@@ -1,10 +1,12 @@
 use std::{
     collections::{HashMap, VecDeque},
-    pin::Pin,
+    future::{Future, poll_fn},
+    pin::{Pin, pin},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
     },
+    task::Poll,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -102,15 +104,61 @@ enum Input {
 
 type InputStream = Pin<Box<dyn Stream<Item = Input> + Send>>;
 
+type Inputs = Arc<Mutex<SelectAll<InputStream>>>;
+
 /// The pump: poll [`TrayEvents::next`] on the service executor. Nothing in the tray moves
 /// unless this is being polled.
 pub struct TrayEvents {
+    core: Core,
+    /// Inputs read off the streams while a handler was waiting on the bus.
+    backlog: VecDeque<Input>,
+}
+
+struct Core {
     shared: Arc<Shared>,
     watcher: SharedWatcher,
     host_name: String,
     owns_watcher: bool,
-    inputs: SelectAll<InputStream>,
+    inputs: Inputs,
     queue: VecDeque<Event>,
+}
+
+/// zbus's socket reader waits for room when any `MessageStream` queue is full (64 messages),
+/// and method replies come through that same reader. So the streams are drained into the
+/// backlog for as long as `fut` waits on a reply; otherwise a burst of signals arriving ahead
+/// of the reply wedges the whole connection, object server included.
+async fn drain_while<T>(
+    inputs: &Inputs,
+    backlog: &mut VecDeque<Input>,
+    fut: impl Future<Output = T>,
+) -> T {
+    let mut fut = pin!(fut);
+    poll_fn(|cx| {
+        if let Poll::Ready(out) = fut.as_mut().poll(cx) {
+            return Poll::Ready(out);
+        }
+        let mut inputs = inputs.lock().unwrap();
+        while let Poll::Ready(Some(input)) = inputs.poll_next_unpin(cx) {
+            push_input(backlog, input);
+        }
+        Poll::Pending
+    })
+    .await
+}
+
+/// A re-read answers every signal before it, so repeats of one already waiting are dropped.
+fn push_input(backlog: &mut VecDeque<Input>, input: Input) {
+    let dup = backlog.iter().any(|queued| match (queued, &input) {
+        (Input::ItemSignal { key: a }, Input::ItemSignal { key: b }) => a == b,
+        (
+            Input::LayoutUpdated { key: a, parent: p },
+            Input::LayoutUpdated { key: b, parent: q },
+        ) => a == b && p == q,
+        _ => false,
+    });
+    if !dup {
+        backlog.push_back(input);
+    }
 }
 
 fn split_key(key: &str) -> (&str, String) {
@@ -162,16 +210,6 @@ impl Tray {
             )
             .await?;
 
-        let dbus = DBusProxy::new(&conn).await?;
-        let owner_changes = dbus.receive_name_owner_changed().await?;
-
-        let watcher_rule = MatchRule::builder()
-            .msg_type(Type::Signal)
-            .interface(WATCHER_IFACE)?
-            .path(WATCHER_PATH)?
-            .build();
-        let watcher_signals = MessageStream::for_match_rule(watcher_rule, &conn, None).await?;
-
         let shared = Arc::new(Shared {
             conn: conn.clone(),
             entries: Mutex::new(Vec::new()),
@@ -182,19 +220,23 @@ impl Tray {
             HOST_SEQ.fetch_add(1, Ordering::Relaxed)
         );
         conn.request_name(host_name.as_str()).await?;
+        let dbus = DBusProxy::new(&conn).await?;
 
-        let mut events = TrayEvents {
+        let mut core = Core {
             shared: shared.clone(),
             watcher,
             host_name,
             owns_watcher: false,
-            inputs: SelectAll::new(),
+            inputs: Arc::new(Mutex::new(SelectAll::new())),
             queue: VecDeque::new(),
         };
-        events.owns_watcher = events.try_own_watcher().await;
+        let inputs = core.inputs.clone();
+        let mut backlog = VecDeque::new();
 
-        events
-            .inputs
+        let owner_changes = dbus.receive_name_owner_changed().await?;
+        inputs
+            .lock()
+            .unwrap()
             .push(Box::pin(owner_changes.filter_map(|sig| async move {
                 let args = sig.args().ok()?;
                 Some(Input::NameOwner {
@@ -206,8 +248,21 @@ impl Tray {
                         .unwrap_or_default(),
                 })
             })));
-        events
-            .inputs
+
+        let watcher_rule = MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface(WATCHER_IFACE)?
+            .path(WATCHER_PATH)?
+            .build();
+        let watcher_signals = drain_while(
+            &inputs,
+            &mut backlog,
+            MessageStream::for_match_rule(watcher_rule, &conn, None),
+        )
+        .await?;
+        inputs
+            .lock()
+            .unwrap()
             .push(Box::pin(watcher_signals.filter_map(|msg| async move {
                 let msg = msg.ok()?;
                 let registered = match msg.header().member()?.as_str() {
@@ -219,10 +274,14 @@ impl Tray {
                 Some(Input::WatcherItem { key, registered })
             })));
 
-        events.connect_to_watcher().await;
+        drain_while(&inputs, &mut backlog, async {
+            core.owns_watcher = core.try_own_watcher().await;
+            core.connect_to_watcher().await;
+        })
+        .await;
         // Events produced while loading the snapshot are already in it.
-        events.queue.clear();
-        Ok((Tray { shared }, events))
+        core.queue.clear();
+        Ok((Tray { shared }, TrayEvents { core, backlog }))
     }
 
     pub fn items(&self) -> Vec<Item> {
@@ -446,15 +505,21 @@ fn map_signals(
 impl TrayEvents {
     /// The next change, or `None` once the connection is gone.
     pub async fn next(&mut self) -> Option<Event> {
+        let inputs = self.core.inputs.clone();
         loop {
-            if let Some(e) = self.queue.pop_front() {
+            if let Some(e) = self.core.queue.pop_front() {
                 return Some(e);
             }
-            let input = self.inputs.next().await?;
-            self.handle(input).await;
+            let input = match self.backlog.pop_front() {
+                Some(input) => input,
+                None => poll_fn(|cx| inputs.lock().unwrap().poll_next_unpin(cx)).await?,
+            };
+            drain_while(&inputs, &mut self.backlog, self.core.handle(input)).await;
         }
     }
+}
 
+impl Core {
     async fn try_own_watcher(&self) -> bool {
         let reply = self
             .shared
@@ -569,14 +634,17 @@ impl TrayEvents {
             return;
         };
         let k = key.clone();
-        self.inputs.push(map_signals(stream, reg, move |m| {
-            let h = m.header();
-            let iface = h.interface()?.as_str();
-            let member = h.member()?.as_str();
-            let relevant = (iface == ITEM_IFACE && member.starts_with("New"))
-                || (iface == PROPS_IFACE && member == "PropertiesChanged");
-            relevant.then(|| Input::ItemSignal { key: k.clone() })
-        }));
+        self.inputs
+            .lock()
+            .unwrap()
+            .push(map_signals(stream, reg, move |m| {
+                let h = m.header();
+                let iface = h.interface()?.as_str();
+                let member = h.member()?.as_str();
+                let relevant = (iface == ITEM_IFACE && member.starts_with("New"))
+                    || (iface == PROPS_IFACE && member == "PropertiesChanged");
+                relevant.then(|| Input::ItemSignal { key: k.clone() })
+            }));
 
         if let Some(menu_path) = item.menu_path.clone() {
             let rule = MatchRule::builder()
@@ -589,23 +657,26 @@ impl TrayEvents {
             {
                 {
                     let k = key.clone();
-                    self.inputs.push(map_signals(stream, reg_menu, move |m| {
-                        let member = m.header().member()?.as_str().to_owned();
-                        match member.as_str() {
-                            "LayoutUpdated" => {
-                                let (_rev, parent): (u32, i32) = m.body().deserialize().ok()?;
-                                Some(Input::LayoutUpdated {
+                    self.inputs
+                        .lock()
+                        .unwrap()
+                        .push(map_signals(stream, reg_menu, move |m| {
+                            let member = m.header().member()?.as_str().to_owned();
+                            match member.as_str() {
+                                "LayoutUpdated" => {
+                                    let (_rev, parent): (u32, i32) = m.body().deserialize().ok()?;
+                                    Some(Input::LayoutUpdated {
+                                        key: k.clone(),
+                                        parent,
+                                    })
+                                }
+                                "ItemsPropertiesUpdated" => Some(Input::PropertiesUpdated {
                                     key: k.clone(),
-                                    parent,
-                                })
+                                    body: m,
+                                }),
+                                _ => None,
                             }
-                            "ItemsPropertiesUpdated" => Some(Input::PropertiesUpdated {
-                                key: k.clone(),
-                                body: m,
-                            }),
-                            _ => None,
-                        }
-                    }));
+                        }));
                 }
             }
         }

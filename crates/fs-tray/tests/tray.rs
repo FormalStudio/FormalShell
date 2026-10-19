@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    future::Future,
     io::{BufRead, BufReader},
     path::PathBuf,
     pin::pin,
@@ -91,14 +92,20 @@ impl Drop for Bus {
     }
 }
 
-async fn next(events: &mut TrayEvents) -> Event {
+async fn within<T>(what: &str, fut: impl Future<Output = T>) -> T {
     let wait = pin!(async {
         Timer::after(Duration::from_secs(10)).await;
     });
-    match select(pin!(events.next()), wait).await {
-        Either::Left((event, _)) => event.expect("event stream ended"),
-        Either::Right(_) => panic!("timed out waiting for a tray event"),
+    match select(pin!(fut), wait).await {
+        Either::Left((out, _)) => out,
+        Either::Right(_) => panic!("timed out waiting for {what}"),
     }
+}
+
+async fn next(events: &mut TrayEvents) -> Event {
+    within("a tray event", events.next())
+        .await
+        .expect("event stream ended")
 }
 
 type Pixmaps = Vec<(i32, i32, Vec<u8>)>;
@@ -778,5 +785,55 @@ fn joins_an_existing_watcher_and_takes_over_when_it_goes() {
             panic!("expected Added");
         };
         assert_eq!(c.key, b.key);
+    });
+}
+
+#[test]
+fn a_signal_burst_ahead_of_a_reply_does_not_wedge_the_connection() {
+    let bus = Bus::start();
+    block_on(async {
+        let conn = bus.connect().await;
+        let (tray, mut events) = Tray::start(conn).await.unwrap();
+        let fake = Fake::start(&bus, "burst", "/StatusNotifierItem", false).await;
+        fake.register("/StatusNotifierItem").await;
+        let Event::Added(item) = next(&mut events).await else {
+            panic!("expected Added");
+        };
+
+        // Far more than a stream queue holds, all on the wire before the re-read the first
+        // one triggers can be answered.
+        fake.state.lock().unwrap().props.title = "renamed".into();
+        let sni = fake.sni().await;
+        for _ in 0..500 {
+            Sni::new_title(sni.signal_emitter()).await.unwrap();
+        }
+        assert_eq!(
+            next(&mut events).await,
+            Event::Changed {
+                key: item.key.clone(),
+                fields: vec![ItemField::Title]
+            }
+        );
+
+        let menu = within("the menu", tray.open_menu(&item.key))
+            .await
+            .unwrap();
+        assert_eq!(menu.children.len(), 6);
+
+        let other = bus.connect().await;
+        let version = within(
+            "the watcher",
+            other.call_method(
+                Some("org.kde.StatusNotifierWatcher"),
+                "/StatusNotifierWatcher",
+                Some("org.freedesktop.DBus.Properties"),
+                "Get",
+                &("org.kde.StatusNotifierWatcher", "ProtocolVersion"),
+            ),
+        )
+        .await
+        .unwrap();
+        let version: zbus::zvariant::OwnedValue = version.body().deserialize().unwrap();
+        assert_eq!(i32::try_from(version).unwrap(), 0);
     });
 }
