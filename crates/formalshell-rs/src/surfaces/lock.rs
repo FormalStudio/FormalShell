@@ -62,14 +62,18 @@ pub struct Prompt<'a> {
     /// Non-empty replaces the field with this message.
     pub unavailable: &'a str,
     pub enabled: bool,
+    /// A check is out: the field breathes on the pulse clock until it answers.
+    pub busy: bool,
     /// The caret and the selection's other end, as char counts.
     pub caret: (usize, usize),
 }
 
 impl Prompt<'_> {
-    /// The lock's: a masked password and nothing over it.
-    pub fn password(dots: usize, caret: (usize, usize), enabled: bool) -> Self {
-        Self { text: "\u{2022}".repeat(dots), placeholder: "Password", label: "", unavailable: "", enabled, caret }
+    /// The lock's: a masked password and nothing over it, or, while PAM
+    /// has the password, an empty field saying so.
+    pub fn password(dots: usize, caret: (usize, usize), checking: bool) -> Self {
+        let placeholder = if checking { "Unlocking\u{2026}" } else { "Password" };
+        Self { text: "\u{2022}".repeat(dots), placeholder, label: "", unavailable: "", enabled: !checking, busy: checking, caret }
     }
 }
 
@@ -181,7 +185,7 @@ impl View {
             if !pr.label.is_empty() {
                 block.push(w::section_label(space, pr.label, None, false).centred());
             }
-            block.push(w::input(&pr.text, pr.placeholder, pr.enabled, error).caret(pr.caret).width(Size::Px(space.popup_width_narrow)).enabled(pr.enabled));
+            block.push(w::input(&pr.text, pr.placeholder, pr.enabled, error).caret(pr.caret).width(Size::Px(space.popup_width_narrow)).enabled(pr.enabled).pulse(pr.busy));
         } else {
             block.push(w::text(pr.unavailable).size(Type::BodySmall).ink(Ink::Muted).centred());
         }
@@ -457,7 +461,7 @@ mod tests {
         let mut corner = |wake: f32| {
             let shared = Shared {
                 now: Local::now(),
-                prompt: Prompt::password(0, (0, 0), true),
+                prompt: Prompt::password(0, (0, 0), false),
                 error: "",
                 has_wallpaper: true,
                 backdrop: Some(&white),
@@ -492,7 +496,7 @@ mod tests {
         let mut corner = |backdrop: Option<&Bitmap>, has_wallpaper: bool, wake: f32| {
             let shared = Shared {
                 now: Local::now(),
-                prompt: Prompt::password(0, (0, 0), true),
+                prompt: Prompt::password(0, (0, 0), false),
                 error: "",
                 has_wallpaper,
                 backdrop,
@@ -518,6 +522,38 @@ mod tests {
             }
         }
         assert_eq!(corner(None, true, 1.0), 0, "a wallpaper still decoding draws dark");
+    }
+
+    /// The check's pulse is what keeps the lock asking for frames while PAM
+    /// has the password; a settled field asks for none.
+    #[test]
+    fn a_pending_check_keeps_the_field_breathing() {
+        let theme = Theme::resolve(|_| None, &Default::default());
+        assert!(theme.motion_enabled);
+        let mut kit = Kit::new(&theme);
+        let mut animating = |checking: bool| {
+            let shared = Shared {
+                now: Local::now(),
+                prompt: Prompt::password(0, (0, 0), checking),
+                error: "",
+                has_wallpaper: false,
+                backdrop: None,
+                picture: None,
+                avatar: None,
+                media: None,
+                enter: (1.0, 0.0),
+                blanked: false,
+                wake: 1.0,
+                palette_ink: false,
+            };
+            let mut view = View::new(900, 700);
+            let now = Instant::now();
+            view.draw(&shared, &theme, &mut kit, now);
+            view.draw(&shared, &theme, &mut kit, now + std::time::Duration::from_millis(300))
+        };
+        assert!(animating(true));
+        assert!(!animating(false));
+        assert_eq!(Prompt::password(0, (0, 0), true).placeholder, "Unlocking\u{2026}");
     }
 
     #[test]

@@ -578,7 +578,7 @@ impl App {
         let has_wallpaper = !self.store.state.data.wallpaper.is_empty();
         let shared = Shared {
             now: Local::now(),
-            prompt: view::Prompt::password(self.lock.password.text().chars().count(), self.lock.password.caret_chars(), !self.lock.checking),
+            prompt: view::Prompt::password(self.lock.password.text().chars().count(), self.lock.password.caret_chars(), self.lock.checking),
             error: &self.lock.error,
             has_wallpaper,
             backdrop: self.lock.backdrop.as_ref(),

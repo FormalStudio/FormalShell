@@ -330,6 +330,7 @@ fn shared<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, availab
             label: convo.label(),
             unavailable: if available { "" } else { NO_SOCKET },
             enabled: available && convo.input_enabled(),
+            busy: false,
             caret: field.caret_chars(),
         },
         error: &convo.error,
