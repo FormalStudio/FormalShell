@@ -1,7 +1,7 @@
 # Switching a real machine over
 
-FormalShell is pre-alpha. Read this before you put it on a machine you
-depend on: what has run on real hardware, what has only run in a VM, and
+FormalShell is early, and it is the everyday session on both development
+machines. Read this before you put it on a machine you depend on: what has run on real hardware, what has only run in a VM, and
 what the host has to provide before a given surface can work at all. The
 install steps live in [`README.md`](../README.md#install); this document is
 the risk.
@@ -9,8 +9,8 @@ the risk.
 The verification rig is a nested Hyprland session under software rendering
 in an aarch64 VM. It proves that a surface works, not that it works against
 your GPU, your Bluetooth adapter or your network. As of 2026-10-07 every leg
-of that rig passes (113 of 113, plus the greeter's own run), and no machine
-runs FormalShell as its everyday session yet.
+of that rig passes (113 of 113, plus the greeter's own run). Daily use on the
+two development machines covers what the rig cannot.
 
 ## Two ways in
 
@@ -70,6 +70,15 @@ stays on its honest unavailable state.
 
 ## What has run on real hardware
 
+Both development machines run FormalShell as their everyday Hyprland session
+on NixOS: e1504g (i3-N305, Intel graphics) since 2026-07-30 and g815
+(RTX 5070) since 2026-08-10. Every day that exercises the bar and its cells,
+the launcher, the panels, notifications, the screensaver, media and lyrics,
+and the lock screen against the real `formalshell-lock` PAM service, plus the
+iPhone integration, AirPlay, LocalSend and a calendar signed in through GNOME
+Online Accounts. Both machines log in through SDDM, so the greeter is not
+part of that.
+
 One nested run on e1504g (i3-N305, 8 GB, 1920x1080, power saver), measuring
 the shell against the rewrite's budgets on 2026-10-07. RSS at 600 s was
 65 MB against a 120 MB ceiling. Three budgets failed: 1.46% CPU at idle
@@ -79,26 +88,16 @@ spinner and panel frame-time rows were not measured, because the nested
 window sat off screen for that run. The full table is in
 `docs/superpowers/plans/2026-10-07-r9-cutover.md` under Task 4.
 
-That run proves the shell starts and draws on real hardware. It says
-nothing about the populated-state paths that only real devices exercise:
-anywhere a real string or number from hardware gets formatted for display
-(signal strength, battery levels, device names) is a class of defect the VM
-cannot surface, and nothing has swept those on hardware yet.
+Real devices are where populated-state defects show up: anywhere a real
+string or number from hardware gets formatted for display (signal strength,
+battery levels, device names). Daily use catches those as they appear, but no
+one has swept them systematically.
 
 ## What has only run in a VM
 
-Everything else. That includes the greeter, the lock screen's real-PAM
-success and failure paths, the sleep inhibitor, the tray, every bar cell
-and panel, the launcher and its routes, notifications, capture, recording
-and OCR, the screensaver, the switcher and the Spaces thumbnails, media,
-lyrics and the visualizer, AirPlay, the iPhone integration, earbuds and the
-headset connect card.
-
-Two of those deserve calling out. **The GOA OAuth path has never run
-anywhere**, since the VM's evidence is a local EDS calendar; a real Google
-or Nextcloud account through GNOME Online Accounts is exactly what a real
-host has to prove. **Screen recording is proven only under software
-rendering**: the rig's `--record` leg runs a real wf-recorder child with
+**The greeter.** Both development machines use SDDM, so FormalShell's own
+greeter has only run in the rig. **The `install.sh` path**, as described
+above. **Screen recording is proven only under software rendering**: the rig's `--record` leg runs a real wf-recorder child with
 `recording.noDmabuf` set, because there is no GPU buffer to import in that
 session. The recorder child, the finalize pass and the GIF transcode are all
 real there; the dmabuf path a real GPU would take is not.
@@ -123,11 +122,8 @@ that lists their neighbours.
 
 ## What "ready" would mean
 
-1. Every VM-only surface above verified on at least one real machine,
-   starting with the greeter and the lock screen's real-PAM paths, since
-   switching over is itself the first real test of both.
+1. The greeter as the login screen on at least one real machine.
 2. The e1504g budgets met, with the frame-time rows measured.
 3. `install.sh` run on bare metal on each distro family it supports, on
    x86_64 as well as aarch64.
 4. Screen recording proven on a real GPU.
-5. A daily-drive stretch on a machine that is not the primary one.

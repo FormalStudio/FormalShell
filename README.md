@@ -12,7 +12,7 @@
 [![Nix flake](https://img.shields.io/badge/nix-flake-4a9eda?style=for-the-badge&labelColor=161616&logo=nixos&logoColor=white)](flake.nix)
 [![Rust](https://img.shields.io/badge/built_with-rust-4a9eda?style=for-the-badge&labelColor=161616&logo=rust&logoColor=white)](crates/)
 [![Wayland](https://img.shields.io/badge/wayland-hyprland-4a9eda?style=for-the-badge&labelColor=161616&logo=wayland&logoColor=white)](#install)
-[![Status](https://img.shields.io/badge/status-pre--alpha-d35f5f?style=for-the-badge&labelColor=161616)](docs/SWITCHOVER.md)
+[![Status](https://img.shields.io/badge/status-daily_driven-4a9eda?style=for-the-badge&labelColor=161616)](docs/SWITCHOVER.md)
 [![License](https://img.shields.io/badge/license-MIT-cccccc?style=for-the-badge&labelColor=161616)](LICENSE)
 
 A desktop shell for [Hyprland](https://hypr.land), written in Rust. One
@@ -22,8 +22,9 @@ keyboard and drivable over IPC.
 
 ![The launcher budding off the bar](docs/media/metamorphosis-launcher.gif)
 
-**Pre-alpha.** [`docs/SWITCHOVER.md`](docs/SWITCHOVER.md) tracks what has run
-on real hardware and what has only run in a VM.
+**Early, and daily driven.** It has been the session shell on both
+development machines since August 2026. [`docs/SWITCHOVER.md`](docs/SWITCHOVER.md)
+tracks what has run on real hardware and what has only run in a VM.
 
 ## Themes
 
