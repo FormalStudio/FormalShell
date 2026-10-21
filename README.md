@@ -114,9 +114,12 @@ services.formalshell-greeter = {
 };
 ```
 
-It lists every session in `services.displayManager.sessionPackages` under
-the field (Tab or a click picks one), starts on Hyprland and remembers each
-user's last pick.
+It draws the lock screen's card: the clock, a session chip (every session in
+`services.displayManager.sessionPackages`, Tab or a click picks one) and
+power buttons on one side, the last user's picture, name and password field
+on the other. A second login account adds a user chip. It starts on
+Hyprland and remembers each user's last session. The lock screen is the same
+card in its locked state, with now playing where the chips go.
 
 The default binds, blur layer rules and palette reads ship as a Lua file, and
 the home-manager module writes it to `~/.config/hypr/formalshell.lua` itself,

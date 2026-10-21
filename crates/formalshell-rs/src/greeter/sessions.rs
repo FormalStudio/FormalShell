@@ -3,8 +3,8 @@
 //! itself has no enumeration call.
 //!
 //! The pick is remembered per user under the greeter's own state dir,
-//! `sessions/<user>`, plus `sessions/.last` for the screen before anyone
-//! has typed a name.
+//! `sessions/<user>`, plus `sessions/.last` for the screen before a user is
+//! known, and `sessions/.user` is who logged in last.
 
 use std::path::{Path, PathBuf};
 
@@ -107,6 +107,17 @@ pub fn pick(sessions: &[Session], remembered: Option<&str>) -> usize {
         .or_else(|| at("hyprland"))
         .or_else(|| sessions.iter().position(|s| s.id.starts_with("hyprland")))
         .unwrap_or(0)
+}
+
+/// The last user to log in here.
+pub fn last_user(state: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(state.join("sessions/.user")).ok()?;
+    Some(text.trim().to_owned()).filter(|t| !t.is_empty())
+}
+
+pub fn remember_user(state: &Path, user: &str) {
+    let _ = std::fs::create_dir_all(state.join("sessions"));
+    let _ = std::fs::write(state.join("sessions/.user"), format!("{user}\n"));
 }
 
 /// A name that is safe as one path component.

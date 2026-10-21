@@ -290,7 +290,7 @@ impl App {
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
         let home = std::env::var("HOME").unwrap_or_default();
         let path = self.store.config.avatar_path(&home);
-        let size = (self.store.theme.theme.font_size.display_large * 3.0).round() as u32;
+        let size = crate::surfaces::login::avatar_size(&self.store.theme.theme) as u32;
         let picture = self.store.wallpaper.latest().cloned();
         let avatar_tx = tx.clone();
         rt.pool().submit(move || {
@@ -578,6 +578,7 @@ impl App {
         let has_wallpaper = !self.store.state.data.wallpaper.is_empty();
         let shared = Shared {
             now: Local::now(),
+            name: crate::greeter::users::own_name(),
             prompt: view::Prompt::password(self.lock.password.text().chars().count(), self.lock.password.caret_chars(), self.lock.checking),
             error: &self.lock.error,
             has_wallpaper,
@@ -588,7 +589,6 @@ impl App {
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
             blanked,
             wake: self.lock.wake.value(now).clamp(0.0, 1.0) as f32,
-            palette_ink: false,
         };
         let active = self.lock_media();
         let mpris = active.as_ref().and_then(|a| self.store.media.mpris.iter().find(|p| p.id == a.id));

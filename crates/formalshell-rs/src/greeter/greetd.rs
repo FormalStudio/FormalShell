@@ -149,7 +149,28 @@ impl Conversation {
                 self.user = text.to_string();
                 self.send(Request::CreateSession { username: text.to_string() })
             }
-            Phase::Asking => self.send(Request::PostAuthMessageResponse { response: Some(text) }),
+            Phase::Asking => {
+                self.error.clear();
+                self.send(Request::PostAuthMessageResponse { response: Some(text) })
+            }
+            _ => Step::Nothing,
+        }
+    }
+
+    /// A conversation for a user picked rather than typed. The failure
+    /// that brought the greeter back here stays on screen.
+    pub fn open(&mut self, user: &str) -> Step {
+        if self.phase != Phase::Inactive {
+            return Step::Nothing;
+        }
+        self.user = user.to_owned();
+        self.send(Request::CreateSession { username: user.to_owned() })
+    }
+
+    /// Back to no conversation, to open one for someone else.
+    pub fn cancel(&mut self) -> Step {
+        match self.phase {
+            Phase::Asking => self.send(Request::CancelSession),
             _ => Step::Nothing,
         }
     }

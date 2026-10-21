@@ -1,7 +1,7 @@
 //! `formalshell-rs greeter`: greetd runs it as its
 //! default_session inside a compositor of its own with no other client, so
 //! there is no session lock here, only one overlay layer surface per output
-//! showing the lock screen's centre column over the flat background.
+//! drawing the login card (`surfaces::login`) over the wallpaper.
 //!
 //! Every output draws the same conversation; only the first output's
 //! surface takes the keyboard, so there is one field to type into.
@@ -12,15 +12,19 @@
 //! theme is settings.json's preset over theme.json's palette, each falling
 //! back the way the shell's own do when absent.
 //!
-//! The session a login starts is picked under the field (Tab, Shift+Tab or
-//! a click) from [`sessions`]; with none found it is `greeter.sessionCommand`.
+//! The user is picked, never typed: the last one to log in from [`users`],
+//! with a conversation opened for them at once, so the field asks for a
+//! password. With no users found the field asks for a username instead.
+//! The session is the card's chip (a click, or Tab and Shift+Tab) from
+//! [`sessions`]; with none found it is `greeter.sessionCommand`.
 
 pub mod greetd;
 pub mod sessions;
+pub mod users;
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use calloop::channel::{self, Event};
@@ -53,13 +57,15 @@ use zeroize::Zeroizing;
 use crate::render::Renderer;
 use crate::scene::{Bitmap, IRect};
 use crate::services::theme;
-use crate::services::wallpaper::{self, Picture};
+use crate::services::wallpaper;
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::Kit;
-use crate::surfaces::lock::{self, Prompt, Shared, View};
+use crate::surfaces::lock;
 use crate::ui::{Ui, What};
-use greetd::{Conversation, Request, Response, Step};
+use greetd::{Conversation, Phase, Request, Response, Step};
 use sessions::Session;
+use users::User;
+use crate::surfaces::login::{self, Card, Controls, Menu, View};
 
 /// AuthPrompt's `unavailableText` with no socket to talk to.
 const NO_SOCKET: &str = "No greetd socket to talk to";
@@ -69,14 +75,13 @@ struct Out {
     surface: Surface<LayerSurface>,
     view: View,
     /// The wallpaper at this output's size, and the size it was asked at.
-    backdrop: Option<(Arc<Picture>, Bitmap)>,
+    backdrop: Option<Bitmap>,
     asked: (i32, i32),
 }
 
 /// A backdrop decoded off the loop.
 struct Decoded {
     size: (i32, i32),
-    picture: Arc<Picture>,
     bitmap: Bitmap,
 }
 
@@ -104,8 +109,17 @@ struct Greeter {
     sessions: Vec<Session>,
     names: Vec<String>,
     session: usize,
-    /// Picked by hand, so a typed username does not bring back its own.
+    /// Picked by hand, so a user change does not bring back their own.
     picked: bool,
+    users: Vec<User>,
+    user_names: Vec<String>,
+    user: usize,
+    avatar: Option<Bitmap>,
+    menu: Menu,
+    /// The conversation reached a question, so its end opens the next one.
+    asked: bool,
+    /// A user change waits on the old conversation's cancel.
+    reopen: bool,
     state_dir: PathBuf,
     wallpaper: Option<PathBuf>,
     decoded: channel::Sender<Decoded>,
@@ -160,11 +174,28 @@ fn wallpaper_path(settings: &Value, env: &theme::Env) -> Option<PathBuf> {
     theme::get(settings)("greeter.wallpaper").and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(PathBuf::from))
 }
 
-/// The wallpaper cover-cropped to `size` with the lock's scrim baked in.
+/// The wallpaper cover-cropped to `size`, as the desktop shows it: the card
+/// carries the contrast, so there is no scrim.
 fn decode(path: &Path, size: (i32, i32)) -> Option<Decoded> {
-    let picture = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None)?;
-    let bitmap = lock::backdrop(&picture);
-    Some(Decoded { size, picture: Arc::new(picture), bitmap })
+    let p = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None)?;
+    let rgba = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
+    Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
+}
+
+/// The avatar the card draws for `login`.
+fn avatar(theme: &Theme, state: &Path, login: &str) -> Option<Bitmap> {
+    let size = login::avatar_size(theme) as u32;
+    lock::avatar(&users::avatar_path(state, login)?, size.max(1))
+}
+
+/// Which power action a control fires, by logind method.
+fn power(on: &str) -> Option<&'static str> {
+    match on {
+        "suspend" => Some("Suspend"),
+        "reboot" => Some("Reboot"),
+        "poweroff" => Some("PowerOff"),
+        _ => None,
+    }
 }
 
 /// The socket on a thread of its own: one request out, one response back.
@@ -241,7 +272,8 @@ pub fn main(args: &[String]) {
     let theme = resolve(&settings, &env);
     eprintln!("greeter: preset {}", theme.preset);
     let sessions = sessions::scan(&session_dirs(&settings));
-    eprintln!("greeter: {} sessions", sessions.len());
+    let users = users::scan();
+    eprintln!("greeter: {} sessions, {} users", sessions.len(), users.len());
     let mut g = Greeter {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -266,6 +298,13 @@ pub fn main(args: &[String]) {
         sessions,
         session: 0,
         picked: false,
+        user_names: users.iter().map(|u| u.name.clone()).collect(),
+        users,
+        user: 0,
+        avatar: None,
+        menu: Menu::Closed,
+        asked: false,
+        reopen: false,
         wallpaper: wallpaper_path(&settings, &env),
         state_dir: env.state_dir.clone(),
         decoded,
@@ -275,6 +314,9 @@ pub fn main(args: &[String]) {
     };
     let last = sessions::remembered(&g.state_dir, None);
     g.select(sessions::pick(&g.sessions, last.as_deref()));
+    let last_user = sessions::last_user(&g.state_dir);
+    g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or(0);
+    g.open_user();
     g.arm_clock();
 
     let signal = event_loop.get_signal();
@@ -311,6 +353,76 @@ impl Greeter {
             }
         };
         self.step(step);
+        match self.convo.phase {
+            Phase::Asking => self.asked = true,
+            Phase::Inactive if self.asked || self.reopen => {
+                self.asked = false;
+                self.reopen = false;
+                self.open_user();
+            }
+            _ => {}
+        }
+        self.dirty = true;
+    }
+
+    /// A conversation for the picked user, the field then asking for a
+    /// password. Their own last session comes back unless one was picked.
+    fn open_user(&mut self) {
+        let Some(login) = self.users.get(self.user).map(|u| u.login.clone()) else { return };
+        self.avatar = avatar(&self.theme, &self.state_dir, &login);
+        if !self.picked
+            && let Some(own) = sessions::remembered(&self.state_dir, Some(&login))
+        {
+            self.select(sessions::pick(&self.sessions, Some(&own)));
+        }
+        if self.greetd.is_some() {
+            let step = self.convo.open(&login);
+            self.step(step);
+        }
+        self.dirty = true;
+    }
+
+    fn pick_user(&mut self, i: usize) {
+        if i == self.user || i >= self.users.len() {
+            return;
+        }
+        self.user = i;
+        self.field = field();
+        self.convo.error.clear();
+        match self.convo.phase {
+            Phase::Inactive => self.open_user(),
+            _ => {
+                self.reopen = true;
+                let step = self.convo.cancel();
+                self.step(step);
+            }
+        }
+    }
+
+    /// A card control, clicked.
+    fn activate(&mut self, on: &str, what: What) {
+        if let Some(method) = power(on) {
+            let _ = std::thread::Builder::new().name("fs-power".into()).spawn(move || {
+                if let Err(e) = futures_lite::future::block_on(crate::services::power::call(method)) {
+                    eprintln!("greeter: {method}: {e}");
+                }
+            });
+            return;
+        }
+        let toggle = |m: Menu, now: Menu| if now == m { Menu::Closed } else { m };
+        match (on, what) {
+            ("sessions", _) => self.menu = toggle(Menu::Sessions, self.menu),
+            ("users", _) => self.menu = toggle(Menu::Users, self.menu),
+            _ => {
+                let Some((kind, i)) = on.split_once(':').and_then(|(k, i)| Some((k, i.parse::<usize>().ok()?))) else { return };
+                match kind {
+                    "session" => self.pick(i),
+                    "user" => self.pick_user(i),
+                    _ => return,
+                }
+                self.menu = Menu::Closed;
+            }
+        }
         self.dirty = true;
     }
 
@@ -326,6 +438,7 @@ impl Greeter {
                 if let Some(s) = self.sessions.get(self.session) {
                     sessions::remember(&self.state_dir, &self.convo.user, &s.id);
                 }
+                sessions::remember_user(&self.state_dir, &self.convo.user);
                 self.exit = true;
             }
             Step::Nothing => {}
@@ -335,9 +448,10 @@ impl Greeter {
     fn key(&mut self, event: &KeyEvent) {
         let enabled = self.greetd.is_some() && self.convo.input_enabled();
         match event.keysym {
+            Keysym::Return | Keysym::KP_Enter if enabled && self.convo.phase == Phase::Inactive && !self.users.is_empty() => self.open_user(),
             Keysym::Return | Keysym::KP_Enter if enabled => {
                 let text = self.field.replace(buffer());
-                if self.convo.phase == greetd::Phase::Inactive && !self.picked {
+                if self.convo.phase == Phase::Inactive && !self.picked {
                     let own = sessions::remembered(&self.state_dir, Some(text.as_str()));
                     if own.is_some() {
                         self.select(sessions::pick(&self.sessions, own.as_deref()));
@@ -351,6 +465,7 @@ impl Greeter {
                 let back = event.keysym == Keysym::ISO_Left_Tab || self.mods.shift;
                 self.pick((self.session + if back { n - 1 } else { 1 }) % n);
             }
+            Keysym::Escape if self.menu != Menu::Closed => self.menu = Menu::Closed,
             Keysym::Escape => self.field = field(),
             sym if enabled => {
                 if self.field.key(crate::wayland::field_key(sym), self.mods, event.utf8.as_deref()) == fs_menu::field::Outcome::Pass {
@@ -373,7 +488,7 @@ impl Greeter {
 
     /// A pick by hand, which only counts before the session starts.
     fn pick(&mut self, i: usize) {
-        if self.convo.phase != greetd::Phase::Launched {
+        if self.convo.phase != Phase::Launched {
             self.picked = true;
             self.select(i);
         }
@@ -381,7 +496,7 @@ impl Greeter {
 
     fn backdrop(&mut self, d: Decoded) {
         if let Some(o) = self.outs.iter_mut().find(|o| o.asked == d.size) {
-            o.backdrop = Some((d.picture, d.bitmap));
+            o.backdrop = Some(d.bitmap);
             self.dirty = true;
         }
     }
@@ -421,51 +536,52 @@ impl Greeter {
         }
         self.dirty = false;
         let now = Instant::now();
-        let available = self.greetd.is_some();
+        let controls = Controls { sessions: &self.names, session: self.session, users: &self.user_names, user: self.user, menu: self.menu };
+        let card = Card {
+            name: self.users.get(self.user).map_or("", |u| u.name.as_str()),
+            avatar: self.avatar.as_ref(),
+            below: Some(controls.el(&self.theme)),
+            ..card(&self.convo, &self.field, self.greetd.is_some(), self.users.is_empty())
+        };
         for o in &mut self.outs {
             if !o.surface.configured {
                 continue;
             }
-            let mut shared = shared(&self.convo, &self.field, available, &self.names, self.session);
-            if self.wallpaper.is_some() {
-                shared.has_wallpaper = true;
-                shared.palette_ink = false;
-                shared.backdrop = o.backdrop.as_ref().map(|(_, b)| b);
-                shared.picture = o.backdrop.as_ref().map(|(p, _)| p);
-            }
-            let moving = o.view.draw(&shared, &self.theme, &mut self.kit, now);
+            let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now);
             o.surface.present(&mut o.view.scene, moving, &self.qh);
         }
     }
 }
 
-/// The column every output draws, from the conversation as it stands.
-fn shared<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available: bool, sessions: &'a [String], session: usize) -> Shared<'a> {
+/// The card's conversation half, as it stands; the caller fills in who and
+/// which session.
+fn card<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available: bool, typed_user: bool) -> Card<'a> {
     let masked = convo.masked();
     let text = if masked { "\u{2022}".repeat(field.text().chars().count()) } else { field.text().to_owned() };
-    Shared {
+    let checking = convo.phase == Phase::Waiting && !convo.user.is_empty();
+    let placeholder = match convo.phase {
+        Phase::Inactive if typed_user => "Username",
+        Phase::Waiting | Phase::Launched if checking => "Signing in\u{2026}",
+        _ => "Password",
+    };
+    // PAM's own "Password:" says what the placeholder already does.
+    let label = match convo.phase {
+        Phase::Asking if !convo.message.trim_end().trim_end_matches(':').eq_ignore_ascii_case("password") => convo.label(),
+        _ => "",
+    };
+    Card {
         now: Local::now(),
-        prompt: Prompt {
-            text,
-            placeholder: if masked { "Password" } else { "Username" },
-            label: convo.label(),
-            unavailable: if available { "" } else { NO_SOCKET },
-            enabled: available && convo.input_enabled(),
-            busy: false,
-            caret: field.caret_chars(),
-            sessions,
-            session,
-        },
-        error: &convo.error,
-        has_wallpaper: false,
-        backdrop: None,
-        picture: None,
+        name: "",
         avatar: None,
-        media: None,
-        enter: (1.0, 0.0),
-        blanked: false,
-        wake: 1.0,
-        palette_ink: true,
+        text,
+        placeholder,
+        label,
+        error: &convo.error,
+        unavailable: if available { "" } else { NO_SOCKET },
+        enabled: available && convo.input_enabled(),
+        busy: checking,
+        caret: field.caret_chars(),
+        below: None,
     }
 }
 
@@ -477,6 +593,7 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     std::fs::create_dir_all(dir).expect("shot directory");
     let backdrop = wallpaper_path(settings, env).and_then(|p| decode(&p, (w, h)));
     let names: Vec<String> = ["Hyprland (uwsm-managed)", "Plasma (Wayland)", "Waylandcraft"].map(String::from).to_vec();
+    let people: Vec<String> = ["Kyan De Sutter", "Guest"].map(String::from).to_vec();
     for preset in fs_theme::presets::NAMES {
         let mut s = settings.clone();
         if let Some(obj) = s.as_object_mut() {
@@ -487,30 +604,71 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
         }
         let theme = resolve(&s, env);
         let mut kit = Kit::new(&theme);
-        let user = Conversation::new(vec![]);
+        let pic = avatar(&theme, &env.state_dir, "shot");
         let mut asking = Conversation::new(vec![]);
-        asking.submit(Zeroizing::new("test".into()));
+        asking.open("kyan");
         asking.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
         let mut failed = Conversation::new(vec![]);
-        failed.submit(Zeroizing::new("test".into()));
-        failed.receive(Response::Error { error_type: greetd::ErrorType::AuthError, description: "pam_authenticate: AUTH_ERR".into() });
-        failed.receive(Response::Error { error_type: greetd::ErrorType::Error, description: "unable to send message: Connection refused".into() });
-        let states: [(&str, &Conversation, &str, bool); 4] = [
-            ("user", &user, "test", true),
-            ("password", &asking, "hunter2", true),
-            ("failed", &failed, "", true),
-            ("unavailable", &user, "", false),
+        failed.open("kyan");
+        failed.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
+        failed.submit(Zeroizing::new("nope".into()));
+        failed.receive(Response::Error { error_type: greetd::ErrorType::AuthError, description: "Wrong password".into() });
+        failed.receive(Response::Success);
+        failed.open("kyan");
+        failed.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
+        let states: [(&str, &Conversation, &str, Menu, bool); 5] = [
+            ("password", &asking, "", Menu::Closed, true),
+            ("typing", &asking, "hunter2", Menu::Closed, true),
+            ("failed", &failed, "", Menu::Closed, true),
+            ("sessions", &asking, "", Menu::Sessions, true),
+            ("unavailable", &asking, "", Menu::Closed, false),
         ];
-        for (name, convo, typed, available) in states {
+        for (name, convo, typed, menu, available) in states {
             let mut view = View::new(w, h);
-            let mut sh = shared(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, &names, 1);
-            if let Some(d) = &backdrop {
-                sh.has_wallpaper = true;
-                sh.palette_ink = false;
-                sh.backdrop = Some(&d.bitmap);
-                sh.picture = Some(&d.picture);
-            }
-            view.draw(&sh, &theme, &mut kit, Instant::now());
+            let controls = Controls { sessions: &names, session: 0, users: &people, user: 0, menu };
+            let c = Card {
+                name: "Kyan De Sutter",
+                avatar: pic.as_ref(),
+                below: Some(controls.el(&theme)),
+                ..card(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, false)
+            };
+            view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now());
+            let mut r = Renderer::new(w as u16, h as u16);
+            r.render(&view.scene, IRect::new(0, 0, w, h));
+            let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
+            let path = dir.join(format!("greeter-{preset}-{name}.png"));
+            image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
+            println!("SHOT {}", path.display());
+        }
+        // The lock screen's card beside the greeter's, locked and playing.
+        for (name, playing) in [("lock", false), ("lock-media", true)] {
+            let mut view = lock::View::new(w, h);
+            let media = playing.then(|| lock::NowPlaying {
+                title: "Teardrop",
+                artist: "Massive Attack",
+                playing: true,
+                can_previous: true,
+                can_toggle: true,
+                can_next: true,
+                progress: Some(0.4),
+                art: None,
+                cursor: -1,
+            });
+            let shared = lock::Shared {
+                now: Local::now(),
+                name: "Kyan De Sutter",
+                prompt: lock::Prompt::password(0, (0, 0), false),
+                error: "",
+                has_wallpaper: backdrop.is_some(),
+                backdrop: backdrop.as_ref().map(|d| &d.bitmap),
+                picture: None,
+                avatar: pic.as_ref(),
+                media,
+                enter: (1.0, 0.0),
+                blanked: false,
+                wake: 1.0,
+            };
+            view.draw(&shared, &theme, &mut kit, Instant::now());
             let mut r = Renderer::new(w as u16, h as u16);
             r.render(&view.scene, IRect::new(0, 0, w, h));
             let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
@@ -637,11 +795,8 @@ impl PointerHandler for Greeter {
                 PointerEventKind::Release { button: 0x110, .. } => {
                     let pressed = ui.pressed.take();
                     let event = ui.hit(x, y).filter(|_| pressed.is_some() && pressed == path).and_then(|h| Ui::event(h, x));
-                    if let Some(e) = event
-                        && e.on == "session"
-                        && let What::Pick(i) = e.what
-                    {
-                        self.pick(i);
+                    if let Some(e) = event {
+                        self.activate(&e.on, e.what);
                     }
                 }
                 _ => continue,

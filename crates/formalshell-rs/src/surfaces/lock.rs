@@ -1,27 +1,25 @@
 //! One output's lock screen: the
 //! wallpaper under the modal scrim, or the flat background without one,
-//! and the avatar, clock, date and password field as one column at its
-//! centre. The clock's ink is chosen per output against the wallpaper under
-//! it (Lock/model.js's `ink`), never the screen.
+//! and the login card the greeter draws (`surfaces::login`) in its locked
+//! state, now playing under the clock in place of the greeter's controls.
+//! `lock status` still reports the ink the wallpaper under the card asks
+//! for (Lock/model.js's `ink`).
 
 use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::{DateTime, Local};
 use fs_theme::color::Rgba;
-use fs_theme::style::Glow;
 use fs_theme::theme::Theme;
-use fs_theme::tokens::WEIGHTS;
 use image::imageops::{self, FilterType};
 use serde_json::{Value, json};
-use vello_cpu::kurbo::Rect;
 
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::wallpaper::Picture;
 use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::TextStyle;
+use crate::surfaces::login;
 use crate::ui::el::Opt;
-use crate::ui::{self, El, Ink, Size, Type, Ui, w};
+use crate::ui::{El, Ink, Type, Ui, w};
 
 /// The modal scrim's opacity over the wallpaper.
 pub const SCRIM: f64 = 0.5;
@@ -29,6 +27,8 @@ pub const SCRIM: f64 = 0.5;
 /// What every output shows the same.
 pub struct Shared<'a> {
     pub now: DateTime<Local>,
+    /// The user's full name over the field.
+    pub name: &'a str,
     pub prompt: Prompt<'a>,
     pub error: &'a str,
     /// `state.json`'s wallpaper is set.
@@ -46,10 +46,6 @@ pub struct Shared<'a> {
     /// The blank and wake crossfade: 0 is
     /// black, 1 the whole screen.
     pub wake: f32,
-    /// The clock in `foreground` and the date in `mutedForeground` with no
-    /// glow (AuthPrompt's own inks, which the greeter keeps), instead of
-    /// the `lock.ink` state the backdrop asks for.
-    pub palette_ink: bool,
 }
 
 /// The password field and what sits over it.
@@ -66,10 +62,6 @@ pub struct Prompt<'a> {
     pub busy: bool,
     /// The caret and the selection's other end, as char counts.
     pub caret: (usize, usize),
-    /// The greeter's session names under the field, and the one picked;
-    /// fewer than two draws none.
-    pub sessions: &'a [String],
-    pub session: usize,
 }
 
 impl Prompt<'_> {
@@ -77,7 +69,7 @@ impl Prompt<'_> {
     /// has the password, an empty field saying so.
     pub fn password(dots: usize, caret: (usize, usize), checking: bool) -> Self {
         let placeholder = if checking { "Unlocking\u{2026}" } else { "Password" };
-        Self { text: "\u{2022}".repeat(dots), placeholder, label: "", unavailable: "", enabled: !checking, busy: checking, caret, sessions: &[], session: 0 }
+        Self { text: "\u{2022}".repeat(dots), placeholder, label: "", unavailable: "", enabled: !checking, busy: checking, caret }
     }
 }
 
@@ -146,7 +138,7 @@ pub fn transport_key(index: i32, count: i32, key: TKey) -> Step {
 
 pub struct View {
     pub scene: Scene,
-    pub ui: Ui,
+    ui: Ui,
     nodes: Vec<NodeId>,
     /// `lock status`'s per-output report.
     pub report: Value,
@@ -176,50 +168,28 @@ impl View {
         }
         let (enter, rise) = s.enter;
         let fade = enter * s.wake;
-        let font = &theme.font_size;
-        let space = &theme.space;
-        let big = (font.display_large * 3.0).round();
-
-        let clock = kit.shape(&s.now.format("%H:%M").to_string(), TextStyle { family: kit.look.mono, size: big as f32, weight: WEIGHTS.semibold as f32, tracking: 0.0 });
-        let date = kit.shape(&s.now.format("%A, %B %-d").to_string(), TextStyle { family: kit.look.sans, size: font.caption as f32, weight: WEIGHTS.medium as f32, tracking: 0.0 });
-        let error = (!s.error.is_empty()).then_some(s.error);
         let pr = &s.prompt;
-        let mut block = Vec::new();
-        if pr.unavailable.is_empty() {
-            if !pr.label.is_empty() {
-                block.push(w::section_label(space, pr.label, None, false).centred());
-            }
-            block.push(w::input(&pr.text, pr.placeholder, pr.enabled, error).caret(pr.caret).width(Size::Px(space.popup_width_narrow)).enabled(pr.enabled).pulse(pr.busy));
-            if pr.sessions.len() > 1 {
-                let options = pr.sessions.iter().map(Opt::new).collect();
-                block.push(w::group(options, pr.session, true).wrap().on("session").centred());
-            }
-        } else {
-            block.push(w::text(pr.unavailable).size(Type::BodySmall).ink(Ink::Muted).centred());
-        }
-        let field = if block.len() == 1 { block.remove(0) } else { w::column(space.lg, block) };
-        let (field_w, field_h) = ui::measure(&field, space.popup_width_narrow, theme, kit);
+        let media = s.media.as_ref().map(|m| now_playing(m, theme));
+        let card = login::Card {
+            now: s.now,
+            name: s.name,
+            avatar: s.avatar,
+            text: pr.text.clone(),
+            placeholder: pr.placeholder,
+            label: pr.label,
+            error: s.error,
+            unavailable: pr.unavailable,
+            enabled: pr.enabled,
+            busy: pr.busy,
+            caret: pr.caret,
+            below: media,
+        };
+        let clock = card.clock(theme, kit);
+        let body = card.body(&clock, theme);
+        let (card_rect, inner) = login::place(&body, (w, h), rise.round(), theme, kit);
 
-        let avatar = s.avatar.map(|_| big);
-        let clock_w = clock.width.max(date.width) as f64;
-        let clock_h = clock.line_height() as f64 + space.lg + date.line_height() as f64;
-        let total = avatar.map_or(0.0, |a| a + space.lg) + clock_h + space.lg + field_h;
-        let mut y = ((h as f64 - total) / 2.0).round() + rise.round();
-        let cx = w as f64 / 2.0;
-
-        let avatar_at = avatar.map(|a| {
-            let at = ((cx - a / 2.0).round() as i32, y as i32);
-            y += a + space.lg;
-            at
-        });
-        let clock_rect = IRect::new((cx - clock_w / 2.0).round() as i32, y as i32, clock_w.round() as i32, clock_h.round() as i32);
-        y += clock_h + space.lg;
-        let field_at = ((cx - field_w / 2.0).round(), y);
-
-        let rest = IRect::new(clock_rect.x, clock_rect.y - rise.round() as i32, clock_rect.w, clock_rect.h);
+        let rest = IRect::new(card_rect.x, card_rect.y - rise.round() as i32, card_rect.w, card_rect.h);
         let (ink_name, luma, sampled) = ink(s, theme, rest, (w, h));
-        let style = theme.box_style("lock.ink", Some(ink_name));
-        let glow: Vec<Glow<Rgba>> = if s.palette_ink { Vec::new() } else { style.ink_shadow.clone() };
 
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
         // Black under everything, the screen faded in over it: a light
@@ -239,53 +209,23 @@ impl View {
                 }
             }
         }
-        if let (Some(b), Some(at)) = (s.avatar, avatar_at) {
-            p.image(b, at, fade);
-        }
-        let (clock_ink, date_ink) = if s.palette_ink { (theme.colors.get("foreground"), theme.colors.get("mutedForeground")) } else { (style.ink, style.ink) };
-        let clock_ink = clock_ink.with_alpha(clock_ink.a * fade);
-        let clock_x = clock_rect.x + ((clock_w - clock.width as f64) / 2.0).round() as i32;
-        p.text(&clock, (clock_x, clock_rect.y), clock_ink, &glow);
-        let date_x = clock_rect.x + ((clock_w - date.width as f64) / 2.0).round() as i32;
-        p.text(&date, (date_x, clock_rect.y + clock.line_height() + space.lg as i32), date_ink.with_alpha(date_ink.a * fade), &glow);
-        // The now-playing card hangs `sectionGap * 2` under the field,
-        // `popupWidthNarrow` wide, its words in the card's own inks.
-        let pad = space.panel_padding;
-        let card_w = space.popup_width_narrow;
-        let media = s.media.as_ref().map(|m| {
-            let (_, bh) = ui::measure(&now_playing(m, theme), card_w - pad * 2.0, theme, kit);
-            let y = (field_at.1 + field_h + space.section_gap * 2.0).round() as i32;
-            (IRect::new((cx - card_w / 2.0).round() as i32, y, card_w.round() as i32, (bh + pad * 2.0).round() as i32), bh)
-        });
-        if let Some((r, _)) = media {
-            let card = theme.box_style("card", None);
-            crate::ui::boxes::paint(&mut p, r, &card, theme.box_radius(&card, r.h as f64), fade, 0.0);
-        }
+        login::paint(&mut p, card_rect, theme, fade);
+        card.paint_clock(&mut p, &clock, inner, theme, kit, fade);
         let last = p.last();
         p.finish();
 
         self.ui.anchor = last;
-        let mut column = vec![field];
-        let mut height = field_h;
-        if let (Some(m), Some((r, bh))) = (s.media.as_ref(), media) {
-            let gap = r.y as f64 + pad.round() - (field_at.1 + field_h);
-            column.push(w::space(gap));
-            column.push(now_playing(m, theme).width(Size::Px(card_w - pad * 2.0)).centred());
-            height += gap + bh;
-        }
         let cursor = s.media.as_ref().map_or(-1, |m| m.cursor);
         self.ui.cursor = (cursor >= 0).then(|| "transport".to_owned());
         self.ui.ring = cursor >= 0;
-        let body = w::column(0.0, column);
-        let x0 = (cx - space.popup_width_narrow / 2.0).round();
-        let drawn = self.ui.draw(&body, Rect::new(x0, field_at.1, x0 + space.popup_width_narrow, field_at.1 + height), None, fade, theme, kit, &mut self.scene, now);
-        let card = media.map(|(r, _)| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h}));
+        let drawn = self.ui.draw(&body, inner, None, fade, theme, kit, &mut self.scene, now);
+        let card_json = json!({"x": rest.x, "y": rest.y, "width": rest.w, "height": rest.h});
         self.report = json!({
             "clockInk": ink_name,
             "clockLuma": js(luma),
             "clockSampled": sampled,
-            "clockRect": {"x": rest.x, "y": rest.y, "width": rest.w, "height": rest.h},
-            "mediaCard": card,
+            "clockRect": card_json,
+            "mediaCard": s.media.is_some().then(|| card_json.clone()),
             "nowPlaying": s.media.is_some(),
             "transportCursor": cursor,
         });
@@ -464,11 +404,13 @@ mod tests {
         use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &Default::default());
         let mut kit = Kit::new(&theme);
-        let (w, h) = (64, 64);
+        // Big enough that the corner is clear of the card.
+        let (w, h) = (900, 700);
         let white = Bitmap::from_rgba(w as u16, h as u16, vec![255; (w * h * 4) as usize]);
         let mut corner = |wake: f32| {
             let shared = Shared {
                 now: Local::now(),
+                name: "",
                 prompt: Prompt::password(0, (0, 0), false),
                 error: "",
                 has_wallpaper: true,
@@ -479,7 +421,6 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: true,
                 wake,
-                palette_ink: false,
             };
             let mut view = View::new(w, h);
             view.draw(&shared, &theme, &mut kit, Instant::now());
@@ -504,6 +445,7 @@ mod tests {
         let mut corner = |backdrop: Option<&Bitmap>, has_wallpaper: bool, wake: f32| {
             let shared = Shared {
                 now: Local::now(),
+                name: "",
                 prompt: Prompt::password(0, (0, 0), false),
                 error: "",
                 has_wallpaper,
@@ -514,7 +456,6 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: true,
                 wake,
-                palette_ink: false,
             };
             let mut view = View::new(w, h);
             view.draw(&shared, &theme, &mut kit, Instant::now());
@@ -542,6 +483,7 @@ mod tests {
         let mut animating = |checking: bool| {
             let shared = Shared {
                 now: Local::now(),
+                name: "",
                 prompt: Prompt::password(0, (0, 0), checking),
                 error: "",
                 has_wallpaper: false,
@@ -552,7 +494,6 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: false,
                 wake: 1.0,
-                palette_ink: false,
             };
             let mut view = View::new(900, 700);
             let now = Instant::now();

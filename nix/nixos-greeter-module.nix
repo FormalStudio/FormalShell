@@ -49,9 +49,9 @@ let
   mirrorScript = pkgs.writeShellScript "formalshell-greeter-mirror" ''
     set -eu
     PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.jq pkgs.util-linux pkgs.diffutils ]}
-    install -d -o greeter -g greeter -m 0700 ${cfg.stateDir}/.local ${cfg.stateDir}/.local/state ${greeterState}
+    install -d -o greeter -g greeter -m 0700 ${cfg.stateDir}/.local ${cfg.stateDir}/.local/state ${greeterState} ${greeterState}/avatars
     copy() {
-      tmp="${greeterState}/.$2.tmp"
+      tmp="${greeterState}/$2.tmp"
       if runuser -u ${cfg.mirrorUser} -- cat -- "$1" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
         if cmp -s "$tmp" "${greeterState}/$2"; then rm -f "$tmp"; return; fi
         chown greeter:greeter "$tmp"
@@ -64,6 +64,7 @@ let
     wallpaper=$(runuser -u ${cfg.mirrorUser} -- jq -r '.wallpaper // empty' ${mirrorState}/state.json 2>/dev/null || true)
     copy "''${wallpaper:-/nonexistent}" wallpaper
     copy ${mirrorState}/theme.json theme.json
+    copy ${mirrorHome}/.face avatars/${cfg.mirrorUser}
   '';
 
   compositorConfigFile = pkgs.writeText "formalshell-greeter-compositor.conf" cfg.compositorConfigText;
@@ -180,9 +181,9 @@ in
       default = null;
       example = "alice";
       description = ''
-        A user whose FormalShell wallpaper and theme.json the greeter
-        shows, copied into stateDir whenever that user's shell changes
-        either, so the login screen matches the desktop.
+        A user whose FormalShell wallpaper, theme.json and `~/.face` the
+        greeter shows, copied into stateDir whenever one of them changes,
+        so the login screen matches the desktop.
       '';
     };
 
@@ -249,7 +250,7 @@ in
 
     systemd.paths.formalshell-greeter-mirror = lib.mkIf (cfg.mirrorUser != null) {
       wantedBy = [ "multi-user.target" ];
-      pathConfig.PathChanged = [ "${mirrorState}/state.json" "${mirrorState}/theme.json" ];
+      pathConfig.PathChanged = [ "${mirrorState}/state.json" "${mirrorState}/theme.json" "${mirrorHome}/.face" ];
     };
   };
 }

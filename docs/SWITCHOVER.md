@@ -113,14 +113,6 @@ real there; the dmabuf path a real GPU would take is not.
 state: a launcher open and a cold start are slower than the targets, and the
 idle shell is not yet at zero CPU.
 
-**The greeter has no user picker.** greetd has no enumeration call, so the
-username is free-text entry. Sessions it finds itself: the Wayland
-`.desktop` files under `greeter.sessionDirs` (on NixOS, every session in
-`services.displayManager.sessionPackages`) sit under the field, picked with
-Tab, Shift+Tab or a click, starting on Hyprland and then on each user's
-last pick. With none found a login runs `greeter.sessionCommand`
-(`Hyprland` when unset).
-
 **A window the compositor reports no box for cannot be captured.** Hyprland
 reports one for every window it does not hide, so this is normally nothing;
 an unfocused member of a tabbed group is the case that hits it. Those
