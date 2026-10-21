@@ -108,9 +108,10 @@ fn dither(img: &mut image::RgbaImage, colors: usize) {
     }
 }
 
-/// Aspect-crop: scaled to cover, centred.
-fn render(path: &str, width: u32, height: u32, colors: Option<usize>) -> Option<Picture> {
-    let img = image::open(path).ok()?.to_rgba8();
+/// Aspect-crop: scaled to cover, centred. The format comes from the bytes,
+/// since the greeter's mirrored copy has no extension.
+pub fn render(path: &str, width: u32, height: u32, colors: Option<usize>) -> Option<Picture> {
+    let img = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?.to_rgba8();
     let (iw, ih) = (img.width() as f64, img.height() as f64);
     let scale = (width as f64 / iw).max(height as f64 / ih);
     let (cw, ch) = ((width as f64 / scale).round().max(1.0) as u32, (height as f64 / scale).round().max(1.0) as u32);

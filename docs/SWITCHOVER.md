@@ -10,7 +10,8 @@ The verification rig is a nested Hyprland session under software rendering
 in an aarch64 VM. It proves that a surface works, not that it works against
 your GPU, your Bluetooth adapter or your network. As of 2026-10-07 every leg
 of that rig passes (113 of 113, plus the greeter's own run). Daily use on the
-two development machines covers what the rig cannot.
+two development machines covers what the rig cannot, and since 2026-10-21
+the greeter is the login screen on both of them.
 
 ## Two ways in
 
@@ -93,11 +94,15 @@ string or number from hardware gets formatted for display (signal strength,
 battery levels, device names). Daily use catches those as they appear, but no
 one has swept them systematically.
 
+The greeter is the login screen on both development hosts since
+2026-10-21: greetd under sway on the e1504g's Intel GPU and on the g815's
+RTX 5070, its backdrop and palette mirrored from the user's own shell.
+
 ## What has only run in a VM
 
-**The greeter.** Both development machines use SDDM, so FormalShell's own
-greeter has only run in the rig. **The `install.sh` path**, as described
-above. **Screen recording is proven only under software rendering**: the rig's `--record` leg runs a real wf-recorder child with
+**The `install.sh` path**, as described above. **Screen recording is proven
+only under software rendering**: the rig's `--record` leg runs a real
+wf-recorder child with
 `recording.noDmabuf` set, because there is no GPU buffer to import in that
 session. The recorder child, the finalize pass and the GIF transcode are all
 real there; the dmabuf path a real GPU would take is not.
@@ -108,11 +113,13 @@ real there; the dmabuf path a real GPU would take is not.
 state: a launcher open and a cold start are slower than the targets, and the
 idle shell is not yet at zero CPU.
 
-**The greeter has no session or user picker**, and that is greetd's wire
-protocol rather than a gap here: it has no enumeration call anywhere in it.
-The session launched on a successful login is the fixed `sessionCommand`
-from your Nix config or `greeter.sessionCommand` in settings.json
-(`Hyprland` when unset), and the username is free-text entry.
+**The greeter has no user picker.** greetd has no enumeration call, so the
+username is free-text entry. Sessions it finds itself: the Wayland
+`.desktop` files under `greeter.sessionDirs` (on NixOS, every session in
+`services.displayManager.sessionPackages`) sit under the field, picked with
+Tab, Shift+Tab or a click, starting on Hyprland and then on each user's
+last pick. With none found a login runs `greeter.sessionCommand`
+(`Hyprland` when unset).
 
 **A window the compositor reports no box for cannot be captured.** Hyprland
 reports one for every window it does not hide, so this is normally nothing;
@@ -122,8 +129,7 @@ that lists their neighbours.
 
 ## What "ready" would mean
 
-1. The greeter as the login screen on at least one real machine.
-2. The e1504g budgets met, with the frame-time rows measured.
-3. `install.sh` run on bare metal on each distro family it supports, on
+1. The e1504g budgets met, with the frame-time rows measured.
+2. `install.sh` run on bare metal on each distro family it supports, on
    x86_64 as well as aarch64.
-4. Screen recording proven on a real GPU.
+3. Screen recording proven on a real GPU.

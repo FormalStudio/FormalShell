@@ -66,6 +66,10 @@ pub struct Prompt<'a> {
     pub busy: bool,
     /// The caret and the selection's other end, as char counts.
     pub caret: (usize, usize),
+    /// The greeter's session names under the field, and the one picked;
+    /// fewer than two draws none.
+    pub sessions: &'a [String],
+    pub session: usize,
 }
 
 impl Prompt<'_> {
@@ -73,7 +77,7 @@ impl Prompt<'_> {
     /// has the password, an empty field saying so.
     pub fn password(dots: usize, caret: (usize, usize), checking: bool) -> Self {
         let placeholder = if checking { "Unlocking\u{2026}" } else { "Password" };
-        Self { text: "\u{2022}".repeat(dots), placeholder, label: "", unavailable: "", enabled: !checking, busy: checking, caret }
+        Self { text: "\u{2022}".repeat(dots), placeholder, label: "", unavailable: "", enabled: !checking, busy: checking, caret, sessions: &[], session: 0 }
     }
 }
 
@@ -142,7 +146,7 @@ pub fn transport_key(index: i32, count: i32, key: TKey) -> Step {
 
 pub struct View {
     pub scene: Scene,
-    ui: Ui,
+    pub ui: Ui,
     nodes: Vec<NodeId>,
     /// `lock status`'s per-output report.
     pub report: Value,
@@ -186,6 +190,10 @@ impl View {
                 block.push(w::section_label(space, pr.label, None, false).centred());
             }
             block.push(w::input(&pr.text, pr.placeholder, pr.enabled, error).caret(pr.caret).width(Size::Px(space.popup_width_narrow)).enabled(pr.enabled).pulse(pr.busy));
+            if pr.sessions.len() > 1 {
+                let options = pr.sessions.iter().map(Opt::new).collect();
+                block.push(w::group(options, pr.session, true).wrap().on("session").centred());
+            }
         } else {
             block.push(w::text(pr.unavailable).size(Type::BodySmall).ink(Ink::Muted).centred());
         }

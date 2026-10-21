@@ -32,9 +32,39 @@ let
   # this is a NixOS module generating a file at build time, not the shell
   # itself writing to its own config at runtime (CLAUDE.md's read-only rule
   # is about the latter).
-  settingsDir = pkgs.writeTextDir "formalshell/settings.json" (builtins.toJSON {
-    greeter.sessionCommand = cfg.sessionCommand;
-  });
+  settingsDir = pkgs.writeTextDir "formalshell/settings.json" (builtins.toJSON (lib.recursiveUpdate cfg.settings {
+    greeter = {
+      inherit (cfg) sessionCommand sessionDirs;
+    } // lib.optionalAttrs (cfg.wallpaper != null) { wallpaper = toString cfg.wallpaper; };
+  }));
+
+  # The greeter's own state dir, where it reads the mirrored wallpaper and
+  # theme.json and keeps the session each user last started.
+  greeterState = "${cfg.stateDir}/.local/state/formalshell";
+  mirrorHome = config.users.users.${cfg.mirrorUser}.home;
+  mirrorState = "${mirrorHome}/.local/state/formalshell";
+
+  # The wallpaper is read as the user, so a path in state.json never reaches
+  # a file only root can read.
+  mirrorScript = pkgs.writeShellScript "formalshell-greeter-mirror" ''
+    set -eu
+    PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.jq pkgs.util-linux pkgs.diffutils ]}
+    install -d -o greeter -g greeter -m 0700 ${cfg.stateDir}/.local ${cfg.stateDir}/.local/state ${greeterState}
+    copy() {
+      tmp="${greeterState}/.$2.tmp"
+      if runuser -u ${cfg.mirrorUser} -- cat -- "$1" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+        if cmp -s "$tmp" "${greeterState}/$2"; then rm -f "$tmp"; return; fi
+        chown greeter:greeter "$tmp"
+        chmod 0600 "$tmp"
+        mv -f "$tmp" "${greeterState}/$2"
+      else
+        rm -f "$tmp" "${greeterState}/$2"
+      fi
+    }
+    wallpaper=$(runuser -u ${cfg.mirrorUser} -- jq -r '.wallpaper // empty' ${mirrorState}/state.json 2>/dev/null || true)
+    copy "''${wallpaper:-/nonexistent}" wallpaper
+    copy ${mirrorState}/theme.json theme.json
+  '';
 
   compositorConfigFile = pkgs.writeText "formalshell-greeter-compositor.conf" cfg.compositorConfigText;
 
@@ -120,6 +150,42 @@ in
       '';
     };
 
+    sessionDirs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "${config.services.displayManager.sessionData.desktops}/share/wayland-sessions" ];
+      defaultText = lib.literalExpression ''[ "''${config.services.displayManager.sessionData.desktops}/share/wayland-sessions" ]'';
+      description = ''
+        Directories of Wayland session `.desktop` files the greeter offers
+        under its field. The default is every session the NixOS display
+        manager options register (`services.displayManager.sessionPackages`,
+        Plasma, Hyprland). With none found, a login runs sessionCommand.
+      '';
+    };
+
+    settings = lib.mkOption {
+      type = (pkgs.formats.json { }).type;
+      default = { };
+      example = { theme.preset = "pantheon"; };
+      description = "More settings.json keys for the greeter, such as the desktop's `theme.preset`.";
+    };
+
+    wallpaper = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Backdrop image, under the lock screen's scrim. A wallpaper mirrored from mirrorUser wins over it.";
+    };
+
+    mirrorUser = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "alice";
+      description = ''
+        A user whose FormalShell wallpaper and theme.json the greeter
+        shows, copied into stateDir whenever that user's shell changes
+        either, so the login screen matches the desktop.
+      '';
+    };
+
     runtimeDir = lib.mkOption {
       type = lib.types.str;
       default = "/run/formalshell-greeter";
@@ -170,5 +236,20 @@ in
       "d ${cfg.runtimeDir} 0700 greeter greeter -"
       "d ${cfg.stateDir} 0700 greeter greeter -"
     ];
+
+    systemd.services.formalshell-greeter-mirror = lib.mkIf (cfg.mirrorUser != null) {
+      description = "Copy ${cfg.mirrorUser}'s FormalShell wallpaper and theme to the greeter";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "systemd-tmpfiles-setup.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = mirrorScript;
+      };
+    };
+
+    systemd.paths.formalshell-greeter-mirror = lib.mkIf (cfg.mirrorUser != null) {
+      wantedBy = [ "multi-user.target" ];
+      pathConfig.PathChanged = [ "${mirrorState}/state.json" "${mirrorState}/theme.json" ];
+    };
   };
 }

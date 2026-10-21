@@ -109,15 +109,18 @@ pub struct Conversation {
     pub echo: bool,
     /// The field's error caption; "" shows none.
     pub error: String,
-    /// The argv a successful login runs.
+    /// The argv a successful login runs, and the environment it gets.
     pub command: Vec<String>,
+    pub env: Vec<String>,
+    /// The username the conversation was opened for.
+    pub user: String,
     /// The request whose response is due.
     pending: Option<&'static str>,
 }
 
 impl Conversation {
     pub fn new(command: Vec<String>) -> Self {
-        Self { phase: Phase::Inactive, message: String::new(), echo: false, error: String::new(), command, pending: None }
+        Self { phase: Phase::Inactive, message: String::new(), echo: false, error: String::new(), command, env: Vec::new(), user: String::new(), pending: None }
     }
 
     /// The label for the current prompt.
@@ -143,6 +146,7 @@ impl Conversation {
         match self.phase {
             Phase::Inactive if !text.is_empty() => {
                 self.error.clear();
+                self.user = text.to_string();
                 self.send(Request::CreateSession { username: text.to_string() })
             }
             Phase::Asking => self.send(Request::PostAuthMessageResponse { response: Some(text) }),
@@ -196,8 +200,8 @@ impl Conversation {
                 }
                 _ => {
                     eprintln!("greetd: authentication complete");
-                    let cmd = self.command.clone();
-                    self.send(Request::StartSession { cmd, env: Vec::new() })
+                    let (cmd, env) = (self.command.clone(), self.env.clone());
+                    self.send(Request::StartSession { cmd, env })
                 }
             },
             Response::Error { error_type, description } => {

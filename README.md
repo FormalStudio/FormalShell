@@ -109,9 +109,14 @@ Optional login screen:
 imports = [ formalshell.nixosModules.formalshell-greeter ];
 services.formalshell-greeter = {
   enable = true;
-  sessionCommand = [ "Hyprland" ];
+  # Your wallpaper and palette behind the field, kept in step with your shell.
+  mirrorUser = "alice";
 };
 ```
+
+It lists every session in `services.displayManager.sessionPackages` under
+the field (Tab or a click picks one), starts on Hyprland and remembers each
+user's last pick.
 
 The default binds, blur layer rules and palette reads ship as a Lua file, and
 the home-manager module writes it to `~/.config/hypr/formalshell.lua` itself,

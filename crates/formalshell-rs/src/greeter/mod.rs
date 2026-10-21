@@ -6,16 +6,21 @@
 //! Every output draws the same conversation; only the first output's
 //! surface takes the keyboard, so there is one field to type into.
 //!
-//! Nothing here reads state.json: it would be the `greeter` system user's,
-//! and the lock's wallpaper backdrop has no place before anyone logs in.
-//! The theme is settings.json's preset over theme.json's palette, each
-//! falling back the way the shell's own do when absent.
+//! Nothing here reads state.json: it would be the `greeter` system user's.
+//! The backdrop is `wallpaper` in the greeter's state dir, a copy the
+//! NixOS module mirrors from a user's own, else `greeter.wallpaper`. The
+//! theme is settings.json's preset over theme.json's palette, each falling
+//! back the way the shell's own do when absent.
+//!
+//! The session a login starts is picked under the field (Tab, Shift+Tab or
+//! a click) from [`sessions`]; with none found it is `greeter.sessionCommand`.
 
 pub mod greetd;
+pub mod sessions;
 
 use std::os::unix::net::UnixStream;
-use std::path::Path;
-use std::sync::mpsc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use calloop::channel::{self, Event};
@@ -28,7 +33,10 @@ use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
-use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_output, wl_seat, wl_surface};
+use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface};
+use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1};
+use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
+use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind, PointerHandler};
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers, repeat::RepeatCallback};
@@ -43,12 +51,15 @@ use fs_menu::field::Field;
 use zeroize::Zeroizing;
 
 use crate::render::Renderer;
-use crate::scene::IRect;
+use crate::scene::{Bitmap, IRect};
 use crate::services::theme;
+use crate::services::wallpaper::{self, Picture};
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::Kit;
-use crate::surfaces::lock::{Prompt, Shared, View};
+use crate::surfaces::lock::{self, Prompt, Shared, View};
+use crate::ui::{Ui, What};
 use greetd::{Conversation, Request, Response, Step};
+use sessions::Session;
 
 /// AuthPrompt's `unavailableText` with no socket to talk to.
 const NO_SOCKET: &str = "No greetd socket to talk to";
@@ -57,6 +68,16 @@ struct Out {
     output: wl_output::WlOutput,
     surface: Surface<LayerSurface>,
     view: View,
+    /// The wallpaper at this output's size, and the size it was asked at.
+    backdrop: Option<(Arc<Picture>, Bitmap)>,
+    asked: (i32, i32),
+}
+
+/// A backdrop decoded off the loop.
+struct Decoded {
+    size: (i32, i32),
+    picture: Arc<Picture>,
+    bitmap: Bitmap,
 }
 
 struct Greeter {
@@ -69,6 +90,9 @@ struct Greeter {
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, Greeter>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
+    cursor_shapes: Option<CursorShapeManager>,
+    cursor_device: Option<WpCursorShapeDeviceV1>,
     mods: fs_menu::nav::Modifiers,
     outs: Vec<Out>,
     theme: Theme,
@@ -77,6 +101,14 @@ struct Greeter {
     field: Field<Zeroizing<String>>,
     /// The worker's end of the socket; None with no greetd to talk to.
     greetd: Option<mpsc::Sender<Request>>,
+    sessions: Vec<Session>,
+    names: Vec<String>,
+    session: usize,
+    /// Picked by hand, so a typed username does not bring back its own.
+    picked: bool,
+    state_dir: PathBuf,
+    wallpaper: Option<PathBuf>,
+    decoded: channel::Sender<Decoded>,
     dirty: bool,
     exit: bool,
     started: Instant,
@@ -111,6 +143,28 @@ fn session_command(settings: &Value) -> Vec<String> {
         .and_then(|v| v.as_array().cloned())
         .and_then(|items| items.iter().map(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned)).collect());
     argv.filter(|a| !a.is_empty()).unwrap_or_else(|| vec!["Hyprland".into()])
+}
+
+/// `greeter.sessionDirs`, else the NixOS profile's and the FHS one.
+fn session_dirs(settings: &Value) -> Vec<PathBuf> {
+    let dirs: Option<Vec<PathBuf>> = theme::get(settings)("greeter.sessionDirs").and_then(|v| v.as_array().cloned()).map(|items| items.iter().filter_map(|v| v.as_str()).map(PathBuf::from).collect());
+    dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| sessions::DIRS.iter().map(PathBuf::from).collect())
+}
+
+/// The mirrored `wallpaper` in the state dir, else `greeter.wallpaper`.
+fn wallpaper_path(settings: &Value, env: &theme::Env) -> Option<PathBuf> {
+    let mirrored = env.state_dir.join("wallpaper");
+    if mirrored.is_file() {
+        return Some(mirrored);
+    }
+    theme::get(settings)("greeter.wallpaper").and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(PathBuf::from))
+}
+
+/// The wallpaper cover-cropped to `size` with the lock's scrim baked in.
+fn decode(path: &Path, size: (i32, i32)) -> Option<Decoded> {
+    let picture = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None)?;
+    let bitmap = lock::backdrop(&picture);
+    Some(Decoded { size, picture: Arc::new(picture), bitmap })
 }
 
 /// The socket on a thread of its own: one request out, one response back.
@@ -175,8 +229,19 @@ pub fn main(args: &[String]) {
         })
         .expect("greetd channel");
 
+    let (decoded, decodes) = channel::channel::<Decoded>();
+    handle
+        .insert_source(decodes, |event, _, g| {
+            if let Event::Msg(d) = event {
+                g.backdrop(d);
+            }
+        })
+        .expect("backdrop channel");
+
     let theme = resolve(&settings, &env);
     eprintln!("greeter: preset {}", theme.preset);
+    let sessions = sessions::scan(&session_dirs(&settings));
+    eprintln!("greeter: {} sessions", sessions.len());
     let mut g = Greeter {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -187,6 +252,9 @@ pub fn main(args: &[String]) {
         qh: qh.clone(),
         handle: handle.clone(),
         keyboard: None,
+        pointer: None,
+        cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
+        cursor_device: None,
         mods: fs_menu::nav::Modifiers::default(),
         outs: Vec::new(),
         kit: Kit::new(&theme),
@@ -194,10 +262,19 @@ pub fn main(args: &[String]) {
         convo: Conversation::new(session_command(&settings)),
         field: field(),
         greetd: connect(replies),
+        names: sessions.iter().map(|s| s.name.clone()).collect(),
+        sessions,
+        session: 0,
+        picked: false,
+        wallpaper: wallpaper_path(&settings, &env),
+        state_dir: env.state_dir.clone(),
+        decoded,
         dirty: true,
         exit: false,
         started,
     };
+    let last = sessions::remembered(&g.state_dir, None);
+    g.select(sessions::pick(&g.sessions, last.as_deref()));
     g.arm_clock();
 
     let signal = event_loop.get_signal();
@@ -246,6 +323,9 @@ impl Greeter {
             }
             Step::Exit => {
                 eprintln!("greeter: session started");
+                if let Some(s) = self.sessions.get(self.session) {
+                    sessions::remember(&self.state_dir, &self.convo.user, &s.id);
+                }
                 self.exit = true;
             }
             Step::Nothing => {}
@@ -257,8 +337,19 @@ impl Greeter {
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter if enabled => {
                 let text = self.field.replace(buffer());
+                if self.convo.phase == greetd::Phase::Inactive && !self.picked {
+                    let own = sessions::remembered(&self.state_dir, Some(text.as_str()));
+                    if own.is_some() {
+                        self.select(sessions::pick(&self.sessions, own.as_deref()));
+                    }
+                }
                 let step = self.convo.submit(text);
                 self.step(step);
+            }
+            Keysym::Tab | Keysym::ISO_Left_Tab if self.sessions.len() > 1 => {
+                let n = self.sessions.len();
+                let back = event.keysym == Keysym::ISO_Left_Tab || self.mods.shift;
+                self.pick((self.session + if back { n - 1 } else { 1 }) % n);
             }
             Keysym::Escape => self.field = field(),
             sym if enabled => {
@@ -269,6 +360,30 @@ impl Greeter {
             _ => return,
         }
         self.dirty = true;
+    }
+
+    /// The session a login starts from here on.
+    fn select(&mut self, i: usize) {
+        let Some(s) = self.sessions.get(i) else { return };
+        self.session = i;
+        self.convo.command = s.command();
+        self.convo.env = s.env();
+        self.dirty = true;
+    }
+
+    /// A pick by hand, which only counts before the session starts.
+    fn pick(&mut self, i: usize) {
+        if self.convo.phase != greetd::Phase::Launched {
+            self.picked = true;
+            self.select(i);
+        }
+    }
+
+    fn backdrop(&mut self, d: Decoded) {
+        if let Some(o) = self.outs.iter_mut().find(|o| o.asked == d.size) {
+            o.backdrop = Some((d.picture, d.bitmap));
+            self.dirty = true;
+        }
     }
 
     /// The clock redraws on the minute.
@@ -296,7 +411,7 @@ impl Greeter {
             ls.set_keyboard_interactivity(if first { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
             ls.commit();
             let surface = Surface::new("greeter", ls, &self.shm, self.started);
-            self.outs.push(Out { output, surface, view: View::new(1, 1) });
+            self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0) });
         }
     }
 
@@ -307,10 +422,16 @@ impl Greeter {
         self.dirty = false;
         let now = Instant::now();
         let available = self.greetd.is_some();
-        let shared = shared(&self.convo, &self.field, available);
         for o in &mut self.outs {
             if !o.surface.configured {
                 continue;
+            }
+            let mut shared = shared(&self.convo, &self.field, available, &self.names, self.session);
+            if self.wallpaper.is_some() {
+                shared.has_wallpaper = true;
+                shared.palette_ink = false;
+                shared.backdrop = o.backdrop.as_ref().map(|(_, b)| b);
+                shared.picture = o.backdrop.as_ref().map(|(p, _)| p);
             }
             let moving = o.view.draw(&shared, &self.theme, &mut self.kit, now);
             o.surface.present(&mut o.view.scene, moving, &self.qh);
@@ -319,7 +440,7 @@ impl Greeter {
 }
 
 /// The column every output draws, from the conversation as it stands.
-fn shared<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available: bool) -> Shared<'a> {
+fn shared<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available: bool, sessions: &'a [String], session: usize) -> Shared<'a> {
     let masked = convo.masked();
     let text = if masked { "\u{2022}".repeat(field.text().chars().count()) } else { field.text().to_owned() };
     Shared {
@@ -332,6 +453,8 @@ fn shared<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, availab
             enabled: available && convo.input_enabled(),
             busy: false,
             caret: field.caret_chars(),
+            sessions,
+            session,
         },
         error: &convo.error,
         has_wallpaper: false,
@@ -352,6 +475,8 @@ fn shared<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, availab
 fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     let (w, h) = (1280, 800);
     std::fs::create_dir_all(dir).expect("shot directory");
+    let backdrop = wallpaper_path(settings, env).and_then(|p| decode(&p, (w, h)));
+    let names: Vec<String> = ["Hyprland (uwsm-managed)", "Plasma (Wayland)", "Waylandcraft"].map(String::from).to_vec();
     for preset in fs_theme::presets::NAMES {
         let mut s = settings.clone();
         if let Some(obj) = s.as_object_mut() {
@@ -378,7 +503,14 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
         ];
         for (name, convo, typed, available) in states {
             let mut view = View::new(w, h);
-            view.draw(&shared(convo, &Field::new(Zeroizing::new(typed.to_owned())), available), &theme, &mut kit, Instant::now());
+            let mut sh = shared(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, &names, 1);
+            if let Some(d) = &backdrop {
+                sh.has_wallpaper = true;
+                sh.palette_ink = false;
+                sh.backdrop = Some(&d.bitmap);
+                sh.picture = Some(&d.picture);
+            }
+            view.draw(&sh, &theme, &mut kit, Instant::now());
             let mut r = Renderer::new(w as u16, h as u16);
             r.render(&view.scene, IRect::new(0, 0, w, h));
             let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
@@ -417,6 +549,17 @@ impl LayerShellHandler for Greeter {
         let (w, h) = (configure.new_size.0.max(1) as i32, configure.new_size.1.max(1) as i32);
         o.view.resize(w, h);
         o.surface.configure(w, h);
+        if let Some(path) = self.wallpaper.clone().filter(|_| o.asked != (w, h)) {
+            o.asked = (w, h);
+            o.backdrop = None;
+            let tx = self.decoded.clone();
+            let _ = std::thread::Builder::new().name("fs-backdrop".into()).spawn(move || match decode(&path, (w, h)) {
+                Some(d) => {
+                    let _ = tx.send(d);
+                }
+                None => eprintln!("greeter: cannot decode {}", path.display()),
+            });
+        }
         self.dirty = true;
     }
 }
@@ -429,6 +572,13 @@ impl SeatHandler for Greeter {
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 
     fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, capability: Capability) {
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            self.pointer = self.seats.get_pointer(qh, &seat).ok();
+            self.cursor_device = match (&self.cursor_shapes, &self.pointer) {
+                (Some(m), Some(p)) => Some(m.get_shape_device(p, qh)),
+                _ => None,
+            };
+        }
         if capability == Capability::Keyboard && self.keyboard.is_none() {
             let repeat: RepeatCallback<Greeter> = Box::new(|g, _, event| g.key(&event));
             self.keyboard = self.seats.get_keyboard_with_repeat(qh, &seat, None, self.handle.clone(), repeat).ok();
@@ -436,6 +586,9 @@ impl SeatHandler for Greeter {
     }
 
     fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, capability: Capability) {
+        if let Some(p) = self.pointer.take().filter(|_| capability == Capability::Pointer) {
+            p.release();
+        }
         if let Some(k) = self.keyboard.take().filter(|_| capability == Capability::Keyboard) {
             k.release();
         }
@@ -461,6 +614,40 @@ impl KeyboardHandler for Greeter {
 
     fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, m: Modifiers, _: RawModifiers, _: u32) {
         self.mods = fs_menu::nav::Modifiers { ctrl: m.ctrl, shift: m.shift, alt: m.alt };
+    }
+}
+
+impl PointerHandler for Greeter {
+    fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
+        for e in events {
+            let Some(o) = self.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == &e.surface) else { continue };
+            let ui = &mut o.view.ui;
+            let (x, y) = e.position;
+            let path = ui.hit(x, y).map(|h| h.path.clone());
+            match e.kind {
+                PointerEventKind::Enter { serial } => {
+                    if let Some(device) = &self.cursor_device {
+                        device.set_shape(serial, Shape::Default);
+                    }
+                    ui.hover = path;
+                }
+                PointerEventKind::Motion { .. } => ui.hover = path,
+                PointerEventKind::Leave { .. } => ui.hover = None,
+                PointerEventKind::Press { button: 0x110, .. } => ui.pressed = path,
+                PointerEventKind::Release { button: 0x110, .. } => {
+                    let pressed = ui.pressed.take();
+                    let event = ui.hit(x, y).filter(|_| pressed.is_some() && pressed == path).and_then(|h| Ui::event(h, x));
+                    if let Some(e) = event
+                        && e.on == "session"
+                        && let What::Pick(i) = e.what
+                    {
+                        self.pick(i);
+                    }
+                }
+                _ => continue,
+            }
+            self.dirty = true;
+        }
     }
 }
 
