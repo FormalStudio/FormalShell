@@ -1,0 +1,116 @@
+[[pkg]]
+name = "just"
+source = "aqua:just"
+version = "1.59.0"
+
+[pkg.aarch64-linux]
+url = "https://github.com/casey/just/releases/download/1.59.0/just-1.59.0-aarch64-unknown-linux-musl.tar.gz"
+hash = "sha256-I4cbFwK/1VD7X5AXeP1CkOzy7gNKRaiJ++ltibGICG0="
+
+[pkg.x86_64-linux]
+url = "https://github.com/casey/just/releases/download/1.59.0/just-1.59.0-x86_64-unknown-linux-musl.tar.gz"
+hash = "sha256-QJBEYXtvBlF8EDXlXKOMjIVv+LZQ5BvCqh74LVkDoj4="
+
+[[pkg]]
+name = "matugen"
+source = "github:InioX/matugen"
+version = "4.2.0"
+
+[pkg.x86_64-linux]
+url = "https://github.com/InioX/matugen/releases/download/v4.2.0/matugen-4.2.0-x86_64.tar.gz"
+hash = "sha256-ouO1DkntZDmZm6PCUu0E+r2Y7k6dEuXl3/LmY3BWl1E="
+
+[[pkg]]
+name = "rustup"
+source = "aqua:rustup"
+version = "1.29.2"
+
+[pkg.aarch64-linux]
+url = "https://static.rust-lang.org/rustup/archive/1.29.2/aarch64-unknown-linux-gnu/rustup-init"
+hash = "sha256-qcFo2+qBqEZxxrelwXlcsOtpkCARDRB938pCe9eX5pc="
+bins = ["rustup", "rustup-init=rustup"]
+
+[pkg.x86_64-linux]
+url = "https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-unknown-linux-gnu/rustup-init"
+hash = "sha256-W+GR6McKUAcHQlTLdNeNv90lzVphwn3nuOVBASLsJPQ="
+bins = ["rustup", "rustup-init=rustup"]
+
+[[native]]
+kind = "lib"
+name = "fontconfig"
+apt = "libfontconfig-dev"
+dnf = "pkgconfig(fontconfig)"
+moss = "pkgconfig(fontconfig)"
+pacman = "fontconfig"
+xbps = "fontconfig-devel"
+zypper = "pkgconfig(fontconfig)"
+
+[[native]]
+kind = "lib"
+name = "libpipewire-0.3"
+apt = "libpipewire-0.3-dev"
+dnf = "pkgconfig(libpipewire-0.3)"
+moss = "pkgconfig(libpipewire-0.3)"
+pacman = "libpipewire"
+xbps = "pipewire-devel"
+zypper = "pkgconfig(libpipewire-0.3)"
+
+[[native]]
+kind = "lib"
+name = "libspa-0.2"
+apt = "libspa-0.2-dev"
+dnf = "pkgconfig(libspa-0.2)"
+moss = "pkgconfig(libspa-0.2)"
+pacman = "libpipewire"
+xbps = "pipewire-devel"
+zypper = "pkgconfig(libspa-0.2)"
+
+[[native]]
+kind = "lib"
+name = "wayland-client"
+apt = "libwayland-dev"
+dnf = "pkgconfig(wayland-client)"
+moss = "pkgconfig(wayland-client)"
+pacman = "wayland"
+xbps = "wayland-devel"
+zypper = "pkgconfig(wayland-client)"
+
+[[native]]
+kind = "lib"
+name = "xkbcommon"
+apt = "libxkbcommon-dev"
+dnf = "pkgconfig(xkbcommon)"
+moss = "pkgconfig(xkbcommon)"
+pacman = "libxkbcommon"
+xbps = "libxkbcommon-devel"
+zypper = "pkgconfig(xkbcommon)"
+
+[[native]]
+kind = "bin"
+name = "clang"
+apt = "clang"
+dnf = "/usr/bin/clang"
+moss = "binary(clang)"
+pacman = "clang"
+xbps = "clang18"
+zypper = "clang"
+
+[[native]]
+kind = "bin"
+name = "gcc"
+apt = "gcc"
+dnf = "/usr/bin/gcc"
+moss = "binary(gcc)"
+pacman = "gcc"
+xbps = "gcc"
+zypper = "gcc"
+
+[[native]]
+kind = "bin"
+name = "pkg-config"
+apt = "pkgconf"
+dnf = "/usr/bin/pkg-config"
+moss = "binary(pkg-config)"
+pacman = "pkgconf"
+xbps = "pkg-config"
+zypper = "pkgconf-pkg-config"
