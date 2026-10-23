@@ -150,6 +150,33 @@ pub fn place(body: &El, size: (i32, i32), rise: f64, theme: &Theme, kit: &mut Ki
     (IRect::new(x as i32, y as i32, cw.round() as i32, ch.round() as i32), Rect::new(x + pad, y + pad, x + pad + bw, y + pad + bh))
 }
 
+/// The backdrop grid over a screen `size` across, at `alpha` of its ink,
+/// where `lock.grid` asks for it: over the lock's scrim, so it reads at the
+/// desktop's strength, and over the greeter's wallpaper.
+pub fn paint_grid(p: &mut Painter, theme: &Theme, size: (i32, i32), alpha: f32) {
+    if !theme.lock_grid || alpha <= 0.0 {
+        return;
+    }
+    let g = crate::services::wallpaper::grid(theme, 1.0);
+    let ink = theme.box_style("backdrop.grid", None).fill;
+    let (w, h) = (f64::from(size.0), f64::from(size.1));
+    let from = g.fade_from(h);
+    let at = |x0: f64, y0: f64, x1: f64, y1: f64| {
+        let (x0, y0) = (x0.round() as i32, y0.round() as i32);
+        IRect::new(x0, y0, x1.round() as i32 - x0, y1.round() as i32 - y0)
+    };
+    for l in g.lines(w, h) {
+        if l.x1 - l.x0 >= w {
+            let a = ink.a * alpha * g.strength((l.y0 + l.y1) / 2.0, h) as f32;
+            p.rect(at(l.x0, l.y0, l.x1, l.y1), ink.with_alpha(a), 0.0);
+        } else {
+            let top = ink.with_alpha(ink.a * alpha);
+            p.rect(at(l.x0, l.y0, l.x1, from), top, 0.0);
+            p.shape(at(l.x0, from, l.x1, h), Paint::Face { from: top, to: top.with_alpha(0.0), radius: 0.0 });
+        }
+    }
+}
+
 pub fn paint(p: &mut Painter, rect: IRect, theme: &Theme, alpha: f32) {
     let card = theme.box_style("card", None);
     ui::boxes::paint(p, rect, &card, theme.box_radius(&card, rect.h as f64), alpha, 0.0);
@@ -239,6 +266,7 @@ impl View {
             Some(b) => p.shape(full, Paint::Picture { image: b.clone(), alpha: 1.0, radius: 0.0 }),
             None => p.rect(full, theme.colors.get("background"), 0.0),
         }
+        paint_grid(&mut p, theme, (w, h), 1.0);
         paint(&mut p, card, theme, 1.0);
         c.paint_clock(&mut p, &clock, inner, theme, kit, 1.0);
         let last = p.last();

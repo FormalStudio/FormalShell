@@ -479,6 +479,14 @@
             "slam": 0.06,
             "duration": 700
         },
+        "backdrop.grid": {
+            "fill": "foreground",
+            "fillAlpha": 0.14,
+            "radius": 0,
+            "pitch": 120,
+            "width": 2,
+            "fade": 0.2
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.5,
@@ -810,6 +818,9 @@
         ],
         "fonts": [
             "Archivo for words and headings (the surfaces set its width and weight axes), DotGothic16 for values and status lines, BIZ UD Mincho for secondary lines. All four families ship with the shell (nix/cartridge-fonts.nix, the tarball), each falling back to its generic alias when missing."
+        ],
+        "roles.backdrop.grid": [
+            "The reference's grid: 2px lines every 120px in the foreground at 0.14, fading out over the bottom fifth (`fade`). Pitch and width are logical pixels; the pass multiplies them by the output's scale. It draws only where `theme.grid` (or `wallpaper.grid`, `lock.grid`) is on, which this preset turns on; the other tables carry the same numbers for anyone who turns it on there."
         ],
         "roles.cursor": [
             "No ring and no halo: the cursor is a block on the row's leading edge (`cursor.bar`) over a faint primary fill, travelling between rows; in a grid it is two arcs held outside the cell with a glow (`cursor.brackets`)."

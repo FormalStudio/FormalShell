@@ -923,7 +923,8 @@ impl Model {
                 };
                 let cell_w = width / columns.max(1) as f64;
                 let name_h = ui::measure(&w::label("Ag"), width, theme, kit).1;
-                let cell_h = if self.view == View::AppGrid && theme.habit_str("grid") == "hex" {
+                let hex = self.view == View::AppGrid && theme.habit_str("grid") == "hex";
+                let cell_h = if hex {
                     hex_tile(s) + hex_name_gap(s) + name_h + s.control_padding_y * 2.0
                 } else if self.view == View::AppGrid {
                     s.control_height * 2.0 + s.row_gap + name_h + s.control_padding_y * 2.0 + gutter * 2.0
@@ -931,9 +932,14 @@ impl Model {
                     cell_w
                 };
                 let heading_text = if self.view == View::AppGrid && cells > 0 { self.sections.first().cloned().unwrap_or_default() } else { String::new() };
+                // The first row's upper bracket sits outside the hexagon: it
+                // clears the heading, or the card's header, by the room the
+                // lower one keeps over the name.
                 if !heading_text.is_empty() {
                     out.headings.push((heading_text, y, gutter));
-                    y += heading_h + s.row_gap;
+                    y += heading_h + if hex { hex_name_gap(s) } else { s.row_gap };
+                } else if theme.habit_str("grid") == "hex" && cells > 0 {
+                    y += hex_name_gap(s) - s.row_gap;
                 }
                 for i in 0..cells {
                     let (r, c) = (i / columns.max(1), i % columns.max(1));
@@ -2542,7 +2548,8 @@ fn hex_tile(s: &fs_theme::tokens::Space) -> f64 {
 }
 
 /// Room under a hex tile for the cursor's lower bracket, which sits outside
-/// the hexagon, to clear the name.
+/// the hexagon, to clear the name; the same over the first row for its upper
+/// one.
 fn hex_name_gap(s: &fs_theme::tokens::Space) -> f64 {
     s.row_gap + s.sm * 2.0
 }

@@ -17,6 +17,7 @@ pub struct Defaults {
     pub surface_opacity: f64,
     pub blur: bool,
     pub dither: bool,
+    pub grid: bool,
     pub style: &'static Value,
 }
 
@@ -36,6 +37,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 1.0,
             blur: false,
             dither: true,
+            grid: false,
             style: tables::retro(),
         },
         // Opaque, unlike the other two: elementary's popovers and dialogs
@@ -48,6 +50,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 1.0,
             blur: true,
             dither: false,
+            grid: false,
             style: tables::pantheon(),
         },
         // The table squares its own boxes; the base radius stays above 0 so
@@ -59,6 +62,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 0.9,
             blur: true,
             dither: false,
+            grid: true,
             style: tables::cartridge(),
         },
         _ => Defaults {
@@ -68,6 +72,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 0.85,
             blur: true,
             dither: false,
+            grid: false,
             style: tables::metamorphosis(),
         },
     }
@@ -102,6 +107,11 @@ pub struct Resolved {
     /// say otherwise.
     pub wallpaper_dither: bool,
     pub lock_dither: bool,
+    /// `theme.grid` the same way: the desktop's lines, and the lock's and
+    /// the greeter's.
+    pub grid: bool,
+    pub wallpaper_grid: bool,
+    pub lock_grid: bool,
 }
 
 /// `get` reads one dotted settings path, `None` when the key is absent: the
@@ -118,6 +128,7 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
     };
     let fonts = written.unwrap_or(d.fonts);
     let dither = boolean(get("theme.dither"), d.dither);
+    let grid = boolean(get("theme.grid"), d.grid);
 
     Resolved {
         preset,
@@ -131,6 +142,9 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         dither,
         wallpaper_dither: boolean(get("wallpaper.dither"), dither),
         lock_dither: boolean(get("lock.dither"), dither),
+        grid,
+        wallpaper_grid: boolean(get("wallpaper.grid"), grid),
+        lock_grid: boolean(get("lock.grid"), grid),
     }
 }
 
@@ -220,6 +234,27 @@ pub(crate) mod tests {
         assert_eq!(t.surface_opacity, json!(0.9));
         assert!(t.blur);
         assert!(!t.dither);
+        assert!(t.grid);
+        assert!(t.wallpaper_grid);
+        assert!(t.lock_grid);
+    }
+
+    #[test]
+    fn only_cartridge_takes_the_grid() {
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            let t = p(name, json!({}));
+            assert!(!t.grid && !t.wallpaper_grid && !t.lock_grid, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_grid_overrides_like_dither() {
+        let t = p("cartridge", json!({ "lock": { "grid": false } }));
+        assert!(t.wallpaper_grid);
+        assert!(!t.lock_grid);
+        let t = p("metamorphosis", json!({ "theme": { "grid": true } }));
+        assert!(t.wallpaper_grid && t.lock_grid);
+        assert!(p("cartridge", json!({ "theme": { "grid": "false" } })).grid);
     }
 
     #[test]

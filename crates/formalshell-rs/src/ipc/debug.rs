@@ -118,6 +118,8 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             "radiusXl": reach,
             "borderWidth": number(theme.border_width),
             "barPosition": edge.as_str(),
+            "habits": theme.style.get("habits").cloned().unwrap_or_default(),
+            "grid": {"wallpaper": theme.wallpaper_grid, "lock": theme.lock_grid},
             "edgeInset": {
                 "top": inset(Edge::Top),
                 "bottom": inset(Edge::Bottom),

@@ -1113,6 +1113,14 @@
         "lock.clock": {
             "fill": "transparent"
         },
+        "backdrop.grid": {
+            "fill": "foreground",
+            "fillAlpha": 0.14,
+            "radius": 0,
+            "pitch": 120,
+            "width": 2,
+            "fade": 0.2
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.49019607843137253,

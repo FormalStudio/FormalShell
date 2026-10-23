@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 
+use fs_chrome::grid::Grid;
 use smithay_client_toolkit::compositor::FrameCallbackData;
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::globals::{BindError, GlobalList};
@@ -1000,8 +1001,9 @@ macro_rules! ignore_events {
 
 ignore_events!(WlSubcompositor, WlSubsurface, WpViewporter, WpViewport, WpSinglePixelBufferManagerV1, WpAlphaModifierV1, WpAlphaModifierSurfaceV1, WlBuffer);
 
-/// The desktop's own layer: the theme's background colour,
-/// or the wallpaper's ready pixels over the whole output. A new wallpaper
+/// The desktop's own layer: the theme's background colour under the grid
+/// when `wallpaper.grid` asks for one, or the wallpaper's ready pixels over
+/// the whole output. A new wallpaper
 /// crossfades in over `reveal`; nothing draws at rest, and frame callbacks
 /// are asked for only while a fade runs. The pixels are the output's own:
 /// a wallpaper made at the scaled size, mapped back by the viewport.
@@ -1011,7 +1013,7 @@ pub struct Backdrop {
     pool: SlotPool,
     buffer: Option<Buffer>,
     size: Option<(i32, i32)>,
-    drawn: Option<(String, Option<usize>, i32, i32, [u8; 4])>,
+    drawn: Option<(String, Option<usize>, i32, i32, [u8; 4], Option<Grid>)>,
     /// What is on screen once any fade lands.
     shown: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
     fade: Option<Fade>,
@@ -1023,6 +1025,7 @@ struct Fade {
     from: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
     to: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
     color: [u8; 4],
+    grid: Option<Grid>,
     start: Instant,
     ms: f64,
 }
@@ -1054,6 +1057,11 @@ impl Backdrop {
         self.size.map(|(w, h)| (scaled(w, scale), scaled(h, scale)))
     }
 
+    /// Buffer pixels to a logical one.
+    pub fn scale(&self) -> f64 {
+        self.scaler.wanted(self.layer.wl_surface())
+    }
+
     /// Already showing `path` at this logical size, though at another
     /// scale: it stays up while the picture for the new scale is made.
     pub fn holds(&self, path: &str) -> bool {
@@ -1066,6 +1074,7 @@ impl Backdrop {
         &mut self,
         picture: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
         background: fs_theme::color::Rgba,
+        grid: Option<Grid>,
         reveal_ms: f64,
         qh: &QueueHandle<App>,
     ) {
@@ -1074,7 +1083,7 @@ impl Backdrop {
         let picture = picture.filter(|p| (p.width as i32, p.height as i32) == (w, h));
         let [r, g, b, _] = background.to_u8();
         let color = [b, g, r, 255];
-        let key = (picture.as_ref().map(|p| p.path.clone()).unwrap_or_default(), picture.as_ref().and_then(|p| p.dither), w, h, color);
+        let key = (picture.as_ref().map(|p| p.path.clone()).unwrap_or_default(), picture.as_ref().and_then(|p| p.dither), w, h, color, grid);
         if self.drawn.as_ref() == Some(&key) {
             return;
         }
@@ -1086,10 +1095,10 @@ impl Backdrop {
         };
         self.shown = picture.clone();
         if first || reveal_ms <= 0.0 || picture.is_none() {
-            self.paint(None, picture.as_deref(), color, 1.0, qh);
+            self.paint(None, picture.as_deref(), color, grid, 1.0, qh);
             return;
         }
-        self.fade = Some(Fade { from, to: picture, color, start: Instant::now(), ms: reveal_ms });
+        self.fade = Some(Fade { from, to: picture, color, grid, start: Instant::now(), ms: reveal_ms });
         self.step(Instant::now(), qh);
     }
 
@@ -1099,24 +1108,25 @@ impl Backdrop {
         let t = (now.duration_since(f.start).as_secs_f64() * 1000.0 / f.ms).clamp(0.0, 1.0);
         // effectsSlow's ease-out, close enough at a crossfade's length.
         let a = 1.0 - (1.0 - t).powi(3);
-        let (from, to, color) = (f.from.clone(), f.to.clone(), f.color);
+        let (from, to, color, grid) = (f.from.clone(), f.to.clone(), f.color, f.grid);
         if t >= 1.0 {
             self.fade = None;
-            self.paint(None, to.as_deref(), color, 1.0, qh);
+            self.paint(None, to.as_deref(), color, grid, 1.0, qh);
             return;
         }
         let surface = self.layer.wl_surface().clone();
         surface.frame(qh, FrameCallbackData(surface.clone()));
-        self.paint(Some(from.as_deref()), to.as_deref(), color, a as f32, qh);
+        self.paint(Some(from.as_deref()), to.as_deref(), color, grid, a as f32, qh);
     }
 
     /// `to` over `from` at `a`; `from` none is no blend at all, `Some(None)`
-    /// the plain colour.
+    /// the plain colour under `grid`.
     fn paint(
         &mut self,
         from: Option<Option<&crate::services::wallpaper::Picture>>,
         to: Option<&crate::services::wallpaper::Picture>,
         color: [u8; 4],
+        grid: Option<Grid>,
         a: f32,
         qh: &QueueHandle<App>,
     ) {
@@ -1124,16 +1134,26 @@ impl Backdrop {
         let scale = self.scaler.wanted(self.layer.wl_surface());
         let (w, h) = (scaled(size.0, scale), scaled(size.1, scale));
         let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888) else { return };
+        let plain = |canvas: &mut [u8]| {
+            for px in canvas.chunks_exact_mut(4) {
+                px.copy_from_slice(&color);
+            }
+            if let Some(g) = grid {
+                let [r, gr, b, a] = g.color;
+                Grid { color: [b, gr, r, a], ..g }.paint(canvas, w as usize, h as usize);
+            }
+        };
         match (from, to) {
             (None, Some(p)) => canvas.copy_from_slice(&p.bgra),
-            (None, None) => {
-                for px in canvas.chunks_exact_mut(4) {
-                    px.copy_from_slice(&color);
-                }
-            }
+            (None, None) => plain(canvas),
             (Some(src), dst) => {
                 let k = (a.clamp(0.0, 1.0) * 256.0) as u32;
-                let pick = |p: Option<&crate::services::wallpaper::Picture>, i: usize| p.map_or(color[i % 4], |p| p.bgra[i]);
+                let mut flat = Vec::new();
+                if src.is_none() || dst.is_none() {
+                    flat.resize(canvas.len(), 0);
+                    plain(&mut flat);
+                }
+                let pick = |p: Option<&crate::services::wallpaper::Picture>, i: usize| p.map_or(flat[i], |p| p.bgra[i]);
                 for (i, c) in canvas.iter_mut().enumerate() {
                     let s0 = u32::from(pick(src, i));
                     let d0 = u32::from(pick(dst, i));

@@ -819,6 +819,7 @@ the whole of what a preset changes that you can override:
 | `theme.surfaceOpacity` | 0.85 | 1 | 1 | 0.9 |
 | `theme.blur` | true | false | true | true |
 | `theme.dither` | false | true | false | false |
+| `theme.grid` | false | false | false | true |
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -978,6 +979,22 @@ programs.formalshell.settings.wallpaper = { dither = true; ditherColors = 12; };
 
 `lock.dither` is the same pass over the lock screen's own backdrop, with the
 same default and its own override.
+
+### Grid
+
+`theme.grid` lays a line grid over the desktop: 2px lines every 120px
+(multiplied by the output's scale), in the theme's foreground at low alpha,
+fading out over the bottom fifth of the screen. It is drawn into the
+wallpaper's pixels after the dither, or over the plain background when no
+wallpaper is set, and over the lock screen and the greeter. It never moves.
+The `cartridge` preset turns it on; `wallpaper.grid` and `lock.grid`
+override it for the desktop and for the lock and greeter alone, the way
+`wallpaper.dither` and `lock.dither` do.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "theme": { "grid": true }, "lock": { "grid": false } }
+```
 
 ### Motion
 

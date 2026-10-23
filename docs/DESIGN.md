@@ -588,7 +588,12 @@ every pill (`Theme::pill_radius`), whichever preset set it. `theme.dither`
 on renders content imagery (launcher and active-window icons, notification
 images, album art) through the retro pass, paints a track's groove as a
 dither fill, and is the default for `wallpaper.dither` and `lock.dither`;
-tray icons, the picker grid and clipboard thumbnails stay true colour.
+tray icons, the picker grid and clipboard thumbnails stay true colour. `theme.grid`
+(on under `cartridge`) is the other full-screen pass: the table's
+`backdrop.grid` role (pitch, width and fade in logical pixels, its fill the
+ink) laid into the wallpaper's pixels by `fs-chrome/src/grid.rs`, and drawn
+over the lock's scrim and the greeter's wallpaper from the same geometry;
+`wallpaper.grid` and `lock.grid` override it the way the dither keys do.
 Hyprland follows through `formalshell-chrome.lua` (`rounding`, `blur`, and
 the `window` role's own gaps, frame and cast, written by
 `fs-theme/src/chrome.rs`), published beside the colours; mango through

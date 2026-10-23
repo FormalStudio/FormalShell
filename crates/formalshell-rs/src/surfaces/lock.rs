@@ -215,6 +215,7 @@ impl View {
                 }
             }
         }
+        login::paint_grid(&mut p, theme, (w, h), s.wake);
         login::paint(&mut p, card_rect, theme, fade);
         // The clock comes in from the leading side by `slam` of the screen's
         // width, fading up as it lands.
@@ -359,12 +360,18 @@ fn fills_size((bw, bh): (i32, i32), (w, h): (i32, i32)) -> bool {
     bw > w && (bw * h - bh * w).abs() <= bw.max(bh)
 }
 
-/// The desktop's picture with the scrim baked in, for the pool.
+/// The desktop's picture with the scrim baked in, for the pool. Its grid
+/// comes off first: the lock draws its own over the scrim, or none.
 pub fn backdrop(p: &Picture) -> Bitmap {
+    let mut rgba: Vec<u8> = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
+    if let Some(g) = p.grid {
+        g.lift(&mut rgba, p.width as usize, p.height as usize);
+    }
     let keep = 1.0 - SCRIM;
-    let mut rgba = Vec::with_capacity(p.bgra.len());
-    for px in p.bgra.chunks_exact(4) {
-        rgba.extend_from_slice(&[(px[2] as f64 * keep) as u8, (px[1] as f64 * keep) as u8, (px[0] as f64 * keep) as u8, 255]);
+    for px in rgba.chunks_exact_mut(4) {
+        for c in &mut px[..3] {
+            *c = (f64::from(*c) * keep) as u8;
+        }
     }
     Bitmap::from_rgba(p.width as u16, p.height as u16, rgba)
 }

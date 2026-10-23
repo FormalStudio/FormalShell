@@ -177,7 +177,7 @@ fn wallpaper_path(settings: &Value, env: &theme::Env) -> Option<PathBuf> {
 /// The wallpaper cover-cropped to `size`, as the desktop shows it: the card
 /// carries the contrast, so there is no scrim.
 fn decode(path: &Path, size: (i32, i32)) -> Option<Decoded> {
-    let p = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None)?;
+    let p = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None, None)?;
     let rgba = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
     Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
 }
