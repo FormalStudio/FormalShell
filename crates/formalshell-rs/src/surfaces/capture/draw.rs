@@ -1,7 +1,7 @@
 //! The region picker's surface, one per screen: the frozen frame under a
 //! scrim with a hole for the selection, the selection's border and size
 //! readout, the key legend, the toolbar and the card naming windows the
-//! compositor gave no box. Only the frame stays while the capture grims it.
+//! compositor gave no box.
 
 use std::time::Instant;
 
@@ -10,7 +10,7 @@ use vello_cpu::kurbo::Rect;
 
 use super::picker::{Cands, Picker, R, TOOLS};
 use crate::motion::{Animated, Kind as Clock};
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::ui::el::CellState;
 use crate::ui::{El, Ink, Ui, w};
@@ -67,10 +67,11 @@ impl Sheet {
         let animating = self.sel.iter().any(|a| a.running(now));
 
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
+        // The freeze is the output's native pixels and the surface is its
+        // logical size, so a scaled output's frame is stretched to fit.
         if let Some(f) = frame {
-            p.image(f, (0, 0), 1.0);
+            p.shape(IRect::new(0, 0, sw, sh), Paint::Picture { image: f.clone(), alpha: 1.0, radius: 0.0 });
         }
-        let chrome = !picker.capturing;
         let bg = theme.colors.get("background");
         let scrim = bg.with_alpha(0.6);
         let toolbar_box = theme.box_style("card", Some("opaque"));
@@ -85,25 +86,23 @@ impl Sheet {
             let (_, h) = crate::ui::measure(el, w - pad * 2.0, theme, kit);
             IRect::new(((sw as f64 - w) / 2.0).round() as i32, ((sh as f64 - h - pad * 2.0) / 2.0).round() as i32, w as i32, (h + pad * 2.0).round() as i32)
         });
-        if chrome {
-            let (xi, yi, wi, hi) = (x.round() as i32, y.round() as i32, bw.round() as i32, bh.round() as i32);
-            if target.is_some() || self.placed && current.is_some() {
-                p.rect(IRect::new(0, 0, sw, yi.max(0)), scrim, 0.0);
-                p.rect(IRect::new(0, yi + hi, sw, (sh - (yi + hi)).max(0)), scrim, 0.0);
-                p.rect(IRect::new(0, yi, xi.max(0), hi), scrim, 0.0);
-                p.rect(IRect::new(xi + wi, yi, (sw - (xi + wi)).max(0), hi), scrim, 0.0);
-                let ink = theme.colors.get(if picker.recording() { "destructive" } else { "primary" });
-                let width = (theme.border_width * 2.0) as f32;
-                p.framed(IRect::new(xi, yi, wi, hi), fs_theme::color::Rgba::TRANSPARENT, 0.0, ink, width);
-            } else {
-                p.rect(IRect::new(0, 0, sw, sh), scrim, 0.0);
-            }
-            let radius = theme.box_radius(&toolbar_box, card.h as f64);
-            crate::ui::boxes::paint(&mut p, card, &toolbar_box, radius, 1.0, 0.0);
-            if let Some(r) = names_card {
-                let radius = theme.box_radius(&toolbar_box, r.h as f64);
-                crate::ui::boxes::paint(&mut p, r, &toolbar_box, radius, 1.0, 0.0);
-            }
+        let (xi, yi, wi, hi) = (x.round() as i32, y.round() as i32, bw.round() as i32, bh.round() as i32);
+        if target.is_some() || self.placed && current.is_some() {
+            p.rect(IRect::new(0, 0, sw, yi.max(0)), scrim, 0.0);
+            p.rect(IRect::new(0, yi + hi, sw, (sh - (yi + hi)).max(0)), scrim, 0.0);
+            p.rect(IRect::new(0, yi, xi.max(0), hi), scrim, 0.0);
+            p.rect(IRect::new(xi + wi, yi, (sw - (xi + wi)).max(0), hi), scrim, 0.0);
+            let ink = theme.colors.get(if picker.recording() { "destructive" } else { "primary" });
+            let width = (theme.border_width * 2.0) as f32;
+            p.framed(IRect::new(xi, yi, wi, hi), fs_theme::color::Rgba::TRANSPARENT, 0.0, ink, width);
+        } else {
+            p.rect(IRect::new(0, 0, sw, sh), scrim, 0.0);
+        }
+        let radius = theme.box_radius(&toolbar_box, card.h as f64);
+        crate::ui::boxes::paint(&mut p, card, &toolbar_box, radius, 1.0, 0.0);
+        if let Some(r) = names_card {
+            let radius = theme.box_radius(&toolbar_box, r.h as f64);
+            crate::ui::boxes::paint(&mut p, r, &toolbar_box, radius, 1.0, 0.0);
         }
         let anchor = p.last();
         p.finish();
@@ -112,12 +111,6 @@ impl Sheet {
         for ui in [&mut self.readout, &mut self.legend, &mut self.toolbar, &mut self.names] {
             ui.anchor = anchor;
             ui.motion_scale = scale;
-        }
-        if !chrome {
-            for ui in [&mut self.readout, &mut self.legend, &mut self.toolbar, &mut self.names] {
-                ui.hide(&mut self.scene);
-            }
-            return animating;
         }
         match current.as_ref().and_then(|e| e.rect.map(|r| (r, e))) {
             Some((r, e)) => {

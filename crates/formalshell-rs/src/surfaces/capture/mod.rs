@@ -14,6 +14,7 @@ use fs_system::capture as model;
 use serde_json::json;
 
 use crate::services::capture::{self as svc, Event, Exit, Job, Run};
+use crate::store::Diff;
 use crate::wayland::App;
 use picker::{Cands, Picker, R};
 
@@ -204,8 +205,7 @@ fn config_secs(app: &App, key: &str) -> f64 {
 }
 
 pub fn cands(app: &App) -> Cands {
-    let windows = &app.store.compositor.snapshot.windows;
-    Cands::new(&app.capture_screens(), windows, &app.store.compositor.snapshot.focused_output_name)
+    Cands::new(&app.capture_screens(), &app.store.compositor.snapshot)
 }
 
 // ---- screenshot ----------------------------------------------------------
@@ -406,12 +406,99 @@ fn shot_exit(app: &mut App, e: Exit) {
     }
 }
 
-/// RegionPicker's `picked`: the picker still shows its freeze, chrome
-/// hidden, so grim photographs the freeze.
+/// A whole-output pick with nothing frozen: grim takes the live screen.
 fn on_picked(app: &mut App, r: R) {
     app.capture.shot.watch += 1;
     let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.w.round(), r.h.round());
     shot_grab(app, &geometry);
+}
+
+/// The selection cut out of its output's freeze at the freeze's native
+/// pixels, so the file holds exactly what the picker showed. A selection
+/// over two outputs keeps the part on the one it mostly covers.
+fn crop_shot(app: &mut App, r: R, c: &Cands) {
+    app.capture.shot.watch += 1;
+    let picked = c
+        .outputs
+        .iter()
+        .filter_map(|o| Some((o.label.clone(), o.rect?, o.rect?.intersect(&r)?)))
+        .max_by(|a, b| (a.2.w * a.2.h).total_cmp(&(b.2.w * b.2.h)));
+    let frame = picked.as_ref().and_then(|(name, ..)| app.capture.picker.frames.get(name).cloned().flatten());
+    let (Some((name, out, sel)), Some(frame)) = (picked, frame) else {
+        // No freeze to cut from: take the picker down and photograph the
+        // live screen once the compositor has dropped it.
+        picker_done(app);
+        let g = app.capture.picker.generation;
+        app.capture_after(120, move |app| {
+            if app.capture.shot.busy && app.capture.shot.grab.is_none() && app.capture.picker.generation == g {
+                on_picked(app, r);
+            }
+        });
+        return;
+    };
+    picker_done(app);
+    let (fw, fh) = (frame.pixmap.width() as f64, frame.pixmap.height() as f64);
+    let (sx, sy) = (fw / out.w, fh / out.h);
+    let x0 = ((sel.x - out.x) * sx).round().clamp(0.0, fw) as u32;
+    let y0 = ((sel.y - out.y) * sy).round().clamp(0.0, fh) as u32;
+    let x1 = ((sel.x + sel.w - out.x) * sx).round().clamp(0.0, fw) as u32;
+    let y1 = ((sel.y + sel.h - out.y) * sy).round().clamp(0.0, fh) as u32;
+    let src = format!("{}/formalshell-capture-{name}.png", runtime_dir());
+    let dest = if app.capture.shot.processing == "copy" {
+        format!("{}/formalshell/shot.png", runtime_dir())
+    } else {
+        app.capture.shot.pending_path.clone()
+    };
+    let g = app.capture.generation();
+    app.capture.shot.grab = Some(g);
+    let Some(rt) = &app.runtime else { return };
+    rt.service(move |ctx| {
+        let job = ctx.pool().run(move || -> Result<String, String> {
+            if x1 <= x0 || y1 <= y0 {
+                return Err("the selection is empty".into());
+            }
+            let img = image::open(&src).map_err(|e| format!("{src}: {e}"))?;
+            if let Some(dir) = std::path::Path::new(&dest).parent() {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            img.crop_imm(x0, y0, x1 - x0, y1 - y0).save(&dest).map_err(|e| format!("{dest}: {e}"))?;
+            Ok(dest)
+        });
+        let publisher = ctx.publisher().clone();
+        ctx.spawn(async move {
+            let result = job.await.unwrap_or_else(|| Err("the crop did not run".into()));
+            publisher.publish(Diff::Capture(Event::Cropped { generation: g, result }));
+        });
+    });
+}
+
+/// The crop landed: the clipboard step runs as the grab, so its exit posts
+/// the notification every other shot posts.
+fn cropped(app: &mut App, generation: u64, result: Result<String, String>) {
+    if app.capture.shot.grab != Some(generation) {
+        return;
+    }
+    let path = match result {
+        Ok(path) => path,
+        Err(why) => {
+            app.capture.shot.grab = None;
+            let s = &mut app.capture.shot;
+            s.busy = false;
+            s.pending_path.clear();
+            s.last_error = why.clone();
+            eprintln!("ScreenshotIpc: {why}");
+            notify("SCREENSHOT FAILED", &why);
+            return;
+        }
+    };
+    let script = match app.capture.shot.processing.as_str() {
+        "save" => "true",
+        "copy" => r#"wl-copy --type image/png < "$FS_SHOT_PATH"; status=$?; rm -f "$FS_SHOT_PATH"; exit $status"#,
+        _ => r#"wl-copy --type image/png < "$FS_SHOT_PATH""#,
+    };
+    let g = app.capture.generation();
+    app.capture.shot.grab = Some(g);
+    spawn(app, Run::sh(Job::ShotGrab, g, script).env("FS_SHOT_PATH", path));
 }
 
 fn on_picked_record(app: &mut App, r: R, output: String) {
@@ -456,7 +543,6 @@ pub fn picker_open(app: &mut App, mode: &str) -> String {
     p.drag = None;
     p.hover = None;
     p.cursor = -1;
-    p.capturing = false;
     p.frames.clear();
     crate::services::compositor::send(crate::services::compositor::Command::RefreshWindows);
     if mode == "fullscreen" {
@@ -537,8 +623,8 @@ pub fn picker_close(app: &mut App, reason: &str) -> String {
         return "error: picker not open".into();
     }
     p.open = false;
-    p.capturing = false;
     p.pending_freezes = 0;
+    p.frames.clear();
     app.capture.picker.generation = app.capture.generation();
     app.picker_sync();
     picker_cancelled(app, reason);
@@ -549,8 +635,8 @@ pub fn picker_close(app: &mut App, reason: &str) -> String {
 pub fn picker_done(app: &mut App) {
     let p = &mut app.capture.picker;
     p.open = false;
-    p.capturing = false;
     p.pending_freezes = 0;
+    p.frames.clear();
     app.capture.picker.generation = app.capture.generation();
     app.picker_sync();
 }
@@ -583,13 +669,12 @@ pub fn finish_rect(app: &mut App, r: R) {
     finish(app, r, &c);
 }
 
-/// The shot keeps the surface up for grim to photograph the freeze; a
-/// recording takes it down first, since wf-recorder records live content.
+/// A shot is cut from the freeze; a recording takes the surface down first,
+/// since wf-recorder records live content.
 fn finish(app: &mut App, r: R, c: &Cands) {
     let g = app.capture.picker.generation;
     if app.capture.picker.recording() {
         app.capture.picker.open = false;
-        app.capture.picker.capturing = false;
         app.picker_sync();
         let output = c.output_name_for(r);
         app.capture_after(120, move |app| {
@@ -599,13 +684,7 @@ fn finish(app: &mut App, r: R, c: &Cands) {
         });
         return;
     }
-    app.capture.picker.capturing = true;
-    app.picker_sync();
-    app.capture_after(80, move |app| {
-        if app.capture.picker.generation == g && app.capture.picker.capturing {
-            on_picked(app, r);
-        }
-    });
+    crop_shot(app, r, c);
 }
 
 pub fn picker_key(app: &mut App, name: &str) -> String {
@@ -872,6 +951,7 @@ pub fn events(app: &mut App) {
                     crate::surfaces::changed(app, crate::store::Topic::Notifications);
                 }
             }
+            Event::Cropped { generation, result } => cropped(app, generation, result),
             Event::Frame { generation, output, frame } => {
                 if generation == app.capture.picker.generation && app.capture.picker.pending_freezes > 0 {
                     let why = if frame.is_none() { "the frame could not be decoded" } else { "" };

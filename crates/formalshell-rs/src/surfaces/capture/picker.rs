@@ -3,11 +3,12 @@
 //! `screenshot pickerStatus` verb reports. The surface and its drawing are
 //! in `draw`; the freeze, the commit and the teardown are the owner's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use serde_json::{Value, json};
 
 use crate::scene::Bitmap;
+use crate::services::compositor::model::{Snapshot, Window};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct R {
@@ -20,6 +21,12 @@ pub struct R {
 impl R {
     pub fn contains(&self, x: f64, y: f64) -> bool {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
+    }
+
+    pub fn intersect(&self, o: &R) -> Option<R> {
+        let (x0, y0) = (self.x.max(o.x), self.y.max(o.y));
+        let (x1, y1) = ((self.x + self.w).min(o.x + o.w), (self.y + self.h).min(o.y + o.h));
+        (x1 > x0 && y1 > y0).then(|| R { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
     }
 
     pub fn json(&self) -> Value {
@@ -45,6 +52,7 @@ pub struct Entry {
     pub label: String,
     pub sublabel: String,
     pub window_id: String,
+    pub floating: bool,
     pub rect: Option<R>,
 }
 
@@ -82,17 +90,36 @@ pub struct Cands {
 }
 
 impl Cands {
-    pub fn new(screens: &[Screen], windows: &[crate::services::compositor::model::Window], focused_output: &str) -> Self {
+    pub fn new(screens: &[Screen], snap: &Snapshot) -> Self {
         let outputs = screens
             .iter()
-            .map(|s| Entry { kind: EntryKind::Output, label: s.name.clone(), sublabel: String::new(), window_id: String::new(), rect: Some(s.rect) })
+            .map(|s| Entry {
+                kind: EntryKind::Output,
+                label: s.name.clone(),
+                sublabel: String::new(),
+                window_id: String::new(),
+                floating: false,
+                rect: Some(s.rect),
+            })
             .collect();
-        let mut seen = std::collections::HashSet::new();
+        // Hyprland keeps a box for every window on every workspace, all of
+        // them laid over the same monitor, and the scrolling layout parks
+        // columns past the monitor's edges. Only what is on screen counts.
+        let active: HashSet<&str> = snap.workspaces.iter().filter(|w| w.is_active).map(|w| w.id.as_str()).collect();
+        let shown = |w: &Window| active.is_empty() || w.workspace_id.is_empty() || active.contains(w.workspace_id.as_str()) || snap.overlaid.contains(&w.id);
+        let on_screen = |r: R| screens.iter().filter_map(|s| s.rect.intersect(&r)).max_by(|a, b| (a.w * a.h).total_cmp(&(b.w * b.h)));
+        let mut seen = HashSet::new();
         let (mut with_rect, mut without_rect) = (Vec::new(), Vec::new());
-        for w in windows {
+        for w in snap.windows.iter().filter(|w| shown(w)) {
             let label = [&w.title, &w.app_id].into_iter().find(|s| !s.is_empty()).cloned().unwrap_or_else(|| "(untitled)".into());
-            let rect = w.rect.map(|r| R { x: r.x as f64, y: r.y as f64, w: r.width as f64, h: r.height as f64 });
-            let entry = Entry { kind: EntryKind::Window, label, sublabel: w.app_id.clone(), window_id: w.id.clone(), rect };
+            let rect = match w.rect {
+                Some(r) => match on_screen(R { x: r.x as f64, y: r.y as f64, w: r.width as f64, h: r.height as f64 }) {
+                    Some(r) => Some(r),
+                    None => continue,
+                },
+                None => None,
+            };
+            let entry = Entry { kind: EntryKind::Window, label, sublabel: w.app_id.clone(), window_id: w.id.clone(), floating: w.is_floating, rect };
             match rect {
                 None => without_rect.push(entry),
                 Some(r) => {
@@ -107,7 +134,7 @@ impl Cands {
             (a.y, a.x).partial_cmp(&(b.y, b.x)).unwrap_or(std::cmp::Ordering::Equal)
         });
         without_rect.sort_by(|a, b| a.label.cmp(&b.label));
-        Self { outputs, with_rect, without_rect, focused_output: focused_output.to_owned() }
+        Self { outputs, with_rect, without_rect, focused_output: snap.focused_output_name.clone() }
     }
 
     pub fn focused_output_rect(&self) -> Option<&Entry> {
@@ -128,7 +155,6 @@ pub struct Picker {
     pub frames: BTreeMap<String, Option<Bitmap>>,
     pub pending_freezes: usize,
     pub last_freeze_error: String,
-    pub capturing: bool,
     pub drag: Option<R>,
     pub hover: Option<Entry>,
     pub cursor: i32,
@@ -145,7 +171,6 @@ impl Default for Picker {
             frames: BTreeMap::new(),
             pending_freezes: 0,
             last_freeze_error: String::new(),
-            capturing: false,
             drag: None,
             hover: None,
             cursor: -1,
@@ -188,7 +213,14 @@ impl Picker {
 
     pub fn current(&self, c: &Cands) -> Option<Entry> {
         if let Some(d) = self.drag {
-            return Some(Entry { kind: EntryKind::Drag, label: String::new(), sublabel: String::new(), window_id: String::new(), rect: Some(d) });
+            return Some(Entry {
+                kind: EntryKind::Drag,
+                label: String::new(),
+                sublabel: String::new(),
+                window_id: String::new(),
+                floating: false,
+                rect: Some(d),
+            });
         }
         let sel = self.selectable(c);
         if self.cursor >= 0 && (self.cursor as usize) < sel.len() {
@@ -197,22 +229,25 @@ impl Picker {
         self.hover.clone()
     }
 
-    /// The smallest hinted box under a point, the first on a tie.
+    /// The box under a point: a floating window over a tiled one, then the
+    /// smallest, the first on a tie.
     pub fn resolve_at(&self, c: &Cands, x: f64, y: f64) -> Option<Entry> {
-        let mut best: Option<Entry> = None;
-        let mut best_area = 0.0;
+        let mut best: Option<(bool, f64, Entry)> = None;
         for cand in self.hint_rects(c) {
             let Some(r) = cand.rect else { continue };
             if !r.contains(x, y) {
                 continue;
             }
             let area = r.w * r.h;
-            if best.is_none() || area < best_area {
-                best_area = area;
-                best = Some(cand);
+            let better = match &best {
+                None => true,
+                Some((floating, best_area, _)) => (cand.floating && !floating) || (cand.floating == *floating && area < *best_area),
+            };
+            if better {
+                best = Some((cand.floating, area, cand));
             }
         }
-        best
+        best.map(|(_, _, e)| e)
     }
 
     pub fn move_cursor(&mut self, c: &Cands, delta: i32) {
@@ -304,7 +339,6 @@ impl Picker {
             "cursor": self.cursor,
             "selection": current.as_ref().and_then(|e| e.rect).map_or(Value::Null, |r| r.json()),
             "selectionLabel": current.map(|e| e.label).unwrap_or_default(),
-            "capturing": self.capturing,
             "pendingFreezes": self.pending_freezes,
             "frames": self.frames.values().filter(|f| f.is_some()).count(),
             "screens": screens,
@@ -317,27 +351,56 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::compositor::model::{Rect, Window};
+    use crate::services::compositor::model::{Rect, Workspace};
 
     fn win(id: &str, title: &str, rect: Option<(i64, i64, i64, i64)>) -> Window {
         Window {
             id: id.into(),
             title: title.into(),
             app_id: format!("app.{id}"),
+            workspace_id: "1".into(),
             rect: rect.map(|(x, y, width, height)| Rect { x, y, width, height }),
             ..Default::default()
         }
     }
 
+    fn snap(windows: Vec<Window>) -> Snapshot {
+        let ws = |id: &str, is_active| Workspace { id: id.into(), output: "DP-1".into(), is_active, ..Default::default() };
+        Snapshot { windows, workspaces: vec![ws("1", true), ws("2", false)], focused_output_name: "DP-1".into(), ..Default::default() }
+    }
+
+    fn screens() -> [Screen; 1] {
+        [Screen { name: "DP-1".into(), rect: R { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0 } }]
+    }
+
     fn cands() -> Cands {
-        let screens = [Screen { name: "DP-1".into(), rect: R { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0 } }];
-        let windows = [
+        let windows = vec![
             win("b", "Right", Some((960, 40, 960, 1040))),
             win("a", "Left", Some((0, 40, 960, 1040))),
             win("dup", "Dup", Some((0, 40, 960, 1040))),
             win("c", "Tabbed", None),
         ];
-        Cands::new(&screens, &windows, "DP-1")
+        Cands::new(&screens(), &snap(windows))
+    }
+
+    #[test]
+    fn only_on_screen_windows_are_candidates_and_boxes_stop_at_the_edge() {
+        let mut hidden = win("h", "Other workspace", Some((10, 50, 900, 900)));
+        hidden.workspace_id = "2".into();
+        let parked = win("p", "Parked column", Some((-1900, 40, 1800, 1040)));
+        let half = win("s", "Half off", Some((1500, 40, 960, 1040)));
+        let c = Cands::new(&screens(), &snap(vec![hidden, parked, half]));
+        let rects: Vec<_> = c.with_rect.iter().map(|e| (e.label.as_str(), e.rect.unwrap())).collect();
+        assert_eq!(rects, [("Half off", R { x: 1500.0, y: 40.0, w: 420.0, h: 1040.0 })]);
+    }
+
+    #[test]
+    fn a_floating_window_wins_over_the_smaller_tile_under_it() {
+        let tile = win("t", "Tile", Some((0, 0, 400, 400)));
+        let mut float = win("f", "Float", Some((100, 100, 800, 600)));
+        float.is_floating = true;
+        let c = Cands::new(&screens(), &snap(vec![tile, float]));
+        assert_eq!(Picker::default().resolve_at(&c, 200.0, 200.0).unwrap().label, "Float");
     }
 
     #[test]

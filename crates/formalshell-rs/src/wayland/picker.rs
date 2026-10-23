@@ -85,9 +85,7 @@ impl App {
 
     /// Maps or unmaps the picker's surfaces to match its state, and redraws.
     pub fn picker_sync(&mut self) {
-        // A surface stays up while capturing: grim is photographing it.
-        let want = self.capture.picker.open || self.capture.picker.capturing;
-        if !want {
+        if !self.capture.picker.open {
             if !self.pickers.surfaces.is_empty() {
                 self.pickers.surfaces.clear();
                 self.log("capture picker unmapped");

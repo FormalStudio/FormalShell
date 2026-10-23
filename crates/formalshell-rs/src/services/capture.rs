@@ -60,6 +60,8 @@ pub enum Event {
     Exited(Exit),
     /// A freeze decoded off the UI thread.
     Frame { generation: u64, output: String, frame: Option<crate::scene::Bitmap> },
+    /// A shot cut out of its freeze off the UI thread: the file, or why not.
+    Cropped { generation: u64, result: Result<String, String> },
     /// A notification's picture, loaded off the UI thread.
     Image { id: String, raw: Option<crate::services::icons::Raw> },
 }
