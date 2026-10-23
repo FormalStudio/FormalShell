@@ -93,7 +93,7 @@ impl App {
                 pid: w.pid,
             })
             .collect();
-        appicon::probe((self.store.theme.theme.space.huge * 2.0).round() as u32, queries);
+        appicon::probe((self.store.theme.theme.space.huge * 2.0).round() as u32, crate::scene::raster_scale(), queries);
         let module = WorkspacePreview::new(chip.id.clone(), chip.idx, chip.label.clone(), pointer, self.peek.shared.clone());
         self.peek.open = Some((chip.id.clone(), chip.idx, pointer));
         self.peek.hover_at = None;
@@ -200,7 +200,8 @@ impl App {
                 .iter()
                 .map(|(id, r, _)| (id.clone(), (r.2.round().max(1.0) as u32, r.3.round().max(1.0) as u32)))
                 .collect();
-            self.capture_set(Owner::Preview, &wants, true);
+            let scale = self.panel.as_ref().map_or(1.0, |p| p.surface.scale());
+            self.capture_set(Owner::Preview, &wants, true, scale);
             self.peek.capturing = true;
         } else if self.peek.capturing {
             self.peek.capturing = false;

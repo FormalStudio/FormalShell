@@ -102,7 +102,7 @@ pub struct Menu {
     nodes: Vec<NodeId>,
     rects: Vec<IRect>,
     close: IRect,
-    icons: HashMap<i32, (u32, Option<Bitmap>)>,
+    icons: HashMap<i32, ((u32, f64), Option<Bitmap>)>,
 }
 
 impl Menu {
@@ -385,9 +385,10 @@ impl Menu {
                 right -= look.icon_gap as i32;
             }
             if let Some(raw) = &row.node.icon {
-                let entry = self.icons.entry(row.node.id).or_insert((0, None));
-                if entry.0 != size {
-                    *entry = (size, raw.bitmap(size));
+                let scale = crate::scene::raster_scale();
+                let entry = self.icons.entry(row.node.id).or_insert(((0, 0.0), None));
+                if entry.0 != (size, scale) {
+                    *entry = ((size, scale), raw.bitmap(size, scale));
                 }
                 if let Some(image) = entry.1.clone() {
                     p.shape(IRect::new(x, r.y + (r.h - size as i32) / 2, size as i32, size as i32), Paint::Image { image, alpha });

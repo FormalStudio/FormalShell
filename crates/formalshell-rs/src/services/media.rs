@@ -254,19 +254,22 @@ impl State {
         changed
     }
 
-    /// The active art at `size` pixels square, asked for when it has not
-    /// been yet.
-    /// The animated cover's frame for `key` at a `size` slot.
-    pub fn motion(&self, key: &str, size: u32) -> Option<crate::scene::Bitmap> {
+    /// The animated cover's frame for `key` at a `size` slot on a surface
+    /// at `scale`, which [`motion_art::Want::at`] asked for.
+    pub fn motion(&self, key: &str, size: u32, scale: f64) -> Option<crate::scene::Bitmap> {
         let (k, frames) = self.motion.as_ref()?;
-        (k == key).then(|| frames.iter().find(|b| u32::from(b.pixmap.width()) == size).cloned())?
+        let px = crate::scene::pixels_at(f64::from(size), scale);
+        (k == key).then(|| frames.iter().find(|b| u32::from(b.pixmap.width()) == px).map(|b| b.clone().at(scale)))?
     }
 
-    pub fn cover(&self, url: &str, size: u32, radius: f64) -> Option<crate::scene::Bitmap> {
-        if let Some((_, _, b)) = self.covers.iter().find(|(u, s, _)| u == url && *s == size) {
-            return b.clone();
+    /// The active art in a `size` square cut to `radius` on a surface at
+    /// `scale`, asked for when it has not been yet.
+    pub fn cover(&self, url: &str, size: u32, radius: f64, scale: f64) -> Option<crate::scene::Bitmap> {
+        let px = crate::scene::pixels_at(f64::from(size), scale);
+        if let Some((_, _, b)) = self.covers.iter().find(|(u, s, _)| u == url && *s == px) {
+            return b.clone().map(|b| b.at(scale));
         }
-        super::cover::request(url, size, radius);
+        super::cover::request(url, px, radius * scale);
         None
     }
 

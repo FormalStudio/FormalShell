@@ -63,15 +63,16 @@ impl Raw {
         Some(Self { width, height, rgba: Arc::new(img.into_raw()) })
     }
 
-    /// Fitted inside a `size` square and centred in it, ready to draw.
-    pub fn bitmap(&self, size: u32) -> Option<Bitmap> {
-        let size = size.max(1);
+    /// Fitted inside a `size` square and centred in it, ready to draw on a
+    /// surface at `scale`.
+    pub fn bitmap(&self, size: u32, scale: f64) -> Option<Bitmap> {
+        let size = crate::scene::pixels_at(f64::from(size.max(1)), scale);
         let src = RgbaImage::from_raw(self.width, self.height, self.rgba.as_ref().clone())?;
         let fitted = fit(src, size);
         let (w, h) = fitted.dimensions();
         let mut canvas = RgbaImage::new(size, size);
         imageops::replace(&mut canvas, &fitted, ((size - w.min(size)) / 2) as i64, ((size - h.min(size)) / 2) as i64);
-        Some(Bitmap::from_rgba(size as u16, size as u16, canvas.into_raw()))
+        Some(Bitmap::from_rgba(size as u16, size as u16, canvas.into_raw()).at(scale))
     }
 }
 
@@ -272,18 +273,34 @@ pub fn load(path: &Path) -> Option<Raw> {
     raw
 }
 
-/// A file drawn in a `size` square: an SVG rendered at that size, a raster
-/// resampled to it once. Decoded once per (file, size).
-pub fn load_at(path: &Path, size: u32) -> Option<Bitmap> {
+/// How many decoded (file, pixel size) pairs [`load_at`] keeps: every app
+/// in the launcher at two scales, with room, at 25 KB an 80 px icon.
+const LOADED: usize = 512;
+
+/// A file drawn in a `size` square on a surface at `scale`: an SVG
+/// rendered at its pixel size, a raster resampled to it once. Decoded once
+/// per (file, pixel size), so a surface at another scale has its own.
+pub fn load_at(path: &Path, size: u32, scale: f64) -> Option<Bitmap> {
     static CACHE: OnceLock<Mutex<HashMap<(PathBuf, u32), Option<Bitmap>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
-    let key = (path.to_owned(), size);
+    let px = crate::scene::pixels_at(f64::from(size.max(1)), scale);
+    let key = (path.to_owned(), px);
     if let Some(hit) = cache.lock().unwrap().get(&key) {
-        return hit.clone();
+        return hit.clone().map(|b| b.at(scale));
     }
-    let bitmap = decode(path, Some(size.max(1))).and_then(|img| Raw { width: img.width(), height: img.height(), rgba: Arc::new(img.into_raw()) }.bitmap(size));
-    cache.lock().unwrap().insert(key, bitmap.clone());
-    bitmap
+    let bitmap = decode(path, Some(px)).and_then(|img| Raw { width: img.width(), height: img.height(), rgba: Arc::new(img.into_raw()) }.bitmap(px, 1.0));
+    let mut cache = cache.lock().unwrap();
+    if cache.len() >= LOADED {
+        cache.clear();
+    }
+    cache.insert(key, bitmap.clone());
+    bitmap.map(|b| b.at(scale))
+}
+
+/// `size` as the pixel size a named icon is looked up at: the largest any
+/// output draws it at, so a surface at that scale never upscales it.
+pub fn pick(size: u32) -> u32 {
+    crate::scene::pixels_at(f64::from(size), crate::surface::largest_scale())
 }
 
 /// `name` looked up for `size` pixels, decoded for a later [`Raw::bitmap`].
@@ -586,14 +603,32 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         for (name, side) in [("small.png", 16), ("large.png", 512)] {
             png(&dir.path().join(name), side);
-            let b = load_at(&dir.path().join(name), 64).unwrap();
+            let b = load_at(&dir.path().join(name), 64, 1.0).unwrap();
             assert_eq!((b.pixmap.width(), b.pixmap.height()), (64, 64));
         }
         let v = dir.path().join("v.svg");
         svg(&v);
-        let b = load_at(&v, 48).unwrap();
+        let b = load_at(&v, 48, 1.0).unwrap();
         assert_eq!((b.pixmap.width(), b.pixmap.height()), (48, 48));
         assert_eq!(b.pixmap.data_as_u8_slice()[24 * 48 * 4..][..4], [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn load_at_makes_a_scaled_surface_its_own_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = dir.path().join("v.svg");
+        svg(&v);
+        let one = load_at(&v, 48, 1.0).unwrap();
+        let more = load_at(&v, 48, 1.25).unwrap();
+        assert_eq!((more.pixmap.width(), more.pixmap.height(), more.density), (60, 60, 1.25));
+        assert_eq!(more.size(), (48, 48));
+        assert!(!one.same_as(&more));
+        assert_eq!((one.pixmap.width(), one.density), (48, 1.0));
+        // The same pixels asked for at another logical size and scale are
+        // the cache's, stamped for the asker.
+        let again = load_at(&v, 60, 1.0).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&again.pixmap, &more.pixmap));
+        assert_eq!(again.density, 1.0);
     }
 
     #[test]
@@ -613,8 +648,10 @@ mod tests {
     #[test]
     fn a_pixmap_fits_its_square() {
         let raw = from_rgba(2, 1, &[255, 0, 0, 255, 0, 255, 0, 255]).unwrap();
-        let b = raw.bitmap(4).unwrap();
+        let b = raw.bitmap(4, 1.0).unwrap();
         assert_eq!((b.pixmap.width(), b.pixmap.height()), (4, 4));
+        let b = raw.bitmap(4, 1.5).unwrap();
+        assert_eq!((b.pixmap.width(), b.pixmap.height(), b.size()), (6, 6, (4, 4)));
     }
 
     #[test]

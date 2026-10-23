@@ -841,6 +841,6 @@ pub fn picture(set: &str, part: &str, size: f64) -> Option<crate::scene::Bitmap>
         return None;
     }
     let dir = std::path::PathBuf::from(std::env::var_os("FS_EARBUDS_ART")?);
-    crate::services::icons::load_at(&dir.join(format!("{set}_{part}.webp")), size.round().max(1.0) as u32)
+    crate::services::icons::load_at(&dir.join(format!("{set}_{part}.webp")), size.round().max(1.0) as u32, crate::scene::raster_scale())
 }
 

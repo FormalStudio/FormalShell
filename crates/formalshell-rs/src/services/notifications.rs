@@ -653,7 +653,7 @@ fn resolve_icon(image: &str, app_icon: &str, desktop_entry: &str, app_name: &str
         return icons::from_rgba(d.width as i32, d.height as i32, &d.rgba);
     }
     if let Some(name) = source.strip_prefix("image://icon/") {
-        return icons::named(name, "", ICON_PICK);
+        return icons::named(name, "", icons::pick(ICON_PICK));
     }
     let path = source.strip_prefix("file://")?;
     icons::load(std::path::Path::new(path))

@@ -114,7 +114,7 @@ struct Greeter {
     users: Vec<User>,
     user_names: Vec<String>,
     user: usize,
-    avatar: Option<Bitmap>,
+    avatar: Vec<Bitmap>,
     menu: Menu,
     /// The conversation reached a question, so its end opens the next one.
     asked: bool,
@@ -182,10 +182,14 @@ fn decode(path: &Path, size: (i32, i32)) -> Option<Decoded> {
     Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
 }
 
-/// The avatar the card draws for `login`.
-fn avatar(theme: &Theme, state: &Path, login: &str) -> Option<Bitmap> {
-    let size = login::avatar_size(theme) as u32;
-    lock::avatar(&users::avatar_path(state, login)?, size.max(1))
+/// The avatar the card draws for `login`, at each scale an output draws at.
+fn avatar(theme: &Theme, state: &Path, login: &str) -> Vec<Bitmap> {
+    let size = login::avatar_size(theme);
+    let Some(path) = users::avatar_path(state, login) else { return Vec::new() };
+    crate::surface::output_scales()
+        .into_iter()
+        .filter_map(|k| lock::avatar(&path, crate::scene::pixels_at(size, k)).map(|b| b.at(k)))
+        .collect()
 }
 
 /// Which power action a control fires, by logind method.
@@ -302,7 +306,7 @@ pub fn main(args: &[String]) {
         user_names: users.iter().map(|u| u.name.clone()).collect(),
         users,
         user: 0,
-        avatar: None,
+        avatar: Vec::new(),
         menu: Menu::Closed,
         asked: false,
         reopen: false,
@@ -495,6 +499,28 @@ impl Greeter {
         }
     }
 
+    /// The wallpaper decoded at each output's size in its own pixels, again
+    /// when the size or the scale moved.
+    fn ask_backdrops(&mut self) {
+        let Some(path) = self.wallpaper.clone() else { return };
+        for o in self.outs.iter_mut().filter(|o| o.surface.configured) {
+            let (size, k) = (o.view.scene.size, o.surface.scale());
+            let want = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
+            if o.asked == want {
+                continue;
+            }
+            o.asked = want;
+            let tx = self.decoded.clone();
+            let path = path.clone();
+            let _ = std::thread::Builder::new().name("fs-backdrop".into()).spawn(move || match decode(&path, want) {
+                Some(d) => {
+                    let _ = tx.send(d);
+                }
+                None => eprintln!("greeter: cannot decode {}", path.display()),
+            });
+        }
+    }
+
     fn backdrop(&mut self, d: Decoded) {
         if let Some(o) = self.outs.iter_mut().find(|o| o.asked == d.size) {
             o.backdrop = Some(d.bitmap);
@@ -514,6 +540,7 @@ impl Greeter {
     }
 
     fn on_outputs(&mut self) {
+        crate::surface::note_outputs(&self.outputs, None);
         let outputs: Vec<wl_output::WlOutput> = self.outputs.outputs().collect();
         for output in outputs {
             if self.outs.iter().any(|o| o.output == output) {
@@ -526,7 +553,7 @@ impl Greeter {
             ls.set_exclusive_zone(-1);
             ls.set_keyboard_interactivity(if first { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
             ls.commit();
-            let surface = Surface::new("greeter", ls, &self.shm, self.started);
+            let surface = Surface::on("greeter", ls, &self.shm, self.started, &output);
             self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0) });
         }
     }
@@ -536,18 +563,23 @@ impl Greeter {
             return;
         }
         self.dirty = false;
+        self.ask_backdrops();
         let now = Instant::now();
         let controls = Controls { sessions: &self.names, session: self.session, users: &self.user_names, user: self.user, menu: self.menu };
         let card = Card {
             name: self.users.get(self.user).map_or("", |u| u.name.as_str()),
-            avatar: self.avatar.as_ref(),
+            avatar: None,
             below: Some(controls.el(&self.theme)),
             ..card(&self.convo, &self.field, self.greetd.is_some(), self.users.is_empty())
         };
+        let mut card = card;
         for o in &mut self.outs {
             if !o.surface.configured {
                 continue;
             }
+            let k = o.surface.scale();
+            card.avatar = crate::scene::nearest(&self.avatar, k);
+            let _raster = crate::scene::raster_at(k);
             let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now);
             o.surface.present(&mut o.view.scene, moving, &self.qh);
         }
@@ -629,7 +661,7 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
             let controls = Controls { sessions: &names, session: 0, users: &people, user: 0, menu };
             let c = Card {
                 name: "Kyan De Sutter",
-                avatar: pic.as_ref(),
+                avatar: crate::scene::nearest(&pic, 1.0),
                 below: Some(controls.el(&theme)),
                 ..card(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, false)
             };
@@ -663,7 +695,7 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
                 has_wallpaper: backdrop.is_some(),
                 backdrop: backdrop.as_ref().map(|d| &d.bitmap),
                 picture: None,
-                avatar: pic.as_ref(),
+                avatar: crate::scene::nearest(&pic, 1.0),
                 media,
                 enter: (1.0, 0.0),
                 blanked: false,
@@ -716,17 +748,7 @@ impl LayerShellHandler for Greeter {
         let (w, h) = (configure.new_size.0.max(1) as i32, configure.new_size.1.max(1) as i32);
         o.view.resize(w, h);
         o.surface.configure(w, h);
-        if let Some(path) = self.wallpaper.clone().filter(|_| o.asked != (w, h)) {
-            o.asked = (w, h);
-            o.backdrop = None;
-            let tx = self.decoded.clone();
-            let _ = std::thread::Builder::new().name("fs-backdrop".into()).spawn(move || match decode(&path, (w, h)) {
-                Some(d) => {
-                    let _ = tx.send(d);
-                }
-                None => eprintln!("greeter: cannot decode {}", path.display()),
-            });
-        }
+        self.ask_backdrops();
         self.dirty = true;
     }
 }

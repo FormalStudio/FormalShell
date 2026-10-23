@@ -11,7 +11,7 @@ use vello_cpu::peniko::{BlendMode, Compose, Fill, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
 use crate::scene::{Bitmap, Brush, IRect, Paint, Scene, VOp};
-use crate::text::Coverage;
+use crate::text::{ColorGlyph, Coverage};
 use fs_theme::color::Rgba;
 
 pub struct Renderer {
@@ -28,9 +28,13 @@ pub struct Renderer {
     /// Glyph outlines rasterised at `scale`, by the outline's address, the
     /// scale and the origin's quarter pixel across.
     scaled: HashMap<(usize, u64, u8), (Arc<BezPath>, Option<Arc<Coverage>>)>,
+    /// Colour glyphs made at the canvas's pixel size, by source and size.
+    colors: HashMap<(usize, u32), (Arc<ColorGlyph>, Option<(Bitmap, i32, i32)>)>,
 }
 
 const INKED_LIMIT: usize = 8192;
+/// An emoji at 20 px is 1.6 KB, so a full table stays under a megabyte.
+const COLORS_LIMIT: usize = 512;
 
 /// A logical length at `scale`, rounded half away from zero the way
 /// wp_fractional_scale_v1 asks a buffer to be.
@@ -48,6 +52,7 @@ impl Renderer {
             scale: 1.0,
             inked: HashMap::new(),
             scaled: HashMap::new(),
+            colors: HashMap::new(),
         }
     }
 
@@ -61,6 +66,7 @@ impl Renderer {
         if scale != self.scale {
             self.scale = scale;
             self.scaled.clear();
+            self.colors.clear();
             self.resize(self.size.0, self.size.1);
         }
     }
@@ -228,9 +234,9 @@ impl Renderer {
                     }
                 }
                 Paint::Blur { text, color: ink, blur } => {
+                    // The layer's transform scales the radius to the canvas.
                     self.ctx.set_transform(origin);
-                    let radius = *blur * s as f32;
-                    let f = vello_cpu::filter_effects::Filter::from_function(vello_cpu::filter_effects::FilterFunction::Blur { radius });
+                    let f = vello_cpu::filter_effects::Filter::from_function(vello_cpu::filter_effects::FilterFunction::Blur { radius: *blur });
                     self.ctx.push_filter_layer(f);
                     self.ctx.set_paint(color(*ink));
                     for glyph in &text.glyphs {
@@ -265,11 +271,8 @@ impl Renderer {
                                 }
                             }
                             VOp::Image(image, (x, y), alpha) => {
-                                self.ctx.set_transform(at * Affine::translate((*x, *y)));
                                 let sampler = vello_cpu::peniko::ImageSampler::default().with_quality(vello_cpu::peniko::ImageQuality::Low).with_alpha(*alpha);
-                                self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
-                                let (w, h) = (image.pixmap.width() as f64, image.pixmap.height() as f64);
-                                self.ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+                                self.image(image, at * Affine::translate((*x, *y)), sampler);
                                 self.ctx.set_transform(at);
                             }
                         }
@@ -307,11 +310,16 @@ impl Renderer {
                             self.ctx.fill_rect(&Rect::new(0.0, 0.0, coverage.w as f64, coverage.h as f64));
                         } else if let Some(image) = &glyph.image {
                             // A colour glyph keeps its own colours and takes only the ink's alpha.
-                            self.ctx.set_paint(vello_cpu::Image {
-                                image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()),
-                                sampler: vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a),
-                            });
-                            self.ctx.fill_rect(&Rect::new(0.0, 0.0, image.pixmap.width() as f64, image.pixmap.height() as f64));
+                            let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a);
+                            let pen = at * Affine::translate((p.0 as f64, p.1 as f64));
+                            match glyph.color.as_ref().filter(|_| s != 1.0).and_then(|c| self.color_glyph(c, pen)) {
+                                Some((image, x, y)) => {
+                                    self.ctx.set_transform(Affine::translate((x, y)));
+                                    self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
+                                    self.ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(image.pixmap.width()), f64::from(image.pixmap.height())));
+                                }
+                                None => self.image(image, pen, sampler),
+                            }
                         } else {
                             self.ctx.set_paint(color(*ink));
                             self.ctx.fill_path(&glyph.path);
@@ -320,19 +328,23 @@ impl Renderer {
                 }
                 Paint::Image { image, alpha } => {
                     let b = node.bounds;
-                    self.ctx.set_transform(at * Affine::translate((b.x as f64, b.y as f64)));
                     let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
-                    self.ctx.set_paint(vello_cpu::Image {
-                        image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()),
-                        sampler,
-                    });
-                    let (w, h) = (image.pixmap.width() as f64, image.pixmap.height() as f64);
-                    self.ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+                    self.image(image, at * Affine::translate((b.x as f64, b.y as f64)), sampler);
                 }
                 Paint::Picture { image, alpha, radius } => {
                     let b = node.bounds;
                     let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
                     let (iw, ih) = (image.pixmap.width() as f64, image.pixmap.height() as f64);
+                    // A picture made at the canvas's own size for the box
+                    // goes on one pixel to a pixel, its corner on a whole one.
+                    if let Some((x, y)) = (s != 1.0).then(|| fits(at, r, (iw, ih))).flatten() {
+                        self.ctx.set_transform(Affine::translate((x, y)));
+                        let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
+                        self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
+                        let k = at.as_coeffs()[0];
+                        self.ctx.fill_path(&RoundedRect::new(0.0, 0.0, iw, ih, (f64::from(*radius) * k).max(0.0)).to_path(0.1));
+                        continue;
+                    }
                     self.ctx.set_transform(at);
                     self.ctx.set_paint_transform(
                         Affine::translate((r.x0, r.y0)) * Affine::scale_non_uniform(r.width() / iw.max(1.0), r.height() / ih.max(1.0)),
@@ -399,6 +411,49 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// A bitmap with its top-left at `at`'s origin, over its logical box:
+    /// one of its pixels to a canvas pixel on a whole one where `at` scales
+    /// by exactly its density, stretched by the difference otherwise.
+    fn image(&mut self, image: &Bitmap, at: Affine, sampler: vello_cpu::peniko::ImageSampler) {
+        let (w, h) = (f64::from(image.pixmap.width()), f64::from(image.pixmap.height()));
+        let d = f64::from(image.density);
+        match one_to_one(at, d).filter(|_| self.scale != 1.0 || d != 1.0) {
+            Some((x, y)) => self.ctx.set_transform(Affine::translate((x, y))),
+            None if d == 1.0 => self.ctx.set_transform(at),
+            None => self.ctx.set_transform(at * Affine::scale(1.0 / d)),
+        }
+        self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
+        self.ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+    }
+
+    /// A colour glyph made again at the canvas's pixel size for its pen at
+    /// `pen`, and the whole canvas pixel its top-left lands on; `None` when
+    /// `pen` rotates or squeezes it, or the face has nothing at that size.
+    fn color_glyph(&mut self, color: &Arc<ColorGlyph>, pen: Affine) -> Option<(Bitmap, f64, f64)> {
+        let [a, b, c, d, e, f] = pen.as_coeffs();
+        if b != 0.0 || c != 0.0 || a != d || a <= 0.0 {
+            return None;
+        }
+        let size = color.size * a as f32;
+        let key = (Arc::as_ptr(color) as usize, size.to_bits());
+        let made = match self.colors.get(&key) {
+            Some((_, hit)) => hit.clone(),
+            None => {
+                if self.colors.len() >= COLORS_LIMIT {
+                    self.colors.clear();
+                }
+                let made = color.at(size);
+                self.colors.insert(key, (color.clone(), made.clone()));
+                made
+            }
+        };
+        let (image, dx, dy) = made?;
+        // The 1x bitmap sits `dx`, `dy` off the pen; the pen goes on a
+        // whole canvas pixel, as a 1x glyph's does.
+        let pen = (e - f64::from(color.dx) * a, f - f64::from(color.dy) * a);
+        Some((image, pen.0.round() + f64::from(dx), pen.1.round() + f64::from(dy)))
+    }
+
     /// A glyph at a scale past 1, rasterised at that scale rather than its
     /// 1x coverage stretched: its origin on a whole canvas pixel down and a
     /// quarter one across, the way the 1x coverage sits on whole pixels.
@@ -471,6 +526,25 @@ impl Renderer {
     }
 }
 
+/// Where `at` puts a bitmap's top-left when it maps one bitmap pixel at
+/// `density` to one canvas pixel, rounded to the whole pixel.
+fn one_to_one(at: Affine, density: f64) -> Option<(f64, f64)> {
+    let [a, b, c, d, e, f] = at.as_coeffs();
+    (b == 0.0 && c == 0.0 && a == d && (a - density).abs() < 1e-3).then(|| (e.round(), f.round()))
+}
+
+/// Where `rect`'s top-left lands on the canvas under `at`, rounded, when a
+/// picture `size` pixels big is `rect` at `at`'s scale give or take the
+/// rounding of a scaled length.
+fn fits(at: Affine, rect: Rect, size: (f64, f64)) -> Option<(f64, f64)> {
+    let [a, b, c, d, e, f] = at.as_coeffs();
+    if b != 0.0 || c != 0.0 || a != d || a <= 0.0 {
+        return None;
+    }
+    let near = |logical: f64, px: f64| (logical * a - px).abs() <= 1.0;
+    (near(rect.width(), size.0) && near(rect.height(), size.1)).then(|| ((rect.x0 * a + e).round(), (rect.y0 * a + f).round()))
+}
+
 /// A node's box where it lands, when its transform is a translation (or
 /// nothing); `None` for anything that scales, rotates or skews it.
 fn drawn_box(bounds: IRect, transform: Affine) -> Option<IRect> {
@@ -505,7 +579,24 @@ fn color(c: Rgba) -> AlphaColor<Srgb> {
 
 #[cfg(test)]
 mod tests {
-    use super::coverage_lift;
+    use super::{coverage_lift, fits, one_to_one};
+    use vello_cpu::kurbo::{Affine, Rect};
+
+    #[test]
+    fn a_picture_made_at_the_canvas_scale_lands_on_whole_pixels() {
+        let at = Affine::scale(1.25).then_translate((10.0, 4.0).into()) * Affine::translate((3.1, 2.0));
+        assert_eq!(one_to_one(at, 1.25), Some((14.0, 7.0)));
+        assert_eq!(one_to_one(at, 1.0), None);
+        assert_eq!(one_to_one(Affine::rotate(0.1), 1.0), None);
+    }
+
+    #[test]
+    fn a_thumbnail_fits_its_box_give_or_take_a_rounded_pixel() {
+        let rect = Rect::new(10.0, 10.0, 110.0, 66.0);
+        assert_eq!(fits(Affine::scale(1.25), rect, (125.0, 70.0)), Some((13.0, 13.0)));
+        assert_eq!(fits(Affine::scale(1.25), rect, (124.0, 71.0)), Some((13.0, 13.0)));
+        assert_eq!(fits(Affine::scale(1.25), rect, (100.0, 56.0)), None);
+    }
 
     #[test]
     fn light_ink_lifts_the_edges_and_dark_ink_keeps_them() {

@@ -68,7 +68,7 @@ impl App {
                 continue;
             }
             let layer = self.overlay_on("formalshell:wallpaper", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
-            let backdrop = Some(Backdrop::new(layer, &self.shm));
+            let backdrop = Some(Backdrop::new(layer, &self.shm, &output));
             let spare = if self.bar_wl.is_none() {
                 self.bar_wl = Some(output.clone());
                 None

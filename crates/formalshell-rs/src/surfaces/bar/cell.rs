@@ -488,7 +488,8 @@ impl<'a> Painter<'a> {
     /// Pixels drawn with their top-left on `at`.
     pub fn image(&mut self, image: &Bitmap, at: (i32, i32), alpha: f32) {
         if alpha > 0.0 {
-            let bounds = IRect::new(at.0, at.1, image.pixmap.width() as i32, image.pixmap.height() as i32);
+            let (w, h) = image.size();
+            let bounds = IRect::new(at.0, at.1, w, h);
             self.put(bounds, Paint::Image { image: image.clone(), alpha }, Affine::IDENTITY, self.clip);
         }
     }
@@ -799,7 +800,7 @@ impl Kit {
                         let n = size.round() as i32;
                         let (x, y) = if vertical { (across_mid - n / 2, at.round() as i32) } else { (at.round() as i32, across_mid - n / 2) };
                         if let Some(image) = &image.0 {
-                            let (w, h) = (image.pixmap.width() as i32, image.pixmap.height() as i32);
+                            let (w, h) = image.size();
                             p.image(image, (x + (n - w) / 2, y + (n - h) / 2), f.alpha * mix);
                         }
                     }
@@ -810,7 +811,7 @@ impl Kit {
                         let radius = fs_theme::tokens::cover_radius(look.radius_sm, *size) as f32;
                         p.framed(slot, ink.of(look.muted_fill), radius, Rgba::TRANSPARENT, 0.0);
                         if let Some(image) = &image.0 {
-                            let (w, h) = (image.pixmap.width() as i32, image.pixmap.height() as i32);
+                            let (w, h) = image.size();
                             p.image(image, (x + (n - w) / 2, y + (n - h) / 2), f.alpha);
                         }
                         p.framed(slot, Rgba::TRANSPARENT, radius, ink.of(look.border), look.border_width as f32);

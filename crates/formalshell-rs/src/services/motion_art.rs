@@ -47,6 +47,13 @@ impl Want {
     pub fn key(&self) -> String {
         am::cache_key(&self.artist, &self.album)
     }
+
+    /// The same slot on a surface at `scale`, in its pixels.
+    pub fn at(mut self, scale: f64) -> Self {
+        self.size = crate::scene::pixels_at(f64::from(self.size), scale);
+        self.radius *= scale;
+        self
+    }
 }
 
 /// One decode for every slot showing the same album: the slots by size,

@@ -72,10 +72,13 @@ pub struct Cast {
 }
 
 /// A decoded picture ready to draw at its own size (a tray icon, a menu row's
-/// icon): premultiplied, shared between the nodes that show it.
+/// icon): premultiplied, shared between the nodes that show it. `density`
+/// is its pixels to a logical pixel: a picture made for a surface at 1.25
+/// is 1.25 times its logical box, and maps 1:1 onto that surface's buffer.
 #[derive(Clone)]
 pub struct Bitmap {
     pub pixmap: Arc<Pixmap>,
+    pub density: f32,
 }
 
 impl Bitmap {
@@ -92,11 +95,81 @@ impl Bitmap {
 
     /// `rgba` already premultiplied, `width * height * 4` bytes.
     pub fn from_premultiplied(width: u16, height: u16, rgba: Vec<u8>) -> Self {
-        Self { pixmap: Arc::new(Pixmap::from_parts(rgba, width, height, PixelMetadata::default())) }
+        Self { pixmap: Arc::new(Pixmap::from_parts(rgba, width, height, PixelMetadata::default())), density: 1.0 }
+    }
+
+    /// The same pixels made for a surface at `scale`.
+    pub fn at(mut self, scale: f64) -> Self {
+        self.density = scale as f32;
+        self
+    }
+
+    /// The box it covers in logical pixels.
+    pub fn logical(&self) -> (f64, f64) {
+        let d = f64::from(self.density);
+        (f64::from(self.pixmap.width()) / d, f64::from(self.pixmap.height()) / d)
+    }
+
+    /// [`Bitmap::logical`] in whole pixels.
+    pub fn size(&self) -> (i32, i32) {
+        let (w, h) = self.logical();
+        (w.round() as i32, h.round() as i32)
     }
 
     pub fn same_as(&self, other: &Bitmap) -> bool {
-        Arc::ptr_eq(&self.pixmap, &other.pixmap)
+        Arc::ptr_eq(&self.pixmap, &other.pixmap) && self.density == other.density
+    }
+}
+
+/// Of the same picture made at several scales, the one made at `scale`,
+/// else the nearest above it, else the largest.
+pub fn nearest(made: &[Bitmap], scale: f64) -> Option<&Bitmap> {
+    let at = |b: &Bitmap| f64::from(b.density);
+    made.iter()
+        .filter(|b| at(b) >= scale - 1e-3)
+        .min_by(|a, b| at(a).total_cmp(&at(b)))
+        .or_else(|| made.iter().max_by(|a, b| at(a).total_cmp(&at(b))))
+}
+
+/// `made` with `b` in it, in place of one at the same density.
+pub fn keep(made: &mut Vec<Bitmap>, b: Bitmap) {
+    made.retain(|m| m.density != b.density);
+    made.push(b);
+}
+
+thread_local! {
+    static RASTER: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+}
+
+/// The scale the surface whose scene is being built draws at: what a
+/// picture asked for while building it is made at. Scenes are built on the
+/// main thread one surface at a time, inside a [`raster_at`] scope; outside
+/// one it is the bar's output's, where a surface with no output of its own
+/// opens.
+pub fn raster_scale() -> f64 {
+    RASTER.with(|r| r.get()).unwrap_or_else(crate::surface::primary_scale)
+}
+
+/// A logical length as the pixels a picture of it is made with at `scale`.
+pub fn pixels_at(logical: f64, scale: f64) -> u32 {
+    (logical * scale).round().max(1.0) as u32
+}
+
+/// [`pixels_at`] the current [`raster_scale`].
+pub fn pixels(logical: f64) -> u32 {
+    pixels_at(logical, raster_scale())
+}
+
+/// Sets [`raster_scale`] until dropped.
+pub struct RasterScope(Option<f64>);
+
+pub fn raster_at(scale: f64) -> RasterScope {
+    RasterScope(RASTER.with(|r| r.replace(Some(scale))))
+}
+
+impl Drop for RasterScope {
+    fn drop(&mut self) {
+        RASTER.with(|r| r.set(self.0));
     }
 }
 
@@ -108,7 +181,7 @@ impl PartialEq for Bitmap {
 
 impl std::fmt::Debug for Bitmap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Bitmap({}x{})", self.pixmap.width(), self.pixmap.height())
+        write!(f, "Bitmap({}x{}@{})", self.pixmap.width(), self.pixmap.height(), self.density)
     }
 }
 
@@ -381,5 +454,52 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
                 && g1.iter().zip(g2).all(|(a, b)| std::sync::Arc::ptr_eq(&a.0, &b.0) && (a.1, a.2, a.3) == (b.1, b.2, b.3))
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn made(w: u16, scale: f64) -> Bitmap {
+        Bitmap::from_rgba(w, w, vec![0; usize::from(w) * usize::from(w) * 4]).at(scale)
+    }
+
+    #[test]
+    fn a_surface_takes_its_own_scale_else_the_next_up_else_the_largest() {
+        let all = [made(16, 1.0), made(20, 1.25), made(32, 2.0)];
+        assert_eq!(nearest(&all, 1.25).map(|b| b.density), Some(1.25));
+        assert_eq!(nearest(&all, 1.5).map(|b| b.density), Some(2.0));
+        assert_eq!(nearest(&all, 3.0).map(|b| b.density), Some(2.0));
+        assert_eq!(nearest(&all[..1], 1.25).map(|b| b.density), Some(1.0));
+        assert!(nearest(&[], 1.0).is_none());
+    }
+
+    #[test]
+    fn keeping_a_scale_replaces_the_one_made_at_it() {
+        let mut all = vec![made(16, 1.0), made(20, 1.25)];
+        keep(&mut all, made(21, 1.25));
+        assert_eq!(all.len(), 2);
+        assert_eq!(nearest(&all, 1.25).map(|b| b.pixmap.width()), Some(21));
+    }
+
+    #[test]
+    fn a_picture_covers_its_logical_box_at_any_scale() {
+        let b = made(20, 1.25);
+        assert_eq!(b.logical(), (16.0, 16.0));
+        assert_eq!(b.size(), (16, 16));
+        assert_ne!(b, made(20, 1.0));
+        assert_eq!((pixels_at(16.0, 1.25), pixels_at(16.0, 1.0), pixels_at(0.1, 1.0)), (20, 16, 1));
+    }
+
+    #[test]
+    fn a_raster_scope_holds_until_dropped() {
+        let _outer = raster_at(1.0);
+        {
+            let _inner = raster_at(1.25);
+            assert_eq!(raster_scale(), 1.25);
+            assert_eq!(pixels(32.0), 40);
+        }
+        assert_eq!(raster_scale(), 1.0);
     }
 }

@@ -75,8 +75,9 @@ struct Thumb {
     owner: Owner,
     id: String,
     key: u64,
-    /// The device pixels the owner draws it at.
+    /// The device pixels the owner draws it at, on a surface at `scale`.
     size: (u32, u32),
+    scale: f64,
     live: bool,
     source: Option<ExtImageCaptureSourceV1>,
     session: Option<ExtImageCopyCaptureSessionV1>,
@@ -166,16 +167,17 @@ pub struct ThumbKey(u64);
 pub struct MapAsk(ExtForeignToplevelHandleV1);
 
 impl App {
-    /// The thumbnails `owner` draws: one per `(window id, device size)`,
-    /// every other one it held dropped with its capture. `live` keeps
-    /// frames coming; otherwise each takes one frame and waits for
-    /// [`App::capture_refresh`].
-    pub fn capture_set(&mut self, owner: Owner, wants: &[(String, (u32, u32))], live: bool) {
+    /// The thumbnails `owner` draws: one per `(window id, logical size)` on
+    /// a surface at `scale`, every other one it held dropped with its
+    /// capture. `live` keeps frames coming; otherwise each takes one frame
+    /// and waits for [`App::capture_refresh`].
+    pub fn capture_set(&mut self, owner: Owner, wants: &[(String, (u32, u32))], live: bool, scale: f64) {
         self.thumbnails.thumbs.retain(|t| t.owner != owner || wants.iter().any(|(id, _)| *id == t.id));
         for (id, size) in wants {
-            let size = (size.0.max(1), size.1.max(1));
+            let size = (crate::scene::pixels_at(f64::from(size.0), scale), crate::scene::pixels_at(f64::from(size.1), scale));
             if let Some(t) = self.thumbnails.thumbs.iter_mut().find(|t| t.owner == owner && t.id == *id) {
                 t.size = size;
+                t.scale = scale;
                 t.live = live;
                 continue;
             }
@@ -186,6 +188,7 @@ impl App {
                 id: id.clone(),
                 key,
                 size,
+                scale,
                 live,
                 source: None,
                 session: None,
@@ -202,7 +205,7 @@ impl App {
 
     /// Drops everything `owner` holds.
     pub fn capture_clear(&mut self, owner: Owner) {
-        self.capture_set(owner, &[], false);
+        self.capture_set(owner, &[], false, 1.0);
     }
 
     /// One more frame for a thumbnail that is not live.
@@ -278,7 +281,7 @@ impl App {
         let Some(canvas) = buffer.canvas(pool) else { return };
         let pixels = canvas[..(w * h * 4) as usize].to_vec();
         let opaque = format == wl_shm::Format::Xrgb8888;
-        let size = t.size;
+        let (size, scale) = (t.size, t.scale);
         if c.landed.is_none() {
             let (tx, rx) = channel::channel::<Landed>();
             if let Some(handle) = &self.handle {
@@ -292,7 +295,7 @@ impl App {
         }
         let Some(tx) = self.thumbnails.landed.clone() else { return };
         let job = move || {
-            let image = fit(&pixels, (w, h), opaque, size);
+            let image = fit(&pixels, (w, h), opaque, size).at(scale);
             let _ = tx.send(Landed { key, image });
         };
         match &self.runtime {

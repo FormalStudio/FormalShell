@@ -13,7 +13,7 @@ use vello_cpu::kurbo::Rect;
 
 use fs_theme::tokens::WEIGHTS;
 
-use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::text::{ShapedText, TextStyle};
 use crate::ui::{self, El, Ink, Size, Type, Ui, w};
@@ -214,7 +214,10 @@ impl View {
         p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
         match backdrop {
             Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), 1.0),
-            _ => p.rect(full, theme.colors.get("background"), 0.0),
+            // Made at the output's own scale, or at its last one while the
+            // new size decodes.
+            Some(b) => p.shape(full, Paint::Picture { image: b.clone(), alpha: 1.0, radius: 0.0 }),
+            None => p.rect(full, theme.colors.get("background"), 0.0),
         }
         paint(&mut p, card, theme, 1.0);
         c.paint_clock(&mut p, &clock, inner, theme, kit, 1.0);

@@ -98,12 +98,16 @@ pub struct Lock {
     checking: bool,
     attempt: u64,
     pub(super) tx: Option<Sender<LockMsg>>,
-    avatar: Option<Bitmap>,
-    backdrop: Option<Bitmap>,
+    /// The avatar at each output's scale.
+    avatar: Vec<Bitmap>,
+    /// The scrimmed wallpaper at each output's size.
+    backdrop: Vec<Bitmap>,
     clock: Option<RegistrationToken>,
     pub(super) dirty: bool,
     transport: i32,
-    art: Option<(String, Option<Bitmap>)>,
+    /// The track's cover at each output's scale, for the art URL it was
+    /// decoded from.
+    art: Option<(String, Vec<Bitmap>)>,
     fade: Animated,
     rise: Animated,
     wake: Animated,
@@ -134,8 +138,8 @@ impl Lock {
             checking: false,
             attempt: 0,
             tx: None,
-            avatar: None,
-            backdrop: None,
+            avatar: Vec::new(),
+            backdrop: Vec::new(),
             clock: None,
             dirty: false,
             transport: -1,
@@ -343,7 +347,7 @@ impl App {
             let name = self.outputs.info(&output).and_then(|i| i.name).unwrap_or_default();
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
-            let surface = Surface::new("lock", ls, &self.shm, self.started);
+            let surface = Surface::on("lock", ls, &self.shm, self.started, &output);
             self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None });
         }
     }
@@ -359,13 +363,17 @@ impl App {
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
         let home = std::env::var("HOME").unwrap_or_default();
         let path = self.store.config.avatar_path(&home);
-        let size = crate::surfaces::login::avatar_size(&self.store.theme.theme) as u32;
-        let picture = self.store.wallpaper.latest().cloned();
-        let avatar_tx = tx.clone();
-        rt.pool().submit(move || {
-            let _ = avatar_tx.send(LockMsg::Avatar(view::avatar(&path, size.max(1))));
-        });
-        if let Some(p) = picture {
+        let size = crate::surfaces::login::avatar_size(&self.store.theme.theme);
+        self.lock.avatar.clear();
+        for scale in crate::surface::output_scales() {
+            let (path, tx) = (path.clone(), tx.clone());
+            rt.pool().submit(move || {
+                let _ = tx.send(LockMsg::Avatar(view::avatar(&path, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale))));
+            });
+        }
+        let path = self.store.wallpaper.latest().map(|p| p.path.clone());
+        for p in self.store.wallpaper.all().filter(|p| Some(&p.path) == path.as_ref()).cloned() {
+            let tx = tx.clone();
             rt.pool().submit(move || {
                 let _ = tx.send(LockMsg::Backdrop(view::backdrop(&p)));
             });
@@ -399,7 +407,9 @@ impl App {
             LockMsg::Pam(attempt, outcome) if attempt == self.lock.attempt => self.lock_result(outcome),
             LockMsg::Pam(..) => {}
             LockMsg::Avatar(a) => {
-                self.lock.avatar = a;
+                if let Some(a) = a {
+                    crate::scene::keep(&mut self.lock.avatar, a);
+                }
                 self.lock.dirty = true;
             }
             LockMsg::PolkitAvatar(a) => {
@@ -408,11 +418,17 @@ impl App {
                 }
             }
             LockMsg::Art(url, art) => {
-                self.lock.art = Some((url, art));
+                if let (Some((u, made)), Some(art)) = (&mut self.lock.art, art)
+                    && *u == url
+                {
+                    crate::scene::keep(made, art);
+                }
                 self.lock.dirty = true;
             }
             LockMsg::Backdrop(b) => {
-                self.lock.backdrop = Some(b);
+                let size = (b.pixmap.width(), b.pixmap.height());
+                self.lock.backdrop.retain(|m| (m.pixmap.width(), m.pixmap.height()) != size);
+                self.lock.backdrop.push(b);
                 self.lock.dirty = true;
             }
             LockMsg::Sleep(sleeping) => {
@@ -545,7 +561,7 @@ impl App {
         }
         match topic {
             Topic::Wallpaper => {
-                self.lock.backdrop = None;
+                self.lock.backdrop.clear();
                 self.load_lock_pictures();
             }
             Topic::Media => {
@@ -565,16 +581,19 @@ impl App {
         if self.lock.art.as_ref().is_some_and(|(u, _)| *u == url) {
             return;
         }
-        self.lock.art = Some((url.clone(), None));
+        self.lock.art = Some((url.clone(), Vec::new()));
         if !url.starts_with("file://") && !url.starts_with("data:") {
             return;
         }
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
-        let size = (self.store.theme.theme.space.control_height * 2.0).round() as u32;
-        rt.pool().submit(move || {
-            let art = view::cover(&url, size.max(1));
-            let _ = tx.send(LockMsg::Art(url, art));
-        });
+        let size = self.store.theme.theme.space.control_height * 2.0;
+        for scale in crate::surface::output_scales() {
+            let (url, tx) = (url.clone(), tx.clone());
+            rt.pool().submit(move || {
+                let art = view::cover(&url, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale));
+                let _ = tx.send(LockMsg::Art(url, art));
+            });
+        }
     }
 
     /// The clipboard's text into the password field. True while locked.
@@ -657,9 +676,9 @@ impl App {
             prompt: view::Prompt::password(self.lock.password.text().chars().count(), self.lock.password.caret_chars(), self.lock.checking),
             error: &self.lock.error,
             has_wallpaper,
-            backdrop: self.lock.backdrop.as_ref(),
+            backdrop: None,
             picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.state.data.wallpaper),
-            avatar: self.lock.avatar.as_ref(),
+            avatar: None,
             media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
             blanked,
@@ -667,8 +686,8 @@ impl App {
         };
         let active = self.lock_media();
         let mpris = active.as_ref().and_then(|a| self.store.media.mpris.iter().find(|p| p.id == a.id));
-        let art = self.lock.art.as_ref().and_then(|(u, b)| (active.as_ref().is_some_and(|a| a.art_url == *u)).then_some(b.as_ref()).flatten());
-        let shared = Shared {
+        let arts = self.lock.art.as_ref().filter(|(u, _)| active.as_ref().is_some_and(|a| a.art_url == *u)).map(|(_, b)| b.as_slice());
+        let mut shared = Shared {
             media: active.as_ref().map(|a| NowPlaying {
                 title: &a.title,
                 artist: &a.artist,
@@ -677,7 +696,7 @@ impl App {
                 can_toggle: mpris.is_none_or(|p| p.can_toggle),
                 can_next: mpris.is_none_or(|p| p.can_next),
                 progress: (a.length > 0.0).then(|| a.position / a.length),
-                art,
+                art: None,
                 cursor: self.lock.transport,
             }),
             ..shared
@@ -689,6 +708,14 @@ impl App {
                 continue;
             }
             let size = o.view.scene.size;
+            let k = o.surface.scale();
+            let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
+            let backdrops = &self.lock.backdrop;
+            shared.backdrop = backdrops.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
+            shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
+            if let Some(m) = &mut shared.media {
+                m.art = arts.and_then(|a| crate::scene::nearest(a, k));
+            }
             // One renderer behind two scenes: a switch repaints all of it.
             if let Some(scene) = saver.lock_scene(&o.output, (size.w, size.h)) {
                 if !std::mem::replace(&mut o.saver, true) {
@@ -700,6 +727,7 @@ impl App {
                 o.surface.present(scene, damaged, &qh);
                 continue;
             }
+            let _raster = crate::scene::raster_at(k);
             let moving = o.view.draw(&shared, theme, &mut self.bar.kit, now) || entering;
             if std::mem::replace(&mut o.saver, false) {
                 o.view.scene.touch(size);

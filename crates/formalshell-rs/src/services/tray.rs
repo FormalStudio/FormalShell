@@ -85,7 +85,7 @@ const PICK: u32 = 22;
 
 fn icon_of(item: &WireItem) -> Option<Raw> {
     let named = match item.icon_source() {
-        IconSource::Named { name, theme_path } => icons::named(name, theme_path, PICK),
+        IconSource::Named { name, theme_path } => icons::named(name, theme_path, icons::pick(PICK)),
         IconSource::Pixmaps => None,
     };
     named.or_else(|| {
@@ -94,7 +94,8 @@ fn icon_of(item: &WireItem) -> Option<Raw> {
         } else {
             &item.icon_pixmap
         };
-        let pm = closest_pixmap(pixmaps, PICK as i32, PICK as i32)?;
+        let pick = icons::pick(PICK) as i32;
+        let pm = closest_pixmap(pixmaps, pick, pick)?;
         icons::from_rgba(pm.width, pm.height, &pm.rgba)
     })
 }
@@ -119,7 +120,7 @@ fn menu_icon(node: &MenuItem) -> Option<Raw> {
     if !node.icon_png.is_empty() {
         return icons::from_bytes(&node.icon_png);
     }
-    (!node.icon_name.is_empty()).then(|| icons::named(&node.icon_name, "", PICK)).flatten()
+    (!node.icon_name.is_empty()).then(|| icons::named(&node.icon_name, "", icons::pick(PICK))).flatten()
 }
 
 fn node_of(node: &MenuItem) -> MenuNode {

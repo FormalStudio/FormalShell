@@ -55,13 +55,18 @@ impl App {
 
     /// Every output's logical box, in announce order.
     pub fn capture_screens(&self) -> Vec<Screen> {
+        self.screen_outputs().into_iter().map(|(_, s)| s).collect()
+    }
+
+    /// [`App::capture_screens`] beside the output each one is.
+    fn screen_outputs(&self) -> Vec<(smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput, Screen)> {
         self.outputs
             .outputs()
-            .filter_map(|o| self.outputs.info(&o))
-            .filter_map(|i| {
+            .filter_map(|o| {
+                let i = self.outputs.info(&o)?;
                 let (x, y) = i.logical_position.unwrap_or((0, 0));
                 let (w, h) = i.logical_size.or_else(|| i.modes.iter().find(|m| m.current).map(|m| m.dimensions))?;
-                Some(Screen { name: i.name.clone().unwrap_or_default(), rect: R { x: x as f64, y: y as f64, w: w as f64, h: h as f64 } })
+                Some((o, Screen { name: i.name.clone().unwrap_or_default(), rect: R { x: x as f64, y: y as f64, w: w as f64, h: h as f64 } }))
             })
             .collect()
     }
@@ -93,9 +98,7 @@ impl App {
             return;
         }
         if self.pickers.surfaces.is_empty() {
-            let screens = self.capture_screens();
-            let outputs: Vec<_> = self.outputs.outputs().collect();
-            for (s, o) in screens.into_iter().zip(outputs) {
+            for (o, s) in self.screen_outputs() {
                 let surface = self.compositor.create_surface(&self.qh);
                 let ls = self.layer_shell.create_layer_surface(&self.qh, surface, Layer::Overlay, Some(NAMESPACE), Some(&o));
                 ls.set_anchor(Anchor::all());
@@ -107,7 +110,7 @@ impl App {
                 self.pickers.surfaces.push(PickerSurface {
                     output: s.name,
                     origin: (s.rect.x, s.rect.y),
-                    surface: Surface::new("capture", ls, &self.shm, self.started),
+                    surface: Surface::on("capture", ls, &self.shm, self.started, &o),
                     sheet: Sheet::new(w, h),
                     dirty: true,
                 });
@@ -158,6 +161,7 @@ impl App {
             if !p.dirty {
                 continue;
             }
+            let _raster = crate::scene::raster_at(p.surface.scale());
             let frame = self.capture.picker.frames.get(&p.output).and_then(|f| f.as_ref());
             let animating = p.sheet.draw(&self.capture.picker, &c, p.origin, frame, theme, kit, self.motion_scale, now);
             p.dirty = animating;

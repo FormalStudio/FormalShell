@@ -50,7 +50,7 @@ pub struct Tray {
     along: f64,
     hover: Option<usize>,
     bitmaps: Vec<Option<Bitmap>>,
-    bitmap_size: u32,
+    bitmap_size: (u32, f64),
 }
 
 impl Tray {
@@ -75,7 +75,7 @@ impl Tray {
             along: 0.0,
             hover: None,
             bitmaps: Vec::new(),
-            bitmap_size: 0,
+            bitmap_size: (0, 0.0),
         }
     }
 
@@ -105,11 +105,12 @@ impl Tray {
     }
 
     fn ensure_bitmaps(&mut self, size: u32) {
-        if self.bitmap_size == size && self.bitmaps.len() == self.items.len() {
+        let scale = crate::scene::raster_scale();
+        if self.bitmap_size == (size, scale) && self.bitmaps.len() == self.items.len() {
             return;
         }
-        self.bitmaps = self.items.iter().map(|i| i.icon.as_ref().and_then(|r| r.bitmap(size))).collect();
-        self.bitmap_size = size;
+        self.bitmaps = self.items.iter().map(|i| i.icon.as_ref().and_then(|r| r.bitmap(size, scale))).collect();
+        self.bitmap_size = (size, scale);
     }
 }
 

@@ -1835,7 +1835,7 @@ impl Shown {
             let (w, h) = m.mirror_box(theme);
             let feed = IRect::new((fx + pad + s.sm).round() as i32, (body_top + s.lg).round() as i32, w as i32, h as i32);
             let pic = store.mirror.frame.as_ref().filter(|(id, _)| *id == m.mirror_current).map(|(_, b)| {
-                let (bw, bh) = (b.pixmap.width() as i32, b.pixmap.height() as i32);
+                let (bw, bh) = b.size();
                 IRect::new(feed.x + (feed.w - bw) / 2, feed.y + (feed.h - bh) / 2, bw, bh)
             });
             let out = |r: IRect| IRect::new(r.x + on_output.0, r.y + on_output.1, r.w, r.h);
@@ -2250,7 +2250,7 @@ fn split_preview(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, width: 
     );
     let body = if image {
         let (bw, bh) = preview_box(theme, kit, width, height);
-        let bitmap = store.clipboard.preview.as_ref().filter(|(p, size, _)| *p == row.thumb_source && *size == (bw, bh)).and_then(|(_, _, b)| b.clone());
+        let bitmap = store.clipboard.preview.as_ref().filter(|(p, size, _)| *p == row.thumb_source && size.0 == (bw, bh)).and_then(|(_, _, b)| b.clone());
         w::picture(bitmap, f64::from(bw.max(bh))).width(Size::Px(f64::from(bw)))
     } else if row.emoji_only {
         w::text(row.full_text.clone()).size(Type::Display).centred()

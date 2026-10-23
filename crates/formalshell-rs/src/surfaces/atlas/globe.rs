@@ -769,16 +769,19 @@ impl Globe {
         let mut sampled = None;
         let moving = self.moving();
         if let Some(earth) = &earth {
+            // Sampled in device pixels so the picture lands one to one.
+            let k = crate::scene::raster_scale();
+            let (dx, dy, dd) = (cx * k, cy * k, disc * k);
             let area = (
-                ((cx - disc - 1.0).floor().max(ox.floor())) as i32,
-                ((cy - disc - 1.0).floor().max(oy.floor())) as i32,
-                ((cx + disc + 1.0).ceil().min((ox + w).ceil())) as i32,
-                ((cy + disc + 1.0).ceil().min((oy + h).ceil())) as i32,
+                ((dx - dd - 1.0).floor().max((ox * k).floor())) as i32,
+                ((dy - dd - 1.0).floor().max((oy * k).floor())) as i32,
+                ((dx + dd + 1.0).ceil().min(((ox + w) * k).ceil())) as i32,
+                ((dy + dd + 1.0).ceil().min(((oy + h) * k).ceil())) as i32,
             );
             let t = Instant::now();
-            if let Some((image, stats)) = earth.sample(&mut self.sampled, moving, area, (cx, cy), r, disc, distance, &rot) {
+            if let Some((image, stats)) = earth.sample(&mut self.sampled, moving, area, (dx, dy), r * k, dd, distance, &rot) {
                 let px = image.pixmap.width() as u64 * image.pixmap.height() as u64;
-                ops.push(VOp::Image(image, (area.0 as f64, area.1 as f64), alpha));
+                ops.push(VOp::Image(image.at(k), (area.0 as f64 / k, area.1 as f64 / k), alpha));
                 sampled = Some((t.elapsed().as_micros(), px));
                 self.earth_stats = stats;
             }

@@ -149,7 +149,8 @@ impl Panel for WorkspacePreview {
                 let win = windows.iter().find(|w| w.id == p.id)?;
                 let rect = (p.x + pad, p.y + pad, (p.width - pad * 2.0).max(0.0), (p.height - pad * 2.0).max(0.0));
                 laid.tiles.push((p.id.clone(), rect, model.iter().find(|m| m.id == p.id).and_then(|m| m.rect)));
-                let icon = v.store.appicon.by_window.get(&icon_key(&p.id)).and_then(|i| i.image.clone());
+                let edge = (v.theme.space.huge * 2.0).round() as u32;
+                let icon = v.store.appicon.get(&icon_key(&p.id), edge, crate::scene::raster_scale()).and_then(|i| i.image);
                 Some(Tile {
                     key: format!("win:{}", p.id),
                     on: format!("focus:{}", p.id),

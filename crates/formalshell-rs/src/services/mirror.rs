@@ -77,15 +77,20 @@ pub enum Cmd {
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
-/// The feed box the frames are fitted to, `w << 32 | h`.
+/// The feed box the frames are fitted to, `w << 32 | h`, in the pixels of
+/// the surface at `SCALE` (in 120ths) they are drawn on.
 static BOX: AtomicU64 = AtomicU64::new((640 << 32) | 480);
+static SCALE: AtomicU64 = AtomicU64::new(120);
 
 pub fn command(cmd: Cmd) {
     let _ = CHANNEL.0.try_send(cmd);
 }
 
-pub fn set_box(w: u32, h: u32) {
-    BOX.store((u64::from(w.max(1)) << 32) | u64::from(h.max(1)), Ordering::Relaxed);
+/// The feed box, `w` by `h` logical pixels on a surface at `scale`.
+pub fn set_box(w: u32, h: u32, scale: f64) {
+    let (w, h) = (crate::scene::pixels_at(f64::from(w), scale), crate::scene::pixels_at(f64::from(h), scale));
+    BOX.store((u64::from(w) << 32) | u64::from(h), Ordering::Relaxed);
+    SCALE.store((scale * 120.0).round() as u64, Ordering::Relaxed);
 }
 
 struct Running {
@@ -191,7 +196,8 @@ fn capture(path: &str, ir: bool, stop: &AtomicBool, tx: &Sender<(String, Result<
         let (tw, th) = (((f64::from(w) * scale).round() as u32).max(1), ((f64::from(h) * scale).round() as u32).max(1));
         let fitted = image::imageops::flip_horizontal(&image::imageops::resize(&img, tw, th, image::imageops::FilterType::Triangle));
         let rgba = image::DynamicImage::ImageRgb8(fitted).into_rgba8();
-        let bitmap = Bitmap::from_rgba(rgba.width() as u16, rgba.height() as u16, rgba.into_raw());
+        let density = SCALE.load(Ordering::Relaxed) as f64 / 120.0;
+        let bitmap = Bitmap::from_rgba(rgba.width() as u16, rgba.height() as u16, rgba.into_raw()).at(density);
         if tx.send_blocking((path.to_owned(), Ok(bitmap))).is_err() {
             return;
         }

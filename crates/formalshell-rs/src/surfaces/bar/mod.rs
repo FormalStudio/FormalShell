@@ -97,6 +97,9 @@ pub struct Bar {
     gaps: Vec<(Edge, (i32, i32))>,
     line_rects: Vec<IRect>,
     pub output: String,
+    /// The scale the bar's surface draws at, which its cells' pictures are
+    /// made at.
+    pub raster: f64,
     pub paint: Option<PaintState>,
     pub hover: Option<usize>,
     /// The bar is off screen (a fullscreen window over it): nothing runs a
@@ -137,6 +140,7 @@ impl Bar {
             gaps: Vec::new(),
             line_rects: Vec::new(),
             output: String::new(),
+            raster: 1.0,
             paint: None,
             hover: None,
             hidden: false,
@@ -300,6 +304,7 @@ impl Bar {
 
     /// Re-reads the cells that read `topic` (all of them with `None`).
     pub fn read(&mut self, store: &Store, topic: Option<Topic>, now: Instant) {
+        let _raster = crate::scene::raster_at(self.raster);
         let env = Env { store, edge: self.edge, output: &self.output };
         let band = self.band().is_some();
         let animate = self.animate(now);
@@ -316,6 +321,7 @@ impl Bar {
 
     /// Reads the cells whose own timer ran out.
     pub fn tick(&mut self, store: &Store, now: Instant) {
+        let _raster = crate::scene::raster_at(self.raster);
         let env = Env { store, edge: self.edge, output: &self.output };
         let band = self.band().is_some();
         let animate = self.animate(now);
@@ -467,6 +473,7 @@ impl Bar {
     /// One pass: budgets, positions and paint. Cheap enough per frame;
     /// unchanged nodes damage nothing.
     pub fn layout(&mut self, store: &Store, now: Instant) {
+        let _raster = crate::scene::raster_at(self.raster);
         self.refit(store, now);
         self.place(now);
         if self.fit_rooms(store, now) {

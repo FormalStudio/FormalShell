@@ -99,9 +99,10 @@ impl App {
                 if own && let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) {
                     let home = std::env::var("HOME").unwrap_or_default();
                     let path = self.store.config.avatar_path(&home);
-                    let px = (self.store.theme.theme.space.xxl * 2.0).round() as u32;
+                    let scale = self.polkit.as_ref().map_or_else(crate::scene::raster_scale, |d| d.modal.surface.scale());
+                    let px = crate::scene::pixels_at((self.store.theme.theme.space.xxl * 2.0).round(), scale);
                     rt.pool().submit(move || {
-                        let _ = tx.send(LockMsg::PolkitAvatar(crate::surfaces::lock::avatar(&path, px)));
+                        let _ = tx.send(LockMsg::PolkitAvatar(crate::surfaces::lock::avatar(&path, px).map(|b| b.at(scale))));
                     });
                 }
             }
@@ -205,6 +206,7 @@ impl App {
         if (d.dirty || !d.modal.surface.mapped) && d.modal.surface.configured {
             d.dirty = false;
             d.modal.sync_region(&self.compositor);
+            let _raster = crate::scene::raster_at(d.modal.surface.scale());
             Self::lay_polkit(d, &self.store.theme.theme, &mut self.bar.kit, now);
         }
         let animating = d.modal.animating(now);
@@ -231,7 +233,7 @@ impl App {
         rows.push(w::column(0.0, wrap(&d.message, inner, theme, kit).into_iter().map(w::text).collect()));
         // The avatar's slot: the picture goes in over the space the row
         // leaves for it.
-        let avatar = d.avatar.as_ref().map(|b| b.pixmap.width() as f64);
+        let avatar = d.avatar.as_ref().map(|b| b.logical().0.round());
         let mut avatar_row = None;
         if !d.identity.is_empty() {
             let name = w::value(&d.identity).elide();
@@ -277,7 +279,7 @@ impl App {
             // Under the Identity label and its gap, centred on the row.
             let label_h = ui::measure(&w::section_label(s, "Identity", None, false), inner, theme, kit).1;
             let above: f64 = heights[..i].iter().map(|h| h + s.section_gap).sum();
-            let side = b.pixmap.width() as f64;
+            let side = b.logical().0.round();
             let line_h = (heights[i] - label_h - s.row_gap).max(side);
             let at = (x.round() as i32, (y + above + label_h + s.row_gap + (line_h - side) / 2.0).round() as i32);
             p.image(b, at, alpha);

@@ -211,6 +211,7 @@ impl App {
         if (w.dirty || animating || !w.modal.surface.mapped) && w.modal.surface.configured {
             w.dirty = false;
             w.modal.sync_region(&self.compositor);
+            let _raster = crate::scene::raster_at(w.modal.surface.scale());
             let run = self.store.plugins.runs.get(&w.id);
             let plugin = plugin::find(&self.store, w.key);
             let drawn = Self::lay_overlay(w, plugin, run, &self.store.theme.theme, &mut self.bar.kit, now);
