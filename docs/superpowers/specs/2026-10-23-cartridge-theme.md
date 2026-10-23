@@ -92,6 +92,15 @@ fill in the page colour with white edge highlights, turning slowly in
 front of a faint giant mark and the grid. A huge letterform beside the
 navigation changes with the hovered item.
 
+## The bar
+
+Owner, 2026-10-23: the polish has to match the site's.
+`2026-10-23-cartridge-theme/preview.html` (published as a claude.ai
+artifact) is a browser mock of the target that the owner signed off as
+the reference: layout, motion and timing are read off it, and it is the
+floor, not the ceiling. Where the mock and the site differ in finish,
+the site wins.
+
 ## Decisions
 
 **C1 Palette.** matugen off the wallpaper, as for every theme. The table

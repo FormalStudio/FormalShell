@@ -1,0 +1,535 @@
+<title>Cartridge Theme</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Archivo+Narrow:wght@400..700&family=BIZ+UD+Mincho:wght@400;700&family=DotGothic16&display=swap">
+<style>
+/* Layout: a console "section page" (title // subtitle, status strip) wrapping a live 1280x800 mock desktop, then specimens and the build log. */
+:root {
+  --page: #181a1b;
+  --well: #111314;
+  --chip: #202425;
+  --world: #2e4a44;
+  --shard: #35534c;
+  --ink: #e8e6e3;
+  --dim: #9aa39f;
+  --line: rgba(232, 230, 227, .14);
+  --teal: #8fd6c4;
+  --orange: #f08a3c;
+  --violet: #c49bff;
+  --red: #ff5a4f;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --spring: linear(0,0.044 0.9%,0.198 2%,1.212 6.8%,1.361 8.1%,1.398 8.7%,1.417 9.4%,1.402 10.4%,1.34 11.5%,0.91 16.4%,0.852 17.6%,0.826 18.9%,0.831 19.9%,0.856 21%,1.038 26%,1.062 27.2%,1.073 28.5%,1.06 30.6%,0.984 35.6%,0.97 38%,1.013 47.6%,0.995 57.1%,1.002 66.6%,1);
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --narrow: "Archivo Narrow", "Arial Narrow", sans-serif;
+  --body: "BIZ UD Mincho", "Hiragino Mincho ProN", Georgia, serif;
+  --pixel: "DotGothic16", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.6; }
+.page { max-width: 1240px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+/* section header grammar */
+.head { display: grid; gap: 10px; }
+.title { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.title h1 { margin: 0; font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: clamp(30px, 6vw, 54px); letter-spacing: .01em; line-height: 1; text-transform: uppercase; text-wrap: balance; }
+.title .sub { font-family: var(--narrow); font-weight: 600; font-size: clamp(20px, 3.4vw, 30px); color: var(--teal); text-shadow: 0 0 10px rgba(143, 214, 196, .45); text-transform: uppercase; }
+.strip { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; border: 1px solid var(--teal); border-radius: 999px; padding: 4px 16px; background: rgba(143, 214, 196, .06); font-family: var(--pixel); font-size: 13px; color: var(--teal); }
+.strip b { color: var(--ink); font-weight: 400; }
+.lede { max-width: 68ch; color: var(--dim); margin: 0; }
+.lede code { font-family: var(--pixel); color: var(--ink); font-size: 13px; }
+
+.tag { display: inline-flex; align-items: center; font-family: var(--narrow); font-weight: 600; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); padding: 1px 28px 1px 6px; background: linear-gradient(90deg, rgba(143, 214, 196, .35), transparent); }
+
+/* controls row */
+.controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 0; border: 0; padding: 0; cursor: pointer; background: none; }
+.btn span { font-family: var(--display); font-stretch: 125%; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; padding: 8px 14px 8px 16px; background: var(--chip); border: 1px solid var(--line); border-right: 0; border-radius: 999px 0 0 999px; transition: background .2s var(--ease), color .2s var(--ease); }
+.btn i { font-style: normal; width: 34px; height: 34px; display: grid; place-items: center; font-family: var(--pixel); background: var(--teal); color: var(--page); clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); margin-left: -6px; }
+.btn:hover span { background: #2a3032; }
+.btn[aria-pressed="true"] span { color: var(--teal); }
+.hint { font-family: var(--pixel); font-size: 12px; color: var(--dim); }
+
+/* the mock screen */
+.screen-wrap { position: relative; width: 100%; border: 1px solid var(--line); background: #000; overflow: hidden; }
+.screen { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; transform-origin: 0 0; overflow: hidden; background: var(--world); outline: none; }
+.grid-layer { position: absolute; inset: 0; background-image: linear-gradient(var(--line) 2px, transparent 2px), linear-gradient(90deg, var(--line) 2px, transparent 2px); background-size: 120px 120px; background-position: -2px -2px; -webkit-mask-image: linear-gradient(#000 78%, transparent); mask-image: linear-gradient(#000 78%, transparent); }
+.mark { position: absolute; left: -120px; top: 120px; width: 900px; height: 520px; border: 46px solid rgba(17, 19, 20, .16); border-radius: 50%; transform: rotate(-14deg); }
+.mark::after { content: "FS"; position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: 300px; color: rgba(17, 19, 20, .16); letter-spacing: -.02em; }
+canvas#shards { position: absolute; inset: 0; width: 1280px; height: 800px; image-rendering: auto; }
+
+.bar { position: absolute; left: 10px; right: 10px; top: 8px; height: 34px; display: flex; align-items: center; gap: 6px; font-family: var(--pixel); font-size: 14px; }
+.cell { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: rgba(17, 19, 20, .88); border: 1px solid var(--line); position: relative; }
+.cell.ws { gap: 2px; padding: 0 4px; }
+.ws b { width: 26px; height: 24px; display: grid; place-items: center; font-weight: 400; color: var(--dim); position: relative; }
+.ws b.on { color: var(--ink); background: rgba(143, 214, 196, .12); }
+.ws b.on::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 4px; background: var(--teal); }
+.bar .grow { flex: 1; }
+.cell .title-cell { font-family: var(--display); font-stretch: 112%; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.dot { width: 8px; height: 8px; background: var(--teal); }
+
+/* launcher */
+.launcher { position: absolute; left: 40px; top: 96px; width: 560px; height: 600px; background: rgba(17, 19, 20, .9); border: 1px solid var(--line); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 28px), calc(100% - 28px) 100%, 0 100%); padding: 22px 0 0; overflow: hidden; }
+.letterform { position: absolute; right: -30px; bottom: -80px; font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: 520px; line-height: 1; color: rgba(232, 230, 227, .05); transition: opacity .5s var(--ease); pointer-events: none; }
+.l-head { padding: 0 24px; display: grid; gap: 10px; position: relative; }
+.l-title { display: flex; gap: 10px; align-items: baseline; }
+.l-title b { font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: 26px; text-transform: uppercase; }
+.l-title span { font-family: var(--narrow); font-weight: 600; font-size: 20px; color: var(--teal); text-shadow: 0 0 8px rgba(143, 214, 196, .5); text-transform: uppercase; }
+.field { height: 40px; border: 1px solid var(--line); background: var(--well); box-shadow: inset 0 2px 0 rgba(0, 0, 0, .5); display: flex; align-items: center; padding: 0 12px; font-family: var(--pixel); font-size: 15px; color: var(--dim); gap: 2px; }
+.caret { width: 9px; height: 18px; background: var(--teal); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.l-strip { font-size: 12px; padding: 2px 12px; }
+.rows { position: relative; margin-top: 14px; list-style: none; padding: 0; margin-bottom: 0; }
+.cursor { position: absolute; left: 0; right: 0; height: 58px; background: rgba(143, 214, 196, .1); transition: transform .5s var(--ease); pointer-events: none; }
+.cursor::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 10px; background: var(--teal); }
+.row { position: relative; height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 34px; cursor: pointer; }
+.row .lbl { font-family: var(--display); font-stretch: 100%; font-weight: 500; font-size: 30px; text-transform: uppercase; letter-spacing: .01em; transition: font-stretch .2s ease, font-weight .2s ease-out, letter-spacing .2s ease-out; }
+.row.cur .lbl { font-stretch: 125%; font-weight: 700; letter-spacing: .04em; }
+.row .meta { font-family: var(--pixel); font-size: 12px; color: var(--dim); }
+.row.cur .meta { color: var(--teal); }
+.ghost { position: absolute; left: 34px; pointer-events: none; font-family: var(--display); font-stretch: 125%; font-weight: 700; font-size: 30px; text-transform: uppercase; letter-spacing: .04em; color: var(--teal); animation: use .4s forwards; transform-origin: left center; }
+@keyframes use { from { transform: scale(1); opacity: 1; } to { transform: scale(1.1, 1.3); opacity: 0; } }
+.l-foot { position: absolute; left: 24px; right: 24px; bottom: 16px; display: flex; gap: 16px; font-family: var(--pixel); font-size: 12px; color: var(--dim); }
+kbd { font-family: var(--pixel); font-size: 11px; color: var(--ink); border: 1px solid var(--line); background: var(--chip); padding: 0 5px; }
+.swap-out { animation: glitchOut .18s steps(2) forwards; }
+.swap-in { animation: glitchIn .5s var(--ease); }
+@keyframes glitchOut { to { transform: translateX(-10px); opacity: 0; } }
+@keyframes glitchIn { 0% { transform: translateX(20px); opacity: 0; } 30% { opacity: 1; } to { transform: none; } }
+
+/* console panel */
+.panel { position: absolute; right: 40px; top: 96px; width: 520px; background: rgba(17, 19, 20, .92); border: 1px solid rgba(240, 138, 60, .55); display: grid; grid-template-columns: 26px 1fr; animation: panelIn .9s var(--ease) both; }
+@keyframes panelIn { from { transform: translateX(40px); opacity: 0; } }
+.vstrip { border-right: 1px solid rgba(240, 138, 60, .35); writing-mode: vertical-rl; transform: rotate(180deg); display: flex; align-items: center; justify-content: flex-end; padding: 10px 0; font-family: var(--pixel); font-size: 12px; color: var(--orange); letter-spacing: .1em; }
+.p-body { padding: 16px 18px 18px; display: grid; gap: 12px; }
+.p-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.p-title { display: flex; gap: 8px; align-items: baseline; }
+.p-title b { font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: 24px; }
+.p-title span { font-family: var(--narrow); font-weight: 600; font-size: 19px; color: var(--orange); text-shadow: 0 0 8px rgba(240, 138, 60, .55); }
+.back { display: flex; align-items: center; gap: 6px; font-family: var(--display); font-stretch: 110%; font-weight: 700; font-size: 11px; letter-spacing: .25em; text-transform: uppercase; background: linear-gradient(180deg, #3a2a20, #24201d); border: 1px solid rgba(240, 138, 60, .5); padding: 4px 10px 4px 4px; }
+.back kbd { background: var(--orange); color: var(--page); border: 0; }
+.p-strip { border-color: var(--orange); color: var(--orange); background: rgba(240, 138, 60, .07); font-size: 12px; padding: 2px 12px; }
+.viewer { position: relative; margin-top: 12px; }
+.viewer .vtab { position: absolute; left: 0; top: -22px; height: 22px; padding: 0 30px 0 8px; background: var(--orange); color: var(--page); font-family: var(--pixel); font-size: 12px; display: flex; align-items: center; clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 100%, 0 100%); }
+.viewer .vbox { border: 1px solid var(--orange); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%); padding: 14px; display: grid; gap: 8px; background: rgba(240, 138, 60, .05); }
+.ssid { font-family: var(--body); font-weight: 700; font-size: 26px; line-height: 1.1; min-height: 29px; }
+.ftag { display: inline-flex; font-family: var(--narrow); font-weight: 600; font-size: 11px; letter-spacing: .08em; color: var(--orange); padding: 0 26px 0 4px; background: linear-gradient(90deg, rgba(240, 138, 60, .3), transparent); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-family: var(--pixel); font-size: 12px; border: 1px solid rgba(240, 138, 60, .7); border-radius: 999px; padding: 0 8px; color: var(--orange); animation: tagIn .5s var(--ease) both; }
+.chip:nth-child(2) { animation-delay: .08s; } .chip:nth-child(3) { animation-delay: .16s; }
+@keyframes tagIn { 0% { opacity: 0; transform: translateX(10px); } 20% { filter: drop-shadow(0 0 5px var(--red)); } 50% { filter: drop-shadow(0 0 1px rgba(255, 90, 79, .5)); } to { transform: none; filter: none; } }
+.nets { list-style: none; margin: 0; padding: 0; display: grid; }
+.nets li { display: flex; justify-content: space-between; align-items: center; height: 38px; padding: 0 10px 0 16px; position: relative; font-family: var(--display); font-stretch: 105%; font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: .03em; animation: liIn .9s var(--ease) both; }
+.nets li:nth-child(2) { animation-delay: .06s; } .nets li:nth-child(3) { animation-delay: .12s; } .nets li:nth-child(4) { animation-delay: .18s; }
+@keyframes liIn { from { opacity: 0; transform: translateY(40px); } }
+.nets li.cur { background: rgba(240, 138, 60, .1); }
+.nets li.cur::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--orange); }
+.nets small { font-family: var(--pixel); font-size: 12px; color: var(--dim); text-transform: none; letter-spacing: 0; }
+.blocks { font-family: var(--pixel); font-size: 13px; color: var(--orange); display: flex; justify-content: space-between; }
+.p-act { display: flex; justify-content: flex-end; }
+.p-act .btn i { background: var(--orange); }
+.p-act .btn span { border-color: rgba(240, 138, 60, .5); }
+
+/* toast: the updates card */
+.toast { position: absolute; right: 40px; bottom: 120px; width: 380px; display: grid; grid-template-columns: 22px 1fr; background: rgba(17, 19, 20, .9); border: 1px solid var(--line); animation: tagIn .6s var(--ease) both; }
+.toast .vstrip { color: var(--violet); border-color: var(--line); font-size: 11px; }
+.toast div:last-child { padding: 8px 12px; }
+.toast b { display: block; font-family: var(--display); font-stretch: 112%; font-weight: 700; font-size: 15px; text-transform: uppercase; }
+.toast p { margin: 0; font-family: var(--pixel); font-size: 12px; color: var(--dim); }
+
+/* osd */
+.osd { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; gap: 14px; align-items: center; padding: 8px 18px; background: rgba(17, 19, 20, .92); border: 1px solid var(--line); font-family: var(--pixel); font-size: 15px; }
+.osd span:first-child { color: var(--teal); }
+.version { position: absolute; left: 40px; bottom: 30px; font-family: var(--pixel); font-size: 11px; color: var(--ink); background: rgba(17, 19, 20, .8); border: 1px solid var(--line); padding: 0 6px; }
+
+/* boot */
+.boot { position: absolute; inset: 0; background: #000; z-index: 20; display: grid; place-items: center; cursor: pointer; }
+.boot.gone { animation: bootOut .9s var(--ease) forwards; pointer-events: none; }
+@keyframes bootOut { to { background: rgba(0, 0, 0, 0); } }
+.gl { position: absolute; background: rgba(232, 230, 227, .22); }
+.gl.v { width: 2px; top: 0; bottom: 0; transform-origin: top; animation: growY var(--d) var(--ease) both; }
+.gl.v.up { transform-origin: bottom; }
+.gl.h { height: 2px; left: 0; right: 0; transform-origin: left; animation: growX var(--d) var(--ease) both; }
+@keyframes growY { from { transform: scaleY(0); } }
+@keyframes growX { from { transform: scaleX(0); } }
+.boot.gone .gl { animation: fadeOut .6s ease forwards; }
+@keyframes fadeOut { to { opacity: 0; } }
+.emblem { position: relative; width: 520px; height: 220px; perspective: 600px; }
+.ring { position: absolute; inset: 0; border: 3px solid var(--ink); border-radius: 50%; animation: ringIn 1.1s .5s var(--spring) both; }
+.ring.inner { inset: 26px 40px; border-width: 2px; animation-delay: .62s; }
+@keyframes ringIn { from { transform: rotateX(89deg) rotateZ(-30deg); opacity: 0; } 20% { opacity: 1; } }
+.word { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; font-family: var(--display); font-stretch: 125%; font-weight: 900; color: var(--ink); line-height: .86; }
+.word div { font-size: 64px; display: flex; justify-content: center; }
+.word div + div { font-size: 50px; }
+.word span { display: inline-block; animation: letterIn .5s steps(3) both; }
+@keyframes letterIn { from { opacity: 0; transform: translate(var(--x), var(--y)); } }
+.press { position: absolute; bottom: 120px; left: 0; right: 0; text-align: center; font-family: var(--pixel); font-size: 14px; letter-spacing: .3em; color: var(--ink); animation: blink 1.2s steps(2) infinite, fadeIn .3s 2.4s both; }
+@keyframes fadeIn { from { opacity: 0; } }
+.boot.gone .emblem { animation: crumple .6s var(--ease) forwards; }
+.boot.gone .press { display: none; }
+@keyframes crumple { 40% { transform: scale(1.15, .35) skewX(-18deg); filter: blur(1px); } to { transform: scale(1.6, .02) skewX(-30deg); opacity: 0; filter: blur(4px); } }
+.slam { animation: slam .7s var(--ease) both; }
+@keyframes slam { from { opacity: 0; transform: translateX(-6vw); } }
+.panel.slam { animation: panelIn .9s var(--ease) both; }
+
+/* specimens */
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.spec { background: var(--well); border: 1px solid var(--line); padding: 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.spec h3 { margin: 0; font-family: var(--display); font-stretch: 118%; font-weight: 800; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.spec h3 button { border: 1px solid var(--line); background: var(--chip); font-family: var(--pixel); font-size: 11px; padding: 0 8px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.stage { height: 70px; display: grid; place-items: center start; padding: 0 10px; background: var(--page); border: 1px solid var(--line); overflow: hidden; }
+.spec p { margin: 0; font-size: 13px; color: var(--dim); }
+.sp-type { font-family: var(--body); font-weight: 700; font-size: 22px; white-space: nowrap; }
+.sp-word { font-family: var(--display); font-weight: 700; font-size: 22px; text-transform: uppercase; color: var(--teal); }
+.shake { animation: shake .5s; }
+@keyframes shake { 0% { font-weight: 500; font-stretch: 110%; letter-spacing: .07em; } 25% { font-weight: 100; font-stretch: 120%; letter-spacing: .01em; } 50% { font-weight: 600; font-stretch: 90%; letter-spacing: .2em; text-shadow: 0 0 4px #fff; } 75% { font-weight: 400; font-stretch: 120%; letter-spacing: .015em; } }
+.sp-err { color: var(--red); }
+.sp-box { height: 40px; background: var(--chip); border: 1px solid var(--teal); width: 40%; }
+.sp-box.big { width: 92%; }
+.sp-box { transition: width 1.2s var(--spring); }
+.sp-pic { width: 54px; height: 54px; background: linear-gradient(135deg, var(--orange), var(--violet)); }
+.zoom { animation: zoom .5s steps(2) forwards; }
+@keyframes zoom { 0% { transform: scale(20); filter: blur(6px) brightness(.2); opacity: 0; } 50% { transform: scale(3); filter: blur(3px) brightness(.8); opacity: 1; } to { transform: none; filter: none; } }
+
+/* build log */
+.log { display: grid; gap: 0; border: 1px solid var(--line); }
+.task { display: grid; grid-template-columns: 52px 1fr auto; gap: 14px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); position: relative; }
+.task:first-child { border-top: 0; }
+.task .n { font-family: var(--pixel); font-size: 13px; color: var(--dim); }
+.task h4 { margin: 0; font-family: var(--display); font-stretch: 112%; font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: .03em; }
+.task p { margin: 2px 0 0; font-size: 13px; color: var(--dim); }
+.state { font-family: var(--pixel); font-size: 12px; padding: 1px 10px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+.task.run { background: rgba(143, 214, 196, .07); }
+.task.run::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--teal); }
+.task.run .state { color: var(--teal); border-color: var(--teal); }
+.task.done .state { color: var(--ink); border-color: var(--ink); }
+.task.done h4 { color: var(--dim); }
+.meter { font-family: var(--pixel); color: var(--teal); }
+
+@media (max-width: 640px) {
+  .task { grid-template-columns: 36px 1fr; }
+  .task .state { grid-column: 2; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+
+<main class="page">
+  <header class="head">
+    <div class="title"><h1>Cartridge</h1><span class="sub">// FormalShell theme</span></div>
+    <div class="strip"><span>BUILD :: <b id="sum">task 1 of 10 running</b></span><span>( 2026 / 10 / 23 )</span></div>
+    <p class="lede">The fourth preset, <code>theme.preset: "cartridge"</code>, after tsubi.club. Below is a working mock of the target look: drive the launcher with the arrow keys or the pointer, press Enter and Escape, replay the boot. It is drawn in the browser to show intent. The shell draws the real thing on the CPU, colours come from matugen off your wallpaper, and the sounds are our own blips, not the site's.</p>
+  </header>
+
+  <section class="head" aria-labelledby="look">
+    <span class="tag" id="look">How it should look</span>
+    <div class="controls">
+      <button class="btn" id="replay" type="button"><span>Replay boot</span><i>&#9654;</i></button>
+      <button class="btn" id="sound" type="button" aria-pressed="false"><span>Sound off</span><i>&#9834;</i></button>
+      <button class="btn" id="anim" type="button" aria-pressed="true"><span>Backdrop on</span><i>&#9650;</i></button>
+      <span class="hint">click the screen, then &uarr; &darr; Enter Esc</span>
+    </div>
+    <div class="screen-wrap" id="wrap">
+      <div class="screen" id="screen" tabindex="0" aria-label="Mock cartridge desktop. Arrow keys move the launcher cursor.">
+        <div class="mark"></div>
+        <canvas id="shards" width="640" height="400"></canvas>
+        <div class="grid-layer"></div>
+
+        <div class="bar slam" id="bar">
+          <div class="cell ws"><b>1</b><b class="on">2</b><b>3</b><b>4</b></div>
+          <div class="cell"><span class="title-cell">foot // ~/Developer/FormalShell</span></div>
+          <div class="grow"></div>
+          <div class="cell"><span class="dot"></span><span>canary-5g</span></div>
+          <div class="cell"><span>BAT 82%</span></div>
+          <div class="cell"><span id="clock">19:24</span></div>
+        </div>
+
+        <div class="launcher slam" id="launcher" style="animation-delay:.08s">
+          <div class="letterform" id="letter">A</div>
+          <div class="l-head">
+            <div class="l-title"><b>Launch</b><span>// root</span></div>
+            <div class="field"><span>&gt;</span><span class="caret"></span></div>
+            <div class="strip l-strip"><span>ROOT :: <b id="count">6 entries</b></span><span>( 19:24 )</span></div>
+          </div>
+          <ul class="rows" id="rows">
+            <li class="cursor" id="cursor" aria-hidden="true"></li>
+          </ul>
+          <div class="l-foot"><span><kbd>&uarr;&darr;</kbd> move</span><span><kbd>enter</kbd> open</span><span><kbd>esc</kbd> back</span></div>
+        </div>
+
+        <div class="panel slam" id="panel" style="animation-delay:.16s">
+          <div class="vstrip">network</div>
+          <div class="p-body">
+            <div class="p-top">
+              <div class="p-title"><b>NETWORK</b><span>// WI-FI</span></div>
+              <div class="back"><kbd>esc</kbd>Back</div>
+            </div>
+            <div class="strip p-strip"><span>NET :: <b>3 networks in range</b></span><span>( 2026 / 10 / 23 )</span></div>
+            <div class="viewer">
+              <div class="vtab">&#10033;connected</div>
+              <div class="vbox">
+                <span class="ftag">SSID</span>
+                <div class="ssid" id="ssid"></div>
+                <span class="ftag">LINK</span>
+                <div class="chips"><span class="chip">-48 dBm</span><span class="chip">5 GHz</span><span class="chip">WPA3</span></div>
+              </div>
+            </div>
+            <span class="ftag">IN RANGE</span>
+            <ul class="nets">
+              <li class="cur">canary-5g <small>connected</small></li>
+              <li>canary-guest <small>open</small></li>
+              <li>DIRECT-7F-printer <small>wpa2</small></li>
+              <li>vodafone-A21C <small>wpa2</small></li>
+            </ul>
+            <div class="blocks"><span id="speed">SPEED &#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617;&#9617; 0%</span><span>412 Mb/s</span></div>
+            <div class="p-act"><button class="btn" type="button" id="speedbtn"><span>Run speed test</span><i>&#8635;</i></button></div>
+          </div>
+        </div>
+
+        <div class="toast" id="toast" style="animation-delay:1.1s">
+          <div class="vstrip">updates</div>
+          <div><b>Screenshot saved</b><p>~/Pictures/Screenshots/2026-10-23-1924.png</p></div>
+        </div>
+
+        <div class="osd slam" style="animation-delay:.3s"><span>VOL</span><span id="vol">&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9608;&#9617;&#9617;&#9617; 70%</span></div>
+        <div class="version">kyan@g815 // formalshell 0.10.21</div>
+
+        <div class="boot" id="boot" aria-label="Boot screen, press any key">
+          <div id="lines"></div>
+          <div class="emblem"><div class="ring"></div><div class="ring inner"></div><div class="word" id="word"></div></div>
+          <div class="press">PRESS ANY KEY</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="head" aria-labelledby="motion">
+    <span class="tag" id="motion">Motion, one per effect</span>
+    <div class="specs" id="specs">
+      <div class="spec"><h3>Type reveal <button type="button" data-play="type">play</button></h3><div class="stage"><span class="sp-type" id="sp-type"></span></div><p>Hero titles and values that change type themselves in, 20 steps over 0.6s.</p></div>
+      <div class="spec"><h3>Glitch swap <button type="button" data-play="glitch">play</button></h3><div class="stage"><span class="sp-word" id="sp-glitch">Clipboard</span></div><p>A level change: the old body jumps back and out, the new one lands from ahead.</p></div>
+      <div class="spec"><h3>Use pop <button type="button" data-play="use">play</button></h3><div class="stage" style="position:relative"><span class="sp-word" id="sp-use">Open</span></div><p>On Enter, a ghost of the row scales up and fades.</p></div>
+      <div class="spec"><h3>Error shake <button type="button" data-play="shake">play</button></h3><div class="stage"><span class="sp-word sp-err" id="sp-shake">Wrong password</span></div><p>Weight, width and tracking jitter on lock, polkit and Wi-Fi errors.</p></div>
+      <div class="spec"><h3>Spring resize <button type="button" data-play="spring">play</button></h3><div class="stage" style="place-items:center stretch"><div class="sp-box" id="sp-box"></div></div><p>Cards that change size overshoot and settle, about 1.2s.</p></div>
+      <div class="spec"><h3>Picture land <button type="button" data-play="zoom">play</button></h3><div class="stage"><div class="sp-pic" id="sp-pic"></div></div><p>A new cover or preview drops in from a large blurred scale in two steps.</p></div>
+    </div>
+  </section>
+
+  <section class="head" aria-labelledby="prog">
+    <span class="tag" id="prog">Build progress</span>
+    <div class="strip"><span>BRANCH :: <b>feat/cartridge</b></span><span class="meter" id="meter"></span></div>
+    <div class="log" id="log"></div>
+    <p class="lede">Each task runs as its own subagent, in order, and commits only after its checks pass in the VM rig and its screenshots have been read. Spec: <code>docs/superpowers/specs/2026-10-23-cartridge-theme.md</code>.</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  const TASKS = [
+    ["Type and curves", "Named font families, width and weight axes, spring curves, the four fonts packaged.", "run"],
+    ["Table, habits, roles", "The cartridge table, chamfers, the block bar and bracket cursors, the rider.", "todo"],
+    ["Panel console grammar", "Title // subtitle, back chip, status strip, field tags, framed hero, accents.", "todo"],
+    ["Motion catalogue", "Widen on focus, type reveal, stagger, glitch swap, use pop, shake, picture land, blocks.", "todo"],
+    ["Surfaces", "Launcher letterform, hex grids, the updates toast, OSD blocks, lock, switcher, bar.", "todo"],
+    ["Grid pass", "The grid on wallpaper, lock and greeter.", "todo"],
+    ["Animated backdrop", "The shard sculpture, 24fps cap, paused when covered, budget measured.", "todo"],
+    ["Boot", "Greeter sequence, once per login, unlock short form.", "todo"],
+    ["Sound", "Nine synthesised blips on an in-process PipeWire stream.", "todo"],
+    ["Whole look", "Every leg together, read against the reference, gifs for the README.", "todo"]
+  ];
+  const log = document.getElementById("log");
+  TASKS.forEach(([t, d, s], i) => {
+    const el = document.createElement("div");
+    el.className = "task " + s;
+    el.innerHTML = `<span class="n">T${String(i + 1).padStart(2, "0")}</span><div><h4>${t}</h4><p>${d}</p></div><span class="state">${s === "run" ? "running" : s === "done" ? "done" : "queued"}</span>`;
+    log.appendChild(el);
+  });
+  const done = TASKS.filter(t => t[2] === "done").length;
+  const filled = Math.round(done / TASKS.length * 10);
+  document.getElementById("meter").textContent = "█".repeat(filled) + "░".repeat(10 - filled) + " " + Math.round(done / TASKS.length * 100) + "%";
+
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // screen scaling
+  const wrap = document.getElementById("wrap"), screen = document.getElementById("screen");
+  const fit = () => { const s = wrap.clientWidth / 1280; screen.style.transform = `scale(${s})`; wrap.style.height = 800 * s + "px"; };
+  new ResizeObserver(fit).observe(wrap); fit();
+
+  // sound
+  let ac = null, soundOn = false;
+  const sbtn = document.getElementById("sound");
+  sbtn.addEventListener("click", () => {
+    soundOn = !soundOn;
+    if (soundOn && !ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { soundOn = false; } }
+    sbtn.setAttribute("aria-pressed", soundOn);
+    sbtn.querySelector("span").textContent = soundOn ? "Sound on" : "Sound off";
+    if (soundOn) sfx("activate");
+  });
+  function tone(type, f0, f1, dur, gain, at = 0) {
+    const t = ac.currentTime + at, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + .02);
+  }
+  function sfx(name) {
+    if (!soundOn || !ac) return;
+    if (name === "move") tone("square", 1180, 1500, .04, .05);
+    if (name === "activate") { tone("triangle", 660, 660, .06, .12); tone("triangle", 990, 990, .09, .12, .06); }
+    if (name === "back") tone("square", 900, 380, .09, .05);
+    if (name === "type") tone("square", 2400, 2000, .015, .03);
+    if (name === "error") { tone("sawtooth", 140, 110, .18, .07); tone("sawtooth", 147, 100, .18, .05, .02); }
+    if (name === "boot") { [440, 554, 659, 880].forEach((f, i) => tone("triangle", f, f, .14, .09, i * .09)); }
+    if (name === "open") tone("triangle", 300, 1200, .12, .08);
+  }
+
+  // launcher
+  const LEVELS = {
+    root: [["Applications", "42 apps"], ["Clipboard", "18 items"], ["Wallpapers", "64 images"], ["Emoji", "3,790"], ["Wi-Fi", "3 in range"], ["Power", "5 actions"]],
+    Clipboard: [["git log --oneline", "text"], ["screenshot-1924.png", "image"], ["kyan@canarypulse.es", "text"], ["#2e4a44", "colour"]]
+  };
+  let level = "root", cur = 0;
+  const rows = document.getElementById("rows"), cursor = document.getElementById("cursor"), letter = document.getElementById("letter");
+  const title = document.querySelector(".l-title span"), count = document.getElementById("count");
+  function build() {
+    rows.querySelectorAll(".row").forEach(r => r.remove());
+    LEVELS[level].forEach(([l, m], i) => {
+      const li = document.createElement("li"); li.className = "row"; li.dataset.i = i;
+      li.innerHTML = `<span class="lbl">${l}</span><span class="meta">${m}</span>`;
+      li.addEventListener("mouseenter", () => move(i));
+      li.addEventListener("click", () => { move(i); activate(); });
+      rows.appendChild(li);
+    });
+    title.textContent = "// " + (level === "root" ? "root" : level.toLowerCase());
+    count.textContent = LEVELS[level].length + " entries";
+    cur = 0; paint(true);
+  }
+  function paint(jump) {
+    if (jump) { cursor.style.transition = "none"; requestAnimationFrame(() => cursor.style.transition = ""); }
+    cursor.style.transform = `translateY(${cur * 58}px)`;
+    rows.querySelectorAll(".row").forEach((r, i) => r.classList.toggle("cur", i === cur));
+    const ch = LEVELS[level][cur][0][0].toUpperCase();
+    if (letter.textContent !== ch) { letter.style.opacity = 0; setTimeout(() => { letter.textContent = ch; letter.style.opacity = 1; }, 160); }
+  }
+  function move(i) { if (i === cur) return; cur = Math.max(0, Math.min(LEVELS[level].length - 1, i)); paint(); sfx("move"); }
+  function swap(to) {
+    rows.classList.add("swap-out");
+    setTimeout(() => { level = to; build(); rows.classList.remove("swap-out"); rows.classList.add("swap-in"); setTimeout(() => rows.classList.remove("swap-in"), 520); }, 180);
+  }
+  function activate() {
+    const row = rows.querySelectorAll(".row")[cur];
+    const g = document.createElement("span"); g.className = "ghost"; g.textContent = row.querySelector(".lbl").textContent;
+    g.style.top = (cur * 58 + 12) + "px"; rows.appendChild(g); setTimeout(() => g.remove(), 420);
+    sfx("activate");
+    if (level === "root" && LEVELS[LEVELS.root[cur][0]]) setTimeout(() => swap(LEVELS.root[cur][0]), 120);
+  }
+  build();
+
+  // panel bits
+  function typeIn(el, text, dur = 600) {
+    const steps = 20; let n = 0; el.textContent = "";
+    const id = setInterval(() => { n++; el.textContent = text.slice(0, Math.ceil(text.length * n / steps)); if (n % 3 === 0) sfx("type"); if (n >= steps) clearInterval(id); }, dur / steps);
+  }
+  const blocks = p => "█".repeat(Math.round(p / 10)) + "░".repeat(10 - Math.round(p / 10)) + " " + p + "%";
+  document.getElementById("speedbtn").addEventListener("click", () => {
+    sfx("activate"); let p = 0; const el = document.getElementById("speed");
+    const id = setInterval(() => { p = Math.min(100, p + 10); el.textContent = "SPEED " + blocks(p); if (p >= 100) clearInterval(id); }, 160);
+  });
+
+  // keys
+  screen.addEventListener("keydown", e => {
+    if (!boot.classList.contains("gone")) { e.preventDefault(); leaveBoot(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); move(cur + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); move(cur - 1); }
+    else if (e.key === "Enter") { e.preventDefault(); activate(); }
+    else if (e.key === "Escape") { e.preventDefault(); sfx("back"); if (level !== "root") swap("root"); }
+  });
+
+  // boot
+  const boot = document.getElementById("boot"), lines = document.getElementById("lines"), word = document.getElementById("word");
+  function bootSeq() {
+    lines.innerHTML = ""; word.innerHTML = "";
+    for (let x = 118; x < 1280; x += 120) { const d = document.createElement("div"); d.className = "gl v" + (Math.random() < .5 ? " up" : ""); d.style.left = x + "px"; d.style.setProperty("--d", (.5 + Math.random() * .9).toFixed(2) + "s"); d.style.animationDelay = (Math.random() * .4).toFixed(2) + "s"; lines.appendChild(d); }
+    for (let y = 118; y < 800; y += 120) { const d = document.createElement("div"); d.className = "gl h"; d.style.top = y + "px"; d.style.setProperty("--d", (.6 + Math.random() * .8).toFixed(2) + "s"); d.style.animationDelay = (.3 + Math.random() * .4).toFixed(2) + "s"; lines.appendChild(d); }
+    ["G815", "FORMAL"].forEach((w, li) => {
+      const row = document.createElement("div");
+      [...w].forEach((c, i) => { const s = document.createElement("span"); s.textContent = c; s.style.setProperty("--x", ((Math.random() - .5) * 120).toFixed(0) + "px"); s.style.setProperty("--y", ((Math.random() - .5) * 80).toFixed(0) + "px"); s.style.animationDelay = (1.1 + li * .25 + i * .07).toFixed(2) + "s"; row.appendChild(s); });
+      word.appendChild(row);
+    });
+    boot.classList.remove("gone"); boot.style.display = "";
+    // restart the desktop's own entrance underneath
+    document.querySelectorAll(".slam, .toast, .panel, .nets li, .chip").forEach(el => { el.style.animationName = "none"; void el.offsetWidth; el.style.animationName = ""; el.style.animationPlayState = "paused"; });
+    setTimeout(() => sfx("boot"), 1200);
+  }
+  function leaveBoot() {
+    if (boot.classList.contains("gone")) return;
+    boot.classList.add("gone"); sfx("open");
+    document.querySelectorAll(".slam, .toast, .panel, .nets li, .chip").forEach(el => el.style.animationPlayState = "running");
+    setTimeout(() => { boot.style.display = "none"; typeIn(document.getElementById("ssid"), "canary-5g"); }, 900);
+  }
+  boot.addEventListener("click", () => { leaveBoot(); screen.focus({ preventScroll: true }); });
+  document.getElementById("replay").addEventListener("click", () => { bootSeq(); screen.focus({ preventScroll: true }); });
+  if (reduced) { boot.classList.add("gone"); boot.style.display = "none"; document.getElementById("ssid").textContent = "canary-5g"; }
+  else bootSeq();
+
+  // clock types in on the minute
+  const clock = document.getElementById("clock");
+  const tick = () => { const d = new Date(); const s = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); if (clock.textContent !== s) typeIn(clock, s, 300); };
+  tick(); setInterval(tick, 5000);
+
+  // specimens
+  const replay = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+  document.getElementById("specs").addEventListener("click", e => {
+    const k = e.target.dataset && e.target.dataset.play; if (!k) return;
+    if (k === "type") typeIn(document.getElementById("sp-type"), "bbbackboard [stems]");
+    if (k === "glitch") { const el = document.getElementById("sp-glitch"); el.classList.add("swap-out"); sfx("back"); setTimeout(() => { el.textContent = el.textContent === "Clipboard" ? "Wallpapers" : "Clipboard"; el.classList.remove("swap-out"); replay(el, "swap-in"); }, 180); }
+    if (k === "use") { const st = document.getElementById("sp-use"); const g = document.createElement("span"); g.className = "ghost"; g.textContent = "Open"; g.style.left = "10px"; g.style.fontSize = "22px"; g.style.top = "20px"; st.parentNode.appendChild(g); setTimeout(() => g.remove(), 420); sfx("activate"); }
+    if (k === "shake") { replay(document.getElementById("sp-shake"), "shake"); sfx("error"); }
+    if (k === "spring") { document.getElementById("sp-box").classList.toggle("big"); sfx("open"); }
+    if (k === "zoom") { replay(document.getElementById("sp-pic"), "zoom"); }
+  });
+  typeIn(document.getElementById("sp-type"), "bbbackboard [stems]");
+
+  // shard backdrop: a seeded low-poly cluster turning slowly, drawn at half resolution and capped at 24fps
+  const cv = document.getElementById("shards"), cx = cv.getContext("2d");
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const norm = v => { const l = Math.hypot(...v) || 1; return v.map(c => c / l); };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const shards = [];
+  for (let i = 0; i < 140; i++) {
+    const c = [(rnd() - .5) * 360, (rnd() - .5) * 300, (rnd() - .5) * 240];
+    const d = norm([rnd() - .5, (rnd() - .5) * .6, rnd() - .5]);
+    const p = norm(cross(d, [rnd() - .5, rnd() - .5, rnd() - .5]));
+    const L = 60 + rnd() * 170, w = 6 + rnd() * 30;
+    shards.push([c.map((v, k) => v - d[k] * L / 2), c.map((v, k) => v + d[k] * L / 2), c.map((v, k) => v + p[k] * w + d[k] * (rnd() - .5) * L * .3)]);
+  }
+  let running = !reduced, last = 0, t0 = performance.now();
+  const abtn = document.getElementById("anim");
+  abtn.addEventListener("click", () => { running = !running; abtn.setAttribute("aria-pressed", running); abtn.querySelector("span").textContent = running ? "Backdrop on" : "Backdrop off"; if (running) requestAnimationFrame(frame); });
+  function draw(t) {
+    const ay = t * .00012, ax = Math.sin(t * .00009) * .35, sy = Math.sin(ay), cy = Math.cos(ay), sx = Math.sin(ax), cxs = Math.cos(ax);
+    const ox = 640 * .7, oy = 400 * .42;
+    const proj = shards.map(tri => {
+      const pts = tri.map(([x, y, z]) => { const x1 = x * cy + z * sy, z1 = -x * sy + z * cy; const y1 = y * cxs - z1 * sx, z2 = y * sx + z1 * cxs; return [x1, y1, z2]; });
+      const n = norm(cross(pts[1].map((v, k) => v - pts[0][k]), pts[2].map((v, k) => v - pts[0][k])));
+      const zc = (pts[0][2] + pts[1][2] + pts[2][2]) / 3;
+      return { zc, lit: Math.abs(n[2]), p: pts.map(([x, y, z]) => { const f = 520 / (z + 700); return [ox + x * f, oy + y * f]; }) };
+    }).sort((a, b) => b.zc - a.zc);
+    cx.clearRect(0, 0, 640, 400);
+    for (const s of proj) {
+      cx.beginPath(); cx.moveTo(...s.p[0]); cx.lineTo(...s.p[1]); cx.lineTo(...s.p[2]); cx.closePath();
+      cx.fillStyle = s.lit > .93 ? "#e8e6e3" : "#33504a"; cx.fill();
+      cx.strokeStyle = "rgba(232,230,227,.85)"; cx.lineWidth = .6;
+      cx.beginPath(); cx.moveTo(...s.p[0]); cx.lineTo(...s.p[1]); cx.stroke();
+    }
+  }
+  function frame(now) {
+    if (!running) return;
+    if (now - last > 1000 / 24) { last = now; draw(now - t0); }
+    requestAnimationFrame(frame);
+  }
+  draw(0); if (running) requestAnimationFrame(frame);
+})();
+</script>
