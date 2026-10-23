@@ -139,9 +139,11 @@ one accent. Its pills (buttons, the status strip, tags) are why its base
 radius stays at 4 while every box pins 0. The cursor has no ring: a list
 row takes `cursor.bar`, a block on its leading edge `width` across that
 travels with the list's halo, over the `cursor` role's faint fill; a grid
-cell (launcher grids, the switcher) takes `cursor.brackets`, two arcs `gap`
-outside the cell, `sweep` degrees each, in the `border` line and over its
-own glow cast (`Theme::with_brackets`). `hero` frames a panel's hero, with
+cell (launcher grids, the switcher) takes `cursor.brackets`, the cell's own
+outline held `gap` outside it and drawn only where it lies within `sweep`
+degrees of straight up or down from the centre (measured as if the cell
+were square, so a wide cell gets corner brackets), in the `border` line
+over a soft glow of that role's cast (`Theme::with_brackets`). `hero` frames a panel's hero, with
 `hero.tab` (`height`, `slant`) its label over the frame and
 `button.default.cap` (`width`) the hexagonal end a primary action carries.
 Every other table declares all five and draws none of them (a bar under a
@@ -152,6 +154,20 @@ shipped with the shell. Its habits are `emerge: "slide"` (the popover card
 sliding 40px in along its line from the end it rests nearer, fading on the
 table's 900ms `emerge` clock), `panel: "console"`, `grid: "hex"` and
 `boot: "cartridge"`; the others declare `sheet`, `square` and `none`.
+
+Three more roles are cartridge's alone and transparent everywhere else.
+`bar.cell` is the dark chip every bar cell sits on (the strip itself,
+`bar.rest`, draws nothing), with the hovered or open cell taking the
+cursor's fill and leading block; a changed label (the clock on the minute)
+types in a character at a time. `launcher.letter` is the cursor row's
+initial, giant and faint past the launcher's far corner, crossfading on its
+`duration`; `grid: "hex"` turns the launcher's grids into pointy-topped
+hexagons. `lock.clock` sets the lock's clock in the display face at its
+`wdth` and `wght`, slamming in from `slam` of the screen's width. The row
+toast becomes an "updates" card on the console grammar (the id strip, the
+summary in caps, the body in the values face, a red pulse on a critical
+one), the OSD's icon takes the accent, and the switcher's thumbnails take
+`switcher.cell`'s chamfer.
 
 `panel: "console"` is the section page (`surfaces/panel/host.rs`): the
 panel's `title` wide and heavy in the display face (`panel.title`'s `wdth`

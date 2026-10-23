@@ -542,7 +542,6 @@ impl Host {
         let left = kit.shape(shown, c.status);
         let date = v.store.clock.now.format("( %Y / %m / %d )").to_string();
         let right = kit.shape(&date, c.status);
-        let tag = kit.shape(&module.id().to_lowercase(), c.strip);
 
         let mut p = Painter::new(scene, nodes, Some(clip));
         let baseline = head.y0 + (top_h + (title.ascent - title.descent) as f64) / 2.0;
@@ -569,20 +568,8 @@ impl Host {
 
         let strip_w = theme.metric("panel.strip", "width");
         if strip_w > 0.0 {
-            let line = strip_box.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
-            let lw = line.width.round().max(1.0) as i32;
-            let x = frame.x + strip_w.round() as i32 - lw;
-            p.rect(IRect::new(x, frame.y, lw, frame.h), a(line.color), 0.0);
-            let (w, h) = tag.box_size();
-            let lh = tag.line_height() as f64;
-            let across = frame.x as f64 + ((strip_w - lh) / 2.0).round();
-            let start = frame.y as f64 + s.panel_padding + tag.width as f64;
-            // Read bottom to top, ending a panel padding under the top edge.
-            let rot = vello_cpu::kurbo::Affine::new([0.0, -1.0, 1.0, 0.0, across, start]);
-            let full = rot * vello_cpu::kurbo::Affine::translate((-crate::text::PAD as f64, -crate::text::PAD as f64));
-            let bounds = crate::scene::Scene::cover(Rect::new(0.0, 0.0, w as f64, h as f64), full, 1.0);
-            let transform = full * vello_cpu::kurbo::Affine::translate((-bounds.x as f64, -bounds.y as f64));
-            p.text_in(&tag, bounds, transform, Some(clip), a(strip_box.ink), &[]);
+            let line = strip_box.border.clone().map_or(Rgba::TRANSPARENT, |l| l.color);
+            id_strip(&mut p, kit, theme, frame, strip_w, &module.id().to_lowercase(), (line, strip_box.ink), alpha);
         }
         p.finish();
         reveal.is_some_and(|p| p < 1.0)
@@ -1087,6 +1074,30 @@ pub enum Key {
     Text(String),
     /// A key into the field that holds the keyboard, with what it types.
     Edit(fs_menu::field::Key, fs_menu::nav::Modifiers, Option<String>),
+}
+
+/// The console's id strip down the leading `width` of `frame`: a line
+/// closing it off and `text` in the values face reading bottom to top,
+/// ending a panel padding under the top edge. `inks` is the line's and the
+/// text's.
+#[allow(clippy::too_many_arguments)]
+pub fn id_strip(p: &mut Painter, kit: &mut Kit, theme: &Theme, frame: IRect, width: f64, text: &str, (line, ink): (Rgba, Rgba), alpha: f32) {
+    let a = |c: Rgba| c.with_alpha(c.a * alpha);
+    let lw = theme.box_style("panel.strip", None).border.map_or(1.0, |l| l.width).round().max(1.0) as i32;
+    let x = frame.x + width.round() as i32 - lw;
+    p.rect(IRect::new(x, frame.y, lw, frame.h), a(line), 0.0);
+    let style = ConsoleType::new(theme, kit).strip;
+    let tag = kit.shape(text, style);
+    let (w, h) = tag.box_size();
+    let lh = tag.line_height() as f64;
+    let across = frame.x as f64 + ((width - lh) / 2.0).round();
+    let start = frame.y as f64 + theme.space.panel_padding + tag.width as f64;
+    let rot = vello_cpu::kurbo::Affine::new([0.0, -1.0, 1.0, 0.0, across, start]);
+    let full = rot * vello_cpu::kurbo::Affine::translate((-crate::text::PAD as f64, -crate::text::PAD as f64));
+    let bounds = crate::scene::Scene::cover(Rect::new(0.0, 0.0, w as f64, h as f64), full, 1.0);
+    let transform = full * vello_cpu::kurbo::Affine::translate((-bounds.x as f64, -bounds.y as f64));
+    let clip = p.clip;
+    p.text_in(&tag, bounds, transform, clip, a(ink), &[]);
 }
 
 /// Whether `module` draws the console header: a table whose panels take

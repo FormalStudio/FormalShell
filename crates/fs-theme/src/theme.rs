@@ -289,15 +289,14 @@ impl Theme {
         if on { style::with_cursor(&b, &self.box_style("cursor", None), self.cursor_bar().as_ref(), halo) } else { b }
     }
 
-    /// A grid cell's cursor: the `cursor.brackets` arcs, their glow cast
+    /// A grid cell's cursor: the `cursor.brackets` lines with their glow
     /// and the cursor's own halo on a table that draws brackets, the plain
     /// cursor otherwise.
     pub fn with_brackets(&self, b: BoxStyle<Rgba>, on: bool, halo: bool) -> BoxStyle<Rgba> {
         match self.cursor_brackets() {
             Some(brackets) if on => {
                 let mut out = style::with_cursor(&b, &self.box_style("cursor", None), None, halo);
-                out.casts.extend(self.box_style("cursor.brackets", None).casts);
-                out.brackets = Some(brackets);
+                out.brackets = Some(style::Brackets { glow: self.box_style("cursor.brackets", None).casts, ..brackets });
                 out
             }
             _ => self.with_cursor(b, on, halo),

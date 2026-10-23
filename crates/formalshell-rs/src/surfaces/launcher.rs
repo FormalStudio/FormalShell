@@ -923,7 +923,9 @@ impl Model {
                 };
                 let cell_w = width / columns.max(1) as f64;
                 let name_h = ui::measure(&w::label("Ag"), width, theme, kit).1;
-                let cell_h = if self.view == View::AppGrid {
+                let cell_h = if self.view == View::AppGrid && theme.habit_str("grid") == "hex" {
+                    hex_tile(s) + hex_name_gap(s) + name_h + s.control_padding_y * 2.0
+                } else if self.view == View::AppGrid {
                     s.control_height * 2.0 + s.row_gap + name_h + s.control_padding_y * 2.0 + gutter * 2.0
                 } else {
                     cell_w
@@ -1640,6 +1642,12 @@ pub struct Shown {
     /// inside the same list travels, anything else lands at once.
     sel_on: Option<(Option<String>, String)>,
     grain: ui::Grain,
+    /// The cursor row's initial behind the list (`launcher.letter`), under
+    /// everything the body draws.
+    letter_anchor: NodeId,
+    letter_nodes: Vec<NodeId>,
+    /// The initial shown, the one it replaced and when it changed.
+    letter: (String, String, Instant),
 }
 
 impl Shown {
@@ -1657,7 +1665,8 @@ impl Shown {
             scene.set_visible(id, false);
             id
         };
-        let sel_anchor = marker(top);
+        let letter_anchor = marker(top);
+        let sel_anchor = marker(letter_anchor);
         let body_anchor = marker(sel_anchor);
         let sel = || Animated::new(0.0, Clock::SpatialFast.curve());
         Self {
@@ -1682,6 +1691,9 @@ impl Shown {
             sel_nodes: Vec::new(),
             sel: [sel(), sel(), sel(), sel()],
             sel_on: None,
+            letter_anchor,
+            letter_nodes: Vec::new(),
+            letter: (String::new(), String::new(), Instant::now()),
         }
     }
 
@@ -1843,6 +1855,10 @@ impl Shown {
             self.wake = Some(now);
         }
 
+        if paint_letter(scene, (&mut self.letter_nodes, self.letter_anchor, &mut self.letter), m, theme, kit, (frame, clip, alpha), self.scale, now) {
+            self.wake = Some(now);
+        }
+
         // The cursor's fill travels between cells on `spatialFast` (DESIGN.md
         // §1 "Motion"), keyboard and pointer alike; a wrap, a filter and a
         // level change land at once.
@@ -1866,7 +1882,9 @@ impl Shown {
                 b.wash = None;
                 // A grid cell takes the brackets, a row the leading bar.
                 let b = if m.cursor < m.cells() {
-                    theme.with_brackets(b, m.from_keys, true)
+                    let mut b = theme.with_brackets(b, m.from_keys, true);
+                    b.hex = theme.habit_str("grid") == "hex";
+                    b
                 } else {
                     theme.with_cursor(b, m.from_keys, true)
                 };
@@ -1958,6 +1976,60 @@ impl Shown {
     }
 }
 
+/// The cursor row's initial, giant and faint against the card's far
+/// corner, crossfading to the next row's: true while it fades. Drawn on
+/// a table whose `launcher.letter` has ink, never with the cursor in a grid.
+#[allow(clippy::type_complexity)]
+fn paint_letter(
+    scene: &mut crate::scene::Scene,
+    (nodes, anchor, letter): (&mut Vec<NodeId>, NodeId, &mut (String, String, Instant)),
+    m: &Model,
+    theme: &Theme,
+    kit: &mut Kit,
+    (frame, clip, alpha): (IRect, IRect, f32),
+    scale: f64,
+    now: Instant,
+) -> bool {
+    let b = theme.box_style("launcher.letter", None);
+    let initial = m
+        .rows
+        .get(m.cursor)
+        .filter(|_| (m.view == View::Rows || (m.view == View::AppGrid && m.cursor >= m.app_count)) && b.ink.a > 0.0)
+        .and_then(|r| r.label.chars().find(|c| c.is_alphanumeric()))
+        .map(|c| c.to_uppercase().collect::<String>())
+        .unwrap_or_default();
+    if initial != letter.0 {
+        let was = std::mem::take(&mut letter.0);
+        *letter = (initial, was, now);
+    }
+    let ms = theme.metric("launcher.letter", "duration") * scale;
+    let t = crate::effects::progress(crate::effects::since(letter.2, now), ms);
+    let e = Clock::Effects.curve().ease(t) as f32;
+    let mut p = Painter::new(scene, nodes, Some(clip)).after(Some(anchor));
+    let size = (f64::from(frame.h) * 0.62).round() as f32;
+    let style = crate::text::TextStyle {
+        family: crate::surfaces::bar::cell::face(theme.faces.display),
+        size,
+        weight: theme.metric("launcher.letter", "wght") as f32,
+        tracking: 0.0,
+        wdth: theme.metric("launcher.letter", "wdth") as f32,
+        wght: Some(theme.metric("launcher.letter", "wght") as f32),
+    };
+    for (text, share) in [(letter.1.clone(), 1.0 - e), (letter.0.clone(), e)] {
+        if text.is_empty() || share <= 0.0 {
+            continue;
+        }
+        let shaped = kit.shape(&text, style);
+        // Past the card's trailing and bottom edges, as the reference's
+        // letter is, so it reads as a shape rather than a word.
+        let x = frame.right() - shaped.width + (size * 0.06) as i32;
+        let y = frame.bottom() - shaped.line_height() + (size * 0.16) as i32;
+        p.text(&shaped, (x, y), b.ink.with_alpha(b.ink.a * alpha * share), &[]);
+    }
+    p.finish();
+    t < 1.0
+}
+
 fn header(m: &Model, store: &Store, theme: &Theme) -> El {
     let s = &theme.space;
     let mut parts = Vec::new();
@@ -1998,12 +2070,20 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     } else {
         m.level_name(store)
     };
-    let mut parts = vec![
-        w::space(s.control_padding_x),
-        w::icon(m.level_icon(store)).ink(Ink::Muted),
-        w::space(s.icon_gap),
-        w::text(name).size(Type::BodySmall).ink(Ink::Muted).elide(),
-    ];
+    let mut parts = if theme.habit_str("panel") == "console" {
+        // The console's status line: the level and what it holds, typing
+        // in whenever either changes.
+        let count = m.rows.len() - m.rows.iter().filter(|r| r.kind == NodeKind::Note).count();
+        let line = format!("{} :: {count} {}", name.to_uppercase(), if count == 1 { "entry" } else { "entries" });
+        vec![w::space(s.control_padding_x), w::value(line).ink(Ink::Primary).elide().typed()]
+    } else {
+        vec![
+            w::space(s.control_padding_x),
+            w::icon(m.level_icon(store)).ink(Ink::Muted),
+            w::space(s.icon_gap),
+            w::text(name).size(Type::BodySmall).ink(Ink::Muted).elide(),
+        ]
+    };
     let mut actions = Vec::new();
     if let Some(p) = &bar.primary {
         actions.push(w::row(0.0, vec![w::button(p.label.clone()).variant(ui::Variant::Ghost).on("primary"), w::chord_keys(s, &p.keys)]));
@@ -2063,13 +2143,36 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         items.push((top, m.picker_switch_h, picker_switch(m).pad_start(s.sm)));
     }
     let cells = m.cells();
+    let hex = theme.habit_str("grid") == "hex";
     for (i, slot) in lay.slots.iter().enumerate() {
         if !visible(slot.y, slot.h) {
             continue;
         }
         let row = &m.rows[i];
         let selected = i == m.cursor;
-        let el = if i < cells && m.view == View::AppGrid {
+        let el = if i < cells && m.view == View::AppGrid && hex {
+            // The tile holds the icon alone and the name sits under it, so
+            // the hexagon's slants never cut a name short.
+            let gutter = s.sm;
+            let tile = hex_tile(s);
+            let edge = s.control_height * 2.0;
+            let image = store.menu.icons.get(&row.icon_source).cloned().flatten();
+            let pic = if image.is_some() {
+                w::picture(image, edge)
+            } else {
+                El::new(ui::el::Kind::Icon { name: "layout-grid".into(), size: Type::Display, ink: Ink::Dim }).width(Size::Px(edge)).height(edge)
+            };
+            let tile_el = w::cell(w::column(0.0, vec![pic.centred()]))
+                .hex()
+                .selected(selected)
+                .interactive()
+                .on(format!("row:{i}"))
+                .stop(format!("c:{}", row.id))
+                .width(Size::Px(slot.w))
+                .height(tile);
+            let name = w::label(row.label.clone()).elide().hug().centred().pad(gutter, 0.0, gutter, 0.0);
+            w::column(hex_name_gap(s), vec![tile_el, name]).width(Size::Px(slot.w)).key(format!("c:{}", row.id))
+        } else if i < cells && m.view == View::AppGrid {
             let gutter = s.sm;
             let image = store.menu.icons.get(&row.icon_source).cloned().flatten();
             let pic = if image.is_some() {
@@ -2095,9 +2198,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             let gutter = s.sm;
             let edge = (slot.w - (gutter + s.sm) * 2.0).max(1.0);
             let image = store.picker.thumbs.get(&row.path).cloned().flatten();
-            w::cell(w::picture(image, edge).centred())
-                .ghost()
-                .selected(selected)
+            let pic = w::picture(image, edge).centred();
+            let cell = if hex { w::cell(w::column(0.0, vec![pic.hex()])).hex() } else { w::cell(pic).ghost() };
+            cell.selected(selected)
                 .interactive()
                 .cell_state(|st| st.cursor = selected && m.from_keys)
                 .on(format!("row:{i}"))
@@ -2107,9 +2210,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
                 .pad(gutter, gutter, gutter, gutter)
         } else if i < cells {
             let glyph = w::text(row.icon.clone()).size(Type::Display).centred();
-            w::cell(w::column(0.0, vec![glyph]))
-                .ghost()
-                .selected(selected)
+            let cell = w::cell(w::column(0.0, vec![glyph]));
+            let cell = if hex { cell.hex() } else { cell.ghost() };
+            cell.selected(selected)
                 .interactive()
                 .cell_state(|st| st.cursor = selected && m.from_keys)
                 .on(format!("row:{i}"))
@@ -2391,7 +2494,9 @@ fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thum
         lead.push(w::icon(drawn));
     }
     let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
-    let mut name = w::label(label).elide();
+    // A console table sets the root's rows as its menu: wide caps, a step up.
+    let menu = theme.habit_str("panel") == "console" && m.mode == Mode::Menu && m.level.is_none() && m.query.is_empty() && !row.emoji_only;
+    let mut name = if menu { w::label(label.to_uppercase()).size(Type::Subtitle).elide() } else { w::label(label).elide() };
     if row.dim == Some(true) {
         name = name.ink(Ink::Dim);
     }
@@ -2427,4 +2532,17 @@ fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thum
         .cell_state(|st| st.destructive = confirming)
         .on(format!("row:{i}"))
         .stop(format!("r:{}", row.id))
+}
+
+/// A hex app tile's height: the icon decodes at twice the control height,
+/// and a pointy-topped hexagon holds a centred square of at most 0.63 of
+/// its height.
+fn hex_tile(s: &fs_theme::tokens::Space) -> f64 {
+    (s.control_height * 2.0 / 0.6).round()
+}
+
+/// Room under a hex tile for the cursor's lower bracket, which sits outside
+/// the hexagon, to clear the name.
+fn hex_name_gap(s: &fs_theme::tokens::Space) -> f64 {
+    s.row_gap + s.sm * 2.0
 }

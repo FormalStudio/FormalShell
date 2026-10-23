@@ -50,21 +50,37 @@ impl Card<'_> {
     /// than laid out; the body keeps a slot its height.
     pub fn clock(&self, theme: &Theme, kit: &mut Kit) -> ShapedText {
         let size = (theme.font_size.display_large * 2.0).round() as f32;
-        kit.shape(&self.now.format("%H:%M").to_string(), TextStyle { family: kit.look.mono, size, weight: WEIGHTS.semibold as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None })
+        let text = self.now.format("%H:%M").to_string();
+        // A table that sets the clock's axes sets it in its display face.
+        let wght = theme.metric("lock.clock", "wght") as f32;
+        let style = if wght > 0.0 {
+            let wdth = theme.metric("lock.clock", "wdth") as f32;
+            let family = crate::surfaces::bar::cell::face(theme.faces.display);
+            TextStyle { family, size, weight: wght, tracking: 0.0, wdth: if wdth > 0.0 { wdth } else { TextStyle::NORMAL_WIDTH }, wght: Some(wght) }
+        } else {
+            TextStyle { family: kit.look.mono, size, weight: WEIGHTS.semibold as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
+        };
+        kit.shape(&text, style)
     }
 
     fn date(&self) -> El {
         w::text(self.now.format("%A, %B %-d").to_string()).size(Type::Subtitle).ink(Ink::Primary)
     }
 
-    pub fn body(&self, clock: &ShapedText, theme: &Theme) -> El {
+    /// The date, the clock's slot and whatever sits under them.
+    fn leading(&self, clock: &ShapedText, theme: &Theme) -> El {
         let s = &theme.space;
-        let field_w = s.popup_width_narrow;
-        let mut leading = vec![self.date(), w::space(clock.line_height() as f64)];
+        let mut leading = vec![self.date(), w::space(f64::from(clock_slot(clock).1))];
         if let Some(below) = &self.below {
             leading.push(w::space(s.md));
             leading.push(below.clone());
         }
+        w::column(s.xs, leading).width(Size::Px(leading_width(theme)))
+    }
+
+    pub fn body(&self, clock: &ShapedText, theme: &Theme) -> El {
+        let s = &theme.space;
+        let field_w = s.popup_width_narrow;
 
         let size = avatar_size(theme);
         let picture = match self.avatar {
@@ -85,16 +101,20 @@ impl Card<'_> {
             trailing.push(w::text(self.unavailable).size(Type::BodySmall).ink(Ink::Muted).width(Size::Px(field_w)).centred());
         }
 
-        w::row(gap(theme), vec![w::column(s.xs, leading).width(Size::Px(leading_width(theme))), w::column(s.md, trailing).width(Size::Px(field_w))]).width(Size::Px(width(theme)))
+        w::row(gap(theme), vec![self.leading(clock, theme), w::column(s.md, trailing).width(Size::Px(field_w))]).width(Size::Px(width(theme)))
     }
 
     /// Paints the clock into its slot in a body laid out at `inner`.
     pub fn paint_clock(&self, p: &mut Painter, clock: &ShapedText, inner: Rect, theme: &Theme, kit: &mut Kit, alpha: f32) -> IRect {
         let (_, date_h) = ui::measure(&self.date(), width(theme), theme, kit);
-        let at = (inner.x0.round() as i32, (inner.y0 + date_h + theme.space.xs).round() as i32);
+        // The body's row centres the shorter column, so the date sits that far down.
+        let (_, leading_h) = ui::measure(&self.leading(clock, theme), width(theme), theme, kit);
+        let top = inner.y0 + ((inner.height() - leading_h) / 2.0).max(0.0);
+        let (over, slot) = clock_slot(clock);
+        let at = (inner.x0.round() as i32, (top + date_h + theme.space.xs).round() as i32);
         let ink = theme.colors.get("foreground");
-        p.text(clock, at, ink.with_alpha(ink.a * alpha), &[]);
-        IRect::new(at.0, at.1, clock.width, clock.line_height())
+        p.text(clock, (at.0, at.1 + over), ink.with_alpha(ink.a * alpha), &[]);
+        IRect::new(at.0, at.1, clock.width, slot)
     }
 }
 
@@ -227,3 +247,16 @@ impl View {
         self.ui.draw(&body, inner, None, 1.0, theme, kit, &mut self.scene, now).animating
     }
 }
+
+/// How far the clock's ink rises past its line box, and the slot that
+/// holds all of it. A heavy display cut's figures stand taller than the
+/// face's own ascent says, and would cross the date over them.
+fn clock_slot(clock: &ShapedText) -> (i32, i32) {
+    let pad = crate::text::PAD;
+    let (top, bottom) = clock.glyphs.iter().filter(|g| g.image.is_none()).fold((0, clock.line_height()), |(top, bottom), g| {
+        let b = vello_cpu::kurbo::Shape::bounding_box(g.path.as_ref());
+        (top.min(g.y - pad + b.y0.floor() as i32), bottom.max(g.y - pad + b.y1.ceil() as i32))
+    });
+    (-top, bottom - top)
+}
+

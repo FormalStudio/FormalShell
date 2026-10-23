@@ -298,6 +298,8 @@ pub struct El {
     /// A picture that lands whenever it changes, on a table with
     /// `picture: zoom` (a cover lands without asking).
     pub lands: bool,
+    /// A cell drawn as the hexagon its rect holds, or a picture cut to one.
+    pub hex: bool,
 }
 
 impl El {
@@ -309,7 +311,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None, tag: false, tab: None, typed: false, lands: false }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None, tag: false, tab: None, typed: false, lands: false, hex: false }
     }
 
     pub fn typed(mut self) -> Self {
@@ -319,6 +321,11 @@ impl El {
 
     pub fn lands(mut self) -> Self {
         self.lands = true;
+        self
+    }
+
+    pub fn hex(mut self) -> Self {
+        self.hex = true;
         self
     }
 

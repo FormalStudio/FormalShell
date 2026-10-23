@@ -2,13 +2,8 @@
     "roles": {
         "bar": {
             "rest": {
-                "fill": "background",
-                "fillAlpha": "surface",
-                "radius": 0,
-                "edge": {
-                    "color": "border",
-                    "width": 1
-                }
+                "fill": "transparent",
+                "radius": 0
             }
         },
         "frame": {
@@ -356,7 +351,7 @@
                 "width": 2
             },
             "gap": 6,
-            "sweep": 70,
+            "sweep": 120,
             "layers": [
                 {
                     "blur": 8,
@@ -459,6 +454,31 @@
             "wdth": 75,
             "wght": 600
         },
+        "bar.cell": {
+            "fill": "background",
+            "fillAlpha": 0.88,
+            "border": {
+                "color": "border",
+                "width": 1
+            }
+        },
+        "launcher.letter": {
+            "fill": "transparent",
+            "ink": [
+                "foreground",
+                0.05
+            ],
+            "wdth": 125,
+            "wght": 900,
+            "duration": 500
+        },
+        "lock.clock": {
+            "fill": "transparent",
+            "wdth": 125,
+            "wght": 900,
+            "slam": 0.06,
+            "duration": 700
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.5,
@@ -497,7 +517,13 @@
         "switcher.cell": {
             "rest": {
                 "fill": "transparent",
-                "radius": 0
+                "radius": 0,
+                "chamfer": [
+                    10,
+                    10,
+                    10,
+                    10
+                ]
             },
             "selected": {
                 "fill": "primary",
@@ -758,7 +784,7 @@
                 1.0,
                 1.0
             ],
-            "alpha": 0.14
+            "alpha": 0.08
         },
         "progress": "blocks"
     },

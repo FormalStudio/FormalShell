@@ -110,6 +110,8 @@ pub struct Lock {
     art: Option<(String, Vec<Bitmap>)>,
     fade: Animated,
     rise: Animated,
+    /// The clock's slam in from the leading side (`lock.clock`'s `slam`).
+    slam: Animated,
     wake: Animated,
     entered: bool,
     notifier: Option<ExtIdleNotifierV1>,
@@ -146,6 +148,7 @@ impl Lock {
             art: None,
             fade: Animated::new(1.0, EFFECTS),
             rise: Animated::new(0.0, SPATIAL),
+            slam: Animated::new(1.0, EFFECTS),
             wake: Animated::new(1.0, EFFECTS_SLOW),
             entered: false,
             notifier: globals.bind(qh, 2..=2, Ignore).ok(),
@@ -664,11 +667,16 @@ impl App {
             self.lock.fade.set(now, 1.0, Clock::Effects.ms(theme) * scale);
             self.lock.rise.jump(theme.space.section_gap);
             self.lock.rise.set(now, 0.0, Clock::Spatial.ms(theme) * scale);
+            if theme.metric("lock.clock", "slam") > 0.0 {
+                let m = theme.motion();
+                self.lock.slam.jump(0.0);
+                self.lock.slam.set_on(now, 1.0, theme.metric("lock.clock", "duration") * scale, crate::motion::Curve::from_table(&m.arrive_curve));
+            }
         }
         let blanked = self.lock_blanked();
         let reveal = if theme.motion_enabled { theme.motion().families.reveal * self.motion_scale } else { 0.0 };
         self.lock.wake.set(now, if blanked { 0.0 } else { 1.0 }, reveal);
-        let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now);
+        let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.slam.running(now) || self.lock.wake.running(now);
         let has_wallpaper = !self.store.state.data.wallpaper.is_empty();
         let shared = Shared {
             now: Local::now(),
@@ -681,6 +689,7 @@ impl App {
             avatar: None,
             media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
+            slam: self.lock.slam.value(now).clamp(0.0, 1.0),
             blanked,
             wake: self.lock.wake.value(now).clamp(0.0, 1.0) as f32,
         };

@@ -15,7 +15,7 @@ use crate::tokens::{self, Easing, Motion};
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
 /// over, which is why `switch.track` reads `off` before `on`.
-pub const ROLES: [(&str, &[&str]); 40] = [
+pub const ROLES: [(&str, &[&str]); 43] = [
     ("bar", &["rest"]),
     ("frame", &["rest"]),
     ("card", &["rest", "opaque"]),
@@ -49,6 +49,9 @@ pub const ROLES: [(&str, &[&str]); 40] = [
     ("panel.strip", &[]),
     ("panel.status", &[]),
     ("panel.tag", &[]),
+    ("bar.cell", &[]),
+    ("launcher.letter", &[]),
+    ("lock.clock", &[]),
     ("scrim", &[]),
     ("separator", &[]),
     ("keycap", &[]),
@@ -392,13 +395,16 @@ pub struct Bar<C> {
     pub color: C,
 }
 
-/// Two arcs held `gap` outside a box, one either side, each `sweep`
-/// degrees of the ellipse through those points.
+/// The box's own outline held `gap` outside it, drawn only where it lies
+/// within `sweep` degrees of straight up or straight down from the centre
+/// (measured with the box squared up), under the role's casts as a glow
+/// along the line.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Brackets<C> {
     pub gap: f64,
     pub sweep: f64,
     pub line: Line<C>,
+    pub glow: Vec<Cast<C>>,
 }
 
 /// A whole box, drawable. Every field is always present so a renderer
@@ -423,6 +429,8 @@ pub struct BoxStyle<C> {
     pub chamfer: [f64; 4],
     pub bar: Option<Bar<C>>,
     pub brackets: Option<Brackets<C>>,
+    /// Drawn as the pointy-topped hexagon its rect holds, not the rect.
+    pub hex: bool,
 }
 
 impl<C> BoxStyle<C> {
@@ -449,6 +457,7 @@ impl<C: Clone> BoxStyle<C> {
             chamfer: [0.0; 4],
             bar: None,
             brackets: None,
+            hex: false,
         }
     }
 }
@@ -727,7 +736,7 @@ pub fn cursor_brackets<C: Ctx>(style: &Value, ctx: &C) -> Option<Brackets<C::Col
     let raw = entry(style, "cursor.brackets", None)?;
     let line = line(raw.get("border"), ctx).filter(|l| l.width > 0.0)?;
     let sweep = num(raw.get("sweep")).filter(|s| s.is_finite() && *s > 0.0)?.min(180.0);
-    Some(Brackets { gap: num_or_zero(raw.get("gap")), sweep, line })
+    Some(Brackets { gap: num_or_zero(raw.get("gap")), sweep, line, glow: Vec::new() })
 }
 
 /// A number a role carries beside its box (`hero.tab`'s height, the
@@ -1754,7 +1763,7 @@ pub(crate) mod tests {
         assert_eq!(cursor_bar(c, &ctx("dark")), Some(Bar { width: 6.0, color: "role:primary".to_owned() }));
         let brackets = cursor_brackets(c, &ctx("dark")).unwrap();
         assert_eq!(brackets.line, Line { color: "role:primary".to_owned(), width: 2.0 });
-        assert_eq!((brackets.gap, brackets.sweep), (6.0, 70.0));
+        assert_eq!((brackets.gap, brackets.sweep), (6.0, 120.0));
         let cursor = r(c, "cursor", None, "dark");
         assert_eq!((cursor.border.is_none(), cursor.rings.len()), (true, 0));
 

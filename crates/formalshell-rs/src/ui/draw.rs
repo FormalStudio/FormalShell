@@ -674,8 +674,13 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let r = irect(inner);
             let landing = if el.lands { landing(cx, pic, path) } else { None };
             let mut p = cx.painter(path);
-            if let Some(image) = &pic.0 {
-                land(&mut p, image, r, alpha, landing);
+            match &pic.0 {
+                Some(image) if el.hex && landing.is_none() => {
+                    let (w, h) = image.size();
+                    p.shape(IRect::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h), Paint::Cut { image: image.clone(), alpha, cut: crate::scene::Cut::Hex });
+                }
+                Some(image) => land(&mut p, image, r, alpha, landing),
+                None => {}
             }
             let last = p.last();
             p.finish();
@@ -965,7 +970,8 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     b.wash = t.box_style("cell", Some("hover")).wash;
     let (on, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned;
-    let b = if state.brackets { t.with_brackets(b, true, true) } else { t.with_cursor(b, ring, !cx.halo_owned() || state.cursor) };
+    let mut b = if state.brackets { t.with_brackets(b, true, true) } else { t.with_cursor(b, ring, !cx.halo_owned() || state.cursor) };
+    b.hex = el.hex;
     let focus_on = on || hovered || state.cursor || (owned && state.selected);
     let catalogue = t.motion().catalogue;
     let focus = match &catalogue.focus_text {

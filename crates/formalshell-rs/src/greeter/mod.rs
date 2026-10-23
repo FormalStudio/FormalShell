@@ -698,6 +698,7 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
                 avatar: crate::scene::nearest(&pic, 1.0),
                 media,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: false,
                 wake: 1.0,
             };

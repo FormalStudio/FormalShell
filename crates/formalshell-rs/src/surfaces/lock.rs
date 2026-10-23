@@ -41,6 +41,8 @@ pub struct Shared<'a> {
     pub media: Option<NowPlaying<'a>>,
     /// The column's entrance: its opacity and how far it still has to rise.
     pub enter: (f32, f64),
+    /// The clock's slam in, 0 to 1 at rest.
+    pub slam: f64,
     /// Idle-blanked: nothing but black once the wake fade has run out.
     pub blanked: bool,
     /// The blank and wake crossfade: 0 is
@@ -214,7 +216,11 @@ impl View {
             }
         }
         login::paint(&mut p, card_rect, theme, fade);
-        card.paint_clock(&mut p, &clock, inner, theme, kit, fade);
+        // The clock comes in from the leading side by `slam` of the screen's
+        // width, fading up as it lands.
+        let slam = theme.metric("lock.clock", "slam") * (1.0 - s.slam) * f64::from(w);
+        let shifted = vello_cpu::kurbo::Rect::new(inner.x0 - slam, inner.y0, inner.x1 - slam, inner.y1);
+        card.paint_clock(&mut p, &clock, shifted, theme, kit, fade * s.slam as f32);
         let last = p.last();
         p.finish();
 
@@ -445,6 +451,7 @@ mod tests {
                 avatar: None,
                 media: None,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: true,
                 wake,
             };
@@ -480,6 +487,7 @@ mod tests {
                 avatar: None,
                 media: None,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: true,
                 wake,
             };
@@ -518,6 +526,7 @@ mod tests {
                 avatar: None,
                 media: None,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: false,
                 wake: 1.0,
             };

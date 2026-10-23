@@ -1104,6 +1104,15 @@
         "panel.tag": {
             "fill": "transparent"
         },
+        "bar.cell": {
+            "fill": "transparent"
+        },
+        "launcher.letter": {
+            "fill": "transparent"
+        },
+        "lock.clock": {
+            "fill": "transparent"
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.49019607843137253,

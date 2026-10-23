@@ -246,6 +246,8 @@ impl Switcher {
 
         let keys: Vec<String> = input.icons.iter().map(|i| i.0.clone()).collect();
         let ordinals = model::ordinals(&keys);
+        // A table that cuts the cells' corners cuts their thumbnails' too.
+        let cut = t.box_style("switcher.cell", Some("rest")).chamfer[0];
         // Clipped only once the rows scroll, so the cursor's halo is whole.
         p.clip = (grid_h > view_h).then_some(view);
         for (i, rects) in self.cells.clone().iter().enumerate() {
@@ -262,13 +264,22 @@ impl Switcher {
             let th = rects.thumb;
             let cover = t.cover_radius(th.w.min(th.h) as f64);
             match input.thumbs.get(i).and_then(Option::as_ref) {
+                Some(image) if cut > 0.0 => {
+                    let r = vello_cpu::kurbo::Rect::new(th.x as f64, th.y as f64, th.right() as f64, th.bottom() as f64);
+                    p.shape(th, Paint::Cut { image: image.clone(), alpha, cut: crate::scene::Cut::Corners(cut as f32) });
+                    let ink = if selected { t.colors.get("ring") } else { t.colors.get("border") };
+                    p.shape(th, boxes::chamfer_paint(r, [cut; 4], Rgba::TRANSPARENT, a(ink), t.border_width));
+                }
                 Some(image) => {
                     p.shape(th, Paint::Picture { image: image.clone(), alpha, radius: cover as f32 });
                     let ink = if selected { t.colors.get("ring") } else { t.colors.get("border") };
                     p.framed(th, Rgba::TRANSPARENT, cover as f32, a(ink), t.border_width as f32);
                 }
                 None => {
-                    let cb: BoxStyle<Rgba> = t.box_style("cell", Some("rest"));
+                    let mut cb: BoxStyle<Rgba> = t.box_style("cell", Some("rest"));
+                    if cut > 0.0 {
+                        cb.chamfer = [cut; 4];
+                    }
                     boxes::paint(&mut p, th, &cb, t.box_radius(&cb, th.h as f64), alpha, 0.0);
                     let size = m.schematic_icon(t, th.w as f64).round() as i32;
                     let at = IRect::new(th.x + (th.w - size) / 2, th.y + (th.h - size) / 2, size, size);
