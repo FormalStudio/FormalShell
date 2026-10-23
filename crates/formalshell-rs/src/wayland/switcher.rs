@@ -25,7 +25,7 @@ pub const OFF: &str = "error: switcher is off (switcher.enabled)";
 pub struct State {
     pub model: Switcher,
     win: Option<(Surface, Scene)>,
-    dirty: bool,
+    pub(super) dirty: bool,
 }
 
 impl State {

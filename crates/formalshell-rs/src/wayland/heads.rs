@@ -350,9 +350,12 @@ impl App {
         let wanted = &self.store.state.data.wallpaper;
         let reveal = theme.motion().families.reveal * self.motion_scale;
         for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
-            let Some((w, h)) = b.size() else { continue };
+            let Some((w, h)) = b.pixels() else { continue };
             crate::services::wallpaper::show(wanted, w as u32, h as u32, dither);
             let picture = self.store.wallpaper.sized(w as u32, h as u32).cloned();
+            if picture.is_none() && b.holds(wanted) {
+                continue;
+            }
             b.draw(picture.filter(|p| p.path == *wanted && p.dither == dither), background, reveal, &self.qh);
         }
     }

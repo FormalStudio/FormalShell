@@ -116,9 +116,9 @@ impl App {
                     surface.set_input_region(Some(region.wl_region()));
                 }
                 let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-                let mut s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started);
+                let mut s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport);
                 s.raster_budget = Some(LAUNCHER_SLICE);
-                (s, viewport)
+                s
             })
             .collect();
         crate::surfaces::modal::Quads::new(name, parts, margin, self.started)
@@ -180,8 +180,8 @@ impl App {
             surface.set_input_region(Some(region.wl_region()));
         }
         let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-        let s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started);
-        crate::surfaces::modal::Layer::new(s, viewport)
+        let s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport);
+        crate::surfaces::modal::Layer::new(s)
     }
 
     /// The window for an open, created fresh unless one is already up.

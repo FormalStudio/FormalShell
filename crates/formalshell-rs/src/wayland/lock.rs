@@ -91,7 +91,7 @@ pub struct Lock {
     avatar: Option<Bitmap>,
     backdrop: Option<Bitmap>,
     clock: Option<RegistrationToken>,
-    dirty: bool,
+    pub(super) dirty: bool,
     transport: i32,
     art: Option<(String, Option<Bitmap>)>,
     fade: Animated,

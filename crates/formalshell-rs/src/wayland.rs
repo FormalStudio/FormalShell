@@ -316,6 +316,7 @@ impl App {
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
         let pixels = Pixels::bind(globals, qh)
             .expect("wp_viewporter, wp_single_pixel_buffer_manager_v1 and wp_alpha_modifier_v1 are required");
+        crate::surface::bind_scaling(globals, qh);
         let store = Store::default();
         let bar = Bar::new(Edge::Top, &store.theme.theme);
         let mut app = Self {
@@ -2075,8 +2076,23 @@ impl App {
     }
 }
 
+impl crate::surface::ScaleHandler for App {
+    /// Every surface draws again at its new scale on its own next present;
+    /// only the owners that present when something changed need telling.
+    fn rescaled(&mut self) {
+        self.lock.dirty = true;
+        self.switcher.dirty = true;
+        for p in &mut self.pickers.surfaces {
+            p.dirty = true;
+        }
+        self.update_backdrops();
+    }
+}
+
 impl CompositorHandler for App {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
+    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {
+        crate::surface::ScaleHandler::rescaled(self);
+    }
 
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
 
