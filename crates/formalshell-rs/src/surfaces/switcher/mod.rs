@@ -114,7 +114,7 @@ impl Metrics {
 }
 
 fn caption_style(kit: &Kit, selected: bool) -> TextStyle {
-    TextStyle { family: kit.look.sans, size: kit.look.caption, weight: if selected { 500.0 } else { 400.0 }, tracking: 0.0 }
+    TextStyle { family: kit.look.sans, size: kit.look.caption, weight: if selected { 500.0 } else { 400.0 }, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 /// `text` cut to `max` with an ellipsis.
@@ -237,7 +237,7 @@ impl Switcher {
             let r = IRect::new(card.x + pad as i32, card.y + pad as i32, content_w.round() as i32, m.cell_h.round() as i32);
             let b = t.box_style("switcher.cell", Some("rest"));
             boxes::paint(&mut p, r, &b, t.box_radius(&b, r.h as f64), alpha, 0.0);
-            let style = TextStyle { family: kit.look.sans, size: kit.look.caption, weight: 500.0, tracking: 0.0 };
+            let style = TextStyle { family: kit.look.sans, size: kit.look.caption, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
             let label = kit.shape("No windows", style);
             p.text(&label, (r.x + (r.w - label.width) / 2, r.y + (r.h - label.line_height()) / 2), a(muted), &[]);
             p.finish();
@@ -276,7 +276,7 @@ impl Switcher {
                         Some(big) => p.shape(at, Paint::Picture { image: big, alpha, radius: 0.0 }),
                         None => {
                             let glyph = fs_theme::icons::glyph(&kit.look.icon_set, "app-window");
-                            let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0 };
+                            let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                             let g = kit.shape(glyph.text, st);
                             p.text(&g, (at.x + (at.w - g.width) / 2, at.y + (at.h - g.line_height()) / 2), a(muted), &[]);
                         }
@@ -286,7 +286,7 @@ impl Switcher {
 
             let (n, of) = ordinals.get(i).copied().unwrap_or((1, 1));
             if of > 1 {
-                let st = TextStyle { family: kit.look.mono, size: kit.look.body, weight: 500.0, tracking: 0.0 };
+                let st = TextStyle { family: kit.look.mono, size: kit.look.body, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                 let label = kit.shape(&n.to_string(), st);
                 let h = label.line_height() + (s.control_padding_y * 2.0) as i32;
                 let w = label.width + (s.control_padding_x * 2.0) as i32;
@@ -301,7 +301,7 @@ impl Switcher {
                 Some(small) => p.shape(ir, Paint::Picture { image: small, alpha, radius: 0.0 }),
                 None => {
                     let glyph = fs_theme::icons::glyph(&kit.look.icon_set, "app-window");
-                    let st = TextStyle { family: Family::Named(glyph.family), size: m.caption_icon as f32, weight: 400.0, tracking: 0.0 };
+                    let st = TextStyle { family: Family::Named(glyph.family), size: m.caption_icon as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                     let g = kit.shape(glyph.text, st);
                     p.text(&g, (ir.x + (ir.w - g.width) / 2, ir.y + (ir.h - g.line_height()) / 2), a(muted), &[]);
                 }

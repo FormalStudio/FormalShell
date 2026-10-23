@@ -89,6 +89,30 @@ if ! { [ -f "$earth" ] && echo "$earth_sum  $earth" | sha256sum -c --quiet 2>/de
   echo "$earth_sum  $earth" | sha256sum -c --quiet
 fi
 
+# The cartridge theme's faces and their licences: the files and hashes
+# nix/cartridge-fonts.nix pins, as google/fonts path, file name, sha256.
+fonts_rev=e7db6ca603fd4862010383ff17ffd6cc4ffac1c0
+fonts=(
+  "archivo/Archivo%5Bwdth,wght%5D.ttf Archivo[wdth,wght].ttf 0e094a7d3c7c4c25cf1310c4b30014f1dae9332220b1c2c88f4fa996f0b05053"
+  "archivo/OFL.txt archivo-OFL.txt 108b4e57c9c796d3d38d0428ca7ee39de47ad93187302718d9b2d8864b9b716b"
+  "archivonarrow/ArchivoNarrow%5Bwght%5D.ttf ArchivoNarrow[wght].ttf adbe027f625c8393ae0f6e174e32e233dda485bc3eda5153ce428275394ef97f"
+  "archivonarrow/OFL.txt archivonarrow-OFL.txt b2087ef3fb91248e346600d19021249152a9688efea72905aa1996bb16a4c8de"
+  "bizudmincho/BIZUDMincho-Regular.ttf BIZUDMincho-Regular.ttf 468ee6d9b149ca144809e03841bf18740ecf014e055a00da6ecaf1aaf4165af2"
+  "bizudmincho/BIZUDMincho-Bold.ttf BIZUDMincho-Bold.ttf 1f077f8f84c1e09d5c4acdd6828048180c2f733ae5ae13271f48cf01bee4ae83"
+  "bizudmincho/OFL.txt bizudmincho-OFL.txt ef0ed524b3bd012f37015e986809eed6f67905456ebfc1ebd7fcc2765282ee01"
+  "dotgothic16/DotGothic16-Regular.ttf DotGothic16-Regular.ttf 3ad9af88726d42b40f7f365f0dcac785af73cf20ea6f1d5b44e57cc21150b8f1"
+  "dotgothic16/OFL.txt dotgothic16-OFL.txt b6630c61ea078cacd7fabe37d14ffe557a0b45b06683374a9aa9e24262993e33"
+)
+mkdir -p "$tp/cartridge-fonts"
+for entry in "${fonts[@]}"; do
+  read -r path name sum <<<"$entry"
+  file=$tp/cartridge-fonts/$name
+  if ! { [ -f "$file" ] && echo "$sum  $file" | sha256sum -c --quiet 2>/dev/null; }; then
+    curl -fsSL -o "$file" "https://raw.githubusercontent.com/google/fonts/$fonts_rev/ofl/$path"
+    echo "$sum  $file" | sha256sum -c --quiet
+  fi
+done
+
 export CARGO_HOME=$work/cargo RUSTUP_HOME=$work/rustup
 export PATH=$CARGO_HOME/bin:$tp/go/bin:$tp/zig:$PATH
 if ! command -v cargo >/dev/null; then
@@ -160,6 +184,9 @@ cp -R "$repo/branding" "$share/branding"
 cp -R "$repo/docs/examples" "$share/examples"
 install -m644 "$tp/lucide-font/lucide.ttf" "$share/fonts/lucide.ttf"
 install -m644 "$tp/nerd-fonts-symbols/SymbolsNerdFont-Regular.ttf" "$tp/nerd-fonts-symbols/SymbolsNerdFontMono-Regular.ttf" "$share/fonts/"
+install -m644 "$tp/cartridge-fonts/"*.ttf "$share/fonts/"
+mkdir -p "$share/licenses"
+install -m644 "$tp/cartridge-fonts/"*-OFL.txt "$share/licenses/"
 python3 "$repo/nix/earth-tiles.py" "$earth" "$share"
 python3 "$repo/nix/earbuds-art.py" "$tp/ear-web" "$tp/librepods" "$share"
 install -m644 "$repo/LICENSE" "$share/LICENSE"

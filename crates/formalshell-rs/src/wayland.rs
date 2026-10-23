@@ -434,11 +434,11 @@ impl App {
         for w in [WEIGHTS.normal, WEIGHTS.medium, WEIGHTS.semibold] {
             jobs.push(("0".into(), look.label(w as f32)));
             jobs.push(("a".into(), look.sans(w as f32)));
-            jobs.push(("0".into(), TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking }));
+            jobs.push(("0".into(), TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
         for name in ["circle", "wifi", "volume-2", "battery", "bell", "bluetooth", "cpu"] {
             let g = fs_theme::icons::glyph(&look.icon_set, name);
-            jobs.push((g.text.to_owned(), TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0 }));
+            jobs.push((g.text.to_owned(), TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
         let text = self.bar.kit.text.clone();
         let _ = std::thread::Builder::new().name("fs-warm".into()).spawn(move || text.warm(&jobs));

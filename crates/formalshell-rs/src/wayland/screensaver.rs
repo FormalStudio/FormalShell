@@ -502,7 +502,7 @@ impl App {
     fn saver_resize(&mut self, i: usize, width: i32, height: i32) {
         let banner = self.saver_banner();
         let Some(o) = self.saver.overlays.get_mut(i) else { return };
-        let style = |size: f64| TextStyle { family: Family::Generic(GenericFamily::Monospace), size: size as f32, weight: 400.0, tracking: 0.0 };
+        let style = |size: f64| TextStyle { family: Family::Generic(GenericFamily::Monospace), size: size as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         let metric = self.bar.kit.text.shape("MMMMMMMMMM", style(100.0));
         let advance = f64::from(metric.width) / 1000.0;
         let line = f64::from(metric.ascent + metric.descent) / 100.0;
@@ -772,7 +772,7 @@ impl App {
                 match blocks::rects_for(c as u32) {
                     None => {
                         let shaped = o.glyphs.entry(c).or_insert_with(|| {
-                            let style = TextStyle { family: Family::Generic(GenericFamily::Monospace), size: font, weight: 400.0, tracking: 0.0 };
+                            let style = TextStyle { family: Family::Generic(GenericFamily::Monospace), size: font, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                             self.bar.kit.text.shape(&c.to_string(), style)
                         });
                         for g in &shaped.glyphs {

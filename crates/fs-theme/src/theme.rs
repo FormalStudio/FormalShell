@@ -10,7 +10,7 @@ use crate::color::Rgba;
 use crate::palette::{self, COLOR_KEYS};
 use crate::presets;
 use crate::style::{self, BoxStyle, Clock, Radius, Ring};
-use crate::tokens::{self, FontTokens, LetterSpacing, Radii, Space};
+use crate::tokens::{self, Easing, FontTokens, LetterSpacing, Radii, Space};
 
 /// theme.json's colour roles, parsed. Built from a palette that already
 /// went through `palette::merge_with_fallback`, so every key is valid hex.
@@ -52,11 +52,53 @@ pub struct ThemeMotion {
     pub switcher: f64,
     pub restack_stagger: f64,
     pub families: tokens::Motion,
-    pub emerge_curve: Vec<f64>,
-    pub arrive_curve: Vec<f64>,
-    pub restack_curve: Vec<f64>,
-    pub switcher_curve: Vec<f64>,
+    pub emerge_curve: Easing,
+    pub arrive_curve: Easing,
+    pub restack_curve: Easing,
+    pub switcher_curve: Easing,
     pub pulse_duration: f64,
+}
+
+/// One text role's family: the name a table gives it, and the fontconfig
+/// alias that stands in when the table names none or the face is missing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Face {
+    pub name: Option<&'static str>,
+    pub generic: &'static str,
+}
+
+/// The four text roles a table may name: `words` for labels, `values` for
+/// numbers and status, `display` for headings and titles, `body` for
+/// secondary lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Faces {
+    pub words: Face,
+    pub values: Face,
+    pub display: Face,
+    pub body: Face,
+}
+
+impl Faces {
+    /// The table's `fonts` block, `display` and `body` falling back to
+    /// `words`, `values` to `monospace` and `words` to the `theme.fonts`
+    /// pair's sans. `from_table` false leaves every role on its alias.
+    pub fn resolve(style: &'static Value, fonts: &str, from_table: bool) -> Self {
+        let sans = if fonts == "mono" { "monospace" } else { "sans-serif" };
+        let name = |key: &str| -> Option<&'static str> {
+            if !from_table {
+                return None;
+            }
+            style.get("fonts")?.get(key)?.as_str().filter(|n| !n.is_empty())
+        };
+        let words = Face { name: name("words"), generic: sans };
+        let or_words = |key: &str| name(key).map_or(words, |n| Face { name: Some(n), generic: sans });
+        Self {
+            words,
+            values: Face { name: name("values"), generic: "monospace" },
+            display: or_words("display"),
+            body: or_words("body"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -70,8 +112,7 @@ pub struct Theme {
     pub surface_opacity: f64,
     pub blur_behind: bool,
     pub fonts: &'static str,
-    pub font_family_sans: &'static str,
-    pub font_family_mono: &'static str,
+    pub faces: Faces,
     pub icon_set: String,
     pub dither: bool,
     pub wallpaper_dither: bool,
@@ -160,8 +201,7 @@ impl Theme {
             surface_opacity,
             blur_behind: preset.blur,
             fonts: preset.fonts,
-            font_family_sans: if preset.fonts == "mono" { "monospace" } else { "sans-serif" },
-            font_family_mono: "monospace",
+            faces: Faces::resolve(style, preset.fonts, preset.table_fonts),
             icon_set,
             dither: preset.dither,
             wallpaper_dither: preset.wallpaper_dither,
@@ -481,10 +521,53 @@ mod tests {
         assert_eq!(t.radii.xl, 0.0);
         assert_eq!(t.surface_opacity, 1.0);
         assert!(!t.blur_behind);
-        assert_eq!(t.font_family_sans, "monospace");
+        assert_eq!(t.faces.words, Face { name: None, generic: "monospace" });
         assert_eq!(t.icon_set, "nerd");
         assert_eq!(t.pill_radius(20.0), 0.0);
         assert_eq!(t.frame_radius, 0.0);
+    }
+
+    #[test]
+    fn a_table_with_no_fonts_block_keeps_the_aliases() {
+        let alias = |generic| Face { name: None, generic };
+        for (preset, sans) in [("metamorphosis", "sans-serif"), ("pantheon", "sans-serif"), ("retro", "monospace")] {
+            let t = Theme::resolve(make_get(json!({ "theme": { "preset": preset } })), &sentinel());
+            let want = Faces { words: alias(sans), values: alias("monospace"), display: alias(sans), body: alias(sans) };
+            assert_eq!(t.faces, want, "{preset}");
+        }
+    }
+
+    #[test]
+    fn a_fonts_block_falls_back_down_its_roles() {
+        let full: &'static Value = Box::leak(Box::new(json!({ "fonts": {
+            "words": "Archivo", "values": "DotGothic16", "display": "Archivo Narrow", "body": "BIZ UDMincho"
+        } })));
+        let f = Faces::resolve(full, "pair", true);
+        assert_eq!(f.words, Face { name: Some("Archivo"), generic: "sans-serif" });
+        assert_eq!(f.values, Face { name: Some("DotGothic16"), generic: "monospace" });
+        assert_eq!(f.display, Face { name: Some("Archivo Narrow"), generic: "sans-serif" });
+        assert_eq!(f.body, Face { name: Some("BIZ UDMincho"), generic: "sans-serif" });
+
+        let words: &'static Value = Box::leak(Box::new(json!({ "fonts": { "words": "Archivo", "display": "" } })));
+        let f = Faces::resolve(words, "pair", true);
+        assert_eq!(f.display, f.words);
+        assert_eq!(f.body, f.words);
+        assert_eq!(f.values, Face { name: None, generic: "monospace" });
+
+        let display: &'static Value = Box::leak(Box::new(json!({ "fonts": { "display": "Archivo" } })));
+        let f = Faces::resolve(display, "pair", true);
+        assert_eq!(f.words, Face { name: None, generic: "sans-serif" });
+        assert_eq!(f.display, Face { name: Some("Archivo"), generic: "sans-serif" });
+        assert_eq!(f.body, f.words);
+    }
+
+    #[test]
+    fn theme_fonts_in_settings_wins_over_the_tables_block() {
+        let table: &'static Value = Box::leak(Box::new(json!({ "fonts": { "words": "Archivo", "values": "DotGothic16" } })));
+        let f = Faces::resolve(table, "mono", false);
+        assert_eq!(f.words, Face { name: None, generic: "monospace" });
+        assert_eq!(f.display, f.words);
+        assert_eq!(f.values, Face { name: None, generic: "monospace" });
     }
 
     #[test]
@@ -519,15 +602,15 @@ mod tests {
         let m = t.motion();
         assert_eq!(m.emerge, 500.0);
         assert_eq!(m.restack_stagger, 0.0);
-        assert_eq!(m.emerge_curve, tokens::curve("spatial").unwrap());
+        assert_eq!(m.emerge_curve, Easing::Bezier(tokens::curve("spatial").unwrap().to_vec()));
         // The toast's own clock is sonner's: 400ms on CSS `ease`, never past rest.
         assert_eq!((m.arrive, m.restack), (400.0, 400.0));
-        assert_eq!(m.restack_curve, [0.25, 0.1, 0.25, 1.0, 1.0, 1.0]);
+        assert_eq!(m.restack_curve, Easing::Bezier(vec![0.25, 0.1, 0.25, 1.0, 1.0, 1.0]));
 
         let p = Theme::resolve(make_get(json!({ "theme": { "preset": "pantheon" } })), &sentinel()).motion();
         assert_eq!(p.emerge, 150.0);
         assert_eq!(p.restack_stagger, 150.0);
-        assert_eq!(p.restack_curve, tokens::curve("emphasizedDecel").unwrap());
+        assert_eq!(p.restack_curve, Easing::Bezier(tokens::curve("emphasizedDecel").unwrap().to_vec()));
 
         t.motion_scale = 10.0;
         assert_eq!(t.motion().emerge, 5000.0);

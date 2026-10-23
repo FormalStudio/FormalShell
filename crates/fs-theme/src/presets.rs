@@ -80,6 +80,9 @@ pub struct Resolved {
     pub radius: Value,
     pub icons: Value,
     pub fonts: &'static str,
+    /// No valid `theme.fonts` in settings.json, so the table's own `fonts`
+    /// block names the families.
+    pub table_fonts: bool,
     /// As written, or the preset's alpha; range-checked by `theme::Theme`.
     pub surface_opacity: Value,
     pub blur: bool,
@@ -97,11 +100,12 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
     let preset = name(preset);
     let d = defaults(Some(&Value::from(preset)));
 
-    let fonts = match get("theme.fonts").as_ref().and_then(Value::as_str) {
-        Some("pair") => "pair",
-        Some("mono") => "mono",
-        _ => d.fonts,
+    let written = match get("theme.fonts").as_ref().and_then(Value::as_str) {
+        Some("pair") => Some("pair"),
+        Some("mono") => Some("mono"),
+        _ => None,
     };
+    let fonts = written.unwrap_or(d.fonts);
     let dither = boolean(get("theme.dither"), d.dither);
 
     Resolved {
@@ -110,6 +114,7 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         radius: get("theme.radius").unwrap_or(Value::from(d.radius)),
         icons: get("theme.icons").unwrap_or(Value::from(d.icons)),
         fonts,
+        table_fonts: written.is_none(),
         surface_opacity: get("theme.surfaceOpacity").unwrap_or(Value::from(d.surface_opacity)),
         blur: boolean(get("theme.blur"), d.blur),
         dither,
@@ -221,6 +226,8 @@ pub(crate) mod tests {
         assert_eq!(p("metamorphosis", json!({ "theme": { "fonts": "comic" } })).fonts, "pair");
         assert_eq!(p("retro", json!({ "theme": { "fonts": "comic" } })).fonts, "mono");
         assert_eq!(p("metamorphosis", json!({ "theme": { "fonts": "mono" } })).fonts, "mono");
+        assert!(p("metamorphosis", json!({ "theme": { "fonts": "comic" } })).table_fonts);
+        assert!(!p("metamorphosis", json!({ "theme": { "fonts": "pair" } })).table_fonts);
     }
 
     #[test]

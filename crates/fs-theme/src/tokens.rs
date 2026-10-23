@@ -411,6 +411,14 @@ pub const MOTION_CURVES: [(&str, &[f64]); 8] = [
     ("emphasizedDecel", &[0.05, 0.7, 0.1, 1.0, 1.0, 1.0]),
 ];
 
+/// A table's curve: control points the way [`MOTION_CURVES`] writes them,
+/// or CSS `linear()`'s `(t, v)` stops, which may pass 1 for an overshoot.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Easing {
+    Bezier(Vec<f64>),
+    Stops(Vec<(f64, f64)>),
+}
+
 /// The curve a table or a caller names, `None` for an unknown name.
 pub fn curve(name: &str) -> Option<&'static [f64]> {
     MOTION_CURVES.iter().find(|(k, _)| *k == name).map(|(_, c)| *c)

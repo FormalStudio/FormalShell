@@ -86,7 +86,7 @@ impl Pane {
 fn style(cx: &Cx, background: bool) -> TextStyle {
     let f = &cx.theme.font_size;
     let size = if background { f.body } else { f.title } as f32;
-    TextStyle { family: cx.kit.look.sans, size, weight: fs_theme::tokens::WEIGHTS.medium as f32, tracking: 0.0 }
+    TextStyle { family: cx.kit.look.sans, size, weight: fs_theme::tokens::WEIGHTS.medium as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 /// `s` cut into runs no wider than `max`, at character boundaries: a chunk
@@ -116,7 +116,7 @@ fn layout_row(cx: &mut Cx, line: &Line, width: f64) -> (f64, Vec<Piece>, HashMap
     let mut bands = HashMap::new();
     if line.interlude {
         let g = fs_theme::icons::glyph(&cx.kit.look.icon_set, "music");
-        let t = cx.kit.shape(g.text, TextStyle { family: text::Family::Named(g.family), size: cx.theme.font_size.heading as f32, weight: 400.0, tracking: 0.0 });
+        let t = cx.kit.shape(g.text, TextStyle { family: text::Family::Named(g.family), size: cx.theme.font_size.heading as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         let h = t.line_height() as f64;
         let w = t.width as f64;
         pieces.push(Piece { text: t, x: 0.0, y: 0.0, w, chunk: None });
@@ -205,7 +205,7 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         cx.done(last);
     }
     let pad = s.panel_padding;
-    let label = cx.kit.shape("Lyrics", TextStyle { family: cx.kit.look.sans, size: t.font_size.caption as f32, weight: fs_theme::tokens::WEIGHTS.medium as f32, tracking: 0.0 });
+    let label = cx.kit.shape("Lyrics", TextStyle { family: cx.kit.look.sans, size: t.font_size.caption as f32, weight: fs_theme::tokens::WEIGHTS.medium as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
     let muted = t.colors.get("mutedForeground");
     let fg = t.colors.get("foreground");
     {

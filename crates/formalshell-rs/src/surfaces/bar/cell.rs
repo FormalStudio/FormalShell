@@ -14,7 +14,7 @@ use std::time::Instant;
 use fs_chrome::types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
-use fs_theme::theme::Theme;
+use fs_theme::theme::{Face, Theme};
 use fs_theme::tokens::WEIGHTS;
 use parley::GenericFamily;
 use vello_cpu::kurbo::Affine;
@@ -312,13 +312,15 @@ pub struct Look {
     pub marquee_hold: f64,
 }
 
-fn family(name: &'static str) -> Family {
-    match name {
-        "monospace" => Family::Generic(GenericFamily::Monospace),
-        "sans-serif" => Family::Generic(GenericFamily::SansSerif),
-        "serif" => Family::Generic(GenericFamily::Serif),
-        other => Family::Named(other),
-    }
+/// A theme text role's family: the table's face over its alias, or the
+/// alias alone.
+pub fn face(face: Face) -> Family {
+    let generic = match face.generic {
+        "monospace" => GenericFamily::Monospace,
+        "serif" => GenericFamily::Serif,
+        _ => GenericFamily::SansSerif,
+    };
+    face.name.map_or(Family::Generic(generic), |name| Family::Face(name, generic))
 }
 
 impl Look {
@@ -343,8 +345,8 @@ impl Look {
             meta_tracking: theme.letter_spacing.meta as f32,
             narrow: s.popup_width_narrow,
             panel_padding: s.panel_padding,
-            sans: family(theme.font_family_sans),
-            mono: family(theme.font_family_mono),
+            sans: face(theme.faces.words),
+            mono: face(theme.faces.values),
             icon_set: theme.icon_set.clone(),
             foreground: theme.colors.get("foreground"),
             muted: theme.colors.get("mutedForeground"),
@@ -385,11 +387,11 @@ impl Look {
     }
 
     pub fn label(&self, weight: f32) -> TextStyle {
-        TextStyle { family: self.mono, size: self.body, weight, tracking: 0.0 }
+        TextStyle { family: self.mono, size: self.body, weight, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
     }
 
     pub fn sans(&self, weight: f32) -> TextStyle {
-        TextStyle { family: self.sans, size: self.body, weight, tracking: 0.0 }
+        TextStyle { family: self.sans, size: self.body, weight, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
     }
 }
 
@@ -630,7 +632,7 @@ impl Kit {
 
     pub fn icon(&mut self, name: &str) -> ShapedText {
         let g = fs_theme::icons::glyph(&self.look.icon_set, name);
-        let style = TextStyle { family: Family::Named(g.family), size: self.look.body, weight: 400.0, tracking: 0.0 };
+        let style = TextStyle { family: Family::Named(g.family), size: self.look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         self.shape(g.text, style)
     }
 
@@ -639,7 +641,7 @@ impl Kit {
         match part {
             Part::Icon { name, .. } | Part::SlotIcon { name, .. } => self.icon(name),
             Part::Cover { .. } | Part::AppIcon { .. } => self.icon("music"),
-            Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body, weight: 400.0, tracking: 0.0 }),
+            Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }),
             Part::Label { text, weight } => {
                 let w = if band { WEIGHTS.semibold } else { weight.unwrap_or(WEIGHTS.medium as f32) as f64 };
                 self.shape(text, look.label(w as f32))
@@ -650,7 +652,7 @@ impl Kit {
             }
             Part::Meta { text } => {
                 let w = if band { WEIGHTS.semibold } else { WEIGHTS.medium };
-                self.shape(text, TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking })
+                self.shape(text, TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None })
             }
             Part::Name { text, .. } => self.shape(text, look.sans(WEIGHTS.medium as f32)),
             Part::Free { text, .. } => {

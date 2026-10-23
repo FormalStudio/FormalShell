@@ -1098,12 +1098,12 @@ fn warm_styles(look: &crate::surfaces::bar::cell::Look, f: &fs_theme::tokens::Fo
     let mut out = Vec::new();
     for size in [f.caption, f.body_small, f.body, f.subtitle] {
         for weight in [WEIGHTS.normal, WEIGHTS.medium] {
-            out.push(TextStyle { family: look.sans, size: size as f32, weight: weight as f32, tracking: 0.0 });
+            out.push(TextStyle { family: look.sans, size: size as f32, weight: weight as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         }
     }
     for size in [f.caption, f.body_small] {
         for weight in [WEIGHTS.normal, WEIGHTS.medium] {
-            out.push(TextStyle { family: look.mono, size: size as f32, weight: weight as f32, tracking: 0.0 });
+            out.push(TextStyle { family: look.mono, size: size as f32, weight: weight as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         }
     }
     out

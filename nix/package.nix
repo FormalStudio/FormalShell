@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, rustCommon, makeBinaryWrapper, lucide-font, blue-marble, earbuds-art, nerd-fonts, noto-fonts-color-emoji, matugen, brightnessctl, ddcutil, wlsunset
+{ lib, stdenvNoCC, rustCommon, makeBinaryWrapper, lucide-font, cartridge-fonts, blue-marble, earbuds-art, nerd-fonts, noto-fonts-color-emoji, matugen, brightnessctl, ddcutil, wlsunset
 , wireplumber, cava, mpv, curl, util-linux, coreutils, procps, systemd, glib, pipewire, asusctl, uxplay, iphone-bridge, openscq30, nothingctl, earbuds
 , formalshell-eds, git, qrencode, networkmanager, wl-clipboard, grim, slurp, wf-recorder, tesseract, ffmpeg-headless, pulseaudio, xdg-utils
 , tensaku, ttfx, clipssh, localsend-cli, wtype, openssh }:
@@ -23,6 +23,10 @@ rustCommon.craneLib.buildPackage (rustCommon.commonArgs // {
 
   nativeBuildInputs = rustCommon.commonArgs.nativeBuildInputs ++ [ makeBinaryWrapper ];
 
+  # text.rs's tests shape the cartridge faces, so the test run registers
+  # them the way the wrapper below does at runtime.
+  FS_RS_FONT_DIRS = "${cartridge-fonts}/share/fonts";
+
   # The icon fonts by path, registered with parley at startup.
   #
   # Suffixed rather than prefixed: anything a host install or the smoke rig's
@@ -44,7 +48,7 @@ rustCommon.craneLib.buildPackage (rustCommon.commonArgs // {
     cp -r --no-preserve=mode ${../docs/examples} $out/share/formalshell/examples
     wrapProgram $out/bin/formalshell-rs \
       --set-default FS_RS_ICON_FONT ${lucide-font}/share/fonts/truetype/lucide.ttf \
-      --set-default FS_RS_FONT_DIRS ${nerd-fonts.symbols-only}/share/fonts:${noto-fonts-color-emoji}/share/fonts \
+      --set-default FS_RS_FONT_DIRS ${nerd-fonts.symbols-only}/share/fonts:${noto-fonts-color-emoji}/share/fonts:${cartridge-fonts}/share/fonts \
       --set-default FS_TEMPLATE_DIR $out/share/formalshell/templates \
       --set-default FS_BRANDING_DIR $out/share/formalshell/branding \
       --set-default FS_EARTH_IMAGE ${blue-marble}/share/formalshell/earth.jpg \

@@ -222,7 +222,7 @@ fn label_style(look: &Look, band: bool) -> TextStyle {
 }
 
 fn caption_style(look: &Look) -> TextStyle {
-    TextStyle { family: look.mono, size: look.caption, weight: WEIGHTS.medium as f32, tracking: 0.0 }
+    TextStyle { family: look.mono, size: look.caption, weight: WEIGHTS.medium as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 impl Workspaces {
@@ -327,7 +327,7 @@ impl Workspaces {
         let a = alpha * pulse;
         p.rect(badge, look.background.with_alpha(look.background.a * a), size as f32 / 2.0);
         let g = fs_theme::icons::glyph(&look.icon_set, badge_glyph(state));
-        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.caption, weight: 400.0, tracking: 0.0 });
+        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.caption, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         let (bw, bh) = shaped.box_size();
         let at = (badge.x + (size - bw) / 2, badge.y + (size - bh) / 2);
         let centre = (badge.x as f64 + size as f64 / 2.0, badge.y as f64 + size as f64 / 2.0);
@@ -659,7 +659,7 @@ impl Custom for Workspaces {
                     Some(image) => p.image(&image, (r.x, r.y), a),
                     None => {
                         let g = fs_theme::icons::glyph(&look.icon_set, "app-window");
-                        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0 });
+                        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
                         let (bw, bh) = (shaped.width, shaped.line_height());
                         let at = (r.x + (r.w - bw) / 2, r.y + (r.h - bh) / 2);
                         p.text(&shaped, at, color.with_alpha(color.a * a), &[]);

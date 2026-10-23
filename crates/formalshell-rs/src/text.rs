@@ -4,14 +4,15 @@
 //! snapped to a whole device pixel so the hinted stems land on the grid.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use parley::fontique::Blob;
+use parley::setting::Tag;
 use parley::{
-    FontContext, FontFamily, FontFamilyName, FontWeight, GenericFamily, Layout, LayoutContext, PositionedLayoutItem,
-    StyleProperty,
+    FontContext, FontFamily, FontFamilyName, FontVariation, FontVariations, FontWeight, FontWidth, GenericFamily, Layout,
+    LayoutContext, PositionedLayoutItem, RangedBuilder, StyleProperty,
 };
 use skrifa::bitmap::{BitmapData, BitmapStrikes};
 use skrifa::instance::{LocationRef, NormalizedCoord, Size};
@@ -40,16 +41,27 @@ pub enum Family {
     Generic(GenericFamily),
     /// A family registered by name, the icon font.
     Named(&'static str),
+    /// A theme's family by name, with the alias behind it for glyphs the
+    /// face lacks and for a face that is not installed at all.
+    Face(&'static str, GenericFamily),
 }
-
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextStyle {
     pub family: Family,
     pub size: f32,
+    /// What picks the face; on a face with a `wght` axis it also sets it.
     pub weight: f32,
     /// Extra advance after every glyph, in pixels (Qt's `letterSpacing`).
     pub tracking: f32,
+    /// The `wdth` axis in percent, 100 for the face's normal width.
+    pub wdth: f32,
+    /// The `wght` axis set outright, past whatever `weight` picked.
+    pub wght: Option<f32>,
+}
+
+impl TextStyle {
+    pub const NORMAL_WIDTH: f32 = 100.0;
 }
 
 /// Room left round the line box for ink that overhangs it (side bearings,
@@ -238,11 +250,20 @@ struct StyleKey {
     size: u32,
     weight: u32,
     tracking: u32,
+    wdth: u32,
+    wght: Option<u32>,
 }
 
 impl StyleKey {
     fn new(style: TextStyle) -> Self {
-        Self { family: style.family, size: style.size.to_bits(), weight: style.weight.to_bits(), tracking: style.tracking.to_bits() }
+        Self {
+            family: style.family,
+            size: style.size.to_bits(),
+            weight: style.weight.to_bits(),
+            tracking: style.tracking.to_bits(),
+            wdth: style.wdth.to_bits(),
+            wght: style.wght.map(f32::to_bits),
+        }
     }
 }
 
@@ -318,6 +339,8 @@ struct Inner {
     styles: HashMap<(u64, u32), GlyphStyles>,
     shaped: HashMap<StyleKey, HashMap<String, ShapedText>>,
     shaped_count: usize,
+    /// Theme families the collection has no face for, logged once each.
+    missing: HashSet<&'static str>,
 }
 
 impl Inner {
@@ -368,36 +391,41 @@ impl Inner {
             styles: HashMap::new(),
             shaped: HashMap::new(),
             shaped_count: 0,
+            missing: HashSet::new(),
         }
     }
 
     fn shape(&mut self, source: &str, style: TextStyle) -> ShapedText {
-        let mut builder = self.lcx.ranged_builder(&mut self.fcx, source, 1.0, true);
-        match style.family {
-            Family::Generic(g) => {
-                builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Owned(vec![
-                    FontFamilyName::Generic(g),
-                    FontFamilyName::Named(Cow::Borrowed(EMOJI_FAMILY)),
-                    FontFamilyName::Generic(GenericFamily::Emoji),
-                ]))));
-                // DejaVu, behind every sans-serif, draws many emoji as
-                // outlines; an emoji run asks the colour face first, the way
-                // a browser honours emoji presentation.
-                for range in emoji_runs(source) {
-                    let stack = FontFamily::List(Cow::Owned(vec![
-                        FontFamilyName::Named(Cow::Borrowed(EMOJI_FAMILY)),
-                        FontFamilyName::Generic(GenericFamily::Emoji),
-                        FontFamilyName::Generic(g),
-                    ]));
-                    builder.push(StyleProperty::FontFamily(stack), range);
+        let face = match style.family {
+            Family::Face(name, g) if self.fcx.collection.family_id(name).is_none() => {
+                if self.missing.insert(name) {
+                    eprintln!("text: no face for \"{name}\", drawing {g:?}");
                 }
+                Family::Generic(g)
             }
+            family => family,
+        };
+        let mut builder = self.lcx.ranged_builder(&mut self.fcx, source, 1.0, true);
+        match face {
+            Family::Generic(g) => text_stack(&mut builder, source, None, g),
+            Family::Face(name, g) => text_stack(&mut builder, source, Some(name), g),
             Family::Named(name) => builder.push_default(StyleProperty::from(FontFamily::Source(Cow::Borrowed(name)))),
         }
         builder.push_default(StyleProperty::FontSize(style.size));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(style.weight)));
         if style.tracking != 0.0 {
             builder.push_default(StyleProperty::LetterSpacing(style.tracking));
+        }
+        let mut axes = Vec::new();
+        if style.wdth != TextStyle::NORMAL_WIDTH {
+            builder.push_default(StyleProperty::FontWidth(FontWidth::from_percentage(style.wdth)));
+            axes.push(FontVariation::new(Tag::new(b"wdth"), style.wdth));
+        }
+        if let Some(wght) = style.wght {
+            axes.push(FontVariation::new(Tag::new(b"wght"), wght));
+        }
+        if !axes.is_empty() {
+            builder.push_default(StyleProperty::FontVariations(FontVariations::List(Cow::Owned(axes))));
         }
         let mut layout: Layout<()> = builder.build(source);
         layout.break_all_lines(None);
@@ -521,6 +549,32 @@ impl Inner {
     }
 }
 
+/// A text family's stack: the named face if any, the alias, then the
+/// colour emoji face. DejaVu, behind every sans-serif, draws many emoji as
+/// outlines, so an emoji run asks the colour face first, the way a browser
+/// honours emoji presentation.
+fn text_stack(builder: &mut RangedBuilder<'_, ()>, source: &str, name: Option<&'static str>, g: GenericFamily) {
+    let lead = name.map(|n| FontFamilyName::Named(Cow::Borrowed(n)));
+    let stack: Vec<_> = lead
+        .clone()
+        .into_iter()
+        .chain([
+            FontFamilyName::Generic(g),
+            FontFamilyName::Named(Cow::Borrowed(EMOJI_FAMILY)),
+            FontFamilyName::Generic(GenericFamily::Emoji),
+        ])
+        .collect();
+    builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Owned(stack))));
+    for range in emoji_runs(source) {
+        let stack = [FontFamilyName::Named(Cow::Borrowed(EMOJI_FAMILY)), FontFamilyName::Generic(GenericFamily::Emoji)]
+            .into_iter()
+            .chain(lead.clone())
+            .chain([FontFamilyName::Generic(g)])
+            .collect();
+        builder.push(StyleProperty::FontFamily(FontFamily::List(Cow::Owned(stack))), range);
+    }
+}
+
 /// Byte ranges of emoji sequences: pictographs, regional indicators, skin
 /// tones, and anything carrying VS16, with the joiners, keycaps and tags
 /// that bind them.
@@ -590,5 +644,40 @@ impl OutlinePen for FlipPen {
 
     fn close(&mut self) {
         self.0.close_path();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn style(family: Family, wdth: f32, wght: Option<f32>) -> TextStyle {
+        TextStyle { family, size: 20.0, weight: 400.0, tracking: 0.0, wdth, wght }
+    }
+
+    // The package's build runs these with FS_RS_FONT_DIRS on the cartridge
+    // faces (nix/package.nix).
+    #[test]
+    fn archivo_widens_on_its_own_axes() {
+        let mut inner = Inner::new();
+        assert!(inner.fcx.collection.family_id("Archivo").is_some(), "FS_RS_FONT_DIRS carries no Archivo");
+        let archivo = Family::Face("Archivo", GenericFamily::SansSerif);
+        let width = |inner: &mut Inner, wdth, wght| inner.shape("CARTRIDGE", style(archivo, wdth, wght)).width;
+        let normal = width(&mut inner, 100.0, None);
+        let wide = width(&mut inner, 125.0, None);
+        let narrow = width(&mut inner, 62.0, None);
+        assert!(narrow < normal && normal < wide, "wdth 62 {narrow}px, 100 {normal}px, 125 {wide}px");
+        let heavy = width(&mut inner, 100.0, Some(800.0));
+        assert!(heavy > normal, "wght 800 {heavy}px against {normal}px");
+    }
+
+    #[test]
+    fn a_face_not_installed_draws_its_alias() {
+        let mut inner = Inner::new();
+        let missing = Family::Face("No Such Family", GenericFamily::Monospace);
+        let alias = inner.shape("values 0123", style(Family::Generic(GenericFamily::Monospace), 100.0, None)).width;
+        assert_eq!(inner.shape("values 0123", style(missing, 100.0, None)).width, alias);
+        inner.shape("again", style(missing, 100.0, None));
+        assert_eq!(inner.missing.len(), 1);
     }
 }

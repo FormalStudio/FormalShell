@@ -39,7 +39,7 @@ fn weight(w: Weight) -> f32 {
 
 pub fn style(cx: &Cx, font: &Font) -> TextStyle {
     let family = if font.mono { cx.kit.look.mono } else { cx.kit.look.sans };
-    TextStyle { family, size: px(cx, font.size), weight: weight(font.weight), tracking: 0.0 }
+    TextStyle { family, size: px(cx, font.size), weight: weight(font.weight), tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 fn shape(cx: &mut Cx, s: &str, font: &Font) -> ShapedText {
@@ -49,7 +49,7 @@ fn shape(cx: &mut Cx, s: &str, font: &Font) -> ShapedText {
 
 fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
     let g = fs_theme::icons::glyph(&cx.kit.look.icon_set, name);
-    let st = TextStyle { family: Family::Named(g.family), size: px(cx, size), weight: 400.0, tracking: 0.0 };
+    let st = TextStyle { family: Family::Named(g.family), size: px(cx, size), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
     cx.kit.shape(g.text, st)
 }
 

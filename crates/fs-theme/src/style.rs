@@ -10,7 +10,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::tokens::{self, Motion};
+use crate::tokens::{self, Easing, Motion};
 
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
@@ -488,7 +488,7 @@ pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Clock {
     pub duration: f64,
-    pub curve: Vec<f64>,
+    pub curve: Easing,
     pub stagger: f64,
 }
 
@@ -501,14 +501,32 @@ pub fn motion(style: &Value, key: &str, m: &Motion) -> Clock {
         Some(Value::String(s)) => m.family(s).unwrap_or(m.spatial),
         _ => m.spatial,
     };
-    let spatial = || tokens::curve("spatial").expect("spatial is in MOTION_CURVES").to_vec();
+    let spatial = || Easing::Bezier(tokens::curve("spatial").expect("spatial is in MOTION_CURVES").to_vec());
     let curve = match raw.and_then(|r| r.get("curve")) {
-        Some(Value::Array(points)) => points.iter().map(|p| p.as_f64().unwrap_or(f64::NAN)).collect(),
-        Some(Value::String(s)) => tokens::curve(s).map_or_else(spatial, <[f64]>::to_vec),
+        Some(Value::Array(points)) if points.first().is_some_and(Value::is_array) => {
+            stops(points).map_or_else(spatial, Easing::Stops)
+        }
+        Some(Value::Array(points)) => Easing::Bezier(points.iter().map(|p| p.as_f64().unwrap_or(f64::NAN)).collect()),
+        Some(Value::String(s)) => tokens::curve(s).map_or_else(spatial, |c| Easing::Bezier(c.to_vec())),
         _ => spatial(),
     };
     let stagger = num(raw.and_then(|r| r.get("stagger"))).unwrap_or(0.0);
     Clock { duration, curve, stagger }
+}
+
+/// A stop list as a table writes it, `[[t, v], ...]`: `None` unless every
+/// stop is two numbers and t climbs from 0 to 1 without stepping back.
+pub fn stops(raw: &[Value]) -> Option<Vec<(f64, f64)>> {
+    let stops = raw
+        .iter()
+        .map(|stop| match stop.as_array()?.as_slice() {
+            [t, v] => Some((t.as_f64()?, v.as_f64()?)),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let climbs = stops.windows(2).all(|w| w[0].0 <= w[1].0);
+    let spans = stops.first().is_some_and(|s| s.0 == 0.0) && stops.last().is_some_and(|s| s.0 == 1.0);
+    (stops.len() >= 2 && climbs && spans).then_some(stops)
 }
 
 /// One of the table's pointer washes, transparent for an unknown key.
@@ -901,6 +919,9 @@ pub(crate) mod tests {
                 }
                 match &e["curve"] {
                     Value::String(s) => assert!(tokens::curve(s).is_some(), "{name} {key} names the unknown curve {s}"),
+                    Value::Array(c) if c.first().is_some_and(Value::is_array) => {
+                        assert!(stops(c).is_some(), "{name} {key} has a stop list t does not climb 0 to 1 on");
+                    }
                     Value::Array(c) => {
                         assert!(c.len() == 6 || c.len() == 12, "{name} {key} has {} control numbers", c.len());
                         assert_eq!(c[c.len() - 1].as_f64(), Some(1.0));
@@ -913,6 +934,17 @@ pub(crate) mod tests {
                     assert!(s.as_f64().is_some_and(|s| s > 0.0), "{name} {key} has the stagger {s}");
                 }
                 assert_eq!(motion(style, key, &families).stagger, stagger.and_then(Value::as_f64).unwrap_or(0.0));
+            }
+        }
+    }
+
+    #[test]
+    fn every_fonts_block_names_known_roles_by_family() {
+        for (name, style) in tables() {
+            let Some(fonts) = style.get("fonts") else { continue };
+            for (key, family) in fonts.as_object().unwrap_or_else(|| panic!("{name}'s fonts is not an object")) {
+                assert!(["words", "values", "display", "body"].contains(&key.as_str()), "{name} names the font role {key}");
+                assert!(family.as_str().is_some_and(|f| !f.is_empty()), "{name} fonts.{key} is {family}");
             }
         }
     }
@@ -1477,5 +1509,32 @@ pub(crate) mod tests {
         assert_eq!(focused["shadow"]["offset"][1], 6);
         assert_eq!(focused["shadow"]["alpha"], 0.35);
         assert_eq!(entry(tables::pantheon(), "window", Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
+    }
+
+    #[test]
+    fn a_stop_list_curve_is_read_as_stops() {
+        let families = tokens::motion_tokens(true);
+        let table = json!({ "motion": { "emerge": { "duration": 1200, "curve": [[0, 0], [0.4, 1.42], [0.7, 0.96], [1, 1]] } } });
+        let clock = motion(&table, "emerge", &families);
+        assert_eq!(clock.duration, 1200.0);
+        assert_eq!(clock.curve, Easing::Stops(vec![(0.0, 0.0), (0.4, 1.42), (0.7, 0.96), (1.0, 1.0)]));
+    }
+
+    #[test]
+    fn a_stop_list_t_does_not_climb_0_to_1_on_falls_back_to_spatial() {
+        let families = tokens::motion_tokens(true);
+        let spatial = Easing::Bezier(tokens::curve("spatial").unwrap().to_vec());
+        for curve in [
+            json!([[0, 0], [0.6, 1.2], [0.5, 1], [1, 1]]),
+            json!([[0.1, 0], [1, 1]]),
+            json!([[0, 0], [0.9, 1]]),
+            json!([[0, 0]]),
+            json!([[0, 0], [0.5], [1, 1]]),
+            json!([[0, 0], ["0.5", 1], [1, 1]]),
+        ] {
+            let table = json!({ "motion": { "emerge": { "curve": curve } } });
+            assert_eq!(motion(&table, "emerge", &families).curve, spatial, "{curve}");
+        }
+        assert!(stops(&[json!([0, 0]), json!([0.5, 0.5]), json!([0.5, 0.8]), json!([1, 1])]).is_some());
     }
 }

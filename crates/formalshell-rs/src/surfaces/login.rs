@@ -50,7 +50,7 @@ impl Card<'_> {
     /// than laid out; the body keeps a slot its height.
     pub fn clock(&self, theme: &Theme, kit: &mut Kit) -> ShapedText {
         let size = (theme.font_size.display_large * 2.0).round() as f32;
-        kit.shape(&self.now.format("%H:%M").to_string(), TextStyle { family: kit.look.mono, size, weight: WEIGHTS.semibold as f32, tracking: 0.0 })
+        kit.shape(&self.now.format("%H:%M").to_string(), TextStyle { family: kit.look.mono, size, weight: WEIGHTS.semibold as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None })
     }
 
     fn date(&self) -> El {
