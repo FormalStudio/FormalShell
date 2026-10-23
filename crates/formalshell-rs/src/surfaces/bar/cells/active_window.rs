@@ -46,12 +46,14 @@ impl Cell for ActiveWindow {
             initial_title: w.initial_title.clone(),
             pid: w.pid,
         };
-        let px = size.round() as u32;
+        let (edge, scale) = (size.round() as u32, crate::scene::raster_scale());
+        let px = crate::scene::pixels_at(f64::from(edge), scale);
         if self.probed.as_ref().is_none_or(|(s, q)| *s != px || *q != query) {
-            appicon::probe(px, vec![query.clone()]);
+            appicon::probe(edge, scale, vec![query.clone()]);
             self.probed = Some((px, query.clone()));
         }
-        let resolved = env.store.appicon.by_window.get(&query.id);
+        let resolved = env.store.appicon.get(&query.id, edge, scale);
+        let resolved = resolved.as_ref();
         let next = Held {
             app_id: w.app_id.clone(),
             title: w.title.clone(),

@@ -419,7 +419,7 @@ impl App {
             layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
             layer.commit();
             let fade = self.pixels.alpha.get_surface(layer.wl_surface(), &self.qh, Ignore);
-            let mut surface = Surface::new("screensaver", layer, &self.shm, self.started);
+            let mut surface = Surface::on("screensaver", layer, &self.shm, self.started, &output);
             surface.wait_map = true;
             Host { surface, fade }
         });

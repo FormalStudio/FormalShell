@@ -360,12 +360,13 @@ impl Cell for Workspaces {
         let slots = workspaces::slots(&rows, &windows, env.output, SlotOpts { persistent, max_icons });
 
         let ids: Vec<&str> = slots.iter().flat_map(|s| s.windows.iter().map(|w| w.id.as_str())).collect();
+        let scale = crate::scene::raster_scale();
         let herdr_now: HashMap<String, String> = ids
             .iter()
             .filter_map(|id| env.store.herdr.by_window.get(*id).map(|s| ((*id).to_owned(), s.clone())))
             .collect();
         let icons_now: HashMap<String, Icon> =
-            ids.iter().filter_map(|id| env.store.appicon.by_window.get(*id).map(|i| ((*id).to_owned(), i.clone()))).collect();
+            ids.iter().filter_map(|id| env.store.appicon.get(id, self.icon_size.round() as u32, scale).map(|i| ((*id).to_owned(), i))).collect();
         let queries: Vec<appicon::Query> = slots
             .iter()
             .flat_map(|s| &s.windows)
@@ -518,10 +519,11 @@ impl Custom for Workspaces {
         self.motion = look.motion;
         let style = label_style(&look, band);
         self.icon_size = kit.shape("0", style).line_height() as f64;
-        let size = self.icon_size.round() as u32;
-        if self.probed.as_ref().is_none_or(|(s, q)| *s != size || *q != self.queries) {
-            self.probed = Some((size, self.queries.clone()));
-            appicon::probe(size, self.queries.clone());
+        let (size, scale) = (self.icon_size.round() as u32, crate::scene::raster_scale());
+        let px = crate::scene::pixels_at(f64::from(size), scale);
+        if self.probed.as_ref().is_none_or(|(s, q)| *s != px || *q != self.queries) {
+            self.probed = Some((px, self.queries.clone()));
+            appicon::probe(size, scale, self.queries.clone());
         }
 
         self.chips.clear();

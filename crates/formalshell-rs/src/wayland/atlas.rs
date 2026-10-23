@@ -165,6 +165,7 @@ impl App {
         let animating = w.shown.animating(now) || moving;
         if m.dirty || animating || !w.shown.modal.surface.mapped {
             w.shown.modal.sync_region(&self.compositor);
+            let _raster = crate::scene::raster_at(w.shown.modal.surface.scale());
             w.shown.layout(m, &r, theme, &mut self.bar.kit, now);
             m.dirty = false;
         }

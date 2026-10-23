@@ -575,15 +575,15 @@ impl App {
         let paste = self.store.config.bool("clipboard.paste").unwrap_or(true);
         let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste);
         let h = crate::surfaces::launcher::thumb_height(&self.store.theme.theme, &mut self.bar.kit).round() as u32;
-        let size = (h * 3, h);
+        let (size, scale) = ((h * 3, h), self.launcher_scale());
         let want: Vec<String> = c
             .items
             .iter()
             .filter_map(|e| e.path.clone())
-            .filter(|p| size != c.thumb_box || !c.thumbs.contains_key(p))
+            .filter(|p| (size, scale) != (c.thumb_box, c.thumb_scale) || !c.thumbs.contains_key(p))
             .collect();
         if !want.is_empty() {
-            crate::services::clipboard::command(crate::services::clipboard::Cmd::Thumbs(want, size));
+            crate::services::clipboard::command(crate::services::clipboard::Cmd::Thumbs(want, (size, scale)));
         }
         let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste);
         let moved = self.store.menu.apply(index::Diff::Source("clipboard".into(), rows));
@@ -596,7 +596,7 @@ impl App {
     /// are in the cache (or the warm gave up on them).
     pub fn launcher_picker(&mut self) {
         if self.launcher.open && self.launcher.on_picker() {
-            let px = crate::surfaces::launcher::picker_cell_px(&self.store.theme.theme);
+            let px = (crate::surfaces::launcher::picker_cell_px(&self.store.theme.theme), self.launcher_scale());
             let p = &self.store.picker;
             let want: Vec<String> = self
                 .launcher
@@ -671,7 +671,7 @@ impl App {
         if height <= 0.0 {
             return;
         }
-        let size = crate::surfaces::launcher::preview_box(theme, &mut self.bar.kit, width, height);
+        let size = (crate::surfaces::launcher::preview_box(theme, &mut self.bar.kit, width, height), self.launcher_scale());
         let have = self.store.clipboard.preview.as_ref().is_some_and(|(p, sz, _)| *p == path && *sz == size);
         if !have && self.preview_asked.as_ref() != Some(&(path.clone(), size)) {
             self.preview_asked = Some((path.clone(), size));
@@ -689,7 +689,7 @@ impl App {
             let ir = cams.iter().find(|c| c.id == current).is_some_and(|c| c.ir);
             self.launcher.mirror_current = current.clone();
             let (w, h) = self.launcher.mirror_box(&self.store.theme.theme);
-            mirror::set_box(w as u32, h as u32);
+            mirror::set_box(w as u32, h as u32, self.launcher_scale());
             mirror::command(Cmd::Stream((!current.is_empty()).then_some((current, ir))));
         }
         self.launcher_store_changed();
@@ -808,6 +808,12 @@ impl App {
     }
 
     /// The launcher's frame, its scrim on the card's own pose.
+    /// The scale the launcher's pictures are made at: its card's, else the
+    /// bar's output's, where it opens.
+    fn launcher_scale(&self) -> f64 {
+        self.launch.as_ref().map_or_else(crate::scene::raster_scale, |w| w.shown.modal.surface.scale())
+    }
+
     pub(super) fn present_launcher(&mut self, now: Instant) {
         self.launcher_answers();
         if let Some(w) = &mut self.launch {
@@ -855,6 +861,7 @@ impl App {
             self.launcher.dirty = true;
         }
         if !rastering && wants {
+            let _raster = crate::scene::raster_at(w.shown.modal.surface.scale());
             w.shown.modal.sync_region(&self.compositor);
             self.bar.kit.seen = Some(std::mem::take(&mut self.launcher_styles));
             w.shown.layout(&mut self.launcher, &self.store, theme, &mut self.bar.kit, now);

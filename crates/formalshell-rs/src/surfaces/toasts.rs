@@ -164,7 +164,7 @@ pub struct Toasts {
     pub hovered: bool,
     pressed: Option<(String, String)>,
     /// Pictures fitted to the icon slot, per entry.
-    fitted: HashMap<String, Option<Bitmap>>,
+    fitted: HashMap<String, (f64, Option<Bitmap>)>,
     /// When the relative times were last recomputed.
     pub rel_at: Instant,
     /// The last draw ran with a clock still running.
@@ -331,11 +331,12 @@ impl Toasts {
         let width = if is_bubble { s.popup_width_bubble } else { s.popup_width_narrow };
         let clock = now_ms();
         let size = theme.font_size.heading.round() as u32;
-        self.fitted.retain(|id, _| n.icons.contains_key(id));
+        let scale = crate::scene::raster_scale();
+        self.fitted.retain(|id, (k, _)| n.icons.contains_key(id) && *k == scale);
         let mut cards: HashMap<&String, El> = HashMap::new();
         for (k, g) in &by_key {
             let pic = n.icons.get(&g.id).and_then(|raw| {
-                self.fitted.entry(g.id.clone()).or_insert_with(|| raw.bitmap(size)).clone()
+                self.fitted.entry(g.id.clone()).or_insert_with(|| (scale, raw.bitmap(size, scale))).1.clone()
             });
             let el = if is_bubble {
                 let hovered = self.slots.get(k.as_str()).is_some_and(|sl| sl.ui.hover.is_some());

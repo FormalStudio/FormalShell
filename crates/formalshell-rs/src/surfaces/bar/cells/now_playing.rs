@@ -61,11 +61,12 @@ impl Cell for NowPlaying {
         let cover = active.as_ref().filter(|a| !a.art_url.is_empty()).map(|a| {
             let size = slot(env);
             let (px, radius) = crate::ui::w::cover_inner(&env.store.theme.theme, size);
+            let scale = crate::scene::raster_scale();
             if animated && !a.artist.is_empty() && !a.album.is_empty() {
-                motion = Some(motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing });
+                motion = Some(motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));
             }
-            let frame = motion.as_ref().and_then(|w| env.store.media.motion(&w.key(), px));
-            (size, frame.or_else(|| env.store.media.cover(&a.art_url, px, radius)))
+            let frame = motion.as_ref().and_then(|w| env.store.media.motion(&w.key(), px, scale));
+            (size, frame.or_else(|| env.store.media.cover(&a.art_url, px, radius, scale)))
         });
         self.motion = motion;
         self.sync_motion();

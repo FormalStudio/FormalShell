@@ -117,7 +117,7 @@ fn art(dev: &Device, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
         return None;
     }
     let dir = PathBuf::from(std::env::var_os("FS_EARBUDS_ART")?);
-    icons::load_at(&dir.join(format!("{}_{part}.webp", dev.art)), size.round().max(1.0) as u32)
+    icons::load_at(&dir.join(format!("{}_{part}.webp", dev.art)), size.round().max(1.0) as u32, crate::scene::raster_scale())
 }
 
 fn percent(level: f64) -> String {

@@ -33,9 +33,15 @@ struct Subject {
 fn subject(store: &Store) -> Option<Subject> {
     let h = &store.compositor;
     let window = h.window(&h.held_focused_window_id())?.clone();
-    let icon = store.appicon.by_window.get(PROBE);
+    let icon = store.appicon.get(PROBE, probe_size(store), crate::scene::raster_scale());
+    let icon = icon.as_ref();
     let windows = h.snapshot.windows.iter().filter(|x| !window.app_id.is_empty() && x.app_id == window.app_id).cloned().collect();
     Some(Subject { entry: icon.and_then(|i| i.entry.clone()), image: icon.and_then(|i| i.image.clone()), window, windows })
+}
+
+/// The hero picture's edge.
+fn probe_size(store: &Store) -> u32 {
+    (store.theme.theme.space.xxl * 2.0).round() as u32
 }
 
 /// Proc.appLaunch: its own scope under uwsm, the command itself outside a
@@ -72,9 +78,9 @@ impl Panel for AppMenu {
     fn start(&mut self, fx: &mut Effect) {
         let h = &fx.store.compositor;
         let Some(win) = h.window(&h.held_focused_window_id()) else { return };
-        let size = (fx.store.theme.theme.space.xxl * 2.0).round() as u32;
         appicon::probe(
-            size,
+            probe_size(fx.store),
+            crate::scene::raster_scale(),
             vec![appicon::Query {
                 id: PROBE.into(),
                 app_id: win.app_id.clone(),

@@ -545,7 +545,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let r = irect(inner);
             let mut p = cx.painter(path);
             if let Some(image) = &pic.0 {
-                let (w, h) = (image.pixmap.width() as i32, image.pixmap.height() as i32);
+                let (w, h) = image.size();
                 p.image(image, (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2), alpha);
             }
             let last = p.last();
@@ -562,7 +562,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let mut p = cx.painter(path);
             p.framed(r, well, radius, Rgba::TRANSPARENT, 0.0);
             if let Some(image) = &pic.0 {
-                let (w, h) = (image.pixmap.width() as i32, image.pixmap.height() as i32);
+                let (w, h) = image.size();
                 p.image(image, (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2), alpha);
             }
             p.framed(r, Rgba::TRANSPARENT, radius, line, bw as f32);

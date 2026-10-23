@@ -34,6 +34,11 @@ impl State {
     }
 }
 
+/// The edges of a card's small icon and of the big one over its thumbnail.
+fn icon_sizes(s: &fs_theme::tokens::Space) -> (u32, u32) {
+    ((s.icon_gap * 2.0).round() as u32, (s.huge * 2.0).min(s.switcher_thumb / 2.0).round() as u32)
+}
+
 fn icon_key(id: &str, big: bool) -> String {
     format!("switcher{}:{id}", if big { "-big" } else { "" })
 }
@@ -62,8 +67,10 @@ impl App {
                 })
                 .collect()
         };
-        appicon::probe((s.icon_gap * 2.0).round() as u32, queries(false));
-        appicon::probe((s.huge * 2.0).min(s.switcher_thumb / 2.0).round() as u32, queries(true));
+        let scale = self.switcher.win.as_ref().map_or_else(crate::scene::raster_scale, |(s, _)| s.scale());
+        let (small, big) = icon_sizes(s);
+        appicon::probe(small, scale, queries(false));
+        appicon::probe(big, scale, queries(true));
     }
 
     /// `next` and `prev`: the first opens with the cursor one step along,
@@ -338,25 +345,30 @@ impl App {
 
         let entries: Vec<compositor::Window> = self.switcher_entries().into_iter().cloned().collect();
         let refs: Vec<&compositor::Window> = entries.iter().collect();
-        let icon = |key: String| self.store.appicon.by_window.get(&key).and_then(|i| i.image.clone());
+        let scale = self.switcher.win.as_ref().map_or(1.0, |(s, _)| s.scale());
+        let (small, big) = icon_sizes(&self.store.theme.theme.space);
+        let icon = |key: String, size: u32| self.store.appicon.get(&key, size, scale);
         let icons: Vec<(String, Option<Bitmap>, Option<Bitmap>)> = entries
             .iter()
             .map(|w| {
-                let entry = self.store.appicon.by_window.get(&icon_key(&w.id, false)).and_then(|i| i.entry.as_ref());
+                let little = icon(icon_key(&w.id, false), small);
+                let entry = little.as_ref().and_then(|i| i.entry.as_ref());
                 let key = entry.map_or_else(|| if w.app_id.is_empty() { w.initial_class.clone() } else { w.app_id.clone() }, |e| format!("entry:{}", e.id));
-                (key, icon(icon_key(&w.id, false)), icon(icon_key(&w.id, true)))
+                (key, little.and_then(|i| i.image), icon(icon_key(&w.id, true), big).and_then(|i| i.image))
             })
             .collect();
         let thumbs: Vec<Option<Bitmap>> = entries.iter().map(|w| self.capture_image(Owner::Switcher, &w.id).cloned()).collect();
         let output = self.output_size();
         let input = Input { theme: &self.store.theme.theme, output, entries: &refs, icons: &icons, thumbs: &thumbs, alpha };
         let Some((surface, scene)) = &mut self.switcher.win else { return };
+        let _raster = crate::scene::raster_at(scale);
         self.switcher.model.draw(&input, &mut self.bar.kit, scene);
         let qh = self.qh.clone();
         surface.present(scene, fading, &qh);
         if self.switcher.model.capturing && self.switcher.model.shown {
             let wants = self.switcher.model.thumb_sizes(&refs);
-            self.capture_set(Owner::Switcher, &wants, false);
+            let scale = self.switcher.win.as_ref().map_or(1.0, |(s, _)| s.scale());
+            self.capture_set(Owner::Switcher, &wants, false, scale);
         }
     }
 }

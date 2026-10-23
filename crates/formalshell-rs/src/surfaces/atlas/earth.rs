@@ -709,7 +709,7 @@ impl Earth {
         }
         let pixmap = pool[i].clone();
         pool.truncate(3);
-        Some((Bitmap { pixmap }, self.finish(view)))
+        Some((Bitmap { pixmap, density: 1.0 }, self.finish(view)))
     }
 }
 

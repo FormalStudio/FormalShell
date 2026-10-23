@@ -302,7 +302,7 @@ pub struct App {
     mods: fs_menu::nav::Modifiers,
     menu_buttons: Option<crate::services::menu::BaseInputs>,
     /// The split pane's last picture request, so a frame asks once.
-    preview_asked: Option<(String, (u32, u32))>,
+    preview_asked: Option<(String, ((u32, u32), f64))>,
     menu_launches: Option<serde_json::Value>,
     pub capture: crate::surfaces::capture::Capture,
     pickers: picker::Pickers,
@@ -512,7 +512,7 @@ impl App {
             layer.set_exclusive_zone(t);
         }
         layer.commit();
-        let mut surface = Surface::new("bar", layer, &self.shm, self.started);
+        let mut surface = Surface::on("bar", layer, &self.shm, self.started, output);
         surface.presize(bar.scene.size.w, bar.scene.size.h);
         let mut zones = Vec::new();
         if framed {
@@ -1469,6 +1469,7 @@ impl App {
             self.log("scrim unmapped");
         }
         self.follow_focus();
+        self.sync_rasters(now);
         let qh = self.qh.clone();
         self.present_heads(self.bar_dirty, now);
         let animating = self.bar.animating(now);
@@ -1493,6 +1494,7 @@ impl App {
             c.present(0.0, false, &qh);
         }
         for p in [&mut self.overflow, &mut self.menu].into_iter().flatten() {
+            let _raster = crate::scene::raster_at(p.surface.scale());
             p.layout(&mut self.bar, now);
             let kit = &self.bar.kit;
             let content = p.slots.iter_mut().any(|s| s.animating(kit, true, now));
@@ -1507,6 +1509,7 @@ impl App {
                 h.primed();
             }
             let animating = h.animating(now) || h.content_animating(now);
+            let _raster = crate::scene::raster_at(h.surface.scale());
             if self.panel_dirty || animating {
                 h.sync_region(&self.compositor, strip);
                 h.layout(&self.store, theme, &mut self.bar.kit, now);
@@ -1537,6 +1540,22 @@ impl App {
         self.present_overlay(now);
         self.present_lock();
         self.arm_wake(now);
+    }
+
+    /// Every bar's cells made at its own surface's scale: a bar whose
+    /// surface moved to another scale reads them all again.
+    fn sync_rasters(&mut self, now: Instant) {
+        if let Some(scale) = self.bar_surface.as_ref().map(|s| s.scale()).filter(|k| *k != self.bar.raster) {
+            self.bar.raster = scale;
+            self.bar.read(&self.store, None, now);
+            self.bar_dirty = true;
+        }
+        for spare in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
+            let Some(scale) = spare.surface.as_ref().map(|s| s.scale()).filter(|k| *k != spare.bar.raster) else { continue };
+            spare.bar.raster = scale;
+            spare.bar.read(&self.store, None, now);
+            spare.dirty = true;
+        }
     }
 
     /// The tooltip group's answer on screen: a card created for a show,
@@ -2080,6 +2099,9 @@ impl crate::surface::ScaleHandler for App {
     /// Every surface draws again at its new scale on its own next present;
     /// only the owners that present when something changed need telling.
     fn rescaled(&mut self) {
+        self.panel_dirty = true;
+        self.launcher.dirty = true;
+        self.toasts_dirty = true;
         self.lock.dirty = true;
         self.switcher.dirty = true;
         for p in &mut self.pickers.surfaces {
@@ -2425,6 +2447,11 @@ impl OutputHandler for App {
 
 impl App {
     fn on_outputs(&mut self) {
+        let primary = crate::surface::primary_scale();
+        crate::surface::note_outputs(&self.outputs, self.bar_wl.as_ref());
+        if crate::surface::primary_scale() != primary {
+            crate::services::menu::ask(crate::services::menu::Ask::Rescan);
+        }
         self.lock_outputs();
         self.sync_hot_corners();
         self.sync_heads();

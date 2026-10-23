@@ -129,6 +129,7 @@ impl App {
         // every clock's end value rather than its last sample.
         let animating = t.animating(now);
         if (self.toasts_dirty || animating || t.was_animating) && t.surface.mapped {
+            let _raster = crate::scene::raster_at(t.surface.scale());
             t.draw(&self.store, theme, &mut self.bar.kit, &insets, self.motion_scale, now);
             t.sync_region(&self.compositor);
             self.toasts_dirty = false;

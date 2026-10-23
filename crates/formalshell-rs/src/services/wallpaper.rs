@@ -60,6 +60,11 @@ impl State {
         self.pictures.iter().rev().find(|p| (p.width, p.height) == (width, height))
     }
 
+    /// The picture at every size an output asked for.
+    pub fn all(&self) -> impl Iterator<Item = &Arc<Picture>> {
+        self.pictures.iter()
+    }
+
     /// The latest picture of any size, for a surface that scales its own.
     pub fn latest(&self) -> Option<&Arc<Picture>> {
         self.pictures.last()

@@ -308,9 +308,10 @@ impl Panel for Media {
                 && v.store.config.bool("media.appleMusicArt").unwrap_or(false)
                 && !a.artist.is_empty()
                 && !a.album.is_empty();
-            motion = animated.then(|| motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing });
-            let frame = motion.as_ref().and_then(|w| m.motion(&w.key(), px));
-            info.push(w::cover(frame.or_else(|| m.cover(&a.art_url, px, radius)), slot));
+            let scale = crate::scene::raster_scale();
+            motion = animated.then(|| motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));
+            let frame = motion.as_ref().and_then(|w| m.motion(&w.key(), px, scale));
+            info.push(w::cover(frame.or_else(|| m.cover(&a.art_url, px, radius, scale)), slot));
         }
         motion_art::want(motion_art::PANEL, motion);
         let mut words = vec![w::label(if a.title.is_empty() { "Unknown title".to_owned() } else { a.title.clone() }).size(Type::Title).elide()];

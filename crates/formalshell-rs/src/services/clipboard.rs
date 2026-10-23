@@ -46,12 +46,14 @@ pub struct State {
     /// Row thumbnails by capture path, decoded to `thumb_box`.
     pub thumbs: HashMap<String, Option<Bitmap>>,
     pub thumb_box: (u32, u32),
+    /// The scale `thumbs` were made at.
+    pub thumb_scale: f64,
     /// An image just captured, for `clipssh.autoSendImages`, taken by the
     /// one reader. A re-copied image only moves its entry, so the list
     /// alone cannot say a capture happened.
     pub captured: bool,
     /// The split pane's picture: the capture, the box it was fitted to.
-    pub preview: Option<(String, (u32, u32), Option<Bitmap>)>,
+    pub preview: Option<(String, ((u32, u32), f64), Option<Bitmap>)>,
     /// What [`Cmd::Paste`] read, for the field holding the keyboard to take.
     pub pasted: Option<String>,
 }
@@ -59,8 +61,8 @@ pub struct State {
 pub enum Diff {
     Items(Vec<Entry>),
     Captured,
-    Preview(String, (u32, u32), Option<Bitmap>),
-    Thumbs((u32, u32), Vec<(String, Option<Bitmap>)>),
+    Preview(String, ((u32, u32), f64), Option<Bitmap>),
+    Thumbs(((u32, u32), f64), Vec<(String, Option<Bitmap>)>),
     Pasted(String),
 }
 
@@ -76,10 +78,10 @@ impl State {
             Diff::Captured => self.captured = true,
             Diff::Pasted(text) => self.pasted = Some(text),
             Diff::Preview(path, size, bitmap) => self.preview = Some((path, size, bitmap)),
-            Diff::Thumbs(size, list) => {
-                if size != self.thumb_box {
+            Diff::Thumbs((size, scale), list) => {
+                if (size, scale) != (self.thumb_box, self.thumb_scale) {
                     self.thumbs.clear();
-                    self.thumb_box = size;
+                    (self.thumb_box, self.thumb_scale) = (size, scale);
                 }
                 self.thumbs.extend(list);
             }
@@ -103,9 +105,9 @@ pub enum Cmd {
     Remove(String),
     Clear,
     /// Decode these captures' `fit` thumbnails into a `(w, h)` box.
-    Thumbs(Vec<String>, (u32, u32)),
+    Thumbs(Vec<String>, ((u32, u32), f64)),
     /// The split pane's picture of one capture, fitted to `(w, h)`.
-    Preview(String, (u32, u32)),
+    Preview(String, ((u32, u32), f64)),
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
@@ -285,7 +287,7 @@ pub async fn run(ctx: Ctx) {
                 let c = ctx.clone();
                 ctx.spawn(async move {
                     let p = path.clone();
-                    if let Some(mut list) = c.pool().run(move || decode_thumbs(&[p], size)).await {
+                    if let Some(mut list) = c.pool().run(move || decode_thumbs(&[p], size.0, size.1)).await {
                         let bitmap = list.pop().and_then(|(_, b)| b);
                         c.publish(store::Diff::Clipboard(Diff::Preview(path, size, bitmap)));
                     }
@@ -294,7 +296,7 @@ pub async fn run(ctx: Ctx) {
             Event::Cmd(Cmd::Thumbs(paths, size)) => {
                 let c = ctx.clone();
                 ctx.spawn(async move {
-                    if let Some(list) = c.pool().run(move || decode_thumbs(&paths, size)).await {
+                    if let Some(list) = c.pool().run(move || decode_thumbs(&paths, size.0, size.1)).await {
                         c.publish(store::Diff::Clipboard(Diff::Thumbs(size, list)));
                     }
                 });
@@ -383,10 +385,11 @@ fn warm(ctx: &Ctx, paths: Vec<String>) {
     });
 }
 
-/// Each capture fitted inside `size`, from its `fit` thumbnail when the
-/// cache has one, else from the capture itself.
-fn decode_thumbs(paths: &[String], size: (u32, u32)) -> Vec<(String, Option<Bitmap>)> {
+/// Each capture fitted inside `size` on a surface at `scale`, from its
+/// `fit` thumbnail when the cache has one, else from the capture itself.
+fn decode_thumbs(paths: &[String], size: (u32, u32), scale: f64) -> Vec<(String, Option<Bitmap>)> {
     let dir = thumb_dir();
+    let size = (crate::scene::pixels_at(f64::from(size.0), scale), crate::scene::pixels_at(f64::from(size.1), scale));
     paths
         .iter()
         .map(|p| {
@@ -394,7 +397,7 @@ fn decode_thumbs(paths: &[String], size: (u32, u32)) -> Vec<(String, Option<Bitm
             let img = image::open(&cached).or_else(|_| image::open(p)).ok();
             let bitmap = img.map(|i| {
                 let fitted = i.resize(size.0.max(1), size.1.max(1), image::imageops::FilterType::Triangle).into_rgba8();
-                Bitmap::from_rgba(fitted.width() as u16, fitted.height() as u16, fitted.into_raw())
+                Bitmap::from_rgba(fitted.width() as u16, fitted.height() as u16, fitted.into_raw()).at(scale)
             });
             (p.clone(), bitmap)
         })

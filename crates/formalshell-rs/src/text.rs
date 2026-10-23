@@ -64,9 +64,68 @@ pub struct PlacedGlyph {
     /// A colour bitmap (CBDT, sbix) drawn instead of the outline, already
     /// at the pixel size, its top-left at `x, y`.
     pub image: Option<crate::scene::Bitmap>,
+    /// Where `image` came from, for a surface past scale 1 to make it again
+    /// at its own pixel size.
+    pub color: Option<Arc<ColorGlyph>>,
     /// The outline rasterised once on the pixel grid, what the renderer
     /// draws text from; `None` for a glyph with no ink.
     pub coverage: Option<Arc<Coverage>>,
+}
+
+/// A colour glyph's face, id and size, and the offset its 1x bitmap has
+/// from the pen.
+pub struct ColorGlyph {
+    blob: Blob<u8>,
+    index: u32,
+    glyph: u32,
+    pub size: f32,
+    pub dx: i32,
+    pub dy: i32,
+}
+
+impl ColorGlyph {
+    /// The bitmap at `size` pixels, from the strike nearest it, and its
+    /// offset from the pen.
+    pub fn at(&self, size: f32) -> Option<(crate::scene::Bitmap, i32, i32)> {
+        color_bitmap(&FontRef::from_index(self.blob.as_ref(), self.index).ok()?, self.glyph, size)
+    }
+}
+
+/// A glyph's colour bitmap scaled to `size`, and its top-left against the
+/// pen position on the baseline. Only a 32-bit strike is colour; a mask
+/// strike is a monochrome bitmap the outline covers.
+fn color_bitmap(font: &FontRef, glyph: u32, size: f32) -> Option<(crate::scene::Bitmap, i32, i32)> {
+    let strikes = BitmapStrikes::new(font);
+    if strikes.is_empty() {
+        return None;
+    }
+    let g = strikes.glyph_for_size(Size::new(size), GlyphId::new(glyph))?;
+    let rgba = match g.data {
+        BitmapData::Png(bytes) => image::load_from_memory_with_format(bytes, image::ImageFormat::Png).ok()?.into_rgba8(),
+        BitmapData::Bgra(bytes) => {
+            let mut px = bytes.to_vec();
+            for p in px.chunks_exact_mut(4) {
+                p.swap(0, 2);
+                // Premultiplied in the table; from_rgba wants it straight.
+                let a = u32::from(p[3]);
+                if a > 0 {
+                    for c in &mut p[..3] {
+                        *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
+                    }
+                }
+            }
+            image::RgbaImage::from_raw(g.width, g.height, px)?
+        }
+        BitmapData::Mask(_) => return None,
+    };
+    let scale = size / g.ppem_y.max(1.0);
+    let w = ((rgba.width() as f32 * scale).round() as u32).max(1);
+    let h = ((rgba.height() as f32 * scale).round() as u32).max(1);
+    let filter = if scale < 1.0 { image::imageops::FilterType::Triangle } else { image::imageops::FilterType::CatmullRom };
+    let scaled = if (w, h) == rgba.dimensions() { rgba } else { image::imageops::resize(&rgba, w, h, filter) };
+    let dx = (g.inner_bearing_x * scale).round() as i32;
+    let dy = -(g.inner_bearing_y * scale).round() as i32;
+    Some((crate::scene::Bitmap::from_rgba(w as u16, h as u16, scaled.into_raw()), dx, dy))
 }
 
 /// A glyph's antialiased coverage, one byte a pixel, its top-left at `x, y`
@@ -253,7 +312,7 @@ struct Inner {
     outlines: HashMap<GlyphKey, (Arc<BezPath>, Option<Arc<Coverage>>)>,
     /// Colour bitmaps by face, glyph and pixel size; `None` where the face
     /// has no bitmap for the glyph.
-    bitmaps: HashMap<(u64, u32, u32, u32), Option<(crate::scene::Bitmap, i32, i32)>>,
+    bitmaps: HashMap<(u64, u32, u32, u32), Option<(crate::scene::Bitmap, Arc<ColorGlyph>)>>,
     /// The autohinter's glyph classes per face, the costly half of a hinting
     /// instance, computed once and shared by every size.
     styles: HashMap<(u64, u32), GlyphStyles>,
@@ -375,12 +434,13 @@ impl Inner {
             for glyph in glyph_run.positioned_glyphs() {
                 let x = PAD + glyph.x.round() as i32;
                 let y = PAD + (baseline + glyph.y - line_baseline).round() as i32;
-                if let Some((image, dx, dy)) = self.bitmap(&font_ref, font.data.id(), font.index, glyph.id, size) {
-                    shaped.glyphs.push(PlacedGlyph { path: Arc::new(BezPath::new()), x: x + dx, y: y + dy, image: Some(image), coverage: None });
+                if let Some((image, color)) = self.bitmap(&font_ref, &font.data, font.index, glyph.id, size) {
+                    let (dx, dy) = (color.dx, color.dy);
+                    shaped.glyphs.push(PlacedGlyph { path: Arc::new(BezPath::new()), x: x + dx, y: y + dy, image: Some(image), color: Some(color), coverage: None });
                     continue;
                 }
                 let (path, coverage) = self.outline(&font_ref, instance, glyph.id, size, &coords);
-                shaped.glyphs.push(PlacedGlyph { path, x, y, image: None, coverage });
+                shaped.glyphs.push(PlacedGlyph { path, x, y, image: None, color: None, coverage });
             }
         }
         shaped
@@ -420,43 +480,14 @@ impl Inner {
         id
     }
 
-    /// The glyph's colour bitmap scaled to `size` once, and its top-left
-    /// against the pen position on the baseline. Only a 32-bit strike is
-    /// colour; a mask strike is a monochrome bitmap the outline covers.
-    fn bitmap(&mut self, font: &FontRef, blob: u64, index: u32, glyph: u32, size: f32) -> Option<(crate::scene::Bitmap, i32, i32)> {
-        let key = (blob, index, glyph, size.to_bits());
+    /// The glyph's colour bitmap at `size` once, and where it came from.
+    fn bitmap(&mut self, font: &FontRef, data: &Blob<u8>, index: u32, glyph: u32, size: f32) -> Option<(crate::scene::Bitmap, Arc<ColorGlyph>)> {
+        let key = (data.id(), index, glyph, size.to_bits());
         if let Some(hit) = self.bitmaps.get(&key) {
             return hit.clone();
         }
-        let strikes = BitmapStrikes::new(font);
-        let found = if strikes.is_empty() { None } else { strikes.glyph_for_size(Size::new(size), GlyphId::new(glyph)) };
-        let placed = found.and_then(|g| {
-            let rgba = match g.data {
-                BitmapData::Png(bytes) => image::load_from_memory_with_format(bytes, image::ImageFormat::Png).ok()?.into_rgba8(),
-                BitmapData::Bgra(bytes) => {
-                    let mut px = bytes.to_vec();
-                    for p in px.chunks_exact_mut(4) {
-                        p.swap(0, 2);
-                        // Premultiplied in the table; from_rgba wants it straight.
-                        let a = u32::from(p[3]);
-                        if a > 0 {
-                            for c in &mut p[..3] {
-                                *c = ((u32::from(*c) * 255 + a / 2) / a).min(255) as u8;
-                            }
-                        }
-                    }
-                    image::RgbaImage::from_raw(g.width, g.height, px)?
-                }
-                BitmapData::Mask(_) => return None,
-            };
-            let scale = size / g.ppem_y.max(1.0);
-            let w = ((rgba.width() as f32 * scale).round() as u32).max(1);
-            let h = ((rgba.height() as f32 * scale).round() as u32).max(1);
-            let scaled = image::imageops::resize(&rgba, w, h, image::imageops::FilterType::Triangle);
-            let dx = (g.inner_bearing_x * scale).round() as i32;
-            let dy = -(g.inner_bearing_y * scale).round() as i32;
-            Some((crate::scene::Bitmap::from_rgba(w as u16, h as u16, scaled.into_raw()), dx, dy))
-        });
+        let placed = color_bitmap(font, glyph, size)
+            .map(|(image, dx, dy)| (image, Arc::new(ColorGlyph { blob: data.clone(), index, glyph, size, dx, dy })));
         self.bitmaps.insert(key, placed.clone());
         placed
     }

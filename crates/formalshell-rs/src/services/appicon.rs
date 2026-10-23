@@ -65,32 +65,48 @@ impl PartialEq for Icon {
     }
 }
 
+/// Icons by window and the pixel size they were made at, so a bar on an
+/// output at another scale keeps its own.
 #[derive(Default)]
 pub struct State {
-    pub by_window: HashMap<String, Icon>,
+    by_window: HashMap<(String, u32), Icon>,
 }
 
-pub struct Diff(pub Vec<(String, Icon)>);
+pub struct Diff(pub Vec<((String, u32), Icon)>);
 
 impl State {
     pub fn apply(&mut self, Diff(icons): Diff) -> bool {
         let mut changed = false;
-        for (id, icon) in icons {
-            if self.by_window.get(&id) != Some(&icon) {
-                self.by_window.insert(id, icon);
+        for (key, icon) in icons {
+            if self.by_window.get(&key) != Some(&icon) {
+                self.by_window.insert(key, icon);
                 changed = true;
             }
         }
         changed
     }
+
+    /// The window's icon as [`probe`] made it for a `size` square at
+    /// `scale`, else one made at another pixel size, drawn in the same box.
+    pub fn get(&self, id: &str, size: u32, scale: f64) -> Option<Icon> {
+        let px = crate::scene::pixels_at(f64::from(size), scale);
+        let (density, icon) = match self.by_window.get(&(id.to_owned(), px)) {
+            Some(hit) => (scale, hit),
+            None => self.by_window.iter().find(|((i, _), _)| i == id).map(|((_, made), icon)| (f64::from(*made) / f64::from(size.max(1)), icon))?,
+        };
+        let mut icon = icon.clone();
+        icon.image = icon.image.map(|b| b.at(density));
+        Some(icon)
+    }
 }
 
 static PROBE: OnceLock<async_channel::Sender<(u32, Vec<Query>)>> = OnceLock::new();
 
-/// Resolves `queries` to icons drawn `size` pixels square.
-pub fn probe(size: u32, queries: Vec<Query>) {
+/// Resolves `queries` to icons drawn in a `size` square on a surface at
+/// `scale`, which [`State::get`] reads back.
+pub fn probe(size: u32, scale: f64, queries: Vec<Query>) {
     if let Some(tx) = PROBE.get() {
-        let _ = tx.try_send((size, queries));
+        let _ = tx.try_send((crate::scene::pixels_at(f64::from(size), scale), queries));
     }
 }
 
@@ -128,10 +144,10 @@ struct Inner {
 }
 
 impl Inner {
-    fn resolve(&mut self, size: u32, queries: &[Query]) -> Vec<(String, Icon)> {
+    fn resolve(&mut self, px: u32, queries: &[Query]) -> Vec<((String, u32), Icon)> {
         self.rescan();
         self.read_procs(queries);
-        queries.iter().map(|q| (q.id.clone(), self.icon_for(size, q))).collect()
+        queries.iter().map(|q| ((q.id.clone(), px), self.icon_for(px, q))).collect()
     }
 
     /// Entries are rescanned when any applications directory's mtime moved,
@@ -179,7 +195,7 @@ impl Inner {
         };
         let Some(path) = icons::lookup(&entry.icon, "", size) else { return Icon { entry: Some(info), ..Icon::default() } };
         let source = path.to_string_lossy().into_owned();
-        let image = icons::load_at(&path, size);
+        let image = icons::load_at(&path, size, 1.0);
         Icon { source, image, entry: Some(info) }
     }
 }
@@ -346,6 +362,28 @@ fn split_exec(exec: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn icon(px: u16) -> Icon {
+        Icon { image: Some(Bitmap::from_rgba(px, px, vec![0; usize::from(px) * usize::from(px) * 4])), ..Icon::default() }
+    }
+
+    #[test]
+    fn each_scale_reads_the_icon_made_for_it() {
+        let mut state = State::default();
+        state.apply(Diff(vec![(("w".into(), 20), icon(20)), (("w".into(), 16), icon(16))]));
+        let at = |scale| state.get("w", 16, scale).and_then(|i| i.image).map(|b| (b.pixmap.width(), b.density));
+        assert_eq!(at(1.25), Some((20, 1.25)));
+        assert_eq!(at(1.0), Some((16, 1.0)));
+    }
+
+    #[test]
+    fn a_scale_not_made_yet_borrows_another_at_its_own_size() {
+        let mut state = State::default();
+        state.apply(Diff(vec![(("w".into(), 20), icon(20))]));
+        let b = state.get("w", 16, 1.0).and_then(|i| i.image).unwrap();
+        assert_eq!(b.logical(), (16.0, 16.0));
+        assert!(state.get("other", 16, 1.0).is_none());
+    }
 
     #[test]
     fn exec_lines() {

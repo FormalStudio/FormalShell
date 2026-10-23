@@ -67,8 +67,8 @@ impl Sheet {
         let animating = self.sel.iter().any(|a| a.running(now));
 
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
-        // The freeze is the output's native pixels and the surface is its
-        // logical size, so a scaled output's frame is stretched to fit.
+        // The freeze is the output's native pixels, which the surface draws
+        // at: a scaled output's frame lands one to one.
         if let Some(f) = frame {
             p.shape(IRect::new(0, 0, sw, sh), Paint::Picture { image: f.clone(), alpha: 1.0, radius: 0.0 });
         }

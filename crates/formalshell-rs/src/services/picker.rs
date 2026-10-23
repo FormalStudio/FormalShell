@@ -27,13 +27,14 @@ pub struct State {
     /// Images whose `cover` thumbnail is in the cache.
     pub cached: HashSet<String>,
     pub thumbs: HashMap<String, Option<Bitmap>>,
-    pub thumb_px: u32,
+    /// The cell edge the thumbnails were made for, and the scale.
+    pub thumb_px: (u32, f64),
 }
 
 pub enum Diff {
     Scanned(String, Vec<String>),
     Cached(Vec<String>),
-    Thumbs(u32, Vec<(String, Option<Bitmap>)>),
+    Thumbs((u32, f64), Vec<(String, Option<Bitmap>)>),
 }
 
 impl State {
@@ -63,8 +64,8 @@ pub enum Cmd {
     Scan(String),
     /// `picker.directory` as read: scanned and warmed once per value.
     Boot(String),
-    /// Decode these images' cells at `px` square.
-    Thumbs(Vec<String>, u32),
+    /// Decode these images' cells at `px` square on a surface at a scale.
+    Thumbs(Vec<String>, (u32, f64)),
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
@@ -104,7 +105,7 @@ pub async fn run(ctx: Ctx) {
             Cmd::Thumbs(paths, px) => {
                 let c = ctx.clone();
                 ctx.spawn(async move {
-                    if let Some(list) = c.pool().run(move || decode(&paths, px)).await {
+                    if let Some(list) = c.pool().run(move || decode(&paths, px.0, px.1)).await {
                         c.publish(store::Diff::Picker(Diff::Thumbs(px, list)));
                     }
                 });
@@ -130,10 +131,11 @@ async fn warm(paths: &[String]) -> Vec<String> {
     done.stdout.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()
 }
 
-/// Each image as a `px` square cover crop, from its cached thumbnail when
-/// there is one.
-fn decode(paths: &[String], px: u32) -> Vec<(String, Option<Bitmap>)> {
+/// Each image as a `px` square cover crop on a surface at `scale`, from its
+/// cached thumbnail when there is one.
+fn decode(paths: &[String], px: u32, scale: f64) -> Vec<(String, Option<Bitmap>)> {
     let dir = thumb_dir();
+    let px = crate::scene::pixels_at(f64::from(px), scale);
     paths
         .iter()
         .map(|p| {
@@ -141,7 +143,7 @@ fn decode(paths: &[String], px: u32) -> Vec<(String, Option<Bitmap>)> {
             let img = image::open(&cached).or_else(|_| image::open(p)).ok();
             let bitmap = img.map(|i| {
                 let fitted = i.resize_to_fill(px.max(1), px.max(1), image::imageops::FilterType::Triangle).into_rgba8();
-                Bitmap::from_rgba(fitted.width() as u16, fitted.height() as u16, fitted.into_raw())
+                Bitmap::from_rgba(fitted.width() as u16, fitted.height() as u16, fitted.into_raw()).at(scale)
             });
             (p.clone(), bitmap)
         })
