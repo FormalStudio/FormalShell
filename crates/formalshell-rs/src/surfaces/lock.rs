@@ -138,7 +138,7 @@ pub fn transport_key(index: i32, count: i32, key: TKey) -> Step {
 
 pub struct View {
     pub scene: Scene,
-    ui: Ui,
+    pub ui: Ui,
     nodes: Vec<NodeId>,
     /// `lock status`'s per-output report.
     pub report: Value,

@@ -138,6 +138,10 @@ pub struct Card {
     live: Rect,
     line_at: f64,
     open: bool,
+    /// When the last enter began, which the grain and the rows run off.
+    pub entered: Option<Instant>,
+    /// Whether the pose was last headed open on screen.
+    open_was: bool,
     mapped: bool,
     /// The pose lands at once (Presence's `bypass`, a handoff's halves).
     bypass: bool,
@@ -212,6 +216,8 @@ impl Card {
             live: rest,
             line_at,
             open: true,
+            entered: None,
+            open_was: false,
             mapped: false,
             bypass: false,
             joined: true,
@@ -335,6 +341,10 @@ impl Card {
         self.open = open;
         let held = open && !self.mapped;
         let target = if open && !held { 1.0 } else { 0.0 };
+        if open && !held && !self.open_was {
+            self.entered = Some(now);
+        }
+        self.open_was = open && !held;
         if self.bypass {
             self.progress.jump(target);
         } else {

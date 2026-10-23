@@ -584,6 +584,113 @@ pub fn stops(raw: &[Value]) -> Option<Vec<(f64, f64)>> {
     (stops.len() >= 2 && climbs && spans).then_some(stops)
 }
 
+/// The effect names a table's `motion` may carry past its clocks, each
+/// optional, absent meaning the effect never runs on that table.
+pub const EFFECT_KEYS: [&str; 8] = ["focusText", "reveal", "swap", "use", "error", "picture", "noise", "progress"];
+
+/// `reveal: "type"`: characters typing in on `steps(20)` over 0.6s.
+pub const TYPE_MS: f64 = 600.0;
+pub const TYPE_STEPS: usize = 20;
+/// `swap: "glitch"`: the old content jumps `GLITCH_BACK` px back and out in
+/// two steps over `GLITCH_OUT_MS`, the new one comes in from `GLITCH_AHEAD`
+/// px ahead over `GLITCH_IN_MS` on the `arrive` curve, opaque by 30% of it.
+pub const GLITCH_OUT_MS: f64 = 180.0;
+pub const GLITCH_IN_MS: f64 = 500.0;
+pub const GLITCH_BACK: f64 = 10.0;
+pub const GLITCH_AHEAD: f64 = 20.0;
+/// `error: "shake"`: the label's weight, width and tracking jitter.
+pub const SHAKE_MS: f64 = 500.0;
+/// `picture: "zoom"`: a picture landing from 20 times its size in steps.
+pub const ZOOM_MS: f64 = 500.0;
+/// `progress: "blocks"`: cells in a block readout.
+pub const BLOCK_CELLS: usize = 10;
+
+/// `focusText`: the axes a focused label goes to, on its own clock.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FocusText {
+    pub clock: Clock,
+    pub wdth: f64,
+    pub wght: f64,
+    /// Extra advance in ems.
+    pub tracking: f64,
+}
+
+/// Rows rising in on open: `arrive.rise` px, `arrive.stagger` ms apart, on
+/// the `emerge` clock the card opens on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rows {
+    pub clock: Clock,
+    pub rise: f64,
+    pub stagger: f64,
+}
+
+/// `use`: a ghost of the activated row scaling to `scale` as it fades.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Use {
+    pub clock: Clock,
+    pub scale: (f64, f64),
+}
+
+/// `noise`: a grain layer over a fresh card, fading from `alpha` to none.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Noise {
+    pub clock: Clock,
+    pub alpha: f64,
+}
+
+/// `swap: "glitch"`: its two halves, the way in on the `arrive` curve.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Glitch {
+    pub out: f64,
+    pub into: f64,
+    pub curve: Easing,
+}
+
+/// What `motion` names past its clocks (C5), durations unscaled.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Catalogue {
+    pub focus_text: Option<FocusText>,
+    /// `reveal: "type"`'s duration.
+    pub reveal: Option<f64>,
+    pub rows: Option<Rows>,
+    pub swap: Option<Glitch>,
+    pub use_: Option<Use>,
+    /// `error: "shake"`'s duration.
+    pub error: Option<f64>,
+    /// `picture: "zoom"`'s duration.
+    pub picture: Option<f64>,
+    pub noise: Option<Noise>,
+    /// `progress: "blocks"`'s cell count.
+    pub progress: Option<usize>,
+}
+
+pub fn catalogue(style: &Value, m: &Motion) -> Catalogue {
+    let raw = |key: &str| style.get("motion").and_then(|mo| mo.get(key)).filter(|v| truthy(Some(v)));
+    let named = |key: &str, name: &str| raw(key).and_then(Value::as_str) == Some(name);
+    let arrive = raw("arrive");
+    let rise = num(arrive.and_then(|a| a.get("rise"))).filter(|r| *r > 0.0);
+    Catalogue {
+        focus_text: raw("focusText").map(|f| FocusText {
+            clock: motion(style, "focusText", m),
+            wdth: num(f.get("wdth")).unwrap_or(100.0),
+            wght: num(f.get("wght")).unwrap_or(400.0),
+            tracking: num_or_zero(f.get("tracking")),
+        }),
+        reveal: named("reveal", "type").then_some(TYPE_MS),
+        rows: rise.map(|rise| Rows { clock: motion(style, "emerge", m), rise, stagger: num_or_zero(arrive.and_then(|a| a.get("stagger"))) }),
+        swap: named("swap", "glitch").then(|| Glitch { out: GLITCH_OUT_MS, into: GLITCH_IN_MS, curve: motion(style, "arrive", m).curve }),
+        use_: raw("use").map(|u| {
+            let scale = u.get("scale").and_then(Value::as_array);
+            let at = |i: usize| scale.and_then(|s| s.get(i)).and_then(Value::as_f64).unwrap_or(1.0);
+            Use { clock: motion(style, "use", m), scale: (at(0), at(1)) }
+        }),
+        error: named("error", "shake").then_some(SHAKE_MS),
+        picture: named("picture", "zoom").then_some(ZOOM_MS),
+        noise: raw("noise").map(|n| Noise { clock: motion(style, "noise", m), alpha: num_or_zero(n.get("alpha")) }),
+        progress: named("progress", "blocks").then_some(BLOCK_CELLS),
+    }
+}
+
 /// One of the table's pointer washes, transparent for an unknown key.
 pub fn wash<C: Ctx>(style: &Value, key: &str, ctx: &C) -> C::Color {
     match style.get("wash").and_then(|w| w.get(key)).filter(|e| truthy(Some(e))) {
@@ -1019,6 +1126,30 @@ pub(crate) mod tests {
                 assert_eq!(motion(style, key, &families).stagger, stagger.and_then(Value::as_f64).unwrap_or(0.0));
             }
         }
+    }
+
+    #[test]
+    fn the_catalogue_is_the_cartridge_tables_alone() {
+        let m = tokens::motion_tokens(true);
+        for (name, style) in tables() {
+            let c = catalogue(style, &m);
+            if name != "cartridge" {
+                assert_eq!(c, Catalogue::default(), "{name} takes an effect");
+                continue;
+            }
+            let f = c.focus_text.expect("focusText");
+            assert_eq!((f.clock.duration, f.wdth, f.wght, f.tracking), (200.0, 125.0, 700.0, 0.04));
+            assert_eq!(c.reveal, Some(TYPE_MS));
+            let rows = c.rows.expect("rows");
+            assert_eq!((rows.rise, rows.stagger, rows.clock.duration), (40.0, 60.0, 900.0));
+            assert_eq!(c.swap.map(|g| (g.out, g.into)), Some((GLITCH_OUT_MS, GLITCH_IN_MS)));
+            let u = c.use_.expect("use");
+            assert_eq!((u.clock.duration, u.scale), (400.0, (1.1, 1.3)));
+            assert_eq!((c.error, c.picture, c.progress), (Some(SHAKE_MS), Some(ZOOM_MS), Some(BLOCK_CELLS)));
+            assert_eq!(c.noise.map(|n| n.clock.duration), Some(1000.0));
+        }
+        let unknown = json!({ "motion": { "reveal": "fade", "swap": "slide", "error": "flash" } });
+        assert_eq!(catalogue(&unknown, &m), Catalogue::default());
     }
 
     #[test]

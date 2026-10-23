@@ -329,6 +329,24 @@ take the same clocks: a row that keeps its place moves on `spatial`, an
 arriving one fades in on `effects` and a leaving one fades out on
 `effectsFast`.
 
+Past its clocks a table may name effects (`fs_theme::style::Catalogue`,
+the maths in `formalshell-rs/src/effects.rs`), each absent on a table that
+does not carry it, so metamorphosis and pantheon run none of them:
+`focusText` (the cursor or hovered row's label going to a width, weight
+and tracking on its own clock), `reveal: "type"` (a hero's title and
+readout, a console's status line and any `El::typed` text typing in on
+`steps(20)` over 600ms, placed by its whole width), `arrive.rise` with
+`arrive.stagger` (a card's rows rising in on open, on the `emerge` clock),
+`swap: "glitch"` (a launcher level change's rows jumping 10px back and out
+in two steps, the new ones coming in from 20px ahead on the `arrive`
+curve; a panel handoff draws the way in alone), `use` (a ghost of the
+activated row's label scaling and fading), `error: "shake"` (a field's
+error label jittering its axes over 500ms), `picture: "zoom"` (a picture
+that changes landing from 20 times its size in four stairs), `noise` (a
+grain over a fresh card fading out) and `progress: "blocks"` (a readout as
+`█████░░░░░ 50%` in the values face). Every one of them runs off a moment
+(the open, the change, the activation) and lands; none runs at rest.
+
 An edge-anchored card and the line it comes out of are one silhouette while
 it comes out (amended 2026-09-09, and 2026-09-14 for the let-go). The bar
 draws a single 1px `border` along its inner edge, the frame ring one round

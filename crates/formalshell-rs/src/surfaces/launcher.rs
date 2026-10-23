@@ -139,6 +139,8 @@ pub struct Model {
     /// The row list's transitions: rows that moved, arrived or left on
     /// the last re-rank inside one level.
     motion: RowMotion,
+    /// The row last activated and when, for its ghost (`use`).
+    used: Option<(String, Instant)>,
     /// `debug motionScale`, which the row transitions run at.
     pub motion_scale: f64,
 }
@@ -155,6 +157,13 @@ struct RowMotion {
     added: std::collections::HashMap<String, Instant>,
     left: Vec<(Node, Slot, Instant)>,
     ms: (f64, f64, f64),
+    /// An open still to start the rows' rise (`arrive.rise`).
+    fresh: bool,
+    /// The rows rising in off the open, the clock scaled.
+    rise: Option<(Instant, fs_theme::style::Rows)>,
+    /// A level change's glitch (`swap: glitch`): the rows that were there,
+    /// the moment, and the clock scaled.
+    swap: Option<(Vec<(Node, Slot)>, Instant, fs_theme::style::Glitch)>,
 }
 
 const ROW_RESET_LIMIT: usize = 64;
@@ -165,7 +174,9 @@ impl RowMotion {
     }
 
     fn running(&self, now: Instant) -> bool {
-        self.moved.values().any(|(_, at)| Self::progress(*at, self.ms.0, now) < 1.0)
+        self.rise.as_ref().is_some_and(|(at, r)| crate::effects::rising(r, crate::effects::since(*at, now), ROW_RESET_LIMIT))
+            || self.swap.as_ref().is_some_and(|(_, at, g)| crate::effects::glitching(g, crate::effects::since(*at, now)))
+            || self.moved.values().any(|(_, at)| Self::progress(*at, self.ms.0, now) < 1.0)
             || self.added.values().any(|at| Self::progress(*at, self.ms.1, now) < 1.0)
             || self.left.iter().any(|(_, _, at)| Self::progress(*at, self.ms.2, now) < 1.0)
     }
@@ -173,6 +184,27 @@ impl RowMotion {
     /// The slide still owed to a row, in body pixels.
     fn offset(&self, id: &str, now: Instant) -> f64 {
         self.moved.get(id).map_or(0.0, |(dy, at)| dy * (1.0 - Clock::Spatial.curve().ease(Self::progress(*at, self.ms.0, now))))
+    }
+
+    /// The `index`th row's shift and opacity off the open's rise and a level
+    /// change's glitch.
+    fn arrival(&self, index: usize, now: Instant) -> (f64, f64, f32) {
+        let (mut dx, mut dy, mut a) = (0.0, 0.0, 1.0);
+        if let Some((at, r)) = &self.rise {
+            (dy, a) = crate::effects::rise(r, crate::effects::since(*at, now), index);
+        }
+        if let Some((_, at, g)) = &self.swap {
+            let (x, ga) = crate::effects::glitch(g, crate::effects::since(*at, now)).new;
+            (dx, a) = (x, a * ga);
+        }
+        (dx, dy, a)
+    }
+
+    /// The rows a level change replaced, while they are still going out.
+    fn going(&self, now: Instant) -> Option<(&[(Node, Slot)], f64, f32)> {
+        let (rows, at, g) = self.swap.as_ref()?;
+        let (dx, a) = crate::effects::glitch(g, crate::effects::since(*at, now)).old?;
+        Some((rows.as_slice(), dx, a))
     }
 
     fn alpha(&self, id: &str, now: Instant) -> f32 {
@@ -254,6 +286,7 @@ impl Default for Model {
             mirror_current: String::new(),
             monitor_history: MonitorHistory::default(),
             motion: RowMotion::default(),
+            used: None,
             motion_scale: 1.0,
             placed: false,
             want: String::new(),
@@ -787,10 +820,24 @@ impl Model {
     fn row_motion(&mut self, before: std::collections::HashMap<String, (Node, Slot)>, view: View, theme: &Theme) {
         let now = Instant::now();
         let same = self.motion.level.as_ref() == Some(&self.level) && self.motion.view == Some(view);
+        let left_level = self.motion.level.as_ref().is_some_and(|l| *l != self.level);
         self.motion.level = Some(self.level.clone());
         self.motion.view = Some(view);
         let k = self.motion_scale;
         let m = &mut self.motion;
+        let c = theme.motion().catalogue;
+        if std::mem::take(&mut m.fresh) {
+            m.swap = None;
+            m.rise = c.rows.map(|r| {
+                let clock = fs_theme::style::Clock { duration: r.clock.duration * k, ..r.clock.clone() };
+                (now, fs_theme::style::Rows { clock, stagger: r.stagger * k, ..r })
+            });
+        } else if left_level && let Some(g) = c.swap {
+            m.rise = None;
+            let mut rows: Vec<(Node, Slot)> = before.values().filter(|(n, _)| n.kind != NodeKind::Note).cloned().collect();
+            rows.sort_by(|a, b| a.1.y.total_cmp(&b.1.y));
+            m.swap = Some((rows, now, fs_theme::style::Glitch { out: g.out * k, into: g.into * k, ..g }));
+        }
         m.ms = (Clock::Spatial.ms(theme) * k, Clock::Effects.ms(theme) * k, Clock::EffectsFast.ms(theme) * k);
         m.moved.retain(|_, (_, at)| RowMotion::progress(*at, m.ms.0, now) < 1.0);
         m.added.retain(|_, at| RowMotion::progress(*at, m.ms.1, now) < 1.0);
@@ -1123,6 +1170,7 @@ impl Model {
         self.enter_level(store, target);
         self.query.set(&prefill);
         self.open = true;
+        self.motion.fresh = true;
         self.key.clear();
     }
 
@@ -1298,6 +1346,7 @@ impl Model {
 
     pub fn activate(&mut self, store: &Store, index: usize) -> Out {
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
+        self.used = Some((node.id.clone(), Instant::now()));
         if self.view == View::Monitor {
             let Some(pid) = node.id.strip_prefix("proc.").and_then(|p| p.parse::<u64>().ok()) else { return Out::None };
             self.dirty = true;
@@ -1590,6 +1639,7 @@ pub struct Shown {
     /// The level and query it was last drawn on, while it is shown: a move
     /// inside the same list travels, anything else lands at once.
     sel_on: Option<(Option<String>, String)>,
+    grain: ui::Grain,
 }
 
 impl Shown {
@@ -1611,6 +1661,7 @@ impl Shown {
         let body_anchor = marker(sel_anchor);
         let sel = || Animated::new(0.0, Clock::SpatialFast.curve());
         Self {
+            grain: ui::Grain::default(),
             modal,
             head: Ui::new(Some(top)),
             body: Ui::new(Some(body_anchor)),
@@ -1750,6 +1801,7 @@ impl Shown {
             Some(l) => { let r = l.place(&self.modal.card, true); (r.x, r.y) }
             None => (0, 0),
         };
+        let entered = self.modal.card.entered;
         let scene = match &mut self.modal.layer {
             Some(l) => &mut l.scene,
             None => &mut self.modal.card.scene,
@@ -1781,6 +1833,10 @@ impl Shown {
         self.body.halo_owned = false;
         self.body.fill_owned = true;
         self.body.cursor = None;
+        self.body.used = m.used.as_ref().and_then(|(id, at)| {
+            let key = self.body.stops.iter().find(|st| st.key.split_once(':').is_some_and(|(_, k)| k == id))?.key.clone();
+            Some((key, *at))
+        });
         let origin = (fx + pad, body_top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + m.layout.content_h), Some(body_clip), alpha, theme, kit, scene, now);
         if d.animating {
@@ -1875,6 +1931,9 @@ impl Shown {
             p.rect(IRect::new(frame.x, foot_rule, frame.w, bw), sep, 0.0);
         }
         p.finish();
+        if self.grain.paint(scene, frame, clip, theme, entered, self.scale, now) {
+            self.wake = Some(now);
+        }
     }
 
     /// What is under the pointer: a body row or cell, a header or footer
@@ -1991,7 +2050,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
     for (text, y, x) in &lay.headings {
         let h = ui::measure(&w::section_label(s, text, None, true), 400.0, theme, kit).1;
         if visible(*y, h) {
-            items.push((*y, h, w::section_label(s, text, None, true).pad_start(s.control_padding_x + x)));
+            let (dx, _, a) = m.motion.arrival(0, now);
+            let label = w::section_label(s, text, None, true).pad_start(s.control_padding_x + x + dx);
+            items.push((*y, h, if a < 1.0 { label.fade(a) } else { label }));
         }
     }
     if m.monitor_strip_h > 0.0 {
@@ -2064,12 +2125,22 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             if alpha < 1.0 { el.fade(alpha) } else { el }
         };
         let dy = if i >= cells && matches!(m.view, View::Rows | View::AppGrid) { m.motion.offset(&row.id, now) } else { 0.0 };
-        if dy.abs() > 0.5 {
-            let top = slot.y + slot.band + dy;
-            overlays.push((el, Rect::new(slot.x, top, slot.x + slot.w, top + slot.h - slot.band)));
+        let (ax, ay, aa) = m.motion.arrival(i, now);
+        let el = if aa < 1.0 { let f = el.fade.unwrap_or(1.0); el.fade(f * aa) } else { el };
+        let (dx, dy) = (ax, dy + ay);
+        if dy.abs() > 0.5 || dx.abs() > 0.5 {
+            let (left, top) = (slot.x + dx, slot.y + slot.band + dy);
+            overlays.push((el, Rect::new(left, top, left + slot.w, top + slot.h - slot.band)));
             continue;
         }
         items.push((slot.y + slot.band, slot.h - slot.band, el.pad_start(0.0)));
+    }
+    if let Some((rows, dx, fade)) = m.motion.going(now) {
+        for (node, slot) in rows.iter().filter(|(_, slot)| visible(slot.y, slot.h)) {
+            let el = menu_row(m, node, usize::MAX, false, false, None, theme).width(Size::Px(slot.w)).fade(fade);
+            let (left, top) = (slot.x + dx, slot.y + slot.band);
+            overlays.push((El { on: None, ..el }, Rect::new(left, top, left + slot.w, top + slot.h - slot.band)));
+        }
     }
     for (node, slot, at) in &m.motion.left {
         let t = RowMotion::progress(*at, m.motion.ms.2, now);

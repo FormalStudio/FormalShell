@@ -1,4 +1,5 @@
 mod cmdline;
+mod effects;
 mod fontconfig;
 mod greeter;
 mod install;

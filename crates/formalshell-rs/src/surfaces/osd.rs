@@ -75,6 +75,11 @@ pub fn content(r: &Reading, theme: &Theme, kit: &mut Kit, inner_width: f64) -> E
     if r.kind == Kind::Media {
         return w::row(s.icon_gap, vec![icon, w::label(r.media.clone()).size(Type::Body).elide()]).fill();
     }
+    if let Some(cells) = theme.motion().catalogue.progress {
+        let bar = crate::effects::blocks(r.fraction(), cells, r.percent());
+        let widest = crate::effects::blocks(1.0, cells, 100);
+        return w::row(s.icon_gap, vec![icon, w::value(bar).ink(Ink::Fg).mono().gauge(widest)]).fill();
+    }
     let text = format!("{}%", r.percent());
     let column = |t: &str| w::value(t.to_owned()).ink(Ink::Fg).mono();
     let widest = ui::measure(&column("100%"), inner_width, theme, kit).0;

@@ -109,6 +109,13 @@ pub struct Host {
     rule_nodes: Vec<NodeId>,
     /// The console header's title, status strip and id strip.
     console_nodes: Vec<NodeId>,
+    /// The status strip's line and when it last changed, for its typing.
+    status_typed: (u64, Instant),
+    /// When the enter began, which the rows' rise and the grain run off.
+    opened: Option<Instant>,
+    /// When a handoff's body started coming in (`swap: glitch`).
+    swapped: Option<Instant>,
+    grain: ui::Grain,
     pub place: Place,
     open: bool,
     /// Cut outright: the card that took this one's place is on top of it.
@@ -169,6 +176,10 @@ impl Host {
             bar_nodes: Vec::new(),
             rule_nodes: vec![rule],
             console_nodes: Vec::new(),
+            status_typed: (0, Instant::now()),
+            opened: None,
+            swapped: None,
+            grain: ui::Grain::default(),
             place,
             open: true,
             handed: false,
@@ -256,11 +267,18 @@ impl Host {
     /// True when the outgoing card has to go now.
     pub fn mapped(&mut self, theme: &Theme, now: Instant) -> bool {
         self.card.mapped(now);
+        if self.opened.is_none() {
+            self.opened = Some(now);
+            if self.handoff.is_none() {
+                self.body.arrive = Some(now);
+            }
+        }
         let Some(h) = &mut self.handoff else { return false };
         if h.started {
             return false;
         }
         h.started = true;
+        self.swapped = theme.motion().catalogue.swap.is_some().then_some(now);
         h.travel.set(now, 1.0, Clock::Spatial.ms(theme) * self.scale);
         h.alpha.set(now, 1.0, Clock::Effects.ms(theme) * self.scale);
         true
@@ -494,7 +512,7 @@ impl Host {
     /// header's controls, the status strip under them and the id strip down
     /// the leading side.
     #[allow(clippy::too_many_arguments)]
-    fn paint_console(module: &dyn Panel, nodes: &mut Vec<NodeId>, scene: &mut crate::scene::Scene, v: &View, kit: &mut Kit, frame: IRect, head: Rect, room: f64, clip: IRect, alpha: f32) {
+    fn paint_console(module: &dyn Panel, nodes: &mut Vec<NodeId>, scene: &mut crate::scene::Scene, v: &View, kit: &mut Kit, frame: IRect, head: Rect, room: f64, clip: IRect, alpha: f32, typed: (&mut (u64, Instant), f64, Instant)) -> bool {
         let theme = v.theme;
         let s = &theme.space;
         let c = ConsoleType::new(theme, kit);
@@ -510,7 +528,18 @@ impl Host {
         // The subtitle goes before the title is cut.
         let sub_shown = (title.width + sub.width) as f64 + s.sm <= room;
         let id = module.id().to_uppercase();
-        let left = kit.shape(&format!("{id} :: {}", module.status(v)), c.status);
+        // The status line types in on open and whenever it changes
+        // (`reveal: type`), placed and fitted by its whole width.
+        let line = format!("{id} :: {}", module.status(v));
+        let (mark, scale, now) = typed;
+        let tok = line_token(&line);
+        if mark.0 != tok {
+            *mark = (tok, now);
+        }
+        let reveal = theme.motion().catalogue.reveal.map(|ms| crate::effects::progress(crate::effects::since(mark.1, now), ms * scale));
+        let shown = reveal.map_or(line.as_str(), |p| crate::effects::prefix(&line, crate::effects::typed(line.chars().count(), p)));
+        let whole = kit.shape(&line, c.status).width;
+        let left = kit.shape(shown, c.status);
         let date = v.store.clock.now.format("( %Y / %m / %d )").to_string();
         let right = kit.shape(&date, c.status);
         let tag = kit.shape(&module.id().to_lowercase(), c.strip);
@@ -533,7 +562,7 @@ impl Host {
         let ly = (sr.y0 + (sr.height() - left.line_height() as f64) / 2.0).round() as i32;
         let inset = s.md;
         let room = (sr.width() - inset * 3.0 - right.width as f64).max(0.0);
-        if (left.width as f64) <= room {
+        if (whole as f64) <= room {
             p.text(&left, ((sr.x0 + inset).round() as i32, ly), a(status_box.ink), &[]);
         }
         p.text(&right, ((sr.x1 - inset).round() as i32 - right.width, ly), a(status_box.ink), &[]);
@@ -556,6 +585,7 @@ impl Host {
             p.text_in(&tag, bounds, transform, Some(clip), a(strip_box.ink), &[]);
         }
         p.finish();
+        reveal.is_some_and(|p| p < 1.0)
     }
 
     fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
@@ -595,7 +625,10 @@ impl Host {
             }
             p.finish();
             if console {
-                Self::paint_console(self.module.as_ref(), &mut self.console_nodes, scene, &v, kit, frame, r, room, clip, alpha);
+                let typing = Self::paint_console(self.module.as_ref(), &mut self.console_nodes, scene, &v, kit, frame, r, room, clip, alpha, (&mut self.status_typed, self.scale, now));
+                if typing {
+                    self.wake = Some(now);
+                }
             } else {
                 Painter::new(scene, &mut self.console_nodes, None).finish();
             }
@@ -625,8 +658,18 @@ impl Host {
         self.head.motion_scale = self.scale;
         self.body.cursor = self.cursor.key.clone().filter(|_| self.cursor.active);
         self.body.ring = self.cursor.keyed;
+        // A handed-over card's body comes in from ahead (`swap: glitch`);
+        // the outgoing card is cut, so there is no way out to draw.
+        let glitch = theme.motion().catalogue.swap.zip(self.swapped).map(|(g, at)| {
+            let t = crate::effects::since(at, now) / self.scale.max(1e-6);
+            (crate::effects::glitch_in(&g, t), crate::effects::glitching(&g, t + g.out))
+        });
+        let ((gdx, ga), glitching) = glitch.unwrap_or(((0.0, 1.0), false));
+        if !glitching {
+            self.swapped = None;
+        }
         let origin = (fx + pad, top - scroll);
-        let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + self.content_h), Some(body_clip), alpha, theme, kit, scene, now);
+        let d = self.body.draw(&body, Rect::new(origin.0 + gdx, origin.1, origin.0 + gdx + inner_w, origin.1 + self.content_h), Some(body_clip), alpha * ga, theme, kit, scene, now);
         if let Some(w) = d.wake {
             self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
         }
@@ -669,6 +712,9 @@ impl Host {
             }
         }
         self.cursor.travels = false;
+        if self.grain.paint(&mut self.card.scene, frame, clip, theme, self.opened, self.scale, now) || glitching {
+            self.wake = Some(now);
+        }
         if let Some(w) = module_wake {
             self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
         }
@@ -790,6 +836,7 @@ impl Host {
             Key::Back | Key::Edit(..) => {}
             Key::Activate => {
                 if let Some(k) = stop.filter(|_| !self.body.stops.is_empty()) {
+                    self.body.used = Some((k.clone(), Instant::now()));
                     self.module.activate(&k, &mut fx);
                 }
             }
@@ -915,6 +962,9 @@ impl Host {
         let Some(e) = Ui::event(&h, x) else { return Out::None };
         if e.on == "close" {
             return Out::Close;
+        }
+        if e.what == What::Click && let Some(k) = h.stop.clone() {
+            self.body.used = Some((k, Instant::now()));
         }
         let mut fx = Self::effect(store, runtime);
         self.module.event(&e, &mut fx);
@@ -1096,6 +1146,13 @@ impl ConsoleType {
     fn head_height(&self, theme: &Theme) -> f64 {
         self.top_height(theme) + theme.space.sm + self.status_h + theme.space.xxs * 2.0
     }
+}
+
+fn line_token(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish() | 1
 }
 
 /// `text` shaped whole, or cut to `room` with an ellipsis.

@@ -85,6 +85,8 @@ pub struct ThemeMotion {
     pub restack_curve: Easing,
     pub switcher_curve: Easing,
     pub pulse_duration: f64,
+    /// The table's effects past its clocks, durations scaled the same way.
+    pub catalogue: style::Catalogue,
 }
 
 /// One text role's family: the name a table gives it, and the fontconfig
@@ -370,6 +372,22 @@ impl Theme {
         chrome::Chrome::from_table(self.style, Value::from(self.radius), Value::Bool(self.blur_behind))
     }
 
+    fn catalogue(&self, on: &dyn Fn(f64) -> f64) -> style::Catalogue {
+        let c = style::catalogue(self.style, &tokens::motion_tokens(true));
+        let clock = |k: Clock| Clock { duration: on(k.duration), stagger: on(k.stagger), ..k };
+        style::Catalogue {
+            focus_text: c.focus_text.map(|f| style::FocusText { clock: clock(f.clock), ..f }),
+            reveal: c.reveal.map(on),
+            rows: c.rows.map(|r| style::Rows { clock: clock(r.clock), stagger: on(r.stagger), ..r }),
+            swap: c.swap.map(|g| style::Glitch { out: on(g.out), into: on(g.into), ..g }),
+            use_: c.use_.map(|u| style::Use { clock: clock(u.clock), ..u }),
+            error: c.error.map(on),
+            picture: c.picture.map(on),
+            noise: c.noise.map(|n| style::Noise { clock: clock(n.clock), ..n }),
+            progress: c.progress,
+        }
+    }
+
     pub fn motion(&self) -> ThemeMotion {
         let families_on = tokens::motion_tokens(true);
         let clock = |key: &str| -> Clock { style::motion(self.style, key, &families_on) };
@@ -399,6 +417,7 @@ impl Theme {
             restack_curve: restack.curve,
             switcher_curve: switcher.curve,
             pulse_duration: 900.0,
+            catalogue: self.catalogue(&on),
         }
     }
 }
@@ -671,6 +690,20 @@ mod tests {
         assert_eq!(t.frame_thickness, 10.0);
         assert!(t.frame_enabled());
         assert_eq!(t.frame_radius, 20.0);
+    }
+
+    #[test]
+    fn the_catalogue_rides_the_switch_and_the_scale() {
+        assert_eq!(theme().motion().catalogue, style::Catalogue::default());
+        let mut c = Theme::resolve(make_get(json!({ "theme": { "preset": "cartridge" } })), &sentinel());
+        c.motion_scale = 10.0;
+        let m = c.motion().catalogue;
+        assert_eq!(m.reveal, Some(6000.0));
+        assert_eq!(m.rows.map(|r| (r.clock.duration, r.stagger, r.rise)), Some((9000.0, 600.0, 40.0)));
+        assert_eq!(m.swap.map(|g| (g.out, g.into)), Some((1800.0, 5000.0)));
+        c.motion_enabled = false;
+        let off = c.motion().catalogue;
+        assert_eq!((off.reveal, off.error, off.focus_text.map(|f| f.clock.duration)), (Some(0.0), Some(0.0), Some(0.0)));
     }
 
     #[test]

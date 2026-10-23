@@ -208,6 +208,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the sheet in the console look: square boxes with one corner cut, the
   cursor's block bar on its row and brackets round the grid cursor's cell,
   in the packaged Archivo, DotGothic16 and BIZ UD Mincho.
+- `catalogue.sh` `--catalogue`: rides `--cartridge`; its motion catalogue
+  at a fifth speed, one frame burst per effect: the launcher's rows rising
+  and grain on open, a real Down widening the cursor's label, an activated
+  row's ghost, a real BackSpace's level change glitching, the audio panel's
+  status strip and hero typing in, the app menu's picture landing, a
+  handoff's body coming in, the OSD's block readout, and a wrong password's
+  error label shaking. Every burst differs from its rest frame and every
+  pair of rest frames a second apart is identical below the bar.
 - `center.sh` `--center`: the notification centre listing the pending tier,
   with the toast stack suppressed for as long as it is open, content-tall on
   a short history and capped and scrolling on thirty rows, then one open at
