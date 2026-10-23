@@ -53,6 +53,8 @@ sources=(
   "nothingctl https://github.com/FormalSnake/nothingctl/archive/refs/tags/v0.1.1.tar.gz 3e52ae1254cfc09c0b88554b887c8e3653f5df606ab9f9490abb67f88cf57cab 1"
   "openscq30 https://github.com/Oppzippy/OpenSCQ30/archive/refs/tags/v2.12.0.tar.gz 5c2509ea0dd71ab0b6b2d81948ec2850fc4d72a1239e4cda79dac2dbad7f3860 1"
   "earbuds https://github.com/JojiiOfficial/LiveBudsCli/archive/refs/tags/v0.2.0.tar.gz b0174d4207312bdf54f5cb586fff22984ecd5be54bd0205c4debf7927878ea70 1"
+  "ear-web https://github.com/radiance-project/ear-web/archive/d076e1371572fbf0a14b441f9b3cafbf9a237e04.tar.gz 9c08f9ecbdc0924eb9e01416c17f01a02f363686b84b279cc6759f30b021d910 1"
+  "librepods https://github.com/kavishdevar/librepods/archive/89356c08cea3db0b6b54792d9329d09a87cc85fa.tar.gz 508c24bc537602f6062778771d871033d43aee9ea101e011f2ec5ef1a366ca95 1"
 )
 case $arch in
   x86_64)
@@ -159,6 +161,7 @@ cp -R "$repo/docs/examples" "$share/examples"
 install -m644 "$tp/lucide-font/lucide.ttf" "$share/fonts/lucide.ttf"
 install -m644 "$tp/nerd-fonts-symbols/SymbolsNerdFont-Regular.ttf" "$tp/nerd-fonts-symbols/SymbolsNerdFontMono-Regular.ttf" "$share/fonts/"
 python3 "$repo/nix/earth-tiles.py" "$earth" "$share"
+python3 "$repo/nix/earbuds-art.py" "$tp/ear-web" "$tp/librepods" "$share"
 install -m644 "$repo/LICENSE" "$share/LICENSE"
 echo "$VERSION" > "$share/VERSION"
 
@@ -173,6 +176,7 @@ export FS_TEMPLATE_DIR="${FS_TEMPLATE_DIR-$prefix/share/formalshell/templates}"
 export FS_BRANDING_DIR="${FS_BRANDING_DIR-$prefix/share/formalshell/branding}"
 export FS_EARTH_IMAGE="${FS_EARTH_IMAGE-$prefix/share/formalshell/earth.jpg}"
 export FS_EARTH_TILES="${FS_EARTH_TILES-$prefix/share/formalshell/tiles}"
+export FS_EARBUDS_ART="${FS_EARBUDS_ART-$prefix/share/formalshell/earbuds}"
 export PATH="$prefix/lib/formalshell/bin:$prefix/bin:$PATH"
 exec "$prefix/lib/formalshell/formalshell-rs" "$@"
 EOF

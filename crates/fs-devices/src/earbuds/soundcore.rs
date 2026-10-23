@@ -286,6 +286,7 @@ pub fn normalise(info: &Info, caps: &Caps, values: &Values) -> Device {
         batteries: batteries(values),
         controls,
         state_line: mode.map_or("", mode_line).to_string(),
+        art: String::new(),
     })
 }
 

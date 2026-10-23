@@ -252,6 +252,7 @@ pub fn normalise(status: &Status, name: &str) -> Vec<Device> {
         batteries: batteries(status),
         controls,
         state_line: line.into(),
+        art: String::new(),
     })]
 }
 

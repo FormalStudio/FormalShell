@@ -1,5 +1,6 @@
 //! Drawn from the active device alone, never branching on
-//! vendor. A `choice` control is a wrapping `ButtonGroup`, a `toggle` a
+//! vendor. A device with a picture set (`Device::art`) leads with its
+//! product picture and gives each bud and the case a tile of its own. A `choice` control is a wrapping `ButtonGroup`, a `toggle` a
 //! `Switch` row, a `range` a track, each under its control's section in the
 //! order the adapter listed them. No backend source at all is the dim "No
 //! daemon" row; a source with no device is "No earbuds connected"; with more
@@ -12,13 +13,15 @@
 //! The panel holds the service while it is open (`wayland.rs`'s sync_open).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-use fs_devices::earbuds::{self as model, Control, ControlKind, Value};
+use fs_devices::earbuds::{self as model, BatteryId, Control, ControlKind, Device, Value};
 
 use super::{Effect, Panel, View};
 use crate::services::devices::{self, earbuds};
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
+use crate::services::icons;
 use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
 const DEVICE: &str = "__device";
@@ -107,6 +110,73 @@ impl Earbuds {
     }
 }
 
+/// One part's picture (`duo`, `case`, `left`, `right`) in a `size` square;
+/// none without `FS_EARBUDS_ART`, a set, or that part.
+fn art(dev: &Device, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
+    if dev.art.is_empty() {
+        return None;
+    }
+    let dir = PathBuf::from(std::env::var_os("FS_EARBUDS_ART")?);
+    icons::load_at(&dir.join(format!("{}_{part}.webp", dev.art)), size.round().max(1.0) as u32)
+}
+
+fn percent(level: f64) -> String {
+    format!("{}%", num(level))
+}
+
+/// The product picture beside the name and what it is doing; a headphone's
+/// one battery sits under them, its level over a track.
+fn hero(s: &fs_theme::tokens::Space, dev: &Device, picture: crate::scene::Bitmap) -> El {
+    let size = s.control_height * 3.0;
+    let mut words = vec![w::text(&dev.name).size(Type::Subtitle).elide()];
+    if !dev.state_line.is_empty() {
+        words.push(w::text(&dev.state_line).size(Type::BodySmall).ink(Ink::Dim).elide());
+    }
+    if let [b] = dev.batteries.as_slice()
+        && b.id == BatteryId::Single
+    {
+        let mut level = vec![w::text(percent(b.level)).size(Type::Title).weight(Weight::Medium)];
+        if b.charging {
+            level.push(w::icon("zap").ink(Ink::Dim));
+        }
+        words.push(w::space(s.row_gap));
+        words.push(w::row(s.xxs, level));
+        words.push(w::track(b.level / 100.0));
+    }
+    w::row(s.section_gap, vec![w::picture(Some(picture), size), w::column(s.xxs, words).fill().mid()]).fill()
+}
+
+/// A tile per bud and the case: its picture, its level over a track, a
+/// bolt while it charges, and "In ear" under a bud that is.
+fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
+    let size = s.control_height * 1.75;
+    let tiles = dev
+        .batteries
+        .iter()
+        .map(|b| {
+            let part = match b.id {
+                BatteryId::Left => "left",
+                BatteryId::Right => "right",
+                BatteryId::Case => "case",
+                BatteryId::Single => "duo",
+            };
+            let mut level = vec![w::text(percent(b.level)).size(Type::Body).weight(Weight::Medium)];
+            if b.charging {
+                level.push(w::icon("zap").ink(Ink::Dim));
+            }
+            let word = if b.in_ear == Some(true) { format!("{} · In ear", b.label) } else { b.label.clone() };
+            let parts = vec![
+                w::picture(art(dev, part, size), size).centred(),
+                w::row(s.xxs, level).centred(),
+                w::track(b.level / 100.0),
+                w::caption(word).centred(),
+            ];
+            w::cell(w::column(s.xxs, parts).fill())
+        })
+        .collect::<Vec<_>>();
+    w::grid(tiles.len().max(1), s.row_gap, tiles)
+}
+
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
     let mut words = vec![w::label(&ctl.label).elide()];
@@ -121,6 +191,27 @@ fn range_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let top = vec![w::label(&ctl.label).elide(), w::value(model::range_text(Some(ctl))).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg)];
     let track = w::slider(model::range_fraction(Some(ctl))).on(format!("range:{}", ctl.key));
     w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), track])).ghost().stop(ctl.key.clone())
+}
+
+/// The plain battery rows, for a device with no pictures.
+fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
+    let batteries = model::battery_rows(Some(dev));
+    if batteries.is_empty() {
+        return None;
+    }
+    let rows = batteries
+        .iter()
+        .map(|b| {
+            let mut value = Vec::new();
+            if !b.hint.is_empty() {
+                value.push(w::section_label(s, &b.hint, None, false).ink(Ink::Dim));
+            }
+            value.push(w::value(percent(b.level)).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg));
+            let top = vec![w::label(&b.label).elide(), w::row(s.icon_gap, value)];
+            w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), w::track(b.level / 100.0)])).ghost()
+        })
+        .collect();
+    Some(w::column(s.row_gap, vec![w::section_label(s, "Battery", None, true), w::column(0.0, rows)]))
 }
 
 impl Panel for Earbuds {
@@ -164,33 +255,28 @@ impl Panel for Earbuds {
             out.push(w::column(s.row_gap, vec![w::section_label(s, "Device", None, true), self.group(DEVICE, &opts, selected, None)]));
         }
         let Some(dev) = dev else { return w::column(s.section_gap, out) };
-        out.push(w::hero(
-            s,
-            w::Hero {
-                glyph: "headphones".into(),
-                title: dev.name.clone(),
-                meta: dev.state_line.clone(),
-                readout: String::new(),
-                trailing: None,
-                rail: None,
-                rail_on: None,
-            },
-        ));
-        let batteries = model::battery_rows(Some(dev));
-        if !batteries.is_empty() {
-            let rows = batteries
-                .iter()
-                .map(|b| {
-                    let mut value = Vec::new();
-                    if !b.hint.is_empty() {
-                        value.push(w::section_label(s, &b.hint, None, false).ink(Ink::Dim));
-                    }
-                    value.push(w::value(format!("{}%", num(b.level))).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg));
-                    let top = vec![w::label(&b.label).elide(), w::row(s.icon_gap, value)];
-                    w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), w::track(b.level / 100.0)])).ghost()
-                })
-                .collect();
-            out.push(w::column(s.row_gap, vec![w::section_label(s, "Battery", None, true), w::column(0.0, rows)]));
+        match art(dev, "duo", s.control_height * 3.0) {
+            Some(picture) => {
+                out.push(hero(s, dev, picture));
+                if !dev.batteries.iter().all(|b| b.id == BatteryId::Single) {
+                    out.push(battery_tiles(s, dev));
+                }
+            }
+            None => {
+                out.push(w::hero(
+                    s,
+                    w::Hero {
+                        glyph: "headphones".into(),
+                        title: dev.name.clone(),
+                        meta: dev.state_line.clone(),
+                        readout: String::new(),
+                        trailing: None,
+                        rail: None,
+                        rail_on: None,
+                    },
+                ));
+                out.extend(battery_section(s, dev));
+            }
         }
         for section in model::sections(Some(dev)) {
             let mut rows = Vec::new();

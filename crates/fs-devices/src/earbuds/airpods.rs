@@ -68,6 +68,7 @@ pub struct Status {
     pub connected: bool,
     pub device_name: String,
     pub model_name: String,
+    pub model_number: String,
     pub is_pro: bool,
     pub supports_off: bool,
     pub noise_mode: f64,
@@ -88,6 +89,7 @@ impl Default for Status {
             connected: false,
             device_name: String::new(),
             model_name: String::new(),
+            model_number: String::new(),
             is_pro: false,
             supports_off: true,
             noise_mode: -1.0,
@@ -155,6 +157,7 @@ pub fn parse_status(text_in: &str) -> Status {
     result.connected = flag(&raw, "connected");
     result.device_name = text(&raw, "device_name");
     result.model_name = text(&raw, "model_name");
+    result.model_number = text(&raw, "model_number");
     result.is_pro = flag(&raw, "is_pro_series");
     // A missing key defaults to supporting Off, only Pro 3 sets this false.
     result.supports_off = js::field(&raw, "supports_noise_off") != Some(&Json::Bool(false));
@@ -262,6 +265,38 @@ fn controls(status: &Status) -> Vec<super::Control> {
     out
 }
 
+/// Model numbers to picture sets, from librepods' own model table
+/// (android/.../data/AirPods.kt); the AirPods 5 with the wireless case
+/// reuses the 4's pictures there too.
+const ART: [(&[&str], &str); 11] = [
+    (&["A1523", "A1722"], "airpods_1"),
+    (&["A2032", "A2031"], "airpods_2"),
+    (&["A2565", "A2564"], "airpods_3"),
+    (&["A3053", "A3050", "A3054"], "airpods_4"),
+    (&["A3056", "A3055", "A3057"], "airpods_4_anc"),
+    (&["A3531", "A3532", "A3533"], "airpods_5"),
+    (&["A3439", "A3440", "A3441"], "airpods_4"),
+    (&["A2084", "A2083"], "airpods_pro_1"),
+    (&["A2931", "A2699", "A2698"], "airpods_pro_2"),
+    (&["A3047", "A3048", "A3049"], "airpods_pro_2"),
+    (&["A3063", "A3064", "A3065"], "airpods_pro_3"),
+];
+
+/// The model number when the table knows it, else the daemon's model name,
+/// which spells the generation out ("AirPods Pro 3", "AirPods (3rd
+/// generation)"). An AirPods Max has no pictures.
+fn art(status: &Status) -> String {
+    if let Some((_, set)) = ART.iter().find(|(numbers, _)| numbers.contains(&status.model_number.as_str())) {
+        return (*set).into();
+    }
+    let name = status.model_name.to_ascii_lowercase();
+    let names = [("pro 3", "airpods_pro_3"), ("pro 2", "airpods_pro_2"), ("pro", "airpods_pro_1"), ("4 (anc", "airpods_4_anc"), ("4", "airpods_4"), ("3", "airpods_3"), ("2", "airpods_2")];
+    if name.contains("max") {
+        return String::new();
+    }
+    names.iter().find(|(word, _)| name.contains(word)).map_or("", |(_, set)| set).into()
+}
+
 /// A live daemon that has never seen a battery packet and reports the link
 /// down knows of no device: the file existing only proves the daemon is up.
 pub fn normalise(status: &Status) -> Vec<Device> {
@@ -282,6 +317,7 @@ pub fn normalise(status: &Status) -> Vec<Device> {
         batteries,
         controls: controls(status),
         state_line: state_line(status),
+        art: art(status),
     })]
 }
 
@@ -490,5 +526,14 @@ mod tests {
         assert_eq!(via("adaptive", "42").as_deref(), Some("adaptive:42"));
         assert_eq!(via("noise", "transparency").as_deref(), Some("noise:transparency"));
         assert_eq!(coerce(control(Some(&d), "noise"), &"off".into()), None);
+    }
+
+    #[test]
+    fn art_by_model_number_then_name() {
+        assert_eq!(device_of(NON_PRO).art, "airpods_3");
+        // A3456 is no real model number, so the name decides.
+        assert_eq!(device_of(PRO3).art, "airpods_pro_3");
+        let max = Status { model_name: "AirPods Max".into(), ..Status::default() };
+        assert_eq!(art(&max), "");
     }
 }

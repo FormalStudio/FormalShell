@@ -227,6 +227,9 @@ pub struct Device {
     pub batteries: Vec<Battery>,
     pub controls: Vec<Control>,
     pub state_line: String,
+    /// The product picture set, `<set>_<part>.webp` under `FS_EARBUDS_ART`
+    /// (nix/earbuds-art.py), "" for a device with none.
+    pub art: String,
 }
 
 /// The fields a backend fills in; everything else defaults.
@@ -241,6 +244,7 @@ pub struct DeviceFields {
     pub batteries: Vec<Battery>,
     pub controls: Vec<Control>,
     pub state_line: String,
+    pub art: String,
 }
 
 pub fn device(fields: DeviceFields) -> Device {
@@ -254,6 +258,7 @@ pub fn device(fields: DeviceFields) -> Device {
         batteries: fields.batteries,
         controls: fields.controls,
         state_line: fields.state_line,
+        art: fields.art,
     }
 }
 
