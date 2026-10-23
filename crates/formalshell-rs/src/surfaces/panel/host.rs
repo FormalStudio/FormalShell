@@ -104,6 +104,8 @@ pub struct Host {
     head: Ui,
     body: Ui,
     halo_nodes: Vec<NodeId>,
+    /// The cursor's leading bar, over the rows rather than under them.
+    bar_nodes: Vec<NodeId>,
     rule_nodes: Vec<NodeId>,
     pub place: Place,
     open: bool,
@@ -159,6 +161,7 @@ impl Host {
             head: Ui::new(Some(rule)),
             body: Ui::new(Some(rule)),
             halo_nodes: vec![halo],
+            bar_nodes: Vec::new(),
             rule_nodes: vec![rule],
             place,
             open: true,
@@ -477,7 +480,8 @@ impl Host {
         }
         self.sync_cursor();
 
-        // One halo for the whole list (M53 D4), travelling on a key step.
+        // One halo for the whole list (M53 D4), travelling on a key step,
+        // with the cursor's fill and leading bar riding it.
         let stop = self.cursor.key.as_ref().filter(|_| self.cursor.active && self.cursor.keyed).and_then(|k| self.body.stops.iter().find(|s| &s.key == k)).cloned();
         let cr = theme.cursor_ring();
         let fast = Clock::SpatialFast.ms(theme) * self.scale;
@@ -490,14 +494,25 @@ impl Host {
                 self.halo_shown = true;
                 let [x, y, w, h] = [0, 1, 2, 3].map(|i| self.halo[i].value(now));
                 let sp = cr.spread;
-                let rect = Rect::new(origin.0 + x - sp, origin.1 + y - sp, origin.0 + x + w + sp, origin.1 + y + h + sp);
+                let row = Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w, origin.1 + y + h);
+                let rect = row.inflate(sp, sp);
+                let fill = theme.box_style("cursor", None).fill;
                 let mut p = Painter::new(&mut self.card.scene, &mut self.halo_nodes, Some(body_clip));
                 p.rect(ui::irect(rect), cr.color.with_alpha(cr.color.a * alpha), (st.radius + sp) as f32);
+                p.rect(ui::irect(row), fill.with_alpha(fill.a * alpha), st.radius as f32);
+                p.finish();
+                let mut p = Painter::new(&mut self.card.scene, &mut self.bar_nodes, Some(body_clip));
+                if let Some(bar) = theme.cursor_bar() {
+                    let r = ui::irect(row);
+                    p.rect(IRect::new(r.x, r.y, (bar.width.round() as i32).min(r.w), r.h), bar.color.with_alpha(bar.color.a * alpha), 0.0);
+                }
                 p.finish();
             }
             None => {
                 self.halo_shown = false;
                 let mut p = Painter::new(&mut self.card.scene, &mut self.halo_nodes, None);
+                p.finish();
+                let p = Painter::new(&mut self.card.scene, &mut self.bar_nodes, None);
                 p.finish();
             }
         }

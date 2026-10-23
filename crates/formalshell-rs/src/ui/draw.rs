@@ -753,7 +753,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     b.wash = t.box_style("cell", Some("hover")).wash;
     let (on, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned;
-    let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
+    let b = if state.brackets { t.with_brackets(b, true, true) } else { t.with_cursor(b, ring, !cx.halo_owned() || state.cursor) };
     let _ = on;
     let ri = irect(r);
     let radius = if state.small { t.radii.sm } else { t.box_radius(&b, ri.h as f64) };

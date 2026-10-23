@@ -203,6 +203,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   record commit, and the cancel path.
 - `capture_edit.sh` `--capture-edit`: the SAVED notification's EDIT action
   reaching a real editor with the capture's own path on argv.
+- `cartridge.sh` `--cartridge`: pins `theme.preset` to `cartridge` in the
+  settings fixture and rides any other leg, so `--cartridge --gallery` is
+  the sheet in the console look: square boxes with one corner cut, the
+  cursor's block bar on its row and brackets round the grid cursor's cell,
+  in the packaged Archivo, DotGothic16 and BIZ UD Mincho.
 - `center.sh` `--center`: the notification centre listing the pending tier,
   with the toast stack suppressed for as long as it is open, content-tall on
   a short history and capped and scrolling on thirty rows, then one open at

@@ -256,7 +256,7 @@ impl Switcher {
             let mut b = t.box_style("switcher.cell", Some(if selected { "selected" } else { "ghost" }));
             let rest_border = t.box_style("switcher.cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
             b.border = Some(t.box_style("switcher.cell", Some("ghost")).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
-            let b = t.with_cursor(b, selected, true);
+            let b = t.with_brackets(b, selected, true);
             boxes::paint(&mut p, rects.cell, &b, t.box_radius(&b, rects.cell.h as f64), alpha, 0.0);
 
             let th = rects.thumb;

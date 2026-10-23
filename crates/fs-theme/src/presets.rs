@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::tables;
 
-pub const NAMES: [&str; 3] = ["metamorphosis", "retro", "pantheon"];
+pub const NAMES: [&str; 4] = ["metamorphosis", "retro", "pantheon", "cartridge"];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Defaults {
@@ -49,6 +49,17 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             blur: true,
             dither: false,
             style: tables::pantheon(),
+        },
+        // The table squares its own boxes; the base radius stays above 0 so
+        // its pills (buttons, the status strip, tags) stay round.
+        "cartridge" => Defaults {
+            radius: 4.0,
+            icons: "lucide",
+            fonts: "pair",
+            surface_opacity: 0.9,
+            blur: true,
+            dither: false,
+            style: tables::cartridge(),
         },
         _ => Defaults {
             radius: 10.0,
@@ -144,8 +155,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn names_are_the_three_presets() {
-        assert_eq!(NAMES, ["metamorphosis", "retro", "pantheon"]);
+    fn names_are_the_four_presets() {
+        assert_eq!(NAMES, ["metamorphosis", "retro", "pantheon", "cartridge"]);
     }
 
     #[test]
@@ -195,6 +206,20 @@ pub(crate) mod tests {
         assert!(!t.dither);
         assert!(!t.wallpaper_dither);
         assert!(!t.lock_dither);
+    }
+
+    #[test]
+    fn cartridge_defaults_match_the_table() {
+        let t = p("cartridge", json!({}));
+        assert_eq!(t.preset, "cartridge");
+        assert!(std::ptr::eq(t.style, tables::cartridge()));
+        assert_eq!(t.radius, json!(4.0));
+        assert_eq!(t.icons, "lucide");
+        assert_eq!(t.fonts, "pair");
+        assert!(t.table_fonts);
+        assert_eq!(t.surface_opacity, json!(0.9));
+        assert!(t.blur);
+        assert!(!t.dither);
     }
 
     #[test]

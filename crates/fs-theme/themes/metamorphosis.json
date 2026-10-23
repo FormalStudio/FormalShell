@@ -328,6 +328,27 @@
                 }
             ]
         },
+        "cursor.bar": {
+            "fill": "transparent",
+            "width": 0
+        },
+        "cursor.brackets": {
+            "border": null,
+            "gap": 0,
+            "sweep": 0
+        },
+        "hero": {
+            "fill": "transparent",
+            "radius": "md"
+        },
+        "hero.tab": {
+            "fill": "transparent",
+            "height": 0
+        },
+        "button.default.cap": {
+            "fill": "transparent",
+            "width": 0
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.5,
@@ -464,7 +485,10 @@
         "emerge": "join",
         "notification": "row",
         "frame": true,
-        "paint": "auto"
+        "paint": "auto",
+        "panel": "sheet",
+        "grid": "square",
+        "boot": "none"
     },
     "notes": {
         "table": [
@@ -527,6 +551,12 @@
         ],
         "roles.trough": [
             "The well a `ButtonGroup`'s row of ghost buttons and a `Segmented`'s segments sit in, and the chip that marks the chosen one. The chip's radius is the concentric step its owner passes it, this is the free-standing value."
+        ],
+        "roles.cursor.bar": [
+            "The block a list's cursor carries on its row's leading edge, and the arcs a grid cell's cursor is held by: neither in this look, whose cursor is the ring alone, so both draw nothing (a bar under a pixel wide, brackets with no line)."
+        ],
+        "roles.hero": [
+            "A panel's hero is a flat ghost cell here, and its tab and the primary button's end cap draw nothing: the framed hero and the capped button are the cartridge table's."
         ],
         "roles.cursor": [
             "The keyboard cursor, composed over whatever box carries it: the ring on the border and its halo outside. Radius comes from the box it lands on, which is why there is none here."

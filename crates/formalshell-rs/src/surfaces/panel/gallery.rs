@@ -137,10 +137,11 @@ impl Panel for Gallery {
         )
         .fill();
 
-        let states: [(&str, fn(&mut CellState)); 7] = [
+        let states: [(&str, fn(&mut CellState)); 8] = [
             ("Rest", |_| {}),
             ("Hovered", |s| s.hovered = true),
             ("Cursor", |s| s.cursor = true),
+            ("Grid cursor", |s| s.brackets = true),
             ("Selected", |s| s.selected = true),
             ("Active", |s| s.active = true),
             ("Destructive", |s| s.destructive = true),

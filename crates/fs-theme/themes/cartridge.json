@@ -1,0 +1,694 @@
+{
+    "roles": {
+        "bar": {
+            "rest": {
+                "fill": "background",
+                "fillAlpha": "surface",
+                "radius": 0,
+                "edge": {
+                    "color": "border",
+                    "width": 1
+                }
+            }
+        },
+        "frame": {
+            "rest": {
+                "fill": "background",
+                "fillAlpha": "surface",
+                "radius": 0,
+                "border": {
+                    "color": "border",
+                    "width": 1
+                }
+            }
+        },
+        "card": {
+            "rest": {
+                "fill": "background",
+                "fillAlpha": "surface",
+                "radius": 0,
+                "chamfer": [
+                    0,
+                    0,
+                    18,
+                    0
+                ],
+                "border": {
+                    "color": "border",
+                    "width": 1
+                }
+            },
+            "opaque": {
+                "fillAlpha": 1
+            }
+        },
+        "notification": {
+            "rest": {
+                "fill": "background",
+                "fillAlpha": 1,
+                "radius": 0,
+                "chamfer": [
+                    0,
+                    0,
+                    12,
+                    0
+                ],
+                "border": {
+                    "color": "border",
+                    "width": 1
+                }
+            },
+            "critical": {
+                "border": {
+                    "color": "destructive",
+                    "width": 1
+                }
+            },
+            "flat": {
+                "fill": "transparent",
+                "border": null,
+                "chamfer": 0
+            },
+            "flatCritical": {
+                "fill": "transparent",
+                "chamfer": 0,
+                "border": {
+                    "color": "destructive",
+                    "width": 1
+                }
+            }
+        },
+        "popover": {
+            "fill": "background",
+            "fillAlpha": "surface",
+            "radius": 0,
+            "border": {
+                "color": "border",
+                "width": 1
+            }
+        },
+        "menu": {
+            "fill": "background",
+            "fillAlpha": "surface",
+            "radius": 0,
+            "border": {
+                "color": "border",
+                "width": 1
+            }
+        },
+        "cell": {
+            "rest": {
+                "fill": "muted",
+                "fillAlpha": 0.5,
+                "radius": 0,
+                "border": {
+                    "color": "border",
+                    "width": 1
+                }
+            },
+            "ghost": {
+                "fill": "transparent",
+                "border": null
+            },
+            "hover": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.08,
+                        "light": 0.05
+                    }
+                }
+            },
+            "active": {
+                "fill": "primary",
+                "fillAlpha": 1
+            },
+            "selected": {
+                "fill": "primary",
+                "fillAlpha": 0.12
+            },
+            "destructive": {
+                "border": {
+                    "color": "destructive",
+                    "width": 1
+                }
+            },
+            "warning": {
+                "border": {
+                    "color": "warning",
+                    "width": 1
+                }
+            }
+        },
+        "cell.mark": {
+            "fill": "primary",
+            "radius": 0
+        },
+        "button.default": {
+            "rest": {
+                "fill": "primary",
+                "radius": "pill"
+            },
+            "hover": {
+                "tint": [
+                    "background",
+                    0.1
+                ]
+            },
+            "press": {
+                "tint": [
+                    "background",
+                    0.18
+                ]
+            }
+        },
+        "button.destructive": {
+            "rest": {
+                "fill": "destructive",
+                "radius": "pill"
+            },
+            "hover": {
+                "tint": [
+                    "background",
+                    0.1
+                ]
+            },
+            "press": {
+                "tint": [
+                    "background",
+                    0.18
+                ]
+            }
+        },
+        "button.outline": {
+            "rest": {
+                "fill": "transparent",
+                "radius": "pill",
+                "border": {
+                    "color": "border",
+                    "width": 1
+                }
+            },
+            "hover": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.08,
+                        "light": 0.05
+                    }
+                }
+            },
+            "press": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.14,
+                        "light": 0.09
+                    }
+                }
+            }
+        },
+        "button.ghost": {
+            "rest": {
+                "fill": "transparent",
+                "radius": 0
+            },
+            "hover": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.08,
+                        "light": 0.05
+                    }
+                }
+            },
+            "press": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.14,
+                        "light": 0.09
+                    }
+                }
+            }
+        },
+        "button.selected": {
+            "rest": {
+                "fill": "muted",
+                "radius": "pill",
+                "border": {
+                    "color": "primary",
+                    "width": 1
+                }
+            },
+            "hover": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.08,
+                        "light": 0.05
+                    }
+                }
+            },
+            "press": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "dark": 0.14,
+                        "light": 0.09
+                    }
+                }
+            }
+        },
+        "input": {
+            "rest": {
+                "fill": "background",
+                "radius": 0,
+                "border": {
+                    "color": "input",
+                    "width": 1
+                },
+                "layers": [
+                    {
+                        "inset": true,
+                        "y": 2,
+                        "color": "black",
+                        "alpha": 0.5
+                    }
+                ]
+            },
+            "focus": {
+                "border": {
+                    "color": "ring",
+                    "width": 1
+                },
+                "layers": [
+                    {
+                        "inset": true,
+                        "y": 2,
+                        "color": "black",
+                        "alpha": 0.5
+                    }
+                ]
+            },
+            "error": {
+                "border": {
+                    "color": "destructive",
+                    "width": 1
+                }
+            }
+        },
+        "input.selection": {
+            "fill": "primary"
+        },
+        "switch.track": {
+            "off": {
+                "fill": "muted",
+                "radius": 0
+            },
+            "on": {
+                "fill": "primary"
+            }
+        },
+        "switch.knob": {
+            "fill": "background",
+            "radius": 0
+        },
+        "track.groove": {
+            "fill": "primary",
+            "fillAlpha": 0.2,
+            "radius": 0
+        },
+        "track.fill": {
+            "fill": "primary",
+            "radius": 0
+        },
+        "track.notch": {
+            "fill": "background"
+        },
+        "trough": {
+            "fill": "background",
+            "radius": 0,
+            "border": {
+                "color": "border",
+                "width": 1
+            }
+        },
+        "segmented.chip": {
+            "fill": "muted",
+            "radius": 0,
+            "border": {
+                "color": "primary",
+                "width": 1
+            }
+        },
+        "cursor": {
+            "fill": "primary",
+            "fillAlpha": 0.1
+        },
+        "cursor.bar": {
+            "fill": "primary",
+            "width": 6
+        },
+        "cursor.brackets": {
+            "border": {
+                "color": "primary",
+                "width": 2
+            },
+            "gap": 6,
+            "sweep": 70,
+            "layers": [
+                {
+                    "blur": 8,
+                    "color": "primary",
+                    "alpha": 0.45
+                }
+            ]
+        },
+        "hero": {
+            "fill": "primary",
+            "fillAlpha": 0.05,
+            "radius": 0,
+            "chamfer": [
+                0,
+                0,
+                22,
+                0
+            ],
+            "border": {
+                "color": "primary",
+                "width": 1
+            }
+        },
+        "hero.tab": {
+            "fill": "primary",
+            "ink": [
+                "primaryForeground",
+                1
+            ],
+            "height": 22,
+            "slant": 22
+        },
+        "button.default.cap": {
+            "fill": "primary",
+            "ink": [
+                "primaryForeground",
+                1
+            ],
+            "width": 34
+        },
+        "scrim": {
+            "fill": "black",
+            "fillAlpha": 0.5,
+            "radius": 0
+        },
+        "separator": {
+            "fill": "border"
+        },
+        "keycap": {
+            "fill": "muted",
+            "radius": 0,
+            "border": {
+                "color": "border",
+                "width": 1
+            },
+            "ink": [
+                "foreground",
+                1
+            ]
+        },
+        "switcher": {
+            "fill": "background",
+            "fillAlpha": "surface",
+            "radius": 0,
+            "chamfer": [
+                0,
+                0,
+                18,
+                0
+            ],
+            "border": {
+                "color": "border",
+                "width": 1
+            }
+        },
+        "switcher.cell": {
+            "rest": {
+                "fill": "transparent",
+                "radius": 0
+            },
+            "selected": {
+                "fill": "primary",
+                "fillAlpha": 0.12,
+                "radius": 0
+            }
+        },
+        "lock.ink": {
+            "light": {
+                "ink": [
+                    "white",
+                    1
+                ]
+            },
+            "dark": {
+                "ink": [
+                    "black",
+                    1
+                ]
+            }
+        },
+        "window": {
+            "rest": {
+                "gapsIn": 4,
+                "gapsOut": 8,
+                "border": {
+                    "color": "primary",
+                    "width": 1
+                },
+                "shadow": {
+                    "enabled": false,
+                    "range": 4,
+                    "renderPower": 3,
+                    "offset": [
+                        0,
+                        0
+                    ],
+                    "color": "black",
+                    "alpha": 0.93
+                }
+            },
+            "inactive": {
+                "shadow": {
+                    "enabled": false,
+                    "range": 4,
+                    "renderPower": 3,
+                    "offset": [
+                        0,
+                        0
+                    ],
+                    "color": "black",
+                    "alpha": 0.93
+                }
+            }
+        }
+    },
+    "wash": {
+        "hover": {
+            "color": "foreground",
+            "alpha": {
+                "dark": 0.08,
+                "light": 0.05
+            }
+        },
+        "press": {
+            "color": "foreground",
+            "alpha": {
+                "dark": 0.14,
+                "light": 0.09
+            }
+        },
+        "filledHover": {
+            "color": "background",
+            "alpha": 0.1
+        },
+        "filledPress": {
+            "color": "background",
+            "alpha": 0.18
+        }
+    },
+    "motion": {
+        "emerge": {
+            "duration": 900,
+            "curve": [
+                0.22,
+                1,
+                0.36,
+                1,
+                1,
+                1
+            ]
+        },
+        "arrive": {
+            "duration": 600,
+            "curve": [
+                0.22,
+                1,
+                0.36,
+                1,
+                1,
+                1
+            ]
+        },
+        "restack": {
+            "duration": 1200,
+            "curve": [
+                [
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.009,
+                    0.044
+                ],
+                [
+                    0.02,
+                    0.198
+                ],
+                [
+                    0.068,
+                    1.212
+                ],
+                [
+                    0.081,
+                    1.361
+                ],
+                [
+                    0.087,
+                    1.398
+                ],
+                [
+                    0.094,
+                    1.417
+                ],
+                [
+                    0.104,
+                    1.402
+                ],
+                [
+                    0.115,
+                    1.34
+                ],
+                [
+                    0.164,
+                    0.91
+                ],
+                [
+                    0.176,
+                    0.852
+                ],
+                [
+                    0.189,
+                    0.826
+                ],
+                [
+                    0.199,
+                    0.831
+                ],
+                [
+                    0.21,
+                    0.856
+                ],
+                [
+                    0.26,
+                    1.038
+                ],
+                [
+                    0.272,
+                    1.062
+                ],
+                [
+                    0.285,
+                    1.073
+                ],
+                [
+                    0.306,
+                    1.06
+                ],
+                [
+                    0.356,
+                    0.984
+                ],
+                [
+                    0.38,
+                    0.97
+                ],
+                [
+                    0.476,
+                    1.013
+                ],
+                [
+                    0.571,
+                    0.995
+                ],
+                [
+                    0.666,
+                    1.002
+                ],
+                [
+                    1.0,
+                    1.0
+                ]
+            ]
+        },
+        "switcher": {
+            "duration": 200,
+            "curve": [
+                0.22,
+                1,
+                0.36,
+                1,
+                1,
+                1
+            ]
+        }
+    },
+    "fonts": {
+        "words": "Archivo",
+        "values": "DotGothic16",
+        "display": "Archivo",
+        "body": "BIZ UDMincho"
+    },
+    "habits": {
+        "bar": "strip",
+        "emerge": "slide",
+        "notification": "row",
+        "frame": true,
+        "paint": "auto",
+        "panel": "console",
+        "grid": "hex",
+        "boot": "cartridge"
+    },
+    "notes": {
+        "table": [
+            "The cartridge look (docs/superpowers/specs/2026-10-23-cartridge-theme.md): an old console's menus after tsubi.club, flat and dark, square boxes with one chamfered corner, 1px outlines, insets rather than casts, and the palette's primary as the one accent. Colours stay palette roles, so matugen drives it like every other table; a flat teal wallpaper gives the reference's home page."
+        ],
+        "fonts": [
+            "Archivo for words and headings (the surfaces set its width and weight axes), DotGothic16 for values and status lines, BIZ UD Mincho for secondary lines. All four families ship with the shell (nix/cartridge-fonts.nix, the tarball), each falling back to its generic alias when missing."
+        ],
+        "roles.cursor": [
+            "No ring and no halo: the cursor is a block on the row's leading edge (`cursor.bar`) over a faint primary fill, travelling between rows; in a grid it is two arcs held outside the cell with a glow (`cursor.brackets`)."
+        ],
+        "roles.hero": [
+            "A panel's hero framed in the accent with one chamfered corner, its label on a slanted tab over the frame (`hero.tab`). The primary action is a pill ending in a hexagonal cap holding its icon (`button.default.cap`)."
+        ],
+        "roles.input": [
+            "A sunk well: the page colour with a 2px inset shade along its top, and no halo on focus."
+        ],
+        "motion": [
+            "Two clocks carry the look: cubic-bezier(0.22, 1, 0.36, 1) for a card sliding in and a toast arriving, and a spring with real overshoot (CSS linear() peaking at 1.42) for the pile closing up."
+        ],
+        "habits": [
+            "A card slides 40px in along its line and fades (`emerge: slide`), panels take the console grammar, launcher grids draw hexagonal tiles, and the session opens on the boot sequence."
+        ]
+    }
+}

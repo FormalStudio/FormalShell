@@ -28,13 +28,16 @@ tracks what has run on real hardware and what has only run in a VM.
 
 ## Themes
 
-`theme.preset` picks one of three looks. The palette follows the wallpaper in
+`theme.preset` picks one of four looks. The palette follows the wallpaper in
 all of them.
 
 | `metamorphosis` (default) | `pantheon` | `retro` |
 | :---: | :---: | :---: |
 | <img src="docs/screenshots/theme-metamorphosis.png" width="280"> | <img src="docs/screenshots/theme-pantheon.png" width="280"> | <img src="docs/screenshots/theme-retro.png" width="280"> |
 | shadcn chrome, translucent cards that bud off the bar's line | elementary OS 8: raised controls, sunken fields, cards on a soft cast | square, mono, Nerd Font glyphs, dithered imagery |
+
+`cartridge` is the fourth: an old console's menus, flat dark boxes with one
+corner cut, a block cursor and wide Archivo headings.
 
 ![A panel growing out of the bar](docs/media/metamorphosis-panel.gif)
 

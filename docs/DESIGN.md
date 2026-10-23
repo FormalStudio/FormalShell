@@ -128,6 +128,31 @@ popovers and dialogs are `bg_color(2)` with nothing behind them, and its one
 translucent surface is the panel, whose alpha belongs to the band's paint
 rather than to that key.
 
+**Cartridge** (`fs-theme/themes/cartridge.json`, spec
+`docs/superpowers/specs/2026-10-23-cartridge-theme.md`): an old console's
+menus after tsubi.club, flat and dark, and the one table allowed past the
+theme boundary spec for its panels, backdrop and session start. Boxes are
+square with one corner cut (`chamfer`: one number for every corner, or four
+clockwise from the top left, drawn as that polygon in place of the radius),
+outlined at 1px, sunk rather than cast, with the palette's `primary` as the
+one accent. Its pills (buttons, the status strip, tags) are why its base
+radius stays at 4 while every box pins 0. The cursor has no ring: a list
+row takes `cursor.bar`, a block on its leading edge `width` across that
+travels with the list's halo, over the `cursor` role's faint fill; a grid
+cell (launcher grids, the switcher) takes `cursor.brackets`, two arcs `gap`
+outside the cell, `sweep` degrees each, in the `border` line and over its
+own glow cast (`Theme::with_brackets`). `hero` frames a panel's hero, with
+`hero.tab` (`height`, `slant`) its label over the frame and
+`button.default.cap` (`width`) the hexagonal end a primary action carries.
+Every other table declares all five and draws none of them (a bar under a
+pixel, brackets with no line, a tab and a cap 0 wide, a hero that is the
+ghost cell it always was). Its fonts block names Archivo for words and
+headings, DotGothic16 for values, BIZ UD Mincho for secondary lines, all
+shipped with the shell. Its habits are `emerge: "slide"` (the popover card
+sliding 40px in along its line from the end it rests nearer, fading on the
+table's 900ms `emerge` clock), `panel: "console"`, `grid: "hex"` and
+`boot: "cartridge"`; the others declare `sheet`, `square` and `none`.
+
 **Type** (`fs_theme::tokens::font_tokens`, picked per element with
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,
 section labels, descriptions, hints), mono for values (numbers, units,
@@ -899,7 +924,8 @@ entry points; the shipped bindings are in
 - Words in mono or values in sans.
 - A shadow, a gradient, or a blur drawn by the shell (blur is the
   compositor's, behind a translucent card), save the lyrics pane's depth
-  of field and its sung-chunk glow (owner, 2026-09-17). Dither only behind
+  of field and its sung-chunk glow (owner, 2026-09-17), and the cartridge
+  table's bracket glow (its own spec, 2026-10-23). Dither only behind
   `wallpaper.dither` or `lock.dither`, both off by default. The bar's own
   mini cover stops animating behind `media.animatedBarCover: false`; the
   media panel's own cover animates unconditionally.

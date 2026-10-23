@@ -395,10 +395,10 @@ formalshell-colors.lua, formalshell-chrome.lua ──▶ Hyprland
 - `theme.mode: "auto"` follows sunrise and sunset (`fs_theme::sun`) off the
   configured location, and a toggle snoozes the schedule for one cycle.
 
-`theme.preset` (`fs_theme::presets`: `metamorphosis`, `retro`, `pantheon`)
-picks a chrome table and a set of settings defaults. An explicit settings
-key always wins over a preset's default; the table itself is not
-overridable. `fs_theme::tables` embeds the JSON tables and
+`theme.preset` (`fs_theme::presets`: `metamorphosis`, `retro`, `pantheon`,
+`cartridge`) picks a chrome table and a set of settings defaults. An
+explicit settings key always wins over a preset's default; the table
+itself is not overridable. `fs_theme::tables` embeds the JSON tables and
 `fs_theme::style` resolves a role plus a state into what a box draws. What a
 theme owns and what stays global is
 `docs/superpowers/specs/2026-09-18-theme-boundary.md`.

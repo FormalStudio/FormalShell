@@ -15,7 +15,7 @@ use crate::tokens::{self, Easing, Motion};
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
 /// over, which is why `switch.track` reads `off` before `on`.
-pub const ROLES: [(&str, &[&str]); 30] = [
+pub const ROLES: [(&str, &[&str]); 35] = [
     ("bar", &["rest"]),
     ("frame", &["rest"]),
     ("card", &["rest", "opaque"]),
@@ -39,6 +39,11 @@ pub const ROLES: [(&str, &[&str]); 30] = [
     ("trough", &[]),
     ("segmented.chip", &[]),
     ("cursor", &[]),
+    ("cursor.bar", &[]),
+    ("cursor.brackets", &[]),
+    ("hero", &[]),
+    ("hero.tab", &[]),
+    ("button.default.cap", &[]),
     ("scrim", &[]),
     ("separator", &[]),
     ("keycap", &[]),
@@ -50,15 +55,18 @@ pub const ROLES: [(&str, &[&str]); 30] = [
 
 /// The habits and each one's allowed values: what a surface reads instead
 /// of testing a theme name. `frame` is a bool, the rest are strings.
-pub const HABIT_KEYS: [&str; 5] = ["bar", "emerge", "notification", "frame", "paint"];
+pub const HABIT_KEYS: [&str; 8] = ["bar", "emerge", "notification", "frame", "paint", "panel", "grid", "boot"];
 
 pub fn habit_allows(key: &str, value: &Value) -> Option<bool> {
     let strings: &[&str] = match key {
         "bar" => &["strip", "wingpanel"],
-        "emerge" => &["join", "popover"],
+        "emerge" => &["join", "popover", "slide"],
         "notification" => &["row", "bubble"],
         "frame" => return Some(value.is_boolean()),
         "paint" => &["auto", "transparent", "light", "dark", "translucentLight", "translucentDark", "maximized"],
+        "panel" => &["sheet", "console"],
+        "grid" => &["square", "hex"],
+        "boot" => &["none", "cartridge"],
         _ => return None,
     };
     Some(value.as_str().is_some_and(|s| strings.contains(&s)))
@@ -243,6 +251,17 @@ pub fn radius_for(value: Option<&Value>, ctx: &impl Ctx) -> Radius {
     }
 }
 
+/// One number for every corner or four clockwise from the top left;
+/// anything else, or a negative cut, is no cut.
+pub fn chamfer_for(value: Option<&Value>) -> [f64; 4] {
+    let cut = |v: &Value| v.as_f64().filter(|c| c.is_finite() && *c > 0.0).unwrap_or(0.0);
+    match value {
+        Some(v @ Value::Number(_)) => [cut(v); 4],
+        Some(Value::Array(list)) if list.len() == 4 => [cut(&list[0]), cut(&list[1]), cut(&list[2]), cut(&list[3])],
+        _ => [0.0; 4],
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayerKind {
     Cast,
@@ -361,6 +380,22 @@ pub struct Cast<C> {
     pub color: C,
 }
 
+/// A solid block along a box's leading edge, `width` across.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bar<C> {
+    pub width: f64,
+    pub color: C,
+}
+
+/// Two arcs held `gap` outside a box, one either side, each `sweep`
+/// degrees of the ellipse through those points.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Brackets<C> {
+    pub gap: f64,
+    pub sweep: f64,
+    pub line: Line<C>,
+}
+
 /// A whole box, drawable. Every field is always present so a renderer
 /// never guards for an absent one; transparent ink means the material says
 /// nothing about the ink.
@@ -378,6 +413,17 @@ pub struct BoxStyle<C> {
     pub rings: Vec<Ring<C>>,
     pub inset_rings: Vec<Ring<C>>,
     pub casts: Vec<Cast<C>>,
+    /// The cut taken off each corner, clockwise from the top left. Any
+    /// cut above 0 draws the box as that polygon and ignores `radius`.
+    pub chamfer: [f64; 4],
+    pub bar: Option<Bar<C>>,
+    pub brackets: Option<Brackets<C>>,
+}
+
+impl<C> BoxStyle<C> {
+    pub fn chamfered(&self) -> bool {
+        self.chamfer.iter().any(|c| *c > 0.0)
+    }
 }
 
 impl<C: Clone> BoxStyle<C> {
@@ -395,6 +441,9 @@ impl<C: Clone> BoxStyle<C> {
             rings: Vec::new(),
             inset_rings: Vec::new(),
             casts: Vec::new(),
+            chamfer: [0.0; 4],
+            bar: None,
+            brackets: None,
         }
     }
 }
@@ -426,6 +475,7 @@ pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) 
         out.fill = ctx.tint(&out.fill, &paint(color, alpha, ctx));
     }
     out.radius = radius_for(raw.get("radius"), ctx);
+    out.chamfer = chamfer_for(raw.get("chamfer"));
     out.border = line(raw.get("border"), ctx);
     if let Some(face) = raw.get("face").filter(|f| truthy(Some(f))) {
         let (fc, fa) = pair(face.get("from"));
@@ -538,17 +588,40 @@ pub fn wash<C: Ctx>(style: &Value, key: &str, ctx: &C) -> C::Color {
 }
 
 /// The keyboard cursor composed over a box: its border in place of the
-/// box's, and its halo appended to the rings only when `halo` asks, since a
-/// list draws one halo for every row it owns.
-pub fn with_cursor<C: Clone>(b: &BoxStyle<C>, cursor: &BoxStyle<C>, halo: bool) -> BoxStyle<C> {
+/// box's, and its halo and leading bar only when `halo` asks, since a list
+/// draws one travelling halo and bar for every row it owns.
+pub fn with_cursor<C: Clone>(b: &BoxStyle<C>, cursor: &BoxStyle<C>, bar: Option<&Bar<C>>, halo: bool) -> BoxStyle<C> {
     let mut out = b.clone();
     if cursor.border.is_some() {
         out.border = cursor.border.clone();
     }
     if halo {
         out.rings.extend(cursor.rings.iter().cloned());
+        out.bar = bar.cloned();
     }
     out
+}
+
+/// The `cursor.bar` role: none while it is under a pixel wide.
+pub fn cursor_bar<C: Ctx>(style: &Value, ctx: &C) -> Option<Bar<C::Color>> {
+    let raw = entry(style, "cursor.bar", None)?;
+    let width = num(raw.get("width")).filter(|w| w.is_finite() && *w >= 1.0)?;
+    Some(Bar { width, color: paint(raw.get("fill"), raw.get("fillAlpha"), ctx) })
+}
+
+/// The `cursor.brackets` role, a grid cell's cursor: none without a line
+/// to draw them in.
+pub fn cursor_brackets<C: Ctx>(style: &Value, ctx: &C) -> Option<Brackets<C::Color>> {
+    let raw = entry(style, "cursor.brackets", None)?;
+    let line = line(raw.get("border"), ctx).filter(|l| l.width > 0.0)?;
+    let sweep = num(raw.get("sweep")).filter(|s| s.is_finite() && *s > 0.0)?.min(180.0);
+    Some(Brackets { gap: num_or_zero(raw.get("gap")), sweep, line })
+}
+
+/// A number a role carries beside its box (`hero.tab`'s height, the
+/// cap's width), 0 when the table gives none.
+pub fn metric(style: &Value, role: &str, key: &str) -> f64 {
+    entry(style, role, None).and_then(|e| num(e.get(key))).filter(|n| n.is_finite()).unwrap_or(0.0)
 }
 
 /// Every box a table declares under [`ROLES`], with its path, in role order.
@@ -794,8 +867,13 @@ pub(crate) mod tests {
         Names { mode }
     }
 
-    fn tables() -> [(&'static str, &'static Value); 3] {
-        [("metamorphosis", tables::metamorphosis()), ("retro", tables::retro()), ("pantheon", tables::pantheon())]
+    fn tables() -> [(&'static str, &'static Value); 4] {
+        [
+            ("metamorphosis", tables::metamorphosis()),
+            ("retro", tables::retro()),
+            ("pantheon", tables::pantheon()),
+            ("cartridge", tables::cartridge()),
+        ]
     }
 
     const BLACK: &str = "#000000";
@@ -877,7 +955,7 @@ pub(crate) mod tests {
                 seen += 1;
             }
         }
-        assert_eq!(seen, ink_shadow_layers(tables::pantheon()).len());
+        assert_eq!(seen, ink_shadow_layers(tables::pantheon()).len() + ink_shadow_layers(tables::cartridge()).len());
         assert!(seen > 0);
         assert_eq!(ink_shadow_layers(tables::metamorphosis()).len(), 0);
     }
@@ -1030,14 +1108,14 @@ pub(crate) mod tests {
         let ghost = r(style, "button.ghost", Some("rest"), "dark");
         let cursor = r(style, "cursor", None, "dark");
 
-        let haloed = with_cursor(&ghost, &cursor, true);
+        let haloed = with_cursor(&ghost, &cursor, None, true);
         assert_eq!(haloed.fill, ghost.fill);
         assert_eq!(haloed.radius, ghost.radius);
         assert_eq!(haloed.border.as_ref().unwrap().color, "role:ring");
         assert_eq!(haloed.rings.len(), 1);
         assert_eq!(haloed.rings[0].spread, 3.0);
 
-        let bordered = with_cursor(&ghost, &cursor, false);
+        let bordered = with_cursor(&ghost, &cursor, None, false);
         assert_eq!(bordered.border.as_ref().unwrap().color, "role:ring");
         assert_eq!(bordered.rings.len(), 0);
 
@@ -1073,6 +1151,7 @@ pub(crate) mod tests {
         assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("metamorphosis")), get).style, tables::metamorphosis()));
         assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("retro")), get).style, tables::retro()));
         assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("pantheon")), get).style, tables::pantheon()));
+        assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("cartridge")), get).style, tables::cartridge()));
         assert!(std::ptr::eq(crate::presets::defaults(Some(&json!("metamorphosis"))).style, tables::metamorphosis()));
     }
 
@@ -1509,6 +1588,97 @@ pub(crate) mod tests {
         assert_eq!(focused["shadow"]["offset"][1], 6);
         assert_eq!(focused["shadow"]["alpha"], 0.35);
         assert_eq!(entry(tables::pantheon(), "window", Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
+    }
+
+    // --- Cartridge, and the roles it brought
+
+    #[test]
+    fn the_other_tables_draw_none_of_the_cartridge_roles() {
+        for (name, style) in [("metamorphosis", tables::metamorphosis()), ("pantheon", tables::pantheon())] {
+            assert_eq!(cursor_bar(style, &ctx("dark")), None, "{name} draws a cursor bar");
+            assert_eq!(cursor_brackets(style, &ctx("dark")), None, "{name} draws brackets");
+            assert_eq!(metric(style, "hero.tab", "height"), 0.0, "{name} draws a hero tab");
+            assert_eq!(metric(style, "button.default.cap", "width"), 0.0, "{name} caps its button");
+            for role in role_names() {
+                for state in declared_states(style, role).into_iter().map(Some).chain([None]) {
+                    assert_eq!(r(style, role, state, "dark").chamfer, [0.0; 4], "{name} chamfers {role}");
+                }
+            }
+            let habits = &style["habits"];
+            assert_eq!((&habits["panel"], &habits["grid"], &habits["boot"]), (&json!("sheet"), &json!("square"), &json!("none")));
+            let hero = r(style, "hero", None, "dark");
+            assert_eq!((hero.fill, hero.border), (CLEAR.to_owned(), None));
+        }
+    }
+
+    #[test]
+    fn the_cartridge_cursor_is_a_bar_and_brackets() {
+        let c = tables::cartridge();
+        assert_eq!(cursor_bar(c, &ctx("dark")), Some(Bar { width: 6.0, color: "role:primary".to_owned() }));
+        let brackets = cursor_brackets(c, &ctx("dark")).unwrap();
+        assert_eq!(brackets.line, Line { color: "role:primary".to_owned(), width: 2.0 });
+        assert_eq!((brackets.gap, brackets.sweep), (6.0, 70.0));
+        let cursor = r(c, "cursor", None, "dark");
+        assert_eq!((cursor.border.is_none(), cursor.rings.len()), (true, 0));
+
+        let row = r(c, "cell", Some("ghost"), "dark");
+        let bar = cursor_bar(c, &ctx("dark"));
+        assert_eq!(with_cursor(&row, &cursor, bar.as_ref(), true).bar, bar);
+        assert_eq!(with_cursor(&row, &cursor, bar.as_ref(), false).bar, None);
+    }
+
+    #[test]
+    fn the_cartridge_frames_cut_one_corner() {
+        let c = tables::cartridge();
+        assert_eq!(r(c, "card", None, "dark").chamfer, [0.0, 0.0, 18.0, 0.0]);
+        assert_eq!(r(c, "card", Some("opaque"), "dark").chamfer, [0.0, 0.0, 18.0, 0.0]);
+        let hero = r(c, "hero", None, "dark");
+        assert_eq!(hero.chamfer, [0.0, 0.0, 22.0, 0.0]);
+        assert_eq!(hero.border.unwrap().color, "role:primary");
+        assert_eq!(r(c, "notification", Some("flat"), "dark").chamfer, [0.0; 4]);
+        assert_eq!(metric(c, "hero.tab", "height"), 22.0);
+        assert_eq!(metric(c, "button.default.cap", "width"), 34.0);
+        assert_eq!(r(c, "button.default.cap", None, "dark").ink, "role:primaryForeground");
+    }
+
+    #[test]
+    fn a_chamfer_is_one_cut_or_four() {
+        assert_eq!(chamfer_for(Some(&json!(8))), [8.0; 4]);
+        assert_eq!(chamfer_for(Some(&json!([0, 2, 3, 4]))), [0.0, 2.0, 3.0, 4.0]);
+        assert_eq!(chamfer_for(Some(&json!([1, 2, 3]))), [0.0; 4]);
+        assert_eq!(chamfer_for(Some(&json!(-4))), [0.0; 4]);
+        assert_eq!(chamfer_for(Some(&json!("big"))), [0.0; 4]);
+        assert_eq!(chamfer_for(None), [0.0; 4]);
+    }
+
+    #[test]
+    fn cartridge_declares_its_own_habits() {
+        let habits = &tables::cartridge()["habits"];
+        assert_eq!(habits["emerge"], "slide");
+        assert_eq!(habits["panel"], "console");
+        assert_eq!(habits["grid"], "hex");
+        assert_eq!(habits["boot"], "cartridge");
+        assert_eq!(habits["bar"], "strip");
+    }
+
+    #[test]
+    fn cartridge_names_its_four_families() {
+        let fonts = &tables::cartridge()["fonts"];
+        assert_eq!(fonts["words"], "Archivo");
+        assert_eq!(fonts["values"], "DotGothic16");
+        assert_eq!(fonts["display"], "Archivo");
+        assert_eq!(fonts["body"], "BIZ UDMincho");
+    }
+
+    #[test]
+    fn the_cartridge_spring_overshoots_and_settles() {
+        let families = tokens::motion_tokens(true);
+        let clock = motion(tables::cartridge(), "restack", &families);
+        let Easing::Stops(stops) = clock.curve else { panic!("restack is not a stop list") };
+        let peak = stops.iter().map(|s| s.1).fold(0.0, f64::max);
+        assert!((1.4..1.45).contains(&peak), "peaks at {peak}");
+        assert_eq!(stops.last(), Some(&(1.0, 1.0)));
+        assert_eq!(clock.duration, 1200.0);
     }
 
     #[test]

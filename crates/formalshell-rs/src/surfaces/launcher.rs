@@ -1808,7 +1808,12 @@ impl Shown {
                 let mut b = theme.box_style("cell", Some("selected"));
                 b.border = None;
                 b.wash = None;
-                let b = theme.with_cursor(b, m.from_keys, true);
+                // A grid cell takes the brackets, a row the leading bar.
+                let b = if m.cursor < m.cells() {
+                    theme.with_brackets(b, m.from_keys, true)
+                } else {
+                    theme.with_cursor(b, m.from_keys, true)
+                };
                 crate::ui::boxes::paint(&mut p, r, &b, st.radius, alpha, 0.0);
                 if self.sel.iter().any(|a| a.running(now)) {
                     self.wake = Some(now);

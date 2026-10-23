@@ -91,6 +91,8 @@ pub struct CellState {
     pub hovered: bool,
     /// Drawn with the cursor whatever the keyboard does (the gallery's).
     pub cursor: bool,
+    /// Drawn with a grid cell's cursor, the brackets (the gallery's).
+    pub brackets: bool,
     /// `radiusSm`, a cell one level inside a card's own frame (a day cell).
     pub small: bool,
 }

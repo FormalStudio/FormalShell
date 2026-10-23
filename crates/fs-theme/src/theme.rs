@@ -244,7 +244,36 @@ impl Theme {
     }
 
     pub fn with_cursor(&self, b: BoxStyle<Rgba>, on: bool, halo: bool) -> BoxStyle<Rgba> {
-        if on { style::with_cursor(&b, &self.box_style("cursor", None), halo) } else { b }
+        if on { style::with_cursor(&b, &self.box_style("cursor", None), self.cursor_bar().as_ref(), halo) } else { b }
+    }
+
+    /// A grid cell's cursor: the `cursor.brackets` arcs, their glow cast
+    /// and the cursor's own halo on a table that draws brackets, the plain
+    /// cursor otherwise.
+    pub fn with_brackets(&self, b: BoxStyle<Rgba>, on: bool, halo: bool) -> BoxStyle<Rgba> {
+        match self.cursor_brackets() {
+            Some(brackets) if on => {
+                let mut out = style::with_cursor(&b, &self.box_style("cursor", None), None, halo);
+                out.casts.extend(self.box_style("cursor.brackets", None).casts);
+                out.brackets = Some(brackets);
+                out
+            }
+            _ => self.with_cursor(b, on, halo),
+        }
+    }
+
+    /// The block the cursor draws on a row's leading edge, if the table has one.
+    pub fn cursor_bar(&self) -> Option<style::Bar<Rgba>> {
+        style::cursor_bar(self.style, &self.ctx())
+    }
+
+    pub fn cursor_brackets(&self) -> Option<style::Brackets<Rgba>> {
+        style::cursor_brackets(self.style, &self.ctx())
+    }
+
+    /// A number a role carries beside its box.
+    pub fn metric(&self, role: &str, key: &str) -> f64 {
+        style::metric(self.style, role, key)
     }
 
     /// Half the extent while the base radius is positive, square at 0.
