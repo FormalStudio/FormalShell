@@ -5,6 +5,9 @@
 //! surface unmaps, and the corner is told whether the compositor's cursor
 //! sits on it at that moment, so a cursor parked in the corner through an
 //! unlock never fires it again.
+//!
+//! The screensaver corner locks the session and shows the screensaver inside
+//! the lock, so like the lock corner it ends at the unlock.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -68,7 +71,7 @@ impl App {
     fn action_active(&self, action: &Action) -> bool {
         match action {
             Action::Lock => self.lock.locked && !self.lock_external(),
-            Action::Screensaver => self.saver.active || self.saver_mapped(),
+            Action::Screensaver => self.saver.active || self.saver_mapped() || (self.lock.locked && !self.lock_external()),
             _ => false,
         }
     }
@@ -219,7 +222,14 @@ impl App {
             Action::Lock => {
                 let _ = self.lock();
             }
-            Action::Screensaver => self.saver_start(),
+            // The screensaver inside a lock of this shell's own: away from
+            // the machine with it left awake.
+            Action::Screensaver => {
+                let _ = self.lock();
+                if !external {
+                    self.saver_start();
+                }
+            }
             other => eprintln!("HotCorners: {} has no surface in this shell yet", other.as_str()),
         }
     }

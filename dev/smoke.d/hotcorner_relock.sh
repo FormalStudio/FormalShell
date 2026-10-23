@@ -34,12 +34,12 @@
 # corner, which the compositor clamps, and travels from there. Top-left is
 # `none` by default, so that origin fires nothing.
 #
-# The same sequence then runs on the bottom-left corner's screensaver: fired,
-# dismissed with `screensaver stop` while the cursor stays parked in the
-# corner, and three seconds with no pointer event in which it must not come
-# back. The screensaver's overlay covers the corner through its exit fade,
-# so the hand-back enter arrives when the overlay unmaps, after any cooldown
-# counted from the dismiss itself has run out.
+# The same sequence then runs on the bottom-left corner, which locks and
+# shows the screensaver inside the lock: a key dismisses it to the password
+# card with the cursor still parked in the corner and the session still
+# locked, the password unlocks, and three seconds with no pointer event pass
+# in which it must not lock again. Leaving and coming back fires it again,
+# and this time a pointer move is what drops it back to the card.
 leg_hotcorner_relock_flag="--hotcorner-relock"
 leg_hotcorner_relock_order=161
 leg_hotcorner_relock_needs="wlrctl wtype jq"
@@ -64,15 +64,25 @@ hotcorner_relock_s4_path="$shot_dir/hotcorner-relock-4-again.txt"
 hotcorner_relock_s5_path="$shot_dir/hotcorner-relock-5-final.txt"
 hotcorner_relock_moves_path="$shot_dir/hotcorner-relock-moves.txt"
 hotcorner_relock_saver_on_path="$shot_dir/hotcorner-relock-6-saver-on.json"
-hotcorner_relock_saver_parked_path="$shot_dir/hotcorner-relock-7-saver-parked.json"
-hotcorner_relock_saver_again_path="$shot_dir/hotcorner-relock-8-saver-again.json"
-hotcorner_relock_saver_final_path="$shot_dir/hotcorner-relock-9-saver-final.json"
+hotcorner_relock_saver_on_lock_path="$shot_dir/hotcorner-relock-6-saver-on.txt"
+hotcorner_relock_saver_card_path="$shot_dir/hotcorner-relock-7-saver-card.json"
+hotcorner_relock_saver_card_lock_path="$shot_dir/hotcorner-relock-7-saver-card.txt"
+hotcorner_relock_saver_unlocked_path="$shot_dir/hotcorner-relock-8-saver-unlocked.txt"
+hotcorner_relock_saver_parked_path="$shot_dir/hotcorner-relock-9-saver-parked.json"
+hotcorner_relock_saver_parked_lock_path="$shot_dir/hotcorner-relock-9-saver-parked.txt"
+hotcorner_relock_saver_again_path="$shot_dir/hotcorner-relock-10-saver-again.json"
+hotcorner_relock_saver_again_lock_path="$shot_dir/hotcorner-relock-10-saver-again.txt"
+hotcorner_relock_saver_moved_path="$shot_dir/hotcorner-relock-11-saver-moved.json"
+hotcorner_relock_saver_moved_lock_path="$shot_dir/hotcorner-relock-11-saver-moved.txt"
+hotcorner_relock_saver_final_path="$shot_dir/hotcorner-relock-12-saver-final.json"
+hotcorner_relock_saver_final_lock_path="$shot_dir/hotcorner-relock-12-saver-final.txt"
 hotcorner_relock_saver_shot_path="$shot_dir/hotcorner-relock-saver.png"
+hotcorner_relock_saver_card_shot_path="$shot_dir/hotcorner-relock-saver-card.png"
 hotcorner_relock_saver_parked_shot_path="$shot_dir/hotcorner-relock-saver-parked.png"
 hotcorner_relock_settings_path="$iso_home/.config/formalshell/settings.json"
 
 leg_hotcorner_relock_timing() {
-  leg_timing 52 85
+  leg_timing 70 105
 }
 
 leg_hotcorner_relock_drive() {
@@ -142,21 +152,42 @@ ipc "$hotcorner_relock_s5_path"
 corners true
 sleep 2
 saver_corner
-sleep 2
+sleep 3
 saver "$hotcorner_relock_saver_on_path"
+ipc "$hotcorner_relock_saver_on_lock_path"
 "$grim_bin" "$hotcorner_relock_saver_shot_path" > /dev/null 2>&1
-$ipc call screensaver stop > /dev/null 2>&1
-# Nothing touches the pointer until the next saver_corner: the overlay fades
-# and unmaps over a cursor that never left.
+# Nothing touches the pointer until the next saver_corner: a key drops the
+# screensaver to the card and the password unlocks over a cursor that never
+# left the corner.
+"$wtype_bin" -k Shift_L
+sleep 2
+saver "$hotcorner_relock_saver_card_path"
+ipc "$hotcorner_relock_saver_card_lock_path"
+"$grim_bin" "$hotcorner_relock_saver_card_shot_path" > /dev/null 2>&1
+"$wtype_bin" "formalshell-test"
+"$wtype_bin" -k Return
+for i in \$(seq 1 40); do
+  ipc "$hotcorner_relock_saver_unlocked_path"
+  grep -q '^false\$' "$hotcorner_relock_saver_unlocked_path" && break
+  sleep 0.25
+done
 sleep 3
 saver "$hotcorner_relock_saver_parked_path"
+ipc "$hotcorner_relock_saver_parked_lock_path"
 "$grim_bin" "$hotcorner_relock_saver_parked_shot_path" > /dev/null 2>&1
 saver_corner
-sleep 2
+sleep 3
 saver "$hotcorner_relock_saver_again_path"
-$ipc call screensaver stop > /dev/null 2>&1
+ipc "$hotcorner_relock_saver_again_lock_path"
+"$wlrctl_bin" pointer move 200 -200 >> "$hotcorner_relock_moves_path" 2>&1
 sleep 2
+saver "$hotcorner_relock_saver_moved_path"
+ipc "$hotcorner_relock_saver_moved_lock_path"
+"$wtype_bin" "formalshell-test"
+"$wtype_bin" -k Return
+sleep 4
 saver "$hotcorner_relock_saver_final_path"
+ipc "$hotcorner_relock_saver_final_lock_path"
 EOF
   hypr_exec_once "bash $script"
 }
@@ -185,14 +216,38 @@ leg_hotcorner_relock_assert() {
   local f
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_on_path" true \
     "the bottom-left corner started the screensaver"
+  hotcorner_relock_expect "$hotcorner_relock_saver_on_lock_path" true \
+    "the bottom-left corner locked the session under it"
+  hotcorner_relock_saver_expect "$hotcorner_relock_saver_card_path" false \
+    "a key dropped the screensaver to the card"
+  hotcorner_relock_expect "$hotcorner_relock_saver_card_lock_path" true \
+    "the session stayed locked behind the card"
+  hotcorner_relock_expect "$hotcorner_relock_saver_unlocked_path" false \
+    "the typed password unlocked the screensaver corner's lock"
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_parked_path" false \
-    "it stayed dismissed for 3s with the pointer parked in its corner"
+    "the screensaver stayed down for 3s with the pointer parked in its corner"
+  hotcorner_relock_expect "$hotcorner_relock_saver_parked_lock_path" false \
+    "the session stayed unlocked for 3s with the pointer parked in its corner"
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_again_path" true \
     "leaving the corner and coming back started it again"
+  hotcorner_relock_expect "$hotcorner_relock_saver_again_lock_path" true \
+    "leaving the corner and coming back locked again"
+  hotcorner_relock_saver_expect "$hotcorner_relock_saver_moved_path" false \
+    "a pointer move dropped the screensaver to the card"
+  hotcorner_relock_expect "$hotcorner_relock_saver_moved_lock_path" true \
+    "the session stayed locked after the pointer move"
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_final_path" false \
     "the screensaver was left stopped"
-  [ -f "$hotcorner_relock_saver_shot_path" ] || fail "no screensaver corner frame produced"
+  hotcorner_relock_expect "$hotcorner_relock_saver_final_lock_path" false \
+    "the session was left unlocked after the screensaver corner"
+  for f in "$hotcorner_relock_saver_shot_path" "$hotcorner_relock_saver_card_shot_path" "$hotcorner_relock_saver_parked_shot_path"; do
+    [ -f "$f" ] || fail "no screensaver corner frame produced at $f"
+  done
+  if cmp -s "$hotcorner_relock_saver_shot_path" "$hotcorner_relock_saver_card_shot_path"; then
+    fail "the screensaver and card frames under the lock are byte-identical: the lock never drew the screensaver"
+  fi
   echo "SMOKE_HOTCORNER_RELOCK_SAVER $hotcorner_relock_saver_shot_path"
+  echo "SMOKE_HOTCORNER_RELOCK_SAVER_CARD $hotcorner_relock_saver_card_shot_path"
   echo "SMOKE_HOTCORNER_RELOCK_SAVER_PARKED $hotcorner_relock_saver_parked_shot_path"
   hotcorner_relock_expect "$hotcorner_relock_s1_path" true \
     "the bottom-right corner locked the session"

@@ -14,6 +14,12 @@
 //! When the overlays unmap, the end of their fade, the hot corner that fired
 //! them is told the action ended (`hot_corner_action_ended`): that is the
 //! moment the pointer comes back to a corner it may never have left.
+//!
+//! Hyprland draws no layer surface over a locked session, so while this
+//! shell's lock is up the overlays have no surface of their own: each one's
+//! scene is presented on its output's lock surface in place of the password
+//! card, and the lock routes input here. The lock rising or lifting moves the
+//! overlays between the two (`saver_rehost`).
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -52,9 +58,22 @@ const FOREGROUND: Rgba = Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 /// One cell to paint: its column on the canvas, its character, its ink.
 type Row = Vec<(i64, char, Rgba)>;
 
+/// An overlay's own layer surface.
+struct Host {
+    surface: Surface,
+    fade: WpAlphaModifierSurfaceV1,
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        self.fade.destroy();
+    }
+}
+
 pub struct Overlay {
     output: WlOutput,
-    surface: Surface,
+    /// None while the session lock presents the scene instead.
+    host: Option<Host>,
     /// Its ttfx run, 0 while none.
     run: u64,
     /// That run ended on its own, converged.
@@ -63,7 +82,6 @@ pub struct Overlay {
     frames: usize,
     /// The rows on screen, ttfx's or the built-in engine's.
     grid: Vec<Row>,
-    fade: WpAlphaModifierSurfaceV1,
     scene: Scene,
     background: Option<NodeId>,
     rows_drawn: Vec<Option<(u64, NodeId)>>,
@@ -77,12 +95,6 @@ pub struct Overlay {
     /// The first pointer position after mapping is a baseline, not a move:
     /// mapping under a still cursor reports one.
     baseline: Option<(f64, f64)>,
-}
-
-impl Drop for Overlay {
-    fn drop(&mut self) {
-        self.fade.destroy();
-    }
 }
 
 pub struct Saver {
@@ -102,6 +114,17 @@ pub struct Saver {
     tick: Option<RegistrationToken>,
     /// `screensaver.lockAfterSeconds`' timer, running only while shown.
     chain: Option<RegistrationToken>,
+}
+
+impl Saver {
+    /// The scene the lock surface of `output` shows while the screensaver
+    /// is up, once it has been laid out at that surface's size.
+    pub(super) fn lock_scene(&mut self, output: &WlOutput, size: (i32, i32)) -> Option<&mut Scene> {
+        if !self.active {
+            return None;
+        }
+        self.overlays.iter_mut().find(|o| o.host.is_none() && o.output == *output && o.size == size).map(|o| &mut o.scene)
+    }
 }
 
 impl Default for Saver {
@@ -283,22 +306,48 @@ impl App {
                 o.baseline = None;
                 o.frames = 0;
                 o.grid.clear();
-                o.surface.layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
-                o.surface.layer.commit();
+                if let Some(h) = &o.host {
+                    h.surface.layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
+                    h.surface.layer.commit();
+                }
             }
             self.saver.opacity.set(now, 1.0, reveal);
             self.saver_paint();
         } else {
             self.saver.pinned = effect::next_pinned_frame(false, self.saver.pinned);
             self.saver.opacity.set(now, 0.0, reveal);
-            for o in &mut self.saver.overlays {
-                o.surface.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-                o.surface.layer.commit();
+            for o in &self.saver.overlays {
+                if let Some(h) = &o.host {
+                    h.surface.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                    h.surface.layer.commit();
+                }
             }
         }
         self.saver_start_runs();
         self.saver_arm_tick();
         self.saver_arm_chain();
+        self.lock_saver_changed();
+    }
+
+    /// The lock rose or lifted: the overlays move to where they can be seen.
+    pub(super) fn saver_rehost(&mut self) {
+        let in_lock = self.lock_drawn();
+        if self.saver.overlays.iter().all(|o| o.host.is_none() == in_lock) {
+            return;
+        }
+        for o in std::mem::take(&mut self.saver.overlays) {
+            self.saver_stop_run(o.run);
+        }
+        self.saver_outputs();
+        self.saver_paint();
+    }
+
+    /// PAM let the session go: whatever the lock was showing ends with it.
+    pub(super) fn saver_unlocked(&mut self) {
+        self.saver.forced = false;
+        self.saver.suppressed = false;
+        self.saver_update();
+        self.saver_rehost();
     }
 
     /// Continued inactivity under the screensaver chains into the lock; 0
@@ -345,6 +394,7 @@ impl App {
             }
         }
         if added {
+            self.lock_saver_mapped();
             self.log(&format!("screensaver on {} outputs", self.saver.overlays.len()));
             self.saver_rebase();
         }
@@ -360,24 +410,27 @@ impl App {
     }
 
     fn saver_map(&mut self, output: WlOutput) {
-        let surface = self.compositor.create_surface(&self.qh);
-        let layer = self.layer_shell.create_layer_surface(&self.qh, surface, Layer::Overlay, Some(NAMESPACE), Some(&output));
-        layer.set_anchor(Anchor::all());
-        layer.set_size(0, 0);
-        layer.set_exclusive_zone(-1);
-        layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
-        layer.commit();
-        let fade = self.pixels.alpha.get_surface(layer.wl_surface(), &self.qh, Ignore);
-        let mut surface = Surface::new("screensaver", layer, &self.shm, self.started);
-        surface.wait_map = true;
+        let host = (!self.lock_drawn()).then(|| {
+            let surface = self.compositor.create_surface(&self.qh);
+            let layer = self.layer_shell.create_layer_surface(&self.qh, surface, Layer::Overlay, Some(NAMESPACE), Some(&output));
+            layer.set_anchor(Anchor::all());
+            layer.set_size(0, 0);
+            layer.set_exclusive_zone(-1);
+            layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
+            layer.commit();
+            let fade = self.pixels.alpha.get_surface(layer.wl_surface(), &self.qh, Ignore);
+            let mut surface = Surface::new("screensaver", layer, &self.shm, self.started);
+            surface.wait_map = true;
+            Host { surface, fade }
+        });
+        let size = if host.is_none() { self.lock_size(&output) } else { None };
         self.saver.overlays.push(Overlay {
             output,
-            surface,
+            host,
             run: 0,
             ended: false,
             frames: 0,
             grid: Vec::new(),
-            fade,
             scene: Scene::new(1, 1),
             background: None,
             rows_drawn: Vec::new(),
@@ -390,6 +443,9 @@ impl App {
             multiplier: None,
             baseline: None,
         });
+        if let Some((width, height)) = size {
+            self.saver_resize(self.saver.overlays.len() - 1, width, height);
+        }
     }
 
     pub(super) fn saver_mapped(&self) -> bool {
@@ -397,7 +453,11 @@ impl App {
     }
 
     pub(super) fn saver_index(&self, surface: &WlSurface) -> Option<usize> {
-        self.saver.overlays.iter().position(|o| o.surface.layer.wl_surface() == surface)
+        self.saver.overlays.iter().position(|o| o.host.as_ref().is_some_and(|h| h.surface.layer.wl_surface() == surface))
+    }
+
+    pub(super) fn saver_lock_index(&self, output: &WlOutput) -> Option<usize> {
+        self.saver.overlays.iter().position(|o| o.host.is_none() && o.output == *output)
     }
 
     /// Overlay `i` gone, its run stopped with it.
@@ -422,11 +482,26 @@ impl App {
     /// the banner.
     pub(super) fn saver_configure(&mut self, surface: &WlSurface, width: i32, height: i32) {
         let Some(i) = self.saver_index(surface) else { return };
-        let banner = self.saver_banner();
-        let Some(o) = self.saver.overlays.get_mut(i) else { return };
         if width <= 0 || height <= 0 {
             return;
         }
+        if let Some(h) = &mut self.saver.overlays[i].host {
+            h.surface.configure(width, height);
+        }
+        self.saver_resize(i, width, height);
+    }
+
+    /// The lock surface on `output` configured, for the overlay it hosts.
+    pub(super) fn saver_lock_configure(&mut self, output: &WlOutput, width: i32, height: i32) {
+        let Some(i) = self.saver_lock_index(output) else { return };
+        if width > 0 && height > 0 {
+            self.saver_resize(i, width, height);
+        }
+    }
+
+    fn saver_resize(&mut self, i: usize, width: i32, height: i32) {
+        let banner = self.saver_banner();
+        let Some(o) = self.saver.overlays.get_mut(i) else { return };
         let style = |size: f64| TextStyle { family: Family::Generic(GenericFamily::Monospace), size: size as f32, weight: 400.0, tracking: 0.0 };
         let metric = self.bar.kit.text.shape("MMMMMMMMMM", style(100.0));
         let advance = f64::from(metric.width) / 1000.0;
@@ -444,7 +519,6 @@ impl App {
         o.cell = cell;
         o.columns = ((f64::from(width) / cell.0).floor() as i64).max(1);
         o.rows = ((f64::from(height) / cell.1).floor() as i64).max(1);
-        o.surface.configure(width, height);
         if changed {
             o.scene = Scene::new(width, height);
             o.background = Some(o.scene.add(IRect::new(0, 0, width, height), Paint::Rect { fill: BACKGROUND, radius: 0.0 }));
@@ -463,8 +537,8 @@ impl App {
 
     pub(super) fn saver_frame_callback(&mut self, surface: &WlSurface) {
         let Some(i) = self.saver_index(surface) else { return };
-        let o = &mut self.saver.overlays[i];
-        let s = &mut o.surface;
+        let Some(h) = &mut self.saver.overlays[i].host else { return };
+        let s = &mut h.surface;
         (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
     }
 
@@ -661,10 +735,14 @@ impl App {
     /// (blocks.rs has why); edges snap to whole pixels so two blocks meeting
     /// leave no seam. Glyphs sit at their own column so nothing accumulates.
     fn saver_draw(&mut self, i: usize) {
-        let Some(o) = self.saver.overlays.get_mut(i) else { return };
+        let Some(o) = self.saver.overlays.get(i) else { return };
         if o.size.0 <= 0 {
             return;
         }
+        if o.host.is_none() {
+            self.lock_saver_drawn();
+        }
+        let o = &mut self.saver.overlays[i];
         let (cw, ch) = o.cell;
         let font = o.font_size as f32;
         let rows = o.rows.max(0) as usize;
@@ -746,18 +824,23 @@ impl App {
             if let Some(runtime) = &self.runtime {
                 runtime.pool().submit(crate::trim_heap);
             }
-            self.hot_corner_action_ended("screensaver");
+            // Dismissed inside the lock, the corner is still covered: the
+            // unlock reports the end.
+            if !self.lock_drawn() {
+                self.hot_corner_action_ended("screensaver");
+            }
             return;
         }
         let multiplier = (alpha * f64::from(u32::MAX)).round() as u32;
         let animating = fading || !self.saver.active;
         let qh = self.qh.clone();
         for o in &mut self.saver.overlays {
-            if o.multiplier != Some(multiplier) && !o.surface.frame_pending {
-                o.fade.set_multiplier(multiplier);
+            let Some(h) = &mut o.host else { continue };
+            if o.multiplier != Some(multiplier) && !h.surface.frame_pending {
+                h.fade.set_multiplier(multiplier);
                 o.multiplier = Some(multiplier);
             }
-            o.surface.present(&mut o.scene, animating, &qh);
+            h.surface.present(&mut o.scene, animating, &qh);
         }
     }
 
