@@ -80,6 +80,13 @@ pub struct Coverage {
 }
 
 impl Coverage {
+    /// The outline at `scale`, its origin `dx` of a pixel right of a whole one.
+    pub fn scaled(path: &BezPath, scale: f64, dx: f64) -> Option<Self> {
+        let mut path = path.clone();
+        path.apply_affine(vello_cpu::kurbo::Affine::new([scale, 0.0, 0.0, scale, dx, 0.0]));
+        Self::of(&path)
+    }
+
     fn of(path: &BezPath) -> Option<Self> {
         use vello_cpu::kurbo::Shape;
         if path.elements().is_empty() {

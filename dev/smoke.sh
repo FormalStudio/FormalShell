@@ -516,8 +516,9 @@ hypr_exec_once() {
 hypr_base_config() {
   # Pinned in both session modes: the vkms connector otherwise comes up
   # 1024x768 at scale 2, and a nested window takes aquamarine's own default
-  # rather than a size the bar is worth reading at.
-  echo 'hl.monitor({ output = "", mode = "1920x1080@60", position = "0x0", scale = 1 })'
+  # rather than a size the bar is worth reading at. FS_SMOKE_SCALE=1.25
+  # runs it fractional, the g815 panel's scale.
+  echo "hl.monitor({ output = \"\", mode = \"1920x1080@60\", position = \"0x0\", scale = ${FS_SMOKE_SCALE:-1} })"
   echo "hl.config({"
   echo "  general = { gaps_in = 0, gaps_out = 0, border_size = 0 },"
   # DESIGN.md: nothing in the shell blurs anything, and a compositor blur

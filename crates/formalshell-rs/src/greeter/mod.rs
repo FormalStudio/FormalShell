@@ -274,6 +274,7 @@ pub fn main(args: &[String]) {
     let sessions = sessions::scan(&session_dirs(&settings));
     let users = users::scan();
     eprintln!("greeter: {} sessions, {} users", sessions.len(), users.len());
+    crate::surface::bind_scaling(&globals, &qh);
     let mut g = Greeter {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -679,8 +680,16 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     }
 }
 
+impl crate::surface::ScaleHandler for Greeter {
+    fn rescaled(&mut self) {
+        self.dirty = true;
+    }
+}
+
 impl CompositorHandler for Greeter {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
+    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {
+        self.dirty = true;
+    }
 
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
 

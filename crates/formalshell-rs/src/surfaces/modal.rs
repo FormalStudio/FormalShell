@@ -17,8 +17,6 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
-use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
-
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::surface::{PixelSurface, Role, Sub, Surface};
 use crate::surfaces::card::{Card, Ends};
@@ -265,7 +263,6 @@ impl Modal {
 pub struct Layer {
     pub scene: Scene,
     pub surface: Surface<Sub>,
-    viewport: WpViewport,
     pub top: NodeId,
     /// The size the owner last laid its content out at.
     laid: (i32, i32),
@@ -279,11 +276,11 @@ pub struct Layer {
 
 impl Layer {
     /// Starts one pixel square; the first layout sizes it to the card.
-    pub fn new(surface: Surface<Sub>, viewport: WpViewport) -> Self {
+    pub fn new(surface: Surface<Sub>) -> Self {
         let mut scene = Scene::clear(1, 1);
         let top = scene.add(IRect::default(), Paint::Shape { fill: None, strokes: Vec::new() });
         scene.set_visible(top, false);
-        let mut layer = Self { scene, surface, viewport, top, laid: (0, 0), buffer: (0, 0), drawn: (0, 0), shown: None };
+        let mut layer = Self { scene, surface, top, laid: (0, 0), buffer: (0, 0), drawn: (0, 0), shown: None };
         layer.surface.configure(1, 1);
         layer
     }
@@ -347,8 +344,7 @@ impl Layer {
             self.shown = Some((shown, at));
             if fits {
                 self.surface.layer.sub.set_position(shown.x, shown.y);
-                self.viewport.set_source(0.0, 0.0, f64::from(shown.w), f64::from(shown.h));
-                self.viewport.set_destination(shown.w, shown.h);
+                self.surface.set_crop(IRect::new(0, 0, shown.w, shown.h));
             }
         }
         self.surface.set_opacity(alpha);
@@ -390,7 +386,6 @@ impl Layer {
 
     /// The layer gone, its pool, buffers and canvas kept for the next one.
     pub fn keep(self) -> crate::surface::Kept {
-        self.viewport.destroy();
         self.surface.keep()
     }
 }
@@ -425,7 +420,6 @@ struct Quad {
     scene: Scene,
     nodes: (NodeId, NodeId),
     surface: Surface<Sub>,
-    viewport: WpViewport,
     /// The card size the buffer the compositor holds was drawn at, and the
     /// one being drawn.
     drawn: Option<(i32, i32)>,
@@ -441,15 +435,15 @@ fn halves(n: i32) -> (i32, i32) {
 }
 
 impl Quads {
-    pub fn new(name: &'static str, parts: Vec<(Surface<Sub>, WpViewport)>, margin: i32, started: std::time::Instant) -> Self {
+    pub fn new(name: &'static str, parts: Vec<Surface<Sub>>, margin: i32, started: std::time::Instant) -> Self {
         let parts = parts
             .into_iter()
-            .map(|(surface, viewport)| {
+            .map(|surface| {
                 let mut scene = Scene::clear(1, 1);
                 let empty = || Paint::Shape { fill: None, strokes: Vec::new() };
                 let casts = scene.add(IRect::default(), empty());
                 let shape = scene.add(IRect::default(), empty());
-                Quad { scene, nodes: (casts, shape), surface, viewport, drawn: None, pending: (0, 0), shown: None }
+                Quad { scene, nodes: (casts, shape), surface, drawn: None, pending: (0, 0), shown: None }
             })
             .collect();
         Self { parts, size: (0, 0), margin, hint: (0, 0), covered: IRect::default(), name, started, steps: 0 }
@@ -538,8 +532,7 @@ impl Quads {
                 q.shown = Some((crop, place));
                 if !crop.is_empty() {
                     q.surface.layer.sub.set_position(place.0, place.1);
-                    q.viewport.set_source(f64::from(crop.x), f64::from(crop.y), f64::from(crop.w), f64::from(crop.h));
-                    q.viewport.set_destination(crop.w, crop.h);
+                    q.surface.set_crop(crop);
                 }
             }
             // Corners still drawing take their new opacity with the commit
@@ -582,11 +575,5 @@ impl Quads {
     /// Any corner still drawing in slices.
     pub fn rastering(&self) -> bool {
         self.parts.iter().any(|q| q.surface.rastering())
-    }
-}
-
-impl Drop for Quad {
-    fn drop(&mut self) {
-        self.viewport.destroy();
     }
 }

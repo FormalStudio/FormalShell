@@ -29,7 +29,7 @@ pub struct PickerSurface {
     pub origin: (f64, f64),
     pub surface: Surface,
     pub sheet: Sheet,
-    dirty: bool,
+    pub(super) dirty: bool,
 }
 
 #[derive(Default)]

@@ -14,7 +14,7 @@ use fs_theme::theme::Theme;
 use image::imageops::{self, FilterType};
 use serde_json::{Value, json};
 
-use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::wallpaper::Picture;
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::surfaces::login;
@@ -199,6 +199,10 @@ impl View {
         p.rect(full, black, 0.0);
         match s.backdrop {
             Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), s.wake),
+            // The desktop's picture made at the output's own scale.
+            Some(b) if fills(b, (w, h)) => {
+                p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+            }
             // The wallpaper still decoding: dark, never the theme's background.
             None if s.has_wallpaper => {}
             _ => {
@@ -300,7 +304,18 @@ fn ink_of(backdrop: f64) -> &'static str {
 /// whether that luma was read off the wallpaper (BarPaint's `sampled`).
 fn ink(s: &Shared, theme: &Theme, rect: IRect, size: (i32, i32)) -> (&'static str, f64, bool) {
     let fallback = if s.has_wallpaper { 0.0 } else { luma_of(theme.colors.get("background")) };
-    let mean = s.picture.filter(|p| (p.width as i32, p.height as i32) == size).and_then(|p| mean_luma(p, rect));
+    let mean = s.picture.and_then(|p| {
+        let (pw, ph) = (p.width as i32, p.height as i32);
+        if (pw, ph) == size {
+            return mean_luma(p, rect);
+        }
+        if !fills_size((pw, ph), size) {
+            return None;
+        }
+        let k = f64::from(pw) / f64::from(size.0.max(1));
+        let at = |v: i32| (f64::from(v) * k).round() as i32;
+        mean_luma(p, IRect::new(at(rect.x), at(rect.y), at(rect.right()) - at(rect.x), at(rect.bottom()) - at(rect.y)))
+    });
     let scrim = if s.has_wallpaper { SCRIM } else { 0.0 };
     match mean {
         Some(m) => {
@@ -325,6 +340,17 @@ fn mean_luma(p: &Picture, rect: IRect) -> Option<f64> {
         }
     }
     Some(sum / r.area() as f64)
+}
+
+/// A picture larger than `size` at its aspect, give or take the rounding
+/// of a scaled size: the output's own pixels under a fractional scale.
+fn fills(b: &Bitmap, size: (i32, i32)) -> bool {
+    fills_size((i32::from(b.pixmap.width()), i32::from(b.pixmap.height())), size)
+}
+
+fn fills_size((bw, bh): (i32, i32), (w, h): (i32, i32)) -> bool {
+    let (bw, bh, w, h) = (i64::from(bw), i64::from(bh), i64::from(w), i64::from(h));
+    bw > w && (bw * h - bh * w).abs() <= bw.max(bh)
 }
 
 /// The desktop's picture with the scrim baked in, for the pool.
