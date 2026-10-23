@@ -78,6 +78,18 @@ impl Panel for Usage {
         "gauge".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Limits".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        peak(&v.store.info.usage).map_or_else(|| "no data".into(), |r| r.label.to_lowercase())
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -107,6 +119,7 @@ impl Panel for Usage {
                 trailing: None,
                 rail: top.map(|r| r.percent),
                 rail_on: None,
+                tab: "now".into(),
             },
         )];
 
@@ -136,7 +149,7 @@ impl Panel for Usage {
 
         if u.claude_enabled {
             let title = if u.claude_tier.is_empty() { "Claude".to_owned() } else { format!("Claude / {}", u.claude_tier) };
-            let mut section = vec![label(&title)];
+            let mut section = vec![w::heading(s, &title, None, true)];
             if u.claude != Claude::Ok {
                 section.push(label(&claude_hint(u)));
             } else if claude_rows(u).is_empty() {
@@ -147,7 +160,7 @@ impl Panel for Usage {
         }
         if u.codex_enabled {
             let title = if u.codex_tier.is_empty() { "Codex".to_owned() } else { format!("Codex / {}", u.codex_tier) };
-            let mut section = vec![label(&title)];
+            let mut section = vec![w::heading(s, &title, None, true)];
             if u.codex != Codex::Ok {
                 section.push(label(codex_hint(u)));
             } else if codex_rows(u).is_empty() {

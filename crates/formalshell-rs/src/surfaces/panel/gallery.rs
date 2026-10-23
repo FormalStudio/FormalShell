@@ -43,6 +43,18 @@ impl Panel for Gallery {
         String::new()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Components".into()
+    }
+
+    fn status(&self, _: &View) -> String {
+        "sample data".into()
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Primary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Theme]
     }
@@ -54,7 +66,7 @@ impl Panel for Gallery {
     fn body(&self, v: &View) -> El {
         let t = v.theme;
         let s = &t.space;
-        let label = |text: &str| w::section_label(s, text, None, true);
+        let label = |text: &str| w::heading(s, text, None, true);
 
         let controls = w::column(
             s.section_gap,

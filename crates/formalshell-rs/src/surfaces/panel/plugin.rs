@@ -134,6 +134,18 @@ impl Panel for PluginPanel {
         ICON.into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Plugin".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        find(v.store, self.key).map_or_else(|| self.id.clone(), |p| p.name.to_lowercase())
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Plugins, Topic::PluginOutput]
     }

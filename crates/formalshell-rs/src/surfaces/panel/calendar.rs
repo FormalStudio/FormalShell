@@ -101,6 +101,18 @@ impl Panel for Calendar {
         "calendar".into()
     }
 
+    fn subtitle(&self, v: &View) -> String {
+        v.store.clock.now.format("%B %Y").to_string()
+    }
+
+    fn status(&self, v: &View) -> String {
+        super::count(v.store.info.calendar.events.len(), "event", "events")
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock, Topic::State, Topic::Config]
     }
@@ -150,6 +162,7 @@ impl Panel for Calendar {
                 trailing: None,
                 rail: None,
                 rail_on: None,
+                tab: "today".into(),
             },
         );
 
@@ -190,14 +203,14 @@ impl Panel for Calendar {
             let days = w::row(s.row_gap, row).fill().swap(i64::from(self.year) * 12 + i64::from(self.month));
             lines.push(w::row(s.row_gap, vec![week, days]).fill());
         }
-        let month = w::column(s.row_gap, vec![w::section_label(s, &month_name, None, true), w::column(s.row_gap, lines)]);
+        let month = w::column(s.row_gap, vec![w::heading(s, &month_name, None, true), w::column(s.row_gap, lines)]);
 
         let selected_is_today = grid::same_date(&self.selected, &t);
         let day_events = agenda::sort_for_day(&ics::events_on_date(events, self.selected));
         let running = selected_is_today && agenda::has_running(&day_events, now);
         let next = if selected_is_today { agenda::next_up(&day_events, now) } else { None };
         let heading = if selected_is_today { "Today".to_owned() } else { format!("{} {}", MONTHS[self.selected.month0() as usize], self.selected.day()) };
-        let mut label_row = vec![w::section_label(s, &heading, Some(day_events.len()), true).fill()];
+        let mut label_row = vec![w::heading(s, &heading, Some(day_events.len()), true).fill()];
         let side = if running {
             Some("Now".to_owned())
         } else {
@@ -237,7 +250,7 @@ impl Panel for Calendar {
                 ],
             )
         };
-        let mut progress_col = vec![w::section_label(s, "Progress", None, true), w::cell(bar("Year", year)).ghost().on("year")];
+        let mut progress_col = vec![w::heading(s, "Progress", None, true), w::cell(bar("Year", year)).ghost().on("year")];
         if show_life {
             progress_col.push(w::cell(bar("Life", life.unwrap_or(0.0))).ghost());
         }

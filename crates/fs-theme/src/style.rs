@@ -15,7 +15,7 @@ use crate::tokens::{self, Easing, Motion};
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
 /// over, which is why `switch.track` reads `off` before `on`.
-pub const ROLES: [(&str, &[&str]); 35] = [
+pub const ROLES: [(&str, &[&str]); 40] = [
     ("bar", &["rest"]),
     ("frame", &["rest"]),
     ("card", &["rest", "opaque"]),
@@ -44,6 +44,11 @@ pub const ROLES: [(&str, &[&str]); 35] = [
     ("hero", &[]),
     ("hero.tab", &[]),
     ("button.default.cap", &[]),
+    ("panel.title", &[]),
+    ("panel.subtitle", &[]),
+    ("panel.strip", &[]),
+    ("panel.status", &[]),
+    ("panel.tag", &[]),
     ("scrim", &[]),
     ("separator", &[]),
     ("keycap", &[]),
@@ -1599,6 +1604,7 @@ pub(crate) mod tests {
             assert_eq!(cursor_brackets(style, &ctx("dark")), None, "{name} draws brackets");
             assert_eq!(metric(style, "hero.tab", "height"), 0.0, "{name} draws a hero tab");
             assert_eq!(metric(style, "button.default.cap", "width"), 0.0, "{name} caps its button");
+            assert_eq!(metric(style, "panel.strip", "width"), 0.0, "{name} draws an id strip");
             for role in role_names() {
                 for state in declared_states(style, role).into_iter().map(Some).chain([None]) {
                     assert_eq!(r(style, role, state, "dark").chamfer, [0.0; 4], "{name} chamfers {role}");
@@ -1639,6 +1645,17 @@ pub(crate) mod tests {
         assert_eq!(metric(c, "hero.tab", "height"), 22.0);
         assert_eq!(metric(c, "button.default.cap", "width"), 34.0);
         assert_eq!(r(c, "button.default.cap", None, "dark").ink, "role:primaryForeground");
+    }
+
+    #[test]
+    fn the_cartridge_console_reads_its_accent() {
+        let c = tables::cartridge();
+        assert_eq!(metric(c, "panel.strip", "width"), 26.0);
+        assert_eq!(r(c, "panel.strip", None, "dark").border.unwrap().color, "role:primary@0.55");
+        let sub = r(c, "panel.subtitle", None, "dark");
+        assert_eq!((sub.ink.as_str(), sub.ink_shadow.len()), ("role:primary", 1));
+        assert_eq!(r(c, "panel.status", None, "dark").radius, Radius::Pill);
+        assert_eq!(metric(c, "panel.tag", "trail"), 26.0);
     }
 
     #[test]

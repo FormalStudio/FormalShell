@@ -349,6 +349,22 @@
             "fill": "transparent",
             "width": 0
         },
+        "panel.title": {
+            "fill": "transparent"
+        },
+        "panel.subtitle": {
+            "fill": "transparent"
+        },
+        "panel.strip": {
+            "fill": "transparent",
+            "width": 0
+        },
+        "panel.status": {
+            "fill": "transparent"
+        },
+        "panel.tag": {
+            "fill": "transparent"
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.5,

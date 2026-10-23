@@ -18,7 +18,7 @@ pub struct Dualsense;
 
 fn half(s: &fs_theme::tokens::Space, title: &str, glyph: &str, middle: El, value: String, key: &str) -> El {
     let line = w::row(s.icon_gap, vec![w::icon(glyph), middle, w::space(0.0).fill(), w::value(value).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg)]).fill();
-    w::cell(w::column(s.xxs, vec![w::section_label(s, title, None, false), line])).ghost().stop(key)
+    w::cell(w::column(s.xxs, vec![w::heading(s, title, None, false), line])).ghost().stop(key)
 }
 
 impl Panel for Dualsense {
@@ -32,6 +32,18 @@ impl Panel for Dualsense {
 
     fn icon(&self, _: &View) -> String {
         "gamepad-2".into()
+    }
+
+    fn subtitle(&self, _: &View) -> String {
+        "Controller".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        v.store.devices.power.dualsense.as_ref().map_or_else(|| "no controller".into(), |s| format!("battery {}%", s.percent))
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Secondary
     }
 
     fn reads(&self) -> &'static [Topic] {
@@ -58,6 +70,7 @@ impl Panel for Dualsense {
                 trailing: None,
                 rail: Some(supply.percent as f64 / 100.0),
                 rail_on: None,
+                tab: "battery".into(),
             },
             false,
             Type::DisplayLarge,
@@ -82,7 +95,7 @@ impl Panel for Dualsense {
         }
         if !halves.is_empty() {
             let halves = halves.into_iter().map(El::fill).collect();
-            out.push(w::column(s.row_gap, vec![w::section_label(s, "Status", None, true), w::row(s.row_gap, halves).fill()]));
+            out.push(w::column(s.row_gap, vec![w::heading(s, "Status", None, true), w::row(s.row_gap, halves).fill()]));
         }
         w::column(s.section_gap, out)
     }

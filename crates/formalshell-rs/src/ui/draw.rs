@@ -231,6 +231,11 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             (inner, h)
         }
         Kind::Space { along } => (*along, *along),
+        Kind::Text { text, .. } if el.tag && console(cx) => {
+            let st = tag_style(cx);
+            let t = cx.kit.shape(&text.to_uppercase(), st);
+            (t.width as f64 + TAG_LEAD + cx.theme.metric("panel.tag", "trail"), t.line_height() as f64)
+        }
         Kind::Text { text, font, elide, .. } => {
             let t = shape(cx, text, font);
             let mut w = t.width as f64;
@@ -261,7 +266,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
         Kind::Cell { state, child, .. } => {
             let content_avail = (inner - s.control_padding_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            (cw + s.control_padding_x * 2.0, across(cx, state.chip, ch))
+            (cw + s.control_padding_x * 2.0, across(cx, state.chip, ch) + tab_height(cx, el, *state))
         }
         Kind::Button { text, icon, square, .. } => {
             if *square {
@@ -544,6 +549,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             }
         }
         Kind::Space { .. } => {}
+        Kind::Text { text, .. } if el.tag && console(cx) => tag(cx, inner, text, path),
         Kind::Text { text, font, ink, elide } => {
             let t = if *elide { elided(cx, text, font, inner.width()) } else { shape(cx, text, font) };
             let color = resolve(cx, *ink);
@@ -712,6 +718,86 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     }
 }
 
+/// Whether the table's panels take the console grammar.
+fn console(cx: &Cx) -> bool {
+    cx.theme.habit_str("panel") == "console"
+}
+
+/// The room a field tag leaves ahead of its label.
+const TAG_LEAD: f64 = 4.0;
+
+/// A field tag's label: caps in the display face, at the axes `panel.tag` sets.
+fn tag_style(cx: &Cx) -> TextStyle {
+    let t = cx.theme;
+    let size = px(cx, Type::Caption);
+    let wght = t.metric("panel.tag", "wght") as f32;
+    let wdth = t.metric("panel.tag", "wdth") as f32;
+    TextStyle {
+        family: crate::surfaces::bar::cell::face(t.faces.display),
+        size,
+        weight: if wght > 0.0 { wght } else { weight(Weight::Semibold) },
+        tracking: (size * 0.08).round(),
+        wdth: if wdth > 0.0 { wdth } else { TextStyle::NORMAL_WIDTH },
+        wght: (wght > 0.0).then_some(wght),
+    }
+}
+
+/// A section label as a field tag: its caps on an accent bar that fades out
+/// over the tag's trail, in steps.
+fn tag(cx: &mut Cx, r: Rect, text: &str, path: &str) {
+    const STEPS: usize = 8;
+    let b = cx.theme.box_style("panel.tag", None);
+    let st = tag_style(cx);
+    let shaped = cx.kit.shape(&text.to_uppercase(), st);
+    let (fill, ink) = (cx.a(b.fill), cx.a(b.ink));
+    let ri = irect(r);
+    let along = shaped.width as f64 + TAG_LEAD + cx.theme.metric("panel.tag", "trail");
+    let (x0, w) = (ri.x, (along.ceil() as i32).min(ri.w).max(0));
+    let mut p = cx.painter(path);
+    for i in 0..STEPS {
+        let a = x0 + w * i as i32 / STEPS as i32;
+        let z = x0 + w * (i as i32 + 1) / STEPS as i32;
+        let fade = 1.0 - i as f32 / STEPS as f32;
+        p.rect(IRect::new(a, ri.y, z - a, ri.h), fill.with_alpha(fill.a * fade), 0.0);
+    }
+    let y = (r.y0 + (r.height() - shaped.line_height() as f64) / 2.0).round() as i32;
+    p.text(&shaped, ((r.x0 + TAG_LEAD).round() as i32, y), ink, &[]);
+    let last = p.last();
+    p.finish();
+    cx.done(last);
+}
+
+/// The height a hero's tab takes over its frame, 0 on a table with no tab.
+fn tab_height(cx: &Cx, el: &El, state: CellState) -> f64 {
+    if state.hero && el.tab.is_some() { cx.theme.metric("hero.tab", "height").max(0.0) } else { 0.0 }
+}
+
+/// The tab over a hero: its label in the values face on a block whose
+/// trailing side slants down to the frame.
+fn hero_tab(cx: &mut Cx, r: Rect, text: &str, path: &str) {
+    let t = cx.theme;
+    let b = t.box_style("hero.tab", None);
+    let slant = t.metric("hero.tab", "slant").max(0.0);
+    let shaped = shape(cx, &format!("*{text}"), &Font { size: Type::Caption, weight: Weight::Normal, mono: true });
+    let lead = cx.theme.space.xs;
+    let w = (lead + shaped.width as f64 + lead + slant).min(r.width());
+    let tab = Rect::new(r.x0, r.y0, r.x0 + w, r.y1);
+    let (fill, ink) = (cx.a(b.fill), cx.a(b.ink));
+    let mut p = cx.painter(&format!("{path}.tab"));
+    let mut outline = BezPath::new();
+    outline.move_to((tab.x0, tab.y0));
+    outline.line_to(((tab.x1 - slant).max(tab.x0), tab.y0));
+    outline.line_to((tab.x1, tab.y1));
+    outline.line_to((tab.x0, tab.y1));
+    outline.close_path();
+    p.shape(irect(tab), Paint::Shape { fill: Some((outline, fill)), strokes: Vec::new() });
+    let y = (r.y0 + (r.height() - shaped.line_height() as f64) / 2.0).round() as i32;
+    p.text(&shaped, ((r.x0 + lead).round() as i32, y), ink, &[]);
+    let last = p.last();
+    p.finish();
+    cx.done(last);
+}
+
 fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
     match &el.kind {
         Kind::Cell { .. } => cx.theme.box_radius(&cx.theme.box_style("cell", None), h),
@@ -745,9 +831,19 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else {
         "rest"
     };
-    let mut b = t.box_style("cell", Some(fill_state));
-    let rest_border = t.box_style("cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
-    b.border = Some(t.box_style("cell", Some(border_state)).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
+    let mut b = if state.hero {
+        t.box_style("hero", None)
+    } else {
+        let mut b = t.box_style("cell", Some(fill_state));
+        let rest_border = t.box_style("cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
+        b.border = Some(t.box_style("cell", Some(border_state)).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
+        b
+    };
+    let tab_h = tab_height(cx, el, state);
+    if tab_h > 0.0 {
+        hero_tab(cx, Rect::new(r.x0, r.y0, r.x1, r.y0 + tab_h), el.tab.as_deref().unwrap_or_default(), path);
+    }
+    let r = Rect::new(r.x0, r.y0 + tab_h, r.x1, r.y1);
     let hovered = state.hovered || (interactive && cx.hover(path));
     let washing = hovered && !state.active && !state.selected;
     b.wash = t.box_style("cell", Some("hover")).wash;

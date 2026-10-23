@@ -71,6 +71,18 @@ impl Panel for AppMenu {
         "menu".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Window".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        subject(v.store).map_or_else(|| "no window".into(), |s| super::count(s.windows.len(), "window", "windows"))
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Primary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::AppIcon]
     }
@@ -108,6 +120,7 @@ impl Panel for AppMenu {
                 trailing: None,
                 rail: None,
                 rail_on: None,
+                tab: "window".into(),
             },
             true,
             crate::ui::Type::Display,
@@ -115,7 +128,7 @@ impl Panel for AppMenu {
         );
 
         let mut action_rows: Vec<El> = Vec::new();
-        let mut action_col = vec![w::section_label(s, "Actions", Some(actions.len()), true)];
+        let mut action_col = vec![w::heading(s, "Actions", Some(actions.len()), true)];
         if sub.entry.is_none() {
             action_col.push(w::section_label(s, "No desktop entry", None, true));
         } else if actions.is_empty() {
@@ -147,7 +160,7 @@ impl Panel for AppMenu {
             .collect();
         let windows = w::column(
             s.row_gap,
-            vec![w::section_label(s, "Windows", Some(sub.windows.len()), true), w::column(0.0, window_rows)],
+            vec![w::heading(s, "Windows", Some(sub.windows.len()), true), w::column(0.0, window_rows)],
         );
         let close = w::cell(w::row(s.icon_gap, vec![w::icon("x"), w::label("Close window").weight(Weight::Medium).elide()]).fill())
             .ghost()

@@ -75,6 +75,18 @@ impl Panel for Monitor {
         "activity".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "System".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        metrics(v).into_iter().find(|m| !m.figure.is_empty()).map_or_else(|| "no readings".into(), |m| format!("{} {}", m.label.to_lowercase(), m.figure))
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Compositor, Topic::Config]
     }
@@ -101,7 +113,7 @@ impl Panel for Monitor {
             parts.push(w::column(
                 s.row_gap,
                 vec![
-                    w::section_label(s, &m.label, None, true),
+                    w::heading(s, &m.label, None, true),
                     w::cell(w::column(s.xxs, content).fill()).ghost().interactive().stop(format!("metric{i}")),
                 ],
             ));
@@ -110,7 +122,7 @@ impl Panel for Monitor {
         parts.push(w::column(
             s.row_gap,
             vec![
-                w::section_label(s, "Main display", None, true),
+                w::heading(s, "Main display", None, true),
                 w::cell(w::text(if name.is_empty() { "--".into() } else { name }).mono().weight(Weight::Medium))
                     .ghost()
                     .interactive()

@@ -242,6 +242,11 @@ impl Card {
         self.look = Look::new(theme, "menu", cast);
     }
 
+    /// The frame drawn in `color` rather than its role's border.
+    pub fn outline(&mut self, color: Rgba) {
+        self.look.border = color;
+    }
+
     /// The look resolved again off a new theme, the clocks left running: a
     /// card open across a mode flip or a wallpaper change kept the old fill
     /// under the new ink.

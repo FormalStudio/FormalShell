@@ -95,6 +95,8 @@ pub struct CellState {
     pub brackets: bool,
     /// `radiusSm`, a cell one level inside a card's own frame (a day cell).
     pub small: bool,
+    /// A panel's hero, drawn in the `hero` box.
+    pub hero: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -285,6 +287,11 @@ pub struct El {
     /// options): it takes no room in the layout, and its stops follow this
     /// node's.
     pub float: Option<Box<El>>,
+    /// A section label, which a console table draws as a field tag
+    /// (`panel.tag`).
+    pub tag: bool,
+    /// The label on a hero's tab (`hero.tab`), over its frame.
+    pub tab: Option<String>,
 }
 
 impl El {
@@ -296,7 +303,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None, tag: false, tab: None }
     }
 
     pub fn float(mut self, list: El) -> Self {

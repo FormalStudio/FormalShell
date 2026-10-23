@@ -33,6 +33,34 @@ impl Colors {
     pub fn get(&self, name: &str) -> Rgba {
         COLOR_KEYS.iter().position(|k| *k == name).map_or(Rgba::TRANSPARENT, |i| self.values[i])
     }
+
+    /// The same roles with `primary` taken from `role`, for a surface drawn
+    /// in its own accent. A role too close to the background to read as one
+    /// (the static fallback's grey chart steps) leaves `primary` alone.
+    pub fn accented(&self, role: &str) -> Self {
+        let mut out = self.clone();
+        let accent = self.get(role);
+        let (hi, lo) = {
+            let (a, b) = (luminance(accent), luminance(self.get("background")));
+            (a.max(b), a.min(b))
+        };
+        if let Some(p) = COLOR_KEYS.iter().position(|k| *k == "primary")
+            && COLOR_KEYS.contains(&role)
+            && (hi + 0.05) / (lo + 0.05) >= 3.0
+        {
+            out.values[p] = accent;
+        }
+        out
+    }
+}
+
+/// WCAG's relative luminance of an sRGB colour.
+fn luminance(c: Rgba) -> f64 {
+    let lin = |v: f32| {
+        let v = f64::from(v);
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
 }
 
 impl Default for Colors {
@@ -228,6 +256,18 @@ impl Theme {
     /// One habit's value, which a surface reads instead of the preset name.
     pub fn habit(&self, key: &str) -> Option<&Value> {
         self.style["habits"].get(key)
+    }
+
+    /// A string habit, `""` when the table leaves it out.
+    pub fn habit_str(&self, key: &str) -> &str {
+        self.habit(key).and_then(Value::as_str).unwrap_or("")
+    }
+
+    /// This theme with `primary` taken from another palette role.
+    pub fn accented(&self, role: &str) -> Self {
+        let mut out = self.clone();
+        out.colors = self.colors.accented(role);
+        out
     }
 
     fn ctx(&self) -> PaletteCtx<'_> {
@@ -564,6 +604,14 @@ mod tests {
             let want = Faces { words: alias(sans), values: alias("monospace"), display: alias(sans), body: alias(sans) };
             assert_eq!(t.faces, want, "{preset}");
         }
+    }
+
+    #[test]
+    fn an_accent_too_close_to_the_background_keeps_primary() {
+        let c = Colors::default();
+        assert_eq!(c.accented("chart2").get("primary"), c.get("primary"));
+        assert_eq!(c.accented("chart3").get("primary"), c.get("chart3"));
+        assert_eq!(c.accented("chart3").get("chart3"), c.get("chart3"));
     }
 
     #[test]

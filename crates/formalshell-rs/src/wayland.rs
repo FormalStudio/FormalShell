@@ -612,7 +612,7 @@ impl App {
             self.launcher.dirty = true;
         }
         if let Some(h) = &mut self.panel {
-            h.card.restyle(theme, self.cast);
+            h.restyle(theme, self.cast);
             h.card.tick(now);
             self.panel_dirty = true;
         }

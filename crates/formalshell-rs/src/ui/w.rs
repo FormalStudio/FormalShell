@@ -101,9 +101,17 @@ pub fn section_label(s: &Space, text: &str, count: Option<usize>, inset: bool) -
     if inset { el.pad_start(s.control_padding_x) } else { el }
 }
 
-/// A named group of rows: the label `rowGap` over them, the rows abutting.
+/// A section label heading a group or naming a field, which a table whose
+/// panels take the console grammar draws as a field tag.
+pub fn heading(s: &Space, text: &str, count: Option<usize>, inset: bool) -> El {
+    let mut el = section_label(s, text, count, inset);
+    el.tag = true;
+    el
+}
+
+/// A named group of rows: the heading `rowGap` over them, the rows abutting.
 pub fn section(s: &Space, title: &str, count: Option<usize>, rows: Vec<El>) -> El {
-    column(s.row_gap, vec![section_label(s, title, count, true), column(0.0, rows)])
+    column(s.row_gap, vec![heading(s, title, count, true), column(0.0, rows)])
 }
 
 /// A `Cell` around one child.
@@ -261,6 +269,9 @@ pub struct Hero {
     /// The rail under it, 0 to 1, or none.
     pub rail: Option<f64>,
     pub rail_on: Option<String>,
+    /// What the hero shows, on the tab over its frame where the table
+    /// draws one (`connected`, `charging`); empty for none.
+    pub tab: String,
 }
 
 /// Panel hero: a flat ghost cell leading the content column, a
@@ -298,5 +309,7 @@ pub fn hero_with(s: &Space, h: Hero, meta_mono: bool, readout_size: Type, leadin
         };
         parts.push(rail);
     }
-    cell(column(s.xxs, parts).fill()).ghost()
+    let mut el = cell(column(s.xxs, parts).fill()).ghost().cell_state(|c| c.hero = true);
+    el.tab = (!h.tab.is_empty()).then_some(h.tab);
+    el
 }

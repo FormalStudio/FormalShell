@@ -397,6 +397,68 @@
             ],
             "width": 34
         },
+        "panel.title": {
+            "fill": "transparent",
+            "ink": [
+                "foreground",
+                1
+            ],
+            "wdth": 125,
+            "wght": 900
+        },
+        "panel.subtitle": {
+            "fill": "transparent",
+            "ink": [
+                "primary",
+                1
+            ],
+            "inkShadow": [
+                {
+                    "blur": 8,
+                    "color": "primary",
+                    "alpha": 0.55
+                }
+            ],
+            "wdth": 75,
+            "wght": 600
+        },
+        "panel.strip": {
+            "fill": "transparent",
+            "border": {
+                "color": "primary",
+                "alpha": 0.55,
+                "width": 1
+            },
+            "ink": [
+                "primary",
+                1
+            ],
+            "width": 26
+        },
+        "panel.status": {
+            "fill": "primary",
+            "fillAlpha": 0.07,
+            "radius": "pill",
+            "border": {
+                "color": "primary",
+                "width": 1
+            },
+            "ink": [
+                "primary",
+                1
+            ]
+        },
+        "panel.tag": {
+            "fill": "primary",
+            "fillAlpha": 0.3,
+            "ink": [
+                "primary",
+                1
+            ],
+            "trail": 26,
+            "wdth": 75,
+            "wght": 600
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.5,
@@ -680,6 +742,9 @@
         ],
         "roles.hero": [
             "A panel's hero framed in the accent with one chamfered corner, its label on a slanted tab over the frame (`hero.tab`). The primary action is a pill ending in a hexagonal cap holding its icon (`button.default.cap`)."
+        ],
+        "roles.panel": [
+            "The console header (`panel: console`): the title wide and heavy, the `// subtitle` condensed in the accent with a glow, the status strip a pill outlined in the accent, the id strip down the card's leading side behind a line that also outlines the card, and section labels as field tags fading out to the right."
         ],
         "roles.input": [
             "A sunk well: the page colour with a 2px inset shade along its top, and no halo on focus."

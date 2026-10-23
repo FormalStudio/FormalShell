@@ -153,6 +153,24 @@ sliding 40px in along its line from the end it rests nearer, fading on the
 table's 900ms `emerge` clock), `panel: "console"`, `grid: "hex"` and
 `boot: "cartridge"`; the others declare `sheet`, `square` and `none`.
 
+`panel: "console"` is the section page (`surfaces/panel/host.rs`): the
+panel's `title` wide and heavy in the display face (`panel.title`'s `wdth`
+and `wght`), its `subtitle` condensed after `//` with a glow
+(`panel.subtitle`'s `inkShadow`), the back chip (Escape's keycap and
+"Back") in place of the close button, the status strip under them
+(`panel.status`: `<ID> :: <status>` and `( yyyy / mm / dd )`), and the id
+strip down the card's leading side (`panel.strip`, `width` wide, its line
+also the card's outline), which widens the card rather than narrowing the
+body. A `ui::w::heading` (every `w::section`'s label and the field labels
+naming one value) draws as a field tag (`panel.tag`: its caps over an
+accent bar fading out over `trail`); a plain `section_label` (a state word,
+an empty state, an error) stays as it was. Each panel names its accent
+(`Panel::accent`: `primary`, or matugen's secondary and tertiary through
+`chart2` and `chart3`), and the console draws the whole card with
+`primary` taken from it; an accent under 3:1 against `background` (the
+static fallback's grey chart steps) keeps `primary`. Every other table
+declares the five `panel.*` roles transparent and keeps the sheet.
+
 **Type** (`fs_theme::tokens::font_tokens`, picked per element with
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,
 section labels, descriptions, hints), mono for values (numbers, units,

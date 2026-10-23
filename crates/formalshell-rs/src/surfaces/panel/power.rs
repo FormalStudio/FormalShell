@@ -107,6 +107,19 @@ impl Panel for Power {
         if v.store.devices.power.battery.is_some() { "battery" } else { "zap" }.into()
     }
 
+    fn subtitle(&self, v: &View) -> String {
+        if v.store.devices.power.battery.is_some() { "Battery" } else { "AC power" }.into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        let power = &v.store.devices.power;
+        power.battery.as_ref().map_or_else(|| "on ac".into(), |b| format!("{}% {}", b.percent, if power.on_battery { "on battery" } else { "plugged in" }))
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices, Topic::Info, Topic::Config]
     }
@@ -135,6 +148,7 @@ impl Panel for Power {
                     trailing: None,
                     rail: Some(b.percent / 100.0),
                     rail_on: None,
+                    tab: charge_state_label(b.percent, b.state, power.on_battery, held).to_lowercase(),
                 },
                 false,
                 crate::ui::Type::Display,
@@ -150,7 +164,7 @@ impl Panel for Power {
                 .and_then(|s| s.limit)
                 .and_then(|l| model::parse_charge_limit(&l.to_string()));
             let mut rows = vec![
-                w::section_label(s, "Battery", None, true),
+                w::heading(s, "Battery", None, true),
                 stat(v, "Capacity", format_health_percent(b.health.unwrap_or(0.0), b.health.is_some())),
                 stat(v, "Size", format_wh(b.size_wh)),
                 stat(v, time_row_label(charging), time_row_value(charging, b.time_to_full, b.time_to_empty)),
@@ -174,7 +188,7 @@ impl Panel for Power {
             &sample.snapshot,
             &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.info.iphone.battery.map(|b| b * 100.0) },
         );
-        let mut flow_rows = vec![w::section_label(s, "Power flow", None, true)];
+        let mut flow_rows = vec![w::heading(s, "Power flow", None, true)];
         flow_rows.push(if model.available {
             w::flow(flow_view(&model, true))
         } else {
@@ -198,7 +212,7 @@ impl Panel for Power {
         parts.push(w::column(
             s.row_gap,
             vec![
-                w::section_label(s, "Profile", None, true),
+                w::heading(s, "Profile", None, true),
                 w::group(options, active(v), true).ring(at).on("profile").stop("profile"),
             ],
         ));

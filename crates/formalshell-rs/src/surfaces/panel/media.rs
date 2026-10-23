@@ -223,6 +223,18 @@ impl Panel for Media {
         "music".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Now playing".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        v.store.media.active().map_or_else(|| "no player".into(), |a| format!("{} {}", a.identity.to_lowercase(), if a.playing { "playing" } else { "paused" }))
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Primary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Media, Topic::Visualizer, Topic::Config, Topic::Lyrics]
     }

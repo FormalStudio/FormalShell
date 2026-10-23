@@ -107,6 +107,8 @@ pub struct Host {
     /// The cursor's leading bar, over the rows rather than under them.
     bar_nodes: Vec<NodeId>,
     rule_nodes: Vec<NodeId>,
+    /// The console header's title, status strip and id strip.
+    console_nodes: Vec<NodeId>,
     pub place: Place,
     open: bool,
     /// Cut outright: the card that took this one's place is on top of it.
@@ -143,6 +145,9 @@ impl Host {
         let size = (place.along_len() as i32, place.across_len() as i32);
         let rest = Rect::new(0.0, place.line_at, 0.0, place.line_at);
         let mut card = Card::build(theme, "card", place.edge, size, place.line_at, rest, scale, cast, true);
+        if let Some(c) = console_outline(module.as_ref(), theme) {
+            card.outline(c);
+        }
         card.ends = place.ends;
         card.target = place.target;
         let top = card.top_node();
@@ -163,6 +168,7 @@ impl Host {
             halo_nodes: vec![halo],
             bar_nodes: Vec::new(),
             rule_nodes: vec![rule],
+            console_nodes: Vec::new(),
             place,
             open: true,
             handed: false,
@@ -183,6 +189,14 @@ impl Host {
             scale,
             region: None,
             fit: std::cell::Cell::new((0.0, 0.0, false)),
+        }
+    }
+
+    /// The card's look off a new theme, its console outline included.
+    pub fn restyle(&mut self, theme: &Theme, cast: bool) {
+        self.card.restyle(theme, cast);
+        if let Some(c) = console_outline(self.module.as_ref(), theme) {
+            self.card.outline(c);
         }
     }
 
@@ -300,13 +314,22 @@ impl Host {
     fn target_size(&self, theme: &Theme, kit: &mut Kit, store: &Store) -> (f64, f64, f64) {
         let s = &theme.space;
         let v = self.view(store, theme);
-        let width = self.module.width(&v);
-        let body = self.module.body(&v);
-        let content_w = (width - s.panel_padding * 2.0).max(0.0);
-        let content_h = ui::measure(&body, content_w, theme, kit).1;
-        let (head, gap) = self.header_metrics(theme);
+        let strip = self.strip(theme);
         let vertical = self.place.edge.is_vertical();
         let p = &self.place;
+        // The strip widens the card, short of a panel already as wide as
+        // the output lets it be (the gallery).
+        let room = if vertical {
+            p.across_len() - p.line_at - p.far_inset - s.bar_margin - s.screen_padding
+        } else {
+            p.along_len() - p.ends.inset_start - p.ends.inset_end - s.screen_padding * 2.0
+        };
+        let width = self.module.width(&v);
+        let width = if strip > 0.0 { (width + strip).min(room.max(width)) } else { width };
+        let body = self.module.body(&v);
+        let content_w = (width - strip - s.panel_padding * 2.0).max(0.0);
+        let content_h = ui::measure(&body, content_w, theme, kit).1;
+        let (head, gap) = self.header_metrics(theme, kit);
         let max_frame = if vertical {
             (p.output.1 - p.ends.inset_start - p.ends.inset_end - s.screen_padding * 2.0).max(0.0)
         } else {
@@ -318,16 +341,31 @@ impl Host {
         (width, height, content_h)
     }
 
-    fn header_metrics(&self, theme: &Theme) -> (f64, f64) {
-        if self.module.header() {
-            (theme.space.control_height, theme.space.panel_padding * 2.0 + theme.border_width)
-        } else {
+    fn header_metrics(&self, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
+        if !self.module.header() {
             (0.0, 0.0)
+        } else if console(self.module.as_ref(), theme) {
+            let c = ConsoleType::new(theme, kit);
+            (c.head_height(theme), theme.space.panel_padding)
+        } else {
+            (theme.space.control_height, theme.space.panel_padding * 2.0 + theme.border_width)
         }
+    }
+
+    /// The id strip down the card's leading side, 0 off a console table.
+    fn strip(&self, theme: &Theme) -> f64 {
+        if console(self.module.as_ref(), theme) { theme.metric("panel.strip", "width").max(0.0) } else { 0.0 }
     }
 
     /// Lays the frame out for this frame and draws everything on it.
     pub fn layout(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
+        let accented;
+        let theme = if console(self.module.as_ref(), theme) {
+            accented = theme.accented(self.module.accent().role());
+            &accented
+        } else {
+            theme
+        };
         let (tw, th, content_h) = self.target_size(theme, kit, store);
         self.content_h = content_h;
         let spatial = Clock::Spatial.ms(theme) * self.scale;
@@ -400,6 +438,9 @@ impl Host {
     }
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
+        if console(self.module.as_ref(), v.theme) {
+            return self.console_header(v, s);
+        }
         let mut parts = Vec::new();
         let glyph = self.module.icon(v);
         if !glyph.is_empty() {
@@ -418,22 +459,124 @@ impl Host {
         w::row(0.0, parts).fill()
     }
 
+    /// The console header's controls: the panel's own actions and the back
+    /// chip, Escape's keycap and "Back", trailing the title painted beside
+    /// them.
+    fn console_header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
+        w::row(0.0, vec![w::spacer(), self.console_controls(v, s)]).fill()
+    }
+
+    fn console_controls(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
+        let mut parts = Vec::new();
+        let actions = self.module.actions(v);
+        if !actions.is_empty() {
+            parts.push(w::row(s.xs, actions));
+            parts.push(w::space(s.xs));
+        }
+        if self.module.closable() {
+            let back = w::row(s.xs, vec![w::keycap("Esc"), w::label("BACK").size(ui::Type::Caption).weight(ui::Weight::Semibold)]);
+            parts.push(
+                w::cell(back)
+                    .cell_state(|c| {
+                        c.chip = true;
+                        c.small = true;
+                    })
+                    .interactive()
+                    .tip("Close")
+                    .on("close")
+                    .key("close"),
+            );
+        }
+        w::row(0.0, parts)
+    }
+
+    /// The console's own paint: the title and `// subtitle` ahead of the
+    /// header's controls, the status strip under them and the id strip down
+    /// the leading side.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_console(module: &dyn Panel, nodes: &mut Vec<NodeId>, scene: &mut crate::scene::Scene, v: &View, kit: &mut Kit, frame: IRect, head: Rect, room: f64, clip: IRect, alpha: f32) {
+        let theme = v.theme;
+        let s = &theme.space;
+        let c = ConsoleType::new(theme, kit);
+        let a = |c: Rgba| c.with_alpha(c.a * alpha);
+        let title_box = theme.box_style("panel.title", None);
+        let sub_box = theme.box_style("panel.subtitle", None);
+        let strip_box = theme.box_style("panel.strip", None);
+        let status_box = theme.box_style("panel.status", None);
+        let top_h = c.top_height(theme);
+
+        let title = fit(kit, &module.title(v).to_uppercase(), c.title, room);
+        let sub = kit.shape(&format!("// {}", module.subtitle(v).to_uppercase()), c.subtitle);
+        // The subtitle goes before the title is cut.
+        let sub_shown = (title.width + sub.width) as f64 + s.sm <= room;
+        let id = module.id().to_uppercase();
+        let left = kit.shape(&format!("{id} :: {}", module.status(v)), c.status);
+        let date = v.store.clock.now.format("( %Y / %m / %d )").to_string();
+        let right = kit.shape(&date, c.status);
+        let tag = kit.shape(&module.id().to_lowercase(), c.strip);
+
+        let mut p = Painter::new(scene, nodes, Some(clip));
+        let baseline = head.y0 + (top_h + (title.ascent - title.descent) as f64) / 2.0;
+        let tx = head.x0.round() as i32;
+        let ty = (baseline - title.ascent as f64).round() as i32;
+        p.text(&title, (tx, ty), a(title_box.ink), &[]);
+        let sx = tx + title.width + s.sm.round() as i32;
+        let sy = (baseline - sub.ascent as f64).round() as i32;
+        let glow: Vec<_> = sub_box.ink_shadow.iter().map(|g| fs_theme::style::Glow { color: a(g.color), ..g.clone() }).collect();
+        if sub_shown {
+            p.text(&sub, (sx, sy), a(sub_box.ink), &glow);
+        }
+
+        let sr = Rect::new(head.x0, head.y0 + top_h + s.sm, head.x1, head.y1);
+        let radius = theme.box_radius(&status_box, sr.height());
+        ui::boxes::paint(&mut p, ui::irect(sr), &status_box, radius, alpha, 0.0);
+        let ly = (sr.y0 + (sr.height() - left.line_height() as f64) / 2.0).round() as i32;
+        let inset = s.md;
+        let room = (sr.width() - inset * 3.0 - right.width as f64).max(0.0);
+        if (left.width as f64) <= room {
+            p.text(&left, ((sr.x0 + inset).round() as i32, ly), a(status_box.ink), &[]);
+        }
+        p.text(&right, ((sr.x1 - inset).round() as i32 - right.width, ly), a(status_box.ink), &[]);
+
+        let strip_w = theme.metric("panel.strip", "width");
+        if strip_w > 0.0 {
+            let line = strip_box.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
+            let lw = line.width.round().max(1.0) as i32;
+            let x = frame.x + strip_w.round() as i32 - lw;
+            p.rect(IRect::new(x, frame.y, lw, frame.h), a(line.color), 0.0);
+            let (w, h) = tag.box_size();
+            let lh = tag.line_height() as f64;
+            let across = frame.x as f64 + ((strip_w - lh) / 2.0).round();
+            let start = frame.y as f64 + s.panel_padding + tag.width as f64;
+            // Read bottom to top, ending a panel padding under the top edge.
+            let rot = vello_cpu::kurbo::Affine::new([0.0, -1.0, 1.0, 0.0, across, start]);
+            let full = rot * vello_cpu::kurbo::Affine::translate((-crate::text::PAD as f64, -crate::text::PAD as f64));
+            let bounds = crate::scene::Scene::cover(Rect::new(0.0, 0.0, w as f64, h as f64), full, 1.0);
+            let transform = full * vello_cpu::kurbo::Affine::translate((-bounds.x as f64, -bounds.y as f64));
+            p.text_in(&tag, bounds, transform, Some(clip), a(strip_box.ink), &[]);
+        }
+        p.finish();
+    }
+
     fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
         let (frame, card_alpha) = self.card.content;
         let alpha = card_alpha * self.handoff.as_ref().map_or(1.0, |h| h.alpha.value(now).clamp(0.0, 1.0) as f32);
         let clip = self.card.clip;
         let s = theme.space.clone();
         let pad = s.panel_padding;
-        let (head_h, head_gap) = self.header_metrics(theme);
-        let fx = frame.x as f64;
+        let (head_h, head_gap) = self.header_metrics(theme, kit);
+        let strip = self.strip(theme);
+        let console = console(self.module.as_ref(), theme) && self.module.header();
+        let fx = frame.x as f64 + strip;
         let fy = frame.y as f64;
-        let fw = frame.w as f64;
+        let fw = frame.w as f64 - strip;
         let inner_w = (fw - pad * 2.0).max(0.0);
         let ring = theme.ring_width();
 
         self.wake = None;
         let v = View { store, theme, output: self.place.output, cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active), hovered: self.hovered_stop() };
         let head = if self.module.header() { Some(self.header(&v, &s)) } else { None };
+        let room = if console { (inner_w - ui::measure(&self.console_controls(&v, &s), inner_w, theme, kit).0 - s.md).max(0.0) } else { 0.0 };
         let body = self.module.body(&v);
         let module_wake = self.module.wake(&v);
 
@@ -441,17 +584,26 @@ impl Host {
         if let Some(head) = head {
             self.head.halo_owned = false;
             let r = Rect::new(fx + pad, fy + pad, fx + pad + inner_w, fy + pad + head_h);
-            let d = self.head.draw(&head, r, Some(clip), alpha, theme, kit, scene, now);
+            let controls = if console { Rect::new(r.x0, r.y0, r.x1, r.y0 + ConsoleType::new(theme, kit).top_height(theme)) } else { r };
+            let d = self.head.draw(&head, controls, Some(clip), alpha, theme, kit, scene, now);
             self.wake = if d.animating { Some(now) } else { d.wake };
-            let seam = IRect::new(frame.x, (fy + pad + head_h + pad).round() as i32, frame.w, theme.border_width.round().max(1.0) as i32);
-            let sep = theme.box_style("separator", None).fill;
             let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
-            p.rect(seam, sep.with_alpha(sep.a * alpha), 0.0);
+            if !console {
+                let seam = IRect::new(frame.x, (fy + pad + head_h + pad).round() as i32, frame.w, theme.border_width.round().max(1.0) as i32);
+                let sep = theme.box_style("separator", None).fill;
+                p.rect(seam, sep.with_alpha(sep.a * alpha), 0.0);
+            }
             p.finish();
+            if console {
+                Self::paint_console(self.module.as_ref(), &mut self.console_nodes, scene, &v, kit, frame, r, room, clip, alpha);
+            } else {
+                Painter::new(scene, &mut self.console_nodes, None).finish();
+            }
         } else {
             self.head.hide(scene);
-            let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
+            let p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
             p.finish();
+            Painter::new(scene, &mut self.console_nodes, None).finish();
         }
 
         let top = fy + pad + head_h + head_gap;
@@ -885,4 +1037,80 @@ pub enum Key {
     Text(String),
     /// A key into the field that holds the keyboard, with what it types.
     Edit(fs_menu::field::Key, fs_menu::nav::Modifiers, Option<String>),
+}
+
+/// Whether `module` draws the console header: a table whose panels take
+/// the console grammar, on a panel with a header at all.
+fn console(module: &dyn Panel, theme: &Theme) -> bool {
+    module.header() && theme.habit_str("panel") == "console"
+}
+
+/// The card's outline in the panel's accent, on a console table.
+fn console_outline(module: &dyn Panel, theme: &Theme) -> Option<Rgba> {
+    console(module, theme).then(|| theme.accented(module.accent().role()).box_style("panel.strip", None).border.map_or(Rgba::TRANSPARENT, |l| l.color))
+}
+
+/// The console header's type: the title wide and heavy, the subtitle
+/// condensed, the status and the id strip in the values face.
+struct ConsoleType {
+    title: crate::text::TextStyle,
+    subtitle: crate::text::TextStyle,
+    status: crate::text::TextStyle,
+    strip: crate::text::TextStyle,
+    title_h: f64,
+    status_h: f64,
+}
+
+impl ConsoleType {
+    fn new(theme: &Theme, kit: &mut Kit) -> Self {
+        use crate::surfaces::bar::cell::face;
+        use crate::text::TextStyle;
+        let f = &theme.font_size;
+        let axes = |role: &str, size: f64, family| {
+            let wdth = theme.metric(role, "wdth") as f32;
+            let wght = theme.metric(role, "wght") as f32;
+            TextStyle {
+                family,
+                size: size as f32,
+                weight: if wght > 0.0 { wght } else { 700.0 },
+                tracking: 0.0,
+                wdth: if wdth > 0.0 { wdth } else { TextStyle::NORMAL_WIDTH },
+                wght: (wght > 0.0).then_some(wght),
+            }
+        };
+        // The reference's 24px and 19px over a 15px body.
+        let title = axes("panel.title", (f.base_size * 1.6).round(), face(theme.faces.display));
+        let subtitle = axes("panel.subtitle", (f.base_size * 1.25).round(), face(theme.faces.display));
+        let mono = |size: f64| TextStyle { family: face(theme.faces.values), size: size as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+        let status = mono(f.body_small);
+        let strip = TextStyle { tracking: (f.caption * 0.1).round() as f32, ..mono(f.caption) };
+        let title_h = kit.shape("Ag", title).line_height() as f64;
+        let status_h = kit.shape("Ag", status).line_height() as f64;
+        Self { title, subtitle, status, strip, title_h, status_h }
+    }
+
+    fn top_height(&self, theme: &Theme) -> f64 {
+        self.title_h.max(theme.space.control_height)
+    }
+
+    fn head_height(&self, theme: &Theme) -> f64 {
+        self.top_height(theme) + theme.space.sm + self.status_h + theme.space.xxs * 2.0
+    }
+}
+
+/// `text` shaped whole, or cut to `room` with an ellipsis.
+fn fit(kit: &mut Kit, text: &str, style: crate::text::TextStyle, room: f64) -> crate::text::ShapedText {
+    let whole = kit.shape(text, style);
+    if whole.width as f64 <= room {
+        return whole;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    for n in (0..chars.len()).rev() {
+        let cut: String = chars[..n].iter().collect::<String>().trim_end().to_owned() + "\u{2026}";
+        let shaped = kit.shape(&cut, style);
+        if shaped.width as f64 <= room || n == 0 {
+            return shaped;
+        }
+    }
+    whole
 }
