@@ -54,10 +54,14 @@ pub const REARM_COOLDOWN_MS: i64 = 400;
 /// guard. That is weaker (a locker held up for a minute outlives the
 /// cooldown), and it is the most this shell can honestly say about a process
 /// it only spawned.
+///
+/// "screensaver" locks the session too and draws the screensaver inside the
+/// lock, so it ends where the lock does: at the unlock, and only with this
+/// shell's own lock. The screensaver being dismissed back to the password
+/// card is not the end, the corner is still covered.
 pub fn reports_end(action: &Action, external_lock: bool) -> bool {
     match action {
-        Action::Lock => !external_lock,
-        Action::Screensaver => true,
+        Action::Lock | Action::Screensaver => !external_lock,
         Action::None | Action::Launcher(_) => false,
     }
 }
@@ -283,7 +287,7 @@ mod tests {
         assert!(reports_end(&Action::Lock, false));
         assert!(!reports_end(&Action::Lock, true));
         assert!(reports_end(&Action::Screensaver, false));
-        assert!(reports_end(&Action::Screensaver, true));
+        assert!(!reports_end(&Action::Screensaver, true));
         assert!(!reports_end(
             &Action::Launcher("@ipc:theme.toggleMode".into()),
             false
@@ -292,6 +296,18 @@ mod tests {
             &Action::Launcher("hyprctl dispatch workspace 1".into()),
             false
         ));
+    }
+
+    // The screensaver corner locks: dismissing the screensaver back to the
+    // password card leaves the corner covered, so only the unlock ends it.
+    #[test]
+    fn the_screensaver_corner_waits_for_the_unlock() {
+        let fired = on_fire(initial(), 1000, reports_end(&Action::Screensaver, false));
+        assert!(!is_armed(fired, 60_000));
+        let unlocked = on_action_end(fired, 60_000, true);
+        assert!(!is_armed(on_enter(unlocked, 60_050), 60_050));
+        let external = on_fire(initial(), 1000, reports_end(&Action::Screensaver, true));
+        assert_eq!(external.ended_at_ms, 1000);
     }
 
     // A corner surface rebuilt while its own action is up (an output waking,

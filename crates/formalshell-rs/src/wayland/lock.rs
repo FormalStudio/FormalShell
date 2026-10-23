@@ -6,6 +6,10 @@
 //! locked leaves the compositor holding the session locked, which is the
 //! protocol's contract, and a lock this process drops without unlocking is
 //! a protocol error that does the same.
+//!
+//! The screensaver can show inside the lock: its scene is presented on the
+//! lock surfaces in place of the card, input dismisses it back to the card,
+//! and a lock raised over it brings it back on idle rather than blanking.
 
 use std::time::{Duration, Instant};
 
@@ -23,6 +27,7 @@ use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{self, ExtIdleNotificationV1};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::session_lock::{
     SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface, SessionLockSurfaceConfigure,
 };
@@ -30,6 +35,7 @@ use fs_menu::field::Field;
 use zeroize::Zeroizing;
 
 use super::App;
+use super::screensaver::SaverInput;
 use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, Kind as Clock, SPATIAL};
 use crate::scene::Bitmap;
 use crate::surface::Ignore;
@@ -63,6 +69,10 @@ struct Out {
     name: String,
     surface: Surface<SessionLockSurface>,
     view: View,
+    /// The surface's last frame was the screensaver's.
+    saver: bool,
+    /// Where the pointer last was on it.
+    pointer: Option<(f64, f64)>,
 }
 
 #[derive(Default)]
@@ -103,6 +113,8 @@ pub struct Lock {
     idle: bool,
     /// Set by a resume from suspend, cleared by any input on the lock.
     resume_guard: bool,
+    /// The screensaver has shown inside this lock: idle brings it back.
+    with_saver: bool,
     slept_at: Option<(f64, Instant)>,
     pub sleep: Sleep,
     /// Each output's last report, kept past the unlock until the next lock.
@@ -136,6 +148,7 @@ impl Lock {
             idle_watch: None,
             idle: false,
             resume_guard: false,
+            with_saver: false,
             slept_at: None,
             sleep: Sleep::default(),
             reports: Map::new(),
@@ -150,7 +163,12 @@ pub struct LockIdle;
 impl Dispatch2<ExtIdleNotificationV1, App> for LockIdle {
     fn event(&self, app: &mut App, _: &ExtIdleNotificationV1, event: ext_idle_notification_v1::Event, _: &Connection, _: &QueueHandle<App>) {
         match event {
-            ext_idle_notification_v1::Event::Idled => app.lock.idle = true,
+            ext_idle_notification_v1::Event::Idled => {
+                app.lock.idle = true;
+                if app.lock.with_saver && app.lock.session.is_some() {
+                    app.saver_start();
+                }
+            }
             ext_idle_notification_v1::Event::Resumed => (app.lock.idle, app.lock.resume_guard) = (false, false),
             _ => {}
         }
@@ -233,8 +251,9 @@ impl App {
             self.load_lock_art();
             self.arm_lock_clock();
             self.lock.entered = false;
-            (self.lock.idle, self.lock.resume_guard) = (false, false);
+            (self.lock.idle, self.lock.resume_guard, self.lock.with_saver) = (false, false, false);
             self.watch_lock_idle();
+            self.saver_rehost();
         }
         self.lock.locked = true;
         self.sync_herdr();
@@ -250,15 +269,65 @@ impl App {
     }
 
     pub fn lock_blanked(&self) -> bool {
-        self.lock.session.is_some() && (self.lock.idle || self.lock.resume_guard)
+        self.lock.session.is_some() && !self.saver.active && ((self.lock.idle && !self.lock.with_saver) || self.lock.resume_guard)
     }
 
-    /// Pointer input on a lock surface is activity: it lifts a resume blank.
-    pub(super) fn lock_pointer(&mut self, surfaces: impl Iterator<Item = WlSurface>) {
-        for s in surfaces {
-            if self.lock.outs.iter().any(|o| *o.surface.layer.wl_surface() == s) && self.lock.resume_guard {
+    /// This shell's lock surfaces are up, so nothing on a layer is seen.
+    pub(super) fn lock_drawn(&self) -> bool {
+        self.lock.session.is_some()
+    }
+
+    pub(super) fn lock_size(&self, output: &WlOutput) -> Option<(i32, i32)> {
+        let o = self.lock.outs.iter().find(|o| o.output == *output && o.surface.configured)?;
+        Some((o.view.scene.size.w, o.view.scene.size.h))
+    }
+
+    pub(super) fn lock_saver_mapped(&mut self) {
+        if self.lock.session.is_some() {
+            self.lock.with_saver = true;
+        }
+    }
+
+    pub(super) fn lock_saver_drawn(&mut self) {
+        self.lock.dirty = true;
+    }
+
+    /// The screensaver started or stopped under the lock. The card comes
+    /// back with its entrance.
+    pub(super) fn lock_saver_changed(&mut self) {
+        if self.lock.session.is_none() {
+            return;
+        }
+        if !self.saver.active {
+            self.lock.entered = false;
+        }
+        self.lock.dirty = true;
+    }
+
+    /// Pointer input on a lock surface is activity: it lifts a resume blank,
+    /// and a move or a press dismisses the screensaver. Enter and leave are
+    /// the compositor mapping a surface under a still pointer, not activity,
+    /// and neither is a motion to where the pointer already was.
+    pub(super) fn lock_pointer(&mut self, events: &[PointerEvent]) {
+        for e in events {
+            let Some(o) = self.lock.outs.iter_mut().find(|o| *o.surface.layer.wl_surface() == e.surface) else { continue };
+            let last = std::mem::replace(&mut o.pointer, Some(e.position));
+            let moved = match e.kind {
+                PointerEventKind::Enter { .. } => continue,
+                PointerEventKind::Leave { .. } => {
+                    o.pointer = None;
+                    continue;
+                }
+                PointerEventKind::Motion { .. } => last != Some(e.position),
+                PointerEventKind::Press { .. } => true,
+                _ => false,
+            };
+            if self.lock.resume_guard {
                 self.lock.resume_guard = false;
                 self.lock.dirty = true;
+            }
+            if moved && self.saver.active {
+                self.saver_input(None, SaverInput::Press);
             }
         }
     }
@@ -275,7 +344,7 @@ impl App {
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
             let surface = Surface::new("lock", ls, &self.shm, self.started);
-            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1) });
+            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None });
         }
     }
 
@@ -424,7 +493,9 @@ impl App {
         if let Some(w) = self.lock.idle_watch.take() {
             w.destroy();
         }
+        self.saver_unlocked();
         self.hot_corner_action_ended("lock");
+        self.hot_corner_action_ended("screensaver");
         self.lock.locked = false;
         self.sync_herdr();
         self.lock.secure = false;
@@ -525,6 +596,10 @@ impl App {
         if self.lock.resume_guard {
             self.lock.resume_guard = false;
         }
+        if self.saver.active {
+            self.saver_input(None, SaverInput::Key);
+            return true;
+        }
         if self.transport_key(event) {
             self.lock.dirty = true;
             return true;
@@ -608,11 +683,27 @@ impl App {
             ..shared
         };
         let qh = self.qh.clone();
+        let saver = &mut self.saver;
         for o in &mut self.lock.outs {
             if !o.surface.configured {
                 continue;
             }
+            let size = o.view.scene.size;
+            // One renderer behind two scenes: a switch repaints all of it.
+            if let Some(scene) = saver.lock_scene(&o.output, (size.w, size.h)) {
+                if !std::mem::replace(&mut o.saver, true) {
+                    scene.touch(size);
+                }
+                // ttfx frames arrive faster than the output refreshes: each
+                // commit waits for the last one's frame callback.
+                let damaged = scene.has_damage();
+                o.surface.present(scene, damaged, &qh);
+                continue;
+            }
             let moving = o.view.draw(&shared, theme, &mut self.bar.kit, now) || entering;
+            if std::mem::replace(&mut o.saver, false) {
+                o.view.scene.touch(size);
+            }
             if !o.name.is_empty() && !blanked {
                 self.lock.reports.insert(o.name.clone(), o.view.report.clone());
             }
@@ -763,6 +854,7 @@ impl SessionLockHandler for App {
         self.lock.locked = false;
         self.sync_herdr();
         self.lock.secure = false;
+        self.saver_rehost();
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: SessionLockSurface, configure: SessionLockSurfaceConfigure, _: u32) {
@@ -770,6 +862,8 @@ impl SessionLockHandler for App {
         let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface.wl_surface()) else { return };
         o.view.resize(w, h);
         o.surface.configure(w, h);
+        let output = o.output.clone();
+        self.saver_lock_configure(&output, w, h);
         self.lock.dirty = true;
     }
 }

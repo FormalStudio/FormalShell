@@ -2994,14 +2994,22 @@ programs.formalshell.settings.hotCorners = {
 ```
 
 The four corner keys are `topLeft`, `topRight`, `bottomLeft` and
-`bottomRight`, and the defaults are the ones shown: `bottomLeft` shows the
-screensaver, `bottomRight` locks. Both top corners default to `none`, because
+`bottomRight`, and the defaults are the ones shown: `bottomLeft` locks the
+session and shows the screensaver inside the lock, `bottomRight` locks. Both top corners default to `none`, because
 the bar owns that edge and a trigger square up there would take pixels out of
 the bar's own input region.
 
 The actions that fire are `screensaver` and `lock`, and `none` maps no
 surface. Any other value is accepted and logged when the corner fires, and
 does nothing.
+
+`screensaver` is for walking away from a machine that has to stay awake: the
+session is locked, the lock draws the screensaver in place of the password
+card, and any key or pointer move drops it back to the card. The session
+stays locked until the password, and `lock.blankAfterSeconds` of no input
+with the card up brings the screensaver back instead of blanking. Nothing in
+it suspends the machine or turns a screen off. With `lock.command` set, the
+external locker runs instead and no screensaver is drawn.
 
 `size` is the trigger square in pixels (default 4, clamped to 64) and
 `delayMs` the dwell before the action fires (default 400, clamped to 10000),
