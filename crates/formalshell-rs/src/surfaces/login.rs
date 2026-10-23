@@ -136,7 +136,7 @@ pub fn paint(p: &mut Painter, rect: IRect, theme: &Theme, alpha: f32) {
 }
 
 /// The greeter's controls: the session chip, the user chip with more than
-/// one user, and power. A menu opens under them.
+/// one user, and power. A chip's menu floats under it.
 pub struct Controls<'a> {
     pub sessions: &'a [String],
     pub session: usize,
@@ -149,33 +149,35 @@ impl Controls<'_> {
     pub fn el(&self, theme: &Theme) -> El {
         let s = &theme.space;
         // Power on its own row: beside two chips it runs out of the column.
-        let mut chips = Vec::new();
-        if let Some(name) = self.sessions.get(self.session).filter(|_| self.sessions.len() > 1) {
-            chips.push(w::trigger(s, "monitor", name, self.menu == Menu::Sessions).on("sessions"));
-        }
-        if let Some(name) = self.users.get(self.user).filter(|_| self.users.len() > 1) {
-            chips.push(w::trigger(s, "users", name, self.menu == Menu::Users).on("users"));
-        }
-        let power = [("moon", "suspend"), ("rotate-cw", "reboot"), ("power", "poweroff")].map(|(glyph, on)| w::icon_button(glyph).on(on)).to_vec();
-        let mut col = Vec::new();
-        if !chips.is_empty() {
-            col.push(w::row(s.sm, chips));
-        }
         let (items, current, key) = match self.menu {
             Menu::Sessions => (self.sessions, self.session, "session"),
             Menu::Users => (self.users, self.user, "user"),
             Menu::Closed => (&[][..], 0, ""),
         };
-        let rows: Vec<El> = items
-            .iter()
-            .enumerate()
-            .map(|(i, label)| {
-                let check = w::icon("check").size(Type::BodySmall).ink(if i == current { Ink::Fg } else { Ink::Color(Rgba::TRANSPARENT) });
-                w::cell(w::row(s.icon_gap, vec![check, w::text(label.clone()).size(Type::BodySmall)])).selected(i == current).interactive().on(format!("{key}:{i}"))
-            })
-            .collect();
-        if !rows.is_empty() {
-            col.push(w::column(0.0, rows).fill());
+        let list = || {
+            let rows = items
+                .iter()
+                .enumerate()
+                .map(|(i, label)| {
+                    let check = w::icon("check").size(Type::BodySmall).ink(if i == current { Ink::Fg } else { Ink::Color(Rgba::TRANSPARENT) });
+                    w::cell(w::row(s.icon_gap, vec![check, w::text(label.clone()).size(Type::BodySmall).elide()])).selected(i == current).interactive().on(format!("{key}:{i}"))
+                })
+                .collect();
+            w::column(0.0, rows)
+        };
+        let mut chips = Vec::new();
+        if let Some(name) = self.sessions.get(self.session).filter(|_| self.sessions.len() > 1) {
+            let chip = w::trigger(s, "monitor", name, self.menu == Menu::Sessions).on("sessions");
+            chips.push(if self.menu == Menu::Sessions { chip.float(list()) } else { chip });
+        }
+        if let Some(name) = self.users.get(self.user).filter(|_| self.users.len() > 1) {
+            let chip = w::trigger(s, "users", name, self.menu == Menu::Users).on("users");
+            chips.push(if self.menu == Menu::Users { chip.float(list()) } else { chip });
+        }
+        let power = [("moon", "suspend"), ("rotate-cw", "reboot"), ("power", "poweroff")].map(|(glyph, on)| w::icon_button(glyph).on(on)).to_vec();
+        let mut col = Vec::new();
+        if !chips.is_empty() {
+            col.push(w::row(s.sm, chips));
         }
         col.push(w::row(s.xs, power));
         w::column(s.sm, col).fill()

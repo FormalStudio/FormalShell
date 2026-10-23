@@ -50,7 +50,7 @@ sources=(
   "clipssh https://github.com/samuellawrentz/clipssh/archive/c7f4e8ddcf102302c6375ba51534c7505ddc2616.tar.gz f4c388645830e3afd9adeae2b71173441ce3b3b97a852915457c043e9cc99afd 1"
   "localsend-cli https://github.com/0w0mewo/localsend-cli/archive/7865fb1cf26e4f782c6400167a7d218d69313cff.tar.gz 0661e232dd939ad3c36c29025aac75db212fbf909f2701ded69bbc590bc96ab3 1"
   "omarchy-iphone https://github.com/kbbahaPro/omarchy-iphone/archive/586f37dce6aceef72376afb8be8bcc8a04de41fe.tar.gz b26cf068e47705ab6046b14c56e08c716afbad07f4b2d2a685785ee71c137ecb 1"
-  "nothingctl https://github.com/FormalSnake/nothingctl/archive/refs/tags/v0.1.1.tar.gz 3e52ae1254cfc09c0b88554b887c8e3653f5df606ab9f9490abb67f88cf57cab 1"
+  "nothingctl https://github.com/FormalSnake/nothingctl/archive/refs/tags/v0.2.0.tar.gz fc9e4219d3996ed7546ddc6b80f4b3595dda5416d695095ada7aa88a5f62a877 1"
   "openscq30 https://github.com/Oppzippy/OpenSCQ30/archive/refs/tags/v2.12.0.tar.gz 5c2509ea0dd71ab0b6b2d81948ec2850fc4d72a1239e4cda79dac2dbad7f3860 1"
   "earbuds https://github.com/JojiiOfficial/LiveBudsCli/archive/refs/tags/v0.2.0.tar.gz b0174d4207312bdf54f5cb586fff22984ecd5be54bd0205c4debf7927878ea70 1"
   "ear-web https://github.com/radiance-project/ear-web/archive/d076e1371572fbf0a14b441f9b3cafbf9a237e04.tar.gz 9c08f9ecbdc0924eb9e01416c17f01a02f363686b84b279cc6759f30b021d910 1"

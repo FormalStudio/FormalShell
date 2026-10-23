@@ -333,6 +333,32 @@ fn segment_width(cx: &mut Cx, options: &[String]) -> f64 {
     widest.ceil() + pad * 2.0
 }
 
+/// Each segment's offset and width across `width`: equal while the widest
+/// label fits an equal share, otherwise each as wide as its own label with
+/// the slack shared out, so a long label does not push the row past its
+/// parent.
+fn segment_spans(cx: &mut Cx, options: &[String], width: f64) -> Vec<(f64, f64)> {
+    let n = options.len().max(1) as f64;
+    let equal = width / n;
+    if equal >= segment_width(cx, options) {
+        return (0..options.len()).map(|i| (equal * i as f64, equal)).collect();
+    }
+    let pad = cx.theme.space.control_padding_x;
+    let own: Vec<f64> = options
+        .iter()
+        .map(|o| shape(cx, o, &Font { size: Type::Body, weight: Weight::Medium, mono: false }).width as f64 + pad * 2.0)
+        .collect();
+    let slack = ((width - own.iter().sum::<f64>()) / n).max(0.0);
+    let mut x = 0.0;
+    own.iter()
+        .map(|w| {
+            let span = (x, w + slack);
+            x += w + slack;
+            span
+        })
+        .collect()
+}
+
 /// keys.js `cap`: the text on the cap, or the icon an arrow takes.
 pub fn keycap(key: &str) -> (String, &'static str) {
     let raw = key.trim();
@@ -404,6 +430,13 @@ fn child_path(path: &str, el: &El, i: usize) -> String {
 
 /// Paints `el` into `rect` (its full measured box, padding included).
 pub fn paint(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
+    paint_node(cx, el, rect, path);
+    if let Some(list) = &el.float {
+        cx.float(rect, (**list).clone(), format!("{path}/float"));
+    }
+}
+
+fn paint_node(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     let pulse = el.pulse && cx.theme.motion_enabled;
     if !pulse && el.swap.is_none() && el.badge.is_none() && el.fade.is_none() {
         return paint_body(cx, el, rect, path);
@@ -1001,8 +1034,10 @@ fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, pa
     let ri = irect(r);
     let tr_radius = t.box_radius(&trough, ri.h as f64);
     let radius = t.radii.sm.max(tr_radius - s.xxs);
-    let seg = segment_width(cx, options);
-    let x = cx.tween(&format!("{path}.chip"), s.xxs + index as f64 * seg, Clock::SpatialFast);
+    let spans = segment_spans(cx, options, r.width() - s.xxs * 2.0);
+    let (at, cw) = spans.get(index).copied().unwrap_or((0.0, 0.0));
+    let x = cx.tween(&format!("{path}.chip"), s.xxs + at, Clock::SpatialFast);
+    let chip_w = cx.tween(&format!("{path}.chipw"), cw, Clock::SpatialFast);
     let fg = t.colors.get("foreground");
     let muted = t.colors.get("mutedForeground");
     let mut labels = Vec::new();
@@ -1018,13 +1053,13 @@ fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, pa
     let alpha = cx.alpha;
     let mut p = cx.painter(path);
     boxes::paint(&mut p, ri, &trough, tr_radius, alpha, 0.0);
-    let cr = IRect::new((r.x0 + x).round() as i32, (r.y0 + s.xxs).round() as i32, seg.round() as i32, (r.height() - s.xxs * 2.0).round() as i32);
+    let cr = IRect::new((r.x0 + x).round() as i32, (r.y0 + s.xxs).round() as i32, chip_w.round() as i32, (r.height() - s.xxs * 2.0).round() as i32);
     if !options.is_empty() {
         boxes::paint(&mut p, cr, &chip, radius, alpha, 0.0);
     }
     for (i, (l, ink, wash, wc)) in labels.iter().enumerate() {
-        let sx = r.x0 + s.xxs + seg * i as f64;
-        let sr = IRect::new(sx.round() as i32, cr.y, seg.round() as i32, cr.h);
+        let (at, sw) = spans[i];
+        let sr = IRect::new((r.x0 + s.xxs + at).round() as i32, cr.y, sw.round() as i32, cr.h);
         if *wash > 0.0 {
             p.rect(sr, wc.with_alpha(wc.a * wash * alpha), radius as f32);
         }
@@ -1035,9 +1070,8 @@ fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, pa
     let last = p.last();
     p.finish();
     cx.done(last);
-    for i in 0..options.len() {
-        let sx = r.x0 + s.xxs + seg * i as f64;
-        let sr = IRect::new(sx.round() as i32, cr.y, seg.round() as i32, cr.h);
+    for (i, (at, sw)) in spans.iter().enumerate() {
+        let sr = IRect::new((r.x0 + s.xxs + at).round() as i32, cr.y, sw.round() as i32, cr.h);
         cx.hit(Hit { rect: sr, path: format!("{path}/{i}"), on: el.on.clone(), tip: None, stop: stop.clone(), what: HitWhat::Pick(i) });
     }
 }

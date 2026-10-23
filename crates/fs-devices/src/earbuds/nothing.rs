@@ -440,7 +440,11 @@ fn mode_value(mode: Option<&str>) -> Value {
 pub fn normalise(state: &State, failure: &str) -> Device {
     let mut controls = Vec::new();
     if let Some(anc) = state.anc.as_ref().filter(|m| !m.available.is_empty()) {
-        controls.push(choice("anc", "Listening mode", "Listening mode", mode_value(chosen(anc)), options(&anc.available, anc_label, anc_icon)));
+        let modes = options(&anc.available, anc_label, anc_icon)
+            .into_iter()
+            .map(|o| if matches!(o.value.as_str(), Some("high" | "mid" | "low" | "adaptive")) { o.tier("Noise cancelling") } else { o })
+            .collect();
+        controls.push(choice("anc", "Listening mode", "Listening mode", mode_value(chosen(anc)), modes));
     }
     if !state.eq.available.is_empty() {
         let preset = state.eq.preset.as_deref().filter(|p| state.eq.available.iter().any(|a| a == p));

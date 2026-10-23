@@ -233,14 +233,17 @@ impl Ui {
             last,
             drawn: Drawn::default(),
             motion_scale,
+            floats: Vec::new(),
         };
         cx.ink = (theme.colors.get("foreground"), theme.colors.get("mutedForeground"));
         let (w, h) = draw::measure(&mut cx, root, rect.width());
-        draw::paint(&mut cx, root, Rect::new(rect.x0, rect.y0, rect.x0 + rect.width(), rect.y0 + h), "");
+        let bounds = Rect::new(rect.x0, rect.y0, rect.x0 + rect.width(), rect.y0 + h);
+        draw::paint(&mut cx, root, bounds, "");
+        let reach = cx.paint_floats(bounds);
         let last = cx.last;
         let mut drawn = std::mem::take(&mut cx.drawn);
         drawn.width = w;
-        drawn.height = h;
+        drawn.height = h.max(reach - rect.y0);
         drawn.last = last;
         // Whatever was not drawn this time is gone from the screen; a group
         // unseen for a while gives its nodes back.
@@ -339,6 +342,7 @@ pub fn measure(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> (f64, f64
         last: None,
         drawn: Drawn::default(),
         motion_scale: 1.0,
+        floats: Vec::new(),
     };
     draw::measure(&mut cx, root, width)
 }
@@ -357,6 +361,9 @@ pub struct Cx<'a> {
     last: Option<NodeId>,
     drawn: Drawn,
     pub motion_scale: f64,
+    /// Lists waiting to float over the finished tree: each one's anchor, its
+    /// content, its path, and where in `stops` its own stops go.
+    floats: Vec<(Rect, El, String, usize)>,
 }
 
 impl Cx<'_> {
@@ -454,6 +461,51 @@ impl Cx<'_> {
     }
 
     /// The painter for one element's own nodes.
+    pub(crate) fn float(&mut self, anchor: Rect, list: El, path: String) {
+        let at = self.ui.stops.len();
+        self.floats.push((anchor, list, path, at));
+    }
+
+    /// Paints every waiting list on a popover card over the tree: under its
+    /// anchor, or over it when the tree ends too soon below and there is
+    /// room above, kept inside `bounds` across. Its stops go in right after the anchor's. The bottom the
+    /// lowest list reaches, for a surface that has to grow to show it.
+    fn paint_floats(&mut self, bounds: Rect) -> f64 {
+        let mut reach = bounds.y1;
+        let floats = std::mem::take(&mut self.floats);
+        let mut shift = 0;
+        for (anchor, list, path, at) in floats {
+            let s = self.theme.space.clone();
+            let pad = s.xxs;
+            let card = self.theme.box_style("popover", None);
+            // Rows fill whatever they are given, so the list has no width of
+            // its own: the anchor's, never under a narrow popup's.
+            let w = anchor.width().max(s.popup_width_narrow).min(bounds.width());
+            let h = draw::measure(self, &list, w - pad * 2.0).1 + pad * 2.0;
+            let x = anchor.x0.min(bounds.x1 - w).max(bounds.x0);
+            let below = anchor.y1 + s.xxs;
+            let above = anchor.y0 - s.xxs - h;
+            let y = if below + h > bounds.y1 && above >= bounds.y0 { above } else { below };
+            reach = reach.max(y + h);
+            let r = IRect::new(x.round() as i32, y.round() as i32, w.round() as i32, h.round() as i32);
+            let radius = self.theme.box_radius(&card, h.min(s.control_height * 2.0));
+            let alpha = self.alpha;
+            let mut p = self.painter(&path);
+            boxes::paint(&mut p, r, &card, radius, alpha, 0.0);
+            let last = p.last();
+            p.finish();
+            self.done(last);
+            self.hit(Hit { rect: r, path: path.clone(), on: None, tip: None, stop: None, what: HitWhat::Hover });
+            let before = self.ui.stops.len();
+            draw::paint(self, &list, Rect::new(x + pad, y + pad, x + w - pad, y + h - pad), &format!("{path}/list"));
+            let added: Vec<Stop> = self.ui.stops.drain(before..).collect();
+            let at = (at + shift).min(before);
+            shift += added.len();
+            self.ui.stops.splice(at..at, added);
+        }
+        reach
+    }
+
     pub fn painter(&mut self, path: &str) -> crate::surfaces::bar::cell::Painter<'_> {
         let frame = self.ui.frame;
         let g = self.ui.groups.entry(path.to_owned()).or_default();

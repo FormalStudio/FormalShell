@@ -172,7 +172,7 @@ impl Media {
                     w::icon(if glyph.is_empty() { "check" } else { glyph })
                         .size(Type::BodySmall)
                         .ink(if glyph.is_empty() { Ink::Color(fs_theme::color::Rgba::TRANSPARENT) } else { Ink::Fg }),
-                    w::text(label).size(Type::BodySmall),
+                    w::text(label).size(Type::BodySmall).elide(),
                 ];
                 if playing {
                     parts.push(w::icon("play").size(Type::Caption).ink(Ink::Muted));
@@ -284,17 +284,21 @@ impl Panel for Media {
 
         let label = m.players().into_iter().find(|r| r.id == a.id).map(|r| r.label).unwrap_or_default();
         let label = if m.selected.is_empty() { format!("Auto · {label}") } else { label };
-        let source = w::trigger(s, source_icon(a.kind), &label, self.menu == "source").stop("source").on("source");
+        let mut source = w::trigger(s, source_icon(a.kind), &label, self.menu == "source").stop("source").on("source");
+        if self.menu == "source" {
+            source = source.float(w::column(0.0, self.menu_rows(v)));
+        }
         let mut triggers = vec![w::row(0.0, vec![source]).fill()];
         if m.can_route() {
             let on = m.output_id();
             let named = m.outputs().iter().find(|(id, _)| *id == on).map_or("Output", |(_, l)| l.as_str());
-            triggers.push(w::trigger(s, "speaker", named, self.menu == "output").stop("output").on("output"));
+            let mut output = w::trigger(s, "speaker", named, self.menu == "output").stop("output").on("output");
+            if self.menu == "output" {
+                output = output.float(w::column(0.0, self.menu_rows(v)));
+            }
+            triggers.push(output);
         }
         col.push(w::row(s.sm, triggers).fill());
-        if !self.menu.is_empty() {
-            col.push(w::column(0.0, self.menu_rows(v)));
-        }
 
         let mut info = Vec::new();
         let mut motion = None;

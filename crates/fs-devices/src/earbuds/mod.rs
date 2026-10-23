@@ -191,11 +191,20 @@ pub struct ControlOption {
     pub value: Value,
     pub label: String,
     pub icon: String,
+    /// The name an option shares with its neighbours in one tier (Nothing's
+    /// four noise cancelling strengths), "" for an option standing alone.
+    /// The panel shows a tier as one choice and its members under it.
+    pub tier: String,
 }
 
 impl ControlOption {
     pub fn new(value: impl Into<Value>, label: &str, icon: &str) -> ControlOption {
-        ControlOption { value: value.into(), label: label.into(), icon: icon.into() }
+        ControlOption { value: value.into(), label: label.into(), icon: icon.into(), tier: String::new() }
+    }
+
+    pub fn tier(mut self, name: &str) -> ControlOption {
+        self.tier = name.into();
+        self
     }
 }
 

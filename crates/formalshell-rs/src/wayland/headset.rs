@@ -155,7 +155,8 @@ impl App {
         }
         let theme = &self.store.theme.theme;
         let face = headset::face(&self.store, address);
-        let width = theme.space.popup_width_narrow;
+        // The product picture takes the room a glyph left the name.
+        let width = if face.art.is_empty() { theme.space.popup_width_narrow } else { theme.space.popup_width_default };
         let height = headset::height(&face, width, theme, &mut self.bar.kit);
         let anchor = self.bar.length() as f64 / 2.0;
         let mut card = self.new_card(anchor, (width, height));

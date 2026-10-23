@@ -1,6 +1,6 @@
 //! The headset connect card's content (new in the Rust shell, spec
-//! `2026-10-06-rust-rewrite.md` under R7): the device's icon, its name over
-//! "Connected", and one battery ring per part the backend reports, drawn in
+//! `2026-10-06-rust-rewrite.md` under R7): the device's product picture
+//! (its icon for a device with none), its name over "Connected", and one battery ring per part the backend reports, drawn in
 //! the shell's own chrome. The card is a plain `card` role box the drawer
 //! buds off the bar's line; nothing here invents a size, a colour or a curve.
 //!
@@ -32,6 +32,8 @@ pub struct Part {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Face {
     pub icon: &'static str,
+    /// The earbuds backend's picture set (`Device::art`), "" for none.
+    pub art: String,
     pub name: String,
     pub parts: Vec<Part>,
     /// The panel a click opens.
@@ -84,13 +86,18 @@ pub fn face(store: &Store, address: &str) -> Face {
     {
         parts.push(Part { label: "", percent: (level * 100.0).round() });
     }
-    Face { icon, name, parts, panel: if claimed.is_some() { "earbuds" } else { "bluetooth" } }
+    let art = claimed.map(|d| d.art.clone()).unwrap_or_default();
+    Face { icon, art, name, parts, panel: if claimed.is_some() { "earbuds" } else { "bluetooth" } }
 }
 
 /// The left half: the icon and the name over its status.
 fn words(f: &Face, theme: &Theme) -> El {
     let s = &theme.space;
-    let icon = w::icon(f.icon).size(Type::Heading).ink(Ink::Fg);
+    let size = s.control_height * 2.0;
+    let icon = match crate::services::devices::earbuds::picture(&f.art, "duo", size) {
+        Some(picture) => w::picture(Some(picture), size),
+        None => w::icon(f.icon).size(Type::Heading).ink(Ink::Fg),
+    };
     let text = w::column(s.xxs, vec![w::label(f.name.clone()).elide(), w::text("Connected").size(Type::BodySmall).ink(Ink::Dim)]).fill();
     w::row(s.icon_gap, vec![icon, text]).fill()
 }

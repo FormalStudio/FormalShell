@@ -832,3 +832,15 @@ impl Nothing {
         self.retry.insert(address.to_owned(), (Instant::now() + delay, delay));
     }
 }
+
+/// A picture set's part (`duo`, `case`, `left`, `right`) in a `size`
+/// square, from `FS_EARBUDS_ART` (nix/earbuds-art.py); none without the
+/// directory, a set, or that part.
+pub fn picture(set: &str, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
+    if set.is_empty() {
+        return None;
+    }
+    let dir = std::path::PathBuf::from(std::env::var_os("FS_EARBUDS_ART")?);
+    crate::services::icons::load_at(&dir.join(format!("{set}_{part}.webp")), size.round().max(1.0) as u32)
+}
+
