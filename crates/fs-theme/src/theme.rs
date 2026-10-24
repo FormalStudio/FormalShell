@@ -153,6 +153,9 @@ pub struct Theme {
     /// The table's boot sequence plays (`theme.boot`, on wherever the
     /// `boot` habit names one).
     pub boot: bool,
+    /// `theme.sounds` over a table that carries `sounds`.
+    pub sounds: bool,
+    pub sound_volume: fs_audio::sfx::Volume,
     pub font_base_size: f64,
     pub font_scale: f64,
     pub font_size: FontTokens,
@@ -246,6 +249,8 @@ impl Theme {
             lock_grid: preset.lock_grid,
             wallpaper_animate: preset.wallpaper_animate,
             boot: preset.boot,
+            sounds: preset.sounds,
+            sound_volume: preset.sound_volume,
             font_base_size,
             font_scale,
             font_size: tokens::font_tokens(font_base_size),
@@ -263,6 +268,15 @@ impl Theme {
 
     pub fn frame_enabled(&self) -> bool {
         self.frame_thickness > 0.0
+    }
+
+    /// The sound the table plays for an event, none with `theme.sounds` off
+    /// or an event the table leaves silent.
+    pub fn sound(&self, event: fs_audio::sfx::Sound) -> Option<fs_audio::sfx::Sound> {
+        if !self.sounds {
+            return None;
+        }
+        self.style.get("sounds")?.get(event.name())?.as_str().and_then(fs_audio::sfx::Sound::from_name)
     }
 
     /// One habit's value, which a surface reads instead of the preset name.

@@ -6,7 +6,7 @@
 //! against the volumes it last saw.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Cursor;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
@@ -22,8 +22,10 @@ use pw::link::{Link as PwLink, LinkListener, LinkState as PwLinkState};
 use pw::main_loop::MainLoopRc;
 use pw::metadata::{Metadata, MetadataListener};
 use pw::node::{Node as PwNode, NodeChangeMask, NodeListener};
+use pw::properties::properties;
 use pw::registry::{GlobalObject, RegistryRc};
 use pw::spa;
+use pw::stream::{StreamFlags, StreamListener, StreamRc};
 use pw::types::ObjectType;
 use spa::param::{ParamInfo, ParamInfoFlags, ParamType};
 use spa::pod::deserialize::PodDeserializer;
@@ -36,13 +38,15 @@ use spa::utils::result::AsyncSeq;
 use crate::{
     AudioState, Command, DEFAULT_TYPE, Defaults, Event, Graph, KEY_CONFIGURED_SINK,
     KEY_CONFIGURED_SOURCE, Link, LinkState, Node, default_value, linear_from_visual,
-    scaled_volumes, visual_from_linear,
+    scaled_volumes, sfx, visual_from_linear,
 };
 
 const RETRY: Duration = Duration::from_secs(2);
 
 enum Msg {
     Command(Command),
+    /// The blip stream has played nothing but silence for [`sfx::LINGER`].
+    SfxIdle,
     Quit,
 }
 
@@ -81,7 +85,8 @@ pub fn spawn() -> std::io::Result<(Audio, async_channel::Receiver<Event>)> {
         .name("fs-pipewire".into())
         .spawn({
             let stop = stop.clone();
-            move || run(rx, &events_tx, &stop)
+            let wake = tx.clone();
+            move || run(rx, &events_tx, &stop, &wake)
         })?;
     Ok((
         Audio {
@@ -104,9 +109,10 @@ fn run(
     mut rx: pw::channel::Receiver<Msg>,
     events: &async_channel::Sender<Event>,
     stop: &AtomicBool,
+    wake: &pw::channel::Sender<Msg>,
 ) {
     while !stop.load(Ordering::Relaxed) {
-        let (back, end) = session(rx, events);
+        let (back, end) = session(rx, events, wake);
         rx = back;
         match end {
             End::Quit => return,
@@ -125,6 +131,7 @@ fn run(
 fn session(
     rx: pw::channel::Receiver<Msg>,
     events: &async_channel::Sender<Event>,
+    wake: &pw::channel::Sender<Msg>,
 ) -> (pw::channel::Receiver<Msg>, End) {
     let Ok(main_loop) = MainLoopRc::new(None) else {
         return (rx, End::Failed);
@@ -140,7 +147,7 @@ fn session(
     };
 
     let end = Rc::new(Cell::new(End::Quit));
-    let state = Rc::new(RefCell::new(State::new(events.clone(), core.clone())));
+    let state = Rc::new(RefCell::new(State::new(events.clone(), core.clone(), wake.clone())));
 
     let _core_listener = core
         .add_listener_local()
@@ -210,6 +217,11 @@ fn session(
                     state.borrow_mut().command(command);
                 }
             }
+            Msg::SfxIdle => {
+                if let Some(state) = state.upgrade() {
+                    state.borrow_mut().sfx_idle();
+                }
+            }
         }
     });
 
@@ -270,6 +282,27 @@ struct State {
     devices: HashMap<u32, DeviceEntry>,
     links: HashMap<u32, (PwLink, LinkListener)>,
     metadata: Option<(u32, Metadata, MetadataListener)>,
+    /// The blip stream's own node ids, kept out of the graph with their links.
+    own: HashSet<u32>,
+    mixer: Rc<RefCell<sfx::Mixer>>,
+    sfx: Option<Sfx>,
+    wake: pw::channel::Sender<Msg>,
+}
+
+/// The playback stream the blips play on, up from the first blip of a
+/// burst to [`sfx::LINGER`] past its last. Pausing it instead loses the
+/// first buffer after a resume, which is the whole of a `type` blip.
+struct Sfx {
+    _listener: StreamListener<()>,
+    stream: StreamRc,
+    /// [`Msg::SfxIdle`] is on its way.
+    asked: Rc<Cell<bool>>,
+}
+
+impl Drop for Sfx {
+    fn drop(&mut self) {
+        let _ = self.stream.disconnect();
+    }
 }
 
 fn readable(params: &[ParamInfo], kind: ParamType) -> bool {
@@ -290,7 +323,18 @@ fn dict(props: Option<&DictRef>) -> BTreeMap<String, String> {
 
 fn on_global(state: &Rc<RefCell<State>>, registry: &RegistryRc, global: &GlobalObject<&DictRef>) {
     let weak = Rc::downgrade(state);
+    let prop = |key: &str| global.props.and_then(|p| p.get(key));
     match global.type_ {
+        ObjectType::Node if prop("node.name") == Some(sfx::NODE_NAME) => {
+            state.borrow_mut().own.insert(global.id);
+        }
+        ObjectType::Link
+            if prop("link.output.node")
+                .and_then(|n| n.parse().ok())
+                .is_some_and(|n| state.borrow().own.contains(&n)) =>
+        {
+            state.borrow_mut().own.insert(global.id);
+        }
         ObjectType::Node => {
             let Ok(proxy) = registry.bind::<PwNode, _>(global) else {
                 return;
@@ -439,7 +483,7 @@ fn with(state: &Weak<RefCell<State>>, f: impl FnOnce(&mut State)) {
 }
 
 impl State {
-    fn new(events: async_channel::Sender<Event>, core: CoreRc) -> Self {
+    fn new(events: async_channel::Sender<Event>, core: CoreRc, wake: pw::channel::Sender<Msg>) -> Self {
         Self {
             events,
             core,
@@ -450,6 +494,10 @@ impl State {
             devices: HashMap::new(),
             links: HashMap::new(),
             metadata: None,
+            own: HashSet::new(),
+            mixer: Rc::default(),
+            sfx: None,
+            wake,
         }
     }
 
@@ -493,6 +541,9 @@ impl State {
     }
 
     fn on_global_remove(&mut self, id: u32) {
+        if self.own.remove(&id) {
+            return;
+        }
         if self.nodes.remove(&id).is_some() {
             self.hw.remove(&id);
             self.emit(Event::NodeRemoved(id));
@@ -612,7 +663,122 @@ impl State {
             Command::SetMuted { node, muted } => self.set_muted(node, muted),
             Command::SetDefaultSink(name) => self.set_default(KEY_CONFIGURED_SINK, name, true),
             Command::SetDefaultSource(name) => self.set_default(KEY_CONFIGURED_SOURCE, name, false),
+            Command::Play { sound, volume, at } => self.play(sound, volume, at),
+            Command::WarmSfx => {
+                let _ = sfx::Sound::Move.pcm();
+                if self.sfx.is_none() {
+                    drop(self.open_sfx(false));
+                }
+            }
         }
+    }
+
+    fn play(&mut self, sound: sfx::Sound, volume: sfx::Volume, at: Instant) {
+        if at.elapsed() > sfx::STALE {
+            return;
+        }
+        self.mixer.borrow_mut().play(sound, volume);
+        if !self.mixer.borrow().playing() {
+            return;
+        }
+        match &self.sfx {
+            Some(s) => s.asked.set(false),
+            None => self.sfx = self.open_sfx(true),
+        }
+    }
+
+    fn sfx_idle(&mut self) {
+        if self.mixer.borrow().idle() {
+            self.sfx = None;
+        } else if let Some(s) = &self.sfx {
+            s.asked.set(false);
+        }
+    }
+
+    /// Mono s16 at [`sfx::RATE`], left to the server to convert, and not
+    /// RT_PROCESS: `process` runs on this loop, where the mixer lives.
+    fn open_sfx(&self, active: bool) -> Option<Sfx> {
+        let props = properties! {
+            *pw::keys::MEDIA_TYPE => "Audio",
+            *pw::keys::MEDIA_CATEGORY => "Playback",
+            *pw::keys::MEDIA_ROLE => "Event",
+            *pw::keys::MEDIA_NAME => "Interface sounds",
+            *pw::keys::APP_NAME => "FormalShell",
+            *pw::keys::NODE_NAME => sfx::NODE_NAME,
+        };
+        let stream = StreamRc::new(self.core.clone(), sfx::NODE_NAME, props).ok()?;
+        let asked = Rc::new(Cell::new(false));
+        let listener = stream
+            .add_local_listener_with_user_data(())
+            .process({
+                let mixer = self.mixer.clone();
+                let asked = asked.clone();
+                let wake = self.wake.clone();
+                move |stream, _| {
+                    let Some(mut buffer) = stream.dequeue_buffer() else {
+                        return;
+                    };
+                    let requested = buffer.requested() as usize;
+                    let data = &mut buffer.datas_mut()[0];
+                    let mut frames = 0;
+                    if let Some(bytes) = data.data() {
+                        let room = bytes.len() / 2;
+                        frames = if requested == 0 { room.min(1024) } else { requested.min(room) };
+                        let mut pcm = vec![0i16; frames];
+                        let mut mixer = mixer.borrow_mut();
+                        mixer.fill(&mut pcm);
+                        for (b, s) in bytes.chunks_exact_mut(2).zip(&pcm) {
+                            b.copy_from_slice(&s.to_le_bytes());
+                        }
+                        if mixer.idle() && !asked.replace(true) {
+                            let _ = wake.send(Msg::SfxIdle);
+                        }
+                    }
+                    let chunk = data.chunk_mut();
+                    *chunk.offset_mut() = 0;
+                    *chunk.stride_mut() = 2;
+                    *chunk.size_mut() = (frames * 2) as u32;
+                }
+            })
+            .register()
+            .ok()?;
+
+        let mut info = spa::param::audio::AudioInfoRaw::new();
+        info.set_format(spa::param::audio::AudioFormat::S16LE);
+        info.set_rate(sfx::RATE);
+        info.set_channels(1);
+        let mut position = [0; spa::param::audio::MAX_CHANNELS];
+        position[0] = ss::SPA_AUDIO_CHANNEL_MONO;
+        info.set_position(position);
+        let bytes = PodSerializer::serialize(
+            Cursor::new(Vec::new()),
+            &Value::Object(Object {
+                type_: ss::SPA_TYPE_OBJECT_Format,
+                id: ss::SPA_PARAM_EnumFormat,
+                properties: info.into(),
+            }),
+        )
+        .ok()?
+        .0
+        .into_inner();
+        let mut params = [Pod::from_bytes(&bytes)?];
+        stream
+            .connect(
+                spa::utils::Direction::Output,
+                None,
+                if active {
+                    StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS
+                } else {
+                    StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS | StreamFlags::INACTIVE
+                },
+                &mut params,
+            )
+            .ok()?;
+        Some(Sfx {
+            _listener: listener,
+            stream,
+            asked,
+        })
     }
 
     fn set_volumes(&mut self, id: u32, volumes: Vec<f32>) {
@@ -781,6 +947,8 @@ impl State {
 
     /// Drops every proxy while the core they belong to is still alive.
     fn release(&mut self) {
+        self.sfx = None;
+        self.own.clear();
         self.metadata = None;
         self.links.clear();
         self.nodes.clear();

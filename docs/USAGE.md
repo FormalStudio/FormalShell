@@ -822,6 +822,7 @@ the whole of what a preset changes that you can override:
 | `theme.grid` | false | false | false | true |
 | `wallpaper.animate` | false | false | false | true |
 | `theme.boot` | false | false | false | true |
+| `theme.sounds` | false | false | false | true |
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -836,6 +837,18 @@ programs.formalshell.settings.theme.preset = "retro";
 `theme.boot` plays the table's boot sequence once per login, on the
 greeter or, without one, over the session's first seconds; a key or a click
 skips it. Only `cartridge` has one, so the key does nothing elsewhere.
+
+`theme.sounds` plays the table's interface blips: the launcher opening,
+closing, moving, typing, going in and back, a toggle, an error, the boot,
+and on the lock its typing, a wrong password and the unlock. Only
+`cartridge` carries them. `theme.soundVolume` (0 to 1, default 0.5) is on
+the same scale as the volume slider, so 0.5 is quiet. Nothing plays under
+do-not-disturb, or while locked except the lock's own field, and with no
+PipeWire there is simply no sound.
+
+```jsonc
+{ "theme": { "preset": "cartridge", "sounds": true, "soundVolume": 0.3 } }
+```
 
 The palette is untouched by the preset: matugen, `theme.json`, the pywal
 template and the Hyprland colours files all work the same way under each

@@ -806,6 +806,7 @@ name = "fs-theme"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "fs-audio",
  "regex",
  "serde_json",
 ]

@@ -14,6 +14,7 @@
 
 use std::time::Instant;
 
+use fs_audio::sfx::Sound;
 use serde_json::{Value, json};
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
@@ -62,6 +63,8 @@ pub struct Boot {
     /// When the bar started sliding in, and whether it is still held back.
     slam: Option<Instant>,
     held: bool,
+    /// The wordmark's blip has played.
+    chimed: bool,
 }
 
 impl App {
@@ -200,6 +203,7 @@ impl App {
             o.surface.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         }
         self.log(&format!("boot leaving {why} t={}ms", t.round()));
+        self.sfx(Sound::Open);
     }
 
     /// The overlay holds the desktop: the sculpture waits for it.
@@ -246,6 +250,10 @@ impl App {
                     self.boot_leave("auto");
                 }
             }
+        }
+        if !self.boot.chimed && self.boot.out.is_none() && !self.boot.handoff && t >= boot::LETTERS_AT {
+            self.boot.chimed = true;
+            self.sfx(Sound::Boot);
         }
         let (t, out) = match self.boot.out {
             Some((at, held)) => (held / scale, Some(since(at, now) / scale)),

@@ -1203,6 +1203,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_tables_sounds_map_known_events_to_known_sounds() {
+        use fs_audio::sfx::Sound;
+        for (name, style) in tables() {
+            let Some(sounds) = style.get("sounds") else { continue };
+            let sounds = sounds.as_object().expect("sounds is an object");
+            for (event, sound) in sounds {
+                assert!(Sound::from_name(event).is_some(), "{name} maps an unknown event {event}");
+                assert!(sound.as_str().and_then(Sound::from_name).is_some(), "{name} maps {event} to an unknown sound {sound}");
+            }
+        }
+        assert_eq!(tables::cartridge()["sounds"].as_object().map(|s| s.len()), Some(9));
+        assert!(tables::metamorphosis().get("sounds").is_none());
+        assert!(tables::pantheon().get("sounds").is_none());
+    }
+
+    #[test]
     fn metamorphosis_is_the_shipped_chrome() {
         let style = tables::metamorphosis();
         let card = r(style, "card", None, "dark");

@@ -5,10 +5,12 @@
 //! fs-audio-probe mute <node.name> <true|false>
 //! fs-audio-probe set-default-sink <node.name>
 //! fs-audio-probe wait-stream <app or node name part> <seconds>
+//! fs-audio-probe play <sound> <visual volume> <seconds held after>
 
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use fs_audio::sfx::{Sound, Volume};
 use fs_audio::{Command, Event, Graph, Node};
 use serde_json::{Value, json};
 
@@ -151,8 +153,21 @@ fn main() -> ExitCode {
             let id = hit(&graph).unwrap();
             println!("{}", node_json(&graph, &graph.nodes[&id]));
         }
+        ["play", sound, v, secs] => {
+            let Some(sound) = Sound::from_name(sound) else {
+                return ExitCode::FAILURE;
+            };
+            audio.send(Command::Play {
+                sound,
+                volume: Volume::from_visual(v.parse().expect("a number")),
+                at: Instant::now(),
+            });
+            let until = Instant::now() + Duration::from_secs_f64(secs.parse().expect("seconds"));
+            pump(&rx, &mut graph, until, |_| false);
+            println!("{}", dump(&graph));
+        }
         _ => {
-            eprintln!("usage: fs-audio-probe dump|set-volume|mute|set-default-sink|wait-stream");
+            eprintln!("usage: fs-audio-probe dump|set-volume|mute|set-default-sink|wait-stream|play");
             return ExitCode::FAILURE;
         }
     }

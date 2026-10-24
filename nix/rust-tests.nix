@@ -14,5 +14,5 @@ rustCommon.craneLib.cargoTest (rustCommon.checkArgs // {
     cd $sourceRoot/crates
     sourceRoot="."
   '';
-  cargoExtraArgs = "--locked -p fs-js -p fs-chrome -p fs-info -p fs-system -p fs-devices -p fs-media -p fs-menu -p fs-screensaver -p fs-theme";
+  cargoExtraArgs = "--locked -p fs-js -p fs-chrome -p fs-info -p fs-system -p fs-devices -p fs-media -p fs-menu -p fs-screensaver -p fs-theme -p fs-audio";
 })

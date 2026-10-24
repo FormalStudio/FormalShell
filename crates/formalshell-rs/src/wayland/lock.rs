@@ -23,6 +23,7 @@ use calloop::RegistrationToken;
 use calloop::channel::{self, Sender};
 use calloop::timer::{TimeoutAction, Timer};
 use chrono::{Local, Timelike};
+use fs_audio::sfx::Sound;
 use fs_auth::pam::{self, Outcome};
 use serde_json::{Map, Value, json};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -528,8 +529,14 @@ impl App {
         self.lock.checking = false;
         self.lock.dirty = true;
         match outcome {
-            Outcome::Success => self.lock_leave(),
-            Outcome::Failed(_) => self.lock.error = "Wrong password".into(),
+            Outcome::Success => {
+                self.sfx_lock(Sound::Activate);
+                self.lock_leave();
+            }
+            Outcome::Failed(_) => {
+                self.sfx_lock(Sound::Error);
+                self.lock.error = "Wrong password".into();
+            }
             Outcome::MaxTries(_) => self.lock.error = "Account locked".into(),
             Outcome::StartFailed(why) | Outcome::Error(why) => {
                 eprintln!("lock: pam: {why}");
@@ -813,13 +820,20 @@ impl App {
         }
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => self.submit_password(),
-            Keysym::Escape => self.lock.password = field(),
+            Keysym::Escape => {
+                if !self.lock.password.text().is_empty() {
+                    self.sfx_lock(Sound::Back);
+                }
+                self.lock.password = field();
+            }
             // A secret field hands nothing out, so a paste is all that can
             // come back from it.
             sym if !self.lock.checking => {
                 let out = self.lock.password.key(super::field_key(sym), self.mods, event.utf8.as_deref());
-                if out == fs_menu::field::Outcome::Paste {
-                    clipboard::command(clipboard::Cmd::Paste);
+                match out {
+                    fs_menu::field::Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
+                    fs_menu::field::Outcome::Edited => self.sfx_lock(Sound::Type),
+                    _ => {}
                 }
             }
             _ => {}

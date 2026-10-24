@@ -731,6 +731,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `showcase.sh` `--showcase`: seeds state.json with a generated wallpaper
   before the shell starts, so the leg it rides photographs a matugen palette
   over a real desktop. The README's screenshots and GIFs are taken under it.
+- `sfx.sh` `--sfx`: the table's blips on fs-audio's own PipeWire stream,
+  recorded off a null sink of the leg's own made the default: real keys
+  through the launcher (an open, two Downs, two letters, an Escape
+  clearing them, an Escape closing, an input step and a Return), nine
+  `sfx` log lines and nine bursts on the sink's monitor with each one's
+  peak and RMS printed, then an open, a Down and an Escape under
+  do-not-disturb with none. `pactl list sink-inputs` holds
+  `formalshell-sfx` just after a blip and nothing 3s after the last.
+  Without `--cartridge` the same drive logs no blip and records silence.
 - `shoulders.sh` `--shoulders`: a join published over `debug join`, the gap
   the bar opens in its own line read off the shell's numbers as the card's
   rect plus a `radiusXl` fillet at either end, and the pixel where the line

@@ -209,6 +209,22 @@ then an overlay holding the lock's backdrop (`formalshell:unlock`, no input)
 lifts off the desktop over 900ms. Every other table declares `boot: "none"`
 and the `boot` role it never draws.
 
+`sounds` is the table's map from an event to one of nine blips: `move`,
+`activate`, `back`, `open`, `close`, `type`, `toggle`, `error`, `boot`.
+They are original, synthesised by `dev/sfx/gen.py` into
+`crates/fs-audio/sfx/` (48 kHz mono WAVs, embedded) and mixed in process
+on a PipeWire playback stream of fs-audio's own (`formalshell-sfx`, role
+`Event`), opened for a blip and closed 1s after the last one ends, so a
+quiet shell holds no stream and wakes for none. The client thread keeps that node and its
+links out of the graph it reports, so no panel lists it. The UI thread
+only sends a command (`App::sfx`): one blip per frame at most, `type` at
+most every 50ms, none under do-not-disturb, none while locked except the
+lock's typing, wrong password and unlock. The launcher's blip is read off
+what its key changed (`sfx::launcher_cue`), so an activate that also
+closes plays the activate alone. `theme.sounds` turns a table's own off
+and `theme.soundVolume` sets the level on the visual volume scale. A table
+without `sounds` is silent; only `cartridge` has one.
+
 **Type** (`fs_theme::tokens::font_tokens`, picked per element with
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,
 section labels, descriptions, hints), mono for values (numbers, units,

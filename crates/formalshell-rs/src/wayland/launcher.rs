@@ -4,6 +4,7 @@
 
 use std::time::Instant;
 
+use fs_audio::sfx::Sound;
 use fs_chrome::types::Edge;
 use fs_menu::nav;
 use smithay_client_toolkit::compositor::Region;
@@ -206,12 +207,17 @@ impl App {
         let shown = Shown::new(&self.store.theme.theme, modal, self.output_size(), self.motion_scale);
         self.launch = Some(Window { shown, scan: None, pressed: None });
         self.log("menu mapped");
+        self.sfx(Sound::Open);
     }
 
     fn hide_launcher(&mut self) {
+        let open = self.launch.as_ref().is_some_and(|w| w.shown.modal.open);
         if let Some(w) = &mut self.launch {
             w.shown.modal.close(Instant::now());
             self.log("menu closing");
+        }
+        if open {
+            self.sfx(Sound::Close);
         }
         self.sync_join();
     }
@@ -953,13 +959,22 @@ impl App {
         };
         let text = event.utf8.as_deref().filter(|t| t.chars().all(|c| c as u32 >= 0x20 && c != '\u{7f}') && !t.is_empty());
         self.resolve_launcher();
+        let before = self.launcher_mark();
         let out = self.launcher.key(&self.store, key, super::field_key(event.keysym), self.mods, repeat, text);
+        if let Some(cue) = crate::sfx::launcher_cue(key, &out, &before, &self.launcher_mark(), self.launcher.open) {
+            self.sfx(cue);
+        }
         if self.launcher.on_mirror() {
             self.launcher_mirror();
         }
         self.launcher_resolve = true;
         self.launcher_out(out);
         true
+    }
+
+    fn launcher_mark(&self) -> crate::sfx::Mark {
+        let l = &self.launcher;
+        crate::sfx::Mark { level: l.level.clone(), query: l.query.text().to_owned(), cursor: l.cursor }
     }
 
     /// The clipboard's text into the query, while the launcher is up.
@@ -990,7 +1005,11 @@ impl App {
                 // not moved, which leaves the cursor where the keys put it.
                 let moved = matches!(e.kind, PointerEventKind::Motion { .. });
                 if let Some(i) = hit.and_then(|h| h.on).filter(|_| moved).and_then(|on| on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok())) {
+                    let was = self.launcher.cursor;
                     self.launcher.set_cursor(i);
+                    if self.launcher.cursor != was {
+                        self.sfx(Sound::Move);
+                    }
                 }
             }
             PointerEventKind::Leave { .. } => {
@@ -1019,10 +1038,12 @@ impl App {
                     }
                     Some("primary") => {
                         let i = self.launcher.cursor;
+                        self.sfx(Sound::Activate);
                         self.menu_activate(i, false);
                     }
                     Some(r) => {
                         if let Some(i) = r.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
+                            self.sfx(Sound::Activate);
                             self.menu_activate(i, false);
                         }
                     }

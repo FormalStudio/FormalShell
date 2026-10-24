@@ -5,6 +5,8 @@
 
 use serde_json::Value;
 
+use fs_audio::sfx::Volume;
+
 use crate::tables;
 
 pub const NAMES: [&str; 4] = ["metamorphosis", "retro", "pantheon", "cartridge"];
@@ -122,6 +124,11 @@ pub struct Resolved {
     /// `theme.boot`: the table's boot sequence plays, where its `boot`
     /// habit names one.
     pub boot: bool,
+    /// `theme.sounds`: the table's blips play, on by default wherever it
+    /// carries `sounds`.
+    pub sounds: bool,
+    /// `theme.soundVolume`, 0.5 unless written as a number.
+    pub sound_volume: Volume,
 }
 
 /// `get` reads one dotted settings path, `None` when the key is absent: the
@@ -157,6 +164,9 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         lock_grid: boolean(get("lock.grid"), grid),
         wallpaper_animate: boolean(get("wallpaper.animate"), d.animate),
         boot: d.style["habits"]["boot"].as_str().is_some_and(|b| b != "none") && boolean(get("theme.boot"), true),
+        sounds: d.style.get("sounds").and_then(Value::as_object).is_some_and(|s| !s.is_empty())
+            && boolean(get("theme.sounds"), true),
+        sound_volume: get("theme.soundVolume").as_ref().and_then(Value::as_f64).map_or(Volume::DEFAULT, Volume::from_visual),
     }
 }
 
@@ -275,6 +285,19 @@ pub(crate) mod tests {
         assert!(!p("cartridge", json!({ "theme": { "boot": false } })).boot);
         for name in ["metamorphosis", "retro", "pantheon"] {
             assert!(!p(name, json!({ "theme": { "boot": true } })).boot, "{name}");
+        }
+    }
+
+    #[test]
+    fn only_a_table_with_sounds_plays_them() {
+        let t = p("cartridge", json!({}));
+        assert!(t.sounds);
+        assert_eq!(t.sound_volume, Volume::DEFAULT);
+        assert!(!p("cartridge", json!({ "theme": { "sounds": false } })).sounds);
+        assert_eq!(p("cartridge", json!({ "theme": { "soundVolume": 2 } })).sound_volume.as_visual(), 1.0);
+        assert_eq!(p("cartridge", json!({ "theme": { "soundVolume": "loud" } })).sound_volume, Volume::DEFAULT);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            assert!(!p(name, json!({ "theme": { "sounds": true } })).sounds, "{name}");
         }
     }
 

@@ -310,6 +310,7 @@ pub struct App {
     menu_launches: Option<serde_json::Value>,
     pub capture: crate::surfaces::capture::Capture,
     pickers: picker::Pickers,
+    sfx: crate::sfx::Gate,
 }
 
 impl App {
@@ -399,6 +400,7 @@ impl App {
             menu_launches: None,
             capture: Default::default(),
             pickers: Default::default(),
+            sfx: Default::default(),
         };
         app.sync_heads();
         app
@@ -452,6 +454,26 @@ impl App {
 
     fn log(&self, what: &str) {
         eprintln!("ipc t={}ms {what}", self.started.elapsed().as_millis());
+    }
+
+    /// One of the table's blips, off the UI thread onto fs-audio's stream.
+    /// None while locked: the lock's own field plays through
+    /// [`App::sfx_lock`].
+    fn sfx(&mut self, event: fs_audio::sfx::Sound) {
+        if !self.lock.locked {
+            self.sfx_lock(event);
+        }
+    }
+
+    fn sfx_lock(&mut self, event: fs_audio::sfx::Sound) {
+        let theme = &self.store.theme.theme;
+        let Some(sound) = theme.sound(event) else { return };
+        if self.store.notifications.model.dnd || !self.sfx.admit(event, Instant::now()) {
+            return;
+        }
+        let volume = theme.sound_volume;
+        crate::services::devices::audio::write(fs_audio::Command::Play { sound, volume, at: Instant::now() });
+        self.log(&format!("sfx {}", event.name()));
     }
 
     /// While a focused fullscreen window covers the bar's output the bar,
@@ -1021,6 +1043,7 @@ impl App {
         self.tips.hide(None, now);
         self.sync_open(now);
         self.log(&format!("panel {id} mapped"));
+        self.sfx(fs_audio::sfx::Sound::Open);
     }
 
     /// The tray overflow: the whole tray as a strip-sized card hanging off
@@ -1324,6 +1347,9 @@ impl App {
     pub fn close_panels(&mut self) {
         self.close_tray_menu();
         let now = Instant::now();
+        if self.panel.as_ref().is_some_and(|p| p.is_open()) {
+            self.sfx(fs_audio::sfx::Sound::Close);
+        }
         if let Some(p) = &mut self.panel {
             p.close(now);
         }
@@ -1506,6 +1532,9 @@ impl App {
             self.warm_faces();
             self.prefault_launcher();
             self.launcher_warm = true;
+            if self.store.theme.theme.sounds {
+                crate::services::devices::audio::write(fs_audio::Command::WarmSfx);
+            }
             self.sync_shards();
         }
         self.step_menu(now);
