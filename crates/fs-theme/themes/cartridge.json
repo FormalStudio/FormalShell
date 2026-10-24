@@ -506,6 +506,16 @@
             "fillAlpha": 0.16,
             "radius": 0
         },
+        "boot": {
+            "fill": "white",
+            "fillAlpha": 0.9,
+            "radius": 0,
+            "border": {
+                "color": "white",
+                "alpha": 0.2,
+                "width": 2
+            }
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.5,
@@ -846,6 +856,9 @@
         ],
         "roles.backdrop.mark": [
             "The giant faint mark under the sculpture: the reference's tilted ring and the stacked word inside it, in the background colour at 0.16."
+        ],
+        "roles.boot": [
+            "The boot sequence (`habits.boot`) on its black stage: `fill` is the emblem's rings and wordmark, `border` the grid lines growing in from the edges. White, since the stage is black in either mode. The other tables carry the same numbers for a table that turns a boot on."
         ],
         "roles.cursor": [
             "No ring and no halo: the cursor is a block on the row's leading edge (`cursor.bar`) over a faint primary fill, travelling between rows; in a grid it is two arcs held outside the cell with a glow (`cursor.brackets`)."

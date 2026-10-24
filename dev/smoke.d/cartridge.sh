@@ -14,6 +14,12 @@ leg_cartridge_order=7
 # vote the base fixture window off through fixture_window_mode's AND.
 leg_cartridge_fixture_window=keep
 
+# The table's boot takes the screen and the keyboard for its first seconds,
+# so every leg but --boot runs with it off.
 leg_cartridge_fixture() {
-  settings_fragment ', "theme": {"preset": "cartridge"}'
+  if leg_on boot; then
+    settings_fragment ', "theme": {"preset": "cartridge"}'
+  else
+    settings_fragment ', "theme": {"preset": "cartridge", "boot": false}'
+  fi
 }

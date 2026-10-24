@@ -5,6 +5,7 @@
 //! callback or an input event belongs to.
 
 mod atlas;
+mod boot;
 mod caffeinate;
 pub mod capture;
 mod console;
@@ -289,6 +290,7 @@ pub struct App {
     launcher_styles: Vec<crate::text::TextStyle>,
     /// The launcher's faces are warmed once, after the bar is on screen.
     faces_warmed: bool,
+    boot: boot::Boot,
     /// The launcher card's pool, buffers and canvas while it is shut.
     launch_kept: Option<crate::surface::Kept>,
     /// The same for the launcher's content layer.
@@ -385,6 +387,7 @@ impl App {
             launcher_warm: false,
             launcher_styles: Vec::new(),
             faces_warmed: false,
+            boot: Default::default(),
             launch_kept: None,
             layer_kept: None,
             kept_generation: 0,
@@ -1474,6 +1477,19 @@ impl App {
         self.follow_focus();
         self.sync_rasters(now);
         let qh = self.qh.clone();
+        self.present_boot(now);
+        if let Some((shift, alpha)) = self.boot_bar(now) {
+            self.bar.scene.set_shift(shift);
+            if let Some(s) = &mut self.bar_surface {
+                s.set_opacity(alpha);
+            }
+            for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
+                s.bar.scene.set_shift(shift);
+                if let Some(surface) = &mut s.surface {
+                    surface.set_opacity(alpha);
+                }
+            }
+        }
         self.present_heads(self.bar_dirty, now);
         let animating = self.bar.animating(now);
         if self.bar_dirty || (animating && !self.bar.step_in_place(now)) {
@@ -1543,6 +1559,7 @@ impl App {
         self.present_polkit(now);
         self.present_overlay(now);
         self.present_lock();
+        self.present_unlock(now);
         self.arm_wake(now);
     }
 
@@ -2216,6 +2233,8 @@ impl CompositorHandler for App {
             Some(Owner::Picker(i)) => self.picker_frame(i),
             Some(Owner::Head(i, part)) => self.head_frame(i, part, now),
             None if self.saver_index(surface).is_some() => self.saver_frame_callback(surface),
+            None if self.boot_frame(surface) => {}
+            None if self.unlock_frame(surface) => {}
             None => {
                 if !self.polkit_frame(surface) && !self.overlay_frame(surface) {
                     self.lock_frame(surface);
@@ -2269,6 +2288,8 @@ impl LayerShellHandler for App {
             Some(Owner::Atlas(_)) => self.atlas_closed(),
             Some(Owner::Picker(i)) => self.picker_closed(i),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_closed(layer.wl_surface()),
+            None if self.boot_closed(layer.wl_surface()) => {}
+            None if self.unlock_closed(layer.wl_surface()) => {}
             Some(Owner::Zone(_) | Owner::Launcher(_)) | None => {}
         }
     }
@@ -2346,6 +2367,8 @@ impl LayerShellHandler for App {
             Some(Owner::Picker(i)) => self.picker_configure(i, width, height),
             None if self.caffeinate_owns(layer) => self.caffeinate_configure(),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_configure(layer.wl_surface(), width, height),
+            None if self.boot_configure(layer.wl_surface(), width, height) => {}
+            None if self.unlock_configure(layer.wl_surface(), width, height) => {}
             None if self.hot_corner_owns(layer) => self.hot_corner_configure(layer),
             None if self.polkit_owns(layer) => self.polkit_configure(layer, width, height),
             None if self.overlay_owns(layer) => self.overlay_configure(layer, width, height),
@@ -2396,7 +2419,8 @@ impl SeatHandler for App {
 impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         self.lock_pointer(events);
-        let rest = self.hot_corner_pointer(events);
+        let events = self.boot_pointer(events);
+        let rest = self.hot_corner_pointer(&events);
         if !rest.is_empty() {
             self.pointer_events(&rest);
         }
@@ -2409,6 +2433,9 @@ impl KeyboardHandler for App {
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {}
 
     fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
+        if self.boot_key() {
+            return;
+        }
         if self.saver.active && !self.lock.locked {
             self.saver_input(None, screensaver::SaverInput::Key);
             return;
@@ -2446,6 +2473,8 @@ impl OutputHandler for App {
         self.drop_head(&output);
         self.saver_output_gone(&output);
         self.lock_output_gone(&output);
+        self.boot_output_gone(&output);
+        self.unlock_output_gone(&output);
     }
 }
 

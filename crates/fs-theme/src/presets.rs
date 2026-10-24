@@ -119,6 +119,9 @@ pub struct Resolved {
     pub lock_grid: bool,
     /// `wallpaper.animate`: the shard sculpture moving over the desktop.
     pub wallpaper_animate: bool,
+    /// `theme.boot`: the table's boot sequence plays, where its `boot`
+    /// habit names one.
+    pub boot: bool,
 }
 
 /// `get` reads one dotted settings path, `None` when the key is absent: the
@@ -153,6 +156,7 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         wallpaper_grid: boolean(get("wallpaper.grid"), grid),
         lock_grid: boolean(get("lock.grid"), grid),
         wallpaper_animate: boolean(get("wallpaper.animate"), d.animate),
+        boot: d.style["habits"]["boot"].as_str().is_some_and(|b| b != "none") && boolean(get("theme.boot"), true),
     }
 }
 
@@ -263,6 +267,15 @@ pub(crate) mod tests {
             assert!(!p(name, json!({})).wallpaper_animate, "{name}");
         }
         assert!(p("pantheon", json!({ "wallpaper": { "animate": true } })).wallpaper_animate);
+    }
+
+    #[test]
+    fn only_a_table_with_a_boot_plays_one() {
+        assert!(p("cartridge", json!({})).boot);
+        assert!(!p("cartridge", json!({ "theme": { "boot": false } })).boot);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            assert!(!p(name, json!({ "theme": { "boot": true } })).boot, "{name}");
+        }
     }
 
     #[test]

@@ -278,12 +278,28 @@ pub struct Scene {
     order: Vec<NodeId>,
     free: Vec<NodeId>,
     damage: Vec<IRect>,
+    /// Everything drawn this far along x, in logical pixels: a whole
+    /// surface sliding in (the bar after the boot) without its layout
+    /// knowing.
+    shift: f64,
 }
 
 impl Scene {
     pub fn new(width: i32, height: i32) -> Self {
         let size = IRect::new(0, 0, width, height);
-        Self { size, nodes: Vec::new(), order: Vec::new(), free: Vec::new(), damage: vec![size] }
+        Self { size, nodes: Vec::new(), order: Vec::new(), free: Vec::new(), damage: vec![size], shift: 0.0 }
+    }
+
+    pub fn shift(&self) -> f64 {
+        self.shift
+    }
+
+    /// Slides every node `dx` along, the whole scene drawn again.
+    pub fn set_shift(&mut self, dx: f64) {
+        if dx != self.shift {
+            self.shift = dx;
+            self.touch(self.size);
+        }
     }
 
     /// A scene whose buffers start out transparent and so owe the

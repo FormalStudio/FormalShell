@@ -143,6 +143,13 @@ impl Renderer {
             let (x1, y1) = ((f64::from(device.right()) / s).ceil() as i32, (f64::from(device.bottom()) / s).ceil() as i32);
             rect = IRect::new(x0, y0, x1 - x0, y1 - y0);
         }
+        let shift = scene.shift();
+        if shift != 0.0 {
+            origin = origin * Affine::translate((shift, 0.0));
+            // The nodes landing in the rect sit `shift` short of it.
+            let dx = shift.floor() as i32;
+            rect = IRect::new(rect.x - dx - 1, rect.y, rect.w + 2, rect.h);
+        }
         let (w, h) = (device.w as u16, device.h as u16);
         self.ctx.reset_and_resize(w, h);
         // A clip is a layer composited on its own, so a run of nodes under

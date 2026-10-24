@@ -4,6 +4,7 @@
 pub mod atlas;
 pub mod bar;
 pub mod battery;
+pub mod boot;
 pub mod capture;
 pub mod card;
 pub mod headset;
@@ -57,6 +58,7 @@ pub fn changed(app: &mut App, topic: Topic) {
             theme_inputs(app);
             lights_palette(app);
             app.saver_config();
+            app.boot_begin();
         }
         Topic::Screensaver => app.saver_changed(),
         Topic::Caffeinate => {

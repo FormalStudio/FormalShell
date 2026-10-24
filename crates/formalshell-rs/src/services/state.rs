@@ -38,6 +38,8 @@ pub struct Data {
     pub overnight: Value,
     pub lights: Value,
     pub hdr: Value,
+    /// The login the boot sequence last played for (`wayland::boot`).
+    pub boot: String,
 }
 
 impl Default for Data {
@@ -57,6 +59,7 @@ impl Default for Data {
             overnight: Value::Null,
             lights: Value::Null,
             hdr: Value::Null,
+            boot: String::new(),
         }
     }
 }
@@ -79,6 +82,7 @@ pub enum Field {
     Overnight(Value),
     Lights(Value),
     Hdr(Value),
+    Boot(String),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -101,12 +105,13 @@ impl Field {
             Field::Overnight(v) => data.overnight = v,
             Field::Lights(v) => data.lights = v,
             Field::Hdr(v) => data.hdr = v,
+            Field::Boot(v) => data.boot = v,
         }
     }
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 14] {
+    fn fields(&self) -> [Field; 15] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
             Field::Mode(self.mode.clone()),
@@ -122,6 +127,7 @@ impl Data {
             Field::Overnight(self.overnight.clone()),
             Field::Lights(self.lights.clone()),
             Field::Hdr(self.hdr.clone()),
+            Field::Boot(self.boot.clone()),
         ]
     }
 
@@ -166,6 +172,7 @@ impl Data {
         data.overnight = take("overnight").unwrap_or(Value::Null);
         data.lights = take("lights").unwrap_or(Value::Null);
         data.hdr = take("hdr").unwrap_or(Value::Null);
+        data.boot = typed(take("boot")).unwrap_or_default();
         Ok(data)
     }
 
@@ -186,6 +193,7 @@ impl Data {
         map.insert("overnight".into(), self.overnight.clone());
         map.insert("lights".into(), self.lights.clone());
         map.insert("hdr".into(), self.hdr.clone());
+        map.insert("boot".into(), self.boot.clone().into());
         let mut doc = Value::Object(map);
         sort_keys(&mut doc);
         let mut out = Vec::new();
@@ -411,7 +419,7 @@ mod tests {
         assert!(text.starts_with("{\n    \"appLaunches\": [],\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 14);
+        assert_eq!(keys.len(), 15);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -434,6 +442,7 @@ mod tests {
             overnight: json!({"backlight": 40}),
             lights: json!({"source": "palette"}),
             hdr: json!({"DP-1": {"prior": {}}}),
+            boot: "b0/s1".into(),
         };
         assert_eq!(Data::parse(&data.to_text()).unwrap(), data);
     }

@@ -1140,6 +1140,16 @@
             "fillAlpha": 0.16,
             "radius": 0
         },
+        "boot": {
+            "fill": "white",
+            "fillAlpha": 0.9,
+            "radius": 0,
+            "border": {
+                "color": "white",
+                "alpha": 0.2,
+                "width": 2
+            }
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.49019607843137253,

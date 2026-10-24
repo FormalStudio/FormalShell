@@ -821,6 +821,7 @@ the whole of what a preset changes that you can override:
 | `theme.dither` | false | true | false | false |
 | `theme.grid` | false | false | false | true |
 | `wallpaper.animate` | false | false | false | true |
+| `theme.boot` | false | false | false | true |
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -831,6 +832,10 @@ the whole of what a preset changes that you can override:
 # home-manager
 programs.formalshell.settings.theme.preset = "retro";
 ```
+
+`theme.boot` plays the table's boot sequence once per login, on the
+greeter or, without one, over the session's first seconds; a key or a click
+skips it. Only `cartridge` has one, so the key does nothing elsewhere.
 
 The palette is untouched by the preset: matugen, `theme.json`, the pywal
 template and the Hyprland colours files all work the same way under each

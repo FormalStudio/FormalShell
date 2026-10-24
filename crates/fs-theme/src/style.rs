@@ -15,7 +15,7 @@ use crate::tokens::{self, Easing, Motion};
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
 /// over, which is why `switch.track` reads `off` before `on`.
-pub const ROLES: [(&str, &[&str]); 46] = [
+pub const ROLES: [(&str, &[&str]); 47] = [
     ("bar", &["rest"]),
     ("frame", &["rest"]),
     ("card", &["rest", "opaque"]),
@@ -55,6 +55,7 @@ pub const ROLES: [(&str, &[&str]); 46] = [
     ("backdrop.grid", &[]),
     ("backdrop.shards", &[]),
     ("backdrop.mark", &[]),
+    ("boot", &[]),
     ("scrim", &[]),
     ("separator", &[]),
     ("keycap", &[]),

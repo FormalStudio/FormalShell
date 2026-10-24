@@ -187,6 +187,28 @@ an empty state, an error) stays as it was. Each panel names its accent
 static fallback's grey chart steps) keeps `primary`. Every other table
 declares the five `panel.*` roles transparent and keeps the sheet.
 
+`boot: "cartridge"` is the session start (`boot.rs` for the timeline,
+`surfaces/boot.rs` for the drawing). On black, the desktop's own grid lines
+grow in from either end, two rings spin in squashed and settle into the
+emblem, and the hostname over `FORMAL` drops in a letter at a time in the
+display face, all in the `boot` role (its fill the ink, its border the
+lines; white on every table, since the stage is always black). The greeter
+plays it under its card, the emblem perching above the card once it has
+assembled; logging in crumples the emblem and the session only lifts the
+black (`FORMALSHELL_BOOT=greeter` in the session's environment). A session
+with no greeter plays it on an Overlay layer per output, the first taking
+the keyboard: any key or press goes to the way out, and left alone it goes
+600ms after the emblem has assembled. The bar waits under it and slams in
+from `0.06` of its width on the lift, and the backdrop's sculpture starts
+turning once the overlay is gone. It plays once per login: state.json's
+`boot` holds the kernel's boot id and the compositor's instance, so a shell
+restarted in the same session shows the desktop at once. `theme.boot`
+turns it off. The unlock has the short form whatever that key says: the
+clock slams back out and the card fades while the session is still locked,
+then an overlay holding the lock's backdrop (`formalshell:unlock`, no input)
+lifts off the desktop over 900ms. Every other table declares `boot: "none"`
+and the `boot` role it never draws.
+
 **Type** (`fs_theme::tokens::font_tokens`, picked per element with
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,
 section labels, descriptions, hints), mono for values (numbers, units,

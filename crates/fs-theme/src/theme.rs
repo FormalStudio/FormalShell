@@ -150,6 +150,9 @@ pub struct Theme {
     pub wallpaper_grid: bool,
     pub lock_grid: bool,
     pub wallpaper_animate: bool,
+    /// The table's boot sequence plays (`theme.boot`, on wherever the
+    /// `boot` habit names one).
+    pub boot: bool,
     pub font_base_size: f64,
     pub font_scale: f64,
     pub font_size: FontTokens,
@@ -242,6 +245,7 @@ impl Theme {
             wallpaper_grid: preset.wallpaper_grid,
             lock_grid: preset.lock_grid,
             wallpaper_animate: preset.wallpaper_animate,
+            boot: preset.boot,
             font_base_size,
             font_scale,
             font_size: tokens::font_tokens(font_base_size),
@@ -472,6 +476,13 @@ mod tests {
         assert_eq!(t.box_radius(&b, 40.0), t.radii.xl);
         assert!(b.casts.is_empty());
         assert!(b.rings.is_empty());
+    }
+
+    #[test]
+    fn the_boot_inks_white_on_its_black_stage() {
+        let b = theme().box_style("boot", None);
+        assert_eq!(b.fill, hex("#ffffff").with_alpha(0.9));
+        assert_eq!(b.border.map(|l| (l.color, l.width)), Some((hex("#ffffff").with_alpha(0.2), 2.0)));
     }
 
     #[test]

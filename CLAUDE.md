@@ -52,7 +52,11 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
   already-running greeter session (restart greetd, screenshot pre-auth, a
   wrong password then the real one over `wtype`) and pulls
   `artifacts/greeter/`. It fails unless the session log shows a real
-  `pam_authenticate: AUTH_ERR` on the wrong attempt.
+  `pam_authenticate: AUTH_ERR` on the wrong attempt. `just vm-greeter
+  --preset cartridge` runs the same login under the testvm's
+  `greeter-cartridge` specialisation (a VM booted off the branch's own
+  testvm, slot 2 or past), a burst of frames through the boot first, and
+  fails unless the greeter logs it played, assembled and crumpled.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
   contract, kept fixed: argument parsing, argument errors and output
   strings, replayed through `formalshell-ipc`'s parser and the registry by
@@ -185,6 +189,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   clock commits, the stub is never called and the shell spends under 5
   ticks; `bluetooth status` lists the paired device alone, and the
   strangers too once the panel is open.
+- `boot.sh` `--boot`: rides `--cartridge`; the boot played over the
+  desktop as the shell's first frame, a burst of frames through it holding
+  a black stage and moving, left on its own and committing at least 20
+  frames. A second daemon taking over in the same login logs it as played
+  and never plays it; with `boot` cut out of state.json a third plays it
+  again and one real key 1s in sends it to the way out before the emblem
+  has assembled. Every other `--cartridge` run sets `theme.boot` false.
 - `brightness.sh` `--brightness`: three bursts of eight steps 40ms apart
   against PATH-shimmed `ddcutil` (a bus flock held 100 to 300ms per call,
   overlaps logged) and `brightnessctl` (reads answering after 20 to 150ms),

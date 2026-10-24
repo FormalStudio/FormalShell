@@ -1,3 +1,4 @@
+mod boot;
 mod cmdline;
 mod effects;
 mod fontconfig;
