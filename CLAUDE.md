@@ -229,6 +229,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the sheet in the console look: square boxes with one corner cut, the
   cursor's block bar on its row and brackets round the grid cursor's cell,
   in the packaged Archivo, DotGothic16 and BIZ UD Mincho.
+- `cartridge_media.sh` `--cartridge-media`: rides `--cartridge` (and
+  `--showcase` for the flat teal wallpaper); a camera, not a check. Grim
+  bursts of the boot, the backdrop, the launcher walked on real keys, the
+  monitor panel and the lock taking a wrong then the real password, all
+  but the boot at a third speed, turned into `docs/media/cartridge-*.gif`
+  at full speed (`dev/vm.sh` pulls them back). Fails only when a GIF was
+  not written.
 - `catalogue.sh` `--catalogue`: rides `--cartridge`; its motion catalogue
   at a fifth speed, one frame burst per effect: the launcher's rows rising
   and grain on open, a real Down widening the cursor's label, an activated

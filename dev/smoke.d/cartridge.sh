@@ -15,9 +15,9 @@ leg_cartridge_order=7
 leg_cartridge_fixture_window=keep
 
 # The table's boot takes the screen and the keyboard for its first seconds,
-# so every leg but --boot runs with it off.
+# so every leg but --boot and --cartridge-media runs with it off.
 leg_cartridge_fixture() {
-  if leg_on boot; then
+  if leg_on boot || leg_on cartridge_media; then
     settings_fragment ', "theme": {"preset": "cartridge"}'
   else
     settings_fragment ', "theme": {"preset": "cartridge", "boot": false}'

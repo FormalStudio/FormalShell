@@ -893,7 +893,7 @@ impl Model {
         let width = self.content_width(theme);
         let inset = s.lg;
         let gutter = s.sm;
-        let heading_h = ui::measure(&w::section_label(s, "Ag", None, true), width, theme, kit).1;
+        let heading_h = ui::measure(&w::heading(s, "Ag", None, true), width, theme, kit).1;
         let mut out = Layout::default();
         let mut y = inset;
         let band_of = |section: &str, first: bool| -> f64 {
@@ -2134,10 +2134,10 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
     let snap = snapshot(store);
     let mut items: Vec<(f64, f64, El)> = Vec::new();
     for (text, y, x) in &lay.headings {
-        let h = ui::measure(&w::section_label(s, text, None, true), 400.0, theme, kit).1;
+        let h = ui::measure(&w::heading(s, text, None, true), 400.0, theme, kit).1;
         if visible(*y, h) {
             let (dx, _, a) = m.motion.arrival(0, now);
-            let label = w::section_label(s, text, None, true).pad_start(s.control_padding_x + x + dx);
+            let label = w::heading(s, text, None, true).pad_start(s.control_padding_x + x + dx);
             items.push((*y, h, if a < 1.0 { label.fade(a) } else { label }));
         }
     }
