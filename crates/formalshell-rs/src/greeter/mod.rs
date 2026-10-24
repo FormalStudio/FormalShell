@@ -136,7 +136,7 @@ struct Greeter {
     /// A user change waits on the old conversation's cancel.
     reopen: bool,
     state_dir: PathBuf,
-    wallpaper: Option<PathBuf>,
+    wallpaper: Option<String>,
     decoded: channel::Sender<Decoded>,
     dirty: bool,
     exit: bool,
@@ -181,19 +181,27 @@ fn session_dirs(settings: &Value) -> Vec<PathBuf> {
     dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| sessions::DIRS.iter().map(PathBuf::from).collect())
 }
 
-/// The mirrored `wallpaper` in the state dir, else `greeter.wallpaper`.
-fn wallpaper_path(settings: &Value, env: &theme::Env) -> Option<PathBuf> {
+/// The desktop's source as this login screen can know it: `wallpaper.color`
+/// or the preset's colour, else the mirrored `wallpaper` in the state dir,
+/// else `greeter.wallpaper`. The user's own picker choice lives in a
+/// state.json the greeter never reads.
+fn wallpaper_source(settings: &Value, env: &theme::Env) -> Option<String> {
+    let get = theme::get(settings);
+    let color = fs_theme::presets::resolve(get("theme.preset").as_ref(), &get).wallpaper_color;
     let mirrored = env.state_dir.join("wallpaper");
-    if mirrored.is_file() {
-        return Some(mirrored);
-    }
-    theme::get(settings)("greeter.wallpaper").and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(PathBuf::from))
+    let picture = if mirrored.is_file() {
+        Some(mirrored.to_string_lossy().into_owned())
+    } else {
+        get("greeter.wallpaper").and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned))
+    };
+    let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""));
+    (!source.is_empty()).then_some(source)
 }
 
 /// The wallpaper cover-cropped to `size`, as the desktop shows it: the card
 /// carries the contrast, so there is no scrim.
-fn decode(path: &Path, size: (i32, i32)) -> Option<Decoded> {
-    let p = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None, None)?;
+fn decode(path: &str, size: (i32, i32)) -> Option<Decoded> {
+    let p = wallpaper::render(path, size.0 as u32, size.1 as u32, None, None)?;
     let rgba = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
     Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
 }
@@ -326,7 +334,7 @@ pub fn main(args: &[String]) {
         menu: Menu::Closed,
         asked: false,
         reopen: false,
-        wallpaper: wallpaper_path(&settings, &env),
+        wallpaper: wallpaper_source(&settings, &env),
         state_dir: env.state_dir.clone(),
         decoded,
         dirty: true,
@@ -559,7 +567,7 @@ impl Greeter {
                 Some(d) => {
                     let _ = tx.send(d);
                 }
-                None => eprintln!("greeter: cannot decode {}", path.display()),
+                None => eprintln!("greeter: cannot decode {path}"),
             });
         }
     }
@@ -707,7 +715,7 @@ fn card<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available
 fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     let (w, h) = (1280, 800);
     std::fs::create_dir_all(dir).expect("shot directory");
-    let backdrop = wallpaper_path(settings, env).and_then(|p| decode(&p, (w, h)));
+    let backdrop = wallpaper_source(settings, env).and_then(|p| decode(&p, (w, h)));
     let names: Vec<String> = ["Hyprland (uwsm-managed)", "Plasma (Wayland)", "Waylandcraft"].map(String::from).to_vec();
     let people: Vec<String> = ["Kyan De Sutter", "Guest"].map(String::from).to_vec();
     for preset in fs_theme::presets::NAMES {

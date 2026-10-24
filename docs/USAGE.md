@@ -820,6 +820,7 @@ the whole of what a preset changes that you can override:
 | `theme.blur` | true | false | true | true |
 | `theme.dither` | false | true | false | false |
 | `theme.grid` | false | false | false | true |
+| `wallpaper.color` | none | none | none | `"#402484"` |
 | `wallpaper.animate` | false | false | false | true |
 | `theme.boot` | false | false | false | true |
 | `theme.sounds` | false | false | false | true |
@@ -1013,6 +1014,24 @@ override it for the desktop and for the lock and greeter alone, the way
 ```jsonc
 // ~/.config/formalshell/settings.json
 { "theme": { "grid": true }, "lock": { "grid": false } }
+```
+
+### Flat colour desktop
+
+`wallpaper.color` shows a flat field of one colour in place of the
+wallpaper picture, with the grid and the sculpture still over it, on the
+desktop, the lock and the greeter. The palette seeds from that colour the
+way it would from a picture. It takes a `#rrggbb` hex or one of five
+names: `sage` (#a1c8bc), `purple` (#402484), `green` (#68bc64), `silver`
+(#bdc3c9) and `orange` (#ff8000). `false` or `null` brings the picture
+back. The `cartridge` preset defaults it to `purple`, and its wallpaper
+picker offers the five colours as cells ahead of your pictures; picking a
+colour or a picture there is saved in `state.json` and wins over the
+setting until you pick again.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "wallpaper": { "color": "orange" } }
 ```
 
 ### Animated backdrop

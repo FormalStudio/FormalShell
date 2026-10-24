@@ -61,6 +61,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
         .map(|s| json!({"sunrise": s.sunrise, "sunset": s.sunset, "polar": s.polar, "source": s.source}));
     let out = json!({
         "wallpaper": data.wallpaper,
+        "desktop": app.store.desktop(),
         "mode": data.mode,
         "themeJsonPresent": app.store.theme.json_present,
         "modeKey": key,

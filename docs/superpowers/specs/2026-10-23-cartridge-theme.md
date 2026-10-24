@@ -194,6 +194,16 @@ battery under 20%, and when `theme.reducedMotion` is set. Paused, it
 holds its last frame. The launcher's letterform (C9) is drawn on the
 launcher card, not the backdrop.
 
+**C7a Flat desktop.** `wallpaper.color` (preset default `#402484`, the
+deep purple of tsubi.club's `--color-2`): the desktop, the lock and the
+greeter show a flat field of that colour in place of the picture, the
+grid and the sculpture over it, and matugen seeds the palette from it.
+It takes a hex or one of tsubi's five preset names (sage `#a1c8bc`,
+purple `#402484`, green `#68bc64`, silver `#bdc3c9`, orange `#ff8000`);
+`false` or `null` gives the picture back. The wallpaper picker offers the
+five as cells ahead of the pictures, and its choice (a colour or a
+picture) lands in `state.json` and wins over the key.
+
 **C8 Grid.** `theme.grid` (preset default), overridable by
 `wallpaper.grid` and `lock.grid` like dither: lines on a fixed pitch in
 logical pixels times the output scale, `onSurface` at low alpha, fading

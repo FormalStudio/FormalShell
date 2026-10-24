@@ -127,6 +127,12 @@ pub enum Topic {
 }
 
 impl Store {
+    /// What the desktop shows ([`wallpaper::source`]).
+    pub fn desktop(&self) -> String {
+        let data = &self.state.data;
+        wallpaper::source(self.theme.theme.wallpaper_color.as_deref(), &data.wallpaper_color, &data.wallpaper)
+    }
+
     /// `None` when the diff left the slice as it was, so nothing redraws.
     pub fn apply(&mut self, diff: Diff) -> Option<Topic> {
         let topic = self.apply_slice(diff);

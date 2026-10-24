@@ -49,10 +49,11 @@ the side instead of budding off the bar.
 <img src="docs/screenshots/theme-cartridge.png" width="840">
 
 It also turns on three things the other presets leave off. The desktop
-becomes a slowly turning sculpture of shards behind a grid, which stops
-whenever nobody can see it or it would cost battery. A boot sequence plays
+becomes a flat deep purple field (or one of four other colours from the
+wallpaper picker) with a slowly turning sculpture of shards behind a grid,
+which stops whenever nobody can see it or it would cost battery. A boot sequence plays
 once per login. And the launcher and panels make small blips as you move
-through them. Each one has its own key (`wallpaper.animate`, `theme.boot`,
+through them. Each one has its own key (`wallpaper.color`, `wallpaper.animate`, `theme.boot`,
 `theme.sounds`), so you can keep the look and drop the extras; see
 [`docs/USAGE.md`](docs/USAGE.md).
 

@@ -632,6 +632,11 @@ tray icons, the picker grid and clipboard thumbnails stay true colour. `theme.gr
 ink) laid into the wallpaper's pixels by `fs-chrome/src/grid.rs`, and drawn
 over the lock's scrim and the greeter's wallpaper from the same geometry;
 `wallpaper.grid` and `lock.grid` override it the way the dither keys do.
+`wallpaper.color` (`#402484` under `cartridge`) makes the desktop a flat
+field of that colour: `services/wallpaper.rs`'s `source` is the one answer
+to what the desktop shows (the picture's path or `color:#rrggbb`, the
+picker's choice in `state.json` first), and the backdrops, the lock, the
+band's paint, the greeter and matugen (`color hex` on it) all read that.
 `wallpaper.animate` (on under `cartridge`) puts the shard sculpture
 (`fs-chrome/src/shards.rs`, rasterised by `shards.rs`) on a Background
 layer of its own over each output's wallpaper at half its pixels, with the

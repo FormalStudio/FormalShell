@@ -654,7 +654,7 @@ impl App {
                 (1.0 - crate::boot::EASE.ease(p)) as f32
             }
         };
-        let has_wallpaper = !self.store.state.data.wallpaper.is_empty();
+        let has_wallpaper = !self.store.desktop().is_empty();
         let mut shared = Shared {
             now: Local::now(),
             name: "",
@@ -870,8 +870,8 @@ impl App {
         }
         let word = self.shard_word();
         let theme = &self.store.theme.theme;
-        let wanted = &self.store.state.data.wallpaper;
-        let base = self.store.wallpaper.latest().filter(|p| p.path == *wanted).and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get("background"));
+        let wanted = self.store.desktop();
+        let base = self.store.wallpaper.latest().filter(|p| p.path == wanted).and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get("background"));
         let look = crate::shards::Look::new(theme, base, word, (1.0 - view::SCRIM) as f32);
         let t = self.heads.iter().find_map(|h| h.backdrop.as_ref()?.shards.as_ref().map(|s| s.t)).unwrap_or(0.0);
         let mut raster = crate::shards::Raster::new();
@@ -910,7 +910,7 @@ impl App {
         let reveal = if theme.motion_enabled { theme.motion().families.reveal * self.motion_scale } else { 0.0 };
         self.lock.wake.set(now, if blanked { 0.0 } else { 1.0 }, reveal);
         let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.slam.running(now) || self.lock.wake.running(now) || self.lock.leaving.is_some();
-        let has_wallpaper = !self.store.state.data.wallpaper.is_empty();
+        let has_wallpaper = !self.store.desktop().is_empty();
         let shared = Shared {
             now: Local::now(),
             name: crate::greeter::users::own_name(),
@@ -919,7 +919,7 @@ impl App {
             has_wallpaper,
             backdrop: None,
             shards: None,
-            picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.state.data.wallpaper),
+            picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.desktop()),
             avatar: None,
             media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),

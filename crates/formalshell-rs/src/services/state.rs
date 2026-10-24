@@ -24,6 +24,9 @@ const DEBOUNCE: Duration = Duration::from_millis(20);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Data {
     pub wallpaper: String,
+    /// The picker's choice between a flat colour and the picture: a
+    /// `#rrggbb`, `false` for the picture, null when it never chose.
+    pub wallpaper_color: Value,
     pub mode: String,
     /// `{ mode, untilMs }` while a manual flip snoozes `theme.mode: "auto"`.
     pub mode_override: Value,
@@ -46,6 +49,7 @@ impl Default for Data {
     fn default() -> Self {
         Self {
             wallpaper: String::new(),
+            wallpaper_color: Value::Null,
             mode: "dark".into(),
             mode_override: Value::Null,
             dnd: false,
@@ -69,6 +73,7 @@ impl Default for Data {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Field {
     Wallpaper(String),
+    WallpaperColor(Value),
     Mode(String),
     ModeOverride(Value),
     Dnd(bool),
@@ -92,6 +97,7 @@ impl Field {
     fn apply(self, data: &mut Data) {
         match self {
             Field::Wallpaper(v) => data.wallpaper = v,
+            Field::WallpaperColor(v) => data.wallpaper_color = v,
             Field::Mode(v) => data.mode = v,
             Field::ModeOverride(v) => data.mode_override = v,
             Field::Dnd(v) => data.dnd = v,
@@ -111,9 +117,10 @@ impl Field {
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 15] {
+    fn fields(&self) -> [Field; 16] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
+            Field::WallpaperColor(self.wallpaper_color.clone()),
             Field::Mode(self.mode.clone()),
             Field::ModeOverride(self.mode_override.clone()),
             Field::Dnd(self.dnd),
@@ -159,6 +166,11 @@ impl Data {
             v.filter(Value::is_array)
         }
         data.wallpaper = typed(take("wallpaper")).unwrap_or(data.wallpaper);
+        data.wallpaper_color = match take("wallpaperColor") {
+            Some(Value::Bool(false)) => Value::Bool(false),
+            Some(v) => fs_theme::presets::color(&v).flatten().map_or(Value::Null, Value::from),
+            None => Value::Null,
+        };
         data.mode = typed(take("mode")).unwrap_or(data.mode);
         data.mode_override = take("modeOverride").unwrap_or(Value::Null);
         data.dnd = typed(take("dnd")).unwrap_or(data.dnd);
@@ -180,6 +192,7 @@ impl Data {
     fn to_text(&self) -> String {
         let mut map = Map::new();
         map.insert("wallpaper".into(), self.wallpaper.clone().into());
+        map.insert("wallpaperColor".into(), self.wallpaper_color.clone());
         map.insert("mode".into(), self.mode.clone().into());
         map.insert("modeOverride".into(), self.mode_override.clone());
         map.insert("dnd".into(), self.dnd.into());
@@ -278,13 +291,17 @@ pub fn set(fields: Vec<Field>) {
 
 /// Mode goes first so a retheme the wallpaper change triggers already reads the
 /// final mode. `mode` is the picker's Dark/Light set, ignored when it is
-/// neither.
+/// neither. A flat source sets the colour and keeps the picture under it; a
+/// picture sets itself over any colour.
 pub fn set_wallpaper(path: &str, mode: Option<&str>) {
     let mut fields = Vec::new();
     if let Some(mode @ ("dark" | "light")) = mode {
         fields.push(Field::Mode(mode.into()));
     }
-    fields.push(Field::Wallpaper(path.into()));
+    match super::wallpaper::flat_hex(path) {
+        Some(hex) => fields.push(Field::WallpaperColor(hex.into())),
+        None => fields.extend([Field::Wallpaper(path.into()), Field::WallpaperColor(Value::Bool(false))]),
+    }
     set(fields);
 }
 
@@ -419,7 +436,7 @@ mod tests {
         assert!(text.starts_with("{\n    \"appLaunches\": [],\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 15);
+        assert_eq!(keys.len(), 16);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -429,6 +446,7 @@ mod tests {
     fn round_trip_keeps_every_field() {
         let data = Data {
             wallpaper: "/w.png".into(),
+            wallpaper_color: json!("#402484"),
             mode: "light".into(),
             mode_override: json!({"mode": "dark", "untilMs": 5}),
             dnd: true,
@@ -497,7 +515,18 @@ mod tests {
         let _ = SETTERS.set(tx);
         set_wallpaper("/w.png", Some("light"));
         set_wallpaper("/x.png", Some("sepia"));
-        assert_eq!(rx.try_recv().unwrap(), vec![Field::Mode("light".into()), Field::Wallpaper("/w.png".into())]);
-        assert_eq!(rx.try_recv().unwrap(), vec![Field::Wallpaper("/x.png".into())]);
+        set_wallpaper("color:#ff8000", None);
+        let picture = |p: &str| [Field::Wallpaper(p.into()), Field::WallpaperColor(Value::Bool(false))];
+        assert_eq!(rx.try_recv().unwrap(), [vec![Field::Mode("light".into())], picture("/w.png").to_vec()].concat());
+        assert_eq!(rx.try_recv().unwrap(), picture("/x.png").to_vec());
+        assert_eq!(rx.try_recv().unwrap(), vec![Field::WallpaperColor(json!("#ff8000"))]);
+    }
+
+    #[test]
+    fn a_wallpaper_colour_is_a_hex_a_name_or_false() {
+        for (text, want) in [("\"#a1c8bc\"", json!("#a1c8bc")), ("false", json!(false)), ("\"Orange\"", json!("#ff8000")), ("\"#40248\"", Value::Null), ("true", Value::Null), ("3", Value::Null)] {
+            let d = Data::parse(&format!(r#"{{"wallpaperColor":{text}}}"#)).unwrap();
+            assert_eq!(d.wallpaper_color, want, "{text}");
+        }
     }
 }

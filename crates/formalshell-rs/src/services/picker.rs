@@ -132,15 +132,17 @@ async fn warm(paths: &[String]) -> Vec<String> {
 }
 
 /// Each image as a `px` square cover crop on a surface at `scale`, from its
-/// cached thumbnail when there is one.
+/// cached thumbnail when there is one; a flat colour's cell is that colour.
 fn decode(paths: &[String], px: u32, scale: f64) -> Vec<(String, Option<Bitmap>)> {
     let dir = thumb_dir();
     let px = crate::scene::pixels_at(f64::from(px), scale);
     paths
         .iter()
         .map(|p| {
-            let cached = thumbnails::cache_path(&dir, p, THUMB_SIZE, Mode::Cover);
-            let img = image::open(&cached).or_else(|_| image::open(p)).ok();
+            let img = match super::wallpaper::flat(p) {
+                Some([r, g, b]) => Some(image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(px.max(1), px.max(1), image::Rgba([r, g, b, 255])))),
+                None => image::open(thumbnails::cache_path(&dir, p, THUMB_SIZE, Mode::Cover)).or_else(|_| image::open(p)).ok(),
+            };
             let bitmap = img.map(|i| {
                 let fitted = i.resize_to_fill(px.max(1), px.max(1), image::imageops::FilterType::Triangle).into_rgba8();
                 Bitmap::from_rgba(fitted.width() as u16, fitted.height() as u16, fitted.into_raw()).at(scale)

@@ -18,6 +18,12 @@
 # variant light` is the segmented switcher's own action over IPC. The route
 # is left open so the run's own screenshot is the grid.
 #
+# Riding --cartridge, the table's five flat colours lead every wallpaper
+# listing (never the image selector's): the grid frame carries them, the
+# picture picked first still beats the preset's purple in `theme status`'s
+# `desktop`, and a second summon picking `color:#68bc64` makes the desktop
+# that flat green, photographed with the grid and the sculpture over it.
+#
 # picker_done_path is this leg's own finish marker: the picker and the
 # clipboard routes are the same launcher surface, so a run carrying both has
 # the clipboard leg wait on this file rather than summoning over the grid.
@@ -44,7 +50,15 @@ picker_cached_status_path="$shot_dir/picker-status-cached.json"
 picker_cache_listing_path="$shot_dir/picker-thumb-cache.txt"
 picker_select_reply_path="$shot_dir/picker-select-reply.txt"
 picker_selection_path="$shot_dir/picker-selection.txt"
+picker_colors_status_path="$shot_dir/picker-status-colors.json"
+picker_color_theme_path="$shot_dir/picker-color-theme-status.json"
+picker_color_png="$shot_dir/picker-color.png"
 picker_dir="$iso_home/.local/share/formalshell/pictures"
+
+# The cartridge table's swatches, ahead of every wallpaper listing.
+picker_colors() {
+  if leg_on cartridge; then echo 5; else echo 0; fi
+}
 
 leg_picker_fixture() {
   # The route points at a directory of generated solid-colour fixtures, so
@@ -83,12 +97,23 @@ leg_picker_timing() {
   # grid up, so the run's own frame is that grid.
   local t0
   t0=$(picker_t0)
-  leg_timing $((24 + t0 - 4)) $((56 + t0 - 4))
+  local extra=0
+  if leg_on cartridge; then extra=7; fi
+  leg_timing $((24 + t0 - 4 + extra)) $((56 + t0 - 4 + extra))
 }
 
 leg_picker_drive() {
-  local t0 script="$shot_dir/picker-drive.sh"
+  local t0 script="$shot_dir/picker-drive.sh" colors=""
   t0=$(picker_t0)
+  if leg_on cartridge; then
+    colors="$ipc call picker summon > /dev/null 2>&1
+sleep 2
+$ipc call picker status > '$picker_colors_status_path' 2>&1
+$ipc call picker choose 'color:#68bc64' > /dev/null 2>&1
+sleep 3
+$ipc call theme status > '$picker_color_theme_path' 2>&1
+'$grim_bin' '$picker_color_png' > /dev/null 2>&1"
+  fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep $t0
@@ -100,6 +125,7 @@ $ipc call picker choose "$picker_dir/img-3.png" > /dev/null 2>&1
 sleep 3
 $ipc call theme status > "$picker_theme_status_path" 2>&1
 sleep 1
+$colors
 $ipc call picker select "$picker_dir" tok-picker > "$picker_select_reply_path" 2>&1
 sleep 2
 $ipc call picker choose "$picker_dir/img-1.png" > /dev/null 2>&1
@@ -123,6 +149,8 @@ EOF
 }
 
 leg_picker_assert() {
+  local colors
+  colors=$(picker_colors)
   if [ ! -f "$picker_grid_png" ]; then
     fail "no picker-grid screenshot produced"
   fi
@@ -136,8 +164,9 @@ leg_picker_assert() {
   cat "$picker_flat_status_path"; echo
   if ! grep -q '"hasVariants":false' "$picker_flat_status_path" \
     || ! grep -q '"variant":"none"' "$picker_flat_status_path" \
-    || ! grep -q '"count":12' "$picker_flat_status_path"; then
-    fail "the flat listing did not report all 12 fixtures with no variants, got: $(cat "$picker_flat_status_path")"
+    || ! grep -q "\"count\":$((12 + colors))" "$picker_flat_status_path" \
+    || ! grep -q "\"colors\":$colors" "$picker_flat_status_path"; then
+    fail "the flat listing did not report all 12 fixtures and $colors colours with no variants, got: $(cat "$picker_flat_status_path")"
   fi
   # Choosing over IPC has to have run State.setWallpaper() through to the
   # ThemeEngine, which is what `theme status` reports back.
@@ -147,6 +176,24 @@ leg_picker_assert() {
   cat "$picker_theme_status_path"; echo
   if ! grep -q "\"wallpaper\":\"$picker_dir/img-3.png\"" "$picker_theme_status_path"; then
     fail "theme status did not report the picker-chosen wallpaper, got: $(cat "$picker_theme_status_path")"
+  fi
+  if ! grep -q "\"desktop\":\"$picker_dir/img-3.png\"" "$picker_theme_status_path"; then
+    fail "the picked picture is not what the desktop shows, got: $(cat "$picker_theme_status_path")"
+  fi
+  if [ "$colors" -gt 0 ]; then
+    cat "$picker_colors_status_path"; echo
+    if ! grep -q "\"count\":$((12 + colors))" "$picker_colors_status_path"; then
+      fail "the second summon lost the colour cells, got: $(cat "$picker_colors_status_path")"
+    fi
+    cat "$picker_color_theme_path"; echo
+    if ! grep -q '"desktop":"color:#68bc64"' "$picker_color_theme_path" \
+      || ! grep -q "\"wallpaper\":\"$picker_dir/img-3.png\"" "$picker_color_theme_path"; then
+      fail "picking the green cell did not make the desktop flat green over the kept picture, got: $(cat "$picker_color_theme_path")"
+    fi
+    if [ ! -f "$picker_color_png" ]; then
+      fail "no picker-color screenshot produced"
+    fi
+    echo "SMOKE_PICKER_COLOR $picker_color_png"
   fi
   # Generic image-selector proof: the second choose(), made against a
   # select()-mode request, must resolve that request's token with the chosen
@@ -181,7 +228,7 @@ leg_picker_assert() {
   fi
   cat "$picker_light_status_path"; echo
   if ! grep -q '"variant":"light"' "$picker_light_status_path" \
-    || ! grep -q '"count":3' "$picker_light_status_path"; then
+    || ! grep -q "\"count\":$((3 + colors))" "$picker_light_status_path"; then
     fail "the switcher did not swap the listing to the light set, got: $(cat "$picker_light_status_path")"
   fi
   if [ ! -f "$picker_variant_png" ]; then
@@ -207,8 +254,8 @@ leg_picker_assert() {
     fail "the thumbnail warm left partial files behind: $(cat "$picker_cache_listing_path")"
   fi
   cat "$picker_cached_status_path"; echo
-  if ! grep -q '"count":3' "$picker_cached_status_path" \
-    || ! grep -q '"cachedThumbnails":3' "$picker_cached_status_path"; then
+  if ! grep -q "\"count\":$((3 + colors))" "$picker_cached_status_path" \
+    || ! grep -q "\"cachedThumbnails\":$((3 + colors))" "$picker_cached_status_path"; then
     fail "the light listing is not fully backed by cached thumbnails, got: $(cat "$picker_cached_status_path")"
   fi
 }

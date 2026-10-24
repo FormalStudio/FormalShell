@@ -32,6 +32,10 @@
 //! pair used to flip one wallpaper's hue family across a toggle, while `-m`
 //! alone tones the scheme.
 //!
+//! A flat desktop (`wallpaper.color`, a picker swatch) seeds the scheme with
+//! `matugen color hex` on that colour, the probe skipped: there is nothing
+//! to rank.
+//!
 //! A wallpaper whose path names a pinned palette (flexoki, zenbones) still
 //! runs matugen, but nothing reads its scheme: every template is rewritten
 //! to the palette's own tones first, matugen renders the copies, and
@@ -681,10 +685,9 @@ impl Engine {
         .map_err(|e| format!("failed to write matugen-merged.toml: {e}"))?;
         let merged = self.env.merged_config().to_string_lossy().into_owned();
 
-        let args: Vec<String> = match pin {
-            Some(pin) => ["color", "hex", pin.source.as_str(), "-m", inputs.mode.as_str(), "-c", merged.as_str()]
-                .map(str::to_owned)
-                .to_vec(),
+        let seed = pin.map(|p| p.source.as_str()).or_else(|| super::wallpaper::flat_hex(&inputs.wallpaper).map(|h| h.trim_start_matches('#')));
+        let args: Vec<String> = match seed {
+            Some(seed) => ["color", "hex", seed, "-m", inputs.mode.as_str(), "-c", merged.as_str()].map(str::to_owned).to_vec(),
             None => {
                 // Extraction only: --dry-run writes no template and runs no
                 // command, and -d is what prints the ranking (-q would
@@ -1134,6 +1137,20 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         let cfg = std::fs::read_to_string(env.merged_config()).unwrap();
         assert!(cfg.starts_with("[config]\n"));
         assert!(cfg.contains("theme.json.tmpl"));
+    }
+
+    /// A flat desktop: one `color hex` run on its colour, no probe, and the
+    /// scheme it renders published like an image's.
+    #[test]
+    fn a_flat_desktop_seeds_matugen_with_its_colour() {
+        let (env, log) = rig("flat");
+        let (seen, _) = drive(env.clone(), vec![(Duration::ZERO, inputs(json!({}), "color:#402484", "dark"))], |s, _| {
+            s.palettes.iter().any(|p| p["primary"] == "#648db8")
+        });
+        assert!(seen.palettes.iter().any(|p| p["primary"] == "#648db8"));
+        let merged = env.merged_config().to_string_lossy().into_owned();
+        assert_eq!(log_lines(&log, "matugen"), [format!("matugen color hex 402484 -m dark -c {merged}")]);
+        assert!(!env.theme_json_tmp().exists());
     }
 
     /// A Flexoki wallpaper: `color hex` on the palette's source, every

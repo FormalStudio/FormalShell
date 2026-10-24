@@ -150,6 +150,8 @@ pub struct Theme {
     pub wallpaper_grid: bool,
     pub lock_grid: bool,
     pub wallpaper_animate: bool,
+    pub wallpaper_color: Option<String>,
+    pub wallpaper_swatches: &'static [(&'static str, &'static str)],
     /// The table's boot sequence plays (`theme.boot`, on wherever the
     /// `boot` habit names one).
     pub boot: bool,
@@ -248,6 +250,8 @@ impl Theme {
             wallpaper_grid: preset.wallpaper_grid,
             lock_grid: preset.lock_grid,
             wallpaper_animate: preset.wallpaper_animate,
+            wallpaper_color: preset.wallpaper_color.clone(),
+            wallpaper_swatches: preset.wallpaper_swatches,
             boot: preset.boot,
             sounds: preset.sounds,
             sound_volume: preset.sound_volume,

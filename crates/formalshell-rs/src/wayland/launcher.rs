@@ -609,7 +609,7 @@ impl App {
                 .picker_listing(&self.store)
                 .into_iter()
                 .filter(|path| px != p.thumb_px || !p.thumbs.contains_key(path))
-                .filter(|path| p.cached.contains(path) || !p.cached.is_empty())
+                .filter(|path| p.cached.contains(path) || !p.cached.is_empty() || crate::services::wallpaper::flat(path).is_some())
                 .collect();
             if !want.is_empty() {
                 crate::services::picker::command(crate::services::picker::Cmd::Thumbs(want, px));

@@ -11,6 +11,12 @@ use crate::tables;
 
 pub const NAMES: [&str; 4] = ["metamorphosis", "retro", "pantheon", "cartridge"];
 
+/// tsubi.club's five presets (`--color-1` to `--color-5`), the names
+/// `wallpaper.color` takes besides a hex and the swatches cartridge's
+/// picker offers.
+pub const COLORS: [(&str, &str); 5] =
+    [("sage", "#a1c8bc"), ("purple", "#402484"), ("green", "#68bc64"), ("silver", "#bdc3c9"), ("orange", "#ff8000")];
+
 #[derive(Clone, Copy, Debug)]
 pub struct Defaults {
     pub radius: f64,
@@ -21,6 +27,10 @@ pub struct Defaults {
     pub dither: bool,
     pub grid: bool,
     pub animate: bool,
+    /// The flat colour the desktop shows in place of the picture.
+    pub color: Option<&'static str>,
+    /// The colours the wallpaper picker offers ahead of the pictures.
+    pub swatches: &'static [(&'static str, &'static str)],
     pub style: &'static Value,
 }
 
@@ -42,6 +52,8 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             dither: true,
             grid: false,
             animate: false,
+            color: None,
+            swatches: &[],
             style: tables::retro(),
         },
         // Opaque, unlike the other two: elementary's popovers and dialogs
@@ -56,6 +68,8 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             dither: false,
             grid: false,
             animate: false,
+            color: None,
+            swatches: &[],
             style: tables::pantheon(),
         },
         // The table squares its own boxes; the base radius stays above 0 so
@@ -69,6 +83,8 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             dither: false,
             grid: true,
             animate: true,
+            color: Some("#402484"),
+            swatches: &COLORS,
             style: tables::cartridge(),
         },
         _ => Defaults {
@@ -80,6 +96,8 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             dither: false,
             grid: false,
             animate: false,
+            color: None,
+            swatches: &[],
             style: tables::metamorphosis(),
         },
     }
@@ -91,6 +109,24 @@ fn boolean(value: Option<Value>, fallback: bool) -> bool {
     match value {
         Some(Value::Bool(b)) => b,
         _ => fallback,
+    }
+}
+
+/// `wallpaper.color` as written: a `#rrggbb` hex (lowercased) or one of
+/// [`COLORS`]' names gives that colour, `false` or `null` the picture, and
+/// anything else is malformed, `None`, so the preset's own stands.
+pub fn color(value: &Value) -> Option<Option<String>> {
+    match value {
+        Value::Bool(false) | Value::Null => Some(None),
+        Value::String(s) => {
+            let s = s.trim().to_lowercase();
+            if let Some((_, hex)) = COLORS.iter().find(|(name, _)| *name == s) {
+                return Some(Some((*hex).to_owned()));
+            }
+            let digits = s.strip_prefix('#')?;
+            (digits.len() == 6 && digits.bytes().all(|b| b.is_ascii_hexdigit())).then(|| Some(s.clone()))
+        }
+        _ => None,
     }
 }
 
@@ -121,6 +157,10 @@ pub struct Resolved {
     pub lock_grid: bool,
     /// `wallpaper.animate`: the shard sculpture moving over the desktop.
     pub wallpaper_animate: bool,
+    /// `wallpaper.color`, or the preset's: a `#rrggbb` the desktop shows
+    /// flat unless the picker chose otherwise.
+    pub wallpaper_color: Option<String>,
+    pub wallpaper_swatches: &'static [(&'static str, &'static str)],
     /// `theme.boot`: the table's boot sequence plays, where its `boot`
     /// habit names one.
     pub boot: bool,
@@ -163,6 +203,8 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         wallpaper_grid: boolean(get("wallpaper.grid"), grid),
         lock_grid: boolean(get("lock.grid"), grid),
         wallpaper_animate: boolean(get("wallpaper.animate"), d.animate),
+        wallpaper_color: get("wallpaper.color").as_ref().and_then(color).unwrap_or(d.color.map(str::to_owned)),
+        wallpaper_swatches: d.swatches,
         boot: d.style["habits"]["boot"].as_str().is_some_and(|b| b != "none") && boolean(get("theme.boot"), true),
         sounds: d.style.get("sounds").and_then(Value::as_object).is_some_and(|s| !s.is_empty())
             && boolean(get("theme.sounds"), true),
@@ -277,6 +319,28 @@ pub(crate) mod tests {
             assert!(!p(name, json!({})).wallpaper_animate, "{name}");
         }
         assert!(p("pantheon", json!({ "wallpaper": { "animate": true } })).wallpaper_animate);
+    }
+
+    #[test]
+    fn only_cartridge_shows_a_flat_colour_unless_asked() {
+        assert_eq!(p("cartridge", json!({})).wallpaper_color.as_deref(), Some("#402484"));
+        assert_eq!(p("cartridge", json!({})).wallpaper_swatches, &COLORS);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            let t = p(name, json!({}));
+            assert_eq!(t.wallpaper_color, None, "{name}");
+            assert!(t.wallpaper_swatches.is_empty(), "{name}");
+        }
+        assert_eq!(p("pantheon", json!({ "wallpaper": { "color": "#FF8000" } })).wallpaper_color.as_deref(), Some("#ff8000"));
+        assert_eq!(p("retro", json!({ "wallpaper": { "color": "sage" } })).wallpaper_color.as_deref(), Some("#a1c8bc"));
+    }
+
+    #[test]
+    fn false_or_null_gives_the_picture_back_and_junk_keeps_the_preset() {
+        assert_eq!(p("cartridge", json!({ "wallpaper": { "color": false } })).wallpaper_color, None);
+        assert_eq!(p("cartridge", json!({ "wallpaper": { "color": null } })).wallpaper_color, None);
+        for junk in [json!("#40248"), json!("402484"), json!("violet"), json!(true), json!(4204164)] {
+            assert_eq!(p("cartridge", json!({ "wallpaper": { "color": junk } })).wallpaper_color.as_deref(), Some("#402484"), "{junk}");
+        }
     }
 
     #[test]

@@ -353,7 +353,7 @@ impl App {
         let theme = &self.store.theme.theme;
         let dither = theme.wallpaper_dither.then(|| self.store.config.f64("wallpaper.ditherColors").unwrap_or(6.0).max(1.0) as usize);
         let background = theme.colors.get("background");
-        let wanted = &self.store.state.data.wallpaper;
+        let wanted = &self.store.desktop();
         let reveal = theme.motion().families.reveal * self.motion_scale;
         let animate = theme.wallpaper_animate;
         for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
@@ -383,7 +383,7 @@ impl App {
         for i in 0..self.heads.len() {
             let run = self.shard_run(i);
             let theme = &self.store.theme.theme;
-            let wanted = &self.store.state.data.wallpaper;
+            let wanted = &self.store.desktop();
             let output = self.heads[i].output.clone();
             let has = self.heads[i].backdrop.as_ref().map(|b| b.shards.is_some());
             let made = (animate && has == Some(false)).then(|| {

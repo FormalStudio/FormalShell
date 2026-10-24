@@ -3,6 +3,11 @@
 //! as ready pixels, through the retro dither pass when
 //! `wallpaper.dither` asks for it and under the grid when `wallpaper.grid`
 //! does. Each output's backdrop crossfades between two of these.
+//!
+//! What the desktop shows is a source, [`source`]'s one answer: the
+//! picture's path, or `color:#rrggbb` where `wallpaper.color` or the picker
+//! made it a flat field. Every reader of the wallpaper (the backdrops, the
+//! lock, the band's paint, matugen, the greeter) takes the source.
 
 use std::sync::{Arc, OnceLock};
 
@@ -22,6 +27,53 @@ pub struct Picture {
     pub width: u32,
     pub height: u32,
     pub bgra: Vec<u8>,
+}
+
+const FLAT: &str = "color:";
+
+/// What the desktop shows: the picker's last colour (`wallpaperColor` in
+/// state.json a hex), the picture when it last chose one (`false`), and with
+/// no choice `wallpaper.color` or the preset's colour over the picture.
+pub fn source(color: Option<&str>, picked: &serde_json::Value, picture: &str) -> String {
+    use serde_json::Value;
+    let color = match picked {
+        Value::String(hex) => Some(hex.as_str()),
+        Value::Bool(false) => None,
+        _ => color,
+    };
+    color.map_or_else(|| picture.to_owned(), flat_source)
+}
+
+/// The source for a flat field of `hex`.
+pub fn flat_source(hex: &str) -> String {
+    format!("{FLAT}{hex}")
+}
+
+/// A flat source's `#rrggbb`, none for a picture.
+pub fn flat_hex(source: &str) -> Option<&str> {
+    source.strip_prefix(FLAT)
+}
+
+/// A flat source's colour.
+pub fn flat(source: &str) -> Option<[u8; 3]> {
+    let hex = flat_hex(source)?.strip_prefix('#')?;
+    let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+    (hex.len() == 6).then_some([byte(0)?, byte(2)?, byte(4)?])
+}
+
+/// The source decoded and cover-cropped to `width` by `height`, or the flat
+/// field filling it.
+pub fn image(source: &str, width: u32, height: u32) -> Option<image::RgbaImage> {
+    if let Some([r, g, b]) = flat(source) {
+        return Some(image::RgbaImage::from_pixel(width.max(1), height.max(1), image::Rgba([r, g, b, 255])));
+    }
+    let img = image::ImageReader::open(source).ok()?.with_guessed_format().ok()?.decode().ok()?.to_rgba8();
+    let (iw, ih) = (img.width() as f64, img.height() as f64);
+    let scale = (width as f64 / iw).max(height as f64 / ih);
+    let (cw, ch) = ((width as f64 / scale).round().max(1.0) as u32, (height as f64 / scale).round().max(1.0) as u32);
+    let (cx, cy) = ((img.width().saturating_sub(cw)) / 2, (img.height().saturating_sub(ch)) / 2);
+    let crop = imageops::crop_imm(&img, cx, cy, cw.min(img.width()), ch.min(img.height())).to_image();
+    Some(imageops::resize(&crop, width, height, FilterType::Triangle))
 }
 
 /// The newest picture for each output size asked for.
@@ -125,16 +177,11 @@ fn dither(img: &mut image::RgbaImage, colors: usize) {
 }
 
 /// Aspect-crop: scaled to cover, centred. The format comes from the bytes,
-/// since the greeter's mirrored copy has no extension.
+/// since the greeter's mirrored copy has no extension. A flat field skips
+/// the dither, which would only hand it back.
 pub fn render(path: &str, width: u32, height: u32, colors: Option<usize>, grid: Option<Grid>) -> Option<Picture> {
-    let img = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?.to_rgba8();
-    let (iw, ih) = (img.width() as f64, img.height() as f64);
-    let scale = (width as f64 / iw).max(height as f64 / ih);
-    let (cw, ch) = ((width as f64 / scale).round().max(1.0) as u32, (height as f64 / scale).round().max(1.0) as u32);
-    let (cx, cy) = ((img.width().saturating_sub(cw)) / 2, (img.height().saturating_sub(ch)) / 2);
-    let crop = imageops::crop_imm(&img, cx, cy, cw.min(img.width()), ch.min(img.height())).to_image();
-    let mut out = imageops::resize(&crop, width, height, FilterType::Triangle);
-    if let Some(n) = colors {
+    let mut out = image(path, width, height)?;
+    if let Some(n) = colors.filter(|_| flat(path).is_none()) {
         dither(&mut out, n);
     }
     if let Some(g) = grid {
@@ -174,5 +221,32 @@ pub async fn run(ctx: Ctx) {
             };
             ctx.publish(store::Diff::Wallpaper(Diff { size: (w, h), picture }));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_preset_colour_covers_the_picture_until_the_picker_says_otherwise() {
+        assert_eq!(source(Some("#402484"), &json!(null), "/w.png"), "color:#402484");
+        assert_eq!(source(None, &json!(null), "/w.png"), "/w.png");
+        assert_eq!(source(Some("#402484"), &json!(false), "/w.png"), "/w.png");
+        assert_eq!(source(None, &json!("#ff8000"), "/w.png"), "color:#ff8000");
+        assert_eq!(source(Some("#402484"), &json!("#a1c8bc"), ""), "color:#a1c8bc");
+        assert_eq!(source(Some("#402484"), &json!(3), "/w.png"), "color:#402484");
+    }
+
+    #[test]
+    fn a_flat_source_renders_one_colour_under_its_grid() {
+        assert_eq!(flat("color:#402484"), Some([0x40, 0x24, 0x84]));
+        assert_eq!(flat("/w/color.png"), None);
+        assert_eq!(flat("color:#40248"), None);
+        let p = render("color:#402484", 8, 4, Some(6), None).unwrap();
+        assert_eq!(p.path, "color:#402484");
+        assert!(p.bgra.chunks_exact(4).all(|px| px == [0x84, 0x24, 0x40, 255]));
+        assert_eq!(crate::shards::mean(&p.bgra).map(|c| c.to_u8()), Some([0x40, 0x24, 0x84, 255]));
     }
 }

@@ -61,7 +61,10 @@ pub fn sample(request: Request) {
 /// The band's samples off the decoded wallpaper, drawn the way
 /// the desktop crops it: cover, centred, nearest-neighbour.
 fn read(request: &Request) -> Option<Profile> {
-    let img = image::open(&request.wallpaper).ok()?.to_rgba8();
+    let img = match super::wallpaper::flat(&request.wallpaper) {
+        Some([r, g, b]) => image::RgbaImage::from_pixel(16, 16, image::Rgba([r, g, b, 255])),
+        None => image::open(&request.wallpaper).ok()?.to_rgba8(),
+    };
     let (iw, ih) = (img.width() as f64, img.height() as f64);
     let (sw, sh) = request.screen;
     if iw <= 0.0 || ih <= 0.0 || sw <= 0.0 || sh <= 0.0 {

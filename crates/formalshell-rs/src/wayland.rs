@@ -696,7 +696,7 @@ impl App {
         }
         let size = self.output_size();
         barpaint::sample(barpaint::Request {
-            wallpaper: self.store.state.data.wallpaper.clone(),
+            wallpaper: self.store.desktop(),
             edge: self.bar.edge().as_str(),
             thickness: self.bar.thickness() as f64,
             screen: size,
@@ -2570,9 +2570,14 @@ pub fn theme_inputs(app: &App) {
         (Some(lat), Some(lon)) => Some((lat, lon)),
         _ => None,
     };
+    // Off settings.json itself rather than the resolved theme, which may
+    // not have taken this settings change yet.
+    let settings = config.settings();
+    let get = theme::get(settings);
+    let color = fs_theme::presets::resolve(get("theme.preset").as_ref(), &get).wallpaper_color;
     theme::send_inputs(theme::Inputs {
-        settings: config.settings().clone(),
-        wallpaper: state.data.wallpaper.clone(),
+        settings: settings.clone(),
+        wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper),
         mode: state.data.mode.clone(),
         mode_override: theme::parse_override(&state.data.mode_override),
         location,

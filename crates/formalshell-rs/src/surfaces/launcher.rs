@@ -29,7 +29,7 @@ use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{IRect, NodeId};
 use crate::scroll::{Touchpad, Travel};
 use crate::services::menu::{self as index, Ask};
-use crate::services::{clipboard, compositor, state};
+use crate::services::{clipboard, compositor, state, wallpaper};
 use crate::store::Store;
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::surfaces::modal::Modal;
@@ -516,8 +516,32 @@ impl Model {
         Some(if self.picker.light { Variant::Light } else { Variant::Dark })
     }
 
+    /// The table's flat colours first, then the directory's pictures. The
+    /// image selector answers a caller with a file, so it lists no colour.
     pub fn picker_listing(&self, store: &Store) -> Vec<String> {
-        fs_menu::providers::wallpaper_listing(&self.picker_variants(store), self.picker_variant()).to_vec()
+        let variants = self.picker_variants(store);
+        let pictures = fs_menu::providers::wallpaper_listing(&variants, self.picker_variant());
+        self.picker_swatches(store).iter().map(|(_, hex)| wallpaper::flat_source(hex)).chain(pictures.iter().cloned()).collect()
+    }
+
+    fn picker_swatches(&self, store: &Store) -> &'static [(&'static str, &'static str)] {
+        if self.picker.select { &[] } else { store.theme.theme.wallpaper_swatches }
+    }
+
+    /// A colour's cell is labelled and searched by its name.
+    fn picker_rows(&self, store: &Store, query: &str) -> Vec<Node> {
+        let swatches = self.picker_swatches(store);
+        let q = query.trim().to_lowercase();
+        fs_menu::providers::image_rows(&self.picker_listing(store), "")
+            .into_iter()
+            .map(|mut row| {
+                if let Some((name, _)) = wallpaper::flat_hex(&row.path).and_then(|hex| swatches.iter().find(|(_, h)| *h == hex)) {
+                    row.label = (*name).to_owned();
+                }
+                row
+            })
+            .filter(|row| q.is_empty() || row.label.to_lowercase().contains(&q))
+            .collect()
     }
 
     /// The wallpaper route's segmented switcher shows.
@@ -572,9 +596,10 @@ impl Model {
             "mode": if self.picker.select { "select" } else { "wallpaper" },
             "directory": self.picker.dir,
             "count": listing.len(),
+            "colors": self.picker_swatches(store).len(),
             "variant": if v.has_variants { if self.picker.light { "light" } else { "dark" } } else { "none" },
             "hasVariants": v.has_variants,
-            "cachedThumbnails": listing.iter().filter(|p| store.picker.cached.contains(*p)).count(),
+            "cachedThumbnails": listing.iter().filter(|p| wallpaper::flat(p).is_some() || store.picker.cached.contains(*p)).count(),
             "darkCount": v.dark.len(),
             "lightCount": v.light.len(),
             "cursor": self.cursor,
@@ -690,7 +715,7 @@ impl Model {
                     .collect()
             }
             Mode::Input => Vec::new(),
-            Mode::Menu if picker => fs_menu::providers::image_rows(&self.picker_listing(store), q),
+            Mode::Menu if picker => self.picker_rows(store, q),
             Mode::Menu if monitor => monitor_rows(store, q),
             Mode::Menu if mirror => Vec::new(),
             Mode::Menu if matches!(level, Some("clipboard" | "share.history")) => {
