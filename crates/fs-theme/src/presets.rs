@@ -18,6 +18,7 @@ pub struct Defaults {
     pub blur: bool,
     pub dither: bool,
     pub grid: bool,
+    pub animate: bool,
     pub style: &'static Value,
 }
 
@@ -38,6 +39,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             blur: false,
             dither: true,
             grid: false,
+            animate: false,
             style: tables::retro(),
         },
         // Opaque, unlike the other two: elementary's popovers and dialogs
@@ -51,6 +53,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             blur: true,
             dither: false,
             grid: false,
+            animate: false,
             style: tables::pantheon(),
         },
         // The table squares its own boxes; the base radius stays above 0 so
@@ -63,6 +66,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             blur: true,
             dither: false,
             grid: true,
+            animate: true,
             style: tables::cartridge(),
         },
         _ => Defaults {
@@ -73,6 +77,7 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             blur: true,
             dither: false,
             grid: false,
+            animate: false,
             style: tables::metamorphosis(),
         },
     }
@@ -112,6 +117,8 @@ pub struct Resolved {
     pub grid: bool,
     pub wallpaper_grid: bool,
     pub lock_grid: bool,
+    /// `wallpaper.animate`: the shard sculpture moving over the desktop.
+    pub wallpaper_animate: bool,
 }
 
 /// `get` reads one dotted settings path, `None` when the key is absent: the
@@ -145,6 +152,7 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         grid,
         wallpaper_grid: boolean(get("wallpaper.grid"), grid),
         lock_grid: boolean(get("lock.grid"), grid),
+        wallpaper_animate: boolean(get("wallpaper.animate"), d.animate),
     }
 }
 
@@ -245,6 +253,16 @@ pub(crate) mod tests {
             let t = p(name, json!({}));
             assert!(!t.grid && !t.wallpaper_grid && !t.lock_grid, "{name}");
         }
+    }
+
+    #[test]
+    fn only_cartridge_animates_the_backdrop_unless_asked() {
+        assert!(p("cartridge", json!({})).wallpaper_animate);
+        assert!(!p("cartridge", json!({ "wallpaper": { "animate": false } })).wallpaper_animate);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            assert!(!p(name, json!({})).wallpaper_animate, "{name}");
+        }
+        assert!(p("pantheon", json!({ "wallpaper": { "animate": true } })).wallpaper_animate);
     }
 
     #[test]

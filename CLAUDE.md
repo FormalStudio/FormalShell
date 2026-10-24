@@ -129,6 +129,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Test App" with a themed icon): the hero carrying the entry's name and
   picture, and the window list holding the fixture window. `--panel
   appmenu` alone only ever shows the empty "No window" state.
+- `backdrop.sh` `--backdrop`: rides `--cartridge`; the shard sculpture
+  over a bare desktop, read off `debug dump`'s `backdrop` block and the
+  shell's `commit surface=shards` lines: frames a second apart differing
+  in its half of the screen, 20 s of it giving the shell's CPU as a share
+  of one core and a frame rate never past 24 (under `FS_CPU_QUOTA` it fails
+  past 10%), `debug motionScale 1000` slowing its clock to a tenth with the
+  beat unchanged, then no commit in 5 s under a fullscreen foot window and
+  none with the same window tiled over the whole output (`covered`), and
+  the frames moving again once it goes to workspace 2.
 - `bar_adaptive.sh` `--bar-adaptive`: the wingpanel band reading its own
   paint off the wallpaper under it, four wallpapers in one session (a flat
   bright field, a flat dark one, a half-and-half field, and the dark one

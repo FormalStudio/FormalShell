@@ -11,6 +11,7 @@ mod runtime;
 mod scene;
 mod scroll;
 mod services;
+mod shards;
 mod store;
 mod surface;
 mod surfaces;

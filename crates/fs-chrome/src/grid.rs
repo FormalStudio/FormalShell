@@ -113,6 +113,30 @@ impl Grid {
         });
     }
 
+    /// The lines laid over a premultiplied buffer that may be clear, the
+    /// fourth byte included: a layer of its own over something that moves.
+    pub fn coat(&self, buf: &mut [u8], w: usize, h: usize) {
+        let Some((cols, rows, alpha)) = self.coverage(w, h) else { return };
+        if buf.len() < w * h * 4 {
+            return;
+        }
+        for (y, row) in buf.chunks_exact_mut(w * 4).take(h).enumerate() {
+            let a = u32::from(alpha[y]);
+            if a == 0 {
+                continue;
+            }
+            let ink = [0, 1, 2].map(|i| (u32::from(self.color[i]) * a + 127) / 255);
+            for (x, px) in row.chunks_exact_mut(4).enumerate() {
+                if rows[y] || cols[x] {
+                    for i in 0..3 {
+                        px[i] = (ink[i] + (u32::from(px[i]) * (255 - a) + 127) / 255) as u8;
+                    }
+                    px[3] = (a + (u32::from(px[3]) * (255 - a) + 127) / 255) as u8;
+                }
+            }
+        }
+    }
+
     fn each(&self, buf: &mut [u8], w: usize, h: usize, f: impl Fn(u8, u8, u8) -> u8) {
         let Some((cols, rows, alpha)) = self.coverage(w, h) else { return };
         if buf.len() < w * h * 4 {
@@ -204,6 +228,25 @@ mod tests {
         assert_ne!(buf, before);
         g.lift(&mut buf, w, h);
         let worst = buf.iter().zip(&before).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+        assert!(worst <= 1, "{worst}");
+    }
+
+    #[test]
+    fn a_coat_over_a_clear_layer_composites_to_the_painted_picture() {
+        let (w, h) = (240, 240);
+        let bg = [40, 70, 60, 255];
+        let mut painted = flat(w, h, bg);
+        grid().paint(&mut painted, w, h);
+        let mut layer = flat(w, h, [0, 0, 0, 0]);
+        grid().coat(&mut layer, w, h);
+        assert_eq!(px(&layer, w, 10, 10), [0, 0, 0, 0], "clear between lines");
+        // Premultiplied over the same background lands where paint did.
+        let over: Vec<u8> = layer
+            .chunks_exact(4)
+            .zip(flat(w, h, bg).chunks_exact(4))
+            .flat_map(|(s, d)| [0, 1, 2, 3].map(|i| (u32::from(s[i]) + u32::from(d[i]) * (255 - u32::from(s[3])) / 255) as u8))
+            .collect();
+        let worst = over.iter().zip(&painted).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
         assert!(worst <= 1, "{worst}");
     }
 

@@ -38,9 +38,15 @@ theme_json_path="$iso_home/.local/state/formalshell/theme.json"
 hypr_sentinel="ff00ff"
 
 leg_wallpaper_fixture() {
+  # The shard backdrop's mark sits over the bare patch read below, so a
+  # cartridge run pins it off: this leg's claim is the image itself.
+  wallpaper_animate=""
+  leg_on cartridge && wallpaper_animate=', "animate": false'
   if [ "${SMOKE_WALLPAPER_DITHER:-0}" = "1" ]; then
     wallpaper_dither=true
-    settings_fragment ', "wallpaper": {"dither": true}'
+    settings_fragment ', "wallpaper": {"dither": true'"$wallpaper_animate"'}'
+  elif [ -n "$wallpaper_animate" ]; then
+    settings_fragment ', "wallpaper": {'"${wallpaper_animate#, }"'}'
   elif leg_on retro; then
     # The retro preset turns `theme.dither` on and `wallpaper.dither`
     # defaults to it, so the quantized strip is the expected frame here.

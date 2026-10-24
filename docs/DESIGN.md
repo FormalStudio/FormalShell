@@ -594,6 +594,12 @@ tray icons, the picker grid and clipboard thumbnails stay true colour. `theme.gr
 ink) laid into the wallpaper's pixels by `fs-chrome/src/grid.rs`, and drawn
 over the lock's scrim and the greeter's wallpaper from the same geometry;
 `wallpaper.grid` and `lock.grid` override it the way the dither keys do.
+`wallpaper.animate` (on under `cartridge`) puts the shard sculpture
+(`fs-chrome/src/shards.rs`, rasterised by `shards.rs`) on a Background
+layer of its own over each output's wallpaper at half its pixels, with the
+grid moved out of the picture onto a third layer over it; the
+`backdrop.shards` and `backdrop.mark` roles colour it, and the lock draws
+the frame it stopped on under its grid.
 Hyprland follows through `formalshell-chrome.lua` (`rounding`, `blur`, and
 the `window` role's own gaps, frame and cast, written by
 `fs-theme/src/chrome.rs`), published beside the colours; mango through

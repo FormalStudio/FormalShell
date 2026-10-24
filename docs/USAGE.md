@@ -820,6 +820,7 @@ the whole of what a preset changes that you can override:
 | `theme.blur` | true | false | true | true |
 | `theme.dither` | false | true | false | false |
 | `theme.grid` | false | false | false | true |
+| `wallpaper.animate` | false | false | false | true |
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -994,6 +995,23 @@ override it for the desktop and for the lock and greeter alone, the way
 ```jsonc
 // ~/.config/formalshell/settings.json
 { "theme": { "grid": true }, "lock": { "grid": false } }
+```
+
+### Animated backdrop
+
+`wallpaper.animate` draws a sculpture of thin shards over the desktop,
+turning slowly, with a faint ring and wordmark behind it and the grid
+over it. It is drawn at half the output's pixels and at most 24 frames a
+second, and it holds still on its last frame whenever it cannot be seen
+or should not cost anything: under a fullscreen window, when tiled
+windows cover more than 85% of the output, under the screensaver, on the
+power saver profile, on battery below 20%, and with `motion.enabled`
+false. The lock screen shows the frame it stopped on. The `cartridge`
+preset turns it on.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "wallpaper": { "animate": false } }
 ```
 
 ### Motion

@@ -1121,6 +1121,25 @@
             "width": 2,
             "fade": 0.2
         },
+        "backdrop.shards": {
+            "fill": "foreground",
+            "fillAlpha": 0.04,
+            "radius": 0,
+            "border": {
+                "color": "foreground",
+                "alpha": 0.85,
+                "width": 0.6
+            },
+            "ink": [
+                "foreground",
+                1
+            ]
+        },
+        "backdrop.mark": {
+            "fill": "background",
+            "fillAlpha": 0.16,
+            "radius": 0
+        },
         "scrim": {
             "fill": "black",
             "fillAlpha": 0.49019607843137253,

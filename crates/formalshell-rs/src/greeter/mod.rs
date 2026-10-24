@@ -694,6 +694,7 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
                 error: "",
                 has_wallpaper: backdrop.is_some(),
                 backdrop: backdrop.as_ref().map(|d| &d.bitmap),
+                shards: None,
                 picture: None,
                 avatar: crate::scene::nearest(&pic, 1.0),
                 media,

@@ -35,6 +35,9 @@ pub struct Shared<'a> {
     pub has_wallpaper: bool,
     /// The decoded wallpaper, scrim baked in, at its own size.
     pub backdrop: Option<&'a Bitmap>,
+    /// The desktop's sculpture held still, darkened as the scrim darkens
+    /// the wallpaper, stretched over the whole output.
+    pub shards: Option<&'a Bitmap>,
     /// The wallpaper as the desktop shows it, for the ink sampler.
     pub picture: Option<&'a Arc<Picture>>,
     pub avatar: Option<&'a Bitmap>,
@@ -214,6 +217,9 @@ impl View {
                     p.rect(full, black.with_alpha(SCRIM as f32), 0.0);
                 }
             }
+        }
+        if let Some(b) = s.shards {
+            p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
         }
         login::paint_grid(&mut p, theme, (w, h), s.wake);
         login::paint(&mut p, card_rect, theme, fade);
@@ -454,6 +460,7 @@ mod tests {
                 error: "",
                 has_wallpaper: true,
                 backdrop: Some(&white),
+                shards: None,
                 picture: None,
                 avatar: None,
                 media: None,
@@ -490,6 +497,7 @@ mod tests {
                 error: "",
                 has_wallpaper,
                 backdrop,
+                shards: None,
                 picture: None,
                 avatar: None,
                 media: None,
@@ -529,6 +537,7 @@ mod tests {
                 error: "",
                 has_wallpaper: false,
                 backdrop: None,
+                shards: None,
                 picture: None,
                 avatar: None,
                 media: None,

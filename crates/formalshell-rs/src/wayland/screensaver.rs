@@ -286,6 +286,7 @@ impl App {
         }
         self.saver.active = active;
         self.sync_herdr();
+        self.sync_shards();
         self.saver_cancel_hold();
         let now = Instant::now();
         let reveal = self.saver_reveal_ms();

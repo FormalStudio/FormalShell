@@ -1019,6 +1019,8 @@ pub struct Backdrop {
     fade: Option<Fade>,
     /// The logical size the buffer on screen was painted for.
     painted: Option<(i32, i32)>,
+    /// The sculpture over the picture, while `wallpaper.animate` is on.
+    pub shards: Option<Shards>,
 }
 
 struct Fade {
@@ -1042,6 +1044,7 @@ impl Backdrop {
             shown: None,
             fade: None,
             painted: None,
+            shards: None,
         }
     }
 
@@ -1049,6 +1052,61 @@ impl Backdrop {
         if width > 0 && height > 0 {
             self.size = Some((width, height));
         }
+    }
+
+    /// The sculpture's layers taken on, or dropped with none.
+    pub fn animate(&mut self, shards: Option<Shards>) {
+        self.shards = shards;
+    }
+
+    /// The sculpture as `look` and `grid` draw it, running or held: a
+    /// change of look or size draws the held frame again at once. True
+    /// while it runs.
+    pub fn sync_shards(&mut self, look: crate::shards::Look, grid: Option<Grid>, run: Result<(), &'static str>, now: Instant, qh: &QueueHandle<App>) -> bool {
+        let (Some(logical), Some(device)) = (self.size, self.pixels()) else { return false };
+        let Some(s) = &mut self.shards else { return false };
+        if !s.configured.iter().all(|c| *c) {
+            return false;
+        }
+        s.set_grid(grid, device, logical);
+        let started = match run {
+            Ok(()) if !s.running => {
+                s.running = true;
+                s.why = "";
+                s.last = Some(now);
+                true
+            }
+            Err(why) => {
+                s.running = false;
+                s.why = why;
+                false
+            }
+            Ok(()) => false,
+        };
+        let moved = s.look.as_ref() != Some(&look) || s.drawn.is_none_or(|(_, d)| d != crate::shards::half(device));
+        s.look = Some(look);
+        // Anything else waits for the beat, which keeps the cap.
+        if moved || (started && !s.pending) {
+            s.draw(device, logical, now, qh);
+        }
+        s.running
+    }
+
+    /// One beat of the sculpture's clock: a frame, unless the last one is
+    /// still waiting on the compositor. False once it has stopped.
+    pub fn shard_tick(&mut self, now: Instant, motion_scale: f64, qh: &QueueHandle<App>) -> bool {
+        let (Some(logical), Some(device)) = (self.size, self.pixels()) else { return false };
+        let Some(s) = &mut self.shards else { return false };
+        if !s.running || !s.configured.iter().all(|c| *c) {
+            return false;
+        }
+        if let Some(last) = s.last.replace(now) {
+            s.t += now.duration_since(last).as_secs_f64() * 1000.0 / motion_scale.max(0.01);
+        }
+        if !s.pending {
+            s.draw(device, logical, now, qh);
+        }
+        true
     }
 
     /// The size in buffer pixels, what a wallpaper is made at.
@@ -1133,6 +1191,8 @@ impl Backdrop {
         let Some(size) = self.size else { return };
         let scale = self.scaler.wanted(self.layer.wl_surface());
         let (w, h) = (scaled(size.0, scale), scaled(size.1, scale));
+        // The grid rides on its own layer over the sculpture.
+        let grid = grid.filter(|_| self.shards.is_none());
         let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888) else { return };
         let plain = |canvas: &mut [u8]| {
             for px in canvas.chunks_exact_mut(4) {
@@ -1153,7 +1213,7 @@ impl Backdrop {
                     flat.resize(canvas.len(), 0);
                     plain(&mut flat);
                 }
-                let pick = |p: Option<&crate::services::wallpaper::Picture>, i: usize| p.map_or(flat[i], |p| p.bgra[i]);
+                let pick = |p: Option<&crate::services::wallpaper::Picture>, i: usize| p.map_or_else(|| flat[i], |p| p.bgra[i]);
                 for (i, c) in canvas.iter_mut().enumerate() {
                     let s0 = u32::from(pick(src, i));
                     let d0 = u32::from(pick(dst, i));
@@ -1173,6 +1233,215 @@ impl Backdrop {
         if from.is_none() {
             eprintln!("commit surface=wallpaper {}x{} picture={}", w, h, to.is_some());
         }
+    }
+}
+
+/// Frames a second the sculpture is drawn at, at most.
+pub const SHARD_FPS: f64 = 24.0;
+
+/// The sculpture's two layers over a [`Backdrop`]'s picture: the shards
+/// at half the output's pixels, mapped back over the whole output by the
+/// viewport, and the grid over them at the output's own, drawn once.
+/// Layer surfaces of their own rather than the picture's subsurfaces:
+/// Hyprland schedules no frame for a commit to a layer's subsurface, so a
+/// subsurface's frames land only when something else redraws the output.
+pub struct Shards {
+    layer: LayerSurface,
+    viewport: WpViewport,
+    grid: LayerSurface,
+    grid_viewport: WpViewport,
+    /// Each layer's first configure, before which neither takes a buffer.
+    pub configured: [bool; 2],
+    pool: SlotPool,
+    /// Each buffer and what its last draw left in it.
+    buffers: Vec<(Buffer, Option<crate::shards::Painted>)>,
+    grid_pool: SlotPool,
+    grid_buffer: Option<Buffer>,
+    grid_drawn: Option<((i32, i32), Option<Grid>)>,
+    format: wl_shm::Format,
+    raster: crate::shards::Raster,
+    look: Option<crate::shards::Look>,
+    /// The sculpture's own clock, ms: it moves only while it runs.
+    pub t: f64,
+    last: Option<Instant>,
+    pub running: bool,
+    /// Why it holds still, empty while it runs.
+    pub why: &'static str,
+    /// A frame is on its way to the screen: the next waits for its callback.
+    pending: bool,
+    damage: Option<IRect>,
+    /// The clock and buffer size of the frame on screen.
+    drawn: Option<(f64, (i32, i32))>,
+    pub commits: u64,
+    pub callbacks: u64,
+    pub render_us: u128,
+    started: Instant,
+    /// The beat driving it, while it runs.
+    pub timer: Option<calloop::RegistrationToken>,
+}
+
+impl Shards {
+    /// `layer` and `grid` are made in that order on the Background level
+    /// after the picture's own, which stacks them over it.
+    pub fn new(layer: LayerSurface, grid: LayerSurface, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<App>, started: Instant) -> Self {
+        let viewport = pixels.viewporter.get_viewport(layer.wl_surface(), qh, Ignore);
+        let grid_viewport = pixels.viewporter.get_viewport(grid.wl_surface(), qh, Ignore);
+        Self {
+            layer,
+            viewport,
+            grid,
+            grid_viewport,
+            configured: [false; 2],
+            pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
+            buffers: Vec::new(),
+            grid_pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
+            grid_buffer: None,
+            grid_drawn: None,
+            format: if shm.formats().contains(&wl_shm::Format::Abgr8888) { wl_shm::Format::Abgr8888 } else { wl_shm::Format::Argb8888 },
+            raster: crate::shards::Raster::new(),
+            look: None,
+            t: 0.0,
+            last: None,
+            running: false,
+            why: "",
+            pending: false,
+            damage: None,
+            drawn: None,
+            commits: 0,
+            callbacks: 0,
+            render_us: 0,
+            started,
+            timer: None,
+        }
+    }
+
+    /// Which of the two layers `surface` is: 0 the shards, 1 the grid.
+    pub fn owns(&self, surface: &WlSurface) -> Option<usize> {
+        if self.layer.wl_surface() == surface {
+            Some(0)
+        } else if self.grid.wl_surface() == surface {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
+    pub fn frame_done(&mut self) {
+        self.pending = false;
+        self.callbacks += 1;
+    }
+
+    /// The grid's layer at the output's own pixels, drawn again only when
+    /// its size or lines change; none clears it.
+    fn set_grid(&mut self, grid: Option<Grid>, device: (i32, i32), logical: (i32, i32)) {
+        let key = (device, grid);
+        if self.grid_drawn == Some(key) {
+            return;
+        }
+        self.grid_drawn = Some(key);
+        let surface = self.grid.wl_surface();
+        let Some(g) = grid else {
+            // A clear pixel keeps the layer mapped: a null buffer unmaps it,
+            // and a remapped layer surface needs a fresh configure.
+            let Ok((buffer, canvas)) = self.grid_pool.create_buffer(1, 1, 4, self.format) else { return };
+            canvas.fill(0);
+            if buffer.attach_to(surface).is_ok() {
+                self.grid_viewport.set_destination(logical.0, logical.1);
+                surface.damage_buffer(0, 0, 1, 1);
+                self.grid.commit();
+                self.grid_buffer = Some(buffer);
+            }
+            return;
+        };
+        let (w, h) = device;
+        let Ok((buffer, canvas)) = self.grid_pool.create_buffer(w, h, w * 4, self.format) else { return };
+        canvas.fill(0);
+        let [r, gr, b, a] = g.color;
+        let ink = if self.format == wl_shm::Format::Abgr8888 { [r, gr, b, a] } else { [b, gr, r, a] };
+        Grid { color: ink, ..g }.coat(canvas, w as usize, h as usize);
+        if buffer.attach_to(surface).is_err() {
+            return;
+        }
+        self.grid_viewport.set_destination(logical.0, logical.1);
+        surface.damage_buffer(0, 0, w, h);
+        self.grid.commit();
+        self.grid_buffer = Some(buffer);
+    }
+
+    /// The frame at the clock's `t`, committed with a callback asked for.
+    fn draw(&mut self, device: (i32, i32), logical: (i32, i32), now: Instant, qh: &QueueHandle<App>) {
+        let Some(look) = &self.look else { return };
+        let (w, h) = crate::shards::half(device);
+        let (Ok(bw), Ok(bh)) = (u16::try_from(w), u16::try_from(h)) else { return };
+        let t0 = Instant::now();
+        // Two buffers in turn, a third only while both are on screen.
+        self.buffers.retain(|(b, _)| b.height() == h && b.stride() == w * 4);
+        let free = self.buffers.iter().position(|(b, _)| self.pool.canvas(b).is_some());
+        let at = match free {
+            Some(i) => i,
+            None if self.buffers.len() >= 3 => return,
+            None => {
+                let Ok((buffer, _)) = self.pool.create_buffer(w, h, w * 4, self.format) else { return };
+                self.buffers.push((buffer, None));
+                self.buffers.len() - 1
+            }
+        };
+        let resized = self.drawn.is_none_or(|(_, d)| d != (w, h));
+        let (buffer, prior) = &mut self.buffers[at];
+        let Some(canvas) = self.pool.canvas(buffer) else { return };
+        // A buffer swapped to BGRA whole can only be painted whole.
+        let keep = if self.format == wl_shm::Format::Abgr8888 { *prior } else { None };
+        let painted = self.raster.draw(canvas, bw, bh, self.t, look, keep);
+        *prior = Some(painted);
+        let damage = painted.shards;
+        if self.format != wl_shm::Format::Abgr8888 {
+            for px in canvas.chunks_exact_mut(4) {
+                px.swap(0, 2);
+            }
+        }
+        let render_us = t0.elapsed().as_micros();
+        let surface = self.layer.wl_surface();
+        if self.buffers[at].0.attach_to(surface).is_err() {
+            return;
+        }
+        let full = IRect::new(0, 0, w, h);
+        let rect = match (resized, self.damage, damage) {
+            (true, ..) => full,
+            (false, Some(a), Some(b)) => a.union(&b),
+            (false, a, b) => a.or(b).unwrap_or(full),
+        };
+        self.viewport.set_destination(logical.0, logical.1);
+        surface.damage_buffer(rect.x, rect.y, rect.w, rect.h);
+        surface.frame(qh, FrameCallbackData(surface.clone()));
+        self.layer.commit();
+        self.pending = true;
+        self.damage = damage;
+        self.drawn = Some((self.t, (w, h)));
+        self.commits += 1;
+        self.render_us = render_us;
+        if crate::tracing() {
+            crate::trace(format!(
+                "commit surface=shards n={} t={}ms render_us={} damage=[{},{},{}x{}] buffer={}x{} clock={:.0} running={}",
+                self.commits,
+                now.duration_since(self.started).as_millis(),
+                render_us,
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                w,
+                h,
+                self.t,
+                self.running as u8,
+            ));
+        }
+    }
+}
+
+impl Drop for Shards {
+    fn drop(&mut self) {
+        self.viewport.destroy();
+        self.grid_viewport.destroy();
     }
 }
 

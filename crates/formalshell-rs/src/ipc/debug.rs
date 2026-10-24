@@ -113,6 +113,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "modals": modals,
         "toasts": toasts,
         "frame": app.bar.frame_state(),
+        "backdrop": app.backdrop_state(),
         "theme": {
             "radius": number(theme.radius),
             "radiusXl": reach,
@@ -120,6 +121,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             "barPosition": edge.as_str(),
             "habits": theme.style.get("habits").cloned().unwrap_or_default(),
             "grid": {"wallpaper": theme.wallpaper_grid, "lock": theme.lock_grid},
+            "animate": theme.wallpaper_animate,
             "edgeInset": {
                 "top": inset(Edge::Top),
                 "bottom": inset(Edge::Bottom),

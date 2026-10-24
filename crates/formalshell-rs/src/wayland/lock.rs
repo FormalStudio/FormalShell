@@ -102,6 +102,9 @@ pub struct Lock {
     avatar: Vec<Bitmap>,
     /// The scrimmed wallpaper at each output's size.
     backdrop: Vec<Bitmap>,
+    /// The desktop's sculpture held still under the scrim, at half each
+    /// output's pixels.
+    shards: Vec<Bitmap>,
     clock: Option<RegistrationToken>,
     pub(super) dirty: bool,
     transport: i32,
@@ -142,6 +145,7 @@ impl Lock {
             tx: None,
             avatar: Vec::new(),
             backdrop: Vec::new(),
+            shards: Vec::new(),
             clock: None,
             dirty: false,
             transport: -1,
@@ -264,6 +268,7 @@ impl App {
         }
         self.lock.locked = true;
         self.sync_herdr();
+        self.sync_shards();
         self.lock.dirty = true;
         "ok".into()
     }
@@ -368,6 +373,7 @@ impl App {
         let path = self.store.config.avatar_path(&home);
         let size = crate::surfaces::login::avatar_size(&self.store.theme.theme);
         self.lock.avatar.clear();
+        self.lock.shards.clear();
         for scale in crate::surface::output_scales() {
             let (path, tx) = (path.clone(), tx.clone());
             rt.pool().submit(move || {
@@ -517,6 +523,7 @@ impl App {
         self.hot_corner_action_ended("screensaver");
         self.lock.locked = false;
         self.sync_herdr();
+        self.sync_shards();
         self.lock.secure = false;
         self.lock.password = field();
         self.lock.error.clear();
@@ -651,11 +658,44 @@ impl App {
         }
     }
 
+    /// The still each output's lock draws of the sculpture, at the clock
+    /// the desktop's stopped on, made once per lock and size.
+    fn lock_shards(&mut self) {
+        if !self.store.theme.theme.wallpaper_animate {
+            self.lock.shards.clear();
+            return;
+        }
+        let devices: Vec<(i32, i32)> = self
+            .lock
+            .outs
+            .iter()
+            .filter(|o| o.surface.configured)
+            .map(|o| crate::shards::half((crate::render::scaled(o.view.scene.size.w, o.surface.scale()), crate::render::scaled(o.view.scene.size.h, o.surface.scale()))))
+            .filter(|&(w, h)| !self.lock.shards.iter().any(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == (w, h)))
+            .collect();
+        if devices.is_empty() {
+            return;
+        }
+        let word = self.shard_word();
+        let theme = &self.store.theme.theme;
+        let wanted = &self.store.state.data.wallpaper;
+        let base = self.store.wallpaper.latest().filter(|p| p.path == *wanted).and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get("background"));
+        let look = crate::shards::Look::new(theme, base, word, (1.0 - view::SCRIM) as f32);
+        let t = self.heads.iter().find_map(|h| h.backdrop.as_ref()?.shards.as_ref().map(|s| s.t)).unwrap_or(0.0);
+        let mut raster = crate::shards::Raster::new();
+        for (w, h) in devices {
+            let (Ok(bw), Ok(bh)) = (u16::try_from(w), u16::try_from(h)) else { continue };
+            let pixmap = raster.still(bw, bh, t, &look);
+            self.lock.shards.push(Bitmap { pixmap: std::sync::Arc::new(pixmap), density: 1.0 });
+        }
+    }
+
     pub(super) fn present_lock(&mut self) {
         if self.lock.outs.is_empty() || !self.lock.dirty {
             return;
         }
         self.lock.dirty = false;
+        self.lock_shards();
         let now = Instant::now();
         let theme = &self.store.theme.theme;
         // The entrance: a fade that must
@@ -685,6 +725,7 @@ impl App {
             error: &self.lock.error,
             has_wallpaper,
             backdrop: None,
+            shards: None,
             picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.state.data.wallpaper),
             avatar: None,
             media: None,
@@ -721,6 +762,8 @@ impl App {
             let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
             let backdrops = &self.lock.backdrop;
             shared.backdrop = backdrops.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
+            let half = crate::shards::half(device);
+            shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == half);
             shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
             if let Some(m) = &mut shared.media {
                 m.art = arts.and_then(|a| crate::scene::nearest(a, k));
@@ -891,6 +934,7 @@ impl SessionLockHandler for App {
         self.lock.outs.clear();
         self.lock.locked = false;
         self.sync_herdr();
+        self.sync_shards();
         self.lock.secure = false;
         self.saver_rehost();
     }

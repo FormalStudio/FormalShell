@@ -269,6 +269,8 @@ pub struct App {
     wake: Option<Instant>,
     /// `debug motionScale`: every duration multiplied by this.
     pub motion_scale: f64,
+    /// The backdrop mark's word, by the style it was shaped in.
+    shard_word: Option<(crate::text::TextStyle, std::sync::Arc<Vec<(std::sync::Arc<vello_cpu::kurbo::BezPath>, f64, f64)>>)>,
     /// pantheon's cast under a joined card.
     pub cast: bool,
     /// `debug join`'s x and width on the bar's line, held under any card's.
@@ -372,6 +374,7 @@ impl App {
             battery_watch: Default::default(),
             wake: None,
             motion_scale: 1.0,
+            shard_word: None,
             cast: false,
             debug_join: None,
             exit: false,
@@ -1487,6 +1490,7 @@ impl App {
             self.warm_faces();
             self.prefault_launcher();
             self.launcher_warm = true;
+            self.sync_shards();
         }
         self.step_menu(now);
         self.step_overflow(now);

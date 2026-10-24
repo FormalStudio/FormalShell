@@ -49,6 +49,8 @@ pub(super) struct Spare {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Part {
     Backdrop,
+    /// One of the sculpture's two layers: 0 the shards, 1 the grid.
+    Shards(usize),
     Bar,
     Zone(usize),
     Catcher,
@@ -263,6 +265,9 @@ impl App {
             if h.backdrop.as_ref().is_some_and(|b| b.layer.wl_surface() == surface) {
                 return Some((i, Part::Backdrop));
             }
+            if let Some(n) = h.backdrop.as_ref().and_then(|b| b.shards.as_ref()).and_then(|s| s.owns(surface)) {
+                return Some((i, Part::Shards(n)));
+            }
             if h.catcher.as_ref().is_some_and(|c| c.layer.wl_surface() == surface) {
                 return Some((i, Part::Catcher));
             }
@@ -342,23 +347,176 @@ impl App {
     }
 
     /// The wallpaper for each output's size, asked for again whenever either
-    /// moves, and drawn once it is ready.
+    /// moves, and drawn once it is ready; the sculpture over it where
+    /// `wallpaper.animate` asks for one.
     pub(super) fn update_backdrops(&mut self) {
         let theme = &self.store.theme.theme;
         let dither = theme.wallpaper_dither.then(|| self.store.config.f64("wallpaper.ditherColors").unwrap_or(6.0).max(1.0) as usize);
         let background = theme.colors.get("background");
         let wanted = &self.store.state.data.wallpaper;
         let reveal = theme.motion().families.reveal * self.motion_scale;
+        let animate = theme.wallpaper_animate;
         for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             let Some((w, h)) = b.pixels() else { continue };
             let grid = theme.wallpaper_grid.then(|| crate::services::wallpaper::grid(theme, b.scale()));
-            crate::services::wallpaper::show(wanted, w as u32, h as u32, dither, grid);
+            // Under the sculpture the grid is a layer of its own, over it.
+            let under = grid.filter(|_| !animate);
+            crate::services::wallpaper::show(wanted, w as u32, h as u32, dither, under);
             let picture = self.store.wallpaper.sized(w as u32, h as u32).cloned();
             if picture.is_none() && b.holds(wanted) {
                 continue;
             }
-            b.draw(picture.filter(|p| p.path == *wanted && p.dither == dither && p.grid == grid), background, grid, reveal, &self.qh);
+            b.draw(picture.filter(|p| p.path == *wanted && p.dither == dither && p.grid == under), background, under, reveal, &self.qh);
         }
+        self.sync_shards();
+    }
+
+    /// Each output's sculpture made or dropped, and run or held as its
+    /// output's state asks; its beat armed while it runs.
+    pub(super) fn sync_shards(&mut self) {
+        // Not before the bar's first frame: the mark's word waits on the
+        // fonts, and the cold start budget is the bar's.
+        let animate = self.store.theme.theme.wallpaper_animate && self.faces_warmed;
+        let word = if animate { Some(self.shard_word()) } else { None };
+        let now = Instant::now();
+        for i in 0..self.heads.len() {
+            let run = self.shard_run(i);
+            let theme = &self.store.theme.theme;
+            let wanted = &self.store.state.data.wallpaper;
+            let output = self.heads[i].output.clone();
+            let has = self.heads[i].backdrop.as_ref().map(|b| b.shards.is_some());
+            let made = (animate && has == Some(false)).then(|| {
+                let layer = |ns| self.overlay_on(ns, Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
+                let (shards, grid) = (layer("formalshell:backdrop-shards"), layer("formalshell:backdrop-grid"));
+                crate::surface::Shards::new(shards, grid, &self.pixels, &self.shm, &self.qh, self.started)
+            });
+            let qh = &self.qh;
+            let Some(b) = self.heads[i].backdrop.as_mut() else { continue };
+            if made.is_some() || (!animate && has == Some(true)) {
+                if let Some(token) = b.shards.as_mut().and_then(|s| s.timer.take())
+                    && let Some(h) = &self.handle
+                {
+                    h.remove(token);
+                }
+                b.animate(made);
+            }
+            let Some(word) = &word else { continue };
+            let Some((w, h)) = b.pixels() else { continue };
+            let picture = self.store.wallpaper.sized(w as u32, h as u32).filter(|p| p.path == *wanted);
+            let base = picture.and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get("background"));
+            let look = crate::shards::Look::new(theme, base, word.clone(), 1.0);
+            let grid = theme.wallpaper_grid.then(|| crate::services::wallpaper::grid(theme, b.scale()));
+            let running = b.sync_shards(look, grid, run, now, qh);
+            let Some(s) = b.shards.as_mut() else { continue };
+            match (running, s.timer.take()) {
+                (true, Some(token)) => s.timer = Some(token),
+                (true, None) => s.timer = self.handle.as_ref().and_then(|h| shard_beat(h, output)),
+                (false, Some(token)) => {
+                    if let Some(h) = &self.handle {
+                        h.remove(token);
+                    }
+                }
+                (false, None) => {}
+            }
+        }
+    }
+
+    /// Why head `i`'s sculpture holds still, if it does: the spec's pause
+    /// rules, the first that applies.
+    fn shard_run(&self, i: usize) -> Result<(), &'static str> {
+        let theme = &self.store.theme.theme;
+        let name = self.output_name(&self.heads[i].output);
+        let snapshot = &self.store.compositor.snapshot;
+        let power = &self.store.devices.power;
+        if !theme.motion_enabled {
+            return Err("reducedMotion");
+        }
+        if self.lock.locked {
+            return Err("locked");
+        }
+        if self.saver.active {
+            return Err("screensaver");
+        }
+        if snapshot.fullscreen_outputs.iter().any(|o| *o == name) {
+            return Err("fullscreen");
+        }
+        if self.store.devices.profiles.as_ref().is_some_and(|p| p.active == fs_upower::Profile::PowerSaver) {
+            return Err("powerSaver");
+        }
+        if power.on_battery && power.battery.as_ref().is_some_and(|b| b.percent < SHARD_BATTERY_FLOOR) {
+            return Err("lowBattery");
+        }
+        if self.shard_cover(i) > SHARD_COVER_LIMIT {
+            return Err("covered");
+        }
+        Ok(())
+    }
+
+    /// The share of head `i`'s output its active workspace's tiled windows
+    /// cover.
+    pub(super) fn shard_cover(&self, i: usize) -> f64 {
+        let output = &self.heads[i].output;
+        let name = self.output_name(output);
+        let Some(info) = self.outputs.info(output) else { return 0.0 };
+        let Some((w, h)) = info.logical_size else { return 0.0 };
+        let (x, y) = info.logical_position.unwrap_or((0, 0));
+        let snapshot = &self.store.compositor.snapshot;
+        let active: Vec<&str> = snapshot.workspaces.iter().filter(|ws| ws.output == name && ws.is_active).map(|ws| ws.id.as_str()).collect();
+        let rects: Vec<(f64, f64, f64, f64)> = snapshot
+            .windows
+            .iter()
+            .filter(|win| !win.is_floating && active.contains(&win.workspace_id.as_str()))
+            .filter_map(|win| win.rect)
+            .map(|r| (r.x as f64, r.y as f64, r.width as f64, r.height as f64))
+            .collect();
+        fs_chrome::shards::covered((f64::from(x), f64::from(y), f64::from(w), f64::from(h)), &rects)
+    }
+
+    /// Each output's sculpture for `debug dump`: running or why not, its
+    /// clock and what it has committed.
+    pub(crate) fn backdrop_state(&self) -> serde_json::Value {
+        let heads: Vec<serde_json::Value> = (0..self.heads.len())
+            .map(|i| {
+                let s = self.heads[i].backdrop.as_ref().and_then(|b| b.shards.as_ref());
+                serde_json::json!({
+                    "output": self.output_name(&self.heads[i].output),
+                    "animate": s.is_some(),
+                    "running": s.is_some_and(|s| s.running),
+                    "paused": s.map_or("", |s| s.why),
+                    "clock": s.map_or(0.0, |s| s.t.round()),
+                    "commits": s.map_or(0, |s| s.commits),
+                    "frameCallbacks": s.map_or(0, |s| s.callbacks),
+                    "renderUs": s.map_or(0, |s| s.render_us as u64),
+                    "cover": (self.shard_cover(i) * 1000.0).round() / 1000.0,
+                })
+            })
+            .collect();
+        serde_json::Value::Array(heads)
+    }
+
+    /// The mark's word in the table's display face, shaped once per face.
+    pub(super) fn shard_word(&mut self) -> std::sync::Arc<Vec<(std::sync::Arc<vello_cpu::kurbo::BezPath>, f64, f64)>> {
+        let theme = &self.store.theme.theme;
+        let style = crate::text::TextStyle {
+            family: crate::surfaces::bar::cell::face(theme.faces.display),
+            size: crate::shards::WORD_SIZE,
+            weight: 900.0,
+            tracking: 0.0,
+            wdth: 125.0,
+            wght: Some(900.0),
+        };
+        if let Some((s, word)) = &self.shard_word
+            && *s == style
+        {
+            return word.clone();
+        }
+        let shaped = self.bar.kit.shape(crate::shards::WORD, style);
+        let (cx, cy) = (f64::from(shaped.width) / 2.0, f64::from(shaped.line_height()) / 2.0);
+        let pad = f64::from(crate::text::PAD);
+        let word: Vec<_> = shaped.glyphs.iter().map(|g| (g.path.clone(), f64::from(g.x) - pad - cx, f64::from(g.y) - pad - cy)).collect();
+        let word = std::sync::Arc::new(word);
+        self.shard_word = Some((style, word.clone()));
+        word
     }
 
     pub(super) fn head_frame(&mut self, i: usize, part: Part, now: Instant) {
@@ -369,6 +527,12 @@ impl App {
                     b.step(now, &self.qh);
                 }
             }
+            Part::Shards(0) => {
+                if let Some(s) = head.backdrop.as_mut().and_then(|b| b.shards.as_mut()) {
+                    s.frame_done();
+                }
+            }
+            Part::Shards(_) => {}
             Part::Bar => {
                 let Some(s) = &mut head.spare else { return };
                 let Some(surface) = &mut s.surface else { return };
@@ -397,6 +561,12 @@ impl App {
                     b.configure(width, height);
                 }
                 self.update_backdrops();
+            }
+            Part::Shards(n) => {
+                if let Some(c) = head.backdrop.as_mut().and_then(|b| b.shards.as_mut()).and_then(|s| s.configured.get_mut(n)) {
+                    *c = true;
+                }
+                self.sync_shards();
             }
             Part::Bar => {
                 let Some(s) = &mut head.spare else { return };
@@ -434,6 +604,11 @@ impl App {
         let Some(head) = self.heads.get_mut(i) else { return };
         match part {
             Part::Backdrop => head.backdrop = None,
+            Part::Shards(_) => {
+                if let Some(b) = &mut head.backdrop {
+                    b.animate(None);
+                }
+            }
             Part::Bar => {
                 if let Some(s) = &mut head.spare {
                     s.surface = None;
@@ -443,4 +618,35 @@ impl App {
             Part::Catcher => head.catcher = None,
         }
     }
+}
+
+/// Below this battery share, discharging, the sculpture holds still.
+const SHARD_BATTERY_FLOOR: f64 = 20.0;
+/// Past this share of the output under tiled windows it holds still.
+const SHARD_COVER_LIMIT: f64 = 0.85;
+
+/// The beat that draws `output`'s sculpture at [`crate::surface::SHARD_FPS`]
+/// while it runs; it drops itself once the sculpture stops or goes.
+fn shard_beat(handle: &calloop::LoopHandle<'static, App>, output: WlOutput) -> Option<calloop::RegistrationToken> {
+    use calloop::timer::{TimeoutAction, Timer};
+    let period = std::time::Duration::from_secs_f64(1.0 / crate::surface::SHARD_FPS);
+    handle
+        .insert_source(Timer::from_duration(period), move |deadline, _, app| {
+            let now = Instant::now();
+            let (scale, qh) = (app.motion_scale, app.qh.clone());
+            let Some(b) = app.heads.iter_mut().find(|h| h.output == output).and_then(|h| h.backdrop.as_mut()) else {
+                return TimeoutAction::Drop;
+            };
+            if b.shard_tick(now, scale, &qh) {
+                // A late beat starts the cadence over rather than firing a
+                // burst to catch up.
+                TimeoutAction::ToInstant((deadline + period).max(now))
+            } else {
+                if let Some(s) = &mut b.shards {
+                    s.timer = None;
+                }
+                TimeoutAction::Drop
+            }
+        })
+        .ok()
 }
