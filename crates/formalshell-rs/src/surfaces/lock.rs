@@ -35,12 +35,17 @@ pub struct Shared<'a> {
     pub has_wallpaper: bool,
     /// The decoded wallpaper, scrim baked in, at its own size.
     pub backdrop: Option<&'a Bitmap>,
+    /// The desktop's sculpture held still, darkened as the scrim darkens
+    /// the wallpaper, stretched over the whole output.
+    pub shards: Option<&'a Bitmap>,
     /// The wallpaper as the desktop shows it, for the ink sampler.
     pub picture: Option<&'a Arc<Picture>>,
     pub avatar: Option<&'a Bitmap>,
     pub media: Option<NowPlaying<'a>>,
     /// The column's entrance: its opacity and how far it still has to rise.
     pub enter: (f32, f64),
+    /// The clock's slam in, 0 to 1 at rest.
+    pub slam: f64,
     /// Idle-blanked: nothing but black once the wake fade has run out.
     pub blanked: bool,
     /// The blank and wake crossfade: 0 is
@@ -138,7 +143,7 @@ pub fn transport_key(index: i32, count: i32, key: TKey) -> Step {
 
 pub struct View {
     pub scene: Scene,
-    ui: Ui,
+    pub ui: Ui,
     nodes: Vec<NodeId>,
     /// `lock status`'s per-output report.
     pub report: Value,
@@ -213,8 +218,16 @@ impl View {
                 }
             }
         }
+        if let Some(b) = s.shards {
+            p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+        }
+        login::paint_grid(&mut p, theme, (w, h), s.wake);
         login::paint(&mut p, card_rect, theme, fade);
-        card.paint_clock(&mut p, &clock, inner, theme, kit, fade);
+        // The clock comes in from the leading side by `slam` of the screen's
+        // width, fading up as it lands.
+        let slam = theme.metric("lock.clock", "slam") * (1.0 - s.slam) * f64::from(w);
+        let shifted = vello_cpu::kurbo::Rect::new(inner.x0 - slam, inner.y0, inner.x1 - slam, inner.y1);
+        card.paint_clock(&mut p, &clock, shifted, theme, kit, fade * s.slam as f32);
         let last = p.last();
         p.finish();
 
@@ -353,12 +366,18 @@ fn fills_size((bw, bh): (i32, i32), (w, h): (i32, i32)) -> bool {
     bw > w && (bw * h - bh * w).abs() <= bw.max(bh)
 }
 
-/// The desktop's picture with the scrim baked in, for the pool.
+/// The desktop's picture with the scrim baked in, for the pool. Its grid
+/// comes off first: the lock draws its own over the scrim, or none.
 pub fn backdrop(p: &Picture) -> Bitmap {
+    let mut rgba: Vec<u8> = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
+    if let Some(g) = p.grid {
+        g.lift(&mut rgba, p.width as usize, p.height as usize);
+    }
     let keep = 1.0 - SCRIM;
-    let mut rgba = Vec::with_capacity(p.bgra.len());
-    for px in p.bgra.chunks_exact(4) {
-        rgba.extend_from_slice(&[(px[2] as f64 * keep) as u8, (px[1] as f64 * keep) as u8, (px[0] as f64 * keep) as u8, 255]);
+    for px in rgba.chunks_exact_mut(4) {
+        for c in &mut px[..3] {
+            *c = (f64::from(*c) * keep) as u8;
+        }
     }
     Bitmap::from_rgba(p.width as u16, p.height as u16, rgba)
 }
@@ -441,10 +460,12 @@ mod tests {
                 error: "",
                 has_wallpaper: true,
                 backdrop: Some(&white),
+                shards: None,
                 picture: None,
                 avatar: None,
                 media: None,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: true,
                 wake,
             };
@@ -476,10 +497,12 @@ mod tests {
                 error: "",
                 has_wallpaper,
                 backdrop,
+                shards: None,
                 picture: None,
                 avatar: None,
                 media: None,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: true,
                 wake,
             };
@@ -514,10 +537,12 @@ mod tests {
                 error: "",
                 has_wallpaper: false,
                 backdrop: None,
+                shards: None,
                 picture: None,
                 avatar: None,
                 media: None,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: false,
                 wake: 1.0,
             };

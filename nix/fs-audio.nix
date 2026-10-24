@@ -113,5 +113,42 @@ testers.runNixOSTest {
         assert s["type"] == "AudioOutStream" and s["is_stream"], s
         assert s["target"] == "fs_b", s
         assert len(s["volumes"]) > 0, s
+
+    with subtest("a blip plays on a stream of its own, gone once it lingered"):
+        # One su session for the lot: a background child of a `su -c` that
+        # has returned is hung up on.
+        machine.succeed("""cat > /tmp/sfx.sh <<'EOF'
+    pkill pw-play
+    parec -d fs_b.monitor --raw --format=s16le --rate=48000 --channels=1 > /tmp/sfx.raw &
+    rec=$!
+    sleep 1
+    fs-audio-probe play activate 1.0 15 > /tmp/sfx-dump.json &
+    probe=$!
+    up=0
+    gone=0
+    for i in $(seq 1 100); do
+      if pw-cli ls Node | grep -q formalshell-sfx; then up=1; break; fi
+      sleep 0.1
+    done
+    for i in $(seq 1 100); do
+      if ! pw-cli ls Node | grep -q formalshell-sfx; then gone=1; break; fi
+      sleep 0.1
+    done
+    kill -0 $probe && alive=1 || alive=0
+    wait $probe
+    kill $rec
+    echo "$up $gone $alive" > /tmp/sfx-seen
+    EOF""")
+        user("bash /tmp/sfx.sh")
+        up, gone, alive = user("cat /tmp/sfx-seen").split()
+        assert up == "1", "no formalshell-sfx node while the blip played"
+        assert gone == "1", "the stream outlived its linger"
+        assert alive == "1", "the probe was gone before the stream was"
+        d = json.loads(user("cat /tmp/sfx-dump.json"))
+        assert not any(n["name"] == "formalshell-sfx" for n in d["nodes"]), d
+        stat = user("sox -t raw -r 48000 -e signed -b 16 -c 1 /tmp/sfx.raw -n stat 2>&1")
+        peak = next(float(l.split(":")[1]) for l in stat.splitlines() if l.startswith("Maximum amplitude"))
+        print(f"blip capture peak {peak:.3f}")
+        assert peak > 0.3, stat
   '';
 }

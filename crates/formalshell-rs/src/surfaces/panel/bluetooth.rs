@@ -143,6 +143,23 @@ impl Panel for Bluetooth {
         "bluetooth".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Devices".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        let bt = &v.store.devices.bluetooth;
+        match bt.powered {
+            None => "no adapter".into(),
+            Some(false) => "off".into(),
+            Some(true) => super::count(rows(bt).iter().filter(|(b, _)| *b == Bucket::Connected).count(), "device", "devices") + " connected",
+        }
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Secondary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
     }
@@ -190,6 +207,7 @@ impl Panel for Bluetooth {
                 trailing: (!battery.is_empty()).then(|| w::value(battery).ink(Ink::Dim)),
                 rail: None,
                 rail_on: None,
+                tab: if !enabled { "off" } else if connected.is_empty() { "on" } else { "connected" }.into(),
             },
         );
         let mut out = vec![hero];

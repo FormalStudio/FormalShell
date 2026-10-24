@@ -103,7 +103,7 @@ fn words(f: &Face, theme: &Theme) -> El {
 }
 
 fn style(theme: &Theme, kit: &Kit, mono: bool) -> TextStyle {
-    TextStyle { family: if mono { kit.look.mono } else { kit.look.sans }, size: theme.font_size.caption as f32, weight: if mono { 500.0 } else { 400.0 }, tracking: 0.0 }
+    TextStyle { family: if mono { kit.look.mono } else { kit.look.sans }, size: theme.font_size.caption as f32, weight: if mono { 500.0 } else { 400.0 }, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 /// The ring's diameter, which is a control's height.

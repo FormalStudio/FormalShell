@@ -207,9 +207,12 @@ impl App {
             d.dirty = false;
             d.modal.sync_region(&self.compositor);
             let _raster = crate::scene::raster_at(d.modal.surface.scale());
+            d.ui.motion_scale = self.motion_scale;
             Self::lay_polkit(d, &self.store.theme.theme, &mut self.bar.kit, now);
         }
-        let animating = d.modal.animating(now);
+        // A content effect still running (an error label's shake) lays out
+        // again on the next frame.
+        let animating = d.modal.animating(now) || d.dirty;
         d.modal.present(animating, now, &qh);
         if animating {
             self.sync_join();
@@ -287,6 +290,7 @@ impl App {
         let after = p.last();
         p.finish();
         d.ui.anchor = after.or(Some(top));
-        d.ui.draw(&body, Rect::new(x, y, x + inner, y + body_h), Some(clip), alpha, theme, kit, scene, now);
+        let drawn = d.ui.draw(&body, Rect::new(x, y, x + inner, y + body_h), Some(clip), alpha, theme, kit, scene, now);
+        d.dirty = drawn.animating;
     }
 }

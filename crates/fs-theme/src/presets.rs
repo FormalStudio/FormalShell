@@ -5,9 +5,11 @@
 
 use serde_json::Value;
 
+use fs_audio::sfx::Volume;
+
 use crate::tables;
 
-pub const NAMES: [&str; 3] = ["metamorphosis", "retro", "pantheon"];
+pub const NAMES: [&str; 4] = ["metamorphosis", "retro", "pantheon", "cartridge"];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Defaults {
@@ -17,6 +19,8 @@ pub struct Defaults {
     pub surface_opacity: f64,
     pub blur: bool,
     pub dither: bool,
+    pub grid: bool,
+    pub animate: bool,
     pub style: &'static Value,
 }
 
@@ -36,6 +40,8 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 1.0,
             blur: false,
             dither: true,
+            grid: false,
+            animate: false,
             style: tables::retro(),
         },
         // Opaque, unlike the other two: elementary's popovers and dialogs
@@ -48,7 +54,22 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 1.0,
             blur: true,
             dither: false,
+            grid: false,
+            animate: false,
             style: tables::pantheon(),
+        },
+        // The table squares its own boxes; the base radius stays above 0 so
+        // its pills (buttons, the status strip, tags) stay round.
+        "cartridge" => Defaults {
+            radius: 4.0,
+            icons: "lucide",
+            fonts: "pair",
+            surface_opacity: 0.9,
+            blur: true,
+            dither: false,
+            grid: true,
+            animate: true,
+            style: tables::cartridge(),
         },
         _ => Defaults {
             radius: 10.0,
@@ -57,6 +78,8 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             surface_opacity: 0.85,
             blur: true,
             dither: false,
+            grid: false,
+            animate: false,
             style: tables::metamorphosis(),
         },
     }
@@ -80,6 +103,9 @@ pub struct Resolved {
     pub radius: Value,
     pub icons: Value,
     pub fonts: &'static str,
+    /// No valid `theme.fonts` in settings.json, so the table's own `fonts`
+    /// block names the families.
+    pub table_fonts: bool,
     /// As written, or the preset's alpha; range-checked by `theme::Theme`.
     pub surface_opacity: Value,
     pub blur: bool,
@@ -88,6 +114,21 @@ pub struct Resolved {
     /// say otherwise.
     pub wallpaper_dither: bool,
     pub lock_dither: bool,
+    /// `theme.grid` the same way: the desktop's lines, and the lock's and
+    /// the greeter's.
+    pub grid: bool,
+    pub wallpaper_grid: bool,
+    pub lock_grid: bool,
+    /// `wallpaper.animate`: the shard sculpture moving over the desktop.
+    pub wallpaper_animate: bool,
+    /// `theme.boot`: the table's boot sequence plays, where its `boot`
+    /// habit names one.
+    pub boot: bool,
+    /// `theme.sounds`: the table's blips play, on by default wherever it
+    /// carries `sounds`.
+    pub sounds: bool,
+    /// `theme.soundVolume`, 0.5 unless written as a number.
+    pub sound_volume: Volume,
 }
 
 /// `get` reads one dotted settings path, `None` when the key is absent: the
@@ -97,12 +138,14 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
     let preset = name(preset);
     let d = defaults(Some(&Value::from(preset)));
 
-    let fonts = match get("theme.fonts").as_ref().and_then(Value::as_str) {
-        Some("pair") => "pair",
-        Some("mono") => "mono",
-        _ => d.fonts,
+    let written = match get("theme.fonts").as_ref().and_then(Value::as_str) {
+        Some("pair") => Some("pair"),
+        Some("mono") => Some("mono"),
+        _ => None,
     };
+    let fonts = written.unwrap_or(d.fonts);
     let dither = boolean(get("theme.dither"), d.dither);
+    let grid = boolean(get("theme.grid"), d.grid);
 
     Resolved {
         preset,
@@ -110,11 +153,20 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         radius: get("theme.radius").unwrap_or(Value::from(d.radius)),
         icons: get("theme.icons").unwrap_or(Value::from(d.icons)),
         fonts,
+        table_fonts: written.is_none(),
         surface_opacity: get("theme.surfaceOpacity").unwrap_or(Value::from(d.surface_opacity)),
         blur: boolean(get("theme.blur"), d.blur),
         dither,
         wallpaper_dither: boolean(get("wallpaper.dither"), dither),
         lock_dither: boolean(get("lock.dither"), dither),
+        grid,
+        wallpaper_grid: boolean(get("wallpaper.grid"), grid),
+        lock_grid: boolean(get("lock.grid"), grid),
+        wallpaper_animate: boolean(get("wallpaper.animate"), d.animate),
+        boot: d.style["habits"]["boot"].as_str().is_some_and(|b| b != "none") && boolean(get("theme.boot"), true),
+        sounds: d.style.get("sounds").and_then(Value::as_object).is_some_and(|s| !s.is_empty())
+            && boolean(get("theme.sounds"), true),
+        sound_volume: get("theme.soundVolume").as_ref().and_then(Value::as_f64).map_or(Volume::DEFAULT, Volume::from_visual),
     }
 }
 
@@ -139,8 +191,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn names_are_the_three_presets() {
-        assert_eq!(NAMES, ["metamorphosis", "retro", "pantheon"]);
+    fn names_are_the_four_presets() {
+        assert_eq!(NAMES, ["metamorphosis", "retro", "pantheon", "cartridge"]);
     }
 
     #[test]
@@ -193,6 +245,73 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn cartridge_defaults_match_the_table() {
+        let t = p("cartridge", json!({}));
+        assert_eq!(t.preset, "cartridge");
+        assert!(std::ptr::eq(t.style, tables::cartridge()));
+        assert_eq!(t.radius, json!(4.0));
+        assert_eq!(t.icons, "lucide");
+        assert_eq!(t.fonts, "pair");
+        assert!(t.table_fonts);
+        assert_eq!(t.surface_opacity, json!(0.9));
+        assert!(t.blur);
+        assert!(!t.dither);
+        assert!(t.grid);
+        assert!(t.wallpaper_grid);
+        assert!(t.lock_grid);
+    }
+
+    #[test]
+    fn only_cartridge_takes_the_grid() {
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            let t = p(name, json!({}));
+            assert!(!t.grid && !t.wallpaper_grid && !t.lock_grid, "{name}");
+        }
+    }
+
+    #[test]
+    fn only_cartridge_animates_the_backdrop_unless_asked() {
+        assert!(p("cartridge", json!({})).wallpaper_animate);
+        assert!(!p("cartridge", json!({ "wallpaper": { "animate": false } })).wallpaper_animate);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            assert!(!p(name, json!({})).wallpaper_animate, "{name}");
+        }
+        assert!(p("pantheon", json!({ "wallpaper": { "animate": true } })).wallpaper_animate);
+    }
+
+    #[test]
+    fn only_a_table_with_a_boot_plays_one() {
+        assert!(p("cartridge", json!({})).boot);
+        assert!(!p("cartridge", json!({ "theme": { "boot": false } })).boot);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            assert!(!p(name, json!({ "theme": { "boot": true } })).boot, "{name}");
+        }
+    }
+
+    #[test]
+    fn only_a_table_with_sounds_plays_them() {
+        let t = p("cartridge", json!({}));
+        assert!(t.sounds);
+        assert_eq!(t.sound_volume, Volume::DEFAULT);
+        assert!(!p("cartridge", json!({ "theme": { "sounds": false } })).sounds);
+        assert_eq!(p("cartridge", json!({ "theme": { "soundVolume": 2 } })).sound_volume.as_visual(), 1.0);
+        assert_eq!(p("cartridge", json!({ "theme": { "soundVolume": "loud" } })).sound_volume, Volume::DEFAULT);
+        for name in ["metamorphosis", "retro", "pantheon"] {
+            assert!(!p(name, json!({ "theme": { "sounds": true } })).sounds, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_grid_overrides_like_dither() {
+        let t = p("cartridge", json!({ "lock": { "grid": false } }));
+        assert!(t.wallpaper_grid);
+        assert!(!t.lock_grid);
+        let t = p("metamorphosis", json!({ "theme": { "grid": true } }));
+        assert!(t.wallpaper_grid && t.lock_grid);
+        assert!(p("cartridge", json!({ "theme": { "grid": "false" } })).grid);
+    }
+
+    #[test]
     fn an_explicit_key_wins_over_the_preset() {
         let t = p("retro", json!({ "theme": { "radius": 4 } }));
         assert_eq!(t.radius, json!(4));
@@ -221,6 +340,8 @@ pub(crate) mod tests {
         assert_eq!(p("metamorphosis", json!({ "theme": { "fonts": "comic" } })).fonts, "pair");
         assert_eq!(p("retro", json!({ "theme": { "fonts": "comic" } })).fonts, "mono");
         assert_eq!(p("metamorphosis", json!({ "theme": { "fonts": "mono" } })).fonts, "mono");
+        assert!(p("metamorphosis", json!({ "theme": { "fonts": "comic" } })).table_fonts);
+        assert!(!p("metamorphosis", json!({ "theme": { "fonts": "pair" } })).table_fonts);
     }
 
     #[test]

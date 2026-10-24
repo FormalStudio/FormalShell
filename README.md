@@ -28,7 +28,7 @@ tracks what has run on real hardware and what has only run in a VM.
 
 ## Themes
 
-`theme.preset` picks one of three looks. The palette follows the wallpaper in
+`theme.preset` picks one of four looks. The palette follows the wallpaper in
 all of them.
 
 | `metamorphosis` (default) | `pantheon` | `retro` |
@@ -37,6 +37,31 @@ all of them.
 | shadcn chrome, translucent cards that bud off the bar's line | elementary OS 8: raised controls, sunken fields, cards on a soft cast | square, mono, Nerd Font glyphs, dithered imagery |
 
 ![A panel growing out of the bar](docs/media/metamorphosis-panel.gif)
+
+### cartridge
+
+The fourth look takes after an old console's menus and
+[tsubi.club](https://tsubi.club/): flat dark boxes with one corner cut, a
+block cursor on the row you're on, wide Archivo headings, and the
+wallpaper's primary as the one accent. Panels and the launcher slide in from
+the side instead of budding off the bar.
+
+<img src="docs/screenshots/theme-cartridge.png" width="840">
+
+It also turns on three things the other presets leave off. The desktop
+becomes a slowly turning sculpture of shards behind a grid, which stops
+whenever nobody can see it or it would cost battery. A boot sequence plays
+once per login. And the launcher and panels make small blips as you move
+through them. Each one has its own key (`wallpaper.animate`, `theme.boot`,
+`theme.sounds`), so you can keep the look and drop the extras; see
+[`docs/USAGE.md`](docs/USAGE.md).
+
+![The cartridge boot sequence](docs/media/cartridge-boot.gif)
+
+| | |
+| :---: | :---: |
+| <img src="docs/media/cartridge-backdrop.gif" width="420"><br>Backdrop | <img src="docs/media/cartridge-launcher.gif" width="420"><br>Launcher |
+| <img src="docs/media/cartridge-panel.gif" width="420"><br>System monitor | <img src="docs/media/cartridge-lock.gif" width="420"><br>Lock screen |
 
 ## What's in it
 

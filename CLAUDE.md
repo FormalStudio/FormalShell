@@ -52,7 +52,11 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
   already-running greeter session (restart greetd, screenshot pre-auth, a
   wrong password then the real one over `wtype`) and pulls
   `artifacts/greeter/`. It fails unless the session log shows a real
-  `pam_authenticate: AUTH_ERR` on the wrong attempt.
+  `pam_authenticate: AUTH_ERR` on the wrong attempt. `just vm-greeter
+  --preset cartridge` runs the same login under the testvm's
+  `greeter-cartridge` specialisation (a VM booted off the branch's own
+  testvm, slot 2 or past), a burst of frames through the boot first, and
+  fails unless the greeter logs it played, assembled and crumpled.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
   contract, kept fixed: argument parsing, argument errors and output
   strings, replayed through `formalshell-ipc`'s parser and the registry by
@@ -129,6 +133,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Test App" with a themed icon): the hero carrying the entry's name and
   picture, and the window list holding the fixture window. `--panel
   appmenu` alone only ever shows the empty "No window" state.
+- `backdrop.sh` `--backdrop`: rides `--cartridge`; the shard sculpture
+  over a bare desktop, read off `debug dump`'s `backdrop` block and the
+  shell's `commit surface=shards` lines: frames a second apart differing
+  in its half of the screen, 20 s of it giving the shell's CPU as a share
+  of one core and a frame rate never past 24 (under `FS_CPU_QUOTA` it fails
+  past 10%), `debug motionScale 1000` slowing its clock to a tenth with the
+  beat unchanged, no commit in 3 s under the open launcher (`modal`),
+  then no commit in 5 s under a fullscreen foot window and
+  none with the same window tiled over the whole output (`covered`), and
+  the frames moving again once it goes to workspace 2.
 - `bar_adaptive.sh` `--bar-adaptive`: the wingpanel band reading its own
   paint off the wallpaper under it, four wallpapers in one session (a flat
   bright field, a flat dark one, a half-and-half field, and the dark one
@@ -176,6 +190,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   clock commits, the stub is never called and the shell spends under 5
   ticks; `bluetooth status` lists the paired device alone, and the
   strangers too once the panel is open.
+- `boot.sh` `--boot`: rides `--cartridge`; the boot played over the
+  desktop as the shell's first frame, a burst of frames through it holding
+  a black stage and moving, left on its own and committing at least 20
+  frames. A second daemon taking over in the same login logs it as played
+  and never plays it; with `boot` cut out of state.json a third plays it
+  again and one real key 1s in sends it to the way out before the emblem
+  has assembled. Every other `--cartridge` run sets `theme.boot` false.
 - `brightness.sh` `--brightness`: three bursts of eight steps 40ms apart
   against PATH-shimmed `ddcutil` (a bus flock held 100 to 300ms per call,
   overlaps logged) and `brightnessctl` (reads answering after 20 to 150ms),
@@ -203,6 +224,26 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   record commit, and the cancel path.
 - `capture_edit.sh` `--capture-edit`: the SAVED notification's EDIT action
   reaching a real editor with the capture's own path on argv.
+- `cartridge.sh` `--cartridge`: pins `theme.preset` to `cartridge` in the
+  settings fixture and rides any other leg, so `--cartridge --gallery` is
+  the sheet in the console look: square boxes with one corner cut, the
+  cursor's block bar on its row and brackets round the grid cursor's cell,
+  in the packaged Archivo, DotGothic16 and BIZ UD Mincho.
+- `cartridge_media.sh` `--cartridge-media`: rides `--cartridge` (and
+  `--showcase` for the flat teal wallpaper); a camera, not a check. Grim
+  bursts of the boot, the backdrop, the launcher walked on real keys, the
+  monitor panel and the lock taking a wrong then the real password, all
+  but the boot at a third speed, turned into `docs/media/cartridge-*.gif`
+  at full speed (`dev/vm.sh` pulls them back). Fails only when a GIF was
+  not written.
+- `catalogue.sh` `--catalogue`: rides `--cartridge`; its motion catalogue
+  at a fifth speed, one frame burst per effect: the launcher's rows rising
+  and grain on open, a real Down widening the cursor's label, an activated
+  row's ghost, a real BackSpace's level change glitching, the audio panel's
+  status strip and hero typing in, the app menu's picture landing, a
+  handoff's body coming in, the OSD's block readout, and a wrong password's
+  error label shaking. Every burst differs from its rest frame and every
+  pair of rest frames a second apart is identical below the bar.
 - `center.sh` `--center`: the notification centre listing the pending tier,
   with the toast stack suppressed for as long as it is open, content-tall on
   a short history and capped and scrolling on thirty rows, then one open at
@@ -698,6 +739,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `showcase.sh` `--showcase`: seeds state.json with a generated wallpaper
   before the shell starts, so the leg it rides photographs a matugen palette
   over a real desktop. The README's screenshots and GIFs are taken under it.
+- `sfx.sh` `--sfx`: the table's blips on fs-audio's own PipeWire stream,
+  recorded off a null sink of the leg's own made the default: real keys
+  through the launcher (an open, two Downs, two letters, an Escape
+  clearing them, an Escape closing, an input step and a Return), nine
+  `sfx` log lines and nine bursts on the sink's monitor with each one's
+  peak and RMS printed, then an open, a Down and an Escape under
+  do-not-disturb with none. `pactl list sink-inputs` holds
+  `formalshell-sfx` just after a blip and nothing 3s after the last.
+  Without `--cartridge` the same drive logs no blip and records silence.
 - `shoulders.sh` `--shoulders`: a join published over `debug join`, the gap
   the bar opens in its own line read off the shell's numbers as the card's
   rect plus a `radiusXl` fillet at either end, and the pixel where the line

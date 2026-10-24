@@ -38,6 +38,8 @@ pub struct Slot {
     /// A text part's outgoing string and the clock that fades it out.
     ghost: Option<(usize, Part)>,
     cross: Animated,
+    /// A label typing in (`reveal: type`): its part and when it changed.
+    typing: Option<(usize, Instant)>,
     /// When the marquee's current cycle started, while it overflows.
     marquee: Option<Instant>,
     /// Laid out along the strip, in the owner's scene; empty when the
@@ -81,6 +83,7 @@ impl Slot {
             mark_fade: Animated::new(0.0, EFFECTS),
             ghost: None,
             cross: Animated::new(1.0, EFFECTS),
+            typing: None,
             marquee: None,
             rect: IRect::default(),
             clip: IRect::default(),
@@ -103,6 +106,11 @@ impl Slot {
                 self.ghost = Some(changed);
                 self.cross.jump(0.0);
                 self.cross.set(now, 1.0, kit.look.effects * kit.motion_scale);
+            }
+            if kit.look.reveal.is_some()
+                && let Some(i) = retyped(&old_view, &self.view)
+            {
+                self.typing = Some((i, now));
             }
         }
         let natural = match self.cell.custom() {
@@ -192,8 +200,28 @@ impl Slot {
         (t >= look.marquee_hold).then(|| (t - look.marquee_hold) / 1000.0 * look.marquee_px)
     }
 
-    /// When the marquee next starts to move, while it is holding, or the
-    /// cell's own timer, whichever comes first.
+    /// How many characters of the typing label show at `now`, and when the
+    /// next one does; none once it has typed out.
+    fn typed(&self, kit: &Kit, now: Instant) -> Option<(usize, usize, Option<Instant>)> {
+        let (i, at) = self.typing?;
+        let ms = kit.look.reveal? * kit.motion_scale;
+        let Some(Part::Label { text, .. } | Part::DimLabel { text }) = self.view.parts.get(i) else { return None };
+        let chars = text.chars().count();
+        let elapsed = crate::effects::since(at, now);
+        let shown = crate::effects::typed(chars, crate::effects::progress(elapsed, ms));
+        if shown >= chars {
+            return None;
+        }
+        // Each step lands on one of `TYPE_STEPS` stairs; only those that
+        // show another character need a frame.
+        let steps = fs_theme::style::TYPE_STEPS;
+        let next = (1..=steps).map(|k| k as f64 / steps as f64).find(|p| p * ms > elapsed && crate::effects::typed(chars, *p) > shown);
+        Some((i, shown, next.map(|p| at + Duration::from_secs_f64(p * ms / 1000.0))))
+    }
+
+    /// When the marquee next starts to move, while it is holding, the next
+    /// character of a typing label, or the cell's own timer, whichever
+    /// comes first.
     pub fn wake(&self, kit: &Kit, visible: bool, now: Instant) -> Option<Instant> {
         let marquee = self.marquee.filter(|_| self.overflowing(kit, visible)).and_then(|start| {
             let free = self.measured.free.as_ref()?;
@@ -202,7 +230,8 @@ impl Slot {
             let t = now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle;
             (t < look.marquee_hold).then(|| now + Duration::from_secs_f64((look.marquee_hold - t) / 1000.0))
         });
-        [marquee, self.cell.wake()].into_iter().flatten().min()
+        let typing = self.typed(kit, now).and_then(|t| t.2);
+        [marquee, typing, self.cell.wake()].into_iter().flatten().min()
     }
 
     pub fn animating(&mut self, kit: &Kit, visible: bool, now: Instant) -> bool {
@@ -268,6 +297,10 @@ impl Slot {
             self.ghost = None;
         }
         let own_hover = self.cell.custom().is_some_and(|c| c.own_hover());
+        let typed = self.typed(kit, now);
+        if typed.is_none() {
+            self.typing = None;
+        }
         let mut p = Painter::new(scene, &mut self.nodes, Some(self.clip.intersect(&rect)));
         if rect.is_empty() || fade <= 0.0 {
             p.finish();
@@ -279,6 +312,7 @@ impl Slot {
             hovered: hovered && self.view.interactive && !own_hover,
             open: (self.mark.value(now), self.mark_fade.value(now).clamp(0.0, 1.0)),
             alpha: fade,
+            typed: typed.map(|t| (t.0, t.1)),
             band,
             scroll,
             ghost: self.ghost.as_ref().map(|(i, part)| (*i, part, self.cross.value(now).clamp(0.0, 1.0) as f32)),
@@ -293,6 +327,24 @@ impl Slot {
         }
         p.finish();
         self.dirty = false;
+    }
+}
+
+/// The one label part whose string changed between two views of the same
+/// shape, which types in on a table that reveals by typing (the clock on
+/// the minute).
+fn retyped(old: &View, new: &View) -> Option<usize> {
+    if old.parts.len() != new.parts.len() || !old.shown {
+        return None;
+    }
+    let mut changed = old.parts.iter().zip(&new.parts).enumerate().filter(|(_, (a, b))| a != b);
+    let (i, (a, b)) = changed.next()?;
+    if changed.next().is_some() {
+        return None;
+    }
+    match (a, b) {
+        (Part::Label { text: x, .. }, Part::Label { text: y, .. }) | (Part::DimLabel { text: x }, Part::DimLabel { text: y }) => (!x.is_empty() && x != y).then_some(i),
+        _ => None,
     }
 }
 

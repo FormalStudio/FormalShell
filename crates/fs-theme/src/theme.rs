@@ -10,7 +10,7 @@ use crate::color::Rgba;
 use crate::palette::{self, COLOR_KEYS};
 use crate::presets;
 use crate::style::{self, BoxStyle, Clock, Radius, Ring};
-use crate::tokens::{self, FontTokens, LetterSpacing, Radii, Space};
+use crate::tokens::{self, Easing, FontTokens, LetterSpacing, Radii, Space};
 
 /// theme.json's colour roles, parsed. Built from a palette that already
 /// went through `palette::merge_with_fallback`, so every key is valid hex.
@@ -33,6 +33,34 @@ impl Colors {
     pub fn get(&self, name: &str) -> Rgba {
         COLOR_KEYS.iter().position(|k| *k == name).map_or(Rgba::TRANSPARENT, |i| self.values[i])
     }
+
+    /// The same roles with `primary` taken from `role`, for a surface drawn
+    /// in its own accent. A role too close to the background to read as one
+    /// (the static fallback's grey chart steps) leaves `primary` alone.
+    pub fn accented(&self, role: &str) -> Self {
+        let mut out = self.clone();
+        let accent = self.get(role);
+        let (hi, lo) = {
+            let (a, b) = (luminance(accent), luminance(self.get("background")));
+            (a.max(b), a.min(b))
+        };
+        if let Some(p) = COLOR_KEYS.iter().position(|k| *k == "primary")
+            && COLOR_KEYS.contains(&role)
+            && (hi + 0.05) / (lo + 0.05) >= 3.0
+        {
+            out.values[p] = accent;
+        }
+        out
+    }
+}
+
+/// WCAG's relative luminance of an sRGB colour.
+fn luminance(c: Rgba) -> f64 {
+    let lin = |v: f32| {
+        let v = f64::from(v);
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
 }
 
 impl Default for Colors {
@@ -52,11 +80,55 @@ pub struct ThemeMotion {
     pub switcher: f64,
     pub restack_stagger: f64,
     pub families: tokens::Motion,
-    pub emerge_curve: Vec<f64>,
-    pub arrive_curve: Vec<f64>,
-    pub restack_curve: Vec<f64>,
-    pub switcher_curve: Vec<f64>,
+    pub emerge_curve: Easing,
+    pub arrive_curve: Easing,
+    pub restack_curve: Easing,
+    pub switcher_curve: Easing,
     pub pulse_duration: f64,
+    /// The table's effects past its clocks, durations scaled the same way.
+    pub catalogue: style::Catalogue,
+}
+
+/// One text role's family: the name a table gives it, and the fontconfig
+/// alias that stands in when the table names none or the face is missing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Face {
+    pub name: Option<&'static str>,
+    pub generic: &'static str,
+}
+
+/// The four text roles a table may name: `words` for labels, `values` for
+/// numbers and status, `display` for headings and titles, `body` for
+/// secondary lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Faces {
+    pub words: Face,
+    pub values: Face,
+    pub display: Face,
+    pub body: Face,
+}
+
+impl Faces {
+    /// The table's `fonts` block, `display` and `body` falling back to
+    /// `words`, `values` to `monospace` and `words` to the `theme.fonts`
+    /// pair's sans. `from_table` false leaves every role on its alias.
+    pub fn resolve(style: &'static Value, fonts: &str, from_table: bool) -> Self {
+        let sans = if fonts == "mono" { "monospace" } else { "sans-serif" };
+        let name = |key: &str| -> Option<&'static str> {
+            if !from_table {
+                return None;
+            }
+            style.get("fonts")?.get(key)?.as_str().filter(|n| !n.is_empty())
+        };
+        let words = Face { name: name("words"), generic: sans };
+        let or_words = |key: &str| name(key).map_or(words, |n| Face { name: Some(n), generic: sans });
+        Self {
+            words,
+            values: Face { name: name("values"), generic: "monospace" },
+            display: or_words("display"),
+            body: or_words("body"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -70,12 +142,20 @@ pub struct Theme {
     pub surface_opacity: f64,
     pub blur_behind: bool,
     pub fonts: &'static str,
-    pub font_family_sans: &'static str,
-    pub font_family_mono: &'static str,
+    pub faces: Faces,
     pub icon_set: String,
     pub dither: bool,
     pub wallpaper_dither: bool,
     pub lock_dither: bool,
+    pub wallpaper_grid: bool,
+    pub lock_grid: bool,
+    pub wallpaper_animate: bool,
+    /// The table's boot sequence plays (`theme.boot`, on wherever the
+    /// `boot` habit names one).
+    pub boot: bool,
+    /// `theme.sounds` over a table that carries `sounds`.
+    pub sounds: bool,
+    pub sound_volume: fs_audio::sfx::Volume,
     pub font_base_size: f64,
     pub font_scale: f64,
     pub font_size: FontTokens,
@@ -160,12 +240,17 @@ impl Theme {
             surface_opacity,
             blur_behind: preset.blur,
             fonts: preset.fonts,
-            font_family_sans: if preset.fonts == "mono" { "monospace" } else { "sans-serif" },
-            font_family_mono: "monospace",
+            faces: Faces::resolve(style, preset.fonts, preset.table_fonts),
             icon_set,
             dither: preset.dither,
             wallpaper_dither: preset.wallpaper_dither,
             lock_dither: preset.lock_dither,
+            wallpaper_grid: preset.wallpaper_grid,
+            lock_grid: preset.lock_grid,
+            wallpaper_animate: preset.wallpaper_animate,
+            boot: preset.boot,
+            sounds: preset.sounds,
+            sound_volume: preset.sound_volume,
             font_base_size,
             font_scale,
             font_size: tokens::font_tokens(font_base_size),
@@ -185,9 +270,30 @@ impl Theme {
         self.frame_thickness > 0.0
     }
 
+    /// The sound the table plays for an event, none with `theme.sounds` off
+    /// or an event the table leaves silent.
+    pub fn sound(&self, event: fs_audio::sfx::Sound) -> Option<fs_audio::sfx::Sound> {
+        if !self.sounds {
+            return None;
+        }
+        self.style.get("sounds")?.get(event.name())?.as_str().and_then(fs_audio::sfx::Sound::from_name)
+    }
+
     /// One habit's value, which a surface reads instead of the preset name.
     pub fn habit(&self, key: &str) -> Option<&Value> {
         self.style["habits"].get(key)
+    }
+
+    /// A string habit, `""` when the table leaves it out.
+    pub fn habit_str(&self, key: &str) -> &str {
+        self.habit(key).and_then(Value::as_str).unwrap_or("")
+    }
+
+    /// This theme with `primary` taken from another palette role.
+    pub fn accented(&self, role: &str) -> Self {
+        let mut out = self.clone();
+        out.colors = self.colors.accented(role);
+        out
     }
 
     fn ctx(&self) -> PaletteCtx<'_> {
@@ -204,7 +310,35 @@ impl Theme {
     }
 
     pub fn with_cursor(&self, b: BoxStyle<Rgba>, on: bool, halo: bool) -> BoxStyle<Rgba> {
-        if on { style::with_cursor(&b, &self.box_style("cursor", None), halo) } else { b }
+        if on { style::with_cursor(&b, &self.box_style("cursor", None), self.cursor_bar().as_ref(), halo) } else { b }
+    }
+
+    /// A grid cell's cursor: the `cursor.brackets` lines with their glow
+    /// and the cursor's own halo on a table that draws brackets, the plain
+    /// cursor otherwise.
+    pub fn with_brackets(&self, b: BoxStyle<Rgba>, on: bool, halo: bool) -> BoxStyle<Rgba> {
+        match self.cursor_brackets() {
+            Some(brackets) if on => {
+                let mut out = style::with_cursor(&b, &self.box_style("cursor", None), None, halo);
+                out.brackets = Some(style::Brackets { glow: self.box_style("cursor.brackets", None).casts, ..brackets });
+                out
+            }
+            _ => self.with_cursor(b, on, halo),
+        }
+    }
+
+    /// The block the cursor draws on a row's leading edge, if the table has one.
+    pub fn cursor_bar(&self) -> Option<style::Bar<Rgba>> {
+        style::cursor_bar(self.style, &self.ctx())
+    }
+
+    pub fn cursor_brackets(&self) -> Option<style::Brackets<Rgba>> {
+        style::cursor_brackets(self.style, &self.ctx())
+    }
+
+    /// A number a role carries beside its box.
+    pub fn metric(&self, role: &str, key: &str) -> f64 {
+        style::metric(self.style, role, key)
     }
 
     /// Half the extent while the base radius is positive, square at 0.
@@ -261,6 +395,22 @@ impl Theme {
         chrome::Chrome::from_table(self.style, Value::from(self.radius), Value::Bool(self.blur_behind))
     }
 
+    fn catalogue(&self, on: &dyn Fn(f64) -> f64) -> style::Catalogue {
+        let c = style::catalogue(self.style, &tokens::motion_tokens(true));
+        let clock = |k: Clock| Clock { duration: on(k.duration), stagger: on(k.stagger), ..k };
+        style::Catalogue {
+            focus_text: c.focus_text.map(|f| style::FocusText { clock: clock(f.clock), ..f }),
+            reveal: c.reveal.map(on),
+            rows: c.rows.map(|r| style::Rows { clock: clock(r.clock), stagger: on(r.stagger), ..r }),
+            swap: c.swap.map(|g| style::Glitch { out: on(g.out), into: on(g.into), ..g }),
+            use_: c.use_.map(|u| style::Use { clock: clock(u.clock), ..u }),
+            error: c.error.map(on),
+            picture: c.picture.map(on),
+            noise: c.noise.map(|n| style::Noise { clock: clock(n.clock), ..n }),
+            progress: c.progress,
+        }
+    }
+
     pub fn motion(&self) -> ThemeMotion {
         let families_on = tokens::motion_tokens(true);
         let clock = |key: &str| -> Clock { style::motion(self.style, key, &families_on) };
@@ -290,6 +440,7 @@ impl Theme {
             restack_curve: restack.curve,
             switcher_curve: switcher.curve,
             pulse_duration: 900.0,
+            catalogue: self.catalogue(&on),
         }
     }
 }
@@ -339,6 +490,13 @@ mod tests {
         assert_eq!(t.box_radius(&b, 40.0), t.radii.xl);
         assert!(b.casts.is_empty());
         assert!(b.rings.is_empty());
+    }
+
+    #[test]
+    fn the_boot_inks_white_on_its_black_stage() {
+        let b = theme().box_style("boot", None);
+        assert_eq!(b.fill, hex("#ffffff").with_alpha(0.9));
+        assert_eq!(b.border.map(|l| (l.color, l.width)), Some((hex("#ffffff").with_alpha(0.2), 2.0)));
     }
 
     #[test]
@@ -481,10 +639,61 @@ mod tests {
         assert_eq!(t.radii.xl, 0.0);
         assert_eq!(t.surface_opacity, 1.0);
         assert!(!t.blur_behind);
-        assert_eq!(t.font_family_sans, "monospace");
+        assert_eq!(t.faces.words, Face { name: None, generic: "monospace" });
         assert_eq!(t.icon_set, "nerd");
         assert_eq!(t.pill_radius(20.0), 0.0);
         assert_eq!(t.frame_radius, 0.0);
+    }
+
+    #[test]
+    fn a_table_with_no_fonts_block_keeps_the_aliases() {
+        let alias = |generic| Face { name: None, generic };
+        for (preset, sans) in [("metamorphosis", "sans-serif"), ("pantheon", "sans-serif"), ("retro", "monospace")] {
+            let t = Theme::resolve(make_get(json!({ "theme": { "preset": preset } })), &sentinel());
+            let want = Faces { words: alias(sans), values: alias("monospace"), display: alias(sans), body: alias(sans) };
+            assert_eq!(t.faces, want, "{preset}");
+        }
+    }
+
+    #[test]
+    fn an_accent_too_close_to_the_background_keeps_primary() {
+        let c = Colors::default();
+        assert_eq!(c.accented("chart2").get("primary"), c.get("primary"));
+        assert_eq!(c.accented("chart3").get("primary"), c.get("chart3"));
+        assert_eq!(c.accented("chart3").get("chart3"), c.get("chart3"));
+    }
+
+    #[test]
+    fn a_fonts_block_falls_back_down_its_roles() {
+        let full: &'static Value = Box::leak(Box::new(json!({ "fonts": {
+            "words": "Archivo", "values": "DotGothic16", "display": "Archivo Narrow", "body": "BIZ UDMincho"
+        } })));
+        let f = Faces::resolve(full, "pair", true);
+        assert_eq!(f.words, Face { name: Some("Archivo"), generic: "sans-serif" });
+        assert_eq!(f.values, Face { name: Some("DotGothic16"), generic: "monospace" });
+        assert_eq!(f.display, Face { name: Some("Archivo Narrow"), generic: "sans-serif" });
+        assert_eq!(f.body, Face { name: Some("BIZ UDMincho"), generic: "sans-serif" });
+
+        let words: &'static Value = Box::leak(Box::new(json!({ "fonts": { "words": "Archivo", "display": "" } })));
+        let f = Faces::resolve(words, "pair", true);
+        assert_eq!(f.display, f.words);
+        assert_eq!(f.body, f.words);
+        assert_eq!(f.values, Face { name: None, generic: "monospace" });
+
+        let display: &'static Value = Box::leak(Box::new(json!({ "fonts": { "display": "Archivo" } })));
+        let f = Faces::resolve(display, "pair", true);
+        assert_eq!(f.words, Face { name: None, generic: "sans-serif" });
+        assert_eq!(f.display, Face { name: Some("Archivo"), generic: "sans-serif" });
+        assert_eq!(f.body, f.words);
+    }
+
+    #[test]
+    fn theme_fonts_in_settings_wins_over_the_tables_block() {
+        let table: &'static Value = Box::leak(Box::new(json!({ "fonts": { "words": "Archivo", "values": "DotGothic16" } })));
+        let f = Faces::resolve(table, "mono", false);
+        assert_eq!(f.words, Face { name: None, generic: "monospace" });
+        assert_eq!(f.display, f.words);
+        assert_eq!(f.values, Face { name: None, generic: "monospace" });
     }
 
     #[test]
@@ -514,20 +723,34 @@ mod tests {
     }
 
     #[test]
+    fn the_catalogue_rides_the_switch_and_the_scale() {
+        assert_eq!(theme().motion().catalogue, style::Catalogue::default());
+        let mut c = Theme::resolve(make_get(json!({ "theme": { "preset": "cartridge" } })), &sentinel());
+        c.motion_scale = 10.0;
+        let m = c.motion().catalogue;
+        assert_eq!(m.reveal, Some(6000.0));
+        assert_eq!(m.rows.map(|r| (r.clock.duration, r.stagger, r.rise)), Some((9000.0, 600.0, 40.0)));
+        assert_eq!(m.swap.map(|g| (g.out, g.into)), Some((1800.0, 5000.0)));
+        c.motion_enabled = false;
+        let off = c.motion().catalogue;
+        assert_eq!((off.reveal, off.error, off.focus_text.map(|f| f.clock.duration)), (Some(0.0), Some(0.0), Some(0.0)));
+    }
+
+    #[test]
     fn motion_follows_the_table_the_switch_and_the_scale() {
         let mut t = theme();
         let m = t.motion();
         assert_eq!(m.emerge, 500.0);
         assert_eq!(m.restack_stagger, 0.0);
-        assert_eq!(m.emerge_curve, tokens::curve("spatial").unwrap());
+        assert_eq!(m.emerge_curve, Easing::Bezier(tokens::curve("spatial").unwrap().to_vec()));
         // The toast's own clock is sonner's: 400ms on CSS `ease`, never past rest.
         assert_eq!((m.arrive, m.restack), (400.0, 400.0));
-        assert_eq!(m.restack_curve, [0.25, 0.1, 0.25, 1.0, 1.0, 1.0]);
+        assert_eq!(m.restack_curve, Easing::Bezier(vec![0.25, 0.1, 0.25, 1.0, 1.0, 1.0]));
 
         let p = Theme::resolve(make_get(json!({ "theme": { "preset": "pantheon" } })), &sentinel()).motion();
         assert_eq!(p.emerge, 150.0);
         assert_eq!(p.restack_stagger, 150.0);
-        assert_eq!(p.restack_curve, tokens::curve("emphasizedDecel").unwrap());
+        assert_eq!(p.restack_curve, Easing::Bezier(tokens::curve("emphasizedDecel").unwrap().to_vec()));
 
         t.motion_scale = 10.0;
         assert_eq!(t.motion().emerge, 5000.0);

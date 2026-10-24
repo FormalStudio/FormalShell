@@ -36,8 +36,8 @@ vm-smoke *FLAGS:
 # header comment). Pulls artifacts/greeter/ back with a plain scp, mirroring
 # dev/vm.sh's own ssh/key wiring rather than adding a second command to that
 # script for one caller.
-vm-greeter:
+vm-greeter *FLAGS:
     ./dev/vm.sh sync
-    ./dev/vm.sh run './dev/smoke-greeter.sh'
+    ./dev/vm.sh run './dev/smoke-greeter.sh {{FLAGS}}'
     mkdir -p artifacts/greeter
     ./dev/vm.sh pull artifacts/greeter artifacts/greeter

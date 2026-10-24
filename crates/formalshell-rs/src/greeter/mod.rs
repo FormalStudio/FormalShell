@@ -77,6 +77,21 @@ struct Out {
     /// The wallpaper at this output's size, and the size it was asked at.
     backdrop: Option<Bitmap>,
     asked: (i32, i32),
+    /// The boot's dice and grid at this output's size.
+    stage: Option<(crate::boot::Plan, Vec<(f64, f64, f64, f64)>)>,
+}
+
+/// The table's boot played behind the card (`crate::boot::greet`): the
+/// emblem assembles on black, moves up as the wallpaper and the card come
+/// in, and crumples into black once the session is on its way.
+struct Boot {
+    emblem: crate::surfaces::boot::Emblem,
+    /// The clock, from the first output's configure.
+    start: Option<Instant>,
+    /// When the emblem started up over the card, and the way-in time it
+    /// holds: on its own once assembled, or at the first key.
+    settle: Option<(Instant, f64)>,
+    out: Option<Instant>,
 }
 
 /// A backdrop decoded off the loop.
@@ -126,6 +141,7 @@ struct Greeter {
     dirty: bool,
     exit: bool,
     started: Instant,
+    boot: Option<Boot>,
 }
 
 /// What the socket thread hands back.
@@ -177,7 +193,7 @@ fn wallpaper_path(settings: &Value, env: &theme::Env) -> Option<PathBuf> {
 /// The wallpaper cover-cropped to `size`, as the desktop shows it: the card
 /// carries the contrast, so there is no scrim.
 fn decode(path: &Path, size: (i32, i32)) -> Option<Decoded> {
-    let p = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None)?;
+    let p = wallpaper::render(path.to_str()?, size.0 as u32, size.1 as u32, None, None)?;
     let rgba = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
     Some(Decoded { size, bitmap: Bitmap::from_rgba(p.width as u16, p.height as u16, rgba) })
 }
@@ -316,7 +332,13 @@ pub fn main(args: &[String]) {
         dirty: true,
         exit: false,
         started,
+        boot: None,
     };
+    if g.theme.boot && g.theme.motion_enabled {
+        let host = crate::boot::hostname();
+        let emblem = crate::surfaces::boot::Emblem::new(&mut g.kit, &g.theme, [host.as_str(), "FORMAL"]);
+        g.boot = Some(Boot { emblem, start: None, settle: None, out: None });
+    }
     let last = sessions::remembered(&g.state_dir, None);
     g.select(sessions::pick(&g.sessions, last.as_deref()));
     let last_user = sessions::last_user(&g.state_dir);
@@ -444,13 +466,31 @@ impl Greeter {
                     sessions::remember(&self.state_dir, &self.convo.user, &s.id);
                 }
                 sessions::remember_user(&self.state_dir, &self.convo.user);
-                self.exit = true;
+                // The emblem crumples into black first; the session lifts it.
+                match &mut self.boot {
+                    Some(b) => {
+                        eprintln!("greeter: boot crumpling");
+                        b.settle.get_or_insert((Instant::now(), 0.0));
+                        b.out = Some(Instant::now());
+                        self.dirty = true;
+                    }
+                    None => self.exit = true,
+                }
             }
             Step::Nothing => {}
         }
     }
 
     fn key(&mut self, event: &KeyEvent) {
+        // A key while the emblem assembles brings the card up at once, and
+        // still reaches the field.
+        if let Some(b) = self.boot.as_mut().filter(|b| b.settle.is_none()) {
+            let held = self.outs.iter().filter_map(|o| o.stage.as_ref()).map(|(p, _)| p.assembled()).fold(0.0, f64::max);
+            let t = b.start.map_or(0, |s| s.elapsed().as_millis());
+            eprintln!("greeter: boot skipped by a key t={t}ms");
+            b.settle = Some((Instant::now(), held));
+            self.dirty = true;
+        }
         let enabled = self.greetd.is_some() && self.convo.input_enabled();
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter if enabled && self.convo.phase == Phase::Inactive && !self.users.is_empty() => self.open_user(),
@@ -488,6 +528,9 @@ impl Greeter {
         self.session = i;
         self.convo.command = s.command();
         self.convo.env = s.env();
+        if self.boot.is_some() {
+            self.convo.env.push(format!("{}={}", crate::boot::HANDOFF_ENV, crate::boot::HANDOFF));
+        }
         self.dirty = true;
     }
 
@@ -554,7 +597,7 @@ impl Greeter {
             ls.set_keyboard_interactivity(if first { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
             ls.commit();
             let surface = Surface::on("greeter", ls, &self.shm, self.started, &output);
-            self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0) });
+            self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0), stage: None });
         }
     }
 
@@ -565,14 +608,43 @@ impl Greeter {
         self.dirty = false;
         self.ask_backdrops();
         let now = Instant::now();
+        let ms = |at: Instant| now.saturating_duration_since(at).as_secs_f64() * 1000.0;
+        let assembled = self.outs.iter().filter_map(|o| o.stage.as_ref()).map(|(p, _)| p.assembled()).fold(0.0, f64::max);
+        if let Some(b) = &mut self.boot
+            && let Some(start) = b.start
+            && b.settle.is_none()
+            && ms(start) >= assembled
+        {
+            eprintln!("greeter: boot assembled t={}ms", assembled.round());
+            b.settle = Some((now, assembled));
+        }
+        let timing = self.boot.as_ref().map(|b| {
+            let t = match (b.settle, b.start) {
+                (Some((_, held)), _) => held,
+                (None, Some(start)) => ms(start),
+                (None, None) => 0.0,
+            };
+            let out = b.out.map(ms);
+            (t, out, crate::boot::greet(b.settle.map(|(at, _)| ms(at)), out))
+        });
+        if timing.is_some_and(|(_, out, g)| out.is_some() && !g.moving) {
+            self.exit = true;
+        }
         let controls = Controls { sessions: &self.names, session: self.session, users: &self.user_names, user: self.user, menu: self.menu };
-        let card = Card {
+        let base = card(&self.convo, &self.field, self.greetd.is_some(), self.users.is_empty());
+        // The prompt types itself in as the card arrives.
+        let placeholder = match timing {
+            Some((_, _, g)) => crate::effects::prefix(base.placeholder, crate::effects::typed(base.placeholder.chars().count(), g.typed)),
+            None => base.placeholder,
+        };
+        let mut card = Card {
             name: self.users.get(self.user).map_or("", |u| u.name.as_str()),
             avatar: None,
             below: Some(controls.el(&self.theme)),
-            ..card(&self.convo, &self.field, self.greetd.is_some(), self.users.is_empty())
+            placeholder,
+            ..base
         };
-        let mut card = card;
+        let empty = crate::surfaces::boot::Emblem::empty();
         for o in &mut self.outs {
             if !o.surface.configured {
                 continue;
@@ -580,8 +652,19 @@ impl Greeter {
             let k = o.surface.scale();
             card.avatar = crate::scene::nearest(&self.avatar, k);
             let _raster = crate::scene::raster_at(k);
-            let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now);
-            o.surface.present(&mut o.view.scene, moving, &self.qh);
+            let stage = match (timing, &o.stage) {
+                (Some((t, out, greet)), Some((plan, lines))) => Some(login::Stage {
+                    plan,
+                    lines,
+                    emblem: self.boot.as_ref().map_or(&empty, |b| &b.emblem),
+                    t,
+                    out,
+                    greet,
+                }),
+                _ => None,
+            };
+            let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now, stage.as_ref());
+            o.surface.present(&mut o.view.scene, moving || timing.is_some_and(|(_, _, g)| g.moving), &self.qh);
         }
     }
 }
@@ -665,13 +748,48 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
                 below: Some(controls.el(&theme)),
                 ..card(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, false)
             };
-            view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now());
+            view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now(), None);
             let mut r = Renderer::new(w as u16, h as u16);
             r.render(&view.scene, IRect::new(0, 0, w, h));
             let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
             let path = dir.join(format!("greeter-{preset}-{name}.png"));
             image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
             println!("SHOT {}", path.display());
+        }
+        // The boot behind the card, at moments through the way in, the
+        // emblem moving up, and the session's way out.
+        if theme.boot {
+            let host = crate::boot::hostname();
+            let emblem = crate::surfaces::boot::Emblem::new(&mut kit, &theme, [host.as_str(), "FORMAL"]);
+            let lines = crate::surfaces::boot::grid_lines(&theme, (w, h));
+            let plan = crate::boot::Plan::new(&crate::surfaces::boot::columns(&lines, (w, h)), &emblem.counts(), crate::boot::SEED);
+            let done = plan.assembled();
+            let moments: [(&str, f64, Option<f64>, Option<f64>); 8] = [
+                ("0300", 300.0, None, None),
+                ("0700", 700.0, None, None),
+                ("1100", 1100.0, None, None),
+                ("1500", 1500.0, None, None),
+                ("2000", 2000.0, None, None),
+                ("settle", done, Some(450.0), None),
+                ("rest", done, Some(3000.0), None),
+                ("out", done, Some(3000.0), Some(250.0)),
+            ];
+            for (name, t, settled, out) in moments {
+                let greet = crate::boot::greet(settled, out);
+                let base = card(&asking, &Field::new(Zeroizing::new(String::new())), true, false);
+                let placeholder = crate::effects::prefix(base.placeholder, crate::effects::typed(base.placeholder.chars().count(), greet.typed));
+                let controls = Controls { sessions: &names, session: 0, users: &people, user: 0, menu: Menu::Closed };
+                let c = Card { name: "Kyan De Sutter", avatar: crate::scene::nearest(&pic, 1.0), below: Some(controls.el(&theme)), placeholder, ..base };
+                let stage = login::Stage { plan: &plan, lines: &lines, emblem: &emblem, t, out, greet };
+                let mut view = View::new(w, h);
+                view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now(), Some(&stage));
+                let mut r = Renderer::new(w as u16, h as u16);
+                r.render(&view.scene, IRect::new(0, 0, w, h));
+                let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
+                let path = dir.join(format!("greeter-{preset}-boot-{name}.png"));
+                image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
+                println!("SHOT {}", path.display());
+            }
         }
         // The lock screen's card beside the greeter's, locked and playing.
         for (name, playing) in [("lock", false), ("lock-media", true)] {
@@ -694,10 +812,12 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
                 error: "",
                 has_wallpaper: backdrop.is_some(),
                 backdrop: backdrop.as_ref().map(|d| &d.bitmap),
+                shards: None,
                 picture: None,
                 avatar: crate::scene::nearest(&pic, 1.0),
                 media,
                 enter: (1.0, 0.0),
+                slam: 1.0,
                 blanked: false,
                 wake: 1.0,
             };
@@ -748,6 +868,15 @@ impl LayerShellHandler for Greeter {
         let (w, h) = (configure.new_size.0.max(1) as i32, configure.new_size.1.max(1) as i32);
         o.view.resize(w, h);
         o.surface.configure(w, h);
+        if let Some(b) = &mut self.boot {
+            let lines = crate::surfaces::boot::grid_lines(&self.theme, (w, h));
+            let plan = crate::boot::Plan::new(&crate::surfaces::boot::columns(&lines, (w, h)), &b.emblem.counts(), crate::boot::SEED);
+            o.stage = Some((plan, lines));
+            if b.start.is_none() {
+                eprintln!("greeter: boot playing");
+                b.start = Some(Instant::now());
+            }
+        }
         self.ask_backdrops();
         self.dirty = true;
     }

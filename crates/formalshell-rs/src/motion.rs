@@ -2,15 +2,18 @@
 //! `MOTION_CURVES`), a `Behavior`'s retarget, and the velocity deform
 //! with its spring.
 
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use fs_theme::tokens::Easing;
 
 /// Qt's `BezierSpline` as `easing.bezierCurve` takes it: per segment the
 /// two control points and the end point, starting from (0,0) and ending on
-/// (1,1).
+/// (1,1). Or CSS `linear()`: `(t, v)` stops joined by straight lines.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Curve {
-    points: [f64; 12],
-    len: usize,
+pub enum Curve {
+    Bezier { points: [f64; 12], len: usize },
+    Stops(&'static [(f64, f64)]),
 }
 
 impl Curve {
@@ -21,14 +24,32 @@ impl Curve {
             out[i] = points[i];
             i += 1;
         }
-        Self { points: out, len: i }
+        Self::Bezier { points: out, len: i }
     }
 
     /// A table's own curve (`motion.emerge` and friends), spatial if it
     /// carries no whole segment.
-    pub fn from_table(points: &[f64]) -> Self {
-        if points.len() < 6 { SPATIAL } else { Self::new(points) }
+    pub fn from_table(easing: &Easing) -> Self {
+        match easing {
+            Easing::Bezier(points) if points.len() >= 6 => Self::new(points),
+            Easing::Bezier(_) => SPATIAL,
+            Easing::Stops(stops) => Self::Stops(interned(stops)),
+        }
     }
+}
+
+/// A stop list for as long as the shell runs. They come out of the
+/// compiled-in tables, so each distinct one is leaked once and shared by
+/// every `Look` built from it after.
+fn interned(stops: &[(f64, f64)]) -> &'static [(f64, f64)] {
+    static SEEN: Mutex<Vec<&'static [(f64, f64)]>> = Mutex::new(Vec::new());
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(hit) = seen.iter().find(|s| **s == stops) {
+        return hit;
+    }
+    let leaked: &'static [(f64, f64)] = Box::leak(stops.into());
+    seen.push(leaked);
+    leaked
 }
 
 pub const SPATIAL_FAST: Curve = Curve::new(&[0.42, 1.67, 0.21, 0.9, 1.0, 1.0]);
@@ -109,12 +130,16 @@ impl Curve {
         if x >= 1.0 {
             return 1.0;
         }
+        let (points, len) = match self {
+            Self::Bezier { points, len } => (points, *len),
+            Self::Stops(stops) => return linear(stops, x),
+        };
         let bez = |p0: f64, a: f64, b: f64, p3: f64, t: f64| {
             let u = 1.0 - t;
             u * u * u * p0 + 3.0 * u * u * t * a + 3.0 * u * t * t * b + t * t * t * p3
         };
         let (mut x0, mut y0) = (0.0, 0.0);
-        for seg in self.points[..self.len].chunks_exact(6) {
+        for seg in points[..len].chunks_exact(6) {
             let [x1, y1, x2, y2, x3, y3] = [seg[0], seg[1], seg[2], seg[3], seg[4], seg[5]];
             if x <= x3 {
                 let (mut lo, mut hi) = (0.0, 1.0);
@@ -128,6 +153,19 @@ impl Curve {
         }
         1.0
     }
+}
+
+/// CSS `linear()` at `x`: the line between the stops either side of it,
+/// the later stop where two share a t.
+fn linear(stops: &[(f64, f64)], x: f64) -> f64 {
+    let Some(i) = stops.iter().position(|s| s.0 > x) else {
+        return stops.last().map_or(1.0, |s| s.1);
+    };
+    let Some(&(t0, v0)) = i.checked_sub(1).and_then(|p| stops.get(p)) else {
+        return stops[0].1;
+    };
+    let (t1, v1) = stops[i];
+    v0 + (v1 - v0) * (x - t0) / (t1 - t0)
 }
 
 /// A number under `Behavior on x { Anim {} }`: a new target starts a fresh
@@ -330,6 +368,21 @@ mod tests {
         assert!(peak > 1.0 && peak < 1.1, "{peak}");
         assert_eq!(SPATIAL.ease(1.0), 1.0);
         assert_eq!(SPATIAL.ease(0.0), 0.0);
+    }
+
+    #[test]
+    fn a_stop_list_runs_straight_between_its_stops_and_past_one() {
+        let spring = Curve::from_table(&Easing::Stops(vec![(0.0, 0.0), (0.25, 1.42), (0.5, 0.9), (0.5, 0.95), (1.0, 1.0)]));
+        assert_eq!(spring.ease(0.0), 0.0);
+        assert!((spring.ease(0.125) - 0.71).abs() < 1e-9);
+        assert!((spring.ease(0.25) - 1.42).abs() < 1e-9);
+        assert!((spring.ease(0.375) - 1.16).abs() < 1e-9);
+        assert!((spring.ease(0.5) - 0.95).abs() < 1e-9);
+        assert!((spring.ease(0.75) - 0.975).abs() < 1e-9);
+        assert_eq!(spring.ease(1.0), 1.0);
+        let peak = (1..100).map(|i| spring.ease(i as f64 / 100.0)).fold(0.0, f64::max);
+        assert!(peak > 1.4, "{peak}");
+        assert_eq!(Curve::from_table(&Easing::Bezier(vec![0.1])), SPATIAL);
     }
 
     #[test]

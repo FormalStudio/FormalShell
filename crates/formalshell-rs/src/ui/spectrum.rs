@@ -107,7 +107,7 @@ pub fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key:
     let mut shaped = Vec::new();
     for s in &scene.shapes {
         if let Shape::Text { text, size, .. } = s {
-            shaped.push(Some(cx.kit.shape(text, TextStyle { family: mono, size: *size as f32, weight: 400.0, tracking: 0.0 })));
+            shaped.push(Some(cx.kit.shape(text, TextStyle { family: mono, size: *size as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None })));
         } else {
             shaped.push(None);
         }

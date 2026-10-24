@@ -172,6 +172,18 @@ impl Panel for Display {
         "monitor".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Outputs".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        super::count(sorted(v.store).len(), "output", "outputs")
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Primary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::Display, Topic::State, Topic::Config]
     }
@@ -191,6 +203,7 @@ impl Panel for Display {
                 trailing: None,
                 rail: None,
                 rail_on: None,
+                tab: "output".into(),
             };
             parts.push(w::hero_with(s, hero, true, Type::Display, None));
         }
@@ -209,7 +222,7 @@ impl Panel for Display {
         }
 
         let devices = store.display.devices();
-        let mut bright = vec![w::section_label(s, "Brightness", Some(devices.len()), true)];
+        let mut bright = vec![w::heading(s, "Brightness", Some(devices.len()), true)];
         if devices.is_empty() {
             bright.push(w::section_label(s, "No backlight", None, true));
         } else {
@@ -227,7 +240,7 @@ impl Panel for Display {
         }
 
         if !rows.is_empty() {
-            let mut mirror = vec![w::section_label(s, "Mirror", None, true)];
+            let mut mirror = vec![w::heading(s, "Mirror", None, true)];
             let plan = outputs::mirror_plan(&rows, focused(store));
             if !display::config_available() {
                 mirror.push(w::section_label(s, "Mirror unsupported", None, true));

@@ -48,6 +48,18 @@ impl Panel for StandIn {
         header(self.id).1.into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Unavailable".into()
+    }
+
+    fn status(&self, _: &View) -> String {
+        "nothing to show".into()
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[]
     }

@@ -362,6 +362,13 @@ cmd_smoke() {
         test@localhost:formalshell/docs/media/ "$repo_root/docs/media/"
       echo "pulled screensaver gifs: $repo_root/docs/media/screensaver-*.gif"
       ;;
+    *" --cartridge-media "*)
+      mkdir -p "$repo_root/docs/media"
+      rsync -az -e "ssh ${ssh_opts[*]}" \
+        --include 'cartridge-*.gif' --exclude '*' \
+        test@localhost:formalshell/docs/media/ "$repo_root/docs/media/"
+      echo "pulled cartridge gifs: $repo_root/docs/media/cartridge-*.gif"
+      ;;
   esac
 }
 

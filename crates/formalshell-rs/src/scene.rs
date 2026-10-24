@@ -198,6 +198,8 @@ pub enum Paint {
     /// A bitmap stretched over the node's bounds inside a rounded rect (a
     /// window thumbnail).
     Picture { image: Bitmap, alpha: f32, radius: f32 },
+    /// The same stretched bitmap inside the outline `cut` makes of the bounds.
+    Cut { image: Bitmap, alpha: f32, cut: Cut },
     /// A rounded rect's fill under a border drawn inside its edge.
     Framed { fill: Rgba, radius: f32, border: Rgba, width: f32 },
     Text { text: ShapedText, color: Rgba },
@@ -222,6 +224,15 @@ pub enum Paint {
     /// list is one picture, so a node keeps the same `Arc` while nothing on
     /// it moved and damages nothing.
     Vector(Arc<Vec<VOp>>),
+}
+
+/// The outline a [`Paint::Cut`] picture is drawn inside.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Cut {
+    /// Every corner cut straight across by this much.
+    Corners(f32),
+    /// The pointy-topped hexagon the bounds hold.
+    Hex,
 }
 
 /// What a vector op fills or strokes with.
@@ -267,12 +278,28 @@ pub struct Scene {
     order: Vec<NodeId>,
     free: Vec<NodeId>,
     damage: Vec<IRect>,
+    /// Everything drawn this far along x, in logical pixels: a whole
+    /// surface sliding in (the bar after the boot) without its layout
+    /// knowing.
+    shift: f64,
 }
 
 impl Scene {
     pub fn new(width: i32, height: i32) -> Self {
         let size = IRect::new(0, 0, width, height);
-        Self { size, nodes: Vec::new(), order: Vec::new(), free: Vec::new(), damage: vec![size] }
+        Self { size, nodes: Vec::new(), order: Vec::new(), free: Vec::new(), damage: vec![size], shift: 0.0 }
+    }
+
+    pub fn shift(&self) -> f64 {
+        self.shift
+    }
+
+    /// Slides every node `dx` along, the whole scene drawn again.
+    pub fn set_shift(&mut self, dx: f64) {
+        if dx != self.shift {
+            self.shift = dx;
+            self.touch(self.size);
+        }
     }
 
     /// A scene whose buffers start out transparent and so owe the
@@ -353,6 +380,10 @@ impl Scene {
         if visible {
             self.mark(bounds);
         }
+    }
+
+    pub fn transform_of(&self, id: NodeId) -> Affine {
+        self.nodes[id.0].transform
     }
 
     /// Moves a node under `transform` (a deform over what a painter laid
@@ -439,6 +470,7 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
         (Paint::Picture { image: i1, alpha: a1, radius: r1 }, Paint::Picture { image: i2, alpha: a2, radius: r2 }) => {
             a1 == a2 && r1 == r2 && i1.same_as(i2)
         }
+        (Paint::Cut { image: i1, alpha: a1, cut: c1 }, Paint::Cut { image: i2, alpha: a2, cut: c2 }) => a1 == a2 && c1 == c2 && i1.same_as(i2),
         (Paint::Shape { fill: f1, strokes: s1 }, Paint::Shape { fill: f2, strokes: s2 }) => f1 == f2 && s1 == s2,
         (
             Paint::Casts { rect: r1, radius: a1, layers: l1, cutout: c1 },

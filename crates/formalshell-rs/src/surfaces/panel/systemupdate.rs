@@ -45,6 +45,18 @@ impl Panel for SystemUpdate {
         "package".into()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "Flake inputs".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        v.store.info.update.summary().to_lowercase()
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Tertiary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Config]
     }
@@ -80,13 +92,14 @@ impl Panel for SystemUpdate {
                     trailing: None,
                     rail: None,
                     rail_on: None,
+                    tab: "flake".into(),
                 },
             ));
         }
 
         if !u.inputs.is_empty() {
             let warning = Ink::Color(v.theme.colors.get("warning"));
-            let mut head = vec![w::section_label(s, "Inputs", Some(u.inputs.len()), true)];
+            let mut head = vec![w::heading(s, "Inputs", Some(u.inputs.len()), true)];
             if ok && counts.unknown > 0 {
                 head.push(w::section_label(s, &format!("{} unknown", counts.unknown), None, true));
             }

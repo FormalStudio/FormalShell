@@ -93,10 +93,39 @@ impl Effect<'_> {
     }
 }
 
+/// The palette role a panel's console header, frame and tags are drawn in:
+/// a fixed map, one section to a hue, read by the `console` habit alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Accent {
+    /// Sound, pictures and the desktop.
+    Primary,
+    /// Links: networks, radios and paired devices.
+    Secondary,
+    /// The machine, time and the world outside.
+    Tertiary,
+}
+
+impl Accent {
+    /// The role it takes `primary` from: matugen's secondary and tertiary
+    /// reach theme.json as `chart2` and `chart3`.
+    pub fn role(self) -> &'static str {
+        match self {
+            Accent::Primary => "primary",
+            Accent::Secondary => "chart2",
+            Accent::Tertiary => "chart3",
+        }
+    }
+}
+
 pub trait Panel {
     fn id(&self) -> &'static str;
     fn title(&self, v: &View) -> String;
     fn icon(&self, v: &View) -> String;
+    /// What the body shows, after the console title's `//`.
+    fn subtitle(&self, v: &View) -> String;
+    /// The console status strip's reading, after `<ID> ::`.
+    fn status(&self, v: &View) -> String;
+    fn accent(&self) -> Accent;
     /// The store slices whose change redraws this panel.
     fn reads(&self) -> &'static [Topic];
     /// The card's width (`panelWidth`): `popupWidthDefault` unless said.
@@ -242,4 +271,9 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         "usage" => Box::new(usage::Usage::new()),
         _ => Box::new(standin::StandIn::new(id)),
     })
+}
+
+/// `n` and the noun that agrees with it, for a status strip.
+pub fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }

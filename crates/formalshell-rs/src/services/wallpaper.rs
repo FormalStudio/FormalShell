@@ -1,11 +1,12 @@
 //! The desktop's picture: the wallpaper decoded and
 //! cover-cropped to each output's size on the pool, handed to the UI thread
 //! as ready pixels, through the retro dither pass when
-//! `wallpaper.dither` asks for it. Each output's backdrop crossfades between
-//! two of these.
+//! `wallpaper.dither` asks for it and under the grid when `wallpaper.grid`
+//! does. Each output's backdrop crossfades between two of these.
 
 use std::sync::{Arc, OnceLock};
 
+use fs_chrome::grid::Grid;
 use image::imageops::{self, FilterType};
 
 use crate::runtime::Ctx;
@@ -16,6 +17,8 @@ pub struct Picture {
     pub path: String,
     /// The palette size the pass quantized to, none for the plain image.
     pub dither: Option<usize>,
+    /// The grid laid over it, in RGBA order and the picture's own pixels.
+    pub grid: Option<Grid>,
     pub width: u32,
     pub height: u32,
     pub bgra: Vec<u8>,
@@ -71,16 +74,24 @@ impl State {
     }
 }
 
-type Request = (String, u32, u32, Option<usize>);
+type Request = (String, u32, u32, Option<usize>, Option<Grid>);
 
 static REQUESTS: OnceLock<async_channel::Sender<Request>> = OnceLock::new();
 
 /// The wallpaper at `path` for an output `width` by `height`, dithered to
-/// `dither` colours when set.
-pub fn show(path: &str, width: u32, height: u32, dither: Option<usize>) {
+/// `dither` colours when set, then under `grid`.
+pub fn show(path: &str, width: u32, height: u32, dither: Option<usize>, grid: Option<Grid>) {
     if let Some(tx) = REQUESTS.get() {
-        let _ = tx.try_send((path.to_owned(), width, height, dither));
+        let _ = tx.try_send((path.to_owned(), width, height, dither, grid));
     }
+}
+
+/// The table's `backdrop.grid` for a buffer at `scale` times the logical
+/// size, in RGBA order.
+pub fn grid(theme: &fs_theme::theme::Theme, scale: f64) -> Grid {
+    let m = |key| theme.metric("backdrop.grid", key);
+    let color = theme.box_style("backdrop.grid", None).fill.to_u8();
+    Grid { pitch: m("pitch"), width: m("width"), fade: m("fade"), color }.scaled(scale)
 }
 
 /// The retro dither: the output sampled on a `chunk` grid at
@@ -115,7 +126,7 @@ fn dither(img: &mut image::RgbaImage, colors: usize) {
 
 /// Aspect-crop: scaled to cover, centred. The format comes from the bytes,
 /// since the greeter's mirrored copy has no extension.
-pub fn render(path: &str, width: u32, height: u32, colors: Option<usize>) -> Option<Picture> {
+pub fn render(path: &str, width: u32, height: u32, colors: Option<usize>, grid: Option<Grid>) -> Option<Picture> {
     let img = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?.to_rgba8();
     let (iw, ih) = (img.width() as f64, img.height() as f64);
     let scale = (width as f64 / iw).max(height as f64 / ih);
@@ -126,12 +137,15 @@ pub fn render(path: &str, width: u32, height: u32, colors: Option<usize>) -> Opt
     if let Some(n) = colors {
         dither(&mut out, n);
     }
+    if let Some(g) = grid {
+        g.paint(&mut out, width as usize, height as usize);
+    }
     let mut bgra = Vec::with_capacity((width * height * 4) as usize);
     for px in out.pixels() {
         let [r, g, b, _] = px.0;
         bgra.extend_from_slice(&[b, g, r, 255]);
     }
-    Some(Picture { path: path.to_owned(), dither: colors, width, height, bgra })
+    Some(Picture { path: path.to_owned(), dither: colors, grid, width, height, bgra })
 }
 
 /// Requests queued behind one another collapse to the newest per size, so
@@ -152,11 +166,11 @@ pub async fn run(ctx: Ctx) {
             }
             last.retain(|r| (r.1, r.2) != (request.1, request.2));
             last.push(request.clone());
-            let (path, w, h, colors) = request;
+            let (path, w, h, colors, grid) = request;
             let picture = if path.is_empty() {
                 None
             } else {
-                ctx.pool().run(move || render(&path, w, h, colors)).await.flatten().map(Arc::new)
+                ctx.pool().run(move || render(&path, w, h, colors, grid)).await.flatten().map(Arc::new)
             };
             ctx.publish(store::Diff::Wallpaper(Diff { size: (w, h), picture }));
         }

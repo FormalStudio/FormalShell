@@ -783,8 +783,14 @@ every word in the mono face, Nerd Font glyphs, opaque surfaces, no compositor
 blur, and dithered imagery. `pantheon` is elementary OS 8's material on the
 same palette: raised buttons and chips with a lit top line and a gradient
 face, sunken fields and troughs, cards and toasts on a soft cast, and
-elementary's own corners (3 on a control, 6 on a popover, 9 on a card). Any
-key you write explicitly wins over the preset, so `retro` with `"radius": 4`
+elementary's own corners (3 on a control, 6 on a popover, 9 on a card).
+`cartridge` is an old console's menus: flat dark boxes with one corner cut
+and 1px outlines, the wallpaper's primary as the one accent, a block bar on
+the cursor row's leading edge and brackets round a grid's cursor cell,
+Archivo headings, DotGothic16 values and BIZ UD Mincho for secondary lines,
+the fonts shipped with the shell. Panels and the launcher slide in from the
+side rather than budding off the bar. Any key you write explicitly wins over
+the preset, so `retro` with `"radius": 4`
 is the retro look on slightly rounded corners. Any other name resolves to
 `metamorphosis`.
 
@@ -802,17 +808,21 @@ surface is the panel, whose alpha is part of the band's paint rather than
 A preset is a JSON chrome table compiled into the binary plus the scalar
 keys below. `retro` uses `metamorphosis`'s table, since the two share every
 fill, border and radius and differ only in those scalars; `pantheon` carries a
-table of its own. The table itself is not a setting, so the columns below are
+table of its own, and so does `cartridge`. The table itself is not a setting, so the columns below are
 the whole of what a preset changes that you can override:
 
-| key | `metamorphosis` | `retro` | `pantheon` |
-| --- | --- | --- | --- |
-| `theme.radius` | 10 | 0 | 6 |
-| `theme.icons` | `lucide` | `nerd` | `lucide` |
-| `theme.fonts` | `pair` | `mono` | `pair` |
-| `theme.surfaceOpacity` | 0.85 | 1 | 1 |
-| `theme.blur` | true | false | true |
-| `theme.dither` | false | true | false |
+| key | `metamorphosis` | `retro` | `pantheon` | `cartridge` |
+| --- | --- | --- | --- | --- |
+| `theme.radius` | 10 | 0 | 6 | 4 |
+| `theme.icons` | `lucide` | `nerd` | `lucide` | `lucide` |
+| `theme.fonts` | `pair` | `mono` | `pair` | `pair` |
+| `theme.surfaceOpacity` | 0.85 | 1 | 1 | 0.9 |
+| `theme.blur` | true | false | true | true |
+| `theme.dither` | false | true | false | false |
+| `theme.grid` | false | false | false | true |
+| `wallpaper.animate` | false | false | false | true |
+| `theme.boot` | false | false | false | true |
+| `theme.sounds` | false | false | false | true |
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -822,6 +832,22 @@ the whole of what a preset changes that you can override:
 ```nix
 # home-manager
 programs.formalshell.settings.theme.preset = "retro";
+```
+
+`theme.boot` plays the table's boot sequence once per login, on the
+greeter or, without one, over the session's first seconds; a key or a click
+skips it. Only `cartridge` has one, so the key does nothing elsewhere.
+
+`theme.sounds` plays the table's interface blips: the launcher opening,
+closing, moving, typing, going in and back, a toggle, an error, the boot,
+and on the lock its typing, a wrong password and the unlock. Only
+`cartridge` carries them. `theme.soundVolume` (0 to 1, default 0.5) is on
+the same scale as the volume slider, so 0.5 is quiet. Nothing plays under
+do-not-disturb, or while locked except the lock's own field, and with no
+PipeWire there is simply no sound.
+
+```jsonc
+{ "theme": { "preset": "cartridge", "sounds": true, "soundVolume": 0.3 } }
 ```
 
 The palette is untouched by the preset: matugen, `theme.json`, the pywal
@@ -972,6 +998,40 @@ programs.formalshell.settings.wallpaper = { dither = true; ditherColors = 12; };
 
 `lock.dither` is the same pass over the lock screen's own backdrop, with the
 same default and its own override.
+
+### Grid
+
+`theme.grid` lays a line grid over the desktop: 2px lines every 120px
+(multiplied by the output's scale), in the theme's foreground at low alpha,
+fading out over the bottom fifth of the screen. It is drawn into the
+wallpaper's pixels after the dither, or over the plain background when no
+wallpaper is set, and over the lock screen and the greeter. It never moves.
+The `cartridge` preset turns it on; `wallpaper.grid` and `lock.grid`
+override it for the desktop and for the lock and greeter alone, the way
+`wallpaper.dither` and `lock.dither` do.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "theme": { "grid": true }, "lock": { "grid": false } }
+```
+
+### Animated backdrop
+
+`wallpaper.animate` draws a sculpture of thin shards over the desktop,
+turning slowly, with a faint ring and wordmark behind it and the grid
+over it. It is drawn at half the output's pixels and at most 24 frames a
+second, and it holds still on its last frame whenever it cannot be seen
+or should not cost anything: under a fullscreen window, when tiled
+windows cover more than 85% of the output, while the launcher or another
+modal card is up, under the screensaver, on the
+power saver profile, on battery below 20%, and with `motion.enabled`
+false. The lock screen shows the frame it stopped on. The `cartridge`
+preset turns it on.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "wallpaper": { "animate": false } }
+```
 
 ### Motion
 

@@ -14,7 +14,7 @@ use std::time::Instant;
 use fs_chrome::types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
-use fs_theme::theme::Theme;
+use fs_theme::theme::{Face, Theme};
 use fs_theme::tokens::WEIGHTS;
 use parley::GenericFamily;
 use vello_cpu::kurbo::Affine;
@@ -310,15 +310,25 @@ pub struct Look {
     pub motion: bool,
     pub marquee_px: f64,
     pub marquee_hold: f64,
+    /// The box under every cell (`bar.cell`), none where it draws nothing.
+    pub chip: Option<fs_theme::style::BoxStyle<Rgba>>,
+    /// The cursor's fill and its leading block (`cursor`, `cursor.bar`),
+    /// which mark a hovered or open cell in place of the wash and the
+    /// open mark on a table that has the block.
+    pub cursor: Option<(Rgba, fs_theme::style::Bar<Rgba>)>,
+    /// `reveal: type`'s duration: a label that changes types in.
+    pub reveal: Option<f64>,
 }
 
-fn family(name: &'static str) -> Family {
-    match name {
-        "monospace" => Family::Generic(GenericFamily::Monospace),
-        "sans-serif" => Family::Generic(GenericFamily::SansSerif),
-        "serif" => Family::Generic(GenericFamily::Serif),
-        other => Family::Named(other),
-    }
+/// A theme text role's family: the table's face over its alias, or the
+/// alias alone.
+pub fn face(face: Face) -> Family {
+    let generic = match face.generic {
+        "monospace" => GenericFamily::Monospace,
+        "serif" => GenericFamily::Serif,
+        _ => GenericFamily::SansSerif,
+    };
+    face.name.map_or(Family::Generic(generic), |name| Family::Face(name, generic))
 }
 
 impl Look {
@@ -343,8 +353,8 @@ impl Look {
             meta_tracking: theme.letter_spacing.meta as f32,
             narrow: s.popup_width_narrow,
             panel_padding: s.panel_padding,
-            sans: family(theme.font_family_sans),
-            mono: family(theme.font_family_mono),
+            sans: face(theme.faces.words),
+            mono: face(theme.faces.values),
             icon_set: theme.icon_set.clone(),
             foreground: theme.colors.get("foreground"),
             muted: theme.colors.get("mutedForeground"),
@@ -376,6 +386,9 @@ impl Look {
             motion: theme.motion_enabled,
             marquee_px: motion.marquee_px_per_sec,
             marquee_hold: motion.marquee_hold_ms,
+            chip: Some(theme.box_style("bar.cell", None)).filter(|b| b.fill.a > 0.0 || b.border.as_ref().is_some_and(|l| l.width > 0.0)),
+            cursor: theme.cursor_bar().map(|bar| (theme.box_style("cursor", None).fill, bar)),
+            reveal: theme.motion().catalogue.reveal,
         }
     }
 
@@ -385,11 +398,11 @@ impl Look {
     }
 
     pub fn label(&self, weight: f32) -> TextStyle {
-        TextStyle { family: self.mono, size: self.body, weight, tracking: 0.0 }
+        TextStyle { family: self.mono, size: self.body, weight, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
     }
 
     pub fn sans(&self, weight: f32) -> TextStyle {
-        TextStyle { family: self.sans, size: self.body, weight, tracking: 0.0 }
+        TextStyle { family: self.sans, size: self.body, weight, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
     }
 }
 
@@ -596,6 +609,8 @@ pub struct Frame<'a> {
     pub open: (f64, f64),
     /// The slot's presence fade.
     pub alpha: f32,
+    /// A label part typing in: its index and how many characters show.
+    pub typed: Option<(usize, usize)>,
     pub band: Option<(Rgba, &'a [Glow<Rgba>])>,
     /// The free label's scroll, in pixels, while its marquee runs.
     pub scroll: Option<f64>,
@@ -630,7 +645,7 @@ impl Kit {
 
     pub fn icon(&mut self, name: &str) -> ShapedText {
         let g = fs_theme::icons::glyph(&self.look.icon_set, name);
-        let style = TextStyle { family: Family::Named(g.family), size: self.look.body, weight: 400.0, tracking: 0.0 };
+        let style = TextStyle { family: Family::Named(g.family), size: self.look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         self.shape(g.text, style)
     }
 
@@ -639,7 +654,7 @@ impl Kit {
         match part {
             Part::Icon { name, .. } | Part::SlotIcon { name, .. } => self.icon(name),
             Part::Cover { .. } | Part::AppIcon { .. } => self.icon("music"),
-            Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body, weight: 400.0, tracking: 0.0 }),
+            Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }),
             Part::Label { text, weight } => {
                 let w = if band { WEIGHTS.semibold } else { weight.unwrap_or(WEIGHTS.medium as f32) as f64 };
                 self.shape(text, look.label(w as f32))
@@ -650,7 +665,7 @@ impl Kit {
             }
             Part::Meta { text } => {
                 let w = if band { WEIGHTS.semibold } else { WEIGHTS.medium };
-                self.shape(text, TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking })
+                self.shape(text, TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None })
             }
             Part::Name { text, .. } => self.shape(text, look.sans(WEIGHTS.medium as f32)),
             Part::Free { text, .. } => {
@@ -727,7 +742,22 @@ impl Kit {
             _ => None,
         };
         let (bc, bw) = border.unwrap_or((Rgba::TRANSPARENT, 0.0));
+        if let Some(chip) = &look.chip {
+            crate::ui::boxes::paint(p, r, chip, f64::from(look.radius), alpha, 0.0);
+        }
         p.framed(r, a(fill), look.radius, a(bc), bw);
+        if let Some((cursor, bar)) = &look.cursor {
+            // The block on the cell's leading edge, whole while the pointer
+            // is on it, fading in with its panel.
+            let k = if f.hovered { 1.0 } else { f.open.1 as f32 };
+            if k > 0.0 {
+                p.rect(r, a(cursor.with_alpha(cursor.a * k)), look.radius);
+                let w = (bar.width.round() as i32).min(r.w.min(r.h));
+                let block = if f.edge.is_vertical() { IRect::new(r.x, r.y, r.w, w) } else { IRect::new(r.x, r.y, w, r.h) };
+                p.rect(block, a(bar.color.with_alpha(bar.color.a * k)), 0.0);
+            }
+            return;
+        }
         if let Some(wash) = look.hover_wash.filter(|_| f.hovered && matches!(tone, Tone::Rest | Tone::Destructive | Tone::Warning)) {
             p.rect(r, a(wash), look.radius);
         }
@@ -818,6 +848,13 @@ impl Kit {
                     }
                     Part::Label { .. } | Part::DimLabel { .. } | Part::Meta { .. } => {
                         let color = ink.of(if matches!(part, Part::Label { .. }) { ink.fg } else { ink.dim });
+                        let shaped = match (f.typed.filter(|t| t.0 == idx && pass == 0), part) {
+                            (Some((_, n)), Part::Label { text, .. } | Part::DimLabel { text }) => {
+                                let w = if ink.band { WEIGHTS.semibold } else if let Part::Label { weight: Some(w), .. } = part { f64::from(*w) } else { WEIGHTS.medium };
+                                self.shape(crate::effects::prefix(text, n), look.label(w as f32))
+                            }
+                            _ => shaped,
+                        };
                         let (x, y) = if vertical {
                             ((across_mid - shaped.width / 2), at.round() as i32)
                         } else {

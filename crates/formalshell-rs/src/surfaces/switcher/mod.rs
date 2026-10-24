@@ -114,7 +114,7 @@ impl Metrics {
 }
 
 fn caption_style(kit: &Kit, selected: bool) -> TextStyle {
-    TextStyle { family: kit.look.sans, size: kit.look.caption, weight: if selected { 500.0 } else { 400.0 }, tracking: 0.0 }
+    TextStyle { family: kit.look.sans, size: kit.look.caption, weight: if selected { 500.0 } else { 400.0 }, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 /// `text` cut to `max` with an ellipsis.
@@ -237,7 +237,7 @@ impl Switcher {
             let r = IRect::new(card.x + pad as i32, card.y + pad as i32, content_w.round() as i32, m.cell_h.round() as i32);
             let b = t.box_style("switcher.cell", Some("rest"));
             boxes::paint(&mut p, r, &b, t.box_radius(&b, r.h as f64), alpha, 0.0);
-            let style = TextStyle { family: kit.look.sans, size: kit.look.caption, weight: 500.0, tracking: 0.0 };
+            let style = TextStyle { family: kit.look.sans, size: kit.look.caption, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
             let label = kit.shape("No windows", style);
             p.text(&label, (r.x + (r.w - label.width) / 2, r.y + (r.h - label.line_height()) / 2), a(muted), &[]);
             p.finish();
@@ -246,6 +246,8 @@ impl Switcher {
 
         let keys: Vec<String> = input.icons.iter().map(|i| i.0.clone()).collect();
         let ordinals = model::ordinals(&keys);
+        // A table that cuts the cells' corners cuts their thumbnails' too.
+        let cut = t.box_style("switcher.cell", Some("rest")).chamfer[0];
         // Clipped only once the rows scroll, so the cursor's halo is whole.
         p.clip = (grid_h > view_h).then_some(view);
         for (i, rects) in self.cells.clone().iter().enumerate() {
@@ -256,19 +258,28 @@ impl Switcher {
             let mut b = t.box_style("switcher.cell", Some(if selected { "selected" } else { "ghost" }));
             let rest_border = t.box_style("switcher.cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
             b.border = Some(t.box_style("switcher.cell", Some("ghost")).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
-            let b = t.with_cursor(b, selected, true);
+            let b = t.with_brackets(b, selected, true);
             boxes::paint(&mut p, rects.cell, &b, t.box_radius(&b, rects.cell.h as f64), alpha, 0.0);
 
             let th = rects.thumb;
             let cover = t.cover_radius(th.w.min(th.h) as f64);
             match input.thumbs.get(i).and_then(Option::as_ref) {
+                Some(image) if cut > 0.0 => {
+                    let r = vello_cpu::kurbo::Rect::new(th.x as f64, th.y as f64, th.right() as f64, th.bottom() as f64);
+                    p.shape(th, Paint::Cut { image: image.clone(), alpha, cut: crate::scene::Cut::Corners(cut as f32) });
+                    let ink = if selected { t.colors.get("ring") } else { t.colors.get("border") };
+                    p.shape(th, boxes::chamfer_paint(r, [cut; 4], Rgba::TRANSPARENT, a(ink), t.border_width));
+                }
                 Some(image) => {
                     p.shape(th, Paint::Picture { image: image.clone(), alpha, radius: cover as f32 });
                     let ink = if selected { t.colors.get("ring") } else { t.colors.get("border") };
                     p.framed(th, Rgba::TRANSPARENT, cover as f32, a(ink), t.border_width as f32);
                 }
                 None => {
-                    let cb: BoxStyle<Rgba> = t.box_style("cell", Some("rest"));
+                    let mut cb: BoxStyle<Rgba> = t.box_style("cell", Some("rest"));
+                    if cut > 0.0 {
+                        cb.chamfer = [cut; 4];
+                    }
                     boxes::paint(&mut p, th, &cb, t.box_radius(&cb, th.h as f64), alpha, 0.0);
                     let size = m.schematic_icon(t, th.w as f64).round() as i32;
                     let at = IRect::new(th.x + (th.w - size) / 2, th.y + (th.h - size) / 2, size, size);
@@ -276,7 +287,7 @@ impl Switcher {
                         Some(big) => p.shape(at, Paint::Picture { image: big, alpha, radius: 0.0 }),
                         None => {
                             let glyph = fs_theme::icons::glyph(&kit.look.icon_set, "app-window");
-                            let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0 };
+                            let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                             let g = kit.shape(glyph.text, st);
                             p.text(&g, (at.x + (at.w - g.width) / 2, at.y + (at.h - g.line_height()) / 2), a(muted), &[]);
                         }
@@ -286,7 +297,7 @@ impl Switcher {
 
             let (n, of) = ordinals.get(i).copied().unwrap_or((1, 1));
             if of > 1 {
-                let st = TextStyle { family: kit.look.mono, size: kit.look.body, weight: 500.0, tracking: 0.0 };
+                let st = TextStyle { family: kit.look.mono, size: kit.look.body, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                 let label = kit.shape(&n.to_string(), st);
                 let h = label.line_height() + (s.control_padding_y * 2.0) as i32;
                 let w = label.width + (s.control_padding_x * 2.0) as i32;
@@ -301,7 +312,7 @@ impl Switcher {
                 Some(small) => p.shape(ir, Paint::Picture { image: small, alpha, radius: 0.0 }),
                 None => {
                     let glyph = fs_theme::icons::glyph(&kit.look.icon_set, "app-window");
-                    let st = TextStyle { family: Family::Named(glyph.family), size: m.caption_icon as f32, weight: 400.0, tracking: 0.0 };
+                    let st = TextStyle { family: Family::Named(glyph.family), size: m.caption_icon as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                     let g = kit.shape(glyph.text, st);
                     p.text(&g, (ir.x + (ir.w - g.width) / 2, ir.y + (ir.h - g.line_height()) / 2), a(muted), &[]);
                 }

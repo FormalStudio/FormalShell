@@ -107,6 +107,21 @@ impl Panel for Center {
         String::new()
     }
 
+    fn subtitle(&self, _: &View) -> String {
+        "History".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        let (pending, seen) = sections(v);
+        let n = pending.iter().chain(&seen).map(|g| g.count).sum::<usize>();
+        let dnd = if v.store.notifications.model.dnd { ", do not disturb" } else { "" };
+        super::count(n, "notification", "notifications") + dnd
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Primary
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Notifications]
     }
@@ -151,7 +166,7 @@ impl Panel for Center {
         }
         let count = |rows: &[Group]| rows.iter().map(|g| g.count).sum::<usize>();
         let mut section = |title: &str, count: usize, rows: &[Group], unread: bool| {
-            let mut col = vec![w::section_label(s, title, Some(count), false)];
+            let mut col = vec![w::heading(s, title, Some(count), false)];
             for (i, g) in rows.iter().enumerate() {
                 if i > 0 {
                     col.push(w::separator());

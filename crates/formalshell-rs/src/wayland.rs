@@ -5,6 +5,7 @@
 //! callback or an input event belongs to.
 
 mod atlas;
+mod boot;
 mod caffeinate;
 pub mod capture;
 mod console;
@@ -269,6 +270,8 @@ pub struct App {
     wake: Option<Instant>,
     /// `debug motionScale`: every duration multiplied by this.
     pub motion_scale: f64,
+    /// The backdrop mark's word, by the style it was shaped in.
+    shard_word: Option<(crate::text::TextStyle, std::sync::Arc<Vec<(std::sync::Arc<vello_cpu::kurbo::BezPath>, f64, f64)>>)>,
     /// pantheon's cast under a joined card.
     pub cast: bool,
     /// `debug join`'s x and width on the bar's line, held under any card's.
@@ -287,6 +290,10 @@ pub struct App {
     launcher_styles: Vec<crate::text::TextStyle>,
     /// The launcher's faces are warmed once, after the bar is on screen.
     faces_warmed: bool,
+    /// A modal card was up at the last present, which holds the backdrop's
+    /// sculpture still.
+    modal_up: bool,
+    boot: boot::Boot,
     /// The launcher card's pool, buffers and canvas while it is shut.
     launch_kept: Option<crate::surface::Kept>,
     /// The same for the launcher's content layer.
@@ -306,6 +313,7 @@ pub struct App {
     menu_launches: Option<serde_json::Value>,
     pub capture: crate::surfaces::capture::Capture,
     pickers: picker::Pickers,
+    sfx: crate::sfx::Gate,
 }
 
 impl App {
@@ -372,6 +380,7 @@ impl App {
             battery_watch: Default::default(),
             wake: None,
             motion_scale: 1.0,
+            shard_word: None,
             cast: false,
             debug_join: None,
             exit: false,
@@ -382,6 +391,8 @@ impl App {
             launcher_warm: false,
             launcher_styles: Vec::new(),
             faces_warmed: false,
+            modal_up: false,
+            boot: Default::default(),
             launch_kept: None,
             layer_kept: None,
             kept_generation: 0,
@@ -393,6 +404,7 @@ impl App {
             menu_launches: None,
             capture: Default::default(),
             pickers: Default::default(),
+            sfx: Default::default(),
         };
         app.sync_heads();
         app
@@ -434,11 +446,11 @@ impl App {
         for w in [WEIGHTS.normal, WEIGHTS.medium, WEIGHTS.semibold] {
             jobs.push(("0".into(), look.label(w as f32)));
             jobs.push(("a".into(), look.sans(w as f32)));
-            jobs.push(("0".into(), TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking }));
+            jobs.push(("0".into(), TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
         for name in ["circle", "wifi", "volume-2", "battery", "bell", "bluetooth", "cpu"] {
             let g = fs_theme::icons::glyph(&look.icon_set, name);
-            jobs.push((g.text.to_owned(), TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0 }));
+            jobs.push((g.text.to_owned(), TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
         let text = self.bar.kit.text.clone();
         let _ = std::thread::Builder::new().name("fs-warm".into()).spawn(move || text.warm(&jobs));
@@ -446,6 +458,26 @@ impl App {
 
     fn log(&self, what: &str) {
         eprintln!("ipc t={}ms {what}", self.started.elapsed().as_millis());
+    }
+
+    /// One of the table's blips, off the UI thread onto fs-audio's stream.
+    /// None while locked: the lock's own field plays through
+    /// [`App::sfx_lock`].
+    fn sfx(&mut self, event: fs_audio::sfx::Sound) {
+        if !self.lock.locked {
+            self.sfx_lock(event);
+        }
+    }
+
+    fn sfx_lock(&mut self, event: fs_audio::sfx::Sound) {
+        let theme = &self.store.theme.theme;
+        let Some(sound) = theme.sound(event) else { return };
+        if self.store.notifications.model.dnd || !self.sfx.admit(event, Instant::now()) {
+            return;
+        }
+        let volume = theme.sound_volume;
+        crate::services::devices::audio::write(fs_audio::Command::Play { sound, volume, at: Instant::now() });
+        self.log(&format!("sfx {}", event.name()));
     }
 
     /// While a focused fullscreen window covers the bar's output the bar,
@@ -612,7 +644,7 @@ impl App {
             self.launcher.dirty = true;
         }
         if let Some(h) = &mut self.panel {
-            h.card.restyle(theme, self.cast);
+            h.restyle(theme, self.cast);
             h.card.tick(now);
             self.panel_dirty = true;
         }
@@ -737,6 +769,11 @@ impl App {
         let polkit = self.polkit.as_ref().map(|d| &d.modal);
         let overlay = self.plugin_overlay.as_ref().map(|w| &w.modal);
         [launch, atlas, polkit, overlay].into_iter().flatten().collect()
+    }
+
+    /// Any modal card on screen, opening, open or closing.
+    pub fn modal_shown(&self) -> bool {
+        self.launch.is_some() || self.atlas.win.is_some() || self.polkit.is_some() || self.plugin_overlay.is_some()
     }
 
     pub fn debug_join(&self) -> Option<(i32, i32)> {
@@ -1015,6 +1052,7 @@ impl App {
         self.tips.hide(None, now);
         self.sync_open(now);
         self.log(&format!("panel {id} mapped"));
+        self.sfx(fs_audio::sfx::Sound::Open);
     }
 
     /// The tray overflow: the whole tray as a strip-sized card hanging off
@@ -1318,6 +1356,9 @@ impl App {
     pub fn close_panels(&mut self) {
         self.close_tray_menu();
         let now = Instant::now();
+        if self.panel.as_ref().is_some_and(|p| p.is_open()) {
+            self.sfx(fs_audio::sfx::Sound::Close);
+        }
         if let Some(p) = &mut self.panel {
             p.close(now);
         }
@@ -1468,9 +1509,26 @@ impl App {
             self.scrim = None;
             self.log("scrim unmapped");
         }
+        if self.modal_up != self.modal_shown() {
+            self.modal_up = !self.modal_up;
+            self.sync_shards();
+        }
         self.follow_focus();
         self.sync_rasters(now);
         let qh = self.qh.clone();
+        self.present_boot(now);
+        if let Some((shift, alpha)) = self.boot_bar(now) {
+            self.bar.scene.set_shift(shift);
+            if let Some(s) = &mut self.bar_surface {
+                s.set_opacity(alpha);
+            }
+            for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
+                s.bar.scene.set_shift(shift);
+                if let Some(surface) = &mut s.surface {
+                    surface.set_opacity(alpha);
+                }
+            }
+        }
         self.present_heads(self.bar_dirty, now);
         let animating = self.bar.animating(now);
         if self.bar_dirty || (animating && !self.bar.step_in_place(now)) {
@@ -1487,6 +1545,10 @@ impl App {
             self.warm_faces();
             self.prefault_launcher();
             self.launcher_warm = true;
+            if self.store.theme.theme.sounds {
+                crate::services::devices::audio::write(fs_audio::Command::WarmSfx);
+            }
+            self.sync_shards();
         }
         self.step_menu(now);
         self.step_overflow(now);
@@ -1539,6 +1601,7 @@ impl App {
         self.present_polkit(now);
         self.present_overlay(now);
         self.present_lock();
+        self.present_unlock(now);
         self.arm_wake(now);
     }
 
@@ -2212,6 +2275,8 @@ impl CompositorHandler for App {
             Some(Owner::Picker(i)) => self.picker_frame(i),
             Some(Owner::Head(i, part)) => self.head_frame(i, part, now),
             None if self.saver_index(surface).is_some() => self.saver_frame_callback(surface),
+            None if self.boot_frame(surface) => {}
+            None if self.unlock_frame(surface) => {}
             None => {
                 if !self.polkit_frame(surface) && !self.overlay_frame(surface) {
                     self.lock_frame(surface);
@@ -2265,6 +2330,8 @@ impl LayerShellHandler for App {
             Some(Owner::Atlas(_)) => self.atlas_closed(),
             Some(Owner::Picker(i)) => self.picker_closed(i),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_closed(layer.wl_surface()),
+            None if self.boot_closed(layer.wl_surface()) => {}
+            None if self.unlock_closed(layer.wl_surface()) => {}
             Some(Owner::Zone(_) | Owner::Launcher(_)) | None => {}
         }
     }
@@ -2342,6 +2409,8 @@ impl LayerShellHandler for App {
             Some(Owner::Picker(i)) => self.picker_configure(i, width, height),
             None if self.caffeinate_owns(layer) => self.caffeinate_configure(),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_configure(layer.wl_surface(), width, height),
+            None if self.boot_configure(layer.wl_surface(), width, height) => {}
+            None if self.unlock_configure(layer.wl_surface(), width, height) => {}
             None if self.hot_corner_owns(layer) => self.hot_corner_configure(layer),
             None if self.polkit_owns(layer) => self.polkit_configure(layer, width, height),
             None if self.overlay_owns(layer) => self.overlay_configure(layer, width, height),
@@ -2392,7 +2461,8 @@ impl SeatHandler for App {
 impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         self.lock_pointer(events);
-        let rest = self.hot_corner_pointer(events);
+        let events = self.boot_pointer(events);
+        let rest = self.hot_corner_pointer(&events);
         if !rest.is_empty() {
             self.pointer_events(&rest);
         }
@@ -2405,6 +2475,9 @@ impl KeyboardHandler for App {
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {}
 
     fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
+        if self.boot_key() {
+            return;
+        }
         if self.saver.active && !self.lock.locked {
             self.saver_input(None, screensaver::SaverInput::Key);
             return;
@@ -2442,6 +2515,8 @@ impl OutputHandler for App {
         self.drop_head(&output);
         self.saver_output_gone(&output);
         self.lock_output_gone(&output);
+        self.boot_output_gone(&output);
+        self.unlock_output_gone(&output);
     }
 }
 

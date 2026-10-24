@@ -182,6 +182,9 @@ nixpkgs.lib.nixosSystem {
           sessionLogFile = "/tmp/formalshell-greeter-session.log";
           postGreeterCommand = "${pkgs.grim}/bin/grim /tmp/formalshell-greeter-post-auth.png";
         };
+        # `dev/smoke-greeter.sh --preset cartridge` switches to this and back,
+        # so the greeter's boot runs under the real greetd.
+        specialisation.greeter-cartridge.configuration.services.formalshell-greeter.settings.theme.preset = "cartridge";
 
         # Headless wlroots parent compositor — the Wayland "host session"
         # dev/smoke-*.sh nests its own Hyprland inside, same role a real

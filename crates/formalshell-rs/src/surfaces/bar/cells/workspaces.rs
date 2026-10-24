@@ -222,7 +222,7 @@ fn label_style(look: &Look, band: bool) -> TextStyle {
 }
 
 fn caption_style(look: &Look) -> TextStyle {
-    TextStyle { family: look.mono, size: look.caption, weight: WEIGHTS.medium as f32, tracking: 0.0 }
+    TextStyle { family: look.mono, size: look.caption, weight: WEIGHTS.medium as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
 impl Workspaces {
@@ -327,7 +327,7 @@ impl Workspaces {
         let a = alpha * pulse;
         p.rect(badge, look.background.with_alpha(look.background.a * a), size as f32 / 2.0);
         let g = fs_theme::icons::glyph(&look.icon_set, badge_glyph(state));
-        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.caption, weight: 400.0, tracking: 0.0 });
+        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.caption, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         let (bw, bh) = shaped.box_size();
         let at = (badge.x + (size - bw) / 2, badge.y + (size - bh) / 2);
         let centre = (badge.x as f64 + size as f64 / 2.0, badge.y as f64 + size as f64 / 2.0);
@@ -595,7 +595,17 @@ impl Custom for Workspaces {
             } else {
                 IRect::new(rect.x + from.round() as i32, rect.y, (to - from).round() as i32, rect.h)
             };
-            p.rect(r, ink.of(look.active_fill.with_alpha(look.active_fill.a * fade)), look.radius);
+            match &look.cursor {
+                // The console's cursor: a faint fill and the block on its
+                // leading edge, the label keeping its own ink.
+                Some((fill, bar)) => {
+                    p.rect(r, ink.of(fill.with_alpha(fill.a * fade)), look.radius);
+                    let w = (bar.width.round() as i32).min(r.w.min(r.h));
+                    let block = if self.vertical { IRect::new(r.x, r.y, r.w, w) } else { IRect::new(r.x, r.y, w, r.h) };
+                    p.rect(block, ink.of(bar.color.with_alpha(bar.color.a * fade)), 0.0);
+                }
+                None => p.rect(r, ink.of(look.active_fill.with_alpha(look.active_fill.a * fade)), look.radius),
+            }
         }
 
         for i in 0..self.slots.len().min(self.chips.len()) {
@@ -609,9 +619,9 @@ impl Custom for Workspaces {
             let waiting = self.waiting(&slot);
             let color = if slot.is_urgent || waiting {
                 look.destructive
-            } else if slot.is_focused {
+            } else if slot.is_focused && look.cursor.is_none() {
                 look.on_active
-            } else if slot.current || hovered {
+            } else if slot.is_focused || slot.current || hovered {
                 ink.fg
             } else {
                 ink.dim
@@ -659,7 +669,7 @@ impl Custom for Workspaces {
                     Some(image) => p.image(&image, (r.x, r.y), a),
                     None => {
                         let g = fs_theme::icons::glyph(&look.icon_set, "app-window");
-                        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0 });
+                        let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
                         let (bw, bh) = (shaped.width, shaped.line_height());
                         let at = (r.x + (r.w - bw) / 2, r.y + (r.h - bh) / 2);
                         p.text(&shaped, at, color.with_alpha(color.a * a), &[]);

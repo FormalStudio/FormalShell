@@ -17,11 +17,16 @@ leg_showcase_fixture_window=keep
 
 leg_showcase_fixture() {
   local wp="$shot_dir/showcase-wallpaper.png"
-  $convert_bin -size 1920x1080 xc:'#101428' \
+  # Under --cartridge a flat teal field, the reference's home page.
+  if leg_on cartridge; then
+    $convert_bin -size 1920x1080 xc:'#2e4a44' "$wp"
+  else
+    $convert_bin -size 1920x1080 xc:'#101428' \
     \( -size 1400x1400 radial-gradient:'#e0703a-none' \) -geometry +900+250 -composite \
     \( -size 1500x1500 radial-gradient:'#4a3fb0-none' \) -geometry -500-500 -composite \
     \( -size 1100x1100 radial-gradient:'#2a8f9a-none' \) -geometry +100+500 -composite \
     -blur 0x40 "$wp"
+  fi
   mkdir -p "$iso_home/.local/state/formalshell"
   printf '{"wallpaper": "%s"}\n' "$wp" > "$iso_home/.local/state/formalshell/state.json"
 }

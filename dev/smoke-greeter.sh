@@ -24,8 +24,23 @@
 # and the default_session compositor this script talks to is gone — the
 # restart forces a fresh greeter back up regardless of what a previous run
 # (or a fresh boot) left running.
+#
+# `--preset cartridge` runs the same login under nix/testvm.nix's
+# greeter-cartridge specialisation (switched to here and back on exit), with
+# a burst of frames through the boot before the pre-auth shot and the
+# greeter's own boot lines asserted: played, assembled, and crumpled on the
+# login before it exits.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+preset=""
+if [ "${1:-}" = "--preset" ]; then
+  preset="${2:-}"
+  if [ "$preset" != "cartridge" ]; then
+    echo "usage: dev/smoke-greeter.sh [--preset cartridge]" >&2
+    exit 1
+  fi
+fi
 
 runtime_dir=/run/formalshell-greeter
 session_log=/tmp/formalshell-greeter-session.log
@@ -58,7 +73,16 @@ end_login_sessions() {
     sudo loginctl terminate-session "$id" || true
   done
 }
-trap end_login_sessions EXIT
+restore_system() {
+  if [ -n "$preset" ]; then
+    sudo /run/booted-system/bin/switch-to-configuration test >/dev/null 2>&1 || true
+  fi
+}
+trap 'end_login_sessions; restore_system' EXIT
+
+if [ -n "$preset" ]; then
+  sudo "/run/booted-system/specialisation/greeter-$preset/bin/switch-to-configuration" test >/dev/null
+fi
 
 sudo rm -f "$post_auth_src" "$session_log"
 sudo systemctl restart greetd
@@ -82,7 +106,16 @@ greeter_env=(sudo env "XDG_RUNTIME_DIR=$runtime_dir" "WAYLAND_DISPLAY=$wayland_d
 # formalshell-greeter needs a moment after connecting to map its surfaces
 # and read greetd's first state — matches the fixed post-connect
 # settle windows dev/smoke.sh's own legs use before their first shot.
-sleep 3
+if [ -n "$preset" ]; then
+  # The boot from its first frames to the card settled.
+  for i in $(seq -w 0 19); do
+    "${greeter_env[@]}" grim "$out_dir/greeter-boot-$i.png" || true
+    sleep 0.25
+  done
+  sleep 1
+else
+  sleep 3
+fi
 "${greeter_env[@]}" grim "$pre_auth_png"
 
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" "test"
@@ -147,6 +180,17 @@ if ! grep -qF "greeter: session started" "$session_log_out"; then
   exit 1
 fi
 
+if [ -n "$preset" ]; then
+  for line in "greeter: preset $preset" "greeter: boot playing" "greeter: boot assembled" "greeter: boot crumpling"; do
+    if ! grep -qF "$line" "$session_log_out"; then
+      echo "SMOKE_FAIL: session log has no '$line', got:" >&2
+      cat "$session_log_out" >&2
+      exit 1
+    fi
+  done
+  grep "greeter: boot\|greeter: exiting" "$session_log_out"
+  echo "SMOKE_GREETER_BOOT $out_dir/greeter-boot-10.png"
+fi
 echo "SMOKE_GREETER_PRE $pre_auth_png"
 echo "SMOKE_GREETER_WRONGPW $wrong_pw_png"
 echo "SMOKE_GREETER_POST $post_auth_png"

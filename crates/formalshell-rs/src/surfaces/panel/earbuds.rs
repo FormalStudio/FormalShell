@@ -319,7 +319,7 @@ fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
             w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), w::track(b.level / 100.0)])).ghost()
         })
         .collect();
-    Some(w::column(s.row_gap, vec![w::section_label(s, "Battery", None, true), w::column(0.0, rows)]))
+    Some(w::column(s.row_gap, vec![w::heading(s, "Battery", None, true), w::column(0.0, rows)]))
 }
 
 impl Panel for Earbuds {
@@ -333,6 +333,23 @@ impl Panel for Earbuds {
 
     fn icon(&self, _: &View) -> String {
         "headphones".into()
+    }
+
+    fn subtitle(&self, _: &View) -> String {
+        "Controls".into()
+    }
+
+    fn status(&self, v: &View) -> String {
+        let e = &v.store.devices.earbuds;
+        match e.active() {
+            _ if !e.available() => "no daemon".into(),
+            None => "none connected".into(),
+            Some(d) => d.state_line.to_lowercase(),
+        }
+    }
+
+    fn accent(&self) -> super::Accent {
+        super::Accent::Secondary
     }
 
     fn reads(&self) -> &'static [Topic] {
@@ -360,7 +377,7 @@ impl Panel for Earbuds {
         }
         if e.devices().len() > 1 {
             let (opts, selected) = devices(e);
-            out.push(w::column(s.row_gap, vec![w::section_label(s, "Device", None, true), self.group(DEVICE, &opts, selected, None)]));
+            out.push(w::column(s.row_gap, vec![w::heading(s, "Device", None, true), self.group(DEVICE, &opts, selected, None)]));
         }
         let Some(dev) = dev else { return w::column(s.section_gap, out) };
         match art(dev, "duo", s.control_height * 3.0) {
@@ -381,6 +398,7 @@ impl Panel for Earbuds {
                         trailing: None,
                         rail: None,
                         rail_on: None,
+                        tab: "device".into(),
                     },
                 ));
                 out.extend(battery_section(s, dev));
@@ -408,7 +426,7 @@ impl Panel for Earbuds {
                     ControlKind::Range => rows.push(range_row(s, ctl)),
                 }
             }
-            out.push(w::column(s.row_gap, vec![w::section_label(s, &section.section, None, true), w::column(0.0, rows)]));
+            out.push(w::column(s.row_gap, vec![w::heading(s, &section.section, None, true), w::column(0.0, rows)]));
         }
         w::column(s.section_gap, out)
     }

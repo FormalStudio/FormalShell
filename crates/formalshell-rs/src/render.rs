@@ -143,6 +143,13 @@ impl Renderer {
             let (x1, y1) = ((f64::from(device.right()) / s).ceil() as i32, (f64::from(device.bottom()) / s).ceil() as i32);
             rect = IRect::new(x0, y0, x1 - x0, y1 - y0);
         }
+        let shift = scene.shift();
+        if shift != 0.0 {
+            origin = origin * Affine::translate((shift, 0.0));
+            // The nodes landing in the rect sit `shift` short of it.
+            let dx = shift.floor() as i32;
+            rect = IRect::new(rect.x - dx - 1, rect.y, rect.w + 2, rect.h);
+        }
         let (w, h) = (device.w as u16, device.h as u16);
         self.ctx.reset_and_resize(w, h);
         // A clip is a layer composited on its own, so a run of nodes under
@@ -352,6 +359,23 @@ impl Renderer {
                     let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
                     self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
                     self.ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
+                    self.ctx.reset_paint_transform();
+                }
+                Paint::Cut { image, alpha, cut } => {
+                    let b = node.bounds;
+                    let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
+                    let (iw, ih) = (image.pixmap.width() as f64, image.pixmap.height() as f64);
+                    let outline = match cut {
+                        crate::scene::Cut::Corners(c) => crate::ui::boxes::chamfered(r, [f64::from(*c); 4]),
+                        crate::scene::Cut::Hex => crate::ui::boxes::hexagon(r),
+                    };
+                    self.ctx.set_transform(at);
+                    self.ctx.set_paint_transform(
+                        Affine::translate((r.x0, r.y0)) * Affine::scale_non_uniform(r.width() / iw.max(1.0), r.height() / ih.max(1.0)),
+                    );
+                    let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
+                    self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
+                    self.ctx.fill_path(&outline);
                     self.ctx.reset_paint_transform();
                 }
                 Paint::Shape { fill, strokes } => {

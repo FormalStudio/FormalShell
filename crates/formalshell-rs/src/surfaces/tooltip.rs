@@ -201,7 +201,7 @@ impl Card {
     }
 
     fn style(theme: &Theme, kit: &Kit) -> TextStyle {
-        TextStyle { family: kit.look.sans, size: theme.font_size.caption as f32, weight: 400.0, tracking: 0.0 }
+        TextStyle { family: kit.look.sans, size: theme.font_size.caption as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
     }
 
     fn shape(theme: &Theme, kit: &mut Kit, text: &str) -> ShapedText {
