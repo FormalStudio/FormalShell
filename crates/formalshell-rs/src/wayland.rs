@@ -290,6 +290,9 @@ pub struct App {
     launcher_styles: Vec<crate::text::TextStyle>,
     /// The launcher's faces are warmed once, after the bar is on screen.
     faces_warmed: bool,
+    /// A modal card was up at the last present, which holds the backdrop's
+    /// sculpture still.
+    modal_up: bool,
     boot: boot::Boot,
     /// The launcher card's pool, buffers and canvas while it is shut.
     launch_kept: Option<crate::surface::Kept>,
@@ -388,6 +391,7 @@ impl App {
             launcher_warm: false,
             launcher_styles: Vec::new(),
             faces_warmed: false,
+            modal_up: false,
             boot: Default::default(),
             launch_kept: None,
             layer_kept: None,
@@ -765,6 +769,11 @@ impl App {
         let polkit = self.polkit.as_ref().map(|d| &d.modal);
         let overlay = self.plugin_overlay.as_ref().map(|w| &w.modal);
         [launch, atlas, polkit, overlay].into_iter().flatten().collect()
+    }
+
+    /// Any modal card on screen, opening, open or closing.
+    pub fn modal_shown(&self) -> bool {
+        self.launch.is_some() || self.atlas.win.is_some() || self.polkit.is_some() || self.plugin_overlay.is_some()
     }
 
     pub fn debug_join(&self) -> Option<(i32, i32)> {
@@ -1499,6 +1508,10 @@ impl App {
         if self.scrim.as_ref().is_some_and(|(p, s)| s.mapped && p.finished(now)) {
             self.scrim = None;
             self.log("scrim unmapped");
+        }
+        if self.modal_up != self.modal_shown() {
+            self.modal_up = !self.modal_up;
+            self.sync_shards();
         }
         self.follow_focus();
         self.sync_rasters(now);

@@ -438,6 +438,11 @@ impl App {
         if self.saver.active {
             return Err("screensaver");
         }
+        // The modal's open is the launcher's budget; the scrim dims the
+        // sculpture under it anyway.
+        if self.modal_up {
+            return Err("modal");
+        }
         if snapshot.fullscreen_outputs.iter().any(|o| *o == name) {
             return Err("fullscreen");
         }

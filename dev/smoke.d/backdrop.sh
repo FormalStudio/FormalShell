@@ -13,9 +13,11 @@
 # same window back to tiled covers the whole output, so it still holds
 # ("covered", cover past 0.85); moved to workspace 2 it runs again and the
 # frames move. `debug motionScale 1000` slows its own clock to a tenth while
-# the beat stays at 24 a second. Under FS_CPU_QUOTA (the e1504g power
-# saver stand-in) the budget is 10% of a core and the leg fails past it; the
-# plain run prints its number, which stands in for nothing on real hardware.
+# the beat stays at 24 a second. The launcher open over it holds it too
+# (`paused` "modal", no commit in 3 s): the open is the launcher's budget.
+# Under FS_CPU_QUOTA (the e1504g power saver stand-in) the budget is 10% of
+# a core and the leg fails past it; the plain run prints its number, which
+# stands in for nothing on real hardware.
 leg_backdrop_flag="--backdrop"
 leg_backdrop_order=212
 leg_backdrop_needs="convert jq foot"
@@ -67,6 +69,12 @@ dump slowed
 $ipc call debug motionScale 100 > /dev/null 2>&1
 k1=\$("$jq_bin" '.backdrop[0].clock' "$shot_dir/backdrop-slowed.json")
 echo "slowclock clock_ms=\$(awk -v a="\$k0" -v b="\$k1" 'BEGIN { print b - a }')" >> "\$out"
+$ipc call menu toggle > /dev/null 2>&1
+sleep 1
+quiet modal 3
+dump modal
+$ipc call menu toggle > /dev/null 2>&1
+sleep 2
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-backdrop --title='formalshell backdrop' sh -c 'sleep 300']==])" > /dev/null 2>&1
 sleep 3
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
@@ -112,7 +120,7 @@ leg_backdrop_assert() {
   [ -f "$backdrop_done" ] || fail "--backdrop: the drive never finished"
   sed 's/^/SMOKE_BACKDROP /' "$backdrop_results"
   local phase
-  for phase in running budget slowed fullscreen covered resumed; do
+  for phase in running budget slowed modal fullscreen covered resumed; do
     [ -s "$shot_dir/backdrop-$phase.json" ] || fail "--backdrop: no dump for $phase"
     echo "SMOKE_BACKDROP $phase $("$jq_bin" -c '.backdrop[0]' "$shot_dir/backdrop-$phase.json")"
   done
@@ -142,6 +150,9 @@ leg_backdrop_assert() {
   awk -v m="${slowed_ms:-0}" 'BEGIN { exit !(m > 100 && m < 1200) }' \
     || fail "--backdrop: under motionScale 1000 the clock moved ${slowed_ms}ms in 4s, not about 400"
   [ "${slowed_commits:-0}" -ge 20 ] || fail "--backdrop: the beat stopped under motionScale ($slowed_commits commits in 4s)"
+
+  [ "$(_backdrop_commits modal)" = 0 ] || fail "--backdrop: $(_backdrop_commits modal) sculpture commits under the open launcher"
+  [ "$(_backdrop_field modal paused)" = modal ] || fail "--backdrop: under the launcher it reports '$(_backdrop_field modal paused)'"
 
   local fs_windows
   fs_windows=$("$jq_bin" -r '[.[] | select(.fullscreen != 0 and .fullscreen != false)] | length' "$shot_dir/backdrop-fullscreen-clients.json" 2>/dev/null)

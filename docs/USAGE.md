@@ -1022,7 +1022,8 @@ turning slowly, with a faint ring and wordmark behind it and the grid
 over it. It is drawn at half the output's pixels and at most 24 frames a
 second, and it holds still on its last frame whenever it cannot be seen
 or should not cost anything: under a fullscreen window, when tiled
-windows cover more than 85% of the output, under the screensaver, on the
+windows cover more than 85% of the output, while the launcher or another
+modal card is up, under the screensaver, on the
 power saver profile, on battery below 20%, and with `motion.enabled`
 false. The lock screen shows the frame it stopped on. The `cartridge`
 preset turns it on.
