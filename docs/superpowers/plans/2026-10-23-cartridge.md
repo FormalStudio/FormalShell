@@ -5,6 +5,23 @@
 **Spec:** `docs/superpowers/specs/2026-10-23-cartridge-theme.md`. The
 spec wins on conflict; its C-numbers are cited below.
 
+## Deviations (recorded in Task 10)
+
+- The backdrop also holds still while a modal card is up (the launcher,
+  Radio Atlas, polkit, a plugin overlay): rendering it on the UI thread
+  during a launcher open put `--cartridge --menu-budget` under
+  `FS_CPU_QUOTA=10%` 60 to 150ms past its first-commit budget. With it
+  held, the worst first commit is 10 to 68ms.
+- `--menu-budget`'s 16ms shell hold under that quota fails at `main`
+  (fc41d3b0) too, 48 to 88ms over four runs, so it was not a gate here.
+  It is e1504g's to read.
+- The README GIFs come from a leg of their own, `--cartridge-media`, which
+  records at a third speed and plays back at full speed, rather than from
+  each leg's frames.
+- The launcher's section headings draw as field tags under the console
+  habit (`w::heading`), the way the panels' headings already did; they
+  were plain section labels.
+
 One subagent per task, sequential, each ending in its verification run
 read back and one commit (`feat(theme): ...` and the like). VM work goes
 through `dev/vm-lock.sh just vm-smoke <flags>` from the worktree;
