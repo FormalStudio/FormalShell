@@ -184,8 +184,8 @@ wallpaper: a seeded set of thin triangles in a slowly rotating 3D
 cluster, projected and drawn flat in the palette's surface colour with
 `onSurface` edges, at the wallpaper's leading side, plus a giant faint
 mark and the grid (C8). Budget, measured by `--idle` riding
-`--cartridge`: at most 24fps, rendered at half the output's pixels and
-scaled, under 4% of one core on g815 and under 10% on e1504g's power
+`--cartridge`: at most 24fps, rendered at the output's own pixels (half
+of them, scaled up, read as pixelated on g815's panel), under 4% of one core on g815 and under 10% on e1504g's power
 saver stand-in while it runs. It runs only while the backdrop is
 visible: paused with zero commits under a fullscreen window, when
 tiled windows cover more than 85% of the output, on a locked session

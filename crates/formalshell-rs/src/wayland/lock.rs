@@ -682,8 +682,7 @@ impl App {
             let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
             let backdrops = &self.lock.backdrop;
             shared.backdrop = backdrops.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
-            let half = crate::shards::half(device);
-            shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == half);
+            shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             let _raster = crate::scene::raster_at(k);
             o.view.draw(&shared, theme, &mut self.bar.kit, now);
             o.surface.set_opacity(alpha);
@@ -862,7 +861,7 @@ impl App {
             .outs
             .iter()
             .filter(|o| o.surface.configured)
-            .map(|o| crate::shards::half((crate::render::scaled(o.view.scene.size.w, o.surface.scale()), crate::render::scaled(o.view.scene.size.h, o.surface.scale()))))
+            .map(|o| (crate::render::scaled(o.view.scene.size.w, o.surface.scale()), crate::render::scaled(o.view.scene.size.h, o.surface.scale())))
             .filter(|&(w, h)| !self.lock.shards.iter().any(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == (w, h)))
             .collect();
         if devices.is_empty() {
@@ -955,8 +954,7 @@ impl App {
             let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
             let backdrops = &self.lock.backdrop;
             shared.backdrop = backdrops.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
-            let half = crate::shards::half(device);
-            shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == half);
+            shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
             if let Some(m) = &mut shared.media {
                 m.art = arts.and_then(|a| crate::scene::nearest(a, k));

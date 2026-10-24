@@ -639,7 +639,7 @@ picker's choice in `state.json` first), and the backdrops, the lock, the
 band's paint, the greeter and matugen (`color hex` on it) all read that.
 `wallpaper.animate` (on under `cartridge`) puts the shard sculpture
 (`fs-chrome/src/shards.rs`, rasterised by `shards.rs`) on a Background
-layer of its own over each output's wallpaper at half its pixels, with the
+layer of its own over each output's wallpaper at its own pixels, with the
 grid moved out of the picture onto a third layer over it; the
 `backdrop.shards` and `backdrop.mark` roles colour it, and the lock draws
 the frame it stopped on under its grid.

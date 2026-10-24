@@ -1,7 +1,7 @@
 //! The animated backdrop's sculpture rasterised: `fs_chrome::shards`'s
-//! triangles and mark drawn into a premultiplied RGBA buffer at half the
-//! output's pixels, for the desktop's own layer over the wallpaper and for
-//! the lock's still of it.
+//! triangles and mark drawn into a premultiplied RGBA buffer at the
+//! output's own pixels, for the desktop's own layer over the wallpaper and
+//! for the lock's still of it.
 
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ pub struct Look {
     pub face: Rgba,
     pub lit: Rgba,
     pub edge: Rgba,
-    /// In the preview's half-resolution pixels, scaled with the buffer.
+    /// In the preview's 640x400 canvas, scaled by the buffer's height.
     pub edge_width: f64,
     pub mark: Rgba,
     /// The word's glyph outlines at [`WORD_SIZE`], placed about its centre.
@@ -137,14 +137,23 @@ impl Raster {
         if target.len() != usize::from(w) * usize::from(h) * 4 || region.is_empty() {
             return painted;
         }
-        // Whole rows, so the stretch of the buffer is one slice vello draws
-        // straight into, over the base copied under it.
-        let Ok(rh) = u16::try_from(region.h) else { return painted };
+        // The damaged rectangle alone: the base copied back under it, and a
+        // scene of its size rendered over it in place at its offset. The
+        // sculpture keeps to one side of the screen, so whole rows would
+        // copy and composite twice the pixels.
+        let (Ok(rw), Ok(rh), Ok(rx), Ok(ry)) =
+            (u16::try_from(region.w), u16::try_from(region.h), u16::try_from(region.x), u16::try_from(region.y))
+        else {
+            return painted;
+        };
         let stride = usize::from(w) * 4;
-        let span = region.y as usize * stride..region.bottom() as usize * stride;
-        target[span.clone()].copy_from_slice(&base.data_as_u8_slice()[span.clone()]);
-        self.ctx.reset_and_resize(w, rh);
-        self.ctx.set_transform(Affine::translate((0.0, -f64::from(region.y))));
+        let (x0, row) = (usize::from(rx) * 4, usize::from(rw) * 4);
+        for y in usize::from(ry)..usize::from(ry) + usize::from(rh) {
+            let at = y * stride + x0;
+            target[at..at + row].copy_from_slice(&base.data_as_u8_slice()[at..at + row]);
+        }
+        self.ctx.reset_and_resize(rw, rh);
+        self.ctx.set_transform(Affine::translate((-f64::from(region.x), -f64::from(region.y))));
         let edge_width = look.edge_width * k;
         for f in &flats {
             self.ctx.set_paint(color(if f.lit { look.lit } else { look.face }));
@@ -155,8 +164,9 @@ impl Raster {
             }
         }
         self.ctx.flush();
-        if let Some(pixmap) = vello_cpu::PixmapMut::new(w, rh, &mut target[span]) {
-            let settings = vello_cpu::RasterizerSettings { target_init: vello_cpu::TargetInit::SrcOver, ..Default::default() };
+        if let Some(pixmap) = vello_cpu::PixmapMut::new(w, h, target) {
+            let settings =
+                vello_cpu::RasterizerSettings { target_init: vello_cpu::TargetInit::SrcOver, offset: (rx, ry), ..Default::default() };
             self.ctx.render_with(pixmap, &mut self.resources, settings);
         }
         painted
@@ -215,11 +225,6 @@ fn edge(a: (f64, f64), b: (f64, f64), width: f64) -> BezPath {
     p.line_to((a.0 - nx, a.1 - ny));
     p.close_path();
     p
-}
-
-/// A buffer at half the output's pixels, rounded up.
-pub fn half(device: (i32, i32)) -> (i32, i32) {
-    ((device.0 + 1) / 2, (device.1 + 1) / 2)
 }
 
 #[cfg(test)]
@@ -286,6 +291,5 @@ mod tests {
     fn the_mean_reads_bgra() {
         assert_eq!(mean(&[0, 0, 255, 255, 0, 0, 255, 255]).map(|c| c.to_u8()), Some([255, 0, 0, 255]));
         assert_eq!(mean(&[]), None);
-        assert_eq!(half((1919, 1080)), (960, 540));
     }
 }

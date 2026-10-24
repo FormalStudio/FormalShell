@@ -1083,7 +1083,7 @@ impl Backdrop {
             }
             Ok(()) => false,
         };
-        let moved = s.look.as_ref() != Some(&look) || s.drawn.is_none_or(|(_, d)| d != crate::shards::half(device));
+        let moved = s.look.as_ref() != Some(&look) || s.drawn.is_none_or(|(_, d)| d != device);
         s.look = Some(look);
         // Anything else waits for the beat, which keeps the cap.
         if moved || (started && !s.pending) {
@@ -1240,8 +1240,8 @@ impl Backdrop {
 pub const SHARD_FPS: f64 = 24.0;
 
 /// The sculpture's two layers over a [`Backdrop`]'s picture: the shards
-/// at half the output's pixels, mapped back over the whole output by the
-/// viewport, and the grid over them at the output's own, drawn once.
+/// and the grid over them, both at the output's own pixels, mapped onto its
+/// logical size by their viewports; the grid is drawn once.
 /// Layer surfaces of their own rather than the picture's subsurfaces:
 /// Hyprland schedules no frame for a commit to a layer's subsurface, so a
 /// subsurface's frames land only when something else redraws the output.
@@ -1371,7 +1371,7 @@ impl Shards {
     /// The frame at the clock's `t`, committed with a callback asked for.
     fn draw(&mut self, device: (i32, i32), logical: (i32, i32), now: Instant, qh: &QueueHandle<App>) {
         let Some(look) = &self.look else { return };
-        let (w, h) = crate::shards::half(device);
+        let (w, h) = device;
         let (Ok(bw), Ok(bh)) = (u16::try_from(w), u16::try_from(h)) else { return };
         let t0 = Instant::now();
         // Two buffers in turn, a third only while both are on screen.

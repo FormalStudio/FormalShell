@@ -866,7 +866,7 @@
             "The reference's grid: 2px lines every 120px in the foreground at 0.14, fading out over the bottom fifth (`fade`). Pitch and width are logical pixels; the pass multiplies them by the output's scale. It draws only where `theme.grid` (or `wallpaper.grid`, `lock.grid`) is on, which this preset turns on; the other tables carry the same numbers for anyone who turns it on there."
         ],
         "roles.backdrop.shards": [
-            "The animated backdrop's sculpture (`wallpaper.animate`), drawn at half the output's pixels. `fill` is a tint laid over the wallpaper's own mean colour, so the shards read as a facet of whatever is under them, the way the reference's #33504a sits on its #2e4a44; `border` is the edge drawn along each shard's long side, at half-resolution pixels; `ink` is a face turned to the viewer. The other tables carry the same numbers for anyone who turns `wallpaper.animate` on there."
+            "The animated backdrop's sculpture (`wallpaper.animate`), drawn at the output's own pixels. `fill` is a tint laid over the wallpaper's own mean colour, so the shards read as a facet of whatever is under them, the way the reference's #33504a sits on its #2e4a44; `border` is the edge drawn along each shard's long side, its width in the preview's 640x400 canvas and scaled by the output's height; `ink` is a face turned to the viewer. The other tables carry the same numbers for anyone who turns `wallpaper.animate` on there."
         ],
         "roles.backdrop.mark": [
             "The giant faint mark under the sculpture: the reference's tilted ring and the stacked word inside it, in the background colour at 0.16."

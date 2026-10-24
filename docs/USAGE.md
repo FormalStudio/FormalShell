@@ -1038,7 +1038,7 @@ setting until you pick again.
 
 `wallpaper.animate` draws a sculpture of thin shards over the desktop,
 turning slowly, with a faint ring and wordmark behind it and the grid
-over it. It is drawn at half the output's pixels and at most 24 frames a
+over it. It is drawn at the output's own pixels and at most 24 frames a
 second, and it holds still on its last frame whenever it cannot be seen
 or should not cost anything: under a fullscreen window, when tiled
 windows cover more than 85% of the output, while the launcher or another
