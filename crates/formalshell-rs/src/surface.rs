@@ -593,6 +593,13 @@ impl<R: Role> Surface<R> {
             self.react_us = self.landed_at.take().map_or(0, |at| at.elapsed().as_micros());
             self.render_us = 0;
             self.slices = 0;
+            // A surface made again for a scene that has drawn before (the
+            // bar re-placed when its framing moves, a spare bar on another
+            // output) starts on a blank canvas: the scene's damage covers
+            // only what changed since its last surface drew it.
+            if self.commits == 0 {
+                scene.touch(IRect::new(0, 0, scene.size.w, scene.size.h));
+            }
         }
         // Damage that came in while a sliced frame was being drawn joins it.
         for rect in scene.take_damage() {
@@ -1194,6 +1201,12 @@ impl Backdrop {
         // The grid rides on its own layer over the sculpture.
         let grid = grid.filter(|_| self.shards.is_none());
         let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888) else { return };
+        // A picture made for the output's last scale (an output given its
+        // scale just after it appeared) waits for its own size; the plain
+        // colour stands in until it lands.
+        let len = canvas.len();
+        let fits = |p: &&crate::services::wallpaper::Picture| p.bgra.len() == len;
+        let (from, to) = (from.map(|f| f.filter(fits)), to.filter(fits));
         let plain = |canvas: &mut [u8]| {
             for px in canvas.chunks_exact_mut(4) {
                 px.copy_from_slice(&color);

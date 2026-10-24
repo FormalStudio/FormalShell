@@ -14,6 +14,11 @@
 # carries while it is open. A panel opened there again, and a click on the
 # second output's own audio cell (its place read off `bar room` once the
 # pointer has promoted that bar) has to close it and open audio there.
+# A fullscreen window there then unmaps that bar, and once it closes the
+# bar's new window has to draw every cell nothing changed with the pointer
+# kept off it: a new window used to draw only what changed since the old
+# one, so cells stayed blank until a hover repainted them (g815,
+# 2026-10-24).
 #
 # The screensaver next, with the pointer resting on the second output: a
 # formalshell:screensaver layer on each output and each grabbed frame mostly
@@ -28,7 +33,7 @@
 # theme whose table wears no ring (`--pantheon`) reserves none.
 leg_multi_output_flag="--multi-output"
 leg_multi_output_order=217
-leg_multi_output_needs="jq wlrctl convert wtype"
+leg_multi_output_needs="jq wlrctl convert wtype foot"
 
 multi_output_second="FS-MULTI"
 multi_output_create="$shot_dir/multi-output-create.txt"
@@ -57,13 +62,16 @@ multi_output_saver_second_png="$shot_dir/multi-output-saver-second.png"
 multi_output_saver_readd_png="$shot_dir/multi-output-saver-readd.png"
 multi_output_lock_first_png="$shot_dir/multi-output-lock-first.png"
 multi_output_lock_second_png="$shot_dir/multi-output-lock-second.png"
+multi_output_bare_png="$shot_dir/multi-output-bare.png"
+multi_output_unhidden_png="$shot_dir/multi-output-unhidden.png"
+multi_output_hidden="$shot_dir/multi-output-hidden.txt"
 
 leg_multi_output_fixture() {
   settings_fragment ', "frame": {"thickness": 6, "radius": 20}'
 }
 
 leg_multi_output_timing() {
-  leg_timing 13 110
+  leg_timing 100 140
 }
 
 leg_multi_output_drive() {
@@ -121,7 +129,18 @@ call bar room > "$multi_output_room_after" 2>&1
 "$grim_bin" "$multi_output_cell_png" > /dev/null 2>&1
 call panel close > /dev/null 2>&1
 park \$((lw + 640)) 500
-sleep 1
+sleep 2
+"$grim_bin" -o "$multi_output_second" "$multi_output_bare_png" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-multi-full sh -c 'sleep 60']==])" > /dev/null 2>&1
+sleep 3
+"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:formalshell-multi-full' })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
+sleep 2
+"$hyprctl_bin" -j layers | "$jq_bin" -r --arg s "$multi_output_second" '"bars under fullscreen: \([.[\$s].levels[]?[]? | select(.namespace == "formalshell:bar")] | length)"' >> "$multi_output_hidden" 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.close()" > /dev/null 2>&1
+sleep 3
+"$grim_bin" -o "$multi_output_second" "$multi_output_unhidden_png" > /dev/null 2>&1
 echo "start: \$(call screensaver start)" >> "$multi_output_saver"
 sleep 3
 "$hyprctl_bin" -j layers > "$multi_output_saver_layers" 2>&1
@@ -241,6 +260,26 @@ leg_multi_output_assert() {
   done
   echo "SMOKE_MULTI_OUTPUT_FIRST $multi_output_first_png"
   echo "SMOKE_MULTI_OUTPUT_SECOND $multi_output_second_png"
+
+  # The second output's bar unmapped under a fullscreen window and given a
+  # window again, with the pointer never over it: every cell but the ones
+  # the fullscreen window itself moved (workspaces) or time did (clock) has
+  # to come back as it was.
+  cat "$multi_output_hidden"
+  grep -q '^bars under fullscreen: 0$' "$multi_output_hidden" || fail "the fullscreen window on $multi_output_second left its bar mapped"
+  [ -s "$multi_output_unhidden_png" ] || fail "no frame of $multi_output_second once its fullscreen window closed"
+  local name box diff cells=0
+  while read -r name box; do
+    diff=$($convert_bin "$multi_output_bare_png" -crop "$box" +repage "(" "$multi_output_unhidden_png" -crop "$box" +repage ")" -alpha off \
+      -compose difference -composite -colorspace gray -threshold 10% -format '%[fx:mean]' info: 2>&1 | tail -1)
+    echo "bar after fullscreen: $name $box, share changed ${diff:-?}"
+    awk -v d="${diff:-1}" 'BEGIN { exit !(d + 0 < 0.3) }' \
+      || fail "$multi_output_second's bar came back from fullscreen without its $name cell (${diff:-?} of $box changed)"
+    cells=$((cells + 1))
+  done < <("$jq_bin" -r '.[0].cells[] | select(.whole and .name != "workspaces" and .name != "clock")
+    | "\(.name) \(.width * 1.25 | ceil)x\(.height * 1.25 | ceil)+\(.x * 1.25 | floor)+\(.y * 1.25 | floor)"' "$multi_output_room" 2>/dev/null)
+  [ "$cells" -gt 0 ] || fail "no cells to compare in $multi_output_second's bar room: $(head -c 300 "$multi_output_room")"
+  echo "SMOKE_MULTI_OUTPUT_UNHIDDEN $multi_output_unhidden_png"
 
   cat "$multi_output_saver"
   grep -q '^status shown: .*"active":true' "$multi_output_saver" || fail "screensaver start did not show it: $(grep '^status shown' "$multi_output_saver")"

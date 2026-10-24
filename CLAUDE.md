@@ -593,7 +593,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   output, read off `hyprctl -j layers`, with a headless
   second output created after the shell started at scale 1.25 (g815's
   laptop panel shape), each output grabbed with `grim -o`, and the second
-  removed again leaving the first's chrome alone. The screensaver on both
+  removed again leaving the first's chrome alone. A fullscreen window on
+  the second unmapping its bar, and once it closes every cell the window
+  and the clock did not change back as it was, per cell crop, with the
+  pointer kept off the bar. The screensaver on both
   outputs, a `formalshell:screensaver` layer and a mostly black frame on
   each, dismissed off both by one real pointer move on the second, then
   the second removed and created again under a running screensaver and
