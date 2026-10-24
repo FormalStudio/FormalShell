@@ -322,7 +322,7 @@ with `bar.widgets.<cell>.showLabel`:
 `frame.thickness` (default 0) grows the bar's window to the whole output and
 paints a frame of that thickness round it, reserving each edge so windows sit
 inside it. `frame.radius` rounds the frame's inner corners (default 20, or 0
-when `theme.radius` is 0). The `pantheon` preset draws no frame whatever
+when `theme.radius` is 0). The `pantheon` and `cartridge` presets draw no frame whatever
 `frame.thickness` says; `debug dump`'s `frame` block reports both the value
 asked for and the ring that was drawn.
 

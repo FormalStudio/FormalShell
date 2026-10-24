@@ -845,7 +845,7 @@ lists what each placed cell settled on.
 **Frame.** A theme habit first (`habits.frame`): a table that says it wears
 no ring reads `frame.thickness` as 0 whatever settings.json holds, so the
 key reserves nothing and the `window` role's own gaps are the whole margin
-round a window. metamorphosis and retro frame, pantheon does not. Off by default
+round a window. metamorphosis and retro frame, pantheon and cartridge do not. Off by default
 (`frame.thickness` 0). On, the bar's own fill continues round the other
 three edges as a band `frame.thickness` wide, and
 a rounded rectangle (`frame.radius`, 20; 0 with a base radius of 0) is cut

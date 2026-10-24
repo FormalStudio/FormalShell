@@ -53,6 +53,11 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
+/// The sculpture against the preview's: tsubi.club's own fills the
+/// trailing three quarters of the screen and runs off its edge, its top
+/// and its bottom, where the preview's sat inside a quarter of it.
+const SCALE: f64 = 1.6;
+
 /// How closely a face has to point at the viewer to draw lit.
 const LIT: f64 = 0.93;
 
@@ -98,8 +103,8 @@ impl Cluster {
         let ay = t * 0.00012;
         let ax = (t * 0.00009).sin() * 0.35;
         let (sy, cy, sx, cx) = (ay.sin(), ay.cos(), ax.sin(), ax.cos());
-        let k = h / REFERENCE_HEIGHT;
-        let (ox, oy) = (w * 0.7, h * 0.42);
+        let k = h / REFERENCE_HEIGHT * SCALE;
+        let (ox, oy) = (w * 0.7, h * 0.45);
         let mut out: Vec<(f64, Flat)> = self
             .tris
             .iter()
@@ -227,9 +232,11 @@ mod tests {
     fn it_sits_on_the_trailing_side_and_scales_with_the_height() {
         let c = Cluster::reference();
         for t in [0.0, 9000.0, 30000.0] {
-            let (x0, _, x1, _) = bounds(&c.project(t, 640.0, 400.0)).unwrap();
+            let (x0, y0, x1, y1) = bounds(&c.project(t, 640.0, 400.0)).unwrap();
             let mid = (x0 + x1) / 2.0;
             assert!((300.0..560.0).contains(&mid), "{t}: {mid}");
+            // Past the trailing edge, the top and the bottom.
+            assert!(x1 > 640.0 && y0 < 0.0 && y1 > 400.0, "{t}: {x0} {y0} {x1} {y1}");
         }
         let small = bounds(&c.project(0.0, 640.0, 400.0)).unwrap();
         let big = bounds(&c.project(0.0, 1280.0, 800.0)).unwrap();

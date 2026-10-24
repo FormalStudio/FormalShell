@@ -835,8 +835,8 @@
         "bar": "strip",
         "emerge": "slide",
         "notification": "row",
-        "frame": true,
-        "paint": "auto",
+        "frame": false,
+        "paint": "transparent",
         "panel": "console",
         "grid": "hex",
         "boot": "cartridge"
@@ -891,7 +891,7 @@
             "The catalogue past the clocks (spec C5), each read off tsubi.club: a focused label widens to 125, 700 and 0.04em over 200ms (`focusText`); hero titles, the status strip and changed values type in on steps(20) over 0.6s (`reveal: type`); rows rise 40px, 60ms apart, on the emerge clock (`arrive.rise`, `arrive.stagger`); a replaced body jumps 10px back and out in two steps, then comes in from 20px (`swap: glitch`); an activated row leaves a ghost scaling to (1.1, 1.3) as it fades over 0.4s (`use`); a field's error label jitters its axes over 0.5s (`error: shake`); a changed picture lands from 20 times its size in two steps (`picture: zoom`); a fresh card's grain fades over 1s (`noise`); progress reads as ten blocks and a percentage (`progress: blocks`). None of them runs at rest."
         ],
         "habits": [
-            "A card slides 40px in along its line and fades (`emerge: slide`), panels take the console grammar, launcher grids draw hexagonal tiles, and the session opens on the boot sequence."
+            "A card slides 40px in along its line and fades (`emerge: slide`), panels take the console grammar, launcher grids draw hexagonal tiles, and the session opens on the boot sequence. No frame ring and a transparent bar: tsubi's chips float straight over the backdrop, so `frame.thickness` reads 0 here."
         ]
     }
 }

@@ -18,11 +18,11 @@
 # thickness in from the left edge and off the right one (e1504g,
 # 2026-08-26); -1 is the only value that holds either way.
 #
-# Ridden by --pantheon it proves the other half (M66): a look whose table
+# Ridden by --pantheon or --cartridge it proves the other half (M66): a look whose table
 # says it wears no ring (`habits.frame`) reads the same key as 0, so the
 # same fixture leaves the bar a strip, reserves nothing round the output and
 # reports why in the dump. The owner had 6px of nothing between every window
-# and the screen edge under this preset.
+# and the screen edge under pantheon, and a ring round cartridge's sculpture.
 leg_frame_flag="--frame"
 leg_frame_order=190
 leg_frame_needs="jq"
@@ -66,7 +66,7 @@ leg_frame_assert() {
 
   # A look that wears no ring reads the key as 0, so the fixture's 10 buys
   # nothing: the bar is back to a strip and no edge reserves anything.
-  if leg_on pantheon; then
+  if leg_on pantheon || leg_on cartridge; then
     "$jq_bin" -e '.frame.enabled == false and .frame.habit == false and .frame.requested == 10' \
       "$frame_dump_path" > /dev/null 2>&1 \
       || fail "under a table that wears no ring the dump should report frame.thickness 10 asked for and no frame drawn, got: $state"

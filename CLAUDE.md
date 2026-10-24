@@ -332,7 +332,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `frame.sh` `--frame`: pins `frame.thickness` in the settings fixture so the
   bar's window grows to the output and paints the frame round it, and reads
   that box and the four exclusion zones off the compositor's own layer list.
-  Under `--pantheon` it proves the other half: a table whose `habits.frame`
+  Under `--pantheon` or `--cartridge` it proves the other half: a table whose `habits.frame`
   is false reads the same key as 0, so the bar stays a strip, no edge
   reserves anything and `debug dump`'s `frame` block reports the 10 that was
   asked for beside the ring that was not drawn.

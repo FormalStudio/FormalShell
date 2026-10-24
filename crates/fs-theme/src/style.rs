@@ -1836,6 +1836,9 @@ pub(crate) mod tests {
         assert_eq!(habits["grid"], "hex");
         assert_eq!(habits["boot"], "cartridge");
         assert_eq!(habits["bar"], "strip");
+        // tsubi's chips float over the backdrop: no ring, no band.
+        assert_eq!(habits["frame"], false);
+        assert_eq!(habits["paint"], "transparent");
     }
 
     #[test]
