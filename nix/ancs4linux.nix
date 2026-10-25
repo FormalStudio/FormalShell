@@ -15,30 +15,20 @@
 # phone's side. The agent is only registered while advertising, the window
 # the user opened to pair.
 #
-# The busy patch retries the mode changes that end pairing. BlueZ answers
-# Busy while the controller settles the fresh bond, and giving up there left
-# the adapter discoverable and pairable with the agent still registered.
-#
-# The resubscribe patch disconnects the old GATT proxies' handlers before a
-# resubscribe. Each fresh bond or reconnect swaps the proxies, and the stale
-# ones kept delivering, so every notification arrived once per resubscribe.
-#
-# The reconnect patch keeps a connectable, non-discoverable advert up while a
-# bonded phone's GATT link is down. The iPhone reconnects ANCS and AMS only to
-# a bonded peripheral it sees advertising, and pairing turns the advert off
-# when it ends, so a dropped link otherwise stayed down until the next pairing.
+# Busy retries, resubscribe handler cleanup and the reconnect advert are
+# upstream as of pzmarzly/ancs4linux#21.
 { lib, python3, fetchFromGitHub, fetchpatch }:
 
 python3.pkgs.buildPythonApplication rec {
   pname = "ancs4linux";
-  version = "1.0.0-unstable-2026-08-29";
+  version = "1.0.0-unstable-2026-10-23";
   pyproject = true;
 
   src = fetchFromGitHub {
     owner = "pzmarzly";
     repo = "ancs4linux";
-    rev = "b658546f08d1468f6d79aa900cc7faa9d938837d";
-    hash = "sha256-ZrSF1F9zBOq3mWkrgfPYjyQrnd09bE8pck+d1HqzABc=";
+    rev = "138451721ff10d3c8634b32656ae3d38a99b9163";
+    hash = "sha256-m1OUrBCMgFRct7GDxrBHJE4Tu5Jdzh5W1AaboE/XcWI=";
   };
 
   patches = [
@@ -47,9 +37,6 @@ python3.pkgs.buildPythonApplication rec {
       hash = "sha256-PKHnQ9/412aMVdznqwQ2KDPgufDWLfbqFgexu4dvBwc=";
     })
     ./ancs4linux-authorize.patch
-    ./ancs4linux-busy.patch
-    ./ancs4linux-reconnect.patch
-    ./ancs4linux-resubscribe.patch
   ];
 
   build-system = [ python3.pkgs.hatchling ];

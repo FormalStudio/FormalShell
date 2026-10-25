@@ -161,7 +161,7 @@ in
       users.groups.ancs4linux = { };
 
       # D-Bus policy copied from ancs4linux's own autorun/ dir (pzmarzly/ancs4linux
-      # @ b658546, autorun/ancs4linux-{observer,advertising}.xml): root owns each
+      # @ 1384517, autorun/ancs4linux-{observer,advertising}.xml): root owns each
       # bus name outright, the ancs4linux group gets send/receive. It goes in
       # through services.dbus.packages because NixOS links /etc/dbus-1 whole
       # from the store, so environment.etc cannot add a file under it.
