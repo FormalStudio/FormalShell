@@ -94,6 +94,7 @@
           formalshell-eds = pkgs.callPackage ./nix/eds-package.nix { };
           tensaku = pkgs.callPackage ./nix/tensaku-package.nix { };
           ttfx = pkgs.callPackage ./nix/ttfx-package.nix { };
+          formalshell-depth = pkgs.callPackage ./nix/formalshell-depth.nix { };
           clipssh = pkgs.callPackage ./nix/clipssh-package.nix { };
           lucide-font = pkgs.callPackage ./nix/lucide-font.nix { };
           cartridge-fonts = pkgs.callPackage ./nix/cartridge-fonts.nix { };
@@ -106,7 +107,7 @@
           nothingctl = pkgs.callPackage ./nix/nothingctl.nix { };
           formalshell = pkgs.callPackage ./nix/package.nix {
             rustCommon = rustCommonFor pkgs;
-            inherit lucide-font cartridge-fonts blue-marble earbuds-art iphone-bridge openscq30 nothingctl formalshell-eds tensaku ttfx clipssh localsend-cli;
+            inherit lucide-font cartridge-fonts blue-marble earbuds-art formalshell-depth iphone-bridge openscq30 nothingctl formalshell-eds tensaku ttfx clipssh localsend-cli;
             inherit (pkgs) uxplay earbuds;
           };
           formalshell-greeter = pkgs.writeShellScriptBin "formalshell-greeter" ''

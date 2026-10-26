@@ -1,7 +1,7 @@
 { lib, stdenvNoCC, rustCommon, makeBinaryWrapper, lucide-font, cartridge-fonts, blue-marble, earbuds-art, nerd-fonts, noto-fonts-color-emoji, matugen, brightnessctl, ddcutil, wlsunset
 , wireplumber, cava, mpv, curl, util-linux, coreutils, procps, systemd, glib, pipewire, asusctl, uxplay, iphone-bridge, openscq30, nothingctl, earbuds
 , formalshell-eds, git, qrencode, networkmanager, wl-clipboard, grim, slurp, wf-recorder, tesseract, ffmpeg-headless, pulseaudio, xdg-utils
-, tensaku, ttfx, clipssh, localsend-cli, wtype, openssh }:
+, tensaku, ttfx, formalshell-depth, clipssh, localsend-cli, wtype, openssh }:
 
 rustCommon.craneLib.buildPackage (rustCommon.commonArgs // {
   inherit (rustCommon) cargoArtifacts cargoVendorDir;
@@ -54,7 +54,7 @@ rustCommon.craneLib.buildPackage (rustCommon.commonArgs // {
       --set-default FS_EARTH_IMAGE ${blue-marble}/share/formalshell/earth.jpg \
       --set-default FS_EARTH_TILES ${blue-marble}/share/formalshell/tiles \
       --set-default FS_EARBUDS_ART ${earbuds-art}/share/formalshell/earbuds \
-      --prefix PATH : ${lib.makeBinPath [ matugen brightnessctl ddcutil wlsunset wireplumber cava mpv curl util-linux procps git formalshell-eds qrencode wl-clipboard grim slurp wf-recorder tesseract ffmpeg-headless pulseaudio xdg-utils ttfx ]} \
+      --prefix PATH : ${lib.makeBinPath [ matugen brightnessctl ddcutil wlsunset wireplumber cava mpv curl util-linux procps git formalshell-eds qrencode wl-clipboard grim slurp wf-recorder tesseract ffmpeg-headless pulseaudio xdg-utils ttfx formalshell-depth ]} \
       --suffix PATH : ${lib.makeBinPath ([ tensaku wtype openssh clipssh localsend-cli uxplay iphone-bridge networkmanager pipewire systemd glib ]
         ++ lib.optional (lib.meta.availableOn stdenvNoCC.hostPlatform asusctl) asusctl
         ++ lib.optionals (lib.meta.availableOn stdenvNoCC.hostPlatform earbuds) [ earbuds openscq30 ]
