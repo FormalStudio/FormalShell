@@ -10,8 +10,14 @@
 # Two frames of the same lock: the first under the defaults, the band drawn
 # over the clock's digits; the second after settings.json is retargeted to
 # `lock.depth: false`, the digits back over the band. `lock status` has to
-# say `depth` true then false, and the band's crop has to carry more orange
-# in the first frame than in the second.
+# say `depth` true then false. The foreground carries the card's own fill,
+# so inside the band the rows just inside and just outside the top and
+# bottom of the drawn rect (`depthRect`) match within 2 per channel, and the
+# band down that rect is one flat fill with depth on and carries the digits
+# with it off.
+#
+# FS_DEPTH_PICTURE=<path in the VM> swaps the band for a real wallpaper and
+# the map beside it (`.depth/<name>.png`); only the status checks apply then.
 leg_depth_flag="--depth"
 leg_depth_order=111
 leg_depth_needs="convert jq"
@@ -28,7 +34,12 @@ leg_depth_validate() {
 }
 
 depth_dir="$shot_dir/depth-wallpapers"
-depth_picture_path="$depth_dir/band.png"
+depth_real="${FS_DEPTH_PICTURE:-}"
+if [ -n "$depth_real" ]; then
+  depth_picture_path="$depth_dir/$(basename "$depth_real")"
+else
+  depth_picture_path="$depth_dir/band.png"
+fi
 depth_on_path="$shot_dir/depth-on.png"
 depth_off_path="$shot_dir/depth-off.png"
 depth_status_on_path="$shot_dir/depth-status-on.json"
@@ -38,9 +49,18 @@ depth_gen2_path="$shot_dir/depth-settings-gen2.json"
 
 leg_depth_fixture() {
   mkdir -p "$depth_dir/.depth"
+  if [ -n "$depth_real" ]; then
+    local map
+    map="$(dirname "$depth_real")/.depth/$(basename "$depth_real").png"
+    [ -s "$depth_real" ] && [ -s "$map" ] || fail "FS_DEPTH_PICTURE needs $depth_real and $map"
+    cp "$depth_real" "$depth_picture_path"
+    cp "$map" "$depth_dir/.depth/$(basename "$depth_real").png"
+    touch -r "$depth_picture_path" "$depth_dir/.depth/$(basename "$depth_real").png"
+  else
   $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 620,0 739,1079' "$depth_picture_path"
   $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 620,0 739,1079' "$depth_dir/.depth/band.png.png"
   touch -r "$depth_picture_path" "$depth_dir/.depth/band.png.png"
+  fi
   mkdir -p "$iso_home/.local/state/formalshell"
   printf '{"wallpaper": "%s"}\n' "$depth_picture_path" > "$iso_home/.local/state/formalshell/state.json"
 }
@@ -75,11 +95,31 @@ leg_depth_assert() {
   cat "$depth_status_on_path"; echo
   grep -q '"depth":true' "$depth_status_on_path" || fail "lock status did not report depth:true with a map beside the wallpaper. Got: $(cat "$depth_status_on_path")"
   grep -q '"depth":true' "$depth_status_off_path" && fail "lock status still reported depth:true after lock.depth was set false. Got: $(cat "$depth_status_off_path")"
-  # Orange is red well past green; the scrim darkens the band but keeps that.
-  on=$($convert_bin "$depth_on_path" -crop 120x1080+620+0 +repage -fx 'r - g > 0.15 ? 1 : 0' -format '%[fx:int(mean*w*h)]' info: 2>/dev/null)
-  off=$($convert_bin "$depth_off_path" -crop 120x1080+620+0 +repage -fx 'r - g > 0.15 ? 1 : 0' -format '%[fx:int(mean*w*h)]' info: 2>/dev/null)
-  echo "depth band orange pixels: on ${on:-none} off ${off:-none}"
-  if [ "${on:-0}" -le "$((${off:-0} + 200))" ]; then
-    fail "the band did not cover the clock with a depth map in use (orange pixels on ${on:-0}, off ${off:-0})"
-  fi
+  [ -n "$depth_real" ] && return 0
+  local rect x y bottom crop
+  rect=$("$jq_bin" -c 'first(.. | objects | select(.depthRect != null) | .depthRect)' "$depth_status_on_path")
+  [ -n "$rect" ] || fail "lock status reported no depthRect with depth on"
+  x=680
+  y=$("$jq_bin" '.y' <<<"$rect")
+  bottom=$("$jq_bin" '.y + .height' <<<"$rect")
+  for pair in "$((y - 3)) $((y + 3))" "$((bottom - 4)) $((bottom + 2))"; do
+    set -- $pair
+    local a b
+    a=$($convert_bin "$depth_on_path" -format "%[fx:int(255*p{$x,$1}.r)] %[fx:int(255*p{$x,$1}.g)] %[fx:int(255*p{$x,$1}.b)]" info:)
+    b=$($convert_bin "$depth_on_path" -format "%[fx:int(255*p{$x,$2}.r)] %[fx:int(255*p{$x,$2}.g)] %[fx:int(255*p{$x,$2}.b)]" info:)
+    echo "depth edge at x $x: y $1 ($a) y $2 ($b)"
+    read -r ar ag ab <<<"$a"
+    read -r br bg bb <<<"$b"
+    for d in $((ar - br)) $((ag - bg)) $((ab - bb)); do
+      [ "${d#-}" -le 2 ] || fail "a step at the depth rect's edge inside the band: y $1 is ($a), y $2 is ($b)"
+    done
+  done
+  # The band clear of its feathered sides, down the drawn rect: one flat
+  # fill with the digits hidden, the digits back with depth off.
+  crop="104x$((bottom - y))+628+$y"
+  on=$($convert_bin "$depth_on_path" -crop "$crop" +repage -format '%[fx:standard_deviation]' info:)
+  off=$($convert_bin "$depth_off_path" -crop "$crop" +repage -format '%[fx:standard_deviation]' info:)
+  echo "depth band under the clock, spread: on $on off $off"
+  awk -v on="$on" -v off="$off" 'BEGIN { exit !(on < 0.01 && off > 0.05) }' \
+    || fail "the band did not hide the clock with a depth map in use (spread on $on, off $off)"
 }

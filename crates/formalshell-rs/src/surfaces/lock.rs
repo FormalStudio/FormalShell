@@ -150,9 +150,19 @@ pub struct View {
     nodes: Vec<NodeId>,
     /// `lock status`'s per-output report.
     pub report: Value,
-    /// The foreground's crop over the clock: the pixel box it was cut
-    /// from, the foreground it was cut out of, and the crop.
-    over_clock: Option<(IRect, Arc<vello_cpu::Pixmap>, Bitmap)>,
+    over_clock: Option<OverClock>,
+}
+
+/// The foreground's crop over the clock and the card's own pixels over the
+/// same box, both cut by the subject's mask, with what they were cut from.
+#[derive(Clone)]
+struct OverClock {
+    pixels: IRect,
+    card_rect: IRect,
+    card: fs_theme::style::BoxStyle<Rgba>,
+    from: Arc<vello_cpu::Pixmap>,
+    front: Bitmap,
+    over: Bitmap,
 }
 
 impl View {
@@ -234,9 +244,10 @@ impl View {
         let slam = theme.metric("lock.clock", "slam") * (1.0 - s.slam) * f64::from(w);
         let shifted = vello_cpu::kurbo::Rect::new(inner.x0 - slam, inner.y0, inner.x1 - slam, inner.y1);
         let clock_rect = card.paint_clock(&mut p, &clock, shifted, theme, kit, fade * s.slam as f32);
-        let front = s.foreground.and_then(|fg| over_clock(&mut self.over_clock, fg, clock_rect, (w, h)));
-        if let Some((rect, b)) = &front {
-            p.shape(*rect, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+        let front = s.foreground.and_then(|fg| over_clock(&mut self.over_clock, fg, clock_rect, card_rect, theme, (w, h)));
+        if let Some((rect, front, over)) = &front {
+            p.shape(*rect, Paint::Picture { image: front.clone(), alpha: s.wake, radius: 0.0 });
+            p.shape(*rect, Paint::Picture { image: over.clone(), alpha: fade, radius: 0.0 });
         }
         let last = p.last();
         p.finish();
@@ -253,6 +264,7 @@ impl View {
             "clockSampled": sampled,
             "clockRect": card_json,
             "depth": front.is_some(),
+            "depthRect": front.as_ref().map(|(r, _, _)| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h})),
             "mediaCard": s.media.is_some().then(|| card_json.clone()),
             "nowPlaying": s.media.is_some(),
             "transportCursor": cursor,
@@ -366,13 +378,15 @@ fn mean_luma(p: &Picture, rect: IRect) -> Option<f64> {
     Some(sum / r.area() as f64)
 }
 
-/// The foreground's pixels under `rect` of a screen `size`, and the box
-/// they cover. Cut again only when the box or the foreground moved, so
-/// a settled lock hands the scene the same picture every frame.
-fn over_clock(cache: &mut Option<(IRect, Arc<vello_cpu::Pixmap>, Bitmap)>, fg: &Bitmap, rect: IRect, size: (i32, i32)) -> Option<(IRect, Bitmap)> {
+/// The foreground's pixels under `rect` of a screen `size`, the card's
+/// pixels over the same box at the subject's coverage, and the box: the
+/// subject reads as the card shows it, not as bare wallpaper. Cut again
+/// only when the box, the card or the foreground moved, so a settled lock
+/// hands the scene the same pictures every frame.
+fn over_clock(cache: &mut Option<OverClock>, fg: &Bitmap, rect: IRect, card_rect: IRect, theme: &Theme, size: (i32, i32)) -> Option<(IRect, Bitmap, Bitmap)> {
     let rect = rect.intersect(&IRect::new(0, 0, size.0, size.1));
     let (fw, fh) = (i32::from(fg.pixmap.width()), i32::from(fg.pixmap.height()));
-    if rect.is_empty() || ((fw, fh) != size && !fills_size((fw, fh), size)) {
+    if rect.is_empty() || card_rect.is_empty() || ((fw, fh) != size && !fills_size((fw, fh), size)) {
         return None;
     }
     let k = f64::from(fw) / f64::from(size.0.max(1));
@@ -382,18 +396,53 @@ fn over_clock(cache: &mut Option<(IRect, Arc<vello_cpu::Pixmap>, Bitmap)>, fg: &
     if px.is_empty() {
         return None;
     }
-    let hit = matches!(&*cache, Some((cut, from, _)) if *cut == px && Arc::ptr_eq(from, &fg.pixmap));
+    let card = theme.box_style("card", None);
+    let hit = matches!(&*cache, Some(c) if c.pixels == px && c.card_rect == card_rect && c.card == card && Arc::ptr_eq(&c.from, &fg.pixmap));
     if !hit {
         let data = fg.pixmap.data_as_u8_slice();
-        let mut rgba = Vec::with_capacity((px.w * px.h * 4) as usize);
+        let mut front = Vec::with_capacity((px.w * px.h * 4) as usize);
         for y in px.y..px.bottom() {
             let from = ((y * fw + px.x) * 4) as usize;
-            rgba.extend_from_slice(&data[from..from + (px.w * 4) as usize]);
+            front.extend_from_slice(&data[from..from + (px.w * 4) as usize]);
         }
-        let crop = Bitmap::from_premultiplied(px.w as u16, px.h as u16, rgba);
-        *cache = Some((px, fg.pixmap.clone(), crop));
+        // The card alone, drawn the way the lock draws it, at the
+        // foreground's pixel size.
+        let mut scene = Scene::new(card_rect.w, card_rect.h);
+        let mut nodes = Vec::new();
+        let mut p = Painter::new(&mut scene, &mut nodes, None);
+        login::paint(&mut p, IRect::new(0, 0, card_rect.w, card_rect.h), theme, 1.0);
+        p.finish();
+        let mut r = crate::render::Renderer::new(card_rect.w as u16, card_rect.h as u16);
+        r.set_scale(k);
+        r.render(&scene, IRect::new(0, 0, card_rect.w, card_rect.h));
+        let (cw, ch) = r.pixels();
+        let canvas = r.canvas().data_as_u8_slice();
+        let (ox, oy) = (px.x - at(card_rect.x), px.y - at(card_rect.y));
+        let mut over = vec![0u8; front.len()];
+        for y in 0..px.h {
+            for x in 0..px.w {
+                let (cx, cy) = (ox + x, oy + y);
+                if cx < 0 || cy < 0 || cx >= cw || cy >= ch {
+                    continue;
+                }
+                let i = ((y * px.w + x) * 4) as usize;
+                let mask = u32::from(front[i + 3]);
+                let c = ((cy * cw + cx) * 4) as usize;
+                for n in 0..4 {
+                    over[i + n] = ((u32::from(canvas[c + n]) * mask + 127) / 255) as u8;
+                }
+            }
+        }
+        *cache = Some(OverClock {
+            pixels: px,
+            card_rect,
+            card,
+            from: fg.pixmap.clone(),
+            front: Bitmap::from_premultiplied(px.w as u16, px.h as u16, front),
+            over: Bitmap::from_premultiplied(px.w as u16, px.h as u16, over),
+        });
     }
-    cache.as_ref().map(|(_, _, b)| (rect, b.clone()))
+    cache.as_ref().map(|c| (rect, c.front.clone(), c.over.clone()))
 }
 
 /// A picture larger than `size` at its aspect, give or take the rounding
@@ -532,12 +581,11 @@ mod tests {
     }
 
     #[test]
-    fn the_foreground_covers_the_clock_and_is_cut_once() {
+    fn the_foreground_covers_the_clock_as_the_card_shows_it_and_is_cut_once() {
         use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &Default::default());
         let mut kit = Kit::new(&theme);
         let (w, h) = (900, 700);
-        let black = Bitmap::from_rgba(w as u16, h as u16, [0, 0, 0, 255].repeat((w * h) as usize));
         let red = Bitmap::from_rgba(w as u16, h as u16, [255, 0, 0, 255].repeat((w * h) as usize));
         let shared = |fg| Shared {
             now: Local::now(),
@@ -545,7 +593,7 @@ mod tests {
             prompt: Prompt::password(0, (0, 0), false),
             error: "",
             has_wallpaper: true,
-            backdrop: Some(&black),
+            backdrop: Some(&red),
             foreground: fg,
             shards: None,
             picture: None,
@@ -561,14 +609,23 @@ mod tests {
         assert_eq!(view.report["depth"], false);
         view.draw(&shared(Some(&red)), &theme, &mut kit, Instant::now());
         assert_eq!(view.report["depth"], true);
-        let (cut, _, crop) = view.over_clock.clone().unwrap();
+        let OverClock { pixels: cut, front: crop, .. } = view.over_clock.clone().unwrap();
         assert!(cut.w > 0 && cut.h > 0 && cut.w < w);
         let mut r = Renderer::new(w as u16, h as u16);
         r.render(&view.scene, IRect::new(0, 0, w, h));
-        let px = r.canvas().data()[((cut.y + cut.h / 2) * w + cut.x + cut.w / 2) as usize];
-        assert_eq!((px.r, px.g, px.b), (255, 0, 0), "the clock drew over the foreground");
+        let at = |x: i32, y: i32| {
+            let p = r.canvas().data()[(y * w + x) as usize];
+            [i32::from(p.r), i32::from(p.g), i32::from(p.b)]
+        };
+        // The subject over the whole screen: inside the clock's box reads
+        // exactly as the card over it just above the box, digits hidden.
+        let (inside, above) = (at(cut.x + cut.w / 2, cut.y + cut.h / 2), at(cut.x + cut.w / 2, cut.y - 3));
+        assert!(inside.iter().zip(above).all(|(a, b)| (a - b).abs() <= 2), "a step at the clock's edge: {inside:?} {above:?}");
+        assert_ne!(inside, [255, 0, 0], "the card's fill is missing over the subject");
+        let ink = (cut.y..cut.bottom()).flat_map(|y| (cut.x..cut.right()).map(move |x| (x, y))).filter(|&(x, y)| at(x, y).iter().zip(above).any(|(a, b)| (a - b).abs() > 2)).count();
+        assert_eq!(ink, 0, "clock ink showing through the subject");
         view.draw(&shared(Some(&red)), &theme, &mut kit, Instant::now());
-        assert!(Arc::ptr_eq(&view.over_clock.as_ref().unwrap().2.pixmap, &crop.pixmap), "a settled lock cut the crop again");
+        assert!(Arc::ptr_eq(&view.over_clock.as_ref().unwrap().front.pixmap, &crop.pixmap), "a settled lock cut the crop again");
     }
 
     #[test]
