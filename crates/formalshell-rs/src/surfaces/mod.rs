@@ -45,6 +45,10 @@ pub fn changed(app: &mut App, topic: Topic) {
                 alias: c.str("localsend.alias").unwrap_or("").to_owned(),
                 dir: c.str("localsend.dir").unwrap_or("").to_owned(),
             });
+            crate::services::depth::command(crate::services::depth::Cmd::Config {
+                enabled: c.bool("wallpaper.depthGenerate").unwrap_or(false),
+                dir: c.str("picker.directory").unwrap_or("").to_owned(),
+            });
             let names = match c.get("compositor.workspaceNames") {
                 Some(serde_json::Value::Array(items)) => items.iter().map(|v| v.as_str().unwrap_or_default().to_owned()).collect(),
                 _ => Vec::new(),

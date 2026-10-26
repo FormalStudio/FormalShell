@@ -48,6 +48,7 @@ use super::screensaver::SaverInput;
 use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, Kind as Clock, SPATIAL};
 use crate::scene::Bitmap;
 use crate::surface::Ignore;
+use crate::services::wallpaper::DepthCut;
 use crate::services::{clipboard, compositor};
 use crate::surface::Surface;
 use crate::store::Topic;
@@ -59,7 +60,8 @@ pub enum LockMsg {
     Avatar(Option<Bitmap>),
     /// The polkit dialog's identity picture.
     PolkitAvatar(Option<Bitmap>),
-    Backdrop(Bitmap),
+    /// The scrimmed wallpaper and its foreground, for a cut.
+    Backdrop(Option<DepthCut>, Bitmap, Option<Bitmap>),
     /// The track's cover, for the art URL it was decoded from.
     Art(String, Option<Bitmap>),
     /// logind's PrepareForSleep.
@@ -121,8 +123,11 @@ pub struct Lock {
     pub(super) tx: Option<Sender<LockMsg>>,
     /// The avatar at each output's scale.
     avatar: Vec<Bitmap>,
-    /// The scrimmed wallpaper at each output's size.
-    backdrop: Vec<Bitmap>,
+    /// The scrimmed wallpaper at each output's size, with what of it
+    /// stands in front of the clock.
+    backdrop: Vec<(Bitmap, Option<Bitmap>)>,
+    /// The depth cut the backdrops were last asked for.
+    depth_cut: Option<DepthCut>,
     /// The desktop's sculpture held still under the scrim, at half each
     /// output's pixels.
     shards: Vec<Bitmap>,
@@ -172,6 +177,7 @@ impl Lock {
             tx: None,
             avatar: Vec::new(),
             backdrop: Vec::new(),
+            depth_cut: None,
             shards: Vec::new(),
             clock: None,
             dirty: false,
@@ -410,11 +416,21 @@ impl App {
                 let _ = tx.send(LockMsg::Avatar(view::avatar(&path, crate::scene::pixels_at(size, scale)).map(|b| b.at(scale))));
             });
         }
+        self.load_lock_backdrops();
+    }
+
+    /// The scrimmed wallpaper and its foreground, decoded on the pool. What
+    /// is on screen stays until its replacement lands.
+    fn load_lock_backdrops(&mut self) {
+        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        let cut = DepthCut::read(&self.store.config);
+        self.lock.depth_cut = cut;
         let path = self.store.wallpaper.latest().map(|p| p.path.clone());
         for p in self.store.wallpaper.all().filter(|p| Some(&p.path) == path.as_ref()).cloned() {
             let tx = tx.clone();
             rt.pool().submit(move || {
-                let _ = tx.send(LockMsg::Backdrop(view::backdrop(&p)));
+                let (b, front) = view::backdrop(&p, cut);
+                let _ = tx.send(LockMsg::Backdrop(cut, b, front));
             });
         }
     }
@@ -464,10 +480,11 @@ impl App {
                 }
                 self.lock.dirty = true;
             }
-            LockMsg::Backdrop(b) => {
+            LockMsg::Backdrop(cut, ..) if cut != self.lock.depth_cut => {}
+            LockMsg::Backdrop(_, b, front) => {
                 let size = (b.pixmap.width(), b.pixmap.height());
-                self.lock.backdrop.retain(|m| (m.pixmap.width(), m.pixmap.height()) != size);
-                self.lock.backdrop.push(b);
+                self.lock.backdrop.retain(|(m, _)| (m.pixmap.width(), m.pixmap.height()) != size);
+                self.lock.backdrop.push((b, front));
                 self.lock.dirty = true;
             }
             LockMsg::Sleep(sleeping) => {
@@ -662,6 +679,7 @@ impl App {
             error: "",
             has_wallpaper,
             backdrop: None,
+            foreground: None,
             shards: None,
             picture: None,
             avatar: None,
@@ -681,7 +699,9 @@ impl App {
             let k = o.surface.scale();
             let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
             let backdrops = &self.lock.backdrop;
-            shared.backdrop = backdrops.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
+            let pair = backdrops.iter().find(|(b, _)| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
+            shared.backdrop = pair.map(|(b, _)| b);
+            shared.foreground = pair.and_then(|(_, f)| f.as_ref());
             shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             let _raster = crate::scene::raster_at(k);
             o.view.draw(&shared, theme, &mut self.bar.kit, now);
@@ -755,6 +775,9 @@ impl App {
                 self.lock.backdrop.clear();
                 self.load_lock_pictures();
             }
+            Topic::Config if DepthCut::read(&self.store.config) != self.lock.depth_cut => self.load_lock_backdrops(),
+            // A map written for the picture under the lock.
+            Topic::Depth if self.store.wallpaper.latest().is_some_and(|p| self.store.depth.wrote(&p.path)) => self.load_lock_backdrops(),
             Topic::Media => {
                 if self.lock_media().is_none() {
                     self.lock.transport = -1;
@@ -923,6 +946,7 @@ impl App {
             error: &self.lock.error,
             has_wallpaper,
             backdrop: None,
+            foreground: None,
             shards: None,
             picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.desktop()),
             avatar: None,
@@ -959,7 +983,9 @@ impl App {
             let k = o.surface.scale();
             let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
             let backdrops = &self.lock.backdrop;
-            shared.backdrop = backdrops.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
+            let pair = backdrops.iter().find(|(b, _)| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
+            shared.backdrop = pair.map(|(b, _)| b);
+            shared.foreground = pair.and_then(|(_, f)| f.as_ref());
             shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
             if let Some(m) = &mut shared.media {

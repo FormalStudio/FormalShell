@@ -9,6 +9,7 @@
 //! made it a flat field. Every reader of the wallpaper (the backdrops, the
 //! lock, the band's paint, matugen, the greeter) takes the source.
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use fs_chrome::grid::Grid;
@@ -68,12 +69,79 @@ pub fn image(source: &str, width: u32, height: u32) -> Option<image::RgbaImage> 
         return Some(image::RgbaImage::from_pixel(width.max(1), height.max(1), image::Rgba([r, g, b, 255])));
     }
     let img = image::ImageReader::open(source).ok()?.with_guessed_format().ok()?.decode().ok()?.to_rgba8();
-    let (iw, ih) = (img.width() as f64, img.height() as f64);
-    let scale = (width as f64 / iw).max(height as f64 / ih);
-    let (cw, ch) = ((width as f64 / scale).round().max(1.0) as u32, (height as f64 / scale).round().max(1.0) as u32);
-    let (cx, cy) = ((img.width().saturating_sub(cw)) / 2, (img.height().saturating_sub(ch)) / 2);
-    let crop = imageops::crop_imm(&img, cx, cy, cw.min(img.width()), ch.min(img.height())).to_image();
+    let (cx, cy, cw, ch) = cover_rect((img.width(), img.height()), (width, height));
+    let crop = imageops::crop_imm(&img, cx, cy, cw, ch).to_image();
     Some(imageops::resize(&crop, width, height, FilterType::Triangle))
+}
+
+/// The centred box of an `iw` by `ih` picture that scaled covers `width` by
+/// `height`: x, y, width, height.
+fn cover_rect((iw, ih): (u32, u32), (width, height): (u32, u32)) -> (u32, u32, u32, u32) {
+    let scale = (width as f64 / iw as f64).max(height as f64 / ih as f64);
+    let (cw, ch) = ((width as f64 / scale).round().max(1.0) as u32, (height as f64 / scale).round().max(1.0) as u32);
+    ((iw.saturating_sub(cw)) / 2, (ih.saturating_sub(ch)) / 2, cw.min(iw), ch.min(ih))
+}
+
+/// Where `formalshell-depth` keeps a picture's depth map, none for a flat
+/// field.
+pub fn depth_path(source: &str) -> Option<PathBuf> {
+    if source.is_empty() || flat_hex(source).is_some() {
+        return None;
+    }
+    let path = Path::new(source);
+    let mut name = path.file_name()?.to_os_string();
+    name.push(".png");
+    Some(path.parent()?.join(".depth").join(name))
+}
+
+/// `lock.depthThreshold` and `lock.depthFeather`, on the map's 0..100 (100
+/// nearest): what passes in front of the clock.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DepthCut {
+    pub threshold: f64,
+    pub feather: f64,
+}
+
+impl DepthCut {
+    pub const THRESHOLD: f64 = 50.0;
+    pub const FEATHER: f64 = 8.0;
+
+    /// None while `lock.depth` is off.
+    pub fn read(config: &super::config::State) -> Option<Self> {
+        if config.bool("lock.depth") == Some(false) {
+            return None;
+        }
+        let num = |path: &str, fallback: f64, hi: f64| config.f64(path).filter(|n| n.is_finite()).map_or(fallback, |n| n.clamp(0.0, hi));
+        Some(Self { threshold: num("lock.depthThreshold", Self::THRESHOLD, 100.0), feather: num("lock.depthFeather", Self::FEATHER, 50.0) })
+    }
+
+    /// A map value's coverage: a smoothstep across `threshold +- feather/2`.
+    pub fn alpha(&self, value: u8) -> u8 {
+        let x = f64::from(value) * 100.0 / 255.0;
+        let half = self.feather / 2.0;
+        let t = if half <= 0.0 {
+            if x >= self.threshold { 1.0 } else { 0.0 }
+        } else {
+            ((x - (self.threshold - half)) / self.feather).clamp(0.0, 1.0)
+        };
+        (t * t * (3.0 - 2.0 * t) * 255.0).round() as u8
+    }
+}
+
+/// The depth map for `source` cover-cropped as [`image`] crops the picture
+/// to `width` by `height`, as one coverage byte per pixel. None for a flat
+/// field, and for a map that is missing or older than its picture.
+pub fn depth_mask(source: &str, width: u32, height: u32, cut: DepthCut) -> Option<Vec<u8>> {
+    let map = depth_path(source)?;
+    let made = std::fs::metadata(&map).ok()?.modified().ok()?;
+    if made < std::fs::metadata(source).ok()?.modified().ok()? {
+        return None;
+    }
+    let img = image::ImageReader::open(&map).ok()?.with_guessed_format().ok()?.decode().ok()?.to_luma8();
+    let (cx, cy, cw, ch) = cover_rect((img.width(), img.height()), (width, height));
+    let crop = imageops::crop_imm(&img, cx, cy, cw, ch).to_image();
+    let fitted = imageops::resize(&crop, width, height, FilterType::Triangle);
+    Some(fitted.into_raw().into_iter().map(|v| cut.alpha(v)).collect())
 }
 
 /// The newest picture for each output size asked for.
@@ -248,5 +316,52 @@ mod tests {
         assert_eq!(p.path, "color:#402484");
         assert!(p.bgra.chunks_exact(4).all(|px| px == [0x84, 0x24, 0x40, 255]));
         assert_eq!(crate::shards::mean(&p.bgra).map(|c| c.to_u8()), Some([0x40, 0x24, 0x84, 255]));
+    }
+
+    #[test]
+    fn a_picture_keeps_its_depth_map_beside_it() {
+        assert_eq!(depth_path("/w/dark/sea.jpg"), Some(PathBuf::from("/w/dark/.depth/sea.jpg.png")));
+        assert_eq!(depth_path("color:#402484"), None);
+        assert_eq!(depth_path(""), None);
+    }
+
+    #[test]
+    fn the_cut_eases_across_its_feather() {
+        let cut = DepthCut { threshold: 50.0, feather: 20.0 };
+        let at = |pct: f64| cut.alpha((pct * 255.0 / 100.0).round() as u8);
+        assert_eq!(at(0.0), 0);
+        assert_eq!(at(39.0), 0);
+        assert!((120..=135).contains(&at(50.0)), "{}", at(50.0));
+        assert_eq!(at(61.0), 255);
+        assert!(at(42.0) < at(45.0) && at(45.0) < at(55.0) && at(55.0) < at(58.0));
+        let hard = DepthCut { threshold: 50.0, feather: 0.0 };
+        assert_eq!((hard.alpha(126), hard.alpha(128)), (0, 255));
+    }
+
+    /// A map at a different size from its picture lands on the same pixels:
+    /// both carry their column across the red channel and their row across
+    /// the green, so the crops agree wherever they are read.
+    #[test]
+    fn the_map_is_cropped_as_the_picture_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let picture = dir.path().join("wide.png");
+        let ramp = |w: u32, h: u32| image::RgbaImage::from_fn(w, h, |x, y| image::Rgba([(x * 255 / (w - 1)) as u8, (y * 255 / (h - 1)) as u8, 0, 255]));
+        ramp(600, 200).save(&picture).unwrap();
+        std::fs::create_dir(dir.path().join(".depth")).unwrap();
+        let map = dir.path().join(".depth/wide.png.png");
+        let small = ramp(300, 100);
+        image::GrayImage::from_fn(300, 100, |x, y| image::Luma([small.get_pixel(x, y).0[0]])).save(&map).unwrap();
+        let identity = DepthCut { threshold: 50.0, feather: 100.0 };
+        let (w, h) = (160, 120);
+        let shown = image(picture.to_str().unwrap(), w, h).unwrap();
+        let mask = depth_mask(picture.to_str().unwrap(), w, h, identity).unwrap();
+        for (x, y) in [(0, 0), (40, 60), (80, 30), (159, 119)] {
+            let want = identity.alpha(shown.get_pixel(x, y).0[0]);
+            let got = mask[(y * w + x) as usize];
+            assert!(want.abs_diff(got) <= 6, "({x}, {y}): picture says {want}, map says {got}");
+        }
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&map).unwrap().set_modified(past).unwrap();
+        assert!(depth_mask(picture.to_str().unwrap(), w, h, identity).is_none(), "a map older than its picture is stale");
     }
 }

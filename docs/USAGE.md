@@ -2726,6 +2726,33 @@ The screen blanks after `lock.blankAfterSeconds` once locked, ignoring
 inhibitors, because a locked screen should blank whatever an app claims. A
 suspend gap blanks immediately on wake instead of trusting a stale countdown.
 
+### The subject in front of the clock
+
+With a depth map beside the wallpaper, whatever stands nearest the camera is
+drawn again over the clock, so the digits pass behind a person, a mountain or
+a building the way a phone's lock screen does. The map is
+`<wallpaper's directory>/.depth/<file name>.png`, 8-bit grey with white
+nearest, as `formalshell-depth` writes it. A flat colour, a missing map, or a
+map older than its picture leaves the lock as it was.
+
+`lock.depthThreshold` is the cut on the map's 0 to 100 scale: anything nearer
+than it is foreground (default 50). `lock.depthFeather` softens the edge over
+that many points (0 to 50, default 8). `lock.depth: false` turns it off.
+Changes apply to a running lock. `lock status` reports `depth: true` on each
+output that has a map in use.
+
+`wallpaper.depthGenerate: true` makes the shell run `formalshell-depth` over
+`picker.directory` at start and again a couple of seconds after the directory
+changes, one run at a time; pictures whose map is current are skipped. A
+locked screen picks up a map written for its own wallpaper as soon as the run
+ends. Without the CLI on PATH it logs once and `debug dump`'s `depth` block
+says `installed: false`.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "lock": { "depthThreshold": 50, "depthFeather": 8 }, "wallpaper": { "depthGenerate": true } }
+```
+
 ### Using another locker
 
 `lock.command` is an argv list naming an external locker. Set it and every

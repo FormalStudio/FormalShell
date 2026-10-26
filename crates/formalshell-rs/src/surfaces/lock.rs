@@ -15,7 +15,7 @@ use image::imageops::{self, FilterType};
 use serde_json::{Value, json};
 
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
-use crate::services::wallpaper::Picture;
+use crate::services::wallpaper::{self, DepthCut, Picture};
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::surfaces::login;
 use crate::ui::el::Opt;
@@ -35,6 +35,9 @@ pub struct Shared<'a> {
     pub has_wallpaper: bool,
     /// The decoded wallpaper, scrim baked in, at its own size.
     pub backdrop: Option<&'a Bitmap>,
+    /// The backdrop's pixels where the wallpaper's subject stands, the rest
+    /// clear: drawn over the clock.
+    pub foreground: Option<&'a Bitmap>,
     /// The desktop's sculpture held still, darkened as the scrim darkens
     /// the wallpaper, stretched over the whole output.
     pub shards: Option<&'a Bitmap>,
@@ -147,11 +150,14 @@ pub struct View {
     nodes: Vec<NodeId>,
     /// `lock status`'s per-output report.
     pub report: Value,
+    /// The foreground's crop over the clock: the pixel box it was cut
+    /// from, the foreground it was cut out of, and the crop.
+    over_clock: Option<(IRect, Arc<vello_cpu::Pixmap>, Bitmap)>,
 }
 
 impl View {
     pub fn new(width: i32, height: i32) -> Self {
-        Self { scene: Scene::new(width, height), ui: Ui::new(None), nodes: Vec::new(), report: Value::Null }
+        Self { scene: Scene::new(width, height), ui: Ui::new(None), nodes: Vec::new(), report: Value::Null, over_clock: None }
     }
 
     pub fn resize(&mut self, width: i32, height: i32) {
@@ -227,7 +233,11 @@ impl View {
         // width, fading up as it lands.
         let slam = theme.metric("lock.clock", "slam") * (1.0 - s.slam) * f64::from(w);
         let shifted = vello_cpu::kurbo::Rect::new(inner.x0 - slam, inner.y0, inner.x1 - slam, inner.y1);
-        card.paint_clock(&mut p, &clock, shifted, theme, kit, fade * s.slam as f32);
+        let clock_rect = card.paint_clock(&mut p, &clock, shifted, theme, kit, fade * s.slam as f32);
+        let front = s.foreground.and_then(|fg| over_clock(&mut self.over_clock, fg, clock_rect, (w, h)));
+        if let Some((rect, b)) = &front {
+            p.shape(*rect, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+        }
         let last = p.last();
         p.finish();
 
@@ -242,6 +252,7 @@ impl View {
             "clockLuma": js(luma),
             "clockSampled": sampled,
             "clockRect": card_json,
+            "depth": front.is_some(),
             "mediaCard": s.media.is_some().then(|| card_json.clone()),
             "nowPlaying": s.media.is_some(),
             "transportCursor": cursor,
@@ -355,6 +366,36 @@ fn mean_luma(p: &Picture, rect: IRect) -> Option<f64> {
     Some(sum / r.area() as f64)
 }
 
+/// The foreground's pixels under `rect` of a screen `size`, and the box
+/// they cover. Cut again only when the box or the foreground moved, so
+/// a settled lock hands the scene the same picture every frame.
+fn over_clock(cache: &mut Option<(IRect, Arc<vello_cpu::Pixmap>, Bitmap)>, fg: &Bitmap, rect: IRect, size: (i32, i32)) -> Option<(IRect, Bitmap)> {
+    let rect = rect.intersect(&IRect::new(0, 0, size.0, size.1));
+    let (fw, fh) = (i32::from(fg.pixmap.width()), i32::from(fg.pixmap.height()));
+    if rect.is_empty() || ((fw, fh) != size && !fills_size((fw, fh), size)) {
+        return None;
+    }
+    let k = f64::from(fw) / f64::from(size.0.max(1));
+    let at = |v: i32| (f64::from(v) * k).round() as i32;
+    let px = IRect::new(at(rect.x), at(rect.y), at(rect.right()) - at(rect.x), at(rect.bottom()) - at(rect.y))
+        .intersect(&IRect::new(0, 0, fw, fh));
+    if px.is_empty() {
+        return None;
+    }
+    let hit = matches!(&*cache, Some((cut, from, _)) if *cut == px && Arc::ptr_eq(from, &fg.pixmap));
+    if !hit {
+        let data = fg.pixmap.data_as_u8_slice();
+        let mut rgba = Vec::with_capacity((px.w * px.h * 4) as usize);
+        for y in px.y..px.bottom() {
+            let from = ((y * fw + px.x) * 4) as usize;
+            rgba.extend_from_slice(&data[from..from + (px.w * 4) as usize]);
+        }
+        let crop = Bitmap::from_premultiplied(px.w as u16, px.h as u16, rgba);
+        *cache = Some((px, fg.pixmap.clone(), crop));
+    }
+    cache.as_ref().map(|(_, _, b)| (rect, b.clone()))
+}
+
 /// A picture larger than `size` at its aspect, give or take the rounding
 /// of a scaled size: the output's own pixels under a fractional scale.
 fn fills(b: &Bitmap, size: (i32, i32)) -> bool {
@@ -366,9 +407,11 @@ fn fills_size((bw, bh): (i32, i32), (w, h): (i32, i32)) -> bool {
     bw > w && (bw * h - bh * w).abs() <= bw.max(bh)
 }
 
-/// The desktop's picture with the scrim baked in, for the pool. Its grid
-/// comes off first: the lock draws its own over the scrim, or none.
-pub fn backdrop(p: &Picture) -> Bitmap {
+/// The desktop's picture with the scrim baked in, for the pool, and with
+/// `cut` the same pixels over the picture's depth map, for in front of the
+/// clock. Its grid comes off first: the lock draws its own over the scrim,
+/// or none.
+pub fn backdrop(p: &Picture, cut: Option<DepthCut>) -> (Bitmap, Option<Bitmap>) {
     let mut rgba: Vec<u8> = p.bgra.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0], 255]).collect();
     if let Some(g) = p.grid {
         g.lift(&mut rgba, p.width as usize, p.height as usize);
@@ -379,7 +422,14 @@ pub fn backdrop(p: &Picture) -> Bitmap {
             *c = (f64::from(*c) * keep) as u8;
         }
     }
-    Bitmap::from_rgba(p.width as u16, p.height as u16, rgba)
+    let front = cut.and_then(|cut| wallpaper::depth_mask(&p.path, p.width, p.height, cut)).map(|mask| {
+        let mut front = rgba.clone();
+        for (px, a) in front.chunks_exact_mut(4).zip(mask) {
+            px[3] = a;
+        }
+        Bitmap::from_rgba(p.width as u16, p.height as u16, front)
+    });
+    (Bitmap::from_rgba(p.width as u16, p.height as u16, rgba), front)
 }
 
 /// By its bytes, not its name: `~/.face` has no extension.
@@ -460,6 +510,7 @@ mod tests {
                 error: "",
                 has_wallpaper: true,
                 backdrop: Some(&white),
+                foreground: None,
                 shards: None,
                 picture: None,
                 avatar: None,
@@ -481,6 +532,46 @@ mod tests {
     }
 
     #[test]
+    fn the_foreground_covers_the_clock_and_is_cut_once() {
+        use crate::render::Renderer;
+        let theme = Theme::resolve(|_| None, &Default::default());
+        let mut kit = Kit::new(&theme);
+        let (w, h) = (900, 700);
+        let black = Bitmap::from_rgba(w as u16, h as u16, [0, 0, 0, 255].repeat((w * h) as usize));
+        let red = Bitmap::from_rgba(w as u16, h as u16, [255, 0, 0, 255].repeat((w * h) as usize));
+        let shared = |fg| Shared {
+            now: Local::now(),
+            name: "",
+            prompt: Prompt::password(0, (0, 0), false),
+            error: "",
+            has_wallpaper: true,
+            backdrop: Some(&black),
+            foreground: fg,
+            shards: None,
+            picture: None,
+            avatar: None,
+            media: None,
+            enter: (1.0, 0.0),
+            slam: 1.0,
+            blanked: false,
+            wake: 1.0,
+        };
+        let mut view = View::new(w, h);
+        view.draw(&shared(None), &theme, &mut kit, Instant::now());
+        assert_eq!(view.report["depth"], false);
+        view.draw(&shared(Some(&red)), &theme, &mut kit, Instant::now());
+        assert_eq!(view.report["depth"], true);
+        let (cut, _, crop) = view.over_clock.clone().unwrap();
+        assert!(cut.w > 0 && cut.h > 0 && cut.w < w);
+        let mut r = Renderer::new(w as u16, h as u16);
+        r.render(&view.scene, IRect::new(0, 0, w, h));
+        let px = r.canvas().data()[((cut.y + cut.h / 2) * w + cut.x + cut.w / 2) as usize];
+        assert_eq!((px.r, px.g, px.b), (255, 0, 0), "the clock drew over the foreground");
+        view.draw(&shared(Some(&red)), &theme, &mut kit, Instant::now());
+        assert!(Arc::ptr_eq(&view.over_clock.as_ref().unwrap().2.pixmap, &crop.pixmap), "a settled lock cut the crop again");
+    }
+
+    #[test]
     fn wake_never_passes_a_light_background() {
         use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &fs_theme::palette::fallback("light"));
@@ -497,6 +588,7 @@ mod tests {
                 error: "",
                 has_wallpaper,
                 backdrop,
+                foreground: None,
                 shards: None,
                 picture: None,
                 avatar: None,
@@ -537,6 +629,7 @@ mod tests {
                 error: "",
                 has_wallpaper: false,
                 backdrop: None,
+                foreground: None,
                 shards: None,
                 picture: None,
                 avatar: None,

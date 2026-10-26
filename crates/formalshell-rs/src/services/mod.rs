@@ -15,6 +15,7 @@ pub mod clock;
 pub mod commands;
 pub mod compositor;
 pub mod config;
+pub mod depth;
 pub mod cover;
 pub mod devices;
 pub mod display;
@@ -87,5 +88,6 @@ pub fn start(ctx: &Ctx) {
     ctx.spawn(power::run(ctx.clone()));
     ctx.spawn(picker::run(ctx.clone()));
     ctx.spawn(localsend::run(ctx.clone()));
+    ctx.spawn(depth::run(ctx.clone()));
     ctx.spawn(mirror::run(ctx.clone()));
 }

@@ -3,7 +3,7 @@
 //! [`Store::apply`].
 
 use crate::services::{
-    appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, devices, display, herdr,
+    appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display, herdr,
     compositor, info, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, picker, plugins, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
@@ -41,6 +41,7 @@ pub struct Store {
     pub clipssh: clipssh::State,
     pub picker: picker::State,
     pub localsend: localsend::State,
+    pub depth: depth::State,
     pub mirror: mirror::State,
     /// Radio Browser answers and the country outlines, waiting for the
     /// atlas to take them.
@@ -81,6 +82,7 @@ pub enum Diff {
     Clipssh(clipssh::Diff),
     Picker(picker::Diff),
     Localsend(localsend::Diff),
+    Depth(depth::Diff),
     Mirror(mirror::Diff),
     Atlas(crate::services::radio::Reply),
 }
@@ -122,6 +124,7 @@ pub enum Topic {
     Clipssh,
     Picker,
     Localsend,
+    Depth,
     Mirror,
     Atlas,
 }
@@ -178,6 +181,7 @@ impl Store {
             Diff::Clipssh(d) => self.clipssh.apply(d).then_some(Topic::Clipssh),
             Diff::Picker(d) => self.picker.apply(d).then_some(Topic::Picker),
             Diff::Localsend(d) => self.localsend.apply(d).then_some(Topic::Localsend),
+            Diff::Depth(d) => self.depth.apply(d).then_some(Topic::Depth),
             Diff::Mirror(d) => self.mirror.apply(d).then_some(Topic::Mirror),
             Diff::Atlas(r) => {
                 self.atlas.push(r);

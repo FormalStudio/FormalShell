@@ -281,6 +281,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   own resting box on at least one frame (the spatial curve's overshoot and
   the velocity deform on top of it) and back on it exactly three clocks
   later, the springs unwound.
+- `depth.sh` `--depth`: rides `--lock`; a seeded wallpaper with a
+  `.depth/` map beside it marking an orange band through the clock digits
+  as the subject: `lock status` reporting `depth` true and the band drawn
+  over the digits, then settings.json retargeted to `lock.depth: false`,
+  `depth` false and the digits back over the band.
 - `device_routes.sh` `--device-routes`: the launcher's Wi-Fi, Bluetooth, Audio
   and Radio Stations routes over real keys and IPC, read off `menu status`
   (its `ids` and `checked` lists) and each service's own status. The Wi-Fi
