@@ -216,6 +216,7 @@ fn scan_entries(dirs: &[PathBuf]) -> (Vec<DesktopEntry>, HashMap<String, Extras>
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     let mut extras = HashMap::new();
+    let desktops = current_desktops();
     for dir in dirs {
         let mut files = Vec::new();
         collect(dir, dir, &mut files);
@@ -224,7 +225,7 @@ fn scan_entries(dirs: &[PathBuf]) -> (Vec<DesktopEntry>, HashMap<String, Extras>
             if !seen.insert(id.clone()) {
                 continue;
             }
-            if let Some((entry, more)) = parse_entry(&id, &path) {
+            if let Some((entry, more)) = parse_entry(&id, &path, &desktops) {
                 extras.insert(entry.id.clone(), more);
                 out.push(entry);
             }
@@ -258,7 +259,19 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
     }
 }
 
-fn parse_entry(id: &str, path: &Path) -> Option<(DesktopEntry, Extras)> {
+fn current_desktops() -> Vec<String> {
+    std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().split(':').filter(|d| !d.is_empty()).map(str::to_owned).collect()
+}
+
+/// OnlyShowIn and NotShowIn against the session's desktops, the way GLib reads
+/// them: an entry with OnlyShowIn and no desktop of ours in it stays hidden,
+/// even when XDG_CURRENT_DESKTOP is unset.
+fn shown_in(fields: &HashMap<&str, &str>, desktops: &[String]) -> bool {
+    let names = |k: &str| fields.get(k).map(|v| v.split(';').any(|d| desktops.iter().any(|c| c == d)));
+    names("OnlyShowIn").unwrap_or(true) && !names("NotShowIn").unwrap_or(false)
+}
+
+fn parse_entry(id: &str, path: &Path, desktops: &[String]) -> Option<(DesktopEntry, Extras)> {
     let text = std::fs::read_to_string(path).ok()?;
     let mut section = String::new();
     let mut fields: HashMap<&str, &str> = HashMap::new();
@@ -283,7 +296,7 @@ fn parse_entry(id: &str, path: &Path) -> Option<(DesktopEntry, Extras)> {
         }
     }
     let flag = |k: &str| fields.get(k) == Some(&"true");
-    if fields.get("Type").is_some_and(|t| *t != "Application") || flag("NoDisplay") || flag("Hidden") {
+    if fields.get("Type").is_some_and(|t| *t != "Application") || flag("NoDisplay") || flag("Hidden") || !shown_in(&fields, desktops) {
         return None;
     }
     let text = |k: &str| fields.get(k).copied().unwrap_or_default().to_owned();
@@ -383,6 +396,20 @@ mod tests {
         let b = state.get("w", 16, 1.0).and_then(|i| i.image).unwrap();
         assert_eq!(b.logical(), (16.0, 16.0));
         assert!(state.get("other", 16, 1.0).is_none());
+    }
+
+    #[test]
+    fn show_in_follows_the_current_desktop() {
+        let shown = |only: Option<&str>, not: Option<&str>, current: &[&str]| {
+            let fields: HashMap<&str, &str> = only.map(|v| ("OnlyShowIn", v)).into_iter().chain(not.map(|v| ("NotShowIn", v))).collect();
+            shown_in(&fields, &current.iter().map(|d| d.to_string()).collect::<Vec<_>>())
+        };
+        assert!(shown(None, None, &["Hyprland"]));
+        assert!(!shown(Some("KDE;"), None, &["Hyprland"]));
+        assert!(shown(Some("GNOME;KDE;"), None, &["ubuntu", "KDE"]));
+        assert!(!shown(Some("KDE;"), None, &[]));
+        assert!(!shown(None, Some("Hyprland;"), &["Hyprland"]));
+        assert!(shown(None, Some("KDE;"), &["Hyprland"]));
     }
 
     #[test]
