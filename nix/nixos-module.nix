@@ -112,6 +112,18 @@ in
       asusd, the daemon behind the keyboard lights route on ASUS ROG and TUF
       laptops
     '';
+
+    gaming.enable = lib.mkEnableOption ''
+      Steam with its gamescope session (a "Steam" entry in the greeter's
+      session list), gamescope with cap_sys_nice, GameMode, the udev rules
+      for Steam controllers, and the hyprland and gtk portals (left to
+      programs.hyprland when that is on, which adds both). x86_64-linux
+      only, as Steam is. Steam is unfree: this adds "steam",
+      "steam-unwrapped" and "steam-run" to nixpkgs.config.allowUnfreePackages,
+      which merges with the system's own list and predicate. It has no
+      effect where nixpkgs.pkgs is passed in from outside the system, whose
+      config then has to allow those names itself
+    '';
   };
 
   config = lib.mkMerge [
@@ -219,6 +231,29 @@ in
 
     (lib.mkIf cfg.lights.asus.enable {
       services.asusd.enable = lib.mkDefault true;
+    })
+
+    (lib.mkIf cfg.gaming.enable {
+      nixpkgs.config.allowUnfreePackages = [ "steam" "steam-unwrapped" "steam-run" ];
+
+      programs.steam = {
+        enable = lib.mkDefault true;
+        gamescopeSession.enable = lib.mkDefault true;
+      };
+      programs.gamescope = {
+        enable = lib.mkDefault true;
+        capSysNice = lib.mkDefault true;
+      };
+      programs.gamemode.enable = lib.mkDefault true;
+      hardware.steam-hardware.enable = lib.mkDefault true;
+
+      # programs.hyprland already adds both portals and Hyprland's own
+      # portals.conf.
+      xdg.portal = lib.mkIf (!config.programs.hyprland.enable) {
+        enable = lib.mkDefault true;
+        extraPortals = [ pkgs.xdg-desktop-portal-hyprland pkgs.xdg-desktop-portal-gtk ];
+        config.hyprland.default = lib.mkDefault [ "hyprland" "gtk" ];
+      };
     })
 
     (lib.mkIf cfg.localsend.enable {

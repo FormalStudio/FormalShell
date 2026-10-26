@@ -57,6 +57,7 @@ still does not work.
 | Polkit prompts | your existing polkit agent dropped. Only one agent can register per session, and this one never fights for the name |
 | Menu share and LocalSend | inbound 53317/tcp and 53317/udp. `services.formalshell.localsend.enable` opens them on NixOS; elsewhere your firewall is yours to open |
 | AirPlay | avahi and UxPlay's fixed ports (`services.formalshell.airplay.enable` on NixOS) |
+| Gaming | Steam with its gamescope session in the greeter's list, GameMode, Steam controller udev rules and the hyprland and gtk portals (`services.formalshell.gaming.enable` on NixOS, x86_64 only; it allows Steam's three unfree package names itself) |
 | Earbuds panel, AirPods | the `omarchy-pods` fork of the `librepods` daemon running as `librepods --headless`. The stock librepods tray app is write-only and cannot feed this panel |
 | DualSense panel | `hid-playstation` bound, and your own udev LED rule if you want lightbar and player LEDs readable |
 | Tailscale toggle | `sudo tailscale set --operator=$USER`, once per host. Status polling needs no grant; only up and down do |

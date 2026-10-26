@@ -85,6 +85,14 @@ hl.config({
       active_border = color(chrome.borderColor),
       inactive_border = colors.border,
     },
+    -- The owner's choice for games, with the `immediate` rule below: tearing
+    -- is allowed, and only windows that rule marks ever tear.
+    allow_tearing = true,
+  },
+
+  -- The owner's choice: VRR only while a window is fullscreen.
+  misc = {
+    vrr = 2,
   },
 
   group = {
@@ -94,6 +102,13 @@ hl.config({
       border_locked_active = colors.destructive,
     },
   },
+})
+
+-- Steam starts each Proton game under XWayland with a steam_app_<id> class.
+hl.window_rule({
+  name = "games-immediate",
+  match = { class = "^steam_app_.*$" },
+  immediate = true,
 })
 
 -- ignore_alpha leaves anything at or below that opacity unblurred, which is
