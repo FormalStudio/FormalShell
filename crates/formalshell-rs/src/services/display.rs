@@ -613,13 +613,12 @@ pub fn hdr_rule(store: &Store, name: &str) -> String {
     };
     let r = outputs::hyprland_color_rule(row, &on_color(store));
     let rule = format!(
-        "{{\"output\":{},\"mode\":{},\"position\":{},\"scale\":{},\"transform\":{},\"vrr\":{},\"bitdepth\":{},\"cm\":{},\"sdrbrightness\":{},\"sdrsaturation\":{},\"mirror\":{}}}",
+        "{{\"output\":{},\"mode\":{},\"position\":{},\"scale\":{},\"transform\":{},\"bitdepth\":{},\"cm\":{},\"sdrbrightness\":{},\"sdrsaturation\":{},\"mirror\":{}}}",
         js(&r.output),
         js(&r.mode),
         js(&r.position),
         r.scale,
         r.transform,
-        r.vrr,
         r.bitdepth,
         js(&r.cm),
         r.sdrbrightness,

@@ -307,7 +307,6 @@ pub struct MonitorRule {
     pub position: String,
     pub scale: String,
     pub transform: i64,
-    pub vrr: i64,
     pub bitdepth: i64,
     pub cm: String,
     pub sdrbrightness: String,
@@ -317,11 +316,12 @@ pub struct MonitorRule {
 
 /// `hl.monitor` merges into the output's existing rule, but an output with no
 /// rule of its own starts from the defaults (mode preferred, scale auto), so
-/// every rule below restates mode, position, scale, transform, vrr, mirror and
-/// the colour fields, and overrides only the ones the caller means to change.
+/// every rule below restates mode, position, scale, transform, mirror and the
+/// colour fields, and overrides only the ones the caller means to change.
 /// The mirror is always sent, empty to clear it, because an omitted one keeps
-/// the previous rule's. `monitors -j` reports vrr as a flag, so a configured
-/// vrr of 2 or 3 comes back as 1.
+/// the previous rule's. vrr is never sent: the merge keeps a rule's own, an
+/// output with none follows `misc.vrr`, and `monitors -j` reports vrr as a
+/// flag, so restating it would turn a configured 2 or 3 into 1.
 fn rule(row: &Output, position: String, scale: f64, mirror: &str, color: &Color) -> MonitorRule {
     MonitorRule {
         output: row.name.clone(),
@@ -329,7 +329,6 @@ fn rule(row: &Output, position: String, scale: f64, mirror: &str, color: &Color)
         position,
         scale: trim_number(scale, 5),
         transform: row.transform,
-        vrr: i64::from(row.vrr),
         bitdepth: if color.bitdepth == 10 { 10 } else { 8 },
         cm: color.cm.clone(),
         sdrbrightness: trim_number(color.sdrbrightness, 2),
@@ -372,7 +371,7 @@ fn live_scale(row: &Output) -> f64 {
 }
 
 /// A complete monitor rule for `row` that restates mode, position, scale,
-/// transform, vrr and mirror as they are now and sets the colour fields from
+/// transform and mirror as they are now and sets the colour fields from
 /// `color`.
 pub fn hyprland_color_rule(row: &Output, color: &Color) -> MonitorRule {
     let position = if row.width > 0 { format!("{}x{}", row.x, row.y) } else { "auto".to_string() };
@@ -392,7 +391,6 @@ pub fn hyprland_rule_lua(rule: &MonitorRule) -> String {
         format!("position = {}", json_str(&rule.position)),
         format!("scale = {}", rule.scale),
         format!("transform = {}", rule.transform),
-        format!("vrr = {}", rule.vrr),
         format!("bitdepth = {}", rule.bitdepth),
         format!("cm = {}", json_str(&rule.cm)),
         format!("sdrbrightness = {}", rule.sdrbrightness),
@@ -836,7 +834,7 @@ mod tests {
     fn hyprland_rule_is_an_hl_monitor_call() {
         assert_eq!(
             lua(&uhd("DP-1"), &scale_override(2.0)),
-            "hl.monitor({ output = \"DP-1\", mode = \"3840x2160@60\", position = \"auto\", scale = 2, transform = 0, vrr = 0, bitdepth = 8, cm = \"srgb\", sdrbrightness = 1, sdrsaturation = 1, mirror = \"\" })"
+            "hl.monitor({ output = \"DP-1\", mode = \"3840x2160@60\", position = \"auto\", scale = 2, transform = 0, bitdepth = 8, cm = \"srgb\", sdrbrightness = 1, sdrsaturation = 1, mirror = \"\" })"
         );
         assert!(lua(&mirroring("DP-1", "eDP-1"), &scale_override(2.0)).contains("mirror = \"eDP-1\" })"));
     }

@@ -395,8 +395,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `toggle` and `setOutput` refusing with their error strings and leaving
   state.json alone, the Display panel frame carrying the dim "HDR
   unavailable" line, and `hdr rule <output>` (the rule an enable would
-  send, unsent) restating the mode, position, scale, transform and vrr
-  `hyprctl monitors all -j` reports. The real toggle is g815's to confirm.
+  send, unsent) restating the mode, position, scale and transform
+  `hyprctl monitors all -j` reports and carrying no vrr, which the merge
+  leaves to the output's own rule or `misc.vrr`. The real toggle is g815's
+  to confirm.
 - `idle.sh` `--idle`: the rewrite spec's idle and cold start budgets under the
   default bar: the launch stamp to the bar's first commit with the shell's
   `phase` lines between (the bar's configure among them, the compositor's

@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn color_rule_keeps_mode_position_scale_transform_vrr() {
+    fn color_rule_keeps_mode_position_scale_transform_and_leaves_vrr() {
         let r = row(|r| {
             r.x = 1920;
             r.y = 240;
@@ -321,11 +321,11 @@ mod tests {
         assert_eq!(rule.position, "1920x240");
         assert_eq!(rule.scale, "1.66667");
         assert_eq!(rule.transform, 1);
-        assert_eq!(rule.vrr, 1);
         assert_eq!(rule.bitdepth, 10);
         assert_eq!(rule.cm, "hdr");
         assert_eq!(rule.sdrbrightness, "1.2");
         assert_eq!(rule.mirror, "");
+        assert!(!hyprland_rule_lua(&rule).contains("vrr"));
     }
 
     #[test]
@@ -346,7 +346,7 @@ mod tests {
         let rule = hyprland_color_rule(&row(|r| r.scale = 1.0), &on_color(1.2, 1.0));
         assert_eq!(
             hyprland_rule_lua(&rule),
-            "hl.monitor({ output = \"eDP-1\", mode = \"2560x1600@165\", position = \"0x0\", scale = 1, transform = 0, vrr = 0, bitdepth = 10, cm = \"hdr\", sdrbrightness = 1.2, sdrsaturation = 1, mirror = \"\" })"
+            "hl.monitor({ output = \"eDP-1\", mode = \"2560x1600@165\", position = \"0x0\", scale = 1, transform = 0, bitdepth = 10, cm = \"hdr\", sdrbrightness = 1.2, sdrsaturation = 1, mirror = \"\" })"
         );
     }
 

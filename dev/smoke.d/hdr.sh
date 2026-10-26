@@ -7,9 +7,10 @@
 # frame carries the dim "HDR unavailable" line under the output.
 #
 # The rule builder is held against the compositor: `hdr rule <output>` (the
-# rule an enable would send, unsent) must restate the mode, position, scale,
-# transform and vrr that `hyprctl monitors all -j` reports for the same
-# output. The real toggle on a panel with HDR in its EDID is g815's to
+# rule an enable would send, unsent) must restate the mode, position, scale
+# and transform that `hyprctl monitors all -j` reports for the same output,
+# and carry no vrr, which the merge leaves to the output's own rule or
+# `misc.vrr`. The real toggle on a panel with HDR in its EDID is g815's to
 # confirm by eye.
 leg_hdr_flag="--hdr"
 leg_hdr_order=215
@@ -83,9 +84,9 @@ leg_hdr_assert() {
         and $r.position == "\($m.x)x\($m.y)"
         and (($r.scale | tonumber) - $m.scale | fabs) < 0.005
         and $r.transform == $m.transform
-        and $r.vrr == (if $m.vrr then 1 else 0 end)
+        and ($r | has("vrr") | not) and (.lua | contains("vrr") | not)
         and $r.cm == "hdr" and $r.bitdepth == 10' "$hdr_rule_path" > /dev/null \
-    || fail "the rule builder disagrees with hyprctl monitors: $(cat "$hdr_rule_path") vs $("$jq_bin" -c '.[0] | {name,width,height,refreshRate,x,y,scale,transform,vrr}' "$hdr_monitors_path")"
+    || fail "the rule builder disagrees with hyprctl monitors: $(cat "$hdr_rule_path") vs $("$jq_bin" -c '.[0] | {name,width,height,refreshRate,x,y,scale,transform}' "$hdr_monitors_path")"
 
   [ -f "$hdr_panel_png" ] || fail "no display panel screenshot produced"
   echo "SMOKE_HDR_PANEL $hdr_panel_png"
