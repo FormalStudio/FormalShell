@@ -369,15 +369,16 @@ fn remove_owned(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// `@include common-auth` on Debian and Ubuntu, `system-auth` on Arch and
-/// Fedora: the same stack the distro's own login uses.
+/// `common-auth` on Debian, Ubuntu and openSUSE, `system-auth` on Arch and
+/// Fedora: the same stack the distro's own login uses. `include` rather than
+/// `@include`, which is a Debian patch that openSUSE's PAM rejects.
 fn pam_file() -> Option<String> {
     pam_for(Path::new("/etc/pam.d/common-auth").exists(), Path::new("/etc/pam.d/system-auth").exists())
 }
 
 fn pam_for(common: bool, system: bool) -> Option<String> {
     if common {
-        Some("#%PAM-1.0\n@include common-auth\n@include common-account\n".into())
+        Some("#%PAM-1.0\nauth       include      common-auth\naccount    include      common-account\n".into())
     } else if system {
         Some("#%PAM-1.0\nauth       include      system-auth\naccount    include      system-auth\n".into())
     } else {
@@ -547,7 +548,7 @@ mod tests {
 
     #[test]
     fn pam_follows_the_distro_stack() {
-        assert!(pam_for(true, true).unwrap().contains("@include common-auth"));
+        assert!(pam_for(true, true).unwrap().contains("auth       include      common-auth"));
         assert!(pam_for(false, true).unwrap().contains("include      system-auth"));
         assert_eq!(pam_for(false, false), None);
     }
