@@ -187,8 +187,18 @@ install -m644 "$tp/nerd-fonts-symbols/SymbolsNerdFont-Regular.ttf" "$tp/nerd-fon
 install -m644 "$tp/cartridge-fonts/"*.ttf "$share/fonts/"
 mkdir -p "$share/licenses"
 install -m644 "$tp/cartridge-fonts/"*-OFL.txt "$share/licenses/"
-python3 "$repo/nix/earth-tiles.py" "$earth" "$share"
-python3 "$repo/nix/earbuds-art.py" "$tp/ear-web" "$tp/librepods" "$share"
+# Both image passes run on one core for minutes, and their output only moves
+# with the pinned sources and the scripts, so a WORK kept between builds
+# reuses it.
+art_key=$({ printf '%s\n' "${sources[@]}" "$earth_sum"; cat "$repo/nix/earth-tiles.py" "$repo/nix/earbuds-art.py"; } | sha256sum | cut -c1-16)
+art=$work/art/$art_key
+if [ ! -f "$art/done" ]; then
+  rm -rf "$work/art"; mkdir -p "$art"
+  python3 "$repo/nix/earth-tiles.py" "$earth" "$art"
+  python3 "$repo/nix/earbuds-art.py" "$tp/ear-web" "$tp/librepods" "$art"
+  touch "$art/done"
+fi
+cp -R "$art/earth.jpg" "$art/tiles" "$art/earbuds" "$share/"
 install -m644 "$repo/LICENSE" "$share/LICENSE"
 echo "$VERSION" > "$share/VERSION"
 
