@@ -401,11 +401,30 @@ restore_host_env() {
   done
 }
 system_bus_pid=""
+quiet_sink_module=""
 on_exit() {
   restore_host_env
   if [ -n "$system_bus_pid" ]; then kill "$system_bus_pid" 2>/dev/null || true; fi
+  if [ -n "$quiet_sink_module" ]; then "$pactl_bin" unload-module "$quiet_sink_module" 2>/dev/null || true; fi
 }
 trap on_exit EXIT
+
+# A nested run shares the host's PipeWire, so a leg's mpv would play its
+# noise and tones out of the real speakers. Every leg's mpv goes to a null
+# sink of the run's own instead, and the shell's cava reads that sink's
+# monitor, since its default source would now hear nothing. The wrapper
+# execs, so a leg's $! is still mpv's own pid.
+if [ -n "${mpv_bin:-}" ]; then
+  need_pactl
+  quiet_sink="fs_smoke_$$"
+  quiet_sink_module=$("$pactl_bin" load-module module-null-sink "sink_name=$quiet_sink" sink_properties=device.description=SmokeQuiet)
+  write_script "$shot_dir/mpv" <<WRAP
+#!/usr/bin/env bash
+exec "$mpv_bin" --audio-device=pipewire/$quiet_sink "\$@"
+WRAP
+  mpv_bin="$shot_dir/mpv"
+  shell_env="${shell_env:+$shell_env }FS_CAVA_SOURCE=$quiet_sink.monitor"
+fi
 
 # A render node is the cheap stand-in for "this machine can nest": both
 # halves of aquamarine's wayland backend (the parent's dmabuf advertisement

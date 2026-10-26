@@ -181,11 +181,14 @@ fn runtime_dir() -> PathBuf {
 /// Every key is in cava 0.10.7's own example config. Fixed gain rather than
 /// autosens (model's gain stage supplies the height), 12 kHz upper cutoff to
 /// pull hats into the top band, light smoothing so six bars track transients,
-/// stereo so the two channels keep their own frame.
+/// stereo so the two channels keep their own frame. FS_CAVA_SOURCE names a
+/// node to read instead of the default sink's monitor (the smoke rig's null
+/// sink).
 fn conf_text() -> String {
+    let source = std::env::var("FS_CAVA_SOURCE").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "auto".into());
     format!(
         "[general]\nframerate = 120\nautosens = 0\nsensitivity = 200\nbars = {}\nlower_cutoff_freq = 50\n\
-         higher_cutoff_freq = 12000\nsleep_timer = 3\n\n[input]\nmethod = pipewire\nsource = auto\n\n\
+         higher_cutoff_freq = 12000\nsleep_timer = 3\n\n[input]\nmethod = pipewire\nsource = {source}\n\n\
          [output]\nmethod = raw\nchannels = stereo\nraw_target = /dev/stdout\ndata_format = ascii\n\
          ascii_max_range = {}\n\n[smoothing]\nnoise_reduction = 35\nmonstercat = 1.5\n",
         BAR_COUNT * 2,
