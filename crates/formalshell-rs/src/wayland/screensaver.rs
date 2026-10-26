@@ -279,12 +279,13 @@ impl App {
 
     pub fn saver_update(&mut self) {
         let c = &self.store.caffeinate;
-        let auto = c.idle && !self.saver.suppressed && (!self.saver_guard() || !self.media_playing()) && !c.active;
+        let auto = c.idle && !self.saver.suppressed && (!self.saver_guard() || !self.media_playing()) && !c.held();
         let active = self.saver.forced || auto;
         if active == self.saver.active {
             return;
         }
         self.saver.active = active;
+        crate::services::inhibit::set_active(active);
         self.sync_herdr();
         self.sync_shards();
         self.saver_cancel_hold();

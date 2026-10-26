@@ -760,6 +760,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the idle timer alone, and the manual start/stop path.
 - `screensaver_gif.sh` `--screensaver-gif`: five ttfx effects recorded frame
   by frame into `docs/media/`, one session each, taking the run over.
+- `screensaver_inhibit.sh` `--screensaver-inhibit`: the shell's
+  `org.freedesktop.ScreenSaver` (`services/inhibit.rs`), the way Steam and
+  SDL inhibit, with caffeinate's toggle off: a Gio client that stays on the
+  bus taking a cookie holds the inhibitor and is listed in `caffeinate
+  status`, the session not going idle three timeouts past, and once it is
+  killed its cookie goes off NameOwnerChanged and the timeout fires the
+  screensaver, read back over `GetActive`. A one-shot `busctl call` on
+  `/ScreenSaver` loses its cookie as it exits, and a second client's
+  `UnInhibit` releases its own while it is still on the bus.
 - `screenshot.sh` `--screenshot`: the `screenshot` target's region cancel and
   full-screen routes.
 - `share.sh` `--share`: the share route present (the copied text reaching

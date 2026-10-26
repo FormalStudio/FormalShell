@@ -66,6 +66,7 @@ pub fn changed(app: &mut App, topic: Topic) {
         }
         Topic::Screensaver => app.saver_changed(),
         Topic::Caffeinate => {
+            app.hold_inhibitor();
             app.saver_idle_changed();
             app.refresh_bar(Some(topic));
         }

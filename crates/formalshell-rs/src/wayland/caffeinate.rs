@@ -1,7 +1,8 @@
 //! Caffeinate:
-//! while the toggle is on, a 1px transparent layer surface of its own holds
-//! a Wayland idle inhibitor, and an ext-idle-notify listener that respects
-//! inhibitors reports whether the session went idle. The surface is its own
+//! while the toggle is on or a ScreenSaver cookie is live, a 1px transparent
+//! layer surface of its own holds a Wayland idle inhibitor, and an
+//! ext-idle-notify listener that respects inhibitors reports whether the
+//! session went idle. The surface is its own
 //! rather than the bar's because the bar unmaps under a fullscreen window,
 //! and it keeps its default input region because Hyprland only counts a
 //! mapped layer surface that accepts input.
@@ -90,8 +91,12 @@ pub struct Caffeinate {
 
 impl Caffeinate {
     pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Self {
+        let inhibit = globals.bind(qh, 1..=1, Ignore).ok();
+        if inhibit.is_none() {
+            eprintln!("caffeinate: the compositor has no zwp_idle_inhibit_manager_v1");
+        }
         Self {
-            inhibit: globals.bind(qh, 1..=1, Ignore).ok(),
+            inhibit,
             notifier: globals.bind(qh, 1..=2, Ignore).ok(),
             held: None,
             idle: None,
@@ -135,10 +140,16 @@ impl App {
 
     pub fn set_caffeinated(&mut self, on: bool) {
         self.caffeinate_diff(Diff::Active(on));
+    }
+
+    /// Run on every caffeinate change: the toggle and the cookies share one
+    /// inhibitor.
+    pub fn hold_inhibitor(&mut self) {
+        let want = self.store.caffeinate.held();
         let held = self.caffeinate.held.is_some();
-        if on && !held {
+        if want && !held {
             self.hold_surface();
-        } else if !on && held {
+        } else if !want && held {
             self.caffeinate.held = None;
             self.caffeinate_diff(Diff::Inhibiting(false));
         }
@@ -150,7 +161,6 @@ impl App {
 
     fn hold_surface(&mut self) {
         if self.caffeinate.inhibit.is_none() {
-            eprintln!("caffeinate: the compositor has no zwp_idle_inhibit_manager_v1");
             return;
         }
         let surface = self.compositor.create_surface(&self.qh);
