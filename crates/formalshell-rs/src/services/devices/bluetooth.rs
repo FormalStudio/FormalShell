@@ -319,7 +319,7 @@ async fn run_action(b: &fs_bluez::Bluez, address: &str, kind: ActionKind) -> Opt
         ActionKind::Connect => b.connect_device(address).await,
         ActionKind::Disconnect => b.disconnect_device(address).await,
         ActionKind::Forget => b.remove(address).await,
-        ActionKind::Pair => match b.pair(address).await {
+        ActionKind::Pair => match pair(b, address).await {
             Ok(()) => match b.set_trusted(address, true).await {
                 Ok(()) => b.connect_device(address).await,
                 Err(e) => Err(e),
@@ -335,6 +335,54 @@ async fn run_action(b: &fs_bluez::Bluez, address: &str, kind: ActionKind) -> Opt
         ActionKind::Untrust => "UNTRUST FAILED",
         _ => "FAILED",
     })
+}
+
+/// BlueZ refuses an SSP pairing that wants a confirmation when no agent is
+/// registered, so one answers for the length of the pairing. The panel has
+/// no passkey prompt and the user picked this device, so its requests are
+/// accepted; any other device's are refused.
+async fn pair(b: &fs_bluez::Bluez, address: &str) -> fs_bluez::Result<()> {
+    use fs_bluez::agent::{AgentRequest, Capability};
+    // A pairing cut off by ACTION_TIMEOUT never got to unregister.
+    let _ = b.unregister_agent().await;
+    let requests = match b.register_agent(Capability::DisplayYesNo).await {
+        Ok(rx) => Some(rx),
+        Err(e) => {
+            eprintln!("bluetooth: agent: {e}");
+            None
+        }
+    };
+    let ours = format!("/dev_{}", address.replace(':', "_"));
+    let answer = async {
+        let mine = |device: &str| device.ends_with(&ours);
+        while let Some(Ok(request)) = match &requests {
+            Some(rx) => Some(rx.recv().await),
+            None => None,
+        } {
+            match request {
+                AgentRequest::Confirm { device, reply, .. }
+                | AgentRequest::Authorize { device, reply }
+                | AgentRequest::AuthorizeService { device, reply, .. } => {
+                    let _ = reply.try_send(mine(&device));
+                }
+                AgentRequest::PinCode { device, reply } => {
+                    let _ = reply.try_send(mine(&device).then(|| "0000".to_owned()));
+                }
+                AgentRequest::Passkey { reply, .. } => {
+                    let _ = reply.try_send(None);
+                }
+                AgentRequest::DisplayPinCode { .. } | AgentRequest::DisplayPasskey { .. } | AgentRequest::Cancel => {}
+            }
+        }
+        future::pending().await
+    };
+    let out = b.pair(address).or(answer).await;
+    if requests.is_some()
+        && let Err(e) = b.unregister_agent().await
+    {
+        eprintln!("bluetooth: agent: {e}");
+    }
+    out
 }
 
 /// The bluetooth cell's right click: the default adapter's radio flipped.
