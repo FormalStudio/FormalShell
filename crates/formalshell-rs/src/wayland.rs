@@ -483,7 +483,7 @@ impl App {
     /// While a focused fullscreen window covers the bar's output the bar,
     /// its frame zones and its cards leave the layers (`fullscreen.hideChrome`).
     pub(crate) fn sync_herdr(&self) {
-        crate::services::herdr::shown(!self.bar.hidden && !self.saver.active && !self.lock.locked);
+        crate::services::herdr::shown(!self.bar.hidden() && !self.saver.active && !self.lock.locked);
     }
 
     fn chrome_hidden(&self) -> bool {
@@ -500,7 +500,7 @@ impl App {
     /// framed window and a strip never share a configure.
     fn place_chrome(&mut self) {
         let hidden = self.chrome_hidden();
-        self.bar.hidden = hidden;
+        self.bar.set_hidden(hidden);
         self.sync_herdr();
         if hidden {
             if self.bar_surface.take().is_some() {
@@ -660,7 +660,7 @@ impl App {
     pub fn refresh_bar(&mut self, topic: Option<Topic>) {
         let now = Instant::now();
         if matches!(topic, None | Some(Topic::Compositor) | Some(Topic::Config)) {
-            if self.chrome_hidden() != self.bar.hidden {
+            if self.chrome_hidden() != self.bar.hidden() {
                 self.place_chrome();
             }
             self.sync_hot_corners();
@@ -2531,7 +2531,7 @@ impl App {
         self.sync_hot_corners();
         self.sync_heads();
         self.saver_outputs();
-        if self.bar_surface.is_none() && !self.bar.hidden {
+        if self.bar_surface.is_none() && !self.bar.hidden() {
             self.place_chrome();
         }
         let name = self.bar_output_name();

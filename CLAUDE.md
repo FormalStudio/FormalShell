@@ -348,6 +348,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the compositor's own layer list: bar, frame zones and hot corners gone
   while the fixture window is fullscreen and back to their starting counts
   after, with `hyprctl clients` confirming a window really was fullscreen.
+  A monitor and a visualizer cell sit in the bar over a real mpv playing:
+  a cava child and the monitor collector's execs (strace) before, neither
+  while the bar is covered, both back after.
   Then `dev/lockpointer.py` floated over the whole output under the
   scrolling layout, holding a persistent `zwp_locked_pointer_v1`: two
   notify-sends and an `osd volume` over it leave the lock active, the

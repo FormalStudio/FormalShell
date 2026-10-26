@@ -47,7 +47,7 @@ impl App {
     /// Theme.edgeInset's top: the bar's thickness on a top bar, the frame
     /// ring's on a framed one, nothing on a bare edge.
     pub(super) fn top_inset(&self) -> f64 {
-        if self.bar.hidden {
+        if self.bar.hidden() {
             0.0
         } else if self.bar.edge() == Edge::Top {
             self.bar.thickness() as f64

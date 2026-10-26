@@ -11,7 +11,7 @@ use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
 
 pub struct Weather {
-    _want: Want,
+    want: Want,
     reading: Option<openmeteo::Weather>,
     day: bool,
     label: bool,
@@ -19,7 +19,7 @@ pub struct Weather {
 
 impl Default for Weather {
     fn default() -> Self {
-        Self { _want: Want::new(Source::Weather), reading: None, day: true, label: false }
+        Self { want: Want::new(Source::Weather), reading: None, day: true, label: false }
     }
 }
 
@@ -30,6 +30,10 @@ fn round(n: f64) -> f64 {
 }
 
 impl Cell for Weather {
+    fn visible(&mut self, on: bool) {
+        self.want.hold(on);
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock]
     }

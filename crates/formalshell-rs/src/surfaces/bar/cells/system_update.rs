@@ -8,18 +8,22 @@ use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, View};
 
 pub struct SystemUpdate {
-    _want: Want,
+    want: Want,
     state: State,
     label: bool,
 }
 
 impl Default for SystemUpdate {
     fn default() -> Self {
-        Self { _want: Want::new(Source::SystemUpdate), state: State::default(), label: true }
+        Self { want: Want::new(Source::SystemUpdate), state: State::default(), label: true }
     }
 }
 
 impl Cell for SystemUpdate {
+    fn visible(&mut self, on: bool) {
+        self.want.hold(on);
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }

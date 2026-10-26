@@ -8,7 +8,7 @@ use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
 
 pub struct Monitor {
-    _want: Want,
+    want: Want,
     cpu: Option<f64>,
     mem: Option<f64>,
     gpu: Option<f64>,
@@ -17,7 +17,7 @@ pub struct Monitor {
 
 impl Default for Monitor {
     fn default() -> Self {
-        Self { _want: Want::new(Source::Monitor), cpu: None, mem: None, gpu: None, label: false }
+        Self { want: Want::new(Source::Monitor), cpu: None, mem: None, gpu: None, label: false }
     }
 }
 
@@ -26,6 +26,10 @@ fn pct(fraction: Option<f64>) -> String {
 }
 
 impl Cell for Monitor {
+    fn visible(&mut self, on: bool) {
+        self.want.hold(on);
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }

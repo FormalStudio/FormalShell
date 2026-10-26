@@ -104,7 +104,7 @@ pub struct Bar {
     pub hover: Option<usize>,
     /// The bar is off screen (a fullscreen window over it): nothing runs a
     /// clock.
-    pub hidden: bool,
+    hidden: bool,
     born: Instant,
     /// Cells rebuilt (a new theme or layout) and not yet read in full: that
     /// read places them where they were rather than growing every one of
@@ -156,6 +156,19 @@ impl Bar {
 
     pub fn edge(&self) -> Edge {
         self.edge
+    }
+
+    pub fn hidden(&self) -> bool {
+        self.hidden
+    }
+
+    /// Off screen under a fullscreen window and back: the cells hear it at
+    /// once, since no paint reaches them while the bar has no window.
+    pub fn set_hidden(&mut self, hidden: bool) {
+        self.hidden = hidden;
+        for slot in &mut self.slots {
+            slot.cell.visible(!hidden);
+        }
     }
 
     pub fn framed(&self) -> bool {
@@ -286,6 +299,9 @@ impl Bar {
                 let unit = self.slots.last().map_or(0, |s| s.unit + 1);
                 self.slots.extend(Slot::rail(e, &entries, unit));
             }
+        }
+        if self.hidden {
+            self.set_hidden(true);
         }
     }
 

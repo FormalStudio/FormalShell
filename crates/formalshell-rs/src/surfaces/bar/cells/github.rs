@@ -8,7 +8,7 @@ use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
 
 pub struct Github {
-    _want: Want,
+    want: Want,
     poll: Poll,
     counts: (u64, u64),
     label: bool,
@@ -16,11 +16,15 @@ pub struct Github {
 
 impl Default for Github {
     fn default() -> Self {
-        Self { _want: Want::new(Source::Github), poll: Poll::Unknown, counts: (0, 0), label: true }
+        Self { want: Want::new(Source::Github), poll: Poll::Unknown, counts: (0, 0), label: true }
     }
 }
 
 impl Cell for Github {
+    fn visible(&mut self, on: bool) {
+        self.want.hold(on);
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }

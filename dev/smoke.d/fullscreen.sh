@@ -22,6 +22,12 @@
 # (Hyprland draws a fullscreen window over the top level) and its card is in
 # the frame, read as the frame differing from the bare fullscreen one.
 #
+# Nothing runs behind the covered bar: a monitor and a visualizer cell sit in
+# the layout while a real MPRIS player (mpv) loops a tone. Before fullscreen
+# there is a `cava` child and the monitor's `sh -c` collector is exec'd every
+# tick (read off `strace -f -e execve` on the shell for 5s); while fullscreen
+# there is neither for 6s, past the wants' 2s grace; after, both are back.
+#
 # Then a game's cursor lock under the scrolling layout, where Hyprland 0.56
 # lets go of every pointer constraint on any layer map, unmap or layer
 # state commit over the output (`present_toasts` has the source). The
@@ -50,7 +56,7 @@
 # `unlocked` across any of them.
 leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
-leg_fullscreen_needs="convert jq notify-send wlrctl python3"
+leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
 leg_fullscreen_fixture_window=keep
 
 fullscreen_before_layers="$shot_dir/fullscreen-before-layers.json"
@@ -69,20 +75,58 @@ fullscreen_lock_osd_layers="$shot_dir/fullscreen-lock-osd-layers.json"
 fullscreen_lock_state="$shot_dir/fullscreen-lock-state.txt"
 fullscreen_lock_toast_path="$shot_dir/fullscreen-lock-toast.png"
 fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating"
+fullscreen_track_path="$shot_dir/fullscreen-tone.flac"
+fullscreen_mpv_pid_path="$shot_dir/fullscreen-mpv.pid"
+fullscreen_work_path="$shot_dir/fullscreen-work.txt"
+
+need_strace() {
+  if [ -z "${strace_bin:-}" ]; then
+    if command -v strace >/dev/null 2>&1; then
+      strace_bin=$(command -v strace)
+    else
+      strace_bin=$(nix build 'nixpkgs#strace^out' --no-link --print-out-paths)/bin/strace
+    fi
+  fi
+}
 
 leg_fullscreen_fixture() {
+  "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=20" -ac 2 \
+    -metadata "title=FormalShell Fullscreen Tone" -metadata "artist=FormalShell Test Artist" -c:a flac -y "$fullscreen_track_path"
   settings_fragment ', "frame": {"thickness": 10, "radius": 20}'
+  settings_fragment ', "bar": {"layout": {"center": ["clock", "monitor", "visualizer"]}}'
 }
 
 leg_fullscreen_timing() {
-  leg_timing 90 135
+  leg_timing 115 160
 }
 
 leg_fullscreen_drive() {
   local script="$shot_dir/fullscreen-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
+"$mpv_bin" --no-video --really-quiet --loop-file=inf "$fullscreen_track_path" &
+echo \$! > "$fullscreen_mpv_pid_path"
+st="$strace_bin"; [ "\$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null)" = 0 ] || st="sudo -n $strace_bin"
+# One line: the phase, whether a cava child runs, and how many monitor
+# collectors the shell exec'd over \$2 seconds.
+work() {
+  local cava=0 ticks
+  pgrep -f -- "cava -p" > /dev/null && cava=1
+  timeout -s INT "\$2" \$st -f -qq -s 64 -e trace=execve -p "\$pid" -o "$shot_dir/fullscreen-\$1-strace.log" > /dev/null 2>&1
+  ticks=\$(grep -c '@stat' "$shot_dir/fullscreen-\$1-strace.log" 2>/dev/null)
+  echo "\$1 cava=\$cava ticks=\${ticks:-0}" >> "$fullscreen_work_path"
+}
+# cava within 10s of the player starting, gone within 5s of a hide.
+wait_cava() {
+  for _ in \$(seq "\$2"); do
+    if pgrep -f -- "cava -p" > /dev/null; then [ "\$1" = up ] && return; else [ "\$1" = down ] && return; fi
+    sleep 1
+  done
+}
 sleep 5
+pid=\$(cat "$shot_dir/shell.pid")
+wait_cava up 10
+work before 5
 "$hyprctl_bin" -j layers > "$fullscreen_before_layers" 2>&1
 "$grim_bin" "$fullscreen_before_path" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
@@ -90,6 +134,8 @@ sleep 3
 "$hyprctl_bin" -j layers > "$fullscreen_on_layers" 2>&1
 "$hyprctl_bin" -j clients > "$fullscreen_on_clients" 2>&1
 "$grim_bin" "$fullscreen_on_path" > /dev/null 2>&1
+wait_cava down 5
+work on 6
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 2
 "$hyprctl_bin" -j layers > "$fullscreen_menu_layers" 2>&1
@@ -100,6 +146,9 @@ sleep 1
 sleep 3
 "$hyprctl_bin" -j layers > "$fullscreen_after_layers" 2>&1
 "$grim_bin" "$fullscreen_after_path" > /dev/null 2>&1
+wait_cava up 10
+work after 5
+kill "\$(cat "$fullscreen_mpv_pid_path")" 2>/dev/null
 "$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
 "$python3_bin" "$PWD/dev/lockpointer.py" formalshell-lockpointer "$fullscreen_lock_log" 2>> "$fullscreen_lock_log" &
 sleep 2
@@ -165,6 +214,7 @@ for phase in $fullscreen_fs_phases; do fs_phase "\$phase"; done
 EOS
   hypr_exec_once "bash $script"
   add_cleanup "pkill -f 'lockpointer.py formalshell-lockpointer' || true"
+  add_cleanup "kill \$(cat '$fullscreen_mpv_pid_path' 2>/dev/null) 2>/dev/null || true"
 }
 
 # Count layer surfaces across every output whose namespace starts with the
@@ -228,12 +278,33 @@ leg_fullscreen_assert() {
   [ "$frame_after" -eq "$frame_before" ] || fail "frame zones did not return after fullscreen ($frame_after vs $frame_before)"
   [ "$corner_after" -eq "$corner_before" ] || fail "hot corners did not return after fullscreen ($corner_after vs $corner_before)"
 
+  _fullscreen_work_assert
   _fullscreen_lock_assert
 
   echo "SMOKE_FULLSCREEN_BEFORE $fullscreen_before_path"
   echo "SMOKE_FULLSCREEN_ON $fullscreen_on_path"
   echo "SMOKE_FULLSCREEN_MENU $fullscreen_menu_path"
   echo "SMOKE_FULLSCREEN_AFTER $fullscreen_after_path"
+}
+
+# The cava child and the monitor's collector: running before, stopped under
+# the covered bar, running again after.
+_fullscreen_work_assert() {
+  [ -s "$fullscreen_work_path" ] || fail "no work samples at $fullscreen_work_path"
+  echo "--- work behind the bar ---"; cat "$fullscreen_work_path"
+  local phase cava ticks
+  for phase in before on after; do
+    cava=$(sed -n "s/^$phase cava=\([0-9]*\) .*/\1/p" "$fullscreen_work_path")
+    ticks=$(sed -n "s/^$phase .*ticks=\([0-9]*\)$/\1/p" "$fullscreen_work_path")
+    [ -n "$cava" ] && [ -n "$ticks" ] || fail "no $phase work sample"
+    if [ "$phase" = on ]; then
+      [ "$cava" -eq 0 ] || fail "cava ran under the covered bar"
+      [ "$ticks" -eq 0 ] || fail "the monitor polled $ticks times under the covered bar"
+    else
+      [ "$cava" -eq 1 ] || fail "no cava child $phase fullscreen with a player playing"
+      [ "$ticks" -ge 1 ] || fail "the monitor never polled $phase fullscreen"
+    fi
+  done
 }
 
 _fullscreen_lock_assert() {

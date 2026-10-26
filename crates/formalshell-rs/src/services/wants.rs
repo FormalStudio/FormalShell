@@ -1,7 +1,8 @@
 //! Polls that run only while a cell wants them. A cell holds a [`Want`]
-//! for as long as it is on a bar; the first one starts the source's task on
-//! the service thread and the last one's release stops it a moment later,
-//! so a config reload that rebuilds the strip does not restart every poll.
+//! for as long as it is on a bar that is on screen; the first one starts
+//! the source's task on the service thread and the last one's release stops
+//! it a moment later, so a config reload that rebuilds the strip does not
+//! restart every poll.
 //! A bar naming none of these cells costs nothing.
 
 use std::future::Future;
@@ -68,20 +69,40 @@ pub fn pulse(source: Source) {
 }
 
 /// Dropped with the cell that took it.
-pub struct Want(Source);
+pub struct Want {
+    source: Source,
+    held: bool,
+}
 
 impl Want {
     pub fn new(source: Source) -> Self {
         COUNTS[source as usize].fetch_add(1, Ordering::SeqCst);
         poke();
-        Self(source)
+        Self { source, held: true }
+    }
+
+    /// Lets the source go while the cell's bar is off screen, and takes it
+    /// again when the bar comes back.
+    pub fn hold(&mut self, on: bool) {
+        if on == self.held {
+            return;
+        }
+        self.held = on;
+        if on {
+            COUNTS[self.source as usize].fetch_add(1, Ordering::SeqCst);
+        } else {
+            COUNTS[self.source as usize].fetch_sub(1, Ordering::SeqCst);
+        }
+        poke();
     }
 }
 
 impl Drop for Want {
     fn drop(&mut self) {
-        COUNTS[self.0 as usize].fetch_sub(1, Ordering::SeqCst);
-        poke();
+        if self.held {
+            COUNTS[self.source as usize].fetch_sub(1, Ordering::SeqCst);
+            poke();
+        }
     }
 }
 

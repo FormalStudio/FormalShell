@@ -123,7 +123,7 @@ impl App {
             self.bar_surface = spare.surface;
             self.zones = spare.zones;
             self.bar_wl = Some(self.heads[j].output.clone());
-            if self.bar_surface.is_none() && !self.bar.hidden {
+            if self.bar_surface.is_none() && !self.bar.hidden() {
                 self.place_chrome();
             }
         }
@@ -284,8 +284,8 @@ impl App {
     pub(super) fn place_spare(&mut self, i: usize) {
         let Some(mut spare) = self.heads.get_mut(i).and_then(|h| h.spare.take()) else { return };
         let output = self.heads[i].output.clone();
-        spare.bar.hidden = self.hidden_on(&spare.bar.output);
-        (spare.surface, spare.zones) = if spare.bar.hidden {
+        spare.bar.set_hidden(self.hidden_on(&spare.bar.output));
+        (spare.surface, spare.zones) = if spare.bar.hidden() {
             (None, Vec::new())
         } else {
             let (surface, zones) = self.build_chrome(&spare.bar, &output);
@@ -305,7 +305,7 @@ impl App {
     pub(super) fn refresh_spares(&mut self, topic: Option<Topic>, now: Instant) {
         for i in 0..self.heads.len() {
             let Some(s) = &self.heads[i].spare else { continue };
-            if self.hidden_on(&s.bar.output) != s.bar.hidden {
+            if self.hidden_on(&s.bar.output) != s.bar.hidden() {
                 self.place_spare(i);
             }
             let Some(s) = &mut self.heads[i].spare else { continue };

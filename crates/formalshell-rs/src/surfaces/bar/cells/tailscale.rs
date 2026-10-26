@@ -8,17 +8,21 @@ use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
 
 pub struct Tailscale {
-    _want: Want,
+    want: Want,
     state: State,
 }
 
 impl Default for Tailscale {
     fn default() -> Self {
-        Self { _want: Want::new(Source::Tailscale), state: State::default() }
+        Self { want: Want::new(Source::Tailscale), state: State::default() }
     }
 }
 
 impl Cell for Tailscale {
+    fn visible(&mut self, on: bool) {
+        self.want.hold(on);
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
