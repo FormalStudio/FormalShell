@@ -108,7 +108,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
     let focused_window = active.get("address").and_then(Value::as_str).and_then(address_id).unwrap_or_default();
 
     let mut windows = Vec::new();
-    let mut fullscreen: Vec<String> = Vec::new();
+    let (mut fullscreen, mut floating_on): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     let (mut parked, mut overlaid) = (Vec::new(), Vec::new());
     for c in array(clients) {
         let Some(id) = c.get("address").and_then(Value::as_str).and_then(address_id) else { continue };
@@ -130,8 +130,10 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
         // and a lone tile grows to the whole monitor and would keep it hidden.
         if let Some((name, output)) = workspace.and_then(|ws| shown_on.get(&ws)).filter(|(n, _)| !n.is_empty()) {
             let borderless = floating && matches!((&rect, output), (Some(r), Some(o)) if fills(r, o));
-            if is_fullscreen(&c) || borderless {
+            if is_fullscreen(&c) && !floating {
                 fullscreen.push(name.clone());
+            } else if is_fullscreen(&c) || borderless {
+                floating_on.push(name.clone());
             }
         }
         windows.push(Window {
@@ -151,8 +153,12 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             toplevel: String::new(),
         });
     }
+    floating_on.retain(|o| !fullscreen.contains(o));
+    fullscreen.extend(floating_on.iter().cloned());
     fullscreen.sort();
     fullscreen.dedup();
+    floating_on.sort();
+    floating_on.dedup();
 
     // Special workspaces carry a negative id and are overlays, not places:
     // model.js drops them, and the console lives on one for good.
@@ -178,6 +184,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
         workspaces: out,
         windows,
         fullscreen_outputs: fullscreen,
+        floating_outputs: floating_on,
         focused_window_id: focused_window,
         focused_workspace_id: focused_ws.map(|n| n.to_string()).unwrap_or_default(),
         focused_output_name: focused_output,
@@ -265,6 +272,17 @@ mod tests {
         assert!(covered(&format!("[{hidden}]")).is_empty());
         let tiled = client("0x1", 1, (0, 0), (1920, 1200), "0").replace(r#""floating":true"#, r#""floating":false"#);
         assert!(covered(&format!("[{tiled}]")).is_empty(), "a lone tile fills the monitor once the bar is gone");
+    }
+
+    #[test]
+    fn a_floating_cover_is_told_apart_from_a_tiled_fullscreen() {
+        let floating = |clients: &str| snapshot(FS_MONITORS, "[]", clients, "{}", &HashSet::new()).snapshot.floating_outputs;
+        let tiled = |c: String| c.replace(r#""floating":true"#, r#""floating":false"#);
+        assert_eq!(floating(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1200), "0"))), ["eDP-1"], "borderless");
+        assert_eq!(floating(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1200), "2"))), ["eDP-1"], "floating fullscreen");
+        assert!(floating(&format!("[{}]", tiled(client("0x1", 1, (0, 0), (1920, 1200), "2")))).is_empty());
+        let both = format!("[{},{}]", client("0x1", 1, (0, 0), (1920, 1200), "0"), tiled(client("0x2", 1, (0, 0), (1920, 1200), "2")));
+        assert!(floating(&both).is_empty(), "a tiled fullscreen window on the same output wins");
     }
 
     #[test]

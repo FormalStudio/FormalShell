@@ -1,8 +1,9 @@
-//! The sonner depth stack. One overlay surface the size of the
-//! output for as long as anything is popped up, so the collapse and expand
-//! reflow moves cards inside a static window rather than resizing a layer
-//! surface the compositor would animate against the shell's own motion; the
-//! input region is the stack's own rect.
+//! The sonner depth stack. One overlay surface down the stack's own side,
+//! the output's height, for as long as anything is popped up, so the
+//! collapse and expand reflow moves cards inside a static window rather than
+//! resizing a layer surface the compositor would animate against the shell's
+//! own motion; the input region is the stack's own rect, and empty on a
+//! covered output.
 //!
 //! Collapsed is the depth stack (the front card, two levels peeking behind
 //! it as empty chrome at the front card's height), expanded the plain
@@ -190,6 +191,8 @@ pub struct Toasts {
     swipe: Option<Swipe>,
     /// The stack hangs off the right edge.
     right: bool,
+    /// The side and width the layer was made with.
+    pub column: (bool, u32),
 }
 
 /// Where the stack hangs: the bar's own edge cleared, `screenPadding` in.
@@ -284,9 +287,27 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     w::row(s.md, vec![mark, w::column(s.row_gap, words).fill()]).top().on("body")
 }
 
+fn card_width(theme: &Theme) -> f64 {
+    let is_bubble = theme.habit("notification").and_then(|v| v.as_str()) == Some("bubble");
+    if is_bubble { theme.space.popup_width_bubble } else { theme.space.popup_width_narrow }
+}
+
+/// How far the stack's layer reaches in from its own edge: the edge's
+/// inset, `screenPadding`, the card, and room past it for the swipe's
+/// rubber band (`scroll::rubber`, 40px at most) and the card's cast.
+pub fn column_width(theme: &Theme, insets: &Insets, right: bool) -> u32 {
+    let inset = if right { insets.right } else { insets.left };
+    let cast = ["rest", "critical"]
+        .iter()
+        .map(|k| fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some(k)).casts))
+        .fold(0.0, f64::max);
+    (inset + theme.space.screen_padding * 2.0 + card_width(theme) + 40.0 + cast).ceil() as u32
+}
+
 impl Toasts {
-    pub fn new(surface: Surface, size: (i32, i32)) -> Self {
+    pub fn new(surface: Surface, size: (i32, i32), column: (bool, u32)) -> Self {
         Self {
+            column,
             surface,
             scene: Scene::clear(size.0, size.1),
             slots: HashMap::new(),
@@ -353,7 +374,7 @@ impl Toasts {
             }
         }
 
-        let width = if is_bubble { s.popup_width_bubble } else { s.popup_width_narrow };
+        let width = card_width(theme);
         let clock = now_ms();
         let size = theme.font_size.heading.round() as u32;
         let scale = crate::scene::raster_scale();
@@ -583,17 +604,21 @@ impl Toasts {
         }
     }
 
-    pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState) {
-        if self.region == Some(self.stack) {
-            return;
+    /// The stack's rect as the input region, or nothing while `passive`.
+    /// Whether it changed, which the next commit has to carry.
+    pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState, passive: bool) -> bool {
+        let want = if passive { IRect::default() } else { self.stack };
+        if self.region == Some(want) {
+            return false;
         }
-        self.region = Some(self.stack);
+        self.region = Some(want);
         if let Ok(region) = smithay_client_toolkit::compositor::Region::new(compositor) {
-            if !self.stack.is_empty() {
-                region.add(self.stack.x, self.stack.y, self.stack.w, self.stack.h);
+            if !want.is_empty() {
+                region.add(want.x, want.y, want.w, want.h);
             }
             self.surface.layer.set_input_region(Some(region.wl_region()));
         }
+        true
     }
 
     fn contains(r: IRect, x: f64, y: f64) -> bool {
@@ -747,6 +772,22 @@ mod tests {
             let mut badges = 0;
             walk(&bubble(&theme, &group(source, ""), 0, None, false), &mut |e| badges += usize::from(e.badge.is_some()));
             assert_eq!(badges, usize::from(marked), "bubble, source {source:?}");
+        }
+    }
+
+    #[test]
+    fn the_column_holds_the_card_its_cast_and_the_rubber_band_under_every_preset() {
+        for preset in ["metamorphosis", "retro", "pantheon", "cartridge"] {
+            let theme = Theme::resolve(getter(json!({ "theme": { "preset": preset } })), &fs_theme::palette::fallback("dark"));
+            let insets = Insets { top: 0.0, bottom: 0.0, left: 12.0, right: 30.0 };
+            for right in [true, false] {
+                let inset = if right { insets.right } else { insets.left };
+                let column = f64::from(column_width(&theme, &insets, right));
+                let card = card_width(&theme);
+                let cast = fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some("rest")).casts);
+                let inner = column - inset - theme.space.screen_padding - card;
+                assert!(inner >= scroll::rubber(-1e9, card).abs() + cast, "{preset}: {inner}px past the card's inner edge");
+            }
         }
     }
 

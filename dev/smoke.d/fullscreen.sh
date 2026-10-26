@@ -21,9 +21,36 @@
 # the fullscreen window, its surface is on the overlay level of a fourth dump
 # (Hyprland draws a fullscreen window over the top level) and its card is in
 # the frame, read as the frame differing from the bare fullscreen one.
+#
+# Then a game's cursor lock under the scrolling layout, where Hyprland 0.56
+# lets go of every pointer constraint on any layer map, unmap or layer
+# state commit over the output (`present_toasts` has the source). The
+# window is dev/lockpointer.py, floated to the output's own size so it
+# covers it borderless, holding a persistent zwp_locked_pointer_v1 and
+# logging each locked/unlocked event. Two notify-sends and an `osd volume`
+# land over it: its log gains no `unlocked`, the notifications layer is a
+# column narrower than the output whose input region the shell logged as
+# empty, no OSD layer maps, and the active window and cursor stay put. A
+# `debug join` over the same window last is the control: an overlay map
+# the shell does not hold back, which has to log `unlocked`, so the probe
+# can see a release at all. Hyprland only activates a constraint again when
+# keyboard focus moves onto its surface (`CFocusState::rawSurfaceFocus`), so
+# the float and resize that release the first lock are followed by focus
+# leaving the window and coming back, the lock active again before the
+# first toast.
+#
+# Then the same window in Hyprland's own fullscreen: tiled under scrolling,
+# tiled under dwindle, and floating under scrolling. Tiled, the stack maps
+# per toast, since an overlay layer that merely exists keeps Hyprland off
+# direct scanout and tearing, and scrolling counts a tiled fullscreen window
+# as covering the workspace. Floating, scrolling counts it as nothing, so the
+# column stays mapped as it does over a borderless game. Each phase re-arms
+# the lock (SIGUSR1 to the probe, while it holds keyboard focus), a toast
+# comes and goes over it (8s, the floor for a normal one), and the log gains no
+# `unlocked` across any of them.
 leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
-leg_fullscreen_needs="convert jq"
+leg_fullscreen_needs="convert jq notify-send wlrctl python3"
 leg_fullscreen_fixture_window=keep
 
 fullscreen_before_layers="$shot_dir/fullscreen-before-layers.json"
@@ -35,13 +62,20 @@ fullscreen_menu_path="$shot_dir/fullscreen-menu.png"
 fullscreen_before_path="$shot_dir/fullscreen-before.png"
 fullscreen_on_path="$shot_dir/fullscreen-on.png"
 fullscreen_after_path="$shot_dir/fullscreen-after.png"
+fullscreen_lock_log="$shot_dir/fullscreen-lock.log"
+fullscreen_lock_clients="$shot_dir/fullscreen-lock-clients.json"
+fullscreen_lock_toast_layers="$shot_dir/fullscreen-lock-toast-layers.json"
+fullscreen_lock_osd_layers="$shot_dir/fullscreen-lock-osd-layers.json"
+fullscreen_lock_state="$shot_dir/fullscreen-lock-state.txt"
+fullscreen_lock_toast_path="$shot_dir/fullscreen-lock-toast.png"
+fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating"
 
 leg_fullscreen_fixture() {
   settings_fragment ', "frame": {"thickness": 10, "radius": 20}'
 }
 
 leg_fullscreen_timing() {
-  leg_timing 21 55
+  leg_timing 90 135
 }
 
 leg_fullscreen_drive() {
@@ -66,8 +100,71 @@ sleep 1
 sleep 3
 "$hyprctl_bin" -j layers > "$fullscreen_after_layers" 2>&1
 "$grim_bin" "$fullscreen_after_path" > /dev/null 2>&1
+"$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
+"$python3_bin" "$PWD/dev/lockpointer.py" formalshell-lockpointer "$fullscreen_lock_log" 2>> "$fullscreen_lock_log" &
+sleep 2
+lp="window = 'class:^(formalshell-lockpointer)\\\$'"
+"$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = 'enable' })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 1920, y = 1080, \$lp })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, \$lp })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+"$wlrctl_bin" pointer move 960 540 > /dev/null 2>&1
+sleep 1
+"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\\\$' })" > /dev/null 2>&1
+sleep 0.5
+"$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
+sleep 2
+"$hyprctl_bin" -j clients > "$fullscreen_lock_clients" 2>&1
+{ echo "before"; "$hyprctl_bin" cursorpos; "$hyprctl_bin" -j activewindow | "$jq_bin" -r .class; } > "$fullscreen_lock_state" 2>&1
+echo "0 toast" >> "$fullscreen_lock_log"
+"$notify_send_bin" -u normal 'Over the game' 'the cursor stays locked'
+sleep 1.5
+"$hyprctl_bin" -j layers > "$fullscreen_lock_toast_layers" 2>&1
+"$grim_bin" "$fullscreen_lock_toast_path" > /dev/null 2>&1
+"$notify_send_bin" -u critical 'Second' 'still locked'
+sleep 1
+$ipc call osd volume > /dev/null 2>&1
+sleep 1
+"$hyprctl_bin" -j layers > "$fullscreen_lock_osd_layers" 2>&1
+sleep 6
+{ echo "after"; "$hyprctl_bin" cursorpos; "$hyprctl_bin" -j activewindow | "$jq_bin" -r .class; } >> "$fullscreen_lock_state" 2>&1
+echo "0 control" >> "$fullscreen_lock_log"
+$ipc call debug join top 100 200 > /dev/null 2>&1
+sleep 1
+$ipc call debug joinClear > /dev/null 2>&1
+$ipc call notifications dismissOne > /dev/null 2>&1
+sleep 1
+fs_phase() {
+  local name="fs-\${1%%:*}" float=disable
+  [ "\${1#*:}" = floating ] && { name="\$name-floating"; float=enable; }
+  "$hyprctl_bin" eval "hl.config({ general = { layout = '\${1%%:*}' } })" > /dev/null 2>&1
+  sleep 1
+  "$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = '\$float' })" > /dev/null 2>&1
+  "$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
+  "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
+  sleep 2
+  echo "0 \$name-arm" >> "$fullscreen_lock_log"
+  pkill -USR1 -f 'lockpointer.py formalshell-lockpointer'
+  sleep 2
+  "$hyprctl_bin" -j clients > "$shot_dir/fullscreen-\$name-clients.json" 2>&1
+  echo "0 \$name" >> "$fullscreen_lock_log"
+  "$notify_send_bin" -u normal 'Over the fullscreen game' "\$1"
+  sleep 1.5
+  "$hyprctl_bin" -j layers > "$shot_dir/fullscreen-\$name-toast-layers.json" 2>&1
+  "$grim_bin" "$shot_dir/fullscreen-\$name.png" > /dev/null 2>&1
+  sleep 8
+  $ipc call osd volume > /dev/null 2>&1
+  sleep 1
+  "$hyprctl_bin" -j layers > "$shot_dir/fullscreen-\$name-after-layers.json" 2>&1
+  echo "0 \$name-end" >> "$fullscreen_lock_log"
+  "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'unset' })" > /dev/null 2>&1
+  sleep 1
+}
+for phase in $fullscreen_fs_phases; do fs_phase "\$phase"; done
 EOS
   hypr_exec_once "bash $script"
+  add_cleanup "pkill -f 'lockpointer.py formalshell-lockpointer' || true"
 }
 
 # Count layer surfaces across every output whose namespace starts with the
@@ -131,8 +228,92 @@ leg_fullscreen_assert() {
   [ "$frame_after" -eq "$frame_before" ] || fail "frame zones did not return after fullscreen ($frame_after vs $frame_before)"
   [ "$corner_after" -eq "$corner_before" ] || fail "hot corners did not return after fullscreen ($corner_after vs $corner_before)"
 
+  _fullscreen_lock_assert
+
   echo "SMOKE_FULLSCREEN_BEFORE $fullscreen_before_path"
   echo "SMOKE_FULLSCREEN_ON $fullscreen_on_path"
   echo "SMOKE_FULLSCREEN_MENU $fullscreen_menu_path"
   echo "SMOKE_FULLSCREEN_AFTER $fullscreen_after_path"
+}
+
+_fullscreen_lock_assert() {
+  local f
+  for f in "$fullscreen_lock_log" "$fullscreen_lock_clients" "$fullscreen_lock_toast_layers" "$fullscreen_lock_osd_layers" "$fullscreen_lock_state"; do
+    [ -s "$f" ] || fail "no dump produced at $f"
+  done
+  echo "--- lockpointer log ---"; cat "$fullscreen_lock_log"
+  echo "--- cursor and active window ---"; cat "$fullscreen_lock_state"
+
+  local covering
+  covering=$("$jq_bin" -r '[.[] | select(.class == "formalshell-lockpointer" and .floating and .size == [1920, 1080] and .at == [0, 0])] | length' "$fullscreen_lock_clients" 2>/dev/null)
+  [ "${covering:-0}" -eq 1 ] || fail "the lock window is not floating over the whole output"
+
+  local before during control
+  before=$(sed -n '1,/ toast$/p' "$fullscreen_lock_log")
+  during=$(sed -n '/ toast$/,/ control$/p' "$fullscreen_lock_log")
+  control=$(sed -n '/ control$/,$p' "$fullscreen_lock_log")
+  echo "$before" | grep -q ' locked$' || fail "the window never held its pointer lock before the toasts"
+  [ "$(echo "$before" | grep ' locked$\| unlocked$' | tail -1 | awk '{print $2}')" = locked ] \
+    || fail "the lock was not active when the first toast arrived"
+  if echo "$during" | grep -q ' unlocked$'; then fail "a toast or the OSD released the game's pointer lock"; fi
+  echo "$control" | grep -q ' unlocked$' || fail "the debug join control map released nothing, so the probe cannot see a release"
+
+  local toasts width
+  toasts=$("$jq_bin" -r '[.[] | .levels["3"][]? | select(.namespace == "formalshell:notifications")] | length' "$fullscreen_lock_toast_layers")
+  width=$("$jq_bin" -r '[.[] | .levels["3"][]? | select(.namespace == "formalshell:notifications") | .w] | first // 0' "$fullscreen_lock_toast_layers")
+  echo "notifications over the game: surfaces=$toasts width=$width"
+  [ "$toasts" -eq 1 ] || fail "expected one notifications layer over the game, got $toasts"
+  [ "$width" -gt 0 ] && [ "$width" -lt 1920 ] || fail "the notifications layer is not a column ($width wide)"
+  grep -q 'toasts input empty' "$shell_log_path" || fail "the shell never set an empty input region on the covered stack"
+
+  local osd
+  osd=$(_fullscreen_count "$fullscreen_lock_osd_layers" "formalshell:osd")
+  echo "osd layers over the game: $osd"
+  [ "$osd" -eq 0 ] || fail "the OSD mapped over a covered output"
+
+  [ "$(sed -n 2,3p "$fullscreen_lock_state")" = "$(sed -n 5,6p "$fullscreen_lock_state")" ] \
+    || fail "the cursor or the active window moved while the toasts showed"
+  echo "SMOKE_FULLSCREEN_LOCK_TOAST $fullscreen_lock_toast_path"
+
+  local phase
+  for phase in $fullscreen_fs_phases; do _fullscreen_fs_assert "$phase"; done
+}
+
+# One true-fullscreen phase: the window in mode 2 and floating or not as
+# asked, the lock re-armed and active going in and never released, the stack
+# mapped for the toast and, after it, gone when tiled and held when floating.
+_fullscreen_fs_assert() {
+  local layout="${1%%:*}" kind="${1#*:}" name="fs-${1%%:*}"
+  [ "$kind" = floating ] && name="$name-floating"
+  local clients="$shot_dir/fullscreen-$name-clients.json"
+  local toast_layers="$shot_dir/fullscreen-$name-toast-layers.json" after_layers="$shot_dir/fullscreen-$name-after-layers.json"
+  local f
+  for f in "$clients" "$toast_layers" "$after_layers"; do [ -s "$f" ] || fail "no dump produced at $f"; done
+
+  local mode floating
+  mode=$("$jq_bin" -r '[.[] | select(.class == "formalshell-lockpointer") | .fullscreen] | first // 0' "$clients")
+  floating=$("$jq_bin" -r '[.[] | select(.class == "formalshell-lockpointer") | .floating] | first' "$clients")
+  echo "$name: lock window fullscreen mode=$mode floating=$floating"
+  [ "$mode" = 2 ] || fail "$name: the lock window was not in fullscreen mode 2"
+  [ "$floating" = "$([ "$kind" = floating ] && echo true || echo false)" ] || fail "$name: the lock window was not $kind"
+
+  local arm during
+  arm=$(sed -n "/ $name-arm\$/,/ $name\$/p" "$fullscreen_lock_log")
+  during=$(sed -n "/ $name\$/,/ $name-end\$/p" "$fullscreen_lock_log")
+  echo "$arm" | grep -q ' rearm$' || fail "$name: the probe never re-armed its lock"
+  [ "$(echo "$arm" | grep ' locked$\| unlocked$' | tail -1 | awk '{print $2}')" = locked ] \
+    || fail "$name: the lock was not active when the toast arrived over the fullscreen game"
+  if echo "$during" | grep -q ' unlocked$'; then fail "$name: a toast over the fullscreen game released its pointer lock"; fi
+
+  local up gone osd want=0
+  [ "$kind" = floating ] && want=1
+  up=$(_fullscreen_count "$toast_layers" "formalshell:notifications")
+  gone=$(_fullscreen_count "$after_layers" "formalshell:notifications")
+  osd=$(_fullscreen_count "$after_layers" "formalshell:osd")
+  echo "$name: notifications layers with the toast up=$up, after it went=$gone (want $want), osd=$osd"
+  [ "$up" -eq 1 ] || fail "$name: the toast did not map over the fullscreen game"
+  [ "$gone" -eq "$want" ] || fail "$name: the stack after the toast was $gone layers, not $want"
+  [ "$osd" -eq 0 ] || fail "$name: the OSD mapped over a fullscreen game"
+  local tag="${name#fs-}"; tag="${tag//-/_}"
+  echo "SMOKE_FULLSCREEN_FS_${tag^^} $shot_dir/fullscreen-$name.png"
 }

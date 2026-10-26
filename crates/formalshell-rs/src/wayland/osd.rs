@@ -59,12 +59,16 @@ impl App {
             self.osd.media = text.to_owned();
         }
         self.osd.hide_at = Some(now + HIDE);
+        let covered = self.chrome_hidden();
         match &mut self.osd.pill {
             Some(p) => {
                 if !p.is_open() {
                     p.set_open(now, true);
                 }
             }
+            // A layer mapped over a covered output releases the pointer
+            // lock a game holds there (`present_toasts` has the why).
+            None if covered => {}
             None => self.osd_create(),
         }
     }

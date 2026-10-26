@@ -54,6 +54,9 @@ pub struct Snapshot {
     pub workspaces: Vec<Workspace>,
     pub windows: Vec<Window>,
     pub fullscreen_outputs: Vec<String>,
+    /// The covered outputs with no tiled fullscreen window over them: the
+    /// cover is a floating window, fullscreen or the size of the output.
+    pub floating_outputs: Vec<String>,
     pub focused_window_id: String,
     pub focused_workspace_id: String,
     pub focused_output_name: String,

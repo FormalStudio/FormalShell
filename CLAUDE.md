@@ -348,6 +348,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the compositor's own layer list: bar, frame zones and hot corners gone
   while the fixture window is fullscreen and back to their starting counts
   after, with `hyprctl clients` confirming a window really was fullscreen.
+  Then `dev/lockpointer.py` floated over the whole output under the
+  scrolling layout, holding a persistent `zwp_locked_pointer_v1`: two
+  notify-sends and an `osd volume` over it leave the lock active, the
+  notifications layer a column with an empty input region, no OSD layer,
+  and the cursor and active window where they were; a `debug join` map
+  after them releases the lock, so the probe sees a release at all.
+  Then the same window in Hyprland's own fullscreen, tiled under scrolling,
+  tiled under dwindle and floating under scrolling, its lock re-armed over
+  SIGUSR1: a toast comes and goes with the lock held throughout, the stack
+  unmapped after it when tiled and still mapped when floating.
 - `gallery.sh` `--gallery`: the dev gallery sheet, every shared component
   drawn against the live theme. The power flow is drawn from
   `fs_system::power::flow::sample_flow` (labelled a sample), the only

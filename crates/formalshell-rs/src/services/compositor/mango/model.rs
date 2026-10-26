@@ -101,7 +101,7 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
     workspaces.sort_by(|a, b| a.idx.cmp(&b.idx).then_with(|| a.output.cmp(&b.output)));
 
     let mut windows = Vec::new();
-    let (mut parked, mut overlaid, mut fullscreen) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut parked, mut overlaid, mut fullscreen, mut floating_on) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut focused_window = String::new();
     for c in &clients {
         let Some(id) = int(c.get("id")).map(|n| n.to_string()) else { continue };
@@ -134,8 +134,10 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
         // goes, and a lone tile grows to the whole monitor.
         if flag(c, "is_visible") && !minimized && !monitor.is_empty() {
             let borderless = flag(c, "is_floating") && rect.as_ref().is_some_and(|r| boxes.iter().any(|(name, o)| *name == monitor && o == r));
-            if flag(c, "is_fullscreen") || borderless {
+            if flag(c, "is_fullscreen") && !flag(c, "is_floating") {
                 fullscreen.push(monitor.clone());
+            } else if flag(c, "is_fullscreen") || borderless {
+                floating_on.push(monitor.clone());
             }
         }
         windows.push(Window {
@@ -153,14 +155,19 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
             id,
         });
     }
+    floating_on.retain(|o: &String| !fullscreen.contains(o));
+    fullscreen.extend(floating_on.iter().cloned());
     fullscreen.sort();
     fullscreen.dedup();
+    floating_on.sort();
+    floating_on.dedup();
 
     Snapshot {
         available: !monitors.is_empty(),
         workspaces,
         windows,
         fullscreen_outputs: fullscreen,
+        floating_outputs: floating_on,
         focused_window_id: focused_window,
         focused_workspace_id: focused_workspace,
         focused_output_name: focused_output,
@@ -281,6 +288,7 @@ mod tests {
         assert_eq!(snapshot(MONITORS, &unfocused, &[]).fullscreen_outputs, ["eDP-1"]);
         let borderless = unfocused.replacen(r#""is_fullscreen":true"#, r#""is_fullscreen":false"#, 1);
         assert_eq!(snapshot(MONITORS, &borderless, &[]).fullscreen_outputs, ["eDP-1"], "a window the size of the monitor");
+        assert_eq!(snapshot(MONITORS, &borderless, &[]).floating_outputs, ["eDP-1"]);
         let shrunk = borderless.replacen(r#""width":1280,"height":800"#, r#""width":1280,"height":770"#, 1);
         assert!(snapshot(MONITORS, &shrunk, &[]).fullscreen_outputs.is_empty());
         let tiled = borderless.replacen(r#""is_floating":true,"is_minimized":false,"is_urgent":false,

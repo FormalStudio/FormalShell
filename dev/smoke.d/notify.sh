@@ -19,8 +19,8 @@
 # resolves without the session having to agree on a theme name.
 #
 # The two layer dumps are the sonner stack's own claim (M48): the toast
-# surface is the whole output and stays that size while it is mapped, so the
-# collapse/expand reflow moves cards inside a static window instead of
+# surface is a column the output's height down the stack's own side, and
+# stays that size while it is mapped, so the collapse/expand reflow moves cards inside a static window instead of
 # resizing a layer surface the compositor would then animate against the
 # shell's own motion.
 leg_notify_flag="--notify"
@@ -120,8 +120,8 @@ leg_notify_assert() {
   collapsed_size=$("$jq_bin" -r '[.[].levels[]?[]? | select(.namespace == "formalshell:notifications")][0] | "\(.w)x\(.h)"' "$notify_layers_collapsed_path")
   expanded_size=$("$jq_bin" -r '[.[].levels[]?[]? | select(.namespace == "formalshell:notifications")][0] | "\(.w)x\(.h)"' "$notify_layers_expanded_path")
   echo "toast layer size collapsed: $collapsed_size, expanded: $expanded_size"
-  if [ "$collapsed_size" != "1920x1080" ]; then
-    fail "the toast layer surface is not the whole output, got $collapsed_size"
+  if [ "${collapsed_size%x*}" -ge 1920 ] 2>/dev/null || [ "${collapsed_size#*x}" != 1080 ]; then
+    fail "the toast layer surface is not a column the output's height, got $collapsed_size"
   fi
   if [ "$collapsed_size" != "$expanded_size" ]; then
     fail "the toast layer surface resized on expand ($collapsed_size -> $expanded_size), the compositor animates that geometry"

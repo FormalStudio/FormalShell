@@ -95,6 +95,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "heldFocusedWindowId": h.held_focused_window_id(),
         "focusedWorkspaceId": c.focused_workspace_id,
         "fullscreenOutputs": c.fullscreen_outputs,
+        "floatingOutputs": c.floating_outputs,
         "configLoaded": app.store.config.settings(),
         "herdr": {"stateByWindow": app.store.herdr.by_window, "stateByKey": app.store.herdr.by_key},
         "iphone": {
