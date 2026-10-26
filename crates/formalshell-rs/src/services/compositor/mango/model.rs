@@ -62,6 +62,15 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
     let focused = monitors.iter().find(|m| flag(m, "active"));
     let focused_output = focused.map(|m| string(m.get("name"))).unwrap_or_default();
 
+    // mango reports a monitor's box and a client's in the same logical pixels.
+    let boxes: Vec<(String, Rect)> = monitors
+        .iter()
+        .filter_map(|m| {
+            let (x, y, width, height) = (int(m.get("x"))?, int(m.get("y"))?, int(m.get("width"))?, int(m.get("height"))?);
+            Some((string(m.get("name")), Rect { x, y, width, height }))
+        })
+        .collect();
+
     let mut workspaces = Vec::new();
     let mut focused_workspace = String::new();
     for m in &monitors {
@@ -106,9 +115,6 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
         let focused = flag(c, "is_focused");
         if focused {
             focused_window = id.clone();
-            if flag(c, "is_fullscreen") && !monitor.is_empty() {
-                fullscreen.push(monitor.clone());
-            }
         }
         if minimized {
             parked.push(id.clone());
@@ -122,6 +128,16 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
             }
             _ => None,
         };
+        // Focus does not matter: a game on another monitor still covers it,
+        // and a borderless one is a floating window the size of its monitor.
+        // A tiled one is left out: with the bar hidden its exclusive zone
+        // goes, and a lone tile grows to the whole monitor.
+        if flag(c, "is_visible") && !minimized && !monitor.is_empty() {
+            let borderless = flag(c, "is_floating") && rect.as_ref().is_some_and(|r| boxes.iter().any(|(name, o)| *name == monitor && o == r));
+            if flag(c, "is_fullscreen") || borderless {
+                fullscreen.push(monitor.clone());
+            }
+        }
         windows.push(Window {
             title: string(c.get("title")),
             app_id: string(c.get("appid")),
@@ -257,6 +273,22 @@ mod tests {
         assert_eq!(s.parked, ["11"]);
         assert_eq!(s.windows[3].rect, None);
         assert_eq!(s.windows[3].workspace_id, "");
+    }
+
+    #[test]
+    fn a_visible_game_covers_its_monitor_focused_or_not() {
+        let unfocused = CLIENTS.replacen(r#""is_visible":true,"is_focused":true"#, r#""is_visible":true,"is_focused":false"#, 1);
+        assert_eq!(snapshot(MONITORS, &unfocused, &[]).fullscreen_outputs, ["eDP-1"]);
+        let borderless = unfocused.replacen(r#""is_fullscreen":true"#, r#""is_fullscreen":false"#, 1);
+        assert_eq!(snapshot(MONITORS, &borderless, &[]).fullscreen_outputs, ["eDP-1"], "a window the size of the monitor");
+        let shrunk = borderless.replacen(r#""width":1280,"height":800"#, r#""width":1280,"height":770"#, 1);
+        assert!(snapshot(MONITORS, &shrunk, &[]).fullscreen_outputs.is_empty());
+        let tiled = borderless.replacen(r#""is_floating":true,"is_minimized":false,"is_urgent":false,
+         "x":0"#, r#""is_floating":false,"is_minimized":false,"is_urgent":false,
+         "x":0"#, 1);
+        assert!(snapshot(MONITORS, &tiled, &[]).fullscreen_outputs.is_empty(), "a lone tile is not a game");
+        let unseen = unfocused.replacen(r#""is_visible":true,"is_focused":false,"is_fullscreen":true"#, r#""is_visible":false,"is_focused":false,"is_fullscreen":true"#, 1);
+        assert!(snapshot(MONITORS, &unseen, &[]).fullscreen_outputs.is_empty(), "a tag not shown covers nothing");
     }
 
     #[test]

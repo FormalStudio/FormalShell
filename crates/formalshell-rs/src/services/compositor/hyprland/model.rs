@@ -45,6 +45,36 @@ fn pair(v: Option<&Value>) -> Option<(i64, i64)> {
     Some((int(items.first())?, int(items.get(1))?))
 }
 
+/// A monitor's box in the layout's logical pixels, the space a client's
+/// `at` and `size` are in: `width` and `height` are the mode's pixels, so
+/// they swap under a 90 or 270 degree transform and divide by the scale.
+fn logical_rect(m: &Value) -> Option<Rect> {
+    let (mut w, mut h) = (int(m.get("width"))?, int(m.get("height"))?);
+    if int(m.get("transform")).unwrap_or(0) % 2 == 1 {
+        (w, h) = (h, w);
+    }
+    let scale = m.get("scale").and_then(Value::as_f64).filter(|s| s.is_finite() && *s > 0.0).unwrap_or(1.0);
+    let (width, height) = ((w as f64 / scale).round() as i64, (h as f64 / scale).round() as i64);
+    (width > 0 && height > 0).then(|| Rect { x: int(m.get("x")).unwrap_or(0), y: int(m.get("y")).unwrap_or(0), width, height })
+}
+
+/// `fullscreen` is a mode mask (1 maximized, 2 fullscreen) on current
+/// Hyprland and a bool on older ones. Maximized alone leaves the bar up.
+fn is_fullscreen(c: &Value) -> bool {
+    match c.get("fullscreen") {
+        Some(Value::Bool(b)) => *b,
+        v => int(v).unwrap_or(0) & 2 != 0,
+    }
+}
+
+/// Within a pixel either way, since a fractional scale rounds the
+/// monitor's logical size one way and the client's another.
+fn fills(window: &Rect, monitor: &Rect) -> bool {
+    [(window.x, monitor.x), (window.y, monitor.y), (window.width, monitor.width), (window.height, monitor.height)]
+        .iter()
+        .all(|(a, b)| (a - b).abs() <= 1)
+}
+
 /// The four `j/` answers one refresh reads. `urgent` holds the window ids an
 /// `urgent` event flagged and nothing has cleared since.
 pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, urgent: &HashSet<String>) -> Read {
@@ -52,17 +82,20 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
     // A populated monitor list is the backend's `available`: the request
     // socket answered with a real session behind it.
     let available = !monitors.is_empty();
-    let mut monitor_names: HashMap<i64, String> = HashMap::new();
     let mut active_on: HashMap<String, i64> = HashMap::new();
     let mut focused_output = String::new();
     let mut special_shown = String::new();
+    // Each workspace shown on a monitor, the special one included, and the
+    // box it is shown in.
+    let mut shown_on: HashMap<i64, (String, Option<Rect>)> = HashMap::new();
     for m in &monitors {
         let name = string(m.get("name"));
-        if let Some(id) = int(m.get("id")) {
-            monitor_names.insert(id, name.clone());
-        }
         if let Some(ws) = int(m.get("activeWorkspace").and_then(|w| w.get("id"))) {
             active_on.insert(name.clone(), ws);
+            shown_on.insert(ws, (name.clone(), logical_rect(m)));
+        }
+        if let Some(ws) = int(m.get("specialWorkspace").and_then(|w| w.get("id"))).filter(|n| *n != 0) {
+            shown_on.insert(ws, (name.clone(), logical_rect(m)));
         }
         if m.get("focused").and_then(Value::as_bool) == Some(true) {
             special_shown = string(m.get("specialWorkspace").and_then(|w| w.get("name")));
@@ -85,16 +118,19 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             (Some((x, y)), Some((w, h))) if !hidden && w > 0 && h > 0 => Some(Rect { x, y, width: w, height: h }),
             _ => None,
         };
-        let workspace_id = int(c.get("workspace").and_then(|w| w.get("id"))).map(|n| n.to_string()).unwrap_or_default();
+        let workspace = int(c.get("workspace").and_then(|w| w.get("id")));
+        let workspace_id = workspace.map(|n| n.to_string()).unwrap_or_default();
         if string(c.get("workspace").and_then(|w| w.get("name"))) == PARK_WORKSPACE {
             if special_shown == PARK_WORKSPACE { overlaid.push(id.clone()) } else { parked.push(id.clone()) }
         }
-        let covers = match c.get("fullscreen") {
-            Some(Value::Bool(b)) => *b,
-            v => int(v).unwrap_or(0) != 0,
-        };
-        if focused && covers {
-            if let Some(name) = int(c.get("monitor")).and_then(|m| monitor_names.get(&m)).filter(|n| !n.is_empty()) {
+        let floating = c.get("floating").and_then(Value::as_bool).unwrap_or(false);
+        // A game on a monitor without focus still covers it, and a
+        // borderless one is a floating window the size of the monitor. A
+        // tiled one is left out: with the bar hidden its exclusive zone goes,
+        // and a lone tile grows to the whole monitor and would keep it hidden.
+        if let Some((name, output)) = workspace.and_then(|ws| shown_on.get(&ws)).filter(|(n, _)| !n.is_empty()) {
+            let borderless = floating && matches!((&rect, output), (Some(r), Some(o)) if fills(r, o));
+            if is_fullscreen(&c) || borderless {
                 fullscreen.push(name.clone());
             }
         }
@@ -105,7 +141,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             initial_title: string(c.get("initialTitle")),
             pid: int(c.get("pid")).unwrap_or(0),
             is_focused: focused,
-            is_floating: c.get("floating").and_then(Value::as_bool).unwrap_or(false),
+            is_floating: floating,
             // A window's urgency clears once it is activated or
             // its workspace takes focus.
             is_urgent: urgent.contains(&id) && !focused && focused_ws.map(|n| n.to_string()) != Some(workspace_id.clone()),
@@ -190,6 +226,53 @@ mod tests {
             r#"{"id":"1","idx":1,"name":"1","output":"Virtual-1","isActive":false,"isFocused":false,"isUrgent":true}"#
         );
         assert!(serde_json::to_string(&s.windows[1]).unwrap().ends_with(r#""isUrgent":false,"rect":null}"#));
+    }
+
+    const FS_MONITORS: &str = r#"[{"id":0,"name":"eDP-1","focused":true,"x":0,"y":0,"width":2880,"height":1800,"scale":1.5,"transform":0,"activeWorkspace":{"id":1,"name":"1"},"specialWorkspace":{"id":0,"name":""}},
+        {"id":1,"name":"DP-1","focused":false,"x":1920,"y":0,"width":1080,"height":1920,"scale":1,"transform":1,"activeWorkspace":{"id":2,"name":"2"},"specialWorkspace":{"id":0,"name":""}}]"#;
+
+    fn covered(clients: &str) -> Vec<String> {
+        snapshot(FS_MONITORS, "[]", clients, r#"{"address":"0x1"}"#, &HashSet::new()).snapshot.fullscreen_outputs
+    }
+
+    fn client(address: &str, workspace: i64, at: (i64, i64), size: (i64, i64), fullscreen: &str) -> String {
+        format!(
+            r#"{{"address":"{address}","hidden":false,"floating":true,"at":[{},{}],"size":[{},{}],"workspace":{{"id":{workspace},"name":"{workspace}"}},"monitor":0,"fullscreen":{fullscreen}}}"#,
+            at.0, at.1, size.0, size.1
+        )
+    }
+
+    #[test]
+    fn maximized_leaves_the_output_uncovered() {
+        assert!(covered(&format!("[{}]", client("0x1", 1, (0, 30), (1920, 1170), "1"))).is_empty());
+    }
+
+    #[test]
+    fn fullscreen_covers_its_output_focused_or_not() {
+        assert_eq!(covered(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1200), "2"))), ["eDP-1"]);
+        assert_eq!(covered(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1200), "3"))), ["eDP-1"]);
+        assert_eq!(covered(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1200), "true"))), ["eDP-1"]);
+        let two = format!("[{},{}]", client("0x1", 1, (10, 40), (800, 600), "0"), client("0x2", 2, (1920, 0), (1920, 1080), "2"));
+        assert_eq!(covered(&two), ["DP-1"], "the game is on the monitor without focus");
+    }
+
+    #[test]
+    fn a_window_the_size_of_its_monitor_covers_it() {
+        assert_eq!(covered(&format!("[{}]", client("0x2", 2, (1920, 0), (1920, 1080), "0"))), ["DP-1"]);
+        assert_eq!(covered(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1200), "0"))), ["eDP-1"]);
+        assert!(covered(&format!("[{}]", client("0x1", 1, (0, 0), (1920, 1170), "0"))).is_empty());
+        let hidden = client("0x1", 1, (0, 0), (1920, 1200), "0").replace(r#""hidden":false"#, r#""hidden":true"#);
+        assert!(covered(&format!("[{hidden}]")).is_empty());
+        let tiled = client("0x1", 1, (0, 0), (1920, 1200), "0").replace(r#""floating":true"#, r#""floating":false"#);
+        assert!(covered(&format!("[{tiled}]")).is_empty(), "a lone tile fills the monitor once the bar is gone");
+    }
+
+    #[test]
+    fn a_workspace_not_shown_covers_nothing() {
+        assert!(covered(&format!("[{}]", client("0x1", 5, (0, 0), (1920, 1200), "2"))).is_empty());
+        let special = FS_MONITORS.replacen(r#""specialWorkspace":{"id":0,"name":""}"#, r#""specialWorkspace":{"id":-99,"name":"special:game"}"#, 1);
+        let s = snapshot(&special, "[]", &format!("[{}]", client("0x1", -99, (0, 0), (1920, 1200), "2")), "{}", &HashSet::new());
+        assert_eq!(s.snapshot.fullscreen_outputs, ["eDP-1"], "a special workspace shown on a monitor covers it");
     }
 
     #[test]
