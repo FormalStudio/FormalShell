@@ -29,6 +29,9 @@ vm-cargo *ARGS:
     ./dev/vm.sh run 'git add -A && cd crates && nix develop ..#formalshell -c cargo {{ARGS}}'
 vm-smoke *FLAGS:
     ./dev/vm.sh smoke {{FLAGS}}
+# docs/shots/, the README's and the website's images and clips.
+shots:
+    ./scripts/shots
 # nix/testvm.nix's services.greetd needs a rebuilt VM (`vm-down && vm-up`)
 # before this passes for the first time — separate from vm-smoke since
 # greetd's default_session is a standing system service, not a fresh nested

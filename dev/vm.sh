@@ -369,6 +369,12 @@ cmd_smoke() {
         test@localhost:formalshell/docs/media/ "$repo_root/docs/media/"
       echo "pulled cartridge gifs: $repo_root/docs/media/cartridge-*.gif"
       ;;
+    *" --shots "*)
+      mkdir -p "$repo_root/docs/shots"
+      rsync -az -e "ssh ${ssh_opts[*]}" \
+        test@localhost:formalshell/docs/shots/ "$repo_root/docs/shots/"
+      echo "pulled shots: $repo_root/docs/shots/"
+      ;;
   esac
 }
 

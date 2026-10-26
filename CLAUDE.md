@@ -47,6 +47,9 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
   the mac through the linux-builder and `nix copy`'d into the VM, so
   nothing compiles in the guest; `FS_BUILD_IN_VM=1` builds in the VM
   instead.
+- `scripts/shots` / `just shots`: regenerates `docs/shots/` (the README's and
+  the website's images and clips) through `--showcase --shots`, once per
+  theme, in the VM on a mac and nested on Linux.
 - `just vm-greeter` / `dev/smoke-greeter.sh`: not a flag on the rig. greetd's
   `default_session` is a standing system service, so this drives the
   already-running greeter session (restart greetd, screenshot pre-auth, a
@@ -744,6 +747,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `showcase.sh` `--showcase`: seeds state.json with a generated wallpaper
   before the shell starts, so the leg it rides photographs a matugen palette
   over a real desktop. The README's screenshots and GIFs are taken under it.
+- `shots.sh` `--shots`: rides `--showcase`; a camera, not a check. Takes
+  `docs/shots/` with demo data (a pink noise track, made-up notifications,
+  `USER=kyan` for the lock's name): launcher and calendar panel bursts at a
+  third speed encoded to H.264, the media card, six visualizer styles,
+  notifications, the centre, the lock, and the decrypt screensaver frame
+  stepped. Under `--pantheon` or `--retro` only that theme's frame.
 - `sfx.sh` `--sfx`: the table's blips on fs-audio's own PipeWire stream,
   recorded off a null sink of the leg's own made the default: real keys
   through the launcher (an open, two Downs, two letters, an Escape

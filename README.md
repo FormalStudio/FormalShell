@@ -20,7 +20,7 @@ process draws the bar, launcher, panels, notifications, lock screen, greeter
 and screensaver, and every colour comes from your wallpaper through matugen. Everything is reachable from the
 keyboard and drivable over IPC.
 
-![The launcher budding off the bar](docs/media/metamorphosis-launcher.gif)
+[![The launcher budding off the bar](docs/shots/launcher-poster.png)](docs/shots/launcher.mp4)
 
 **Early, and daily driven.** It has been the session shell on both
 development machines since August 2026. [`docs/SWITCHOVER.md`](docs/SWITCHOVER.md)
@@ -33,10 +33,10 @@ all of them.
 
 | `metamorphosis` (default) | `pantheon` | `retro` |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/theme-metamorphosis.png" width="280"> | <img src="docs/screenshots/theme-pantheon.png" width="280"> | <img src="docs/screenshots/theme-retro.png" width="280"> |
+| <img src="docs/shots/theme-metamorphosis.png" width="280"> | <img src="docs/shots/theme-pantheon.png" width="280"> | <img src="docs/shots/theme-retro.png" width="280"> |
 | shadcn chrome, translucent cards that bud off the bar's line | elementary OS 8: raised controls, sunken fields, cards on a soft cast | square, mono, Nerd Font glyphs, dithered imagery |
 
-![A panel growing out of the bar](docs/media/metamorphosis-panel.gif)
+[![A panel growing out of the bar](docs/shots/panel-poster.png)](docs/shots/panel.mp4)
 
 ### cartridge
 
@@ -83,14 +83,17 @@ through them. Each one has its own key (`wallpaper.color`, `wallpaper.animate`, 
 - Night light, caffeinate, reminders, polkit agent, LocalSend, AirPlay.
 
 A widget with nothing behind it says so (`NO ADAPTER`, `NO PLAYER`) instead of
-inventing data. That holds for every screenshot here.
+inventing data. That holds for every screenshot here. The images and clips in
+`docs/shots/` are regenerated with `scripts/shots` (`just shots`).
 
 | | |
 | :---: | :---: |
-| <img src="docs/screenshots/media.png" width="420"><br>Now playing | <img src="docs/screenshots/notifications.png" width="420"><br>Notifications |
-| <img src="docs/screenshots/center.png" width="420"><br>Notification centre | <img src="docs/screenshots/lock.png" width="420"><br>Lock screen |
+| <img src="docs/shots/media.png" width="420"><br>Now playing | <img src="docs/shots/notifications.png" width="420"><br>Notifications |
+| <img src="docs/shots/center.png" width="420"><br>Notification centre | <img src="docs/shots/lock.png" width="420"><br>Lock screen |
 
-<img src="docs/media/visualizer-styles.png" alt="Every visualizer style drawn from the same pink noise">
+<img src="docs/shots/visualizers.png" alt="Six of the visualizer styles drawn from the same pink noise">
+
+[![The ttfx screensaver](docs/shots/screensaver-poster.png)](docs/shots/screensaver.mp4)
 
 ## Install
 
