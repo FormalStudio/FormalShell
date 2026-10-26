@@ -917,9 +917,9 @@ change has to be pushed before either picks it up. g815 is NixOS:
 restarts onto the new store path in the home-manager activation. e1504g is
 openSUSE Tumbleweed under fspec, not NixOS, so `nixosModules.formalshell`
 and `formalshell install` don't apply there: bump FormalShell's `rev` in
-`examples/kyan/system.star` in `~/Developer/ecosystem/formalspec`, run
-`fspec update -s examples/kyan/spec.star formalshell`, push, and
-`fspec apply --host e1504g -s examples/kyan/spec.star` (g815 is its
+`system.star` on the `formalspec` branch of FormalSnake/dotfiles (checked
+out at `~/.config/nix-wt/formalspec`), run `fspec update formalshell` there,
+push, and `fspec apply --host e1504g` from the same worktree (g815 is its
 builder; never compile on e1504g). Its `/etc/pam.d/formalshell-lock` is
 declared in that same `system.star`.
 That makes them the place to confirm what the VM's llvmpipe and
