@@ -799,9 +799,15 @@ impl App {
     }
 
     /// Every key while locked is the lock's. True when it took the key.
-    pub(super) fn lock_key(&mut self, event: &KeyEvent) -> bool {
+    pub(super) fn lock_key(&mut self, event: &KeyEvent, repeat: bool) -> bool {
         if self.lock.session.is_none() {
             return false;
+        }
+        // Repeats are timed on this loop, so a frame that holds back a
+        // release types the key again behind the dots. Only editing keys
+        // repeat on the password.
+        if repeat && !matches!(event.keysym, Keysym::BackSpace | Keysym::Delete | Keysym::KP_Delete | Keysym::Left | Keysym::Right) {
+            return true;
         }
         if self.lock.leaving.is_some() {
             return true;
