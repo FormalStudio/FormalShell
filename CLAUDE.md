@@ -910,13 +910,18 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 ## macOS verification loop (mac e2e rig)
 
 Both Linux hosts (g815, e1504g) are reachable over ssh with passwordless
-sudo. Their nix config consumes this repo as
-`github:FormalSnake/FormalShell`, so a change has to be pushed before a
-rebuild picks it up: `nix flake update formalshell` in `~/.config/nix`, then
-`sudo nixos-rebuild switch --flake .#<host>` on g815, and for e1504g
-`nixos-rebuild switch --flake .#e1504g --target-host e1504g --sudo` from
-g815 (never build on e1504g). Their `formalshell.service` user unit
-restarts onto the new store path as part of the home-manager activation.
+sudo, and both consume this repo as `github:FormalSnake/FormalShell`, so a
+change has to be pushed before either picks it up. g815 is NixOS:
+`nix flake update formalshell` in `~/.config/nix`, then
+`sudo nixos-rebuild switch --flake .#g815` on g815; `formalshell.service`
+restarts onto the new store path in the home-manager activation. e1504g is
+openSUSE Tumbleweed under fspec, not NixOS, so `nixosModules.formalshell`
+and `formalshell install` don't apply there: bump FormalShell's `rev` in
+`examples/kyan/system.star` in `~/Developer/ecosystem/formalspec`, run
+`fspec update -s examples/kyan/spec.star formalshell`, push, and
+`fspec apply --host e1504g -s examples/kyan/spec.star` (g815 is its
+builder; never compile on e1504g). Its `/etc/pam.d/formalshell-lock` is
+declared in that same `system.star`.
 That makes them the place to confirm what the VM's llvmpipe and
 no-desktop-bus environment cannot show (real GPU rendering, a real session
 bus owner, real hardware devices, e1504g's power-saver budgets), but it does
