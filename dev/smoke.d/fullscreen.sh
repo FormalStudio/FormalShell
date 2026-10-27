@@ -58,7 +58,10 @@
 # floor for a normal one), and the log gains no `unlocked` across any of
 # them. Last a fullscreen video: the probe drops its lock (SIGUSR2), tiled
 # fullscreen under scrolling, and a toast coming and going logs no `motion`,
-# which is what showed a video's hidden cursor and its controls.
+# which is what showed a video's hidden cursor and its controls. Then the
+# same video in a tiled window with the pointer on it, a browser playing
+# YouTube unfullscreened: nothing covers the output there, and the toast
+# still has to send it no `motion`.
 leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
 leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
@@ -79,7 +82,7 @@ fullscreen_lock_toast_layers="$shot_dir/fullscreen-lock-toast-layers.json"
 fullscreen_lock_osd_layers="$shot_dir/fullscreen-lock-osd-layers.json"
 fullscreen_lock_state="$shot_dir/fullscreen-lock-state.txt"
 fullscreen_lock_toast_path="$shot_dir/fullscreen-lock-toast.png"
-fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating scrolling:video"
+fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating scrolling:video scrolling:windowed"
 fullscreen_track_path="$shot_dir/fullscreen-tone.flac"
 fullscreen_mpv_pid_path="$shot_dir/fullscreen-mpv.pid"
 fullscreen_work_path="$shot_dir/fullscreen-work.txt"
@@ -102,7 +105,7 @@ leg_fullscreen_fixture() {
 }
 
 leg_fullscreen_timing() {
-  leg_timing 115 160
+  leg_timing 155 200
 }
 
 leg_fullscreen_drive() {
@@ -111,14 +114,23 @@ leg_fullscreen_drive() {
 #!/usr/bin/env bash
 "$mpv_bin" --no-video --really-quiet --loop-file=inf "$fullscreen_track_path" &
 echo \$! > "$fullscreen_mpv_pid_path"
-st="$strace_bin"; [ "\$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null)" = 0 ] || st="sudo -n $strace_bin"
+# A slot user on the g815 rig has neither ptrace_scope 0 nor sudo, so it
+# records no count and the assert reports the tick check as skipped.
+st="$strace_bin"
+if [ "\$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null)" != 0 ]; then
+  sudo -n true 2>/dev/null && st="sudo -n $strace_bin" || st=
+fi
 # One line: the phase, whether a cava child runs, and how many monitor
 # collectors the shell exec'd over \$2 seconds.
 work() {
-  local cava=0 ticks
+  local cava=0 ticks=-
   pgrep -f -- "cava -p" > /dev/null && cava=1
-  timeout -s INT "\$2" \$st -f -qq -s 64 -e trace=execve -p "\$pid" -o "$shot_dir/fullscreen-\$1-strace.log" > /dev/null 2>&1
-  ticks=\$(grep -c '@stat' "$shot_dir/fullscreen-\$1-strace.log" 2>/dev/null)
+  if [ -n "\$st" ]; then
+    timeout -s INT "\$2" \$st -f -qq -s 64 -e trace=execve -p "\$pid" -o "$shot_dir/fullscreen-\$1-strace.log" > /dev/null 2>&1
+    ticks=\$(grep -c '@stat' "$shot_dir/fullscreen-\$1-strace.log" 2>/dev/null)
+  else
+    sleep "\$2"
+  fi
   echo "\$1 cava=\$cava ticks=\${ticks:-0}" >> "$fullscreen_work_path"
 }
 # cava within 10s of the player starting, gone within 5s of a hide.
@@ -190,15 +202,22 @@ $ipc call debug joinClear > /dev/null 2>&1
 $ipc call notifications dismissOne > /dev/null 2>&1
 sleep 1
 fs_phase() {
-  local name="fs-\${1%%:*}" float=disable sig=USR1
+  local name="fs-\${1%%:*}" float=disable sig=USR1 fs=set
   [ "\${1#*:}" = floating ] && { name="\$name-floating"; float=enable; }
   [ "\${1#*:}" = video ] && { name="\$name-video"; sig=USR2; }
+  [ "\${1#*:}" = windowed ] && { name="\$name-windowed"; sig=USR2; fs=unset; }
   "$hyprctl_bin" eval "hl.config({ general = { layout = '\${1%%:*}' } })" > /dev/null 2>&1
   sleep 1
   "$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = '\$float' })" > /dev/null 2>&1
   "$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
-  "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
+  "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = '\$fs' })" > /dev/null 2>&1
   sleep 2
+  if [ "\$fs" = unset ]; then
+    read -r cx cy < <("$hyprctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-lockpointer") | "\\(.at[0] + .size[0] / 2 | floor) \\(.at[1] + .size[1] / 2 | floor)"')
+    "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+    "$wlrctl_bin" pointer move "\$cx" "\$cy" > /dev/null 2>&1
+    sleep 1
+  fi
   echo "0 \$name-arm" >> "$fullscreen_lock_log"
   pkill -\$sig -f 'lockpointer.py formalshell-lockpointer'
   sleep 2
@@ -209,7 +228,7 @@ fs_phase() {
   "$hyprctl_bin" -j layers > "$shot_dir/fullscreen-\$name-toast-layers.json" 2>&1
   "$grim_bin" "$shot_dir/fullscreen-\$name.png" > /dev/null 2>&1
   sleep 8
-  $ipc call osd volume > /dev/null 2>&1
+  if [ "\$fs" = set ]; then $ipc call osd volume > /dev/null 2>&1; else sleep 3; fi
   sleep 1
   "$hyprctl_bin" -j layers > "$shot_dir/fullscreen-\$name-after-layers.json" 2>&1
   echo "0 \$name-end" >> "$fullscreen_lock_log"
@@ -306,9 +325,16 @@ _fullscreen_work_assert() {
   local phase cava ticks
   for phase in before on after; do
     cava=$(sed -n "s/^$phase cava=\([0-9]*\) .*/\1/p" "$fullscreen_work_path")
-    ticks=$(sed -n "s/^$phase .*ticks=\([0-9]*\)$/\1/p" "$fullscreen_work_path")
+    ticks=$(sed -n "s/^$phase .*ticks=\([0-9-]*\)$/\1/p" "$fullscreen_work_path")
     [ -n "$cava" ] && [ -n "$ticks" ] || fail "no $phase work sample"
-    if [ "$phase" = on ]; then
+    if [ "$ticks" = - ]; then
+      echo "skipped: monitor ticks $phase fullscreen (strace cannot attach here)"
+      if [ "$phase" = on ]; then
+        [ "$cava" -eq 0 ] || fail "cava ran under the covered bar"
+      else
+        [ "$cava" -eq 1 ] || fail "no cava child $phase fullscreen with a player playing"
+      fi
+    elif [ "$phase" = on ]; then
       [ "$cava" -eq 0 ] || fail "cava ran under the covered bar"
       [ "$ticks" -eq 0 ] || fail "the monitor polled $ticks times under the covered bar"
     else
@@ -378,18 +404,22 @@ _fullscreen_fs_assert() {
   mode=$("$jq_bin" -r '[.[] | select(.class == "formalshell-lockpointer") | .fullscreen] | first // 0' "$clients")
   floating=$("$jq_bin" -r '[.[] | select(.class == "formalshell-lockpointer") | .floating] | first' "$clients")
   echo "$name: lock window fullscreen mode=$mode floating=$floating"
-  [ "$mode" = 2 ] || fail "$name: the lock window was not in fullscreen mode 2"
+  if [ "$kind" = windowed ]; then
+    [ "$mode" = 0 ] || fail "$name: the video window was fullscreen (mode $mode)"
+  else
+    [ "$mode" = 2 ] || fail "$name: the lock window was not in fullscreen mode 2"
+  fi
   [ "$floating" = "$([ "$kind" = floating ] && echo true || echo false)" ] || fail "$name: the lock window was not $kind"
 
   local arm during
   arm=$(sed -n "/ $name-arm\$/,/ $name\$/p" "$fullscreen_lock_log")
   during=$(sed -n "/ $name\$/,/ $name-end\$/p" "$fullscreen_lock_log")
-  if [ "$kind" = video ]; then
+  if [ "$kind" = video ] || [ "$kind" = windowed ]; then
     echo "$arm" | grep -q ' release$' || fail "$name: the probe never dropped its lock"
     local motions
-    motions=$(echo "$during" | grep -c ' motion$')
+    motions=$(echo "$during" | grep -c ' motion$' || true)
     echo "$name: pointer motion events across the toast: $motions"
-    [ "$motions" -eq 0 ] || fail "$name: a toast over a fullscreen video sent it $motions pointer motion events"
+    [ "$motions" -eq 0 ] || fail "$name: a toast over a $kind video sent it $motions pointer motion events"
   else
     echo "$arm" | grep -q ' rearm$' || fail "$name: the probe never re-armed its lock"
     [ "$(echo "$arm" | grep ' locked$\| unlocked$' | tail -1 | awk '{print $2}')" = locked ] \
@@ -398,7 +428,7 @@ _fullscreen_fs_assert() {
   fi
 
   local up top over osd park=2
-  [ "$kind" = floating ] && park=3
+  [ "$kind" = floating ] || [ "$kind" = windowed ] && park=3
   up=$(_fullscreen_level "$toast_layers" "formalshell:notifications" 3)
   top=$(_fullscreen_level "$after_layers" "formalshell:notifications" 2)
   over=$(_fullscreen_level "$after_layers" "formalshell:notifications" 3)

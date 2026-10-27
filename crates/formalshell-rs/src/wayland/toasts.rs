@@ -96,16 +96,14 @@ impl App {
         }
     }
 
-    /// Mapped while anything is popped up or still fading out, and the
-    /// centre is shut: the centre suppresses the stack for as long as it is
-    /// open. Over a fullscreen or borderless window it stays mapped, passive
-    /// and empty when nothing is up, for as long as the cover lasts: every
-    /// layer unmap ends in a synthetic pointer motion to the window under
-    /// the cursor (`CLayerSurface::onUnmap`), which wakes a fullscreen
-    /// video's hidden cursor and controls, and Hyprland 0.56's scrolling
-    /// layout recalculates the workspace on every layer map, unmap and
-    /// layer-state commit and, with no tiled fullscreen window on it
-    /// (`SScrollingData::recalculate` counts no other), deactivates every
+    /// Mapped for as long as the centre is shut, passive and empty when
+    /// nothing is up: the centre suppresses the stack while it is open.
+    /// Every layer unmap ends in a synthetic pointer motion to the window
+    /// under the cursor (`CLayerSurface::onUnmap`), which wakes a video's
+    /// hidden cursor and controls, fullscreen or not, and Hyprland 0.56's
+    /// scrolling layout recalculates the workspace on every layer map,
+    /// unmap and layer-state commit and, with no tiled fullscreen window on
+    /// it (`SScrollingData::recalculate` counts no other), deactivates every
     /// pointer constraint (`CScrollingFullscreenHandler::updateFullscreenFade`).
     /// Buffer and input region commits reach none of that. Over a tiled
     /// fullscreen window an empty column parks on the top layer, which
@@ -119,7 +117,7 @@ impl App {
         let n = &self.store.notifications;
         let fading = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
         let up = !n.model.popups.is_empty() || fading;
-        let want = (up || covered) && !n.center_open;
+        let want = !n.center_open;
         let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
         let insets = self.toast_insets();
         let right = fs_info::notifications::position_spec(self.store.config.str("notifications.position")).right;
@@ -146,7 +144,7 @@ impl App {
         let Some(t) = &mut self.toasts else { return };
         if now >= t.rel_at + surfaces::toasts::REL_EVERY {
             t.rel_at = now;
-            self.toasts_dirty = true;
+            self.toasts_dirty |= up;
         }
         // One draw past the last running frame, so what rests on screen is
         // every clock's end value rather than its last sample.

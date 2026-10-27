@@ -178,7 +178,7 @@ pub struct Toasts {
     pub surface: Surface,
     pub scene: Scene,
     slots: HashMap<String, Slot>,
-    region: Option<IRect>,
+    region: Option<(IRect, bool)>,
     stack: IRect,
     /// The pointer over the stack: it fans out and every toast in it holds.
     pub hovered: bool,
@@ -608,13 +608,13 @@ impl Toasts {
     }
 
     /// The stack's rect as the input region, or nothing while `passive`.
-    /// Whether it changed, which the next commit has to carry.
+    /// Whether it or `passive` changed, which the next commit has to carry.
     pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState, passive: bool) -> bool {
         let want = if passive { IRect::default() } else { self.stack };
-        if self.region == Some(want) {
+        if self.region == Some((want, passive)) {
             return false;
         }
-        self.region = Some(want);
+        self.region = Some((want, passive));
         if let Ok(region) = smithay_client_toolkit::compositor::Region::new(compositor) {
             if !want.is_empty() {
                 region.add(want.x, want.y, want.w, want.h);
