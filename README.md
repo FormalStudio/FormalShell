@@ -280,8 +280,10 @@ logic underneath (theme tables, launcher ranking, audio, network and so on).
 `just smoke` boots the shell in a throwaway nested Hyprland session on a
 private D-Bus, drives the surfaces its flags name, screenshots them and tears
 down, so the lock screen and notification server never touch your real
-session. Each flag is a file under [`dev/smoke.d/`](dev/smoke.d/). On a Mac,
-`just vm-smoke` runs the same thing in a headless NixOS VM.
+session. Each flag is a file under [`dev/smoke.d/`](dev/smoke.d/). It runs on
+a Linux build host over ssh (`dev/remote.sh`) and falls back to a headless
+NixOS VM on a Mac (`just vm-smoke`); `just local-smoke` runs it in your own
+session.
 
 ## Credits
 

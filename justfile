@@ -1,7 +1,18 @@
 default: build
 build:
     git add -A && nix build .#formalshell
+# The rig: g815's slot users (dev/remote.sh), the mac VM when g815 is down
+# or a leg is vm_only. FS_RIG=vm forces the VM.
 smoke *FLAGS:
+    ./dev/remote.sh smoke {{FLAGS}}
+cargo *ARGS:
+    ./dev/remote.sh cargo {{ARGS}}
+check NAME:
+    ./dev/remote.sh check {{NAME}}
+rig-lint:
+    ./dev/remote.sh lint
+# dev/smoke.sh in this machine's own session, on a Linux host.
+local-smoke *FLAGS:
     ./dev/smoke.sh {{FLAGS}}
 lint:
     git add -A && nix flake check -L

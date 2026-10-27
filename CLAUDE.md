@@ -34,14 +34,23 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
   private bus, `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
   `fs-upower` in a NixOS VM test (`nix/fs-*.nix`). Run one with
   `nix build .#checks.<system>.<name>`.
-- `just vm-cargo <args>`: cargo inside the VM against the synced tree, in
-  the package's own build environment (the mac has no pipewire or wayland
-  to link), for a quick `test -p <crate>` or `clippy` before the flake.
-- `just smoke` / `dev/smoke.sh <flags>`: the runtime loop. Builds the shell,
-  brings up an isolated Hyprland session under `dbus-run-session`, drives
-  the legs the flags asked for, screenshots, tears it down. **Read the PNGs
-  rather than assuming they look right.** `FS_RESULT=<store path>` runs a
-  shell built elsewhere instead of building one.
+- The rig is g815 first: `dev/remote.sh {smoke|cargo|check|lint|build|run}`
+  (`just smoke`, `just cargo`, `just check <name>`, `just rig-lint`) rsyncs
+  the working tree to one of two slot users (`fstest0`, `fstest1`, a mac-side
+  flock each) and runs there natively on x86_64, nested in the slot's
+  headless labwc, with screenshots and artifacts pulled into `./artifacts/`.
+  It falls back to the mac VM on its own when g815 does not answer ssh or a
+  smoke run carries a `leg_<n>_vm_only` leg; `FS_RIG=vm` forces the VM. Its
+  header carries the slot model.
+- `just cargo <args>` / `just vm-cargo <args>`: cargo in the package's own
+  build environment on the rig (the mac has no pipewire or wayland to
+  link), for a quick `test -p <crate>` or `clippy` before the flake.
+- `just local-smoke` / `dev/smoke.sh <flags>`: the runtime loop itself.
+  Builds the shell, brings up an isolated Hyprland session under
+  `dbus-run-session`, drives the legs the flags asked for, screenshots,
+  tears it down. **Read the PNGs rather than assuming they look right.**
+  `FS_RESULT=<store path>` runs a shell built elsewhere instead of building
+  one.
 - `just vm-smoke <flags>`: the same script inside the mac VM, screenshots
   pulled back to the mac (the mac rig section below). The shell is built on
   the mac through the linux-builder and `nix copy`'d into the VM, so
@@ -286,6 +295,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   as the subject: `lock status` reporting `depth` true and the band drawn
   over the digits, then settings.json retargeted to `lock.depth: false`,
   `depth` false and the digits back over the band.
+- `desktop_clock.sh` `--desktop-clock`: `desktopClock.enabled` over the
+  `--depth` leg's band fixture, read off `debug dump`'s `desktopClock`
+  block and a frame per phase: the band over the digits, a real pointer
+  (wlrctl) near the bottom-left corner leaning `offset` left and down by
+  more than 0 and at most `parallax`, then no commit in 3s at rest; no
+  commit in 5s under a fullscreen foot window; the digits over the band
+  once `desktopClock.depth` is retargeted false; the gooey and serif
+  faces; and the first redraw past the next minute (`minuteUs` plus its
+  commit's `render_us`) under 50ms, read under `FS_CPU_QUOTA` too.
 - `device_routes.sh` `--device-routes`: the launcher's Wi-Fi, Bluetooth, Audio
   and Radio Stations routes over real keys and IPC, read off `menu status`
   (its `ids` and `checked` lists) and each service's own status. The Wi-Fi
