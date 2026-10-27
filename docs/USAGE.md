@@ -1057,17 +1057,14 @@ preset turns it on.
 `desktopClock.enabled: true` puts a big clock on the desktop of every
 output, behind the wallpaper's subject when the picture has a depth map
 (the same `.depth/` maps the lock uses; `desktopClock.depth: false` draws
-it over everything). Everything nearer than the map's far plane (a sky, a
-backdrop) counts as subject, mountains included; with no such plane, or
-with `desktopClock.depthThreshold` set, it cuts as the lock does, softened
-over `desktopClock.depthFeather`. With no `y` it sits where the subject's
-top edge crosses the lower part of its digits. The digits are frosted
-glass: the wallpaper under them blurred and drawn toward light or dark,
-a little short of opaque. Moving the pointer over bare desktop leans the wallpaper and its
-subject toward the pointer, up to `desktopClock.parallax` px at the
-screen's edge, and the clock under them less (0 holds both still). It
-draws nothing new under a fullscreen window, while locked and under the
-screensaver.
+it over everything). The cut sits halfway between the map's far plane (a
+sky, a backdrop) and the first thing in front of it, so a mountain range
+counts as subject; a picture with no far plane, or one that fades into it
+like clouds or fog, gets no depth. `desktopClock.depthThreshold` and
+`desktopClock.depthFeather` cut it as the lock does instead. With no `y`
+it sits where the subject's top edge crosses the lower part of its
+digits. The digits are frosted glass: the wallpaper under them blurred and
+drawn toward light or dark, a little short of opaque.
 
 | Key | Default | |
 | --- | --- | --- |
@@ -1077,7 +1074,6 @@ screensaver.
 | `x`, `y` | `0.5`, off the subject | the clock's centre, as shares of the output; with no `y` and no subject, `0.3` |
 | `hour12` | `false` | 12-hour time |
 | `color` | `auto` | the frost's tint: `auto` (light or dark off the picture), `primary` or a `#rrggbb` |
-| `parallax` | `12` | px |
 | `depth` | `true` | the subject in front of the clock |
 
 ```jsonc
@@ -1086,8 +1082,7 @@ screensaver.
 ```
 
 `debug dump`'s `desktopClock` block lists each output's clock: its face,
-box, the wallpaper's lean (`offset`) and source (`pan`), ink, whether a
-depth map is in use and its commits.
+box, ink, whether a depth map is in use and its commits.
 
 ### Motion
 

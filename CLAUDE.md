@@ -297,10 +297,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `depth` false and the digits back over the band.
 - `desktop_clock.sh` `--desktop-clock`: `desktopClock.enabled` over the
   `--depth` leg's band fixture, read off `debug dump`'s `desktopClock`
-  block and a frame per phase: the band over the digits, a held
-  `dev/vpointer.py` pointer near the bottom-left corner leaning `offset`
-  left and down by more than 0 and at most `parallax`, the wallpaper's
-  viewport `pan` following it, then no commit in
+  block and a frame per phase: the band over the digits, then no commit in
   3s at rest; no
   commit in 5s under a fullscreen foot window; the digits over the band
   once `desktopClock.depth` is retargeted false; the gooey and serif

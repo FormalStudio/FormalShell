@@ -2,14 +2,11 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
 # --desktop-clock: desktopClock.enabled over a dark field with an orange band
 # down the screen through the clock's box (x 940 to 979 at 1920x1080, the
-# box centred on x 960), and a depth map white over that band alone, the
-# --depth leg's fixture moved under the desktop clock. Every frame comes
+# box centred on x 960), and a depth map white over that band and a ground
+# strip from y 900 down (a far plane with something in front of it, which
+# the cut needs), so the clock sits on the strip with the band through it. Every frame comes
 # with the `debug dump`'s `desktopClock` block beside it:
-# - the band over the digits with the defaults;
-# - a virtual pointer (dev/vpointer.py) parked near the bottom-left corner:
-#   `offset` leaning left and down, by more than 0 and no more than the
-#   default `desktopClock.parallax` of 12, the wallpaper's `pan` source
-#   moved by exactly that inside its 12px margin, then no commit in 3s at
+# - the band over the digits with the defaults, then no commit in 3s at
 #   rest;
 # - a foot window made fullscreen and no commit in 5s under it;
 # - the digits over the band once settings.json is retargeted to
@@ -19,7 +16,7 @@
 #   e1504g's power saver).
 leg_desktop_clock_flag="--desktop-clock"
 leg_desktop_clock_order=112
-leg_desktop_clock_needs="convert jq python3 foot"
+leg_desktop_clock_needs="convert jq foot"
 
 leg_desktop_clock_validate() {
   if leg_on showcase || leg_on wallpaper || leg_on depth || leg_on config_reload; then
@@ -31,13 +28,12 @@ leg_desktop_clock_validate() {
 desktop_clock_dir="$shot_dir/desktop-clock-wallpapers"
 desktop_clock_picture="$desktop_clock_dir/band.png"
 desktop_clock_results="$shot_dir/desktop-clock-results.txt"
-desktop_clock_vpointer="$PWD/dev/vpointer.py"
 
 leg_desktop_clock_fixture() {
   settings_fragment ', "desktopClock": {"enabled": true}'
   mkdir -p "$desktop_clock_dir/.depth"
   $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 940,0 979,1079' "$desktop_clock_picture"
-  $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 940,0 979,1079' "$desktop_clock_dir/.depth/band.png.png"
+  $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 940,0 979,1079' -draw 'rectangle 0,900 1919,1079' "$desktop_clock_dir/.depth/band.png.png"
   touch -r "$desktop_clock_picture" "$desktop_clock_dir/.depth/band.png.png"
   mkdir -p "$iso_home/.local/state/formalshell"
   printf '{"wallpaper": "%s"}\n' "$desktop_clock_picture" > "$iso_home/.local/state/formalshell/state.json"
@@ -75,17 +71,7 @@ retarget() {
 sleep 5
 snap on
 cp "\$(readlink -f "$settings_path")" "$shot_dir/desktop-clock-settings-gen1.json"
-
-# One virtual pointer held through the rest window. wlrctl's goes away as
-# it exits, before the shell has bound the wl_pointer its seat just
-# gained, so no enter ever reaches the layer; and the leave a vanishing
-# pointer sends would land in the rest window.
-"$python3_bin" "$desktop_clock_vpointer" wait 500 move -4000 -4000 wait 100 move 20 1060 wait 20000 > /dev/null 2>&1 &
-vp=\$!
-sleep 3
-snap pointer
 quiet rest 3
-kill \$vp 2>/dev/null
 
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-desktop-clock --title='formalshell desktop clock' sh -c 'sleep 300']==])" > /dev/null 2>&1
 sleep 3
@@ -119,20 +105,14 @@ _desktop_clock_quiet() { awk -v p="$1" '$1 == p { sub("commits=", "", $2); print
 leg_desktop_clock_assert() {
   local phase
   grep -qx done "$desktop_clock_results" 2>/dev/null || fail "--desktop-clock: the drive never finished: $(cat "$desktop_clock_results" 2>/dev/null)"
-  for phase in on pointer off gooey serif minute; do
+  for phase in on off gooey serif minute; do
     [ -s "$shot_dir/desktop-clock-$phase.png" ] && [ -s "$shot_dir/desktop-clock-$phase.json" ] || fail "--desktop-clock produced no $phase frame or dump"
     echo "SMOKE_DESKTOP_CLOCK_$(echo "$phase" | tr '[:lower:]' '[:upper:]') $shot_dir/desktop-clock-$phase.png"
     echo "$phase $(cat "$shot_dir/desktop-clock-$phase.json")"
   done
 
-  _desktop_clock on 'length > 0 and all(.enabled and .depth and .input)' | grep -qx true \
-    || fail "--desktop-clock: no clock with depth and input on: $(cat "$shot_dir/desktop-clock-on.json")"
-
-  # The pointer at (20, 1060) of 1920x1080 leans x by -0.98 and y by +0.96.
-  _desktop_clock pointer '.[0].offset | .[0] < 0 and .[0] >= -12 and .[1] > 0 and .[1] <= 12' | grep -qx true \
-    || fail "--desktop-clock: offset $(_desktop_clock pointer '.[0].offset') does not lean toward the bottom-left corner within 12px"
-  _desktop_clock pointer '.[0] | (.pan[0] - (12 - .offset[0]) | fabs) < 0.01 and (.pan[1] - (12 - .offset[1]) | fabs) < 0.01 and .pan[2] == 1896 and .pan[3] == 1056' | grep -qx true \
-    || fail "--desktop-clock: wallpaper source $(_desktop_clock pointer '.[0].pan') does not follow offset $(_desktop_clock pointer '.[0].offset')"
+  _desktop_clock on 'length > 0 and all(.enabled and .depth)' | grep -qx true \
+    || fail "--desktop-clock: no clock with depth on: $(cat "$shot_dir/desktop-clock-on.json")"
   [ "$(_desktop_clock_quiet rest)" = 0 ] || fail "--desktop-clock: $(_desktop_clock_quiet rest) commits in 3s at rest"
 
   local fs_windows

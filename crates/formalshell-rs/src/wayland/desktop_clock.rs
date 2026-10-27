@@ -3,9 +3,7 @@
 //! box. The time is drawn there and the wallpaper's subject laid back over
 //! it, cut out of the picture by its depth map, so the clock sits behind
 //! whatever the map puts in front; with no `desktopClock.y` the clock is
-//! placed so the subject's top edge crosses its lower part. The layer takes
-//! the pointer over bare desktop: the wallpaper and the subject lean toward
-//! it on the output's viewport, and the clock under them less.
+//! placed so the subject's top edge crosses its lower part.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -13,13 +11,9 @@ use std::time::Instant;
 use calloop::channel::{self, Sender};
 use fs_chrome::clock_face::{self, Face, Width};
 use fs_theme::color::Rgba;
-use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
-use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
-use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
 use super::App;
-use crate::motion::{Animated, Kind};
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::wallpaper::{DepthCut, Picture};
 use crate::store::{Store, Topic};
@@ -91,7 +85,6 @@ struct Settings {
     y: Option<f64>,
     hour12: bool,
     color: String,
-    parallax: f64,
     cut: Option<DepthCut>,
 }
 
@@ -110,7 +103,6 @@ impl Settings {
             y: config.f64("desktopClock.y").filter(|n| n.is_finite()).map(|n| n.clamp(0.0, 1.0)),
             hour12: config.bool("desktopClock.hour12").unwrap_or(false),
             color: config.str("desktopClock.color").unwrap_or("auto").to_owned(),
-            parallax: num("desktopClock.parallax", 12.0, 0.0, 200.0),
             cut: DepthCut::read(config, "desktopClock", None),
         })
     }
@@ -137,17 +129,9 @@ pub(super) struct Clock {
     /// The output's sculpture was up when this layer was made. One made
     /// later stacks over it, so the layer is made again then.
     pub over_shards: bool,
-    /// The layer takes the pointer (`desktopClock.parallax` above 0).
-    input: bool,
     face: Face,
     /// The box the clock draws in, at rest.
     rect: IRect,
-    /// How far the wallpaper leans, x and y, on the spatial family.
-    glide: [Animated; 2],
-    /// The lean the scene was last drawn at.
-    offset: (f64, f64),
-    /// The wallpaper's source at that lean, in logical pixels.
-    pan: Option<[f64; 4]>,
     ink: Rgba,
     /// What the ink was read off: the box in the picture's pixels, and the
     /// picture.
@@ -163,18 +147,14 @@ pub(super) struct Clock {
 }
 
 impl Clock {
-    fn new(surface: Surface, over_shards: bool, input: bool) -> Self {
+    fn new(surface: Surface, over_shards: bool) -> Self {
         Self {
             surface,
             scene: Scene::clear(1, 1),
             nodes: Vec::new(),
             over_shards,
-            input,
             face: Face::Pixel,
             rect: IRect::default(),
-            glide: [Animated::new(0.0, Kind::Spatial.curve()), Animated::new(0.0, Kind::Spatial.curve())],
-            offset: (0.0, 0.0),
-            pan: None,
             ink: Rgba::WHITE,
             ink_from: None,
             digits: None,
@@ -191,15 +171,6 @@ impl Clock {
             self.scene.resize(width, height);
             self.surface.configure(width, height);
         }
-    }
-
-    fn at(&self, now: Instant) -> (f64, f64) {
-        (self.glide[0].value(now), self.glide[1].value(now))
-    }
-
-    /// The glide has somewhere left to go from what was drawn.
-    fn moving(&self, now: Instant) -> bool {
-        self.glide.iter().any(|g| g.running(now)) || self.at(now) != self.offset
     }
 
     /// The subject's coverage when depth is on and its map was found.
@@ -258,15 +229,9 @@ impl App {
             let name = self.output_name(&output);
             let shards = self.heads[i].backdrop.as_ref().is_some_and(|b| b.shards.is_some());
             let want = settings.is_some() && self.heads[i].backdrop.is_some() && !self.hidden_on(&name);
-            let input = settings.as_ref().is_some_and(|s| s.parallax > 0.0);
-            let stale = self.heads[i].clock.as_ref().is_some_and(|c| (shards && !c.over_shards) || c.input != input);
+            let stale = self.heads[i].clock.as_ref().is_some_and(|c| shards && !c.over_shards);
             if (!want || stale) && self.heads[i].clock.take().is_some() {
                 self.log(&format!("desktop clock off {name}"));
-            }
-            if self.heads[i].clock.is_none()
-                && let Some(b) = self.heads[i].backdrop.as_mut()
-            {
-                b.set_pan(None, &self.qh);
             }
             let Some(settings) = &settings else { continue };
             if !want {
@@ -274,22 +239,13 @@ impl App {
             }
             if self.heads[i].clock.is_none() {
                 let layer = self.overlay_on("formalshell:desktop-clock", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
-                // The whole output: the pointer reaches it wherever no
-                // window or other layer is over the desktop.
-                if input {
-                    layer.set_input_region(None);
-                }
                 let surface = Surface::on("desktop-clock", layer, &self.shm, self.started, &output);
-                self.heads[i].clock = Some(Clock::new(surface, shards, input));
+                self.heads[i].clock = Some(Clock::new(surface, shards));
                 self.log(&format!("desktop clock on {name}"));
             }
             let picture = self.desktop_clock_picture(i);
             let Some(clock) = self.heads[i].clock.as_mut() else { continue };
-            let pan = draw(clock, &mut self.bar.kit, &self.store, settings, picture.as_ref(), Instant::now());
-            if let Some(b) = self.heads[i].backdrop.as_mut() {
-                b.set_pan(pan, &self.qh);
-            }
-            let Some(clock) = self.heads[i].clock.as_mut() else { continue };
+            draw(clock, &mut self.bar.kit, &self.store, settings, picture.as_ref());
             if let (Some(cut), Some(picture)) = (settings.cut, picture) {
                 let key = Key { picture, cut, generation: self.desktop_clock.generation };
                 let held = clock.subject.as_ref().is_some_and(|(k, _)| k.same(&key)) || clock.asked.as_ref().is_some_and(|k| k.same(&key));
@@ -320,33 +276,6 @@ impl App {
         self.store.wallpaper.sized(w as u32, h as u32).filter(|p| p.path == wanted).cloned()
     }
 
-    /// The pointer over head `i`'s bare desktop: the wallpaper leans toward
-    /// it, `desktopClock.parallax` px at the output's edge. Leave holds it
-    /// there.
-    pub(super) fn desktop_clock_pointer(&mut self, i: usize, e: &PointerEvent) {
-        match e.kind {
-            PointerEventKind::Enter { serial } => {
-                self.cursor = Some((serial, Shape::Default));
-                self.pointer_on = None;
-                self.hover(None, e.position);
-                self.set_cursor(true);
-            }
-            PointerEventKind::Motion { .. } => {}
-            _ => return,
-        }
-        let Some(s) = Settings::read(&self.store.config) else { return };
-        let ms = Kind::Spatial.ms(&self.store.theme.theme);
-        let Some(c) = self.heads.get_mut(i).and_then(|h| h.clock.as_mut()) else { return };
-        let (hw, hh) = (f64::from(c.scene.size.w) / 2.0, f64::from(c.scene.size.h) / 2.0);
-        if hw < 1.0 || hh < 1.0 {
-            return;
-        }
-        let lean = |at: f64, half: f64| ((at - half) / half).clamp(-1.0, 1.0) * s.parallax;
-        let now = Instant::now();
-        c.glide[0].set(now, lean(e.position.0, hw), ms);
-        c.glide[1].set(now, lean(e.position.1, hh), ms);
-    }
-
     /// Head `i`'s clock holds its frame: its output fullscreen, the session
     /// locked or under the screensaver.
     pub(super) fn desktop_clock_held(&self, i: usize) -> bool {
@@ -354,29 +283,14 @@ impl App {
         self.lock.locked || self.saver.active || self.store.compositor.snapshot.fullscreen_outputs.contains(&name)
     }
 
-    /// A gliding clock is drawn again once per frame callback, and asks
-    /// for none once it lands.
     pub(super) fn present_desktop_clocks(&mut self) {
         let qh = self.qh.clone();
-        let now = Instant::now();
-        let mut settings = None;
         for i in 0..self.heads.len() {
-            if self.heads[i].clock.is_none() || self.desktop_clock_held(i) {
+            if self.desktop_clock_held(i) {
                 continue;
             }
-            let moving = self.heads[i].clock.as_ref().is_some_and(|c| c.moving(now));
-            if moving && self.heads[i].clock.as_ref().is_some_and(|c| !c.surface.frame_pending) {
-                let Some(s) = settings.get_or_insert_with(|| Settings::read(&self.store.config)).clone() else { return };
-                let picture = self.desktop_clock_picture(i);
-                if let Some(c) = self.heads[i].clock.as_mut() {
-                    let pan = draw(c, &mut self.bar.kit, &self.store, &s, picture.as_ref(), now);
-                    if let Some(b) = self.heads[i].backdrop.as_mut() {
-                        b.set_pan(pan, &qh);
-                    }
-                }
-            }
             if let Some(c) = self.heads[i].clock.as_mut() {
-                c.surface.present(&mut c.scene, moving, &qh);
+                c.surface.present(&mut c.scene, false, &qh);
             }
         }
     }
@@ -397,10 +311,6 @@ impl App {
                     "enabled": c.is_some(),
                     "face": c.map_or("", |c| c.face.as_str()),
                     "rect": [r.x, r.y, r.w, r.h],
-                    "offset": c.map_or([0.0, 0.0], |c| [c.offset.0, c.offset.1]),
-                    "target": c.map_or([0.0, 0.0], |c| [c.glide[0].target(), c.glide[1].target()]),
-                    "pan": c.and_then(|c| c.pan),
-                    "input": c.is_some_and(|c| c.input),
                     "ink": format!("#{:02x}{:02x}{:02x}", hex(ink.r), hex(ink.g), hex(ink.b)),
                     "depth": c.is_some_and(|c| c.mask(settings.as_ref().and_then(|s| s.cut)).is_some()),
                     "commits": c.map_or(0, |c| c.surface.commits()),
@@ -418,27 +328,15 @@ enum Digits {
     Serif { hours: ShapedText, colon: ShapedText, minutes: ShapedText, gap: f64 },
 }
 
-/// Draws `clock` and gives back the source its output's wallpaper shows,
-/// the same one this layer's viewport is set to so the subject stays on
-/// the picture's own pixels.
-fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: Option<&Arc<Picture>>, now: Instant) -> Option<[f64; 4]> {
+fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: Option<&Arc<Picture>>) {
     let size = clock.scene.size;
     if size.w <= 1 || size.h <= 1 {
-        return None;
+        return;
     }
     let started = Instant::now();
     let scale = clock.surface.scale();
     let (sw, sh) = (f64::from(size.w), f64::from(size.h));
     let digit_h = (s.size * sh).max(8.0);
-    let lean = clock.at(now);
-    clock.offset = lean;
-    // The wallpaper's lean is a source moved inside a margin as wide as the
-    // reach, and the clock is drawn back against it to lean less.
-    let reach = s.parallax.min(sw / 4.0).min(sh / 4.0);
-    let pan = (reach > 0.0).then_some([reach - lean.0, reach - lean.1, sw - reach * 2.0, sh - reach * 2.0]);
-    clock.surface.set_pan(pan);
-    clock.pan = pan;
-    let (ox, oy) = ((lean.0 * (CLOCK_LEAN - 1.0)).round() as i32, (lean.1 * (CLOCK_LEAN - 1.0)).round() as i32);
     let now = store.clock.now;
     let time = now.format(if s.hour12 { "%I%M" } else { "%H%M" }).to_string();
     let new_minute = time != clock.time;
@@ -531,12 +429,12 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
                 clock.digits = Some((look, filled.at(scale)));
             }
             if let Some((_, bitmap)) = &clock.digits {
-                p.image(bitmap, (digits_x.round() as i32 + ox, digits_top.round() as i32 + oy), 1.0);
+                p.image(bitmap, (digits_x.round() as i32, digits_top.round() as i32), 1.0);
             }
         }
         Digits::Serif { hours, colon, minutes, gap } => {
-            let baseline = digits_top + digit_h + f64::from(oy);
-            let mut x = digits_x + f64::from(ox);
+            let baseline = digits_top + digit_h;
+            let mut x = digits_x;
             let put = |p: &mut Painter, t: &ShapedText, base: f64, x: &mut f64, after: f64| {
                 p.text(t, (x.round() as i32, (base - f64::from(t.ascent)).round() as i32), ink.with_alpha(FROST_ALPHA), &[]);
                 *x += f64::from(t.width) + after;
@@ -546,11 +444,9 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
             put(&mut p, &minutes, baseline, &mut x, 0.0);
         }
     }
-    // The subject over the box and the parallax's reach round it, so the
-    // clock moving under it never needs a new crop.
+    // The subject laid back over the box.
     if let (Some(pic), Some(sub)) = (picture, subject) {
-        let reach = reach.ceil() as i32 + 1;
-        let over = IRect::new(rect.x - reach, rect.y - reach, rect.w + reach * 2, rect.h + reach * 2).intersect(&IRect::new(0, 0, size.w, size.h));
+        let over = rect.intersect(&IRect::new(0, 0, size.w, size.h));
         let px = device(over, pic);
         if !px.is_empty() {
             if clock.crop.as_ref().is_none_or(|(r, from, _)| *r != px || *from != ptr(pic)) {
@@ -565,15 +461,12 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
     if new_minute {
         clock.minute_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
     }
-    pan
 }
 
 /// A serif face's figures stand this share of its size.
 const SERIF_FIGURE: f64 = 0.7;
 /// How far the serif colon sits over the figures' baseline, of their height.
 const COLON_RAISE: f64 = 0.16;
-/// The clock's lean as a share of the wallpaper's.
-const CLOCK_LEAN: f64 = 0.4;
 /// The share of the digits a placed clock hides behind the subject's edge.
 const UNDER: f64 = 0.4;
 /// Where a clock with no subject to sit behind is centred, of the height.

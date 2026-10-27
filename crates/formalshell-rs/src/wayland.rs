@@ -1878,10 +1878,6 @@ impl App {
                 continue;
             }
             let mut owner = self.owner(&e.surface);
-            if let Some(Owner::Head(i, heads::Part::Clock)) = owner {
-                self.desktop_clock_pointer(i, e);
-                continue;
-            }
             if let Some(Owner::Head(_, heads::Part::Catcher)) = owner {
                 if matches!(e.kind, PointerEventKind::Press { .. }) {
                     self.dismiss();

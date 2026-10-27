@@ -96,7 +96,7 @@ pub fn depth_path(source: &str) -> Option<PathBuf> {
 
 /// `<prefix>.depthThreshold` and `<prefix>.depthFeather`, on the map's
 /// 0..100 (100 nearest): what passes in front of the clock. No threshold
-/// cuts just past the map's far plane.
+/// cuts between the map's far plane and the nearest thing in front of it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DepthCut {
     pub threshold: Option<f64>,
@@ -133,7 +133,8 @@ impl DepthCut {
 
 /// The depth map for `source` cover-cropped as [`image`] crops the picture
 /// to `width` by `height`, as one coverage byte per pixel. None for a flat
-/// field, and for a map that is missing or older than its picture.
+/// field, for a map that is missing or older than its picture, and for a
+/// cut off the far plane where [`far_plane`] finds none.
 pub fn depth_mask(source: &str, width: u32, height: u32, cut: DepthCut) -> Option<Vec<u8>> {
     let map = depth_path(source)?;
     let made = std::fs::metadata(&map).ok()?.modified().ok()?;
@@ -145,38 +146,51 @@ pub fn depth_mask(source: &str, width: u32, height: u32, cut: DepthCut) -> Optio
     let crop = imageops::crop_imm(&img, cx, cy, cw, ch).to_image();
     let fitted = imageops::resize(&crop, width, height, FilterType::Triangle);
     let map = fitted.into_raw();
-    // The far plane's cut eases in over a narrow feather starting at its
-    // band's edge, so none of the sky comes forward.
-    let cut = match (cut.threshold, far_plane(&map)) {
-        (None, Some(edge)) => {
-            let feather = cut.feather.min(FAR_FEATHER);
-            DepthCut { threshold: Some(edge + feather / 2.0), feather }
+    // The feather stays inside the gap, so none of the sky comes forward.
+    let cut = match cut.threshold {
+        Some(_) => cut,
+        None => {
+            let t = far_plane(&map)?;
+            DepthCut { threshold: Some(t), feather: cut.feather.min(t) }
         }
-        _ => cut,
     };
     Some(map.into_iter().map(|v| cut.alpha(v)).collect())
 }
 
-/// The near edge of the map's far plane, on 0..100: the band holding its
-/// farthest values, when that band is a sky or a backdrop's worth of the
-/// picture. Anything nearer, a mountain range included, is subject. None
-/// for a map with no such band, which is cut at [`DepthCut::THRESHOLD`].
+/// A cut for a map with a far plane, on 0..100: halfway from the band
+/// holding its farthest values (a sky, a backdrop) to the first cluster
+/// nearer than it, so a mountain range in front of the sky is subject and
+/// the haze a map smears round a skyline is not. None for a map with no
+/// such band or no cluster in front of it, and for one where a lot of the
+/// picture sits in the gap between them: a soft ramp (clouds, fog) rather
+/// than a subject standing in front of something.
 pub fn far_plane(map: &[u8]) -> Option<f64> {
     let mut hist = [0usize; 256];
     for &v in map {
         hist[usize::from(v)] += 1;
     }
-    let far = hist.iter().position(|&n| n * 1000 >= map.len())?;
+    let n = map.len();
+    let far = hist.iter().position(|&c| c * 1000 >= n)?;
     let band: usize = hist[far..=(far + FAR_BAND).min(255)].iter().sum();
-    (band * 100 >= map.len() * FAR_SHARE).then(|| (far + FAR_BAND) as f64 * 100.0 / 255.0)
+    if band * 100 < n * FAR_SHARE {
+        return None;
+    }
+    // Counts averaged over 7 values, so one noisy value is not a cluster.
+    let smooth: Vec<usize> = (0..256).map(|v: usize| hist[v.saturating_sub(3)..(v + 4).min(256)].iter().sum::<usize>()).collect();
+    let near = (far + FAR_BAND + 1..255).find(|&v| smooth[v] * 1000 >= n * 7 * CLUSTER && smooth[v] >= smooth[v - 1] && smooth[v] >= smooth[v + 1])?;
+    let (lo, hi) = (far + (near - far) / 4, far + (near - far) * 3 / 4);
+    let gap: usize = hist[lo..=hi].iter().sum();
+    (gap * 100 < n * RAMP_SHARE).then(|| (far + near) as f64 / 2.0 * 100.0 / 255.0)
 }
 
 /// How wide the far plane's band is, in map values, and the share of the
 /// picture in percent it has to hold to count as one.
 const FAR_BAND: usize = 4;
 const FAR_SHARE: usize = 15;
-/// The far plane's cut eases over no more than this, on 0..100.
-const FAR_FEATHER: f64 = 3.0;
+/// A cluster holds at least this many thousandths of the picture per map
+/// value, and the middle half of the gap behind it under this percentage.
+const CLUSTER: usize = 3;
+const RAMP_SHARE: usize = 8;
 
 /// The newest picture for each output size asked for.
 #[derive(Default)]
@@ -380,8 +394,8 @@ mod tests {
         let mut map = vec![0u8; 440];
         map.extend((7..37).flat_map(|v| [v; 5]));
         map.extend((117..=255).flat_map(|v| [v; 3]));
-        let edge = far_plane(&map).unwrap();
-        assert!(edge < 7.0 * 100.0 / 255.0, "{edge}");
+        let cut = far_plane(&map).unwrap();
+        assert!(cut > 0.0 && cut < 7.0 * 100.0 / 255.0, "{cut}");
         let ramp: Vec<u8> = (0..=255).collect();
         assert_eq!(far_plane(&ramp), None);
     }
