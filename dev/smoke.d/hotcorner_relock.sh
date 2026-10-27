@@ -33,6 +33,8 @@
 # only, so every move starts by slamming the pointer into the top-left
 # corner, which the compositor clamps, and travels from there. Top-left is
 # `none` by default, so that origin fires nothing.
+# Every wtype runs with `-s 300`, for the reason `lock.sh`'s drive gives:
+# a new virtual keyboard's first keys reach nobody until the shell binds it.
 #
 # The same sequence then runs on the bottom-left corner, which locks and
 # shows the screensaver inside the lock: a key dismisses it to the password
@@ -120,8 +122,7 @@ corners false
 sleep 2
 corners true
 sleep 2
-"$wtype_bin" "formalshell-test"
-"$wtype_bin" -k Return
+"$wtype_bin" -s 300 "formalshell-test" -k Return
 # Polled rather than slept: PAM's own round trip varies here, and a corner
 # that re-arms too eagerly locks again 400ms after the unlock, so a fixed
 # sample lands on the relock and blames the password for it. The first
@@ -145,8 +146,7 @@ sleep 2
 ipc "$hotcorner_relock_s4_path"
 "$grim_bin" "$hotcorner_relock_again_path" > /dev/null 2>&1
 sleep 1
-"$wtype_bin" "formalshell-test"
-"$wtype_bin" -k Return
+"$wtype_bin" -s 300 "formalshell-test" -k Return
 sleep 4
 ipc "$hotcorner_relock_s5_path"
 corners true
@@ -159,13 +159,12 @@ ipc "$hotcorner_relock_saver_on_lock_path"
 # Nothing touches the pointer until the next saver_corner: a key drops the
 # screensaver to the card and the password unlocks over a cursor that never
 # left the corner.
-"$wtype_bin" -k Shift_L
+"$wtype_bin" -s 300 -k Shift_L
 sleep 2
 saver "$hotcorner_relock_saver_card_path"
 ipc "$hotcorner_relock_saver_card_lock_path"
 "$grim_bin" "$hotcorner_relock_saver_card_shot_path" > /dev/null 2>&1
-"$wtype_bin" "formalshell-test"
-"$wtype_bin" -k Return
+"$wtype_bin" -s 300 "formalshell-test" -k Return
 for i in \$(seq 1 40); do
   ipc "$hotcorner_relock_saver_unlocked_path"
   grep -q '^false\$' "$hotcorner_relock_saver_unlocked_path" && break
@@ -183,8 +182,7 @@ ipc "$hotcorner_relock_saver_again_lock_path"
 sleep 2
 saver "$hotcorner_relock_saver_moved_path"
 ipc "$hotcorner_relock_saver_moved_lock_path"
-"$wtype_bin" "formalshell-test"
-"$wtype_bin" -k Return
+"$wtype_bin" -s 300 "formalshell-test" -k Return
 sleep 4
 saver "$hotcorner_relock_saver_final_path"
 ipc "$hotcorner_relock_saver_final_lock_path"
