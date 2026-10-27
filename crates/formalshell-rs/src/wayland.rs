@@ -247,6 +247,7 @@ pub struct App {
     outgoing: Option<Host>,
     panel_dirty: bool,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    released: crate::keyboard::Released,
     tips: tooltip::Group,
     tip_card: Option<tooltip::Card>,
     toasts: Option<surfaces::toasts::Toasts>,
@@ -365,6 +366,7 @@ impl App {
             outgoing: None,
             panel_dirty: false,
             keyboard: None,
+            released: Default::default(),
             tips: tooltip::Group::default(),
             tip_card: None,
             toasts: None,
@@ -1485,6 +1487,7 @@ impl App {
     }
 
     pub fn present(&mut self) {
+        self.released.sweep();
         self.preview_present();
         crate::surfaces::capture::flush(self);
         let now = Instant::now();
@@ -2458,7 +2461,7 @@ impl SeatHandler for App {
             p.release();
         }
         if let Some(k) = self.keyboard.take().filter(|_| capability == Capability::Keyboard) {
-            k.release();
+            self.released.release(k);
         }
     }
 

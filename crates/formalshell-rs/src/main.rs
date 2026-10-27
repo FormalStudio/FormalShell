@@ -5,6 +5,7 @@ mod fontconfig;
 mod greeter;
 mod install;
 mod instance;
+mod keyboard;
 mod ipc;
 mod motion;
 mod render;

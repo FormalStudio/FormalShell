@@ -110,6 +110,7 @@ struct Greeter {
     qh: QueueHandle<Self>,
     handle: LoopHandle<'static, Greeter>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    released: crate::keyboard::Released,
     pointer: Option<wl_pointer::WlPointer>,
     cursor_shapes: Option<CursorShapeManager>,
     cursor_device: Option<WpCursorShapeDeviceV1>,
@@ -313,6 +314,7 @@ pub fn main(args: &[String]) {
         qh: qh.clone(),
         handle: handle.clone(),
         keyboard: None,
+        released: Default::default(),
         pointer: None,
         cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
         cursor_device: None,
@@ -356,6 +358,7 @@ pub fn main(args: &[String]) {
 
     let signal = event_loop.get_signal();
     let ended = event_loop.run(None, &mut g, |g| {
+        g.released.sweep();
         g.present();
         if g.exit {
             signal.stop();
@@ -917,7 +920,7 @@ impl SeatHandler for Greeter {
             p.release();
         }
         if let Some(k) = self.keyboard.take().filter(|_| capability == Capability::Keyboard) {
-            k.release();
+            self.released.release(k);
         }
     }
 
