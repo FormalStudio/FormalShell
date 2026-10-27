@@ -299,7 +299,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `--depth` leg's band fixture, read off `debug dump`'s `desktopClock`
   block and a frame per phase: the band over the digits, a held
   `dev/vpointer.py` pointer near the bottom-left corner leaning `offset`
-  left and down by more than 0 and at most `parallax`, then no commit in
+  left and down by more than 0 and at most `parallax`, the wallpaper's
+  viewport `pan` following it, then no commit in
   3s at rest; no
   commit in 5s under a fullscreen foot window; the digits over the band
   once `desktopClock.depth` is retargeted false; the gooey and serif
@@ -1162,6 +1163,8 @@ behaviour on hosts where a real owner exists.
   `media.lyricsBlur`, and a glow on the chunk being sung. Radio Atlas's
   globe is the other (owner, 2026-10-09): an atmosphere glow and rim haze
   over a starfield, part of the illustration and kept inside its pane.
+  The desktop clock's digits are the third (owner, 2026-10-27): frosted,
+  filled with the wallpaper under them blurred.
   Motion is
   `docs/DESIGN.md` §1 "Motion": the two clock families in
   `crates/formalshell-rs/src/motion.rs`, and the joined shape a card hanging

@@ -94,11 +94,12 @@ pub fn depth_path(source: &str) -> Option<PathBuf> {
     Some(path.parent()?.join(".depth").join(name))
 }
 
-/// `lock.depthThreshold` and `lock.depthFeather`, on the map's 0..100 (100
-/// nearest): what passes in front of the clock.
+/// `<prefix>.depthThreshold` and `<prefix>.depthFeather`, on the map's
+/// 0..100 (100 nearest): what passes in front of the clock. No threshold
+/// cuts just past the map's far plane.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DepthCut {
-    pub threshold: f64,
+    pub threshold: Option<f64>,
     pub feather: f64,
 }
 
@@ -106,23 +107,25 @@ impl DepthCut {
     pub const THRESHOLD: f64 = 50.0;
     pub const FEATHER: f64 = 8.0;
 
-    /// None while `switch` (`lock.depth`, `desktopClock.depth`) is off.
-    pub fn read(config: &super::config::State, switch: &str) -> Option<Self> {
-        if config.bool(switch) == Some(false) {
+    /// None while `<prefix>.depth` is off. `threshold` is the default
+    /// cut, None for the far plane's.
+    pub fn read(config: &super::config::State, prefix: &str, threshold: Option<f64>) -> Option<Self> {
+        if config.bool(&format!("{prefix}.depth")) == Some(false) {
             return None;
         }
-        let num = |path: &str, fallback: f64, hi: f64| config.f64(path).filter(|n| n.is_finite()).map_or(fallback, |n| n.clamp(0.0, hi));
-        Some(Self { threshold: num("lock.depthThreshold", Self::THRESHOLD, 100.0), feather: num("lock.depthFeather", Self::FEATHER, 50.0) })
+        let num = |key: &str, hi: f64| config.f64(&format!("{prefix}.{key}")).filter(|n| n.is_finite()).map(|n| n.clamp(0.0, hi));
+        Some(Self { threshold: num("depthThreshold", 100.0).or(threshold), feather: num("depthFeather", 50.0).unwrap_or(Self::FEATHER) })
     }
 
     /// A map value's coverage: a smoothstep across `threshold +- feather/2`.
     pub fn alpha(&self, value: u8) -> u8 {
+        let threshold = self.threshold.unwrap_or(Self::THRESHOLD);
         let x = f64::from(value) * 100.0 / 255.0;
         let half = self.feather / 2.0;
         let t = if half <= 0.0 {
-            if x >= self.threshold { 1.0 } else { 0.0 }
+            if x >= threshold { 1.0 } else { 0.0 }
         } else {
-            ((x - (self.threshold - half)) / self.feather).clamp(0.0, 1.0)
+            ((x - (threshold - half)) / self.feather).clamp(0.0, 1.0)
         };
         (t * t * (3.0 - 2.0 * t) * 255.0).round() as u8
     }
@@ -141,8 +144,39 @@ pub fn depth_mask(source: &str, width: u32, height: u32, cut: DepthCut) -> Optio
     let (cx, cy, cw, ch) = cover_rect((img.width(), img.height()), (width, height));
     let crop = imageops::crop_imm(&img, cx, cy, cw, ch).to_image();
     let fitted = imageops::resize(&crop, width, height, FilterType::Triangle);
-    Some(fitted.into_raw().into_iter().map(|v| cut.alpha(v)).collect())
+    let map = fitted.into_raw();
+    // The far plane's cut eases in over a narrow feather starting at its
+    // band's edge, so none of the sky comes forward.
+    let cut = match (cut.threshold, far_plane(&map)) {
+        (None, Some(edge)) => {
+            let feather = cut.feather.min(FAR_FEATHER);
+            DepthCut { threshold: Some(edge + feather / 2.0), feather }
+        }
+        _ => cut,
+    };
+    Some(map.into_iter().map(|v| cut.alpha(v)).collect())
 }
+
+/// The near edge of the map's far plane, on 0..100: the band holding its
+/// farthest values, when that band is a sky or a backdrop's worth of the
+/// picture. Anything nearer, a mountain range included, is subject. None
+/// for a map with no such band, which is cut at [`DepthCut::THRESHOLD`].
+pub fn far_plane(map: &[u8]) -> Option<f64> {
+    let mut hist = [0usize; 256];
+    for &v in map {
+        hist[usize::from(v)] += 1;
+    }
+    let far = hist.iter().position(|&n| n * 1000 >= map.len())?;
+    let band: usize = hist[far..=(far + FAR_BAND).min(255)].iter().sum();
+    (band * 100 >= map.len() * FAR_SHARE).then(|| (far + FAR_BAND) as f64 * 100.0 / 255.0)
+}
+
+/// How wide the far plane's band is, in map values, and the share of the
+/// picture in percent it has to hold to count as one.
+const FAR_BAND: usize = 4;
+const FAR_SHARE: usize = 15;
+/// The far plane's cut eases over no more than this, on 0..100.
+const FAR_FEATHER: f64 = 3.0;
 
 /// The newest picture for each output size asked for.
 #[derive(Default)]
@@ -327,15 +361,29 @@ mod tests {
 
     #[test]
     fn the_cut_eases_across_its_feather() {
-        let cut = DepthCut { threshold: 50.0, feather: 20.0 };
+        let cut = DepthCut { threshold: Some(50.0), feather: 20.0 };
         let at = |pct: f64| cut.alpha((pct * 255.0 / 100.0).round() as u8);
         assert_eq!(at(0.0), 0);
         assert_eq!(at(39.0), 0);
         assert!((120..=135).contains(&at(50.0)), "{}", at(50.0));
         assert_eq!(at(61.0), 255);
         assert!(at(42.0) < at(45.0) && at(45.0) < at(55.0) && at(55.0) < at(58.0));
-        let hard = DepthCut { threshold: 50.0, feather: 0.0 };
+        let hard = DepthCut { threshold: Some(50.0), feather: 0.0 };
         assert_eq!((hard.alpha(126), hard.alpha(128)), (0, 255));
+    }
+
+    /// A sky at 0 with a far range at 7..36 and dunes past 117, the shape of
+    /// a desert under mountains: the range is subject, the sky is not. A
+    /// map with no far band keeps the fixed cut.
+    #[test]
+    fn the_far_plane_leaves_the_mountains_in_front() {
+        let mut map = vec![0u8; 440];
+        map.extend((7..37).flat_map(|v| [v; 5]));
+        map.extend((117..=255).flat_map(|v| [v; 3]));
+        let edge = far_plane(&map).unwrap();
+        assert!(edge < 7.0 * 100.0 / 255.0, "{edge}");
+        let ramp: Vec<u8> = (0..=255).collect();
+        assert_eq!(far_plane(&ramp), None);
     }
 
     /// A map at a different size from its picture lands on the same pixels:
@@ -351,7 +399,7 @@ mod tests {
         let map = dir.path().join(".depth/wide.png.png");
         let small = ramp(300, 100);
         image::GrayImage::from_fn(300, 100, |x, y| image::Luma([small.get_pixel(x, y).0[0]])).save(&map).unwrap();
-        let identity = DepthCut { threshold: 50.0, feather: 100.0 };
+        let identity = DepthCut { threshold: Some(50.0), feather: 100.0 };
         let (w, h) = (160, 120);
         let shown = image(picture.to_str().unwrap(), w, h).unwrap();
         let mask = depth_mask(picture.to_str().unwrap(), w, h, identity).unwrap();

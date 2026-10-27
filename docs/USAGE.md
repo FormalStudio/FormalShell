@@ -1056,10 +1056,16 @@ preset turns it on.
 
 `desktopClock.enabled: true` puts a big clock on the desktop of every
 output, behind the wallpaper's subject when the picture has a depth map
-(the same `.depth/` maps and `lock.depthThreshold`/`lock.depthFeather` the
-lock uses; `desktopClock.depth: false` draws it over everything). Moving
-the pointer over bare desktop leans it toward the pointer, up to
-`desktopClock.parallax` px at the screen's edge (0 holds it still). It
+(the same `.depth/` maps the lock uses; `desktopClock.depth: false` draws
+it over everything). Everything nearer than the map's far plane (a sky, a
+backdrop) counts as subject, mountains included; with no such plane, or
+with `desktopClock.depthThreshold` set, it cuts as the lock does, softened
+over `desktopClock.depthFeather`. With no `y` it sits where the subject's
+top edge crosses the lower part of its digits. The digits are frosted
+glass: the wallpaper under them blurred and drawn toward light or dark,
+a little short of opaque. Moving the pointer over bare desktop leans the wallpaper and its
+subject toward the pointer, up to `desktopClock.parallax` px at the
+screen's edge, and the clock under them less (0 holds both still). It
 draws nothing new under a fullscreen window, while locked and under the
 screensaver.
 
@@ -1068,20 +1074,20 @@ screensaver.
 | `face` | `pixel` | `pixel` (square pixels, Nothing OS's clock), `gooey` (melting dots) or `serif` |
 | `size` | `0.18` | digit height, as a share of the output's height |
 | `width` | `wide` | `narrow` or `wide` digits |
-| `x`, `y` | `0.5`, `0.3` | the clock's centre, as shares of the output |
-| `date` | `true` | the date over the digits |
+| `x`, `y` | `0.5`, off the subject | the clock's centre, as shares of the output; with no `y` and no subject, `0.3` |
 | `hour12` | `false` | 12-hour time |
-| `color` | `auto` | `auto` (light or dark off the picture), `primary` or a `#rrggbb` |
+| `color` | `auto` | the frost's tint: `auto` (light or dark off the picture), `primary` or a `#rrggbb` |
 | `parallax` | `12` | px |
 | `depth` | `true` | the subject in front of the clock |
 
 ```jsonc
 // ~/.config/formalshell/settings.json
-{ "desktopClock": { "enabled": true, "face": "pixel", "y": 0.3 } }
+{ "desktopClock": { "enabled": true, "face": "pixel" } }
 ```
 
 `debug dump`'s `desktopClock` block lists each output's clock: its face,
-box, offset, ink, whether a depth map is in use and its commits.
+box, the wallpaper's lean (`offset`) and source (`pan`), ink, whether a
+depth map is in use and its commits.
 
 ### Motion
 

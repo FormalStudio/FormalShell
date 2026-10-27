@@ -227,13 +227,15 @@ struct Scaler {
     viewport: Option<WpViewport>,
     /// The owner's cut of the surface, in logical pixels.
     crop: Option<IRect>,
+    /// A source in logical pixels stretched over the whole surface.
+    pan: Option<[f64; 4]>,
     sent: Option<View>,
 }
 
 impl Scaler {
     fn new(scale: f64) -> Self {
         let preferred = Preferred(Arc::new(AtomicU32::new((scale * 120.0).round() as u32)));
-        Self { preferred, fractional: None, viewport: None, crop: None, sent: None }
+        Self { preferred, fractional: None, viewport: None, crop: None, pan: None, sent: None }
     }
 
     /// The scale the surface should be drawn at: the fractional scale it
@@ -267,19 +269,24 @@ impl Scaler {
     where
         D: Dispatch<WpViewport, Inert> + 'static,
     {
-        let want: View = match self.crop {
-            Some(c) if scale == 1.0 => (Some([f64::from(c.x), f64::from(c.y), f64::from(c.w), f64::from(c.h)]), (c.w, c.h)),
-            Some(c) => {
+        let fixed = |v: f64| (v * 256.0).floor() / 256.0;
+        let want: View = match (self.crop, self.pan) {
+            (None, Some([x, y, w, h])) => {
+                let (bw, bh) = (f64::from(scaled(size.0, scale)), f64::from(scaled(size.1, scale)));
+                let (x, y) = (fixed((x * scale).clamp(0.0, bw)), fixed((y * scale).clamp(0.0, bh)));
+                (Some([x, y, fixed((w * scale).min(bw - x)), fixed((h * scale).min(bh - y))]), size)
+            }
+            (Some(c), _) if scale == 1.0 => (Some([f64::from(c.x), f64::from(c.y), f64::from(c.w), f64::from(c.h)]), (c.w, c.h)),
+            (Some(c), _) => {
                 // A source has to lie inside the buffer, which is the
                 // logical size scaled and rounded; wl_fixed keeps 1/256.
                 let (bw, bh) = (f64::from(scaled(size.0, scale)), f64::from(scaled(size.1, scale)));
-                let fixed = |v: f64| (v * 256.0).floor() / 256.0;
                 let (x, y) = (fixed(f64::from(c.x) * scale).min(bw), fixed(f64::from(c.y) * scale).min(bh));
                 let (w, h) = (fixed((f64::from(c.w) * scale).min(bw - x)), fixed((f64::from(c.h) * scale).min(bh - y)));
                 (Some([x, y, w, h]), (c.w, c.h))
             }
-            None if scale != 1.0 || self.sent.is_some() => (None, size),
-            None => return,
+            (None, None) if scale != 1.0 || self.sent.is_some() => (None, size),
+            (None, None) => return,
         };
         if self.sent == Some(want) {
             return;
@@ -291,8 +298,11 @@ impl Scaler {
             }
         }
         let Some(viewport) = &self.viewport else { return };
-        if let Some([x, y, w, h]) = want.0 {
-            viewport.set_source(x, y, w, h);
+        match want.0 {
+            Some([x, y, w, h]) => viewport.set_source(x, y, w, h),
+            // All -1 unsets a source sent before.
+            None if self.sent.is_some_and(|(s, _)| s.is_some()) => viewport.set_source(-1.0, -1.0, -1.0, -1.0),
+            None => {}
         }
         viewport.set_destination(want.1.0, want.1.1);
         self.sent = Some(want);
@@ -511,6 +521,12 @@ impl<R: Role> Surface<R> {
     /// next commit, a present's or [`Surface::recommit`]'s.
     pub fn set_crop(&mut self, crop: IRect) {
         self.scaler.crop = Some(crop);
+    }
+
+    /// Shows `source` (logical pixels) stretched over the whole surface,
+    /// none for all of it, sent with the next commit.
+    pub fn set_pan(&mut self, source: Option<[f64; 4]>) {
+        self.scaler.pan = source;
     }
 
     /// Draws again at the scale the compositor last asked for, if it moved:
@@ -1125,6 +1141,23 @@ impl Backdrop {
     /// Buffer pixels to a logical one.
     pub fn scale(&self) -> f64 {
         self.scaler.wanted(self.layer.wl_surface())
+    }
+
+    /// Shows `source` (logical pixels) of the picture stretched over the
+    /// whole output, none for all of it: the buffer on screen committed
+    /// again with the new viewport, nothing drawn.
+    pub fn set_pan(&mut self, source: Option<[f64; 4]>, qh: &QueueHandle<App>) {
+        if self.scaler.pan == source {
+            return;
+        }
+        self.scaler.pan = source;
+        let scale = self.scaler.wanted(self.layer.wl_surface());
+        let (Some(size), Some(buffer)) = (self.painted, &self.buffer) else { return };
+        let surface = self.layer.wl_surface();
+        let _ = buffer.activate();
+        surface.attach(Some(buffer.wl_buffer()), 0, 0);
+        self.scaler.sync(surface, scale, size, Some(qh));
+        self.layer.commit();
     }
 
     /// Already showing `path` at this logical size, though at another

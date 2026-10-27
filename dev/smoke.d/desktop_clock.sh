@@ -8,7 +8,9 @@
 # - the band over the digits with the defaults;
 # - a virtual pointer (dev/vpointer.py) parked near the bottom-left corner:
 #   `offset` leaning left and down, by more than 0 and no more than the
-#   default `desktopClock.parallax` of 12, then no commit in 3s at rest;
+#   default `desktopClock.parallax` of 12, the wallpaper's `pan` source
+#   moved by exactly that inside its 12px margin, then no commit in 3s at
+#   rest;
 # - a foot window made fullscreen and no commit in 5s under it;
 # - the digits over the band once settings.json is retargeted to
 #   `desktopClock.depth: false`, then the gooey and serif faces;
@@ -129,6 +131,8 @@ leg_desktop_clock_assert() {
   # The pointer at (20, 1060) of 1920x1080 leans x by -0.98 and y by +0.96.
   _desktop_clock pointer '.[0].offset | .[0] < 0 and .[0] >= -12 and .[1] > 0 and .[1] <= 12' | grep -qx true \
     || fail "--desktop-clock: offset $(_desktop_clock pointer '.[0].offset') does not lean toward the bottom-left corner within 12px"
+  _desktop_clock pointer '.[0] | (.pan[0] - (12 - .offset[0]) | fabs) < 0.01 and (.pan[1] - (12 - .offset[1]) | fabs) < 0.01 and .pan[2] == 1896 and .pan[3] == 1056' | grep -qx true \
+    || fail "--desktop-clock: wallpaper source $(_desktop_clock pointer '.[0].pan') does not follow offset $(_desktop_clock pointer '.[0].offset')"
   [ "$(_desktop_clock_quiet rest)" = 0 ] || fail "--desktop-clock: $(_desktop_clock_quiet rest) commits in 3s at rest"
 
   local fs_windows

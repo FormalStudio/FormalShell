@@ -998,12 +998,16 @@ group the field's own Tab reaches without the field ever losing focus.
 
 **Desktop clock** (`formalshell-rs/src/wayland/desktop_clock.rs`, faces in
 `fs-chrome/src/clock_face.rs`). A Background layer per output over the
-wallpaper and the sculpture, no fill, no border, no card: big digits in one
-ink (light or dark off the picture under the box, or `primary`), the date
-over them in `look.sans` at 0.8 of that ink, and the wallpaper's subject
-drawn back over both where a depth map says it stands nearer. The pointer
-over bare desktop leans it up to `desktopClock.parallax` px on the spatial
-family; at rest, under a fullscreen window, locked or under the
+wallpaper and the sculpture, no fill, no border, no card: big digits
+filled with the picture under them blurred and pulled 75% toward one ink
+(light or dark off the picture under the box, or `primary`) at 0.88
+opacity, the one blur the shell draws besides the lyrics pane and the
+globe (owner, 2026-10-27), and the wallpaper's subject drawn back over
+them where a depth map says it stands nearer than the far plane, its top edge across the digits' lower 40% unless `y` is set. The
+pointer over bare desktop leans the wallpaper up to
+`desktopClock.parallax` px on the spatial family, a source panned inside
+a margin that wide on both its viewport and the clock layer's, and the
+clock 0.4 of that; at rest, under a fullscreen window, locked or under the
 screensaver it commits nothing.
 
 **Picker.** Thumbnail cells with `radiusMd`; cursor is the ring;
