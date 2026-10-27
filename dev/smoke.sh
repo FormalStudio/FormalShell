@@ -182,7 +182,16 @@ if [ -n "${FS_RESULT:-}" ]; then
   ln -sfn "$FS_RESULT" result
 else
   git add -A >/dev/null 2>&1 || true   # flakes only see tracked files
-  nix build .#formalshell
+  # On NixOS the lock's PAM file dlopens the system's pam_unix.so, which
+  # fails to load into a shell linked against an older glibc than the
+  # system's (GLIBC_2.43 not found) and turns every password into a wrong
+  # one. The system registry's nixpkgs is the one the installed shell
+  # follows, so the rig builds against it too.
+  override=()
+  if [ -e /etc/NIXOS ] && nix registry list 2>/dev/null | grep -q '^system flake:nixpkgs '; then
+    override=(--override-input nixpkgs flake:nixpkgs)
+  fi
+  nix build .#formalshell ${override[@]+"${override[@]}"}
 fi
 
 # Resolved once, on demand: a leg names what it needs in leg_<name>_needs
@@ -691,6 +700,7 @@ write_script "$shell_start_script" <<EOF
 # path they render on anyway. Scoped to this process: Hyprland's
 # own EGL runs on gbm over that same card and must keep doing so.
 export LIBGL_ALWAYS_SOFTWARE=1
+export RUST_BACKTRACE=1
 # Captured, not discarded: a shell that dies at startup would otherwise
 # fail every assertion below with no way to see why.
 # Backgrounded rather than exec'd so the shell's pid lands in a file the

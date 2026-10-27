@@ -62,18 +62,21 @@ $ipc call lock isLocked > "$lock_islocked1_path" 2>&1
 sleep 3
 "$grim_bin" "$lock_locked_path" > /dev/null 2>&1
 sleep 2
-"$wtype_bin" "wrong-password"
+# Every wtype is a new virtual keyboard, and the seat only gains its
+# keyboard once wtype starts, so keys sent before the shell has bound the
+# new wl_keyboard reach nobody: a lone \`-k Return\` was lost whole. -s
+# holds each one back until the bind has landed.
+"$wtype_bin" -s 300 "wrong-password"
 sleep 1
 "$grim_bin" "$lock_typing_path" > /dev/null 2>&1
-"$wtype_bin" -k Return
+"$wtype_bin" -s 300 -k Return
 # The PAM round trip for a wrong password forks and execs through the whole
 # auth stack, which on this VM is slower than a first glance suggests: a 2s
 # buffer intermittently caught the frame before authError had updated.
 sleep 5
 "$grim_bin" "$lock_error_path" > /dev/null 2>&1
 sleep 2
-"$wtype_bin" "formalshell-test"
-"$wtype_bin" -k Return
+"$wtype_bin" -s 300 "formalshell-test" -k Return
 $after
 "$grim_bin" "$lock_unlocked_path" > /dev/null 2>&1
 sleep 1
