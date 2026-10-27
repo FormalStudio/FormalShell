@@ -98,24 +98,29 @@ impl App {
 
     /// Mapped while anything is popped up or still fading out, and the
     /// centre is shut: the centre suppresses the stack for as long as it is
-    /// open. Over a floating game, borderless or fullscreen, it stays mapped,
-    /// passive and empty when nothing is up, for as long as the cover lasts:
-    /// Hyprland 0.56's scrolling layout recalculates the workspace on every
-    /// layer map, unmap and layer-state commit on the output and, with no
-    /// tiled fullscreen window on it (`SScrollingData::recalculate` counts
-    /// no other), deactivates every pointer constraint
-    /// (`CScrollingFullscreenHandler::updateFullscreenFade`), so a toast
-    /// mapping over a game let go of its locked cursor. Buffer and input
-    /// region commits reach none of that. Over a tiled fullscreen window it
-    /// maps per toast instead: any overlay layer that exists, drawn or not,
-    /// keeps Hyprland off direct scanout and tearing
-    /// (`CMonitor::isSolitaryBlocked`).
+    /// open. Over a fullscreen or borderless window it stays mapped, passive
+    /// and empty when nothing is up, for as long as the cover lasts: every
+    /// layer unmap ends in a synthetic pointer motion to the window under
+    /// the cursor (`CLayerSurface::onUnmap`), which wakes a fullscreen
+    /// video's hidden cursor and controls, and Hyprland 0.56's scrolling
+    /// layout recalculates the workspace on every layer map, unmap and
+    /// layer-state commit and, with no tiled fullscreen window on it
+    /// (`SScrollingData::recalculate` counts no other), deactivates every
+    /// pointer constraint (`CScrollingFullscreenHandler::updateFullscreenFade`).
+    /// Buffer and input region commits reach none of that. Over a tiled
+    /// fullscreen window an empty column parks on the top layer, which
+    /// fullscreen hides and direct scanout ignores, where any overlay layer
+    /// would keep Hyprland off scanout and tearing
+    /// (`CMonitor::isSolitaryBlocked`); a layer change sends no motion to a
+    /// surface the pointer is not on, and that recalc keeps the lock.
     pub(crate) fn present_toasts(&mut self, now: Instant) {
         let covered = self.chrome_hidden();
-        let held = covered && self.store.compositor.snapshot.floating_outputs.contains(&self.bar.output);
+        let floating = self.store.compositor.snapshot.floating_outputs.contains(&self.bar.output);
         let n = &self.store.notifications;
         let fading = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
-        let want = (!n.model.popups.is_empty() || fading || held) && !n.center_open;
+        let up = !n.model.popups.is_empty() || fading;
+        let want = (up || covered) && !n.center_open;
+        let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
         let insets = self.toast_insets();
         let right = fs_info::notifications::position_spec(self.store.config.str("notifications.position")).right;
         let column = (right, surfaces::toasts::column_width(&self.store.theme.theme, &insets, right));
@@ -130,10 +135,10 @@ impl App {
         if self.toasts.is_none() {
             let (_, out_h) = self.output_size();
             let side = if right { Anchor::RIGHT } else { Anchor::LEFT };
-            let layer = self.overlay("formalshell:notifications", Layer::Overlay, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
-            let mut surface = Surface::new("toasts", layer, &self.shm, self.started);
+            let ls = self.overlay("formalshell:notifications", layer, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
+            let mut surface = Surface::new("toasts", ls, &self.shm, self.started);
             surface.wait_map = true;
-            self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column));
+            self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer));
             self.toasts_dirty = true;
         }
         let qh = self.qh.clone();
@@ -152,8 +157,9 @@ impl App {
             self.toasts_dirty = false;
             t.was_animating = animating;
         }
+        let lifted = t.sync_layer(layer);
         let moved = t.sync_region(&self.compositor, covered);
-        if moved {
+        if moved || lifted {
             t.scene.touch(crate::scene::IRect::new(0, 0, 1, 1));
         }
         let passive = moved && covered;
@@ -161,6 +167,9 @@ impl App {
         t.surface.present(&mut t.scene, animating, &qh);
         if passive {
             self.log("toasts input empty");
+        }
+        if lifted {
+            self.log(&format!("toasts layer {}", if layer == Layer::Top { "top" } else { "overlay" }));
         }
     }
 

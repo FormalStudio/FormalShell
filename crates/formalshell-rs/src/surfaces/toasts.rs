@@ -31,6 +31,7 @@ use fs_info::notifications::{self as model, Group, Urgency};
 use fs_info::toast_stack::{self, StackParams};
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::wlr_layer::Layer;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, EFFECTS, Kind};
@@ -193,6 +194,7 @@ pub struct Toasts {
     right: bool,
     /// The side and width the layer was made with.
     pub column: (bool, u32),
+    layer: Layer,
 }
 
 /// Where the stack hangs: the bar's own edge cleared, `screenPadding` in.
@@ -305,8 +307,9 @@ pub fn column_width(theme: &Theme, insets: &Insets, right: bool) -> u32 {
 }
 
 impl Toasts {
-    pub fn new(surface: Surface, size: (i32, i32), column: (bool, u32)) -> Self {
+    pub fn new(surface: Surface, size: (i32, i32), column: (bool, u32), layer: Layer) -> Self {
         Self {
+            layer,
             column,
             surface,
             scene: Scene::clear(size.0, size.1),
@@ -618,6 +621,17 @@ impl Toasts {
             }
             self.surface.layer.set_input_region(Some(region.wl_region()));
         }
+        true
+    }
+
+    /// Moves the column to `layer`. Whether it changed, which the next
+    /// commit has to carry.
+    pub fn sync_layer(&mut self, layer: Layer) -> bool {
+        if self.layer == layer {
+            return false;
+        }
+        self.layer = layer;
+        self.surface.layer.set_layer(layer);
         true
     }
 

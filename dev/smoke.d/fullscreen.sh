@@ -46,14 +46,19 @@
 # first toast.
 #
 # Then the same window in Hyprland's own fullscreen: tiled under scrolling,
-# tiled under dwindle, and floating under scrolling. Tiled, the stack maps
-# per toast, since an overlay layer that merely exists keeps Hyprland off
-# direct scanout and tearing, and scrolling counts a tiled fullscreen window
-# as covering the workspace. Floating, scrolling counts it as nothing, so the
-# column stays mapped as it does over a borderless game. Each phase re-arms
-# the lock (SIGUSR1 to the probe, while it holds keyboard focus), a toast
-# comes and goes over it (8s, the floor for a normal one), and the log gains no
-# `unlocked` across any of them.
+# tiled under dwindle, and floating under scrolling. The column stays mapped
+# through every one of them, since a layer unmap sends the window under the
+# cursor a synthetic motion. Tiled, it parks on the top layer between toasts
+# (level 2 in `hyprctl layers`), since an overlay layer that merely exists
+# keeps Hyprland off direct scanout and tearing, and scrolling counts a
+# tiled fullscreen window as covering the workspace. Floating, scrolling
+# counts it as nothing, so the column stays on the overlay layer as it does
+# over a borderless game. Each phase re-arms the lock (SIGUSR1 to the probe,
+# while it holds keyboard focus), a toast comes and goes over it (8s, the
+# floor for a normal one), and the log gains no `unlocked` across any of
+# them. Last a fullscreen video: the probe drops its lock (SIGUSR2), tiled
+# fullscreen under scrolling, and a toast coming and going logs no `motion`,
+# which is what showed a video's hidden cursor and its controls.
 leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
 leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
@@ -74,7 +79,7 @@ fullscreen_lock_toast_layers="$shot_dir/fullscreen-lock-toast-layers.json"
 fullscreen_lock_osd_layers="$shot_dir/fullscreen-lock-osd-layers.json"
 fullscreen_lock_state="$shot_dir/fullscreen-lock-state.txt"
 fullscreen_lock_toast_path="$shot_dir/fullscreen-lock-toast.png"
-fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating"
+fullscreen_fs_phases="scrolling:tiled dwindle:tiled scrolling:floating scrolling:video"
 fullscreen_track_path="$shot_dir/fullscreen-tone.flac"
 fullscreen_mpv_pid_path="$shot_dir/fullscreen-mpv.pid"
 fullscreen_work_path="$shot_dir/fullscreen-work.txt"
@@ -185,8 +190,9 @@ $ipc call debug joinClear > /dev/null 2>&1
 $ipc call notifications dismissOne > /dev/null 2>&1
 sleep 1
 fs_phase() {
-  local name="fs-\${1%%:*}" float=disable
+  local name="fs-\${1%%:*}" float=disable sig=USR1
   [ "\${1#*:}" = floating ] && { name="\$name-floating"; float=enable; }
+  [ "\${1#*:}" = video ] && { name="\$name-video"; sig=USR2; }
   "$hyprctl_bin" eval "hl.config({ general = { layout = '\${1%%:*}' } })" > /dev/null 2>&1
   sleep 1
   "$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = '\$float' })" > /dev/null 2>&1
@@ -194,7 +200,7 @@ fs_phase() {
   "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set' })" > /dev/null 2>&1
   sleep 2
   echo "0 \$name-arm" >> "$fullscreen_lock_log"
-  pkill -USR1 -f 'lockpointer.py formalshell-lockpointer'
+  pkill -\$sig -f 'lockpointer.py formalshell-lockpointer'
   sleep 2
   "$hyprctl_bin" -j clients > "$shot_dir/fullscreen-\$name-clients.json" 2>&1
   echo "0 \$name" >> "$fullscreen_lock_log"
@@ -222,6 +228,11 @@ EOS
 # the bar "formalshell:bar", the hot corners "formalshell:hotcorner").
 _fullscreen_count() {
   "$jq_bin" -r --arg ns "$2" '[.[] | .levels[] | .[] | select(.namespace == $ns)] | length' "$1" 2>/dev/null
+}
+
+# The same count on one level only: 2 is the top layer, 3 the overlay.
+_fullscreen_level() {
+  "$jq_bin" -r --arg ns "$2" --arg l "$3" '[.[] | .levels[$l][]? | select(.namespace == $ns)] | length' "$1" 2>/dev/null
 }
 
 leg_fullscreen_assert() {
@@ -351,11 +362,13 @@ _fullscreen_lock_assert() {
 }
 
 # One true-fullscreen phase: the window in mode 2 and floating or not as
-# asked, the lock re-armed and active going in and never released, the stack
-# mapped for the toast and, after it, gone when tiled and held when floating.
+# asked, the lock re-armed and active going in and never released (a video
+# holds none and takes no motion instead), the stack on the overlay layer for
+# the toast and, after it, parked on the top layer when tiled and held on the
+# overlay layer when floating.
 _fullscreen_fs_assert() {
   local layout="${1%%:*}" kind="${1#*:}" name="fs-${1%%:*}"
-  [ "$kind" = floating ] && name="$name-floating"
+  [ "$kind" = tiled ] || name="$name-$kind"
   local clients="$shot_dir/fullscreen-$name-clients.json"
   local toast_layers="$shot_dir/fullscreen-$name-toast-layers.json" after_layers="$shot_dir/fullscreen-$name-after-layers.json"
   local f
@@ -371,19 +384,32 @@ _fullscreen_fs_assert() {
   local arm during
   arm=$(sed -n "/ $name-arm\$/,/ $name\$/p" "$fullscreen_lock_log")
   during=$(sed -n "/ $name\$/,/ $name-end\$/p" "$fullscreen_lock_log")
-  echo "$arm" | grep -q ' rearm$' || fail "$name: the probe never re-armed its lock"
-  [ "$(echo "$arm" | grep ' locked$\| unlocked$' | tail -1 | awk '{print $2}')" = locked ] \
-    || fail "$name: the lock was not active when the toast arrived over the fullscreen game"
-  if echo "$during" | grep -q ' unlocked$'; then fail "$name: a toast over the fullscreen game released its pointer lock"; fi
+  if [ "$kind" = video ]; then
+    echo "$arm" | grep -q ' release$' || fail "$name: the probe never dropped its lock"
+    local motions
+    motions=$(echo "$during" | grep -c ' motion$')
+    echo "$name: pointer motion events across the toast: $motions"
+    [ "$motions" -eq 0 ] || fail "$name: a toast over a fullscreen video sent it $motions pointer motion events"
+  else
+    echo "$arm" | grep -q ' rearm$' || fail "$name: the probe never re-armed its lock"
+    [ "$(echo "$arm" | grep ' locked$\| unlocked$' | tail -1 | awk '{print $2}')" = locked ] \
+      || fail "$name: the lock was not active when the toast arrived over the fullscreen game"
+    if echo "$during" | grep -q ' unlocked$'; then fail "$name: a toast over the fullscreen game released its pointer lock"; fi
+  fi
 
-  local up gone osd want=0
-  [ "$kind" = floating ] && want=1
-  up=$(_fullscreen_count "$toast_layers" "formalshell:notifications")
-  gone=$(_fullscreen_count "$after_layers" "formalshell:notifications")
+  local up top over osd park=2
+  [ "$kind" = floating ] && park=3
+  up=$(_fullscreen_level "$toast_layers" "formalshell:notifications" 3)
+  top=$(_fullscreen_level "$after_layers" "formalshell:notifications" 2)
+  over=$(_fullscreen_level "$after_layers" "formalshell:notifications" 3)
   osd=$(_fullscreen_count "$after_layers" "formalshell:osd")
-  echo "$name: notifications layers with the toast up=$up, after it went=$gone (want $want), osd=$osd"
-  [ "$up" -eq 1 ] || fail "$name: the toast did not map over the fullscreen game"
-  [ "$gone" -eq "$want" ] || fail "$name: the stack after the toast was $gone layers, not $want"
+  echo "$name: notifications on overlay with the toast up=$up, after it top=$top overlay=$over (want level $park), osd=$osd"
+  [ "$up" -eq 1 ] || fail "$name: the toast did not map on the overlay layer over the fullscreen game"
+  if [ "$park" = 2 ]; then
+    [ "$top" -eq 1 ] && [ "$over" -eq 0 ] || fail "$name: the stack after the toast was not parked on the top layer"
+  else
+    [ "$over" -eq 1 ] && [ "$top" -eq 0 ] || fail "$name: the stack after the toast was not held on the overlay layer"
+  fi
   [ "$osd" -eq 0 ] || fail "$name: the OSD mapped over a fullscreen game"
   local tag="${name#fs-}"; tag="${tag//-/_}"
   echo "SMOKE_FULLSCREEN_FS_${tag^^} $shot_dir/fullscreen-$name.png"

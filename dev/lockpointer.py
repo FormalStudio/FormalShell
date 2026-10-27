@@ -5,12 +5,15 @@ holds the cursor, logging every lock state change to a file.
     lockpointer.py APP_ID LOG
 
 Each line of LOG is `<monotonic ms> <event>`: `configure WxH`, `enter`,
-`leave`, `locked`, `unlocked`. The lock is asked for once the first
-configure lands; the compositor activates it while the pointer is over the
-focused window. SIGUSR1 destroys the lock and asks for a new one, which
-Hyprland activates at once while the window holds keyboard focus, so a
-lock some earlier step released is back without focus moving. Talks the Wayland wire protocol directly (vpointer.py's
-shape), so it needs nothing but python3 and WAYLAND_DISPLAY.
+`leave`, `motion`, `locked`, `unlocked`, `rearm`, `release`. The lock is
+asked for once the first configure lands; the compositor activates it
+while the pointer is over the focused window. SIGUSR1 destroys the lock and
+asks for a new one, which Hyprland activates at once while the window holds
+keyboard focus, so a lock some earlier step released is back without focus
+moving. SIGUSR2 destroys the lock and asks for none, which leaves the
+window a fullscreen video's: any `motion` it logs is one that would wake
+the video's hidden cursor. Talks the Wayland wire protocol directly
+(vpointer.py's shape), so it needs nothing but python3 and WAYLAND_DISPLAY.
 """
 
 import array
@@ -121,17 +124,27 @@ def main(app_id, log_path):
     size = (640, 400)
     pending = size
     locked_pointer = None
+    want_lock = True
 
     def rearm(*_):
-        nonlocal locked_pointer
-        if locked_pointer is None:
-            return
-        w.send(locked_pointer, 0)
+        nonlocal locked_pointer, want_lock
+        want_lock = True
+        if locked_pointer is not None:
+            w.send(locked_pointer, 0)
         locked_pointer = w.new_id()
         note("rearm")
         w.send(constraints, 1, struct.pack("<IIIII", locked_pointer, surface, pointer, 0, PERSISTENT))
 
+    def release(*_):
+        nonlocal locked_pointer, want_lock
+        want_lock = False
+        if locked_pointer is not None:
+            w.send(locked_pointer, 0)
+            locked_pointer = None
+        note("release")
+
     signal.signal(signal.SIGUSR1, rearm)
+    signal.signal(signal.SIGUSR2, release)
     while True:
         obj, op, body = w.read()
         if obj == wm and op == 0:
@@ -149,11 +162,13 @@ def main(app_id, log_path):
             w.send(surface, 1, struct.pack("<Iii", buffer, 0, 0))
             w.send(surface, 2, struct.pack("<iiii", 0, 0, size[0], size[1]))
             w.send(surface, 6)
-            if locked_pointer is None:
+            if locked_pointer is None and want_lock:
                 locked_pointer = w.new_id()
                 w.send(constraints, 1, struct.pack("<IIIII", locked_pointer, surface, pointer, 0, PERSISTENT))
         elif obj == pointer and op in (0, 1):
             note("enter" if op == 0 else "leave")
+        elif obj == pointer and op == 2:
+            note("motion")
         elif obj == locked_pointer and op in (0, 1):
             note("locked" if op == 0 else "unlocked")
 
