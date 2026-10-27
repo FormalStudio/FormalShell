@@ -39,20 +39,11 @@ host="${FS_G815_HOST:-g815}"
 if [ -z "${FS_RIG:-}" ]; then
   FS_RIG=g815
   if [ "$1" = smoke ]; then
-    # The slot's nested Hyprland never sends a client wl_pointer enter or
-    # motion (dev/lockpointer.py saw none, even after a wlrctl move), so a
-    # leg driving a synthetic pointer proves nothing on g815 yet.
     for leg in dev/smoke.d/*.sh; do
-      if grep -q '^leg_[a-z0-9_]*_vm_only=' "$leg"; then
-        why="is vm_only"
-      elif grep -qE 'wlrctl pointer|vpointer\.py|lockpointer\.py' "$leg"; then
-        why="drives a pointer"
-      else
-        continue
-      fi
+      grep -q '^leg_[a-z0-9_]*_vm_only=' "$leg" || continue
       flag=$(sed -n 's/^leg_[a-z0-9_]*_flag="\([^ "]*\).*/\1/p' "$leg" | head -1)
       case " ${*:2} " in *" $flag "*)
-        echo "rig: $flag $why, running on the VM" >&2
+        echo "rig: $flag is vm_only, running on the VM" >&2
         FS_RIG=vm
         break ;;
       esac
@@ -116,13 +107,14 @@ ssh_opts=(-o BatchMode=yes -o ForwardAgent=no -o ConnectTimeout=10 -o LogLevel=E
 
 # The slot user's shell is bash, and pam_systemd has already given it
 # XDG_RUNTIME_DIR and its own bus. WAYLAND_DISPLAY is the headless parent's,
-# read off the slot user's manager the way dev/smoke.sh's own fallback does.
+# from the file its startup writes: a nested Hyprland imports its own socket
+# into the slot's manager environment, so that is not a safe place to read.
 # The slot user's profile goes ahead of /run/wrappers/bin: it carries the
 # patched Hyprland the rig module builds, which dev/smoke.sh finds on PATH.
 # The guard refuses to go on as anyone but a slot user.
 remote_env='unset HYPRLAND_INSTANCE_SIGNATURE
      export PATH=/etc/profiles/per-user/$(id -un)/bin:$PATH
-     export WAYLAND_DISPLAY=$(systemctl --user show-environment | sed -n "s/^WAYLAND_DISPLAY=//p")'
+     export WAYLAND_DISPLAY=$(cat "$XDG_RUNTIME_DIR/formalshell-rig-display")'
 remote_ssh() {
   ssh "${ssh_opts[@]}" "$target" \
     "case \$(id -un) in fstest[01]) ;; *) echo 'g815: not a slot user' >&2; exit 1 ;; esac
