@@ -9,6 +9,7 @@ mod boot;
 mod caffeinate;
 pub mod capture;
 mod console;
+mod desktop_clock;
 mod headset;
 mod heads;
 mod hotcorners;
@@ -314,6 +315,7 @@ pub struct App {
     pub capture: crate::surfaces::capture::Capture,
     pickers: picker::Pickers,
     sfx: crate::sfx::Gate,
+    desktop_clock: desktop_clock::State,
 }
 
 impl App {
@@ -405,6 +407,7 @@ impl App {
             capture: Default::default(),
             pickers: Default::default(),
             sfx: Default::default(),
+            desktop_clock: Default::default(),
         };
         app.sync_heads();
         app
@@ -1872,6 +1875,10 @@ impl App {
                 continue;
             }
             let mut owner = self.owner(&e.surface);
+            if let Some(Owner::Head(i, heads::Part::Clock)) = owner {
+                self.desktop_clock_pointer(i, e);
+                continue;
+            }
             if let Some(Owner::Head(_, heads::Part::Catcher)) = owner {
                 if matches!(e.kind, PointerEventKind::Press { .. }) {
                     self.dismiss();

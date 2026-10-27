@@ -1052,6 +1052,37 @@ preset turns it on.
 { "wallpaper": { "animate": false } }
 ```
 
+### Desktop clock
+
+`desktopClock.enabled: true` puts a big clock on the desktop of every
+output, behind the wallpaper's subject when the picture has a depth map
+(the same `.depth/` maps and `lock.depthThreshold`/`lock.depthFeather` the
+lock uses; `desktopClock.depth: false` draws it over everything). Moving
+the pointer over bare desktop leans it toward the pointer, up to
+`desktopClock.parallax` px at the screen's edge (0 holds it still). It
+draws nothing new under a fullscreen window, while locked and under the
+screensaver.
+
+| Key | Default | |
+| --- | --- | --- |
+| `face` | `pixel` | `pixel` (square pixels, Nothing OS's clock), `gooey` (melting dots) or `serif` |
+| `size` | `0.18` | digit height, as a share of the output's height |
+| `width` | `wide` | `narrow` or `wide` digits |
+| `x`, `y` | `0.5`, `0.3` | the clock's centre, as shares of the output |
+| `date` | `true` | the date over the digits |
+| `hour12` | `false` | 12-hour time |
+| `color` | `auto` | `auto` (light or dark off the picture), `primary` or a `#rrggbb` |
+| `parallax` | `12` | px |
+| `depth` | `true` | the subject in front of the clock |
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "desktopClock": { "enabled": true, "face": "pixel", "y": 0.3 } }
+```
+
+`debug dump`'s `desktopClock` block lists each output's clock: its face,
+box, offset, ink, whether a depth map is in use and its commits.
+
 ### Motion
 
 Transitions run off a small set of tokens per preset: hover fills, surfaces

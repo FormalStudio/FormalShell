@@ -115,6 +115,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "toasts": toasts,
         "frame": app.bar.frame_state(),
         "backdrop": app.backdrop_state(),
+        "desktopClock": app.desktop_clock_state(),
         "depth": app.store.depth.status(),
         "boot": app.boot_state(),
         "theme": {

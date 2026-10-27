@@ -36,6 +36,7 @@ pub(super) struct Head {
     /// None on the live bar's output, whose bar is `App::bar`.
     pub spare: Option<Spare>,
     pub catcher: Option<PixelSurface>,
+    pub clock: Option<super::desktop_clock::Clock>,
 }
 
 pub(super) struct Spare {
@@ -54,6 +55,7 @@ pub(super) enum Part {
     Bar,
     Zone(usize),
     Catcher,
+    Clock,
 }
 
 impl App {
@@ -77,7 +79,7 @@ impl App {
             } else {
                 Some(Spare { bar: self.spare_bar(), surface: None, zones: Vec::new(), dirty: true })
             };
-            self.heads.push(Head { output, backdrop, spare, catcher: None });
+            self.heads.push(Head { output, backdrop, spare, catcher: None, clock: None });
             if self.heads.last().is_some_and(|h| h.spare.is_some()) {
                 self.place_spare(self.heads.len() - 1);
             } else {
@@ -271,6 +273,9 @@ impl App {
             if h.catcher.as_ref().is_some_and(|c| c.layer.wl_surface() == surface) {
                 return Some((i, Part::Catcher));
             }
+            if h.clock.as_ref().is_some_and(|c| c.surface.layer.wl_surface() == surface) {
+                return Some((i, Part::Clock));
+            }
             let s = h.spare.as_ref()?;
             if s.surface.as_ref().is_some_and(|b| b.layer.wl_surface() == surface) {
                 return Some((i, Part::Bar));
@@ -344,6 +349,7 @@ impl App {
                 z.present(0.0, false, &qh);
             }
         }
+        self.present_desktop_clocks();
     }
 
     /// The wallpaper for each output's size, asked for again whenever either
@@ -369,6 +375,7 @@ impl App {
             b.draw(picture.filter(|p| p.path == *wanted && p.dither == dither && p.grid == under), background, under, reveal, &self.qh);
         }
         self.sync_shards();
+        self.sync_desktop_clocks();
     }
 
     /// Each output's sculpture made or dropped, and run or held as its
@@ -556,6 +563,11 @@ impl App {
                 let Some(c) = &mut head.catcher else { return };
                 (c.frame_pending, c.mapped, c.callbacks) = (false, true, c.callbacks + 1);
             }
+            Part::Clock => {
+                let Some(c) = &mut head.clock else { return };
+                c.surface.landed(now);
+                c.surface.mapped = true;
+            }
         }
     }
 
@@ -603,6 +615,12 @@ impl App {
                 }
                 self.set_catcher_input(i);
             }
+            Part::Clock => {
+                if let Some(c) = &mut head.clock {
+                    c.configure(width, height);
+                }
+                self.sync_desktop_clocks();
+            }
         }
     }
 
@@ -622,6 +640,7 @@ impl App {
             }
             Part::Zone(_) => {}
             Part::Catcher => head.catcher = None,
+            Part::Clock => head.clock = None,
         }
     }
 }

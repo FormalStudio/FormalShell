@@ -423,7 +423,7 @@ impl App {
     /// is on screen stays until its replacement lands.
     fn load_lock_backdrops(&mut self) {
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
-        let cut = DepthCut::read(&self.store.config);
+        let cut = DepthCut::read(&self.store.config, "lock.depth");
         self.lock.depth_cut = cut;
         let path = self.store.wallpaper.latest().map(|p| p.path.clone());
         for p in self.store.wallpaper.all().filter(|p| Some(&p.path) == path.as_ref()).cloned() {
@@ -775,7 +775,7 @@ impl App {
                 self.lock.backdrop.clear();
                 self.load_lock_pictures();
             }
-            Topic::Config if DepthCut::read(&self.store.config) != self.lock.depth_cut => self.load_lock_backdrops(),
+            Topic::Config if DepthCut::read(&self.store.config, "lock.depth") != self.lock.depth_cut => self.load_lock_backdrops(),
             // A map written for the picture under the lock.
             Topic::Depth if self.store.wallpaper.latest().is_some_and(|p| self.store.depth.wrote(&p.path)) => self.load_lock_backdrops(),
             Topic::Media => {

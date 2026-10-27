@@ -30,8 +30,9 @@ same subject, nudged a few pixels by the pointer.
 - **Faces.** A pure module in `fs-chrome` (`clock_face`), tested by
   `rust-tests`, turns a time string into an 8-bit coverage mask at a given
   digit height:
-  - `pixel` (default): the owner's face. A grid glyph table for 0-9 and
-    the colon (the date line is ordinary text, not grid glyphs). Cells
+  - `pixel` (default): the owner's face. A grid glyph table for 0-9; the
+    pixel and gooey faces draw no colon, so 09:19 reads "0919" (the date
+    line is ordinary text, not grid glyphs). Cells
     are squares; the union is rounded so convex corners carry a radius of
     about a third of a cell and concave ones a small fillet, the corner
     cells of round digits are missing, and a seam about a tenth of a cell

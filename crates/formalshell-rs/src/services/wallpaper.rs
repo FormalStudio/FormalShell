@@ -106,9 +106,9 @@ impl DepthCut {
     pub const THRESHOLD: f64 = 50.0;
     pub const FEATHER: f64 = 8.0;
 
-    /// None while `lock.depth` is off.
-    pub fn read(config: &super::config::State) -> Option<Self> {
-        if config.bool("lock.depth") == Some(false) {
+    /// None while `switch` (`lock.depth`, `desktopClock.depth`) is off.
+    pub fn read(config: &super::config::State, switch: &str) -> Option<Self> {
+        if config.bool(switch) == Some(false) {
             return None;
         }
         let num = |path: &str, fallback: f64, hi: f64| config.f64(path).filter(|n| n.is_finite()).map_or(fallback, |n| n.clamp(0.0, hi));

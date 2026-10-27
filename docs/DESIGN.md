@@ -996,6 +996,16 @@ the field, while something is playing or paused, the now-playing block: a
 cover, title and artist in that ink, a track, and the transport as a button
 group the field's own Tab reaches without the field ever losing focus.
 
+**Desktop clock** (`formalshell-rs/src/wayland/desktop_clock.rs`, faces in
+`fs-chrome/src/clock_face.rs`). A Background layer per output over the
+wallpaper and the sculpture, no fill, no border, no card: big digits in one
+ink (light or dark off the picture under the box, or `primary`), the date
+over them in `look.sans` at 0.8 of that ink, and the wallpaper's subject
+drawn back over both where a depth map says it stands nearer. The pointer
+over bare desktop leans it up to `desktopClock.parallax` px on the spatial
+family; at rest, under a fullscreen window, locked or under the
+screensaver it commits nothing.
+
 **Picker.** Thumbnail cells with `radiusMd`; cursor is the ring;
 `Dark | Light` is a segmented control.
 

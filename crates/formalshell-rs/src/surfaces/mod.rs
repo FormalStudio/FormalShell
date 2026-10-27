@@ -27,6 +27,7 @@ use crate::wayland::{App, theme_inputs};
 
 pub fn changed(app: &mut App, topic: Topic) {
     app.lock_changed(topic);
+    app.desktop_clock_changed(topic);
     if matches!(topic, Topic::Compositor | Topic::State | Topic::Display | Topic::Config) {
         crate::services::display::reconcile(&app.store);
     }
