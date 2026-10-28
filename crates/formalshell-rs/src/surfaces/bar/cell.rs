@@ -91,6 +91,9 @@ pub enum Tone {
     Warning,
 }
 
+/// Nerd Font distro logos sit small in their em box next to Lucide icons of the same size.
+const GLYPH_SCALE: f32 = 1.4;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Part {
     /// An icon by name, through `theme.icons`; `dim` takes the meta ink,
@@ -654,7 +657,7 @@ impl Kit {
         match part {
             Part::Icon { name, .. } | Part::SlotIcon { name, .. } => self.icon(name),
             Part::Cover { .. } | Part::AppIcon { .. } => self.icon("music"),
-            Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }),
+            Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body * GLYPH_SCALE, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }),
             Part::Label { text, weight } => {
                 let w = if band { WEIGHTS.semibold } else { weight.unwrap_or(WEIGHTS.medium as f32) as f64 };
                 self.shape(text, look.label(w as f32))
@@ -687,7 +690,11 @@ impl Kit {
             let h = shaped.line_height() as f64;
             let b = match part {
                 Part::Icon { .. } | Part::Glyph { .. } | Part::SlotIcon { .. } => {
-                    let along = if let Part::SlotIcon { width, .. } = part { *width } else { look.body as f64 };
+                    let along = match part {
+                        Part::SlotIcon { width, .. } => *width,
+                        Part::Glyph { .. } => (look.body * GLYPH_SCALE) as f64,
+                        _ => look.body as f64,
+                    };
                     if vertical { (icon_h, along) } else { (along, icon_h) }
                 }
                 Part::Cover { size, .. } | Part::AppIcon { size, .. } => {
@@ -811,7 +818,11 @@ impl Kit {
                         let dim = matches!(part, Part::Icon { dim: true, .. });
                         let dot = matches!(part, Part::Icon { dot: true, .. });
                         let color = ink.of(if dim { ink.dim } else { ink.fg });
-                        let size = if let Part::SlotIcon { width, .. } = part { *width } else { look.body as f64 };
+                        let size = match part {
+                            Part::SlotIcon { width, .. } => *width,
+                            Part::Glyph { .. } => (look.body * GLYPH_SCALE) as f64,
+                            _ => look.body as f64,
+                        };
                         let (bx, by) = if vertical {
                             (across_mid as f64 - size / 2.0, at)
                         } else {

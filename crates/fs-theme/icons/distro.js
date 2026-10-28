@@ -68,7 +68,7 @@ var LOGOS = {
     "openbsd": "\u{F328}",               // linux-openbsd
     "opensuse": "\u{F314}",              // linux-opensuse
     "opensuse-leap": "\u{F37E}",         // linux-leap
-    "opensuse-tumbleweed": "\u{F37D}",   // linux-tumbleweed
+    "opensuse-tumbleweed": "\u{F314}",   // linux-opensuse, the gecko
     "openwrt": "\u{F382}",               // linux-openwrt
     "parabola": "\u{F340}",              // linux-parabola
     "parrot": "\u{F329}",                // linux-parrot
