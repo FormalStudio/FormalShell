@@ -107,6 +107,8 @@ pub struct Bar {
     hidden: bool,
     /// The output is idle (screensaver or lock up): marquees hold still.
     idle: bool,
+    /// The exclusive zone last handed to the bar's layer.
+    pub reserved: i32,
     born: Instant,
     /// Cells rebuilt (a new theme or layout) and not yet read in full: that
     /// read places them where they were rather than growing every one of
@@ -147,6 +149,7 @@ impl Bar {
             hover: None,
             hidden: false,
             idle: false,
+            reserved: 0,
             born: Instant::now(),
             rebuilt: false,
             room: Room::default(),
@@ -192,6 +195,22 @@ impl Bar {
     pub fn thickness(&self) -> i32 {
         let across = if self.edge.is_vertical() { self.kit.look.cell_width } else { self.style.thickness };
         (across + self.style.margin * 2.0) as i32
+    }
+
+    /// The exclusive zone the bar reserves. A floating band (no fill, no
+    /// line) reserves only its outer margin and its cells, so the
+    /// compositor's outer gap is all that sits between the cells and the
+    /// windows, the same gap as at the screen's other edges. A solid strip
+    /// reserves the whole of itself.
+    pub fn zone(&self) -> i32 {
+        let t = self.thickness();
+        if self.floating() { t - self.style.margin as i32 } else { t }
+    }
+
+    fn floating(&self) -> bool {
+        let fill = self.band_fill.unwrap_or(self.style.fill);
+        let line = self.style.edge.is_some_and(|(c, w)| c.a > 0.0 && w > 0.0);
+        !self.framed() && fill.a <= 0.0 && !line
     }
 
     fn vertical(&self) -> bool {

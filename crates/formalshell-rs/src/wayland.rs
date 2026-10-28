@@ -522,6 +522,7 @@ impl App {
         }
         let Some(output) = self.bar_wl.clone() else { return };
         let (surface, zones) = self.build_chrome(&self.bar, &output);
+        self.bar.reserved = self.bar.zone();
         self.bar_surface = Some(surface);
         self.zones = zones;
         self.bar_dirty = true;
@@ -546,7 +547,7 @@ impl App {
             let (w, h) = if edge.is_vertical() { (t, 0) } else { (0, t) };
             layer.set_anchor(edge_anchor(edge));
             layer.set_size(w as u32, h as u32);
-            layer.set_exclusive_zone(t);
+            layer.set_exclusive_zone(bar.zone());
         }
         layer.commit();
         let mut surface = Surface::on("bar", layer, &self.shm, self.started, output);
@@ -671,6 +672,7 @@ impl App {
             self.sync_hot_corners();
         }
         self.bar.update_paint(&self.store);
+        sync_zone(&mut self.bar, self.bar_surface.as_mut());
         self.request_paint();
         self.bar.read(&self.store, topic, now);
         let env_edge = self.bar.edge();
@@ -2607,5 +2609,19 @@ pub(crate) fn field_key(sym: Keysym) -> fs_menu::field::Key {
         Keysym::BackSpace => F::Backspace,
         Keysym::Delete | Keysym::KP_Delete => F::Delete,
         sym => sym.key_char().filter(char::is_ascii_alphabetic).map_or(F::Other, |c| F::Letter(c.to_ascii_lowercase())),
+    }
+}
+
+/// A bar's exclusive zone told to its layer again when its paint moved it
+/// (a band turning solid under a maximized window reserves its margin too).
+pub(crate) fn sync_zone(bar: &mut Bar, surface: Option<&mut Surface>) {
+    let zone = bar.zone();
+    if zone == bar.reserved || bar.framed() {
+        return;
+    }
+    bar.reserved = zone;
+    if let Some(s) = surface {
+        s.layer.set_exclusive_zone(zone);
+        s.layer.commit();
     }
 }

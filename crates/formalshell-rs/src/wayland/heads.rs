@@ -294,6 +294,7 @@ impl App {
             (None, Vec::new())
         } else {
             let (surface, zones) = self.build_chrome(&spare.bar, &output);
+            spare.bar.reserved = spare.bar.zone();
             (Some(surface), zones)
         };
         spare.dirty = true;
@@ -315,6 +316,7 @@ impl App {
             }
             let Some(s) = &mut self.heads[i].spare else { continue };
             s.bar.update_paint(&self.store);
+            super::sync_zone(&mut s.bar, s.surface.as_mut());
             s.bar.read(&self.store, topic, now);
             s.dirty = true;
         }
