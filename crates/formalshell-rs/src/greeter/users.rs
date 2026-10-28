@@ -10,6 +10,7 @@ pub struct User {
     pub login: String,
     /// The GECOS name, else the login.
     pub name: String,
+    pub uid: u32,
 }
 
 pub fn scan() -> Vec<User> {
@@ -27,11 +28,17 @@ fn parse(passwd: &str) -> Vec<User> {
                 return None;
             }
             let name = gecos.split(',').next().filter(|n| !n.trim().is_empty()).unwrap_or(login);
-            Some(User { login: login.to_owned(), name: name.trim().to_owned() })
+            Some(User { login: login.to_owned(), name: name.trim().to_owned(), uid })
         })
         .collect();
     out.sort_by(|a, b| a.login.cmp(&b.login));
     out
+}
+
+/// Before anyone has logged in here: the lowest uid, the machine's first account, rather than
+/// whichever login sorts first (a test account `fstest0` before its owner).
+pub fn first_account(users: &[User]) -> usize {
+    users.iter().enumerate().min_by_key(|(_, u)| u.uid).map_or(0, |(i, _)| i)
 }
 
 /// The session user's own full name, for the lock screen, else their login.
@@ -71,7 +78,11 @@ mod tests {
         );
         assert_eq!(
             users,
-            [User { login: "alice".into(), name: "alice".into() }, User { login: "kyandesutter".into(), name: "Kyan De Sutter".into() }]
+            [
+                User { login: "alice".into(), name: "alice".into(), uid: 1001 },
+                User { login: "kyandesutter".into(), name: "Kyan De Sutter".into(), uid: 1000 }
+            ]
         );
+        assert_eq!(first_account(&users), 1);
     }
 }

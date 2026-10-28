@@ -352,7 +352,7 @@ pub fn main(args: &[String]) {
     let last = sessions::remembered(&g.state_dir, None);
     g.select(sessions::pick(&g.sessions, last.as_deref()));
     let last_user = sessions::last_user(&g.state_dir);
-    g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or(0);
+    g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or_else(|| users::first_account(&g.users));
     g.open_user();
     g.arm_clock();
 
