@@ -788,29 +788,25 @@ impl Bar {
         true
     }
 
-    /// A clock wanting a frame every vsync (the marquee is not one).
+    /// A clock wanting a frame every vsync.
     pub fn animating(&mut self, now: Instant) -> bool {
-        self.slots.iter_mut().any(|s| s.animating(now))
+        let visible = !self.hidden;
+        let kit = &self.kit;
+        self.slots.iter_mut().any(|s| s.animating(kit, visible, now))
     }
 
-    /// A marquee has scrolled to another pixel since it was painted.
+    /// A marquee has moved since it was painted.
     pub fn marquee_due(&mut self, now: Instant) -> bool {
-        let _raster = crate::scene::raster_at(self.raster);
         let visible = !self.hidden;
         let kit = &self.kit;
         self.slots.iter_mut().any(|s| s.marquee_due(kit, visible, now))
     }
 
-    /// The next time a cell's own timer runs out or a label types on.
+    /// The next time something holding still starts to move again (a
+    /// marquee ending its hold).
     pub fn wake(&self, now: Instant) -> Option<Instant> {
-        self.slots.iter().filter_map(|s| s.wake(&self.kit, now)).min()
-    }
-
-    /// The next marquee step, which only repaints its cell in place.
-    pub fn marquee_wake(&self, now: Instant) -> Option<Instant> {
-        let _raster = crate::scene::raster_at(self.raster);
         let visible = !self.hidden;
-        self.slots.iter().filter_map(|s| s.marquee_wake(&self.kit, visible, now)).min()
+        self.slots.iter().filter_map(|s| s.wake(&self.kit, visible, now)).min()
     }
 
     /// The output went idle (screensaver or lock) or came back: an idle

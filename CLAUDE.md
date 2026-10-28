@@ -1202,6 +1202,9 @@ behaviour on hosts where a real owner exists.
   Mixing 0..1 and 0..100 has already shipped two bugs. A new service value
   gets the same treatment: read the daemon's own spec or source for its
   unit, never a raw `f64` crossing a crate boundary.
+- Animations run at the output's refresh rate off its frame callbacks,
+  moving by the clock with fractional offsets. Never a fixed low step rate
+  or whole-pixel snapping to save CPU; make the per-frame work cheap instead.
 - Commits: conventional style, lowercase imperative subject
   (`feat(compositor): ...`), no Co-Authored-By lines, no commit descriptions.
 - Every task ends with its verification commands actually run and their

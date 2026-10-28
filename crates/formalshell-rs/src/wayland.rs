@@ -1571,7 +1571,7 @@ impl App {
             let _raster = crate::scene::raster_at(p.surface.scale());
             p.layout(&mut self.bar, now);
             let kit = &self.bar.kit;
-            let content = p.slots.iter_mut().any(|s| s.animating(now) || s.marquee_due(kit, true, now));
+            let content = p.slots.iter_mut().any(|s| s.animating(kit, true, now));
             let morphing = p.menu.as_ref().is_some_and(|m| m.morph.running(now)) || p.fit.as_ref().is_some_and(|f| f.running(now));
             let animating = p.card.animating(now) || content || morphing;
             p.surface.present(&mut p.card.scene, animating, &qh);
@@ -1676,30 +1676,19 @@ impl App {
     fn arm_wake(&mut self, now: Instant) {
         let hosts = [&self.panel, &self.outgoing];
         let notifications = self.store.notifications.wake().map(|at| crate::services::notifications::instant_at(at, now));
-        let other = [self.bar.wake(now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY)]
+        let at = [self.bar.wake(now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY)]
             .into_iter()
             .chain(hosts.iter().filter_map(|h| h.as_ref()).flat_map(|h| [h.prime_until, h.wake.filter(|w| *w > now)]))
             .flatten()
             .min();
-        let popouts = [&self.overflow, &self.menu].into_iter().flatten().flat_map(|p| {
-            let _raster = crate::scene::raster_at(p.surface.scale());
-            p.slots.iter().filter_map(|s| s.marquee_wake(&self.bar.kit, true, now)).min()
-        });
-        let step = [self.bar.marquee_wake(now), self.spares_marquee_wake(now)].into_iter().flatten().chain(popouts).min();
-        let Some(at) = [other, step].into_iter().flatten().min() else { return };
-        // A marquee step only repaints its label in place: no cell reads
-        // again and the strip is not laid out.
-        let step_only = other.is_none_or(|o| o > at);
+        let Some(at) = at else { return };
         if self.wake.is_some_and(|w| w <= at && w > now) {
             return;
         }
         let Some(handle) = &self.handle else { return };
         self.wake = Some(at);
-        let _ = handle.insert_source(Timer::from_deadline(at), move |_, _, app: &mut App| {
+        let _ = handle.insert_source(Timer::from_deadline(at), |_, _, app: &mut App| {
             app.wake = None;
-            if step_only {
-                return TimeoutAction::Drop;
-            }
             app.bar.tick(&app.store, Instant::now());
             app.tick_spares(Instant::now());
             app.bar_dirty = true;

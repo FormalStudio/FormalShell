@@ -331,10 +331,6 @@ impl App {
         self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.wake(now)).min()
     }
 
-    pub(super) fn spares_marquee_wake(&self, now: Instant) -> Option<Instant> {
-        self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.marquee_wake(now)).min()
-    }
-
     pub(super) fn present_heads(&mut self, all: bool, now: Instant) {
         self.sync_catchers();
         let qh = self.qh.clone();
