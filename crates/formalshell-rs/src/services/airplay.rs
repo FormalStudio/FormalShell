@@ -204,6 +204,16 @@ pub async fn run(ctx: Ctx) {
                 None => base.await,
             }
         };
+        // A closed stdout is ready on every poll and wins the select over the
+        // exit future, so the exit is awaited here instead.
+        let event = match (event, child.as_mut()) {
+            (Ev::Line(None), Some((c, _))) => {
+                let _ = c.status().await;
+                Ev::Exit
+            }
+            (Ev::Line(None), None) => Ev::Exit,
+            (event, _) => event,
+        };
         match event {
             Ev::Settings(Some(next)) => settings = next,
             Ev::Settings(None) => return,
@@ -216,7 +226,7 @@ pub async fn run(ctx: Ctx) {
                 Some(Event::Error { message }) => state.last_error = message,
                 None => {}
             },
-            Ev::Line(None) => {}
+            Ev::Line(None) => unreachable!("a closed stdout became an exit above"),
             Ev::Exit => {
                 child = None;
                 dacp_up = false;
