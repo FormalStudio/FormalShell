@@ -331,6 +331,10 @@ impl App {
         self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.wake(now)).min()
     }
 
+    pub(super) fn spares_marquee_wake(&self, now: Instant) -> Option<Instant> {
+        self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.marquee_wake(now)).min()
+    }
+
     pub(super) fn present_heads(&mut self, all: bool, now: Instant) {
         self.sync_catchers();
         let qh = self.qh.clone();
@@ -340,7 +344,8 @@ impl App {
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
             let Some(surface) = &mut s.surface else { continue };
             let animating = s.bar.animating(now);
-            if all || s.dirty || (animating && !s.bar.step_in_place(now)) {
+            let stepping = animating || s.bar.marquee_due(now);
+            if all || s.dirty || (stepping && !s.bar.step_in_place(now)) {
                 s.bar.layout(&self.store, now);
                 s.dirty = false;
             }

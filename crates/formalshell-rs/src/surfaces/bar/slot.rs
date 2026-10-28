@@ -15,6 +15,9 @@ use crate::scene::{IRect, NodeId, Scene};
 use crate::surfaces::bar::cell::{Cell, Env, Frame, Ink, Kit, Limits, Measured, Painter, Part, View};
 use crate::surfaces::bar::cells;
 
+/// The most marquee steps a second, whatever the scroll rate and scale.
+const MARQUEE_HZ: f64 = 40.0;
+
 pub struct Slot {
     /// The name `bar.layout` gave it.
     pub name: String,
@@ -42,6 +45,11 @@ pub struct Slot {
     typing: Option<(usize, Instant)>,
     /// When the marquee's current cycle started, while it overflows.
     marquee: Option<Instant>,
+    /// The scroll the free label was last painted at, so a marquee step
+    /// that lands on the same device pixel repaints nothing.
+    painted_scroll: Option<f64>,
+    /// The output is idle (screensaver or lock up): the marquee holds still.
+    pub held: bool,
     /// Laid out along the strip, in the owner's scene; empty when the
     /// region's room hid it.
     pub rect: IRect,
@@ -85,6 +93,8 @@ impl Slot {
             cross: Animated::new(1.0, EFFECTS),
             typing: None,
             marquee: None,
+            painted_scroll: None,
+            held: false,
             rect: IRect::default(),
             clip: IRect::default(),
             ink: None,
@@ -178,7 +188,7 @@ impl Slot {
     }
 
     fn overflowing(&self, kit: &Kit, visible: bool) -> bool {
-        kit.look.motion && visible && self.measured.free.as_ref().is_some_and(|f| f.overflow && f.extent > 0.0)
+        kit.look.motion && visible && !self.held && self.measured.free.as_ref().is_some_and(|f| f.overflow && f.extent > 0.0)
     }
 
     pub fn scrolling(&self, kit: &Kit, visible: bool) -> bool {
@@ -186,18 +196,58 @@ impl Slot {
     }
 
     /// The marquee's scroll this frame, or none while it holds or fits.
+    /// Snapped down to the device pixel grid of the surface being drawn, so
+    /// it only moves when a pixel does.
     fn scroll(&mut self, kit: &Kit, visible: bool, now: Instant) -> Option<f64> {
         if !self.overflowing(kit, visible) {
             self.marquee = None;
             return None;
         }
         let start = *self.marquee.get_or_insert(now);
+        let raw = self.raw_scroll(kit, start, now)?;
+        let k = crate::scene::raster_scale().max(0.01);
+        Some((raw * k).floor() / k)
+    }
+
+    /// The marquee's unsnapped scroll for a cycle started at `start`, none
+    /// while it holds.
+    fn raw_scroll(&self, kit: &Kit, start: Instant, now: Instant) -> Option<f64> {
         let free = self.measured.free.as_ref()?;
         let look = &kit.look;
         let run = free.loop_width / look.marquee_px * 1000.0;
         let cycle = look.marquee_hold + run;
         let t = now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle;
         (t >= look.marquee_hold).then(|| (t - look.marquee_hold) / 1000.0 * look.marquee_px)
+    }
+
+    /// The marquee scrolled to another device pixel (or started or stopped)
+    /// since the label was last painted.
+    pub fn marquee_due(&mut self, kit: &Kit, visible: bool, now: Instant) -> bool {
+        !self.rect.is_empty() && self.scroll(kit, visible, now) != self.painted_scroll
+    }
+
+    /// When the marquee next lands on another device pixel or leaves its
+    /// hold, at most [`MARQUEE_HZ`] times a second. The marquee runs off
+    /// this timer, never off frame callbacks, so a 240 Hz output does not
+    /// redraw the strip 240 times a second for a 30 px/s scroll.
+    pub fn marquee_wake(&self, kit: &Kit, visible: bool, now: Instant) -> Option<Instant> {
+        if self.rect.is_empty() || !self.overflowing(kit, visible) {
+            return None;
+        }
+        let Some(start) = self.marquee else { return Some(now) };
+        let free = self.measured.free.as_ref()?;
+        let look = &kit.look;
+        let cycle = look.marquee_hold + free.loop_width / look.marquee_px * 1000.0;
+        let t = now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle;
+        let wait_ms = if t < look.marquee_hold {
+            look.marquee_hold - t
+        } else {
+            let k = crate::scene::raster_scale().max(0.01);
+            let px = (t - look.marquee_hold) / 1000.0 * look.marquee_px;
+            let next = ((px * k).floor() + 1.0) / k;
+            ((next - px) / look.marquee_px * 1000.0).max(1000.0 / MARQUEE_HZ)
+        };
+        Some(now + Duration::from_secs_f64(wait_ms.max(0.0) / 1000.0))
     }
 
     /// How many characters of the typing label show at `now`, and when the
@@ -219,22 +269,16 @@ impl Slot {
         Some((i, shown, next.map(|p| at + Duration::from_secs_f64(p * ms / 1000.0))))
     }
 
-    /// When the marquee next starts to move, while it is holding, the next
-    /// character of a typing label, or the cell's own timer, whichever
-    /// comes first.
-    pub fn wake(&self, kit: &Kit, visible: bool, now: Instant) -> Option<Instant> {
-        let marquee = self.marquee.filter(|_| self.overflowing(kit, visible)).and_then(|start| {
-            let free = self.measured.free.as_ref()?;
-            let look = &kit.look;
-            let cycle = look.marquee_hold + free.loop_width / look.marquee_px * 1000.0;
-            let t = now.saturating_duration_since(start).as_secs_f64() * 1000.0 % cycle;
-            (t < look.marquee_hold).then(|| now + Duration::from_secs_f64((look.marquee_hold - t) / 1000.0))
-        });
+    /// The next character of a typing label or the cell's own timer,
+    /// whichever comes first. The marquee keeps its own: [`Self::marquee_wake`].
+    pub fn wake(&self, kit: &Kit, now: Instant) -> Option<Instant> {
         let typing = self.typed(kit, now).and_then(|t| t.2);
-        [marquee, typing, self.cell.wake()].into_iter().flatten().min()
+        [typing, self.cell.wake()].into_iter().flatten().min()
     }
 
-    pub fn animating(&mut self, kit: &Kit, visible: bool, now: Instant) -> bool {
+    /// A clock that wants a frame on every vsync. The marquee is not one:
+    /// it steps off [`Self::marquee_wake`].
+    pub fn animating(&mut self, now: Instant) -> bool {
         let custom = self.cell.custom().is_some_and(|c| c.animating(now));
         custom
             || self.along.running(now)
@@ -242,19 +286,18 @@ impl Slot {
             || self.mark.running(now)
             || self.mark_fade.running(now)
             || self.ghost.is_some() && self.cross.running(now)
-            || self.scroll(kit, visible, now).is_some()
     }
 
     /// Whether only the cell's own drawing moves this frame: nothing about
     /// the slot's place, size or fade, and a self-drawn cell measuring what
-    /// it measured. False sends the frame to a whole layout.
-    pub fn moves_in_place(&mut self, kit: &mut Kit, vertical: bool, band: bool, visible: bool, now: Instant) -> bool {
+    /// it measured. A scrolling marquee moves in place. False sends the
+    /// frame to a whole layout.
+    pub fn moves_in_place(&mut self, kit: &mut Kit, vertical: bool, band: bool, now: Instant) -> bool {
         let still = !(self.along.running(now)
             || self.fade.running(now)
             || self.mark.running(now)
             || self.mark_fade.running(now)
-            || self.ghost.is_some() && self.cross.running(now)
-            || self.scroll(kit, visible, now).is_some());
+            || self.ghost.is_some() && self.cross.running(now));
         let shown = self.view.shown;
         let natural = self.natural;
         still
@@ -301,6 +344,7 @@ impl Slot {
         if typed.is_none() {
             self.typing = None;
         }
+        self.painted_scroll = scroll;
         let mut p = Painter::new(scene, &mut self.nodes, Some(self.clip.intersect(&rect)));
         if rect.is_empty() || fade <= 0.0 {
             p.finish();

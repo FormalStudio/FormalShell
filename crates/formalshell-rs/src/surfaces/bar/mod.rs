@@ -105,6 +105,8 @@ pub struct Bar {
     /// The bar is off screen (a fullscreen window over it): nothing runs a
     /// clock.
     hidden: bool,
+    /// The output is idle (screensaver or lock up): marquees hold still.
+    idle: bool,
     born: Instant,
     /// Cells rebuilt (a new theme or layout) and not yet read in full: that
     /// read places them where they were rather than growing every one of
@@ -144,6 +146,7 @@ impl Bar {
             paint: None,
             hover: None,
             hidden: false,
+            idle: false,
             born: Instant::now(),
             rebuilt: false,
             room: Room::default(),
@@ -303,6 +306,7 @@ impl Bar {
         if self.hidden {
             self.set_hidden(true);
         }
+        self.set_idle(self.idle);
     }
 
     /// The governed entries of a region, as the second bar holds them.
@@ -765,16 +769,17 @@ impl Bar {
     /// those slots repainted where they are, with no layout of the strip.
     /// False when anything along it changes, for a whole layout instead.
     pub fn step_in_place(&mut self, now: Instant) -> bool {
+        let _raster = crate::scene::raster_at(self.raster);
         let visible = !self.hidden;
         let vertical = self.edge.is_vertical();
         let band = self.band_box.is_some();
-        if !self.slots.iter_mut().all(|s| s.moves_in_place(&mut self.kit, vertical, band, visible, now)) {
+        if !self.slots.iter_mut().all(|s| s.moves_in_place(&mut self.kit, vertical, band, now)) {
             return false;
         }
         let edge = self.edge;
         let (band, bare) = (&self.band_box, &self.bare_inks);
         for (i, slot) in self.slots.iter_mut().enumerate() {
-            if slot.rect.is_empty() || !slot.drawing(now) {
+            if slot.rect.is_empty() || !(slot.drawing(now) || slot.marquee_due(&self.kit, visible, now)) {
                 continue;
             }
             let ink = slot_ink(band, bare, slot.ink);
@@ -783,17 +788,38 @@ impl Bar {
         true
     }
 
+    /// A clock wanting a frame every vsync (the marquee is not one).
     pub fn animating(&mut self, now: Instant) -> bool {
-        let visible = !self.hidden;
-        let kit = &self.kit;
-        self.slots.iter_mut().any(|s| s.animating(kit, visible, now))
+        self.slots.iter_mut().any(|s| s.animating(now))
     }
 
-    /// The next time something holding still starts to move again (a
-    /// marquee ending its hold).
-    pub fn wake(&self, now: Instant) -> Option<Instant> {
+    /// A marquee has scrolled to another pixel since it was painted.
+    pub fn marquee_due(&mut self, now: Instant) -> bool {
+        let _raster = crate::scene::raster_at(self.raster);
         let visible = !self.hidden;
-        self.slots.iter().filter_map(|s| s.wake(&self.kit, visible, now)).min()
+        let kit = &self.kit;
+        self.slots.iter_mut().any(|s| s.marquee_due(kit, visible, now))
+    }
+
+    /// The next time a cell's own timer runs out or a label types on.
+    pub fn wake(&self, now: Instant) -> Option<Instant> {
+        self.slots.iter().filter_map(|s| s.wake(&self.kit, now)).min()
+    }
+
+    /// The next marquee step, which only repaints its cell in place.
+    pub fn marquee_wake(&self, now: Instant) -> Option<Instant> {
+        let _raster = crate::scene::raster_at(self.raster);
+        let visible = !self.hidden;
+        self.slots.iter().filter_map(|s| s.marquee_wake(&self.kit, visible, now)).min()
+    }
+
+    /// The output went idle (screensaver or lock) or came back: an idle
+    /// bar's marquees hold still.
+    pub fn set_idle(&mut self, idle: bool) {
+        self.idle = idle;
+        for slot in &mut self.slots {
+            slot.held = idle;
+        }
     }
 
     /// The slot under a point of the window, if it is the strip's.
