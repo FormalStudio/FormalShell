@@ -74,7 +74,7 @@ impl Cell for ActiveWindow {
         }
         parts.push(Part::Name { text: w.name.clone().unwrap_or_else(|| w.app_id.clone()), max: look.narrow / 2.0, dim: w.name.is_none() });
         parts.push(Part::Free { text: w.title.clone(), dim: w.name.is_some(), lead: look.md, ceiling: f64::INFINITY, cross: false });
-        View::new(parts, look.xxs)
+        View::new(parts, look.xs)
     }
 
     fn limits(&self, look: &Look, _along: f64, rest: f64) -> Option<Limits> {

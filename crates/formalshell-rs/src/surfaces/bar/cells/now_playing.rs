@@ -98,7 +98,7 @@ impl Cell for NowPlaying {
                 format!("NOW PLAYING / {by}{title} / RIGHT NEXT / SCROLL PREV NEXT")
             }
         };
-        View::new(parts, look.xxs).panel("media").tooltip(tooltip)
+        View::new(parts, look.xs).panel("media").tooltip(tooltip)
     }
 
     fn limits(&self, look: &Look, along: f64, _rest: f64) -> Option<Limits> {
