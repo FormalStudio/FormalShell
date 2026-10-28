@@ -122,7 +122,10 @@ impl App {
         let insets = self.toast_insets();
         let right = fs_info::notifications::position_spec(self.store.config.str("notifications.position")).right;
         let column = (right, surfaces::toasts::column_width(&self.store.theme.theme, &insets, right));
-        if !want || self.toasts.as_ref().is_some_and(|t| t.column != column) {
+        // The column stays mapped between toasts (see above), so it is moved
+        // to the live bar's output only when a toast arrives on an empty one.
+        let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl.as_ref());
+        if !want || stray || self.toasts.as_ref().is_some_and(|t| t.column != column) {
             if self.toasts.take().is_some() {
                 self.log("toasts unmapped");
             }
@@ -136,7 +139,7 @@ impl App {
             let ls = self.overlay("formalshell:notifications", layer, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
             let mut surface = Surface::new("toasts", ls, &self.shm, self.started);
             surface.wait_map = true;
-            self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer));
+            self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer, self.bar_wl.clone()));
             self.toasts_dirty = true;
         }
         let qh = self.qh.clone();

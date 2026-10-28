@@ -31,6 +31,7 @@ use fs_info::notifications::{self as model, Group, Urgency};
 use fs_info::toast_stack::{self, StackParams};
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 use vello_cpu::kurbo::{Affine, Rect};
 
@@ -195,6 +196,8 @@ pub struct Toasts {
     /// The side and width the layer was made with.
     pub column: (bool, u32),
     layer: Layer,
+    /// The output the layer was made on.
+    pub output: Option<WlOutput>,
 }
 
 /// Where the stack hangs: the bar's own edge cleared, `screenPadding` in.
@@ -307,9 +310,10 @@ pub fn column_width(theme: &Theme, insets: &Insets, right: bool) -> u32 {
 }
 
 impl Toasts {
-    pub fn new(surface: Surface, size: (i32, i32), column: (bool, u32), layer: Layer) -> Self {
+    pub fn new(surface: Surface, size: (i32, i32), column: (bool, u32), layer: Layer, output: Option<WlOutput>) -> Self {
         Self {
             layer,
+            output,
             column,
             surface,
             scene: Scene::clear(size.0, size.1),
