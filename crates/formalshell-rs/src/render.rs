@@ -11,7 +11,7 @@ use vello_cpu::peniko::{BlendMode, Compose, Fill, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
 use crate::scene::{Bitmap, Brush, IRect, Paint, Scene, VOp};
-use crate::text::{ColorGlyph, Coverage};
+use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
 
 pub struct Renderer {
@@ -30,7 +30,23 @@ pub struct Renderer {
     scaled: HashMap<(usize, u64, u8), (Arc<BezPath>, Option<Arc<Coverage>>)>,
     /// Colour glyphs made at the canvas's pixel size, by source and size.
     colors: HashMap<(usize, u32), (Arc<ColorGlyph>, Option<(Bitmap, i32, i32)>)>,
+    /// A line's glow drawn once into a pixmap of its own (a band's ink
+    /// shadow is 9 taps of every glyph's outline per layer), by the glyphs,
+    /// the glow, the scale and where the node's origin falls inside a
+    /// canvas pixel; the entry holds the line so its glyphs' addresses are
+    /// never reused under it. A scrolling marquee only moves it.
+    glows: HashMap<GlowKey, (ShapedText, Arc<Pixmap>)>,
+    #[cfg(test)]
+    no_glow_cache: bool,
 }
+
+/// The glyphs' outline addresses and places, the glow's colour, offset and
+/// blur, the scale, and the origin's eighth of a canvas pixel down and across.
+type GlowKey = (u64, [u8; 4], [u32; 3], u64, (u8, u8));
+
+/// Glows are a few lines' worth on a strip; a crossfade's every alpha
+/// step is its own entry, so the table is cleared rather than kept.
+const GLOWS_LIMIT: usize = 64;
 
 const INKED_LIMIT: usize = 8192;
 /// An emoji at 20 px is 1.6 KB, so a full table stays under a megabyte.
@@ -53,6 +69,9 @@ impl Renderer {
             inked: HashMap::new(),
             scaled: HashMap::new(),
             colors: HashMap::new(),
+            glows: HashMap::new(),
+            #[cfg(test)]
+            no_glow_cache: false,
         }
     }
 
@@ -67,6 +86,7 @@ impl Renderer {
             self.scale = scale;
             self.scaled.clear();
             self.colors.clear();
+            self.glows.clear();
             self.resize(self.size.0, self.size.1);
         }
     }
@@ -217,6 +237,7 @@ impl Renderer {
                     self.ctx.set_paint(gradient);
                     self.ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
                 }
+                Paint::Glow { text, color: ink, x, y, blur } if self.cached_glow(node.bounds, at, text, *ink, (*x, *y, *blur)) => {}
                 Paint::Glow { text, color: ink, x, y, blur } => {
                     // A box of taps over the blur's reach, each carrying its
                     // share of the alpha: cheap, and close enough at the 2px
@@ -513,6 +534,72 @@ impl Renderer {
         self.ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(coverage.w), f64::from(coverage.h)));
     }
 
+    /// A glow node drawn from its cached pixmap, made on a miss; false when
+    /// `at` rotates or squeezes it, for the caller to fill the outlines.
+    fn cached_glow(&mut self, bounds: IRect, at: Affine, text: &ShapedText, ink: Rgba, (x, y, blur): (f32, f32, f32)) -> bool {
+        let origin = at * Affine::translate((f64::from(bounds.x), f64::from(bounds.y)));
+        let [a, b, c, d, e, f] = origin.as_coeffs();
+        if b != 0.0 || c != 0.0 || a != d || a <= 0.0 || bounds.is_empty() {
+            return false;
+        }
+        #[cfg(test)]
+        if self.no_glow_cache {
+            return false;
+        }
+        let eighth = |v: f64| {
+            let q = ((v - v.floor()) * 8.0).round();
+            if q >= 8.0 { (v.floor() + 1.0, 0u8) } else { (v.floor(), q as u8) }
+        };
+        let ((px, qx), (py, qy)) = (eighth(e), eighth(f));
+        let glyphs = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            for g in &text.glyphs {
+                (Arc::as_ptr(&g.path) as usize, g.x, g.y).hash(&mut h);
+            }
+            h.finish()
+        };
+        let key = (glyphs, ink.to_u8(), [x.to_bits(), y.to_bits(), blur.to_bits()], a.to_bits(), (qx, qy));
+        let pixmap = match self.glows.get(&key) {
+            Some((_, p)) => p.clone(),
+            None => {
+                if self.glows.len() >= GLOWS_LIMIT {
+                    self.glows.clear();
+                }
+                let w = (f64::from(bounds.w) * a).ceil() as u16 + 2;
+                let h = (f64::from(bounds.h) * a).ceil() as u16 + 2;
+                let mut ctx = RenderContext::new(w, h);
+                let reach = (blur / 2.0).max(0.0);
+                let taps: &[(f32, f32)] = if reach < 0.25 {
+                    &[(0.0, 0.0)]
+                } else {
+                    &[(0.0, 0.0), (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0), (-0.7, -0.7), (0.7, -0.7), (-0.7, 0.7), (0.7, 0.7)]
+                };
+                let share = ink.with_alpha(ink.a / taps.len() as f32 * if taps.len() > 1 { 2.0 } else { 1.0 });
+                ctx.set_paint(color(share));
+                let base = Affine::translate((f64::from(qx) / 8.0, f64::from(qy) / 8.0)) * Affine::scale(a);
+                for (dx, dy) in taps {
+                    for glyph in &text.glyphs {
+                        let p = (glyph.x as f32 + x + dx * reach, glyph.y as f32 + y + dy * reach);
+                        ctx.set_transform(base * Affine::translate((f64::from(p.0), f64::from(p.1))));
+                        ctx.fill_path(&glyph.path);
+                    }
+                }
+                ctx.flush();
+                let mut pixmap = Pixmap::new(w, h);
+                ctx.render(&mut pixmap, &mut self.resources);
+                let pixmap = Arc::new(pixmap);
+                self.glows.insert(key, (text.clone(), pixmap.clone()));
+                pixmap
+            }
+        };
+        let (w, h) = (f64::from(pixmap.width()), f64::from(pixmap.height()));
+        self.ctx.set_transform(Affine::translate((px, py)));
+        self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(pixmap), sampler: vello_cpu::peniko::ImageSampler::default() });
+        self.ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+        true
+    }
+
     /// `coverage` in `ink`'s colour, opaque: the ink's alpha is the
     /// sampler's, so a fade reuses the same pixmap.
     fn inked(&mut self, coverage: &Arc<Coverage>, ink: Rgba) -> Arc<Pixmap> {
@@ -603,8 +690,49 @@ fn color(c: Rgba) -> AlphaColor<Srgb> {
 
 #[cfg(test)]
 mod tests {
-    use super::{coverage_lift, fits, one_to_one};
+    use super::{Renderer, coverage_lift, fits, one_to_one};
+    use crate::scene::{IRect, Paint, Scene};
+    use fs_theme::color::Rgba;
     use vello_cpu::kurbo::{Affine, Rect};
+
+    /// A glow drawn from its cached pixmap lands within a step of the
+    /// outlines filled in place, at 1x and at a fractional scale, and a
+    /// scroll by whole pixels reuses the pixmap.
+    #[test]
+    fn a_cached_glow_draws_what_the_outlines_do() {
+        let mut text = crate::text::Text::new();
+        let style = crate::text::TextStyle {
+            family: crate::text::Family::Generic(parley::GenericFamily::SansSerif),
+            size: 16.0,
+            weight: 600.0,
+            tracking: 0.0,
+            wdth: 100.0,
+            wght: None,
+        };
+        let shaped = text.shape("Hide & Seek, But We STOLE", style);
+        assert!(!shaped.glyphs.is_empty());
+        for scale in [1.0, 1.25] {
+            let draw = |cache: bool, shift: f64| {
+                let mut scene = Scene::new(400, 40);
+                let (w, h) = shaped.box_size();
+                let paint = Paint::Glow { text: shaped.clone(), color: Rgba::BLACK.with_alpha(0.6), x: 0.0, y: 1.0, blur: 2.0 };
+                let id = scene.add(IRect::new(20, 5, w + 6, h + 6), paint);
+                scene.set_transform(id, Affine::translate((shift + 3.0, 3.0)));
+                let mut r = Renderer::new(400, 40);
+                r.set_scale(scale);
+                r.no_glow_cache = !cache;
+                r.render(&scene, IRect::new(0, 0, 400, 40));
+                (r.canvas().data_as_u8_slice().to_vec(), r.glows.len())
+            };
+            for shift in [0.0, 7.0 / scale] {
+                let (direct, _) = draw(false, shift);
+                let (cached, entries) = draw(true, shift);
+                assert_eq!(entries, 1);
+                let worst = direct.iter().zip(&cached).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+                assert!(worst <= 2, "scale {scale} shift {shift}: a channel off by {worst}");
+            }
+        }
+    }
 
     #[test]
     fn a_picture_made_at_the_canvas_scale_lands_on_whole_pixels() {
