@@ -67,6 +67,20 @@ zypper = "pkgconfig(libspa-0.2)"
 
 [[native]]
 kind = "lib"
+name = "pam"
+dnf = "pkgconfig(pam)"
+moss = "pkgconfig(pam)"
+zypper = "pkgconfig(pam)"
+
+[[native]]
+kind = "lib"
+name = "pam_misc"
+dnf = "pkgconfig(pam_misc)"
+moss = "pkgconfig(pam_misc)"
+zypper = "pkgconfig(pam_misc)"
+
+[[native]]
+kind = "lib"
 name = "wayland-client"
 apt = "libwayland-dev"
 dnf = "pkgconfig(wayland-client)"

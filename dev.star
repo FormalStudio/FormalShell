@@ -12,7 +12,8 @@ dev(
     platforms = ["x86_64-linux", "aarch64-linux"],
     packages = [pkg("just"), pkg("rustup", links = {name: "rustup" for name in RUST})] + MATUGEN,
     # fs-audio's PipeWire client binds libpipewire with bindgen, which loads libclang.
-    libs = [lib(n) for n in ["libpipewire-0.3", "libspa-0.2", "wayland-client", "xkbcommon", "fontconfig"]],
+    # The lock screen authenticates through PAM.
+    libs = [lib(n) for n in ["libpipewire-0.3", "libspa-0.2", "wayland-client", "xkbcommon", "fontconfig", "pam", "pam_misc"]],
     bins = [bin(n) for n in ["pkg-config", "gcc", "clang"]],
     env = {"RUSTUP_TOOLCHAIN": "1.99.1"},
 )
