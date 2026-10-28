@@ -10,7 +10,7 @@ use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Rect, RoundedRect, Shape, Str
 use vello_cpu::peniko::{BlendMode, Compose, Fill, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::{Bitmap, Brush, IRect, Paint, Scene, VOp};
+use crate::scene::{Bitmap, Brush, Fade, IRect, Paint, Scene, VOp};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
 
@@ -179,7 +179,11 @@ impl Renderer {
         let mut active: Option<IRect> = None;
         for node in scene.nodes().filter(|n| n.bounds.intersects(&rect)) {
             // Casts and glows paint past their own box.
-            let spills = matches!(node.paint, Paint::Casts { .. } | Paint::Glow { .. });
+            let (paint, fade) = match &node.paint {
+                Paint::Faded { paint, fade } => (&**paint, Some(*fade)),
+                paint => (paint, None),
+            };
+            let spills = matches!(paint, Paint::Casts { .. } | Paint::Glow { .. });
             let drawn = drawn_box(node.bounds, node.transform).filter(|_| !spills);
             let inside = |c: &IRect| drawn.is_some_and(|d| c.contains(&d));
             let want = node.clip.filter(|c| !inside(c));
@@ -200,7 +204,11 @@ impl Renderer {
                 _ => {}
             }
             let at = origin * node.transform;
-            match &node.paint {
+            if fade.is_some() {
+                self.ctx.set_transform(origin);
+                self.ctx.push_layer(None, None, None, None, None);
+            }
+            match paint {
                 Paint::Rect { fill, radius } => {
                     self.ctx.set_transform(at);
                     self.ctx.set_paint(color(*fill));
@@ -418,6 +426,7 @@ impl Renderer {
                         self.ctx.stroke_path(path);
                     }
                 }
+                Paint::Faded { .. } => {}
                 Paint::Casts { rect: card, radius, layers, cutout } => {
                     self.ctx.set_transform(at);
                     self.ctx.push_layer(None, None, None, None, None);
@@ -435,6 +444,10 @@ impl Renderer {
                     self.ctx.pop_layer();
                     self.ctx.pop_layer();
                 }
+            }
+            if let Some(fade) = fade {
+                self.fade_out(origin, fade);
+                self.ctx.pop_layer();
             }
         }
         if active.is_some() {
@@ -534,10 +547,39 @@ impl Renderer {
         self.ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(coverage.w), f64::from(coverage.h)));
     }
 
+    /// Erases the open layer toward `fade`'s ends: opaque at each end,
+    /// nothing `low` or `high` px in.
+    fn fade_out(&mut self, origin: Affine, fade: Fade) {
+        let v = fade.view;
+        let (x0, y0, x1, y1) = (f64::from(v.x), f64::from(v.y), f64::from(v.right()), f64::from(v.bottom()));
+        self.ctx.set_transform(origin);
+        self.ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestOut)), None, None, None);
+        let ramps = if fade.vertical {
+            [(fade.low, (x0, y0), (x0, y0 + fade.low), Rect::new(x0, y0, x1, y0 + fade.low)), (fade.high, (x0, y1), (x0, y1 - fade.high), Rect::new(x0, y1 - fade.high, x1, y1))]
+        } else {
+            [(fade.low, (x0, y0), (x0 + fade.low, y0), Rect::new(x0, y0, x0 + fade.low, y1)), (fade.high, (x1, y0), (x1 - fade.high, y0), Rect::new(x1 - fade.high, y0, x1, y1))]
+        };
+        for (width, from, to, rect) in ramps {
+            if width < 0.5 {
+                continue;
+            }
+            let gradient = vello_cpu::peniko::Gradient::new_linear(from, to).with_stops([color(Rgba::BLACK), color(Rgba::TRANSPARENT)]);
+            self.ctx.set_paint(gradient);
+            self.ctx.fill_rect(&rect);
+        }
+        self.ctx.pop_layer();
+    }
+
     /// A glow node drawn from its cached pixmap, made on a miss; false when
     /// `at` rotates or squeezes it, for the caller to fill the outlines.
     fn cached_glow(&mut self, bounds: IRect, at: Affine, text: &ShapedText, ink: Rgba, (x, y, blur): (f32, f32, f32)) -> bool {
-        let origin = at * Affine::translate((f64::from(bounds.x), f64::from(bounds.y)));
+        // The pixmap holds the whole line and its reach, not the node's
+        // bounds: a marquee's node is cut to its viewport, and the same
+        // line is drawn again at every scroll with other bounds.
+        let reach = (blur / 2.0).max(0.0);
+        let margin = (x.abs() + y.abs() + reach).ceil() as i32 + 2;
+        let (tw, th) = text.box_size();
+        let origin = at * Affine::translate((f64::from(bounds.x - margin), f64::from(bounds.y - margin)));
         let [a, b, c, d, e, f] = origin.as_coeffs();
         if b != 0.0 || c != 0.0 || a != d || a <= 0.0 || bounds.is_empty() {
             return false;
@@ -566,10 +608,9 @@ impl Renderer {
                 if self.glows.len() >= GLOWS_LIMIT {
                     self.glows.clear();
                 }
-                let w = (f64::from(bounds.w) * a).ceil() as u16 + 2;
-                let h = (f64::from(bounds.h) * a).ceil() as u16 + 2;
+                let w = (f64::from(tw + margin * 2) * a).ceil() as u16 + 2;
+                let h = (f64::from(th + margin * 2) * a).ceil() as u16 + 2;
                 let mut ctx = RenderContext::new(w, h);
-                let reach = (blur / 2.0).max(0.0);
                 let taps: &[(f32, f32)] = if reach < 0.25 {
                     &[(0.0, 0.0)]
                 } else {
@@ -577,7 +618,7 @@ impl Renderer {
                 };
                 let share = ink.with_alpha(ink.a / taps.len() as f32 * if taps.len() > 1 { 2.0 } else { 1.0 });
                 ctx.set_paint(color(share));
-                let base = Affine::translate((f64::from(qx) / 8.0, f64::from(qy) / 8.0)) * Affine::scale(a);
+                let base = Affine::translate((f64::from(qx) / 8.0, f64::from(qy) / 8.0)) * Affine::scale(a) * Affine::translate((f64::from(margin), f64::from(margin)));
                 for (dx, dy) in taps {
                     for glyph in &text.glyphs {
                         let p = (glyph.x as f32 + x + dx * reach, glyph.y as f32 + y + dy * reach);
@@ -731,6 +772,32 @@ mod tests {
                 let worst = direct.iter().zip(&cached).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
                 assert!(worst <= 2, "scale {scale} shift {shift}: a channel off by {worst}");
             }
+            // A marquee: the node cut to a viewport narrower than the line
+            // and the line scrolled under it, drawn first at a narrower cut
+            // so a pixmap sized to the bounds would be reused short.
+            let (w, h) = shaped.box_size();
+            let marquee = |r: &mut Renderer, cut: i32, scroll: f64| {
+                let mut scene = Scene::new(400, 40);
+                let paint = Paint::Glow { text: shaped.clone(), color: Rgba::BLACK.with_alpha(0.6), x: 0.0, y: 1.0, blur: 2.0 };
+                let (bounds, clip) = (IRect::new(20, 5, cut, h + 6), IRect::new(20, 0, cut, 40));
+                let id = scene.add(bounds, Paint::Rect { fill: Rgba::TRANSPARENT, radius: 0.0 });
+                scene.update_with(id, bounds, paint, true, Affine::translate((3.0 - scroll, 3.0)), Some(clip));
+                r.render(&scene, IRect::new(0, 0, 400, 40));
+                r.canvas().data_as_u8_slice().to_vec()
+            };
+            // Half a pixel, on the cache's eighth-pixel grid at 1x and 1.25x.
+            let (cut, scroll) = (w / 2, f64::from(w / 3) + 0.5);
+            let mut direct = Renderer::new(400, 40);
+            direct.set_scale(scale);
+            direct.no_glow_cache = true;
+            let want = marquee(&mut direct, cut, scroll);
+            let mut cached = Renderer::new(400, 40);
+            cached.set_scale(scale);
+            marquee(&mut cached, cut / 3, scroll);
+            let got = marquee(&mut cached, cut, scroll);
+            assert!(want.iter().any(|v| *v > 0), "the marquee drew nothing");
+            let worst = want.iter().zip(&got).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
+            assert!(worst <= 2, "scale {scale} marquee: a channel off by {worst}");
         }
     }
 

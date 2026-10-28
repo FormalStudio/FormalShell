@@ -185,6 +185,16 @@ impl std::fmt::Debug for Bitmap {
     }
 }
 
+/// An alpha ramp at either end of `view` along its axis: `low` px of it at
+/// the start (left or top), `high` px at the end, none at 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fade {
+    pub view: IRect,
+    pub vertical: bool,
+    pub low: f64,
+    pub high: f64,
+}
+
 impl Cast {
     fn same(&self, o: &Cast) -> bool {
         (self.x, self.y, self.blur, self.spread) == (o.x, o.y, o.blur, o.spread) && self.color == o.color
@@ -193,6 +203,9 @@ impl Cast {
 
 pub enum Paint {
     Rect { fill: Rgba, radius: f32 },
+    /// Another paint faded out toward the ends of `fade`'s view (a
+    /// marquee's cut edges), in a layer of its own so nothing under it fades.
+    Faded { paint: Box<Paint>, fade: Fade },
     /// A bitmap drawn at the node's bounds origin, one pixel to a pixel.
     Image { image: Bitmap, alpha: f32 },
     /// A bitmap stretched over the node's bounds inside a rounded rect (a
@@ -454,6 +467,7 @@ impl Scene {
 
 fn paint_eq(a: &Paint, b: &Paint) -> bool {
     match (a, b) {
+        (Paint::Faded { paint: p1, fade: f1 }, Paint::Faded { paint: p2, fade: f2 }) => f1 == f2 && paint_eq(p1, p2),
         (Paint::Rect { fill: f1, radius: r1 }, Paint::Rect { fill: f2, radius: r2 }) => f1 == f2 && r1 == r2,
         (Paint::Text { text: t1, color: c1 }, Paint::Text { text: t2, color: c2 }) => c1 == c2 && t1.same_as(t2),
         (Paint::Blur { text: t1, color: c1, blur: b1 }, Paint::Blur { text: t2, color: c2, blur: b2 }) => {

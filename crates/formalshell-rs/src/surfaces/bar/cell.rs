@@ -19,7 +19,7 @@ use fs_theme::tokens::WEIGHTS;
 use parley::GenericFamily;
 use vello_cpu::kurbo::Affine;
 
-use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, Fade, IRect, NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
 use crate::text::{self, Family, ShapedText, Text, TextStyle};
 
@@ -269,6 +269,8 @@ pub struct Look {
     pub cell_width: f64,
     pub xxs: f64,
     pub huge: f64,
+    /// How far a cut marquee label fades in from each cut end (`xxl`).
+    pub fade: f64,
     pub xs: f64,
     pub sm: f64,
     pub md: f64,
@@ -348,6 +350,7 @@ impl Look {
             cell_width: s.bar_cell_width,
             xxs: s.xxs,
             huge: s.huge,
+            fade: s.xxl,
             xs: s.xs,
             sm: s.sm,
             md: s.md,
@@ -455,11 +458,13 @@ pub struct Painter<'a> {
     /// Where a node this painter has not drawn before goes in paint order:
     /// after its own last one, or after this.
     anchor: Option<NodeId>,
+    /// While set, every node drawn fades out toward its view's ends.
+    pub fade: Option<Fade>,
 }
 
 impl<'a> Painter<'a> {
     pub fn new(scene: &'a mut Scene, nodes: &'a mut Vec<NodeId>, clip: Option<IRect>) -> Self {
-        Self { scene, nodes, used: 0, clip, anchor: None }
+        Self { scene, nodes, used: 0, clip, anchor: None, fade: None }
     }
 
     /// New nodes start right after `anchor` rather than on top of the scene.
@@ -486,6 +491,10 @@ impl<'a> Painter<'a> {
         }
         let id = self.nodes[self.used];
         self.used += 1;
+        let paint = match self.fade {
+            Some(fade) => Paint::Faded { paint: Box::new(paint), fade },
+            None => paint,
+        };
         self.scene.update_with(id, bounds, paint, true, transform, clip);
     }
 
@@ -906,6 +915,19 @@ impl Kit {
                         };
                         let clip = Some(p.clip.map_or(vp, |c| c.intersect(&vp)));
                         let copies: &[f64] = if scroll_now.is_some() { &[0.0, 1.0] } else { &[0.0] };
+                        // A cut label fades at its cut ends: the far end
+                        // whenever it overflows, the near end growing in as
+                        // the scroll leaves its hold and out as the next copy
+                        // arrives, so neither end ever pops.
+                        let overflow = m.free.as_ref().is_some_and(|l| l.overflow) && pass == 0;
+                        let ramp = look.fade;
+                        let near = scroll_now.map_or(0.0, |s| s.min(loop_w - s).clamp(0.0, ramp));
+                        let (low, high) = match (vertical, f.edge) {
+                            (true, Edge::Left) => (ramp, near),
+                            _ => (near, ramp),
+                        };
+                        let faded = overflow.then_some(Fade { view: vp, vertical, low, high });
+                        let outer = std::mem::replace(&mut p.fade, faded);
                         for k in copies {
                             let shift = -scroll + k * loop_w;
                             let local = Affine::translate((shift - text::PAD as f64, -text::PAD as f64));
@@ -916,6 +938,7 @@ impl Kit {
                             let transform = full * Affine::translate((-bounds.x as f64, -bounds.y as f64));
                             p.text_in(&shaped, bounds, transform, clip, color, &ink.glow);
                         }
+                        p.fade = outer;
                     }
                 }
             }
