@@ -33,8 +33,10 @@ pub fn focus_window(id: &str) -> String {
     format!("hl.dsp.focus({{ window = {} }})", string(&selector(id)))
 }
 
+/// A bare selector argument is ignored and closes the focused window; only
+/// the `window` field picks the target.
 pub fn close_window(id: &str) -> String {
-    format!("hl.dsp.window.close({})", string(&selector(id)))
+    format!("hl.dsp.window.close({{ window = {} }})", string(&selector(id)))
 }
 
 pub fn spawn(argv: &[String]) -> String {
@@ -87,7 +89,7 @@ mod tests {
         assert_eq!(focus_workspace("2"), "hl.dsp.focus({ workspace = 2 })");
         assert_eq!(focus_workspace("name"), "hl.dsp.focus({ workspace = \"name\" })");
         assert_eq!(focus_window("55d0c1b0"), "hl.dsp.focus({ window = \"address:0x55d0c1b0\" })");
-        assert_eq!(close_window("0xab"), "hl.dsp.window.close(\"address:0xab\")");
+        assert_eq!(close_window("0xab"), "hl.dsp.window.close({ window = \"address:0xab\" })");
         assert_eq!(
             spawn(&["foot".into(), "-e".into(), "it's".into()]),
             r#"hl.dsp.exec_cmd("'foot' '-e' 'it'\\''s'")"#
