@@ -70,7 +70,7 @@ for entry in "${sources[@]}"; do
   read -r name url sum strip <<<"$entry"
   file=$dl/$name-${url##*/}
   if ! { [ -f "$file" ] && echo "$sum  $file" | sha256sum -c --quiet 2>/dev/null; }; then
-    curl -fsSL -o "$file" "$url"
+    curl -fsSL --retry 5 --retry-all-errors -o "$file" "$url"
     echo "$sum  $file" | sha256sum -c --quiet
   fi
   rm -rf "${tp:?}/$name"; mkdir -p "$tp/$name"
@@ -85,7 +85,7 @@ earth_url=https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.t
 earth_sum=d225f1f35a6448a4d1d8f6de6e48f3433e470085b70a35800e64f384f269a7b0
 earth=$dl/blue-marble-${earth_url##*/}
 if ! { [ -f "$earth" ] && echo "$earth_sum  $earth" | sha256sum -c --quiet 2>/dev/null; }; then
-  curl -fsSL -o "$earth" "$earth_url"
+  curl -fsSL --retry 5 --retry-all-errors -o "$earth" "$earth_url"
   echo "$earth_sum  $earth" | sha256sum -c --quiet
 fi
 
@@ -108,7 +108,7 @@ for entry in "${fonts[@]}"; do
   read -r path name sum <<<"$entry"
   file=$tp/cartridge-fonts/$name
   if ! { [ -f "$file" ] && echo "$sum  $file" | sha256sum -c --quiet 2>/dev/null; }; then
-    curl -fsSL -o "$file" "https://raw.githubusercontent.com/google/fonts/$fonts_rev/ofl/$path"
+    curl -fsSL --retry 5 --retry-all-errors -o "$file" "https://raw.githubusercontent.com/google/fonts/$fonts_rev/ofl/$path"
     echo "$sum  $file" | sha256sum -c --quiet
   fi
 done
@@ -116,7 +116,7 @@ done
 export CARGO_HOME=$work/cargo RUSTUP_HOME=$work/rustup
 export PATH=$CARGO_HOME/bin:$tp/go/bin:$tp/zig:$PATH
 if ! command -v cargo >/dev/null; then
-  curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
+  curl -fsSL --retry 5 --retry-all-errors https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable --no-modify-path
 fi
 host=$(rustc -vV | sed -n 's/^host: //p')
 export CARGO_TARGET_DIR=$work/target
