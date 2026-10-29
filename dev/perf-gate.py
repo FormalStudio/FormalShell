@@ -230,7 +230,8 @@ def cmd_run(args):
     for i in range(1, count + 1):
         for leg in legs:
             for mode in ("plain", "quota"):
-                env = dict(os.environ)
+                # The baseline is g815's; never the mac rig's fallback.
+                env = dict(os.environ, FS_RIG="g815")
                 for k in QUOTA_ENV:
                     env.pop(k, None)
                 if mode == "quota":

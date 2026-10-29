@@ -384,15 +384,20 @@ render_node_present() {
 
 # The driver name is not readable off card*/device/driver (vkms sits on the
 # faux bus, whose symlink says faux_driver), but the device path itself is
-# /sys/devices/faux/vkms/..., which nothing else produces.
+# /sys/devices/faux/vkms/..., which nothing else produces. A card has one DRM
+# master, so the mac rig makes one per slot user through vkms's configfs,
+# /sys/devices/faux/vkms-<user>, and a slot takes its own.
 vkms_card_device() {
+  local sysfs any=""
   for sysfs in /sys/class/drm/card[0-9]*; do
     [ -e "$sysfs/device" ] || continue
     case "$(readlink -f "$sysfs/device")" in
-      */vkms*) echo "/dev/dri/$(basename "$sysfs")"; return 0 ;;
+      */vkms-"$(id -un)") echo "/dev/dri/$(basename "$sysfs")"; return 0 ;;
+      */vkms-*) ;;
+      */vkms*) any=${any:-/dev/dri/$(basename "$sysfs")} ;;
     esac
   done
-  return 1
+  [ -n "$any" ] && echo "$any"
 }
 
 session_mode=""
@@ -415,14 +420,28 @@ fi
 # put in session_env so a takeover leg's own sessions and every helper
 # started from here inherit it too. sudo resets the environment, so a leg
 # that needs root or a real system service declares leg_<n>_vm_only and is
-# refused here. The VM rig keeps its system bus, which is the VM's own.
-if [ "$session_mode" = "nested" ]; then
+# refused here. The VM rig keeps its system bus, which is the VM's own. The
+# mac rig (dev/mac-vm.sh) renders on vkms like the VM rig but carries no
+# real daemons, so it is isolated the same way; its spec writes
+# /etc/formalshell-rig/kind. It also refuses leg_<n>_budget legs, whose
+# numbers hold on g815 alone.
+rig_kind=$(cat /etc/formalshell-rig/kind 2>/dev/null || true)
+if [ "$session_mode" = "nested" ] || [ "$rig_kind" = mac ]; then
   for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
     vm_only_var="leg_${leg_name}_vm_only"
+    budget_var="leg_${leg_name}_budget"
+    flag_var="leg_${leg_name}_flag"
+    flag_decl="${!flag_var}"
     if [ -n "${!vm_only_var:-}" ]; then
-      flag_var="leg_${leg_name}_flag"
-      flag_decl="${!flag_var}"
-      echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig, which g815 does not have yet: ${!vm_only_var}" >&2
+      if [ "$rig_kind" = mac ]; then
+        echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig, not the mac rig: ${!vm_only_var}" >&2
+      else
+        echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig, which g815 does not have yet: ${!vm_only_var}" >&2
+      fi
+      exit 1
+    fi
+    if [ "$rig_kind" = mac ] && [ -n "${!budget_var:-}" ]; then
+      echo "SMOKE_FAIL: ${flag_decl%% *} runs on g815 only: ${!budget_var}" >&2
       exit 1
     fi
   done
@@ -797,6 +816,11 @@ else
   # empty value still sends it down the wayland backend, which then fails
   # to connect at all.
   session_env+=("AQ_DRM_DEVICES=$vkms_device")
+  # Without seatd (the mac rig runs none), libseat finds no seat for an ssh
+  # login and aquamarine's backend fails to create. noop opens the card
+  # straight, which the video group allows, and lets four slots each be the
+  # master of their own card at once.
+  [ -S /run/seatd.sock ] || session_env+=("LIBSEAT_BACKEND=noop")
   unset WAYLAND_DISPLAY
 fi
 

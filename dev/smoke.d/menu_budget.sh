@@ -13,6 +13,7 @@
 # commit nothing.
 leg_menu_budget_flag="--menu-budget"
 leg_menu_budget_order=22
+leg_menu_budget_budget="the launcher and bar frame budgets are g815's numbers"
 leg_menu_budget_needs=""
 
 leg_menu_budget_timing() {

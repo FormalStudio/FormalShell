@@ -24,6 +24,7 @@
 # counts from.
 leg_r0_measure_flag="--r0-measure <seconds>"
 leg_r0_measure_order=900
+leg_r0_measure_budget="R0's CPU, frame and RSS numbers are g815's"
 leg_r0_measure_needs="foot"
 
 r0_shim_dir="$shot_dir/r0-shim"

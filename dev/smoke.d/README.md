@@ -10,6 +10,9 @@ frame, teardown) and sources every file here. A leg defines:
 - `leg_<n>_vm_only` `"<why>"` for a leg that needs root or a real system
   service (NetworkManager, logind, polkit): a nested run on a real host
   gets a private, empty system bus and refuses the leg with `SMOKE_FAIL`.
+- `leg_<n>_budget` `"<why>"` for a leg whose numbers only hold on g815 (its
+  CPU and frame budgets): the mac rig refuses it, and `dev/remote.sh`
+  leaves it out of that rig's run lists.
 - `leg_<n>_fixture_window` `keep` to leave the base run's fixture window in
   the frame; `leg_<n>_validate` usage checks, run before the build.
 - `leg_<n>_fixture` `settings_fragment '<json>'` and staged files;

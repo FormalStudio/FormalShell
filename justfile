@@ -1,6 +1,7 @@
 default: build
-# Everything that compiles or runs the shell goes to g815's slot users
-# (dev/remote.sh): the mac has no pipewire, PAM or Wayland to link.
+# Everything that compiles or runs the shell goes to g815's slot users, or
+# the mac rig's while g815 is off (dev/remote.sh, FS_RIG): the mac itself
+# has no pipewire, PAM or Wayland to link.
 #
 # cargo build --release, and ./result laid out as the release tarball
 # unpacks (dev/build.sh).

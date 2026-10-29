@@ -26,8 +26,9 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 ## Verification loop
 
 There is no Nix anywhere: the macbook, g815 and e1504g carry none.
-Everything that compiles or runs the shell goes to g815 through
-`dev/remote.sh`, since the mac has no pipewire, PAM or Wayland to link.
+Everything that compiles or runs the shell goes through `dev/remote.sh` to
+g815, or to the mac rig while g815 is off, since the mac itself has no
+pipewire, PAM or Wayland to link.
 
 - The rig is g815: `dev/remote.sh {build|lint|cargo|check|smoke|smoke-affected|smoke-all|run|sync|pull|shell}`
   rsyncs the working tree (`.gitignore` applies, so `crates/target` stays
@@ -40,8 +41,25 @@ Everything that compiles or runs the shell goes to g815 through
   `formalshell-rs` alone ~25s, a cold one ~50s), and a worktree syncs to
   `~/formalshell-wt/<name>` rather than over the main checkout's copy. Any
   number of agents can run at once; past eight they queue. Its header
-  carries the slot model. A g815 that does not answer ssh fails the
-  command; there is no fallback.
+  carries the slot model.
+- **The mac rig** takes over when g815 is off (it powers down around 22:00
+  for the night): `FS_RIG=g815|mac` picks one, and unset, a g815 that does
+  not answer ssh in 5s sends the command to `mac`, booting the guest first
+  when it is stopped (`dev/mac-vm.sh {start|stop|status|apply}`, ~1m from
+  cold). It is `fstestmac`, an openSUSE Tumbleweed aarch64 lima guest on
+  Apple's Virtualization framework (8 vCPU, 16 GiB, its own disk, nothing of
+  the mac mounted), with four slot users of the same shape (`fstest0` to
+  `fstest3`, locks `/tmp/formalshell-mac-<n>.lock`). Every verb works there;
+  each Hyprland runs on a vkms card of its own (`vkms-<user>`) with
+  llvmpipe instead of nesting, at about 33 frames a second. Measured
+  against g815 on the same tree: a no-op build 1.7s (g815 1.6s), one
+  `formalshell-rs` file 37s (27s), a cold worktree 108s (54s), `just smoke
+  --menu` 37s warm (38s), a one-file `smoke-affected` 117s (105s), the core
+  set 91s over four slots. Budgets do not hold there: `leg_<n>_budget` legs
+  (`--idle`, `--menu-budget`, `--r0-measure`, so `dev/perf-gate.py` too,
+  which pins `FS_RIG=g815`) are refused and left out of its run lists, as
+  are the `vm_only` legs. Release tarballs and the hosts' fspec packages
+  build on g815 only; shipping waits for it.
 - **The default check for a change is `just smoke-affected [base]`** (or
   `just smoke <flags>` for the legs you know it touches). It diffs against
   the merge base with `origin/main` (or `base`), uncommitted and untracked
@@ -131,7 +149,10 @@ How a run works:
 - Session mode is decided by the machine, never by a flag: a real host nests
   Hyprland in the running session, and a VM whose pixman parent advertises
   no `zwp_linux_dmabuf_v1` and hands out no render node runs it on the
-  `vkms` software KMS card instead.
+  `vkms` software KMS card instead, the slot user's own `vkms-<user>` card
+  where the machine made one, through `LIBSEAT_BACKEND=noop` where no
+  seatd runs. `/etc/formalshell-rig/kind` reading `mac` gives a vkms run the
+  nested rig's private system bus and refusals.
 - The nested session runs in a transient user scope of its own
   (`fs-run-hypr-<pid>`) and is stopped as a cgroup at teardown, so a
   compositor that outlives `timeout` goes with it; a leftover carrying the
@@ -980,7 +1001,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 
 Sessions run from the macbook, which has no Wayland at all, so every build,
 check and smoke run happens on g815 through `dev/remote.sh` (the
-verification loop above). g815 and e1504g are both openSUSE Tumbleweed
+verification loop above), or on the mac rig while g815 is off. g815 and e1504g are both openSUSE Tumbleweed
 managed by fspec (FormalSpec); the owner's spec is `~/.config/formalspec`
 (FormalSnake/dotfiles, branch `main`). Both are reachable over ssh with
 passwordless sudo.
@@ -1015,6 +1036,17 @@ the theme engine or any compositor action against a live session there.
 Apply and look; anything that drives a surface goes through the nested
 rig, which on e1504g means `dev/smoke.sh` with `FS_RESULT` pointing at a
 result built on g815 and copied over.
+
+The mac rig lives in the same spec: `hosts/fstestmac/lima.yaml` is the VM
+(its first boot builds an fspec for the guest), `hosts/fstestmac/host.star`
+what runs in it (the slot users, `formalshell-rig-vkms` making a card per
+slot through vkms's configfs, Hyprland and the legs' tools, wlrctl built
+from source since Tumbleweed carries it for x86_64 only, and the
+formalshell package built in the guest for aarch64). Recreate it with
+`limactl delete fstestmac`, `dev/mac-vm.sh start`, then `dev/mac-vm.sh
+apply`. fspec's own `vm()` drives qemu on a KVM host only, hence the
+script; aarch64 Tumbleweed has no history snapshots, so the guest's repos
+roll and `fspec.lock` pins none for it.
 
 The VM rig (a throwaway fspec-driven headless VM on g815, for the
 `leg_<n>_vm_only` legs, the daemon-backed `just check`s and

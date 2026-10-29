@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # The rig: builds, checks, cargo and dev/smoke.sh on g815, natively on
-# x86_64.
+# x86_64, or on the mac rig while g815 is off.
+#
+# FS_RIG picks it: g815, or mac, the macbook's own Tumbleweed aarch64 guest
+# (dev/mac-vm.sh, hosts/fstestmac of the spec). Unset, a g815 that does not
+# answer ssh in five seconds sends the command to mac, booting the guest
+# when it is stopped. The mac rig has four slot users of the same shape;
+# each Hyprland there runs on a vkms card of its own rather than nesting,
+# since the guest has no GPU. Budgets (--idle, --menu-budget, --r0-measure,
+# dev/perf-gate.py) hold on g815 alone and are refused there. Release
+# tarballs and the hosts' packages still build on g815 only.
 #
 # Every run is one of the slot users on g815, fstest0 to fstest7
 # (hosts/g815/rig.star of the owner's fspec spec, FormalSnake/dotfiles). A
@@ -41,9 +50,36 @@ usage() {
 }
 [ $# -gt 0 ] || usage
 
-host="${FS_G815_HOST:-g815}"
-# The count of slot users hosts/g815/rig.star declares.
-slots="${FS_G815_SLOTS:-8}"
+ssh_opts=(-o BatchMode=yes -o ForwardAgent=no -o ConnectTimeout=10 -o LogLevel=ERROR)
+
+# Resolved once, by the command an agent ran; the build and runs it starts
+# inherit it.
+if [ -z "${FS_RIG:-}" ]; then
+  if ssh -o ConnectTimeout=5 "${ssh_opts[@]}" "fstest0@${FS_G815_HOST:-g815}" true 2>/dev/null; then
+    FS_RIG=g815
+  else
+    echo "g815 does not answer ssh; using the mac rig" >&2
+    FS_RIG=mac
+  fi
+fi
+export FS_RIG
+case "$FS_RIG" in
+  g815)
+    host="${FS_G815_HOST:-g815}"
+    # The count of slot users hosts/g815/rig.star declares.
+    slots="${FS_G815_SLOTS:-8}"
+    ;;
+  mac)
+    host=fstestmac
+    # hosts/fstestmac/host.star's SLOTS.
+    slots=4
+    ;;
+  *) echo "FS_RIG must be g815 or mac, got '$FS_RIG'" >&2; exit 1 ;;
+esac
+rig=$FS_RIG
+if [ "$rig" = mac ] && [ -z "${FS_RIG_SLOT:-}" ]; then
+  "$repo_root/dev/mac-vm.sh" start
+fi
 
 case "$repo_root" in
   */FormalShell) remote_dir=formalshell ;;
@@ -52,7 +88,9 @@ esac
 
 # Every run's own time on its slot, kept across runs so a list starts with
 # its longest legs and the last one to finish is not the slowest started last.
+# The mac rig's runs keep their own, being slower.
 times="${XDG_STATE_HOME:-$HOME/.local/state}/formalshell-rig/leg-times.tsv"
+[ "$rig" = g815 ] || times="${times%.tsv}-$rig.tsv"
 
 # Runs a list of runs over the free slots off one build. The list goes
 # longest recorded first; a run with no record goes first of all.
@@ -64,8 +102,20 @@ run_list() {
   mkdir -p "$out" "$(dirname "$times")"
   touch "$times"
   python3 -c '
-import collections, statistics, sys
+import collections, glob, os, re, statistics, sys
 runs = [l.strip() for l in open(sys.argv[1]) if l.strip() and not l.lstrip().startswith("#")]
+# A leg declaring leg_<n>_budget measures numbers that hold on g815 alone.
+if sys.argv[3] != "g815":
+    budget = set()
+    for path in glob.glob(os.path.join(sys.argv[4], "*.sh")):
+        leg, text = os.path.basename(path)[:-3], open(path).read()
+        flag = re.search(r"^leg_%s_flag=\"(--[a-z0-9-]+)" % leg, text, re.M)
+        if flag and re.search(r"^leg_%s_budget=" % leg, text, re.M):
+            budget.add(flag.group(1))
+    held = [r for r in runs if budget & set(r.split())]
+    if held:
+        print("budgets hold on g815 alone, not run on %s: %s" % (sys.argv[3], ", ".join(held)), file=sys.stderr)
+    runs = [r for r in runs if r not in held]
 seen = collections.defaultdict(list)
 for line in open(sys.argv[2]):
     parts = line.rstrip("\n").split("\t")
@@ -74,15 +124,15 @@ for line in open(sys.argv[2]):
 est = {r: statistics.median(seen[r][-3:]) if seen[r] else float("inf") for r in runs}
 for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
     print("%s\t%s" % ("?" if est[r] == float("inf") else int(est[r]), r))
-' "$list" "$times" > "$out/order"
+' "$list" "$times" "$rig" "$repo_root/dev/smoke.d" > "$out/order"
   started=$SECONDS
-  echo "$label: building once, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
-  if ! env -u FS_G815_SLOT "$self" run "dev/build.sh && dev/share-result.sh $shared" > "$out/build.log" 2>&1; then
+  echo "$label: building once on $rig, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
+  if ! env -u FS_RIG_SLOT "$self" run "dev/build.sh && dev/share-result.sh $shared" > "$out/build.log" 2>&1; then
     tail -20 "$out/build.log" >&2
     echo "$label: build failed, $out/build.log" >&2
     return 1
   fi
-  builder=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$out/build.log" | head -1)
+  builder=$(sed -n 's/^[a-z0-9]*: slot \([0-9]*\)$/\1/p' "$out/build.log" | head -1)
   echo "$label: built in $((SECONDS - started))s on slot $builder"
   : > "$out/results"
   while IFS=$'\t' read -r _ flags; do
@@ -92,9 +142,9 @@ for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
       t0=$SECONDS
       status=0
       # shellcheck disable=SC2086 # one line is one run's flags
-      env -u FS_G815_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
-      slot=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
-      waited=$(sed -n 's/^g815: waited \([0-9]*\)s for a slot$/\1/p' "$out/$slug.log" | head -1)
+      env -u FS_RIG_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
+      slot=$(sed -n 's/^[a-z0-9]*: slot \([0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
+      waited=$(sed -n 's/^[a-z0-9]*: waited \([0-9]*\)s for a slot$/\1/p' "$out/$slug.log" | head -1)
       took=$((SECONDS - t0 - ${waited:-0}))
       verdict=PASS; [ "$status" -eq 0 ] || verdict=FAIL
       printf '%s\t%s\t%s\n' "$(date +%s)" "$took" "$flags" >> "$times"
@@ -124,22 +174,24 @@ case "${1:-}" in
     exit "$status"
     ;;
   smoke-all)
-    # The whole suite is for milestones. One at a time across every agent
-    # on this mac: a second queues here rather than halving both.
+    # The whole suite is for milestones. One at a time per rig across every
+    # agent on this mac: a second queues here rather than halving both.
     if [ -z "${FS_SMOKE_ALL_HELD:-}" ]; then
+      lock=/tmp/formalshell-smoke-all.lock
+      [ "$rig" = g815 ] || lock=/tmp/formalshell-smoke-all-$rig.lock
       exec python3 -c '
 import fcntl, os, subprocess, sys
-lock = open("/tmp/formalshell-smoke-all.lock", "a+")
+lock = open(sys.argv[1], "a+")
 try:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except OSError:
     lock.seek(0)
     print("smoke-all: queued behind the run started by %s" % (lock.read().strip() or "another agent"), file=sys.stderr)
     fcntl.flock(lock, fcntl.LOCK_EX)
-lock.seek(0); lock.truncate(); lock.write("%s (pid %d)\n" % (sys.argv[1], os.getpid())); lock.flush()
+lock.seek(0); lock.truncate(); lock.write("%s (pid %d)\n" % (sys.argv[2], os.getpid())); lock.flush()
 os.environ["FS_SMOKE_ALL_HELD"] = "1"
-sys.exit(subprocess.call(sys.argv[2:]))
-' "$repo_root" "$self" "$@"
+sys.exit(subprocess.call(sys.argv[3:]))
+' "$lock" "$repo_root" "$self" "$@"
     fi
     shift
     list="${1:-$repo_root/dev/smoke-all.list}"
@@ -153,44 +205,43 @@ esac
 # whole command holds its slot, so a sync and the run after it share it.
 # A slot's .last names the checkout that ran there last: the picker tries
 # the free slots this checkout left warm, then unused ones, then any.
-if [ -z "${FS_G815_SLOT:-}" ]; then
+if [ -z "${FS_RIG_SLOT:-}" ]; then
   exec python3 -c '
 import fcntl, os, subprocess, sys, time
-slots, me, cmd = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
+rig, slots, me, cmd = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
 def last(n):
     try:
-        return open("/tmp/formalshell-g815-%d.last" % n).read().strip()
+        return open("/tmp/formalshell-%s-%d.last" % (rig, n)).read().strip()
     except OSError:
         return ""
 began = time.time()
 while True:
     order = sorted(range(slots), key=lambda n: (last(n) != me, last(n) != "", n))
     for n in order:
-        lock = open("/tmp/formalshell-g815-%d.lock" % n, "w")
+        lock = open("/tmp/formalshell-%s-%d.lock" % (rig, n), "w")
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             lock.close()
             continue
-        with open("/tmp/formalshell-g815-%d.last" % n, "w") as f:
+        with open("/tmp/formalshell-%s-%d.last" % (rig, n), "w") as f:
             f.write(me + "\n")
-        os.environ["FS_G815_SLOT"] = str(n)
+        os.environ["FS_RIG_SLOT"] = str(n)
         waited = int(time.time() - began)
         if waited:
-            print("g815: waited %ds for a slot" % waited, file=sys.stderr)
-        print("g815: slot %d" % n, file=sys.stderr)
+            print("%s: waited %ds for a slot" % (rig, waited), file=sys.stderr)
+        print("%s: slot %d" % (rig, n), file=sys.stderr)
         sys.exit(subprocess.call(cmd))
     time.sleep(3)
-' "$slots" "$repo_root" "$self" "$@"
+' "$rig" "$slots" "$repo_root" "$self" "$@"
 fi
-case "$FS_G815_SLOT" in
-  ''|*[!0-9]*) echo "FS_G815_SLOT must be a slot number, got '$FS_G815_SLOT'" >&2; exit 1 ;;
+case "$FS_RIG_SLOT" in
+  ''|*[!0-9]*) echo "FS_RIG_SLOT must be a slot number, got '$FS_RIG_SLOT'" >&2; exit 1 ;;
 esac
-[ "$FS_G815_SLOT" -lt "$slots" ] || { echo "FS_G815_SLOT $FS_G815_SLOT is past the $slots slots" >&2; exit 1; }
-target="fstest$FS_G815_SLOT@$host"
-ssh_opts=(-o BatchMode=yes -o ForwardAgent=no -o ConnectTimeout=10 -o LogLevel=ERROR)
+[ "$FS_RIG_SLOT" -lt "$slots" ] || { echo "FS_RIG_SLOT $FS_RIG_SLOT is past $rig's $slots slots" >&2; exit 1; }
+target="fstest$FS_RIG_SLOT@$host"
 if ! ssh "${ssh_opts[@]}" "$target" true 2>/dev/null; then
-  echo "g815: $target does not answer ssh" >&2
+  echo "$rig: $target does not answer ssh" >&2
   exit 1
 fi
 
@@ -200,14 +251,20 @@ fi
 # into the slot's manager environment, so that is not a safe place to read.
 # The rig's own directory goes first on PATH: it carries the Hyprland that
 # loads a patched aquamarine (`_rig()` in g815.star has the why), which
-# dev/smoke.sh finds there. The guard refuses to go on as anyone but a slot
-# user.
-remote_env='unset HYPRLAND_INSTANCE_SIGNATURE
+# dev/smoke.sh finds there. The mac rig has neither: its sessions take a
+# vkms card, which dev/smoke.sh picks off the slot user's name. The guard
+# refuses to go on as anyone but a slot user.
+case "$rig" in
+  g815)
+    remote_env='unset HYPRLAND_INSTANCE_SIGNATURE
      export PATH=/usr/local/libexec/formalshell-rig:$PATH
      export WAYLAND_DISPLAY=$(cat "$XDG_RUNTIME_DIR/formalshell-rig-display")'
+    ;;
+  mac) remote_env='unset HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY' ;;
+esac
 remote_ssh() {
   ssh "${ssh_opts[@]}" "$target" \
-    "case \$(id -un) in fstest[0-9]*) ;; *) echo 'g815: not a slot user' >&2; exit 1 ;; esac
+    "case \$(id -un) in fstest[0-9]*) ;; *) echo '$rig: not a slot user' >&2; exit 1 ;; esac
      $remote_env
      cd ~/$remote_dir && $*"
 }
@@ -283,7 +340,7 @@ cmd_smoke() {
     for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Z0-9_]+ [^[:space:]]+\.(png|log|tar)' | awk '{print $2}'); do
       pull_one "$remote"
     done
-    echo "g815: smoke run failed (exit $status)" >&2
+    echo "$rig: smoke run failed (exit $status)" >&2
     exit "$status"
   fi
 
@@ -291,7 +348,7 @@ cmd_smoke() {
   # trailing newline, so the SMOKE_OK marker can land appended to it.
   remote=$(printf '%s\n' "$out" | grep -oE 'SMOKE_OK [^[:space:]]+' | tail -1 | awk '{print $2}')
   if [ -z "$remote" ]; then
-    echo "g815: no SMOKE_OK line in smoke output" >&2
+    echo "$rig: no SMOKE_OK line in smoke output" >&2
     exit 1
   fi
   mkdir -p "$artifacts"

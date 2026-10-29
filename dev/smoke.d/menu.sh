@@ -140,6 +140,7 @@ sleep 2
 $ipc call menu status > "$menu_status_emoji_path" 2>&1
 sleep 1
 $ipc call menu select "Pick" ' ["a","b","c"]' tok1 > /dev/null 2>&1
+touch "$shot_dir/menu-drive.done"
 EOF
 
   # Runs after the screenshot, never before: closing the surface first would
@@ -149,6 +150,9 @@ EOF
   write_script "$menu_finish_script" <<EOF
 #!/usr/bin/env bash
 sleep $((t0 + 24))
+# The mac rig's software compositor runs the drive past 24s; the select it
+# ends on has to be pending before the close.
+for _ in \$(seq 80); do [ -e "$shot_dir/menu-drive.done" ] && break; sleep 0.25; done
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 cat "$iso_home/.local/state/formalshell/menu-selection.txt" > "$selection_path" 2>&1

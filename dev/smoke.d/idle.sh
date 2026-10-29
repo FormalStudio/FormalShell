@@ -13,6 +13,7 @@
 # surfaces cost. Under FS_CPU_QUOTA this is the e1504g power saver stand-in.
 leg_idle_flag="--idle"
 leg_idle_order=901
+leg_idle_budget="the idle CPU, wakeup and cold start budgets are g815's numbers"
 leg_idle_needs=""
 
 idle_results_path="$shot_dir/idle-results.txt"

@@ -43,7 +43,8 @@ def matches(path, patterns):
 
 
 def legs():
-    """Each leg's flag and whether it needs the VM rig, off dev/smoke.d."""
+    """Each leg's flag, whether it needs the VM rig and whether it measures a
+    budget, off dev/smoke.d."""
     out = {}
     d = os.path.join(root, "dev", "smoke.d")
     for name in sorted(os.listdir(d)):
@@ -54,7 +55,8 @@ def legs():
         flag = re.search(r'^leg_%s_flag="(--[a-z0-9-]+)' % leg, text, re.M)
         if flag:
             vm = re.search(r"^leg_%s_vm_only=" % leg, text, re.M) is not None
-            out[leg] = (flag.group(1), vm)
+            budget = re.search(r"^leg_%s_budget=" % leg, text, re.M) is not None
+            out[leg] = (flag.group(1), vm, budget)
     return out
 
 
@@ -66,7 +68,9 @@ def main():
 
     smoke_map = tomllib.load(open(os.path.join(root, "dev", "smoke-map.toml"), "rb"))
     by_leg = legs()
-    flags = {flag: (leg, vm) for leg, (flag, vm) in by_leg.items()}
+    flags = {flag: (leg, vm, budget) for leg, (flag, vm, budget) in by_leg.items()}
+    # dev/remote.sh exports the rig it resolved; budgets hold on g815 alone.
+    rig = os.environ.get("FS_RIG", "g815")
     listed = [l.strip() for l in open(os.path.join(root, "dev", "smoke-all.list")) if l.strip() and not l.startswith("#")]
 
     # A run naming a flag no leg here declares is a typo, or a map that
@@ -125,12 +129,19 @@ def main():
         for run in runs:
             take(run, path)
 
-    picked, skipped = [], []
+    picked, skipped, budgets = [], [], []
     for run, reasons in chosen.items():
-        vm = [w for w in run.split() if w in flags and flags[w][1]]
-        (skipped if vm else picked).append((run, reasons))
+        words = [w for w in run.split() if w in flags]
+        if any(flags[w][1] for w in words):
+            skipped.append(run)
+        elif rig != "g815" and any(flags[w][2] for w in words):
+            budgets.append(run)
+        else:
+            picked.append((run, reasons))
     if skipped:
-        print("smoke-affected: needs the VM rig, not run here: %s" % ", ".join(r for r, _ in skipped))
+        print("smoke-affected: needs the VM rig, not run here: %s" % ", ".join(skipped))
+    if budgets:
+        print("smoke-affected: budgets hold on g815 alone, not run on %s: %s" % (rig, ", ".join(budgets)))
     if not picked:
         print("smoke-affected: no legs to run")
     else:
