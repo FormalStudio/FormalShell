@@ -178,8 +178,10 @@ done
 # FS_RESULT names a result built elsewhere and copied in (an unpacked
 # release tarball has the same layout), for a host that must not build
 # (e1504g): the result link points at it and nothing is compiled here.
+# dev/build.sh leaves result a directory, which `ln -sfn` would link into.
 if [ -n "${FS_RESULT:-}" ]; then
-  ln -sfn "$FS_RESULT" result
+  rm -rf result
+  ln -s "$FS_RESULT" result
 else
   dev/build.sh
 fi

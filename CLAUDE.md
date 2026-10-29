@@ -29,14 +29,28 @@ There is no Nix anywhere: the macbook, g815 and e1504g carry none.
 Everything that compiles or runs the shell goes to g815 through
 `dev/remote.sh`, since the mac has no pipewire, PAM or Wayland to link.
 
-- The rig is g815: `dev/remote.sh {build|lint|cargo|check|smoke|run|sync|pull|shell}`
+- The rig is g815: `dev/remote.sh {build|lint|cargo|check|smoke|smoke-all|run|sync|pull|shell}`
   rsyncs the working tree (`.gitignore` applies, so `crates/target` stays
-  per slot and cargo stays incremental) to one of two slot users
-  (`fstest0`, `fstest1`, a mac-side flock each) and runs there natively on
-  x86_64, nested in the slot's headless labwc
+  per slot and cargo stays incremental) to one of eight slot users
+  (`fstest0` to `fstest7`, a mac-side flock each, `FS_G815_SLOTS`) and runs
+  there natively on x86_64, nested in the slot's headless labwc
   (`formalshell-rig-parent.service`), with screenshots and artifacts pulled
-  into `./artifacts/`. Its header carries the slot model. A g815 that does
-  not answer ssh fails the command; there is no fallback.
+  into `./artifacts/`. A command takes the free slot its checkout last ran
+  on first (a warm target: a no-op build is ~3s, a change to
+  `formalshell-rs` alone ~25s, a cold one ~50s), and a worktree syncs to
+  `~/formalshell-wt/<name>` rather than over the main checkout's copy. Any
+  number of agents can run at once; past eight they queue. Its header
+  carries the slot model. A g815 that does not answer ssh fails the
+  command; there is no fallback.
+- `just smoke-all [list]`: every run in `dev/smoke-all.list` (one line of
+  flags each, every leg the nested rig can run) spread over the free slots,
+  all off one build (`dev/share-result.sh` copies it where every slot user
+  can read it, and each run gets it as `FS_RESULT`). Each run's log and
+  artifacts land in `artifacts/smoke-all-<ts>/<n>-<flags>/`, `results`
+  lists PASS or FAIL with seconds and slot, and it exits non-zero on any
+  failure. `FS_SMOKE_JOBS` caps the parallel runs. A slot user's very
+  first run has failed `--notify`'s toast-column check once; a second run
+  passes.
 - `just build`: `dev/build.sh` on the rig: `cargo build --locked --release
   -p formalshell-rs` in dev.star's environment (`fspec dev -- cargo`), then
   `./result` laid out as the release tarball unpacks (`bin/formalshell`,
@@ -976,9 +990,10 @@ managed by fspec (FormalSpec); the owner's spec is `~/.config/formalspec`
 (FormalSnake/dotfiles, branch `main`). Both are reachable over ssh with
 passwordless sudo.
 
-The rig lives in that spec: `_rig()` in `g815.star` declares the slot users
-`fstest0` and `fstest1` (group `fstest`, plus `render` and `video` for the
-Intel render node), their `formalshell-rig-parent` user service (a headless
+The rig lives in that spec: `hosts/g815/rig.star` declares the slot users
+`fstest0` to `fstest7` (uids 1001 to 1008, group `fstest`, plus `render`
+and `video` for the Intel render node, each slice at `CPUWeight=20` so a
+slot yields to the desktop), their `formalshell-rig-parent` user service (a headless
 labwc that writes its socket name to
 `$XDG_RUNTIME_DIR/formalshell-rig-display`) and the tools the legs need.
 A slot user picks up a new group only when its user manager restarts

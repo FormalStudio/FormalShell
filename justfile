@@ -11,6 +11,10 @@ lint:
     ./dev/remote.sh lint
 smoke *FLAGS:
     ./dev/remote.sh smoke {{FLAGS}}
+# Every run in dev/smoke-all.list (or the list given) over the rig's free
+# slots in parallel, all off one build.
+smoke-all *LIST:
+    ./dev/remote.sh smoke-all {{LIST}}
 cargo *ARGS:
     ./dev/remote.sh cargo {{ARGS}}
 # fs-tray, fs-notifd, fs-mpris on a private bus (dev/check.sh); the

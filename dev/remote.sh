@@ -2,8 +2,8 @@
 # The rig: builds, checks, cargo and dev/smoke.sh on g815, natively on
 # x86_64.
 #
-# Every run is one of two slot users on g815, fstest0 and fstest1
-# (`_rig()` in g815.star of the owner's fspec spec, FormalSnake/dotfiles). A
+# Every run is one of the slot users on g815, fstest0 to fstest7
+# (hosts/g815/rig.star of the owner's fspec spec, FormalSnake/dotfiles). A
 # slot user is not the owner: its own uid, runtime dir, session bus and
 # systemd user manager, no access to the live session's Wayland socket, the
 # cards or the input devices. Its manager runs a headless labwc on the Intel
@@ -14,52 +14,118 @@
 # VM rig g815 does not have yet; they fail saying so.
 #
 # The working tree, not a commit, is what runs: `sync` rsyncs it into the
-# slot user's ~/formalshell, leaving crates/target alone so cargo stays
-# incremental between runs. cargo runs in dev.star's environment
+# slot user's ~/formalshell (a worktree into ~/formalshell-wt/<name>, so two
+# checkouts sharing a slot do not rebuild over each other), leaving
+# crates/target alone so cargo stays incremental between runs. A command
+# takes the free slot this checkout last ran on before any other, for a warm
+# target. cargo runs in dev.star's environment
 # (`fspec dev`), and dev/build.sh links the art and helpers no distro
 # carries out of g815's installed formalshell package.
 #
 #   dev/remote.sh smoke --lock --depth
 #   dev/remote.sh cargo test -p fs-menu
 #   dev/remote.sh check fs-tray
+#   dev/remote.sh smoke-all [list]     every run in dev/smoke-all.list, one
+#                                      build shared by all slots in parallel
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
 self="$repo_root/dev/remote.sh"
 
 usage() {
-  echo "usage: $0 {sync|run <cmd...>|build|cargo <args...>|lint|check <name>|smoke [flags...]|pull <remote-dir> <local-dir>|shell}" >&2
+  echo "usage: $0 {sync|run <cmd...>|build|cargo <args...>|lint|check <name>|smoke [flags...]|smoke-all [list]|pull <remote-dir> <local-dir>|shell}" >&2
   exit 1
 }
 [ $# -gt 0 ] || usage
 
 host="${FS_G815_HOST:-g815}"
+# The count of slot users hosts/g815/rig.star declares.
+slots="${FS_G815_SLOTS:-8}"
 
+case "$repo_root" in
+  */FormalShell) remote_dir=formalshell ;;
+  *) remote_dir="formalshell-wt/$(basename "$repo_root")" ;;
+esac
+
+# smoke-all takes no slot itself: its build and every run take their own.
+if [ "${1:-}" = smoke-all ]; then
+  shift
+  list="${1:-$repo_root/dev/smoke-all.list}"
+  [ -r "$list" ] || { echo "smoke-all: no list at $list" >&2; exit 1; }
+  jobs="${FS_SMOKE_JOBS:-$slots}"
+  out="$repo_root/artifacts/smoke-all-$(date +%Y%m%d-%H%M%S)"
+  shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
+  mkdir -p "$out"
+  started=$SECONDS
+  echo "smoke-all: building once, then $(grep -cvE '^[[:space:]]*(#|$)' "$list") runs over $jobs slots into $out"
+  if ! env -u FS_G815_SLOT "$self" run "dev/build.sh && dev/share-result.sh $shared" > "$out/build.log" 2>&1; then
+    tail -20 "$out/build.log" >&2
+    echo "smoke-all: build failed, $out/build.log" >&2
+    exit 1
+  fi
+  builder=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$out/build.log" | head -1)
+  echo "smoke-all: built in $((SECONDS - started))s on slot $builder"
+  : > "$out/results"
+  n=0 running=0
+  while IFS= read -r flags; do
+    case "$flags" in ''|'#'*) continue ;; esac
+    n=$((n + 1))
+    slug=$(printf '%03d-%s' "$n" "$(printf '%s' "$flags" | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')")
+    (
+      t0=$SECONDS
+      # shellcheck disable=SC2086 # one line is one run's flags
+      status=0
+      env -u FS_G815_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
+      slot=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
+      verdict=PASS; [ "$status" -eq 0 ] || verdict=FAIL
+      printf '%s %4ss slot%s %s\n' "$verdict" "$((SECONDS - t0))" "$slot" "$flags" | tee -a "$out/results"
+    ) &
+    running=$((running + 1))
+    if [ "$running" -ge "$jobs" ]; then wait -n; running=$((running - 1)); fi
+  done < "$list"
+  wait
+  ssh -o BatchMode=yes -o LogLevel=ERROR "fstest$builder@$host" "rm -rf $shared" || true
+  failed=$((n - $(grep -c '^PASS' "$out/results" || true)))
+  echo "smoke-all: $((n - failed)) of $n passed in $((SECONDS - started))s; logs and artifacts in $out"
+  grep '^FAIL' "$out/results" | sed "s|^|  |" || true
+  [ "$failed" -eq 0 ]
+  exit
+fi
 
 # Slot locks live on the mac, which is the one place runs start from. The
 # whole command holds its slot, so a sync and the run after it share it.
+# A slot's .last names the checkout that ran there last: the picker tries
+# the free slots this checkout left warm, then unused ones, then any.
 if [ -z "${FS_G815_SLOT:-}" ]; then
   exec python3 -c '
 import fcntl, os, subprocess, sys, time
-cmd = sys.argv[1:]
+slots, me, cmd = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
+def last(n):
+    try:
+        return open("/tmp/formalshell-g815-%d.last" % n).read().strip()
+    except OSError:
+        return ""
 while True:
-    for n in range(2):
+    order = sorted(range(slots), key=lambda n: (last(n) != me, last(n) != "", n))
+    for n in order:
         lock = open("/tmp/formalshell-g815-%d.lock" % n, "w")
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             lock.close()
             continue
+        with open("/tmp/formalshell-g815-%d.last" % n, "w") as f:
+            f.write(me + "\n")
         os.environ["FS_G815_SLOT"] = str(n)
         print("g815: slot %d" % n, file=sys.stderr)
         sys.exit(subprocess.call(cmd))
     time.sleep(3)
-' "$self" "$@"
+' "$slots" "$repo_root" "$self" "$@"
 fi
 case "$FS_G815_SLOT" in
-  0|1) ;;
-  *) echo "FS_G815_SLOT must be 0 or 1, got '$FS_G815_SLOT'" >&2; exit 1 ;;
+  ''|*[!0-9]*) echo "FS_G815_SLOT must be a slot number, got '$FS_G815_SLOT'" >&2; exit 1 ;;
 esac
+[ "$FS_G815_SLOT" -lt "$slots" ] || { echo "FS_G815_SLOT $FS_G815_SLOT is past the $slots slots" >&2; exit 1; }
 target="fstest$FS_G815_SLOT@$host"
 ssh_opts=(-o BatchMode=yes -o ForwardAgent=no -o ConnectTimeout=10 -o LogLevel=ERROR)
 if ! ssh "${ssh_opts[@]}" "$target" true 2>/dev/null; then
@@ -80,9 +146,9 @@ remote_env='unset HYPRLAND_INSTANCE_SIGNATURE
      export WAYLAND_DISPLAY=$(cat "$XDG_RUNTIME_DIR/formalshell-rig-display")'
 remote_ssh() {
   ssh "${ssh_opts[@]}" "$target" \
-    "case \$(id -un) in fstest[01]) ;; *) echo 'g815: not a slot user' >&2; exit 1 ;; esac
+    "case \$(id -un) in fstest[0-9]*) ;; *) echo 'g815: not a slot user' >&2; exit 1 ;; esac
      $remote_env
-     cd ~/formalshell && $*"
+     cd ~/$remote_dir && $*"
 }
 
 # remote_ssh with the command in a scope of its own (dev/scoped-run.sh), so
@@ -98,7 +164,12 @@ remote_run() {
 }
 
 cmd_sync() {
-  ssh "${ssh_opts[@]}" "$target" 'mkdir -p ~/formalshell'
+  # .rig-used marks when a checkout last ran here; a worktree's copy and its
+  # target go once it has sat unused for three days.
+  ssh "${ssh_opts[@]}" "$target" "mkdir -p ~/$remote_dir && touch ~/$remote_dir/.rig-used
+    for d in ~/formalshell-wt/*/; do
+      [ -n \"\$(find \"\$d.rig-used\" -mtime +3 2>/dev/null)\" ] && rm -rf \"\$d\"
+    done; true"
   # .gitignore's patterns keep crates/target, result and artifacts on their
   # own side. macOS's openrsync reads a `:- .gitignore` dir-merge for the
   # sending side only and lets --delete remove the same paths on the
@@ -109,24 +180,27 @@ cmd_sync() {
     --filter=':- .gitignore' \
     --exclude '/.git' \
     --exclude '/.claude/' \
+    --exclude '/.rig-used' \
     -e "ssh ${ssh_opts[*]}" \
-    "$repo_root/" "$target:formalshell/"
+    "$repo_root/" "$target:$remote_dir/"
 }
 
 # Pulls a remote file or directory listed in the run's output into
-# ./artifacts/, under its own basename.
+# ./artifacts/ (FS_ARTIFACTS when set, smoke-all's per-run directory), under
+# its own basename.
+artifacts="${FS_ARTIFACTS:-$repo_root/artifacts}"
 pull_one() {
   local remote=$1 local_path
-  mkdir -p "$repo_root/artifacts"
+  mkdir -p "$artifacts"
   case "$remote" in
     *.tar)
-      local_path="$repo_root/artifacts/$(basename "$remote" .tar)"
+      local_path="$artifacts/$(basename "$remote" .tar)"
       mkdir -p "$local_path"
       ssh "${ssh_opts[@]}" "$target" "cat $(printf '%q' "$remote")" | tar -xf - -C "$local_path" \
         && echo "pulled frames: $local_path"
       ;;
     *)
-      local_path="$repo_root/artifacts/$(basename "$remote")"
+      local_path="$artifacts/$(basename "$remote")"
       rsync -a -e "ssh ${ssh_opts[*]}" "$target:$remote" "$local_path" \
         && echo "pulled: $local_path"
       ;;
@@ -159,14 +233,14 @@ cmd_smoke() {
     echo "g815: no SMOKE_OK line in smoke output" >&2
     exit 1
   fi
-  mkdir -p "$repo_root/artifacts"
-  rsync -a -e "ssh ${ssh_opts[*]}" "$target:$remote" "$repo_root/artifacts/smoke-$ts.png"
-  echo "pulled screenshot: $repo_root/artifacts/smoke-$ts.png"
+  mkdir -p "$artifacts"
+  rsync -a -e "ssh ${ssh_opts[*]}" "$target:$remote" "$artifacts/smoke-$ts.png"
+  echo "pulled screenshot: $artifacts/smoke-$ts.png"
   local rest
   rest=$(printf '%s\n' "$out" | sed -E 's/SMOKE_OK [^[:space:]]+//' | sed '/^[[:space:]]*$/d')
   if [ -n "$(printf '%s' "$rest" | tr -d '[:space:]')" ]; then
-    printf '%s\n' "$rest" > "$repo_root/artifacts/smoke-$ts.json"
-    echo "pulled dump/status output: $repo_root/artifacts/smoke-$ts.json"
+    printf '%s\n' "$rest" > "$artifacts/smoke-$ts.json"
+    echo "pulled dump/status output: $artifacts/smoke-$ts.json"
   fi
 
   while IFS= read -r line; do
@@ -185,7 +259,7 @@ cmd_smoke() {
   esac
   mkdir -p "$repo_root/$dir"
   rsync -az -e "ssh ${ssh_opts[*]}" --include "$glob" --exclude '*' \
-    "$target:formalshell/$dir/" "$repo_root/$dir/"
+    "$target:$remote_dir/$dir/" "$repo_root/$dir/"
   echo "pulled: $repo_root/$dir/$glob"
 }
 
@@ -199,7 +273,7 @@ case "$verb" in
   lint) cmd_sync; remote_run dev/lint.sh ;;
   check) [ $# -eq 1 ] || usage; cmd_sync; remote_run dev/check.sh "$1" ;;
   smoke) cmd_smoke "$@" ;;
-  pull) [ $# -eq 2 ] || usage; mkdir -p "$2"; rsync -a -e "ssh ${ssh_opts[*]}" "$target:formalshell/$1/" "$2/" ;;
-  shell) exec ssh -t "${ssh_opts[@]}" "$target" "cd ~/formalshell 2>/dev/null; $remote_env; exec bash" ;;
+  pull) [ $# -eq 2 ] || usage; mkdir -p "$2"; rsync -a -e "ssh ${ssh_opts[*]}" "$target:$remote_dir/$1/" "$2/" ;;
+  shell) exec ssh -t "${ssh_opts[@]}" "$target" "cd ~/$remote_dir 2>/dev/null; $remote_env; exec bash" ;;
   *) usage ;;
 esac

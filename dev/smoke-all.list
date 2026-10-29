@@ -1,0 +1,130 @@
+# dev/remote.sh smoke-all: one dev/smoke.sh run per line, spread over the
+# rig's free slots. Every leg that runs on the nested rig, alone or on the
+# leg it rides. Left out: the vm_only legs (device-routes, mirror,
+# panel-morph, polkit, power, sleep, wifi), the cameras that write docs/
+# (shots, screensaver-gif, cartridge-media), --r0-measure, which records
+# rather than checks, and --installed, which runs a distro image per line.
+
+--airplay
+--app-grid
+--appmenu
+--cartridge --backdrop
+--bar-adaptive
+--pantheon --bar-ink
+--bar-layout
+--bar-position bottom
+--bar-position left
+--bar-room
+--bar-title
+--idle --bluez-rssi
+--cartridge --boot
+--brightness
+--caffeinate
+--capture
+--capture-edit
+--cartridge
+--cartridge --catalogue
+--center
+--chevron
+--chevron-quiet
+--clipboard
+--clipssh
+--clipssh-image
+--config-reload
+--console
+--deform
+--lock --depth
+--desktop-clock
+--display
+--dump
+--earbuds
+--emoji
+--flexoki
+--frame
+--fullscreen
+--gallery
+--gpu
+--grid-relaunch
+--hdr
+--headset-card
+--host-binds
+--hotcorner
+--hotcorner-relock
+--idle
+--instance
+--iphone
+--join
+--keybinds
+--lights
+--localsend
+--lock
+--lock-media
+--lyrics
+--lyrics-blur
+--media
+--media-progress
+--menu
+--menu-actions
+--menu-budget
+--menu-emerge
+--menu-hover
+--menu-morph
+--menu-resize
+--menu-rows
+--mic
+--monitor
+--motion-art
+--multi-output
+--nightlight
+--nix-run
+--notify
+--pantheon --notify-close
+--pantheon --notify-emerge
+--ocr
+--osd
+--overnight
+--panel audio
+--panel-anchor
+--panel-at 1
+--panel-emerge
+--panel-handoff
+--panel-keys
+--pantheon
+--picker
+--plugins
+--processes
+--radio
+--radio-atlas
+--radio-atlas-cold
+--record
+--reminder
+--retro
+--screensaver
+--screensaver-inhibit
+--screenshot
+--sfx
+--share
+--shoulders
+--showcase
+--spaces
+--spectrum
+--speedtest
+--switcher
+--switcher-keys
+--switcher-off
+--systemupdate
+--theme-auto
+--theme-toggle
+--toast-motion
+--toast-swipe
+--toggles
+--panel network --tooltip
+--panel network --tooltip-travel
+--tray
+--tray-overflow
+--use
+--visualizer
+--visualizer-styles
+--wallpaper
+--wheel
+--workspaces
