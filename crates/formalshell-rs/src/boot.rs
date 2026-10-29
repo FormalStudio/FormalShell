@@ -8,7 +8,7 @@
 //! Every length is in the preview's stage pixels, a 1280 by 800 screen;
 //! the surfaces scale them to their own.
 
-use crate::motion::Curve;
+use crate::motion::{Curve, progress};
 
 /// The preview's `--ease`, on every move but the rings'.
 pub const EASE: Curve = Curve::new(&[0.22, 1.0, 0.36, 1.0, 1.0, 1.0]);
@@ -283,11 +283,6 @@ pub fn greet(settled: Option<f64>, out: Option<f64>) -> Greet {
         g.moving = !gone(o);
     }
     g
-}
-
-/// `elapsed` over `ms`, 0 to 1.
-pub fn progress(elapsed: f64, ms: f64) -> f64 {
-    if ms <= 0.0 { if elapsed >= 0.0 { 1.0 } else { 0.0 } } else { (elapsed / ms).clamp(0.0, 1.0) }
 }
 
 /// The login the boot plays once for: this boot of the machine and the

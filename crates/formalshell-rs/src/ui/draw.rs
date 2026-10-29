@@ -128,7 +128,7 @@ fn rise(cx: &mut Cx, el: &El) -> Option<(f64, f32)> {
     }
     let at = cx.arrive()?;
     let rows = cx.theme.motion().catalogue.rows?;
-    let elapsed = crate::effects::since(at, cx.now) / cx.motion_scale.max(1e-6);
+    let elapsed = crate::motion::since(at, cx.now) / cx.motion_scale.max(1e-6);
     let index = cx.stops_len();
     if crate::effects::rising(&rows, elapsed, index + 1) {
         cx.animate();

@@ -174,8 +174,8 @@ impl RowMotion {
     }
 
     fn running(&self, now: Instant) -> bool {
-        self.rise.as_ref().is_some_and(|(at, r)| crate::effects::rising(r, crate::effects::since(*at, now), ROW_RESET_LIMIT))
-            || self.swap.as_ref().is_some_and(|(_, at, g)| crate::effects::glitching(g, crate::effects::since(*at, now)))
+        self.rise.as_ref().is_some_and(|(at, r)| crate::effects::rising(r, crate::motion::since(*at, now), ROW_RESET_LIMIT))
+            || self.swap.as_ref().is_some_and(|(_, at, g)| crate::effects::glitching(g, crate::motion::since(*at, now)))
             || self.moved.values().any(|(_, at)| Self::progress(*at, self.ms.0, now) < 1.0)
             || self.added.values().any(|at| Self::progress(*at, self.ms.1, now) < 1.0)
             || self.left.iter().any(|(_, _, at)| Self::progress(*at, self.ms.2, now) < 1.0)
@@ -191,10 +191,10 @@ impl RowMotion {
     fn arrival(&self, index: usize, now: Instant) -> (f64, f64, f32) {
         let (mut dx, mut dy, mut a) = (0.0, 0.0, 1.0);
         if let Some((at, r)) = &self.rise {
-            (dy, a) = crate::effects::rise(r, crate::effects::since(*at, now), index);
+            (dy, a) = crate::effects::rise(r, crate::motion::since(*at, now), index);
         }
         if let Some((_, at, g)) = &self.swap {
-            let (x, ga) = crate::effects::glitch(g, crate::effects::since(*at, now)).new;
+            let (x, ga) = crate::effects::glitch(g, crate::motion::since(*at, now)).new;
             (dx, a) = (x, a * ga);
         }
         (dx, dy, a)
@@ -203,7 +203,7 @@ impl RowMotion {
     /// The rows a level change replaced, while they are still going out.
     fn going(&self, now: Instant) -> Option<(&[(Node, Slot)], f64, f32)> {
         let (rows, at, g) = self.swap.as_ref()?;
-        let (dx, a) = crate::effects::glitch(g, crate::effects::since(*at, now)).old?;
+        let (dx, a) = crate::effects::glitch(g, crate::motion::since(*at, now)).old?;
         Some((rows.as_slice(), dx, a))
     }
 
@@ -2034,7 +2034,7 @@ fn paint_letter(
         *letter = (initial, was, now);
     }
     let ms = theme.metric("launcher.letter", "duration") * scale;
-    let t = crate::effects::progress(crate::effects::since(letter.2, now), ms);
+    let t = crate::motion::progress(crate::motion::since(letter.2, now), ms);
     let e = Clock::Effects.curve().ease(t) as f32;
     let mut p = Painter::new(scene, nodes, Some(clip)).after(Some(anchor));
     let size = (f64::from(frame.h) * 0.62).round() as f32;

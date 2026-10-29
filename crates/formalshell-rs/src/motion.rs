@@ -117,6 +117,19 @@ pub fn breathe(since: Instant, now: Instant) -> f32 {
     (1.0 - 0.6 * eased) as f32
 }
 
+/// `elapsed` over `ms`, 0 to 1, landed at once on a zero clock.
+pub fn progress(elapsed: f64, ms: f64) -> f64 {
+    if ms <= 0.0 { if elapsed >= 0.0 { 1.0 } else { 0.0 } } else { (elapsed / ms).clamp(0.0, 1.0) }
+}
+
+/// Milliseconds from `from` to `now`, negative when `from` is still ahead.
+pub fn since(from: Instant, now: Instant) -> f64 {
+    match now.checked_duration_since(from) {
+        Some(d) => d.as_secs_f64() * 1000.0,
+        None => -(from.duration_since(now).as_secs_f64() * 1000.0),
+    }
+}
+
 /// metamorphosis's `emerge`: `{ duration: "spatial", curve: "spatial" }`.
 pub const EMERGE: (f64, Curve) = (SPATIAL_MS, SPATIAL);
 
@@ -361,6 +374,13 @@ impl Deform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_zero_clock_lands_at_once() {
+        assert_eq!(progress(0.0, 0.0), 1.0);
+        assert_eq!(progress(-1.0, 0.0), 0.0);
+        assert_eq!(progress(50.0, 100.0), 0.5);
+    }
 
     #[test]
     fn spatial_overshoots_and_lands() {

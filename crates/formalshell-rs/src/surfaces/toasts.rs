@@ -551,7 +551,7 @@ impl Toasts {
             slot.rect = at.drawn;
             let mut b = theme.box_style("notification", Some(if slot.critical { "critical" } else { "rest" }));
             if console {
-                let glow = tag_glow(crate::effects::since(slot.born, now) / arrive.0.max(1.0));
+                let glow = tag_glow(crate::motion::since(slot.born, now) / arrive.0.max(1.0));
                 if glow > 0.0 {
                     let red = theme.colors.get("destructive");
                     b.casts.push(fs_theme::style::Cast { x: 0.0, y: 0.0, blur: 10.0 * glow, spread: 0.0, color: red.with_alpha(red.a * glow as f32) });

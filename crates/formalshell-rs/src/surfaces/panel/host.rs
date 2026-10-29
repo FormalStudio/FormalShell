@@ -536,7 +536,7 @@ impl Host {
         if mark.0 != tok {
             *mark = (tok, now);
         }
-        let reveal = theme.motion().catalogue.reveal.map(|ms| crate::effects::progress(crate::effects::since(mark.1, now), ms * scale));
+        let reveal = theme.motion().catalogue.reveal.map(|ms| crate::motion::progress(crate::motion::since(mark.1, now), ms * scale));
         let shown = reveal.map_or(line.as_str(), |p| crate::effects::prefix(&line, crate::effects::typed(line.chars().count(), p)));
         let whole = kit.shape(&line, c.status).width;
         let left = kit.shape(shown, c.status);
@@ -648,7 +648,7 @@ impl Host {
         // A handed-over card's body comes in from ahead (`swap: glitch`);
         // the outgoing card is cut, so there is no way out to draw.
         let glitch = theme.motion().catalogue.swap.zip(self.swapped).map(|(g, at)| {
-            let t = crate::effects::since(at, now) / self.scale.max(1e-6);
+            let t = crate::motion::since(at, now) / self.scale.max(1e-6);
             (crate::effects::glitch_in(&g, t), crate::effects::glitching(&g, t + g.out))
         });
         let ((gdx, ga), glitching) = glitch.unwrap_or(((0.0, 1.0), false));

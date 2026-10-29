@@ -221,8 +221,8 @@ impl Slot {
         let ms = kit.look.reveal? * kit.motion_scale;
         let Some(Part::Label { text, .. } | Part::DimLabel { text }) = self.view.parts.get(i) else { return None };
         let chars = text.chars().count();
-        let elapsed = crate::effects::since(at, now);
-        let shown = crate::effects::typed(chars, crate::effects::progress(elapsed, ms));
+        let elapsed = crate::motion::since(at, now);
+        let shown = crate::effects::typed(chars, crate::motion::progress(elapsed, ms));
         if shown >= chars {
             return None;
         }

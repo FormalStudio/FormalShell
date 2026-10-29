@@ -449,7 +449,7 @@ impl Cx<'_> {
     /// How far an effect begun at `from` is through `ms` of the table's
     /// clock, asking for frames until it lands.
     pub fn effect(&mut self, from: Instant, ms: f64) -> f64 {
-        let p = crate::effects::progress(crate::effects::since(from, self.now), ms * self.motion_scale);
+        let p = crate::motion::progress(crate::motion::since(from, self.now), ms * self.motion_scale);
         if p < 1.0 {
             self.drawn.animating = true;
         }
@@ -697,7 +697,7 @@ impl Grain {
         let mut p = crate::surfaces::bar::cell::Painter::new(scene, &mut self.nodes, Some(clip.intersect(&frame)));
         let mut fading = false;
         if let (Some(n), Some(at)) = (theme.motion().catalogue.noise, opened) {
-            let t = crate::effects::progress(crate::effects::since(at, now), n.clock.duration * scale);
+            let t = crate::motion::progress(crate::motion::since(at, now), n.clock.duration * scale);
             let a = (n.alpha * (1.0 - crate::motion::Curve::from_table(&n.clock.curve).ease(t))) as f32;
             if t < 1.0 && a > 0.0 {
                 let tile = self.tile.get_or_insert_with(|| crate::effects::grain(Self::TILE));

@@ -24,7 +24,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 
 use super::App;
 use crate::boot::{self, Plan};
-use crate::effects::since;
+use crate::motion::{progress, since};
 use crate::scene::{NodeId, Scene};
 use crate::services::state;
 use crate::surface::Surface;
@@ -226,7 +226,7 @@ impl App {
             }
             return Some((-SLAM * width, 0.0));
         };
-        let p = boot::progress(since(at, now), SLAM_MS * self.motion_scale.max(0.0));
+        let p = progress(since(at, now), SLAM_MS * self.motion_scale.max(0.0));
         if p >= 1.0 {
             self.boot.held = false;
             return Some((0.0, 1.0));

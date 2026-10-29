@@ -5,7 +5,7 @@
 
 use fs_theme::style::{Glitch, Rows, TYPE_STEPS, Use};
 
-use crate::motion::Curve;
+use crate::motion::{Curve, progress};
 use crate::scene::Bitmap;
 
 /// CSS `steps(n)` (jump-end): the progress held flat on `n` stairs, landing
@@ -135,19 +135,6 @@ pub fn grain(size: u16) -> Bitmap {
     Bitmap::from_rgba(size, size, rgba)
 }
 
-/// `elapsed` over `ms`, 0 to 1, landed at once on a zero clock.
-pub fn progress(elapsed: f64, ms: f64) -> f64 {
-    if ms <= 0.0 { if elapsed >= 0.0 { 1.0 } else { 0.0 } } else { (elapsed / ms).clamp(0.0, 1.0) }
-}
-
-/// Milliseconds from `from` to `now`, negative when `from` is still ahead.
-pub fn since(from: std::time::Instant, now: std::time::Instant) -> f64 {
-    match now.checked_duration_since(from) {
-        Some(d) => d.as_secs_f64() * 1000.0,
-        None => -(from.duration_since(now).as_secs_f64() * 1000.0),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,12 +215,5 @@ mod tests {
         assert_eq!(blocks(0.5, 10, 50), "█████░░░░░ 50%");
         assert_eq!(blocks(0.0, 10, 0), "░░░░░░░░░░ 0%");
         assert_eq!(blocks(1.2, 10, 100), "██████████ 100%");
-    }
-
-    #[test]
-    fn a_zero_clock_lands_at_once() {
-        assert_eq!(progress(0.0, 0.0), 1.0);
-        assert_eq!(progress(-1.0, 0.0), 0.0);
-        assert_eq!(progress(50.0, 100.0), 0.5);
     }
 }

@@ -609,7 +609,7 @@ impl App {
     /// (or had its grace): the session goes and the overlay starts lifting.
     fn lock_left(&mut self, now: Instant) {
         let Some((at, ms)) = self.lock.leaving else { return };
-        let t = crate::effects::since(at, now);
+        let t = crate::motion::since(at, now);
         let ready = self.lock.outro.iter().all(|o| o.surface.commits() > 0);
         if t < ms || !(ready || t >= ms + COMMIT_GRACE_MS) {
             return;
@@ -661,7 +661,7 @@ impl App {
         let alpha = match self.lock.lifting {
             None => 1.0,
             Some(at) => {
-                let p = crate::boot::progress(crate::effects::since(at, now), LIFT_MS * self.motion_scale.max(0.0));
+                let p = crate::motion::progress(crate::motion::since(at, now), LIFT_MS * self.motion_scale.max(0.0));
                 if p >= 1.0 {
                     self.lock.outro.clear();
                     self.lock.lifting = None;
