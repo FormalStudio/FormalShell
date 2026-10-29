@@ -143,6 +143,21 @@ disagrees, this plan's spec (written in task 1.1) wins.
     size, never serif. Hover tints without moving the selection, click
     runs, right-click opens actions. Everything the launcher does today
     survives or the spec names its replacement.
+14. **The shell and NativeDesktop apps are one ecosystem** (owner,
+    2026-10-29). NativeDesktop (`~/Developer/ecosystem/nativedesktop`, GPUI
+    with a libadwaita look on Linux) already reads the shell's matugen
+    `~/.local/state/formalshell/theme.json` (`nd-theme/src/matugen.rs`), so
+    the palette is shared. The rest follows the same direction: phase 1.4
+    takes its radius ladder, type ramp, weights, spacing and control
+    heights from nd's Linux preset (`nd-theme/src/preset.rs`, `tokens.rs`)
+    where it matches Adwaita, and names any deliberate difference; both
+    read the desktop's interface fonts the same way (fontconfig
+    `sans-serif`/`monospace`, GNOME's interface keys first in nd); focus
+    rings, selection fills, hover tints and switch/entry/button shapes
+    look the same in a shell card and an nd window side by side. Either
+    side may change, as long as they move together: a token change in one
+    is checked against the other, with a side-by-side frame of the
+    gallery sheet and nd's `examples/gallery` on g815 at each phase ship.
 
 ## Phases
 
