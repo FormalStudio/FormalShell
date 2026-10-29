@@ -9,10 +9,12 @@
 # keys through the password field's own filter (Tab onto the transport,
 # Right to play/pause, Return) and `media status` has to say the player
 # paused. The wallpaper is then swapped for a flat dark one under the same
-# lock, and the clock's ink has to flip: dark words over the white field
-# (black at 0.5 over white is mid grey, where black out-contrasts white) and
-# light ones over the dark field. Both are read off `lock status`'s per
-# output report and off the frame, inside the clock's own rect. Then the
+# lock, and the ink `lock status` reports has to flip: dark over the white
+# field (black at 0.5 over white is mid grey, where black out-contrasts
+# white) and light over the dark one. The clock itself sits on the login
+# card (`surfaces::login`), so the frame inside its rect carries the card's
+# own ink whatever the wallpaper: light words in dark mode over both
+# fields, dark ones in light mode. Then the
 # mode goes light under the same lock: the card is the theme's `card` box,
 # so a band of its top padding (`mediaCard` off the report) is one flat
 # fill in both modes, dark in dark mode and light in light mode over the
@@ -182,21 +184,21 @@ leg_lock_media_assert() {
   [ "$cursor" = "1" ] || fail "lock-media: Tab then Right left the transport cursor on '$cursor', not play/pause (1)"
   [ "$playing" = "false" ] || fail "lock-media: Return on play/pause did not pause the player (isPlaying=$playing)"
 
-  # The ink, off the report and off the frame, over each wallpaper.
+  # The ink the report asks for follows the wallpaper; the card's words
+  # follow the mode.
   ink=$(_lock_media_out "$lock_media_bright_json" clockInk)
   px=$(_lock_media_ink_px "$lock_media_bright_json" "$lock_media_bright_png")
   read -r dark light <<< "$px"
   echo "lock-media: white wallpaper clockInk=$ink luma=$(_lock_media_out "$lock_media_bright_json" clockLuma) clock-dark-px=$dark clock-light-px=$light"
   [ "$ink" = "dark" ] || fail "lock-media: the clock took '$ink' ink over a white wallpaper, not dark"
-  [ "$dark" -ge 400 ] || fail "lock-media: the clock's rect carries $dark dark pixels over a white wallpaper; the dark ink never reached the frame"
-  [ "$light" -le 40 ] || fail "lock-media: the clock's rect carries $light light pixels over a white wallpaper"
+  [ "$light" -ge 400 ] || fail "lock-media: the clock's rect carries $light light pixels in dark mode over a white wallpaper; the card's words never reached the frame"
 
   ink=$(_lock_media_out "$lock_media_dark_json" clockInk)
   px=$(_lock_media_ink_px "$lock_media_dark_json" "$lock_media_dark_png")
   read -r dark light <<< "$px"
   echo "lock-media: dark wallpaper clockInk=$ink luma=$(_lock_media_out "$lock_media_dark_json" clockLuma) clock-dark-px=$dark clock-light-px=$light"
   [ "$ink" = "light" ] || fail "lock-media: the clock took '$ink' ink over a dark wallpaper, not light"
-  [ "$light" -ge 400 ] || fail "lock-media: the clock's rect carries $light light pixels over a dark wallpaper; the light ink never reached the frame"
+  [ "$light" -ge 400 ] || fail "lock-media: the clock's rect carries $light light pixels in dark mode over a dark wallpaper; the card's words never reached the frame"
 
   # The card over the same dark wallpaper in each mode.
   [ -s "$lock_media_light_json" ] || fail "lock-media: no reply produced at $lock_media_light_json"
