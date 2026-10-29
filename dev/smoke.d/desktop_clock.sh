@@ -11,6 +11,12 @@
 # - a foot window made fullscreen and no commit in 5s under it;
 # - the digits over the band once settings.json is retargeted to
 #   `desktopClock.depth: false`, then the gooey and serif faces;
+# - a real photograph (a mountain range under a sky, a hill in front, its
+#   depth map scaled down beside it), framed with the clock and without:
+#   the digits' pixels (where the two frames differ) carrying under 28% of
+#   the picture's own edge energy, so frosted rather than clear glass with
+#   the picture sharp through it, and reaching 75 to 95% of the way down
+#   the clock's box, so it sits on the subject with a little tucked behind;
 # - the first redraw past the next minute: its `minuteUs` and the commit's
 #   own `render_us` under 50ms together (read under FS_CPU_QUOTA for
 #   e1504g's power saver).
@@ -27,6 +33,7 @@ leg_desktop_clock_validate() {
 
 desktop_clock_dir="$shot_dir/desktop-clock-wallpapers"
 desktop_clock_picture="$desktop_clock_dir/band.png"
+desktop_clock_photo="$desktop_clock_dir/mountains.jpg"
 desktop_clock_results="$shot_dir/desktop-clock-results.txt"
 
 leg_desktop_clock_fixture() {
@@ -35,12 +42,15 @@ leg_desktop_clock_fixture() {
   $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 940,0 979,1079' "$desktop_clock_picture"
   $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 940,0 979,1079' -draw 'rectangle 0,900 1919,1079' "$desktop_clock_dir/.depth/band.png.png"
   touch -r "$desktop_clock_picture" "$desktop_clock_dir/.depth/band.png.png"
+  cp dev/smoke.d/fixtures/desktop-clock-mountains.jpg "$desktop_clock_photo"
+  cp dev/smoke.d/fixtures/desktop-clock-mountains.depth.png "$desktop_clock_dir/.depth/mountains.jpg.png"
+  touch "$desktop_clock_dir/.depth/mountains.jpg.png"
   mkdir -p "$iso_home/.local/state/formalshell"
   printf '{"wallpaper": "%s"}\n' "$desktop_clock_picture" > "$iso_home/.local/state/formalshell/state.json"
 }
 
 leg_desktop_clock_timing() {
-  leg_timing 130 170
+  leg_timing 145 185
 }
 
 leg_desktop_clock_drive() {
@@ -90,6 +100,13 @@ retarget serif '.desktopClock.face = "serif"'
 snap serif
 retarget pixel '.'
 
+$ipc call wallpaper set "$desktop_clock_photo" > /dev/null 2>&1
+sleep 6
+snap photo
+retarget bare '.desktopClock.enabled = false'
+snap bare
+retarget pixel '.'
+
 # Past the next minute, so the redraw read is the minute's own.
 sleep \$((62 - 10#\$(date +%S)))
 snap minute
@@ -105,7 +122,7 @@ _desktop_clock_quiet() { awk -v p="$1" '$1 == p { sub("commits=", "", $2); print
 leg_desktop_clock_assert() {
   local phase
   grep -qx done "$desktop_clock_results" 2>/dev/null || fail "--desktop-clock: the drive never finished: $(cat "$desktop_clock_results" 2>/dev/null)"
-  for phase in on off gooey serif minute; do
+  for phase in on off gooey serif photo bare minute; do
     [ -s "$shot_dir/desktop-clock-$phase.png" ] && [ -s "$shot_dir/desktop-clock-$phase.json" ] || fail "--desktop-clock produced no $phase frame or dump"
     echo "SMOKE_DESKTOP_CLOCK_$(echo "$phase" | tr '[:lower:]' '[:upper:]') $shot_dir/desktop-clock-$phase.png"
     echo "$phase $(cat "$shot_dir/desktop-clock-$phase.json")"
@@ -124,6 +141,29 @@ leg_desktop_clock_assert() {
     || fail "--desktop-clock: still reported depth after desktopClock.depth was set false"
   [ "$(_desktop_clock gooey '.[0].face')" = gooey ] || fail "--desktop-clock: the gooey retarget reported $(_desktop_clock gooey '.[0].face')"
   [ "$(_desktop_clock serif '.[0].face')" = serif ] || fail "--desktop-clock: the serif retarget reported $(_desktop_clock serif '.[0].face')"
+
+  _desktop_clock photo 'length > 0 and all(.enabled and .depth)' | grep -qx true \
+    || fail "--desktop-clock: no clock with depth on over the photograph: $(cat "$shot_dir/desktop-clock-photo.json")"
+  local x y w h mask box share grad_on grad_off
+  read -r x y w h < <(_desktop_clock photo '.[0].rect | @tsv')
+  mask="$shot_dir/desktop-clock-photo-mask.png"
+  # The digits' own pixels: where the frame with the clock differs from the
+  # one without, less two pixels round each shape so the 3x3 gradient below
+  # never reads the glass's outline.
+  $convert_bin "$shot_dir/desktop-clock-photo.png" "$shot_dir/desktop-clock-bare.png" -crop "${w}x${h}+${x}+${y}" +repage \
+    -compose difference -composite -colorspace Gray -threshold 4% -morphology Erode Square:2 "$mask"
+  box=$($convert_bin "$mask" -format '%@' info:)
+  share=$(awk -v b="$box" -v h="$h" 'BEGIN { split(b, a, /[x+]/); printf "%.3f", (a[4] + a[2]) / h }')
+  _desktop_clock_grad() {
+    $convert_bin "$1" -crop "${w}x${h}+${x}+${y}" +repage -colorspace Gray -statistic Gradient 3x3 "$mask" -compose Multiply -composite -format '%[fx:mean]' info:
+  }
+  grad_on=$(_desktop_clock_grad "$shot_dir/desktop-clock-photo.png")
+  grad_off=$(_desktop_clock_grad "$shot_dir/desktop-clock-bare.png")
+  echo "SMOKE_DESKTOP_CLOCK_PHOTO rect=${x},${y},${w},${h} digits=$box share=$share grad_on=$grad_on grad_off=$grad_off"
+  awk -v s="$share" 'BEGIN { exit !(s >= 0.75 && s <= 0.95) }' \
+    || fail "--desktop-clock: the digits reach $share of the box over the photograph, not 0.75 to 0.95"
+  awk -v on="$grad_on" -v off="$grad_off" 'BEGIN { exit !(off > 0 && on < off * 0.28) }' \
+    || fail "--desktop-clock: the digits carry $grad_on edge energy over the photograph's $grad_off, not frosted"
 
   local draw_us render_us total
   draw_us=$(_desktop_clock minute '.[0].minuteUs')

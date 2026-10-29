@@ -146,25 +146,29 @@ pub fn depth_mask(source: &str, width: u32, height: u32, cut: DepthCut) -> Optio
     let crop = imageops::crop_imm(&img, cx, cy, cw, ch).to_image();
     let fitted = imageops::resize(&crop, width, height, FilterType::Triangle);
     let map = fitted.into_raw();
-    // The feather stays inside the gap, so none of the sky comes forward.
+    // The feather spans at most the middle sixth of the gap. A far subject
+    // the map barely lifts off its sky (a mountain range under a haze) sits
+    // inside the gap, and a wider ramp lays it back at partial cover: sharp
+    // picture over the clock's frosted digits.
     let cut = match cut.threshold {
         Some(_) => cut,
         None => {
-            let t = far_plane(&map)?;
-            DepthCut { threshold: Some(t), feather: cut.feather.min(t) }
+            let (t, gap) = far_plane(&map)?;
+            DepthCut { threshold: Some(t), feather: cut.feather.min(gap / 6.0) }
         }
     };
     Some(map.into_iter().map(|v| cut.alpha(v)).collect())
 }
 
-/// A cut for a map with a far plane, on 0..100: halfway from the band
+/// A cut for a map with a far plane and the gap it sits in, both on
+/// 0..100: halfway from the band
 /// holding its farthest values (a sky, a backdrop) to the first cluster
 /// nearer than it, so a mountain range in front of the sky is subject and
 /// the haze a map smears round a skyline is not. None for a map with no
 /// such band or no cluster in front of it, and for one where a lot of the
 /// picture sits in the gap between them: a soft ramp (clouds, fog) rather
 /// than a subject standing in front of something.
-pub fn far_plane(map: &[u8]) -> Option<f64> {
+pub fn far_plane(map: &[u8]) -> Option<(f64, f64)> {
     let mut hist = [0usize; 256];
     for &v in map {
         hist[usize::from(v)] += 1;
@@ -180,7 +184,8 @@ pub fn far_plane(map: &[u8]) -> Option<f64> {
     let near = (far + FAR_BAND + 1..255).find(|&v| smooth[v] * 1000 >= n * 7 * CLUSTER && smooth[v] >= smooth[v - 1] && smooth[v] >= smooth[v + 1])?;
     let (lo, hi) = (far + (near - far) / 4, far + (near - far) * 3 / 4);
     let gap: usize = hist[lo..=hi].iter().sum();
-    (gap * 100 < n * RAMP_SHARE).then(|| (far + near) as f64 / 2.0 * 100.0 / 255.0)
+    let pct = |v: usize| v as f64 * 100.0 / 255.0;
+    (gap * 100 < n * RAMP_SHARE).then(|| (pct(far + near) / 2.0, pct(near - far)))
 }
 
 /// How wide the far plane's band is, in map values, and the share of the
@@ -394,8 +399,9 @@ mod tests {
         let mut map = vec![0u8; 440];
         map.extend((7..37).flat_map(|v| [v; 5]));
         map.extend((117..=255).flat_map(|v| [v; 3]));
-        let cut = far_plane(&map).unwrap();
+        let (cut, gap) = far_plane(&map).unwrap();
         assert!(cut > 0.0 && cut < 7.0 * 100.0 / 255.0, "{cut}");
+        assert!((gap - cut * 2.0).abs() < 1e-9, "{gap}");
         let ramp: Vec<u8> = (0..=255).collect();
         assert_eq!(far_plane(&ramp), None);
     }

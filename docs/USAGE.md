@@ -1064,7 +1064,7 @@ sky, a backdrop) and the first thing in front of it, so a mountain range
 counts as subject; a picture with no far plane, or one that fades into it
 like clouds or fog, gets no depth. `desktopClock.depthThreshold` and
 `desktopClock.depthFeather` cut it as the lock does instead. With no `y`
-it sits where the subject's top edge crosses the lower part of its
+it sits where the subject's top edge crosses the bottom fifth of its
 digits. The digits are frosted glass: the wallpaper under them blurred and
 drawn toward light or dark, a little short of opaque.
 

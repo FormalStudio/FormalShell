@@ -413,6 +413,9 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
 
     let digits_top = f64::from(rect.y);
     let digits_x = cx - digits_w / 2.0;
+    // What the digits cover, past the box where a serif figure overshoots
+    // its baseline.
+    let mut drawn = rect;
     let mut p = Painter::new(&mut clock.scene, &mut clock.nodes, None);
     match digits {
         Digits::Grid { text, device: px, w } => {
@@ -435,8 +438,10 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
         Digits::Serif { hours, colon, minutes, gap } => {
             let baseline = digits_top + digit_h;
             let mut x = digits_x;
-            let put = |p: &mut Painter, t: &ShapedText, base: f64, x: &mut f64, after: f64| {
-                p.text(t, (x.round() as i32, (base - f64::from(t.ascent)).round() as i32), ink.with_alpha(FROST_ALPHA), &[]);
+            let mut put = |p: &mut Painter, t: &ShapedText, base: f64, x: &mut f64, after: f64| {
+                let at = (x.round() as i32, (base - f64::from(t.ascent)).round() as i32);
+                p.text(t, at, ink.with_alpha(FROST_ALPHA), &[]);
+                drawn = drawn.union(&IRect::new(at.0, at.1, t.width, t.line_height()));
                 *x += f64::from(t.width) + after;
             };
             put(&mut p, &hours, baseline, &mut x, gap);
@@ -446,7 +451,7 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
     }
     // The subject laid back over the box.
     if let (Some(pic), Some(sub)) = (picture, subject) {
-        let over = rect.intersect(&IRect::new(0, 0, size.w, size.h));
+        let over = drawn.intersect(&IRect::new(0, 0, size.w, size.h));
         let px = device(over, pic);
         if !px.is_empty() {
             if clock.crop.as_ref().is_none_or(|(r, from, _)| *r != px || *from != ptr(pic)) {
@@ -468,7 +473,7 @@ const SERIF_FIGURE: f64 = 0.7;
 /// How far the serif colon sits over the figures' baseline, of their height.
 const COLON_RAISE: f64 = 0.16;
 /// The share of the digits a placed clock hides behind the subject's edge.
-const UNDER: f64 = 0.4;
+const UNDER: f64 = 0.2;
 /// Where a clock with no subject to sit behind is centred, of the height.
 const AUTO_Y: f64 = 0.3;
 
@@ -492,10 +497,10 @@ fn mean_luma(p: &Picture, r: IRect) -> f64 {
 
 /// How opaque the digits are, and how far their fill is drawn from the
 /// blurred picture toward the ink.
-const FROST_ALPHA: f32 = 0.88;
-const FROST_INK: f32 = 0.75;
+const FROST_ALPHA: f32 = 0.94;
+const FROST_INK: f32 = 0.5;
 /// The blur's radius, of the digits' height.
-const FROST_BLUR: f64 = 0.05;
+const FROST_BLUR: f64 = 0.14;
 
 /// A coverage mask filled with `ink` at `alpha`, premultiplied.
 fn tint(mask: &clock_face::Mask, ink: Rgba, alpha: f32) -> Bitmap {
