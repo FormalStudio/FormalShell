@@ -179,12 +179,12 @@ for leg_name in "${legs[@]}"; do
 done
 
 # Long enough for the base run's drive below and ten seconds of rest after
-# it. Only the base run has that drive; a leg sizes its own session
-# (leg_timing) from the scaffold's 8s.
-if [ ${#active_legs[@]} -eq 0 ]; then
-  screenshot_delay=52
-  session_timeout=75
-fi
+# it. Only the base run has that drive; a leg's shot comes at its own delay
+# (leg_timing) from the scaffold's 8s, or once its drive scripts are done,
+# up to this 52s every leg's shot sat at before (shot.sh).
+drive_cap=52
+session_timeout=75
+if [ ${#active_legs[@]} -eq 0 ]; then screenshot_delay=$drive_cap; fi
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
@@ -461,6 +461,7 @@ host_notifications_owner_before=$(host_notifications_owner)
 # The rig boots from a Lua config, the only format Hyprland is supported on.
 # Legs append to it through this helper, one autostart line per drive script.
 hypr_exec_once() {
+  if [ "${recording_drives:-}" = 1 ]; then printf '%s\n' "$1" >> "$shot_dir/drives.list"; fi
   printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$1"
 }
 
@@ -681,10 +682,14 @@ EOF
 } > "$cfg"
 
 # Not a subshell: a drive function writes its own scripts, echoes its
-# autostart lines onto the config, and may register a teardown line.
+# autostart lines onto the config, and may register a teardown line. The
+# scripts it starts land in drives.list for shot.sh to wait on.
+recording_drives=1
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_drive" >/dev/null; then "leg_${leg_name}_drive" >> "$cfg"; fi
 done
+recording_drives=""
+drive_pattern=$(grep -oE "$shot_dir/[^ ]+\.(sh|py)" "$shot_dir/drives.list" 2>/dev/null | sort -u | paste -sd '|' - || true)
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_timing" >/dev/null; then "leg_${leg_name}_timing"; fi
@@ -736,6 +741,7 @@ shot_script="$shot_dir/shot.sh"
 write_script "$shot_script" <<EOF
 #!/usr/bin/env bash
 sleep $screenshot_delay
+while [ -n "$drive_pattern" ] && [ \$SECONDS -lt $drive_cap ] && pgrep -f -- '$drive_pattern' > /dev/null; do sleep 0.5; done
 "$grim_bin" "$shot_path" > "$shot_dir/grim.log" 2>&1
 sleep $tail_gap
 # The host user manager's environment while the session is still up, for
