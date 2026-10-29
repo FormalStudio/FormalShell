@@ -94,6 +94,14 @@ settings_fragment() {
   settings_extra="$settings_extra$1"
 }
 
+# One key set inside an object other legs write whole (`bar`, `motion`), as
+# a jq assignment run over the finished fixture: a second top-level `bar`
+# fragment would leave only one of the two objects standing.
+settings_pins=()
+settings_pin() {
+  settings_pins+=("$1")
+}
+
 # A line for the teardown script, run after the run's own frame and before
 # the compositor exits.
 add_cleanup() {
@@ -231,7 +239,16 @@ need_notify_send() { need_tool notify_send_bin notify-send libnotify-tools; }
 need_wlrctl() { need_tool wlrctl_bin wlrctl wlrctl; }
 need_wpctl() { need_tool wpctl_bin wpctl wireplumber; }
 need_convert() { need_tool convert_bin convert ImageMagick; }
-need_wtype() { need_tool wtype_bin wtype wtype; }
+# Hyprland drops the first key a new virtual keyboard sends when it lands
+# with the keymap upload, so `wtype ab` typed only b and a lone `wtype -k
+# Escape` nothing. Every run sleeps first, giving the keymap a frame to land.
+need_wtype() {
+  local real
+  need_tool real wtype wtype
+  wtype_bin="$shot_dir/wtype"
+  printf '#!/bin/sh\nexec %s -s 100 "$@"\n' "$real" > "$wtype_bin"
+  chmod 755 "$wtype_bin"
+}
 need_jq() { need_tool jq_bin jq jq; }
 need_wl_copy() { need_tool wl_copy_bin wl-copy wl-clipboard; }
 need_wl_paste() { need_tool wl_paste_bin wl-paste wl-clipboard; }
@@ -505,6 +522,13 @@ done
 cat > "$iso_home/.config/formalshell/settings.json" <<EOF
 {"calendar": {"icsDir": "$iso_home/.local/share/formalshell/calendar"}, "location": {"latitude": 52.52, "longitude": 13.41}, "nightlight": {"schedule": "off"}$settings_extra}
 EOF
+if [ ${#settings_pins[@]} -gt 0 ]; then
+  need_jq
+  pins=$(printf '%s | ' "${settings_pins[@]}")
+  "$jq_bin" -c "${pins% | }" "$iso_home/.config/formalshell/settings.json" > "$shot_dir/settings.pinned.json" \
+    || { echo "SMOKE_FAIL: the settings pins (${pins% | }) did not apply" >&2; exit 1; }
+  mv "$shot_dir/settings.pinned.json" "$iso_home/.config/formalshell/settings.json"
+fi
 
 # The calendar leg's own events, dated at run time so the fixture never goes
 # stale: --panel calendar's screenshot then proves real events render (the
