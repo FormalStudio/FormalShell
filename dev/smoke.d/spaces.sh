@@ -110,6 +110,7 @@ leg_spaces_fixture() {
   cat > "$spaces_shim_dir/ssh" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$spaces_ssh_calls_path"
+args=" \$* "
 host=""
 while [ \$# -gt 0 ]; do
   case "\$1" in
@@ -125,7 +126,7 @@ fi
 # A real remote whose bash, run by sshd, sources a ~/.bashrc that starts
 # an interactive shell on the channel's stdin. Short of -n that shell waits
 # for an EOF the shell's open stdin pipe never sends.
-case " \$* " in
+case "\$args" in
   *" -n "*) ;;
   *) cat > /dev/null ;;
 esac
