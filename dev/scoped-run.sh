@@ -37,7 +37,10 @@ if [ "$owner" -gt 1 ]; then
   watcher=$!
 fi
 
-systemd-run --user --scope --quiet --collect --unit="$unit" \
+# --expand-environment=no: systemd-run otherwise expands $NAME and ${NAME}
+# in the command line from the manager's environment before bash sees it,
+# emptying every shell variable a remote.sh command carries.
+systemd-run --user --scope --quiet --collect --unit="$unit" --expand-environment=no \
   -p RuntimeMaxSec=2h -p TimeoutStopSec=5 bash -c "$1"
 status=$?
 [ -n "${watcher:-}" ] && kill "$watcher" 2>/dev/null
