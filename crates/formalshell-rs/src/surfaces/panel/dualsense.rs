@@ -76,7 +76,7 @@ impl Panel for Dualsense {
             let primary = v.theme.colors.get("primary");
             let muted = v.theme.colors.get("mutedForeground");
             let pips = (0..5)
-                .map(|i| El::new(Kind::Swatch { color: if i < lit { primary } else { muted }, w: s.md, h: s.md, radius: s.md / 2.0, border: false }))
+                .map(|i| El::new(Kind::Swatch { color: if i < lit { primary } else { muted }, w: s.sm, h: s.sm, radius: s.sm / 2.0, border: false }))
                 .collect();
             halves.push(half(s, "Player LEDs", "circle-dot", w::row(s.sm, pips), format!("{lit} / 5"), "leds"));
         }

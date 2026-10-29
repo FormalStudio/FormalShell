@@ -35,14 +35,18 @@ pub fn js_number(value: Option<&Value>) -> f64 {
     }
 }
 
+/// libadwaita's ramp as ratios of the body size (`widgets/_labels.scss`):
+/// `.caption`, a row subtitle's `smaller`, `.body`, `.heading`, `.title-4`,
+/// `.title-3` and `.title-1`. `displayLarge` has no class; the clocks size
+/// their own digits.
 pub const FONT_MULTIPLIERS: [(&str, f64); 8] = [
-    ("caption", 0.833),
-    ("bodySmall", 0.917),
+    ("caption", 0.82),
+    ("bodySmall", 0.833),
     ("body", 1.0),
-    ("subtitle", 1.083),
-    ("title", 1.167),
-    ("heading", 1.333),
-    ("display", 2.0),
+    ("subtitle", 1.0),
+    ("title", 1.18),
+    ("heading", 1.36),
+    ("display", 1.81),
     ("displayLarge", 2.333),
 ];
 
@@ -64,44 +68,48 @@ pub struct FontTokens {
 }
 
 pub fn font_tokens(base_size: f64) -> FontTokens {
-    let at = |m: f64| js_round(base_size * m);
+    let at = |name: &str| {
+        let (_, m) = FONT_MULTIPLIERS.iter().find(|(k, _)| *k == name).expect("every FontTokens field has a ratio");
+        js_round(base_size * m)
+    };
     FontTokens {
         base_size,
-        caption: at(0.833),
-        body_small: at(0.917),
-        body: at(1.0),
-        subtitle: at(1.083),
-        title: at(1.167),
-        heading: at(1.333),
-        display: at(2.0),
-        display_large: at(2.333),
+        caption: at("caption"),
+        body_small: at("bodySmall"),
+        body: at("body"),
+        subtitle: at("subtitle"),
+        title: at("title"),
+        heading: at("heading"),
+        display: at("display"),
+        display_large: at("displayLarge"),
     }
 }
 
+/// libadwaita's grid of 3 and 6, `xxs` aside.
 pub const SPACING_BASE: [(&str, f64); 8] = [
     ("xxs", 2.0),
     ("xs", 3.0),
-    ("sm", 4.0),
-    ("md", 6.0),
-    ("lg", 8.0),
-    ("xl", 10.0),
-    ("xxl", 12.0),
-    ("huge", 18.0),
+    ("sm", 6.0),
+    ("md", 9.0),
+    ("lg", 12.0),
+    ("xl", 18.0),
+    ("xxl", 24.0),
+    ("huge", 36.0),
 ];
 
 pub const SEMANTIC_SPACING_BASE: [(&str, f64); 27] = [
-    ("controlGap", 8.0),
-    ("controlPaddingX", 12.0),
-    ("controlPaddingY", 6.0),
-    ("controlHeight", 32.0),
+    ("controlGap", 6.0),
+    ("controlPaddingX", 10.0),
+    ("controlPaddingY", 5.0),
+    ("controlHeight", 34.0),
     ("barCellHeight", 28.0),
     ("barCellWidth", 44.0),
     ("barMargin", 6.0),
-    ("popupRowHeight", 28.0),
+    ("popupRowHeight", 32.0),
     ("rowGap", 4.0),
-    ("iconGap", 8.0),
+    ("iconGap", 6.0),
     ("panelPadding", 12.0),
-    ("sectionGap", 16.0),
+    ("sectionGap", 18.0),
     ("screenPadding", 12.0),
     ("trackThickness", 6.0),
     ("popupWidthNarrow", 320.0),
@@ -287,9 +295,11 @@ pub struct Weights {
     pub normal: f64,
     pub medium: f64,
     pub semibold: f64,
+    pub bold: f64,
+    pub heavy: f64,
 }
 
-pub const WEIGHTS: Weights = Weights { normal: 400.0, medium: 500.0, semibold: 600.0 };
+pub const WEIGHTS: Weights = Weights { normal: 400.0, medium: 500.0, semibold: 600.0, bold: 700.0, heavy: 800.0 };
 
 /// Holds a settings number inside a range. Anything that is not a finite
 /// number resolves to `fallback` rather than to `min`, which for an alpha
@@ -324,15 +334,9 @@ impl Radii {
     }
 }
 
-/// The ladder off the base radius, floored at 2 while the base is positive.
-/// A base of 0 (or anything that is not a number) squares every step.
-pub fn radius_tokens(base: Option<f64>) -> Radii {
-    let b = base.unwrap_or(0.0);
-    if b.is_nan() || b <= 0.0 {
-        return Radii { sm: 0.0, md: 0.0, lg: 0.0, xl: 0.0 };
-    }
-    Radii { sm: (b - 4.0).max(2.0), md: (b - 2.0).max(2.0), lg: b.max(2.0), xl: (b + 4.0).max(2.0) }
-}
+/// libadwaita's corners: `$check_radius`, `$button_radius`, `$card_radius`
+/// and `$popover_radius` (`_common.scss`, `widgets/_checks.scss`).
+pub const RADII: Radii = Radii { sm: 6.0, md: 9.0, lg: 12.0, xl: 15.0 };
 
 /// A picture's corner: a quarter of its shorter side, capped at `sm` and
 /// floored at 2, square when `sm` is.
@@ -460,12 +464,12 @@ mod tests {
     fn font_tokens_at_default_base_match_design_doc_table() {
         let f = font_tokens(13.0);
         assert_eq!(f.caption, 11.0);
-        assert_eq!(f.body_small, 12.0);
+        assert_eq!(f.body_small, 11.0);
         assert_eq!(f.body, 13.0);
-        assert_eq!(f.subtitle, 14.0);
+        assert_eq!(f.subtitle, 13.0);
         assert_eq!(f.title, 15.0);
-        assert_eq!(f.heading, 17.0);
-        assert_eq!(f.display, 26.0);
+        assert_eq!(f.heading, 18.0);
+        assert_eq!(f.display, 24.0);
         assert_eq!(f.display_large, 30.0);
     }
 
@@ -474,39 +478,35 @@ mod tests {
         let f = font_tokens(16.0);
         assert_eq!(f.base_size, 16.0);
         assert_eq!(f.body, 16.0);
-        assert_eq!(f.caption, js_round(16.0 * 0.833));
-        assert_eq!(f.display, js_round(16.0 * 2.0));
+        assert_eq!(f.caption, js_round(16.0 * 0.82));
+        assert_eq!(f.display, js_round(16.0 * 1.81));
     }
 
     #[test]
-    fn spacing_tokens_at_scale_one_match_design_doc_table() {
+    fn spacing_tokens_at_scale_one_are_the_adwaita_grid() {
         let s = spacing_tokens(1.0);
-        assert_eq!(s.xxs, 2.0);
-        assert_eq!(s.xs, 3.0);
-        assert_eq!(s.sm, 4.0);
-        assert_eq!(s.md, 6.0);
-        assert_eq!(s.lg, 8.0);
-        assert_eq!(s.xl, 10.0);
-        assert_eq!(s.xxl, 12.0);
-        assert_eq!(s.huge, 18.0);
-        assert_eq!(s.control_gap, 8.0);
-        assert_eq!(s.popup_row_height, 28.0);
+        assert_eq!(
+            [s.xxs, s.xs, s.sm, s.md, s.lg, s.xl, s.xxl, s.huge],
+            [2.0, 3.0, 6.0, 9.0, 12.0, 18.0, 24.0, 36.0]
+        );
         assert_eq!(s.track_thickness, 6.0);
     }
 
     #[test]
-    fn semantic_spacing_tokens_match_the_shadcn_table() {
+    fn semantic_spacing_tokens_match_the_adwaita_table() {
         let s = spacing_tokens(1.0);
-        assert_eq!(s.control_height, 32.0);
+        assert_eq!(s.control_height, 34.0);
+        assert_eq!(s.control_padding_x, 10.0);
+        assert_eq!(s.control_padding_y, 5.0);
+        assert_eq!(s.control_gap, 6.0);
+        assert_eq!(s.icon_gap, 6.0);
+        assert_eq!(s.popup_row_height, 32.0);
+        assert_eq!(s.section_gap, 18.0);
         assert_eq!(s.bar_cell_height, 28.0);
         assert_eq!(s.bar_cell_width, 44.0);
         assert_eq!(s.bar_margin, 6.0);
-        assert_eq!(s.control_padding_x, 12.0);
-        assert_eq!(s.control_padding_y, 6.0);
         assert_eq!(s.row_gap, 4.0);
-        assert_eq!(s.icon_gap, 8.0);
         assert_eq!(s.panel_padding, 12.0);
-        assert_eq!(s.section_gap, 16.0);
         assert_eq!(s.screen_padding, 12.0);
         assert_eq!(s.popup_width_narrow, 320.0);
         assert_eq!(s.popup_width_default, 380.0);
@@ -519,73 +519,52 @@ mod tests {
     #[test]
     fn spacing_tokens_rescale_with_scale_factor() {
         let s = spacing_tokens(2.0);
-        assert_eq!(s.sm, 8.0);
+        assert_eq!(s.sm, 12.0);
         assert_eq!(s.panel_padding, 24.0);
         assert_eq!(s.track_thickness, 12.0);
-        assert_eq!(s.control_height, 64.0);
+        assert_eq!(s.control_height, 68.0);
         assert_eq!(s.bar_margin, 12.0);
     }
 
     #[test]
-    fn radius_tokens_at_default_base_match_the_spec_table() {
-        let r = radius_tokens(Some(10.0));
-        assert_eq!((r.sm, r.md, r.lg, r.xl), (6.0, 8.0, 10.0, 14.0));
-    }
-
-    #[test]
-    fn radius_tokens_track_a_custom_base() {
-        let r = radius_tokens(Some(20.0));
-        assert_eq!((r.sm, r.md, r.lg, r.xl), (16.0, 18.0, 20.0, 24.0));
-    }
-
-    #[test]
-    fn radius_tokens_are_all_zero_at_a_zero_base() {
-        let r = radius_tokens(Some(0.0));
-        assert_eq!((r.sm, r.md, r.lg, r.xl), (0.0, 0.0, 0.0, 0.0));
-        assert_eq!(radius_tokens(None).xl, 0.0);
+    fn radii_are_the_libadwaita_ladder() {
+        assert_eq!((RADII.sm, RADII.md, RADII.lg, RADII.xl), (6.0, 9.0, 12.0, 15.0));
+        assert_eq!(RADII.step("lg"), Some(12.0));
+        assert_eq!(RADII.step("pill"), None);
     }
 
     #[test]
     fn cover_radius_is_a_quarter_of_the_slot() {
-        let sm = radius_tokens(Some(10.0)).sm;
-        assert_eq!(sm, 6.0);
-        assert_eq!(cover_radius(sm, 17.0), 4.0);
-        assert_eq!(cover_radius(sm, 12.0), 3.0);
+        assert_eq!(cover_radius(RADII.sm, 17.0), 4.0);
+        assert_eq!(cover_radius(RADII.sm, 12.0), 3.0);
     }
 
     #[test]
     fn cover_radius_caps_at_the_small_step() {
-        let sm = radius_tokens(Some(10.0)).sm;
-        assert_eq!(cover_radius(sm, 96.0), sm);
-        assert_eq!(cover_radius(sm, 400.0), sm);
+        assert_eq!(cover_radius(RADII.sm, 96.0), RADII.sm);
+        assert_eq!(cover_radius(RADII.sm, 400.0), RADII.sm);
     }
 
     #[test]
     fn cover_radius_floors_at_two_and_never_reaches_a_circle() {
-        let sm = radius_tokens(Some(10.0)).sm;
-        assert_eq!(cover_radius(sm, 4.0), 2.0);
-        assert_eq!(cover_radius(sm, 0.0), 2.0);
-        assert!(cover_radius(sm, 17.0) < 17.0 / 2.0);
-        assert!(cover_radius(sm, 96.0) < 96.0 / 2.0);
+        assert_eq!(cover_radius(RADII.sm, 4.0), 2.0);
+        assert_eq!(cover_radius(RADII.sm, 0.0), 2.0);
+        assert!(cover_radius(RADII.sm, 17.0) < 17.0 / 2.0);
+        assert!(cover_radius(RADII.sm, 96.0) < 96.0 / 2.0);
     }
 
     #[test]
-    fn cover_radius_is_square_at_a_zero_base() {
-        assert_eq!(cover_radius(radius_tokens(Some(0.0)).sm, 17.0), 0.0);
+    fn cover_radius_is_square_at_a_zero_step() {
         assert_eq!(cover_radius(0.0, 96.0), 0.0);
     }
 
     #[test]
-    fn radius_tokens_floor_at_two_on_a_positive_base() {
-        let r = radius_tokens(Some(1.0));
-        assert_eq!((r.sm, r.md, r.lg, r.xl), (2.0, 2.0, 2.0, 5.0));
-    }
-
-    #[test]
-    fn weights_match_the_shadcn_table() {
+    fn weights_carry_adwaita_bold_and_heavy() {
         assert_eq!(WEIGHTS.normal, 400.0);
         assert_eq!(WEIGHTS.medium, 500.0);
         assert_eq!(WEIGHTS.semibold, 600.0);
+        assert_eq!(WEIGHTS.bold, 700.0);
+        assert_eq!(WEIGHTS.heavy, 800.0);
     }
 
     #[test]

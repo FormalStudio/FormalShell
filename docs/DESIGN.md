@@ -43,9 +43,11 @@ colour takes `Theme::hover_filled(c)`/`Theme::press_filled(c)`, the fill
 blended toward `background` and left opaque (shadcn's `hover:bg-primary/90`);
 dropping its opacity instead makes it see-through on a translucent panel.
 
-**Radius** (the ladder, `fs_theme::tokens::radius_tokens`): `Sm` 6, `Md` 8,
-`Lg` 10, `Xl` 14, `Full`, off a base of 10; the shipped table runs it at 6
-(`fs_theme::theme`'s `RADIUS`), which is `Sm` 2 to `Xl` 10. Nested corners are outer minus padding,
+**Radius** (the ladder, `fs_theme::tokens::RADII`, fixed): `Sm` 6, `Md` 9,
+`Lg` 12, `Xl` 15, `Full`: libadwaita's `$check_radius`, `$button_radius`,
+`$card_radius` and `$popover_radius`, and NativeDesktop's Adwaita preset
+(`nd-theme/src/preset.rs`) to the pixel. Hyprland's window rounding is `Xl`,
+libadwaita's `--window-radius`. Nested corners are outer minus padding,
 floored at `Sm`.
 
 **Border**: 1px `border`. `input` on text fields. No other width exists.
@@ -126,20 +128,37 @@ rather than to that key.
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,
 section labels, descriptions, hints), mono for values (numbers, units,
 times, identifiers, chords, clipboard and terminal content). Both are
-fontconfig aliases, Geist Sans and Geist Mono by intent. Sizes `caption` 11,
-`bodySmall` 12, `body` 13, `subtitle` 14, `title` 15, `heading` 17,
-`display` 26, `displayLarge` 30. Weights `normal` 400, `medium` 500,
-`semibold` 600. Values that change are mono, so they stay tabular.
+fontconfig aliases, Geist Sans and Geist Mono by intent. Sizes are
+libadwaita's ratios of the 13px body (`widgets/_labels.scss`): `caption` 11,
+`bodySmall` 11, `body` 13, `subtitle` 13, `title` 15, `heading` 18,
+`display` 24, `displayLarge` 30. Weights `normal` 400, `medium` 500,
+`semibold` 600, `bold` 700, `heavy` 800; `subtitle`, `title` and `heading`
+draw bold and `display` heavy unless the caller asks otherwise
+(`ui::Type::role_weight`), as `.heading`, `.title-4`, `.title-3` and
+`.title-1` do. Values that change are mono, so they stay tabular.
 
-**Space** (`fs_theme::tokens::Space`): the raw steps are `xxs` 2, `xs` 3,
-`sm` 4, `md` 6, `lg` 8, `xl` 10, `xxl` 12, `huge` 18; the semantic keys are
-`controlHeight` 32, `barCellHeight` 28, `barCellWidth` 44, `barMargin` 6,
-`controlPaddingX` 12, `controlPaddingY` 6, `rowGap` 4, `iconGap` 8,
-`panelPadding` 12, `sectionGap` 16, `trackThickness` 6; `screenPadding` 12,
+**Space** (`fs_theme::tokens::Space`): the raw steps are libadwaita's grid
+of 3 and 6, `xxs` 2, `xs` 3, `sm` 6, `md` 9, `lg` 12, `xl` 18, `xxl` 24,
+`huge` 36; the semantic keys are `controlHeight` 34 (an entry, a button 24
+plus its 5px padding), `barCellHeight` 28, `barCellWidth` 44, `barMargin` 6,
+`controlPaddingX` 10, `controlPaddingY` 5, `rowGap` 4, `iconGap` 6,
+`popupRowHeight` 32 (a menu item), `panelPadding` 12, `sectionGap` 18,
+`trackThickness` 6; `screenPadding` 12,
 `popupWidthNarrow` 320, `Default` 380, `Wide` 480, `Menu` 560, `MenuSplit`
 840, `MenuApp` 900. `panelPadding` is the gap inside a card, `screenPadding`
 the gap outside a floating surface; they share a value and describe
 different things.
+
+**Against NativeDesktop.** The shell and nd's Adwaita preset share the
+radius ladder, the 34px control and 24px small control, the 3/6 spacing
+grid and the 700/800 heading weights. Where they differ, on purpose: the
+shell's body is 13px, not nd's 14 (Adwaita Sans at 11pt), because every
+popup width and the bar's cell height are tuned to 13, so its ramp is
+libadwaita's ratios off 13 (`heading` 18 against nd's `Title3` 17, `display`
+24 against `LargeTitle` 26); its spacing ladder keeps a 9 (`md`) between
+nd's `sm` 6 and `md` 12, for the gaps a 13px body wants; a launcher or panel
+row is a menu item at 32, not nd's 50px boxed-list row; and both read the
+desktop's fontconfig aliases, where nd asks GNOME's interface keys first.
 
 **Separation**: one ladder, five rungs, and a boundary takes exactly one of
 them. Reaching for a rung is a claim that the one below it was tried and was

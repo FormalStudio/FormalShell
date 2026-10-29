@@ -244,7 +244,7 @@ impl Card {
         let w = text.width as f64 + s.control_padding_x * 2.0;
         let h = text.line_height() as f64 + s.control_padding_y * 2.0;
         let screen = (self.scene.size.w as f64, self.scene.size.h as f64);
-        let (x, y) = placement(ask.rect, (w, h), screen, s.md, s.screen_padding, ask.bar);
+        let (x, y) = placement(ask.rect, (w, h), screen, s.sm, s.screen_padding, ask.bar);
         for (a, v) in [(&mut self.x, x), (&mut self.y, y), (&mut self.w, w)] {
             if travel && self.placed { a.set(now, v, fast) } else { a.jump(v) }
         }

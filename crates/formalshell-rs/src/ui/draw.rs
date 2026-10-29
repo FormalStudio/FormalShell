@@ -34,6 +34,8 @@ fn weight(w: Weight) -> f32 {
         Weight::Normal => WEIGHTS.normal,
         Weight::Medium => WEIGHTS.medium,
         Weight::Semibold => WEIGHTS.semibold,
+        Weight::Bold => WEIGHTS.bold,
+        Weight::Heavy => WEIGHTS.heavy,
     }) as f32
 }
 
@@ -458,7 +460,7 @@ fn paint_node(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     }
     if let Some(token) = el.swap {
         let (progress, sign) = cx.swap(path, token);
-        let dx = (1.0 - progress) * sign * cx.theme.space.lg;
+        let dx = (1.0 - progress) * sign * cx.theme.space.md;
         cx.alpha *= progress as f32;
         rect = Rect::new(rect.x0 + dx, rect.y0, rect.x1 + dx, rect.y1);
     }
@@ -727,7 +729,7 @@ fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
         Kind::Cell { .. } => cx.theme.box_radius(&cx.theme.box_style("cell", None), h),
         Kind::Track { .. } => cx.theme.box_radius(&cx.theme.box_style("track.groove", None), h),
         Kind::Group { .. } | Kind::Segmented { .. } => cx.theme.box_radius(&cx.theme.box_style("trough", None), h),
-        Kind::Switch { .. } => cx.theme.box_radius(&cx.theme.box_style("switch.track", Some("off")), cx.theme.space.huge),
+        Kind::Switch { .. } => cx.theme.box_radius(&cx.theme.box_style("switch.track", Some("off")), cx.theme.space.xl),
         _ => cx.theme.radii.md,
     }
 }
@@ -855,7 +857,7 @@ fn button(
     if !enabled {
         cx.alpha *= 0.5;
     }
-    let pad_x = if pick.is_some() { t.space.md } else { t.space.control_padding_x };
+    let pad_x = if pick.is_some() { t.space.sm } else { t.space.control_padding_x };
     let s = t.space.clone();
     let body = t.font_size.body;
     let (_, label, glyph) = button_metrics(cx, text, icon_name, pad_x);
@@ -908,8 +910,8 @@ fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &st
     let fill = cx.color(&format!("{path}.fill"), track.fill);
     let track = BoxStyle { fill, ..track };
     let knob = t.box_style("switch.knob", None);
-    let tr = Rect::new(r.x0, r.y0 + (r.height() - s.huge) / 2.0, r.x1, r.y0 + (r.height() + s.huge) / 2.0);
-    let size = s.huge - inset * 2.0;
+    let tr = Rect::new(r.x0, r.y0 + (r.height() - s.xl) / 2.0, r.x1, r.y0 + (r.height() + s.xl) / 2.0);
+    let size = s.xl - inset * 2.0;
     let target = if checked { r.width() - size - inset } else { inset };
     let kx = cx.tween(&format!("{path}.knob"), target, Clock::SpatialFast);
     let kr = IRect::new((r.x0 + kx).round() as i32, (tr.y0 + inset).round() as i32, size.round() as i32, size.round() as i32);
@@ -973,7 +975,7 @@ fn cx_border(t: &fs_theme::theme::Theme) -> i32 {
 /// The widest whole label.
 fn group_natural(cx: &mut Cx, options: &[super::el::Opt]) -> f64 {
     let s = cx.theme.space.clone();
-    options.iter().map(|o| button_metrics(cx, &o.label, &o.icon, s.md).0).fold(s.control_height - s.xs * 2.0, f64::max)
+    options.iter().map(|o| button_metrics(cx, &o.label, &o.icon, s.sm).0).fold(s.control_height - s.xs * 2.0, f64::max)
 }
 
 /// Button group wrap: as many columns as fit the widest button, then

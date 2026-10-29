@@ -48,7 +48,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     let meta = if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel };
     let mut head = Vec::new();
     if unread {
-        let d = s.md;
+        let d = s.sm;
         head.push(El::new(Kind::Swatch { color: v.theme.colors.get("primary"), w: d, h: d, radius: d / 2.0, border: false }));
     }
     let mark = w::icon(if critical { "triangle-alert" } else { "bell" }).ink(if critical { Ink::Destructive } else { Ink::Muted });

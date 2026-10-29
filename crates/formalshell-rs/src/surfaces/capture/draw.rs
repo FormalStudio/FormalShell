@@ -78,7 +78,7 @@ impl Sheet {
         let pad = s.panel_padding;
         let toolbar_el = toolbar(picker, theme);
         let (tw, th) = crate::ui::measure(&toolbar_el, sw as f64, theme, kit);
-        let card = IRect::new(((sw as f64 - (tw + pad * 2.0)) / 2.0).round() as i32, (sh as f64 - (th + pad * 2.0) - s.xl).round() as i32, (tw + pad * 2.0).round() as i32, (th + pad * 2.0).round() as i32);
+        let card = IRect::new(((sw as f64 - (tw + pad * 2.0)) / 2.0).round() as i32, (sh as f64 - (th + pad * 2.0) - s.md).round() as i32, (tw + pad * 2.0).round() as i32, (th + pad * 2.0).round() as i32);
         let names = picker.named_shown(c);
         let names_el = names.then(|| names_list(c, theme));
         let names_card = names_el.as_ref().map(|el| {
@@ -126,7 +126,7 @@ impl Sheet {
         }
         let legend_el = legend(picker, theme);
         let (lw, lh) = crate::ui::measure(&legend_el, sw as f64, theme, kit);
-        let ly = card.y as f64 - lh - s.md;
+        let ly = card.y as f64 - lh - s.sm;
         let lx = ((sw as f64 - lw) / 2.0).round();
         drawn_animating |= self.legend.draw(&legend_el, Rect::new(lx, ly, lx + lw, ly + lh), None, 1.0, theme, kit, &mut self.scene, now).animating;
         let (cx, cy) = (card.x as f64 + pad, card.y as f64 + pad);
@@ -193,7 +193,7 @@ fn toolbar(picker: &Picker, theme: &Theme) -> El {
     .interactive()
     .on("commit");
     w::row(
-        s.md,
+        s.sm,
         vec![
             label("Shot"),
             w::row(0.0, (0..3).map(cell).collect()),

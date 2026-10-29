@@ -126,7 +126,7 @@ fn rings_width(parts: &[Part], theme: &Theme, kit: &mut Kit) -> f64 {
         return 0.0;
     }
     let widths: f64 = parts.iter().map(|p| column_width(p, theme, kit)).sum();
-    widths + theme.space.md * (parts.len() - 1) as f64
+    widths + theme.space.sm * (parts.len() - 1) as f64
 }
 
 /// The card's own height: padding round the taller of the words and a ring
@@ -142,7 +142,7 @@ pub fn height(f: &Face, width: f64, theme: &Theme, kit: &mut Kit) -> f64 {
 
 /// The words' element and the rect it is laid in, left of the rings.
 pub fn left(f: &Face, inner: Rect, theme: &Theme, kit: &mut Kit) -> (El, Rect) {
-    let gap = if f.parts.is_empty() { 0.0 } else { theme.space.lg };
+    let gap = if f.parts.is_empty() { 0.0 } else { theme.space.md };
     let rings = rings_width(&f.parts, theme, kit);
     let el = words(f, theme);
     let width = (inner.width() - rings - gap).max(0.0);
@@ -195,6 +195,6 @@ pub fn paint_rings(p: &mut Painter, alpha: f32, f: &Face, inner: Rect, theme: &T
             let at = ((cx - label.width as f64 / 2.0).round() as i32, (top + d + s.xxs).round() as i32);
             p.text(&label, at, with_alpha(muted, alpha), &[]);
         }
-        x += cw + s.md;
+        x += cw + s.sm;
     }
 }

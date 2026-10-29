@@ -140,7 +140,7 @@ impl Panel for Tailscale {
                     vec![w::text(p.name.clone()).mono().weight(Weight::Medium).elide(), w::row(s.icon_gap, detail)],
                 )
                 .fill();
-                let row = w::row(s.icon_gap, vec![w::dot(if p.online { primary } else { muted }, s.md).pulse(t.action == Action::Up), words]).fill();
+                let row = w::row(s.icon_gap, vec![w::dot(if p.online { primary } else { muted }, s.sm).pulse(t.action == Action::Up), words]).fill();
                 let cell = w::cell(row).ghost().stop(format!("peer{i}"));
                 match &p.ip {
                     Some(ip) => cell.interactive().on(format!("copy:{ip}")),

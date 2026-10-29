@@ -404,7 +404,7 @@ impl Host {
             parts.push(w::icon(glyph).size(ui::Type::Subtitle));
             parts.push(w::space(s.icon_gap));
         }
-        parts.push(w::label(self.module.title(v)).size(ui::Type::Subtitle).weight(ui::Weight::Semibold).elide());
+        parts.push(w::label(self.module.title(v)).size(ui::Type::Subtitle).elide());
         parts.push(w::space(s.icon_gap));
         let actions = self.module.actions(v);
         if !actions.is_empty() {

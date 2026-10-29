@@ -41,7 +41,7 @@ fn subject(store: &Store) -> Option<Subject> {
 
 /// The hero picture's edge.
 fn probe_size(store: &Store) -> u32 {
-    (store.theme.theme.space.xxl * 2.0).round() as u32
+    (store.theme.theme.space.lg * 2.0).round() as u32
 }
 
 /// Proc.appLaunch: its own scope under uwsm, the command itself outside a
@@ -111,7 +111,7 @@ impl Panel for AppMenu {
             },
             true,
             crate::ui::Type::Display,
-            Some(w::picture(sub.image.clone(), s.xxl * 2.0)),
+            Some(w::picture(sub.image.clone(), s.lg * 2.0)),
         );
 
         let mut action_rows: Vec<El> = Vec::new();

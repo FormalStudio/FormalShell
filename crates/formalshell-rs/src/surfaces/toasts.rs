@@ -217,7 +217,7 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
         let buttons = actions.iter().map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(format!("action:{}", a.key))).collect();
         words.push(w::row(s.sm, buttons).pad(0.0, s.row_gap, 0.0, 0.0));
     }
-    w::row(s.md, vec![mark, w::column(s.row_gap, words).fill()]).top().on("body")
+    w::row(s.sm, vec![mark, w::column(s.row_gap, words).fill()]).top().on("body")
 }
 
 fn card_width(theme: &Theme) -> f64 {
@@ -325,7 +325,7 @@ impl Toasts {
         }
         let layout = toast_stack::layout(&StackParams {
             frame_width: width,
-            peek_inset: s.lg,
+            peek_inset: s.md,
             peek_offset: s.panel_padding,
             max_peek_levels: MAX_PEEK_LEVELS,
             gap: s.panel_padding,

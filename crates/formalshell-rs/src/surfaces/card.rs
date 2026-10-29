@@ -77,7 +77,7 @@ impl Look {
             popover,
             emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
             emerge_curve: Curve::from_table(&motion.emerge_curve),
-            drop: theme.space.md,
+            drop: theme.space.sm,
         }
     }
 }

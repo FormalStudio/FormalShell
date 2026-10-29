@@ -78,6 +78,7 @@
 --nightlight
 --nix-run
 --no-morph --panel-emerge
+--light --gallery
 --notify
 --notify-close
 --notify-emerge

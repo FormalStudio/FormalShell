@@ -148,9 +148,9 @@ impl Panel for Gallery {
         ];
         let mut cells = vec![label("Cell")];
         cells.extend(states.iter().map(|(name, f)| w::cell(w::label(*name)).cell_state(|s| f(s))));
-        let span = s.huge * 5.0;
-        let depth = s.huge * 3.0;
-        let run = s.huge * 2.0;
+        let span = s.xl * 5.0;
+        let depth = s.xl * 3.0;
+        let run = s.xl * 2.0;
         // A Flow in the sheet: the two along a line, then the two down one.
         let pair = |a: Edge, b: Edge| w::row(s.section_gap, vec![w::shoulders(a, span, depth, run), w::shoulders(b, span, depth, run)]).top();
         let joins = w::column(s.section_gap, vec![pair(Edge::Top, Edge::Bottom), pair(Edge::Left, Edge::Right)]);
@@ -176,7 +176,7 @@ impl Panel for Gallery {
             ("display", f.display, Type::Display),
             ("displayLarge", f.display_large, Type::DisplayLarge),
         ] {
-            let row = w::row(s.md, vec![w::section_label(s, &format!("{name} {px}"), None, false), w::text("Aa").size(ty)]);
+            let row = w::row(s.sm, vec![w::section_label(s, &format!("{name} {px}"), None, false), w::text("Aa").size(ty)]);
             types.push(w::cell(row).ghost());
         }
         types.push(
@@ -196,7 +196,7 @@ impl Panel for Gallery {
                 .pad_top(s.section_gap - s.row_gap),
         );
         let keycaps = w::row(
-            s.lg,
+            s.md,
             vec![w::chord(s, "Enter"), w::chord_keys(s, &["Up", "Down"]), w::chord(s, "Shift+Enter"), w::chord(s, "Super+Alt+Space"), w::chord(s, "Esc")],
         )
         .pad_start(s.control_padding_x);
@@ -204,8 +204,8 @@ impl Panel for Gallery {
         for key in fs_theme::palette::COLOR_KEYS {
             let c = t.colors.get(key);
             let row = w::row(
-                s.md,
-                vec![w::swatch(c, s.huge + s.xl, f.caption + s.sm, t.radius), w::section_label(s, &format!("{key} {}", hex(c)), None, false)],
+                s.sm,
+                vec![w::swatch(c, s.xl + s.md, f.caption + s.sm, t.radii.sm), w::section_label(s, &format!("{key} {}", hex(c)), None, false)],
             );
             swatches.push(w::cell(row).ghost());
         }
@@ -232,8 +232,8 @@ impl Panel for Gallery {
         let mut steps = Vec::new();
         for (name, px) in [("xxs", s.xxs), ("xs", s.xs), ("sm", s.sm), ("md", s.md), ("lg", s.lg), ("xl", s.xl), ("xxl", s.xxl), ("huge", s.huge)] {
             let row = w::row(
-                s.md,
-                vec![w::section_label(s, &format!("{name} {px}"), None, false), w::swatch(t.colors.get("foreground"), px, f.caption, t.radius)],
+                s.sm,
+                vec![w::section_label(s, &format!("{name} {px}"), None, false), w::swatch(t.colors.get("foreground"), px, f.caption, t.radii.sm)],
             );
             steps.push(w::cell(row).ghost());
         }

@@ -307,7 +307,7 @@ impl Network {
         let result = w::row(
             s.xs,
             vec![
-                w::text(down).mono().size(Type::Display).weight(Weight::Semibold),
+                w::text(down).mono().size(Type::Display),
                 w::section_label(s, "Mbps", None, false).mono(),
             ],
         );

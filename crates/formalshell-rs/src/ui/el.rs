@@ -41,11 +41,25 @@ pub enum Type {
     DisplayLarge,
 }
 
+impl Type {
+    /// The weight libadwaita draws a heading role at (`.heading`, `.title-4`,
+    /// `.title-3` at 700, `.title-1` at 800); `None` leaves the caller's.
+    pub fn role_weight(self) -> Option<Weight> {
+        match self {
+            Type::Subtitle | Type::Title | Type::Heading => Some(Weight::Bold),
+            Type::Display => Some(Weight::Heavy),
+            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weight {
     Normal,
     Medium,
     Semibold,
+    Bold,
+    Heavy,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -440,7 +454,12 @@ impl El {
 
     pub fn size(mut self, t: Type) -> Self {
         match &mut self.kind {
-            Kind::Text { font, .. } | Kind::Para { font, .. } => font.size = t,
+            Kind::Text { font, .. } | Kind::Para { font, .. } => {
+                font.size = t;
+                if let Some(w) = t.role_weight() {
+                    font.weight = w;
+                }
+            }
             Kind::Icon { size, .. } => *size = t,
             _ => {}
         }

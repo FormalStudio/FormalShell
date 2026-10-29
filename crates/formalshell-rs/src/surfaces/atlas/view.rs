@@ -139,7 +139,7 @@ impl Shown {
         let head = w::row(
             s.sm,
             vec![
-                w::text("Radio Atlas").size(Type::Title).weight(Weight::Semibold),
+                w::text("Radio Atlas").size(Type::Title),
                 w::spacer(),
                 w::row(0.0, vec![w::field(&a.search, "Search station, country, or genre", a.editing, None).fill().on("search")]).width(Size::Px(field_w)),
                 w::icon_button("shuffle").tip("Tune randomly").on("shuffle"),
@@ -238,7 +238,7 @@ impl Shown {
 
         // The globe.
         let g_top = body_top + p;
-        let g_bottom = foot_y - s.lg;
+        let g_bottom = foot_y - s.md;
         a.globe.rect = (ox, g_top, (map_right - p - ox).max(0.0), (g_bottom - g_top).max(0.0));
         a.globe.set_selected(r.station.clone().or_else(|| a.selected.clone()));
         a.globe.active_country = a.active_code.clone();
@@ -270,13 +270,13 @@ impl Shown {
                     if elide { col } else { col.hug() }
                 };
                 let content = column(true);
-                let max_w = s.popup_width_narrow.min((gw - s.lg * 2.0).max(0.0));
+                let max_w = s.popup_width_narrow.min((gw - s.md * 2.0).max(0.0));
                 let (tw, _) = ui::measure(&column(false), max_w, theme, kit);
                 let bw_ = max_w.min(tw + s.control_padding_x * 2.0);
                 let (_, th) = ui::measure(&content, (bw_ - s.control_padding_x * 2.0).max(0.0), theme, kit);
                 let bh = th + s.control_padding_y * 2.0;
-                let tx = (gw - bw_ - s.lg).min(s.lg.max(anchor.0 + s.huge));
-                let ty = (gh - bh - s.lg).min(s.lg.max(anchor.1 + s.huge));
+                let tx = (gw - bw_ - s.md).min(s.md.max(anchor.0 + s.xl));
+                let ty = (gh - bh - s.md).min(s.md.max(anchor.1 + s.xl));
                 let rect = IRect::new((gx + tx).round() as i32, (gy + ty).round() as i32, bw_.round() as i32, bh.round() as i32);
                 let b = theme.box_style("popover", None);
                 let radius = theme.box_radius(&b, rect.h as f64) as f32;

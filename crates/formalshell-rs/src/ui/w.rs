@@ -280,11 +280,11 @@ pub fn hero(s: &Space, h: Hero) -> El {
 pub fn hero_with(s: &Space, h: Hero, meta_mono: bool, readout_size: Type, leading: Option<El>) -> El {
     let mut top = Vec::new();
     if let Some(l) = leading {
-        top.push(l.width(super::Size::Px(s.xxl * 2.0)));
+        top.push(l.width(super::Size::Px(s.lg * 2.0)));
     } else if !h.glyph.is_empty() {
-        top.push(El::new(Kind::Icon { name: h.glyph.clone(), size: Type::Heading, ink: Ink::Fg }).width(super::Size::Px(s.xxl * 2.0)));
+        top.push(El::new(Kind::Icon { name: h.glyph.clone(), size: Type::Heading, ink: Ink::Fg }).width(super::Size::Px(s.lg * 2.0)));
     }
-    let mut words = vec![text_el(h.title, Type::Subtitle, Weight::Normal, false, Ink::Fg).elide()];
+    let mut words = vec![text_el(h.title, Type::Subtitle, Weight::Bold, false, Ink::Fg).elide()];
     if !h.meta.is_empty() {
         words.push(text_el(h.meta, Type::BodySmall, Weight::Normal, meta_mono, Ink::Dim).elide());
     }

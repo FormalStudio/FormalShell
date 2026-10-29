@@ -36,7 +36,7 @@ impl State {
 
 /// The edges of a card's small icon and of the big one over its thumbnail.
 fn icon_sizes(s: &fs_theme::tokens::Space) -> (u32, u32) {
-    ((s.icon_gap * 2.0).round() as u32, (s.huge * 2.0).min(s.switcher_thumb / 2.0).round() as u32)
+    ((s.icon_gap * 2.0).round() as u32, (s.xl * 2.0).min(s.switcher_thumb / 2.0).round() as u32)
 }
 
 fn icon_key(id: &str, big: bool) -> String {

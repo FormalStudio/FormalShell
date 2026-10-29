@@ -208,7 +208,7 @@ impl App {
     /// shows the terminal at its own default size until the placement lands.
     fn console_reveal(&mut self, id: String) {
         let share = self.store.config.f64("console.share").unwrap_or(0.5);
-        let margin = self.store.theme.theme.space.xl;
+        let margin = self.store.theme.theme.space.md;
         let Some(target) = self.console_screen().and_then(|s| geometry(s, self.console_insets(), share, margin)) else {
             eprintln!("console: no output to place the console on");
             return;

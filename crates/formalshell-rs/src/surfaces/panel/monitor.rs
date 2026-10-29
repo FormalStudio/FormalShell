@@ -89,7 +89,7 @@ impl Panel for Monitor {
         for (i, m) in metrics(v).into_iter().enumerate() {
             let mut line = Vec::new();
             if !m.figure.is_empty() {
-                line.push(w::text(m.figure).size(Type::Display).mono().weight(Weight::Semibold));
+                line.push(w::text(m.figure).size(Type::Display).mono());
             }
             if !m.state.is_empty() {
                 line.push(w::section_label(s, m.state, None, false).ink(Ink::Dim));

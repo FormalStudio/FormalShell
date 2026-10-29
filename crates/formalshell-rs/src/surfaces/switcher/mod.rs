@@ -109,7 +109,7 @@ impl Metrics {
     /// The schematic's icon, as a window thumbnail sizes it for a thumbnail
     /// `thumb_w` wide.
     pub fn schematic_icon(&self, theme: &Theme, thumb_w: f64) -> f64 {
-        (theme.space.huge * 2.0).min(thumb_w / 2.0).min(self.thumb_h / 2.0)
+        (theme.space.xl * 2.0).min(thumb_w / 2.0).min(self.thumb_h / 2.0)
     }
 }
 

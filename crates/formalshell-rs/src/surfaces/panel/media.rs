@@ -332,7 +332,7 @@ impl Panel for Media {
             let tip = styles::label(&style);
             info.push(w::spectrum(style, SPECTRUM_COLUMNS, vis.running).on("spectrum").tip(tip).key("spectrum"));
         }
-        col.push(w::row(s.xxl, info).fill());
+        col.push(w::row(s.lg, info).fill());
 
         if has_timeline(&a) {
             let fraction = if a.length > 0.0 { a.position / a.length } else { 0.0 };

@@ -15,7 +15,7 @@ use crate::services::info::usage::{Claude, Codex, State};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Type, Weight, w};
+use crate::ui::{El, Event, Type, w};
 
 pub struct Usage {
     _want: Want,
@@ -118,7 +118,7 @@ impl Panel for Usage {
                 .map(|(i, r)| {
                     let mut lines = vec![
                         w::section_label(s, &r.label, None, false),
-                        w::text(format!("{}%", (r.percent * 100.0).round())).size(Type::Display).mono().weight(Weight::Semibold),
+                        w::text(format!("{}%", (r.percent * 100.0).round())).size(Type::Display).mono(),
                         w::track(r.percent),
                     ];
                     if !r.resets_at.is_empty() {

@@ -139,7 +139,7 @@ pub fn paint(cx: &mut Cx, r: Rect, f: &Flow, path: &str) {
         link(cx, rect, *direction, f.animate, &format!("{path}/link{i}"));
     }
     let trunk = r.x0 + r.width() / 2.0;
-    let branch = s.huge + s.xxl;
+    let branch = s.xl + s.lg;
     let mut y = r.y0 + m.node_h + s.row_gap;
     let body = shape(cx, "A", &BODY).line_height() as f64;
     let cap = shape(cx, "A", &CAPTION).line_height() as f64;

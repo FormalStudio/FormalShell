@@ -12,7 +12,7 @@ use super::{Effect, Panel, View};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Type, Variant, Weight, w};
+use crate::ui::{El, Event, Ink, Type, Variant, w};
 
 pub struct SystemUpdate {
     _want: Want,
@@ -126,7 +126,7 @@ impl Panel for SystemUpdate {
                         .stop("check")
                         .on("check"),
                     w::spacer(),
-                    w::text(figure).size(Type::Display).mono().weight(Weight::Semibold),
+                    w::text(figure).size(Type::Display).mono(),
                     w::section_label(s, "Behind", None, false),
                 ],
             )

@@ -93,7 +93,7 @@ impl App {
                 pid: w.pid,
             })
             .collect();
-        appicon::probe((self.store.theme.theme.space.huge * 2.0).round() as u32, crate::scene::raster_scale(), queries);
+        appicon::probe((self.store.theme.theme.space.xl * 2.0).round() as u32, crate::scene::raster_scale(), queries);
         let module = WorkspacePreview::new(chip.id.clone(), chip.idx, chip.label.clone(), pointer, self.peek.shared.clone());
         self.peek.open = Some((chip.id.clone(), chip.idx, pointer));
         self.peek.hover_at = None;

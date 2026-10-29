@@ -64,7 +64,7 @@ impl Card<'_> {
         let s = &theme.space;
         let mut leading = vec![self.date(), w::space(f64::from(clock_slot(clock).1))];
         if let Some(below) = &self.below {
-            leading.push(w::space(s.md));
+            leading.push(w::space(s.sm));
             leading.push(below.clone());
         }
         w::column(s.xs, leading).width(Size::Px(leading_width(theme)))
@@ -93,7 +93,7 @@ impl Card<'_> {
             trailing.push(w::text(self.unavailable).size(Type::BodySmall).ink(Ink::Muted).width(Size::Px(field_w)).centred());
         }
 
-        w::row(gap(theme), vec![self.leading(clock, theme), w::column(s.md, trailing).width(Size::Px(field_w))]).width(Size::Px(width(theme)))
+        w::row(gap(theme), vec![self.leading(clock, theme), w::column(s.sm, trailing).width(Size::Px(field_w))]).width(Size::Px(width(theme)))
     }
 
     /// Paints the clock into its slot in a body laid out at `inner`.
@@ -111,7 +111,7 @@ impl Card<'_> {
 }
 
 fn gap(theme: &Theme) -> f64 {
-    theme.space.xxl * 2.0
+    theme.space.lg * 2.0
 }
 
 /// Wider than the field, so a session chip and a user chip share a row.

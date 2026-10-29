@@ -154,11 +154,11 @@ impl Panel for Calendar {
         );
 
         let month_name = NaiveDate::from_ymd_opt(self.year, self.month, 1).map(|d| d.format("%B %Y").to_string()).unwrap_or_default();
-        let mut head: Vec<El> = vec![w::space(s.xl)];
+        let mut head: Vec<El> = vec![w::space(s.md)];
         head.extend(WEEKDAYS.iter().map(|d| w::section_label(s, d, None, false).mid().fill()));
         let mut lines = vec![w::row(s.row_gap, head).fill()];
         for (r, line) in cells.chunks(grid::COLUMNS).enumerate() {
-            let week = w::value(clock::pad2(weeks[r].into())).size(Type::Caption).ink(Ink::Muted).width(Size::Px(s.xl)).mid();
+            let week = w::value(clock::pad2(weeks[r].into())).size(Type::Caption).ink(Ink::Muted).width(Size::Px(s.md)).mid();
             let mut row = Vec::new();
             for (k, cell) in line.iter().enumerate() {
                 let i = r * grid::COLUMNS + k;

@@ -100,7 +100,7 @@ impl App {
                     let home = std::env::var("HOME").unwrap_or_default();
                     let path = self.store.config.avatar_path(&home);
                     let scale = self.polkit.as_ref().map_or_else(crate::scene::raster_scale, |d| d.modal.surface.scale());
-                    let px = crate::scene::pixels_at((self.store.theme.theme.space.xxl * 2.0).round(), scale);
+                    let px = crate::scene::pixels_at((self.store.theme.theme.space.lg * 2.0).round(), scale);
                     rt.pool().submit(move || {
                         let _ = tx.send(LockMsg::PolkitAvatar(crate::surfaces::lock::avatar(&path, px).map(|b| b.at(scale))));
                     });

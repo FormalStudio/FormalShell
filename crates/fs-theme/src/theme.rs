@@ -255,14 +255,10 @@ fn boolean(value: Option<Value>, fallback: bool) -> bool {
     }
 }
 
-/// elementary's base radius, the ladder every `sm`..`xl` step reads.
-const RADIUS: f64 = 6.0;
-
 #[derive(Clone, Debug)]
 pub struct Theme {
     pub style: &'static Value,
     pub colors: Colors,
-    pub radius: f64,
     pub radii: Radii,
     pub border_width: f64,
     pub surface_opacity: f64,
@@ -338,8 +334,7 @@ impl Theme {
         Self {
             style,
             colors: Colors::from_palette(palette),
-            radius: RADIUS,
-            radii: tokens::radius_tokens(Some(RADIUS)),
+            radii: tokens::RADII,
             border_width: 1.0,
             surface_opacity,
             blur_behind: boolean(get("theme.blur"), true),
@@ -401,9 +396,8 @@ impl Theme {
         style::metric(self.style, role, key)
     }
 
-    /// Half the extent while the base radius is positive, square at 0.
     pub fn pill_radius(&self, extent: f64) -> f64 {
-        if self.radius > 0.0 { extent / 2.0 } else { 0.0 }
+        extent / 2.0
     }
 
     pub fn box_radius(&self, b: &BoxStyle<Rgba>, extent: f64) -> f64 {
@@ -448,11 +442,11 @@ impl Theme {
         c.tint(style::wash(self.style, "filledPress", &self.ctx()))
     }
 
-    /// What formalshell-chrome.lua carries: the radius, the blur switch and
+    /// What formalshell-chrome.lua carries: the window radius (`xl`, libadwaita's `--window-radius`), the blur switch and
     /// the `window` role's two states unresolved, since Hyprland draws them
     /// off a palette role's name rather than a colour.
     pub fn window_chrome(&self) -> chrome::Chrome {
-        chrome::Chrome::from_table(self.style, Value::from(self.radius), Value::Bool(self.blur_behind))
+        chrome::Chrome::from_table(self.style, Value::from(self.radii.xl), Value::Bool(self.blur_behind))
     }
 
     pub fn motion(&self) -> ThemeMotion {
@@ -682,7 +676,7 @@ mod tests {
     #[test]
     fn the_defaults_are_the_one_look() {
         let t = theme();
-        assert_eq!((t.radius, t.radii.xl, t.surface_opacity), (6.0, 10.0, 1.0));
+        assert_eq!((t.radii.md, t.radii.xl, t.surface_opacity), (9.0, 15.0, 1.0));
         assert!(t.blur_behind);
         assert_eq!(t.faces, Faces::ALIASES);
         assert_eq!(t.faces.words, Face { name: None, generic: "sans-serif" });
@@ -697,7 +691,7 @@ mod tests {
     fn a_removed_key_is_ignored_and_reported() {
         let written = json!({ "theme": { "preset": "square", "radius": 0, "icons": "nerd", "dither": true, "grid": true }, "bar": { "paint": "dark" } });
         let t = Theme::resolve(make_get(written.clone()), &sentinel());
-        assert_eq!((t.radius, t.surface_opacity), (6.0, 1.0));
+        assert_eq!((t.radii.sm, t.surface_opacity), (6.0, 1.0));
         assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid);
         assert_eq!(t.bar_style, BarStyle::Transparent);
         assert_eq!(removed_keys(make_get(written)), ["theme.preset", "theme.radius", "theme.icons", "theme.dither", "theme.grid", "bar.paint"]);

@@ -460,7 +460,7 @@ impl Model {
     pub fn mirror_box(&self, theme: &Theme) -> (f64, f64) {
         let s = &theme.space;
         let w = self.content_width(theme) - s.sm * 2.0;
-        (w.round(), (w * 3.0 / 4.0).min(self.body_h - s.lg * 2.0).max(1.0).round())
+        (w.round(), (w * 3.0 / 4.0).min(self.body_h - s.md * 2.0).max(1.0).round())
     }
 
     pub fn body_height(&self) -> f64 {
@@ -869,7 +869,7 @@ impl Model {
     fn layout(&mut self, theme: &Theme, kit: &mut Kit) {
         let s = &theme.space;
         let width = self.content_width(theme);
-        let inset = s.lg;
+        let inset = s.md;
         let gutter = s.sm;
         let heading_h = ui::measure(&w::heading(s, "Ag", None, true), width, theme, kit).1;
         let mut out = Layout::default();
@@ -1858,7 +1858,7 @@ impl Shown {
         }
         self.feed = (m.view == View::Mirror).then(|| {
             let (w, h) = m.mirror_box(theme);
-            let feed = IRect::new((fx + pad + s.sm).round() as i32, (body_top + s.lg).round() as i32, w as i32, h as i32);
+            let feed = IRect::new((fx + pad + s.sm).round() as i32, (body_top + s.md).round() as i32, w as i32, h as i32);
             let pic = store.mirror.frame.as_ref().filter(|(id, _)| *id == m.mirror_current).map(|(_, b)| {
                 let (bw, bh) = b.size();
                 IRect::new(feed.x + (feed.w - bw) / 2, feed.y + (feed.h - bh) / 2, bw, bh)
@@ -1869,7 +1869,7 @@ impl Shown {
         // The split preview: the cursor row's whole content beside the list.
         if m.split() && body_h > 0.0 {
             let half = (inner_w / 2.0).round();
-            let r = Rect::new(fx + pad + half + s.sm, body_top + s.lg, fx + pad + inner_w - side, body_top + body_h - s.lg);
+            let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - side, body_top + body_h - s.md);
             let el = split_preview(m, store, theme, kit, r.width(), r.height());
             let d = self.preview.draw(&el, r, Some(body_clip), alpha, theme, kit, scene, now);
             if d.animating {
@@ -1972,7 +1972,7 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     for h in &bar.hints {
         actions.push(w::row(s.sm, vec![w::text(h.label.clone()).size(Type::BodySmall).ink(Ink::Muted), w::chord_keys(s, &h.keys)]));
     }
-    parts.push(w::row(s.xxl, actions));
+    parts.push(w::row(s.lg, actions));
     parts.push(w::space(s.control_padding_x));
     // A band a `controlHeight` tall whether or not a button is in it, so
     // the level's name sits on one line on every level.
@@ -2015,7 +2015,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         }
     }
     if m.monitor_strip_h > 0.0 {
-        items.push((lay.slots.first().map_or(s.lg, |s0| s0.y) - m.monitor_strip_h - s.section_gap, m.monitor_strip_h, monitor_strip(store, theme, &m.monitor_history)));
+        items.push((lay.slots.first().map_or(s.md, |s0| s0.y) - m.monitor_strip_h - s.section_gap, m.monitor_strip_h, monitor_strip(store, theme, &m.monitor_history)));
     }
     if m.picker_switch_h > 0.0 {
         let top = lay.slots.first().map_or(0.0, |s0| s0.y) - m.picker_switch_h - s.row_gap;
@@ -2160,7 +2160,7 @@ fn mirror_body(m: &Model, store: &Store, theme: &Theme) -> El {
                 .width(Size::Px(w))
         }
     };
-    w::column(0.0, vec![w::space(s.lg), w::row(0.0, vec![w::space(s.sm), feed])])
+    w::column(0.0, vec![w::space(s.md), w::row(0.0, vec![w::space(s.sm), feed])])
 }
 
 /// The process table's rows: the filter, busiest first.
@@ -2219,7 +2219,7 @@ fn monitor_strip(store: &Store, theme: &Theme, h: &MonitorHistory) -> El {
         .map(|(label, figure, plot)| {
             w::cell(w::column(
                 s.xxs,
-                vec![w::section_label(s, label, None, false), w::text(figure).size(Type::Title).mono().weight(Weight::Semibold), plot],
+                vec![w::section_label(s, label, None, false), w::text(figure).size(Type::Title).mono(), plot],
             ))
             .fill()
         })

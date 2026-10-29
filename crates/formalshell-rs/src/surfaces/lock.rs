@@ -280,7 +280,7 @@ fn now_playing(m: &NowPlaying, theme: &Theme) -> El {
         info.push(w::picture(Some(art.clone()), s.control_height * 2.0));
     }
     info.push(w::column(s.xxs, words).fill());
-    let mut rows = vec![w::row(s.lg, info).fill()];
+    let mut rows = vec![w::row(s.md, info).fill()];
     if let Some(p) = m.progress {
         rows.push(w::track(p.clamp(0.0, 1.0)).fill());
     }
@@ -302,7 +302,7 @@ fn now_playing(m: &NowPlaying, theme: &Theme) -> El {
         .collect();
     let group = w::group(options, usize::MAX, false).stop("transport").ring(m.cursor.max(0) as usize);
     rows.push(group.centred());
-    w::column(s.md, rows)
+    w::column(s.sm, rows)
 }
 
 /// How `JSON.stringify` prints a number: whole values without a fraction.

@@ -575,6 +575,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   top bar, so those runs print each claim as skipped and are read by eye.
 - `keybinds.sh` `--keybinds`: the launcher's binds route rendering rows off
   Hyprland's own expanded bind table.
+- `light.sh` `--light`: pins `theme.mode` light (a `settings_pin`) and
+  rides any leg, so its frames are read in light mode; asserts `theme
+  status` reports light.
 - `lights.sh` `--lights`: `services/lights.rs` against PATH-shimmed
   `asusctl` and
   `busctl` standing in for asusd's Aura object: the startup repaint off the

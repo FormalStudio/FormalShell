@@ -667,7 +667,7 @@ impl App {
         let s = &theme.space;
         let inner = self.launcher.content_width(theme);
         let width = inner - (inner / 2.0).round() - s.sm * 2.0;
-        let height = self.launcher.body_height() - s.lg * 2.0;
+        let height = self.launcher.body_height() - s.md * 2.0;
         if height <= 0.0 {
             return;
         }

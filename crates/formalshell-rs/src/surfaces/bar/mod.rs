@@ -59,7 +59,7 @@ impl Style {
             corners: if theme.bar_style == BarStyle::Corners && !theme.frame_enabled() { theme.frame_radius } else { 0.0 },
             thickness: s.bar_cell_height,
             margin: s.bar_margin,
-            inset: s.md,
+            inset: s.sm,
             gap: s.sm,
             frame: (theme.frame_enabled(), theme.frame_thickness, theme.frame_radius),
         }

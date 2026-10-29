@@ -398,7 +398,7 @@ fn setup_webcam(app: &mut App, device: String) {
         return;
     };
     let size = config_str(app, "recording.webcamSize", "medium");
-    let margin = app.store.theme.theme.space.huge;
+    let margin = app.store.theme.theme.space.xl;
     app.capture.rec.webcam_target = Some(model::webcam_geometry(&size, region, margin));
     let configured = config_str(app, "recording.webcamDevice", "");
     if !configured.is_empty() {
