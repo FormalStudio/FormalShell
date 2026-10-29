@@ -13,8 +13,8 @@
 # carries, and one no icon at all, which has to fall back to the card's bell.
 # The theme is staged into the isolated HOME rather than pulled off the
 # machine: the rig hands the session `XDG_DATA_DIRS=$iso_home/.local/share`
-# and nothing else, so an icon theme installed system-wide (there is none in
-# nix/testvm.nix either) would be invisible to it. hicolor is the one theme
+# and nothing else, so an icon theme installed system-wide would be
+# invisible to it. hicolor is the one theme
 # every other theme falls back to, which is why a name dropped in there
 # resolves without the session having to agree on a theme name.
 #

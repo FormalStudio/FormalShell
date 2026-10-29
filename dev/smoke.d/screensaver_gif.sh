@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); the *_bin values can be multi-word "nix run ..." prefixes
+# shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); the *_bin values expand unquoted
 # --screensaver-gif records five ttfx effects as GIFs, one independent
 # Hyprland session per effect, since screensaver.effect is pinned through the
 # settings fixture a session reads at startup. That is why this leg takes the
@@ -31,7 +31,7 @@ leg_screensaver_gif_takeover() {
   local expected_frames frame_count out_gif gif_delay last_frame i
   local -a frame_files
   local -a gif_env
-  local gif_shell="$PWD/result/bin/formalshell-rs"
+  local gif_shell="$PWD/result/bin/formalshell"
 
   # SCREENSAVER_GIF_EFFECTS (optional, space-separated) limits the run to a
   # subset: verifying the recorder itself needs one effect and must not
@@ -47,8 +47,8 @@ leg_screensaver_gif_takeover() {
   for i in "${!effects[@]}"; do
     effect="${effects[$i]}"
     # One temp dir per effect (frames, config and scripts together), removed
-    # once its GIF exists, except the last one's: dev/vm.sh still has to scp
-    # this run's SMOKE_OK frame back after the script exits.
+    # once its GIF exists, except the last one's: dev/remote.sh still has to
+    # pull this run's SMOKE_OK frame back after the script exits.
     effect_dir=$(mktemp -d)
     frames_dir="$effect_dir/frames"
     mkdir -p "$frames_dir"

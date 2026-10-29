@@ -16,14 +16,14 @@
 #           is a Wayland client of the running session. aquamarine's wayland
 #           backend needs the parent to advertise zwp_linux_dmabuf_v1, and
 #           it allocates from the DRM render node that feedback names.
-#   vkms    the mac VM rig, which has neither: its parent is a pixman
-#           wlroots session on a guest with no GPU at all, so nesting dies
+#   vkms    a VM with neither: its parent is a pixman wlroots session on
+#           a guest with no GPU at all, so nesting dies
 #           at CBackend::create() ("Missing protocols", then "no allocator
 #           available"). Hyprland instead takes the software KMS card the
 #           kernel's vkms module draws, pinned by AQ_DRM_DEVICES. The branch
 #           is gated on that card's sysfs device really being vkms, so it
 #           can never take a real GPU out from under a real session, and
-#           opening it unprivileged needs seatd (nix/testvm.nix).
+#           opening it unprivileged needs seatd.
 #
 # D-Bus isolation (M5 hard rule): the whole
 # Hyprland invocation runs under `dbus-run-session --`, giving the shell's
@@ -175,23 +175,13 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if [ "${!keep_var:-}" != "keep" ]; then fixture_window_mode=false; fi
 done
 
-# FS_RESULT names a store path built elsewhere and copied in, for a host
-# that must not build (e1504g): the result link points at it and nothing is
-# evaluated here.
+# FS_RESULT names a result built elsewhere and copied in (an unpacked
+# release tarball has the same layout), for a host that must not build
+# (e1504g): the result link points at it and nothing is compiled here.
 if [ -n "${FS_RESULT:-}" ]; then
   ln -sfn "$FS_RESULT" result
 else
-  git add -A >/dev/null 2>&1 || true   # flakes only see tracked files
-  # On NixOS the lock's PAM file dlopens the system's pam_unix.so, which
-  # fails to load into a shell linked against an older glibc than the
-  # system's (GLIBC_2.43 not found) and turns every password into a wrong
-  # one. The system registry's nixpkgs is the one the installed shell
-  # follows, so the rig builds against it too.
-  override=()
-  if [ -e /etc/NIXOS ] && nix registry list 2>/dev/null | grep -q '^system flake:nixpkgs '; then
-    override=(--override-input nixpkgs flake:nixpkgs)
-  fi
-  nix build .#formalshell ${override[@]+"${override[@]}"}
+  dev/build.sh
 fi
 
 # Resolved once, on demand: a leg names what it needs in leg_<name>_needs
@@ -204,138 +194,36 @@ need_bin() {
   done
 }
 
-need_hyprland() {
-  if [ -z "${hyprland_bin:-}" ]; then
-    if command -v Hyprland >/dev/null 2>&1; then
-      hyprland_bin=Hyprland
-    else
-      hyprland_bin="nix run nixpkgs#hyprland --"
-    fi
-  fi
+# need_tool <var> <command> <openSUSE package>: the command's path into var,
+# or the run fails naming the package that carries it.
+need_tool() {
+  local path
+  [ -z "${!1:-}" ] || return 0
+  path=$(command -v "$2" 2>/dev/null) \
+    || { echo "SMOKE_FAIL: $2 is not on PATH; install the openSUSE package $3" >&2; exit 1; }
+  printf -v "$1" '%s' "$path"
 }
 
-need_hyprctl() {
-  if [ -z "${hyprctl_bin:-}" ]; then
-    if command -v hyprctl >/dev/null 2>&1; then
-      hyprctl_bin=$(command -v hyprctl)
-    else
-      hyprctl_bin=$(nix build --no-link --print-out-paths 'nixpkgs#hyprland^out')/bin/hyprctl
-    fi
-  fi
-}
+need_hyprland() { need_tool hyprland_bin Hyprland hyprland; }
+need_hyprctl() { need_tool hyprctl_bin hyprctl hyprland; }
+need_grim() { need_tool grim_bin grim grim; }
+need_foot() { need_tool foot_bin foot foot; }
+need_notify_send() { need_tool notify_send_bin notify-send libnotify-tools; }
+need_wlrctl() { need_tool wlrctl_bin wlrctl wlrctl; }
+need_wpctl() { need_tool wpctl_bin wpctl wireplumber; }
+need_convert() { need_tool convert_bin convert ImageMagick; }
+need_wtype() { need_tool wtype_bin wtype wtype; }
+need_jq() { need_tool jq_bin jq jq; }
+need_wl_copy() { need_tool wl_copy_bin wl-copy wl-clipboard; }
+need_wl_paste() { need_tool wl_paste_bin wl-paste wl-clipboard; }
 
-need_grim() {
-  if [ -z "${grim_bin:-}" ]; then
-    if command -v grim >/dev/null 2>&1; then
-      grim_bin=$(command -v grim)
-    else
-      grim_bin=$(nix build --no-link --print-out-paths 'nixpkgs#grim^out')/bin/grim
-    fi
-  fi
-}
-
-need_foot() {
-  if [ -z "${foot_bin:-}" ]; then
-    if command -v foot >/dev/null 2>&1; then
-      foot_bin=$(command -v foot)
-    else
-      foot_bin=$(nix build --no-link --print-out-paths 'nixpkgs#foot^out')/bin/foot
-    fi
-  fi
-}
-
-need_notify_send() {
-  if [ -z "${notify_send_bin:-}" ]; then
-    if command -v notify-send >/dev/null 2>&1; then
-      notify_send_bin=$(command -v notify-send)
-    else
-      notify_send_bin=$(nix build --no-link --print-out-paths 'nixpkgs#libnotify^out')/bin/notify-send
-    fi
-  fi
-}
-
-need_wlrctl() {
-  if [ -z "${wlrctl_bin:-}" ]; then
-    if command -v wlrctl >/dev/null 2>&1; then
-      wlrctl_bin=$(command -v wlrctl)
-    else
-      wlrctl_bin=$(nix build --no-link --print-out-paths 'nixpkgs#wlrctl^out')/bin/wlrctl
-    fi
-  fi
-}
-
-need_wpctl() {
-  if [ -z "${wpctl_bin:-}" ]; then
-    if command -v wpctl >/dev/null 2>&1; then
-      wpctl_bin=$(command -v wpctl)
-    else
-      wpctl_bin=$(nix build --no-link --print-out-paths 'nixpkgs#wireplumber^out')/bin/wpctl
-    fi
-  fi
-}
-
-need_convert() {
-  if [ -z "${convert_bin:-}" ]; then
-    if command -v convert >/dev/null 2>&1; then
-      convert_bin=convert
-    else
-      convert_bin="nix run nixpkgs#imagemagick -- convert"
-    fi
-  fi
-}
-
-need_wtype() {
-  if [ -z "${wtype_bin:-}" ]; then
-    if command -v wtype >/dev/null 2>&1; then
-      wtype_bin=$(command -v wtype)
-    else
-      wtype_bin=$(nix build 'nixpkgs#wtype^out' --no-link --print-out-paths)/bin/wtype
-    fi
-  fi
-}
-
-need_jq() {
-  if [ -z "${jq_bin:-}" ]; then
-    if command -v jq >/dev/null 2>&1; then
-      jq_bin=$(command -v jq)
-    else
-      jq_bin=$(nix build --no-link --print-out-paths 'nixpkgs#jq^out')/bin/jq
-    fi
-  fi
-}
-
-need_wl_copy() {
-  if [ -z "${wl_copy_bin:-}" ]; then
-    if command -v wl-copy >/dev/null 2>&1; then
-      wl_copy_bin=$(command -v wl-copy)
-    else
-      wl_copy_bin=$(nix build 'nixpkgs#wl-clipboard^out' --no-link --print-out-paths)/bin/wl-copy
-    fi
-  fi
-}
-
-need_wl_paste() {
-  if [ -z "${wl_paste_bin:-}" ]; then
-    if command -v wl-paste >/dev/null 2>&1; then
-      wl_paste_bin=$(command -v wl-paste)
-    else
-      wl_paste_bin=$(nix build 'nixpkgs#wl-clipboard^out' --no-link --print-out-paths)/bin/wl-paste
-    fi
-  fi
-}
-
+# A second, independent localsend-cli standing in for a real second device:
+# the one the result's helpers carry (dev/build.sh), the same build the
+# shell sends with.
 need_localsend_cli() {
-  if [ -z "${localsend_cli_bin:-}" ]; then
-    if command -v localsend-cli >/dev/null 2>&1; then
-      localsend_cli_bin=$(command -v localsend-cli)
-    else
-      # This repo's own package (nix/localsend-cli.nix), not upstream
-      # nixpkgs -- --localsend's own second CLI instance, standing in for a
-      # real second device, is built the same way `nix build .#formalshell`
-      # already builds the wrapped shell above.
-      localsend_cli_bin=$(nix build --no-link --print-out-paths '.#localsend-cli')/bin/localsend-cli
-    fi
-  fi
+  [ -z "${localsend_cli_bin:-}" ] || return 0
+  localsend_cli_bin="$PWD/result/lib/formalshell/bin/localsend-cli"
+  [ -x "$localsend_cli_bin" ] || { echo "SMOKE_FAIL: no localsend-cli in the result's helpers ($localsend_cli_bin)" >&2; exit 1; }
 }
 
 need_bin hyprland hyprctl grim
@@ -422,14 +310,15 @@ trap on_exit EXIT
 # noise and tones out of the real speakers. Every leg's mpv goes to a null
 # sink of the run's own instead, and the shell's cava reads that sink's
 # monitor, since its default source would now hear nothing. The wrapper
-# execs, so a leg's $! is still mpv's own pid.
+# also loads the MPRIS script need_mpv found, and execs, so a leg's $! is
+# still mpv's own pid.
 if [ -n "${mpv_bin:-}" ]; then
   need_pactl
   quiet_sink="fs_smoke_$$"
   quiet_sink_module=$("$pactl_bin" load-module module-null-sink "sink_name=$quiet_sink" sink_properties=device.description=SmokeQuiet)
   write_script "$shot_dir/mpv" <<WRAP
 #!/usr/bin/env bash
-exec "$mpv_bin" --audio-device=pipewire/$quiet_sink "\$@"
+exec "$mpv_bin" --script="$mpv_mpris" --audio-device=pipewire/$quiet_sink "\$@"
 WRAP
   mpv_bin="$shot_dir/mpv"
   shell_env="${shell_env:+$shell_env }FS_CAVA_SOURCE=$quiet_sink.monitor"
@@ -488,7 +377,7 @@ if [ "$session_mode" = "nested" ]; then
     if [ -n "${!vm_only_var:-}" ]; then
       flag_var="leg_${leg_name}_flag"
       flag_decl="${!flag_var}"
-      echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig (dev/vm-lock.sh just vm-smoke): ${!vm_only_var}" >&2
+      echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig, which g815 does not have yet: ${!vm_only_var}" >&2
       exit 1
     fi
   done
@@ -673,7 +562,7 @@ shell_launcher=""
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_shell" >/dev/null; then shell_launcher="leg_${leg_name}_shell"; fi
 done
-shell_bin="$PWD/result/bin/formalshell-rs"
+shell_bin="$PWD/result/bin/formalshell"
 # FS_CPU_QUOTA=25% runs the shell alone under a CPU quota, in a transient
 # user scope of its own, so a fast machine stands in for e1504g's N305 in
 # power saver. systemd-run reaches the user manager over its private socket,
@@ -858,14 +747,14 @@ echo "session mode: $session_mode${vkms_device:+ ($vkms_device)}"
 # -k 10 force-kills 10s after the initial SIGTERM: Hyprland's SIGTERM
 # handler can hang instead of exiting, and a stuck session would sit on the
 # card (or on the host's screen) indefinitely. That only reaches the pid
-# timeout started, and on NixOS that is /run/wrappers/bin/Hyprland, a
-# capability wrapper whose real compositor can outlive it, reparented to
-# pid 1 (e1504g, 2026-10-07). So the whole session runs in a transient user
+# timeout started, and behind a capability wrapper (NixOS's
+# /run/wrappers/bin/Hyprland) the real compositor outlived it, reparented
+# to pid 1 (e1504g, 2026-10-07). So the whole session runs in a transient user
 # scope of its own and is torn down as a cgroup: every process in it gets
 # SIGTERM, then SIGKILL five seconds on, wherever it was reparented to.
 # systemd-run reaches the user manager over its private socket, never the
 # session bus. Its fs-run- name puts a leftover under dev/scoped-run.sh's
-# sweep in the VM.
+# sweep.
 hypr_unit="fs-run-hypr-$$"
 session_scope=()
 if systemd-run --user --scope --quiet --collect --unit="$hypr_unit-probe" true > /dev/null 2>&1; then

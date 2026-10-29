@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Regenerates docs/shots/: one --shots session for the default preset and
 # one each for pantheon and retro (dev/smoke.d/shots.sh). On a mac it runs
-# in the test VM and pulls the files back, booting the linux-builder first
-# since the reaper stops it after two idle hours; on Linux it nests a
-# session here.
+# on g815's rig, which pulls the files back; on Linux it nests a session
+# here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "$(uname)" = Darwin ]; then
-  ./dev/linux-builder.sh start
-  run=(./dev/vm.sh smoke)
+  run=(./dev/remote.sh smoke)
 else
   run=(./dev/smoke.sh)
 fi

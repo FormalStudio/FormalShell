@@ -19,34 +19,15 @@ leg_screensaver_order=230
 leg_screensaver_needs="mpv ffmpeg jq convert wtype"
 
 # Shared with dev/smoke.d/visualizer.sh, which the scaffold sources on every
-# run: the VM's mpv is pre-wrapped with mpvScripts.mpris baked into its
-# --script= flags (nix/testvm.nix), so plain `mpv` on PATH already announces
-# itself over MPRIS. A host without that gets the same wrapped derivation from
-# this repo's own pinned nixpkgs, since `.override` is not expressible as a
-# flake installable attribute path.
+# run. openSUSE's mpv-mpris installs the script where mpv never looks on its
+# own; the run's mpv wrapper in dev/smoke.sh passes it with --script=.
 need_mpv() {
-  if [ -n "${mpv_bin:-}" ]; then return 0; fi
-  if command -v mpv >/dev/null 2>&1; then
-    mpv_bin=$(command -v mpv)
-  else
-    mpv_bin=$(nix build --no-link --print-out-paths --impure --expr '
-      let
-        flake = builtins.getFlake (toString ./.);
-        pkgs = flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem};
-      in
-        pkgs.mpv.override { scripts = [ pkgs.mpvScripts.mpris ]; }
-    ')/bin/mpv
-  fi
+  need_tool mpv_bin mpv mpv
+  mpv_mpris=/usr/lib64/mpv/mpris.so
+  [ -f "$mpv_mpris" ] || { echo "SMOKE_FAIL: no MPRIS script for mpv at $mpv_mpris; install the openSUSE package mpv-mpris" >&2; exit 1; }
 }
 
-need_ffmpeg() {
-  if [ -n "${ffmpeg_bin:-}" ]; then return 0; fi
-  if command -v ffmpeg >/dev/null 2>&1; then
-    ffmpeg_bin=$(command -v ffmpeg)
-  else
-    ffmpeg_bin=$(nix build --no-link --print-out-paths 'nixpkgs#ffmpeg-headless^out')/bin/ffmpeg
-  fi
-}
+need_ffmpeg() { need_tool ffmpeg_bin ffmpeg ffmpeg; }
 
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the screensaver
 # covers the whole output, so under --wallpaper it starts after that leg's last

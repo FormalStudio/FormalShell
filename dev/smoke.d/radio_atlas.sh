@@ -19,14 +19,14 @@
 # panel header. The example Hyprland config has to carry a layer rule for
 # formalshell:radio (this rig runs with blur off, so a frame cannot show it).
 #
-# The globe wears NASA's Blue Marble (nix/blue-marble.nix):
+# The globe wears NASA's Blue Marble (the release tarball's, dev/tarball.sh):
 # `radio status` has to report atlas.globe.imagery true before the open
 # frame is taken, and a square inside the disc has to carry colour the flat
 # globe never had (mean HSL saturation 0.05 and some 450 colours over the
 # same square in the flat globe's frame), and the whole disc's mean
 # luminance has to clear 0.18: the picture as NASA masters it read 0.127,
 # and the tone `earth::load` lays over each tile lifts that to about 0.26.
-# The picture is a tile pyramid (FS_EARTH_TILES, nix/earth-tiles.py), and
+# The picture is a tile pyramid (FS_EARTH_TILES, packaging/earth-tiles.py), and
 # the leg points FS_EARTH_TILES at a link of its own to the package's tiles.
 # After the rest, the station plays again to bring the globe back over it,
 # and a real wheel over the globe zooms it to its limit: `radio status` has
@@ -96,8 +96,8 @@ leg_radio_atlas_fixture() {
 {"fetchedAt":$now_ms,"stations":[{"uuid":"smoke-atlas-1","name":"$radio_atlas_name","url":"http://127.0.0.1:$radio_atlas_port/station.mp3","homepage":"","favicon":"","country":"France","countryCode":"FR","state":"","language":"","tags":"","codec":"MP3","bitrate":128,"votes":0,"clicks":0,"latitude":31.5,"longitude":84.5}]}
 EOF
   local tiles
-  tiles=$(grep -aoE '/nix/store/[a-z0-9]{32}-blue-marble-[^/]+/share/formalshell/tiles' "$PWD/result/bin/formalshell-rs" | head -1)
-  [ -n "$tiles" ] || fail "--radio-atlas: the shell's wrapper names no blue-marble tiles"
+  tiles=$(readlink -f "$PWD/result/share/formalshell/tiles")
+  [ -d "$tiles" ] || fail "--radio-atlas: the result carries no blue-marble tiles"
   ln -sfn "$tiles" "$radio_atlas_tiles_link"
   ln -sfn "$tiles" "$radio_atlas_tiles_link.saved"
   shell_env="${shell_env:+$shell_env }FS_EARTH_TILES=$radio_atlas_tiles_link"

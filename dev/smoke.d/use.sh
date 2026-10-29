@@ -334,7 +334,7 @@ use_launcher_frames() {
 
 leg_use_assert() {
   # Packed first, so a failing run still hands every frame back
-  # (dev/vm.sh pulls and unpacks a SMOKE_ *.tar).
+  # (dev/remote.sh pulls and unpacks a SMOKE_ *.tar).
   cp "$shell_log_path" "$use_dir/shell.log" 2>/dev/null || true
   tar -cf "$shot_dir/use.tar" -C "$use_dir" . 2>/dev/null || true
   echo "SMOKE_USE_FRAMES $shot_dir/use.tar"

@@ -19,15 +19,7 @@ leg_radio_flag="--radio"
 leg_radio_order=175
 leg_radio_needs="ffmpeg wtype pactl mpv"
 
-need_pactl() {
-  if [ -z "${pactl_bin:-}" ]; then
-    if command -v pactl >/dev/null 2>&1; then
-      pactl_bin=$(command -v pactl)
-    else
-      pactl_bin=$(nix build --no-link --print-out-paths 'nixpkgs#pulseaudio^out')/bin/pactl
-    fi
-  fi
-}
+need_pactl() { need_tool pactl_bin pactl pulseaudio-utils; }
 
 radio_track_path="$shot_dir/radio-station.mp3"
 radio_play_path="$shot_dir/radio-play.txt"

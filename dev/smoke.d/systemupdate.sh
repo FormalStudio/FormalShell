@@ -1,9 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --systemupdate: the flake-inputs-behind panel against this repo's own
-# flake. Naming the bar cell in bar.layout IS the opt-in to background
-# polling (the widget flips the panel's pollEnabled), so the cell and the
-# panel read the same real poll rather than two independent ones. That is
+# --systemupdate: the flake-inputs-behind panel against a fixture flake
+# (fixtures/flake, the lock this repo carried while it was one). Naming the
+# bar cell in bar.layout IS the opt-in to background polling (the widget
+# flips the panel's pollEnabled), so the cell and the panel read the same
+# real poll rather than two independent ones. That is
 # what this leg has over `--panel systemupdate`, which only opens the panel.
 #
 # The probes are real `git ls-remote`-class calls against real forges, so the
@@ -20,13 +21,14 @@ systemupdate_panel_png="$shot_dir/systemupdate-panel.png"
 # The same file --dump's own leg writes.
 systemupdate_dump_path="$shot_dir/dump.json"
 systemupdate_room_path="$shot_dir/systemupdate-room.json"
+systemupdate_flake_dir="$PWD/dev/smoke.d/fixtures/flake"
 
 leg_systemupdate_fixture() {
   # --panel systemupdate writes the identical key, so only one of the two
   # ever emits it: a settings.json carrying it twice is last-wins JSON that
   # would silently disagree with whichever half is being read.
   if ! leg_on panel || [ "$(leg_arg panel)" != "systemupdate" ]; then
-    settings_fragment ', "systemUpdate": {"flakeDir": "'"$PWD"'"}'
+    settings_fragment ', "systemUpdate": {"flakeDir": "'"$systemupdate_flake_dir"'"}'
   fi
   settings_fragment ', "bar": {"layout": {"right": ["systemUpdate", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]}}'
 }
@@ -61,8 +63,8 @@ leg_systemupdate_assert() {
   if [ ! -s "$systemupdate_dump_path" ]; then
     fail "no debug dump produced"
   fi
-  if ! grep -qF "\"flakeDir\":\"$PWD\"" "$systemupdate_dump_path"; then
-    fail "the resolved settings do not point systemUpdate.flakeDir at this repo ($PWD)"
+  if ! grep -qF "\"flakeDir\":\"$systemupdate_flake_dir\"" "$systemupdate_dump_path"; then
+    fail "the resolved settings do not point systemUpdate.flakeDir at the fixture flake ($systemupdate_flake_dir)"
   fi
   if ! grep -qF '"right":["systemUpdate"' "$systemupdate_dump_path"; then
     fail "the resolved settings do not lead bar.layout's right region with systemUpdate, the opt-in cell was never placed, so nothing flipped the panel's pollEnabled"
@@ -71,5 +73,5 @@ leg_systemupdate_assert() {
   jq -e '.[].cells[] | select(.name == "systemUpdate" and .whole == true and .width > 0)' "$systemupdate_room_path" > /dev/null \
     || fail "the systemUpdate cell is not whole on the strip: $(cat "$systemupdate_room_path" 2>/dev/null)"
   [ -f "$systemupdate_panel_png" ] || fail "no systemupdate screenshot produced at $systemupdate_panel_png"
-  echo "SMOKE_SYSTEMUPDATE $systemupdate_panel_png (against $PWD/flake.lock; whatever the real probes answered is what rendered)"
+  echo "SMOKE_SYSTEMUPDATE $systemupdate_panel_png (against $systemupdate_flake_dir/flake.lock; whatever the real probes answered is what rendered)"
 }

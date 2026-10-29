@@ -1,6 +1,6 @@
-# The same tools as flake.nix's devShell, plus what a non-nix `cargo build` of the shell needs:
+# What `cargo build` of the shell needs (dev/build.sh, dev/lint.sh run it as `fspec dev -- cargo`):
 #   cd crates && cargo build --release --package formalshell-rs
-# The shell is Linux only; `just build` stays the nix build.
+# The shell is Linux only.
 
 # rustup's proxies act on the name they run as and install the pinned toolchain on first use.
 RUST = ["cargo", "rustc", "rustdoc", "rustfmt", "cargo-fmt", "cargo-clippy", "clippy-driver"]

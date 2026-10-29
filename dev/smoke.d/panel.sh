@@ -20,15 +20,15 @@ leg_panel_validate() {
 }
 
 leg_panel_fixture() {
-  # --panel systemupdate needs a real flake to read, and this repo is one:
-  # the panel parses flake.lock itself (no nix invocation), so pointing it
-  # here renders the actual input rows instead of the honest NO FLAKE cell.
+  # --panel systemupdate needs a real flake to read: the panel parses
+  # flake.lock itself (no nix invocation), so pointing it at the fixture
+  # flake renders the actual input rows instead of the honest NO FLAKE cell.
   # Only that leg gets the key, so every other run keeps proving the unset
   # default. The upstream probes are the one part that needs network; a VM
   # with none lands on NO NETWORK, which is an honest state and still shows
   # the rows.
   if [ "$(leg_arg panel)" = "systemupdate" ]; then
-    settings_fragment ', "systemUpdate": {"flakeDir": "'"$PWD"'"}'
+    settings_fragment ', "systemUpdate": {"flakeDir": "'"$PWD/dev/smoke.d/fixtures/flake"'"}'
   fi
 }
 

@@ -22,36 +22,12 @@ leg_media_needs="mpv ffmpeg convert"
 # own need_* helpers: set once, absolute path, since every one of these is
 # embedded in a generated script.
 need_mpv() {
-  if [ -z "${mpv_bin:-}" ]; then
-    if command -v mpv >/dev/null 2>&1; then
-      mpv_bin=$(command -v mpv)
-    else
-      # nix/testvm.nix stages mpv with mpvScripts.mpris baked into the
-      # wrapper's --script= flags, so plain `mpv` on PATH already announces
-      # itself over MPRIS. A host without that gets the same derivation built
-      # from this repo's own pinned nixpkgs (`.override` is not expressible
-      # as a flake installable attribute path).
-      # shellcheck disable=SC2016  # ${builtins.currentSystem} is nix, not shell
-      mpv_bin=$(nix build --no-link --print-out-paths --impure --expr '
-        let
-          flake = builtins.getFlake (toString ./.);
-          pkgs = flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem};
-        in
-          pkgs.mpv.override { scripts = [ pkgs.mpvScripts.mpris ]; }
-      ')/bin/mpv
-    fi
-  fi
+  need_tool mpv_bin mpv mpv
+  mpv_mpris=/usr/lib64/mpv/mpris.so
+  [ -f "$mpv_mpris" ] || { echo "SMOKE_FAIL: no MPRIS script for mpv at $mpv_mpris; install the openSUSE package mpv-mpris" >&2; exit 1; }
 }
 
-need_ffmpeg() {
-  if [ -z "${ffmpeg_bin:-}" ]; then
-    if command -v ffmpeg >/dev/null 2>&1; then
-      ffmpeg_bin=$(command -v ffmpeg)
-    else
-      ffmpeg_bin=$(nix build 'nixpkgs#ffmpeg-headless^out' --no-link --print-out-paths)/bin/ffmpeg
-    fi
-  fi
-}
+need_ffmpeg() { need_tool ffmpeg_bin ffmpeg ffmpeg; }
 
 media_status_path="$shot_dir/media-status.json"
 media_status_long_path="$shot_dir/media-status-long.json"

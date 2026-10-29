@@ -38,15 +38,7 @@ record_ffprobe_path="$shot_dir/record-ffprobe.txt"
 
 # ffprobe reads back what RecordingService's own finalize pass did to a real
 # captured file. The scaffold resolves leg_<n>_needs through need_<name>.
-need_ffprobe() {
-  if [ -z "${ffprobe_bin:-}" ]; then
-    if command -v ffprobe >/dev/null 2>&1; then
-      ffprobe_bin=$(command -v ffprobe)
-    else
-      ffprobe_bin=$(nix build --no-link --print-out-paths 'nixpkgs#ffmpeg-headless^out')/bin/ffprobe
-    fi
-  fi
-}
+need_ffprobe() { need_tool ffprobe_bin ffprobe ffmpeg; }
 
 leg_record_fixture() {
   settings_fragment ', "recording": {"noDmabuf": true, "webcam": true}'

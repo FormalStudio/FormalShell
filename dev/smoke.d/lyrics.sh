@@ -113,17 +113,9 @@ leg_lyrics_order=175
 leg_lyrics_needs="mpv ffmpeg convert jq wlrctl pipewire"
 
 need_pipewire() {
-  if [ -z "${pw_dump_bin:-}" ]; then
-    local dir
-    if command -v pw-loopback >/dev/null 2>&1; then
-      dir=$(dirname "$(command -v pw-loopback)")
-    else
-      dir=$(nix build --no-link --print-out-paths 'nixpkgs#pipewire^out')/bin
-    fi
-    pw_dump_bin="$dir/pw-dump"
-    pw_cli_bin="$dir/pw-cli"
-    pw_loopback_bin="$dir/pw-loopback"
-  fi
+  need_tool pw_dump_bin pw-dump pipewire-tools
+  need_tool pw_cli_bin pw-cli pipewire-tools
+  need_tool pw_loopback_bin pw-loopback pipewire-tools
 }
 
 lyrics_track1_path="$shot_dir/lyrics-track1.flac"

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --dump: the debug IPC target's whole state dump, taken in-session and
-# printed on stdout so dev/vm.sh saves it as this run's JSON sidecar. Other
+# printed on stdout so dev/remote.sh saves it as this run's JSON sidecar. Other
 # legs read the same file for the settings the shell actually resolved.
 #
 # The reply is captured with stderr folded in, so "not empty" alone would

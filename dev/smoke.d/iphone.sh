@@ -36,7 +36,7 @@
 #    the second run's now playing lands with the error gone. The error is
 #    BlueZ's "Not connected" as a person reads it, not the GDBus string.
 #  - a bond BlueZ holds for a phone that is not connected (what a phone that
-#    forgot this laptop looks like, nix/iphone-bridge-bond.patch's status):
+#    forgot this laptop looks like, packaging/iphone-bridge-bond.patch's status):
 #    `iphone status` not connected and bonded, the ams child and its error
 #    gone with the link, the panel offering "Pair again", and `iphone pair`
 #    reaching the bridge shim with `--forget <address>`, the shim's own

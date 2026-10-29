@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --wifi drives the network panel against the two real hostapd radios
-# nix/testvm.nix stands up on mac80211_hwsim: wait for a genuine scan to
+# the VM rig stands up on mac80211_hwsim: wait for a genuine scan to
 # surface both SSIDs, a wrong-password round trip that must settle to a
 # stable disconnected state, the real password reaching connected:true (so
 # hostapd's own dnsmasq handed the station an address), forget, then the
@@ -247,17 +247,11 @@ leg_wifi_assert() {
   cat "$wifi_eap_forget_status_path"; echo
 }
 
-# Tesseract out of the shell's own closure, the one `capture text` runs. The
-# closure carries two builds, and only the wrapped one ships eng.
+# The host's tesseract, the one `capture text` runs.
 wifi_ocr() {
-  local c
-  for c in $(nix-store -qR "$PWD/result" | grep -E -- '-tesseract-[0-9.]+$'); do
-    if "$c/bin/tesseract" --list-langs 2>/dev/null | grep -qx eng; then
-      "$c/bin/tesseract" "$1" - 2>/dev/null
-      return
-    fi
-  done
-  fail "no tesseract with eng data in the shell's closure"
+  command -v tesseract >/dev/null 2>&1 && tesseract --list-langs 2>/dev/null | grep -qx eng \
+    || fail "no tesseract with eng data on PATH; install the openSUSE packages tesseract-ocr and tesseract-ocr-traineddata-english"
+  tesseract "$1" - 2>/dev/null
 }
 
 leg_wifi_assert_ghost() {

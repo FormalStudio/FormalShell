@@ -50,8 +50,8 @@ leg_instance_drive() {
   # the primary. The daemon is the wrapped binary itself, told apart from
   # formalshell-ipc and the scripts by what /proc says it executes.
   local find_daemons launch
-  find_daemons='for pid in $(pgrep -f -- formalshell-rs); do case "$(readlink /proc/$pid/exe 2>/dev/null)" in *formalshell-rs-wrapped|*/bin/formalshell-rs) echo "$pid" ;; esac; done'
-  launch="$PWD/result/bin/formalshell-rs"
+  find_daemons='for pid in $(pgrep -f -- formalshell-rs); do case "$(readlink /proc/$pid/exe 2>/dev/null)" in */formalshell-rs) echo "$pid" ;; esac; done'
+  launch="$PWD/result/bin/formalshell"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 3

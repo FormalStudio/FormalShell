@@ -36,8 +36,8 @@ leg_boot_timing() {
 leg_boot_drive() {
   local script="$shot_dir/boot-drive.sh"
   local find_daemons launch state
-  find_daemons='for pid in $(pgrep -f -- formalshell-rs); do case "$(readlink /proc/$pid/exe 2>/dev/null)" in *formalshell-rs-wrapped|*/bin/formalshell-rs) echo "$pid" ;; esac; done'
-  launch="$PWD/result/bin/formalshell-rs"
+  find_daemons='for pid in $(pgrep -f -- formalshell-rs); do case "$(readlink /proc/$pid/exe 2>/dev/null)" in */formalshell-rs) echo "$pid" ;; esac; done'
+  launch="$PWD/result/bin/formalshell"
   state="$iso_home/.local/state/formalshell/state.json"
   write_script "$script" <<EOF
 #!/usr/bin/env bash

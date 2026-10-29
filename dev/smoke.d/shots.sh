@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); $convert_bin can be a multi-word "nix run ..." prefix
+# shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); $convert_bin expands unquoted
 # --shots rides --showcase and writes the README's and the website's images
 # into docs/shots/ (scripts/shots runs it once per theme). Alone it takes
 # every one of them under the default preset; under --pantheon or --retro it

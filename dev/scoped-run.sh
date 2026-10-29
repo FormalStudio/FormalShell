@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Runs a command inside the VM as a transient systemd user scope, so the
+# Runs a command on a rig slot as a transient systemd user scope, so the
 # whole tree it starts (nested Hyprland, its dbus-run-session, the shell,
 # every client) lives in one cgroup that can be stopped as a unit. Without
 # it the tree outlives an ssh drop: a command session has no tty to hang up,
 # and `timeout` puts Hyprland in a process group of its own. Called by
-# dev/vm.sh's vm_run; do not run it by hand on a host.
+# dev/remote.sh's remote_run; do not run it by hand on a host.
 #
 #   dev/scoped-run.sh <unit> <command string>
 #
-# Three ways the scope ends: the command exits, vm.sh stops it from the mac
-# when its own side is signalled, or the watcher below sees the ssh session
-# that started it gone (a SIGKILLed mac side). RuntimeMaxSec is the backstop.
+# Three ways the scope ends: the command exits, remote.sh stops it from the
+# mac when its own side is signalled, or the watcher below sees the ssh
+# session that started it gone (a SIGKILLed mac side). RuntimeMaxSec is the
+# backstop.
 #
-# The VM's slot is held by one run at a time (dev/vm-lock.sh), so any scope
-# or Hyprland still here at start is a leftover of a finished run.
+# A slot is held by one run at a time (remote.sh's mac-side flock), so any
+# scope or Hyprland still here at start is a leftover of a finished run.
 set -uo pipefail
 unit=$1
 shift

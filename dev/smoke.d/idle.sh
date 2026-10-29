@@ -16,11 +16,10 @@ idle_results_path="$shot_dir/idle-results.txt"
 idle_start_path="$shot_dir/shell-start.ns"
 idle_done_path="$shot_dir/idle-done"
 
-# perf for a profile of the spin, where nix can fetch it; the run goes on
+# perf for a profile of the spin, where the host has it; the run goes on
 # without one.
 leg_idle_fixture() {
-  idle_perf=$(timeout 300 nix build --no-link --print-out-paths nixpkgs#perf 2>/dev/null | head -1)
-  [ -n "$idle_perf" ] && idle_perf="$idle_perf/bin/perf"
+  idle_perf=$(command -v perf 2>/dev/null || true)
 }
 
 leg_idle_shell() {

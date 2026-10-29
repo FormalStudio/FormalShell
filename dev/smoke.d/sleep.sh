@@ -3,7 +3,7 @@
 # --sleep suspends the machine through logind with the session unlocked and
 # reads the lock back after wake. `sudo systemctl suspend` is the real path:
 # logind signals PrepareForSleep(true), waits on every delay inhibitor, then
-# starts suspend.target. Only the kernel's freeze is stubbed (nix/testvm.nix
+# starts suspend.target. Only the kernel's freeze is stubbed (the VM rig
 # carries why), and the stub stamps the millisecond logind got there, which
 # has to come after the shell let its inhibitor go with the surface secure.
 # The FormalShell delay inhibitor is read off `systemd-inhibit --list` before

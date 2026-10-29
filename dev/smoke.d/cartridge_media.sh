@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); $convert_bin can be a multi-word "nix run ..." prefix
+# shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); $convert_bin expands unquoted
 # --cartridge-media rides --cartridge (and --showcase, for the flat teal
 # wallpaper) and records the README's cartridge GIFs into docs/media/, the
 # way --screensaver-gif does: the boot as the session's first frame, the

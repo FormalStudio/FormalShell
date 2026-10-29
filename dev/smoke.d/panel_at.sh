@@ -6,7 +6,7 @@
 # panel-bearing cell, so `panel state` is read back beside the route's own
 # answer: a toggleAt that returned ok while opening the wrong panel would
 # look identical here without it. Its own grim frame, since the run's
-# smoke.png is timestamped by the time dev/vm.sh has pulled it.
+# smoke.png is timestamped by the time dev/remote.sh has pulled it.
 leg_panel_at_flag="--panel-at <n>"
 leg_panel_at_order=70
 

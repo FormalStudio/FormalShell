@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --mirror: the launcher's camera mirror against two real V4L2 capture nodes.
-# The VM has no camera, so nix/testvm.nix builds v4l2loopback (not loaded)
+# The VM has no camera, so the VM rig builds v4l2loopback (not loaded)
 # and this leg loads it and feeds /dev/video10 a colour test pattern and
 # /dev/video11 a GREY one, the pixel format an IR sensor advertises, each
 # through a real ffmpeg writer.

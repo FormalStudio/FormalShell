@@ -18,10 +18,7 @@
 #
 # Those two stop at "the overlay is on screen" because both block on a real
 # slurp drag: CaptureIpc exposes no geometry stand-in for that answer (unlike
-# picker choose or screenshot key), slurp cannot be shimmed off the shell's
-# PATH (nix/package.nix installs it with makeWrapper's --prefix, which
-# outranks anything this rig puts on the session PATH), and there is no
-# synthetic pointer here. textAt/colorAt run the identical pipeline from a
+# picker choose or screenshot key), and there is no synthetic pointer here. textAt/colorAt run the identical pipeline from a
 # geometry, so those two prove grim to tesseract to wl-copy end to end.
 leg_ocr_flag="--ocr"
 leg_ocr_order=215
@@ -198,5 +195,5 @@ leg_ocr_assert() {
   echo "SMOKE_OCR_TEXT_OVERLAY $ocr_text_overlay_png"
   echo "SMOKE_OCR_COLOR_OVERLAY $ocr_color_overlay_png"
   echo "SMOKE_OCR_FIXTURE $ocr_fixture_png (foot window: known text on a known #3fae2a background)"
-  echo "SMOKE_OCR_LIMIT what stays host-trial is the SELECTION, not the pipeline: bare 'capture text'/'capture color' block on a real slurp drag this rig cannot answer (no synthetic pointer, and slurp cannot be shimmed off the shell's PATH since nix/package.nix installs it with --prefix), so those two legs assert only that the right overlay launched and cancelled clean"
+  echo "SMOKE_OCR_LIMIT what stays host-trial is the SELECTION, not the pipeline: bare 'capture text'/'capture color' block on a real slurp drag this rig cannot answer (no synthetic pointer), so those two legs assert only that the right overlay launched and cancelled clean"
 }

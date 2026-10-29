@@ -87,15 +87,7 @@ fullscreen_track_path="$shot_dir/fullscreen-tone.flac"
 fullscreen_mpv_pid_path="$shot_dir/fullscreen-mpv.pid"
 fullscreen_work_path="$shot_dir/fullscreen-work.txt"
 
-need_strace() {
-  if [ -z "${strace_bin:-}" ]; then
-    if command -v strace >/dev/null 2>&1; then
-      strace_bin=$(command -v strace)
-    else
-      strace_bin=$(nix build 'nixpkgs#strace^out' --no-link --print-out-paths)/bin/strace
-    fi
-  fi
-}
+need_strace() { need_tool strace_bin strace strace; }
 
 leg_fullscreen_fixture() {
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=20" -ac 2 \

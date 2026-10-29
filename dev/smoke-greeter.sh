@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # greetd smoke (M8 Task 2): drives the real greetd instance's default_session
-# (the formalshell-greeter compositor nix/testvm.nix declares) through a full
+# (the formalshell-greeter compositor the VM rig runs) through a full
 # login, typed via wtype into the greeter's own Wayland session rather than
 # an IPC shortcut (the same "verify the action, not the input method" idiom
 # dev/smoke.sh's --lock leg already uses). Prints
@@ -10,7 +10,7 @@
 #
 # Unlike dev/smoke.sh's own ephemeral nested compositor (composed fresh
 # every run by that script), greetd's default_session is a persistent system
-# service declared once in nix/testvm.nix — driving it means finding the
+# service declared once in the VM — driving it means finding the
 # ALREADY-RUNNING greeter session rather than spawning a new one, and
 # reaching from this script's own "test" account into the separate `greeter`
 # system account's Wayland session. Root (passwordless sudo, already wired
@@ -25,7 +25,7 @@
 # restart forces a fresh greeter back up regardless of what a previous run
 # (or a fresh boot) left running.
 #
-# `--preset cartridge` runs the same login under nix/testvm.nix's
+# `--preset cartridge` runs the same login under the VM's
 # greeter-cartridge specialisation (switched to here and back on exit), with
 # a burst of frames through the boot before the pre-auth shot and the
 # greeter's own boot lines asserted: played, assembled, and crumpled on the
@@ -87,9 +87,8 @@ fi
 sudo rm -f "$post_auth_src" "$session_log"
 sudo systemctl restart greetd
 
-# The session script no longer pins a fixed socket name (see
-# nix/nixos-greeter-module.nix's header comment on WAYLAND_DISPLAY) — the
-# compositor picks its own, so discover it the same way that script does.
+# The session script pins no fixed socket name: the compositor picks its
+# own, so discover it the same way that script does.
 wayland_display=""
 for _ in $(seq 1 60); do
   wayland_display=$(sudo find "$runtime_dir" -maxdepth 1 -name 'wayland-*' ! -name '*.lock' -printf '%f' -quit 2>/dev/null)

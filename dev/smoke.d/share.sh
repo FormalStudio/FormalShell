@@ -4,11 +4,10 @@
 # localsend-cli (M75 Task 5 restructured the route around it; M17's
 # GUI-only shape is now the fallback, providers.js's sharePeerEntries).
 #
-# nix/package.nix wraps localsend-cli onto the `formalshell` binary's own
-# PATH via `--suffix`, so it is unconditionally present for anything
-# launched through `result/bin/formalshell` in this rig: no PATH trick can
-# shadow it off, the wrapper re-suffixes its own store path onto whatever
-# PATH it inherited regardless. That makes the CLI-present branch the only
+# The launcher appends the result's helper directory (dev/build.sh), which
+# carries localsend-cli, to whatever PATH it inherited, so the CLI is
+# unconditionally present for anything launched through
+# `result/bin/formalshell` in this rig: no PATH trick can take it away. That makes the CLI-present branch the only
 # one this rig can honestly exercise end to end; the CLI-absent fallback
 # shape (M17's Clipboard/Pick From History/Receive-launches-the-GUI rows)
 # cannot be produced honestly on this rig, so it isn't reproduced here.

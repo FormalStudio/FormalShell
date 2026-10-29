@@ -88,23 +88,25 @@ leg_menu_drive() {
   t0=$(menu_t0)
   write_script "$menu_script" <<EOF
 #!/usr/bin/env bash
+# Every wtype is a new virtual keyboard whose first keys reach nobody until
+# the shell binds it (lock.sh's drive has the detail), so each waits first.
 sleep $t0
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 2
 $ipc call debug query 'e' > "$query_path" 2>&1
 "$grim_bin" "$menu_root_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_root_path" 2>&1
-"$wtype_bin" -k Down
+"$wtype_bin" -s 300 -k Down
 sleep 1
 "$grim_bin" "$menu_down_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_down_path" 2>&1
 for n in 2 3 4; do
-  "$wtype_bin" -k Down
+  "$wtype_bin" -s 300 -k Down
   sleep 0.6
   $ipc call menu status > "$shot_dir/menu-status-down\$n.json" 2>&1
 done
 for n in 1 2 3 4; do
-  "$wtype_bin" -k Up
+  "$wtype_bin" -s 300 -k Up
   sleep 0.6
   $ipc call menu status > "$shot_dir/menu-status-up\$n.json" 2>&1
 done
@@ -116,18 +118,18 @@ $ipc call menu status > "$menu_status_search_path" 2>&1
 sleep 1
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 1
-"$wtype_bin" fire
+"$wtype_bin" -s 300 fire
 sleep 0.6
 $ipc call menu status > "$shot_dir/menu-status-typed.json" 2>&1
-"$wtype_bin" -M ctrl -k a -m ctrl
+"$wtype_bin" -s 300 -M ctrl -k a -m ctrl
 sleep 0.6
 "$grim_bin" "$menu_selected_path" > /dev/null 2>&1
 $ipc call menu status > "$shot_dir/menu-status-selected.json" 2>&1
-"$wtype_bin" term
+"$wtype_bin" -s 300 term
 sleep 0.6
 $ipc call menu status > "$shot_dir/menu-status-replaced.json" 2>&1
-"$wtype_bin" -M shift -k Home -m shift
-"$wtype_bin" -k BackSpace
+"$wtype_bin" -s 300 -M shift -k Home -m shift
+"$wtype_bin" -s 300 -k BackSpace
 sleep 0.6
 $ipc call menu status > "$shot_dir/menu-status-emptied.json" 2>&1
 $ipc call menu summon emoji > /dev/null 2>&1

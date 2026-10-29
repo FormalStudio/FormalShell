@@ -43,10 +43,8 @@
 #     zero `brightnessStep` afterwards shows the restored level, the row
 #     the next key steps from.
 #
-# The shell's wrapper puts its own brightnessctl and ddcutil first on PATH,
-# so this leg starts the wrapped binary itself, with the wrapper's own
-# environment read out of the makeCWrapper call it embeds and the shims in
-# front of its PATH.
+# The shims go ahead of PATH before the launcher runs, so they stand in
+# front of the host's brightnessctl and ddcutil.
 leg_brightness_flag="--brightness"
 leg_brightness_order=217
 leg_brightness_needs="wtype jq"
@@ -130,21 +128,12 @@ EOF
 }
 
 leg_brightness_shell() {
-  local doc wrapped env_lines
-  doc=$(grep -a -A20 "^makeCWrapper '" "$shell_bin")
-  wrapped=$(sed -n "s/^makeCWrapper '\([^']*\)'.*/\1/p" <<< "$doc" | head -n1)
-  [ -x "$wrapped" ] || fail "cannot read the wrapped binary out of $shell_bin"
-  env_lines=$(sed -n \
-    -e "s/^ *--set-default '\([A-Z_]*\)' '\([^']*\)'.*/export \1=\"\${\1:-\2}\"/p" \
-    -e "s/^ *--prefix 'PATH' ':' '\([^']*\)'.*/export PATH=\"\1:\$PATH\"/p" \
-    -e "s/^ *--suffix 'PATH' ':' '\([^']*\)'.*/export PATH=\"\$PATH:\1\"/p" <<< "$doc")
   write_script "$1" <<EOF
 #!/usr/bin/env bash
 export LIBGL_ALWAYS_SOFTWARE=1
-$env_lines
 export PATH="$brightness_shim_dir:\$PATH"
 $wayland_debug_line
-$shell_prefix "$wrapped" > "$shell_log_path" 2>&1 &
+$shell_prefix "$shell_bin" > "$shell_log_path" 2>&1 &
 echo \$! > "$shot_dir/shell.pid"
 wait
 EOF

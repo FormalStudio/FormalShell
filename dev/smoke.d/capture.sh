@@ -37,15 +37,7 @@ leg_capture_fixture_window=keep
 # file(1) backs the PNG/container assertions in four of the capture legs.
 # The scaffold resolves leg_<n>_needs through need_<name> and sources every
 # leg file first, so a resolver a leg needs can live in the leg itself.
-need_file() {
-  if [ -z "${file_bin:-}" ]; then
-    if command -v file >/dev/null 2>&1; then
-      file_bin=$(command -v file)
-    else
-      file_bin=$(nix build --no-link --print-out-paths 'nixpkgs#file^out')/bin/file
-    fi
-  fi
-}
+need_file() { need_tool file_bin file file; }
 
 leg_capture_fixture() {
   # recording.noDmabuf is the one recording key software rendering makes

@@ -16,22 +16,11 @@ leg_tray_flag="--tray"
 leg_tray_order=170
 leg_tray_needs="python3"
 
-# nix/testvm.nix stages a PyGObject-capable interpreter into
-# environment.systemPackages, so `command -v python3` already resolves inside
-# the VM; the fallback is for a host that never wired that in.
+# The stub items are PyGObject.
 need_python3() {
-  if [ -n "${python3_bin:-}" ]; then return 0; fi
-  if python3 -c 'import gi' >/dev/null 2>&1; then
-    python3_bin=$(command -v python3)
-  else
-    python3_bin=$(nix build --no-link --print-out-paths --impure --expr '
-      let
-        flake = builtins.getFlake (toString ./.);
-        pkgs = flake.inputs.nixpkgs.legacyPackages.${builtins.currentSystem};
-      in
-        pkgs.python3.withPackages (ps: [ ps.pygobject3 ])
-    ')/bin/python3
-  fi
+  need_tool python3_bin python3 python3
+  "$python3_bin" -c 'import gi' >/dev/null 2>&1 \
+    || { echo "SMOKE_FAIL: $python3_bin cannot import gi; install the openSUSE package python3-gobject" >&2; exit 1; }
 }
 
 tray_status_path="$shot_dir/tray-status.json"

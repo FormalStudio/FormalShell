@@ -19,15 +19,7 @@ leg_sfx_flag="--sfx"
 leg_sfx_order=226
 leg_sfx_needs="wtype pactl parec python3"
 
-need_parec() {
-  if [ -z "${parec_bin:-}" ]; then
-    if command -v parec >/dev/null 2>&1; then
-      parec_bin=$(command -v parec)
-    else
-      parec_bin=$(nix build --no-link --print-out-paths 'nixpkgs#pulseaudio^out')/bin/parec
-    fi
-  fi
-}
+need_parec() { need_tool parec_bin parec pulseaudio-utils; }
 
 sfx_sink=fs_sfx_sink
 sfx_raw_path="$shot_dir/sfx-capture.raw"
