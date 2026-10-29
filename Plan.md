@@ -234,6 +234,19 @@ summary; now playing when a player exists. A status row at the foot:
 network, audio, settings, collapse. Panels and the launcher bud off its
 inner edge with the same join the bar uses.
 
+The minimap is a map you can act on (owner, 2026-10-29, after Pond's
+niri map): each workspace is a row and its windows' icons sit left to
+right in their layout order. Dragging an icon along its row reorders that
+window in the workspace (Hyprland's scrolling layout: the column moves;
+other layouts: a swap with the window under the drop), dragging it to
+another row moves the window to that workspace at the dropped slot, and
+dropping on the empty row below makes a new workspace. A click focuses
+the window. The keyboard does the same: arrows move a cursor over the
+icons, and Shift plus an arrow carries the window, so the mouse is never
+the only way. Moves go through the compositor backend's typed `Command`s
+(a logged no-op where mango cannot), the icons glide to their new slots
+on the shell's curves, and a drop the compositor refuses springs back.
+
 ### Phase 5: installing from the shell
 
 - 5.0 FormalSpec design: how an install from the launcher lands in a
