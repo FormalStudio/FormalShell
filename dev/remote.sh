@@ -99,9 +99,13 @@ remote_run() {
 
 cmd_sync() {
   ssh "${ssh_opts[@]}" "$target" 'mkdir -p ~/formalshell'
-  # .gitignore's patterns keep crates/target, result, artifacts and the old
-  # mac VM's disk images on their own side.
+  # .gitignore's patterns keep crates/target, result and artifacts on their
+  # own side. macOS's openrsync reads a `:- .gitignore` dir-merge for the
+  # sending side only and lets --delete remove the same paths on the
+  # receiver, which wiped crates/target before every build; --exclude-from
+  # protects them there too.
   rsync -az --delete \
+    --exclude-from="$repo_root/.gitignore" \
     --filter=':- .gitignore' \
     --exclude '/.git' \
     --exclude '/.claude/' \
