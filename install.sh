@@ -1,7 +1,7 @@
 #!/bin/sh
 # FormalShell for Arch, Debian, Ubuntu and Fedora, without Nix:
 #
-#   curl -fsSL https://raw.githubusercontent.com/FormalSnake/FormalShell/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/FormalStudio/FormalShell/main/install.sh | sh
 #
 # `install.sh --help` prints the flags.
 set -eu
@@ -23,7 +23,7 @@ manager.
 USAGE
 }
 
-repo=FormalSnake/FormalShell
+repo=FormalStudio/FormalShell
 prefix=$HOME/.local
 from=
 yes=

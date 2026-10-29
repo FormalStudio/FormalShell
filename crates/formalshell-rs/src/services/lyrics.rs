@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 use crate::runtime::Ctx;
 use crate::store;
 
-const USER_AGENT: &str = "User-Agent: FormalShell (https://github.com/FormalSnake/FormalShell)";
+const USER_AGENT: &str = "User-Agent: FormalShell (https://github.com/FormalStudio/FormalShell)";
 
 /// What a lookup is for.
 #[derive(Clone, Debug, PartialEq, Default)]

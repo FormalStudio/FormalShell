@@ -8,7 +8,7 @@
  ▀██▀ ▄▀███▀▄█▀  ▄██ ██ ▀█▄▀█▄██▄██ ▀██████▀▄██ ██▄▀█▄▄▄▄██▄██
 ```
 
-[![CI](https://img.shields.io/github/actions/workflow/status/FormalSnake/FormalShell/ci.yml?branch=main&style=for-the-badge&labelColor=161616&color=4a9eda&logo=githubactions&logoColor=white&label=CI)](https://github.com/FormalSnake/FormalShell/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/FormalStudio/FormalShell/ci.yml?branch=main&style=for-the-badge&labelColor=161616&color=4a9eda&logo=githubactions&logoColor=white&label=CI)](https://github.com/FormalStudio/FormalShell/actions/workflows/ci.yml)
 [![Nix flake](https://img.shields.io/badge/nix-flake-4a9eda?style=for-the-badge&labelColor=161616&logo=nixos&logoColor=white)](flake.nix)
 [![Rust](https://img.shields.io/badge/built_with-rust-4a9eda?style=for-the-badge&labelColor=161616&logo=rust&logoColor=white)](crates/)
 [![Wayland](https://img.shields.io/badge/wayland-hyprland-4a9eda?style=for-the-badge&labelColor=161616&logo=wayland&logoColor=white)](#install)
@@ -106,7 +106,7 @@ an optional greeter.
 
 ```nix
 {
-  inputs.formalshell.url = "github:FormalSnake/FormalShell";
+  inputs.formalshell.url = "github:FormalStudio/FormalShell";
 
   outputs = { nixpkgs, home-manager, formalshell, ... }: {
     nixosConfigurations.mymachine = nixpkgs.lib.nixosSystem {
@@ -164,7 +164,7 @@ dofile(os.getenv("HOME") .. "/.config/hypr/formalshell.lua")
 x86_64 and aarch64, no Nix:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/FormalSnake/FormalShell/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/FormalStudio/FormalShell/main/install.sh | sh
 ```
 
 It installs Hyprland and the shell's runtime tools with pacman, apt or dnf,

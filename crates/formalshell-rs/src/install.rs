@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const REPO: &str = "FormalSnake/FormalShell";
+const REPO: &str = "FormalStudio/FormalShell";
 /// First line of every Hyprland file the installer owns.
 const MARKER: &str = "-- Written by `formalshell install`; `formalshell update` rewrites it.";
 const PAM_PATH: &str = "/etc/pam.d/formalshell-lock";

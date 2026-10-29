@@ -58,7 +58,7 @@ async fn geolocate() -> Option<Fix> {
 async fn place_name(key: &str) -> String {
     let reply = proc::capture(
         &proc::argv(&[
-            "curl", "-sS", "--fail", "--max-time", "8", "-H", "User-Agent: FormalShell (https://github.com/FormalSnake/FormalShell)",
+            "curl", "-sS", "--fail", "--max-time", "8", "-H", "User-Agent: FormalShell (https://github.com/FormalStudio/FormalShell)",
             &location::reverse_url(key),
         ]),
         Duration::from_secs(15),
