@@ -70,9 +70,15 @@ burst() {
     sleep $catalogue_gap
   done
   sleep "\$3"
-  "$grim_bin" "$p-\$1-rest.png" > /dev/null 2>&1
-  sleep 1
-  "$grim_bin" "$p-\$1-rest2.png" > /dev/null 2>&1
+  # A pair the clock ticked between is taken again.
+  local m
+  for i in 1 2; do
+    m=\$(date +%H%M)
+    "$grim_bin" "$p-\$1-rest.png" > /dev/null 2>&1
+    sleep 1
+    "$grim_bin" "$p-\$1-rest2.png" > /dev/null 2>&1
+    [ "\$(date +%H%M)" = "\$m" ] && break
+  done
 }
 sleep 5
 ipc debug motionScale 500 > "$p-scale.txt" 2>&1
@@ -113,8 +119,13 @@ sleep 6
 burst lock-shake 36 4
 "$wtype_bin" "formalshell-test"
 "$wtype_bin" -k Return
-sleep 3
-ipc lock isLocked > "$p-locked-after.txt" 2>&1
+# At a fifth speed the unlock's own lift outlasts 3s, and isLocked holds
+# true until it is done.
+for i in \$(seq 20); do
+  sleep 0.5
+  ipc lock isLocked > "$p-locked-after.txt" 2>&1
+  grep -q '^false\$' "$p-locked-after.txt" && break
+done
 ipc debug motionScale 100 > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
