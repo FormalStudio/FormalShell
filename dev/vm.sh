@@ -25,6 +25,8 @@
 #   dev/vm.sh greeter         dev/smoke-greeter.sh, this tree's build installed
 #                             over the guest's shell
 #   dev/vm.sh shell           a shell in a resumed slot, stopped on exit
+#   dev/vm.sh hold <cmd...>   <cmd> with a slot held and FS_VM_SLOT set, the VM
+#                             left as it is (dev/seams.sh)
 #   dev/vm.sh wants <flags>   exits 0 when the flags name a leg_<n>_vm_only leg
 #
 # A saved slot goes stale when an apply changes its disk: `fspec vm stop`,
@@ -35,7 +37,7 @@ repo_root="$(pwd)"
 self="$repo_root/dev/vm.sh"
 
 usage() {
-  echo "usage: $0 {smoke <flags...>|check <name>|greeter|shell|wants <flags...>}" >&2
+  echo "usage: $0 {smoke <flags...>|check <name>|greeter|shell|hold <cmd...>|wants <flags...>}" >&2
   exit 1
 }
 [ $# -gt 0 ] || usage
@@ -70,6 +72,7 @@ verb=$1
 shift
 case "$verb" in
   smoke|greeter|shell) ;;
+  hold) [ $# -gt 0 ] || usage ;;
   check)
     [ $# -eq 1 ] || usage
     case "$1" in fs-auth|fs-audio|fs-bluez|fs-network|fs-upower) ;; *) echo "$1: not a VM check (fs-auth, fs-audio, fs-bluez, fs-network, fs-upower)" >&2; exit 1 ;; esac
@@ -88,7 +91,7 @@ fi
 if [ -z "${FS_VM_RESULT:-}" ]; then
   if [ -n "${FS_RESULT:-}" ] && [ "$verb" != check ]; then
     export FS_VM_RESULT="$FS_RESULT"
-  elif [ "$verb" != shell ]; then
+  elif [ "$verb" != shell ] && [ "$verb" != hold ]; then
     shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
     build_log=$(mktemp)
     case "$verb" in
@@ -139,6 +142,7 @@ fi
 case "$FS_VM_SLOT" in
   ''|*[!0-9]*) echo "FS_VM_SLOT must be a slot number, got '$FS_VM_SLOT'" >&2; exit 1 ;;
 esac
+[ "$verb" = hold ] && exec "$@"
 vm="fstestvm$FS_VM_SLOT"
 port=$((2222 + FS_VM_SLOT))
 
