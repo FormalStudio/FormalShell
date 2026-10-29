@@ -12,7 +12,7 @@
 # every run by that script), greetd's default_session is a persistent system
 # service declared once in the VM — driving it means finding the
 # ALREADY-RUNNING greeter session rather than spawning a new one, and
-# reaching from this script's own "test" account into the separate `greeter`
+# reaching from this script's own account into the separate `greeter`
 # system account's Wayland session. Root (passwordless sudo, already wired
 # for --lock's own wtype use) bypasses the greeter runtime dir's 0700 mode
 # outright, the same way it bypasses any other user's file permissions, so
@@ -47,6 +47,11 @@ journal_out="$out_dir/greetd-journal.txt"
 # that round trip time to complete — confirmed reliable up to a 16-char
 # string across this same cross-user path.
 wtype_settle_ms=300
+
+# The login is this account's own: the rig's password is the same on every
+# user it makes.
+user=$(id -un)
+desktop_png="$out_dir/greeter-desktop.png"
 
 # A successful login leaves the authenticated user's greetd session on seat0,
 # and whatever it runs keeps the display card until something ends it. The
@@ -84,7 +89,7 @@ greeter_env=(sudo env "XDG_RUNTIME_DIR=$runtime_dir" "WAYLAND_DISPLAY=$wayland_d
 sleep 3
 "${greeter_env[@]}" grim "$pre_auth_png"
 
-"${greeter_env[@]}" wtype -s "$wtype_settle_ms" "test"
+"${greeter_env[@]}" wtype -s "$wtype_settle_ms" "$user"
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" -k Return
 # The create_session -> auth_message round trip (real PAM conversation)
 # measured comparably slow to --lock's own PAM round trip in
@@ -113,7 +118,7 @@ fi
 
 # greetd resets to Inactive after auth_error; re-submit the username to
 # start a fresh conversation for the real login below.
-"${greeter_env[@]}" wtype -s "$wtype_settle_ms" "test"
+"${greeter_env[@]}" wtype -s "$wtype_settle_ms" "$user"
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" -k Return
 sleep 3
 "${greeter_env[@]}" wtype -s "$wtype_settle_ms" "formalshell-test"
@@ -146,7 +151,30 @@ if ! grep -qF "greeter: session started" "$session_log_out"; then
   exit 1
 fi
 
+# The session the login started: Hyprland under uwsm in this account's
+# manager, its shell's bar mapped. That bar is what reaching the desktop
+# means; the greeter's exit alone is not.
+instance="" wl_socket=""
+for _ in $(seq 1 45); do
+  read -r instance wl_socket < <(hyprctl instances -j 2>/dev/null | jq -r '.[0] | "\(.instance) \(.wl_socket)"' 2>/dev/null) || true
+  if [ -n "$instance" ] && [ "$instance" != null ] \
+    && HYPRLAND_INSTANCE_SIGNATURE=$instance hyprctl -j layers 2>/dev/null | grep -q '"namespace": *"formalshell:bar"'; then
+    break
+  fi
+  instance=""
+  sleep 2
+done
+if [ -z "$instance" ]; then
+  echo "SMOKE_FAIL: the login's desktop never mapped a formalshell:bar layer; Hyprland instances: $(hyprctl instances 2>&1)" >&2
+  journalctl --user -b --no-pager -n 80 >&2 || true
+  exit 1
+fi
+sleep 2
+WAYLAND_DISPLAY=$wl_socket grim "$desktop_png"
+echo "greeter: desktop up, Hyprland $instance on $wl_socket with the bar mapped"
+
 echo "SMOKE_GREETER_PRE $pre_auth_png"
 echo "SMOKE_GREETER_WRONGPW $wrong_pw_png"
 echo "SMOKE_GREETER_POST $post_auth_png"
+echo "SMOKE_GREETER_DESKTOP $desktop_png"
 echo "SMOKE_GREETER_OK"

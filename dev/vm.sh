@@ -195,10 +195,11 @@ case "$verb" in
       for f in formalshell formalshell-ipc formalshell-greeter; do sudo ln -sfn $result/bin/\$f /opt/fspec/current/bin/\$f; done
       cd ~/formalshell && exec dev/smoke-greeter.sh" 2>&1) || status=$?
     echo "$out"
+    artifacts="$artifacts/greeter"
     for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_GREETER_[A-Z]+ [^[:space:]]+' | awk '{print $2}'); do
       pull "formalshell/$remote"
     done
-    for remote in greeter-session.log greetd-journal.txt desktop.png; do
+    for remote in greeter-session.log greetd-journal.txt; do
       guest_ssh "test -e formalshell/artifacts/greeter/$remote" && pull "formalshell/artifacts/greeter/$remote"
     done
     exit "$status"
