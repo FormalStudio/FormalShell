@@ -25,15 +25,18 @@
 #   dev/remote.sh smoke --lock --depth
 #   dev/remote.sh cargo test -p fs-menu
 #   dev/remote.sh check fs-tray
-#   dev/remote.sh smoke-all [list]     every run in dev/smoke-all.list, one
-#                                      build shared by all slots in parallel
+#   dev/remote.sh smoke-affected [base] the runs dev/smoke-map.toml maps the
+#                                      change against base to, the default
+#   dev/remote.sh smoke-all [list]     every run in dev/smoke-all.list, for
+#                                      milestones; one at a time per mac
+# Both build once and spread their runs over the free slots.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
 self="$repo_root/dev/remote.sh"
 
 usage() {
-  echo "usage: $0 {sync|run <cmd...>|build|cargo <args...>|lint|check <name>|smoke [flags...]|smoke-all [list]|pull <remote-dir> <local-dir>|shell}" >&2
+  echo "usage: $0 {sync|run <cmd...>|build|cargo <args...>|lint|check <name>|smoke [flags...]|smoke-affected [base]|smoke-all [list]|pull <remote-dir> <local-dir>|shell}" >&2
   exit 1
 }
 [ $# -gt 0 ] || usage
@@ -47,50 +50,104 @@ case "$repo_root" in
   *) remote_dir="formalshell-wt/$(basename "$repo_root")" ;;
 esac
 
-# smoke-all takes no slot itself: its build and every run take their own.
-if [ "${1:-}" = smoke-all ]; then
-  shift
-  list="${1:-$repo_root/dev/smoke-all.list}"
-  [ -r "$list" ] || { echo "smoke-all: no list at $list" >&2; exit 1; }
+# Every run's own time on its slot, kept across runs so a list starts with
+# its longest legs and the last one to finish is not the slowest started last.
+times="${XDG_STATE_HOME:-$HOME/.local/state}/formalshell-rig/leg-times.tsv"
+
+# Runs a list of runs over the free slots off one build. The list goes
+# longest recorded first; a run with no record goes first of all.
+run_list() {
+  local label=$1 list=$2 out shared builder started n=0 running=0 failed flags slug
   jobs="${FS_SMOKE_JOBS:-$slots}"
-  out="$repo_root/artifacts/smoke-all-$(date +%Y%m%d-%H%M%S)"
+  out="$repo_root/artifacts/$label-$(date +%Y%m%d-%H%M%S)"
   shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
-  mkdir -p "$out"
+  mkdir -p "$out" "$(dirname "$times")"
+  touch "$times"
+  python3 -c '
+import collections, statistics, sys
+runs = [l.strip() for l in open(sys.argv[1]) if l.strip() and not l.lstrip().startswith("#")]
+seen = collections.defaultdict(list)
+for line in open(sys.argv[2]):
+    parts = line.rstrip("\n").split("\t")
+    if len(parts) == 3:
+        seen[parts[2]].append(int(parts[1]))
+est = {r: statistics.median(seen[r][-3:]) if seen[r] else float("inf") for r in runs}
+for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
+    print("%s\t%s" % ("?" if est[r] == float("inf") else int(est[r]), r))
+' "$list" "$times" > "$out/order"
   started=$SECONDS
-  echo "smoke-all: building once, then $(grep -cvE '^[[:space:]]*(#|$)' "$list") runs over $jobs slots into $out"
+  echo "$label: building once, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
   if ! env -u FS_G815_SLOT "$self" run "dev/build.sh && dev/share-result.sh $shared" > "$out/build.log" 2>&1; then
     tail -20 "$out/build.log" >&2
-    echo "smoke-all: build failed, $out/build.log" >&2
-    exit 1
+    echo "$label: build failed, $out/build.log" >&2
+    return 1
   fi
   builder=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$out/build.log" | head -1)
-  echo "smoke-all: built in $((SECONDS - started))s on slot $builder"
+  echo "$label: built in $((SECONDS - started))s on slot $builder"
   : > "$out/results"
-  n=0 running=0
-  while IFS= read -r flags; do
-    case "$flags" in ''|'#'*) continue ;; esac
+  while IFS=$'\t' read -r _ flags; do
     n=$((n + 1))
     slug=$(printf '%03d-%s' "$n" "$(printf '%s' "$flags" | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')")
     (
       t0=$SECONDS
-      # shellcheck disable=SC2086 # one line is one run's flags
       status=0
+      # shellcheck disable=SC2086 # one line is one run's flags
       env -u FS_G815_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
       slot=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
+      waited=$(sed -n 's/^g815: waited \([0-9]*\)s for a slot$/\1/p' "$out/$slug.log" | head -1)
+      took=$((SECONDS - t0 - ${waited:-0}))
       verdict=PASS; [ "$status" -eq 0 ] || verdict=FAIL
-      printf '%s %4ss slot%s %s\n' "$verdict" "$((SECONDS - t0))" "$slot" "$flags" | tee -a "$out/results"
+      printf '%s\t%s\t%s\n' "$(date +%s)" "$took" "$flags" >> "$times"
+      printf '%s %4ss slot%s %s\n' "$verdict" "$took" "$slot" "$flags" | tee -a "$out/results"
     ) &
     running=$((running + 1))
     if [ "$running" -ge "$jobs" ]; then wait -n; running=$((running - 1)); fi
-  done < "$list"
+  done < "$out/order"
   wait
   ssh -o BatchMode=yes -o LogLevel=ERROR "fstest$builder@$host" "rm -rf $shared" || true
   failed=$((n - $(grep -c '^PASS' "$out/results" || true)))
-  echo "smoke-all: $((n - failed)) of $n passed in $((SECONDS - started))s; logs and artifacts in $out"
+  echo "$label: $((n - failed)) of $n passed in $((SECONDS - started))s; logs and artifacts in $out"
   grep '^FAIL' "$out/results" | sed "s|^|  |" || true
   [ "$failed" -eq 0 ]
-  exit
-fi
+}
+
+# Neither takes a slot itself: the build and every run take their own.
+case "${1:-}" in
+  smoke-affected)
+    shift
+    picked=$(mktemp)
+    python3 "$repo_root/dev/smoke-affected.py" "$@" --out "$picked"
+    if [ ! -s "$picked" ]; then rm -f "$picked"; exit 0; fi
+    status=0
+    run_list smoke-affected "$picked" || status=$?
+    rm -f "$picked"
+    exit "$status"
+    ;;
+  smoke-all)
+    # The whole suite is for milestones. One at a time across every agent
+    # on this mac: a second queues here rather than halving both.
+    if [ -z "${FS_SMOKE_ALL_HELD:-}" ]; then
+      exec python3 -c '
+import fcntl, os, subprocess, sys
+lock = open("/tmp/formalshell-smoke-all.lock", "a+")
+try:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except OSError:
+    lock.seek(0)
+    print("smoke-all: queued behind the run started by %s" % (lock.read().strip() or "another agent"), file=sys.stderr)
+    fcntl.flock(lock, fcntl.LOCK_EX)
+lock.seek(0); lock.truncate(); lock.write("%s (pid %d)\n" % (sys.argv[1], os.getpid())); lock.flush()
+os.environ["FS_SMOKE_ALL_HELD"] = "1"
+sys.exit(subprocess.call(sys.argv[2:]))
+' "$repo_root" "$self" "$@"
+    fi
+    shift
+    list="${1:-$repo_root/dev/smoke-all.list}"
+    [ -r "$list" ] || { echo "smoke-all: no list at $list" >&2; exit 1; }
+    run_list smoke-all "$list"
+    exit
+    ;;
+esac
 
 # Slot locks live on the mac, which is the one place runs start from. The
 # whole command holds its slot, so a sync and the run after it share it.
@@ -105,6 +162,7 @@ def last(n):
         return open("/tmp/formalshell-g815-%d.last" % n).read().strip()
     except OSError:
         return ""
+began = time.time()
 while True:
     order = sorted(range(slots), key=lambda n: (last(n) != me, last(n) != "", n))
     for n in order:
@@ -117,6 +175,9 @@ while True:
         with open("/tmp/formalshell-g815-%d.last" % n, "w") as f:
             f.write(me + "\n")
         os.environ["FS_G815_SLOT"] = str(n)
+        waited = int(time.time() - began)
+        if waited:
+            print("g815: waited %ds for a slot" % waited, file=sys.stderr)
         print("g815: slot %d" % n, file=sys.stderr)
         sys.exit(subprocess.call(cmd))
     time.sleep(3)

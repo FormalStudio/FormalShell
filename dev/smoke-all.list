@@ -128,3 +128,7 @@
 --wallpaper
 --wheel
 --workspaces
+--panel network
+--panel power
+--panel calendar
+--panel weather

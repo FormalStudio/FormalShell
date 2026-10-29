@@ -11,8 +11,12 @@ lint:
     ./dev/remote.sh lint
 smoke *FLAGS:
     ./dev/remote.sh smoke {{FLAGS}}
-# Every run in dev/smoke-all.list (or the list given) over the rig's free
-# slots in parallel, all off one build.
+# The runs dev/smoke-map.toml maps this change to (against origin/main, or
+# the base given, plus uncommitted files), over the free slots off one
+# build. The default check for a change.
+smoke-affected *BASE:
+    ./dev/remote.sh smoke-affected {{BASE}}
+# Every run in dev/smoke-all.list (or the list given): milestones only.
 smoke-all *LIST:
     ./dev/remote.sh smoke-all {{LIST}}
 cargo *ARGS:

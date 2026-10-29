@@ -1,0 +1,584 @@
+# dev/smoke-affected.py: which smoke runs a change needs. Paths are globs
+# from the repo root (`**` crosses directories); runs are lines of
+# dev/smoke-all.list, and the selector refuses one that is not there.
+#
+# A changed file takes the runs of every rule it matches. One matching no
+# rule takes the core set, as does anything under `shared`. A change to
+# dev/smoke.d/<leg>.sh takes every run carrying that leg's flag without a
+# rule here. `none` runs nothing: docs, tests, the plans.
+
+# Eight runs across the launcher, a panel, toasts, the lock, the bar, the
+# OSD, a real MPRIS player and every component on the gallery sheet.
+core = [
+  "--menu",
+  "--panel audio",
+  "--notify",
+  "--lock",
+  "--bar-layout",
+  "--osd",
+  "--media",
+  "--gallery",
+  "--switcher",
+]
+
+[none]
+paths = [
+  "docs/**",
+  "**/*.md",
+  "LICENSE",
+  "branding/**",
+  "crates/*/tests/**",
+  "crates/**/tests.rs",
+  "crates/**/tests/**",
+  "dev/smoke-map.toml",
+  "dev/smoke-all.list",
+  "dev/smoke-affected.py",
+  "dev/lint.sh",
+  "dev/check.sh",
+  "dev/tarball.sh",
+  "dev/smoke-greeter.sh",
+  "packaging/**",
+  "install.sh",
+  "scripts/**",
+  "tools/**",
+  ".github/**",
+  "justfile",
+  "crates/formalshell-rs/src/greeter/**",
+  "crates/formalshell-rs/src/install.rs",
+  "crates/fs-auth/src/polkit.rs",
+  "crates/fs-network/**",
+  "crates/fs-upower/**",
+  "crates/fs-bluez/src/agent.rs",
+  ".gitignore",
+  "crates/*/examples/**",
+  "crates/formalshell-rs/src/ipc/golden.rs",
+]
+
+# The kit every surface draws with, the theme tables, the wayland core, the
+# motion clocks, the render path and the scaffold itself.
+[shared]
+paths = [
+  "crates/formalshell-rs/src/ui/**",
+  "crates/formalshell-rs/src/motion.rs",
+  "crates/formalshell-rs/src/render.rs",
+  "crates/formalshell-rs/src/scene.rs",
+  "crates/formalshell-rs/src/text.rs",
+  "crates/formalshell-rs/src/fontconfig.rs",
+  "crates/formalshell-rs/src/effects.rs",
+  "crates/formalshell-rs/src/surface.rs",
+  "crates/formalshell-rs/src/wayland.rs",
+  "crates/formalshell-rs/src/main.rs",
+  "crates/formalshell-rs/src/runtime/**",
+  "crates/formalshell-rs/src/store.rs",
+  "crates/formalshell-rs/src/surfaces/mod.rs",
+  "crates/formalshell-rs/src/surfaces/card.rs",
+  "crates/formalshell-rs/src/surfaces/modal.rs",
+  "crates/formalshell-rs/src/surfaces/popup.rs",
+  "crates/formalshell-rs/src/services/mod.rs",
+  "crates/formalshell-rs/src/services/config.rs",
+  "crates/formalshell-rs/src/services/state.rs",
+  "crates/formalshell-rs/src/services/wants.rs",
+  "crates/formalshell-rs/src/services/watch.rs",
+  "crates/formalshell-rs/src/services/compositor/**",
+  "crates/formalshell-rs/src/ipc/mod.rs",
+  "crates/formalshell-rs/src/ipc/registry.rs",
+  "crates/formalshell-rs/src/ipc/wire.rs",
+  "crates/formalshell-rs/src/ipc/cli.rs",
+  "crates/formalshell-rs/src/ipc/client.rs",
+  "crates/formalshell-rs/src/bin/**",
+  "crates/formalshell-rs/protocols/**",
+  "crates/formalshell-rs/src/wayland/heads.rs",
+  "crates/formalshell-rs/src/services/icons.rs",
+  "crates/fs-devices/src/lib.rs",
+  "crates/fs-info/src/lib.rs",
+  "crates/fs-theme/**",
+  "crates/fs-chrome/src/lib.rs",
+  "crates/fs-chrome/src/types.rs",
+  "crates/fs-chrome/src/drawer.rs",
+  "crates/fs-js/**",
+  "crates/Cargo.toml",
+  "crates/Cargo.lock",
+  "crates/*/Cargo.toml",
+  "dev.star",
+  "fspec.lock",
+  "dev/smoke.sh",
+  "dev/build.sh",
+  "dev/remote.sh",
+  "dev/share-result.sh",
+  "dev/scoped-run.sh",
+  "dev/smoke-hyprland.sh",
+]
+
+# Launcher
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/launcher.rs",
+  "crates/formalshell-rs/src/wayland/launcher.rs",
+  "crates/formalshell-rs/src/services/menu.rs",
+  "crates/formalshell-rs/src/ipc/menu.rs",
+  "crates/fs-menu/src/model.rs",
+  "crates/fs-menu/src/nav.rs",
+  "crates/fs-menu/src/node.rs",
+  "crates/fs-menu/src/lib.rs",
+  "crates/fs-menu/src/frecency.rs",
+  "crates/fs-menu/src/appmatch.rs",
+  "crates/fs-menu/src/providers/mod.rs",
+  "crates/fs-menu/src/providers/apps.rs",
+  "crates/fs-menu/src/icons.rs",
+]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/field.rs"]
+runs = ["--menu", "--polkit"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/appgrid.rs"]
+runs = ["--app-grid", "--grid-relaunch", "--menu"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/actions.rs", "crates/fs-menu/src/calc.rs"]
+runs = ["--menu-actions", "--toggles"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/clipboard/emoji.rs", "crates/fs-menu/src/providers/emoji.rs"]
+runs = ["--emoji", "--menu-hover"]
+
+[[rule]]
+paths = [
+  "crates/fs-menu/src/clipboard/**",
+  "crates/fs-menu/src/providers/clipboard.rs",
+  "crates/formalshell-rs/src/services/clipboard.rs",
+  "crates/formalshell-rs/src/ipc/clipboard.rs",
+]
+runs = ["--clipboard", "--clipssh-image"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/providers/clipssh.rs", "crates/formalshell-rs/src/services/clipssh.rs"]
+runs = ["--clipssh", "--clipssh-image"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/providers/devices.rs"]
+runs = ["--device-routes"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/providers/nix.rs"]
+runs = ["--nix-run"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/providers/share.rs", "crates/formalshell-rs/src/services/localsend.rs", "crates/formalshell-rs/src/ipc/localsend.rs", "crates/fs-devices/src/localsend.rs"]
+runs = ["--share", "--localsend"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/keybinds.rs"]
+runs = ["--keybinds"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/providers/**"]
+runs = ["--menu"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/scroll.rs"]
+runs = ["--wheel", "--menu"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/keyboard.rs"]
+runs = ["--menu", "--panel-keys", "--lock"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/sfx.rs", "crates/fs-audio/src/sfx.rs"]
+runs = ["--sfx"]
+
+# Bar
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/bar/mod.rs",
+  "crates/formalshell-rs/src/surfaces/bar/slot.rs",
+  "crates/formalshell-rs/src/surfaces/bar/cell.rs",
+  "crates/formalshell-rs/src/surfaces/bar/cells/mod.rs",
+  "crates/formalshell-rs/src/ipc/bar.rs",
+  "crates/fs-chrome/src/bar/**",
+]
+runs = ["--bar-layout", "--bar-room", "--bar-title", "--bar-position bottom", "--chevron"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/chevron.rs"]
+runs = ["--chevron", "--chevron-quiet"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/workspaces.rs", "crates/fs-chrome/src/bar/workspaces.rs", "crates/formalshell-rs/src/ipc/workspaces.rs"]
+runs = ["--workspaces", "--spaces"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/active_window.rs"]
+runs = ["--bar-title"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/now_playing.rs"]
+runs = ["--bar-room", "--bar-title", "--motion-art"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/command.rs", "crates/formalshell-rs/src/services/commands.rs"]
+runs = ["--bar-layout"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/mic.rs"]
+runs = ["--mic"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/system_update.rs", "crates/formalshell-rs/src/surfaces/panel/systemupdate.rs", "crates/fs-info/src/system_update.rs"]
+runs = ["--systemupdate"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
+runs = ["--tray", "--tray-overflow"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum.rs"]
+runs = ["--visualizer", "--visualizer-styles", "--spectrum"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/monitor.rs"]
+runs = ["--monitor"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/**"]
+runs = ["--bar-layout"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/barpaint.rs"]
+runs = ["--bar-adaptive", "--pantheon --bar-ink"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/shoulders.rs"]
+runs = ["--shoulders", "--join", "--menu-emerge", "--panel-emerge"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/frame.rs"]
+runs = ["--frame", "--multi-output"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/hot_corners/**", "crates/formalshell-rs/src/wayland/hotcorners.rs"]
+runs = ["--hotcorner", "--hotcorner-relock"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/plugins.rs", "crates/formalshell-rs/src/services/plugins.rs", "crates/formalshell-rs/src/ipc/plugins.rs", "crates/formalshell-rs/src/surfaces/panel/plugin.rs", "crates/formalshell-rs/src/surfaces/bar/cells/plugin.rs", "crates/formalshell-rs/src/wayland/plugin_overlay.rs"]
+runs = ["--plugins"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/shards.rs", "crates/formalshell-rs/src/shards.rs"]
+runs = ["--cartridge --backdrop"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs", "crates/formalshell-rs/src/services/clock.rs"]
+runs = ["--desktop-clock", "--lock"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/dither.rs"]
+runs = ["--wallpaper", "--retro"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/cursor.rs", "crates/fs-chrome/src/grid.rs"]
+runs = ["--app-grid", "--emoji", "--cartridge"]
+
+[[rule]]
+paths = ["crates/fs-chrome/src/switcher.rs", "crates/formalshell-rs/src/surfaces/switcher/**", "crates/formalshell-rs/src/wayland/switcher.rs", "crates/formalshell-rs/src/ipc/switcher.rs"]
+runs = ["--switcher", "--switcher-keys", "--switcher-off"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/capture.rs", "crates/formalshell-rs/src/wayland/preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview.rs"]
+runs = ["--switcher", "--spaces"]
+
+# Panels
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs", "crates/fs-chrome/src/bar/panels.rs"]
+runs = ["--panel audio", "--panel-anchor", "--panel-at 1", "--panel-emerge", "--panel-handoff", "--panel-keys", "--deform"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/audio.rs", "crates/formalshell-rs/src/services/devices/audio.rs", "crates/fs-audio/src/backend.rs", "crates/fs-audio/src/lib.rs", "crates/fs-system/src/audio.rs"]
+runs = ["--panel audio", "--panel-keys", "--osd"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
+runs = ["--panel network", "--speedtest", "--panel network --tooltip"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/bluetooth.rs", "crates/formalshell-rs/src/services/devices/bluetooth.rs", "crates/formalshell-rs/src/ipc/bluetooth.rs", "crates/fs-devices/src/bluetooth.rs", "crates/fs-bluez/**"]
+runs = ["--idle --bluez-rssi", "--headset-card"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/headset.rs", "crates/formalshell-rs/src/wayland/headset.rs", "crates/formalshell-rs/src/services/devices/headsets.rs", "crates/formalshell-rs/src/ipc/headset.rs"]
+runs = ["--headset-card"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/earbuds.rs", "crates/formalshell-rs/src/services/devices/earbuds.rs", "crates/formalshell-rs/src/ipc/earbuds.rs", "crates/fs-devices/src/earbuds/**", "crates/formalshell-rs/src/surfaces/bar/cells/earbuds.rs"]
+runs = ["--earbuds", "--headset-card"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshell-rs/src/services/media.rs", "crates/formalshell-rs/src/ipc/media.rs", "crates/fs-media/src/media.rs", "crates/fs-media/src/lib.rs", "crates/fs-mpris/**", "crates/formalshell-rs/src/services/cover.rs"]
+runs = ["--media", "--media-progress", "--lock-media"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/lyrics.rs", "crates/fs-media/src/lyrics.rs", "crates/formalshell-rs/src/ui/lyrics.rs"]
+runs = ["--lyrics", "--lyrics-blur"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/motion_art.rs", "crates/fs-media/src/applemusic.rs"]
+runs = ["--motion-art"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/airplay.rs", "crates/formalshell-rs/src/ipc/airplay.rs", "crates/fs-media/src/airplay.rs"]
+runs = ["--airplay"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/radio.rs", "crates/formalshell-rs/src/ipc/radio.rs", "crates/fs-media/src/radio/**"]
+runs = ["--radio", "--radio-atlas"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/atlas/**", "crates/formalshell-rs/src/wayland/atlas.rs"]
+runs = ["--radio-atlas", "--radio-atlas-cold"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/appmenu.rs", "crates/formalshell-rs/src/services/appicon.rs", "crates/fs-system/src/compositor/appicon.rs"]
+runs = ["--appmenu", "--spaces"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/center.rs"]
+runs = ["--center"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/display.rs", "crates/formalshell-rs/src/services/display.rs", "crates/formalshell-rs/src/ipc/display.rs", "crates/fs-system/src/display/**"]
+runs = ["--display", "--hdr", "--multi-output"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/brightness.rs"]
+runs = ["--brightness", "--osd"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/overnight.rs", "crates/formalshell-rs/src/ipc/overnight.rs"]
+runs = ["--overnight", "--brightness"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/ui/draw/flow.rs"]
+runs = ["--gallery"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]
+runs = ["--monitor", "--processes", "--gpu"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/power.rs", "crates/formalshell-rs/src/surfaces/battery.rs", "crates/formalshell-rs/src/services/devices/power.rs", "crates/formalshell-rs/src/services/info/powerflow.rs"]
+runs = ["--gallery", "--panel power"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/iphone.rs", "crates/formalshell-rs/src/services/info/iphone.rs", "crates/formalshell-rs/src/ipc/iphone.rs", "crates/formalshell-rs/src/services/ams.rs", "crates/fs-devices/src/iphone.rs"]
+runs = ["--iphone"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/calendar.rs", "crates/formalshell-rs/src/services/info/calendar.rs", "crates/formalshell-rs/src/ipc/calendar.rs", "crates/fs-info/src/calendar/**"]
+runs = ["--panel calendar"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/weather.rs", "crates/formalshell-rs/src/services/info/weather.rs", "crates/formalshell-rs/src/services/info/geoclue.rs", "crates/fs-info/src/weather.rs", "crates/fs-info/src/location.rs"]
+runs = ["--panel weather"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/**", "crates/formalshell-rs/src/services/info/**", "crates/formalshell-rs/src/services/devices/**"]
+runs = ["--panel audio"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/tooltip.rs"]
+runs = ["--panel network --tooltip", "--panel network --tooltip-travel"]
+
+# Toasts and notifications
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/toasts.rs",
+  "crates/formalshell-rs/src/wayland/toasts.rs",
+  "crates/formalshell-rs/src/services/notifications.rs",
+  "crates/formalshell-rs/src/ipc/notifications.rs",
+  "crates/fs-notifd/**",
+  "crates/fs-info/src/notifications.rs",
+  "crates/fs-info/src/notification_geometry.rs",
+  "crates/fs-info/src/notification_icon.rs",
+  "crates/fs-info/src/toast_stack.rs",
+]
+runs = ["--notify", "--toast-motion", "--toast-swipe", "--pantheon --notify-close", "--pantheon --notify-emerge", "--center"]
+
+[[rule]]
+paths = ["crates/fs-info/src/reminders.rs"]
+runs = ["--reminder", "--menu-actions"]
+
+[[rule]]
+paths = ["crates/fs-info/src/agents.rs", "crates/formalshell-rs/src/services/agents.rs"]
+runs = ["--spaces"]
+
+# OSD
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/osd.rs", "crates/formalshell-rs/src/wayland/osd.rs", "crates/formalshell-rs/src/ipc/osd.rs"]
+runs = ["--osd", "--brightness"]
+
+# Lock, screensaver, idle
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/lock.rs",
+  "crates/formalshell-rs/src/surfaces/login.rs",
+  "crates/formalshell-rs/src/wayland/lock.rs",
+  "crates/formalshell-rs/src/ipc/lock.rs",
+  "crates/fs-auth/src/lib.rs",
+  "crates/fs-auth/src/pam.rs",
+  "crates/fs-system/src/lock.rs",
+]
+runs = ["--lock", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/depth.rs"]
+runs = ["--lock --depth", "--desktop-clock"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/sleep.rs"]
+runs = ["--sleep"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/screensaver.rs", "crates/formalshell-rs/src/wayland/screensaver.rs", "crates/formalshell-rs/src/ipc/screensaver.rs", "crates/fs-screensaver/**"]
+runs = ["--screensaver", "--idle", "--caffeinate"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/caffeinate.rs", "crates/formalshell-rs/src/wayland/caffeinate.rs", "crates/formalshell-rs/src/ipc/caffeinate.rs"]
+runs = ["--caffeinate", "--screensaver-inhibit"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/inhibit.rs"]
+runs = ["--screensaver-inhibit"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/polkit.rs", "crates/formalshell-rs/src/wayland/polkit.rs"]
+runs = ["--polkit"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/power.rs"]
+runs = ["--power"]
+
+# Boot, cartridge
+[[rule]]
+paths = ["crates/formalshell-rs/src/boot.rs", "crates/formalshell-rs/src/surfaces/boot.rs", "crates/formalshell-rs/src/wayland/boot.rs"]
+runs = ["--cartridge --boot"]
+
+# Wallpaper and theme
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/wallpaper.rs", "crates/formalshell-rs/src/services/theme.rs", "crates/formalshell-rs/src/ipc/theme.rs"]
+runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/picker.rs", "crates/formalshell-rs/src/wayland/picker.rs", "crates/formalshell-rs/src/ipc/picker.rs"]
+runs = ["--picker", "--wheel"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/nightlight.rs", "crates/formalshell-rs/src/ipc/nightlight.rs"]
+runs = ["--nightlight"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/lights.rs", "crates/formalshell-rs/src/ipc/lights.rs", "crates/fs-system/src/lights.rs"]
+runs = ["--lights"]
+
+# Capture, recording, console
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/capture/**", "crates/formalshell-rs/src/services/capture.rs", "crates/formalshell-rs/src/ipc/capture.rs", "crates/formalshell-rs/src/ipc/screenshot.rs", "crates/fs-system/src/capture.rs"]
+runs = ["--capture", "--capture-edit", "--screenshot", "--ocr"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/recording.rs", "crates/formalshell-rs/src/ipc/record.rs"]
+runs = ["--record", "--capture"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/console.rs", "crates/formalshell-rs/src/ipc/console.rs", "crates/fs-system/src/console.rs"]
+runs = ["--console", "--nix-run"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/mirror.rs", "crates/formalshell-rs/src/services/v4l2.rs", "crates/formalshell-rs/src/ipc/mirror.rs", "crates/fs-system/src/camera.rs"]
+runs = ["--mirror"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/instance.rs", "crates/formalshell-rs/src/cmdline.rs"]
+runs = ["--instance", "--dump"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/ipc/debug.rs"]
+runs = ["--dump"]
+
+[[rule]]
+paths = ["crates/fs-system/src/compositor/keyboard.rs", "crates/formalshell-rs/src/surfaces/bar/cells/keyboard_layout.rs"]
+runs = ["--bar-layout"]
+
+[[rule]]
+paths = ["crates/fs-system/src/dualsense.rs", "crates/formalshell-rs/src/surfaces/panel/dualsense.rs", "crates/formalshell-rs/src/surfaces/bar/cells/dualsense.rs"]
+runs = ["--gallery"]
+
+[[rule]]
+paths = ["crates/fs-system/src/**"]
+runs = ["--gpu", "--monitor"]
+
+# The legs' own helpers
+[[rule]]
+paths = ["dev/bluez-stub.py"]
+runs = ["--idle --bluez-rssi"]
+
+[[rule]]
+paths = ["dev/vpointer.py"]
+runs = ["--wheel", "--toast-swipe", "--radio-atlas"]
+
+[[rule]]
+paths = ["dev/lockpointer.py"]
+runs = ["--fullscreen"]
+
+[[rule]]
+paths = ["dev/sni-stub.py"]
+runs = ["--tray", "--tray-overflow"]
+
+[[rule]]
+paths = ["dev/librepods-stub.py"]
+runs = ["--earbuds", "--headset-card"]
+
+[[rule]]
+paths = ["dev/sfx/**"]
+runs = ["--sfx"]
+
+[[rule]]
+paths = ["dev/gen-emoji.sh"]
+runs = ["--emoji"]
+
+[[rule]]
+paths = ["dev/smoke.d/fixtures/flake/**"]
+runs = ["--systemupdate"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/search.rs", "crates/fs-menu/data/default-menu.jsonc"]
+runs = ["--menu", "--menu-rows"]
+
+[[rule]]
+paths = ["crates/fs-menu/data/emoji.json"]
+runs = ["--emoji"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/thumbnails.rs"]
+runs = ["--picker"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/toggles.rs"]
+runs = ["--toggles", "--menu-actions"]
+
+[[rule]]
+paths = ["crates/fs-audio/sfx/**"]
+runs = ["--sfx"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/data/countries.json"]
+runs = ["--radio-atlas"]
+
+[[rule]]
+paths = ["crates/fs-info/src/clock.rs"]
+runs = ["--bar-layout", "--desktop-clock"]
+
+[[rule]]
+paths = ["crates/fs-info/src/usage.rs", "crates/fs-devices/src/tailscale.rs"]
+runs = ["--panel audio"]
