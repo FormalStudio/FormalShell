@@ -1914,7 +1914,18 @@ impl App {
             if self.launcher_pointer(e, owner) {
                 continue;
             }
-            let (x, y) = e.position;
+            let (mut x, mut y) = e.position;
+            // A pointer left still over the strip once a panel maps gets its
+            // presses on the panel's surface, though that surface's input
+            // region leaves the strip out; they are the bar's.
+            let strip = self.bar_strip();
+            if owner == Some(Owner::Panel) && x >= strip.x as f64 && x < strip.right() as f64 && y >= strip.y as f64 && y < strip.bottom() as f64 {
+                owner = Some(Owner::Bar);
+                if !self.bar.framed() {
+                    let (ox, oy) = self.edge_origin(self.bar.thickness());
+                    (x, y) = (x - ox as f64, y - oy as f64);
+                }
+            }
             self.headset_pointer(owner, &e.kind);
             match e.kind {
                 PointerEventKind::Enter { serial } => {
