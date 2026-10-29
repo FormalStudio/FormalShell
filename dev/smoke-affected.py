@@ -132,14 +132,14 @@ def main():
     picked, skipped, budgets = [], [], []
     for run, reasons in chosen.items():
         words = [w for w in run.split() if w in flags]
-        if any(flags[w][1] for w in words):
+        if rig != "g815" and any(flags[w][1] for w in words):
             skipped.append(run)
         elif rig != "g815" and any(flags[w][2] for w in words):
             budgets.append(run)
         else:
             picked.append((run, reasons))
     if skipped:
-        print("smoke-affected: needs the VM rig, not run here: %s" % ", ".join(skipped))
+        print("smoke-affected: the VM rig is on g815, not run on %s: %s" % (rig, ", ".join(skipped)))
     if budgets:
         print("smoke-affected: budgets hold on g815 alone, not run on %s: %s" % (rig, ", ".join(budgets)))
     if not picked:
@@ -148,7 +148,8 @@ def main():
         print("smoke-affected: %d runs" % len(picked))
         for run, reasons in picked:
             more = " and %d more" % (len(reasons) - 1) if len(reasons) > 1 else ""
-            print("  %-36s %s%s" % (run, reasons[0], more))
+            vm = " (VM rig)" if any(w in flags and flags[w][1] for w in run.split()) else ""
+            print("  %-36s %s%s%s" % (run, reasons[0], more, vm))
     if args.out:
         with open(args.out, "w") as f:
             f.writelines(run + "\n" for run, _ in picked)

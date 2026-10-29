@@ -1,8 +1,7 @@
 # dev/remote.sh smoke-all: one dev/smoke.sh run per line, spread over the
-# rig's free slots. Every leg that runs on the nested rig, alone or on the
-# leg it rides. Left out: the vm_only legs (device-routes, mirror,
-# panel-morph, polkit, power, sleep, wifi), the cameras that write docs/
-# (shots, screensaver-gif), --r0-measure, which records
+# rig's free slots, and the vm_only legs at the end over the VM rig's
+# (dev/vm.sh). Every leg, alone or on the leg it rides. Left out: the
+# cameras that write docs/ (shots, screensaver-gif), --r0-measure, which records
 # rather than checks, and --installed, which runs a distro image per line.
 
 --activity
@@ -134,3 +133,10 @@
 --panel power
 --panel calendar
 --panel weather
+--device-routes
+--mirror
+--panel-morph
+--polkit
+--power
+--sleep
+--wifi

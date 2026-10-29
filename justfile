@@ -22,10 +22,14 @@ smoke-all *LIST:
     ./dev/remote.sh smoke-all {{LIST}}
 cargo *ARGS:
     ./dev/remote.sh cargo {{ARGS}}
-# fs-tray, fs-notifd, fs-mpris on a private bus (dev/check.sh); the
-# daemon-backed ones need the VM rig.
+# fs-tray, fs-notifd, fs-mpris on a private bus (dev/check.sh); fs-auth,
+# fs-audio, fs-bluez, fs-network and fs-upower on the VM rig (dev/vm.sh).
 check NAME:
     ./dev/remote.sh check {{NAME}}
+# dev/smoke-greeter.sh on a VM rig slot, with this tree's build as the
+# guest's shell: greetd, a wrong then the real password, the desktop's bar.
+greeter:
+    ./dev/vm.sh greeter
 # dev/smoke.sh in this machine's own session, on a Linux host.
 local-smoke *FLAGS:
     ./dev/smoke.sh {{FLAGS}}

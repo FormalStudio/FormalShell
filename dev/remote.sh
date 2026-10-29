@@ -19,8 +19,8 @@
 # render node (formalshell-rig-parent.service), so dev/smoke.sh's
 # session-mode pick lands on `nested` inside that, with its private session
 # and system buses as on any host, and no window ever reaches a real output.
-# Legs that declare leg_<n>_vm_only and the VM-backed service checks need a
-# VM rig g815 does not have yet; they fail saying so.
+# Legs that declare leg_<n>_vm_only and the VM-backed service checks go to
+# the VM rig instead (dev/vm.sh), smoke-all's and smoke-affected's included.
 #
 # The working tree, not a commit, is what runs: `sync` rsyncs it into the
 # slot user's ~/formalshell (a worktree into ~/formalshell-wt/<name>, so two
@@ -143,7 +143,7 @@ for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
       status=0
       # shellcheck disable=SC2086 # one line is one run's flags
       env -u FS_RIG_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
-      slot=$(sed -n 's/^[a-z0-9]*: slot \([0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
+      slot=$(sed -n 's/^[a-z0-9]*: slot \([a-z]*[0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
       waited=$(sed -n 's/^[a-z0-9]*: waited \([0-9]*\)s for a slot$/\1/p' "$out/$slug.log" | head -1)
       took=$((SECONDS - t0 - ${waited:-0}))
       verdict=PASS; [ "$status" -eq 0 ] || verdict=FAIL
@@ -160,6 +160,13 @@ for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
   grep '^FAIL' "$out/results" | sed "s|^|  |" || true
   [ "$failed" -eq 0 ]
 }
+
+# The VM rig's runs, on g815's fstestvm guests: dev/vm.sh takes a guest slot
+# of its own.
+case "${1:-}" in
+  smoke) if [ "$rig" = g815 ] && "$repo_root/dev/vm.sh" wants "${@:2}"; then exec "$repo_root/dev/vm.sh" "$@"; fi ;;
+  check) case "$rig:${2:-}" in g815:fs-auth|g815:fs-audio|g815:fs-bluez|g815:fs-network|g815:fs-upower) exec "$repo_root/dev/vm.sh" "$@" ;; esac ;;
+esac
 
 # Neither takes a slot itself: the build and every run take their own.
 case "${1:-}" in

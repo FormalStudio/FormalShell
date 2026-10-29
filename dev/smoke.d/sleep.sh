@@ -97,7 +97,7 @@ EOF
 }
 
 sleep_inhibitor_held() {
-  grep -E '^FormalShell +[0-9]+ +test .* sleep +Lock the session before sleep +delay' "$1" > /dev/null
+  grep -E "^FormalShell +[0-9]+ +$(id -un) .* sleep +Lock the session before sleep +delay" "$1" > /dev/null
 }
 
 # Mean luminance, 0..1, in thousandths.

@@ -16,8 +16,9 @@
 #           is a Wayland client of the running session. aquamarine's wayland
 #           backend needs the parent to advertise zwp_linux_dmabuf_v1, and
 #           it allocates from the DRM render node that feedback names.
-#   vkms    a VM with neither: its parent is a pixman wlroots session on
-#           a guest with no GPU at all, so nesting dies
+#   vkms    the VM rig, which loads vkms and takes this branch first: its
+#           parent is a pixman wlroots session, and its one render node is
+#           virtio-gpu's with no 3D behind it, so nesting dies
 #           at CBackend::create() ("Missing protocols", then "no allocator
 #           available"). Hyprland instead takes the software KMS card the
 #           kernel's vkms module draws, pinned by AQ_DRM_DEVICES. The branch
@@ -400,12 +401,13 @@ vkms_card_device() {
   [ -n "$any" ] && echo "$any"
 }
 
+# vkms first: the VM rig's guest has a render node too (the header has why).
 session_mode=""
 vkms_device=""
-if [ -n "$wayland_display" ] && render_node_present; then
-  session_mode="nested"
-elif vkms_device=$(vkms_card_device); then
+if vkms_device=$(vkms_card_device); then
   session_mode="vkms"
+elif [ -n "$wayland_display" ] && render_node_present; then
+  session_mode="nested"
 else
   echo "SMOKE_FAIL: no way to bring up Hyprland here: no live parent session with a DRM render node to nest in, and no vkms card to render on" >&2
   exit 1
@@ -436,7 +438,7 @@ if [ "$session_mode" = "nested" ] || [ "$rig_kind" = mac ]; then
       if [ "$rig_kind" = mac ]; then
         echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig, not the mac rig: ${!vm_only_var}" >&2
       else
-        echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig, which g815 does not have yet: ${!vm_only_var}" >&2
+        echo "SMOKE_FAIL: ${flag_decl%% *} needs the VM rig (dev/vm.sh smoke, which dev/remote.sh smoke picks itself): ${!vm_only_var}" >&2
       fi
       exit 1
     fi

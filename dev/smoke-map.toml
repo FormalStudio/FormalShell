@@ -575,3 +575,8 @@ runs = ["--bar-layout", "--desktop-clock"]
 [[rule]]
 paths = ["crates/fs-info/src/usage.rs", "crates/fs-devices/src/tailscale.rs"]
 runs = ["--panel audio"]
+
+# The VM rig's own driver: one run there and one on the rig beside it.
+[[rule]]
+paths = ["dev/vm.sh"]
+runs = ["--wifi", "--menu"]
