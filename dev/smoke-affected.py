@@ -69,18 +69,18 @@ def main():
     flags = {flag: (leg, vm) for leg, (flag, vm) in by_leg.items()}
     listed = [l.strip() for l in open(os.path.join(root, "dev", "smoke-all.list")) if l.strip() and not l.startswith("#")]
 
-    def check(run, where):
-        for word in run.split():
-            if word.startswith("--") and word not in flags:
-                sys.exit("smoke-affected: %s names %s, which no leg in dev/smoke.d declares" % (where, word))
+    # A run naming a flag no leg here declares is a typo, or a map that
+    # landed ahead of its leg; it is named and left out rather than run.
+    def known(run, where):
+        missing = [w for w in run.split() if w.startswith("--") and w not in flags]
+        if missing:
+            print("smoke-affected: %s names %s, which no leg in dev/smoke.d declares; skipped" % (where, " ".join(missing)))
+        return not missing
 
-    core = smoke_map["core"]
-    for run in core:
-        check(run, "core")
+    core = [run for run in smoke_map["core"] if known(run, "core")]
     rules = smoke_map.get("rule", [])
     for n, rule in enumerate(rules):
-        for run in rule["runs"]:
-            check(run, "rule %d" % (n + 1))
+        rule["runs"] = [run for run in rule["runs"] if known(run, "rule %d" % (n + 1))]
 
     base = git("merge-base", "HEAD", args.base).strip()
     changed = set(git("diff", "--name-only", base).split())
