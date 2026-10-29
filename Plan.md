@@ -247,6 +247,18 @@ the only way. Moves go through the compositor backend's typed `Command`s
 (a logged no-op where mango cannot), the icons glide to their new slots
 on the shell's curves, and a drop the compositor refuses springs back.
 
+Polish, read off a 17s capture of Pond in use (2026-10-29): at rest the
+sidebar is a rail of clock digits, workspace numbers and dots, and it
+widens to the full card on hover or a drag, never pushing windows. Rows
+are numbered and hold a 3-wide icon grid with one empty row below. A
+pressed icon lifts (a size step up, a soft halo under the pointer, the
+others dimmed slightly), its siblings slide apart live to show the drop
+slot, the target row lights, and the windows themselves glide to the new
+layout while the icon settles, so the map and the screen move together.
+Pond's zoomed-out overview of every workspace's live windows is niri's;
+Hyprland's equivalent is a compositor plugin (hyprexpo), declared in
+fspec if adopted, never captures by the shell.
+
 ### Phase 5: installing from the shell
 
 - 5.0 FormalSpec design: how an install from the launcher lands in a
