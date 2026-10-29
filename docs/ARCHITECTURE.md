@@ -11,9 +11,9 @@ visual language is `docs/DESIGN.md`.
 
 The package installs three entry points, all from the one crate:
 
-- `formalshell` (a symlink to `formalshell-rs`): the shell. The home-manager
-  module and `formalshell install` both run it as the `formalshell.service`
-  systemd user unit under `graphical-session.target`.
+- `formalshell` (the tarball's launcher for `formalshell-rs`): the shell.
+  `formalshell install` runs it as the `formalshell.service` systemd user
+  unit under `graphical-session.target`.
 - `formalshell-ipc`: the IPC client (`src/bin/formalshell-ipc.rs`). Hyprland
   binds and the smoke rig drive the shell through it.
 - `formalshell greeter`: the greetd greeter (`src/greeter/`), dispatched in
@@ -498,36 +498,23 @@ lock screen's centre column over a flat background, and only the first
 output takes the keyboard. `greeter/greetd.rs` speaks greetd-ipc on
 `$GREETD_SOCK`. It never reads state.json, which would belong to the
 `greeter` system user; the theme is settings.json's preset over theme.json's
-palette. `nix/nixos-greeter-module.nix` (`services.formalshell-greeter`)
-wires it into greetd, and `formalshell install` can write the greetd config
-on a non-Nix system.
+palette. `formalshell install` can write the greetd config.
 
 ## Packaging
 
-- `nix/rust-common.nix`: the crane setup every Rust derivation shares,
-  including the dependency build and the vendored crates.
-- `nix/package.nix`: `.#formalshell`. Builds `formalshell-rs`, ships the
-  matugen templates, branding and `docs/examples` under
-  `share/formalshell`, and wraps the binary with its runtime CLIs on PATH.
-  Most are prefixed; the ones a host or the smoke rig must be able to shadow
-  (wtype, ssh, clipssh, uxplay, localsend-cli, the iPhone bridge) and the
-  clients of daemons the host runs (nmcli, pw-dump, busctl, systemctl,
-  asusctl, the earbuds tools) are suffixed. It also builds
-  `formalshell-watchdog` from `nix/formalshell-watchdog.in`: a probe that
-  restarts the service after two IPC timeouts in a row, since a hung main
-  loop leaves a live process that `Restart=on-failure` never catches.
-- `nix/hm-module.nix` (`programs.formalshell`): the user unit, the watchdog
-  timer, settings.json from `settings`, and
-  `~/.config/hypr/formalshell.lua` from `docs/examples/hyprland/`.
-- `nix/nixos-module.nix` (`services.formalshell`): the system side, the
-  `formalshell-lock` PAM file, geoclue, NetworkManager, bluez, UPower,
-  power-profiles-daemon, PipeWire, polkit, the RAPL power poller, and the
-  optional iPhone, LocalSend, AirPlay and Asus lights pieces.
-- Without Nix: `install.sh` installs Hyprland and the runtime tools with
-  pacman, apt or dnf, unpacks the release tarball under `~/.local` (or
-  `/usr/local` with `--system`), and runs `formalshell install`.
-  `dev/tarball.sh` builds that tarball in a `debian:bookworm` container,
-  holding every binary to glibc 2.36.
+- `dev/tarball.sh` builds the release tarball in a `debian:bookworm`
+  container, holding every binary to glibc 2.36: the shell and
+  `formalshell-ipc`, the helpers no distro carries in `lib/formalshell/bin`
+  (ttfx, matugen, tensaku, clipssh, localsend-cli, the iPhone bridge, the
+  earbuds CLIs, formalshell-eds), the fonts, Blue Marble tiles and earbuds
+  art in `share/formalshell`, and a `bin/formalshell` launcher that puts
+  those helpers first on PATH. It also builds `formalshell-watchdog` from
+  `packaging/formalshell-watchdog.in`: a probe that restarts the service
+  after two IPC timeouts in a row, since a hung main loop leaves a live
+  process that `Restart=on-failure` never catches.
+- `install.sh` installs Hyprland and the runtime tools with pacman, apt or
+  dnf, unpacks the release tarball under `~/.local` (or `/usr/local` with
+  `--system`), and runs `formalshell install`.
 - `src/install.rs`: `formalshell install` writes the user units, the
   Hyprland include and a `hypr-user.lua` the user owns, and, behind a sudo
   prompt each, the PAM file and the greetd config. Every file it owns

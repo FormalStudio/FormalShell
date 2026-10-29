@@ -9,7 +9,6 @@
 ```
 
 [![CI](https://img.shields.io/github/actions/workflow/status/FormalStudio/FormalShell/ci.yml?branch=main&style=for-the-badge&labelColor=161616&color=4a9eda&logo=githubactions&logoColor=white&label=CI)](https://github.com/FormalStudio/FormalShell/actions/workflows/ci.yml)
-[![Nix flake](https://img.shields.io/badge/nix-flake-4a9eda?style=for-the-badge&labelColor=161616&logo=nixos&logoColor=white)](flake.nix)
 [![Rust](https://img.shields.io/badge/built_with-rust-4a9eda?style=for-the-badge&labelColor=161616&logo=rust&logoColor=white)](crates/)
 [![Wayland](https://img.shields.io/badge/wayland-hyprland-4a9eda?style=for-the-badge&labelColor=161616&logo=wayland&logoColor=white)](#install)
 [![Status](https://img.shields.io/badge/status-daily_driven-4a9eda?style=for-the-badge&labelColor=161616)](docs/SWITCHOVER.md)
@@ -97,71 +96,9 @@ inventing data. That holds for every screenshot here. The images and clips in
 
 ## Install
 
-### NixOS
-
-FormalShell is a Nix flake with three modules: home-manager for the shell,
-NixOS for the system pieces it needs (PAM for the lock screen, geoclue,
-NetworkManager, bluez, upower, power-profiles-daemon, pipewire, polkit), and
-an optional greeter.
-
-```nix
-{
-  inputs.formalshell.url = "github:FormalStudio/FormalShell";
-
-  outputs = { nixpkgs, home-manager, formalshell, ... }: {
-    nixosConfigurations.mymachine = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        formalshell.nixosModules.formalshell
-        { services.formalshell.enable = true; }
-
-        home-manager.nixosModules.home-manager
-        {
-          home-manager.users.me = {
-            imports = [ formalshell.homeModules.default ];
-            programs.formalshell.enable = true;
-          };
-        }
-      ];
-    };
-  };
-}
-```
-
-The home-manager module starts the shell as a systemd user service on
-`graphical-session.target`. Every service the NixOS module enables is
-`mkDefault`, so your own config wins.
-
-Optional login screen:
-
-```nix
-imports = [ formalshell.nixosModules.formalshell-greeter ];
-services.formalshell-greeter = {
-  enable = true;
-  # Your wallpaper and palette behind the field, kept in step with your shell.
-  mirrorUser = "alice";
-};
-```
-
-It draws the lock screen's card: the clock, a session chip (every session in
-`services.displayManager.sessionPackages`, Tab or a click picks one) and
-power buttons on one side, the last user's picture, name and password field
-on the other. A second login account adds a user chip. It starts on
-Hyprland and remembers each user's last session. The lock screen is the same
-card in its locked state, with now playing where the chips go.
-
-The default binds, blur layer rules and palette reads ship as a Lua file, and
-the home-manager module writes it to `~/.config/hypr/formalshell.lua` itself,
-so one line is left for you:
-
-```lua
--- ~/.config/hypr/hyprland.lua
-dofile(os.getenv("HOME") .. "/.config/hypr/formalshell.lua")
-```
-
 ### Arch, Debian, Ubuntu and Fedora
 
-x86_64 and aarch64, no Nix:
+x86_64 and aarch64:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/FormalStudio/FormalShell/main/install.sh | sh
@@ -177,6 +114,13 @@ A tool your distro does not carry is skipped and its widget says so.
 Debian trixie and Fedora carry no Hyprland package, so there you install
 Hyprland 0.56 or newer yourself first.
 
+The greeter draws the lock screen's card: the clock, a session chip (every
+installed Wayland session, Tab or a click picks one) and power buttons on one
+side, the last user's picture, name and password field on the other. A second
+login account adds a user chip. It starts on Hyprland and remembers each
+user's last session. The lock screen is the same card in its locked state,
+with now playing where the chips go.
+
 ### Update and uninstall
 
 ```sh
@@ -187,7 +131,7 @@ formalshell uninstall   # removes the units, the Hyprland files, the PAM file an
 `hypr-user.lua` is yours and no update touches it; uninstall moves it back to
 `hyprland.lua` and leaves `~/.config/formalshell` and the shell's state in
 place. Both take `--yes` to answer the sudo prompts, and `update --from
-<tarball>` updates from a local file. On NixOS, bump the flake input instead.
+<tarball>` updates from a local file.
 
 ## Usage
 
@@ -215,8 +159,7 @@ fs panel toggle calendar
 fs notifications toggleDnd
 ```
 
-Config is `~/.config/formalshell/settings.json`, or
-`programs.formalshell.settings` from home-manager. The shell only reads it;
+Config is `~/.config/formalshell/settings.json`. The shell only reads it;
 its own state goes to `$XDG_STATE_HOME/formalshell/state.json`.
 
 ```jsonc
@@ -268,8 +211,8 @@ formalshell-ipc call media status         # JSON
 ## Development
 
 ```sh
-just build    # nix build .#formalshell
-just lint     # nix flake check: the Rust tests and per-crate checks
+just build    # cargo build --release on the Linux build host, ./result laid out as the release
+just lint     # clippy and the pure crates' tests
 just smoke --menu --showcase
 ```
 
@@ -281,9 +224,8 @@ logic underneath (theme tables, launcher ranking, audio, network and so on).
 private D-Bus, drives the surfaces its flags name, screenshots them and tears
 down, so the lock screen and notification server never touch your real
 session. Each flag is a file under [`dev/smoke.d/`](dev/smoke.d/). It runs on
-a Linux build host over ssh (`dev/remote.sh`) and falls back to a headless
-NixOS VM on a Mac (`just vm-smoke`); `just local-smoke` runs it in your own
-session.
+a Linux build host over ssh (`dev/remote.sh`); `just local-smoke` runs it in
+your own session.
 
 ## Credits
 
