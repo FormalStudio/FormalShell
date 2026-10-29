@@ -56,10 +56,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     let framed = app.bar.framed();
     let inset = |e: Edge| if e == edge { thickness } else if framed { frame } else { 0 };
     let theme = &app.store.theme.theme;
-    let reach = match theme.box_style("card", None).radius {
-        fs_theme::style::Radius::Px(px) => number(px),
-        fs_theme::style::Radius::Pill => number(theme.radii.xl),
-    };
+    let reach = number(theme.card_radius());
     let screen = app.bar_output_name();
     let join = match app.debug_join() {
         Some((x, width)) => json!({"edge": edge.as_str(), "x": x, "width": width, "reach": reach, "screen": screen}),

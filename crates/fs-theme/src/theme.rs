@@ -405,6 +405,15 @@ impl Theme {
         }
     }
 
+    /// The `card` role's radius, which a card joined to the bar also opens
+    /// its fillets at.
+    pub fn card_radius(&self) -> f64 {
+        match self.box_style("card", None).radius {
+            Radius::Pill => self.radii.xl,
+            Radius::Px(px) => px,
+        }
+    }
+
     pub fn cover_radius(&self, extent: f64) -> f64 {
         tokens::cover_radius(self.radii.sm, extent)
     }

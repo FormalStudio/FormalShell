@@ -198,7 +198,7 @@ pub fn preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::No
     if let Some((x, width)) = join {
         const DEPTH: f64 = 140.0;
         let card = theme.box_style("card", None);
-        let radius = theme.radii.xl;
+        let radius = theme.card_radius();
         let (color, bw) = card.border.map_or((fs_theme::color::Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
         let paths = paths(width + radius * 2.0, DEPTH, radius, bw, 1.0, 0.0);
         let (sw, sh) = (p.scene().size.w as f64, p.scene().size.h as f64);

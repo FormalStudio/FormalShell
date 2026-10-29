@@ -798,7 +798,7 @@ impl App {
         if !joins.iter().any(|j| j.0 == edge)
             && let Some((x, width)) = self.debug_join
         {
-            joins.push((edge, x as f64, width as f64, self.store.theme.theme.radii.xl));
+            joins.push((edge, x as f64, width as f64, self.store.theme.theme.card_radius()));
         }
         // One gap per edge: the strip's own goes to the first card on it.
         let mut seen = Vec::new();
