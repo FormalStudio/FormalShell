@@ -5,7 +5,7 @@
 //! wallpaper or band change and never on a clock; the decode runs on the
 //! pool.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use fs_theme::barpaint::{self, Profile, SAMPLE_WIDTH, Stats};
 
@@ -51,10 +51,16 @@ impl State {
 }
 
 static REQUESTS: OnceLock<async_channel::Sender<Request>> = OnceLock::new();
+static SENT: Mutex<Option<Request>> = Mutex::new(None);
 
+/// Dropped here when it repeats the last one sent: the bar asks on every
+/// store topic, the minute's clock included, and a send wakes the service
+/// thread whether or not there is anything to read.
 pub fn sample(request: Request) {
-    if let Some(tx) = REQUESTS.get() {
-        let _ = tx.try_send(request);
+    let Some(tx) = REQUESTS.get() else { return };
+    let mut sent = SENT.lock().unwrap_or_else(|e| e.into_inner());
+    if sent.as_ref() != Some(&request) && tx.try_send(request.clone()).is_ok() {
+        *sent = Some(request);
     }
 }
 
@@ -94,15 +100,10 @@ fn read(request: &Request) -> Option<Profile> {
 pub async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded::<Request>();
     let _ = REQUESTS.set(tx);
-    let mut last: Option<Request> = None;
     while let Ok(mut request) = rx.recv().await {
         while let Ok(newer) = rx.try_recv() {
             request = newer;
         }
-        if last.as_ref() == Some(&request) {
-            continue;
-        }
-        last = Some(request.clone());
         let output = request.output.clone();
         let profile = if request.wallpaper.is_empty() {
             None
