@@ -29,7 +29,7 @@ There is no Nix anywhere: the macbook, g815 and e1504g carry none.
 Everything that compiles or runs the shell goes to g815 through
 `dev/remote.sh`, since the mac has no pipewire, PAM or Wayland to link.
 
-- The rig is g815: `dev/remote.sh {build|lint|cargo|check|smoke|smoke-all|run|sync|pull|shell}`
+- The rig is g815: `dev/remote.sh {build|lint|cargo|check|smoke|smoke-affected|smoke-all|run|sync|pull|shell}`
   rsyncs the working tree (`.gitignore` applies, so `crates/target` stays
   per slot and cargo stays incremental) to one of eight slot users
   (`fstest0` to `fstest7`, a mac-side flock each, `FS_G815_SLOTS`) and runs
@@ -42,15 +42,36 @@ Everything that compiles or runs the shell goes to g815 through
   number of agents can run at once; past eight they queue. Its header
   carries the slot model. A g815 that does not answer ssh fails the
   command; there is no fallback.
+- **The default check for a change is `just smoke-affected [base]`** (or
+  `just smoke <flags>` for the legs you know it touches). It diffs against
+  the merge base with `origin/main` (or `base`), uncommitted and untracked
+  files included, maps each changed path to runs through
+  `dev/smoke-map.toml`, prints which runs it chose and why, and runs them
+  over the free slots off one build. Docs, tests, the plans and the
+  packaging run nothing; shared code (the ui kit, fs-theme, the wayland
+  core, motion, the scaffold) and any path the map does not name run the
+  nine-run `core` set; a leg's own file runs that leg; vm_only legs are
+  named and skipped. Expected: one surface file ~1m45s warm (a ~25s build,
+  then its legs side by side), ~2m15s from a cold worktree, the core set
+  ~1m40s, a docs-only change a few seconds. A new surface, service or leg
+  gets its paths into the map in the same commit. In the shared main
+  checkout the uncommitted files include other agents' edits, so it can
+  pick more than your change alone needs.
 - `just smoke-all [list]`: every run in `dev/smoke-all.list` (one line of
-  flags each, every leg the nested rig can run) spread over the free slots,
-  all off one build (`dev/share-result.sh` copies it where every slot user
-  can read it, and each run gets it as `FS_RESULT`). Each run's log and
-  artifacts land in `artifacts/smoke-all-<ts>/<n>-<flags>/`, `results`
-  lists PASS or FAIL with seconds and slot, and it exits non-zero on any
-  failure. `FS_SMOKE_JOBS` caps the parallel runs. A slot user's very
-  first run has failed `--notify`'s toast-column check once; a second run
-  passes.
+  flags each, every leg the nested rig can run), **for milestones only** (a
+  phase shipping, a release) or when the owner asks: ~15 min (884s for 127
+  runs, against 768s of run time over eight slots). One runs at a time per
+  mac (`/tmp/formalshell-smoke-all.lock`); a second queues and says behind
+  whom.
+- Both run longest first off the run times recorded in
+  `~/.local/state/formalshell-rig/leg-times.tsv` (the median of the last
+  three, a run never timed going first), share one build
+  (`dev/share-result.sh` copies it where every slot user can read it, each
+  run gets it as `FS_RESULT`), put each run's log and artifacts in
+  `artifacts/<smoke-affected|smoke-all>-<ts>/<n>-<flags>/`, list PASS or
+  FAIL with seconds and slot in `results`, and exit non-zero on any
+  failure. `FS_SMOKE_JOBS` caps the parallel runs. A slot user's very first
+  run has failed `--notify`'s toast-column check once; a second run passes.
 - `just build`: `dev/build.sh` on the rig: `cargo build --locked --release
   -p formalshell-rs` in dev.star's environment (`fspec dev -- cargo`), then
   `./result` laid out as the release tarball unpacks (`bin/formalshell`,
