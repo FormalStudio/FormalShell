@@ -3,10 +3,10 @@
 // Real distro logos, from the font that carries them (owner, 2026-08-26:
 // "make it the actual logo, not a fake snowflake one. Find a library for the
 // most mayor distros"). The library is font-logos, which Nerd Fonts embeds
-// as its Linux range and nixpkgs ships as `nerd-fonts.symbols-only`;
-// nix/package.nix puts it on the wrapper's XDG_DATA_DIRS the same way
-// lucide-font gets there, so the glyphs resolve on any install without the
-// user having an icon theme with distributor logos in it.
+// as its Linux range; the release tarball ships Symbols Nerd Font beside
+// lucide.ttf on FS_RS_FONT_DIRS (dev/tarball.sh), so the glyphs resolve on
+// any install without the user having an icon theme with distributor logos
+// in it.
 //
 // Deliberately NOT part of Theme/icons.js's set switching. Every other icon
 // in the shell follows `theme.icons`, but a distro logo is a mark, not an

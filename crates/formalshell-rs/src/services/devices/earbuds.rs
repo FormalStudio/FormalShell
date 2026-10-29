@@ -834,7 +834,7 @@ impl Nothing {
 }
 
 /// A picture set's part (`duo`, `case`, `left`, `right`) in a `size`
-/// square, from `FS_EARBUDS_ART` (nix/earbuds-art.py); none without the
+/// square, from `FS_EARBUDS_ART` (packaging/earbuds-art.py); none without the
 /// directory, a set, or that part.
 pub fn picture(set: &str, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
     if set.is_empty() {

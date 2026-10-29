@@ -237,7 +237,7 @@ pub struct Device {
     pub controls: Vec<Control>,
     pub state_line: String,
     /// The product picture set, `<set>_<part>.webp` under `FS_EARBUDS_ART`
-    /// (nix/earbuds-art.py), "" for a device with none.
+    /// (packaging/earbuds-art.py), "" for a device with none.
     pub art: String,
 }
 

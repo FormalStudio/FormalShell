@@ -1,5 +1,5 @@
 //! Needs daemons, so every test is ignored under a plain `cargo test`. The
-//! NixOS VM check (nix/fs-upower.nix) runs them with `--ignored` inside
+//! VM check (`dev/check.sh fs-upower`) runs them with `--ignored` inside
 //! `dbus-run-session`, against the VM's real upowerd and
 //! power-profiles-daemon on the system bus and a fake UPower on the session
 //! bus.

@@ -1,6 +1,6 @@
 //! Needs NetworkManager and the hwsim radios, so the test is ignored under a
-//! plain `cargo test`. The NixOS VM check (nix/fs-network.nix) runs it with
-//! `--ignored`: wlan0 is NetworkManager's station, wlan1 and wlan2 are the
+//! plain `cargo test`. The VM check (`dev/check.sh fs-network`) runs it
+//! with `--ignored`: wlan0 is NetworkManager's station, wlan1 and wlan2 are the
 //! hostapd radios serving FORMALTEST (WPA2-PSK) and FORMALTEST-EAP (PEAP with
 //! MSCHAPv2), the same topology dev/smoke.d/wifi.sh drives through the shell.
 //!

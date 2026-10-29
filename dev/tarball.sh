@@ -80,7 +80,7 @@ for entry in "${sources[@]}"; do
   esac
 done
 
-# Radio Atlas's satellite globe, cut into tiles the way nix/blue-marble.nix does.
+# Radio Atlas's satellite globe, cut into tiles by packaging/earth-tiles.py.
 earth_url=https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x21600x10800.jpg
 earth_sum=d225f1f35a6448a4d1d8f6de6e48f3433e470085b70a35800e64f384f269a7b0
 earth=$dl/blue-marble-${earth_url##*/}
@@ -89,8 +89,8 @@ if ! { [ -f "$earth" ] && echo "$earth_sum  $earth" | sha256sum -c --quiet 2>/de
   echo "$earth_sum  $earth" | sha256sum -c --quiet
 fi
 
-# The cartridge theme's faces and their licences: the files and hashes
-# nix/cartridge-fonts.nix pins, as google/fonts path, file name, sha256.
+# The cartridge theme's faces and their licences, as google/fonts path,
+# file name, sha256.
 fonts_rev=e7db6ca603fd4862010383ff17ffd6cc4ffac1c0
 fonts=(
   "archivo/Archivo%5Bwdth,wght%5D.ttf Archivo[wdth,wght].ttf 0e094a7d3c7c4c25cf1310c4b30014f1dae9332220b1c2c88f4fa996f0b05053"
@@ -136,7 +136,7 @@ export PKG_CONFIG_PATH=$gls/lib/pkgconfig
 release=$CARGO_TARGET_DIR/release
 
 # The x86-64 engine's asm objects call libc with PC32 relocations, which a
-# PIE link rejects (nix/ttfx-package.nix). An explicit --target keeps the
+# PIE link rejects. An explicit --target keeps the
 # static model off the proc-macros.
 (cd "$tp/ttfx" && RUSTFLAGS="-C relocation-model=static" \
   cargo build --locked --release --target "$host" --target-dir "$work/target-ttfx")
@@ -148,16 +148,16 @@ rm -f "$tp/tensaku/rust-toolchain.toml"
 (cd "$tp/earbuds" && cargo build --locked --release)
 (cd "$repo/tools/eds" && zig build --global-cache-dir "$work/zig-cache" --release=safe -Dcpu=baseline --prefix "$work/eds")
 
-# Same fix as nix/localsend-cli.nix: without a Content-Type every send is
-# rejected by a fiber receiver, this CLI's own `recv` included.
+# Without a Content-Type every send is rejected by a fiber receiver, this
+# CLI's own `recv` included.
 (cd "$tp/localsend-cli" \
   && sed -i 's/req.SetBodyRaw(metaJson)/req.Header.SetContentType("application\/json"); req.SetBodyRaw(metaJson)/' \
     internal/localsend/send/fwdsend.go \
   && grep -q 'SetContentType("application/json")' internal/localsend/send/fwdsend.go \
   && CGO_ENABLED=0 GOTOOLCHAIN=local GOPATH=$work/gopath GOFLAGS=-modcacherw \
     go build -trimpath -buildvcs=false -o localsend-cli .)
-(cd "$tp/omarchy-iphone" && patch -Np1 -i "$repo/nix/iphone-ams-subscribe.patch" \
-  && patch -Np1 -i "$repo/nix/iphone-bridge-bond.patch")
+(cd "$tp/omarchy-iphone" && patch -Np1 -i "$repo/packaging/iphone-ams-subscribe.patch" \
+  && patch -Np1 -i "$repo/packaging/iphone-bridge-bond.patch")
 
 stage=$work/stage/formalshell
 rm -rf "$work/stage"
@@ -190,12 +190,12 @@ install -m644 "$tp/cartridge-fonts/"*-OFL.txt "$share/licenses/"
 # Both image passes run on one core for minutes, and their output only moves
 # with the pinned sources and the scripts, so a WORK kept between builds
 # reuses it.
-art_key=$({ printf '%s\n' "${sources[@]}" "$earth_sum"; cat "$repo/nix/earth-tiles.py" "$repo/nix/earbuds-art.py"; } | sha256sum | cut -c1-16)
+art_key=$({ printf '%s\n' "${sources[@]}" "$earth_sum"; cat "$repo/packaging/earth-tiles.py" "$repo/packaging/earbuds-art.py"; } | sha256sum | cut -c1-16)
 art=$work/art/$art_key
 if [ ! -f "$art/done" ]; then
   rm -rf "$work/art"; mkdir -p "$art"
-  python3 "$repo/nix/earth-tiles.py" "$earth" "$art"
-  python3 "$repo/nix/earbuds-art.py" "$tp/ear-web" "$tp/librepods" "$art"
+  python3 "$repo/packaging/earth-tiles.py" "$earth" "$art"
+  python3 "$repo/packaging/earbuds-art.py" "$tp/ear-web" "$tp/librepods" "$art"
   touch "$art/done"
 fi
 cp -R "$art/earth.jpg" "$art/tiles" "$art/earbuds" "$share/"
@@ -223,7 +223,7 @@ exec "$(dirname "$(readlink -f "$0")")/formalshell" greeter "$@"
 EOF
 sed -e 's|@IPC@|"$(dirname "$(readlink -f "$0")")/formalshell-ipc"|' \
   -e 's|@TIMEOUT@|timeout|' -e 's|@SYSTEMCTL@|systemctl|' \
-  "$repo/nix/formalshell-watchdog.in" > "$stage/bin/formalshell-watchdog"
+  "$repo/packaging/formalshell-watchdog.in" > "$stage/bin/formalshell-watchdog"
 chmod 755 "$stage/bin/formalshell" "$stage/bin/formalshell-greeter" "$stage/bin/formalshell-watchdog"
 
 # Every soname here is in the base install or a package install.sh's table

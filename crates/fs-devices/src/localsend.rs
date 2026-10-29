@@ -1,9 +1,9 @@
 //! Pure model for LocalSend (plan at `docs/superpowers/plans/2026-09-28-m75-iphone.md`).
 //! Ported from `shell/Localsend/model.js`.
 //!
-//! The CLI is 0w0mewo/localsend-cli (Go, rev 7865fb1c, see
-//! nix/localsend-cli.nix for why this one over the official Rust `cli/`
-//! crate). `scan -t <seconds>` prints one line per discovered peer to stdout
+//! The CLI is 0w0mewo/localsend-cli (Go, rev 7865fb1c), picked over the
+//! official Rust `cli/` crate, whose headless mode can only send: no `recv`
+//! and no `scan`. `scan -t <seconds>` prints one line per discovered peer to stdout
 //! under a "Found Devices:" header, or "No device found" to stderr when
 //! nothing answered (scan.go's own Fprintf calls). `send`/`recv` log every
 //! event through Go's log/slog default handler; [`parse_slog_line`] reads that

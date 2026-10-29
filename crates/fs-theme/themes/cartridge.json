@@ -857,7 +857,7 @@
             "The cartridge look (docs/superpowers/specs/2026-10-23-cartridge-theme.md): an old console's menus after tsubi.club, flat and dark, square boxes with one chamfered corner, 1px outlines, insets rather than casts, and the palette's primary as the one accent. Colours stay palette roles, so matugen drives it like every other table; a flat teal wallpaper gives the reference's home page."
         ],
         "fonts": [
-            "Archivo for words and headings (the surfaces set its width and weight axes), DotGothic16 for values and status lines, BIZ UD Mincho for secondary lines. All four families ship with the shell (nix/cartridge-fonts.nix, the tarball), each falling back to its generic alias when missing."
+            "Archivo for words and headings (the surfaces set its width and weight axes), DotGothic16 for values and status lines, BIZ UD Mincho for secondary lines. All four families ship in the release tarball, each falling back to its generic alias when missing."
         ],
         "sounds": [
             "Event to sound: the nine blips dev/sfx/gen.py synthesises into crates/fs-audio/sfx/, original square and triangle sweeps after an old console menu. A table without this key is silent; theme.sounds turns a table's own off."

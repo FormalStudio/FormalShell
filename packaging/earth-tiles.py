@@ -7,8 +7,8 @@ level W holds OUT/tiles/W/<column>_<row>.jpg, TILE pixels square except
 along the right and bottom edges. Each level halves the one above it, from
 SRC's own width down to the first at or under BASE wide, which the shell
 decodes whole on open. OUT/earth.jpg is the single picture the shell falls
-back to without the tiles. Run at build time by nix/blue-marble.nix and
-dev/tarball.sh; nothing here ships.
+back to without the tiles. Run at build time by dev/tarball.sh; nothing
+here ships.
 """
 
 import os

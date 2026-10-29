@@ -6,8 +6,7 @@ EAR_WEB and LIBREPODS are the two repos' source trees. OUT/earbuds holds
 <set>_<part>.webp, part one of duo, case, left, right, each at most SIZE
 pixels on its long side: a Nothing set is ear-web's own `b175_black`, an
 AirPods set librepods' `airpods_pro_3` with its `buds` picture renamed
-`duo`. Run at build time by nix/earbuds-art.nix and dev/tarball.sh;
-nothing here ships.
+`duo`. Run at build time by dev/tarball.sh; nothing here ships.
 """
 
 import glob

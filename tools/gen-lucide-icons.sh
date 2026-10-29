@@ -4,7 +4,7 @@
 # "\eXXX"; }`, where the escape's hex digits ARE the codepoint, "e" included,
 # not a fixed "\e" prefix followed by three digits). The output is
 # vendored: run this once when bumping the Lucide version pinned in
-# nix/lucide-font.nix; the shell never generates at runtime.
+# dev/tarball.sh; the shell never generates at runtime.
 #
 # usage: tools/gen-lucide-icons.sh [version]   (default 1.34.0)
 set -euo pipefail

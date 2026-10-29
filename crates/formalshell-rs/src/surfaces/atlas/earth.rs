@@ -1,6 +1,6 @@
 //! The satellite picture the globe wraps itself in, and the sampler that
 //! draws it. The picture is a pyramid of equirectangular levels cut into
-//! square tiles (`FS_EARTH_TILES`, nix/earth-tiles.py): the coarsest level
+//! square tiles (`FS_EARTH_TILES`, packaging/earth-tiles.py): the coarsest level
 //! is decoded whole on open, every finer tile only once a frame needs it,
 //! on a pool thread, into a cache with a byte cap. A frame samples each run
 //! of pixels from the finest level that has its tiles, so a tile still

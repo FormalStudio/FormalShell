@@ -7,7 +7,7 @@
 //! The wire is `omarchy-iphone-bridge listen` (omarchy-iphone @ 586f37d,
 //! bin/omarchy-iphone-bridge): one JSON object per stdout line, `type` one of
 //! history, notification, dismiss, status, pairingCode, advertising, forgot,
-//! error, hci. nix/iphone-bridge-bond.patch adds `paired`/`address` to status
+//! error, hci. packaging/iphone-bridge-bond.patch adds `paired`/`address` to status
 //! and the `forgot` event. A notification's `id` is ancs4linux's
 //! per-connection id (the ANCS uid offset by a random base chosen per
 //! connection), so it only means anything inside the `session` it arrived in.
@@ -905,7 +905,7 @@ mod tests {
         assert_eq!(status(r#"{"type":"status","battery":-1}"#).battery, -1.0);
     }
 
-    // nix/iphone-bridge-bond.patch's status: a bond BlueZ holds while LE is down.
+    // packaging/iphone-bridge-bond.patch's status: a bond BlueZ holds while LE is down.
     #[test]
     fn parse_status_bond() {
         let e = status(r#"{"type":"status","observer":true,"connected":false,"linked":true,"paired":true,"deviceName":"FormalPhone","address":"10:7d:c8:a5:3b:42","battery":-1}"#);
