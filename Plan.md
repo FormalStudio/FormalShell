@@ -53,7 +53,7 @@ disagrees, this plan's spec (written in task 1.1) wins.
    on GPUI's terms, the lock host (ext-session-lock), the per-surface damage
    tracking that holds the idle and CPU-quota budgets, and the motion
    system, for a renderer gain we can test in place. Blur is the
-   compositor's job either way (Hyprland layer blur). Phase 6 is not a
+   compositor's job either way (Hyprland layer blur). Phase 7 is not a
    swap either: `vello_hybrid` renders into GPU textures while `surface.rs`
    hands `wl_shm` buffers to the compositor, so the spike has to solve
    presentation (dmabuf or readback) and keep damage tracking, and lands only
@@ -62,7 +62,7 @@ disagrees, this plan's spec (written in task 1.1) wins.
    shell talks to pacman/Flatpak/Nix: install, update and rollback show up
    as live activity in the shell, not in a terminal. fspec has no
    imperative `install` or catalog search today, so that is designed in
-   FormalSpec first (phase 4.0), declaratively.
+   FormalSpec first (phase 5.0), declaratively.
 
 5. **The polish is the shell's, not the sidebar's.** Activity, the glass,
    the morph and the seams are services and surfaces every layout gets.
@@ -79,7 +79,7 @@ disagrees, this plan's spec (written in task 1.1) wins.
      `replaces_id` or `x-canonical-private-synchronous` (fs-notifd has the
      latter, not `value`).
    - KDE's `org.kde.JobViewServer` for file copies, after the first two.
-   - fspec's own operation stream for installs and updates (2.2).
+   - fspec's own operation stream for installs and updates (3.2).
 7. **Performance is a gate, not a goal.** Before phase 1, `--r0-measure`
    and `--idle` record a baseline (idle CPU, RSS, wakeups, launcher open,
    GPU use at idle) on g815 and e1504g's power-saver stand-in
@@ -107,7 +107,7 @@ disagrees, this plan's spec (written in task 1.1) wins.
 10. **Rendering is configurable.** `render.backend`: `auto` (GPU where a
     usable render node exists, which is most machines with an iGPU),
     `gpu`, `cpu`. The CPU path stays first class for the greeter, the
-    lock's fallback and machines without a GPU. Phase 6 builds it, gated
+    lock's fallback and machines without a GPU. Phase 7 builds it, gated
     on the performance baseline for both RSS and CPU.
 11. **Under load the shell stays smooth.** It already runs every
     service thread at nice 10 and draws only off frame callbacks. What it
@@ -124,6 +124,25 @@ disagrees, this plan's spec (written in task 1.1) wins.
     seconds, then fold into the notification centre. Every new card and
     cell gets an overflow case in its smoke leg (long titles, ten sources,
     narrow outputs).
+
+13. **The launcher is a field, a list and actions** (owner, 2026-10-29,
+    approved mockup `artifacts/plan/launcher.html`). Opened, it is a calm
+    field and a `Recent` list: no section stack, no shortcut chips, 40px
+    rows with 22px icons, one soft selection fill, and a foot showing only
+    the selected row's keys as clickable hints. The app grid stays behind
+    `menu.appGrid`, off by default. Every result is a subject (Tuna's
+    subject, action, target): Tab or a right-click opens its actions in a
+    column beside it, typing filters them, Shift+Tab goes back, → steps
+    into things. Actions are data that routes, `menu.jsonc` and plugins
+    contribute to. Abbreviations are configured in settings.json, pinned
+    from the launcher into state.json, and learned from picks; configured
+    beats pinned beats learned, learned ones decay and are forgotten from
+    the row. A mode is a token in the field, and every existing route and
+    prefix maps onto one. Install mode searches and installs through fspec
+    (phase 5), Uninstall is an app action. The field is sans at a larger
+    size, never serif. Hover tints without moving the selection, click
+    runs, right-click opens actions. Everything the launcher does today
+    survives or the spec names its replacement.
 
 ## Phases
 
@@ -163,19 +182,31 @@ reading the PNGs, then shipped to e1504g and photographed there with
 - 1.4 HIG pass over the token table and every surface, `gallery` leg as the
   sheet. Ship to e1504g after 1.3 and after 1.4.
 
-### Phase 2: glass and fspec activity
+### Phase 2: the launcher
 
-- 2.1 Translucent role fills (Pantheon defaults `surfaceOpacity` to 1 and
+One calm field over a `Recent` list; every result a subject with actions
+beside it (Tab), things to step into (→), learned and pinned
+abbreviations, routes as modes in the field, a preview pane only where
+there is something to preview, and a pointer that never moves the
+selection. Spec: `docs/superpowers/specs/2026-10-29-launcher.md`, whose
+§13 holds the tasks (2.0 the spec, 2.1 subjects and actions, 2.2 ranking,
+2.3 the opened state, 2.4 modes, 2.5 the actions column, 2.6 the mouse,
+2.7 preview and files, 2.8 plugins, 2.9 gate and ship). Install mode's
+launcher half is specified there and built in phase 5.
+
+### Phase 3: glass and fspec activity
+
+- 3.1 Translucent role fills (Pantheon defaults `surfaceOpacity` to 1 and
   toasts to an opaque fill, so compositor blur has nothing to show through)
   tuned together with the Hyprland layerrules fspec ships per namespace,
   checked on g815's GPU.
-- 2.2 FormalSpec: an operation stream (operation id, phase, progress,
+- 3.2 FormalSpec: an operation stream (operation id, phase, progress,
   result) from `apply` and `update`, on a socket the shell reads, with a
   snapshot on reconnect, so a shell restart mid-apply still shows it.
-- 2.3 Shell: an Activity service over that stream, a progress toast
+- 3.3 Shell: an Activity service over that stream, a progress toast
   (Pond's "installing Firefox" ring), honest unavailable without fspec.
 
-### Phase 3: the sidebar
+### Phase 4: the sidebar
 
 Our take on Pond's left column, kept quiet: about 160 logical px wide
 (Pond's is ~12% of a 1280px screen), compact cards, no card wider than its
@@ -188,15 +219,18 @@ summary; now playing when a player exists. A status row at the foot:
 network, audio, settings, collapse. Panels and the launcher bud off its
 inner edge with the same join the bar uses.
 
-### Phase 4: installing from the shell
+### Phase 5: installing from the shell
 
-- 4.0 FormalSpec design: how an install from the launcher lands in a
+- 5.0 FormalSpec design: how an install from the launcher lands in a
   declarative spec (a user apps module fspec edits, commits and applies),
   catalog search over its sources, privilege handling.
-- 4.1 Launcher install route on that, progress in Activity, the app in the
-  grid when it lands. Updates and rollback rows in the sidebar.
+- 5.1 The launcher's Install mode on that (the launcher spec's §8):
+  search, an install action, progress in Activity, the app in the results
+  when it lands.
+- 5.2 Uninstall as an action on an app row fspec owns.
+- 5.3 Updates and rollback rows in the sidebar.
 
-### Phase 5: the seams
+### Phase 6: the seams
 
 Power-on to desktop is one continuous picture, as in Pond: Limine's menu
 (or no menu) into the Plymouth splash into the greeter into the session,
@@ -217,13 +251,13 @@ Greeter to session with no flash, lock to desktop, first run with no
 settings.json, launch feedback (the spinner in Activity until the window
 maps), every unavailable state.
 
-### Phase 6: GPU rendering, configurable
+### Phase 7: GPU rendering, configurable
 
 `render.backend` (decision 10): `vello_hybrid` behind the existing scene,
 presented through dmabuf with damage kept, launcher first, then every
 surface. Lands only at or under the baseline on g815 and e1504g.
 
-### Phase 7: later, each on its own
+### Phase 8: later, each on its own
 
 - Sky wallpaper: the sky's gradient for the sun's position now
   (`fs-theme/src/sun.rs` has the times), feeding matugen like a picture.
