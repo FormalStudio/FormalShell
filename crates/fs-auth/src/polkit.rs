@@ -29,6 +29,7 @@ const HELPER_PATHS: &[&str] = &[
     "/run/wrappers/bin/polkit-agent-helper-1",
     "/usr/lib/polkit-1/polkit-agent-helper-1",
     "/usr/libexec/polkit-agent-helper-1",
+    "/usr/libexec/polkit-1/polkit-agent-helper-1",
     "/usr/lib/policykit-1/polkit-agent-helper-1",
 ];
 
