@@ -9,6 +9,129 @@
                     "color": "border",
                     "width": 1
                 }
+            },
+            "light": {
+                "fill": "transparent",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "white",
+                    1
+                ],
+                "inkShadow": [
+                    {
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.3
+                    },
+                    {
+                        "y": 1,
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.6
+                    }
+                ],
+                "fillAlpha": 1
+            },
+            "dark": {
+                "fill": "transparent",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "black",
+                    0.65
+                ],
+                "inkShadow": [],
+                "fillAlpha": 1
+            },
+            "translucentLight": {
+                "fill": "white",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "black",
+                    0.65
+                ],
+                "inkShadow": [],
+                "fillAlpha": 0.5,
+                "layers": [
+                    {
+                        "inset": true,
+                        "y": 1,
+                        "color": "white",
+                        "alpha": 0.15
+                    },
+                    {
+                        "inset": true,
+                        "y": -1,
+                        "color": "white",
+                        "alpha": 0.03
+                    }
+                ]
+            },
+            "translucentDark": {
+                "fill": "black",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "white",
+                    1
+                ],
+                "inkShadow": [
+                    {
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.15
+                    },
+                    {
+                        "y": 1,
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.3
+                    }
+                ],
+                "fillAlpha": 0.3
+            },
+            "maximized": {
+                "fill": "black",
+                "edge": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                },
+                "ink": [
+                    "white",
+                    1
+                ],
+                "inkShadow": [
+                    {
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.3
+                    },
+                    {
+                        "y": 1,
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.6
+                    }
+                ],
+                "fillAlpha": 1
             }
         },
         "frame": {
@@ -20,6 +143,55 @@
                     "color": "border",
                     "width": 1
                 }
+            },
+            "light": {
+                "fill": "transparent",
+                "border": {
+                    "color": "transparent",
+                    "width": 1
+                },
+                "fillAlpha": 1
+            },
+            "dark": {
+                "fill": "transparent",
+                "border": {
+                    "color": "transparent",
+                    "width": 1
+                },
+                "fillAlpha": 1
+            },
+            "translucentLight": {
+                "fill": "white",
+                "border": {
+                    "color": "white",
+                    "alpha": 0.15,
+                    "width": 1
+                },
+                "fillAlpha": 0.5
+            },
+            "translucentDark": {
+                "fill": "black",
+                "border": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                },
+                "fillAlpha": 0.3
+            },
+            "maximized": {
+                "fill": "black",
+                "border": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                },
+                "fillAlpha": 1
             }
         },
         "card": {
@@ -124,6 +296,14 @@
                     "color": "warning",
                     "width": 1
                 }
+            },
+            "ghostOpen": {
+                "fill": "white",
+                "fillAlpha": {
+                    "light": 0.6,
+                    "dark": 0.12
+                },
+                "border": null
             }
         },
         "cell.mark": {
@@ -576,7 +756,7 @@
             "`filledHover`/`filledPress` are shadcn's `hover:bg-primary/90` for a control that already carries a colour: the fill blended toward `background` and left opaque. Dropping the fill's own alpha instead is what `/90` means on an opaque page and something else here, a primary button on a translucent panel goes see-through and the wallpaper reads straight through its label."
         ],
         "roles.bar": [
-            "The strip (DESIGN.md §3 Bar): the card fill with no border at all, and one hairline along the edge facing the desktop. `edge` rather than `border` because three of the four sides are the screen's own edges, and the line is drawn in two segments around the gap a joined card opens in it, which is Bar's own geometry. One state, since the strip habit has one paint; the five a sampled band takes are wingpanel's (style.js's HABIT_STATES)."
+            "The strip (DESIGN.md §3 Bar): the card fill with no border at all, and one hairline along the edge facing the desktop. `edge` rather than `border` because three of the four sides are the screen's own edges, and the line is drawn in two segments around the gap a joined card opens in it, which is Bar's own geometry. `rest` is the strip; the five band paints `bar.style` selects in its place are pantheon's, written out whole so none of them inherits the strip's fill or line."
         ],
         "roles.frame": [
             "The screen frame's ring. Its corner is `frame.radius`, a settings key rather than a step off the ladder, so the radius here is the band's own square outer edge and FrameRing keeps deciding the cut out it leaves for the desktop."

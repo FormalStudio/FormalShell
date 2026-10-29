@@ -13,6 +13,9 @@ frame, teardown) and sources every file here. A leg defines:
 - `leg_<n>_fixture_window` `keep` to leave the base run's fixture window in
   the frame; `leg_<n>_validate` usage checks, run before the build.
 - `leg_<n>_fixture` `settings_fragment '<json>'` and staged files;
+  `settings_pin '<jq assignment>'` for one key inside an object other legs
+  write whole (`.bar.style = "solid"`), applied over the finished file, so
+  a leg that rewrites settings.json mid-run drops it;
   `leg_<n>_timing` `leg_timing <delay> <timeout> [tail_gap]`, max-merged.
 - `leg_<n>_drive` writes the drive scripts, echoes their autostart lines (`hypr_exec_once`),
   may `add_cleanup '<line>'`; `leg_<n>_assert` prints `SMOKE_*`, calls `fail`.

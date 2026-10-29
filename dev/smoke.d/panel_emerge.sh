@@ -6,10 +6,10 @@
 # and travels out from under it, so its visible height grows from nothing to
 # the whole card and no part of it is ever drawn inside the bar's own band.
 #
-# Ridden by --pantheon it reads the other habit instead (M60 T2): a card that
-# drops out of its cell has no line to unroll from, so the ladder is whole or
-# empty on every frame and never a fraction of the card, and the sampling
-# rides that habit's own 150ms clock. The bar's band stays the claim it is
+# Ridden by --pantheon or --no-morph it reads the popover instead (M60 T2): a
+# card that drops out of its cell has no line to unroll from, so the ladder is
+# whole or empty on every frame and never a fraction of the card, and the
+# sampling rides the table's own clock (150ms under pantheon). The bar's band stays the claim it is
 # under either habit, since a popover opens no gap in the line at all.
 #
 # Measured down the card's own centre column, and a probe is "covered" when it
@@ -81,6 +81,10 @@ panel_emerge_mid_paths=(
 panel_emerge_map_ms=200
 panel_emerge_mid_fractions=(-36 -24 -18 -12 -6 0 12 24 48 150)
 panel_emerge_mid_sleeps=()
+
+panel_emerge_popover() {
+  leg_on pantheon || leg_on no_morph
+}
 
 panel_emerge_build_sleeps() {
   local clock=500 f at
@@ -260,7 +264,7 @@ leg_panel_emerge_assert() {
   for i in "${!panel_emerge_mid_paths[@]}"; do
     depth=$(panel_emerge_depth "${panel_emerge_mid_paths[$i]}" "mid-$((i + 1))")
     ladder+=" $depth"
-    if leg_on pantheon; then
+    if panel_emerge_popover; then
       if [ "$depth" -ne 0 ] && [ "$depth" -ne "$settled_depth" ]; then
         fail "sample $((i + 1)) drew part of the card (depths$ladder): a popover drops whole out of its cell, it does not unroll from the line"
       fi
@@ -272,7 +276,7 @@ leg_panel_emerge_assert() {
     last_depth=$depth
   done
   echo "SMOKE_PANEL_EMERGE_LADDER$ladder settled=$settled_depth"
-  if ! leg_on pantheon && [ "$first_depth" -ge "$settled_depth" ]; then
+  if ! panel_emerge_popover && [ "$first_depth" -ge "$settled_depth" ]; then
     fail "the first sample already showed the whole card (depths$ladder): the panel appeared rather than emerging"
   fi
   if [ "$last_depth" -ne "$settled_depth" ]; then

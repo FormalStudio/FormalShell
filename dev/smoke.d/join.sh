@@ -111,11 +111,20 @@ leg_join_fixture() {
 }
 
 leg_join_timing() {
-  leg_timing 110 180
+  if leg_on menu_emerge; then
+    leg_timing 150 230
+  else
+    leg_timing 110 180
+  fi
 }
 
 leg_join_drive() {
-  local script="$shot_dir/join-drive.sh"
+  local script="$shot_dir/join-drive.sh" wait_menu=""
+  if leg_on menu_emerge; then
+    # Its launcher and scrim would otherwise sit over these cases, and its
+    # motionScale fight this one's.
+    wait_menu="for _ in \$(seq 1 120); do [ -e \"$menu_emerge_done_path\" ] && break; sleep 0.5; done"
+  fi
   if join_whole_output; then
     # The output dev/smoke.sh pins for every session. A crop cut for the top
     # bar's right end holds nothing at all on a left bar, and with the probes
@@ -161,6 +170,7 @@ cell() {
   fi
 }
 sleep 5
+$wait_menu
 call debug motionScale 1000
 # Not through call(), whose own redirect would swallow the dump into the
 # reply log.

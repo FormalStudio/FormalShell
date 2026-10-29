@@ -4,6 +4,129 @@
             "rest": {
                 "fill": "transparent",
                 "radius": 0
+            },
+            "light": {
+                "fill": "transparent",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "white",
+                    1
+                ],
+                "inkShadow": [
+                    {
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.3
+                    },
+                    {
+                        "y": 1,
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.6
+                    }
+                ],
+                "fillAlpha": 1
+            },
+            "dark": {
+                "fill": "transparent",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "black",
+                    0.65
+                ],
+                "inkShadow": [],
+                "fillAlpha": 1
+            },
+            "translucentLight": {
+                "fill": "white",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "black",
+                    0.65
+                ],
+                "inkShadow": [],
+                "fillAlpha": 0.5,
+                "layers": [
+                    {
+                        "inset": true,
+                        "y": 1,
+                        "color": "white",
+                        "alpha": 0.15
+                    },
+                    {
+                        "inset": true,
+                        "y": -1,
+                        "color": "white",
+                        "alpha": 0.03
+                    }
+                ]
+            },
+            "translucentDark": {
+                "fill": "black",
+                "edge": {
+                    "color": "black",
+                    "alpha": 0.3,
+                    "width": 0
+                },
+                "ink": [
+                    "white",
+                    1
+                ],
+                "inkShadow": [
+                    {
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.15
+                    },
+                    {
+                        "y": 1,
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.3
+                    }
+                ],
+                "fillAlpha": 0.3
+            },
+            "maximized": {
+                "fill": "black",
+                "edge": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                },
+                "ink": [
+                    "white",
+                    1
+                ],
+                "inkShadow": [
+                    {
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.3
+                    },
+                    {
+                        "y": 1,
+                        "blur": 2,
+                        "color": "black",
+                        "alpha": 0.6
+                    }
+                ],
+                "fillAlpha": 1
             }
         },
         "frame": {
@@ -15,6 +138,55 @@
                     "color": "border",
                     "width": 1
                 }
+            },
+            "light": {
+                "fill": "transparent",
+                "border": {
+                    "color": "transparent",
+                    "width": 1
+                },
+                "fillAlpha": 1
+            },
+            "dark": {
+                "fill": "transparent",
+                "border": {
+                    "color": "transparent",
+                    "width": 1
+                },
+                "fillAlpha": 1
+            },
+            "translucentLight": {
+                "fill": "white",
+                "border": {
+                    "color": "white",
+                    "alpha": 0.15,
+                    "width": 1
+                },
+                "fillAlpha": 0.5
+            },
+            "translucentDark": {
+                "fill": "black",
+                "border": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                },
+                "fillAlpha": 0.3
+            },
+            "maximized": {
+                "fill": "black",
+                "border": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                },
+                "fillAlpha": 1
             }
         },
         "card": {
@@ -133,6 +305,14 @@
                     "color": "warning",
                     "width": 1
                 }
+            },
+            "ghostOpen": {
+                "fill": "white",
+                "fillAlpha": {
+                    "light": 0.6,
+                    "dark": 0.12
+                },
+                "border": null
             }
         },
         "cell.mark": {

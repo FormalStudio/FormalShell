@@ -15,6 +15,10 @@
 --bar-position bottom
 --bar-position left
 --bar-room
+--bar-style corners
+--bar-style corners --frame
+--bar-style solid --join --menu-emerge
+--bar-style transparent --bar-adaptive
 --bar-title
 --idle --bluez-rssi
 --cartridge --boot
@@ -77,6 +81,7 @@
 --multi-output
 --nightlight
 --nix-run
+--no-morph --panel-emerge
 --notify
 --pantheon --notify-close
 --pantheon --notify-emerge

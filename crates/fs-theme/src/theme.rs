@@ -5,6 +5,7 @@
 
 use serde_json::{Map, Value};
 
+use crate::barpaint::{Paint, Pin};
 use crate::chrome;
 use crate::color::Rgba;
 use crate::palette::{self, COLOR_KEYS};
@@ -166,6 +167,15 @@ pub enum BarStyle {
 }
 
 impl BarStyle {
+    /// The band's paint rule: wingpanel's without the busy branch, or the
+    /// `maximized` paint whatever is under the band.
+    pub fn pin(self) -> Pin {
+        match self {
+            Self::Transparent => Pin::Transparent,
+            Self::Solid | Self::Corners => Pin::Paint(Paint::Maximized),
+        }
+    }
+
     /// `None` for an absent or unknown value, which leaves the table's own
     /// `bar` and `paint` habits standing.
     fn parse(value: Option<&Value>) -> Option<Self> {
@@ -381,6 +391,22 @@ impl Theme {
     /// A string habit, `""` when the table leaves it out.
     pub fn habit_str(&self, key: &str) -> &str {
         self.habit(key).and_then(Value::as_str).unwrap_or("")
+    }
+
+    /// Whether the bar is the band: a written `bar.style` selects it under
+    /// every table, an absent one leaves the table's `bar` habit standing.
+    pub fn band(&self) -> bool {
+        self.bar_style.is_some() || self.habit_str("bar") == "wingpanel"
+    }
+
+    /// How a card arrives: a written `motion.morph` joins the bar or drops
+    /// from its cell, an absent one leaves the table's `emerge` habit.
+    pub fn emerge(&self) -> &str {
+        match self.morph {
+            Some(true) => "join",
+            Some(false) => "popover",
+            None => self.habit_str("emerge"),
+        }
     }
 
     /// This theme with `primary` taken from another palette role.
@@ -838,6 +864,20 @@ mod tests {
         }
         let t = Theme::resolve(make_get(json!({ "bar": { "style": "solid" }, "motion": { "morph": true } })), &sentinel());
         assert_eq!((t.bar_style, t.morph), (Some(BarStyle::Solid), Some(true)));
+    }
+
+    #[test]
+    fn a_written_style_selects_the_band_and_morph_the_emerge() {
+        let t = theme();
+        assert_eq!((t.band(), t.emerge()), (false, "join"));
+        let t = Theme::resolve(make_get(json!({ "bar": { "style": "solid" }, "motion": { "morph": false } })), &sentinel());
+        assert_eq!((t.band(), t.emerge()), (true, "popover"));
+        let t = Theme::resolve(make_get(json!({ "theme": { "preset": "pantheon" }, "motion": { "morph": true } })), &sentinel());
+        assert_eq!((t.band(), t.emerge()), (true, "join"));
+        let t = Theme::resolve(make_get(json!({ "theme": { "preset": "cartridge" } })), &sentinel());
+        assert_eq!((t.band(), t.emerge()), (false, "slide"));
+        assert_eq!(BarStyle::Transparent.pin(), Pin::Transparent);
+        assert_eq!(BarStyle::Corners.pin(), Pin::Paint(Paint::Maximized));
     }
 
     #[test]

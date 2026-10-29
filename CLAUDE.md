@@ -201,7 +201,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   under a fullscreen window), each read twice: the paint and the three
   numbers `bar paint` reports, and the fill the band actually drew, off a
   patch of the frame above the cells. Pins `theme.preset` and
-  `fullscreen.hideChrome` itself.
+  `fullscreen.hideChrome` itself. Ridden by `--bar-style transparent` the
+  style is the rule, so the half-and-half field is a bare band with light
+  ink instead of a wash; any other style is refused.
 - `bar_ink.sh` `--bar-ink`: each cell of the wingpanel band reading its ink
   off its own stretch of the wallpaper: one half black, one half white,
   under pantheon's own `transparent` paint, every whole cell clear of the
@@ -223,6 +225,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   budget under 220, the frame read for a whole cell at the region's own
   inner edge, never a cut one, and every drawn cell rect `bar room`
   reports clear of every other.
+- `bar_style.sh` `--bar-style <transparent|solid|corners>`: pins
+  `bar.style` (a `settings_pin`, inside any `bar` object the ridden legs
+  write) and rides any leg, the bar then wingpanel's band under every
+  table: `debug dump`'s `barStyle` and `bar paint`'s `style` agreeing, solid
+  and corners on the `maximized` paint and the band's own rows black on a
+  top bar. Alone it sets a flat grey wallpaper and reads corners' fillets:
+  one `formalshell:bar` layer a fillet's radius taller than the band, the
+  output's reserved top still the band's, black at each fillet's corner
+  and grey at its arc's centre.
 - `bar_title.sh` `--bar-title`: a window title far longer than the strip
   in a crowded bar, read off `bar room`: the title drawn at exactly the
   budget its region has with the marquee running, no cell hidden, and no
@@ -397,6 +408,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   bar's window grows to the output and paints the frame round it, and reads
   that box and the four exclusion zones off the compositor's own layer list.
   The key holds under every table, `--pantheon` and `--cartridge` included.
+  Ridden by `--bar-style corners`, the ring's own fillets read black where
+  the band meets the cut-out, the style adding no layer.
 - `fullscreen.sh` `--fullscreen`: the fullscreen chrome auto-hide, read off
   the compositor's own layer list: bar, frame zones and hot corners gone
   while the fixture window is fullscreen and back to their starting counts
@@ -684,6 +697,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and no quake console spawned by it.
 - `nightlight.sh` `--nightlight`: the wlsunset-backed night light on and off,
   honest about a session that cannot gamma-control.
+- `no_morph.sh` `--no-morph`: pins `motion.morph` false (a
+  `settings_pin`) and rides any leg, every card then dropping from its cell
+  as a popover under every table; asserts `debug dump`'s `morph` false.
 - `notify.sh` `--notify`: the toast stack collapsed and expanded, critical
   holding the front slot over a newer normal, the icon resolution order over
   three cards, and the layer surface the same size either way.
@@ -718,7 +734,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `panel_emerge.sh` `--panel-emerge`: `panel open network` sampled frame by
   frame, the drawer open: a ladder of probes down the card's gutter showing
   its visible height grow out of the bar's inner line to the resting rect,
-  and no card pixel inside the bar's own band in any frame.
+  and no card pixel inside the bar's own band in any frame. Ridden by
+  `--pantheon` or `--no-morph` it reads the popover: the ladder whole or
+  empty on every frame.
 - `panel_handoff.sh` `--panel-handoff`: `audio` alone in the left region and
   `network` alone in the right, so the two cards rest ~1500px apart, and
   `panel toggle audio` over an open network panel is one card rather than

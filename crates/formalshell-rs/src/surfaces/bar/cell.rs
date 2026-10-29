@@ -378,7 +378,7 @@ impl Look {
             active_fill: cell("active").fill,
             selected_fill: cell("selected").fill,
             hover_wash: cell("hover").wash,
-            ghost_open: theme.has_state("cell", "ghostOpen").then(|| cell("ghostOpen").fill),
+            ghost_open: theme.band().then(|| cell("ghostOpen").fill),
             destructive_border: border("destructive"),
             warning_border: border("warning"),
             mark: mark.fill,

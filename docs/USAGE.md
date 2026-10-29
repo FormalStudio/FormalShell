@@ -330,10 +330,33 @@ block reports the ring that was drawn.
 { "frame": { "thickness": 10, "radius": 20 } }
 ```
 
+### Bar style
+
+`bar.style` puts the bar on the band below under every preset and picks
+what it wears. `"transparent"` reads the wallpaper as the band's paint
+describes, with no wash on a busy one. `"solid"` is black with light words
+and a 1px line along the inner edge, whatever the wallpaper, and reads no
+wallpaper at all. `"corners"` is `"solid"` with a concave fillet of radius
+`frame.radius` under each end of the band, drawn on the bar's own window
+past its edge, so windows still start right under the band. With a screen
+frame on, the ring's own rounded corners are those fillets. Unset, the
+preset decides: a strip under the default preset, the band under
+`pantheon`. Anything else reads as unset.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "bar": { "style": "corners" } }
+```
+
+```nix
+# home-manager
+programs.formalshell.settings.bar.style = "corners";
+```
+
 ### The band's paint
 
-Under `theme.preset: "pantheon"` the bar is a wingpanel band rather than a
-strip card: it draws no card of its own and reads the wallpaper directly
+Under `theme.preset: "pantheon"` (or any `bar.style`) the bar is a wingpanel
+band rather than a strip card: it draws no card of its own and reads the wallpaper directly
 under it to decide what it wears. A calm wallpaper gets no fill at all, just
 white or dark words with a text shadow under them. A busy one gets a wash,
 black at 0.3 in dark mode and white at 0.5 in light, so the words stay
@@ -342,7 +365,8 @@ reading is taken once, on the main display (`display.outputPriority`), and
 every output's band wears it, so two monitors never disagree; a window
 covering one output still blackens that band alone.
 
-`bar.paint` overrules the reading, and the theme decides the default:
+With `bar.style` unset, `bar.paint` overrules the reading, and the theme
+decides the default:
 `pantheon` says `"transparent"`, so the rule above is what you get by setting
 `"auto"`. `"transparent"` keeps the rule for the ink and drops the wash: a
 busy wallpaper then gets dark words over a bright band and light words over a
@@ -360,9 +384,11 @@ and stop the sampling mattering at all. Anything else reads as `"auto"`.
 programs.formalshell.settings.bar.paint = "transparent";
 ```
 
-`fs bar paint` reports what each band settled on, whether it was pinned, and
-the three numbers the rule read off the wallpaper. The key does nothing under
-the other presets, whose bar is a strip with nothing to sample.
+`fs bar paint` reports what each band settled on, the `bar.style` it was
+given (`style`, null when unset), whether it was pinned, and the three
+numbers the rule read off the wallpaper. Without a `bar.style` the key does
+nothing under the other presets, whose bar is a strip with nothing to
+sample.
 
 ### Custom modules
 
@@ -1091,6 +1117,16 @@ Transitions run off a small set of tokens per preset: hover fills, surfaces
 entering and leaving, and a card budding off the bar's line. End states are
 pixel-identical to the unanimated shell, and full-bleed selection swaps are
 states rather than transitions and stay instant.
+
+`motion.morph` (unset, the preset decides) picks how a card arrives: `true`
+buds it off the bar's inner edge and morphs it between sizes, `false` drops
+it out of the cell that opened it while it fades in, with no join to the
+bar. Anything but a boolean reads as unset.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "motion": { "morph": false } }
+```
 
 Two carve-outs. A new wallpaper fades in with the old one still painted
 underneath instead of hard-cutting. The now-playing title scrolls only when

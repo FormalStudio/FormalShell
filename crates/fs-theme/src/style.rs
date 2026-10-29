@@ -14,15 +14,18 @@ use crate::tokens::{self, Easing, Motion};
 
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
-/// over, which is why `switch.track` reads `off` before `on`.
+/// over, which is why `switch.track` reads `off` before `on`. The band
+/// carries one paint per answer `bar.style` and its wallpaper reading give,
+/// the frame the same (its band is a stretch of the ring once
+/// `frame.thickness` is set), and an open cell on a band fills.
 pub const ROLES: [(&str, &[&str]); 47] = [
-    ("bar", &["rest"]),
-    ("frame", &["rest"]),
+    ("bar", BAND_PAINTS),
+    ("frame", BAND_PAINTS),
     ("card", &["rest", "opaque"]),
     ("notification", &["rest", "critical", "flat", "flatCritical"]),
     ("popover", &[]),
     ("menu", &[]),
-    ("cell", &["rest", "ghost", "hover", "active", "selected", "destructive", "warning"]),
+    ("cell", &["rest", "ghost", "hover", "active", "selected", "destructive", "warning", "ghostOpen"]),
     ("cell.mark", &[]),
     ("button.default", &["rest", "hover", "press"]),
     ("button.outline", &["rest", "hover", "press"]),
@@ -84,18 +87,7 @@ pub fn habit_allows(key: &str, value: &Value) -> Option<bool> {
     Some(value.as_str().is_some_and(|s| strings.contains(&s)))
 }
 
-/// The states a habit brings with it, over and above [`ROLES`], required of
-/// the tables that take the habit and of no others: wingpanel's band
-/// carries one paint per answer its sampling gives, the frame takes the same
-/// five (its band is a stretch of the ring once `frame.thickness` is set),
-/// and an open indicator fills its cell.
-const WINGPANEL_PAINTS: &[&str] = &["light", "dark", "translucentLight", "translucentDark", "maximized"];
-type RoleStates = &'static [(&'static str, &'static [&'static str])];
-const HABIT_STATES: [(&str, &str, RoleStates); 1] = [(
-    "bar",
-    "wingpanel",
-    &[("bar", WINGPANEL_PAINTS), ("frame", WINGPANEL_PAINTS), ("cell", &["ghostOpen"])],
-)];
+const BAND_PAINTS: &[&str] = &["rest", "light", "dark", "translucentLight", "translucentDark", "maximized"];
 
 pub const MOTION_KEYS: [&str; 4] = ["emerge", "arrive", "restack", "switcher"];
 pub const WASH_KEYS: [&str; 4] = ["hover", "press", "filledHover", "filledPress"];
@@ -158,36 +150,9 @@ fn roles(style: &Value) -> Option<&Map<String, Value>> {
     style.get("roles").and_then(Value::as_object)
 }
 
-/// The states every habit the table takes asks for, role by role.
-pub fn habit_states(style: &Value) -> Vec<(&'static str, Vec<&'static str>)> {
-    let mut out: Vec<(&'static str, Vec<&'static str>)> = Vec::new();
-    let habits = style.get("habits");
-    for (key, value, declared) in HABIT_STATES {
-        if habits.and_then(|h| h.get(key)).and_then(Value::as_str) != Some(value) {
-            continue;
-        }
-        for (role, states) in declared {
-            match out.iter_mut().find(|(r, _)| r == role) {
-                Some((_, list)) => list.extend_from_slice(states),
-                None => out.push((role, states.to_vec())),
-            }
-        }
-    }
-    out
-}
-
 /// Whether a table describes a state at all.
 pub fn has_state(style: &Value, role: &str, state: &str) -> bool {
     roles(style).and_then(|r| r.get(role)).is_some_and(|d| truthy(d.get(state)))
-}
-
-/// Every state of a role a table describes, its habits' own included.
-pub fn declared_states(style: &Value, role: &str) -> Vec<&'static str> {
-    let mut out = states_for(role).to_vec();
-    if let Some((_, extra)) = habit_states(style).into_iter().find(|(r, _)| *r == role) {
-        out.extend(extra);
-    }
-    out
 }
 
 /// The raw entry for a role and a state, the state merged key by key over
@@ -758,7 +723,7 @@ fn walk_boxes<'a>(style: &'a Value, mut take: impl FnMut(String, &'a Value)) {
         let Some(declared) = roles.get(role).filter(|d| truthy(Some(d))) else {
             continue;
         };
-        let states = declared_states(style, role);
+        let states = states_for(role);
         if states.is_empty() {
             take(role.to_owned(), declared);
             continue;
@@ -1026,19 +991,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn every_table_carries_the_states_its_habits_ask_for() {
-        for (name, style) in tables() {
-            for (role, states) in habit_states(style) {
-                for state in states {
-                    assert!(has_state(style, role, state), "{name} takes a habit that needs {role}.{state}");
-                }
-            }
-        }
-        assert!(!has_state(tables::metamorphosis(), "bar", "translucentDark"));
-        assert!(!has_state(tables::metamorphosis(), "cell", "ghostOpen"));
-    }
-
-    #[test]
     fn every_colour_a_table_names_is_a_palette_role_or_a_literal() {
         for (name, style) in tables() {
             let used = color_names(style);
@@ -1080,9 +1032,7 @@ pub(crate) mod tests {
                 seen += 1;
             }
         }
-        assert_eq!(seen, ink_shadow_layers(tables::pantheon()).len() + ink_shadow_layers(tables::cartridge()).len());
         assert!(seen > 0);
-        assert_eq!(ink_shadow_layers(tables::metamorphosis()).len(), 0);
     }
 
     #[test]
@@ -1488,7 +1438,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_metamorphosis_ring_ignores_a_paint() {
+    fn the_metamorphosis_ring_keeps_the_strip_and_takes_the_band_paints() {
         let m = tables::metamorphosis();
         let rest = r(m, "frame", None, "dark");
         assert_eq!(rest.fill, "role:card@0.85");
@@ -1496,7 +1446,23 @@ pub(crate) mod tests {
         assert_eq!(border.color, "role:border");
         assert_eq!(border.width, 1.0);
         assert_eq!(rest.radius, Radius::Px(0.0));
-        assert_eq!(r(m, "frame", Some("translucentDark"), "dark").fill, "role:card@0.85");
+        assert_eq!(r(m, "frame", Some("translucentDark"), "dark").fill, "#000000@0.3");
+        assert_eq!(r(m, "frame", Some("light"), "dark").fill, CLEAR);
+    }
+
+    #[test]
+    fn every_table_draws_solid_as_an_opaque_band_on_a_line() {
+        for (name, style) in tables() {
+            for mode in ["dark", "light"] {
+                let solid = r(style, "bar", Some("maximized"), mode);
+                assert_eq!(solid.fill, BLACK, "{name} {mode}");
+                let edge = solid.edge.unwrap_or_else(|| panic!("{name} draws solid with no line"));
+                assert_eq!(edge.width, 1.0, "{name} {mode}");
+                for state in ["light", "dark"] {
+                    assert_eq!(r(style, "bar", Some(state), mode).fill, CLEAR, "{name} {state} {mode}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -1766,7 +1732,7 @@ pub(crate) mod tests {
             assert_eq!(metric(style, "button.default.cap", "width"), 0.0, "{name} caps its button");
             assert_eq!(metric(style, "panel.strip", "width"), 0.0, "{name} draws an id strip");
             for role in role_names() {
-                for state in declared_states(style, role).into_iter().map(Some).chain([None]) {
+                for state in states_for(role).iter().copied().map(Some).chain([None]) {
                     assert_eq!(r(style, role, state, "dark").chamfer, [0.0; 4], "{name} chamfers {role}");
                 }
             }

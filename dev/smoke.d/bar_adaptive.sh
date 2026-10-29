@@ -56,6 +56,13 @@ bar_adaptive_max_clients="$shot_dir/bar-adaptive-maximized-clients.json"
 # telling apart from every other case.
 bar_adaptive_patch="40x4+1200+1"
 
+leg_bar_adaptive_validate() {
+  if leg_on bar_style && [ "$(leg_arg bar_style)" != transparent ]; then
+    echo "usage: --bar-adaptive reads the wallpaper, which only --bar-style transparent does" >&2
+    exit 1
+  fi
+}
+
 leg_bar_adaptive_fixture() {
   # --pantheon pins the same preset; two "theme" keys in one settings.json
   # would be one object silently winning over the other.
@@ -63,8 +70,11 @@ leg_bar_adaptive_fixture() {
     settings_fragment ', "theme": {"preset": "pantheon"}'
   fi
   # The rule itself is the claim, and pantheon's own table pins the band
-  # transparent, so the key puts the rule back.
-  settings_fragment ', "bar": {"paint": "auto"}'
+  # transparent, so the key puts the rule back. Ridden by --bar-style
+  # transparent the style is the rule instead, which has no busy branch.
+  if ! leg_on bar_style; then
+    settings_fragment ', "bar": {"paint": "auto"}'
+  fi
   settings_fragment ', "fullscreen": {"hideChrome": false}'
   $convert_bin -size 1920x1080 xc:'#e6e6e6' "$bar_adaptive_bright_wp"
   $convert_bin -size 1920x1080 xc:'#1e1e1e' "$bar_adaptive_dark_wp"
@@ -172,8 +182,14 @@ leg_bar_adaptive_assert() {
   # A flat dark one: the same bare band, light ink, the wallpaper's own 30.
   _bar_adaptive_case dark "$bar_adaptive_dark_json" "$bar_adaptive_dark_png" light 30
   # Half black and half white: busy by spread, so black at 0.3 over the
-  # white half, which is 178.
-  _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" translucentDark 178
+  # white half, which is 178. `bar.style: transparent` takes the busy branch
+  # out, so the same field is a bare band whose mean (127) asks light ink,
+  # over the white half's own 255.
+  if leg_on bar_style; then
+    _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" light 255
+  else
+    _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" translucentDark 178
+  fi
   # A window covering the output: solid black, whatever the wallpaper says.
   # The frame shows the window rather than the band (see `_bar_adaptive_case`),
   # so this one is asserted off the shell's own answers alone.

@@ -668,7 +668,7 @@ only when two surfaces need the same new thing.
 | icon button (`w::icon_button`) | a ghost button that is `controlHeight` square, one icon | as button |
 | card (`surfaces::card::Card`) | the `card` role at `panelPadding`, opaque on a surface the compositor does not blur; the surface's own frame, never nested | rest, opaque |
 | shoulders (`formalshell-rs/src/surfaces/shoulders.rs`) | the `card` role with the anchored edge left open and a concave fillet outside each of its two corners, running out to the line it came out of (§1 Motion), and, at `attach` 0, a plain card again: what every surface coming out of a line draws | attached, letting go, free |
-| drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by the live theme's `emerge` habit and never a theme name (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls, the nested bud's span and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
+| drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by `motion.morph`, or with it unset the live theme's `emerge` habit, and never a theme name (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls, the nested bud's span and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
 | picture (`w::picture`) | content imagery, bare: the retro pass under `theme.dither`, no frame and no rounding | none |
 | cover (`w::cover`) | a picture in a `muted` well with a 1px `border`, clipped to `Theme::cover_radius`: album art, a notification's app icon | none |
 | section label (`w::section_label`, `w::section`) | `caption`, `medium`, `mutedForeground`, sentence case; optional trailing count `(3)` | none |
@@ -795,8 +795,8 @@ themselves animate their size; the regions, their clips and the centre's
 position follow those sizes frame by frame with no motion of their own,
 so no two cells ever sit on top of each other mid-glide.
 
-**Wingpanel band** (`bar.kind: wingpanel`, the pantheon habit). No strip
-card, no hairline, no cell borders: the band's paint is read off the
+**Wingpanel band** (the pantheon habit, or any table once `bar.style` is
+written). No strip card, no cell borders: the band's paint is read off the
 wallpaper under it rather than drawn as chrome, one of five paints
 (`light`, `dark`, `translucentLight`, `translucentDark`, `maximized`)
 decided by the band's own mean luminance, standard deviation and acutance
@@ -812,11 +812,22 @@ top) and the bar cell's painter (`Painter::text_in` in
 text per layer under it, so the blurred half is rendered rather than
 approximated. Black at 0.3 and 0.6 under white words on a bare band, 0.15
 and 0.3 once the band has a fill of its own, and none at all under dark
-words or over white at 0.5. `bar.paint` in settings.json overrules the
-reading: `transparent` keeps the ink adaptive and drops the fill, and the
-five names pin one paint outright. `bar paint` and `debug dump` report the
-paint, whether it was pinned, the output it was read on, and the three
-numbers.
+words or over white at 0.5. `bar.style` decides the rule: `transparent`
+keeps the ink adaptive and drops the busy branch's fill, `solid` pins
+`maximized` (black, light ink, the 1px `BORDERS` line along the inner edge,
+which a joined card opens its gap in as it does the strip's hairline) and
+starts no wallpaper reading, and `corners` is `solid` with a concave
+fillet of `frame.radius` at each end of the inner edge, in the band's fill
+on the bar's own window, which reaches that far past the band while its
+exclusive zone stays the band's (with a ring drawn the ring's own fillets
+are the corners). Under a transparent band there is no line, so a joined
+card's shoulders meet the band's inner edge and the band is left whole.
+Every table carries the five paints, so a table whose habit is the strip
+draws the band the same way once the key is written. With `bar.style`
+unset, `bar.paint` overrules the reading as before (`transparent`, or one
+of the five names pinned outright). `bar paint` and `debug dump` report the
+paint, the style, whether it was pinned, the output it was read on, and
+the three numbers.
 
 One reading, not one per monitor: sampling each panel against its own
 screen left a two-output desk with one bar in dark ink and the other in
@@ -853,8 +864,8 @@ frame and the two corners beside it curve into the strip
 grows to the output and paints the whole ring, strip included, then its
 cells over it, so the three are one surface under the compositor's blur and
 above windows; it draws the single 1px `border` along the cut-out and takes
-input on the strip alone. Under the wingpanel habit the ring takes the
-band's own paint from the same sampler (M62): the bar's band is a stretch
+input on the strip alone. On the band the ring takes the band's own paint
+from the same sampler (M62): the bar's band is a stretch
 of the ring there, so a calm wallpaper leaves the whole frame undrawn, a
 busy one washes it, and what wingpanel puts along its panel's inside edge
 lands on the ring's hairline. Its cast is dropped, having only the desktop
@@ -923,11 +934,14 @@ the same three energy bands off the one shared cava process, carried toward
 every new frame rather than snapped to it, so the motion runs at the
 screen's own refresh rate.
 
-**Popover emerge** (`emerge: "popover"`, the pantheon habit). A panel, the
+**Popover emerge** (`emerge: "popover"`, the pantheon habit, or
+`motion.morph: false` under any table; `true` is the joined recipe under
+any table). A panel, the
 launcher, the OSD, polkit, the notification centre and the radio atlas all
 read this off the drawer the way they read the joined recipe (§1 Motion,
 §2 drawer): the card drops straight out of the cell that opened it on
-Gala's 150ms menu map instead of budding off the bar's line, so there is no
+the table's `emerge` clock (Gala's 150ms menu map under pantheon) instead
+of budding off the bar's line, so there is no
 let-go, no gap published to the line, and no shoulders either: the card
 is a plain rounded rectangle on all four sides.
 

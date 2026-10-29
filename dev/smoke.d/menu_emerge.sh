@@ -68,6 +68,10 @@ leg_menu_emerge_needs="convert jq"
 menu_emerge_scale_path="$shot_dir/menu-emerge-scale.txt"
 menu_emerge_summon_path="$shot_dir/menu-emerge-summon.txt"
 menu_emerge_close_path="$shot_dir/menu-emerge-close.txt"
+# Touched once the open and the close are photographed and the clock is
+# back at full speed, for a leg sharing the session that drives a card of
+# its own (--join) to start after.
+menu_emerge_done_path="$shot_dir/menu-emerge-done"
 menu_emerge_status_path="$shot_dir/menu-emerge-status.json"
 menu_emerge_dump_path="$shot_dir/menu-emerge-dump.json"
 menu_emerge_rest_dump_path="$shot_dir/menu-emerge-rest-dump.json"
@@ -111,6 +115,13 @@ menu_emerge_line_row=39
 # own corner is nowhere near it and carries nothing that ticks. Four rows, so
 # the probe stays inside a frame ring's band as well as a bar's.
 menu_emerge_bar_box="8x4+2+2"
+
+# Ridden by `--bar-style solid` or `corners` the band is black, which reads
+# the same dimmed or not, so the two claims that the scrim reached the band
+# are left to the desktop half.
+menu_emerge_black_band() {
+  leg_on bar_style && [ "$(leg_arg bar_style)" != transparent ]
+}
 # And a desktop one, well below the card, for the other half of the same
 # claim: 40 rows off the output's bottom, cut in the assert.
 
@@ -161,6 +172,8 @@ for i in \$(seq 1 $menu_emerge_close_frames); do
   sleep $menu_emerge_frame_gap
 done
 call debug motionScale 100 > /dev/null 2>&1
+sleep 1
+touch "$menu_emerge_done_path"
 EOF
   hypr_exec_once "bash $script"
 }
@@ -301,7 +314,12 @@ leg_menu_emerge_assert() {
   b_rest=$(menu_emerge_level "$menu_emerge_rest_path" "$menu_emerge_bar_box")
   d_closed=$(menu_emerge_level "$menu_emerge_closed_path" "$menu_emerge_desk_box")
   d_rest=$(menu_emerge_level "$menu_emerge_rest_path" "$menu_emerge_desk_box")
-  for pair in "bar $menu_emerge_bar_box $b_closed $b_rest" "desktop $menu_emerge_desk_box $d_closed $d_rest"; do
+  local pairs=("bar $menu_emerge_bar_box $b_closed $b_rest" "desktop $menu_emerge_desk_box $d_closed $d_rest")
+  if menu_emerge_black_band; then
+    echo "SMOKE_MENU_EMERGE_DIM_BAR skipped: a black band reads the same dimmed"
+    pairs=("${pairs[1]}")
+  fi
+  for pair in "${pairs[@]}"; do
     read -r who box c r <<< "$pair"
     awk -v c="$c" 'BEGIN { exit !(c > 0.03) }' || fail \
       "the $who at $box reads $c with the launcher closed, too dark to tell a dim from black"
@@ -505,7 +523,11 @@ leg_menu_emerge_assert() {
   if [ "$border" = "$above" ] || [ "$border" = "$fill" ]; then
     fail "the rest frame reads $above above, $border on and $fill under row $menu_emerge_card_y at column $column_x: the card has no top border of its own"
   fi
-  menu_emerge_same "$menu_emerge_rest_path" "$menu_emerge_closed_path" "$menu_emerge_bar_box" && fail \
+  menu_emerge_black_band || ! menu_emerge_same "$menu_emerge_rest_path" "$menu_emerge_closed_path" "$menu_emerge_bar_box" || fail \
     "the bar's own band at $menu_emerge_bar_box is unchanged in the rest frame: the scrim never reached it after the card let go"
-  echo "SMOKE_MENU_EMERGE_PLAIN ok border $border between $above and $fill, bar band dimmed"
+  if menu_emerge_black_band; then
+    echo "SMOKE_MENU_EMERGE_PLAIN ok border $border between $above and $fill, black band not read"
+  else
+    echo "SMOKE_MENU_EMERGE_PLAIN ok border $border between $above and $fill, bar band dimmed"
+  fi
 }

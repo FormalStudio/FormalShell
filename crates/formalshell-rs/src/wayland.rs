@@ -544,7 +544,8 @@ impl App {
             // four has no one edge to reserve against.
             layer.set_exclusive_zone(-1);
         } else {
-            let (w, h) = if edge.is_vertical() { (t, 0) } else { (0, t) };
+            let across = bar.across();
+            let (w, h) = if edge.is_vertical() { (across, 0) } else { (0, across) };
             layer.set_anchor(edge_anchor(edge));
             layer.set_size(w as u32, h as u32);
             layer.set_exclusive_zone(bar.zone());
@@ -573,7 +574,7 @@ impl App {
     }
 
     fn set_input_region_for(&self, bar: &Bar, s: &Surface) {
-        if !bar.framed() {
+        if bar.strip_only() {
             return;
         }
         if let Ok(region) = Region::new(&self.compositor) {
@@ -628,12 +629,12 @@ impl App {
     /// The bar repainted off the store's theme, re-placed when its framing
     /// or thickness moved with it.
     pub fn set_bar_theme(&mut self) {
-        let before = (self.bar.thickness(), self.bar.framed(), self.bar.frame_thickness());
+        let before = (self.bar.across(), self.bar.framed(), self.bar.frame_thickness());
         self.bar.set_theme(&self.store.theme.theme);
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
             s.bar.set_theme(&self.store.theme.theme);
         }
-        if (self.bar.thickness(), self.bar.framed(), self.bar.frame_thickness()) != before {
+        if (self.bar.across(), self.bar.framed(), self.bar.frame_thickness()) != before {
             self.place_chrome();
             self.place_spares();
         }
@@ -698,7 +699,7 @@ impl App {
 
     /// The main output's wallpaper reading, for the wingpanel band.
     fn request_paint(&self) {
-        if !self.bar.wingpanel() {
+        if !self.bar.reads_wallpaper() {
             return;
         }
         let size = self.output_size();
@@ -1824,7 +1825,7 @@ impl App {
         let ask = match owner {
             Some(Owner::Bar) if opened => None,
             Some(Owner::Bar) => self.bar.tooltip().map(|(text, r, edge)| {
-                let (ox, oy) = if self.bar.framed() { (0, 0) } else { self.edge_origin(self.bar.thickness()) };
+                let (ox, oy) = if self.bar.framed() { (0, 0) } else { self.edge_origin(self.bar.across()) };
                 let rect = IRect::new(r.x + ox, r.y + oy, r.w, r.h);
                 tooltip::Ask { owner: format!("bar:{}:{}", rect.x, rect.y), text, rect, bar: Some(edge) }
             }),

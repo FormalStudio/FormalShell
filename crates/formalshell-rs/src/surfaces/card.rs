@@ -1,5 +1,6 @@
 //! A card hanging off a line, on any of the four edges. Under
-//! the `join` emerge habit it is the joined shape:
+//! the `join` emerge (`motion.morph`, or the table's habit with it absent)
+//! it is the joined shape:
 //! Presence's emerge on the theme's `emerge` clock, the let-go on
 //! `spatialFast`, Deform's springs, Shoulders' outline cut at the line, the
 //! walls a side too close to the line's end runs out to (M57 D2) and the
@@ -65,8 +66,8 @@ impl Look {
     fn new(theme: &Theme, role: &str, cast: bool) -> Self {
         let card = theme.box_style(role, None);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
-        let emerge = theme.habit("emerge").and_then(|v| v.as_str());
-        let popover = matches!(emerge, Some("popover" | "slide"));
+        let emerge = theme.emerge();
+        let popover = matches!(emerge, "popover" | "slide");
         let casts = if popover {
             card.casts.clone()
         } else if cast {
@@ -90,7 +91,7 @@ impl Look {
             chamfer: card.chamfer,
             casts,
             popover,
-            slide: if emerge == Some("slide") { SLIDE * theme.spacing_scale } else { 0.0 },
+            slide: if emerge == "slide" { SLIDE * theme.spacing_scale } else { 0.0 },
             emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
             emerge_curve: Curve::from_table(&motion.emerge_curve),
             drop: theme.space.md,

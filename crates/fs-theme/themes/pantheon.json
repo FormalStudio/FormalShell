@@ -77,7 +77,15 @@
             },
             "maximized": {
                 "fill": "black",
-                "fillAlpha": 1
+                "fillAlpha": 1,
+                "edge": {
+                    "color": "black",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.75
+                    },
+                    "width": 1
+                }
             }
         },
         "frame": {
@@ -1424,7 +1432,7 @@
             "What the pointer paints. elementary states two of these and not the other two: a menu row's hover and a list's selection are both `alpha(fg, 0.15)` (`widgets/menu.scss`, `widgets/list.scss`), and a button's hover is GTK's own shade of its fill with no rule in the stylesheet at all. So `hover` is elementary's, `press` is one step past it (shadcn's 0.16 would land UNDER the hover we just took, which would read as the press lifting), and the two filled steps keep shadcn's numbers, since blending a coloured control toward `background` is the answer elementary reaches by shading and we have no shade to reach for."
         ],
         "roles.bar": [
-            "wingpanel's band (`data/styles/Application.css`, one paint per answer `wingpanel-interface/BackgroundManager.vala` gives for what is under the panel; formalshell-rs's services/barpaint.rs carries the decision and the bar draws it). `rest` is the base the five merge over: no fill, no line facing the desktop (the edge stands at width 0, which is what Bar reads for it), and the white ink the two dark bands and the light-wallpaper band all take.",
+            "wingpanel's band (`data/styles/Application.css`, one paint per answer `wingpanel-interface/BackgroundManager.vala` gives for what is under the panel; formalshell-rs's services/barpaint.rs carries the decision and the bar draws it). `rest` is the base the five merge over: no fill, no line facing the desktop (the edge stands at width 0, which is what Bar reads for it), and the white ink the two dark bands and the light-wallpaper band all take. `maximized` is also `bar.style: solid`, so it carries the 1px BORDERS line the gap a joined card opens is cut in.",
             "The names say which INK a paint carries, not how dark its band is, which is the spec's own reading of wingpanel's classes: `dark` is dark ink over a bright wallpaper, `light` light ink over a dark one, and the two translucent paints are named after the fill they add.",
             "The cast wingpanel hangs under its translucent-dark panel (`0 1px 3px black 0.15, 0 1px 1px black 0.3`) is not here: the bar's window is exactly the band's thickness and reserves that same thickness, so there is no row under the band to blur into.",
             "Each paint carries elementary's own text shadow, both layers of it (INK_SHADOW above, O6): a wide halo and an offset one under it, deepest on the bare band and lighter once the band has a fill."

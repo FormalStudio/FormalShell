@@ -19,15 +19,19 @@
 # 2026-08-26); -1 is the only value that holds either way.
 #
 # The key is read under every table, so the same holds riding --pantheon or
-# --cartridge.
+# --cartridge. Ridden by --bar-style corners the ring's own fillets are the
+# corners (the style adds no fillet of its own and no layer): on a top bar
+# the pixel just inside each end of the band's inner edge, where the ring
+# curves into the cut-out, is the solid band's black.
 leg_frame_flag="--frame"
 leg_frame_order=190
-leg_frame_needs="jq"
+leg_frame_needs="jq convert"
 leg_frame_wayland_debug=1
 
 frame_layers_path="$shot_dir/frame-layers.json"
 frame_monitors_path="$shot_dir/frame-monitors.json"
 frame_dump_path="$shot_dir/frame-dump.json"
+frame_shot_path="$shot_dir/frame.png"
 
 leg_frame_fixture() {
   settings_fragment ', "frame": {"thickness": 10, "radius": 20}'
@@ -45,6 +49,7 @@ sleep 5
 "$hyprctl_bin" -j layers > "$frame_layers_path" 2>&1
 "$hyprctl_bin" -j monitors > "$frame_monitors_path" 2>&1
 $ipc call debug dump > "$frame_dump_path" 2>&1
+"$grim_bin" "$frame_shot_path" > /dev/null 2>&1
 EOS
   hypr_exec_once "bash $script"
 }
@@ -93,5 +98,17 @@ leg_frame_assert() {
   echo "framed bar exclusive zone: $zone"
   if [ "$zone" != "-1" ]; then
     fail "the framed bar has to ignore the frame zones' reservations (-1), it last sent: ${zone:-none}"
+  fi
+
+  if leg_on bar_style && [ "$(leg_arg bar_style)" = corners ] && [ "$edge" = top ]; then
+    local t x px
+    [ -f "$frame_shot_path" ] || fail "no frame produced at $frame_shot_path"
+    echo "SMOKE_FRAME_CORNERS $frame_shot_path"
+    t=$("$jq_bin" -r '.theme.edgeInset.top' "$frame_dump_path")
+    for x in 11 $((mw - 12)); do
+      px=$($convert_bin "$frame_shot_path" -crop "1x1+$x+$((t + 1))" +repage -format '%[fx:int(r*255+0.5)]' info: 2>/dev/null)
+      echo "ring fillet ($x,$((t + 1))): $px"
+      [ -n "$px" ] && [ "$px" -le 12 ] || fail "no fillet where the band meets the ring at ($x,$((t + 1))): read ${px:-nothing}, not the solid band's black"
+    done
   fi
 }
