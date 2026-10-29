@@ -198,6 +198,18 @@ inner edge with the same join the bar uses.
 
 ### Phase 5: the seams
 
+Power-on to desktop is one continuous picture, as in Pond: Limine's menu
+(or no menu) into the Plymouth splash into the greeter into the session,
+with no text, no console, no cursor and no black gap between them, and
+motion where a step can carry it. Owned across both repos: the boot look
+in fspec (`~/.config/formalspec/boot.star`: Limine, the kernel's quiet
+cmdline, Plymouth's `splash.script`, fbcon handover so the VT never
+shows), the greeter's first frame taking over from the splash's last, and
+the greeter handing its last frame to the shell's first. Verified only in
+the fspec VM rig, recorded from power-on (QEMU screendumps at a fixed
+rate), every frame read: no frame may carry text that is not ours, a
+blank frame between stages, or a jump in the picture.
+
 Greeter to session with no flash, lock to desktop, first run with no
 settings.json, launch feedback (the spinner in Activity until the window
 maps), every unavailable state.
