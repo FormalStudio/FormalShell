@@ -330,7 +330,9 @@ case "$verb" in
   sync) cmd_sync ;;
   run) [ $# -gt 0 ] || usage; cmd_sync; remote_run "$@" ;;
   build) cmd_sync; remote_run dev/build.sh ;;
-  cargo) cmd_sync >&2; remote_run "cd crates && fspec dev -- cargo $*" ;;
+  # A test that shapes text (text.rs) reads the package's fonts the way the
+  # launcher's FS_RS_FONT_DIRS hands them to the shell.
+  cargo) cmd_sync >&2; remote_run 'export FS_RS_FONT_DIRS="${FS_RS_FONT_DIRS-$(dirname "$(dirname "$(readlink -f "$(command -v formalshell)")")")/share/formalshell/fonts}";'" cd crates && fspec dev -- cargo $*" ;;
   lint) cmd_sync; remote_run dev/lint.sh ;;
   check) [ $# -eq 1 ] || usage; cmd_sync; remote_run dev/check.sh "$1" ;;
   smoke) cmd_smoke "$@" ;;
