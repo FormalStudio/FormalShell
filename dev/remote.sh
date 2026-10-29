@@ -280,7 +280,7 @@ cmd_smoke() {
   local ts line remote
   ts=$(date +%Y%m%d-%H%M%S)
   if [ "$status" -ne 0 ]; then
-    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Z0-9_]+ [^[:space:]]+\.(log|tar)' | awk '{print $2}'); do
+    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Z0-9_]+ [^[:space:]]+\.(png|log|tar)' | awk '{print $2}'); do
       pull_one "$remote"
     done
     echo "g815: smoke run failed (exit $status)" >&2
