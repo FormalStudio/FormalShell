@@ -400,6 +400,10 @@ fn stub() -> Registry<()> {
                 ],
             },
             Target {
+                name: "activity",
+                functions: vec![f("status", &[], Type::String, |_, _| s("{}")), f("seen", &[], Type::String, |_, _| s("ok"))],
+            },
+            Target {
                 name: "mirror",
                 functions: vec![
                     f("toggle", &[], Type::String, |_, _| s("ok")),
@@ -629,6 +633,7 @@ fn signatures_match_golden() {
         super::display::hdr(),
         super::notifications::target(),
         super::notifications::reminder(),
+        super::activity::target(),
         super::lock::target(),
         super::osd::target(),
         super::nightlight::target(),

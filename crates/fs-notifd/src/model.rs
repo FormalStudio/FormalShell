@@ -20,6 +20,16 @@ pub enum Urgency {
     Critical,
 }
 
+/// The `value` hint: how far along a progress notification is, 0..=100.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Percent(u8);
+
+impl Percent {
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Action {
     pub key: String,
@@ -50,6 +60,7 @@ pub struct Notification {
     /// `x-canonical-private-synchronous`: a later notification with the same
     /// tag takes over this one's id.
     pub synchronous: Option<String>,
+    pub value: Option<Percent>,
     pub sound_file: Option<String>,
     pub sound_name: Option<String>,
     pub suppress_sound: bool,
@@ -90,6 +101,13 @@ fn as_bool(v: &OwnedValue) -> bool {
         Ok(b) => b,
         Err(_) => as_int(v).is_some_and(|n| n != 0),
     }
+}
+
+/// Out-of-range values are clamped rather than dropped: a sender counting
+/// past 100 is still saying it is done.
+fn percent_of(v: &OwnedValue) -> Option<Percent> {
+    let v: &Value = v;
+    as_int(v).map(|n| Percent(n.clamp(0, 100) as u8))
 }
 
 fn urgency_of(v: &OwnedValue) -> Urgency {
@@ -154,6 +172,7 @@ impl Notification {
             action_icons: flag("action-icons"),
             expire_timeout,
             synchronous: get_str("x-canonical-private-synchronous"),
+            value: hints.get("value").and_then(percent_of),
             sound_file: get_str("sound-file"),
             sound_name: get_str("sound-name"),
             suppress_sound: flag("suppress-sound"),

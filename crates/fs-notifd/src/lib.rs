@@ -20,7 +20,7 @@ use async_channel::{Receiver, Sender};
 use zbus::connection::Builder;
 
 pub use image::{Image, ImageData};
-pub use model::{Action, CloseReason, Notification, Urgency};
+pub use model::{Action, CloseReason, Notification, Percent, Urgency};
 
 pub const BUS_NAME: &str = "org.freedesktop.Notifications";
 pub const OBJECT_PATH: &str = "/org/freedesktop/Notifications";

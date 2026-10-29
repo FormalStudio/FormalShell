@@ -2,6 +2,7 @@
 //! [`Store`](crate::store::Store), a `Diff` that applies to it, and an
 //! async task on the service thread that publishes those diffs.
 
+pub mod activity;
 pub mod agents;
 pub mod airplay;
 pub mod ams;
@@ -81,6 +82,7 @@ pub fn start(ctx: &Ctx) {
     devices::start(ctx);
     display::start(ctx);
     ctx.spawn(tray::run(ctx.clone()));
+    ctx.spawn(activity::run(ctx.clone()));
     ctx.spawn(notifications::run(ctx.clone()));
     ctx.spawn(menu::run(ctx.clone()));
     ctx.spawn(screensaver::run(ctx.clone()));

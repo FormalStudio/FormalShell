@@ -3,7 +3,7 @@
 //! [`Store::apply`].
 
 use crate::services::{
-    agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
+    activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
     compositor, info, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, picker, plugins, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
@@ -32,6 +32,7 @@ pub struct Store {
     pub recording: recording::State,
     pub capture: capture::Inbox,
     pub notifications: notifications::State,
+    pub activity: activity::State,
     pub menu: menu::State,
     pub brightness: brightness::State,
     pub nightlight: nightlight::State,
@@ -73,6 +74,7 @@ pub enum Diff {
     Recording(recording::Diff),
     Capture(capture::Event),
     Notifications(notifications::Diff),
+    Activity(activity::Diff),
     Menu(menu::Diff),
     Brightness(brightness::Diff),
     NightLight(nightlight::Diff),
@@ -115,6 +117,7 @@ pub enum Topic {
     Recording,
     Capture,
     Notifications,
+    Activity,
     Menu,
     Brightness,
     NightLight,
@@ -172,6 +175,7 @@ impl Store {
             Diff::Menu(d) => self.menu.apply(d).then_some(Topic::Menu),
             Diff::Caffeinate(d) => self.caffeinate.apply(d).then_some(Topic::Caffeinate),
             Diff::Notifications(d) => self.notifications.apply(d).then_some(Topic::Notifications),
+            Diff::Activity(d) => self.activity.apply(d).then_some(Topic::Activity),
             Diff::Brightness(d) => self.brightness.apply(d).then_some(Topic::Brightness),
             Diff::NightLight(d) => self.nightlight.apply(d).then_some(Topic::NightLight),
             Diff::Lights(d) => self.lights.apply(d).then_some(Topic::Lights),

@@ -399,7 +399,17 @@ paths = [
   "crates/fs-info/src/notification_icon.rs",
   "crates/fs-info/src/toast_stack.rs",
 ]
-runs = ["--notify", "--toast-motion", "--toast-swipe", "--pantheon --notify-close", "--pantheon --notify-emerge", "--center"]
+runs = ["--notify", "--toast-motion", "--toast-swipe", "--pantheon --notify-close", "--pantheon --notify-emerge", "--center", "--activity"]
+
+# Activity
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/services/activity.rs",
+  "crates/formalshell-rs/src/ipc/activity.rs",
+  "crates/fs-activity/**",
+  "dev/fspec-activity-stub.py",
+]
+runs = ["--activity"]
 
 [[rule]]
 paths = ["crates/fs-info/src/reminders.rs"]

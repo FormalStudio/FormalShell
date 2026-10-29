@@ -617,6 +617,7 @@ dependencies = [
  "calloop",
  "chrono",
  "fastrand",
+ "fs-activity",
  "fs-audio",
  "fs-auth",
  "fs-bluez",
@@ -652,6 +653,14 @@ dependencies = [
  "yeslogic-fontconfig-sys",
  "zbus",
  "zeroize",
+]
+
+[[package]]
+name = "fs-activity"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

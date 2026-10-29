@@ -108,6 +108,8 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.launcher_inputs();
         }
         Topic::Localsend => app.launcher_inputs(),
+        // Read over IPC alone until its cell and toast land.
+        Topic::Activity => {}
         Topic::Mirror => app.launcher_mirror(),
         Topic::Picker => app.launcher_picker(),
         Topic::Info => {

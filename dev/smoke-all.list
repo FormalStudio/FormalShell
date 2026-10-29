@@ -5,6 +5,7 @@
 # (shots, screensaver-gif), --r0-measure, which records
 # rather than checks, and --installed, which runs a distro image per line.
 
+--activity
 --airplay
 --app-grid
 --appmenu

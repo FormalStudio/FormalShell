@@ -8,6 +8,7 @@
 //! [`registry`]; `formalshell-ipc` (`src/bin/formalshell-ipc.rs`) is the
 //! client.
 
+mod activity;
 mod airplay;
 mod bluetooth;
 mod bar;
@@ -108,6 +109,7 @@ fn registry() ->&'static Registry<App> {
             record::target(),
             notifications::target(),
             notifications::reminder(),
+            activity::target(),
             osd::target(),
             nightlight::target(),
             lights::target(),

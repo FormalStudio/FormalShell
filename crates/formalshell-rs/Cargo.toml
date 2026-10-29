@@ -32,6 +32,7 @@ fs-screensaver = { path = "../fs-screensaver" }
 fs-upower = { path = "../fs-upower" }
 fs-info = { version = "0.2.0", path = "../fs-info" }
 fs-notifd = { path = "../fs-notifd" }
+fs-activity = { path = "../fs-activity" }
 fs-auth = { path = "../fs-auth" }
 zeroize = "1.8"
 libc = "0.2"

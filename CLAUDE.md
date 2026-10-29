@@ -103,7 +103,7 @@ pipewire, PAM or Wayland to link.
 - `just lint`: `dev/lint.sh` on the rig: `cargo clippy --workspace
   --all-targets` (deny-level lints fail it, warnings print), then the pure
   crates' tests (fs-js,
-  fs-chrome, fs-info, fs-system, fs-devices, fs-media, fs-menu,
+  fs-chrome, fs-info, fs-activity, fs-system, fs-devices, fs-media, fs-menu,
   fs-screensaver, fs-theme, fs-audio). ci.yml runs the same script on a
   GitHub runner.
 - `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd` and
@@ -179,6 +179,21 @@ How a run works:
 Every leg is one file, `dev/smoke.d/<name>.sh`, whose header carries the
 detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 
+- `activity.sh` `--activity`: `services/activity.rs` over its three
+  sources, read off `activity status` at known steps and once off `debug
+  dump`. `dev/fspec-activity-stub.py` plays FormalSpec's operation stream
+  in the session's real `$XDG_RUNTIME_DIR/fspec/activity`: an apply at 1/4
+  then 3/4 resources and succeeded, an update that fails, and a rollback
+  whose final line is cut short with its socket gone, read as failed. Four
+  seconds on the success has folded into the history with both failures
+  kept, and `activity seen` folds them. A Gio client's
+  `com.canonical.Unity.LauncherEntry` updates for a staged desktop entry
+  land as progress, a badge count and urgency, merged property by
+  property, the progress hidden ends the item and the client leaving the
+  bus takes its badge. notify-send's `value` hint updates one item in
+  place through `-r` and through `x-canonical-private-synchronous`, and a
+  replace without a value ends it. One real `fspec run --detach jq` is read
+  as a `run` item where the rig's fspec has `run`, else skipped saying so.
 - `airplay.sh` `--airplay`: `services/airplay.rs` against a PATH-shimmed
   `uxplay` (the real one decodes into a GL texture this rig's software KMS
   card has no path for), which prints uxplay's own connect log line and

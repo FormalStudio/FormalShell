@@ -712,10 +712,13 @@ pub async fn run(ctx: Ctx) {
         while let Ok(cmd) = rx.recv().await {
             match cmd {
                 Cmd::Close(id, reason) => {
-                    let _ = s.close(id, reason).await;
+                    if let Ok(true) = s.close(id, reason).await {
+                        super::activity::notification_closed(id);
+                    }
                 }
                 Cmd::Invoke(id, key) => {
                     if let Ok(true) = s.invoke_action(id, &key, None).await {
+                        super::activity::notification_closed(id);
                         c.publish(store::Diff::Notifications(Diff::Closed(id.to_string())));
                     }
                 }
@@ -736,10 +739,12 @@ pub async fn run(ctx: Ctx) {
             Event::Notified(n) => (n, false),
             Event::Replaced(n) => (n, true),
             Event::Closed { id } => {
+                super::activity::notification_closed(id);
                 ctx.publish(store::Diff::Notifications(Diff::Closed(id.to_string())));
                 continue;
             }
         };
+        super::activity::notification(&n);
         let mut a = arrival(&n, replaced);
         let (image, pixels) = image_of(&n);
         let (app_icon, entry, name) = (n.app_icon.clone(), n.desktop_entry.clone(), n.app_name.clone());

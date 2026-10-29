@@ -187,6 +187,7 @@ fn notify_send_shaped_call() {
                     ("suppress-sound", Value::from(false)),
                     ("x-canonical-private-synchronous", Value::from("vol")),
                     ("x-custom", Value::from(7i32)),
+                    ("value", Value::from(140i32)),
                 ]),
                 -1,
             )
@@ -207,12 +208,13 @@ fn notify_send_shaped_call() {
         assert_eq!(n.actions.len(), 2);
         assert_eq!((n.actions[1].key.as_str(), n.actions[1].label.as_str()), ("mute", "Mute"));
         assert!(n.hints.contains_key("x-custom"));
+        assert_eq!(n.value.map(|v| v.get()), Some(100));
 
         let id2 = p.notify("a", 0, "", "s", "", &[], hints(vec![]), 0).await.unwrap();
         assert_eq!(id2, 2);
         let n2 = notified(&rig.events).await;
         assert_eq!(n2.urgency, Urgency::Normal);
-        assert!(n2.category.is_none() && n2.image.is_none());
+        assert!(n2.category.is_none() && n2.image.is_none() && n2.value.is_none());
         assert_eq!(rig.server.notifications().len(), 2);
     });
 }
@@ -439,7 +441,7 @@ fn real_notify_send() {
             .env("DBUS_SESSION_BUS_ADDRESS", &rig._bus.address)
             .args(["-a", "myapp", "-u", "low", "-i", "mail-unread", "-c", "email.arrived", "-t", "4000"])
             .args(["-h", "string:desktop-entry:org.example.app", "-h", "string:x-canonical-private-synchronous:vol"])
-            .args(["-h", "boolean:transient:true", "-A", "reply=Reply", "Hello", "World"])
+            .args(["-h", "boolean:transient:true", "-h", "int:value:40", "-A", "reply=Reply", "Hello", "World"])
             .output()
             .unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -454,6 +456,7 @@ fn real_notify_send() {
         assert!(n.transient);
         assert_eq!(n.expire_timeout, 4000);
         assert_eq!(n.synchronous.as_deref(), Some("vol"));
+        assert_eq!(n.value.map(|v| v.get()), Some(40));
     });
 }
 

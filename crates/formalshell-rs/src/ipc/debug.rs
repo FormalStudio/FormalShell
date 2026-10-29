@@ -113,6 +113,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "join": join,
         "modals": modals,
         "toasts": toasts,
+        "activity": app.store.activity.to_json(),
         "frame": app.bar.frame_state(),
         "backdrop": app.backdrop_state(),
         "desktopClock": app.desktop_clock_state(),
