@@ -25,50 +25,64 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Verification loop
 
-- `just build`: `nix build .#formalshell`: the shell (the greeter is its
-  `greeter` subcommand) and `formalshell-ipc`. **`git add` first**, flakes only see git-tracked files, so an
-  unstaged file is invisible to the build.
-- `just lint`: `nix flake check -L`. `rust-tests` runs the pure crates'
-  tests (`nix/rust-tests.nix`); each service crate carries a check of its
-  own against the real daemon: `fs-tray`, `fs-notifd` and `fs-mpris` on a
-  private bus, `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
-  `fs-upower` in a NixOS VM test (`nix/fs-*.nix`). Run one with
-  `nix build .#checks.<system>.<name>`.
-- The rig is g815 first: `dev/remote.sh {smoke|cargo|check|lint|build|run}`
-  (`just smoke`, `just cargo`, `just check <name>`, `just rig-lint`) rsyncs
-  the working tree to one of two slot users (`fstest0`, `fstest1`, a mac-side
-  flock each) and runs there natively on x86_64, nested in the slot's
-  headless labwc, with screenshots and artifacts pulled into `./artifacts/`.
-  It falls back to the mac VM on its own when g815 does not answer ssh or a
-  smoke run carries a `leg_<n>_vm_only` leg; `FS_RIG=vm` forces the VM. Its
-  header carries the slot model.
-- `just cargo <args>` / `just vm-cargo <args>`: cargo in the package's own
-  build environment on the rig (the mac has no pipewire or wayland to
-  link), for a quick `test -p <crate>` or `clippy` before the flake.
-- `just local-smoke` / `dev/smoke.sh <flags>`: the runtime loop itself.
-  Builds the shell, brings up an isolated Hyprland session under
-  `dbus-run-session`, drives the legs the flags asked for, screenshots,
-  tears it down. **Read the PNGs rather than assuming they look right.**
-  `FS_RESULT=<store path>` runs a shell built elsewhere instead of building
-  one.
-- `just vm-smoke <flags>`: the same script inside the mac VM, screenshots
-  pulled back to the mac (the mac rig section below). The shell is built on
-  the mac through the linux-builder and `nix copy`'d into the VM, so
-  nothing compiles in the guest; `FS_BUILD_IN_VM=1` builds in the VM
-  instead.
+There is no Nix anywhere: the macbook, g815 and e1504g carry none.
+Everything that compiles or runs the shell goes to g815 through
+`dev/remote.sh`, since the mac has no pipewire, PAM or Wayland to link.
+
+- The rig is g815: `dev/remote.sh {build|lint|cargo|check|smoke|run|sync|pull|shell}`
+  rsyncs the working tree (`.gitignore` applies, so `crates/target` stays
+  per slot and cargo stays incremental) to one of two slot users
+  (`fstest0`, `fstest1`, a mac-side flock each) and runs there natively on
+  x86_64, nested in the slot's headless labwc
+  (`formalshell-rig-parent.service`), with screenshots and artifacts pulled
+  into `./artifacts/`. Its header carries the slot model. A g815 that does
+  not answer ssh fails the command; there is no fallback.
+- `just build`: `dev/build.sh` on the rig: `cargo build --locked --release
+  -p formalshell-rs` in dev.star's environment (`fspec dev -- cargo`), then
+  `./result` laid out as the release tarball unpacks (`bin/formalshell`,
+  `bin/formalshell-ipc`, `lib/formalshell/{formalshell-rs,bin}`,
+  `share/formalshell`). The binaries, templates, branding and examples come
+  from the tree; the fonts, Blue Marble tiles, earbuds art and the helpers
+  no distro carries (ttfx, localsend-cli, tensaku, clipssh, the iPhone
+  bridge, the earbuds CLIs, matugen) are linked out of the host's installed
+  fspec `formalshell` package, the same tarball at its pinned rev. A host
+  without it fails the build saying so.
+- `just lint`: `dev/lint.sh` on the rig: `cargo clippy --workspace
+  --all-targets` (deny-level lints fail it, warnings print), then the pure
+  crates' tests (fs-js,
+  fs-chrome, fs-info, fs-system, fs-devices, fs-media, fs-menu,
+  fs-screensaver, fs-theme, fs-audio). ci.yml runs the same script on a
+  GitHub runner.
+- `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd` and
+  `fs-mpris` run their tests under `dbus-run-session` against their own
+  dbus-daemon. `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
+  `fs-upower` drive real system daemons and need the VM rig, which g815
+  does not have yet; they fail saying so.
+- `just cargo <args>`: cargo in dev.star's environment on the rig, for a
+  quick `test -p <crate>` or `clippy`.
+- `just smoke <flags>`: `dev/smoke.sh` on the rig, the runtime loop itself.
+  Builds the shell (`dev/build.sh`), brings up an isolated Hyprland session
+  under `dbus-run-session`, drives the legs the flags asked for,
+  screenshots, tears it down. **Read the PNGs rather than assuming they look
+  right.** `FS_RESULT=<dir>` runs a result built elsewhere (an unpacked
+  release tarball has the same layout) instead of building one. A tool a leg
+  needs and the host lacks fails the run naming the openSUSE package that
+  carries it. Legs declaring `leg_<n>_vm_only` need the VM rig and fail
+  saying so.
+- `just local-smoke <flags>`: `dev/smoke.sh` in this machine's own session,
+  on a Linux host.
 - `scripts/shots` / `just shots`: regenerates `docs/shots/` (the README's and
   the website's images and clips) through `--showcase --shots`, once per
-  theme, in the VM on a mac and nested on Linux.
-- `just vm-greeter` / `dev/smoke-greeter.sh`: not a flag on the rig. greetd's
-  `default_session` is a standing system service, so this drives the
-  already-running greeter session (restart greetd, screenshot pre-auth, a
-  wrong password then the real one over `wtype`) and pulls
-  `artifacts/greeter/`. It fails unless the session log shows a real
-  `pam_authenticate: AUTH_ERR` on the wrong attempt. `just vm-greeter
-  --preset cartridge` runs the same login under the testvm's
-  `greeter-cartridge` specialisation (a VM booted off the branch's own
-  testvm, slot 2 or past), a burst of frames through the boot first, and
-  fails unless the greeter logs it played, assembled and crumpled.
+  theme, on the rig from a mac and nested on Linux.
+- `dev/smoke-greeter.sh`: not a flag on the rig. greetd's `default_session`
+  is a standing system service, so this drives the already-running greeter
+  session (restart greetd, screenshot pre-auth, a wrong password then the
+  real one over `wtype`) and writes `artifacts/greeter/`. It fails unless
+  the session log shows a real `pam_authenticate: AUTH_ERR` on the wrong
+  attempt. `--preset cartridge` runs the same login under a
+  `greeter-cartridge` specialisation, a burst of frames through the boot
+  first, and fails unless the greeter logs it played, assembled and
+  crumpled. It runs inside a VM with greetd, so it waits for the VM rig.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
   contract, kept fixed: argument parsing, argument errors and output
   strings, replayed through `formalshell-ipc`'s parser and the registry by
@@ -77,21 +91,19 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
   (`dev/tarball.sh`), built for this machine's arch in a debian:bookworm
   container, into `artifacts/tarball/`. It fails on a binary needing glibc
   past bookworm's 2.36 or linking a library outside its soname allowlist.
-- `dev/install-check.sh [--no-build] [distro...]`: that tarball and
-  install.sh copied into the VM and run through `--installed` one distro at
-  a time (arch, trixie, fedora by default), frames and logs under
-  `artifacts/installed/<distro>/`.
+  The files it reads that are not crates (the tile and earbuds-art scripts,
+  the iPhone bridge patches, the watchdog template) live in `packaging/`.
 
 How a run works:
 
 - Session mode is decided by the machine, never by a flag: a real host nests
-  Hyprland in the running session, and the VM, whose pixman sway parent
-  advertises no `zwp_linux_dmabuf_v1` and hands out no render node, runs it
-  on the `vkms` software KMS card instead (`nix/testvm.nix`).
+  Hyprland in the running session, and a VM whose pixman parent advertises
+  no `zwp_linux_dmabuf_v1` and hands out no render node runs it on the
+  `vkms` software KMS card instead.
 - The nested session runs in a transient user scope of its own
   (`fs-run-hypr-<pid>`) and is stopped as a cgroup at teardown, so a
-  compositor that outlives `timeout` (NixOS's `/run/wrappers/bin/Hyprland`)
-  goes with it; a leftover carrying the run's config path fails the run.
+  compositor that outlives `timeout` goes with it; a leftover carrying the
+  run's config path fails the run.
 - `FS_CPU_QUOTA=10% FS_CPU_QUOTA_PERIOD=2ms` runs the shell alone under that
   CPU quota in a scope of its own, the stand-in for e1504g in power saver
   (its launcher and cold start numbers land in the same range). Every
@@ -104,15 +116,8 @@ How a run works:
   desktop sampler, which is why `--wallpaper` pushes `--menu` and `--lock`
   back and leaves a matugen-recoloured desktop behind them.
 - Every run prints `SMOKE_OK <path>` for its own frame and `SMOKE_<NAME>
-  <path>` for each named artifact; `dev/vm.sh smoke` scps all of them plus
-  the run's stdout JSON into `./artifacts/` on the mac.
-- Each VM holds one checkout and `dev/vm.sh sync` rsyncs over it with
-  `--delete`, so every VM command from a worktree goes through
-  `dev/vm-lock.sh just vm-smoke <flags>`. There are two VM slots (`FS_VM_SLOT`,
-  default 0): the lock takes whichever slot is free, waits when both are busy,
-  boots that slot's VM if it is down and exports `FS_VM_SLOT` to the command.
-  Slot 0 is ssh 2222 and state in `dev/.testvm`, slot 1 is 2223 and
-  `dev/.testvm/slot1`; each VM is 8 GB and 6 cores, so no third slot.
+  <path>` for each named artifact; `dev/remote.sh smoke` pulls all of them
+  plus the run's stdout JSON into `./artifacts/` on the mac.
 - matugen's source colour is pinned to its own rank 0 rather than left to
   `--prefer`, which is a bad proxy for what colour a wallpaper is;
   `crates/formalshell-rs/src/services/theme.rs`'s header carries the why. Force the source
@@ -212,8 +217,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `brightness.sh` `--brightness`: three bursts of eight steps 40ms apart
   against PATH-shimmed `ddcutil` (a bus flock held 100 to 300ms per call,
   overlaps logged) and `brightnessctl` (reads answering after 20 to 150ms),
-  the shell started as its wrapped binary so the shims beat the wrapper's
-  own PATH: the keybind path's `osd state` brightness never stepping back
+  the shims ahead of the launcher's PATH: the keybind path's `osd state` brightness never stepping back
   and landing on 70, the display panel's HDMI-A-1 row written one setvcp at
   a time rising to 70, and its backlight row falling to 30. Then `display
   brightnessStep` in two bursts of eight, focused on headless outputs named
@@ -246,7 +250,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   bursts of the boot, the backdrop, the launcher walked on real keys, the
   monitor panel and the lock taking a wrong then the real password, all
   but the boot at a third speed, turned into `docs/media/cartridge-*.gif`
-  at full speed (`dev/vm.sh` pulls them back). Fails only when a GIF was
+  at full speed (`dev/remote.sh` pulls them back). Fails only when a GIF was
   not written.
 - `catalogue.sh` `--catalogue`: rides `--cartridge`; its motion catalogue
   at a fifth speed, one frame burst per effect: the launcher's rows rising
@@ -340,7 +344,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   reports back, and a stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once
-  and no device is listed. The VM has no Bluetooth controller, so the leg
+  and no device is listed. The rig has no Bluetooth controller, so the leg
   exports `FORMALSHELL_SMOKE_BLUETOOTH`, a device list that replaces the
   adapter's (`fs-devices` `earbuds::bluetooth_devices`), with the Soundcore
   pair connected.
@@ -603,7 +607,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `mic.sh` `--mic`: the opt-in mic cell rendering its honest no-device state
   on a machine with no capture device.
 - `mirror.sh` `--mirror`: the launcher's camera mirror against two v4l2loopback
-  nodes (built by `nix/testvm.nix`, loaded by the leg) fed by real ffmpeg
+  nodes (built by the VM rig, loaded by the leg) fed by real ffmpeg
   writers, a colour pattern on video10 and a GREY one on video11 standing in
   for an IR sensor, alternating a dim frame and a near-black one the way an
   emitter lights every other frame. The view opened with no `/dev/video*`
@@ -752,7 +756,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   held drag over `dev/vpointer.py` that stops before its release leaving
   the globe's longitude where the release left it, and one let go while
   moving coasting less than 2.5 times its own travel. Escape closes it.
-  The globe wears the packaged Blue Marble (`nix/blue-marble.nix`, a
+  The globe wears the packaged Blue Marble (`packaging/earth-tiles.py`, a
   512px tile pyramid 2700 to 21600 wide under `FS_EARTH_TILES`):
   `radio status` reports `imagery` true and a square
   of the disc carries saturation and colours the flat globe never had,
@@ -884,7 +888,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `switcher.enabled: false` in the settings fixture: all five verbs answering
   the error string and no switcher surface mapped at all.
 - `systemupdate.sh` `--systemupdate`: the flake-inputs-behind cell and panel
-  reading this repo's own flake through one shared poll.
+  reading a fixture flake (`dev/smoke.d/fixtures/flake`) through one shared
+  poll.
 - `theme_auto.sh` `--theme-auto`: `theme.mode: "auto"` resolving off the
   fixture's own coordinates rather than the 20:00 to 06:00 fallback, the
   sunrise/sunset pair read back out of `theme status` and checked against
@@ -962,86 +967,53 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   that travels, read off the bar region alone before, 80ms into, and after a
   workspace switch.
 
-## macOS verification loop (mac e2e rig)
+## Hosts and the g815 rig
 
-Both Linux hosts (g815, e1504g) are reachable over ssh with passwordless
-sudo, and both consume this repo as `github:FormalSnake/FormalShell`, so a
-change has to be pushed before either picks it up. g815 is NixOS:
-`nix flake update formalshell` in `~/.config/nix`, then
-`sudo nixos-rebuild switch --flake .#g815` on g815; `formalshell.service`
-restarts onto the new store path in the home-manager activation. e1504g is
-openSUSE Tumbleweed under fspec, not NixOS, so `nixosModules.formalshell`
-and `formalshell install` don't apply there: bump FormalShell's `rev` in
-`system.star` on the `formalspec` branch of FormalSnake/dotfiles (checked
-out at `~/.config/nix-wt/formalspec`), run `fspec update formalshell` there,
-push, and `fspec apply --host e1504g` from the same worktree (g815 is its
-builder; never compile on e1504g). Its `/etc/pam.d/formalshell-lock` is
-declared in that same `system.star`.
-That makes them the place to confirm what the VM's llvmpipe and
-no-desktop-bus environment cannot show (real GPU rendering, a real session
-bus owner, real hardware devices, e1504g's power-saver budgets), but it does
-NOT make them a test target: the host-session-safety and lock-screen rules
-below still forbid running the shell, the theme engine or any compositor
-action against a live session there. Rebuild them and look; anything that
-drives a surface goes through the nested rig, which on e1504g means
-`dev/smoke.sh` with `FS_RESULT` pointing at a shell built on g815 and copied
-over.
+Sessions run from the macbook, which has no Wayland at all, so every build,
+check and smoke run happens on g815 through `dev/remote.sh` (the
+verification loop above). g815 and e1504g are both openSUSE Tumbleweed
+managed by fspec (FormalSpec); the owner's spec is `~/.config/formalspec`
+(FormalSnake/dotfiles, branch `main`). Both are reachable over ssh with
+passwordless sudo.
 
-Sessions themselves run from a macbook, which has no Wayland at all, so that
-rig is where verification happens. nix-darwin's `nix.linux-builder.enable` is
-unavailable under `determinateNix.enable = true`, so it is hand-rolled as two
-layers, both driven from this repo
-(`docs/superpowers/plans/2026-07-28-mac-e2e-rig.md` has the full design
-rationale):
+The rig lives in that spec: `_rig()` in `g815.star` declares the slot users
+`fstest0` and `fstest1` (group `fstest`, plus `render` and `video` for the
+Intel render node), their `formalshell-rig-parent` user service (a headless
+labwc that writes its socket name to
+`$XDG_RUNTIME_DIR/formalshell-rig-display`) and the tools the legs need.
+A slot user picks up a new group only when its user manager restarts
+(`sudo systemctl restart user@<uid>.service`). A leg that needs a tool g815
+lacks fails naming the openSUSE package; add it to the spec, not to the
+leg.
 
-- **Build layer**: `dev/linux-builder.sh {start|stop|status|register}` boots
-  the stock `darwin.linux-builder` VM in the background and registers it in
-  `/etc/nix/machines`, giving `nix build .#packages.aarch64-linux.<x>` a real
-  remote builder from the mac. Its only job is compiling aarch64-linux
-  closures (`formalshell`, the testvm image itself); it does not run any
-  part of the shell. `dev/vm.sh smoke` builds `formalshell` here and copies
-  the closure into the VM's store before every run.
-- **Runtime layer**: `nixosConfigurations.testvm` (`nix/testvm.nix`,
-  `packages.aarch64-darwin.testvm`) is a headless aarch64 NixOS VM booted
-  under HVF, pre-staged with hyprland, sway, matugen and the flake's inputs.
-  Inside it, a systemd **user** service runs
-  a headless wlroots parent compositor (sway, `WLR_BACKENDS=headless`,
-  `WLR_RENDERER=pixman`) publishing `WAYLAND_DISPLAY` into the systemd user
-  environment, the same lookup `dev/smoke.sh` already falls back to on a real
-  host. The script then runs **completely unchanged** inside, except that its
-  own session-mode pick lands on `vkms` rather than nesting: that pixman
-  parent advertises no `zwp_linux_dmabuf_v1` and hands out no render node, so
-  Hyprland renders on the software KMS card the kernel's vkms module draws
-  (software rendering throughout, Mesa llvmpipe for Hyprland's EGL and pixman
-  for the parent, the same concession any CI-grade wlroots testing makes).
+Both hosts run FormalShell as the fspec package `formalshell`, built from a
+pinned rev with `dev/tarball.sh` in debian:bookworm (`system.star`). A
+change reaches them like this:
 
-`dev/vm.sh` is the driver: `start` (build and boot headless, wait for ssh),
-`stop`, `status`, `sync` (rsync the **working tree**, not a commit, into
-`~/formalshell` inside the VM), `run <cmd...>` (ssh with cwd at the repo and
-the session env exported), `prebuild` (build the shell on the mac and copy
-it in), `smoke [flags...]` (sync, prebuild, run `dev/smoke.sh`, then `scp`
-the `SMOKE_OK` screenshot plus any dump/status/query JSON back to
-`./artifacts/` on the mac; `--screensaver-gif` also rsyncs the VM's
-`docs/media/screensaver-*.gif` straight into the real repo's `docs/media/`,
-since those are committed output and the next `sync`'s `rsync --delete`
-would wipe the VM's copies), `pull <vm-dir> <local-dir>`, `shell`
-(interactive ssh). `FS_VM_SLOT` picks the VM every command talks to. The
-`justfile` wraps this as `vm-up`/`vm-down`/`vm-build`/`vm-lint`/`vm-cargo`/
-`vm-smoke *FLAGS`/`vm-greeter`, the mac-side equivalents of the recipes
-above (`vm-greeter` syncs, runs `dev/smoke-greeter.sh` inside, then pulls
-`artifacts/greeter/` back with `dev/vm.sh pull`; greetd's `default_session`
-is a standing system service already up in the VM, not a fresh nested
-compositor `vm-smoke` spins up itself, so it needs no flag of its own).
+1. Push it to `FormalStudio/FormalShell`.
+2. Bump the formalshell `rev` in `~/.config/formalspec/system.star`.
+3. `fspec update formalshell` there, then commit and push the spec.
+4. `fspec apply --host g815` and `fspec apply --host e1504g` (g815 builds
+   for e1504g; never compile on e1504g).
+
+e1504g's `/etc/pam.d/formalshell-lock` is declared in that same
+`system.star`. The hosts are the place to confirm what the nested rig
+cannot show (real GPU rendering, a real session bus owner, real hardware
+devices, e1504g's power-saver budgets), but they are NOT a test target: the
+host-session-safety and lock-screen rules below forbid running the shell,
+the theme engine or any compositor action against a live session there.
+Apply and look; anything that drives a surface goes through the nested
+rig, which on e1504g means `dev/smoke.sh` with `FS_RESULT` pointing at a
+result built on g815 and copied over.
+
+The VM rig (a throwaway fspec-driven headless VM on g815, for the
+`leg_<n>_vm_only` legs, the daemon-backed `just check`s and
+`dev/smoke-greeter.sh`) is being built in FormalSpec and does not exist
+yet.
+
 Screenshots and JSON always land on the **mac** filesystem under
 `./artifacts/` (gitignored); Read-verify them there exactly as you would on
 a Linux host.
-
-The VM has no real desktop bus owner (nothing on the mac plays the role DMS
-plays on the Linux hosts), so `busctl --user status
-org.freedesktop.Notifications` legitimately answers ENXIO/no-owner every
-run; the smoke rig's D-Bus isolation check tolerates that (`|| true`, a
-real "no owner" answer rather than a connectivity failure) without changing
-behaviour on hosts where a real owner exists.
 
 ## Hard rules
 
@@ -1071,7 +1043,7 @@ behaviour on hosts where a real owner exists.
   `notify-send` fired inside it) a private bus; it asserts `busctl --user status
   org.freedesktop.Notifications`'s owner PID on the **host** bus is unchanged
   before and after every run (`|| true`-tolerant of a legitimate "no owner"
-  answer, e.g. on the mac VM rig, which has no desktop bus owner at all).
+  answer, e.g. on a VM with no desktop bus owner at all).
   A nested run on a real host also gets a private, empty system bus
   (`DBUS_SYSTEM_BUS_ADDRESS`), so the shell never reaches the host's
   NetworkManager, BlueZ, UPower, logind or polkit (a nested run took g815's
@@ -1093,10 +1065,10 @@ behaviour on hosts where a real owner exists.
   `clipboard`/etc. Unknown panel names return an error string, never a
   silent no-op.
 - **Honest unavailable states, never faked data**, as a standing expectation
-  for every VM smoke run: a panel/widget with nothing to show from its
+  for every smoke run: a panel/widget with nothing to show from its
   backend renders a single dim cell (`NO ADAPTER`, `NO DEVICES`,
   `NO LOCATION`, an absent battery bar cell, ...) rather than a stubbed
-  value or an invented device. Enabling a real service in `nix/testvm.nix`
+  value or an invented device. Enabling a real service in the VM rig
   so a panel has a genuine backend to talk to is the sanctioned way to make
   a screenshot show more; inventing fake `/sys` entries or synthetic
   devices is not. The one exception (owner, 2026-09-28): with the iPhone as the
@@ -1109,19 +1081,19 @@ behaviour on hosts where a real owner exists.
   read on the service thread, never linked in, and every one of them has an
   honest fallback or unavailable state when it isn't installed.
 - **Everything ships** (owner, 2026-09-28 and 2026-10-07): never tell a
-  user to install something by hand. With Nix, every CLI the shell uses is
-  packaged in the flake (nixpkgs or `nix/*.nix`) and on the wrapper's PATH
-  in `nix/package.nix`, and every system piece it needs (a daemon, a D-Bus
-  policy, a firewall port, avahi) is a `services.formalshell.*` option in
-  `nix/nixos-module.nix`. Without Nix, `install.sh` carries the same
-  guarantee: its one name table for pacman, apt and dnf covers what those
-  distros carry, and the release tarball (`dev/tarball.sh`) carries the
-  rest. A new runtime CLI goes into `nix/package.nix` and into the name
-  table or the tarball in the same commit.
+  user to install something by hand. `install.sh`'s one name table for
+  pacman, apt and dnf covers what those distros carry, and the release
+  tarball (`dev/tarball.sh`) carries the rest in `lib/formalshell/bin`,
+  ahead of PATH in its launcher. The owner's hosts install that tarball as
+  the fspec package `formalshell`, and every system piece it needs (a
+  daemon, a D-Bus policy, a firewall port, avahi, the PAM file) is declared
+  beside it in the fspec spec. A new runtime CLI goes into the name table
+  or the tarball in the same commit, and into the spec for the owner's
+  hosts.
 - **ttfx is a spec addendum, not a conflict.** Spec §10 says the
   screensaver draws TTE-style rain/decrypt/matrix itself in the shell's
   mono font, with no spawned terminal windows. The screensaver runs `ttfx`
-  (`nix/ttfx-package.nix`) as a frame source and parses its ANSI stream
+  (built into the release tarball by `dev/tarball.sh`) as a frame source and parses its ANSI stream
   (`crates/fs-screensaver/src/ttfx.rs`), still drawing every glyph itself
   in the shell's mono font with no terminal window anywhere. The palette
   comes from ttfx, since each effect carries its own gradient (owner's
@@ -1192,7 +1164,7 @@ behaviour on hosts where a real owner exists.
   The smoke rig runs Hyprland only.
 - Lua (`hyprland.lua`) is the only Hyprland config format (owner,
   2026-09-29). Runtime changes go through `hyprctl eval` with the `hl.*` API,
-  never `hyprctl keyword`, and nothing the shell or the nix module writes is
+  never `hyprctl keyword`, and nothing the shell or its installer writes is
   hyprlang. The smoke rig boots from a Lua config too.
 - **Units live in types.** A percentage-shaped value keeps the unit its
   daemon sends and carries it in a type, converted only through a named
