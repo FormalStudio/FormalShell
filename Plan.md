@@ -247,9 +247,7 @@ the only way. Moves go through the compositor backend's typed `Command`s
 (a logged no-op where mango cannot), the icons glide to their new slots
 on the shell's curves, and a drop the compositor refuses springs back.
 
-Polish, read off a 17s capture of Pond in use (2026-10-29): at rest the
-sidebar is a rail of clock digits, workspace numbers and dots, and it
-widens to the full card on hover or a drag, never pushing windows. Rows
+Polish, read off a 17s capture of Pond in use (2026-10-29): rows
 are numbered and hold a 3-wide icon grid with one empty row below. A
 pressed icon lifts (a size step up, a soft halo under the pointer, the
 others dimmed slightly), its siblings slide apart live to show the drop
