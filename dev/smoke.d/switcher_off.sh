@@ -3,8 +3,7 @@
 # --switcher-off: the other half of --switcher (M60 T6). `switcher.enabled:
 # false` never instantiates the surface at all, so the claim here is that the
 # IPC target says so rather than accepting a call and doing nothing. A leg of
-# its own because one session carries one settings.json. The setting is the
-# user's rather than the theme's, so it rides --pantheon or --retro as well.
+# its own because one session carries one settings.json.
 #
 # All five verbs, not just one: `state` returning the error string is what a
 # rig or a keybind sees, and `commit` is bound to the release of a modifier,

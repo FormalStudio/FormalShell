@@ -12,13 +12,17 @@
 # card's depth is that file's business; everything asserted here is along the
 # bar.
 #
+# Only a band with a line has a gap to open: the default transparent band
+# draws none (`debug dump`'s `bar[].line` is empty), so this leg needs
+# `--bar-style solid` or `corners` riding it and refuses to run without one.
+#
 # Two claims, read two different ways:
 #
 # The gap is the shell's own number, off `debug dump`'s `bar[].line`, the two
 # segment rects the strip actually laid out. Its two ends have to sit exactly
 # `radiusXl` outside the card's rect, and `radiusXl` comes out of the same
-# dump, so `theme.radius` or the retro preset moves the expectation with the
-# shape rather than breaking the leg.
+# dump, so a change to the radius moves the expectation with the shape
+# rather than breaking the leg.
 #
 # The seam is pixels, because no number can say whether the line and the arc
 # meet: at the gap's own end column the bar's line row must carry the border
@@ -64,8 +68,15 @@ shoulders_crop_x=730
 
 leg_shoulders_validate() {
   local other
+  case "$(leg_arg bar_style 2>/dev/null)" in
+    solid|corners) ;;
+    *)
+      echo "usage: --shoulders needs --bar-style solid or corners: the transparent band has no line to open" >&2
+      exit 1
+      ;;
+  esac
   for other in bar_layout bar_position config_reload frame fullscreen gallery lock \
-    panel_emerge panel_handoff retro screensaver wallpaper; do
+    panel_emerge panel_handoff screensaver wallpaper; do
     if leg_on "$other"; then
       echo "usage: --shoulders measures the bar's own line and cannot combine with --${other//_/-}" >&2
       exit 1
@@ -260,10 +271,10 @@ leg_shoulders_assert() {
   shoulders_probe "$shoulders_open_path" $((gap_end - 1)) "$line_row" border "far-arc-end"
   shoulders_probe "$shoulders_open_path" "$gap_end" "$line_row" border "line-out-of-far-arc"
 
-  # Inside the gap the card is the only thing drawing, on the line's own row
-  # and one row inward: it closes the opening the bar left rather than
-  # leaving the desktop showing through it.
-  shoulders_probe "$shoulders_open_path" "$shoulders_join_x" "$line_row" card "card-on-the-line"
+  # Inside the gap the line's own row is still the band's (`--join`'s seam
+  # claim: a card filling it too would paint it twice), and one row inward
+  # the card is the only thing drawing, so the desktop never shows through.
+  shoulders_probe "$shoulders_open_path" "$shoulders_join_x" "$line_row" border "band-on-the-line"
   shoulders_probe "$shoulders_open_path" "$shoulders_join_x" $((line_row + 1)) card "card-one-row-inward"
 
   # And the fillet really is concave: just inside the arc's outer end, two

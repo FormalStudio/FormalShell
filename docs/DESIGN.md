@@ -44,8 +44,8 @@ blended toward `background` and left opaque (shadcn's `hover:bg-primary/90`);
 dropping its opacity instead makes it see-through on a translucent panel.
 
 **Radius** (the ladder, `fs_theme::tokens::radius_tokens`): `Sm` 6, `Md` 8,
-`Lg` 10, `Xl` 14, `Full`. `theme.radius` in `settings.json` moves the base
-(default 10); the others follow. Nested corners are outer minus padding,
+`Lg` 10, `Xl` 14, `Full`, off a base of 10; the shipped table runs it at 6
+(`fs_theme::theme`'s `RADIUS`), which is `Sm` 2 to `Xl` 10. Nested corners are outer minus padding,
 floored at `Sm`.
 
 **Border**: 1px `border`. `input` on text fields. No other width exists.
@@ -86,12 +86,10 @@ carry a plain black 0.5 scrim, so they take `ignore_alpha = 0.6` rather than
 card over it stays above and keeps its blur (owner, 2026-09-17: "make the
 overlay just darken instead of blur").
 
-**Themes**: the chrome every primitive draws comes out of one table,
-`fs-theme/themes/<name>.json`, one file per theme, embedded by
-`fs-theme/src/tables.rs` (`metamorphosis` is the look above; `retro` has no
-file and resolves to it, since retro differs from it only by the scalars
-`theme.preset` already resolves). JSON carries no comments, so each table's
-reasoning sits in its own `notes` key, which nothing resolves. A table is
+**The table**: the chrome every primitive draws comes out of one table,
+`fs-theme/formalshell.json`, embedded and read through `fs_theme::table()`.
+JSON carries no comments, so the table's reasoning sits in its own `notes`
+key, which nothing resolves. A table is
 keyed by role, and each role is one box: `fill` (a colour role or a
 literal), `fillAlpha` (a number or `"surface"`), `radius` (a step off the
 ladder or a literal), `border` (`{ color, alpha, width }` or none), `face`
@@ -102,17 +100,14 @@ never its alpha dropped), `wash` (a translucent surface's own hover and
 press, a colour laid over the fill rather than blended into it) and `edge`
 (a hairline drawn outside the box, the bar strip's line against the
 desktop). Any alpha may instead be `{ light, dark }`, resolved by the live
-palette's mode. A role's states merge over its base state key by key.
-`habits` in the same table are the same idea for shape rather than chrome:
-which surface a bar, an emerging card or a notification takes where a theme
-differs from metamorphosis in more than colour. A primitive renders its role
-and state and never names a theme; a theme never reaches into a primitive.
+palette's mode. A role's states merge over its base state key by key. A
+primitive renders its role and state; the table never reaches into a
+primitive.
 `Theme::box_style(role, state)` (resolved by `fs-theme/src/style.rs`) is the
 only way chrome reaches one, drawn by `ui::boxes::paint`
 (`formalshell-rs/src/ui/boxes.rs`).
 
-**Pantheon** (`fs-theme/themes/pantheon.json`): elementary OS 8's material
-as the same kind of table, transcribed from its own GPL stylesheet rather
+**Pantheon**: the table is elementary OS 8's material, transcribed from its own GPL stylesheet rather
 than ported, each block naming the file its numbers came from
 (`_exported.scss` for the tokens, `_index.scss` for the mixins,
 `widgets/*.scss` for the roles). GTK's `alpha(c, f)` multiplies rather than
@@ -121,8 +116,7 @@ so every highlight-derived alpha in the dark column is written as that
 product: `alpha(@highlight_color, 0.3)` lands at white 0.06, not 0.3, which
 is why the dark material reads quieter than the light one rather than as
 the same lines at a lower opacity. Radii are elementary's own, pinned by
-number rather than by the radius ladder's step so `theme.radius` moving the
-base never drifts them: 3 for a control, 6 for a popover, 9 for a card or
+number rather than by the radius ladder's step: 3 for a control, 6 for a popover, 9 for a card or
 bubble. Its surfaces are opaque (`theme.surfaceOpacity` 1): elementary's
 popovers and dialogs are `bg_color(2)` with nothing behind them, and its one
 translucent surface is the panel, whose alpha belongs to the band's paint
@@ -257,9 +251,8 @@ height, margins, scale, radius, rotation, an emerge, a morph, a cursor's
 travel. `effectsFast` 150, `effects` 200 and `effectsSlow` 300 pace anything
 with neither: opacity, colour, a progress that only drives alpha. Two names
 sit outside both families, `emphasized` 400 for the workspace pill and
-`emphasizedDecel`, a curve with no duration of its own that pantheon's
-bubbles restack on. The row toast keeps sonner's own clock instead, 400 on
-CSS `ease` (the table's `arrive` and `restack`), which never passes rest.
+`emphasizedDecel`, a curve with no duration of its own that the bubbles
+restack on.
 `reveal` 400 is the
 full-screen fades: the wallpaper and palette crossfades, the lock's blank
 and wake, the screensaver's own enter and exit, on `effectsSlow`'s curve.
@@ -309,8 +302,7 @@ along it, the reach) off its frame's live position (`Card::joins` in
 `App::sync_join` in `formalshell-rs/src/wayland.rs`), so a size morph and a
 handoff carry the gap with them frame by frame; that rect is the only thing
 the two windows share, and it is gone once the card has let go (§1 Motion).
-`theme.radius` 0 draws square corners and no fillets, which is a plain card
-against a whole line. The panels take the shoulders, and the chevron's and
+The panels take the shoulders, and the chevron's and
 the tray's second bars with them, on a framed screen as on a bare one: the
 ring's hairline runs the bar's edge there and opens the same gap; the
 notification centre takes it against the ring's far side or a right bar.
@@ -451,7 +443,7 @@ Content never snaps. What one slot draws crossfades on `effects` when it
 changes: an icon glyph, a label under a width morph, the launcher's empty
 state, the clipboard preview, a calendar month. A fill or border that
 switches which colour role it binds crossfades through `Cx::color`. A
-palette change (mode toggle, matugen recolour, preset swap) crossfades every
+palette change (mode toggle, matugen recolour) crossfades every
 colour role over `reveal`.
 
 The cursor travels (amended 2026-09-09, owner: a keyboard user wants what a
@@ -491,32 +483,20 @@ not boot), and a theme republish that changes nothing writes no file and
 reloads nothing.
 
 **Imagery**: content pictures go through `w::picture`, a bare bitmap plus
-the retro pass `theme.dither` turns on (`fs-chrome/src/dither.rs`). A
-picture that needs an edge of its own is a cover (`w::cover`). Neither is
+nothing else. A picture that needs an edge of its own is a cover (`w::cover`). Neither is
 chrome: an app icon and an album cover keep their own colours on a filled
 row, unlike every other ink on it.
 
-**Icons**: `w::icon("wifi")`, resolved through the set `theme.icons` selects
-(`lucide` default, `nerd`) in `fs-theme/src/icons.rs`. Size equals the
+**Icons**: `w::icon("wifi")`, resolved through the bundled Lucide font in
+`fs-theme/src/icons.rs`. Size equals the
 neighbouring text's font size. No raw codepoints in surface modules.
 
-**Presets** (`theme.preset`, `fs-theme/src/presets.rs`): a table of
-defaults for the chrome knobs, never a mode a surface can read.
-`metamorphosis` (the default) is everything above. `retro` is the shell's
-earlier language as a setting of this one: `theme.radius` 0, `theme.icons`
-`nerd`, `theme.fonts` `mono` (words take the mono face too),
-`theme.surfaceOpacity` 1, `theme.blur` false, `theme.dither` true. An
-explicit key wins over the preset. `radius` 0 means 0 on every step and
-every pill (`Theme::pill_radius`), whichever preset set it. `theme.dither`
-on renders content imagery (launcher and active-window icons, notification
-images, album art) through the retro pass, paints a track's groove as a
-dither fill, and is the default for `wallpaper.dither` and `lock.dither`;
-tray icons, the picker grid and clipboard thumbnails stay true colour. `theme.grid`
-is the other full-screen pass: the table's
-`backdrop.grid` role (pitch, width and fade in logical pixels, its fill the
-ink) laid into the wallpaper's pixels by `fs-chrome/src/grid.rs`, and drawn
-over the lock's scrim and the greeter's wallpaper from the same geometry;
-`wallpaper.grid` and `lock.grid` override it the way the dither keys do.
+**Image passes**: `wallpaper.dither` and `lock.dither` put the picture
+through the dither pass (`fs-chrome/src/dither.rs`). `wallpaper.grid` and
+`lock.grid` lay the table's `backdrop.grid` role (pitch, width and fade in
+logical pixels, its fill the ink) into the wallpaper's pixels by
+`fs-chrome/src/grid.rs`, and over the lock's scrim and the greeter's
+wallpaper from the same geometry. All four default false.
 `wallpaper.color` makes the desktop a flat
 field of that colour: `services/wallpaper.rs`'s `source` is the one answer
 to what the desktop shows (the picture's path or `color:#rrggbb`, the
@@ -533,9 +513,8 @@ the `window` role's own gaps, frame and cast, written by
 `fs-theme/src/chrome.rs`), published beside the colours; mango through
 `formalshell-chrome.conf` and `formalshell-colors.conf` in
 `~/.config/mango`, the same window role as its own options with the palette
-roles already resolved. A surface reads
-the radius ladder, the font families, the icon set, the dither flag and
-`Theme::pill_radius`, and never the preset's name.
+roles already resolved. A surface reads the radius ladder, the font
+families and `Theme::pill_radius`.
 
 ## 2. Primitives
 
@@ -553,8 +532,8 @@ only when two surfaces need the same new thing.
 | icon button (`w::icon_button`) | a ghost button that is `controlHeight` square, one icon | as button |
 | card (`surfaces::card::Card`) | the `card` role at `panelPadding`, opaque on a surface the compositor does not blur; the surface's own frame, never nested | rest, opaque |
 | shoulders (`formalshell-rs/src/surfaces/shoulders.rs`) | the `card` role with the anchored edge left open and a concave fillet outside each of its two corners, running out to the line it came out of (§1 Motion), and, at `attach` 0, a plain card again: what every surface coming out of a line draws | attached, letting go, free |
-| drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by `motion.morph`, or with it unset the live theme's `emerge` habit, and never a theme name (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls, the nested bud's span and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
-| picture (`w::picture`) | content imagery, bare: the retro pass under `theme.dither`, no frame and no rounding | none |
+| drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by `motion.morph` (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls, the nested bud's span and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
+| picture (`w::picture`) | content imagery, bare: no frame and no rounding | none |
 | cover (`w::cover`) | a picture in a `muted` well with a 1px `border`, clipped to `Theme::cover_radius`: album art, a notification's app icon | none |
 | section label (`w::section_label`, `w::section`) | `caption`, `medium`, `mutedForeground`, sentence case; optional trailing count `(3)` | none |
 | input (`w::input`) | the `input` role at `radiusMd`, `controlHeight`, placeholder `mutedForeground`; a dragged selection paints the `input.selection` role behind the text | rest, focus (ring), error (caption below) |
@@ -680,15 +659,11 @@ themselves animate their size; the regions, their clips and the centre's
 position follow those sizes frame by frame with no motion of their own,
 so no two cells ever sit on top of each other mid-glide.
 
-**Wingpanel band** (the pantheon habit, or any table once `bar.style` is
-written). No strip card, no cell borders: the band's paint is read off the
-wallpaper under it rather than drawn as chrome, one of five paints
-(`light`, `dark`, `translucentLight`, `translucentDark`, `maximized`)
-decided by the band's own mean luminance, standard deviation and acutance
-against wingpanel's own thresholds (mean 180, spread 45, acutance 8, plus
-the 1.645-sigma rule for a band whose mean falls short but whose spread
-puts a twentieth of it past 180) and Hyprland's fullscreen state, which
-forces `maximized` outright (`fs-theme/src/barpaint.rs`, sampled by
+**Wingpanel band**. No strip card, no cell borders: the band's paint is
+read off the wallpaper under it rather than drawn as chrome, `light` or
+`dark` decided by the band's own mean luminance against wingpanel's
+threshold (180), and Hyprland's fullscreen state, which forces `maximized`
+outright (`fs-theme/src/barpaint.rs`, sampled by
 `formalshell-rs/src/services/barpaint.rs`). Each paint carries its own ink
 and elementary's own text shadow under it, both layers of it: the table's
 `inkShadow` is a CSS layer list (`{ x, y, blur, color, alpha }`, first on
@@ -697,8 +672,8 @@ top) and the bar cell's painter (`Painter::text_in` in
 text per layer under it, so the blurred half is rendered rather than
 approximated. Black at 0.3 and 0.6 under white words on a bare band, 0.15
 and 0.3 once the band has a fill of its own, and none at all under dark
-words or over white at 0.5. `bar.style` decides the rule: `transparent`
-keeps the ink adaptive and drops the busy branch's fill, `solid` pins
+words. `bar.style` decides the rule: `transparent` (the default) keeps the
+ink adaptive with no fill, each cell reading its own stretch, `solid` pins
 `maximized` (black, light ink, the 1px `BORDERS` line along the inner edge,
 which a joined card opens its gap in as it does the strip's hairline) and
 starts no wallpaper reading, and `corners` is `solid` with a concave
@@ -707,12 +682,8 @@ on the bar's own window, which reaches that far past the band while its
 exclusive zone stays the band's (with a ring drawn the ring's own fillets
 are the corners). Under a transparent band there is no line, so a joined
 card's shoulders meet the band's inner edge and the band is left whole.
-Every table carries the five paints, so a table whose habit is the strip
-draws the band the same way once the key is written. With `bar.style`
-unset, `bar.paint` overrules the reading as before (`transparent`, or one
-of the five names pinned outright). `bar paint` and `debug dump` report the
-paint, the style, whether it was pinned, the output it was read on, and
-the three numbers.
+`bar paint` and `debug dump` report the paint, the style, each cell's ink,
+the output it was read on, and the mean, spread and acutance.
 
 One reading, not one per monitor: sampling each panel against its own
 screen left a two-output desk with one bar in dark ink and the other in
@@ -819,13 +790,12 @@ the same three energy bands off the one shared cava process, carried toward
 every new frame rather than snapped to it, so the motion runs at the
 screen's own refresh rate.
 
-**Popover emerge** (`emerge: "popover"`, the pantheon habit, or
-`motion.morph: false` under any table; `true` is the joined recipe under
-any table). A panel, the
+**Popover emerge** (`motion.morph: false`; `true`, the default, is the
+joined recipe). A panel, the
 launcher, the OSD, polkit, the notification centre and the radio atlas all
 read this off the drawer the way they read the joined recipe (§1 Motion,
 §2 drawer): the card drops straight out of the cell that opened it on
-the table's `emerge` clock (Gala's 150ms menu map under pantheon) instead
+the table's `emerge` clock (Gala's 150ms menu map) instead
 of budding off the bar's line, so there is no
 let-go, no gap published to the line, and no shoulders either: the card
 is a plain rounded rectangle on all four sides.
@@ -863,9 +833,8 @@ for as long as it is mapped, so a compositor's own layer animation has no
 geometry change to fight; the cards move, and everything outside them is
 click-through.
 
-**Bubble** (`notification: "bubble"`, the pantheon habit). elementary's own
-notification, drawn by `bubble` in the same `toasts.rs` that draws the
-toast above: 332 wide, radius 9, icon left with a 6px gap, bold title, body
+**Bubble**. elementary's own notification, drawn by `bubble` in
+`toasts.rs`: 332 wide, radius 9, icon left with a 6px gap, bold title, body
 wrapped at 33 characters, a round close button that appears on hover. It
 flips in over 400ms (opacity plus an x rotation from 90 degrees through -10
 at 60% to 0) and restacks on `emphasizedDecel` 200ms with a 150ms stagger
@@ -966,7 +935,6 @@ at minimum; a change to one surface re-runs that surface's leg. Contrast:
 A theme table change runs fs-theme's tests first (every role in every
 table resolves against a palette whose roles answer with their own names,
 `fs-theme/src/style.rs`), then the legs whose frames it touches, read by
-eye. The pantheon habits add their own legs: `--pantheon` rides any other
-for the table alone, `--bar-adaptive` reads the wingpanel band's paint off
-four fixture wallpapers, and `--notify-emerge` reads the bubble's flip-in
-frame by frame.
+eye. `--bar-adaptive` reads the wingpanel band's paint off four fixture
+wallpapers, and `--notify-emerge` reads the bubble's flip-in frame by
+frame.

@@ -282,7 +282,6 @@ pub struct Look {
     pub panel_padding: f64,
     pub sans: Family,
     pub mono: Family,
-    pub icon_set: String,
     pub foreground: Rgba,
     pub muted: Rgba,
     pub on_active: Rgba,
@@ -301,11 +300,9 @@ pub struct Look {
     pub active_fill: Rgba,
     pub selected_fill: Rgba,
     pub hover_wash: Option<Rgba>,
-    pub ghost_open: Option<Rgba>,
+    pub ghost_open: Rgba,
     pub destructive_border: Option<(Rgba, f32)>,
     pub warning_border: Option<(Rgba, f32)>,
-    pub mark: Rgba,
-    pub mark_radius: f32,
     pub border_width: f64,
     pub effects: f64,
     pub effects_slow: f64,
@@ -336,7 +333,6 @@ impl Look {
         let cell = |state| theme.box_style("cell", Some(state));
         let border = |state| cell(state).border.map(|l| (l.color, l.width as f32));
         let motion = theme.motion().families;
-        let mark = theme.box_style("cell.mark", None);
         Self {
             pad_x: s.control_padding_x,
             pad_y: s.control_padding_y,
@@ -355,7 +351,6 @@ impl Look {
             panel_padding: s.panel_padding,
             sans: face(theme.faces.words),
             mono: face(theme.faces.values),
-            icon_set: theme.icon_set.clone(),
             foreground: theme.colors.get("foreground"),
             muted: theme.colors.get("mutedForeground"),
             on_active: theme.colors.get("primaryForeground"),
@@ -372,11 +367,9 @@ impl Look {
             active_fill: cell("active").fill,
             selected_fill: cell("selected").fill,
             hover_wash: cell("hover").wash,
-            ghost_open: theme.band().then(|| cell("ghostOpen").fill),
+            ghost_open: cell("ghostOpen").fill,
             destructive_border: border("destructive"),
             warning_border: border("warning"),
-            mark: mark.fill,
-            mark_radius: theme.box_radius(&mark, theme.border_width * 2.0) as f32,
             border_width: theme.border_width,
             effects: motion.effects,
             effects_slow: motion.effects_slow,
@@ -646,7 +639,7 @@ impl Kit {
     }
 
     pub fn icon(&mut self, name: &str) -> ShapedText {
-        let g = fs_theme::icons::glyph(&self.look.icon_set, name);
+        let g = fs_theme::icons::glyph(name);
         let style = TextStyle { family: Family::Named(g.family), size: self.look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         self.shape(g.text, style)
     }
@@ -729,18 +722,17 @@ impl Kit {
     }
 
     /// The cell box under any content: the fill and border its tone and
-    /// state resolve to, the pointer's wash, and the open mark along the
-    /// edge facing the desktop.
+    /// state resolve to, the open indicator filling it, and the pointer's
+    /// wash.
     pub fn draw_box(&mut self, p: &mut Painter, tone: Tone, f: &Frame) {
         let look = self.look.clone();
         let r = f.rect;
         let alpha = f.alpha;
         let a = |c: Rgba| c.with_alpha(c.a * alpha);
-        let open_fill = look.ghost_open.filter(|_| f.open.1 > 0.0);
         let fill = match tone {
             Tone::Active => look.active_fill,
             Tone::Selected => look.selected_fill,
-            _ => open_fill.map_or(Rgba::TRANSPARENT, |c| c.with_alpha(c.a * f.open.1 as f32)),
+            _ => look.ghost_open.with_alpha(look.ghost_open.a * f.open.1.max(0.0) as f32),
         };
         let border = match tone {
             Tone::Destructive => look.destructive_border,
@@ -754,27 +746,6 @@ impl Kit {
         p.framed(r, a(fill), look.radius, a(bc), bw);
         if let Some(wash) = look.hover_wash.filter(|_| f.hovered && matches!(tone, Tone::Rest | Tone::Destructive | Tone::Warning)) {
             p.rect(r, a(wash), look.radius);
-        }
-        if look.ghost_open.is_none() && f.open.1 > 0.0 {
-            let t = (look.border_width * 2.0).round().max(1.0) as i32;
-            let edge_margin = bw as i32;
-            let inset = look.xs as i32;
-            let mark = match f.edge {
-                Edge::Top => IRect::new(r.x + inset, r.bottom() - t - edge_margin, r.w - inset * 2, t),
-                Edge::Bottom => IRect::new(r.x + inset, r.y + edge_margin, r.w - inset * 2, t),
-                Edge::Left => IRect::new(r.right() - t - edge_margin, r.y + inset, t, r.h - inset * 2),
-                Edge::Right => IRect::new(r.x + edge_margin, r.y + inset, t, r.h - inset * 2),
-            };
-            // Grows out of the cell's own centre along the bar.
-            let s = f.open.0.max(0.0);
-            let mark = if f.edge.is_vertical() {
-                let h = (mark.h as f64 * s).round() as i32;
-                IRect::new(mark.x, mark.y + (mark.h - h) / 2, mark.w, h)
-            } else {
-                let w = (mark.w as f64 * s).round() as i32;
-                IRect::new(mark.x + (mark.w - w) / 2, mark.y, w, mark.h)
-            };
-            p.rect(mark, look.mark.with_alpha(look.mark.a * (f.open.1 as f32) * alpha), look.mark_radius);
         }
     }
 

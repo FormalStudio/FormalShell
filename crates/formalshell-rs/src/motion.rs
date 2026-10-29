@@ -117,7 +117,7 @@ pub fn breathe(since: Instant, now: Instant) -> f32 {
     (1.0 - 0.6 * eased) as f32
 }
 
-/// metamorphosis's `emerge`: `{ duration: "spatial", curve: "spatial" }`.
+/// An emerge on the `spatial` family's duration and curve.
 pub const EMERGE: (f64, Curve) = (SPATIAL_MS, SPATIAL);
 
 impl Curve {

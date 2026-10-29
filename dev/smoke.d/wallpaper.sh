@@ -6,7 +6,7 @@
 # dither assertions read opposite things and neither can be made off the
 # other's source.
 #
-# The retro dither is opt-in since M45, so the default run writes no
+# The dither is opt-in since M45, so the default run writes no
 # `wallpaper.dither` key at all and this leg asserts the plain image reached
 # the screen. SMOKE_WALLPAPER_DITHER=1 turns the opt-in on for one run and
 # flips the assertion with it, so both sides of the setting are provable
@@ -41,10 +41,6 @@ leg_wallpaper_fixture() {
   if [ "${SMOKE_WALLPAPER_DITHER:-0}" = "1" ]; then
     wallpaper_dither=true
     settings_fragment ', "wallpaper": {"dither": true}'
-  elif leg_on retro; then
-    # The retro preset turns `theme.dither` on and `wallpaper.dither`
-    # defaults to it, so the quantized strip is the expected frame here.
-    wallpaper_dither=true
   fi
   # Seeded before Hyprland starts, because the config below dofiles it and
   # the shell does not write its own copy until a second or two into the

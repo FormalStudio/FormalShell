@@ -1,7 +1,7 @@
-//! What the theme resolves: the preset against settings.json,
-//! the palette theme.json carries, the tokens at the live scale, and
-//! `box()` against all three. Settings come in through `get` (one dotted
-//! path, `None` when absent) so this holds no config of its own.
+//! What the theme resolves: the one table against settings.json, the
+//! palette theme.json carries, the tokens at the live scale, and `box()`
+//! against all three. Settings come in through `get` (one dotted path,
+//! `None` when absent) so this holds no config of its own.
 
 use serde_json::{Map, Value};
 
@@ -9,7 +9,6 @@ use crate::barpaint::{Paint, Pin};
 use crate::chrome;
 use crate::color::Rgba;
 use crate::palette::{self, COLOR_KEYS};
-use crate::presets;
 use crate::style::{self, BoxStyle, Clock, Radius, Ring};
 use crate::tokens::{self, Easing, FontTokens, LetterSpacing, Radii, Space};
 
@@ -107,12 +106,12 @@ pub struct Faces {
 }
 
 impl Faces {
-    /// Every role on its alias: `values` on `monospace`, the rest on the
-    /// `theme.fonts` pair's sans.
-    pub fn resolve(fonts: &str) -> Self {
-        let sans = Face { name: None, generic: if fonts == "mono" { "monospace" } else { "sans-serif" } };
+    /// Every role on its fontconfig alias: `values` on `monospace`, the
+    /// rest on `sans-serif`.
+    pub const ALIASES: Self = {
+        let sans = Face { name: None, generic: "sans-serif" };
         Self { words: sans, values: Face { name: None, generic: "monospace" }, display: sans, body: sans }
-    }
+    };
 }
 
 /// `layout`: where the shell's chrome sits. `sidebar` is read ahead of the
@@ -159,14 +158,12 @@ impl BarStyle {
         }
     }
 
-    /// `None` for an absent or unknown value, which leaves the table's own
-    /// `bar` and `paint` habits standing.
-    fn parse(value: Option<&Value>) -> Option<Self> {
+    /// An unknown value reads as the default.
+    fn parse(value: Option<&Value>) -> Self {
         match value.and_then(Value::as_str) {
-            Some("transparent") => Some(Self::Transparent),
-            Some("solid") => Some(Self::Solid),
-            Some("corners") => Some(Self::Corners),
-            _ => None,
+            Some("solid") => Self::Solid,
+            Some("corners") => Self::Corners,
+            _ => Self::Transparent,
         }
     }
 
@@ -206,9 +203,63 @@ impl Backend {
     }
 }
 
+/// Settings keys earlier versions read and this one ignores, each logged
+/// once per start where it is still written.
+pub const REMOVED_KEYS: [&str; 10] = [
+    "theme.preset",
+    "theme.radius",
+    "theme.icons",
+    "theme.fonts",
+    "theme.dither",
+    "theme.grid",
+    "theme.boot",
+    "theme.sounds",
+    "theme.soundVolume",
+    "bar.paint",
+];
+
+/// The [`REMOVED_KEYS`] settings.json still writes.
+pub fn removed_keys(get: impl Fn(&str) -> Option<Value>) -> Vec<&'static str> {
+    REMOVED_KEYS.into_iter().filter(|k| get(k).is_some()).collect()
+}
+
+/// tsubi.club's five swatches (`--color-1` to `--color-5`), the names
+/// `wallpaper.color` takes besides a hex.
+pub const WALLPAPER_COLORS: [(&str, &str); 5] =
+    [("sage", "#a1c8bc"), ("purple", "#402484"), ("green", "#68bc64"), ("silver", "#bdc3c9"), ("orange", "#ff8000")];
+
+/// `wallpaper.color` as written: a `#rrggbb` hex (lowercased) or one of
+/// [`WALLPAPER_COLORS`]' names gives that colour, `false` or `null` the
+/// picture, and anything else is malformed, `None`.
+pub fn wallpaper_color(value: &Value) -> Option<Option<String>> {
+    match value {
+        Value::Bool(false) | Value::Null => Some(None),
+        Value::String(s) => {
+            let s = s.trim().to_lowercase();
+            if let Some((_, hex)) = WALLPAPER_COLORS.iter().find(|(name, _)| *name == s) {
+                return Some(Some((*hex).to_owned()));
+            }
+            let digits = s.strip_prefix('#')?;
+            (digits.len() == 6 && digits.bytes().all(|b| b.is_ascii_hexdigit())).then(|| Some(s.clone()))
+        }
+        _ => None,
+    }
+}
+
+/// A value that is not a real boolean is a malformed key rather than a
+/// falsy one, so `"true"` and `1` take the default.
+fn boolean(value: Option<Value>, fallback: bool) -> bool {
+    match value {
+        Some(Value::Bool(b)) => b,
+        _ => fallback,
+    }
+}
+
+/// elementary's base radius, the ladder every `sm`..`xl` step reads.
+const RADIUS: f64 = 6.0;
+
 #[derive(Clone, Debug)]
 pub struct Theme {
-    pub preset: &'static str,
     pub style: &'static Value,
     pub colors: Colors,
     pub radius: f64,
@@ -216,10 +267,7 @@ pub struct Theme {
     pub border_width: f64,
     pub surface_opacity: f64,
     pub blur_behind: bool,
-    pub fonts: &'static str,
     pub faces: Faces,
-    pub icon_set: String,
-    pub dither: bool,
     pub wallpaper_dither: bool,
     pub lock_dither: bool,
     pub wallpaper_grid: bool,
@@ -236,12 +284,10 @@ pub struct Theme {
     pub motion_enabled: bool,
     pub motion_scale: f64,
     pub layout: Layout,
-    /// `None` until settings.json writes one: the table's `bar` and `paint`
-    /// habits stand.
-    pub bar_style: Option<BarStyle>,
-    /// `motion.morph`, `None` until settings.json writes a boolean: the
-    /// table's `emerge` habit stands.
-    pub morph: Option<bool>,
+    pub bar_style: BarStyle,
+    /// `motion.morph`: a card buds off the bar's inner edge and morphs
+    /// between sizes, or drops from its cell as a popover.
+    pub morph: bool,
     pub render_backend: Backend,
     pub frame_thickness: f64,
     pub frame_radius: f64,
@@ -278,12 +324,8 @@ impl style::Ctx for PaletteCtx<'_> {
 
 impl Theme {
     pub fn resolve(get: impl Fn(&str) -> Option<Value>, palette: &Map<String, Value>) -> Self {
-        let preset = presets::resolve(get("theme.preset").as_ref(), &get);
-        let preset_defaults = presets::defaults(Some(&Value::from(preset.preset)));
-        let style = preset.style;
-
-        let radius = tokens::js_round(tokens::clamp(Some(&preset.radius), 0.0, f64::INFINITY, preset_defaults.radius));
-        let surface_opacity = tokens::clamp(Some(&preset.surface_opacity), 0.0, 1.0, preset_defaults.surface_opacity);
+        let style = crate::table();
+        let surface_opacity = tokens::clamp(get("theme.surfaceOpacity").as_ref(), 0.0, 1.0, 1.0);
 
         let font_base_size = 13.0;
         let font_scale = tokens::font_scale(font_base_size);
@@ -291,39 +333,24 @@ impl Theme {
 
         let frame_thickness =
             tokens::js_round(tokens::clamp(get("frame.thickness").as_ref(), 0.0, f64::INFINITY, 0.0));
-        let frame_radius_default = Value::from(if radius > 0.0 { 20 } else { 0 });
-        let frame_radius = tokens::js_round(tokens::clamp(
-            Some(&get("frame.radius").unwrap_or(frame_radius_default)),
-            0.0,
-            f64::INFINITY,
-            0.0,
-        ));
-
-        let icon_set = match &preset.icons {
-            Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
+        let frame_radius = tokens::js_round(tokens::clamp(get("frame.radius").as_ref(), 0.0, f64::INFINITY, 15.0));
 
         Self {
-            preset: preset.preset,
             style,
             colors: Colors::from_palette(palette),
-            radius,
-            radii: tokens::radius_tokens(Some(radius)),
+            radius: RADIUS,
+            radii: tokens::radius_tokens(Some(RADIUS)),
             border_width: 1.0,
             surface_opacity,
-            blur_behind: preset.blur,
-            fonts: preset.fonts,
-            faces: Faces::resolve(preset.fonts),
-            icon_set,
-            dither: preset.dither,
-            wallpaper_dither: preset.wallpaper_dither,
-            lock_dither: preset.lock_dither,
-            wallpaper_grid: preset.wallpaper_grid,
-            lock_grid: preset.lock_grid,
-            wallpaper_animate: preset.wallpaper_animate,
-            wallpaper_color: preset.wallpaper_color.clone(),
-            wallpaper_swatches: preset.wallpaper_swatches,
+            blur_behind: boolean(get("theme.blur"), true),
+            faces: Faces::ALIASES,
+            wallpaper_dither: boolean(get("wallpaper.dither"), false),
+            lock_dither: boolean(get("lock.dither"), false),
+            wallpaper_grid: boolean(get("wallpaper.grid"), false),
+            lock_grid: boolean(get("lock.grid"), false),
+            wallpaper_animate: boolean(get("wallpaper.animate"), false),
+            wallpaper_color: get("wallpaper.color").as_ref().and_then(wallpaper_color).flatten(),
+            wallpaper_swatches: &[],
             font_base_size,
             font_scale,
             font_size: tokens::font_tokens(font_base_size),
@@ -334,10 +361,7 @@ impl Theme {
             motion_scale: 1.0,
             layout: Layout::parse(get("layout").as_ref()),
             bar_style: BarStyle::parse(get("bar.style").as_ref()),
-            morph: match get("motion.morph") {
-                Some(Value::Bool(b)) => Some(b),
-                _ => None,
-            },
+            morph: boolean(get("motion.morph"), true),
             render_backend: Backend::parse(get("render.backend").as_ref()),
             frame_thickness,
             frame_radius,
@@ -346,32 +370,6 @@ impl Theme {
 
     pub fn frame_enabled(&self) -> bool {
         self.frame_thickness > 0.0
-    }
-
-    /// One habit's value, which a surface reads instead of the preset name.
-    pub fn habit(&self, key: &str) -> Option<&Value> {
-        self.style["habits"].get(key)
-    }
-
-    /// A string habit, `""` when the table leaves it out.
-    pub fn habit_str(&self, key: &str) -> &str {
-        self.habit(key).and_then(Value::as_str).unwrap_or("")
-    }
-
-    /// Whether the bar is the band: a written `bar.style` selects it under
-    /// every table, an absent one leaves the table's `bar` habit standing.
-    pub fn band(&self) -> bool {
-        self.bar_style.is_some() || self.habit_str("bar") == "wingpanel"
-    }
-
-    /// How a card arrives: a written `motion.morph` joins the bar or drops
-    /// from its cell, an absent one leaves the table's `emerge` habit.
-    pub fn emerge(&self) -> &str {
-        match self.morph {
-            Some(true) => "join",
-            Some(false) => "popover",
-            None => self.habit_str("emerge"),
-        }
     }
 
     /// This theme with `primary` taken from another palette role.
@@ -493,7 +491,6 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presets::tests::make_get;
     use crate::style::{Cast, Edge, geometry};
     use serde_json::json;
 
@@ -513,6 +510,17 @@ mod tests {
         palette::merge_with_fallback(Some(&colors))
     }
 
+    /// `Config.get`'s own walk over a plain settings object.
+    pub(crate) fn make_get(settings: Value) -> impl Fn(&str) -> Option<Value> {
+        move |path| {
+            let mut node = &settings;
+            for part in path.split('.') {
+                node = node.as_object()?.get(part)?;
+            }
+            Some(node.clone())
+        }
+    }
+
     fn theme() -> Theme {
         Theme::resolve(make_get(json!({})), &sentinel())
     }
@@ -530,20 +538,20 @@ mod tests {
         let b = t.box_style("card", None);
         assert_eq!(b.fill, hex("#151515").with_alpha(t.surface_opacity as f32));
         let border = b.border.clone().unwrap();
-        assert_eq!(border.color, hex("#444444"));
+        assert_eq!(border.color, Rgba::BLACK.with_alpha(0.75));
         assert_eq!(border.width, t.border_width);
-        assert_eq!(t.box_radius(&b, 40.0), t.radii.xl);
-        assert!(b.casts.is_empty());
+        assert_eq!(t.box_radius(&b, 40.0), 9.0);
+        assert_eq!(b.casts.len(), 2);
         assert!(b.rings.is_empty());
     }
 
     #[test]
     fn a_role_with_no_border_draws_none() {
         let t = theme();
-        let b = t.box_style("trough", None);
-        assert_eq!(b.fill, hex("#2a2a2a"));
+        let b = t.box_style("cell.mark", None);
+        assert_eq!(b.fill, hex("#1133ff"));
         assert_eq!(b.border, None);
-        assert_eq!(t.box_radius(&b, 40.0), t.radii.md);
+        assert_eq!(t.box_radius(&b, 40.0), t.radii.sm);
     }
 
     #[test]
@@ -570,7 +578,7 @@ mod tests {
     fn a_literal_colour_resolves_under_its_own_alpha() {
         let t = theme();
         let b = t.box_style("scrim", None);
-        assert_eq!(b.fill, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 0.5 });
+        assert_eq!(b.fill, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 125.0 / 255.0 });
         assert_eq!(t.box_radius(&b, 40.0), 0.0);
         assert_eq!(b.border, None);
     }
@@ -579,7 +587,7 @@ mod tests {
     fn the_consumer_can_override_the_radius() {
         // Box's own `radius` property wins over the table; the table's value
         // is what it overrides.
-        assert_eq!(theme().box_style("card", None).radius, Radius::Px(14.0));
+        assert_eq!(theme().box_style("card", None).radius, Radius::Px(9.0));
     }
 
     #[test]
@@ -600,7 +608,7 @@ mod tests {
         assert_eq!(ring.x, -spread);
         assert_eq!(ring.width, 100.0 + spread * 2.0);
         assert_eq!(ring.radius, 8.0 + spread);
-        assert_eq!(cursor.rings[0].color, hex("#00ccff").with_alpha(0.5));
+        assert_eq!(cursor.rings[0].color, hex("#00ccff").with_alpha(0.3));
         assert_eq!(cursor.border.unwrap().color, hex("#00ccff"));
     }
 
@@ -621,7 +629,8 @@ mod tests {
 
     #[test]
     fn a_box_with_no_hairlines_draws_none() {
-        assert!(theme().box_style("card", None).hairlines.is_empty());
+        assert!(theme().box_style("scrim", None).hairlines.is_empty());
+        assert_eq!(theme().box_style("card", None).hairlines.len(), 4);
     }
 
     #[test]
@@ -633,7 +642,7 @@ mod tests {
     #[test]
     fn a_cast_layers_an_effect_only_when_a_layer_blurs() {
         let t = theme();
-        assert!(t.box_style("card", None).casts.is_empty());
+        assert_eq!(t.box_style("card", None).casts.len(), 2);
         assert!(t.box_style("cursor", None).casts.is_empty());
 
         let casts = [
@@ -657,7 +666,7 @@ mod tests {
         let t = theme();
         let b = t.box_style("cell", Some("hover"));
         assert_eq!(b.wash, Some(t.hover_fill()));
-        assert_eq!(t.box_radius(&b, 40.0), t.radii.md);
+        assert_eq!(t.box_radius(&b, 40.0), 3.0);
     }
 
     #[test]
@@ -671,100 +680,81 @@ mod tests {
     // --- the theme's own resolution
 
     #[test]
-    fn the_preset_scalars_reach_the_theme() {
-        let t = Theme::resolve(make_get(json!({ "theme": { "preset": "retro" } })), &sentinel());
-        assert_eq!(t.radius, 0.0);
-        assert_eq!(t.radii.xl, 0.0);
-        assert_eq!(t.surface_opacity, 1.0);
-        assert!(!t.blur_behind);
-        assert_eq!(t.faces.words, Face { name: None, generic: "monospace" });
-        assert_eq!(t.icon_set, "nerd");
-        assert_eq!(t.pill_radius(20.0), 0.0);
-        assert_eq!(t.frame_radius, 0.0);
-    }
-
-    #[test]
-    fn a_table_with_no_fonts_block_keeps_the_aliases() {
-        let alias = |generic| Face { name: None, generic };
-        for (preset, sans) in [("metamorphosis", "sans-serif"), ("pantheon", "sans-serif"), ("retro", "monospace")] {
-            let t = Theme::resolve(make_get(json!({ "theme": { "preset": preset } })), &sentinel());
-            let want = Faces { words: alias(sans), values: alias("monospace"), display: alias(sans), body: alias(sans) };
-            assert_eq!(t.faces, want, "{preset}");
-        }
-    }
-
-    #[test]
-    fn an_accent_too_close_to_the_background_keeps_primary() {
-        let c = Colors::default();
-        assert_eq!(c.accented("chart2").get("primary"), c.get("primary"));
-        assert_eq!(c.accented("chart3").get("primary"), c.get("chart3"));
-        assert_eq!(c.accented("chart3").get("chart3"), c.get("chart3"));
-    }
-
-    #[test]
-    fn a_malformed_scalar_falls_back_to_the_presets_own() {
-        let t = Theme::resolve(
-            make_get(json!({ "theme": { "preset": "pantheon", "radius": "big", "surfaceOpacity": 4 } })),
-            &sentinel(),
-        );
-        assert_eq!(t.radius, 6.0);
-        assert_eq!(t.surface_opacity, 1.0);
-        let t = Theme::resolve(make_get(json!({ "theme": { "radius": 10.6, "surfaceOpacity": -1 } })), &sentinel());
-        assert_eq!(t.radius, 11.0);
-        assert_eq!(t.surface_opacity, 0.0);
-    }
-
-    #[test]
-    fn the_frame_thickness_holds_under_every_table() {
-        for preset in presets::NAMES {
-            let get = make_get(json!({ "theme": { "preset": preset }, "frame": { "thickness": 10 } }));
-            let t = Theme::resolve(get, &sentinel());
-            assert_eq!(t.frame_thickness, 10.0, "{preset}");
-            assert!(t.frame_enabled(), "{preset}");
-        }
-        let t = Theme::resolve(make_get(json!({ "frame": { "thickness": 10 } })), &sentinel());
-        assert_eq!(t.frame_radius, 20.0);
-        assert!(!theme().frame_enabled());
-    }
-
-    #[test]
-    fn an_absent_key_keeps_the_habit_and_a_written_one_wins() {
-        for preset in presets::NAMES {
-            let t = Theme::resolve(make_get(json!({ "theme": { "preset": preset } })), &sentinel());
-            assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, None, None, Backend::Auto), "{preset}");
-
-            let written = json!({
-                "theme": { "preset": preset },
-                "layout": "sidebar",
-                "bar": { "style": "corners" },
-                "motion": { "morph": false },
-                "render": { "backend": "gpu" },
-            });
-            let t = Theme::resolve(make_get(written), &sentinel());
-            assert_eq!(
-                (t.layout, t.bar_style, t.morph, t.render_backend),
-                (Layout::Sidebar, Some(BarStyle::Corners), Some(false), Backend::Gpu),
-                "{preset}"
-            );
-        }
-        let t = Theme::resolve(make_get(json!({ "bar": { "style": "solid" }, "motion": { "morph": true } })), &sentinel());
-        assert_eq!((t.bar_style, t.morph), (Some(BarStyle::Solid), Some(true)));
-    }
-
-    #[test]
-    fn a_written_style_selects_the_band_and_morph_the_emerge() {
+    fn the_defaults_are_the_one_look() {
         let t = theme();
-        assert_eq!((t.band(), t.emerge()), (false, "join"));
-        let t = Theme::resolve(make_get(json!({ "bar": { "style": "solid" }, "motion": { "morph": false } })), &sentinel());
-        assert_eq!((t.band(), t.emerge()), (true, "popover"));
-        let t = Theme::resolve(make_get(json!({ "theme": { "preset": "pantheon" }, "motion": { "morph": true } })), &sentinel());
-        assert_eq!((t.band(), t.emerge()), (true, "join"));
-        assert_eq!(BarStyle::Transparent.pin(), Pin::Transparent);
-        assert_eq!(BarStyle::Corners.pin(), Pin::Paint(Paint::Maximized));
+        assert_eq!((t.radius, t.radii.xl, t.surface_opacity), (6.0, 10.0, 1.0));
+        assert!(t.blur_behind);
+        assert_eq!(t.faces, Faces::ALIASES);
+        assert_eq!(t.faces.words, Face { name: None, generic: "sans-serif" });
+        assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid && !t.wallpaper_animate);
+        assert_eq!(t.wallpaper_color, None);
+        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, BarStyle::Transparent, true, Backend::Auto));
+        assert_eq!((t.frame_thickness, t.frame_radius), (0.0, 15.0));
+        assert!(!t.frame_enabled());
     }
 
     #[test]
-    fn an_unknown_or_malformed_key_reads_as_absent() {
+    fn a_removed_key_is_ignored_and_reported() {
+        let written = json!({ "theme": { "preset": "square", "radius": 0, "icons": "nerd", "dither": true, "grid": true }, "bar": { "paint": "dark" } });
+        let t = Theme::resolve(make_get(written.clone()), &sentinel());
+        assert_eq!((t.radius, t.surface_opacity), (6.0, 1.0));
+        assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid);
+        assert_eq!(t.bar_style, BarStyle::Transparent);
+        assert_eq!(removed_keys(make_get(written)), ["theme.preset", "theme.radius", "theme.icons", "theme.dither", "theme.grid", "bar.paint"]);
+        assert!(removed_keys(make_get(json!({ "theme": { "mode": "dark" } }))).is_empty());
+    }
+
+    #[test]
+    fn the_image_keys_are_read_on_their_own() {
+        let t = Theme::resolve(make_get(json!({ "wallpaper": { "dither": true, "grid": true, "animate": true }, "lock": { "grid": true } })), &sentinel());
+        assert!(t.wallpaper_dither && !t.lock_dither && t.wallpaper_grid && t.lock_grid && t.wallpaper_animate);
+        let t = Theme::resolve(make_get(json!({ "wallpaper": { "dither": "true", "animate": 1 } })), &sentinel());
+        assert!(!t.wallpaper_dither && !t.wallpaper_animate);
+    }
+
+    #[test]
+    fn wallpaper_color_takes_a_hex_or_a_name_and_false_gives_the_picture_back() {
+        let color = |v: Value| Theme::resolve(make_get(json!({ "wallpaper": { "color": v } })), &sentinel()).wallpaper_color;
+        assert_eq!(color(json!("#FF8000")).as_deref(), Some("#ff8000"));
+        assert_eq!(color(json!("sage")).as_deref(), Some("#a1c8bc"));
+        assert_eq!(color(json!(false)), None);
+        assert_eq!(color(json!(null)), None);
+        for junk in [json!("#40248"), json!("402484"), json!("violet"), json!(true), json!(4204164)] {
+            assert_eq!(color(junk.clone()), None, "{junk}");
+            assert_eq!(wallpaper_color(&junk), None, "{junk}");
+        }
+        assert_eq!(wallpaper_color(&json!(false)), Some(None));
+    }
+
+    #[test]
+    fn a_malformed_scalar_falls_back_to_the_default() {
+        let t = Theme::resolve(make_get(json!({ "theme": { "surfaceOpacity": 4, "blur": "false" } })), &sentinel());
+        assert_eq!(t.surface_opacity, 1.0);
+        assert!(t.blur_behind);
+        let t = Theme::resolve(make_get(json!({ "theme": { "surfaceOpacity": -1, "blur": false } })), &sentinel());
+        assert_eq!(t.surface_opacity, 0.0);
+        assert!(!t.blur_behind);
+    }
+
+    #[test]
+    fn the_frame_thickness_alone_draws_the_ring() {
+        let t = Theme::resolve(make_get(json!({ "frame": { "thickness": 10 } })), &sentinel());
+        assert_eq!((t.frame_thickness, t.frame_radius), (10.0, 15.0));
+        assert!(t.frame_enabled());
+        let t = Theme::resolve(make_get(json!({ "frame": { "thickness": 6, "radius": 20 } })), &sentinel());
+        assert_eq!(t.frame_radius, 20.0);
+    }
+
+    #[test]
+    fn a_written_key_wins_and_an_unknown_or_malformed_one_reads_as_the_default() {
+        let written = json!({
+            "layout": "sidebar",
+            "bar": { "style": "corners" },
+            "motion": { "morph": false },
+            "render": { "backend": "gpu" },
+        });
+        let t = Theme::resolve(make_get(written), &sentinel());
+        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Sidebar, BarStyle::Corners, false, Backend::Gpu));
         let get = make_get(json!({
             "layout": "dock",
             "bar": { "style": "auto" },
@@ -772,29 +762,21 @@ mod tests {
             "render": { "backend": "vulkan" },
         }));
         let t = Theme::resolve(get, &sentinel());
-        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, None, None, Backend::Auto));
-        let t = Theme::resolve(make_get(json!({ "motion": { "morph": 0 } })), &sentinel());
-        assert_eq!(t.morph, None);
+        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, BarStyle::Transparent, true, Backend::Auto));
+        assert_eq!(BarStyle::Transparent.pin(), Pin::Transparent);
+        assert_eq!(BarStyle::Corners.pin(), Pin::Paint(Paint::Maximized));
     }
 
     #[test]
     fn motion_follows_the_table_the_switch_and_the_scale() {
         let mut t = theme();
         let m = t.motion();
-        assert_eq!(m.emerge, 500.0);
-        assert_eq!(m.restack_stagger, 0.0);
-        assert_eq!(m.emerge_curve, Easing::Bezier(tokens::curve("spatial").unwrap().to_vec()));
-        // The toast's own clock is sonner's: 400ms on CSS `ease`, never past rest.
-        assert_eq!((m.arrive, m.restack), (400.0, 400.0));
-        assert_eq!(m.restack_curve, Easing::Bezier(vec![0.25, 0.1, 0.25, 1.0, 1.0, 1.0]));
-
-        let p = Theme::resolve(make_get(json!({ "theme": { "preset": "pantheon" } })), &sentinel()).motion();
-        assert_eq!(p.emerge, 150.0);
-        assert_eq!(p.restack_stagger, 150.0);
-        assert_eq!(p.restack_curve, Easing::Bezier(tokens::curve("emphasizedDecel").unwrap().to_vec()));
+        assert_eq!(m.emerge, 150.0);
+        assert_eq!(m.restack_stagger, 150.0);
+        assert_eq!(m.restack_curve, Easing::Bezier(tokens::curve("emphasizedDecel").unwrap().to_vec()));
 
         t.motion_scale = 10.0;
-        assert_eq!(t.motion().emerge, 5000.0);
+        assert_eq!(t.motion().emerge, 1500.0);
         assert_eq!(t.motion().families.spatial, 5000.0);
         let off = Theme::resolve(make_get(json!({ "motion": { "enabled": "yes" } })), &sentinel());
         assert!(!off.motion_enabled);
@@ -804,9 +786,7 @@ mod tests {
 
     #[test]
     fn the_cursor_ring_reserves_its_spread() {
-        assert_eq!(theme().ring_width(), 3.0);
-        let p = Theme::resolve(make_get(json!({ "theme": { "preset": "pantheon" } })), &sentinel());
-        assert_eq!(p.ring_width(), 2.0);
+        assert_eq!(theme().ring_width(), 2.0);
     }
 
     #[test]

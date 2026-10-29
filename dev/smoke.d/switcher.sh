@@ -34,8 +34,7 @@
 # constant: the fill is the wallpaper's own accent under matugen, and a leg
 # naming a hex would be asserting the palette rather than the cursor.
 #
-# The switcher is on under every theme (`switcher.enabled`, default true), so
-# the leg pins no preset and rides --pantheon or --retro for their material.
+# The switcher is on by default (`switcher.enabled`).
 leg_switcher_flag="--switcher"
 leg_switcher_order=102
 leg_switcher_needs="foot jq convert"

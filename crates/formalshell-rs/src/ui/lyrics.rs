@@ -115,7 +115,7 @@ fn layout_row(cx: &mut Cx, line: &Line, width: f64) -> (f64, Vec<Piece>, HashMap
     let mut pieces = Vec::new();
     let mut bands = HashMap::new();
     if line.interlude {
-        let g = fs_theme::icons::glyph(&cx.kit.look.icon_set, "music");
+        let g = fs_theme::icons::glyph("music");
         let t = cx.kit.shape(g.text, TextStyle { family: text::Family::Named(g.family), size: cx.theme.font_size.heading as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         let h = t.line_height() as f64;
         let w = t.width as f64;

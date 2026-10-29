@@ -56,24 +56,6 @@ pub const ROLES: [(&str, &[&str]); 35] = [
     ("window", &["rest", "inactive"]),
 ];
 
-/// The habits and each one's allowed values: what a surface reads instead
-/// of testing a theme name. `frame` is a bool, the rest are strings.
-pub const HABIT_KEYS: [&str; 7] = ["bar", "emerge", "notification", "frame", "paint", "panel", "grid"];
-
-pub fn habit_allows(key: &str, value: &Value) -> Option<bool> {
-    let strings: &[&str] = match key {
-        "bar" => &["strip", "wingpanel"],
-        "emerge" => &["join", "popover"],
-        "notification" => &["row", "bubble"],
-        "frame" => return Some(value.is_boolean()),
-        "paint" => &["auto", "transparent", "light", "dark", "translucentLight", "translucentDark", "maximized"],
-        "panel" => &["sheet"],
-        "grid" => &["square"],
-        _ => return None,
-    };
-    Some(value.as_str().is_some_and(|s| strings.contains(&s)))
-}
-
 const BAND_PAINTS: &[&str] = &["rest", "light", "dark", "translucentLight", "translucentDark", "maximized"];
 
 pub const MOTION_KEYS: [&str; 4] = ["emerge", "arrive", "restack", "switcher"];
@@ -724,7 +706,7 @@ pub mod geometry {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::{palette, tables};
+    use crate::palette;
     use serde_json::json;
 
     /// A palette whose every role answers with its own name, so a resolved
@@ -772,8 +754,8 @@ pub(crate) mod tests {
         Names { mode }
     }
 
-    fn tables() -> [(&'static str, &'static Value); 3] {
-        [("metamorphosis", tables::metamorphosis()), ("retro", tables::retro()), ("pantheon", tables::pantheon())]
+    fn tables() -> [(&'static str, &'static Value); 1] {
+        [("formalshell", crate::table())]
     }
 
     const BLACK: &str = "#000000";
@@ -868,7 +850,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn every_table_declares_a_clock_for_every_habit_that_has_one() {
+    fn every_table_declares_every_clock() {
         let families = tokens::motion_tokens(true);
         for (name, style) in tables() {
             for key in MOTION_KEYS {
@@ -902,23 +884,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_paint_policy_is_the_tables() {
-        assert_eq!(tables::pantheon()["habits"]["paint"], "transparent");
-        assert_eq!(tables::metamorphosis()["habits"]["paint"], "auto");
-    }
-
-    #[test]
-    fn every_table_declares_the_habits_and_the_washes() {
+    fn every_table_declares_the_washes() {
         for (name, style) in tables() {
-            let habits = style["habits"].as_object().expect("habits is an object");
-            for key in HABIT_KEYS {
-                let v = habits.get(key);
-                assert!(v.is_some(), "{name} is missing the habit {key}");
-                assert_eq!(habit_allows(key, v.unwrap()), Some(true), "{name} habit {key} is {}", v.unwrap());
-            }
-            for own in habits.keys() {
-                assert!(HABIT_KEYS.contains(&own.as_str()), "{name} carries an unknown habit {own}");
-            }
             for key in WASH_KEYS {
                 let w = style["wash"].get(key);
                 assert!(truthy(w), "{name} is missing the wash {key}");
@@ -928,47 +895,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn metamorphosis_is_the_shipped_chrome() {
-        let style = tables::metamorphosis();
-        let card = r(style, "card", None, "dark");
-        assert_eq!(card.fill, "role:card@0.85");
-        assert_eq!(card.radius, Radius::Px(14.0));
-        let border = card.border.clone().unwrap();
-        assert_eq!(border.color, "role:border");
-        assert_eq!(border.width, 1.0);
-        assert_eq!(card.face, None);
-        assert_eq!(card.casts.len(), 0);
-        assert_eq!(card.rings.len(), 0);
-
-        let cell = r(style, "cell", Some("rest"), "dark");
-        assert_eq!(cell.fill, "role:card@0.85");
-        assert_eq!(cell.radius, Radius::Px(8.0));
-        assert_eq!(cell.border.unwrap().color, "role:border");
-
-        assert_eq!(r(style, "cell", Some("active"), "dark").fill, "role:primary");
-        assert_eq!(r(style, "cell", Some("selected"), "dark").fill, "role:accent");
-
-        let tooltip = r(style, "popover", None, "dark");
-        assert_eq!(tooltip.fill, "role:popover@0.85");
-        assert_eq!(tooltip.radius, Radius::Px(6.0));
-        assert_eq!(r(style, "menu", None, "dark").radius, Radius::Px(8.0));
-    }
-
-    #[test]
-    fn the_cursor_is_a_ring_layer_at_the_shipped_numbers() {
-        let cursor = r(tables::metamorphosis(), "cursor", None, "dark");
-        let border = cursor.border.unwrap();
-        assert_eq!(border.color, "role:ring");
-        assert_eq!(border.width, 1.0);
-        assert_eq!(cursor.rings.len(), 1);
-        assert_eq!(cursor.rings[0].spread, 3.0);
-        assert_eq!(cursor.rings[0].color, "role:ring@0.5");
-        assert_eq!(cursor.casts.len(), 0);
-    }
-
-    #[test]
     fn the_marks_a_control_paints_come_off_the_table() {
-        let style = tables::metamorphosis();
+        let style = crate::table();
         let mark = r(style, "cell.mark", None, "dark");
         assert_eq!(mark.fill, "role:primary");
         assert_eq!(mark.radius, Radius::Px(6.0));
@@ -978,7 +906,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_cursor_composes_over_a_box() {
-        let style = tables::metamorphosis();
+        let style = crate::table();
         let ghost = r(style, "button.ghost", Some("rest"), "dark");
         let cursor = r(style, "cursor", None, "dark");
 
@@ -987,7 +915,7 @@ pub(crate) mod tests {
         assert_eq!(haloed.radius, ghost.radius);
         assert_eq!(haloed.border.as_ref().unwrap().color, "role:ring");
         assert_eq!(haloed.rings.len(), 1);
-        assert_eq!(haloed.rings[0].spread, 3.0);
+        assert_eq!(haloed.rings[0].spread, 2.0);
 
         let bordered = with_cursor(&ghost, &cursor, false);
         assert_eq!(bordered.border.as_ref().unwrap().color, "role:ring");
@@ -997,42 +925,11 @@ pub(crate) mod tests {
         assert_eq!(ghost.rings.len(), 0);
     }
 
-    #[test]
-    fn the_scrim_is_black_at_a_half() {
-        let scrim = r(tables::metamorphosis(), "scrim", None, "dark");
-        assert_eq!(scrim.fill, format!("{BLACK}@0.5"));
-        assert_eq!(scrim.radius, Radius::Px(0.0));
-    }
-
-    #[test]
-    fn the_bar_carries_one_edge_and_no_border() {
-        let bar = r(tables::metamorphosis(), "bar", None, "dark");
-        assert_eq!(bar.fill, "role:card@0.85");
-        assert_eq!(bar.border, None);
-        let edge = bar.edge.unwrap();
-        assert_eq!(edge.color, "role:border");
-        assert_eq!(edge.width, 1.0);
-    }
-
-    #[test]
-    fn retro_is_the_metamorphosis_table() {
-        assert!(std::ptr::eq(tables::retro(), tables::metamorphosis()));
-    }
-
-    #[test]
-    fn a_preset_hands_back_its_own_table() {
-        let get = |_: &str| None;
-        assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("metamorphosis")), get).style, tables::metamorphosis()));
-        assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("retro")), get).style, tables::retro()));
-        assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("pantheon")), get).style, tables::pantheon()));
-        assert!(std::ptr::eq(crate::presets::defaults(Some(&json!("metamorphosis"))).style, tables::metamorphosis()));
-    }
-
-    // --- Pantheon
+    // --- The table's own values
 
     #[test]
     fn the_pantheon_button_is_raised() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let button = r(p, "button.outline", Some("rest"), "light");
         assert_eq!(button.fill, "role:secondary");
         assert_eq!(button.radius, Radius::Px(3.0));
@@ -1056,7 +953,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_card_carries_every_layer_kind() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let card = r(p, "card", None, "dark");
         assert_eq!(card.fill, "role:card@0.85");
         assert_eq!(card.radius, Radius::Px(9.0));
@@ -1076,7 +973,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_highlight_is_the_product_in_dark() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let light = r(p, "card", None, "light");
         let dark = r(p, "card", None, "dark");
         assert_eq!(light.hairlines[0].color, "#ffffff@0.3");
@@ -1089,7 +986,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_cursor_is_a_two_pixel_halo() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let cursor = r(p, "cursor", None, "dark");
         assert_eq!(cursor.border.unwrap().color, "role:ring");
         assert_eq!(cursor.rings.len(), 1);
@@ -1104,7 +1001,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_bubble_flattens_inside_the_centre() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let bubble = r(p, "notification", Some("rest"), "dark");
         assert_eq!(bubble.fill, "role:card");
         assert_eq!(bubble.radius, Radius::Px(9.0));
@@ -1123,13 +1020,13 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_scrim_is_gala_s_dim() {
-        let scrim = r(tables::pantheon(), "scrim", None, "dark");
+        let scrim = r(crate::table(), "scrim", None, "dark");
         assert_eq!(scrim.fill, format!("{BLACK}@{}", fmt(125.0 / 255.0)));
     }
 
     #[test]
     fn the_pantheon_band_has_a_paint_per_reading() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let light = r(p, "bar", Some("light"), "dark");
         assert_eq!(light.fill, CLEAR);
         assert_eq!(light.ink, WHITE);
@@ -1174,7 +1071,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_ring_takes_the_bands_paint() {
-        let p = tables::pantheon();
+        let p = crate::table();
         for bare in ["light", "dark"] {
             let b = r(p, "frame", Some(bare), "dark");
             assert_eq!(b.fill, CLEAR, "{bare} draws a fill");
@@ -1196,19 +1093,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_metamorphosis_ring_keeps_the_strip_and_takes_the_band_paints() {
-        let m = tables::metamorphosis();
-        let rest = r(m, "frame", None, "dark");
-        assert_eq!(rest.fill, "role:card@0.85");
-        let border = rest.border.unwrap();
-        assert_eq!(border.color, "role:border");
-        assert_eq!(border.width, 1.0);
-        assert_eq!(rest.radius, Radius::Px(0.0));
-        assert_eq!(r(m, "frame", Some("translucentDark"), "dark").fill, "#000000@0.3");
-        assert_eq!(r(m, "frame", Some("light"), "dark").fill, CLEAR);
-    }
-
-    #[test]
     fn every_table_draws_solid_as_an_opaque_band_on_a_line() {
         for (name, style) in tables() {
             for mode in ["dark", "light"] {
@@ -1225,7 +1109,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_open_indicator_fills_its_cell() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let open = r(p, "cell", Some("ghostOpen"), "light");
         assert_eq!(open.fill, format!("{WHITE}@0.6"));
         assert_eq!(open.border, None);
@@ -1235,7 +1119,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_pantheon_switcher_is_galas_card() {
-        let p = tables::pantheon();
+        let p = crate::table();
         let card = r(p, "switcher", None, "dark");
         assert_eq!(card.fill, "role:background@0.6");
         assert_eq!(card.radius, Radius::Px(9.0));
@@ -1251,50 +1135,11 @@ pub(crate) mod tests {
         assert_eq!(selected.radius, Radius::Px(3.0));
     }
 
-    #[test]
-    fn the_metamorphosis_switcher_is_the_plain_card() {
-        let m = tables::metamorphosis();
-        let card = r(m, "switcher", None, "dark");
-        let plain = r(m, "card", Some("rest"), "dark");
-        assert_eq!(card.fill, plain.fill);
-        assert_eq!(card.radius, plain.radius);
-        assert_eq!(card.border.unwrap().color, plain.border.unwrap().color);
-        assert_eq!(card.inset_rings.len(), 0);
-    }
-
-    #[test]
-    fn no_table_carries_the_switcher() {
-        assert_eq!(habit_allows("switcher", &json!(true)), None);
-        assert!(tables::metamorphosis()["habits"].get("switcher").is_none());
-        assert!(tables::pantheon()["habits"].get("switcher").is_none());
-    }
-
-    #[test]
-    fn no_table_carries_the_launcher() {
-        assert_eq!(habit_allows("launcher", &json!(true)), None);
-        assert!(tables::metamorphosis()["habits"].get("launcher").is_none());
-        assert!(tables::pantheon()["habits"].get("launcher").is_none());
-    }
-
-    #[test]
-    fn pantheon_declares_pantheon_habits() {
-        let habits = &tables::pantheon()["habits"];
-        assert_eq!(habits["bar"], "wingpanel");
-        assert_eq!(habits["emerge"], "popover");
-        assert_eq!(habits["notification"], "bubble");
-    }
-
-    #[test]
-    fn only_the_framed_look_wears_a_ring() {
-        assert_eq!(tables::metamorphosis()["habits"]["frame"], true);
-        assert_eq!(tables::pantheon()["habits"]["frame"], false);
-    }
-
     // --- The resolver
 
     #[test]
     fn a_state_absent_from_a_role_reads_as_its_base() {
-        let m = tables::metamorphosis();
+        let m = crate::table();
         let rest = r(m, "cell", Some("rest"), "dark");
         let unknown = r(m, "cell", Some("nonsense"), "dark");
         assert_eq!(unknown.fill, rest.fill);
@@ -1304,37 +1149,32 @@ pub(crate) mod tests {
 
     #[test]
     fn a_partial_state_merges_over_its_base() {
-        let m = tables::metamorphosis();
+        let m = crate::table();
         let hover = r(m, "cell", Some("hover"), "dark");
         assert_eq!(hover.fill, "role:card@0.85");
-        assert_eq!(hover.radius, Radius::Px(8.0));
-        assert_eq!(hover.wash.as_deref(), Some("role:foreground@0.1"));
+        assert_eq!(hover.radius, Radius::Px(3.0));
+        assert_eq!(hover.wash.as_deref(), Some("role:foreground@0.15"));
 
         let ghost = r(m, "cell", Some("ghost"), "dark");
         assert_eq!(ghost.fill, CLEAR);
         assert_eq!(ghost.border, None);
-        assert_eq!(ghost.radius, Radius::Px(8.0));
+        assert_eq!(ghost.radius, Radius::Px(3.0));
 
         let on = r(m, "switch.track", Some("on"), "dark");
-        assert_eq!(on.fill, "role:primary");
-        assert_eq!(on.radius, Radius::Pill);
+        assert_eq!(on.fill, "role:primary@0.4");
+        assert_eq!(on.radius, Radius::Px(16.0));
     }
 
     #[test]
     fn an_alpha_pair_resolves_per_mode() {
-        let wash = &tables::metamorphosis()["wash"];
-        let dark = alpha_for(wash["hover"].get("alpha"), &ctx("dark"));
-        let light = alpha_for(wash["hover"].get("alpha"), &ctx("light"));
-        assert!(dark > light);
-        assert!(alpha_for(wash["press"].get("alpha"), &ctx("dark")) > dark);
-        assert!(alpha_for(wash["press"].get("alpha"), &ctx("light")) > light);
-        assert!(dark > 0.07);
-        assert!(light > 0.043);
+        let pair = json!({ "light": 0.2, "dark": 0.3 });
+        assert_eq!(alpha_for(Some(&pair), &ctx("dark")), 0.3);
+        assert_eq!(alpha_for(Some(&pair), &ctx("light")), 0.2);
     }
 
     #[test]
     fn the_filled_steps_match_across_modes() {
-        let wash = &tables::metamorphosis()["wash"];
+        let wash = &crate::table()["wash"];
         assert_eq!(
             alpha_for(wash["filledHover"].get("alpha"), &ctx("dark")),
             alpha_for(wash["filledHover"].get("alpha"), &ctx("light"))
@@ -1347,8 +1187,8 @@ pub(crate) mod tests {
 
     #[test]
     fn an_unknown_mode_reads_as_dark() {
-        let wash = &tables::metamorphosis()["wash"];
-        assert_eq!(alpha_for(wash["hover"].get("alpha"), &ctx("")), alpha_for(wash["hover"].get("alpha"), &ctx("dark")));
+        let pair = json!({ "light": 0.2, "dark": 0.3 });
+        assert_eq!(alpha_for(Some(&pair), &ctx("")), 0.3);
     }
 
     #[test]
@@ -1360,11 +1200,11 @@ pub(crate) mod tests {
 
     #[test]
     fn a_tint_folds_into_the_fill_and_leaves_it_opaque() {
-        let m = tables::metamorphosis();
+        let m = crate::table();
         let press = r(m, "button.default", Some("press"), "dark");
         assert_eq!(press.fill, "role:primary+role:background@0.18");
         assert_eq!(press.wash, None);
-        assert_eq!(r(m, "button.ghost", Some("press"), "dark").wash.as_deref(), Some("role:foreground@0.16"));
+        assert_eq!(r(m, "button.ghost", Some("press"), "dark").wash.as_deref(), Some("role:foreground@0.22"));
     }
 
     #[test]
@@ -1410,7 +1250,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_unknown_role_resolves_to_an_empty_box() {
-        let b = r(tables::metamorphosis(), "nonsense", None, "dark");
+        let b = r(crate::table(), "nonsense", None, "dark");
         assert_eq!(b.fill, CLEAR);
         assert_eq!(b.radius, Radius::Px(0.0));
         assert_eq!(b.border, None);
@@ -1419,9 +1259,9 @@ pub(crate) mod tests {
 
     #[test]
     fn a_wash_resolves_off_the_table() {
-        let m = tables::metamorphosis();
-        assert_eq!(wash(m, "hover", &ctx("dark")), "role:foreground@0.1");
-        assert_eq!(wash(m, "hover", &ctx("light")), "role:foreground@0.06");
+        let m = crate::table();
+        assert_eq!(wash(m, "hover", &ctx("dark")), "role:foreground@0.15");
+        assert_eq!(wash(m, "hover", &ctx("light")), "role:foreground@0.15");
         assert_eq!(wash(m, "filledPress", &ctx("dark")), "role:background@0.18");
         assert_eq!(wash(m, "nonsense", &ctx("dark")), CLEAR);
     }
@@ -1458,17 +1298,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_shipped_window_casts_nothing() {
-        let focused = entry(tables::metamorphosis(), "window", Some("rest")).unwrap();
-        assert_eq!(focused["shadow"]["enabled"], false);
-        assert_eq!(focused["border"]["color"], "primary");
-        assert_eq!(focused["border"]["width"], 1);
-        assert_eq!(entry(tables::retro(), "window", Some("rest")).unwrap()["shadow"]["enabled"], false);
-    }
-
-    #[test]
     fn the_pantheon_window_is_elementarys_shadow() {
-        let focused = entry(tables::pantheon(), "window", Some("rest")).unwrap();
+        let focused = entry(crate::table(), "window", Some("rest")).unwrap();
         assert_eq!(focused["border"]["color"], "border");
         assert_eq!(focused["border"]["width"], 1);
         assert_eq!(focused["shadow"]["enabled"], true);
@@ -1476,7 +1307,7 @@ pub(crate) mod tests {
         assert_eq!(focused["shadow"]["renderPower"], 3);
         assert_eq!(focused["shadow"]["offset"][1], 6);
         assert_eq!(focused["shadow"]["alpha"], 0.35);
-        assert_eq!(entry(tables::pantheon(), "window", Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
+        assert_eq!(entry(crate::table(), "window", Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
     }
 
     #[test]

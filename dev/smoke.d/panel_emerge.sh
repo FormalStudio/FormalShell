@@ -6,11 +6,10 @@
 # and travels out from under it, so its visible height grows from nothing to
 # the whole card and no part of it is ever drawn inside the bar's own band.
 #
-# Ridden by --pantheon or --no-morph it reads the popover instead (M60 T2): a
-# card that drops out of its cell has no line to unroll from, so the ladder is
-# whole or empty on every frame and never a fraction of the card, and the
-# sampling rides the table's own clock (150ms under pantheon). The bar's band stays the claim it is
-# under either habit, since a popover opens no gap in the line at all.
+# Ridden by --no-morph it reads the popover instead (M60 T2): a card that
+# drops out of its cell has no line to unroll from, so the ladder is whole or
+# empty on every frame and never a fraction of the card. The bar's band stays
+# the claim it is either way, since a popover opens no gap in the line at all.
 #
 # Measured down the card's own centre column, and a probe is "covered" when it
 # is NOT byte-identical to the same probe in the closed output: something the
@@ -69,8 +68,9 @@ panel_emerge_mid_paths=(
   "$shot_dir/panel-emerge-mid-9.png"
   "$shot_dir/panel-emerge-mid-10.png"
 )
-# The emerge's own clock (the live table's `motion.emerge`: the spatial family
-# under metamorphosis, Gala's menu map under pantheon) and the moment this rig
+# The emerge's own clock (the table's `motion.emerge`, Gala's 150ms menu map,
+# run at `panel_emerge_scale` so it lasts 500ms, long enough for grim to land
+# inside it) and the moment this rig
 # has the window up, both in milliseconds; every sample is the map plus a
 # fraction of that clock, so a change to the token moves the sampling with it
 # rather than leaving the ladder pinned to a duration that has gone. The
@@ -79,16 +79,16 @@ panel_emerge_mid_paths=(
 # the end so the ladder has to have landed by it. Built in the drive, since
 # the legs are sourced before the flags are read.
 panel_emerge_map_ms=200
+panel_emerge_scale=333
 panel_emerge_mid_fractions=(-36 -24 -18 -12 -6 0 12 24 48 150)
 panel_emerge_mid_sleeps=()
 
 panel_emerge_popover() {
-  leg_on pantheon || leg_on no_morph
+  leg_on no_morph
 }
 
 panel_emerge_build_sleeps() {
-  local clock=500 f at
-  if leg_on pantheon; then clock=150; fi
+  local clock=$((150 * panel_emerge_scale / 100)) f at
   panel_emerge_mid_sleeps=()
   for f in "${panel_emerge_mid_fractions[@]}"; do
     at=$((panel_emerge_map_ms + f * clock / 100))
@@ -139,10 +139,12 @@ sleep 2
 $ipc call panel toggle network > "$panel_emerge_close_path" 2>&1
 sleep 2
 "$grim_bin" "$panel_emerge_bare_path" > /dev/null 2>&1
+$ipc call debug motionScale $panel_emerge_scale > /dev/null 2>&1
 sleep 1
 $arm
 $ipc call panel open network > "$panel_emerge_reopen_path" 2>&1
 wait
+$ipc call debug motionScale 100 > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$panel_emerge_settled_path" > /dev/null 2>&1
 $ipc call panel state > "$panel_emerge_state_path" 2>&1

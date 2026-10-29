@@ -41,7 +41,7 @@ toast_swipe_dispatch_path="$shot_dir/toast-swipe-dispatch.txt"
 
 leg_toast_swipe_validate() {
   local other
-  for other in notify notify_emerge notify_close toast_motion center reminder capture_edit deform polkit screensaver; do
+  for other in notify notify_emerge notify_close center reminder capture_edit deform polkit screensaver; do
     if leg_on "$other"; then
       echo "usage: --toast-swipe swipes one notification away and cannot combine with --${other//_/-}" >&2
       exit 1

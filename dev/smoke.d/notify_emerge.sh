@@ -19,11 +19,9 @@
 # least one frame covers some of the ladder and not all of it, the covered
 # rungs are always the shallow ones, and the depth never goes back up.
 #
-# --pantheon only, and it says so rather than branching: the unfold is that
-# habit's, and the row habit's own arrival travels in from past the anchored
-# screen edge while the velocity deform squashes it about the midpoint of that
-# edge (M54 D7), which is a card whose top and bottom leave the ladder
-# together. That is --notify's frame and --deform's burst, not this one's.
+# Then, with motion at full speed and the card at rest, the toast surface
+# commits nothing for four seconds, read off the shell's own commit log
+# between two `notifications status` calls.
 #
 # The card's rect is not hardcoded: it is the difference between the settled
 # frame and the one taken before the notification existed, measured over the
@@ -39,6 +37,7 @@ leg_notify_emerge_needs="notify-send convert"
 
 notify_emerge_scale_path="$shot_dir/notify-emerge-scale.txt"
 notify_emerge_status_path="$shot_dir/notify-emerge-status.txt"
+notify_emerge_rest_path="$shot_dir/notify-emerge-rest.txt"
 notify_emerge_t0_path="$shot_dir/notify-emerge-t0.txt"
 notify_emerge_stamp_path="$shot_dir/notify-emerge-stamps.txt"
 notify_emerge_bare_path="$shot_dir/notify-emerge-bare.png"
@@ -62,10 +61,6 @@ notify_emerge_body_top=60
 
 leg_notify_emerge_validate() {
   local other
-  if ! leg_on pantheon; then
-    echo "usage: --notify-emerge reads the bubble habit's own unfold and needs --pantheon" >&2
-    exit 1
-  fi
   for other in notify center reminder capture_edit menu_emerge panel_emerge \
     panel_handoff panel_morph join deform chevron_quiet osd polkit screensaver; do
     if leg_on "$other"; then
@@ -76,7 +71,7 @@ leg_notify_emerge_validate() {
 }
 
 leg_notify_emerge_timing() {
-  leg_timing 22 70
+  leg_timing 28 76
 }
 
 leg_notify_emerge_drive() {
@@ -101,6 +96,11 @@ sleep 4
 "$grim_bin" "$notify_emerge_settled_path" > /dev/null 2>&1
 call notifications status > "$notify_emerge_status_path" 2>&1
 call debug motionScale 100 > /dev/null 2>&1
+sleep 2
+# Two status calls bracket the rest window in the shell's own log.
+call notifications status > "$notify_emerge_rest_path" 2>&1
+sleep 4
+call notifications status >> "$notify_emerge_rest_path" 2>&1
 EOF
   hypr_exec_once "bash $script"
 }
@@ -238,4 +238,14 @@ leg_notify_emerge_assert() {
   [ "$fractional" -gt 0 ] || fail \
     "no frame drew part of the card (depths$ladder): a bubble unfolds off its own top edge, it does not appear at its resting height"
   echo "SMOKE_NOTIFY_EMERGE_UNFOLD ok $fractional of $notify_emerge_frames frames carried a fraction of the card"
+
+  local commits
+  commits=$(awk '
+    function t(line) { match(line, /t=[0-9]+ms/); return substr(line, RSTART + 2, RLENGTH - 4) + 0 }
+    /^ipc t=.*target: "notifications", function: "status"/ { lo = hi; hi = t($0) }
+    /^commit surface=toasts / { c[++n] = t($0) }
+    END { k = 0; for (i = 1; i <= n; i++) if (c[i] > lo && c[i] < hi) k++; print (lo > 0 ? k : -1) }' "$shell_log_path")
+  echo "SMOKE_NOTIFY_EMERGE_QUIET commits=$commits"
+  [ "$commits" -ge 0 ] || fail "no rest window bracketed in the shell log"
+  [ "$commits" -eq 0 ] || fail "the toast surface committed $commits times with the card at rest"
 }

@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --switcher-keys: the switcher driven by the compositor's own binds and real
 # keys rather than over IPC (M64). --switcher proves the surface; this proves
-# the way in, which is where it was broken: on a pantheon host a held Alt
+# the way in, which is where it was broken: on the owner's host a held Alt
 # with two taps of Tab left the card up and the release did nothing (owner,
 # 2026-09-18).
 #

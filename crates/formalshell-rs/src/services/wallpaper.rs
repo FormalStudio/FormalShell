@@ -1,6 +1,6 @@
 //! The desktop's picture: the wallpaper decoded and
 //! cover-cropped to each output's size on the pool, handed to the UI thread
-//! as ready pixels, through the retro dither pass when
+//! as ready pixels, through the dither pass when
 //! `wallpaper.dither` asks for it and under the grid when `wallpaper.grid`
 //! does. Each output's backdrop crossfades between two of these.
 //!
@@ -34,7 +34,7 @@ const FLAT: &str = "color:";
 
 /// What the desktop shows: the picker's last colour (`wallpaperColor` in
 /// state.json a hex), the picture when it last chose one (`false`), and with
-/// no choice `wallpaper.color` or the preset's colour over the picture.
+/// no choice `wallpaper.color` over the picture.
 pub fn source(color: Option<&str>, picked: &serde_json::Value, picture: &str) -> String {
     use serde_json::Value;
     let color = match picked {
@@ -267,7 +267,7 @@ pub fn grid(theme: &fs_theme::theme::Theme, scale: f64) -> Grid {
     Grid { pitch: m("pitch"), width: m("width"), fade: m("fade"), color }.scaled(scale)
 }
 
-/// The retro dither: the output sampled on a `chunk` grid at
+/// The dither: the output sampled on a `chunk` grid at
 /// each cell's centre, a palette of the image's own colours, and every cell
 /// painted as one hard-edged square of its quantized entry.
 fn dither(img: &mut image::RgbaImage, colors: usize) {
@@ -351,7 +351,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn the_preset_colour_covers_the_picture_until_the_picker_says_otherwise() {
+    fn the_settings_colour_covers_the_picture_until_the_picker_says_otherwise() {
         assert_eq!(source(Some("#402484"), &json!(null), "/w.png"), "color:#402484");
         assert_eq!(source(None, &json!(null), "/w.png"), "/w.png");
         assert_eq!(source(Some("#402484"), &json!(false), "/w.png"), "/w.png");

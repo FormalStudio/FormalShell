@@ -321,9 +321,8 @@ with `bar.widgets.<cell>.showLabel`:
 
 `frame.thickness` (default 0) grows the bar's window to the whole output and
 paints a frame of that thickness round it, reserving each edge so windows sit
-inside it. `frame.radius` rounds the frame's inner corners (default 20, or 0
-when `theme.radius` is 0). Every preset draws it; `debug dump`'s `frame`
-block reports the ring that was drawn.
+inside it. `frame.radius` rounds the frame's inner corners (default 15).
+`debug dump`'s `frame` block reports the ring that was drawn.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -332,16 +331,14 @@ block reports the ring that was drawn.
 
 ### Bar style
 
-`bar.style` puts the bar on the band below under every preset and picks
-what it wears. `"transparent"` reads the wallpaper as the band's paint
-describes, with no wash on a busy one. `"solid"` is black with light words
+`bar.style` picks what the band below wears. `"transparent"` (the default)
+reads its ink off the wallpaper, as the band's paint describes. `"solid"` is black with light words
 and a 1px line along the inner edge, whatever the wallpaper, and reads no
 wallpaper at all. `"corners"` is `"solid"` with a concave fillet of radius
 `frame.radius` under each end of the band, drawn on the bar's own window
 past its edge, so windows still start right under the band. With a screen
-frame on, the ring's own rounded corners are those fillets. Unset, the
-preset decides: a strip under the default preset, the band under
-`pantheon`. Anything else reads as unset.
+frame on, the ring's own rounded corners are those fillets. Anything else
+reads as `"transparent"`.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -355,40 +352,19 @@ programs.formalshell.settings.bar.style = "corners";
 
 ### The band's paint
 
-Under `theme.preset: "pantheon"` (or any `bar.style`) the bar is a wingpanel
-band rather than a strip card: it draws no card of its own and reads the wallpaper directly
-under it to decide what it wears. A calm wallpaper gets no fill at all, just
-white or dark words with a text shadow under them. A busy one gets a wash,
-black at 0.3 in dark mode and white at 0.5 in light, so the words stay
-readable. A window covering the output turns the band solid black. The
+The bar is a wingpanel band: it draws no card of its own and, under
+`"transparent"`, reads the wallpaper directly under it to decide its ink.
+There is no fill at all, just white words with a text shadow over a dark
+wallpaper and dark words over a bright one, and each cell reads its own
+stretch, so a wallpaper bright at one end and dark at the other keeps every
+word legible. A window covering the output turns the band solid black. The
 reading is taken once, on the main display (`display.outputPriority`), and
 every output's band wears it, so two monitors never disagree; a window
 covering one output still blackens that band alone.
 
-With `bar.style` unset, `bar.paint` overrules the reading, and the theme
-decides the default:
-`pantheon` says `"transparent"`, so the rule above is what you get by setting
-`"auto"`. `"transparent"` keeps the rule for the ink and drops the wash: a
-busy wallpaper then gets dark words over a bright band and light words over a
-dark one, with no fill anywhere. The five paint names, `"light"`, `"dark"`,
-`"translucentLight"`, `"translucentDark"` and `"maximized"`, pin one outright
-and stop the sampling mattering at all. Anything else reads as `"auto"`.
-
-```jsonc
-// ~/.config/formalshell/settings.json
-{ "theme": { "preset": "pantheon" }, "bar": { "paint": "transparent" } }
-```
-
-```nix
-# home-manager
-programs.formalshell.settings.bar.paint = "transparent";
-```
-
 `fs bar paint` reports what each band settled on, the `bar.style` it was
-given (`style`, null when unset), whether it was pinned, and the three
-numbers the rule read off the wallpaper. Without a `bar.style` the key does
-nothing under the other presets, whose bar is a strip with nothing to
-sample.
+given (`style`), the ink each cell wears, and the three numbers read off the
+wallpaper.
 
 ### Custom modules
 
@@ -801,77 +777,30 @@ fallback anyway; the `pcall` is what stops a missing file from killing the
 rest of the config. Hyprland does not watch a `dofile`d file, so the shell
 runs `hyprctl reload` itself after every publish.
 
-### Presets
+### The look
 
-`theme.preset` picks the table of defaults the keys in the next section fall
-back to. `metamorphosis` (the default) is the look documented here. `retro`
-is the shell's earlier language as a setting of this one: everything square,
-every word in the mono face, Nerd Font glyphs, opaque surfaces, no compositor
-blur, and dithered imagery. `pantheon` is elementary OS 8's material on the
-same palette: raised buttons and chips with a lit top line and a gradient
-face, sunken fields and troughs, cards and toasts on a soft cast, and
-elementary's own corners (3 on a control, 6 on a popover, 9 on a card).
-Any key you write explicitly wins over
-the preset, so `retro` with `"radius": 4`
-is the retro look on slightly rounded corners. Any other name resolves to
-`metamorphosis`.
+The shell draws one look: elementary OS 8's material on the wallpaper's
+palette. Buttons and chips are raised with a lit top line and a gradient
+face, fields and troughs are sunken, cards and toasts sit on a soft cast, and
+the corners are elementary's own (3 on a control, 6 on a popover, 9 on a
+card). Toasts and the notification centre draw as elementary's bubble, the
+app grid is the launcher's default, and the bar is a wingpanel band (see
+[The band's paint](#the-bands-paint)). The palette is untouched by any of
+it: matugen, `theme.json`, the pywal template and the Hyprland colours files
+work the same way.
 
-`pantheon` also swaps four habits beyond the chrome table: panels, the
-launcher, the OSD and the notification centre drop straight out of the cell
-or edge that opened them instead of budding off the bar's line; toasts and
-the notification centre draw as elementary's own bubble instead of the shadcn
-card; the app grid is the launcher's default; and the bar paints as a
-wingpanel band that reads the wallpaper under it (see
-[The band's paint](#the-bands-paint)). Its surfaces are opaque: elementary's
-popovers and dialogs have nothing behind them, and the one translucent
-surface is the panel, whose alpha is part of the band's paint rather than
-`theme.surfaceOpacity`.
+`motion.morph` (default true) decides how a card opens: budding off the
+bar's line, or with `false` dropping straight out of the cell or edge that
+opened it, which is elementary's popover.
 
-A preset is a JSON chrome table compiled into the binary plus the scalar
-keys below. `retro` uses `metamorphosis`'s table, since the two share every
-fill, border and radius and differ only in those scalars; `pantheon` carries a
-table of its own. The table itself is not a setting, so the columns below are
-the whole of what a preset changes that you can override:
+These keys are no longer read, and each one written is logged once per
+start as `settings: <key> is no longer read`: `theme.preset`,
+`theme.radius`, `theme.icons`, `theme.fonts`, `theme.dither`, `theme.grid`,
+`theme.boot`, `theme.sounds`, `theme.soundVolume` and `bar.paint`.
 
-| key | `metamorphosis` | `retro` | `pantheon` |
-| --- | --- | --- | --- |
-| `theme.radius` | 10 | 0 | 6 |
-| `theme.icons` | `lucide` | `nerd` | `lucide` |
-| `theme.fonts` | `pair` | `mono` | `pair` |
-| `theme.surfaceOpacity` | 0.85 | 1 | 1 |
-| `theme.blur` | true | false | true |
-| `theme.dither` | false | true | false |
+### Translucency and fonts
 
-```jsonc
-// ~/.config/formalshell/settings.json
-{ "theme": { "preset": "retro" } }
-```
-
-```nix
-# home-manager
-programs.formalshell.settings.theme.preset = "retro";
-```
-
-The palette is untouched by the preset: matugen, `theme.json`, the pywal
-template and the Hyprland colours files all work the same way under each
-one.
-
-### Radius, icons, fonts and translucency
-
-`theme.radius` sets the corner radius every surface derives its
-`sm`/`md`/`lg`/`xl` steps from (shadcn's own `--radius`, default 10). At 0
-every step is 0 and every pill shape (switches, workspace dots, badges) is
-square too.
-
-`theme.icons` picks the glyph set icons render from: `lucide` (the default,
-the bundled Lucide icon font) or `nerd` (Nerd Font glyphs from the mono
-face). A name missing from a set falls back to that set's own
-`circle-help`.
-
-`theme.fonts` is `pair` (sans for words, mono for values) or `mono` (the mono
-alias for both).
-
-`theme.surfaceOpacity` (0 to 1, default 0.85) is the alpha of the bar cells,
+`theme.surfaceOpacity` (0 to 1, default 1) is the alpha of the bar cells,
 the panels and the launcher card. The shell blurs nothing itself: that alpha
 is what lets a compositor blur read through. The example Hyprland config
 turns the blur on and points it at the `formalshell:bar`, `formalshell:panel`,
@@ -886,18 +815,18 @@ darkens the desktop and the card over it keeps its blur. A `surfaceOpacity`
 under 0.6 puts the card under that mark too and it loses its blur there;
 lower those namespaces' `ignore_alpha` to match if you want it back.
 
-The shell asks fontconfig for `sans-serif` and `monospace` and never names a
-family, so the pair of faces is yours to pick. Geist Sans and Geist Mono are
-what the design targets:
+The shell asks fontconfig for `sans-serif` (words) and `monospace` (values)
+and never names a family, so the pair of faces is yours to pick. Geist Sans
+and Geist Mono are what the design targets:
 
 ```jsonc
 // ~/.config/formalshell/settings.json
-{ "theme": { "radius": 10, "icons": "lucide", "fonts": "pair", "surfaceOpacity": 0.85 } }
+{ "theme": { "surfaceOpacity": 0.85 } }
 ```
 
 ```nix
 # home-manager
-programs.formalshell.settings.theme = { radius = 10; icons = "lucide"; fonts = "pair"; surfaceOpacity = 0.85; };
+programs.formalshell.settings.theme.surfaceOpacity = 0.85;
 
 # NixOS
 fonts.packages = [ pkgs.geist-font ];
@@ -908,18 +837,15 @@ fonts.fontconfig.defaultFonts.monospace = [ "Geist Mono" ];
 ### Hyprland rounding, blur and window chrome
 
 The shell publishes `formalshell-chrome.lua` next to the colours file, a
-table a `dofile` returns. It carries `rounding` (the value of
-`theme.radius`), `blur` (`theme.blur`) and the window gaps, frame and shadow
-the preset's table declares (`gapsIn`, `gapsOut`, `borderSize`,
-`borderColor`, `shadow`, `shadowRange`, `shadowPower`, `shadowOffset`,
-`shadowColor`, `shadowInactiveColor`), rewritten whenever any of them changes
-and reloaded the way the colours table is. The example config reads all of
-them, so window corners, the blur behind the shell's surfaces and the chrome
-round every window follow the preset: `metamorphosis` and `retro` cast no
-shadow and hang the wallpaper's `primary` on the focused window, `pantheon`
-casts elementary's own (range 24, offset `{ 0, 6 }`) under a quiet 1px
-`border` frame. The gaps follow the same rule: 4 and 8 under `metamorphosis`
-and `retro`, 4 and 6 under `pantheon`.
+table a `dofile` returns. It carries `rounding` (6), `blur` (`theme.blur`,
+default true) and the window gaps, frame and shadow the table declares
+(`gapsIn`, `gapsOut`, `borderSize`, `borderColor`, `shadow`, `shadowRange`,
+`shadowPower`, `shadowOffset`, `shadowColor`, `shadowInactiveColor`),
+rewritten whenever any of them changes and reloaded the way the colours
+table is. The example config reads all of them, so window corners, the blur
+behind the shell's surfaces and the chrome round every window follow the
+shell: elementary's own shadow (range 24, offset `{ 0, 6 }`) under a quiet
+1px `border` frame, with gaps of 4 and 6.
 
 ```lua
 -- ~/.config/hypr/hyprland.lua
@@ -952,21 +878,6 @@ A colour there is either an `rgba(...)` literal or the name of a role in
 `formalshell-colors.lua`, so `colors[c] or c` reads both. The shipped example
 already does this, with fallbacks for a first run before either file exists.
 
-### Dither
-
-`theme.dither` is the one texture switch: on, the launcher's app icons, the
-active-window icon, notification images and album art render through the
-limited-palette pass below, track grooves take a 1-bit checker, and
-`wallpaper.dither` and `lock.dither` default to on. Tray icons, the wallpaper
-picker and clipboard thumbnails stay true colour, since those exist to show a
-picture as it is. The `retro` preset turns it on; set it by hand under
-`metamorphosis` for the texture alone.
-
-```jsonc
-// ~/.config/formalshell/settings.json
-{ "theme": { "dither": true } }
-```
-
 ### Wallpaper dither
 
 The wallpaper renders through a limited-palette pass: six colors are derived
@@ -983,9 +894,8 @@ times as many. The image is cover-cropped first with nearest-neighbor, so the
 scale never introduces a color the file didn't have.
 
 matugen reads the wallpaper file itself, never this rendering, so the dither
-can't influence the color scheme. It follows `theme.dither`, so it is off
-under `metamorphosis` and on under `retro`; `wallpaper.dither` overrides that
-for the wallpaper alone. Raise `wallpaper.ditherColors` for a subtler pass,
+can't influence the color scheme. It is off by default; `wallpaper.dither`
+turns it on. Raise `wallpaper.ditherColors` for a subtler pass,
 since more colors means less of the image dithers at all:
 
 ```jsonc
@@ -1003,17 +913,16 @@ same default and its own override.
 
 ### Grid
 
-`theme.grid` lays a line grid over the desktop: 2px lines every 120px
+`wallpaper.grid` lays a line grid over the desktop: 2px lines every 120px
 (multiplied by the output's scale), in the theme's foreground at low alpha,
 fading out over the bottom fifth of the screen. It is drawn into the
 wallpaper's pixels after the dither, or over the plain background when no
-wallpaper is set, and over the lock screen and the greeter. It never moves.
-`wallpaper.grid` and `lock.grid` override it for the desktop and for the lock and greeter alone, the way
-`wallpaper.dither` and `lock.dither` do.
+wallpaper is set. It never moves. `lock.grid` draws the same grid over the
+lock screen and the greeter. Both are off by default.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
-{ "theme": { "grid": true }, "lock": { "grid": false } }
+{ "wallpaper": { "grid": true }, "lock": { "grid": true } }
 ```
 
 ### Flat colour desktop
@@ -1083,15 +992,15 @@ box, ink, whether a depth map is in use and its commits.
 
 ### Motion
 
-Transitions run off a small set of tokens per preset: hover fills, surfaces
+Transitions run off a small set of tokens: hover fills, surfaces
 entering and leaving, and a card budding off the bar's line. End states are
 pixel-identical to the unanimated shell, and full-bleed selection swaps are
 states rather than transitions and stay instant.
 
-`motion.morph` (unset, the preset decides) picks how a card arrives: `true`
-buds it off the bar's inner edge and morphs it between sizes, `false` drops
-it out of the cell that opened it while it fades in, with no join to the
-bar. Anything but a boolean reads as unset.
+`motion.morph` (default true) picks how a card arrives: `true` buds it off
+the bar's inner edge and morphs it between sizes, `false` drops it out of
+the cell that opened it while it fades in, with no join to the bar. Anything
+but a boolean reads as true.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -1925,7 +1834,7 @@ is on), or by the aliases `internal` (`eDP`, `LVDS`, `DSI`) and `external`
 (anything else). The list is re-applied whenever outputs change, so unplugging
 the main monitor hands the title down the list and plugging it back in takes
 it again. Unset, it is the focused output. It is read wherever one screen has
-to be picked: the bar's output, the pantheon band's sample, and the monitor
+to be picked: the bar's output, the band's sample, and the monitor
 panel's `Main display` row.
 
 ### Keyboard
@@ -2737,7 +2646,7 @@ consent; see [`README.md`](../README.md#install). The home-manager module
 cannot create a PAM service.
 
 The backdrop is the current wallpaper under a black scrim at half opacity.
-`lock.dither` puts the dither pass over it; it follows `theme.dither`. The
+`lock.dither` (default false) puts the dither pass over it. The
 backdrop never captures the screen: a screencopy-based one would fail open on
 a security-critical surface.
 
@@ -3770,9 +3679,8 @@ fs debug joinClear
 
 `debug dump`'s `theme` block also reports `layout`, `barStyle` and `morph`
 as read from settings.json, and its `render` block the `render.backend`
-asked for beside the one drawing (`cpu`). `barStyle` and `morph` are `null` until
-settings.json writes them, which leaves the preset's own bar and card
-arrival in place.
+asked for beside the one drawing (`cpu`). Unwritten, `barStyle` is
+`transparent` and `morph` is `true`.
 
 ## Instance lock
 

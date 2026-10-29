@@ -1,10 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); $convert_bin expands unquoted
 # --shots rides --showcase and writes the README's and the website's images
-# into docs/shots/ (scripts/shots runs it once per theme). Alone it takes
-# every one of them under the default preset; under --pantheon or --retro it
-# takes that preset's theme frame and nothing else, since the preset is read
-# at startup and needs a session of its own.
+# into docs/shots/ (scripts/shots runs it).
 #
 # Demo data only: a pink noise track tagged as a demo, notifications from
 # made-up apps, and USER=kyan in the shell's own environment, which is where
@@ -25,16 +22,9 @@ shots_track="$shot_dir/shots-demo.flac"
 shots_title="Midnight Drive"
 shots_artist="Demo Artist"
 
-shots_theme() {
-  if leg_on pantheon; then echo pantheon
-  elif leg_on retro; then echo retro
-  else echo metamorphosis
-  fi
-}
-
 leg_shots_validate() {
   if ! leg_on showcase; then
-    echo "usage: $0 --showcase [--pantheon|--retro] --shots" >&2
+    echo "usage: $0 --showcase --shots" >&2
     exit 1
   fi
 }
@@ -50,16 +40,11 @@ leg_shots_fixture() {
 }
 
 leg_shots_timing() {
-  if [ "$(shots_theme)" = metamorphosis ]; then
-    leg_timing 420 500
-  else
-    leg_timing 30 70
-  fi
+  leg_timing 420 500
 }
 
 leg_shots_drive() {
-  local script="$shot_dir/shots-drive.sh" kill_script="$shot_dir/shots-kill.sh" theme
-  theme=$(shots_theme)
+  local script="$shot_dir/shots-drive.sh" kill_script="$shot_dir/shots-kill.sh"
   mkdir -p "$shots_dir"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
@@ -86,13 +71,9 @@ sleep 2
 
 $ipc call menu toggle > /dev/null 2>&1
 sleep 3
-shot theme-$theme
+shot launcher
 $ipc call menu toggle > /dev/null 2>&1
 sleep 2
-if [ "$theme" != metamorphosis ]; then
-  touch "$shots_done"
-  exit 0
-fi
 
 slow 300
 $ipc call menu toggle > /dev/null 2>&1 &
@@ -213,15 +194,9 @@ _shots_clip() {
 
 leg_shots_assert() {
   [ -f "$shots_done" ] || fail "the shots drive never finished"
-  local out="$PWD/docs/shots" theme f made=0 want ids=() last stride delay
-  theme=$(shots_theme)
+  local out="$PWD/docs/shots" f made=0 want ids=() last stride delay
   mkdir -p "$out"
-  cp "$shots_dir/theme-$theme.png" "$out/" 2>/dev/null && made=$((made + 1))
-  if [ "$theme" != metamorphosis ]; then
-    [ "$made" -eq 1 ] || fail "no theme-$theme.png"
-    echo "SMOKE_SHOTS bytes=$(stat -c %s "$out/theme-$theme.png") theme-$theme.png"
-    return
-  fi
+  cp "$shots_dir/launcher.png" "$out/" 2>/dev/null && made=$((made + 1))
   for f in panel-poster media notifications center lock; do
     cp "$shots_dir/$f.png" "$out/" 2>/dev/null && made=$((made + 1))
   done

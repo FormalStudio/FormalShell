@@ -47,7 +47,8 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Once, OnceLock};
+use std::collections::BTreeSet;
+use std::sync::{Mutex, Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use async_io::Timer;
@@ -106,6 +107,14 @@ impl State {
             }
             _ => return false,
         }
+        static REMOVED: Mutex<BTreeSet<&str>> = Mutex::new(BTreeSet::new());
+        let mut told = REMOVED.lock().unwrap_or_else(|e| e.into_inner());
+        for key in fs_theme::theme::removed_keys(get(&self.settings)) {
+            if told.insert(key) {
+                eprintln!("settings: {key} is no longer read");
+            }
+        }
+        drop(told);
         let motion_scale = self.theme.motion_scale;
         self.theme = Theme::resolve(get(&self.settings), &self.palette);
         self.theme.motion_scale = motion_scale;
@@ -130,6 +139,7 @@ pub fn get(settings: &Value) -> impl Fn(&str) -> Option<Value> + '_ {
 }
 
 /// [`get`] over a settings object it owns.
+#[cfg(test)]
 pub fn getter(settings: Value) -> impl Fn(&str) -> Option<Value> {
     move |path| get(&settings)(path)
 }
@@ -1043,10 +1053,10 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
     #[test]
     fn a_settings_or_palette_diff_resolves_the_theme_again() {
         let mut state = State::default();
-        assert_eq!(state.theme.preset, "metamorphosis");
-        assert!(state.apply(Diff::Settings(json!({ "theme": { "preset": "pantheon" } }))));
-        assert_eq!(state.theme.preset, "pantheon");
-        assert!(!state.apply(Diff::Settings(json!({ "theme": { "preset": "pantheon" } }))));
+        assert!(state.theme.morph);
+        assert!(state.apply(Diff::Settings(json!({ "motion": { "morph": false } }))));
+        assert!(!state.theme.morph);
+        assert!(!state.apply(Diff::Settings(json!({ "motion": { "morph": false } }))));
         assert!(state.apply(Diff::Palette(palette::fallback("light"))));
         assert_eq!(state.theme.colors.mode, "light");
     }
@@ -1094,8 +1104,8 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         assert_eq!(seen.palettes.last().unwrap()["mode"], "light");
         assert_eq!(std::fs::read_to_string(env.hypr_colors()).unwrap(), matugen::hyprland_colors(&light));
         let chrome = std::fs::read_to_string(env.hypr_chrome()).unwrap();
-        assert!(chrome.contains("rounding = 10,"));
-        assert!(std::fs::read_to_string(env.mango_chrome()).unwrap().contains("\nborder_radius=10\n"));
+        assert!(chrome.contains("rounding = 6,"));
+        assert!(std::fs::read_to_string(env.mango_chrome()).unwrap().contains("\nborder_radius=6\n"));
         assert!(log_lines(&log, "matugen").is_empty());
         let dconf = log_lines(&log, "dconf");
         assert!(dconf.contains(&"dconf write /org/gnome/desktop/interface/color-scheme 'prefer-light'".to_owned()));

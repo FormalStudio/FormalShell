@@ -9,7 +9,7 @@
 //! Nothing here reads state.json: it would be the `greeter` system user's.
 //! The backdrop is `wallpaper` in the greeter's state dir, a copy the
 //! NixOS module mirrors from a user's own, else `greeter.wallpaper`. The
-//! theme is settings.json's preset over theme.json's palette, each falling
+//! theme is settings.json's keys over theme.json's palette, each falling
 //! back the way the shell's own do when absent.
 //!
 //! The user is picked, never typed: the last one to log in from [`users`],
@@ -166,13 +166,13 @@ fn session_dirs(settings: &Value) -> Vec<PathBuf> {
     dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| sessions::DIRS.iter().map(PathBuf::from).collect())
 }
 
-/// The desktop's source as this login screen can know it: `wallpaper.color`
-/// or the preset's colour, else the mirrored `wallpaper` in the state dir,
+/// The desktop's source as this login screen can know it: `wallpaper.color`,
+/// else the mirrored `wallpaper` in the state dir,
 /// else `greeter.wallpaper`. The user's own picker choice lives in a
 /// state.json the greeter never reads.
 fn wallpaper_source(settings: &Value, env: &theme::Env) -> Option<String> {
     let get = theme::get(settings);
-    let color = fs_theme::presets::resolve(get("theme.preset").as_ref(), &get).wallpaper_color;
+    let color = get("wallpaper.color").and_then(|v| fs_theme::theme::wallpaper_color(&v)).flatten();
     let mirrored = env.state_dir.join("wallpaper");
     let picture = if mirrored.is_file() {
         Some(mirrored.to_string_lossy().into_owned())
@@ -283,7 +283,6 @@ pub fn main(args: &[String]) {
         .expect("backdrop channel");
 
     let theme = resolve(&settings, &env);
-    eprintln!("greeter: preset {}", theme.preset);
     let sessions = sessions::scan(&session_dirs(&settings));
     let users = users::scan();
     eprintln!("greeter: {} sessions, {} users", sessions.len(), users.len());
@@ -629,8 +628,8 @@ fn card<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available
     }
 }
 
-/// `--shot <dir>`: the greeter's states under every preset, drawn off
-/// screen to `greeter-<preset>-<state>.png`, for reading the look without
+/// `--shot <dir>`: the greeter's states, drawn off screen to
+/// `greeter-<state>.png`, for reading the look without
 /// a greetd. Nothing is sent anywhere.
 fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     let (w, h) = (1280, 800);
@@ -638,90 +637,81 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
     let backdrop = wallpaper_source(settings, env).and_then(|p| decode(&p, (w, h)));
     let names: Vec<String> = ["Hyprland (uwsm-managed)", "Plasma (Wayland)", "Waylandcraft"].map(String::from).to_vec();
     let people: Vec<String> = ["Kyan De Sutter", "Guest"].map(String::from).to_vec();
-    for preset in fs_theme::presets::NAMES {
-        let mut s = settings.clone();
-        if let Some(obj) = s.as_object_mut() {
-            let theme_obj = obj.entry("theme").or_insert_with(|| Value::Object(Default::default()));
-            if let Some(t) = theme_obj.as_object_mut() {
-                t.insert("preset".into(), Value::from(preset));
-            }
-        }
-        let theme = resolve(&s, env);
-        let mut kit = Kit::new(&theme);
-        let pic = avatar(&theme, &env.state_dir, "shot");
-        let mut asking = Conversation::new(vec![]);
-        asking.open("kyan");
-        asking.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
-        let mut failed = Conversation::new(vec![]);
-        failed.open("kyan");
-        failed.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
-        failed.submit(Zeroizing::new("nope".into()));
-        failed.receive(Response::Error { error_type: greetd::ErrorType::AuthError, description: "Wrong password".into() });
-        failed.receive(Response::Success);
-        failed.open("kyan");
-        failed.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
-        let states: [(&str, &Conversation, &str, Menu, bool); 5] = [
-            ("password", &asking, "", Menu::Closed, true),
-            ("typing", &asking, "hunter2", Menu::Closed, true),
-            ("failed", &failed, "", Menu::Closed, true),
-            ("sessions", &asking, "", Menu::Sessions, true),
-            ("unavailable", &asking, "", Menu::Closed, false),
-        ];
-        for (name, convo, typed, menu, available) in states {
-            let mut view = View::new(w, h);
-            let controls = Controls { sessions: &names, session: 0, users: &people, user: 0, menu };
-            let c = Card {
-                name: "Kyan De Sutter",
-                avatar: crate::scene::nearest(&pic, 1.0),
-                below: Some(controls.el(&theme)),
-                ..card(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, false)
-            };
-            view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now());
-            let mut r = Renderer::new(w as u16, h as u16);
-            r.render(&view.scene, IRect::new(0, 0, w, h));
-            let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
-            let path = dir.join(format!("greeter-{preset}-{name}.png"));
-            image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
-            println!("SHOT {}", path.display());
-        }
-        // The lock screen's card beside the greeter's, locked and playing.
-        for (name, playing) in [("lock", false), ("lock-media", true)] {
-            let mut view = lock::View::new(w, h);
-            let media = playing.then(|| lock::NowPlaying {
-                title: "Teardrop",
-                artist: "Massive Attack",
-                playing: true,
-                can_previous: true,
-                can_toggle: true,
-                can_next: true,
-                progress: Some(0.4),
-                art: None,
-                cursor: -1,
-            });
-            let shared = lock::Shared {
-                now: Local::now(),
-                name: "Kyan De Sutter",
-                prompt: lock::Prompt::password(0, (0, 0), false),
-                error: "",
-                has_wallpaper: backdrop.is_some(),
-                backdrop: backdrop.as_ref().map(|d| &d.bitmap),
-                foreground: None,
-                shards: None,
-                picture: None,
-                avatar: crate::scene::nearest(&pic, 1.0),
-                media,
-                enter: (1.0, 0.0),
-                blanked: false,
-                wake: 1.0,
-            };
-            view.draw(&shared, &theme, &mut kit, Instant::now());
-            let mut r = Renderer::new(w as u16, h as u16);
-            r.render(&view.scene, IRect::new(0, 0, w, h));
-            let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
-            let path = dir.join(format!("greeter-{preset}-{name}.png"));
-            image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
-            println!("SHOT {}", path.display());
-        }
+    let theme = resolve(settings, env);
+    let mut kit = Kit::new(&theme);
+    let pic = avatar(&theme, &env.state_dir, "shot");
+    let mut asking = Conversation::new(vec![]);
+    asking.open("kyan");
+    asking.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
+    let mut failed = Conversation::new(vec![]);
+    failed.open("kyan");
+    failed.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
+    failed.submit(Zeroizing::new("nope".into()));
+    failed.receive(Response::Error { error_type: greetd::ErrorType::AuthError, description: "Wrong password".into() });
+    failed.receive(Response::Success);
+    failed.open("kyan");
+    failed.receive(Response::AuthMessage { auth_message_type: greetd::MessageType::Secret, auth_message: "Password: ".into() });
+    let states: [(&str, &Conversation, &str, Menu, bool); 5] = [
+        ("password", &asking, "", Menu::Closed, true),
+        ("typing", &asking, "hunter2", Menu::Closed, true),
+        ("failed", &failed, "", Menu::Closed, true),
+        ("sessions", &asking, "", Menu::Sessions, true),
+        ("unavailable", &asking, "", Menu::Closed, false),
+    ];
+    for (name, convo, typed, menu, available) in states {
+        let mut view = View::new(w, h);
+        let controls = Controls { sessions: &names, session: 0, users: &people, user: 0, menu };
+        let c = Card {
+            name: "Kyan De Sutter",
+            avatar: crate::scene::nearest(&pic, 1.0),
+            below: Some(controls.el(&theme)),
+            ..card(convo, &Field::new(Zeroizing::new(typed.to_owned())), available, false)
+        };
+        view.draw(&c, backdrop.as_ref().map(|d| &d.bitmap), &theme, &mut kit, Instant::now());
+        let mut r = Renderer::new(w as u16, h as u16);
+        r.render(&view.scene, IRect::new(0, 0, w, h));
+        let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
+        let path = dir.join(format!("greeter-{name}.png"));
+        image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
+        println!("SHOT {}", path.display());
+    }
+    // The lock screen's card beside the greeter's, locked and playing.
+    for (name, playing) in [("lock", false), ("lock-media", true)] {
+        let mut view = lock::View::new(w, h);
+        let media = playing.then(|| lock::NowPlaying {
+            title: "Teardrop",
+            artist: "Massive Attack",
+            playing: true,
+            can_previous: true,
+            can_toggle: true,
+            can_next: true,
+            progress: Some(0.4),
+            art: None,
+            cursor: -1,
+        });
+        let shared = lock::Shared {
+            now: Local::now(),
+            name: "Kyan De Sutter",
+            prompt: lock::Prompt::password(0, (0, 0), false),
+            error: "",
+            has_wallpaper: backdrop.is_some(),
+            backdrop: backdrop.as_ref().map(|d| &d.bitmap),
+            foreground: None,
+            shards: None,
+            picture: None,
+            avatar: crate::scene::nearest(&pic, 1.0),
+            media,
+            enter: (1.0, 0.0),
+            blanked: false,
+            wake: 1.0,
+        };
+        view.draw(&shared, &theme, &mut kit, Instant::now());
+        let mut r = Renderer::new(w as u16, h as u16);
+        r.render(&view.scene, IRect::new(0, 0, w, h));
+        let rgba: Vec<u8> = r.canvas().data().iter().flat_map(|p| [p.r, p.g, p.b, p.a]).collect();
+        let path = dir.join(format!("greeter-{name}.png"));
+        image::save_buffer(&path, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).expect("png");
+        println!("SHOT {}", path.display());
     }
 }
 

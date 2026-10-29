@@ -325,7 +325,7 @@ impl Radii {
 }
 
 /// The ladder off the base radius, floored at 2 while the base is positive.
-/// A base of 0 (retro, or anything that is not a number) squares every step.
+/// A base of 0 (or anything that is not a number) squares every step.
 pub fn radius_tokens(base: Option<f64>) -> Radii {
     let b = base.unwrap_or(0.0);
     if b.is_nan() || b <= 0.0 {

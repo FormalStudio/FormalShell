@@ -99,7 +99,7 @@ leg_bar_style_assert() {
   "$jq_bin" -e --arg s "$style" '.[0].paint.style == $s' "$bar_style_paint_path" > /dev/null 2>&1 \
     || fail "bar paint does not report the style $style: $paint"
   if [ "$style" = transparent ]; then
-    "$jq_bin" -e '.[0].paint.pin == "transparent"' "$bar_style_paint_path" > /dev/null 2>&1 \
+    "$jq_bin" -e '.[0].paint.paint | IN("light", "dark")' "$bar_style_paint_path" > /dev/null 2>&1 \
       || fail "a transparent band should read the wallpaper without the busy branch: $paint"
     return 0
   fi

@@ -11,7 +11,7 @@
 # this rig's dark mode:
 #   a flat #e6e6e6 field (mean 230, no spread)      -> dark, no fill at all
 #   a flat #1e1e1e field (mean 30, no spread)       -> light, no fill at all
-#   half black, half white (spread 127)             -> translucentDark
+#   half black, half white (spread 127)             -> light, no fill at all
 #   the dark field with the fixture window full     -> maximized, solid
 # The fourth band is not in its frame: Hyprland draws a fullscreen window
 # above the top layer the bar is on, which is what the chrome auto-hide
@@ -20,10 +20,10 @@
 # The busy case is a coarse split rather than pixel noise on purpose: the
 # sampler decodes the wallpaper small, and a smooth downscale averages a
 # per-pixel pattern away while a half-and-half field keeps its spread at any
-# scale.
+# scale. The transparent style has no busy branch, so that field is a bare
+# band whose mean asks light ink.
 #
-# It pins `theme.preset` itself, so it needs no --pantheon (and does not
-# fight one), and it pins `fullscreen.hideChrome` off: the auto-hide takes
+# It pins `bar.style: transparent` itself, and `fullscreen.hideChrome` off: the auto-hide takes
 # the bar off the overlay layer while a window covers the output, and the
 # solid paint is exactly what a session that turned that off gets to see.
 leg_bar_adaptive_flag="--bar-adaptive"
@@ -52,8 +52,7 @@ bar_adaptive_max_clients="$shot_dir/bar-adaptive-maximized-clients.json"
 # The band's own rows, above every cell on it: the strip is barCellHeight
 # plus a barMargin band either side (40px), the cells sit barMargin in, so
 # rows 1 to 4 are band and nothing else at any x. The x is in the white half
-# of the busy wallpaper, where black at 0.3 over it lands at 178 and is
-# telling apart from every other case.
+# of the busy wallpaper, so a fill drawn there would show.
 bar_adaptive_patch="40x4+1200+1"
 
 leg_bar_adaptive_validate() {
@@ -64,16 +63,8 @@ leg_bar_adaptive_validate() {
 }
 
 leg_bar_adaptive_fixture() {
-  # --pantheon pins the same preset; two "theme" keys in one settings.json
-  # would be one object silently winning over the other.
-  if ! leg_on pantheon; then
-    settings_fragment ', "theme": {"preset": "pantheon"}'
-  fi
-  # The rule itself is the claim, and pantheon's own table pins the band
-  # transparent, so the key puts the rule back. Ridden by --bar-style
-  # transparent the style is the rule instead, which has no busy branch.
   if ! leg_on bar_style; then
-    settings_fragment ', "bar": {"paint": "auto"}'
+    settings_pin '.bar.style = "transparent"'
   fi
   settings_fragment ', "fullscreen": {"hideChrome": false}'
   $convert_bin -size 1920x1080 xc:'#e6e6e6' "$bar_adaptive_bright_wp"
@@ -181,15 +172,9 @@ leg_bar_adaptive_assert() {
   _bar_adaptive_case bright "$bar_adaptive_bright_json" "$bar_adaptive_bright_png" dark 230
   # A flat dark one: the same bare band, light ink, the wallpaper's own 30.
   _bar_adaptive_case dark "$bar_adaptive_dark_json" "$bar_adaptive_dark_png" light 30
-  # Half black and half white: busy by spread, so black at 0.3 over the
-  # white half, which is 178. `bar.style: transparent` takes the busy branch
-  # out, so the same field is a bare band whose mean (127) asks light ink,
+  # Half black and half white: a bare band whose mean (127) asks light ink,
   # over the white half's own 255.
-  if leg_on bar_style; then
-    _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" light 255
-  else
-    _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" translucentDark 178
-  fi
+  _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" light 255
   # A window covering the output: solid black, whatever the wallpaper says.
   # The frame shows the window rather than the band (see `_bar_adaptive_case`),
   # so this one is asserted off the shell's own answers alone.

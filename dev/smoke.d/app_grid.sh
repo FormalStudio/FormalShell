@@ -23,7 +23,7 @@
 # is deleted underneath the running shell, the launcher resummoned, and the
 # level has to come back as the grid with no key set at all; then it is put
 # back, which leaves the grid up for the run's own frame. Ridden by
-# --pantheon the grid is also read for sitting inside its own card: the
+# --no-morph the grid is also read for sitting inside its own card: the
 # popover emerge cuts nothing at the card's edge, so a view scrolled to a
 # negative offset paints its cells up the output instead of being clipped
 # away.
@@ -440,7 +440,7 @@ leg_app_grid_assert() {
   if [ -z "$marked" ] || [ "$marked" -lt 2500 ]; then
     fail "the default grid drew the probe icon over ${marked:-0} pixels, too few to be a 64px cell icon"
   fi
-  if leg_on pantheon; then
+  if leg_on no_morph; then
     # It drew inside its own card. The popover cuts nothing at the card's
     # edge, so a grid scrolled to a negative offset paints its cells up the
     # output rather than being clipped away: the band above the card's top

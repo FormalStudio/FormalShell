@@ -25,15 +25,12 @@ keyboard and drivable over IPC.
 development machines since August 2026. [`docs/SWITCHOVER.md`](docs/SWITCHOVER.md)
 tracks what has run on real hardware and what has only run in a VM.
 
-## Themes
+## The look
 
-`theme.preset` picks one of three looks. The palette follows the wallpaper in
-all of them.
+elementary OS 8's material: raised controls, sunken fields, cards on a soft
+cast, on a palette that follows the wallpaper.
 
-| `metamorphosis` (default) | `pantheon` | `retro` |
-| :---: | :---: | :---: |
-| <img src="docs/shots/theme-metamorphosis.png" width="280"> | <img src="docs/shots/theme-pantheon.png" width="280"> | <img src="docs/shots/theme-retro.png" width="280"> |
-| shadcn chrome, translucent cards that bud off the bar's line | elementary OS 8: raised controls, sunken fields, cards on a soft cast | square, mono, Nerd Font glyphs, dithered imagery |
+<img src="docs/shots/launcher.png" width="560">
 
 [![A panel growing out of the bar](docs/shots/panel-poster.png)](docs/shots/panel.mp4)
 
@@ -138,7 +135,7 @@ its own state goes to `$XDG_STATE_HOME/formalshell/state.json`.
 
 ```jsonc
 {
-  "theme": { "preset": "pantheon", "mode": "auto" },
+  "theme": { "mode": "auto" },
   "bar": { "position": "bottom" }
 }
 ```

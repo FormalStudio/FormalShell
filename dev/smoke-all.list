@@ -10,7 +10,7 @@
 --appmenu
 --backdrop
 --bar-adaptive
---pantheon --bar-ink
+--bar-ink
 --bar-layout
 --bar-position bottom
 --bar-position left
@@ -18,7 +18,6 @@
 --bar-style corners
 --bar-style corners --frame
 --bar-style solid --join --menu-emerge
---bar-style transparent --bar-adaptive
 --bar-title
 --idle --bluez-rssi
 --brightness
@@ -80,8 +79,8 @@
 --nix-run
 --no-morph --panel-emerge
 --notify
---pantheon --notify-close
---pantheon --notify-emerge
+--notify-close
+--notify-emerge
 --ocr
 --osd
 --overnight
@@ -91,7 +90,6 @@
 --panel-emerge
 --panel-handoff
 --panel-keys
---pantheon
 --picker
 --plugins
 --processes
@@ -100,12 +98,11 @@
 --radio-atlas-cold
 --record
 --reminder
---retro
 --screensaver
 --screensaver-inhibit
 --screenshot
 --share
---shoulders
+--bar-style solid --shoulders
 --showcase
 --spaces
 --spectrum
@@ -116,7 +113,6 @@
 --systemupdate
 --theme-auto
 --theme-toggle
---toast-motion
 --toast-swipe
 --toggles
 --panel network --tooltip

@@ -275,7 +275,7 @@ impl Switcher {
                     match icon.and_then(|i| i.2.clone()) {
                         Some(big) => p.shape(at, Paint::Picture { image: big, alpha, radius: 0.0 }),
                         None => {
-                            let glyph = fs_theme::icons::glyph(&kit.look.icon_set, "app-window");
+                            let glyph = fs_theme::icons::glyph("app-window");
                             let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                             let g = kit.shape(glyph.text, st);
                             p.text(&g, (at.x + (at.w - g.width) / 2, at.y + (at.h - g.line_height()) / 2), a(muted), &[]);
@@ -300,7 +300,7 @@ impl Switcher {
             match icon.and_then(|i| i.1.clone()) {
                 Some(small) => p.shape(ir, Paint::Picture { image: small, alpha, radius: 0.0 }),
                 None => {
-                    let glyph = fs_theme::icons::glyph(&kit.look.icon_set, "app-window");
+                    let glyph = fs_theme::icons::glyph("app-window");
                     let st = TextStyle { family: Family::Named(glyph.family), size: m.caption_icon as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
                     let g = kit.shape(glyph.text, st);
                     p.text(&g, (ir.x + (ir.w - g.width) / 2, ir.y + (ir.h - g.line_height()) / 2), a(muted), &[]);

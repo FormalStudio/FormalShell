@@ -135,7 +135,7 @@ pub fn hyprland_chrome(chrome: &Chrome) -> String {
 
     format!(
         "-- Written by the shell (ThemeEngine) into ~/.config/hypr/formalshell-chrome.lua\n\
-         -- on every theme.radius/theme.blur/theme.preset change, for a hyprland.lua\n\
+         -- on every theme.blur change, for a hyprland.lua\n\
          -- that reads it back with `dofile`. The shell asks Hyprland to reload after\n\
          -- each write.\n\
          return {{\n  \
@@ -166,7 +166,7 @@ pub fn mango_chrome(chrome: &Chrome) -> String {
     let flag = |b: bool| u8::from(b);
     format!(
         "# Written by the shell (ThemeEngine) into ~/.config/mango/formalshell-chrome.conf\n\
-         # on every theme.radius/theme.blur/theme.preset change, for a mango config\n\
+         # on every theme.blur change, for a mango config\n\
          # that sources it. The shell asks mango to reload after each write.\n\
          border_radius={}\n\
          border_px={}\n\
@@ -250,7 +250,6 @@ pub fn mango_colors(chrome: &Chrome, palette: &Map<String, Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tables;
     use serde_json::json;
 
     fn chrome_for(table: &Value, rounding: Value, blur: Value) -> Chrome {
@@ -289,36 +288,20 @@ mod tests {
 
     #[test]
     fn the_shipped_table_renders_the_shipped_chrome() {
-        let out = hyprland_chrome(&chrome_for(tables::metamorphosis(), json!(10), json!(true)));
+        let out = hyprland_chrome(&chrome_for(crate::table(), json!(6), json!(true)));
         let lines: Vec<&str> = out.trim().lines().collect();
         for line in &lines[..4] {
             assert!(line.starts_with("--"));
         }
         assert_eq!(
             body(&out),
-            expected(10, "true", (4, 8), 1, "\"primary\"", "false", 4, 3, "{ 0, 0 }", "\"rgba(000000ed)\"", "\"rgba(000000ed)\"")
-        );
-    }
-
-    #[test]
-    fn retro_squares_the_corners_and_keeps_the_window_chrome() {
-        assert_eq!(
-            body(&hyprland_chrome(&chrome_for(tables::metamorphosis(), json!(0), json!(false)))),
-            expected(0, "false", (4, 8), 1, "\"primary\"", "false", 4, 3, "{ 0, 0 }", "\"rgba(000000ed)\"", "\"rgba(000000ed)\"")
-        );
-    }
-
-    #[test]
-    fn the_pantheon_table_renders_elementarys_window() {
-        assert_eq!(
-            body(&hyprland_chrome(&chrome_for(tables::pantheon(), json!(6), json!(true)))),
             expected(6, "true", (4, 6), 1, "\"border\"", "true", 24, 3, "{ 0, 6 }", "\"rgba(00000059)\"", "\"rgba(00000040)\"")
         );
     }
 
     #[test]
     fn rounding_is_a_non_negative_int() {
-        let t = tables::metamorphosis();
+        let t = crate::table();
         assert!(hyprland_chrome(&chrome_for(t, json!(10.6), json!(false))).contains("rounding = 11,"));
         assert!(hyprland_chrome(&chrome_for(t, json!(-4), json!(false))).contains("rounding = 0,"));
         assert!(hyprland_chrome(&chrome_for(t, json!("square"), json!(false))).contains("rounding = 0,"));
@@ -326,7 +309,7 @@ mod tests {
 
     #[test]
     fn blur_is_a_real_bool() {
-        let t = tables::metamorphosis();
+        let t = crate::table();
         assert!(hyprland_chrome(&chrome_for(t, json!(0), json!("yes"))).contains("blur = false,"));
         let mut absent = chrome_for(t, json!(0), Value::Null);
         absent.blur = None;
@@ -373,15 +356,6 @@ mod tests {
     }
 
     #[test]
-    fn each_table_publishes_its_own_gaps() {
-        let shadcn = hyprland_chrome(&chrome_for(tables::metamorphosis(), json!(10), json!(true)));
-        assert!(shadcn.contains("gapsIn = 4,\n"));
-        assert!(shadcn.contains("gapsOut = 8,\n"));
-        let pantheon = hyprland_chrome(&chrome_for(tables::pantheon(), json!(6), json!(true)));
-        assert!(pantheon.contains("gapsOut = 6,\n"));
-    }
-
-    #[test]
     fn the_gaps_are_clamped_and_fall_back() {
         let bare = raw(json!({ "rounding": 0, "blur": false, "window": {}, "windowInactive": {} }));
         assert!(hyprland_chrome(&bare).contains("gapsIn = 4,\n"));
@@ -394,7 +368,7 @@ mod tests {
 
     #[test]
     fn mango_takes_the_same_window_as_its_own_options() {
-        let out = mango_chrome(&chrome_for(tables::pantheon(), json!(6), json!(true)));
+        let out = mango_chrome(&chrome_for(crate::table(), json!(6), json!(true)));
         let body: Vec<&str> = out.lines().filter(|l| !l.starts_with('#')).collect();
         assert_eq!(
             body,
@@ -415,7 +389,7 @@ mod tests {
                 "shadows_position_y=6",
             ]
         );
-        assert!(mango_chrome(&chrome_for(tables::metamorphosis(), json!(400), json!(false))).contains("border_radius=100\nborder_px=1\n"));
+        assert!(mango_chrome(&chrome_for(crate::table(), json!(400), json!(false))).contains("border_radius=100\nborder_px=1\n"));
     }
 
     #[test]
@@ -424,9 +398,9 @@ mod tests {
             "primary": "#9ecafc", "border": "#42474e80", "destructive": "#ffb4ab"
         }))
         .unwrap();
-        let out = mango_colors(&chrome_for(tables::metamorphosis(), json!(10), json!(true)), &palette);
+        let out = mango_colors(&chrome_for(crate::table(), json!(6), json!(true)), &palette);
         let body: Vec<&str> = out.lines().filter(|l| !l.starts_with('#')).collect();
-        assert_eq!(body, ["focus_color=0x9ecafcff", "border_color=0x42474e80", "urgent_color=0xffb4abff", "shadows_color=0x000000ed"]);
+        assert_eq!(body, ["focus_color=0x42474e80", "border_color=0x42474e80", "urgent_color=0xffb4abff", "shadows_color=0x00000059"]);
         let none = mango_colors(&raw(json!({ "window": { "border": { "color": "nope" } } })), &Map::new());
         assert_eq!(none.lines().filter(|l| !l.starts_with('#')).collect::<Vec<_>>(), ["shadows_color=0x00000000"]);
     }

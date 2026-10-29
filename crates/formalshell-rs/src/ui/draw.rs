@@ -48,7 +48,7 @@ fn shape(cx: &mut Cx, s: &str, font: &Font) -> ShapedText {
 }
 
 fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
-    let g = fs_theme::icons::glyph(&cx.kit.look.icon_set, name);
+    let g = fs_theme::icons::glyph(name);
     let st = TextStyle { family: Family::Named(g.family), size: px(cx, size), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
     cx.kit.shape(g.text, st)
 }
@@ -945,21 +945,10 @@ fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interact
     let ri = irect(r);
     let radius = t.box_radius(&groove, ri.h as f64);
     let fill_radius = t.box_radius(&fill, ri.h as f64);
-    let dither = t.dither;
     let w = cx.tween(&format!("{path}.fill"), ri.w as f64 * value.clamp(0.0, 1.0), Clock::SpatialFast);
     let alpha = cx.alpha;
     let mut p = cx.painter(path);
     boxes::paint(&mut p, ri, &groove, radius, alpha, 0.0);
-    if dither {
-        // DitherFill: every other pixel of the groove takes the ink, the
-        // retro pass's checker at its smallest chunk.
-        let ink = fill.fill.with_alpha(fill.fill.a * alpha * 0.35);
-        let mut x = ri.x;
-        while x < ri.right() {
-            p.rect(IRect::new(x, ri.y + ((x - ri.x) % 2), 1, 1), ink, 0.0);
-            x += 1;
-        }
-    }
     p.rect(IRect::new(ri.x, ri.y, w.round() as i32, ri.h), fill.fill.with_alpha(fill.fill.a * alpha), fill_radius as f32);
     if let Some(n) = notch {
         let bw = cx_border(t);

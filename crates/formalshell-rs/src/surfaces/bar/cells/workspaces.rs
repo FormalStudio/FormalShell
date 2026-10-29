@@ -326,7 +326,7 @@ impl Workspaces {
         let pulse = if state == "blocked" { breathe(self.clock, now) } else { 1.0 };
         let a = alpha * pulse;
         p.rect(badge, look.background.with_alpha(look.background.a * a), size as f32 / 2.0);
-        let g = fs_theme::icons::glyph(&look.icon_set, badge_glyph(state));
+        let g = fs_theme::icons::glyph(badge_glyph(state));
         let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.caption, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
         let (bw, bh) = shaped.box_size();
         let at = (badge.x + (size - bw) / 2, badge.y + (size - bh) / 2);
@@ -668,7 +668,7 @@ impl Custom for Workspaces {
                 match self.icons.get(&w.id).and_then(|i| i.image.clone()) {
                     Some(image) => p.image(&image, (r.x, r.y), a),
                     None => {
-                        let g = fs_theme::icons::glyph(&look.icon_set, "app-window");
+                        let g = fs_theme::icons::glyph("app-window");
                         let shaped = kit.shape(g.text, TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
                         let (bw, bh) = (shaped.width, shaped.line_height());
                         let at = (r.x + (r.w - bw) / 2, r.y + (r.h - bh) / 2);

@@ -449,7 +449,7 @@ impl App {
             jobs.push(("0".into(), TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
         for name in ["circle", "wifi", "volume-2", "battery", "bell", "bluetooth", "cpu"] {
-            let g = fs_theme::icons::glyph(&look.icon_set, name);
+            let g = fs_theme::icons::glyph(name);
             jobs.push((g.text.to_owned(), TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
         let text = self.bar.kit.text.clone();
@@ -2542,7 +2542,7 @@ pub fn theme_inputs(app: &App) {
     // not have taken this settings change yet.
     let settings = config.settings();
     let get = theme::get(settings);
-    let color = fs_theme::presets::resolve(get("theme.preset").as_ref(), &get).wallpaper_color;
+    let color = get("wallpaper.color").and_then(|v| fs_theme::theme::wallpaper_color(&v)).flatten();
     theme::send_inputs(theme::Inputs {
         settings: settings.clone(),
         wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper),

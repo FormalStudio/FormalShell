@@ -243,11 +243,11 @@ runs = ["--bar-layout"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/barpaint.rs"]
-runs = ["--bar-adaptive", "--pantheon --bar-ink", "--bar-style transparent --bar-adaptive"]
+runs = ["--bar-adaptive", "--bar-ink"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/shoulders.rs"]
-runs = ["--shoulders", "--join", "--menu-emerge", "--panel-emerge", "--no-morph --panel-emerge"]
+runs = ["--bar-style solid --shoulders", "--join", "--menu-emerge", "--panel-emerge", "--no-morph --panel-emerge"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/frame.rs"]
@@ -271,7 +271,7 @@ runs = ["--desktop-clock", "--lock"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/dither.rs"]
-runs = ["--wallpaper", "--retro"]
+runs = ["--wallpaper"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/cursor.rs", "crates/fs-chrome/src/grid.rs"]
@@ -399,7 +399,7 @@ paths = [
   "crates/fs-info/src/notification_icon.rs",
   "crates/fs-info/src/toast_stack.rs",
 ]
-runs = ["--notify", "--toast-motion", "--toast-swipe", "--pantheon --notify-close", "--pantheon --notify-emerge", "--center", "--activity"]
+runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--center", "--activity"]
 
 # Activity
 [[rule]]

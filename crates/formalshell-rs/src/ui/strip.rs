@@ -95,7 +95,7 @@ fn thumb(cx: &mut Cx, tile: &Tile, r: IRect, lit: bool, ring: bool, path: &str) 
             let font = Font { size: Type::Caption, weight: Weight::Normal, mono: false };
             let title = (!tile.title.is_empty()).then(|| elided(cx, &tile.title, &font, (r.w as f64 - s.md * 2.0).max(0.0)));
             let title = title.filter(|l| r.h as f64 >= size as f64 + s.xs + l.line_height() as f64 + s.md * 2.0);
-            let glyph = fs_theme::icons::glyph(&cx.kit.look.icon_set, "app-window");
+            let glyph = fs_theme::icons::glyph("app-window");
             let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
             let mark = cx.kit.shape(glyph.text, st);
             let total = size + title.as_ref().map_or(0, |l| s.xs as i32 + l.line_height());

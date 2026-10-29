@@ -2,10 +2,9 @@
 //! (fs-chrome's resolver), the room rule that shares the strip between them
 //! (free labels give ground first, then whole cells hide from an end
 //! region's inner edge), on whichever edge `bar.position` names, painted as
-//! the metamorphosis strip or wingpanel's band. `bar.style` picks the band's
-//! paint (read off the wallpaper, or solid, or solid with `corners` filleted
-//! into the desktop on the bar's own window); with it absent the table's
-//! `bar` habit decides. With the screen frame on, the window is the whole
+//! wingpanel's band. `bar.style` picks the band's paint (read off the
+//! wallpaper, or solid, or solid with `corners` filleted into the desktop on
+//! the bar's own window). With the screen frame on, the window is the whole
 //! output and paints the ring, strip included, under its cells.
 //!
 //! Cells are [`cell::Cell`]s in `cells/`, placed as [`slot::Slot`]s.
@@ -39,15 +38,12 @@ const STRIP_NODES: usize = 6;
 /// session's first answers land as one layout.
 const REVEAL: Duration = Duration::from_millis(1500);
 
-/// The theme's paint for the strip, the band and the ring.
+/// The theme's paint for the band and the ring.
 struct Style {
-    band: bool,
-    bar_style: Option<BarStyle>,
+    bar_style: BarStyle,
     /// The fillets' radius under `corners` with no ring, 0 otherwise: the
     /// window reaches this far past the band into the desktop.
     corners: f64,
-    fill: Rgba,
-    edge: Option<(Rgba, f64)>,
     thickness: f64,
     margin: f64,
     inset: f64,
@@ -57,14 +53,10 @@ struct Style {
 
 impl Style {
     fn new(theme: &Theme) -> Self {
-        let bar = theme.box_style("bar", None);
         let s = &theme.space;
         Self {
-            band: theme.band(),
             bar_style: theme.bar_style,
-            corners: if theme.bar_style == Some(BarStyle::Corners) && !theme.frame_enabled() { theme.frame_radius } else { 0.0 },
-            fill: bar.fill,
-            edge: bar.edge.map(|l| (l.color, l.width)),
+            corners: if theme.bar_style == BarStyle::Corners && !theme.frame_enabled() { theme.frame_radius } else { 0.0 },
             thickness: s.bar_cell_height,
             margin: s.bar_margin,
             inset: s.md,
@@ -78,7 +70,7 @@ impl Style {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PaintState {
     pub paint: barpaint::Paint,
-    pub pin: &'static str,
+    pub pin: barpaint::Pin,
     pub fullscreen: bool,
 }
 
@@ -218,9 +210,8 @@ impl Bar {
     }
 
     fn floating(&self) -> bool {
-        let fill = self.band_fill.unwrap_or(self.style.fill);
-        let edge = if self.style.band { self.band_edge } else { self.style.edge };
-        let line = edge.is_some_and(|(c, w)| c.a > 0.0 && w > 0.0);
+        let fill = self.band_fill.unwrap_or(Rgba::TRANSPARENT);
+        let line = self.band_edge.is_some_and(|(c, w)| c.a > 0.0 && w > 0.0);
         !self.framed() && fill.a <= 0.0 && !line
     }
 
@@ -300,7 +291,7 @@ impl Bar {
         self.strip_key = None;
     }
 
-    /// A new theme: every metric, ink and the habit. True when the strip's
+    /// A new theme: every metric and ink. True when the strip's
     /// framing changed with it, which re-places the window.
     pub fn set_theme(&mut self, theme: &Theme) -> bool {
         let framed = self.framed();
@@ -430,31 +421,20 @@ impl Bar {
         }
     }
 
-    /// The band's ink and glow, none for a strip.
+    /// The band's ink and glow, none before its first paint.
     fn band(&self) -> Option<(Rgba, Vec<Glow<Rgba>>)> {
         self.band_box.clone()
     }
 
-    /// The band's paint off `bar.style` (or, with it absent, `bar.paint`
-    /// and the table's `paint` habit), the shared wallpaper reading and the
-    /// output's fullscreen state; true when it moved. The ring wears the
+    /// The band's paint off `bar.style`, the shared wallpaper reading and
+    /// the output's fullscreen state; true when it moved. The ring wears the
     /// same paint.
     pub fn update_paint(&mut self, store: &Store) -> bool {
         let theme = &store.theme.theme;
-        let paint = self.style.band.then(|| {
-            let pin = match self.style.bar_style {
-                Some(style) => style.pin(),
-                None => {
-                    let raw = store.config.str("bar.paint").map(str::to_owned).or_else(|| theme.habit("paint").and_then(Value::as_str).map(str::to_owned));
-                    barpaint::pin(raw.as_deref())
-                }
-            }
-            .as_str();
-            let fullscreen = store.compositor.snapshot.fullscreen_outputs.contains(&self.output);
-            let stats = store.bar_paint.stats();
-            let paint = barpaint::decide(stats.as_ref(), &theme.colors.mode, fullscreen, Some(pin));
-            PaintState { paint, pin, fullscreen }
-        });
+        let pin = self.style.bar_style.pin();
+        let fullscreen = store.compositor.snapshot.fullscreen_outputs.contains(&self.output);
+        let stats = store.bar_paint.stats();
+        let paint = Some(PaintState { paint: barpaint::decide(stats.as_ref(), fullscreen, pin), pin, fullscreen });
         let state = paint.as_ref().map(|p| p.paint.as_str());
         let bar = theme.box_style("bar", state);
         let ring = theme.box_style("frame", state);
@@ -492,7 +472,7 @@ impl Bar {
         changed
     }
 
-    /// `bar paint`'s answer for this bar, null under a strip. `cells` is the
+    /// `bar paint`'s answer for this bar, null before its first paint. `cells` is the
     /// ink each placed cell wears, the band's own unless its stretch of a
     /// bare band read otherwise.
     pub fn paint_state(&self, store: &Store) -> Value {
@@ -508,9 +488,7 @@ impl Bar {
             "paint": p.paint.as_str(),
             "cells": cells,
             "source": store.bar_paint.source,
-            "style": self.style.bar_style.map(BarStyle::as_str),
-            "pin": p.pin,
-            "pinned": p.pin != "auto",
+            "style": self.style.bar_style.as_str(),
             "mean": s.mean,
             "std": s.std,
             "acutance": s.acutance,
@@ -522,7 +500,7 @@ impl Bar {
     /// Whether the band's paint reads the wallpaper under it: a band
     /// pinned solid starts no reading.
     pub fn reads_wallpaper(&self) -> bool {
-        self.style.band && !matches!(self.style.bar_style, Some(BarStyle::Solid | BarStyle::Corners))
+        !matches!(self.style.bar_style, BarStyle::Solid | BarStyle::Corners)
     }
 
     pub fn line_rects(&self) -> &[IRect] {
@@ -592,7 +570,7 @@ impl Bar {
                     } else {
                         ((r.x - strip.x) as f64 / strip.w.max(1) as f64, (r.right() - strip.x) as f64 / strip.w.max(1) as f64)
                     };
-                    Some(barpaint::cell(p.paint, Some(p.pin), &profile.span(from, to)))
+                    Some(barpaint::cell(p.paint, p.pin, &profile.span(from, to)))
                 }
                 _ => Some(p.paint),
             };
@@ -734,9 +712,8 @@ impl Bar {
         }
     }
 
-    /// The strip's own paint: the strip habit's fill and hairline, the
-    /// band's fill with its own line and `corners`' fillets, or the frame's
-    /// ring with its line.
+    /// The strip's own paint: the band's fill with its own line and
+    /// `corners`' fillets, or the frame's ring with its line.
     fn paint_strip(&mut self) {
         let key = format!("{:?} {:?} {:?} {:?} {:?}", self.scene.size, self.gaps, self.edge, self.paint, self.ring_box);
         if self.strip_key.as_deref() == Some(key.as_str()) {
@@ -794,10 +771,7 @@ impl Bar {
             }
             p.shape(size, Paint::Shape { fill: Some((band, ring.0)), strokes: vec![(path, ring.2, ring.1)] });
         } else {
-            let (fill, line) = match band_fill {
-                Some(fill) => (fill, self.band_edge),
-                None => (self.style.fill, self.style.edge),
-            };
+            let (fill, line) = (band_fill.unwrap_or(Rgba::TRANSPARENT), self.band_edge);
             p.rect(strip, fill, 0.0);
             if let Some((color, width)) = line.filter(|(c, w)| c.a > 0.0 && *w > 0.0) {
                 let t = width.round().max(1.0) as i32;

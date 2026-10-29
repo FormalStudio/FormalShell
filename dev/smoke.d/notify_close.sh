@@ -6,11 +6,10 @@
 # the button and none after the click.
 #
 # What it guards: the card's hover has to keep reporting with the pointer on
-# the close button. Under the bubble habit that button only exists while the
-# card is hovered, so a hover that drops out over it fades the button away
-# under the pointer and the click lands on the body instead, which focuses the
-# sender and leaves a sticky card where it was. Rides --pantheon for that
-# case; alone it is the row habit's always-drawn button.
+# the close button. The bubble's button only exists while the card is
+# hovered, so a hover that drops out over it fades the button away under the
+# pointer and the click lands on the body instead, which focuses the sender
+# and leaves a sticky card where it was.
 #
 # The button's place is measured, not hardcoded: the card's rect is the
 # difference between a frame with no card and the settled one, cut at 20% so

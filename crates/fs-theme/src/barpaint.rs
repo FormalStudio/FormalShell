@@ -17,31 +17,13 @@ const LUMA_R: f64 = 0.299;
 const LUMA_G: f64 = 0.587;
 const LUMA_B: f64 = 0.114;
 
-/// A band is bright above the mean threshold, busy above either of the next
-/// two, and the sigma rule catches a band whose mean is dark but whose spread
-/// puts a twentieth of it in the light: 1.645 is the 95th percentile of a
-/// normal distribution.
+/// A band is bright above the mean threshold, and wears dark ink then.
 pub const LUMA_THRESHOLD: f64 = 180.0;
-pub const STD_THRESHOLD: f64 = 45.0;
-pub const ACUTANCE_THRESHOLD: f64 = 8.0;
-pub const SIGMA: f64 = 1.645;
 
 /// How wide the whole wallpaper is sampled, the band's rows taken out of
 /// that. The mean and spread are scale-free and the acutance keeps its edges
 /// as long as the downscale is nearest-neighbour.
 pub const SAMPLE_WIDTH: u32 = 240;
-
-/// What `bar.paint` may say. `auto` is wingpanel's rule; `transparent` is
-/// that rule with the busy branch taken out; the other five pin one paint.
-pub const PINS: [&str; 7] = [
-    "auto",
-    "transparent",
-    "light",
-    "dark",
-    "translucentLight",
-    "translucentDark",
-    "maximized",
-];
 
 /// The five paints a band can wear. The strings are the theme state names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,10 +47,10 @@ impl Paint {
     }
 }
 
-/// A resolved `bar.paint` value.
+/// What `bar.style` asks of the band: no fill of its own with the ink read
+/// off the wallpaper, or one paint whatever is under it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pin {
-    Auto,
     Transparent,
     Paint(Paint),
 }
@@ -76,7 +58,6 @@ pub enum Pin {
 impl Pin {
     pub fn as_str(self) -> &'static str {
         match self {
-            Pin::Auto => "auto",
             Pin::Transparent => "transparent",
             Pin::Paint(p) => p.as_str(),
         }
@@ -233,53 +214,18 @@ pub fn stats(data: &[u8], width: usize, height: usize) -> Stats {
     Profile::read(data, width, height, true).stats()
 }
 
-/// Whether the band is too busy to read ink off directly, which is what makes
-/// wingpanel draw a translucent panel at all.
-pub fn busy(s: Option<&Stats>) -> bool {
-    let Some(s) = s.filter(|s| s.sampled) else {
-        return false;
-    };
-    s.std > STD_THRESHOLD
-        || s.acutance > ACUTANCE_THRESHOLD
-        || (s.mean < LUMA_THRESHOLD && s.mean + SIGMA * s.std > LUMA_THRESHOLD)
-}
-
-/// An unknown value is a typo rather than a request, and reads as the rule.
-pub fn pin(value: Option<&str>) -> Pin {
-    match value {
-        Some("transparent") => Pin::Transparent,
-        Some("light") => Pin::Paint(Paint::Light),
-        Some("dark") => Pin::Paint(Paint::Dark),
-        Some("translucentLight") => Pin::Paint(Paint::TranslucentLight),
-        Some("translucentDark") => Pin::Paint(Paint::TranslucentDark),
-        Some("maximized") => Pin::Paint(Paint::Maximized),
-        _ => Pin::Auto,
-    }
-}
-
 /// The paint. A pinned paint is the answer whatever is under the band,
-/// including a window over it. Under the two rules a window covering the
-/// output wins over everything the wallpaper says. With no wallpaper set the
-/// honest answer is the bare band with light ink.
-pub fn decide(s: Option<&Stats>, mode: &str, fullscreen: bool, pinned: Option<&str>) -> Paint {
-    let p = pin(pinned);
-    if let Pin::Paint(paint) = p {
+/// including a window over it. Otherwise a window covering the output wins
+/// over everything the wallpaper says. With no wallpaper set the honest
+/// answer is the bare band with light ink.
+pub fn decide(s: Option<&Stats>, fullscreen: bool, pin: Pin) -> Paint {
+    if let Pin::Paint(paint) = pin {
         return paint;
     }
     if fullscreen {
         return Paint::Maximized;
     }
-    let Some(s) = s.filter(|s| s.sampled) else {
-        return Paint::Light;
-    };
-    if p == Pin::Auto && busy(Some(s)) {
-        return if mode == "light" {
-            Paint::TranslucentLight
-        } else {
-            Paint::TranslucentDark
-        };
-    }
-    bare(s)
+    s.filter(|s| s.sampled).map_or(Paint::Light, bare)
 }
 
 /// The bare band's ink off its mean alone: dark words over a bright field,
@@ -298,9 +244,9 @@ fn bare(s: &Stats) -> Paint {
 /// what keeps the words legible over a wallpaper bright at one end and
 /// dark at the other; a band with a fill, a pinned paint and a covered
 /// output keep one ink across, since the fill is what the words sit on.
-pub fn cell(band: Paint, pinned: Option<&str>, span: &Stats) -> Paint {
-    match (pin(pinned), band) {
-        (Pin::Auto | Pin::Transparent, Paint::Light | Paint::Dark) if span.sampled => bare(span),
+pub fn cell(band: Paint, pin: Pin, span: &Stats) -> Paint {
+    match (pin, band) {
+        (Pin::Transparent, Paint::Light | Paint::Dark) if span.sampled => bare(span),
         _ => band,
     }
 }
@@ -308,15 +254,9 @@ pub fn cell(band: Paint, pinned: Option<&str>, span: &Stats) -> Paint {
 /// What one output's band wears, given the reading taken on the main display.
 /// The wallpaper is one picture across the session, so the reading is shared
 /// and the only per-output term left is a window covering that output.
-pub fn decide_for(
-    s: Option<&Stats>,
-    mode: &str,
-    fullscreen_outputs: Option<&[&str]>,
-    name: &str,
-    pinned: Option<&str>,
-) -> Paint {
+pub fn decide_for(s: Option<&Stats>, fullscreen_outputs: Option<&[&str]>, name: &str, pin: Pin) -> Paint {
     let covered = fullscreen_outputs.is_some_and(|outputs| outputs.contains(&name));
-    decide(s, mode, covered, pinned)
+    decide(s, covered, pin)
 }
 
 /// The band's rect inside a sample of the whole wallpaper: the bar's own edge
@@ -473,275 +413,71 @@ mod tests {
         assert!(near(p.stats().acutance, 0.0));
     }
 
+    const T: Pin = Pin::Transparent;
+
     #[test]
     fn a_cell_on_a_bare_band_reads_its_own_stretch() {
-        assert_eq!(cell(Paint::Dark, None, &st(30.0, 0.0, 0.0)), Paint::Light);
-        assert_eq!(cell(Paint::Light, None, &st(230.0, 0.0, 0.0)), Paint::Dark);
-        assert_eq!(
-            cell(Paint::Dark, Some("transparent"), &st(30.0, 0.0, 0.0)),
-            Paint::Light
-        );
-        assert_eq!(
-            cell(Paint::Dark, Some("auto"), &st(230.0, 0.0, 0.0)),
-            Paint::Dark
-        );
+        assert_eq!(cell(Paint::Dark, T, &st(30.0, 0.0, 0.0)), Paint::Light);
+        assert_eq!(cell(Paint::Light, T, &st(230.0, 0.0, 0.0)), Paint::Dark);
     }
 
     #[test]
     fn a_cell_keeps_the_band_paint_when_the_band_has_a_fill_or_a_pin() {
         let dark = st(30.0, 0.0, 0.0);
-        assert_eq!(
-            cell(Paint::TranslucentDark, None, &dark),
-            Paint::TranslucentDark
-        );
-        assert_eq!(
-            cell(Paint::TranslucentLight, None, &dark),
-            Paint::TranslucentLight
-        );
-        assert_eq!(cell(Paint::Maximized, None, &dark), Paint::Maximized);
-        assert_eq!(cell(Paint::Dark, Some("dark"), &dark), Paint::Dark);
-        let unsampled = Stats {
-            mean: 0.0,
-            std: 0.0,
-            acutance: 0.0,
-            sampled: false,
-        };
-        assert_eq!(cell(Paint::Dark, None, &unsampled), Paint::Dark);
+        assert_eq!(cell(Paint::Maximized, T, &dark), Paint::Maximized);
+        assert_eq!(cell(Paint::Dark, Pin::Paint(Paint::Maximized), &dark), Paint::Dark);
+        let unsampled = Stats { mean: 0.0, std: 0.0, acutance: 0.0, sampled: false };
+        assert_eq!(cell(Paint::Dark, T, &unsampled), Paint::Dark);
     }
 
     #[test]
-    fn a_calm_bright_band_takes_dark_ink_on_no_fill() {
-        assert_eq!(
-            decide(Some(&st(230.0, 0.0, 0.0)), "dark", false, None).as_str(),
-            "dark"
-        );
-    }
-
-    #[test]
-    fn a_calm_dark_band_takes_light_ink_on_no_fill() {
-        assert_eq!(
-            decide(Some(&st(30.0, 0.0, 0.0)), "dark", false, None).as_str(),
-            "light"
-        );
-    }
-
-    #[test]
-    fn spread_alone_makes_a_band_busy() {
-        assert!(!busy(Some(&st(60.0, STD_THRESHOLD, 0.0))));
-        assert!(busy(Some(&st(60.0, STD_THRESHOLD + 1.0, 0.0))));
-    }
-
-    #[test]
-    fn acutance_alone_makes_a_band_busy() {
-        assert!(!busy(Some(&st(60.0, 0.0, ACUTANCE_THRESHOLD))));
-        assert!(busy(Some(&st(60.0, 0.0, ACUTANCE_THRESHOLD + 1.0))));
-    }
-
-    #[test]
-    fn the_sigma_rule_catches_a_dark_band_with_bright_parts() {
-        let boundary = LUMA_THRESHOLD - SIGMA * 40.0;
-        assert!(!busy(Some(&st(boundary - 1.0, 40.0, 0.0))));
-        assert!(busy(Some(&st(boundary + 1.0, 40.0, 0.0))));
-    }
-
-    #[test]
-    fn a_bright_band_is_not_busy_by_the_sigma_rule() {
-        assert!(!busy(Some(&st(200.0, 40.0, 0.0))));
-        assert_eq!(
-            decide(Some(&st(200.0, 40.0, 0.0)), "dark", false, None).as_str(),
-            "dark"
-        );
-    }
-
-    #[test]
-    fn the_mode_picks_between_the_two_translucent_paints() {
-        let b = st(120.0, 80.0, 0.0);
-        assert_eq!(
-            decide(Some(&b), "dark", false, None).as_str(),
-            "translucentDark"
-        );
-        assert_eq!(
-            decide(Some(&b), "light", false, None).as_str(),
-            "translucentLight"
-        );
+    fn the_bare_band_takes_its_ink_off_the_mean_alone() {
+        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), false, T), Paint::Dark);
+        assert_eq!(decide(Some(&st(30.0, 0.0, 0.0)), false, T), Paint::Light);
+        assert_eq!(decide(Some(&st(120.0, 80.0, 0.0)), false, T), Paint::Light);
+        assert_eq!(decide(Some(&st(200.0, 80.0, 20.0)), false, T), Paint::Dark);
     }
 
     #[test]
     fn a_window_covering_the_output_wins_over_every_reading() {
-        assert_eq!(
-            decide(Some(&st(230.0, 0.0, 0.0)), "dark", true, None).as_str(),
-            "maximized"
-        );
-        assert_eq!(
-            decide(Some(&st(120.0, 80.0, 0.0)), "light", true, None).as_str(),
-            "maximized"
-        );
-        assert_eq!(decide(None, "dark", true, None).as_str(), "maximized");
+        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), true, T), Paint::Maximized);
+        assert_eq!(decide(None, true, T), Paint::Maximized);
     }
 
     #[test]
     fn nothing_sampled_reads_as_the_bare_band() {
-        assert_eq!(decide(None, "dark", false, None).as_str(), "light");
-        let unsampled = Stats {
-            mean: 0.0,
-            std: 0.0,
-            acutance: 0.0,
-            sampled: false,
-        };
-        assert_eq!(
-            decide(Some(&unsampled), "light", false, None).as_str(),
-            "light"
-        );
-    }
-
-    /// JS also feeds 42, null and undefined; a `&str` option has only `None`
-    /// for all three. "constructor" covers the inherited-property case.
-    #[test]
-    fn an_unknown_pin_reads_as_the_rule() {
-        assert_eq!(pin(Some("auto")).as_str(), "auto");
-        assert_eq!(pin(Some("transparent")).as_str(), "transparent");
-        assert_eq!(pin(Some("translucentDark")).as_str(), "translucentDark");
-        assert_eq!(pin(Some("solid")).as_str(), "auto");
-        assert_eq!(pin(Some("")).as_str(), "auto");
-        assert_eq!(pin(None).as_str(), "auto");
-        assert_eq!(pin(Some("constructor")).as_str(), "auto");
-        for p in PINS {
-            assert_eq!(pin(Some(p)).as_str(), p);
-        }
+        assert_eq!(decide(None, false, T), Paint::Light);
+        let unsampled = Stats { mean: 0.0, std: 0.0, acutance: 0.0, sampled: false };
+        assert_eq!(decide(Some(&unsampled), false, T), Paint::Light);
     }
 
     #[test]
     fn a_pinned_paint_wins_over_the_sample() {
-        let b = st(120.0, 80.0, 0.0);
-        assert_eq!(
-            decide(Some(&b), "dark", false, Some("light")).as_str(),
-            "light"
-        );
-        assert_eq!(
-            decide(
-                Some(&st(230.0, 0.0, 0.0)),
-                "dark",
-                false,
-                Some("translucentDark")
-            )
-            .as_str(),
-            "translucentDark"
-        );
-        assert_eq!(
-            decide(Some(&b), "dark", true, Some("dark")).as_str(),
-            "dark"
-        );
-        assert_eq!(
-            decide(None, "dark", false, Some("maximized")).as_str(),
-            "maximized"
-        );
-    }
-
-    #[test]
-    fn auto_samples_the_way_it_always_did() {
-        let b = st(120.0, 80.0, 0.0);
-        assert_eq!(
-            decide(Some(&b), "dark", false, Some("auto")),
-            decide(Some(&b), "dark", false, None)
-        );
-        assert_eq!(
-            decide(Some(&b), "light", false, Some("auto")).as_str(),
-            "translucentLight"
-        );
-        assert_eq!(
-            decide(Some(&st(230.0, 0.0, 0.0)), "dark", false, Some("auto")).as_str(),
-            "dark"
-        );
-        assert_eq!(
-            decide(Some(&st(30.0, 0.0, 0.0)), "dark", false, Some("auto")).as_str(),
-            "light"
-        );
-        assert_eq!(
-            decide(Some(&st(30.0, 0.0, 0.0)), "dark", true, Some("auto")).as_str(),
-            "maximized"
-        );
-        assert_eq!(
-            decide(Some(&b), "dark", false, Some("solid")).as_str(),
-            "translucentDark"
-        );
-    }
-
-    #[test]
-    fn transparent_drops_the_fill_and_keeps_the_ink_adaptive() {
-        let t = Some("transparent");
-        assert_eq!(
-            decide(Some(&st(120.0, 80.0, 0.0)), "dark", false, t).as_str(),
-            "light"
-        );
-        assert_eq!(
-            decide(Some(&st(230.0, 80.0, 0.0)), "dark", false, t).as_str(),
-            "dark"
-        );
-        assert_eq!(
-            decide(Some(&st(200.0, 80.0, 20.0)), "light", false, t).as_str(),
-            "dark"
-        );
-        assert_eq!(
-            decide(Some(&st(30.0, 0.0, 0.0)), "dark", false, t).as_str(),
-            "light"
-        );
-        assert_eq!(decide(None, "dark", false, t).as_str(), "light");
-        assert_eq!(
-            decide(Some(&st(230.0, 0.0, 0.0)), "dark", true, t).as_str(),
-            "maximized"
-        );
+        let solid = Pin::Paint(Paint::Maximized);
+        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), false, solid), Paint::Maximized);
+        assert_eq!(decide(None, false, solid), Paint::Maximized);
+        assert_eq!(solid.as_str(), "maximized");
+        assert_eq!(T.as_str(), "transparent");
     }
 
     #[test]
     fn every_output_wears_the_one_reading() {
         let bright = st(230.0, 0.0, 0.0);
-        let a = Some("auto");
-        assert_eq!(
-            decide_for(Some(&bright), "dark", Some(&[]), "HDMI-A-1", a).as_str(),
-            "dark"
-        );
-        assert_eq!(
-            decide_for(Some(&bright), "dark", Some(&[]), "eDP-1", a).as_str(),
-            "dark"
-        );
-
-        let b = st(120.0, 80.0, 0.0);
-        assert_eq!(
-            decide_for(Some(&b), "dark", Some(&[]), "HDMI-A-1", a).as_str(),
-            "translucentDark"
-        );
-        assert_eq!(
-            decide_for(Some(&b), "dark", Some(&[]), "eDP-1", a).as_str(),
-            "translucentDark"
-        );
+        assert_eq!(decide_for(Some(&bright), Some(&[]), "HDMI-A-1", T), Paint::Dark);
+        assert_eq!(decide_for(Some(&bright), Some(&[]), "eDP-1", T), Paint::Dark);
     }
 
     #[test]
     fn a_covered_output_blackens_its_own_band_alone() {
         let bright = st(230.0, 0.0, 0.0);
-        let a = Some("auto");
-        assert_eq!(
-            decide_for(Some(&bright), "dark", Some(&["eDP-1"]), "eDP-1", a).as_str(),
-            "maximized"
-        );
-        assert_eq!(
-            decide_for(Some(&bright), "dark", Some(&["eDP-1"]), "HDMI-A-1", a).as_str(),
-            "dark"
-        );
+        assert_eq!(decide_for(Some(&bright), Some(&["eDP-1"]), "eDP-1", T), Paint::Maximized);
+        assert_eq!(decide_for(Some(&bright), Some(&["eDP-1"]), "HDMI-A-1", T), Paint::Dark);
     }
 
     #[test]
     fn no_fullscreen_set_is_no_window() {
         let bright = st(230.0, 0.0, 0.0);
-        let a = Some("auto");
-        assert_eq!(
-            decide_for(Some(&bright), "dark", Some(&[]), "eDP-1", a).as_str(),
-            "dark"
-        );
-        assert_eq!(
-            decide_for(Some(&bright), "dark", None, "eDP-1", a).as_str(),
-            "dark"
-        );
+        assert_eq!(decide_for(Some(&bright), None, "eDP-1", T), Paint::Dark);
     }
 
     #[test]

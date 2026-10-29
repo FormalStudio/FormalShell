@@ -30,11 +30,14 @@
 #                       leaves a line across the whole gap wherever the
 #                       surfaces are translucent.
 #   the wall (M57 D2)   case a rests a screenPadding off the output and its
-#                       fillet wants radiusXl, so there is no room for one:
-#                       the attached silhouette runs out to the screen's own
-#                       edge instead, and the output's last column carries
-#                       card fill from under the line down to the shape's far
-#                       edge. At rest that column is bare desktop again.
+#                       fillet wants radiusXl. Where that is more than the
+#                       room, the attached silhouette runs out to the
+#                       screen's own edge instead, and the output's last
+#                       column carries card fill from under the line down to
+#                       the shape's far edge; where the fillet fits (the one
+#                       table's radiusXl of 10 in a 12px room), that column
+#                       stays bare desktop throughout. At rest it is bare
+#                       desktop again either way.
 #   the bud (M57 D3)    case c's 380px card hangs off a second bar a third of
 #                       its width. On the frames taken before it lets go of
 #                       that bar's edge, nothing it paints under that edge may
@@ -407,31 +410,42 @@ leg_join_assert() {
   mapfile -t wall < <(join_column "$attached" "$edge")
   mapfile -t rest < <(join_column "$shot_dir/join-a-rest.png" "$edge")
   mapfile -t desk < <(join_column "$join_desktop_path" "$edge")
-  for ((row = top; row <= bottom; row++)); do
-    [ "${wall[row]}" = "$ink" ] || fail \
-      "the output's last column reads ${wall[row]} at row $row of $attached against the card's own $ink: the walled silhouette stops short of the screen's edge"
-    [ "${rest[row]}" = "${desk[row]}" ] || fail \
-      "the output's last column still reads ${rest[row]} at row $row of join-a-rest.png against the bare desktop's ${desk[row]}: the card has let go and the edge should be desktop again"
-  done
-
-  # And the run out to the wall is one unbroken fill: two whole rows read
-  # across, from the card's own middle to that last column, may not carry the
-  # bare desktop's ink anywhere. A column probe alone misses a seam between
-  # the card's side and the run-out, which is exactly where the two meet.
-  local -a scan bare
-  local depth col_i bad
-  for depth in $((join_line_row + 8)) $((join_line_row + (bottom - join_line_row) * 2 / 3)); do
-    mapfile -t scan < <(join_row "$attached" "$col" "$depth")
-    mapfile -t bare < <(join_row "$join_desktop_path" "$col" "$depth")
-    bad=""
-    for ((col_i = 0; col_i < ${#scan[@]}; col_i++)); do
-      [ "${scan[col_i]}" = "${bare[col_i]}" ] && bad="$bad $((col + col_i))"
+  local reach room
+  reach=$("$jq_bin" -r '.theme.radiusXl | round' "$join_dump_path" 2>/dev/null)
+  room=$((join_crop_width - join_card_x - join_card_width))
+  if [ -n "$reach" ] && [ "$reach" -le "$room" ]; then
+    for ((row = top; row <= bottom; row++)); do
+      [ "${wall[row]}" = "${desk[row]}" ] || fail \
+        "the output's last column reads ${wall[row]} at row $row of $attached against the bare desktop's ${desk[row]}: a ${reach}px fillet fits the ${room}px room, so nothing should wall"
     done
-    [ -z "$bad" ] || fail \
-      "row $depth of $attached shows the bare desktop at column(s)$bad between the card's middle and the output's end: the attached silhouette is not one unbroken fill"
-    echo "SMOKE_JOIN_WALL_ROW ok row $depth columns $col-$edge $attached"
-  done
-  echo "SMOKE_JOIN_WALL ok $ink rows $top-$bottom at column $edge $attached"
+    echo "SMOKE_JOIN_WALL ok fits radiusXl $reach room $room rows $top-$bottom at column $edge $attached"
+  else
+    for ((row = top; row <= bottom; row++)); do
+      [ "${wall[row]}" = "$ink" ] || fail \
+        "the output's last column reads ${wall[row]} at row $row of $attached against the card's own $ink: the walled silhouette stops short of the screen's edge"
+      [ "${rest[row]}" = "${desk[row]}" ] || fail \
+        "the output's last column still reads ${rest[row]} at row $row of join-a-rest.png against the bare desktop's ${desk[row]}: the card has let go and the edge should be desktop again"
+    done
+
+    # And the run out to the wall is one unbroken fill: two whole rows read
+    # across, from the card's own middle to that last column, may not carry the
+    # bare desktop's ink anywhere. A column probe alone misses a seam between
+    # the card's side and the run-out, which is exactly where the two meet.
+    local -a scan bare
+    local depth col_i bad
+    for depth in $((join_line_row + 8)) $((join_line_row + (bottom - join_line_row) * 2 / 3)); do
+      mapfile -t scan < <(join_row "$attached" "$col" "$depth")
+      mapfile -t bare < <(join_row "$join_desktop_path" "$col" "$depth")
+      bad=""
+      for ((col_i = 0; col_i < ${#scan[@]}; col_i++)); do
+        [ "${scan[col_i]}" = "${bare[col_i]}" ] && bad="$bad $((col + col_i))"
+      done
+      [ -z "$bad" ] || fail \
+        "row $depth of $attached shows the bare desktop at column(s)$bad between the card's middle and the output's end: the attached silhouette is not one unbroken fill"
+      echo "SMOKE_JOIN_WALL_ROW ok row $depth columns $col-$edge $attached"
+    done
+    echo "SMOKE_JOIN_WALL ok $ink rows $top-$bottom at column $edge $attached"
+  fi
 
   # --- The bud (M57 D3) ------------------------------------------------
   #

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Regenerates docs/shots/: one --shots session for the default preset and
-# one each for pantheon and retro (dev/smoke.d/shots.sh). On a mac it runs
-# on g815's rig, which pulls the files back; on Linux it nests a session
-# here.
+# Regenerates docs/shots/: one --shots session (dev/smoke.d/shots.sh). On a
+# mac it runs on g815's rig, which pulls the files back; on Linux it nests a
+# session here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "$(uname)" = Darwin ]; then
@@ -11,6 +10,4 @@ else
   run=(./dev/smoke.sh)
 fi
 "${run[@]}" --showcase --shots
-"${run[@]}" --showcase --pantheon --shots
-"${run[@]}" --showcase --retro --shots
 ls -l docs/shots

@@ -2,8 +2,8 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --bar-ink: each cell of the wingpanel band reading its ink off its own
 # stretch of the wallpaper (`barpaint::cell`). One wallpaper, black down
-# the left half and white down the right, under pantheon's own
-# `transparent` paint: the band as a whole is bare (mean 127, light ink),
+# the left half and white down the right, under the default
+# `transparent` style: the band as a whole is bare (mean 127, light ink),
 # and the claim is that the cells over the white half do not wear it.
 # Both halves of the claim: `bar paint`'s `cells` naming light ink for
 # every cell whose rect is inside the black half and dark ink for every
@@ -13,10 +13,8 @@
 # A cell straddling the seam reads whichever its own mean says and is
 # skipped here.
 #
-# It pins `theme.preset` itself (unless --pantheon already did) and leaves
-# `bar.paint` to the table. --bar-adaptive pins `bar.paint: auto`, under
-# which this wallpaper goes translucentDark with one ink across, so the
-# two refuse to share a run.
+# Any other --bar-style gives the band a fill and one ink across, so the
+# leg refuses one.
 leg_bar_ink_flag="--bar-ink"
 leg_bar_ink_order=102
 leg_bar_ink_needs="convert jq"
@@ -27,16 +25,13 @@ bar_ink_json="$shot_dir/bar-ink.json"
 bar_ink_room_json="$shot_dir/bar-ink-room.json"
 
 leg_bar_ink_validate() {
-  if leg_on bar_adaptive; then
-    echo "usage: --bar-ink needs the table's transparent paint and --bar-adaptive pins bar.paint to auto; run them apart" >&2
+  if leg_on bar_style && [ "$(leg_arg bar_style)" != transparent ]; then
+    echo "usage: --bar-ink reads each cell's own stretch, which only --bar-style transparent does" >&2
     exit 1
   fi
 }
 
 leg_bar_ink_fixture() {
-  if ! leg_on pantheon; then
-    settings_fragment ', "theme": {"preset": "pantheon"}'
-  fi
   $convert_bin -size 1920x1080 xc:black -fill white \
     -draw "rectangle 960,0 1919,1079" "$bar_ink_wp"
 }

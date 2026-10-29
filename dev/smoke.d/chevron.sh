@@ -14,9 +14,9 @@
 # correct IPC contract over a bar that rendered nothing, and these two frames
 # were byte-identical the whole time with every dump passing.
 #
-# Ridden by --pantheon it also carries the ink claim (M66): that band reads
-# its paint off the wallpaper, so the leg sets a flat bright field first and
-# the strip goes to dark ink over it. The card the chevron opens is not the
+# It also carries the ink claim (M66): the band reads its paint off the
+# wallpaper, so the leg sets a flat bright field first and the strip goes
+# to dark ink over it. The card the chevron opens is not the
 # band, and its cells have to say so, which is read off one patch of the
 # frame inside the card: a dark plate with light words on it, not the band's
 # black ink drawn onto it.
@@ -84,21 +84,15 @@ EOF
   settings_fragment ', "bar": {"layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "custom:chevgrow", "chevron", "battery", "audio", "network"]}, "modules": [{"id": "chevgrow", "type": "command", "command": ["bash", "'"$chevron_grow_cmd_path"'"], "interval": 500}]}'
   # The wallpaper the band's dark ink comes from, the flat bright field
   # --bar-adaptive reads `dark` off: mean 230, no spread, nothing busy.
-  if leg_on pantheon; then
-    $convert_bin -size 1920x1080 xc:'#e6e6e6' "$chevron_bright_wp"
-  fi
+  $convert_bin -size 1920x1080 xc:'#e6e6e6' "$chevron_bright_wp"
 }
 
 leg_chevron_timing() {
   # chevron-drive.sh's own last step lands ~19s in; the run's own frame is
   # taken past that, so it shows the bar left with the group's card shut.
-  # Under --pantheon the wallpaper set and the retheme behind it push every
-  # step of that ~9s later.
-  if leg_on pantheon; then
-    leg_timing 62 92
-  else
-    leg_timing 52 80
-  fi
+  # The wallpaper set and the retheme behind it push every step of that ~9s
+  # later.
+  leg_timing 62 92
 }
 
 leg_chevron_drive() {
@@ -116,16 +110,10 @@ leg_chevron_drive() {
   # weather cell's centre as the open status reports it. A miss fails the
   # panel assert loudly rather than passing quietly.
   #
-  # The bright wallpaper and the shell's own reading of the band over it,
-  # both empty under any preset but pantheon: the strip habit hands its cells
-  # no ink at all, so there is nothing for the card to inherit wrongly and
-  # nothing here to prove.
-  local paint_step=""
-  if leg_on pantheon; then
-    paint_step="$ipc call wallpaper set \"$chevron_bright_wp\" > /dev/null 2>&1
+  # The bright wallpaper and the shell's own reading of the band over it.
+  local paint_step="$ipc call wallpaper set \"$chevron_bright_wp\" > /dev/null 2>&1
 sleep 8
 $ipc call bar paint > \"$chevron_paint_path\" 2>&1"
-  fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 5
@@ -196,7 +184,7 @@ _chevron_patch() {
     -format "%[fx:int($stat.r*255+0.5)]" info: 2>/dev/null
 }
 
-# The ink claim, under --pantheon only (M66). Three parts: the band settled
+# The ink claim (M66). Three parts: the band settled
 # on the dark paint, so its cells really are carrying black ink; the patch
 # inside the card is on the card, not on the bright wallpaper around it; and
 # the words drawn on that card are light. The middle one is what makes the
@@ -388,7 +376,5 @@ leg_chevron_assert() {
   fi
   _chevron_assert_resize
   _chevron_assert_clicks
-  if leg_on pantheon; then
-    _chevron_assert_ink
-  fi
+  _chevron_assert_ink
 }

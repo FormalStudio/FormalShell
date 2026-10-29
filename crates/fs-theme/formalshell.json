@@ -1313,15 +1313,6 @@
             ]
         }
     },
-    "habits": {
-        "bar": "wingpanel",
-        "emerge": "popover",
-        "notification": "bubble",
-        "frame": false,
-        "paint": "transparent",
-        "panel": "sheet",
-        "grid": "square"
-    },
     "notes": {
         "table": [
             "elementary OS 8's material as a table (M60 T1, the 2026-09-17 spec's Part 2). Every number is transcribed from elementary's own GPL sources, the file named beside the block that uses it: `stylesheet`'s gtk-4.0 `_exported.scss` for the tokens, `_index.scss` for the mixins, `widgets/*.scss` for the roles. Nothing is ported; the recipes are read and our own primitives draw them.",
@@ -1354,7 +1345,7 @@
         ],
         "R_CONTROL": [
             "R_CONTROL, inlined wherever it appears: 3.",
-            "The radii elementary pins, by number rather than by step: the ladder the preset's base of 6 gives (2/4/6/10) is what everything else takes. buttons, entries, checks, indicators (`rem(3px)`)"
+            "The radii elementary pins, by number rather than by step: the ladder a base of 6 gives (2/4/6/10) is what everything else takes. buttons, entries, checks, indicators (`rem(3px)`)"
         ],
         "R_POPOVER": [
             "R_POPOVER, inlined wherever it appears: 6.",
@@ -1420,7 +1411,7 @@
             "Every bar cell, list row and chip. elementary's list row carries no chrome at all and answers the pointer with `fg 0.15`, so the resting tile here is the plate a row sits on rather than a raised button: a panel is a column of these, and rows wearing a button's material would read as a stack of buttons. `ghost` is the bar's own cells, and the filled states stay opaque, a fill IS the statement."
         ],
         "roles.cell.ghostOpen": [
-            "An open wingpanel indicator (`data/styles/Application.css`): the cell fills with `highlight` at 0.6 rather than carrying a line along the band's edge, which is why `cell.mark` below never draws under this habit. White at 0.6 in light and at 0.12 in dark, the GTK product described in the header. wingpanel's own white 0.3 for the maximized band is dropped: the cell is handed the band's ink, not which paint it is under, and one fill reads on all five."
+            "An open wingpanel indicator (`data/styles/Application.css`): the cell fills with `highlight` at 0.6 rather than carrying a line along the band's edge, which is why `cell.mark` below never draws. White at 0.6 in light and at 0.12 in dark, the GTK product described in the header. wingpanel's own white 0.3 for the maximized band is dropped: the cell is handed the band's ink, not which paint it is under, and one fill reads on all five."
         ],
         "roles.cell.mark": [
             "No elementary counterpart: wingpanel marks an open indicator with the `ghostOpen` fill above and draws no line, so this is what a cell outside a band would take, and nothing on the bar reaches it."
@@ -1488,21 +1479,12 @@
             "The window itself, which the shell does not draw: Hyprland does, off the table ThemeEngine publishes into formalshell-chrome.lua (chrome.js, M60 P7). elementary's focused window is a 1px `borders` frame over `shadow(4)` and a backdrop one drops to `shadow(2)`, and what a compositor can take of that is one cast: the range, the power and the offset below are the focused numbers, and a backdrop window differs by its colour alone. The frame takes the `border` role rather than the literal black the cards carry, since a window's rim lies on the wallpaper instead of on a sheet of this material."
         ],
         "roles.window.rest.gapsIn": [
-            "No screen frame under this look (`habits.frame`), so the outer gap is the whole margin a window gets and 8 read as a wide one with nothing drawn in it (owner, 2026-09-18)."
+            "With no screen frame (`frame.thickness` 0, the default) the outer gap is the whole margin a window gets and 8 read as a wide one with nothing drawn in it (owner, 2026-09-18)."
         ],
         "motion": [
             "Gala's menu map (`lib/Constants.vala`) on elementary's own curve (`_animate.scss`): 150ms, and the one easing every transition in the stylesheet rides, written as the control points plus the end point Qt's `easing.bezierCurve` wants. It never overshoots, which is what a popover dropping out of its cell asks for: the card arrives and stops rather than settling back onto the bar.",
             "The bubble's two clocks (`notifications/data/application.css`'s `bubble` keyframes, M60 T4) ride the same curve: 400ms for the flip a bubble arrives on, and 200ms for the pile closing up behind it, spread over a 150ms window so N bubbles move one after another rather than together. The restack takes `emphasizedDecel` instead of the curve above because it is the one clock here that is a card travelling rather than appearing, and it must not pass the place it is going to: a bubble overshooting into its neighbour reads as the pile bouncing.",
             "The switcher is the fourth, and none of the three above: Gala fades its card on `AnimationDuration.HIDE` (200ms, `WindowSwitcher.vala`'s `set_easing_duration`) with no easing mode set, which leaves Clutter's own default for an implicit animation, ease-out-cubic, written here as its control points. Opacity and nothing else moves; the card does not drop, scale or slide."
-        ],
-        "habits": [
-            "Pantheon's habits, the shapes that differ from Omarchy in more than chrome: wingpanel's band, a popover that drops out of its cell rather than budding off the line, and elementary's notification bubble."
-        ],
-        "habits.frame": [
-            "No ring. elementary frames nothing, and under the band the ring is transparent anyway (M62), so all `frame.thickness` bought was a reserved band of nothing between every window and the screen edge (owner, 2026-09-18)."
-        ],
-        "habits.paint": [
-            "The panel elementary shows over a calm sky, on every wallpaper: the owner's busy band tripped wingpanel's own rule into a black wash and that is not the picture they were after."
         ]
     }
 }

@@ -28,11 +28,11 @@
 # with a real line under the pill and leave them out; those combinations are
 # read by eye.
 #
-# Ridden by --pantheon the claim turns over (M60 T2): a popover has no line to
+# Ridden by --no-morph the claim turns over (M60 T2): a popover has no line to
 # come out of, so the pill fades in a few pixels under its rest and the
-# output's last row stays bare through the whole entrance. The habit is read off
-# `debug dump`'s `theme.habits.emerge`, not off the rider, and every habit is
-# then read against the same resting pose.
+# output's last row stays bare through the whole entrance. Which one runs is
+# read off `debug dump`'s `theme.morph`, not off the rider, and both are then
+# read against the same resting pose.
 leg_osd_flag="--osd"
 leg_osd_order=50
 leg_osd_needs="wpctl convert jq"
@@ -152,13 +152,13 @@ leg_osd_assert() {
 
   [ -s "$osd_dump_path" ] || fail "no debug dump produced for the osd check"
   local emerge
-  emerge=$("$jq_bin" -r '.theme.habits.emerge // "join"' "$osd_dump_path" 2>/dev/null)
-  echo "SMOKE_OSD_HABIT emerge=$emerge"
+  emerge=$("$jq_bin" -r 'if .theme.morph == false then "popover" else "join" end' "$osd_dump_path" 2>/dev/null)
+  echo "SMOKE_OSD_MORPH emerge=$emerge"
 
   # The entrance: the pill comes out of the bottom line, so on at least one
   # frame its ink reaches the output's own last row at the pill's centre
   # column. A pill that appeared at its resting place instead would leave
-  # every one of those rows bare. Under the popover habit that is
+  # every one of those rows bare. Under the popover that is
   # exactly the claim, the other way up: the pill comes in a few pixels off
   # its rest and never reaches the edge at all.
   local out=-1 hit=""
@@ -181,12 +181,10 @@ leg_osd_assert() {
   fi
 
   # And at rest it is the plain pill at its resting rect, one screenPadding
-  # of bare desktop between its own bottom and the output's edge. A table
-  # whose pill carries a cast lands nearer the edge by the few rows that cast
-  # reaches past the rect, which is the card's own ink and not the pill
-  # sitting lower.
-  local rest gap floor=9
-  if leg_on pantheon; then floor=5; fi
+  # of bare desktop between its own bottom and the output's edge. The pill's
+  # cast lands nearer the edge by the few rows it reaches past the rect,
+  # which is the card's own ink and not the pill sitting lower.
+  local rest gap floor=5
   rest=$(osd_ink_bottom "$osd_rest_path" "$osd_column_probe")
   [ "$rest" -ge 0 ] || fail \
     "column $osd_column_probe of $osd_rest_path is bare desktop from top to bottom: the pill never settled"

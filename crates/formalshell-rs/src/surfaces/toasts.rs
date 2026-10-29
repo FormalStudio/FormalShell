@@ -12,12 +12,9 @@
 //! Each group keeps its slot across draws, so a card retargets rather than
 //! snaps: x, y, width and height ride the table's `restack` clock (y behind
 //! its rank's share of `restack.stagger`), presence rides `arrive` in and
-//! `restack` out. A row moves the way sonner's toast does: it rises out of
-//! the anchored edge by its own height as it fades in, and leaves back
-//! toward that edge as it fades out, the whole height for the card in front
-//! (or any card of the expanded column) and 40% of it for one behind. A
-//! group that left keeps its slot, its card and its last place while it
-//! fades.
+//! `restack` out. A bubble unfolds off its own top edge where it lands and
+//! fades where it is. A group that left keeps its slot, its card and its
+//! last place while it fades.
 //!
 //! A two-finger horizontal swipe over a card carries it along x, sonner's
 //! swipe: toward the stack's own edge it follows the fingers, the other way
@@ -45,11 +42,6 @@ use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::ui::{self, El, Ink, Type, Ui, Variant, Weight, w};
 
 const MAX_PEEK_LEVELS: usize = 2;
-/// How far a card behind the front one travels as it leaves, a share of its
-/// height: sonner's `translateY(40%)` for a collapsed toast that is not the
-/// front one.
-const BEHIND_LEAVE: f64 = 0.4;
-
 /// sonner's SWIPE_THRESHOLD: the travel past which a lift dismisses.
 const SWIPE_DISTANCE: f64 = 45.0;
 /// sonner's 0.11px/ms: a flick this fast dismisses however short it was.
@@ -104,18 +96,14 @@ struct Slot {
     y: Animated,
     width: Animated,
     height: Animated,
-    /// 0 off the stack, 1 shown: opacity, and the row's slide.
+    /// 0 off the stack, 1 shown: the card's opacity.
     presence: Animated,
     /// 0 for a card deeper than the last peek level, which keeps its place
     /// behind it unseen.
     visible: Animated,
-    /// The card was in front, or in the expanded column, at its last layout:
-    /// it leaves by its whole height rather than `BEHIND_LEAVE` of it.
-    front: bool,
     /// The card's words over the peek level's bare chrome.
     content: Animated,
-    /// The bubble unfolding off its own top edge on `arrive`; 1 at once
-    /// for the row.
+    /// The bubble unfolding off its own top edge on `arrive`.
     reveal: Animated,
     /// The group is gone and the card is fading where it was.
     departing: bool,
@@ -189,43 +177,6 @@ pub struct Insets {
     pub right: f64,
 }
 
-fn card(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>) -> El {
-    let s = &theme.space;
-    let e = &g.entry;
-    let critical = e.urgency == Urgency::Critical;
-    let rel = model::rel_time(now, e.arrived_at);
-    let meta = if g.count > 1 { format!("{rel}  x{}", g.count) } else { rel };
-    let glyph = if critical { "triangle-alert" } else { "bell" };
-    let slot = theme.font_size.heading;
-    let mark = match picture.filter(|_| !critical) {
-        Some(b) => w::picture(Some(b), slot),
-        None => w::row(0.0, vec![w::icon(glyph).ink(if critical { Ink::Destructive } else { Ink::Muted })])
-            .width(ui::Size::Px(slot))
-            .centred(),
-    };
-    let mark = if e.source == "iphone" { mark.badge("smartphone") } else { mark };
-    let header = w::row(
-        s.icon_gap,
-        vec![
-            mark,
-            w::section_label(s, &e.app_name, None, false),
-            w::caption(meta).mono().fill(),
-            w::icon_button("x").on("close"),
-        ],
-    );
-    let mut parts = vec![header, w::para(e.summary.clone(), Type::Body, Weight::Medium, Ink::Fg, 2)];
-    let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
-    if !body.is_empty() {
-        parts.push(w::para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
-    }
-    let actions = model::button_actions(e);
-    if !actions.is_empty() {
-        let buttons = actions.iter().map(|a| w::button(a.label.clone()).variant(Variant::Outline).on(format!("action:{}", a.key))).collect();
-        parts.push(w::row(s.sm, buttons).pad(0.0, s.row_gap, 0.0, 0.0));
-    }
-    w::column(s.row_gap, parts).on("body")
-}
-
 /// Elementary's bubble: the picture in a
 /// `controlHeight` slot beside the words, a semibold summary, and the close
 /// button only while the pointer is over the bubble.
@@ -270,8 +221,7 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
 }
 
 fn card_width(theme: &Theme) -> f64 {
-    let is_bubble = theme.habit("notification").and_then(|v| v.as_str()) == Some("bubble");
-    if is_bubble { theme.space.popup_width_bubble } else { theme.space.popup_width_narrow }
+    theme.space.popup_width_bubble
 }
 
 /// How far the stack's layer reaches in from its own edge: the edge's
@@ -312,7 +262,6 @@ impl Toasts {
     }
 
     pub fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, insets: &Insets, scale: f64, now: Instant) {
-        let is_bubble = theme.habit("notification").and_then(|v| v.as_str()) == Some("bubble");
         let s = &theme.space;
         let n = &store.notifications;
         let spec = model::position_spec(store.config.str("notifications.position"));
@@ -365,12 +314,8 @@ impl Toasts {
             let pic = n.icons.get(&g.id).and_then(|raw| {
                 self.fitted.entry(g.id.clone()).or_insert_with(|| (scale, raw.bitmap(size, scale))).1.clone()
             });
-            let el = if is_bubble {
-                let hovered = self.slots.get(k.as_str()).is_some_and(|sl| sl.ui.hover.is_some());
-                bubble(theme, g, clock, pic, hovered)
-            } else {
-                card(theme, g, clock, pic)
-            };
+            let hovered = self.slots.get(k.as_str()).is_some_and(|sl| sl.ui.hover.is_some());
+            let el = bubble(theme, g, clock, pic, hovered);
             cards.insert(k, el);
         }
         let mut heights = HashMap::new();
@@ -412,11 +357,7 @@ impl Toasts {
             let content = if g.content_visible { 1.0 } else { 0.0 };
             let slot = self.slots.entry(k.clone()).or_insert_with(|| {
                 let mut reveal = Animated::new(0.0, arrive.1);
-                if is_bubble {
-                    reveal.set(now, 1.0, arrive.0);
-                } else {
-                    reveal.jump(1.0);
-                }
+                reveal.set(now, 1.0, arrive.0);
                 let mut presence = Animated::new(0.0, arrive.1);
                 presence.set(now, 1.0, arrive.0);
                 Slot {
@@ -433,7 +374,6 @@ impl Toasts {
                     height: Animated::new(h, restack.1),
                     presence,
                     visible: Animated::new(1.0, EFFECTS),
-                    front: true,
                     content: Animated::new(content, EFFECTS),
                     reveal,
                     departing: false,
@@ -453,7 +393,6 @@ impl Toasts {
             }
             slot.content.set(now, content, effects);
             slot.visible.set(now, if g.visible { 1.0 } else { 0.0 }, effects);
-            slot.front = expanded || g.rank == 0;
             slot.z = g.z;
             slot.el = cards[k].clone();
             slot.critical = by_key[k].urgency == Urgency::Critical;
@@ -463,8 +402,6 @@ impl Toasts {
         // Back to front, so the front card's chrome covers the peeks.
         let mut order: Vec<(i64, String)> = self.slots.iter().map(|(k, sl)| (sl.z, k.clone())).collect();
         order.sort();
-        // Down for a stack hanging off the bottom edge, up for the top.
-        let toward_edge = if spec.top { -1.0 } else { 1.0 };
         let placed: Vec<Placed> = order
             .iter()
             .map(|(_, k)| {
@@ -472,25 +409,16 @@ impl Toasts {
                 let presence = slot.presence.value(now);
                 let w = slot.width.value(now);
                 let fh = slot.height.value(now);
-                // A row rises out of the anchored edge by its own height and
-                // leaves back toward it; a bubble unfolds where it lands.
+                // A bubble unfolds where it lands; one swiped away leaves
+                // along x alone.
                 let dx = slot.dx.value(now);
-                // A card swiped away leaves along x alone.
-                let travel = if slot.dx.target() != 0.0 {
-                    0.0
-                } else if !is_bubble && slot.departing && !slot.front {
-                    BEHIND_LEAVE
-                } else {
-                    1.0
-                };
-                let slide = if is_bubble { 0.0 } else { (1.0 - presence) * fh * travel * toward_edge };
                 // Every card is drawn at the column's full width and scaled
                 // to its level's, words and all, about the edge its sliver
                 // shows from, so a card behind coming forward grows as one
                 // piece rather than its box widening under words already
                 // full width.
                 let fx = slot.x.value(now) + (w - width) / 2.0 + dx;
-                let fy = slot.y.value(now) + slide;
+                let fy = slot.y.value(now);
                 let sc = (w / width).clamp(0.0, 1.0);
                 let pivot = (fx + width / 2.0, if spec.top { fy + fh } else { fy });
                 let (sw, sh) = (width * sc, fh * sc);
@@ -743,27 +671,22 @@ mod tests {
         let theme = theme();
         for (source, marked) in [("iphone", true), ("", false)] {
             let mut badges = 0;
-            walk(&card(&theme, &group(source, ""), 0, None), &mut |e| badges += usize::from(e.badge.is_some()));
-            assert_eq!(badges, usize::from(marked), "source {source:?}");
-            let mut badges = 0;
             walk(&bubble(&theme, &group(source, ""), 0, None, false), &mut |e| badges += usize::from(e.badge.is_some()));
-            assert_eq!(badges, usize::from(marked), "bubble, source {source:?}");
+            assert_eq!(badges, usize::from(marked), "source {source:?}");
         }
     }
 
     #[test]
-    fn the_column_holds_the_card_its_cast_and_the_rubber_band_under_every_preset() {
-        for preset in ["metamorphosis", "retro", "pantheon"] {
-            let theme = Theme::resolve(getter(json!({ "theme": { "preset": preset } })), &fs_theme::palette::fallback("dark"));
-            let insets = Insets { top: 0.0, bottom: 0.0, left: 12.0, right: 30.0 };
-            for right in [true, false] {
-                let inset = if right { insets.right } else { insets.left };
-                let column = f64::from(column_width(&theme, &insets, right));
-                let card = card_width(&theme);
-                let cast = fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some("rest")).casts);
-                let inner = column - inset - theme.space.screen_padding - card;
-                assert!(inner >= scroll::rubber(-1e9, card).abs() + cast, "{preset}: {inner}px past the card's inner edge");
-            }
+    fn the_column_holds_the_card_its_cast_and_the_rubber_band() {
+        let theme = theme();
+        let insets = Insets { top: 0.0, bottom: 0.0, left: 12.0, right: 30.0 };
+        for right in [true, false] {
+            let inset = if right { insets.right } else { insets.left };
+            let column = f64::from(column_width(&theme, &insets, right));
+            let card = card_width(&theme);
+            let cast = fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some("rest")).casts);
+            let inner = column - inset - theme.space.screen_padding - card;
+            assert!(inner >= scroll::rubber(-1e9, card).abs() + cast, "{inner}px past the card's inner edge");
         }
     }
 
@@ -801,7 +724,7 @@ mod tests {
     fn the_summary_and_the_body_wrap_to_two_lines() {
         let theme = theme();
         let mut wrapped = Vec::new();
-        walk(&card(&theme, &group("", "some body"), 0, None), &mut |e| {
+        walk(&bubble(&theme, &group("", "some body"), 0, None, false), &mut |e| {
             if let Kind::Para { lines, .. } = &e.kind {
                 wrapped.push(*lines);
             }

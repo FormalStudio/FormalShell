@@ -257,8 +257,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   covering a 64px cell rather than a row's glyph, with real arrow keys
   moving the cursor one cell across and a column count down, a real Enter
   launching through the row path, apps and a ranked route sharing the card,
-  and the key deleted underneath the running shell putting the grid back
-  under every theme, `--pantheon` included.
+  and the key deleted underneath the running shell putting the grid back.
+  Ridden by `--no-morph` it also reads the grid inside its popover card.
   Then typing on real keys: `cursorId` agreeing with the view's own
   `viewCursor` after a re-rank and a Backspace, a query no app matches
   keeping the grid with no rows in it, Escape clearing the query and
@@ -283,17 +283,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   bright field, a flat dark one, a half-and-half field, and the dark one
   under a fullscreen window), each read twice: the paint and the three
   numbers `bar paint` reports, and the fill the band actually drew, off a
-  patch of the frame above the cells. Pins `theme.preset` and
-  `fullscreen.hideChrome` itself. Ridden by `--bar-style transparent` the
-  style is the rule, so the half-and-half field is a bare band with light
-  ink instead of a wash; any other style is refused.
+  patch of the frame above the cells. Pins `bar.style: transparent` and
+  `fullscreen.hideChrome` itself, so the half-and-half field is a bare band
+  with light ink; any other style is refused.
 - `bar_ink.sh` `--bar-ink`: each cell of the wingpanel band reading its ink
   off its own stretch of the wallpaper: one half black, one half white,
-  under pantheon's own `transparent` paint, every whole cell clear of the
+  under the default `transparent` style, every whole cell clear of the
   seam reporting light ink on the black half and dark on the white in
   `bar paint`'s `cells`, and one cell per half read off the frame over its
-  `bar room` rect for a glyph of that ink. Refuses `--bar-adaptive`, which
-  pins `bar.paint: auto`.
+  `bar room` rect for a glyph of that ink. Refuses any other `--bar-style`.
 - `bar_layout.sh` `--bar-layout`: user `bar.modules` and a reordered layout
   resolved from settings.json alone, every `command` module failure path
   (`services/commands.rs`) in the one frame.
@@ -369,9 +367,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   of the line there.
 - `chevron.sh` `--chevron`: a right-region chevron holding the five cells
   before it off the strip entirely, and `bar chevron expand` opening them in
-  the second bar under it, the two frames asserted to differ. Under
-  `--pantheon` it also sets a flat bright wallpaper first, so the band goes
-  to dark ink, and reads a patch inside the card for a dark plate carrying
+  the second bar under it, the two frames asserted to differ. It also sets a
+  flat bright wallpaper first, so the band goes to dark ink, and reads a patch inside the card for a dark plate carrying
   light words: the second bar keeps its own ink whatever the band wears.
 - `chevron_quiet.sh` `--chevron-quiet`: the same second bar OPENING, read
   off a stamped burst of frames: the card is never narrower than the width
@@ -463,7 +460,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `frame.sh` `--frame`: pins `frame.thickness` in the settings fixture so the
   bar's window grows to the output and paints the frame round it, and reads
   that box and the four exclusion zones off the compositor's own layer list.
-  The key holds under every table, `--pantheon` included.
   Ridden by `--bar-style corners`, the ring's own fillets read black where
   the band meets the cut-out, the style adding no layer.
 - `fullscreen.sh` `--fullscreen`: the fullscreen chrome auto-hide, read off
@@ -761,14 +757,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   three cards, and the layer surface the same size either way.
 - `notify_close.sh` `--notify-close`: one sticky critical notification closed
   by a real pointer parked on its close button and a real click, `notifications
-  status` counting one popup parked and none after. Rides `--pantheon` for
-  the bubble, whose button only exists while the card's hover holds.
-- `notify_emerge.sh` `--notify-emerge`: rides `--pantheon` and needs it; one
-  sticky notification arriving at a tenth speed, read as a ladder down the
-  card's own centre column: the bubble unfolds off its top edge, so the
-  covered rungs are always the shallow ones and at least one frame carries a
-  fraction of the card. The row habit's arrival is `--notify`'s frame and
-  `--deform`'s burst instead.
+  status` counting one popup parked and none after: the bubble's button
+  only exists while the card's hover holds.
+- `notify_emerge.sh` `--notify-emerge`: one sticky notification arriving at
+  a tenth speed, read as a ladder down the card's own centre column: the
+  bubble unfolds off its top edge, so the covered rungs are always the
+  shallow ones and at least one frame carries a fraction of the card. Then
+  at full speed the card at rest committing nothing for four seconds.
 - `ocr.sh` `--ocr`: the `capture` target's text and colour verbs against a
   window carrying known text on a known background.
 - `overnight.sh` `--overnight`: overnight enabled and disabled over IPC, the
@@ -791,8 +786,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   frame, the drawer open: a ladder of probes down the card's gutter showing
   its visible height grow out of the bar's inner line to the resting rect,
   and no card pixel inside the bar's own band in any frame. Ridden by
-  `--pantheon` or `--no-morph` it reads the popover: the ladder whole or
-  empty on every frame.
+  `--no-morph` it reads the popover: the ladder whole or empty on every
+  frame.
 - `panel_handoff.sh` `--panel-handoff`: `audio` alone in the left region and
   `network` alone in the right, so the two cards rest ~1500px apart, and
   `panel toggle audio` over an open network panel is one card rather than
@@ -808,10 +803,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   NO PLAYER to a real track. The band is cut for a top bar with no frame, so
   a run on another edge drives the same three cases, prints each claim as
   skipped and is read by eye.
-- `pantheon.sh` `--pantheon`: pins `theme.preset` to `pantheon` in the
-  settings fixture and rides any other leg, so `--pantheon --gallery` is the
-  sheet in elementary's material: raised buttons and chips over sunken
-  troughs and fields, cards and toasts on a cast under a lit rim.
 - `picker.sh` `--picker`: the wallpaper grid, the pick becoming the
   wallpaper, the select token round trip, the Dark/Light variants, and
   the prerendered thumbnail cache (`fs-menu` `thumbnails`) backing every
@@ -878,9 +869,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   honest unavailable error, neither frame a flat card.
 - `reminder.sh` `--reminder`: a real countdown firing inside the run and
   bypassing DND into the popup tier.
-- `retro.sh` `--retro`: pins `theme.preset` to `retro` in the settings
-  fixture and rides any other leg, so `--retro --gallery` is the sheet
-  square, mono and dithered.
 - `screensaver.sh` `--screensaver`: the live media guard, auto-activation off
   the idle timer alone, and the manual start/stop path.
 - `screensaver_gif.sh` `--screensaver-gif`: five ttfx effects recorded frame
@@ -906,8 +894,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `USER=kyan` for the lock's name): launcher and calendar panel bursts at a
   third speed encoded to H.264, the media card, six visualizer styles,
   notifications, the centre, the lock, and the decrypt screensaver frame
-  stepped. Under `--pantheon` or `--retro` only that theme's frame.
-- `shoulders.sh` `--shoulders`: a join published over `debug join`, the gap
+  stepped.
+- `shoulders.sh` `--shoulders`: rides `--bar-style solid` or `corners` (the
+  transparent band has no line); a join published over `debug join`, the gap
   the bar opens in its own line read off the shell's numbers as the card's
   rect plus a `radiusXl` fillet at either end, and the pixel where the line
   stops and the arc starts.
@@ -994,16 +983,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `theme_toggle.sh` `--theme-toggle`: `theme mode toggle` both ways, and with
   `--wallpaper` that a toggle re-runs matugen instead of resetting to the
   fallback palette.
-- `toast_motion.sh` `--toast-motion`: the row toast's own motion at a tenth
-  speed, read off frame bursts: one sticky critical rising out of the bottom
-  edge to its rest on its own column, a second stacking in front with the
-  pile exactly the front card plus a 12px sliver of the one behind and
-  nothing under the front card's bottom edge, `notifications expand on`
-  fanning it out with the front card's own pixels unchanged on every frame
-  and settling two cards 12px apart, then the front one dismissed
-  with some frame matching neither settled pile, and at full speed a still
-  pile committing
-  nothing for four seconds. The bubble's arrival is `--notify-emerge`'s.
 - `toast_swipe.sh` `--toast-swipe`: one sticky critical toast swiped by
   two fingers off `dev/vpointer.py` (`hfinger`, `hlift`) with the pointer
   parked on it: ~22px slowly carrying the card right mid-gesture and
@@ -1220,19 +1199,17 @@ a Linux host.
 - The shell only ever **reads** `~/.config/formalshell/settings.json`; it
   never writes it. Runtime-mutable state goes to
   `$XDG_STATE_HOME/formalshell/state.json`.
-- Chrome defaults (2026-08-25): every number below is the `metamorphosis`
-  table (`metamorphosis.json`, compiled into `fs-theme`'s `tables.rs`), read
-  through `fs_theme::Theme::box_style`; see `docs/DESIGN.md` §1 "Themes"
-  for the schema. Radius 10 (`theme.radius` in settings.json), 1px
-  `border`, no shadow, no gradient, no blur drawn by the shell (Hyprland blurs behind the translucent bar/panel/launcher cards
-  via layerrules; `theme.surfaceOpacity`, default 0.85), dither only behind
+- Chrome defaults (2026-10-29): every number below is the one table
+  (`crates/fs-theme/formalshell.json`, elementary OS 8's material, read
+  through `fs_theme::table()` and `fs_theme::Theme::box_style`); see
+  `docs/DESIGN.md` §1 "The table" for the schema. Radius base 6, 1px
+  `border`, the table's own casts and faces, no blur drawn by the shell (Hyprland blurs behind the bar/panel/launcher cards
+  via layerrules; `theme.surfaceOpacity`, default 1), dither only behind
   `wallpaper.dither`/`lock.dither` (both default false), fonts = the
   fontconfig `sans-serif` alias for words and `monospace` for values (Geist
   Sans/Mono by intent, never a hardcoded family), icons by name
-  through `ui::w::icon` and `fs_theme::icons` with the set picked by
-  `theme.icons` (`lucide` default, `nerd`; no raw glyphs in surface code,
-  no SVG icon assets). Nothing in the shell blurs or shadows
-  anything: a modal surface sits over a plain 0.5 black scrim that only
+  through `ui::w::icon` and `fs_theme::icons` (Lucide; no raw glyphs in
+  surface code, no SVG icon assets). Nothing in the shell blurs anything: a modal surface sits over a plain 0.5 black scrim that only
   darkens the desktop (the modal namespaces take `ignore_alpha = 0.6`, so
   the scrim falls under the compositor's blur and the card over it stays
   above), every other surface sits over the desktop with its border doing

@@ -576,7 +576,7 @@ mod tests {
     #[test]
     fn the_foreground_covers_the_clock_as_the_card_shows_it_and_is_cut_once() {
         use crate::render::Renderer;
-        let theme = Theme::resolve(|_| None, &Default::default());
+        let theme = Theme::resolve(|_| None, &fs_theme::palette::fallback("dark"));
         let mut kit = Kit::new(&theme);
         let (w, h) = (900, 700);
         let red = Bitmap::from_rgba(w as u16, h as u16, [255, 0, 0, 255].repeat((w * h) as usize));

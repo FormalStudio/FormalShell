@@ -262,7 +262,8 @@ lyrics_wait_marker() {
 # shots would otherwise stretch the box upward); the returned y is relative
 # to that crop, so a caller driving the real pointer adds the 60 back and a
 # caller only cropping further from the same body image does not. Echoes
-# "x y w h bodyImagePath".
+# "x y w h bodyImagePath". Cut at 2%: the opaque card's fill sits about 6%
+# over this rig's near-black desktop.
 lyrics_pane_rect() {
   local bare="$1" open="$2" conv="$3"
   local body_h=$((1080 - 60)) bare_body open_body rect w h rest x y
@@ -271,7 +272,7 @@ lyrics_pane_rect() {
   "$conv" "$bare" -crop "1920x${body_h}+0+60" +repage "$bare_body" > /dev/null 2>&1
   "$conv" "$open" -crop "1920x${body_h}+0+60" +repage "$open_body" > /dev/null 2>&1
   rect=$("$conv" "$bare_body" "$open_body" -compose difference -composite \
-    -threshold 8% -format "%@" info: 2>/dev/null)
+    -threshold 2% -format "%@" info: 2>/dev/null)
   w=${rect%%x*}
   rest=${rect#*x}
   h=${rest%%+*}
@@ -942,13 +943,14 @@ tops = [int(b[0]) for b in bands]
 # row nearer the middle, and a line whose second row carries more ink than
 # its first peaks there rather than at its own top. One line leads its own
 # wrapped rows closer together than the cell pitch between two display rows,
-# which is what tells where the line ends.
+# which is what tells where the line ends: 18px apart against a pitch of
+# 28, so anything past 24 is the next display row.
 anchor = crop_h * 0.42
 lit = min(range(len(tops)), key=lambda i: abs(tops[i] - anchor))
 lo = hi = lit
-while lo > 0 and tops[lo] - tops[lo - 1] <= 28:
+while lo > 0 and tops[lo] - tops[lo - 1] <= 24:
     lo -= 1
-while hi + 1 < len(tops) and tops[hi + 1] - tops[hi] <= 28:
+while hi + 1 < len(tops) and tops[hi + 1] - tops[hi] <= 24:
     hi += 1
 print(" ".join("%s:%s" % (b[0], b[1]) for b in bands[lo:hi + 1]))
 ' "$(printf '%s' "${2#*x}" | cut -d+ -f1)"

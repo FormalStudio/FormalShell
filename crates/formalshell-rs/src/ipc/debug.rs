@@ -125,9 +125,8 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             "borderWidth": number(theme.border_width),
             "barPosition": edge.as_str(),
             "layout": theme.layout.as_str(),
-            "barStyle": theme.bar_style.map(|s| s.as_str()),
+            "barStyle": theme.bar_style.as_str(),
             "morph": theme.morph,
-            "habits": theme.style.get("habits").cloned().unwrap_or_default(),
             "grid": {"wallpaper": theme.wallpaper_grid, "lock": theme.lock_grid},
             "animate": theme.wallpaper_animate,
             "edgeInset": {

@@ -18,7 +18,6 @@
 # thickness in from the left edge and off the right one (e1504g,
 # 2026-08-26); -1 is the only value that holds either way.
 #
-# The key is read under every table, so the same holds riding --pantheon.
 # Ridden by --bar-style corners the ring's own fillets are the
 # corners (the style adds no fillet of its own and no layer): on a top bar
 # the pixel just inside each end of the band's inner edge, where the ring

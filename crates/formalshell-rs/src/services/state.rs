@@ -162,7 +162,7 @@ impl Data {
         data.wallpaper = typed(take("wallpaper")).unwrap_or(data.wallpaper);
         data.wallpaper_color = match take("wallpaperColor") {
             Some(Value::Bool(false)) => Value::Bool(false),
-            Some(v) => fs_theme::presets::color(&v).flatten().map_or(Value::Null, Value::from),
+            Some(v) => fs_theme::theme::wallpaper_color(&v).flatten().map_or(Value::Null, Value::from),
             None => Value::Null,
         };
         data.mode = typed(take("mode")).unwrap_or(data.mode);

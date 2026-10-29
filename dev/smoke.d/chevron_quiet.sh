@@ -29,7 +29,7 @@
 #          card's own width and a settled one is the card plus both fillets,
 #          and comparing the two raw would call a perfectly rigid card 16%
 #          narrow. The radius comes off `debug dump` rather than a constant,
-#          so `theme.radius` moves it.
+#          so a change to the radius moves it.
 #   quiet  three captures taken back to back once the entrance is over, and
 #          two more half a second apart after them, are byte-identical: once
 #          the card is up, nothing inside it moves on its own.
@@ -174,11 +174,12 @@ EOF
 # How wide the card is in one band, in pixels: the bounding box of everything
 # that differs from the shut band, which in this band is the card and nothing
 # else. 0 when there is no card in the frame, so one taken between two of the
-# cycles reads as one rather than as a failure.
+# cycles reads as one rather than as a failure. Cut at 2%: the opaque card's
+# fill sits about 6% over this rig's near-black desktop.
 chevron_quiet_card_width() {
   local band="$1" box
   box=$($convert_bin "$band" "$chevron_quiet_shut_path" -compose difference -composite \
-    -colorspace Gray -threshold 8% -format "%@" info: 2>/dev/null)
+    -colorspace Gray -threshold 2% -format "%@" info: 2>/dev/null)
   case "$box" in
     [0-9]*x[0-9]*) ;;
     *) echo 0; return 0 ;;

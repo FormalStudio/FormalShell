@@ -1,11 +1,10 @@
 //! A card hanging off a line, on any of the four edges. Under
-//! the `join` emerge (`motion.morph`, or the table's habit with it absent)
-//! it is the joined shape:
+//! `motion.morph` it is the joined shape:
 //! Presence's emerge on the theme's `emerge` clock, the let-go on
 //! `spatialFast`, Deform's springs, Shoulders' outline cut at the line, the
 //! walls a side too close to the line's end runs out to (M57 D2) and the
 //! bud a card hanging off another card's far edge is clamped into (M57 D3).
-//! Under `popover` it is a plain card on its casts,
+//! With it off it is a plain card on its casts,
 //! fading on the table's `emerge` clock over an `md` drop out of its cell.
 //!
 //! Worked out for a top edge in the card's own coordinates, `u` along the
@@ -29,9 +28,7 @@ use crate::surfaces::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
 use fs_theme::style::Radius;
 use fs_theme::theme::Theme;
-use serde_json::json;
 
-use crate::services::theme::getter;
 
 /// The deform amount for a popout.
 const DEFORM_AMOUNT: f64 = 0.15;
@@ -59,16 +56,11 @@ impl Look {
     fn new(theme: &Theme, role: &str, cast: bool) -> Self {
         let card = theme.box_style(role, None);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
-        let emerge = theme.emerge();
-        let popover = emerge == "popover";
+        let popover = !theme.morph;
         let casts = if popover {
             card.casts.clone()
         } else if cast {
-            let pantheon = Theme::resolve(
-                getter(json!({ "theme": { "preset": "pantheon" } })),
-                &fs_theme::palette::fallback(&theme.colors.mode),
-            );
-            pantheon.box_style("card", None).casts
+            theme.box_style("card", None).casts
         } else {
             Vec::new()
         };
@@ -439,7 +431,7 @@ impl Card {
 
     fn tick_popover(&mut self, now: Instant) {
         // A popover never hangs off its line. `attach` starts at 1 for the
-        // joined habit, and the scrim's band over the bar fades by 1 - attach.
+        // joined shape, and the scrim's band over the bar fades by 1 - attach.
         self.attach.jump(0.0);
         let pose = if self.bypass { if self.open { 1.0 } else { 0.0 } } else { self.progress.value(now) };
         let alpha = pose.clamp(0.0, 1.0) as f32 * self.frame_alpha;
@@ -517,7 +509,10 @@ impl Card {
         let clamped_along = along + (bud_start - along) * a;
         let clamped_length = (along + length + (bud_end - along - length) * a - clamped_along).max(0.0);
         let span_clip = (shown && span_tight && slide > 0.0).then_some((span_start, span_length));
-        let bud_clip = (shown && !span_tight && a > 0.0 && clamped).then_some((clamped_along - reach, clamped_length + reach * 2.0));
+        // Inside the clamped sides' border, where content fills at rest: the
+        // content is undeformed and opaque, so any wider and it paints over
+        // the border and past it while the bud widens.
+        let bud_clip = (shown && !span_tight && a > 0.0 && clamped).then_some((clamped_along + border, (clamped_length - border * 2.0).max(0.0)));
         let along_pivot = if clamped && a > 0.0 {
             clamped_along + clamped_length / 2.0 - along
         } else if (wall_start >= 0.0) == (wall_end >= 0.0) {
@@ -713,6 +708,8 @@ impl Scrim {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::theme::getter;
+    use serde_json::json;
 
     fn theme() -> Theme {
         Theme::resolve(getter(json!({})), &fs_theme::palette::fallback("dark"))

@@ -29,7 +29,6 @@
 #                     `ignore_alpha`, so the compositor never blurs behind it.
 #   the dim           the rest frame's bar band and desktop each at 1 - alpha
 #                     of their closed level: dimmed, not untouched, not black.
-#                     Read on every theme, `--pantheon` included.
 #   the settle       the first captured frame byte-equal to the rest frame,
 #                     stamped against the summon that started it and divided
 #                     by the motion scale. Printed before anything is
