@@ -34,18 +34,6 @@ impl Panel for Dualsense {
         "gamepad-2".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Controller".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        v.store.devices.power.dualsense.as_ref().map_or_else(|| "no controller".into(), |s| format!("battery {}%", s.percent))
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Secondary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
     }
@@ -70,7 +58,6 @@ impl Panel for Dualsense {
                 trailing: None,
                 rail: Some(supply.percent as f64 / 100.0),
                 rail_on: None,
-                tab: "battery".into(),
             },
             false,
             Type::DisplayLarge,

@@ -42,23 +42,6 @@ impl Panel for Github {
         "git-branch".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Activity".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        match v.store.info.github.poll {
-            Poll::Unknown => "loading".into(),
-            Poll::Missing | Poll::Error => "no gh".into(),
-            Poll::NoAuth => "no auth".into(),
-            Poll::Ok => "signed in".into(),
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -91,7 +74,6 @@ impl Panel for Github {
                 trailing: None,
                 rail: None,
                 rail_on: None,
-                tab: "open".into(),
             },
         ));
         let section = |title: &str, count: u64, rows: &[Row], first: usize| {

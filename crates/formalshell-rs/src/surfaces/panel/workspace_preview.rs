@@ -98,18 +98,6 @@ impl Panel for WorkspacePreview {
         "layout-grid".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Preview".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        super::count(self.windows(v).len(), "window", "windows")
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Primary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::AppIcon]
     }

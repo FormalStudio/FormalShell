@@ -317,12 +317,6 @@ pub struct Look {
     pub marquee_hold: f64,
     /// The box under every cell (`bar.cell`), none where it draws nothing.
     pub chip: Option<fs_theme::style::BoxStyle<Rgba>>,
-    /// The cursor's fill and its leading block (`cursor`, `cursor.bar`),
-    /// which mark a hovered or open cell in place of the wash and the
-    /// open mark on a table that has the block.
-    pub cursor: Option<(Rgba, fs_theme::style::Bar<Rgba>)>,
-    /// `reveal: type`'s duration: a label that changes types in.
-    pub reveal: Option<f64>,
 }
 
 /// A theme text role's family: the table's face over its alias, or the
@@ -393,8 +387,6 @@ impl Look {
             marquee_px: motion.marquee_px_per_sec,
             marquee_hold: motion.marquee_hold_ms,
             chip: Some(theme.box_style("bar.cell", None)).filter(|b| b.fill.a > 0.0 || b.border.as_ref().is_some_and(|l| l.width > 0.0)),
-            cursor: theme.cursor_bar().map(|bar| (theme.box_style("cursor", None).fill, bar)),
-            reveal: theme.motion().catalogue.reveal,
         }
     }
 
@@ -621,8 +613,6 @@ pub struct Frame<'a> {
     pub open: (f64, f64),
     /// The slot's presence fade.
     pub alpha: f32,
-    /// A label part typing in: its index and how many characters show.
-    pub typed: Option<(usize, usize)>,
     pub band: Option<(Rgba, &'a [Glow<Rgba>])>,
     /// The free label's scroll, in pixels, while its marquee runs.
     pub scroll: Option<f64>,
@@ -762,18 +752,6 @@ impl Kit {
             crate::ui::boxes::paint(p, r, chip, f64::from(look.radius), alpha, 0.0);
         }
         p.framed(r, a(fill), look.radius, a(bc), bw);
-        if let Some((cursor, bar)) = &look.cursor {
-            // The block on the cell's leading edge, whole while the pointer
-            // is on it, fading in with its panel.
-            let k = if f.hovered { 1.0 } else { f.open.1 as f32 };
-            if k > 0.0 {
-                p.rect(r, a(cursor.with_alpha(cursor.a * k)), look.radius);
-                let w = (bar.width.round() as i32).min(r.w.min(r.h));
-                let block = if f.edge.is_vertical() { IRect::new(r.x, r.y, r.w, w) } else { IRect::new(r.x, r.y, w, r.h) };
-                p.rect(block, a(bar.color.with_alpha(bar.color.a * k)), 0.0);
-            }
-            return;
-        }
         if let Some(wash) = look.hover_wash.filter(|_| f.hovered && matches!(tone, Tone::Rest | Tone::Destructive | Tone::Warning)) {
             p.rect(r, a(wash), look.radius);
         }
@@ -804,7 +782,6 @@ impl Kit {
     pub fn draw(&mut self, view: &View, m: &Measured, p: &mut Painter, f: &Frame) {
         self.draw_box(p, view.tone, f);
         let look = self.look.clone();
-        let ink = Ink::resolve(&look, view.tone, f.band, f.alpha);
         let vertical = f.edge.is_vertical();
         let r = f.rect;
         let mut at = if vertical { r.y as f64 + look.pad_x } else { r.x as f64 + look.pad_x };
@@ -868,13 +845,6 @@ impl Kit {
                     }
                     Part::Label { .. } | Part::DimLabel { .. } | Part::Meta { .. } => {
                         let color = ink.of(if matches!(part, Part::Label { .. }) { ink.fg } else { ink.dim });
-                        let shaped = match (f.typed.filter(|t| t.0 == idx && pass == 0), part) {
-                            (Some((_, n)), Part::Label { text, .. } | Part::DimLabel { text }) => {
-                                let w = if ink.band { WEIGHTS.semibold } else if let Part::Label { weight: Some(w), .. } = part { f64::from(*w) } else { WEIGHTS.medium };
-                                self.shape(crate::effects::prefix(text, n), look.label(w as f32))
-                            }
-                            _ => shaped,
-                        };
                         let (x, y) = if vertical {
                             ((across_mid - shaped.width / 2), at.round() as i32)
                         } else {

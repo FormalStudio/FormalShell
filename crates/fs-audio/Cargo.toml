@@ -11,8 +11,7 @@ pipewire = ["dep:pipewire", "dep:async-channel"]
 
 [dependencies]
 async-channel = { version = "2.5", optional = true }
-# v0_3_49 for `pw_buffer.requested`, the frames a playback cycle wants.
-pipewire = { version = "0.10.1", optional = true, features = ["v0_3_49"] }
+pipewire = { version = "0.10.1", optional = true }
 serde_json = "1"
 
 [[example]]

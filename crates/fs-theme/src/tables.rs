@@ -14,11 +14,6 @@ static PANTHEON: LazyLock<Value> = LazyLock::new(|| {
         .expect("pantheon.json is valid JSON")
 });
 
-static CARTRIDGE: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../themes/cartridge.json"))
-        .expect("cartridge.json is valid JSON")
-});
-
 /// shadcn chrome on Omarchy habits, the shipped look.
 pub fn metamorphosis() -> &'static Value {
     &METAMORPHOSIS
@@ -27,11 +22,6 @@ pub fn metamorphosis() -> &'static Value {
 /// elementary OS 8's material.
 pub fn pantheon() -> &'static Value {
     &PANTHEON
-}
-
-/// An old console's menus, after tsubi.club.
-pub fn cartridge() -> &'static Value {
-    &CARTRIDGE
 }
 
 /// Retro is the metamorphosis table on different preset scalars, the same

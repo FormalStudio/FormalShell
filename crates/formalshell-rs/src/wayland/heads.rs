@@ -387,7 +387,7 @@ impl App {
         // Not before the bar's first frame: the mark's word waits on the
         // fonts, and the cold start budget is the bar's. Nor under the boot,
         // which hands the desktop over once it is gone.
-        let animate = self.store.theme.theme.wallpaper_animate && self.faces_warmed && !self.boot_holds();
+        let animate = self.store.theme.theme.wallpaper_animate && self.faces_warmed;
         let word = if animate { Some(self.shard_word()) } else { None };
         let now = Instant::now();
         for i in 0..self.heads.len() {

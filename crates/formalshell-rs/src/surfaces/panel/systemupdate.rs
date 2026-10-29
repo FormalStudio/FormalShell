@@ -45,18 +45,6 @@ impl Panel for SystemUpdate {
         "package".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Flake inputs".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        v.store.info.update.summary().to_lowercase()
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Config]
     }
@@ -92,7 +80,6 @@ impl Panel for SystemUpdate {
                     trailing: None,
                     rail: None,
                     rail_on: None,
-                    tab: "flake".into(),
                 },
             ));
         }

@@ -328,23 +328,6 @@ impl Panel for Network {
         "wifi".into()
     }
 
-    fn subtitle(&self, v: &View) -> String {
-        if v.store.devices.network.wifi_device.is_some() { "Networks" } else { "Wired" }.into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let n = &v.store.devices.network;
-        match &n.wifi_device {
-            None => super::count(n.wired_rows.len(), "wired link", "wired links"),
-            Some(_) if !n.wifi_enabled => "radio off".into(),
-            Some(_) => super::count(n.rows.iter().filter(|r| r.in_range).count(), "network", "networks") + " in range",
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Secondary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
     }
@@ -380,7 +363,6 @@ impl Panel for Network {
                     trailing: connected.map(|(_, signal)| w::value(format!("signal {signal}%"))),
                     rail: None,
                     rail_on: None,
-                    tab: match connected { Some(_) => "connected", None if n.wifi_enabled => "offline", None => "radio off" }.into(),
                 },
                 mono,
                 Type::Display,

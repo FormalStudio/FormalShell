@@ -50,24 +50,6 @@ impl Panel for Weather {
         }
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Forecast".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let state = &v.store.info.weather;
-        match &state.weather {
-            _ if !state.located => "no location".into(),
-            _ if state.error.is_some() => "unavailable".into(),
-            None => "loading".into(),
-            Some(r) => format!("{}\u{b0} {}", round(r.current.temperature), openmeteo::condition_text(r.current.code).to_lowercase()),
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock]
     }
@@ -114,7 +96,6 @@ impl Panel for Weather {
                     trailing: None,
                     rail: None,
                     rail_on: None,
-                    tab: "now".into(),
                 },
                 true,
                 Type::Display,

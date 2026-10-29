@@ -63,27 +63,6 @@ impl Panel for Iphone {
         "smartphone".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Bridge".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let st = &v.store.info.iphone;
-        if !st.installed {
-            "no bridge".into()
-        } else if !st.observer {
-            "bridge down".into()
-        } else if st.connected {
-            "connected".into()
-        } else {
-            "no phone".into()
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Secondary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Media, Topic::Clock]
     }
@@ -139,7 +118,6 @@ impl Panel for Iphone {
                     trailing: None,
                     rail: st.battery,
                     rail_on: None,
-                    tab: "connected".into(),
                 },
             ));
         }
@@ -164,7 +142,7 @@ impl Panel for Iphone {
             };
             parts.push(w::hero_with(
                 s,
-                w::Hero { glyph: "smartphone".into(), title, meta: meta.into(), readout: st.pairing_code.clone(), trailing: None, rail: None, rail_on: None, tab: "pairing".into() },
+                w::Hero { glyph: "smartphone".into(), title, meta: meta.into(), readout: st.pairing_code.clone(), trailing: None, rail: None, rail_on: None },
                 false,
                 Type::DisplayLarge,
                 None,

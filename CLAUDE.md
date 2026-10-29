@@ -114,10 +114,7 @@ Everything that compiles or runs the shell goes to g815 through
   session (restart greetd, screenshot pre-auth, a wrong password then the
   real one over `wtype`) and writes `artifacts/greeter/`. It fails unless
   the session log shows a real `pam_authenticate: AUTH_ERR` on the wrong
-  attempt. `--preset cartridge` runs the same login under a
-  `greeter-cartridge` specialisation, a burst of frames through the boot
-  first, and fails unless the greeter logs it played, assembled and
-  crumpled. It runs inside a VM with greetd, so it waits for the VM rig.
+  attempt. It runs inside a VM with greetd, so it waits for the VM rig.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
   contract, kept fixed: argument parsing, argument errors and output
   strings, replayed through `formalshell-ipc`'s parser and the registry by
@@ -185,8 +182,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Test App" with a themed icon): the hero carrying the entry's name and
   picture, and the window list holding the fixture window. `--panel
   appmenu` alone only ever shows the empty "No window" state.
-- `backdrop.sh` `--backdrop`: rides `--cartridge`; the shard sculpture
-  over a bare desktop, read off `debug dump`'s `backdrop` block and the
+- `backdrop.sh` `--backdrop`: pins `wallpaper.animate`; the shard
+  sculpture over a bare desktop, read off `debug dump`'s `backdrop` block and the
   shell's `commit surface=shards` lines: frames a second apart differing
   in its half of the screen, 20 s of it giving the shell's CPU as a share
   of one core and a frame rate never past 24 (under `FS_CPU_QUOTA` it fails
@@ -253,13 +250,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   clock commits, the stub is never called and the shell spends under 5
   ticks; `bluetooth status` lists the paired device alone, and the
   strangers too once the panel is open.
-- `boot.sh` `--boot`: rides `--cartridge`; the boot played over the
-  desktop as the shell's first frame, a burst of frames through it holding
-  a black stage and moving, left on its own and committing at least 20
-  frames. A second daemon taking over in the same login logs it as played
-  and never plays it; with `boot` cut out of state.json a third plays it
-  again and one real key 1s in sends it to the way out before the emblem
-  has assembled. Every other `--cartridge` run sets `theme.boot` false.
 - `brightness.sh` `--brightness`: three bursts of eight steps 40ms apart
   against PATH-shimmed `ddcutil` (a bus flock held 100 to 300ms per call,
   overlaps logged) and `brightnessctl` (reads answering after 20 to 150ms),
@@ -286,26 +276,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   record commit, and the cancel path.
 - `capture_edit.sh` `--capture-edit`: the SAVED notification's EDIT action
   reaching a real editor with the capture's own path on argv.
-- `cartridge.sh` `--cartridge`: pins `theme.preset` to `cartridge` in the
-  settings fixture and rides any other leg, so `--cartridge --gallery` is
-  the sheet in the console look: square boxes with one corner cut, the
-  cursor's block bar on its row and brackets round the grid cursor's cell,
-  in the packaged Archivo, DotGothic16 and BIZ UD Mincho.
-- `cartridge_media.sh` `--cartridge-media`: rides `--cartridge` (and
-  `--showcase` for the flat teal wallpaper); a camera, not a check. Grim
-  bursts of the boot, the backdrop, the launcher walked on real keys, the
-  monitor panel and the lock taking a wrong then the real password, all
-  but the boot at a third speed, turned into `docs/media/cartridge-*.gif`
-  at full speed (`dev/remote.sh` pulls them back). Fails only when a GIF was
-  not written.
-- `catalogue.sh` `--catalogue`: rides `--cartridge`; its motion catalogue
-  at a fifth speed, one frame burst per effect: the launcher's rows rising
-  and grain on open, a real Down widening the cursor's label, an activated
-  row's ghost, a real BackSpace's level change glitching, the audio panel's
-  status strip and hero typing in, the app menu's picture landing, a
-  handoff's body coming in, the OSD's block readout, and a wrong password's
-  error label shaking. Every burst differs from its rest frame and every
-  pair of rest frames a second apart is identical below the bar.
 - `center.sh` `--center`: the notification centre listing the pending tier,
   with the toast stack suppressed for as long as it is open, content-tall on
   a short history and capped and scrolling on thirty rows, then one open at
@@ -407,7 +377,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `frame.sh` `--frame`: pins `frame.thickness` in the settings fixture so the
   bar's window grows to the output and paints the frame round it, and reads
   that box and the four exclusion zones off the compositor's own layer list.
-  The key holds under every table, `--pantheon` and `--cartridge` included.
+  The key holds under every table, `--pantheon` included.
   Ridden by `--bar-style corners`, the ring's own fillets read black where
   the band meets the cut-out, the style adding no layer.
 - `fullscreen.sh` `--fullscreen`: the fullscreen chrome auto-hide, read off
@@ -761,9 +731,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the prerendered thumbnail cache (`fs-menu` `thumbnails`) backing every
   cell (the cache
   directory's own contents, since a warmed cell and a fallback cell paint
-  the same picture). Riding `--cartridge`, tsubi's five flat colours lead
-  the listing, and picking the green one makes the desktop that flat field
-  over the kept picture (`theme status`'s `desktop`).
+  the same picture), with no colour swatches ahead of the pictures.
 - `plugins.sh` `--plugins`: a plugin directory dropped into the config home
   placing its own bar cell, no `bar` key involved.
 - `polkit.sh` `--polkit`: a real `pkexec` conversation through the shell's
@@ -853,15 +821,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   third speed encoded to H.264, the media card, six visualizer styles,
   notifications, the centre, the lock, and the decrypt screensaver frame
   stepped. Under `--pantheon` or `--retro` only that theme's frame.
-- `sfx.sh` `--sfx`: the table's blips on fs-audio's own PipeWire stream,
-  recorded off a null sink of the leg's own made the default: real keys
-  through the launcher (an open, two Downs, two letters, an Escape
-  clearing them, an Escape closing, an input step and a Return), nine
-  `sfx` log lines and nine bursts on the sink's monitor with each one's
-  peak and RMS printed, then an open, a Down and an Escape under
-  do-not-disturb with none. `pactl list sink-inputs` holds
-  `formalshell-sfx` just after a blip and nothing 3s after the last.
-  Without `--cartridge` the same drive logs no blip and records silence.
 - `shoulders.sh` `--shoulders`: a join published over `debug join`, the gap
   the bar opens in its own line read off the shell's numbers as the card's
   rect plus a `radiusXl` fillet at either end, and the pixel where the line

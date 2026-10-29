@@ -605,17 +605,7 @@ impl Custom for Workspaces {
             } else {
                 IRect::new(rect.x + from.round() as i32, rect.y, (to - from).round() as i32, rect.h)
             };
-            match &look.cursor {
-                // The console's cursor: a faint fill and the block on its
-                // leading edge, the label keeping its own ink.
-                Some((fill, bar)) => {
-                    p.rect(r, ink.of(fill.with_alpha(fill.a * fade)), look.radius);
-                    let w = (bar.width.round() as i32).min(r.w.min(r.h));
-                    let block = if self.vertical { IRect::new(r.x, r.y, r.w, w) } else { IRect::new(r.x, r.y, w, r.h) };
-                    p.rect(block, ink.of(bar.color.with_alpha(bar.color.a * fade)), 0.0);
-                }
-                None => p.rect(r, ink.of(look.active_fill.with_alpha(look.active_fill.a * fade)), look.radius),
-            }
+            p.rect(r, ink.of(look.active_fill.with_alpha(look.active_fill.a * fade)), look.radius);
         }
 
         for i in 0..self.slots.len().min(self.chips.len()) {
@@ -629,7 +619,7 @@ impl Custom for Workspaces {
             let waiting = self.waiting(&slot);
             let color = if slot.is_urgent || waiting {
                 look.destructive
-            } else if slot.is_focused && look.cursor.is_none() {
+            } else if slot.is_focused {
                 look.on_active
             } else if slot.is_focused || slot.current || hovered {
                 ink.fg

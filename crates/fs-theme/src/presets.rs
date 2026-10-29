@@ -5,15 +5,12 @@
 
 use serde_json::Value;
 
-use fs_audio::sfx::Volume;
-
 use crate::tables;
 
-pub const NAMES: [&str; 4] = ["metamorphosis", "retro", "pantheon", "cartridge"];
+pub const NAMES: [&str; 3] = ["metamorphosis", "retro", "pantheon"];
 
 /// tsubi.club's five presets (`--color-1` to `--color-5`), the names
-/// `wallpaper.color` takes besides a hex and the swatches cartridge's
-/// picker offers.
+/// `wallpaper.color` takes besides a hex.
 pub const COLORS: [(&str, &str); 5] =
     [("sage", "#a1c8bc"), ("purple", "#402484"), ("green", "#68bc64"), ("silver", "#bdc3c9"), ("orange", "#ff8000")];
 
@@ -72,21 +69,6 @@ pub fn defaults(preset: Option<&Value>) -> Defaults {
             swatches: &[],
             style: tables::pantheon(),
         },
-        // The table squares its own boxes; the base radius stays above 0 so
-        // its pills (buttons, the status strip, tags) stay round.
-        "cartridge" => Defaults {
-            radius: 4.0,
-            icons: "lucide",
-            fonts: "pair",
-            surface_opacity: 0.9,
-            blur: true,
-            dither: false,
-            grid: true,
-            animate: true,
-            color: Some("#402484"),
-            swatches: &COLORS,
-            style: tables::cartridge(),
-        },
         _ => Defaults {
             radius: 10.0,
             icons: "lucide",
@@ -139,9 +121,6 @@ pub struct Resolved {
     pub radius: Value,
     pub icons: Value,
     pub fonts: &'static str,
-    /// No valid `theme.fonts` in settings.json, so the table's own `fonts`
-    /// block names the families.
-    pub table_fonts: bool,
     /// As written, or the preset's alpha; range-checked by `theme::Theme`.
     pub surface_opacity: Value,
     pub blur: bool,
@@ -161,14 +140,6 @@ pub struct Resolved {
     /// flat unless the picker chose otherwise.
     pub wallpaper_color: Option<String>,
     pub wallpaper_swatches: &'static [(&'static str, &'static str)],
-    /// `theme.boot`: the table's boot sequence plays, where its `boot`
-    /// habit names one.
-    pub boot: bool,
-    /// `theme.sounds`: the table's blips play, on by default wherever it
-    /// carries `sounds`.
-    pub sounds: bool,
-    /// `theme.soundVolume`, 0.5 unless written as a number.
-    pub sound_volume: Volume,
 }
 
 /// `get` reads one dotted settings path, `None` when the key is absent: the
@@ -178,12 +149,11 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
     let preset = name(preset);
     let d = defaults(Some(&Value::from(preset)));
 
-    let written = match get("theme.fonts").as_ref().and_then(Value::as_str) {
-        Some("pair") => Some("pair"),
-        Some("mono") => Some("mono"),
-        _ => None,
+    let fonts = match get("theme.fonts").as_ref().and_then(Value::as_str) {
+        Some("pair") => "pair",
+        Some("mono") => "mono",
+        _ => d.fonts,
     };
-    let fonts = written.unwrap_or(d.fonts);
     let dither = boolean(get("theme.dither"), d.dither);
     let grid = boolean(get("theme.grid"), d.grid);
 
@@ -193,7 +163,6 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         radius: get("theme.radius").unwrap_or(Value::from(d.radius)),
         icons: get("theme.icons").unwrap_or(Value::from(d.icons)),
         fonts,
-        table_fonts: written.is_none(),
         surface_opacity: get("theme.surfaceOpacity").unwrap_or(Value::from(d.surface_opacity)),
         blur: boolean(get("theme.blur"), d.blur),
         dither,
@@ -205,10 +174,6 @@ pub fn resolve(preset: Option<&Value>, get: impl Fn(&str) -> Option<Value>) -> R
         wallpaper_animate: boolean(get("wallpaper.animate"), d.animate),
         wallpaper_color: get("wallpaper.color").as_ref().and_then(color).unwrap_or(d.color.map(str::to_owned)),
         wallpaper_swatches: d.swatches,
-        boot: d.style["habits"]["boot"].as_str().is_some_and(|b| b != "none") && boolean(get("theme.boot"), true),
-        sounds: d.style.get("sounds").and_then(Value::as_object).is_some_and(|s| !s.is_empty())
-            && boolean(get("theme.sounds"), true),
-        sound_volume: get("theme.soundVolume").as_ref().and_then(Value::as_f64).map_or(Volume::DEFAULT, Volume::from_visual),
     }
 }
 
@@ -233,8 +198,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn names_are_the_four_presets() {
-        assert_eq!(NAMES, ["metamorphosis", "retro", "pantheon", "cartridge"]);
+    fn names_are_the_three_presets() {
+        assert_eq!(NAMES, ["metamorphosis", "retro", "pantheon"]);
     }
 
     #[test]
@@ -287,92 +252,38 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn cartridge_defaults_match_the_table() {
-        let t = p("cartridge", json!({}));
-        assert_eq!(t.preset, "cartridge");
-        assert!(std::ptr::eq(t.style, tables::cartridge()));
-        assert_eq!(t.radius, json!(4.0));
-        assert_eq!(t.icons, "lucide");
-        assert_eq!(t.fonts, "pair");
-        assert!(t.table_fonts);
-        assert_eq!(t.surface_opacity, json!(0.9));
-        assert!(t.blur);
-        assert!(!t.dither);
-        assert!(t.grid);
-        assert!(t.wallpaper_grid);
-        assert!(t.lock_grid);
-    }
-
-    #[test]
-    fn only_cartridge_takes_the_grid() {
-        for name in ["metamorphosis", "retro", "pantheon"] {
+    fn no_preset_takes_the_grid_the_backdrop_or_a_flat_colour_unless_asked() {
+        for name in NAMES {
             let t = p(name, json!({}));
             assert!(!t.grid && !t.wallpaper_grid && !t.lock_grid, "{name}");
-        }
-    }
-
-    #[test]
-    fn only_cartridge_animates_the_backdrop_unless_asked() {
-        assert!(p("cartridge", json!({})).wallpaper_animate);
-        assert!(!p("cartridge", json!({ "wallpaper": { "animate": false } })).wallpaper_animate);
-        for name in ["metamorphosis", "retro", "pantheon"] {
-            assert!(!p(name, json!({})).wallpaper_animate, "{name}");
-        }
-        assert!(p("pantheon", json!({ "wallpaper": { "animate": true } })).wallpaper_animate);
-    }
-
-    #[test]
-    fn only_cartridge_shows_a_flat_colour_unless_asked() {
-        assert_eq!(p("cartridge", json!({})).wallpaper_color.as_deref(), Some("#402484"));
-        assert_eq!(p("cartridge", json!({})).wallpaper_swatches, &COLORS);
-        for name in ["metamorphosis", "retro", "pantheon"] {
-            let t = p(name, json!({}));
+            assert!(!t.wallpaper_animate, "{name}");
             assert_eq!(t.wallpaper_color, None, "{name}");
             assert!(t.wallpaper_swatches.is_empty(), "{name}");
         }
+        assert!(p("pantheon", json!({ "wallpaper": { "animate": true } })).wallpaper_animate);
         assert_eq!(p("pantheon", json!({ "wallpaper": { "color": "#FF8000" } })).wallpaper_color.as_deref(), Some("#ff8000"));
         assert_eq!(p("retro", json!({ "wallpaper": { "color": "sage" } })).wallpaper_color.as_deref(), Some("#a1c8bc"));
     }
 
     #[test]
     fn false_or_null_gives_the_picture_back_and_junk_keeps_the_preset() {
-        assert_eq!(p("cartridge", json!({ "wallpaper": { "color": false } })).wallpaper_color, None);
-        assert_eq!(p("cartridge", json!({ "wallpaper": { "color": null } })).wallpaper_color, None);
+        let flat = json!({ "wallpaper": { "color": "#402484" } });
+        assert_eq!(p("pantheon", flat).wallpaper_color.as_deref(), Some("#402484"));
+        assert_eq!(p("pantheon", json!({ "wallpaper": { "color": false } })).wallpaper_color, None);
+        assert_eq!(p("pantheon", json!({ "wallpaper": { "color": null } })).wallpaper_color, None);
         for junk in [json!("#40248"), json!("402484"), json!("violet"), json!(true), json!(4204164)] {
-            assert_eq!(p("cartridge", json!({ "wallpaper": { "color": junk } })).wallpaper_color.as_deref(), Some("#402484"), "{junk}");
-        }
-    }
-
-    #[test]
-    fn only_a_table_with_a_boot_plays_one() {
-        assert!(p("cartridge", json!({})).boot);
-        assert!(!p("cartridge", json!({ "theme": { "boot": false } })).boot);
-        for name in ["metamorphosis", "retro", "pantheon"] {
-            assert!(!p(name, json!({ "theme": { "boot": true } })).boot, "{name}");
-        }
-    }
-
-    #[test]
-    fn only_a_table_with_sounds_plays_them() {
-        let t = p("cartridge", json!({}));
-        assert!(t.sounds);
-        assert_eq!(t.sound_volume, Volume::DEFAULT);
-        assert!(!p("cartridge", json!({ "theme": { "sounds": false } })).sounds);
-        assert_eq!(p("cartridge", json!({ "theme": { "soundVolume": 2 } })).sound_volume.as_visual(), 1.0);
-        assert_eq!(p("cartridge", json!({ "theme": { "soundVolume": "loud" } })).sound_volume, Volume::DEFAULT);
-        for name in ["metamorphosis", "retro", "pantheon"] {
-            assert!(!p(name, json!({ "theme": { "sounds": true } })).sounds, "{name}");
+            assert_eq!(p("pantheon", json!({ "wallpaper": { "color": junk } })).wallpaper_color, None, "{junk}");
         }
     }
 
     #[test]
     fn the_grid_overrides_like_dither() {
-        let t = p("cartridge", json!({ "lock": { "grid": false } }));
+        let t = p("metamorphosis", json!({ "theme": { "grid": true }, "lock": { "grid": false } }));
         assert!(t.wallpaper_grid);
         assert!(!t.lock_grid);
         let t = p("metamorphosis", json!({ "theme": { "grid": true } }));
         assert!(t.wallpaper_grid && t.lock_grid);
-        assert!(p("cartridge", json!({ "theme": { "grid": "false" } })).grid);
+        assert!(!p("pantheon", json!({ "theme": { "grid": "true" } })).grid);
     }
 
     #[test]
@@ -404,8 +315,6 @@ pub(crate) mod tests {
         assert_eq!(p("metamorphosis", json!({ "theme": { "fonts": "comic" } })).fonts, "pair");
         assert_eq!(p("retro", json!({ "theme": { "fonts": "comic" } })).fonts, "mono");
         assert_eq!(p("metamorphosis", json!({ "theme": { "fonts": "mono" } })).fonts, "mono");
-        assert!(p("metamorphosis", json!({ "theme": { "fonts": "comic" } })).table_fonts);
-        assert!(!p("metamorphosis", json!({ "theme": { "fonts": "pair" } })).table_fonts);
     }
 
     #[test]

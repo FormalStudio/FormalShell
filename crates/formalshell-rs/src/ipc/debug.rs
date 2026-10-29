@@ -117,7 +117,6 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "backdrop": app.backdrop_state(),
         "desktopClock": app.desktop_clock_state(),
         "depth": app.store.depth.status(),
-        "boot": app.boot_state(),
         "render": {"asked": theme.render_backend.as_str(), "backend": "cpu"},
         "theme": {
             "radius": number(theme.radius),

@@ -128,103 +128,6 @@ popovers and dialogs are `bg_color(2)` with nothing behind them, and its one
 translucent surface is the panel, whose alpha belongs to the band's paint
 rather than to that key.
 
-**Cartridge** (`fs-theme/themes/cartridge.json`, spec
-`docs/superpowers/specs/2026-10-23-cartridge-theme.md`): an old console's
-menus after tsubi.club, flat and dark, and the one table allowed past the
-theme boundary spec for its panels, backdrop and session start. Boxes are
-square with one corner cut (`chamfer`: one number for every corner, or four
-clockwise from the top left, drawn as that polygon in place of the radius),
-outlined at 1px, sunk rather than cast, with the palette's `primary` as the
-one accent. Its pills (buttons, the status strip, tags) are why its base
-radius stays at 4 while every box pins 0. The cursor has no ring: a list
-row takes `cursor.bar`, a block on its leading edge `width` across that
-travels with the list's halo, over the `cursor` role's faint fill; a grid
-cell (launcher grids, the switcher) takes `cursor.brackets`, the cell's own
-outline held `gap` outside it and drawn only where it lies within `sweep`
-degrees of straight up or down from the centre (measured as if the cell
-were square, so a wide cell gets corner brackets), in the `border` line
-over a soft glow of that role's cast (`Theme::with_brackets`). `hero` frames a panel's hero, with
-`hero.tab` (`height`, `slant`) its label over the frame and
-`button.default.cap` (`width`) the hexagonal end a primary action carries.
-Every other table declares all five and draws none of them (a bar under a
-pixel, brackets with no line, a tab and a cap 0 wide, a hero that is the
-ghost cell it always was). Its fonts block names Archivo for words and
-headings, DotGothic16 for values, BIZ UD Mincho for secondary lines, all
-shipped with the shell. Its habits are `emerge: "slide"` (the popover card
-sliding 40px in along its line from the end it rests nearer, fading on the
-table's 900ms `emerge` clock), `panel: "console"`, `grid: "hex"` and
-`boot: "cartridge"`; the others declare `sheet`, `square` and `none`.
-
-Three more roles are cartridge's alone and transparent everywhere else.
-`bar.cell` is the dark chip every bar cell sits on (the strip itself,
-`bar.rest`, draws nothing), with the hovered or open cell taking the
-cursor's fill and leading block; a changed label (the clock on the minute)
-types in a character at a time. `launcher.letter` is the cursor row's
-initial, giant and faint past the launcher's far corner, crossfading on its
-`duration`; `grid: "hex"` turns the launcher's grids into pointy-topped
-hexagons. `lock.clock` sets the lock's clock in the display face at its
-`wdth` and `wght`, slamming in from `slam` of the screen's width. The row
-toast becomes an "updates" card on the console grammar (the id strip, the
-summary in caps, the body in the values face, a red pulse on a critical
-one), the OSD's icon takes the accent, and the switcher's thumbnails take
-`switcher.cell`'s chamfer.
-
-`panel: "console"` is the section page (`surfaces/panel/host.rs`): the
-panel's `title` wide and heavy in the display face (`panel.title`'s `wdth`
-and `wght`), its `subtitle` condensed after `//` with a glow
-(`panel.subtitle`'s `inkShadow`), the back chip (Escape's keycap and
-"Back") in place of the close button, the status strip under them
-(`panel.status`: `<ID> :: <status>` and `( yyyy / mm / dd )`), and the id
-strip down the card's leading side (`panel.strip`, `width` wide, its line
-also the card's outline), which widens the card rather than narrowing the
-body. A `ui::w::heading` (every `w::section`'s label and the field labels
-naming one value) draws as a field tag (`panel.tag`: its caps over an
-accent bar fading out over `trail`); a plain `section_label` (a state word,
-an empty state, an error) stays as it was. Each panel names its accent
-(`Panel::accent`: `primary`, or matugen's secondary and tertiary through
-`chart2` and `chart3`), and the console draws the whole card with
-`primary` taken from it; an accent under 3:1 against `background` (the
-static fallback's grey chart steps) keeps `primary`. Every other table
-declares the five `panel.*` roles transparent and keeps the sheet.
-
-`boot: "cartridge"` is the session start (`boot.rs` for the timeline,
-`surfaces/boot.rs` for the drawing). On black, the desktop's own grid lines
-grow in from either end, two rings spin in squashed and settle into the
-emblem, and the hostname over `FORMAL` drops in a letter at a time in the
-display face, all in the `boot` role (its fill the ink, its border the
-lines; white on every table, since the stage is always black). The greeter
-plays it under its card, the emblem perching above the card once it has
-assembled; logging in crumples the emblem and the session only lifts the
-black (`FORMALSHELL_BOOT=greeter` in the session's environment). A session
-with no greeter plays it on an Overlay layer per output, the first taking
-the keyboard: any key or press goes to the way out, and left alone it goes
-600ms after the emblem has assembled. The bar waits under it and slams in
-from `0.06` of its width on the lift, and the backdrop's sculpture starts
-turning once the overlay is gone. It plays once per login: state.json's
-`boot` holds the kernel's boot id and the compositor's instance, so a shell
-restarted in the same session shows the desktop at once. `theme.boot`
-turns it off. The unlock has the short form whatever that key says: the
-clock slams back out and the card fades while the session is still locked,
-then an overlay holding the lock's backdrop (`formalshell:unlock`, no input)
-lifts off the desktop over 900ms. Every other table declares `boot: "none"`
-and the `boot` role it never draws.
-
-`sounds` is the table's map from an event to one of nine blips: `move`,
-`activate`, `back`, `open`, `close`, `type`, `toggle`, `error`, `boot`.
-They are original, synthesised by `dev/sfx/gen.py` into
-`crates/fs-audio/sfx/` (48 kHz mono WAVs, embedded) and mixed in process
-on a PipeWire playback stream of fs-audio's own (`formalshell-sfx`, role
-`Event`), opened for a blip and closed 1s after the last one ends, so a
-quiet shell holds no stream and wakes for none. The client thread keeps that node and its
-links out of the graph it reports, so no panel lists it. The UI thread
-only sends a command (`App::sfx`): one blip per frame at most, `type` at
-most every 50ms, none under do-not-disturb, none while locked except the
-lock's typing, wrong password and unlock. The launcher's blip is read off
-what its key changed (`sfx::launcher_cue`), so an activate that also
-closes plays the activate alone. `theme.sounds` turns a table's own off
-and `theme.soundVolume` sets the level on the visual volume scale. A table
-without `sounds` is silent; only `cartridge` has one.
-
 **Type** (`fs_theme::tokens::font_tokens`, picked per element with
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,
 section labels, descriptions, hints), mono for values (numbers, units,
@@ -382,24 +285,6 @@ shorter than that reads as a flicker rather than as a change. A list's rows
 take the same clocks: a row that keeps its place moves on `spatial`, an
 arriving one fades in on `effects` and a leaving one fades out on
 `effectsFast`.
-
-Past its clocks a table may name effects (`fs_theme::style::Catalogue`,
-the maths in `formalshell-rs/src/effects.rs`), each absent on a table that
-does not carry it, so metamorphosis and pantheon run none of them:
-`focusText` (the cursor or hovered row's label going to a width, weight
-and tracking on its own clock), `reveal: "type"` (a hero's title and
-readout, a console's status line and any `El::typed` text typing in on
-`steps(20)` over 600ms, placed by its whole width), `arrive.rise` with
-`arrive.stagger` (a card's rows rising in on open, on the `emerge` clock),
-`swap: "glitch"` (a launcher level change's rows jumping 10px back and out
-in two steps, the new ones coming in from 20px ahead on the `arrive`
-curve; a panel handoff draws the way in alone), `use` (a ghost of the
-activated row's label scaling and fading), `error: "shake"` (a field's
-error label jittering its axes over 500ms), `picture: "zoom"` (a picture
-that changes landing from 20 times its size in four stairs), `noise` (a
-grain over a fresh card fading out) and `progress: "blocks"` (a readout as
-`█████░░░░░ 50%` in the values face). Every one of them runs off a moment
-(the open, the change, the activation) and lands; none runs at rest.
 
 An edge-anchored card and the line it comes out of are one silhouette while
 it comes out (amended 2026-09-09, and 2026-09-14 for the let-go). The bar
@@ -627,17 +512,17 @@ on renders content imagery (launcher and active-window icons, notification
 images, album art) through the retro pass, paints a track's groove as a
 dither fill, and is the default for `wallpaper.dither` and `lock.dither`;
 tray icons, the picker grid and clipboard thumbnails stay true colour. `theme.grid`
-(on under `cartridge`) is the other full-screen pass: the table's
+is the other full-screen pass: the table's
 `backdrop.grid` role (pitch, width and fade in logical pixels, its fill the
 ink) laid into the wallpaper's pixels by `fs-chrome/src/grid.rs`, and drawn
 over the lock's scrim and the greeter's wallpaper from the same geometry;
 `wallpaper.grid` and `lock.grid` override it the way the dither keys do.
-`wallpaper.color` (`#402484` under `cartridge`) makes the desktop a flat
+`wallpaper.color` makes the desktop a flat
 field of that colour: `services/wallpaper.rs`'s `source` is the one answer
 to what the desktop shows (the picture's path or `color:#rrggbb`, the
 picker's choice in `state.json` first), and the backdrops, the lock, the
 band's paint, the greeter and matugen (`color hex` on it) all read that.
-`wallpaper.animate` (on under `cartridge`) puts the shard sculpture
+`wallpaper.animate` puts the shard sculpture
 (`fs-chrome/src/shards.rs`, rasterised by `shards.rs`) on a Background
 layer of its own over each output's wallpaper at its own pixels, with the
 grid moved out of the picture onto a third layer over it; the
@@ -1053,8 +938,7 @@ entry points; the shipped bindings are in
 - Words in mono or values in sans.
 - A shadow, a gradient, or a blur drawn by the shell (blur is the
   compositor's, behind a translucent card), save the lyrics pane's depth
-  of field and its sung-chunk glow (owner, 2026-09-17), and the cartridge
-  table's bracket glow (its own spec, 2026-10-23). Dither only behind
+  of field and its sung-chunk glow (owner, 2026-09-17). Dither only behind
   `wallpaper.dither` or `lock.dither`, both off by default. The bar's own
   mini cover stops animating behind `media.animatedBarCover: false`; the
   media panel's own cover animates unconditionally.

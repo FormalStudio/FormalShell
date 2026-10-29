@@ -43,18 +43,6 @@ impl Panel for Gallery {
         String::new()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Components".into()
-    }
-
-    fn status(&self, _: &View) -> String {
-        "sample data".into()
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Primary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Theme]
     }
@@ -149,11 +137,10 @@ impl Panel for Gallery {
         )
         .fill();
 
-        let states: [(&str, fn(&mut CellState)); 8] = [
+        let states: [(&str, fn(&mut CellState)); 7] = [
             ("Rest", |_| {}),
             ("Hovered", |s| s.hovered = true),
             ("Cursor", |s| s.cursor = true),
-            ("Grid cursor", |s| s.brackets = true),
             ("Selected", |s| s.selected = true),
             ("Active", |s| s.active = true),
             ("Destructive", |s| s.destructive = true),

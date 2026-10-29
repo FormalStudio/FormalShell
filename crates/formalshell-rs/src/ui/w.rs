@@ -101,12 +101,9 @@ pub fn section_label(s: &Space, text: &str, count: Option<usize>, inset: bool) -
     if inset { el.pad_start(s.control_padding_x) } else { el }
 }
 
-/// A section label heading a group or naming a field, which a table whose
-/// panels take the console grammar draws as a field tag.
+/// A section label heading a group or naming a field.
 pub fn heading(s: &Space, text: &str, count: Option<usize>, inset: bool) -> El {
-    let mut el = section_label(s, text, count, inset);
-    el.tag = true;
-    el
+    section_label(s, text, count, inset)
 }
 
 /// A named group of rows: the heading `rowGap` over them, the rows abutting.
@@ -269,9 +266,6 @@ pub struct Hero {
     /// The rail under it, 0 to 1, or none.
     pub rail: Option<f64>,
     pub rail_on: Option<String>,
-    /// What the hero shows, on the tab over its frame where the table
-    /// draws one (`connected`, `charging`); empty for none.
-    pub tab: String,
 }
 
 /// Panel hero: a flat ghost cell leading the content column, a
@@ -286,17 +280,17 @@ pub fn hero(s: &Space, h: Hero) -> El {
 pub fn hero_with(s: &Space, h: Hero, meta_mono: bool, readout_size: Type, leading: Option<El>) -> El {
     let mut top = Vec::new();
     if let Some(l) = leading {
-        top.push(l.lands().width(super::Size::Px(s.xxl * 2.0)));
+        top.push(l.width(super::Size::Px(s.xxl * 2.0)));
     } else if !h.glyph.is_empty() {
         top.push(El::new(Kind::Icon { name: h.glyph.clone(), size: Type::Heading, ink: Ink::Fg }).width(super::Size::Px(s.xxl * 2.0)));
     }
-    let mut words = vec![text_el(h.title, Type::Subtitle, Weight::Normal, false, Ink::Fg).elide().typed()];
+    let mut words = vec![text_el(h.title, Type::Subtitle, Weight::Normal, false, Ink::Fg).elide()];
     if !h.meta.is_empty() {
         words.push(text_el(h.meta, Type::BodySmall, Weight::Normal, meta_mono, Ink::Dim).elide());
     }
     top.push(column(s.xxs, words).fill());
     if !h.readout.is_empty() {
-        top.push(text_el(h.readout, readout_size, Weight::Normal, true, Ink::Fg).typed());
+        top.push(text_el(h.readout, readout_size, Weight::Normal, true, Ink::Fg));
     }
     if let Some(t) = h.trailing {
         top.push(t);
@@ -309,7 +303,5 @@ pub fn hero_with(s: &Space, h: Hero, meta_mono: bool, readout_size: Type, leadin
         };
         parts.push(rail);
     }
-    let mut el = cell(column(s.xxs, parts).fill()).ghost().cell_state(|c| c.hero = true);
-    el.tab = (!h.tab.is_empty()).then_some(h.tab);
-    el
+    cell(column(s.xxs, parts).fill()).ghost().cell_state(|c| c.hero = true)
 }

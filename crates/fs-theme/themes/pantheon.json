@@ -1075,50 +1075,11 @@
                 }
             ]
         },
-        "cursor.bar": {
-            "fill": "transparent",
-            "width": 0
-        },
-        "cursor.brackets": {
-            "border": null,
-            "gap": 0,
-            "sweep": 0
-        },
         "hero": {
             "fill": "transparent",
             "radius": 3
         },
-        "hero.tab": {
-            "fill": "transparent",
-            "height": 0
-        },
-        "button.default.cap": {
-            "fill": "transparent",
-            "width": 0
-        },
-        "panel.title": {
-            "fill": "transparent"
-        },
-        "panel.subtitle": {
-            "fill": "transparent"
-        },
-        "panel.strip": {
-            "fill": "transparent",
-            "width": 0
-        },
-        "panel.status": {
-            "fill": "transparent"
-        },
-        "panel.tag": {
-            "fill": "transparent"
-        },
         "bar.cell": {
-            "fill": "transparent"
-        },
-        "launcher.letter": {
-            "fill": "transparent"
-        },
-        "lock.clock": {
             "fill": "transparent"
         },
         "backdrop.grid": {
@@ -1147,16 +1108,6 @@
             "fill": "background",
             "fillAlpha": 0.16,
             "radius": 0
-        },
-        "boot": {
-            "fill": "white",
-            "fillAlpha": 0.9,
-            "radius": 0,
-            "border": {
-                "color": "white",
-                "alpha": 0.2,
-                "width": 2
-            }
         },
         "scrim": {
             "fill": "black",
@@ -1369,8 +1320,7 @@
         "frame": false,
         "paint": "transparent",
         "panel": "sheet",
-        "grid": "square",
-        "boot": "none"
+        "grid": "square"
     },
     "notes": {
         "table": [
@@ -1510,12 +1460,6 @@
         ],
         "roles.trough": [
             "The well a `ButtonGroup`'s row and a `Segmented`'s segments sit in: elementary's linked container, sunk the way an entry is. The chip that marks the chosen segment is the raised button, concentric inside it, so the trough takes the step above the chip's own 3."
-        ],
-        "roles.cursor.bar": [
-            "The block a list's cursor carries on its row's leading edge, and the arcs a grid cell's cursor is held by: neither in this look, whose cursor is the ring alone, so both draw nothing (a bar under a pixel wide, brackets with no line)."
-        ],
-        "roles.hero": [
-            "A panel's hero is a flat ghost cell here, and its tab and the primary button's end cap draw nothing: the framed hero and the capped button are the cartridge table's."
         ],
         "roles.cursor": [
             "Focus (`_index.scss`): the accent on the border and `0 0 0 2px alpha(accent, 0.3)` outside it."

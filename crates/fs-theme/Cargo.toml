@@ -6,6 +6,5 @@ publish = false
 
 [dependencies]
 chrono = "0.4"
-fs-audio = { path = "../fs-audio" }
 regex = "1"
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }

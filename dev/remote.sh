@@ -314,7 +314,6 @@ cmd_smoke() {
   local glob dir
   case " $* " in
     *" --screensaver-gif "*) dir=docs/media glob='screensaver-*.gif' ;;
-    *" --cartridge-media "*) dir=docs/media glob='cartridge-*.gif' ;;
     *" --shots "*) dir=docs/shots glob='*' ;;
     *) return 0 ;;
   esac

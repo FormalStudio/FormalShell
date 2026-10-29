@@ -335,23 +335,6 @@ impl Panel for Earbuds {
         "headphones".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Controls".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let e = &v.store.devices.earbuds;
-        match e.active() {
-            _ if !e.available() => "no daemon".into(),
-            None => "none connected".into(),
-            Some(d) => d.state_line.to_lowercase(),
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Secondary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
     }
@@ -398,7 +381,6 @@ impl Panel for Earbuds {
                         trailing: None,
                         rail: None,
                         rail_on: None,
-                        tab: "device".into(),
                     },
                 ));
                 out.extend(battery_section(s, dev));

@@ -10,12 +10,6 @@
 //! The screensaver can show inside the lock: its scene is presented on the
 //! lock surfaces in place of the card, input dismisses it back to the card,
 //! and a lock raised over it brings it back on idle rather than blanking.
-//!
-//! Under a table with a boot habit (spec C6) the unlock has a short form: the
-//! clock slams back out and the card fades while the session is still
-//! locked, then an overlay holding what the lock last showed lifts off the
-//! desktop. The overlay is mapped as the way out starts, so it is already
-//! committed when the lock goes and the desktop never shows through cut.
 
 use std::time::{Duration, Instant};
 
@@ -23,7 +17,6 @@ use calloop::RegistrationToken;
 use calloop::channel::{self, Sender};
 use calloop::timer::{TimeoutAction, Timer};
 use chrono::{Local, Timelike};
-use fs_audio::sfx::Sound;
 use fs_auth::pam::{self, Outcome};
 use serde_json::{Map, Value, json};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -35,8 +28,6 @@ use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
-use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerSurface};
 use smithay_client_toolkit::session_lock::{
     SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface, SessionLockSurfaceConfigure,
 };
@@ -77,15 +68,6 @@ pub enum LockMsg {
 
 /// How long the overlay takes to lift off the desktop, and how long the
 /// unlock waits past the clock's way out for it to commit.
-const LIFT_MS: f64 = 900.0;
-const COMMIT_GRACE_MS: f64 = 300.0;
-
-/// One output's overlay through the unlock's short form.
-struct Outro {
-    output: WlOutput,
-    surface: Surface<LayerSurface>,
-    view: View,
-}
 
 struct Out {
     output: WlOutput,
@@ -139,8 +121,6 @@ pub struct Lock {
     art: Option<(String, Vec<Bitmap>)>,
     fade: Animated,
     rise: Animated,
-    /// The clock's slam in from the leading side (`lock.clock`'s `slam`).
-    slam: Animated,
     wake: Animated,
     entered: bool,
     notifier: Option<ExtIdleNotifierV1>,
@@ -154,12 +134,6 @@ pub struct Lock {
     pub sleep: Sleep,
     /// Each output's last report, kept past the unlock until the next lock.
     reports: Map<String, Value>,
-    /// The short form's way out under the lock: when it started and how
-    /// long the clock takes. The session unlocks once it has run.
-    leaving: Option<(Instant, f64)>,
-    outro: Vec<Outro>,
-    /// When the overlay started lifting, once the session unlocked.
-    lifting: Option<Instant>,
 }
 
 impl Lock {
@@ -185,7 +159,6 @@ impl Lock {
             art: None,
             fade: Animated::new(1.0, EFFECTS),
             rise: Animated::new(0.0, SPATIAL),
-            slam: Animated::new(1.0, EFFECTS),
             wake: Animated::new(1.0, EFFECTS_SLOW),
             entered: false,
             notifier: globals.bind(qh, 2..=2, Ignore).ok(),
@@ -196,9 +169,6 @@ impl Lock {
             slept_at: None,
             sleep: Sleep::default(),
             reports: Map::new(),
-            leaving: None,
-            outro: Vec::new(),
-            lifting: None,
         }
     }
 }
@@ -547,13 +517,9 @@ impl App {
         self.lock.dirty = true;
         match outcome {
             Outcome::Success => {
-                self.sfx_lock(Sound::Activate);
-                self.lock_leave();
+                self.unlock();
             }
-            Outcome::Failed(_) => {
-                self.sfx_lock(Sound::Error);
-                self.lock.error = "Wrong password".into();
-            }
+            Outcome::Failed(_) => self.lock.error = "Wrong password".into(),
             Outcome::MaxTries(_) => self.lock.error = "Account locked".into(),
             Outcome::StartFailed(why) | Outcome::Error(why) => {
                 eprintln!("lock: pam: {why}");
@@ -562,155 +528,7 @@ impl App {
         }
     }
 
-    /// PAM's success: the short form under a table with a boot habit, the lock
-    /// gone at once otherwise.
-    fn lock_leave(&mut self) {
-        let theme = &self.store.theme.theme;
-        // The table's own exit, kept with `theme.boot` off: that key is the
-        // login's sequence, never the lock's motion.
-        let boot = theme.habit_str("boot");
-        if boot.is_empty() || boot == "none" || !theme.motion_enabled || self.lock.outs.is_empty() || self.saver.active {
-            self.unlock();
-            return;
-        }
-        let now = Instant::now();
-        let ms = match theme.metric("lock.clock", "duration") {
-            d if d > 0.0 => d,
-            _ => Clock::Effects.ms(theme),
-        } * self.motion_scale;
-        let curve = crate::motion::Curve::from_table(&theme.motion().arrive_curve);
-        self.lock.slam.set_on(now, 0.0, ms, curve);
-        self.lock.fade.set(now, 0.0, ms);
-        self.lock.leaving = Some((now, ms));
-        self.lock.lifting = None;
-        self.lock.outro.clear();
-        let outputs: Vec<WlOutput> = self.lock.outs.iter().map(|o| o.output.clone()).collect();
-        for output in outputs {
-            let wl = self.compositor.create_surface(&self.qh);
-            let layer = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:unlock"), Some(&output));
-            layer.set_anchor(Anchor::all());
-            layer.set_size(0, 0);
-            layer.set_exclusive_zone(-1);
-            layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-            // Presses go straight through to the desktop it lifts off.
-            if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
-                layer.set_input_region(Some(region.wl_region()));
-            }
-            layer.commit();
-            let mut surface = Surface::on("unlock", layer, &self.shm, self.started, &output);
-            surface.wait_map = true;
-            self.lock.outro.push(Outro { output, surface, view: View::new(1, 1) });
-        }
-        self.lock.dirty = true;
-        self.log("unlock leaving");
-    }
-
-    /// The short form's clock has run and every overlay has a frame up
-    /// (or had its grace): the session goes and the overlay starts lifting.
-    fn lock_left(&mut self, now: Instant) {
-        let Some((at, ms)) = self.lock.leaving else { return };
-        let t = crate::motion::since(at, now);
-        let ready = self.lock.outro.iter().all(|o| o.surface.commits() > 0);
-        if t < ms || !(ready || t >= ms + COMMIT_GRACE_MS) {
-            return;
-        }
-        self.lock.leaving = None;
-        self.unlock();
-        self.lock.lifting = Some(now);
-        self.log(&format!("unlock lifting t={}ms ready={ready}", t.round()));
-    }
-
-    fn outro_index(&self, surface: &WlSurface) -> Option<usize> {
-        self.lock.outro.iter().position(|o| o.surface.layer.wl_surface() == surface)
-    }
-
-    pub(super) fn unlock_frame(&mut self, surface: &WlSurface) -> bool {
-        let Some(i) = self.outro_index(surface) else { return false };
-        let s = &mut self.lock.outro[i].surface;
-        s.landed(Instant::now());
-        s.mapped = true;
-        true
-    }
-
-    pub(super) fn unlock_configure(&mut self, surface: &WlSurface, width: i32, height: i32) -> bool {
-        let Some(i) = self.outro_index(surface) else { return false };
-        if width > 0 && height > 0 {
-            let o = &mut self.lock.outro[i];
-            o.view.resize(width, height);
-            o.surface.configure(width, height);
-        }
-        true
-    }
-
-    pub(super) fn unlock_closed(&mut self, surface: &WlSurface) -> bool {
-        let Some(i) = self.outro_index(surface) else { return false };
-        self.lock.outro.remove(i);
-        true
-    }
-
-    pub(super) fn unlock_output_gone(&mut self, output: &WlOutput) {
-        self.lock.outro.retain(|o| o.output != *output);
-    }
-
-    /// The overlay: the lock's backdrop with the card and clock gone, at
-    /// full opacity until the session unlocks, then lifted on the ease.
-    pub(super) fn present_unlock(&mut self, now: Instant) {
-        if self.lock.outro.is_empty() {
-            return;
-        }
-        let alpha = match self.lock.lifting {
-            None => 1.0,
-            Some(at) => {
-                let p = crate::motion::progress(crate::motion::since(at, now), LIFT_MS * self.motion_scale.max(0.0));
-                if p >= 1.0 {
-                    self.lock.outro.clear();
-                    self.lock.lifting = None;
-                    self.log("unlock done");
-                    return;
-                }
-                (1.0 - crate::boot::EASE.ease(p)) as f32
-            }
-        };
-        let has_wallpaper = !self.store.desktop().is_empty();
-        let mut shared = Shared {
-            now: Local::now(),
-            name: "",
-            prompt: view::Prompt::password(0, (0, 0), false),
-            error: "",
-            has_wallpaper,
-            backdrop: None,
-            foreground: None,
-            shards: None,
-            picture: None,
-            avatar: None,
-            media: None,
-            enter: (0.0, 0.0),
-            slam: 0.0,
-            blanked: false,
-            wake: 1.0,
-        };
-        let theme = &self.store.theme.theme;
-        let qh = self.qh.clone();
-        for o in &mut self.lock.outro {
-            if !o.surface.configured || o.surface.frame_pending {
-                continue;
-            }
-            let size = o.view.scene.size;
-            let k = o.surface.scale();
-            let device = (crate::render::scaled(size.w, k), crate::render::scaled(size.h, k));
-            let backdrops = &self.lock.backdrop;
-            let pair = backdrops.iter().find(|(b, _)| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device).or(backdrops.last());
-            shared.backdrop = pair.map(|(b, _)| b);
-            shared.foreground = pair.and_then(|(_, f)| f.as_ref());
-            shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
-            let _raster = crate::scene::raster_at(k);
-            o.view.draw(&shared, theme, &mut self.bar.kit, now);
-            o.surface.set_opacity(alpha);
-            o.surface.present(&mut o.view.scene, true, &qh);
-        }
-    }
-
-    /// PAM's success is the one caller, straight or through the short form.
+    /// PAM's success is the one caller.
     fn unlock(&mut self) {
         if let Some(session) = self.lock.session.take() {
             session.unlock();
@@ -832,9 +650,6 @@ impl App {
         if repeat && !matches!(event.keysym, Keysym::BackSpace | Keysym::Delete | Keysym::KP_Delete | Keysym::Left | Keysym::Right) {
             return true;
         }
-        if self.lock.leaving.is_some() {
-            return true;
-        }
         if self.lock.resume_guard {
             self.lock.resume_guard = false;
         }
@@ -848,19 +663,13 @@ impl App {
         }
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => self.submit_password(),
-            Keysym::Escape => {
-                if !self.lock.password.text().is_empty() {
-                    self.sfx_lock(Sound::Back);
-                }
-                self.lock.password = field();
-            }
+            Keysym::Escape => self.lock.password = field(),
             // A secret field hands nothing out, so a paste is all that can
             // come back from it.
             sym if !self.lock.checking => {
                 let out = self.lock.password.key(super::field_key(sym), self.mods, event.utf8.as_deref());
                 match out {
                     fs_menu::field::Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
-                    fs_menu::field::Outcome::Edited => self.sfx_lock(Sound::Type),
                     _ => {}
                 }
             }
@@ -911,7 +720,6 @@ impl App {
     }
 
     pub(super) fn present_lock(&mut self) {
-        self.lock_left(Instant::now());
         if self.lock.outs.is_empty() || !self.lock.dirty {
             return;
         }
@@ -928,16 +736,11 @@ impl App {
             self.lock.fade.set(now, 1.0, Clock::Effects.ms(theme) * scale);
             self.lock.rise.jump(theme.space.section_gap);
             self.lock.rise.set(now, 0.0, Clock::Spatial.ms(theme) * scale);
-            if theme.metric("lock.clock", "slam") > 0.0 {
-                let m = theme.motion();
-                self.lock.slam.jump(0.0);
-                self.lock.slam.set_on(now, 1.0, theme.metric("lock.clock", "duration") * scale, crate::motion::Curve::from_table(&m.arrive_curve));
-            }
         }
         let blanked = self.lock_blanked();
         let reveal = if theme.motion_enabled { theme.motion().families.reveal * self.motion_scale } else { 0.0 };
         self.lock.wake.set(now, if blanked { 0.0 } else { 1.0 }, reveal);
-        let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.slam.running(now) || self.lock.wake.running(now) || self.lock.leaving.is_some();
+        let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now);
         let has_wallpaper = !self.store.desktop().is_empty();
         let shared = Shared {
             now: Local::now(),
@@ -952,7 +755,6 @@ impl App {
             avatar: None,
             media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
-            slam: self.lock.slam.value(now).clamp(0.0, 1.0),
             blanked,
             wake: self.lock.wake.value(now).clamp(0.0, 1.0) as f32,
         };
@@ -1154,8 +956,6 @@ impl SessionLockHandler for App {
     fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         eprintln!("lock: finished by the compositor");
         self.lock.session = None;
-        self.lock.leaving = None;
-        self.lock.outro.clear();
         self.lock.outs.clear();
         self.lock.locked = false;
         self.sync_agents();

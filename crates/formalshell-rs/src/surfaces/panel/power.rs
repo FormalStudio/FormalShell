@@ -107,19 +107,6 @@ impl Panel for Power {
         if v.store.devices.power.battery.is_some() { "battery" } else { "zap" }.into()
     }
 
-    fn subtitle(&self, v: &View) -> String {
-        if v.store.devices.power.battery.is_some() { "Battery" } else { "AC power" }.into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let power = &v.store.devices.power;
-        power.battery.as_ref().map_or_else(|| "on ac".into(), |b| format!("{}% {}", b.percent, if power.on_battery { "on battery" } else { "plugged in" }))
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices, Topic::Info, Topic::Config]
     }
@@ -148,7 +135,6 @@ impl Panel for Power {
                     trailing: None,
                     rail: Some(b.percent / 100.0),
                     rail_on: None,
-                    tab: charge_state_label(b.percent, b.state, power.on_battery, held).to_lowercase(),
                 },
                 false,
                 crate::ui::Type::Display,

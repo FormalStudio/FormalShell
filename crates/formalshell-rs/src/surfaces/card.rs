@@ -6,9 +6,7 @@
 //! walls a side too close to the line's end runs out to (M57 D2) and the
 //! bud a card hanging off another card's far edge is clamped into (M57 D3).
 //! Under `popover` it is a plain card on its casts,
-//! fading on the table's `emerge` clock over an `md` drop out of its cell;
-//! under `slide` the same card slides in along the line from the side of
-//! the output it rests on.
+//! fading on the table's `emerge` clock over an `md` drop out of its cell.
 //!
 //! Worked out for a top edge in the card's own coordinates, `u` along the
 //! line and `v` away from the output's edge; [`Card::edge_map`] turns those
@@ -42,8 +40,6 @@ const DEFORM_AMOUNT: f64 = 0.15;
 pub const SLACK: i32 = 48;
 /// Past any output's edge, for the half-plane beyond the line.
 const FAR: f64 = 1.0e5;
-/// How far a `slide` card travels along its line, in logical pixels.
-const SLIDE: f64 = 40.0;
 
 /// What the card takes off the theme.
 struct Look {
@@ -51,12 +47,9 @@ struct Look {
     border: Rgba,
     border_width: f64,
     radius: f64,
-    chamfer: [f64; 4],
     casts: Vec<fs_theme::style::Cast<Rgba>>,
-    /// Off the line, on the popover path: `popover` and `slide` both.
+    /// Off the line, on the popover path.
     popover: bool,
-    /// The travel along the line a `slide` card makes, 0 for a popover.
-    slide: f64,
     emerge_ms: f64,
     emerge_curve: Curve,
     drop: f64,
@@ -67,7 +60,7 @@ impl Look {
         let card = theme.box_style(role, None);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
         let emerge = theme.emerge();
-        let popover = matches!(emerge, "popover" | "slide");
+        let popover = emerge == "popover";
         let casts = if popover {
             card.casts.clone()
         } else if cast {
@@ -88,10 +81,8 @@ impl Look {
                 Radius::Px(px) => px,
                 Radius::Pill => theme.radii.xl,
             },
-            chamfer: card.chamfer,
             casts,
             popover,
-            slide: if emerge == "slide" { SLIDE * theme.spacing_scale } else { 0.0 },
             emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
             emerge_curve: Curve::from_table(&motion.emerge_curve),
             drop: theme.space.md,
@@ -247,11 +238,6 @@ impl Card {
     pub fn menu(&mut self, theme: &Theme, cast: bool) {
         self.role = "menu";
         self.look = Look::new(theme, "menu", cast);
-    }
-
-    /// The frame drawn in `color` rather than its role's border.
-    pub fn outline(&mut self, color: Rgba) {
-        self.look.border = color;
     }
 
     /// The look resolved again off a new theme, the clocks left running: a
@@ -421,14 +407,10 @@ impl Card {
         );
         let fill = look.fill.with_alpha(look.fill.a * alpha);
         let border = look.border.with_alpha(look.border.a * alpha);
-        let paint = if look.chamfer.iter().any(|c| *c > 0.0) {
-            crate::ui::boxes::chamfer_paint(card, look.chamfer, fill, border, look.border_width)
-        } else {
-            let half = look.border_width / 2.0;
-            let mut line = rr(card.inflate(-half, -half), radius - half);
-            line.close_path();
-            Paint::Shape { fill: Some((rr(card, radius), fill)), strokes: vec![(line, border, look.border_width)] }
-        };
+        let half = look.border_width / 2.0;
+        let mut line = rr(card.inflate(-half, -half), radius - half);
+        line.close_path();
+        let paint = Paint::Shape { fill: Some((rr(card, radius), fill)), strokes: vec![(line, border, look.border_width)] };
         scene.update_with(nodes.1, Scene::cover(card, Affine::IDENTITY, 2.0), paint, shown, Affine::IDENTITY, None);
     }
 
@@ -463,15 +445,8 @@ impl Card {
         let alpha = pose.clamp(0.0, 1.0) as f32 * self.frame_alpha;
         let shown = self.shown(now) && alpha > 0.0;
         let map = self.edge_map();
-        let offset = if self.look.slide > 0.0 {
-            // In from the end of the line the card rests nearer.
-            let along = if self.edge.is_vertical() { self.scene.size.h } else { self.scene.size.w } as f64;
-            let side = if self.live.center().x > along / 2.0 { 1.0 } else { -1.0 };
-            vello_cpu::kurbo::Vec2::new(side * (1.0 - pose) * self.look.slide, 0.0)
-        } else {
-            // Toward the line it dropped out of.
-            vello_cpu::kurbo::Vec2::new(0.0, -(1.0 - pose) * self.look.drop)
-        };
+        // Toward the line it dropped out of.
+        let offset = vello_cpu::kurbo::Vec2::new(0.0, -(1.0 - pose) * self.look.drop);
         let at = self.live + offset;
         let device = Scene::cover(at, map, 0.0);
         let card = Rect::new(device.x as f64, device.y as f64, device.right() as f64, device.bottom() as f64);
@@ -763,25 +738,6 @@ mod tests {
             assert!(card.scene.size.intersect(&r) == r, "{edge:?} outside its surface");
             let clip = card.content_clip();
             assert!(clip.intersect(&r) == r, "{edge:?} content clipped off its own rest");
-        }
-    }
-
-    /// Under `emerge: slide` a card opens from 40px along its line, toward
-    /// the end of the line it rests nearer, and lands on its rest.
-    #[test]
-    fn a_slide_card_comes_in_along_its_line() {
-        let t = Theme::resolve(getter(json!({ "theme": { "preset": "cartridge" } })), &fs_theme::palette::fallback("dark"));
-        let travel = SLIDE * t.spacing_scale;
-        for (anchor, side) in [(1600.0, 1.0), (300.0, -1.0)] {
-            let now = Instant::now();
-            let mut card = Card::new(&t, Edge::Top, 1920, 40.0, anchor, (200.0, 60.0), 1.0, false);
-            card.mapped(now);
-            let rest = card.rest_rect();
-            let (frame, _) = card.popover_frame;
-            assert_eq!(frame.y, rest.y);
-            assert!((f64::from(frame.x - rest.x) - side * travel).abs() <= 1.0, "{anchor}: {frame:?} against {rest:?}");
-            card.tick(now + std::time::Duration::from_secs(2));
-            assert_eq!(card.popover_frame.0, rest);
         }
     }
 }

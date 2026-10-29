@@ -30,10 +30,7 @@
 #
 # Ridden by --pantheon the claim turns over (M60 T2): a popover has no line to
 # come out of, so the pill fades in a few pixels under its rest and the
-# output's last row stays bare through the whole entrance. Under the `slide`
-# habit (--cartridge) the last row stays bare too, and the pill comes in
-# along the line instead: some entrance frame has its leading edge left of
-# where it rests, read along the pill's middle row. The habit is read off
+# output's last row stays bare through the whole entrance. The habit is read off
 # `debug dump`'s `theme.habits.emerge`, not off the rider, and every habit is
 # then read against the same resting pose.
 leg_osd_flag="--osd"
@@ -111,43 +108,6 @@ osd_column() {
     | awk 'NR > 1 { print toupper(substr($3, 2, 6)) }'
 }
 
-# One whole row of a frame, as six hex digits per column, left to right.
-osd_row() {
-  $convert_bin "$1" -crop "4096x1+0+$2" +repage -depth 8 txt:- 2>/dev/null \
-    | awk 'NR > 1 { print toupper(substr($3, 2, 6)) }'
-}
-
-# The left-most column of row $2 in frame $1 that is not the bare desktop's
-# own ink, or -1 for a row with nothing drawn on it.
-osd_ink_left() {
-  local i
-  local -a shot desk
-  mapfile -t shot < <(osd_row "$1" "$2")
-  mapfile -t desk < <(osd_row "$osd_desktop_path" "$2")
-  for ((i = 0; i < ${#shot[@]}; i++)); do
-    if [ -n "${shot[i]}" ] && [ "${shot[i]}" != "${desk[i]}" ]; then
-      echo "$i"
-      return 0
-    fi
-  done
-  echo -1
-}
-
-# The top-most row of column $2 in frame $1 that is not the bare desktop's.
-osd_ink_top() {
-  local i
-  local -a shot desk
-  mapfile -t shot < <(osd_column "$1" "$2")
-  mapfile -t desk < <(osd_column "$osd_desktop_path" "$2")
-  for ((i = 0; i < ${#shot[@]}; i++)); do
-    if [ -n "${shot[i]}" ] && [ "${shot[i]}" != "${desk[i]}" ]; then
-      echo "$i"
-      return 0
-    fi
-  done
-  echo -1
-}
-
 # The bottom-most row of column $2 in frame $1 that is not the bare desktop's
 # own ink, or -1 for a column with nothing drawn on it at all.
 osd_ink_bottom() {
@@ -198,7 +158,7 @@ leg_osd_assert() {
   # The entrance: the pill comes out of the bottom line, so on at least one
   # frame its ink reaches the output's own last row at the pill's centre
   # column. A pill that appeared at its resting place instead would leave
-  # every one of those rows bare. Under the popover and slide habits that is
+  # every one of those rows bare. Under the popover habit that is
   # exactly the claim, the other way up: the pill comes in a few pixels off
   # its rest and never reaches the edge at all.
   local out=-1 hit=""
@@ -235,26 +195,4 @@ leg_osd_assert() {
     fail "the pill's own bottom sits ${gap}px off the output's last row in $osd_rest_path against the screenPadding (12) it rests at: it has not let go of the line"
   fi
   echo "SMOKE_OSD_RESTING ok ${gap}px of desktop under the pill at column $osd_column_probe"
-
-  [ "$emerge" = "slide" ] || return 0
-  # The slide: along the pill's middle row, its leading edge at rest, and
-  # some entrance frame drawing ink further left than that, the pill still
-  # on its way in from the side.
-  local top mid rest_left left travelled=""
-  top=$(osd_ink_top "$osd_rest_path" "$osd_column_probe")
-  mid=$(((top + rest) / 2))
-  rest_left=$(osd_ink_left "$osd_rest_path" "$mid")
-  [ "$rest_left" -gt 0 ] || fail \
-    "row $mid of $osd_rest_path has no bare desktop left of the pill (leading edge $rest_left): the band is too narrow to read the slide"
-  for i in $(seq 1 $osd_frames); do
-    path="$shot_dir/osd-emerge-$i.png"
-    left=$(osd_ink_left "$path" "$mid")
-    if [ "$left" -ge 0 ] && [ "$left" -lt $((rest_left - 4)) ]; then
-      travelled="$path at column $left"
-      break
-    fi
-  done
-  [ -n "$travelled" ] || fail \
-    "no entrance frame among osd-emerge-1..$osd_frames draws row $mid left of the resting leading edge $rest_left: the pill never slid in along the line"
-  echo "SMOKE_OSD_SLIDE ok rest edge $rest_left, $travelled"
 }

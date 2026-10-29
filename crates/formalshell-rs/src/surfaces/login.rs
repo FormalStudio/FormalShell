@@ -51,15 +51,7 @@ impl Card<'_> {
     pub fn clock(&self, theme: &Theme, kit: &mut Kit) -> ShapedText {
         let size = (theme.font_size.display_large * 2.0).round() as f32;
         let text = self.now.format("%H:%M").to_string();
-        // A table that sets the clock's axes sets it in its display face.
-        let wght = theme.metric("lock.clock", "wght") as f32;
-        let style = if wght > 0.0 {
-            let wdth = theme.metric("lock.clock", "wdth") as f32;
-            let family = crate::surfaces::bar::cell::face(theme.faces.display);
-            TextStyle { family, size, weight: wght, tracking: 0.0, wdth: if wdth > 0.0 { wdth } else { TextStyle::NORMAL_WIDTH }, wght: Some(wght) }
-        } else {
-            TextStyle { family: kit.look.mono, size, weight: WEIGHTS.semibold as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
-        };
+        let style = TextStyle { family: kit.look.mono, size, weight: WEIGHTS.semibold as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
         kit.shape(&text, style)
     }
 
@@ -251,78 +243,29 @@ impl View {
     }
 
     /// True while something on the card is still moving.
-    pub fn draw(&mut self, c: &Card, backdrop: Option<&Bitmap>, theme: &Theme, kit: &mut Kit, now: Instant, boot: Option<&Stage>) -> bool {
+    pub fn draw(&mut self, c: &Card, backdrop: Option<&Bitmap>, theme: &Theme, kit: &mut Kit, now: Instant) -> bool {
         let (w, h) = (self.scene.size.w, self.scene.size.h);
         let full = IRect::new(0, 0, w, h);
         let clock = c.clock(theme, kit);
         let body = c.body(&clock, theme);
-        let (mut card, mut inner) = place(&body, (w, h), 0.0, theme, kit);
-        // Under the boot the emblem perches over the card, the two centred
-        // together a little above the middle.
-        let mut perch = (f64::from(w) / 2.0, f64::from(h) / 2.0);
-        if let Some(s) = boot {
-            let k = crate::surfaces::boot::stage_scale((w, h));
-            let tall = 2.0 * crate::boot::RINGS[0].ry * k * crate::boot::PERCH;
-            let gap = theme.space.xxl;
-            let top = ((f64::from(h) - tall - gap - f64::from(card.h)) * 0.42).max(0.0);
-            perch.1 = top + tall / 2.0;
-            let rise = top + tall + gap - f64::from(card.y) + s.greet.rise;
-            (card, inner) = place(&body, (w, h), rise, theme, kit);
-        }
-        let (world, alpha) = boot.map_or((1.0, 1.0), |s| (s.greet.world, s.greet.card));
+        let (card, inner) = place(&body, (w, h), 0.0, theme, kit);
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
         p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
         match backdrop {
-            Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), world),
+            Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), 1.0),
             // Made at the output's own scale, or at its last one while the
             // new size decodes.
-            Some(b) if world > 0.0 => p.shape(full, Paint::Picture { image: b.clone(), alpha: world, radius: 0.0 }),
-            Some(_) => {}
-            None => {
-                let bg = theme.colors.get("background");
-                p.rect(full, bg.with_alpha(bg.a * world), 0.0);
-            }
+            Some(b) => p.shape(full, Paint::Picture { image: b.clone(), alpha: 1.0, radius: 0.0 }),
+            None => p.rect(full, theme.colors.get("background"), 0.0),
         }
-        paint_grid(&mut p, theme, (w, h), world);
-        if let Some(s) = boot {
-            let (cx, cy) = (f64::from(w) / 2.0, f64::from(h) / 2.0);
-            let e = s.greet.settle;
-            let frame = crate::surfaces::boot::Frame {
-                t: s.t,
-                out: s.out,
-                at: (cx, cy + (perch.1 - cy) * e),
-                scale: 1.0 + (crate::boot::PERCH - 1.0) * e,
-                black: 0.0,
-                lines: s.greet.lines,
-                emblem: 1.0,
-            };
-            crate::surfaces::boot::paint(&mut p, theme, (w, h), s.lines, s.plan, s.emblem, &frame);
-        }
-        if alpha > 0.0 {
-            paint(&mut p, card, theme, alpha);
-            c.paint_clock(&mut p, &clock, inner, theme, kit, alpha);
-        }
+        paint_grid(&mut p, theme, (w, h), 1.0);
+        paint(&mut p, card, theme, 1.0);
+        c.paint_clock(&mut p, &clock, inner, theme, kit, 1.0);
         let last = p.last();
         p.finish();
         self.ui.anchor = last;
-        if alpha <= 0.0 {
-            self.ui.hide(&mut self.scene);
-            return false;
-        }
-        self.ui.draw(&body, inner, None, alpha, theme, kit, &mut self.scene, now).animating
+        self.ui.draw(&body, inner, None, 1.0, theme, kit, &mut self.scene, now).animating
     }
-}
-
-/// The boot behind the greeter's card, one frame of it.
-pub struct Stage<'a> {
-    pub plan: &'a crate::boot::Plan,
-    pub lines: &'a [(f64, f64, f64, f64)],
-    pub emblem: &'a crate::surfaces::boot::Emblem,
-    /// ms into the way in, held once the emblem starts up.
-    pub t: f64,
-    /// ms into the crumple, once the session is on its way.
-    pub out: Option<f64>,
-    pub greet: crate::boot::Greet,
 }
 
 /// How far the clock's ink rises past its line box, and the slot that

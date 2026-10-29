@@ -107,21 +107,6 @@ impl Panel for Center {
         String::new()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "History".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let (pending, seen) = sections(v);
-        let n = pending.iter().chain(&seen).map(|g| g.count).sum::<usize>();
-        let dnd = if v.store.notifications.model.dnd { ", do not disturb" } else { "" };
-        super::count(n, "notification", "notifications") + dnd
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Primary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Notifications]
     }

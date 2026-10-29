@@ -18,7 +18,7 @@ use crate::tokens::{self, Easing, Motion};
 /// carries one paint per answer `bar.style` and its wallpaper reading give,
 /// the frame the same (its band is a stretch of the ring once
 /// `frame.thickness` is set), and an open cell on a band fills.
-pub const ROLES: [(&str, &[&str]); 47] = [
+pub const ROLES: [(&str, &[&str]); 35] = [
     ("bar", BAND_PAINTS),
     ("frame", BAND_PAINTS),
     ("card", &["rest", "opaque"]),
@@ -42,23 +42,11 @@ pub const ROLES: [(&str, &[&str]); 47] = [
     ("trough", &[]),
     ("segmented.chip", &[]),
     ("cursor", &[]),
-    ("cursor.bar", &[]),
-    ("cursor.brackets", &[]),
     ("hero", &[]),
-    ("hero.tab", &[]),
-    ("button.default.cap", &[]),
-    ("panel.title", &[]),
-    ("panel.subtitle", &[]),
-    ("panel.strip", &[]),
-    ("panel.status", &[]),
-    ("panel.tag", &[]),
     ("bar.cell", &[]),
-    ("launcher.letter", &[]),
-    ("lock.clock", &[]),
     ("backdrop.grid", &[]),
     ("backdrop.shards", &[]),
     ("backdrop.mark", &[]),
-    ("boot", &[]),
     ("scrim", &[]),
     ("separator", &[]),
     ("keycap", &[]),
@@ -70,18 +58,17 @@ pub const ROLES: [(&str, &[&str]); 47] = [
 
 /// The habits and each one's allowed values: what a surface reads instead
 /// of testing a theme name. `frame` is a bool, the rest are strings.
-pub const HABIT_KEYS: [&str; 8] = ["bar", "emerge", "notification", "frame", "paint", "panel", "grid", "boot"];
+pub const HABIT_KEYS: [&str; 7] = ["bar", "emerge", "notification", "frame", "paint", "panel", "grid"];
 
 pub fn habit_allows(key: &str, value: &Value) -> Option<bool> {
     let strings: &[&str] = match key {
         "bar" => &["strip", "wingpanel"],
-        "emerge" => &["join", "popover", "slide"],
+        "emerge" => &["join", "popover"],
         "notification" => &["row", "bubble"],
         "frame" => return Some(value.is_boolean()),
         "paint" => &["auto", "transparent", "light", "dark", "translucentLight", "translucentDark", "maximized"],
-        "panel" => &["sheet", "console"],
-        "grid" => &["square", "hex"],
-        "boot" => &["none", "cartridge"],
+        "panel" => &["sheet"],
+        "grid" => &["square"],
         _ => return None,
     };
     Some(value.as_str().is_some_and(|s| strings.contains(&s)))
@@ -228,17 +215,6 @@ pub fn radius_for(value: Option<&Value>, ctx: &impl Ctx) -> Radius {
     }
 }
 
-/// One number for every corner or four clockwise from the top left;
-/// anything else, or a negative cut, is no cut.
-pub fn chamfer_for(value: Option<&Value>) -> [f64; 4] {
-    let cut = |v: &Value| v.as_f64().filter(|c| c.is_finite() && *c > 0.0).unwrap_or(0.0);
-    match value {
-        Some(v @ Value::Number(_)) => [cut(v); 4],
-        Some(Value::Array(list)) if list.len() == 4 => [cut(&list[0]), cut(&list[1]), cut(&list[2]), cut(&list[3])],
-        _ => [0.0; 4],
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayerKind {
     Cast,
@@ -357,25 +333,6 @@ pub struct Cast<C> {
     pub color: C,
 }
 
-/// A solid block along a box's leading edge, `width` across.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Bar<C> {
-    pub width: f64,
-    pub color: C,
-}
-
-/// The box's own outline held `gap` outside it, drawn only where it lies
-/// within `sweep` degrees of straight up or straight down from the centre
-/// (measured with the box squared up), under the role's casts as a glow
-/// along the line.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Brackets<C> {
-    pub gap: f64,
-    pub sweep: f64,
-    pub line: Line<C>,
-    pub glow: Vec<Cast<C>>,
-}
-
 /// A whole box, drawable. Every field is always present so a renderer
 /// never guards for an absent one; transparent ink means the material says
 /// nothing about the ink.
@@ -393,19 +350,6 @@ pub struct BoxStyle<C> {
     pub rings: Vec<Ring<C>>,
     pub inset_rings: Vec<Ring<C>>,
     pub casts: Vec<Cast<C>>,
-    /// The cut taken off each corner, clockwise from the top left. Any
-    /// cut above 0 draws the box as that polygon and ignores `radius`.
-    pub chamfer: [f64; 4],
-    pub bar: Option<Bar<C>>,
-    pub brackets: Option<Brackets<C>>,
-    /// Drawn as the pointy-topped hexagon its rect holds, not the rect.
-    pub hex: bool,
-}
-
-impl<C> BoxStyle<C> {
-    pub fn chamfered(&self) -> bool {
-        self.chamfer.iter().any(|c| *c > 0.0)
-    }
 }
 
 impl<C: Clone> BoxStyle<C> {
@@ -423,10 +367,6 @@ impl<C: Clone> BoxStyle<C> {
             rings: Vec::new(),
             inset_rings: Vec::new(),
             casts: Vec::new(),
-            chamfer: [0.0; 4],
-            bar: None,
-            brackets: None,
-            hex: false,
         }
     }
 }
@@ -458,7 +398,6 @@ pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) 
         out.fill = ctx.tint(&out.fill, &paint(color, alpha, ctx));
     }
     out.radius = radius_for(raw.get("radius"), ctx);
-    out.chamfer = chamfer_for(raw.get("chamfer"));
     out.border = line(raw.get("border"), ctx);
     if let Some(face) = raw.get("face").filter(|f| truthy(Some(f))) {
         let (fc, fa) = pair(face.get("from"));
@@ -562,113 +501,6 @@ pub fn stops(raw: &[Value]) -> Option<Vec<(f64, f64)>> {
     (stops.len() >= 2 && climbs && spans).then_some(stops)
 }
 
-/// The effect names a table's `motion` may carry past its clocks, each
-/// optional, absent meaning the effect never runs on that table.
-pub const EFFECT_KEYS: [&str; 8] = ["focusText", "reveal", "swap", "use", "error", "picture", "noise", "progress"];
-
-/// `reveal: "type"`: characters typing in on `steps(20)` over 0.6s.
-pub const TYPE_MS: f64 = 600.0;
-pub const TYPE_STEPS: usize = 20;
-/// `swap: "glitch"`: the old content jumps `GLITCH_BACK` px back and out in
-/// two steps over `GLITCH_OUT_MS`, the new one comes in from `GLITCH_AHEAD`
-/// px ahead over `GLITCH_IN_MS` on the `arrive` curve, opaque by 30% of it.
-pub const GLITCH_OUT_MS: f64 = 180.0;
-pub const GLITCH_IN_MS: f64 = 500.0;
-pub const GLITCH_BACK: f64 = 10.0;
-pub const GLITCH_AHEAD: f64 = 20.0;
-/// `error: "shake"`: the label's weight, width and tracking jitter.
-pub const SHAKE_MS: f64 = 500.0;
-/// `picture: "zoom"`: a picture landing from 20 times its size in steps.
-pub const ZOOM_MS: f64 = 500.0;
-/// `progress: "blocks"`: cells in a block readout.
-pub const BLOCK_CELLS: usize = 10;
-
-/// `focusText`: the axes a focused label goes to, on its own clock.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FocusText {
-    pub clock: Clock,
-    pub wdth: f64,
-    pub wght: f64,
-    /// Extra advance in ems.
-    pub tracking: f64,
-}
-
-/// Rows rising in on open: `arrive.rise` px, `arrive.stagger` ms apart, on
-/// the `emerge` clock the card opens on.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Rows {
-    pub clock: Clock,
-    pub rise: f64,
-    pub stagger: f64,
-}
-
-/// `use`: a ghost of the activated row scaling to `scale` as it fades.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Use {
-    pub clock: Clock,
-    pub scale: (f64, f64),
-}
-
-/// `noise`: a grain layer over a fresh card, fading from `alpha` to none.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Noise {
-    pub clock: Clock,
-    pub alpha: f64,
-}
-
-/// `swap: "glitch"`: its two halves, the way in on the `arrive` curve.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Glitch {
-    pub out: f64,
-    pub into: f64,
-    pub curve: Easing,
-}
-
-/// What `motion` names past its clocks (C5), durations unscaled.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Catalogue {
-    pub focus_text: Option<FocusText>,
-    /// `reveal: "type"`'s duration.
-    pub reveal: Option<f64>,
-    pub rows: Option<Rows>,
-    pub swap: Option<Glitch>,
-    pub use_: Option<Use>,
-    /// `error: "shake"`'s duration.
-    pub error: Option<f64>,
-    /// `picture: "zoom"`'s duration.
-    pub picture: Option<f64>,
-    pub noise: Option<Noise>,
-    /// `progress: "blocks"`'s cell count.
-    pub progress: Option<usize>,
-}
-
-pub fn catalogue(style: &Value, m: &Motion) -> Catalogue {
-    let raw = |key: &str| style.get("motion").and_then(|mo| mo.get(key)).filter(|v| truthy(Some(v)));
-    let named = |key: &str, name: &str| raw(key).and_then(Value::as_str) == Some(name);
-    let arrive = raw("arrive");
-    let rise = num(arrive.and_then(|a| a.get("rise"))).filter(|r| *r > 0.0);
-    Catalogue {
-        focus_text: raw("focusText").map(|f| FocusText {
-            clock: motion(style, "focusText", m),
-            wdth: num(f.get("wdth")).unwrap_or(100.0),
-            wght: num(f.get("wght")).unwrap_or(400.0),
-            tracking: num_or_zero(f.get("tracking")),
-        }),
-        reveal: named("reveal", "type").then_some(TYPE_MS),
-        rows: rise.map(|rise| Rows { clock: motion(style, "emerge", m), rise, stagger: num_or_zero(arrive.and_then(|a| a.get("stagger"))) }),
-        swap: named("swap", "glitch").then(|| Glitch { out: GLITCH_OUT_MS, into: GLITCH_IN_MS, curve: motion(style, "arrive", m).curve }),
-        use_: raw("use").map(|u| {
-            let scale = u.get("scale").and_then(Value::as_array);
-            let at = |i: usize| scale.and_then(|s| s.get(i)).and_then(Value::as_f64).unwrap_or(1.0);
-            Use { clock: motion(style, "use", m), scale: (at(0), at(1)) }
-        }),
-        error: named("error", "shake").then_some(SHAKE_MS),
-        picture: named("picture", "zoom").then_some(ZOOM_MS),
-        noise: raw("noise").map(|n| Noise { clock: motion(style, "noise", m), alpha: num_or_zero(n.get("alpha")) }),
-        progress: named("progress", "blocks").then_some(BLOCK_CELLS),
-    }
-}
-
 /// One of the table's pointer washes, transparent for an unknown key.
 pub fn wash<C: Ctx>(style: &Value, key: &str, ctx: &C) -> C::Color {
     match style.get("wash").and_then(|w| w.get(key)).filter(|e| truthy(Some(e))) {
@@ -678,38 +510,21 @@ pub fn wash<C: Ctx>(style: &Value, key: &str, ctx: &C) -> C::Color {
 }
 
 /// The keyboard cursor composed over a box: its border in place of the
-/// box's, and its halo and leading bar only when `halo` asks, since a list
-/// draws one travelling halo and bar for every row it owns.
-pub fn with_cursor<C: Clone>(b: &BoxStyle<C>, cursor: &BoxStyle<C>, bar: Option<&Bar<C>>, halo: bool) -> BoxStyle<C> {
+/// box's, and its halo only when `halo` asks, since a list draws one
+/// travelling halo for every row it owns.
+pub fn with_cursor<C: Clone>(b: &BoxStyle<C>, cursor: &BoxStyle<C>, halo: bool) -> BoxStyle<C> {
     let mut out = b.clone();
     if cursor.border.is_some() {
         out.border = cursor.border.clone();
     }
     if halo {
         out.rings.extend(cursor.rings.iter().cloned());
-        out.bar = bar.cloned();
     }
     out
 }
 
-/// The `cursor.bar` role: none while it is under a pixel wide.
-pub fn cursor_bar<C: Ctx>(style: &Value, ctx: &C) -> Option<Bar<C::Color>> {
-    let raw = entry(style, "cursor.bar", None)?;
-    let width = num(raw.get("width")).filter(|w| w.is_finite() && *w >= 1.0)?;
-    Some(Bar { width, color: paint(raw.get("fill"), raw.get("fillAlpha"), ctx) })
-}
-
-/// The `cursor.brackets` role, a grid cell's cursor: none without a line
-/// to draw them in.
-pub fn cursor_brackets<C: Ctx>(style: &Value, ctx: &C) -> Option<Brackets<C::Color>> {
-    let raw = entry(style, "cursor.brackets", None)?;
-    let line = line(raw.get("border"), ctx).filter(|l| l.width > 0.0)?;
-    let sweep = num(raw.get("sweep")).filter(|s| s.is_finite() && *s > 0.0)?.min(180.0);
-    Some(Brackets { gap: num_or_zero(raw.get("gap")), sweep, line, glow: Vec::new() })
-}
-
-/// A number a role carries beside its box (`hero.tab`'s height, the
-/// cap's width), 0 when the table gives none.
+/// A number a role carries beside its box (the backdrop grid's pitch),
+/// 0 when the table gives none.
 pub fn metric(style: &Value, role: &str, key: &str) -> f64 {
     entry(style, role, None).and_then(|e| num(e.get(key))).filter(|n| n.is_finite()).unwrap_or(0.0)
 }
@@ -957,13 +772,8 @@ pub(crate) mod tests {
         Names { mode }
     }
 
-    fn tables() -> [(&'static str, &'static Value); 4] {
-        [
-            ("metamorphosis", tables::metamorphosis()),
-            ("retro", tables::retro()),
-            ("pantheon", tables::pantheon()),
-            ("cartridge", tables::cartridge()),
-        ]
+    fn tables() -> [(&'static str, &'static Value); 3] {
+        [("metamorphosis", tables::metamorphosis()), ("retro", tables::retro()), ("pantheon", tables::pantheon())]
     }
 
     const BLACK: &str = "#000000";
@@ -1092,41 +902,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_catalogue_is_the_cartridge_tables_alone() {
-        let m = tokens::motion_tokens(true);
-        for (name, style) in tables() {
-            let c = catalogue(style, &m);
-            if name != "cartridge" {
-                assert_eq!(c, Catalogue::default(), "{name} takes an effect");
-                continue;
-            }
-            let f = c.focus_text.expect("focusText");
-            assert_eq!((f.clock.duration, f.wdth, f.wght, f.tracking), (200.0, 125.0, 700.0, 0.04));
-            assert_eq!(c.reveal, Some(TYPE_MS));
-            let rows = c.rows.expect("rows");
-            assert_eq!((rows.rise, rows.stagger, rows.clock.duration), (40.0, 60.0, 900.0));
-            assert_eq!(c.swap.map(|g| (g.out, g.into)), Some((GLITCH_OUT_MS, GLITCH_IN_MS)));
-            let u = c.use_.expect("use");
-            assert_eq!((u.clock.duration, u.scale), (400.0, (1.1, 1.3)));
-            assert_eq!((c.error, c.picture, c.progress), (Some(SHAKE_MS), Some(ZOOM_MS), Some(BLOCK_CELLS)));
-            assert_eq!(c.noise.map(|n| n.clock.duration), Some(1000.0));
-        }
-        let unknown = json!({ "motion": { "reveal": "fade", "swap": "slide", "error": "flash" } });
-        assert_eq!(catalogue(&unknown, &m), Catalogue::default());
-    }
-
-    #[test]
-    fn every_fonts_block_names_known_roles_by_family() {
-        for (name, style) in tables() {
-            let Some(fonts) = style.get("fonts") else { continue };
-            for (key, family) in fonts.as_object().unwrap_or_else(|| panic!("{name}'s fonts is not an object")) {
-                assert!(["words", "values", "display", "body"].contains(&key.as_str()), "{name} names the font role {key}");
-                assert!(family.as_str().is_some_and(|f| !f.is_empty()), "{name} fonts.{key} is {family}");
-            }
-        }
-    }
-
-    #[test]
     fn the_paint_policy_is_the_tables() {
         assert_eq!(tables::pantheon()["habits"]["paint"], "transparent");
         assert_eq!(tables::metamorphosis()["habits"]["paint"], "auto");
@@ -1150,22 +925,6 @@ pub(crate) mod tests {
                 assert!(w.unwrap()["color"].is_string());
             }
         }
-    }
-
-    #[test]
-    fn a_tables_sounds_map_known_events_to_known_sounds() {
-        use fs_audio::sfx::Sound;
-        for (name, style) in tables() {
-            let Some(sounds) = style.get("sounds") else { continue };
-            let sounds = sounds.as_object().expect("sounds is an object");
-            for (event, sound) in sounds {
-                assert!(Sound::from_name(event).is_some(), "{name} maps an unknown event {event}");
-                assert!(sound.as_str().and_then(Sound::from_name).is_some(), "{name} maps {event} to an unknown sound {sound}");
-            }
-        }
-        assert_eq!(tables::cartridge()["sounds"].as_object().map(|s| s.len()), Some(9));
-        assert!(tables::metamorphosis().get("sounds").is_none());
-        assert!(tables::pantheon().get("sounds").is_none());
     }
 
     #[test]
@@ -1223,14 +982,14 @@ pub(crate) mod tests {
         let ghost = r(style, "button.ghost", Some("rest"), "dark");
         let cursor = r(style, "cursor", None, "dark");
 
-        let haloed = with_cursor(&ghost, &cursor, None, true);
+        let haloed = with_cursor(&ghost, &cursor, true);
         assert_eq!(haloed.fill, ghost.fill);
         assert_eq!(haloed.radius, ghost.radius);
         assert_eq!(haloed.border.as_ref().unwrap().color, "role:ring");
         assert_eq!(haloed.rings.len(), 1);
         assert_eq!(haloed.rings[0].spread, 3.0);
 
-        let bordered = with_cursor(&ghost, &cursor, None, false);
+        let bordered = with_cursor(&ghost, &cursor, false);
         assert_eq!(bordered.border.as_ref().unwrap().color, "role:ring");
         assert_eq!(bordered.rings.len(), 0);
 
@@ -1266,7 +1025,6 @@ pub(crate) mod tests {
         assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("metamorphosis")), get).style, tables::metamorphosis()));
         assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("retro")), get).style, tables::retro()));
         assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("pantheon")), get).style, tables::pantheon()));
-        assert!(std::ptr::eq(crate::presets::resolve(Some(&json!("cartridge")), get).style, tables::cartridge()));
         assert!(std::ptr::eq(crate::presets::defaults(Some(&json!("metamorphosis"))).style, tables::metamorphosis()));
     }
 
@@ -1719,112 +1477,6 @@ pub(crate) mod tests {
         assert_eq!(focused["shadow"]["offset"][1], 6);
         assert_eq!(focused["shadow"]["alpha"], 0.35);
         assert_eq!(entry(tables::pantheon(), "window", Some("inactive")).unwrap()["shadow"]["alpha"], 0.25);
-    }
-
-    // --- Cartridge, and the roles it brought
-
-    #[test]
-    fn the_other_tables_draw_none_of_the_cartridge_roles() {
-        for (name, style) in [("metamorphosis", tables::metamorphosis()), ("pantheon", tables::pantheon())] {
-            assert_eq!(cursor_bar(style, &ctx("dark")), None, "{name} draws a cursor bar");
-            assert_eq!(cursor_brackets(style, &ctx("dark")), None, "{name} draws brackets");
-            assert_eq!(metric(style, "hero.tab", "height"), 0.0, "{name} draws a hero tab");
-            assert_eq!(metric(style, "button.default.cap", "width"), 0.0, "{name} caps its button");
-            assert_eq!(metric(style, "panel.strip", "width"), 0.0, "{name} draws an id strip");
-            for role in role_names() {
-                for state in states_for(role).iter().copied().map(Some).chain([None]) {
-                    assert_eq!(r(style, role, state, "dark").chamfer, [0.0; 4], "{name} chamfers {role}");
-                }
-            }
-            let habits = &style["habits"];
-            assert_eq!((&habits["panel"], &habits["grid"], &habits["boot"]), (&json!("sheet"), &json!("square"), &json!("none")));
-            let hero = r(style, "hero", None, "dark");
-            assert_eq!((hero.fill, hero.border), (CLEAR.to_owned(), None));
-        }
-    }
-
-    #[test]
-    fn the_cartridge_cursor_is_a_bar_and_brackets() {
-        let c = tables::cartridge();
-        assert_eq!(cursor_bar(c, &ctx("dark")), Some(Bar { width: 6.0, color: "role:primary".to_owned() }));
-        let brackets = cursor_brackets(c, &ctx("dark")).unwrap();
-        assert_eq!(brackets.line, Line { color: "role:primary".to_owned(), width: 2.0 });
-        assert_eq!((brackets.gap, brackets.sweep), (6.0, 120.0));
-        let cursor = r(c, "cursor", None, "dark");
-        assert_eq!((cursor.border.is_none(), cursor.rings.len()), (true, 0));
-
-        let row = r(c, "cell", Some("ghost"), "dark");
-        let bar = cursor_bar(c, &ctx("dark"));
-        assert_eq!(with_cursor(&row, &cursor, bar.as_ref(), true).bar, bar);
-        assert_eq!(with_cursor(&row, &cursor, bar.as_ref(), false).bar, None);
-    }
-
-    #[test]
-    fn the_cartridge_frames_cut_one_corner() {
-        let c = tables::cartridge();
-        assert_eq!(r(c, "card", None, "dark").chamfer, [0.0, 0.0, 18.0, 0.0]);
-        assert_eq!(r(c, "card", Some("opaque"), "dark").chamfer, [0.0, 0.0, 18.0, 0.0]);
-        let hero = r(c, "hero", None, "dark");
-        assert_eq!(hero.chamfer, [0.0, 0.0, 22.0, 0.0]);
-        assert_eq!(hero.border.unwrap().color, "role:primary");
-        assert_eq!(r(c, "notification", Some("flat"), "dark").chamfer, [0.0; 4]);
-        assert_eq!(metric(c, "hero.tab", "height"), 22.0);
-        assert_eq!(metric(c, "button.default.cap", "width"), 34.0);
-        assert_eq!(r(c, "button.default.cap", None, "dark").ink, "role:primaryForeground");
-    }
-
-    #[test]
-    fn the_cartridge_console_reads_its_accent() {
-        let c = tables::cartridge();
-        assert_eq!(metric(c, "panel.strip", "width"), 26.0);
-        assert_eq!(r(c, "panel.strip", None, "dark").border.unwrap().color, "role:primary@0.55");
-        let sub = r(c, "panel.subtitle", None, "dark");
-        assert_eq!((sub.ink.as_str(), sub.ink_shadow.len()), ("role:primary", 1));
-        assert_eq!(r(c, "panel.status", None, "dark").radius, Radius::Pill);
-        assert_eq!(metric(c, "panel.tag", "trail"), 26.0);
-    }
-
-    #[test]
-    fn a_chamfer_is_one_cut_or_four() {
-        assert_eq!(chamfer_for(Some(&json!(8))), [8.0; 4]);
-        assert_eq!(chamfer_for(Some(&json!([0, 2, 3, 4]))), [0.0, 2.0, 3.0, 4.0]);
-        assert_eq!(chamfer_for(Some(&json!([1, 2, 3]))), [0.0; 4]);
-        assert_eq!(chamfer_for(Some(&json!(-4))), [0.0; 4]);
-        assert_eq!(chamfer_for(Some(&json!("big"))), [0.0; 4]);
-        assert_eq!(chamfer_for(None), [0.0; 4]);
-    }
-
-    #[test]
-    fn cartridge_declares_its_own_habits() {
-        let habits = &tables::cartridge()["habits"];
-        assert_eq!(habits["emerge"], "slide");
-        assert_eq!(habits["panel"], "console");
-        assert_eq!(habits["grid"], "hex");
-        assert_eq!(habits["boot"], "cartridge");
-        assert_eq!(habits["bar"], "strip");
-        // tsubi's chips float over the backdrop: no ring, no band.
-        assert_eq!(habits["frame"], false);
-        assert_eq!(habits["paint"], "transparent");
-    }
-
-    #[test]
-    fn cartridge_names_its_four_families() {
-        let fonts = &tables::cartridge()["fonts"];
-        assert_eq!(fonts["words"], "Archivo");
-        assert_eq!(fonts["values"], "DotGothic16");
-        assert_eq!(fonts["display"], "Archivo");
-        assert_eq!(fonts["body"], "BIZ UDMincho");
-    }
-
-    #[test]
-    fn the_cartridge_spring_overshoots_and_settles() {
-        let families = tokens::motion_tokens(true);
-        let clock = motion(tables::cartridge(), "restack", &families);
-        let Easing::Stops(stops) = clock.curve else { panic!("restack is not a stop list") };
-        let peak = stops.iter().map(|s| s.1).fold(0.0, f64::max);
-        assert!((1.4..1.45).contains(&peak), "peaks at {peak}");
-        assert_eq!(stops.last(), Some(&(1.0, 1.0)));
-        assert_eq!(clock.duration, 1200.0);
     }
 
     #[test]

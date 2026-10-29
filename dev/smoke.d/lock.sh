@@ -10,10 +10,6 @@
 # ordinary client. wtype is a real virtual-keyboard-unstable-v1 client;
 # LockIpc deliberately has no "type this password" verb (see its header), so
 # the only way to prove the unlock path is to actually type into it.
-#
-# Under --cartridge the unlock has its short form: the seconds after the real
-# password is a burst of frames instead (`lock-outro-<n>.png`, read as one
-# sheet), and the shell has to log the way out, the lift and its end.
 leg_lock_flag="--lock"
 leg_lock_order=110
 leg_lock_needs="wtype convert"
@@ -47,11 +43,8 @@ leg_lock_timing() {
 }
 
 leg_lock_drive() {
-  local t0 script="$shot_dir/lock-drive.sh" after="sleep 3"
+  local t0 script="$shot_dir/lock-drive.sh"
   t0=$(lock_t0)
-  if leg_on cartridge; then
-    after="for i in \$(seq -w 0 35); do \"$grim_bin\" \"$shot_dir/lock-outro-\$i.png\" > /dev/null 2>&1; sleep 0.05; done"
-  fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep $t0
@@ -77,7 +70,7 @@ sleep 5
 "$grim_bin" "$lock_error_path" > /dev/null 2>&1
 sleep 2
 "$wtype_bin" -s 300 "formalshell-test" -k Return
-$after
+sleep 3
 "$grim_bin" "$lock_unlocked_path" > /dev/null 2>&1
 sleep 1
 $ipc call lock isLocked > "$lock_islocked2_path" 2>&1
@@ -129,19 +122,5 @@ leg_lock_assert() {
   # times while every IPC answer stayed perfectly plausible.
   if cmp -s "$lock_locked_path" "$lock_unlocked_path"; then
     fail "lock-locked and lock-unlocked screenshots are byte-identical: the lock surface never mapped"
-  fi
-  if leg_on cartridge; then
-    local line rows=() i n=0 frames=()
-    for line in "unlock leaving" "unlock lifting" "unlock done"; do
-      grep -q "$line" "$shell_log_path" || fail "the cartridge unlock never logged '$line'"
-    done
-    grep "unlock " "$shell_log_path"
-    mapfile -t frames < <(find "$shot_dir" -maxdepth 1 -name 'lock-outro-*.png' | sort)
-    for ((i = 0; i < ${#frames[@]}; i += 6)); do
-      $convert_bin "${frames[@]:i:6}" -resize 320x +append "$shot_dir/lock-outro-row$n.png" 2>/dev/null && rows+=("$shot_dir/lock-outro-row$n.png")
-      n=$((n + 1))
-    done
-    [ "${#rows[@]}" -gt 0 ] && $convert_bin "${rows[@]}" -append "$shot_dir/lock-outro-sheet.png" 2>/dev/null \
-      && echo "SMOKE_LOCK_OUTRO $shot_dir/lock-outro-sheet.png"
   fi
 }

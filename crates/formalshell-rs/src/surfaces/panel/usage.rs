@@ -78,18 +78,6 @@ impl Panel for Usage {
         "gauge".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Limits".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        peak(&v.store.info.usage).map_or_else(|| "no data".into(), |r| r.label.to_lowercase())
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -119,7 +107,6 @@ impl Panel for Usage {
                 trailing: None,
                 rail: top.map(|r| r.percent),
                 rail_on: None,
-                tab: "now".into(),
             },
         )];
 

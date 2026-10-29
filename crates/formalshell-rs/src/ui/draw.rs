@@ -75,68 +75,6 @@ fn elided_in(cx: &mut Cx, s: &str, st: TextStyle, max: f64) -> ShapedText {
     cx.kit.shape(&t, st)
 }
 
-/// A word label's style part way to the table's focused axes, quantised so
-/// a 200ms widen shapes a handful of styles rather than one a frame.
-fn focused(cx: &Cx, font: &Font) -> TextStyle {
-    let st = style(cx, font);
-    if cx.focus <= 0.0 || font.mono {
-        return st;
-    }
-    let Some(f) = cx.theme.motion().catalogue.focus_text else { return st };
-    let k = f64::from(cx.focus);
-    let wdth = (100.0 + (f.wdth - 100.0) * k).round() as f32;
-    let wght = ((f64::from(st.weight) + (f.wght - f64::from(st.weight)) * k) / 10.0).round() as f32 * 10.0;
-    let tracking = ((f64::from(st.size) * f.tracking * k) * 4.0).round() as f32 / 4.0;
-    TextStyle { wdth, wght: Some(wght), tracking, ..st }
-}
-
-fn token(s: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    s.hash(&mut h);
-    h.finish() | 1
-}
-
-/// A used row's ghost over its label: the same line in `primary`, scaled
-/// about its leading edge's middle as it fades.
-fn ghost(cx: &mut Cx, t: &ShapedText, at: (i32, i32), p: f64, path: &str) {
-    let Some(u) = cx.theme.motion().catalogue.use_ else { return };
-    let (sx, sy, a) = crate::effects::ghost(&u, p);
-    let ink = cx.theme.colors.get("primary");
-    let ink = cx.a(ink.with_alpha(ink.a * a));
-    let (w, h) = t.box_size();
-    let pivot = (f64::from(at.0), f64::from(at.1) + f64::from(t.line_height()) / 2.0);
-    let full = Affine::translate(pivot)
-        * Affine::scale_non_uniform(sx, sy)
-        * Affine::translate((-pivot.0, -pivot.1))
-        * Affine::translate((f64::from(at.0 - text::PAD), f64::from(at.1 - text::PAD)));
-    let bounds = Scene::cover(Rect::new(0.0, 0.0, f64::from(w), f64::from(h)), full, 1.0);
-    let transform = full * Affine::translate((-f64::from(bounds.x), -f64::from(bounds.y)));
-    let mut p = cx.painter(&format!("{path}.ghost"));
-    let clip = p.clip;
-    p.text_in(t, bounds, transform, clip, ink, &[]);
-    let last = p.last();
-    p.finish();
-    cx.done(last);
-}
-
-/// A stop's rise on open: how far under its place it sits and its opacity,
-/// none once it has landed or on a table whose rows do not rise.
-fn rise(cx: &mut Cx, el: &El) -> Option<(f64, f32)> {
-    if !el.stop {
-        return None;
-    }
-    let at = cx.arrive()?;
-    let rows = cx.theme.motion().catalogue.rows?;
-    let elapsed = crate::motion::since(at, cx.now) / cx.motion_scale.max(1e-6);
-    let index = cx.stops_len();
-    if crate::effects::rising(&rows, elapsed, index + 1) {
-        cx.animate();
-    }
-    let (dy, a) = crate::effects::rise(&rows, elapsed, index);
-    (dy > 0.0 || a < 1.0).then_some((dy, a))
-}
-
 /// `text` broken on spaces to lines no wider than `max`, newlines kept, the
 /// last line that fits `lines` ending in an ellipsis when words are left.
 fn wrapped(cx: &mut Cx, text: &str, font: &Font, max: f64, lines: usize) -> Vec<ShapedText> {
@@ -298,11 +236,6 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             (inner, h)
         }
         Kind::Space { along } => (*along, *along),
-        Kind::Text { text, .. } if el.tag && console(cx) => {
-            let st = tag_style(cx);
-            let t = cx.kit.shape(&text.to_uppercase(), st);
-            (t.width as f64 + TAG_LEAD + cx.theme.metric("panel.tag", "trail"), t.line_height() as f64)
-        }
         Kind::Text { text, font, elide, .. } => {
             let t = shape(cx, text, font);
             let mut w = t.width as f64;
@@ -333,7 +266,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
         Kind::Cell { state, child, .. } => {
             let content_avail = (inner - s.control_padding_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            (cw + s.control_padding_x * 2.0, across(cx, state.chip, ch) + tab_height(cx, el, *state))
+            (cw + s.control_padding_x * 2.0, across(cx, state.chip, ch))
         }
         Kind::Button { text, icon, square, .. } => {
             if *square {
@@ -510,16 +443,11 @@ pub fn paint(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
 
 fn paint_node(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     let pulse = el.pulse && cx.theme.motion_enabled;
-    let rise = rise(cx, el);
-    if !pulse && rise.is_none() && el.swap.is_none() && el.badge.is_none() && el.fade.is_none() {
+    if !pulse && el.swap.is_none() && el.badge.is_none() && el.fade.is_none() {
         return paint_body(cx, el, rect, path);
     }
     let saved = cx.alpha;
     let mut rect = rect;
-    if let Some((dy, a)) = rise {
-        cx.alpha *= a;
-        rect = Rect::new(rect.x0, rect.y0 + dy, rect.x1, rect.y1 + dy);
-    }
     if let Some(f) = el.fade {
         cx.alpha *= f.clamp(0.0, 1.0);
     }
@@ -621,37 +549,19 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             }
         }
         Kind::Space { .. } => {}
-        Kind::Text { text, .. } if el.tag && console(cx) => tag(cx, inner, text, path),
         Kind::Text { text, font, ink, elide } => {
-            let st = focused(cx, font);
-            let shown = match cx.theme.motion().catalogue.reveal.filter(|_| el.typed) {
-                Some(ms) => {
-                    let at = cx.changed(&format!("{path}.typed"), token(text));
-                    let p = cx.effect(at, ms);
-                    crate::effects::prefix(text, crate::effects::typed(text.chars().count(), p))
-                }
-                None => text.as_str(),
-            };
-            let t = if *elide { elided_in(cx, shown, st, inner.width()) } else { cx.kit.shape(shown, st) };
-            // A line typing in is placed by its whole width, so it never reflows.
-            let whole = if shown.len() < text.len() { cx.kit.shape(text, st).width.min(inner.width() as i32) } else { t.width };
+            let st = style(cx, font);
+            let t = if *elide { elided_in(cx, text, st, inner.width()) } else { cx.kit.shape(text, st) };
             let color = resolve(cx, *ink);
             let color = cx.color(&format!("{path}.ink"), color);
             let color = cx.a(color);
             let y = (inner.y0 + (inner.height() - t.line_height() as f64) / 2.0).round() as i32;
-            let x = if el.mid { inner.x0 + (inner.width() - whole as f64) / 2.0 } else { inner.x0 };
+            let x = if el.mid { inner.x0 + (inner.width() - t.width as f64) / 2.0 } else { inner.x0 };
             let mut p = cx.painter(path);
             p.text(&t, (x.round() as i32, y), color, &[]);
             let last = p.last();
             p.finish();
             cx.done(last);
-            // Only the cell's own label widens, never a trailing word.
-            if !font.mono {
-                cx.focus = 0.0;
-            }
-            if let Some(g) = cx.ghost.take() {
-                ghost(cx, &t, (x.round() as i32, y), g, path);
-            }
         }
         Kind::Para { text, font, ink, lines } => {
             let ls = wrapped(cx, text, font, inner.width(), *lines);
@@ -672,15 +582,9 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         Kind::Picture { pic, .. } => {
             let alpha = cx.alpha;
             let r = irect(inner);
-            let landing = if el.lands { landing(cx, pic, path) } else { None };
             let mut p = cx.painter(path);
-            match &pic.0 {
-                Some(image) if el.hex && landing.is_none() => {
-                    let (w, h) = image.size();
-                    p.shape(IRect::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h), Paint::Cut { image: image.clone(), alpha, cut: crate::scene::Cut::Hex });
-                }
-                Some(image) => land(&mut p, image, r, alpha, landing),
-                None => {}
+            if let Some(image) = &pic.0 {
+                centred(&mut p, image, r, alpha);
             }
             let last = p.last();
             p.finish();
@@ -693,11 +597,10 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let (well, line) = (cx.a(t.colors.get("muted")), cx.a(t.colors.get("border")));
             let alpha = cx.alpha;
             let r = irect(inner);
-            let landing = landing(cx, pic, path);
             let mut p = cx.painter(path);
             p.framed(r, well, radius, Rgba::TRANSPARENT, 0.0);
             if let Some(image) = &pic.0 {
-                land(&mut p, image, r, alpha, landing);
+                centred(&mut p, image, r, alpha);
             }
             p.framed(r, Rgba::TRANSPARENT, radius, line, bw as f32);
             let last = p.last();
@@ -813,110 +716,10 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     }
 }
 
-/// Where a picture is in its landing (`picture: zoom`): none once it rests or
-/// on a table that does not zoom, `Some(None)` while it is not shown yet.
-fn landing(cx: &mut Cx, pic: &super::el::Pic, path: &str) -> Option<Option<(f64, f32, f32)>> {
-    let ms = cx.theme.motion().catalogue.picture?;
-    let image = pic.0.as_ref()?;
-    let at = cx.changed(&format!("{path}.zoom"), std::sync::Arc::as_ptr(&image.pixmap) as usize as u64);
-    let p = cx.effect(at, ms);
-    (p < 1.0).then(|| crate::effects::zoom(p))
-}
-
-/// A picture centred in `r`, or part way through its landing: stretched
-/// about the centre, cut to `r`, under black for the brightness it lacks.
-fn land(p: &mut crate::surfaces::bar::cell::Painter, image: &crate::scene::Bitmap, r: IRect, alpha: f32, landing: Option<Option<(f64, f32, f32)>>) {
+/// A picture centred in `r`.
+fn centred(p: &mut crate::surfaces::bar::cell::Painter, image: &crate::scene::Bitmap, r: IRect, alpha: f32) {
     let (w, h) = image.size();
-    match landing {
-        None => p.image(image, (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2), alpha),
-        Some(None) => {}
-        Some(Some((scale, bright, a))) => {
-            let (sw, sh) = ((f64::from(w) * scale).round() as i32, (f64::from(h) * scale).round() as i32);
-            let at = IRect::new(r.x + (r.w - sw) / 2, r.y + (r.h - sh) / 2, sw, sh);
-            p.shape_in(at, Paint::Picture { image: image.clone(), alpha: alpha * a, radius: 0.0 }, r);
-            p.rect(at.intersect(&r), Rgba { r: 0.0, g: 0.0, b: 0.0, a: (1.0 - bright) * alpha * a }, 0.0);
-        }
-    }
-}
-
-/// Whether the table's panels take the console grammar.
-fn console(cx: &Cx) -> bool {
-    cx.theme.habit_str("panel") == "console"
-}
-
-/// The room a field tag leaves ahead of its label.
-const TAG_LEAD: f64 = 4.0;
-
-/// A field tag's label: caps in the display face, at the axes `panel.tag` sets.
-fn tag_style(cx: &Cx) -> TextStyle {
-    let t = cx.theme;
-    let size = px(cx, Type::Caption);
-    let wght = t.metric("panel.tag", "wght") as f32;
-    let wdth = t.metric("panel.tag", "wdth") as f32;
-    TextStyle {
-        family: crate::surfaces::bar::cell::face(t.faces.display),
-        size,
-        weight: if wght > 0.0 { wght } else { weight(Weight::Semibold) },
-        tracking: (size * 0.08).round(),
-        wdth: if wdth > 0.0 { wdth } else { TextStyle::NORMAL_WIDTH },
-        wght: (wght > 0.0).then_some(wght),
-    }
-}
-
-/// A section label as a field tag: its caps on an accent bar that fades out
-/// over the tag's trail, in steps.
-fn tag(cx: &mut Cx, r: Rect, text: &str, path: &str) {
-    const STEPS: usize = 8;
-    let b = cx.theme.box_style("panel.tag", None);
-    let st = tag_style(cx);
-    let shaped = cx.kit.shape(&text.to_uppercase(), st);
-    let (fill, ink) = (cx.a(b.fill), cx.a(b.ink));
-    let ri = irect(r);
-    let along = shaped.width as f64 + TAG_LEAD + cx.theme.metric("panel.tag", "trail");
-    let (x0, w) = (ri.x, (along.ceil() as i32).min(ri.w).max(0));
-    let mut p = cx.painter(path);
-    for i in 0..STEPS {
-        let a = x0 + w * i as i32 / STEPS as i32;
-        let z = x0 + w * (i as i32 + 1) / STEPS as i32;
-        let fade = 1.0 - i as f32 / STEPS as f32;
-        p.rect(IRect::new(a, ri.y, z - a, ri.h), fill.with_alpha(fill.a * fade), 0.0);
-    }
-    let y = (r.y0 + (r.height() - shaped.line_height() as f64) / 2.0).round() as i32;
-    p.text(&shaped, ((r.x0 + TAG_LEAD).round() as i32, y), ink, &[]);
-    let last = p.last();
-    p.finish();
-    cx.done(last);
-}
-
-/// The height a hero's tab takes over its frame, 0 on a table with no tab.
-fn tab_height(cx: &Cx, el: &El, state: CellState) -> f64 {
-    if state.hero && el.tab.is_some() { cx.theme.metric("hero.tab", "height").max(0.0) } else { 0.0 }
-}
-
-/// The tab over a hero: its label in the values face on a block whose
-/// trailing side slants down to the frame.
-fn hero_tab(cx: &mut Cx, r: Rect, text: &str, path: &str) {
-    let t = cx.theme;
-    let b = t.box_style("hero.tab", None);
-    let slant = t.metric("hero.tab", "slant").max(0.0);
-    let shaped = shape(cx, &format!("*{text}"), &Font { size: Type::Caption, weight: Weight::Normal, mono: true });
-    let lead = cx.theme.space.xs;
-    let w = (lead + shaped.width as f64 + lead + slant).min(r.width());
-    let tab = Rect::new(r.x0, r.y0, r.x0 + w, r.y1);
-    let (fill, ink) = (cx.a(b.fill), cx.a(b.ink));
-    let mut p = cx.painter(&format!("{path}.tab"));
-    let mut outline = BezPath::new();
-    outline.move_to((tab.x0, tab.y0));
-    outline.line_to(((tab.x1 - slant).max(tab.x0), tab.y0));
-    outline.line_to((tab.x1, tab.y1));
-    outline.line_to((tab.x0, tab.y1));
-    outline.close_path();
-    p.shape(irect(tab), Paint::Shape { fill: Some((outline, fill)), strokes: Vec::new() });
-    let y = (r.y0 + (r.height() - shaped.line_height() as f64) / 2.0).round() as i32;
-    p.text(&shaped, ((r.x0 + lead).round() as i32, y), ink, &[]);
-    let last = p.last();
-    p.finish();
-    cx.done(last);
+    p.image(image, (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2), alpha);
 }
 
 fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
@@ -960,25 +763,12 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
         b.border = Some(t.box_style("cell", Some(border_state)).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
         b
     };
-    let tab_h = tab_height(cx, el, state);
-    if tab_h > 0.0 {
-        hero_tab(cx, Rect::new(r.x0, r.y0, r.x1, r.y0 + tab_h), el.tab.as_deref().unwrap_or_default(), path);
-    }
-    let r = Rect::new(r.x0, r.y0 + tab_h, r.x1, r.y1);
     let hovered = state.hovered || (interactive && cx.hover(path));
     let washing = hovered && !state.active && !state.selected;
     b.wash = t.box_style("cell", Some("hover")).wash;
-    let (on, ring) = cx.cursor(stop.as_deref());
+    let (_, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned;
-    let mut b = if state.brackets { t.with_brackets(b, true, true) } else { t.with_cursor(b, ring, !cx.halo_owned() || state.cursor) };
-    b.hex = el.hex;
-    let focus_on = on || hovered || state.cursor || (owned && state.selected);
-    let catalogue = t.motion().catalogue;
-    let focus = match &catalogue.focus_text {
-        Some(f) => cx.tween_on(&format!("{path}.focus"), if focus_on { 1.0 } else { 0.0 }, f.clock.duration, crate::motion::Curve::from_table(&f.clock.curve)) as f32,
-        None => 0.0,
-    };
-    let used = catalogue.use_.as_ref().and_then(|u| cx.used(stop.as_deref(), u.clock.duration));
+    let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
     let ri = irect(r);
     let radius = if state.small { t.radii.sm } else { t.box_radius(&b, ri.h as f64) };
     let fill = cx.color(&format!("{path}.fill"), b.fill);
@@ -1012,13 +802,11 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let (cw, ch) = measure(cx, child, content_w);
     let cw = if child.width == Size::Fill { content_w } else { cw };
     let y = r.y0 + (r.height() - ch) / 2.0;
-    let saved = (cx.ink, cx.focus, cx.ghost);
+    let saved = cx.ink;
     cx.ink = (fg, dim);
-    cx.focus = focus;
-    cx.ghost = used;
     let under = cx.hits_len();
     paint(cx, child, Rect::new(r.x0 + pad_x, y, r.x0 + pad_x + cw, y + ch), &format!("{path}/0"));
-    (cx.ink, cx.focus, cx.ghost) = saved;
+    cx.ink = saved;
     if interactive || el.on.is_some() || el.tip.is_some() {
         let what = if el.on.is_some() { HitWhat::Click } else { HitWhat::Hover };
         cx.hit_at(under, Hit { rect: ri, path: path.into(), on: el.on.clone(), tip: el.tip.clone(), stop, what });
@@ -1320,17 +1108,9 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
     let body = Font { size: Type::Body, weight: Weight::Normal, mono: false };
     let inner_w = (frame.w as f64 - s.control_padding_x * 2.0).max(0.0);
     let line = line_parts(cx, text, placeholder, caret, &body, inner_w as i32);
-    let shake = cx.theme.motion().catalogue.error.map(|ms| {
-        let at = cx.changed(&format!("{path}.error"), error.filter(|e| !e.is_empty()).map_or(0, token));
-        (at, ms)
-    });
     let err = error.filter(|e| !e.is_empty()).map(|e| {
         let st = style(cx, &Font { size: Type::Caption, weight: Weight::Normal, mono: false });
-        let Some((at, ms)) = shake else { return cx.kit.shape(e, st) };
-        let p = cx.effect(at, ms);
-        let (wght, wdth, em) = crate::effects::shake(p, (f64::from(st.weight), 100.0, 0.0));
-        let shaken = TextStyle { wght: Some(((wght / 10.0).round() * 10.0) as f32), wdth: wdth.round() as f32, tracking: ((f64::from(st.size) * em) * 4.0).round() as f32 / 4.0, ..st };
-        cx.kit.shape(e, if p < 1.0 { shaken } else { st })
+        cx.kit.shape(e, st)
     });
     let destructive = t.colors.get("destructive");
     let alpha = cx.alpha;

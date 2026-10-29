@@ -10,7 +10,7 @@
 #   result/share/formalshell            fonts, globe tiles, earbuds art
 #
 # The binaries, templates, branding and examples come from this tree. The
-# rest (the icon and cartridge fonts, the Blue Marble tiles, ttfx,
+# rest (the icon fonts, the Blue Marble tiles, ttfx,
 # localsend-cli, tensaku, clipssh, the iPhone bridge, the earbuds CLIs) is
 # linked out of the host's installed formalshell package, the same tarball
 # at an older rev: none of it moves with the shell's code, and the tarball is

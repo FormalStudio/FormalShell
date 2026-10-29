@@ -2,8 +2,8 @@
 //! of thin triangles turning slowly in 3D, projected flat, and the giant
 //! faint mark under it. Geometry only; the shell rasterises it.
 //!
-//! Every number is the signed-off preview's
-//! (docs/superpowers/specs/2026-10-23-cartridge-theme/preview.html), whose
+//! Every number is the signed-off preview's (`preview.html` in the
+//! 2026-10-23 theme spec's directory under docs/superpowers/specs), whose
 //! canvas is the 1280x800 desktop at half resolution, 640x400. A buffer of
 //! another size scales by its height against that 400.
 

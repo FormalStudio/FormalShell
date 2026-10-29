@@ -8,8 +8,6 @@
 
 use std::collections::BTreeMap;
 
-pub mod sfx;
-
 #[cfg(feature = "pipewire")]
 mod backend;
 #[cfg(feature = "pipewire")]
@@ -376,18 +374,6 @@ pub enum Command {
     /// By `node.name`; `None` clears the configured default. What `pactl set-default-sink` writes.
     SetDefaultSink(Option<String>),
     SetDefaultSource(Option<String>),
-    /// One blip on the client's own playback stream, opened for it and
-    /// closed [`sfx::LINGER`] after the last one ends. `at` is when it was
-    /// asked for: past [`sfx::STALE`] it is dropped.
-    Play {
-        sound: sfx::Sound,
-        volume: sfx::Volume,
-        at: std::time::Instant,
-    },
-    /// What the first blip would load, loaded ahead of it: the decoded
-    /// sounds, and a stream connected inactive and dropped at once, which
-    /// brings in the client-node module every later stream goes through.
-    WarmSfx,
 }
 
 /// The graph as the shell sees it.

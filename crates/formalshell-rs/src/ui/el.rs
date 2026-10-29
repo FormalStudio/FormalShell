@@ -91,8 +91,6 @@ pub struct CellState {
     pub hovered: bool,
     /// Drawn with the cursor whatever the keyboard does (the gallery's).
     pub cursor: bool,
-    /// Drawn with a grid cell's cursor, the brackets (the gallery's).
-    pub brackets: bool,
     /// `radiusSm`, a cell one level inside a card's own frame (a day cell).
     pub small: bool,
     /// A panel's hero, drawn in the `hero` box.
@@ -287,19 +285,6 @@ pub struct El {
     /// options): it takes no room in the layout, and its stops follow this
     /// node's.
     pub float: Option<Box<El>>,
-    /// A section label, which a console table draws as a field tag
-    /// (`panel.tag`).
-    pub tag: bool,
-    /// The label on a hero's tab (`hero.tab`), over its frame.
-    pub tab: Option<String>,
-    /// Text that types itself in when it first shows and whenever it
-    /// changes, on a table with `reveal: type`.
-    pub typed: bool,
-    /// A picture that lands whenever it changes, on a table with
-    /// `picture: zoom` (a cover lands without asking).
-    pub lands: bool,
-    /// A cell drawn as the hexagon its rect holds, or a picture cut to one.
-    pub hex: bool,
 }
 
 impl El {
@@ -311,22 +296,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None, tag: false, tab: None, typed: false, lands: false, hex: false }
-    }
-
-    pub fn typed(mut self) -> Self {
-        self.typed = true;
-        self
-    }
-
-    pub fn lands(mut self) -> Self {
-        self.lands = true;
-        self
-    }
-
-    pub fn hex(mut self) -> Self {
-        self.hex = true;
-        self
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None }
     }
 
     pub fn float(mut self, list: El) -> Self {

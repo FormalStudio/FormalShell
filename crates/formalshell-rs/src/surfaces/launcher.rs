@@ -139,8 +139,6 @@ pub struct Model {
     /// The row list's transitions: rows that moved, arrived or left on
     /// the last re-rank inside one level.
     motion: RowMotion,
-    /// The row last activated and when, for its ghost (`use`).
-    used: Option<(String, Instant)>,
     /// `debug motionScale`, which the row transitions run at.
     pub motion_scale: f64,
 }
@@ -157,13 +155,6 @@ struct RowMotion {
     added: std::collections::HashMap<String, Instant>,
     left: Vec<(Node, Slot, Instant)>,
     ms: (f64, f64, f64),
-    /// An open still to start the rows' rise (`arrive.rise`).
-    fresh: bool,
-    /// The rows rising in off the open, the clock scaled.
-    rise: Option<(Instant, fs_theme::style::Rows)>,
-    /// A level change's glitch (`swap: glitch`): the rows that were there,
-    /// the moment, and the clock scaled.
-    swap: Option<(Vec<(Node, Slot)>, Instant, fs_theme::style::Glitch)>,
 }
 
 const ROW_RESET_LIMIT: usize = 64;
@@ -174,9 +165,7 @@ impl RowMotion {
     }
 
     fn running(&self, now: Instant) -> bool {
-        self.rise.as_ref().is_some_and(|(at, r)| crate::effects::rising(r, crate::motion::since(*at, now), ROW_RESET_LIMIT))
-            || self.swap.as_ref().is_some_and(|(_, at, g)| crate::effects::glitching(g, crate::motion::since(*at, now)))
-            || self.moved.values().any(|(_, at)| Self::progress(*at, self.ms.0, now) < 1.0)
+        self.moved.values().any(|(_, at)| Self::progress(*at, self.ms.0, now) < 1.0)
             || self.added.values().any(|at| Self::progress(*at, self.ms.1, now) < 1.0)
             || self.left.iter().any(|(_, _, at)| Self::progress(*at, self.ms.2, now) < 1.0)
     }
@@ -184,27 +173,6 @@ impl RowMotion {
     /// The slide still owed to a row, in body pixels.
     fn offset(&self, id: &str, now: Instant) -> f64 {
         self.moved.get(id).map_or(0.0, |(dy, at)| dy * (1.0 - Clock::Spatial.curve().ease(Self::progress(*at, self.ms.0, now))))
-    }
-
-    /// The `index`th row's shift and opacity off the open's rise and a level
-    /// change's glitch.
-    fn arrival(&self, index: usize, now: Instant) -> (f64, f64, f32) {
-        let (mut dx, mut dy, mut a) = (0.0, 0.0, 1.0);
-        if let Some((at, r)) = &self.rise {
-            (dy, a) = crate::effects::rise(r, crate::motion::since(*at, now), index);
-        }
-        if let Some((_, at, g)) = &self.swap {
-            let (x, ga) = crate::effects::glitch(g, crate::motion::since(*at, now)).new;
-            (dx, a) = (x, a * ga);
-        }
-        (dx, dy, a)
-    }
-
-    /// The rows a level change replaced, while they are still going out.
-    fn going(&self, now: Instant) -> Option<(&[(Node, Slot)], f64, f32)> {
-        let (rows, at, g) = self.swap.as_ref()?;
-        let (dx, a) = crate::effects::glitch(g, crate::motion::since(*at, now)).old?;
-        Some((rows.as_slice(), dx, a))
     }
 
     fn alpha(&self, id: &str, now: Instant) -> f32 {
@@ -286,7 +254,6 @@ impl Default for Model {
             mirror_current: String::new(),
             monitor_history: MonitorHistory::default(),
             motion: RowMotion::default(),
-            used: None,
             motion_scale: 1.0,
             placed: false,
             want: String::new(),
@@ -845,24 +812,10 @@ impl Model {
     fn row_motion(&mut self, before: std::collections::HashMap<String, (Node, Slot)>, view: View, theme: &Theme) {
         let now = Instant::now();
         let same = self.motion.level.as_ref() == Some(&self.level) && self.motion.view == Some(view);
-        let left_level = self.motion.level.as_ref().is_some_and(|l| *l != self.level);
         self.motion.level = Some(self.level.clone());
         self.motion.view = Some(view);
         let k = self.motion_scale;
         let m = &mut self.motion;
-        let c = theme.motion().catalogue;
-        if std::mem::take(&mut m.fresh) {
-            m.swap = None;
-            m.rise = c.rows.map(|r| {
-                let clock = fs_theme::style::Clock { duration: r.clock.duration * k, ..r.clock.clone() };
-                (now, fs_theme::style::Rows { clock, stagger: r.stagger * k, ..r })
-            });
-        } else if left_level && let Some(g) = c.swap {
-            m.rise = None;
-            let mut rows: Vec<(Node, Slot)> = before.values().filter(|(n, _)| n.kind != NodeKind::Note).cloned().collect();
-            rows.sort_by(|a, b| a.1.y.total_cmp(&b.1.y));
-            m.swap = Some((rows, now, fs_theme::style::Glitch { out: g.out * k, into: g.into * k, ..g }));
-        }
         m.ms = (Clock::Spatial.ms(theme) * k, Clock::Effects.ms(theme) * k, Clock::EffectsFast.ms(theme) * k);
         m.moved.retain(|_, (_, at)| RowMotion::progress(*at, m.ms.0, now) < 1.0);
         m.added.retain(|_, at| RowMotion::progress(*at, m.ms.1, now) < 1.0);
@@ -948,23 +901,15 @@ impl Model {
                 };
                 let cell_w = width / columns.max(1) as f64;
                 let name_h = ui::measure(&w::label("Ag"), width, theme, kit).1;
-                let hex = self.view == View::AppGrid && theme.habit_str("grid") == "hex";
-                let cell_h = if hex {
-                    hex_tile(s) + hex_name_gap(s) + name_h + s.control_padding_y * 2.0
-                } else if self.view == View::AppGrid {
+                let cell_h = if self.view == View::AppGrid {
                     s.control_height * 2.0 + s.row_gap + name_h + s.control_padding_y * 2.0 + gutter * 2.0
                 } else {
                     cell_w
                 };
                 let heading_text = if self.view == View::AppGrid && cells > 0 { self.sections.first().cloned().unwrap_or_default() } else { String::new() };
-                // The first row's upper bracket sits outside the hexagon: it
-                // clears the heading, or the card's header, by the room the
-                // lower one keeps over the name.
                 if !heading_text.is_empty() {
                     out.headings.push((heading_text, y, gutter));
-                    y += heading_h + if hex { hex_name_gap(s) } else { s.row_gap };
-                } else if theme.habit_str("grid") == "hex" && cells > 0 {
-                    y += hex_name_gap(s) - s.row_gap;
+                    y += heading_h + s.row_gap;
                 }
                 for i in 0..cells {
                     let (r, c) = (i / columns.max(1), i % columns.max(1));
@@ -1203,7 +1148,6 @@ impl Model {
         self.enter_level(store, target);
         self.query.set(&prefill);
         self.open = true;
-        self.motion.fresh = true;
         self.key.clear();
     }
 
@@ -1379,7 +1323,6 @@ impl Model {
 
     pub fn activate(&mut self, store: &Store, index: usize) -> Out {
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
-        self.used = Some((node.id.clone(), Instant::now()));
         if self.view == View::Monitor {
             let Some(pid) = node.id.strip_prefix("proc.").and_then(|p| p.parse::<u64>().ok()) else { return Out::None };
             self.dirty = true;
@@ -1672,13 +1615,6 @@ pub struct Shown {
     /// The level and query it was last drawn on, while it is shown: a move
     /// inside the same list travels, anything else lands at once.
     sel_on: Option<(Option<String>, String)>,
-    grain: ui::Grain,
-    /// The cursor row's initial behind the list (`launcher.letter`), under
-    /// everything the body draws.
-    letter_anchor: NodeId,
-    letter_nodes: Vec<NodeId>,
-    /// The initial shown, the one it replaced and when it changed.
-    letter: (String, String, Instant),
 }
 
 impl Shown {
@@ -1696,12 +1632,10 @@ impl Shown {
             scene.set_visible(id, false);
             id
         };
-        let letter_anchor = marker(top);
-        let sel_anchor = marker(letter_anchor);
+        let sel_anchor = marker(top);
         let body_anchor = marker(sel_anchor);
         let sel = || Animated::new(0.0, Clock::SpatialFast.curve());
         Self {
-            grain: ui::Grain::default(),
             modal,
             head: Ui::new(Some(top)),
             body: Ui::new(Some(body_anchor)),
@@ -1722,9 +1656,6 @@ impl Shown {
             sel_nodes: Vec::new(),
             sel: [sel(), sel(), sel(), sel()],
             sel_on: None,
-            letter_anchor,
-            letter_nodes: Vec::new(),
-            letter: (String::new(), String::new(), Instant::now()),
         }
     }
 
@@ -1844,7 +1775,6 @@ impl Shown {
             Some(l) => { let r = l.place(&self.modal.card, true); (r.x, r.y) }
             None => (0, 0),
         };
-        let entered = self.modal.card.entered;
         let scene = match &mut self.modal.layer {
             Some(l) => &mut l.scene,
             None => &mut self.modal.card.scene,
@@ -1876,17 +1806,9 @@ impl Shown {
         self.body.halo_owned = false;
         self.body.fill_owned = true;
         self.body.cursor = None;
-        self.body.used = m.used.as_ref().and_then(|(id, at)| {
-            let key = self.body.stops.iter().find(|st| st.key.split_once(':').is_some_and(|(_, k)| k == id))?.key.clone();
-            Some((key, *at))
-        });
         let origin = (fx + pad, body_top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + m.layout.content_h), Some(body_clip), alpha, theme, kit, scene, now);
         if d.animating {
-            self.wake = Some(now);
-        }
-
-        if paint_letter(scene, (&mut self.letter_nodes, self.letter_anchor, &mut self.letter), m, theme, kit, (frame, clip, alpha), self.scale, now) {
             self.wake = Some(now);
         }
 
@@ -1911,14 +1833,7 @@ impl Shown {
                 let mut b = theme.box_style("cell", Some("selected"));
                 b.border = None;
                 b.wash = None;
-                // A grid cell takes the brackets, a row the leading bar.
-                let b = if m.cursor < m.cells() {
-                    let mut b = theme.with_brackets(b, m.from_keys, true);
-                    b.hex = theme.habit_str("grid") == "hex";
-                    b
-                } else {
-                    theme.with_cursor(b, m.from_keys, true)
-                };
+                let b = theme.with_cursor(b, m.from_keys, true);
                 crate::ui::boxes::paint(&mut p, r, &b, st.radius, alpha, 0.0);
                 if self.sel.iter().any(|a| a.running(now)) {
                     self.wake = Some(now);
@@ -1980,9 +1895,6 @@ impl Shown {
             p.rect(IRect::new(frame.x, foot_rule, frame.w, bw), sep, 0.0);
         }
         p.finish();
-        if self.grain.paint(scene, frame, clip, theme, entered, self.scale, now) {
-            self.wake = Some(now);
-        }
     }
 
     /// What is under the pointer: a body row or cell, a header or footer
@@ -2005,60 +1917,6 @@ impl Shown {
         self.foot.hover = path;
         changed
     }
-}
-
-/// The cursor row's initial, giant and faint against the card's far
-/// corner, crossfading to the next row's: true while it fades. Drawn on
-/// a table whose `launcher.letter` has ink, never with the cursor in a grid.
-#[allow(clippy::type_complexity)]
-fn paint_letter(
-    scene: &mut crate::scene::Scene,
-    (nodes, anchor, letter): (&mut Vec<NodeId>, NodeId, &mut (String, String, Instant)),
-    m: &Model,
-    theme: &Theme,
-    kit: &mut Kit,
-    (frame, clip, alpha): (IRect, IRect, f32),
-    scale: f64,
-    now: Instant,
-) -> bool {
-    let b = theme.box_style("launcher.letter", None);
-    let initial = m
-        .rows
-        .get(m.cursor)
-        .filter(|_| (m.view == View::Rows || (m.view == View::AppGrid && m.cursor >= m.app_count)) && b.ink.a > 0.0)
-        .and_then(|r| r.label.chars().find(|c| c.is_alphanumeric()))
-        .map(|c| c.to_uppercase().collect::<String>())
-        .unwrap_or_default();
-    if initial != letter.0 {
-        let was = std::mem::take(&mut letter.0);
-        *letter = (initial, was, now);
-    }
-    let ms = theme.metric("launcher.letter", "duration") * scale;
-    let t = crate::motion::progress(crate::motion::since(letter.2, now), ms);
-    let e = Clock::Effects.curve().ease(t) as f32;
-    let mut p = Painter::new(scene, nodes, Some(clip)).after(Some(anchor));
-    let size = (f64::from(frame.h) * 0.62).round() as f32;
-    let style = crate::text::TextStyle {
-        family: crate::surfaces::bar::cell::face(theme.faces.display),
-        size,
-        weight: theme.metric("launcher.letter", "wght") as f32,
-        tracking: 0.0,
-        wdth: theme.metric("launcher.letter", "wdth") as f32,
-        wght: Some(theme.metric("launcher.letter", "wght") as f32),
-    };
-    for (text, share) in [(letter.1.clone(), 1.0 - e), (letter.0.clone(), e)] {
-        if text.is_empty() || share <= 0.0 {
-            continue;
-        }
-        let shaped = kit.shape(&text, style);
-        // Past the card's trailing and bottom edges, as the reference's
-        // letter is, so it reads as a shape rather than a word.
-        let x = frame.right() - shaped.width + (size * 0.06) as i32;
-        let y = frame.bottom() - shaped.line_height() + (size * 0.16) as i32;
-        p.text(&shaped, (x, y), b.ink.with_alpha(b.ink.a * alpha * share), &[]);
-    }
-    p.finish();
-    t < 1.0
 }
 
 fn header(m: &Model, store: &Store, theme: &Theme) -> El {
@@ -2101,20 +1959,12 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     } else {
         m.level_name(store)
     };
-    let mut parts = if theme.habit_str("panel") == "console" {
-        // The console's status line: the level and what it holds, typing
-        // in whenever either changes.
-        let count = m.rows.len() - m.rows.iter().filter(|r| r.kind == NodeKind::Note).count();
-        let line = format!("{} :: {count} {}", name.to_uppercase(), if count == 1 { "entry" } else { "entries" });
-        vec![w::space(s.control_padding_x), w::value(line).ink(Ink::Primary).elide().typed()]
-    } else {
-        vec![
-            w::space(s.control_padding_x),
-            w::icon(m.level_icon(store)).ink(Ink::Muted),
-            w::space(s.icon_gap),
-            w::text(name).size(Type::BodySmall).ink(Ink::Muted).elide(),
-        ]
-    };
+    let mut parts = vec![
+        w::space(s.control_padding_x),
+        w::icon(m.level_icon(store)).ink(Ink::Muted),
+        w::space(s.icon_gap),
+        w::text(name).size(Type::BodySmall).ink(Ink::Muted).elide(),
+    ];
     let mut actions = Vec::new();
     if let Some(p) = &bar.primary {
         actions.push(w::row(0.0, vec![w::button(p.label.clone()).variant(ui::Variant::Ghost).on("primary"), w::chord_keys(s, &p.keys)]));
@@ -2161,9 +2011,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
     for (text, y, x) in &lay.headings {
         let h = ui::measure(&w::heading(s, text, None, true), 400.0, theme, kit).1;
         if visible(*y, h) {
-            let (dx, _, a) = m.motion.arrival(0, now);
-            let label = w::heading(s, text, None, true).pad_start(s.control_padding_x + x + dx);
-            items.push((*y, h, if a < 1.0 { label.fade(a) } else { label }));
+            items.push((*y, h, w::heading(s, text, None, true).pad_start(s.control_padding_x + x)));
         }
     }
     if m.monitor_strip_h > 0.0 {
@@ -2174,36 +2022,13 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         items.push((top, m.picker_switch_h, picker_switch(m).pad_start(s.sm)));
     }
     let cells = m.cells();
-    let hex = theme.habit_str("grid") == "hex";
     for (i, slot) in lay.slots.iter().enumerate() {
         if !visible(slot.y, slot.h) {
             continue;
         }
         let row = &m.rows[i];
         let selected = i == m.cursor;
-        let el = if i < cells && m.view == View::AppGrid && hex {
-            // The tile holds the icon alone and the name sits under it, so
-            // the hexagon's slants never cut a name short.
-            let gutter = s.sm;
-            let tile = hex_tile(s);
-            let edge = s.control_height * 2.0;
-            let image = store.menu.icons.get(&row.icon_source).cloned().flatten();
-            let pic = if image.is_some() {
-                w::picture(image, edge)
-            } else {
-                El::new(ui::el::Kind::Icon { name: "layout-grid".into(), size: Type::Display, ink: Ink::Dim }).width(Size::Px(edge)).height(edge)
-            };
-            let tile_el = w::cell(w::column(0.0, vec![pic.centred()]))
-                .hex()
-                .selected(selected)
-                .interactive()
-                .on(format!("row:{i}"))
-                .stop(format!("c:{}", row.id))
-                .width(Size::Px(slot.w))
-                .height(tile);
-            let name = w::label(row.label.clone()).elide().hug().centred().pad(gutter, 0.0, gutter, 0.0);
-            w::column(hex_name_gap(s), vec![tile_el, name]).width(Size::Px(slot.w)).key(format!("c:{}", row.id))
-        } else if i < cells && m.view == View::AppGrid {
+        let el = if i < cells && m.view == View::AppGrid {
             let gutter = s.sm;
             let image = store.menu.icons.get(&row.icon_source).cloned().flatten();
             let pic = if image.is_some() {
@@ -2230,8 +2055,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             let edge = (slot.w - (gutter + s.sm) * 2.0).max(1.0);
             let image = store.picker.thumbs.get(&row.path).cloned().flatten();
             let pic = w::picture(image, edge).centred();
-            let cell = if hex { w::cell(w::column(0.0, vec![pic.hex()])).hex() } else { w::cell(pic).ghost() };
-            cell.selected(selected)
+            w::cell(pic)
+                .ghost()
+                .selected(selected)
                 .interactive()
                 .cell_state(|st| st.cursor = selected && m.from_keys)
                 .on(format!("row:{i}"))
@@ -2241,9 +2067,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
                 .pad(gutter, gutter, gutter, gutter)
         } else if i < cells {
             let glyph = w::text(row.icon.clone()).size(Type::Display).centred();
-            let cell = w::cell(w::column(0.0, vec![glyph]));
-            let cell = if hex { cell.hex() } else { cell.ghost() };
-            cell.selected(selected)
+            w::cell(w::column(0.0, vec![glyph]))
+                .ghost()
+                .selected(selected)
                 .interactive()
                 .cell_state(|st| st.cursor = selected && m.from_keys)
                 .on(format!("row:{i}"))
@@ -2259,22 +2085,12 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             if alpha < 1.0 { el.fade(alpha) } else { el }
         };
         let dy = if i >= cells && matches!(m.view, View::Rows | View::AppGrid) { m.motion.offset(&row.id, now) } else { 0.0 };
-        let (ax, ay, aa) = m.motion.arrival(i, now);
-        let el = if aa < 1.0 { let f = el.fade.unwrap_or(1.0); el.fade(f * aa) } else { el };
-        let (dx, dy) = (ax, dy + ay);
-        if dy.abs() > 0.5 || dx.abs() > 0.5 {
-            let (left, top) = (slot.x + dx, slot.y + slot.band + dy);
+        if dy.abs() > 0.5 {
+            let (left, top) = (slot.x, slot.y + slot.band + dy);
             overlays.push((el, Rect::new(left, top, left + slot.w, top + slot.h - slot.band)));
             continue;
         }
         items.push((slot.y + slot.band, slot.h - slot.band, el.pad_start(0.0)));
-    }
-    if let Some((rows, dx, fade)) = m.motion.going(now) {
-        for (node, slot) in rows.iter().filter(|(_, slot)| visible(slot.y, slot.h)) {
-            let el = menu_row(m, node, usize::MAX, false, false, None, theme).width(Size::Px(slot.w)).fade(fade);
-            let (left, top) = (slot.x + dx, slot.y + slot.band);
-            overlays.push((El { on: None, ..el }, Rect::new(left, top, left + slot.w, top + slot.h - slot.band)));
-        }
     }
     for (node, slot, at) in &m.motion.left {
         let t = RowMotion::progress(*at, m.motion.ms.2, now);
@@ -2525,9 +2341,7 @@ fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thum
         lead.push(w::icon(drawn));
     }
     let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
-    // A console table sets the root's rows as its menu: wide caps, a step up.
-    let menu = theme.habit_str("panel") == "console" && m.mode == Mode::Menu && m.level.is_none() && m.query.is_empty() && !row.emoji_only;
-    let mut name = if menu { w::label(label.to_uppercase()).size(Type::Subtitle).elide() } else { w::label(label).elide() };
+    let mut name = w::label(label).elide();
     if row.dim == Some(true) {
         name = name.ink(Ink::Dim);
     }
@@ -2565,16 +2379,3 @@ fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thum
         .stop(format!("r:{}", row.id))
 }
 
-/// A hex app tile's height: the icon decodes at twice the control height,
-/// and a pointy-topped hexagon holds a centred square of at most 0.63 of
-/// its height.
-fn hex_tile(s: &fs_theme::tokens::Space) -> f64 {
-    (s.control_height * 2.0 / 0.6).round()
-}
-
-/// Room under a hex tile for the cursor's lower bracket, which sits outside
-/// the hexagon, to clear the name; the same over the first row for its upper
-/// one.
-fn hex_name_gap(s: &fs_theme::tokens::Space) -> f64 {
-    s.row_gap + s.sm * 2.0
-}

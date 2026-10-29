@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --backdrop rides --cartridge: the shard sculpture over the desktop
-# (`wallpaper.animate`, the preset's default) on one timeline, read off
+# --backdrop: the shard sculpture over the desktop (`wallpaper.animate`,
+# pinned on in the settings fixture) on one timeline, read off
 # `debug dump`'s `backdrop` block, the shell's own `commit surface=shards`
 # lines and the frames.
 #
@@ -25,11 +25,8 @@ leg_backdrop_needs="convert jq foot"
 backdrop_results="$shot_dir/backdrop-results.txt"
 backdrop_done="$shot_dir/backdrop-done"
 
-leg_backdrop_validate() {
-  if ! leg_on cartridge; then
-    echo "usage: $0 --cartridge --backdrop (the sculpture is the cartridge preset's)" >&2
-    exit 1
-  fi
+leg_backdrop_fixture() {
+  settings_pin '.wallpaper.animate = true'
 }
 
 leg_backdrop_timing() {
@@ -124,7 +121,7 @@ leg_backdrop_assert() {
     [ -s "$shot_dir/backdrop-$phase.json" ] || fail "--backdrop: no dump for $phase"
     echo "SMOKE_BACKDROP $phase $("$jq_bin" -c '.backdrop[0]' "$shot_dir/backdrop-$phase.json")"
   done
-  [ "$(_backdrop_field running animate)" = true ] || fail "--backdrop: the cartridge preset made no sculpture"
+  [ "$(_backdrop_field running animate)" = true ] || fail "--backdrop: wallpaper.animate made no sculpture"
   [ "$(_backdrop_field running running)" = true ] || fail "--backdrop: the sculpture is not running on a bare desktop ($(_backdrop_field running paused))"
 
   local d12 d23

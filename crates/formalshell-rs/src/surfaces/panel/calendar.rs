@@ -101,18 +101,6 @@ impl Panel for Calendar {
         "calendar".into()
     }
 
-    fn subtitle(&self, v: &View) -> String {
-        v.store.clock.now.format("%B %Y").to_string()
-    }
-
-    fn status(&self, v: &View) -> String {
-        super::count(v.store.info.calendar.events.len(), "event", "events")
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock, Topic::State, Topic::Config]
     }
@@ -162,7 +150,6 @@ impl Panel for Calendar {
                 trailing: None,
                 rail: None,
                 rail_on: None,
-                tab: "today".into(),
             },
         );
 

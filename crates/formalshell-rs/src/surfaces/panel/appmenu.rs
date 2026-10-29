@@ -71,18 +71,6 @@ impl Panel for AppMenu {
         "menu".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Window".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        subject(v.store).map_or_else(|| "no window".into(), |s| super::count(s.windows.len(), "window", "windows"))
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Primary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::AppIcon]
     }
@@ -120,7 +108,6 @@ impl Panel for AppMenu {
                 trailing: None,
                 rail: None,
                 rail_on: None,
-                tab: "window".into(),
             },
             true,
             crate::ui::Type::Display,

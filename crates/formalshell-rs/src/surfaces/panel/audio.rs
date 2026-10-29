@@ -154,23 +154,6 @@ impl Panel for Audio {
         "volume-2".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Mixer".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let a = &v.store.devices.audio;
-        match a.volume {
-            None => "no devices".into(),
-            Some(_) if a.muted => "output muted".into(),
-            Some(volume) => format!("output {}%", (clamp_device(volume) * 100.0).round()),
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Primary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
     }
@@ -198,7 +181,6 @@ impl Panel for Audio {
                     trailing: Some(w::switch(!a.muted).on("mute:output-slider")),
                     rail: Some(volume),
                     rail_on: Some("volume:output-slider".into()),
-                    tab: if a.muted { "muted" } else { "output" }.into(),
                 },
             )
             .stop("output-slider");

@@ -45,23 +45,6 @@ use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::ui::{self, El, Ink, Type, Ui, Variant, Weight, w};
 
 const MAX_PEEK_LEVELS: usize = 2;
-/// How far a console card slides in (the reference's `tagAppear`).
-const TAG_SLIDE: f64 = 10.0;
-
-/// The red glow pulsing out of a console card as it arrives, 0 to 1 over
-/// its arrival `t`: up by a fifth of the way, nearly gone by half.
-fn tag_glow(t: f64) -> f64 {
-    if t <= 0.0 || t >= 1.0 {
-        0.0
-    } else if t < 0.2 {
-        t / 0.2
-    } else if t < 0.5 {
-        1.0 - 0.7 * (t - 0.2) / 0.3
-    } else {
-        0.3 * (1.0 - (t - 0.5) / 0.5)
-    }
-}
-
 /// How far a card behind the front one travels as it leaves, a share of its
 /// height: sonner's `translateY(40%)` for a collapsed toast that is not the
 /// front one.
@@ -141,8 +124,6 @@ struct Slot {
     /// The swipe's offset along x: under the fingers, springing back to 0,
     /// or carrying on off the edge.
     dx: Animated,
-    /// When it arrived, which a console card's glow pulses out from.
-    born: Instant,
 }
 
 impl Slot {
@@ -208,9 +189,7 @@ pub struct Insets {
     pub right: f64,
 }
 
-/// `console` is the console grammar's updates card: the summary in caps and
-/// the body in the values face.
-fn card(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, console: bool) -> El {
+fn card(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>) -> El {
     let s = &theme.space;
     let e = &g.entry;
     let critical = e.urgency == Urgency::Critical;
@@ -234,12 +213,10 @@ fn card(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, console: bo
             w::icon_button("x").on("close"),
         ],
     );
-    let summary = if console { e.summary.to_uppercase() } else { e.summary.clone() };
-    let mut parts = vec![header, w::para(summary, Type::Body, if console { Weight::Semibold } else { Weight::Medium }, Ink::Fg, 2)];
+    let mut parts = vec![header, w::para(e.summary.clone(), Type::Body, Weight::Medium, Ink::Fg, 2)];
     let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
     if !body.is_empty() {
-        let para = w::para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2);
-        parts.push(if console { para.mono() } else { para });
+        parts.push(w::para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
     }
     let actions = model::button_actions(e);
     if !actions.is_empty() {
@@ -336,9 +313,6 @@ impl Toasts {
 
     pub fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, insets: &Insets, scale: f64, now: Instant) {
         let is_bubble = theme.habit("notification").and_then(|v| v.as_str()) == Some("bubble");
-        let console = !is_bubble && theme.habit_str("panel") == "console";
-        // The console's id strip down the leading side, reading "updates".
-        let strip = if console { theme.metric("panel.strip", "width") } else { 0.0 };
         let s = &theme.space;
         let n = &store.notifications;
         let spec = model::position_spec(store.config.str("notifications.position"));
@@ -395,13 +369,13 @@ impl Toasts {
                 let hovered = self.slots.get(k.as_str()).is_some_and(|sl| sl.ui.hover.is_some());
                 bubble(theme, g, clock, pic, hovered)
             } else {
-                card(theme, g, clock, pic, console)
+                card(theme, g, clock, pic)
             };
             cards.insert(k, el);
         }
         let mut heights = HashMap::new();
         for (k, el) in &cards {
-            let inner = ui::measure(el, width - s.panel_padding * 2.0 - strip, theme, kit).1;
+            let inner = ui::measure(el, width - s.panel_padding * 2.0, theme, kit).1;
             heights.insert((*k).clone(), inner + s.panel_padding * 2.0);
         }
         let layout = toast_stack::layout(&StackParams {
@@ -465,7 +439,6 @@ impl Toasts {
                     departing: false,
                     ui_animating: false,
                     dx: Animated::new(0.0, Kind::Spatial.curve()),
-                    born: now,
                 }
             });
             slot.x.set(now, gx, restack.0);
@@ -510,9 +483,7 @@ impl Toasts {
                 } else {
                     1.0
                 };
-                // A console card slides in sideways a little, as a tag does.
-                let slide = if is_bubble || console { 0.0 } else { (1.0 - presence) * fh * travel * toward_edge };
-                let dx = if console && slot.dx.target() == 0.0 { dx + (1.0 - presence) * TAG_SLIDE * if self.right { 1.0 } else { -1.0 } } else { dx };
+                let slide = if is_bubble { 0.0 } else { (1.0 - presence) * fh * travel * toward_edge };
                 // Every card is drawn at the column's full width and scaled
                 // to its level's, words and all, about the edge its sliver
                 // shows from, so a card behind coming forward grows as one
@@ -549,14 +520,7 @@ impl Toasts {
             let cut = if spec.top { solid.map(|f| f.drawn.bottom()).max() } else { solid.map(|f| f.drawn.y).min() };
             let slot = self.slots.get_mut(&at.key).expect("ordered from the map");
             slot.rect = at.drawn;
-            let mut b = theme.box_style("notification", Some(if slot.critical { "critical" } else { "rest" }));
-            if console {
-                let glow = tag_glow(crate::motion::since(slot.born, now) / arrive.0.max(1.0));
-                if glow > 0.0 {
-                    let red = theme.colors.get("destructive");
-                    b.casts.push(fs_theme::style::Cast { x: 0.0, y: 0.0, blur: 10.0 * glow, spread: 0.0, color: red.with_alpha(red.a * glow as f32) });
-                }
-            }
+            let b = theme.box_style("notification", Some(if slot.critical { "critical" } else { "rest" }));
             let (fx, fy, fh) = (at.fx, at.fy, at.fh);
             let rect = IRect::new(fx.round() as i32, fy.round() as i32, width.round() as i32, fh.round() as i32);
             let alpha = at.alpha as f32;
@@ -579,13 +543,7 @@ impl Toasts {
             }
             let mut p = Painter::new(&mut self.scene, &mut slot.nodes, Some(around)).after(anchor);
             ui::boxes::paint(&mut p, shown, &b, radius, alpha, 0.0);
-            if strip > 0.0 {
-                let line = b.border.as_ref().map_or(theme.colors.get("border"), |l| l.color);
-                let ink = theme.box_style("panel.strip", None).ink;
-                crate::surfaces::panel::host::id_strip(&mut p, kit, theme, shown, strip, "updates", (line, ink), alpha);
-            }
             p.finish();
-            // Over what the painter set, so the id strip's turned label keeps its turn.
             for id in &slot.nodes {
                 let own = self.scene.transform_of(*id);
                 self.scene.set_transform(*id, at.matrix * own);
@@ -595,7 +553,7 @@ impl Toasts {
             if content > 0.0 {
                 slot.ui.motion_scale = 1.0;
                 let pad = s.panel_padding;
-                let inner = Rect::new(fx + pad + strip, fy + pad, fx + width - pad, fy + fh - pad);
+                let inner = Rect::new(fx + pad, fy + pad, fx + width - pad, fy + fh - pad);
                 // The words go right over their own box, never over the
                 // card in front of it, and the next card stacks over them.
                 slot.ui.anchor = anchor;
@@ -785,7 +743,7 @@ mod tests {
         let theme = theme();
         for (source, marked) in [("iphone", true), ("", false)] {
             let mut badges = 0;
-            walk(&card(&theme, &group(source, ""), 0, None, false), &mut |e| badges += usize::from(e.badge.is_some()));
+            walk(&card(&theme, &group(source, ""), 0, None), &mut |e| badges += usize::from(e.badge.is_some()));
             assert_eq!(badges, usize::from(marked), "source {source:?}");
             let mut badges = 0;
             walk(&bubble(&theme, &group(source, ""), 0, None, false), &mut |e| badges += usize::from(e.badge.is_some()));
@@ -795,7 +753,7 @@ mod tests {
 
     #[test]
     fn the_column_holds_the_card_its_cast_and_the_rubber_band_under_every_preset() {
-        for preset in ["metamorphosis", "retro", "pantheon", "cartridge"] {
+        for preset in ["metamorphosis", "retro", "pantheon"] {
             let theme = Theme::resolve(getter(json!({ "theme": { "preset": preset } })), &fs_theme::palette::fallback("dark"));
             let insets = Insets { top: 0.0, bottom: 0.0, left: 12.0, right: 30.0 };
             for right in [true, false] {
@@ -843,7 +801,7 @@ mod tests {
     fn the_summary_and_the_body_wrap_to_two_lines() {
         let theme = theme();
         let mut wrapped = Vec::new();
-        walk(&card(&theme, &group("", "some body"), 0, None, false), &mut |e| {
+        walk(&card(&theme, &group("", "some body"), 0, None), &mut |e| {
             if let Kind::Para { lines, .. } = &e.kind {
                 wrapped.push(*lines);
             }

@@ -9,8 +9,8 @@
 # Demo data only: a pink noise track tagged as a demo, notifications from
 # made-up apps, and USER=kyan in the shell's own environment, which is where
 # the lock screen's name comes from. The launcher and panel clips are grim
-# bursts at a third of the session's speed (`debug motionScale 300`), as
-# --cartridge-media takes them; the screensaver is frame-stepped the way
+# bursts at a third of the session's speed (`debug motionScale 300`); the
+# screensaver is frame-stepped the way
 # --screensaver-gif steps it, since a ttfx run on llvmpipe is too slow to
 # film in real time. A camera, not a test: it fails only when a file is
 # missing.

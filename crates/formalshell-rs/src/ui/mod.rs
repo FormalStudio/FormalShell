@@ -114,13 +114,6 @@ struct Tween {
     seen: u64,
 }
 
-/// What a node showed last and when that last changed.
-struct Mark {
-    token: u64,
-    at: Instant,
-    seen: u64,
-}
-
 /// What a draw left behind.
 #[derive(Default)]
 pub struct Drawn {
@@ -153,7 +146,6 @@ pub struct Ui {
     panes: HashMap<String, lyrics::Pane>,
     tweens: HashMap<String, Tween>,
     births: HashMap<String, Instant>,
-    marks: HashMap<String, Mark>,
     /// Each paragraph's lines by text, style, width and line cap. Wrapping
     /// shapes every word prefix, so a long list of them overran the shaper's
     /// cache and reshaped all of it on every frame.
@@ -182,11 +174,6 @@ pub struct Ui {
     pub fill_owned: bool,
     /// `debug motionScale` over the theme's clocks.
     pub motion_scale: f64,
-    /// When the card holding this content started opening: its rows rise
-    /// in off this moment on a table that has them do so.
-    pub arrive: Option<Instant>,
-    /// The stop just activated and when, for its ghost.
-    pub used: Option<(String, Instant)>,
 }
 
 impl Ui {
@@ -197,7 +184,6 @@ impl Ui {
             panes: HashMap::new(),
             tweens: HashMap::new(),
             births: HashMap::new(),
-            marks: HashMap::new(),
             wraps: HashMap::new(),
             measured: HashMap::new(),
             frame: 0,
@@ -211,8 +197,6 @@ impl Ui {
             halo_owned: true,
             fill_owned: false,
             motion_scale: 1.0,
-            arrive: None,
-            used: None,
         }
     }
 
@@ -250,8 +234,6 @@ impl Ui {
             drawn: Drawn::default(),
             motion_scale,
             floats: Vec::new(),
-            focus: 0.0,
-            ghost: None,
         };
         cx.ink = (theme.colors.get("foreground"), theme.colors.get("mutedForeground"));
         let (w, h) = draw::measure(&mut cx, root, rect.width());
@@ -281,7 +263,6 @@ impl Ui {
             }
         }
         self.tweens.retain(|_, t| frame - t.seen < 120);
-        self.marks.retain(|_, m| frame - m.seen < 120);
         self.spectra.retain(|_, l| frame - l.seen < 120);
         self.panes.retain(|_, l| frame - l.seen < 120);
         self.wraps.retain(|_, w| frame - w.seen < 120);
@@ -362,8 +343,6 @@ pub fn measure(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> (f64, f64
         drawn: Drawn::default(),
         motion_scale: 1.0,
         floats: Vec::new(),
-        focus: 0.0,
-        ghost: None,
     };
     draw::measure(&mut cx, root, width)
 }
@@ -385,12 +364,6 @@ pub struct Cx<'a> {
     /// Lists waiting to float over the finished tree: each one's anchor, its
     /// content, its path, and where in `stops` its own stops go.
     floats: Vec<(Rect, El, String, usize)>,
-    /// How far the enclosing cell's label has gone to the table's focused
-    /// axes (`focusText`), 0 to 1.
-    pub focus: f32,
-    /// The enclosing cell's ghost progress while it was just used; its
-    /// first label draws it and takes it.
-    pub ghost: Option<f64>,
 }
 
 impl Cx<'_> {
@@ -414,61 +387,6 @@ impl Cx<'_> {
             self.drawn.animating = true;
         }
         a.value(now)
-    }
-
-    /// [`tween`](Self::tween) on a clock of the table's own.
-    pub fn tween_on(&mut self, key: &str, target: f64, ms: f64, curve: crate::motion::Curve) -> f64 {
-        let frame = self.ui.frame;
-        let ms = ms * self.motion_scale;
-        let now = self.now;
-        let t = self.ui.tweens.entry(key.to_owned()).or_insert_with(|| Tween { value: TweenValue::Num(Animated::new(target, curve)), seen: frame });
-        t.seen = frame;
-        let TweenValue::Num(a) = &mut t.value else {
-            t.value = TweenValue::Num(Animated::new(target, curve));
-            return target;
-        };
-        a.set_on(now, target, ms, curve);
-        if a.running(now) {
-            self.drawn.animating = true;
-        }
-        a.value(now)
-    }
-
-    /// When what `key` shows last changed to `token`; its first sight
-    /// counts as a change.
-    pub fn changed(&mut self, key: &str, token: u64) -> Instant {
-        let (frame, now) = (self.ui.frame, self.now);
-        let m = self.ui.marks.entry(key.to_owned()).or_insert(Mark { token, at: now, seen: frame });
-        m.seen = frame;
-        if m.token != token {
-            (m.token, m.at) = (token, now);
-        }
-        m.at
-    }
-
-    /// How far an effect begun at `from` is through `ms` of the table's
-    /// clock, asking for frames until it lands.
-    pub fn effect(&mut self, from: Instant, ms: f64) -> f64 {
-        let p = crate::motion::progress(crate::motion::since(from, self.now), ms * self.motion_scale);
-        if p < 1.0 {
-            self.drawn.animating = true;
-        }
-        p
-    }
-
-    /// When the card holding this content started opening.
-    pub fn arrive(&self) -> Option<Instant> {
-        self.ui.arrive
-    }
-
-    /// The used stop's ghost progress, if `key` is it.
-    pub fn used(&mut self, key: Option<&str>, ms: f64) -> Option<f64> {
-        let (k, at) = self.ui.used.clone()?;
-        if key != Some(k.as_str()) {
-            return None;
-        }
-        let p = self.effect(at, ms);
-        (p < 1.0).then_some(p)
     }
 
     /// A swap of what a node shows (CalendarPanel's month step): the new
@@ -658,10 +576,6 @@ impl Cx<'_> {
         *self.ui.births.entry(path.to_owned()).or_insert(now)
     }
 
-    pub fn stops_len(&self) -> usize {
-        self.ui.stops.len()
-    }
-
     pub fn stop(&mut self, stop: Stop) {
         self.ui.stops.push(stop);
     }
@@ -680,37 +594,3 @@ pub fn irect(r: Rect) -> IRect {
     IRect::new(x0, y0, r.x1.round() as i32 - x0, r.y1.round() as i32 - y0)
 }
 
-/// The grain over a fresh card (`noise`), fading off the moment it opened.
-#[derive(Default)]
-pub struct Grain {
-    nodes: Vec<NodeId>,
-    tile: Option<crate::scene::Bitmap>,
-}
-
-impl Grain {
-    const TILE: u16 = 128;
-
-    /// Paints the grain over `frame` on top of everything the card holds,
-    /// true while it is still fading. `scale` is `debug motionScale`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn paint(&mut self, scene: &mut Scene, frame: IRect, clip: IRect, theme: &Theme, opened: Option<Instant>, scale: f64, now: Instant) -> bool {
-        let mut p = crate::surfaces::bar::cell::Painter::new(scene, &mut self.nodes, Some(clip.intersect(&frame)));
-        let mut fading = false;
-        if let (Some(n), Some(at)) = (theme.motion().catalogue.noise, opened) {
-            let t = crate::motion::progress(crate::motion::since(at, now), n.clock.duration * scale);
-            let a = (n.alpha * (1.0 - crate::motion::Curve::from_table(&n.clock.curve).ease(t))) as f32;
-            if t < 1.0 && a > 0.0 {
-                let tile = self.tile.get_or_insert_with(|| crate::effects::grain(Self::TILE));
-                let step = i32::from(Self::TILE);
-                for y in (frame.y..frame.bottom()).step_by(step as usize) {
-                    for x in (frame.x..frame.right()).step_by(step as usize) {
-                        p.image(tile, (x, y), a);
-                    }
-                }
-            }
-            fading = t < 1.0;
-        }
-        p.finish();
-        fading
-    }
-}

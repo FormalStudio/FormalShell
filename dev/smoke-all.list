@@ -2,13 +2,13 @@
 # rig's free slots. Every leg that runs on the nested rig, alone or on the
 # leg it rides. Left out: the vm_only legs (device-routes, mirror,
 # panel-morph, polkit, power, sleep, wifi), the cameras that write docs/
-# (shots, screensaver-gif, cartridge-media), --r0-measure, which records
+# (shots, screensaver-gif), --r0-measure, which records
 # rather than checks, and --installed, which runs a distro image per line.
 
 --airplay
 --app-grid
 --appmenu
---cartridge --backdrop
+--backdrop
 --bar-adaptive
 --pantheon --bar-ink
 --bar-layout
@@ -21,13 +21,10 @@
 --bar-style transparent --bar-adaptive
 --bar-title
 --idle --bluez-rssi
---cartridge --boot
 --brightness
 --caffeinate
 --capture
 --capture-edit
---cartridge
---cartridge --catalogue
 --center
 --chevron
 --chevron-quiet
@@ -107,7 +104,6 @@
 --screensaver
 --screensaver-inhibit
 --screenshot
---sfx
 --share
 --shoulders
 --showcase

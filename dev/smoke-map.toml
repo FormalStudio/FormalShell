@@ -64,7 +64,6 @@ paths = [
   "crates/formalshell-rs/src/scene.rs",
   "crates/formalshell-rs/src/text.rs",
   "crates/formalshell-rs/src/fontconfig.rs",
-  "crates/formalshell-rs/src/effects.rs",
   "crates/formalshell-rs/src/surface.rs",
   "crates/formalshell-rs/src/wayland.rs",
   "crates/formalshell-rs/src/main.rs",
@@ -186,10 +185,6 @@ runs = ["--wheel", "--menu"]
 paths = ["crates/formalshell-rs/src/keyboard.rs"]
 runs = ["--menu", "--panel-keys", "--lock"]
 
-[[rule]]
-paths = ["crates/formalshell-rs/src/sfx.rs", "crates/fs-audio/src/sfx.rs"]
-runs = ["--sfx"]
-
 # Bar
 [[rule]]
 paths = [
@@ -268,7 +263,7 @@ runs = ["--plugins"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/shards.rs", "crates/formalshell-rs/src/shards.rs"]
-runs = ["--cartridge --backdrop"]
+runs = ["--backdrop"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs", "crates/formalshell-rs/src/services/clock.rs"]
@@ -280,7 +275,7 @@ runs = ["--wallpaper", "--retro"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/cursor.rs", "crates/fs-chrome/src/grid.rs"]
-runs = ["--app-grid", "--emoji", "--cartridge"]
+runs = ["--app-grid", "--emoji"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/switcher.rs", "crates/formalshell-rs/src/surfaces/switcher/**", "crates/formalshell-rs/src/wayland/switcher.rs", "crates/formalshell-rs/src/ipc/switcher.rs"]
@@ -460,11 +455,6 @@ runs = ["--polkit"]
 paths = ["crates/formalshell-rs/src/services/power.rs"]
 runs = ["--power"]
 
-# Boot, cartridge
-[[rule]]
-paths = ["crates/formalshell-rs/src/boot.rs", "crates/formalshell-rs/src/surfaces/boot.rs", "crates/formalshell-rs/src/wayland/boot.rs"]
-runs = ["--cartridge --boot"]
-
 # Wallpaper and theme
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/wallpaper.rs", "crates/formalshell-rs/src/services/theme.rs", "crates/formalshell-rs/src/ipc/theme.rs"]
@@ -541,10 +531,6 @@ paths = ["dev/librepods-stub.py"]
 runs = ["--earbuds", "--headset-card"]
 
 [[rule]]
-paths = ["dev/sfx/**"]
-runs = ["--sfx"]
-
-[[rule]]
 paths = ["dev/gen-emoji.sh"]
 runs = ["--emoji"]
 
@@ -567,10 +553,6 @@ runs = ["--picker"]
 [[rule]]
 paths = ["crates/fs-menu/src/toggles.rs"]
 runs = ["--toggles", "--menu-actions"]
-
-[[rule]]
-paths = ["crates/fs-audio/sfx/**"]
-runs = ["--sfx"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/data/countries.json"]

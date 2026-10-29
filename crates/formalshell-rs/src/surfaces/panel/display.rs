@@ -172,18 +172,6 @@ impl Panel for Display {
         "monitor".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Outputs".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        super::count(sorted(v.store).len(), "output", "outputs")
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Primary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::Display, Topic::State, Topic::Config]
     }
@@ -203,7 +191,6 @@ impl Panel for Display {
                 trailing: None,
                 rail: None,
                 rail_on: None,
-                tab: "output".into(),
             };
             parts.push(w::hero_with(s, hero, true, Type::Display, None));
         }

@@ -58,24 +58,6 @@ impl Panel for Tailscale {
         "network".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "Tailnet".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        let t = &v.store.info.tailscale;
-        match t.poll {
-            Poll::Unknown => "loading".into(),
-            Poll::Missing | Poll::Error => "not running".into(),
-            Poll::NeedsLogin => "needs login".into(),
-            Poll::Ok => t.status.as_ref().map_or_else(|| "connected".into(), |s| super::count(s.peers.len(), "peer", "peers")),
-        }
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Secondary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -120,7 +102,6 @@ impl Panel for Tailscale {
                     trailing: None,
                     rail: None,
                     rail_on: None,
-                    tab: "tailnet".into(),
                 },
             )
             .interactive()

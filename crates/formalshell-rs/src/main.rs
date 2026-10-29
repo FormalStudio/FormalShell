@@ -1,6 +1,4 @@
-mod boot;
 mod cmdline;
-mod effects;
 mod fontconfig;
 mod greeter;
 mod install;
@@ -13,7 +11,6 @@ mod runtime;
 mod scene;
 mod scroll;
 mod services;
-mod sfx;
 mod shards;
 mod store;
 mod surface;

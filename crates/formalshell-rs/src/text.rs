@@ -655,22 +655,6 @@ mod tests {
         TextStyle { family, size: 20.0, weight: 400.0, tracking: 0.0, wdth, wght }
     }
 
-    // The package's build runs these with FS_RS_FONT_DIRS on the cartridge
-    // faces (nix/package.nix).
-    #[test]
-    fn archivo_widens_on_its_own_axes() {
-        let mut inner = Inner::new();
-        assert!(inner.fcx.collection.family_id("Archivo").is_some(), "FS_RS_FONT_DIRS carries no Archivo");
-        let archivo = Family::Face("Archivo", GenericFamily::SansSerif);
-        let width = |inner: &mut Inner, wdth, wght| inner.shape("CARTRIDGE", style(archivo, wdth, wght)).width;
-        let normal = width(&mut inner, 100.0, None);
-        let wide = width(&mut inner, 125.0, None);
-        let narrow = width(&mut inner, 62.0, None);
-        assert!(narrow < normal && normal < wide, "wdth 62 {narrow}px, 100 {normal}px, 125 {wide}px");
-        let heavy = width(&mut inner, 100.0, Some(800.0));
-        assert!(heavy > normal, "wght 800 {heavy}px against {normal}px");
-    }
-
     #[test]
     fn a_face_not_installed_draws_its_alias() {
         let mut inner = Inner::new();

@@ -75,18 +75,6 @@ impl Panel for Monitor {
         "activity".into()
     }
 
-    fn subtitle(&self, _: &View) -> String {
-        "System".into()
-    }
-
-    fn status(&self, v: &View) -> String {
-        metrics(v).into_iter().find(|m| !m.figure.is_empty()).map_or_else(|| "no readings".into(), |m| format!("{} {}", m.label.to_lowercase(), m.figure))
-    }
-
-    fn accent(&self) -> super::Accent {
-        super::Accent::Tertiary
-    }
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Compositor, Topic::Config]
     }
