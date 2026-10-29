@@ -263,7 +263,11 @@ join_fill() {
 # "<side> <row> <column>" per line. What counts as painted is a channel sum
 # more than 6 off the second bar's own resting frame, which has the pointer's
 # hover on the strip in it already. A row carrying fewer than 40 painted
-# columns is no card at all and is skipped.
+# columns is no card at all and is skipped. A dark theme's border over a
+# dark desktop, antialiased across a fractional edge, lands inside that
+# tolerance, so a fill column with the column past it darker than the
+# desktop is bordered: a clip that cuts the border leaves the desktop's own
+# value or the fill's lighter fringe there, never darker.
 join_borderless() {
   $convert_bin "$shot_dir/join-b-rest.png" -crop "${join_crop_width}x$3+0+$2" +repage \
     -depth 8 txt:- 2>/dev/null > "$shot_dir/join-base.txt"
@@ -275,11 +279,16 @@ join_borderless() {
         for (i = 1; i <= 3; i++) s += (x[i] > y[i] ? x[i] - y[i] : y[i] - x[i]);
         return s
       }
+      function darker(a, b,   x, y) {
+        if (a == "" || b == "") return 0;
+        split(a, x, ","); split(b, y, ",");
+        return x[1] + x[2] + x[3] < y[1] + y[2] + y[3]
+      }
       FNR == 1 { next }
       { split($1, c, ","); sub(":", "", c[2]); gsub(/[()]/, "", $2);
         x = c[1] + 0; y = c[2] + 0 }
       NR == FNR { base[x "," y] = $2; next }
-      { hex[x "," y] = toupper(substr($3, 2, 6))
+      { hex[x "," y] = toupper(substr($3, 2, 6)); cur[x "," y] = $2
         if (delta($2, base[x "," y]) > 6) {
           if (!(y in first)) first[y] = x;
           last[y] = x
@@ -288,8 +297,8 @@ join_borderless() {
         for (y in first) {
           a = first[y]; b = last[y];
           if (b - a < 40) continue;
-          if (hex[a "," y] == fill) print "L", y + top, a;
-          if (hex[b "," y] == fill) print "R", y + top, b
+          if (hex[a "," y] == fill && !darker(cur[(a - 1) "," y], base[(a - 1) "," y])) print "L", y + top, a;
+          if (hex[b "," y] == fill && !darker(cur[(b + 1) "," y], base[(b + 1) "," y])) print "R", y + top, b
         }
       }' "$shot_dir/join-base.txt" -
 }

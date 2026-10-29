@@ -610,6 +610,13 @@ impl Card {
         if let Some((s, l)) = bud_clip {
             clip = clip.intersect(&Scene::cover(Rect::new(s, -FAR, s + l, FAR), map, 0.0));
         }
+        // Nor past the deformed shape's border, rounded inward: the deform
+        // squeezes the shape under the undeformed content, which is opaque.
+        if visible {
+            let r = item.transform_rect_bbox(Rect::new(over + border, 0.0, over + clamped_length - border, (shape_depth - border).max(0.0)));
+            let (x0, y0) = (r.x0.ceil() as i32, r.y0.ceil() as i32);
+            clip = clip.intersect(&IRect::new(x0, y0, (r.x1.floor() as i32 - x0).max(0), (r.y1.floor() as i32 - y0).max(0)));
+        }
         self.clip = clip;
 
         self.joins.clear();
