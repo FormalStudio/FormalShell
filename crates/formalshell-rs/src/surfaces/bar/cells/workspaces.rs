@@ -1,9 +1,9 @@
 //! Spaces: one chip per workspace on this output, each its
 //! ordinal followed by the icons of the windows on it, the focused chip
 //! under one pill that travels (Bar/workspaces.js picks the chips and what
-//! each lists). herdr's word on an agent rides its window's icon as a badge:
-//! a spinner while it works, a pulse while it waits on the user, a check once
-//! it is done. The hover preview waits for the thumbnails (R8).
+//! each lists). T3 Code's agent state rides its window's icon as a badge:
+//! a spinner while one works, a pulse while one waits on the user, a check
+//! once one is done. The hover preview waits for the thumbnails (R8).
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -17,7 +17,7 @@ use vello_cpu::kurbo::Affine;
 use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, EMPHASIZED, PULSE_MS, breathe};
 use crate::scene::IRect;
 use crate::services::appicon::{self, Icon};
-use crate::services::herdr;
+use crate::services::agents;
 use crate::services::compositor::{Window, Workspace};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, View};
@@ -121,7 +121,7 @@ pub struct Workspaces {
     agents: bool,
     /// Wheel travel since the last step, in notches.
     wheel_sum: f64,
-    herdr: HashMap<String, String>,
+    agent_state: HashMap<String, String>,
     icons: HashMap<String, Icon>,
     queries: Vec<appicon::Query>,
     probed: Option<(u32, Vec<appicon::Query>)>,
@@ -143,7 +143,7 @@ pub struct Workspaces {
     was_urgent: HashMap<i64, bool>,
     clock: Instant,
     /// `debug r0Spinner`: a working badge on the first chip whether or not
-    /// herdr says so.
+    /// an agent works.
     forced_spinner: bool,
 }
 
@@ -155,7 +155,7 @@ impl Default for Workspaces {
             show_apps: SHOW_APPS.into(),
             agents: true,
             wheel_sum: 0.0,
-            herdr: HashMap::new(),
+            agent_state: HashMap::new(),
             icons: HashMap::new(),
             queries: Vec::new(),
             probed: None,
@@ -227,11 +227,11 @@ fn caption_style(look: &Look) -> TextStyle {
 
 impl Workspaces {
     fn waiting(&self, slot: &Slot) -> bool {
-        self.agents && !slot.current && slot.windows.iter().any(|w| self.herdr.get(&w.id).is_some_and(|s| s == "blocked"))
+        self.agents && !slot.current && slot.windows.iter().any(|w| self.agent_state.get(&w.id).is_some_and(|s| s == "blocked"))
     }
 
     fn agent(&self, window_id: &str) -> &str {
-        if self.agents && !window_id.is_empty() { self.herdr.get(window_id).map_or("", String::as_str) } else { "" }
+        if self.agents && !window_id.is_empty() { self.agent_state.get(window_id).map_or("", String::as_str) } else { "" }
     }
 
     fn focused_index(&self) -> i64 {
@@ -316,7 +316,7 @@ impl Workspaces {
         })
     }
 
-    /// herdr's badge on the corner of `anchor`, on its own nodes so a frame
+    /// The agent badge on the corner of `anchor`, on its own nodes so a frame
     /// of a spinner or a pulse damages that rect alone.
     fn badge(&self, kit: &mut Kit, p: &mut Painter, anchor: IRect, state: &str, now: Instant, alpha: f32) {
         let look = kit.look.clone();
@@ -346,7 +346,7 @@ impl Workspaces {
 
 impl Cell for Workspaces {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Compositor, Topic::Config, Topic::Herdr, Topic::AppIcon]
+        &[Topic::Compositor, Topic::Config, Topic::Agents, Topic::AppIcon]
     }
 
     fn read(&mut self, env: &Env) -> bool {
@@ -361,9 +361,9 @@ impl Cell for Workspaces {
 
         let ids: Vec<&str> = slots.iter().flat_map(|s| s.windows.iter().map(|w| w.id.as_str())).collect();
         let scale = crate::scene::raster_scale();
-        let herdr_now: HashMap<String, String> = ids
+        let agents_now: HashMap<String, String> = ids
             .iter()
-            .filter_map(|id| env.store.herdr.by_window.get(*id).map(|s| ((*id).to_owned(), s.clone())))
+            .filter_map(|id| env.store.agents.by_window.get(*id).map(|s| ((*id).to_owned(), s.clone())))
             .collect();
         let icons_now: HashMap<String, Icon> =
             ids.iter().filter_map(|id| env.store.appicon.get(id, self.icon_size.round() as u32, scale).map(|i| ((*id).to_owned(), i))).collect();
@@ -378,19 +378,29 @@ impl Cell for Workspaces {
                 pid: w.pid,
             })
             .collect();
-        let polled = if agents {
-            c.windows.iter().map(|w| herdr::Window { id: w.id.clone(), pid: w.pid, title: w.title.clone() }).collect()
+        let watched = if agents {
+            agents::Watch {
+                windows: c
+                    .windows
+                    .iter()
+                    .filter(|w| fs_info::agents::is_app(&w.app_id, &w.initial_class))
+                    .map(|w| w.id.clone())
+                    .collect(),
+                hosts: env.store.config.get("workspaces.agentHosts").and_then(Value::as_array).map_or_else(Vec::new, |hosts| {
+                    hosts.iter().filter_map(Value::as_str).map(str::to_owned).collect()
+                }),
+            }
         } else {
-            Vec::new()
+            agents::Watch::default()
         };
-        herdr::windows(polled);
+        agents::watch(watched);
 
         let vertical = env.edge.is_vertical();
         let changed = slots != self.slots
             || vertical != self.vertical
             || show_apps != self.show_apps
             || agents != self.agents
-            || herdr_now != self.herdr
+            || agents_now != self.agent_state
             || icons_now != self.icons
             || env.output != self.output;
         if slots != self.slots {
@@ -407,7 +417,7 @@ impl Cell for Workspaces {
         self.vertical = vertical;
         self.show_apps = show_apps;
         self.agents = agents;
-        self.herdr = herdr_now;
+        self.agent_state = agents_now;
         self.icons = icons_now;
         self.queries = queries;
         changed

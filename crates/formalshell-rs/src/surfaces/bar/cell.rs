@@ -238,7 +238,7 @@ pub trait Custom {
     fn measure(&mut self, kit: &mut Kit, vertical: bool, band: bool) -> f64;
     fn draw(&mut self, kit: &mut Kit, p: &mut Painter, rect: IRect, ink: &Ink, now: Instant);
     fn animating(&self, now: Instant) -> bool;
-    /// `debug r0Spinner`: the herdr badge on the first chip.
+    /// `debug r0Spinner`: the agent badge on the first chip.
     fn spinner(&mut self, _on: bool, _now: Instant) {}
     /// The cell washes its own children under the pointer, so the kit keeps
     /// its whole-box wash off.

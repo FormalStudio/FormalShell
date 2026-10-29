@@ -2,6 +2,7 @@
 //! [`Store`](crate::store::Store), a `Diff` that applies to it, and an
 //! async task on the service thread that publishes those diffs.
 
+pub mod agents;
 pub mod airplay;
 pub mod ams;
 pub mod appicon;
@@ -19,7 +20,6 @@ pub mod depth;
 pub mod cover;
 pub mod devices;
 pub mod display;
-pub mod herdr;
 pub mod icons;
 pub mod inhibit;
 pub mod lights;
@@ -71,7 +71,7 @@ pub fn start(ctx: &Ctx) {
     ctx.spawn(commands::run(ctx.clone()));
     ctx.spawn(barpaint::run(ctx.clone()));
     ctx.spawn(wallpaper::run(ctx.clone()));
-    ctx.spawn(herdr::run(ctx.clone()));
+    ctx.spawn(agents::run(ctx.clone()));
     ctx.spawn(appicon::run(ctx.clone()));
     ctx.spawn(wants::run(ctx.clone()));
     ctx.spawn(plugins::run(ctx.clone()));

@@ -320,7 +320,7 @@ Each module under `src/services/` names its source in its header. Grouped:
 
 - Session and files: `config`, `state`, `clock`, `theme`, `wallpaper`,
   `barpaint`, `plugins`, `commands`.
-- Compositor: `hyprland`, `herdr` (agent badges on Spaces windows),
+- Compositor: `hyprland`, `agents` (T3 Code agent badges on Spaces windows),
   `appicon` (which desktop entry and icon a window has), `icons`.
 - Devices (`services/devices/`): `audio` over `fs-audio`, `bluetooth` over
   `fs-bluez`, `network` over `fs-network`, `power` over `fs-upower`,
@@ -355,7 +355,7 @@ spawn nothing, so they run on the shell's executor.
 | `fs-theme` | chrome tables, tokens, presets, the `box()` resolver (`style.rs`), palettes, the pure half of matugen |
 | `fs-chrome` | bar layout resolver, workspace cell model, drawer and frame geometry, panel cursor, dither, switcher list, hot corner arming, plugin manifests |
 | `fs-menu` | the launcher tree, fuzzy search, key policy, frecency, calculator, providers, clipboard history, emoji |
-| `fs-info` | notifications and toasts, reminders, calendar, weather, location, herdr, usage, flake updates |
+| `fs-info` | notifications and toasts, reminders, calendar, weather, location, agents, usage, flake updates |
 | `fs-media` | MPRIS source picking, Apple Music art, AirPlay, lyrics, radio, visualizer styles |
 | `fs-system` | monitor parsers, power, display, lights, capture, keybinds, audio, camera, controller, lock and overnight models |
 | `fs-devices` | earbuds, iPhone, Bluetooth, LocalSend, Wi-Fi and Tailscale models |

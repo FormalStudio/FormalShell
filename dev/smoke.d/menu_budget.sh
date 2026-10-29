@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --menu-budget: the rust rewrite spec's launcher budget, read off the
 # shell's own commit log. The bar's badge spins throughout (`debug
-# r0Spinner`, the herdr badge's spinner) while the launcher opens and
+# r0Spinner`, the agent badge's spinner) while the launcher opens and
 # closes five times over `menu toggle`. Two numbers per open: the time from
 # the toggle reaching the shell to the launcher surface's first commit
 # (budget 50 ms), and the longest gap between two bar commits from the

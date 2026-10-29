@@ -3,38 +3,31 @@
 # --spaces (M74): the Spaces cell's own reads, off one session with windows
 # on two workspaces. A sibling of --workspaces rather than more of it: that
 # leg photographs the pill's travel on a burst clock, and everything here
-# waits on herdr polls and a real pointer instead, so the two timelines
+# waits on agent polls and a real pointer instead, so the two timelines
 # would only get in each other's way.
 #
 # Fixture: the base window plus two windows of one foot server on
-# workspace 1, sharing its pid the way every ghostty window does: one
-# carries `herdr --remote fakehost` under the title herdr's default
-# window_title renders for it, the other a plain shell. Two foots on
-# workspace 2, one
-# carrying a bare `herdr` and one carrying nothing. `herdr` is a PATH shim:
-# as a client it execs an interactive bash under the argv a real client has
-# (the script itself reads as `bash .../herdr` in ps, which is not a
-# client, and `cat` will not do: the VM's coreutils is one multi-call
-# binary that picks its applet off argv[0]),
-# and as `herdr agent list` it answers one `working` agent, which is the
-# local poll. `ssh` is a PATH shim too, and the only ssh this session can
-# reach: the wrapper suffixes openssh for exactly this, so the remote poll
-# lands here, answers `blocked` (or `idle` once the drive says so) for
-# fakehost every two seconds, and refuses any other host without ever
-# handing it on. Every invocation is logged, which is the proof the remote
-# path was taken at all.
+# workspace 1, sharing its pid the way every ghostty window does: one under
+# the T3 Code desktop app's id (com.t3tools.T3Code), the other a plain
+# shell. Two foots on workspace 2 carrying nothing. `workspaces.agentHosts`
+# lists fakehost and deadhost. `ssh` is a PATH shim, and the only ssh this
+# session can reach: the wrapper suffixes openssh for exactly this, so each
+# host's `t3-agents` stream lands here. fakehost answers one thread
+# `blocked` (or none once the drive says so) every two seconds; deadhost
+# and any other host are refused without ever being handed on. Every
+# invocation is logged, which is the proof the poll was taken at all.
 #
 # What is read, in order:
 # - `workspaces status`: every window listed under its own chip with its
 #   icon resolved and shown (icons on every occupied chip, not just the
-#   one on screen), every chip labelled with its ordinal, the blocked and
-#   working agents on the right icons, the plain window with none, and the
-#   chip on screen wider than a bare one.
-# - `debug dump`'s herdr block agreeing: both windows in stateByWindow,
-#   both client keys in stateByKey.
+#   one on screen), every chip labelled with its ordinal, the blocked
+#   badge on the T3 Code icon, and none on its same-pid sibling or the
+#   plain windows, and the chip on screen wider than a bare one.
+# - `debug dump`'s agents block agreeing: the T3 Code window alone in
+#   stateByWindow, fakehost blocked and deadhost empty in stateByHost.
 # - The frame: the blocked icon's badge, read as the difference between the
-#   chip with herdr answering blocked and the same chip once it answers
-#   idle, red-dominant and inside that icon's own box (the icon's rect out
+#   chip with fakehost answering blocked and the same chip once it answers
+#   no threads, red-dominant and inside that icon's own box (the icon's rect out
 #   of `workspaces status`). The idle dump drops the window from
 #   stateByWindow, which is the "nothing for idle" half.
 # - A wheel notch over workspace 1's slot (wlrctl, a real axis event) moving
@@ -60,9 +53,9 @@
 #   scrolls the strip along x, then a notch the other way scrolls it back.
 #
 # The rust shell also logs every commit with its damage, so a
-# stretch with both badges animating (the working spinner, the blocked pulse)
-# is read off that log: every damage rect has to sit on one of those two
-# icons' badges, which is what "the spinner damages only its own rect" means.
+# stretch with the blocked pulse animating is read off that log: every
+# damage rect has to sit on that icon's badge, which is what "a badge
+# damages only its own rect" means.
 leg_spaces_flag="--spaces"
 leg_spaces_order=196
 leg_spaces_needs="foot jq convert wlrctl"
@@ -70,7 +63,6 @@ leg_spaces_fixture_window=keep
 
 spaces_shim_dir="$shot_dir/spaces-shim"
 spaces_ssh_calls_path="$shot_dir/spaces-ssh-calls.txt"
-spaces_herdr_calls_path="$shot_dir/spaces-herdr-calls.txt"
 spaces_remote_state_path="$shot_dir/spaces-remote-state"
 spaces_dispatch_path="$shot_dir/spaces-dispatch.txt"
 spaces_foot_socket="$shot_dir/formalshell-spaces-foot.sock"
@@ -114,25 +106,7 @@ leg_spaces_fixture() {
   local name colour
   mkdir -p "$spaces_shim_dir"
   echo blocked > "$spaces_remote_state_path"
-  cat > "$spaces_shim_dir/herdr" <<EOF
-#!/usr/bin/env bash
-if [ "\${1:-}" = agent ]; then
-  printf '%s\n' "\$*" >> "$spaces_herdr_calls_path"
-  printf '%s\n' '{"result":{"type":"agent_list","agents":[{"pane_id":"p1","agent":"claude","agent_status":"working"}]}}'
-  exit 0
-fi
-if [ "\${1:-}" = workspace ]; then
-  printf '%s\n' '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[{"label":"rig","number":1}]}}'
-  exit 0
-fi
-# "{hostname}: {workspace}" as fakehost's server would render it. The VM's
-# own bashrc titles every prompt user@host: cwd, so this client's bash gets
-# a home whose .bashrc, read last, puts herdr's title back each prompt.
-if [ "\$*" = "--remote fakehost" ]; then
-  export HOME="$spaces_shim_dir/remote-client-home"
-fi
-exec -a "herdr\${*:+ \$*}" bash
-EOF
+  settings_fragment ', "workspaces": {"agentHosts": ["fakehost", "deadhost"]}'
   cat > "$spaces_shim_dir/ssh" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$spaces_ssh_calls_path"
@@ -149,34 +123,25 @@ if [ "\$host" != fakehost ]; then
   exit 255
 fi
 # A real remote whose bash, run by sshd, sources a ~/.bashrc that starts
-# an interactive fish on the channel's stdin. Short of -n or --norc that fish
-# waits for an EOF the shell's open stdin pipe never sends.
+# an interactive shell on the channel's stdin. Short of -n that shell waits
+# for an EOF the shell's open stdin pipe never sends.
 case " \$* " in
-  *" -n "*|*" bash --norc "*) ;;
+  *" -n "*) ;;
   *) cat > /dev/null ;;
 esac
-# One line the size and shape herdr 0.9.1 really prints for eight agents
-# (~4.5KB, a non-ASCII title glyph in each), only the first one's status
-# driven.
-agent() {
-  printf '{"agent":"claude","agent_session":{"agent":"claude","kind":"id","source":"herdr:claude","value":"764b8a38-bc42-4d6b-8c85-73ca5a24831%s"},"agent_status":"%s","cwd":"/home/rig/src/project-%s","focused":false,"foreground_cwd":"/home/rig/src/project-%s","pane_id":"w65215ab3bb4281:p%s","revision":11,"state_change_seq":856,"tab_id":"w65215ab3bb4281:t%s","terminal_id":"term_65c177d9ebde6%s","terminal_title":"◑ Fixture agent %s on a long running task","terminal_title_stripped":"Fixture agent %s on a long running task","workspace_id":"w65215ab3bb4281"}' "\$1" "\$2" "\$1" "\$1" "\$1" "\$1" "\$1" "\$1" "\$1"
-}
-echo "hostname fakehost-server"
+# t3-agents' own shape, a thread title with a non-ASCII glyph, only the
+# status driven.
 while :; do
   state=\$(cat "$spaces_remote_state_path" 2>/dev/null)
-  agents=\$(agent 1 "\${state:-idle}")
-  for i in 2 3 4 5 6 7 8; do agents="\$agents,\$(agent "\$i" idle)"; done
-  printf '{"id":"cli:agent:list","result":{"type":"agent_list","agents":[%s]}}\n' "\$agents"
-  printf '%s\n' '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[{"label":"other","number":1},{"label":"rig","number":2}]}}'
+  if [ "\$state" = blocked ]; then
+    printf '%s\n' '{"environment": "e0", "threads": [{"id": "t1", "title": "\u25d1 Fixture thread", "project": "rig", "status": "blocked", "seq": "2026-01-01T00:00:00.000Z"}]}'
+  else
+    printf '%s\n' '{"environment": "e0", "threads": []}'
+  fi
   sleep 2
 done
 EOF
-  mkdir -p "$spaces_shim_dir/remote-client-home"
-  cat > "$spaces_shim_dir/remote-client-home/.bashrc" <<'EOF'
-PS1='$ '
-PROMPT_COMMAND='printf "\033]2;fakehost-server: rig\007"'
-EOF
-  chmod +x "$spaces_shim_dir/herdr" "$spaces_shim_dir/ssh"
+  chmod +x "$spaces_shim_dir/ssh"
   # clipssh.sh's route onto the shell's PATH: the rig's own environment is
   # what Hyprland, the foots and the shell's pollers all inherit.
   export PATH="$spaces_shim_dir:$PATH"
@@ -184,17 +149,17 @@ EOF
   # One entry and one flat icon per fixture app id, so every window has an
   # icon of its own and none of them is red, which the badge read relies on.
   mkdir -p "$iso_home/.local/share/applications" "$iso_home/.local/share/icons/hicolor/48x48/apps"
-  for name in blocked:'#3A7BD5' sibling:'#9A6AD5' working:'#3AAA5D' plain:'#8A8A8A'; do
+  for name in com.t3tools.T3Code:'#3A7BD5' formalshell-spaces-sibling:'#9A6AD5' formalshell-spaces-other:'#3AAA5D' formalshell-spaces-plain:'#8A8A8A'; do
     colour=${name#*:}
     name=${name%%:*}
-    cat > "$iso_home/.local/share/applications/formalshell-spaces-$name.desktop" <<EOF
+    cat > "$iso_home/.local/share/applications/$name.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Spaces $name
 Exec=true
-Icon=formalshell-spaces-$name
+Icon=$name
 EOF
-    $convert_bin -size 48x48 "xc:$colour" "$iso_home/.local/share/icons/hicolor/48x48/apps/formalshell-spaces-$name.png"
+    $convert_bin -size 48x48 "xc:$colour" "$iso_home/.local/share/icons/hicolor/48x48/apps/$name.png"
   done
   # The base run writes the same index only when every leg keeps its
   # fixture window, which a rider like --frame does not, and QIconLoader
@@ -231,9 +196,9 @@ park() {
 sleep 4
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --server=$spaces_foot_socket]==])" > "$spaces_dispatch_path" 2>&1
 sleep 1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=formalshell-spaces-blocked herdr --remote fakehost]==])" >> "$spaces_dispatch_path" 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=com.t3tools.T3Code sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[${foot_bin%/*}/footclient --server-socket=$spaces_foot_socket --app-id=formalshell-spaces-sibling sh -c 'sleep 300']==])" >> "$spaces_dispatch_path" 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-working herdr]==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-other sh -c 'sleep 300']==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
 sleep 2
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-spaces-plain sh -c 'sleep 300']==], { workspace = '2 silent' })" >> "$spaces_dispatch_path" 2>&1
 sleep 2
@@ -246,7 +211,7 @@ out_w=\$("$hyprctl_bin" monitors -j | "$jq_bin" -r '.[0] | (.width / .scale) | f
 "$hyprctl_bin" dispatch "hl.dsp.window.move({ x = \$((out_w - 200)), y = 150, window = 'class:^(formalshell-spaces-plain)\$' })" >> "$spaces_dispatch_path" 2>&1
 # A footclient window belongs to the server's pid, which exec's window rules
 # never see, so both are moved by class instead.
-"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(formalshell-spaces-blocked)\$' })" >> "$spaces_dispatch_path" 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(com\\.t3tools\\.T3Code)\$' })" >> "$spaces_dispatch_path" 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.move({ workspace = 1, follow = false, window = 'class:^(formalshell-spaces-sibling)\$' })" >> "$spaces_dispatch_path" 2>&1
 sleep 6
 call workspaces status > "$spaces_status_one_path" 2>&1
@@ -258,8 +223,7 @@ call debug dump > "$spaces_dump_idle_path" 2>&1
 "$grim_bin" "$spaces_idle_png" > /dev/null 2>&1
 echo blocked > "$spaces_remote_state_path"
 sleep 4
-# A stretch with the working spinner and the blocked pulse both running and
-# nothing else moving, clear of the clock's minute edge.
+# A stretch with the blocked pulse running and nothing else moving, clear of the clock's minute edge.
 while s=\$(date +%S); [ "\$((10#\$s))" -ge 52 ] || [ "\$((10#\$s))" -lt 2 ]; do sleep 1; done
 call debug query spaces-quiet-start
 sleep 3
@@ -328,13 +292,13 @@ EOF
 # The icon a fixture app id resolved to in one status read, as a jq object
 # carrying its slot index and its place among that slot's icons.
 spaces_icon() {
-  "$jq_bin" -c --arg app "formalshell-spaces-$2" \
+  "$jq_bin" -c --arg app "$2" \
     '[.slots | to_entries[] | .key as $s | .value.icons | to_entries[] | select(.value.appId == $app) | .value + {slot: $s, at: .key}] | first' "$1"
 }
 
 # Every commit the rust shell made between the two quiet markers, read off
 # its log: the bar's damage rects, each of which has to lie on the badge of
-# an icon herdr marks working or blocked (the icon's own box grown by the
+# an icon marked working or blocked (the icon's own box grown by the
 # badge's reach), and enough of them that the animations really ran.
 spaces_badge_damage() {
   local t0 t1 boxes commits verdict
@@ -378,7 +342,7 @@ spaces_badge_damage() {
 }
 
 leg_spaces_assert() {
-  local f blocked working plain blocked_id working_id slot_one slot_bare
+  local f blocked other plain sibling blocked_id sibling_id pids slot_one slot_bare
   [ -f "$spaces_done_path" ] || fail "the spaces drive never finished; last dispatch output: $(tail -n 5 "$spaces_dispatch_path" 2>/dev/null)"
   for f in "$spaces_status_one_path" "$spaces_dump_path" "$spaces_dump_idle_path" "$spaces_status_quiet_path" \
     "$spaces_status_two_path" "$spaces_status_peek_path" "$spaces_status_hover_path" \
@@ -390,15 +354,15 @@ leg_spaces_assert() {
   cat "$spaces_status_one_path"; echo
   cat "$spaces_dispatch_path" 2>/dev/null || true
   echo "ssh shim calls:"; cat "$spaces_ssh_calls_path" 2>/dev/null || true
-  echo "herdr shim calls: $(wc -l < "$spaces_herdr_calls_path" 2>/dev/null || echo 0)"
 
-  # The remote poll reached the shim, and only for fakehost.
-  grep -q 'fakehost' "$spaces_ssh_calls_path" 2>/dev/null \
-    || fail "no ssh call for fakehost: the remote herdr client was never polled"
-  if grep -q '^refused' "$spaces_ssh_calls_path"; then
-    fail "the shell asked ssh for a host other than fakehost: $(grep '^refused' "$spaces_ssh_calls_path")"
+  # Both hosts were asked, through t3-agents, and no other.
+  grep -q 'fakehost .local/bin/t3-agents' "$spaces_ssh_calls_path" 2>/dev/null \
+    || fail "no t3-agents ssh call for fakehost: the agent host was never polled"
+  grep -q '^refused deadhost' "$spaces_ssh_calls_path" \
+    || fail "deadhost was never polled"
+  if grep '^refused' "$spaces_ssh_calls_path" | grep -vq '^refused deadhost'; then
+    fail "the shell asked ssh for a host not in agentHosts: $(grep '^refused' "$spaces_ssh_calls_path")"
   fi
-  [ -s "$spaces_herdr_calls_path" ] || fail "the local herdr client was never polled"
 
   # Chips: the ordinal on every one, whatever the compositor names it.
   "$jq_bin" -e '.slots | all(.label == (.idx | tostring))' "$spaces_status_one_path" > /dev/null \
@@ -406,18 +370,18 @@ leg_spaces_assert() {
 
   # Icons: every fixture window under its own chip, each resolved, and
   # shown on every chip that holds a window, not only the one on screen.
-  blocked=$(spaces_icon "$spaces_status_one_path" blocked)
-  working=$(spaces_icon "$spaces_status_one_path" working)
-  plain=$(spaces_icon "$spaces_status_one_path" plain)
-  sibling=$(spaces_icon "$spaces_status_one_path" sibling)
-  echo "blocked: $blocked"; echo "sibling: $sibling"; echo "working: $working"; echo "plain: $plain"
-  echo "herdr in debug dump: $("$jq_bin" -c .herdr "$spaces_dump_path")"
-  "$jq_bin" -c '.windows[] | select(.appId | startswith("formalshell-spaces-")) | {appId, pid, title}' "$spaces_dump_path"
-  [ "$(echo "$blocked" | "$jq_bin" -r .slot)" = 0 ] || fail "the blocked window is not under workspace 1's slot: $blocked"
-  [ "$(echo "$working" | "$jq_bin" -r .slot)" = 1 ] || fail "the working window is not under workspace 2's slot: $working"
+  blocked=$(spaces_icon "$spaces_status_one_path" com.t3tools.T3Code)
+  other=$(spaces_icon "$spaces_status_one_path" formalshell-spaces-other)
+  plain=$(spaces_icon "$spaces_status_one_path" formalshell-spaces-plain)
+  sibling=$(spaces_icon "$spaces_status_one_path" formalshell-spaces-sibling)
+  echo "blocked: $blocked"; echo "sibling: $sibling"; echo "other: $other"; echo "plain: $plain"
+  echo "agents in debug dump: $("$jq_bin" -c .agents "$spaces_dump_path")"
+  "$jq_bin" -c '.windows[] | select(.appId | test("^(formalshell-spaces-|com\\.t3tools\\.)")) | {appId, pid, title}' "$spaces_dump_path"
+  [ "$(echo "$blocked" | "$jq_bin" -r .slot)" = 0 ] || fail "the T3 Code window is not under workspace 1's slot: $blocked"
+  [ "$(echo "$other" | "$jq_bin" -r .slot)" = 1 ] || fail "the other window is not under workspace 2's slot: $other"
   [ "$(echo "$plain" | "$jq_bin" -r .slot)" = 1 ] || fail "the plain window is not under workspace 2's slot: $plain"
   [ "$(echo "$sibling" | "$jq_bin" -r .slot)" = 0 ] || fail "the sibling window is not under workspace 1's slot: $sibling"
-  for f in "$blocked" "$sibling" "$working" "$plain"; do
+  for f in "$blocked" "$sibling" "$other" "$plain"; do
     [ "$(echo "$f" | "$jq_bin" -r .icon)" = true ] || fail "a fixture window resolved no icon: $f"
   done
   "$jq_bin" -e '[.slots[] | select(.icons | length > 0) | .appsShown] | all' "$spaces_status_one_path" > /dev/null \
@@ -429,30 +393,27 @@ leg_spaces_assert() {
   fi
 
   # Badges in status, then the same answer in the service itself.
-  [ "$(echo "$blocked" | "$jq_bin" -r .agent)" = blocked ] || fail "the remote client's window carries no blocked badge: $blocked"
-  [ "$(echo "$working" | "$jq_bin" -r .agent)" = working ] || fail "the local client's window carries no working badge: $working"
-  [ "$(echo "$plain" | "$jq_bin" -r .agent)" = "" ] || fail "a window with no herdr in its tree carries a badge: $plain"
+  [ "$(echo "$blocked" | "$jq_bin" -r .agent)" = blocked ] || fail "the T3 Code window carries no blocked badge: $blocked"
+  [ "$(echo "$other" | "$jq_bin" -r .agent)" = "" ] || fail "a window that is not T3 Code carries a badge: $other"
+  [ "$(echo "$plain" | "$jq_bin" -r .agent)" = "" ] || fail "a window that is not T3 Code carries a badge: $plain"
   [ "$(echo "$sibling" | "$jq_bin" -r .agent)" = "" ] \
-    || fail "the plain window sharing the herdr window's pid carries its badge: $sibling"
+    || fail "the plain window sharing the T3 Code window's pid carries its badge: $sibling"
   blocked_id=$(echo "$blocked" | "$jq_bin" -r .id)
   sibling_id=$(echo "$sibling" | "$jq_bin" -r .id)
   pids=$("$jq_bin" -r --arg a "$blocked_id" --arg b "$sibling_id" '[.windows[] | select(.id == $a or .id == $b) | .pid] | unique | map(tostring) | join(" ")' "$spaces_dump_path")
   echo "blocked and sibling pids: $pids"
   case "$pids" in ""|*" "*) fail "the blocked and sibling windows do not share one pid: '$pids'" ;; esac
-  [ "$("$jq_bin" -r --arg id "$sibling_id" '.herdr.stateByWindow[$id] // ""' "$spaces_dump_path")" = "" ] \
-    || fail "debug dump's stateByWindow badges the sibling $sibling_id"
-  working_id=$(echo "$working" | "$jq_bin" -r .id)
-  [ "$("$jq_bin" -r --arg id "$blocked_id" '.herdr.stateByWindow[$id] // ""' "$spaces_dump_path")" = blocked ] \
+  [ "$("$jq_bin" -r '.agents.stateByWindow | keys | join(" ")' "$spaces_dump_path")" = "$blocked_id" ] \
+    || fail "debug dump's stateByWindow badges something other than the T3 Code window $blocked_id"
+  [ "$("$jq_bin" -r --arg id "$blocked_id" '.agents.stateByWindow[$id] // ""' "$spaces_dump_path")" = blocked ] \
     || fail "debug dump's stateByWindow has no blocked entry for $blocked_id"
-  [ "$("$jq_bin" -r --arg id "$working_id" '.herdr.stateByWindow[$id] // ""' "$spaces_dump_path")" = working ] \
-    || fail "debug dump's stateByWindow has no working entry for $working_id"
-  [ "$("$jq_bin" -r '.herdr.stateByKey["remote:fakehost"] // ""' "$spaces_dump_path")" = blocked ] \
-    || fail "debug dump's stateByKey has no blocked remote:fakehost"
-  [ "$("$jq_bin" -r '.herdr.stateByKey.local // ""' "$spaces_dump_path")" = working ] \
-    || fail "debug dump's stateByKey has no working local client"
-  "$jq_bin" -c .herdr "$spaces_dump_idle_path"
-  [ "$("$jq_bin" -r --arg id "$blocked_id" '.herdr.stateByWindow[$id] // ""' "$spaces_dump_idle_path")" = "" ] \
-    || fail "herdr answering idle left $blocked_id in stateByWindow"
+  [ "$("$jq_bin" -r '.agents.stateByHost.fakehost // ""' "$spaces_dump_path")" = blocked ] \
+    || fail "debug dump's stateByHost has no blocked fakehost"
+  [ "$("$jq_bin" -r '.agents.stateByHost.deadhost // ""' "$spaces_dump_path")" = "" ] \
+    || fail "the unreachable deadhost carries a state in stateByHost"
+  "$jq_bin" -c .agents "$spaces_dump_idle_path"
+  [ "$("$jq_bin" -r --arg id "$blocked_id" '.agents.stateByWindow[$id] // ""' "$spaces_dump_idle_path")" = "" ] \
+    || fail "fakehost answering no threads left $blocked_id in stateByWindow"
 
   # The slot on screen is wider than a bare one.
   slot_one=$("$jq_bin" -r '.slots[0].extent' "$spaces_status_one_path")
@@ -472,8 +433,8 @@ leg_spaces_assert() {
   echo "SMOKE_SPACES_HOVER $spaces_hover_png"
   echo "SMOKE_SPACES_LEFT $spaces_left_png"
 
-  # The badge in the frame: what changed in workspace 1's chip when herdr
-  # went from blocked to idle, which has to sit on the blocked icon and be
+  # The badge in the frame: what changed in workspace 1's chip when fakehost
+  # went from a blocked thread to none, which has to sit on the blocked icon and be
   # red. The icon's own rect comes out of the status read.
   local geo sx sy sw sh icon_left icon_width diff_box dx dw red_on red_off
   read -r sx sy sw sh < <("$jq_bin" -r '.slots[0].rect | "\(.x) \(.y) \(.width) \(.height)"' "$spaces_status_one_path")
@@ -492,7 +453,7 @@ leg_spaces_assert() {
   dw=${diff_box%%x*}
   dx=$(echo "$diff_box" | sed -n 's/^[0-9]*x[0-9]*+\([0-9]*\)+[0-9]*$/\1/p')
   [ -n "$dx" ] && [ "${dw:-0}" -gt 0 ] && [ "$diff_box" != "0x0+0+0" ] \
-    || fail "workspace 1's slot looks the same with herdr blocked and idle: no badge drawn"
+    || fail "workspace 1's slot looks the same with fakehost blocked and idle: no badge drawn"
   dx=$((dx + sx))
   if [ "$dx" -lt $((icon_left - 3)) ] || [ $((dx + dw)) -gt $((icon_left + icon_width + 4)) ]; then
     fail "the badge change spans x=$dx..$((dx + dw)), outside the blocked icon at $icon_left..$((icon_left + icon_width))"
@@ -513,8 +474,8 @@ leg_spaces_assert() {
   echo "after notch up: $("$jq_bin" -c '{id, name}' "$spaces_ws_up_path" 2>/dev/null)"
   [ "$("$jq_bin" -r .id "$spaces_ws_down_path")" = 2 ] || fail "a wheel notch over the cell did not move focus to workspace 2"
   [ "$("$jq_bin" -r .id "$spaces_ws_up_path")" = 1 ] || fail "a wheel notch back did not return focus to workspace 1"
-  "$jq_bin" -e '.slots[1].active and (.slots[1].icons | map(.agent) | index("working") != null)' "$spaces_status_two_path" > /dev/null \
-    || fail "workspace 2's slot is not active with its working badge after the notch: $(cat "$spaces_status_two_path")"
+  "$jq_bin" -e '.slots[1].active' "$spaces_status_two_path" > /dev/null \
+    || fail "workspace 2's slot is not active after the notch: $(cat "$spaces_status_two_path")"
 
   spaces_badge_damage
 

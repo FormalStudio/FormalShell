@@ -5,9 +5,9 @@
 # budgets are read off its output by hand.
 #
 # The bar is pinned to workspaces on the left and the clock in the centre,
-# which is all the spike draws. A foot window running a `herdr` PATH shim
-# sits on workspace 1 throughout, answering `herdr agent list` with an idle
-# agent; the badge spins over `debug r0Spinner`.
+# which is all the spike draws. A foot window under the T3 Code app id sits
+# on workspace 1 throughout, its one agent host an `ssh` PATH shim answering
+# t3-agents with no threads; the badge spins over `debug r0Spinner`.
 #
 # Timeline, after the shell's pid shows up and 20s of settling:
 #   idle      60s of /proc/<pid>/stat utime+stime, all threads
@@ -27,7 +27,6 @@ leg_r0_measure_order=900
 leg_r0_measure_needs="foot"
 
 r0_shim_dir="$shot_dir/r0-shim"
-r0_state_path="$shot_dir/r0-herdr-state"
 r0_marks_path="$shot_dir/r0-marks.txt"
 r0_results_path="$shot_dir/r0-results.txt"
 r0_done_path="$shot_dir/r0-done"
@@ -49,23 +48,16 @@ leg_r0_measure_validate() {
 
 leg_r0_measure_fixture() {
   mkdir -p "$r0_shim_dir"
-  echo idle > "$r0_state_path"
-  cat > "$r0_shim_dir/herdr" <<EOF
+  cat > "$r0_shim_dir/ssh" <<'EOF'
 #!/usr/bin/env bash
-if [ "\${1:-}" = agent ]; then
-  printf '{"result":{"type":"agent_list","agents":[{"pane_id":"p1","agent":"claude","agent_status":"%s"}]}}\n' "\$(cat "$r0_state_path")"
-  exit 0
-fi
-if [ "\${1:-}" = workspace ]; then
-  printf '%s\n' '{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[{"label":"rig","number":1}]}}'
-  exit 0
-fi
-# argv exactly "herdr": Herdr/model.js's parseClient takes a bare client only.
-exec -a herdr bash
+while :; do
+  printf '%s\n' '{"environment": "e0", "threads": []}'
+  sleep 2
+done
 EOF
-  chmod +x "$r0_shim_dir/herdr"
+  chmod +x "$r0_shim_dir/ssh"
   export PATH="$r0_shim_dir:$PATH"
-  settings_fragment ', "bar": {"layout": {"left": ["workspaces"], "center": ["clock"], "right": []}}'
+  settings_fragment ', "bar": {"layout": {"left": ["workspaces"], "center": ["clock"], "right": []}}, "workspaces": {"agentHosts": ["fakehost"]}'
 }
 
 leg_r0_measure_shell() {
@@ -117,7 +109,7 @@ for _ in \$(seq 100); do
   pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$pid/stat" ] && break
   sleep 0.1
 done
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-r0-herdr herdr]==])" > "$shot_dir/r0-dispatch.txt" 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=com.t3tools.T3Code sh -c 'sleep infinity']==])" > "$shot_dir/r0-dispatch.txt" 2>&1
 start=\$(cut -d' ' -f1 "$r0_start_path")
 sleep 20
 mark idle; cpu idle

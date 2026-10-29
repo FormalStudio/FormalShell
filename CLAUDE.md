@@ -735,7 +735,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   wf-recorder child, with the bar's recording cell mid-run.
 - `r0_measure.sh` `--r0-measure <seconds>`: R0's numbers on one
   timeline: CPU off `/proc/<pid>/stat` over
-  60s idle and 60s with a herdr badge spinning, ten panel opens and ten
+  60s idle and 60s with an agent badge spinning, ten panel opens and ten
   scrim fades, the launcher stall (first frame after `menu toggle`, longest
   gap between bar frames), RSS at `<seconds>`, and the launch stamp a cold
   start counts from. Records, never judges: the budgets are read by hand.
@@ -837,11 +837,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   thumbnail at its full size beyond the viewport, a real wheel notch over
   the peeked card scrolling the strip along x and back, and a horizontal
   axis event (a trackpad's sideways swipe) doing the same on the
-  hover-opened card without closing it; and herdr badges read off
-  shimmed clients
-  (`herdr --remote fakehost` answered by an `ssh` shim, a local `herdr`
-  answering `working`), agreeing in `debug dump`, `workspaces status` and
-  the frame, where the blocked `!` is red and gone once herdr says idle.
+  hover-opened card without closing it; and the T3 Code agent badge read
+  off an `ssh` shim answering t3-agents for `fakehost` (and refusing
+  `deadhost`), on the T3 Code window only, agreeing in `debug dump`,
+  `workspaces status` and the frame, where the blocked `!` is red and gone
+  once fakehost reports no threads.
 - `spectrum.sh` `--spectrum`: the media panel's own spectrum band, a cava
   child wanted by the open panel alone with no `visualizer` cell anywhere in
   bar.layout, pgrep proving it appears on open and dies on close.

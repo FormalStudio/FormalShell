@@ -78,7 +78,7 @@ if command -v strace > /dev/null; then
   st=strace; [ "\$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null)" = 0 ] || st="sudo -n strace"
   timeout -s INT 20 \$st -f -tt -T -p "\$pid" -o "$shot_dir/idle-strace.log" > /dev/null 2>&1 || true
 fi
-# The herdr badge spinning for 30 s: the cost of one 11x11 cell per frame.
+# The agent badge spinning for 30 s: the cost of one 11x11 cell per frame.
 $ipc call debug r0Spinner true > /dev/null 2>&1
 sleep 2
 sample > "$shot_dir/spin-before.txt"

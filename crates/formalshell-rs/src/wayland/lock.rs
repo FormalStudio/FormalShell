@@ -303,7 +303,7 @@ impl App {
             self.saver_rehost();
         }
         self.lock.locked = true;
-        self.sync_herdr();
+        self.sync_agents();
         self.sync_shards();
         self.lock.dirty = true;
         "ok".into()
@@ -723,7 +723,7 @@ impl App {
         self.hot_corner_action_ended("lock");
         self.hot_corner_action_ended("screensaver");
         self.lock.locked = false;
-        self.sync_herdr();
+        self.sync_agents();
         self.sync_shards();
         self.lock.secure = false;
         self.lock.password = field();
@@ -1158,7 +1158,7 @@ impl SessionLockHandler for App {
         self.lock.outro.clear();
         self.lock.outs.clear();
         self.lock.locked = false;
-        self.sync_herdr();
+        self.sync_agents();
         self.sync_shards();
         self.lock.secure = false;
         self.saver_rehost();

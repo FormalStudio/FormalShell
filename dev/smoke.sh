@@ -962,7 +962,7 @@ if [ ${#active_legs[@]} -eq 0 ]; then
   # rows. Every other reply is matched byte for byte.
   [ -s "$rs_ipc_path" ] || fail "the rust drive wrote no debug replies"
   need_jq
-  dump_keys='["compositor","available","workspaces","windows","focusedWindowId","heldFocusedWindowId","focusedWorkspaceId","fullscreenOutputs","configLoaded","audio","brightness","location","lyrics","herdr","iphone","localsend","airplay","bar","join","modals","toasts","frame","theme"]'
+  dump_keys='["compositor","available","workspaces","windows","focusedWindowId","heldFocusedWindowId","focusedWorkspaceId","fullscreenOutputs","configLoaded","audio","brightness","location","lyrics","agents","iphone","localsend","airplay","bar","join","modals","toasts","frame","theme"]'
   dumps=$(awk 'prev=="> debug dump"{print} {prev=$0}' "$rs_ipc_path")
   [ "$(printf '%s\n' "$dumps" | wc -l)" -eq 2 ] || fail "expected two debug dump replies in $rs_ipc_path"
   check_dump() {

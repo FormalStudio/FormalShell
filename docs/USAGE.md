@@ -395,8 +395,10 @@ one workspace either way.
 
 Hovering a chip opens a preview of that workspace with every window captured
 live; it closes when the pointer leaves. `workspaces.preview: false` turns
-that off. With herdr running, a window whose agent is working or blocked
-carries a badge on its icon; `workspaces.agents: false` hides the badges.
+that off. `workspaces.agentHosts` lists ssh hosts that run a T3 Code server
+and ship `~/.local/bin/t3-agents`; while one of their threads is working,
+waiting on you or done, every T3 Code window carries a badge on its icon for
+the worst of them. `workspaces.agents: false` hides the badges.
 
 ```sh
 fs workspaces peek 2    # open the preview of workspace 2, as a hover would

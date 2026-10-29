@@ -177,7 +177,7 @@ var ICONS = {
     "ear-off": "\u{F0A45}",          // md-ear_hearing_off
     "audio-waveform": "\u{F147D}",   // md-waveform
 
-    // M74: the Spaces cell's herdr agent badges.
+    // M74: the Spaces cell's agent badges.
     "loader-circle": "\u{F0772}",    // md-loading
     "circle-check": "\u{F05E0}",     // md-check_circle
 

@@ -97,7 +97,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "fullscreenOutputs": c.fullscreen_outputs,
         "floatingOutputs": c.floating_outputs,
         "configLoaded": app.store.config.settings(),
-        "herdr": {"stateByWindow": app.store.herdr.by_window, "stateByKey": app.store.herdr.by_key},
+        "agents": {"stateByWindow": app.store.agents.by_window, "stateByHost": app.store.agents.by_host},
         "iphone": {
             "installed": phone.installed,
             "available": phone.observer,

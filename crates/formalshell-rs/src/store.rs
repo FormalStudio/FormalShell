@@ -3,7 +3,7 @@
 //! [`Store::apply`].
 
 use crate::services::{
-    appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display, herdr,
+    agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
     compositor, info, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, picker, plugins, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
@@ -24,7 +24,7 @@ pub struct Store {
     pub bar_paint: barpaint::State,
     pub wallpaper: wallpaper::State,
     pub tray: tray::State,
-    pub herdr: herdr::State,
+    pub agents: agents::State,
     pub appicon: appicon::State,
     pub info: info::State,
     pub caffeinate: caffeinate::State,
@@ -64,7 +64,7 @@ pub enum Diff {
     BarPaint(barpaint::Diff),
     Wallpaper(wallpaper::Diff),
     Tray(tray::Diff),
-    Herdr(herdr::Diff),
+    Agents(agents::Diff),
     AppIcon(appicon::Diff),
     Info(info::Diff),
     Caffeinate(caffeinate::Diff),
@@ -104,7 +104,7 @@ pub enum Topic {
     BarPaint,
     Wallpaper,
     Tray,
-    Herdr,
+    Agents,
     AppIcon,
     Info,
     Caffeinate,
@@ -161,7 +161,7 @@ impl Store {
             Diff::BarPaint(d) => self.bar_paint.apply(d).then_some(Topic::BarPaint),
             Diff::Wallpaper(d) => self.wallpaper.apply(d).then_some(Topic::Wallpaper),
             Diff::Tray(d) => self.tray.apply(d).then_some(Topic::Tray),
-            Diff::Herdr(d) => self.herdr.apply(d).then_some(Topic::Herdr),
+            Diff::Agents(d) => self.agents.apply(d).then_some(Topic::Agents),
             Diff::AppIcon(d) => self.appicon.apply(d).then_some(Topic::AppIcon),
             Diff::Info(d) => self.info.apply(d).then_some(Topic::Info),
             Diff::Plugins(d) => self.plugins.apply(d).map(|c| match c {

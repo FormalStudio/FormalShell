@@ -729,8 +729,8 @@ number and icons, with `primaryForeground` ink on it; there the windows not
 holding focus are dimmed. Every other number is `dimForeground`, lifted to
 `foreground` under the pointer, so on a band both follow its paint. An
 urgent workspace takes a `destructive` number that pulses once. Past
-`workspaces.maxIcons` the rest are a `+n` count. A window whose herdr agent
-is working, waiting or done carries a badge on its icon (a spinner, a
+`workspaces.maxIcons` the rest are a `+n` count. A T3 Code window whose agents
+are working, waiting or done carries a badge on its icon (a spinner, a
 pulsing alert in `destructive`, a check in `primary`), and a workspace with
 an agent waiting on it breathes its number in `destructive` until it is
 looked at. Clicking a cell goes there, clicking an icon focuses that window,
