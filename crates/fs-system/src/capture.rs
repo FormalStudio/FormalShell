@@ -137,6 +137,7 @@ pub struct RecorderOpts {
     pub output: String,
     pub geometry: String,
     pub codec: String,
+    pub pixel_format: String,
     pub max_height: Option<f64>,
     pub no_dmabuf: bool,
     pub audio_device: String,
@@ -169,6 +170,13 @@ pub fn recorder_argv(opts: &RecorderOpts) -> Vec<String> {
     }
     if !opts.codec.is_empty() {
         argv.extend(["-c".to_string(), opts.codec.clone()]);
+    }
+    if !opts.pixel_format.is_empty() {
+        argv.extend(["-x".to_string(), opts.pixel_format.clone()]);
+    }
+    // MPEG-4 part 2's default 200 kb/s smears text.
+    if opts.codec == "mpeg4" {
+        argv.extend(["-p".to_string(), "b=8M".into()]);
     }
     let filter = scale_cap_filter(opts.max_height.unwrap_or(f64::NAN));
     if !filter.is_empty() {
@@ -332,6 +340,13 @@ pub fn finalize_has_audio(stream_types_text: &str) -> bool {
 
 /// Sits next to its source, the same dotfile-safe stem logic as
 /// `gif_output_path`.
+/// A script printing the first of x264, OpenH264 and MPEG-4 part 2 this
+/// ffmpeg can open, all of which mp4 holds. The `-encoders` list is not
+/// enough: openSUSE ships noopenh264, a stub that is listed and fails to
+/// open. Printing nothing leaves wf-recorder its own default, which openSUSE
+/// patches to utvideo in gbrp, which mp4 cannot hold either.
+pub const CODEC_PROBE: &str = r#"for c in libx264 libopenh264 mpeg4; do ffmpeg -v quiet -f lavfi -i color=s=64x64 -frames:v 1 -pix_fmt yuv420p -c:v "$c" -f null - && { echo "$c"; exit 0; }; done"#;
+
 pub fn finalize_output_path(source: &str) -> String {
     if source.is_empty() {
         return String::new();
@@ -344,12 +359,12 @@ pub fn finalize_output_path(source: &str) -> String {
 /// filter chain hard-mutes the first 400ms (the PipeWire capture-open pop a
 /// fade alone can't attenuate enough), fades the next 50ms, then normalizes the
 /// rest to -14 LUFS.
-pub fn finalize_argv(in_path: &str, out_path: &str, reencode: bool, has_audio: bool) -> Vec<String> {
+pub fn finalize_argv(in_path: &str, out_path: &str, reencode: Option<&str>, has_audio: bool) -> Vec<String> {
     let mut argv = strings(&["ffmpeg", "-y", "-ss", "0.1", "-i", in_path]);
-    if reencode {
-        argv.extend(strings(&["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]));
-    } else {
-        argv.extend(strings(&["-c:v", "copy"]));
+    match reencode {
+        Some("libx264" | "") => argv.extend(strings(&["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"])),
+        Some(codec) => argv.extend(strings(&["-c:v", codec, "-b:v", "8M"])),
+        None => argv.extend(strings(&["-c:v", "copy"])),
     }
     if has_audio {
         argv.extend(strings(&[
@@ -781,7 +796,7 @@ mod tests {
 
     #[test]
     fn finalize_argv_always_trims_the_first_tenth_of_a_second() {
-        let argv = finalize_argv("/v/a.mp4", "/v/a-processed.mp4", false, false);
+        let argv = finalize_argv("/v/a.mp4", "/v/a-processed.mp4", None, false);
         assert_eq!(at(&argv, "-ss"), "0.1");
         assert!(!has(&argv, "-af"));
         assert_eq!(at(&argv, "-c:v"), "copy");
@@ -790,20 +805,35 @@ mod tests {
 
     #[test]
     fn finalize_argv_reencodes_only_when_the_gop_needs_it() {
-        let argv = finalize_argv("/v/a.mp4", "/v/out.mp4", true, false);
+        let argv = finalize_argv("/v/a.mp4", "/v/out.mp4", Some("libx264"), false);
         assert_eq!(at(&argv, "-c:v"), "libx264");
         assert!(has(&argv, "-preset"));
         assert!(has(&argv, "-crf"));
+        let argv = finalize_argv("/v/a.mp4", "/v/out.mp4", Some("libopenh264"), false);
+        assert_eq!(at(&argv, "-c:v"), "libopenh264");
+        assert!(!has(&argv, "-crf"));
+    }
+
+    #[test]
+    fn recorder_argv_gives_mpeg4_a_bitrate() {
+        let argv = recorder_argv(&opts(|o| {
+            o.codec = "mpeg4".into();
+            o.pixel_format = "yuv420p".into();
+        }));
+        assert_eq!(at(&argv, "-c"), "mpeg4");
+        assert_eq!(at(&argv, "-x"), "yuv420p");
+        assert_eq!(at(&argv, "-p"), "b=8M");
+        assert!(!has(&recorder_argv(&opts(|o| o.codec = "libx264".into())), "-p"));
     }
 
     #[test]
     fn finalize_argv_skips_the_audio_filter_without_a_track() {
-        assert!(!has(&finalize_argv("/v/a.mp4", "/v/out.mp4", false, false), "-af"));
+        assert!(!has(&finalize_argv("/v/a.mp4", "/v/out.mp4", None, false), "-af"));
     }
 
     #[test]
     fn finalize_argv_mutes_fades_and_normalizes_when_there_is_audio() {
-        let argv = finalize_argv("/v/a.mp4", "/v/out.mp4", false, true);
+        let argv = finalize_argv("/v/a.mp4", "/v/out.mp4", None, true);
         let af = at(&argv, "-af");
         assert!(af.contains("volume=enable='lt(t,0.4)':volume=0"));
         assert!(af.contains("afade=t=in:st=0.4:d=0.05"));

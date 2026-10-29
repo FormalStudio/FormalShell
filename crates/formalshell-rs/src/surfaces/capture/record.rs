@@ -35,6 +35,8 @@ pub struct Rec {
     finalize_source: String,
     finalize_processed: String,
     finalize_reencode: bool,
+    /// The encoder `CODEC_PROBE` found, once per run of the shell.
+    codec: String,
     audio_modules: Vec<f64>,
     stopping: bool,
     killed: bool,
@@ -320,7 +322,9 @@ pub fn status(app: &App) -> String {
 fn prepare_directory(app: &mut App) {
     let g = app.capture.generation();
     app.capture.rec.mkdir = Some(g);
-    spawn(app, Run::new(Job::Mkdir, g, vec!["mkdir".into(), "-p".into(), dir(app)]));
+    let script = format!(r#"mkdir -p "$FS_DIR" || exit 1; [ -n "$FS_PROBE" ] || exit 0; {}; exit 0"#, model::CODEC_PROBE);
+    let probe = if app.capture.rec.codec.is_empty() { "1" } else { "" };
+    spawn(app, Run::sh(Job::Mkdir, g, &script).env("FS_DIR", dir(app)).env("FS_PROBE", probe));
 }
 
 fn setup_audio(app: &mut App) {
@@ -356,12 +360,15 @@ fn launch(app: &mut App, device: String) {
         app.capture.rec.pending_output.clone()
     };
     let r = &app.capture.rec;
+    let configured = config_str(app, "recording.codec", "");
+    let picked = configured.is_empty() && !r.codec.is_empty();
     let opts = model::RecorderOpts {
         path: r.pending_path.clone(),
         framerate: app.store.config.f64("recording.framerate").unwrap_or(30.0),
         output,
         geometry: r.pending_geometry.clone(),
-        codec: config_str(app, "recording.codec", ""),
+        codec: if configured.is_empty() { r.codec.clone() } else { configured },
+        pixel_format: if picked { "yuv420p".into() } else { String::new() },
         max_height: Some(r.pending_max_height),
         no_dmabuf: app.store.config.bool("recording.noDmabuf") == Some(true),
         audio_device: device,
@@ -607,6 +614,9 @@ pub fn exit(app: &mut App, e: Exit) {
             }
             app.capture.rec.mkdir = None;
             if e.started && e.code == 0 {
+                if app.capture.rec.codec.is_empty() {
+                    app.capture.rec.codec = e.stdout.trim().to_owned();
+                }
                 setup_audio(app);
                 return;
             }
@@ -712,7 +722,7 @@ pub fn exit(app: &mut App, e: Exit) {
             }
             let has_audio = model::finalize_has_audio(&e.stdout);
             let processed = model::finalize_output_path(&source);
-            let argv = model::finalize_argv(&source, &processed, app.capture.rec.finalize_reencode, has_audio);
+            let argv = model::finalize_argv(&source, &processed, app.capture.rec.finalize_reencode.then_some(app.capture.rec.codec.as_str()), has_audio);
             app.capture.rec.finalize_processed = processed;
             let g = app.capture.generation();
             app.capture.rec.finalize_step = Some(g);

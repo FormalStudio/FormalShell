@@ -3452,7 +3452,7 @@ someone sent you sitting in `~/Downloads`.
 | --- | --- | --- |
 | `recording.directory` | `~/Videos` | where recordings land, created on first use |
 | `recording.framerate` | `30` | wf-recorder `-r` |
-| `recording.codec` | `""` | wf-recorder `-c`, empty leaves its own default |
+| `recording.codec` | `""` | wf-recorder `-c`; empty picks the first of `libx264`, `libopenh264` and `mpeg4` this ffmpeg can open, in yuv420p |
 | `recording.audioBackend` | `""` | wf-recorder `--audio-backend`, only sent when a device is recorded |
 | `recording.noDmabuf` | `false` | the fallback for a driver whose dmabuf path is broken |
 | `recording.timeoutSeconds` | `90` | auto-cancel an unanswered `region` selection |
