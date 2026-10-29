@@ -157,9 +157,13 @@ for leg_name in "${legs[@]}"; do
   if leg_on "$leg_name"; then active_legs+=("$leg_name"); fi
 done
 
-# Long enough for the base run's drive below and ten seconds of rest after it.
-screenshot_delay=52
-session_timeout=75
+# Long enough for the base run's drive below and ten seconds of rest after
+# it. Only the base run has that drive; a leg sizes its own session
+# (leg_timing) from the scaffold's 8s.
+if [ ${#active_legs[@]} -eq 0 ]; then
+  screenshot_delay=52
+  session_timeout=75
+fi
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
