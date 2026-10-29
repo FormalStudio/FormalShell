@@ -125,7 +125,12 @@ impl App {
         // The column stays mapped between toasts (see above), so it is moved
         // to the live bar's output only when a toast arrives on an empty one.
         let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl.as_ref());
-        if !want || stray || self.toasts.as_ref().is_some_and(|t| t.column != column) {
+        // The column is as tall as the output, which is unknown until its
+        // first mode or logical size arrives; a scene made before that is
+        // zero rows tall and never commits.
+        let (_, out_h) = self.output_size();
+        let resized = self.toasts.as_ref().is_some_and(|t| t.scene.size.h != out_h as i32);
+        if !want || stray || resized || self.toasts.as_ref().is_some_and(|t| t.column != column) {
             if self.toasts.take().is_some() {
                 self.log("toasts unmapped");
             }
@@ -134,7 +139,9 @@ impl App {
             }
         }
         if self.toasts.is_none() {
-            let (_, out_h) = self.output_size();
+            if out_h <= 0.0 {
+                return;
+            }
             let side = if right { Anchor::RIGHT } else { Anchor::LEFT };
             let ls = self.overlay("formalshell:notifications", layer, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
             let mut surface = Surface::new("toasts", ls, &self.shm, self.started);
