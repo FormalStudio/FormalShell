@@ -16,9 +16,9 @@
 #           is a Wayland client of the running session. aquamarine's wayland
 #           backend needs the parent to advertise zwp_linux_dmabuf_v1, and
 #           it allocates from the DRM render node that feedback names.
-#   vkms    the VM rig, which loads vkms and takes this branch first: its
-#           parent is a pixman wlroots session, and its one render node is
-#           virtio-gpu's with no 3D behind it, so nesting dies
+#   vkms    the VM rig and the mac rig, which load vkms, and take this
+#           branch first: their parent, where there is one, is a pixman
+#           wlroots session, so nesting dies
 #           at CBackend::create() ("Missing protocols", then "no allocator
 #           available"). Hyprland instead takes the software KMS card the
 #           kernel's vkms module draws, pinned by AQ_DRM_DEVICES. The branch
@@ -401,7 +401,7 @@ vkms_card_device() {
   [ -n "$any" ] && echo "$any"
 }
 
-# vkms first: the VM rig's guest has a render node too (the header has why).
+# vkms first: a rig that loads it means it (the header has why).
 session_mode=""
 vkms_device=""
 if vkms_device=$(vkms_card_device); then

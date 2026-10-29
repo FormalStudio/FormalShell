@@ -42,6 +42,25 @@ pipewire, PAM or Wayland to link.
   `~/formalshell-wt/<name>` rather than over the main checkout's copy. Any
   number of agents can run at once; past eight they queue. Its header
   carries the slot model.
+- **The VM rig** is four persistent openSUSE Tumbleweed guests on g815,
+  `fstestvm0` to `fstestvm3` (the owner's spec, `hosts/fstestvm`; FormalSpec's
+  `docs/formalshell-vm-rig.md`), each with a system of its own:
+  NetworkManager against two hostapd radios on mac80211_hwsim, BlueZ with no
+  controller, UPower and power-profiles-daemon, polkit (wheel is its admin
+  group, pkexec installed), logind, PAM (`formalshell-lock`, password
+  `formalshell-test`), PipeWire, greetd running the FormalShell greeter, a
+  vkms card for the legs and a VGA display for `dev/seams.sh`. `dev/vm.sh`
+  drives them, and `dev/remote.sh` hands it every run with a `vm_only` leg
+  and the five daemon-backed checks: a run builds on a rig slot (or takes
+  smoke-all's `FS_RESULT`), takes a free guest (a mac-side flock each,
+  `/tmp/formalshell-fstestvm-<n>.lock`, `FS_VM_SLOTS`), resumes it from its
+  saved state on a throwaway overlay (`fspec vm resume`, ~1.5s), copies the
+  tree and the build in, runs, pulls the artifacts and stops it, which drops
+  everything the run wrote. Nothing compiles in a guest. `dev/vm.sh shell`
+  is a shell in one. The guests are g815's, so the mac rig refuses these
+  runs. A save goes stale once an apply changes a guest's disk: `fspec vm
+  stop`, `fspec vm start`, `fspec vm save` after `fspec apply --host
+  fstestvm<n>`. The mac's `fspec` has to carry `vm resume` (FormalSpec main).
 - **The mac rig** takes over when g815 is off (it powers down around 22:00
   for the night): `FS_RIG=g815|mac` picks one, and unset, a g815 that does
   not answer ssh in 5s sends the command to `mac`, booting the guest first
@@ -68,15 +87,20 @@ pipewire, PAM or Wayland to link.
   over the free slots off one build. Docs, tests, the plans and the
   packaging run nothing; shared code (the ui kit, fs-theme, the wayland
   core, motion, the scaffold) and any path the map does not name run the
-  nine-run `core` set; a leg's own file runs that leg; vm_only legs are
-  named and skipped. Expected: one surface file ~1m45s warm (a ~25s build,
+  nine-run `core` set; a leg's own file runs that leg; vm_only legs run on
+  the VM rig beside the rig's runs (on the mac rig they are named and
+  skipped). Expected: one surface file ~1m45s warm (a ~25s build,
   then its legs side by side), ~2m15s from a cold worktree, the core set
-  ~1m40s, a docs-only change a few seconds. A new surface, service or leg
+  ~1m40s, a docs-only change a few seconds; a change reaching a VM leg
+  takes that leg's own time (`--wifi` ~3m40s), 4m10s to 5m for the core
+  set with `--sleep` and `--wifi` beside it. A new surface, service or leg
   gets its paths into the map in the same commit. In the shared main
   checkout the uncommitted files include other agents' edits, so it can
   pick more than your change alone needs.
 - `just smoke-all [list]`: every run in `dev/smoke-all.list` (one line of
-  flags each, every leg the nested rig can run), **for milestones only** (a
+  flags each, every leg the nested rig can run, then the seven vm_only legs
+  spread over the VM rig's four guests, ~5m30s for those alone), **for
+  milestones only** (a
   phase shipping, a release) or when the owner asks: ~15 min (884s for 127
   runs, against 768s of run time over eight slots). One runs at a time per
   mac (`/tmp/formalshell-smoke-all.lock`); a second queues and says behind
@@ -109,8 +133,16 @@ pipewire, PAM or Wayland to link.
 - `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd` and
   `fs-mpris` run their tests under `dbus-run-session` against their own
   dbus-daemon. `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
-  `fs-upower` drive real system daemons and need the VM rig, which g815
-  does not have yet; they fail saying so.
+  `fs-upower` drive real system daemons and run on the VM rig: `dev/check.sh
+  build` compiles their test binaries (ignored tests included) and probes
+  on a rig slot, and the guest runs them against its own PAM and polkit
+  (`pam_probe`, `polkit_probe` over a real pkexec), PipeWire (the probe
+  against two null sinks), BlueZ (`fake_bluez` and the no-controller test;
+  the two-controller one needs btvirt, which Tumbleweed does not build),
+  NetworkManager and the hostapd radios, and UPower and
+  power-profiles-daemon. 15s (fs-upower) to 80s (fs-network) each, the
+  build included. fs-upower's profile switch has timed out once with nine
+  runs sharing the guests; alone it passes.
 - `just cargo <args>`: cargo in dev.star's environment on the rig, for a
   quick `test -p <crate>` or `clippy`.
 - `just smoke <flags>`: `dev/smoke.sh` on the rig, the runtime loop itself.
@@ -120,19 +152,31 @@ pipewire, PAM or Wayland to link.
   right.** `FS_RESULT=<dir>` runs a result built elsewhere (an unpacked
   release tarball has the same layout) instead of building one. A tool a leg
   needs and the host lacks fails the run naming the openSUSE package that
-  carries it. Legs declaring `leg_<n>_vm_only` need the VM rig and fail
-  saying so.
+  carries it. Legs declaring `leg_<n>_vm_only` run on the VM rig
+  (`dev/vm.sh smoke`, which `just smoke` picks itself): `--mirror`,
+  `--polkit`, `--power` and `--sleep` ~1m to 1m20s, `--wifi`,
+  `--device-routes` and `--panel-morph` ~3m40s.
 - `just local-smoke <flags>`: `dev/smoke.sh` in this machine's own session,
   on a Linux host.
 - `scripts/shots` / `just shots`: regenerates `docs/shots/` (the README's and
   the website's images and clips) through `--showcase --shots`, once per
   theme, on the rig from a mac and nested on Linux.
-- `dev/smoke-greeter.sh`: not a flag on the rig. greetd's `default_session`
-  is a standing system service, so this drives the already-running greeter
-  session (restart greetd, screenshot pre-auth, a wrong password then the
-  real one over `wtype`) and writes `artifacts/greeter/`. It fails unless
-  the session log shows a real `pam_authenticate: AUTH_ERR` on the wrong
-  attempt. It runs inside a VM with greetd, so it waits for the VM rig.
+- `just greeter` (`dev/vm.sh greeter`): `dev/smoke-greeter.sh` in a VM rig
+  guest, with this tree's build linked over the guest's installed shell for
+  the run. greetd's `default_session` is a standing system service, so it
+  drives the already-running greeter session (restart greetd, screenshot
+  pre-auth, a wrong password then the real one over `wtype`), waits for the
+  login's Hyprland to map the shell's `formalshell:bar` layer, screenshots
+  that desktop, and writes `artifacts/greeter/`. It fails unless the session
+  log shows a real `pam_authenticate: AUTH_ERR` on the wrong attempt and the
+  bar comes up. ~55s.
+- `dev/seams.sh`: the boot chain on film, from a VM rig guest's power-on
+  (OVMF, Limine, systemd-boot, the FormalOS splash, the greeter, the
+  password, the desktop) and out of it by logout, reboot and shutdown to
+  power-off, as PNG frames over QMP screendump (frame n is n x 100ms), typed
+  over QMP send-key, into `artifacts/seams/{boot,logout,reboot,shutdown}/frames/`.
+  The guest's installed package, not the tree's build. ~4 min, the guest
+  saved again at the end.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
   contract, kept fixed: argument parsing, argument errors and output
   strings, replayed through `formalshell-ipc`'s parser and the registry by
@@ -146,10 +190,12 @@ pipewire, PAM or Wayland to link.
 
 How a run works:
 
-- Session mode is decided by the machine, never by a flag: a real host nests
-  Hyprland in the running session, and a VM whose pixman parent advertises
-  no `zwp_linux_dmabuf_v1` and hands out no render node runs it on the
-  `vkms` software KMS card instead, the slot user's own `vkms-<user>` card
+- Session mode is decided by the machine, never by a flag: a machine with a
+  vkms card (the VM rig and the mac rig load one) runs Hyprland on that
+  software KMS card, and a real host nests it in the running session. A
+  guest's display card must carry no render node (the VM rig's is plain
+  VGA): Hyprland on vkms allocates on any render node it finds, and on
+  virtio-gpu's, with no 3D behind it, it never drew a frame. A vkms run takes the slot user's own `vkms-<user>` card
   where the machine made one, through `LIBSEAT_BACKEND=noop` where no
   seatd runs. `/etc/formalshell-rig/kind` reading `mac` gives a vkms run the
   nested rig's private system bus and refusals.
@@ -1063,10 +1109,11 @@ apply`. fspec's own `vm()` drives qemu on a KVM host only, hence the
 script; aarch64 Tumbleweed has no history snapshots, so the guest's repos
 roll and `fspec.lock` pins none for it.
 
-The VM rig (a throwaway fspec-driven headless VM on g815, for the
-`leg_<n>_vm_only` legs, the daemon-backed `just check`s and
-`dev/smoke-greeter.sh`) is being built in FormalSpec and does not exist
-yet.
+The VM rig lives there too: `hosts/fstestvm/host.star` declares the four
+guests (4 CPUs, 3 GiB each, KSM on g815 merging what they share) and what
+runs in them, and FormalSpec's `fspec vm` (`start`, `stop`, `save`,
+`resume`, `status`, `ssh`, `record`, `type`, `key`, `frames`) drives them.
+A run never boots one: it resumes the slot's save and stops it after.
 
 Screenshots and JSON always land on the **mac** filesystem under
 `./artifacts/` (gitignored); Read-verify them there exactly as you would on
@@ -1105,7 +1152,8 @@ a Linux host.
   (`DBUS_SYSTEM_BUS_ADDRESS`), so the shell never reaches the host's
   NetworkManager, BlueZ, UPower, logind or polkit (a nested run took g815's
   Wi-Fi down, 2026-10-09); legs that need those declare `leg_<n>_vm_only`
-  and are refused there.
+  and are refused there; `dev/remote.sh` sends them to the VM rig, whose
+  system bus is the guest's own.
 - **Design language**: every UI surface follows `docs/DESIGN.md`: shadcn/ui
   chrome (`card` fill, 1px `border`, `radiusMd` controls and `radiusXl`
   cards, one `ring` for focus, `accent` hover, `primary` for the wallpaper
