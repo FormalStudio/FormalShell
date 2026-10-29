@@ -6,8 +6,11 @@
 # the shell's own `phase` lines between. Idle is 60 s with nothing driven,
 # 20 s after the launch: CPU ticks and context switches of every thread
 # (a voluntary switch is a sleep, so each one is a wakeup), the frame
-# callbacks the shell asked for, and the commits it made. Under FS_CPU_QUOTA
-# this is the e1504g power saver stand-in.
+# callbacks the shell asked for, and the commits it made (the clock's
+# minute tick counted apart). Over the same window, GPU time off
+# /proc/<pid>/fdinfo: the shell's drm-engine-* time and the DRM fds it
+# holds, and the nested Hyprland's engine time, the compositing the shell's
+# surfaces cost. Under FS_CPU_QUOTA this is the e1504g power saver stand-in.
 leg_idle_flag="--idle"
 leg_idle_order=901
 leg_idle_needs=""
@@ -53,16 +56,34 @@ sample() {
     echo "\${t##*/} \$name \$ticks \$vol \$inv"
   done
 }
+# drm-engine-* ns summed over every engine of every DRM client the process
+# holds, then the count of its fds open on a /dev/dri node. Dup'd fds share
+# a drm-client-id and report the same counters, so each client counts once.
+gpu() {
+  local f
+  for f in /proc/\$1/fdinfo/*; do
+    case "\$(readlink "/proc/\$1/fd/\${f##*/}" 2>/dev/null)" in /dev/dri/*) echo fd ;; *) continue ;; esac
+    awk '/^drm-client-id:/ { id = \$2 } /^drm-engine-/ && !/^drm-engine-capacity-/ { print "engine", id, \$1, \$2 }' "\$f" 2>/dev/null
+  done | awk '\$1 == "fd" { n++; next } { e[\$2 " " \$3] = \$4 } END { for (k in e) t += e[k]; printf "%d %d\\n", t, n }'
+}
 for _ in \$(seq 100); do
   pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$pid/stat" ] && break
   sleep 0.1
 done
+hypr=""
+for p in \$(pgrep -f -- "--config $cfg"); do
+  [ "\$(cat "/proc/\$p/comm" 2>/dev/null)" = Hyprland ] && hypr=\$p
+done
 sleep 20
 sample > "$shot_dir/idle-before.txt"
+read -r g0 _ < <(gpu "\$pid")
+read -r h0 _ < <(gpu "\${hypr:-0}")
 c0=\$(grep -c '^commit ' "$shell_log_path")
 echo "idle-start \$(date +%s%N)" > "$shot_dir/idle-marks.txt"
 sleep 60
 sample > "$shot_dir/idle-after.txt"
+read -r g1 drm_fds < <(gpu "\$pid")
+read -r h1 _ < <(gpu "\${hypr:-0}")
 c1=\$(grep -c '^commit ' "$shell_log_path")
 echo "idle-end \$(date +%s%N)" >> "$shot_dir/idle-marks.txt"
 awk 'NR == FNR { t[\$1] = \$3; v[\$1] = \$4; i[\$1] = \$5; next }
@@ -70,7 +91,20 @@ awk 'NR == FNR { t[\$1] = \$3; v[\$1] = \$4; i[\$1] = \$5; next }
     printf "thread %s %s ticks=%d wakeups=%d preempted=%d\n", \$1, \$2, dt, dv, di }
   END { printf "total ticks=%d wakeups=%d clk_tck=%d\n", tt, tv, '"\$(getconf CLK_TCK)"' }' \
   "$shot_dir/idle-before.txt" "$shot_dir/idle-after.txt" > "$idle_results_path"
-echo "commits \$((c1 - c0))" >> "$idle_results_path"
+# The clock's cell redraws on the wall clock's minute (services/clock.rs),
+# so a bar commit within a second of a minute is its tick (one has logged at
+# 59.999s, the timer and the log's whole milliseconds rounding apart); every
+# other commit is the shell spending a frame on nothing.
+zero_ms=\$(awk '/^start epoch_us=/{ split(\$2, a, "="); print int(a[2] / 1000); exit }' "$shell_log_path")
+grep '^commit ' "$shell_log_path" \\
+  | awk -v zero="\$zero_ms" -v c0="\$c0" -v c1="\$c1" 'NR <= c0 || NR > c1 { next } { match(\$0, /t=[0-9]+ms/); w = zero + substr(\$0, RSTART + 2, RLENGTH - 4)
+      x = w % 60000; if (\$2 == "surface=bar" && (x < 1000 || x > 59000)) clock++; else other++ }
+    END { printf "commits %d clock=%d\\n", other, clock }' >> "$idle_results_path"
+if [ -n "\$hypr" ]; then
+  echo "gpu shell_engine_ns=\$((g1 - g0)) shell_drm_fds=\$drm_fds compositor_engine_ns=\$((h1 - h0)) compositor_pid=\$hypr" >> "$idle_results_path"
+else
+  echo "gpu shell_engine_ns=\$((g1 - g0)) shell_drm_fds=\$drm_fds compositor_engine_ns=none" >> "$idle_results_path"
+fi
 # Then 20 s under strace, after the sample so its cost is not counted: the
 # syscall each wakeup came back from names its waker.
 if command -v strace > /dev/null; then
@@ -117,6 +151,8 @@ leg_idle_assert() {
   grep -E '^phase ' "$shell_log_path" | sed 's/^/SMOKE_IDLE /'
   echo "SMOKE_IDLE first_bar_commit_ms=${first:-none}"
   sed 's/^/SMOKE_IDLE /' "$idle_results_path"
+  grep -q '^gpu .*compositor_engine_ns=[0-9]' "$idle_results_path" \
+    || fail "--idle: found no Hyprland carrying this run's config to read the compositor's engine time from"
   echo "SMOKE_IDLE_LOG $shell_log_path"
   if [ -s "$shot_dir/idle-strace.log" ]; then echo "SMOKE_IDLE_STRACE $shot_dir/idle-strace.log"; fi
   if [ -s "$shot_dir/spin-perf.log" ]; then echo "SMOKE_IDLE_SPIN_PERF $shot_dir/spin-perf.log"; fi

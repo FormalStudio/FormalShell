@@ -141,6 +141,33 @@ EOF
 
 leg_r0_measure_assert() {
   [ -f "$r0_done_path" ] || fail "--r0-measure: the drive never reached its RSS sample"
+  # The panel and scrim steps off the shell's own log: per open, the call
+  # reaching the shell to the surface's first commit, and the slowest render
+  # of any commit before the next call. The first ten panel opens are the
+  # panel step; the stall step's ten come after them.
+  awk '
+    function t(line) { match(line, /t=[0-9]+ms/); return substr(line, RSTART + 2, RLENGTH - 4) + 0 }
+    function us(line) { if (!match(line, /render_us=[0-9]+/)) return 0; return substr(line, RSTART + 10, RLENGTH - 10) + 0 }
+    /^ipc t=/ && /function: "r0Panel"/ { if (/"open"/ && ++np <= 10) po[np] = t($0); else if (np <= 10 && !(np in pe)) pe[np] = t($0) }
+    /^ipc t=/ && /function: "r0Scrim"/ { if (/"true"/ && ++ns <= 10) so[ns] = t($0); else if (ns <= 10 && !(ns in se)) se[ns] = t($0) }
+    /^commit surface=panel / { pc[++a] = t($0); pr[a] = us($0) }
+    /^commit surface=scrim / { sc[++b] = t($0); sr[b] = us($0) }
+    function step(name, n, opens, ends, ct, cr, m,   i, j, first, lat, k, worst, x, y) {
+      k = 0; worst = 0
+      for (i = 1; i <= n; i++) {
+        first = -1
+        for (j = 1; j <= m; j++) {
+          if (ct[j] < opens[i] || (i in ends && ct[j] > ends[i])) continue
+          if (first < 0) first = ct[j] - opens[i]
+          if (cr[j] > worst) worst = cr[j]
+        }
+        if (first >= 0) lat[++k] = first
+      }
+      for (x = 2; x <= k; x++) for (y = x; y > 1 && lat[y - 1] > lat[y]; y--) { first = lat[y]; lat[y] = lat[y - 1]; lat[y - 1] = first }
+      printf "%s opens=%d committed=%d first_commit_ms_p50=%d first_commit_ms_max=%d render_us_max=%d\n", name, n, k, (k ? lat[int((k + 1) / 2)] : -1), (k ? lat[k] : -1), worst
+    }
+    END { step("panel", np > 10 ? 10 : np, po, pe, pc, pr, a); step("scrim", ns > 10 ? 10 : ns, so, se, sc, sr, b) }
+  ' "$shell_log_path" >> "$r0_results_path"
   cat "$r0_results_path"
   echo "SMOKE_R0_RESULTS $r0_results_path"
   echo "SMOKE_R0_MARKS $r0_marks_path"

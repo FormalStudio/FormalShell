@@ -1,0 +1,461 @@
+{
+  "commit": "3628805a05da558071cdbc2fb29268ca0c9972f1",
+  "host": "g815",
+  "taken": "2026-10-29",
+  "note": "Crates identical from this commit to 411ea455. The r0 and menu run 1s built 952ab94f with this commit's desktop_clock.rs in flight (code these legs never run). Two to five other nested sessions shared g815 through most runs.",
+  "modes": {
+    "plain": {
+      "quota": null,
+      "numbers": {
+        "cold_start_ms": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            64,
+            73,
+            62
+          ],
+          "median": 64,
+          "spread": 11
+        },
+        "idle_ticks": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "idle_wakeups": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            8,
+            9,
+            10
+          ],
+          "median": 9,
+          "spread": 2
+        },
+        "idle_commits": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_engine_ns": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_drm_fds": {
+          "leg": "--idle",
+          "gate": "report",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "compositor_engine_ns": {
+          "leg": "--idle",
+          "gate": "median",
+          "runs": [
+            741988,
+            612716,
+            620308
+          ],
+          "median": 620308,
+          "spread": 129272
+        },
+        "idle_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.017,
+            0.017,
+            0.017
+          ],
+          "median": 0.017,
+          "spread": 0.0
+        },
+        "spinner_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1.167,
+            0.65,
+            0.617
+          ],
+          "median": 0.65,
+          "spread": 0.55
+        },
+        "rss_kb": {
+          "leg": "--r0-measure 300",
+          "gate": "rss",
+          "runs": [
+            54188,
+            54468,
+            52800
+          ],
+          "median": 54188,
+          "spread": 1668
+        },
+        "threads": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            14,
+            14,
+            14
+          ],
+          "median": 14,
+          "spread": 0
+        },
+        "panel_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            14,
+            7,
+            8
+          ],
+          "median": 8,
+          "spread": 7
+        },
+        "panel_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            19,
+            9,
+            10
+          ],
+          "median": 10,
+          "spread": 10
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            4915,
+            2937,
+            3226
+          ],
+          "median": 3226,
+          "spread": 1978
+        },
+        "scrim_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0,
+            1,
+            0
+          ],
+          "median": 0,
+          "spread": 1
+        },
+        "scrim_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1,
+            1,
+            1
+          ],
+          "median": 1,
+          "spread": 0
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            42,
+            9,
+            9
+          ],
+          "median": 9,
+          "spread": 33
+        },
+        "launcher_first_commit_ms_p50": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            8,
+            7,
+            8
+          ],
+          "median": 8,
+          "spread": 1
+        },
+        "launcher_first_commit_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            8,
+            9,
+            11
+          ],
+          "median": 9,
+          "spread": 3
+        },
+        "bar_gap_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            18,
+            18,
+            19
+          ],
+          "median": 18,
+          "spread": 1
+        }
+      }
+    },
+    "quota": {
+      "quota": {
+        "FS_CPU_QUOTA": "10%",
+        "FS_CPU_QUOTA_PERIOD": "2ms"
+      },
+      "numbers": {
+        "cold_start_ms": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            58,
+            63,
+            68
+          ],
+          "median": 63,
+          "spread": 10
+        },
+        "idle_ticks": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            0,
+            1,
+            0
+          ],
+          "median": 0,
+          "spread": 1
+        },
+        "idle_wakeups": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            8,
+            8,
+            9
+          ],
+          "median": 8,
+          "spread": 1
+        },
+        "idle_commits": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_engine_ns": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_drm_fds": {
+          "leg": "--idle",
+          "gate": "report",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "compositor_engine_ns": {
+          "leg": "--idle",
+          "gate": "median",
+          "runs": [
+            674440,
+            634400,
+            708448
+          ],
+          "median": 674440,
+          "spread": 74048
+        },
+        "idle_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.0,
+            0.017,
+            0.0
+          ],
+          "median": 0.0,
+          "spread": 0.017
+        },
+        "spinner_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.65,
+            0.633,
+            0.683
+          ],
+          "median": 0.65,
+          "spread": 0.050000000000000044
+        },
+        "rss_kb": {
+          "leg": "--r0-measure 300",
+          "gate": "rss",
+          "runs": [
+            52860,
+            52500,
+            52932
+          ],
+          "median": 52860,
+          "spread": 432
+        },
+        "threads": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            14,
+            14,
+            14
+          ],
+          "median": 14,
+          "spread": 0
+        },
+        "panel_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            11,
+            9,
+            7
+          ],
+          "median": 9,
+          "spread": 4
+        },
+        "panel_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            14,
+            10,
+            10
+          ],
+          "median": 10,
+          "spread": 4
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            4394,
+            4251,
+            2754
+          ],
+          "median": 4251,
+          "spread": 1640
+        },
+        "scrim_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1,
+            1,
+            0
+          ],
+          "median": 1,
+          "spread": 1
+        },
+        "scrim_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1,
+            1,
+            1
+          ],
+          "median": 1,
+          "spread": 0
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            12,
+            11,
+            12
+          ],
+          "median": 12,
+          "spread": 1
+        },
+        "launcher_first_commit_ms_p50": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            7,
+            8,
+            8
+          ],
+          "median": 8,
+          "spread": 1
+        },
+        "launcher_first_commit_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            9,
+            16,
+            11
+          ],
+          "median": 11,
+          "spread": 7
+        },
+        "bar_gap_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            18,
+            18,
+            18
+          ],
+          "median": 18,
+          "spread": 0
+        }
+      }
+    }
+  }
+}
