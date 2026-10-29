@@ -434,7 +434,9 @@ impl Bar {
         let pin = self.style.bar_style.pin();
         let fullscreen = store.compositor.snapshot.fullscreen_outputs.contains(&self.output);
         let stats = store.bar_paint.stats();
-        let paint = Some(PaintState { paint: barpaint::decide(stats.as_ref(), fullscreen, pin), pin, fullscreen });
+        let [r, g, b, _] = theme.colors.get("background").to_u8();
+        let blank = barpaint::Stats::flat([r, g, b]);
+        let paint = Some(PaintState { paint: barpaint::decide(stats.as_ref(), &blank, fullscreen, pin), pin, fullscreen });
         let state = paint.as_ref().map(|p| p.paint.as_str());
         let bar = theme.box_style("bar", state);
         let ring = theme.box_style("frame", state);

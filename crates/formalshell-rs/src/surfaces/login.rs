@@ -170,7 +170,7 @@ pub fn paint_grid(p: &mut Painter, theme: &Theme, size: (i32, i32), alpha: f32) 
 }
 
 pub fn paint(p: &mut Painter, rect: IRect, theme: &Theme, alpha: f32) {
-    let card = theme.box_style("card", None);
+    let card = theme.box_style("card", Some("dialog"));
     ui::boxes::paint(p, rect, &card, theme.box_radius(&card, rect.h as f64), alpha, 0.0);
 }
 

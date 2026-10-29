@@ -270,7 +270,6 @@ pub struct Theme {
     pub lock_grid: bool,
     pub wallpaper_animate: bool,
     pub wallpaper_color: Option<String>,
-    pub wallpaper_swatches: &'static [(&'static str, &'static str)],
     pub font_base_size: f64,
     pub font_scale: f64,
     pub font_size: FontTokens,
@@ -345,7 +344,6 @@ impl Theme {
             lock_grid: boolean(get("lock.grid"), false),
             wallpaper_animate: boolean(get("wallpaper.animate"), false),
             wallpaper_color: get("wallpaper.color").as_ref().and_then(wallpaper_color).flatten(),
-            wallpaper_swatches: &[],
             font_base_size,
             font_scale,
             font_size: tokens::font_tokens(font_base_size),
@@ -534,7 +532,7 @@ mod tests {
         let border = b.border.clone().unwrap();
         assert_eq!(border.color, Rgba::BLACK.with_alpha(0.75));
         assert_eq!(border.width, t.border_width);
-        assert_eq!(t.box_radius(&b, 40.0), 9.0);
+        assert_eq!(t.box_radius(&b, 40.0), 12.0);
         assert_eq!(b.casts.len(), 2);
         assert!(b.rings.is_empty());
     }
@@ -581,7 +579,7 @@ mod tests {
     fn the_consumer_can_override_the_radius() {
         // Box's own `radius` property wins over the table; the table's value
         // is what it overrides.
-        assert_eq!(theme().box_style("card", None).radius, Radius::Px(9.0));
+        assert_eq!(theme().box_style("card", None).radius, Radius::Px(12.0));
     }
 
     #[test]
@@ -594,16 +592,13 @@ mod tests {
 
     #[test]
     fn a_ring_layer_draws_a_band_outside_the_box() {
-        let t = theme();
-        let cursor = t.box_style("cursor", None);
-        assert_eq!(cursor.rings.len(), 1);
-        let spread = t.ring_width();
-        let ring = geometry::ring(100.0, 40.0, 8.0, spread);
-        assert_eq!(ring.x, -spread);
-        assert_eq!(ring.width, 100.0 + spread * 2.0);
-        assert_eq!(ring.radius, 8.0 + spread);
-        assert_eq!(cursor.rings[0].color, hex("#00ccff").with_alpha(0.3));
-        assert_eq!(cursor.border.unwrap().color, hex("#00ccff"));
+        let ring = geometry::ring(100.0, 40.0, 8.0, 2.0);
+        assert_eq!(ring.x, -2.0);
+        assert_eq!(ring.width, 104.0);
+        assert_eq!(ring.radius, 10.0);
+        let cursor = theme().box_style("cursor", None);
+        assert!(cursor.rings.is_empty());
+        assert_eq!(cursor.border.unwrap().color, hex("#00ccff").with_alpha(0.5));
     }
 
     #[test]
@@ -660,7 +655,7 @@ mod tests {
         let t = theme();
         let b = t.box_style("cell", Some("hover"));
         assert_eq!(b.wash, Some(t.hover_fill()));
-        assert_eq!(t.box_radius(&b, 40.0), 3.0);
+        assert_eq!(t.box_radius(&b, 40.0), 9.0);
     }
 
     #[test]
@@ -779,8 +774,8 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_ring_reserves_its_spread() {
-        assert_eq!(theme().ring_width(), 2.0);
+    fn the_cursor_ring_draws_inside_the_box() {
+        assert_eq!(theme().ring_width(), 0.0);
     }
 
     #[test]

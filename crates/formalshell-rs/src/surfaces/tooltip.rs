@@ -242,7 +242,8 @@ impl Card {
         let s = &theme.space;
         let text = Self::shape(theme, kit, &ask.text);
         let w = text.width as f64 + s.control_padding_x * 2.0;
-        let h = text.line_height() as f64 + s.control_padding_y * 2.0;
+        // `_tooltip.scss`'s 6x10.
+        let h = text.line_height() as f64 + s.sm * 2.0;
         let screen = (self.scene.size.w as f64, self.scene.size.h as f64);
         let (x, y) = placement(ask.rect, (w, h), screen, s.sm, s.screen_padding, ask.bar);
         for (a, v) in [(&mut self.x, x), (&mut self.y, y), (&mut self.w, w)] {
@@ -261,7 +262,7 @@ impl Card {
         let back = Self::shape(theme, kit, &self.texts[1 - self.front].clone());
         let cross = self.cross.value(now).clamp(0.0, 1.0) as f32;
         let w = self.w.value(now);
-        let h = front.line_height() as f64 + s.control_padding_y * 2.0;
+        let h = front.line_height() as f64 + s.sm * 2.0;
         let (cx, cy) = (self.x.value(now) + w / 2.0, self.y.value(now) + h / 2.0);
         let (zw, zh) = (w * zoom, h * zoom);
         let rect = IRect::new((cx - zw / 2.0).round() as i32, (cy - zh / 2.0).round() as i32, zw.round() as i32, zh.round() as i32);

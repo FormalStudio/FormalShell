@@ -72,6 +72,14 @@ pub struct Stats {
     pub sampled: bool,
 }
 
+impl Stats {
+    /// The reading of one flat colour: the bare desktop's `background`.
+    pub fn flat([r, g, b]: [u8; 3]) -> Stats {
+        let mean = LUMA_R * f64::from(r) + LUMA_G * f64::from(g) + LUMA_B * f64::from(b);
+        Stats { mean, std: 0.0, acutance: 0.0, sampled: true }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     pub x: f64,
@@ -216,16 +224,16 @@ pub fn stats(data: &[u8], width: usize, height: usize) -> Stats {
 
 /// The paint. A pinned paint is the answer whatever is under the band,
 /// including a window over it. Otherwise a window covering the output wins
-/// over everything the wallpaper says. With no wallpaper set the honest
-/// answer is the bare band with light ink.
-pub fn decide(s: Option<&Stats>, fullscreen: bool, pin: Pin) -> Paint {
+/// over everything the wallpaper says. With no wallpaper sampled the band
+/// sits on the bare desktop, read as `blank`.
+pub fn decide(s: Option<&Stats>, blank: &Stats, fullscreen: bool, pin: Pin) -> Paint {
     if let Pin::Paint(paint) = pin {
         return paint;
     }
     if fullscreen {
         return Paint::Maximized;
     }
-    s.filter(|s| s.sampled).map_or(Paint::Light, bare)
+    bare(s.filter(|s| s.sampled).unwrap_or(blank))
 }
 
 /// The bare band's ink off its mean alone: dark words over a bright field,
@@ -254,9 +262,9 @@ pub fn cell(band: Paint, pin: Pin, span: &Stats) -> Paint {
 /// What one output's band wears, given the reading taken on the main display.
 /// The wallpaper is one picture across the session, so the reading is shared
 /// and the only per-output term left is a window covering that output.
-pub fn decide_for(s: Option<&Stats>, fullscreen_outputs: Option<&[&str]>, name: &str, pin: Pin) -> Paint {
+pub fn decide_for(s: Option<&Stats>, blank: &Stats, fullscreen_outputs: Option<&[&str]>, name: &str, pin: Pin) -> Paint {
     let covered = fullscreen_outputs.is_some_and(|outputs| outputs.contains(&name));
-    decide(s, covered, pin)
+    decide(s, blank, covered, pin)
 }
 
 /// The band's rect inside a sample of the whole wallpaper: the bar's own edge
@@ -414,6 +422,7 @@ mod tests {
     }
 
     const T: Pin = Pin::Transparent;
+    const DARK: Stats = Stats { mean: 9.0, std: 0.0, acutance: 0.0, sampled: true };
 
     #[test]
     fn a_cell_on_a_bare_band_reads_its_own_stretch() {
@@ -432,30 +441,34 @@ mod tests {
 
     #[test]
     fn the_bare_band_takes_its_ink_off_the_mean_alone() {
-        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), false, T), Paint::Dark);
-        assert_eq!(decide(Some(&st(30.0, 0.0, 0.0)), false, T), Paint::Light);
-        assert_eq!(decide(Some(&st(120.0, 80.0, 0.0)), false, T), Paint::Light);
-        assert_eq!(decide(Some(&st(200.0, 80.0, 20.0)), false, T), Paint::Dark);
+        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), &DARK, false, T), Paint::Dark);
+        assert_eq!(decide(Some(&st(30.0, 0.0, 0.0)), &DARK, false, T), Paint::Light);
+        assert_eq!(decide(Some(&st(120.0, 80.0, 0.0)), &DARK, false, T), Paint::Light);
+        assert_eq!(decide(Some(&st(200.0, 80.0, 20.0)), &DARK, false, T), Paint::Dark);
     }
 
     #[test]
     fn a_window_covering_the_output_wins_over_every_reading() {
-        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), true, T), Paint::Maximized);
-        assert_eq!(decide(None, true, T), Paint::Maximized);
+        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), &DARK, true, T), Paint::Maximized);
+        assert_eq!(decide(None, &DARK, true, T), Paint::Maximized);
     }
 
     #[test]
-    fn nothing_sampled_reads_as_the_bare_band() {
-        assert_eq!(decide(None, false, T), Paint::Light);
+    fn nothing_sampled_reads_the_bare_desktop() {
+        assert_eq!(decide(None, &DARK, false, T), Paint::Light);
         let unsampled = Stats { mean: 0.0, std: 0.0, acutance: 0.0, sampled: false };
-        assert_eq!(decide(Some(&unsampled), false, T), Paint::Light);
+        assert_eq!(decide(Some(&unsampled), &DARK, false, T), Paint::Light);
+        let white = Stats::flat([255, 255, 255]);
+        assert_eq!(decide(None, &white, false, T), Paint::Dark);
+        assert_eq!(decide(Some(&unsampled), &white, false, T), Paint::Dark);
+        assert_eq!(decide(Some(&st(30.0, 0.0, 0.0)), &white, false, T), Paint::Light);
     }
 
     #[test]
     fn a_pinned_paint_wins_over_the_sample() {
         let solid = Pin::Paint(Paint::Maximized);
-        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), false, solid), Paint::Maximized);
-        assert_eq!(decide(None, false, solid), Paint::Maximized);
+        assert_eq!(decide(Some(&st(230.0, 0.0, 0.0)), &DARK, false, solid), Paint::Maximized);
+        assert_eq!(decide(None, &DARK, false, solid), Paint::Maximized);
         assert_eq!(solid.as_str(), "maximized");
         assert_eq!(T.as_str(), "transparent");
     }
@@ -463,21 +476,21 @@ mod tests {
     #[test]
     fn every_output_wears_the_one_reading() {
         let bright = st(230.0, 0.0, 0.0);
-        assert_eq!(decide_for(Some(&bright), Some(&[]), "HDMI-A-1", T), Paint::Dark);
-        assert_eq!(decide_for(Some(&bright), Some(&[]), "eDP-1", T), Paint::Dark);
+        assert_eq!(decide_for(Some(&bright), &DARK, Some(&[]), "HDMI-A-1", T), Paint::Dark);
+        assert_eq!(decide_for(Some(&bright), &DARK, Some(&[]), "eDP-1", T), Paint::Dark);
     }
 
     #[test]
     fn a_covered_output_blackens_its_own_band_alone() {
         let bright = st(230.0, 0.0, 0.0);
-        assert_eq!(decide_for(Some(&bright), Some(&["eDP-1"]), "eDP-1", T), Paint::Maximized);
-        assert_eq!(decide_for(Some(&bright), Some(&["eDP-1"]), "HDMI-A-1", T), Paint::Dark);
+        assert_eq!(decide_for(Some(&bright), &DARK, Some(&["eDP-1"]), "eDP-1", T), Paint::Maximized);
+        assert_eq!(decide_for(Some(&bright), &DARK, Some(&["eDP-1"]), "HDMI-A-1", T), Paint::Dark);
     }
 
     #[test]
     fn no_fullscreen_set_is_no_window() {
         let bright = st(230.0, 0.0, 0.0);
-        assert_eq!(decide_for(Some(&bright), None, "eDP-1", T), Paint::Dark);
+        assert_eq!(decide_for(Some(&bright), &DARK, None, "eDP-1", T), Paint::Dark);
     }
 
     #[test]

@@ -390,7 +390,7 @@ fn over_clock(cache: &mut Option<OverClock>, fg: &Bitmap, rect: IRect, card_rect
     if px.is_empty() {
         return None;
     }
-    let card = theme.box_style("card", None);
+    let card = theme.box_style("card", Some("dialog"));
     let hit = matches!(&*cache, Some(c) if c.pixels == px && c.card_rect == card_rect && c.card == card && Arc::ptr_eq(&c.from, &fg.pixmap));
     if !hit {
         let data = fg.pixmap.data_as_u8_slice();

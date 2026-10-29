@@ -32,7 +32,7 @@
 //! pair used to flip one wallpaper's hue family across a toggle, while `-m`
 //! alone tones the scheme.
 //!
-//! A flat desktop (`wallpaper.color`, a picker swatch) seeds the scheme with
+//! A flat desktop (`wallpaper.color`) seeds the scheme with
 //! `matugen color hex` on that colour, the probe skipped: there is nothing
 //! to rank.
 //!

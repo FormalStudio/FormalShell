@@ -136,9 +136,8 @@ leg_picker_assert() {
   cat "$picker_flat_status_path"; echo
   if ! grep -q '"hasVariants":false' "$picker_flat_status_path" \
     || ! grep -q '"variant":"none"' "$picker_flat_status_path" \
-    || ! grep -q '"count":12' "$picker_flat_status_path" \
-    || ! grep -q '"colors":0' "$picker_flat_status_path"; then
-    fail "the flat listing did not report all 12 fixtures and no colours with no variants, got: $(cat "$picker_flat_status_path")"
+    || ! grep -q '"count":12' "$picker_flat_status_path"; then
+    fail "the flat listing did not report all 12 fixtures with no variants, got: $(cat "$picker_flat_status_path")"
   fi
   # Choosing over IPC has to have run State.setWallpaper() through to the
   # ThemeEngine, which is what `theme status` reports back.

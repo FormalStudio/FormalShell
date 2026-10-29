@@ -133,12 +133,12 @@ fn resolve(cx: &Cx, ink: Ink) -> Rgba {
 
 fn across(cx: &Cx, chip: bool, content: f64) -> f64 {
     let s = &cx.theme.space;
-    (if chip { 0.0 } else { s.control_height }).max(content + s.control_padding_y * 2.0)
+    (if chip { 0.0 } else { s.popup_row_height }).max(content + s.control_padding_y * 2.0)
 }
 
 fn button_metrics(cx: &mut Cx, text: &str, icon_name: &str, pad_x: f64) -> (f64, Option<ShapedText>, Option<ShapedText>) {
     let s = cx.theme.space.clone();
-    let label = (!text.is_empty()).then(|| shape(cx, text, &Font { size: Type::Body, weight: Weight::Medium, mono: false }));
+    let label = (!text.is_empty()).then(|| shape(cx, text, &Font { size: Type::Body, weight: Weight::Bold, mono: false }));
     let glyph = (!icon_name.is_empty()).then(|| icon(cx, icon_name, Type::Body));
     let mut w = label.as_ref().map_or(0.0, |l| l.width as f64);
     if glyph.is_some() {
@@ -277,7 +277,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
                 (button_metrics(cx, text, icon, s.control_padding_x).0, s.control_height)
             }
         }
-        Kind::Switch { .. } => (s.control_height, s.control_height),
+        Kind::Switch { .. } => (switch_track(cx.theme).0, s.control_height),
         Kind::Track { .. } => (inner, s.track_thickness),
         Kind::Group { options, wrap, .. } => {
             let widest = group_natural(cx, options);
@@ -335,7 +335,7 @@ fn segment_width(cx: &mut Cx, options: &[String]) -> f64 {
     let pad = cx.theme.space.control_padding_x;
     let widest = options
         .iter()
-        .map(|o| shape(cx, o, &Font { size: Type::Body, weight: Weight::Medium, mono: false }).width as f64)
+        .map(|o| shape(cx, o, &Font { size: Type::Body, weight: Weight::Bold, mono: false }).width as f64)
         .fold(0.0, f64::max);
     widest.ceil() + pad * 2.0
 }
@@ -353,7 +353,7 @@ fn segment_spans(cx: &mut Cx, options: &[String], width: f64) -> Vec<(f64, f64)>
     let pad = cx.theme.space.control_padding_x;
     let own: Vec<f64> = options
         .iter()
-        .map(|o| shape(cx, o, &Font { size: Type::Body, weight: Weight::Medium, mono: false }).width as f64 + pad * 2.0)
+        .map(|o| shape(cx, o, &Font { size: Type::Body, weight: Weight::Bold, mono: false }).width as f64 + pad * 2.0)
         .collect();
     let slack = ((width - own.iter().sum::<f64>()) / n).max(0.0);
     let mut x = 0.0;
@@ -729,7 +729,7 @@ fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
         Kind::Cell { .. } => cx.theme.box_radius(&cx.theme.box_style("cell", None), h),
         Kind::Track { .. } => cx.theme.box_radius(&cx.theme.box_style("track.groove", None), h),
         Kind::Group { .. } | Kind::Segmented { .. } => cx.theme.box_radius(&cx.theme.box_style("trough", None), h),
-        Kind::Switch { .. } => cx.theme.box_radius(&cx.theme.box_style("switch.track", Some("off")), cx.theme.space.xl),
+        Kind::Switch { .. } => cx.theme.box_radius(&cx.theme.box_style("switch.track", Some("off")), switch_track(cx.theme).1),
         _ => cx.theme.radii.md,
     }
 }
@@ -843,7 +843,7 @@ fn button(
     let washing = b.wash.is_some();
     b.wash = held;
     let ri = irect(r);
-    let radius = radius.unwrap_or(t.radii.md);
+    let radius = radius.unwrap_or_else(|| t.box_radius(&b, ri.h as f64));
     let fill = cx.color(&format!("{path}.fill"), b.fill);
     let border = b.border.clone().map(|l| Line { color: cx.color(&format!("{path}.border"), l.color), width: l.width });
     let b = BoxStyle { fill, border, ..b };
@@ -866,7 +866,7 @@ fn button(
     let budget = (r.width() - pad_x * 2.0 - glyph.as_ref().map_or(0.0, |_| body + if label.is_some() { s.icon_gap } else { 0.0 })).max(0.0);
     let label = match label {
         Some(l) if square => Some(l),
-        Some(l) if l.width as f64 > budget + 0.5 => Some(elided(cx, text, &Font { size: Type::Body, weight: Weight::Medium, mono: false }, budget)),
+        Some(l) if l.width as f64 > budget + 0.5 => Some(elided(cx, text, &Font { size: Type::Body, weight: Weight::Bold, mono: false }, budget)),
         other => other,
     };
     let content = label.as_ref().map_or(0.0, |l| l.width as f64)
@@ -895,10 +895,17 @@ fn button(
     }
 }
 
+/// The track's (width, height): two knobs and the padding around them,
+/// as libadwaita's switch is.
+fn switch_track(t: &fs_theme::theme::Theme) -> (f64, f64) {
+    let (knob, pad) = (t.metric("switch.knob", "size"), t.metric("switch.track", "padding"));
+    (knob * 2.0 + pad * 2.0, knob + pad * 2.0)
+}
+
 fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &str, stop: Option<String>) {
     let t = cx.theme;
-    let s = t.space.clone();
-    let inset = t.border_width * 2.0;
+    let inset = t.metric("switch.track", "padding");
+    let (track_w, track_h) = switch_track(t);
     let mut track = t.box_style("switch.track", Some(if checked { "on" } else { "off" }));
     let (_, ring) = cx.cursor(stop.as_deref());
     if ring {
@@ -910,9 +917,9 @@ fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &st
     let fill = cx.color(&format!("{path}.fill"), track.fill);
     let track = BoxStyle { fill, ..track };
     let knob = t.box_style("switch.knob", None);
-    let tr = Rect::new(r.x0, r.y0 + (r.height() - s.xl) / 2.0, r.x1, r.y0 + (r.height() + s.xl) / 2.0);
-    let size = s.xl - inset * 2.0;
-    let target = if checked { r.width() - size - inset } else { inset };
+    let tr = Rect::new(r.x0, r.y0 + (r.height() - track_h) / 2.0, r.x0 + track_w, r.y0 + (r.height() + track_h) / 2.0);
+    let size = t.metric("switch.knob", "size");
+    let target = if checked { track_w - size - inset } else { inset };
     let kx = cx.tween(&format!("{path}.knob"), target, Clock::SpatialFast);
     let kr = IRect::new((r.x0 + kx).round() as i32, (tr.y0 + inset).round() as i32, size.round() as i32, size.round() as i32);
     let tri = irect(tr);
@@ -1052,7 +1059,7 @@ fn segmented(cx: &mut Cx, el: &El, r: Rect, options: &[String], index: usize, pa
         let pressed = cx.pressed(&sp);
         let ink = cx.color(&format!("{sp}.ink"), if i == index || hovered { fg } else { muted });
         let wash = cx.tween(&format!("{sp}.wash"), if i != index && (hovered || pressed) { 1.0 } else { 0.0 }, Clock::Effects) as f32;
-        let shaped = shape(cx, o, &Font { size: Type::Body, weight: Weight::Medium, mono: false });
+        let shaped = shape(cx, o, &Font { size: Type::Body, weight: Weight::Bold, mono: false });
         labels.push((shaped, ink, wash, if pressed { press_wash } else { hover_wash }));
     }
     let alpha = cx.alpha;
@@ -1097,7 +1104,8 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
     let b = BoxStyle { fill, border, ..b };
     let ring_a = cx.tween(&format!("{path}.ring"), if focused { 1.0 } else { 0.0 }, Clock::Effects) as f32;
     let body = Font { size: Type::Body, weight: Weight::Normal, mono: false };
-    let inner_w = (frame.w as f64 - s.control_padding_x * 2.0).max(0.0);
+    // An entry's own padding, `_entries.scss`'s 9px.
+    let inner_w = (frame.w as f64 - s.md * 2.0).max(0.0);
     let line = line_parts(cx, text, placeholder, caret, &body, inner_w as i32);
     let err = error.filter(|e| !e.is_empty()).map(|e| {
         let st = style(cx, &Font { size: Type::Caption, weight: Weight::Normal, mono: false });
@@ -1105,7 +1113,7 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
     });
     let destructive = t.colors.get("destructive");
     let alpha = cx.alpha;
-    let tx = frame.x + s.control_padding_x as i32;
+    let tx = frame.x + s.md as i32;
     let ty = frame.y + (frame.h - line.shown.line_height()) / 2;
     let mut p = cx.painter(path);
     if let Some(ring) = focus_ring.filter(|_| ring_a > 0.0) {

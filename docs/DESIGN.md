@@ -52,8 +52,9 @@ floored at `Sm`.
 
 **Border**: 1px `border`. `input` on text fields. No other width exists.
 
-**Ring**: focus is `border` swapped to `ring` plus a 3px outer halo of `ring`
-at 0.5 alpha (`Theme::ring_width`). Same drawing on every surface, and the
+**Ring**: focus is `border` swapped to a 2px `ring` at 0.5 alpha with no
+halo outside it, libadwaita's focus ring and NativeDesktop's `focus_ring`.
+Same drawing on every surface, and the
 keyboard's own mark: it draws only while the cursor's last move came from a
 key, and a cursor the pointer put on a row leaves that row its hover wash
 alone, which is the whole mark a pointer needs. The row keeps the cursor
@@ -61,12 +62,12 @@ either way, so Enter still acts on it. The surface owning the cursor tracks
 whether its last move came from a key (the panel host's `keyed` flag in
 `formalshell-rs/src/surfaces/panel/host.rs`, decided by
 `fs_chrome::cursor::ring_after`) and every row under it draws by that one
-flag. The halo falls outside the item's own bounds, so a clipping container
-reserves room for it: it grows its clip rect by `ring_width` on every side
-and insets its content by the same, which leaves every row at the x, width
-and top it had without a ring. The rule lives in the container (the panel
-host's content viewport, the launcher's and the centre's lists), never in
-the surface, and a row never insets itself.
+flag. A table whose cursor carries a halo puts it outside the item's own
+bounds, so a clipping container reserves `Theme::ring_width` for it on every
+side (0 under the shipped table) and insets its content by the same. The
+rule lives in the container (the panel host's content viewport, the
+launcher's and the centre's lists), never in the surface, and a row never
+insets itself.
 
 **Translucency and blur**: the bar strip, panels, the launcher card and the
 polkit consent card paint `Theme::surface(card)`, the card colour at
@@ -117,9 +118,13 @@ sets, and the `highlight` base is white in light but white at 0.2 in dark,
 so every highlight-derived alpha in the dark column is written as that
 product: `alpha(@highlight_color, 0.3)` lands at white 0.06, not 0.3, which
 is why the dark material reads quieter than the light one rather than as
-the same lines at a lower opacity. Radii are elementary's own, pinned by
-number rather than by the radius ladder's step: 3 for a control, 6 for a popover, 9 for a card or
-bubble. Its surfaces are opaque (`theme.surfaceOpacity` 1): elementary's
+the same lines at a lower opacity. Its geometry is libadwaita's, by the
+radius ladder's step: `md` for a control, a row and a popover, `lg` for a
+card, a bubble and the switcher, `xl` for a dialog (`card`'s `dialog`
+state: the lock card, the greeter, the polkit prompt), `sm` for a keycap.
+A button is `controlHeight` tall with `controlPaddingY` by
+`controlPaddingX` round a bold label; an entry is `controlHeight` with 9px
+(`md`) inside; a tooltip is 6 by 10. Its surfaces are opaque (`theme.surfaceOpacity` 1): elementary's
 popovers and dialogs are `bg_color(2)` with nothing behind them, and its one
 translucent surface is the panel, whose alpha belongs to the band's paint
 rather than to that key.
@@ -165,7 +170,7 @@ them. Reaching for a rung is a claim that the one below it was tried and was
 not enough, so the question is never "does this need a box" but "how far up
 does this boundary have to go".
 
-1. **Nothing.** Rows inside one group. A row is `controlHeight` tall with
+1. **Nothing.** Rows inside one group. A row is `popupRowHeight` tall with
    `controlPaddingX` either side, and that padding is the gap. Rows in a
    uniformly interactive list abut with no gap; the hover wash and the
    cursor ring are what a pointer needs, and neither is a resting mark.
@@ -241,7 +246,7 @@ does this boundary have to go".
    (`w::picture`).
 
 **Padding**: one rule, on every surface. A card insets its content by
-`panelPadding`. A row is `controlHeight` tall with `controlPaddingX` either
+`panelPadding`. A row is `popupRowHeight` tall with `controlPaddingX` either
 side and its content vertically centred; it is taller only when its own
 content needs the room, and a badge that sits inside a row rather than
 being one (a chip cell, `CellState::chip`) hugs its label. A section label
@@ -556,13 +561,13 @@ only when two surfaces need the same new thing.
 | cover (`w::cover`) | a picture in a `muted` well with a 1px `border`, clipped to `Theme::cover_radius`: album art, a notification's app icon | none |
 | section label (`w::section_label`, `w::section`) | `caption`, `medium`, `mutedForeground`, sentence case; optional trailing count `(3)` | none |
 | input (`w::input`) | the `input` role at `radiusMd`, `controlHeight`, placeholder `mutedForeground`; a dragged selection paints the `input.selection` role behind the text | rest, focus (ring), error (caption below) |
-| switch (`w::switch`) | a 32x18 `switch.track` (`off`/`on`) holding a `switch.knob` | cursor (ring) |
+| switch (`w::switch`) | a 46x26 `switch.track` (`off`/`on`, radius 14, its `padding` 3) holding a 20px `switch.knob` with its cast | cursor (ring) |
 | button group (`w::group`) | a `trough` role at `radiusMd` holding one ghost button per option, `xs` inside: a choice among several (power profiles, the audio device pick) when exclusive, a set of actions (the media transport) when not | selected (`button.selected`), active option (`primary` fill), cursor (ring on one button) |
 | segmented (`w::segmented`) | a `trough` role, `radiusMd`, its `segmented.chip` fill travelling to the active segment on `spatial` | hover on an unchosen segment (the wash, ink lifted off `mutedForeground`), cursor (ring) |
 | track (`w::track`, `w::slider`) | a `trackThickness` progress or slider: `track.groove`, `track.fill`, `track.notch` for the one mark it can carry | cursor (ring), for a surface that addresses the track as a row |
 | separator (`w::separator`) | a 1px `border` rule, full-bleed, inset or vertical | none |
 | power flow (`w::flow`, `formalshell-rs/src/ui/draw/flow.rs`) | the Power panel's diagram (each node an icon, caption, mono value and detail, flat; each link a separator rule): adapter, laptop and battery in a row and a trunk with one branch per USB-C port. A link carries a chevron only while power crosses it; the chevron travels on the charging pulse's clock (the continuous-motion carve-out) and rests mid-line under `motion.enabled: false`. Figures come from `formalshell-rs/src/services/info/powerflow.rs` and a reading the kernel does not give is left out | none |
-| tooltip (`formalshell-rs/src/surfaces/tooltip.rs`) | the `popover` role at `radiusSm`, `caption`, 6px off the anchor; one surface per output | delayed (400ms), travelling (within 500ms of the last hide) |
+| tooltip (`formalshell-rs/src/surfaces/tooltip.rs`) | the `popover` role at `radiusMd`, 6 by 10 inside, `caption`, 6px off the anchor; one surface per output | delayed (400ms), travelling (within 500ms of the last hide) |
 | keys (`Host::key`, `fs-chrome/src/cursor.rs`) | key dispatch for keyboard-driven surfaces (Escape, Tab, arrows and hjkl, Enter, Space, x, printable) | blocked while an inline editor has focus (`cursor::catcher_blocked`) |
 | tween (`Cx::tween`, `motion::Animated`) | the one number animation in the shell: `motion::Kind` resolves a duration and a curve out of the motion tokens (§1 Motion), `spatial` by default | none |
 | colour tween (`Cx::color`) | the colour half of it, always `effectsSlow`: every fill and border that changes colour | none |
@@ -853,7 +858,7 @@ geometry change to fight; the cards move, and everything outside them is
 click-through.
 
 **Bubble**. elementary's own notification, drawn by `bubble` in
-`toasts.rs`: 332 wide, radius 9, icon left with a 6px gap, bold title, body
+`toasts.rs`: 332 wide, radius `lg`, icon left with a 6px gap, bold title, body
 wrapped at 33 characters, a round close button that appears on hover. It
 flips in over 400ms (opacity plus an x rotation from 90 degrees through -10
 at 60% to 0) and restacks on `emphasizedDecel` 200ms with a 150ms stagger

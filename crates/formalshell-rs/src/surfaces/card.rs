@@ -53,8 +53,8 @@ struct Look {
 }
 
 impl Look {
-    fn new(theme: &Theme, role: &str, cast: bool) -> Self {
-        let card = theme.box_style(role, None);
+    fn new(theme: &Theme, role: &str, state: Option<&str>, cast: bool) -> Self {
+        let card = theme.box_style(role, state);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
         let popover = !theme.morph;
         let casts = if popover {
@@ -117,6 +117,7 @@ pub struct Card {
     look: Look,
     /// The box style `look` was resolved from, for a theme change.
     role: &'static str,
+    state: Option<&'static str>,
     pub edge: Edge,
     rest: Rect,
     live: Rect,
@@ -181,7 +182,7 @@ impl Card {
     /// card's own coordinates.
     #[allow(clippy::too_many_arguments)]
     pub fn build(theme: &Theme, role: &'static str, edge: Edge, size: (i32, i32), line_at: f64, rest: Rect, scale: f64, cast: bool, clear: bool) -> Self {
-        let look = Look::new(theme, role, cast);
+        let look = Look::new(theme, role, None, cast);
         let (sw, sh) = if edge.is_vertical() { (size.1, size.0) } else { size };
         let mut scene = if clear { Scene::clear(sw, sh) } else { Scene::new(sw, sh) };
         let empty = || Paint::Shape { fill: None, strokes: Vec::new() };
@@ -195,6 +196,7 @@ impl Card {
             scene,
             look,
             role,
+            state: None,
             edge,
             rest,
             live: rest,
@@ -229,14 +231,21 @@ impl Card {
     /// The card as a menu: the `menu` role's fill, border and radius.
     pub fn menu(&mut self, theme: &Theme, cast: bool) {
         self.role = "menu";
-        self.look = Look::new(theme, "menu", cast);
+        self.look = Look::new(theme, "menu", None, cast);
+    }
+
+    /// The card as a dialog: `card`'s `dialog` state, libadwaita's
+    /// `$dialog_radius`.
+    pub fn dialog(&mut self, theme: &Theme, cast: bool) {
+        self.state = Some("dialog");
+        self.look = Look::new(theme, self.role, self.state, cast);
     }
 
     /// The look resolved again off a new theme, the clocks left running: a
     /// card open across a mode flip or a wallpaper change kept the old fill
     /// under the new ink.
     pub fn restyle(&mut self, theme: &Theme, cast: bool) {
-        self.look = Look::new(theme, self.role, cast);
+        self.look = Look::new(theme, self.role, self.state, cast);
     }
 
     /// The same card at `size`, centred on `anchor` along a line `length`

@@ -21,7 +21,7 @@ use crate::tokens::{self, Easing, Motion};
 pub const ROLES: [(&str, &[&str]); 35] = [
     ("bar", BAND_PAINTS),
     ("frame", BAND_PAINTS),
-    ("card", &["rest", "opaque"]),
+    ("card", &["rest", "opaque", "dialog"]),
     ("notification", &["rest", "critical", "flat", "flatCritical"]),
     ("popover", &[]),
     ("menu", &[]),
@@ -425,7 +425,8 @@ pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) 
             out.rings.push(ring);
         }
     }
-    for layer in split.casts {
+    // A cast at 0 in this mode is one the other mode alone draws.
+    for layer in split.casts.into_iter().filter(|l| alpha_for(l.get("alpha"), ctx) > 0.0) {
         out.casts.push(Cast {
             x: num_or_zero(layer.get("x")),
             y: num_or_zero(layer.get("y")),
@@ -730,9 +731,9 @@ pub(crate) mod tests {
         fn radius(&self, step: &str) -> Option<f64> {
             match step {
                 "sm" => Some(6.0),
-                "md" => Some(8.0),
-                "lg" => Some(10.0),
-                "xl" => Some(14.0),
+                "md" => Some(9.0),
+                "lg" => Some(12.0),
+                "xl" => Some(15.0),
                 _ => None,
             }
         }
@@ -913,12 +914,12 @@ pub(crate) mod tests {
         let haloed = with_cursor(&ghost, &cursor, true);
         assert_eq!(haloed.fill, ghost.fill);
         assert_eq!(haloed.radius, ghost.radius);
-        assert_eq!(haloed.border.as_ref().unwrap().color, "role:ring");
-        assert_eq!(haloed.rings.len(), 1);
-        assert_eq!(haloed.rings[0].spread, 2.0);
+        assert_eq!(haloed.border.as_ref().unwrap().color, "role:ring@0.5");
+        assert_eq!(haloed.border.as_ref().unwrap().width, 2.0);
+        assert!(haloed.rings.is_empty());
 
         let bordered = with_cursor(&ghost, &cursor, false);
-        assert_eq!(bordered.border.as_ref().unwrap().color, "role:ring");
+        assert_eq!(bordered.border.as_ref().unwrap().color, "role:ring@0.5");
         assert_eq!(bordered.rings.len(), 0);
 
         assert_eq!(ghost.border, None);
@@ -932,7 +933,7 @@ pub(crate) mod tests {
         let p = crate::table();
         let button = r(p, "button.outline", Some("rest"), "light");
         assert_eq!(button.fill, "role:secondary");
-        assert_eq!(button.radius, Radius::Px(3.0));
+        assert_eq!(button.radius, Radius::Px(9.0));
         let face = button.face.clone().unwrap();
         assert_eq!(face.from, "#ffffff@0.2");
         assert_eq!(face.to, "#ffffff@0");
@@ -956,7 +957,8 @@ pub(crate) mod tests {
         let p = crate::table();
         let card = r(p, "card", None, "dark");
         assert_eq!(card.fill, "role:card@0.85");
-        assert_eq!(card.radius, Radius::Px(9.0));
+        assert_eq!(card.radius, Radius::Px(12.0));
+        assert_eq!(r(p, "card", Some("dialog"), "dark").radius, Radius::Px(15.0));
         let border = card.border.clone().unwrap();
         assert_eq!(border.color, "#000000@0.75");
         assert_eq!(border.width, 1.0);
@@ -985,17 +987,17 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_pantheon_cursor_is_a_two_pixel_halo() {
+    fn the_cursor_is_adwaitas_two_pixel_ring() {
         let p = crate::table();
         let cursor = r(p, "cursor", None, "dark");
-        assert_eq!(cursor.border.unwrap().color, "role:ring");
-        assert_eq!(cursor.rings.len(), 1);
-        assert_eq!(cursor.rings[0].spread, 2.0);
-        assert_eq!(cursor.rings[0].color, "role:ring@0.3");
+        let border = cursor.border.unwrap();
+        assert_eq!((border.color.as_str(), border.width), ("role:ring@0.5", 2.0));
+        assert!(cursor.rings.is_empty());
 
         let focus = r(p, "input", Some("focus"), "dark");
-        assert_eq!(focus.rings.len(), 1);
-        assert_eq!(focus.rings[0].spread, 2.0);
+        let border = focus.border.unwrap();
+        assert_eq!((border.color.as_str(), border.width), ("role:ring@0.5", 2.0));
+        assert!(focus.rings.is_empty());
         assert_eq!(focus.hairlines.len(), 1);
     }
 
@@ -1004,9 +1006,12 @@ pub(crate) mod tests {
         let p = crate::table();
         let bubble = r(p, "notification", Some("rest"), "dark");
         assert_eq!(bubble.fill, "role:card");
-        assert_eq!(bubble.radius, Radius::Px(9.0));
+        assert_eq!(bubble.radius, Radius::Px(12.0));
         assert_eq!(bubble.casts.len(), 2);
         assert_eq!(bubble.casts[1].blur, 9.0);
+        // Light mode wears libadwaita's toast cast instead.
+        let light = r(p, "notification", Some("rest"), "light");
+        assert_eq!(light.casts.iter().map(|c| (c.y, c.blur, c.spread)).collect::<Vec<_>>(), [(1.0, 3.0, 1.0), (2.0, 6.0, 2.0)]);
         assert_eq!(bubble.border.unwrap().color, "#000000@0.75");
         assert_eq!(r(p, "notification", Some("critical"), "dark").border.unwrap().color, "role:destructive");
 
@@ -1113,7 +1118,7 @@ pub(crate) mod tests {
         let open = r(p, "cell", Some("ghostOpen"), "light");
         assert_eq!(open.fill, format!("{WHITE}@0.6"));
         assert_eq!(open.border, None);
-        assert_eq!(open.radius, Radius::Px(3.0));
+        assert_eq!(open.radius, Radius::Px(9.0));
         assert_eq!(r(p, "cell", Some("ghostOpen"), "dark").fill, format!("{WHITE}@0.12"));
     }
 
@@ -1122,7 +1127,7 @@ pub(crate) mod tests {
         let p = crate::table();
         let card = r(p, "switcher", None, "dark");
         assert_eq!(card.fill, "role:background@0.6");
-        assert_eq!(card.radius, Radius::Px(9.0));
+        assert_eq!(card.radius, Radius::Px(12.0));
         assert_eq!(card.border.unwrap().color, "#000000@0.75");
         assert_eq!(card.rings.len(), 0);
         assert_eq!(card.inset_rings.len(), 1);
@@ -1132,7 +1137,7 @@ pub(crate) mod tests {
 
         let selected = r(p, "cell", Some("selected"), "dark");
         assert_eq!(selected.fill, "role:accent");
-        assert_eq!(selected.radius, Radius::Px(3.0));
+        assert_eq!(selected.radius, Radius::Px(9.0));
     }
 
     // --- The resolver
@@ -1152,17 +1157,17 @@ pub(crate) mod tests {
         let m = crate::table();
         let hover = r(m, "cell", Some("hover"), "dark");
         assert_eq!(hover.fill, "role:card@0.85");
-        assert_eq!(hover.radius, Radius::Px(3.0));
+        assert_eq!(hover.radius, Radius::Px(9.0));
         assert_eq!(hover.wash.as_deref(), Some("role:foreground@0.15"));
 
         let ghost = r(m, "cell", Some("ghost"), "dark");
         assert_eq!(ghost.fill, CLEAR);
         assert_eq!(ghost.border, None);
-        assert_eq!(ghost.radius, Radius::Px(3.0));
+        assert_eq!(ghost.radius, Radius::Px(9.0));
 
         let on = r(m, "switch.track", Some("on"), "dark");
-        assert_eq!(on.fill, "role:primary@0.4");
-        assert_eq!(on.radius, Radius::Px(16.0));
+        assert_eq!(on.fill, "role:primary");
+        assert_eq!(on.radius, Radius::Px(14.0));
     }
 
     #[test]
@@ -1211,7 +1216,7 @@ pub(crate) mod tests {
     fn a_radius_step_resolves_and_pill_survives() {
         let c = ctx("dark");
         assert_eq!(radius_for(Some(&json!("sm")), &c), Radius::Px(6.0));
-        assert_eq!(radius_for(Some(&json!("xl")), &c), Radius::Px(14.0));
+        assert_eq!(radius_for(Some(&json!("xl")), &c), Radius::Px(15.0));
         assert_eq!(radius_for(Some(&json!(3)), &c), Radius::Px(3.0));
         assert_eq!(radius_for(Some(&json!("pill")), &c), Radius::Pill);
         assert_eq!(radius_for(None, &c), Radius::Px(0.0));
