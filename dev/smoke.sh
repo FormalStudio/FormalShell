@@ -238,7 +238,16 @@ need_foot() { need_tool foot_bin foot foot; }
 need_notify_send() { need_tool notify_send_bin notify-send libnotify-tools; }
 need_wlrctl() { need_tool wlrctl_bin wlrctl wlrctl; }
 need_wpctl() { need_tool wpctl_bin wpctl wireplumber; }
-need_convert() { need_tool convert_bin convert ImageMagick; }
+# openSUSE's ImageMagick policy refuses the TXT coder the legs read pixels
+# through, so `txt:-` goes to dev/im-txt.py, which prints the same
+# enumeration off the raw coders; every other call runs convert itself.
+need_convert() {
+  local real
+  need_tool real convert ImageMagick
+  convert_bin="$shot_dir/convert"
+  printf '#!/bin/sh\nexec python3 %s %s "$@"\n' "$PWD/dev/im-txt.py" "$real" > "$convert_bin"
+  chmod 755 "$convert_bin"
+}
 # Hyprland drops the first key a new virtual keyboard sends when it lands
 # with the keymap upload, so `wtype ab` typed only b and a lone `wtype -k
 # Escape` nothing. Every run sleeps first, giving the keymap a frame to land.

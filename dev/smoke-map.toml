@@ -105,6 +105,7 @@ paths = [
   "dev/build.sh",
   "dev/remote.sh",
   "dev/share-result.sh",
+  "dev/im-txt.py",
   "dev/scoped-run.sh",
   "dev/smoke-hyprland.sh",
 ]
@@ -199,7 +200,7 @@ paths = [
   "crates/formalshell-rs/src/ipc/bar.rs",
   "crates/fs-chrome/src/bar/**",
 ]
-runs = ["--bar-layout", "--bar-room", "--bar-title", "--bar-position bottom", "--chevron"]
+runs = ["--bar-layout", "--bar-room", "--bar-title", "--bar-position bottom", "--chevron", "--bar-style corners", "--bar-style solid --join --menu-emerge"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/chevron.rs"]
@@ -247,15 +248,15 @@ runs = ["--bar-layout"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/barpaint.rs"]
-runs = ["--bar-adaptive", "--pantheon --bar-ink"]
+runs = ["--bar-adaptive", "--pantheon --bar-ink", "--bar-style transparent --bar-adaptive"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/shoulders.rs"]
-runs = ["--shoulders", "--join", "--menu-emerge", "--panel-emerge"]
+runs = ["--shoulders", "--join", "--menu-emerge", "--panel-emerge", "--no-morph --panel-emerge"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/frame.rs"]
-runs = ["--frame", "--multi-output"]
+runs = ["--frame", "--multi-output", "--bar-style corners --frame"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/hot_corners/**", "crates/formalshell-rs/src/wayland/hotcorners.rs"]
