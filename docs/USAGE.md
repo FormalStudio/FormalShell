@@ -322,9 +322,8 @@ with `bar.widgets.<cell>.showLabel`:
 `frame.thickness` (default 0) grows the bar's window to the whole output and
 paints a frame of that thickness round it, reserving each edge so windows sit
 inside it. `frame.radius` rounds the frame's inner corners (default 20, or 0
-when `theme.radius` is 0). The `pantheon` and `cartridge` presets draw no frame whatever
-`frame.thickness` says; `debug dump`'s `frame` block reports both the value
-asked for and the ring that was drawn.
+when `theme.radius` is 0). Every preset draws it; `debug dump`'s `frame`
+block reports the ring that was drawn.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -3762,6 +3761,12 @@ fs debug motionScale 100   # back to normal
 fs debug join top 10 20    # publish a fake join on an edge at x and width
 fs debug joinClear
 ```
+
+`debug dump`'s `theme` block also reports `layout`, `barStyle` and `morph`
+as read from settings.json, and its `render` block the `render.backend`
+asked for beside the one drawing (`cpu`). `barStyle` and `morph` are `null` until
+settings.json writes them, which leaves the preset's own bar and card
+arrival in place.
 
 ## Instance lock
 

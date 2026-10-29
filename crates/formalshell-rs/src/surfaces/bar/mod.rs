@@ -47,7 +47,7 @@ struct Style {
     margin: f64,
     inset: f64,
     gap: f64,
-    frame: (bool, f64, f64, f64, bool),
+    frame: (bool, f64, f64),
 }
 
 impl Style {
@@ -62,7 +62,7 @@ impl Style {
             margin: s.bar_margin,
             inset: s.md,
             gap: s.sm,
-            frame: (theme.frame_enabled(), theme.frame_thickness, theme.frame_radius, theme.frame_requested, theme.frame_habit),
+            frame: (theme.frame_enabled(), theme.frame_thickness, theme.frame_radius),
         }
     }
 }
@@ -183,8 +183,8 @@ impl Bar {
 
     /// `frame` in `debug dump`.
     pub fn frame_state(&self) -> Value {
-        let (enabled, thickness, _, requested, habit) = self.style.frame;
-        json!({"enabled": enabled, "thickness": number(thickness), "requested": number(requested), "habit": habit})
+        let (enabled, thickness, _) = self.style.frame;
+        json!({"enabled": enabled, "thickness": number(thickness)})
     }
 
     pub fn frame_thickness(&self) -> f64 {
@@ -717,7 +717,7 @@ impl Bar {
         let band_fill = self.band_fill;
         let mut p = Painter::new(&mut self.scene, &mut self.strip_nodes, None);
         if self.style.frame.0 {
-            let (_, ft, fr, _, _) = self.style.frame;
+            let (_, ft, fr) = self.style.frame;
             let on = |e: Edge| if e == edge { t } else { ft };
             let insets = Insets { top: on(Edge::Top), bottom: on(Edge::Bottom), left: on(Edge::Left), right: on(Edge::Right) };
             let g = frame::frame_geometry(size.w as f64, size.h as f64, insets, fr);

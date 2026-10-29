@@ -131,6 +131,88 @@ impl Faces {
     }
 }
 
+/// `layout`: where the shell's chrome sits. `sidebar` is read ahead of the
+/// sidebar itself and draws the bar until it exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layout {
+    Bar,
+    Sidebar,
+}
+
+impl Layout {
+    /// An unknown value reads as the default.
+    fn parse(value: Option<&Value>) -> Self {
+        match value.and_then(Value::as_str) {
+            Some("sidebar") => Self::Sidebar,
+            _ => Self::Bar,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bar => "bar",
+            Self::Sidebar => "sidebar",
+        }
+    }
+}
+
+/// `bar.style`: the band's paint. `corners` is `solid` with a fillet at
+/// each end of the band's inner edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarStyle {
+    Transparent,
+    Solid,
+    Corners,
+}
+
+impl BarStyle {
+    /// `None` for an absent or unknown value, which leaves the table's own
+    /// `bar` and `paint` habits standing.
+    fn parse(value: Option<&Value>) -> Option<Self> {
+        match value.and_then(Value::as_str) {
+            Some("transparent") => Some(Self::Transparent),
+            Some("solid") => Some(Self::Solid),
+            Some("corners") => Some(Self::Corners),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transparent => "transparent",
+            Self::Solid => "solid",
+            Self::Corners => "corners",
+        }
+    }
+}
+
+/// `render.backend` as asked. Reserved: every value draws with `vello_cpu`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backend {
+    Auto,
+    Gpu,
+    Cpu,
+}
+
+impl Backend {
+    /// An unknown value reads as the default.
+    fn parse(value: Option<&Value>) -> Self {
+        match value.and_then(Value::as_str) {
+            Some("gpu") => Self::Gpu,
+            Some("cpu") => Self::Cpu,
+            _ => Self::Auto,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Gpu => "gpu",
+            Self::Cpu => "cpu",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Theme {
     pub preset: &'static str,
@@ -166,8 +248,14 @@ pub struct Theme {
     pub letter_spacing: LetterSpacing,
     pub motion_enabled: bool,
     pub motion_scale: f64,
-    pub frame_habit: bool,
-    pub frame_requested: f64,
+    pub layout: Layout,
+    /// `None` until settings.json writes one: the table's `bar` and `paint`
+    /// habits stand.
+    pub bar_style: Option<BarStyle>,
+    /// `motion.morph`, `None` until settings.json writes a boolean: the
+    /// table's `emerge` habit stands.
+    pub morph: Option<bool>,
+    pub render_backend: Backend,
     pub frame_thickness: f64,
     pub frame_radius: f64,
 }
@@ -214,10 +302,7 @@ impl Theme {
         let font_scale = tokens::font_scale(font_base_size);
         let spacing_scale = font_scale;
 
-        // A table that wears no frame reads `frame.thickness` as 0, ring and
-        // reservation both.
-        let frame_habit = style["habits"].get("frame") != Some(&Value::Bool(false));
-        let frame_requested =
+        let frame_thickness =
             tokens::js_round(tokens::clamp(get("frame.thickness").as_ref(), 0.0, f64::INFINITY, 0.0));
         let frame_radius_default = Value::from(if radius > 0.0 { 20 } else { 0 });
         let frame_radius = tokens::js_round(tokens::clamp(
@@ -263,9 +348,14 @@ impl Theme {
             letter_spacing: tokens::letter_spacing_tokens(font_scale),
             motion_enabled: get("motion.enabled").unwrap_or(Value::Bool(true)) == Value::Bool(true),
             motion_scale: 1.0,
-            frame_habit,
-            frame_requested,
-            frame_thickness: if frame_habit { frame_requested } else { 0.0 },
+            layout: Layout::parse(get("layout").as_ref()),
+            bar_style: BarStyle::parse(get("bar.style").as_ref()),
+            morph: match get("motion.morph") {
+                Some(Value::Bool(b)) => Some(b),
+                _ => None,
+            },
+            render_backend: Backend::parse(get("render.backend").as_ref()),
+            frame_thickness,
             frame_radius,
         }
     }
@@ -714,16 +804,54 @@ mod tests {
     }
 
     #[test]
-    fn a_table_without_a_frame_reads_the_thickness_as_zero() {
-        let get = make_get(json!({ "theme": { "preset": "pantheon" }, "frame": { "thickness": 10 } }));
-        let t = Theme::resolve(get, &sentinel());
-        assert!(!t.frame_habit);
-        assert_eq!(t.frame_requested, 10.0);
-        assert_eq!(t.frame_thickness, 0.0);
+    fn the_frame_thickness_holds_under_every_table() {
+        for preset in presets::NAMES {
+            let get = make_get(json!({ "theme": { "preset": preset }, "frame": { "thickness": 10 } }));
+            let t = Theme::resolve(get, &sentinel());
+            assert_eq!(t.frame_thickness, 10.0, "{preset}");
+            assert!(t.frame_enabled(), "{preset}");
+        }
         let t = Theme::resolve(make_get(json!({ "frame": { "thickness": 10 } })), &sentinel());
-        assert_eq!(t.frame_thickness, 10.0);
-        assert!(t.frame_enabled());
         assert_eq!(t.frame_radius, 20.0);
+        assert!(!theme().frame_enabled());
+    }
+
+    #[test]
+    fn an_absent_key_keeps_the_habit_and_a_written_one_wins() {
+        for preset in presets::NAMES {
+            let t = Theme::resolve(make_get(json!({ "theme": { "preset": preset } })), &sentinel());
+            assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, None, None, Backend::Auto), "{preset}");
+
+            let written = json!({
+                "theme": { "preset": preset },
+                "layout": "sidebar",
+                "bar": { "style": "corners" },
+                "motion": { "morph": false },
+                "render": { "backend": "gpu" },
+            });
+            let t = Theme::resolve(make_get(written), &sentinel());
+            assert_eq!(
+                (t.layout, t.bar_style, t.morph, t.render_backend),
+                (Layout::Sidebar, Some(BarStyle::Corners), Some(false), Backend::Gpu),
+                "{preset}"
+            );
+        }
+        let t = Theme::resolve(make_get(json!({ "bar": { "style": "solid" }, "motion": { "morph": true } })), &sentinel());
+        assert_eq!((t.bar_style, t.morph), (Some(BarStyle::Solid), Some(true)));
+    }
+
+    #[test]
+    fn an_unknown_or_malformed_key_reads_as_absent() {
+        let get = make_get(json!({
+            "layout": "dock",
+            "bar": { "style": "auto" },
+            "motion": { "morph": "false" },
+            "render": { "backend": "vulkan" },
+        }));
+        let t = Theme::resolve(get, &sentinel());
+        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, None, None, Backend::Auto));
+        let t = Theme::resolve(make_get(json!({ "motion": { "morph": 0 } })), &sentinel());
+        assert_eq!(t.morph, None);
     }
 
     #[test]

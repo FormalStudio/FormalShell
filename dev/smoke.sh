@@ -50,6 +50,19 @@ cd "$script_dir/.."
 shot_dir=$(mktemp -d)
 iso_home=$(mktemp -d)
 
+# The rig runs eight slot users side by side on one host, and a leg that
+# counts or kills processes by name would see every other slot's shell, cava
+# and slurp. Here pgrep and pkill see this user's own, unless a leg names a
+# user itself (--installed's podman uid).
+proc_shim_dir="$shot_dir/proc-shim"
+mkdir -p "$proc_shim_dir"
+for tool in pgrep pkill; do
+  real=$(command -v "$tool") || continue
+  printf '#!/bin/sh\ncase " $* " in *" -u "*|*" -U "*|*" --euid "*|*" --uid "*) exec %s "$@" ;; esac\nexec %s -u "$(id -u)" "$@"\n' "$real" "$real" > "$proc_shim_dir/$tool"
+  chmod 755 "$proc_shim_dir/$tool"
+done
+export PATH="$proc_shim_dir:$PATH"
+
 legs=()
 active_legs=()
 settings_extra=""
@@ -857,7 +870,7 @@ if [ ${#active_legs[@]} -eq 0 ]; then
   # rows. Every other reply is matched byte for byte.
   [ -s "$rs_ipc_path" ] || fail "the rust drive wrote no debug replies"
   need_jq
-  dump_keys='["compositor","available","workspaces","windows","focusedWindowId","heldFocusedWindowId","focusedWorkspaceId","fullscreenOutputs","configLoaded","audio","brightness","location","lyrics","agents","iphone","localsend","airplay","bar","join","modals","toasts","frame","theme"]'
+  dump_keys='["compositor","available","workspaces","windows","focusedWindowId","heldFocusedWindowId","focusedWorkspaceId","fullscreenOutputs","configLoaded","audio","brightness","location","lyrics","agents","iphone","localsend","airplay","bar","join","modals","toasts","frame","render","theme"]'
   dumps=$(awk 'prev=="> debug dump"{print} {prev=$0}' "$rs_ipc_path")
   [ "$(printf '%s\n' "$dumps" | wc -l)" -eq 2 ] || fail "expected two debug dump replies in $rs_ipc_path"
   check_dump() {
@@ -866,7 +879,7 @@ if [ ${#active_legs[@]} -eq 0 ]; then
       and (["compositor","configLoaded","join","bar","frame","theme"] - keys) == []
       and .compositor == "hyprland"
       and (.bar | length) == 1
-      and (.frame | keys) == ["enabled","habit","requested","thickness"]
+      and (.frame | keys) == ["enabled","thickness"]
       and (.theme | del(.edgeInset)) == {"radius":10,"radiusXl":14,"borderWidth":1,"barPosition":"top"}
       and (.theme.edgeInset | keys) == ["bottom","left","right","top"]
       and (if $join == null then .join == null

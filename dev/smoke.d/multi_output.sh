@@ -29,8 +29,8 @@
 # the lock over both outputs, each frame grabbed, and the real password
 # lifting it.
 #
-# The frame's zones are counted against the shell's own `debug dump`: a
-# theme whose table wears no ring (`--pantheon`) reserves none.
+# The frame's zones are counted against the shell's own `debug dump`: four
+# with the ring drawn, none without.
 leg_multi_output_flag="--multi-output"
 leg_multi_output_order=217
 leg_multi_output_needs="jq wlrctl convert wtype foot"
@@ -187,7 +187,7 @@ _multi_output_count() {
 }
 
 # Every output in dump $1 carrying one wallpaper, one bar and the frame zones
-# the shell says it drew (four, or none under a theme with no ring).
+# the shell says it drew (four, or none with no ring drawn).
 _multi_output_check() {
   local dump="$1" when="$2" out wall bar zones
   for out in $("$jq_bin" -r 'keys[]' "$dump"); do

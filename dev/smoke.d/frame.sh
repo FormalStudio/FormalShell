@@ -18,11 +18,8 @@
 # thickness in from the left edge and off the right one (e1504g,
 # 2026-08-26); -1 is the only value that holds either way.
 #
-# Ridden by --pantheon or --cartridge it proves the other half (M66): a look whose table
-# says it wears no ring (`habits.frame`) reads the same key as 0, so the
-# same fixture leaves the bar a strip, reserves nothing round the output and
-# reports why in the dump. The owner had 6px of nothing between every window
-# and the screen edge under pantheon, and a ring round cartridge's sculpture.
+# The key is read under every table, so the same holds riding --pantheon or
+# --cartridge.
 leg_frame_flag="--frame"
 leg_frame_order=190
 leg_frame_needs="jq"
@@ -64,23 +61,7 @@ leg_frame_assert() {
   state=$("$jq_bin" -c '.frame' "$frame_dump_path" 2>/dev/null)
   echo "bar window: $box on ${mw}x${mh}, frame zones: $zones, frame: $state"
 
-  # A look that wears no ring reads the key as 0, so the fixture's 10 buys
-  # nothing: the bar is back to a strip and no edge reserves anything.
-  if leg_on pantheon || leg_on cartridge; then
-    "$jq_bin" -e '.frame.enabled == false and .frame.habit == false and .frame.requested == 10' \
-      "$frame_dump_path" > /dev/null 2>&1 \
-      || fail "under a table that wears no ring the dump should report frame.thickness 10 asked for and no frame drawn, got: $state"
-    if [ "$zones" -ne 0 ]; then
-      fail "a look with no ring still reserved $zones frame zones"
-    fi
-    if [ "$box" = "0 0 $mw $mh" ]; then
-      fail "a look with no ring left the bar's window covering the whole output: $box"
-    fi
-    echo "frame: no ring, no zones, $state"
-    return 0
-  fi
-
-  "$jq_bin" -e '.frame.enabled == true and .frame.habit == true and .frame.thickness == 10' \
+  "$jq_bin" -e '.frame.enabled == true and .frame.thickness == 10' \
     "$frame_dump_path" > /dev/null 2>&1 \
     || fail "the framed look should report a 10px ring it drew, got: $state"
   if [ "$box" != "0 0 $mw $mh" ]; then

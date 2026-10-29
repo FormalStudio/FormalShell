@@ -375,10 +375,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `frame.sh` `--frame`: pins `frame.thickness` in the settings fixture so the
   bar's window grows to the output and paints the frame round it, and reads
   that box and the four exclusion zones off the compositor's own layer list.
-  Under `--pantheon` or `--cartridge` it proves the other half: a table whose `habits.frame`
-  is false reads the same key as 0, so the bar stays a strip, no edge
-  reserves anything and `debug dump`'s `frame` block reports the 10 that was
-  asked for beside the ring that was not drawn.
+  The key holds under every table, `--pantheon` and `--cartridge` included.
 - `fullscreen.sh` `--fullscreen`: the fullscreen chrome auto-hide, read off
   the compositor's own layer list: bar, frame zones and hot corners gone
   while the fixture window is fullscreen and back to their starting counts
@@ -647,7 +644,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   running shell leaves no decoder, the static art in the bar and the bar not
   committing, even with the panel animating over it.
 - `multi_output.sh` `--multi-output`: a wallpaper, a bar and four frame
-  zones (none under a theme with no ring, off `debug dump`) on every
+  zones (none with no ring drawn, off `debug dump`) on every
   output, read off `hyprctl -j layers`, with a headless
   second output created after the shell started at scale 1.25 (g815's
   laptop panel shape), each output grabbed with `grim -o`, and the second
