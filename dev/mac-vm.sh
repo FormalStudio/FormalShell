@@ -30,12 +30,14 @@ ssh_ready() {
   ssh -o BatchMode=yes -o ConnectTimeout=5 "${1:-fstest0}@$name" true 2>/dev/null
 }
 
+# limactl leaves its hostagent running for the VM's life; 9>&- keeps the
+# start lock below out of it, or the lock outlives this script.
 start() {
   if [ "$(status)" = Missing ]; then
-    limactl create --name "$name" --tty=false "$spec/hosts/fstestmac/lima.yaml"
+    limactl create --name "$name" --tty=false "$spec/hosts/fstestmac/lima.yaml" 9>&-
   fi
   if [ "$(status)" != Running ]; then
-    limactl start --tty=false "$name" > /dev/null
+    limactl start --tty=false "$name" > /dev/null 9>&-
   fi
   for _ in $(seq 60); do
     ssh_ready && return 0
@@ -61,7 +63,7 @@ case "${1:-}" in
     # authorized_keys.d, and may leave the boot on kernel-default-base, which
     # has no vkms.
     if ! ssh_ready || ! ssh "kyan@$name" modinfo vkms >/dev/null 2>&1; then
-      limactl restart --tty=false "$name" > /dev/null
+      limactl restart --tty=false "$name" > /dev/null 9>&-
       start
     fi
     ;;

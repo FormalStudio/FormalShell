@@ -704,6 +704,13 @@ EOF
 
 {
   hypr_base_config
+  # g815's headless parent holds a virtual pointer for the nested session
+  # (formalshell-rig-pointer in the spec). The mac rig's vkms session has no
+  # input device at all, so its seat offers no wl_pointer until one exists;
+  # this one lives until the session's scope is torn down.
+  if [ "$rig_kind" = mac ]; then
+    hypr_exec_once "python3 $script_dir/vpointer.py wait 86400000"
+  fi
   hypr_exec_once "bash $shell_start_script"
   hypr_exec_once "bash $output_script"
   if $fixture_window_mode; then

@@ -64,7 +64,7 @@ pipewire, PAM or Wayland to link.
 - **The mac rig** takes over when g815 is off (it powers down around 22:00
   for the night): `FS_RIG=g815|mac` picks one, and unset, a g815 that does
   not answer ssh in 5s sends the command to `mac`, booting the guest first
-  when it is stopped (`dev/mac-vm.sh {start|stop|status|apply}`, ~1m from
+  when it is stopped (`dev/mac-vm.sh {start|stop|status|apply}`, ~10s from
   cold). It is `fstestmac`, an openSUSE Tumbleweed aarch64 lima guest on
   Apple's Virtualization framework (8 vCPU, 16 GiB, its own disk, nothing of
   the mac mounted), with four slot users of the same shape (`fstest0` to
@@ -74,11 +74,13 @@ pipewire, PAM or Wayland to link.
   against g815 on the same tree: a no-op build 1.7s (g815 1.6s), one
   `formalshell-rs` file 37s (27s), a cold worktree 108s (54s), `just smoke
   --menu` 37s warm (38s), a one-file `smoke-affected` 117s (105s), the core
-  set 91s over four slots. Budgets do not hold there: `leg_<n>_budget` legs
+  set 91s over four slots, `smoke-all` ~27 min. Budgets do not hold there: `leg_<n>_budget` legs
   (`--idle`, `--menu-budget`, `--r0-measure`, so `dev/perf-gate.py` too,
   which pins `FS_RIG=g815`) are refused and left out of its run lists, as
-  are the `vm_only` legs. Release tarballs and the hosts' fspec packages
-  build on g815 only; shipping waits for it.
+  are the `vm_only` legs. `--menu-hover` (its drive outruns the 40s
+  frame) and `--lyrics` (the lit row reads as still moving at a burst's
+  end) fail there on timing alone; read them on g815. Release tarballs and
+  the hosts' fspec packages build on g815 only; shipping waits for it.
 - **The default check for a change is `just smoke-affected [base]`** (or
   `just smoke <flags>` for the legs you know it touches). It diffs against
   the merge base with `origin/main` (or `base`), uncommitted and untracked
@@ -198,7 +200,9 @@ How a run works:
   virtio-gpu's, with no 3D behind it, it never drew a frame. A vkms run takes the slot user's own `vkms-<user>` card
   where the machine made one, through `LIBSEAT_BACKEND=noop` where no
   seatd runs. `/etc/formalshell-rig/kind` reading `mac` gives a vkms run the
-  nested rig's private system bus and refusals.
+  nested rig's private system bus and refusals, and a virtual pointer held
+  for the session (`dev/vpointer.py`), standing in for the one g815's
+  parent holds.
 - The nested session runs in a transient user scope of its own
   (`fs-run-hypr-<pid>`) and is stopped as a cgroup at teardown, so a
   compositor that outlives `timeout` goes with it; a leftover carrying the

@@ -104,17 +104,18 @@ run_list() {
   python3 -c '
 import collections, glob, os, re, statistics, sys
 runs = [l.strip() for l in open(sys.argv[1]) if l.strip() and not l.lstrip().startswith("#")]
-# A leg declaring leg_<n>_budget measures numbers that hold on g815 alone.
+# A leg declaring leg_<n>_budget measures numbers that hold on g815 alone,
+# and the VM rig the vm_only legs go to is on g815 too.
 if sys.argv[3] != "g815":
-    budget = set()
+    g815 = set()
     for path in glob.glob(os.path.join(sys.argv[4], "*.sh")):
         leg, text = os.path.basename(path)[:-3], open(path).read()
         flag = re.search(r"^leg_%s_flag=\"(--[a-z0-9-]+)" % leg, text, re.M)
-        if flag and re.search(r"^leg_%s_budget=" % leg, text, re.M):
-            budget.add(flag.group(1))
-    held = [r for r in runs if budget & set(r.split())]
+        if flag and re.search(r"^leg_%s_(budget|vm_only)=" % leg, text, re.M):
+            g815.add(flag.group(1))
+    held = [r for r in runs if g815 & set(r.split())]
     if held:
-        print("budgets hold on g815 alone, not run on %s: %s" % (sys.argv[3], ", ".join(held)), file=sys.stderr)
+        print("needs g815 (a budget, or the VM rig), not run on %s: %s" % (sys.argv[3], ", ".join(held)), file=sys.stderr)
     runs = [r for r in runs if r not in held]
 seen = collections.defaultdict(list)
 for line in open(sys.argv[2]):
