@@ -783,8 +783,8 @@ The shell draws one look: elementary OS 8's material on the wallpaper's
 palette. Buttons and chips are raised with a lit top line and a gradient
 face, fields and troughs are sunken, cards and toasts sit on a soft cast, and
 the corners are elementary's own (3 on a control, 6 on a popover, 9 on a
-card). Toasts and the notification centre draw as elementary's bubble, the
-app grid is the launcher's default, and the bar is a wingpanel band (see
+card). Toasts and the notification centre draw as elementary's bubble, and
+the bar is a wingpanel band (see
 [The band's paint](#the-bands-paint)). The palette is untouched by any of
 it: matugen, `theme.json`, the pywal template and the Hyprland colours files
 work the same way.
@@ -1164,54 +1164,62 @@ lists all of them:
 { "menu": { "abbreviations": { "ff": "app:firefox.desktop", "wf": "wifi" } } }
 ```
 
-`menu.appGrid` (bool, default true) swaps the app rows for a grid of icons
+`menu.appGrid` (bool, default false) swaps the app rows for a grid of icons
 with the app's name centred underneath each one. It only touches app
-results: the root's frecency-ordered list and an app search draw as the grid,
-and anything else the same query ranked still draws as rows underneath.
-Arrows move the cursor by cell instead of by row; every other key, the
-ranking and the launch path stay what they are for the row list.
+results: at rest the root draws your eight most-picked apps as cells, then
+`Recent` rows for the picks that are not apps; an app search draws as the
+grid, and anything else the same query ranked still draws as rows
+underneath. Arrows move the cursor by cell instead of by row; every other
+key, the ranking and the launch path stay what they are for the row list.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
-{ "menu": { "appGrid": false } }
+{ "menu": { "appGrid": true } }
 ```
 
 ### Getting around
 
 The card centers on the focused output over a plain black scrim at half
-opacity. The input row is a search icon, the text field, and a 1px rule
-underneath; a breadcrumb chip for each level below the root sits under that
-rule, hidden at the root. The empty field reads `Type a command or search...`
-at the root and the level's own prompt inside one (`Search apps`,
-`Type an expression`).
+opacity. The field is the query in a large sans face with a full-width 1px
+rule under it, and no search icon or close button: Escape and a click
+outside close. Inside a level a back chip naming it sits before the query.
+The empty field reads `Search apps, files, commands` at the root and the
+level's own prompt inside one (`Search apps`, `Type an expression`).
 
-Rows come in groups, each under a heading: `Suggestions` then `Commands` at
-the root and `Options` in select mode; a query's results draw under none. A level whose rows are all one group draws no heading, since its
-breadcrumb chip already names it. Nothing is reordered to make a group: the
-heading appears wherever the run of rows changes.
+With the field empty the root lists one thing: `Recent`, your eight best
+picks of any kind (an app, a mode like Clipboard, a row like Shutdown), or,
+until three picks exist, `Modes`, the root routes in the order the tree
+declares them. A pick whose app or row has gone is skipped, and dropped from
+the ledger on the next pick. Everything else the root used to show still
+ranks under a query. Elsewhere rows come in groups, each under a heading:
+`Options` in select mode, and a level's own sections; a query's results
+draw under none. A level whose rows are all one group draws no heading,
+since its back chip already names it. Nothing is reordered to make a group:
+the heading appears wherever the run of rows changes.
 
 A row's icon is a name from the active icon set, mapped from the shipped
 route ids. A route id with no mapping, an emoji row, a provider row carrying
 its own glyph, or an entry from your own `menu.jsonc` falls back to the row's
 own glyph string.
 
-A row's right edge carries a hint where it has one: the chord that summons
-that route directly (`Super+Ctrl+E` on `Emoji`), or, for a route whose
-children are a listing, how many rows it holds. The chords are the ones in
+A row's right edge carries a dim value where it has one: an app's open
+windows (`2 windows`), the chord that summons that route directly
+(`Super Ctrl E` on `Emoji`), or, for a route whose children are a listing,
+how many rows it holds. The chords are the ones in
 [`docs/examples/hyprland/formalshell.lua`](examples/hyprland/formalshell.lua),
 not a read of your live bindings, so a rebound route still shows the shipped
 chord.
 
-The bottom row of the card names what Enter will do to the row under the
-cursor, then the keys that always apply. The verb comes from the row's own
-kind: Select, Open, Enter, Run, Choose (`Set wallpaper` on the wallpaper
-route), Copy, Paste or Share on clipboard and emoji rows, or a confirm prompt
-once a confirm-gated row is armed. A row that can't be activated leaves the
-verb out. `esc` reads `back` wherever there is a level to pop, `close` at the
-root, and `cancel` in select or input mode. Two more hints show only when they
-mean something: `Tab` names the picker's other Dark/Light set while its
-switcher is up, and `Shift+Enter` names a row's second action (New window
-on an app row, an ssh send on a clipboard image, Forget on a saved network).
+The bottom row of the card shows the selected row's keys and nothing else,
+right-aligned, each a button that does what its key does. Enter comes first,
+named by the row's own kind: Select, Open, Run, Choose (`Set wallpaper` on
+the wallpaper route), Copy, Paste or Share on clipboard and emoji rows, or a
+confirm prompt once a confirm-gated row is armed; a row that can't be
+activated shows no keys at all. Then `Actions` on `Tab` (the picker's other
+Dark/Light set while its switcher is up), `Into` on `→` where the row has
+children (a route's rows, an app's windows), and `Shift+Enter` named after
+the row's second action where it has one (New window on an app row, an ssh
+send on a clipboard image, Forget on a saved network).
 
 | Key | Does |
 | --- | --- |

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --app-grid: the launcher's app results drawn as a grid of icons with the
-# app's name under each one (`menu.appGrid`), and the row list it still is
+# app's name under each one (`menu.appGrid: true`), and the row list it is
 # with the key absent.
 #
 # The session's XDG_DATA_DIRS is the isolated HOME alone, so the installed-app
@@ -18,11 +18,12 @@
 # compositor proves the grid answers the arrows at all (the same reason
 # --panel-keys exists). `cursor` on `menu status` is what reads the answer.
 #
-# The key's default is the other half of the leg: the grid, under every
-# theme (M72 T2). The shell re-reads settings.json on a write, so the key
+# The key's default is the other half of the leg: rows (launcher spec §1
+# "The app grid"). The shell re-reads settings.json on a write, so the key
 # is deleted underneath the running shell, the launcher resummoned, and the
-# level has to come back as the grid with no key set at all; then it is put
-# back, which leaves the grid up for the run's own frame. Ridden by
+# level has to come back as one column of rows, each app's icon at the
+# row's 22px; then it is put back, which leaves the grid up for the run's
+# own frame. Ridden by
 # --no-morph the grid is also read for sitting inside its own card: the
 # popover emerge cuts nothing at the card's edge, so a view scrolled to a
 # negative offset paints its cells up the output instead of being clipped
@@ -426,19 +427,20 @@ leg_app_grid_assert() {
   fi
   echo "SMOKE_APP_GRID_KEYS empty query kept the grid, Escape cleared, a held Backspace climbed one level"
 
-  # The default: with the key gone the route is still the grid, under every
-  # theme, and every entry the grid had is still on it.
+  # The default: with the key gone the route is rows, and every entry the
+  # grid had is still on it, the probe's icon at row size rather than cell
+  # size.
   cat "$app_grid_off_path"; echo
   if [ "$(app_grid_field "$app_grid_off_path" rows)" != "$rows" ]; then
     fail "the default route lost entries the grid had, got: $(cat "$app_grid_off_path")"
   fi
   marked=$(app_grid_mark_pixels "$app_grid_rows_png")
-  if [ "$(app_grid_field "$app_grid_off_path" view)" != "appGrid" ] \
-    || [ "$(app_grid_field "$app_grid_off_path" columns)" -le 1 ]; then
-    fail "the apps route did not default to the grid, got: $(cat "$app_grid_off_path")"
+  if [ "$(app_grid_field "$app_grid_off_path" view)" != "rows" ] \
+    || [ "$(app_grid_field "$app_grid_off_path" columns)" != "1" ]; then
+    fail "the apps route did not default to rows, got: $(cat "$app_grid_off_path")"
   fi
-  if [ -z "$marked" ] || [ "$marked" -lt 2500 ]; then
-    fail "the default grid drew the probe icon over ${marked:-0} pixels, too few to be a 64px cell icon"
+  if [ -z "$marked" ] || [ "$marked" -lt 100 ] || [ "$marked" -ge 2500 ]; then
+    fail "the default rows drew the probe icon over ${marked:-0} pixels, not a 22px row icon"
   fi
   if leg_on no_morph; then
     # It drew inside its own card. The popover cuts nothing at the card's
@@ -452,5 +454,5 @@ leg_app_grid_assert() {
       fail "${above:-0} pixels of the grid's own icon sit above the card's top row ($app_grid_above_card)"
     fi
   fi
-  echo "SMOKE_APP_GRID_DEFAULT $(app_grid_field "$app_grid_off_path" columns) columns with no key set (${marked}px of the probe icon)"
+  echo "SMOKE_APP_GRID_DEFAULT rows with no key set (${marked}px of the probe icon)"
 }

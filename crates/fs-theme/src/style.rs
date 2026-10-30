@@ -18,7 +18,7 @@ use crate::tokens::{self, Easing, Motion};
 /// carries one paint per answer `bar.style` and its wallpaper reading give,
 /// the frame the same (its band is a stretch of the ring once
 /// `frame.thickness` is set), and an open cell on a band fills.
-pub const ROLES: [(&str, &[&str]); 35] = [
+pub const ROLES: [(&str, &[&str]); 37] = [
     ("bar", BAND_PAINTS),
     ("frame", BAND_PAINTS),
     ("card", &["rest", "opaque", "dialog"]),
@@ -53,6 +53,8 @@ pub const ROLES: [(&str, &[&str]); 35] = [
     ("switcher", &[]),
     ("switcher.cell", &["rest", "selected"]),
     ("lock.ink", &["light", "dark"]),
+    ("launcher.row", &["rest", "hover", "selected"]),
+    ("launcher.token", &[]),
     ("window", &["rest", "inactive"]),
 ];
 

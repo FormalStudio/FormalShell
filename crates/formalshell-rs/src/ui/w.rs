@@ -116,6 +116,14 @@ pub fn cell(child: El) -> El {
     El::new(Kind::Cell { state: CellState::default(), interactive: false, child: Box::new(child) })
 }
 
+/// The launcher's mode chip: a `caption` word at 600 in `launcher.token`.
+pub fn token(s: impl Into<String>) -> El {
+    cell(text_el(s, Type::Caption, Weight::Semibold, false, Ink::Fg)).cell_state(|c| {
+        c.chip = true;
+        c.token = true;
+    })
+}
+
 /// A list row: a ghost cell answering the pointer, holding an icon, a name
 /// that elides and whatever trails it.
 pub fn list_row(s: &Space, glyph: &str, name: &str, trailing: Vec<El>) -> El {

@@ -243,8 +243,57 @@ pub fn build_tree(default_obj: &Entries, user_obj: &Entries) -> Tree {
 /// The heading a level's rows fall back to when nothing declares one.
 pub const ROOT_SECTION: &str = "Commands";
 
-/// The heading over the app grid's cells.
-pub const APPS_SECTION: &str = "Applications";
+/// The root's heading at rest over the best picks.
+pub const RECENT_SECTION: &str = "Recent";
+
+/// The root's heading at rest on a profile with too few picks for `Recent`.
+pub const MODES_SECTION: &str = "Modes";
+
+/// Fewer resolving picks than this and the root lists its modes.
+pub const RECENT_MIN: usize = 3;
+
+/// The node a pick, an abbreviation or `Recent` names, while it is still in
+/// the tree: `app:<desktop id>` is the app under `apps`.
+pub fn subject_node<'a>(nodes: &'a IndexMap<String, Node>, id: &str) -> Option<&'a Node> {
+    match id.strip_prefix("app:") {
+        Some(app) => nodes.get(&format!("apps.{app}")),
+        None => nodes.get(id),
+    }
+}
+
+/// What the root lists with an empty field: the `limit` best picks that
+/// still resolve and pass their `when`, any kind, under `Recent`; with fewer
+/// than [`RECENT_MIN`] of them, the root's routes in declaration order under
+/// `Modes`. Never both, and nothing else.
+pub fn root_rest(
+    nodes: &IndexMap<String, Node>,
+    picks: &[crate::frecency::Record],
+    now_ms: f64,
+    limit: usize,
+    cond_results: &HashMap<String, bool>,
+) -> Vec<Node> {
+    let mut ranked: Vec<&crate::frecency::Record> = picks.iter().filter(|r| crate::frecency::score_of(Some(r), now_ms) > 0.0).collect();
+    ranked.sort_by(|a, b| {
+        let (sa, sb) = (crate::frecency::score_of(Some(a), now_ms), crate::frecency::score_of(Some(b), now_ms));
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut seen = HashSet::new();
+    let recent: Vec<Node> = ranked
+        .into_iter()
+        .filter_map(|r| subject_node(nodes, &r.id))
+        .filter(|n| is_when_visible(n, cond_results) && seen.insert(n.id.clone()))
+        .take(limit)
+        .map(|n| Node { section: Some(RECENT_SECTION.into()), ..n.clone() })
+        .collect();
+    if recent.len() >= RECENT_MIN {
+        return recent;
+    }
+    visible_children(nodes, None, cond_results)
+        .into_iter()
+        .filter(|n| matches!(n.kind, Kind::Submenu | Kind::Provider | Kind::Link))
+        .map(|n| Node { section: Some(MODES_SECTION.into()), ..n.clone() })
+        .collect()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -278,7 +327,7 @@ pub fn sections_for(rows: &[Node], ctx: &SectionCtx) -> Vec<String> {
         .enumerate()
         .map(|(i, row)| {
             if i < ctx.cells {
-                APPS_SECTION.to_string()
+                String::new()
             } else {
                 section_of(row, ctx)
             }

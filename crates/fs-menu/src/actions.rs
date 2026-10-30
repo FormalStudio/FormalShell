@@ -379,31 +379,20 @@ pub fn hint_for(node: Option<&Node>) -> String {
     if chord.is_empty() { count_for(node) } else { chord.to_string() }
 }
 
-/// The row's right-aligned accessory: its own value, else what the row is.
+/// The row's trailing value: its own (a level, a source), else a route's
+/// prefix, chord or count. An app or an action carries none of its own.
 pub fn accessory_for(node: Option<&Node>) -> String {
     let Some(n) = node else { return String::new() };
     if let Some(meta) = n.meta.as_deref().filter(|m| !m.is_empty()) {
         return meta.to_string();
     }
     match n.kind {
-        Kind::App => "Application".into(),
-        Kind::Action => if n.verb.as_deref().is_some_and(|v| !v.is_empty()) { "" } else { "Command" }.into(),
         Kind::Submenu | Kind::Provider | Kind::Link => {
             let prefix = lookup(ROUTE_PREFIXES, &n.id);
-            if prefix.is_empty() { hint_for(node) } else { prefix.into() }
+            if prefix.is_empty() { hint_for(node).replace('+', " ") } else { prefix.into() }
         }
         _ => String::new(),
     }
-}
-
-/// The accessory as a chord's keys, one per cap, when that is what it is.
-pub fn chord_keys_for(node: Option<&Node>) -> Vec<&'static str> {
-    let Some(n) = node else { return Vec::new() };
-    let chord = chord_for(&n.id);
-    if chord.is_empty() || accessory_for(node) != chord {
-        return Vec::new();
-    }
-    chord.split('+').collect()
 }
 
 #[cfg(test)]
@@ -451,14 +440,12 @@ mod tests {
     #[test]
     fn accessories() {
         let app = Node::new("apps.x", "X", Kind::App);
-        assert_eq!(accessory_for(Some(&app)), "Application");
-        assert_eq!(accessory_for(Some(&Node::new("a", "a", Kind::Action))), "Command");
+        assert_eq!(accessory_for(Some(&app)), "");
+        assert_eq!(accessory_for(Some(&Node::new("a", "a", Kind::Action))), "");
         let emoji = Node::new("emoji", "Emoji", Kind::Provider);
         assert_eq!(accessory_for(Some(&emoji)), ":e");
         let clip = Node::new("clipboard", "Clipboard", Kind::Provider);
-        assert_eq!(accessory_for(Some(&clip)), "Super+Ctrl+V");
-        assert_eq!(chord_keys_for(Some(&clip)), ["Super", "Ctrl", "V"]);
-        assert!(chord_keys_for(Some(&emoji)).is_empty());
+        assert_eq!(accessory_for(Some(&clip)), "Super Ctrl V");
         let tray = Node { child_ids: vec!["a".into(), "b".into()], ..Node::new("tray", "Tray", Kind::Provider) };
         assert_eq!(accessory_for(Some(&tray)), "2");
         let meta = Node { meta: Some("42%".into()), ..app };

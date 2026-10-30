@@ -72,8 +72,8 @@ fn action_row() {
     assert!(shutdown[0].confirm);
     assert_eq!(shutdown[0].run, Run::Ipc("power.poweroff".into()));
     let logout = of(&tree.nodes["system.logout"]);
-    assert_eq!(ids(&logout), ["run", "copy-command"]);
-    assert_eq!(logout[1].run, Run::Command("wl-copy -- 'hyprctl dispatch '\\''hl.dsp.exit()'\\'''".into()));
+    assert_eq!(ids(&logout), ["run"]);
+    assert_eq!(logout[0].run, Run::Ipc("power.logout".into()));
 }
 
 #[test]

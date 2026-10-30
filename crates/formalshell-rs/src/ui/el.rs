@@ -39,6 +39,8 @@ pub enum Type {
     Heading,
     Display,
     DisplayLarge,
+    /// The launcher's field, `LAUNCHER.field_size` on the base size.
+    Field,
 }
 
 impl Type {
@@ -48,7 +50,7 @@ impl Type {
         match self {
             Type::Subtitle | Type::Title | Type::Heading => Some(Weight::Bold),
             Type::Display => Some(Weight::Heavy),
-            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge => None,
+            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge | Type::Field => None,
         }
     }
 }
@@ -109,6 +111,11 @@ pub struct CellState {
     pub small: bool,
     /// A panel's hero, drawn in the `hero` box.
     pub hero: bool,
+    /// A launcher row: the `launcher.row` box, its ink unchanged when
+    /// selected and no cursor ring.
+    pub row: bool,
+    /// The launcher's mode chip, in the `launcher.token` box.
+    pub token: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

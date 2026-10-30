@@ -9,7 +9,7 @@ use fs_chrome::types::Edge;
 use super::{Effect, Panel, View};
 use crate::store::Topic;
 use crate::ui::el::{CellState, Opt, Ring};
-use crate::ui::{El, Event, Ink, Type, Variant, What, w};
+use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
 
 #[derive(Default)]
 pub struct Gallery {
@@ -155,6 +155,19 @@ impl Panel for Gallery {
         ];
         let mut cells = vec![label("Cell")];
         cells.extend(states.iter().map(|(name, f)| w::cell(w::label(*name)).cell_state(|s| f(s))));
+        let mut rows = vec![label("Launcher row / token")];
+        rows.extend([("Rest", false, false), ("Hovered", true, false), ("Selected", false, true)].into_iter().map(|(name, hovered, selected)| {
+            let weight = if selected { Weight::Semibold } else { Weight::Normal };
+            w::cell(w::row(s.lg, vec![w::icon("terminal").size(Type::Heading), w::text(name).weight(weight)]))
+                .ghost()
+                .cell_state(|c| {
+                    c.row = true;
+                    c.hovered = hovered;
+                    c.selected = selected;
+                })
+                .height(fs_theme::tokens::LAUNCHER.row_height)
+        }));
+        rows.push(w::row(s.sm, vec![w::token("Clipboard"), w::text("query")]).pad_start(s.lg));
         let span = s.xl * 5.0;
         let depth = s.xl * 3.0;
         let run = s.xl * 2.0;
@@ -165,6 +178,7 @@ impl Panel for Gallery {
             s.section_gap,
             vec![
                 w::column(s.row_gap, cells),
+                w::column(0.0, rows),
                 label("Dim / unavailable"),
                 w::column(s.row_gap, vec![label("Shoulders / joined to the bar"), joins]),
             ],

@@ -29,6 +29,7 @@ fn px(cx: &Cx, t: Type) -> f32 {
         Type::Heading => f.heading,
         Type::Display => f.display,
         Type::DisplayLarge => f.display_large,
+        Type::Field => (f.base_size * fs_theme::tokens::LAUNCHER.field_size).round(),
     }) as f32
 }
 
@@ -131,6 +132,17 @@ fn resolve(cx: &Cx, ink: Ink) -> Rgba {
         Ink::Primary => cx.theme.colors.get("primary"),
         Ink::Destructive => cx.theme.colors.get("destructive"),
         Ink::Color(c) => c,
+    }
+}
+
+/// A launcher row keeps `lg` either side, the token `sm`.
+fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
+    if state.row {
+        s.lg
+    } else if state.token {
+        s.sm
+    } else {
+        s.control_padding_x
     }
 }
 
@@ -269,9 +281,10 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             ((t.width as f64).min(*max), t.line_height() as f64)
         }
         Kind::Cell { state, child, .. } => {
-            let content_avail = (inner - s.control_padding_x * 2.0).max(0.0);
+            let pad_x = cell_pad(&s, state);
+            let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            (cw + s.control_padding_x * 2.0, across(cx, state.chip, ch))
+            (cw + pad_x * 2.0, across(cx, state.chip, ch))
         }
         Kind::Button { text, icon, square, .. } => {
             if *square {
@@ -764,6 +777,14 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let mut b = if state.hero {
         t.box_style("hero", None)
+    } else if state.token {
+        t.box_style("launcher.token", None)
+    } else if state.row {
+        let mut b = t.box_style("launcher.row", Some(if state.selected && !owned { "selected" } else { "rest" }));
+        if state.destructive {
+            b.border = t.box_style("cell", Some("destructive")).border;
+        }
+        b
     } else {
         let mut b = t.box_style("cell", Some(fill_state));
         let rest_border = t.box_style("cell", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
@@ -772,17 +793,22 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let hovered = state.hovered || (interactive && cx.hover(path));
     let washing = hovered && !state.active && !state.selected;
-    b.wash = t.box_style("cell", Some("hover")).wash;
+    b.wash = t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
     let (_, ring) = cx.cursor(stop.as_deref());
-    let ring = (ring || state.cursor) && !owned;
+    let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
     let ri = irect(r);
     let radius = if state.small { t.radii.sm } else { t.box_radius(&b, ri.h as f64) };
     let fill = cx.color(&format!("{path}.fill"), b.fill);
     let border = b.border.clone().map(|l| Line { color: cx.color(&format!("{path}.border"), l.color), width: l.width });
     let b = BoxStyle { fill, border, ..b };
-    let wash = cx.tween(&format!("{path}.wash"), if washing { 1.0 } else { 0.0 }, Clock::Effects) as f32;
-    let fg = if state.active {
+    let wash_clock = if state.row { Clock::EffectsFast } else { Clock::Effects };
+    let wash = cx.tween(&format!("{path}.wash"), if washing { 1.0 } else { 0.0 }, wash_clock) as f32;
+    let fg = if state.token {
+        b.ink
+    } else if state.row && !state.destructive {
+        t.colors.get("foreground")
+    } else if state.active {
         t.colors.get("primaryForeground")
     } else if state.destructive {
         t.colors.get("destructive")
@@ -793,7 +819,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else {
         t.colors.get("foreground")
     };
-    let dim = if state.active || state.selected { fg } else { t.colors.get("mutedForeground") };
+    let dim = if (state.active || state.selected) && !state.row { fg } else { t.colors.get("mutedForeground") };
     let fg = cx.color(&format!("{path}.fg"), fg);
     let dim = cx.color(&format!("{path}.dim"), dim);
     let alpha = cx.alpha;
@@ -803,8 +829,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     p.finish();
     cx.done(last);
 
-    let s = &cx.theme.space;
-    let pad_x = s.control_padding_x;
+    let pad_x = cell_pad(&cx.theme.space, &state);
     let content_w = (r.width() - pad_x * 2.0).max(0.0);
     let (cw, ch) = measure(cx, child, content_w);
     let cw = if child.width == Size::Fill { content_w } else { cw };

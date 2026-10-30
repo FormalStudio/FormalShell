@@ -1249,6 +1249,37 @@
                 "inkShadow": []
             }
         },
+        "launcher.row": {
+            "rest": {
+                "fill": "transparent",
+                "radius": "md"
+            },
+            "hover": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "light": 0.035,
+                        "dark": 0.045
+                    }
+                }
+            },
+            "selected": {
+                "fill": "foreground",
+                "fillAlpha": {
+                    "light": 0.07,
+                    "dark": 0.085
+                }
+            }
+        },
+        "launcher.token": {
+            "fill": "primary",
+            "fillAlpha": 0.16,
+            "radius": "sm",
+            "ink": [
+                "primary",
+                1
+            ]
+        },
         "window": {
             "rest": {
                 "gapsIn": 4,
@@ -1479,6 +1510,12 @@
         ],
         "roles.lock.ink": [
             "Words straight on the lock wallpaper, in the band's own two inks: white under elementary's bare text shadow, and the 0.65 black over a bright backdrop with none, for the reason INK_SHADOW gives."
+        ],
+        "roles.launcher.row": [
+            "A launcher row (launcher spec §2): nothing at rest, a lighter wash under the pointer that never travels, and one soft fill under the selection that does, `selected` winning over `hover` on the same row. Dark takes the mockup's two values; light is read off `--gallery`'s light sheet, the selected row plain against the hovered one at a glance."
+        ],
+        "roles.launcher.token": [
+            "The mode chip standing in the launcher's field (launcher spec §2, §4): the wallpaper colour at 0.16 under its own ink, `radiusSm`, the label in `caption` at 600."
         ],
         "roles.window": [
             "The window itself, which the shell does not draw: Hyprland does, off the table ThemeEngine publishes into formalshell-chrome.lua (chrome.js, M60 P7). elementary's focused window is a 1px `borders` frame over `shadow(4)` and a backdrop one drops to `shadow(2)`, and what a compositor can take of that is one cast: the range, the power and the offset below are the focused numbers, and a backdrop window differs by its colour alone. The frame takes the `border` role rather than the literal black the cards carry, since a window's rim lies on the wallpaper instead of on a sheet of this material."

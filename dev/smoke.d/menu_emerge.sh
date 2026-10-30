@@ -272,7 +272,7 @@ leg_menu_emerge_assert() {
   # The root level names no route of its own, so it is the placeholder and
   # the row count that say the launcher is up and holding the root list.
   if [ ! -s "$menu_emerge_status_path" ] \
-    || ! grep -q '"placeholder":"Type a command or search..."' "$menu_emerge_status_path" \
+    || ! grep -q '"placeholder":"Search apps, files, commands"' "$menu_emerge_status_path" \
     || [ "$("$jq_bin" -r '.rows' "$menu_emerge_status_path" 2>/dev/null)" -lt 1 ]; then
     fail "the launcher did not settle back at the root level, got: $(cat "$menu_emerge_status_path" 2>/dev/null)"
   fi

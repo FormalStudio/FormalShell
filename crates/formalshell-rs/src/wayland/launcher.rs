@@ -1029,6 +1029,15 @@ impl App {
                         let i = self.launcher.cursor;
                         self.menu_activate(i, false);
                     }
+                    Some("alternate") => {
+                        let i = self.launcher.cursor;
+                        self.menu_activate(i, true);
+                    }
+                    Some(hint @ ("actions" | "into")) => {
+                        let key = if hint == "actions" { nav::Key::Tab } else { nav::Key::Right };
+                        let out = self.launcher.key(&self.store, key, fs_menu::field::Key::Other, nav::Modifiers::default(), false, None);
+                        self.launcher_out(out);
+                    }
                     Some(r) => {
                         if let Some(i) = r.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
                             self.menu_activate(i, false);

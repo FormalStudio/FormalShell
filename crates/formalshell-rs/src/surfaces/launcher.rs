@@ -161,6 +161,10 @@ struct RowMotion {
 
 const ROW_RESET_LIMIT: usize = 64;
 
+/// The rows whose labels are shaped at both weights on a resolve: more
+/// than a card at `LAUNCHER.row_height` shows.
+const ROWS_SHAPED_AHEAD: usize = 24;
+
 impl RowMotion {
     fn progress(at: Instant, ms: f64, now: Instant) -> f64 {
         if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(at).as_secs_f64() * 1000.0 / ms).min(1.0) }
@@ -430,6 +434,16 @@ impl Model {
         self.card_width(theme) - theme.space.panel_padding * 2.0
     }
 
+    /// A row list runs the card's whole width, its rows an `sm` inset off
+    /// the edge; the other views keep the card's padding.
+    pub fn bleeds(&self) -> bool {
+        matches!(self.view, View::Rows | View::AppGrid)
+    }
+
+    fn body_width(&self, theme: &Theme) -> f64 {
+        if self.bleeds() { self.card_width(theme) } else { self.content_width(theme) }
+    }
+
     /// The card's height for the level kind, capped by a share of the
     /// output's.
     fn kind_height(&self, theme: &Theme, output_h: f64) -> f64 {
@@ -586,7 +600,7 @@ impl Model {
         }
         match self.level.as_deref().and_then(|l| store.menu.nodes().get(l)) {
             Some(node) => model::prompt_for(Some(node)),
-            None => "Type a command or search...".into(),
+            None => "Search apps, files, commands".into(),
         }
     }
 
@@ -641,7 +655,7 @@ impl Model {
         let radio_q = if menu { fs_menu::providers::radio_trigger_query(q) } else { None };
         let emoji = menu && (level == Some("emoji") || emoji_q.is_some());
         let route_rows = matches!(level, Some("nix" | "keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
-        let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(true);
+        let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
         let picker = menu && level == Some(PICKER_ROUTE);
         let monitor = menu && level == Some(MONITOR_ROUTE);
         let mirror = menu && level == Some(MIRROR_ROUTE);
@@ -693,6 +707,15 @@ impl Model {
                 fs_menu::keybinds::rows_for(reply, keys_q.unwrap_or(q))
             }
             Mode::Menu if level == Some("radio.search") || radio_q.is_some() => radio_search_rows(store, radio_q.unwrap_or(q)),
+            Mode::Menu if q.is_empty() && level.is_none() => {
+                let rest = model::root_rest(nodes, &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond);
+                let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
+                if view == View::AppGrid && recent {
+                    rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
+                } else {
+                    rest
+                }
+            }
             Mode::Menu if q.is_empty() => {
                 let gated = level.and_then(|l| nodes.get(l)).is_some_and(|n| !model::is_when_visible(n, cond));
                 if gated {
@@ -725,7 +748,7 @@ impl Model {
             let apps: Vec<Node> = model::visible_children(nodes, Some("apps"), cond)
                 .into_iter()
                 .filter(|r| r.kind == NodeKind::App)
-                .take(fs_theme::tokens::LAUNCHER.root_apps as usize)
+                .take(fs_theme::tokens::LAUNCHER.recent as usize)
                 .cloned()
                 .collect();
             rows = apps.into_iter().chain(rows).collect();
@@ -794,6 +817,15 @@ impl Model {
         self.monitor_strip_h = if view == View::Monitor { ui::measure(&monitor_strip(store, theme, &self.monitor_history), self.content_width(theme), theme, kit).1 } else { 0.0 };
         self.picker_switch_h = if self.picker_switch(store) { ui::measure(&picker_switch(self), 400.0, theme, kit).1 } else { 0.0 };
         self.layout(theme, kit);
+        if changed && matches!(view, View::Rows | View::AppGrid) {
+            // The selection sets its row's label at 600: both weights are
+            // shaped here, so a step never waits on the shaper.
+            for r in self.rows.iter().take(ROWS_SHAPED_AHEAD) {
+                for weight in [Weight::Normal, Weight::Semibold] {
+                    ui::measure(&w::text(r.label.clone()).weight(weight), f64::MAX, theme, kit);
+                }
+            }
+        }
         self.row_motion(before, view, theme);
         // A key's step resolves the level again before it draws: the cursor
         // landing where the step put it keeps the step's travel.
@@ -867,9 +899,10 @@ impl Model {
     /// rows, the emoji grid's tiles.
     fn layout(&mut self, theme: &Theme, kit: &mut Kit) {
         let s = &theme.space;
-        let width = self.content_width(theme);
-        let inset = s.md;
+        let width = self.body_width(theme);
+        let inset = if self.bleeds() { s.sm } else { s.md };
         let gutter = s.sm;
+        let heading_x = if self.bleeds() { s.sm + s.lg - s.control_padding_x } else { 0.0 };
         let heading_h = ui::measure(&w::heading(s, "Ag", None, true), width, theme, kit).1;
         let mut out = Layout::default();
         let mut y = inset;
@@ -891,6 +924,8 @@ impl Model {
                 } else {
                     (self.rows.len(), 0.0)
                 };
+                let grid_x = if self.view == View::AppGrid { gutter } else { 0.0 };
+                let width = width - grid_x * 2.0;
                 let columns = if self.view == View::Picker {
                     fs_theme::tokens::LAUNCHER.picker_columns as usize
                 } else if self.view == View::Emoji {
@@ -912,17 +947,18 @@ impl Model {
                 }
                 for i in 0..cells {
                     let (r, c) = (i / columns.max(1), i % columns.max(1));
-                    out.slots.push(Slot { x: c as f64 * cell_w, y: y + r as f64 * cell_h, w: cell_w, h: cell_h, band: 0.0 });
+                    out.slots.push(Slot { x: grid_x + c as f64 * cell_w, y: y + r as f64 * cell_h, w: cell_w, h: cell_h, band: 0.0 });
                 }
                 y += cells.div_ceil(columns.max(1)) as f64 * cell_h;
                 out.columns = columns;
                 out.cell_w = cell_w;
                 out.cell_h = cell_h;
+                let width = width + grid_x * 2.0;
                 for i in cells..self.rows.len() {
                     let h_text = heading(i, &self.sections);
                     let band = band_of(&h_text, i == 0);
                     if !h_text.is_empty() {
-                        out.headings.push((h_text, y + band - heading_h - s.row_gap, 0.0));
+                        out.headings.push((h_text, y + band - heading_h - s.row_gap, heading_x));
                     }
                     let row_h = row_height(&self.rows[i], theme, kit);
                     out.slots.push(Slot { x: gutter, y, w: width - gutter * 2.0, h: band + row_h, band });
@@ -941,7 +977,7 @@ impl Model {
                     let h_text = heading(i, &self.sections);
                     let band = band_of(&h_text, i == 0);
                     if !h_text.is_empty() {
-                        out.headings.push((h_text, y + band - heading_h - s.row_gap, 0.0));
+                        out.headings.push((h_text, y + band - heading_h - s.row_gap, heading_x));
                     }
                     let row_h = row_height(&self.rows[i], theme, kit);
                     out.slots.push(Slot { x: side, y, w: width - side * 2.0, h: band + row_h, band });
@@ -959,11 +995,14 @@ impl Model {
             self.scroll = 0.0;
             return;
         };
-        let (top, h) = (slot.y + slot.band, slot.h - slot.band);
+        // A row heading its section brings the heading with it, and the
+        // first row the list's own inset.
+        let (top, bottom) = (slot.y, slot.y + slot.h);
         let view = self.body_h;
         let mut next = self.scroll;
-        // The grid's own heading rides with its first row.
-        let top = if !matches!(self.view, View::Rows | View::Monitor) && self.cursor < self.cells() && self.cursor < self.layout.columns { 0.0 } else { top };
+        let first = self.cursor == 0 || (!matches!(self.view, View::Rows | View::Monitor) && self.cursor < self.cells() && self.cursor < self.layout.columns);
+        let top = if first { 0.0 } else { top };
+        let h = bottom - top;
         if top < next {
             next = top;
         } else if top + h > next + view {
@@ -1369,7 +1408,13 @@ impl Model {
             return;
         }
         let now = now_ms();
-        let mut fields = vec![state::Field::Picks(json!(fs_menu::frecency::record(&picks(store), &id, now, None)))];
+        // Only an uninstalled app is pruned, once the apps scan has landed:
+        // a provider's rows (a network out of range, a stopped player) come
+        // back, and before the scan no app resolves at all.
+        let apps_known = !store.menu.exec.is_empty();
+        let held: Vec<fs_menu::frecency::Record> =
+            picks(store).into_iter().filter(|r| !(apps_known && r.id.starts_with("app:")) || resolves(store, &r.id)).collect();
+        let mut fields = vec![state::Field::Picks(json!(fs_menu::frecency::record(&held, &id, now, None)))];
         let q = self.query.text();
         let q_norm = fs_menu::search::normalize(q.trim());
         let exact = fs_menu::search::tier(node, &q_norm, &fs_menu::search::slug(&q_norm)) == fs_menu::search::TIER_EXACT;
@@ -1621,11 +1666,7 @@ pub fn configured_abbreviations(store: &Store) -> std::collections::HashMap<Stri
 
 /// Whether a subject id names something in the tree now.
 fn resolves(store: &Store, id: &str) -> bool {
-    let nodes = store.menu.nodes();
-    match id.strip_prefix("app:") {
-        Some(app) => nodes.contains_key(&format!("apps.{app}")),
-        None => nodes.contains_key(id),
-    }
+    model::subject_node(store.menu.nodes(), id).is_some()
 }
 
 /// The compositor's windows an app's entry claims.
@@ -1658,7 +1699,12 @@ fn row_height(node: &Node, theme: &Theme, kit: &mut Kit) -> f64 {
         let h = ui::measure(&w::text("Ag").size(Type::Display), 100.0, theme, kit).1;
         return h + s.control_padding_y * 2.0;
     }
-    s.control_height
+    launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height)
+}
+
+/// A `LAUNCHER` length at the theme's type scale.
+fn launcher_px(theme: &Theme, base: f64) -> f64 {
+    (base * fs_theme::tokens::font_scale(theme.font_size.base_size)).round()
 }
 
 /// The window: the card, its surface and the three bands' widgets.
@@ -1759,12 +1805,16 @@ impl Shown {
         card || self.scroll.running(now) || self.wake.is_some_and(|w| w <= now)
     }
 
-    fn metrics(theme: &Theme, m: &Model, output_h: f64) -> (f64, f64, f64) {
+    /// The field's line, the head band's height under the card's top and
+    /// the foot band's, each band with its rule.
+    fn metrics(theme: &Theme, m: &Model, output_h: f64, kit: &mut Kit) -> (f64, f64, f64, f64) {
         let s = &theme.space;
-        let band = s.control_height + s.panel_padding * 2.0 + theme.border_width;
-        let chrome = band * 2.0;
-        let body = if m.mode == Mode::Input { 0.0 } else { (m.kind_height(theme, output_h) - chrome).max(0.0) };
-        (band, chrome, body)
+        let line = ui::measure(&w::text("Ag").size(Type::Field), 100.0, theme, kit).1;
+        let line = if m.mode == Mode::Menu && m.level.is_some() { line.max(s.control_height) } else { line };
+        let head = s.lg + line + s.lg + theme.border_width;
+        let foot = theme.border_width + s.control_height;
+        let body = if m.mode == Mode::Input { 0.0 } else { (m.kind_height(theme, output_h) - head - foot).max(0.0) };
+        (line, head, foot, body)
     }
 
     /// The card at this frame of its size morph, centred across the
@@ -1781,7 +1831,8 @@ impl Shown {
 
     /// Lays the card out and draws the three bands.
     pub fn layout(&mut self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
-        let (_, chrome, body_h) = Self::metrics(theme, m, self.output.1);
+        let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, self.output.1, kit);
+        let chrome = head_h + foot_h;
         if (m.body_h - body_h).abs() > 0.5 {
             m.body_h = body_h;
             m.follow();
@@ -1814,7 +1865,7 @@ impl Shown {
             // A coast's tail moves under half a pixel a frame.
             self.scroll.jump(target);
         }
-        self.draw(m, store, theme, kit, now, body_h, (tw, th));
+        self.draw(m, store, theme, kit, now, line, body_h, (tw, th));
         self.laid_for = (tw, th);
     }
 
@@ -1828,7 +1879,7 @@ impl Shown {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw(&mut self, m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant, body_h: f64, target: (f64, f64)) {
+    fn draw(&mut self, m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant, line: f64, body_h: f64, target: (f64, f64)) {
         // On a layer the content is laid out in the layer's own pixels at
         // the size the card is headed for: the compositor moves, cuts and
         // fades it with the card.
@@ -1862,21 +1913,22 @@ impl Shown {
         self.body.motion_scale = self.scale;
         self.foot.motion_scale = self.scale;
 
-        // The header band.
-        let head_rect = Rect::new(fx + pad, fy + pad, fx + pad + inner_w, fy + pad + s.control_height);
+        // The field band: `lg` round the line, a full-bleed rule under it.
+        let head_rect = Rect::new(fx + s.lg, fy + s.lg, fx + fw - s.lg, fy + s.lg + line);
         let head = header(m, store, theme);
         let d = self.head.draw(&head, head_rect, Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
         }
         let bw = theme.border_width.round().max(1.0) as i32;
-        let rule_top = (fy + pad + s.control_height + pad).round() as i32;
+        let rule_top = (fy + s.lg + line + s.lg).round() as i32;
         let body_top = rule_top as f64 + theme.border_width;
+        let (body_x, body_w) = if m.bleeds() { (fx, fw) } else { (fx + pad, inner_w) };
         let sep = theme.box_style("separator", None).fill;
         let sep = sep.with_alpha(sep.a * alpha);
 
         // The body.
-        let viewport = IRect::new((fx + pad).round() as i32, body_top.round() as i32, inner_w.round() as i32, body_h.round() as i32);
+        let viewport = IRect::new(body_x.round() as i32, body_top.round() as i32, body_w.round() as i32, body_h.round() as i32);
         let body_clip = viewport.intersect(&clip);
         self.body_rect = (body_h > 0.0).then(|| IRect::new(viewport.x + on_output.0, viewport.y + on_output.1, viewport.w, viewport.h));
         let scroll = self.scroll.value(now) + m.touch.value(now);
@@ -1885,8 +1937,8 @@ impl Shown {
         self.body.halo_owned = false;
         self.body.fill_owned = true;
         self.body.cursor = None;
-        let origin = (fx + pad, body_top - scroll);
-        let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + m.layout.content_h), Some(body_clip), alpha, theme, kit, scene, now);
+        let origin = (body_x, body_top - scroll);
+        let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + body_w, origin.1 + m.layout.content_h), Some(body_clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
         }
@@ -1909,10 +1961,14 @@ impl Shown {
                 self.sel_on = Some(on);
                 let [x, y, w_, h] = [0, 1, 2, 3].map(|i| self.sel[i].value(now));
                 let r = ui::irect(Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w_, origin.1 + y + h));
-                let mut b = theme.box_style("cell", Some("selected"));
-                b.border = None;
-                b.wash = None;
-                let b = theme.with_cursor(b, m.from_keys, true);
+                let b = if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
+                    theme.box_style("launcher.row", Some("selected"))
+                } else {
+                    let mut b = theme.box_style("cell", Some("selected"));
+                    b.border = None;
+                    b.wash = None;
+                    theme.with_cursor(b, m.from_keys, true)
+                };
                 crate::ui::boxes::paint(&mut p, r, &b, st.radius, alpha, 0.0);
                 if self.sel.iter().any(|a| a.running(now)) {
                     self.wake = Some(now);
@@ -1959,11 +2015,11 @@ impl Shown {
         }
         let _ = side;
 
-        // The footer band.
+        // The foot band: a full-bleed rule, then the selected subject's keys.
         let foot_rule = (body_top + body_h).round() as i32;
-        let foot_top = if body_h > 0.0 { foot_rule as f64 + theme.border_width + pad } else { body_top + pad };
+        let foot_top = if body_h > 0.0 { foot_rule as f64 + theme.border_width } else { body_top };
         let foot = footer(m, store, theme);
-        let d = self.foot.draw(&foot, Rect::new(fx + pad + side, foot_top, fx + pad + inner_w - side, foot_top + s.control_height), Some(clip), alpha, theme, kit, scene, now);
+        let d = self.foot.draw(&foot, Rect::new(fx + s.sm, foot_top, fx + fw - s.sm, foot_top + s.control_height), Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
         }
@@ -2001,65 +2057,72 @@ impl Shown {
 fn header(m: &Model, store: &Store, theme: &Theme) -> El {
     let s = &theme.space;
     let mut parts = Vec::new();
-    let in_level = m.mode == Mode::Menu && m.level.is_some();
-    if in_level {
-        parts.push(w::space(s.sm));
+    if m.mode == Mode::Menu && m.level.is_some() {
         parts.push(w::icon_text_button(m.level_icon(store), m.level_name(store)).variant(ui::Variant::Outline).tip("Back").on("back"));
         parts.push(w::space(s.icon_gap));
-    } else {
-        parts.push(w::space(s.sm + s.control_padding_x));
     }
-    parts.push(w::edit(&m.query, &m.placeholder(store), Type::Subtitle));
-    parts.push(w::space(s.icon_gap));
-    parts.push(w::icon_button("x").tip("Close").on("close"));
-    parts.push(w::space(s.sm));
+    parts.push(w::edit(&m.query, &m.placeholder(store), Type::Field));
     w::row(0.0, parts).fill()
 }
 
+/// The selected subject's keys and nothing else, right-aligned, each a
+/// button doing what its key does.
 fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     let s = &theme.space;
     let node = m.rows.get(m.cursor);
-    let second = match node.filter(|_| m.mode == Mode::Menu).map(|n| m.subject(store, n)) {
-        Some(subject) if !subject.inert() => fs_menu::actions::actions_for(&subject).into_iter().nth(1).map(|a| a.label).unwrap_or_default(),
-        _ => String::new(),
-    };
-    let bar = fs_menu::actions::action_bar(&fs_menu::actions::ActionCtx {
-        mode: m.mode,
-        node,
-        at_root: m.level.is_none(),
-        confirming: node.is_some_and(|n| m.confirming(&n.id)),
-        alternate_label: &second,
-        ..Default::default()
-    });
-    let name = if m.view == View::Emoji {
-        node.map(|n| {
-            let l = n.label.to_lowercase();
-            let mut c = l.chars();
-            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
-        })
-        .unwrap_or_else(|| m.level_name(store))
-    } else {
-        m.level_name(store)
-    };
-    let mut parts = vec![
-        w::space(s.control_padding_x),
-        w::icon(m.level_icon(store)).ink(Ink::Muted),
-        w::space(s.icon_gap),
-        w::text(name).size(Type::BodySmall).ink(Ink::Muted).elide(),
-    ];
-    let mut actions = Vec::new();
-    if let Some(p) = &bar.primary {
-        actions.push(w::row(0.0, vec![w::button(p.label.clone()).variant(ui::Variant::Ghost).on("primary"), w::chord_keys(s, &p.keys)]));
+    let mut hints: Vec<(String, Vec<&'static str>, &'static str)> = Vec::new();
+    match m.mode {
+        Mode::Input => hints.push(("Submit".into(), vec!["Enter"], "primary")),
+        Mode::Select => {
+            if node.is_some() {
+                hints.push(("Select".into(), vec!["Enter"], "primary"));
+            }
+        }
+        Mode::Menu => {
+            if let Some(n) = node {
+                let subject = m.subject(store, n);
+                let bar = fs_menu::actions::action_bar(&fs_menu::actions::ActionCtx {
+                    mode: m.mode,
+                    node,
+                    at_root: m.level.is_none(),
+                    picker_select: m.picker.select,
+                    confirming: m.confirming(&n.id),
+                    ..Default::default()
+                });
+                if let Some(p) = bar.primary {
+                    hints.push((p.label, vec!["Enter"], "primary"));
+                }
+                if m.picker_switch(store) {
+                    let label = if m.picker.light { "Show dark" } else { "Show light" };
+                    hints.push((label.into(), vec!["Tab"], "variant"));
+                } else if !subject.inert() {
+                    hints.push(("Actions".into(), vec!["Tab"], "actions"));
+                }
+                if !subject.inert() {
+                    let into = match n.kind {
+                        NodeKind::Submenu | NodeKind::Provider | NodeKind::Link => true,
+                        NodeKind::App => subject.windows > 0,
+                        _ => false,
+                    };
+                    if into {
+                        hints.push(("Into".into(), vec!["Right"], "into"));
+                    }
+                    let all = fs_menu::actions::actions_for(&subject);
+                    if let Some(second) = all.get(1).filter(|_| !m.confirming(&n.id)) {
+                        hints.push((second.label.clone(), vec!["Shift", "Enter"], "alternate"));
+                    }
+                }
+            }
+        }
     }
-    for h in &bar.hints {
-        actions.push(w::row(s.sm, vec![w::text(h.label.clone()).size(Type::BodySmall).ink(Ink::Muted), w::chord_keys(s, &h.keys)]));
+    let mut parts = vec![w::spacer()];
+    for (label, keys, on) in hints {
+        let content = w::row(s.sm, vec![w::text(label).size(Type::Caption).ink(Ink::Muted), w::chord_keys(s, &keys)]);
+        parts.push(w::cell(content).ghost().interactive().cell_state(|c| c.chip = true).on(on));
     }
-    parts.push(w::row(s.lg, actions));
-    parts.push(w::space(s.control_padding_x));
-    // A band a `controlHeight` tall whether or not a button is in it, so
-    // the level's name sits on one line on every level.
+    // A band a `controlHeight` tall whether or not a hint is in it.
     parts.push(El::new(ui::el::Kind::Swatch { color: fs_theme::color::Rgba::TRANSPARENT, w: 0.0, h: s.control_height, radius: 0.0, border: false }));
-    w::row(0.0, parts).fill()
+    w::row(s.xs, parts).fill()
 }
 
 /// The body's widgets for the slots inside the viewport, the rest as room.
@@ -2125,7 +2188,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
                 .ghost()
                 .selected(selected)
                 .interactive()
-                .cell_state(|st| st.cursor = selected && m.from_keys)
+                .cell_state(|st| st.row = true)
                 .on(format!("row:{i}"))
                 .stop(format!("c:{}", row.id))
                 .width(Size::Px(slot.w))
@@ -2153,7 +2216,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
                 .ghost()
                 .selected(selected)
                 .interactive()
-                .cell_state(|st| st.cursor = selected && m.from_keys)
+                .cell_state(|st| st.row = true)
                 .on(format!("row:{i}"))
                 .stop(format!("e:{}", row.id))
                 .width(Size::Px(slot.w))
@@ -2163,7 +2226,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             let alpha = m.motion.alpha(&row.id, now);
             let thumb = (!row.thumb_source.is_empty())
                 .then(|| (store.clipboard.thumbs.get(&row.thumb_source).cloned().flatten(), f64::from(store.clipboard.thumb_box.1)));
-            let el = menu_row(m, row, i, selected, checked, thumb, theme).width(Size::Px(slot.w));
+            let el = menu_row(m, store, row, i, selected, checked, thumb, theme).width(Size::Px(slot.w)).height(slot.h - slot.band);
             if alpha < 1.0 { el.fade(alpha) } else { el }
         };
         let dy = if i >= cells && matches!(m.view, View::Rows | View::AppGrid) { m.motion.offset(&row.id, now) } else { 0.0 };
@@ -2180,7 +2243,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             continue;
         }
         let fade = 1.0 - Clock::EffectsFast.curve().ease(t) as f32;
-        let el = menu_row(m, node, usize::MAX, false, false, None, theme).width(Size::Px(slot.w)).fade(fade);
+        let el = menu_row(m, store, node, usize::MAX, false, false, None, theme).width(Size::Px(slot.w)).height(slot.h - slot.band).fade(fade);
         let top = slot.y + slot.band;
         overlays.push((El { on: None, ..el }, Rect::new(slot.x, top, slot.x + slot.w, top + slot.h - slot.band)));
     }
@@ -2408,26 +2471,36 @@ fn slot_x_of(m: &Model, el: &El) -> f64 {
     m.rows.iter().position(|r| r.id == id).and_then(|i| m.layout.slots.get(i)).map_or(0.0, |s| s.x)
 }
 
-fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thumb: Option<(Option<crate::scene::Bitmap>, f64)>, theme: &Theme) -> El {
+/// One row: a `row_icon` mark, the label at 400 (600 under the selection),
+/// a dim trailing value, `lg` either side.
+#[allow(clippy::too_many_arguments)]
+fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, checked: bool, thumb: Option<(Option<crate::scene::Bitmap>, f64)>, theme: &Theme) -> El {
     let s = &theme.space;
     let confirming = m.confirming(&row.id);
+    let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
     let mut lead = Vec::new();
     if let Some((image, h)) = thumb {
         lead.push(w::picture(image, h).width(Size::Px(h * 3.0)));
     }
     let glyph = fs_menu::icons::icon_for(Some(row));
+    let picture = (!row.icon_source.is_empty() && glyph.is_empty())
+        .then(|| store.menu.row_icons.get(&row.icon_source).cloned().flatten())
+        .flatten();
     let drawn = if !glyph.is_empty() {
         glyph.to_owned()
-    } else if row.icon_source.is_empty() && !row.icon.is_empty() {
+    } else if picture.is_none() && !row.emoji_only && row.thumb_source.is_empty() {
         fs_menu::icons::fallback_for(Some(row)).to_owned()
     } else {
         String::new()
     };
-    if !drawn.is_empty() {
-        lead.push(w::icon(drawn));
+    if let Some(image) = picture {
+        let density = image.pixmap.width() as f64 / icon_px.max(1.0);
+        lead.push(w::picture(Some(image.at(density)), icon_px));
+    } else if !drawn.is_empty() {
+        lead.push(w::icon(drawn).size(Type::Heading).width(Size::Px(icon_px)).height(icon_px));
     }
     let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
-    let mut name = w::label(label).elide();
+    let mut name = w::text(label).weight(if selected { Weight::Semibold } else { Weight::Normal }).elide();
     if row.dim == Some(true) {
         name = name.ink(Ink::Dim);
     }
@@ -2438,29 +2511,34 @@ fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thum
     if let Some(desc) = row.desc.clone().filter(|d| !d.is_empty()) {
         lead.push(w::text(desc).size(Type::BodySmall).ink(Ink::Dim).elide());
     }
+    let windows = match &row.entry {
+        Some(entry) if row.kind == NodeKind::App && row.meta.as_deref().unwrap_or("").is_empty() => app_windows(store, entry).len(),
+        _ => 0,
+    };
+    let value = match windows {
+        0 => fs_menu::actions::accessory_for(Some(row)),
+        1 => "1 window".into(),
+        n => format!("{n} windows"),
+    };
     let mut trail = Vec::new();
-    let chord = fs_menu::actions::chord_keys_for(Some(row));
-    let accessory = fs_menu::actions::accessory_for(Some(row));
-    if !chord.is_empty() {
-        trail.push(w::chord_keys(s, &chord));
-    } else if !accessory.is_empty() {
-        let word = row.meta.as_deref().unwrap_or("").is_empty() && matches!(row.kind, NodeKind::App | NodeKind::Action);
-        let a = w::caption(accessory).ink(Ink::Dim);
-        trail.push(if word { a } else { a.mono() });
+    if !value.is_empty() {
+        trail.push(w::text(value).size(Type::BodySmall).ink(Ink::Dim));
     }
     if checked && !confirming {
         trail.push(w::icon("check"));
     }
-    let mut parts = vec![w::row(s.icon_gap, lead).fill()];
+    let mut parts = vec![w::row(s.lg, lead).fill()];
     if !trail.is_empty() {
         parts.push(w::row(s.icon_gap, trail));
     }
-    let _ = Weight::Medium;
-    w::cell(w::row(s.control_padding_x, parts).fill())
+    w::cell(w::row(s.lg, parts).fill())
         .ghost()
         .selected(selected)
         .interactive()
-        .cell_state(|st| st.destructive = confirming)
+        .cell_state(|st| {
+            st.row = true;
+            st.destructive = confirming;
+        })
         .on(format!("row:{i}"))
         .stop(format!("r:{}", row.id))
 }

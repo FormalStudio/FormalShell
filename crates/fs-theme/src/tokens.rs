@@ -268,7 +268,13 @@ pub struct Launcher {
     pub app_height_share: f64,
     pub picker_columns: u32,
     pub emoji_columns: u32,
-    pub root_apps: u32,
+    /// The most rows `Recent` lists at rest.
+    pub recent: u32,
+    /// The field's type, a ratio on the base size, between the ramp's
+    /// `heading` and `display`.
+    pub field_size: f64,
+    pub row_height: f64,
+    pub row_icon: f64,
 }
 
 pub const LAUNCHER: Launcher = Launcher {
@@ -276,7 +282,10 @@ pub const LAUNCHER: Launcher = Launcher {
     app_height_share: 0.82,
     picker_columns: 4,
     emoji_columns: 8,
-    root_apps: 8,
+    recent: 8,
+    field_size: 1.615,
+    row_height: 40.0,
+    row_icon: 22.0,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]

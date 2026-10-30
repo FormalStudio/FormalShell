@@ -472,7 +472,7 @@ colour role over `reveal`.
 
 The cursor travels (amended 2026-09-09, owner: a keyboard user wants what a
 keystroke moves to be seen moving). It is one item per list, the launcher's
-`accent` row and a panel's ring, moving on `spatialFast`; a one-step move
+`launcher.row` fill and a panel's ring, moving on `spatialFast`; a one-step move
 travels, while a wrap, a filter reset and a level change snap, since nothing
 connects the two positions. A selection fill (the segmented control, the
 picker's mode tabs) travels the same way on `spatial`. Everything a key
@@ -824,17 +824,24 @@ of budding off the bar's line, so there is no
 let-go, no gap published to the line, and no shoulders either: the card
 is a plain rounded rectangle on all four sides.
 
-**Launcher** (`formalshell-rs/src/surfaces/launcher.rs`). shadcn Command:
-a `Menu`-wide card at 30% from the top; input with a bottom rule only; a
-shadcn Breadcrumb under it (ancestors in `mutedForeground`, the level in
-`foreground`, a `chevron-right` between, no fill and no frame); rows with
-the cursor row in `accent`; hint footer in `caption` `mutedForeground`.
+**Launcher** (`formalshell-rs/src/surfaces/launcher.rs`, launcher spec
+§1 and §2): a `Menu`-wide card at 30% from the top. The field draws the
+query at `LAUNCHER.field_size` (21px sans, 400) with `lg` round it, no
+search icon and no close button, over a full-bleed rule. Rows are
+`LAUNCHER.row_height` 40 with a `LAUNCHER.row_icon` 22 mark, `lg` either
+side and between, abutting, an `sm` inset off the card; the label is
+`body` at 400 and 600 under the selection, a dim `bodySmall` value at the
+trailing edge. The selection is one `launcher.row` `selected` fill at
+`radiusMd`, no ring and no bar; hover is the lighter `launcher.row` wash,
+which never travels. The foot is a full-bleed rule over the selected
+subject's keys alone, right-aligned in `caption` `mutedForeground`, each a
+button.
 Modal over a 0.5 black scrim. The split route's preview pane is the one
 card this surface spends inside its own frame (§1's ladder, rung 5):
 `radiusMd`, an `sm` gutter off the list, flat rows beside it. Nothing
 inside the pane draws a frame of its own, the preview picture included.
-`menu.appGrid` defaults true under every theme (M72 T2), swapping app rows
-for Slingshot's icon grid; a user `false` still wins. A route is where you
+`menu.appGrid` defaults false (launcher spec §1 "The app grid"); a user
+`true` swaps app rows for Slingshot's icon grid. A route is where you
 pick from a list (a network, a sink, a station) and a panel is where you
 watch live state, so a device that has both keeps both, and the launcher
 row never grows the panel's controls.
@@ -907,7 +914,7 @@ no exceptions.
 
 Anything a pointer can do on a shell surface has a key, and the target is
 visible. Panels take keys through the panel host's key dispatch and show
-the cursor as the ring; the launcher shows it as the `accent` row. A panel
+the cursor as the ring; the launcher shows it as the `launcher.row` fill. A panel
 opened by pointer hides the cursor until the first key, and a pointer
 moving the cursor takes the ring off it again (§1 "Ring"). `panel toggle
 <name>`, `panel toggleAt <n>` and `menu summon <route>` are the keybind

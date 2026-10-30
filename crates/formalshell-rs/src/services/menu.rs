@@ -41,6 +41,13 @@ pub const SELF: &str = "formalshell-ipc";
 /// icon is decoded at.
 pub const ICON_EXTENT: u32 = 64;
 
+/// A launcher row's icon edge (`LAUNCHER.row_icon`), decoded beside the
+/// cell's so a row never scales one down while it draws.
+pub const ROW_ICON_EXTENT: u32 = fs_theme::tokens::LAUNCHER.row_icon as u32;
+
+/// One icon's path, then its file at the cell's edge and at the row's.
+pub type Icon = (String, Option<Bitmap>, Option<Bitmap>);
+
 #[derive(Default)]
 pub struct State {
     base: Tree,
@@ -54,6 +61,8 @@ pub struct State {
     /// Decoded app icons by `iconSource` path, `None` where the file did
     /// not decode.
     pub icons: HashMap<String, Option<Bitmap>>,
+    /// The same icons at [`ROW_ICON_EXTENT`].
+    pub row_icons: HashMap<String, Option<Bitmap>>,
     /// The compositor's binds: `None` until it answered, `Err` when it
     /// failed.
     pub binds: Option<Result<Arc<[Bind]>, ()>>,
@@ -67,7 +76,7 @@ pub enum Diff {
     Base(Tree),
     Source(String, Vec<Node>),
     Cond { id: String, when: bool, ok: bool },
-    Icons(Vec<(String, Option<Bitmap>)>),
+    Icons(Vec<Icon>),
     Binds(Result<Arc<[Bind]>, ()>),
     Emoji(Arc<fs_menu::providers::EmojiIndex>),
     Exec(HashMap<String, Vec<String>>),
@@ -95,8 +104,9 @@ impl State {
                 map.insert(id, ok);
             }
             Diff::Icons(list) => {
-                for (path, bitmap) in list {
-                    self.icons.insert(path, bitmap);
+                for (path, cell, row) in list {
+                    self.icons.insert(path.clone(), cell);
+                    self.row_icons.insert(path, row);
                 }
             }
             Diff::Binds(reply) => self.binds = Some(reply),
@@ -337,7 +347,7 @@ struct Scan {
 }
 
 impl Scan {
-    fn apps(&mut self, launches: &[Record]) -> (Vec<Node>, Vec<(String, Option<Bitmap>)>, HashMap<String, Vec<String>>) {
+    fn apps(&mut self, launches: &[Record]) -> (Vec<Node>, Vec<Icon>, HashMap<String, Vec<String>>) {
         let dirs = appicon::applications_dirs();
         let stamp: Vec<Option<SystemTime>> = dirs.iter().map(|d| std::fs::metadata(d).and_then(|m| m.modified()).ok()).collect();
         if !self.scanned || stamp != self.stamp {
@@ -380,8 +390,8 @@ impl Scan {
             if path.is_empty() || !self.decoded.insert(path.clone()) {
                 continue;
             }
-            let bitmap = icons::load_at(std::path::Path::new(path), ICON_EXTENT, scale);
-            fresh.push((path.clone(), bitmap));
+            let file = std::path::Path::new(path);
+            fresh.push((path.clone(), icons::load_at(file, ICON_EXTENT, scale), icons::load_at(file, ROW_ICON_EXTENT, scale)));
         }
         let mut exec: HashMap<String, Vec<String>> = HashMap::new();
         for l in &self.entries {

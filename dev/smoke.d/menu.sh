@@ -2,19 +2,20 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --menu: the launcher summoned at root, its fuzzy ranking against the live
 # tree (`debug query`), a root query as one list in score order, the emoji route's grid, and the select round trip. The run's own
-# smoke.png lands in select mode; menu-root.png is the root level, where
-# the row icons, the group headings and the tree's own chrome are,
-# menu-search.png is the same field with a query in it under no heading,
-# and menu-emoji.png is the grid.
+# smoke.png lands in select mode; menu-root.png is the root at rest on a
+# profile with too few picks, menu-recent.png the same root once a third
+# pick lands, menu-search.png is the same field with a query in it under no
+# heading, and menu-emoji.png is the grid.
 #
 # The chrome that a frame cannot state is asserted off `menu status` instead
-# (M48): the field's placeholder, the group headings in the order they
-# appear, and the column count. That last one is what tells a grid from a
-# list at all, since a frame cannot say whether eight glyphs on one line are
-# eight cells of a grid or one wide row of a list. The root is the app grid
-# (M72 T4): its apps under Applications, then the tree's own commands under
-# their headings, so the leg stages one desktop entry for the isolated
-# session to list, and the root has to report that order.
+# (M48): the field's placeholder, the headings, the column count and the
+# ids. The root at rest lists one heading and nothing else (launcher spec
+# §1): `Modes`, the root routes in declaration order, while fewer than three
+# picks resolve, then `Recent`, the best picks of any kind. state.json is
+# staged with two picks of fixture apps and one of an app that is not
+# installed, which is skipped, so the first open is `Modes`; one real pick
+# by search and Enter (the fixture's Exec is `true`) makes three, and the
+# next open is `Recent` with exactly those three apps.
 #
 # Every status read here also checks the cursor against the view (M72 T1):
 # `cursorId` is the row Enter acts on, and `viewCursor` is where the live
@@ -43,6 +44,8 @@ menu_root_path="$shot_dir/menu-root.png"
 menu_search_path="$shot_dir/menu-search.png"
 menu_emoji_path="$shot_dir/menu-emoji.png"
 menu_status_root_path="$shot_dir/menu-status-root.json"
+menu_recent_path="$shot_dir/menu-recent.png"
+menu_status_recent_path="$shot_dir/menu-status-recent.json"
 menu_status_search_path="$shot_dir/menu-status-search.json"
 menu_status_emoji_path="$shot_dir/menu-status-emoji.json"
 menu_down_path="$shot_dir/menu-down.png"
@@ -52,6 +55,14 @@ menu_selected_path="$shot_dir/menu-selected.png"
 menu_app_dir="$iso_home/.local/share/applications"
 
 leg_menu_fixture() {
+  local fs_state="$iso_home/.local/state/formalshell/state.json" now
+  now=$(date +%s)000
+  mkdir -p "$(dirname "$fs_state")"
+  [ -s "$fs_state" ] || echo '{}' > "$fs_state"
+  "$jq_bin" --argjson now "$now" '.picks = [
+    {"id": "app:formalshell-menu-gone", "count": 9, "lastMs": $now},
+    {"id": "app:formalshell-menu-fixture-01", "count": 2, "lastMs": $now},
+    {"id": "app:formalshell-menu-fixture-02", "count": 1, "lastMs": $now}]' "$fs_state" > "$fs_state.tmp" && mv "$fs_state.tmp" "$fs_state"
   mkdir -p "$menu_app_dir"
   {
     echo "[Desktop Entry]"
@@ -59,8 +70,6 @@ leg_menu_fixture() {
     echo "Name=Menu Fixture"
     echo "Exec=true"
   } > "$menu_app_dir/formalshell-menu-fixture.desktop"
-  # A root grid of more than one row, the shape a real install has: the
-  # Down check below is about a cursor moving between grid rows.
   local n
   for n in 01 02 03 04 05 06 07 08 09 10 11; do
     printf '[Desktop Entry]\nType=Application\nName=Fixture App %s\nExec=true\n' "$n" \
@@ -73,7 +82,7 @@ leg_menu_timing() {
   # has to outlive that, not just the screenshot.
   local t0
   t0=$(menu_t0)
-  leg_timing $((26 + t0 - 3)) $((58 + t0 - 3)) 4
+  leg_timing $((31 + t0 - 3)) $((63 + t0 - 3)) 4
 }
 
 leg_menu_drive() {
@@ -108,6 +117,14 @@ for n in 1 2 3 4; do
   $ipc call menu status > "$shot_dir/menu-status-up\$n.json" 2>&1
 done
 sleep 1
+$ipc call menu filter "Fixture App 03" > /dev/null 2>&1
+sleep 1
+"$wtype_bin" -s 300 -k Return
+sleep 1.5
+$ipc call menu summon "" > /dev/null 2>&1
+sleep 1.5
+"$grim_bin" "$menu_recent_path" > /dev/null 2>&1
+$ipc call menu status > "$menu_status_recent_path" 2>&1
 $ipc call menu filter e > /dev/null 2>&1
 sleep 1
 "$grim_bin" "$menu_search_path" > /dev/null 2>&1
@@ -146,7 +163,7 @@ EOF
   local menu_finish_script="$shot_dir/menu-finish.sh"
   write_script "$menu_finish_script" <<EOF
 #!/usr/bin/env bash
-sleep $((t0 + 24))
+sleep $((t0 + 29))
 # The mac rig's software compositor runs the drive past 24s; the select it
 # ends on has to be pending before the close.
 for _ in \$(seq 80); do [ -e "$shot_dir/menu-drive.done" ] && break; sleep 0.25; done
@@ -198,20 +215,32 @@ leg_menu_assert() {
     fail "no root-level menu screenshot produced"
   fi
   echo "SMOKE_MENU_ROOT $menu_root_path"
-  # The root's own chrome: shadcn's placeholder, and the body's sections in
-  # order: the staged app's grid under Applications first, then the tree's
-  # own two command groups, in declaration order, in the rows under it.
+  # The root at rest on two resolving picks: one column of rows under
+  # `Modes`, the root routes in declaration order with no app among them.
   if [ ! -s "$menu_status_root_path" ]; then
     fail "no root menu status produced"
   fi
   cat "$menu_status_root_path"; echo
-  if ! grep -q '"placeholder":"Type a command or search..."' "$menu_status_root_path"; then
-    fail "the root field did not carry the command-palette placeholder, got: $(cat "$menu_status_root_path")"
+  if ! grep -q '"placeholder":"Search apps, files, commands"' "$menu_status_root_path"; then
+    fail "the root field did not carry the launcher's placeholder, got: $(cat "$menu_status_root_path")"
   fi
-  if ! "$jq_bin" -e '.view == "appGrid" and .columns > 1
-      and .sections == ["Applications", "Suggestions", "Commands"]' "$menu_status_root_path" > /dev/null 2>&1; then
-    fail "the root did not lay out as the Applications grid, then Suggestions, then Commands, got: $(cat "$menu_status_root_path")"
+  if ! "$jq_bin" -e '.view == "rows" and .columns == 1 and .sections == ["Modes"]
+      and .ids[0] == "apps" and (.ids | index("clipboard")) and ([.ids[] | select(startswith("apps."))] | length) == 0' \
+      "$menu_status_root_path" > /dev/null 2>&1; then
+    fail "the root at rest did not list the root routes under Modes alone, got: $(cat "$menu_status_root_path")"
   fi
+  echo "SMOKE_MENU_MODES $("$jq_bin" -c '.ids' "$menu_status_root_path")"
+  # A third pick: `Recent` alone, the three fixture apps and not the one that
+  # is not installed.
+  [ -f "$menu_recent_path" ] || fail "no Recent screenshot produced"
+  echo "SMOKE_MENU_RECENT $menu_recent_path"
+  cat "$menu_status_recent_path"; echo
+  if ! "$jq_bin" -e '.view == "rows" and .sections == ["Recent"]
+      and (.ids | sort) == ["apps.formalshell-menu-fixture-01", "apps.formalshell-menu-fixture-02", "apps.formalshell-menu-fixture-03"]' \
+      "$menu_status_recent_path" > /dev/null 2>&1; then
+    fail "the root after a third pick did not list the three picks under Recent alone, got: $(cat "$menu_status_recent_path")"
+  fi
+  menu_cursor_agrees "$menu_status_recent_path" "recent"
   menu_cursor_agrees "$menu_status_root_path" "root"
   # One real Down straight after opening: the row it lands on has to be
   # inside the viewport, whole, not scrolled past.
@@ -225,24 +254,20 @@ leg_menu_assert() {
     fail "root after Down: the cursor row spans $top..$bottom in a viewport of $viewport"
   fi
   echo "SMOKE_MENU_DOWN_RECT $top..$bottom of $viewport"
-  # The second grid row fits the card, so that Down scrolls nothing: the
-  # heading over the grid stays in sight.
+  # The second row fits the card, so that Down scrolls nothing: the heading
+  # over the rows stays in sight.
   if [ "$(menu_field "$menu_status_down_path" scrollTop)" != "0" ]; then
     fail "root after Down: the view scrolled to $(menu_field "$menu_status_down_path" scrollTop) for a row that already fit"
   fi
-  # Down through the grid's last row into the rows under it and back up to
-  # the first cell: every stop whole inside the viewport.
+  # Four rows down and back up: every stop whole inside the viewport.
   local f
   for f in down2 down3 down4 up1 up2 up3 up4; do
     menu_cursor_on_screen "$shot_dir/menu-status-$f.json" "root after $f"
   done
-  # Up out of the rows lands on the grid's last cell, so four Ups end in
-  # the grid's first row rather than on cell 0.
-  local back cols
+  local back
   back=$("$jq_bin" -r '.cursor' "$shot_dir/menu-status-up4.json")
-  cols=$("$jq_bin" -r '.columns' "$shot_dir/menu-status-up4.json")
-  if [ -z "$back" ] || [ "$back" -ge "$cols" ]; then
-    fail "root: four Downs then four Ups left the cursor on $back, outside the grid's first row"
+  if [ "$back" != "0" ]; then
+    fail "root: four Downs then four Ups left the cursor on ${back:-nothing}, not the first row"
   fi
   # The emoji route: a grid, filtered, with the route's own prompt in the
   # field. More columns than one is the whole claim, and it is not readable

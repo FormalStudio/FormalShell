@@ -190,3 +190,58 @@ fn gated_note_row_is_a_non_activatable_dim_note_under_the_node() {
     assert_eq!(row.dim, Some(true));
     assert!(row.child_ids.is_empty());
 }
+
+fn rest_tree() -> fs_menu::node::Tree {
+    let mut tree = tree_of(json!({
+        "apps": { "provider": "apps" },
+        "clipboard": { "provider": "clipboard" },
+        "system": { "label": "System" },
+        "system.suspend": { "label": "Suspend", "action": "@ipc:power.suspend" },
+        "toggles": { "label": "Toggles" },
+        "toggles.dnd": { "label": "Do Not Disturb", "action": "@ipc:notifications.toggleDnd" },
+        "hidden": { "label": "Hidden", "provider": "x", "when": "false" },
+        "run": { "label": "Run", "action": "true" }
+    }));
+    let app = Node { parent_id: Some("apps".into()), ..Node::new("apps.firefox", "Firefox", Kind::App) };
+    tree.nodes.insert(app.id.clone(), app);
+    tree.nodes.get_mut("apps").unwrap().child_ids.push("apps.firefox".into());
+    tree
+}
+
+fn pick(id: &str, count: f64) -> fs_menu::frecency::Record {
+    fs_menu::frecency::Record::new(id, count, 1_000.0)
+}
+
+#[test]
+fn root_rest_lists_modes_on_a_fresh_profile() {
+    let tree = rest_tree();
+    let rows = fs_menu::model::root_rest(&tree.nodes, &[pick("app:firefox", 1.0)], 1_000.0, 8, &HashMap::new());
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["apps", "clipboard", "system", "toggles"]);
+    assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::MODES_SECTION)));
+}
+
+#[test]
+fn root_rest_lists_the_best_picks_of_any_kind_skipping_the_gone() {
+    let tree = rest_tree();
+    let picks = [
+        pick("app:firefox", 5.0),
+        pick("app:uninstalled", 9.0),
+        pick("clipboard", 3.0),
+        pick("system.suspend", 4.0),
+        pick("hidden", 8.0),
+        pick("toggles.dnd", 1.0),
+    ];
+    let rows = fs_menu::model::root_rest(&tree.nodes, &picks, 1_000.0, 3, &HashMap::new());
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["apps.firefox", "system.suspend", "clipboard"]);
+    assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::RECENT_SECTION)));
+}
+
+#[test]
+fn root_rest_falls_back_to_modes_when_too_few_picks_resolve() {
+    let tree = rest_tree();
+    let picks = [pick("app:firefox", 5.0), pick("app:gone", 9.0), pick("gone.too", 9.0), pick("clipboard", 1.0)];
+    let rows = fs_menu::model::root_rest(&tree.nodes, &picks, 1_000.0, 8, &HashMap::new());
+    assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::MODES_SECTION)));
+}

@@ -150,11 +150,10 @@ fn shipped_root_is_two_contiguous_groups() {
     assert_eq!(sections[sections.len() - 1], "Commands");
 }
 
-// The app grid's cells are one block under Applications, and the rows under
-// the grid keep the headings they carry anywhere else: at the root that is
-// Applications, then Suggestions, then Commands.
+// The app grid's cells sit under no heading, and the rows under the grid
+// keep the headings they carry anywhere else.
 #[test]
-fn the_app_grid_heads_its_cells() {
+fn the_app_grid_leaves_its_cells_unheaded() {
     let rows = [
         Node { kind: Kind::App, ..row("apps.a") },
         Node { kind: Kind::App, ..row("apps.b") },
@@ -163,8 +162,8 @@ fn the_app_grid_heads_its_cells() {
     ];
     let ctx = SectionCtx { cells: 2, ..menu_ctx() };
     let sections = sections_for(&rows, &ctx);
-    assert_eq!(sections, ["Applications", "Applications", "Suggestions", "Commands"]);
-    assert_eq!(section_names(&sections), ["Applications", "Suggestions", "Commands"]);
+    assert_eq!(sections, ["", "", "Suggestions", "Commands"]);
+    assert_eq!(section_names(&sections), ["Suggestions", "Commands"]);
 }
 
 // Inside a level whose cells are the whole of it (the apps route), the one

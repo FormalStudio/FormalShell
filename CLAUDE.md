@@ -267,12 +267,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `airplay` source read the metadata and cover art back; a drive-script
   trigger then tells the shim to clear the files and print the disconnect
   line, and both go back to idle in the frame and over IPC.
-- `app_grid.sh` `--app-grid`: `menu.appGrid` drawing the launcher's app
-  results as icons over their names, read off the probe entry's own colour
-  covering a 64px cell rather than a row's glyph, with real arrow keys
+- `app_grid.sh` `--app-grid`: `menu.appGrid: true` drawing the launcher's
+  app results as icons over their names, read off the probe entry's own
+  colour covering a 64px cell rather than a row's icon, with real arrow keys
   moving the cursor one cell across and a column count down, a real Enter
   launching through the row path, apps and a ranked route sharing the card,
-  and the key deleted underneath the running shell putting the grid back.
+  and the key deleted underneath the running shell putting rows back, the
+  probe's icon at the row's 22px.
   Ridden by `--no-morph` it also reads the grid inside its popover card.
   Then typing on real keys: `cursorId` agreeing with the view's own
   `viewCursor` after a re-rank and a Backspace, a query no app matches
@@ -667,15 +668,17 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   player switch, with and without synced lyrics, the drawn progress fill
   measured off the frame against the position `media status` reports at
   every sample.
-- `menu.sh` `--menu`: the launcher at root laid out as its sections in
-  order (a staged app's grid under Applications, then the Suggestions and
-  Commands rows), its fuzzy ranking against the live tree, and the select
-  round trip, with every status read's
+- `menu.sh` `--menu`: the launcher's root at rest, one heading and nothing
+  else: `Modes` (the root routes in declaration order, no app among them)
+  over a state.json staging two fixture picks and one of an app not
+  installed, then `Recent` holding exactly the three fixture apps once a
+  real search and Enter makes the third pick; its fuzzy ranking against the
+  live tree, and the select round trip, with every status read's
   `cursorId` checked against the row the live view holds its current item
-  on (`viewCursor`). Then real arrow keys on a two-row grid of twelve
-  staged apps: one Down from a fresh open scrolls nothing, and four Downs
-  into the rows under the grid and four Ups back each leave the cursor's
-  item whole inside the viewport (`viewCursor.top`/`bottom`). Then the
+  on (`viewCursor`). Real arrow keys on the `Modes` rows: one Down from a
+  fresh open scrolls nothing, and four Downs and four Ups back each leave
+  the cursor's item whole inside the viewport (`viewCursor.top`/`bottom`)
+  and the cursor on the first row. Then the
   field on real keys, read off `menu status`'s `query`, `caret` and
   `selection`: a word typed, Ctrl+A selecting it (photographed), a second
   word replacing it, and Shift+Home then Backspace emptying it.
