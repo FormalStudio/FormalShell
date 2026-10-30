@@ -100,8 +100,9 @@ pub struct Map {
     pub cursor: Option<Cursor>,
     pub drag: Option<Drag>,
     /// The order a drop asked for, held until the compositor agrees or the
-    /// deadline: every row's window ids, the empty row's last.
-    hold: Option<(Vec<Vec<String>>, Instant)>,
+    /// deadline: window ids by workspace index, so a row the compositor
+    /// drops or adds meanwhile does not shift the rest (`align`).
+    hold: Option<(Vec<(i64, Vec<String>)>, Instant)>,
     /// Each painted icon's place, gliding to its slot.
     glides: HashMap<String, (Animated, Animated)>,
     /// Each slot as last laid out, by window id, and each row's box.
@@ -159,7 +160,7 @@ impl Map {
             })
             .collect();
         let now = Instant::now();
-        if self.hold.as_ref().is_some_and(|(order, until)| *order == self.base() || now >= *until) {
+        if self.hold.as_ref().is_some_and(|(_, until)| now >= *until) || self.held() == self.base() {
             self.hold = None;
         }
         if let Some(c) = &mut self.cursor {
@@ -246,6 +247,15 @@ impl Map {
         self.rows.iter().map(|r| r.idx).max().unwrap_or(0) + 1
     }
 
+    /// The held order laid over the rows the compositor has now, or
+    /// `base` when nothing holds.
+    fn held(&self) -> Vec<Vec<String>> {
+        match &self.hold {
+            Some((held, _)) => align(held, &self.rows),
+            None => self.base(),
+        }
+    }
+
     /// Every row's window ids as the compositor has them, the empty row's
     /// last.
     fn base(&self) -> Vec<Vec<String>> {
@@ -257,7 +267,7 @@ impl Map {
     /// What the map shows: a dropped order while it holds, with a lifted
     /// icon taken out and an empty slot (`""`) where it would land.
     fn shown(&self) -> Vec<Vec<String>> {
-        let mut order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
+        let mut order = self.held();
         if let Some(d) = self.drag.as_ref().filter(|d| d.lifted) {
             for row in &mut order {
                 row.retain(|id| *id != d.id);
@@ -366,7 +376,7 @@ impl Map {
         let (x, y) = at;
         let last = self.row_boxes.last()?.0;
         let t = self.row_boxes.iter().find(|(_, b)| (y as i32) < b.bottom()).map_or(last, |(i, _)| *i);
-        let mut order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
+        let mut order = self.held();
         let row = order.get_mut(t)?;
         row.retain(|id| *id != d.id);
         let slot = row
@@ -390,12 +400,14 @@ impl Map {
         }
         let inside = at.0 >= strip.x as f64 && at.0 < strip.right() as f64 && at.1 >= strip.y as f64 && at.1 < strip.bottom() as f64;
         let Some((t, j)) = d.target.filter(|_| inside) else { return Some(Vec::new()) };
-        let order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
+        let order = self.held();
         let Some(from) = order.iter().position(|row| row.contains(&d.id)) else { return Some(Vec::new()) };
         let columns = self.rows.get(t).is_some_and(|r| r.columns);
         let (commands, predicted) = drop_on(&order, from, &d.id, t, j, self.rows.get(t).map(|r| r.idx).unwrap_or_else(|| self.next_idx()), columns);
         if !commands.is_empty() {
-            self.hold = Some((predicted, now + Duration::from_millis(HOLD_MS)));
+            let next = self.next_idx();
+            let keyed = predicted.into_iter().enumerate().map(|(i, ids)| (self.rows.get(i).map_or(next + (i - self.rows.len()) as i64, |r| r.idx), ids)).collect();
+            self.hold = Some((keyed, now + Duration::from_millis(HOLD_MS)));
         }
         Some(commands)
     }
@@ -507,6 +519,33 @@ impl Map {
             "held": self.hold.as_ref().map(|h| &h.0),
         })
     }
+}
+
+/// A held order (window ids by workspace index) over `rows`: each row
+/// takes its workspace's held ids, the empty row the next index's (and a
+/// fresh empty row after it when it holds any), windows gone are dropped,
+/// and a window the hold places nowhere stays where the compositor has it.
+fn align(held: &[(i64, Vec<String>)], rows: &[Row]) -> Vec<Vec<String>> {
+    let live = |id: &String| rows.iter().any(|r| r.windows.iter().any(|w| &w.id == id));
+    let take = |idx: i64| held.iter().find(|(k, _)| *k == idx).map(|(_, ids)| ids.iter().filter(|id| live(id)).cloned().collect::<Vec<_>>());
+    let mut out: Vec<Vec<String>> = rows
+        .iter()
+        .map(|r| take(r.idx).unwrap_or_else(|| r.windows.iter().map(|w| w.id.clone()).collect()))
+        .collect();
+    let next = take(rows.iter().map(|r| r.idx).max().unwrap_or(0) + 1).unwrap_or_default();
+    let fresh = !next.is_empty();
+    out.push(next);
+    if fresh {
+        out.push(Vec::new());
+    }
+    for (i, r) in rows.iter().enumerate() {
+        for w in &r.windows {
+            if !out.iter().any(|row| row.contains(&w.id)) {
+                out[i].push(w.id.clone());
+            }
+        }
+    }
+    out
 }
 
 /// An icon three across a sidebar card, past the ordinal.
@@ -626,6 +665,33 @@ mod tests {
 
     fn order(rows: &[&[&str]]) -> Vec<Vec<String>> {
         rows.iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect()
+    }
+
+    fn rows(rows: &[(i64, &[&str])]) -> Vec<Row> {
+        rows.iter()
+            .map(|(idx, ids)| Row {
+                id: idx.to_string(),
+                idx: *idx,
+                label: String::new(),
+                current: false,
+                columns: false,
+                windows: ids.iter().map(|id| Win { id: id.to_string(), focused: false, icon: None }).collect(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_held_order_follows_its_workspaces() {
+        // `a`, the sole window of workspace 1, dropped ahead of `b` on 2.
+        let held = vec![(1, vec![]), (2, vec!["a".to_owned(), "b".to_owned()]), (3, vec![])];
+        // The compositor drops workspace 1 before it reorders 2.
+        assert_eq!(align(&held, &rows(&[(2, &["b", "a"])])), order(&[&["a", "b"], &[]]));
+        // A drop on the empty row, before workspace 3 exists.
+        let held = vec![(1, vec!["b".to_owned()]), (2, vec!["a".to_owned()]), (3, vec![])];
+        assert_eq!(align(&held, &rows(&[(1, &["a", "b"])])), order(&[&["b"], &["a"], &[]]));
+        // A window that went away, and one that arrived.
+        let held = vec![(1, vec!["a".to_owned(), "b".to_owned()]), (2, vec![])];
+        assert_eq!(align(&held, &rows(&[(1, &["b", "c"])])), order(&[&["b", "c"], &[]]));
     }
 
     #[test]
