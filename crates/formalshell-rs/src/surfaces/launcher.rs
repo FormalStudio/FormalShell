@@ -83,6 +83,9 @@ struct Layout {
     columns: usize,
     cell_w: f64,
     cell_h: f64,
+    /// Laid out at half the card: the selection moving onto or off a
+    /// subject with a preview lays it out again.
+    halved: bool,
 }
 
 pub struct Model {
@@ -148,9 +151,11 @@ pub struct Model {
     abbrev_key: Option<String>,
     /// The actions column beside the list, while it is open.
     column: Option<Column>,
-    /// The subject whose own children the list holds (an app's windows),
-    /// stepped into over `level`.
-    children: Option<Children>,
+    /// The subjects whose own children the list holds (an app's windows, a
+    /// folder's entries), stepped into over `level`, outermost first.
+    children: Vec<Children>,
+    /// The captured frame of the window the preview pane shows.
+    pub pane_frame: Option<crate::scene::Bitmap>,
     /// `Edit abbreviation`'s subject and the abbreviation it edits, while
     /// its Input step is up.
     editing: Option<(String, String)>,
@@ -159,12 +164,28 @@ pub struct Model {
 /// The token an `Edit abbreviation` answer comes back under.
 pub const ABBREV_EDIT: &str = "abbrev-edit";
 
-/// A subject stepped into with →.
+/// What a subject stepped into with → lists.
+#[derive(Clone, Debug)]
+enum Into {
+    /// An app's windows, by the app's subject id.
+    Windows(String),
+    /// A folder's entries, by its path.
+    Folder(String),
+}
+
+/// A subject stepped into with →, which the token names.
 #[derive(Clone, Debug)]
 struct Children {
-    /// Its subject id.
-    id: String,
+    into: Into,
     label: String,
+}
+
+impl Children {
+    fn key(&self) -> &str {
+        match &self.into {
+            Into::Windows(id) | Into::Folder(id) => id,
+        }
+    }
 }
 
 /// The selected subject's actions beside the list (launcher spec §5). The
@@ -396,7 +417,8 @@ impl Default for Model {
             lookup: Default::default(),
             abbrev_key: None,
             column: None,
-            children: None,
+            children: Vec::new(),
+            pane_frame: None,
             editing: None,
             placed: false,
             want: String::new(),
@@ -525,16 +547,24 @@ impl Model {
         }
     }
 
-    /// The clipboard routes' 50/50 split: the list, then the cursor row's
-    /// whole content.
-    pub fn split(&self) -> bool {
-        self.mode == Mode::Menu && matches!(self.level.as_deref(), Some("clipboard" | "share.history")) && self.children.is_none()
+    /// The clipboard routes, whose card keeps the split height.
+    fn split(&self) -> bool {
+        self.mode == Mode::Menu && matches!(self.level.as_deref(), Some("clipboard" | "share.history")) && self.children.is_empty()
     }
 
-    /// The list takes the left half of the card: a split route's preview
-    /// or the actions column holds the right.
+    /// The selected subject, when it has a preview (launcher spec §7).
+    /// The actions column takes the side column over it.
+    pub fn pane(&self) -> Option<&Node> {
+        if self.mode != Mode::Menu || self.column.is_some() || self.view != View::Rows {
+            return None;
+        }
+        self.rows.get(self.cursor).filter(|n| pane_kind(n).is_some())
+    }
+
+    /// The list takes the left half of the card: the selected subject's
+    /// preview or the actions column holds the right.
     pub fn halved(&self) -> bool {
-        self.split() || self.column.is_some()
+        self.column.is_some() || self.pane().is_some()
     }
 
     /// The query the list is ranked by: the field's, or while the column
@@ -773,7 +803,7 @@ impl Model {
             return Vec::new();
         }
         let mut path = model::mode_path(store.menu.nodes(), self.level.as_deref());
-        path.extend(self.children.as_ref().map(|c| c.label.clone()));
+        path.extend(self.children.iter().map(|c| c.label.clone()));
         path
     }
 
@@ -796,7 +826,7 @@ impl Model {
         let nodes = store.menu.nodes();
         let cond = &store.menu.cond;
         let emoji = menu && level == Some("emoji");
-        let children = self.children.as_ref().filter(|_| menu);
+        let children = self.children.last().filter(|_| menu);
         let route_rows = children.is_some() || matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
         let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
         let picker = menu && children.is_none() && level == Some(PICKER_ROUTE);
@@ -827,7 +857,10 @@ impl Model {
                     .collect()
             }
             Mode::Input => Vec::new(),
-            Mode::Menu if children.is_some() => window_rows(store, children.map_or("", |c| c.id.as_str()), q),
+            Mode::Menu if children.is_some() => children.map_or_else(Vec::new, |c| match &c.into {
+                Into::Windows(id) => window_rows(store, id, q),
+                Into::Folder(path) => folder_rows(store, path, q),
+            }),
             Mode::Menu if picker => self.picker_rows(store, q),
             Mode::Menu if monitor => monitor_rows(store, q),
             Mode::Menu if mirror => Vec::new(),
@@ -904,7 +937,7 @@ impl Model {
             "{:?}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
             self.mode,
             level.unwrap_or(""),
-            children.map_or("", |c| c.id.as_str()),
+            children.map_or("", Children::key),
             q,
             if picker && self.picker.light { "light" } else { "" }
         );
@@ -927,7 +960,7 @@ impl Model {
         let (view, rows, app_count, empty, searching, key) = self.resolve_rows(store);
         let fresh = key != self.key;
         let level_label = self.level.as_deref().and_then(|l| store.menu.nodes().get(l)).map(|n| n.label.clone()).unwrap_or_default();
-        let sections = if self.children.is_some() {
+        let sections = if !self.children.is_empty() {
             vec![String::new(); rows.len()]
         } else {
             model::sections_for(
@@ -983,6 +1016,7 @@ impl Model {
         // landing where the step put it keeps the step's travel.
         let travels = self.travels && !fresh && !view_changed && index == self.cursor;
         self.place(index, travels);
+        self.relayout(theme, kit);
         if fresh || view_changed {
             self.scroll = 0.0;
             self.touch.settle();
@@ -1052,7 +1086,8 @@ impl Model {
     fn layout(&mut self, theme: &Theme, kit: &mut Kit) {
         let s = &theme.space;
         let width = self.body_width(theme);
-        let width = if self.column.is_some() { (width / 2.0).round() } else { width };
+        let halved = self.halved();
+        let width = if halved { (width / 2.0).round() } else { width };
         let inset = if self.bleeds() { s.sm } else { s.md };
         let gutter = s.sm;
         let heading_x = if self.bleeds() { s.sm + s.lg - s.control_padding_x } else { 0.0 };
@@ -1122,7 +1157,6 @@ impl Model {
             View::Rows | View::Monitor => {
                 out.columns = 1;
                 let side = s.sm;
-                let width = if self.split() { (width / 2.0).round() } else { width };
                 if self.monitor_strip_h > 0.0 {
                     y += self.monitor_strip_h + s.section_gap;
                 }
@@ -1139,7 +1173,17 @@ impl Model {
             }
         }
         out.content_h = y + inset;
+        out.halved = halved;
         self.layout = out;
+    }
+
+    /// The body laid out again where the selection has moved onto or off a
+    /// subject with a preview, which halves the list or gives it back.
+    fn relayout(&mut self, theme: &Theme, kit: &mut Kit) {
+        if self.layout.halved != self.halved() {
+            self.layout(theme, kit);
+            self.follow();
+        }
     }
 
     /// The smallest scroll that shows the cursor's slot.
@@ -1319,7 +1363,36 @@ impl Model {
             "actionCursor": self.column.as_ref().map_or(-1, |c| c.cursor as i64),
             "actionsScroll": self.column.as_ref().map_or(0, |c| (c.scroll + c.touch.value(Instant::now())).round() as i64),
             "actionsScrollMax": self.column.as_ref().map_or(0, |c| c.max_scroll().round() as i64),
+            "pane": self.pane().map(|n| self.pane_status(store, n)),
+            "cardWidth": self.card_width(&store.theme.theme).round() as i64,
         })
+    }
+
+    /// What the preview pane holds, for `menu status`.
+    fn pane_status(&self, store: &Store, n: &Node) -> Value {
+        use fs_menu::providers::Peek;
+        let kind = pane_kind(n).map_or("", PaneKind::name);
+        let mut v = json!({"kind": kind, "id": n.id, "path": n.path});
+        let peek = store.menu.peek.as_ref().filter(|(p, _)| *p == n.path).map(|(_, p)| &p.peek);
+        match peek {
+            Some(Peek::Text(lines)) => v["lines"] = json!(lines),
+            Some(Peek::Folder { count, names }) => {
+                v["count"] = json!(count);
+                v["names"] = json!(names.iter().map(|e| e.name.as_str()).collect::<Vec<_>>());
+            }
+            Some(Peek::Image) => v["image"] = json!(true),
+            Some(Peek::Binary) => v["binary"] = json!(true),
+            Some(Peek::Unreadable(why)) => v["error"] = json!(why),
+            None => {}
+        }
+        match pane_picture(n) {
+            Some(PanePicture::Decoded(path)) => {
+                v["picture"] = json!(store.clipboard.preview.as_ref().is_some_and(|p| p.path == path && p.bitmap.is_some()));
+            }
+            Some(PanePicture::Window(_)) => v["picture"] = json!(self.pane_frame.is_some()),
+            None => {}
+        }
+        v
     }
 
     fn resolve_route(store: &Store, route: &str) -> Option<String> {
@@ -1378,6 +1451,7 @@ impl Model {
             .collect();
         index::ask(Ask::Conds(conds));
         index::ask(Ask::Binds);
+        index::ask(Ask::Files);
     }
 
     pub fn open_select(&mut self, prompt: &str, options: Vec<String>, token: &str) {
@@ -1418,7 +1492,7 @@ impl Model {
         self.open = false;
         self.confirm.clear();
         self.column = None;
-        self.children = None;
+        self.children.clear();
     }
 
     /// Every input and select answer since the last call, for the in-process
@@ -1486,7 +1560,7 @@ impl Model {
             self.monitor_history = MonitorHistory::default();
         }
         self.column = None;
-        self.children = None;
+        self.children.clear();
         self.monitor_wants = (id.as_deref() == Some(MONITOR_ROUTE)).then(|| {
             use crate::services::wants::{Source, Want};
             (Want::new(Source::Monitor), Want::new(Source::Processes))
@@ -1506,7 +1580,12 @@ impl Model {
     /// One level up: Backspace, Escape and ← on an empty field, and a click
     /// on the token. At the root it closes.
     pub fn pop(&mut self, store: &Store) -> Out {
-        if self.children.take().is_some() {
+        if self.children.pop().is_some() {
+            // One listing is held at a time: the folder stepped back into
+            // is read again.
+            if let Some(Children { into: Into::Folder(path), .. }) = self.children.last() {
+                index::ask(Ask::Folder(path.clone()));
+            }
             self.query.clear();
             self.confirm.clear();
             self.from_keys = true;
@@ -1559,7 +1638,7 @@ impl Model {
             c.refilter(self.query.text());
             return;
         }
-        if self.mode != Mode::Menu || self.children.is_some() {
+        if self.mode != Mode::Menu || !self.children.is_empty() {
             return;
         }
         let Some((level, rest)) = model::prefixed(store.menu.nodes(), self.query.text()).and_then(|(n, rest)| Some((Self::level_of(store, n)?, rest.to_owned()))) else {
@@ -1670,6 +1749,7 @@ impl Model {
         let Some(&i) = c.shown.get(c.cursor) else { return Out::None };
         let node = c.node.clone();
         match &c.target {
+            Some((_, targets)) if targets[i].kind == NodeKind::Note => Out::None,
             Some((action, targets)) => {
                 let (action, target) = (action.clone(), targets[i].clone());
                 self.close_actions();
@@ -1761,9 +1841,22 @@ impl Model {
         Some(self.run(store, &node, &action))
     }
 
-    /// A target action's pick: the subject's windows onto a workspace.
+    /// A target action's pick: the subject's windows onto a workspace, a
+    /// file opened in an app or sent to a peer.
     fn run_target(&mut self, store: &Store, node: &Node, action: &Action, target: &Node) -> Out {
         match action.run {
+            Run::Target(TargetKind::App) => {
+                let Some(mut argv) = target.id.strip_prefix("target-app:").and_then(|id| index::launch_argv(&store.menu, id)) else { return Out::None };
+                argv.push(node.path.clone());
+                compositor::spawn(&argv);
+            }
+            Run::Target(TargetKind::Peer) => {
+                use crate::services::localsend;
+                let Some(peer) = target.id.strip_prefix("peer:").and_then(|i| i.parse::<usize>().ok()).and_then(|i| store.localsend.peers.get(i)) else {
+                    return Out::None;
+                };
+                localsend::command(localsend::Cmd::Send { peer: peer.clone(), payload: localsend::Payload::Path(node.path.clone()) });
+            }
             Run::Target(TargetKind::Workspace) => {
                 let Some(idx) = target.id.strip_prefix("workspace:").and_then(|i| i.parse::<i64>().ok()) else { return Out::None };
                 let windows = match &node.entry {
@@ -1811,6 +1904,9 @@ impl Model {
         self.close_actions();
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
         match fs_menu::actions::second_action(&self.subject(store, &node)) {
+            // One that asks a target lists them in the column, as Tab then
+            // Enter on it would.
+            Some(action) if matches!(action.run, Run::Target(_)) => self.run_action(store, index, &action.id).unwrap_or(Out::None),
             Some(action) => self.run(store, &node, &action),
             None => self.activate(store, index),
         }
@@ -1864,8 +1960,18 @@ impl Model {
         let out = match &action.run {
             Run::Into(id) => {
                 self.picked(store, node);
-                if node.kind == NodeKind::App && *id == fs_menu::actions::subject_id(node) {
-                    self.children = Some(Children { id: id.clone(), label: node.label.clone() });
+                let into = if *id != fs_menu::actions::subject_id(node) {
+                    None
+                } else if node.kind == NodeKind::App {
+                    Some(Into::Windows(id.clone()))
+                } else if fs_menu::providers::is_folder_subject(node) {
+                    index::ask(Ask::Folder(node.path.clone()));
+                    Some(Into::Folder(node.path.clone()))
+                } else {
+                    None
+                };
+                if let Some(into) = into {
+                    self.children.push(Children { into, label: node.label.clone() });
                     self.query.clear();
                     self.from_keys = true;
                     self.dirty = true;
@@ -2003,7 +2109,7 @@ impl Model {
             app_view: false,
             scrollable: false,
             variants: self.picker_switch(store),
-            level: self.level.is_some() || self.children.is_some(),
+            level: self.level.is_some() || !self.children.is_empty(),
             column,
             into,
         };
@@ -2209,10 +2315,44 @@ fn window_rows(store: &Store, subject: &str, q: &str) -> Vec<Node> {
         .collect()
 }
 
+/// A folder stepped into: its entries as subjects, a note while the
+/// service reads it or when it cannot, or when it holds nothing.
+fn folder_rows(store: &Store, path: &str, q: &str) -> Vec<Node> {
+    match store.menu.folder.as_ref().filter(|(p, _)| p == path).map(|(_, l)| l) {
+        None => vec![Node::note("files.reading", "Reading folder")],
+        Some(Err(why)) => vec![Node::note("files.unreadable", why.clone())],
+        Some(Ok(entries)) => {
+            let rows = fs_menu::providers::listing_rows(path, entries, q);
+            if rows.is_empty() && q.is_empty() { vec![Node::note("files.empty", "Empty folder")] } else { rows }
+        }
+    }
+}
+
 /// What a target action picks from. Workspaces: the focused output's, by
-/// slot, then the next free one as a new one.
+/// slot, then the next free one as a new one. Apps: every installed one,
+/// by name. Peers: LocalSend's last scan, which a listing asks again.
 fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
     match kind {
+        TargetKind::App => {
+            let mut apps: Vec<Node> = model::visible_children(store.menu.nodes(), Some("apps"), &store.menu.cond)
+                .into_iter()
+                .filter_map(|n| n.entry.as_ref().map(|e| Node::new(format!("target-app:{}", e.id), n.label.clone(), NodeKind::Other("target".into()))))
+                .collect();
+            apps.sort_by_key(|n| n.label.to_lowercase());
+            apps
+        }
+        TargetKind::Peer => {
+            use crate::services::localsend;
+            localsend::command(localsend::Cmd::Scan { force: false });
+            let peers: Vec<Node> = store
+                .localsend
+                .peers
+                .iter()
+                .enumerate()
+                .map(|(i, p)| Node { meta: Some(p.ip.clone()), ..Node::new(format!("peer:{i}"), p.name.clone(), NodeKind::Other("target".into())) })
+                .collect();
+            if peers.is_empty() { vec![Node::note("peer:none", "No devices found")] } else { peers }
+        }
         TargetKind::Workspace => {
             let snap = &store.compositor.snapshot;
             let output = &snap.focused_output_name;
@@ -2285,6 +2425,10 @@ pub struct Shown {
     /// drawn.
     column_scroll: Animated,
     column_rect: Option<Rect>,
+    /// The preview pane's box on the surface while it is drawn, and when
+    /// it last arrived.
+    pane_rect: Option<Rect>,
+    pane_since: Option<Instant>,
     /// The card's width and height travelling between level kinds.
     morph: (Animated, Animated),
     /// One widget tree per row mid-transition, drawn over the body.
@@ -2336,6 +2480,8 @@ impl Shown {
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             column_scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             column_rect: None,
+            pane_rect: None,
+            pane_since: None,
             overlays: Vec::new(),
             top_node: top,
             laid_for: (0.0, 0.0),
@@ -2396,6 +2542,7 @@ impl Shown {
     /// Lays the card out and draws the three bands.
     pub fn layout(&mut self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
         let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, self.output.1, kit);
+        m.relayout(theme, kit);
         let chrome = head_h + foot_h;
         if (m.body_h - body_h).abs() > 0.5 {
             m.body_h = body_h;
@@ -2463,7 +2610,6 @@ impl Shown {
         let pad = s.panel_padding;
         let (fx, fy, fw) = (frame.x as f64, frame.y as f64, frame.w as f64);
         let inner_w = (fw - pad * 2.0).max(0.0);
-        let side = s.sm;
         self.wake = None;
         // Where the layer's pixels sit on the output once settled, for the
         // rects reported out.
@@ -2570,9 +2716,10 @@ impl Shown {
             let out = |r: IRect| IRect::new(r.x + on_output.0, r.y + on_output.1, r.w, r.h);
             (out(feed), pic.map(out))
         });
-        // The actions column over the right half, else a split route's
-        // preview there: the cursor row's whole content beside the list.
+        // The actions column over the right half, else the selected
+        // subject's preview there.
         self.column_rect = None;
+        self.pane_rect = None;
         if let Some(c) = m.column.as_ref().filter(|_| body_h > 0.0) {
             let half = (body_w / 2.0).round();
             let r = Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h);
@@ -2584,18 +2731,26 @@ impl Shown {
                 self.wake = Some(now);
             }
             self.column_rect = Some(r);
-        } else if m.split() && body_h > 0.0 {
+            self.pane_since = None;
+        } else if let Some(row) = m.pane().filter(|_| body_h > 0.0) {
             let half = (inner_w / 2.0).round();
-            let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - side, body_top + body_h - s.md);
-            let el = split_preview(m, store, theme, kit, r.width(), r.height());
+            let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - s.sm, body_top + body_h - s.md);
+            let el = preview_el(m, store, row, theme, kit, r.width(), r.height());
+            // The pane's arrival fades its content in on `effects` while the
+            // card widens, as the actions column's does.
+            let since = *self.pane_since.get_or_insert(now);
+            let ms = Clock::Effects.ms(theme) * self.scale;
+            let t = if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(since).as_secs_f64() * 1000.0 / ms).min(1.0) };
+            let el = if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el };
             let d = self.preview.draw(&el, r, Some(body_clip), alpha, theme, kit, scene, now);
-            if d.animating {
+            if d.animating || t < 1.0 {
                 self.wake = Some(now);
             }
+            self.pane_rect = Some(r);
         } else {
+            self.pane_since = None;
             self.preview.draw(&w::space(0.0), Rect::new(0.0, 0.0, 0.0, 0.0), Some(body_clip), alpha, theme, kit, scene, now);
         }
-        let _ = side;
 
         // The foot band: a full-bleed rule, then the selected subject's keys.
         let foot_rule = (body_top + body_h).round() as i32;
@@ -2657,6 +2812,11 @@ impl Shown {
     /// The actions column's box on the output, while it is drawn.
     pub fn column_box(&self) -> Option<IRect> {
         self.column_rect.map(|r| self.on_output(ui::irect(r)))
+    }
+
+    /// The preview pane's box on the output, while it is drawn.
+    pub fn pane_box(&self) -> Option<IRect> {
+        self.pane_rect.map(|r| self.on_output(ui::irect(r)))
     }
 
     /// The foot's buttons on the output, each by what a click on it does.
@@ -3109,41 +3269,159 @@ fn proc_row(m: &Model, row: &Node, i: usize, selected: bool, theme: &Theme) -> E
         .stop(format!("r:{}", row.id))
 }
 
-/// The split pane's picture box for an area `w` by `h`.
-pub fn preview_box(theme: &Theme, kit: &mut Kit, w: f64, h: f64) -> (u32, u32) {
-    let head = ui::measure(&w::section_label(&theme.space, "Ag", None, false), w, theme, kit).1 + theme.space.row_gap;
-    let pad = theme.space.control_padding_x * 2.0;
-    ((w - pad).max(1.0).round() as u32, (h - head - pad).max(1.0).round() as u32)
+/// What the preview pane shows for a subject (launcher spec §7), `None`
+/// for one with no preview.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaneKind {
+    Clip,
+    File,
+    Folder,
+    Window,
 }
 
-/// The split preview: "Text" or "Image" and the capture time over the full
-/// text, the emoji at display size, or the picture fitted to the pane.
-fn split_preview(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, width: f64, height: f64) -> El {
-    let s = &theme.space;
-    let Some(row) = m.rows.get(m.cursor).filter(|r| r.kind != NodeKind::Note) else { return w::space(0.0) };
-    let image = !row.thumb_source.is_empty();
-    let head = w::row(
-        s.sm,
-        vec![w::section_label(s, if image { "Image" } else { "Text" }, None, false), w::caption(row.time.clone()).mono().ink(Ink::Muted)],
-    );
-    let body = if image {
-        let (bw, bh) = preview_box(theme, kit, width, height);
-        let bitmap = store.clipboard.preview.as_ref().filter(|(p, size, _)| *p == row.thumb_source && size.0 == (bw, bh)).and_then(|(_, _, b)| b.clone());
-        w::picture(bitmap, f64::from(bw.max(bh))).width(Size::Px(f64::from(bw)))
-    } else if row.emoji_only {
-        w::text(row.full_text.clone()).size(Type::Display).centred()
+impl PaneKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            PaneKind::Clip => "clipboard",
+            PaneKind::File => "file",
+            PaneKind::Folder => "folder",
+            PaneKind::Window => "window",
+        }
+    }
+}
+
+pub fn pane_kind(n: &Node) -> Option<PaneKind> {
+    if matches!(n.parent_id.as_deref(), Some("clipboard" | "share.history")) && n.kind != NodeKind::Note {
+        Some(PaneKind::Clip)
+    } else if fs_menu::providers::is_file_subject(n) {
+        Some(PaneKind::File)
+    } else if fs_menu::providers::is_folder_subject(n) {
+        Some(PaneKind::Folder)
+    } else if matches!(&n.kind, NodeKind::Other(k) if k == fs_menu::actions::WINDOW_KIND) {
+        Some(PaneKind::Window)
     } else {
-        let line = ui::measure(&w::text("Ag"), width, theme, kit).1.max(1.0);
-        let lines = ((height - line * 2.0) / line).floor().max(1.0) as usize;
-        w::para(row.full_text.clone(), Type::Body, Weight::Normal, Ink::Fg, lines)
+        None
+    }
+}
+
+/// The picture a pane subject shows and where it is read from: a
+/// clipboard capture or an image file through the decoder, or the window
+/// the pane captures.
+pub enum PanePicture<'a> {
+    Decoded(&'a str),
+    Window(&'a str),
+}
+
+pub fn pane_picture(n: &Node) -> Option<PanePicture<'_>> {
+    match pane_kind(n)? {
+        PaneKind::Clip if !n.thumb_source.is_empty() => Some(PanePicture::Decoded(&n.thumb_source)),
+        PaneKind::File if fs_menu::providers::is_image(&n.path) => Some(PanePicture::Decoded(&n.path)),
+        PaneKind::Window => Some(PanePicture::Window(&n.path)),
+        _ => None,
+    }
+}
+
+/// The pane's name and facts lines under what it shows.
+fn pane_foot_h(theme: &Theme, kit: &mut Kit, w: f64) -> f64 {
+    let s = &theme.space;
+    ui::measure(&w::text("Ag"), w, theme, kit).1 + ui::measure(&w::caption("Ag").mono(), w, theme, kit).1 + s.row_gap * 2.0
+}
+
+/// The pane's picture box for a pane `w` by `h`.
+pub fn preview_box(theme: &Theme, kit: &mut Kit, w: f64, h: f64) -> (u32, u32) {
+    let pad = theme.space.control_padding_x * 2.0;
+    ((w - pad).max(1.0).round() as u32, (h - pane_foot_h(theme, kit, w) - pad).max(1.0).round() as u32)
+}
+
+/// A frame of a `from` window fitted inside `box_`, its shape kept.
+pub fn fit_inside(from: (f64, f64), box_: (u32, u32)) -> (u32, u32) {
+    let (bw, bh) = (f64::from(box_.0), f64::from(box_.1));
+    if from.0 <= 0.0 || from.1 <= 0.0 {
+        return box_;
+    }
+    let k = (bw / from.0).min(bh / from.1);
+    ((from.0 * k).round().max(1.0) as u32, (from.1 * k).round().max(1.0) as u32)
+}
+
+/// The preview pane, DESIGN's one card inside the surface: what the
+/// selected subject holds in the room above, then its name and a line of
+/// facts in `mono`.
+fn preview_el(m: &Model, store: &Store, row: &Node, theme: &Theme, kit: &mut Kit, width: f64, height: f64) -> El {
+    use fs_menu::providers::Peek;
+    let s = &theme.space;
+    let Some(kind) = pane_kind(row) else { return w::space(0.0) };
+    let (bw, bh) = preview_box(theme, kit, width, height);
+    let (bw_f, bh_f) = (f64::from(bw), f64::from(bh));
+    let boxed = |el: El| el.width(Size::Px(bw_f)).height(bh_f);
+    let decoded = |path: &str| {
+        store.clipboard.preview.as_ref().filter(|p| p.path == path && p.size.0 == (bw, bh)).map(|p| (p.bitmap.clone(), p.dims))
     };
-    // The pane keeps its height whatever it holds: room under a text,
-    // and an emoji centred in it.
-    let head_h = ui::measure(&w::section_label(s, "Ag", None, false), width, theme, kit).1;
-    let body_h = ui::measure(&body, width, theme, kit).1;
-    let room = (height - head_h - s.row_gap * 3.0 - s.control_padding_y * 2.0 - body_h).max(0.0);
-    let above = if row.emoji_only { (room / 2.0).floor() } else { 0.0 };
-    w::cell(w::column(s.row_gap, vec![head, w::space(above), body, w::space(room - above)]).fill()).fill()
+    let picture = |image: Option<crate::scene::Bitmap>| boxed(w::picture(image, bh_f));
+    let line = ui::measure(&w::caption("Ag").mono(), width, theme, kit).1.max(1.0);
+    let lines_el = |lines: &[String]| {
+        let fits = ((bh_f / line).floor() as usize).max(1);
+        let col: Vec<El> = lines.iter().take(fits).map(|l| w::caption(l.clone()).mono().ink(Ink::Fg).elide()).collect();
+        boxed(w::column(0.0, col))
+    };
+    let muted = |t: &str| boxed(w::column(0.0, vec![w::space((bh_f / 2.0 - line).max(0.0)), w::text(t.to_owned()).ink(Ink::Muted).centred()]));
+    let peeked = || store.menu.peek.as_ref().filter(|(p, _)| *p == row.path).map(|(_, p)| p);
+    let dims = |d: Option<(u32, u32)>| d.map(|(w_, h_)| format!("{w_} \u{D7} {h_}"));
+    let join = |parts: Vec<String>| parts.into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" \u{B7} ");
+    let (content, title, facts) = match kind {
+        PaneKind::Clip if !row.thumb_source.is_empty() => {
+            let got = decoded(&row.thumb_source);
+            let facts = join(vec![dims(got.as_ref().and_then(|g| g.1)).unwrap_or_default(), row.time.clone()]);
+            (picture(got.and_then(|g| g.0)), "Image".to_owned(), facts)
+        }
+        PaneKind::Clip if row.emoji_only => (boxed(w::column(0.0, vec![w::space((bh_f / 2.0 - line * 2.0).max(0.0)), w::text(row.full_text.clone()).size(Type::Display).centred()])), "Text".to_owned(), row.time.clone()),
+        PaneKind::Clip => {
+            let body_line = ui::measure(&w::text("Ag"), width, theme, kit).1.max(1.0);
+            let lines = ((bh_f / body_line).floor() as usize).max(1);
+            (boxed(w::para(row.full_text.clone(), Type::Body, Weight::Normal, Ink::Fg, lines)), "Text".to_owned(), row.time.clone())
+        }
+        PaneKind::File | PaneKind::Folder => {
+            let p = peeked();
+            let facts = p.map(fs_menu::providers::facts).unwrap_or_default();
+            let content = match p.map(|p| &p.peek) {
+                None => muted(""),
+                Some(Peek::Image) => {
+                    let got = decoded(&row.path);
+                    let facts = join(vec![dims(got.as_ref().and_then(|g| g.1)).unwrap_or_default(), facts.clone()]);
+                    return pane_card(picture(got.and_then(|g| g.0)), &row.label, &facts, s);
+                }
+                Some(Peek::Text(lines)) if lines.iter().all(|l| l.trim().is_empty()) => muted("Empty file"),
+                Some(Peek::Text(lines)) => lines_el(lines),
+                Some(Peek::Binary) => muted("No preview for this file"),
+                Some(Peek::Folder { names, .. }) if names.is_empty() => muted("Empty folder"),
+                Some(Peek::Folder { names, .. }) => {
+                    let row_h = ui::measure(&w::text("Ag"), width, theme, kit).1.max(1.0) + s.xs;
+                    let fits = ((bh_f / row_h).floor() as usize).max(1);
+                    let col: Vec<El> = names
+                        .iter()
+                        .take(fits)
+                        .map(|e| w::row(s.sm, vec![w::icon(if e.dir { "folder" } else { "file" }).ink(Ink::Dim), w::text(e.name.clone()).elide()]).height(row_h))
+                        .collect();
+                    boxed(w::column(0.0, col))
+                }
+                Some(Peek::Unreadable(why)) => muted(why),
+            };
+            (content, row.label.clone(), facts)
+        }
+        PaneKind::Window => {
+            let facts = row.meta.clone().filter(|m| !m.is_empty()).map(|ws| format!("Workspace {ws}")).unwrap_or_default();
+            let content = match &m.pane_frame {
+                Some(frame) => picture(Some(frame.clone())),
+                None => muted(""),
+            };
+            (content, row.label.clone(), facts)
+        }
+    };
+    pane_card(content, &title, &facts, s)
+}
+
+fn pane_card(content: El, title: &str, facts: &str, s: &fs_theme::tokens::Space) -> El {
+    let foot = vec![content, w::text(title.to_owned()).elide(), w::caption(facts.to_owned()).mono().elide()];
+    w::cell(w::column(s.row_gap, foot).fill()).fill()
 }
 
 /// The wallpaper route's Dark | Light switcher.

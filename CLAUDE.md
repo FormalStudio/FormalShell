@@ -625,8 +625,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   light.
 - `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
   read off `menu status`'s `level` and `token`: every route the rig lists
-  entered by its name and Enter and by `menu summon`, the four prefixes
-  (`:e`, `:k`, `:r` and a menu.jsonc fixture's `:m`) typed on real keys
+  entered by its name and Enter and by `menu summon`, the five prefixes
+  (`:e`, `:k`, `:r`, `:f` and a menu.jsonc fixture's `:m`) typed on real keys
   with what follows kept as the query, a query inside the fixture mode
   listing its own leaf alone and Clipboard and Emoji listing none of a
   staged app, Backspace, a 1500ms held Backspace and ← on an empty field
@@ -649,6 +649,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   list scrolling the list alone; a click outside closing the card. The
   hover beside the selection and the right-click column photographed dark
   and light.
+- `launcher_preview.sh` `--launcher-preview`: the preview pane, read off
+  `menu status`'s `cardWidth` and `pane`, the dump's modal card and
+  `captures`: a staged app at 560 with no pane, a foot window at 840 with
+  one captured frame under its title, a text file's first line in mono, a
+  folder's count and names, an image file's swatch and a clipboard image's
+  colour read off the pane, `→` listing the folder folders first with its
+  hidden entry only after `.`, ← back, and the launcher capture gone once
+  the selection leaves the window and once the card closes. The Files mode
+  over a staged `recently-used.xbel` and `user-dirs.dirs`, a file that has
+  gone left out. Photographed dark and light.
 - `light.sh` `--light`: pins `theme.mode` light (a `settings_pin`) and
   rides any leg, so its frames are read in light mode; asserts `theme
   status` reports light.
@@ -1332,11 +1342,13 @@ a Linux host.
   `docs/DESIGN.md` §1 "Motion": the two clock families in
   `crates/formalshell-rs/src/motion.rs`, and the joined shape a card hanging
   off the bar draws instead of a plain card.
-- **Capture rule**: the shell captures windows in exactly two places, the
+- **Capture rule**: the shell captures windows in exactly three places, the
   Spaces preview (`wayland/preview.rs`, drawn by
-  `surfaces/panel/workspace_preview.rs`) and the Alt+Tab switcher
-  (`wayland/switcher.rs`, `surfaces/switcher/`), and only while their card
-  is open. Both go through `wayland/capture.rs` (ext-image-copy-capture on
+  `surfaces/panel/workspace_preview.rs`), the Alt+Tab switcher
+  (`wayland/switcher.rs`, `surfaces/switcher/`) and the launcher's preview
+  pane (`wayland/launcher.rs`, drawn by `surfaces/launcher.rs`: one frame of
+  the selected window, never live, held only while the pane shows that
+  window), and only while their card is open. All three go through `wayland/capture.rs` (ext-image-copy-capture on
   each window's foreign-toplevel handle); closing the card drops every
   frame, session and source it held. The lock surface never captures
   anything, and no other surface gets window capture. Screenshots and

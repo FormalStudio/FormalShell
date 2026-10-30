@@ -6,10 +6,11 @@
 //! identifier instead, matched against the handle's own. Either way a
 //! thumbnail is asked for by the same opaque id every other surface carries.
 //!
-//! Only two owners ever hold one (the switcher and the Spaces preview, the
-//! capture exception in the 2026-10-06 spec), and only while their card is
-//! up: dropping an owner's set destroys every frame, session and source it
-//! held. A frame lands in a wl_shm buffer, is copied out and fitted to the
+//! Only three owners ever hold one (the switcher and the Spaces preview, the
+//! capture exception in the 2026-10-06 spec, and the launcher's preview
+//! pane, launcher spec §7), and only while their card is up: dropping an
+//! owner's set destroys every frame, session and source it held. The pane
+//! holds one window's single frame, and only while it shows that window. A frame lands in a wl_shm buffer, is copied out and fitted to the
 //! size the owner draws on the blocking pool, and comes back as a `Bitmap`.
 
 use std::collections::HashMap;
@@ -69,6 +70,7 @@ use mapping::hyprland_toplevel_window_mapping_handle_v1::{self as window_mapping
 pub enum Owner {
     Switcher,
     Preview,
+    Launcher,
 }
 
 struct Thumb {
@@ -223,7 +225,12 @@ impl App {
 
     /// How many of `owner`'s thumbnails hold a capture source.
     pub fn capture_sourced(&self, owner: Owner) -> usize {
-        self.thumbnails.thumbs.iter().filter(|t| t.owner == owner && t.session.is_some()).count()
+        self.capture_sessions(owner).len()
+    }
+
+    /// The windows `owner` holds a capture session on.
+    pub fn capture_sessions(&self, owner: Owner) -> Vec<&str> {
+        self.thumbnails.thumbs.iter().filter(|t| t.owner == owner && t.session.is_some()).map(|t| t.id.as_str()).collect()
     }
 
     /// A source and a session for a thumbnail whose window has a handle

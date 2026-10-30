@@ -9,6 +9,7 @@
 use crate::abbrev::Source;
 use crate::model::Mode;
 use crate::node::{ActionEntry, Kind, Node};
+use crate::providers::{FILE_KIND, FOLDER_KIND};
 
 /// What running an action does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +35,10 @@ pub enum Run {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetKind {
     Workspace,
+    /// An app to open a file with.
+    App,
+    /// A LocalSend peer.
+    Peer,
 }
 
 impl TargetKind {
@@ -41,6 +46,8 @@ impl TargetKind {
     pub fn label(self) -> &'static str {
         match self {
             TargetKind::Workspace => "Workspace",
+            TargetKind::App => "Open with",
+            TargetKind::Peer => "Send to",
         }
     }
 }
@@ -162,6 +169,27 @@ fn copy(id: &str, label: &str, text: &str) -> Action {
     Action::new(id, label, Run::Command(format!("wl-copy -- {}", shell_quote(text))))
 }
 
+/// What a `file://` URI escapes in a path: everything but the unreserved
+/// characters and `/`. A comma too, which `dbus-send` would split on.
+const URI_PATH: &percent_encoding::AsciiSet =
+    &percent_encoding::NON_ALPHANUMERIC.remove(b'/').remove(b'-').remove(b'_').remove(b'.').remove(b'~');
+
+/// The file manager's own window on `path` with it selected, over
+/// org.freedesktop.FileManager1; with no file manager on the bus, its
+/// folder through xdg-open.
+fn show_in_folder(path: &str) -> String {
+    let uri = format!("file://{}", percent_encoding::utf8_percent_encode(path, URI_PATH));
+    let parent = match path.trim_end_matches('/').rsplit_once('/') {
+        Some(("", _)) | None => "/",
+        Some((p, _)) => p,
+    };
+    format!(
+        "dbus-send --session --print-reply --dest=org.freedesktop.FileManager1 /org/freedesktop/FileManager1 org.freedesktop.FileManager1.ShowItems {} string: >/dev/null 2>&1 || xdg-open {}",
+        shell_quote(&format!("array:string:{uri}")),
+        shell_quote(parent)
+    )
+}
+
 /// The kind's own actions, before the node's.
 fn builtins(s: &Subject) -> Vec<Action> {
     let n = s.node;
@@ -201,6 +229,18 @@ fn builtins(s: &Subject) -> Vec<Action> {
         Kind::Submenu | Kind::Provider | Kind::Link => {
             let to = n.target.clone().filter(|_| n.kind == Kind::Link).unwrap_or_else(|| n.id.clone());
             out.push(Action::new("open", "Open", Run::Into(to)));
+        }
+        Kind::Other(k) if k == FILE_KIND => {
+            out.push(Action::new("open", "Open", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
+            out.push(Action::new("open-with", "Open with\u{2026}", Run::Target(TargetKind::App)));
+            out.push(Action::new("show-in-folder", "Show in folder", Run::Command(show_in_folder(&n.path))));
+            out.push(copy("copy-path", "Copy path", &n.path));
+            out.push(Action::new("send-to", "Send to\u{2026}", Run::Target(TargetKind::Peer)));
+        }
+        Kind::Other(k) if k == FOLDER_KIND => {
+            out.push(Action::new("open", "Open in the file manager", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
+            out.push(copy("copy-path", "Copy path", &n.path));
+            out.push(Action::new("contents", "Open folder contents", Run::Into(subject_id(n))));
         }
         Kind::Image => {
             let label = if s.picker_select { "Choose" } else { "Set wallpaper" };

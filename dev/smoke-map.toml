@@ -126,7 +126,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--menu-hover"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-preview", "--menu-hover"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]
@@ -138,7 +138,7 @@ runs = ["--app-grid", "--grid-relaunch", "--menu"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/actions.rs", "crates/fs-menu/src/calc.rs"]
-runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev"]
+runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-preview"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/clipboard/emoji.rs", "crates/fs-menu/src/providers/emoji.rs"]
@@ -151,7 +151,7 @@ paths = [
   "crates/formalshell-rs/src/services/clipboard.rs",
   "crates/formalshell-rs/src/ipc/clipboard.rs",
 ]
-runs = ["--clipboard", "--clipssh-image"]
+runs = ["--clipboard", "--clipssh-image", "--launcher-preview"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/clipssh.rs", "crates/formalshell-rs/src/services/clipssh.rs"]
@@ -164,6 +164,10 @@ runs = ["--device-routes"]
 [[rule]]
 paths = ["crates/fs-menu/src/providers/share.rs", "crates/formalshell-rs/src/services/localsend.rs", "crates/formalshell-rs/src/ipc/localsend.rs", "crates/fs-devices/src/localsend.rs"]
 runs = ["--share", "--localsend"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/providers/files.rs", "dev/smoke.d/launcher_preview.sh"]
+runs = ["--launcher-preview", "--launcher-modes"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/keybinds.rs"]
@@ -279,7 +283,7 @@ runs = ["--switcher", "--switcher-keys", "--switcher-off"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/wayland/capture.rs", "crates/formalshell-rs/src/wayland/preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview.rs"]
-runs = ["--switcher", "--spaces"]
+runs = ["--switcher", "--switcher-keys", "--spaces", "--launcher-preview"]
 
 # Panels
 [[rule]]

@@ -115,6 +115,11 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "toasts": toasts,
         "activity": app.store.activity.to_json(),
         "frame": app.bar.frame_state(),
+        "captures": {
+            "switcher": app.capture_sessions(crate::wayland::capture::Owner::Switcher),
+            "spaces": app.capture_sessions(crate::wayland::capture::Owner::Preview),
+            "launcher": app.capture_sessions(crate::wayland::capture::Owner::Launcher),
+        },
         "backdrop": app.backdrop_state(),
         "desktopClock": app.desktop_clock_state(),
         "veil": app.veil_phase(),

@@ -108,6 +108,9 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     if let Some(r) = shown.and_then(|w| w.column_box()) {
         v["actionsBox"] = rect(r);
     }
+    if let Some(r) = shown.and_then(|w| w.pane_box()) {
+        v["paneBox"] = rect(r);
+    }
     v["footHints"] = shown
         .map_or_else(Vec::new, |w| w.foot_hints())
         .into_iter()

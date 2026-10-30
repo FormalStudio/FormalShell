@@ -52,16 +52,26 @@ pub struct State {
     /// one reader. A re-copied image only moves its entry, so the list
     /// alone cannot say a capture happened.
     pub captured: bool,
-    /// The split pane's picture: the capture, the box it was fitted to.
-    pub preview: Option<(String, ((u32, u32), f64), Option<Bitmap>)>,
+    /// The launcher pane's picture: a capture or an image file.
+    pub preview: Option<Preview>,
     /// What [`Cmd::Paste`] read, for the field holding the keyboard to take.
     pub pasted: Option<String>,
+}
+
+/// One picture fitted to the launcher's preview pane.
+pub struct Preview {
+    pub path: String,
+    /// The box it was fitted to, and the scale.
+    pub size: ((u32, u32), f64),
+    pub bitmap: Option<Bitmap>,
+    /// Its own width and height, read off the file's header.
+    pub dims: Option<(u32, u32)>,
 }
 
 pub enum Diff {
     Items(Vec<Entry>),
     Captured,
-    Preview(String, ((u32, u32), f64), Option<Bitmap>),
+    Preview(Preview),
     Thumbs(((u32, u32), f64), Vec<(String, Option<Bitmap>)>),
     Pasted(String),
 }
@@ -77,7 +87,7 @@ impl State {
             }
             Diff::Captured => self.captured = true,
             Diff::Pasted(text) => self.pasted = Some(text),
-            Diff::Preview(path, size, bitmap) => self.preview = Some((path, size, bitmap)),
+            Diff::Preview(preview) => self.preview = Some(preview),
             Diff::Thumbs((size, scale), list) => {
                 if (size, scale) != (self.thumb_box, self.thumb_scale) {
                     self.thumbs.clear();
@@ -106,7 +116,8 @@ pub enum Cmd {
     Clear,
     /// Decode these captures' `fit` thumbnails into a `(w, h)` box.
     Thumbs(Vec<String>, ((u32, u32), f64)),
-    /// The split pane's picture of one capture, fitted to `(w, h)`.
+    /// The launcher pane's picture of a capture or an image file, fitted to
+    /// `(w, h)`.
     Preview(String, ((u32, u32), f64)),
 }
 
@@ -287,9 +298,10 @@ pub async fn run(ctx: Ctx) {
                 let c = ctx.clone();
                 ctx.spawn(async move {
                     let p = path.clone();
-                    if let Some(mut list) = c.pool().run(move || decode_thumbs(&[p], size.0, size.1)).await {
+                    let decoded = c.pool().run(move || (image::image_dimensions(&p).ok(), decode_thumbs(&[p], size.0, size.1))).await;
+                    if let Some((dims, mut list)) = decoded {
                         let bitmap = list.pop().and_then(|(_, b)| b);
-                        c.publish(store::Diff::Clipboard(Diff::Preview(path, size, bitmap)));
+                        c.publish(store::Diff::Clipboard(Diff::Preview(Preview { path, size, bitmap, dims })));
                     }
                 });
             }

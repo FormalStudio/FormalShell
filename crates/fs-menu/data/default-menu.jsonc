@@ -76,6 +76,11 @@
     // compositor binds (Compositor/keybinds.js). Rows are inert notes, never
     // activatable.
     "keybinds": { "label": "Keybinds", "provider": "keybinds", "aliases": ["keys", "hotkeys", "shortcuts"], "prompt": "Search keybinds", "prefix": ":k" },
+    // "files" is filled on the shell's service thread from GTK's
+    // recently-used.xbel and the XDG user directories (providers/files.rs):
+    // no index, so its rows rank in a root search as file and folder
+    // subjects, and → on a folder lists that folder.
+    "files": { "label": "Files", "provider": "files", "aliases": ["recent", "documents", "folders"], "prompt": "Search files", "prefix": ":f" },
     // "wifi" registers a provider fn (providers.js's wifiRows): the scanned
     // networks with saved ones first, Enter connecting (a password step for a
     // secured new one) and Shift+Enter forgetting. Separate from the "Network"

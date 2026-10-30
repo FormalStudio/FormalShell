@@ -18,7 +18,7 @@ use fs_menu::frecency::Record;
 use fs_menu::keybinds::Bind;
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
 use fs_menu::node::{DesktopEntry, Entries, Kind, Node, Tree};
-use fs_menu::providers::{self, CustomPowerButton};
+use fs_menu::providers::{self, CustomPowerButton, Listed, Peeked};
 use serde_json::Value;
 
 use super::{appicon, icons, proc};
@@ -70,7 +70,15 @@ pub struct State {
     /// Each desktop entry's `Exec` argv by entry id, and each of its
     /// `[Desktop Action]`s' by [`action_key`].
     pub exec: HashMap<String, Vec<String>>,
+    /// The folder → last listed, by path: its sorted entries, or why it
+    /// could not be read.
+    pub folder: Option<(String, Listing)>,
+    /// What the preview pane last read off a file or folder, by path.
+    pub peek: Option<(String, Peeked)>,
 }
+
+/// A folder's sorted entries, or why it could not be read.
+pub type Listing = Result<Arc<[Listed]>, String>;
 
 pub enum Diff {
     Base(Tree),
@@ -80,6 +88,8 @@ pub enum Diff {
     Binds(Result<Arc<[Bind]>, ()>),
     Emoji(Arc<fs_menu::providers::EmojiIndex>),
     Exec(HashMap<String, Vec<String>>),
+    Folder(String, Listing),
+    Peek(String, Peeked),
 }
 
 impl State {
@@ -117,6 +127,8 @@ impl State {
                 }
                 self.exec = exec;
             }
+            Diff::Folder(path, listing) => self.folder = Some((path, listing)),
+            Diff::Peek(path, peeked) => self.peek = Some((path, peeked)),
         }
         true
     }
@@ -191,6 +203,12 @@ pub enum Ask {
     Spawn(String),
     /// An applications directory changed under the shell.
     Rescan,
+    /// The Files source again: the recent list and the user directories.
+    Files,
+    /// One folder's entries, for →.
+    Folder(String),
+    /// A file or folder's preview.
+    Peek(String),
 }
 
 static ASK: OnceLock<async_channel::Sender<Ask>> = OnceLock::new();
@@ -208,6 +226,7 @@ pub async fn run(ctx: Ctx) {
     let _ = tx.try_send(Ask::Base(BaseInputs::default()));
     let _ = tx.try_send(Ask::Apps(Vec::new()));
     let _ = tx.try_send(Ask::Emoji);
+    let _ = tx.try_send(Ask::Files);
     ctx.spawn(watch_entries(tx.clone()));
     let _ = ASK.set(tx);
     let mut launches_seen: Vec<Record> = Vec::new();
@@ -264,6 +283,23 @@ pub async fn run(ctx: Ctx) {
             }
             Ask::Spawn(command) => {
                 super::compositor::spawn(&proc::argv(&["sh", "-c", &command]));
+            }
+            Ask::Files => {
+                if let Some(rows) = ctx.pool().run(files).await {
+                    ctx.publish(store::Diff::Menu(Diff::Source(providers::FILES_ROUTE.into(), rows)));
+                }
+            }
+            Ask::Folder(path) => {
+                let p = path.clone();
+                if let Some(listing) = ctx.pool().run(move || list_folder(&p).map(Arc::from)).await {
+                    ctx.publish(store::Diff::Menu(Diff::Folder(path, listing)));
+                }
+            }
+            Ask::Peek(path) => {
+                let p = path.clone();
+                if let Some(peeked) = ctx.pool().run(move || peek(&p)).await {
+                    ctx.publish(store::Diff::Menu(Diff::Peek(path, peeked)));
+                }
             }
         }
     }
@@ -325,12 +361,86 @@ fn power_buttons(v: &Value) -> Vec<CustomPowerButton> {
         .collect()
 }
 
+fn home() -> String {
+    std::env::var("HOME").unwrap_or_default()
+}
+
+/// `$XDG_<var>`, else `$HOME/<fallback>`.
+fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
+    std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(home()).join(fallback))
+}
+
 fn user_menu_path() -> PathBuf {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_default();
-    config.join("formalshell").join("menu.jsonc")
+    xdg_dir("XDG_CONFIG_HOME", ".config").join("formalshell").join("menu.jsonc")
+}
+
+/// The Files route's rows: the user directories that exist, then the
+/// recent list's newest files that still do.
+fn files() -> Vec<Node> {
+    use fs_menu::providers::{Found, RECENT_FILES, recent_paths, user_dirs};
+    let home = home();
+    let found = |path: String| std::fs::metadata(&path).ok().map(|m| Found { path, dir: m.is_dir() });
+    let dirs = std::fs::read_to_string(xdg_dir("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs")).unwrap_or_default();
+    let places: Vec<Found> = user_dirs(&dirs, &home).into_iter().filter_map(found).filter(|f| f.dir).collect();
+    let xbel = std::fs::read_to_string(xdg_dir("XDG_DATA_HOME", ".local/share").join("recently-used.xbel")).unwrap_or_default();
+    let recent: Vec<Found> = recent_paths(&xbel).into_iter().filter_map(found).take(RECENT_FILES).collect();
+    providers::files_rows(&places, &recent, &home)
+}
+
+fn list_folder(path: &str) -> Result<Vec<Listed>, String> {
+    read_folder(path).map(fs_menu::providers::sort_listing)
+}
+
+/// Every entry of `path`, unsorted and uncapped.
+fn read_folder(path: &str) -> Result<Vec<Listed>, String> {
+    let read = std::fs::read_dir(path).map_err(|e| format!("Cannot read this folder: {}", io_reason(&e)))?;
+    Ok(read
+        .flatten()
+        .map(|e| Listed {
+            name: e.file_name().to_string_lossy().into_owned(),
+            // A link to a directory steps in like one.
+            dir: std::fs::metadata(e.path()).is_ok_and(|m| m.is_dir()),
+        })
+        .collect())
+}
+
+fn io_reason(e: &std::io::Error) -> String {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => "it no longer exists".into(),
+        std::io::ErrorKind::PermissionDenied => "permission denied".into(),
+        _ => e.to_string(),
+    }
+}
+
+/// What the preview pane shows of `path`: a folder's names, a text file's
+/// first lines out of its first [`PEEK_BYTES`](fs_menu::providers::PEEK_BYTES),
+/// or that it is a picture or neither.
+fn peek(path: &str) -> Peeked {
+    use std::io::Read;
+
+    use fs_menu::providers::{PEEK_BYTES, Peek, folder_peek, is_image, text_lines};
+    let meta = match std::fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) => return Peeked { size: None, modified: None, peek: Peek::Unreadable(format!("Cannot read it: {}", io_reason(&e))) },
+    };
+    let modified = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as i64);
+    if meta.is_dir() {
+        let peek = match read_folder(path) {
+            Ok(entries) => folder_peek(entries),
+            Err(e) => Peek::Unreadable(e),
+        };
+        return Peeked { size: None, modified, peek };
+    }
+    let peek = if is_image(path) {
+        Peek::Image
+    } else {
+        let mut head = Vec::new();
+        match std::fs::File::open(path).and_then(|f| f.take(PEEK_BYTES as u64).read_to_end(&mut head)) {
+            Ok(_) => text_lines(&head).map_or(Peek::Binary, Peek::Text),
+            Err(e) => Peek::Unreadable(format!("Cannot read it: {}", io_reason(&e))),
+        }
+    };
+    Peeked { size: Some(meta.len()), modified, peek }
 }
 
 /// The desktop entries and the icons already decoded, kept across asks.

@@ -3,9 +3,10 @@
 # --menu-morph: the launcher's card takes the size of the level kind it
 # shows and travels into it rather than jumping. The card opens at the root's
 # `popupWidthMenu`, then `menu summon clipboard` re-levels it in place onto
-# a split route's `popupWidthMenuSplit`, all at a tenth of its speed (set
-# before the open: a window takes the scale it opened with) and photographed
-# frame by frame.
+# `popupWidthMenuSplit`, the width a selected row with a preview takes (one
+# wl-copy seeds that row: an empty clipboard has no preview and stays 560),
+# all at a tenth of its speed (set before the open: a window takes the scale
+# it opened with) and photographed frame by frame.
 #
 # Read off one row through the card's header band: the card's own fill sits
 # well above the scrim around it, so the first column bright enough is the
@@ -19,7 +20,7 @@
 # row with a frame caught between the two widths.
 leg_menu_morph_flag="--menu-morph"
 leg_menu_morph_order=126
-leg_menu_morph_needs="convert wtype"
+leg_menu_morph_needs="convert wtype wl-copy"
 
 menu_morph_frames=24
 menu_morph_gap=0.12
@@ -49,6 +50,8 @@ leg_menu_morph_drive() {
 #!/usr/bin/env bash
 call() { $ipc call "\$@"; }
 sleep 4
+"$wl_copy_bin" "menu morph preview text"
+sleep 1
 call debug motionScale 1000 > /dev/null 2>&1
 call menu summon "" > /dev/null 2>&1
 sleep 8

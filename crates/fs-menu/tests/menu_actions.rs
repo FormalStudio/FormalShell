@@ -216,6 +216,31 @@ fn wallpaper() {
 }
 
 #[test]
+fn file() {
+    let row = &fs_menu::providers::files_rows(&[], &[fs_menu::providers::Found { path: "/h/My Report, v2.pdf".into(), dir: false }], "/h")[0];
+    let all = of(row);
+    assert_eq!(ids(&all), ["open", "open-with", "show-in-folder", "copy-path", "send-to"]);
+    assert_eq!(all[0].run, Run::Command("xdg-open '/h/My Report, v2.pdf'".into()));
+    assert_eq!(all[1].run, Run::Target(TargetKind::App));
+    assert_eq!(all[4].run, Run::Target(TargetKind::Peer));
+    let Run::Command(show) = &all[2].run else { panic!("show-in-folder is not a command") };
+    assert!(show.contains("'array:string:file:///h/My%20Report%2C%20v2.pdf'") && show.ends_with("|| xdg-open '/h'"), "{show}");
+    assert_eq!(all[3].run, Run::Command("wl-copy -- '/h/My Report, v2.pdf'".into()));
+    assert_eq!(second_action(&Subject::of(row)).unwrap().id, "open-with");
+    assert_eq!(into_action(&Subject::of(row)), None);
+}
+
+#[test]
+fn folder() {
+    let row = &fs_menu::providers::files_rows(&[fs_menu::providers::Found { path: "/h/Documents".into(), dir: true }], &[], "/h")[0];
+    let all = of(row);
+    assert_eq!(ids(&all), ["open", "copy-path", "contents"]);
+    assert_eq!(all[0].label, "Open in the file manager");
+    assert_eq!(all[0].run, Run::Command("xdg-open '/h/Documents'".into()));
+    assert_eq!(into_action(&Subject::of(row)).unwrap().run, Run::Into(row.id.clone()));
+}
+
+#[test]
 fn calc_result() {
     let node = fs_menu::calc::result_node("2+2").unwrap();
     let all = of(&node);

@@ -130,6 +130,8 @@ impl App {
     /// The launcher's window gone, its card's pool, buffers and canvas kept
     /// for the next open.
     fn drop_launch(&mut self) {
+        self.capture_clear(crate::wayland::capture::Owner::Launcher);
+        self.launcher.pane_frame = None;
         if let Some(w) = self.launch.take() {
             let modal = w.shown.modal;
             if let Some(layer) = modal.layer {
@@ -702,26 +704,58 @@ impl App {
         localsend::command(Cmd::Send { peer, payload });
     }
 
-    /// Asks for the split pane's picture when the cursor sits on an image
-    /// row whose picture is not decoded at the pane's size yet.
+    /// What the preview pane needs for the selected subject, asked for
+    /// once: a file or folder's peek, a picture decoded at the pane's size,
+    /// or one captured frame of a window. The window's capture is held only
+    /// while the pane shows it, and dropped the moment it does not.
     fn launcher_preview(&mut self) {
-        if !self.launcher.split() {
-            return;
+        use crate::surfaces::launcher::{PanePicture, PaneKind, pane_kind, pane_picture};
+        use crate::wayland::capture::Owner as Capture;
+        let row = self.launcher.open.then(|| self.launcher.pane().cloned()).flatten();
+        if !self.launcher.open {
+            self.peek_asked = None;
         }
-        let Some(path) = self.launcher.rows.get(self.launcher.cursor).map(|r| r.thumb_source.clone()).filter(|p| !p.is_empty()) else { return };
         let theme = &self.store.theme.theme;
         let s = &theme.space;
         let inner = self.launcher.content_width(theme);
         let width = inner - (inner / 2.0).round() - s.sm * 2.0;
         let height = self.launcher.body_height() - s.md * 2.0;
-        if height <= 0.0 {
-            return;
-        }
         let size = (crate::surfaces::launcher::preview_box(theme, &mut self.bar.kit, width, height), self.launcher_scale());
-        let have = self.store.clipboard.preview.as_ref().is_some_and(|(p, sz, _)| *p == path && *sz == size);
-        if !have && self.preview_asked.as_ref() != Some(&(path.clone(), size)) {
-            self.preview_asked = Some((path.clone(), size));
-            crate::services::clipboard::command(crate::services::clipboard::Cmd::Preview(path, size));
+        if let Some(n) = row.as_ref().filter(|n| matches!(pane_kind(n), Some(PaneKind::File | PaneKind::Folder)))
+            && self.peek_asked.as_deref() != Some(n.path.as_str())
+        {
+            self.peek_asked = Some(n.path.clone());
+            index::ask(Ask::Peek(n.path.clone()));
+        }
+        let mut window = None;
+        match row.as_ref().and_then(pane_picture) {
+            Some(PanePicture::Decoded(path)) if height > 0.0 => {
+                let have = self.store.clipboard.preview.as_ref().is_some_and(|p| p.path == path && p.size == size);
+                if !have && self.preview_asked.as_ref() != Some(&(path.to_owned(), size)) {
+                    self.preview_asked = Some((path.to_owned(), size));
+                    crate::services::clipboard::command(crate::services::clipboard::Cmd::Preview(path.to_owned(), size));
+                }
+            }
+            Some(PanePicture::Window(id)) if height > 0.0 => window = Some(id.to_owned()),
+            _ => {}
+        }
+        match &window {
+            Some(id) => {
+                let from = self.store.compositor.window(id).and_then(|w| w.rect.as_ref()).map_or((0.0, 0.0), |r| (r.width as f64, r.height as f64));
+                let fitted = crate::surfaces::launcher::fit_inside(from, size.0);
+                self.capture_set(Capture::Launcher, &[(id.clone(), fitted)], false, size.1);
+            }
+            None => self.capture_clear(Capture::Launcher),
+        }
+        let frame = window.as_ref().and_then(|id| self.capture_image(Capture::Launcher, id)).cloned();
+        let same = match (&frame, &self.launcher.pane_frame) {
+            (Some(a), Some(b)) => std::sync::Arc::ptr_eq(&a.pixmap, &b.pixmap),
+            (None, None) => true,
+            _ => false,
+        };
+        if !same {
+            self.launcher.pane_frame = frame;
+            self.launcher.dirty = true;
         }
     }
 

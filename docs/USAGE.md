@@ -1241,7 +1241,7 @@ A route you step into is a mode: a token naming it sits before the query
 inside it. A mode inside a mode carries its path (`Radio Stations ›
 Search`), past two levels `… ›` and the last two. You get in by Enter or a
 click on its row, by `menu summon <id>` or its chord, or by its
-prefix and a space (`:e `, `:k `, `:r `). You get out one level at a time by
+prefix and a space (`:e `, `:k `, `:r `, `:f `). You get out one level at a time by
 Backspace or `←` on an empty field, by Escape once the query is empty, or
 by a click on the token.
 
@@ -1282,8 +1282,8 @@ row, an ssh send on a clipboard image, Forget on a saved network).
 
 `Tab` opens the selected row's actions in a column beside the list: the
 card widens from 560 to 840, the list keeps the left half with the row
-still selected, and the column takes the right (on the clipboard it stands
-in for the preview). The field then filters the actions, its query held
+still selected, and the column takes the right (where the row has a
+preview, the column stands in for it). The field then filters the actions, its query held
 until the column closes, and reads `Actions` after the mode's token. `↑`
 `↓`, Page and Home/End move in the column, Enter or a click runs an
 action, and `Shift+Tab`, Escape or `←` on an empty filter close it. An
@@ -1402,10 +1402,40 @@ reachable with its bar cell left out. **Tray** does the same for live
 StatusNotifierItems, Enter taking the action a left click on the item would.
 An empty tray renders one dim `No tray items` row.
 
-**Clipboard** draws as a split route: the row list keeps the left half of the
-card, and a bordered inner card on the right previews the row under the
-cursor, either its full text or, on a capture, the image itself at true
-color, since menu thumbnails are never dithered.
+**The preview pane.** A selected row that has something to preview widens
+the card from 560 to 840, the list keeping the left half and a bordered
+inner card on the right showing it; a row with none narrows the card
+again, whatever route it is in, so a list of apps stays 560 and a moving
+selection glides between the two. Under what it shows, the pane names the
+row and a line of facts.
+
+| Row | The pane |
+| --- | --- |
+| Clipboard text | the text, wrapped and clamped, and its capture time |
+| Clipboard image | the image at true colour (menu thumbnails are never dithered), its size and time |
+| Image file (png, jpeg, webp) | the picture, its pixel size, file size and when it changed |
+| Text file | its first 40 lines in mono, out of at most its first 64 KB |
+| Folder | how many entries it holds and the first 12 by name |
+| Window | one captured frame of it, its title and workspace |
+
+The file and folder reads, and every picture, are made off the drawing
+thread and land when they are ready. A window's frame is captured once,
+only while the pane shows that window, and dropped as the selection moves
+off it or the card closes; nothing else in the launcher captures a window.
+Opening Actions with `Tab` hands the right half to the actions column.
+
+**Files** (`:f `) lists the folders `user-dirs.dirs` names (Documents,
+Downloads, Pictures and the rest, `xdg-user-dirs-update` writes it) and
+the files in GTK's recent list, `$XDG_DATA_HOME/recently-used.xbel`, which
+GTK and most Qt apps write to; a file that has gone since is left out.
+There is no index: these rows rank in a root search like any other, and
+nothing searches the rest of the disk. `→` on a folder lists it, folders
+first and at most 500 entries, its hidden ones only once the query starts
+with `.`; `←` goes back up. A file's actions are Open (`xdg-open`), Open
+with… (any installed app, given the path), Show in folder (the file
+manager's own window with the file selected, else the folder through
+`xdg-open`), Copy path and Send to… (a LocalSend peer); a folder's are
+Open in the file manager, Copy path and Open folder contents.
 
 `System` also carries `Console` and `Screensaver` rows and a `Plugins`
 submenu (`List Plugins`, `Reload Plugins`), and the root has `Notifications`

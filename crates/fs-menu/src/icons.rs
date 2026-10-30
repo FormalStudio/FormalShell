@@ -22,6 +22,7 @@ pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("calc", "calculator"),
     ("emoji", "smile"),
     ("keybinds", "keyboard"),
+    ("files", "folder-open"),
     ("wallpaper", "image"),
     ("monitor", "cpu"),
     ("mirror", "camera"),
@@ -148,6 +149,10 @@ pub fn fallback_for(node: Option<&Node>) -> &'static str {
         Some(Kind::Submenu | Kind::Provider | Kind::Link) => "folder",
         Some(Kind::Action) => "terminal",
         Some(Kind::Other(k)) if k == crate::actions::WINDOW_KIND => "app-window",
+        Some(Kind::Other(k)) if k == crate::providers::FOLDER_KIND => "folder",
+        Some(Kind::Other(k)) if k == crate::providers::FILE_KIND => {
+            if node.is_some_and(|n| crate::providers::is_image(&n.path)) { "file-image" } else { "file" }
+        }
         _ => "circle-help",
     }
 }

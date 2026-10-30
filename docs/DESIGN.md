@@ -635,9 +635,11 @@ between cells and closes once the pointer is on neither. `workspaces peek
 `formalshell-rs/src/surfaces/panel/workspace_preview.rs` over the strip
 widget in `formalshell-rs/src/ui/strip.rs`, its window and captures `formalshell-rs/src/wayland/preview.rs`.
 
-Window capture has two owners and no others: this preview and the Alt+Tab
-switcher (`formalshell-rs/src/surfaces/switcher/`, `formalshell-rs/src/wayland/switcher.rs`).
-Both take thumbnails through `formalshell-rs/src/wayland/capture.rs`
+Window capture has three owners and no others: this preview, the Alt+Tab
+switcher (`formalshell-rs/src/surfaces/switcher/`, `formalshell-rs/src/wayland/switcher.rs`)
+and the launcher's preview pane (`formalshell-rs/src/wayland/launcher.rs`),
+which takes one frame of the selected window, never a live stream, and holds
+it only while the pane shows that window. All three take thumbnails through `formalshell-rs/src/wayland/capture.rs`
 (ext-image-copy-capture on each window's foreign-toplevel handle, keyed by
 `capture::Owner`), and only while their card is open: closing the card drops
 its owner's set, which destroys every frame, session and source it held.
@@ -946,8 +948,8 @@ entry points; the shipped bindings are in
   `wallpaper.dither` or `lock.dither`, both off by default. The bar's own
   mini cover stops animating behind `media.animatedBarCover: false`; the
   media panel's own cover animates unconditionally.
-- A window capture outside the Spaces preview and the Alt+Tab switcher, or
-  one held while their card is closed.
+- A window capture outside the Spaces preview, the Alt+Tab switcher and the
+  launcher's preview pane, or one held while their card is closed.
 - A card inside a card, and a resting fill-and-border around any block that
   only groups its children or only reports a value.
 - Foreground/background inversion for selection.

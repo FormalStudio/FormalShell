@@ -4,11 +4,10 @@
 # `menu status`'s `level` and `token`. Every route of the launcher spec's §4
 # table this rig lists is entered three ways: its name filtered at the root
 # and Enter on its row (`menu activate`), `menu summon <id>`, and for the
-# four with a `prefix` (`:e`, `:k`, `:r`, and the fixture's `:m` from
-# menu.jsonc) the prefix and a space typed on real keys, what follows
-# staying as the query. Share, Clipssh, Install and Files are left out:
-# the first two are gated on tools the rig lacks, the last two do not
-# exist yet.
+# five with a `prefix` (`:e`, `:k`, `:r`, `:f`, and the fixture's `:m`
+# from menu.jsonc) the prefix and a space typed on real keys, what follows
+# staying as the query. Share, Clipssh and Install are left out: the first
+# two are gated on tools the rig lacks, the last does not exist yet.
 #
 # The fixture menu.jsonc nests three modes (Fixture › Outer › Inner, a
 # Leaf action inside): `le` inside Fixture lists the Leaf alone where the
@@ -44,6 +43,7 @@ gpu|GPU
 system|System
 reminder|Reminder
 toggles|Toggles
+files|Files
 modesfix|Fixture"
 
 leg_launcher_modes_fixture() {
@@ -89,7 +89,7 @@ $launcher_modes_routes
 radio.search|Search
 ROUTES
 
-for p in "e|emoji" "k|keybinds" "r|radio.search" "m|modesfix"; do
+for p in "e|emoji" "k|keybinds" "r|radio.search" "f|files" "m|modesfix"; do
   root
   key -d 30 ":\${p%%|*} "
   status "prefix-\${p#*|}"
@@ -198,6 +198,7 @@ ROUTES
   launcher_modes_expect prefix-emoji '.level == "emoji" and .token == ["Emoji"] and .query == "" and .view == "emoji"' "':e ' did not become the Emoji token"
   launcher_modes_expect prefix-keybinds '.level == "keybinds" and .token == ["Keybinds"] and .query == ""' "':k ' did not become the Keybinds token"
   launcher_modes_expect prefix-radio.search '.level == "radio.search" and .token == ["Radio Stations", "Search"]' "':r ' did not become Radio Stations › Search"
+  launcher_modes_expect prefix-files '.level == "files" and .token == ["Files"] and .query == ""' "':f ' did not become the Files token"
   launcher_modes_expect prefix-modesfix '.level == "modesfix" and .token == ["Fixture"]' "menu.jsonc's ':m' prefix did not enter its route"
   launcher_modes_expect summon-prefixed '.level == "keybinds" and .query == "SUPER"' "'menu summon \":k SUPER\"' did not keep SUPER as the query in Keybinds"
   echo "SMOKE_LAUNCHER_MODES prefixes :e :k :r and menu.jsonc's :m typed on real keys"
