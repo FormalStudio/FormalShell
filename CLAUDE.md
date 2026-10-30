@@ -1034,6 +1034,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `sidebarCollapsed`, `sidebar expand` opening it again, and settings.json
   rewritten with `bar.position: right` moving it to that edge. The open,
   panel and rail frames are read dark and light (`--sidebar --light`).
+  Ridden by `--idle` or `--menu-budget` it pins the layout alone, and
+  `--menu-budget` skips its bar frame claims, the sidebar having no badge
+  to spin.
 - `showcase.sh` `--showcase`: seeds state.json with a generated wallpaper
   before the shell starts, so the leg it rides photographs a matugen palette
   over a real desktop. The README's screenshots and GIFs are taken under it.

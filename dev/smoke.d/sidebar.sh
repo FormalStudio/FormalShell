@@ -11,6 +11,8 @@
 # state.json carrying `sidebarCollapsed`; `sidebar expand` opens it again.
 # Then settings.json rewritten with `bar.position: right` moves it to the
 # right edge. The open, panel and rail frames are pulled for reading.
+# Ridden by a budget leg (`--idle`, `--menu-budget`) it pins the layout
+# alone, so the budget is read with the sidebar on and nothing driven.
 leg_sidebar_flag="--sidebar"
 leg_sidebar_order=237
 leg_sidebar_needs="jq wlrctl notify-send"
@@ -29,6 +31,10 @@ sidebar_open_png="$shot_dir/sidebar-open.png"
 sidebar_panel_png="$shot_dir/sidebar-panel.png"
 sidebar_rail_png="$shot_dir/sidebar-rail.png"
 
+sidebar_rider() {
+  leg_on idle || leg_on menu_budget
+}
+
 leg_sidebar_validate() {
   if leg_on bar_position || leg_on frame; then
     echo "usage: --sidebar places the column itself and cannot combine with --bar-position or --frame" >&2
@@ -45,6 +51,7 @@ leg_sidebar_timing() {
 }
 
 leg_sidebar_drive() {
+  sidebar_rider && return 0
   local script="$shot_dir/sidebar-drive.sh"
   local settings_path="$iso_home/.config/formalshell/settings.json"
   local state_path="$iso_home/.local/state/formalshell/state.json"
@@ -109,6 +116,7 @@ sidebar_box() {
 }
 
 leg_sidebar_assert() {
+  sidebar_rider && return 0
   local f
   for f in "$sidebar_status_open" "$sidebar_layers_open" "$sidebar_monitors" "$sidebar_open_png" "$sidebar_rail_png"; do
     [ -s "$f" ] || fail "sidebar: $f missing or empty"

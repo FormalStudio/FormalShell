@@ -128,6 +128,13 @@ leg_menu_budget_assert() {
   local shell wait
   shell=$(echo "$worst" | sed -n 's/.*shell_ms=\([0-9]*\).*/\1/p')
   wait=$(echo "$worst" | sed -n 's/.*compositor_wait_ms=\([0-9]*\).*/\1/p')
+  # The sidebar carries no Spaces cell, so no badge spins and the bar
+  # commits nothing to time the frames against.
+  if leg_on sidebar; then
+    echo "SMOKE_MENU_BUDGET bar frames skipped: the sidebar has no spinning badge"
+    [ "$quiet" -eq 0 ] || fail "menu budget: the launcher committed $quiet times while open at rest"
+    return 0
+  fi
   [ "${shell:-99}" -le 16 ] || fail "menu budget: the shell held a bar frame ${shell}ms across an open (budget 16, one frame)"
   # The VM's llvmpipe Hyprland drops to 20-30 fps compositing the launcher
   # and its scrim, so every gap there is its own callback wait: the 33 ms
