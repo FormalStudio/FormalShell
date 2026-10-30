@@ -264,28 +264,6 @@ impl App {
             return false;
         }
         self.resolve_launcher();
-        // A clipboard image row goes over ssh rather than onto the
-        // clipboard: straight there with an alias resolved, else copied and
-        // the alias route asked.
-        if alternate
-            && let Some(node) = self.launcher.rows.get(index).filter(|n| n.alternate.is_none() && !n.clipssh_path.is_empty()).cloned()
-        {
-            use crate::services::clipssh;
-            let configured = self.store.config.str("clipssh.alias").unwrap_or("");
-            match clipssh::resolve_alias(configured, &self.store.clipssh.aliases) {
-                Some(alias) => {
-                    clipssh::command(clipssh::Cmd::SendImage(alias, node.clipssh_path.clone()));
-                    self.menu_close();
-                }
-                None => {
-                    if let Some(name) = node.action.as_deref().and_then(|a| a.strip_prefix("@ipc:")) {
-                        self.dispatch_internal(name);
-                    }
-                    self.menu_open(Some("clipssh"));
-                }
-            }
-            return true;
-        }
         let out = if alternate { self.launcher.activate_alternate(&self.store, index) } else { self.launcher.activate(&self.store, index) };
         self.launcher_out(out);
         true
@@ -332,8 +310,20 @@ impl App {
         if let Some(attr) = name.strip_prefix("nix.run:") {
             return self.console_run_once(&format!("nix run nixpkgs#{attr}; read"));
         }
-        if let Some(pid) = name.strip_prefix("monitor.kill:") {
-            return self.call_self("monitor", "kill", &[pid, "TERM"]);
+        if let Some((pid, signal)) = name.strip_prefix("monitor.kill:").and_then(|r| r.split_once(':')) {
+            return self.call_self("monitor", "kill", &[pid, signal]);
+        }
+        if let Some(rest) = name.strip_prefix("clipssh.image:") {
+            return self.clipssh_image(rest);
+        }
+        if let Some(id) = name.strip_prefix("app.gpu:") {
+            return self.call_self("monitor", "launch", &[id, ""]);
+        }
+        if let Some(panel) = name.strip_prefix("panel.open:") {
+            return self.call_self("panel", "open", &[panel]);
+        }
+        if let Some(id) = name.strip_prefix("clipboard.remove:") {
+            return crate::services::clipboard::command(crate::services::clipboard::Cmd::Remove(id.to_owned()));
         }
         if let Some(alias) = name.strip_prefix("clipssh.send:") {
             return crate::services::clipssh::command(crate::services::clipssh::Cmd::Send(alias.to_owned()));
@@ -369,6 +359,22 @@ impl App {
             "reminder.clear" => self.call_self("reminder", "clear", &[]),
             "reminder.set" => self.menu_input_as("Reminder (25m coffee)", REMINDER_SET, false),
             other => eprintln!("Menu: no service for internal action: {}", other.split(':').next().unwrap_or(other)),
+        }
+    }
+
+    /// A clipboard image (`<entry id>:<path>`) over ssh rather than onto the
+    /// clipboard: straight there with an alias resolved, else copied and
+    /// the alias route asked.
+    fn clipssh_image(&mut self, rest: &str) {
+        use crate::services::clipssh;
+        let Some((id, path)) = rest.split_once(':') else { return };
+        let configured = self.store.config.str("clipssh.alias").unwrap_or("");
+        match clipssh::resolve_alias(configured, &self.store.clipssh.aliases) {
+            Some(alias) => clipssh::command(clipssh::Cmd::SendImage(alias, path.to_owned())),
+            None => {
+                crate::services::clipboard::command(crate::services::clipboard::Cmd::Copy(id.to_owned()));
+                self.menu_open(Some("clipssh"));
+            }
         }
     }
 
@@ -464,6 +470,7 @@ impl App {
                 }
             }
             ("bluetooth", "power") if value == "on" => bluetooth::ask(bluetooth::Ask::Power(true)),
+            ("bluetooth", "forget") => bluetooth::ask(bluetooth::Ask::Run(value, bluetooth::ActionKind::Forget)),
             ("bluetooth", "toggle") => {
                 let Some(d) = self.store.devices.bluetooth.devices.iter().find(|d| d.address.eq_ignore_ascii_case(&value)) else { return };
                 let kind = if d.connected { bluetooth::ActionKind::Disconnect } else { bluetooth::ActionKind::Connect };

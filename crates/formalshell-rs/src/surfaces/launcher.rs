@@ -19,7 +19,7 @@ use std::time::Instant;
 use fs_menu::field;
 use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir, KeyAction, KeyCtx, KeyMode};
-use fs_menu::node::{Kind as NodeKind, Node};
+use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
@@ -1306,102 +1306,128 @@ impl Model {
         }
     }
 
-    pub fn activate(&mut self, store: &Store, index: usize) -> Out {
-        let Some(node) = self.rows.get(index).cloned() else { return Out::None };
-        if self.view == View::Monitor {
-            let Some(pid) = node.id.strip_prefix("proc.").and_then(|p| p.parse::<u64>().ok()) else { return Out::None };
-            self.dirty = true;
-            if self.monitor_armed == Some(pid) {
-                self.monitor_armed = None;
-                return Out::Internal(format!("monitor.kill:{pid}"));
-            }
-            self.monitor_armed = Some(pid);
-            return Out::None;
-        }
-        match node.kind {
-            NodeKind::Other(ref k) if k == "option" => {
-                self.complete_select(&node.label);
-                Out::Close
-            }
-            NodeKind::Action => {
-                if node.confirm == Some(true) && self.confirm != node.id {
-                    self.confirm = node.id.clone();
-                    self.dirty = true;
-                    return Out::None;
-                }
-                let out = run_action(node.action.as_deref().unwrap_or(""));
-                if node.paste_after {
-                    self.paste = true;
-                }
-                if node.id.starts_with("emoji.") {
-                    let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
-                    let next = fs_menu::frecency::record(&uses, &node.id, now_ms(), None);
-                    state::set(vec![state::Field::EmojiUses(serde_json::to_value(next).unwrap_or_default())]);
-                }
-                if node.keep_open == Some(true) {
-                    self.confirm.clear();
-                    return out;
-                }
-                match out {
-                    Out::Internal(name) => {
-                        self.close();
-                        Out::Internal(name)
-                    }
-                    _ => {
-                        self.close();
-                        Out::Close
-                    }
-                }
-            }
-            NodeKind::App => {
-                let Some(entry) = node.entry.clone() else { return Out::None };
-                let windows: Vec<fs_menu::appmatch::Window> = store
-                    .compositor
-                    .snapshot
-                    .windows
-                    .iter()
-                    .map(|w| fs_menu::appmatch::Window { id: w.id.clone(), app_id: w.app_id.clone(), ..Default::default() })
-                    .collect();
-                let matches = fs_menu::appmatch::match_windows(Some(&entry), &windows);
-                let target = fs_menu::appmatch::next_window(&matches, &store.compositor.snapshot.focused_window_id);
-                if !target.is_empty() {
-                    compositor::focus_window(&target);
-                } else if let Some(argv) = index::launch_argv(&store.menu, &entry.id) {
-                    compositor::spawn(&argv);
-                }
-                record_launch(store, &entry.id);
-                self.close();
-                Out::Close
-            }
-            NodeKind::Image => {
-                let path = node.path.clone();
-                if self.choose_image(store, &path) { Out::Close } else { Out::None }
-            }
-            NodeKind::Submenu | NodeKind::Provider => {
-                self.enter_level(store, Some(node.id.clone()));
-                Out::None
-            }
-            NodeKind::Link => {
-                let to = node.target.clone().filter(|t| store.menu.nodes().contains_key(t)).unwrap_or(node.id.clone());
-                self.enter_level(store, Some(to));
-                Out::None
-            }
-            _ => Out::None,
+    /// The row as a subject, with what the shell knows about it.
+    pub fn subject<'a>(&self, store: &Store, node: &'a Node) -> fs_menu::actions::Subject<'a> {
+        let windows = match &node.entry {
+            Some(entry) if node.kind == NodeKind::App => app_windows(store, entry).len(),
+            _ => 0,
+        };
+        fs_menu::actions::Subject {
+            node,
+            windows,
+            discrete_gpu: store.info.monitor.cards.iter().any(|c| c.discrete),
+            picker_select: self.picker.select,
         }
     }
 
-    /// A row's own alternate, else Enter.
+    /// Enter: the row's first action.
+    pub fn activate(&mut self, store: &Store, index: usize) -> Out {
+        let Some(node) = self.rows.get(index).cloned() else { return Out::None };
+        if matches!(node.kind, NodeKind::Other(ref k) if k == "option") {
+            self.complete_select(&node.label);
+            return Out::Close;
+        }
+        match fs_menu::actions::first_action(&self.subject(store, &node)) {
+            Some(action) => self.run(store, &node, &action),
+            None => Out::None,
+        }
+    }
+
+    /// Shift+Enter: the row's second action, else its first.
     pub fn activate_alternate(&mut self, store: &Store, index: usize) -> Out {
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
-        if let Some(alt) = node.alternate.as_deref() {
-            let out = run_action(alt);
-            if node.keep_open != Some(true) {
-                self.close();
-                return if matches!(out, Out::Internal(_)) { out } else { Out::Close };
+        match fs_menu::actions::second_action(&self.subject(store, &node)) {
+            Some(action) => self.run(store, &node, &action),
+            None => self.activate(store, index),
+        }
+    }
+
+    /// Whether a confirm action on row `id` is armed.
+    pub fn confirming(&self, id: &str) -> bool {
+        !self.confirm.is_empty() && self.confirm.split('\u{1}').next() == Some(id)
+    }
+
+    /// One action on one row. A `confirm` action arms on the first run and
+    /// runs on the second; a `keepOpen` one leaves the launcher up.
+    pub fn run(&mut self, store: &Store, node: &Node, action: &fs_menu::actions::Action) -> Out {
+        use fs_menu::actions::Run;
+        let armed = format!("{}\u{1}{}", node.id, action.id);
+        if action.confirm && self.confirm != armed {
+            self.confirm = armed;
+            self.dirty = true;
+            return Out::None;
+        }
+        self.confirm.clear();
+        let out = match &action.run {
+            Run::Into(id) => {
+                let to = if store.menu.nodes().contains_key(id) { id.clone() } else { node.id.clone() };
+                self.enter_level(store, Some(to));
+                return Out::None;
             }
+            Run::Ipc(name) => {
+                let (verb, arg) = name.split_once(':').unwrap_or((name, ""));
+                match verb {
+                    "app.open" => {
+                        let Some(entry) = node.entry.as_ref().filter(|e| e.id == arg) else { return Out::None };
+                        let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
+                        if !target.is_empty() {
+                            compositor::focus_window(&target);
+                        } else if let Some(argv) = index::launch_argv(&store.menu, arg) {
+                            compositor::spawn(&argv);
+                        }
+                        record_launch(store, arg);
+                        Out::None
+                    }
+                    "app.new" | "app.action" => {
+                        let key = match arg.split_once(':') {
+                            Some((id, action)) if verb == "app.action" => index::action_key(id, action),
+                            _ => arg.to_owned(),
+                        };
+                        if let Some(argv) = index::launch_argv(&store.menu, &key) {
+                            compositor::spawn(&argv);
+                        }
+                        record_launch(store, arg.split(':').next().unwrap_or(arg));
+                        Out::None
+                    }
+                    "wallpaper.set" => {
+                        return if self.choose_image(store, arg) { Out::Close } else { Out::None };
+                    }
+                    "monitor.end" => {
+                        let Ok(pid) = arg.parse::<u64>() else { return Out::None };
+                        self.dirty = true;
+                        if self.monitor_armed != Some(pid) {
+                            self.monitor_armed = Some(pid);
+                            return Out::None;
+                        }
+                        self.monitor_armed = None;
+                        Out::Internal(format!("monitor.kill:{pid}:TERM"))
+                    }
+                    _ => Out::Internal(name.clone()),
+                }
+            }
+            Run::Command(cmd) => {
+                if !cmd.is_empty() {
+                    index::ask(Ask::Spawn(index::ipc_command(cmd)));
+                }
+                Out::None
+            }
+        };
+        if action.paste_after {
+            self.paste = true;
+        }
+        if node.id.starts_with("emoji.") {
+            let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
+            let next = fs_menu::frecency::record(&uses, &node.id, now_ms(), None);
+            state::set(vec![state::Field::EmojiUses(serde_json::to_value(next).unwrap_or_default())]);
+        }
+        if action.keep_open {
             return out;
         }
-        self.activate(store, index)
+        self.close();
+        match out {
+            Out::Internal(name) => Out::Internal(name),
+            _ => Out::Close,
+        }
     }
 
     /// One key, through `nav::key_action`, or into the field as `edit`.
@@ -1534,16 +1560,16 @@ fn record_launch(store: &Store, id: &str) {
     state::set(vec![state::Field::AppLaunches(serde_json::to_value(next).unwrap_or_default())]);
 }
 
-/// `@ipc:` stays in process, anything else is a shell
-/// command spawned through the compositor.
-fn run_action(action: &str) -> Out {
-    if let Some(name) = action.strip_prefix("@ipc:") {
-        return Out::Internal(name.to_owned());
-    }
-    if !action.is_empty() {
-        index::ask(Ask::Spawn(index::ipc_command(action)));
-    }
-    Out::None
+/// The compositor's windows an app's entry claims.
+fn app_windows(store: &Store, entry: &fs_menu::node::DesktopEntry) -> Vec<String> {
+    let windows: Vec<fs_menu::appmatch::Window> = store
+        .compositor
+        .snapshot
+        .windows
+        .iter()
+        .map(|w| fs_menu::appmatch::Window { id: w.id.clone(), app_id: w.app_id.clone() })
+        .collect();
+    fs_menu::appmatch::match_windows(Some(entry), &windows)
 }
 
 pub fn selection_path() -> std::path::PathBuf {
@@ -1925,13 +1951,16 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
 fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     let s = &theme.space;
     let node = m.rows.get(m.cursor);
+    let second = match node.filter(|_| m.mode == Mode::Menu).map(|n| m.subject(store, n)) {
+        Some(subject) if !subject.inert() => fs_menu::actions::actions_for(&subject).into_iter().nth(1).map(|a| a.label).unwrap_or_default(),
+        _ => String::new(),
+    };
     let bar = fs_menu::actions::action_bar(&fs_menu::actions::ActionCtx {
         mode: m.mode,
         node,
         at_root: m.level.is_none(),
-        confirming: !m.confirm.is_empty() && node.is_some_and(|n| n.id == m.confirm),
-        clipssh_image: node.is_some_and(|n| n.alternate.is_none() && !n.clipssh_path.is_empty()),
-        alternate_label: node.and_then(|n| n.alternate_label.as_deref()).unwrap_or(""),
+        confirming: node.is_some_and(|n| m.confirming(&n.id)),
+        alternate_label: &second,
         ..Default::default()
     });
     let name = if m.view == View::Emoji {
@@ -2165,6 +2194,10 @@ fn monitor_rows(store: &Store, q: &str) -> Vec<Node> {
         .map(|r| Node {
             desc: Some(r.cmd.clone()),
             meta: Some(format!("{}\u{1}{}\u{1}{}", r.pid, format::proc_pct(r.cpu_fraction), format::bytes(Some(r.mem_bytes)))),
+            actions: vec![
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("end", "End", format!("@ipc:monitor.end:{}", r.pid)) },
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("kill", "Kill", format!("@ipc:monitor.kill:{}:KILL", r.pid)).destructive() },
+            ],
             ..Node::new(format!("proc.{}", r.pid), r.name.clone(), NodeKind::Action)
         })
         .collect()
@@ -2309,7 +2342,7 @@ fn slot_x_of(m: &Model, el: &El) -> f64 {
 
 fn menu_row(m: &Model, row: &Node, i: usize, selected: bool, checked: bool, thumb: Option<(Option<crate::scene::Bitmap>, f64)>, theme: &Theme) -> El {
     let s = &theme.space;
-    let confirming = !m.confirm.is_empty() && m.confirm == row.id;
+    let confirming = m.confirming(&row.id);
     let mut lead = Vec::new();
     if let Some((image, h)) = thumb {
         lead.push(w::picture(image, h).width(Size::Px(h * 3.0)));

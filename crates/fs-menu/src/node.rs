@@ -81,6 +81,62 @@ pub struct Entry {
     pub hidden: Option<bool>,
     pub desc: Option<String>,
     pub thumb_source: Option<String>,
+    pub actions: Option<Vec<ActionEntry>>,
+    pub alternate: Option<String>,
+    pub alternate_label: Option<String>,
+}
+
+/// One entry of a node's `actions` array: a built-in's id overrides that
+/// action key by key, `hidden: true` removes it, any other id adds one.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ActionEntry {
+    pub id: String,
+    pub label: Option<String>,
+    pub icon: Option<String>,
+    pub action: Option<String>,
+    pub confirm: Option<bool>,
+    pub keep_open: Option<bool>,
+    pub hidden: Option<bool>,
+    pub destructive: Option<bool>,
+    pub paste_after: Option<bool>,
+}
+
+impl ActionEntry {
+    pub fn new(id: &str, label: &str, action: impl Into<String>) -> ActionEntry {
+        ActionEntry { id: id.into(), label: Some(label.into()), action: Some(action.into()), ..ActionEntry::default() }
+    }
+
+    pub fn destructive(mut self) -> ActionEntry {
+        self.destructive = Some(true);
+        self
+    }
+
+    fn merged(&self, over: &ActionEntry) -> ActionEntry {
+        ActionEntry {
+            id: self.id.clone(),
+            label: over.label.clone().or_else(|| self.label.clone()),
+            icon: over.icon.clone().or_else(|| self.icon.clone()),
+            action: over.action.clone().or_else(|| self.action.clone()),
+            confirm: over.confirm.or(self.confirm),
+            keep_open: over.keep_open.or(self.keep_open),
+            hidden: over.hidden.or(self.hidden),
+            destructive: over.destructive.or(self.destructive),
+            paste_after: over.paste_after.or(self.paste_after),
+        }
+    }
+}
+
+/// `over` laid onto `base` per action id, base order first.
+pub fn merge_actions(base: &[ActionEntry], over: &[ActionEntry]) -> Vec<ActionEntry> {
+    let mut out: Vec<ActionEntry> = base.to_vec();
+    for o in over {
+        match out.iter_mut().find(|a| a.id == o.id) {
+            Some(a) => *a = a.merged(o),
+            None => out.push(o.clone()),
+        }
+    }
+    out
 }
 
 impl Entry {
@@ -136,6 +192,12 @@ impl Entry {
             hidden: u.hidden.or(self.hidden),
             desc: u.desc.clone().or_else(|| self.desc.clone()),
             thumb_source: u.thumb_source.clone().or_else(|| self.thumb_source.clone()),
+            alternate: u.alternate.clone().or_else(|| self.alternate.clone()),
+            alternate_label: u.alternate_label.clone().or_else(|| self.alternate_label.clone()),
+            actions: match (&self.actions, &u.actions) {
+                (Some(base), Some(over)) => Some(merge_actions(base, over)),
+                (base, over) => over.clone().or_else(|| base.clone()),
+            },
         }
     }
 }
@@ -151,6 +213,10 @@ pub struct DesktopEntry {
     pub icon: String,
     pub generic_name: String,
     pub startup_class: String,
+    /// The `.desktop` file itself.
+    pub path: String,
+    /// Its `[Desktop Action]` groups: the group key and its `Name`.
+    pub actions: Vec<(String, String)>,
 }
 
 /// A tree node and, equally, a display row.
@@ -199,6 +265,8 @@ pub struct Node {
     pub local_only: bool,
     /// The desktop entry an app row launches or focuses.
     pub entry: Option<DesktopEntry>,
+    /// Actions past the kind's own: a provider's, then `menu.jsonc`'s.
+    pub actions: Vec<ActionEntry>,
 }
 
 impl Node {

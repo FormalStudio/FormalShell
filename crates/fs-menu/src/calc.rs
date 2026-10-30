@@ -255,6 +255,8 @@ pub fn result_node(query: &str) -> Option<Node> {
         parent_id: Some("calc".to_string()),
         action: Some(std::format!("wl-copy -- {text}")),
         meta: Some("CALC".to_string()),
+        verb: Some("Copy".to_string()),
+        actions: vec![crate::node::ActionEntry { paste_after: Some(true), ..crate::node::ActionEntry::new("paste", "Paste", std::format!("wl-copy -- {text}")) }],
         ..Node::new("calc.result", std::format!("= {text}"), Kind::Action)
     })
 }

@@ -1192,8 +1192,8 @@ once a confirm-gated row is armed. A row that can't be activated leaves the
 verb out. `esc` reads `back` wherever there is a level to pop, `close` at the
 root, and `cancel` in select or input mode. Two more hints show only when they
 mean something: `Tab` names the picker's other Dark/Light set while its
-switcher is up, and `Shift+Enter` names a row's alternate action (the
-discrete GPU on an app row, an ssh send on a clipboard image).
+switcher is up, and `Shift+Enter` names a row's second action (New window
+on an app row, an ssh send on a clipboard image, Forget on a saved network).
 
 | Key | Does |
 | --- | --- |
@@ -1202,7 +1202,7 @@ discrete GPU on an app row, an ssh send on a clipboard image).
 | `Page Up` / `Page Down` | Move a page |
 | `Home` / `End` | Jump to the first or last row |
 | `Enter` | Submit (input mode); otherwise activate the row under the cursor |
-| `Shift+Enter` | The row's alternate action, where it has one |
+| `Shift+Enter` | The row's second action, else its first |
 | `Escape` | Cancel and close (select and input mode); pop a level, or close at the root |
 | `Backspace` | Pop a level, only when the search field is empty; `Ctrl+Backspace` deletes a word |
 | `Tab` / `Shift+Tab` | Swap the picker's Dark/Light set, only while its switcher is showing |
@@ -1250,6 +1250,23 @@ own worth looking at:
 
 That `checked` is an ordinary shell condition, resolved like any other. Only
 the `@state:` paths are in-process.
+
+Every row has a list of actions: its kind's own (an app's Open, New window,
+its desktop file's `[Desktop Action]`s, Open on discrete GPU on a machine
+with one, Copy desktop file path), then its `alternate`, then an `actions`
+array of your own. Enter runs the first, `Shift+Enter` the second. An entry
+with a built-in's id changes that action, `"hidden": true` removes it:
+
+```jsonc
+// ~/.config/formalshell/menu.jsonc
+{
+    "apps.firefox": { "actions": [
+        { "id": "profiles", "label": "Profiles", "action": "firefox -P" },
+        { "id": "copy-path", "hidden": true }
+    ] },
+    "tools.build": { "action": "make", "alternate": "make clean", "alternateLabel": "Clean" }
+}
+```
 
 **If your `menu.jsonc` predates the `Toggles` node**, three ids changed. An
 override keyed on an old one does not error; it lands on a node nothing
@@ -2046,9 +2063,8 @@ Metrics are uneven because the kernel is:
 - **Intel i915 and xe** have no unprivileged utilization counter at all, so
   those cards always show identity and outputs with no busy figure.
 
-`Shift+Enter` on an app row launches it on the discrete card; the footer
-names the key whenever the cursor is on an app and the machine has one. The
-launch builds argv itself and strips Exec field codes first: `nvidia-offload`
+An app row's Open on discrete GPU action launches it on the discrete card,
+offered only when the machine has one. The launch builds argv itself and strips Exec field codes first: `nvidia-offload`
 if present, else `prime-run`, else the four variables NixOS's own wrapper
 exports (`__NV_PRIME_RENDER_OFFLOAD`, `__NV_PRIME_RENDER_OFFLOAD_PROVIDER`,
 `__GLX_VENDOR_LIBRARY_NAME`, `__VK_LAYER_NV_optimus`). A non-NVIDIA target

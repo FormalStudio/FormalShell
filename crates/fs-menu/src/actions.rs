@@ -7,7 +7,215 @@
 //! rather than a verb that would do nothing. Keys are names, one per cap.
 
 use crate::model::Mode;
-use crate::node::{Kind, Node};
+use crate::node::{ActionEntry, Kind, Node};
+
+/// What running an action does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Run {
+    /// A shell command, spawned through the compositor.
+    Command(String),
+    /// An in-process name, the part of an `@ipc:` action after the prefix.
+    Ipc(String),
+    /// A level to step into, by node id.
+    Into(String),
+}
+
+impl Run {
+    pub fn parse(action: &str) -> Run {
+        match action.strip_prefix("@ipc:") {
+            Some(name) => Run::Ipc(name.to_owned()),
+            None => Run::Command(action.to_owned()),
+        }
+    }
+}
+
+/// Something done to a subject. The first of a subject's list runs on
+/// Enter, the second on Shift+Enter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Action {
+    pub id: String,
+    pub label: String,
+    pub icon: Option<String>,
+    pub run: Run,
+    /// Two runs: the first arms, the second runs.
+    pub confirm: bool,
+    pub keep_open: bool,
+    /// Drawn with a `destructive` icon, never a filled row.
+    pub destructive: bool,
+    /// The paste chord goes out once the launcher is gone.
+    pub paste_after: bool,
+}
+
+impl Action {
+    pub fn new(id: &str, label: impl Into<String>, run: Run) -> Action {
+        Action {
+            id: id.to_owned(),
+            label: label.into(),
+            icon: None,
+            run,
+            confirm: false,
+            keep_open: false,
+            destructive: false,
+            paste_after: false,
+        }
+    }
+
+    /// An action entry laid over this built-in, key by key.
+    fn overlaid(mut self, e: &ActionEntry) -> Action {
+        if let Some(l) = &e.label {
+            self.label = l.clone();
+        }
+        if e.icon.is_some() {
+            self.icon = e.icon.clone();
+        }
+        if let Some(a) = &e.action {
+            self.run = Run::parse(a);
+        }
+        self.confirm = e.confirm.unwrap_or(self.confirm);
+        self.keep_open = e.keep_open.unwrap_or(self.keep_open);
+        self.destructive = e.destructive.unwrap_or(self.destructive);
+        self.paste_after = e.paste_after.unwrap_or(self.paste_after);
+        self
+    }
+
+    fn from_entry(e: &ActionEntry) -> Option<Action> {
+        let mut a = Action::new(&e.id, e.label.clone().unwrap_or_else(|| e.id.clone()), Run::parse(e.action.as_deref()?));
+        a.icon = e.icon.clone();
+        a.confirm = e.confirm.unwrap_or(false);
+        a.keep_open = e.keep_open.unwrap_or(false);
+        a.destructive = e.destructive.unwrap_or(false);
+        a.paste_after = e.paste_after.unwrap_or(false);
+        Some(a)
+    }
+}
+
+/// A row as something with actions: the node and what the shell knows
+/// about it that the node does not carry.
+#[derive(Clone, Copy, Debug)]
+pub struct Subject<'a> {
+    pub node: &'a Node,
+    /// Open windows of an app subject.
+    pub windows: usize,
+    /// The machine has a discrete GPU to offer an app.
+    pub discrete_gpu: bool,
+    pub picker_select: bool,
+}
+
+impl<'a> Subject<'a> {
+    pub fn of(node: &'a Node) -> Subject<'a> {
+        Subject { node, windows: 0, discrete_gpu: false, picker_select: false }
+    }
+
+    /// A dim note, a keybind, an unavailable row: Enter, Shift+Enter and a
+    /// click do nothing on it, and its column still lists what it has.
+    pub fn inert(&self) -> bool {
+        self.node.dim == Some(true) || self.node.kind == Kind::Note
+    }
+}
+
+/// A single-quoted shell word.
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn copy(id: &str, label: &str, text: &str) -> Action {
+    Action::new(id, label, Run::Command(format!("wl-copy -- {}", shell_quote(text))))
+}
+
+/// The kind's own actions, before the node's.
+fn builtins(s: &Subject) -> Vec<Action> {
+    let n = s.node;
+    let mut out = Vec::new();
+    match &n.kind {
+        Kind::App => {
+            let Some(e) = &n.entry else { return out };
+            out.push(Action::new("open", "Open", Run::Ipc(format!("app.open:{}", e.id))));
+            out.push(Action::new("new-window", "New window", Run::Ipc(format!("app.new:{}", e.id))));
+            for (key, name) in &e.actions {
+                out.push(Action::new(&format!("desktop:{key}"), name.clone(), Run::Ipc(format!("app.action:{}:{key}", e.id))));
+            }
+            if s.discrete_gpu {
+                out.push(Action::new("discrete-gpu", "Open on discrete GPU", Run::Ipc(format!("app.gpu:{}", e.id))));
+            }
+            if !e.path.is_empty() {
+                out.push(copy("copy-path", "Copy desktop file path", &e.path));
+            }
+        }
+        Kind::Submenu | Kind::Provider | Kind::Link => {
+            let to = n.target.clone().filter(|_| n.kind == Kind::Link).unwrap_or_else(|| n.id.clone());
+            out.push(Action::new("open", "Open", Run::Into(to)));
+        }
+        Kind::Image => {
+            let label = if s.picker_select { "Choose" } else { "Set wallpaper" };
+            out.push(Action::new("set", label, Run::Ipc(format!("wallpaper.set:{}", n.path))));
+            out.push(Action::new("open-file", "Open file", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
+            out.push(copy("copy-path", "Copy path", &n.path));
+        }
+        Kind::Action => {
+            let Some(action) = n.action.as_deref() else { return out };
+            let label = match n.verb.as_deref().filter(|v| !v.is_empty()) {
+                Some(v) => v,
+                None if n.checked.is_some() => "Toggle",
+                None => "Run",
+            };
+            let mut run = Action::new("run", label, Run::parse(action));
+            run.confirm = n.confirm == Some(true);
+            run.keep_open = n.keep_open == Some(true);
+            run.paste_after = n.paste_after;
+            let plain_command = matches!(run.run, Run::Command(_)) && n.verb.is_none() && n.checked.is_none();
+            let copy_only = n.paste_after.then(|| Action { id: "copy-only".into(), label: "Copy only".into(), paste_after: false, ..run.clone() });
+            out.push(run);
+            if let Some(alt) = n.alternate.as_deref() {
+                let mut a = Action::new("alternate", n.alternate_label.clone().unwrap_or_else(|| "Alternate".into()), Run::parse(alt));
+                a.keep_open = n.keep_open == Some(true);
+                out.push(a);
+            }
+            out.extend(copy_only);
+            if plain_command {
+                out.push(copy("copy-command", "Copy command", action));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// A subject's actions in order: the kind's, then the node's own (a
+/// provider's and `menu.jsonc`'s, where an entry with a built-in's id
+/// overrides it and `hidden: true` removes it). Built on Tab, never per
+/// keystroke.
+pub fn actions_for(s: &Subject) -> Vec<Action> {
+    let mut out = builtins(s);
+    for e in &s.node.actions {
+        match out.iter().position(|a| a.id == e.id) {
+            Some(i) if e.hidden == Some(true) => {
+                out.remove(i);
+            }
+            Some(i) => out[i] = out[i].clone().overlaid(e),
+            None if e.hidden == Some(true) => {}
+            None => out.extend(Action::from_entry(e)),
+        }
+    }
+    out
+}
+
+/// The action Enter runs, `None` on an inert subject.
+pub fn first_action(s: &Subject) -> Option<Action> {
+    if s.inert() {
+        return None;
+    }
+    actions_for(s).into_iter().next()
+}
+
+/// The action Shift+Enter runs: the second, else the first.
+pub fn second_action(s: &Subject) -> Option<Action> {
+    if s.inert() {
+        return None;
+    }
+    let mut all = actions_for(s).into_iter();
+    let first = all.next();
+    all.next().or(first)
+}
 
 /// One legend entry: the keys of a chord (or keys offered side by side) and
 /// the outcome they name.
@@ -40,9 +248,7 @@ pub struct ActionCtx<'a> {
     /// The variant Tab would switch to, `None` wherever Tab does nothing.
     pub variant_switch: Option<Variant>,
     pub confirming: bool,
-    pub discrete_gpu: bool,
-    pub clipssh_image: bool,
-    /// A row's own Shift+Enter verb, "" for none.
+    /// The row's second action, "" for none.
     pub alternate_label: &'a str,
 }
 
@@ -55,8 +261,6 @@ impl Default for ActionCtx<'_> {
             picker_select: false,
             variant_switch: None,
             confirming: false,
-            discrete_gpu: false,
-            clipssh_image: false,
             alternate_label: "",
         }
     }
@@ -107,12 +311,6 @@ pub fn hints(c: &ActionCtx) -> Vec<KeyHint> {
         Some(Variant::Light) => out.push(hint(KEY_TAB, "Show light")),
         Some(Variant::Dark) => out.push(hint(KEY_TAB, "Show dark")),
         None => {}
-    }
-    if c.discrete_gpu && c.node.is_some_and(|n| n.kind == Kind::App) && !c.confirming {
-        out.push(hint(KEY_SHIFT_ENTER, "Open on GPU"));
-    }
-    if c.clipssh_image && !c.confirming {
-        out.push(hint(KEY_SHIFT_ENTER, "Send over SSH"));
     }
     if !c.alternate_label.is_empty() && !c.confirming {
         out.push(hint(KEY_SHIFT_ENTER, c.alternate_label));
@@ -235,14 +433,8 @@ mod tests {
         assert_eq!(labels(&hints(&ActionCtx { at_root: true, ..Default::default() })), ["Close"]);
         assert_eq!(labels(&hints(&ActionCtx::default())), ["Back"]);
         assert_eq!(labels(&hints(&ActionCtx { mode: Mode::Select, ..Default::default() })), ["Cancel"]);
-        let c = ActionCtx {
-            node: Some(&app),
-            discrete_gpu: true,
-            variant_switch: Some(Variant::Light),
-            alternate_label: "Alt",
-            ..Default::default()
-        };
-        assert_eq!(labels(&hints(&c)), ["Show light", "Open on GPU", "Alt", "Back"]);
+        let c = ActionCtx { node: Some(&app), variant_switch: Some(Variant::Light), alternate_label: "New window", ..Default::default() };
+        assert_eq!(labels(&hints(&c)), ["Show light", "New window", "Back"]);
         assert_eq!(hints(&c)[1].keys, ["Shift", "Enter"]);
         assert_eq!(labels(&hints(&ActionCtx { confirming: true, ..c })), ["Show light", "Back"]);
     }

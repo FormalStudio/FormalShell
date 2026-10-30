@@ -58,7 +58,8 @@ pub struct State {
     /// failed.
     pub binds: Option<Result<Arc<[Bind]>, ()>>,
     pub emoji: Option<Arc<fs_menu::providers::EmojiIndex>>,
-    /// Each desktop entry's `Exec` argv by entry id.
+    /// Each desktop entry's `Exec` argv by entry id, and each of its
+    /// `[Desktop Action]`s' by [`action_key`].
     pub exec: HashMap<String, Vec<String>>,
 }
 
@@ -327,7 +328,7 @@ fn user_menu_path() -> PathBuf {
 struct Scan {
     stamp: Vec<Option<SystemTime>>,
     scanned: bool,
-    entries: Vec<fs_system::compositor::appicon::DesktopEntry>,
+    entries: Vec<appicon::Launchable>,
     icon_of: HashMap<String, String>,
     decoded: HashSet<String>,
     /// The scale the icons were decoded for: the launcher's output's, the
@@ -340,19 +341,21 @@ impl Scan {
         let dirs = appicon::applications_dirs();
         let stamp: Vec<Option<SystemTime>> = dirs.iter().map(|d| std::fs::metadata(d).and_then(|m| m.modified()).ok()).collect();
         if !self.scanned || stamp != self.stamp {
-            self.entries = appicon::scan_launchable(&dirs);
+            self.entries = appicon::scan_apps(&dirs);
             self.stamp = stamp;
             self.scanned = true;
         }
         let entries: Vec<DesktopEntry> = self
             .entries
             .iter()
-            .map(|e| DesktopEntry {
-                id: e.id.clone(),
-                name: e.name.clone(),
-                icon: e.icon.clone(),
-                generic_name: e.generic_name.clone(),
-                startup_class: e.startup_class.clone(),
+            .map(|l| DesktopEntry {
+                id: l.entry.id.clone(),
+                name: l.entry.name.clone(),
+                icon: l.entry.icon.clone(),
+                generic_name: l.entry.generic_name.clone(),
+                startup_class: l.entry.startup_class.clone(),
+                path: l.path.to_string_lossy().into_owned(),
+                actions: l.actions.iter().map(|a| (a.key.clone(), a.name.clone())).collect(),
             })
             .collect();
         let scale = crate::surface::primary_scale();
@@ -380,9 +383,20 @@ impl Scan {
             let bitmap = icons::load_at(std::path::Path::new(path), ICON_EXTENT, scale);
             fresh.push((path.clone(), bitmap));
         }
-        let exec = self.entries.iter().map(|e| (e.id.clone(), e.command.clone())).collect();
+        let mut exec: HashMap<String, Vec<String>> = HashMap::new();
+        for l in &self.entries {
+            exec.insert(l.entry.id.clone(), l.entry.command.clone());
+            for a in &l.actions {
+                exec.insert(action_key(&l.entry.id, &a.key), a.command.clone());
+            }
+        }
         (rows, fresh, exec)
     }
+}
+
+/// A desktop action's key in [`State::exec`].
+pub fn action_key(id: &str, action: &str) -> String {
+    format!("{id}\u{1}{action}")
 }
 
 /// Proc.appLaunch: under uwsm a plain entry goes by its id, so uwsm reads

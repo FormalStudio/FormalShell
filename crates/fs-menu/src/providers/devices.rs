@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use fs_devices::bluetooth::{Device, activity_text, battery_text, buckets};
 use fs_devices::network::model::{WifiRowLike, sort_wifi_rows};
 
-use crate::node::{Kind, Node};
+use crate::node::{ActionEntry, Kind, Node};
 
 /// Row ids are dotted tree paths, so a key that can carry a dot (an SSID, a
 /// PipeWire node name) is escaped before it goes into one.
@@ -133,6 +133,7 @@ fn wifi_row(st: &WifiState, n: WifiNetwork) -> Node {
         keep_open: Some(true),
         local_only: !n.known,
         section: Some(if n.known { "Saved" } else { "Nearby" }.to_string()),
+        actions: vec![ActionEntry::new("panel", "Open network panel", "@ipc:panel.open:network")],
         ..Node::new(format!("wifi.net.{}", id_part(&n.name)), n.name.clone(), Kind::Action)
     };
     if n.known {
@@ -179,6 +180,10 @@ pub fn bluetooth_rows(st: &BluetoothState) -> Vec<Node> {
             action: Some(format!("@ipc:bluetooth.toggle:{}", d.address)),
             checked: Some(format!("@state:bluetooth.connected={}", d.address.to_uppercase())),
             keep_open: Some(true),
+            actions: vec![
+                ActionEntry { keep_open: Some(true), ..ActionEntry::new("forget", "Forget", format!("@ipc:bluetooth.forget:{}", d.address)).destructive() },
+                ActionEntry::new("panel", "Open Bluetooth panel", "@ipc:panel.open:bluetooth"),
+            ],
             ..Node::new(format!("bluetooth.dev.{}", id_part(&d.address)), device_label(d), Kind::Action)
         })
         .collect()
@@ -207,6 +212,7 @@ pub fn audio_rows(devices: &[AudioDevice]) -> Vec<Node> {
                 verb: Some("Use".to_string()),
                 checked: Some(format!("@state:audio.{verb}={}", d.name)),
                 keep_open: Some(true),
+                actions: vec![ActionEntry::new("panel", "Open audio panel", "@ipc:panel.open:audio")],
                 ..Node::new(
                     format!("audio.{}{}", if d.is_sink { "output." } else { "input." }, id_part(&d.name)),
                     d.label.clone(),

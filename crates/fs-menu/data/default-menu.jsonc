@@ -23,6 +23,11 @@
 // underlying state flips. `@state:` is a `checked` prefix only; a `when`
 // carrying it is refused with a warning and the node hides. `"keepOpen":
 // true` on an action row leaves the menu open after activation.
+//
+// Actions: a node's `actions` array is what Tab lists past its kind's own
+// (fs-menu actions.rs `actions_for`), each `{id, label, icon?, action,
+// confirm?, keepOpen?}`. An id a built-in already uses overrides it, and
+// `"hidden": true` on one removes it.
 {
     // The six routes anyone opens the launcher for lead the root under one
     // heading; everything after them falls back to "Commands".
@@ -193,6 +198,7 @@
         "action": "@ipc:nightlight.toggle",
         "checked": "@state:nightlight.active",
         "keepOpen": true,
+        "actions": [{ "id": "panel", "label": "Open display panel", "action": "@ipc:panel.open:display" }],
         "when": "command -v wlsunset >/dev/null 2>&1"
     },
     "toggles.overnight": {
@@ -211,7 +217,8 @@
         "label": "HDR",
         "action": "@ipc:hdr.toggle",
         "checked": "@state:hdr.active",
-        "keepOpen": true
+        "keepOpen": true,
+        "actions": [{ "id": "panel", "label": "Open display panel", "action": "@ipc:panel.open:display" }]
     },
     "toggles.dnd": {
         "label": "Do Not Disturb",

@@ -219,6 +219,9 @@ pub fn build_tree(default_obj: &Entries, user_obj: &Entries) -> Tree {
                 route_only: entry.route_only,
                 section: entry.section,
                 prompt: entry.prompt,
+                actions: entry.actions.unwrap_or_default(),
+                alternate: entry.alternate,
+                alternate_label: entry.alternate_label,
                 ..Node::default()
             },
         );

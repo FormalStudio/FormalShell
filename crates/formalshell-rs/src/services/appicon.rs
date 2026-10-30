@@ -29,6 +29,8 @@ pub struct Query {
 /// One of a desktop entry's own `[Desktop Action]` groups.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Action {
+    /// The group's key, `new-private-window` in `[Desktop Action new-private-window]`.
+    pub key: String,
     pub name: String,
     pub command: Vec<String>,
 }
@@ -234,9 +236,26 @@ fn scan_entries(dirs: &[PathBuf]) -> (Vec<DesktopEntry>, HashMap<String, Extras>
     (out, extras)
 }
 
-/// The launcher's apps source: every launchable entry.
 pub fn scan_launchable(dirs: &[PathBuf]) -> Vec<DesktopEntry> {
     scan_entries(dirs).0
+}
+
+/// One launchable entry as the launcher's apps source reads it.
+pub struct Launchable {
+    pub entry: DesktopEntry,
+    pub path: PathBuf,
+    pub actions: Vec<Action>,
+}
+
+pub fn scan_apps(dirs: &[PathBuf]) -> Vec<Launchable> {
+    let (entries, mut extras) = scan_entries(dirs);
+    entries
+        .into_iter()
+        .map(|entry| {
+            let more = extras.remove(&entry.id).unwrap_or_default();
+            Launchable { entry, path: more.path, actions: more.actions }
+        })
+        .collect()
 }
 
 /// What an entry carries past the fields `DesktopEntry` holds.
@@ -244,6 +263,7 @@ pub fn scan_launchable(dirs: &[PathBuf]) -> Vec<DesktopEntry> {
 struct Extras {
     terminal: bool,
     actions: Vec<Action>,
+    path: PathBuf,
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
@@ -305,7 +325,11 @@ fn parse_entry(id: &str, path: &Path, desktops: &[String]) -> Option<(DesktopEnt
         .iter()
         .filter_map(|name| {
             let g = &groups.iter().find(|(n, _)| n == name)?.1;
-            Some(Action { name: g.get("Name")?.to_string(), command: split_exec(g.get("Exec").copied().unwrap_or_default()) })
+            Some(Action {
+                key: (*name).to_owned(),
+                name: g.get("Name")?.to_string(),
+                command: split_exec(g.get("Exec").copied().unwrap_or_default()),
+            })
         })
         .collect();
     let entry = DesktopEntry {
@@ -316,7 +340,7 @@ fn parse_entry(id: &str, path: &Path, desktops: &[String]) -> Option<(DesktopEnt
         command: split_exec(fields.get("Exec").copied().unwrap_or_default()),
         generic_name: text("GenericName"),
     };
-    Some((entry, Extras { terminal: flag("Terminal"), actions }))
+    Some((entry, Extras { terminal: flag("Terminal"), actions, path: path.to_owned() }))
 }
 
 /// An `Exec` line as an argv: quotes and backslashes honoured, field codes

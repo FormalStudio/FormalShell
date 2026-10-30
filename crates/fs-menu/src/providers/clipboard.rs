@@ -4,7 +4,7 @@ use chrono::{DateTime, Local, Timelike};
 
 use crate::clipboard::emoji::is_emoji_only;
 use crate::clipboard::history::{Entry, EntryKind};
-use crate::node::{Kind, Node};
+use crate::node::{ActionEntry, Kind, Node};
 
 /// Local `HH:MM` of a capture time. A legacy entry with no timestamp reads
 /// "NaN:NaN", which is what an invalid date formats to.
@@ -68,6 +68,8 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
                 // Shift+Enter's target: the image file this row stands for,
                 // "" on text rows and on share rows, whose Shift+Enter has
                 // nothing of its own to do.
+                alternate: (is_image && !share).then(|| format!("@ipc:clipssh.image:{}:{path}", entry.id)),
+                alternate_label: (is_image && !share).then(|| "Send over SSH".to_string()),
                 clipssh_path: if is_image && !share { path } else { String::new() },
                 // Full untruncated text for the split-pane preview, "" for
                 // images. `time` rides every row, since the preview pane's
@@ -85,6 +87,14 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
                     format!("@ipc:clipboard.copy:{}", entry.id)
                 }),
                 paste_after,
+                actions: if share {
+                    Vec::new()
+                } else {
+                    vec![ActionEntry {
+                        keep_open: Some(true),
+                        ..ActionEntry::new("delete", "Delete from history", format!("@ipc:clipboard.remove:{}", entry.id)).destructive()
+                    }]
+                },
                 ..Node::new(format!("{id_prefix}{}", entry.id), label, Kind::Action)
             }
         })

@@ -224,6 +224,11 @@ pub fn rows(binds: &[Bind], query: &str) -> Vec<Node> {
             label.extend(std::iter::repeat_n(PAD_CHAR, width.saturating_sub(n)));
             Node {
                 desc: Some(describe_action(bind)),
+                actions: vec![crate::node::ActionEntry::new(
+                    "copy-chord",
+                    "Copy chord",
+                    format!("wl-copy -- {}", crate::actions::shell_quote(&bind.chord)),
+                )],
                 ..Node::new(format!("keybinds.{i}.{}", bind.chord), label, Kind::Note)
             }
         })
