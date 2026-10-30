@@ -12,6 +12,11 @@
 //! theme is settings.json's keys over theme.json's palette, each falling
 //! back the way the shell's own do when absent.
 //!
+//! The greeter fades in over whatever its compositor shows first (the
+//! splash's last frame, on the first login after boot) and leaves by
+//! fading to black on its own veil (docs/superpowers/specs/2026-10-30-seams.md).
+//! The pointer stays hidden until it first moves.
+//!
 //! The user is picked, never typed: the last one to log in from [`users`],
 //! with a conversation opened for them at once, so the field asks for a
 //! password. With no users found the field asks for a username instead.
@@ -33,7 +38,7 @@ use calloop::{EventLoop, LoopHandle};
 use chrono::{Local, Timelike};
 use fs_theme::theme::Theme;
 use serde_json::Value;
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
@@ -61,6 +66,7 @@ use crate::services::wallpaper;
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::Kit;
 use crate::surfaces::lock;
+use crate::surfaces::veil::Veil;
 use crate::ui::{Ui, What};
 use greetd::{Conversation, Phase, Request, Response, Step};
 use sessions::Session;
@@ -69,6 +75,15 @@ use crate::surfaces::login::{self, Card, Controls, Menu, View};
 
 /// AuthPrompt's `unavailableText` with no socket to talk to.
 const NO_SOCKET: &str = "No greetd socket to talk to";
+
+/// The fade in over the splash, and how long it waits for the wallpaper
+/// before starting without it.
+const SHOW_MS: f64 = 500.0;
+const SHOW_WAIT: Duration = Duration::from_secs(1);
+/// The fade out to black, and how long the exit waits on the compositor to
+/// show its end.
+const LEAVE_MS: f64 = 300.0;
+const LEAVE_WAIT: Duration = Duration::from_secs(1);
 
 struct Out {
     output: wl_output::WlOutput,
@@ -127,6 +142,14 @@ struct Greeter {
     dirty: bool,
     exit: bool,
     started: Instant,
+    /// When the fade in started.
+    shown: Option<Instant>,
+    /// The veil per output, once the session has started.
+    veils: Vec<Veil>,
+    /// The pointer has moved since the greeter started, and the serial of
+    /// its last enter, which a shape needs.
+    moved: bool,
+    entered: Option<u32>,
 }
 
 /// What the socket thread hands back.
@@ -325,6 +348,10 @@ pub fn main(args: &[String]) {
         dirty: true,
         exit: false,
         started,
+        shown: None,
+        veils: Vec::new(),
+        moved: false,
+        entered: None,
     };
     let last = sessions::remembered(&g.state_dir, None);
     g.select(sessions::pick(&g.sessions, last.as_deref()));
@@ -332,6 +359,10 @@ pub fn main(args: &[String]) {
     g.user = g.users.iter().position(|u| Some(&u.login) == last_user.as_ref()).unwrap_or_else(|| users::first_account(&g.users));
     g.open_user();
     g.arm_clock();
+    let _ = handle.insert_source(Timer::from_deadline(started + SHOW_WAIT), |_, _, g: &mut Greeter| {
+        g.dirty = true;
+        TimeoutAction::Drop
+    });
 
     let signal = event_loop.get_signal();
     let ended = event_loop.run(None, &mut g, |g| {
@@ -454,7 +485,7 @@ impl Greeter {
                     sessions::remember(&self.state_dir, &self.convo.user, &s.id);
                 }
                 sessions::remember_user(&self.state_dir, &self.convo.user);
-                self.exit = true;
+                self.leave();
             }
             Step::Nothing => {}
         }
@@ -568,6 +599,55 @@ impl Greeter {
         }
     }
 
+    /// The session is starting: black over every output, and the exit once
+    /// the compositor has shown it.
+    fn leave(&mut self) {
+        if !self.veils.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        for o in &self.outs {
+            let wl = self.compositor.create_surface(&self.qh);
+            let ls = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:greeter-veil"), Some(&o.output));
+            ls.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+            ls.set_exclusive_zone(-1);
+            ls.set_keyboard_interactivity(KeyboardInteractivity::None);
+            if let Ok(region) = Region::new(&self.compositor) {
+                ls.set_input_region(Some(region.wl_region()));
+            }
+            ls.commit();
+            let mut veil = Veil::new(Surface::on("greeter-veil", ls, &self.shm, self.started, &o.output), 0.0, now);
+            veil.fade(1.0, LEAVE_MS, now);
+            self.veils.push(veil);
+        }
+        if self.veils.is_empty() {
+            self.exit = true;
+            return;
+        }
+        let _ = self.handle.insert_source(Timer::from_duration(LEAVE_WAIT), |_, _, g: &mut Greeter| {
+            if !g.exit {
+                eprintln!("greeter: the veil was not shown in {}ms, exiting under it", LEAVE_WAIT.as_millis());
+                g.exit = true;
+            }
+            TimeoutAction::Drop
+        });
+        self.dirty = true;
+    }
+
+    /// The opacity the greeter's own surfaces draw at: nothing until the
+    /// wallpaper is in (or the wait is over), then the fade in.
+    fn opacity(&mut self, now: Instant) -> f32 {
+        let decoded = self.wallpaper.is_none() || self.outs.iter().filter(|o| o.surface.configured).all(|o| o.backdrop.is_some());
+        let configured = self.outs.iter().any(|o| o.surface.configured);
+        if self.shown.is_none() && configured && (decoded || now >= self.started + SHOW_WAIT) {
+            self.shown = Some(now);
+        }
+        self.shown.map_or(0.0, |at| {
+            let t = (now.saturating_duration_since(at).as_secs_f64() * 1000.0 / SHOW_MS).min(1.0);
+            crate::motion::EFFECTS.ease(t) as f32
+        })
+    }
+
     fn present(&mut self) {
         if !self.dirty || self.outs.is_empty() {
             return;
@@ -575,6 +655,15 @@ impl Greeter {
         self.dirty = false;
         self.ask_backdrops();
         let now = Instant::now();
+        if !self.veils.is_empty() {
+            for v in &mut self.veils {
+                v.present(now, &self.qh);
+            }
+            if self.veils.iter().all(Veil::settled) {
+                self.exit = true;
+            }
+        }
+        let opacity = self.opacity(now);
         let controls = Controls { sessions: &self.names, session: self.session, users: &self.user_names, user: self.user, menu: self.menu };
         let base = card(&self.convo, &self.field, self.greetd.is_some(), self.users.is_empty());
         let mut card = Card {
@@ -591,7 +680,8 @@ impl Greeter {
             card.avatar = crate::scene::nearest(&self.avatar, k);
             let _raster = crate::scene::raster_at(k);
             let moving = o.view.draw(&card, o.backdrop.as_ref(), &self.theme, &mut self.kit, now);
-            o.surface.present(&mut o.view.scene, moving, &self.qh);
+            o.surface.set_opacity(opacity);
+            o.surface.present(&mut o.view.scene, moving || (self.shown.is_some() && opacity < 1.0), &self.qh);
         }
     }
 }
@@ -729,6 +819,10 @@ impl CompositorHandler for Greeter {
     fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
 
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, _: u32) {
+        if let Some(v) = self.veils.iter_mut().find(|v| v.surface.layer.wl_surface() == surface) {
+            v.landed(Instant::now());
+            self.dirty = true;
+        }
         if let Some(o) = self.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface) {
             o.surface.landed(Instant::now());
             o.surface.mapped = true;
@@ -743,10 +837,16 @@ impl CompositorHandler for Greeter {
 
 impl LayerShellHandler for Greeter {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
+        self.veils.retain(|v| v.surface.layer.wl_surface() != layer.wl_surface());
         self.outs.retain(|o| o.surface.layer.wl_surface() != layer.wl_surface());
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
+        if let Some(v) = self.veils.iter_mut().find(|v| v.surface.layer.wl_surface() == layer.wl_surface()) {
+            v.configure(configure.new_size.0 as i32, configure.new_size.1 as i32);
+            self.dirty = true;
+            return;
+        }
         let Some(o) = self.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == layer.wl_surface()) else { return };
         let (w, h) = (configure.new_size.0.max(1) as i32, configure.new_size.1.max(1) as i32);
         o.view.resize(w, h);
@@ -818,12 +918,23 @@ impl PointerHandler for Greeter {
             let path = ui.hit(x, y).map(|h| h.path.clone());
             match e.kind {
                 PointerEventKind::Enter { serial } => {
-                    if let Some(device) = &self.cursor_device {
-                        device.set_shape(serial, Shape::Default);
+                    self.entered = Some(serial);
+                    match (&self.cursor_device, &self.pointer) {
+                        (Some(device), _) if self.moved => device.set_shape(serial, Shape::Default),
+                        (_, Some(pointer)) => pointer.set_cursor(serial, None, 0, 0),
+                        _ => {}
                     }
                     ui.hover = path;
                 }
-                PointerEventKind::Motion { .. } => ui.hover = path,
+                PointerEventKind::Motion { .. } => {
+                    if !self.moved {
+                        self.moved = true;
+                        if let (Some(device), Some(serial)) = (&self.cursor_device, self.entered) {
+                            device.set_shape(serial, Shape::Default);
+                        }
+                    }
+                    ui.hover = path;
+                }
                 PointerEventKind::Leave { .. } => ui.hover = None,
                 PointerEventKind::Press { button: 0x110, .. } => ui.pressed = path,
                 PointerEventKind::Release { button: 0x110, .. } => {

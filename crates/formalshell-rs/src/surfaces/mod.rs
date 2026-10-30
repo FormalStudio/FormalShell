@@ -20,6 +20,7 @@ pub mod switcher;
 pub mod tray_menu;
 pub mod toasts;
 pub mod tooltip;
+pub mod veil;
 
 use crate::services::{lights, theme};
 use crate::store::Topic;
