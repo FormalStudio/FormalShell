@@ -270,9 +270,22 @@ impl StyleKey {
 const SHAPED_LIMIT: usize = 4096;
 const OUTLINE_LIMIT: usize = 8192;
 
+/// The loader `preload` started, for the first `Text` to take.
+static PRELOAD: Mutex<Option<std::thread::JoinHandle<Inner>>> = Mutex::new(None);
+
+fn load() -> std::thread::JoinHandle<Inner> {
+    std::thread::Builder::new().name("fs-fonts".into()).spawn(Inner::new).expect("spawn the font loader")
+}
+
+/// Starts loading the fonts before the compositor connection: the bar's
+/// first frame waits on them, and the connection's own wait is as long.
+pub fn preload() {
+    *PRELOAD.lock().unwrap_or_else(|e| e.into_inner()) = Some(load());
+}
+
 impl Text {
     pub fn new() -> Self {
-        let loading = std::thread::Builder::new().name("fs-fonts".into()).spawn(Inner::new).expect("spawn the font loader");
+        let loading = PRELOAD.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_else(load);
         Self(Arc::new(Shared { inner: Mutex::new(None), loading: Mutex::new(Some(loading)), urgent: AtomicUsize::new(0) }))
     }
 

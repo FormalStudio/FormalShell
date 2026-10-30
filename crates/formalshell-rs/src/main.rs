@@ -64,6 +64,7 @@ fn main() {
     instance::acquire();
     own_process_group();
     phase("instance");
+    text::preload();
 
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
     let (globals, queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
