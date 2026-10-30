@@ -310,7 +310,7 @@ fn hypr_entry(l: &Layout) -> Result<(), String> {
     }
     let systemctl = "systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && systemctl --user start formalshell.service formalshell-watchdog.timer";
     let body = format!(
-        "{MARKER}\n-- Put your own settings in hypr-user.lua.\nlocal dir = (os.getenv(\"XDG_CONFIG_HOME\") or (os.getenv(\"HOME\") .. \"/.config\")) .. \"/hypr/\"\ndofile(dir .. \"formalshell.lua\")\ndofile(dir .. \"hypr-user.lua\")\n\n-- A plain Hyprland login never reaches graphical-session.target.\nhl.on(\"hyprland.start\", function() hl.exec_cmd([==[{systemctl}]==]) end)\n"
+        "{MARKER}\n-- Put your own settings in hypr-user.lua.\nlocal dir = (os.getenv(\"XDG_CONFIG_HOME\") or (os.getenv(\"HOME\") .. \"/.config\")) .. \"/hypr/\"\ndofile(dir .. \"formalshell.lua\")\ndofile(dir .. \"hypr-user.lua\")\n-- hypr-user.lua may set XCURSOR_THEME; the arrival's blank pointer goes back on over it.\nif formalshell_blank_cursor then formalshell_blank_cursor() end\n\n-- A plain Hyprland login never reaches graphical-session.target.\nhl.on(\"hyprland.start\", function() hl.exec_cmd([==[{systemctl}]==]) end)\n"
     );
     write_owned(&entry, &body)
 }

@@ -76,8 +76,11 @@ pub fn bind_escape(global: &str, argv: &[String]) -> String {
     format!("{} {global} = hl.bind(\"Escape\", {}, {{ non_consuming = true }})", unbind(global), spawn(argv))
 }
 
+/// Showing it goes through the include's `formalshell_arrived` where the
+/// config defines it, which also takes the arrival's blank cursor theme off.
 pub fn cursor(hidden: bool) -> String {
-    format!("hl.config({{ cursor = {{ invisible = {hidden} }} }})")
+    let set = format!("hl.config({{ cursor = {{ invisible = {hidden} }} }})");
+    if hidden { set } else { format!("if formalshell_arrived then formalshell_arrived() else {set} end") }
 }
 
 pub fn exit() -> String {
@@ -112,6 +115,7 @@ mod tests {
             r#"if fs_esc then fs_esc:remove() fs_esc = nil end fs_esc = hl.bind("Escape", hl.dsp.exec_cmd("'ipc' 'x'"), { non_consuming = true })"#
         );
         assert_eq!(cursor(true), "hl.config({ cursor = { invisible = true } })");
+        assert_eq!(cursor(false), "if formalshell_arrived then formalshell_arrived() else hl.config({ cursor = { invisible = false } }) end");
         assert_eq!(exit(), "hl.dsp.exit()");
         assert_eq!(value("-3"), "-3");
         assert_eq!(value("+"), "\"+\"");
