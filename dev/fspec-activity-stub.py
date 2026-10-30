@@ -12,6 +12,10 @@ reads the shell's status at a known step.
   fail  an update: resolving 0/2, failed
   die   a rollback: planning with no progress, then a final line cut short
         and the socket gone, the way a killed fspec leaves a reader
+  strand  a run: resolving 0/1, resolving 1/1, preparing, succeeded, with
+        the first connection held open and never written to again past its
+        snapshot, the way fspec treats a reader whose snapshot it could not
+        send whole
 """
 import json
 import os
@@ -61,6 +65,14 @@ def scenario(name, op_id):
         o = lambda **f: op(op_id, "run", f"fspec:run:{op_id}",
                            f"Running a package whose name runs well past the bar {op_id}", **f)
         return [o(phase="resolving", progress={"done": 1, "total": 3, "unit": "packages"}, item=op_id), None]
+    if name == "strand":
+        o = lambda **f: op(op_id, "run", "fspec:run:smoke-strand", "Running smoke-strand", **f)
+        return [
+            o(phase="resolving", progress={"done": 0, "total": 1, "unit": "packages"}, item="smoke-strand"),
+            o(phase="resolving", progress={"done": 1, "total": 1, "unit": "packages"}, item="smoke-strand"),
+            o(phase="preparing"),
+            o(state="succeeded", phase="preparing", result={"changes": 0, "summary": "started"}),
+        ]
     if name == "die":
         o = lambda **f: op(op_id, "rollback", "fspec:rollback:smoke", "Rolling back smoke", host="smoke", **f)
         return [o(phase="planning"), None]
@@ -78,6 +90,7 @@ def main():
     server.listen(8)
     lock = threading.Lock()
     clients = []
+    stranded = []
     current = {"op": None}
 
     def line(kind, o):
@@ -95,6 +108,9 @@ def main():
                         conn.sendall(line("snapshot", current["op"]))
                     except OSError:
                         continue
+                if name == "strand" and not stranded:
+                    stranded.append(conn)
+                    continue
                 clients.append(conn)
 
     def broadcast(data):
@@ -129,6 +145,8 @@ def main():
     with lock:
         for conn in clients:
             conn.close()
+    # A stranded reader is never told the operation ended.
+    time.sleep(10 if stranded else 0)
     if steps[-1] is None:
         with open(f"{marks}.{len(steps)}", "w") as f:
             f.write("cut\n")

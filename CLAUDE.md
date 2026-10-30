@@ -245,7 +245,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   bus takes its badge. notify-send's `value` hint updates one item in
   place through `-r` and through `x-canonical-private-synchronous`, and a
   replace without a value ends it. One real `fspec run --detach jq` is read
-  as a `run` item where the rig's fspec has `run`, else skipped saying so.
+  to a succeeded `run` item where the rig's fspec has `run`, else skipped
+  saying so, and a stubbed run whose first connection fspec stops writing
+  to reaches 1/1 and succeeded off a fresh connection.
   The Activity panel photographed with the apply at 3/4 beside the running
   update and again with the update failed; `activity dismiss` taking a
   running group's card (`toasts`) and not its row, the card back once it

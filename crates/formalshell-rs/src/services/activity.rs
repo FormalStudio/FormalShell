@@ -36,6 +36,12 @@ const MAX_LINE: usize = 1 << 20;
 /// socket that still exists is taken for dead.
 const EMPTY_RECONNECTS: u32 = 3;
 const RECONNECT_GAP: Duration = Duration::from_millis(100);
+/// Silence on a running operation's connection past this is taken for a
+/// connection fspec stopped writing to (one whose snapshot it could not
+/// send whole is never written to again, yet stays open while fspec runs):
+/// the reader connects again, and the snapshot that answers is the state
+/// now. A connection that answers with nothing new costs one line.
+const QUIET: Duration = Duration::from_secs(3);
 const LISTEN_GAP: Duration = Duration::from_millis(50);
 
 /// What the stream reader knows about fspec on this machine.
@@ -320,9 +326,15 @@ async fn read_operation(path: &Path, tx: &Sender<Input>) {
         let mut pending: Vec<u8> = Vec::new();
         let mut chunk = [0u8; 8192];
         loop {
-            let n = match stream.read(&mut chunk).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => n,
+            let read = async { Some(stream.read(&mut chunk).await) };
+            let n = match futures_lite::future::or(read, async {
+                Timer::after(QUIET).await;
+                None
+            })
+            .await
+            {
+                Some(Ok(0) | Err(_)) | None => break,
+                Some(Ok(n)) => n,
             };
             pending.extend_from_slice(&chunk[..n]);
             while let Some(at) = pending.iter().position(|b| *b == b'\n') {
@@ -516,6 +528,27 @@ mod tests {
         block_on(read_operation(&path, &tx));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "running 75", "failed 75"]);
+    }
+
+    /// A connection fspec stopped writing to while holding it open: past
+    /// `QUIET` the reader connects again and reads the end.
+    #[test]
+    fn a_silent_connection_is_asked_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("e.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let (tx, rx) = async_channel::unbounded();
+        let server = std::thread::spawn(move || {
+            let (mut stranded, _) = listener.accept().unwrap();
+            stranded.write_all(line("e", "running", 1).as_bytes()).unwrap();
+            let (mut s, _) = listener.accept().unwrap();
+            s.write_all(line("e", "running", 4).as_bytes()).unwrap();
+            s.write_all(line("e", "succeeded", 4).as_bytes()).unwrap();
+            drop(stranded);
+        });
+        block_on(read_operation(&path, &tx));
+        server.join().unwrap();
+        assert_eq!(drain(&rx), ["running 25", "running 100", "succeeded 100"]);
     }
 
     #[test]

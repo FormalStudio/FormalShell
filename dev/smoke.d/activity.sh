@@ -18,9 +18,12 @@
 # in place by `-r` and by an `x-canonical-private-synchronous` tag, and a
 # replace without a value ends it.
 #
-# Where the rig's fspec has `fspec run`, one real `fspec run --detach` of a
-# small package is read as a `run` item; an fspec without it prints why the
-# check was skipped.
+# Where the rig's fspec has `fspec run`, one real `fspec run --detach jq` is
+# read to its end as a succeeded `run` item; an fspec without it prints why
+# the check was skipped. A stubbed run whose first connection fspec stops
+# writing to after its snapshot (held open, never closed) still reads 1/1
+# and then succeeded: the shell asks again on a fresh connection once that
+# one has been quiet for three seconds.
 #
 # The Activity panel (`surfaces/panel/activity.rs`) is photographed with the
 # apply at 3/4 beside the running update, and again with the apply
@@ -77,7 +80,7 @@ EOF
 }
 
 leg_activity_timing() {
-  leg_timing 60 110
+  leg_timing 75 130
 }
 
 leg_activity_drive() {
@@ -196,12 +199,19 @@ for i in \$(seq 0 9); do touch "\$m.many\$i.go1"; done
 for i in \$(seq 0 9); do await "\$m.many\$i.2"; done
 sleep 0.5; $ipc call activity seen > /dev/null
 
+# A run whose first connection fspec stops writing to: the shell reads
+# past the silence on a fresh connection to the end.
+"$python3_bin" "$stub" "\$dir" smoke-st strand "\$m.st" 2>> "\$m-drive.log" &
+await "\$m.st.1"; sleep 0.5; status st-1
+touch "\$m.st.go1"; await "\$m.st.2"; sleep 4.5; status st-2
+touch "\$m.st.go2"; await "\$m.st.3"; touch "\$m.st.go3"; await "\$m.st.4"; sleep 0.5; status st-end
+
 # A real fspec run, where this fspec publishes one.
 if command -v fspec > /dev/null 2>&1 && fspec run --help > /dev/null 2>&1; then
   fspec run --detach jq -- --version > "\$m-run.log" 2>&1 &
   for _ in \$(seq 120); do
     $ipc call activity status > "\$m-run.json" 2>&1
-    jq -e '[.groups[].items[], .history[]] | any(.kind == "run")' "\$m-run.json" > /dev/null 2>&1 && break
+    jq -e '[.groups[].items[], .history[]] | any(.source == "fspec:run:jq" and .state != "running")' "\$m-run.json" > /dev/null 2>&1 && break
     sleep 0.5
   done
 else
@@ -313,6 +323,14 @@ leg_activity_assert() {
   done
   jq -e '.history == []' "$m-cleared.json" > /dev/null || fail "activity: the centre's Clear left history: $(cat "$m-cleared.json")"
 
+  local st='[.groups[].items[], .history[]] | map(select(.id == "fspec:smoke-st")) | first'
+  jq -e "$st | .state == \"running\" and .progress.done == 0" "$m-st-1.json" > /dev/null \
+    || fail "activity: the stranded run did not start: $(jq -c "$st" "$m-st-1.json")"
+  jq -e "$st | .state == \"running\" and .progress.done == 1" "$m-st-2.json" > /dev/null \
+    || fail "activity: the shell stayed on a connection fspec stopped writing to: $(jq -c "$st" "$m-st-2.json")"
+  jq -e "$st | .state == \"succeeded\"" "$m-st-end.json" > /dev/null \
+    || fail "activity: the stranded run never reached its end: $(jq -c "$st" "$m-st-end.json")"
+
   local cells='[.[0].cells[] | select(.name == "indicators")] | length'
   jq -e "$cells == 0" "$m-room-idle.json" > /dev/null || fail "activity: an indicators cell showed at idle: $(cat "$m-room-idle.json")"
   jq -e "$cells == 1" "$m-room-ok-1.json" > /dev/null || fail "activity: no bar cell while the apply ran: $(cat "$m-room-ok-1.json")"
@@ -341,9 +359,9 @@ leg_activity_assert() {
   if [ -s "$m-run-skipped.txt" ]; then
     echo "SMOKE_ACTIVITY_FSPEC_RUN skipped: $(cat "$m-run-skipped.txt")"
   else
-    jq -e '[.groups[].items[], .history[]] | any(.kind == "run" and .origin == "fspec")' "$m-run.json" > /dev/null \
-      || fail "activity: a real fspec run never showed as a run item: $(cat "$m-run.json") $(cat "$m-run.log")"
-    echo "SMOKE_ACTIVITY_FSPEC_RUN $(jq -c '[.groups[].items[], .history[]] | map(select(.kind == "run")) | first' "$m-run.json")"
+    jq -e '[.groups[].items[], .history[]] | any(.source == "fspec:run:jq" and .state == "succeeded")' "$m-run.json" > /dev/null \
+      || fail "activity: the real fspec run --detach jq never read as succeeded: $(cat "$m-run.json") $(cat "$m-run.log")"
+    echo "SMOKE_ACTIVITY_FSPEC_RUN $(jq -c '[.groups[].items[], .history[]] | map(select(.source == "fspec:run:jq")) | first' "$m-run.json")"
   fi
   for f in ok-2 fail-2 l-2 n-2; do
     echo "SMOKE_ACTIVITY_STATUS_$(printf %s "$f" | tr a-z- A-Z_) $(jq -c . "$m-$f.json")"
