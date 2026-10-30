@@ -107,22 +107,20 @@ impl Sidebar {
             }
             // Time and Spaces alone still too tall: the minimap shows the
             // rows that fit and scrolls through the rest. Each pass measures
-            // the window at the scroll it would land on; the scroll itself
-            // settles once, against the final count.
+            // the rows it would show (`first_for`), so what settles once
+            // after it is what was measured.
             let total = self.map.len();
             let mut n = total;
             while !fits(&cards, kit) && n > 1 {
                 n -= 1;
                 self.map.fits = n;
-                self.map.first = want.min(total - n);
+                self.map.first = self.map.first_for(want, n);
                 let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
                 cards = self::cards(theme, store, &self.map, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
             }
             if n < total {
                 self.map.first = want;
                 self.map.keep_in_view();
-                let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
-                cards = self::cards(theme, store, &self.map, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
             }
             if self.map.fits == usize::MAX {
                 self.map.first = 0;

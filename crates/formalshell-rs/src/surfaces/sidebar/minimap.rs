@@ -340,20 +340,26 @@ impl Map {
     /// `first` moved so the row that matters is shown: the cursor's or a
     /// drag's target always, the current row when it changes.
     pub fn keep_in_view(&mut self) {
+        self.first = self.first_for(self.first, self.fits);
+        self.seen = self.rows.iter().position(|r| r.current);
+    }
+
+    /// Where `keep_in_view` puts the first row shown, from `first` with
+    /// `fits` rows in view, leaving `seen` alone.
+    pub fn first_for(&self, first: usize, fits: usize) -> usize {
         let total = self.len();
-        let fits = self.fits.clamp(1, total.max(1));
+        let fits = fits.clamp(1, total.max(1));
         let current = self.rows.iter().position(|r| r.current);
         let held = self.cursor.as_ref().map(|c| c.row).or_else(|| self.drag.as_ref().and_then(|d| d.target).map(|t| t.0));
-        let row = held.or(current.filter(|c| self.seen != Some(*c)));
-        self.seen = current;
-        if let Some(r) = row {
-            if r < self.first {
-                self.first = r;
-            } else if r >= self.first + fits {
-                self.first = r + 1 - fits;
+        let mut first = first;
+        if let Some(r) = held.or(current.filter(|c| self.seen != Some(*c))) {
+            if r < first {
+                first = r;
+            } else if r >= first + fits {
+                first = r + 1 - fits;
             }
         }
-        self.first = self.first.min(total.saturating_sub(fits));
+        first.min(total.saturating_sub(fits))
     }
 
     /// A wheel notch over the map, `dy` rows on.
