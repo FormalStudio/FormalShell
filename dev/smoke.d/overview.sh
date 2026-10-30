@@ -12,7 +12,10 @@
 # overview opened four ways, each read back off `hyprctl submap` (the
 # plugin enters its `hyprexpo` submap while it is up) and closed over IPC:
 # Super+O typed by wtype, `workspaces overview open`, a 900ms press on a
-# minimap icon, and an icon dragged off its row onto the next. The bind's
+# minimap icon, an icon dragged off its row onto the next, and the pointer
+# parked in the top-left hot corner: closed under it, the overview stays
+# closed 2s with the pointer still there, and a leave past the cooldown
+# and a new approach open it again. The bind's
 # and the IPC's frames are pulled to read the grid by eye, each differing
 # from the desktop frame before it; the drag's release lands on the
 # overview, which takes the pointer while it is up and closes on it.
@@ -134,6 +137,22 @@ wait
 sleep 1
 submap drag-released
 $ipc call workspaces overview close > /dev/null 2>&1
+sleep 1
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+sleep 1.2
+submap corner-open
+$ipc call workspaces overview close > /dev/null 2>&1
+sleep 2
+submap corner-parked
+"$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1
+sleep 0.8
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+sleep 1.2
+submap corner-again
+$ipc call workspaces overview close > /dev/null 2>&1
+"$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1
+sleep 1
+submap corner-closed
 EOS
   hypr_exec_once "bash $script"
 }
@@ -158,11 +177,11 @@ leg_overview_assert() {
   "$jq_bin" -e '.overview == true' "$overview_dump" > /dev/null \
     || fail "overview: debug dump's overview is not true: $("$jq_bin" -c '.overview' "$overview_dump")"
   local step
-  for step in rest bind-closed ipc-closed press-released drag-released; do
+  for step in rest bind-closed ipc-closed press-released drag-released corner-parked corner-closed; do
     grep -q "^$step " "$overview_submaps" && ! grep -q "^$step .*hyprexpo" "$overview_submaps" \
       || fail "overview: the overview was up at $step"
   done
-  for step in bind-open ipc-open press-open drag-open; do
+  for step in bind-open ipc-open press-open drag-open corner-open corner-again; do
     grep -q "^$step .*hyprexpo" "$overview_submaps" || fail "overview: the overview was not up at $step"
   done
   local d

@@ -46,6 +46,9 @@ pub enum Action {
     None,
     Screensaver,
     Lock,
+    /// The compositor's workspace overview (HyprExpo), the same command as
+    /// `workspaces overview open`.
+    Overview,
     Launcher(String),
 }
 
@@ -55,6 +58,7 @@ impl Action {
             Action::None => "none",
             Action::Screensaver => "screensaver",
             Action::Lock => "lock",
+            Action::Overview => "overview",
             Action::Launcher(s) => s,
         }
     }
@@ -64,6 +68,7 @@ impl Action {
             "none" => Some(Action::None),
             "screensaver" => Some(Action::Screensaver),
             "lock" => Some(Action::Lock),
+            "overview" => Some(Action::Overview),
             _ => None,
         }
     }
@@ -133,13 +138,14 @@ impl Corners {
     }
 }
 
-/// Both top corners default to "none": the bar anchors top/left/right, so a
-/// hot corner up there would take its trigger square out of the bar's own
-/// input region, the leftmost pixels of the workspace cell, the rightmost of
-/// the indicators one.
+/// A top corner's square comes out of the bar's own input region (the bar
+/// anchors top/left/right): the overview's top-left one takes the leftmost
+/// pixels of the first cell, and the top-right stays "none" so the
+/// indicators keep theirs.
 fn default_corner(corner: Corner) -> Action {
     match corner {
-        Corner::TopLeft | Corner::TopRight => Action::None,
+        Corner::TopLeft => Action::Overview,
+        Corner::TopRight => Action::None,
         Corner::BottomLeft => Action::Screensaver,
         Corner::BottomRight => Action::Lock,
     }
@@ -303,7 +309,7 @@ mod tests {
         assert!(c.enabled);
         assert_eq!(c.size, 4);
         assert_eq!(c.delay_ms, 400);
-        assert_eq!(c.corners.top_left, Action::None);
+        assert_eq!(c.corners.top_left, Action::Overview);
         assert_eq!(c.corners.top_right, Action::None);
         assert_eq!(c.corners.bottom_left, Action::Screensaver);
         assert_eq!(c.corners.bottom_right, Action::Lock);
@@ -353,8 +359,8 @@ mod tests {
     fn a_custom_action_reaches_the_window_list() {
         let c = run(json!({ "bottomLeft": "@ipc:theme.toggleMode" }));
         let wins = windows(&c, &screens(&["HDMI-1"]));
-        assert_eq!(wins.len(), 2);
-        assert_eq!(wins[0].action.as_str(), "@ipc:theme.toggleMode");
+        assert_eq!(wins.len(), 3);
+        assert_eq!(wins[1].action.as_str(), "@ipc:theme.toggleMode");
     }
 
     // The built-ins are the surface's own, never the launcher's: routing
@@ -363,6 +369,7 @@ mod tests {
     fn the_built_in_names_are_not_launcher_actions() {
         assert!(!is_launcher_action("lock"));
         assert!(!is_launcher_action("screensaver"));
+        assert!(!is_launcher_action("overview"));
         assert!(!is_launcher_action("none"));
     }
 
@@ -433,14 +440,16 @@ mod tests {
     fn windows_covers_every_screen_and_skips_none() {
         let c = resolve(None);
         let wins = windows(&c, &screens(&["HDMI-1", "DP-1"]));
-        assert_eq!(wins.len(), 4);
+        assert_eq!(wins.len(), 6);
         assert_eq!(wins[0].screen, "HDMI-1");
-        assert_eq!(wins[0].corner, Corner::BottomLeft);
-        assert_eq!(wins[0].action, Action::Screensaver);
-        assert_eq!(wins[1].corner, Corner::BottomRight);
-        assert_eq!(wins[1].action, Action::Lock);
-        assert_eq!(wins[2].screen, "DP-1");
+        assert_eq!(wins[0].corner, Corner::TopLeft);
+        assert_eq!(wins[0].action, Action::Overview);
+        assert_eq!(wins[1].corner, Corner::BottomLeft);
+        assert_eq!(wins[1].action, Action::Screensaver);
+        assert_eq!(wins[2].corner, Corner::BottomRight);
+        assert_eq!(wins[2].action, Action::Lock);
         assert_eq!(wins[3].screen, "DP-1");
+        assert_eq!(wins[5].screen, "DP-1");
     }
 
     #[test]
@@ -451,7 +460,7 @@ mod tests {
 
     #[test]
     fn windows_is_empty_when_every_corner_is_none() {
-        let c = run(json!({ "bottomLeft": "none", "bottomRight": "none" }));
+        let c = run(json!({ "topLeft": "none", "bottomLeft": "none", "bottomRight": "none" }));
         assert_eq!(windows(&c, &screens(&["HDMI-1"])).len(), 0);
     }
 }

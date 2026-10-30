@@ -37,13 +37,19 @@ leg_hotcorner_assert() {
   # Level 2 is Hyprland's `top`, the layer the corners ask for so the
   # screensaver and the lock surface can still cover a corner once fired.
   hotcorner_top=$("$jq_bin" '[.[].levels."2"[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_layers_path")
-  # Two, not four: shell/HotCorners/corners.js leaves both TOP corners at
-  # "none" by default (the bar owns that edge), and this run writes no
-  # `hotCorners` config at all, so the count doubles as proof that a corner
-  # set to "none" costs no surface rather than a mapped but inert one.
+  # Two, not four: the top-right corner is "none" by default (the bar's
+  # indicators own it), and the top-left one is the overview's, which has
+  # no surface on a Hyprland with no HyprExpo loaded, as this one is. This
+  # run writes no `hotCorners` config at all, so the count doubles as proof
+  # that neither costs a surface rather than a mapped but inert one.
   if [ "$hotcorner_count" != "2" ]; then
     fail "expected 2 formalshell:hotcorner layer surfaces, found $hotcorner_count"
   fi
+  if [ "$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner" and .x == 0 and .y == 0)] | length' "$hotcorner_layers_path")" != "0" ]; then
+    fail "the overview's hot corner is mapped with no HyprExpo to open"
+  fi
+  grep -q 'HotCorners: overview: hyprexpo is not loaded, the corner is off' "$shell_log_path" \
+    || fail "the shell did not log the overview corner staying off"
   if [ "$hotcorner_top" != "2" ]; then
     fail "expected both hot corner surfaces on the top layer, found $hotcorner_top there"
   fi

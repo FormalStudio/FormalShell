@@ -581,13 +581,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   share), then 60 s undriven, CPU ticks and voluntary switches (wakeups)
   per thread and the commits made, then 20 s of `strace -f` naming each
   waker.
-- `hotcorner.sh` `--hotcorner`: both hot corner surfaces mapped on the right
-  layer, which is all a rig with no synthetic pointer can observe.
+- `hotcorner.sh` `--hotcorner`: the screensaver's and the lock's hot
+  corner surfaces mapped on the right layer, and none for the default
+  top-left overview corner on a rig with no HyprExpo, logged as off.
 - `hotcorner_relock.sh` `--hotcorner-relock`: locks from the corner, unlocks
   by typing, proves the corner stays quiet while the pointer sits in it and
   fires again only after a leave plus the 400ms cooldown. Then the same on
   the screensaver corner: dismissed with the cursor parked in it, quiet for
-  3s after the overlay unmaps, firing again after a leave.
+  3s after the overlay unmaps, firing again after a leave. Then
+  `topLeft: "overview"` written under a Hyprland with no HyprExpo,
+  mapping no surface for it.
 - `hypr_motion.sh` `--hypr-motion`: Hyprland's window animations on the
   shell's two clock families. The rig boots with animations off; the leg
   appends the shipped `docs/examples/hyprland/formalshell.lua` motion block,
@@ -1035,9 +1038,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   is the Hyprland its `hyprland-version` file names: `hyprctl plugin list`
   naming it, `plugin:hyprexpo:columns` taking hl.config's 3 and `debug
   dump`'s `overview` true. Under `layout: sidebar` it is opened by Super+O,
-  by `workspaces overview open`, by a 900ms press on a minimap icon and by
-  an icon dragged off its row, each read off `hyprctl submap` (the plugin's
-  `hyprexpo` submap while it is up), and closed over IPC; the bind's and
+  by `workspaces overview open`, by a 900ms press on a minimap icon, by an
+  icon dragged off its row and by the top-left hot corner (not again
+  while parked under it, again after a leave), each read off
+  `hyprctl submap` (the plugin's `hyprexpo` submap while it is up), and
+  closed over IPC; g815 only, since its hooks need x86_64. The bind's and
   the IPC's frames differ from the desktop's and are read by eye for the
   grid. The plugin takes every pointer event while it is up, so the
   minimap hands it the gesture and the release lands on the overview.

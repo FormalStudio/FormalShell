@@ -6,6 +6,9 @@
 //! sits on it at that moment, so a cursor parked in the corner through an
 //! unlock never fires it again.
 //!
+//! The overview corner exists only while the compositor has HyprExpo
+//! loaded: a square that can open nothing would take the bar's pixels.
+//!
 //! The screensaver corner locks the session and shows the screensaver inside
 //! the lock, so like the lock corner it ends at the unlock.
 
@@ -59,6 +62,9 @@ pub struct HotCorners {
     wins: Vec<Win>,
     /// When each action last ended, on [`App::corner_ms`]'s clock.
     ended_at: HashMap<String, i64>,
+    /// An overview corner is configured and HyprExpo is not loaded, so it
+    /// has no surface over the bar's pixels.
+    overview_off: bool,
 }
 
 impl App {
@@ -94,8 +100,17 @@ impl App {
         // is free and a corner cannot fire mid-game.
         let hide = self.store.config.bool("fullscreen.hideChrome").unwrap_or(true);
         let covered = &self.store.compositor.snapshot.fullscreen_outputs;
-        let windows: Vec<_> =
-            corners::windows(&config, &names).into_iter().filter(|w| !(hide && covered.contains(&w.screen))).collect();
+        let all = corners::windows(&config, &names);
+        let overview = self.store.compositor.overview;
+        let off = !overview && self.store.compositor.overview_answered && all.iter().any(|w| w.action == Action::Overview);
+        if off && !self.hot.overview_off {
+            eprintln!("HotCorners: overview: hyprexpo is not loaded, the corner is off");
+        }
+        self.hot.overview_off = off;
+        let windows: Vec<_> = all
+            .into_iter()
+            .filter(|w| !(hide && covered.contains(&w.screen)) && (overview || w.action != Action::Overview))
+            .collect();
         let key: Vec<(String, Corner, String, i64)> =
             windows.iter().map(|w| (w.screen.clone(), w.corner, w.action.as_str().to_owned(), config.size)).collect();
         self.hot.config = Some(config.clone());
@@ -230,6 +245,7 @@ impl App {
                     self.saver_start();
                 }
             }
+            Action::Overview => compositor::send(compositor::Command::Overview(compositor::Overview::Open)),
             other => eprintln!("HotCorners: {} has no surface in this shell yet", other.as_str()),
         }
     }

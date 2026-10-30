@@ -32,7 +32,8 @@
 # "type this password" verb (see its header). wlrctl's protocol is relative
 # only, so every move starts by slamming the pointer into the top-left
 # corner, which the compositor clamps, and travels from there. Top-left is
-# `none` by default, so that origin fires nothing.
+# the overview by default, so the leg writes it `none` before the first
+# move and that origin fires nothing.
 # Every wtype runs with `-s 300`, for the reason `lock.sh`'s drive gives:
 # a new virtual keyboard's first keys reach nobody until the shell binds it.
 #
@@ -42,6 +43,10 @@
 # locked, the password unlocks, and three seconds with no pointer event pass
 # in which it must not lock again. Leaving and coming back fires it again,
 # and this time a pointer move is what drops it back to the card.
+#
+# Last the top-left corner written "overview", which this rig's Hyprland
+# has no HyprExpo for: the rebuild maps the other two corners and none
+# for it. Its leave-and-cooldown rule is --overview's, on g815.
 leg_hotcorner_relock_flag="--hotcorner-relock"
 leg_hotcorner_relock_order=161
 leg_hotcorner_relock_needs="wlrctl wtype jq"
@@ -82,6 +87,7 @@ hotcorner_relock_saver_shot_path="$shot_dir/hotcorner-relock-saver.png"
 hotcorner_relock_saver_card_shot_path="$shot_dir/hotcorner-relock-saver-card.png"
 hotcorner_relock_saver_parked_shot_path="$shot_dir/hotcorner-relock-saver-parked.png"
 hotcorner_relock_settings_path="$iso_home/.config/formalshell/settings.json"
+hotcorner_relock_overview_path="$shot_dir/hotcorner-relock-13-overview-layers.json"
 
 leg_hotcorner_relock_timing() {
   leg_timing 70 105
@@ -101,7 +107,7 @@ corner() {
 # overwriting it, and written back through the same inode so the shell's own
 # FileView watch survives the change.
 corners() {
-  "$jq_bin" ". + {hotCorners: {enabled: \$1, size: 4, delayMs: 400, topLeft: \"none\", topRight: \"none\", bottomLeft: \"screensaver\", bottomRight: \"lock\"}}" \\
+  "$jq_bin" ". + {hotCorners: {enabled: \$1, size: 4, delayMs: 400, topLeft: \"\${2:-none}\", topRight: \"none\", bottomLeft: \"screensaver\", bottomRight: \"lock\"}}" \\
     "$hotcorner_relock_settings_path" > "$shot_dir/hotcorner-relock-settings.json" 2>&1
   cat "$shot_dir/hotcorner-relock-settings.json" > "$hotcorner_relock_settings_path"
 }
@@ -113,6 +119,8 @@ saver_corner() {
   "$wlrctl_bin" pointer move 2 $hotcorner_relock_y >> "$hotcorner_relock_moves_path" 2>&1
 }
 sleep 6
+corners true
+sleep 2
 corner
 # 400ms of dwell, then the lock plate.
 sleep 2
@@ -186,6 +194,9 @@ ipc "$hotcorner_relock_saver_moved_lock_path"
 sleep 4
 saver "$hotcorner_relock_saver_final_path"
 ipc "$hotcorner_relock_saver_final_lock_path"
+corners true overview
+sleep 2
+"$hyprctl_bin" -j layers > "$hotcorner_relock_overview_path" 2>&1
 EOF
   hypr_exec_once "bash $script"
 }
@@ -212,6 +223,10 @@ hotcorner_relock_saver_expect() {
 
 leg_hotcorner_relock_assert() {
   local f
+  [ -s "$hotcorner_relock_overview_path" ] || fail "no layer dump at $hotcorner_relock_overview_path"
+  [ "$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_relock_overview_path")" = 2 ] \
+    || fail "topLeft overview with no HyprExpo mapped a corner surface: $(cat "$hotcorner_relock_overview_path")"
+  echo "SMOKE_HOTCORNER_RELOCK the overview corner has no surface with no HyprExpo loaded"
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_on_path" true \
     "the bottom-left corner started the screensaver"
   hotcorner_relock_expect "$hotcorner_relock_saver_on_lock_path" true \

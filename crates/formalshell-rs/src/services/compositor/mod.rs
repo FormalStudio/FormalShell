@@ -93,6 +93,8 @@ pub struct State {
     pub active_border: Option<[f32; 3]>,
     /// HyprExpo is loaded, so `Command::Overview` opens something.
     pub overview: bool,
+    /// False until the backend first answers whether it is.
+    pub overview_answered: bool,
 }
 
 impl Default for State {
@@ -108,6 +110,7 @@ impl Default for State {
             gaps_out: Gaps::default(),
             active_border: None,
             overview: false,
+            overview_answered: false,
         }
     }
 }
@@ -161,7 +164,8 @@ impl State {
                 self.active_border = c;
             }
             Diff::Overview(loaded) => {
-                if self.overview == loaded {
+                let first = !std::mem::replace(&mut self.overview_answered, true);
+                if self.overview == loaded && !first {
                     return false;
                 }
                 self.overview = loaded;

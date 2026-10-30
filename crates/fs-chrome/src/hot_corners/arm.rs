@@ -59,10 +59,13 @@ pub const REARM_COOLDOWN_MS: i64 = 400;
 /// lock, so it ends where the lock does: at the unlock, and only with this
 /// shell's own lock. The screensaver being dismissed back to the password
 /// card is not the end, the corner is still covered.
+///
+/// "overview" is HyprExpo's, which tells the shell nothing when it closes,
+/// so it takes the launcher path too.
 pub fn reports_end(action: &Action, external_lock: bool) -> bool {
     match action {
         Action::Lock | Action::Screensaver => !external_lock,
-        Action::None | Action::Launcher(_) => false,
+        Action::None | Action::Overview | Action::Launcher(_) => false,
     }
 }
 
