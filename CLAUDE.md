@@ -629,6 +629,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   carries under a tenth of the edge energy it carries under the scrim
   beside it, so the text behind a translucent card is blurred. Ridden by
   `--no-morph` it reads the popover card, which stays opaque.
+- `launcher_density.sh` `--launcher-density`: the launcher as a popover
+  (`motion.morph` false) on a headless second output at scale 1.25 beside
+  the session's own at 1, the bar's: every buffer the card, its look's four
+  corners (which log as the card) and its content commit read off the
+  shell's log at 1.25, since Hyprland sends a subsurface no preferred scale
+  and a corner left at the bar's 1 is a stretched picture on the panel. The
+  frame of that output is pulled for reading.
 - `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
   read off `menu status`'s `level` and `token`: every route the rig lists
   entered by its name and Enter and by `menu summon`, the five prefixes

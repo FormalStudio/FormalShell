@@ -101,7 +101,10 @@ impl App {
         let card = self.overlay(namespace, layer, Anchor::all(), (0, 0), -1);
         card.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         card.commit();
-        let mut surface = Surface::new(names[0], card, &self.shm, self.started);
+        let mut surface = match &self.bar_wl {
+            Some(output) => Surface::on(names[0], card, &self.shm, self.started, output),
+            None => Surface::new(names[0], card, &self.shm, self.started),
+        };
         surface.wait_map = true;
         Modal::new(theme, surface, band, dim, namespace, output, edge, inset, ends, self.motion_scale, self.cast, deform_amount)
     }
@@ -129,7 +132,7 @@ impl App {
                     surface.set_input_region(Some(region.wl_region()));
                 }
                 let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-                let mut s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport);
+                let mut s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
                 s.raster_budget = Some(LAUNCHER_SLICE);
                 s
             })
@@ -195,7 +198,7 @@ impl App {
             surface.set_input_region(Some(region.wl_region()));
         }
         let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-        let s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport);
+        let s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
         crate::surfaces::modal::Layer::new(s)
     }
 

@@ -228,12 +228,15 @@ struct Scaler {
     /// The owner's cut of the surface, in logical pixels.
     crop: Option<IRect>,
     sent: Option<View>,
+    /// `preferred` is a parent's: Hyprland sends no preferred scale to a
+    /// subsurface, which would otherwise keep the scale it was made at.
+    inherited: bool,
 }
 
 impl Scaler {
     fn new(scale: f64) -> Self {
         let preferred = Preferred(Arc::new(AtomicU32::new((scale * 120.0).round() as u32)));
-        Self { preferred, fractional: None, viewport: None, crop: None, sent: None }
+        Self { preferred, fractional: None, viewport: None, crop: None, sent: None, inherited: false }
     }
 
     /// The scale the surface should be drawn at: the fractional scale it
@@ -252,7 +255,7 @@ impl Scaler {
     where
         D: Dispatch<WpFractionalScaleV1, Preferred> + 'static,
     {
-        if self.fractional.is_some() {
+        if self.fractional.is_some() || self.inherited {
             return;
         }
         if let Some(manager) = SCALING.get().and_then(|s| s.fractional.as_ref()) {
@@ -499,6 +502,13 @@ impl<R: Role> Surface<R> {
     /// pictures its scene asks for are made at.
     pub fn scale(&self) -> f64 {
         self.scaler.wanted(self.layer.role_surface())
+    }
+
+    /// Draws at `parent`'s scale, for a subsurface of it.
+    pub fn under<P: Role>(mut self, parent: &Surface<P>) -> Self {
+        self.scaler.preferred = parent.scaler.preferred.clone();
+        self.scaler.inherited = true;
+        self
     }
 
     /// Takes over a viewport made for this surface, which a crop is sent on.
