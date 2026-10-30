@@ -131,7 +131,6 @@ runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize
 [[rule]]
 paths = [
   "crates/formalshell-rs/src/surfaces/card.rs",
-  "docs/examples/hyprland/formalshell.lua",
 ]
 runs = ["--launcher-glass", "--launcher-glass --no-morph"]
 

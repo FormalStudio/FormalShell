@@ -425,7 +425,7 @@ impl Map {
         let (commands, predicted) = drop_on(&order, from, &d.id, t, j, idx, columns, &|w| self.cols.get(w).copied());
         if !commands.is_empty() {
             let next = self.next_idx();
-            let keyed = predicted.into_iter().enumerate().map(|(i, ids)| (self.rows.get(i).map_or(next + (i - self.rows.len()) as i64, |r| r.idx), ids)).collect();
+            let keyed = predicted.into_iter().enumerate().map(|(i, ids)| (self.rows.get(i).map_or_else(|| next + (i - self.rows.len()) as i64, |r| r.idx), ids)).collect();
             self.hold = Some((keyed, now + Duration::from_millis(HOLD_MS)));
         }
         Some(commands)
