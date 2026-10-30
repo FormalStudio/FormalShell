@@ -35,7 +35,18 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     };
     let last = sw.last.as_ref().map(|(verb, name)| json!({"verb": verb.as_str(), "name": name}));
     let software = json!({"checked": sw.behind.is_some(), "behind": behind, "upstream": upstream, "error": error, "last": last, "applying": sw.applying, "failed": sw.failed.as_ref().map(|(change, why)| json!({"change": format!("{change:?}").to_lowercase(), "why": why}))});
-    Value::Str(json!({"fspec": app.store.activity.fspec.installed, "search": search, "started": started, "owners": owners, "software": software}).to_string())
+    let info: serde_json::Map<String, serde_json::Value> = p
+        .info
+        .iter()
+        .map(|(id, i)| {
+            let v = match i {
+                Ok(i) => json!({"name": i.name, "license": i.license, "developer": i.developer, "download": i.download, "installed": i.installed, "screenshot": i.screenshot}),
+                Err(why) => json!({"error": why}),
+            };
+            (id.clone(), v)
+        })
+        .collect();
+    Value::Str(json!({"fspec": app.store.activity.fspec.installed, "search": search, "started": started, "owners": owners, "software": software, "info": info, "shots": p.shots}).to_string())
 }
 
 fn send(cmd: Cmd) -> Value {

@@ -379,6 +379,10 @@ impl App {
         if let Some(id) = name.strip_prefix("package.install:") {
             return crate::surfaces::packages::install(&self.store, id);
         }
+        if let Some(id) = name.strip_prefix("package.run:") {
+            crate::services::compositor::spawn(&["fspec", "run", "--detach", id].map(String::from));
+            return;
+        }
         if let Some(id) = name.strip_prefix("package.uninstall:") {
             return crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
         }
@@ -756,6 +760,24 @@ impl App {
         {
             self.peek_asked = Some(n.path.clone());
             index::ask(Ask::Peek(n.path.clone()));
+        }
+        // An Install row's details, asked once per row shown, and its
+        // screenshot decoded at the pane's width once the file is cached.
+        if let Some(n) = row.as_ref().filter(|n| matches!(pane_kind(n), Some(PaneKind::Package))) {
+            if self.info_asked.as_deref() != Some(n.path.as_str()) {
+                self.info_asked = Some(n.path.clone());
+                crate::services::packages::send(crate::services::packages::Cmd::Info(n.path.clone()));
+            }
+            let p = &self.store.packages;
+            let shot = p.info.get(&n.path).and_then(|i| i.as_ref().ok()).and_then(|i| i.screenshot.as_ref()).and_then(|u| p.shots.get(u)).cloned().flatten();
+            if let Some(path) = shot {
+                let size = (crate::surfaces::launcher::shot_box(width), size.1);
+                let have = self.store.clipboard.preview.as_ref().is_some_and(|p| p.path == path && p.size == size);
+                if !have && self.preview_asked.as_ref() != Some(&(path.clone(), size)) {
+                    self.preview_asked = Some((path.clone(), size));
+                    crate::services::clipboard::command(crate::services::clipboard::Cmd::Preview(path, size));
+                }
+            }
         }
         let mut window = None;
         match row.as_ref().and_then(pane_picture) {

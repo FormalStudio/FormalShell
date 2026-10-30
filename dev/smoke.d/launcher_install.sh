@@ -28,7 +28,9 @@
 # reaching the shim as exactly `app uninstall flatpak:org.example.Foxberry
 # --detach`, Activity reading it succeeded and the app gone from the rows
 # once its entry is, and a staged Foxtail the distro owns offering no
-# Uninstall. The rows with the description pane, the ring mid-download, the
+# Uninstall. Run once on Foxfire: a real Tab listing it after Install,
+# Return reaching the shim as exactly `run --detach <id>` and Activity
+# following the `run` item to succeeded. The rows with the description pane, the ring mid-download, the
 # toast, a dim state and the armed Uninstall are photographed.
 leg_launcher_install_flag="--launcher-install"
 leg_launcher_install_order=34
@@ -38,10 +40,14 @@ li_dir="$shot_dir/launcher-install"
 li_shim_dir="$li_dir/shim"
 li_apps="$iso_home/.local/share/applications"
 li_icon="$li_dir/foxglove.png"
+# The screenshot's loopback server, a port per slot user.
+li_port=$((18000 + $(id -u) % 1000))
 
 leg_launcher_install_fixture() {
   mkdir -p "$li_shim_dir" "$li_apps"
   "$convert_bin" -size 128x128 xc:'#ff7a00' "$li_icon"
+  mkdir -p "$li_dir/www"
+  "$convert_bin" -size 752x423 xc:'#00c8c8' "$li_dir/www/foxglove-shot.png"
   local stub="$script_dir/fspec-activity-stub.py"
   cat > "$li_dir/search.jsonl" <<EOF
 {"id":"flatpak:org.example.Foxglove","name":"Foxglove","source":"flatpak","version":"1.4.2","icon":"$li_icon","description":"A field guide to the hedgerow, with a description long enough to wrap inside the preview pane twice over.","installed":false,"owner":null,"installable":true,"run":true}
@@ -59,7 +65,7 @@ start() {
   n=\$(( \$(wc -l < "$li_dir/shim.log") ))
   op="smoke-\$verb-\$n"
   local scenario=\$verb
-  case "\$id" in *Foxfire*) scenario=installfail ;; esac
+  [ "\$verb" = install ] && case "\$id" in *Foxfire*) scenario=installfail ;; esac
   FSPEC_STUB_PKG="\$id" FSPEC_STUB_TITLE="\$title" setsid "$python3_bin" "$stub" "\$XDG_RUNTIME_DIR/fspec/activity" "\$op" "\$scenario" "$li_dir/\$op" < /dev/null > /dev/null 2>> "$li_dir/stub.log" &
   for _ in \$(seq 1 50); do
     [ -S "\$XDG_RUNTIME_DIR/fspec/activity/\$op.sock" ] && break
@@ -80,8 +86,19 @@ case "\$1 \$2" in
   "app install")
     title=\$("$jq_bin" -r --arg id "\$3" 'select(.id == \$id) | .name' "$li_dir/search.jsonl")
     start install "\$3" "\$title" ;;
+  "run --detach")
+    title=\$("$jq_bin" -r --arg id "\$3" 'select(.id == \$id) | .name' "$li_dir/search.jsonl")
+    start run "\$3" "\$title" ;;
   "app uninstall")
     start uninstall "\$3" Foxberry ;;
+  "info flatpak:org.example.Foxglove")
+    printf '{"id":"%s","source":"flatpak","name":"Foxglove","version":"1.4.2","summary":"A field guide to the hedgerow","description":"Foxglove names every plant in a hedgerow from a photo. It works offline, with a guide for each season.","license":"MIT","developer":"Hedgerow Labs","download":"12.4 MB","installed":"38.0 MB","screenshot":"http://127.0.0.1:%s/foxglove-shot.png","icon":null}\n' "\$2" "$li_port" ;;
+  "info flatpak:org.example.Foxfire")
+    printf '{"id":"%s","source":"flatpak","name":"Foxfire","version":"0.9","summary":"A glow in the dark","description":null,"license":"GPL-3.0-or-later","developer":null,"download":"3.1 MB","installed":"9.8 MB","screenshot":null,"icon":null}\n' "\$2" ;;
+  "info zypper:foxtrot-cli")
+    printf '{"id":"%s","source":"zypper","name":"foxtrot-cli","version":"2.1.0-1.3","summary":"Dance steps in a terminal","description":"Prints the steps of a foxtrot, one bar at a time.","license":null,"developer":null,"download":null,"installed":"412.0 KiB","screenshot":null,"icon":null}\n' "\$2" ;;
+  "info "*)
+    printf '{"id":"%s","source":"%s"}\n' "\$2" "\${2%%:*}" ;;
   "app owner")
     case "\$3" in
       org.example.Foxberry) sleep 1; printf '{"path":null,"id":"flatpak:org.example.Foxberry","pkg":"org.example.Foxberry","source":"flatpak","owner":"spec","removable":true}\n' ;;
@@ -123,15 +140,43 @@ step() {
   for _ in \$(seq 1 100); do [ -e "$li_dir/\$1" ] && return 0; sleep 0.1; done
 }
 go() { touch "$li_dir/\$1"; }
+# Waits for packages status step \$1 to satisfy jq claim \$2, at most \$3 s.
+until_pkgs() {
+  SECONDS=0
+  while [ "\$SECONDS" -lt "\$3" ]; do
+    pkgs "\$1"
+    "$jq_bin" -e "\$2" "$li_dir/\$1.json" > /dev/null 2>&1 && return 0
+    sleep 0.2
+  done
+}
+"$python3_bin" -m http.server "$li_port" --bind 127.0.0.1 --directory "$li_dir/www" > "$li_dir/http.log" 2>&1 &
 sleep 4
 call menu summon install > /dev/null 2>&1
 sleep 1
 status idle
 call menu filter fox > /dev/null 2>&1
 until_status searching '.empty == "install.searching"' 3
-until_status rows '(.ids | length) >= 4' 10
+until_status rows '(.ids | length) >= 4 and .drawn[0].picture' 10
 sleep 1
 shoot rows
+# The panes: Foxglove's with its screenshot fetched off loopback, then the
+# zypper row's and Foxfire's, neither with a screenshot.
+until_pkgs pkgs-pane-shot '.shots["http://127.0.0.1:$li_port/foxglove-shot.png"] != null' 10
+sleep 1.5
+status pane-shot
+shoot pane-shot
+"$wtype_bin" -k Down
+until_pkgs pkgs-pane-zypper '.info["zypper:foxtrot-cli"].installed != null' 10
+sleep 1
+status pane-zypper
+shoot pane-zypper
+"$wtype_bin" -k Down
+until_pkgs pkgs-pane-noshot '.info["flatpak:org.example.Foxfire"].license != null' 10
+sleep 1
+status pane-noshot
+shoot pane-noshot
+"$wtype_bin" -k Up -k Up
+sleep 0.5
 call menu filter broken > /dev/null 2>&1
 until_status failed '.empty == "install.failed"' 10
 shoot failed
@@ -194,6 +239,36 @@ call menu close > /dev/null 2>&1
 sleep 0.3
 call activity retry "fspec:install:flatpak:org.example.Foxfire" > "$li_dir/retry.txt" 2>&1
 sleep 2
+
+# Run once on Foxfire, its retry failed again so the row offers Install:
+# Down onto it, a real Tab, End to the column's last action, Return.
+go "\$(cat "$li_dir/last-op").go1"
+sleep 1
+call menu summon install > /dev/null 2>&1
+sleep 0.5
+call menu filter fox > /dev/null 2>&1
+until_status runready '(.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")) != null' 10
+i=\$("$jq_bin" '.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")' "$li_dir/runready.json")
+for _ in \$(seq 1 "\$i"); do "$wtype_bin" -k Down; done
+sleep 0.3
+"$wtype_bin" -k Tab
+until_status runcol '.actionsOpen and .actions[-1] == "run-once"' 5
+"$wtype_bin" -k End
+sleep 0.3
+shoot runcol
+before=\$(cat "$li_dir/last-op")
+"$wtype_bin" -k Return
+for _ in \$(seq 1 30); do [ "\$(cat "$li_dir/last-op")" != "\$before" ] && break; sleep 0.2; done
+rop=\$(cat "$li_dir/last-op")
+step "\$rop.1"
+go "\$rop.go1"; step "\$rop.2"
+sleep 0.8
+acts runrunning
+shoot runonce
+go "\$rop.go2"; step "\$rop.3"
+sleep 0.6
+acts runsucceeded
+call menu close > /dev/null 2>&1
 
 cat > "$li_apps/org.example.Foxberry.desktop" <<DESKTOP
 [Desktop Entry]
@@ -263,6 +338,40 @@ EOF
 }
 
 # `<step> <jq claim> <what it means>`, against that step's file.
+# The Install pane off `fspec info`: asked once per row shown, Foxglove's
+# screenshot fetched once off loopback and drawn (its cyan read inside the
+# pane, fitted under the facts), and neither pane without one stretched:
+# below what each has to say, its bottom quarter is flat card.
+li_panes() {
+  local pid
+  "$jq_bin" -e '.info["flatpak:org.example.Foxglove"].license == "MIT" and .info["flatpak:org.example.Foxglove"].developer == "Hedgerow Labs"' "$li_dir/pkgs-pane-shot.json" > /dev/null \
+    || fail "launcher-install: Foxglove's info did not land: $(cat "$li_dir/pkgs-pane-shot.json")"
+  "$jq_bin" -e '.info["zypper:foxtrot-cli"].installed == "412.0 KiB" and .info["zypper:foxtrot-cli"].license == null' "$li_dir/pkgs-pane-zypper.json" > /dev/null \
+    || fail "launcher-install: the zypper row's info did not land: $(cat "$li_dir/pkgs-pane-zypper.json")"
+  for pid in flatpak:org.example.Foxglove zypper:foxtrot-cli flatpak:org.example.Foxfire; do
+    [ "$(grep -cx "info $pid --json" "$li_dir/shim.log")" = 1 ] || fail "launcher-install: info $pid was not asked exactly once: $(grep '^info' "$li_dir/shim.log")"
+  done
+  [ "$(grep -c 'GET /foxglove-shot.png' "$li_dir/http.log")" = 1 ] || fail "launcher-install: the screenshot was not fetched exactly once: $(cat "$li_dir/http.log")"
+  local shot box x y w h rgb r g b sd rows
+  for shot in pane-zypper pane-noshot; do
+    li_expect "$shot" '.pane.kind == "package" and .paneBox != null' "no package pane at $shot"
+    box=$("$jq_bin" -r '.paneBox | "\(.x) \(.y) \(.width) \(.height)"' "$li_dir/$shot.json")
+    read -r x y w h <<< "$box"
+    echo "SMOKE_LAUNCHER_INSTALL_SHOT $li_dir/$shot.png"
+    sd=$("$convert_bin" "$li_dir/$shot.png" -crop "${w}x$((h / 4))+${x}+$((y + h - h / 4))" +repage -colorspace Gray -format '%[fx:int(1000*standard_deviation)]' info:)
+    # A pane whose words reach its foot is hugging them, as long as the
+    # card is no taller than the rows beside it need.
+    rows=$("$jq_bin" -r '([.rowBoxes[] | .y + .height] | max) - ([.rowBoxes[] | .y] | min)' "$li_dir/$shot.json")
+    [ "$sd" -le 5 ] || [ "$h" -le $((rows + 32)) ] || fail "launcher-install: $shot's pane is ${h}px with ink in its bottom quarter (sd $sd) beside ${rows}px of rows: stretched past what it says (box $box)"
+  done
+  echo "SMOKE_LAUNCHER_INSTALL_SHOT $li_dir/pane-shot.png"
+  box=$("$jq_bin" -r '.paneBox | "\(.x) \(.y) \(.width) \(.height)"' "$li_dir/pane-shot.json")
+  read -r x y w h <<< "$box"
+  rgb=$("$convert_bin" "$li_dir/pane-shot.png" -crop "${w}x${h}+${x}+${y}" +repage -fuzz 12% -fill black +opaque '#00c8c8' -format '%[fx:int(1000*mean)]' info:)
+  [ "$rgb" -ge 20 ] || fail "launcher-install: Foxglove's pane does not show its screenshot (cyan share $rgb)"
+  echo "SMOKE_LAUNCHER_INSTALL panes: info asked once per row, the screenshot fetched once and drawn, no pane stretched"
+}
+
 li_expect() {
   local f="$li_dir/$1.json"
   [ -s "$f" ] || fail "launcher-install: no status for $1"
@@ -275,13 +384,14 @@ leg_launcher_install_assert() {
   li_expect searching '.empty == "install.searching"' "a query never read Searching… while fspec answered"
   li_expect rows ".ids[0] == \"$fox\" and .drawn[0].value == \"flatpak 1.4.2\" and .drawn[0].picture and (.checked | index(\"install.pkg.zypper%3Afoxtrot-cli\")) != null and .drawn[1].value == \"Installed\" and .pane.kind == \"package\"" "the packages are not listed with their source, version, tick and pane"
   echo "SMOKE_LAUNCHER_INSTALL search rows: source and version, the installed one ticked, a description pane"
+  li_panes
   li_expect failed '.empty == "install.failed"' "a failed search did not read as one"
   li_expect none '.empty == "install.none"' "no packages did not read as one"
   li_expect gone '.empty == "install.nofspec"' "fspec gone did not read Installing apps needs fspec"
   "$jq_bin" -r '.empty' "$li_dir/failed.json" > /dev/null
   echo "SMOKE_LAUNCHER_INSTALL dim states: searching, failed, none, no fspec"
 
-  rg -qx 'app install flatpak:org.example.Foxglove --detach' "$li_dir/shim.log" || fail "launcher-install: Enter never reached the shim as app install --detach: $(cat "$li_dir/shim.log")"
+  grep -qx 'app install flatpak:org.example.Foxglove --detach' "$li_dir/shim.log" || fail "launcher-install: Enter never reached the shim as app install --detach: $(cat "$li_dir/shim.log")"
   li_expect resolving ".isOpen and .ids[0] == \"$fox\"" "the launcher did not stay open on the row"
   li_expect downloading '.drawn[0].value == "Downloading 40%"' "the row did not follow the stream into Downloading 40%"
   li_expect committing '.drawn[0].value == "Installing 50%"' "the row did not follow the stream into Installing 50%"
@@ -300,21 +410,26 @@ leg_launcher_install_assert() {
   li_expect failrow '(.drawn[] | select(.id == "install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire") | .value) == "flatpak: remote flathub is not reachable"' "the failure's reason is not on the row"
   li_expect failact '.groups | map(select(.source == "fspec:install:flatpak:org.example.Foxfire" and .state == "failed")) | length == 1' "Activity did not read the install failed"
   [ "$(cat "$li_dir/retry.txt")" = "ok" ] || fail "launcher-install: activity retry answered $(cat "$li_dir/retry.txt")"
-  [ "$(rg -c 'app install flatpak:org.example.Foxfire --detach' "$li_dir/shim.log")" = "2" ] || fail "launcher-install: retry did not reach the shim as the same install: $(cat "$li_dir/shim.log")"
+  [ "$(grep -c 'app install flatpak:org.example.Foxfire --detach' "$li_dir/shim.log")" = "2" ] || fail "launcher-install: retry did not reach the shim as the same install: $(cat "$li_dir/shim.log")"
   echo "SMOKE_LAUNCHER_INSTALL a failure on the row and in Activity, retried as the same install"
+  li_expect runcol '.actions == ["install", "run-once"]' "Foxfire's column is not Install then Run once"
+  [ "$(grep -c '^run ' "$li_dir/shim.log")" = "1" ] && grep -qx 'run --detach flatpak:org.example.Foxfire' "$li_dir/shim.log" || fail "launcher-install: Run once did not reach the shim once as run --detach: $(cat "$li_dir/shim.log")"
+  li_expect runrunning '.groups | map(select(.source == "fspec:run:flatpak:org.example.Foxfire" and .state == "running")) | length == 1' "Activity had no running run item"
+  li_expect runsucceeded '.groups | map(select(.source == "fspec:run:flatpak:org.example.Foxfire" and .state == "succeeded")) | length == 1' "Activity did not read the run succeeded"
+  echo "SMOKE_LAUNCHER_INSTALL run once: Tab lists it, fspec run --detach, the run followed in Activity"
   li_expect early '.actionsOpen and (.actions | index("uninstall")) == null' "the owner query answered before Tab, so a late answer joining the column went unexercised"
   li_expect column '.actions[-1] == "uninstall"' "Uninstall never joined the open column of an app fspec owns, or not last"
   li_expect armed '.isOpen and .actionsOpen and .actions[.actionCursor] == "uninstall"' "the first Enter on Uninstall did not only arm it"
-  rg -qx 'app uninstall flatpak:org.example.Foxberry --detach' "$li_dir/shim.log" || fail "launcher-install: the second Enter never reached the shim as app uninstall --detach: $(cat "$li_dir/shim.log")"
-  [ "$(rg -c '^app uninstall' "$li_dir/shim.log")" = "1" ] || fail "launcher-install: the first Enter ran the uninstall too: $(cat "$li_dir/shim.log")"
+  grep -qx 'app uninstall flatpak:org.example.Foxberry --detach' "$li_dir/shim.log" || fail "launcher-install: the second Enter never reached the shim as app uninstall --detach: $(cat "$li_dir/shim.log")"
+  [ "$(grep -c '^app uninstall' "$li_dir/shim.log")" = "1" ] || fail "launcher-install: the first Enter ran the uninstall too: $(cat "$li_dir/shim.log")"
   li_expect uninstalled '.groups | map(select(.source == "fspec:uninstall:flatpak:org.example.Foxberry" and .state == "succeeded")) | length == 1' "Activity did not read the uninstall succeeded"
   li_expect gonerows '(.ids | index("apps.org.example.Foxberry")) == null' "the uninstalled app is still among the rows"
   li_expect distrocolumn '.actionsOpen and (.actions | index("open")) != null and (.actions | index("uninstall")) == null' "an app the distro owns offered Uninstall"
   echo "SMOKE_LAUNCHER_INSTALL uninstall: listed last, armed then run, the app gone, none on a distro app"
-  if rg -qv '^(search --json|app install|app uninstall|app owner)' "$li_dir/shim.log"; then fail "launcher-install: the shell asked fspec something unshimmed: $(cat "$li_dir/shim.log")"; fi
+  if grep -qvE '^(search --json|app install|app uninstall|app owner|info |run --detach )' "$li_dir/shim.log"; then fail "launcher-install: the shell asked fspec something unshimmed: $(cat "$li_dir/shim.log")"; fi
 
   local shot
-  for shot in rows failed ring toast armed; do
+  for shot in rows failed ring toast runcol runonce armed; do
     [ -s "$li_dir/$shot.png" ] || fail "launcher-install: no $shot frame"
     echo "SMOKE_LAUNCHER_INSTALL_SHOT $li_dir/$shot.png"
   done

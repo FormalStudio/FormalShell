@@ -716,8 +716,11 @@ impl Model {
     }
 
     /// A card whose height follows its list rather than the level's kind.
+    /// A preview pane counts: the card takes the taller of the list and
+    /// what the pane has to say. The clipboard keeps Pond's one height and
+    /// the actions column the level's.
     fn content_tall(&self) -> bool {
-        self.mode != Mode::Input && !self.app_view() && !self.split() && !self.halved() && matches!(self.view, View::Rows | View::Tiles | View::AppGrid)
+        self.mode != Mode::Input && !self.app_view() && !self.split() && self.column.is_none() && matches!(self.view, View::Rows | View::Tiles | View::AppGrid)
     }
 
     /// The routes that draw a whole view of their own.
@@ -2933,7 +2936,7 @@ impl Shown {
 
     /// The field's line, the head band's height under the card's top and
     /// the foot band's, each band with its rule.
-    fn metrics(theme: &Theme, m: &Model, output_h: f64, kit: &mut Kit) -> (f64, f64, f64, f64) {
+    fn metrics(theme: &Theme, m: &Model, store: &Store, output_h: f64, kit: &mut Kit) -> (f64, f64, f64, f64) {
         let s = &theme.space;
         let line = ui::measure(&w::text("Ag").size(Type::Field), 100.0, theme, kit).1.max(s.control_height);
         let head = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band) + theme.border_width;
@@ -2944,7 +2947,15 @@ impl Shown {
         } else if m.content_tall() {
             // The card hugs its list, never shorter than the opened state.
             let rest = s.xl + launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height) + s.xxl;
-            m.layout.content_h.max(rest - foot).min(cap)
+            let pane = match m.pane() {
+                Some(row) => {
+                    let (_, pw, _) = m.pane_extent(theme);
+                    let inner = (cap - s.lg * 2.0).max(0.0);
+                    ui::measure(&preview_el(m, store, row, theme, kit, pw, inner), pw, theme, kit).1.min(inner) + s.lg * 2.0
+                }
+                None => 0.0,
+            };
+            m.layout.content_h.max(pane).max(rest - foot).min(cap)
         } else {
             cap
         };
@@ -2978,7 +2989,7 @@ impl Shown {
     pub fn layout(&mut self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
         m.output_w = self.output.0;
         m.relayout(theme, kit);
-        let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, self.output.1, kit);
+        let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, store, self.output.1, kit);
         let chrome = head_h + foot_h;
         if (m.body_h - body_h).abs() > 0.5 {
             m.body_h = body_h;
@@ -3829,6 +3840,80 @@ pub fn pane_picture(n: &Node) -> Option<PanePicture<'_>> {
     }
 }
 
+/// An Install row's screenshot box in a pane `w` wide: the width, at most
+/// 10:16 of it tall.
+pub fn shot_box(w: f64) -> (u32, u32) {
+    (w.max(1.0).round() as u32, (w * 0.625).max(1.0).round() as u32)
+}
+
+/// The Install pane, as tall as what `fspec info` had to say: the icon,
+/// name and summary, the description clamped, the catalog's facts as
+/// label-over-value lines in two columns, then the first screenshot once
+/// fetched, in what height is left. A field the catalog left out is not
+/// drawn.
+fn package_pane(store: &Store, row: &Node, theme: &Theme, kit: &mut Kit, width: f64, height: f64) -> El {
+    let s = &theme.space;
+    let info = store.packages.info.get(&row.path);
+    let ok = info.and_then(|i| i.as_ref().ok());
+    let found = store.packages.search.as_ref().and_then(|(_, f)| f.as_ref().ok()).and_then(|f| f.iter().find(|p| p.id == row.path));
+    let icon_px = launcher_px(theme, 48.0);
+    let mark = match store.menu.row_icons.get(&row.icon_source).cloned().flatten() {
+        Some(image) => {
+            let density = image.pixmap.width() as f64 / icon_px.max(1.0);
+            w::picture(Some(image.at(density)), icon_px)
+        }
+        None => w::icon("package").size(Type::Display).ink(Ink::Muted).width(Size::Px(icon_px)).height(icon_px),
+    };
+    let name = ok.and_then(|i| i.name.clone()).unwrap_or_else(|| row.label.clone());
+    let summary = ok.and_then(|i| i.summary.clone()).or_else(|| found.and_then(|p| p.description.clone())).unwrap_or_default();
+    let text_w = (width - icon_px - s.lg).max(1.0);
+    let mut head = vec![w::text(name).size(Type::Heading).weight(Weight::Medium).elide()];
+    if !summary.is_empty() {
+        head.push(w::para(summary, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
+    }
+    let mut parts = vec![w::row(s.lg, vec![mark, w::column(s.xs, head).width(Size::Px(text_w))])];
+    if let Some(d) = ok.and_then(|i| i.description.clone()) {
+        parts.push(w::para(d, Type::BodySmall, Weight::Normal, Ink::Fg, 4));
+    }
+    let source = ok.map(|i| i.source.clone()).or_else(|| found.map(|p| p.source.clone())).filter(|v| !v.is_empty());
+    let version = ok.and_then(|i| i.version.clone()).or_else(|| found.and_then(|p| p.version.clone()));
+    let facts: Vec<(&str, String)> = [
+        ("Version", version),
+        ("Source", source),
+        ("Download", ok.and_then(|i| i.download.clone())),
+        ("Installed size", ok.and_then(|i| i.installed.clone())),
+        ("License", ok.and_then(|i| i.license.clone())),
+        ("Developer", ok.and_then(|i| i.developer.clone())),
+    ]
+    .into_iter()
+    .filter_map(|(k, v)| v.filter(|v| !v.is_empty()).map(|v| (k, v)))
+    .collect();
+    let col_w = ((width - s.lg) / 2.0).floor().max(1.0);
+    let line = |(label, value): &(&str, String)| {
+        w::column(s.xxs, vec![w::text(label.to_string()).size(Type::BodySmall).weight(Weight::Medium), w::caption(value.clone()).ink(Ink::Muted).elide()]).width(Size::Px(col_w))
+    };
+    let grid: Vec<El> = facts.chunks(2).map(|pair| w::row(s.lg, pair.iter().map(line).collect())).collect();
+    if !grid.is_empty() {
+        parts.push(w::column(s.md, grid));
+    }
+    if let Some(Err(why)) = info {
+        parts.push(w::caption(why.clone()).ink(Ink::Muted));
+    }
+    let shot = ok.and_then(|i| i.screenshot.as_ref()).and_then(|u| store.packages.shots.get(u)).cloned().flatten();
+    let (bw, bh) = shot_box(width);
+    if let Some(bitmap) = shot.and_then(|path| store.clipboard.preview.as_ref().filter(|p| p.path == path && p.size.0 == (bw, bh)).and_then(|p| p.bitmap.clone())) {
+        let used = ui::measure(&w::column(s.lg, parts.clone()), width, theme, kit).1 + s.lg;
+        let (iw, ih) = (f64::from(bitmap.pixmap.width()).max(1.0), f64::from(bitmap.pixmap.height()).max(1.0));
+        let h = (f64::from(bw) * ih / iw).min(f64::from(bh)).min(height - used).floor();
+        // Too short a strip to show anything is left out.
+        if h >= 48.0 {
+            let pw = (h * iw / ih).min(f64::from(bw)).floor();
+            parts.push(w::picture(Some(bitmap), h).width(Size::Px(pw)).height(h));
+        }
+    }
+    w::column(s.lg, parts)
+}
+
 /// The pane's name and facts lines under what it shows.
 fn pane_foot_h(theme: &Theme, kit: &mut Kit, w: f64) -> f64 {
     let s = &theme.space;
@@ -3922,12 +4007,7 @@ fn preview_el(m: &Model, store: &Store, row: &Node, theme: &Theme, kit: &mut Kit
             };
             (content, row.label.clone(), facts)
         }
-        PaneKind::Package => {
-            let body_line = ui::measure(&w::text("Ag"), width, theme, kit).1.max(1.0);
-            let lines = ((bh_f / body_line).floor() as usize).max(1);
-            let content = if row.full_text.is_empty() { muted("No description") } else { boxed(w::para(row.full_text.clone(), Type::Body, Weight::Normal, Ink::Fg, lines)) };
-            (content, row.label.clone(), row.path.clone())
-        }
+        PaneKind::Package => return package_pane(store, row, theme, kit, width, height),
         PaneKind::Window => {
             let facts = row.meta.clone().filter(|m| !m.is_empty()).map(|ws| format!("Workspace {ws}")).unwrap_or_default();
             let content = match &m.pane_frame {

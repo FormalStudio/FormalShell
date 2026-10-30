@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use async_io::Timer;
-use fs_menu::providers::{self as p, Owner, Package};
+use fs_menu::providers::{self as p, Info, Owner, Package};
 use futures_lite::{FutureExt, future};
 
 use super::proc;
@@ -98,6 +98,10 @@ pub struct State {
     /// rescan, a pick for the new app). Written on the UI thread.
     pub landed: HashSet<String>,
     pub software: Software,
+    /// `fspec info` by package id, or why it did not answer.
+    pub info: HashMap<String, Result<Info, String>>,
+    /// A screenshot URL's cached file, `None` when it could not be fetched.
+    pub shots: HashMap<String, Option<String>>,
 }
 
 pub enum Diff {
@@ -107,6 +111,8 @@ pub enum Diff {
     Checked(Result<(u32, String), String>, Option<(Verb, String)>),
     /// An Apply started or ended, and the change that did not go.
     Changing(bool, Option<(Change, String)>),
+    Info(String, Result<Info, String>),
+    Shot(String, Option<String>),
 }
 
 impl State {
@@ -148,6 +154,18 @@ impl State {
                 self.software.behind = behind;
                 self.software.last = last;
             }
+            Diff::Info(id, info) => {
+                if self.info.get(&id) == Some(&info) {
+                    return false;
+                }
+                self.info.insert(id, info);
+            }
+            Diff::Shot(url, path) => {
+                if self.shots.get(&url) == Some(&path) {
+                    return false;
+                }
+                self.shots.insert(url, path);
+            }
             Diff::Changing(applying, failed) => {
                 if self.software.applying == applying && self.software.failed == failed {
                     return false;
@@ -186,6 +204,9 @@ pub enum Cmd {
     /// Check the spec checkout now.
     Check,
     Change(Change),
+    /// One package's details for the Install pane, and its screenshot,
+    /// asked once each.
+    Info(String),
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
@@ -228,6 +249,63 @@ fn spawn_app(ctx: &Ctx, verb: Verb, id: String, name: String, before: HashSet<St
         }
         c.publish(store::Diff::Packages(Diff::Started(Started { id, name, verb, op, before, app: None })));
     });
+}
+
+/// `fspec info` for one package, then its screenshot into the cache: a
+/// file already there is not fetched again.
+fn spawn_info(ctx: &Ctx, id: String) {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let done = proc::capture_err(&proc::argv(&["fspec", "info", &id, "--json"]), Duration::from_secs(20)).await;
+        let info = match done.code {
+            0 => p::parse_info(&done.stdout).ok_or_else(|| "fspec printed no details".to_owned()),
+            proc::MISSING => Err(NO_FSPEC.into()),
+            proc::TIMED_OUT => Err("fspec info timed out".into()),
+            code => Err(p::failure(&done.stderr, code)),
+        };
+        let url = info.as_ref().ok().and_then(|i| i.screenshot.clone()).filter(|u| u.starts_with("https://") || u.starts_with("http://"));
+        c.publish(store::Diff::Packages(Diff::Info(id, info)));
+        let Some(url) = url else { return };
+        let path = shot_path(&url);
+        let have = std::fs::metadata(&path).is_ok_and(|m| m.len() > 0);
+        let got = have || fetch_shot(&url, &path).await;
+        c.publish(store::Diff::Packages(Diff::Shot(url, got.then(|| path.to_string_lossy().into_owned()))));
+    });
+}
+
+/// Where a screenshot URL is cached, named by a hash of the whole URL:
+/// Flathub reuses one last segment (`image-1_752x423@1.png`) across apps.
+fn shot_path(url: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let base = match std::env::var("XDG_CACHE_HOME") {
+        Ok(v) if !v.is_empty() => PathBuf::from(v),
+        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"),
+    };
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut h);
+    // `image::open` reads the format off the extension.
+    let ext = url.rsplit('/').next().and_then(|last| last.rsplit_once('.')).map(|(_, e)| e).filter(|e| !e.is_empty() && e.chars().all(|c| c.is_ascii_alphanumeric())).unwrap_or("png");
+    base.join("formalshell/install-shots").join(format!("{:016x}.{ext}", h.finish()))
+}
+
+/// curl into a part file, renamed over `path` once whole.
+async fn fetch_shot(url: &str, path: &Path) -> bool {
+    let Some(dir) = path.parent() else { return false };
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    let part = path.with_extension("part");
+    let part_s = part.to_string_lossy().into_owned();
+    let done = proc::capture_err(
+        &proc::argv(&["curl", "--fail", "--silent", "--location", "--connect-timeout", "4", "--max-time", "20", "--max-filesize", "8388608", "--output", &part_s, url]),
+        Duration::from_secs(25),
+    )
+    .await;
+    if done.code != 0 {
+        let _ = std::fs::remove_file(&part);
+        return false;
+    }
+    std::fs::rename(&part, path).is_ok()
 }
 
 /// The spec's directory, off `FSPEC_SPEC` as fspec reads it (a directory
@@ -346,6 +424,7 @@ pub async fn run(ctx: Ctx) {
     let mut due: Option<Instant> = None;
     let mut searching: Option<Searching> = None;
     let mut asked: HashSet<String> = HashSet::new();
+    let mut asked_info: HashSet<String> = HashSet::new();
     let mut recheck: Option<Instant> = None;
     loop {
         let wake = {
@@ -430,6 +509,12 @@ pub async fn run(ctx: Ctx) {
                 spawn_check(&ctx);
             }
             Wake::Cmd(Cmd::Change(change)) => spawn_change(&ctx, change),
+            Wake::Cmd(Cmd::Info(id)) => {
+                if !asked_info.insert(id.clone()) {
+                    continue;
+                }
+                spawn_info(&ctx, id);
+            }
         }
     }
 }

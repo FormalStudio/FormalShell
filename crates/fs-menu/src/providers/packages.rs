@@ -28,6 +28,34 @@ pub struct Package {
     pub description: Option<String>,
     pub installed: bool,
     pub installable: bool,
+    /// fspec can start it once without installing (`fspec run --detach`).
+    pub run: bool,
+}
+
+/// `fspec info --json`: what the Install pane shows of one package, each
+/// field absent where its catalog does not say.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Info {
+    pub id: String,
+    pub source: String,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub summary: Option<String>,
+    /// Paragraphs and list items, one per line.
+    pub description: Option<String>,
+    pub license: Option<String>,
+    pub developer: Option<String>,
+    /// The download and installed sizes as the package manager words them.
+    pub download: Option<String>,
+    pub installed: Option<String>,
+    /// An http URL of the first screenshot.
+    pub screenshot: Option<String>,
+    pub icon: Option<String>,
+}
+
+pub fn parse_info(stdout: &str) -> Option<Info> {
+    stdout.lines().find_map(|l| serde_json::from_str::<Info>(l.trim()).ok()).filter(|i| !i.id.is_empty())
 }
 
 /// The packages in the order fspec ranked them; a line that is not one is
@@ -95,6 +123,7 @@ pub fn package_rows(found: &[Package]) -> Vec<Node> {
         .iter()
         .map(|p| {
             let installable = p.installable && !p.installed;
+            let runnable = p.run && !p.installed;
             Node {
                 path: p.id.clone(),
                 meta: Some(package_value(p)),
@@ -102,6 +131,8 @@ pub fn package_rows(found: &[Package]) -> Vec<Node> {
                 icon_source: p.icon.clone().unwrap_or_default(),
                 action: installable.then(|| format!("@ipc:package.install:{}", p.id)),
                 verb: installable.then(|| "Install".to_owned()),
+                alternate: runnable.then(|| format!("@ipc:package.run:{}", p.id)),
+                alternate_label: runnable.then(|| "Run once".to_owned()),
                 checked: p.installed.then(|| PACKAGE_INSTALLED.to_owned()),
                 keep_open: Some(true),
                 local_only: true,
@@ -142,6 +173,13 @@ mod tests {
     const FIREFOX: &str = r#"{"id":"flatpak:org.mozilla.firefox","name":"Firefox","source":"flatpak","version":"159.0","icon":"/c/firefox.png","description":"Fast, Private & Safe Web Browser","installed":false,"owner":null,"installable":true,"run":true,"spec":"pkg()"}"#;
 
     #[test]
+    fn info_reads_fspecs_line_and_keeps_what_it_leaves_out_absent() {
+        let i = parse_info(r#"{"id":"zypper:btop","source":"zypper","name":"btop","version":"1.4.7","summary":"Usage","description":"One.\nTwo.","license":null,"developer":null,"download":null,"installed":"2.1 MiB","screenshot":null,"icon":null}"#).unwrap();
+        assert_eq!((i.installed.as_deref(), i.license, i.description.as_deref()), (Some("2.1 MiB"), None, Some("One.\nTwo.")));
+        assert!(parse_info("not json").is_none());
+    }
+
+    #[test]
     fn reads_search_lines_in_order() {
         let out = format!("{FIREFOX}\nnot json\n{}\n", r#"{"id":"zypper:btop","name":"btop","source":"zypper","version":null,"icon":null,"description":null,"installed":true,"owner":"distro","installable":true}"#);
         let found = parse_search(&out);
@@ -175,6 +213,8 @@ mod tests {
         assert_eq!(first.id, "install");
         assert!(first.keep_open);
         assert_eq!(first.run, crate::actions::Run::Ipc("package.install:flatpak:org.mozilla.firefox".into()));
+        let ids: Vec<_> = crate::actions::actions_for(&s).into_iter().map(|a| (a.id, a.run)).collect();
+        assert_eq!(ids[1], ("run-once".into(), crate::actions::Run::Ipc("package.run:flatpak:org.mozilla.firefox".into())));
         let installed = package_rows(&[Package { id: "zypper:btop".into(), installed: true, installable: true, ..Package::default() }]);
         let s = crate::actions::Subject { node: &installed[0], ..s };
         assert_eq!(crate::actions::first_action(&s), None);

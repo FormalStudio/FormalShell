@@ -20,6 +20,8 @@ reads the shell's status at a known step.
         resolving, preparing 40%, committing 1/2, succeeded
   installfail  the same failing at preparing 10%
   uninstall  resolving, committing 0/1, succeeded
+  run   a run once from the launcher (FSPEC_STUB_PKG, FSPEC_STUB_TITLE):
+        resolving 0/1, preparing 40%, succeeded
   strand  a run: resolving 0/1, resolving 1/1, preparing, succeeded, with
         the first connection held open and never written to again past its
         snapshot, the way fspec treats a reader whose snapshot it could not
@@ -79,6 +81,15 @@ def scenario(name, op_id):
             o(phase="resolving", progress={"done": 0, "total": 1, "unit": "packages"}, item="smoke-strand"),
             o(phase="resolving", progress={"done": 1, "total": 1, "unit": "packages"}, item="smoke-strand"),
             o(phase="preparing"),
+            o(state="succeeded", phase="preparing", result={"changes": 0, "summary": "started"}),
+        ]
+    if name == "run":
+        pkg = os.environ.get("FSPEC_STUB_PKG", "flatpak:org.example.smoke")
+        title = os.environ.get("FSPEC_STUB_TITLE", "smoke")
+        o = lambda **f: op(op_id, "run", f"fspec:run:{pkg}", f"Running {title}", **f)
+        return [
+            o(phase="resolving", progress={"done": 0, "total": 1, "unit": "packages"}, item=title),
+            o(phase="preparing", progress={"done": 40, "total": 100, "unit": "percent"}, item=title),
             o(state="succeeded", phase="preparing", result={"changes": 0, "summary": "started"}),
         ]
     if name in ("install", "installfail", "uninstall"):

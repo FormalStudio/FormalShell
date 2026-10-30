@@ -275,6 +275,9 @@ fn builtins(s: &Subject) -> Vec<Action> {
                 install.keep_open = true;
                 out.push(install);
             }
+            if let Some(run) = n.alternate.as_deref() {
+                out.push(Action::new("run-once", "Run once", Run::parse(run)));
+            }
         }
         Kind::Image => {
             let label = if s.picker_select { "Choose" } else { "Set wallpaper" };
