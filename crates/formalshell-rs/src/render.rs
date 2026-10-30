@@ -605,11 +605,31 @@ impl Caches {
                         }
                         let stops: Vec<(f32, AlphaColor<Srgb>)> = line.stops.iter().map(|(o, c)| (*o, color(*c))).collect();
                         let g = vello_cpu::peniko::Gradient::new_sweep(line.centre, 0.0, std::f32::consts::TAU).with_stops(stops.as_slice());
-                        ctx.set_paint_transform(back);
-                        ctx.set_gradient(g);
-                        ctx.set_stroke(Stroke::new(line.width).with_caps(Cap::Square).with_join(Join::Bevel));
-                        ctx.stroke_path(&line.path);
-                        ctx.reset_paint_transform();
+                        if let Some(mask) = &line.mask {
+                            // The mask's alpha in a layer of its own, the sweep
+                            // kept only where it lands.
+                            let (mw, mh) = (f64::from(mask.image.pixmap.width()), f64::from(mask.image.pixmap.height()));
+                            let r = mask.rect;
+                            ctx.push_group();
+                            ctx.set_transform(at * Affine::translate((r.x0, r.y0)) * Affine::scale_non_uniform(r.width() / mw, r.height() / mh));
+                            let sampler = vello_cpu::peniko::ImageSampler::default().with_quality(vello_cpu::peniko::ImageQuality::Medium);
+                            ctx.set_image(mask.image.pixmap.clone(), sampler);
+                            ctx.fill_rect(&Rect::new(0.0, 0.0, mw, mh));
+                            ctx.set_transform(at);
+                            ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::SrcIn));
+                            ctx.set_paint_transform(back);
+                            ctx.set_gradient(g);
+                            ctx.fill_path(&line.path);
+                            ctx.reset_paint_transform();
+                            ctx.pop_layer();
+                            ctx.pop_layer();
+                        } else {
+                            ctx.set_paint_transform(back);
+                            ctx.set_gradient(g);
+                            ctx.set_stroke(Stroke::new(line.width).with_caps(Cap::Square).with_join(Join::Bevel));
+                            ctx.stroke_path(&line.path);
+                            ctx.reset_paint_transform();
+                        }
                         if line.clip.is_some() {
                             ctx.pop_layer();
                         }

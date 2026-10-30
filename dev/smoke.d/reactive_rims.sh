@@ -15,7 +15,11 @@
 #   while the rims keep asking the compositor for the windows.
 # - A floating foot window moved by Hyprland's own dispatcher to just left
 #   of the network card, which raises no event of its own: the card's left
-#   side lifts in the dump and its left rim column brightens in the frame.
+#   side lifts in the dump and its left rim column brightens in the frame,
+#   read along the stretch the window spans. The light spills onto the
+#   fill: a column 10px inside the lit edge is brighter than one 10px
+#   inside the far edge, moved by less than the rim itself was, and 48px
+#   in (past the spill's depth) not moved at all.
 # - settings.json retargeted to `theme.reactiveRims: false` under the
 #   running shell: `rims.enabled` false and the panel's rim gone.
 leg_reactive_rims_flag="--reactive-rims"
@@ -119,6 +123,25 @@ _reactive_rims_column() {
   echo "1x$h+$x+$((y0 + h / 2))"
 }
 
+# The same column cut to the stretch the window beside the card spans
+# (its top 24px under the card's, 200px tall), 16px clear of either end.
+_reactive_rims_span() {
+  local json="$1" side="$2" inset="$3" x0 y0 x1 y1 x top bottom
+  read -r x0 y0 x1 y1 < <("$jq_bin" -r '.rims.panel.rect | map(round) | "\(.[0]) \(.[1]) \(.[2]) \(.[3])"' "$json")
+  top=$((y0 + 40))
+  bottom=$((y0 + 208))
+  [ "$bottom" -le $((y1 - 16)) ] || bottom=$((y1 - 16))
+  if [ "$side" = left ]; then x=$((x0 + inset)); else x=$((x1 - 1 - inset)); fi
+  echo "1x$((bottom - top))+$x+$top"
+}
+
+# Luminance (0..255) inside one rect of a frame.
+_reactive_rims_lum() {
+  local lr lg lb
+  read -r lr lg lb < <(_reactive_rims_mean "$1" "$2")
+  echo $(((lr * 2126 + lg * 7152 + lb * 722) / 10000))
+}
+
 # Red minus blue at the rim, less red minus blue on the fill inside it.
 _reactive_rims_lean() {
   local png="$1" json="$2" side="$3" rim fill
@@ -128,7 +151,7 @@ _reactive_rims_lean() {
 }
 
 leg_reactive_rims_assert() {
-  local f side lean_l lean_r rest c0 c1 lift_b lift_c lum_b lum_c lum_d lr lg lb
+  local f side lean_l lean_r rest c0 c1 lift_b lift_c lum_b lum_c lum_d near_b near_c far_c deep_b deep_c
   for f in "$reactive_rims_left_json" "$reactive_rims_right_json" "$reactive_rims_lit_json" "$reactive_rims_off_json"; do
     [ -s "$f" ] || fail "no debug dump at $f"
   done
@@ -166,24 +189,37 @@ leg_reactive_rims_assert() {
   echo "left lift: $lift_b alone, $lift_c with the window beside it; windows=$("$jq_bin" -r .rims.windows "$reactive_rims_lit_json")"
   "$jq_bin" -en --argjson b "$lift_b" --argjson c "$lift_c" '$c >= $b + 0.15' > /dev/null \
     || fail "the window beside the card did not lift its left side ($lift_b to $lift_c); dispatch: $(tr '\n' ' ' < "$reactive_rims_dispatch_path")"
-  read -r lr lg lb < <(_reactive_rims_mean "$reactive_rims_right_png" "$(_reactive_rims_column "$reactive_rims_right_json" left 0)")
-  lum_b=$(((lr * 2126 + lg * 7152 + lb * 722) / 10000))
-  read -r lr lg lb < <(_reactive_rims_mean "$reactive_rims_lit_png" "$(_reactive_rims_column "$reactive_rims_lit_json" left 0)")
-  lum_c=$(((lr * 2126 + lg * 7152 + lb * 722) / 10000))
+  lum_b=$(_reactive_rims_lum "$reactive_rims_right_png" "$(_reactive_rims_span "$reactive_rims_right_json" left 0)")
+  lum_c=$(_reactive_rims_lum "$reactive_rims_lit_png" "$(_reactive_rims_span "$reactive_rims_lit_json" left 0)")
   echo "left rim luminance: $lum_b alone, $lum_c with the window"
   [ $((lum_c - lum_b)) -ge 12 ] || fail "the left rim did not brighten with the window beside it ($lum_b to $lum_c)"
+
+  # The spill: the fill near the lit edge brighter than near the far one,
+  # and moved by less than the rim.
+  near_b=$(_reactive_rims_lum "$reactive_rims_right_png" "$(_reactive_rims_span "$reactive_rims_right_json" left 10)")
+  near_c=$(_reactive_rims_lum "$reactive_rims_lit_png" "$(_reactive_rims_span "$reactive_rims_lit_json" left 10)")
+  far_c=$(_reactive_rims_lum "$reactive_rims_lit_png" "$(_reactive_rims_span "$reactive_rims_lit_json" right 10)")
+  echo "fill luminance 10px inside: lit edge $near_b alone, $near_c with the window; far edge $far_c"
+  [ $((near_c - far_c)) -ge 3 ] || fail "the fill by the lit edge ($near_c) is no brighter than by the far one ($far_c)"
+  [ $((near_c - near_b)) -ge 2 ] || fail "the fill by the lit edge did not take the window's light ($near_b to $near_c)"
+  [ $((near_c - near_b)) -lt $((lum_c - lum_b)) ] \
+    || fail "the fill moved as much as the rim ($near_b to $near_c against $lum_b to $lum_c)"
+  # Past the spill's 36px the window changes nothing.
+  deep_b=$(_reactive_rims_lum "$reactive_rims_right_png" "$(_reactive_rims_span "$reactive_rims_right_json" left 48)")
+  deep_c=$(_reactive_rims_lum "$reactive_rims_lit_png" "$(_reactive_rims_span "$reactive_rims_lit_json" left 48)")
+  echo "fill luminance 48px inside the lit edge: $deep_b alone, $deep_c with the window"
+  [ $((deep_c - deep_b)) -le 1 ] || fail "the window's light reached 48px into the fill ($deep_b to $deep_c)"
 
   # Off: the flat border back on the same edge, the window still beside it.
   "$jq_bin" -e '.rims.enabled == false and .rims.panel == null' "$reactive_rims_off_json" > /dev/null \
     || fail "theme.reactiveRims false left the rims on: $("$jq_bin" -c .rims "$reactive_rims_off_json")"
-  read -r lr lg lb < <(_reactive_rims_mean "$reactive_rims_off_png" "$(_reactive_rims_column "$reactive_rims_lit_json" left 0)")
-  lum_d=$(((lr * 2126 + lg * 7152 + lb * 722) / 10000))
+  lum_d=$(_reactive_rims_lum "$reactive_rims_off_png" "$(_reactive_rims_span "$reactive_rims_lit_json" left 0)")
   echo "left rim luminance with rims off: $lum_d"
-  [ $((lum_c - lum_d)) -ge 30 ] && [ "$lum_d" -le $((lum_b + 12)) ] \
+  [ $((lum_c - lum_d)) -ge 12 ] && [ "$lum_d" -le $((lum_b + 12)) ] \
     || fail "the left rim with rims off ($lum_d) is not the flat border ($lum_b alone, $lum_c lit)"
 
   echo "active border: $(tail -1 "$reactive_rims_dispatch_path")"
-  echo "SMOKE_REACTIVE_RIMS ok rest_commits=$rest lift=$lift_b->$lift_c lum=$lum_b->$lum_c->$lum_d"
+  echo "SMOKE_REACTIVE_RIMS ok rest_commits=$rest lift=$lift_b->$lift_c lum=$lum_b->$lum_c->$lum_d fill=$near_b->$near_c far=$far_c"
   echo "SMOKE_REACTIVE_RIMS_LEFT $reactive_rims_left_png"
   echo "SMOKE_REACTIVE_RIMS_RIGHT $reactive_rims_right_png"
   echo "SMOKE_REACTIVE_RIMS_WINDOW $reactive_rims_lit_png"

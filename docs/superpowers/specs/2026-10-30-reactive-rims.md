@@ -8,6 +8,12 @@ the border's own weight, never a glow. Behind `theme.reactiveRims`
 (default true). Wins over DESIGN.md's flat-border wording where the two
 disagree; the table's border stays the rim's base colour.
 
+Retuned the same night (owner: "more like an outline than an edge, too
+intense, and it doesn't impact the rest of the surface"): the rim is a lit
+edge of a physical card. Its light peaks at the point nearest its source
+and fades along the edge, and a fraction of it spills onto the fill. The
+fill always moves clearly less than the border.
+
 ## 1. What a rim reads
 
 The capture rule holds: nothing here captures a window or the output.
@@ -39,19 +45,31 @@ For each of 24 stops round the card, at even angles from its centre: the
 point on the card's edge along that ray and the edge's outward normal there.
 
 - **Tint**: the sky averaged just outside and just under that point. The
-  stop's border colour is the table's border mixed 35% toward the tint.
-- **Lift**: the sky's luminance there (up to 0.25), plus each window's
-  light: facing the stop (the normal against the direction to the
-  window's nearest point) and within 64px, falling off with the square of
-  the distance. Capped at 1. The border brightens toward white by
-  half the lift, and its alpha rises by at most 0.35 of what it lacks.
+  stop's border colour is the table's border mixed 20% toward the tint.
+- **Lift**: the sky's luminance there (up to 0.25), at full weight only on
+  the stretch over the sky's brightest part and at 0.3 of it where the sky
+  is no brighter than the rim's mean; plus each window's light: facing the
+  stop (the normal against the direction to the window's nearest point),
+  within 64px and falling off with the square of the distance, and along
+  the edge a Gaussian 72px wide round the point of the card nearest the
+  window (the middle of the stretch the two share). Each stop then takes a
+  quarter of each neighbour's lift, so the light fades along the edge.
+  Capped at 1. The border brightens toward white by 0.28 of the lift, and
+  its alpha rises by at most 0.15 of what it lacks.
 - **Specular**: a 1px line one pixel inside the border, white mixed 30%
-  toward the tint, at 0.22 of the lift. Zero lift draws nothing.
+  toward the tint, at 0.16 of the lift. Zero lift draws nothing.
+- **Spill**: the same sweep filled over the card's fill at 0.12 of the lift,
+  whitened by the lift, under the content, weighted by a falloff mask that
+  is 1 at the edge and 0 from 36px in (quadratic, from the nearest edge).
+  The mask is made once per fill size at a quarter of its logical
+  resolution and stretched, so a changing light only recomposes it.
+- **Wash**: the sky's mean tint flat over the whole fill at 0.03. Flat
+  because a sweep carried to the centre draws its seams there.
 
 Stops are quantised (colour to 1/255, lift to 1/64), so a sky or a window
 that did not really change gives the same stops and damages nothing.
 
-Both lines are one sweep gradient stroke each, drawn by vello_cpu the way
+The rim lines are one sweep gradient stroke each, the spill one masked fill, drawn by vello_cpu the way
 every other paint is (`Paint::Rim`, the gradient held in surface pixels so
 a joined card's deform and edge map leave it in place). They replace the
 flat border stroke; the border is never drawn twice. The GPU path draws
@@ -81,6 +99,8 @@ whose look the compositor draws off viewport-cropped quads.
 a panel open over each half in turn, the rim's pixels read off the frame:
 red over blue on the left card, blue over red on the right. A floating
 window moved next to the open card brightens the facing rim (`debug dump`'s
-`rims` and the frame). Five seconds at rest with the card open: no commit
+`rims` and the frame), read along the stretch the window spans. The fill
+10px inside the lit edge is brighter than 10px inside the far one, and
+moved by less than the rim. Five seconds at rest with the card open: no commit
 on its surface. `theme.reactiveRims: false` retargeted under the running
 shell puts the flat border back.

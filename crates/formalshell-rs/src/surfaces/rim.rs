@@ -9,19 +9,28 @@ use std::time::Instant;
 
 use fs_chrome::rim::{self, Field, Light, STOPS};
 use fs_theme::color::Rgba;
-use vello_cpu::kurbo::{BezPath, Rect};
+use vello_cpu::kurbo::{BezPath, Rect, Shape};
 
 use crate::motion::{Animated, SPATIAL_FAST, SPATIAL_FAST_MS};
-use crate::scene::{Paint, RimLine};
+use crate::scene::{Bitmap, Paint, RimLine, RimMask};
 
 /// How far the border goes toward the colour around it.
-const TINT: f32 = 0.35;
+const TINT: f32 = 0.2;
 /// How far toward white, and how much of its missing alpha, at full lift.
-const BRIGHTEN: f32 = 0.5;
-const OPACIFY: f32 = 0.35;
+const BRIGHTEN: f32 = 0.28;
+const OPACIFY: f32 = 0.15;
 /// The specular line's alpha at full lift, and how far it leans to the tint.
-const SPECULAR: f32 = 0.22;
+const SPECULAR: f32 = 0.16;
 const SPECULAR_TINT: f32 = 0.3;
+/// The light spilling onto the fill: its alpha at the lit edge at full
+/// lift, about a fifth of what the border moves, and the sky's own tint
+/// over the whole fill.
+const SPILL: f32 = 0.12;
+const SPILL_TINT: f32 = 0.03;
+/// How far the spill falls inward from the edge, and the logical pixels to
+/// one mask pixel.
+const SPILL_DEPTH: f64 = 36.0;
+const MASK_CELL: f64 = 4.0;
 
 /// One output's field and the count of times it changed.
 #[derive(Clone)]
@@ -41,6 +50,10 @@ struct Key {
 pub struct Stops {
     pub border: [Rgba; STOPS],
     pub specular: [Rgba; STOPS],
+    pub spill: [Rgba; STOPS],
+    /// The sky's mean tint, flat over the whole fill: a sweep carried to
+    /// the centre would draw its seams there.
+    pub wash: Rgba,
 }
 
 impl Stops {
@@ -48,14 +61,22 @@ impl Stops {
         let white = Rgba { r: 1.0, g: 1.0, b: 1.0, a: base.a };
         let mut border = [base; STOPS];
         let mut specular = [Rgba::TRANSPARENT; STOPS];
+        let mut spill = [Rgba::TRANSPARENT; STOPS];
+        let mut sum = [0.0f32; 4];
         for (i, l) in lights.iter().enumerate() {
             let tint = Rgba { r: l.tint[0], g: l.tint[1], b: l.tint[2], a: base.a };
             let c = base.mix(tint, TINT * l.tinted).mix(white, BRIGHTEN * l.lift);
             border[i] = c.with_alpha(base.a + (1.0 - base.a) * OPACIFY * l.lift);
             let s = Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 }.mix(tint.with_alpha(1.0), SPECULAR_TINT * l.tinted);
             specular[i] = s.with_alpha(SPECULAR * l.lift);
+            let glow = tint.with_alpha(1.0).mix(Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 }, if l.tinted > 0.0 { l.lift } else { 1.0 });
+            spill[i] = glow.with_alpha(SPILL * l.lift);
+            for (acc, v) in sum.iter_mut().zip([l.tint[0], l.tint[1], l.tint[2], l.tinted]) {
+                *acc += v / STOPS as f32;
+            }
         }
-        Self { border, specular }
+        let wash = Rgba { r: sum[0], g: sum[1], b: sum[2], a: SPILL_TINT * sum[3] };
+        Self { border, specular, spill, wash }
     }
 
     fn mix(&self, to: &Stops, t: f32) -> Stops {
@@ -63,7 +84,9 @@ impl Stops {
         for i in 0..STOPS {
             out.border[i] = self.border[i].mix(to.border[i], t);
             out.specular[i] = self.specular[i].mix(to.specular[i], t);
+            out.spill[i] = self.spill[i].mix(to.spill[i], t);
         }
+        out.wash = self.wash.mix(to.wash, t);
         out
     }
 }
@@ -76,12 +99,35 @@ pub struct Rim {
     /// The stops changed with no blend to carry them: one more paint.
     fresh: bool,
     pub lights: Option<[Light; STOPS]>,
+    /// The spill's falloff for the last fill size, in mask pixels.
+    mask: Option<((u16, u16), Bitmap)>,
+    /// One white pixel, the wash's mask.
+    flat: Option<Bitmap>,
 }
 
 impl Default for Rim {
     fn default() -> Self {
-        Self { from: None, to: None, blend: Animated::new(1.0, SPATIAL_FAST), key: None, fresh: false, lights: None }
+        Self { from: None, to: None, blend: Animated::new(1.0, SPATIAL_FAST), key: None, fresh: false, lights: None, mask: None, flat: None }
     }
+}
+
+/// The spill's falloff over a fill `size` logical pixels big: white, its
+/// alpha a quadratic fall from each edge over `SPILL_DEPTH`.
+fn spill_mask(size: (f64, f64), cells: (u16, u16)) -> Bitmap {
+    let (w, h) = size;
+    let (sx, sy) = (w / f64::from(cells.0), h / f64::from(cells.1));
+    let mut px = Vec::with_capacity(usize::from(cells.0) * usize::from(cells.1) * 4);
+    for j in 0..cells.1 {
+        let y = (f64::from(j) + 0.5) * sy;
+        for i in 0..cells.0 {
+            let x = (f64::from(i) + 0.5) * sx;
+            let d = x.min(w - x).min(y).min(h - y);
+            let f = (1.0 - d / SPILL_DEPTH).max(0.0) as f32;
+            let a = (f * f * 255.0).round() as u8;
+            px.extend_from_slice(&[a; 4]);
+        }
+    }
+    Bitmap::from_premultiplied(cells.0, cells.1, px)
 }
 
 impl Rim {
@@ -173,13 +219,28 @@ impl Rim {
             v
         };
         let centre = ((card.x0 + card.x1) / 2.0, (card.y0 + card.y1) / 2.0);
-        let mut lines = Vec::with_capacity(2);
-        if stops.specular.iter().any(|c| c.a > 0.0) {
-            // Two borders deep on the fill's own edge, cut to the fill, under
-            // the border: the pixel inside the border is what shows.
-            lines.push(RimLine { path: fill.clone(), width: width * 4.0, clip: Some(fill), centre, stops: sweep(&stops.specular, true) });
+        let mut lines = Vec::with_capacity(3);
+        let bounds = fill.bounding_box();
+        if stops.wash.a > 0.0 {
+            let flat = self.flat.get_or_insert_with(|| Bitmap::from_premultiplied(1, 1, vec![255; 4])).clone();
+            let wash = stops.wash.with_alpha(stops.wash.a * alpha);
+            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: vec![(0.0, wash), (1.0, wash)], mask: Some(RimMask { image: flat, rect: bounds }) });
         }
-        lines.push(RimLine { path: outer, width, clip: None, centre, stops: sweep(&stops.border, false) });
+        if stops.spill.iter().any(|c| c.a > 0.0) && bounds.width() > 0.0 && bounds.height() > 0.0 {
+            // Made again only when the fill grows or shrinks by a mask pixel.
+            let cells = ((bounds.width() / MASK_CELL).ceil().clamp(1.0, 4096.0) as u16, (bounds.height() / MASK_CELL).ceil().clamp(1.0, 4096.0) as u16);
+            if self.mask.as_ref().is_none_or(|(c, _)| *c != cells) {
+                self.mask = Some((cells, spill_mask((bounds.width(), bounds.height()), cells)));
+            }
+            let image = self.mask.as_ref().map(|(_, m)| m.clone()).expect("made above");
+            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: sweep(&stops.spill, false), mask: Some(RimMask { image, rect: bounds }) });
+        }
+        if stops.specular.iter().any(|c| c.a > 0.0) {
+            // One border deep on the fill's own edge, cut to the fill, under
+            // the border: the pixel inside the border is what shows.
+            lines.push(RimLine { path: fill.clone(), width: width * 2.0, clip: Some(fill), centre, stops: sweep(&stops.specular, true), mask: None });
+        }
+        lines.push(RimLine { path: outer, width, clip: None, centre, stops: sweep(&stops.border, false), mask: None });
         Some(Paint::Rim(lines))
     }
 

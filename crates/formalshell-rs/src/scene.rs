@@ -250,6 +250,27 @@ pub struct RimLine {
     /// clockwise, the last one back on the first.
     pub centre: (f64, f64),
     pub stops: Vec<(f32, Rgba)>,
+    pub mask: Option<RimMask>,
+}
+
+/// A rim line that fills its path instead of stroking it, the sweep
+/// weighted by `image`'s alpha stretched over `rect` (node coordinates).
+#[derive(Clone)]
+pub struct RimMask {
+    pub image: Bitmap,
+    pub rect: Rect,
+}
+
+impl PartialEq for RimMask {
+    fn eq(&self, other: &Self) -> bool {
+        self.rect == other.rect && self.image.same_as(&other.image)
+    }
+}
+
+impl std::fmt::Debug for RimMask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RimMask({}x{} over {:?})", self.image.pixmap.width(), self.image.pixmap.height(), self.rect)
+    }
 }
 
 /// What a vector op fills or strokes with.

@@ -12,11 +12,17 @@ pub const STOPS: usize = 24;
 pub const CELL: f64 = 8.0;
 /// How far a window lights a rim facing it.
 pub const REACH: f64 = 64.0;
+/// How far along the edge a window's light runs from the point of the card
+/// nearest it, as a Gaussian's width.
+pub const SPREAD: f64 = 72.0;
 /// How far outside and inside the edge the sky is read.
 const SKY_OUT: f64 = 6.0;
 const SKY_IN: f64 = 6.0;
 /// The most the sky's own brightness lifts a stop.
 const SKY_LIFT: f32 = 0.25;
+/// The share of that a stop no brighter than the rim's mean keeps: the
+/// sky lights the stretch over its brightest part, not the whole line.
+const SKY_BASE: f32 = 0.3;
 /// A window that is not focused, against the focused one.
 pub const UNFOCUSED: f32 = 0.45;
 
@@ -141,21 +147,42 @@ fn overlaps(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
     a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3
 }
 
+/// The point on `card`'s edge a window at `g` lights hardest: the middle of
+/// the stretch the two share along each axis, or the side facing it.
+fn hotspot(card: (f64, f64, f64, f64), g: (f64, f64, f64, f64)) -> (f64, f64) {
+    let axis = |a0: f64, a1: f64, b0: f64, b1: f64| {
+        if b0 < a1 && a0 < b1 {
+            (a0.max(b0) + a1.min(b1)) / 2.0
+        } else if b1 <= a0 {
+            a0
+        } else {
+            a1
+        }
+    };
+    (axis(card.0, card.2, g.0, g.2), axis(card.1, card.3, g.1, g.3))
+}
+
 /// The stops for a card at `card`.
 pub fn lights(field: &Field, card: (f64, f64, f64, f64)) -> [Light; STOPS] {
     let mut out = [Light { tint: [0.0; 3], tinted: 0.0, lift: 0.0 }; STOPS];
-    for (i, light) in out.iter_mut().enumerate() {
-        let angle = i as f64 * std::f64::consts::TAU / STOPS as f64;
-        let (p, n) = edge_point(card, angle);
-        let mut lift = 0.0f32;
-        if let Some(sky) = &field.sky {
+    let edges: [((f64, f64), (f64, f64)); STOPS] = std::array::from_fn(|i| edge_point(card, i as f64 * std::f64::consts::TAU / STOPS as f64));
+    let mut sky_lum = [0.0f32; STOPS];
+    if let Some(sky) = &field.sky {
+        for (i, (p, n)) in edges.iter().enumerate() {
             let a = sky.at(p.0 + n.0 * SKY_OUT, p.1 + n.1 * SKY_OUT);
             let b = sky.at(p.0 - n.0 * SKY_IN, p.1 - n.1 * SKY_IN);
-            let tint = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
-            light.tint = tint;
-            light.tinted = 1.0;
-            lift += luminance(tint) * SKY_LIFT;
+            out[i].tint = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
+            out[i].tinted = 1.0;
+            sky_lum[i] = luminance(out[i].tint);
         }
+    }
+    let mean = sky_lum.iter().sum::<f32>() / STOPS as f32;
+    let top = sky_lum.iter().copied().fold(0.0f32, f32::max);
+    let mut lifts = [0.0f32; STOPS];
+    for (i, light) in out.iter_mut().enumerate() {
+        let (p, n) = edges[i];
+        let rel = if top - mean > 0.02 { ((sky_lum[i] - mean) / (top - mean)).clamp(0.0, 1.0) } else { 0.0 };
+        let mut lift = sky_lum[i] * SKY_LIFT * (SKY_BASE + (1.0 - SKY_BASE) * rel);
         let mut glow = [0.0f32; 3];
         let mut glow_w = 0.0f32;
         for g in &field.glints {
@@ -171,7 +198,9 @@ pub fn lights(field: &Field, card: (f64, f64, f64, f64)) -> [Light; STOPS] {
             }
             let facing = if d < 1e-6 { 1.0 } else { ((vx * n.0 + vy * n.1) / d).max(0.0) };
             let fall = 1.0 - d / REACH;
-            let w = (facing * fall * fall) as f32 * g.strength;
+            let h = hotspot(card, g.rect);
+            let along = ((p.0 - h.0).powi(2) + (p.1 - h.1).powi(2)).sqrt() / SPREAD;
+            let w = (facing * fall * fall * (-along * along).exp()) as f32 * g.strength;
             if w <= 0.0 {
                 continue;
             }
@@ -190,11 +219,17 @@ pub fn lights(field: &Field, card: (f64, f64, f64, f64)) -> [Light; STOPS] {
             }
             light.tinted = light.tinted.max(share);
         }
-        light.lift = q(lift.min(1.0), 64.0);
+        lifts[i] = lift.min(1.0);
         for c in &mut light.tint {
             *c = q(c.clamp(0.0, 1.0), 255.0);
         }
         light.tinted = q(light.tinted, 64.0);
+    }
+    // Each stop shares a little with its neighbours, so the light fades
+    // along the edge rather than stepping at a stop.
+    for (i, light) in out.iter_mut().enumerate() {
+        let l = lifts[(i + STOPS - 1) % STOPS] * 0.25 + lifts[i] * 0.5 + lifts[(i + 1) % STOPS] * 0.25;
+        light.lift = q(l, 64.0);
     }
     out
 }
@@ -239,7 +274,8 @@ mod tests {
         // Stop 0 faces +x (the blue half), stop 12 faces -x (the red one).
         assert_eq!(s[0].tint, [0.0, 0.0, 1.0]);
         assert_eq!(s[12].tint, [1.0, 0.0, 0.0]);
-        assert!(s[0].lift > 0.0 && s[0].lift <= SKY_LIFT);
+        // The brighter half lights its side harder.
+        assert!(s[12].lift > s[0].lift && s[12].lift <= SKY_LIFT, "{} {}", s[12].lift, s[0].lift);
     }
 
     #[test]
@@ -254,6 +290,17 @@ mod tests {
         // Out of reach, nothing.
         let far = Field { sky: None, glints: vec![Glint { rect: (380.0, 120.0, 600.0, 180.0), ..window }] };
         assert_eq!(side_lift(&lights(&far, CARD), CARD, (1.0, 0.0)), 0.0);
+    }
+
+    #[test]
+    fn a_window_lights_hardest_at_the_point_nearest_it() {
+        // A tall card, the window beside the lower end of its right edge.
+        let card = (100.0, 100.0, 300.0, 500.0);
+        let window = Glint { rect: (310.0, 380.0, 500.0, 500.0), rgb: [1.0, 1.0, 1.0], strength: 1.0 };
+        let s = lights(&Field { sky: None, glints: vec![window] }, card);
+        // Stops 0, 2, 3 and 4 run down the right edge from its middle.
+        assert!(s[3].lift > s[2].lift && s[4].lift > s[2].lift, "{:?}", s.map(|l| l.lift));
+        assert!(s[2].lift > s[0].lift, "{:?}", s.map(|l| l.lift));
     }
 
     #[test]

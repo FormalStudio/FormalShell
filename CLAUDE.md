@@ -1126,7 +1126,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   what the fill a few pixels in carries; no `commit surface=panel` in 5s
   at rest with the window poll running; a floating foot window moved
   beside the network card by Hyprland's own dispatcher (no event) lifting
-  and brightening the facing rim; and `theme.reactiveRims: false`
+  and brightening the facing rim along the stretch it spans, the fill
+  10px inside that edge brighter than 10px inside the far one and moved
+  by less than the rim; and `theme.reactiveRims: false`
   retargeted under the running shell putting the flat border back.
 - `reminder.sh` `--reminder`: a real countdown firing inside the run and
   bypassing DND into the popup tier.
