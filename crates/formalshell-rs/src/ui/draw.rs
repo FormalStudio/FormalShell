@@ -1305,12 +1305,13 @@ fn matrix(cx: &mut Cx, r: Rect, rows: &[String], path: &str) {
     cx.done(last);
 }
 
-/// Where a turning ring's arc starts, the same for every ring on screen.
-pub fn ring_turn(now: Instant) -> f64 {
+/// Where a turning ring's arc starts, the same for every ring on screen:
+/// one turn every two pulses, slow enough to read as work rather than
+/// alarm, stretched by the motion scale like every other clock.
+pub fn ring_turn(now: Instant, motion_scale: f64) -> f64 {
     static EPOCH: OnceLock<Instant> = OnceLock::new();
     let ms = now.saturating_duration_since(*EPOCH.get_or_init(|| now)).as_secs_f64() * 1000.0;
-    // One turn every two pulses, slow enough to read as work, not alarm.
-    (ms / (PULSE_MS * 2.0)).fract() * std::f64::consts::TAU
+    (ms / (PULSE_MS * 2.0 * motion_scale.max(f64::EPSILON))).fract() * std::f64::consts::TAU
 }
 
 /// A ring's strokes: the `track.groove` circle and, over it, the arc from
@@ -1343,7 +1344,7 @@ fn ring(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
     });
     let turn = if r == Ring::Unknown && t.motion_enabled {
         cx.animate();
-        ring_turn(cx.now)
+        ring_turn(cx.now, cx.motion_scale)
     } else {
         0.0
     };
