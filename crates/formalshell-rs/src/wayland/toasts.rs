@@ -63,7 +63,7 @@ impl App {
                 self.close_panels();
             }
         } else if !self.center_open() {
-            let insets = self.toast_insets();
+            let insets = self.center_insets();
             let output = self.output_size();
             let place = Place {
                 edge: Edge::Right,
@@ -94,6 +94,18 @@ impl App {
             left: if edge == Edge::Left { t } else { 0.0 },
             right: if edge == Edge::Right { t } else { 0.0 },
         }
+    }
+
+    /// What the centre's card clears on each edge, in output coordinates:
+    /// the strip on its own edge and the frame on the others. The toast
+    /// column's insets leave a framed bar out because its layer already
+    /// sits inside the frame's exclusive zones; the centre's card does not.
+    fn center_insets(&self) -> Insets {
+        let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
+        let t = f64::from(self.bar.thickness());
+        let edge = self.bar.edge();
+        let on = |e: Edge| if edge == e { t } else { ft };
+        Insets { top: on(Edge::Top), bottom: on(Edge::Bottom), left: on(Edge::Left), right: on(Edge::Right) }
     }
 
     /// Mapped for as long as the centre is shut, passive and empty when
