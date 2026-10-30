@@ -1696,7 +1696,8 @@ rather than broken images.
 
 `notifications.position` picks the corner, default `bottom-right`, also
 `top-right`, `bottom-left` and `top-left`. An unrecognised value falls back
-to the default.
+to the default. With the bar or the sidebar on a side edge the stack sits
+beside it, where its panels hang, and the setting picks top or bottom.
 
 ```jsonc
 // ~/.config/formalshell/settings.json

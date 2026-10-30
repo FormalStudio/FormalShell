@@ -19,7 +19,10 @@
 # layout, three windows on workspace 4, one column each: the first icon
 # dragged past the last moves its column to the tape's end (e f d by x,
 # where a swap would give f e d), with a frame mid-drag and one after; then
-# `sidebar focus` and Shift+Left carry that column back one (e d f). Then
+# `sidebar focus` and Shift+Left carry that column back one (e d f).
+# After them, the map's rows photographed as the drags left them and
+# again once a collapse and expand draws them whole: no pixel differs, so
+# no drag left a trail behind its lifted icon. Then
 # the launcher open under `sidebar focus` closing (`menu status`) with the
 # cursor up, and `sidebar collapse` taking the cursor down. Then 26
 # more workspaces: the map showing fewer rows than it has, every row hit
@@ -41,6 +44,9 @@ minimap_column_lifted_png="$shot_dir/minimap-column-lifted.png"
 minimap_column_png="$shot_dir/minimap-column.png"
 minimap_focus_png="$shot_dir/minimap-focus.png"
 minimap_carried_png="$shot_dir/minimap-carried.png"
+minimap_trail_png="$shot_dir/minimap-trail.png"
+minimap_redrawn_png="$shot_dir/minimap-redrawn.png"
+minimap_trail_status="$shot_dir/minimap-trail.json"
 
 leg_minimap_validate() {
   if leg_on bar_position || leg_on frame; then
@@ -169,6 +175,20 @@ sleep 1.5
 "$hyprctl_bin" -j clients > "${minimap_clients[10]}" 2>&1
 "$wtype_bin" -k Escape
 sleep 0.5
+# Every drag has settled and the keyboard is back: the map as the drags
+# left it, then drawn whole again by a collapse and expand, the pointer
+# parked off the column for both so no hover differs. It comes after
+# Shift+Left, since parking the pointer focuses the window under it.
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+"$wlrctl_bin" pointer move 600 300 > /dev/null 2>&1
+sleep 1
+$ipc call sidebar status > "$minimap_trail_status" 2>&1
+"$grim_bin" "$minimap_trail_png" > /dev/null 2>&1
+$ipc call sidebar collapse > /dev/null 2>&1
+sleep 1
+$ipc call sidebar expand > /dev/null 2>&1
+sleep 1.5
+"$grim_bin" "$minimap_redrawn_png" > /dev/null 2>&1
 $ipc call menu toggle > /dev/null 2>&1
 sleep 1
 $ipc call sidebar focus > /dev/null 2>&1
@@ -279,6 +299,21 @@ leg_minimap_assert() {
     || fail "minimap: sidebar focus over the launcher put no cursor up"
   "$jq_bin" -e '.collapsed and .cursor == null' "$shot_dir/minimap-collapsed.json" > /dev/null \
     || fail "minimap: collapsing kept the minimap cursor: $(cat "$shot_dir/minimap-collapsed.json")"
+  echo "SMOKE_MINIMAP_TRAIL $minimap_trail_png"
+  local trail
+  trail=$("$python3_bin" - "$minimap_trail_png" "$minimap_redrawn_png" "$minimap_trail_status" <<'PY' 2>&1
+import json, sys
+from PIL import Image, ImageChops
+hits = [h for h in json.load(open(sys.argv[3]))["hits"] if (h.get("on") or "").startswith(("row:", "window:")) or h.get("on") == "new"]
+box = (min(h["x"] for h in hits), min(h["y"] for h in hits), max(h["x"] + h["w"] for h in hits), max(h["y"] + h["h"] for h in hits))
+a, b = (Image.open(p).convert("RGB").crop(box) for p in sys.argv[1:3])
+diff = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v > 8 else 0)
+n = sum(1 for v in diff.getdata() if v)
+print(f"map {box}: {n} pixels differ from a whole redraw")
+sys.exit(1 if n else 0)
+PY
+  ) || fail "minimap: the drags left pixels a whole redraw does not draw: $trail"
+  echo "$trail"
   echo "SMOKE_MINIMAP_CROWDED $shot_dir/minimap-crowded.png"
   echo "SMOKE_MINIMAP_SCROLLED $shot_dir/minimap-scrolled.png"
   "$jq_bin" -e '(.rows | length) + 1 > .shown.count and .shown.first == 0

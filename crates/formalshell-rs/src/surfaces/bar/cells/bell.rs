@@ -2,6 +2,7 @@
 //! shuts the notification centre, a right click flips DND.
 
 use crate::store::Topic;
+use crate::surfaces::panel::center;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
 
 #[derive(Default)]
@@ -39,7 +40,7 @@ impl Cell for Bell {
         if self.label && self.pending > 0 {
             parts.push(Part::Label { text: self.pending.to_string(), weight: None });
         }
-        View::new(parts, look.xxs).tooltip(tooltip)
+        View::new(parts, look.xxs).panel(center::ID).tooltip(tooltip)
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {

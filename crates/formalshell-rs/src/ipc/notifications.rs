@@ -64,7 +64,7 @@ fn set_dnd(app: &mut App, args: &[Value]) -> Value {
 
 fn show_history(app: &mut App, _: &[Value]) -> Value {
     let open = !app.store.notifications.center_open;
-    text(app.set_center(open))
+    text(app.set_center(open, None))
 }
 
 fn clear(app: &mut App, _: &[Value]) -> Value {

@@ -49,6 +49,34 @@ pub struct Window {
     pub toplevel: String,
 }
 
+/// The compositor's outer gap on each side of an output, in logical
+/// pixels: Hyprland's `general.gaps_out`, zero where a backend has none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Gaps {
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub left: i32,
+}
+
+impl Gaps {
+    /// getoption's answer: a css-style `"top right bottom left"` (one to
+    /// four numbers, as CSS fills them in) or a plain `int`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let v: serde_json::Value = serde_json::from_str(text).ok()?;
+        let nums: Vec<i32> = match (v.get("css").and_then(serde_json::Value::as_str), v.get("int").and_then(serde_json::Value::as_i64)) {
+            (Some(css), _) => css.split_whitespace().map(str::parse).collect::<Result<_, _>>().ok()?,
+            (None, Some(i)) => vec![i32::try_from(i).ok()?],
+            _ => return None,
+        };
+        let at = |i: usize| nums.get(i).copied();
+        let top = at(0)?;
+        let right = at(1).unwrap_or(top);
+        let bottom = at(2).unwrap_or(top);
+        Some(Self { top, right, bottom, left: at(3).unwrap_or(right) })
+    }
+}
+
 /// Everything one refresh learns, before the backend's own bookkeeping
 /// (window order, urgency) is laid over it.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -117,6 +145,16 @@ pub fn is_parked(s: &Snapshot, id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gaps_read_as_css_fills_them_in() {
+        let g = |t: &str| Gaps::parse(t);
+        assert_eq!(g(r#"{"option":"general:gaps_out","css":"6 6 6 6","set":true}"#), Some(Gaps { top: 6, right: 6, bottom: 6, left: 6 }));
+        assert_eq!(g(r#"{"css":"1 2 3 4"}"#), Some(Gaps { top: 1, right: 2, bottom: 3, left: 4 }));
+        assert_eq!(g(r#"{"css":"5 9"}"#), Some(Gaps { top: 5, right: 9, bottom: 5, left: 9 }));
+        assert_eq!(g(r#"{"int":20}"#), Some(Gaps { top: 20, right: 20, bottom: 20, left: 20 }));
+        assert_eq!(g("no"), None);
+    }
 
     #[test]
     fn order_holds_across_refreshes() {

@@ -15,7 +15,7 @@ use fs_system::compositor::keyboard::{self, Layout};
 use fs_system::display::outputs::{Color, Output};
 
 use crate::runtime::Ctx;
-pub use model::{Snapshot, Window, Workspace};
+pub use model::{Gaps, Snapshot, Window, Workspace};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -87,6 +87,7 @@ pub struct State {
     pub keyboard_answered: bool,
     /// Counts config reloads, the contract's `configReloaded` signal.
     pub config_reloads: u64,
+    pub gaps_out: Gaps,
 }
 
 impl Default for State {
@@ -99,6 +100,7 @@ impl Default for State {
             keyboard: keyboard::unavailable(),
             keyboard_answered: false,
             config_reloads: 0,
+            gaps_out: Gaps::default(),
         }
     }
 }
@@ -108,6 +110,7 @@ pub enum Diff {
     Outputs(Vec<Output>, OutputsState),
     Keyboard(Layout),
     ConfigReloaded,
+    GapsOut(Gaps),
 }
 
 impl State {
@@ -136,6 +139,12 @@ impl State {
                 self.keyboard = layout;
             }
             Diff::ConfigReloaded => self.config_reloads += 1,
+            Diff::GapsOut(gaps) => {
+                if self.gaps_out == gaps {
+                    return false;
+                }
+                self.gaps_out = gaps;
+            }
         }
         true
     }

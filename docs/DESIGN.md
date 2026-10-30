@@ -272,7 +272,10 @@ axis and clamped to the padding at either end, and is no taller than the
 screen minus the bar and those two paddings: past that its content scrolls
 under the wheel rather than the surface running off the display. Toasts,
 the OSD pill, the notification centre and the tooltip take those same
-numbers. A surface never writes its own margin.
+numbers, and the toast stack clears the same insets a panel's `Place`
+gives (`Place::insets`); beside a side bar it sits on the bar's side, at
+the end `notifications.position` names, where every panel hangs. A surface
+never writes its own margin.
 
 **Motion** (`fs_theme::tokens::motion_tokens`, run by
 `formalshell-rs/src/motion.rs`): two families of clock, and the property
@@ -345,8 +348,10 @@ handoff carry the gap with them frame by frame; that rect is the only thing
 the two windows share, and it is gone once the card has let go (§1 Motion).
 The panels take the shoulders, and the chevron's and
 the tray's second bars with them, on a framed screen as on a bare one: the
-ring's hairline runs the bar's edge there and opens the same gap; the
-notification centre takes it against the ring's far side or a right bar.
+ring's hairline runs the bar's edge there and opens the same gap. The
+notification centre is one of those panels: it hangs off the bar's line
+under the bell (or the sidebar's Notifications card), at the line's end
+with neither, through the same `Place` every panel takes.
 The OSD pill takes it too against the bottom line (M57 D8), a
 `screenPadding` off whatever that edge carries; on a bare bottom edge there
 is no line to join and the pill comes out from behind the output.
@@ -411,9 +416,8 @@ corners at either end, widening to the card's own rect on the attach clock,
 so a card wider than the strip it hangs off never hangs its fillets past
 either end of it. A span too tight for two fillets and a sliver of card
 leaves it joining nothing, coming out plain from under the owner's edge
-instead. The notification centre takes the frame ring's far side, or the
-bar's own hairline when the bar is on the right, and comes out from behind
-the output's edge as before when there is neither. A card that floats in
+instead. The notification centre hangs off the bar's line like any
+panel. A card that floats in
 the middle of the output does the same thing off the top line (M57 D5): the
 launcher, the polkit request and the radio atlas all take the top bar's
 hairline, the frame ring's top line, or the output's own top edge with

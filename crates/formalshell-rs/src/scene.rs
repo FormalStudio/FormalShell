@@ -360,11 +360,17 @@ impl Scene {
         if same {
             return;
         }
-        let old = if node.visible { node.bounds } else { IRect::default() };
+        // A transformed node drew past its bounds (a lifted icon scaled
+        // about its centre), so where it was is the bounds through that
+        // transform as well.
+        let old = node.visible.then(|| (node.bounds, node.transform));
         self.nodes[id.0] = Node { bounds, paint, visible, transform, clip };
-        self.mark(old);
-        if visible {
-            self.mark(bounds);
+        for (b, t) in old.into_iter().chain(visible.then_some((bounds, transform))) {
+            self.mark(b);
+            if t != Affine::IDENTITY {
+                let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
+                self.mark(Self::cover(r, t, 1.0));
+            }
         }
     }
 
@@ -508,6 +514,18 @@ mod tests {
         assert_eq!(b.size(), (16, 16));
         assert_ne!(b, made(20, 1.0));
         assert_eq!((pixels_at(16.0, 1.25), pixels_at(16.0, 1.0), pixels_at(0.1, 1.0)), (20, 16, 1));
+    }
+
+    #[test]
+    fn a_node_redrawn_untransformed_damages_where_its_transform_drew_it() {
+        let mut scene = Scene::clear(200, 200);
+        let paint = || Paint::Rect { fill: Rgba::TRANSPARENT, radius: 0.0 };
+        let id = scene.add(IRect::new(80, 80, 40, 40), paint());
+        scene.set_transform(id, Affine::scale_about(1.25, (100.0, 100.0)));
+        scene.take_damage();
+        scene.update_with(id, IRect::new(60, 60, 40, 40), paint(), true, Affine::IDENTITY, None);
+        let damage = scene.take_damage();
+        assert!(damage.iter().any(|d| d.x <= 75 && d.y <= 75 && d.right() >= 125 && d.bottom() >= 125), "{damage:?}");
     }
 
     #[test]

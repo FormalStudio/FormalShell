@@ -12,8 +12,10 @@
 # on it, some frame carries it still on it and between a sixth and five
 # sixths of the way to its resting far side, and none carries it further
 # off the edge than it rests. The panel rests within the bar's margin of
-# the edge; the launcher travels on to its own place, 30% across. The sidebar's default transparent column
-# draws no line, so there is no gap in one to read.
+# the edge; the launcher travels on to rest centred, within 2px, in the
+# area right of the column across and on the output's middle down. The
+# sidebar's default transparent column draws no line, so there is no gap
+# in one to read.
 leg_sidebar_join_flag="--sidebar-join"
 leg_sidebar_join_order=238
 leg_sidebar_join_needs="jq convert python3"
@@ -112,6 +114,10 @@ x0, y0, x1, y1 = rest
 print(f"{name}: rest x={edge + x0}..{edge + x1} y={y0}..{y1}", end="")
 if name == "panel" and x0 > 12:
     sys.exit(f"\n{name}: the resting card stands {x0}px off the column's edge, not against it")
+if name == "menu":
+    cx, cy = edge + (x0 + x1) / 2, (y0 + y1) / 2
+    if abs(cx - (edge + w) / 2) > 2 or abs(cy - h / 2) > 2:
+        sys.exit(f"\n{name}: the resting card's centre {cx},{cy} is not the area's {(edge + w) / 2},{h / 2}")
 seen = [b for b in (card(L(f"mid-{i}")) for i in range(n)) if b]
 print(f" frames={[(b[0], b[2]) for b in seen]}", end="")
 if not seen or seen[0][0] > 2:

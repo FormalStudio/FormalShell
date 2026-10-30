@@ -14,7 +14,8 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_chrome::types::{Edge, Insets};
+use fs_info::notifications::PositionSpec;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -57,6 +58,36 @@ impl Place {
 
     fn across_len(&self) -> f64 {
         if self.edge.is_vertical() { self.output.0 } else { self.output.1 }
+    }
+    /// What a card clears on each output edge: the line on its own edge,
+    /// the far inset across from it and the ends' insets along it.
+    pub fn insets(&self) -> Insets {
+        let (start, end) = (self.ends.inset_start, self.ends.inset_end);
+        let mut i = if self.edge.is_vertical() {
+            Insets { top: start, bottom: end, left: self.far_inset, right: self.far_inset }
+        } else {
+            Insets { top: self.far_inset, bottom: self.far_inset, left: start, right: end }
+        };
+        match self.edge {
+            Edge::Top => i.top = self.line_at,
+            Edge::Bottom => i.bottom = self.line_at,
+            Edge::Left => i.left = self.line_at,
+            Edge::Right => i.right = self.line_at,
+        }
+        i
+    }
+
+    /// The corner a stack with no cell of its own (the toasts) takes:
+    /// beside a side line, where every panel hangs, at the end the
+    /// configured corner names; along a top or bottom line, the configured
+    /// corner itself.
+    pub fn corner(&self, spec: PositionSpec) -> PositionSpec {
+        let right = match self.edge {
+            Edge::Left => false,
+            Edge::Right => true,
+            _ => spec.right,
+        };
+        PositionSpec { left: !right, right, ..spec }
     }
 }
 
@@ -845,7 +876,26 @@ pub fn step(index: usize, count: usize, active: bool, dx: i32, dy: i32, columns:
 
 #[cfg(test)]
 mod tests {
-    use super::step;
+    use super::{Edge, Ends, Place, step};
+    use fs_info::notifications::position_spec;
+
+    fn place(edge: Edge) -> Place {
+        let ends = Ends { along: 1080.0, inset_start: 6.0, inset_end: 6.0, radius: 0.0 };
+        Place { edge, output: (1920.0, 1080.0), line_at: 160.0, ends, far_inset: 6.0, anchor: None, target: None }
+    }
+
+    #[test]
+    fn a_stack_clears_the_line_and_sits_beside_a_side_one() {
+        let i = place(Edge::Left).insets();
+        assert_eq!((i.left, i.right, i.top, i.bottom), (160.0, 6.0, 6.0, 6.0));
+        let i = place(Edge::Top).insets();
+        assert_eq!((i.top, i.bottom, i.left, i.right), (160.0, 6.0, 6.0, 6.0));
+        let spec = position_spec(Some("bottom-right"));
+        let c = place(Edge::Left).corner(spec);
+        assert!(c.left && !c.right && c.bottom);
+        assert!(place(Edge::Right).corner(position_spec(Some("top-left"))).right);
+        assert_eq!(place(Edge::Top).corner(spec), spec);
+    }
 
     #[test]
     fn the_first_key_reveals_and_the_rest_walk() {

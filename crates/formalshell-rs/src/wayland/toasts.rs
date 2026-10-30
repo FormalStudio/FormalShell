@@ -4,7 +4,6 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
 use super::App;
@@ -14,10 +13,8 @@ use crate::services::notifications::now_ms;
 use crate::store::Topic;
 use crate::surface::Surface;
 use crate::surfaces;
-use crate::surfaces::card::Ends;
 use crate::surfaces::panel::center;
-use crate::surfaces::panel::host::Place;
-use crate::surfaces::toasts::{Act, Insets, Toasts};
+use crate::surfaces::toasts::{Act, Toasts};
 
 impl App {
     pub(crate) fn tick_notifications(&mut self) {
@@ -54,27 +51,17 @@ impl App {
         }
     }
 
-    /// The centre hangs off the output's right edge, clear of a bar on any
-    /// edge, at the top of the room it leaves.
-    pub fn set_center(&mut self, open: bool) -> &'static str {
+    /// The centre is a panel: it hangs off the line at `anchor` (the cell
+    /// or card that opened it), else at its own cell, else at the line's end.
+    pub fn set_center(&mut self, open: bool, anchor: Option<f64>) -> &'static str {
         let now = Instant::now();
         if !open {
             if self.center_open() {
                 self.close_panels();
             }
         } else if !self.center_open() {
-            let insets = self.center_insets();
-            let output = self.output_size();
-            let place = Place {
-                edge: Edge::Right,
-                output,
-                line_at: insets.right,
-                ends: Ends { along: output.1, inset_start: insets.top, inset_end: insets.bottom, radius: 0.0 },
-                far_inset: insets.left,
-                anchor: Some(0.0),
-                target: None,
-            };
-            self.open_host_at(Box::new(center::Center::default()), place, now);
+            let anchor = anchor.or_else(|| self.bar.panel_anchor(center::ID));
+            self.open_host(Box::new(center::Center::default()), anchor, false, now);
         }
         self.tick_notifications();
         "ok"
@@ -82,30 +69,6 @@ impl App {
 
     pub(crate) fn toasts_changed(&mut self) {
         self.toasts_dirty = true;
-    }
-
-    /// Theme.edgeInset: the bar's thickness on its own edge.
-    fn toast_insets(&self) -> Insets {
-        let t = if self.bar.framed() { 0.0 } else { f64::from(self.bar.thickness()) };
-        let edge = self.bar.edge();
-        Insets {
-            top: if edge == Edge::Top { t } else { 0.0 },
-            bottom: if edge == Edge::Bottom { t } else { 0.0 },
-            left: if edge == Edge::Left { t } else { 0.0 },
-            right: if edge == Edge::Right { t } else { 0.0 },
-        }
-    }
-
-    /// What the centre's card clears on each edge, in output coordinates:
-    /// the strip on its own edge and the frame on the others. The toast
-    /// column's insets leave a framed bar out because its layer already
-    /// sits inside the frame's exclusive zones; the centre's card does not.
-    fn center_insets(&self) -> Insets {
-        let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
-        let t = f64::from(self.bar.thickness());
-        let edge = self.bar.edge();
-        let on = |e: Edge| if edge == e { t } else { ft };
-        Insets { top: on(Edge::Top), bottom: on(Edge::Bottom), left: on(Edge::Left), right: on(Edge::Right) }
     }
 
     /// Mapped for as long as the centre is shut, passive and empty when
@@ -131,8 +94,12 @@ impl App {
         let up = !n.model.popups.is_empty() || !surfaces::toasts::activity_groups(&self.store).is_empty() || fading;
         let want = !n.center_open;
         let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
-        let insets = self.toast_insets();
-        let right = fs_info::notifications::position_spec(self.store.config.str("notifications.position")).right;
+        // Placed off the same line as every panel: its insets, and beside a
+        // side line, that line's side.
+        let place = self.panel_place(None, false);
+        let insets = place.insets();
+        let spec = place.corner(fs_info::notifications::position_spec(self.store.config.str("notifications.position")));
+        let right = spec.right;
         let theme = &self.store.theme.theme;
         let cast = *self.toast_cast.get_or_insert_with(|| surfaces::toasts::column_cast(theme));
         let column = (right, surfaces::toasts::column_width(theme, cast, &insets, right));
@@ -175,7 +142,7 @@ impl App {
         let animating = t.animating(now);
         if (self.toasts_dirty || animating || t.was_animating) && t.surface.mapped {
             let _raster = crate::scene::raster_at(t.surface.scale());
-            t.draw(&self.store, theme, &mut self.bar.kit, &insets, self.motion_scale, now);
+            t.draw(&self.store, theme, &mut self.bar.kit, &insets, spec, self.motion_scale, now);
             self.toasts_dirty = false;
             t.was_animating = animating;
         }

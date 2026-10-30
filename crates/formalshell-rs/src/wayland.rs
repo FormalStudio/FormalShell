@@ -1499,7 +1499,7 @@ impl App {
             Action::MediaPrevious => self.store.media.previous(),
             Action::Center => {
                 let open = !self.store.notifications.center_open;
-                self.set_center(open);
+                self.set_center(open, Some(anchor));
             }
             Action::Dnd(on) => {
                 self.store.notifications.set_dnd(on);

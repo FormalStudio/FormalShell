@@ -285,6 +285,11 @@ impl Card {
         Scene::cover(self.live, self.edge_map(), 0.0)
     }
 
+    /// How far in from its edge the line the card buds off lies.
+    pub fn line_at(&self) -> f64 {
+        self.line_at
+    }
+
     pub fn rest(&self) -> Rect {
         self.rest
     }

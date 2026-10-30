@@ -237,7 +237,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   whose final line is cut short with its socket gone, read as failed. Four
   seconds on the success has folded into the history with both failures
   kept, and `activity seen` folds them: the notification centre
-  photographed with the three under Activity, and a real Down, Up and
+  photographed with the three under Activity, and real Ups and a
   Return on its Clear emptying the history. A Gio client's
   `com.canonical.Unity.LauncherEntry` updates for a staged desktop entry
   land as progress, a badge count and urgency, merged property by
@@ -382,7 +382,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   with the toast stack suppressed for as long as it is open, content-tall on
   a short history and capped and scrolling on thirty rows, then one open at
   a tenth speed over a band down the trailing edge, for the card coming out
-  of the line there.
+  of the bar's line under the bell like any panel.
 - `chevron.sh` `--chevron`: a right-region chevron holding the five cells
   before it off the strip entirely, and `bar chevron expand` opening them in
   the second bar under it, the two frames asserted to differ. It also sets a
@@ -907,7 +907,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   moving nothing and holding no order. Last the scrolling layout, three
   windows on workspace 4: the first icon dragged past the last moving its
   column to the tape's end (`e f d` by x, where a swap gives `f e d`) and
-  Shift+Left carrying it back one (`e d f`). Then `sidebar focus` over an
+  Shift+Left carrying it back one (`e d f`), the map's rows between the
+  two matching a whole redraw (a collapse and expand) pixel for pixel, so
+  no lifted icon left a trail. Then `sidebar focus` over an
   open launcher closing it with the cursor up, `sidebar collapse` taking
   the cursor down, and 26 more workspaces: the map cut to the rows that
   fit above the foot's buttons and a real wheel notch moving the first
@@ -1114,7 +1116,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   LocalSend as a real file) and honestly absent with no binary on PATH.
 - `sidebar.sh` `--sidebar`: `layout: sidebar` from settings.json alone,
   the formalshell:bar layer read off `hyprctl -j layers` as a column 160
-  wide down the left edge, `sidebar status` naming the time, Spaces and
+  wide down the left edge, under Hyprland's `gaps_out` 10 the fixture
+  window's border as far off the cards as the cards are off the screen's
+  edge (the column's zone leaves the outer gap to the compositor, read at
+  runtime off `getoption`), `sidebar status` naming the time, Spaces and
   notifications cards and a window on the map, a real click on the status
   row's network button opening its panel, one on its collapse button
   folding the column to the 48 wide rail with state.json carrying
@@ -1165,8 +1170,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   scrimmed grey or well lighter than the grey right of the column: its
   first frame on the column's edge, a frame still on it part way out, none
   further off the edge than it rests, the panel resting within the bar's
-  margin of the edge and the launcher travelling on to its place 30%
-  across. Read dark and `--light`.
+  margin of the edge and the launcher travelling on to rest centred in
+  the area right of the column, within 2px both ways. Read dark and
+  `--light`.
 - `sidebar_software.sh` `--sidebar-software`: the sidebar's Software card
   against a PATH-shimmed `fspec` and a fixture spec checkout
   (`FSPEC_SPEC`) cloned from a bare upstream 22 commits ahead, the

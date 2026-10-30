@@ -10,7 +10,12 @@
 # real click on its collapse button folds the column to the 48 wide rail,
 # state.json carrying `sidebarCollapsed`; `sidebar expand` opens it again.
 # Then settings.json rewritten with `bar.position: right` moves it to the
-# right edge. The open, panel and rail frames are pulled for reading.
+# right edge. The session runs with Hyprland's `gaps_out` 10 and
+# `border_size` 2, and the fixture window's visible left edge (its `at`
+# less the border, off `hyprctl -j clients`) sits as far off the cards'
+# right edge as the cards sit off the screen's, both read off the layer's
+# geometry and the time card's hit rect. The open, panel and rail frames
+# are pulled for reading.
 # Ridden by a budget leg (`--idle`, `--menu-budget`) it pins the layout
 # alone, so the budget is read with the sidebar on and nothing driven.
 leg_sidebar_flag="--sidebar"
@@ -25,6 +30,7 @@ sidebar_layers_open="$shot_dir/sidebar-layers-open.json"
 sidebar_layers_rail="$shot_dir/sidebar-layers-rail.json"
 sidebar_layers_right="$shot_dir/sidebar-layers-right.json"
 sidebar_monitors="$shot_dir/sidebar-monitors.json"
+sidebar_clients="$shot_dir/sidebar-clients.json"
 sidebar_panel_state="$shot_dir/sidebar-panel-state.txt"
 sidebar_state_copy="$shot_dir/sidebar-state.json"
 sidebar_open_png="$shot_dir/sidebar-open.png"
@@ -65,6 +71,7 @@ done
 sleep 5
 $ipc call sidebar status > "$sidebar_status_open" 2>&1
 "$hyprctl_bin" -j layers > "$sidebar_layers_open" 2>&1
+"$hyprctl_bin" -j clients > "$sidebar_clients" 2>&1
 "$hyprctl_bin" -j monitors > "$sidebar_monitors" 2>&1
 "$grim_bin" "$sidebar_open_png" > /dev/null 2>&1
 # A control's centre on the output: its rect in the window plus the
@@ -108,6 +115,7 @@ done
 sleep 1
 "$hyprctl_bin" -j layers > "$sidebar_layers_right" 2>&1
 EOS
+  echo 'hl.config({ general = { gaps_out = 10, border_size = 2 } })'
   hypr_exec_once "bash $script"
 }
 
@@ -130,6 +138,14 @@ leg_sidebar_assert() {
   echo "sidebar layer open: x=$bx y=$by w=$bw h=$bh on ${mw}x${mh}"
   [ "$bx" -eq 0 ] && [ "$bw" -eq 160 ] && [ "$bh" -eq "$mh" ] \
     || fail "sidebar: the open column is not 160 wide down the left edge: x=$bx y=$by w=$bw h=$bh"
+  local cx cw wx outer inner
+  read -r cx cw <<< "$("$jq_bin" -r '.hits[] | select(.on == "panel:calendar") | "\(.x) \(.w)"' "$sidebar_status_open" | head -1)"
+  wx=$("$jq_bin" -r '[.[] | select(.workspace.id == 1 and .mapped and .hidden != true) | .at[0]] | min' "$sidebar_clients")
+  outer=$((bx + cx))
+  inner=$((wx - 2 - bx - cx - cw))
+  echo "sidebar gaps: screen edge to card $outer, card to window $inner (window at $wx)"
+  [ -n "$cw" ] && [ "$wx" != null ] && [ "$inner" -eq "$outer" ] \
+    || fail "sidebar: the card sits $outer off the screen's edge but $inner off the window: $(cat "$sidebar_clients")"
   "$jq_bin" -e '.collapsed == false and .edge == "left" and .width == 160
       and (.cards | index("time") != null and index("spaces") != null and index("notifications") != null)
       and ([.rows[] | .windows | length] | add) >= 1' "$sidebar_status_open" > /dev/null \

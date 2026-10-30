@@ -30,7 +30,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use fs_info::notifications::{self as model, Group, Urgency};
+use fs_chrome::types::Insets;
+use fs_info::notifications::{self as model, Group, PositionSpec, Urgency};
 use fs_info::toast_stack::{self, StackParams};
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -218,14 +219,6 @@ pub struct Toasts {
     pub output: Option<WlOutput>,
 }
 
-/// Where the stack hangs: the bar's own edge cleared, `screenPadding` in.
-pub struct Insets {
-    pub top: f64,
-    pub bottom: f64,
-    pub left: f64,
-    pub right: f64,
-}
-
 /// Elementary's bubble: the picture in a
 /// `controlHeight` slot beside the words, a semibold summary, and the close
 /// button only while the pointer is over the bubble.
@@ -317,10 +310,11 @@ impl Toasts {
         self.hovered || store.notifications.stack_expanded
     }
 
-    pub fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, insets: &Insets, scale: f64, now: Instant) {
+    /// The stack in `spec`'s corner, `screenPadding` inside `insets`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, insets: &Insets, spec: PositionSpec, scale: f64, now: Instant) {
         let s = &theme.space;
         let n = &store.notifications;
-        let spec = model::position_spec(store.config.str("notifications.position"));
         self.right = spec.right;
         let groups = model::group_entries(&n.model.popups);
         let live = activity_groups(store);

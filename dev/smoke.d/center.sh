@@ -10,8 +10,8 @@
 # combine it is the oldest group and therefore the one the popup cap evicts
 # into pending: --notify's frames need all four of its cards alive.
 # Combining also leaves the critical popup sticky in the popup layer, which
-# is what makes the suppression claim readable: the centre is a fixed
-# right-anchored card wherever notifications.position puts the toast stack,
+# is what makes the suppression claim readable: the centre hangs off the
+# bar under the bell wherever notifications.position puts the toast stack,
 # so the toast stack drops out for as long as the centre is open and
 # center.png shows the centre alone.
 #
@@ -29,11 +29,10 @@
 #
 # Last, one open at a tenth of its speed (`debug motionScale`, the instrument
 # --join and --menu-emerge sample with) over a band down the output's trailing
-# side: the centre comes out of the line on that edge, a frame ring's when one
-# is on and the output's own bare edge when none is, and this is the only
-# place that travel is photographed at all. Frames only, read by eye: on a
-# bare edge there is no line there to join, so no claim here would hold
-# whatever the run carries.
+# side, where the bell sits: the centre comes out of the bar's line under it
+# like any panel, and this is the only place that travel is photographed.
+# Frames only, read by eye: the line it joins moves with --frame and
+# --bar-position, so no one claim here would hold whatever the run carries.
 leg_center_flag="--center"
 leg_center_order=40
 leg_center_needs="notify-send jq wlrctl convert"
@@ -104,7 +103,7 @@ $ipc call notifications status > "$center_status_long_path" 2>&1
 # without the surface under it ever seeing a pointer event. Its protocol is
 # relative only, so the pointer is slammed into a corner the compositor
 # clamps and then moved once from that known origin. 1700x600 is inside the
-# card, which hangs a padding in from the right edge at popupWidthWide.
+# card, which hangs under the bell, clamped a padding in from the right edge.
 # Each exit code is recorded: wlrctl aborts on an assertion rather than
 # printing anything useful when it cannot reach the display, and a silent
 # success looks the same as a silent nothing.
@@ -121,7 +120,7 @@ sleep 2
 $ipc call notifications showHistory > /dev/null 2>&1
 sleep 2
 # And the same open again at a tenth speed, over the band alone: the card
-# coming out of the line on the output's trailing edge.
+# coming out of the bar's line under the bell.
 $ipc call debug motionScale 1000 > /dev/null 2>&1
 "$grim_bin" -g "$center_region" "$center_emerge_desktop_path" > /dev/null 2>&1
 $ipc call notifications showHistory > /dev/null 2>&1

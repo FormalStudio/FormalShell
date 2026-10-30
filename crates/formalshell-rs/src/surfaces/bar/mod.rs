@@ -115,6 +115,8 @@ pub struct Bar {
     idle: bool,
     /// The exclusive zone last handed to the bar's layer.
     pub reserved: i32,
+    /// The compositor's outer gap on the bar's own edge.
+    gap_out: i32,
     born: Instant,
     /// Cells rebuilt (a new theme or layout) and not yet read in full: that
     /// read places them where they were rather than growing every one of
@@ -161,6 +163,7 @@ impl Bar {
             hidden: false,
             idle: false,
             reserved: 0,
+            gap_out: 0,
             born: Instant::now(),
             rebuilt: false,
             room: Room::default(),
@@ -267,10 +270,18 @@ impl Bar {
     /// line) reserves only its outer margin and its cells, so the
     /// compositor's outer gap is all that sits between the cells and the
     /// windows, the same gap as at the screen's other edges. A solid strip
-    /// reserves the whole of itself.
+    /// reserves the whole of itself. The sidebar leaves the compositor's
+    /// outer gap out of its zone, so a window starts at the column's edge
+    /// and sits as far off the cards as the cards sit off the screen's.
     pub fn zone(&self) -> i32 {
         let t = self.thickness();
-        if self.floating() { t - self.style.margin as i32 } else { t }
+        if self.sidebar.is_some() {
+            (t - self.gap_out).max(0)
+        } else if self.floating() {
+            t - self.style.margin as i32
+        } else {
+            t
+        }
     }
 
     fn floating(&self) -> bool {
@@ -501,6 +512,13 @@ impl Bar {
     /// the output's fullscreen state; true when it moved. The ring wears the
     /// same paint.
     pub fn update_paint(&mut self, store: &Store) -> bool {
+        let g = store.compositor.gaps_out;
+        self.gap_out = match self.edge {
+            Edge::Top => g.top,
+            Edge::Right => g.right,
+            Edge::Bottom => g.bottom,
+            Edge::Left => g.left,
+        };
         let theme = &store.theme.theme;
         let pin = self.style.bar_style.pin();
         let fullscreen = store.compositor.snapshot.fullscreen_outputs.contains(&self.output);

@@ -20,6 +20,7 @@ use crate::services::compositor::Command;
 use crate::services::state::{self, Field};
 use crate::store::Store;
 use crate::surfaces::activity;
+use crate::surfaces::panel::center;
 use crate::surfaces::bar::cell::{Action, Kit};
 use crate::ui::{El, Ink, Type, Ui, Variant, Weight, w};
 
@@ -81,7 +82,7 @@ impl Sidebar {
         self.map.read(store, output, theme);
         self.strip = strip;
 
-        let foot = if collapsed { rail_foot(theme, edge) } else { foot_row(theme, edge) };
+        let foot = if collapsed { rail_foot(theme, edge) } else { foot_row(edge) };
         let (_, foot_h) = crate::ui::measure(&foot, width, theme, kit);
         let room = (bottom - foot_h - s.section_gap - y0).max(0.0);
         let mut kept: Vec<&'static str> = Vec::new();
@@ -253,11 +254,11 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "audio" => Action::Panel("audio"),
             "media" => Action::Panel("media"),
             "activity" => Action::Panel("activity"),
+            center::ID => Action::Center,
             _ => Action::None,
         },
         // An Activity row: the panel holds its actions.
         "open" => Action::Panel("activity"),
-        "center" => Action::Center,
         "summon" => Action::Summon("system"),
         "media" => Action::MediaPlayPause,
         "software" => match arg {
@@ -305,7 +306,7 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, now: Instant) -> Vec<
         out.push(("activity", w::card(w::column(s.row_gap, rows)).fill()));
     }
     out.push(("software", w::card(w::column(s.row_gap, crate::surfaces::packages::software_rows(theme, store))).fill()));
-    out.push(("notifications", w::card(notifications(theme, store)).interactive().on("center").fill()));
+    out.push(("notifications", w::card(notifications(theme, store)).interactive().on(format!("panel:{}", center::ID)).fill()));
     if let Some(media) = media(theme, store) {
         out.push(("media", w::card(media).fill()));
     }
@@ -342,12 +343,12 @@ fn media(theme: &Theme, store: &Store) -> Option<El> {
     Some(row)
 }
 
-/// The status row: network, audio, settings and collapse.
-fn foot_row(theme: &Theme, edge: Edge) -> El {
-    let s = &theme.space;
-    let mut b = foot_buttons(edge, false);
-    b.insert(3, w::spacer());
-    w::row(s.xs, b).fill()
+/// The status row: network, audio, settings and collapse, on a card like
+/// every other piece of the column, so no glyph sits bare on the wallpaper.
+/// The four share the card's inner width, which is narrower than four
+/// square buttons.
+fn foot_row(edge: Edge) -> El {
+    w::card(w::row(0.0, foot_buttons(edge, false).into_iter().map(El::fill).collect()).fill()).fill()
 }
 
 fn foot_buttons(edge: Edge, collapsed: bool) -> Vec<El> {

@@ -11,7 +11,7 @@
 # which reads failed. Four seconds after the apply succeeds it has folded
 # into the history while both failures stay; `activity seen` folds them,
 # and the notification centre shows the three folded rows under Activity
-# until a real Down, Up and Return reach its Clear and empty the history.
+# until real Ups to the top and a Return reach its Clear and empty the history.
 # A Gio client sends `com.canonical.Unity.LauncherEntry` updates for a staged
 # desktop entry (progress, count, urgent, then progress hidden) and leaves
 # the bus, taking its badge. notify-send sends a `value` hint replaced
@@ -47,7 +47,7 @@
 # rest counted as `+9`, and the panel listing all ten.
 leg_activity_flag="--activity"
 leg_activity_order=236
-leg_activity_needs="jq python3 notify-send convert wtype"
+leg_activity_needs="jq python3 notify-send convert wtype wlrctl"
 
 act_marks="$shot_dir/act"
 act_app_id="formalshell-smoke-activity"
@@ -146,9 +146,13 @@ touch "\$m.die.go1"; await "\$m.die.2"; sleep 0.5; status die-2
 sleep 4; status folded
 $ipc call activity seen > "\$m-seen.txt" 2>&1; sleep 0.3; status seen
 # The folded rows in the notification centre, then its Clear on real keys.
+# The pointer goes to the output's corner first: a row it rests on takes
+# the cursor. A cursor woken by a key starts on the row it last held, so
+# four Ups reach Clear from wherever that was.
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
 $ipc call notifications showHistory > /dev/null; sleep 0.8
 "$grim_bin" "$shot_dir/activity-center.png" > /dev/null 2>&1
-"$wtype_bin" -k Down -k Up -k Return; sleep 0.5; status cleared
+"$wtype_bin" -k Up -k Up -k Up -k Up -k Return; sleep 0.5; status cleared
 "$grim_bin" "$shot_dir/activity-center-cleared.png" > /dev/null 2>&1
 $ipc call panel close > /dev/null; sleep 0.4
 

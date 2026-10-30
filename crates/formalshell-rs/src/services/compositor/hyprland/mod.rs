@@ -114,6 +114,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
         refresh_outputs(&ctx, &shared).await;
         refresh_keyboard(&ctx, &shared).await;
         refresh_blur(&ctx).await;
+        refresh_gaps(&ctx).await;
 
         let mut lines = BufReader::new(stream).lines();
         while let Some(line) = lines.next().await {
@@ -137,6 +138,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
                     refresh_outputs(&ctx, &shared).await;
                     refresh_keyboard(&ctx, &shared).await;
                     refresh_blur(&ctx).await;
+                    refresh_gaps(&ctx).await;
                 }
                 "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => {
                     refresh_outputs(&ctx, &shared).await;
@@ -219,6 +221,13 @@ async fn refresh_keyboard(ctx: &Ctx, shared: &Shared) {
 async fn refresh_blur(ctx: &Ctx) {
     let blur = request("j/getoption decoration:blur:enabled").await.is_ok_and(|text| blur_enabled(&text));
     ctx.publish(store::Diff::Theme(crate::services::theme::Diff::Blur(blur)));
+}
+
+/// `general.gaps_out`, which a side bar's zone leaves to the compositor.
+/// An answer it cannot read counts as no gap.
+async fn refresh_gaps(ctx: &Ctx) {
+    let gaps = request("j/getoption general:gaps_out").await.ok().and_then(|text| common::Gaps::parse(&text)).unwrap_or_default();
+    ctx.publish(store::Diff::Compositor(Diff::GapsOut(gaps)));
 }
 
 /// getoption's JSON carries the value under its type's key: `int` for the
