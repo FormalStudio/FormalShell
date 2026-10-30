@@ -27,6 +27,19 @@ pub fn socket_path() -> PathBuf {
     PathBuf::from(runtime).join("formalshell").join(format!("instance-{key}.sock"))
 }
 
+/// `$XDG_RUNTIME_DIR/formalshell/<name>-<compositor instance>`: a file that
+/// outlives one shell and belongs to one compositor run. Keyed on the
+/// instance signature where there is one, since socket names like
+/// `wayland-1` come back with the next session.
+pub fn compositor_file(name: &str) -> PathBuf {
+    let id = ["HYPRLAND_INSTANCE_SIGNATURE", "MANGO_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
+        .into_iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
+        .unwrap_or_default();
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("formalshell");
+    dir.join(format!("{name}-{}", id.replace('/', "_")))
+}
+
 /// Replaces a live shell if there is one, then holds the lock on a thread
 /// of its own for the life of the process.
 pub fn acquire() {

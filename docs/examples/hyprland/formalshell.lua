@@ -96,6 +96,9 @@ hl.config({
   misc = {
     vrr = 2,
     background_color = "rgb(000000)",
+    -- A shell restarted while locked takes the lock back
+    -- (crates/formalshell-rs/src/wayland/lock.rs).
+    allow_session_lock_restore = true,
   },
 
   group = {

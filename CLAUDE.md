@@ -708,6 +708,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   theme's `card` box, a band of its padding (`mediaCard` off the report)
   one flat fill in both modes, dark then light. The real password typed
   last still unlocks.
+- `lock_restore.sh` `--lock-restore`: a shell SIGKILLed holding the lock
+  secure, Hyprland's dead-locker page photographed, and a new shell
+  started through the wrapped launcher taking the lock back off the
+  compositor-instance marker it finds (`misc.allow_session_lock_restore`
+  in the rig's config and the shipped one): its log naming the restore,
+  `lock status` locked and secure, the avatar fixture on screen, and the
+  real password unlocking it. Runs alone, since it kills the session's
+  shell.
 - `logind_lock.sh` `--logind-lock`: logind's Lock signal on the VM rig's
   real logind, the shell started with `XDG_SESSION_ID` emptied the way uwsm
   starts it, so it finds its session through logind's `auto`: `loginctl

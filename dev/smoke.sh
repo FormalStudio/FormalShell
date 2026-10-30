@@ -523,6 +523,7 @@ hypr_base_config() {
   echo "    disable_splash_rendering = true,"
   echo "    force_default_wallpaper = 0,"
   echo "    disable_autoreload = true,"
+  echo "    allow_session_lock_restore = true,"
   echo "  },"
   # suppress_errors: Hyprland's error overlay is a full-width banner across
   # the top of the screen, which is where the bar is. It renders over the

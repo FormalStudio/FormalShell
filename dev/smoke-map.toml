@@ -444,7 +444,7 @@ paths = [
   "crates/fs-auth/src/pam.rs",
   "crates/fs-system/src/lock.rs",
 ]
-runs = ["--lock", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep"]
+runs = ["--lock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/depth.rs"]
@@ -519,7 +519,7 @@ runs = ["--mirror"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/instance.rs", "crates/formalshell-rs/src/cmdline.rs"]
-runs = ["--instance", "--dump"]
+runs = ["--instance", "--lock-restore", "--dump"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/ipc/debug.rs"]

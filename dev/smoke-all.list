@@ -72,6 +72,7 @@
 --lights
 --localsend
 --lock
+--lock-restore
 --lock-media
 --lyrics
 --lyrics-blur

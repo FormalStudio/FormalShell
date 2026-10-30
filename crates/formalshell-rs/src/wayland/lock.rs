@@ -7,6 +7,12 @@
 //! protocol's contract, and a lock this process drops without unlocking is
 //! a protocol error that does the same.
 //!
+//! A shell started while its predecessor's lock is still held (a restart, an
+//! update, a crash) takes the lock back at once, so the compositor's
+//! dead-locker screen is never what the user is left at. Hyprland only lets
+//! a second client lock a session whose locker died under
+//! `misc.allow_session_lock_restore`.
+//!
 //! The screensaver can show inside the lock: its scene is presented on the
 //! lock surfaces in place of the card, input dismisses it back to the card,
 //! and a lock raised over it brings it back on idle rather than blanking.
@@ -208,6 +214,24 @@ fn command(app: &App) -> Vec<String> {
     if argv.len() == items.len() { argv } else { Vec::new() }
 }
 
+/// Present while this session's built-in lock is held, whichever shell
+/// holds it.
+fn held_marker() -> std::path::PathBuf {
+    crate::instance::compositor_file("locked")
+}
+
+fn mark_held(held: bool) {
+    let path = held_marker();
+    let result = if held {
+        path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&path, b""))
+    } else {
+        std::fs::remove_file(&path).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
+    };
+    if let Err(err) = result {
+        eprintln!("lock: {}: {err}", path.display());
+    }
+}
+
 fn via_logind(app: &App) -> bool {
     command(app).first().is_some_and(|b| b.rsplit('/').next() == Some("loginctl"))
 }
@@ -233,6 +257,13 @@ impl App {
             return;
         }
         self.lock.tx = Some(tx.clone());
+        if held_marker().exists() {
+            eprintln!("lock: the session was left locked, taking the lock back");
+            let result = self.raise_lock();
+            if result != "ok" {
+                eprintln!("lock: {result}");
+            }
+        }
         if let Some(rt) = &self.runtime {
             let polkit = tx.clone();
             rt.service(move |ctx| {
@@ -597,6 +628,7 @@ impl App {
         self.sync_shards();
         self.lock.secure = false;
         self.locked_hint(false);
+        mark_held(false);
         self.lock.password = field();
         self.lock.error.clear();
         if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
@@ -1003,6 +1035,7 @@ impl SessionLockHandler for App {
     fn locked(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         self.lock.secure = true;
         self.locked_hint(true);
+        mark_held(true);
         eprintln!("lock: secure");
     }
 
@@ -1017,6 +1050,7 @@ impl SessionLockHandler for App {
         self.sync_shards();
         self.lock.secure = false;
         self.locked_hint(false);
+        mark_held(false);
         self.saver_rehost();
     }
 
