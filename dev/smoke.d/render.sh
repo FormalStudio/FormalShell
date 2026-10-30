@@ -99,7 +99,11 @@ leg_render_assert() {
     render_expect gpu '.render.asked == "gpu" and .render.backend == "cpu" and (.render.reason | test("render node|Vulkan device"))' "a $session_mode session has no render node to draw on, and the reason does not say so"
   fi
   render_expect cpu '.render.asked == "cpu" and .render.backend == "cpu" and .render.reason == "render.backend is cpu"' "asked for cpu"
-  render_expect nodriver '.render.asked == "gpu" and .render.backend == "cpu" and (.render.reason | test("Vulkan device"))' "with no Vulkan driver the GPU ask did not fall back saying so"
+  # Off a nested session there is no render node, and that is the reason
+  # given before any driver is looked for.
+  nodriver_reason="Vulkan device"
+  [ "$session_mode" = nested ] || nodriver_reason="render node|Vulkan device"
+  render_expect nodriver '.render.asked == "gpu" and .render.backend == "cpu" and (.render.reason | test("'"$nodriver_reason"'"))' "with no Vulkan driver the GPU ask did not fall back saying so"
   for t in gpu cpu nodriver; do
     card=$(render_crop "$t")
     echo "SMOKE_RENDER_$(echo "$t" | tr a-z A-Z)_CARD $card"

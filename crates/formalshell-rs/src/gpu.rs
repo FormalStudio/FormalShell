@@ -224,16 +224,7 @@ impl Gpu {
         }
         let node = render_node(feedback.main_device()).ok_or("the compositor's main device has no render node")?;
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN, ..wgpu::InstanceDescriptor::new_without_display_handle() });
-        let adapters = futures_lite::future::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
-        let found: Vec<String> = adapters.iter().map(|a| a.get_info().name).collect();
-        let adapter = adapters
-            .into_iter()
-            .find(|a| a.get_info().device_type != wgpu::DeviceType::Cpu && unsafe { drm_node(a) } == Some(node.rdev))
-            .ok_or_else(|| {
-                let found = if found.is_empty() { "none".to_string() } else { found.join(", ") };
-                format!("no Vulkan device drives {} (found: {found})", node.path)
-            })?;
+        let adapter = adapter(&node)?;
         let info = adapter.get_info();
         let name = format!("{} on {}", info.name, node.path);
 
@@ -620,6 +611,120 @@ fn render_node(dev: libc::dev_t) -> Option<Node> {
         return Some(Node { path: format!("/dev/dri/{name}"), rdev: (a.parse().ok()?, b.parse().ok()?) });
     }
     None
+}
+
+/// The Vulkan adapter on `node`, off an instance holding only the driver
+/// for it where that can be had. Left to itself the loader opens every
+/// driver installed: on g815 (2026-10-30) that is lavapipe with its libLLVM
+/// and NVIDIA's beside Intel's, 133 MB of RSS and 0.8s where Intel's alone
+/// is 15 MB and 10ms (`vulkaninfo --summary`).
+fn adapter(node: &Node) -> Result<wgpu::Adapter, String> {
+    let picked = ["VK_DRIVER_FILES", "VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES", "VK_LOADER_DRIVERS_SELECT", "VK_LOADER_DRIVERS_DISABLE"]
+        .iter()
+        .find(|v| std::env::var_os(v).is_some());
+    let mut found = Vec::new();
+    if let Some(var) = picked {
+        eprintln!("formalshell: render: {var} is set, so the loader picks the Vulkan drivers");
+    } else {
+        for lib in drivers(node) {
+            // SAFETY: `lib` is a Vulkan driver's own library name.
+            match unsafe { one_driver(lib) } {
+                Ok(instance) => match on_node(&instance, node, &mut found) {
+                    Some(adapter) => return Ok(adapter),
+                    None => continue,
+                },
+                Err(e) => eprintln!("formalshell: render: {e}"),
+            }
+        }
+        eprintln!("formalshell: render: no single Vulkan driver drives {}, loading them all", node.path);
+    }
+    found.clear();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN, ..wgpu::InstanceDescriptor::new_without_display_handle() });
+    on_node(&instance, node, &mut found).ok_or_else(|| {
+        let found = if found.is_empty() { "none".to_string() } else { found.join(", ") };
+        format!("no Vulkan device drives {} (found: {found})", node.path)
+    })
+}
+
+fn on_node(instance: &wgpu::Instance, node: &Node, found: &mut Vec<String>) -> Option<wgpu::Adapter> {
+    let adapters = futures_lite::future::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
+    found.extend(adapters.iter().map(|a| a.get_info().name));
+    adapters.into_iter().find(|a| a.get_info().device_type != wgpu::DeviceType::Cpu && unsafe { drm_node(a) } == Some(node.rdev))
+}
+
+/// The driver libraries that can drive `node`, by its kernel driver, in the
+/// order to try them (hasvk covers the Intel generations anv dropped).
+fn drivers(node: &Node) -> &'static [&'static str] {
+    let (major, minor) = node.rdev;
+    let Ok(link) = std::fs::read_link(format!("/sys/dev/char/{major}:{minor}/device/driver")) else {
+        return &[];
+    };
+    match link.file_name().and_then(|n| n.to_str()).unwrap_or("") {
+        "i915" | "xe" => &["libvulkan_intel.so", "libvulkan_intel_hasvk.so"],
+        "amdgpu" | "radeon" => &["libvulkan_radeon.so"],
+        "nouveau" => &["libvulkan_nouveau.so"],
+        "nvidia" => &["libGLX_nvidia.so.0"],
+        "virtio_gpu" => &["libvulkan_virtio.so"],
+        "msm" => &["libvulkan_freedreno.so"],
+        "panfrost" | "panthor" => &["libvulkan_panfrost.so"],
+        "v3d" => &["libvulkan_broadcom.so"],
+        "asahi" => &["libvulkan_asahi.so"],
+        _ => &[],
+    }
+}
+
+/// An instance whose only driver is `lib`, handed to the loader through
+/// VK_LUNARG_direct_driver_loading so it opens no other. Its extensions are
+/// named rather than enumerated, since enumerating them opens every driver:
+/// of the ones wgpu-hal asks for, the rest are for surfaces and displays,
+/// which a headless device never makes. The library stays loaded.
+///
+/// # Safety
+/// `lib` must name a Vulkan driver library exporting
+/// `vk_icdGetInstanceProcAddr`.
+unsafe fn one_driver(lib: &str) -> Result<wgpu::Instance, String> {
+    let name = std::ffi::CString::new(lib).map_err(|e| e.to_string())?;
+    // SAFETY: dlopen and dlsym on a NUL-terminated name; the symbol has the
+    // ICD interface's vkGetInstanceProcAddr signature.
+    let gipa: vk::PFN_vkGetInstanceProcAddrLUNARG = unsafe {
+        let handle = libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+        if handle.is_null() {
+            return Err(format!("{lib} is not installed"));
+        }
+        let sym = libc::dlsym(handle, c"vk_icdGetInstanceProcAddr".as_ptr());
+        if sym.is_null() {
+            return Err(format!("{lib} exports no vk_icdGetInstanceProcAddr"));
+        }
+        std::mem::transmute::<*mut libc::c_void, vk::PFN_vkGetInstanceProcAddrLUNARG>(sym)
+    };
+    // SAFETY: the loader's own entry points, and an instance made with the
+    // version, extensions and flags handed on to wgpu-hal with it.
+    unsafe {
+        let entry = ash::Entry::load().map_err(|e| format!("the Vulkan loader: {e}"))?;
+        let version = entry.try_enumerate_instance_version().ok().flatten().unwrap_or(vk::API_VERSION_1_0);
+        let ask = if version < vk::API_VERSION_1_1 { vk::API_VERSION_1_0 } else { vk::API_VERSION_1_3 };
+        let app = vk::ApplicationInfo::default().application_name(c"formalshell").engine_name(c"wgpu-hal").engine_version(2).api_version(ask);
+        let driver = [vk::DirectDriverLoadingInfoLUNARG::default().pfn_get_instance_proc_addr(gipa)];
+        let mut list = vk::DirectDriverLoadingListLUNARG::default().mode(vk::DirectDriverLoadingModeLUNARG::EXCLUSIVE).drivers(&driver);
+        let names = vec![ash::lunarg::direct_driver_loading::NAME, ash::khr::get_physical_device_properties2::NAME];
+        let extensions: Vec<_> = names.iter().map(|n| n.as_ptr()).collect();
+        let info = vk::InstanceCreateInfo::default().application_info(&app).enabled_extension_names(&extensions).push_next(&mut list);
+        let raw = entry.create_instance(&info, None).map_err(|e| format!("a Vulkan instance on {lib} alone: {e}"))?;
+        let hal = wgpu::hal::vulkan::Instance::from_raw(
+            entry,
+            raw,
+            version,
+            0,
+            None,
+            names,
+            wgpu::InstanceFlags::empty(),
+            wgpu::MemoryBudgetThresholds::default(),
+            false,
+            None,
+        )
+        .map_err(|e| format!("wgpu on {lib}: {e}"))?;
+        Ok(wgpu::Instance::from_hal::<wgpu::hal::api::Vulkan>(hal))
+    }
 }
 
 /// The render node a Vulkan adapter drives, off VK_EXT_physical_device_drm.
@@ -1032,5 +1137,31 @@ impl Fade {
                 wgpu::BindGroupEntry { binding: 1, resource: self.uniform.as_entire_binding() },
             ],
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Run where lavapipe is installed (the rigs carry it):
+    /// `cargo test -p formalshell-rs one_driver -- --ignored`.
+    #[test]
+    #[ignore = "needs the Vulkan loader and lavapipe"]
+    fn one_driver_holds_that_driver_alone() {
+        // SAFETY: lavapipe's own library.
+        let instance = unsafe { super::one_driver("libvulkan_lvp.so") }.unwrap();
+        let adapters = futures_lite::future::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
+        let names: Vec<_> = adapters.iter().map(|a| a.get_info().name).collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        assert!(names[0].starts_with("llvmpipe"), "{names:?}");
+        // The same adapter the loader's own instance gives: wgpu-hal reads
+        // features and properties through VK_KHR_get_physical_device_properties2
+        // only when the instance names it.
+        let all = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN, ..wgpu::InstanceDescriptor::new_without_display_handle() });
+        let full = futures_lite::future::block_on(all.enumerate_adapters(wgpu::Backends::VULKAN)).into_iter().find(|a| a.get_info().name.starts_with("llvmpipe")).unwrap();
+        assert_eq!(adapters[0].features(), full.features());
+        assert_eq!(format!("{:?}", adapters[0].limits()), format!("{:?}", full.limits()));
+        assert_eq!(format!("{:?}", adapters[0].get_info()), format!("{:?}", full.get_info()));
+        // SAFETY: a name no library carries.
+        assert!(unsafe { super::one_driver("libvulkan_nothing.so") }.is_err());
     }
 }
