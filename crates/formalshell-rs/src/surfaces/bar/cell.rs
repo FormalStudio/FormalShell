@@ -69,6 +69,8 @@ pub enum Action {
     MediaPlayPause,
     /// The sidebar folded to its rail, or opened out of it.
     Sidebar(bool),
+    /// The Software card's Apply or Undo.
+    Software(crate::services::packages::Change),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

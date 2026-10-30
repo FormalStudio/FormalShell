@@ -2,13 +2,17 @@
 //! `docs/shell-install.md`): Install mode's catalogue search, the install
 //! and uninstall it starts, and which fspec package owns a desktop file.
 //! The work itself is fspec's, on the operation stream Activity reads; this
-//! only starts it and keeps what the launcher draws off.
+//! only starts it and keeps what the launcher draws off. The sidebar's
+//! Software card reads the spec checkout here too: the upstream commits it
+//! does not have yet, and the newest app change `fspec app undo` would
+//! reverse, checked once it is first drawn and every half hour after.
 //!
 //! A search waits 250ms after the last query and a newer one drops the
 //! child still answering an older one. `--offline` keeps crates.io and npm
 //! out, so a keystroke never waits on the network.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::LazyLock;
@@ -24,6 +28,7 @@ use crate::runtime::Ctx;
 use crate::store;
 
 const DEBOUNCE: Duration = Duration::from_millis(250);
+const RECHECK: Duration = Duration::from_secs(30 * 60);
 const SEARCH_LIMIT: &str = "30";
 /// What a search answers with no fspec to ask.
 pub const NO_FSPEC: &str = "Installing apps needs fspec";
@@ -59,6 +64,27 @@ pub struct Started {
     pub app: Option<String>,
 }
 
+/// The spec checkout as the Software card shows it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Software {
+    /// The upstream's commits the checkout lacks and the upstream's name,
+    /// why that cannot be told, `None` before the first check.
+    pub behind: Option<Result<(u32, String), String>>,
+    /// The newest app change on the upstream for this host, and the entry.
+    pub last: Option<(Verb, String)>,
+    /// An Apply the card started that has not ended.
+    pub applying: bool,
+    /// The last Apply or Undo that did not go, and why.
+    pub failed: Option<(Change, String)>,
+}
+
+/// The card's two buttons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Change {
+    Apply,
+    Undo,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     /// The last query answered and its packages or why there are none.
@@ -69,12 +95,16 @@ pub struct State {
     /// The fspec operations whose success this shell already acted on (a
     /// rescan, a pick for the new app). Written on the UI thread.
     pub landed: HashSet<String>,
+    pub software: Software,
 }
 
 pub enum Diff {
     Search(String, Result<Vec<Package>, String>),
     Started(Started),
     Owner(String, Owner),
+    Checked(Result<(u32, String), String>, Option<(Verb, String)>),
+    /// An Apply started or ended, and the change that did not go.
+    Changing(bool, Option<(Change, String)>),
 }
 
 impl State {
@@ -108,6 +138,21 @@ impl State {
                 }
                 self.owners.insert(id, owner);
             }
+            Diff::Checked(behind, last) => {
+                let (behind, last) = (Some(behind), last);
+                if self.software.behind == behind && self.software.last == last {
+                    return false;
+                }
+                self.software.behind = behind;
+                self.software.last = last;
+            }
+            Diff::Changing(applying, failed) => {
+                if self.software.applying == applying && self.software.failed == failed {
+                    return false;
+                }
+                self.software.applying = applying;
+                self.software.failed = failed;
+            }
         }
         true
     }
@@ -133,6 +178,12 @@ pub enum Cmd {
     Owner(String),
     /// Ownership moved (an install, an uninstall, an undo landed).
     Forget,
+    /// The Software card is up: check now unless it already has been, and
+    /// every half hour after.
+    Watch,
+    /// Check the spec checkout now.
+    Check,
+    Change(Change),
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
@@ -177,6 +228,114 @@ fn spawn_app(ctx: &Ctx, verb: Verb, id: String, name: String, before: HashSet<St
     });
 }
 
+/// The spec's directory, off `FSPEC_SPEC` as fspec reads it (a directory
+/// or the spec.star in one).
+fn spec_dir() -> Option<PathBuf> {
+    let spec = PathBuf::from(std::env::var_os("FSPEC_SPEC").filter(|v| !v.is_empty())?);
+    if spec.is_dir() { Some(spec) } else { spec.parent().map(Path::to_path_buf) }
+}
+
+/// The name fspec knows this machine by in its commits.
+fn host() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/hostname").map(|h| h.trim().to_owned()).unwrap_or_default()
+}
+
+async fn git(dir: &Path, args: &[&str], timeout: Duration) -> proc::Done {
+    let dir = dir.to_string_lossy();
+    let mut argv = vec!["git", "-C", &dir];
+    argv.extend_from_slice(args);
+    proc::capture_err(&proc::argv(&argv), timeout).await
+}
+
+/// `feat(apps): install <name> on <host>`, fspec's commit for one change.
+fn app_change(subject: &str, host: &str) -> Option<(Verb, String)> {
+    let rest = subject.trim().strip_prefix("feat(apps): ")?;
+    let (verb, rest) = rest.split_once(' ')?;
+    let verb = match verb {
+        "install" => Verb::Install,
+        "uninstall" => Verb::Uninstall,
+        _ => return None,
+    };
+    let name = rest.strip_suffix(&format!(" on {host}"))?;
+    Some((verb, name.to_owned()))
+}
+
+/// The checkout's standing against its upstream, fetched first; a fetch
+/// that fails leaves the last one's answer.
+async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
+    let Some(dir) = spec_dir() else { return (Err("Set FSPEC_SPEC to read the spec".into()), None) };
+    let _ = git(&dir, &["fetch", "--quiet"], Duration::from_secs(60)).await;
+    let up = git(&dir, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], Duration::from_secs(10)).await;
+    if up.code != 0 {
+        return (Err("The spec's branch has no upstream".into()), None);
+    }
+    let upstream = up.stdout.trim().to_owned();
+    let count = git(&dir, &["rev-list", "--count", "HEAD..@{u}"], Duration::from_secs(10)).await;
+    let behind = match count.stdout.trim().parse::<u32>() {
+        Ok(n) if count.code == 0 => Ok((n, upstream)),
+        _ => Err(p::failure(&count.stderr, count.code)),
+    };
+    let host = host();
+    let grep = format!("--grep=^feat\\(apps\\): (install|uninstall) .+ on {}$", host.replace('.', "\\."));
+    let log = git(&dir, &["log", "-1", "--format=%s", "-E", &grep, "@{u}", "--", "apps.star"], Duration::from_secs(10)).await;
+    let last = log.stdout.lines().find_map(|l| app_change(l, &host));
+    (behind, last)
+}
+
+fn spawn_check(ctx: &Ctx) {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let (behind, last) = check().await;
+        c.publish(store::Diff::Packages(Diff::Checked(behind, last)));
+    });
+}
+
+/// Apply: the upstream fast-forwarded into the checkout, then that commit
+/// applied. Undo: the newest app change reversed, detached, on the stream.
+fn spawn_change(ctx: &Ctx, change: Change) {
+    let c = ctx.clone();
+    let publish = move |applying, failed| c.publish(store::Diff::Packages(Diff::Changing(applying, failed)));
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let failed = match change {
+            Change::Apply => {
+                publish(true, None);
+                match spec_dir() {
+                    None => Some("Set FSPEC_SPEC to read the spec".to_owned()),
+                    Some(dir) => {
+                        let merged = git(&dir, &["merge", "--ff-only", "--quiet", "@{u}"], Duration::from_secs(60)).await;
+                        if merged.code != 0 {
+                            Some(p::failure(&merged.stderr, merged.code))
+                        } else {
+                            let done = proc::capture_err(&proc::argv(&["fspec", "apply", "--rev", "HEAD"]), Duration::from_secs(2 * 60 * 60)).await;
+                            match done.code {
+                                0 => None,
+                                proc::MISSING => Some(NO_FSPEC.into()),
+                                code => Some(p::failure(&done.stderr, code)),
+                            }
+                        }
+                    }
+                }
+            }
+            Change::Undo => {
+                let done = proc::capture_err(&proc::argv(&["fspec", "app", "undo", "--detach"]), Duration::from_secs(60)).await;
+                match (done.code, p::parse_op(&done.stdout)) {
+                    (0, Some(_)) => None,
+                    (0, None) => Some("fspec printed no operation".into()),
+                    (proc::MISSING, _) => Some(NO_FSPEC.into()),
+                    (code, _) => Some(p::failure(&done.stderr, code)),
+                }
+            }
+        };
+        if let Some(why) = &failed {
+            eprintln!("packages: {change:?}: {why}");
+        }
+        publish(false, failed.map(|why| (change, why)));
+        let (behind, last) = check().await;
+        c.publish(store::Diff::Packages(Diff::Checked(behind, last)));
+    });
+}
+
 pub async fn run(ctx: Ctx) {
     // The query last asked for, answered or not: the launcher asks again
     // on every resolve.
@@ -185,6 +344,7 @@ pub async fn run(ctx: Ctx) {
     let mut due: Option<Instant> = None;
     let mut searching: Option<Searching> = None;
     let mut asked: HashSet<String> = HashSet::new();
+    let mut recheck: Option<Instant> = None;
     loop {
         let wake = {
             let timer = async {
@@ -205,7 +365,16 @@ pub async fn run(ctx: Ctx) {
                     None => future::pending().await,
                 }
             };
-            async { CHANNEL.1.recv().await.map_or(Wake::Gone, Wake::Cmd) }.or(timer).or(answer).await
+            let watch = async {
+                match recheck {
+                    Some(t) => {
+                        Timer::at(t).await;
+                        Wake::Cmd(Cmd::Check)
+                    }
+                    None => future::pending().await,
+                }
+            };
+            async { CHANNEL.1.recv().await.map_or(Wake::Gone, Wake::Cmd) }.or(timer).or(answer).or(watch).await
         };
         match wake {
             Wake::Gone => return,
@@ -253,6 +422,12 @@ pub async fn run(ctx: Ctx) {
                 });
             }
             Wake::Cmd(Cmd::Forget) => asked.clear(),
+            Wake::Cmd(Cmd::Watch) if recheck.is_some() => {}
+            Wake::Cmd(Cmd::Watch | Cmd::Check) => {
+                recheck = Some(Instant::now() + RECHECK);
+                spawn_check(&ctx);
+            }
+            Wake::Cmd(Cmd::Change(change)) => spawn_change(&ctx, change),
         }
     }
 }
@@ -266,6 +441,14 @@ mod tests {
         assert_eq!(searched(proc::MISSING, "", ""), Err(NO_FSPEC.to_owned()));
         assert_eq!(searched(1, "", "fspec: no catalog\n"), Err("no catalog".to_owned()));
         assert_eq!(searched(0, "", ""), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn reads_fspecs_app_commits_for_this_host() {
+        assert_eq!(app_change("feat(apps): install org.mozilla.firefox on g815", "g815"), Some((Verb::Install, "org.mozilla.firefox".into())));
+        assert_eq!(app_change("feat(apps): uninstall btop on e1504g", "e1504g"), Some((Verb::Uninstall, "btop".into())));
+        assert_eq!(app_change("feat(apps): install btop on e1504g", "g815"), None);
+        assert_eq!(app_change("feat(apps): pin btop on g815", "g815"), None);
     }
 
     #[test]

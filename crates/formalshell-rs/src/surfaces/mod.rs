@@ -48,7 +48,8 @@ pub fn changed(app: &mut App, topic: Topic) {
         }
         Topic::Packages => {
             app.launcher.owner_answer(&app.store);
-            app.launcher_store_changed()
+            app.launcher_store_changed();
+            app.refresh_bar(Some(topic));
         }
         Topic::Config => {
             app.launcher_inputs();

@@ -631,6 +631,13 @@ and the frame are not read under it.
 { "layout": "sidebar", "bar": { "position": "right" } }
 ```
 
+With fspec, a Software card reads your spec checkout (`FSPEC_SPEC`)
+against its upstream when it is first drawn and every half hour after.
+`2 updates` with Apply fast-forwards the checkout and runs `fspec apply
+--rev HEAD`; the newest app you installed or removed from this machine
+carries Undo, which runs `fspec app undo`. Both show in Activity like any
+fspec operation. `fs packages check` checks again now.
+
 A click on a window's icon focuses it; a click on a row focuses that
 workspace, and the empty row under the last opens the next one. Whether
 the column is folded lives in state.json, so it survives a restart:

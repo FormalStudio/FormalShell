@@ -1164,6 +1164,21 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   further off the edge than it rests, the panel resting within the bar's
   margin of the edge and the launcher travelling on to its place 30%
   across. Read dark and `--light`.
+- `sidebar_software.sh` `--sidebar-software`: the sidebar's Software card
+  against a PATH-shimmed `fspec` and a fixture spec checkout
+  (`FSPEC_SPEC`) cloned from a bare upstream 22 commits ahead, the
+  oldest fspec's own `feat(apps): install ... on <this host>` and 21
+  newer ones for another host, read off `packages status`'s `software`:
+  22 updates behind `origin/main` and `Installed Foxglove`; a real click
+  on Apply fast-forwarding the checkout before reaching the shim as
+  exactly `apply --rev HEAD`, the shim refusing it and the row keeping a
+  retry with nothing behind, and a second click applying, the card then
+  up to date; a real click on Undo
+  reaching it as `app undo --detach`, the shim pushing fspec's uninstall
+  commit and the card re-checking to one update and `Removed Foxglove`;
+  and the branch's upstream unset reading the honest error row. The
+  behind, retry, up-to-date and undone cards photographed, dark and
+  `--light`.
 - `spaces.sh` `--spaces`: the Spaces cell over windows on two workspaces,
   each listed with its icon under its own chip in `workspaces status`, every
   occupied chip showing its icons and every chip its ordinal, and the chip

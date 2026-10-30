@@ -28,6 +28,8 @@
 --sidebar --light
 --sidebar-join
 --sidebar-join --light
+--sidebar-software
+--sidebar-software --light
 --minimap
 --capture
 --capture-edit

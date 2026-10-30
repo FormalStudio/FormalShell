@@ -25,7 +25,7 @@ use crate::ui::{El, Ink, Type, Ui, Variant, Weight, w};
 
 /// The cards in the order they give up their place when the column runs
 /// short: the first is the first to go.
-const DROPS: [&str; 3] = ["media", "notifications", "activity"];
+const DROPS: [&str; 4] = ["media", "software", "notifications", "activity"];
 
 pub struct Sidebar {
     /// The cards from the top, and the status row at the foot.
@@ -260,6 +260,11 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
         "center" => Action::Center,
         "summon" => Action::Summon("system"),
         "media" => Action::MediaPlayPause,
+        "software" => match arg {
+            "apply" => Action::Software(crate::services::packages::Change::Apply),
+            "undo" => Action::Software(crate::services::packages::Change::Undo),
+            _ => Action::None,
+        },
         "collapse" => Action::Sidebar(true),
         "expand" => Action::Sidebar(false),
         _ => map.action(on, output),
@@ -299,6 +304,7 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, now: Instant) -> Vec<
     if !rows.is_empty() {
         out.push(("activity", w::card(w::column(s.row_gap, rows)).fill()));
     }
+    out.push(("software", w::card(w::column(s.row_gap, crate::surfaces::packages::software_rows(theme, store))).fill()));
     out.push(("notifications", w::card(notifications(theme, store)).interactive().on("center").fill()));
     if let Some(media) = media(theme, store) {
         out.push(("media", w::card(media).fill()));

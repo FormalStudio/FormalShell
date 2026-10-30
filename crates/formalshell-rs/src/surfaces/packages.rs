@@ -173,6 +173,7 @@ pub fn land(store: &mut Store) -> bool {
         store.packages.landed.extend(done);
         store.packages.owners.clear();
         packages::send(Cmd::Forget);
+        packages::send(Cmd::Check);
         index::ask(Ask::Rescan);
         moved = true;
     }
@@ -219,6 +220,55 @@ fn brought_by(desktop: &str, label: &str, id: &str, name: &str) -> bool {
     desktop.eq_ignore_ascii_case(reference)
         || tail(desktop).eq_ignore_ascii_case(&tail(reference))
         || (!name.is_empty() && (label.eq_ignore_ascii_case(name) || desktop.eq_ignore_ascii_case(name)))
+}
+
+/// The Software card's rows (Plan 5.3): the upstream's commits the spec
+/// checkout lacks, with Apply, and the newest app change, with Undo. Each
+/// is a label over a caption so the words keep the sidebar's narrow width.
+pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate::ui::El> {
+    use crate::ui::{Ink, Variant, w};
+    let s = &theme.space;
+    let row = |icon: &str, words: Vec<crate::ui::El>, button: Option<crate::ui::El>| {
+        let mut r = vec![w::icon(icon).ink(Ink::Muted), w::column(0.0, words).fill()];
+        r.extend(button);
+        w::row(s.icon_gap, r)
+    };
+    let dim = |text: String| w::caption(text).ink(Ink::Muted).elide();
+    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
+    if !store.activity.fspec.installed {
+        return vec![row("refresh-cw", vec![dim("Updates need fspec".into())], None)];
+    }
+    let sw = &store.packages.software;
+    packages::send(Cmd::Watch);
+    let retry = !sw.applying && matches!(sw.failed, Some((packages::Change::Apply, _)));
+    let updates = match &sw.behind {
+        None => row("refresh-cw", vec![dim("Checking for updates\u{2026}".into())], None),
+        Some(Err(why)) => row("refresh-cw", vec![dim(why.clone())], None),
+        // The checkout already fast-forwarded, so only the apply failed:
+        // the row keeps its retry.
+        Some(Ok((0, _))) if retry => row("refresh-cw", vec![w::label("Failed").elide(), dim("Not applied".into())], Some(button("rotate-ccw", "Apply again", "software:apply"))),
+        Some(Ok((0, _))) => row("refresh-cw", vec![dim("Up to date".into())], None),
+        Some(Ok((n, upstream))) => {
+            let label = if *n == 1 { "1 update".to_owned() } else { format!("{n} updates") };
+            let (caption, apply) = if sw.applying { ("Applying\u{2026}".to_owned(), None) } else { (upstream.clone(), Some(button("download", "Apply", "software:apply"))) };
+            row("refresh-cw", vec![w::label(label).elide(), dim(caption)], apply)
+        }
+    };
+    let mut out = vec![updates];
+    if let Some((verb, name)) = &sw.last {
+        let app = store.menu.nodes().get(&format!("apps.{name}")).map_or(name.as_str(), |n| n.label.as_str());
+        let (icon, words) = match verb {
+            Verb::Install => ("package-plus", "Installed"),
+            Verb::Uninstall => ("package-minus", "Removed"),
+        };
+        let undoing = store.activity.activity.live().iter().any(|i| i.origin == fs_activity::Origin::Fspec && i.kind == "undo" && i.state == Run::Running);
+        let undo = (!undoing).then(|| button("undo-2", "Undo", "software:undo"));
+        out.push(row(icon, vec![w::label(words), dim(app.to_owned())], undo));
+    }
+    if let Some((_, why)) = &sw.failed {
+        out.push(w::caption(why.clone()).ink(Ink::Destructive).elide());
+    }
+    out
 }
 
 /// The app an Activity install row's Open launches, once it landed.

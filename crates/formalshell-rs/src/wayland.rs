@@ -1509,6 +1509,7 @@ impl App {
             Action::Summon(route) => self.menu_open(Some(route)),
             Action::MediaPlayPause => self.store.media.play_pause(),
             Action::Sidebar(collapsed) => surfaces::sidebar::set_collapsed(collapsed),
+            Action::Software(change) => crate::services::packages::send(crate::services::packages::Cmd::Change(change)),
         }
     }
 
