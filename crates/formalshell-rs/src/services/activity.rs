@@ -36,11 +36,12 @@ const MAX_LINE: usize = 1 << 20;
 /// socket that still exists is taken for dead.
 const EMPTY_RECONNECTS: u32 = 3;
 const RECONNECT_GAP: Duration = Duration::from_millis(100);
-/// Silence on a running operation's connection past this is taken for a
-/// connection fspec stopped writing to (one whose snapshot it could not
-/// send whole is never written to again, yet stays open while fspec runs):
-/// the reader connects again, and the snapshot that answers is the state
-/// now. A connection that answers with nothing new costs one line.
+/// Silence on a running operation's connection past this asks fspec
+/// again on a second connection, kept only once it answers; the first stays
+/// open until then, so a final line written to it meanwhile is still read.
+/// It recovers a connection fspec stopped writing to while holding it open
+/// (one whose snapshot it could not send whole), the cause suspected and
+/// not confirmed for a run read stuck at its first line.
 const QUIET: Duration = Duration::from_secs(3);
 const LISTEN_GAP: Duration = Duration::from_millis(50);
 
@@ -313,45 +314,87 @@ async fn connect(path: &Path) -> Option<Async<UnixStream>> {
     }
 }
 
+/// What a reader has passed on of one operation.
+#[derive(Default)]
+struct Seen {
+    last: Option<String>,
+    ended: bool,
+}
+
+enum Got {
+    Lines(usize),
+    Quiet,
+    Closed,
+}
+
+struct Conn {
+    stream: Async<UnixStream>,
+    pending: Vec<u8>,
+}
+
+impl Conn {
+    /// Reads one chunk, or nothing for `QUIET`, sending every line it completes.
+    async fn step(&mut self, seen: &mut Seen, tx: &Sender<Input>) -> Got {
+        let mut chunk = [0u8; 8192];
+        let read = async { Some(self.stream.read(&mut chunk).await) };
+        let n = match futures_lite::future::or(read, async {
+            Timer::after(QUIET).await;
+            None
+        })
+        .await
+        {
+            None => return Got::Quiet,
+            Some(Ok(0) | Err(_)) => return Got::Closed,
+            Some(Ok(n)) => n,
+        };
+        self.pending.extend_from_slice(&chunk[..n]);
+        let mut lines = 0;
+        while let Some(at) = self.pending.iter().position(|b| *b == b'\n') {
+            let line: Vec<u8> = self.pending.drain(..=at).collect();
+            let Some(op) = std::str::from_utf8(&line[..at]).ok().and_then(fspec::parse) else { continue };
+            lines += 1;
+            seen.ended = op.state() != ItemState::Running;
+            seen.last = Some(fspec::item_id(&op.id));
+            let _ = tx.send(Input::Op(Box::new(op.item()))).await;
+        }
+        // What is left in `pending` is a line the writer never finished.
+        if self.pending.len() > MAX_LINE { Got::Closed } else { Got::Lines(lines) }
+    }
+}
+
+/// A second connection that has answered with at least one line.
+async fn ask_again(path: &Path, seen: &mut Seen, tx: &Sender<Input>) -> Option<(Conn, usize)> {
+    let stream = Async::<UnixStream>::connect(path).await.ok()?;
+    let mut fresh = Conn { stream, pending: Vec::new() };
+    match fresh.step(seen, tx).await {
+        Got::Lines(n) if n > 0 => Some((fresh, n)),
+        _ => None,
+    }
+}
+
 /// Reads one operation until it ends. A connection cut short (a reader
 /// that fell behind) is reconnected while the socket still exists; one
 /// that ends with no final state and no socket to go back to is a death.
 async fn read_operation(path: &Path, tx: &Sender<Input>) {
-    let mut last: Option<String> = None;
-    let mut ended = false;
+    let mut seen = Seen::default();
     let mut empty = 0;
     loop {
-        let Some(mut stream) = connect(path).await else { break };
+        let Some(stream) = connect(path).await else { break };
+        let mut conn = Conn { stream, pending: Vec::new() };
         let mut lines = 0;
-        let mut pending: Vec<u8> = Vec::new();
-        let mut chunk = [0u8; 8192];
         loop {
-            let read = async { Some(stream.read(&mut chunk).await) };
-            let n = match futures_lite::future::or(read, async {
-                Timer::after(QUIET).await;
-                None
-            })
-            .await
-            {
-                Some(Ok(0) | Err(_)) | None => break,
-                Some(Ok(n)) => n,
-            };
-            pending.extend_from_slice(&chunk[..n]);
-            while let Some(at) = pending.iter().position(|b| *b == b'\n') {
-                let line: Vec<u8> = pending.drain(..=at).collect();
-                let Some(op) = std::str::from_utf8(&line[..at]).ok().and_then(fspec::parse) else { continue };
-                lines += 1;
-                ended = op.state() != ItemState::Running;
-                last = Some(fspec::item_id(&op.id));
-                let _ = tx.send(Input::Op(Box::new(op.item()))).await;
+            match conn.step(&mut seen, tx).await {
+                Got::Lines(n) => lines += n,
+                Got::Closed => break,
+                Got::Quiet => {
+                    if let Some((fresh, n)) = ask_again(path, &mut seen, tx).await {
+                        (conn, lines) = (fresh, n);
+                    }
+                }
             }
-            if pending.len() > MAX_LINE {
-                break;
+            if seen.ended {
+                return;
             }
-        }
-        // What is left in `pending` is a line the writer never finished.
-        if ended {
-            return;
         }
         empty = if lines == 0 { empty + 1 } else { 0 };
         if empty >= EMPTY_RECONNECTS || !path.exists() {
@@ -359,7 +402,7 @@ async fn read_operation(path: &Path, tx: &Sender<Input>) {
         }
         Timer::after(RECONNECT_GAP).await;
     }
-    if let (Some(id), false) = (last, ended) {
+    if let (Some(id), false) = (seen.last, seen.ended) {
         let _ = tx.send(Input::Died(id)).await;
     }
 }
@@ -549,6 +592,32 @@ mod tests {
         block_on(read_operation(&path, &tx));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "running 100", "succeeded 100"]);
+    }
+
+    /// The operation ending while the reader asks again: the final line
+    /// lands on the first connection and the socket is gone, so the second
+    /// never answers, and the first is still read to its end.
+    #[test]
+    fn an_end_during_the_second_ask_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let (tx, rx) = async_channel::unbounded();
+        let gone = path.clone();
+        let server = std::thread::spawn(move || {
+            let (mut first, _) = listener.accept().unwrap();
+            first.write_all(line("f", "running", 1).as_bytes()).unwrap();
+            let (second, _) = listener.accept().unwrap();
+            first.write_all(line("f", "succeeded", 4).as_bytes()).unwrap();
+            std::fs::remove_file(&gone).unwrap();
+            drop(second);
+            drop(listener);
+            std::thread::sleep(Duration::from_millis(200));
+            drop(first);
+        });
+        block_on(read_operation(&path, &tx));
+        server.join().unwrap();
+        assert_eq!(drain(&rx), ["running 25", "succeeded 100"]);
     }
 
     #[test]
