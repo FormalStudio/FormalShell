@@ -15,9 +15,35 @@ pub struct Clock {
     vertical: bool,
 }
 
+/// The clock format every clock reads: the one state.json saved, else the
+/// locale's own 12 or 24 hour preset.
+pub fn clock_format(store: &crate::store::Store) -> String {
+    let saved = &store.state.data.clock_format;
+    match saved.is_empty() {
+        false => saved.clone(),
+        true if twelve_hour() => CLOCK_FORMATS[1].to_owned(),
+        true => CLOCK_FORMATS[0].to_owned(),
+    }
+}
+
+/// Whether the locale's LC_TIME writes a 12 hour clock: its own time
+/// format (`nl_langinfo(T_FMT)`) carrying an AM/PM or a 12 hour field.
+fn twelve_hour() -> bool {
+    static TWELVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TWELVE.get_or_init(|| {
+        // A locale object of its own: setlocale would change the process's.
+        let loc = unsafe { libc::newlocale(libc::LC_TIME_MASK, c"".as_ptr(), std::ptr::null_mut()) };
+        if loc.is_null() {
+            return false;
+        }
+        let fmt = unsafe { std::ffi::CStr::from_ptr(libc::nl_langinfo_l(libc::T_FMT, loc)) }.to_string_lossy().into_owned();
+        unsafe { libc::freelocale(loc) };
+        ["%p", "%P", "%r", "%I", "%l"].iter().any(|f| fmt.contains(f))
+    })
+}
+
 fn format_of(env: &Env) -> String {
-    let saved = &env.store.state.data.clock_format;
-    if saved.is_empty() { CLOCK_FORMATS[0].to_owned() } else { saved.clone() }
+    clock_format(env.store)
 }
 
 impl Cell for Clock {

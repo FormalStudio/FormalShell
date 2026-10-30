@@ -14,7 +14,7 @@ mod battery;
 mod bell;
 mod bluetooth;
 mod chevron;
-mod clock;
+pub(crate) mod clock;
 mod display;
 mod dualsense;
 mod earbuds;

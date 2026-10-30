@@ -32,6 +32,8 @@ const RECHECK: Duration = Duration::from_secs(30 * 60);
 const SEARCH_LIMIT: &str = "30";
 /// What a search answers with no fspec to ask.
 pub const NO_FSPEC: &str = "Installing apps needs fspec";
+/// `check`'s answer on a machine whose fspec has no spec to read.
+pub const NO_SPEC: &str = "No spec on this machine";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verb {
@@ -263,7 +265,7 @@ fn app_change(subject: &str, host: &str) -> Option<(Verb, String)> {
 /// The checkout's standing against its upstream, fetched first; a fetch
 /// that fails leaves the last one's answer.
 async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
-    let Some(dir) = spec_dir() else { return (Err("Set FSPEC_SPEC to read the spec".into()), None) };
+    let Some(dir) = spec_dir() else { return (Err(NO_SPEC.into()), None) };
     let _ = git(&dir, &["fetch", "--quiet"], Duration::from_secs(60)).await;
     let up = git(&dir, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], Duration::from_secs(10)).await;
     if up.code != 0 {
@@ -301,7 +303,7 @@ fn spawn_change(ctx: &Ctx, change: Change) {
             Change::Apply => {
                 publish(true, None);
                 match spec_dir() {
-                    None => Some("Set FSPEC_SPEC to read the spec".to_owned()),
+                    None => Some(NO_SPEC.to_owned()),
                     Some(dir) => {
                         let merged = git(&dir, &["merge", "--ff-only", "--quiet", "@{u}"], Duration::from_secs(60)).await;
                         if merged.code != 0 {

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use fs_chrome::types::Edge;
-use fs_info::clock::{CLOCK_FORMATS, format_qt};
+use fs_info::clock::format_qt;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
@@ -27,6 +27,7 @@ use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::compositor::Command;
 use crate::services::state::{self, Field};
 use crate::store::Store;
+use crate::surfaces::bar::cells::clock::clock_format;
 use crate::surfaces::activity;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::panel::center;
@@ -415,14 +416,9 @@ pub fn set_collapsed(collapsed: bool) {
     state::set(vec![Field::SidebarCollapsed(collapsed)]);
 }
 
-fn clock_format(store: &Store) -> String {
-    let saved = &store.state.data.clock_format;
-    if saved.is_empty() { CLOCK_FORMATS[0].to_owned() } else { saved.clone() }
-}
-
-/// The time the card's digits read and the period after them: the clock
-/// format's own hour (padded or not) with its minutes, and its AM/PM in its
-/// own case where it carries one. The date it may carry is the box's.
+/// The time the card's digits read and the period after them, on the
+/// same format as the bar's clock: its hour (padded or not) with its
+/// minutes, and its AM/PM where it carries one. Its date is the box's.
 fn time_parts(store: &Store) -> (String, Option<String>) {
     let format = clock_format(store);
     // Quoted runs are literal text, never a marker.
@@ -462,13 +458,16 @@ fn clock_face(p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRec
     let (time, period) = time_parts(store);
     let period = period.map(|ap| kit.shape(&ap, style(kit, g.period, 500.0, 0.0)));
     let after = period.as_ref().map_or(0, |t| t.width + g.dot as i32);
-    let room = bx - g.spacing as i32 - (card.x + g.time_x as i32);
-    // A format wider than the room shrinks rather than cut.
+    let room = bx - g.dot as i32 - (card.x + g.time_x as i32);
+    // Weight 100 is the family's lightest: matching falls to the nearest
+    // face, and a wght axis clamps to its own floor.
+    let face = |kit: &mut Kit, size: f64| kit.shape(&time, style(kit, size, 100.0, -(size * 0.03) as f32));
+    // A time wider than the room shrinks rather than cut.
     let mut size = g.digits;
-    let mut digits = kit.shape(&time, style(kit, size, 300.0, -1.0));
+    let mut digits = face(kit, size);
     while digits.width + after > room && size > g.date_words {
         size -= 1.0;
-        digits = kit.shape(&time, style(kit, size, 300.0, -1.0));
+        digits = face(kit, size);
     }
     // Cap height near 0.7 of the size, centred on the card.
     let baseline = card.y + ((card.h as f64 + size * 0.7) / 2.0).round() as i32;
@@ -498,7 +497,10 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, icons: &Hash
     if let Some(card) = activity::installs_card(store) {
         out.push(("activity", card));
     }
-    out.push(("software", w::card(w::column(s.row_gap, crate::surfaces::packages::software_rows(theme, store))).fill()));
+    let software = crate::surfaces::packages::software_rows(theme, store);
+    if !software.is_empty() {
+        out.push(("software", w::card(w::column(s.row_gap, software)).fill()));
+    }
     out
 }
 
@@ -610,7 +612,7 @@ fn rail(theme: &Theme, store: &Store, map: &minimap::Map) -> El {
     let mut col = vec![
         w::column(
             0.0,
-            vec![w::value(format_qt(clock, "hh")).centred(), w::value(format_qt(clock, "mm")).centred()],
+            vec![w::value(time_parts(store).0.split(':').next().unwrap_or_default().to_owned()).centred(), w::value(format_qt(clock, "mm")).centred()],
         )
         .fill()
         .on("panel:calendar"),

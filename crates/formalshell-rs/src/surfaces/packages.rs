@@ -226,20 +226,24 @@ fn brought_by(desktop: &str, label: &str, id: &str, name: &str) -> bool {
 /// checkout lacks, with Apply, and the newest app change, with Undo. Each
 /// is a label over a caption so the words keep the sidebar's narrow width.
 pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate::ui::El> {
-    use crate::ui::{Ink, Variant, w};
+    use crate::ui::{Ink, Type, Variant, Weight, w};
     let s = &theme.space;
     let row = |icon: &str, words: Vec<crate::ui::El>, button: Option<crate::ui::El>| {
         let mut r = vec![w::icon(icon).ink(Ink::Muted), w::column(0.0, words).fill()];
         r.extend(button);
         w::row(s.icon_gap, r)
     };
-    let dim = |text: String| w::caption(text).ink(Ink::Muted).elide();
+    let dim = |text: String| w::para(text, Type::Caption, Weight::Normal, Ink::Muted, 3);
     let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
     if !store.activity.fspec.installed {
         return vec![row("refresh-cw", vec![dim("Updates need fspec".into())], None)];
     }
     let sw = &store.packages.software;
     packages::send(Cmd::Watch);
+    // No spec is nothing to track rather than a failure.
+    if matches!(&sw.behind, Some(Err(why)) if why == packages::NO_SPEC) {
+        return Vec::new();
+    }
     let retry = !sw.applying && matches!(sw.failed, Some((packages::Change::Apply, _)));
     let updates = match &sw.behind {
         None => row("refresh-cw", vec![dim("Checking for updates\u{2026}".into())], None),
@@ -266,7 +270,7 @@ pub fn software_rows(theme: &fs_theme::theme::Theme, store: &Store) -> Vec<crate
         out.push(row(icon, vec![w::label(words), dim(app.to_owned())], undo));
     }
     if let Some((_, why)) = &sw.failed {
-        out.push(w::caption(why.clone()).ink(Ink::Destructive).elide());
+        out.push(w::para(why.clone(), Type::Caption, Weight::Normal, Ink::Destructive, 3));
     }
     out
 }

@@ -137,8 +137,7 @@ impl Panel for Calendar {
         let cells = self.cells();
         let weeks = grid::week_numbers(&cells);
         let events = &v.store.info.calendar.events;
-        let fmt = &v.store.state.data.clock_format;
-        let twelve = clock::uses_meridiem(if fmt.is_empty() { clock::CLOCK_FORMATS[0] } else { fmt });
+        let twelve = clock::uses_meridiem(&crate::surfaces::bar::cells::clock::clock_format(v.store));
 
         let hero = w::hero(
             s,
