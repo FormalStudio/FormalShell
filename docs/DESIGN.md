@@ -82,7 +82,10 @@ nothing blurred behind it reads as a rendering fault rather than as depth,
 so the two travel together: a surface is either on that list or opaque.
 The launcher's popover card (`motion.morph` false) is opaque too: it draws
 its look on viewport-cropped subsurfaces, and Hyprland 0.56 blurs nothing
-under those whatever the layer rule says (`--launcher-glass --no-morph`).
+under those whatever the layer rule says (`--glass-behind --no-morph`).
+With the compositor's blur off every card draws at 1, whatever
+`theme.surfaceOpacity` asks. `--glass-behind` reads each card on the list
+over text, blurred or opaque.
 Toasts and lock are the opaque ones; the OSD joined the blurred list when it
 started budding off the bottom line (M57 D8), since one silhouette across
 two windows cannot be opaque on one side of the seam. The modal namespaces
@@ -127,10 +130,11 @@ card, a bubble and the switcher, `xl` for a dialog (`card`'s `dialog`
 state: the lock card, the greeter, the polkit prompt), `sm` for a keycap.
 A button is `controlHeight` tall with `controlPaddingY` by
 `controlPaddingX` round a bold label; an entry is `controlHeight` with 9px
-(`md`) inside; a tooltip is 6 by 10. Its surfaces are opaque (`theme.surfaceOpacity` 1): elementary's
+(`md`) inside; a tooltip is 6 by 10. elementary's surfaces are opaque: its
 popovers and dialogs are `bg_color(2)` with nothing behind them, and its one
-translucent surface is the panel, whose alpha belongs to the band's paint
-rather than to that key.
+translucent surface is the panel, whose alpha belongs to the band's paint.
+The shell's cards still draw at `theme.surfaceOpacity` (0.85) where the
+compositor blurs behind them (Translucency and blur, above).
 
 **Type** (`fs_theme::tokens::font_tokens`, picked per element with
 `ui::Type` and `ui::Weight`): sans for words (titles, labels, buttons,

@@ -438,7 +438,7 @@ impl Card {
     ///
     /// The fill goes opaque here: Hyprland 0.56 never blurs under these
     /// viewport-cropped subsurfaces whatever the layer rule says (the
-    /// `--launcher-glass` leg reads the text behind them sharp), so a
+    /// `--glass-behind` leg reads the text behind them sharp), so a
     /// see-through look would show the desktop through it unblurred.
     pub fn popover_look(&self, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect) {
         let mut look = self.look.clone();

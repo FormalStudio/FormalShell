@@ -127,7 +127,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--launcher-glass", "--launcher-glass --no-morph", "--launcher-density"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--glass-behind", "--glass-behind --no-morph", "--launcher-density"]
 
 # Install mode: fspec as the package manager
 [[rule]]
@@ -144,7 +144,7 @@ runs = ["--launcher-install", "--launcher-install --light"]
 paths = [
   "crates/formalshell-rs/src/surfaces/card.rs",
 ]
-runs = ["--launcher-glass", "--launcher-glass --no-morph"]
+runs = ["--glass-behind", "--glass-behind --no-morph"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]
@@ -513,7 +513,7 @@ runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki", "--glass",
 # example a hyprland.lua loads it from (a rule wins over `none`).
 [[rule]]
 paths = ["crates/fs-theme/src/chrome.rs", "docs/examples/hyprland/formalshell.lua"]
-runs = ["--hypr-motion", "--launcher-glass"]
+runs = ["--hypr-motion", "--glass-behind"]
 
 # The sky wallpaper and the sun it is drawn for.
 [[rule]]

@@ -509,6 +509,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   populated view of it on
   a rig with no battery; `--panel power` proves the honest "No power
   sources" state.
+- `glass_behind.sh` `--glass-behind`: the shipped layer rules from
+  `docs/examples/hyprland/formalshell.lua` loaded and blur turned on, the
+  launcher, the audio panel, the notification centre, the volume OSD, the
+  switcher and a sticky toast each photographed over a foot window full of
+  text and again over a bare wallpaper: what each card lets through (the
+  edge energy of the two frames' difference inside it) at most 0.06 of the
+  text's own, where a translucent card with nothing blurred under it lets
+  through 0.11 to 0.52. Ridden by `--no-morph` it reads the popover cards
+  (the launcher's opaque), by `--light` the light ones; run it at
+  `FS_SMOKE_SCALE=1.25` too.
 - `gpu.sh` `--gpu`: both cards of a hybrid laptop this rig is not, and the
   four PRIME offload variables reaching a launched child.
 - `grid_relaunch.sh` `--grid-relaunch`: the root grid after launches that
@@ -642,13 +652,6 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `actions`, `runAction` and `into` answering `error: menu not open` shut.
   The column, the targets and the windows photographed dark, the column
   light.
-- `launcher_glass.sh` `--launcher-glass`: the shipped layer rules from
-  `docs/examples/hyprland/formalshell.lua` loaded and blur turned on, the
-  launcher photographed over a foot window full of text and again over the
-  bare wallpaper: inside the card the difference between the two frames
-  carries under a tenth of the edge energy it carries under the scrim
-  beside it, so the text behind a translucent card is blurred. Ridden by
-  `--no-morph` it reads the popover card, which stays opaque.
 - `launcher_density.sh` `--launcher-density`: the launcher as a popover
   (`motion.morph` false) on a headless second output at scale 1.25 beside
   the session's own at 1, the bar's: every buffer the card, its look's four
@@ -1461,7 +1464,9 @@ a Linux host.
   through `fs_theme::table()` and `fs_theme::Theme::box_style`); see
   `docs/DESIGN.md` §1 "The table" for the schema. Radius base 6, 1px
   `border`, the table's own casts and faces, no blur drawn by the shell (Hyprland blurs behind the bar/panel/launcher cards
-  via layerrules; `theme.surfaceOpacity`, default 1), dither only behind
+  via layerrules; `theme.surfaceOpacity`, default 0.85, drawn at 1
+  while the compositor's own blur is off, and the popover card opaque
+  always), dither only behind
   `wallpaper.dither`/`lock.dither` (both default false), fonts = the
   fontconfig `sans-serif` alias for words and `monospace` for values (Geist
   Sans/Mono by intent, never a hardcoded family), icons by name

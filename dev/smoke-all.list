@@ -66,8 +66,8 @@
 --launcher-abbrev
 --launch
 --launcher-actions
---launcher-glass
---launcher-glass --no-morph
+--glass-behind
+--glass-behind --no-morph
 --launcher-modes
 --launcher-mouse
 --launcher-overflow
