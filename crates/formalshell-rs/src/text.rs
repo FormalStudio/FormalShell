@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use parley::fontique::Blob;
-use parley::setting::Tag;
+use parley::setting::{FontFeature, Tag};
 use parley::{
-    FontContext, FontFamily, FontFamilyName, FontVariation, FontVariations, FontWeight, FontWidth, GenericFamily, Layout,
+    FontContext, FontFamily, FontFamilyName, FontFeatures, FontVariation, FontVariations, FontWeight, FontWidth, GenericFamily, Layout,
     LayoutContext, PositionedLayoutItem, RangedBuilder, StyleProperty,
 };
 use skrifa::bitmap::{BitmapData, BitmapStrikes};
@@ -20,6 +20,7 @@ use skrifa::outline::{
     DrawSettings, Engine, GlyphStyles, HintingInstance, HintingOptions, OutlinePen, SmoothMode, Target,
 };
 use skrifa::raw::types::F2Dot14;
+use skrifa::raw::TableProvider;
 use skrifa::string::StringId;
 use skrifa::{FontRef, GlyphId, MetadataProvider};
 use vello_cpu::kurbo::BezPath;
@@ -44,6 +45,19 @@ pub enum Family {
     /// A theme's family by name, with the alias behind it for glyphs the
     /// face lacks and for a face that is not installed at all.
     Face(&'static str, GenericFamily),
+}
+
+const TNUM: [FontFeature; 1] = [FontFeature::new(Tag::new(b"tnum"), 1)];
+
+fn family_name(font: &FontRef) -> String {
+    font.localized_strings(StringId::FAMILY_NAME).english_or_first().map(|n| n.to_string()).unwrap_or_default()
+}
+
+/// Whether the face's GSUB lists a `tnum` feature.
+fn has_tnum(font: &FontRef) -> bool {
+    let Ok(gsub) = font.gsub() else { return false };
+    let Ok(list) = gsub.feature_list() else { return false };
+    list.feature_records().iter().any(|r| r.feature_tag() == skrifa::Tag::new(b"tnum"))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -354,6 +368,8 @@ struct Inner {
     shaped_count: usize,
     /// Theme families the collection has no face for, logged once each.
     missing: HashSet<&'static str>,
+    /// Faces a value has been drawn in, each checked once for `tnum`.
+    figures: HashSet<(u64, u32)>,
 }
 
 impl Inner {
@@ -405,6 +421,7 @@ impl Inner {
             shaped: HashMap::new(),
             shaped_count: 0,
             missing: HashSet::new(),
+            figures: HashSet::new(),
         }
     }
 
@@ -440,6 +457,12 @@ impl Inner {
         if !axes.is_empty() {
             builder.push_default(StyleProperty::FontVariations(FontVariations::List(Cow::Owned(axes))));
         }
+        // Values draw monospace, and take tabular figures where the face
+        // carries them (libadwaita's `.numeric`).
+        let value = matches!(face, Family::Generic(GenericFamily::Monospace) | Family::Face(_, GenericFamily::Monospace));
+        if value {
+            builder.push_default(StyleProperty::FontFeatures(FontFeatures::from(&TNUM)));
+        }
         let mut layout: Layout<()> = builder.build(source);
         layout.break_all_lines(None);
 
@@ -471,6 +494,15 @@ impl Inner {
             let Ok(font_ref) = FontRef::from_index(font.data.as_ref(), font.index) else {
                 continue;
             };
+            if value && self.figures.insert((font.data.id(), font.index)) && !has_tnum(&font_ref) {
+                // Each text context loads its own blobs, so the log is
+                // kept once per face across all of them.
+                static TOLD: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+                let name = family_name(&font_ref);
+                if TOLD.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashSet::new).insert(name.clone()) {
+                    eprintln!("text: face \"{name}\" has no tnum, so values draw its own figures");
+                }
+            }
             let instance = self.instance(&font_ref, font.data.id(), font.index, size, &coords);
             for glyph in glyph_run.positioned_glyphs() {
                 let x = PAD + glyph.x.round() as i32;
@@ -501,11 +533,7 @@ impl Inner {
             }
             HintingInstance::new(&outlines, Size::new(size), LocationRef::new(&location), options).ok()
         });
-        let family = font
-            .localized_strings(StringId::FAMILY_NAME)
-            .english_or_first()
-            .map(|n| n.to_string())
-            .unwrap_or_default();
+        let family = family_name(font);
         let subfamily = font
             .localized_strings(StringId::SUBFAMILY_NAME)
             .english_or_first()

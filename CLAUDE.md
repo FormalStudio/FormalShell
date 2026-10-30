@@ -1493,7 +1493,8 @@ a Linux host.
   always), dither only behind
   `wallpaper.dither`/`lock.dither` (both default false), fonts = the
   fontconfig `sans-serif` alias for words and `monospace` for values (Geist
-  Sans/Mono by intent, never a hardcoded family), icons by name
+  Sans/Mono by intent, never a hardcoded family; values ask the face for
+  `tnum`, and a face without it is logged once in `text.rs`), icons by name
   through `ui::w::icon` and `fs_theme::icons` (Lucide; no raw glyphs in
   surface code, no SVG icon assets). Nothing in the shell blurs anything: a modal surface sits over a plain 0.5 black scrim that only
   darkens the desktop (the modal namespaces take `ignore_alpha = 0.6`, so
