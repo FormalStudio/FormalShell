@@ -1074,6 +1074,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   honest unavailable error, neither frame a flat card.
 - `reminder.sh` `--reminder`: a real countdown firing inside the run and
   bypassing DND into the popup tier.
+- `render.sh` `--render`: `render.backend` resolved at start, three
+  shells in one session, each replacing the last: `gpu` drawing on the GPU
+  in a nested session (`debug dump`'s `render` block naming the render
+  node) and falling back to cpu with the reason on a vkms rig, `cpu`
+  asked, and `gpu` under a `VK_DRIVER_FILES` naming no driver falling back
+  saying no Vulkan device was found. Each opens the launcher: the card's
+  crop off `menu status`'s `cardBox` not flat, and the GPU's and the
+  fallback's within 3% RMSE of the CPU's. Runs alone.
 - `screensaver.sh` `--screensaver`: the live media guard, auto-activation off
   the idle timer alone, and the manual start/stop path.
 - `screensaver_gif.sh` `--screensaver-gif`: five ttfx effects recorded frame

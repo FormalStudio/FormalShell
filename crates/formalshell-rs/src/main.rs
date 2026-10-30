@@ -1,5 +1,6 @@
 mod cmdline;
 mod fontconfig;
+mod gpu;
 mod greeter;
 mod install;
 mod instance;
@@ -70,6 +71,8 @@ fn main() {
     let (globals, queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
     let qh = queue.handle();
     phase("wayland");
+    gpu::resolve(render_backend(), &conn, &globals);
+    phase("render");
 
     let mut event_loop: EventLoop<'static, App> = EventLoop::try_new().expect("event loop");
     let handle = event_loop.handle();
@@ -145,6 +148,14 @@ pub fn thread_ticks() {
 /// after it is dropped (the screensaver's, the launcher's). Pinned, every
 /// such buffer is its own mapping, gone with its owner. Fewer arenas keep
 /// the threads' small allocations from each holding their own slack.
+/// `render.backend`, read once: the backend is picked before the first
+/// surface, so a new value takes effect at the next start.
+fn render_backend() -> fs_theme::theme::Backend {
+    let text = std::fs::read_to_string(services::config::settings_path()).unwrap_or_default();
+    let settings: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    fs_theme::theme::Backend::parse(settings.pointer("/render/backend"))
+}
+
 fn tune_malloc() {
     #[cfg(target_env = "gnu")]
     // SAFETY: mallopt only sets allocator parameters, before any thread.

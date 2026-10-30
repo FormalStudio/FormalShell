@@ -42,14 +42,16 @@ leg_dump_assert() {
   # The four keys the theme reads off settings.json, against the file the
   # shell loaded: a written value reads back, an absent or unknown one is
   # the default (`layout` bar, `bar.style` transparent, `motion.morph`
-  # true, `render.backend` auto).
+  # true, `render.backend` auto), and the backend drawing names its device
+  # (gpu) or why it is not on one (cpu).
   "$jq_bin" -e '
     def pick($v; $allowed; $absent): if ($v | type) == "string" and ($allowed | index($v)) then $v else $absent end;
     .configLoaded as $c
     | .theme.layout == pick($c.layout; ["bar","sidebar"]; "bar")
     and .theme.barStyle == pick($c.bar.style; ["transparent","solid","corners"]; "transparent")
     and .theme.morph == (if ($c.motion.morph | type) == "boolean" then $c.motion.morph else true end)
-    and .render == {"asked": pick($c.render.backend; ["auto","gpu","cpu"]; "auto"), "backend": "cpu"}' \
+    and .render.asked == pick($c.render.backend; ["auto","gpu","cpu"]; "auto")
+    and ((.render.backend == "gpu" and .render.device != null) or (.render.backend == "cpu" and .render.reason != null))' \
     "$dump_path" > /dev/null \
     || fail "the dump's layout, barStyle, morph or render do not match settings.json: $("$jq_bin" -c '{layout: .theme.layout, barStyle: .theme.barStyle, morph: .theme.morph, render}' "$dump_path")"
 }

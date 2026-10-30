@@ -1,26 +1,133 @@
 //! Rasterises dirty rects of the scene into one persistent premultiplied
 //! RGBA canvas. Only nodes crossing a rect are encoded, and only that rect is
-//! rasterised; the rest of the canvas keeps what it last held.
+//! rasterised; the rest of the canvas keeps what it last held. The canvas
+//! is a vello_cpu pixmap, or a texture vello_hybrid draws into on the GPU
+//! path (`gpu.rs`); one walk over the scene drives either through [`Raster`].
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use vello_cpu::color::{AlphaColor, Srgb};
 use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Rect, RoundedRect, Shape, Stroke, Vec2};
-use vello_cpu::peniko::{BlendMode, Compose, Fill, Mix};
+use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
 use crate::scene::{Bitmap, Brush, Fade, IRect, Paint, Scene, VOp};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
 
+/// What the scene walk draws with: vello_cpu's context, or a GPU tile's
+/// vello_hybrid scene. Both take the same kurbo paths and peniko paints;
+/// only their picture types differ, so a picture goes in as a pixmap.
+pub trait Raster {
+    fn set_transform(&mut self, t: Affine);
+    fn set_color(&mut self, c: AlphaColor<Srgb>);
+    fn set_gradient(&mut self, g: Gradient);
+    fn set_image(&mut self, pixmap: Arc<Pixmap>, sampler: ImageSampler);
+    fn set_paint_transform(&mut self, t: Affine);
+    fn reset_paint_transform(&mut self);
+    fn set_stroke(&mut self, s: Stroke);
+    fn set_fill_rule(&mut self, f: Fill);
+    fn fill_path(&mut self, p: &BezPath);
+    fn fill_rect(&mut self, r: &Rect);
+    fn stroke_path(&mut self, p: &BezPath);
+    fn fill_blurred_rounded_rect(&mut self, r: &Rect, radius: f32, std_dev: f32);
+    fn push_clip_layer(&mut self, p: &BezPath);
+    fn push_group(&mut self);
+    fn push_blend_layer(&mut self, b: BlendMode);
+    fn push_blur_layer(&mut self, radius: f32);
+    fn pop_layer(&mut self);
+}
+
+impl Raster for RenderContext {
+    fn set_transform(&mut self, t: Affine) {
+        RenderContext::set_transform(self, t);
+    }
+
+    fn set_color(&mut self, c: AlphaColor<Srgb>) {
+        self.set_paint(c);
+    }
+
+    fn set_gradient(&mut self, g: Gradient) {
+        self.set_paint(g);
+    }
+
+    fn set_image(&mut self, pixmap: Arc<Pixmap>, sampler: ImageSampler) {
+        self.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(pixmap), sampler });
+    }
+
+    fn set_paint_transform(&mut self, t: Affine) {
+        RenderContext::set_paint_transform(self, t);
+    }
+
+    fn reset_paint_transform(&mut self) {
+        RenderContext::reset_paint_transform(self);
+    }
+
+    fn set_stroke(&mut self, s: Stroke) {
+        RenderContext::set_stroke(self, s);
+    }
+
+    fn set_fill_rule(&mut self, f: Fill) {
+        RenderContext::set_fill_rule(self, f);
+    }
+
+    fn fill_path(&mut self, p: &BezPath) {
+        RenderContext::fill_path(self, p);
+    }
+
+    fn fill_rect(&mut self, r: &Rect) {
+        RenderContext::fill_rect(self, r);
+    }
+
+    fn stroke_path(&mut self, p: &BezPath) {
+        RenderContext::stroke_path(self, p);
+    }
+
+    fn fill_blurred_rounded_rect(&mut self, r: &Rect, radius: f32, std_dev: f32) {
+        RenderContext::fill_blurred_rounded_rect(self, r, radius, std_dev, false);
+    }
+
+    fn push_clip_layer(&mut self, p: &BezPath) {
+        RenderContext::push_clip_layer(self, p);
+    }
+
+    fn push_group(&mut self) {
+        self.push_layer(None, None, None, None, None);
+    }
+
+    fn push_blend_layer(&mut self, b: BlendMode) {
+        self.push_layer(None, Some(b), None, None, None);
+    }
+
+    fn push_blur_layer(&mut self, radius: f32) {
+        let f = vello_cpu::filter_effects::Filter::from_function(vello_cpu::filter_effects::FilterFunction::Blur { radius });
+        self.push_filter_layer(f);
+    }
+
+    fn pop_layer(&mut self) {
+        RenderContext::pop_layer(self);
+    }
+}
+
+enum Target {
+    Cpu { ctx: Box<RenderContext>, canvas: Pixmap },
+    Gpu(crate::gpu::Canvas),
+}
+
 pub struct Renderer {
-    ctx: RenderContext,
-    resources: Resources,
     /// `size` times `scale`, rounded: the scene stays in logical pixels and
     /// only the canvas is in the output's own.
-    canvas: Pixmap,
+    target: Target,
+    caches: Caches,
     size: (u16, u16),
+    scale: f64,
+}
+
+/// What both targets draw from: pictures made once and reused.
+struct Caches {
+    resources: Resources,
+    /// The canvas's scale, for the walk.
     scale: f64,
     /// Glyph coverage tinted for an ink, by the coverage's address; the
     /// entry holds the coverage so the address is never reused under it.
@@ -60,33 +167,57 @@ pub fn scaled(n: i32, scale: f64) -> i32 {
 
 impl Renderer {
     pub fn new(width: u16, height: u16) -> Self {
+        Self::with_target(Target::Cpu { ctx: Box::new(RenderContext::new(1, 1)), canvas: Pixmap::new(width, height) }, width, height)
+    }
+
+    /// A renderer drawing into a GPU canvas; None once the device is gone.
+    pub fn gpu(width: u16, height: u16) -> Option<Self> {
+        let canvas = crate::gpu::Canvas::new(u32::from(width), u32::from(height))?;
+        Some(Self::with_target(Target::Gpu(canvas), width, height))
+    }
+
+    fn with_target(target: Target, width: u16, height: u16) -> Self {
         Self {
-            ctx: RenderContext::new(1, 1),
-            resources: Resources::new(),
-            canvas: Pixmap::new(width, height),
+            target,
+            caches: Caches {
+                resources: Resources::new(),
+                scale: 1.0,
+                inked: HashMap::new(),
+                scaled: HashMap::new(),
+                colors: HashMap::new(),
+                glows: HashMap::new(),
+                #[cfg(test)]
+                no_glow_cache: false,
+            },
             size: (width, height),
             scale: 1.0,
-            inked: HashMap::new(),
-            scaled: HashMap::new(),
-            colors: HashMap::new(),
-            glows: HashMap::new(),
-            #[cfg(test)]
-            no_glow_cache: false,
         }
+    }
+
+    pub fn is_gpu(&self) -> bool {
+        matches!(self.target, Target::Gpu(_))
     }
 
     pub fn resize(&mut self, width: u16, height: u16) {
         self.size = (width, height);
         let (w, h) = (scaled(i32::from(width), self.scale), scaled(i32::from(height), self.scale));
-        self.canvas = Pixmap::new(w.clamp(1, i32::from(u16::MAX)) as u16, h.clamp(1, i32::from(u16::MAX)) as u16);
+        let (w, h) = (w.clamp(1, i32::from(u16::MAX)) as u16, h.clamp(1, i32::from(u16::MAX)) as u16);
+        match &mut self.target {
+            Target::Cpu { canvas, .. } => *canvas = Pixmap::new(w, h),
+            Target::Gpu(canvas) => {
+                if let Some(c) = crate::gpu::Canvas::new(u32::from(w), u32::from(h)) {
+                    *canvas = c;
+                }
+            }
+        }
     }
 
     pub fn set_scale(&mut self, scale: f64) {
         if scale != self.scale {
             self.scale = scale;
-            self.scaled.clear();
-            self.colors.clear();
-            self.glows.clear();
+            self.caches.scaled.clear();
+            self.caches.colors.clear();
+            self.caches.glows.clear();
             self.resize(self.size.0, self.size.1);
         }
     }
@@ -106,7 +237,10 @@ impl Renderer {
 
     /// The canvas in its own pixels.
     pub fn pixels(&self) -> (i32, i32) {
-        (i32::from(self.canvas.width()), i32::from(self.canvas.height()))
+        match &self.target {
+            Target::Cpu { canvas, .. } => (i32::from(canvas.width()), i32::from(canvas.height())),
+            Target::Gpu(canvas) => (canvas.size().0 as i32, canvas.size().1 as i32),
+        }
     }
 
     /// The canvas pixels a logical rect touches.
@@ -121,12 +255,28 @@ impl Renderer {
         IRect::new(x0, y0, x1 - x0, y1 - y0).intersect(&IRect::new(0, 0, w, h))
     }
 
+    /// The CPU canvas; a GPU renderer's lives on the device and is copied
+    /// out by [`crate::gpu::Buffer::fill`] instead.
     pub fn canvas(&self) -> &Pixmap {
-        &self.canvas
+        match &self.target {
+            Target::Cpu { canvas, .. } => canvas,
+            Target::Gpu(_) => unreachable!("a GPU canvas is read on the device"),
+        }
     }
 
+    pub fn gpu_canvas(&mut self) -> Option<&mut crate::gpu::Canvas> {
+        match &mut self.target {
+            Target::Gpu(canvas) => Some(canvas),
+            Target::Cpu { .. } => None,
+        }
+    }
+
+    /// The CPU canvas's bytes, empty on the GPU.
     pub fn canvas_bytes_mut(&mut self) -> &mut [u8] {
-        self.canvas.data_as_u8_slice_mut()
+        match &mut self.target {
+            Target::Cpu { canvas, .. } => canvas.data_as_u8_slice_mut(),
+            Target::Gpu(_) => &mut [],
+        }
     }
 
     /// `rect` back to transparent, without drawing anything.
@@ -136,16 +286,21 @@ impl Renderer {
         if rect.is_empty() {
             return;
         }
-        let stride = self.canvas.width() as usize * 4;
-        let bytes = self.canvas.data_as_u8_slice_mut();
-        for row in rect.y..rect.bottom() {
-            let start = row as usize * stride + rect.x as usize * 4;
-            bytes[start..start + rect.w as usize * 4].fill(0);
+        match &mut self.target {
+            Target::Cpu { canvas, .. } => {
+                let stride = canvas.width() as usize * 4;
+                let bytes = canvas.data_as_u8_slice_mut();
+                for row in rect.y..rect.bottom() {
+                    let start = row as usize * stride + rect.x as usize * 4;
+                    bytes[start..start + rect.w as usize * 4].fill(0);
+                }
+            }
+            Target::Gpu(canvas) => canvas.clear(rect),
         }
     }
 
     pub fn render(&mut self, scene: &Scene, rect: IRect) {
-        let mut rect = rect.intersect(&scene.size);
+        let rect = rect.intersect(&scene.size);
         if rect.is_empty() {
             return;
         }
@@ -153,8 +308,20 @@ impl Renderer {
         if device.is_empty() {
             return;
         }
+        if matches!(self.target, Target::Gpu(_)) {
+            for tile in crate::gpu::tiles(device) {
+                self.draw(scene, rect, tile);
+            }
+        } else {
+            self.draw(scene, rect, device);
+        }
+    }
+
+    /// `device`, the canvas pixels `rect` touches or a tile of them, drawn.
+    fn draw(&mut self, scene: &Scene, rect: IRect, device: IRect) {
         let s = self.scale;
         let mut origin = Affine::translate((-device.x as f64, -device.y as f64));
+        let mut rect = if s == 1.0 { device } else { rect };
         if s != 1.0 {
             origin = origin * Affine::scale(s);
             // Every node reaching a canvas pixel the rect only partly covers
@@ -163,8 +330,34 @@ impl Renderer {
             let (x1, y1) = ((f64::from(device.right()) / s).ceil() as i32, (f64::from(device.bottom()) / s).ceil() as i32);
             rect = IRect::new(x0, y0, x1 - x0, y1 - y0);
         }
-        let (w, h) = (device.w as u16, device.h as u16);
-        self.ctx.reset_and_resize(w, h);
+        let caches = &mut self.caches;
+        caches.scale = s;
+        match &mut self.target {
+            Target::Cpu { ctx, canvas } => {
+                let (w, h) = (device.w as u16, device.h as u16);
+                ctx.reset_and_resize(w, h);
+                caches.paint(&mut **ctx, scene, rect, origin);
+                ctx.flush();
+                let mut tile = Pixmap::new(w, h);
+                ctx.render(&mut tile, &mut caches.resources);
+                let stride = canvas.width() as usize;
+                let src = tile.data();
+                let dst = canvas.data_mut();
+                for row in 0..device.h as usize {
+                    let d = (device.y as usize + row) * stride + device.x as usize;
+                    let s = row * device.w as usize;
+                    dst[d..d + device.w as usize].copy_from_slice(&src[s..s + device.w as usize]);
+                }
+            }
+            Target::Gpu(canvas) => canvas.draw(device, |frame| caches.paint(frame, scene, rect, origin)),
+        }
+    }
+}
+
+impl Caches {
+    /// The nodes crossing `rect` into `ctx`, whose origin is `origin`.
+    fn paint(&mut self, ctx: &mut impl Raster, scene: &Scene, rect: IRect, origin: Affine) {
+        let s = self.scale;
         // A clip is a layer composited on its own, so a run of nodes under
         // one clip shares a layer, and a node the clip cannot cut (its box
         // inside the clip, moved by a plain translation at most) needs none.
@@ -183,62 +376,62 @@ impl Renderer {
             match want {
                 Some(c) if active != Some(c) => {
                     if active.is_some() {
-                        self.ctx.pop_layer();
+                        ctx.pop_layer();
                     }
-                    self.ctx.set_transform(origin);
+                    ctx.set_transform(origin);
                     let r = Rect::new(c.x as f64, c.y as f64, c.right() as f64, c.bottom() as f64);
-                    self.ctx.push_clip_layer(&r.to_path(0.1));
+                    ctx.push_clip_layer(&r.to_path(0.1));
                     active = Some(c);
                 }
                 None if active.is_some_and(|a| !inside(&a)) => {
-                    self.ctx.pop_layer();
+                    ctx.pop_layer();
                     active = None;
                 }
                 _ => {}
             }
             let at = origin * node.transform;
             if fade.is_some() {
-                self.ctx.set_transform(origin);
-                self.ctx.push_layer(None, None, None, None, None);
+                ctx.set_transform(origin);
+                ctx.push_group();
             }
             match paint {
                 Paint::Rect { fill, radius } => {
-                    self.ctx.set_transform(at);
-                    self.ctx.set_paint(color(*fill));
+                    ctx.set_transform(at);
+                    ctx.set_color(color(*fill));
                     let b = node.bounds;
                     let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
                     if *radius > 0.0 {
-                        self.ctx.fill_path(&RoundedRect::from_rect(r, *radius as f64).to_path(0.1));
+                        ctx.fill_path(&RoundedRect::from_rect(r, *radius as f64).to_path(0.1));
                     } else {
-                        self.ctx.fill_rect(&r);
+                        ctx.fill_rect(&r);
                     }
                 }
                 Paint::Framed { fill, radius, border, width } => {
-                    self.ctx.set_transform(at);
+                    ctx.set_transform(at);
                     let b = node.bounds;
                     let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
                     let rr = |r: Rect, radius: f64| RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1);
                     if fill.to_u8()[3] > 0 {
-                        self.ctx.set_paint(color(*fill));
-                        self.ctx.fill_path(&rr(r, *radius as f64));
+                        ctx.set_color(color(*fill));
+                        ctx.fill_path(&rr(r, *radius as f64));
                     }
                     if *width > 0.0 && border.to_u8()[3] > 0 {
                         let half = *width as f64 / 2.0;
-                        self.ctx.set_stroke(Stroke::new(*width as f64));
-                        self.ctx.set_paint(color(*border));
-                        self.ctx.stroke_path(&rr(r.inflate(-half, -half), *radius as f64 - half));
+                        ctx.set_stroke(Stroke::new(*width as f64));
+                        ctx.set_color(color(*border));
+                        ctx.stroke_path(&rr(r.inflate(-half, -half), *radius as f64 - half));
                     }
                 }
                 Paint::Face { from, to, radius } => {
-                    self.ctx.set_transform(at);
+                    ctx.set_transform(at);
                     let b = node.bounds;
                     let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
                     let gradient = vello_cpu::peniko::Gradient::new_linear((r.x0, r.y0), (r.x0, r.y1))
                         .with_stops([color(*from), color(*to)]);
-                    self.ctx.set_paint(gradient);
-                    self.ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
+                    ctx.set_gradient(gradient);
+                    ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
                 }
-                Paint::Glow { text, color: ink, x, y, blur } if self.cached_glow(node.bounds, at, text, *ink, (*x, *y, *blur)) => {}
+                Paint::Glow { text, color: ink, x, y, blur } if self.cached_glow(ctx, node.bounds, at, text, *ink, (*x, *y, *blur)) => {}
                 Paint::Glow { text, color: ink, x, y, blur } => {
                     // A box of taps over the blur's reach, each carrying its
                     // share of the alpha: cheap, and close enough at the 2px
@@ -250,115 +443,111 @@ impl Renderer {
                         &[(0.0, 0.0), (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0), (-0.7, -0.7), (0.7, -0.7), (-0.7, 0.7), (0.7, 0.7)]
                     };
                     let share = ink.with_alpha(ink.a / taps.len() as f32 * if taps.len() > 1 { 2.0 } else { 1.0 });
-                    self.ctx.set_paint(color(share));
+                    ctx.set_color(color(share));
                     for (dx, dy) in taps {
                         for glyph in &text.glyphs {
                             let p = (
                                 node.bounds.x as f32 + glyph.x as f32 + x + dx * reach,
                                 node.bounds.y as f32 + glyph.y as f32 + y + dy * reach,
                             );
-                            self.ctx.set_transform(at * Affine::translate((p.0 as f64, p.1 as f64)));
-                            self.ctx.fill_path(&glyph.path);
+                            ctx.set_transform(at * Affine::translate((p.0 as f64, p.1 as f64)));
+                            ctx.fill_path(&glyph.path);
                         }
                     }
                 }
                 Paint::Blur { text, color: ink, blur } => {
                     // The layer's transform scales the radius to the canvas.
-                    self.ctx.set_transform(origin);
-                    let f = vello_cpu::filter_effects::Filter::from_function(vello_cpu::filter_effects::FilterFunction::Blur { radius: *blur });
-                    self.ctx.push_filter_layer(f);
-                    self.ctx.set_paint(color(*ink));
+                    ctx.set_transform(origin);
+                    ctx.push_blur_layer(*blur);
+                    ctx.set_color(color(*ink));
                     for glyph in &text.glyphs {
                         let p = (node.bounds.x + glyph.x, node.bounds.y + glyph.y);
-                        self.ctx.set_transform(at * Affine::translate((p.0 as f64, p.1 as f64)));
-                        self.ctx.fill_path(&glyph.path);
+                        ctx.set_transform(at * Affine::translate((p.0 as f64, p.1 as f64)));
+                        ctx.fill_path(&glyph.path);
                     }
-                    self.ctx.pop_layer();
+                    ctx.pop_layer();
                 }
                 Paint::Vector(ops) => {
-                    self.ctx.set_transform(at);
+                    ctx.set_transform(at);
                     let mut depth = 0;
                     for op in ops.iter() {
                         match op {
                             VOp::Fill(path, brush) => {
-                                self.set_brush(brush);
-                                self.ctx.fill_path(path);
+                                self.set_brush(ctx, brush);
+                                ctx.fill_path(path);
                             }
                             VOp::Stroke(path, brush, width) => {
-                                self.set_brush(brush);
-                                self.ctx.set_stroke(Stroke::new(*width));
-                                self.ctx.stroke_path(path);
+                                self.set_brush(ctx, brush);
+                                ctx.set_stroke(Stroke::new(*width));
+                                ctx.stroke_path(path);
                             }
                             VOp::Clip(path) => {
-                                self.ctx.push_clip_layer(path);
+                                ctx.push_clip_layer(path);
                                 depth += 1;
                             }
                             VOp::Pop => {
                                 if depth > 0 {
-                                    self.ctx.pop_layer();
+                                    ctx.pop_layer();
                                     depth -= 1;
                                 }
                             }
                             VOp::Image(image, (x, y), alpha) => {
                                 let sampler = vello_cpu::peniko::ImageSampler::default().with_quality(vello_cpu::peniko::ImageQuality::Low).with_alpha(*alpha);
-                                self.image(image, at * Affine::translate((*x, *y)), sampler);
-                                self.ctx.set_transform(at);
+                                self.image(ctx, image, at * Affine::translate((*x, *y)), sampler);
+                                ctx.set_transform(at);
                             }
                         }
                     }
                     for _ in 0..depth {
-                        self.ctx.pop_layer();
+                        ctx.pop_layer();
                     }
                 }
                 Paint::Cells { rects, glyphs } => {
-                    self.ctx.set_transform(at);
+                    ctx.set_transform(at);
                     for (r, ink) in rects {
-                        self.ctx.set_paint(color(*ink));
-                        self.ctx.fill_rect(r);
+                        ctx.set_color(color(*ink));
+                        ctx.fill_rect(r);
                     }
                     for (path, x, y, ink) in glyphs {
-                        self.ctx.set_paint(color(*ink));
-                        self.ctx.set_transform(at * Affine::translate((*x, *y)));
-                        self.ctx.fill_path(path);
+                        ctx.set_color(color(*ink));
+                        ctx.set_transform(at * Affine::translate((*x, *y)));
+                        ctx.fill_path(path);
                     }
                 }
                 Paint::Text { text, color: ink } => {
                     for glyph in &text.glyphs {
                         let p = (node.bounds.x + glyph.x, node.bounds.y + glyph.y);
-                        self.ctx.set_transform(at * Affine::translate((p.0 as f64, p.1 as f64)));
+                        ctx.set_transform(at * Affine::translate((p.0 as f64, p.1 as f64)));
                         if s != 1.0 && glyph.image.is_none() && glyph.coverage.is_some() {
-                            self.scaled_glyph(&glyph.path, at * Affine::translate((p.0 as f64, p.1 as f64)), *ink);
+                            self.scaled_glyph(ctx, &glyph.path, at * Affine::translate((p.0 as f64, p.1 as f64)), *ink);
                         } else if let (None, Some(coverage)) = (&glyph.image, &glyph.coverage) {
                             let pixmap = self.inked(coverage, *ink);
                             let shift = Affine::translate(((p.0 + coverage.x) as f64, (p.1 + coverage.y) as f64));
-                            self.ctx.set_transform(at * shift);
-                            self.ctx.set_paint(vello_cpu::Image {
-                                image: vello_cpu::ImageSource::Pixmap(pixmap),
-                                sampler: vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a),
-                            });
-                            self.ctx.fill_rect(&Rect::new(0.0, 0.0, coverage.w as f64, coverage.h as f64));
+                            ctx.set_transform(at * shift);
+                            ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
+                            ctx.fill_rect(&Rect::new(0.0, 0.0, coverage.w as f64, coverage.h as f64));
                         } else if let Some(image) = &glyph.image {
                             // A colour glyph keeps its own colours and takes only the ink's alpha.
                             let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a);
                             let pen = at * Affine::translate((p.0 as f64, p.1 as f64));
                             match glyph.color.as_ref().filter(|_| s != 1.0).and_then(|c| self.color_glyph(c, pen)) {
                                 Some((image, x, y)) => {
-                                    self.ctx.set_transform(Affine::translate((x, y)));
-                                    self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
-                                    self.ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(image.pixmap.width()), f64::from(image.pixmap.height())));
+                                    ctx.set_transform(Affine::translate((x, y)));
+                                    ctx.set_image(image.pixmap.clone(), sampler);
+                                    ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(image.pixmap.width()), f64::from(image.pixmap.height())));
                                 }
-                                None => self.image(image, pen, sampler),
+                                None => self.image(ctx, image, pen, sampler),
                             }
                         } else {
-                            self.ctx.set_paint(color(*ink));
-                            self.ctx.fill_path(&glyph.path);
+                            ctx.set_color(color(*ink));
+                            ctx.fill_path(&glyph.path);
                         }
                     }
                 }
                 Paint::Image { image, alpha } => {
                     let b = node.bounds;
                     let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
-                    self.image(image, at * Affine::translate((b.x as f64, b.y as f64)), sampler);
+                    self.image(ctx, image, at * Affine::translate((b.x as f64, b.y as f64)), sampler);
                 }
                 Paint::Picture { image, alpha, radius } => {
                     let b = node.bounds;
@@ -367,97 +556,85 @@ impl Renderer {
                     // A picture made at the canvas's own size for the box
                     // goes on one pixel to a pixel, its corner on a whole one.
                     if let Some((x, y)) = (s != 1.0).then(|| fits(at, r, (iw, ih))).flatten() {
-                        self.ctx.set_transform(Affine::translate((x, y)));
+                        ctx.set_transform(Affine::translate((x, y)));
                         let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
-                        self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
+                        ctx.set_image(image.pixmap.clone(), sampler);
                         let k = at.as_coeffs()[0];
-                        self.ctx.fill_path(&RoundedRect::new(0.0, 0.0, iw, ih, (f64::from(*radius) * k).max(0.0)).to_path(0.1));
+                        ctx.fill_path(&RoundedRect::new(0.0, 0.0, iw, ih, (f64::from(*radius) * k).max(0.0)).to_path(0.1));
                         continue;
                     }
-                    self.ctx.set_transform(at);
-                    self.ctx.set_paint_transform(
+                    ctx.set_transform(at);
+                    ctx.set_paint_transform(
                         Affine::translate((r.x0, r.y0)) * Affine::scale_non_uniform(r.width() / iw.max(1.0), r.height() / ih.max(1.0)),
                     );
                     let sampler = vello_cpu::peniko::ImageSampler::default().with_alpha(*alpha);
-                    self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
-                    self.ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
-                    self.ctx.reset_paint_transform();
+                    ctx.set_image(image.pixmap.clone(), sampler);
+                    ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
+                    ctx.reset_paint_transform();
                 }
                 Paint::Shape { fill, strokes } => {
-                    self.ctx.set_transform(at);
+                    ctx.set_transform(at);
                     if let Some((path, ink)) = fill {
                         // Even-odd, so a band carries its cut-out as a second subpath.
-                        self.ctx.set_fill_rule(Fill::EvenOdd);
-                        self.ctx.set_paint(color(*ink));
-                        self.ctx.fill_path(path);
-                        self.ctx.set_fill_rule(Fill::NonZero);
+                        ctx.set_fill_rule(Fill::EvenOdd);
+                        ctx.set_color(color(*ink));
+                        ctx.fill_path(path);
+                        ctx.set_fill_rule(Fill::NonZero);
                     }
                     for (path, ink, width) in strokes {
                         if ink.to_u8()[3] == 0 {
                             continue;
                         }
                         // ShapePath's own defaults.
-                        self.ctx.set_stroke(Stroke::new(*width).with_caps(Cap::Square).with_join(Join::Bevel));
-                        self.ctx.set_paint(color(*ink));
-                        self.ctx.stroke_path(path);
+                        ctx.set_stroke(Stroke::new(*width).with_caps(Cap::Square).with_join(Join::Bevel));
+                        ctx.set_color(color(*ink));
+                        ctx.stroke_path(path);
                     }
                 }
                 Paint::Faded { .. } => {}
                 Paint::Casts { rect: card, radius, layers, cutout } => {
-                    self.ctx.set_transform(at);
-                    self.ctx.push_layer(None, None, None, None, None);
+                    ctx.set_transform(at);
+                    ctx.push_group();
                     for cast in layers {
                         let shrink = (-cast.spread).max(0.0);
                         let grow = cast.spread.max(0.0);
                         let r = card.inflate(grow - shrink, grow - shrink) + Vec2::new(cast.x, cast.y);
-                        self.ctx.set_paint(color(cast.color));
+                        ctx.set_color(color(cast.color));
                         // RectangularShadow's blur is CSS's blur radius, twice the deviation.
-                        self.ctx.fill_blurred_rounded_rect(&r, (radius - shrink).max(0.0) as f32, (cast.blur / 2.0) as f32, false);
+                        ctx.fill_blurred_rounded_rect(&r, (radius - shrink).max(0.0) as f32, (cast.blur / 2.0) as f32);
                     }
-                    self.ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestOut)), None, None, None);
-                    self.ctx.set_paint(color(Rgba::hex(0)));
-                    self.ctx.fill_path(cutout);
-                    self.ctx.pop_layer();
-                    self.ctx.pop_layer();
+                    ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
+                    ctx.set_color(color(Rgba::hex(0)));
+                    ctx.fill_path(cutout);
+                    ctx.pop_layer();
+                    ctx.pop_layer();
                 }
             }
             if let Some(fade) = fade {
-                self.fade_out(origin, fade);
-                self.ctx.pop_layer();
+                self.fade_out(ctx, origin, fade);
+                ctx.pop_layer();
             }
         }
         if active.is_some() {
-            self.ctx.pop_layer();
-        }
-        self.ctx.flush();
-        let mut tile = Pixmap::new(w, h);
-        self.ctx.render(&mut tile, &mut self.resources);
-
-        let stride = self.canvas.width() as usize;
-        let src = tile.data();
-        let dst = self.canvas.data_mut();
-        for row in 0..device.h as usize {
-            let d = (device.y as usize + row) * stride + device.x as usize;
-            let s = row * device.w as usize;
-            dst[d..d + device.w as usize].copy_from_slice(&src[s..s + device.w as usize]);
+            ctx.pop_layer();
         }
     }
 }
 
-impl Renderer {
+impl Caches {
     /// A bitmap with its top-left at `at`'s origin, over its logical box:
     /// one of its pixels to a canvas pixel on a whole one where `at` scales
     /// by exactly its density, stretched by the difference otherwise.
-    fn image(&mut self, image: &Bitmap, at: Affine, sampler: vello_cpu::peniko::ImageSampler) {
+    fn image(&mut self, ctx: &mut impl Raster, image: &Bitmap, at: Affine, sampler: vello_cpu::peniko::ImageSampler) {
         let (w, h) = (f64::from(image.pixmap.width()), f64::from(image.pixmap.height()));
         let d = f64::from(image.density);
         match one_to_one(at, d).filter(|_| self.scale != 1.0 || d != 1.0) {
-            Some((x, y)) => self.ctx.set_transform(Affine::translate((x, y))),
-            None if d == 1.0 => self.ctx.set_transform(at),
-            None => self.ctx.set_transform(at * Affine::scale(1.0 / d)),
+            Some((x, y)) => ctx.set_transform(Affine::translate((x, y))),
+            None if d == 1.0 => ctx.set_transform(at),
+            None => ctx.set_transform(at * Affine::scale(1.0 / d)),
         }
-        self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(image.pixmap.clone()), sampler });
-        self.ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+        ctx.set_image(image.pixmap.clone(), sampler);
+        ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
     }
 
     /// A colour glyph made again at the canvas's pixel size for its pen at
@@ -492,11 +669,11 @@ impl Renderer {
     /// 1x coverage stretched: its origin on a whole canvas pixel down and a
     /// quarter one across, the way the 1x coverage sits on whole pixels.
     /// A transform that rotates or squeezes it fills the outline instead.
-    fn scaled_glyph(&mut self, path: &Arc<BezPath>, at: Affine, ink: Rgba) {
+    fn scaled_glyph(&mut self, ctx: &mut impl Raster, path: &Arc<BezPath>, at: Affine, ink: Rgba) {
         let [a, b, c, d, e, f] = at.as_coeffs();
         if b != 0.0 || c != 0.0 || a != d || a <= 0.0 {
-            self.ctx.set_paint(color(ink));
-            self.ctx.fill_path(path);
+            ctx.set_color(color(ink));
+            ctx.fill_path(path);
             return;
         }
         let quarter = ((e - e.floor()) * 4.0).round();
@@ -515,21 +692,18 @@ impl Renderer {
         };
         let Some(coverage) = coverage else { return };
         let pixmap = self.inked(&coverage, ink);
-        self.ctx.set_transform(Affine::translate((x + f64::from(coverage.x), f.round() + f64::from(coverage.y))));
-        self.ctx.set_paint(vello_cpu::Image {
-            image: vello_cpu::ImageSource::Pixmap(pixmap),
-            sampler: vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a),
-        });
-        self.ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(coverage.w), f64::from(coverage.h)));
+        ctx.set_transform(Affine::translate((x + f64::from(coverage.x), f.round() + f64::from(coverage.y))));
+        ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
+        ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(coverage.w), f64::from(coverage.h)));
     }
 
     /// Erases the open layer toward `fade`'s ends: opaque at each end,
     /// nothing `low` or `high` px in.
-    fn fade_out(&mut self, origin: Affine, fade: Fade) {
+    fn fade_out(&mut self, ctx: &mut impl Raster, origin: Affine, fade: Fade) {
         let v = fade.view;
         let (x0, y0, x1, y1) = (f64::from(v.x), f64::from(v.y), f64::from(v.right()), f64::from(v.bottom()));
-        self.ctx.set_transform(origin);
-        self.ctx.push_layer(None, Some(BlendMode::new(Mix::Normal, Compose::DestOut)), None, None, None);
+        ctx.set_transform(origin);
+        ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
         let ramps = if fade.vertical {
             [(fade.low, (x0, y0), (x0, y0 + fade.low), Rect::new(x0, y0, x1, y0 + fade.low)), (fade.high, (x0, y1), (x0, y1 - fade.high), Rect::new(x0, y1 - fade.high, x1, y1))]
         } else {
@@ -540,15 +714,15 @@ impl Renderer {
                 continue;
             }
             let gradient = vello_cpu::peniko::Gradient::new_linear(from, to).with_stops([color(Rgba::BLACK), color(Rgba::TRANSPARENT)]);
-            self.ctx.set_paint(gradient);
-            self.ctx.fill_rect(&rect);
+            ctx.set_gradient(gradient);
+            ctx.fill_rect(&rect);
         }
-        self.ctx.pop_layer();
+        ctx.pop_layer();
     }
 
     /// A glow node drawn from its cached pixmap, made on a miss; false when
     /// `at` rotates or squeezes it, for the caller to fill the outlines.
-    fn cached_glow(&mut self, bounds: IRect, at: Affine, text: &ShapedText, ink: Rgba, (x, y, blur): (f32, f32, f32)) -> bool {
+    fn cached_glow(&mut self, ctx: &mut impl Raster, bounds: IRect, at: Affine, text: &ShapedText, ink: Rgba, (x, y, blur): (f32, f32, f32)) -> bool {
         // The pixmap holds the whole line and its reach, not the node's
         // bounds: a marquee's node is cut to its viewport, and the same
         // line is drawn again at every scroll with other bounds.
@@ -586,34 +760,34 @@ impl Renderer {
                 }
                 let w = (f64::from(tw + margin * 2) * a).ceil() as u16 + 2;
                 let h = (f64::from(th + margin * 2) * a).ceil() as u16 + 2;
-                let mut ctx = RenderContext::new(w, h);
+                let mut glow = RenderContext::new(w, h);
                 let taps: &[(f32, f32)] = if reach < 0.25 {
                     &[(0.0, 0.0)]
                 } else {
                     &[(0.0, 0.0), (-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0), (-0.7, -0.7), (0.7, -0.7), (-0.7, 0.7), (0.7, 0.7)]
                 };
                 let share = ink.with_alpha(ink.a / taps.len() as f32 * if taps.len() > 1 { 2.0 } else { 1.0 });
-                ctx.set_paint(color(share));
+                glow.set_paint(color(share));
                 let base = Affine::translate((f64::from(qx) / 8.0, f64::from(qy) / 8.0)) * Affine::scale(a) * Affine::translate((f64::from(margin), f64::from(margin)));
                 for (dx, dy) in taps {
                     for glyph in &text.glyphs {
                         let p = (glyph.x as f32 + x + dx * reach, glyph.y as f32 + y + dy * reach);
-                        ctx.set_transform(base * Affine::translate((f64::from(p.0), f64::from(p.1))));
-                        ctx.fill_path(&glyph.path);
+                        glow.set_transform(base * Affine::translate((f64::from(p.0), f64::from(p.1))));
+                        glow.fill_path(&glyph.path);
                     }
                 }
-                ctx.flush();
+                glow.flush();
                 let mut pixmap = Pixmap::new(w, h);
-                ctx.render(&mut pixmap, &mut self.resources);
+                glow.render(&mut pixmap, &mut self.resources);
                 let pixmap = Arc::new(pixmap);
                 self.glows.insert(key, (text.clone(), pixmap.clone()));
                 pixmap
             }
         };
         let (w, h) = (f64::from(pixmap.width()), f64::from(pixmap.height()));
-        self.ctx.set_transform(Affine::translate((px, py)));
-        self.ctx.set_paint(vello_cpu::Image { image: vello_cpu::ImageSource::Pixmap(pixmap), sampler: vello_cpu::peniko::ImageSampler::default() });
-        self.ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
+        ctx.set_transform(Affine::translate((px, py)));
+        ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default());
+        ctx.fill_rect(&Rect::new(0.0, 0.0, w, h));
         true
     }
 
@@ -642,13 +816,13 @@ impl Renderer {
         pixmap
     }
 
-    fn set_brush(&mut self, brush: &Brush) {
+    fn set_brush(&mut self, ctx: &mut impl Raster, brush: &Brush) {
         match brush {
-            Brush::Solid(c) => self.ctx.set_paint(color(*c)),
+            Brush::Solid(c) => ctx.set_color(color(*c)),
             Brush::Radial { centre, r0, r1, stops } => {
                 let stops: Vec<(f32, AlphaColor<Srgb>)> = stops.iter().map(|(o, c)| (*o, color(*c))).collect();
                 let g = vello_cpu::peniko::Gradient::new_two_point_radial(*centre, *r0 as f32, *centre, *r1 as f32).with_stops(stops.as_slice());
-                self.ctx.set_paint(g);
+                ctx.set_gradient(g);
             }
         }
     }
@@ -737,9 +911,9 @@ mod tests {
                 scene.set_transform(id, Affine::translate((shift + 3.0, 3.0)));
                 let mut r = Renderer::new(400, 40);
                 r.set_scale(scale);
-                r.no_glow_cache = !cache;
+                r.caches.no_glow_cache = !cache;
                 r.render(&scene, IRect::new(0, 0, 400, 40));
-                (r.canvas().data_as_u8_slice().to_vec(), r.glows.len())
+                (r.canvas().data_as_u8_slice().to_vec(), r.caches.glows.len())
             };
             for shift in [0.0, 7.0 / scale] {
                 let (direct, _) = draw(false, shift);
@@ -765,7 +939,7 @@ mod tests {
             let (cut, scroll) = (w / 2, f64::from(w / 3) + 0.5);
             let mut direct = Renderer::new(400, 40);
             direct.set_scale(scale);
-            direct.no_glow_cache = true;
+            direct.caches.no_glow_cache = true;
             let want = marquee(&mut direct, cut, scroll);
             let mut cached = Renderer::new(400, 40);
             cached.set_scale(scale);

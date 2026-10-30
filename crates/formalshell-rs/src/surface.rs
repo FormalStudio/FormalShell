@@ -46,6 +46,27 @@ struct ShmBuffer {
     stale: Vec<IRect>,
 }
 
+/// The surfaces drawn on the GPU when `render.backend` resolves to it.
+fn on_gpu(name: &str) -> bool {
+    matches!(name, "menu" | "menu-content")
+}
+
+/// A renderer for `name`: the GPU's where the backend is, else the CPU's.
+fn renderer_for(name: &str) -> Renderer {
+    let gpu = (on_gpu(name) && crate::gpu::active()).then(|| Renderer::gpu(1, 1)).flatten();
+    gpu.unwrap_or_else(|| Renderer::new(1, 1))
+}
+
+/// A buffer's stale list after `damage` went into another one: past
+/// [`STALE_LIMIT`] rects it just takes their union.
+fn go_stale(stale: &mut Vec<IRect>, damage: &[IRect]) {
+    stale.extend_from_slice(damage);
+    if stale.len() > STALE_LIMIT {
+        let union = stale.iter().fold(stale[0], |u, r| u.union(r));
+        *stale = vec![union];
+    }
+}
+
 /// What a [`Surface`] is to the compositor: a layer surface, or a lock
 /// surface on one output.
 pub trait Role {
@@ -323,6 +344,8 @@ pub struct Surface<R: Role = LayerSurface> {
     format: wl_shm::Format,
     pool: SlotPool,
     buffers: Vec<ShmBuffer>,
+    /// The GPU renderer's buffers, which its canvas is copied into.
+    dmabufs: Vec<crate::gpu::Buffer>,
     renderer: Renderer,
     pub configured: bool,
     /// A frame callback is outstanding: nothing is drawn until it lands.
@@ -369,6 +392,7 @@ pub struct Surface<R: Role = LayerSurface> {
     /// resize dropped the rest: what [`Surface::recommit`] attaches again.
     front: Option<usize>,
     retired: Option<Buffer>,
+    retired_dmabuf: Option<crate::gpu::Buffer>,
     /// The scale and logical size that buffer was drawn at.
     front_view: Option<(f64, (i32, i32))>,
 }
@@ -386,6 +410,7 @@ fn bands(rect: IRect) -> impl Iterator<Item = IRect> {
 pub struct Kept {
     pool: SlotPool,
     buffers: Vec<ShmBuffer>,
+    dmabufs: Vec<crate::gpu::Buffer>,
     renderer: Renderer,
     pool_clean: bool,
     drawn: Option<IRect>,
@@ -399,6 +424,10 @@ impl Kept {
     /// A clean pool two `size` buffers deep and a canvas of `size`, both
     /// faulted in on the blocking pool while nothing draws from them.
     pub fn prefaulted(shm: &Shm, size: (i32, i32), runner: &crate::runtime::Pool) -> Option<Self> {
+        // The launcher's card draws on the GPU there: nothing to fault in.
+        if crate::gpu::active() {
+            return None;
+        }
         let scale = primary_scale();
         let bytes = scaled(size.0.max(1), scale) as usize * scaled(size.1.max(1), scale) as usize * 4 * 2;
         let mut pool = SlotPool::new(bytes, shm).ok()?;
@@ -419,7 +448,7 @@ impl Kept {
                 libc::madvise(canvas_at as *mut libc::c_void, canvas_len, MADV_POPULATE_WRITE);
             }
         });
-        Some(Self { pool, buffers: Vec::new(), renderer, pool_clean: true, drawn: None })
+        Some(Self { pool, buffers: Vec::new(), dmabufs: Vec::new(), renderer, pool_clean: true, drawn: None })
     }
 }
 
@@ -431,21 +460,29 @@ impl<R: Role> Surface<R> {
     /// The pool, buffers and canvas, for [`Surface::adopt`] on the next
     /// window of this kind.
     pub fn keep(self) -> Kept {
-        Kept { pool: self.pool, buffers: self.buffers, renderer: self.renderer, pool_clean: self.pool_clean, drawn: self.drawn }
+        Kept { pool: self.pool, buffers: self.buffers, dmabufs: self.dmabufs, renderer: self.renderer, pool_clean: self.pool_clean, drawn: self.drawn }
     }
 
     /// Takes over a kept pool, buffers and canvas. What the last window
     /// drew is cleared off the canvas and stale in every buffer, so each
     /// takes the clear canvas there on its first use.
     pub fn adopt(&mut self, mut kept: Kept) {
+        // Kept on the other backend (the GPU lost since) is no use here.
+        if kept.renderer.is_gpu() != self.renderer.is_gpu() {
+            return;
+        }
         if let Some(old) = kept.drawn {
             kept.renderer.clear(old);
             for b in &mut kept.buffers {
                 b.stale.push(old);
             }
+            for b in &mut kept.dmabufs {
+                b.stale.push(old);
+            }
         }
         self.pool = kept.pool;
         self.buffers = kept.buffers;
+        self.dmabufs = kept.dmabufs;
         self.renderer = kept.renderer;
         self.pool_clean = kept.pool_clean;
         self.front = None;
@@ -462,7 +499,7 @@ impl<R: Role> Surface<R> {
     }
 
     fn at(name: &'static str, layer: R, shm: &Shm, started: Instant, scale: f64) -> Self {
-        let mut renderer = Renderer::new(1, 1);
+        let mut renderer = renderer_for(name);
         renderer.set_scale(scale);
         Self {
             name,
@@ -471,6 +508,7 @@ impl<R: Role> Surface<R> {
             format: if shm.formats().contains(&wl_shm::Format::Abgr8888) { wl_shm::Format::Abgr8888 } else { wl_shm::Format::Argb8888 },
             pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
             buffers: Vec::new(),
+            dmabufs: Vec::new(),
             renderer,
             configured: false,
             frame_pending: false,
@@ -494,6 +532,7 @@ impl<R: Role> Surface<R> {
             refade: false,
             front: None,
             retired: None,
+            retired_dmabuf: None,
             front_view: None,
         }
     }
@@ -540,9 +579,14 @@ impl<R: Role> Surface<R> {
     fn drop_buffers(&mut self) {
         self.pool_clean &= self.buffers.is_empty();
         if let Some(at) = self.front.take() {
-            self.retired = Some(self.buffers.swap_remove(at).buffer);
+            if self.renderer.is_gpu() {
+                self.retired_dmabuf = (at < self.dmabufs.len()).then(|| self.dmabufs.swap_remove(at));
+            } else {
+                self.retired = Some(self.buffers.swap_remove(at).buffer);
+            }
         }
         self.buffers.clear();
+        self.dmabufs.clear();
         self.drawn = None;
         self.raster.clear();
         self.left.clear();
@@ -561,6 +605,9 @@ impl<R: Role> Surface<R> {
             for b in &mut self.buffers {
                 b.stale.push(drawn);
             }
+            for b in &mut self.dmabufs {
+                b.stale.push(drawn);
+            }
         }
     }
 
@@ -573,6 +620,15 @@ impl<R: Role> Surface<R> {
     pub fn recommit(&mut self) {
         if let Some((scale, size)) = self.front_view {
             self.scaler.sync::<App>(self.layer.role_surface(), scale, size, None);
+        }
+        if self.renderer.is_gpu() {
+            let buffer = self.front.and_then(|at| self.dmabufs.get(at)).or(self.retired_dmabuf.as_ref());
+            if let Some(b) = buffer {
+                b.attached();
+                self.layer.role_surface().attach(Some(b.wl_buffer()), 0, 0);
+            }
+            self.layer.role_commit();
+            return;
         }
         let buffer = self.front.map(|at| &self.buffers[at].buffer).or(self.retired.as_ref());
         if let Some(b) = buffer {
@@ -681,6 +737,9 @@ impl<R: Role> Surface<R> {
         if self.frame_pending {
             return;
         }
+        if self.renderer.is_gpu() && !crate::gpu::active() {
+            self.leave_gpu(scene);
+        }
         // A scene resized ahead of the compositor's configure (the bar
         // moving edge) keeps its damage until the buffers match it.
         if (self.renderer.width() as i32, self.renderer.height() as i32) != (scene.size.w, scene.size.h) {
@@ -726,6 +785,70 @@ impl<R: Role> Surface<R> {
         let t1 = Instant::now();
         let size = scene.size;
         let (pw, ph) = self.renderer.pixels();
+        let at = if self.renderer.is_gpu() { self.fill_dmabuf(&damage, size) } else { Some(self.fill_shm(&damage, size)) };
+        let Some(at) = at else {
+            // No buffer to draw into: the frame waits for the next present.
+            self.raster = damage;
+            return;
+        };
+        let copy_us = t1.elapsed().as_micros();
+
+        let scale = self.renderer.scale();
+        let surface = self.layer.role_surface();
+        for rect in &damage {
+            let rect = self.renderer.device(*rect);
+            surface.damage_buffer(rect.x, rect.y, rect.w, rect.h);
+        }
+        self.scaler.sync(surface, scale, (size.w, size.h), Some(qh));
+        // Until the first callback the surface may not be on screen yet,
+        // and an enter waits for it.
+        if request {
+            surface.frame(qh, FrameCallbackData(surface.clone()));
+            self.frame_pending = true;
+            self.asked = Some(Instant::now());
+        }
+        if self.renderer.is_gpu() {
+            let b = &self.dmabufs[at];
+            b.attached();
+            surface.attach(Some(b.wl_buffer()), 0, 0);
+        } else {
+            self.buffers[at].buffer.attach_to(surface).expect("attach released buffer");
+        }
+        self.layer.role_commit();
+        self.front = Some(at);
+        self.retired = None;
+        self.retired_dmabuf = None;
+        self.front_view = Some((scale, (size.w, size.h)));
+
+        self.commits += 1;
+        if !crate::tracing() {
+            return;
+        }
+        let area: i64 = damage.iter().map(IRect::area).sum();
+        let rects: Vec<String> = damage.iter().map(|r| format!("{},{},{}x{}", r.x, r.y, r.w, r.h)).collect();
+        crate::trace(format!(
+            "commit surface={} n={} t={}ms render_us={} copy_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}",
+            self.name,
+            self.commits,
+            self.started.elapsed().as_millis(),
+            render_us,
+            copy_us,
+            damage.len(),
+            area,
+            rects.join(" "),
+            at,
+            self.callbacks,
+            request as u8,
+            self.waited_us,
+            react_us,
+            self.slices,
+        ) + &if scale == 1.0 { String::new() } else { format!(" scale={scale} buffer_px={pw}x{ph}") });
+    }
+
+    /// The canvas copied into a released shm buffer, made if none is: the
+    /// frame's damage plus whatever that buffer missed meanwhile.
+    fn fill_shm(&mut self, damage: &[IRect], size: IRect) -> usize {
+        let (pw, ph) = self.renderer.pixels();
         let at = match self.buffers.iter().position(|b| b.buffer.canvas(&mut self.pool).is_some()) {
             Some(at) => at,
             None => {
@@ -738,28 +861,14 @@ impl<R: Role> Surface<R> {
                 self.buffers.len() - 1
             }
         };
-
         for (i, b) in self.buffers.iter_mut().enumerate() {
             if i != at {
-                b.stale.extend_from_slice(&damage);
-                if b.stale.len() > STALE_LIMIT {
-                    let union = b.stale.iter().fold(b.stale[0], |u, r| u.union(r));
-                    b.stale = vec![union];
-                }
+                go_stale(&mut b.stale, damage);
             }
         }
-
+        let stale = std::mem::take(&mut self.buffers[at].stale);
+        let copy = self.copy_list(stale, damage, size);
         let target = &mut self.buffers[at];
-        let mut copy = std::mem::take(&mut target.stale);
-        copy.extend_from_slice(&damage);
-        // A rect inside another is copied with it.
-        let copy: Vec<IRect> = copy
-            .iter()
-            .enumerate()
-            .filter(|(i, r)| !copy.iter().enumerate().any(|(j, o)| j != *i && o.contains(r) && (o != *r || j < *i)))
-            .map(|(_, r)| self.renderer.device(r.intersect(&size)))
-            .filter(|r| !r.is_empty())
-            .collect();
         let canvas = target.buffer.canvas(&mut self.pool).expect("released buffer");
         let stride = pw as usize;
         let k = self.opacity;
@@ -802,51 +911,59 @@ impl<R: Role> Surface<R> {
                 }
             }
         }
-        let copy_us = t1.elapsed().as_micros();
+        at
+    }
 
-        let scale = self.renderer.scale();
-        let surface = self.layer.role_surface();
-        for rect in &damage {
-            let rect = self.renderer.device(*rect);
-            surface.damage_buffer(rect.x, rect.y, rect.w, rect.h);
+    /// The GPU canvas copied into a dmabuf the compositor has given back,
+    /// made if none is; None when the device can no longer make one.
+    fn fill_dmabuf(&mut self, damage: &[IRect], size: IRect) -> Option<usize> {
+        crate::gpu::dispatch();
+        let (pw, ph) = self.renderer.pixels();
+        let at = match self.dmabufs.iter().position(|b| b.free()) {
+            Some(at) => at,
+            None => {
+                let mut b = crate::gpu::Buffer::new(pw as u32, ph as u32)?;
+                // Fresh device memory holds nothing known.
+                b.stale = vec![size];
+                self.dmabufs.push(b);
+                self.dmabufs.len() - 1
+            }
+        };
+        for (i, b) in self.dmabufs.iter_mut().enumerate() {
+            if i != at {
+                go_stale(&mut b.stale, damage);
+            }
         }
-        self.scaler.sync(surface, scale, (size.w, size.h), Some(qh));
-        // Until the first callback the surface may not be on screen yet,
-        // and an enter waits for it.
-        if request {
-            surface.frame(qh, FrameCallbackData(surface.clone()));
-            self.frame_pending = true;
-            self.asked = Some(Instant::now());
-        }
-        target.buffer.attach_to(surface).expect("attach released buffer");
-        self.layer.role_commit();
-        self.front = Some(at);
-        self.retired = None;
-        self.front_view = Some((scale, (size.w, size.h)));
+        let stale = std::mem::take(&mut self.dmabufs[at].stale);
+        let copy = self.copy_list(stale, damage, size);
+        let opacity = self.opacity;
+        let canvas = self.renderer.gpu_canvas()?;
+        self.dmabufs[at].fill(canvas, &copy, opacity).then_some(at)
+    }
 
-        self.commits += 1;
-        if !crate::tracing() {
-            return;
-        }
-        let area: i64 = damage.iter().map(IRect::area).sum();
-        let rects: Vec<String> = damage.iter().map(|r| format!("{},{},{}x{}", r.x, r.y, r.w, r.h)).collect();
-        crate::trace(format!(
-            "commit surface={} n={} t={}ms render_us={} copy_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}",
-            self.name,
-            self.commits,
-            self.started.elapsed().as_millis(),
-            render_us,
-            copy_us,
-            damage.len(),
-            area,
-            rects.join(" "),
-            at,
-            self.callbacks,
-            request as u8,
-            self.waited_us,
-            react_us,
-            self.slices,
-        ) + &if scale == 1.0 { String::new() } else { format!(" scale={scale} buffer_px={pw}x{ph}") });
+    /// `stale` and `damage` as canvas pixels, a rect inside another dropped.
+    fn copy_list(&self, mut copy: Vec<IRect>, damage: &[IRect], size: IRect) -> Vec<IRect> {
+        copy.extend_from_slice(damage);
+        copy.iter()
+            .enumerate()
+            .filter(|(i, r)| !copy.iter().enumerate().any(|(j, o)| j != *i && o.contains(r) && (o != *r || j < *i)))
+            .map(|(_, r)| self.renderer.device(r.intersect(&size)))
+            .filter(|r| !r.is_empty())
+            .collect()
+    }
+
+    /// The GPU is gone: a CPU canvas of the same size and scale, and the
+    /// whole scene drawn into it again.
+    fn leave_gpu(&mut self, scene: &mut Scene) {
+        let (w, h, scale) = (self.renderer.width(), self.renderer.height(), self.renderer.scale());
+        self.drop_buffers();
+        self.retired_dmabuf = None;
+        let mut renderer = Renderer::new(1, 1);
+        renderer.set_scale(scale);
+        renderer.resize(w, h);
+        self.renderer = renderer;
+        self.pool_clean = false;
+        scene.touch(IRect::new(0, 0, scene.size.w, scene.size.h));
     }
 
     pub fn report(&self) -> String {

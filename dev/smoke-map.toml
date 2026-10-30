@@ -560,7 +560,11 @@ runs = ["--instance", "--lock-restore", "--dump"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/ipc/debug.rs"]
-runs = ["--dump"]
+runs = ["--dump", "--render"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/gpu.rs"]
+runs = ["--render", "--menu", "--dump"]
 
 [[rule]]
 paths = ["crates/fs-system/src/compositor/keyboard.rs", "crates/formalshell-rs/src/surfaces/bar/cells/keyboard_layout.rs"]

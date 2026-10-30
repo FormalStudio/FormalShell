@@ -124,7 +124,7 @@ pub enum Layout {
 
 impl Layout {
     /// An unknown value reads as the default.
-    fn parse(value: Option<&Value>) -> Self {
+    pub fn parse(value: Option<&Value>) -> Self {
         match value.and_then(Value::as_str) {
             Some("sidebar") => Self::Sidebar,
             _ => Self::Bar,
@@ -159,7 +159,7 @@ impl BarStyle {
     }
 
     /// An unknown value reads as the default.
-    fn parse(value: Option<&Value>) -> Self {
+    pub fn parse(value: Option<&Value>) -> Self {
         match value.and_then(Value::as_str) {
             Some("solid") => Self::Solid,
             Some("corners") => Self::Corners,
@@ -176,7 +176,8 @@ impl BarStyle {
     }
 }
 
-/// `render.backend` as asked. Reserved: every value draws with `vello_cpu`.
+/// `render.backend` as asked. Read once at start: the shell resolves it
+/// to the backend drawing (`formalshell-rs`'s `gpu.rs`) before any surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Backend {
     Auto,
@@ -186,7 +187,7 @@ pub enum Backend {
 
 impl Backend {
     /// An unknown value reads as the default.
-    fn parse(value: Option<&Value>) -> Self {
+    pub fn parse(value: Option<&Value>) -> Self {
         match value.and_then(Value::as_str) {
             Some("gpu") => Self::Gpu,
             Some("cpu") => Self::Cpu,

@@ -125,7 +125,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "desktopClock": app.desktop_clock_state(),
         "veil": app.veil_phase(),
         "depth": app.store.depth.status(),
-        "render": {"asked": theme.render_backend.as_str(), "backend": "cpu"},
+        "render": render(),
         "theme": {
             "radii": {"sm": number(theme.radii.sm), "md": number(theme.radii.md), "lg": number(theme.radii.lg), "xl": number(theme.radii.xl)},
             "radiusXl": reach,
@@ -239,4 +239,11 @@ fn r0_scrim(app: &mut App, args: &[Value]) -> Value {
 fn r0_cast(app: &mut App, args: &[Value]) -> Value {
     app.cast = args[0].bool();
     ok()
+}
+
+/// The backend asked for at start and the one drawing; a settings.json
+/// changed since reads in `theme` but takes effect at the next start.
+fn render() -> serde_json::Value {
+    let s = crate::gpu::status();
+    json!({"asked": s.asked.as_str(), "backend": s.backend, "reason": s.reason, "device": s.device})
 }

@@ -550,6 +550,12 @@ cfg="$shot_dir/hyprland.lua"
 # host-session safety note in the header.
 mkdir -p "$iso_home/.config/formalshell" "$iso_home/.local/share/applications" \
   "$iso_home/.local/share/formalshell/calendar"
+# XDG_DATA_DIRS is that home alone (session_env), and the Vulkan loader
+# finds the distro's drivers only under it: their manifests come along, the
+# desktop entries stay the fixtures'.
+if [ -d /usr/share/vulkan ]; then
+  ln -s /usr/share/vulkan "$iso_home/.local/share/vulkan"
+fi
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_fixture" >/dev/null; then "leg_${leg_name}_fixture"; fi
@@ -666,8 +672,13 @@ write_script "$shell_start_script" <<EOF
 # name for fd -1"), and a client's EGL init fails on it. Forcing the
 # software driver keeps the shell and its children on the wl_shm/llvmpipe
 # path they render on anyway. Scoped to this process: Hyprland's
-# own EGL runs on gbm over that same card and must keep doing so.
-export LIBGL_ALWAYS_SOFTWARE=1
+# own EGL runs on gbm over that same card and must keep doing so. Mesa's
+# Vulkan device-select layer reads it too and then lists llvmpipe alone, so
+# a nested session, whose main device is a real render node, leaves it out
+# and the shell's GPU path finds the GPU (--render).
+if [ "$session_mode" = vkms ]; then
+  export LIBGL_ALWAYS_SOFTWARE=1
+fi
 export RUST_BACKTRACE=1
 # Captured, not discarded: a shell that dies at startup would otherwise
 # fail every assertion below with no way to see why.
