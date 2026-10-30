@@ -1272,6 +1272,8 @@ how many rows it holds. The chords are the ones in
 [`docs/examples/hyprland/formalshell.lua`](examples/hyprland/formalshell.lua),
 not a read of your live bindings, so a rebound route still shows the shipped
 chord.
+The value takes at most 40% of the row and elides past that (a file's long
+parent directory), leaving the rest to the row's name.
 
 The bottom row of the card shows the selected row's keys and nothing else,
 right-aligned, each a button that does what its key does. Enter comes first,

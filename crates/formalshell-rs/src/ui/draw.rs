@@ -171,6 +171,7 @@ fn width_of(el: &El, avail: f64, natural: f64) -> f64 {
         Size::Fill => avail,
         Size::Px(p) => p,
         Size::Hug => natural.min(avail.max(natural)),
+        Size::AtMost(_) => natural.min(avail),
     }
 }
 
@@ -186,6 +187,7 @@ fn row_widths(cx: &mut Cx, children: &[El], inner: f64, gap: f64) -> Vec<f64> {
             Size::Fill => fills += 1,
             _ => {
                 let w = if let Kind::Space { along } = c.kind { along } else { measure(cx, c, inner).0 };
+                let w = if let Size::AtMost(share) = c.width { w.min(inner * share) } else { w };
                 out[i] = w;
                 used += w;
             }

@@ -658,7 +658,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `launcher_overflow.sh` `--launcher-overflow`: §11's overflow on a
   headless 1280x720 output made for it, read off `menu status`'s
   `cardBox`, `rowBoxes`, `actionsBox` and the column's keys: a staged app
-  named 200 characters long with every row's box inside the card's, and a
+  named 200 characters long with every row's box inside the card's, a
+  recent file under a long directory whose dim value, read off the frame,
+  is at most 40% of its row with the elided name one gap before it, and a
   launcher plugin's row carrying 40 actions of its own, Tab opening the 840
   card whole on that output with the column's last visible row reading
   `n more`, a real End scrolling it to the last action. Photographed off

@@ -3795,14 +3795,14 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     };
     let mut trail = Vec::new();
     if !value.is_empty() {
-        trail.push(w::text(value).size(Type::BodySmall).ink(Ink::Dim));
+        trail.push(w::text(value).size(Type::BodySmall).ink(Ink::Dim).elide());
     }
     if checked && !confirming {
         trail.push(w::icon("check"));
     }
     let mut parts = vec![w::row(s.lg, lead).fill()];
     if !trail.is_empty() {
-        parts.push(w::row(s.icon_gap, trail));
+        parts.push(w::row(s.icon_gap, trail).width(Size::AtMost(0.4)));
     }
     w::cell(w::row(s.lg, parts).fill())
         .ghost()

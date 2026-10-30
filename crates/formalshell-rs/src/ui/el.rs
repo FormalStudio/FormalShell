@@ -14,6 +14,9 @@ pub enum Size {
     /// A share of what the parent has left.
     Fill,
     Px(f64),
+    /// Its natural width, capped at this share of the parent row's inner
+    /// width.
+    AtMost(f64),
 }
 
 /// Ink as a token, or as the enclosing `Cell`'s own (its `foreground` and
