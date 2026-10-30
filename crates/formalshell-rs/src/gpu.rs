@@ -105,7 +105,11 @@ fn with<T>(f: impl FnOnce(&mut Gpu) -> T) -> Option<T> {
 pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
     let tried = match asked {
         Backend::Cpu => Err("render.backend is cpu".to_string()),
-        Backend::Auto | Backend::Gpu => Gpu::new(conn, globals),
+        // Measured on g815 (2026-10-30), the Vulkan driver alone puts the
+        // shell at 141 MB of RSS against the 54 MB baseline, and three
+        // threads and ~230ms of cold start over it.
+        Backend::Auto => Err("auto draws on the CPU until the GPU path meets the performance baseline".to_string()),
+        Backend::Gpu => Gpu::new(conn, globals),
     };
     let status = match tried {
         Ok(gpu) => {

@@ -837,12 +837,13 @@ opened it, which is elementary's popover.
 `render.backend` (`auto`, `gpu` or `cpu`, default `auto`) picks what draws
 the launcher: `gpu` draws it with vello_hybrid on the Vulkan device behind
 the compositor's own render node and hands it over as a dmabuf, `cpu` with
-vello_cpu as everything else. `auto` and `gpu` fall back to the CPU, saying
-why in the log and in `debug dump`, when the compositor offers no
-linux-dmabuf v4, its main device has no render node, no hardware Vulkan
-driver drives that node (Mesa's `LIBGL_ALWAYS_SOFTWARE` hides them all), or
-the driver cannot export a linear dmabuf; a GPU lost later sends every
-surface back to the CPU. It is read once at start.
+vello_cpu as everything else. `auto` is the CPU for now: loading the Vulkan
+driver alone takes the shell from about 54 MB of RSS to 141 MB. `gpu` falls
+back to the CPU, saying why in the log and in `debug dump`, when the
+compositor offers no linux-dmabuf v4, its main device has no render node,
+no hardware Vulkan driver drives that node (Mesa's `LIBGL_ALWAYS_SOFTWARE`
+hides them all), or the driver cannot export a linear dmabuf; a GPU lost
+later sends every surface back to the CPU. It is read once at start.
 
 These keys are no longer read, and each one written is logged once per
 start as `settings: <key> is no longer read`: `theme.preset`,
