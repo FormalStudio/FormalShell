@@ -757,7 +757,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `lock.sh` `--lock`: the lock round trip over real PAM, wrong password to
   unlocked, typed by a real virtual-keyboard client, with a staged `~/.face`
   found in the locked frame as the avatar over the clock.
-- `localsend.sh` `--localsend`: a real loopback transfer, a second
+- `localsend.sh` `--localsend` (vm_only: localsend-cli fixes its receive
+  port at 53317, which g815's own shell holds): a real loopback transfer, a second
   independent `localsend-cli send` process against the shell's own real
   receiver child. The file lands byte-identical (sha256) in the fixture
   directory and one RECEIVED toast follows, raised by `recv`'s own `Recv
@@ -828,7 +829,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   held through playback, a pause and resume, a seek, a track change and a
   player switch, with and without synced lyrics, the drawn progress fill
   measured off the frame against the position `media status` reports at
-  every sample.
+  every sample, each frame cropped to its own panel rect (the panel narrows
+  when lyrics go) and the track found as the longest bar three rows deep
+  off the card's own shade.
 - `menu.sh` `--menu`: the launcher's root at rest, one heading and nothing
   else: `Modes` (the root routes in declaration order, no app among them)
   over a state.json staging two fixture picks and one of an app not

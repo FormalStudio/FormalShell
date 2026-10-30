@@ -215,8 +215,8 @@ media_progress_rect() {
 # panel is the position track, since it is the widest thing the panel draws
 # in the primary hue. Taking the run rather than the row keeps the elapsed
 # and total readouts either side of it out of the count. The fill is the
-# strong end of that hue and the groove the 0.2-alpha wash the track paints
-# behind it.
+# far end from the card's own shade and the groove a step off it (darker
+# than the card under the shipped table, lighter under others).
 media_progress_fill() {
   local body rect
   body=$(media_progress_body "$1")
@@ -229,20 +229,40 @@ for line in sys.stdin:
     m = re.match(r"(\d+),(\d+): \((\d+),(\d+),(\d+)", line)
     if not m:
         continue
-    x, y, r = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    rows.setdefault(y, {})[x] = 2 if r > 170 else (1 if r > 45 else 0)
-best = (0, 0)
+    rows.setdefault(int(m.group(2)), {})[int(m.group(1))] = int(m.group(3))
+# The card is the commonest shade; the fill stands far off it and the
+# groove a little off it, darker or lighter as the table has it.
+counts = {}
 for row in rows.values():
-    run = fill = 0
+    for r in row.values():
+        counts[r] = counts.get(r, 0) + 1
+card = max(counts, key=counts.get) if counts else 0
+for row in rows.values():
+    for x, r in row.items():
+        d = abs(r - card)
+        row[x] = 2 if d > 100 else (1 if d > 5 else 0)
+# The track is a bar three rows deep or more; a separator or the lyrics
+# pane border is one pixel.
+segs = {}
+for y, row in rows.items():
+    out, seg = [], None
     for x in sorted(row):
-        if row.get(x, 0) and row.get(x - 1, 0):
-            run += 1
-            fill += row[x] == 2
-        else:
-            run = 1
-            fill = 1 if row[x] == 2 else 0
-        if run > best[0]:
-            best = (run, fill)
+        if row[x] and seg and x == seg[1] + 1:
+            seg[1], seg[2] = x, seg[2] + (row[x] == 2)
+            continue
+        if seg:
+            out.append(seg)
+        seg = [x, x, int(row[x] == 2)] if row[x] else None
+    if seg:
+        out.append(seg)
+    segs[y] = out
+def under(y, start, end):
+    return any(abs(s - start) <= 2 and abs(e - end) <= 2 for s, e, _ in segs.get(y, []))
+best = (0, 0)
+for y, out in segs.items():
+    for start, end, fill in out:
+        if end - start + 1 > best[0] and under(y + 1, start, end) and under(y + 2, start, end):
+            best = (end - start + 1, fill)
 print("%.4f %d" % (best[1] / best[0] if best[0] else 0.0, best[0]))
 '
 }
@@ -273,7 +293,8 @@ leg_media_progress_assert() {
     len=$(media_progress_field "$name" length)
     title=$(grep -o '"title":"[^"]*"' "$shot_dir/progress-$name.json" 2>/dev/null | head -1 | cut -d'"' -f4)
     lyr=$(grep -o '"state":"[^"]*"' "$shot_dir/progress-$name-lyrics.json" 2>/dev/null | head -1 | cut -d'"' -f4)
-    read -r drawn width < <(media_progress_fill "$name" "$rect")
+    # The panel narrows once lyrics go, so each frame is read in its own rect.
+    read -r drawn width < <(media_progress_fill "$name" "$(media_progress_rect "$name")")
     want=$(awk -v p="${pos:-0}" -v l="${len:-0}" 'BEGIN { printf "%.4f", (l > 0 ? p / l : 0) }')
     printf '%-10s position=%-9s want=%-8s drawn=%-8s track=%-5s lyrics=%-8s title=%s\n' \
       "$name" "${pos:-none}" "$want" "$drawn" "$width" "${lyr:-none}" "${title:-none}" \
@@ -285,5 +306,6 @@ leg_media_progress_assert() {
     fi
   done
   echo "SMOKE_MEDIA_PROGRESS_LOG $media_progress_log_path"
+  echo "SMOKE_MEDIA_PROGRESS_SEEK $shot_dir/progress-seek-1.png"
   [ -z "$failures" ] || fail "the drawn progress does not follow the reported position at:$failures"
 }

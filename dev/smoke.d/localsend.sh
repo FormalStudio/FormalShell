@@ -19,6 +19,10 @@
 # source file is the one claim a screenshot cannot make: a truncated or
 # corrupted transfer would still produce a same-named file and a toast.
 #
+# It runs on the VM rig: the port below is fixed, and a nested run on a
+# real host shares that host's network with the owner's own shell, whose
+# receiver already holds it.
+#
 # The reverse direction -- the shell's own `localsend send` IPC route
 # against a second real `recv` -- is NOT run here. 0w0mewo/localsend-cli's
 # `recv` and `send` (cmd/recv/recv.go, internal/models/discovery.go
@@ -31,6 +35,7 @@
 # trip is what this rig can honestly still prove of that half.
 leg_localsend_flag="--localsend"
 leg_localsend_order=231
+leg_localsend_vm_only="localsend-cli fixes its receive port at 53317, which a host's own shell holds"
 leg_localsend_needs="localsend-cli jq"
 
 localsend_receive_dir="$shot_dir/localsend-receive"
