@@ -247,6 +247,7 @@ async fn commands(shared: Shared, rx: async_channel::Receiver<Command>, dirty: a
                 dispatch(&dispatch::move_to(&id, &output, idx)).await;
             }
             Command::SwapWindows { .. } => unsupported("a window swap"),
+            Command::MoveColumn { .. } => unsupported("a column move"),
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
                 let target = (x.round() as i64, y.round() as i64, width.round() as i64, height.round() as i64);
                 shared.borrow_mut().placed.insert(id.clone(), target);

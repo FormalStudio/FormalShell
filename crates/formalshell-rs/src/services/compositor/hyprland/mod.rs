@@ -294,6 +294,10 @@ async fn commands(
                 // event, so the rects are asked for again.
                 let _ = dirty.try_send(());
             }
+            Command::MoveColumn { id, before } => {
+                eval(&ctx, &lua::move_column(&id, before.as_deref())).await;
+                let _ = dirty.try_send(());
+            }
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
                 let (w, h) = ((width.round() as i64).max(1), (height.round() as i64).max(1));
                 dispatch(&lua::resize_window(&id, w, h)).await;

@@ -15,7 +15,11 @@
 # with the button still down: lifted, its target row 1), the two then
 # trading places by a drag along that row, mm-c dragged to the empty row
 # making workspace 3 again, and a drag let go past the column's edge
-# moving nothing, the map holding no order after it. Each window is
+# moving nothing, the map holding no order after it. Last the scrolling
+# layout, three windows on workspace 4, one column each: the first icon
+# dragged past the last moves its column to the tape's end (e f d by x,
+# where a swap would give f e d), with a frame mid-drag and one after; then
+# `sidebar focus` and Shift+Left carry that column back one (e d f). Each window is
 # matched by its address (`sidebar status` ids carry no `0x`). The
 # cursor's frame, the carried one, the mid-drag and the dropped ones are
 # pulled for reading.
@@ -24,10 +28,12 @@ leg_minimap_order=238
 leg_minimap_needs="jq foot wtype wlrctl python3"
 minimap_vpointer="$PWD/dev/vpointer.py"
 
-minimap_clients=("$shot_dir"/minimap-clients-{0,2,3,4,6,7,8,9}.json)
+minimap_clients=("$shot_dir"/minimap-clients-{0,2,3,4,6,7,8,9,10,11,12}.json)
 minimap_status=("$shot_dir"/minimap-status-{0,1,2,3,4,5,6,7,8,9,10}.json)
 minimap_lifted_png="$shot_dir/minimap-lifted.png"
 minimap_dropped_png="$shot_dir/minimap-dropped.png"
+minimap_column_lifted_png="$shot_dir/minimap-column-lifted.png"
+minimap_column_png="$shot_dir/minimap-column.png"
 minimap_focus_png="$shot_dir/minimap-focus.png"
 minimap_carried_png="$shot_dir/minimap-carried.png"
 
@@ -43,7 +49,7 @@ leg_minimap_fixture() {
 }
 
 leg_minimap_timing() {
-  leg_timing 30 70
+  leg_timing 30 110
 }
 
 leg_minimap_drive() {
@@ -130,6 +136,33 @@ drag "\$ax" "\$ay" 600 "\$ay" 200
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[10]}" 2>&1
 "$hyprctl_bin" -j clients > "${minimap_clients[7]}" 2>&1
+"$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 4 })" > /dev/null 2>&1
+for app in d e f; do
+  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-\$app sh -c 'sleep 300']==])" > /dev/null 2>&1
+  sleep 1
+done
+sleep 2
+"$hyprctl_bin" -j clients > "${minimap_clients[8]}" 2>&1
+"$hyprctl_bin" -j workspaces > "$shot_dir/minimap-workspaces.json" 2>&1
+row=\$($ipc call sidebar status | "$jq_bin" '[.rows[] | .windows | length] | index(3)')
+d=\$($ipc call sidebar status | "$jq_bin" -r --argjson r "\$row" '.rows[\$r].windows[0]')
+f=\$($ipc call sidebar status | "$jq_bin" -r --argjson r "\$row" '.rows[\$r].windows[2]')
+read -r ax ay <<< "\$(centre "window:\$d")"
+read -r bx by <<< "\$(centre "window:\$f")"
+drag "\$ax" "\$ay" \$(( bx + 12 )) "\$by" 1200 &
+sleep 1
+"$grim_bin" "$minimap_column_lifted_png" > /dev/null 2>&1
+wait
+sleep 1.5
+"$hyprctl_bin" -j clients > "${minimap_clients[9]}" 2>&1
+"$grim_bin" "$minimap_column_png" > /dev/null 2>&1
+$ipc call sidebar focus > /dev/null 2>&1
+sleep 0.5
+"$wtype_bin" -M shift -k Left -m shift
+sleep 1.5
+"$hyprctl_bin" -j clients > "${minimap_clients[10]}" 2>&1
+"$wtype_bin" -k Escape
 EOS
   hypr_exec_once "bash $script"
 }
@@ -196,4 +229,18 @@ leg_minimap_assert() {
     || fail "minimap: a drag let go past the column moved its window"
   "$jq_bin" -e '.minimap.drag == null and .minimap.held == null' "${minimap_status[10]}" > /dev/null \
     || fail "minimap: the cancelled drag left a drag or a held order: $(cat "${minimap_status[10]}")"
+  echo "SMOKE_MINIMAP_COLUMN_LIFTED $minimap_column_lifted_png"
+  echo "SMOKE_MINIMAP_COLUMN $minimap_column_png"
+  "$jq_bin" -e '[.[] | select(.id == 4 and .tiledLayout == "scrolling")] | length == 1' "$shot_dir/minimap-workspaces.json" > /dev/null \
+    || fail "minimap: workspace 4 is not under the scrolling layout: $(cat "$shot_dir/minimap-workspaces.json")"
+  local order
+  for f in 8 9 10; do
+    order=$("$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0]) | map(.class | ltrimstr("formalshell-mm-")) | join(" ")' "${minimap_clients[$f]}")
+    echo "minimap scrolling order $f: $order"
+    case $f in
+      8) [ "$order" = "d e f" ] || fail "minimap: the scrolling tape did not start as d e f: $order" ;;
+      9) [ "$order" = "e f d" ] || fail "minimap: the drag past the last column did not move d's column to the end: $order" ;;
+      10) [ "$order" = "e d f" ] || fail "minimap: Shift+Left did not carry d's column back one: $order" ;;
+    esac
+  done
 }

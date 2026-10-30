@@ -814,8 +814,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   dragged onto workspace 2's row (status read mid-drag, lifted over row
   1), the two there trading places by a drag along the row, one dropped
   on the empty row making workspace 3, and a drag let go past the column
-  moving nothing and holding no order. The cursor's, the carried, the
-  mid-drag and the dropped frames pulled.
+  moving nothing and holding no order. Last the scrolling layout, three
+  windows on workspace 4: the first icon dragged past the last moving its
+  column to the tape's end (`e f d` by x, where a swap gives `f e d`) and
+  Shift+Left carrying it back one (`e d f`). The cursor's, the carried, the
+  mid-drag, the dropped and both column frames pulled.
 - `mirror.sh` `--mirror`: the launcher's camera mirror against two v4l2loopback
   nodes (built by the VM rig, loaded by the leg) fed by real ffmpeg
   writers, a colour pattern on video10 and a GREY one on video11 standing in

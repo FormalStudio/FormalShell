@@ -8,7 +8,6 @@ use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 
 use super::App;
 use crate::services::compositor::{self, Command};
-use crate::surfaces::sidebar::minimap::Move;
 
 impl App {
     /// The minimap's cursor up with the keyboard, or both given back.
@@ -51,17 +50,12 @@ impl App {
             }
             _ => return true,
         };
-        match sb.map.step(dx, dy, carry) {
-            Some(Move::Swap(a, b)) => compositor::send(Command::SwapWindows { a, b }),
-            Some(Move::To(id, idx)) => compositor::send(Command::MoveWindowTo { id, idx, output: self.bar.output.clone() }),
-            None => {}
-        }
-        self.bar_dirty = true;
-        self.request_paint();
+        let moved = sb.map.step(dx, dy, carry);
+        self.minimap_drop(moved.into_iter().collect());
         true
     }
 
-    /// A minimap drop's commands, in order, onto the bar's output.
+    /// A minimap move's commands, in order, onto the bar's output.
     pub(super) fn minimap_drop(&mut self, commands: Vec<Command>) {
         for command in commands {
             compositor::send(match command {

@@ -170,6 +170,10 @@ pub enum Command {
     MoveWindowTo { id: String, idx: i64, output: String },
     /// Two windows trade places in the layout, focus staying put.
     SwapWindows { a: String, b: String },
+    /// Under a scrolling layout, `id`'s column moves to sit just before
+    /// `before`'s, or last with none, the columns between shifting one
+    /// along. It focuses `id`.
+    MoveColumn { id: String, before: Option<String> },
     PlaceFloatingWindow { id: String, x: f64, y: f64, width: f64, height: f64 },
     ParkWindow(String),
     UnparkWindow(String),

@@ -16,6 +16,9 @@ pub struct Workspace {
     pub is_active: bool,
     pub is_focused: bool,
     pub is_urgent: bool,
+    /// Its windows sit in a scrolling layout's columns, which reorder by
+    /// moving a column rather than swapping two windows.
+    pub columns: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]

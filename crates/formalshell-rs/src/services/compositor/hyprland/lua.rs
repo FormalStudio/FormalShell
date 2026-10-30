@@ -64,6 +64,31 @@ pub fn swap_windows(a: &str, b: &str) -> String {
     format!("hl.dsp.window.swap({{ window = {}, target = {} }})", string(&selector(a)), string(&selector(b)))
 }
 
+/// The scrolling layout has no move-column-to-index (0.56 and 0.57 alike):
+/// `swapcol` trades the focused column with a neighbour, so the column is
+/// focused and walked there one swap at a time. Columns are told apart by
+/// their windows' x on the tape.
+pub fn move_column(id: &str, before: Option<&str>) -> String {
+    let window = string(&selector(id));
+    let before = before.map_or_else(|| "nil".to_owned(), |b| format!("hl.get_window({})", string(&selector(b))));
+    format!(
+        "local w = hl.get_window({window}) \
+         if w and w.workspace and not w.floating then \
+         local xs, seen = {{}}, {{}} \
+         for _, c in ipairs(hl.get_workspace_windows(w.workspace.id)) do \
+         if not c.floating and not seen[c.at.x] then seen[c.at.x] = true; xs[#xs + 1] = c.at.x end end \
+         table.sort(xs) \
+         local from, rest = nil, {{}} \
+         for i, x in ipairs(xs) do if x == w.at.x then from = i else rest[#rest + 1] = x end end \
+         local to, b = #rest + 1, {before} \
+         if b then for i, x in ipairs(rest) do if x == b.at.x then to = i end end end \
+         if from and to ~= from then \
+         hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
+         for _ = 1, math.abs(to - from) do hl.dispatch(hl.dsp.layout(to > from and \"swapcol r\" or \"swapcol l\")) end \
+         end end"
+    )
+}
+
 pub fn resize_window(id: &str, w: i64, h: i64) -> String {
     format!("hl.dsp.window.resize({{ window = {}, x = {w}, y = {h} }})", string(&selector(id)))
 }
@@ -131,6 +156,11 @@ mod tests {
             "hl.dsp.window.fullscreen({ window = \"address:0xab\", mode = \"fullscreen\", action = \"toggle\" })"
         );
         assert_eq!(swap_windows("ab", "cd"), "hl.dsp.window.swap({ window = \"address:0xab\", target = \"address:0xcd\" })");
+        let col = move_column("ab", Some("cd"));
+        assert!(col.starts_with("local w = hl.get_window(\"address:0xab\") if w"));
+        assert!(col.contains("local to, b = #rest + 1, hl.get_window(\"address:0xcd\") if b"));
+        assert!(col.contains("hl.dsp.layout(to > from and \"swapcol r\" or \"swapcol l\")"));
+        assert!(move_column("ab", None).contains("#rest + 1, nil if b"));
         assert_eq!(move_to_workspace("ab", 2), "hl.dsp.window.move({ window = \"address:0xab\", workspace = 2, follow = false })");
         assert_eq!(toggle_special(), "hl.dsp.workspace.toggle_special(\"formalshell-console\")");
         assert_eq!(

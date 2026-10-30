@@ -95,6 +95,7 @@ pub fn snapshot(monitors: &str, clients: &str, names: &[String]) -> Snapshot {
                 is_active,
                 is_focused,
                 is_urgent: flag(t, "is_urgent") && !is_focused,
+                columns: false,
             });
         }
     }

@@ -174,7 +174,8 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             let id = idx.to_string();
             let is_focused = is_active && output == focused_output;
             let is_urgent = !is_focused && windows.iter().any(|win| win.is_urgent && win.workspace_id == id);
-            Some(Workspace { id, idx, name: string(w.get("name")), output, is_active, is_focused, is_urgent })
+            let columns = string(w.get("tiledLayout")) == "scrolling";
+            Some(Workspace { id, idx, name: string(w.get("name")), output, is_active, is_focused, is_urgent, columns })
         })
         .collect();
     out.sort_by_key(|w| w.idx);
