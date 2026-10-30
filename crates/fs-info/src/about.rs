@@ -42,27 +42,43 @@ fn sections(text: &str) -> HashMap<&str, String> {
     out
 }
 
-/// One `KEY=value` from os-release, its quotes taken off.
-fn os_release<'a>(text: &'a str, key: &str) -> Option<&'a str> {
-    text.lines()
-        .filter_map(|l| l.split_once('='))
-        .find(|(k, _)| k.trim() == key)
-        .map(|(_, v)| v.trim().trim_matches('"').trim_matches('\''))
-        .filter(|v| !v.is_empty())
+/// One `KEY=value` from os-release, unquoted the way its shell-style
+/// grammar reads: one pair of delimiters off, and inside double quotes a
+/// backslash escaping `"`, `\\`, `$` or a backtick.
+fn os_release(text: &str, key: &str) -> Option<String> {
+    let raw = text.lines().filter_map(|l| l.split_once('=')).find(|(k, _)| k.trim() == key)?.1.trim();
+    let value = if let Some(inner) = raw.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')) {
+        inner.to_owned()
+    } else if let Some(inner) = raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        let mut out = String::with_capacity(inner.len());
+        let mut chars = inner.chars().peekable();
+        while let Some(c) = chars.next() {
+            match (c, chars.peek()) {
+                ('\\', Some('"' | '\\' | '$' | '`')) => out.extend(chars.next()),
+                _ => out.push(c),
+            }
+        }
+        out
+    } else {
+        raw.to_owned()
+    };
+    (!value.is_empty()).then_some(value)
 }
 
 /// DMI fills unset strings with OEM placeholders.
 fn dmi(text: Option<&String>) -> Option<String> {
     let v = text?.trim();
-    let placeholder = ["", "default string", "to be filled by o.e.m.", "not applicable", "none", "system product name"];
+    let placeholder = ["", "default string", "to be filled by o.e.m.", "not applicable", "none", "not specified", "system product name", "system version"];
     (!placeholder.contains(&v.to_lowercase().as_str())).then(|| v.to_owned())
 }
 
 /// The model name with its threads, `AMD Ryzen 7 9800X3D (16 Threads)`;
-/// the `(R)`, `(TM)` and `CPU @ ...` noise Intel writes goes.
+/// the `(R)`, `(TM)` and `CPU @ ...` noise Intel writes goes. ARM
+/// cpuinfo carries no `model name`, and its `Model` names the board, so
+/// it reads as none.
 pub fn cpu_label(cpuinfo: &str) -> Option<String> {
     let field = |l: &str, key: &str| l.split_once(':').filter(|(k, _)| k.trim() == key).map(|(_, v)| v.trim().to_owned());
-    let model = cpuinfo.lines().find_map(|l| field(l, "model name").or_else(|| field(l, "Model")))?;
+    let model = cpuinfo.lines().find_map(|l| field(l, "model name"))?;
     let threads = cpuinfo.lines().filter(|l| l.split_once(':').is_some_and(|(k, _)| k.trim() == "processor")).count();
     let mut name = model.replace("(R)", "").replace("(TM)", "").replace("(tm)", "");
     if let Some(at) = name.find(" @ ") {
@@ -84,8 +100,8 @@ pub fn parse(text: &str) -> About {
     let os = s.get("os").map(String::as_str).unwrap_or("");
     let board = dmi(s.get("board")).or_else(|| dmi(s.get("product")));
     About {
-        os: os_release(os, "PRETTY_NAME").or_else(|| os_release(os, "NAME")).map(str::to_owned),
-        os_id: os_release(os, "ID").map(str::to_owned),
+        os: os_release(os, "PRETTY_NAME").or_else(|| os_release(os, "NAME")),
+        os_id: os_release(os, "ID"),
         host: s.get("host").map(|h| h.trim().to_owned()).filter(|h| !h.is_empty()),
         board,
         cpu: s.get("cpu").and_then(|c| cpu_label(c)),
@@ -131,6 +147,24 @@ mod tests {
     fn intel_frequency_suffix_goes() {
         let c = cpu_label("processor : 0\nmodel name : Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz\n");
         assert_eq!(c.as_deref(), Some("Intel Core i7-8550U (1 Thread)"));
+    }
+
+    #[test]
+    fn os_release_unquotes_its_escapes() {
+        let a = parse("@os\nPRETTY_NAME=\"Say \\\"hi\\\" \\\\ OS\"\nID='arch'\n");
+        assert_eq!(a.os.as_deref(), Some("Say \"hi\" \\ OS"));
+        assert_eq!(a.os_id.as_deref(), Some("arch"));
+    }
+
+    #[test]
+    fn not_specified_falls_back_to_the_product() {
+        let a = parse("@board\nNot Specified\n@product\nThinkPad X1\n");
+        assert_eq!(a.board.as_deref(), Some("ThinkPad X1"));
+    }
+
+    #[test]
+    fn an_arm_board_model_is_not_a_cpu() {
+        assert_eq!(cpu_label("processor : 0\nModel : Raspberry Pi 4 Model B Rev 1.4\n"), None);
     }
 
     #[test]

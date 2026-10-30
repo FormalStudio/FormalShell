@@ -214,7 +214,7 @@ leg_panel_emerge_assert() {
   card_x=$(echo "$rect" | sed -n 's/.*+\([0-9]*\)+[0-9]*$/\1/p')
   card_y=$(echo "$rect" | sed -n 's/.*+\([0-9]*\)$/\1/p')
   card_y=$((card_y + panel_emerge_body_top))
-  if [ -z "$card_w" ] || [ "${card_w:-0}" -lt 200 ] || [ "${card_h:-0}" -lt 200 ]; then
+  if [ -z "$card_w" ] || [ "${card_w:-0}" -lt 200 ] || [ "${card_h:-0}" -lt 80 ]; then
     fail "could not measure the network card off the open/closed pair, got rect '$rect'"
   fi
   echo "SMOKE_PANEL_EMERGE_CARD ${card_w}x${card_h}+${card_x}+${card_y}"

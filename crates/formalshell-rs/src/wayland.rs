@@ -1083,7 +1083,7 @@ impl App {
         let mut surface = Surface::new("panel", layer, &self.shm, self.started);
         surface.wait_map = true;
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
-        host.module.start(&mut panel::Effect { store: &self.store, runtime: self.runtime.as_ref(), close: false, summon: None });
+        host.module.start(&mut panel::Effect { store: &self.store, runtime: self.runtime.as_ref(), close: false, summon: None, panel: None, call: None });
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
                 host.take_over(old.card.live(), now);
@@ -2179,6 +2179,9 @@ impl App {
             Keysym::Up => Key::Move(0, -1),
             Keysym::Right => Key::Move(1, 0),
             Keysym::Left => Key::Move(-1, 0),
+            // A held key activates once: a confirm that arms on the first
+            // press must not fire on the repeat.
+            Keysym::Return | Keysym::KP_Enter | Keysym::space if repeat => return,
             Keysym::Return | Keysym::KP_Enter | Keysym::space => Key::Activate,
             _ => match event.utf8 {
                 Some(t) if t.chars().count() == 1 && t.chars().all(|c| c as u32 >= 0x20) => Key::Text(t),
@@ -2214,6 +2217,11 @@ impl App {
             Out::Summon(route) => {
                 self.close_panels();
                 self.menu_open(Some(route));
+            }
+            Out::Panel(name) => self.set_panel(name, true, None),
+            Out::Call(target, function) => {
+                self.close_panels();
+                self.call_self(target, function, &[]);
             }
         }
     }

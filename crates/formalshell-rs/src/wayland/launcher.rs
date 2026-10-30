@@ -438,7 +438,7 @@ impl App {
     }
 
     /// One call into this shell's own IPC targets, answered in process.
-    fn call_self(&mut self, target: &str, function: &str, args: &[&str]) {
+    pub(super) fn call_self(&mut self, target: &str, function: &str, args: &[&str]) {
         self.call_self_reply(target, function, args);
     }
 

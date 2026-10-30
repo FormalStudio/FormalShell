@@ -35,6 +35,7 @@ pub mod monitor;
 pub mod network;
 pub mod plugin;
 pub mod power;
+pub mod settings;
 pub mod standin;
 pub mod systemupdate;
 pub mod tailscale;
@@ -84,6 +85,11 @@ pub struct Effect<'a> {
     pub close: bool,
     /// A launcher route to open as the panel closes.
     pub summon: Option<&'static str>,
+    /// Another panel to open in this one's place.
+    pub panel: Option<&'static str>,
+    /// An IPC target and function the shell calls on itself as the panel
+    /// closes (`lock`, `lock`).
+    pub call: Option<(&'static str, &'static str)>,
 }
 
 impl Effect<'_> {
@@ -182,6 +188,8 @@ pub trait Panel {
     }
     /// After every key: the stop now holding the cursor.
     fn reached(&mut self, _stop: &str, _fx: &mut Effect) {}
+    /// The stop under the pointer changed, `None` once it is over none.
+    fn pointed(&mut self, _stop: Option<&str>) {}
     /// `x` on a stop.
     fn delete(&mut self, _stop: &str, _fx: &mut Effect) {}
     /// A printable key no binding took.
@@ -198,7 +206,7 @@ pub trait Panel {
 
 /// The panels `panel` can open, each one's
 /// module.
-pub const PANELS: [&str; 21] = [
+pub const PANELS: [&str; 22] = [
     "activity",
     "appmenu",
     "audio",
@@ -220,6 +228,7 @@ pub const PANELS: [&str; 21] = [
     "trayoverflow",
     "radio",
     "info",
+    "settings",
 ];
 
 pub fn known(name: &str) -> Option<&'static str> {
@@ -248,6 +257,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         "monitor" => Box::new(monitor::Monitor::new()),
         "power" => Box::new(power::Power::new()),
         "info" => Box::new(info::Info::new()),
+        "settings" => Box::<settings::Settings>::default(),
         "systemupdate" => Box::new(systemupdate::SystemUpdate::new()),
         "tailscale" => Box::new(tailscale::Tailscale::new()),
         "usage" => Box::new(usage::Usage::new()),

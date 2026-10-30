@@ -159,6 +159,7 @@
 --panel network
 --panel power
 --panel info
+--panel settings
 --panel calendar
 --panel weather
 --device-routes

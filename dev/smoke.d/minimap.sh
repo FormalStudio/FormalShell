@@ -318,7 +318,7 @@ PY
   echo "SMOKE_MINIMAP_SCROLLED $shot_dir/minimap-scrolled.png"
   "$jq_bin" -e '(.rows | length) + 1 > .shown.count and .shown.first == 0
       and ([.hits[] | select(.on | startswith("row:") or . == "new") | .y + .h] | max)
-        <= ([.hits[] | select(.on == "panel:info") | .y] | min)' "$shot_dir/minimap-crowded.json" > /dev/null \
+        <= ([.hits[] | select(.on == "panel:settings") | .y] | min)' "$shot_dir/minimap-crowded.json" > /dev/null \
     || fail "minimap: the crowded map was not cut to the rows that fit above the foot: $(cat "$shot_dir/minimap-crowded.json")"
   "$jq_bin" -e '.shown.first > 0' "$shot_dir/minimap-scrolled.json" > /dev/null \
     || fail "minimap: a wheel notch over the map did not scroll its rows: $("$jq_bin" -c .shown "$shot_dir/minimap-scrolled.json")"

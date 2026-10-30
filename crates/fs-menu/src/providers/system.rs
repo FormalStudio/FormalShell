@@ -104,6 +104,7 @@ const PANEL_NAMES: &[PanelName] = &[
     PanelName { id: "monitor", label: "Monitor", icon: "\u{F029A}", aliases: &[] },
     PanelName { id: "radio", label: "Radio", icon: "\u{F0439}", aliases: &[] },
     PanelName { id: "info", label: "Information", icon: "\u{F02FC}", aliases: &["about", "system information", "about this computer"] },
+    PanelName { id: "settings", label: "Settings", icon: "\u{F0493}", aliases: &["preferences", "session"] },
 ];
 
 pub fn panels_provider(ipc: &str) -> Vec<Node> {

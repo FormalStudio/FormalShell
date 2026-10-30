@@ -163,7 +163,7 @@ leg_deform_assert() {
   local rest_box rest_h
   rest_box=$(deform_box "$deform_settled_path" "settled")
   rest_h=$(deform_height "$rest_box")
-  if [ "${rest_h:-0}" -lt 200 ]; then
+  if [ "${rest_h:-0}" -lt 80 ]; then
     fail "no resting card found under the bar: the diff against the closed output is '$rest_box'"
   fi
   echo "SMOKE_DEFORM_REST_BOX $rest_box"

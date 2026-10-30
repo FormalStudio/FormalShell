@@ -395,6 +395,7 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "activity" => Action::Panel("activity"),
             "trayoverflow" => Action::Panel("trayoverflow"),
             "info" => Action::Panel("info"),
+            "settings" => Action::Panel("settings"),
             center::ID => Action::Center,
             _ => Action::None,
         },
@@ -574,7 +575,7 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     let mut row = vec![
         button("wifi", "Network", "panel:network"),
         button("volume-2", "Audio", "panel:audio"),
-        button("settings", "Information", "panel:info"),
+        button("settings", "Settings", "panel:settings"),
     ];
     if !store.tray.items.is_empty() {
         row.push(button("ellipsis", "Tray", "panel:trayoverflow"));
@@ -598,7 +599,7 @@ fn rail_foot(theme: &Theme, edge: Edge) -> El {
     let buttons = vec![
         button("wifi", "Network", "panel:network"),
         button("volume-2", "Audio", "panel:audio"),
-        button("settings", "Information", "panel:info"),
+        button("settings", "Settings", "panel:settings"),
         button(fold_glyph(edge, true), "Expand", "expand"),
     ];
     w::column(theme.space.xs, buttons).fill()

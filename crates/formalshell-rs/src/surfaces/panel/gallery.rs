@@ -203,7 +203,13 @@ impl Panel for Gallery {
         types.push(
             w::column(
                 s.row_gap,
-                vec![label("PowerFlow / sample snapshot, not live"), w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true))],
+                vec![
+                    label("PowerFlow / sample snapshot, not live"),
+                    w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)),
+                    label("Battery / sample, not live"),
+                    w::cell(w::column(s.xl, vec![super::power::battery_card(s, &battery_sample()), super::power::profiles(s, 0, 0, true)]))
+                        .width(Size::Px(s.popup_width_narrow)),
+                ],
             )
             .pad_top(s.section_gap - s.row_gap),
         );
@@ -285,9 +291,6 @@ impl Panel for Gallery {
                     .interactive()
                     .tip("Tooltip / the real card, loaded by this cell"),
                 label("Tooltip opens under the row above, over this panel"),
-                label("Battery / sample, not live"),
-                w::cell(w::column(s.xl, vec![super::power::battery_card(s, &battery_sample()), super::power::profiles(s, 0, 0, true)]))
-                    .width(Size::Px(s.popup_width_narrow)),
             ],
         )
         .fill();

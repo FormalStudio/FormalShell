@@ -18,7 +18,7 @@ use fs_menu::search;
 
 const PANEL_NAMES: &[&str] = &[
     "appmenu", "audio", "calendar", "network", "bluetooth", "earbuds", "iphone", "dualsense", "power", "weather",
-    "media", "github", "usage", "tailscale", "systemupdate", "display", "monitor", "radio", "info",
+    "media", "github", "usage", "tailscale", "systemupdate", "display", "monitor", "radio", "info", "settings",
 ];
 
 // The headline guard: every panel name has a "panels.<name>" row whose action

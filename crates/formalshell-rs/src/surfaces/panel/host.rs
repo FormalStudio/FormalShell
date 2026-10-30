@@ -116,14 +116,20 @@ pub enum Out {
     Close,
     /// Close, then open the launcher on this route.
     Summon(&'static str),
+    /// Open this panel in the open one's place.
+    Panel(&'static str),
+    /// Close, then call this IPC target's function on the shell itself.
+    Call(&'static str, &'static str),
 }
 
 impl Effect<'_> {
     fn out(&self) -> Out {
-        match (self.summon, self.close) {
-            (Some(route), _) => Out::Summon(route),
-            (None, true) => Out::Close,
-            (None, false) => Out::None,
+        match (self.summon, self.panel, self.call, self.close) {
+            (Some(route), ..) => Out::Summon(route),
+            (None, Some(name), ..) => Out::Panel(name),
+            (None, None, Some((target, function)), _) => Out::Call(target, function),
+            (None, None, None, true) => Out::Close,
+            (None, None, None, false) => Out::None,
         }
     }
 }
@@ -569,7 +575,7 @@ impl Host {
     }
 
     fn effect<'a>(store: &'a Store, runtime: Option<&'a Runtime>) -> Effect<'a> {
-        Effect { store, runtime, close: false, summon: None }
+        Effect { store, runtime, close: false, summon: None, panel: None, call: None }
     }
 
     /// Move the cursor.
@@ -720,8 +726,13 @@ impl Host {
             None => (None, None),
         };
         let changed = self.body.hover != body_hover || self.head.hover != head_hover;
+        let before = self.hovered_stop();
         self.body.hover = body_hover;
         self.head.hover = head_hover;
+        let after = self.hovered_stop();
+        if after != before {
+            self.module.pointed(after.as_deref());
+        }
         // A row the pointer reaches takes the cursor, without the ring.
         if let Some((true, h)) = &hit
             && let Some(stop) = &h.stop
