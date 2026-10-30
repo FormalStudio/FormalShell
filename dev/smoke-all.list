@@ -72,6 +72,8 @@
 --launcher-mouse
 --launcher-overflow
 --launcher-preview
+--launcher-install
+--launcher-install --light
 --lights
 --localsend
 --lock

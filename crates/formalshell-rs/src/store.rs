@@ -4,7 +4,7 @@
 
 use crate::services::{
     activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
-    compositor, info, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, picker, plugins, recording, screensaver, state, theme, tray,
+    compositor, info, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
 
@@ -40,6 +40,7 @@ pub struct Store {
     pub screensaver: screensaver::State,
     pub clipboard: clipboard::State,
     pub clipssh: clipssh::State,
+    pub packages: packages::State,
     pub picker: picker::State,
     pub localsend: localsend::State,
     pub depth: depth::State,
@@ -82,6 +83,7 @@ pub enum Diff {
     Screensaver(screensaver::Diff),
     Clipboard(clipboard::Diff),
     Clipssh(clipssh::Diff),
+    Packages(packages::Diff),
     Picker(picker::Diff),
     Localsend(localsend::Diff),
     Depth(depth::Diff),
@@ -125,6 +127,7 @@ pub enum Topic {
     Screensaver,
     Clipboard,
     Clipssh,
+    Packages,
     Picker,
     Localsend,
     Depth,
@@ -190,6 +193,7 @@ impl Store {
             Diff::Screensaver(d) => self.screensaver.apply(d).then_some(Topic::Screensaver),
             Diff::Clipboard(d) => self.clipboard.apply(d).then_some(Topic::Clipboard),
             Diff::Clipssh(d) => self.clipssh.apply(d).then_some(Topic::Clipssh),
+            Diff::Packages(d) => self.packages.apply(d).then_some(Topic::Packages),
             Diff::Picker(d) => self.picker.apply(d).then_some(Topic::Picker),
             Diff::Localsend(d) => self.localsend.apply(d).then_some(Topic::Localsend),
             Diff::Depth(d) => self.depth.apply(d).then_some(Topic::Depth),

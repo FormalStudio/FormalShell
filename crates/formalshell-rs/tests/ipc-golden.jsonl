@@ -409,6 +409,7 @@
 {"argv":["call","activity","dismiss","app:nothing"],"live":true,"stdout":"error: no activity from 'app:nothing'\n","stderr":"","exit":0}
 {"argv":["call","activity","retry","fspec:run:jq"],"live":true,"stdout":"error: no activity from 'fspec:run:jq'\n","stderr":"","exit":0}
 {"argv":["call","activity","launch","nothing"],"live":true,"stdout":"error: no desktop entry 'nothing'\n","stderr":"","exit":0}
+{"argv":["call","activity","openApp","fspec:install:flatpak:org.example.Nothing"],"live":true,"stdout":"error: no activity from 'fspec:install:flatpak:org.example.Nothing'\n","stderr":"","exit":0}
 {"argv":["call","activity","retry"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function retry(source: string): string\n","stderr":"","exit":0}
 {"argv":["call","activity","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
 {"argv":["call","activity","start"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}

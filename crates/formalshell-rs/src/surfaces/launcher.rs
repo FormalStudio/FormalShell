@@ -960,7 +960,7 @@ impl Model {
         let emoji = menu && level == Some("emoji");
         let children = self.children.last().filter(|_| menu);
         let plugin = self.plugin_mode().is_some();
-        let route_rows = children.is_some() || plugin || matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
+        let route_rows = children.is_some() || plugin || matches!(level, Some("keybinds" | "calc" | "radio.search" | "install" | "clipboard" | "share.history"));
         let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
         let picker = menu && children.is_none() && level == Some(PICKER_ROUTE);
         let monitor = menu && children.is_none() && level == Some(MONITOR_ROUTE);
@@ -1017,6 +1017,7 @@ impl Model {
                 fs_menu::keybinds::rows_for(reply, q)
             }
             Mode::Menu if level == Some("radio.search") => radio_search_rows(store, q),
+            Mode::Menu if level == Some(fs_menu::providers::INSTALL_ROUTE) => crate::surfaces::packages::install_rows(store, q),
             // The plugin ranks its own rows against the query it was sent.
             Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
@@ -1479,7 +1480,7 @@ impl Model {
             let snap = snapshot(store);
             self.rows
                 .iter()
-                .filter(|n| toggles::checked_for(Some(n), Some(&snap), Some(&store.menu.checked)))
+                .filter(|n| crate::surfaces::packages::row_checked(store, n, toggles::checked_for(Some(n), Some(&snap), Some(&store.menu.checked))))
                 .map(|n| n.id.as_str())
                 .collect()
         };
@@ -1490,7 +1491,13 @@ impl Model {
         let drawn: Vec<Value> = match self.view {
             View::AppGrid => self.rows[..self.app_count].iter().map(|r| json!({"id": r.id, "label": r.label})).collect(),
             View::Rows | View::Monitor | View::Mirror => {
-                self.rows.iter().map(|r| json!({"id": r.id, "label": r.label, "value": fs_menu::actions::accessory_for(Some(r))})).collect()
+                self.rows
+                    .iter()
+                    .map(|r| {
+                        let picture = !r.icon_source.is_empty() && store.menu.row_icons.get(&r.icon_source).is_some_and(Option::is_some);
+                        json!({"id": r.id, "label": r.label, "value": crate::surfaces::packages::row_value(store, r), "picture": picture})
+                    })
+                    .collect()
             }
             View::Emoji | View::Picker => Vec::new(),
         };
@@ -2491,6 +2498,7 @@ impl Model {
                 return noted(fs_menu::keybinds::rows_for(reply, q));
             }
             Some("radio.search") => return noted(radio_search_rows(store, q)),
+            Some(fs_menu::providers::INSTALL_ROUTE) => return noted(crate::surfaces::packages::install_rows(store, q)),
             _ => {}
         }
         let snap = snapshot(store);
@@ -2514,7 +2522,7 @@ impl Model {
     }
 }
 
-fn now_ms() -> f64 {
+pub fn now_ms() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
 }
 
@@ -3625,6 +3633,7 @@ pub enum PaneKind {
     File,
     Folder,
     Window,
+    Package,
 }
 
 impl PaneKind {
@@ -3634,6 +3643,7 @@ impl PaneKind {
             PaneKind::File => "file",
             PaneKind::Folder => "folder",
             PaneKind::Window => "window",
+            PaneKind::Package => "package",
         }
     }
 }
@@ -3647,6 +3657,8 @@ pub fn pane_kind(n: &Node) -> Option<PaneKind> {
         Some(PaneKind::Folder)
     } else if matches!(&n.kind, NodeKind::Other(k) if k == fs_menu::actions::WINDOW_KIND) {
         Some(PaneKind::Window)
+    } else if fs_menu::providers::is_package(n) {
+        Some(PaneKind::Package)
     } else {
         None
     }
@@ -3755,6 +3767,12 @@ fn preview_el(m: &Model, store: &Store, row: &Node, theme: &Theme, kit: &mut Kit
             };
             (content, row.label.clone(), facts)
         }
+        PaneKind::Package => {
+            let body_line = ui::measure(&w::text("Ag"), width, theme, kit).1.max(1.0);
+            let lines = ((bh_f / body_line).floor() as usize).max(1);
+            let content = if row.full_text.is_empty() { muted("No description") } else { boxed(w::para(row.full_text.clone(), Type::Body, Weight::Normal, Ink::Fg, lines)) };
+            (content, row.label.clone(), row.path.clone())
+        }
         PaneKind::Window => {
             let facts = row.meta.clone().filter(|m| !m.is_empty()).map(|ws| format!("Workspace {ws}")).unwrap_or_default();
             let content = match &m.pane_frame {
@@ -3807,8 +3825,13 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     let s = &theme.space;
     let confirming = m.confirming(&row.id);
     let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
+    let live = fs_menu::providers::is_package(row).then(|| crate::surfaces::packages::live(store, &row.path)).flatten();
+    let checked = crate::surfaces::packages::row_checked(store, row, checked);
     let mut lead = Vec::new();
-    if let Some((image, h)) = thumb {
+    let ringed = live.as_ref().is_some_and(|l| l.ring.is_some());
+    if let Some(ring) = live.as_ref().and_then(|l| l.ring) {
+        lead.push(w::ring(ring).width(Size::Px(icon_px)).height(icon_px));
+    } else if let Some((image, h)) = thumb {
         lead.push(w::picture(image, h).width(Size::Px(h * 3.0)));
     }
     // A plugin's rows and its mode carry icon names from the active set,
@@ -3829,7 +3852,9 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     } else {
         String::new()
     };
-    if let Some(image) = picture {
+    if ringed {
+        // The ring stands in the icon slot.
+    } else if let Some(image) = picture {
         let density = image.pixmap.width() as f64 / icon_px.max(1.0);
         lead.push(w::picture(Some(image.at(density)), icon_px));
     } else if !drawn.is_empty() {
@@ -3854,6 +3879,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
         _ => 0,
     };
     let value = match windows {
+        _ if live.is_some() => live.map(|l| l.value).unwrap_or_default(),
         0 => fs_menu::actions::accessory_for(Some(row)),
         1 => "1 window".into(),
         n => format!("{n} windows"),

@@ -375,6 +375,12 @@ impl App {
         if let Some(id) = name.strip_prefix("clipboard.remove:") {
             return crate::services::clipboard::command(crate::services::clipboard::Cmd::Remove(id.to_owned()));
         }
+        if let Some(id) = name.strip_prefix("package.install:") {
+            return crate::surfaces::packages::install(&self.store, id);
+        }
+        if let Some(id) = name.strip_prefix("package.uninstall:") {
+            return crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
+        }
         if let Some(alias) = name.strip_prefix("clipssh.send:") {
             return crate::services::clipssh::command(crate::services::clipssh::Cmd::Send(alias.to_owned()));
         }

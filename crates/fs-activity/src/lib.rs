@@ -203,8 +203,8 @@ impl Group<'_> {
 }
 
 /// How a failed fspec operation is run again: what its stream line names
-/// is all there is to go on, so only a `run` (its package) and an `update`
-/// (its spec dir) can be.
+/// is all there is to go on, so only a `run` (its package), an `update`
+/// (its spec dir) and an `install` or `uninstall` (its search id) can be.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Retry {
     pub cwd: Option<String>,
@@ -220,6 +220,9 @@ impl Retry {
         match item.kind.as_str() {
             "run" => Some(Retry { cwd: None, argv: vec!["fspec".into(), "run".into(), "--detach".into(), arg.into()] }),
             "update" => Some(Retry { cwd: Some(arg.into()), argv: vec!["fspec".into(), "update".into()] }),
+            "install" | "uninstall" => {
+                Some(Retry { cwd: None, argv: vec!["fspec".into(), "app".into(), item.kind.clone(), arg.into(), "--detach".into()] })
+            }
             _ => None,
         }
     }

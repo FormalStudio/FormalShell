@@ -225,6 +225,9 @@ pub enum Ask {
     Peek(String),
     /// Whether each picked path is still there, and a folder.
     Stat(Vec<String>),
+    /// Icon files by absolute path, for rows that are no desktop entry (a
+    /// catalog's package icon).
+    Icons(Vec<String>),
 }
 
 static ASK: OnceLock<async_channel::Sender<Ask>> = OnceLock::new();
@@ -267,6 +270,13 @@ pub async fn run(ctx: Ctx) {
                     if !icons.is_empty() {
                         ctx.publish(store::Diff::Menu(Diff::Icons(icons)));
                     }
+                }
+            }
+            Ask::Icons(paths) => {
+                let scan = scan.clone();
+                let done = ctx.pool().run(move || scan.lock().unwrap().icons(&paths)).await;
+                if let Some(icons) = done.filter(|i| !i.is_empty()) {
+                    ctx.publish(store::Diff::Menu(Diff::Icons(icons)));
                 }
             }
             Ask::Conds(list) => {
@@ -523,15 +533,8 @@ impl Scan {
         };
         let cell = std::cell::RefCell::new(resolve);
         let rows = providers::apps_provider(&entries, Some(&|n: &str| (cell.borrow_mut())(n)), launches, None);
-        let mut fresh = Vec::new();
-        for row in &rows {
-            let path = &row.icon_source;
-            if path.is_empty() || !self.decoded.insert(path.clone()) {
-                continue;
-            }
-            let file = std::path::Path::new(path);
-            fresh.push((path.clone(), icons::load_at(file, ICON_EXTENT, scale), icons::load_at(file, ROW_ICON_EXTENT, scale)));
-        }
+        let paths: Vec<String> = rows.iter().map(|r| r.icon_source.clone()).collect();
+        let fresh = self.icons(&paths);
         let mut exec: HashMap<String, Vec<String>> = HashMap::new();
         for l in &self.entries {
             exec.insert(l.entry.id.clone(), l.entry.command.clone());
@@ -540,6 +543,20 @@ impl Scan {
             }
         }
         (rows, fresh, exec)
+    }
+
+    /// Each path not decoded yet, at the cell's and the row's size.
+    fn icons(&mut self, paths: &[String]) -> Vec<Icon> {
+        let scale = if self.scale > 0.0 { self.scale } else { crate::surface::primary_scale() };
+        let mut fresh = Vec::new();
+        for path in paths {
+            if path.is_empty() || !self.decoded.insert(path.clone()) {
+                continue;
+            }
+            let file = std::path::Path::new(path);
+            fresh.push((path.clone(), icons::load_at(file, ICON_EXTENT, scale), icons::load_at(file, ROW_ICON_EXTENT, scale)));
+        }
+        fresh
     }
 }
 

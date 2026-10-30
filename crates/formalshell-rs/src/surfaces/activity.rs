@@ -3,9 +3,9 @@
 //! the live toast and the notification centre all build from [`row`] and
 //! [`folded`], and a sidebar card is [`list`] with a small `max`.
 //!
-//! A row's `on` actions are `open:<source>`, `dismiss:<source>` and
-//! `retry:<source>`; [`event`] turns one into [`act`], which the IPC
-//! verbs call too.
+//! A row's `on` actions are `open:<source>`, `dismiss:<source>`,
+//! `retry:<source>` and `open-app:<source>`; [`event`] turns one into
+//! [`act`], which the IPC verbs call too.
 
 use fs_activity::{Group, Item, Origin, Retry, State};
 use fs_theme::theme::Theme;
@@ -43,7 +43,7 @@ pub fn detail(item: &Item) -> String {
 /// One live group: its lead's ring, title and detail, the count past one
 /// item, and its actions. `actions` off leaves the words alone (the bar's
 /// tooltip, a narrow card).
-pub fn row(theme: &Theme, g: &Group, actions: bool) -> El {
+pub fn row(theme: &Theme, store: &Store, g: &Group, actions: bool) -> El {
     let s = &theme.space;
     let lead = g.lead();
     let failed = g.state() == State::Failed;
@@ -58,6 +58,9 @@ pub fn row(theme: &Theme, g: &Group, actions: bool) -> El {
     .fill();
     let mut parts = vec![w::ring(ring(lead)), words];
     if actions {
+        if lead.state != State::Failed && crate::surfaces::packages::landed_app(store, g.source).is_some() {
+            parts.push(w::icon_button("square-arrow-out-up-right").tip("Open").on(format!("open-app:{}", g.source)));
+        }
         if lead.state == State::Failed && Retry::of(lead).is_some() {
             parts.push(w::icon_button("rotate-ccw").tip("Retry").on(format!("retry:{}", g.source)));
         }
@@ -87,7 +90,7 @@ pub fn list(theme: &Theme, store: &Store, max: usize) -> Vec<El> {
     let mut rows: Vec<El> = groups
         .iter()
         .take(max)
-        .map(|g| w::cell(row(theme, g, true)).ghost().interactive().on(format!("open:{}", g.source)).stop(g.source.to_owned()))
+        .map(|g| w::cell(row(theme, store, g, true)).ghost().interactive().on(format!("open:{}", g.source)).stop(g.source.to_owned()))
         .collect();
     if groups.len() > max {
         rows.push(w::caption(format!("+{}", groups.len() - max)).mono().ink(Ink::Dim));
@@ -100,6 +103,8 @@ pub enum Verb {
     Open,
     Dismiss,
     Retry,
+    /// The app an install brought.
+    OpenApp,
 }
 
 impl Verb {
@@ -109,6 +114,7 @@ impl Verb {
             "open" => Verb::Open,
             "dismiss" => Verb::Dismiss,
             "retry" => Verb::Retry,
+            "open-app" => Verb::OpenApp,
             _ => return None,
         };
         Some((verb, source))
@@ -182,9 +188,21 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
             }
             service::send(Input::Dismiss(source.to_owned()));
         }
+        Verb::OpenApp => {
+            let Some(app) = crate::surfaces::packages::landed_app(store, source) else { return Err(format!("error: '{source}' brought no app")) };
+            focus_app(store, app);
+            service::send(Input::Dismiss(source.to_owned()));
+        }
         Verb::Retry => {
             let Some(retry) = activity.retry(source) else { return Err(format!("error: '{source}' cannot be retried")) };
-            spawn(retry);
+            // The packages service follows its own installs' operations.
+            if let Some(id) = source.strip_prefix("fspec:install:") {
+                crate::surfaces::packages::install(store, id);
+            } else if let Some(id) = source.strip_prefix("fspec:uninstall:") {
+                crate::services::packages::send(crate::services::packages::Cmd::Uninstall(id.to_owned()));
+            } else {
+                spawn(retry);
+            }
             service::send(Input::Dismiss(source.to_owned()));
         }
     }

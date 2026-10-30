@@ -1180,7 +1180,8 @@ field, so moving your own row into the suggestions block is one line:
 
 `prefix` is what, typed with a space after it from anywhere, enters that
 node as a mode, keeping what follows as the query. The shipped tree sets
-`:e` on `emoji`, `:k` on `keybinds` and `:r` on `radio.search`; any route can
+`:e` on `emoji`, `:k` on `keybinds`, `:r` on `radio.search` and `:i` on
+`install`; any route can
 take one:
 
 ```jsonc
@@ -1283,7 +1284,7 @@ A route you step into is a mode: a token naming it sits before the query
 inside it. A mode inside a mode carries its path (`Radio Stations ›
 Search`), past two levels `… ›` and the last two. You get in by Enter or a
 click on its row, by `menu summon <id>` or its chord, or by its
-prefix and a space (`:e `, `:k `, `:r `, `:f `), from any level, a folder's
+prefix and a space (`:e `, `:k `, `:r `, `:f `, `:i `), from any level, a folder's
 listing or an app's windows included. You get out one level at a time by
 Backspace or `←` on an empty field, by Escape once the query is empty, or
 by a click on the token.
@@ -1496,7 +1497,23 @@ manager's own window with the file selected, else the folder through
 `xdg-open`), Copy path and Send to… (a LocalSend peer); a folder's are
 Open in the file manager, Copy path and Open folder contents.
 
-`System` also carries `Console` and `Screensaver` rows and a `Plugins`
+**Install** (`:i `) searches the package catalogues fspec reads (Flathub,
+your distro, the aqua registry) through `fspec search --offline`, 250ms
+after you stop typing and at two characters or more. Apps already here
+that match come first; each package row shows its catalogue icon, its
+source and version, and `Installed` with a tick once it is on the
+machine, and the preview pane holds its description. Enter installs it
+through `fspec app install`, which commits it to your spec's `apps.star`
+and applies it: the launcher stays open on the row, whose icon becomes a
+ring and whose value follows fspec (`Downloading 40%`), and Activity
+carries it once you close the launcher. A failure puts fspec's reason on
+the row and in Activity, where Retry starts the same install. Once it
+lands the new app heads `Recent` once and Activity's row offers Open. The
+launcher never runs a package manager or asks for a password itself;
+privilege prompts are the shell's polkit agent's. With no fspec on `PATH`
+the mode is one dim row, `Installing apps needs fspec`.
+
+ and a `Plugins`
 submenu (`List Plugins`, `Reload Plugins`), and the root has `Notifications`
 (`Clear All`, `Mark All Seen`, `Dismiss Popups`), `Theme` (`Retheme`, `Dark
 Mode`, `Light Mode`) and `Capture` nodes, so the launcher reaches every

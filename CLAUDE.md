@@ -656,6 +656,24 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   shell's log at 1.25, since Hyprland sends a subsurface no preferred scale
   and a corner left at the bar's 1 is a stretched picture on the panel. The
   frame of that output is pulled for reading.
+- `launcher_install.sh` `--launcher-install`: Install mode (launcher
+  spec §8) against a PATH-shimmed `fspec` speaking FormalSpec's
+  `docs/shell-install.md` (a fixture `search --json`, and `app install
+  --detach` starting `dev/fspec-activity-stub.py`'s `install` on the
+  session's real operation stream), read off `menu status`, `packages
+  status` and `activity status`: the rows with source and version, a
+  catalog icon, the installed one ticked and the description pane; every
+  dim state (Searching…, a failed search's reason, No packages, and fspec
+  gone reading `Installing apps needs fspec`); a real Enter reaching the
+  shim as exactly `app install <id> --detach` with the launcher left open
+  and the row's ring and value following the stream (Resolving,
+  Downloading 40%, Installing 50%); the live toast once it closes; the
+  shim's desktop entry found as the install's app, picked once in
+  state.json, Activity's Open (`activity openApp`) running it, and a search
+  for it heading with the app above its package, which reads Installed; a
+  failing install's reason on the row and in Activity, and `activity
+  retry` reaching the shim as the same install. Photographed dark and
+  light (`--launcher-install --light`).
 - `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
   read off `menu status`'s `level` and `token`: every route the rig lists
   entered by its name and Enter and by `menu summon`, the five prefixes

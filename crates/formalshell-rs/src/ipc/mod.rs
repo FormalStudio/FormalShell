@@ -35,6 +35,7 @@ mod menu;
 mod mirror;
 mod notifications;
 mod overnight;
+mod packages;
 mod monitor;
 mod network;
 mod nightlight;
@@ -118,6 +119,7 @@ fn registry() ->&'static Registry<App> {
             lights::target(),
             switcher::target(),
             sidebar::target(),
+            packages::target(),
             clipboard::target(),
             picker::target(),
             localsend::target(),

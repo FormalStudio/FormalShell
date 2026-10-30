@@ -385,7 +385,7 @@ impl Toasts {
             cards.insert(k, Card { el, critical: g.urgency == Urgency::Critical, members: g.member_ids.clone() });
         }
         for g in &live {
-            let el = activity::row(theme, g, true);
+            let el = activity::row(theme, store, g, true);
             let critical = g.state() == fs_activity::State::Failed;
             cards.insert(format!("{ACTIVITY}{}", g.source), Card { el, critical, members: Vec::new() });
         }

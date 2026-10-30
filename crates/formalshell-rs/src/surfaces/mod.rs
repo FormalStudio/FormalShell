@@ -13,6 +13,7 @@ pub mod lock;
 pub mod login;
 pub mod modal;
 pub mod osd;
+pub mod packages;
 pub mod panel;
 pub mod popup;
 pub mod shoulders;
@@ -41,7 +42,11 @@ pub fn changed(app: &mut App, topic: Topic) {
     app.overlay_changed(topic);
     app.preview_changed(topic);
     match topic {
-        Topic::Menu => app.launcher_store_changed(),
+        Topic::Menu => {
+            packages::land(&mut app.store);
+            app.launcher_store_changed();
+        }
+        Topic::Packages => app.launcher_store_changed(),
         Topic::Config => {
             app.launcher_inputs();
             crate::services::picker::command(crate::services::picker::Cmd::Boot(app.store.config.str("picker.directory").unwrap_or("").to_owned()));
@@ -129,6 +134,9 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.launcher_store_changed();
         }
         Topic::Activity => {
+            if packages::land(&mut app.store) || app.launcher.level.as_deref() == Some(fs_menu::providers::INSTALL_ROUTE) {
+                app.launcher_store_changed();
+            }
             app.toasts_changed();
             app.refresh_bar(Some(topic));
         }

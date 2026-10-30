@@ -12,6 +12,10 @@ reads the shell's status at a known step.
   fail  an update: resolving 0/2, failed
   die   a rollback: planning with no progress, then a final line cut short
         and the socket gone, the way a killed fspec leaves a reader
+  install  an install from the launcher (FSPEC_STUB_PKG, FSPEC_STUB_TITLE):
+        resolving, preparing 40%, committing 1/2, succeeded
+  installfail  the same failing at preparing 10%
+  uninstall  resolving, committing 0/1, succeeded
   strand  a run: resolving 0/1, resolving 1/1, preparing, succeeded, with
         the first connection held open and never written to again past its
         snapshot, the way fspec treats a reader whose snapshot it could not
@@ -72,6 +76,32 @@ def scenario(name, op_id):
             o(phase="resolving", progress={"done": 1, "total": 1, "unit": "packages"}, item="smoke-strand"),
             o(phase="preparing"),
             o(state="succeeded", phase="preparing", result={"changes": 0, "summary": "started"}),
+        ]
+    if name in ("install", "installfail", "uninstall"):
+        # The package and its title come from the shim that started the stub.
+        pkg = os.environ.get("FSPEC_STUB_PKG", "flatpak:org.example.smoke")
+        title = os.environ.get("FSPEC_STUB_TITLE", "smoke")
+        verb = "uninstall" if name == "uninstall" else "install"
+        words = "Uninstalling" if verb == "uninstall" else "Installing"
+        o = lambda **f: op(op_id, verb, f"fspec:{verb}:{pkg}", f"{words} {title}", host="smoke",
+                           keys=[f"pkg:{pkg.split(':', 1)[-1]}"], **f)
+        if name == "uninstall":
+            return [
+                o(phase="resolving"),
+                o(phase="committing", scope="system", progress={"done": 0, "total": 1, "unit": "resources"}, item=pkg),
+                o(state="succeeded", phase="pushing", result={"changes": 1, "summary": "1 change"}),
+            ]
+        if name == "installfail":
+            return [
+                o(phase="preparing", scope="system", progress={"done": 10, "total": 100, "unit": "percent"}, item=title),
+                o(state="failed", phase="preparing", progress={"done": 10, "total": 100, "unit": "percent"},
+                  error="flatpak: remote flathub is not reachable"),
+            ]
+        return [
+            o(phase="resolving", item="spec"),
+            o(phase="preparing", scope="system", progress={"done": 40, "total": 100, "unit": "percent"}, item=title),
+            o(phase="committing", scope="system", progress={"done": 1, "total": 2, "unit": "resources"}, item=pkg),
+            o(state="succeeded", phase="pushing", result={"changes": 2, "summary": "2 changes"}),
         ]
     if name == "die":
         o = lambda **f: op(op_id, "rollback", "fspec:rollback:smoke", "Rolling back smoke", host="smoke", **f)

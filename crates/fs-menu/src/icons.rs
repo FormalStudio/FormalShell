@@ -68,6 +68,7 @@ pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("radio", "radio"),
     ("radio.search", "search"),
     ("radio.stop", "square"),
+    ("install", "package-plus"),
     ("capture", "camera"),
     ("capture.text", "scan-text"),
     ("capture.color", "pipette"),
@@ -153,6 +154,7 @@ pub fn fallback_for(node: Option<&Node>) -> &'static str {
         Some(Kind::Action) => "terminal",
         Some(Kind::Other(k)) if k == crate::actions::WINDOW_KIND => "app-window",
         Some(Kind::Other(k)) if k == crate::providers::FOLDER_KIND => "folder",
+        Some(Kind::Other(k)) if k == crate::providers::PACKAGE_KIND => "package",
         Some(Kind::Other(k)) if k == crate::providers::FILE_KIND => {
             if node.is_some_and(|n| crate::providers::is_image(&n.path)) { "file-image" } else { "file" }
         }

@@ -1,7 +1,8 @@
 //! `activity`: what is running, grouped by source (`services/activity.rs`),
 //! `seen`, which folds the failures that stay until looked at, a row's own
 //! verbs by source (`surfaces/activity.rs`), and `launch`, a desktop entry
-//! spawned with its launch shown (`services/launch.rs`), for a keybind.
+//! spawned with its launch shown (`services/launch.rs`), for a keybind, and
+//! `openApp`, the app an install brought, off its row's source.
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::activity::{self, Input};
@@ -43,6 +44,10 @@ fn retry(app: &mut App, args: &[Value]) -> Value {
     verb(app, Verb::Retry, args[0].str())
 }
 
+fn open_app(app: &mut App, args: &[Value]) -> Value {
+    verb(app, Verb::OpenApp, args[0].str())
+}
+
 fn launch(app: &mut App, args: &[Value]) -> Value {
     let id = args[0].str();
     let Some(argv) = crate::services::menu::launch_argv(&app.store.menu, id) else {
@@ -62,6 +67,7 @@ pub fn target() -> Target<App> {
             Function { name: "dismiss", params: &[("source", Type::String)], ret: Type::String, call: dismiss },
             Function { name: "retry", params: &[("source", Type::String)], ret: Type::String, call: retry },
             Function { name: "launch", params: &[("desktopId", Type::String)], ret: Type::String, call: launch },
+            Function { name: "openApp", params: &[("source", Type::String)], ret: Type::String, call: open_app },
         ],
     }
 }

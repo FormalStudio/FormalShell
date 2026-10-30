@@ -127,7 +127,18 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--menu-hover", "--plugins", "--launcher-glass", "--launcher-glass --no-morph", "--launcher-density"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--launcher-glass", "--launcher-glass --no-morph", "--launcher-density"]
+
+# Install mode: fspec as the package manager
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/services/packages.rs",
+  "crates/formalshell-rs/src/surfaces/packages.rs",
+  "crates/formalshell-rs/src/ipc/packages.rs",
+  "crates/fs-menu/src/providers/packages.rs",
+  "dev/smoke.d/launcher_install.sh",
+]
+runs = ["--launcher-install", "--launcher-install --light"]
 
 [[rule]]
 paths = [
@@ -145,7 +156,7 @@ runs = ["--app-grid", "--grid-relaunch", "--menu"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/actions.rs", "crates/fs-menu/src/calc.rs"]
-runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-preview", "--launcher-send"]
+runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-preview", "--launcher-send", "--launcher-install"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/clipboard/emoji.rs", "crates/fs-menu/src/providers/emoji.rs"]
@@ -419,7 +430,7 @@ paths = [
   "crates/fs-activity/**",
   "dev/fspec-activity-stub.py",
 ]
-runs = ["--activity", "--launch"]
+runs = ["--activity", "--launch", "--launcher-install"]
 
 # Launch feedback, and the paths that spawn a desktop entry through it.
 [[rule]]

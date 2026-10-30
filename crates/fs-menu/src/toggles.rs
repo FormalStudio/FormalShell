@@ -149,6 +149,9 @@ pub fn checked_for(
 ) -> bool {
     let Some(node) = node else { return false };
     let Some(checked) = &node.checked else { return false };
+    if checked == crate::providers::PACKAGE_INSTALLED {
+        return true;
+    }
     if let Some(live) = resolve_state(checked, snap) {
         return live;
     }

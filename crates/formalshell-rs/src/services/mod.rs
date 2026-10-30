@@ -33,6 +33,7 @@ pub mod motion_art;
 pub mod nightlight;
 pub mod notifications;
 pub mod overnight;
+pub mod packages;
 pub mod picker;
 pub mod info;
 pub mod launch;
@@ -93,6 +94,7 @@ pub fn start(ctx: &Ctx) {
     ctx.spawn(inhibit::run(ctx.clone()));
     ctx.spawn(clipboard::run(ctx.clone()));
     ctx.spawn(clipssh::run(ctx.clone()));
+    ctx.spawn(packages::run(ctx.clone()));
     ctx.spawn(power::run(ctx.clone()));
     ctx.spawn(picker::run(ctx.clone()));
     ctx.spawn(localsend::run(ctx.clone()));

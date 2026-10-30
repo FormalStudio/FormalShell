@@ -9,7 +9,7 @@
 use crate::abbrev::Source;
 use crate::model::Mode;
 use crate::node::{ActionEntry, Kind, Node};
-use crate::providers::{FILE_KIND, FOLDER_KIND, clipboard_entry_id, is_wifi_network};
+use crate::providers::{FILE_KIND, FOLDER_KIND, PACKAGE_KIND, clipboard_entry_id, is_wifi_network};
 
 /// What running an action does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -265,6 +265,13 @@ fn builtins(s: &Subject) -> Vec<Action> {
             out.push(Action::new("open", "Open in the file manager", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
             out.push(copy("copy-path", "Copy path", &n.path));
             out.push(Action::new("contents", "Open folder contents", Run::Into(subject_id(n))));
+        }
+        Kind::Other(k) if k == PACKAGE_KIND => {
+            if let Some(action) = n.action.as_deref() {
+                let mut install = Action::new("install", "Install", Run::parse(action));
+                install.keep_open = true;
+                out.push(install);
+            }
         }
         Kind::Image => {
             let label = if s.picker_select { "Choose" } else { "Set wallpaper" };

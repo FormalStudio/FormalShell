@@ -1,0 +1,280 @@
+//! fspec as the shell's package manager (FormalSpec
+//! `docs/shell-install.md`): Install mode's catalogue search, the install
+//! and uninstall it starts, and which fspec package owns a desktop file.
+//! The work itself is fspec's, on the operation stream Activity reads; this
+//! only starts it and keeps what the launcher draws off.
+//!
+//! A search waits 250ms after the last query and a newer one drops the
+//! child still answering an older one. `--offline` keeps crates.io and npm
+//! out, so a keystroke never waits on the network.
+
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+
+use async_channel::{Receiver, Sender};
+use async_io::Timer;
+use fs_menu::providers::{self as p, Owner, Package};
+use futures_lite::{FutureExt, future};
+
+use super::proc;
+use crate::runtime::Ctx;
+use crate::store;
+
+const DEBOUNCE: Duration = Duration::from_millis(250);
+const SEARCH_LIMIT: &str = "30";
+/// What a search answers with no fspec to ask.
+pub const NO_FSPEC: &str = "Installing apps needs fspec";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verb {
+    Install,
+    Uninstall,
+}
+
+impl Verb {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Verb::Install => "install",
+            Verb::Uninstall => "uninstall",
+        }
+    }
+}
+
+/// One install or uninstall the shell started, by package id.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Started {
+    pub id: String,
+    /// The catalog's name for it, which the app it brings is matched on.
+    pub name: String,
+    pub verb: Verb,
+    /// The operation id once fspec printed one, `Ok(None)` while it starts,
+    /// the reason it never started.
+    pub op: Result<Option<String>, String>,
+    /// The desktop ids before the install, so the one it brings is found.
+    pub before: HashSet<String>,
+    /// The app the install brought, once the scan after it found one.
+    pub app: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct State {
+    /// The last query answered and its packages or why there are none.
+    pub search: Option<(String, Result<Vec<Package>, String>)>,
+    pub started: Vec<Started>,
+    /// `fspec app owner` by desktop id.
+    pub owners: HashMap<String, Owner>,
+    /// The fspec operations whose success this shell already acted on (a
+    /// rescan, a pick for the new app). Written on the UI thread.
+    pub landed: HashSet<String>,
+}
+
+pub enum Diff {
+    Search(String, Result<Vec<Package>, String>),
+    Started(Started),
+    Owner(String, Owner),
+}
+
+impl State {
+    pub fn apply(&mut self, diff: Diff) -> bool {
+        match diff {
+            Diff::Search(q, found) => {
+                let next = Some((q, found));
+                if self.search == next {
+                    return false;
+                }
+                self.search = next;
+            }
+            Diff::Started(s) => match self.started.iter_mut().find(|x| x.id == s.id) {
+                Some(x) if x.op == s.op && x.verb == s.verb => return false,
+                Some(x) => {
+                    x.op = s.op;
+                    x.verb = s.verb;
+                    if !s.name.is_empty() {
+                        x.name = s.name;
+                    }
+                    if s.verb == Verb::Install {
+                        x.before = s.before;
+                        x.app = None;
+                    }
+                }
+                None => self.started.push(s),
+            },
+            Diff::Owner(id, owner) => {
+                if self.owners.get(&id) == Some(&owner) {
+                    return false;
+                }
+                self.owners.insert(id, owner);
+            }
+        }
+        true
+    }
+
+    /// The shell's own start of `id`, newest verb.
+    pub fn started(&self, id: &str) -> Option<&Started> {
+        self.started.iter().find(|s| s.id == id)
+    }
+
+    /// The search id an Uninstall of desktop entry `desktop` takes, once
+    /// the owner query answered that fspec can take it out.
+    pub fn removable(&self, desktop: &str) -> Option<&str> {
+        self.owners.get(desktop).and_then(Owner::removable_id)
+    }
+}
+
+pub enum Cmd {
+    Search(String),
+    /// A package id, its name, and the desktop ids there before it.
+    Install(String, String, HashSet<String>),
+    Uninstall(String),
+    /// Who owns this desktop id, asked once until [`Cmd::Forget`].
+    Owner(String),
+    /// Ownership moved (an install, an uninstall, an undo landed).
+    Forget,
+}
+
+static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
+
+/// Callable from any thread.
+pub fn send(cmd: Cmd) {
+    let _ = CHANNEL.0.try_send(cmd);
+}
+
+type Searching = Pin<Box<dyn Future<Output = (String, proc::Done)> + Send>>;
+
+enum Wake {
+    Cmd(Cmd),
+    Due,
+    Searched(String, proc::Done),
+    Gone,
+}
+
+fn searched(code: i32, stdout: &str, stderr: &str) -> Result<Vec<Package>, String> {
+    match code {
+        0 => Ok(p::parse_search(stdout)),
+        proc::MISSING => Err(NO_FSPEC.into()),
+        proc::TIMED_OUT => Err("fspec search timed out".into()),
+        _ => Err(p::failure(stderr, code)),
+    }
+}
+
+fn spawn_app(ctx: &Ctx, verb: Verb, id: String, name: String, before: HashSet<String>) {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let done = proc::capture_err(&proc::argv(&["fspec", "app", verb.as_str(), &id, "--detach"]), Duration::from_secs(300)).await;
+        let op = match (done.code, p::parse_op(&done.stdout)) {
+            (0, Some(op)) => Ok(Some(op)),
+            (0, None) => Err("fspec printed no operation".into()),
+            (proc::MISSING, _) => Err(NO_FSPEC.into()),
+            (code, _) => Err(p::failure(&done.stderr, code)),
+        };
+        if let Err(why) = &op {
+            eprintln!("packages: fspec app {} {id}: {why}", verb.as_str());
+        }
+        c.publish(store::Diff::Packages(Diff::Started(Started { id, name, verb, op, before, app: None })));
+    });
+}
+
+pub async fn run(ctx: Ctx) {
+    // The query last asked for, answered or not: the launcher asks again
+    // on every resolve.
+    let mut last: Option<String> = None;
+    let mut pending: Option<String> = None;
+    let mut due: Option<Instant> = None;
+    let mut searching: Option<Searching> = None;
+    let mut asked: HashSet<String> = HashSet::new();
+    loop {
+        let wake = {
+            let timer = async {
+                match due {
+                    Some(t) => {
+                        Timer::at(t).await;
+                        Wake::Due
+                    }
+                    None => future::pending().await,
+                }
+            };
+            let answer = async {
+                match searching.as_mut() {
+                    Some(f) => {
+                        let (q, done) = f.await;
+                        Wake::Searched(q, done)
+                    }
+                    None => future::pending().await,
+                }
+            };
+            async { CHANNEL.1.recv().await.map_or(Wake::Gone, Wake::Cmd) }.or(timer).or(answer).await
+        };
+        match wake {
+            Wake::Gone => return,
+            Wake::Cmd(Cmd::Search(q)) => {
+                if last.as_deref() == Some(q.as_str()) {
+                    continue;
+                }
+                searching = None;
+                last = Some(q.clone());
+                pending = Some(q);
+                due = Some(Instant::now() + DEBOUNCE);
+            }
+            Wake::Due => {
+                due = None;
+                let Some(q) = pending.take() else { continue };
+                let argv = proc::argv(&["fspec", "search", "--json", "--offline", "--limit", SEARCH_LIMIT, &q]);
+                searching = Some(Box::pin(async move {
+                    let done = proc::capture_err(&argv, Duration::from_secs(30)).await;
+                    (q, done)
+                }));
+            }
+            Wake::Searched(q, done) => {
+                searching = None;
+                ctx.publish(store::Diff::Packages(Diff::Search(q, searched(done.code, &done.stdout, &done.stderr))));
+            }
+            Wake::Cmd(Cmd::Install(id, name, before)) => {
+                let started = Started { id: id.clone(), name: name.clone(), verb: Verb::Install, op: Ok(None), before: before.clone(), app: None };
+                ctx.publish(store::Diff::Packages(Diff::Started(started)));
+                spawn_app(&ctx, Verb::Install, id, name, before);
+            }
+            Wake::Cmd(Cmd::Uninstall(id)) => {
+                let started = Started { id: id.clone(), name: String::new(), verb: Verb::Uninstall, op: Ok(None), before: HashSet::new(), app: None };
+                ctx.publish(store::Diff::Packages(Diff::Started(started)));
+                spawn_app(&ctx, Verb::Uninstall, id, String::new(), HashSet::new());
+            }
+            Wake::Cmd(Cmd::Owner(desktop)) => {
+                if !asked.insert(desktop.clone()) {
+                    continue;
+                }
+                let c = ctx.clone();
+                ctx.spawn(async move {
+                    let done = proc::capture(&proc::argv(&["fspec", "app", "owner", &desktop, "--json"]), Duration::from_secs(20)).await;
+                    let owner = if done.code == 0 { Owner::parse(&done.stdout) } else { Owner::default() };
+                    c.publish(store::Diff::Packages(Diff::Owner(desktop, owner)));
+                });
+            }
+            Wake::Cmd(Cmd::Forget) => asked.clear(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_search_reads_each_way_it_ends() {
+        assert_eq!(searched(proc::MISSING, "", ""), Err(NO_FSPEC.to_owned()));
+        assert_eq!(searched(1, "", "fspec: no catalog\n"), Err("no catalog".to_owned()));
+        assert_eq!(searched(0, "", ""), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn an_owner_answer_gates_the_uninstall() {
+        let mut s = State::default();
+        s.apply(Diff::Owner("firefox".into(), Owner { id: Some("flatpak:org.mozilla.firefox".into()), removable: true }));
+        s.apply(Diff::Owner("gimp".into(), Owner { id: Some("zypper:gimp".into()), removable: false }));
+        assert_eq!(s.removable("firefox"), Some("flatpak:org.mozilla.firefox"));
+        assert_eq!(s.removable("gimp"), None);
+        assert_eq!(s.removable("other"), None);
+    }
+}
