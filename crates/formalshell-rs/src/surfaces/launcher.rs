@@ -22,6 +22,7 @@ use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir, KeyAction, KeyCtx, KeyMode};
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
+use fs_chrome::types::Edge;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
@@ -2527,15 +2528,23 @@ impl Shown {
         (line, head, foot, body)
     }
 
-    /// The card at this frame of its size morph, centred across the
-    /// output. On a layer that is all a frame of the morph does: the
-    /// content stays laid out at the size the card is headed for.
+    /// The card at this frame of its size morph: centred along the line it
+    /// buds off, its near side 30% of the way across the output. On a
+    /// layer that is all a frame of the morph does: the content stays laid
+    /// out at the size the card is headed for.
     pub fn place_card(&mut self, theme: &Theme, now: Instant) {
         let (w_, h_) = (self.morph.0.value(now).round(), self.morph.1.value(now).round());
-        let x = ((self.output.0 - w_) / 2.0).round();
         let pad = theme.space.panel_padding;
-        let max_top = self.output.1 - h_ - pad;
-        let y = if max_top < pad { pad } else { (self.output.1 * 0.3).clamp(pad, max_top) }.round();
+        let near = |extent: f64, size: f64| {
+            let max = extent - size - pad;
+            if max < pad { pad } else { (extent * 0.3).clamp(pad, max) }.round()
+        };
+        let centred = |extent: f64, size: f64| ((extent - size) / 2.0).max(pad).round();
+        let (x, y) = match self.modal.card.edge {
+            Edge::Left => (near(self.output.0, w_), centred(self.output.1, h_)),
+            Edge::Right => (self.output.0 - w_ - near(self.output.0, w_), centred(self.output.1, h_)),
+            _ => (((self.output.0 - w_) / 2.0).round(), near(self.output.1, h_)),
+        };
         self.modal.place(Rect::new(x, y, x + w_, y + h_), now);
     }
 

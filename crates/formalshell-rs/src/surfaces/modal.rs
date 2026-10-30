@@ -1,8 +1,8 @@
-//! A modal card (a drawer on the top edge with a scrim under it): the
-//! card budding off the top line on its own full-output surface, which
-//! holds the keyboard while open, and the two single-pixel scrim surfaces
-//! riding its pose: the band over the top line's own inset, which fades in
-//! only as the card lets go of the line (`1 - attach`), and the rest of the
+//! A modal card (a drawer on the bar's edge with a scrim under it): the
+//! card budding off the line on its own full-output surface, which holds
+//! the keyboard while open, and the two single-pixel scrim surfaces riding
+//! its pose: the band over the line's own inset, which fades in only as
+//! the card lets go of the line (`1 - attach`), and the rest of the
 //! output. The launcher, the polkit dialog and the radio atlas are each one
 //! of these; the owner lays its content out in `card.content` under
 //! `card.content_clip()`.
@@ -57,6 +57,7 @@ impl Modal {
         dim: PixelSurface,
         namespace: &'static str,
         output: (f64, f64),
+        edge: Edge,
         line_at: f64,
         ends: Ends,
         scale: f64,
@@ -64,7 +65,8 @@ impl Modal {
         deform_amount: f64,
     ) -> Self {
         let rest = Rect::new(0.0, line_at, 0.0, line_at);
-        let mut card = Card::build(theme, "card", Edge::Top, (output.0 as i32, output.1 as i32), line_at, rest, scale, cast, true);
+        let size = if edge.is_vertical() { (output.1, output.0) } else { output };
+        let mut card = Card::build(theme, "card", edge, (size.0 as i32, size.1 as i32), line_at, rest, scale, cast, true);
         card.ends = ends;
         card.deform_amount = deform_amount;
         Self { card, surface, band, dim, namespace, open: true, region: None, layer: None, quads: None }
@@ -99,10 +101,12 @@ impl Modal {
         self.quads.as_ref().is_some_and(Quads::rastering)
     }
 
-    /// Moves the card's resting rect, drawn on this frame: content laid
-    /// out in the new rect never shows over the card's last one. A second
-    /// tick on one frame leaves the deform to the next (`Deform::step_at`).
+    /// Moves the card's resting rect, given on the output, drawn on this
+    /// frame: content laid out in the new rect never shows over the card's
+    /// last one. A second tick on one frame leaves the deform to the next
+    /// (`Deform::step_at`).
     pub fn place(&mut self, rest: Rect, now: Instant) {
+        let rest = self.card.edge_map().inverse().transform_rect_bbox(rest);
         if rest != self.card.rest() {
             self.card.set_rect(rest, rest);
             self.card.tick(now);

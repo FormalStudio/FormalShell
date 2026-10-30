@@ -46,41 +46,51 @@ impl Window {
 }
 
 impl App {
-    /// Theme.edgeInset's top: the bar's thickness on a top bar, the frame
-    /// ring's on a framed one, nothing on a bare edge.
-    pub(super) fn top_inset(&self) -> f64 {
+    /// The line a modal card buds off and how far in it lies: a side bar's
+    /// inner edge, else Theme.edgeInset's top (the bar's thickness on a top
+    /// bar, the frame ring's on a framed one, nothing on a bare edge).
+    pub(super) fn modal_line(&self) -> (Edge, f64) {
+        let edge = self.bar.edge();
         if self.bar.hidden() {
-            0.0
-        } else if self.bar.edge() == Edge::Top {
-            self.bar.thickness() as f64
+            (Edge::Top, 0.0)
+        } else if edge == Edge::Top || (edge.is_vertical() && !self.bar.framed()) {
+            (edge, self.bar.thickness() as f64)
         } else if self.bar.framed() {
-            self.bar.frame_thickness()
+            (Edge::Top, self.bar.frame_thickness())
         } else {
-            0.0
+            (Edge::Top, 0.0)
         }
     }
 
     /// A modal card's three surfaces on `layer` under `namespace`: the
     /// card's own full-output one holding the keyboard, the band over the
-    /// top line's inset (none on a bare edge) and the dim under the rest.
+    /// line's inset (none on a bare edge) and the dim under the rest.
     pub(super) fn new_modal(&self, names: [&'static str; 3], namespace: &'static str, layer: Layer, deform_amount: f64) -> Modal {
         let theme = &self.store.theme.theme;
         let output = self.output_size();
-        let inset = self.top_inset();
-        let framed = self.bar.framed();
+        let (edge, inset) = self.modal_line();
+        let framed = self.bar.framed() && edge == Edge::Top;
         let ft = if framed { self.bar.frame_thickness() } else { 0.0 };
-        let ends = Ends { along: output.0, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
+        let along = if edge.is_vertical() { output.1 } else { output.0 };
+        let ends = Ends { along, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
         // The scrim's alpha rides in its pixel, under the modal namespaces'
         // `ignore_alpha`, so it only darkens and the card alone is blurred.
         let tone = f64::from(theme.box_style("scrim", None).fill.a);
         let band = (inset > 0.0).then(|| {
-            let ls = self.overlay(namespace, layer, Anchor::TOP | Anchor::LEFT | Anchor::RIGHT, (0, inset as u32), -1);
+            let size = if edge.is_vertical() { (inset as u32, 0) } else { (0, inset as u32) };
+            let ls = self.overlay(namespace, layer, super::edge_anchor(edge), size, -1);
             PixelSurface::new(names[1], ls, tone, &self.pixels, &self.qh, self.started)
         });
         let ls = self.layer_shell.create_layer_surface(&self.qh, self.compositor.create_surface(&self.qh), layer, Some(namespace), self.bar_wl.as_ref());
         ls.set_anchor(Anchor::all());
         ls.set_size(0, 0);
-        ls.set_margin(inset as i32, 0, 0, 0);
+        let i = inset as i32;
+        match edge {
+            Edge::Top => ls.set_margin(i, 0, 0, 0),
+            Edge::Right => ls.set_margin(0, i, 0, 0),
+            Edge::Bottom => ls.set_margin(0, 0, i, 0),
+            Edge::Left => ls.set_margin(0, 0, 0, i),
+        }
         ls.set_exclusive_zone(-1);
         ls.set_keyboard_interactivity(KeyboardInteractivity::None);
         if let Ok(region) = Region::new(&self.compositor) {
@@ -93,7 +103,7 @@ impl App {
         card.commit();
         let mut surface = Surface::new(names[0], card, &self.shm, self.started);
         surface.wait_map = true;
-        Modal::new(theme, surface, band, dim, namespace, output, inset, ends, self.motion_scale, self.cast, deform_amount)
+        Modal::new(theme, surface, band, dim, namespace, output, edge, inset, ends, self.motion_scale, self.cast, deform_amount)
     }
 
     /// A popover card's look handed to the compositor, for an owner whose
