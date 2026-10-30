@@ -148,12 +148,17 @@ pub fn entry(style: &Value, role: &str, state: Option<&str>) -> Option<Map<Strin
     Some(out)
 }
 
-/// A number, `"surface"`, or a `{ light, dark }` pair the mode picks
-/// between. Absent reads as opaque.
+/// A number, `"surface"`, `{ glass }`, or a `{ light, dark }` pair the
+/// mode picks between. Absent reads as opaque. `{ glass }` is a fill of its
+/// own alpha that only holds while the cards are translucent at all, so it
+/// goes opaque with them where the compositor does not blur.
 pub fn alpha_for(value: Option<&Value>, ctx: &impl Ctx) -> f64 {
     match value {
         None | Some(Value::Null) => 1.0,
         Some(Value::String(s)) if s == "surface" => ctx.surface_opacity(),
+        Some(Value::Object(o)) if o.contains_key("glass") => {
+            if ctx.surface_opacity() < 1.0 { num(o.get("glass")).unwrap_or(f64::NAN) } else { 1.0 }
+        }
         Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
         Some(Value::Object(pair)) => {
             let side = if ctx.mode() == "light" { "light" } else { "dark" };

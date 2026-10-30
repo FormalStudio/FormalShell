@@ -635,7 +635,7 @@ impl App {
             h.card.tick(now);
             self.panel_dirty = true;
         }
-        if let Some(p) = &mut self.overflow {
+        for p in [&mut self.overflow, &mut self.menu].into_iter().flatten() {
             p.card.restyle(theme, self.cast);
             p.card.tick(now);
         }

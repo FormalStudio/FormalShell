@@ -315,7 +315,9 @@
         },
         "popover": {
             "fill": "popover",
-            "fillAlpha": 0.9,
+            "fillAlpha": {
+                "glass": 0.9
+            },
             "radius": "md",
             "layers": [
                 {
@@ -1187,7 +1189,9 @@
         },
         "switcher": {
             "fill": "background",
-            "fillAlpha": 0.6,
+            "fillAlpha": {
+                "glass": 0.6
+            },
             "radius": "lg",
             "border": {
                 "color": "black",

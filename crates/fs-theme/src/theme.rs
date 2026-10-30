@@ -725,6 +725,16 @@ mod tests {
     }
 
     #[test]
+    fn a_glass_fill_goes_opaque_with_the_cards() {
+        let mut t = theme();
+        assert_eq!(t.box_style("switcher", None).fill.a, 0.6);
+        assert_eq!(t.box_style("popover", None).fill.a, 0.9);
+        t.surface_opacity = 1.0;
+        assert_eq!(t.box_style("switcher", None).fill.a, 1.0);
+        assert_eq!(t.box_style("popover", None).fill.a, 1.0);
+    }
+
+    #[test]
     fn a_malformed_scalar_falls_back_to_the_default() {
         let t = Theme::resolve(make_get(json!({ "theme": { "surfaceOpacity": 4, "blur": "false" } })), &sentinel());
         assert_eq!(t.surface_opacity, 1.0);
