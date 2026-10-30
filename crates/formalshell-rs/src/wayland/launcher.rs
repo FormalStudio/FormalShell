@@ -28,12 +28,15 @@ const WIFI_PASSWORD: &str = "wifi-password";
 const WIFI_IDENTITY: &str = "wifi-identity";
 const REMINDER_SET: &str = "reminder-set";
 const LIGHTS_COLOR: &str = "lights-color";
+const BTN_LEFT: u32 = 0x110;
+const BTN_RIGHT: u32 = 0x111;
 
 pub struct Window {
     pub shown: Shown,
     /// The Wi-Fi route keeps the scanner awake while it is the level.
     scan: Option<crate::services::devices::network::Hold>,
-    pressed: Option<String>,
+    /// What a button went down on, and the button.
+    pressed: Option<(String, u32)>,
 }
 
 impl Window {
@@ -751,14 +754,9 @@ impl App {
         true
     }
 
-    /// The launcher body's viewport on the output, while it is open.
-    pub fn launcher_body(&self) -> Option<crate::scene::IRect> {
-        self.launch.as_ref().filter(|w| w.shown.modal.open).and_then(|w| w.shown.body_rect)
-    }
-
-    /// The mode token's box on the output, while the open launcher draws one.
-    pub fn launcher_token(&self) -> Option<crate::scene::IRect> {
-        self.launch.as_ref().filter(|w| w.shown.modal.open).and_then(|w| w.shown.token_rect())
+    /// The launcher's window, while it is open.
+    pub fn launcher_shown(&self) -> Option<&Shown> {
+        self.launch.as_ref().filter(|w| w.shown.modal.open).map(|w| &w.shown)
     }
 
     /// `mirror status`.
@@ -1023,23 +1021,19 @@ impl App {
     }
 
     /// The pointer over the launcher's window. True when it took the event.
+    /// It tints what it hovers and never moves the selection (launcher
+    /// spec §6).
     pub(super) fn launcher_pointer(&mut self, e: &PointerEvent, owner: Option<Owner>) -> bool {
         if owner != Some(Owner::Launcher(Part::Card)) {
             return false;
         }
         let Some(w) = &mut self.launch else { return true };
         let (x, y) = e.position;
+        let on = |w: &Window| w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.on_card(x, y)).then(|| "outside".into()));
         match e.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
-                let hit = w.shown.hit(x, y);
-                if w.shown.set_hover(hit.as_ref().map(|h| h.path.clone())) {
+                if w.shown.set_hover(w.shown.hit(x, y).map(|h| h.path)) {
                     self.launcher.dirty = true;
-                }
-                // An enter alone is the card mapping under a pointer that has
-                // not moved, which leaves the cursor where the keys put it.
-                let moved = matches!(e.kind, PointerEventKind::Motion { .. }) && !self.launcher.actions_open();
-                if let Some(i) = hit.and_then(|h| h.on).filter(|_| moved).and_then(|on| on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok())) {
-                    self.launcher.set_cursor(i);
                 }
             }
             PointerEventKind::Leave { .. } => {
@@ -1047,70 +1041,82 @@ impl App {
                     self.launcher.dirty = true;
                 }
             }
-            PointerEventKind::Press { .. } => {
-                w.pressed = w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.on_card(x, y)).then(|| "outside".into()));
-            }
-            PointerEventKind::Release { .. } => {
+            PointerEventKind::Press { button, .. } => w.pressed = on(w).map(|o| (o, button)),
+            PointerEventKind::Release { button, .. } => {
                 let pressed = w.pressed.take();
-                let on = w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.on_card(x, y)).then(|| "outside".into()));
-                if pressed.is_none() || pressed != on {
+                let Some(on) = on(w).filter(|o| pressed.as_ref() == Some(&(o.clone(), button))) else { return true };
+                if button == BTN_RIGHT {
+                    if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
+                        self.resolve_launcher();
+                        self.launcher.open_actions(&self.store, i);
+                        self.launcher_resolve = true;
+                    } else if on == "outside" {
+                        self.menu_close();
+                    }
                     return true;
                 }
-                match on.as_deref() {
-                    Some("outside" | "close") => self.menu_close(),
-                    Some("variant") => {
-                        let light = !self.launcher.picker.light;
-                        self.picker_variant(light);
-                    }
-                    Some("token") => {
-                        let out = self.launcher.pop(&self.store);
-                        self.launcher_out(out);
-                    }
-                    Some("primary") => {
-                        let i = self.launcher.cursor;
-                        self.menu_activate(i, false);
-                    }
-                    Some("alternate") => {
-                        let i = self.launcher.cursor;
-                        self.menu_activate(i, true);
-                    }
-                    Some(hint @ ("actions" | "into" | "column-run" | "column-back" | "column-token")) => {
-                        let key = match hint {
-                            "actions" => nav::Key::Tab,
-                            "into" => nav::Key::Right,
-                            "column-run" => nav::Key::Return,
-                            _ => nav::Key::Backtab,
-                        };
-                        self.resolve_launcher();
-                        let out = self.launcher.key(&self.store, key, fs_menu::field::Key::Other, nav::Modifiers::default(), false, None);
-                        self.launcher_out(out);
-                    }
-                    Some(r) => {
-                        if let Some(i) = r.strip_prefix("action:").and_then(|i| i.parse::<usize>().ok()) {
-                            self.resolve_launcher();
-                            let out = self.launcher.column_pick(&self.store, i);
-                            self.launcher_out(out);
-                        } else if let Some(i) = r.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
-                            // A click on the list while the column is open
-                            // only closes it onto the clicked row.
-                            if self.launcher.actions_open() {
-                                self.launcher.close_actions();
-                                self.launcher.set_cursor(i);
-                                self.launcher_resolve = true;
-                            } else {
-                                self.menu_activate(i, false);
-                            }
-                        }
-                    }
-                    None => {}
+                if button == BTN_LEFT {
+                    self.launcher_click(&on);
                 }
             }
             PointerEventKind::Axis { time, vertical, source, .. } => {
                 let ms = crate::motion::Kind::SpatialFast.ms(&self.store.theme.theme) * self.motion_scale;
-                self.launcher.scroll(crate::scroll::travel(&vertical, source, time), ms);
+                let travel = crate::scroll::travel(&vertical, source, time);
+                if w.shown.over_column(x, y) {
+                    self.launcher.scroll_actions(travel, ms);
+                } else {
+                    self.launcher.scroll(travel, ms);
+                }
             }
         }
         true
+    }
+
+    /// A press and release on one thing: the foot's buttons are their keys.
+    fn launcher_click(&mut self, on: &str) {
+        let key = |key, shift| Some((key, nav::Modifiers { shift, ..Default::default() }));
+        let hint = match on {
+            "actions" => key(nav::Key::Tab, false),
+            "into" => key(nav::Key::Right, false),
+            "primary" | "column-run" => key(nav::Key::Return, false),
+            "alternate" => key(nav::Key::Return, true),
+            "column-back" | "column-token" => key(nav::Key::Backtab, false),
+            _ => None,
+        };
+        if let Some((key, mods)) = hint {
+            self.resolve_launcher();
+            let out = self.launcher.key(&self.store, key, fs_menu::field::Key::Other, mods, false, None);
+            if self.launcher.on_mirror() {
+                self.launcher_mirror();
+            }
+            self.launcher_resolve = true;
+            self.launcher_out(out);
+            return;
+        }
+        match on {
+            "outside" | "close" => self.menu_close(),
+            "variant" => {
+                let light = !self.launcher.picker.light;
+                self.picker_variant(light);
+            }
+            "token" => {
+                let out = self.launcher.pop(&self.store);
+                self.launcher_out(out);
+            }
+            _ => {
+                self.resolve_launcher();
+                if let Some(depth) = on.strip_prefix("token:").and_then(|i| i.parse::<usize>().ok()) {
+                    self.launcher.leave_to(&self.store, depth);
+                } else if let Some(i) = on.strip_prefix("action:").and_then(|i| i.parse::<usize>().ok()) {
+                    let out = self.launcher.column_pick(&self.store, i);
+                    self.launcher_out(out);
+                } else if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
+                    let out = self.launcher.click(&self.store, i);
+                    self.launcher_out(out);
+                }
+                self.launcher_resolve = true;
+            }
+        }
     }
 
     pub(super) fn launcher_joins(&self) -> Vec<(Edge, f64, f64, f64)> {

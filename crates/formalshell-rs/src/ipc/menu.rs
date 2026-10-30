@@ -94,12 +94,25 @@ fn refresh(app: &mut App, _: &[Value]) -> Value {
 fn status(app: &mut App, _: &[Value]) -> Value {
     app.resolve_launcher();
     let mut v = app.launcher.status(&app.store);
-    if let Some(r) = app.launcher_body() {
-        v["body"] = serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+    let rect = |r: crate::scene::IRect| serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+    let shown = app.launcher_shown();
+    if let Some(r) = shown.and_then(|w| w.body_rect) {
+        v["body"] = rect(r);
     }
-    if let Some(r) = app.launcher_token() {
-        v["tokenBox"] = serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+    if let Some(r) = shown.and_then(|w| w.token_rect()) {
+        v["tokenBox"] = rect(r);
     }
+    let (hover, action_hover) = shown.map_or((None, None), |w| w.hovered());
+    v["hover"] = hover.map_or(-1, |i| i as i64).into();
+    v["actionHover"] = action_hover.map_or(-1, |i| i as i64).into();
+    if let Some(r) = shown.and_then(|w| w.column_box()) {
+        v["actionsBox"] = rect(r);
+    }
+    v["footHints"] = shown
+        .map_or_else(Vec::new, |w| w.foot_hints())
+        .into_iter()
+        .map(|(on, r)| serde_json::json!({"on": on, "x": r.x, "y": r.y, "width": r.w, "height": r.h}))
+        .collect();
     text(v.to_string())
 }
 

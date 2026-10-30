@@ -835,7 +835,9 @@ side and between, abutting, an `sm` inset off the card; the label is
 `body` at 400 and 600 under the selection, a dim `bodySmall` value at the
 trailing edge. The selection is one `launcher.row` `selected` fill at
 `radiusMd`, no ring and no bar; hover is the lighter `launcher.row` wash,
-which never travels. The foot is a full-bleed rule over the selected
+which never travels, on the list's rows and the actions column's alike,
+and the pointer never moves the selection: a click selects and runs, a
+right-click opens the row's actions. The foot is a full-bleed rule over the selected
 subject's keys alone, right-aligned in `caption` `mutedForeground`, each a
 button.
 Modal over a 0.5 black scrim. The split route's preview pane is the one

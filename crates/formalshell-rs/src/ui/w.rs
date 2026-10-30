@@ -118,17 +118,19 @@ pub fn cell(child: El) -> El {
 
 /// The launcher's mode chip: the mode path in `caption` at 600 in
 /// `launcher.token`, `System › Power`, the ancestors muted. Past two levels
-/// it reads `… › ` and the last two.
+/// it reads `… › ` and the last two. Each ancestor fires `token:<depth>`,
+/// its index in `path`, the `…` the deepest one it hides.
 pub fn token<S: AsRef<str>>(s: &Space, path: &[S]) -> El {
     let word = |w: &str, ink| text_el(w, Type::Caption, Weight::Semibold, false, ink);
     let mut parts = Vec::new();
-    if path.len() > 2 {
-        parts.extend([word("\u{2026}", Ink::Muted), word("\u{203a}", Ink::Muted)]);
+    let skipped = path.len().saturating_sub(2);
+    if skipped > 0 {
+        parts.extend([word("\u{2026}", Ink::Muted).on(format!("token:{}", skipped - 1)), word("\u{203a}", Ink::Muted)]);
     }
-    let shown = &path[path.len().saturating_sub(2)..];
+    let shown = &path[skipped..];
     for (i, label) in shown.iter().enumerate() {
         if i + 1 < shown.len() {
-            parts.extend([word(label.as_ref(), Ink::Muted), word("\u{203a}", Ink::Muted)]);
+            parts.extend([word(label.as_ref(), Ink::Muted).on(format!("token:{}", skipped + i)), word("\u{203a}", Ink::Muted)]);
         } else {
             parts.push(word(label.as_ref(), Ink::Fg));
         }

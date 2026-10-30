@@ -180,6 +180,15 @@ struct Column {
     shown: Vec<usize>,
     cursor: usize,
     opened: Instant,
+    /// Its own scroll, the list's model: the offset, a touchpad's stretch
+    /// and coast over it, and how the last move asks to be drawn.
+    scroll: f64,
+    touch: Touchpad,
+    wheeled: bool,
+    travels: bool,
+    /// A row's pitch and the rows' viewport, as the window last laid it out.
+    row_h: f64,
+    view_h: f64,
 }
 
 impl Column {
@@ -203,6 +212,68 @@ impl Column {
     fn refilter(&mut self, query: &str) {
         self.shown = fs_menu::actions::filter(&self.labels(), query);
         self.cursor = 0;
+        self.scroll = 0.0;
+        self.touch.settle();
+    }
+
+    fn max_scroll(&self) -> f64 {
+        (self.shown.len() as f64 * self.row_h - self.view_h).max(0.0)
+    }
+
+    /// The smallest scroll that shows the cursor's row.
+    fn follow(&mut self) {
+        let top = self.cursor as f64 * self.row_h;
+        let mut next = self.scroll;
+        if top < next {
+            next = top;
+        } else if top + self.row_h > next + self.view_h {
+            next = top + self.row_h - self.view_h;
+        }
+        self.scroll = next.clamp(0.0, self.max_scroll());
+        self.travels = true;
+        self.wheeled = false;
+        self.touch.settle();
+    }
+}
+
+/// One axis frame over a scroll area at `offset`, `max` from its end: the
+/// offset it lands on and whether it glides there, None for a frame that
+/// asks nothing. A wheel's notches step `step` each and stop on either
+/// end; a touchpad's travel lands at once and stretches past an end until
+/// the fingers lift, springing back over `release_ms` or coasting on.
+#[allow(clippy::too_many_arguments)]
+fn travel_to(touch: &mut Touchpad, travel: Travel, offset: f64, max: f64, step: f64, view: f64, release_ms: f64, slow: f64) -> Option<(f64, bool)> {
+    let now = Instant::now();
+    Some(match travel {
+        Travel::Notches(n) => {
+            touch.settle();
+            ((offset + n * step).clamp(0.0, max), true)
+        }
+        Travel::Pixels { px, finger: true, time } => (touch.drag(now, time, offset, max, px, view), false),
+        Travel::Pixels { px, finger: false, .. } => {
+            touch.settle();
+            ((offset + px).clamp(0.0, max), false)
+        }
+        Travel::Lift(time) => {
+            touch.release(now, time, offset, max, release_ms, slow);
+            (offset, false)
+        }
+        Travel::None => return None,
+    })
+}
+
+/// The drawn offset headed for `target`: a wheel's notch glides there on
+/// `effectsFast`, a key's follow travels on `spatialFast`, a touchpad's
+/// travel and a coast's frames land at once.
+fn glide(a: &mut Animated, now: Instant, target: f64, wheeled: bool, travels: bool, theme: &Theme, scale: f64) {
+    let gap = (a.target() - target).abs();
+    if wheeled && gap > 0.5 {
+        a.set_on(now, target, Clock::EffectsFast.ms(theme) * scale, Clock::EffectsFast.curve());
+    } else if travels && gap > 0.5 {
+        a.set_on(now, target, Clock::SpatialFast.ms(theme) * scale, Clock::SpatialFast.curve());
+    } else if !wheeled && !travels && gap > 0.0 {
+        // A coast's tail moves under half a pixel a frame.
+        a.jump(target);
     }
 }
 
@@ -965,7 +1036,7 @@ impl Model {
 
     /// A transition is still running, so the body draws again.
     pub fn rows_moving(&self, now: Instant) -> bool {
-        self.motion.running(now) || self.touch.running(now)
+        self.motion.running(now) || self.touch.running(now) || self.column.as_ref().is_some_and(|c| c.touch.running(now))
     }
 
     fn place(&mut self, index: usize, travels: bool) {
@@ -1138,22 +1209,9 @@ impl Model {
     /// touchpad's travel lands at once and stretches past an end until the
     /// fingers lift, springing back over `release_ms` or coasting on.
     pub fn scroll(&mut self, travel: Travel, release_ms: f64) {
-        let now = Instant::now();
-        let (next, glide) = match travel {
-            Travel::Notches(n) => {
-                self.touch.settle();
-                ((self.scroll + n * self.wheel_step()).clamp(0.0, self.max_scroll()), true)
-            }
-            Travel::Pixels { px, finger: true, time } => (self.touch.drag(now, time, self.scroll, self.max_scroll(), px, self.body_h), false),
-            Travel::Pixels { px, finger: false, .. } => {
-                self.touch.settle();
-                ((self.scroll + px).clamp(0.0, self.max_scroll()), false)
-            }
-            Travel::Lift(time) => {
-                self.touch.release(now, time, self.scroll, self.max_scroll(), release_ms, self.motion_scale);
-                (self.scroll, false)
-            }
-            Travel::None => return,
+        let (step, max) = (self.wheel_step(), self.max_scroll());
+        let Some((next, glide)) = travel_to(&mut self.touch, travel, self.scroll, max, step, self.body_h, release_ms, self.motion_scale) else {
+            return;
         };
         self.travels = false;
         self.wheeled = glide;
@@ -1165,17 +1223,35 @@ impl Model {
         (self.layout.content_h - self.body_h).max(0.0)
     }
 
-    /// The pointer named a row.
-    pub fn set_cursor(&mut self, index: usize) {
-        if index == self.cursor {
+    /// The same frame over the actions column, which scrolls on its own.
+    pub fn scroll_actions(&mut self, travel: Travel, release_ms: f64) {
+        let slow = self.motion_scale;
+        let Some(c) = &mut self.column else { return };
+        let max = c.max_scroll();
+        let Some((next, glide)) = travel_to(&mut c.touch, travel, c.scroll, max, c.row_h, c.view_h, release_ms, slow) else {
             return;
+        };
+        c.scroll = next;
+        c.wheeled = glide;
+        c.travels = false;
+        self.dirty = true;
+    }
+
+    /// A click on row `index` (launcher spec §6): the row takes the
+    /// selection and runs its first action, unless the actions column was
+    /// open, which the click only closes.
+    pub fn click(&mut self, store: &Store, index: usize) -> Out {
+        let column = self.column.is_some();
+        self.close_actions();
+        if index != self.cursor {
+            self.place(index, false);
+            self.placed = true;
+            self.want = self.cursor_id.clone();
+            self.confirm.clear();
         }
-        self.place(index, false);
-        self.placed = true;
-        self.want = self.cursor_id.clone();
-        self.confirm.clear();
         self.from_keys = false;
         self.dirty = true;
+        if column { Out::None } else { self.activate(store, index) }
     }
 
     pub fn view_cursor(&self) -> Value {
@@ -1241,6 +1317,8 @@ impl Model {
             "actionsOpen": self.column.is_some(),
             "actions": self.column.as_ref().map_or_else(Vec::new, Column::ids),
             "actionCursor": self.column.as_ref().map_or(-1, |c| c.cursor as i64),
+            "actionsScroll": self.column.as_ref().map_or(0, |c| (c.scroll + c.touch.value(Instant::now())).round() as i64),
+            "actionsScrollMax": self.column.as_ref().map_or(0, |c| c.max_scroll().round() as i64),
         })
     }
 
@@ -1445,6 +1523,20 @@ impl Model {
         Out::None
     }
 
+    /// A click on the token's ancestor at `depth`: every mode inside it
+    /// left, that one kept.
+    pub fn leave_to(&mut self, store: &Store, depth: usize) {
+        let mut held = self.token(store).len();
+        while held > depth + 1 {
+            self.pop(store);
+            let now = self.token(store).len();
+            if now >= held {
+                break;
+            }
+            held = now;
+        }
+    }
+
     pub fn set_query(&mut self, store: &Store, text: &str) {
         self.query.set(text);
         self.query_changed(store);
@@ -1521,13 +1613,23 @@ impl Model {
         let shown = (0..actions.len()).collect();
         let list_query = self.query.text().to_owned();
         self.query.clear();
-        self.column = Some(Column { node, actions, list_query, target: None, shown, cursor: 0, opened: Instant::now() });
+        self.column = Some(Column {
+            node,
+            actions,
+            list_query,
+            target: None,
+            shown,
+            cursor: 0,
+            opened: Instant::now(),
+            scroll: 0.0,
+            touch: Touchpad::new(),
+            wheeled: false,
+            travels: false,
+            row_h: 0.0,
+            view_h: 0.0,
+        });
         self.dirty = true;
         true
-    }
-
-    pub fn actions_open(&self) -> bool {
-        self.column.is_some()
     }
 
     /// The column gone, the list's query back in the field.
@@ -1557,6 +1659,7 @@ impl Model {
         let page = (self.body_h / fs_theme::tokens::LAUNCHER.row_height).floor().max(1.0) as usize;
         let Some(c) = &mut self.column else { return };
         c.cursor = nav::step(c.cursor, dir, c.shown.len(), 0, 1, page).index;
+        c.follow();
         self.confirm.clear();
         self.dirty = true;
     }
@@ -2178,6 +2281,10 @@ pub struct Shown {
     pub wake: Option<Instant>,
     /// The card's top, settled: the scroll's own animation.
     scroll: Animated,
+    /// The actions column's own, and its box on the surface while it is
+    /// drawn.
+    column_scroll: Animated,
+    column_rect: Option<Rect>,
     /// The card's width and height travelling between level kinds.
     morph: (Animated, Animated),
     /// One widget tree per row mid-transition, drawn over the body.
@@ -2227,6 +2334,8 @@ impl Shown {
             scale,
             wake: None,
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
+            column_scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
+            column_rect: None,
             overlays: Vec::new(),
             top_node: top,
             laid_for: (0.0, 0.0),
@@ -2245,6 +2354,7 @@ impl Shown {
     pub fn animating(&self, now: Instant) -> bool {
         self.modal.animating(now)
             || self.scroll.running(now)
+            || self.column_scroll.running(now)
             || self.morph.0.running(now)
             || self.morph.1.running(now)
             || self.sel.iter().any(|a| a.running(now))
@@ -2256,7 +2366,7 @@ impl Shown {
     /// the compositor moves and cuts the layer.
     pub fn content_animating(&self, now: Instant) -> bool {
         let card = self.modal.layer.is_none() && (self.modal.animating(now) || self.morph.0.running(now) || self.morph.1.running(now));
-        card || self.scroll.running(now) || self.wake.is_some_and(|w| w <= now)
+        card || self.scroll.running(now) || self.column_scroll.running(now) || self.wake.is_some_and(|w| w <= now)
     }
 
     /// The field's line, the head band's height under the card's top and
@@ -2309,15 +2419,20 @@ impl Shown {
             m.travels = false;
             m.wheeled = false;
         }
-        let target = m.scroll;
-        let gap = (self.scroll.target() - target).abs();
-        if m.wheeled && gap > 0.5 {
-            self.scroll.set_on(now, target, Clock::EffectsFast.ms(theme) * self.scale, Clock::EffectsFast.curve());
-        } else if m.travels && gap > 0.5 {
-            self.scroll.set_on(now, target, Clock::SpatialFast.ms(theme) * self.scale, Clock::SpatialFast.curve());
-        } else if !m.wheeled && !m.travels && gap > 0.0 {
-            // A coast's tail moves under half a pixel a frame.
-            self.scroll.jump(target);
+        glide(&mut self.scroll, now, m.scroll, m.wheeled, m.travels, theme, self.scale);
+        match &mut m.column {
+            Some(c) => {
+                c.row_h = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height);
+                c.view_h = (body_h - theme.space.sm * 2.0).max(0.0);
+                c.scroll = c.scroll.min(c.max_scroll());
+                if let Some(coast) = c.touch.tick(now, c.max_scroll()) {
+                    c.scroll = coast;
+                    c.wheeled = false;
+                    c.travels = false;
+                }
+                glide(&mut self.column_scroll, now, c.scroll, c.wheeled, c.travels, theme, self.scale);
+            }
+            None => self.column_scroll.jump(0.0),
         }
         self.draw(m, store, theme, kit, now, line, body_h, (tw, th));
         self.laid_for = (tw, th);
@@ -2457,14 +2572,18 @@ impl Shown {
         });
         // The actions column over the right half, else a split route's
         // preview there: the cursor row's whole content beside the list.
-        if m.column.is_some() && body_h > 0.0 {
+        self.column_rect = None;
+        if let Some(c) = m.column.as_ref().filter(|_| body_h > 0.0) {
             let half = (body_w / 2.0).round();
             let r = Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h);
-            let (el, settling) = column_el(m, theme, r.height(), now, self.scale);
-            let d = self.preview.draw(&el, r, Some(body_clip), alpha, theme, kit, scene, now);
+            let scroll = self.column_scroll.value(now) + c.touch.value(now);
+            let (el, settling) = column_el(m, theme, scroll, now, self.scale);
+            let clip = ui::irect(r).intersect(&body_clip);
+            let d = self.preview.draw(&el, Rect::new(r.x0, r.y0 - scroll, r.x1, r.y1 - scroll), Some(clip), alpha, theme, kit, scene, now);
             if d.animating || settling {
                 self.wake = Some(now);
             }
+            self.column_rect = Some(r);
         } else if m.split() && body_h > 0.0 {
             let half = (inner_w / 2.0).round();
             let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - side, body_top + body_h - s.md);
@@ -2498,24 +2617,61 @@ impl Shown {
     /// What is under the pointer: a body row or cell, a header or footer
     /// control.
     pub fn hit(&self, x: f64, y: f64) -> Option<crate::ui::Hit> {
-        let (x, y) = match &self.modal.layer {
+        let (x, y) = self.local(x, y);
+        self.body.hit(x, y).or_else(|| self.preview.hit(x, y)).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
+    }
+
+    /// An output point in the surface's own pixels.
+    fn local(&self, x: f64, y: f64) -> (f64, f64) {
+        match &self.modal.layer {
             Some(l) => {
                 let at = l.place(&self.modal.card, !self.modal.animating(Instant::now()));
                 (x - f64::from(at.x), y - f64::from(at.y))
             }
             None => (x, y),
-        };
-        self.body.hit(x, y).or_else(|| self.preview.hit(x, y)).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
+        }
+    }
+
+    /// A box on the surface, settled, as a box on the output.
+    fn on_output(&self, r: IRect) -> IRect {
+        let at = self.modal.layer.as_ref().map_or((0, 0), |l| {
+            let p = l.place(&self.modal.card, true);
+            (p.x, p.y)
+        });
+        IRect::new(r.x + at.0, r.y + at.1, r.w, r.h)
+    }
+
+    /// Whether an output point is over the actions column, which a wheel
+    /// there scrolls instead of the list.
+    pub fn over_column(&self, x: f64, y: f64) -> bool {
+        let (x, y) = self.local(x, y);
+        self.column_rect.is_some_and(|r| r.contains((x, y)))
     }
 
     /// The mode token's box on the output, while one is drawn.
     pub fn token_rect(&self) -> Option<IRect> {
         let r = self.head.hits.iter().find(|h| h.on.as_deref() == Some("token"))?.rect;
-        let at = self.modal.layer.as_ref().map_or((0, 0), |l| {
-            let p = l.place(&self.modal.card, true);
-            (p.x, p.y)
-        });
-        Some(IRect::new(r.x + at.0, r.y + at.1, r.w, r.h))
+        Some(self.on_output(r))
+    }
+
+    /// The actions column's box on the output, while it is drawn.
+    pub fn column_box(&self) -> Option<IRect> {
+        self.column_rect.map(|r| self.on_output(ui::irect(r)))
+    }
+
+    /// The foot's buttons on the output, each by what a click on it does.
+    pub fn foot_hints(&self) -> Vec<(String, IRect)> {
+        self.foot.hits.iter().filter_map(|h| Some((h.on.clone()?, self.on_output(h.rect)))).collect()
+    }
+
+    /// What the pointer hovers in the list and in the column: the row's
+    /// index and the action's position, as they were last drawn.
+    pub fn hovered(&self) -> (Option<usize>, Option<usize>) {
+        let on = |ui: &Ui, prefix: &str| {
+            let path = ui.hover.as_deref()?;
+            ui.hits.iter().find(|h| h.path == path)?.on.as_deref()?.strip_prefix(prefix)?.parse().ok()
+        };
+        (on(&self.body, "row:"), on(&self.preview, "action:"))
     }
 
     pub fn set_hover(&mut self, path: Option<String>) -> bool {
@@ -2606,16 +2762,18 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
 
 /// The actions column, or the targets one of them asks for: rows of the
 /// list's height and inset, the cursor's row filled, faded in on `effects`
-/// as it opens. True while that fade runs.
-fn column_el(m: &Model, theme: &Theme, height: f64, now: Instant, scale: f64) -> (El, bool) {
+/// as it opens, built only where `scroll` puts the viewport. True while
+/// that fade runs.
+fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) -> (El, bool) {
     let s = &theme.space;
     let Some(c) = &m.column else { return (w::space(0.0), false) };
-    let row_h = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height);
+    let row_h = c.row_h.max(1.0);
     let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
     let armed = m.column_armed();
-    let fits = (((height - s.sm * 2.0) / row_h).floor() as usize).max(1);
-    let first = (c.cursor + 1).saturating_sub(fits);
-    let mut rows = Vec::new();
+    let first = (scroll / row_h).floor().max(0.0) as usize;
+    let fits = (c.view_h / row_h).ceil() as usize + 1;
+    let last = (first + fits).min(c.shown.len());
+    let mut rows = vec![w::space(first.min(last) as f64 * row_h)];
     for (at, &i) in c.shown.iter().enumerate().skip(first).take(fits) {
         let selected = at == c.cursor;
         let (label, icon, trail, dim, destructive) = match &c.target {
@@ -2654,12 +2812,14 @@ fn column_el(m: &Model, theme: &Theme, height: f64, now: Instant, scale: f64) ->
                     st.destructive = confirming;
                 })
                 .on(format!("action:{at}"))
+                .key(format!("a{at}"))
                 .height(row_h),
         );
     }
-    if rows.is_empty() {
+    if c.shown.is_empty() {
         rows.push(w::text("No matches").ink(Ink::Muted).pad(s.lg, s.md, s.lg, s.md));
     }
+    rows.push(w::space(c.shown.len().saturating_sub(last) as f64 * row_h));
     let ms = Clock::Effects.ms(theme) * scale;
     let t = if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(c.opened).as_secs_f64() * 1000.0 / ms).min(1.0) };
     let el = w::column(0.0, rows).pad(s.sm, s.sm, s.sm, s.sm);
@@ -2816,7 +2976,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         // Exactly the slot's height: the next line's gap is reckoned from
         // the layout, so a line shorter than its slot would pull every line
         // under it up and leave the viewport's foot empty.
-        col.push(w::row(0.0, line).top().height(h));
+        // Keyed by the line's top in the content, so a scroll that culls
+        // the lines above it leaves its rows' hover and tweens on them.
+        col.push(w::row(0.0, line).top().height(h).key(format!("y{}", top.round() as i64)));
         y = top + h;
     }
     col.push(w::space((lay.content_h - y).max(0.0)));

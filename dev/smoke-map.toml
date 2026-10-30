@@ -126,7 +126,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--menu-hover"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]
@@ -175,7 +175,7 @@ runs = ["--menu"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/scroll.rs"]
-runs = ["--wheel", "--menu"]
+runs = ["--wheel", "--menu", "--launcher-mouse"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/keyboard.rs"]
@@ -534,7 +534,7 @@ runs = ["--idle --bluez-rssi"]
 
 [[rule]]
 paths = ["dev/vpointer.py"]
-runs = ["--wheel", "--toast-swipe", "--radio-atlas"]
+runs = ["--wheel", "--toast-swipe", "--radio-atlas", "--launcher-mouse"]
 
 [[rule]]
 paths = ["dev/lockpointer.py"]

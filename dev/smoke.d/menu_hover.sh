@@ -1,22 +1,24 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --menu-hover: the launcher's cursor fill under a real pointer and real
-# keys. Moving onto a cell and off it again, no frame of the cell is darker
-# than its rest or its cursor fill: a fill crossfading out of `transparent`
-# through a straight lerp drags the colour through black at half alpha, the
-# dark flash this leg was written for. A real Right then moves the one fill
-# the body draws across to the neighbour: on some frame its left edge sits
-# part way between the two cells, rather than one cell fading out while the
-# other fades in.
+# --menu-hover: the launcher's hover tint and selection fill under a real
+# pointer and real keys (launcher spec §2, §6). The pointer on cell 20
+# leaves `cursor` on cell 0 and sets `hover` to 20, and one cell right
+# hands `hover` to 21; the hover tint differs from the rest fill and from
+# the selection fill. Moving onto the cell and off it again, no frame of
+# it is darker than its rest or its hover tint: a fill crossfading out of
+# `transparent` through a straight lerp drags the colour through black at
+# half alpha, the dark flash this leg was first written for. A real Right
+# then moves the one selection fill the body draws from cell 0 to cell 1:
+# on some frame its left edge sits part way between the two, rather than
+# one cell fading out while the other fades in.
 #
 # The emoji grid is the level: its cells carry a glyph centred in a square,
 # so a patch inside a cell's left edge is the cell's own fill and nothing
 # else. Where the cells are comes off `menu status` (`body`, `viewCursor`),
 # read with the cursor on the first cell. The pointer is slammed into the
 # corner before the open (wlrctl's pointer is relative only), then moved in
-# one event onto the third row's fifth cell and nudged a pixel (an enter
-# alone leaves the cursor be), which makes it the cursor, and later one cell
-# right, which hands the cursor on. Everything is sampled at a tenth speed.
+# one event onto the third row's fifth cell and nudged a pixel, and later
+# one cell right. Everything is sampled at a tenth speed.
 leg_menu_hover_flag="--menu-hover"
 leg_menu_hover_order=128
 leg_menu_hover_needs="wlrctl wtype convert jq"
@@ -63,6 +65,7 @@ x=\$((bx + left + col * cw)); y=\$((by + top + row * ch))
 box="\$x,\$y \${cw}x\${ch}"
 echo "\$x \$y \$cw \$ch" > "$shot_dir/menu-hover-cell.txt"
 "$grim_bin" -g "\$box" "$shot_dir/menu-hover-rest.png" > /dev/null 2>&1
+"$grim_bin" -g "\$((bx + left)),\$((by + top)) \${cw}x\${ch}" "$shot_dir/menu-hover-selected.png" > /dev/null 2>&1
 "$wlrctl_bin" pointer move \$((x + cw / 2)) \$((y + ch / 2)) > /dev/null 2>&1
 "$wlrctl_bin" pointer move 1 0 > /dev/null 2>&1
 burst in
@@ -75,10 +78,8 @@ sleep 8
 "$grim_bin" -g "\$box" "$shot_dir/menu-hover-left.png" > /dev/null 2>&1
 call menu status > "$shot_dir/menu-hover-moved.json" 2>&1
 "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-sleep 1
-pair="\$x,\$y \$((cw * 2))x\${ch}"
-"$wtype_bin" -k Left
 sleep 8
+pair="\$((bx + left)),\$((by + top)) \$((cw * 2))x\${ch}"
 "$grim_bin" -g "\$pair" "$shot_dir/menu-hover-keys-from.png" > /dev/null 2>&1
 "$wtype_bin" -k Right
 for i in \$(seq 1 $menu_hover_frames); do
@@ -136,15 +137,14 @@ menu_hover_span() {
       END { print (l == "" ? -1 : l), (r == "" ? -1 : r) }'
 }
 
-# A real Right moving the cursor from the target cell to its neighbour, the
-# pair sampled at a tenth speed: on some frame the fill's left edge stops
+# A real Right moving the selection from cell 0 to cell 1, the pair sampled at a tenth speed: on some frame the fill's left edge stops
 # part way between the two cells, the one fill travelling rather than one
 # cell fading out while the other fades in.
 menu_hover_keys() {
   local w rest sel b1 la lb i l r a b between=0 dark=""
   w=$(cut -d' ' -f3 "$shot_dir/menu-hover-cell.txt")
-  "$jq_bin" -e ".cursor == $((menu_hover_target + 1))" "$shot_dir/menu-hover-keys.json" > /dev/null \
-    || fail "Right did not move the cursor onto cell $((menu_hover_target + 1)): $(cat "$shot_dir/menu-hover-keys.json")"
+  "$jq_bin" -e ".cursor == 1" "$shot_dir/menu-hover-keys.json" > /dev/null \
+    || fail "Right did not move the cursor from cell 0 onto cell 1: $(cat "$shot_dir/menu-hover-keys.json")"
   sel=$(menu_hover_luma "$shot_dir/menu-hover-keys-from.png")
   rest=$(menu_hover_luma "$shot_dir/menu-hover-keys-from.png" "$w")
   b1=$(menu_hover_luma "$shot_dir/menu-hover-keys-to.png" "$w")
@@ -172,24 +172,29 @@ menu_hover_keys() {
 }
 
 leg_menu_hover_assert() {
-  local rest hover left
+  local rest hover left selected
   for f in open hovered moved; do
     [ -s "$shot_dir/menu-hover-$f.json" ] || fail "no menu status at $f"
   done
   [ -s "$shot_dir/menu-hover-cell.txt" ] || fail "the drive never found the target cell"
   cat "$shot_dir/menu-hover-cell.txt"
-  "$jq_bin" -e ".cursor == $menu_hover_target" "$shot_dir/menu-hover-hovered.json" > /dev/null \
-    || fail "the pointer did not land on cell $menu_hover_target: $(cat "$shot_dir/menu-hover-hovered.json")"
-  "$jq_bin" -e ".cursor == $((menu_hover_target + 1))" "$shot_dir/menu-hover-moved.json" > /dev/null \
-    || fail "the pointer did not move one cell on: $(cat "$shot_dir/menu-hover-moved.json")"
+  "$jq_bin" -e ".cursor == 0" "$shot_dir/menu-hover-open.json" > /dev/null \
+    || fail "the emoji grid did not open on cell 0: $(cat "$shot_dir/menu-hover-open.json")"
+  "$jq_bin" -e ".cursor == 0 and .hover == $menu_hover_target" "$shot_dir/menu-hover-hovered.json" > /dev/null \
+    || fail "the pointer on cell $menu_hover_target did not hover it and leave the cursor on 0: $("$jq_bin" -c '{cursor, hover}' "$shot_dir/menu-hover-hovered.json")"
+  "$jq_bin" -e ".cursor == 0 and .hover == $((menu_hover_target + 1))" "$shot_dir/menu-hover-moved.json" > /dev/null \
+    || fail "one cell on, the hover did not follow or the cursor moved: $("$jq_bin" -c '{cursor, hover}' "$shot_dir/menu-hover-moved.json")"
   rest=$(menu_hover_luma "$shot_dir/menu-hover-rest.png")
   hover=$(menu_hover_luma "$shot_dir/menu-hover-hover.png")
   left=$(menu_hover_luma "$shot_dir/menu-hover-left.png")
-  echo "rest $rest, hovered $hover, left $left"
+  selected=$(menu_hover_luma "$shot_dir/menu-hover-selected.png")
+  echo "rest $rest, hovered $hover, left $left, selected $selected"
   awk -v a="$rest" -v b="$hover" 'BEGIN { exit !(a - b > 0.01 || b - a > 0.01) }' \
     || fail "hovering left the cell's fill where it was ($rest, $hover)"
+  awk -v a="$selected" -v b="$hover" 'BEGIN { exit !(a - b > 0.01 || b - a > 0.01) }' \
+    || fail "the hover tint reads as the selection fill ($hover, $selected)"
   menu_hover_crossing in "$rest" "$hover"
   menu_hover_crossing out "$hover" "$left"
   menu_hover_keys
-  echo "SMOKE_MENU_HOVER $shot_dir/menu-hover-hover.png (the fill travels on the pointer and on keys, no frame darker than its ends)"
+  echo "SMOKE_MENU_HOVER $shot_dir/menu-hover-hover.png (the pointer tints without moving the selection, the fill travels on keys, no frame darker than its ends)"
 }

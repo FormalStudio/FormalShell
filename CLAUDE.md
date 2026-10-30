@@ -634,6 +634,21 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   mode then closing, and a real click on the token leaving it. The
   three-deep token, Emoji's and the scoped list photographed dark and
   light.
+- `launcher_mouse.sh` `--launcher-mouse`: the launcher under a real
+  pointer, read off `menu status` (`cursorId`, `hover`, `actionHover`,
+  `actionsOpen`, `actionsScroll`, `footHints`, `actionsBox`) and the
+  services the rows drive: the pointer crossing five root rows moving
+  `hover` and leaving the selection on row 0; in the toggle hub a click
+  running Caffeinate with the hub left open on it, a right-click opening
+  Do Not Disturb's actions with it selected and DND untouched, and a click
+  on Overnight with the column open closing it onto Overnight unrun,
+  which the foot's Enter button then runs; the foot's Actions, Back and
+  Into buttons doing Tab, Shift+Tab and →; over a staged app with 16
+  menu.jsonc actions, a wheel notch and a touchpad flick
+  (`dev/vpointer.py`) over the column scrolling it alone, a notch over the
+  list scrolling the list alone; a click outside closing the card. The
+  hover beside the selection and the right-click column photographed dark
+  and light.
 - `light.sh` `--light`: pins `theme.mode` light (a `settings_pin`) and
   rides any leg, so its frames are read in light mode; asserts `theme
   status` reports light.
@@ -739,11 +754,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Caffeinate and Overnight rows each flipping their service with the hub
   left open and the rows ticked, Set Reminder's input step setting a
   reminder typed on real keys, and Clear Reminders dropping it.
-- `menu_hover.sh` `--menu-hover`: a real pointer moving onto an emoji cell
-  and one cell on at a tenth speed, the target cell sampled frame by frame
-  with no sample darker than its rest or cursor fill, then a real Right
-  with some frame holding the body's one cursor fill part way between the
-  two cells.
+- `menu_hover.sh` `--menu-hover`: a real pointer moving onto emoji cell
+  20 and one cell on at a tenth speed: `cursor` held on cell 0 and `hover`
+  20 then 21, the hover tint apart from both the rest and the selection
+  fill, the cell sampled frame by frame with no sample darker than its
+  rest or hover tint, then a real Right with some frame holding the body's
+  one selection fill part way between cells 0 and 1.
 - `menu_emerge.sh` `--menu-emerge`: the launcher budding off the top line,
   sampled frame by frame under `debug motionScale`: card fill under the line
   with nothing at its resting floor, the bar's own band undimmed while it is
@@ -1098,7 +1114,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and under the closed "Known networks" disclosure until real Down, Up,
   Up and Return open it (`knownOpen`), read off tesseract over both frames.
 - `wheel.sh` `--wheel`: a virtual-pointer scroll moves the picker grid
-  (`menu status` `scrollTop`) without moving the cursor, and a wheel over the
+  (`menu status` `scrollTop`) without moving the cursor or the cell the
+  pointer tints (`hover`), and a wheel over the
   bar's audio cell still steps the volume. Between the two, touchpad frames
   off `dev/vpointer.py` (`finger`, `lift`): 100px of finger travel moving
   the grid 112 (`scroll.rs`'s gain), a held pull past the end reading

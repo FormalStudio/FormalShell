@@ -59,6 +59,7 @@
 --launcher-abbrev
 --launcher-actions
 --launcher-modes
+--launcher-mouse
 --lights
 --localsend
 --lock

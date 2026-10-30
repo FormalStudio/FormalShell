@@ -17,7 +17,10 @@
 #
 # The reading, not the frame, is the claim. Two screenshots of a scrolled
 # grid look alike whether the cursor followed the wheel or not, so the
-# assertion is `menu status`'s scrollTop against `picker status`'s cursor.
+# assertion is `menu status`'s scrollTop against `picker status`'s cursor,
+# and `menu status`'s `hover`: the cell the pointer tints before the notch
+# is the one it tints after, the content having moved under a pointer that
+# did not.
 #
 # The other half of the contract runs on the same timeline once the grid is
 # closed: a notch on the bar's audio cell has to keep adjusting the sink.
@@ -295,7 +298,13 @@ leg_wheel_assert() {
   if [ -z "$before_cursor" ] || [ "$before_cursor" != "$after_cursor" ]; then
     fail "the wheel moved the cursor from $before_cursor to $after_cursor"
   fi
-  echo "SMOKE_WHEEL scrollTop $before_scroll -> $after_scroll, cursor held at $after_cursor"
+  local before_hover after_hover
+  before_hover=$(wheel_field "$wheel_menu_before_path" hover)
+  after_hover=$(wheel_field "$wheel_menu_after_path" hover)
+  if [ -z "$before_hover" ] || [ "$before_hover" -lt 0 ] || [ "$before_hover" != "$after_hover" ]; then
+    fail "the wheel moved the hover from cell ${before_hover:-none} to ${after_hover:-none}"
+  fi
+  echo "SMOKE_WHEEL scrollTop $before_scroll -> $after_scroll, cursor held at $after_cursor, hover held on cell $after_hover"
   for f in "$wheel_before_png" "$wheel_after_png" "$wheel_bar_png"; do
     if [ ! -f "$f" ]; then
       fail "no wheel screenshot produced at $f"

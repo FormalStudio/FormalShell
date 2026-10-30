@@ -1273,9 +1273,18 @@ Move to workspace…, Toggle floating and Fullscreen.
 | `Tab` / `Shift+Tab` | Open and close the row's actions column |
 | `Ctrl+Tab` | Swap the picker's Dark/Light set, only while its switcher is showing |
 
-Hover moves the cursor only when the pointer is what moved. Rows sliding
-under a parked pointer never take the cursor, and the first real pointer
-movement does.
+The pointer never moves the selection. The row or cell under it, in the
+list and in the actions column, takes a lighter tint than the selected
+one, so the bottom row keeps naming the selected row and Enter still runs
+it; the arrow keys always move from the selection, never from the hovered
+row. A click selects a row and runs its first action (a mode's row enters
+the mode; a row with nothing to run is only selected). A right-click
+selects it and opens its actions column. With the column open, a click on
+the list only closes the column and selects that row, and the next click
+runs it. A click on the token leaves the mode, or a nested token's
+ancestor leaves to that level. The wheel and a touchpad scroll whatever is
+under the pointer, the list or the actions column, each on its own, and
+never move the selection or the tint until the pointer moves.
 
 The card's top edge stays put and only its bottom edge moves, so a row count
 that changes on every keystroke grows the card downward instead of shifting
