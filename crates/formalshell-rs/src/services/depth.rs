@@ -1,4 +1,5 @@
-//! `formalshell-depth` over the picker directory while
+//! `formalshell-depth` (the release tarball's `lib/formalshell/bin`, ahead of
+//! PATH in the launcher) over the picker directory while
 //! `wallpaper.depthGenerate` is on: once when it is turned on, and again
 //! after the directory settles from a change. The CLI skips pictures whose
 //! map is current, so a run over an unchanged directory only reads mtimes.
@@ -23,12 +24,14 @@ const SETTLE: Duration = Duration::from_secs(2);
 /// The model on a CPU takes seconds per picture; a first run over a full
 /// directory can take many minutes.
 const RUN_TIMEOUT: Duration = Duration::from_secs(3600);
+/// The CLI's exit code for a model file that is not there.
+const NO_MODEL: i32 = 3;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
     pub enabled: bool,
     pub dir: String,
-    /// None until a run has said.
+    /// Whether the CLI and its model are there; None until a run has said.
     pub installed: Option<bool>,
     pub running: bool,
     /// The pictures the last run wrote a map for.
@@ -115,10 +118,14 @@ pub async fn run(ctx: Ctx) {
             Wake::Done(done) => {
                 s.running = false;
                 s.last_code = Some(done.code);
-                if done.code == proc::MISSING {
+                if done.code == proc::MISSING || done.code == NO_MODEL {
                     s.installed = Some(false);
                     if !logged {
-                        eprintln!("depth: formalshell-depth is not on PATH, no depth maps");
+                        if done.code == NO_MODEL {
+                            eprintln!("depth: formalshell-depth has no model ({}), no depth maps", done.stderr.trim());
+                        } else {
+                            eprintln!("depth: formalshell-depth is not on PATH, no depth maps");
+                        }
                         logged = true;
                     }
                 } else {
@@ -140,7 +147,7 @@ pub async fn run(ctx: Ctx) {
                 s.wrote.clear();
                 let (argv, tx) = (proc::argv(&["formalshell-depth", &s.dir]), tx.clone());
                 ctx.spawn(async move {
-                    let _ = tx.send(Wake::Done(proc::capture(&argv, RUN_TIMEOUT).await)).await;
+                    let _ = tx.send(Wake::Done(proc::capture_err(&argv, RUN_TIMEOUT).await)).await;
                 });
             }
         }

@@ -39,10 +39,8 @@ wallpaper's subject, the way a phone's lock screen does.
 
 ## Out of scope
 
-- The tarball and install.sh do not carry the generator: onnxruntime is
-  not in Debian's or Fedora's archive. A non-Nix install reads maps made
-  elsewhere, and `wallpaper.depthGenerate` there reports the generator
-  missing rather than failing.
+- (Superseded 2026-10-30: the tarball carries the generator on a bundled
+  CPython, see `dev/tarball.sh`; install.sh needs nothing for it.)
 - The greeter keeps its wallpaper as it is.
 
 One subagent per task, sequential, each ending in its verification run read

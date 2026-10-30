@@ -2975,8 +2975,11 @@ output that has a map in use.
 `picker.directory` at start and again a couple of seconds after the directory
 changes, one run at a time; pictures whose map is current are skipped. A
 locked screen picks up a map written for its own wallpaper as soon as the run
-ends. Without the CLI on PATH it logs once and `debug dump`'s `depth` block
-says `installed: false`.
+ends. The release tarball carries the CLI (`lib/formalshell/bin/formalshell-depth`,
+ahead of PATH in the launcher) with its own Python, numpy, onnxruntime and the
+Depth Anything V2 Small model (`share/formalshell/depth/model.onnx`), so nothing
+else is installed. Without the CLI on PATH, or with the model file gone, it logs
+once and `debug dump`'s `depth` block says `installed: false`.
 
 ```jsonc
 // ~/.config/formalshell/settings.json

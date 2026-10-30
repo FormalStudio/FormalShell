@@ -215,7 +215,7 @@ case "$verb" in
     ;;
   smoke)
     forward=""
-    for name in SMOKE_WALLPAPER_DITHER FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_DEPTH_PICTURE FS_SMOKE_SCALE; do
+    for name in SMOKE_WALLPAPER_DITHER FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_DEPTH_PICTURE FS_DEPTH_GENERATE FS_SMOKE_SCALE; do
       [ -z "${!name:-}" ] || forward+="$name=$(printf '%q' "${!name}") "
     done
     status=0

@@ -11,10 +11,10 @@ current when it exists and is not older than its picture; its mtime is set to
 the picture's, so a copy that keeps mtimes stays current. Maps whose picture
 is gone are removed (DIR mode only).
 
-Exit 0 when every picture is done or current, 1 when any failed, 2 on usage.
-FORMALSHELL_DEPTH_MODEL points at the ONNX model (Depth Anything V2 Small,
-preprocessed as its preprocessor_config.json says: long edge 518, sides
-multiples of 14, bicubic, ImageNet mean and std).
+Exit 0 when every picture is done or current, 1 when any failed, 2 on usage,
+3 when FORMALSHELL_DEPTH_MODEL names no file. It points at the ONNX model
+(Depth Anything V2 Small, preprocessed as its preprocessor_config.json says:
+long edge 518, sides multiples of 14, bicubic, ImageNet mean and std).
 """
 
 import os
@@ -32,6 +32,7 @@ MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 GUIDE_RADIUS = 0.01
 GUIDE_EPS = 1e-3
+EXIT_NO_MODEL = 3
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -159,7 +160,11 @@ def main(argv):
     ok = True
     for picture in targets:
         if depth is None and not current(picture, map_path(picture)):
-            depth = Depth(os.environ["FORMALSHELL_DEPTH_MODEL"])
+            model = os.environ.get("FORMALSHELL_DEPTH_MODEL", "")
+            if not os.path.isfile(model):
+                print(f"no depth model at '{model}'", file=sys.stderr)
+                return EXIT_NO_MODEL
+            depth = Depth(model)
         ok = process(depth, picture) and ok
     return 0 if ok else 1
 

@@ -55,13 +55,20 @@ sources=(
   "earbuds https://github.com/JojiiOfficial/LiveBudsCli/archive/refs/tags/v0.2.0.tar.gz b0174d4207312bdf54f5cb586fff22984ecd5be54bd0205c4debf7927878ea70 1"
   "ear-web https://github.com/radiance-project/ear-web/archive/d076e1371572fbf0a14b441f9b3cafbf9a237e04.tar.gz 9c08f9ecbdc0924eb9e01416c17f01a02f363686b84b279cc6759f30b021d910 1"
   "librepods https://github.com/kavishdevar/librepods/archive/89356c08cea3db0b6b54792d9329d09a87cc85fa.tar.gz 508c24bc537602f6062778771d871033d43aee9ea101e011f2ec5ef1a366ca95 1"
+  "cpython https://www.python.org/ftp/python/3.12.16/Python-3.12.16.tar.xz b5796915dc45ff745cfb4e990a7e7c93d6f546328a102ce31448d69ebc37575c 1"
 )
 case $arch in
   x86_64)
     sources+=("zig https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00 1")
+    sources+=("wheel-numpy https://files.pythonhosted.org/packages/43/a3/c799c62e19c337e6d3770b08e475887fb30ce8477d3c09efca6b2f0228a6/numpy-2.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl fbde6962867ee75b48b0ee29b2b9372ec5d617799dbaf38e82dc0596f2f7738a 0")
+    sources+=("wheel-pillow https://files.pythonhosted.org/packages/e6/99/fdf65cc539e266ab93546c261bdf98411fe165c6e4e13f9dbf597097192b/pillow-13.0.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl 42d63be3af4f9b951b199b0a9d23365d37ab14687e6d77b74940432c8515c4ca 0")
+    sources+=("wheel-onnxruntime https://files.pythonhosted.org/packages/eb/27/c6a823bac55b2977bea2027c3ec9393a2c1002cb9a09eb40354563e02730/onnxruntime-1.31.1-cp312-cp312-manylinux_2_28_x86_64.whl 1f3dea47f2f0e5117c2404cea7d21fd253ae7836a3bf167a501cdfbb2600d536 0")
     sources+=("go https://go.dev/dl/go1.27.1.linux-amd64.tar.gz 63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445 1") ;;
   aarch64)
     sources+=("zig https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17 1")
+    sources+=("wheel-numpy https://files.pythonhosted.org/packages/dc/96/8319e2457ae4333c62c815c7006b869a4f60985c1e01024c2f8c6c040fe5/numpy-2.5.4-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl fe4d21ab149f15e4e6043dfb0de87e6e5f34ac176cde83060e9802981fca2ac2 0")
+    sources+=("wheel-pillow https://files.pythonhosted.org/packages/3b/bb/9e30e8ed18c20800ee327a12107d5249ad8dc444867b3adfcc21654e3c71/pillow-13.0.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl 8bf295fe459343bc6093c8e5e0df60bfa189e0fcb775a22e2c2488fdeccc6c0d 0")
+    sources+=("wheel-onnxruntime https://files.pythonhosted.org/packages/ba/e4/1ed1a7a5f4702d899091fa2b976d377995250c307326ec8dc9ae6378aa13/onnxruntime-1.31.1-cp312-cp312-manylinux_2_28_aarch64.whl 0b9a492176886992e0e875f06bc0367e333f5fff11711a2d642e18b02f3009cc 0")
     sources+=("go https://go.dev/dl/go1.27.1.linux-arm64.tar.gz 3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec 1") ;;
   *) echo "no tarball build for $arch" >&2; exit 1 ;;
 esac
@@ -75,7 +82,7 @@ for entry in "${sources[@]}"; do
   fi
   rm -rf "${tp:?}/$name"; mkdir -p "$tp/$name"
   case $file in
-    *.zip) (cd "$tp/$name" && unzip -q "$file" && if [ "$strip" = 1 ]; then d=$(ls); mv "$d"/* . && rmdir "$d"; fi) ;;
+    *.zip|*.whl) (cd "$tp/$name" && unzip -q "$file" && if [ "$strip" = 1 ]; then d=$(ls); mv "$d"/* . && rmdir "$d"; fi) ;;
     *) tar -xf "$file" -C "$tp/$name" --strip-components="$strip" ;;
   esac
 done
@@ -87,6 +94,17 @@ earth=$dl/blue-marble-${earth_url##*/}
 if ! { [ -f "$earth" ] && echo "$earth_sum  $earth" | sha256sum -c --quiet 2>/dev/null; }; then
   curl -fsSL --retry 5 --retry-all-errors -o "$earth" "$earth_url"
   echo "$earth_sum  $earth" | sha256sum -c --quiet
+fi
+
+# formalshell-depth's model: Depth Anything V2 Small (Apache-2.0), the int8
+# export, 27 MB where the fp32 one is 99. On a photograph its map is 0.0033
+# off the fp32 map on average (0..1 scale), 0.043 at worst.
+depth_url=https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model_quantized.onnx
+depth_sum=fcf51f1b230362b28690bb9d1809bf0431f29cad20534e3f589bd7285547f20d
+depth_model=$dl/depth-anything-v2-small-model_quantized.onnx
+if ! { [ -f "$depth_model" ] && echo "$depth_sum  $depth_model" | sha256sum -c --quiet 2>/dev/null; }; then
+  curl -fsSL --retry 5 --retry-all-errors -o "$depth_model" "$depth_url"
+  echo "$depth_sum  $depth_model" | sha256sum -c --quiet
 fi
 
 export CARGO_HOME=$work/cargo RUSTUP_HOME=$work/rustup
@@ -135,6 +153,17 @@ rm -f "$tp/tensaku/rust-toolchain.toml"
 (cd "$tp/omarchy-iphone" && patch -Np1 -i "$repo/packaging/iphone-ams-subscribe.patch" \
   && patch -Np1 -i "$repo/packaging/iphone-bridge-bond.patch")
 
+# formalshell-depth's interpreter, built here rather than taken from
+# python-build-standalone: those builds link libutil.so.1, which Arch's glibc
+# no longer ships. Bookworm's glibc binds openpty to libc, so NEEDED stays
+# libc and libm. Static libpython, no ensurepip, no tests.
+py=$work/cpython-3.12.16-1
+if [ ! -x "$py/bin/python3" ]; then
+  rm -rf "$py"
+  (cd "$tp/cpython" && ./configure --prefix="$py" --without-ensurepip --disable-test-modules --disable-shared >/dev/null \
+    && make -j"$(nproc)" >/dev/null && make install >/dev/null)
+fi
+
 stage=$work/stage/formalshell
 rm -rf "$work/stage"
 mkdir -p "$stage/bin" "$stage/lib/formalshell/bin" "$stage/share/formalshell/fonts"
@@ -154,6 +183,34 @@ install -m755 "$work/eds/bin/formalshell-eds" "$lib/bin/formalshell-eds"
 install -m755 "$tp/localsend-cli/localsend-cli" "$lib/bin/localsend-cli"
 install -m755 "$tp/clipssh/clipssh" "$lib/bin/clipssh"
 install -m755 "$tp/omarchy-iphone/bin/omarchy-iphone-bridge" "$tp/omarchy-iphone/bin/omarchy-iphone-ams" "$lib/bin/"
+
+# formalshell-depth runs on that CPython with numpy, pillow and onnxruntime
+# unpacked from hash-pinned manylinux wheels, so no distro's python version
+# or packages matter. Nothing in the shell itself links any of it.
+mkdir -p "$lib/depth" "$share/depth"
+cp -R "$py" "$lib/depth/python"
+site=$lib/depth/python/lib/python3.12/site-packages
+for wheel in numpy pillow onnxruntime; do cp -R "$tp/wheel-$wheel"/. "$site/"; done
+(cd "$lib/depth/python" \
+  && rm -rf include share lib/pkgconfig lib/libpython3.12.a lib/python3.12/config-3.12-* lib/python3.12/ensurepip lib/python3.12/pydoc_data \
+    bin/idle* bin/pydoc* bin/2to3* bin/python3-config bin/python3.*-config \
+    lib/python3.12/idlelib lib/python3.12/tkinter lib/python3.12/turtledemo lib/python3.12/lib2to3 \
+    lib/python3.12/lib-dynload/_tkinter* lib/python3.12/lib-dynload/_curses* lib/python3.12/lib-dynload/_dbm* \
+    lib/python3.12/lib-dynload/_gdbm* lib/python3.12/lib-dynload/_ctypes* lib/python3.12/lib-dynload/_crypt* \
+    lib/python3.12/lib-dynload/_lzma* lib/python3.12/lib-dynload/_uuid* lib/python3.12/lib-dynload/nis* \
+  && strip --strip-unneeded bin/python3.12 lib/python3.12/lib-dynload/*.so \
+  && find . -name __pycache__ -prune -exec rm -rf {} + \
+  && find lib/python3.12/site-packages \( -name tests -o -name test \) -type d -prune -exec rm -rf {} +)
+install -m644 "$repo/packaging/formalshell-depth.py" "$lib/depth/formalshell-depth.py"
+install -m644 "$depth_model" "$share/depth/model.onnx"
+cat > "$lib/bin/formalshell-depth" <<'EOF'
+#!/bin/sh
+here=$(dirname "$(readlink -f "$0")")
+prefix=$(cd "$here/../../.." && pwd)
+export FORMALSHELL_DEPTH_MODEL="${FORMALSHELL_DEPTH_MODEL-$prefix/share/formalshell/depth/model.onnx}"
+exec "$prefix/lib/formalshell/depth/python/bin/python3" -I "$prefix/lib/formalshell/depth/formalshell-depth.py" "$@"
+EOF
+chmod 755 "$lib/bin/formalshell-depth"
 
 cp -R "$repo/crates/fs-theme/templates" "$share/templates"
 cp -R "$repo/branding" "$share/branding"
@@ -201,15 +258,19 @@ chmod 755 "$stage/bin/formalshell" "$stage/bin/formalshell-greeter" "$stage/bin/
 
 # Every soname here is in the base install or a package install.sh's table
 # pulls in, on Arch, Debian and Fedora alike.
-allowed='^(ld-linux-[a-z0-9_-]+\.so\.[0-9]+|libc\.so\.6|libm\.so\.6|libdl\.so\.2|librt\.so\.1|libpthread\.so\.0|libgcc_s\.so\.1|libstdc\+\+\.so\.6|libpam\.so\.0|libpipewire-0\.3\.so\.0|libfontconfig\.so\.1|libfreetype\.so\.6|libxkbcommon\.so\.0|libdbus-1\.so\.3|libsystemd\.so\.0|libpulse\.so\.0|libbluetooth\.so\.3|libsqlite3\.so\.0|libwayland-client\.so\.0|libgtk-4\.so\.1|libadwaita-1\.so\.0|libgio-2\.0\.so\.0|libglib-2\.0\.so\.0|libgobject-2\.0\.so\.0|libcairo\.so\.2|libcairo-gobject\.so\.2|libpango-1\.0\.so\.0|libpangocairo-1\.0\.so\.0|libgdk_pixbuf-2\.0\.so\.0|libgraphene-1\.0\.so\.0|libepoxy\.so\.0|libharfbuzz\.so\.0)$'
+allowed='^(ld-linux-[a-z0-9_-]+\.so\.[0-9]+|libc\.so\.6|libm\.so\.6|libdl\.so\.2|librt\.so\.1|libpthread\.so\.0|libgcc_s\.so\.1|libstdc\+\+\.so\.6|libpam\.so\.0|libpipewire-0\.3\.so\.0|libfontconfig\.so\.1|libfreetype\.so\.6|libxkbcommon\.so\.0|libdbus-1\.so\.3|libsystemd\.so\.0|libpulse\.so\.0|libbluetooth\.so\.3|libsqlite3\.so\.0|libwayland-client\.so\.0|libgtk-4\.so\.1|libadwaita-1\.so\.0|libgio-2\.0\.so\.0|libglib-2\.0\.so\.0|libgobject-2\.0\.so\.0|libcairo\.so\.2|libcairo-gobject\.so\.2|libpango-1\.0\.so\.0|libpangocairo-1\.0\.so\.0|libgdk_pixbuf-2\.0\.so\.0|libgraphene-1\.0\.so\.0|libepoxy\.so\.0|libharfbuzz\.so\.0|libz\.so\.1)$'
 bad=0
-for f in "$stage"/bin/* "$lib"/formalshell-rs "$lib"/bin/*; do
+# The depth tree's wheels vendor their own libraries; those are fine to
+# need, and are held to the same glibc floor.
+for f in "$stage"/bin/* "$lib"/formalshell-rs "$lib"/bin/* $(find "$lib/depth" -type f \( -name '*.so' -o -name '*.so.*' -o -name 'python3*' \) -not -name '*.py' | sort); do
   file -b "$f" | grep -q '^ELF' || continue
   needed=$(objdump -p "$f" | awk '/NEEDED/ { print $2 }')
   top=$({ objdump -T "$f" 2>/dev/null || true; } | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1 || true)
   echo "linkage ${f#"$stage"/}: glibc ${top:-none}; $(echo "$needed" | tr '\n' ' ')"
   for n in $needed; do
-    echo "$n" | grep -Eq "$allowed" || { echo "  unexpected NEEDED: $n" >&2; bad=1; }
+    echo "$n" | grep -Eq "$allowed" && continue
+    case $f in "$lib"/depth/*) [ -n "$(find "$lib/depth" -name "${n##*/}" -print -quit)" ] && continue ;; esac
+    echo "  unexpected NEEDED: $n" >&2; bad=1
   done
   if [ -n "$top" ] && [ "$(printf '%s\n%s\n' "$top" "$glibc_max" | sort -V | tail -1)" != "$glibc_max" ]; then
     echo "  needs glibc $top, newer than $glibc_max" >&2; bad=1

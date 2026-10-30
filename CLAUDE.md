@@ -420,7 +420,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `.depth/` map beside it marking an orange band through the clock digits
   as the subject: `lock status` reporting `depth` true and the band drawn
   over the digits, then settings.json retargeted to `lock.depth: false`,
-  `depth` false and the digits back over the band.
+  `depth` false and the digits back over the band. `FS_DEPTH_GENERATE=1`
+  swaps the band for the mountains photograph and has the result's own
+  `formalshell-depth` (the tarball's bundled Python, onnxruntime and model)
+  write its map first: a second run `fresh`, the map not flat and within 0.1
+  of the committed reference, then the status checks.
 - `desktop_clock.sh` `--desktop-clock`: `desktopClock.enabled` over the
   `--depth` leg's band fixture, read off `debug dump`'s `desktopClock`
   block and a frame per phase: the band over the digits, then no commit in

@@ -486,7 +486,7 @@ paths = ["crates/formalshell-rs/src/wayland/veil.rs", "crates/formalshell-rs/src
 runs = ["--unlock", "--lock", "--menu", "--multi-output", "--login-lock"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/depth.rs"]
+paths = ["crates/formalshell-rs/src/services/depth.rs", "packaging/formalshell-depth.py"]
 runs = ["--lock --depth", "--desktop-clock"]
 
 [[rule]]

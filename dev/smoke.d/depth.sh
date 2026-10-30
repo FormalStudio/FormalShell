@@ -18,6 +18,13 @@
 #
 # FS_DEPTH_PICTURE=<path in the VM> swaps the band for a real wallpaper and
 # the map beside it (`.depth/<name>.png`); only the status checks apply then.
+#
+# FS_DEPTH_GENERATE=1 swaps the band for the mountains photograph and has the
+# result's own `formalshell-depth` (the tarball's python, numpy, onnxruntime
+# and model; `FS_RESULT` an unpacked release tarball) write its map before the
+# shell starts: a second run answering `fresh`, the map an 8-bit grey PNG of
+# the picture's size that is not flat and sits within 0.1 mean difference of
+# the committed reference map, and `lock status` reporting `depth` over it.
 leg_depth_flag="--depth"
 leg_depth_order=111
 leg_depth_needs="convert jq"
@@ -25,6 +32,10 @@ leg_depth_needs="convert jq"
 leg_depth_validate() {
   if ! leg_on lock; then
     echo "usage: $0 --depth rides --lock, which locks the session it photographs" >&2
+    exit 1
+  fi
+  if [ -n "${FS_DEPTH_GENERATE:-}" ] && [ -n "${FS_DEPTH_PICTURE:-}" ]; then
+    echo "usage: $0 --depth takes FS_DEPTH_GENERATE or FS_DEPTH_PICTURE, not both" >&2
     exit 1
   fi
   if leg_on showcase || leg_on wallpaper || leg_on config_reload || leg_on lyrics_blur; then
@@ -35,8 +46,12 @@ leg_depth_validate() {
 
 depth_dir="$shot_dir/depth-wallpapers"
 depth_real="${FS_DEPTH_PICTURE:-}"
+depth_generate="${FS_DEPTH_GENERATE:-}"
+depth_photo=dev/smoke.d/fixtures/desktop-clock-mountains
 if [ -n "$depth_real" ]; then
   depth_picture_path="$depth_dir/$(basename "$depth_real")"
+elif [ -n "$depth_generate" ]; then
+  depth_picture_path="$depth_dir/mountains.jpg"
 else
   depth_picture_path="$depth_dir/band.png"
 fi
@@ -47,9 +62,26 @@ depth_status_off_path="$shot_dir/depth-status-off.json"
 depth_gen1_path="$shot_dir/depth-settings-gen1.json"
 depth_gen2_path="$shot_dir/depth-settings-gen2.json"
 
+leg_depth_generate() {
+  local bin="$PWD/result/lib/formalshell/bin/formalshell-depth" map="$depth_dir/.depth/mountains.jpg.png" log="$shot_dir/depth-generate.log" diff
+  [ -x "$bin" ] || fail "FS_DEPTH_GENERATE needs the result's formalshell-depth ($bin)"
+  cp "$depth_photo.jpg" "$depth_picture_path"
+  env -i HOME="$iso_home" PATH=/usr/bin:/bin "$bin" "$depth_dir" > "$log" 2>&1 || fail "formalshell-depth failed: $(cat "$log")"
+  grep -q "^wrote $depth_picture_path\$" "$log" || fail "formalshell-depth did not write a map for the photograph: $(cat "$log")"
+  env -i HOME="$iso_home" PATH=/usr/bin:/bin "$bin" "$depth_dir" 2>&1 | grep -q "^fresh $depth_picture_path\$" || fail "a second formalshell-depth run did not find the map fresh"
+  [ "$($convert_bin "$map" -format '%wx%h %[depth] %[colorspace]' info:)" = "1280x854 8 Gray" ] || fail "the generated map is not a 1280x854 8-bit grey PNG: $($convert_bin "$map" -format '%wx%h %[depth] %[colorspace]' info:)"
+  awk -v sd="$($convert_bin "$map" -format '%[fx:standard_deviation]' info:)" 'BEGIN { exit !(sd > 0.1) }' || fail "the generated map is flat"
+  diff=$($convert_bin "$map" "$depth_photo.depth.png" -compose difference -composite -format '%[fx:mean]' info:)
+  echo "generated depth map, mean difference from the reference: $diff"
+  awk -v d="$diff" 'BEGIN { exit !(d < 0.1) }' || fail "the generated map is $diff from the reference map (limit 0.1)"
+  echo "SMOKE_DEPTH_MAP $map"
+}
+
 leg_depth_fixture() {
   mkdir -p "$depth_dir/.depth"
-  if [ -n "$depth_real" ]; then
+  if [ -n "$depth_generate" ]; then
+    leg_depth_generate
+  elif [ -n "$depth_real" ]; then
     local map
     map="$(dirname "$depth_real")/.depth/$(basename "$depth_real").png"
     [ -s "$depth_real" ] && [ -s "$map" ] || fail "FS_DEPTH_PICTURE needs $depth_real and $map"
@@ -95,7 +127,7 @@ leg_depth_assert() {
   cat "$depth_status_on_path"; echo
   grep -q '"depth":true' "$depth_status_on_path" || fail "lock status did not report depth:true with a map beside the wallpaper. Got: $(cat "$depth_status_on_path")"
   grep -q '"depth":true' "$depth_status_off_path" && fail "lock status still reported depth:true after lock.depth was set false. Got: $(cat "$depth_status_off_path")"
-  [ -n "$depth_real" ] && return 0
+  [ -n "$depth_real" ] || [ -n "$depth_generate" ] && return 0
   local rect x y bottom crop
   rect=$("$jq_bin" -c 'first(.. | objects | select(.depthRect != null) | .depthRect)' "$depth_status_on_path")
   [ -n "$rect" ] || fail "lock status reported no depthRect with depth on"
