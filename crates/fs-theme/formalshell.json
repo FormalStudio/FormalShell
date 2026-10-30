@@ -208,13 +208,14 @@
                 "fillAlpha": 1
             },
             "dialog": {
+                "fillAlpha": 1,
                 "radius": "xl"
             }
         },
         "notification": {
             "rest": {
                 "fill": "card",
-                "fillAlpha": 1,
+                "fillAlpha": "surface",
                 "radius": "lg",
                 "border": {
                     "color": "black",

@@ -800,13 +800,17 @@ start as `settings: <key> is no longer read`: `theme.preset`,
 
 ### Translucency and fonts
 
-`theme.surfaceOpacity` (0 to 1, default 1) is the alpha of the bar cells,
-the panels and the launcher card. The shell blurs nothing itself: that alpha
-is what lets a compositor blur read through. The example Hyprland config
-turns the blur on and points it at the `formalshell:bar`, `formalshell:panel`,
-`formalshell:menu` and `formalshell:radio` layer namespaces. Under a compositor with blur off the
-same alpha reads as a tint. Toasts and the lock screen stay opaque either
-way; the OSD pill is drawn at the same alpha as the line it buds off.
+`theme.surfaceOpacity` (0 to 1, default 0.85) is the alpha of the bar
+cells, the panels, the launcher card and the toasts. The shell blurs nothing
+itself: that alpha is what lets a compositor blur read through, so it only
+applies while Hyprland reports `decoration:blur:enabled` (read on start and
+on every config reload, `blur` in `debug dump`). With blur off, or under
+mango, every card draws opaque whatever the key says. The example Hyprland
+config turns the blur on and points it at the shell's layer namespaces
+(`formalshell:bar`, `formalshell:panel`, `formalshell:menu`,
+`formalshell:notifications` and the rest). The lock screen and the greeter
+stay opaque either way; the OSD pill is drawn at the same alpha as the line
+it buds off.
 
 The launcher and the polkit request cover the whole output and sit over a
 0.5 black scrim, so their layer rules (`formalshell:menu`,
@@ -821,12 +825,12 @@ and Geist Mono are what the design targets:
 
 ```jsonc
 // ~/.config/formalshell/settings.json
-{ "theme": { "surfaceOpacity": 0.85 } }
+{ "theme": { "surfaceOpacity": 0.75 } }
 ```
 
 ```nix
 # home-manager
-programs.formalshell.settings.theme.surfaceOpacity = 0.85;
+programs.formalshell.settings.theme.surfaceOpacity = 0.75;
 
 # NixOS
 fonts.packages = [ pkgs.geist-font ];

@@ -1007,7 +1007,7 @@ pub(crate) mod tests {
     fn the_pantheon_bubble_flattens_inside_the_centre() {
         let p = crate::table();
         let bubble = r(p, "notification", Some("rest"), "dark");
-        assert_eq!(bubble.fill, "role:card");
+        assert_eq!(bubble.fill, "role:card@0.85");
         assert_eq!(bubble.radius, Radius::Px(12.0));
         assert_eq!(bubble.casts.len(), 2);
         assert_eq!(bubble.casts[1].blur, 9.0);

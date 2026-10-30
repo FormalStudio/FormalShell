@@ -82,6 +82,7 @@ pub fn changed(app: &mut App, topic: Topic) {
         Topic::Theme => {
             app.set_bar_theme();
             app.restyle_cards();
+            app.toasts_changed();
             lights_palette(app);
         }
         Topic::Devices => {

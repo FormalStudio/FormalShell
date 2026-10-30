@@ -127,6 +127,8 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             "barPosition": edge.as_str(),
             "layout": theme.layout.as_str(),
             "barStyle": theme.bar_style.as_str(),
+            "blur": app.store.theme.blur,
+            "surfaceOpacity": number(theme.surface_opacity),
             "morph": theme.morph,
             "grid": {"wallpaper": theme.wallpaper_grid, "lock": theme.lock_grid},
             "animate": theme.wallpaper_animate,

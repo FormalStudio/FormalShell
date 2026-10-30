@@ -113,6 +113,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
         let _ = dirty.try_send(());
         refresh_outputs(&ctx, &shared).await;
         refresh_keyboard(&ctx, &shared).await;
+        refresh_blur(&ctx).await;
 
         let mut lines = BufReader::new(stream).lines();
         while let Some(line) = lines.next().await {
@@ -135,6 +136,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
                     ctx.publish(store::Diff::Compositor(Diff::ConfigReloaded));
                     refresh_outputs(&ctx, &shared).await;
                     refresh_keyboard(&ctx, &shared).await;
+                    refresh_blur(&ctx).await;
                 }
                 "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => {
                     refresh_outputs(&ctx, &shared).await;
@@ -210,6 +212,20 @@ async fn refresh_keyboard(ctx: &Ctx, shared: &Shared) {
     };
     shared.borrow_mut().keyboard = Some(layout.clone());
     ctx.publish(store::Diff::Compositor(Diff::Keyboard(layout)));
+}
+
+/// `decoration:blur:enabled`, which decides whether the cards may be
+/// translucent. An answer it cannot read counts as no blur.
+async fn refresh_blur(ctx: &Ctx) {
+    let blur = request("j/getoption decoration:blur:enabled").await.is_ok_and(|text| blur_enabled(&text));
+    ctx.publish(store::Diff::Theme(crate::services::theme::Diff::Blur(blur)));
+}
+
+/// getoption's JSON carries the value under its type's key: `int` for the
+/// hyprlang config, `bool` under a Lua one.
+fn blur_enabled(text: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else { return false };
+    v.get("bool").and_then(serde_json::Value::as_bool).or_else(|| v.get("int").and_then(serde_json::Value::as_i64).map(|i| i != 0)).unwrap_or(false)
 }
 
 async fn dispatch(lua: &str) {

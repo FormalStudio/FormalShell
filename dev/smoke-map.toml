@@ -471,7 +471,12 @@ runs = ["--power"]
 # Wallpaper and theme
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/wallpaper.rs", "crates/formalshell-rs/src/services/theme.rs", "crates/formalshell-rs/src/ipc/theme.rs"]
-runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki"]
+runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki", "--glass"]
+
+# Glass: the compositor's blur switch deciding the cards' opacity.
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/compositor/hyprland/mod.rs", "dev/smoke.d/glass.sh"]
+runs = ["--glass"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/picker.rs", "crates/formalshell-rs/src/wayland/picker.rs", "crates/formalshell-rs/src/ipc/picker.rs"]

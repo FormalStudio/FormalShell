@@ -72,6 +72,10 @@ pub struct State {
     pub palette: Map<String, Value>,
     pub settings: Value,
     pub theme: Theme,
+    /// Whether the compositor blurs behind layer surfaces. Until it says
+    /// so every card draws opaque, whatever `theme.surfaceOpacity` asks,
+    /// so text never sits on a bare wallpaper.
+    pub blur: bool,
     pub json_present: bool,
     pub schedule: Option<SunTimes>,
 }
@@ -80,8 +84,9 @@ impl Default for State {
     fn default() -> Self {
         let palette = palette::fallback("dark");
         let settings = Value::Object(Map::new());
-        let theme = Theme::resolve(get(&settings), &palette);
-        Self { palette, settings, theme, json_present: false, schedule: None }
+        let mut theme = Theme::resolve(get(&settings), &palette);
+        theme.surface_opacity = 1.0;
+        Self { palette, settings, theme, blur: false, json_present: false, schedule: None }
     }
 }
 
@@ -90,6 +95,8 @@ pub enum Diff {
     Settings(Value),
     JsonPresent(bool),
     Schedule(Option<SunTimes>),
+    /// The compositor's own blur switch, read on start and every reload.
+    Blur(bool),
 }
 
 impl State {
@@ -97,6 +104,7 @@ impl State {
         match diff {
             Diff::Palette(p) if p != self.palette => self.palette = p,
             Diff::Settings(s) if s != self.settings => self.settings = s,
+            Diff::Blur(b) if b != self.blur => self.blur = b,
             Diff::JsonPresent(p) if p != self.json_present => {
                 self.json_present = p;
                 return true;
@@ -118,6 +126,9 @@ impl State {
         let motion_scale = self.theme.motion_scale;
         self.theme = Theme::resolve(get(&self.settings), &self.palette);
         self.theme.motion_scale = motion_scale;
+        if !self.blur {
+            self.theme.surface_opacity = 1.0;
+        }
         if self.theme.layout == Layout::Sidebar {
             static SIDEBAR: Once = Once::new();
             SIDEBAR.call_once(|| eprintln!("layout: sidebar is not built yet"));

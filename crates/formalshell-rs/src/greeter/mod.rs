@@ -172,7 +172,10 @@ fn settings(env: &theme::Env) -> Value {
 
 fn resolve(settings: &Value, env: &theme::Env) -> Theme {
     let (palette, _) = theme::read_palette(&env.theme_json());
-    Theme::resolve(theme::get(settings), &palette)
+    let mut theme = Theme::resolve(theme::get(settings), &palette);
+    // The greeter never asks its compositor whether it blurs.
+    theme.surface_opacity = 1.0;
+    theme
 }
 
 /// `greeter.sessionCommand`: a list of non-empty strings, else `["Hyprland"]`.

@@ -245,11 +245,13 @@ hl.layer_rule({
   no_anim = true,
 })
 
--- The surfaces that stay opaque by design (DESIGN.md), so they take the
--- animation rule alone with no blur.
+-- The toast cards are drawn at surfaceOpacity too; the layer between and
+-- around them is clear, which the 0.2 mark leaves unblurred.
 hl.layer_rule({
   name = "formalshell-notifications",
   match = { namespace = "formalshell:notifications" },
+  blur = chrome.blur,
+  ignore_alpha = 0.2,
   no_anim = true,
 })
 

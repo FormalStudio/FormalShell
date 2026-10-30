@@ -495,6 +495,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   tiled under dwindle and floating under scrolling, its lock re-armed over
   SIGUSR1: a toast comes and goes with the lock held throughout, the stack
   unmapped after it when tiled and still mapped when floating.
+- `glass.sh` `--glass`: the cards' opacity following Hyprland's own blur
+  switch: with the rig's `decoration.blur.enabled` false, `debug dump`'s
+  `blur` false and `surfaceOpacity` 1; the session's config rewritten with
+  blur on and reloaded, `blur` true and 0.85 off `configreloaded`. The audio
+  panel and a sticky toast over a flat bright wallpaper photographed in
+  both states, the share of the right half dark enough to be their opaque
+  fill at least halving.
 - `gallery.sh` `--gallery`: the dev gallery sheet, every shared component
   drawn against the live theme. The power flow is drawn from
   `fs_system::power::flow::sample_flow` (labelled a sample), the only

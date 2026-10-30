@@ -320,7 +320,7 @@ impl style::Ctx for PaletteCtx<'_> {
 impl Theme {
     pub fn resolve(get: impl Fn(&str) -> Option<Value>, palette: &Map<String, Value>) -> Self {
         let style = crate::table();
-        let surface_opacity = tokens::clamp(get("theme.surfaceOpacity").as_ref(), 0.0, 1.0, 1.0);
+        let surface_opacity = tokens::clamp(get("theme.surfaceOpacity").as_ref(), 0.0, 1.0, 0.85);
 
         let font_base_size = 13.0;
         let font_scale = tokens::font_scale(font_base_size);
@@ -680,7 +680,7 @@ mod tests {
     #[test]
     fn the_defaults_are_the_one_look() {
         let t = theme();
-        assert_eq!((t.radii.md, t.radii.xl, t.surface_opacity), (9.0, 15.0, 1.0));
+        assert_eq!((t.radii.md, t.radii.xl, t.surface_opacity), (9.0, 15.0, 0.85));
         assert!(t.blur_behind);
         assert_eq!(t.faces, Faces::ALIASES);
         assert_eq!(t.faces.words, Face { name: None, generic: "sans-serif" });
@@ -695,7 +695,7 @@ mod tests {
     fn a_removed_key_is_ignored_and_reported() {
         let written = json!({ "theme": { "preset": "square", "radius": 0, "icons": "nerd", "dither": true, "grid": true }, "bar": { "paint": "dark" } });
         let t = Theme::resolve(make_get(written.clone()), &sentinel());
-        assert_eq!((t.radii.sm, t.surface_opacity), (6.0, 1.0));
+        assert_eq!((t.radii.sm, t.surface_opacity), (6.0, 0.85));
         assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid);
         assert_eq!(t.bar_style, BarStyle::Transparent);
         assert_eq!(removed_keys(make_get(written)), ["theme.preset", "theme.radius", "theme.icons", "theme.dither", "theme.grid", "bar.paint"]);
