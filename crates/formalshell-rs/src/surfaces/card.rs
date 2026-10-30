@@ -24,6 +24,7 @@ use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, EMERGE, SPATIAL_FAST, SPATIAL_FAST_MS};
 use crate::scene::{Cast, IRect, NodeId, Paint, Scene};
+use crate::surfaces::rim::{Lit, Rim};
 use crate::surfaces::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
 use fs_theme::style::Radius;
@@ -150,6 +151,9 @@ pub struct Card {
     pub deform_amount: f64,
     casts: NodeId,
     shape: NodeId,
+    rim_node: NodeId,
+    /// The border's light off what is around the card.
+    pub rim: Rim,
     /// Every gap this card opens this frame: the line's, and a walled side's.
     pub joins: Vec<Join>,
     /// Where content goes this frame, in surface pixels, and how opaque.
@@ -193,7 +197,8 @@ impl Card {
         let empty = || Paint::Shape { fill: None, strokes: Vec::new() };
         let casts = scene.add(IRect::default(), empty());
         let shape = scene.add(IRect::default(), empty());
-        for id in [casts, shape] {
+        let rim_node = scene.add(IRect::default(), empty());
+        for id in [casts, shape, rim_node] {
             scene.set_visible(id, false);
         }
         let curve = look.emerge_curve;
@@ -225,6 +230,8 @@ impl Card {
             deform_amount: DEFORM_AMOUNT,
             casts,
             shape,
+            rim_node,
+            rim: Rim::default(),
             joins: Vec::new(),
             content: (IRect::default(), 0.0),
             popover_frame: (IRect::default(), 0.0),
@@ -267,7 +274,27 @@ impl Card {
 
     /// The node every other node on this surface paints above.
     pub fn top_node(&self) -> NodeId {
-        self.shape
+        self.rim_node
+    }
+
+    /// Aims the rim at `lit` for the card at rest, the surface's top left
+    /// at `origin` in output pixels.
+    pub fn light(&mut self, now: Instant, lit: Option<&Lit>, origin: (f64, f64), ms: f64) {
+        let r = self.rest_rect();
+        let card = Rect::new(r.x as f64 + origin.0, r.y as f64 + origin.1, r.right() as f64 + origin.0, r.bottom() as f64 + origin.1);
+        let base = self.look.border.with_alpha(self.look.border.a);
+        let lit = lit.filter(|_| self.look.border_width > 0.0 && !self.compositor_look);
+        self.rim.aim(now, lit, card, base, ms);
+    }
+
+    /// The side of the card that hangs off its line, in surface pixels.
+    fn line_normal(&self) -> (f64, f64) {
+        match self.edge {
+            Edge::Top => (0.0, -1.0),
+            Edge::Bottom => (0.0, 1.0),
+            Edge::Left => (-1.0, 0.0),
+            Edge::Right => (1.0, 0.0),
+        }
     }
 
     /// The surface's extent away from its edge.
@@ -381,7 +408,7 @@ impl Card {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        !self.mapped || self.progress.running(now) || self.attach.running(now) || !self.deform.at_rest
+        !self.mapped || self.progress.running(now) || self.attach.running(now) || !self.deform.at_rest || self.rim.running(now)
     }
 
     /// Presence's `contentOpacity`: the card lands before its text.
@@ -395,11 +422,12 @@ impl Card {
         } else {
             self.tick_join(now);
         }
+        self.rim.painted();
     }
 
     /// A popover's casts, fill and border for a card at `card`, `alpha`
     /// opaque, onto `nodes` of `scene`.
-    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, alpha: f32, shown: bool) {
+    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
         let radius = look.radius;
         let layers: Vec<Cast> = look
             .casts
@@ -418,12 +446,20 @@ impl Card {
             None,
         );
         let fill = look.fill.with_alpha(look.fill.a * alpha);
-        let border = look.border.with_alpha(look.border.a * alpha);
         let half = look.border_width / 2.0;
         let mut line = rr(card.inflate(-half, -half), radius - half);
         line.close_path();
+        let lit = rim.and_then(|(rim, now, node)| {
+            let paint = rim.paint(now, line.clone(), look.border_width, rr(card, radius), card, alpha, None)?;
+            Some((node, paint))
+        });
+        let border = if lit.is_some() { Rgba::TRANSPARENT } else { look.border.with_alpha(look.border.a * alpha) };
         let paint = Paint::Shape { fill: Some((rr(card, radius), fill)), strokes: vec![(line, border, look.border_width)] };
-        scene.update_with(nodes.1, Scene::cover(card, Affine::IDENTITY, 2.0), paint, shown, Affine::IDENTITY, None);
+        let bounds = Scene::cover(card, Affine::IDENTITY, 2.0);
+        scene.update_with(nodes.1, bounds, paint, shown, Affine::IDENTITY, None);
+        if let Some((node, paint)) = lit {
+            scene.update_with(node, bounds, paint, shown, Affine::IDENTITY, None);
+        }
     }
 
     /// How far past the card a popover's casts reach.
@@ -448,7 +484,7 @@ impl Card {
     pub fn popover_look(&self, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect) {
         let mut look = self.look.clone();
         look.fill = look.fill.with_alpha(1.0);
-        Self::paint_popover(&look, scene, nodes, card, 1.0, true);
+        Self::paint_popover(&look, scene, nodes, card, 1.0, true, None);
     }
 
     /// The room a popover's casts need around the card.
@@ -472,7 +508,12 @@ impl Card {
         // Painted by the compositor instead (`popover_look`): the card's own
         // surface carries nothing of it.
         let here = shown && !self.compositor_look;
-        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, alpha, here);
+        let rim = self.rim.current(now).is_some().then_some((&mut self.rim, now, self.rim_node));
+        let lit = rim.is_some();
+        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, alpha, here, rim);
+        if !lit || !here {
+            self.scene.set_visible(self.rim_node, false);
+        }
         self.popover_frame = (device, if shown { alpha } else { 0.0 });
         self.content = (device, if shown { self.content_alpha(pose) * self.frame_alpha } else { 0.0 });
         self.clip = self.scene.size;
@@ -594,14 +635,23 @@ impl Card {
         let near = line.with_alpha(line.a * (1.0 - a) as f32);
         let bounds = Scene::cover(item_rect, item, 2.0).intersect(&band);
         let cutout = paths.fill.clone();
+        let frame_box = Scene::cover(Rect::new(live.x0, frame_y, live.x1, frame_y + extent), map, 0.0);
+        let centre = Rect::new(frame_box.x as f64, frame_box.y as f64, frame_box.right() as f64, frame_box.bottom() as f64);
+        let mute = (a > 0.0).then(|| self.line_normal());
+        let lit = self.rim.paint(now, paths.outer.clone(), border, paths.fill.clone(), centre, fa, mute);
+        let outer_line = if lit.is_some() { Rgba::TRANSPARENT } else { line };
         self.scene.update_with(
             self.shape,
             bounds,
-            Paint::Shape { fill: Some((paths.fill, fill)), strokes: vec![(paths.outer, line, border), (paths.near, near, border)] },
+            Paint::Shape { fill: Some((paths.fill, fill)), strokes: vec![(paths.outer, outer_line, border), (paths.near, near, border)] },
             visible && fa > 0.0,
             item,
             Some(band),
         );
+        match lit {
+            Some(paint) => self.scene.update_with(self.rim_node, bounds, paint, visible && fa > 0.0, item, Some(band)),
+            None => self.scene.set_visible(self.rim_node, false),
+        }
 
         let cast_alpha = (1.0 - a) as f32 * fa;
         let layers: Vec<Cast> = self

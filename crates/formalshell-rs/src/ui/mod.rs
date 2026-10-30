@@ -175,6 +175,10 @@ pub struct Ui {
     pub fill_owned: bool,
     /// `debug motionScale` over the theme's clocks.
     pub motion_scale: f64,
+    /// The field a card's rim reads, and the surface's top left on the
+    /// output; `None` draws every card's border flat.
+    pub lit: Option<(crate::surfaces::rim::Lit, (f64, f64))>,
+    rims: HashMap<String, crate::surfaces::rim::Rim>,
 }
 
 impl Ui {
@@ -198,6 +202,8 @@ impl Ui {
             halo_owned: true,
             fill_owned: false,
             motion_scale: 1.0,
+            lit: None,
+            rims: HashMap::new(),
         }
     }
 
@@ -257,6 +263,7 @@ impl Ui {
                 }
                 self.groups.remove(&k);
                 self.births.remove(&k);
+                self.rims.remove(&k);
             } else {
                 for id in &g.nodes {
                     scene.set_visible(*id, false);
@@ -505,6 +512,25 @@ impl Cx<'_> {
             self.ui.stops.splice(at..at, added);
         }
         reach
+    }
+
+    /// The rim of the card at `path`, aimed at the field for its box `r`
+    /// over a border `base`; handed back with [`Cx::put_rim`].
+    pub fn take_rim(&mut self, path: &str, r: IRect, base: Rgba) -> Option<crate::surfaces::rim::Rim> {
+        let Some((lit, origin)) = self.ui.lit.clone() else {
+            self.ui.rims.remove(path);
+            return None;
+        };
+        let mut rim = self.ui.rims.remove(path).unwrap_or_default();
+        let card = Rect::new(r.x as f64 + origin.0, r.y as f64 + origin.1, r.right() as f64 + origin.0, r.bottom() as f64 + origin.1);
+        rim.aim(self.now, Some(&lit), card, base, crate::surfaces::rim::blend_ms(self.theme, self.motion_scale));
+        Some(rim)
+    }
+
+    pub fn put_rim(&mut self, path: &str, mut rim: crate::surfaces::rim::Rim) {
+        self.drawn.animating |= rim.running(self.now);
+        rim.painted();
+        self.ui.rims.insert(path.to_owned(), rim);
     }
 
     pub fn painter(&mut self, path: &str) -> crate::surfaces::bar::cell::Painter<'_> {

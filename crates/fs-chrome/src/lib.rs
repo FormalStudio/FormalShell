@@ -15,6 +15,7 @@ pub mod frame;
 pub mod grid;
 pub mod hot_corners;
 pub mod plugins;
+pub mod rim;
 pub mod shards;
 pub mod switcher;
 pub mod types;

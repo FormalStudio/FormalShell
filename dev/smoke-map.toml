@@ -264,6 +264,14 @@ paths = ["crates/formalshell-rs/src/surfaces/bar/cells/**"]
 runs = ["--bar-layout"]
 
 [[rule]]
+paths = [
+  "crates/fs-chrome/src/rim.rs",
+  "crates/formalshell-rs/src/surfaces/rim.rs",
+  "crates/formalshell-rs/src/wayland/rims.rs",
+]
+runs = ["--reactive-rims", "--panel audio", "--notify", "--osd", "--sidebar"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/services/barpaint.rs"]
 runs = ["--bar-adaptive", "--bar-ink"]
 

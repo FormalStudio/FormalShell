@@ -115,6 +115,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
         refresh_keyboard(&ctx, &shared).await;
         refresh_blur(&ctx).await;
         refresh_gaps(&ctx).await;
+        refresh_border(&ctx).await;
 
         let mut lines = BufReader::new(stream).lines();
         while let Some(line) = lines.next().await {
@@ -139,6 +140,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
                     refresh_keyboard(&ctx, &shared).await;
                     refresh_blur(&ctx).await;
                     refresh_gaps(&ctx).await;
+                    refresh_border(&ctx).await;
                 }
                 "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => {
                     refresh_outputs(&ctx, &shared).await;
@@ -228,6 +230,34 @@ async fn refresh_blur(ctx: &Ctx) {
 async fn refresh_gaps(ctx: &Ctx) {
     let gaps = request("j/getoption general:gaps_out").await.ok().and_then(|text| common::Gaps::parse(&text)).unwrap_or_default();
     ctx.publish(store::Diff::Compositor(Diff::GapsOut(gaps)));
+}
+
+/// `general:col.active_border`, the light the focused window gives a
+/// card's rim.
+async fn refresh_border(ctx: &Ctx) {
+    let colour = request("j/getoption general:col.active_border").await.ok().and_then(|text| active_border(&text));
+    ctx.publish(store::Diff::Compositor(Diff::ActiveBorder(colour)));
+}
+
+/// The gradient's first stop. A hyprlang config answers under `custom`, its
+/// stops as AARRGGBB hex then its angle (`ee33ccff 00ff99ee 45deg`, a
+/// leading zero alpha printed short); a Lua one under `gradient`.
+fn active_border(text: &str) -> Option<[f32; 3]> {
+    let v = serde_json::from_str::<serde_json::Value>(text).ok()?;
+    let argb = v.get("gradient").or_else(|| v.get("custom")).and_then(first_stop)?;
+    let ch = |shift: u32| ((argb >> shift) & 0xff) as f32 / 255.0;
+    Some([ch(16), ch(8), ch(0)])
+}
+
+fn first_stop(v: &serde_json::Value) -> Option<u32> {
+    use serde_json::Value;
+    match v {
+        Value::String(s) => s.split_whitespace().find_map(|w| u32::from_str_radix(w.trim_start_matches("0x"), 16).ok()),
+        Value::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        Value::Array(items) => items.iter().find_map(first_stop),
+        Value::Object(map) => map.get("colors").or_else(|| map.get("stops")).and_then(first_stop),
+        _ => None,
+    }
 }
 
 /// getoption's JSON carries the value under its type's key: `int` for the
@@ -363,5 +393,19 @@ async fn park(ctx: &Ctx, shared: &Shared, id: &str, show: bool) {
     if shown != show {
         dispatch(&lua::toggle_special()).await;
         refresh_compositor(ctx, shared).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::active_border;
+
+    #[test]
+    fn the_border_is_the_gradient_s_first_stop() {
+        let c = active_border(r#"{"option":"general:col.active_border","custom":"ff33ccff 00ff99ee 45deg","set":true}"#).unwrap();
+        assert_eq!(c, [0x33 as f32 / 255.0, 0xcc as f32 / 255.0, 1.0]);
+        assert_eq!(active_border(r#"{"option":"general:col.active_border","int":0}"#), None);
+        assert_eq!(active_border(r#"{"option":"general:col.active_border","gradient":"ff33ccff 45deg"}"#), Some(c));
+        assert_eq!(active_border(r#"{"option":"general:col.active_border","gradient":{"colors":["ff33ccff"],"angle":45}}"#), Some(c));
     }
 }

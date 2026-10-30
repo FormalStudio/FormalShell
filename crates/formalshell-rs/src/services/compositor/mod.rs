@@ -88,6 +88,9 @@ pub struct State {
     /// Counts config reloads, the contract's `configReloaded` signal.
     pub config_reloads: u64,
     pub gaps_out: Gaps,
+    /// The focused window's border colour (Hyprland's
+    /// `general:col.active_border`, its first stop), sRGB 0..1.
+    pub active_border: Option<[f32; 3]>,
 }
 
 impl Default for State {
@@ -101,6 +104,7 @@ impl Default for State {
             keyboard_answered: false,
             config_reloads: 0,
             gaps_out: Gaps::default(),
+            active_border: None,
         }
     }
 }
@@ -111,6 +115,7 @@ pub enum Diff {
     Keyboard(Layout),
     ConfigReloaded,
     GapsOut(Gaps),
+    ActiveBorder(Option<[f32; 3]>),
 }
 
 impl State {
@@ -144,6 +149,12 @@ impl State {
                     return false;
                 }
                 self.gaps_out = gaps;
+            }
+            Diff::ActiveBorder(c) => {
+                if self.active_border == c {
+                    return false;
+                }
+                self.active_border = c;
             }
         }
         true

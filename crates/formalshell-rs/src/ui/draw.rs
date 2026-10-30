@@ -842,10 +842,16 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let fg = cx.color(&format!("{path}.fg"), fg);
     let dim = cx.color(&format!("{path}.dim"), dim);
     let alpha = cx.alpha;
+    let base = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
+    let mut rim = if state.card { cx.take_rim(path, ri, base) } else { None };
+    let now = cx.now;
     let mut p = cx.painter(path);
-    boxes::paint(&mut p, ri, &b, radius, alpha, wash);
+    boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));
     let last = p.last();
     p.finish();
+    if let Some(rim) = rim {
+        cx.put_rim(path, rim);
+    }
     cx.done(last);
 
     let (pad_x, _) = cell_pad(&cx.theme.space, &state);

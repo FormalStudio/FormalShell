@@ -235,6 +235,21 @@ pub enum Paint {
     /// list is one picture, so a node keeps the same `Arc` while nothing on
     /// it moved and damages nothing.
     Vector(Arc<Vec<VOp>>),
+    /// A card's reactive rim (`surfaces/rim.rs`): lines stroked with a sweep
+    /// gradient held in surface pixels, whatever the node's transform.
+    Rim(Vec<RimLine>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RimLine {
+    pub path: BezPath,
+    pub width: f64,
+    /// Cut to this shape, in the node's own coordinates.
+    pub clip: Option<BezPath>,
+    /// The sweep's centre in surface pixels, its stops from its +x
+    /// clockwise, the last one back on the first.
+    pub centre: (f64, f64),
+    pub stops: Vec<(f32, Rgba)>,
 }
 
 /// What a vector op fills or strokes with.
@@ -472,6 +487,7 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
             f1 == f2 && t1 == t2 && r1 == r2
         }
         (Paint::Vector(a), Paint::Vector(b)) => Arc::ptr_eq(a, b),
+        (Paint::Rim(a), Paint::Rim(b)) => a == b,
         (Paint::Cells { rects: r1, glyphs: g1 }, Paint::Cells { rects: r2, glyphs: g2 }) => {
             r1 == r2
                 && g1.len() == g2.len()

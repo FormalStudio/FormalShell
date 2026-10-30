@@ -33,6 +33,7 @@ use std::time::Instant;
 use fs_chrome::types::Insets;
 use fs_info::notifications::{self as model, Group, PositionSpec, Urgency};
 use fs_info::toast_stack::{self, StackParams};
+use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
@@ -47,6 +48,7 @@ use crate::store::Store;
 use crate::surface::Surface;
 use crate::surfaces::activity::{self, Verb};
 use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::surfaces::rim::{self, Lit, Rim};
 use crate::ui::{self, El, Ink, Type, Ui, Variant, Weight, w};
 
 const MAX_PEEK_LEVELS: usize = 2;
@@ -162,6 +164,7 @@ struct Slot {
     /// The swipe's offset along x: under the fingers, springing back to 0,
     /// or carrying on off the edge.
     dx: Animated,
+    rim: Rim,
 }
 
 impl Slot {
@@ -170,7 +173,7 @@ impl Slot {
     }
 
     fn animating(&self, now: Instant) -> bool {
-        self.moving(now) || self.content.running(now) || self.reveal.running(now) || self.visible.running(now) || self.ui_animating
+        self.moving(now) || self.content.running(now) || self.reveal.running(now) || self.visible.running(now) || self.ui_animating || self.rim.running(now)
     }
 
     /// Faded out and no longer anything to draw.
@@ -217,6 +220,10 @@ pub struct Toasts {
     layer: Layer,
     /// The output the layer was made on.
     pub output: Option<WlOutput>,
+    /// The field the cards' rims read, and the column's left edge on the
+    /// output.
+    pub lit: Option<Lit>,
+    pub origin_x: f64,
 }
 
 /// Elementary's bubble: the picture in a
@@ -303,6 +310,8 @@ impl Toasts {
             was_animating: false,
             swipe: None,
             right: true,
+            lit: None,
+            origin_x: 0.0,
         }
     }
 
@@ -444,6 +453,7 @@ impl Toasts {
                     departing: false,
                     ui_animating: false,
                     dx: Animated::new(0.0, Kind::Spatial.curve()),
+                    rim: Rim::default(),
                 }
             });
             slot.x.set(now, gx, restack.0);
@@ -534,9 +544,21 @@ impl Toasts {
             for id in &slot.nodes {
                 self.scene.set_transform(*id, Affine::IDENTITY);
             }
+            // Lit where the card settles at its level's scale, not where
+            // this frame has it, so a moving stack starts no blend.
+            let (wt, ft) = (slot.width.target(), slot.height.target());
+            let rx = slot.x.target() + (wt - width) / 2.0;
+            let sc = (wt / width).clamp(0.0, 1.0);
+            let (rw, rh) = (width * sc, ft * sc);
+            let cx = rx + width / 2.0 + self.origin_x;
+            let ry = if spec.top { slot.y.target() + ft - rh } else { slot.y.target() };
+            let rest = Rect::new(cx - rw / 2.0, ry, cx + rw / 2.0, ry + rh);
+            let base = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
+            slot.rim.aim(now, self.lit.as_ref(), rest, base, rim::blend_ms(theme, scale));
             let mut p = Painter::new(&mut self.scene, &mut slot.nodes, Some(around)).after(anchor);
-            ui::boxes::paint(&mut p, shown, &b, radius, alpha, 0.0);
+            ui::boxes::paint_rimmed(&mut p, shown, &b, radius, alpha, 0.0, Some((&mut slot.rim, now, at.matrix)));
             p.finish();
+            slot.rim.painted();
             for id in &slot.nodes {
                 let own = self.scene.transform_of(*id);
                 self.scene.set_transform(*id, at.matrix * own);

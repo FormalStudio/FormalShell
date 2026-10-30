@@ -19,6 +19,7 @@ mod plugin_overlay;
 mod polkit;
 mod picker;
 mod preview;
+mod rims;
 mod screensaver;
 mod sidebar;
 pub mod switcher;
@@ -275,6 +276,7 @@ pub struct App {
     bar_dirty: bool,
     pub battery_watch: surfaces::battery::Watch,
     wake: Option<Instant>,
+    rims: rims::Rims,
     /// `debug motionScale`: every duration multiplied by this.
     pub motion_scale: f64,
     /// The backdrop mark's word, by the style it was shaped in.
@@ -395,6 +397,7 @@ impl App {
             bar_dirty: true,
             battery_watch: Default::default(),
             wake: None,
+            rims: Default::default(),
             motion_scale: 1.0,
             shard_word: None,
             cast: false,
@@ -724,6 +727,9 @@ impl App {
         self.sync_open(now);
         self.refresh_spares(topic, now);
         self.update_backdrops();
+        if matches!(topic, None | Some(Topic::Compositor | Topic::Wallpaper | Topic::Theme | Topic::Config | Topic::Display | Topic::State)) {
+            self.sync_rims();
+        }
         self.bar_dirty = true;
     }
 
@@ -1553,6 +1559,7 @@ impl App {
             self.sync_shards();
         }
         self.follow_focus();
+        self.light_cards(now);
         self.sync_rasters(now);
         let qh = self.qh.clone();
         let idle = self.saver.active || self.lock.locked;

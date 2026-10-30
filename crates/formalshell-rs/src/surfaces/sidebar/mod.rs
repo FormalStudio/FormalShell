@@ -44,6 +44,13 @@ pub struct Sidebar {
 }
 
 impl Sidebar {
+    /// The field the cards' rims read and the bar window's top left on
+    /// the output.
+    pub fn set_lit(&mut self, lit: Option<(crate::surfaces::rim::Lit, (f64, f64))>) {
+        self.top.lit = lit.clone();
+        self.foot.lit = lit;
+    }
+
     pub fn new() -> Self {
         Self {
             top: Ui::new(None),

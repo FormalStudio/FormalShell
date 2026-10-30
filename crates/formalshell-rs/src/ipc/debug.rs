@@ -148,6 +148,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     });
     // Past json!'s recursion limit inside the literal.
     dump["sky"] = sky(app);
+    dump["rims"] = app.rims_report();
     text(dump.to_string())
 }
 

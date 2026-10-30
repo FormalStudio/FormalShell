@@ -591,6 +591,30 @@ impl Caches {
                         ctx.stroke_path(path);
                     }
                 }
+                Paint::Rim(lines) => {
+                    ctx.set_transform(at);
+                    // The stops are placed in surface pixels, so the sweep
+                    // undoes the node's own transform.
+                    let back = node.transform.inverse();
+                    for line in lines {
+                        if line.stops.iter().all(|(_, c)| c.to_u8()[3] == 0) {
+                            continue;
+                        }
+                        if let Some(clip) = &line.clip {
+                            ctx.push_clip_layer(clip);
+                        }
+                        let stops: Vec<(f32, AlphaColor<Srgb>)> = line.stops.iter().map(|(o, c)| (*o, color(*c))).collect();
+                        let g = vello_cpu::peniko::Gradient::new_sweep(line.centre, 0.0, std::f32::consts::TAU).with_stops(stops.as_slice());
+                        ctx.set_paint_transform(back);
+                        ctx.set_gradient(g);
+                        ctx.set_stroke(Stroke::new(line.width).with_caps(Cap::Square).with_join(Join::Bevel));
+                        ctx.stroke_path(&line.path);
+                        ctx.reset_paint_transform();
+                        if line.clip.is_some() {
+                            ctx.pop_layer();
+                        }
+                    }
+                }
                 Paint::Faded { .. } => {}
                 Paint::Casts { rect: card, radius, layers, cutout } => {
                     ctx.set_transform(at);

@@ -889,6 +889,20 @@ fonts.fontconfig.defaultFonts.sansSerif = [ "Geist" ];
 fonts.fontconfig.defaultFonts.monospace = [ "Geist Mono" ];
 ```
 
+### Reactive rims
+
+`theme.reactiveRims` (default true) lets a card's 1px border take light
+off what is around it: the wallpaper under and beside it tints it, and a
+window next to it brightens the side facing it, the focused one in
+Hyprland's `col.active_border`. It covers the panels, the notification
+centre, the launcher, the OSD, toasts and the sidebar's cards. Nothing is
+captured: the shell reads the wallpaper it draws and the window rects the
+compositor reports. Set it to false for the flat border.
+
+```jsonc
+{ "theme": { "reactiveRims": false } }
+```
+
 ### Hyprland rounding, blur and window chrome
 
 The shell publishes `formalshell-chrome.lua` next to the colours file, a

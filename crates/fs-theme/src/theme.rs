@@ -291,6 +291,9 @@ pub struct Theme {
     /// `motion.morph`: a card buds off the bar's inner edge and morphs
     /// between sizes, or drops from its cell as a popover.
     pub morph: bool,
+    /// `theme.reactiveRims`: a card's border takes light off the wallpaper
+    /// and the windows around it (`docs/superpowers/specs/2026-10-30-reactive-rims.md`).
+    pub reactive_rims: bool,
     pub render_backend: Backend,
     pub frame_thickness: f64,
     pub frame_radius: f64,
@@ -363,6 +366,7 @@ impl Theme {
             layout: Layout::parse(get("layout").as_ref()),
             bar_style: BarStyle::parse(get("bar.style").as_ref()),
             morph: boolean(get("motion.morph"), true),
+            reactive_rims: boolean(get("theme.reactiveRims"), true),
             render_backend: Backend::parse(get("render.backend").as_ref()),
             frame_thickness,
             frame_radius,

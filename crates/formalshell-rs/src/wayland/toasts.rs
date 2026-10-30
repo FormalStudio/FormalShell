@@ -131,8 +131,15 @@ impl App {
             self.toasts_dirty = true;
         }
         let qh = self.qh.clone();
+        let (out_w, _) = self.output_size();
         let theme = &self.store.theme.theme;
         let Some(t) = &mut self.toasts else { return };
+        let generation = |l: &Option<crate::surfaces::rim::Lit>| l.as_ref().map(|l| l.generation);
+        if generation(&t.lit) != generation(&self.rims.lit) {
+            t.lit = self.rims.lit.clone();
+            self.toasts_dirty = true;
+        }
+        t.origin_x = if t.column.0 { out_w - f64::from(t.column.1) } else { 0.0 };
         if now >= t.rel_at + surfaces::toasts::REL_EVERY {
             t.rel_at = now;
             self.toasts_dirty |= up;

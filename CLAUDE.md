@@ -1095,6 +1095,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   world cache, a frame a second in and another once `radio status`
   reports stations (fetched over the real network and cached) or the
   honest unavailable error, neither frame a flat card.
+- `reactive_rims.sh` `--reactive-rims`: the cards' reactive rims
+  (`docs/superpowers/specs/2026-10-30-reactive-rims.md`) over a wallpaper
+  red on its left half and blue on its right, `audio` alone in the left
+  region and `network` in the right: each card's rim leaning to its half
+  in `debug dump`'s `rims.panel` and in the frame's 1px edge columns, past
+  what the fill a few pixels in carries; no `commit surface=panel` in 5s
+  at rest with the window poll running; a floating foot window moved
+  beside the network card by Hyprland's own dispatcher (no event) lifting
+  and brightening the facing rim; and `theme.reactiveRims: false`
+  retargeted under the running shell putting the flat border back.
 - `reminder.sh` `--reminder`: a real countdown firing inside the run and
   bypassing DND into the popup tier.
 - `render.sh` `--render`: `render.backend` resolved at start, three
