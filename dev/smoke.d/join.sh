@@ -265,9 +265,13 @@ join_fill() {
 # hover on the strip in it already. A row carrying fewer than 40 painted
 # columns is no card at all and is skipped. A dark theme's border over a
 # dark desktop, antialiased across a fractional edge, lands inside that
-# tolerance, so a fill column with the column past it darker than the
-# desktop is bordered: a clip that cuts the border leaves the desktop's own
-# value or the fill's lighter fringe there, never darker.
+# tolerance, so a fill column is bordered when the column past it is darker
+# than the desktop, or when the column after that is still painted. The
+# second case is a 0.75 black border on a fractional edge: the fill and the
+# stroke each cover part of the outer pixels, and coverage compositing lets
+# the fill outweigh the border there, so they read as the desktop or a step
+# lighter. A clip that cuts the border, or a fill with none, leaves one
+# partial column at most before the desktop.
 join_borderless() {
   $convert_bin "$shot_dir/join-b-rest.png" -crop "${join_crop_width}x$3+0+$2" +repage \
     -depth 8 txt:- 2>/dev/null > "$shot_dir/join-base.txt"
@@ -284,6 +288,11 @@ join_borderless() {
         split(a, x, ","); split(b, y, ",");
         return x[1] + x[2] + x[3] < y[1] + y[2] + y[3]
       }
+      function edged(k, d, y,   k1, k2) {
+        k1 = (k + d) "," y; k2 = (k + 2 * d) "," y;
+        if (darker(cur[k1], base[k1])) return 1;
+        return cur[k2] != "" && delta(cur[k2], base[k2]) > 0
+      }
       FNR == 1 { next }
       { split($1, c, ","); sub(":", "", c[2]); gsub(/[()]/, "", $2);
         x = c[1] + 0; y = c[2] + 0 }
@@ -297,8 +306,8 @@ join_borderless() {
         for (y in first) {
           a = first[y]; b = last[y];
           if (b - a < 40) continue;
-          if (hex[a "," y] == fill && !darker(cur[(a - 1) "," y], base[(a - 1) "," y])) print "L", y + top, a;
-          if (hex[b "," y] == fill && !darker(cur[(b + 1) "," y], base[(b + 1) "," y])) print "R", y + top, b
+          if (hex[a "," y] == fill && !edged(a, -1, y)) print "L", y + top, a;
+          if (hex[b "," y] == fill && !edged(b, 1, y)) print "R", y + top, b
         }
       }' "$shot_dir/join-base.txt" -
 }
