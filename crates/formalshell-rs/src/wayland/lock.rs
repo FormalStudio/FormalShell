@@ -1048,9 +1048,13 @@ impl SessionLockHandler for App {
         self.lock.locked = false;
         self.sync_agents();
         self.sync_shards();
+        // A lock refused before it went secure (a restore the compositor
+        // does not allow) leaves the predecessor's lock held, marker and all.
+        if self.lock.secure {
+            mark_held(false);
+        }
         self.lock.secure = false;
         self.locked_hint(false);
-        mark_held(false);
         self.saver_rehost();
     }
 
