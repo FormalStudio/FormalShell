@@ -1,8 +1,9 @@
 //! `~/.config/hypr/formalshell-chrome.lua` (`shell/Theme/chrome.js`) and
 //! its mango twins: the window rounding, whether the compositor blurs
-//! behind the shell, and the gaps, frame and cast the table's `window` role
-//! asks for. Not a matugen template, since none of it comes from the
-//! wallpaper.
+//! behind the shell, the gaps, frame and cast the table's `window` role
+//! asks for, and (Hyprland only) the shell's two clock families as the
+//! curves and speeds its window animations take. Not a matugen template,
+//! since none of it comes from the wallpaper.
 //!
 //! Every value is clamped to the range Hyprland's own option carries
 //! (src/config/values/ConfigValues.cpp, 0.56): a value outside one fails the
@@ -13,7 +14,7 @@ use std::borrow::Cow;
 use serde_json::{Map, Value};
 
 use crate::style;
-use crate::tokens::{js_number, js_round};
+use crate::tokens::{self, js_number, js_round};
 
 /// What ThemeEngine hands the renderer: the two settings scalars as written
 /// and the `window` role's two states straight off the live table.
@@ -23,13 +24,16 @@ pub struct Chrome {
     pub blur: Option<Value>,
     pub window: Option<Map<String, Value>>,
     pub window_inactive: Option<Map<String, Value>>,
+    /// `motion.enabled`.
+    pub motion: bool,
 }
 
 impl Chrome {
-    pub fn from_table(table: &Value, rounding: Value, blur: Value) -> Self {
+    pub fn from_table(table: &Value, rounding: Value, blur: Value, motion: bool) -> Self {
         Self {
             rounding: Some(rounding),
             blur: Some(blur),
+            motion,
             window: style::entry(table, "window", Some("rest")).map(Cow::into_owned),
             window_inactive: style::entry(table, "window", Some("inactive")).map(Cow::into_owned),
         }
@@ -128,6 +132,29 @@ fn window(chrome: &Chrome) -> Window {
     }
 }
 
+/// The six families as `motion` in formalshell-chrome.lua: each its own
+/// `MOTION_CURVES` bezier, which Hyprland takes as one segment's two
+/// control points (the end points are fixed at 0,0 and 1,1, the overshoot
+/// in the control points' y as the shell's own), and its duration as
+/// Hyprland's `speed`, in tenths of a second. `enabled` is
+/// `motion.enabled`; the speeds stay the families' own with it off, since
+/// Hyprland refuses a zero speed.
+pub fn hyprland_motion(enabled: bool) -> String {
+    const FAMILIES: [&str; 6] = ["spatialFast", "spatial", "spatialSlow", "effectsFast", "effects", "effectsSlow"];
+    let m = tokens::motion_tokens(true);
+    let mut out = format!("  motion = {{\n    enabled = {enabled},\n");
+    for name in FAMILIES {
+        let c = tokens::curve(name).expect("every family is in MOTION_CURVES");
+        let speed = m.family(name).expect("every family has a duration") / 100.0;
+        out.push_str(&format!(
+            "    {name} = {{ curve = {{ {{ {}, {} }}, {{ {}, {} }} }}, speed = {} }},\n",
+            c[0], c[1], c[2], c[3], speed
+        ));
+    }
+    out.push_str("  },\n");
+    out
+}
+
 pub fn hyprland_chrome(chrome: &Chrome) -> String {
     let w = window(chrome);
     let hypr = |(name, alpha): &(Option<Value>, Option<Value>)| color(name.as_ref(), alpha.as_ref());
@@ -153,8 +180,10 @@ pub fn hyprland_chrome(chrome: &Chrome) -> String {
          shadowOffset = {{ {ox}, {oy} }},\n  \
          shadowColor = \"{shadow_color}\",\n  \
          shadowInactiveColor = \"{backdrop_color}\",\n\
+         {motion}\
          }}\n",
         w.rounding, w.blur,
+        motion = hyprland_motion(chrome.motion),
     )
 }
 
@@ -255,12 +284,12 @@ mod tests {
     use serde_json::json;
 
     fn chrome_for(table: &Value, rounding: Value, blur: Value) -> Chrome {
-        Chrome::from_table(table, rounding, blur)
+        Chrome::from_table(table, rounding, blur, true)
     }
 
     fn raw(v: Value) -> Chrome {
         let o = |k: &str| v.get(k).and_then(Value::as_object).cloned();
-        Chrome { rounding: v.get("rounding").cloned(), blur: v.get("blur").cloned(), window: o("window"), window_inactive: o("windowInactive") }
+        Chrome { rounding: v.get("rounding").cloned(), blur: v.get("blur").cloned(), window: o("window"), window_inactive: o("windowInactive"), motion: true }
     }
 
     /// The table alone, with the file's own header dropped.
@@ -283,8 +312,8 @@ mod tests {
         inactive: &str,
     ) -> String {
         format!(
-            "return {{\n  rounding = {rounding},\n  blur = {blur},\n  gapsIn = {},\n  gapsOut = {},\n  borderSize = {border_size},\n  borderColor = {border_color},\n  shadow = {shadow},\n  shadowRange = {range},\n  shadowPower = {power},\n  shadowOffset = {offset},\n  shadowColor = {shadow_color},\n  shadowInactiveColor = {inactive},\n}}",
-            gaps.0, gaps.1
+            "return {{\n  rounding = {rounding},\n  blur = {blur},\n  gapsIn = {},\n  gapsOut = {},\n  borderSize = {border_size},\n  borderColor = {border_color},\n  shadow = {shadow},\n  shadowRange = {range},\n  shadowPower = {power},\n  shadowOffset = {offset},\n  shadowColor = {shadow_color},\n  shadowInactiveColor = {inactive},\n{}}}",
+            gaps.0, gaps.1, hyprland_motion(true)
         )
     }
 
@@ -405,5 +434,27 @@ mod tests {
         assert_eq!(body, ["focus_color=0x42474e80", "border_color=0x42474e80", "urgent_color=0xffb4abff", "shadows_color=0x00000059"]);
         let none = mango_colors(&raw(json!({ "window": { "border": { "color": "nope" } } })), &Map::new());
         assert_eq!(none.lines().filter(|l| !l.starts_with('#')).collect::<Vec<_>>(), ["shadows_color=0x00000000"]);
+    }
+
+    /// The curves are motion.rs's own, the speeds the families' durations
+    /// in tenths of a second, and motion off keeps them while turning the
+    /// animations off.
+    #[test]
+    fn the_motion_block_carries_the_two_clock_families() {
+        assert_eq!(
+            hyprland_motion(true),
+            "  motion = {\n    enabled = true,\n\
+             \x20   spatialFast = { curve = { { 0.42, 1.67 }, { 0.21, 0.9 } }, speed = 3.5 },\n\
+             \x20   spatial = { curve = { { 0.38, 1.21 }, { 0.22, 1 } }, speed = 5 },\n\
+             \x20   spatialSlow = { curve = { { 0.39, 1.29 }, { 0.35, 0.98 } }, speed = 6.5 },\n\
+             \x20   effectsFast = { curve = { { 0.31, 0.94 }, { 0.34, 1 } }, speed = 1.5 },\n\
+             \x20   effects = { curve = { { 0.34, 0.8 }, { 0.34, 1 } }, speed = 2 },\n\
+             \x20   effectsSlow = { curve = { { 0.34, 0.88 }, { 0.34, 1 } }, speed = 3 },\n\
+             \x20 },\n"
+        );
+        let mut still = chrome_for(crate::table(), json!(6), json!(true));
+        still.motion = false;
+        let off = hyprland_chrome(&still);
+        assert!(off.contains("    enabled = false,\n    spatialFast = { curve = { { 0.42, 1.67 }, { 0.21, 0.9 } }, speed = 3.5 },"), "{off}");
     }
 }

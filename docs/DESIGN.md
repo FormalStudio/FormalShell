@@ -295,6 +295,16 @@ zeroes every duration and pins the deform to identity, so every surface
 lands at once, at rest and undeformed; the curves themselves are left alone,
 a zero-duration animation ending in the same place whatever it carries.
 
+Windows move on the same clocks (Plan.md Phase 8): ThemeEngine writes the six
+families into formalshell-chrome.lua's `motion` table
+(`fs-theme/src/chrome.rs` `hyprland_motion`, each curve as Hyprland's one
+bezier segment and each duration as its `speed` in tenths of a second, the
+`enabled` switch `motion.enabled`), and the shipped
+`docs/examples/hyprland/formalshell.lua` turns them into `hl.curve`s and
+`hl.animation`s: a window's arrival, travel and resize, a layer and a
+workspace slide on `spatial`, a window or layer leaving on `spatialFast`,
+fades on `effects` and `effectsFast`, a border's colour on `effectsSlow`.
+
 A surface names a clock exactly one way. A number rides
 `Cx::tween(key, target, kind)` (`formalshell-rs/src/ui/mod.rs`), `kind` one
 of `motion::Kind`'s six family members, `Kind::Spatial` unless the property

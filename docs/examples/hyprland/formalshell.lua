@@ -3,8 +3,8 @@
 -- publishes formalshell-chrome.lua, a table with rounding (theme.radius),
 -- blur (theme.blur) and the theme table's own window chrome (gapsIn, gapsOut,
 -- borderSize, borderColor, shadow, shadowRange, shadowPower, shadowOffset,
--- shadowColor, shadowInactiveColor), and rewrites it whenever any of them
--- changes, so the retro preset squares the corners and turns blur off,
+-- shadowColor, shadowInactiveColor) and the motion curves (below), and
+-- rewrites it whenever any of them changes, so the retro preset squares the corners and turns blur off,
 -- metamorphosis keeps 10px and blur on, and pantheon casts elementary's own
 -- shadow under a quiet 1px frame and closes the outer gap it has no screen
 -- frame to leave room for. The shell never blurs a pixel itself.
@@ -109,6 +109,42 @@ hl.config({
     },
   },
 })
+
+-- Windows, workspaces and layers move on the shell's own two clock families
+-- (DESIGN.md section 1 Motion), out of the chrome file's `motion`: anything
+-- with a position or a size rides a spatial curve, which carries it a few
+-- pixels past its place and back as the shell's cards do, and opacity and
+-- colour an effects curve, which never overshoots. Each curve is the shell's
+-- own control points and each speed its duration in tenths of a second.
+-- `motion.enabled: false` turns the animations off with the shell's own.
+local motion = chrome.motion or {
+  enabled = true,
+  spatialFast = { curve = { { 0.42, 1.67 }, { 0.21, 0.9 } }, speed = 3.5 },
+  spatial = { curve = { { 0.38, 1.21 }, { 0.22, 1 } }, speed = 5 },
+  spatialSlow = { curve = { { 0.39, 1.29 }, { 0.35, 0.98 } }, speed = 6.5 },
+  effectsFast = { curve = { { 0.31, 0.94 }, { 0.34, 1 } }, speed = 1.5 },
+  effects = { curve = { { 0.34, 0.8 }, { 0.34, 1 } }, speed = 2 },
+  effectsSlow = { curve = { { 0.34, 0.88 }, { 0.34, 1 } }, speed = 3 },
+}
+hl.config({ animations = { enabled = motion.enabled } })
+for _, family in ipairs({ "spatialFast", "spatial", "spatialSlow", "effectsFast", "effects", "effectsSlow" }) do
+  hl.curve("formalshell_" .. family, { type = "bezier", points = motion[family].curve })
+end
+local function leaf(name, family)
+  hl.animation({ leaf = name, enabled = true, bezier = "formalshell_" .. family, speed = motion[family].speed })
+end
+-- A window arriving, moving or resizing travels on spatial and leaves on
+-- spatialFast, a workspace slides on spatial, and a fade or a border colour
+-- takes its effects clock.
+leaf("windows", "spatial")
+leaf("windowsOut", "spatialFast")
+leaf("layers", "spatial")
+leaf("layersOut", "spatialFast")
+leaf("fade", "effects")
+leaf("fadeOut", "effectsFast")
+leaf("border", "effectsSlow")
+leaf("workspaces", "spatial")
+leaf("specialWorkspace", "spatial")
 
 -- The pointer stays hidden until the shell has faded the desktop in. Hidden
 -- twice over: Hyprland draws it for its first frames whatever

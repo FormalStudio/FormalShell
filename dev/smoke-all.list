@@ -51,6 +51,7 @@
 --fullscreen
 --gallery
 --gpu
+--hypr-motion
 --grid-relaunch
 --hdr
 --headset-card

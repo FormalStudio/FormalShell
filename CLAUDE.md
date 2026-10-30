@@ -554,6 +554,17 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   fires again only after a leave plus the 400ms cooldown. Then the same on
   the screensaver corner: dismissed with the cursor parked in it, quiet for
   3s after the overlay unmaps, firing again after a leave.
+- `hypr_motion.sh` `--hypr-motion`: Hyprland's window animations on the
+  shell's two clock families. The rig boots with animations off; the leg
+  appends the shipped `docs/examples/hyprland/formalshell.lua` motion block,
+  reading the formalshell-chrome.lua the shell publishes: `hyprctl
+  animations` carrying the six `formalshell_<family>` beziers at
+  `MOTION_CURVES`' control points and nine leaves (windows, layers, fades,
+  border, workspaces) on their family's bezier and speed,
+  `animations:enabled` on; a burst of one-row strips across a foot
+  window's arrival with its middle drawn over a still bare edge; and
+  settings.json rewritten with `motion.enabled: false` turning
+  `animations:enabled` off.
 - `installed.sh` `--installed <distro>`: `install.sh --from` the tarball
   in `~/install-check`, run from nothing in a rootless podman image of
   arch, trixie or fedora (pacman, apt or dnf installing Hyprland and the

@@ -916,6 +916,27 @@ A colour there is either an `rgba(...)` literal or the name of a role in
 `formalshell-colors.lua`, so `colors[c] or c` reads both. The shipped example
 already does this, with fallbacks for a first run before either file exists.
 
+
+### Hyprland window motion
+
+`formalshell-chrome.lua` also carries `motion`: the shell's six clocks
+(`spatialFast`, `spatial`, `spatialSlow`, `effectsFast`, `effects`,
+`effectsSlow`), each a `curve` (the bezier's two control points) and a
+`speed` (its duration in Hyprland's tenths of a second), and `enabled`,
+which is `motion.enabled`. The example config turns them into curves and
+animations, so windows, layers and workspaces move the way the shell's own
+cards do: arriving, moving and sliding on `spatial` with its slight
+overshoot, leaving on `spatialFast`, fading on `effects`, and the border's
+colour changing on `effectsSlow`. `motion.enabled: false` turns Hyprland's
+animations off along with the shell's.
+
+```lua
+-- ~/.config/hypr/hyprland.lua, after the `chrome` dofile above
+local motion = chrome.motion
+hl.config({ animations = { enabled = motion.enabled } })
+hl.curve("formalshell_spatial", { type = "bezier", points = motion.spatial.curve })
+hl.animation({ leaf = "windows", enabled = true, bezier = "formalshell_spatial", speed = motion.spatial.speed })
+```
 ### Wallpaper dither
 
 The wallpaper renders through a limited-palette pass: six colors are derived

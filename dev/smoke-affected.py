@@ -100,13 +100,15 @@ def main():
 
     print("smoke-affected: %d changed files against %s (%s)" % (len(changed), args.base, base[:8]))
     for path in changed:
-        if matches(path, smoke_map["none"]["paths"]):
-            print("  %-60s no legs" % path)
-            continue
         runs, why = [], []
         for rule in rules:
             if matches(path, rule["paths"]):
                 runs += rule["runs"]
+        # A rule names a file under a `none` glob on purpose (the shipped
+        # Hyprland example under docs/).
+        if not runs and matches(path, smoke_map["none"]["paths"]):
+            print("  %-60s no legs" % path)
+            continue
         if runs:
             why.append("mapped")
         leg_file = re.fullmatch(r"dev/smoke\.d/([a-z0-9_]+)\.sh", path)

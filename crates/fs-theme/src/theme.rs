@@ -456,11 +456,11 @@ impl Theme {
         c.tint(style::wash(self.style, "filledPress", &self.ctx()))
     }
 
-    /// What formalshell-chrome.lua carries: the window radius (`xl`, libadwaita's `--window-radius`), the blur switch and
+    /// What formalshell-chrome.lua carries: the window radius (`xl`, libadwaita's `--window-radius`), the blur switch,
     /// the `window` role's two states unresolved, since Hyprland draws them
-    /// off a palette role's name rather than a colour.
+    /// off a palette role's name rather than a colour, and `motion.enabled`.
     pub fn window_chrome(&self) -> chrome::Chrome {
-        chrome::Chrome::from_table(self.style, Value::from(self.radii.xl), Value::Bool(self.blur_behind))
+        chrome::Chrome::from_table(self.style, Value::from(self.radii.xl), Value::Bool(self.blur_behind), self.motion_enabled)
     }
 
     pub fn motion(&self) -> ThemeMotion {

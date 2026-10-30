@@ -2,8 +2,9 @@
 # from the repo root (`**` crosses directories); runs are lines of
 # dev/smoke-all.list, and the selector refuses one that is not there.
 #
-# A changed file takes the runs of every rule it matches. One matching no
-# rule takes the core set, as does anything under `shared`. A change to
+# A changed file takes the runs of every rule it matches, even under a
+# `none` glob. One matching no rule takes the core set, as does anything
+# under `shared`. A change to
 # dev/smoke.d/<leg>.sh takes every run carrying that leg's flag without a
 # rule here. `none` runs nothing: docs, tests, the plans.
 
@@ -482,6 +483,12 @@ runs = ["--power"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/wallpaper.rs", "crates/formalshell-rs/src/services/theme.rs", "crates/formalshell-rs/src/ipc/theme.rs"]
 runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki", "--glass", "--sky"]
+
+# Hyprland's window motion off the published chrome, and the shipped
+# example a hyprland.lua loads it from (a rule wins over `none`).
+[[rule]]
+paths = ["crates/fs-theme/src/chrome.rs", "docs/examples/hyprland/formalshell.lua"]
+runs = ["--hypr-motion", "--launcher-glass"]
 
 # The sky wallpaper and the sun it is drawn for.
 [[rule]]
