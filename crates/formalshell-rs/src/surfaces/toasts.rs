@@ -16,6 +16,12 @@
 //! fades where it is. A group that left keeps its slot, its card and its
 //! last place while it fades.
 //!
+//! Activity's live groups ride the same stack as cards of their own, keyed
+//! `activity:<source>` ([`activity_groups`]): one per fspec operation or
+//! app progress, updated in place, never timing out while it runs. A
+//! notification carrying a `value` hint is its own live card and draws the
+//! same ring inside its bubble instead.
+//!
 //! A two-finger horizontal swipe over a card carries it along x, sonner's
 //! swipe: toward the stack's own edge it follows the fingers, the other way
 //! it pulls against the rubber band, and the lift either sends it on off
@@ -38,6 +44,7 @@ use crate::scroll::{self, Travel, Velocity};
 use crate::services::notifications::now_ms;
 use crate::store::Store;
 use crate::surface::Surface;
+use crate::surfaces::activity::{self, Verb};
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::ui::{self, El, Ink, Type, Ui, Variant, Weight, w};
 
@@ -80,6 +87,48 @@ pub enum Act {
     /// The body: the default action when there is one, else the sender's
     /// window, and the toast goes either way.
     Body(Vec<String>),
+    /// An Activity card's row verb, by source.
+    Activity(Verb, String),
+}
+
+const ACTIVITY: &str = "activity:";
+
+/// The Activity groups that get a card now: every `toasts()` source, held
+/// back under Do Not Disturb unless it failed.
+pub fn activity_groups(store: &Store) -> Vec<fs_activity::Group<'_>> {
+    let a = &store.activity.activity;
+    let cards = a.toasts();
+    let dnd = store.notifications.model.dnd;
+    a.groups()
+        .into_iter()
+        .filter(|g| cards.contains(&g.source) && (!dnd || g.state() == fs_activity::State::Failed))
+        .collect()
+}
+
+/// One card's place in the pile: notifications by arrival, an Activity
+/// group by when it started or ended, a failure ranked as critical.
+#[derive(Clone)]
+struct Rank {
+    key: String,
+    at: i64,
+    urgency: Urgency,
+}
+
+impl model::Ranked for Rank {
+    fn arrived_at(&self) -> i64 {
+        self.at
+    }
+
+    fn urgency(&self) -> Urgency {
+        self.urgency
+    }
+}
+
+/// What a card draws and holds, whichever kind it is.
+struct Card {
+    el: El,
+    critical: bool,
+    members: Vec<String>,
 }
 
 struct Slot {
@@ -180,7 +229,7 @@ pub struct Insets {
 /// Elementary's bubble: the picture in a
 /// `controlHeight` slot beside the words, a semibold summary, and the close
 /// button only while the pointer is over the bubble.
-fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: bool) -> El {
+fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: bool, progress: Option<&fs_activity::Item>) -> El {
     let s = &theme.space;
     let e = &g.entry;
     let critical = e.urgency == Urgency::Critical;
@@ -211,6 +260,9 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
     if !body.is_empty() {
         words.push(w::para(body, Type::BodySmall, Weight::Normal, Ink::Muted, 2));
+    }
+    if let Some(item) = progress {
+        words.push(w::row(s.sm, vec![w::ring(activity::ring(item)), w::caption(item.progress.words().unwrap_or_default()).mono().ink(Ink::Muted)]));
     }
     let actions = model::button_actions(e);
     if !actions.is_empty() {
@@ -267,8 +319,16 @@ impl Toasts {
         let spec = model::position_spec(store.config.str("notifications.position"));
         self.right = spec.right;
         let groups = model::group_entries(&n.model.popups);
-        let by_key: HashMap<String, &Group> = groups.iter().map(|g| (model::group_key(g), g)).collect();
-        let stack_order: Vec<String> = model::stack_order(&groups).iter().map(|g| model::group_key(g)).collect();
+        let live = activity_groups(store);
+        let mut ranks: Vec<Rank> =
+            groups.iter().map(|g| Rank { key: model::group_key(g), at: g.arrived_at, urgency: g.urgency }).collect();
+        ranks.extend(live.iter().map(|g| {
+            let lead = g.lead();
+            let failed = g.state() == fs_activity::State::Failed;
+            Rank { key: format!("{ACTIVITY}{}", g.source), at: lead.ended_ms.unwrap_or(lead.started_ms), urgency: if failed { Urgency::Critical } else { Urgency::Normal } }
+        }));
+        let stack_order: Vec<String> = model::stack_order(&ranks).into_iter().map(|r| r.key).collect();
+        let by_key: HashSet<String> = stack_order.iter().cloned().collect();
         // The column fans the pile out in its own order, front card against
         // the anchored edge, so no card trades places on the way: the column
         // lays out top-down, which puts a bottom stack's front card last.
@@ -285,7 +345,7 @@ impl Toasts {
         // A group that left fades where it was; one back before its fade
         // ended takes its slot again.
         for (k, slot) in self.slots.iter_mut() {
-            let live = by_key.contains_key(k);
+            let live = by_key.contains(k);
             if !live && !slot.departing {
                 slot.departing = true;
                 slot.presence.set_on(now, 0.0, restack.0, restack.1);
@@ -309,19 +369,26 @@ impl Toasts {
         let size = theme.font_size.heading.round() as u32;
         let scale = crate::scene::raster_scale();
         self.fitted.retain(|id, (k, _)| n.icons.contains_key(id) && *k == scale);
-        let mut cards: HashMap<&String, El> = HashMap::new();
-        for (k, g) in &by_key {
+        let mut cards: HashMap<String, Card> = HashMap::new();
+        for g in &groups {
+            let k = model::group_key(g);
             let pic = n.icons.get(&g.id).and_then(|raw| {
                 self.fitted.entry(g.id.clone()).or_insert_with(|| (scale, raw.bitmap(size, scale))).1.clone()
             });
             let hovered = self.slots.get(k.as_str()).is_some_and(|sl| sl.ui.hover.is_some());
-            let el = bubble(theme, g, clock, pic, hovered);
-            cards.insert(k, el);
+            let progress = store.activity.activity.get(&fs_activity::notification_id(g.id.parse().unwrap_or(u32::MAX)));
+            let el = bubble(theme, g, clock, pic, hovered, progress);
+            cards.insert(k, Card { el, critical: g.urgency == Urgency::Critical, members: g.member_ids.clone() });
+        }
+        for g in &live {
+            let el = activity::row(theme, g, true).on("body");
+            let critical = g.state() == fs_activity::State::Failed;
+            cards.insert(format!("{ACTIVITY}{}", g.source), Card { el, critical, members: Vec::new() });
         }
         let mut heights = HashMap::new();
-        for (k, el) in &cards {
-            let inner = ui::measure(el, width - s.panel_padding * 2.0, theme, kit).1;
-            heights.insert((*k).clone(), inner + s.panel_padding * 2.0);
+        for (k, c) in &cards {
+            let inner = ui::measure(&c.el, width - s.panel_padding * 2.0, theme, kit).1;
+            heights.insert(k.clone(), inner + s.panel_padding * 2.0);
         }
         let layout = toast_stack::layout(&StackParams {
             frame_width: width,
@@ -363,7 +430,7 @@ impl Toasts {
                 Slot {
                     nodes: Vec::new(),
                     ui: Ui::new(None),
-                    el: cards[k].clone(),
+                    el: cards[k].el.clone(),
                     critical: false,
                     rect: IRect::default(),
                     z: g.z,
@@ -394,9 +461,9 @@ impl Toasts {
             slot.content.set(now, content, effects);
             slot.visible.set(now, if g.visible { 1.0 } else { 0.0 }, effects);
             slot.z = g.z;
-            slot.el = cards[k].clone();
-            slot.critical = by_key[k].urgency == Urgency::Critical;
-            slot.members = by_key[k].member_ids.clone();
+            slot.el = cards[k].el.clone();
+            slot.critical = cards[k].critical;
+            slot.members = cards[k].members.clone();
         }
 
         // Back to front, so the front card's chrome covers the peeks.
@@ -578,6 +645,13 @@ impl Toasts {
         }
         let (key, on) = pressed;
         let Some(slot) = self.slots.get(&key) else { return Act::None };
+        if let Some(source) = key.strip_prefix(ACTIVITY) {
+            return match Verb::parse(&on) {
+                Some((verb, _)) => Act::Activity(verb, source.to_owned()),
+                None if on == "body" => Act::Activity(Verb::Open, source.to_owned()),
+                None => Act::None,
+            };
+        }
         let members = slot.members.clone();
         match on.as_str() {
             "close" => Act::Dismiss(members),
@@ -671,7 +745,7 @@ mod tests {
         let theme = theme();
         for (source, marked) in [("iphone", true), ("", false)] {
             let mut badges = 0;
-            walk(&bubble(&theme, &group(source, ""), 0, None, false), &mut |e| badges += usize::from(e.badge.is_some()));
+            walk(&bubble(&theme, &group(source, ""), 0, None, false, None), &mut |e| badges += usize::from(e.badge.is_some()));
             assert_eq!(badges, usize::from(marked), "source {source:?}");
         }
     }
@@ -716,7 +790,7 @@ mod tests {
         let theme = theme();
         let mut kit = Kit::new(&theme);
         let g = group("", "some body");
-        let h = |hovered, kit: &mut Kit| ui::measure(&bubble(&theme, &g, 0, None, hovered), 300.0, &theme, kit).1;
+        let h = |hovered, kit: &mut Kit| ui::measure(&bubble(&theme, &g, 0, None, hovered, None), 300.0, &theme, kit).1;
         assert_eq!(h(false, &mut kit), h(true, &mut kit));
     }
 
@@ -724,7 +798,7 @@ mod tests {
     fn the_summary_and_the_body_wrap_to_two_lines() {
         let theme = theme();
         let mut wrapped = Vec::new();
-        walk(&bubble(&theme, &group("", "some body"), 0, None, false), &mut |e| {
+        walk(&bubble(&theme, &group("", "some body"), 0, None, false, None), &mut |e| {
             if let Kind::Para { lines, .. } = &e.kind {
                 wrapped.push(*lines);
             }

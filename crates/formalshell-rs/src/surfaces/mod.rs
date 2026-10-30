@@ -110,7 +110,10 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.launcher_inputs();
         }
         Topic::Localsend => app.launcher_inputs(),
-        Topic::Activity => app.refresh_bar(Some(topic)),
+        Topic::Activity => {
+            app.toasts_changed();
+            app.refresh_bar(Some(topic));
+        }
         Topic::Mirror => app.launcher_mirror(),
         Topic::Picker => app.launcher_picker(),
         Topic::Info => {

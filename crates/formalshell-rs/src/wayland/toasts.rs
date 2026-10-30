@@ -116,7 +116,7 @@ impl App {
         let floating = self.store.compositor.snapshot.floating_outputs.contains(&self.bar.output);
         let n = &self.store.notifications;
         let fading = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
-        let up = !n.model.popups.is_empty() || fading;
+        let up = !n.model.popups.is_empty() || !surfaces::toasts::activity_groups(&self.store).is_empty() || fading;
         let want = !n.center_open;
         let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
         let insets = self.toast_insets();
@@ -215,9 +215,16 @@ impl App {
     }
 
     fn toast_act(&mut self, act: Act) {
+        if let Act::Activity(verb, source) = act {
+            if let Ok(surfaces::activity::Done::Panel) = surfaces::activity::act(&self.store, self.runtime.as_ref(), verb, &source) {
+                self.set_panel("activity", true, None);
+                self.panel_call("activity", "select", &source);
+            }
+            return;
+        }
         let n = &mut self.store.notifications;
         match act {
-            Act::None => return,
+            Act::None | Act::Activity(..) => return,
             Act::Dismiss(ids) => n.dismiss_popup_group(&ids),
             Act::Action(id, key) => {
                 n.invoke_action(&id, &key);

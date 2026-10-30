@@ -32,7 +32,10 @@
 # rail) is read off `bar room`: no indicators cell at idle, one while the
 # apply runs, and photographed at 1/4 and with the update failed in front of
 # the finished apply. Last, a second rollback alone leads with a ring that
-# cannot say how far: two frames 300ms apart differ inside the cell.
+# cannot say how far: two frames 300ms apart differ inside the cell. The
+# same frames carry the live cards in the toast stack (one per fspec group,
+# the failure in front), and one more holds the `value` notifications'
+# own bubbles with the ring inside them.
 leg_activity_flag="--activity"
 leg_activity_order=236
 leg_activity_needs="jq python3 notify-send convert"
@@ -149,7 +152,7 @@ sleep 0.5; status n-1
 "$notify_send_bin" -r "\$id" -a smoke-dl -h int:value:60 Downloading a.iso
 "$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy -h int:value:30 Copying b.img
 "$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy -h int:value:70 Copying b.img
-sleep 0.5; status n-2
+sleep 0.5; status n-2; bar notify
 "$notify_send_bin" -r "\$id" -a smoke-dl Downloaded a.iso
 sleep 0.5; status n-3
 "$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy Copied b.img
@@ -297,7 +300,7 @@ leg_activity_assert() {
   "$convert_bin" "$shot_dir/activity-bar-turning-2.png" -crop "$cell" +repage "$shot_dir/activity-cell-b.png"
   cmp -s "$shot_dir/activity-cell-a.png" "$shot_dir/activity-cell-b.png" \
     && fail "activity: the ring with no progress did not turn between two frames"
-  for f in progress turning failed; do
+  for f in progress turning failed notify; do
     [ -s "$shot_dir/activity-bar-$f.png" ] || fail "activity: no bar frame $f"
     echo "SMOKE_ACTIVITY_BAR_$(printf %s "$f" | tr a-z A-Z) $shot_dir/activity-bar-$f.png"
   done
