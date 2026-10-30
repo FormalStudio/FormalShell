@@ -114,6 +114,7 @@ fn stub() -> Registry<()> {
                 functions: vec![
                     f("peek", &[("n", Type::Int)], Type::String, |_, a| s(format!("peek {}", a[0].int()))),
                     f("close", &[], Type::String, |_, _| s("ok")),
+                    f("overview", &[("action", Type::String)], Type::String, |_, _| s("ok")),
                     f("status", &[], Type::String, |_, _| s("{}")),
                 ],
             },

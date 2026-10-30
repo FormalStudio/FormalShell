@@ -32,6 +32,7 @@
 --sidebar-software
 --sidebar-software --light
 --minimap
+--overview
 --capture
 --capture-edit
 --center

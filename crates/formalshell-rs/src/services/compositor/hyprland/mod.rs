@@ -116,6 +116,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
         refresh_blur(&ctx).await;
         refresh_gaps(&ctx).await;
         refresh_border(&ctx).await;
+        refresh_overview(&ctx).await;
 
         let mut lines = BufReader::new(stream).lines();
         while let Some(line) = lines.next().await {
@@ -141,6 +142,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
                     refresh_blur(&ctx).await;
                     refresh_gaps(&ctx).await;
                     refresh_border(&ctx).await;
+                    refresh_overview(&ctx).await;
                 }
                 "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => {
                     refresh_outputs(&ctx, &shared).await;
@@ -232,6 +234,12 @@ async fn refresh_gaps(ctx: &Ctx) {
     ctx.publish(store::Diff::Compositor(Diff::GapsOut(gaps)));
 }
 
+/// Whether HyprExpo is loaded; a config load is what loads it.
+async fn refresh_overview(ctx: &Ctx) {
+    let loaded = request("j/plugin list").await.is_ok_and(|text| hyprexpo_loaded(&text));
+    ctx.publish(store::Diff::Compositor(Diff::Overview(loaded)));
+}
+
 /// `general:col.active_border`, the light the focused window gives a
 /// card's rim.
 async fn refresh_border(ctx: &Ctx) {
@@ -265,6 +273,12 @@ fn first_stop(v: &serde_json::Value) -> Option<u32> {
 fn blur_enabled(text: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else { return false };
     v.get("bool").and_then(serde_json::Value::as_bool).or_else(|| v.get("int").and_then(serde_json::Value::as_i64).map(|i| i != 0)).unwrap_or(false)
+}
+
+/// `plugin list` as JSON names each loaded plugin; with none Hyprland
+/// answers plain text, which is no plugin either.
+fn hyprexpo_loaded(text: &str) -> bool {
+    serde_json::from_str::<Vec<serde_json::Value>>(text).is_ok_and(|list| list.iter().any(|p| p.get("name").and_then(serde_json::Value::as_str) == Some("hyprexpo")))
 }
 
 async fn dispatch(lua: &str) {
@@ -318,6 +332,11 @@ async fn commands(
             Command::WorkspaceNames(_) => {}
             Command::Cursor { hidden } => eval(&ctx, &lua::cursor(hidden)).await,
             Command::Exit => dispatch(&lua::exit()).await,
+            Command::Overview(action) => match request("j/plugin list").await {
+                Ok(text) if hyprexpo_loaded(&text) => eval(&ctx, &lua::overview(action)).await,
+                Ok(_) => eprintln!("hyprland: overview: hyprexpo is not loaded"),
+                Err(err) => eprintln!("hyprland: overview: {err}"),
+            },
             Command::FloatWindow(id) => {
                 let floating = shared.borrow().snapshot.windows.iter().any(|w| w.id == id && w.is_floating);
                 if !floating {
@@ -398,7 +417,14 @@ async fn park(ctx: &Ctx, shared: &Shared, id: &str, show: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::active_border;
+    use super::{active_border, hyprexpo_loaded};
+
+    #[test]
+    fn hyprexpo_is_loaded_only_when_listed() {
+        assert!(hyprexpo_loaded(r#"[{"name":"hyprexpo","author":"sandwich","handle":"0x1","version":"v0.56.2+4","description":""}]"#));
+        assert!(!hyprexpo_loaded(r#"[{"name":"hyprbars"}]"#));
+        assert!(!hyprexpo_loaded("no plugins loaded"));
+    }
 
     #[test]
     fn the_border_is_the_gradient_s_first_stop() {

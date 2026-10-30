@@ -690,6 +690,12 @@ runs = ["--sidebar-join", "--sidebar-join --light"]
 paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "dev/smoke.d/minimap.sh"]
 runs = ["--minimap"]
 
+# HyprExpo's overview: the minimap's long press and cross-row drag, the
+# compositor command and the IPC verb that open it.
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "crates/formalshell-rs/src/services/compositor/hyprland/", "crates/formalshell-rs/src/ipc/workspaces.rs", "dev/smoke.d/overview.sh"]
+runs = ["--overview"]
+
 # A subsurface's scale follows its parent's
 [[rule]]
 paths = ["dev/smoke.d/launcher_density.sh"]

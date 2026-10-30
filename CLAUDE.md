@@ -1029,6 +1029,18 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   by frame under `debug motionScale`, ink on the output's very last row early
   and a plain pill a `screenPadding` clear of it at rest, then at full speed a
   manual call, a real `wpctl` change, and a machine with no backlight.
+- `overview.sh` `--overview`: HyprExpo, the workspace overview the
+  owner's spec builds as the fspec package `hyprexpo` (`FS_HYPREXPO` points
+  at another build), loaded only by this leg and only while `hl.version()`
+  is the Hyprland its `hyprland-version` file names: `hyprctl plugin list`
+  naming it, `plugin:hyprexpo:columns` taking hl.config's 3 and `debug
+  dump`'s `overview` true. Under `layout: sidebar` it is opened by Super+O,
+  by `workspaces overview open`, by a 900ms press on a minimap icon and by
+  an icon dragged off its row, each read off `hyprctl submap` (the plugin's
+  `hyprexpo` submap while it is up), and closed over IPC; the bind's and
+  the IPC's frames differ from the desktop's and are read by eye for the
+  grid. The plugin takes every pointer event while it is up, so the
+  minimap hands it the gesture and the release lands on the overview.
 - `panel.sh` `--panel <name>`: one popout opened over the `panel` route, with
   `panel state` agreeing it is the only open one.
 - `panel_anchor.sh` `--panel-anchor`: `panel toggle` hanging its card under

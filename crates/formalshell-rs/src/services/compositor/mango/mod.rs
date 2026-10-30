@@ -285,6 +285,7 @@ async fn commands(shared: Shared, rx: async_channel::Receiver<Command>, dirty: a
             Command::SetOutputColor(..) => unsupported("an output colour mode"),
             Command::Cursor { .. } => unsupported("a cursor visibility change"),
             Command::Exit => dispatch(dispatch::QUIT).await,
+            Command::Overview(_) => unsupported("a workspace overview"),
             Command::WorkspaceNames(names) => {
                 shared.borrow_mut().names = names;
                 let _ = dirty.try_send(());

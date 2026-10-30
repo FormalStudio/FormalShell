@@ -2014,8 +2014,10 @@ impl App {
                         }
                     }
                     self.pressed = owner.zip(hit);
-                    if let Some((Owner::Bar, i)) = self.pressed {
-                        self.bar.sidebar_press(i, (x, y));
+                    if let Some((Owner::Bar, i)) = self.pressed
+                        && self.bar.sidebar_press(i, (x, y))
+                    {
+                        self.bar_dirty = true;
                     }
                 }
                 PointerEventKind::Release { button, .. } => {

@@ -1,4 +1,6 @@
-//! `workspaces peek <n>|close|status`: `peek` opens the
+//! `workspaces peek <n>|close|overview <open|close|toggle>|status`:
+//! `overview` is HyprExpo's grid of every workspace, the compositor's
+//! plugin rather than a surface of the shell. `peek` opens the
 //! preview of workspace `n` (the number on its chip) off the Spaces cell,
 //! the pointer's hover open for a keybind or the rig; `status` is the chips
 //! the cell resolved and the preview's state.
@@ -6,6 +8,7 @@
 use serde_json::json;
 
 use super::registry::{Function, Target, Type, Value};
+use crate::services::compositor::{self, Command, Overview};
 use crate::wayland::App;
 
 pub fn target() -> Target<App> {
@@ -14,6 +17,7 @@ pub fn target() -> Target<App> {
         functions: vec![
             Function { name: "peek", params: &[("n", Type::Int)], ret: Type::String, call: peek },
             Function { name: "close", params: &[], ret: Type::String, call: close },
+            Function { name: "overview", params: &[("action", Type::String)], ret: Type::String, call: overview },
             Function { name: "status", params: &[], ret: Type::String, call: status },
         ],
     }
@@ -25,6 +29,17 @@ fn peek(app: &mut App, args: &[Value]) -> Value {
 
 fn close(app: &mut App, _: &[Value]) -> Value {
     app.preview_close();
+    Value::Str("ok".into())
+}
+
+fn overview(_: &mut App, args: &[Value]) -> Value {
+    let action = match args[0].str() {
+        "open" => Overview::Open,
+        "close" => Overview::Close,
+        "toggle" => Overview::Toggle,
+        other => return Value::Str(format!("error: overview takes open, close or toggle, not {other:?}")),
+    };
+    compositor::send(Command::Overview(action));
     Value::Str("ok".into())
 }
 

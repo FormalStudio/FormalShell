@@ -28,7 +28,7 @@ use vello_cpu::kurbo::Affine;
 
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
-use crate::services::compositor::Command;
+use crate::services::compositor::{self, Command, Overview};
 use crate::services::appicon;
 use crate::store::Store;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
@@ -56,6 +56,8 @@ pub const HOLD_MS: u64 = 600;
 const LIFT_PX: f64 = 6.0;
 /// The lifted icon's size step.
 const LIFT_SCALE: f64 = 1.15;
+/// A press held this long without lifting opens the overview.
+const LONG_PRESS: Duration = Duration::from_millis(500);
 
 #[derive(Clone)]
 pub struct Win {
@@ -96,6 +98,9 @@ pub struct Drag {
     pub lifted: bool,
     /// The row and the slot in it the icon would land on.
     pub target: Option<(usize, usize)>,
+    /// The row it was pressed on.
+    row: Option<usize>,
+    pressed: Instant,
 }
 
 /// Window ids by workspace index.
@@ -124,6 +129,11 @@ pub struct Map {
     seen: Option<usize>,
     /// The pointer is on the map: the rows' numbers show.
     pub over: bool,
+    /// The compositor has an overview to open (`compositor::State`).
+    overview: bool,
+    /// The press went to the overview. HyprExpo lets a release through
+    /// when it is barely open, and that one is not a click.
+    handed: bool,
     nodes: Vec<NodeId>,
     /// Each tiled window's column (its x) on a workspace that reorders by
     /// column: a column moves whole.
@@ -133,6 +143,7 @@ pub struct Map {
 impl Map {
     /// The rows for `output` off the compositor's snapshot.
     pub fn read(&mut self, store: &Store, output: &str, theme: &Theme) {
+        self.overview = store.compositor.overview;
         let c = &store.compositor.snapshot;
         let ws: Vec<workspaces::Workspace> = c.workspaces.iter().map(workspace).collect();
         let wins: Vec<workspaces::Window> = c.windows.iter().map(window).collect();
@@ -374,7 +385,32 @@ impl Map {
 
     /// A press on hit `on` at `at`: a window's icon may be lifted.
     pub fn press(&mut self, on: &str, at: (f64, f64)) {
-        self.drag = on.strip_prefix("window:").map(|id| Drag { id: id.to_owned(), from: at, at, lifted: false, target: None });
+        self.handed = false;
+        let row = |id: &str| self.held().iter().position(|r| r.iter().any(|w| w == id));
+        self.drag = on.strip_prefix("window:").map(|id| Drag {
+            id: id.to_owned(),
+            from: at,
+            at,
+            lifted: false,
+            target: None,
+            row: row(id),
+            pressed: Instant::now(),
+        });
+    }
+
+    /// A drag that leaves its row, or a press held past `LONG_PRESS`,
+    /// opens the compositor's overview and hands it the gesture: HyprExpo
+    /// takes every pointer event while it is up, so the release picks a
+    /// workspace there and never reaches this map.
+    fn open_overview(&mut self, now: Instant) {
+        let Some(d) = self.drag.as_ref().filter(|_| self.overview) else { return };
+        let left = d.lifted && d.target.is_some_and(|(t, _)| Some(t) != d.row);
+        let held = !d.lifted && now >= d.pressed + LONG_PRESS;
+        if left || held {
+            self.drag = None;
+            self.handed = true;
+            compositor::send(Command::Overview(Overview::Open));
+        }
     }
 
     /// The pointer moved with a button held; true when the map needs a
@@ -390,6 +426,7 @@ impl Map {
         if let Some(d) = &mut self.drag {
             d.target = target;
         }
+        self.open_overview(Instant::now());
         true
     }
 
@@ -421,6 +458,9 @@ impl Map {
     /// click); otherwise the commands the drop asks for, none when it lands
     /// where it started or outside `strip`.
     pub fn release(&mut self, at: (f64, f64), strip: IRect, now: Instant) -> Option<Vec<Command>> {
+        if std::mem::take(&mut self.handed) {
+            return Some(Vec::new());
+        }
         let d = self.drag.take()?;
         if !d.lifted {
             return None;
@@ -440,9 +480,11 @@ impl Map {
         Some(commands)
     }
 
-    /// When the held order lets go.
+    /// When the held order lets go, or a press still down becomes a long
+    /// one.
     pub fn wake(&self) -> Option<Instant> {
-        self.hold.as_ref().map(|h| h.1)
+        let press = self.drag.as_ref().filter(|d| self.overview && !d.lifted).map(|d| d.pressed + LONG_PRESS);
+        [self.hold.as_ref().map(|h| h.1), press].into_iter().flatten().min()
     }
 
     /// The icons over the slots `hits` laid out, after `anchor` in paint
@@ -451,6 +493,7 @@ impl Map {
     /// `card` is the cards' left edge and width, which the rows' numbers
     /// straddle (the right one on a right edge).
     pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, card: (f64, f64), right: bool, now: Instant) -> bool {
+        self.open_overview(now);
         self.slots = hits.iter().filter_map(|h| Some((h.on.as_ref()?.strip_prefix("window:")?.to_owned(), h.rect))).collect();
         let last = self.rows.len();
         self.row_boxes = hits

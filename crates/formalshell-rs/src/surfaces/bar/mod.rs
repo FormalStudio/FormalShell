@@ -216,10 +216,12 @@ impl Bar {
     }
 
     /// A press on hit `i`; under the sidebar it may lift a minimap icon.
-    pub fn sidebar_press(&mut self, i: usize, at: (f64, f64)) {
-        if let Some(sb) = &mut self.sidebar {
-            sb.press(i, at);
-        }
+    /// True when the press is on a minimap icon, whose long press needs a
+    /// pass to schedule its wake.
+    pub fn sidebar_press(&mut self, i: usize, at: (f64, f64)) -> bool {
+        let Some(sb) = &mut self.sidebar else { return false };
+        sb.press(i, at);
+        sb.map.drag.is_some()
     }
 
     /// The pointer moved with a button held; true when the column needs a

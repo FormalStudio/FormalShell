@@ -216,6 +216,8 @@
 {"argv":["call","workspaces","close"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
 {"argv":["call","workspaces","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","workspaces","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
+{"argv":["call","workspaces","overview","toggle"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
+{"argv":["call","workspaces","overview"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function overview(action: string): string\n","stderr":"","exit":0}
 {"argv":["show","workspaces"],"live":true,"stdout":"","stderr":"The following argument was not expected: workspaces\nRun with --help for more information.\n","exit":109}
 {"argv":["call","network","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","network","connect","FORMALTEST"],"live":true,"stdout":"Too few arguments provided (2 required but 1 were provided.)\nFunction definition: function connect(ssid: string, psk: string): string\n","stderr":"","exit":0}

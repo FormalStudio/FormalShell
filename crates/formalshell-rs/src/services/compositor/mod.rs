@@ -91,6 +91,8 @@ pub struct State {
     /// The focused window's border colour (Hyprland's
     /// `general:col.active_border`, its first stop), sRGB 0..1.
     pub active_border: Option<[f32; 3]>,
+    /// HyprExpo is loaded, so `Command::Overview` opens something.
+    pub overview: bool,
 }
 
 impl Default for State {
@@ -105,6 +107,7 @@ impl Default for State {
             config_reloads: 0,
             gaps_out: Gaps::default(),
             active_border: None,
+            overview: false,
         }
     }
 }
@@ -116,6 +119,7 @@ pub enum Diff {
     ConfigReloaded,
     GapsOut(Gaps),
     ActiveBorder(Option<[f32; 3]>),
+    Overview(bool),
 }
 
 impl State {
@@ -155,6 +159,12 @@ impl State {
                     return false;
                 }
                 self.active_border = c;
+            }
+            Diff::Overview(loaded) => {
+                if self.overview == loaded {
+                    return false;
+                }
+                self.overview = loaded;
             }
         }
         true
@@ -211,6 +221,16 @@ pub enum Command {
     Cursor { hidden: bool },
     /// Ends the session.
     Exit,
+    /// HyprExpo's workspace overview, a compositor plugin the owner's
+    /// spec loads. Nothing when the plugin is not loaded.
+    Overview(Overview),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overview {
+    Open,
+    Close,
+    Toggle,
 }
 
 static COMMANDS: OnceLock<async_channel::Sender<Command>> = OnceLock::new();
