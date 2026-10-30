@@ -208,6 +208,25 @@ impl Bar {
         Some(sb.status(self.collapsed, self.edge, self.thickness()))
     }
 
+    /// A press on hit `i`; under the sidebar it may lift a minimap icon.
+    pub fn sidebar_press(&mut self, i: usize, at: (f64, f64)) {
+        if let Some(sb) = &mut self.sidebar {
+            sb.press(i, at);
+        }
+    }
+
+    /// The pointer moved with a button held; true when the column needs a
+    /// pass.
+    pub fn sidebar_motion(&mut self, at: (f64, f64)) -> bool {
+        self.sidebar.as_mut().is_some_and(|sb| sb.map.motion(at))
+    }
+
+    /// The button let go over the sidebar: a drop's commands, or `None`
+    /// when the press is a click.
+    pub fn sidebar_release(&mut self, at: (f64, f64)) -> Option<Vec<crate::services::compositor::Command>> {
+        self.sidebar.as_mut()?.release(at, Instant::now())
+    }
+
     /// Whether hit `i` takes a click: a cell that is interactive, any
     /// control the sidebar drew.
     pub fn clickable(&self, i: usize) -> bool {

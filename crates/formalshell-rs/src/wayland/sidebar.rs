@@ -60,4 +60,16 @@ impl App {
         self.request_paint();
         true
     }
+
+    /// A minimap drop's commands, in order, onto the bar's output.
+    pub(super) fn minimap_drop(&mut self, commands: Vec<Command>) {
+        for command in commands {
+            compositor::send(match command {
+                Command::MoveWindowTo { id, idx, .. } => Command::MoveWindowTo { id, idx, output: self.bar.output.clone() },
+                other => other,
+            });
+        }
+        self.bar_dirty = true;
+        self.request_paint();
+    }
 }

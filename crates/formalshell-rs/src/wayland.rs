@@ -1936,6 +1936,9 @@ impl App {
                     self.set_cursor(true);
                 }
                 PointerEventKind::Motion { .. } => {
+                    if matches!(self.pressed, Some((Owner::Bar, _))) && self.bar.sidebar_motion((x, y)) {
+                        self.bar_dirty = true;
+                    }
                     self.pointer_on = owner;
                     self.hover(owner, (x, y));
                     self.set_cursor(false);
@@ -1981,6 +1984,9 @@ impl App {
                         }
                     }
                     self.pressed = owner.zip(hit);
+                    if let Some((Owner::Bar, i)) = self.pressed {
+                        self.bar.sidebar_press(i, (x, y));
+                    }
                 }
                 PointerEventKind::Release { button, .. } => {
                     let Some((o, i)) = self.pressed.take() else { continue };
@@ -1992,6 +1998,12 @@ impl App {
                         let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, &self.store, self.runtime.as_ref()));
                         self.panel_out(out);
                         self.panel_dirty = true;
+                        continue;
+                    }
+                    if o == Owner::Bar
+                        && let Some(commands) = self.bar.sidebar_release((x, y))
+                    {
+                        self.minimap_drop(commands);
                         continue;
                     }
                     let button = match button {

@@ -2,17 +2,31 @@
 //! ordinal and its windows' icons three across in screen order, one empty
 //! row under the last for a new workspace. Icons come off compositor
 //! metadata through `appicon`; nothing is captured.
+//!
+//! The ui kit lays each row out with an empty slot per icon; the icons are
+//! painted over those slots here, each gliding to its slot on the spatial
+//! clock, so a reorder (a drag, a key, the compositor's own) moves them
+//! rather than cutting. A drag lifts its icon under the pointer, the rows
+//! open a gap where it would land, and once dropped the map holds the
+//! order it asked for until the compositor agrees or `HOLD_MS` passes,
+//! after which every icon glides to where the compositor has it: a refused
+//! move springs back.
 
-use std::time::Instant;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use fs_chrome::bar::workspaces::{self, SlotOpts};
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 
-use crate::scene::Bitmap;
+use vello_cpu::kurbo::Affine;
+
+use crate::motion::{Animated, Kind as Clock};
+use crate::scene::{Bitmap, IRect, NodeId, Scene};
+use crate::services::compositor::Command;
 use crate::services::appicon;
 use crate::store::Store;
-use crate::surfaces::bar::cell::Action;
+use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::bar::cells::workspaces::{window, workspace};
 use crate::ui::{El, Ink, Variant, w};
 
@@ -20,6 +34,14 @@ use crate::ui::{El, Ink, Variant, w};
 pub const ACROSS: usize = 3;
 /// The cap past which a row stops listing windows.
 const MAX: usize = 64;
+/// How long a dropped order holds against a compositor that disagrees.
+pub const HOLD_MS: u64 = 600;
+/// Pointer travel past which a press on an icon lifts it.
+const LIFT_PX: f64 = 6.0;
+/// The lifted icon's size step.
+const LIFT_SCALE: f64 = 1.25;
+/// The other icons' alpha while one is lifted.
+const DIMMED: f32 = 0.7;
 
 #[derive(Clone)]
 pub struct Win {
@@ -55,11 +77,31 @@ pub enum Move {
     To(String, i64),
 }
 
+/// A press on an icon, lifted once it has travelled `LIFT_PX`.
+pub struct Drag {
+    pub id: String,
+    from: (f64, f64),
+    pub at: (f64, f64),
+    pub lifted: bool,
+    /// The row and the slot in it the icon would land on.
+    pub target: Option<(usize, usize)>,
+}
+
 #[derive(Default)]
 pub struct Map {
     pub rows: Vec<Row>,
     probed: Option<(u32, Vec<appicon::Query>)>,
     pub cursor: Option<Cursor>,
+    pub drag: Option<Drag>,
+    /// The order a drop asked for, held until the compositor agrees or the
+    /// deadline: every row's window ids, the empty row's last.
+    hold: Option<(Vec<Vec<String>>, Instant)>,
+    /// Each painted icon's place, gliding to its slot.
+    glides: HashMap<String, (Animated, Animated)>,
+    /// Each slot as last laid out, by window id, and each row's box.
+    slots: HashMap<String, IRect>,
+    row_boxes: Vec<IRect>,
+    nodes: Vec<NodeId>,
 }
 
 impl Map {
@@ -101,6 +143,10 @@ impl Map {
                 current: s.current,
             })
             .collect();
+        let now = Instant::now();
+        if self.hold.as_ref().is_some_and(|(order, until)| *order == self.base() || now >= *until) {
+            self.hold = None;
+        }
         if let Some(c) = &mut self.cursor {
             match c.window.as_ref().and_then(|id| self.rows.iter().position(|r| r.windows.iter().any(|w| &w.id == id))) {
                 Some(row) => c.row = row,
@@ -184,13 +230,168 @@ impl Map {
         self.rows.iter().map(|r| r.idx).max().unwrap_or(0) + 1
     }
 
+    /// Every row's window ids as the compositor has them, the empty row's
+    /// last.
+    fn base(&self) -> Vec<Vec<String>> {
+        let mut order: Vec<Vec<String>> = self.rows.iter().map(|r| r.windows.iter().map(|w| w.id.clone()).collect()).collect();
+        order.push(Vec::new());
+        order
+    }
+
+    /// What the map shows: a dropped order while it holds, with a lifted
+    /// icon taken out and an empty slot (`""`) where it would land.
+    fn shown(&self) -> Vec<Vec<String>> {
+        let mut order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
+        if let Some(d) = self.drag.as_ref().filter(|d| d.lifted) {
+            for row in &mut order {
+                row.retain(|id| *id != d.id);
+            }
+            if let Some((t, j)) = d.target
+                && let Some(row) = order.get_mut(t)
+            {
+                row.insert(j.min(row.len()), String::new());
+            }
+        }
+        order
+    }
+
+    fn win(&self, id: &str) -> Option<&Win> {
+        self.rows.iter().flat_map(|r| &r.windows).find(|w| w.id == id)
+    }
+
     pub fn view(&self, theme: &Theme, _now: Instant) -> El {
         let s = &theme.space;
         let size = icon_size(theme);
-        let mut col: Vec<El> = self.rows.iter().enumerate().map(|(i, r)| row(theme, i, r, size)).collect();
-        let empty = w::row(s.sm, vec![w::caption(format!("{}", self.next_idx())).mono().ink(Ink::Dim), w::spacer()]);
-        col.push(w::cell(empty).ghost().interactive().on("new").stop("new").fill());
+        let target = self.drag.as_ref().filter(|d| d.lifted).and_then(|d| d.target).map(|t| t.0);
+        let shown = self.shown();
+        let last = shown.len() - 1;
+        let col: Vec<El> = shown
+            .iter()
+            .enumerate()
+            .map(|(i, ids)| {
+                let (label, current) = match self.rows.get(i) {
+                    Some(r) => (r.label.clone(), r.current),
+                    None => (format!("{}", self.next_idx() + (i - self.rows.len()) as i64), false),
+                };
+                let on = if i == last { "new".to_owned() } else { format!("row:{i}") };
+                let stop = if i == last { "new".to_owned() } else { format!("r:{i}") };
+                row(theme, &label, current, target == Some(i), ids, |id| self.win(id), size).on(on).stop(stop)
+            })
+            .collect();
         w::column(s.xxs, col).fill()
+    }
+
+    /// A press on hit `on` at `at`: a window's icon may be lifted.
+    pub fn press(&mut self, on: &str, at: (f64, f64)) {
+        self.drag = on.strip_prefix("window:").map(|id| Drag { id: id.to_owned(), from: at, at, lifted: false, target: None });
+    }
+
+    /// The pointer moved with a button held; true when the map needs a
+    /// pass.
+    pub fn motion(&mut self, at: (f64, f64)) -> bool {
+        let Some(d) = &mut self.drag else { return false };
+        d.at = at;
+        if !d.lifted && (at.0 - d.from.0).hypot(at.1 - d.from.1) < LIFT_PX {
+            return false;
+        }
+        d.lifted = true;
+        let target = self.target(at);
+        if let Some(d) = &mut self.drag {
+            d.target = target;
+        }
+        true
+    }
+
+    /// The row under `at` (above the first is the first, below the empty
+    /// row is the empty row) and the slot in it: the icons of that row
+    /// ahead of the pointer in reading order.
+    fn target(&self, at: (f64, f64)) -> Option<(usize, usize)> {
+        let d = self.drag.as_ref()?;
+        let (x, y) = at;
+        let last = self.row_boxes.len().checked_sub(1)?;
+        let t = self.row_boxes.iter().position(|b| (y as i32) < b.bottom()).unwrap_or(last);
+        let mut order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
+        let row = order.get_mut(t)?;
+        row.retain(|id| *id != d.id);
+        let slot = row
+            .iter()
+            .filter_map(|id| self.slots.get(id))
+            .filter(|r| {
+                let (cx, cy, half) = (r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 / 2.0, r.h as f64 / 2.0);
+                cy < y - half || ((cy - y).abs() <= half && cx < x)
+            })
+            .count();
+        Some((t, slot))
+    }
+
+    /// The button let go. `None` when no icon was lifted (the press is a
+    /// click); otherwise the commands the drop asks for, none when it lands
+    /// where it started or outside `strip`.
+    pub fn release(&mut self, at: (f64, f64), strip: IRect, now: Instant) -> Option<Vec<Command>> {
+        let d = self.drag.take()?;
+        if !d.lifted {
+            return None;
+        }
+        let inside = at.0 >= strip.x as f64 && at.0 < strip.right() as f64 && at.1 >= strip.y as f64 && at.1 < strip.bottom() as f64;
+        let Some((t, j)) = d.target.filter(|_| inside) else { return Some(Vec::new()) };
+        let order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
+        let Some(from) = order.iter().position(|row| row.contains(&d.id)) else { return Some(Vec::new()) };
+        let (commands, predicted) = drop_on(&order, from, &d.id, t, j, self.rows.get(t).map(|r| r.idx).unwrap_or_else(|| self.next_idx()));
+        if !commands.is_empty() {
+            self.hold = Some((predicted, now + Duration::from_millis(HOLD_MS)));
+        }
+        Some(commands)
+    }
+
+    /// When the held order lets go.
+    pub fn wake(&self) -> Option<Instant> {
+        self.hold.as_ref().map(|h| h.1)
+    }
+
+    /// The icons over the slots `hits` laid out, after `anchor` in paint
+    /// order; true while one is still gliding.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, now: Instant) -> bool {
+        self.slots = hits.iter().filter_map(|h| Some((h.on.as_ref()?.strip_prefix("window:")?.to_owned(), h.rect))).collect();
+        self.row_boxes = hits.iter().filter(|h| h.on.as_deref().is_some_and(|on| on == "new" || on.starts_with("row:"))).map(|h| h.rect).collect();
+        let ms = Clock::Spatial.ms(theme) * kit.motion_scale;
+        let lifted = self.drag.as_ref().filter(|d| d.lifted).map(|d| (d.id.clone(), d.at));
+        self.glides.retain(|id, _| self.slots.contains_key(id) || lifted.as_ref().is_some_and(|l| &l.0 == id));
+        let fg = theme.colors.get("foreground");
+        let mut nodes = std::mem::take(&mut self.nodes);
+        let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
+        let mut moving = false;
+        let ids: Vec<String> = self.slots.keys().cloned().collect();
+        for id in &ids {
+            let r = self.slots[id];
+            let (x, y) = (r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 / 2.0);
+            let g = self.glides.entry(id.clone()).or_insert_with(|| (Animated::new(x, Clock::Spatial.curve()), Animated::new(y, Clock::Spatial.curve())));
+            g.0.set(now, x, ms);
+            g.1.set(now, y, ms);
+            moving |= g.0.running(now) || g.1.running(now);
+            let at = (g.0.value(now), g.1.value(now));
+            let alpha = if lifted.is_some() { DIMMED } else { 1.0 };
+            let icon = self.win(id).and_then(|w| w.icon.clone());
+            draw_icon(&mut p, kit, icon.as_ref(), at, 1.0, alpha, fg);
+        }
+        if let Some((id, at)) = lifted {
+            let size = icon_size(theme) * LIFT_SCALE;
+            let halo = theme.colors.get("foreground").with_alpha(0.12);
+            let card = theme.colors.get("card");
+            let reach = (size * 1.6).round() as i32;
+            p.rect(IRect::new(at.0 as i32 - reach / 2, at.1 as i32 - reach / 2, reach, reach), halo, reach as f32 / 2.0);
+            let plate = (size + theme.space.sm).round() as i32;
+            p.framed(IRect::new(at.0 as i32 - plate / 2, at.1 as i32 - plate / 2, plate, plate), card, theme.radii.md as f32, theme.colors.get("border"), 1.0);
+            let icon = self.win(&id).and_then(|w| w.icon.clone());
+            draw_icon(&mut p, kit, icon.as_ref(), at, LIFT_SCALE, 1.0, fg);
+            // It lands from where it was let go.
+            let g = self.glides.entry(id).or_insert_with(|| (Animated::new(at.0, Clock::Spatial.curve()), Animated::new(at.1, Clock::Spatial.curve())));
+            g.0.jump(at.0);
+            g.1.jump(at.1);
+        }
+        p.finish();
+        self.nodes = nodes;
+        moving
     }
 
     /// The rail's chips: one ordinal per workspace, the focused one filled.
@@ -233,6 +434,14 @@ impl Map {
     pub fn cursor_status(&self) -> Value {
         self.cursor.as_ref().map_or(Value::Null, |c| json!({"window": c.window, "row": c.row}))
     }
+
+    /// The press or lifted icon, and the order a drop holds.
+    pub fn drag_status(&self) -> Value {
+        json!({
+            "drag": self.drag.as_ref().map(|d| json!({"window": d.id, "lifted": d.lifted, "target": d.target.map(|(t, j)| [t, j])})),
+            "held": self.hold.as_ref().map(|h| &h.0),
+        })
+    }
 }
 
 /// An icon three across a sidebar card, past the ordinal.
@@ -240,28 +449,122 @@ fn icon_size(theme: &Theme) -> f64 {
     theme.space.control_height * 0.75
 }
 
-fn row(theme: &Theme, i: usize, r: &Row, size: f64) -> El {
+/// One icon centred on `at`, `scale` about its centre.
+fn draw_icon(p: &mut Painter, kit: &mut Kit, icon: Option<&Bitmap>, at: (f64, f64), scale: f64, alpha: f32, fg: fs_theme::color::Rgba) {
+    let about = Affine::scale_about(scale, (at.0, at.1));
+    match icon {
+        Some(b) => {
+            let (w, h) = b.size();
+            p.image(b, ((at.0 - w as f64 / 2.0).round() as i32, (at.1 - h as f64 / 2.0).round() as i32), alpha);
+        }
+        None => {
+            let glyph = kit.icon("app-window");
+            let (w, h) = glyph.box_size();
+            p.text(&glyph, ((at.0 - w as f64 / 2.0).round() as i32 + crate::text::PAD, (at.1 - h as f64 / 2.0).round() as i32 + crate::text::PAD), fg.with_alpha(fg.a * alpha), &[]);
+        }
+    }
+    if scale != 1.0
+        && let Some(id) = p.last()
+    {
+        p.scene().set_transform(id, about);
+    }
+}
+
+/// The commands a drop of `id` from row `from` onto slot `j` of row `t`
+/// asks for, and the order it predicts. Along its own row it trades places
+/// with the window at that slot; onto another row it moves there (`idx`)
+/// and then trades with the window at the slot, if one is.
+fn drop_on(order: &[Vec<String>], from: usize, id: &str, t: usize, j: usize, idx: i64) -> (Vec<Command>, Vec<Vec<String>>) {
+    let mut out = order.to_vec();
+    let k = order[from].iter().position(|w| w == id).unwrap_or(0);
+    if t == from {
+        let j = j.min(order[from].len() - 1);
+        if j == k {
+            return (Vec::new(), out);
+        }
+        let other = order[from][j].clone();
+        out[from].swap(k, j);
+        return (vec![Command::SwapWindows { a: id.to_owned(), b: other }], out);
+    }
+    let mut commands = vec![Command::MoveWindowTo { id: id.to_owned(), idx, output: String::new() }];
+    out[from].retain(|w| w != id);
+    let row = &mut out[t];
+    row.push(id.to_owned());
+    if let Some(other) = order[t].get(j).cloned() {
+        let last = row.len() - 1;
+        row.swap(j, last);
+        commands.push(Command::SwapWindows { a: id.to_owned(), b: other });
+    }
+    if t == order.len() - 1 {
+        out.push(Vec::new());
+    }
+    (commands, out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String], win: impl Fn(&str) -> Option<&'a Win>, size: f64) -> El {
     let s = &theme.space;
-    let icons: Vec<El> = r
-        .windows
+    let icons: Vec<El> = ids
         .iter()
-        .map(|win| {
-            let pic = match &win.icon {
-                Some(b) => w::picture(Some(b.clone()), size),
-                None => w::icon("app-window"),
-            };
-            w::cell(pic).cell_state(|c| {
+        .map(|id| {
+            let slot = w::cell(w::picture(None, size));
+            if id.is_empty() {
+                return slot.cell_state(|c| {
+                    c.chip = true;
+                    c.small = true;
+                    c.ghost = true;
+                });
+            }
+            let focused = win(id).is_some_and(|w| w.focused);
+            slot.cell_state(|c| {
                 c.chip = true;
                 c.small = true;
-                c.ghost = !win.focused;
-                c.selected = win.focused;
+                c.ghost = !focused;
+                c.selected = focused;
             })
             .interactive()
-            .on(format!("window:{}", win.id))
-            .stop(format!("w:{}", win.id))
+            .on(format!("window:{id}"))
+            .stop(format!("w:{id}"))
         })
         .collect();
-    let label = w::caption(r.label.clone()).mono().ink(if r.current { Ink::Fg } else { Ink::Dim });
+    let label = w::caption(label.to_owned()).mono().ink(if current { Ink::Fg } else { Ink::Dim });
     let body = w::row(s.sm, vec![label, w::grid(ACROSS, s.xxs, icons).fill()]);
-    w::cell(body).ghost().selected(r.current).interactive().on(format!("row:{i}")).stop(format!("r:{i}")).fill()
+    w::cell(body).ghost().selected(current).cell_state(|c| c.hovered = lit).interactive().fill()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order(rows: &[&[&str]]) -> Vec<Vec<String>> {
+        rows.iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect()
+    }
+
+    #[test]
+    fn a_drop_along_its_row_swaps() {
+        let o = order(&[&["a", "b", "c"], &[]]);
+        let (cmds, out) = drop_on(&o, 0, "a", 0, 2, 1);
+        assert!(matches!(&cmds[..], [Command::SwapWindows { a, b }] if a == "a" && b == "c"));
+        assert_eq!(out, order(&[&["c", "b", "a"], &[]]));
+        assert!(drop_on(&o, 0, "b", 0, 1, 1).0.is_empty());
+    }
+
+    #[test]
+    fn a_drop_on_another_row_moves_then_swaps_into_the_slot() {
+        let o = order(&[&["a", "b"], &["c"], &[]]);
+        let (cmds, out) = drop_on(&o, 0, "a", 1, 0, 2);
+        assert!(matches!(&cmds[..], [Command::MoveWindowTo { id, idx: 2, .. }, Command::SwapWindows { a, b }] if id == "a" && a == "a" && b == "c"));
+        assert_eq!(out, order(&[&["b"], &["a", "c"], &[]]));
+        let (cmds, out) = drop_on(&o, 0, "a", 1, 1, 2);
+        assert!(matches!(&cmds[..], [Command::MoveWindowTo { .. }]));
+        assert_eq!(out, order(&[&["b"], &["c", "a"], &[]]));
+    }
+
+    #[test]
+    fn a_drop_on_the_empty_row_makes_a_workspace() {
+        let o = order(&[&["a", "b"], &[]]);
+        let (cmds, out) = drop_on(&o, 0, "a", 1, 0, 2);
+        assert!(matches!(&cmds[..], [Command::MoveWindowTo { id, idx: 2, .. }] if id == "a"));
+        assert_eq!(out, order(&[&["b"], &["a"], &[]]));
+    }
 }

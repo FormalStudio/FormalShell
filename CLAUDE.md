@@ -810,7 +810,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   neighbour (their places traded in `hyprctl clients` and in the row's
   order), Shift+Down carrying it onto workspace 2 and again past the last
   row onto a new workspace 3, the cursor following it, and Escape giving
-  the keyboard back. The cursor's frame and the carried one pulled.
+  the keyboard back. Then held drags off `dev/vpointer.py`: the window
+  dragged onto workspace 2's row (status read mid-drag, lifted over row
+  1), the two there trading places by a drag along the row, one dropped
+  on the empty row making workspace 3, and a drag let go past the column
+  moving nothing and holding no order. The cursor's, the carried, the
+  mid-drag and the dropped frames pulled.
 - `mirror.sh` `--mirror`: the launcher's camera mirror against two v4l2loopback
   nodes (built by the VM rig, loaded by the leg) fed by real ffmpeg
   writers, a colour pattern on video10 and a GREY one on video11 standing in

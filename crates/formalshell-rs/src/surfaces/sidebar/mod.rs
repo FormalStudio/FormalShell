@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
 
 use crate::scene::{IRect, NodeId, Scene};
+use crate::services::compositor::Command;
 use crate::services::state::{self, Field};
 use crate::store::Store;
 use crate::surfaces::activity;
@@ -35,6 +36,8 @@ pub struct Sidebar {
     cards: Vec<&'static str>,
     pub animating: bool,
     pub wake: Option<Instant>,
+    /// The column's box in the window, as last drawn.
+    strip: IRect,
 }
 
 impl Sidebar {
@@ -46,6 +49,7 @@ impl Sidebar {
             cards: Vec::new(),
             animating: false,
             wake: None,
+            strip: IRect::new(0, 0, 0, 0),
         }
     }
 
@@ -72,6 +76,7 @@ impl Sidebar {
         self.top.motion_scale = kit.motion_scale;
         self.foot.motion_scale = kit.motion_scale;
         self.map.read(store, output, theme);
+        self.strip = strip;
 
         let foot = if collapsed { rail_foot(theme, edge) } else { foot_row(theme, edge) };
         let (_, foot_h) = crate::ui::measure(&foot, width, theme, kit);
@@ -100,8 +105,10 @@ impl Sidebar {
         self.foot.anchor = drawn.last.or(anchor);
         let at = bottom - foot_h;
         let feet = self.foot.draw(&foot, Rect::new(x0, at, x0 + width, bottom), clip, 1.0, theme, kit, scene, now);
-        self.animating = drawn.animating || feet.animating;
-        self.wake = [drawn.wake, feet.wake].into_iter().flatten().min();
+        let hits = if collapsed { &[][..] } else { &self.top.hits[..] };
+        let gliding = self.map.paint(hits, theme, kit, scene, feet.last.or(self.foot.anchor), strip, now);
+        self.animating = drawn.animating || feet.animating || gliding;
+        self.wake = [drawn.wake, feet.wake, self.map.wake()].into_iter().flatten().min();
     }
 
     /// The clickable rect under a point, as an index past the top column's
@@ -150,6 +157,17 @@ impl Sidebar {
         (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on.as_str()))).map(|i| self.anchor(i))
     }
 
+    /// A press on hit `i`, which may start a drag on the minimap.
+    pub fn press(&mut self, i: usize, at: (f64, f64)) {
+        let on = self.hit_at(i).and_then(|h| h.on.clone()).unwrap_or_default();
+        self.map.press(&on, at);
+    }
+
+    /// The button let go: the drop's commands, or `None` for a click.
+    pub fn release(&mut self, at: (f64, f64), now: Instant) -> Option<Vec<Command>> {
+        self.map.release(at, self.strip, now)
+    }
+
     pub fn action(&self, i: usize, output: &str) -> Action {
         let Some(on) = self.hit_at(i).and_then(|h| h.on.clone()) else { return Action::None };
         action(&on, output, &self.map)
@@ -165,6 +183,7 @@ impl Sidebar {
             "cards": self.cards,
             "rows": self.map.status(),
             "cursor": self.map.cursor_status(),
+            "minimap": self.map.drag_status(),
             "hits": self
                 .top
                 .hits
