@@ -851,7 +851,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   shell's own hold on any bar frame under 16 ms (each gap split into the
   compositor's callback wait and the shell's turn), no gap between bar
   commits over 33 ms where the compositor kept 60 Hz, and no launcher
-  commit in five seconds open at rest.
+  commit in five seconds open at rest, nor in five more with the actions
+  column open, with a recent image in the preview pane, or with → on a
+  staged app showing its foot window's captured frame.
 - `menu_actions.sh` `--menu-actions`: the launcher's in-process `@ipc:`
   actions reached through its own rows: the toggle hub's Do Not Disturb,
   Caffeinate and Overnight rows each flipping their service with the hub
