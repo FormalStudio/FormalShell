@@ -125,13 +125,6 @@ pub const ROUTE_ICON_PREFIXES: &[(&str, &str)] = &[
     ("radio.result.", "radio"),
 ];
 
-/// Routes whose mark is a real logo rather than an icon, keyed by the
-/// os-release id the distro logo table uses. A logo never follows
-/// `theme.icons`: under `lucide` the nix route resolved "snowflake" to
-/// Lucide's weather snowflake, which is how the launcher once wore a fake
-/// NixOS logo.
-pub const ROUTE_LOGOS: &[(&str, &str)] = &[("nix", "nixos")];
-
 /// "" means "this row has no named icon": the caller draws the node's own
 /// glyph instead.
 pub fn icon_for(node: Option<&Node>) -> &'static str {
@@ -143,12 +136,6 @@ pub fn icon_for(node: Option<&Node>) -> &'static str {
         .iter()
         .find(|(prefix, _)| node.id.starts_with(prefix))
         .map_or("", |(_, name)| name)
-}
-
-/// "" means "this row's mark is not a logo", which is every row but one.
-pub fn logo_for(node: Option<&Node>) -> &'static str {
-    let Some(node) = node.filter(|n| !n.id.is_empty()) else { return "" };
-    ROUTE_LOGOS.iter().find(|(id, _)| *id == node.id).map_or("", |(_, logo)| logo)
 }
 
 /// The named icon a row draws when it has none of its own, by what the row

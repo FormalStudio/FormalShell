@@ -605,6 +605,17 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   settings.json beating a pin in state.json for the same query and a pin
   alone leading, `menu abbreviations` holding the two picks, and
   settings.json's sha256 unchanged.
+- `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
+  read off `menu status`'s `level` and `token`: every route the rig lists
+  entered by its name and Enter and by `menu summon`, the four prefixes
+  (`:e`, `:k`, `:r` and a menu.jsonc fixture's `:m`) typed on real keys
+  with what follows kept as the query, a query inside the fixture mode
+  listing its own leaf alone and Clipboard and Emoji listing none of a
+  staged app, Backspace, a 1500ms held Backspace and ← on an empty field
+  each leaving one level, Escape clearing the query then leaving each
+  mode then closing, and a real click on the token leaving it. The
+  three-deep token, Emoji's and the scoped list photographed dark and
+  light.
 - `light.sh` `--light`: pins `theme.mode` light (a `settings_pin`) and
   rides any leg, so its frames are read in light mode; asserts `theme
   status` reports light.

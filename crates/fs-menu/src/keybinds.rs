@@ -164,15 +164,6 @@ pub fn describe_action(bind: &Bind) -> String {
     if text.is_empty() { bind.title.clone() } else { text }
 }
 
-/// `":k"` root trigger: the query after it, "" for the bare trigger, `None`
-/// when `text` is not the trigger.
-pub fn trigger_query(text: &str) -> Option<&str> {
-    if text == ":k" {
-        return Some("");
-    }
-    text.strip_prefix(":k ")
-}
-
 const WORD_BREAK: &str = " +-_./";
 
 fn word_start(hay: &str, q: &str) -> bool {
@@ -278,14 +269,6 @@ mod tests {
         assert_eq!(binds[2].chord, "XF86AudioRaiseVolume");
         assert!(parse_hyprland_binds("").is_empty());
         assert!(parse_hyprland_binds("garbage\n\tkey: x").is_empty());
-    }
-
-    #[test]
-    fn triggers() {
-        assert_eq!(trigger_query(":k"), Some(""));
-        assert_eq!(trigger_query(":k spawn"), Some("spawn"));
-        assert_eq!(trigger_query(":kx"), None);
-        assert_eq!(trigger_query("k"), None);
     }
 
     #[test]

@@ -122,7 +122,24 @@ fn route_only_subtree_is_invisible_to_a_root_query() {
 
 #[test]
 fn route_only_subtree_is_searchable_from_inside_the_route() {
-    assert_eq!(ranked_ids(&route_only_tree(), "Equibop", Some("tray")), ["apps.equibop", "tray.equibop"]);
+    assert_eq!(ranked_ids(&route_only_tree(), "Equibop", Some("tray")), ["tray.equibop"]);
+}
+
+// A mode ranks its own subtree: the app of the same name outside it is not
+// one of its subjects.
+#[test]
+fn a_mode_searches_only_inside_itself() {
+    let tree = tree_of(json!({
+        "apps": {},
+        "apps.firefox": { "label": "Firefox" },
+        "system": {},
+        "system.power": {},
+        "system.power.fire": { "label": "Fire drill" },
+        "system.files": { "label": "Files" }
+    }));
+    assert_eq!(ranked_ids(&tree, "fi", Some("system")), ["system.files", "system.power.fire"]);
+    assert_eq!(ranked_ids(&tree, "fire", Some("system.power")), ["system.power.fire"]);
+    assert!(ranked_ids(&tree, "fi", None).contains(&"apps.firefox".to_string()));
 }
 
 // localOnly is set on the built node: only provider rows carry it, and

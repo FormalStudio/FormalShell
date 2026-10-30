@@ -121,7 +121,7 @@ fn share_receive_status(receive: Option<&ReceiveStatus>) -> Entry {
 /// The GUI-only shape. An empty history is the one shape `infer_kind` cannot
 /// produce on its own (no action, target or provider to key off), which is
 /// what the explicit `kind` and `dim` override exists for: an honest NOTHING
-/// TO SHARE row, the same non-activatable shape as nix's own
+/// TO SHARE row, the same non-activatable shape as a route's own
 /// unavailable-state rows.
 fn share_fallback_entries(clipboard_items: &[ClipEntry]) -> Entries {
     let mut out = Entries::new();

@@ -126,7 +126,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--launcher-abbrev"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--launcher-abbrev", "--launcher-modes"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]
@@ -160,10 +160,6 @@ runs = ["--clipssh", "--clipssh-image"]
 [[rule]]
 paths = ["crates/fs-menu/src/providers/devices.rs"]
 runs = ["--device-routes"]
-
-[[rule]]
-paths = ["crates/fs-menu/src/providers/nix.rs"]
-runs = ["--nix-run"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/share.rs", "crates/formalshell-rs/src/services/localsend.rs", "crates/formalshell-rs/src/ipc/localsend.rs", "crates/fs-devices/src/localsend.rs"]
@@ -558,7 +554,7 @@ runs = ["--systemupdate"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/search.rs", "crates/fs-menu/data/default-menu.jsonc"]
-runs = ["--menu", "--menu-rows", "--launcher-abbrev"]
+runs = ["--menu", "--menu-rows", "--launcher-abbrev", "--launcher-modes"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/abbrev.rs", "dev/smoke.d/launcher_abbrev.sh"]

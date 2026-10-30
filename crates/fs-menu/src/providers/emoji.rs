@@ -21,20 +21,10 @@ pub struct EmojiEntry {
 }
 
 /// The vendored dataset's text (its provenance header, then a JSON array),
-/// parsed. A file that does not parse is an empty list: the route and the
-/// `":e "` trigger then list nothing.
+/// parsed. A file that does not parse is an empty list: the route then lists
+/// nothing.
 pub fn parse_emoji_dataset(text: &str) -> Vec<EmojiEntry> {
     crate::model::parse_headered_json(text).ok().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
-}
-
-/// `":e "` root trigger (the DMS muscle-memory prefix): the emoji query after
-/// it, "" for `":e "` alone (browse mode), or `None` when `text` is not the
-/// trigger at all. The space is part of the trigger: it swaps the whole view
-/// for the emoji grid, and a bare `":e"` also starts `":ex..."` and every
-/// other word, which swapped to the grid and straight back on the next
-/// letter.
-pub fn emoji_trigger_query(text: &str) -> Option<&str> {
-    text.strip_prefix(":e ")
 }
 
 /// The ledger id for an emoji, the row id the launcher records on

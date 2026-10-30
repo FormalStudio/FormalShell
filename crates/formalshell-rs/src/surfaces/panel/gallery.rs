@@ -167,7 +167,7 @@ impl Panel for Gallery {
                 })
                 .height(fs_theme::tokens::LAUNCHER.row_height)
         }));
-        rows.push(w::row(s.sm, vec![w::token("Clipboard"), w::text("query")]).pad_start(s.lg));
+        rows.push(w::row(s.sm, vec![w::token(s, &["Clipboard"]), w::text("query")]).pad_start(s.lg));
         let span = s.xl * 5.0;
         let depth = s.xl * 3.0;
         let run = s.xl * 2.0;

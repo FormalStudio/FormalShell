@@ -45,7 +45,7 @@ fn it_builds_as_a_root_provider_level() {
     assert!(tree.root_ids.contains(&"wallpaper".to_string()));
 }
 
-// No provider fn is registered for it (same as emoji/nix/calc/keybinds): the
+// No provider fn is registered for it (same as emoji/calc/keybinds): the
 // level's contents come from the directory scan, not the tree, so the node
 // stays childless after apply_providers rather than silently acquiring rows
 // from somewhere else.

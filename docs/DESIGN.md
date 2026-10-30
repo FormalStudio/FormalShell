@@ -827,7 +827,9 @@ is a plain rounded rectangle on all four sides.
 **Launcher** (`formalshell-rs/src/surfaces/launcher.rs`, launcher spec
 §1 and §2): a `Menu`-wide card at 30% from the top. The field draws the
 query at `LAUNCHER.field_size` (21px sans, 400) with `lg` round it, no
-search icon and no close button, over a full-bleed rule. Rows are
+search icon and no close button, over a full-bleed rule; inside a mode
+the `launcher.token` chip (launcher spec §4) sits before the query, the
+ancestors of a nested mode in `mutedForeground`. Rows are
 `LAUNCHER.row_height` 40 with a `LAUNCHER.row_icon` 22 mark, `lg` either
 side and between, abutting, an `sm` inset off the card; the label is
 `body` at 400 and 600 under the selection, a dim `bodySmall` value at the

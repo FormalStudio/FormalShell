@@ -166,7 +166,7 @@ const CTRL: Modifiers = Modifiers { ctrl: true, shift: false, alt: false };
 const SHIFT: Modifiers = Modifiers { ctrl: false, shift: true, alt: false };
 
 fn ctx() -> KeyCtx {
-    KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, variants: false }
+    KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, variants: false, level: false }
 }
 
 fn act(key: Key, mods: Modifiers, repeat: bool, ctx: KeyCtx) -> &'static str {
@@ -206,6 +206,20 @@ fn backspace_on_an_empty_field_pops_once_per_press() {
     assert_eq!(act(Key::Backspace, NONE, false, ctx()), "pop");
     assert_eq!(act(Key::Backspace, NONE, true, ctx()), "swallow");
     assert_eq!(act(Key::Backspace, NONE, false, KeyCtx { mode: KeyMode::Select, ..ctx() }), "pass");
+}
+
+// Left on an empty field inside a mode leaves it, once per press; with text,
+// at the root or on a grid it stays the caret's or the grid's.
+#[test]
+fn left_on_an_empty_field_leaves_the_mode() {
+    let mode = KeyCtx { level: true, ..ctx() };
+    assert_eq!(act(Key::Left, NONE, false, mode), "pop");
+    assert_eq!(act(Key::Left, NONE, true, mode), "swallow");
+    assert_eq!(act(Key::Left, NONE, false, KeyCtx { query: true, ..mode }), "pass");
+    assert_eq!(act(Key::Left, CTRL, false, mode), "pass");
+    assert_eq!(act(Key::Left, NONE, false, ctx()), "pass");
+    assert_eq!(act(Key::Left, NONE, false, KeyCtx { grid: true, ..mode }), "left");
+    assert_eq!(act(Key::Left, NONE, false, KeyCtx { mode: KeyMode::Select, ..mode }), "pass");
 }
 
 #[test]

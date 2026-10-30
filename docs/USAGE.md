@@ -1056,9 +1056,10 @@ condition after the menu closes and never per keystroke. `when: "false"`
 hides a node outright; anything else has its exit code decide, which is how
 `system.logout` guards on `test -n "$HYPRLAND_INSTANCE_SIGNATURE"`.
 
-Typing at any level searches the whole tree, with one exception. A node
-marked `"routeOnly": true` is searched only while you are standing inside it;
-from the root, the route row itself matches but its children don't. The
+Typing at the root searches the whole tree; inside a mode it searches that
+mode's own subtree and nothing else. A node marked `"routeOnly": true` is
+searched only while you are standing inside it; from the root, the route row
+itself matches but its children don't. The
 shipped tree uses it for `Panels` and `Tray`, both of which name their rows
 after things the launcher already lists elsewhere, so a search for `equibop`
 returns the app once instead of once per route that mentions it.
@@ -1100,6 +1101,18 @@ field, so moving your own row into the suggestions block is one line:
 // ~/.config/formalshell/menu.jsonc
 {
     "system.custom-user-node": { "section": "Suggestions", "prompt": "Search my scripts" }
+}
+```
+
+`prefix` is what, typed with a space after it from anywhere, enters that
+node as a mode, keeping what follows as the query. The shipped tree sets
+`:e` on `emoji`, `:k` on `keybinds` and `:r` on `radio.search`; any route can
+take one:
+
+```jsonc
+// ~/.config/formalshell/menu.jsonc
+{
+    "clipboard": { "prefix": ":c" }
 }
 ```
 
@@ -1186,9 +1199,18 @@ key, the ranking and the launch path stay what they are for the row list.
 The card centers on the focused output over a plain black scrim at half
 opacity. The field is the query in a large sans face with a full-width 1px
 rule under it, and no search icon or close button: Escape and a click
-outside close. Inside a level a back chip naming it sits before the query.
-The empty field reads `Search apps, files, commands` at the root and the
-level's own prompt inside one (`Search apps`, `Type an expression`).
+outside close. The empty field reads `Search apps, files, commands` at the
+root and the level's own prompt inside one (`Search apps`, `Type an
+expression`).
+
+A route you step into is a mode: a token naming it sits before the query
+(`Clipboard`), the list holds that route's own rows, and the query searches
+inside it. A mode inside a mode carries its path (`Radio Stations ›
+Search`), past two levels `… ›` and the last two. You get in by Enter or a
+click on its row, by `menu summon <id>` or its chord, or by its
+prefix and a space (`:e `, `:k `, `:r `). You get out one level at a time by
+Backspace or `←` on an empty field, by Escape once the query is empty, or
+by a click on the token.
 
 With the field empty the root lists one thing: `Recent`, your eight best
 picks of any kind (an app, a mode like Clipboard, a row like Shutdown), or,
@@ -1198,7 +1220,7 @@ the ledger on the next pick. Everything else the root used to show still
 ranks under a query. Elsewhere rows come in groups, each under a heading:
 `Options` in select mode, and a level's own sections; a query's results
 draw under none. A level whose rows are all one group draws no heading,
-since its back chip already names it. Nothing is reordered to make a group:
+since its token already names it. Nothing is reordered to make a group:
 the heading appears wherever the run of rows changes.
 
 A row's icon is a name from the active icon set, mapped from the shipped
@@ -1228,12 +1250,12 @@ send on a clipboard image, Forget on a saved network).
 | Key | Does |
 | --- | --- |
 | `↑` / `↓` | Move the cursor a row, or a whole row of cells on a grid |
-| `←` / `→` | Move the cursor a column on a grid; the text field's cursor everywhere else |
+| `←` / `→` | Move the cursor a column on a grid; `←` on an empty field leaves the mode; the text field's cursor everywhere else |
 | `Page Up` / `Page Down` | Move a page |
 | `Home` / `End` | Jump to the first or last row |
 | `Enter` | Submit (input mode); otherwise activate the row under the cursor |
 | `Shift+Enter` | The row's second action, else its first |
-| `Escape` | Cancel and close (select and input mode); pop a level, or close at the root |
+| `Escape` | Cancel and close (select and input mode); otherwise clear the query, then leave the mode, then close at the root |
 | `Backspace` | Pop a level, only when the search field is empty; `Ctrl+Backspace` deletes a word |
 | `Tab` / `Shift+Tab` | Swap the picker's Dark/Light set, only while its switcher is showing |
 
@@ -1340,7 +1362,7 @@ an `eval`) leads the results with a `= <result>` row tagged `CALC`. Enter
 copies and closes. `menu summon calc` opens a level showing only that live
 result. A parse failure shows no row and no error.
 
-**Emoji.** `menu summon emoji`, or `:e <query>` from anywhere, searches a
+**Emoji.** `menu summon emoji`, or `:e ` and a query from anywhere, searches a
 vendored Unicode dataset (Emoji 17.0, regenerated with `dev/gen-emoji.sh`,
 never edited by hand). Each entry carries CLDR's English search keywords
 alongside its Unicode name, the same annotations macOS and iOS type their
@@ -1361,15 +1383,7 @@ same paste the clipboard history does, on the same `clipboard.paste` and
 false and Enter copies only. Without `wtype` the copy still happens and the
 paste is skipped with one log warning.
 
-**Nix package runner.** `menu summon nix`, or `:nix <query>`, runs a
-debounced `nix search nixpkgs <query> --json` as you type, showing attr name
-and version with a dimmed description. Enter runs the package in a one-off
-console (`nix run nixpkgs#<attr>` with a `read` holding the window open) and
-fires a `NIX RUN <attr>` notification straight away, since a first search can
-spend tens of seconds warming evaluation caches. Every other state is one dim
-row: searching, no results, a failed search, or `NO NIX`.
-
-**Keybinds.** `menu summon keybinds`, or `:k <query>`, lists your
+**Keybinds.** `menu summon keybinds`, or `:k ` and a query, lists your
 compositor's own bindings: the chord in content ink, padded into a column,
 action and arguments dimmed behind it. Capped at 200 rows, with route-local
 ranking (exact chord, chord or action prefix, word start, substring) rather

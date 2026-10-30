@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use common::*;
 use fs_menu::model::{
-    build_tree, gated_note_row, parse_headered_json, parse_jsonc, visible_children,
+    build_tree, gated_note_row, mode_path, parse_headered_json, parse_jsonc, prefixed, visible_children,
 };
 use fs_menu::node::{Entries, Kind, Node};
 use serde_json::json;
@@ -244,4 +244,38 @@ fn root_rest_falls_back_to_modes_when_too_few_picks_resolve() {
     let picks = [pick("app:firefox", 5.0), pick("app:gone", 9.0), pick("gone.too", 9.0), pick("clipboard", 1.0)];
     let rows = fs_menu::model::root_rest(&tree.nodes, &picks, 1_000.0, 8, &HashMap::new());
     assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::MODES_SECTION)));
+}
+
+// The shipped prefixes live in default-menu.jsonc: a prefix and a space name
+// the route, and what follows is the query inside it.
+#[test]
+fn a_prefix_and_a_space_name_their_route() {
+    let tree = real_tree();
+    let at = |text| prefixed(&tree.nodes, text).map(|(n, rest)| (n.id.as_str(), rest));
+    assert_eq!(at(":e cry"), Some(("emoji", "cry")));
+    assert_eq!(at(":e "), Some(("emoji", "")));
+    assert_eq!(at(":k SUPER+T"), Some(("keybinds", "SUPER+T")));
+    assert_eq!(at(":r jazz"), Some(("radio.search", "jazz")));
+    assert_eq!(at(":e"), None);
+    assert_eq!(at(":ex"), None);
+    assert_eq!(at(":nix hello"), None);
+    assert_eq!(at("cry"), None);
+    assert!(!tree.nodes.contains_key("nix"));
+}
+
+#[test]
+fn a_user_prefix_overrides_and_adds() {
+    let user = entries(json!({ "emoji": { "prefix": ";" }, "clipboard": { "prefix": ":c" } }));
+    let tree = build_tree(&default_menu(), &user);
+    assert_eq!(prefixed(&tree.nodes, "; cry").map(|(n, _)| n.id.as_str()), Some("emoji"));
+    assert_eq!(prefixed(&tree.nodes, ":e cry"), None);
+    assert_eq!(prefixed(&tree.nodes, ":c url").map(|(n, rest)| (n.id.as_str(), rest)), Some(("clipboard", "url")));
+}
+
+#[test]
+fn the_mode_path_runs_from_the_outermost_mode() {
+    let tree = real_tree();
+    assert_eq!(mode_path(&tree.nodes, Some("radio.search")), ["Radio Stations", "Search"]);
+    assert_eq!(mode_path(&tree.nodes, Some("clipboard")), ["Clipboard"]);
+    assert!(mode_path(&tree.nodes, None).is_empty());
 }

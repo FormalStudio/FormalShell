@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, iso_home, the *_bin paths and fail()
-# --nix-run: a launcher row carrying `@ipc:nix.run:<attr>` (the nix search
-# route's own action) run through the menu's Enter path, which hands
+# --nix-run: a launcher row carrying `@ipc:nix.run:<attr>` (kept for a
+# user's own menu.jsonc rows) run through the menu's Enter path, which hands
 # `nix run nixpkgs#<attr>; read` to the console's one-off drop-down: the
 # console's own argv with its app id swapped for `<appId>.run`. The row is a
 # user menu.jsonc entry, so the leg needs no search index and no network.

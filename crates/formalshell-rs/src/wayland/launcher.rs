@@ -721,6 +721,11 @@ impl App {
         self.launch.as_ref().filter(|w| w.shown.modal.open).and_then(|w| w.shown.body_rect)
     }
 
+    /// The mode token's box on the output, while the open launcher draws one.
+    pub fn launcher_token(&self) -> Option<crate::scene::IRect> {
+        self.launch.as_ref().filter(|w| w.shown.modal.open).and_then(|w| w.shown.token_rect())
+    }
+
     /// `mirror status`.
     pub fn mirror_status(&self) -> String {
         let mi = &self.store.mirror;
@@ -1021,8 +1026,8 @@ impl App {
                         let light = !self.launcher.picker.light;
                         self.picker_variant(light);
                     }
-                    Some("back") => {
-                        let out = self.launcher.key(&self.store, nav::Key::Escape, fs_menu::field::Key::Other, nav::Modifiers::default(), false, None);
+                    Some("token") => {
+                        let out = self.launcher.pop(&self.store);
                         self.launcher_out(out);
                     }
                     Some("primary") => {

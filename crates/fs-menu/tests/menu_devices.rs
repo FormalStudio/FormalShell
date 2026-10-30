@@ -6,7 +6,7 @@ use fs_devices::bluetooth::{Device as BluetoothDevice, DeviceState};
 use fs_menu::node::{Kind, Node};
 use fs_menu::providers::{
     AudioDevice, BluetoothState, RadioState, RadioStation, WifiNetwork, WifiState, audio_rows,
-    bluetooth_rows, id_part, radio_result_rows, radio_rows, radio_trigger_query, wifi_rows,
+    bluetooth_rows, id_part, radio_result_rows, radio_rows, wifi_rows,
 };
 
 #[test]
@@ -294,15 +294,6 @@ fn audio_outputs_only_has_no_input_note() {
     let rows = audio_rows(&[AudioDevice { name: "o".into(), label: "O".into(), is_sink: true }]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].kind, Kind::Action);
-}
-
-#[test]
-fn radio_trigger_parsing() {
-    assert_eq!(radio_trigger_query(":r"), Some(""));
-    assert_eq!(radio_trigger_query(":r jazz"), Some("jazz"));
-    assert_eq!(radio_trigger_query(":radio"), None);
-    assert_eq!(radio_trigger_query(":rx"), None);
-    assert_eq!(radio_trigger_query("jazz"), None);
 }
 
 #[test]

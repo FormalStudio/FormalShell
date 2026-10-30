@@ -1,7 +1,7 @@
 //! The launcher. One keyboard-exclusive overlay window over the
 //! output, a card budding off the top line (a `Card`) to
 //! rest at 30% of the output's height, three bands split by full-bleed
-//! rules: the header (back chip, search field, close), the body (the app
+//! rules: the header (the mode token and the search field), the body (the app
 //! grid, the row list or the emoji grid, sections and the empty state) and
 //! the footer (where you are, what Enter does). The scrim behind it is two
 //! single-pixel surfaces the App owns.
@@ -615,32 +615,13 @@ impl Model {
         }
     }
 
-    fn level_node<'a>(&self, store: &'a Store) -> Option<&'a Node> {
+    /// The mode token's labels, outermost first; none at the root or
+    /// outside Menu mode.
+    pub fn token(&self, store: &Store) -> Vec<String> {
         if self.mode != Mode::Menu {
-            return None;
+            return Vec::new();
         }
-        self.level.as_deref().and_then(|l| store.menu.nodes().get(l))
-    }
-
-    pub fn level_name(&self, store: &Store) -> String {
-        match self.mode {
-            Mode::Select => "Select".into(),
-            Mode::Input => "Input".into(),
-            Mode::Menu => self.level_node(store).map_or_else(|| "Launcher".into(), |n| n.label.clone()),
-        }
-    }
-
-    fn level_icon(&self, store: &Store) -> String {
-        if self.mode != Mode::Menu {
-            return "list".into();
-        }
-        match self.level_node(store) {
-            Some(n) => {
-                let i = fs_menu::icons::icon_for(Some(n));
-                if i.is_empty() { fs_menu::icons::fallback_for(Some(n)).into() } else { i.into() }
-            }
-            None => "search".into(),
-        }
+        model::mode_path(store.menu.nodes(), self.level.as_deref())
     }
 
     /// The level and its rows, resolved over the warm index.
@@ -650,11 +631,8 @@ impl Model {
         let level = self.level.as_deref();
         let nodes = store.menu.nodes();
         let cond = &store.menu.cond;
-        let emoji_q = if menu { fs_menu::providers::emoji_trigger_query(q) } else { None };
-        let keys_q = if menu { fs_menu::keybinds::trigger_query(q) } else { None };
-        let radio_q = if menu { fs_menu::providers::radio_trigger_query(q) } else { None };
-        let emoji = menu && (level == Some("emoji") || emoji_q.is_some());
-        let route_rows = matches!(level, Some("nix" | "keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
+        let emoji = menu && level == Some("emoji");
+        let route_rows = matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
         let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
         let picker = menu && level == Some(PICKER_ROUTE);
         let monitor = menu && level == Some(MONITOR_ROUTE);
@@ -699,14 +677,13 @@ impl Model {
             Mode::Menu if emoji => {
                 let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
                 let paste = store.config.bool("clipboard.paste").unwrap_or(true);
-                let eq = emoji_q.unwrap_or(q);
-                store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(eq, paste, &uses, None))
+                store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(q, paste, &uses, None))
             }
-            Mode::Menu if level == Some("keybinds") || keys_q.is_some() => {
+            Mode::Menu if level == Some("keybinds") => {
                 let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
-                fs_menu::keybinds::rows_for(reply, keys_q.unwrap_or(q))
+                fs_menu::keybinds::rows_for(reply, q)
             }
-            Mode::Menu if level == Some("radio.search") || radio_q.is_some() => radio_search_rows(store, radio_q.unwrap_or(q)),
+            Mode::Menu if level == Some("radio.search") => radio_search_rows(store, q),
             Mode::Menu if q.is_empty() && level.is_none() => {
                 let rest = model::root_rest(nodes, &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
@@ -724,16 +701,13 @@ impl Model {
                     model::visible_children(nodes, level, cond).into_iter().cloned().collect()
                 }
             }
+            Mode::Menu if level == Some("calc") => fs_menu::calc::result_node(q).into_iter().collect(),
             Mode::Menu => {
-                let calc = fs_menu::calc::result_node(q);
-                if level == Some("calc") {
-                    calc.into_iter().collect()
-                } else {
-                    let picks = picks(store);
-                    let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &picks, now: now_ms() };
-                    let ranked = fs_menu::search::rank_with(nodes, q, cond, level, boost).into_iter().cloned();
-                    calc.into_iter().chain(ranked).collect()
-                }
+                let calc = level.is_none().then(|| fs_menu::calc::result_node(q)).flatten();
+                let picks = picks(store);
+                let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &picks, now: now_ms() };
+                let ranked = fs_menu::search::rank_with(nodes, q, cond, level, boost).into_iter().cloned();
+                calc.into_iter().chain(ranked).collect()
             }
         };
         let mut empty = None;
@@ -759,7 +733,7 @@ impl Model {
             rows = parts.rows;
             app_count = parts.app_count;
         }
-        let searching = menu && !q.is_empty() && !emoji && !picker && !monitor && !route_rows && keys_q.is_none();
+        let searching = menu && !q.is_empty() && !emoji && !picker && !monitor && !route_rows;
         let key = format!("{:?}\u{1}{}\u{1}{}\u{1}{}", self.mode, level.unwrap_or(""), q, if picker && self.picker.light { "light" } else { "" });
         (view, rows, app_count, empty, searching, key)
     }
@@ -1155,6 +1129,7 @@ impl Model {
             "checked": checked,
             "drawn": drawn,
             "abbrev": self.rows.get(self.cursor).and_then(|n| self.lookup.source_of(&fs_menu::actions::subject_id(n))).map(fs_menu::abbrev::Source::as_str),
+            "token": self.token(store),
         })
     }
 
@@ -1166,8 +1141,17 @@ impl Model {
         nodes.values().find(|n| n.aliases.iter().any(|a| a == route)).map(|n| n.id.clone())
     }
 
+    /// The level a route row stands for: its own id, or a link's target.
+    fn level_of(store: &Store, node: &Node) -> Option<String> {
+        match node.kind {
+            NodeKind::Submenu | NodeKind::Provider => Some(node.id.clone()),
+            NodeKind::Link => Some(node.target.clone().filter(|t| store.menu.nodes().contains_key(t)).unwrap_or(node.id.clone())),
+            _ => None,
+        }
+    }
+
     /// `open(route)`: a fresh session on `route`'s level, or a `:`-led
-    /// prefill at the root.
+    /// prefill at the root, which a route's prefix turns into its mode.
     pub fn open(&mut self, store: &Store, route: Option<&str>) {
         self.abandon_select();
         self.ask_fresh(store);
@@ -1178,14 +1162,11 @@ impl Model {
             && let Some(id) = route.and_then(|r| Self::resolve_route(store, r))
             && let Some(node) = store.menu.nodes().get(&id)
         {
-            target = match node.kind {
-                NodeKind::Submenu | NodeKind::Provider => Some(node.id.clone()),
-                NodeKind::Link => Some(node.target.clone().filter(|t| store.menu.nodes().contains_key(t)).unwrap_or(node.id.clone())),
-                _ => None,
-            };
+            target = Self::level_of(store, node);
         }
         self.enter_level(store, target);
         self.query.set(&prefill);
+        self.query_changed(store);
         self.open = true;
         self.key.clear();
     }
@@ -1329,13 +1310,16 @@ impl Model {
         }
     }
 
-    fn pop(&mut self, store: &Store) -> Out {
+    /// One level up: Backspace, Escape and ← on an empty field, and a click
+    /// on the token. At the root it closes.
+    pub fn pop(&mut self, store: &Store) -> Out {
         let Some(level) = self.level.clone() else {
             self.close();
             return Out::Close;
         };
         let parent = store.menu.nodes().get(&level).and_then(|n| n.parent_id.clone());
         self.enter_level(store, parent);
+        self.dirty = true;
         Out::None
     }
 
@@ -1352,12 +1336,19 @@ impl Model {
         }
     }
 
+    /// A route's prefix and a space become its mode, what follows them the
+    /// query inside it.
     fn query_changed(&mut self, store: &Store) {
         self.confirm.clear();
         self.monitor_armed = None;
-        if self.mode == Mode::Menu && fs_menu::providers::emoji_trigger_query(self.query.text()).is_some() && store.menu.emoji.is_none() {
-            index::ask(Ask::Emoji);
+        if self.mode != Mode::Menu {
+            return;
         }
+        let Some((level, rest)) = model::prefixed(store.menu.nodes(), self.query.text()).and_then(|(n, rest)| Some((Self::level_of(store, n)?, rest.to_owned()))) else {
+            return;
+        };
+        self.enter_level(store, Some(level));
+        self.query.set(&rest);
     }
 
     /// The row as a subject, with what the shell knows about it.
@@ -1527,6 +1518,7 @@ impl Model {
             app_view: false,
             scrollable: false,
             variants: self.picker_switch(store),
+            level: self.level.is_some(),
         };
         let action = nav::key_action(key, mods, repeat, &ctx);
         let out = match action {
@@ -1584,41 +1576,40 @@ impl Model {
         Out::None
     }
 
-    /// `debug query`: the live tree ranked, whether or not the window is up.
+    /// `debug query`: the live tree ranked, whether or not the window is up:
+    /// inside the mode a leading prefix names, else the open launcher's.
     pub fn query(&self, store: &Store, q: &str) -> Value {
-        if let Some(eq) = fs_menu::providers::emoji_trigger_query(q) {
-            let Some(index) = &store.menu.emoji else {
-                index::ask(Ask::Emoji);
-                return json!([]);
-            };
-            let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
-            return Value::Array(index.rows(eq, true, &uses, None).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
-        }
-        if let Some(kq) = fs_menu::keybinds::trigger_query(q) {
-            index::ask(Ask::Binds);
-            let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
-            return Value::Array(
-                fs_menu::keybinds::rows_for(reply, kq)
-                    .iter()
-                    .map(|n| json!({"id": n.id, "label": n.label, "desc": n.desc.clone().unwrap_or_default(), "kind": n.kind.as_str()}))
-                    .collect(),
-            );
-        }
-        if let Some(rq) = fs_menu::providers::radio_trigger_query(q) {
-            return Value::Array(
-                radio_search_rows(store, rq)
-                    .iter()
-                    .map(|n| json!({"id": n.id, "label": n.label, "desc": n.desc.clone().unwrap_or_default(), "kind": n.kind.as_str()}))
-                    .collect(),
-            );
-        }
         let nodes = store.menu.nodes();
+        let (level, q) = match model::prefixed(nodes, q) {
+            Some((node, rest)) => (Some(node.id.as_str()), rest),
+            None => (self.level.as_deref().filter(|_| self.open), q),
+        };
+        let noted = |rows: Vec<Node>| -> Value {
+            Value::Array(rows.iter().map(|n| json!({"id": n.id, "label": n.label, "desc": n.desc.clone().unwrap_or_default(), "kind": n.kind.as_str()})).collect())
+        };
+        match level {
+            Some("emoji") => {
+                let Some(index) = &store.menu.emoji else {
+                    index::ask(Ask::Emoji);
+                    return json!([]);
+                };
+                let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
+                return Value::Array(index.rows(q, true, &uses, None).iter().map(|n| json!({"id": n.id, "label": n.label, "icon": n.icon, "kind": n.kind.as_str()})).collect());
+            }
+            Some("keybinds") => {
+                index::ask(Ask::Binds);
+                let reply = store.menu.binds.as_ref().map(|r| r.as_deref().map_err(|_| ()));
+                return noted(fs_menu::keybinds::rows_for(reply, q));
+            }
+            Some("radio.search") => return noted(radio_search_rows(store, q)),
+            _ => {}
+        }
         let snap = snapshot(store);
         let picks = picks(store);
         let book = abbreviation_book(store);
         let lookup = fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, q, now_ms(), |id| resolves(store, id));
         let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &picks, now: now_ms() };
-        let mut rows: Vec<Value> = fs_menu::search::rank_with(nodes, q, &store.menu.cond, self.level.as_deref(), boost)
+        let mut rows: Vec<Value> = fs_menu::search::rank_with(nodes, q, &store.menu.cond, level, boost)
             .into_iter()
             .map(|n| {
                 json!({
@@ -1627,7 +1618,7 @@ impl Model {
                 })
             })
             .collect();
-        if let Some(calc) = fs_menu::calc::result_node(q) {
+        if let Some(calc) = level.is_none().then(|| fs_menu::calc::result_node(q)).flatten() {
             rows.insert(0, json!({"id": calc.id, "label": calc.label, "kind": calc.kind.as_str()}));
         }
         Value::Array(rows)
@@ -2045,6 +2036,16 @@ impl Shown {
         self.body.hit(x, y).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
     }
 
+    /// The mode token's box on the output, while one is drawn.
+    pub fn token_rect(&self) -> Option<IRect> {
+        let r = self.head.hits.iter().find(|h| h.on.as_deref() == Some("token"))?.rect;
+        let at = self.modal.layer.as_ref().map_or((0, 0), |l| {
+            let p = l.place(&self.modal.card, true);
+            (p.x, p.y)
+        });
+        Some(IRect::new(r.x + at.0, r.y + at.1, r.w, r.h))
+    }
+
     pub fn set_hover(&mut self, path: Option<String>) -> bool {
         let changed = self.body.hover != path;
         self.body.hover = path.clone();
@@ -2057,9 +2058,10 @@ impl Shown {
 fn header(m: &Model, store: &Store, theme: &Theme) -> El {
     let s = &theme.space;
     let mut parts = Vec::new();
-    if m.mode == Mode::Menu && m.level.is_some() {
-        parts.push(w::icon_text_button(m.level_icon(store), m.level_name(store)).variant(ui::Variant::Outline).tip("Back").on("back"));
-        parts.push(w::space(s.icon_gap));
+    let token = m.token(store);
+    if !token.is_empty() {
+        parts.push(w::token(s, &token).on("token"));
+        parts.push(w::space(s.sm));
     }
     parts.push(w::edit(&m.query, &m.placeholder(store), Type::Field));
     w::row(0.0, parts).fill()

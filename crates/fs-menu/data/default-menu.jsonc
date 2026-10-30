@@ -17,6 +17,9 @@
 // "Commands" at the root. `prompt` overrides what the search field says
 // while standing inside that node ("Search <label>" otherwise).
 //
+// Modes: `prefix` is what, typed with a space after it from any level, enters
+// that route as a mode (`":e cry"` is Emoji searching "cry").
+//
 // Live state: a `checked` value prefixed `@state:` resolves in-process from
 // the launcher's state snapshot against toggles.js's closed allow-list, never
 // through `sh -c` and never cached, so the checkmark repaints the instant the
@@ -39,9 +42,8 @@
     "calc": { "label": "Calculator", "provider": "calc", "section": "Suggestions", "prompt": "Type an expression" },
     // "emoji" registers no provider fn either: a summonable route
     // (`menu summon emoji`) whose level the launcher renders as a GRID over the
-    // vendored emoji dataset (emoji.json) instead of the tree; ":e <query>"
-    // reaches the same grid from anywhere.
-    "emoji": { "label": "Emoji", "provider": "emoji", "section": "Suggestions", "prompt": "Search emoji" },
+    // vendored emoji dataset (emoji.json) instead of the tree.
+    "emoji": { "label": "Emoji", "provider": "emoji", "section": "Suggestions", "prompt": "Search emoji", "prefix": ":e" },
     // "wallpaper" registers no provider fn either: a summonable route
     // (`menu summon wallpaper`, and the whole `picker` IPC target) whose
     // level the launcher renders as an image GRID over `picker.directory`
@@ -69,20 +71,11 @@
     // or "screen mirroring" (Menu/providers.js PANEL_NAMES).
     "mirror": { "label": "Mirror", "provider": "mirror", "aliases": ["camera", "webcam", "selfie", "ir camera"], "section": "Suggestions", "prompt": "Tab switches camera" },
 
-    // "nix" registers no provider fn either: a summonable route
-    // (`menu summon nix`) whose level the launcher fills from the debounced
-    // `nix search nixpkgs` cache; ":nix <query>" reaches the same rows
-    // from anywhere. Entering the route pays the nixpkgs eval cache off
-    // once behind a dim INDEXING NIXPKGS row, which is what keeps the
-    // first real query off a twenty-second cold search. No nix on PATH
-    // renders a single dim NO NIX row. Enter runs the package in the
-    // quake console's own terminal (ConsoleService.runOnce).
-    "nix": { "label": "Nix Run", "provider": "nix", "prompt": "Search nixpkgs" },
     // "keybinds" registers no provider fn either: a summonable route
     // (`menu summon keybinds`) whose level the launcher fills from the parsed
-    // compositor binds (Compositor/keybinds.js); ":k <query>" reaches the
-    // same rows from anywhere. Rows are inert notes, never activatable.
-    "keybinds": { "label": "Keybinds", "provider": "keybinds", "aliases": ["keys", "hotkeys", "shortcuts"], "prompt": "Search keybinds" },
+    // compositor binds (Compositor/keybinds.js). Rows are inert notes, never
+    // activatable.
+    "keybinds": { "label": "Keybinds", "provider": "keybinds", "aliases": ["keys", "hotkeys", "shortcuts"], "prompt": "Search keybinds", "prefix": ":k" },
     // "wifi" registers a provider fn (providers.js's wifiRows): the scanned
     // networks with saved ones first, Enter connecting (a password step for a
     // secured new one) and Shift+Enter forgetting. Separate from the "Network"
@@ -102,12 +95,11 @@
     // "radio" registers a provider fn (providers.js's radioRows): Stop while a
     // station plays, then the favourites with the tuned one ticked, Enter
     // playing. "radio.search" registers none, so it stays a listed route
-    // (`menu summon radio.search`) that the launcher fills from Radio Browser;
-    // ":r <query>" reaches the same rows from anywhere, and its results are
-    // searchable only from inside that level. The "Radio" row under Panels
-    // opens the card.
+    // (`menu summon radio.search`) that the launcher fills from Radio Browser,
+    // its results searchable only from inside that level. The "Radio" row
+    // under Panels opens the card.
     "radio": { "label": "Radio Stations", "provider": "radio", "aliases": ["stations", "fm", "stream"], "prompt": "Search favorites" },
-    "radio.search": { "label": "Search Stations", "provider": "radioSearch", "prompt": "Search Radio Browser" },
+    "radio.search": { "label": "Search", "provider": "radioSearch", "prompt": "Search Radio Browser", "prefix": ":r" },
 
     // "panels" registers a provider fn too: one row per name in
     // the panel registry, each spawning "panel open <name>"

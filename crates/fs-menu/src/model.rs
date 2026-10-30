@@ -219,6 +219,7 @@ pub fn build_tree(default_obj: &Entries, user_obj: &Entries) -> Tree {
                 route_only: entry.route_only,
                 section: entry.section,
                 prompt: entry.prompt,
+                prefix: entry.prefix,
                 actions: entry.actions.unwrap_or_default(),
                 alternate: entry.alternate,
                 alternate_label: entry.alternate_label,
@@ -336,8 +337,8 @@ pub fn sections_for(rows: &[Node], ctx: &SectionCtx) -> Vec<String> {
     collapse_single_level_group(out, ctx)
 }
 
-/// A level whose rows are all one group is already named by the back chip
-/// and the footer, so its heading goes. A level that splits keeps every one.
+/// A level whose rows are all one group is already named by the mode token,
+/// so its heading goes. A level that splits keeps every one.
 fn collapse_single_level_group(sections: Vec<String>, ctx: &SectionCtx) -> Vec<String> {
     if ctx.level.is_none() || ctx.searching {
         return sections;
@@ -388,6 +389,27 @@ pub fn section_names(sections: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+/// The route a query's leading `prefix` and a space name, and the query
+/// after them.
+pub fn prefixed<'a, 'q>(nodes: &'a IndexMap<String, Node>, text: &'q str) -> Option<(&'a Node, &'q str)> {
+    nodes.values().find_map(|n| {
+        let prefix = n.prefix.as_deref().filter(|p| !p.is_empty())?;
+        text.strip_prefix(prefix)?.strip_prefix(' ').map(|rest| (n, rest))
+    })
+}
+
+/// The labels from the outermost mode down to `level`.
+pub fn mode_path(nodes: &IndexMap<String, Node>, level: Option<&str>) -> Vec<String> {
+    let mut path = Vec::new();
+    let mut at = level.and_then(|l| nodes.get(l));
+    while let Some(node) = at {
+        path.push(node.label.clone());
+        at = node.parent_id.as_deref().and_then(|p| nodes.get(p));
+    }
+    path.reverse();
+    path
 }
 
 /// What the empty search field says a level is for: the level's own `prompt`

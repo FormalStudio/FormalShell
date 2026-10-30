@@ -150,13 +150,13 @@ struct Hit<'a> {
     decl_index: usize,
 }
 
-/// Depth-first walk of `nodes` from its roots, scoring every when-visible
-/// node against `query` (a node whose `when` is not satisfied is skipped with
-/// its whole subtree). Returns the 40 best matches in rank order.
+/// Depth-first walk of `nodes` from the roots, or from `within_id`'s own
+/// children inside a mode, scoring every when-visible node against `query`
+/// (a node whose `when` is not satisfied is skipped with its whole subtree).
+/// Returns the 40 best matches in rank order.
 ///
-/// `within_id` is the level the search runs from. It matters for a
-/// `route_only` node, whose children are reachable only while standing
-/// inside it (the tray names its items after applications that are already
+/// A `route_only` node's children are reached only while standing inside
+/// it (the tray names its items after applications that are already
 /// listed). `local_only` is the per-node counterpart: scored only while the
 /// node's parent level is open.
 pub fn rank<'a>(
@@ -224,10 +224,8 @@ pub fn rank_with<'a>(
 
     let picks: HashMap<&str, &Record> = boost.picks.iter().map(|r| (r.id.as_str(), r)).collect();
     let walk = Walk { nodes, cond_results, open: &open, q_norm: &q_norm, q_slug: &q_slug, boost, picks: &picks };
-    for (id, node) in nodes {
-        if node.parent_id.is_none() {
-            visit(&walk, id, 0, &mut decl_index, &mut hits);
-        }
+    for node in crate::model::direct_children(nodes, within_id) {
+        visit(&walk, &node.id, 0, &mut decl_index, &mut hits);
     }
 
     hits.sort_by(|a, b| {

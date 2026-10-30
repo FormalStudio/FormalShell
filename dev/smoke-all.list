@@ -57,6 +57,7 @@
 --join
 --keybinds
 --launcher-abbrev
+--launcher-modes
 --lights
 --localsend
 --lock

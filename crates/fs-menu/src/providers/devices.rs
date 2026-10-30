@@ -223,15 +223,6 @@ pub fn audio_rows(devices: &[AudioDevice]) -> Vec<Node> {
         .collect()
 }
 
-/// `":r"` root trigger: the station query after it ("" for the bare `":r"`),
-/// or `None` when `text` is not the trigger.
-pub fn radio_trigger_query(text: &str) -> Option<&str> {
-    if text == ":r" {
-        return Some("");
-    }
-    text.strip_prefix(":r ")
-}
-
 fn radio_tick(uuid: &str) -> String {
     format!("@state:radio.station={uuid}")
 }

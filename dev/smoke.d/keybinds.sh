@@ -7,8 +7,8 @@
 # descriptions. A Lua bind reports the anonymous `__lua` dispatcher, so the
 # description is the whole action text a row has.
 #
-# Two passes on the query, the same idiom the nix route uses: the hyprctl
-# Process is async, so the first pass can land before it has exited. The rows
+# Two passes on the query: the hyprctl Process is async, so the first pass
+# can land before it has exited. The rows
 # are inert notes by construction (a bind acts on whatever has focus, and at
 # Enter that is the launcher), so there is no activation to drive.
 #
@@ -63,9 +63,9 @@ leg_keybinds_drive() {
 #!/usr/bin/env bash
 sleep $t0
 "$hyprctl_bin" binds > "$keybinds_hyprctl_plain_path" 2>&1
-$ipc call debug query ":k" > /dev/null 2>&1
+$ipc call debug query ":k " > /dev/null 2>&1
 sleep 1
-$ipc call debug query ":k" > "$keybinds_query1_path" 2>&1
+$ipc call debug query ":k " > "$keybinds_query1_path" 2>&1
 $ipc call debug query ":k SUPER+T" > "$keybinds_query2_path" 2>&1
 $ipc call menu summon keybinds > /dev/null 2>&1
 sleep 2

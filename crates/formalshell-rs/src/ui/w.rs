@@ -116,9 +116,24 @@ pub fn cell(child: El) -> El {
     El::new(Kind::Cell { state: CellState::default(), interactive: false, child: Box::new(child) })
 }
 
-/// The launcher's mode chip: a `caption` word at 600 in `launcher.token`.
-pub fn token(s: impl Into<String>) -> El {
-    cell(text_el(s, Type::Caption, Weight::Semibold, false, Ink::Fg)).cell_state(|c| {
+/// The launcher's mode chip: the mode path in `caption` at 600 in
+/// `launcher.token`, `System › Power`, the ancestors muted. Past two levels
+/// it reads `… › ` and the last two.
+pub fn token<S: AsRef<str>>(s: &Space, path: &[S]) -> El {
+    let word = |w: &str, ink| text_el(w, Type::Caption, Weight::Semibold, false, ink);
+    let mut parts = Vec::new();
+    if path.len() > 2 {
+        parts.extend([word("\u{2026}", Ink::Muted), word("\u{203a}", Ink::Muted)]);
+    }
+    let shown = &path[path.len().saturating_sub(2)..];
+    for (i, label) in shown.iter().enumerate() {
+        if i + 1 < shown.len() {
+            parts.extend([word(label.as_ref(), Ink::Muted), word("\u{203a}", Ink::Muted)]);
+        } else {
+            parts.push(word(label.as_ref(), Ink::Fg));
+        }
+    }
+    cell(row(s.xs, parts)).cell_state(|c| {
         c.chip = true;
         c.token = true;
     })

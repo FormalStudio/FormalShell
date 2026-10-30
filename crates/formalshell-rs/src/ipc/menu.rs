@@ -74,6 +74,9 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     if let Some(r) = app.launcher_body() {
         v["body"] = serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
     }
+    if let Some(r) = app.launcher_token() {
+        v["tokenBox"] = serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+    }
     text(v.to_string())
 }
 

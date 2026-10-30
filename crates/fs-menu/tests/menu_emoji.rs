@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use common::*;
 use fs_menu::frecency::Record;
 use fs_menu::model::parse_headered_json;
-use fs_menu::providers::{EmojiEntry, EmojiIndex, emoji_trigger_query};
+use fs_menu::providers::{EmojiEntry, EmojiIndex};
 
 static DATASET: LazyLock<Vec<EmojiEntry>> = LazyLock::new(|| {
     let value = parse_headered_json(&read_repo("crates/fs-menu/data/emoji.json")).expect("emoji.json parses");
@@ -115,16 +115,6 @@ fn the_four_tiers_rank_in_order() {
     // exact, then the two prefixes in file order, then word start. "red apple"
     // has no "cat" in it at all and must not appear.
     assert_eq!(icons(&index, "cat"), ["3", "2", "5", "4"]);
-}
-
-#[test]
-fn trigger_query() {
-    assert_eq!(emoji_trigger_query(":e thumbs"), Some("thumbs"));
-    assert_eq!(emoji_trigger_query(":e "), Some(""));
-    assert_eq!(emoji_trigger_query(":e"), None);
-    assert_eq!(emoji_trigger_query("thumbs"), None);
-    assert_eq!(emoji_trigger_query(":ex"), None);
-    assert_eq!(emoji_trigger_query(""), None);
 }
 
 // Uncapped: the route is a scrolling grid, and the old 40-result ceiling put

@@ -6,7 +6,7 @@
 mod common;
 
 use common::*;
-use fs_menu::icons::{ROUTE_ICONS, ROUTE_ICON_PREFIXES, ROUTE_LOGOS, fallback_for, icon_for, logo_for};
+use fs_menu::icons::{ROUTE_ICONS, ROUTE_ICON_PREFIXES, fallback_for, icon_for};
 use fs_menu::model::build_tree;
 use fs_menu::node::{Entries, Kind, Node};
 
@@ -31,9 +31,9 @@ fn a_device_row_resolves_by_prefix() {
     assert_eq!(icon_for(Some(&id("wifi"))), "wifi");
 }
 
-// The point of the map: every route the shell ships names its icon here, or its
-// logo in the map beside it. A route added without either still renders, just
-// bare, so only this test catches the omission.
+// The point of the map: every route the shell ships names its icon here. A
+// route added without one still renders, just bare, so only this test catches
+// the omission.
 #[test]
 fn every_shipped_route_is_mapped() {
     let tree = build_tree(&default_menu(), &Entries::new());
@@ -43,11 +43,7 @@ fn every_shipped_route_is_mapped() {
         if node.id.is_empty() {
             continue;
         }
-        assert!(
-            !icon_for(Some(node)).is_empty() || !logo_for(Some(node)).is_empty(),
-            "{} has no mapped icon name or logo",
-            node.id
-        );
+        assert!(!icon_for(Some(node)).is_empty(), "{} has no mapped icon name", node.id);
         mapped += 1;
     }
     assert!(mapped > 0);
@@ -68,23 +64,6 @@ fn a_mapped_row_answers_with_its_name() {
     assert_eq!(icon_for(Some(&id("clipboard"))), "clipboard");
     assert_eq!(icon_for(Some(&id("toggles.dnd"))), "bell-off");
     assert_eq!(icon_for(Some(&id("panels.network"))), "wifi");
-}
-
-// A logo is a mark, not an icon: the nix route must not resolve through the
-// icon sets at all, or `lucide` draws its weather snowflake again.
-#[test]
-fn the_nix_route_is_a_logo_not_an_icon() {
-    assert_eq!(icon_for(Some(&id("nix"))), "");
-    assert_eq!(logo_for(Some(&id("nix"))), "nixos");
-}
-
-#[test]
-fn every_other_row_has_no_logo() {
-    assert_eq!(logo_for(Some(&id("clipboard"))), "");
-    assert_eq!(logo_for(Some(&id("my.own.route"))), "");
-    assert_eq!(logo_for(Some(&Node::default())), "");
-    assert_eq!(logo_for(None), "");
-    assert_eq!(ROUTE_LOGOS.len(), 1);
 }
 
 // A row whose own icon is a raw codepoint draws a named icon for what it is

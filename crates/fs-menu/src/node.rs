@@ -78,6 +78,7 @@ pub struct Entry {
     pub route_only: Option<bool>,
     pub section: Option<String>,
     pub prompt: Option<String>,
+    pub prefix: Option<String>,
     pub hidden: Option<bool>,
     pub desc: Option<String>,
     pub thumb_source: Option<String>,
@@ -189,6 +190,7 @@ impl Entry {
             route_only: u.route_only.or(self.route_only),
             section: u.section.clone().or_else(|| self.section.clone()),
             prompt: u.prompt.clone().or_else(|| self.prompt.clone()),
+            prefix: u.prefix.clone().or_else(|| self.prefix.clone()),
             hidden: u.hidden.or(self.hidden),
             desc: u.desc.clone().or_else(|| self.desc.clone()),
             thumb_source: u.thumb_source.clone().or_else(|| self.thumb_source.clone()),
@@ -245,6 +247,8 @@ pub struct Node {
     pub route_only: Option<bool>,
     pub section: Option<String>,
     pub prompt: Option<String>,
+    /// What typed before a space in the field enters this route as a mode.
+    pub prefix: Option<String>,
     /// The dim trailing slot of a row.
     pub desc: Option<String>,
     pub icon_source: String,

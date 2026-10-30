@@ -352,9 +352,6 @@ pub const ROUTE_CHORDS: &[(&str, &str)] = &[
     ("wallpaper", "Super+Ctrl+Space"),
 ];
 
-/// What a route answers to when typed as a prefix from any level.
-pub const ROUTE_PREFIXES: &[(&str, &str)] = &[("emoji", ":e"), ("nix", ":nix"), ("keybinds", ":k")];
-
 fn lookup(table: &[(&str, &'static str)], id: &str) -> &'static str {
     table.iter().find(|(k, _)| *k == id).map_or("", |(_, v)| v)
 }
@@ -380,17 +377,17 @@ pub fn hint_for(node: Option<&Node>) -> String {
 }
 
 /// The row's trailing value: its own (a level, a source), else a route's
-/// prefix, chord or count. An app or an action carries none of its own.
+/// `prefix`, chord or count. An app or an action carries none of its own.
 pub fn accessory_for(node: Option<&Node>) -> String {
     let Some(n) = node else { return String::new() };
     if let Some(meta) = n.meta.as_deref().filter(|m| !m.is_empty()) {
         return meta.to_string();
     }
     match n.kind {
-        Kind::Submenu | Kind::Provider | Kind::Link => {
-            let prefix = lookup(ROUTE_PREFIXES, &n.id);
-            if prefix.is_empty() { hint_for(node).replace('+', " ") } else { prefix.into() }
-        }
+        Kind::Submenu | Kind::Provider | Kind::Link => match n.prefix.as_deref().filter(|p| !p.is_empty()) {
+            Some(prefix) => prefix.to_owned(),
+            None => hint_for(node).replace('+', " "),
+        },
         _ => String::new(),
     }
 }
@@ -442,7 +439,7 @@ mod tests {
         let app = Node::new("apps.x", "X", Kind::App);
         assert_eq!(accessory_for(Some(&app)), "");
         assert_eq!(accessory_for(Some(&Node::new("a", "a", Kind::Action))), "");
-        let emoji = Node::new("emoji", "Emoji", Kind::Provider);
+        let emoji = Node { prefix: Some(":e".into()), ..Node::new("emoji", "Emoji", Kind::Provider) };
         assert_eq!(accessory_for(Some(&emoji)), ":e");
         let clip = Node::new("clipboard", "Clipboard", Kind::Provider);
         assert_eq!(accessory_for(Some(&clip)), "Super Ctrl V");

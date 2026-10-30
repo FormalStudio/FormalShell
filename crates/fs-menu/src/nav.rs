@@ -194,6 +194,8 @@ pub struct KeyCtx {
     pub scrollable: bool,
     /// The picker's Dark | Light switcher is up.
     pub variants: bool,
+    /// Standing inside a mode rather than at the root.
+    pub level: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -265,7 +267,15 @@ pub fn key_action(key: Key, mods: Modifiers, auto_repeat: bool, ctx: &KeyCtx) ->
     match key {
         Key::Up => if ctx.app_view { KeyAction::ScrollUp } else { KeyAction::Up },
         Key::Down => if ctx.app_view { KeyAction::ScrollDown } else { KeyAction::Down },
-        Key::Left => if plain && ctx.grid && !ctx.app_view { KeyAction::Left } else { KeyAction::Pass },
+        Key::Left => {
+            if plain && ctx.grid && !ctx.app_view {
+                KeyAction::Left
+            } else if plain && ctx.level && !ctx.query && ctx.mode == KeyMode::Menu {
+                if auto_repeat { KeyAction::Swallow } else { KeyAction::Pop }
+            } else {
+                KeyAction::Pass
+            }
+        }
         Key::Right => if plain && ctx.grid && !ctx.app_view { KeyAction::Right } else { KeyAction::Pass },
         Key::PageUp => {
             if ctx.app_view {
