@@ -18,11 +18,16 @@
 # dim trailing value (the directory) is read off the frame, its ink no
 # wider than 40% of the row and its left edge one gap from the elided
 # name's, so the name takes the rest.
+#
+# A second headless output 800x600, narrower than the 840 card plus
+# `screenPadding` either side: the same Tab cuts the card to the output
+# less 12 either side, the column at most 45% of it, photographed there.
 leg_launcher_overflow_flag="--launcher-overflow"
 leg_launcher_overflow_order=34
 leg_launcher_overflow_needs="jq wtype python3"
 
 launcher_overflow_output="HEADLESS-OVERFLOW"
+launcher_overflow_narrow="HEADLESS-NARROW"
 launcher_overflow_dir="$iso_home/Documents$(printf '/a-directory-nested-far-down-%s' 1 2 3 4)"
 launcher_overflow_file="$launcher_overflow_dir/overflow-trail-probe-with-a-file-name-that-runs-on-and-on.txt"
 
@@ -64,7 +69,7 @@ EOF
 }
 
 leg_launcher_overflow_timing() {
-  leg_timing 35 95
+  leg_timing 45 105
 }
 
 leg_launcher_overflow_drive() {
@@ -73,8 +78,8 @@ leg_launcher_overflow_drive() {
 #!/usr/bin/env bash
 call() { $ipc call "\$@"; }
 status() { call menu status > "$shot_dir/launcher-overflow-\$1.json" 2>&1; }
-shoot() { "$grim_bin" -o "$launcher_overflow_output" "$shot_dir/launcher-overflow-\$1.png" > /dev/null 2>&1; }
-focus() { "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '$launcher_overflow_output' })" > /dev/null 2>&1; sleep 0.4; }
+shoot() { "$grim_bin" -o "\${2:-$launcher_overflow_output}" "$shot_dir/launcher-overflow-\$1.png" > /dev/null 2>&1; }
+focus() { "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\${1:-$launcher_overflow_output}' })" > /dev/null 2>&1; sleep 0.4; }
 sleep 4
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
 "$hyprctl_bin" output create headless "$launcher_overflow_output" > /dev/null 2>&1
@@ -116,6 +121,22 @@ sleep 1.5
 status end
 shoot end
 call menu close > /dev/null 2>&1
+sleep 1
+
+"$hyprctl_bin" output create headless "$launcher_overflow_narrow" > /dev/null 2>&1
+"$hyprctl_bin" eval "hl.monitor({ output = \"$launcher_overflow_narrow\", mode = \"800x600@60\", position = \"\$((width + 1280))x0\", scale = 1 })" > /dev/null 2>&1
+sleep 3
+"$hyprctl_bin" -j monitors > "$shot_dir/launcher-overflow-monitors-narrow.json" 2>&1
+focus "$launcher_overflow_narrow"
+call menu summon plugin:overflow-probe > /dev/null 2>&1
+sleep 2
+"$wtype_bin" -k Tab
+sleep 1.5
+status narrow
+shoot narrow "$launcher_overflow_narrow"
+call menu close > /dev/null 2>&1
+sleep 1
+"$hyprctl_bin" output remove "$launcher_overflow_narrow" > /dev/null 2>&1
 sleep 1
 
 call theme mode light > /dev/null 2>&1
@@ -194,10 +215,18 @@ PY
   launcher_overflow_expect column "$inside"' .cardBox as $c | (.actionsBox | inside($c)) and all(.rowBoxes[]; inside($c))' "the column or a row reached past the card"
   launcher_overflow_expect column '.actionCursor == 0 and .actionsScroll == 0 and .actionsMore > 0' "the column's last visible row does not read n more"
   launcher_overflow_expect end '.actionCursor == 40 and .actionsScrollMax > 0 and .actionsScroll == .actionsScrollMax and .actionsMore == 0' "End did not scroll the column to its last action"
+  launcher_overflow_expect column '((.actionsBox.width - .cardBox.width / 2) | fabs) <= 1' "the column on a wide output is not half the card"
   echo "SMOKE_LAUNCHER_OVERFLOW 41 actions in the 840 card on 1280x720, n more, End scrolling to the last"
 
+  "$jq_bin" -e --arg o "$launcher_overflow_narrow" '.[] | select(.name == $o and .width == 800 and .height == 600)' "$shot_dir/launcher-overflow-monitors-narrow.json" > /dev/null \
+    || fail "launcher-overflow: no 800x600 headless output: $("$jq_bin" -c '[.[] | {name, width, height}]' "$shot_dir/launcher-overflow-monitors-narrow.json")"
+  launcher_overflow_expect narrow '.actionsOpen and .cardWidth == 776 and .cardBox.x >= 12 and .cardBox.x + .cardBox.width <= 788' "the split card is not cut to the 800 output less 12 either side"
+  launcher_overflow_expect narrow "$inside"' .cardBox as $c | (.actionsBox | inside($c)) and all(.rowBoxes[]; inside($c))' "on the narrow output the column or a row reached past the card"
+  launcher_overflow_expect narrow '.actionsBox.width <= .cardBox.width * 0.45 + 1 and .actionsBox.width >= .cardBox.width * 0.4' "the column on the narrow output is not 45% of the card"
+  echo "SMOKE_LAUNCHER_OVERFLOW the split card cut to 776 on an 800 output, the column 45% of it"
+
   local shot
-  for shot in long trail column end column-light; do
+  for shot in long trail column end narrow column-light; do
     [ -s "$shot_dir/launcher-overflow-$shot.png" ] || fail "launcher-overflow: no $shot frame"
     echo "SMOKE_LAUNCHER_OVERFLOW_SHOT $shot_dir/launcher-overflow-$shot.png"
   done

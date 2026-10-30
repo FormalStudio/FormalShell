@@ -87,6 +87,9 @@ struct Layout {
     /// Laid out at half the card: the selection moving onto or off a
     /// subject with a preview lays it out again.
     halved: bool,
+    /// The body width it was laid out in, which an output narrower than
+    /// the card changes.
+    body_w: f64,
 }
 
 pub struct Model {
@@ -131,6 +134,8 @@ pub struct Model {
     /// The Dark | Light switcher's height at the head of the body, 0 when
     /// the route has none.
     picker_switch_h: f64,
+    /// The output's width, which the card is cut to.
+    pub output_w: f64,
     /// The monitor route's tile strip height, 0 off the route.
     monitor_strip_h: f64,
     /// The monitor route keeps both polls running while it is the level.
@@ -435,6 +440,7 @@ impl Default for Model {
             paste: false,
             picker: Picker::default(),
             picker_switch_h: 0.0,
+            output_w: 0.0,
             monitor_strip_h: 0.0,
             monitor_wants: None,
             monitor_armed: None,
@@ -702,9 +708,15 @@ impl Model {
         self.mode == Mode::Menu && matches!(self.level.as_deref(), Some(MONITOR_ROUTE | MIRROR_ROUTE))
     }
 
-    /// One card width per level kind, which the content
-    /// is laid out at while the card itself morphs into it.
+    /// One card width per level kind, which the content is laid out at
+    /// while the card itself morphs into it, cut to the output less
+    /// `screenPadding` either side.
     pub fn card_width(&self, theme: &Theme) -> f64 {
+        let kind = self.kind_width(theme);
+        if self.output_w > 0.0 { kind.min(self.output_w - theme.space.screen_padding * 2.0) } else { kind }
+    }
+
+    fn kind_width(&self, theme: &Theme) -> f64 {
         let s = &theme.space;
         if self.app_view() {
             s.popup_width_menu_app
@@ -713,6 +725,12 @@ impl Model {
         } else {
             s.popup_width_menu
         }
+    }
+
+    /// The list's share of a halved body: half, or 55% on a card cut to a
+    /// narrow output, the side column at most 45%.
+    fn list_share(&self, theme: &Theme) -> f64 {
+        if self.card_width(theme) < self.kind_width(theme) { 0.55 } else { 0.5 }
     }
 
     /// The width inside the card's padding.
@@ -1224,9 +1242,9 @@ impl Model {
     /// rows, the emoji grid's tiles.
     fn layout(&mut self, theme: &Theme, kit: &mut Kit) {
         let s = &theme.space;
-        let width = self.body_width(theme);
+        let body_w = self.body_width(theme);
         let halved = self.halved();
-        let width = if halved { (width / 2.0).round() } else { width };
+        let width = if halved { (body_w * self.list_share(theme)).round() } else { body_w };
         let inset = if self.bleeds() { s.sm } else { s.md };
         let gutter = s.sm;
         let heading_x = if self.bleeds() { s.sm + s.lg - s.control_padding_x } else { 0.0 };
@@ -1313,13 +1331,15 @@ impl Model {
         }
         out.content_h = y + inset;
         out.halved = halved;
+        out.body_w = body_w;
         self.layout = out;
     }
 
     /// The body laid out again where the selection has moved onto or off a
-    /// subject with a preview, which halves the list or gives it back.
+    /// subject with a preview, which halves the list or gives it back, or
+    /// the output under it has changed the card's width.
     fn relayout(&mut self, theme: &Theme, kit: &mut Kit) {
-        if self.layout.halved != self.halved() {
+        if self.layout.halved != self.halved() || self.layout.body_w != self.body_width(theme) {
             self.layout(theme, kit);
             self.follow();
         }
@@ -2797,6 +2817,7 @@ impl Shown {
     /// Lays the card out and draws the three bands.
     pub fn layout(&mut self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
         let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, self.output.1, kit);
+        m.output_w = self.output.0;
         m.relayout(theme, kit);
         let chrome = head_h + foot_h;
         if (m.body_h - body_h).abs() > 0.5 {
@@ -2976,7 +2997,7 @@ impl Shown {
         self.column_rect = None;
         self.pane_rect = None;
         if let Some(c) = m.column.as_ref().filter(|_| body_h > 0.0) {
-            let half = (body_w / 2.0).round();
+            let half = (body_w * m.list_share(theme)).round();
             let r = Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h);
             let scroll = self.column_scroll.value(now) + c.touch.value(now);
             let (el, settling) = column_el(m, theme, scroll, now, self.scale);
@@ -2988,7 +3009,7 @@ impl Shown {
             self.column_rect = Some(r);
             self.pane_since = None;
         } else if let Some(row) = m.pane().filter(|_| body_h > 0.0) {
-            let half = (inner_w / 2.0).round();
+            let half = (inner_w * m.list_share(theme)).round();
             let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - s.sm, body_top + body_h - s.md);
             let el = preview_el(m, store, row, theme, kit, r.width(), r.height());
             // The pane's arrival fades its content in on `effects` while the

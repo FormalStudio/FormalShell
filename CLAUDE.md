@@ -663,8 +663,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   is at most 40% of its row with the elided name one gap before it, and a
   launcher plugin's row carrying 40 actions of its own, Tab opening the 840
   card whole on that output with the column's last visible row reading
-  `n more`, a real End scrolling it to the last action. Photographed off
-  that output alone, the column dark and light.
+  `n more`, a real End scrolling it to the last action, and the same Tab
+  on a second headless output 800x600 cutting the card to 776 with the
+  column at most 45% of it. Photographed off those outputs alone, the
+  column dark and light.
 - `launcher_preview.sh` `--launcher-preview`: the preview pane, read off
   `menu status`'s `cardWidth` and `pane`, the dump's modal card and
   `captures`: a staged app at 560 with no pane, a foot window at 840 with

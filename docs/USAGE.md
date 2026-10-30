@@ -1289,7 +1289,9 @@ row, an ssh send on a clipboard image, Forget on a saved network).
 `Tab` opens the selected row's actions in a column beside the list: the
 card widens from 560 to 840, the list keeps the left half with the row
 still selected, and the column takes the right (where the row has a
-preview, the column stands in for it). The field then filters the actions, its query held
+preview, the column stands in for it). On an output too narrow for that
+card, it is cut to the output less `screenPadding` either side and the
+column (or the preview) takes 45% of it. The field then filters the actions, its query held
 until the column closes, and reads `Actions` after the mode's token. `↑`
 `↓`, Page and Home/End move in the column, Enter or a click runs an
 action, and `Shift+Tab`, Escape or `←` on an empty filter close it. An
