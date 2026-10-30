@@ -121,7 +121,9 @@ impl App {
         let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
         let insets = self.toast_insets();
         let right = fs_info::notifications::position_spec(self.store.config.str("notifications.position")).right;
-        let column = (right, surfaces::toasts::column_width(&self.store.theme.theme, &insets, right));
+        let theme = &self.store.theme.theme;
+        let cast = *self.toast_cast.get_or_insert_with(|| surfaces::toasts::column_cast(theme));
+        let column = (right, surfaces::toasts::column_width(theme, cast, &insets, right));
         // The column stays mapped between toasts (see above), so it is moved
         // to the live bar's output only when a toast arrives on an empty one.
         let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl.as_ref());

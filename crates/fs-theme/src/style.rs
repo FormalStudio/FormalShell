@@ -8,6 +8,10 @@
 //! a state merges over its base key by key, exactly as style.js merges two
 //! objects, and an absent key reads the way an absent JS property does.
 
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 use serde_json::{Map, Value};
 
 use crate::tokens::{self, Easing, Motion};
@@ -128,24 +132,56 @@ pub fn has_state(style: &Value, role: &str, state: &str) -> bool {
 
 /// The raw entry for a role and a state, the state merged key by key over
 /// the role's base. An unknown or empty state reads as the base.
-pub fn entry(style: &Value, role: &str, state: Option<&str>) -> Option<Map<String, Value>> {
+pub fn entry<'a>(style: &'a Value, role: &str, state: Option<&str>) -> Option<Cow<'a, Map<String, Value>>> {
     let declared = roles(style)?.get(role).filter(|d| truthy(Some(d)))?;
     let states = states_for(role);
     if states.is_empty() {
-        return declared.as_object().cloned();
+        return declared.as_object().map(Cow::Borrowed);
     }
     let base = declared.get(states[0]).filter(|b| truthy(Some(b)))?.as_object()?;
-    let over = match state {
-        Some(s) if !s.is_empty() && s != states[0] && truthy(declared.get(s)) => declared.get(s)?,
-        _ => return Some(base.clone()),
+    let (s, over) = match state {
+        Some(s) if !s.is_empty() && s != states[0] && truthy(declared.get(s)) => (s, declared.get(s)?),
+        _ => return Some(Cow::Borrowed(base)),
     };
-    let mut out = base.clone();
-    if let Some(over) = over.as_object() {
-        for (k, v) in over {
-            out.insert(k.clone(), v.clone());
+    // Surfaces resolve boxes every frame, so the shipped table's merges are
+    // made once rather than cloned per call.
+    if std::ptr::eq(style, crate::table()) {
+        if let Some(m) = merged().get(role).and_then(|m| m.get(s)) {
+            return Some(Cow::Borrowed(m));
         }
     }
-    Some(out)
+    Some(Cow::Owned(merge(base, over)))
+}
+
+fn merge(base: &Map<String, Value>, over: &Value) -> Map<String, Value> {
+    let mut out = base.clone();
+    for (k, v) in over.as_object().into_iter().flatten() {
+        out.insert(k.clone(), v.clone());
+    }
+    out
+}
+
+type Merged = HashMap<&'static str, HashMap<&'static str, Map<String, Value>>>;
+
+/// Every declared state of the shipped table merged over its role's base.
+fn merged() -> &'static Merged {
+    static MERGED: LazyLock<Merged> = LazyLock::new(|| {
+        let roles = roles(crate::table());
+        ROLES
+            .iter()
+            .map(|(role, states)| {
+                let declared = roles.and_then(|r| r.get(*role));
+                let base = declared.zip(states.first()).and_then(|(d, s)| d.get(*s)?.as_object());
+                let own = states
+                    .iter()
+                    .skip(1)
+                    .filter_map(|s| Some((*s, merge(base?, declared?.get(*s).filter(|o| truthy(Some(o)))?))))
+                    .collect();
+                (*role, own)
+            })
+            .collect()
+    });
+    &MERGED
 }
 
 /// A number, `"surface"`, `{ glass }`, or a `{ light, dark }` pair the

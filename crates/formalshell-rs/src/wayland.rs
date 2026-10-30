@@ -255,6 +255,8 @@ pub struct App {
     tip_card: Option<tooltip::Card>,
     toasts: Option<surfaces::toasts::Toasts>,
     toasts_dirty: bool,
+    /// `column_cast` for the theme in force, dropped on a theme change.
+    toast_cast: Option<f64>,
     /// `debug join`'s card, hung in the gap it opens.
     preview: Option<(Surface, crate::scene::Scene, Vec<NodeId>)>,
     /// The tray item menu, over whatever popout it hangs off.
@@ -376,6 +378,7 @@ impl App {
             tip_card: None,
             toasts: None,
             toasts_dirty: false,
+            toast_cast: None,
             preview: None,
             scrim: None,
             pointer: None,
@@ -648,6 +651,7 @@ impl App {
     /// launcher's, the open panel's and the second bar's.
     pub fn restyle_cards(&mut self) {
         let now = Instant::now();
+        self.toast_cast = None;
         let theme = &self.store.theme.theme;
         if let Some(w) = &mut self.launch {
             w.shown.modal.restyle(theme, self.cast, now);

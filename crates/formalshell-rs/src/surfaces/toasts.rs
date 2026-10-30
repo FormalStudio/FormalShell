@@ -276,15 +276,19 @@ fn card_width(theme: &Theme) -> f64 {
     theme.space.popup_width_bubble
 }
 
+/// The widest cast a card throws, which moves with the theme alone.
+pub fn column_cast(theme: &Theme) -> f64 {
+    ["rest", "critical"]
+        .iter()
+        .map(|k| fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some(k)).casts))
+        .fold(0.0, f64::max)
+}
+
 /// How far the stack's layer reaches in from its own edge: the edge's
 /// inset, `screenPadding`, the card, and room past it for the swipe's
 /// rubber band (`scroll::rubber`, 40px at most) and the card's cast.
-pub fn column_width(theme: &Theme, insets: &Insets, right: bool) -> u32 {
+pub fn column_width(theme: &Theme, cast: f64, insets: &Insets, right: bool) -> u32 {
     let inset = if right { insets.right } else { insets.left };
-    let cast = ["rest", "critical"]
-        .iter()
-        .map(|k| fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some(k)).casts))
-        .fold(0.0, f64::max);
     (inset + theme.space.screen_padding * 2.0 + card_width(theme) + 40.0 + cast).ceil() as u32
 }
 
@@ -759,7 +763,7 @@ mod tests {
         let insets = Insets { top: 0.0, bottom: 0.0, left: 12.0, right: 30.0 };
         for right in [true, false] {
             let inset = if right { insets.right } else { insets.left };
-            let column = f64::from(column_width(&theme, &insets, right));
+            let column = f64::from(column_width(&theme, column_cast(&theme), &insets, right));
             let card = card_width(&theme);
             let cast = fs_theme::style::geometry::cast_pad(&theme.box_style("notification", Some("rest")).casts);
             let inner = column - inset - theme.space.screen_padding - card;

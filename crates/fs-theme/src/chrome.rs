@@ -8,6 +8,8 @@
 //! (src/config/values/ConfigValues.cpp, 0.56): a value outside one fails the
 //! whole `hl.config` call rather than one key.
 
+use std::borrow::Cow;
+
 use serde_json::{Map, Value};
 
 use crate::style;
@@ -28,8 +30,8 @@ impl Chrome {
         Self {
             rounding: Some(rounding),
             blur: Some(blur),
-            window: style::entry(table, "window", Some("rest")),
-            window_inactive: style::entry(table, "window", Some("inactive")),
+            window: style::entry(table, "window", Some("rest")).map(Cow::into_owned),
+            window_inactive: style::entry(table, "window", Some("inactive")).map(Cow::into_owned),
         }
     }
 }
