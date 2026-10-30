@@ -1,6 +1,7 @@
 //! Black over a whole output, faded in or out by its surface's opacity:
 //! the greeter's way out to the session, and the shell's arrival from black
-//! and departure into it (docs/superpowers/specs/2026-10-30-seams.md). The
+//! and departure into it (docs/superpowers/specs/2026-10-30-seams.md). On
+//! unlock it carries the lock's last picture instead of black. The
 //! caller makes the layer surface (Overlay, every edge anchored, an empty
 //! input region) and routes its configure and frame callbacks here. The
 //! shell's is a [`PixelSurface`], so a fade step is one multiplier; the
@@ -39,12 +40,19 @@ pub struct Veil<S = Surface<LayerSurface>> {
     /// said the compositor has shown it.
     committed_end: bool,
     shown_end: bool,
+    /// The scene is a picture handed over whole, drawn as it stands.
+    held: bool,
 }
 
 impl<S> Veil<S> {
     /// A veil standing at `opacity` until the first `fade`.
     pub fn new(surface: S, opacity: f32, now: Instant) -> Self {
-        Self { surface, scene: Scene::new(1, 1), nodes: Vec::new(), fade: Fade { at: now, from: opacity, to: opacity, ms: 0.0 }, committed_end: false, shown_end: false }
+        Self { surface, scene: Scene::new(1, 1), nodes: Vec::new(), fade: Fade { at: now, from: opacity, to: opacity, ms: 0.0 }, committed_end: false, shown_end: false, held: false }
+    }
+
+    /// An opaque veil drawing `scene` rather than black.
+    pub fn picture(surface: S, scene: Scene, now: Instant) -> Self {
+        Self { scene, held: true, ..Self::new(surface, 1.0, now) }
     }
 
     /// From wherever the veil stands now to `to`, over `ms`.
@@ -114,7 +122,9 @@ impl Veil<PixelSurface> {
 impl Veil {
     pub fn configure(&mut self, width: i32, height: i32) {
         let (w, h) = (width.max(1), height.max(1));
-        if (self.scene.size.w, self.scene.size.h) != (w, h) || self.nodes.is_empty() {
+        if self.held {
+            self.scene.touch(self.scene.size);
+        } else if (self.scene.size.w, self.scene.size.h) != (w, h) || self.nodes.is_empty() {
             self.scene.resize(w, h);
             let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
             p.rect(IRect::new(0, 0, w, h), Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
@@ -139,6 +149,12 @@ impl Veil {
     {
         if !self.surface.configured {
             return true;
+        }
+        // As the shell's own veils: a fade out ends in the layer's
+        // destruction, with no callback to wait on near alpha 0.
+        if self.fade.to == 0.0 && self.done(now) {
+            self.shown_end = true;
+            return false;
         }
         self.surface.set_opacity(self.opacity(now));
         let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending);

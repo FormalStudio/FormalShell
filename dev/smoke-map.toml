@@ -445,7 +445,12 @@ paths = [
   "crates/fs-auth/src/pam.rs",
   "crates/fs-system/src/lock.rs",
 ]
-runs = ["--lock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep"]
+runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep"]
+
+# The veils: the arrival every run starts under, and the unlock's hand-over.
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/veil.rs", "crates/formalshell-rs/src/surfaces/veil.rs", "dev/smoke.d/unlock.sh"]
+runs = ["--unlock", "--lock", "--menu", "--multi-output"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/depth.rs"]

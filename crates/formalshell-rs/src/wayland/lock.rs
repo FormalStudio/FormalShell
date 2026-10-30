@@ -76,9 +76,6 @@ pub enum LockMsg {
     Polkit(crate::services::polkit::Event),
 }
 
-/// How long the overlay takes to lift off the desktop, and how long the
-/// unlock waits past the clock's way out for it to commit.
-
 struct Out {
     output: WlOutput,
     name: String,
@@ -111,6 +108,9 @@ pub struct Lock {
     password: Field<Zeroizing<String>>,
     pub error: String,
     checking: bool,
+    /// PAM said yes and the last picture is being handed to the desktop:
+    /// nothing is drawn or typed until the session unlocks.
+    unlocking: bool,
     attempt: u64,
     pub(super) tx: Option<Sender<LockMsg>>,
     /// The avatar at each output's scale.
@@ -159,6 +159,7 @@ impl Lock {
             password: field(),
             error: String::new(),
             checking: false,
+            unlocking: false,
             attempt: 0,
             tx: None,
             avatar: Vec::new(),
@@ -599,9 +600,7 @@ impl App {
         self.lock.checking = false;
         self.lock.dirty = true;
         match outcome {
-            Outcome::Success => {
-                self.unlock();
-            }
+            Outcome::Success => self.begin_unlock(),
             Outcome::Failed(_) => self.lock.error = "Wrong password".into(),
             Outcome::MaxTries(_) => self.lock.error = "Account locked".into(),
             Outcome::StartFailed(why) | Outcome::Error(why) => {
@@ -611,8 +610,33 @@ impl App {
         }
     }
 
-    /// PAM's success is the one caller.
-    fn unlock(&mut self) {
+    /// PAM's success is the one caller. Each output's last picture goes to
+    /// a veil first (wayland/veil.rs), so the desktop comes in under it.
+    fn begin_unlock(&mut self) {
+        if self.lock.unlocking {
+            return;
+        }
+        let pictures: Vec<_> = self
+            .lock
+            .outs
+            .iter_mut()
+            .filter(|o| o.surface.mapped && !o.saver)
+            .map(|o| (o.output.clone(), std::mem::replace(&mut o.view.scene, crate::scene::Scene::new(1, 1))))
+            .collect();
+        self.lock.unlocking = true;
+        if !self.hand_over(pictures) {
+            self.finish_unlock();
+        }
+    }
+
+    pub(super) fn lock_unlocking(&self) -> bool {
+        self.lock.unlocking
+    }
+
+    /// The unlock itself, once the pictures are committed or the wait for
+    /// them is over.
+    pub(super) fn finish_unlock(&mut self) {
+        self.lock.unlocking = false;
         if let Some(session) = self.lock.session.take() {
             session.unlock();
         }
@@ -634,6 +658,7 @@ impl App {
         if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
             handle.remove(t);
         }
+        self.lift_handover();
     }
 
     /// What the now-playing block shows, if it shows.
@@ -729,6 +754,9 @@ impl App {
         if self.lock.session.is_none() {
             return false;
         }
+        if self.lock.unlocking {
+            return true;
+        }
         // Repeats are timed on this loop, so a frame that holds back a
         // release types the key again behind the dots. Only editing keys
         // repeat on the password.
@@ -805,7 +833,7 @@ impl App {
     }
 
     pub(super) fn present_lock(&mut self) {
-        if self.lock.outs.is_empty() || !self.lock.dirty {
+        if self.lock.outs.is_empty() || !self.lock.dirty || self.lock.unlocking {
             return;
         }
         self.lock.dirty = false;
@@ -1043,6 +1071,8 @@ impl SessionLockHandler for App {
     /// the session): nothing of ours is on screen.
     fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         eprintln!("lock: finished by the compositor");
+        self.lock.unlocking = false;
+        self.lift_handover();
         self.lock.session = None;
         self.lock.outs.clear();
         self.lock.locked = false;

@@ -1213,6 +1213,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `tray_overflow.sh` `--tray-overflow`: the shipped default, the whole tray
   in its second bar behind the strip's dots toggle with no settings at all,
   read off `tray status`.
+- `unlock.sh` `--unlock`: the lock handing over to the desktop
+  (`wayland/veil.rs`): over a flat grey wallpaper the real password typed
+  at a tenth speed and the unlock photographed back to back, each frame's
+  mean grey read against the locked and unlocked frames: none outside
+  them (no flash), never turning back, at least one part way between (a
+  fade, where a cut has none), and the last ones the desktop.
 - `visualizer.sh` `--visualizer`: the `cava` child owned and killed with
   playback, proven by pgrep rather than by the frame.
 - `visualizer_styles.sh` `--visualizer-styles`: pink noise through a real

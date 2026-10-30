@@ -8,6 +8,10 @@
 //! logout all leave the same way: the veil fades in over everything, then
 //! logind's inhibitor goes (shutdown) or the compositor is told to exit
 //! (logout).
+//!
+//! An unlock hands the lock's last picture to a veil per output, committed
+//! while the session is still locked, so the compositor's first unlocked
+//! frame is that picture over the desktop; it then fades off it.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -21,8 +25,10 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 
 use super::App;
+use crate::motion::Kind as Clock;
+use crate::scene::Scene;
 use crate::services::compositor::{self, Command};
-use crate::surface::PixelSurface;
+use crate::surface::{PixelSurface, Surface};
 use crate::surfaces::veil::Veil;
 
 /// The lift once the desktop is in, and how long it waits for the bar and
@@ -33,6 +39,9 @@ const ARRIVE_WAIT: Duration = Duration::from_secs(2);
 /// to show its end.
 const DEPART_MS: f64 = 300.0;
 const DEPART_WAIT: Duration = Duration::from_secs(1);
+/// How long an unlock waits for its pictures to be committed before it
+/// unlocks without the ones still to come.
+const HANDOVER_WAIT: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Phase {
@@ -69,6 +78,8 @@ pub(super) struct State {
     /// does not hide it at start. The lift waits on it, or the reveal would
     /// come first and the hide never.
     hidden: bool,
+    /// The lock's last picture per output, through an unlock.
+    handover: Vec<(WlOutput, Veil)>,
 }
 
 /// The instance's marker, written once the arrival has shown the pointer.
@@ -158,13 +169,27 @@ impl App {
         self.veil.veils.iter().position(|(_, v)| v.surface.layer.wl_surface() == surface)
     }
 
+    fn handover_index(&self, surface: &WlSurface) -> Option<usize> {
+        self.veil.handover.iter().position(|(_, v)| v.surface.layer.wl_surface() == surface)
+    }
+
     pub(super) fn veil_owns(&self, surface: &WlSurface) -> bool {
-        self.veil_index(surface).is_some()
+        self.veil_index(surface).is_some() || self.handover_index(surface).is_some()
     }
 
     /// The veil's first frame goes out at once, ahead of whatever else this
     /// dispatch configures.
     pub(super) fn veil_configure(&mut self, surface: &WlSurface, width: i32, height: i32) {
+        if let Some(i) = self.handover_index(surface) {
+            let v = &mut self.veil.handover[i].1;
+            v.configure(width, height);
+            let _raster = crate::scene::raster_at(v.surface.scale());
+            v.present(Instant::now(), &self.qh);
+            if self.lock_unlocking() && self.veil.handover.iter().all(|(_, v)| v.surface.commits() > 0) {
+                self.finish_unlock();
+            }
+            return;
+        }
         let Some(i) = self.veil_index(surface) else { return };
         let v = &mut self.veil.veils[i].1;
         v.configure(width, height);
@@ -172,6 +197,10 @@ impl App {
     }
 
     pub(super) fn veil_frame(&mut self, surface: &WlSurface) -> bool {
+        if let Some(i) = self.handover_index(surface) {
+            self.veil.handover[i].1.landed(Instant::now());
+            return true;
+        }
         let Some(i) = self.veil_index(surface) else { return false };
         self.veil.veils[i].1.landed();
         true
@@ -179,10 +208,57 @@ impl App {
 
     pub(super) fn veil_closed(&mut self, surface: &WlSurface) {
         self.veil.veils.retain(|(_, v)| v.surface.layer.wl_surface() != surface);
+        self.veil.handover.retain(|(_, v)| v.surface.layer.wl_surface() != surface);
     }
 
     pub(super) fn veil_output_gone(&mut self, output: &WlOutput) {
         self.veil.veils.retain(|(o, _)| o != output);
+        self.veil.handover.retain(|(o, _)| o != output);
+    }
+
+    /// The unlock's first half: each output's last lock picture on a veil
+    /// of its own. The lock lifts once every one has been committed, or
+    /// after [`HANDOVER_WAIT`]; false when there is nothing to hand over.
+    pub(super) fn hand_over(&mut self, pictures: Vec<(WlOutput, Scene)>) -> bool {
+        let now = Instant::now();
+        self.veil.handover.clear();
+        for (output, scene) in pictures {
+            let wl = self.compositor.create_surface(&self.qh);
+            let ls = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:veil"), Some(&output));
+            ls.set_anchor(Anchor::all());
+            ls.set_exclusive_zone(-1);
+            ls.set_keyboard_interactivity(KeyboardInteractivity::None);
+            if let Ok(region) = Region::new(&self.compositor) {
+                ls.set_input_region(Some(region.wl_region()));
+            }
+            ls.commit();
+            let surface = Surface::on("unlock", ls, &self.shm, self.started, &output);
+            self.veil.handover.push((output, Veil::picture(surface, scene, now)));
+        }
+        if self.veil.handover.is_empty() {
+            return false;
+        }
+        if let Some(handle) = &self.handle {
+            let _ = handle.insert_source(Timer::from_duration(HANDOVER_WAIT), |_, _, app: &mut App| {
+                if app.lock_unlocking() {
+                    eprintln!("lock: the unlock picture not committed in {}ms, unlocking without it", HANDOVER_WAIT.as_millis());
+                    app.finish_unlock();
+                }
+                TimeoutAction::Drop
+            });
+        }
+        true
+    }
+
+    /// The session is unlocked: a picture never committed is dropped
+    /// rather than shown late over the desktop, and the rest fade off it.
+    pub(super) fn lift_handover(&mut self) {
+        self.veil.handover.retain(|(_, v)| v.surface.commits() > 0);
+        let ms = Clock::Effects.ms(&self.store.theme.theme) * self.motion_scale;
+        let now = Instant::now();
+        for (_, v) in &mut self.veil.handover {
+            v.fade(0.0, ms, now);
+        }
     }
 
     fn fade_veils(&mut self, to: f32, ms: f64) {
@@ -256,10 +332,20 @@ impl App {
     /// once the compositor has shown where its fade ends.
     /// The next fade end to reach, for the loop's wake.
     pub(super) fn veil_deadline(&self, now: Instant) -> Option<Instant> {
-        self.veil.veils.iter().filter_map(|(_, v)| v.deadline()).filter(|at| *at > now).min()
+        let handover = self.veil.handover.iter().filter(|_| !self.lock_unlocking()).filter_map(|(_, v)| v.deadline());
+        self.veil.veils.iter().filter_map(|(_, v)| v.deadline()).chain(handover).filter(|at| *at > now).min()
     }
 
     pub(super) fn present_veils(&mut self, now: Instant) {
+        if !self.veil.handover.is_empty() && !self.lock_unlocking() {
+            for (_, v) in &mut self.veil.handover {
+                let _raster = crate::scene::raster_at(v.surface.scale());
+                v.present(now, &self.qh);
+            }
+            if self.veil.handover.iter().all(|(_, v)| v.settled()) {
+                self.veil.handover.clear();
+            }
+        }
         if self.veil.reveal && self.veil.phase.is_none() && (self.faces_warmed || now >= self.started + ARRIVE_WAIT) {
             self.veil.reveal = false;
             reveal_cursor();
