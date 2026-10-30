@@ -90,9 +90,12 @@ hl.config({
     allow_tearing = true,
   },
 
-  -- The owner's choice: VRR only while a window is fullscreen.
+  -- The owner's choice: VRR only while a window is fullscreen. Black under
+  -- everything, so the session arrives out of the greeter's black
+  -- (docs/superpowers/specs/2026-10-30-seams.md).
   misc = {
     vrr = 2,
+    background_color = "rgb(000000)",
   },
 
   group = {
@@ -103,6 +106,21 @@ hl.config({
     },
   },
 })
+
+-- The pointer stays hidden until the shell has faded the desktop in, and the
+-- shell shows it then. Only before that: a reload (the shell's own after each
+-- publish) finds the shell's marker for this instance and leaves the cursor
+-- alone. A shell that never starts gets it back ten seconds in.
+local arrived = (os.getenv("XDG_RUNTIME_DIR") or "") .. "/formalshell/arrived-" .. (os.getenv("HYPRLAND_INSTANCE_SIGNATURE") or "")
+local marker = io.open(arrived, "r")
+if marker then
+  marker:close()
+else
+  hl.config({ cursor = { invisible = true } })
+end
+hl.on("hyprland.start", function()
+  hl.exec_cmd([==[sleep 10 && hyprctl eval 'hl.config({ cursor = { invisible = false } })']==])
+end)
 
 -- Steam starts each Proton game under XWayland with a steam_app_<id> class.
 hl.window_rule({
@@ -174,6 +192,13 @@ hl.layer_rule({
 -- The OSD pill buds off the bottom line the way a panel buds off the bar's,
 -- so it is drawn at the same surfaceOpacity the line it grows out of is: one
 -- silhouette across two windows cannot be opaque on one side of the seam.
+-- The arrival and departure veil fades itself.
+hl.layer_rule({
+  name = "formalshell-veil",
+  match = { namespace = "formalshell:veil" },
+  no_anim = true,
+})
+
 hl.layer_rule({
   name = "formalshell-osd",
   match = { namespace = "formalshell:osd" },
