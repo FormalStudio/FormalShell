@@ -174,6 +174,8 @@ enum Into {
     Windows(String),
     /// A folder's entries, by its path.
     Folder(String),
+    /// A Wi-Fi network's details, by its SSID.
+    Network(String),
 }
 
 /// A subject stepped into with →, which the token names.
@@ -186,7 +188,7 @@ struct Children {
 impl Children {
     fn key(&self) -> &str {
         match &self.into {
-            Into::Windows(id) | Into::Folder(id) => id,
+            Into::Windows(id) | Into::Folder(id) | Into::Network(id) => id,
         }
     }
 }
@@ -524,6 +526,29 @@ pub fn radio_search_rows(store: &Store, q: &str) -> Vec<Node> {
     }
 }
 
+fn wifi_network(r: &crate::services::devices::network::Row) -> fs_menu::providers::WifiNetwork {
+    fs_menu::providers::WifiNetwork {
+        name: r.ssid.clone(),
+        known: r.known,
+        connected: r.connected,
+        secured: r.secured,
+        enterprise: r.enterprise,
+        in_range: r.in_range,
+        signal: r.signal,
+        signal_strength: None,
+        security: r.security.clone(),
+        addresses: r.addresses.clone(),
+    }
+}
+
+/// A network stepped into: its details off the live scan, a note once it
+/// is no longer listed.
+fn network_rows(store: &Store, ssid: &str, q: &str) -> Vec<Node> {
+    let Some(row) = store.devices.network.row(ssid) else { return vec![Node::note("wifi.details.gone", "No longer listed")] };
+    let q = q.trim().to_lowercase();
+    fs_menu::providers::wifi_details(&wifi_network(row)).into_iter().filter(|n| q.is_empty() || n.label.to_lowercase().contains(&q)).collect()
+}
+
 /// The four device routes' rows, off the store.
 pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
     use fs_menu::providers as p;
@@ -532,20 +557,7 @@ pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
     let wifi = p::WifiState {
         has_device: n.wifi_device.is_some(),
         enabled: n.wifi_enabled,
-        networks: n
-            .rows
-            .iter()
-            .map(|r| p::WifiNetwork {
-                name: r.ssid.clone(),
-                known: r.known,
-                connected: r.connected,
-                secured: r.secured,
-                enterprise: r.enterprise,
-                in_range: r.in_range,
-                signal: r.signal,
-                signal_strength: None,
-            })
-            .collect(),
+        networks: n.rows.iter().map(wifi_network).collect(),
         action_ssid: n.action.as_ref().map(|(_, s)| s.clone()).unwrap_or_default(),
         action_kind: n.action.as_ref().map(|(k, _)| k.as_str().to_owned()).unwrap_or_default(),
         failure_ssid: n.failure.as_ref().map(|f| f.ssid.clone()).unwrap_or_default(),
@@ -963,6 +975,7 @@ impl Model {
             Mode::Menu if children.is_some() => children.map_or_else(Vec::new, |c| match &c.into {
                 Into::Windows(id) => window_rows(store, id, q),
                 Into::Folder(path) => folder_rows(store, path, q),
+                Into::Network(ssid) => network_rows(store, ssid, q),
             }),
             Mode::Menu if picker => self.picker_rows(store, q),
             Mode::Menu if monitor => monitor_rows(store, q),
@@ -1437,7 +1450,9 @@ impl Model {
         };
         let drawn: Vec<Value> = match self.view {
             View::AppGrid => self.rows[..self.app_count].iter().map(|r| json!({"id": r.id, "label": r.label})).collect(),
-            View::Rows | View::Monitor | View::Mirror => self.rows.iter().map(|r| json!({"id": r.id, "label": r.label})).collect(),
+            View::Rows | View::Monitor | View::Mirror => {
+                self.rows.iter().map(|r| json!({"id": r.id, "label": r.label, "value": fs_menu::actions::accessory_for(Some(r))})).collect()
+            }
             View::Emoji | View::Picker => Vec::new(),
         };
         json!({
@@ -2136,6 +2151,8 @@ impl Model {
                 } else if fs_menu::providers::is_folder_subject(node) {
                     index::ask(Ask::Folder(node.path.clone()));
                     Some(Into::Folder(node.path.clone()))
+                } else if fs_menu::providers::is_wifi_network(node) {
+                    Some(Into::Network(node.label.clone()))
                 } else {
                     None
                 };

@@ -1295,7 +1295,11 @@ action that needs an argument (`Move to workspace…`) lists those in the
 column under a third token (`Workspace`), `Shift+Tab` going back to the
 actions; one that needs words (`Edit abbreviation`) asks for them in the
 input step. `→` on an app with windows lists them, each with Focus, Close,
-Move to workspace…, Toggle floating and Fullscreen.
+Move to workspace…, Toggle floating and Fullscreen. `→` on a Wi-Fi network
+(or its `Details` action) lists what NetworkManager reports for it: its
+security, its signal (`Not in range` for a saved network no access point
+broadcasts), and while connected each IPv4 address the device holds on it
+as `address/prefix`.
 
 | Key | Does |
 | --- | --- |

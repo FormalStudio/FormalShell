@@ -9,7 +9,7 @@
 use crate::abbrev::Source;
 use crate::model::Mode;
 use crate::node::{ActionEntry, Kind, Node};
-use crate::providers::{FILE_KIND, FOLDER_KIND};
+use crate::providers::{FILE_KIND, FOLDER_KIND, is_wifi_network};
 
 /// What running an action does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -325,6 +325,11 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
             None if e.hidden == Some(true) => {}
             None => out.extend(Action::from_entry(e)),
         }
+    }
+    // After the node's own, so a network with no Forget keeps the panel on
+    // Shift+Enter.
+    if is_wifi_network(s.node) {
+        out.push(Action::new("details", "Details", Run::Into(subject_id(s.node))));
     }
     out.extend(abbreviation_actions(s));
     out

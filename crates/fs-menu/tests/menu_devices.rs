@@ -6,7 +6,7 @@ use fs_devices::bluetooth::{Device as BluetoothDevice, DeviceState};
 use fs_menu::node::{Kind, Node};
 use fs_menu::providers::{
     AudioDevice, BluetoothState, RadioState, RadioStation, WifiNetwork, WifiState, audio_rows,
-    bluetooth_rows, id_part, radio_result_rows, radio_rows, wifi_rows,
+    bluetooth_rows, id_part, radio_result_rows, radio_rows, wifi_details, wifi_rows,
 };
 
 #[test]
@@ -336,4 +336,26 @@ fn radio_results_are_local_only_with_alternate_per_favorite_set() {
     assert_eq!(rows[1].alternate.as_deref(), Some("@ipc:radio.favorite:b"));
     assert_eq!(rows[1].alternate_label.as_deref(), Some("Add favorite"));
     assert_ne!(rows[1].keep_open, Some(true));
+}
+
+#[test]
+fn a_network_details_its_security_signal_and_addresses_while_connected() {
+    let live = WifiNetwork {
+        known: true,
+        connected: true,
+        signal: 0.72,
+        security: "WPA2 Personal".into(),
+        addresses: vec!["10.0.0.5/24".into(), "10.0.1.5/16".into()],
+        ..net("Home")
+    };
+    let rows = wifi_details(&live);
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["wifi.details.security", "wifi.details.signal", "wifi.details.address.0", "wifi.details.address.1"]);
+    let values: Vec<&str> = rows.iter().map(|r| r.meta.as_deref().unwrap()).collect();
+    assert_eq!(values, ["WPA2 Personal", "72%", "10.0.0.5/24", "10.0.1.5/16"]);
+    assert!(rows.iter().all(|r| r.kind == Kind::Note && r.dim.is_none()));
+    let away = WifiNetwork { connected: false, in_range: false, ..live };
+    let rows = wifi_details(&away);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].meta.as_deref(), Some("Not in range"));
 }

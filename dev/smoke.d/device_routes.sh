@@ -6,7 +6,9 @@
 # status. Wi-Fi runs against the two hostapd radios --wifi uses: a wrong
 # password typed into the launcher's masked step, the real one after it,
 # then a Shift+Enter forget, with the password absent from
-# menu-selection.txt and the shell log. Audio adds its own null sink and
+# menu-selection.txt and the shell log. While connected, → on the network
+# lists its details: Security reading WPA2 Personal, Signal a percentage,
+# and one IP address row per IPv4 address `ip -4 addr` shows on wlan0. Audio adds its own null sink and
 # switches the default to it, read back with pactl (the output half only:
 # the sink's monitor is not an input the route lists). Bluetooth has no
 # adapter here, so it is the honest NO ADAPTER row while `panel open
@@ -54,7 +56,7 @@ EOF
 }
 
 leg_device_routes_timing() {
-  leg_timing 200 235
+  leg_timing 210 245
 }
 
 leg_device_routes_drive() {
@@ -173,6 +175,17 @@ sleep 2
 ipc menu status > "$shot_dir/device-routes-wifi-ticked.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-connected.png" > /dev/null 2>&1
 cp "$iso_home/.local/state/formalshell/menu-selection.txt" "$device_routes_selection_copy" 2>/dev/null
+
+# → on the connected network: its details.
+route wifi FORMALTEST
+idx=\$(row_index "$shot_dir/device-routes-wifi-details-list.json" wifi.net.FORMALTEST)
+ipc menu into "\$idx" > "$shot_dir/device-routes-wifi-into.txt" 2>&1
+sleep 1.5
+ipc menu status > "$shot_dir/device-routes-wifi-details.json" 2>&1
+ip -4 -o addr show dev wlan0 | awk '{print \$4}' > "$shot_dir/device-routes-wifi-addresses.txt" 2>&1
+"$grim_bin" "$shot_dir/device-routes-wifi-details.png" > /dev/null 2>&1
+ipc menu close > /dev/null 2>&1
+sleep 1
 
 # A root query reaches what is saved, sunk or a favourite, never what is
 # merely nearby.
@@ -293,6 +306,15 @@ leg_device_routes_assert() {
     || fail "the real password never reached connected:true: $(cat "$p-wifi-connected.json")"
   "$jq_bin" -e '.checked | index("wifi.net.FORMALTEST") != null' "$p-wifi-ticked.json" > /dev/null \
     || fail "the connected network carries no tick: $(cat "$p-wifi-ticked.json")"
+  grep -q '^ok$' "$p-wifi-into.txt" || fail "menu into on the network answered: $(cat "$p-wifi-into.txt")"
+  "$jq_bin" -e '.token[-1] == "FORMALTEST" and .ids[0:2] == ["wifi.details.security", "wifi.details.signal"]
+      and .drawn[0].value == "WPA2 Personal" and (.drawn[1].value | test("^[0-9]+%$"))' "$p-wifi-details.json" > /dev/null \
+    || fail "→ on the network did not list its security and signal: $("$jq_bin" -c '{token, drawn}' "$p-wifi-details.json")"
+  local drawn_ips real_ips
+  drawn_ips=$("$jq_bin" -r '.drawn[] | select(.id | startswith("wifi.details.address.")) | .value' "$p-wifi-details.json" | sort)
+  real_ips=$(sort "$p-wifi-addresses.txt")
+  [ "$drawn_ips" = "$real_ips" ] || fail "the details' IP addresses ($drawn_ips) are not wlan0's ($real_ips)"
+  echo "SMOKE_DEVICE_ROUTES_WIFI_DETAILS $("$jq_bin" -c '[.drawn[] | [.label, .value]]' "$p-wifi-details.json")"
   "$jq_bin" -e 'any(.[]; .id == "wifi.net.FORMALTEST" and .checked == true)' "$p-root-wifi.json" > /dev/null \
     || fail "a root query did not reach the ticked saved network: $(cat "$p-root-wifi.json")"
   "$jq_bin" -e 'any(.[]; .id == "wifi.net.FORMALTEST-EAP") | not' "$p-root-nearby.json" > /dev/null \
@@ -329,7 +351,7 @@ leg_device_routes_assert() {
   grep -qF 'radio.result.' "$p-root-jazz.json" \
     && fail "a station search result reached the root: $(cat "$p-root-jazz.json")"
 
-  for f in wifi-list wifi-masked wifi-wrong wifi-connected wifi-hint audio bluetooth radio; do
+  for f in wifi-list wifi-masked wifi-wrong wifi-connected wifi-details wifi-hint audio bluetooth radio; do
     [ -s "$p-$f.png" ] || fail "no $f frame"
     n=${f^^}
     echo "SMOKE_DEVICE_ROUTES_${n//-/_} $p-$f.png"

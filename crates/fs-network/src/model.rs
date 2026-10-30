@@ -141,6 +141,22 @@ impl Security {
         }
     }
 
+    /// The class as the network panel and the launcher name it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Wpa3SuiteB192 => "WPA3 Enterprise 192-bit",
+            Self::Sae => "WPA3 Personal",
+            Self::Wpa2Eap => "WPA2 Enterprise",
+            Self::Wpa2Psk => "WPA2 Personal",
+            Self::WpaEap => "WPA Enterprise",
+            Self::WpaPsk => "WPA Personal",
+            Self::Wep => "WEP",
+            Self::Owe => "Enhanced Open",
+            Self::Open => "Open",
+            Self::Unknown => "Unknown",
+        }
+    }
+
     /// From a saved profile's `802-11-wireless-security` key-mgmt.
     pub(crate) fn from_key_mgmt(key_mgmt: &str) -> Self {
         match key_mgmt {
@@ -166,6 +182,9 @@ pub struct WifiNetwork {
     pub known: bool,
     pub visible: bool,
     pub state: ConnectionState,
+    /// The device's IPv4 addresses as `address/prefix`, on the network it
+    /// is connected to; empty on every other.
+    pub addresses: Vec<String>,
 }
 
 impl WifiNetwork {

@@ -22,6 +22,7 @@ const DEVICE_INTERFACE: &str = "org.freedesktop.NetworkManager.Device";
 const WIRELESS_INTERFACE: &str = "org.freedesktop.NetworkManager.Device.Wireless";
 const ACCESS_POINT_INTERFACE: &str = "org.freedesktop.NetworkManager.AccessPoint";
 const ACTIVE_INTERFACE: &str = "org.freedesktop.NetworkManager.Connection.Active";
+const IP4_INTERFACE: &str = "org.freedesktop.NetworkManager.IP4Config";
 
 /// Longest a connect waits for the device to reach a final state. NetworkManager
 /// gives up on a bad passphrase well inside this; DHCP is the slow case.
@@ -237,6 +238,8 @@ struct WifiDevice {
     active_ap: Option<OwnedObjectPath>,
     /// The saved profile the device's active connection runs, with its state.
     active: Option<(OwnedObjectPath, ConnectionState)>,
+    /// Its IP4Config's addresses as `address/prefix`.
+    addresses: Vec<String>,
 }
 
 impl NetworkManager {
@@ -689,11 +692,19 @@ impl NetworkManager {
             let state = ConnectionState::from_active_state(get(&props, "State").unwrap_or(0));
             active = Some((saved, state));
         }
+        let mut addresses = Vec::new();
+        if let Some(path) = get::<OwnedObjectPath>(&device_props, "Ip4Config")
+            && path.as_str() != "/"
+            && let Ok(props) = self.props(&path, IP4_INTERFACE).await
+        {
+            addresses = address_data(&props);
+        }
         Ok(WifiDevice {
             device,
             access_points,
             active_ap: get(&wireless_props, "ActiveAccessPoint").filter(|p: &OwnedObjectPath| p.as_str() != "/"),
             active,
+            addresses,
         })
     }
 }
@@ -738,6 +749,7 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
                 known: false,
                 visible: true,
                 state: ConnectionState::Disconnected,
+                addresses: Vec::new(),
             }),
         }
     }
@@ -762,10 +774,44 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
                 known: true,
                 visible: false,
                 state: running.unwrap_or(ConnectionState::Disconnected),
+                addresses: Vec::new(),
             }),
         }
     }
+    for row in rows.iter_mut().filter(|r| r.connected()) {
+        row.addresses = wifi.addresses.clone();
+    }
     rows
+}
+
+/// An IP4Config's `AddressData` (`aa{sv}`) as `address/prefix`, in its
+/// order.
+fn address_data(props: &HashMap<String, OwnedValue>) -> Vec<String> {
+    fn plain<'a, 'b>(v: &'a Value<'b>) -> &'a Value<'b> {
+        match v {
+            Value::Value(inner) => plain(inner),
+            v => v,
+        }
+    }
+    let Some(Value::Array(items)) = props.get("AddressData").map(|v| plain(v)) else {
+        return Vec::new();
+    };
+    items
+        .inner()
+        .iter()
+        .filter_map(|item| {
+            let Value::Dict(d) = plain(item) else { return None };
+            let (mut address, mut prefix) = (None, None);
+            for (k, v) in d.iter() {
+                match (plain(k), plain(v)) {
+                    (Value::Str(k), Value::Str(a)) if k.as_str() == "address" => address = Some(a.to_string()),
+                    (Value::Str(k), Value::U32(p)) if k.as_str() == "prefix" => prefix = Some(*p),
+                    _ => {}
+                }
+            }
+            Some(format!("{}/{}", address?, prefix?))
+        })
+        .collect()
 }
 
 fn row_is_active(row: &WifiNetwork, wifi: &WifiDevice) -> bool {
@@ -872,6 +918,7 @@ mod tests {
             access_points: vec![ap(1, "home", 40), ap(2, "cafe", 55)],
             active_ap: None,
             active: None,
+            addresses: Vec::new(),
         };
         let mut reading = Reading { wifi_enabled: true, profiles: Vec::new(), devices: vec![ReadDevice::Wifi(wifi)] };
         let ap1 = "/org/freedesktop/NetworkManager/AccessPoint/1";
@@ -891,6 +938,7 @@ mod tests {
             access_points: vec![ap(1, "home", 40), ap(2, "home", 77), ap(3, "cafe", 55)],
             active_ap: None,
             active: None,
+            addresses: Vec::new(),
         };
         let rows = wifi_networks(&wifi, &[]);
         assert_eq!(rows.len(), 2);
@@ -905,6 +953,7 @@ mod tests {
             active_ap: Some(active.path.clone()),
             access_points: vec![active, ap(2, "home", 90)],
             active: None,
+            addresses: Vec::new(),
         };
         let rows = wifi_networks(&wifi, &[]);
         assert_eq!(rows[0].signal.as_percent(), 40);
@@ -918,6 +967,7 @@ mod tests {
             access_points: vec![ap(1, "cafe", 55)],
             active_ap: None,
             active: Some((saved.clone(), ConnectionState::Connecting)),
+            addresses: Vec::new(),
         };
         let rows = wifi_networks(&wifi, &[(saved, profile("home"))]);
         let home = rows.iter().find(|r| r.ssid == "home").unwrap();
@@ -935,6 +985,7 @@ mod tests {
             access_points: vec![ap(1, "cafe", 30), ap(2, "home", 20), ap(3, "street", 70)],
             active_ap: None,
             active: None,
+            addresses: Vec::new(),
         };
         let profiles = vec![
             (path("/org/freedesktop/NetworkManager/Settings/1"), profile("home")),
@@ -953,9 +1004,26 @@ mod tests {
             access_points: vec![ap(1, "home", 60)],
             active_ap: None,
             active: Some((saved.clone(), ConnectionState::Connected)),
+            addresses: vec!["10.0.0.5/24".into()],
         };
-        let rows = wifi_networks(&wifi, &[(saved, profile("home"))]);
+        let rows = wifi_networks(&WifiDevice { access_points: vec![ap(1, "home", 60), ap(2, "cafe", 70)], ..wifi }, &[(saved, profile("home"))]);
         assert!(rows[0].known && rows[0].connected());
+        assert_eq!(rows[0].addresses, ["10.0.0.5/24"]);
+        assert!(rows[1].addresses.is_empty());
+    }
+
+    #[test]
+    fn address_data_reads_each_address_and_its_prefix() {
+        let entry = |a: &str, p: u32| {
+            let mut m: HashMap<String, Value<'static>> = HashMap::new();
+            m.insert("address".into(), Value::Value(Box::new(Value::from(a.to_owned()))));
+            m.insert("prefix".into(), Value::Value(Box::new(Value::U32(p))));
+            m
+        };
+        let data = Value::from(vec![entry("192.168.4.20", 24), entry("10.1.2.3", 8)]);
+        let props: HashMap<String, OwnedValue> = [("AddressData".to_owned(), OwnedValue::try_from(data).unwrap())].into();
+        assert_eq!(address_data(&props), ["192.168.4.20/24", "10.1.2.3/8"]);
+        assert!(address_data(&HashMap::new()).is_empty());
     }
 
     #[test]

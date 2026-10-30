@@ -124,6 +124,9 @@ pub const ROUTE_ICON_PREFIXES: &[(&str, &str)] = &[
     ("audio.input.", "mic"),
     ("radio.fav.", "radio"),
     ("radio.result.", "radio"),
+    ("wifi.details.security", "shield"),
+    ("wifi.details.signal", "signal"),
+    ("wifi.details.address.", "network"),
 ];
 
 /// "" means "this row has no named icon": the caller draws the node's own

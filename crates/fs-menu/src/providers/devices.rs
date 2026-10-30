@@ -36,6 +36,10 @@ pub struct WifiNetwork {
     pub signal: f64,
     /// Overrides `signal` when the source carries its own 0..1 fraction.
     pub signal_strength: Option<f64>,
+    /// Its security class as NetworkManager reads it (`WPA2 Personal`).
+    pub security: String,
+    /// The device's addresses on it, `address/prefix`, while connected.
+    pub addresses: Vec<String>,
 }
 
 /// `LiveMenuSources.wifi`: the device and radio flags, the scanned networks,
@@ -134,13 +138,33 @@ fn wifi_row(st: &WifiState, n: WifiNetwork) -> Node {
         local_only: !n.known,
         section: Some(if n.known { "Saved" } else { "Nearby" }.to_string()),
         actions: vec![ActionEntry::new("panel", "Open network panel", "@ipc:panel.open:network")],
-        ..Node::new(format!("wifi.net.{}", id_part(&n.name)), n.name.clone(), Kind::Action)
+        ..Node::new(format!("{WIFI_NET_PREFIX}{}", id_part(&n.name)), n.name.clone(), Kind::Action)
     };
     if n.known {
         row.alternate = Some(format!("@ipc:wifi.forget:{}", n.name));
         row.alternate_label = Some("Forget".to_string());
     }
     row
+}
+
+/// A Wi-Fi network row's id starts with this.
+const WIFI_NET_PREFIX: &str = "wifi.net.";
+
+pub fn is_wifi_network(node: &Node) -> bool {
+    node.kind == Kind::Action && node.id.starts_with(WIFI_NET_PREFIX)
+}
+
+/// What → on a network lists: its security, its signal while an access
+/// point broadcasts it, and each address the device holds on it while
+/// connected. Each a line with its value trailing, nothing to run.
+pub fn wifi_details(n: &WifiNetwork) -> Vec<Node> {
+    let line = |key: &str, label: &str, value: String| Node { meta: Some(value), ..Node::new(format!("wifi.details.{key}"), label, Kind::Note) };
+    let signal = if n.in_range { format!("{}%", (n.signal_strength() * 100.0).round()) } else { "Not in range".to_owned() };
+    let mut rows = vec![line("security", "Security", n.security.clone()), line("signal", "Signal", signal)];
+    if n.connected {
+        rows.extend(n.addresses.iter().enumerate().map(|(i, a)| line(&format!("address.{i}"), "IP address", a.clone())));
+    }
+    rows
 }
 
 /// `LiveMenuSources.bluetooth`.

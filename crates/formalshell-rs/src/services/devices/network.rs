@@ -49,6 +49,10 @@ pub struct Row {
     pub in_range: bool,
     /// 0 to 1.
     pub signal: f64,
+    /// `Security::label`'s name for its class.
+    pub security: String,
+    /// The device's addresses on it, `address/prefix`, while connected.
+    pub addresses: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -270,6 +274,8 @@ fn view(i: &Inner) -> Network {
             enterprise: w.security.is_enterprise(),
             in_range: w.visible || w.connected(),
             signal: w.signal.as_fraction(),
+            security: w.security.label().to_owned(),
+            addresses: w.addresses.clone(),
         })
         .collect();
     n
