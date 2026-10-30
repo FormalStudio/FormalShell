@@ -199,6 +199,10 @@ impl Bar {
         let before = self.thickness();
         self.collapsed = collapsed;
         self.strip_key = None;
+        // The rail draws no minimap for a cursor to stand on.
+        if let Some(sb) = self.sidebar.as_mut().filter(|_| collapsed) {
+            sb.map.cursor = None;
+        }
         before != self.thickness()
     }
 
@@ -958,8 +962,8 @@ impl Bar {
     }
 
     pub fn click(&mut self, i: usize, button: Button, x: f64, y: f64, store: &Store) -> Action {
-        if let Some(sb) = &self.sidebar {
-            return if button == Button::Left { sb.action(i, &self.output) } else { Action::None };
+        if let Some(sb) = &mut self.sidebar {
+            return if button == Button::Left { sb.clicked(x, y, &self.output) } else { Action::None };
         }
         let env = Env { store, edge: self.edge, output: &self.output };
         let s = &mut self.slots[i];
@@ -970,7 +974,8 @@ impl Bar {
     }
 
     pub fn wheel(&mut self, i: usize, vertical: f64, sideways: f64, store: &Store) -> Action {
-        if self.sidebar.is_some() {
+        if let Some(sb) = &mut self.sidebar {
+            sb.wheel(i, vertical);
             return Action::None;
         }
         let env = Env { store, edge: self.edge, output: &self.output };

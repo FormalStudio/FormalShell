@@ -19,7 +19,12 @@
 # layout, three windows on workspace 4, one column each: the first icon
 # dragged past the last moves its column to the tape's end (e f d by x,
 # where a swap would give f e d), with a frame mid-drag and one after; then
-# `sidebar focus` and Shift+Left carry that column back one (e d f). Each window is
+# `sidebar focus` and Shift+Left carry that column back one (e d f). Then
+# the launcher open under `sidebar focus` closing (`menu status`) with the
+# cursor up, and `sidebar collapse` taking the cursor down. Then 26
+# more workspaces: the map showing fewer rows than it has, every row hit
+# above the foot's buttons, and a real wheel notch over it moving the
+# first row shown. Each window is
 # matched by its address (`sidebar status` ids carry no `0x`). The
 # cursor's frame, the carried one, the mid-drag and the dropped ones are
 # pulled for reading.
@@ -163,6 +168,31 @@ sleep 0.5
 sleep 1.5
 "$hyprctl_bin" -j clients > "${minimap_clients[10]}" 2>&1
 "$wtype_bin" -k Escape
+sleep 0.5
+$ipc call menu toggle > /dev/null 2>&1
+sleep 1
+$ipc call sidebar focus > /dev/null 2>&1
+sleep 0.5
+$ipc call menu status > "$shot_dir/minimap-menu-status.json" 2>&1
+$ipc call sidebar status > "$shot_dir/minimap-focus-over-menu.json" 2>&1
+$ipc call sidebar collapse > /dev/null 2>&1
+sleep 1
+$ipc call sidebar status > "$shot_dir/minimap-collapsed.json" 2>&1
+$ipc call sidebar expand > /dev/null 2>&1
+for n in \$(seq 5 30); do
+  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-mm-\$n sh -c 'sleep 300']==], { workspace = '\$n silent' })" > /dev/null 2>&1
+done
+sleep 3
+$ipc call sidebar status > "$shot_dir/minimap-crowded.json" 2>&1
+"$grim_bin" "$shot_dir/minimap-crowded.png" > /dev/null 2>&1
+read -r rx ry <<< "\$(centre row:0)"
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+"$wlrctl_bin" pointer move "\$rx" "\$ry" > /dev/null 2>&1
+sleep 0.3
+"$wlrctl_bin" pointer scroll 15 0 > /dev/null 2>&1
+sleep 0.8
+$ipc call sidebar status > "$shot_dir/minimap-scrolled.json" 2>&1
+"$grim_bin" "$shot_dir/minimap-scrolled.png" > /dev/null 2>&1
 EOS
   hypr_exec_once "bash $script"
 }
@@ -243,4 +273,18 @@ leg_minimap_assert() {
       10) [ "$order" = "e d f" ] || fail "minimap: Shift+Left did not carry d's column back one: $order" ;;
     esac
   done
+  "$jq_bin" -e '.isOpen == false' "$shot_dir/minimap-menu-status.json" > /dev/null \
+    || fail "minimap: sidebar focus left the launcher open: $(cat "$shot_dir/minimap-menu-status.json")"
+  "$jq_bin" -e '.cursor != null' "$shot_dir/minimap-focus-over-menu.json" > /dev/null \
+    || fail "minimap: sidebar focus over the launcher put no cursor up"
+  "$jq_bin" -e '.collapsed and .cursor == null' "$shot_dir/minimap-collapsed.json" > /dev/null \
+    || fail "minimap: collapsing kept the minimap cursor: $(cat "$shot_dir/minimap-collapsed.json")"
+  echo "SMOKE_MINIMAP_CROWDED $shot_dir/minimap-crowded.png"
+  echo "SMOKE_MINIMAP_SCROLLED $shot_dir/minimap-scrolled.png"
+  "$jq_bin" -e '(.rows | length) + 1 > .shown.count and .shown.first == 0
+      and ([.hits[] | select(.on | startswith("row:") or . == "new") | .y + .h] | max)
+        <= ([.hits[] | select(.on == "summon:system") | .y] | min)' "$shot_dir/minimap-crowded.json" > /dev/null \
+    || fail "minimap: the crowded map was not cut to the rows that fit above the foot: $(cat "$shot_dir/minimap-crowded.json")"
+  "$jq_bin" -e '.shown.first > 0' "$shot_dir/minimap-scrolled.json" > /dev/null \
+    || fail "minimap: a wheel notch over the map did not scroll its rows: $("$jq_bin" -c .shown "$shot_dir/minimap-scrolled.json")"
 }

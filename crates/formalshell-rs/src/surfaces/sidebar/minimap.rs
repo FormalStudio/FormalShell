@@ -32,6 +32,15 @@ use crate::ui::{El, Ink, Variant, w};
 
 /// Icons a row lays across before it wraps.
 pub const ACROSS: usize = 3;
+
+/// Icons a row's grid holds across `width` (the column inside its
+/// padding), past a label `label` wide.
+pub fn across(theme: &Theme, width: f64, label: f64) -> usize {
+    let s = &theme.space;
+    let room = width - 2.0 * s.md - 2.0 * s.control_padding_x - s.sm - label;
+    let cell = icon_size(theme) + 2.0 * s.xs;
+    (((room + s.xxs) / (cell + s.xxs)).floor() as usize).clamp(1, ACROSS)
+}
 /// The cap past which a row stops listing windows.
 const MAX: usize = 64;
 /// How long a dropped order holds against a compositor that disagrees.
@@ -97,7 +106,15 @@ pub struct Map {
     glides: HashMap<String, (Animated, Animated)>,
     /// Each slot as last laid out, by window id, and each row's box.
     slots: HashMap<String, IRect>,
-    row_boxes: Vec<IRect>,
+    row_boxes: Vec<(usize, IRect)>,
+    /// The rows shown when not all fit the column: from `first`, `fits`
+    /// of them (the empty row counted). `seen` is the current row last
+    /// brought into view, so a wheel scroll is not undone every pass.
+    pub first: usize,
+    pub fits: usize,
+    seen: Option<usize>,
+    /// Icons across a row's grid, set for the column's width.
+    pub across: usize,
     nodes: Vec<NodeId>,
 }
 
@@ -267,6 +284,8 @@ impl Map {
         let col: Vec<El> = shown
             .iter()
             .enumerate()
+            .skip(self.first)
+            .take(self.fits)
             .map(|(i, ids)| {
                 let (label, current) = match self.rows.get(i) {
                     Some(r) => (r.label.clone(), r.current),
@@ -274,10 +293,48 @@ impl Map {
                 };
                 let on = if i == last { "new".to_owned() } else { format!("row:{i}") };
                 let stop = if i == last { "new".to_owned() } else { format!("r:{i}") };
-                row(theme, &label, current, target == Some(i), ids, |id| self.win(id), size).on(on).stop(stop)
+                row(theme, &label, current, target == Some(i), ids, |id| self.win(id), size, self.across.max(1)).on(on).stop(stop)
             })
             .collect();
         w::column(s.xxs, col).fill()
+    }
+
+    /// The widest ordinal a row's label carries.
+    pub fn widest_label(&self) -> String {
+        let mut labels: Vec<String> = self.rows.iter().map(|r| r.label.clone()).collect();
+        labels.push(self.next_idx().to_string());
+        labels.into_iter().max_by_key(|l| l.chars().count()).unwrap_or_default()
+    }
+
+    /// The rows in the list, the empty one counted.
+    pub fn len(&self) -> usize {
+        self.shown().len()
+    }
+
+    /// `first` moved so the row that matters is shown: the cursor's or a
+    /// drag's target always, the current row when it changes.
+    pub fn keep_in_view(&mut self) {
+        let total = self.len();
+        let fits = self.fits.clamp(1, total.max(1));
+        let current = self.rows.iter().position(|r| r.current);
+        let held = self.cursor.as_ref().map(|c| c.row).or_else(|| self.drag.as_ref().and_then(|d| d.target).map(|t| t.0));
+        let row = held.or(current.filter(|c| self.seen != Some(*c)));
+        self.seen = current;
+        if let Some(r) = row {
+            if r < self.first {
+                self.first = r;
+            } else if r >= self.first + fits {
+                self.first = r + 1 - fits;
+            }
+        }
+        self.first = self.first.min(total.saturating_sub(fits));
+    }
+
+    /// A wheel notch over the map, `dy` rows on.
+    pub fn scroll(&mut self, dy: i32) -> bool {
+        let before = self.first;
+        self.first = self.first.saturating_add_signed(dy as isize).min(self.len().saturating_sub(self.fits.max(1)));
+        before != self.first
     }
 
     /// A press on hit `on` at `at`: a window's icon may be lifted.
@@ -307,8 +364,8 @@ impl Map {
     fn target(&self, at: (f64, f64)) -> Option<(usize, usize)> {
         let d = self.drag.as_ref()?;
         let (x, y) = at;
-        let last = self.row_boxes.len().checked_sub(1)?;
-        let t = self.row_boxes.iter().position(|b| (y as i32) < b.bottom()).unwrap_or(last);
+        let last = self.row_boxes.last()?.0;
+        let t = self.row_boxes.iter().find(|(_, b)| (y as i32) < b.bottom()).map_or(last, |(i, _)| *i);
         let mut order = self.hold.as_ref().map_or_else(|| self.base(), |(o, _)| o.clone());
         let row = order.get_mut(t)?;
         row.retain(|id| *id != d.id);
@@ -353,7 +410,15 @@ impl Map {
     #[allow(clippy::too_many_arguments)]
     pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, now: Instant) -> bool {
         self.slots = hits.iter().filter_map(|h| Some((h.on.as_ref()?.strip_prefix("window:")?.to_owned(), h.rect))).collect();
-        self.row_boxes = hits.iter().filter(|h| h.on.as_deref().is_some_and(|on| on == "new" || on.starts_with("row:"))).map(|h| h.rect).collect();
+        let last = self.rows.len();
+        self.row_boxes = hits
+            .iter()
+            .filter_map(|h| {
+                let on = h.on.as_deref()?;
+                let i = if on == "new" { last } else { on.strip_prefix("row:")?.parse().ok()? };
+                Some((i, h.rect))
+            })
+            .collect();
         let ms = Clock::Spatial.ms(theme) * kit.motion_scale;
         let lifted = self.drag.as_ref().filter(|d| d.lifted).map(|d| (d.id.clone(), d.at));
         self.glides.retain(|id, _| self.slots.contains_key(id) || lifted.as_ref().is_some_and(|l| &l.0 == id));
@@ -523,7 +588,7 @@ fn drop_on(order: &[Vec<String>], from: usize, id: &str, t: usize, j: usize, idx
 }
 
 #[allow(clippy::too_many_arguments)]
-fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String], win: impl Fn(&str) -> Option<&'a Win>, size: f64) -> El {
+fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String], win: impl Fn(&str) -> Option<&'a Win>, size: f64, across: usize) -> El {
     let s = &theme.space;
     let icons: Vec<El> = ids
         .iter()
@@ -533,6 +598,7 @@ fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String],
                 return slot.cell_state(|c| {
                     c.chip = true;
                     c.small = true;
+                    c.tight = true;
                     c.ghost = true;
                 });
             }
@@ -540,6 +606,7 @@ fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String],
             slot.cell_state(|c| {
                 c.chip = true;
                 c.small = true;
+                c.tight = true;
                 c.ghost = !focused;
                 c.selected = focused;
             })
@@ -549,7 +616,7 @@ fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String],
         })
         .collect();
     let label = w::caption(label.to_owned()).mono().ink(if current { Ink::Fg } else { Ink::Dim });
-    let body = w::row(s.sm, vec![label, w::grid(ACROSS, s.xxs, icons).fill()]);
+    let body = w::row(s.sm, vec![label, w::grid(across, s.xxs, icons).fill()]);
     w::cell(body).ghost().selected(current).cell_state(|c| c.hovered = lit).interactive().fill()
 }
 

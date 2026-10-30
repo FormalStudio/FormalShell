@@ -11,21 +11,50 @@ use crate::services::compositor::{self, Command};
 
 impl App {
     /// The minimap's cursor up with the keyboard, or both given back.
-    /// False under the bar layout.
+    /// False under the bar layout. Taking it closes the launcher and the
+    /// panels, which would otherwise keep the keys.
     pub fn sidebar_focus(&mut self, on: bool) -> bool {
+        if self.bar.sidebar.is_none() {
+            return false;
+        }
+        if on {
+            if self.launcher.open {
+                self.menu_close();
+            }
+            self.close_panels();
+        }
         let Some(sb) = self.bar.sidebar.as_mut() else { return false };
         if on {
             sb.map.take_keyboard();
         } else {
             sb.map.cursor = None;
         }
-        if let Some(s) = &self.bar_surface {
-            s.layer.set_keyboard_interactivity(if on { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
-            s.layer.commit();
-        }
+        self.sync_sidebar_keys();
         self.bar_dirty = true;
         self.request_paint();
         true
+    }
+
+    /// The live bar's layer holds the keyboard exactly while the minimap's
+    /// cursor is up. A bar re-created (collapse, a new edge) takes it over;
+    /// one rebuilt has no cursor and lets go; a bar hidden under fullscreen
+    /// gives the cursor up with its layer.
+    pub(super) fn sync_sidebar_keys(&mut self) {
+        let current = self.bar_surface.as_ref().map(|s| s.layer.wl_surface().clone());
+        if current.is_none()
+            && let Some(sb) = self.bar.sidebar.as_mut()
+        {
+            sb.map.cursor = None;
+        }
+        let want = current.is_some() && self.bar.sidebar.as_ref().is_some_and(|sb| sb.map.cursor.is_some());
+        let have = self.sidebar_keys.is_some() && self.sidebar_keys == current;
+        if want != have
+            && let Some(s) = &self.bar_surface
+        {
+            s.layer.set_keyboard_interactivity(if want { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
+            s.layer.commit();
+        }
+        self.sidebar_keys = if want { current } else { None };
     }
 
     /// A key while the sidebar holds the keyboard; false when it does not.

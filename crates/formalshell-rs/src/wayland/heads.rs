@@ -149,6 +149,10 @@ impl App {
         if self.heads.get(i).is_none_or(|h| h.spare.is_none()) || self.bar_busy() {
             return false;
         }
+        if let Some(sb) = self.bar.sidebar.as_mut() {
+            sb.map.cursor = None;
+        }
+        self.sync_sidebar_keys();
         let mut spare = self.heads[i].spare.take().expect("checked");
         std::mem::swap(&mut self.bar, &mut spare.bar);
         std::mem::swap(&mut self.bar_surface, &mut spare.surface);

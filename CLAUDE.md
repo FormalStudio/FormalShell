@@ -817,8 +817,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   moving nothing and holding no order. Last the scrolling layout, three
   windows on workspace 4: the first icon dragged past the last moving its
   column to the tape's end (`e f d` by x, where a swap gives `f e d`) and
-  Shift+Left carrying it back one (`e d f`). The cursor's, the carried, the
-  mid-drag, the dropped and both column frames pulled.
+  Shift+Left carrying it back one (`e d f`). Then `sidebar focus` over an
+  open launcher closing it with the cursor up, `sidebar collapse` taking
+  the cursor down, and 26 more workspaces: the map cut to the rows that
+  fit above the foot's buttons and a real wheel notch moving the first
+  row shown. The cursor's, the carried, the mid-drag, the dropped, both
+  column and the crowded frames pulled.
 - `mirror.sh` `--mirror`: the launcher's camera mirror against two v4l2loopback
   nodes (built by the VM rig, loaded by the leg) fed by real ffmpeg
   writers, a colour pattern on video10 and a GREY one on video11 standing in

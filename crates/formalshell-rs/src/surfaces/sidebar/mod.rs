@@ -38,6 +38,8 @@ pub struct Sidebar {
     pub wake: Option<Instant>,
     /// The column's box in the window, as last drawn.
     strip: IRect,
+    /// The control a press landed on, by its `on`.
+    pressed: Option<String>,
 }
 
 impl Sidebar {
@@ -50,6 +52,7 @@ impl Sidebar {
             animating: false,
             wake: None,
             strip: IRect::new(0, 0, 0, 0),
+            pressed: None,
         }
     }
 
@@ -85,13 +88,32 @@ impl Sidebar {
         let top = if collapsed {
             rail(theme, store, &self.map)
         } else {
+            self.map.fits = usize::MAX;
+            let label = crate::ui::measure(&w::caption(self.map.widest_label()).mono(), width, theme, kit).0;
+            self.map.across = minimap::across(theme, width, label);
+            let fits = |cards: &[(&str, El)], kit: &mut Kit| {
+                let col = w::column(s.section_gap, cards.iter().map(|(_, c)| c.clone()).collect());
+                crate::ui::measure(&col, width, theme, kit).1 <= room
+            };
             let mut cards = cards(theme, store, &self.map, now);
             for drop in DROPS {
-                let col = w::column(s.section_gap, cards.iter().map(|(_, c)| c.clone()).collect());
-                if crate::ui::measure(&col, width, theme, kit).1 <= room {
+                if fits(&cards, kit) {
                     break;
                 }
                 cards.retain(|(name, _)| *name != drop);
+            }
+            // Time and Spaces alone still too tall: the minimap shows the
+            // rows that fit and scrolls through the rest.
+            let mut n = self.map.len();
+            while !fits(&cards, kit) && n > 1 {
+                n -= 1;
+                self.map.fits = n;
+                self.map.keep_in_view();
+                let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
+                cards = self::cards(theme, store, &self.map, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
+            }
+            if self.map.fits == usize::MAX {
+                self.map.first = 0;
             }
             kept = cards.iter().map(|(n, _)| *n).collect();
             w::column(s.section_gap, cards.into_iter().map(|(_, c)| c).collect())
@@ -157,10 +179,19 @@ impl Sidebar {
         (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on.as_str()))).map(|i| self.anchor(i))
     }
 
-    /// A press on hit `i`, which may start a drag on the minimap.
+    /// A wheel over hit `i`: on the minimap it scrolls its rows.
+    pub fn wheel(&mut self, i: usize, notches: f64) -> bool {
+        let on_map = self.hit_at(i).and_then(|h| h.on.as_deref()).is_some_and(|on| on == "new" || on.starts_with("row:") || on.starts_with("window:"));
+        on_map && notches != 0.0 && self.map.scroll(notches.signum() as i32)
+    }
+
+    /// A press on hit `i`, which may start a drag on the minimap. The
+    /// control is kept by what it does, since a redraw before the release
+    /// can renumber the hits.
     pub fn press(&mut self, i: usize, at: (f64, f64)) {
-        let on = self.hit_at(i).and_then(|h| h.on.clone()).unwrap_or_default();
-        self.map.press(&on, at);
+        let on = self.hit_at(i).and_then(|h| h.on.clone());
+        self.map.press(on.as_deref().unwrap_or_default(), at);
+        self.pressed = on;
     }
 
     /// The button let go: the drop's commands, or `None` for a click.
@@ -168,9 +199,15 @@ impl Sidebar {
         self.map.release(at, self.strip, now)
     }
 
-    pub fn action(&self, i: usize, output: &str) -> Action {
-        let Some(on) = self.hit_at(i).and_then(|h| h.on.clone()) else { return Action::None };
-        action(&on, output, &self.map)
+    /// A click let go at `(x, y)`: what the pressed control asks for, when
+    /// the pointer is still on that control.
+    pub fn clicked(&mut self, x: f64, y: f64, output: &str) -> Action {
+        let pressed = self.pressed.take();
+        let here = self.hit(x, y).and_then(|i| self.hit_at(i)).and_then(|h| h.on.clone());
+        match pressed.filter(|on| Some(on) == here.as_ref()) {
+            Some(on) => action(&on, output, &self.map),
+            None => Action::None,
+        }
     }
 
     /// `sidebar status`'s answer; `hits` are every control's rect in the
@@ -184,6 +221,7 @@ impl Sidebar {
             "rows": self.map.status(),
             "cursor": self.map.cursor_status(),
             "minimap": self.map.drag_status(),
+            "shown": {"first": self.map.first, "count": self.map.fits.min(self.map.len())},
             "hits": self
                 .top
                 .hits

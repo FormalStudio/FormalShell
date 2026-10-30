@@ -238,6 +238,8 @@ pub struct App {
     peek: preview::State,
     pub bar: Bar,
     bar_surface: Option<Surface>,
+    /// The bar layer that holds the keyboard for the minimap, if one does.
+    sidebar_keys: Option<wl_surface::WlSurface>,
     /// The output the live bar is on.
     bar_wl: Option<wl_output::WlOutput>,
     heads: Vec<heads::Head>,
@@ -359,6 +361,7 @@ impl App {
             peek: preview::State::default(),
             bar,
             bar_surface: None,
+            sidebar_keys: None,
             bar_wl: None,
             heads: Vec::new(),
             zones: Vec::new(),
@@ -1552,6 +1555,7 @@ impl App {
         if self.bar_dirty || (stepping && !self.bar.step_in_place(now)) {
             self.bar.layout(&self.store, now);
             self.bar_dirty = false;
+            self.sync_sidebar_keys();
         }
         if let Some(s) = &mut self.bar_surface {
             s.present(&mut self.bar.scene, animating, &qh);
@@ -2043,6 +2047,10 @@ impl App {
                         let action = self.bar.wheel(i, v, h, &self.store);
                         let anchor = self.bar.slot_anchor(i);
                         self.act(action, anchor);
+                        if self.bar.sidebar.is_some() {
+                            self.bar_dirty = true;
+                            self.request_paint();
+                        }
                     }
                 }
             }

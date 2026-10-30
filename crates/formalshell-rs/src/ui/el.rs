@@ -118,6 +118,9 @@ pub struct CellState {
     pub token: bool,
     /// A sidebar card, in the `card` box with its own padding all round.
     pub card: bool,
+    /// `xs` either side instead of the control padding: an icon chip in a
+    /// narrow grid.
+    pub tight: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

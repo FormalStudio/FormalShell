@@ -143,6 +143,8 @@ fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
         s.md
     } else if state.token {
         s.sm
+    } else if state.tight {
+        s.xs
     } else {
         s.control_padding_x
     }
