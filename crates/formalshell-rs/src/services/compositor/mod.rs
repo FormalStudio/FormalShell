@@ -185,6 +185,11 @@ pub enum Command {
 
 static COMMANDS: OnceLock<async_channel::Sender<Command>> = OnceLock::new();
 
+/// The service has started, so [`send`] reaches it.
+pub fn ready() -> bool {
+    COMMANDS.get().is_some()
+}
+
 /// Dropped when the service has not started.
 pub fn send(command: Command) {
     if let Some(tx) = COMMANDS.get() {

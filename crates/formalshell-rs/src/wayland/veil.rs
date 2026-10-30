@@ -66,6 +66,10 @@ pub(super) struct State {
     generation: u64,
     /// The pointer is still to be shown once the shell is up.
     reveal: bool,
+    /// The arrival has hidden the pointer: Hyprland 0.56 draws it at start
+    /// whatever the config's `cursor.invisible` says, and only a runtime
+    /// eval takes it away.
+    hidden: bool,
 }
 
 /// The first start for this compositor instance, marked so a restart
@@ -248,6 +252,10 @@ impl App {
             compositor::send(Command::Cursor { hidden: false });
         }
         let Some(phase) = self.veil.phase else { return };
+        if phase == Phase::Arriving && !self.veil.hidden && compositor::ready() {
+            self.veil.hidden = true;
+            compositor::send(Command::Cursor { hidden: true });
+        }
         if phase == Phase::Arriving && !self.veil.lifting {
             let bar = self.bar_surface.as_ref().map_or(self.bar.hidden(), |s| s.mapped);
             // With no picture to decode, the plain colour is the wallpaper.
