@@ -727,6 +727,7 @@ named in a log warning that the pin left them alone.
 
 ```sh
 fs wallpaper set /path/to/image.jpg
+fs wallpaper set sky   # the sky for the sun's position, see "Sky desktop"
 fs wallpaper get              # the current path
 fs theme mode toggle          # dark | light | toggle
 fs theme retheme              # run matugen again on the current wallpaper
@@ -976,6 +977,25 @@ and wins over the setting until you pick again.
 ```jsonc
 // ~/.config/formalshell/settings.json
 { "wallpaper": { "color": "orange" } }
+```
+
+### Sky desktop
+
+`wallpaper.color: "sky"` draws the sky for where the sun stands now: a
+gradient from the zenith at the top of the screen to the horizon at its
+foot, black at night, warm at the foot through the twilights and the low
+sun, blue through the day. The palette follows it the way it follows a
+picture. The sun is read off `location.latitude` and `location.longitude`
+(the same pair `theme.mode: "auto"` uses); with no location it rides the
+fallback window instead, up at 06:00 and down at 20:00. The sky moves in
+steps of two degrees of the sun's height, so it changes every ten minutes
+or so through the twilights and holds still through the day and the
+night; nothing redraws in between. `fs wallpaper set sky` picks it the
+way a picture is picked, saved in `state.json` over the setting.
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "wallpaper": { "color": "sky" }, "location": { "latitude": 52.37, "longitude": 4.9 } }
 ```
 
 ### Animated backdrop

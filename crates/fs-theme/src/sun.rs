@@ -91,26 +91,9 @@ pub fn local_minutes<Tz: TimeZone>(date: &DateTime<Tz>) -> f64 {
     date.hour() as f64 * 60.0 + date.minute() as f64 + date.second() as f64 / 60.0
 }
 
-/// `tz_offset_hours` is the offset the times come back in, hours east of
-/// UTC; `None` is the date's own local offset, which makes the pair read as
-/// wall clock. Returns `None` for coordinates outside the globe (or not
-/// finite).
-pub fn sun_times<Tz: TimeZone>(
-    date: &DateTime<Tz>,
-    latitude: f64,
-    longitude: f64,
-    tz_offset_hours: Option<f64>,
-) -> Option<SunTimes> {
-    if !latitude.is_finite() || !longitude.is_finite() {
-        return None;
-    }
-    if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
-        return None;
-    }
-
-    let tz_offset =
-        tz_offset_hours.unwrap_or_else(|| date.offset().fix().local_minus_utc() as f64 / 3600.0);
-    let julian_day = date_serial(date) + 2415018.5 - tz_offset / 24.0;
+/// The sun's declination in degrees and the equation of time in minutes
+/// for a Julian day, the spreadsheet's columns T and V.
+fn solar(julian_day: f64) -> (f64, f64) {
     let century = (julian_day - 2451545.0) / 36525.0;
     let mean_long = (280.46646 + century * (36000.76983 + century * 0.0003032)) % 360.0;
     let mean_anom = 357.52911 + century * (35999.05029 - 0.0001537 * century);
@@ -138,6 +121,29 @@ pub fn sun_times<Tz: TimeZone>(
                 - 0.5 * var_y * var_y * (4.0 * deg2rad(mean_long)).sin()
                 - 1.25 * eccentricity * eccentricity * (2.0 * deg2rad(mean_anom)).sin(),
         );
+    (declination, equation_of_time)
+}
+
+/// `tz_offset_hours` is the offset the times come back in, hours east of
+/// UTC; `None` is the date's own local offset, which makes the pair read as
+/// wall clock. Returns `None` for coordinates outside the globe (or not
+/// finite).
+pub fn sun_times<Tz: TimeZone>(
+    date: &DateTime<Tz>,
+    latitude: f64,
+    longitude: f64,
+    tz_offset_hours: Option<f64>,
+) -> Option<SunTimes> {
+    if !latitude.is_finite() || !longitude.is_finite() {
+        return None;
+    }
+    if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+        return None;
+    }
+
+    let tz_offset =
+        tz_offset_hours.unwrap_or_else(|| date.offset().fix().local_minus_utc() as f64 / 3600.0);
+    let (declination, equation_of_time) = solar(date_serial(date) + 2415018.5 - tz_offset / 24.0);
     let cos_hour_angle = deg2rad(DARK_ZENITH_DEG).cos()
         / (deg2rad(latitude).cos() * deg2rad(declination).cos())
         - deg2rad(latitude).tan() * deg2rad(declination).tan();
@@ -174,6 +180,42 @@ pub fn sun_times<Tz: TimeZone>(
 pub fn fallback_dark<Tz: TimeZone>(now: &DateTime<Tz>) -> bool {
     let hour = now.hour();
     !(FALLBACK_LIGHT_HOUR..FALLBACK_DARK_HOUR).contains(&hour)
+}
+
+/// The sun's height above the geometric horizon in degrees at `at`, off the
+/// same spreadsheet: its hour angle from the true solar time at that
+/// instant. No refraction correction, which only lifts the sun near the
+/// horizon by under a degree. `None` for coordinates outside the globe.
+pub fn elevation<Tz: TimeZone>(at: &DateTime<Tz>, latitude: f64, longitude: f64) -> Option<f64> {
+    if !latitude.is_finite() || !longitude.is_finite() {
+        return None;
+    }
+    if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+        return None;
+    }
+    let utc = at.with_timezone(&chrono::Utc);
+    let julian_day = utc.timestamp_millis() as f64 / 86_400_000.0 + 2440587.5;
+    let (declination, equation_of_time) = solar(julian_day);
+    let utc_minutes = utc.hour() as f64 * 60.0 + utc.minute() as f64 + (utc.second() as f64 + utc.nanosecond() as f64 / 1e9) / 60.0;
+    let true_solar = (utc_minutes + equation_of_time + 4.0 * longitude).rem_euclid(MINUTES_PER_DAY);
+    let hour_angle = true_solar / 4.0 - 180.0;
+    let (lat, dec) = (deg2rad(latitude), deg2rad(declination));
+    let cos_zenith = lat.sin() * dec.sin() + lat.cos() * dec.cos() * deg2rad(hour_angle).cos();
+    Some(90.0 - rad2deg(cos_zenith.clamp(-1.0, 1.0).acos()))
+}
+
+/// A stand-in elevation with no location, on the fallback window's own
+/// clock: up at 06:00, 50 degrees at 13:00, down at 20:00, and 30 below
+/// at 01:00.
+pub fn fallback_elevation<Tz: TimeZone>(at: &DateTime<Tz>) -> f64 {
+    let (rise, set) = (FALLBACK_LIGHT_HOUR as f64 * 60.0, FALLBACK_DARK_HOUR as f64 * 60.0);
+    let m = local_minutes(at);
+    let pi = std::f64::consts::PI;
+    if (rise..set).contains(&m) {
+        return 50.0 * (pi * (m - rise) / (set - rise)).sin();
+    }
+    let night = MINUTES_PER_DAY - (set - rise);
+    -30.0 * (pi * (m - set).rem_euclid(MINUTES_PER_DAY) / night).sin()
 }
 
 /// `times` `None` means no location, so the fallback window answers instead.
@@ -636,5 +678,37 @@ mod tests {
     fn hhmm_empty_for_no_time() {
         assert_eq!(hhmm(None), "");
         assert_eq!(hhmm(Some(f64::NAN)), "");
+    }
+
+    /// Amsterdam at the June solstice: 90 - 52.37 + 23.44 at solar noon,
+    /// and the refracted zenith the times are cut at on either side of it.
+    #[test]
+    fn the_elevation_meets_the_times_at_the_horizon() {
+        let (lat, lon) = (52.37, 4.9);
+        let noon = (0..1440)
+            .map(|m| Utc.with_ymd_and_hms(2026, 6, 21, 0, 0, 0).unwrap() + Duration::minutes(m))
+            .map(|t| elevation(&t, lat, lon).unwrap())
+            .fold(f64::MIN, f64::max);
+        assert!((noon - 61.07).abs() < 0.2, "{noon}");
+        let day = Utc.with_ymd_and_hms(2026, 6, 21, 12, 0, 0).unwrap();
+        let times = sun_times(&day, lat, lon, Some(0.0)).unwrap();
+        for minutes in [times.sunrise_minutes.unwrap(), times.sunset_minutes.unwrap()] {
+            let at = Utc.with_ymd_and_hms(2026, 6, 21, 0, 0, 0).unwrap() + Duration::milliseconds((minutes * 60000.0) as i64);
+            let e = elevation(&at, lat, lon).unwrap();
+            assert!((e + 0.833).abs() < 0.3, "{minutes}: {e}");
+        }
+        let midnight = elevation(&Utc.with_ymd_and_hms(2026, 12, 21, 23, 40, 0).unwrap(), lat, lon).unwrap();
+        assert!((midnight + 61.07).abs() < 0.3, "{midnight}");
+        assert_eq!(elevation(&day, 91.0, 0.0), None);
+    }
+
+    #[test]
+    fn the_fallback_sun_rides_the_fallback_window() {
+        let at = |h, m| local(2026, 3, 1, h, m);
+        assert!(fallback_elevation(&at(6, 0)).abs() < 1e-9);
+        assert!(fallback_elevation(&at(20, 0)).abs() < 1e-9);
+        assert!((fallback_elevation(&at(13, 0)) - 50.0).abs() < 1e-9);
+        assert!((fallback_elevation(&at(1, 0)) + 30.0).abs() < 1e-9);
+        assert!(fallback_elevation(&at(5, 59)) < 0.0 && fallback_elevation(&at(6, 1)) > 0.0);
     }
 }

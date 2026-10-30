@@ -481,7 +481,12 @@ runs = ["--power"]
 # Wallpaper and theme
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/wallpaper.rs", "crates/formalshell-rs/src/services/theme.rs", "crates/formalshell-rs/src/ipc/theme.rs"]
-runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki", "--glass"]
+runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki", "--glass", "--sky"]
+
+# The sky wallpaper and the sun it is drawn for.
+[[rule]]
+paths = ["crates/fs-theme/src/sky.rs", "crates/fs-theme/src/sun.rs"]
+runs = ["--sky", "--theme-auto"]
 
 # Glass: the compositor's blur switch deciding the cards' opacity.
 [[rule]]

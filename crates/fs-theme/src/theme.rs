@@ -223,19 +223,26 @@ pub fn removed_keys(get: impl Fn(&str) -> Option<Value>) -> Vec<&'static str> {
     REMOVED_KEYS.into_iter().filter(|k| get(k).is_some()).collect()
 }
 
+/// The `wallpaper.color` that asks for the sky rather than a colour.
+pub const SKY: &str = "sky";
+
 /// tsubi.club's five swatches (`--color-1` to `--color-5`), the names
 /// `wallpaper.color` takes besides a hex.
 pub const WALLPAPER_COLORS: [(&str, &str); 5] =
     [("sage", "#a1c8bc"), ("purple", "#402484"), ("green", "#68bc64"), ("silver", "#bdc3c9"), ("orange", "#ff8000")];
 
 /// `wallpaper.color` as written: a `#rrggbb` hex (lowercased) or one of
-/// [`WALLPAPER_COLORS`]' names gives that colour, `false` or `null` the
-/// picture, and anything else is malformed, `None`.
+/// [`WALLPAPER_COLORS`]' names gives that colour, [`SKY`] the sky for the
+/// sun's position (`sky`), `false` or `null` the picture, and anything else
+/// is malformed, `None`.
 pub fn wallpaper_color(value: &Value) -> Option<Option<String>> {
     match value {
         Value::Bool(false) | Value::Null => Some(None),
         Value::String(s) => {
             let s = s.trim().to_lowercase();
+            if s == SKY {
+                return Some(Some(s));
+            }
             if let Some((_, hex)) = WALLPAPER_COLORS.iter().find(|(name, _)| *name == s) {
                 return Some(Some((*hex).to_owned()));
             }
@@ -715,6 +722,7 @@ mod tests {
         let color = |v: Value| Theme::resolve(make_get(json!({ "wallpaper": { "color": v } })), &sentinel()).wallpaper_color;
         assert_eq!(color(json!("#FF8000")).as_deref(), Some("#ff8000"));
         assert_eq!(color(json!("sage")).as_deref(), Some("#a1c8bc"));
+        assert_eq!(color(json!(" Sky ")).as_deref(), Some("sky"));
         assert_eq!(color(json!(false)), None);
         assert_eq!(color(json!(null)), None);
         for junk in [json!("#40248"), json!("402484"), json!("violet"), json!(true), json!(4204164)] {

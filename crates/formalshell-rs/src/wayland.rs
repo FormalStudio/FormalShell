@@ -2607,10 +2607,7 @@ pub fn theme_inputs(app: &App) {
     if !config.loaded || !state.loaded {
         return;
     }
-    let location = match (config.f64("location.latitude"), config.f64("location.longitude")) {
-        (Some(lat), Some(lon)) => Some((lat, lon)),
-        _ => None,
-    };
+    let location = theme::location(config);
     // Off settings.json itself rather than the resolved theme, which may
     // not have taken this settings change yet.
     let settings = config.settings();
@@ -2618,10 +2615,11 @@ pub fn theme_inputs(app: &App) {
     let color = get("wallpaper.color").and_then(|v| fs_theme::theme::wallpaper_color(&v)).flatten();
     theme::send_inputs(theme::Inputs {
         settings: settings.clone(),
-        wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper),
+        wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper, app.store.sky_step()),
         mode: state.data.mode.clone(),
         mode_override: theme::parse_override(&state.data.mode_override),
         location,
+        sky_at: app.store.theme.sky_at,
     });
 }
 

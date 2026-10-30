@@ -1079,6 +1079,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the bar opens in its own line read off the shell's numbers as the card's
   rect plus a `radiusXl` fillet at either end, and the pixel where the line
   stops and the arc starts.
+- `sky.sh` `--sky`: the sky wallpaper (`wallpaper.color: "sky"`) over a
+  pinned Amsterdam: the session starting on the sky for the sun now
+  (`debug dump`'s `sky` block located, unpinned, a next change), a picture
+  over IPC taking it down and `wallpaper set sky` putting it back with
+  state.json's `wallpaperColor` reading `sky`, then `debug skyAt` pinning
+  noon, the low sun, dusk and night of one day in UTC: each its step in
+  the dump and its own frame (blue down the screen, the foot warmer than
+  the top twice, near black), theme.json's primary differing between noon
+  and the low sun, and no desktop commit in six seconds under a sky that
+  did not move.
 - `sleep.sh` `--sleep`: `sudo systemctl suspend` with the session unlocked,
   the real logind path with only the kernel's freeze stubbed, the lock read
   back after wake: the stub's millisecond stamp has to come after the shell

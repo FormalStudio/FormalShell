@@ -526,9 +526,15 @@ logical pixels, its fill the ink) into the wallpaper's pixels by
 wallpaper from the same geometry. All four default false.
 `wallpaper.color` makes the desktop a flat
 field of that colour: `services/wallpaper.rs`'s `source` is the one answer
-to what the desktop shows (the picture's path or `color:#rrggbb`, the
-picker's choice in `state.json` first), and the backdrops, the lock, the
-band's paint, the greeter and matugen (`color hex` on it) all read that.
+to what the desktop shows (the picture's path, `color:#rrggbb` or
+`sky:<degrees>`, the picker's choice in `state.json` first), and the
+backdrops, the lock, the band's paint, the greeter and matugen (`color hex`
+on a colour) all read that. `"sky"` is the sky for the sun's height
+(`fs-theme/src/sky.rs`, the elevation off `sun.rs`), cut into two-degree
+steps held below astronomical night and above 24 degrees: the theme engine
+publishes the step, sleeps until the next one (ten minutes at most, its
+timer standing still through a suspend), and hands matugen the sky drawn
+small as a picture.
 `wallpaper.animate` puts the shard sculpture
 (`fs-chrome/src/shards.rs`, rasterised by `shards.rs`) on a Background
 layer of its own over each output's wallpaper at its own pixels, with the

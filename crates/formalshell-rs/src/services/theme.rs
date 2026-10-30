@@ -34,7 +34,10 @@
 //!
 //! A flat desktop (`wallpaper.color`) seeds the scheme with
 //! `matugen color hex` on that colour, the probe skipped: there is nothing
-//! to rank.
+//! to rank. The sky (`wallpaper.color: "sky"`) is a picture to matugen: the
+//! engine draws the step the sun stands in to `sky.png` in the state dir
+//! and runs both passes on it. It also owns the sky's clock, publishing
+//! the step and sleeping until the next one ([`Sky`]).
 //!
 //! A wallpaper whose path names a pinned palette (flexoki, zenbones) still
 //! runs matugen, but nothing reads its scheme: every template is rewritten
@@ -78,6 +81,57 @@ pub struct State {
     pub blur: bool,
     pub json_present: bool,
     pub schedule: Option<SunTimes>,
+    /// The sun as the engine last read it for a sky desktop, none while
+    /// the desktop is something else.
+    pub sky: Option<Sky>,
+    /// `debug skyAt`: the instant the sky is read at instead of now, in
+    /// unix ms.
+    pub sky_at: Option<i64>,
+}
+
+/// Where the sun stood for the sky the desktop shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sky {
+    pub step: i32,
+    pub elevation: f64,
+    /// Off `location.latitude/longitude` rather than the fallback window.
+    pub located: bool,
+    /// Read at `debug skyAt`'s instant rather than now.
+    pub pinned: bool,
+}
+
+impl Sky {
+    fn instant(pin: Option<i64>) -> (chrono::DateTime<Local>, bool) {
+        match pin.and_then(|ms| chrono::TimeZone::timestamp_millis_opt(&Local, ms).single()) {
+            Some(at) => (at, true),
+            None => (Local::now(), false),
+        }
+    }
+
+    /// The sky at `pin`, else now.
+    pub fn read(location: Option<(f64, f64)>, pin: Option<i64>) -> Self {
+        let (at, pinned) = Self::instant(pin);
+        let (elevation, located) = fs_theme::sky::elevation(&at, location);
+        Self { step: fs_theme::sky::bucket(elevation), elevation, located, pinned }
+    }
+
+    /// When the step changes next, unix ms: none while the clock is pinned
+    /// and where the step holds all day. A day's search at most.
+    pub fn next_ms(&self, location: Option<(f64, f64)>) -> Option<i64> {
+        if self.pinned {
+            return None;
+        }
+        fs_theme::sky::next_change(&Local::now(), location).map(|t| t.timestamp_millis())
+    }
+}
+
+/// The longest the engine sleeps between two looks at a sky: the timer
+/// runs on the monotonic clock, which stands still through a suspend.
+const SKY_LOOK: Duration = Duration::from_secs(600);
+
+/// `location.latitude/longitude`, both or neither.
+pub fn location(config: &super::config::State) -> Option<(f64, f64)> {
+    config.f64("location.latitude").zip(config.f64("location.longitude"))
 }
 
 impl Default for State {
@@ -86,7 +140,7 @@ impl Default for State {
         let settings = Value::Object(Map::new());
         let mut theme = Theme::resolve(get(&settings), &palette);
         theme.surface_opacity = 1.0;
-        Self { palette, settings, theme, blur: false, json_present: false, schedule: None }
+        Self { palette, settings, theme, blur: false, json_present: false, schedule: None, sky: None, sky_at: None }
     }
 }
 
@@ -97,6 +151,7 @@ pub enum Diff {
     Schedule(Option<SunTimes>),
     /// The compositor's own blur switch, read on start and every reload.
     Blur(bool),
+    Sky(Option<Sky>),
 }
 
 impl State {
@@ -111,6 +166,10 @@ impl State {
             }
             Diff::Schedule(s) if s != self.schedule => {
                 self.schedule = s;
+                return true;
+            }
+            Diff::Sky(s) if s != self.sky => {
+                self.sky = s;
                 return true;
             }
             _ => return false,
@@ -238,6 +297,8 @@ pub struct Inputs {
     pub mode_override: Option<Override>,
     /// Latitude and longitude, when one is known.
     pub location: Option<(f64, f64)>,
+    /// [`State::sky_at`].
+    pub sky_at: Option<i64>,
 }
 
 /// The state.json writes the engine asks for.
@@ -351,6 +412,7 @@ struct Engine {
     requests: async_channel::Sender<Request>,
     inputs: RefCell<Option<Inputs>>,
     times: RefCell<Option<SunTimes>>,
+    sky: Cell<Option<Sky>>,
     retheme: async_channel::Sender<()>,
     reloading: Rc<Cell<bool>>,
 }
@@ -411,6 +473,7 @@ pub async fn run(ctx: Ctx, env: Env, inputs: async_channel::Receiver<Inputs>, re
         requests,
         inputs: RefCell::new(None),
         times: RefCell::new(None),
+        sky: Cell::new(None),
         retheme,
         reloading: Rc::new(Cell::new(false)),
     });
@@ -423,9 +486,11 @@ pub async fn run(ctx: Ctx, env: Env, inputs: async_channel::Receiver<Inputs>, re
     });
 
     let mut tick: Option<Instant> = None;
+    let mut sky_tick: Option<Instant> = None;
     loop {
+        let deadline = tick.into_iter().chain(sky_tick).min();
         let timer = async {
-            match tick {
+            match deadline {
                 Some(at) => {
                     Timer::at(at).await;
                     None
@@ -434,11 +499,14 @@ pub async fn run(ctx: Ctx, env: Env, inputs: async_channel::Receiver<Inputs>, re
             }
         };
         let next = future::or(async { Some(inputs.recv().await.ok()) }, timer).await;
+        let fired = next.is_none();
         match next {
             Some(None) => return,
             Some(Some(new)) => engine.receive(new).await,
-            None => engine.apply_mode_key(),
+            None if tick.is_some_and(|at| at <= Instant::now()) => engine.apply_mode_key(),
+            None => {}
         }
+        sky_tick = engine.sync_sky(fired || sky_tick.is_none(), sky_tick);
         let auto = engine.inputs.borrow().as_ref().is_some_and(|i| mode_key(&i.settings) == "auto");
         tick = match (auto, tick) {
             (false, _) => None,
@@ -473,7 +541,9 @@ impl Engine {
         let path = self.env.theme_json();
         let present = blocking(&self.ctx, move || Ok(path.exists())).await.unwrap_or(false);
         self.ctx.publish(store::Diff::Theme(Diff::JsonPresent(present)));
-        if !present {
+        // A sky has moved on since the theme.json it left behind.
+        let sky = self.snapshot().is_some_and(|i| super::wallpaper::sky(&i.wallpaper).is_some());
+        if !present || sky {
             let _ = self.retheme.try_send(());
         } else if let Some(inputs) = self.snapshot() {
             // Another session (Plasma's gtkconfig) rewrites color-scheme to
@@ -487,6 +557,36 @@ impl Engine {
 
     fn snapshot(&self) -> Option<Inputs> {
         self.inputs.borrow().clone()
+    }
+
+    /// Reads the sun for a sky desktop and publishes the step it stands in
+    /// when it moved, whose new source comes back as new inputs and
+    /// rethemes. Returns when to look again: the step's own next change, or
+    /// [`SKY_LOOK`] if that is further off. `fresh` asks for that again, and
+    /// a receive that moved nothing the sky reads keeps `held`.
+    fn sync_sky(&self, fresh: bool, held: Option<Instant>) -> Option<Instant> {
+        let inputs = self.snapshot()?;
+        if super::wallpaper::sky(&inputs.wallpaper).is_none() {
+            if self.sky.take().is_some() {
+                self.ctx.publish(store::Diff::Theme(Diff::Sky(None)));
+            }
+            return None;
+        }
+        let last = self.sky.get();
+        let read = Sky::read(inputs.location, inputs.sky_at);
+        let same = last.is_some_and(|l| (l.step, l.located, l.pinned) == (read.step, read.located, read.pinned));
+        if same && !fresh {
+            return held;
+        }
+        if !same {
+            self.sky.set(Some(read));
+            self.ctx.publish(store::Diff::Theme(Diff::Sky(Some(read))));
+        }
+        if read.pinned {
+            return None;
+        }
+        let wait = read.next_ms(inputs.location).map_or(SKY_LOOK, |at| Duration::from_millis((at - Local::now().timestamp_millis()).max(1000) as u64));
+        Some(Instant::now() + wait.min(SKY_LOOK))
     }
 
     fn request(&self, r: Request) {
@@ -677,6 +777,21 @@ impl Engine {
         self.reload_compositor();
     }
 
+    /// The sky as a picture matugen can open, at a size its quantizer
+    /// samples down to anyway.
+    async fn sky_picture(&self, source: &str) -> Result<String, String> {
+        let (path, source) = (self.env.state_dir.join("sky.png"), source.to_owned());
+        let out = path.clone();
+        blocking(&self.ctx, move || {
+            std::fs::create_dir_all(out.parent().unwrap_or(Path::new("/")))?;
+            let img = super::wallpaper::image(&source, 320, 180).ok_or_else(|| io::Error::other("no sky"))?;
+            img.save(&out).map_err(io::Error::other)
+        })
+        .await
+        .map_err(|e| format!("failed to write sky.png: {e}"))?;
+        Ok(path.to_string_lossy().into_owned())
+    }
+
     async fn matugen_run(&self, inputs: &Inputs) -> Result<(), String> {
         let (user, drop_ins) = (self.env.user_config(), self.env.drop_in_dir());
         let (user_text, drop_in) = blocking(&self.ctx, move || Ok(read_user_configs(&user, &drop_ins)))
@@ -705,6 +820,10 @@ impl Engine {
         .await
         .map_err(|e| format!("failed to write matugen-merged.toml: {e}"))?;
         let merged = self.env.merged_config().to_string_lossy().into_owned();
+        let picture = match super::wallpaper::sky(&inputs.wallpaper) {
+            Some(_) => self.sky_picture(&inputs.wallpaper).await?,
+            None => inputs.wallpaper.clone(),
+        };
 
         let seed = pin.map(|p| p.source.as_str()).or_else(|| super::wallpaper::flat_hex(&inputs.wallpaper).map(|h| h.trim_start_matches('#')));
         let args: Vec<String> = match seed {
@@ -714,7 +833,7 @@ impl Engine {
                 // command, and -d is what prints the ranking (-q would
                 // silence it).
                 let probe = crate::services::proc::command(&self.env.matugen)
-                    .args(["-d", "image", inputs.wallpaper.as_str(), "--dry-run", "--prefer", "saturation"])
+                    .args(["-d", "image", picture.as_str(), "--dry-run", "--prefer", "saturation"])
                     .stdin(std::process::Stdio::null())
                     .output()
                     .await
@@ -734,7 +853,7 @@ impl Engine {
                     Some(s) => vec!["--prefer".into(), "closest-to-fallback".into(), "--fallback-color".into(), s],
                     None => vec!["--prefer".into(), "saturation".into()],
                 };
-                ["image", inputs.wallpaper.as_str(), "-m", inputs.mode.as_str(), "-c", merged.as_str()]
+                ["image", picture.as_str(), "-m", inputs.mode.as_str(), "-c", merged.as_str()]
                     .map(str::to_owned)
                     .into_iter()
                     .chain(pick)
@@ -966,7 +1085,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
     }
 
     fn inputs(settings: Value, wallpaper: &str, mode: &str) -> Inputs {
-        Inputs { settings, wallpaper: wallpaper.into(), mode: mode.into(), mode_override: None, location: None }
+        Inputs { settings, wallpaper: wallpaper.into(), mode: mode.into(), mode_override: None, location: None, sky_at: None }
     }
 
     #[derive(Default)]

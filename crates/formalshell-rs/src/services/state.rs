@@ -326,14 +326,15 @@ pub fn set(fields: Vec<Field>) {
 
 /// Mode goes first so a retheme the wallpaper change triggers already reads the
 /// final mode. `mode` is the picker's Dark/Light set, ignored when it is
-/// neither. A flat source sets the colour and keeps the picture under it; a
-/// picture sets itself over any colour.
+/// neither. A flat or sky source sets the colour and keeps the picture
+/// under it; a picture sets itself over any colour.
 pub fn set_wallpaper(path: &str, mode: Option<&str>) {
     let mut fields = Vec::new();
     if let Some(mode @ ("dark" | "light")) = mode {
         fields.push(Field::Mode(mode.into()));
     }
-    match super::wallpaper::flat_hex(path) {
+    let sky = (path == fs_theme::theme::SKY || super::wallpaper::sky(path).is_some()).then_some(fs_theme::theme::SKY);
+    match super::wallpaper::flat_hex(path).or(sky) {
         Some(hex) => fields.push(Field::WallpaperColor(hex.into())),
         None => fields.extend([Field::Wallpaper(path.into()), Field::WallpaperColor(Value::Bool(false))]),
     }
@@ -562,15 +563,17 @@ mod tests {
         set_wallpaper("/w.png", Some("light"));
         set_wallpaper("/x.png", Some("sepia"));
         set_wallpaper("color:#ff8000", None);
+        set_wallpaper("sky:-4", None);
         let picture = |p: &str| [Field::Wallpaper(p.into()), Field::WallpaperColor(Value::Bool(false))];
         assert_eq!(rx.try_recv().unwrap(), [vec![Field::Mode("light".into())], picture("/w.png").to_vec()].concat());
         assert_eq!(rx.try_recv().unwrap(), picture("/x.png").to_vec());
         assert_eq!(rx.try_recv().unwrap(), vec![Field::WallpaperColor(json!("#ff8000"))]);
+        assert_eq!(rx.try_recv().unwrap(), vec![Field::WallpaperColor(json!("sky"))]);
     }
 
     #[test]
     fn a_wallpaper_colour_is_a_hex_a_name_or_false() {
-        for (text, want) in [("\"#a1c8bc\"", json!("#a1c8bc")), ("false", json!(false)), ("\"Orange\"", json!("#ff8000")), ("\"#40248\"", Value::Null), ("true", Value::Null), ("3", Value::Null)] {
+        for (text, want) in [("\"#a1c8bc\"", json!("#a1c8bc")), ("false", json!(false)), ("\"Orange\"", json!("#ff8000")), ("\"sky\"", json!("sky")), ("\"#40248\"", Value::Null), ("true", Value::Null), ("3", Value::Null)] {
             let d = Data::parse(&format!(r#"{{"wallpaperColor":{text}}}"#)).unwrap();
             assert_eq!(d.wallpaper_color, want, "{text}");
         }

@@ -192,8 +192,8 @@ fn session_dirs(settings: &Value) -> Vec<PathBuf> {
     dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| sessions::DIRS.iter().map(PathBuf::from).collect())
 }
 
-/// The desktop's source as this login screen can know it: `wallpaper.color`,
-/// else the mirrored `wallpaper` in the state dir,
+/// The desktop's source as this login screen can know it: `wallpaper.color`
+/// (the sky as it stands at login), else the mirrored `wallpaper` in the state dir,
 /// else `greeter.wallpaper`. The user's own picker choice lives in a
 /// state.json the greeter never reads.
 fn wallpaper_source(settings: &Value, env: &theme::Env) -> Option<String> {
@@ -205,7 +205,9 @@ fn wallpaper_source(settings: &Value, env: &theme::Env) -> Option<String> {
     } else {
         get("greeter.wallpaper").and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned))
     };
-    let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""));
+    let location = get("location.latitude").and_then(|v| v.as_f64()).zip(get("location.longitude").and_then(|v| v.as_f64()));
+    let sky = theme::Sky::read(location, None).step;
+    let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""), sky);
     (!source.is_empty()).then_some(source)
 }
 

@@ -136,7 +136,14 @@ impl Store {
     /// What the desktop shows ([`wallpaper::source`]).
     pub fn desktop(&self) -> String {
         let data = &self.state.data;
-        wallpaper::source(self.theme.theme.wallpaper_color.as_deref(), &data.wallpaper_color, &data.wallpaper)
+        wallpaper::source(self.theme.theme.wallpaper_color.as_deref(), &data.wallpaper_color, &data.wallpaper, self.sky_step())
+    }
+
+    /// The step a sky desktop shows: the engine's last reading, else the
+    /// sun read now, until the engine has looked.
+    pub fn sky_step(&self) -> i32 {
+        let read = || theme::Sky::read(theme::location(&self.config), self.theme.sky_at);
+        self.theme.sky.unwrap_or_else(read).step
     }
 
     /// `None` when the diff left the slice as it was, so nothing redraws.

@@ -32,6 +32,7 @@ pub fn target() -> Target<App> {
             Function { name: "joinClear", params: &[], ret: Type::String, call: join_clear },
             Function { name: "motionScale", params: &[("percent", Type::Int)], ret: Type::String, call: motion_scale },
             Function { name: "query", params: &[("q", Type::String)], ret: Type::String, call: query },
+            Function { name: "skyAt", params: &[("instant", Type::String)], ret: Type::String, call: sky_at },
             Function { name: "r0Spinner", params: &[("on", Type::Bool)], ret: Type::String, call: r0_spinner },
             Function { name: "r0Panel", params: &[("action", Type::String)], ret: Type::String, call: r0_panel },
             Function { name: "r0Scrim", params: &[("on", Type::Bool)], ret: Type::String, call: r0_scrim },
@@ -86,7 +87,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         })
         .collect();
     let phone = &app.store.info.iphone;
-    let dump = json!({
+    let mut dump = json!({
         "compositor": crate::services::compositor::kind().as_str(),
         "available": c.available,
         "workspaces": c.workspaces,
@@ -145,6 +146,8 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             },
         },
     });
+    // Past json!'s recursion limit inside the literal.
+    dump["sky"] = sky(app);
     text(dump.to_string())
 }
 
@@ -173,6 +176,38 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Value {
     }
     app.motion_scale = percent as f64 / 100.0;
     app.bar.kit.motion_scale = app.motion_scale;
+    ok()
+}
+
+/// The sun the sky desktop is drawn for, null while the desktop is
+/// something else.
+fn sky(app: &App) -> serde_json::Value {
+    let Some(s) = app.store.theme.sky else { return serde_json::Value::Null };
+    let location = crate::services::theme::location(&app.store.config);
+    json!({
+        "source": app.store.desktop(),
+        "step": s.step,
+        "elevation": (s.elevation * 100.0).round() / 100.0,
+        "located": s.located,
+        "pinned": s.pinned,
+        "nextMs": s.next_ms(location),
+    })
+}
+
+/// Reads the sky at an RFC 3339 instant instead of now; an empty one goes
+/// back to the clock.
+fn sky_at(app: &mut App, args: &[Value]) -> Value {
+    let arg = args[0].str();
+    let pin = if arg.is_empty() {
+        None
+    } else {
+        match chrono::DateTime::parse_from_rfc3339(arg) {
+            Ok(at) => Some(at.timestamp_millis()),
+            Err(e) => return text(format!("error: {e}")),
+        }
+    };
+    app.store.theme.sky_at = pin;
+    crate::wayland::theme_inputs(app);
     ok()
 }
 

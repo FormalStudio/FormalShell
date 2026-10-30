@@ -93,6 +93,8 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.restyle_cards();
             app.toasts_changed();
             lights_palette(app);
+            // A sky step the engine published moves the desktop's source.
+            theme_inputs(app);
         }
         Topic::Devices => {
             if app.battery_watch.check(&mut app.store) {

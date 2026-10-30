@@ -67,9 +67,15 @@ pub fn sample(request: Request) {
 /// The band's samples off the decoded wallpaper, drawn the way
 /// the desktop crops it: cover, centred, nearest-neighbour.
 fn read(request: &Request) -> Option<Profile> {
-    let img = match super::wallpaper::flat(&request.wallpaper) {
-        Some([r, g, b]) => image::RgbaImage::from_pixel(16, 16, image::Rgba([r, g, b, 255])),
-        None => image::open(&request.wallpaper).ok()?.to_rgba8(),
+    // A drawn field at the screen's own shape, so the cover crop below
+    // keeps all of a sky's rows.
+    let img = match super::wallpaper::generated(&request.wallpaper) {
+        true => {
+            let (sw, sh) = request.screen;
+            let h = (SAMPLE_WIDTH as f64 * sh / sw.max(1.0)).round().clamp(1.0, 4096.0) as u32;
+            super::wallpaper::image(&request.wallpaper, SAMPLE_WIDTH, h)?
+        }
+        false => image::open(&request.wallpaper).ok()?.to_rgba8(),
     };
     let (iw, ih) = (img.width() as f64, img.height() as f64);
     let (sw, sh) = request.screen;

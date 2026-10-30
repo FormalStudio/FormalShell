@@ -15,6 +15,7 @@ pub mod gtk;
 pub mod icons;
 pub mod matugen;
 pub mod palette;
+pub mod sky;
 pub mod style;
 pub mod sun;
 pub mod theme;

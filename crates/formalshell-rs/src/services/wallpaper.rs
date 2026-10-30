@@ -5,8 +5,9 @@
 //! does. Each output's backdrop crossfades between two of these.
 //!
 //! What the desktop shows is a source, [`source`]'s one answer: the
-//! picture's path, or `color:#rrggbb` where `wallpaper.color` or the picker
-//! made it a flat field. Every reader of the wallpaper (the backdrops, the
+//! picture's path, `color:#rrggbb` where `wallpaper.color` or the picker
+//! made it a flat field, or `sky:<degrees>` where either asked for the sky
+//! (`fs_theme::sky`), the step the sun stands in. Every reader of the wallpaper (the backdrops, the
 //! lock, the band's paint, matugen, the greeter) takes the source.
 
 use std::path::{Path, PathBuf};
@@ -31,18 +32,39 @@ pub struct Picture {
 }
 
 const FLAT: &str = "color:";
+const SKY: &str = "sky:";
 
 /// What the desktop shows: the picker's last colour (`wallpaperColor` in
-/// state.json a hex), the picture when it last chose one (`false`), and with
-/// no choice `wallpaper.color` over the picture.
-pub fn source(color: Option<&str>, picked: &serde_json::Value, picture: &str) -> String {
+/// state.json a hex or `sky`), the picture when it last chose one
+/// (`false`), and with no choice `wallpaper.color` over the picture. `sky`
+/// is the step the sky stands in now.
+pub fn source(color: Option<&str>, picked: &serde_json::Value, picture: &str, sky: i32) -> String {
     use serde_json::Value;
     let color = match picked {
         Value::String(hex) => Some(hex.as_str()),
         Value::Bool(false) => None,
         _ => color,
     };
-    color.map_or_else(|| picture.to_owned(), flat_source)
+    match color {
+        Some(fs_theme::theme::SKY) => sky_source(sky),
+        Some(hex) => flat_source(hex),
+        None => picture.to_owned(),
+    }
+}
+
+/// The source for the sky at a step.
+pub fn sky_source(step: i32) -> String {
+    format!("{SKY}{step}")
+}
+
+/// A sky source's step, none for anything else.
+pub fn sky(source: &str) -> Option<i32> {
+    source.strip_prefix(SKY)?.parse().ok()
+}
+
+/// Whether the source is drawn by the shell rather than read off a file.
+pub fn generated(source: &str) -> bool {
+    flat(source).is_some() || sky(source).is_some()
 }
 
 /// The source for a flat field of `hex`.
@@ -68,6 +90,9 @@ pub fn image(source: &str, width: u32, height: u32) -> Option<image::RgbaImage> 
     if let Some([r, g, b]) = flat(source) {
         return Some(image::RgbaImage::from_pixel(width.max(1), height.max(1), image::Rgba([r, g, b, 255])));
     }
+    if let Some(step) = sky(source) {
+        return image::RgbaImage::from_raw(width.max(1), height.max(1), fs_theme::sky::paint(step, width, height));
+    }
     let img = image::ImageReader::open(source).ok()?.with_guessed_format().ok()?.decode().ok()?.to_rgba8();
     let (cx, cy, cw, ch) = cover_rect((img.width(), img.height()), (width, height));
     let crop = imageops::crop_imm(&img, cx, cy, cw, ch).to_image();
@@ -82,10 +107,10 @@ fn cover_rect((iw, ih): (u32, u32), (width, height): (u32, u32)) -> (u32, u32, u
     ((iw.saturating_sub(cw)) / 2, (ih.saturating_sub(ch)) / 2, cw.min(iw), ch.min(ih))
 }
 
-/// Where `formalshell-depth` keeps a picture's depth map, none for a flat
-/// field.
+/// Where `formalshell-depth` keeps a picture's depth map, none for a field
+/// the shell draws.
 pub fn depth_path(source: &str) -> Option<PathBuf> {
-    if source.is_empty() || flat_hex(source).is_some() {
+    if source.is_empty() || generated(source) {
         return None;
     }
     let path = Path::new(source);
@@ -352,12 +377,25 @@ mod tests {
 
     #[test]
     fn the_settings_colour_covers_the_picture_until_the_picker_says_otherwise() {
-        assert_eq!(source(Some("#402484"), &json!(null), "/w.png"), "color:#402484");
-        assert_eq!(source(None, &json!(null), "/w.png"), "/w.png");
-        assert_eq!(source(Some("#402484"), &json!(false), "/w.png"), "/w.png");
-        assert_eq!(source(None, &json!("#ff8000"), "/w.png"), "color:#ff8000");
-        assert_eq!(source(Some("#402484"), &json!("#a1c8bc"), ""), "color:#a1c8bc");
-        assert_eq!(source(Some("#402484"), &json!(3), "/w.png"), "color:#402484");
+        assert_eq!(source(Some("#402484"), &json!(null), "/w.png", 0), "color:#402484");
+        assert_eq!(source(None, &json!(null), "/w.png", 0), "/w.png");
+        assert_eq!(source(Some("#402484"), &json!(false), "/w.png", 0), "/w.png");
+        assert_eq!(source(None, &json!("#ff8000"), "/w.png", 0), "color:#ff8000");
+        assert_eq!(source(Some("#402484"), &json!("#a1c8bc"), "", 0), "color:#a1c8bc");
+        assert_eq!(source(Some("#402484"), &json!(3), "/w.png", 0), "color:#402484");
+        assert_eq!(source(Some("sky"), &json!(null), "/w.png", -4), "sky:-4");
+        assert_eq!(source(Some("sky"), &json!(false), "/w.png", -4), "/w.png");
+        assert_eq!(source(None, &json!("sky"), "/w.png", 12), "sky:12");
+    }
+
+    #[test]
+    fn a_sky_source_is_drawn_and_has_no_depth() {
+        assert_eq!(sky("sky:-4"), Some(-4));
+        assert_eq!(sky("/w/sky:2.png"), None);
+        assert!(generated("sky:6") && generated("color:#402484") && !generated("/w.png"));
+        assert_eq!(depth_path("sky:6"), None);
+        let p = render("sky:6", 4, 16, None, None).unwrap();
+        assert_eq!((p.width, p.height, p.bgra.len()), (4, 16, 256));
     }
 
     #[test]
