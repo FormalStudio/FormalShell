@@ -592,3 +592,8 @@ runs = ["--panel audio"]
 [[rule]]
 paths = ["dev/vm.sh"]
 runs = ["--wifi", "--menu"]
+
+# The sidebar: the bar's body under layout sidebar, its cards and minimap.
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/sidebar/", "crates/formalshell-rs/src/ipc/sidebar.rs", "dev/smoke.d/sidebar.sh"]
+runs = ["--sidebar", "--sidebar --light"]

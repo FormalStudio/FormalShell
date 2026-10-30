@@ -45,6 +45,7 @@ pub struct Data {
     pub overnight: Value,
     pub lights: Value,
     pub hdr: Value,
+    pub sidebar_collapsed: bool,
 }
 
 impl Default for Data {
@@ -66,6 +67,7 @@ impl Default for Data {
             overnight: Value::Null,
             lights: Value::Null,
             hdr: Value::Null,
+            sidebar_collapsed: false,
         }
     }
 }
@@ -90,6 +92,7 @@ pub enum Field {
     Overnight(Value),
     Lights(Value),
     Hdr(Value),
+    SidebarCollapsed(bool),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -114,12 +117,13 @@ impl Field {
             Field::Overnight(v) => data.overnight = v,
             Field::Lights(v) => data.lights = v,
             Field::Hdr(v) => data.hdr = v,
+            Field::SidebarCollapsed(v) => data.sidebar_collapsed = v,
         }
     }
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 16] {
+    fn fields(&self) -> [Field; 17] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
             Field::WallpaperColor(self.wallpaper_color.clone()),
@@ -137,6 +141,7 @@ impl Data {
             Field::Overnight(self.overnight.clone()),
             Field::Lights(self.lights.clone()),
             Field::Hdr(self.hdr.clone()),
+            Field::SidebarCollapsed(self.sidebar_collapsed),
         ]
     }
 
@@ -189,6 +194,7 @@ impl Data {
         data.overnight = take("overnight").unwrap_or(Value::Null);
         data.lights = take("lights").unwrap_or(Value::Null);
         data.hdr = take("hdr").unwrap_or(Value::Null);
+        data.sidebar_collapsed = typed(take("sidebarCollapsed")).unwrap_or(false);
         Ok(data)
     }
 
@@ -211,6 +217,7 @@ impl Data {
         map.insert("overnight".into(), self.overnight.clone());
         map.insert("lights".into(), self.lights.clone());
         map.insert("hdr".into(), self.hdr.clone());
+        map.insert("sidebarCollapsed".into(), self.sidebar_collapsed.into());
         let mut doc = Value::Object(map);
         sort_keys(&mut doc);
         let mut out = Vec::new();
@@ -456,7 +463,7 @@ mod tests {
         assert!(text.starts_with("{\n    \"abbreviations\": null,\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 16);
+        assert_eq!(keys.len(), 17);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -481,6 +488,7 @@ mod tests {
             overnight: json!({"backlight": 40}),
             lights: json!({"source": "palette"}),
             hdr: json!({"DP-1": {"prior": {}}}),
+            sidebar_collapsed: true,
         };
         assert_eq!(Data::parse(&data.to_text()).unwrap(), data);
     }

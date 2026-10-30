@@ -616,6 +616,32 @@ fs tray menucursor <delta>  # move the open menu's cursor
 fs tray menuactivate        # Enter on the cursor row
 ```
 
+## Sidebar
+
+`"layout": "sidebar"` swaps the bar for a 160 wide column of cards on a
+side edge, one per output: the time and date, a Spaces map with a row per
+workspace and its windows' icons, Activity while something runs, a
+notifications summary and now playing while a player exists. A status row
+at its foot opens the network and audio panels, the launcher's System
+route, and folds the column to a 48 wide rail. `bar.position` picks the
+edge: `left` (also what `top` and `bottom` give) or `right`. `bar.layout`
+and the frame are not read under it.
+
+```json
+{ "layout": "sidebar", "bar": { "position": "right" } }
+```
+
+A click on a window's icon focuses it; a click on a row focuses that
+workspace, and the empty row under the last opens the next one. Whether
+the column is folded lives in state.json, so it survives a restart:
+
+```sh
+fs sidebar toggle    # fold to the rail, or open it out
+fs sidebar collapse
+fs sidebar expand
+fs sidebar status    # {"collapsed":false,"edge":"left","width":160,"cards":[…],"rows":[…],"hits":[…]}
+```
+
 ## Theming
 
 Colors come out of your wallpaper, with no restart anywhere in the loop:

@@ -64,6 +64,11 @@ pub enum Action {
     Dnd(bool),
     /// The launcher, open or shut.
     Launcher,
+    /// The launcher opened on a route.
+    Summon(&'static str),
+    MediaPlayPause,
+    /// The sidebar folded to its rail, or opened out of it.
+    Sidebar(bool),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

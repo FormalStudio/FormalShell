@@ -21,12 +21,13 @@ use fs_chrome::types::{Edge, Insets, Region};
 use fs_theme::barpaint;
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
-use fs_theme::theme::{BarStyle, Theme};
+use fs_theme::theme::{BarStyle, Layout, Theme};
 use serde_json::{Value, json};
 use vello_cpu::kurbo::{Affine, Arc, BezPath, Point, Rect, RoundedRect, Shape, SvgArc, Vec2};
 
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
+use crate::surfaces::sidebar::Sidebar;
 use cell::{Action, Button, Env, Kit, Painter};
 use slot::Slot;
 
@@ -49,6 +50,9 @@ struct Style {
     inset: f64,
     gap: f64,
     frame: (bool, f64, f64),
+    /// `layout: sidebar`: its width open and as the rail, which take the
+    /// place of the cells' thickness.
+    sidebar: Option<(f64, f64)>,
 }
 
 impl Style {
@@ -61,7 +65,8 @@ impl Style {
             margin: s.bar_margin,
             inset: s.sm,
             gap: s.sm,
-            frame: (theme.frame_enabled(), theme.frame_thickness, theme.frame_radius),
+            frame: (theme.frame_enabled() && theme.layout != Layout::Sidebar, theme.frame_thickness, theme.frame_radius),
+            sidebar: (theme.layout == Layout::Sidebar).then_some((s.sidebar_width, s.sidebar_rail)),
         }
     }
 }
@@ -117,6 +122,10 @@ pub struct Bar {
     rebuilt: bool,
     /// Strip room as last laid out, for `bar room`.
     room: Room,
+    /// The card column drawn instead of cells under `layout: sidebar`.
+    pub sidebar: Option<Sidebar>,
+    /// The sidebar folded to its rail (state.json's `sidebarCollapsed`).
+    collapsed: bool,
 }
 
 #[derive(Default, Clone)]
@@ -155,6 +164,8 @@ impl Bar {
             born: Instant::now(),
             rebuilt: false,
             room: Room::default(),
+            sidebar: None,
+            collapsed: false,
         };
         let (w, h) = bar.placed_size(true);
         bar.scene = Scene::new(w, h);
@@ -179,6 +190,33 @@ impl Bar {
         }
     }
 
+    /// Folds the sidebar to its rail or opens it; true when its thickness
+    /// moved, which re-places the window.
+    pub fn set_collapsed(&mut self, collapsed: bool) -> bool {
+        if collapsed == self.collapsed {
+            return false;
+        }
+        let before = self.thickness();
+        self.collapsed = collapsed;
+        self.strip_key = None;
+        before != self.thickness()
+    }
+
+    /// `sidebar status`, none under the bar layout.
+    pub fn sidebar_status(&self) -> Option<Value> {
+        let sb = self.sidebar.as_ref()?;
+        Some(sb.status(self.collapsed, self.edge, self.thickness()))
+    }
+
+    /// Whether hit `i` takes a click: a cell that is interactive, any
+    /// control the sidebar drew.
+    pub fn clickable(&self, i: usize) -> bool {
+        if self.sidebar.is_some() {
+            return true;
+        }
+        self.slots.get(i).is_some_and(|s| s.view.interactive)
+    }
+
     pub fn framed(&self) -> bool {
         self.style.frame.0
     }
@@ -195,6 +233,9 @@ impl Bar {
 
     /// The strip's extent across its edge, which is also its exclusive zone.
     pub fn thickness(&self) -> i32 {
+        if let Some((open, rail)) = self.style.sidebar {
+            return (if self.collapsed { rail } else { open }) as i32;
+        }
         let across = if self.edge.is_vertical() { self.kit.look.cell_width } else { self.style.thickness };
         (across + self.style.margin * 2.0) as i32
     }
@@ -210,6 +251,9 @@ impl Bar {
     }
 
     fn floating(&self) -> bool {
+        if self.sidebar.is_some() {
+            return false;
+        }
         let fill = self.band_fill.unwrap_or(Rgba::TRANSPARENT);
         let line = self.band_edge.is_some_and(|(c, w)| c.a > 0.0 && w > 0.0);
         !self.framed() && fill.a <= 0.0 && !line
@@ -330,7 +374,8 @@ impl Bar {
         self.hover = None;
         self.rebuilt = true;
         self.slots.clear();
-        for region in Region::ALL {
+        self.sidebar = self.style.sidebar.map(|_| Sidebar::new());
+        for region in Region::ALL.into_iter().filter(|_| self.sidebar.is_none()) {
             let entries = self.resolved.regions.get(region).to_vec();
             for e in entries.iter().filter(|e| !e.collapsible) {
                 let unit = self.slots.last().map_or(0, |s| s.unit + 1);
@@ -390,6 +435,9 @@ impl Bar {
     /// The pointer over the strip, handed to each cell that washes its own
     /// parts in the cell's own coordinates; true when the strip needs a pass.
     pub fn pointer(&mut self, over: Option<usize>, at: (f64, f64), store: &Store, now: Instant) -> bool {
+        if let Some(sb) = &mut self.sidebar {
+            return sb.hover(over);
+        }
         let (mut redraw, mut relayout) = (false, false);
         for (i, s) in self.slots.iter_mut().enumerate() {
             let local = (Some(i) == over).then(|| (at.0 - s.rect.x as f64, at.1 - s.rect.y as f64));
@@ -530,6 +578,15 @@ impl Bar {
     /// unchanged nodes damage nothing.
     pub fn layout(&mut self, store: &Store, now: Instant) {
         let _raster = crate::scene::raster_at(self.raster);
+        if self.sidebar.is_some() {
+            self.paint_strip();
+            let anchor = self.strip_nodes.last().copied();
+            let (strip, edge, collapsed) = (self.strip(), self.edge, self.collapsed);
+            if let Some(sb) = &mut self.sidebar {
+                sb.draw(store, &self.output, collapsed, edge, strip, &mut self.kit, &mut self.scene, anchor, now);
+            }
+            return;
+        }
         self.refit(store, now);
         self.place(now);
         if self.fit_rooms(store, now) {
@@ -811,6 +868,9 @@ impl Bar {
     /// those slots repainted where they are, with no layout of the strip.
     /// False when anything along it changes, for a whole layout instead.
     pub fn step_in_place(&mut self, now: Instant) -> bool {
+        if self.sidebar.is_some() {
+            return false;
+        }
         let _raster = crate::scene::raster_at(self.raster);
         let visible = !self.hidden;
         let vertical = self.edge.is_vertical();
@@ -833,6 +893,9 @@ impl Bar {
     /// A clock wanting a frame every vsync.
     pub fn animating(&mut self, now: Instant) -> bool {
         let visible = !self.hidden;
+        if let Some(sb) = &self.sidebar {
+            return visible && sb.animating;
+        }
         let kit = &self.kit;
         self.slots.iter_mut().any(|s| s.animating(kit, visible, now))
     }
@@ -848,6 +911,9 @@ impl Bar {
     /// marquee ending its hold).
     pub fn wake(&self, now: Instant) -> Option<Instant> {
         let visible = !self.hidden;
+        if let Some(sb) = &self.sidebar {
+            return sb.wake.filter(|_| visible);
+        }
         self.slots.iter().filter_map(|s| s.wake(&self.kit, visible, now)).min()
     }
 
@@ -862,6 +928,9 @@ impl Bar {
 
     /// The slot under a point of the window, if it is the strip's.
     pub fn hit(&self, x: f64, y: f64) -> Option<usize> {
+        if let Some(sb) = &self.sidebar {
+            return sb.hit(x, y);
+        }
         let (x, y) = (x.floor() as i32, y.floor() as i32);
         self.slots.iter().position(|s| {
             let r = s.rect.intersect(&s.clip);
@@ -870,6 +939,9 @@ impl Bar {
     }
 
     pub fn click(&mut self, i: usize, button: Button, x: f64, y: f64, store: &Store) -> Action {
+        if let Some(sb) = &self.sidebar {
+            return if button == Button::Left { sb.action(i, &self.output) } else { Action::None };
+        }
         let env = Env { store, edge: self.edge, output: &self.output };
         let s = &mut self.slots[i];
         if !s.view.interactive {
@@ -879,6 +951,9 @@ impl Bar {
     }
 
     pub fn wheel(&mut self, i: usize, vertical: f64, sideways: f64, store: &Store) -> Action {
+        if self.sidebar.is_some() {
+            return Action::None;
+        }
         let env = Env { store, edge: self.edge, output: &self.output };
         self.slots[i].cell.wheel_by(vertical, sideways, &env)
     }
@@ -888,7 +963,10 @@ impl Bar {
     /// edge the card opens away from.
     #[allow(dead_code)]
     pub fn tooltip(&self) -> Option<(String, IRect, Edge)> {
-        let s = &self.slots[self.hover?];
+        if let Some(sb) = &self.sidebar {
+            return sb.tip(self.hover?).map(|(text, rect)| (text, rect, self.edge));
+        }
+        let s = self.slots.get(self.hover?)?;
         if let Some((text, start, extent)) = s.cell.tip_at() {
             let (start, extent) = (start.round() as i32, extent.round() as i32);
             let r = s.rect;
@@ -901,12 +979,18 @@ impl Bar {
     /// Where a panel's own cell sits along the strip, for an open with no
     /// click to read one off.
     pub fn panel_anchor(&self, name: &str) -> Option<f64> {
+        if let Some(sb) = &self.sidebar {
+            return sb.panel_anchor(name);
+        }
         let s = self.slots.iter().find(|s| s.view.panel == Some(name) && !s.rect.is_empty())?;
         let r = s.rect;
         Some(if self.vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 })
     }
 
     pub fn slot_anchor(&self, i: usize) -> f64 {
+        if let Some(sb) = &self.sidebar {
+            return sb.anchor(i);
+        }
         let r = self.slots[i].rect;
         if self.vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 }
     }

@@ -139,6 +139,8 @@ fn resolve(cx: &Cx, ink: Ink) -> Rgba {
 fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
     if state.row {
         s.lg
+    } else if state.card {
+        s.md
     } else if state.token {
         s.sm
     } else {
@@ -284,7 +286,8 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             let pad_x = cell_pad(&s, state);
             let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            (cw + pad_x * 2.0, across(cx, state.chip, ch))
+            let h = if state.card { ch + pad_x * 2.0 } else { across(cx, state.chip, ch) };
+            (cw + pad_x * 2.0, h)
         }
         Kind::Button { text, icon, square, .. } => {
             if *square {
@@ -777,6 +780,8 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let mut b = if state.hero {
         t.box_style("hero", None)
+    } else if state.card {
+        t.box_style("card", None)
     } else if state.token {
         t.box_style("launcher.token", None)
     } else if state.row {

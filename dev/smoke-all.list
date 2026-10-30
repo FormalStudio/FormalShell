@@ -23,6 +23,8 @@
 --brightness
 --caffeinate
 --glass
+--sidebar
+--sidebar --light
 --capture
 --capture-edit
 --center

@@ -114,8 +114,8 @@ impl Faces {
     };
 }
 
-/// `layout`: where the shell's chrome sits. `sidebar` is read ahead of the
-/// sidebar itself and draws the bar until it exists.
+/// `layout`: where the shell's chrome sits, a strip or the sidebar's card
+/// column on a side edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {
     Bar,

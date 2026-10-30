@@ -976,6 +976,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   full-screen routes.
 - `share.sh` `--share`: the share route present (the copied text reaching
   LocalSend as a real file) and honestly absent with no binary on PATH.
+- `sidebar.sh` `--sidebar`: `layout: sidebar` from settings.json alone,
+  the formalshell:bar layer read off `hyprctl -j layers` as a column 160
+  wide down the left edge, `sidebar status` naming the time, Spaces and
+  notifications cards and a window on the map, a real click on the status
+  row's network button opening its panel, one on its collapse button
+  folding the column to the 48 wide rail with state.json carrying
+  `sidebarCollapsed`, `sidebar expand` opening it again, and settings.json
+  rewritten with `bar.position: right` moving it to that edge. The open,
+  panel and rail frames are read dark and light (`--sidebar --light`).
 - `showcase.sh` `--showcase`: seeds state.json with a generated wallpaper
   before the shell starts, so the leg it rides photographs a matugen palette
   over a real desktop. The README's screenshots and GIFs are taken under it.

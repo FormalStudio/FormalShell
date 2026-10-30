@@ -48,7 +48,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::collections::BTreeSet;
-use std::sync::{Mutex, Once, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use async_io::Timer;
@@ -57,7 +57,7 @@ use fs_theme::chrome;
 use fs_theme::matugen::{self, BuildOpts};
 use fs_theme::palette::{self, Pin};
 use fs_theme::sun::{self, Override, SunTimes};
-use fs_theme::theme::{Layout, Theme};
+use fs_theme::theme::Theme;
 use futures_lite::future;
 use serde_json::{Map, Value};
 
@@ -128,10 +128,6 @@ impl State {
         self.theme.motion_scale = motion_scale;
         if !self.blur {
             self.theme.surface_opacity = 1.0;
-        }
-        if self.theme.layout == Layout::Sidebar {
-            static SIDEBAR: Once = Once::new();
-            SIDEBAR.call_once(|| eprintln!("layout: sidebar is not built yet"));
         }
         true
     }

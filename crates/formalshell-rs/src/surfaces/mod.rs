@@ -16,6 +16,7 @@ pub mod osd;
 pub mod panel;
 pub mod popup;
 pub mod shoulders;
+pub mod sidebar;
 pub mod switcher;
 pub mod tray_menu;
 pub mod toasts;

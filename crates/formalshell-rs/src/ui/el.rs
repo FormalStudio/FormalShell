@@ -116,6 +116,8 @@ pub struct CellState {
     pub row: bool,
     /// The launcher's mode chip, in the `launcher.token` box.
     pub token: bool,
+    /// A sidebar card, in the `card` box with its own padding all round.
+    pub card: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

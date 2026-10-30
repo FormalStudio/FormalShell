@@ -103,6 +103,7 @@ impl App {
     fn spare_bar(&self) -> Bar {
         let mut bar = Bar::new(self.bar.edge(), &self.store.theme.theme);
         bar.set_layout(self.bar.resolved.clone());
+        bar.set_collapsed(self.store.state.data.sidebar_collapsed);
         bar.update_paint(&self.store);
         bar
     }

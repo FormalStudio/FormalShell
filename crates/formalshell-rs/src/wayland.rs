@@ -586,7 +586,7 @@ impl App {
         nightlight::configure(self.store.config.settings());
         info::configure(self.store.config.settings());
         self.arm_caffeinate();
-        let edge = layout::position(self.store.config.str("bar.position"));
+        let edge = self.chrome_edge();
         let moved = self.bar.set_edge(edge);
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
             s.bar.set_edge(edge);
@@ -606,15 +606,31 @@ impl App {
         self.refresh_bar(None);
     }
 
+    /// `bar.position`'s edge, a side one under `layout: sidebar`: top and
+    /// bottom put the sidebar on the left.
+    fn chrome_edge(&self) -> Edge {
+        let edge = layout::position(self.store.config.str("bar.position"));
+        match (self.store.theme.theme.layout, edge) {
+            (fs_theme::theme::Layout::Sidebar, Edge::Top | Edge::Bottom) => Edge::Left,
+            _ => edge,
+        }
+    }
+
     /// The bar repainted off the store's theme, re-placed when its framing
     /// or thickness moved with it.
     pub fn set_bar_theme(&mut self) {
-        let before = (self.bar.across(), self.bar.framed(), self.bar.frame_thickness());
+        let before = (self.bar.across(), self.bar.framed(), self.bar.frame_thickness(), self.bar.edge());
+        let edge = self.chrome_edge();
+        let collapsed = self.store.state.data.sidebar_collapsed;
         self.bar.set_theme(&self.store.theme.theme);
+        self.bar.set_edge(edge);
+        self.bar.set_collapsed(collapsed);
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
             s.bar.set_theme(&self.store.theme.theme);
+            s.bar.set_edge(edge);
+            s.bar.set_collapsed(collapsed);
         }
-        if (self.bar.across(), self.bar.framed(), self.bar.frame_thickness()) != before {
+        if (self.bar.across(), self.bar.framed(), self.bar.frame_thickness(), self.bar.edge()) != before {
             self.place_chrome();
             self.place_spares();
         }
@@ -642,10 +658,27 @@ impl App {
         self.bar_dirty = true;
     }
 
+    /// state.json's `sidebarCollapsed` on every bar, the windows re-placed
+    /// at their new thickness.
+    fn sync_collapsed(&mut self) {
+        let collapsed = self.store.state.data.sidebar_collapsed;
+        let mut moved = self.bar.set_collapsed(collapsed);
+        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
+            moved |= s.bar.set_collapsed(collapsed);
+        }
+        if moved {
+            self.place_chrome();
+            self.place_spares();
+        }
+    }
+
     /// The cells reading `topic` read again, and everything the strip draws
     /// with them.
     pub fn refresh_bar(&mut self, topic: Option<Topic>) {
         let now = Instant::now();
+        if matches!(topic, None | Some(Topic::State)) {
+            self.sync_collapsed();
+        }
         if matches!(topic, None | Some(Topic::Compositor) | Some(Topic::Config)) {
             if self.chrome_hidden() != self.bar.hidden() {
                 self.place_chrome();
@@ -1462,6 +1495,9 @@ impl App {
                 surfaces::changed(self, Topic::Notifications);
             }
             Action::Launcher => self.menu_toggle(),
+            Action::Summon(route) => self.menu_open(Some(route)),
+            Action::MediaPlayPause => self.store.media.play_pause(),
+            Action::Sidebar(collapsed) => surfaces::sidebar::set_collapsed(collapsed),
         }
     }
 
@@ -2017,7 +2053,7 @@ impl App {
         let (Some(device), Some((serial, current))) = (&self.cursor_device, self.cursor) else { return };
         let interactive = |slots: &[Slot], i: Option<usize>| i.and_then(|i| slots.get(i)).is_some_and(|s| s.view.interactive);
         let hand = match self.pointer_on {
-            Some(Owner::Bar) => interactive(&self.bar.slots, self.bar.hover),
+            Some(Owner::Bar) => self.bar.hover.is_some_and(|i| self.bar.clickable(i)),
             Some(Owner::Overflow) => self.overflow.as_ref().is_some_and(|p| interactive(&p.slots, p.hover)),
             Some(Owner::Panel) => self.panel.as_ref().is_some_and(|h| h.hand()),
             Some(Owner::Headset) => true,
@@ -2033,7 +2069,7 @@ impl App {
     fn click(&mut self, owner: Owner, i: usize, button: Button, at: (f64, f64)) {
         let edge = self.bar.edge();
         match owner {
-            Owner::Bar if i < self.bar.slots.len() => {
+            Owner::Bar if self.bar.clickable(i) => {
                 let a = self.bar.click(i, button, at.0, at.1, &self.store);
                 let anchor = self.bar.slot_anchor(i);
                 self.act(a, anchor);

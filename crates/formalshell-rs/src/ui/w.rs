@@ -116,6 +116,11 @@ pub fn cell(child: El) -> El {
     El::new(Kind::Cell { state: CellState::default(), interactive: false, child: Box::new(child) })
 }
 
+/// A sidebar card: the `card` box round one child, as tall as it.
+pub fn card(child: El) -> El {
+    cell(child).cell_state(|c| c.card = true)
+}
+
 /// The launcher's mode chip: the mode path in `caption` at 600 in
 /// `launcher.token`, `System › Power`, the ancestors muted. Past two levels
 /// it reads `… › ` and the last two. Each ancestor fires `token:<depth>`,

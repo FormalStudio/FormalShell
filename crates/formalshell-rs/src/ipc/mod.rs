@@ -49,6 +49,7 @@ mod screensaver;
 mod switcher;
 pub mod registry;
 mod screenshot;
+mod sidebar;
 mod theme;
 mod tray;
 mod visualizer;
@@ -116,6 +117,7 @@ fn registry() ->&'static Registry<App> {
             nightlight::target(),
             lights::target(),
             switcher::target(),
+            sidebar::target(),
             clipboard::target(),
             picker::target(),
             localsend::target(),

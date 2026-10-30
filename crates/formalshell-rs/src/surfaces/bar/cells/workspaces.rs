@@ -179,7 +179,7 @@ impl Default for Workspaces {
     }
 }
 
-fn workspace(w: &Workspace) -> workspaces::Workspace {
+pub(crate) fn workspace(w: &Workspace) -> workspaces::Workspace {
     workspaces::Workspace {
         id: w.id.clone(),
         idx: w.idx,

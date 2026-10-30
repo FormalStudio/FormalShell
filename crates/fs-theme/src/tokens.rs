@@ -97,7 +97,7 @@ pub const SPACING_BASE: [(&str, f64); 8] = [
     ("huge", 36.0),
 ];
 
-pub const SEMANTIC_SPACING_BASE: [(&str, f64); 27] = [
+pub const SEMANTIC_SPACING_BASE: [(&str, f64); 29] = [
     ("controlGap", 6.0),
     ("controlPaddingX", 10.0),
     ("controlPaddingY", 5.0),
@@ -125,6 +125,8 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 27] = [
     ("switcherThumb", 128.0),
     ("switcherInset", 64.0),
     ("keycapHeight", 20.0),
+    ("sidebarWidth", 160.0),
+    ("sidebarRail", 48.0),
 ];
 
 /// `spacingTokens(scale)`: every scale step and semantic spacing token,
@@ -166,6 +168,8 @@ pub struct Space {
     pub switcher_thumb: f64,
     pub switcher_inset: f64,
     pub keycap_height: f64,
+    pub sidebar_width: f64,
+    pub sidebar_rail: f64,
 }
 
 impl Space {
@@ -208,6 +212,8 @@ impl Space {
             "switcherThumb" => self.switcher_thumb,
             "switcherInset" => self.switcher_inset,
             "keycapHeight" => self.keycap_height,
+            "sidebarWidth" => self.sidebar_width,
+            "sidebarRail" => self.sidebar_rail,
             _ => return None,
         })
     }
@@ -258,6 +264,8 @@ pub fn spacing_tokens(scale: f64) -> Space {
         switcher_thumb: s("switcherThumb"),
         switcher_inset: s("switcherInset"),
         keycap_height: s("keycapHeight"),
+        sidebar_width: s("sidebarWidth"),
+        sidebar_rail: s("sidebarRail"),
     }
 }
 
