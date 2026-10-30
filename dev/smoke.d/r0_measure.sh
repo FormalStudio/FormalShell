@@ -99,12 +99,16 @@ mark() { echo "\$1 \$(date +%s%N)" >> "$r0_marks_path"; }
 # Fields after the comm's closing paren: utime and stime are the 12th and
 # 13th, cutime and cstime the 14th and 15th.
 ticks() { sed 's/.*) //' "/proc/\$pid/stat" | awk '{print \$12 + \$13, \$14 + \$15}'; }
+# Each thread's utime plus stime, keyed by tid and named by its comm.
+threads() { for t in /proc/\$pid/task/*; do printf '%s %s %s\n' "\${t##*/}" "\$(tr ' ' _ < "\$t/comm")" "\$(sed 's/.*) //' "\$t/stat" | awk '{print \$12 + \$13}')"; done 2>/dev/null; }
 cpu() {
-  local t0 c0 t1 c1
-  t0=\$(date +%s%N); c0=\$(ticks)
+  local t0 c0 t1 c1 h0
+  t0=\$(date +%s%N); c0=\$(ticks); h0=\$(threads)
   sleep 60
   t1=\$(date +%s%N); c1=\$(ticks)
   echo "cpu \$1 self_ticks=\$(( \${c1% *} - \${c0% *} )) child_ticks=\$(( \${c1#* } - \${c0#* } )) wall_ns=\$(( t1 - t0 )) clk_tck=\$(getconf CLK_TCK)" >> "$r0_results_path"
+  threads | awk -v w="\$1" -v before="\$h0" 'BEGIN { n = split(before, l, "\n"); for (i = 1; i <= n; i++) { split(l[i], f, " "); b[f[1]] = f[3] } }
+    { d = \$3 - (\$1 in b ? b[\$1] : 0); if (d > 0) print "cpu-thread " w " " \$2 " ticks=" d }' >> "$r0_results_path"
 }
 for _ in \$(seq 100); do
   pid=\$(cat "$shot_dir/shell.pid" 2>/dev/null) && [ -r "/proc/\$pid/stat" ] && break
