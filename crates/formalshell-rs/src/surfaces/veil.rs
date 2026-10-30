@@ -120,6 +120,12 @@ impl Veil<PixelSurface> {
 }
 
 impl Veil {
+    /// A committed picture whose output has since changed size: drawn on,
+    /// it would be stretched over a desktop it no longer matches.
+    pub fn outgrown(&self, width: i32, height: i32) -> bool {
+        self.held && self.surface.commits() > 0 && (self.scene.size.w, self.scene.size.h) != (width.max(1), height.max(1))
+    }
+
     pub fn configure(&mut self, width: i32, height: i32) {
         let (w, h) = (width.max(1), height.max(1));
         if self.held {

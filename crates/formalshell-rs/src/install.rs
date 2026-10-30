@@ -564,7 +564,7 @@ fn login_script() -> String {
 # Written by `formalshell install`; `formalshell update` rewrites it.
 mkdir -p \"$XDG_RUNTIME_DIR/formalshell\"
 : > \"$XDG_RUNTIME_DIR/formalshell/login-lock\"
-exec uwsm start -e -D Hyprland -- hyprland.desktop -- --locked-cmd '{START}'
+exec uwsm start -g -1 -e -D Hyprland -- hyprland.desktop -- --locked-cmd '{START}'
 "
     )
 }

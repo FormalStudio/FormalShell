@@ -8,10 +8,9 @@
 //! session for a caller in none. Under uwsm the shell runs in the user
 //! manager, outside every session, and `auto` is what finds the desktop's.
 //!
-//! The Unlock signal never lifts the lock. Logind lets any process of the
-//! session's own user call UnlockSession with no authentication, and the
-//! signal does not say who asked, so honouring it would be an unlock without
-//! the password.
+//! The Unlock signal lifts the lock, as GNOME's and KDE's do: polkit
+//! already gates `loginctl unlock-session`, and a process running as the
+//! user can defeat a screen lock without it anyway.
 
 use std::cell::RefCell;
 

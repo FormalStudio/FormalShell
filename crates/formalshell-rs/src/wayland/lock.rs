@@ -38,7 +38,7 @@ use smithay_client_toolkit::reexports::client::globals::GlobalList;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::dispatch2::Dispatch2;
-use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
+use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{self, ExtIdleNotificationV1};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
@@ -228,7 +228,10 @@ impl Dispatch2<ExtIdleNotificationV1, App> for LockIdle {
         match event {
             ext_idle_notification_v1::Event::Idled => {
                 app.lock.idle = true;
-                if app.lock.with_saver && app.lock.session.is_some() {
+                // Not over a password being checked or a lock lifting: the
+                // unlock hands over each output's lock picture, and an
+                // output showing the screensaver has none to hand over.
+                if app.lock.with_saver && app.lock.session.is_some() && !app.lock.checking && !app.lock.unlocking {
                     app.saver_start();
                 }
             }
@@ -667,7 +670,17 @@ impl App {
                     self.lock();
                 }
             }
-            LockMsg::Logind(false) => eprintln!("lock: logind's Unlock ignored, the password is the only way out"),
+            // ext-session-lock takes an unlock only once the compositor has
+            // said the session is locked.
+            LockMsg::Logind(false) if self.lock.session.is_some() && self.lock.secure => {
+                eprintln!("lock: logind asked for the unlock");
+                // A password check still running belongs to this lock: its
+                // answer must not lift the next one.
+                self.lock.attempt += 1;
+                self.lock.checking = false;
+                self.begin_unlock();
+            }
+            LockMsg::Logind(false) => eprintln!("lock: logind's Unlock with no secure lock of this shell's to lift"),
             LockMsg::ActionEnded { action, at, cursor } => self.hot_corner_ended(&action, at, cursor),
             LockMsg::Polkit(event) => self.polkit_event(event),
             LockMsg::Refused(why) => {
@@ -726,7 +739,7 @@ impl App {
         }
     }
 
-    /// PAM's success is the one caller. Each output's last picture goes to
+    /// PAM's success and logind's Unlock. Each output's last picture goes to
     /// a veil first (wayland/veil.rs), so the desktop comes in under it.
     fn begin_unlock(&mut self) {
         if self.lock.unlocking {
@@ -755,6 +768,12 @@ impl App {
         self.lock.unlocking = false;
         if let Some(session) = self.lock.session.take() {
             session.unlock();
+            // The unlock reaches the compositor before the markers below go:
+            // a shell killed between the two would leave a lock no restarted
+            // shell takes back.
+            if let Some(Err(err)) = self.lock.outs.first().and_then(|o| o.output.backend().upgrade()).map(|b| b.flush()) {
+                eprintln!("lock: flushing the unlock: {err}");
+            }
         }
         self.lock.outs.clear();
         if let Some(w) = self.lock.idle_watch.take() {

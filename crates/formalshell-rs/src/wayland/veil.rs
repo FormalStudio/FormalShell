@@ -181,6 +181,10 @@ impl App {
     /// dispatch configures.
     pub(super) fn veil_configure(&mut self, surface: &WlSurface, width: i32, height: i32) {
         if let Some(i) = self.handover_index(surface) {
+            if self.veil.handover[i].1.outgrown(width, height) {
+                self.veil.handover.remove(i);
+                return;
+            }
             let v = &mut self.veil.handover[i].1;
             v.configure(width, height);
             let _raster = crate::scene::raster_at(v.surface.scale());

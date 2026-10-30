@@ -810,9 +810,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   real logind, the shell started with `XDG_SESSION_ID` emptied the way uwsm
   starts it, so it finds its session through logind's `auto`: `loginctl
   lock-session <id>` locking (`lock status`, LockedHint yes), `loginctl
-  unlock-session` leaving it locked, the real password unlocking with
-  LockedHint no, then the launcher's Lock row, typed for and activated, coming back
-  through the same signal, locked again and unlocked by the password.
+  unlock-session` lifting it with LockedHint no (polkit gates it, as on
+  GNOME and KDE), then the launcher's Lock row, typed for and activated,
+  coming back through the same signal, locked again and unlocked by the
+  real password.
 - `lyrics.sh` `--lyrics`: three tracks (two cached, one a sibling `.lrc` of
   the shape a line-synced provider really returns), the lit set on a duet and
   background overlap, quality and estimated timing, the estimated wipe read

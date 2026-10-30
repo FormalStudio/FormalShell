@@ -6,12 +6,12 @@
 # its session through logind's `auto` as it does on e1504g.
 #
 # `loginctl lock-session <id>` locks (`lock status`, LockedHint yes);
-# `loginctl unlock-session <id>` leaves it locked, since logind lets any
-# process of the user send that unauthenticated; the real password typed
-# on real keys unlocks, LockedHint no. Then the launcher's Lock row, found
-# by typing and chosen through `menu activate`, comes back through the same signal: a second
-# "logind asked for the lock" line in the shell log, locked, LockedHint yes,
-# and the password again.
+# `loginctl unlock-session <id>` lifts it, as GNOME's and KDE's locks do
+# (polkit gates it), LockedHint no. Then the launcher's Lock row, found by
+# typing and chosen through `menu activate`, comes back through the same
+# signal: a second "logind asked for the lock" line in the shell log,
+# locked, LockedHint yes, and the real password typed on real keys
+# unlocking it.
 leg_logind_lock_flag="--logind-lock"
 leg_logind_lock_order=113
 leg_logind_lock_vm_only="it needs the real logind session the shell runs in"
@@ -46,8 +46,7 @@ hint "\$sid" > "\$p-hint-1.txt"
 loginctl unlock-session "\$sid" > /dev/null 2>&1
 sleep 2
 $ipc call lock isLocked > "\$p-after-unlock-session.txt" 2>&1
-"$wtype_bin" -s 300 "formalshell-test" -k Return
-sleep 4
+sleep 2
 $ipc call lock status > "\$p-status-2.json" 2>&1
 hint "\$sid" > "\$p-hint-2.txt"
 "$grim_bin" "\$p-unlocked.png" > /dev/null 2>&1
@@ -80,8 +79,9 @@ leg_logind_lock_assert() {
   grep -q '"locked":true' "$p-status-1.json" || fail "loginctl lock-session did not lock: $(cat "$p-status-1.json")"
   grep -q '"secure":true' "$p-status-1.json" || fail "the logind lock never went secure: $(cat "$p-status-1.json")"
   grep -qx yes "$p-hint-1.txt" || fail "LockedHint not yes while locked: $(cat "$p-hint-1.txt")"
-  grep -qx true "$p-after-unlock-session.txt" || fail "loginctl unlock-session lifted the lock: $(cat "$p-after-unlock-session.txt")"
-  grep -q '"locked":false' "$p-status-2.json" || fail "the real password did not unlock: $(cat "$p-status-2.json")"
+  grep -qx false "$p-after-unlock-session.txt" || fail "loginctl unlock-session did not lift the lock: $(cat "$p-after-unlock-session.txt")"
+  grep -q "lock: logind asked for the unlock" "$shell_log_path" || fail "no logind Unlock in the shell log"
+  grep -q '"locked":false' "$p-status-2.json" || fail "the lock was still up after unlock-session: $(cat "$p-status-2.json")"
   grep -qx no "$p-hint-2.txt" || fail "LockedHint not back to no after the unlock: $(cat "$p-hint-2.txt")"
   "$jq_bin" -e '.ids | index("system.lock")' "$p-menu.json" > /dev/null 2>&1 \
     || fail "typing lock in the launcher offered no system.lock row: $(cat "$p-menu.json")"

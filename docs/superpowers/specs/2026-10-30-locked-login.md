@@ -26,7 +26,7 @@ compositor from boot there is no second hand-over to bridge.
 2. The script writes `$XDG_RUNTIME_DIR/formalshell/login-lock` (its content
    the path of the splash's finished frame, `greeter-<s>.png`, picked as the
    greeter session script picks it, or empty) and execs
-   `uwsm start -e -D Hyprland -- hyprland.desktop -- --locked-cmd <start>`,
+   `uwsm start -g -1 -e -D Hyprland -- hyprland.desktop -- --locked-cmd <start>`,
    `<start>` being the include's own `import-environment` plus `systemctl
    --user start formalshell.service`. The unit is the shell's only
    launcher: the include's `hyprland.start` hook runs the same command, and
@@ -137,6 +137,27 @@ The departure fade (seams stage 8) is drawn by an overlay, which Hyprland
 does not draw over a session lock. While locked, `PrepareForShutdown` fades
 the lock surfaces themselves to black over the same 300 ms, and the
 shutdown inhibitor goes on the frame after it lands, as it does unlocked.
+
+## logind's Unlock
+
+The lock honours logind's Unlock signal (owner, 2026-10-30), as GNOME's
+and KDE's do: `loginctl unlock-session` lifts it with the same fade as a
+password unlock and clears LockedHint. polkit already gates
+`unlock-session`, and a process running as the user can defeat a screen
+lock without it anyway, so ignoring the signal bought nothing. It applies
+to the boot lock too, whose marker the unlock deletes as a password's does.
+
+## Measured
+
+The first film (fstestvm0, 2026-10-30) put 3.2 s of black between
+plymouth's last frame and the lock's first: uwsm held the session until
+`graphical.target` (plymouth's quit holds that target), then Hyprland took
+about a second to open its socket on the VM's llvmpipe. `uwsm start -g -1`
+starts the session without waiting for the target, which brought the
+black to 600 ms. The rest is Hyprland's init between its first modeset and
+its socket answering; the shell's own part, connection to the lock's first
+commit, is 57 ms. The 100 ms bound is not met on the VM rig; a real GPU
+host's number waits on its next boot, which this work does not force.
 
 ## Proof
 
