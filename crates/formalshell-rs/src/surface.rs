@@ -965,6 +965,10 @@ impl PixelSurface {
     pub fn fade(&self) -> f64 {
         self.multiplier.map_or(0.0, |m| f64::from(m) / f64::from(u32::MAX))
     }
+
+    pub fn commits(&self) -> u64 {
+        self.commits
+    }
 }
 
 impl Drop for PixelSurface {

@@ -22,7 +22,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 
 use super::App;
 use crate::services::compositor::{self, Command};
-use crate::surface::Surface;
+use crate::surface::PixelSurface;
 use crate::surfaces::veil::Veil;
 
 /// The lift once the desktop is in, and how long it waits for the bar and
@@ -56,7 +56,7 @@ impl Phase {
 #[derive(Default)]
 pub(super) struct State {
     phase: Option<Phase>,
-    veils: Vec<(WlOutput, Veil)>,
+    veils: Vec<(WlOutput, Veil<PixelSurface>)>,
     /// Fading out, to be dropped once that has been shown.
     lifting: bool,
     /// The departure's end acted on: the inhibitor let go, or the exit sent.
@@ -141,7 +141,7 @@ impl App {
         }
     }
 
-    fn new_veil(&self, output: &WlOutput, opacity: f32) -> Veil {
+    fn new_veil(&self, output: &WlOutput, opacity: f32) -> Veil<PixelSurface> {
         let wl = self.compositor.create_surface(&self.qh);
         let ls = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:veil"), Some(output));
         ls.set_anchor(Anchor::all());
@@ -151,7 +151,7 @@ impl App {
             ls.set_input_region(Some(region.wl_region()));
         }
         ls.commit();
-        Veil::new(Surface::on("veil", ls, &self.shm, self.started, output), opacity, Instant::now())
+        Veil::new(PixelSurface::new("veil", ls, 1.0, &self.pixels, &self.qh, self.started), opacity, Instant::now())
     }
 
     fn veil_index(&self, surface: &WlSurface) -> Option<usize> {
@@ -173,7 +173,7 @@ impl App {
 
     pub(super) fn veil_frame(&mut self, surface: &WlSurface) -> bool {
         let Some(i) = self.veil_index(surface) else { return false };
-        self.veil.veils[i].1.landed(Instant::now());
+        self.veil.veils[i].1.landed();
         true
     }
 
@@ -254,6 +254,11 @@ impl App {
 
     /// Each veil drawn at this moment's opacity, and the phase moved on
     /// once the compositor has shown where its fade ends.
+    /// The next fade end to reach, for the loop's wake.
+    pub(super) fn veil_deadline(&self, now: Instant) -> Option<Instant> {
+        self.veil.veils.iter().filter_map(|(_, v)| v.deadline()).filter(|at| *at > now).min()
+    }
+
     pub(super) fn present_veils(&mut self, now: Instant) {
         if self.veil.reveal && self.veil.phase.is_none() && (self.faces_warmed || now >= self.started + ARRIVE_WAIT) {
             self.veil.reveal = false;
