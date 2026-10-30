@@ -88,7 +88,10 @@ impl Sidebar {
         let top = if collapsed {
             rail(theme, store, &self.map)
         } else {
+            // Measured whole first: every row, from the top.
+            let want = self.map.first;
             self.map.fits = usize::MAX;
+            self.map.first = 0;
             let label = crate::ui::measure(&w::caption(self.map.widest_label()).mono(), width, theme, kit).0;
             self.map.across = minimap::across(theme, width, label);
             let fits = |cards: &[(&str, El)], kit: &mut Kit| {
@@ -103,11 +106,20 @@ impl Sidebar {
                 cards.retain(|(name, _)| *name != drop);
             }
             // Time and Spaces alone still too tall: the minimap shows the
-            // rows that fit and scrolls through the rest.
-            let mut n = self.map.len();
+            // rows that fit and scrolls through the rest. Each pass measures
+            // the window at the scroll it would land on; the scroll itself
+            // settles once, against the final count.
+            let total = self.map.len();
+            let mut n = total;
             while !fits(&cards, kit) && n > 1 {
                 n -= 1;
                 self.map.fits = n;
+                self.map.first = want.min(total - n);
+                let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
+                cards = self::cards(theme, store, &self.map, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
+            }
+            if n < total {
+                self.map.first = want;
                 self.map.keep_in_view();
                 let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
                 cards = self::cards(theme, store, &self.map, now).into_iter().filter(|(name, _)| names.contains(name)).collect();

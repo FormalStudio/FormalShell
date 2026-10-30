@@ -93,6 +93,9 @@ pub struct Drag {
     pub target: Option<(usize, usize)>,
 }
 
+/// Window ids by workspace index.
+type Held = Vec<(i64, Vec<String>)>;
+
 #[derive(Default)]
 pub struct Map {
     pub rows: Vec<Row>,
@@ -102,7 +105,7 @@ pub struct Map {
     /// The order a drop asked for, held until the compositor agrees or the
     /// deadline: window ids by workspace index, so a row the compositor
     /// drops or adds meanwhile does not shift the rest (`align`).
-    hold: Option<(Vec<(i64, Vec<String>)>, Instant)>,
+    hold: Option<(Held, Instant)>,
     /// Each painted icon's place, gliding to its slot.
     glides: HashMap<String, (Animated, Animated)>,
     /// Each slot as last laid out, by window id, and each row's box.
@@ -117,6 +120,9 @@ pub struct Map {
     /// Icons across a row's grid, set for the column's width.
     pub across: usize,
     nodes: Vec<NodeId>,
+    /// Each tiled window's column (its x) on a workspace that reorders by
+    /// column: a column moves whole.
+    cols: HashMap<String, i64>,
 }
 
 impl Map {
@@ -126,6 +132,11 @@ impl Map {
         let ws: Vec<workspaces::Workspace> = c.workspaces.iter().map(workspace).collect();
         let wins: Vec<workspaces::Window> = c.windows.iter().map(window).collect();
         let slots = workspaces::slots(&ws, &wins, output, SlotOpts { persistent: 0, max_icons: MAX });
+        self.cols = wins
+            .iter()
+            .filter(|w| !w.is_floating && c.workspaces.iter().any(|ws| ws.id == w.workspace_id && ws.columns))
+            .filter_map(|w| Some((w.id.clone(), w.rect.as_ref()?.x.round() as i64)))
+            .collect();
         let size = icon_size(theme).round() as u32;
         let scale = crate::scene::raster_scale();
         let queries: Vec<appicon::Query> = slots
@@ -198,8 +209,13 @@ impl Map {
             let id = self.cursor.as_ref()?.window.clone()?;
             if dx != 0 {
                 let ids: Vec<String> = windows(row).iter().map(|w| w.id.clone()).collect();
-                let j = col.checked_add_signed(dx as isize).filter(|j| *j < ids.len())?;
-                return Some(reorder(&ids, &id, j, self.rows[row].columns));
+                let col_of = |w: &str| self.cols.get(w).copied();
+                let j = if self.rows[row].columns {
+                    column_step(&ids, &id, dx, &col_of)?
+                } else {
+                    col.checked_add_signed(dx as isize).filter(|j| *j < ids.len())?
+                };
+                return Some(reorder(&ids, &id, j, self.rows[row].columns, &col_of));
             }
             let to = row.checked_add_signed(dy as isize)?;
             let idx = match self.rows.get(to) {
@@ -378,7 +394,9 @@ impl Map {
         let t = self.row_boxes.iter().find(|(_, b)| (y as i32) < b.bottom()).map_or(last, |(i, _)| *i);
         let mut order = self.held();
         let row = order.get_mut(t)?;
-        row.retain(|id| *id != d.id);
+        let along = row.contains(&d.id) && self.rows.get(t).is_some_and(|r| r.columns);
+        let mates = if along { mates(row, &d.id, &|w| self.cols.get(w).copied()) } else { vec![d.id.clone()] };
+        row.retain(|id| !mates.contains(id));
         let slot = row
             .iter()
             .filter_map(|id| self.slots.get(id))
@@ -403,7 +421,8 @@ impl Map {
         let order = self.held();
         let Some(from) = order.iter().position(|row| row.contains(&d.id)) else { return Some(Vec::new()) };
         let columns = self.rows.get(t).is_some_and(|r| r.columns);
-        let (commands, predicted) = drop_on(&order, from, &d.id, t, j, self.rows.get(t).map(|r| r.idx).unwrap_or_else(|| self.next_idx()), columns);
+        let idx = self.rows.get(t).map(|r| r.idx).unwrap_or_else(|| self.next_idx());
+        let (commands, predicted) = drop_on(&order, from, &d.id, t, j, idx, columns, &|w| self.cols.get(w).copied());
         if !commands.is_empty() {
             let next = self.next_idx();
             let keyed = predicted.into_iter().enumerate().map(|(i, ids)| (self.rows.get(i).map_or(next + (i - self.rows.len()) as i64, |r| r.idx), ids)).collect();
@@ -577,20 +596,55 @@ fn draw_icon(p: &mut Painter, kit: &mut Kit, icon: Option<&Bitmap>, at: (f64, f6
 /// `id` to slot `j` of its own row `ids` (counted with `id` taken out),
 /// and the row it leaves. Under columns its column moves there; elsewhere
 /// it trades places with the window that holds the slot now.
-fn reorder(ids: &[String], id: &str, j: usize, columns: bool) -> Command {
+/// The windows of `row` in `id`'s column, `id` alone where `col` knows
+/// no column for it.
+fn mates(row: &[String], id: &str, col: &dyn Fn(&str) -> Option<i64>) -> Vec<String> {
+    match col(id) {
+        Some(x) => row.iter().filter(|w| col(w) == Some(x)).cloned().collect(),
+        None => vec![id.to_owned()],
+    }
+}
+
+/// The slot (counted with `id`'s column taken out) one column along from
+/// `id`'s, `dx` either way; `None` past either end.
+fn column_step(ids: &[String], id: &str, dx: i32, col: &dyn Fn(&str) -> Option<i64>) -> Option<usize> {
+    let own = mates(ids, id, col);
+    let rest: Vec<&String> = ids.iter().filter(|w| !own.contains(w)).collect();
+    let at = ids.iter().take_while(|w| !own.contains(w)).count();
+    // Each column's first slot in `rest`.
+    let starts: Vec<usize> = (0..rest.len()).filter(|&i| i == 0 || col(rest[i]).is_none() || col(rest[i]) != col(rest[i - 1])).collect();
+    if dx < 0 {
+        starts.iter().rev().find(|&&i| i < at).copied()
+    } else {
+        let next = starts.iter().position(|&i| i >= at)?;
+        Some(starts.get(next + 1).copied().unwrap_or(rest.len()))
+    }
+}
+
+/// The command that puts `id` at slot `j` of its row (`ids`): under
+/// columns its column moves before the window holding slot `j` with that
+/// column taken out; otherwise it trades places with the window at `j`.
+fn reorder(ids: &[String], id: &str, j: usize, columns: bool, col: &dyn Fn(&str) -> Option<i64>) -> Command {
     if columns {
-        let rest: Vec<&String> = ids.iter().filter(|w| *w != id).collect();
+        let own = mates(ids, id, col);
+        let rest: Vec<&String> = ids.iter().filter(|w| !own.contains(w)).collect();
         return Command::MoveColumn { id: id.to_owned(), before: rest.get(j).map(|w| (*w).clone()) };
     }
     Command::SwapWindows { a: id.to_owned(), b: ids[j.min(ids.len() - 1)].clone() }
 }
 
-/// The order `reorder` predicts for `row`.
-fn reordered(row: &mut Vec<String>, id: &str, j: usize, columns: bool) {
+/// The order `reorder` predicts for `row`: a column lands whole ahead of
+/// the column holding slot `j`.
+fn reordered(row: &mut Vec<String>, id: &str, j: usize, columns: bool, col: &dyn Fn(&str) -> Option<i64>) {
     let k = row.iter().position(|w| w == id).unwrap_or(0);
     if columns {
-        row.remove(k);
-        row.insert(j.min(row.len()), id.to_owned());
+        let own = mates(row, id, col);
+        row.retain(|w| !own.contains(w));
+        let mut at = j.min(row.len());
+        while at > 0 && at < row.len() && col(&row[at]).is_some() && col(&row[at - 1]) == col(&row[at]) {
+            at -= 1;
+        }
+        row.splice(at..at, own);
     } else {
         let j = j.min(row.len() - 1);
         row.swap(k, j);
@@ -598,27 +652,28 @@ fn reordered(row: &mut Vec<String>, id: &str, j: usize, columns: bool) {
 }
 
 /// The commands a drop of `id` from row `from` onto slot `j` of row `t`
-/// asks for (`j` counted with `id` taken out), and the order it predicts.
-/// Along its own row it is `reorder`; onto another row it moves there
-/// (`idx`) and then takes the slot, if a window holds it.
-fn drop_on(order: &[Vec<String>], from: usize, id: &str, t: usize, j: usize, idx: i64, columns: bool) -> (Vec<Command>, Vec<Vec<String>>) {
+/// asks for (`j` counted with `id`, or under columns its column, taken
+/// out), and the order it predicts. Along its own row it is `reorder`;
+/// onto another row it moves there (`idx`), a column of its own, and then
+/// takes the slot, if a window holds it.
+#[allow(clippy::too_many_arguments)]
+fn drop_on(order: &[Vec<String>], from: usize, id: &str, t: usize, j: usize, idx: i64, columns: bool, col: &dyn Fn(&str) -> Option<i64>) -> (Vec<Command>, Vec<Vec<String>>) {
     let mut out = order.to_vec();
     if t == from {
-        let k = order[from].iter().position(|w| w == id).unwrap_or(0);
-        let j = j.min(order[from].len() - 1);
-        if j == k {
+        reordered(&mut out[from], id, j, columns, col);
+        if out[from] == order[from] {
             return (Vec::new(), out);
         }
-        reordered(&mut out[from], id, j, columns);
-        return (vec![reorder(&order[from], id, j, columns)], out);
+        return (vec![reorder(&order[from], id, j, columns, col)], out);
     }
+    let alone = |w: &str| if w == id { None } else { col(w) };
     let mut commands = vec![Command::MoveWindowTo { id: id.to_owned(), idx, output: String::new() }];
     out[from].retain(|w| w != id);
     let row = &mut out[t];
     row.push(id.to_owned());
     if j < order[t].len() {
-        commands.push(reorder(row, id, j, columns));
-        reordered(row, id, j, columns);
+        commands.push(reorder(row, id, j, columns, &alone));
+        reordered(row, id, j, columns, &alone);
     }
     if t == order.len() - 1 {
         out.push(Vec::new());
@@ -663,6 +718,10 @@ fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String],
 mod tests {
     use super::*;
 
+    fn none(_: &str) -> Option<i64> {
+        None
+    }
+
     fn order(rows: &[&[&str]]) -> Vec<Vec<String>> {
         rows.iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect()
     }
@@ -697,19 +756,19 @@ mod tests {
     #[test]
     fn a_drop_along_its_row_swaps() {
         let o = order(&[&["a", "b", "c"], &[]]);
-        let (cmds, out) = drop_on(&o, 0, "a", 0, 2, 1, false);
+        let (cmds, out) = drop_on(&o, 0, "a", 0, 2, 1, false, &none);
         assert!(matches!(&cmds[..], [Command::SwapWindows { a, b }] if a == "a" && b == "c"));
         assert_eq!(out, order(&[&["c", "b", "a"], &[]]));
-        assert!(drop_on(&o, 0, "b", 0, 1, 1, false).0.is_empty());
+        assert!(drop_on(&o, 0, "b", 0, 1, 1, false, &none).0.is_empty());
     }
 
     #[test]
     fn a_drop_on_another_row_moves_then_swaps_into_the_slot() {
         let o = order(&[&["a", "b"], &["c"], &[]]);
-        let (cmds, out) = drop_on(&o, 0, "a", 1, 0, 2, false);
+        let (cmds, out) = drop_on(&o, 0, "a", 1, 0, 2, false, &none);
         assert!(matches!(&cmds[..], [Command::MoveWindowTo { id, idx: 2, .. }, Command::SwapWindows { a, b }] if id == "a" && a == "a" && b == "c"));
         assert_eq!(out, order(&[&["b"], &["a", "c"], &[]]));
-        let (cmds, out) = drop_on(&o, 0, "a", 1, 1, 2, false);
+        let (cmds, out) = drop_on(&o, 0, "a", 1, 1, 2, false, &none);
         assert!(matches!(&cmds[..], [Command::MoveWindowTo { .. }]));
         assert_eq!(out, order(&[&["b"], &["c", "a"], &[]]));
     }
@@ -717,7 +776,7 @@ mod tests {
     #[test]
     fn a_drop_on_the_empty_row_makes_a_workspace() {
         let o = order(&[&["a", "b"], &[]]);
-        let (cmds, out) = drop_on(&o, 0, "a", 1, 0, 2, false);
+        let (cmds, out) = drop_on(&o, 0, "a", 1, 0, 2, false, &none);
         assert!(matches!(&cmds[..], [Command::MoveWindowTo { id, idx: 2, .. }] if id == "a"));
         assert_eq!(out, order(&[&["b"], &["a"], &[]]));
     }
@@ -725,17 +784,41 @@ mod tests {
     #[test]
     fn under_columns_a_drop_moves_the_column() {
         let o = order(&[&["a", "b", "c"], &["d"], &[]]);
-        let (cmds, out) = drop_on(&o, 0, "a", 0, 1, 1, true);
+        let (cmds, out) = drop_on(&o, 0, "a", 0, 1, 1, true, &none);
         assert!(matches!(&cmds[..], [Command::MoveColumn { id, before: Some(b) }] if id == "a" && b == "c"));
         assert_eq!(out[0], ["b", "a", "c"]);
-        let (cmds, out) = drop_on(&o, 0, "c", 0, 0, 1, true);
+        let (cmds, out) = drop_on(&o, 0, "c", 0, 0, 1, true, &none);
         assert!(matches!(&cmds[..], [Command::MoveColumn { id, before: Some(b) }] if id == "c" && b == "a"));
         assert_eq!(out[0], ["c", "a", "b"]);
-        let (cmds, out) = drop_on(&o, 0, "a", 0, 2, 1, true);
+        let (cmds, out) = drop_on(&o, 0, "a", 0, 2, 1, true, &none);
         assert!(matches!(&cmds[..], [Command::MoveColumn { before: None, .. }]));
         assert_eq!(out[0], ["b", "c", "a"]);
-        let (cmds, out) = drop_on(&o, 0, "b", 1, 0, 2, true);
+        let (cmds, out) = drop_on(&o, 0, "b", 1, 0, 2, true, &none);
         assert!(matches!(&cmds[..], [Command::MoveWindowTo { .. }, Command::MoveColumn { id, before: Some(b) }] if id == "b" && b == "d"));
         assert_eq!(out[1], ["b", "d"]);
+    }
+
+    #[test]
+    fn a_column_moves_whole() {
+        // Columns [a b] [c] [d].
+        let col = |w: &str| match w {
+            "a" | "b" => Some(0),
+            "c" => Some(1),
+            "d" => Some(2),
+            _ => None,
+        };
+        let o = order(&[&["a", "b", "c", "d"], &[]]);
+        let (cmds, out) = drop_on(&o, 0, "a", 0, 2, 1, true, &col);
+        assert!(matches!(&cmds[..], [Command::MoveColumn { id, before: None }] if id == "a"));
+        assert_eq!(out[0], ["c", "d", "a", "b"]);
+        let (cmds, out) = drop_on(&o, 0, "d", 0, 1, 1, true, &col);
+        assert!(matches!(&cmds[..], [Command::MoveColumn { id, before: Some(b) }] if id == "d" && b == "b"));
+        assert_eq!(out[0], ["d", "a", "b", "c"]);
+        assert!(drop_on(&o, 0, "b", 0, 0, 1, true, &col).0.is_empty());
+        let ids: Vec<String> = o[0].clone();
+        assert_eq!(column_step(&ids, "a", 1, &col), Some(1));
+        assert_eq!(column_step(&ids, "d", -1, &col), Some(2));
+        assert_eq!(column_step(&ids, "c", -1, &col), Some(0));
+        assert_eq!(column_step(&ids, "a", -1, &col), None);
     }
 }
