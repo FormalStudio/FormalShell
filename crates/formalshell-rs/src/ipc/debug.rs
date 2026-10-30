@@ -117,6 +117,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "frame": app.bar.frame_state(),
         "backdrop": app.backdrop_state(),
         "desktopClock": app.desktop_clock_state(),
+        "veil": app.veil_phase(),
         "depth": app.store.depth.status(),
         "render": {"asked": theme.render_backend.as_str(), "backend": "cpu"},
         "theme": {

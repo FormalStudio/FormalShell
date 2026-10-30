@@ -42,6 +42,7 @@ mod osd;
 mod panel;
 mod picker;
 mod plugins;
+mod power;
 mod radio;
 mod record;
 mod screensaver;
@@ -99,6 +100,7 @@ fn registry() ->&'static Registry<App> {
             headset::target(),
             gallery::target(),
             lock::target(),
+            power::target(),
             menu::target(),
             calendar::target(),
             iphone::target(),

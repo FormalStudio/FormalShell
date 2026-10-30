@@ -1028,6 +1028,10 @@ pub struct Backdrop {
     painted: Option<(i32, i32)>,
     /// The sculpture over the picture, while `wallpaper.animate` is on.
     pub shards: Option<Shards>,
+    /// A first frame and a first whole picture committed, and then shown:
+    /// what the session's arrival waits on.
+    committed: (bool, bool),
+    pub landed: (bool, bool),
 }
 
 struct Fade {
@@ -1052,7 +1056,15 @@ impl Backdrop {
             fade: None,
             painted: None,
             shards: None,
+            committed: (false, false),
+            landed: (false, false),
         }
+    }
+
+    /// The backdrop's frame callback.
+    pub fn landed(&mut self, now: Instant, qh: &QueueHandle<App>) {
+        self.landed = self.committed;
+        self.step(now, qh);
     }
 
     pub fn configure(&mut self, width: i32, height: i32) {
@@ -1240,6 +1252,11 @@ impl Backdrop {
         }
         self.scaler.sync(surface, scale, size, Some(qh));
         surface.damage_buffer(0, 0, w, h);
+        let committed = (true, self.committed.1 || (from.is_none() && to.is_some()));
+        if committed != self.committed && from.is_none() {
+            surface.frame(qh, FrameCallbackData(surface.clone()));
+        }
+        self.committed = committed;
         self.layer.commit();
         self.painted = Some(size);
         self.buffer = Some(buffer);

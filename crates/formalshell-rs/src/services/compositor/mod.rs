@@ -176,6 +176,11 @@ pub enum Command {
     /// `compositor.workspaceNames`, for a backend whose workspaces carry
     /// no names of their own.
     WorkspaceNames(Vec<String>),
+    /// The pointer hidden or shown on every output, the session's arrival
+    /// and departure.
+    Cursor { hidden: bool },
+    /// Ends the session.
+    Exit,
 }
 
 static COMMANDS: OnceLock<async_channel::Sender<Command>> = OnceLock::new();

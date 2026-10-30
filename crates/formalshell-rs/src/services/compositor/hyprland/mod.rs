@@ -261,6 +261,8 @@ async fn commands(
                 eval(&ctx, &lua).await;
             }
             Command::WorkspaceNames(_) => {}
+            Command::Cursor { hidden } => eval(&ctx, &lua::cursor(hidden)).await,
+            Command::Exit => dispatch(&lua::exit()).await,
             Command::FloatWindow(id) => {
                 let floating = shared.borrow().snapshot.windows.iter().any(|w| w.id == id && w.is_floating);
                 if !floating {

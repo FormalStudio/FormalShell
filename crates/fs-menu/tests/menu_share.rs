@@ -231,8 +231,8 @@ fn default_copy_mode_is_unaffected_by_the_new_parameter() {
 }
 
 // The presence-gate itself (default-menu.jsonc's "share" node): the same `when`
-// mechanism the system.logout guard already proves in the self-pruning cascade
-// test, exercised here with the localsend command string. visible_children
+// mechanism the self-pruning cascade test already proves, exercised here with
+// the localsend command string. visible_children
 // only ever sees a resolved cond_results entry (the launcher's own condition
 // runner fills that in from a real `sh -c` exit code), so this proves the tree
 // wiring honors both outcomes, not the `command -v` shell behavior itself.

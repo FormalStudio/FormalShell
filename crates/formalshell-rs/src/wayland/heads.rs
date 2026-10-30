@@ -71,6 +71,7 @@ impl App {
             if self.heads.iter().any(|h| h.output == output) {
                 continue;
             }
+            self.veil_output(&output);
             let layer = self.overlay_on("formalshell:wallpaper", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
             let backdrop = Some(Backdrop::new(layer, &self.shm, &output));
             let spare = if self.bar_wl.is_none() {
@@ -540,7 +541,7 @@ impl App {
         match part {
             Part::Backdrop => {
                 if let Some(b) = &mut head.backdrop {
-                    b.step(now, &self.qh);
+                    b.landed(now, &self.qh);
                 }
             }
             Part::Shards(0) => {

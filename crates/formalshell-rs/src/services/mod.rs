@@ -42,6 +42,7 @@ pub mod proc;
 pub mod radio;
 pub mod recording;
 pub mod screensaver;
+pub mod shutdown;
 pub mod sleep;
 pub mod state;
 mod watch;

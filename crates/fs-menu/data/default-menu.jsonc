@@ -143,10 +143,7 @@
     "system.suspend": { "action": "@ipc:power.suspend" },
     "system.reboot": { "action": "@ipc:power.reboot", "confirm": true },
     "system.shutdown": { "action": "@ipc:power.poweroff", "confirm": true },
-    "system.logout": {
-        "action": "hyprctl dispatch 'hl.dsp.exit()'",
-        "when": "test -n \"$HYPRLAND_INSTANCE_SIGNATURE\""
-    },
+    "system.logout": { "action": "@ipc:power.logout" },
     "system.notifications": {
         "label": "Notifications",
         "action": "@ipc:notifications.showHistory"

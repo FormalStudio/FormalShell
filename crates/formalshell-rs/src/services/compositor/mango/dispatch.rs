@@ -25,6 +25,8 @@ pub fn monitor(name: &str) -> String {
     out
 }
 
+pub const QUIT: &str = "quit";
+
 pub fn view(monitor_name: &str, tag: i64) -> String {
     format!("viewcrossmon,{tag},{}", monitor(monitor_name))
 }

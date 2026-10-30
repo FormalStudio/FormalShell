@@ -491,8 +491,12 @@ host_notifications_owner_before=$(host_notifications_owner)
 # The rig boots from a Lua config, the only format Hyprland is supported on.
 # Legs append to it through this helper, one autostart line per drive script.
 hypr_exec_once() {
-  if [ "${recording_drives:-}" = 1 ]; then printf '%s\n' "$1" >> "$shot_dir/drives.list"; fi
-  printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$1"
+  local cmd="$1"
+  if [ "${recording_drives:-}" = 1 ]; then
+    printf '%s\n' "$1" >> "$shot_dir/drives.list"
+    cmd="bash $arrived_script; $1"
+  fi
+  printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[%s]==]) end)\n' "$cmd"
 }
 
 # The session shape every run boots with, shared with --screensaver-gif's
@@ -717,6 +721,18 @@ EOF
     hypr_exec_once "bash $fixture_script"
   fi
 } > "$cfg"
+
+# Every drive starts on an arrived desktop: the bar mapped and the shell's
+# arrival veil (wayland/veil.rs) lifted off it, so no frame a leg takes is
+# the veil's black. Bounded, so a run whose shell never maps a bar still
+# reaches its own assertions.
+arrived_script="$shot_dir/arrived.sh"
+write_script "$arrived_script" <<EOF
+#!/usr/bin/env bash
+layer() { "$hyprctl_bin" -j layers 2>/dev/null | grep -q "\"namespace\": *\"formalshell:\$1\""; }
+for _ in \$(seq 1 150); do layer bar && break; sleep 0.1; done
+for _ in \$(seq 1 50); do layer veil || break; sleep 0.1; done
+EOF
 
 # Not a subshell: a drive function writes its own scripts, echoes its
 # autostart lines onto the config, and may register a teardown line. The

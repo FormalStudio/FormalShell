@@ -464,7 +464,7 @@ paths = ["crates/formalshell-rs/src/services/polkit.rs", "crates/formalshell-rs/
 runs = ["--polkit"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/power.rs"]
+paths = ["crates/formalshell-rs/src/services/power.rs", "crates/formalshell-rs/src/services/shutdown.rs", "crates/formalshell-rs/src/ipc/power.rs"]
 runs = ["--power"]
 
 # Wallpaper and theme

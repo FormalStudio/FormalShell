@@ -348,6 +348,7 @@ impl App {
             // The rest go through the same in-process handlers the IPC
             // targets answer with.
             "lock.lock" => self.call_self("lock", "lock", &[]),
+            "power.logout" => self.call_self("power", "logout", &[]),
             "nightlight.toggle" => self.call_self("nightlight", "toggle", &[]),
             "lights.toggle" => self.call_self("lights", "toggle", &[]),
             "lights.colorInput" => self.menu_input_as("Hex color (ff8800)", LIGHTS_COLOR, false),

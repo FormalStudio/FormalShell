@@ -22,6 +22,7 @@ mod preview;
 mod screensaver;
 pub mod switcher;
 mod toasts;
+mod veil;
 
 use std::time::Instant;
 
@@ -314,6 +315,7 @@ pub struct App {
     pub capture: crate::surfaces::capture::Capture,
     pickers: picker::Pickers,
     desktop_clock: desktop_clock::State,
+    veil: veil::State,
 }
 
 impl App {
@@ -405,7 +407,9 @@ impl App {
             capture: Default::default(),
             pickers: Default::default(),
             desktop_clock: Default::default(),
+            veil: Default::default(),
         };
+        app.begin_arrival();
         app.sync_heads();
         app
     }
@@ -413,6 +417,7 @@ impl App {
     pub fn set_handle(&mut self, handle: LoopHandle<'static, App>) {
         self.handle = Some(handle);
         self.start_lock();
+        self.start_veil();
     }
 
     /// A layer surface that takes no input and reserves nothing, on the
@@ -1571,6 +1576,7 @@ impl App {
         self.present_polkit(now);
         self.present_overlay(now);
         self.present_lock();
+        self.present_veils(now);
         self.arm_wake(now);
     }
 
@@ -2256,7 +2262,7 @@ impl CompositorHandler for App {
             Some(Owner::Head(i, part)) => self.head_frame(i, part, now),
             None if self.saver_index(surface).is_some() => self.saver_frame_callback(surface),
             None => {
-                if !self.polkit_frame(surface) && !self.overlay_frame(surface) {
+                if !self.veil_frame(surface) && !self.polkit_frame(surface) && !self.overlay_frame(surface) {
                     self.lock_frame(surface);
                 }
             }
@@ -2308,6 +2314,7 @@ impl LayerShellHandler for App {
             Some(Owner::Atlas(_)) => self.atlas_closed(),
             Some(Owner::Picker(i)) => self.picker_closed(i),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_closed(layer.wl_surface()),
+            None if self.veil_owns(layer.wl_surface()) => self.veil_closed(layer.wl_surface()),
             Some(Owner::Zone(_) | Owner::Launcher(_)) | None => {}
         }
     }
@@ -2383,6 +2390,7 @@ impl LayerShellHandler for App {
             Some(Owner::Switcher) => self.switcher_configure(width, height),
             Some(Owner::Atlas(p)) => self.atlas_configure(p, width, height),
             Some(Owner::Picker(i)) => self.picker_configure(i, width, height),
+            None if self.veil_owns(layer.wl_surface()) => self.veil_configure(layer.wl_surface(), width, height),
             None if self.caffeinate_owns(layer) => self.caffeinate_configure(),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_configure(layer.wl_surface(), width, height),
             None if self.hot_corner_owns(layer) => self.hot_corner_configure(layer),
@@ -2485,6 +2493,7 @@ impl OutputHandler for App {
         self.drop_head(&output);
         self.saver_output_gone(&output);
         self.lock_output_gone(&output);
+        self.veil_output_gone(&output);
     }
 }
 
