@@ -61,6 +61,8 @@
 --keybinds
 --launcher-abbrev
 --launcher-actions
+--launcher-glass
+--launcher-glass --no-morph
 --launcher-modes
 --launcher-mouse
 --launcher-overflow

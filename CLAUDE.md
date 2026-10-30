@@ -622,6 +622,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `actions`, `runAction` and `into` answering `error: menu not open` shut.
   The column, the targets and the windows photographed dark, the column
   light.
+- `launcher_glass.sh` `--launcher-glass`: the shipped layer rules from
+  `docs/examples/hyprland/formalshell.lua` loaded and blur turned on, the
+  launcher photographed over a foot window full of text and again over the
+  bare wallpaper: inside the card the difference between the two frames
+  carries under a tenth of the edge energy it carries under the scrim
+  beside it, so the text behind a translucent card is blurred. Ridden by
+  `--no-morph` it reads the popover card, which stays opaque.
 - `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
   read off `menu status`'s `level` and `token`: every route the rig lists
   entered by its name and Enter and by `menu summon`, the five prefixes

@@ -126,7 +126,14 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--menu-hover", "--plugins"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--menu-hover", "--plugins", "--launcher-glass", "--launcher-glass --no-morph"]
+
+[[rule]]
+paths = [
+  "crates/formalshell-rs/src/surfaces/card.rs",
+  "docs/examples/hyprland/formalshell.lua",
+]
+runs = ["--launcher-glass", "--launcher-glass --no-morph"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]

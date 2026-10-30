@@ -39,6 +39,7 @@ pub const SLACK: i32 = 48;
 const FAR: f64 = 1.0e5;
 
 /// What the card takes off the theme.
+#[derive(Clone)]
 struct Look {
     fill: Rgba,
     border: Rgba,
@@ -434,8 +435,15 @@ impl Card {
 
     /// The popover's look painted fully opaque at `card` onto `nodes` of
     /// `scene`.
+    ///
+    /// The fill goes opaque here: Hyprland 0.56 never blurs under these
+    /// viewport-cropped subsurfaces whatever the layer rule says (the
+    /// `--launcher-glass` leg reads the text behind them sharp), so a
+    /// see-through look would show the desktop through it unblurred.
     pub fn popover_look(&self, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect) {
-        Self::paint_popover(&self.look, scene, nodes, card, 1.0, true);
+        let mut look = self.look.clone();
+        look.fill = look.fill.with_alpha(1.0);
+        Self::paint_popover(&look, scene, nodes, card, 1.0, true);
     }
 
     /// The room a popover's casts need around the card.

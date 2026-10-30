@@ -80,6 +80,9 @@ outside the lyrics pane's own depth of field and sung-chunk glow (owner,
 2026-09-17, gated behind `media.lyricsBlur`). A translucent card with
 nothing blurred behind it reads as a rendering fault rather than as depth,
 so the two travel together: a surface is either on that list or opaque.
+The launcher's popover card (`motion.morph` false) is opaque too: it draws
+its look on viewport-cropped subsurfaces, and Hyprland 0.56 blurs nothing
+under those whatever the layer rule says (`--launcher-glass --no-morph`).
 Toasts and lock are the opaque ones; the OSD joined the blurred list when it
 started budding off the bottom line (M57 D8), since one silhouette across
 two windows cannot be opaque on one side of the seam. The modal namespaces
