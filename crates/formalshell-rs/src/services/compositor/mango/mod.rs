@@ -240,6 +240,12 @@ async fn commands(shared: Shared, rx: async_channel::Receiver<Command>, dirty: a
                     dispatch(&dispatch::float_window(&id)).await;
                 }
             }
+            Command::ToggleFloating(id) => dispatch(&dispatch::float_window(&id)).await,
+            Command::ToggleFullscreen(_) => unsupported("a fullscreen toggle"),
+            Command::MoveWindowTo { id, idx, output } => {
+                let output = if output.is_empty() { shared.borrow().snapshot.focused_output_name.clone() } else { output };
+                dispatch(&dispatch::move_to(&id, &output, idx)).await;
+            }
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
                 let target = (x.round() as i64, y.round() as i64, width.round() as i64, height.round() as i64);
                 shared.borrow_mut().placed.insert(id.clone(), target);

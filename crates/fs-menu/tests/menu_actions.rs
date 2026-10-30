@@ -5,7 +5,8 @@
 mod common;
 
 use common::{entries, real_tree};
-use fs_menu::actions::{Action, Run, Subject, actions_for, first_action, second_action};
+use fs_menu::abbrev::Source;
+use fs_menu::actions::{Action, Run, Subject, TargetKind, WINDOW_KIND, actions_for, filter, first_action, into_action, second_action};
 use fs_menu::clipboard::history::Entry;
 use fs_menu::keybinds::{Bind, rows as bind_rows};
 use fs_menu::model::build_tree;
@@ -49,6 +50,56 @@ fn app() {
     assert_eq!(ids(&hybrid), ["open", "new-window", "desktop:new-private-window", "discrete-gpu", "copy-path"]);
     assert_eq!(hybrid[3].run, Run::Ipc("app.gpu:firefox".into()));
     assert_eq!(second_action(&Subject::of(&node)).unwrap().id, "new-window");
+    assert_eq!(into_action(&Subject::of(&node)), None);
+}
+
+#[test]
+fn app_with_windows() {
+    let node = firefox();
+    let open = actions_for(&Subject { windows: 2, discrete_gpu: true, ..Subject::of(&node) });
+    assert_eq!(ids(&open), ["open", "new-window", "desktop:new-private-window", "windows", "discrete-gpu", "move-to-workspace", "copy-path"]);
+    assert_eq!(open[3].label, "Show its 2 windows");
+    assert_eq!(open[3].run, Run::Into("app:firefox".into()));
+    assert_eq!(open[5].run, Run::Target(TargetKind::Workspace));
+    assert_eq!(into_action(&Subject { windows: 1, ..Subject::of(&node) }).unwrap().label, "Show its window");
+}
+
+#[test]
+fn window() {
+    let node = Node { path: "0xab".into(), ..Node::new("window:0xab", "Firefox", Kind::Other(WINDOW_KIND.into())) };
+    let all = of(&node);
+    assert_eq!(ids(&all), ["focus", "close", "move-to-workspace", "float", "fullscreen"]);
+    assert_eq!(all[0].run, Run::Ipc("window.focus:0xab".into()));
+    assert!(all[1].destructive);
+    assert_eq!(second_action(&Subject::of(&node)).unwrap().id, "close");
+    assert_eq!(into_action(&Subject::of(&node)), None);
+}
+
+#[test]
+fn abbreviation() {
+    let node = firefox();
+    let with = |source| actions_for(&Subject { abbrev: Some(("ff", source)), ..Subject::of(&node) });
+    let learned = with(Source::Learned);
+    assert_eq!(ids(&learned[4..]), ["abbrev-forget", "abbrev-edit", "abbrev-pin"]);
+    assert_eq!(learned[4].run, Run::Ipc("abbrev.forget:ff".into()));
+    assert_eq!(learned[5].run, Run::Input("Abbreviation for Firefox".into()));
+    assert_eq!(learned[6].run, Run::Ipc("abbrev.pin:ff".into()));
+    assert_eq!(ids(&with(Source::Pinned)[4..]), ["abbrev-forget", "abbrev-edit"]);
+    let configured = with(Source::Configured);
+    assert_eq!(ids(&configured[4..]), ["abbrev-configured"]);
+    assert_eq!(configured[4].run, Run::Note);
+    // A note never runs, so a subject with nothing else has no default.
+    let bare = Node::new("x", "X", Kind::Other("thing".into()));
+    assert_eq!(first_action(&Subject { abbrev: Some(("x", Source::Configured)), ..Subject::of(&bare) }), None);
+}
+
+#[test]
+fn filtering() {
+    let labels = ["Open", "New window", "New private window", "Move to workspace\u{2026}"];
+    assert_eq!(filter(&labels, "new"), [1, 2]);
+    assert_eq!(filter(&labels, "new priv"), [2]);
+    assert_eq!(filter(&labels, "WORK"), [3]);
+    assert_eq!(filter(&labels, ""), [0, 1, 2, 3]);
 }
 
 #[test]

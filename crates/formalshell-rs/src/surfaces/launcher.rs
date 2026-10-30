@@ -16,6 +16,7 @@
 
 use std::time::Instant;
 
+use fs_menu::actions::{Action, Run, TargetKind};
 use fs_menu::field;
 use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir, KeyAction, KeyCtx, KeyMode};
@@ -143,6 +144,66 @@ pub struct Model {
     pub motion_scale: f64,
     /// What the query's abbreviations say, for the ranking and `abbrev`.
     lookup: fs_menu::abbrev::Lookup,
+    /// The query as an abbreviation, when it is one.
+    abbrev_key: Option<String>,
+    /// The actions column beside the list, while it is open.
+    column: Option<Column>,
+    /// The subject whose own children the list holds (an app's windows),
+    /// stepped into over `level`.
+    children: Option<Children>,
+    /// `Edit abbreviation`'s subject and the abbreviation it edits, while
+    /// its Input step is up.
+    editing: Option<(String, String)>,
+}
+
+/// The token an `Edit abbreviation` answer comes back under.
+pub const ABBREV_EDIT: &str = "abbrev-edit";
+
+/// A subject stepped into with →.
+#[derive(Clone, Debug)]
+struct Children {
+    /// Its subject id.
+    id: String,
+    label: String,
+}
+
+/// The selected subject's actions beside the list (launcher spec §5). The
+/// field filters it; the list's own query waits in `list_query`.
+struct Column {
+    node: Node,
+    actions: Vec<Action>,
+    list_query: String,
+    /// An action asking for a target, and the targets, which the column
+    /// lists instead of the actions.
+    target: Option<(Action, Vec<Node>)>,
+    /// What the filter leaves, as positions in the step's list.
+    shown: Vec<usize>,
+    cursor: usize,
+    opened: Instant,
+}
+
+impl Column {
+    fn labels(&self) -> Vec<&str> {
+        match &self.target {
+            Some((_, targets)) => targets.iter().map(|t| t.label.as_str()).collect(),
+            None => self.actions.iter().map(|a| a.label.as_str()).collect(),
+        }
+    }
+
+    fn ids(&self) -> Vec<&str> {
+        self.shown
+            .iter()
+            .filter_map(|&i| match &self.target {
+                Some((_, targets)) => targets.get(i).map(|t| t.id.as_str()),
+                None => self.actions.get(i).map(|a| a.id.as_str()),
+            })
+            .collect()
+    }
+
+    fn refilter(&mut self, query: &str) {
+        self.shown = fs_menu::actions::filter(&self.labels(), query);
+        self.cursor = 0;
+    }
 }
 
 /// AddTransition, MoveTransition and RemoveTransition: an arriving row
@@ -262,6 +323,10 @@ impl Default for Model {
             motion: RowMotion::default(),
             motion_scale: 1.0,
             lookup: Default::default(),
+            abbrev_key: None,
+            column: None,
+            children: None,
+            editing: None,
             placed: false,
             want: String::new(),
             from_keys: true,
@@ -392,7 +457,19 @@ impl Model {
     /// The clipboard routes' 50/50 split: the list, then the cursor row's
     /// whole content.
     pub fn split(&self) -> bool {
-        self.mode == Mode::Menu && matches!(self.level.as_deref(), Some("clipboard" | "share.history"))
+        self.mode == Mode::Menu && matches!(self.level.as_deref(), Some("clipboard" | "share.history")) && self.children.is_none()
+    }
+
+    /// The list takes the left half of the card: a split route's preview
+    /// or the actions column holds the right.
+    pub fn halved(&self) -> bool {
+        self.split() || self.column.is_some()
+    }
+
+    /// The query the list is ranked by: the field's, or while the column
+    /// filters through the field, the one it held before.
+    fn list_text(&self) -> &str {
+        self.column.as_ref().map_or(self.query.text(), |c| c.list_query.as_str())
     }
 
     /// One monitor tick onto the tiles' history lines.
@@ -422,7 +499,7 @@ impl Model {
         let s = &theme.space;
         if self.app_view() {
             s.popup_width_menu_app
-        } else if self.split() {
+        } else if self.halved() {
             s.popup_width_menu_split
         } else {
             s.popup_width_menu
@@ -598,6 +675,9 @@ impl Model {
         if self.mode != Mode::Menu {
             return self.select_prompt.clone();
         }
+        if let Some(c) = &self.column {
+            return if c.target.is_some() { "Search targets".into() } else { "Search actions".into() };
+        }
         match self.level.as_deref().and_then(|l| store.menu.nodes().get(l)) {
             Some(node) => model::prompt_for(Some(node)),
             None => "Search apps, files, commands".into(),
@@ -621,23 +701,37 @@ impl Model {
         if self.mode != Mode::Menu {
             return Vec::new();
         }
-        model::mode_path(store.menu.nodes(), self.level.as_deref())
+        let mut path = model::mode_path(store.menu.nodes(), self.level.as_deref());
+        path.extend(self.children.as_ref().map(|c| c.label.clone()));
+        path
+    }
+
+    /// The column's tokens after the mode's: `Actions`, then the target
+    /// an action asks for.
+    pub fn column_tokens(&self) -> Vec<&'static str> {
+        let Some(c) = &self.column else { return Vec::new() };
+        let mut out = vec!["Actions"];
+        if let Some((Action { run: Run::Target(kind), .. }, _)) = &c.target {
+            out.push(kind.label());
+        }
+        out
     }
 
     /// The level and its rows, resolved over the warm index.
     fn resolve_rows(&self, store: &Store) -> (View, Vec<Node>, usize, Option<Node>, bool, String) {
         let menu = self.mode == Mode::Menu;
-        let q = self.query.text();
+        let q = self.list_text();
         let level = self.level.as_deref();
         let nodes = store.menu.nodes();
         let cond = &store.menu.cond;
         let emoji = menu && level == Some("emoji");
-        let route_rows = matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
+        let children = self.children.as_ref().filter(|_| menu);
+        let route_rows = children.is_some() || matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
         let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
-        let picker = menu && level == Some(PICKER_ROUTE);
-        let monitor = menu && level == Some(MONITOR_ROUTE);
-        let mirror = menu && level == Some(MIRROR_ROUTE);
-        let emoji = emoji && !picker && !monitor && !mirror;
+        let picker = menu && children.is_none() && level == Some(PICKER_ROUTE);
+        let monitor = menu && children.is_none() && level == Some(MONITOR_ROUTE);
+        let mirror = menu && children.is_none() && level == Some(MIRROR_ROUTE);
+        let emoji = emoji && children.is_none() && !picker && !monitor && !mirror;
         let view = if mirror {
             View::Mirror
         } else if monitor {
@@ -662,6 +756,7 @@ impl Model {
                     .collect()
             }
             Mode::Input => Vec::new(),
+            Mode::Menu if children.is_some() => window_rows(store, children.map_or("", |c| c.id.as_str()), q),
             Mode::Menu if picker => self.picker_rows(store, q),
             Mode::Menu if monitor => monitor_rows(store, q),
             Mode::Menu if mirror => Vec::new(),
@@ -734,7 +829,14 @@ impl Model {
             app_count = parts.app_count;
         }
         let searching = menu && !q.is_empty() && !emoji && !picker && !monitor && !route_rows;
-        let key = format!("{:?}\u{1}{}\u{1}{}\u{1}{}", self.mode, level.unwrap_or(""), q, if picker && self.picker.light { "light" } else { "" });
+        let key = format!(
+            "{:?}\u{1}{}\u{1}{}\u{1}{}\u{1}{}",
+            self.mode,
+            level.unwrap_or(""),
+            children.map_or("", |c| c.id.as_str()),
+            q,
+            if picker && self.picker.light { "light" } else { "" }
+        );
         (view, rows, app_count, empty, searching, key)
     }
 
@@ -744,26 +846,31 @@ impl Model {
             return Default::default();
         }
         let book = abbreviation_book(store);
-        fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, self.query.text(), now_ms(), |id| resolves(store, id))
+        fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, self.list_text(), now_ms(), |id| resolves(store, id))
     }
 
     /// Commits the rows, their headings and the cursor.
     pub fn resolve(&mut self, store: &Store, theme: &Theme, kit: &mut Kit) {
         self.lookup = self.lookup(store);
+        self.abbrev_key = if self.mode == Mode::Menu { fs_menu::abbrev::key(self.list_text()) } else { None };
         let (view, rows, app_count, empty, searching, key) = self.resolve_rows(store);
         let fresh = key != self.key;
         let level_label = self.level.as_deref().and_then(|l| store.menu.nodes().get(l)).map(|n| n.label.clone()).unwrap_or_default();
-        let sections = model::sections_for(
-            &rows,
-            &SectionCtx {
-                mode: Some(self.mode),
-                grid: view == View::Emoji,
-                cells: app_count,
-                searching,
-                level: self.level.as_deref(),
-                level_label: &level_label,
-            },
-        );
+        let sections = if self.children.is_some() {
+            vec![String::new(); rows.len()]
+        } else {
+            model::sections_for(
+                &rows,
+                &SectionCtx {
+                    mode: Some(self.mode),
+                    grid: view == View::Emoji,
+                    cells: app_count,
+                    searching,
+                    level: self.level.as_deref(),
+                    level_label: &level_label,
+                },
+            )
+        };
         let view_changed = view != self.view;
         let before: std::collections::HashMap<String, (Node, Slot)> = if matches!(view, View::Rows | View::AppGrid) {
             let skip = if self.view == View::AppGrid { self.app_count } else { 0 };
@@ -874,6 +981,7 @@ impl Model {
     fn layout(&mut self, theme: &Theme, kit: &mut Kit) {
         let s = &theme.space;
         let width = self.body_width(theme);
+        let width = if self.column.is_some() { (width / 2.0).round() } else { width };
         let inset = if self.bleeds() { s.sm } else { s.md };
         let gutter = s.sm;
         let heading_x = if self.bleeds() { s.sm + s.lg - s.control_padding_x } else { 0.0 };
@@ -1130,6 +1238,9 @@ impl Model {
             "drawn": drawn,
             "abbrev": self.rows.get(self.cursor).and_then(|n| self.lookup.source_of(&fs_menu::actions::subject_id(n))).map(fs_menu::abbrev::Source::as_str),
             "token": self.token(store),
+            "actionsOpen": self.column.is_some(),
+            "actions": self.column.as_ref().map_or_else(Vec::new, Column::ids),
+            "actionCursor": self.column.as_ref().map_or(-1, |c| c.cursor as i64),
         })
     }
 
@@ -1228,6 +1339,8 @@ impl Model {
         }
         self.open = false;
         self.confirm.clear();
+        self.column = None;
+        self.children = None;
     }
 
     /// Every input and select answer since the last call, for the in-process
@@ -1294,6 +1407,8 @@ impl Model {
         if id.as_deref() == Some(MONITOR_ROUTE) && self.level.as_deref() != Some(MONITOR_ROUTE) {
             self.monitor_history = MonitorHistory::default();
         }
+        self.column = None;
+        self.children = None;
         self.monitor_wants = (id.as_deref() == Some(MONITOR_ROUTE)).then(|| {
             use crate::services::wants::{Source, Want};
             (Want::new(Source::Monitor), Want::new(Source::Processes))
@@ -1313,6 +1428,13 @@ impl Model {
     /// One level up: Backspace, Escape and ← on an empty field, and a click
     /// on the token. At the root it closes.
     pub fn pop(&mut self, store: &Store) -> Out {
+        if self.children.take().is_some() {
+            self.query.clear();
+            self.confirm.clear();
+            self.from_keys = true;
+            self.dirty = true;
+            return Out::None;
+        }
         let Some(level) = self.level.clone() else {
             self.close();
             return Out::Close;
@@ -1341,7 +1463,11 @@ impl Model {
     fn query_changed(&mut self, store: &Store) {
         self.confirm.clear();
         self.monitor_armed = None;
-        if self.mode != Mode::Menu {
+        if let Some(c) = &mut self.column {
+            c.refilter(self.query.text());
+            return;
+        }
+        if self.mode != Mode::Menu || self.children.is_some() {
             return;
         }
         let Some((level, rest)) = model::prefixed(store.menu.nodes(), self.query.text()).and_then(|(n, rest)| Some((Self::level_of(store, n)?, rest.to_owned()))) else {
@@ -1352,21 +1478,220 @@ impl Model {
     }
 
     /// The row as a subject, with what the shell knows about it.
-    pub fn subject<'a>(&self, store: &Store, node: &'a Node) -> fs_menu::actions::Subject<'a> {
+    pub fn subject<'a>(&'a self, store: &Store, node: &'a Node) -> fs_menu::actions::Subject<'a> {
         let windows = match &node.entry {
             Some(entry) if node.kind == NodeKind::App => app_windows(store, entry).len(),
             _ => 0,
         };
+        let abbrev = self.abbrev_key.as_deref().zip(self.lookup.source_of(&fs_menu::actions::subject_id(node)));
         fs_menu::actions::Subject {
             node,
             windows,
             discrete_gpu: store.info.monitor.cards.iter().any(|c| c.discrete),
             picker_select: self.picker.select,
+            abbrev,
         }
+    }
+
+    /// The cursor onto `index` as a key would put it, the column left as
+    /// it is.
+    fn select(&mut self, index: usize) {
+        if index != self.cursor {
+            self.place(index, false);
+            self.placed = true;
+            self.want = self.cursor_id.clone();
+            self.confirm.clear();
+        }
+    }
+
+    /// Tab, a right-click and `menu actions`: the row's actions in the
+    /// column beside the list. False with nothing to list.
+    pub fn open_actions(&mut self, store: &Store, index: usize) -> bool {
+        if self.mode != Mode::Menu || !matches!(self.view, View::Rows | View::AppGrid | View::Emoji) {
+            return false;
+        }
+        let Some(node) = self.rows.get(index).cloned() else { return false };
+        let actions = fs_menu::actions::actions_for(&self.subject(store, &node));
+        if actions.is_empty() {
+            return false;
+        }
+        self.close_actions();
+        self.select(index);
+        self.confirm.clear();
+        let shown = (0..actions.len()).collect();
+        let list_query = self.query.text().to_owned();
+        self.query.clear();
+        self.column = Some(Column { node, actions, list_query, target: None, shown, cursor: 0, opened: Instant::now() });
+        self.dirty = true;
+        true
+    }
+
+    pub fn actions_open(&self) -> bool {
+        self.column.is_some()
+    }
+
+    /// The column gone, the list's query back in the field.
+    pub fn close_actions(&mut self) {
+        if let Some(c) = self.column.take() {
+            self.query.set(&c.list_query);
+            self.confirm.clear();
+            self.dirty = true;
+        }
+    }
+
+    /// Shift+Tab, Escape and ← in the column: a target list back to its
+    /// actions, the actions back to the list.
+    fn column_back(&mut self) {
+        let Some(c) = &mut self.column else { return };
+        if c.target.take().is_none() {
+            return self.close_actions();
+        }
+        self.query.clear();
+        c.refilter("");
+        c.opened = Instant::now();
+        self.confirm.clear();
+        self.dirty = true;
+    }
+
+    fn column_move(&mut self, dir: Dir) {
+        let page = (self.body_h / fs_theme::tokens::LAUNCHER.row_height).floor().max(1.0) as usize;
+        let Some(c) = &mut self.column else { return };
+        c.cursor = nav::step(c.cursor, dir, c.shown.len(), 0, 1, page).index;
+        self.confirm.clear();
+        self.dirty = true;
+    }
+
+    /// Enter in the column: the action, or the target, under its cursor.
+    fn column_run(&mut self, store: &Store) -> Out {
+        let Some(c) = &self.column else { return Out::None };
+        let Some(&i) = c.shown.get(c.cursor) else { return Out::None };
+        let node = c.node.clone();
+        match &c.target {
+            Some((action, targets)) => {
+                let (action, target) = (action.clone(), targets[i].clone());
+                self.close_actions();
+                self.run_target(store, &node, &action, &target)
+            }
+            None => {
+                let action = c.actions[i].clone();
+                self.run_from_column(store, &node, &action)
+            }
+        }
+    }
+
+    /// One action off the column: a target action lists its targets in
+    /// it, a confirm action arms there, anything else closes it and runs.
+    fn run_from_column(&mut self, store: &Store, node: &Node, action: &Action) -> Out {
+        match action.run {
+            Run::Note => return Out::None,
+            Run::Target(kind) => {
+                let targets = targets_for(store, kind);
+                if let Some(c) = &mut self.column {
+                    c.target = Some((action.clone(), targets));
+                    c.refilter("");
+                    c.opened = Instant::now();
+                }
+                self.query.clear();
+                self.dirty = true;
+                return Out::None;
+            }
+            _ => {}
+        }
+        let armed = format!("{}\u{1}{}", node.id, action.id);
+        if action.confirm && self.confirm != armed {
+            self.confirm = armed;
+            self.dirty = true;
+            return Out::None;
+        }
+        self.close_actions();
+        self.run(store, node, action)
+    }
+
+    /// The column action a first Enter armed, by position in the actions.
+    fn column_armed(&self) -> Option<usize> {
+        let c = self.column.as_ref()?;
+        c.actions.iter().position(|a| self.confirm == format!("{}\u{1}{}", c.node.id, a.id))
+    }
+
+    /// A click on the column's `i`th entry.
+    pub fn column_pick(&mut self, store: &Store, i: usize) -> Out {
+        if let Some(c) = &mut self.column
+            && i < c.shown.len()
+        {
+            c.cursor = i;
+        }
+        self.column_run(store)
+    }
+
+    /// `menu runAction`: the action `id` on row `index`, as the column
+    /// would run it, which opens the column for one that asks a target.
+    pub fn run_action(&mut self, store: &Store, index: usize, id: &str) -> Result<Out, String> {
+        let on_row = self.column.as_ref().is_some_and(|c| self.rows.get(index).is_some_and(|r| r.id == c.node.id));
+        if !on_row && !self.open_actions(store, index) {
+            return Err(format!("error: row {index} has no actions"));
+        }
+        let Some((node, action)) = self.column.as_ref().and_then(|c| Some((c.node.clone(), c.actions.iter().find(|a| a.id == id)?.clone()))) else {
+            if !on_row {
+                self.close_actions();
+            }
+            return Err(format!("error: no action {id}"));
+        };
+        self.query.clear();
+        if let Some(c) = &mut self.column {
+            c.target = None;
+            c.refilter("");
+            c.cursor = c.actions.iter().position(|a| a.id == id).unwrap_or(0);
+        }
+        Ok(self.run_from_column(store, &node, &action))
+    }
+
+    /// →, and `menu into`: row `index`'s own children, `None` when it has
+    /// none to step into.
+    pub fn step_into(&mut self, store: &Store, index: usize) -> Option<Out> {
+        if self.mode != Mode::Menu {
+            return None;
+        }
+        let node = self.rows.get(index).cloned()?;
+        let action = fs_menu::actions::into_action(&self.subject(store, &node))?;
+        self.close_actions();
+        self.select(index);
+        Some(self.run(store, &node, &action))
+    }
+
+    /// A target action's pick: the subject's windows onto a workspace.
+    fn run_target(&mut self, store: &Store, node: &Node, action: &Action, target: &Node) -> Out {
+        match action.run {
+            Run::Target(TargetKind::Workspace) => {
+                let Some(idx) = target.id.strip_prefix("workspace:").and_then(|i| i.parse::<i64>().ok()) else { return Out::None };
+                let windows = match &node.entry {
+                    Some(entry) if node.kind == NodeKind::App => app_windows(store, entry),
+                    _ => vec![node.path.clone()],
+                };
+                let output = store.compositor.snapshot.focused_output_name.clone();
+                for id in windows.into_iter().filter(|w| !w.is_empty()) {
+                    compositor::send(compositor::Command::MoveWindowTo { id, idx, output: output.clone() });
+                }
+            }
+            _ => return Out::None,
+        }
+        self.picked(store, node);
+        self.close();
+        Out::Close
+    }
+
+    /// `Edit abbreviation`'s answer: the subject pinned under the new
+    /// abbreviation, the one it edits forgotten.
+    pub fn edit_answer(&mut self, store: &Store, value: Option<String>, cancelled: bool) {
+        let Some((subject, old)) = self.editing.take() else { return };
+        let Some(new) = value.filter(|_| !cancelled).as_deref().and_then(fs_menu::abbrev::key) else { return };
+        let book = fs_menu::abbrev::forget(&abbreviation_book(store), &old, &subject);
+        let book = fs_menu::abbrev::pin(&book, &new, &subject);
+        state::set(vec![state::Field::Abbreviations(json!(book))]);
     }
 
     /// Enter: the row's first action.
     pub fn activate(&mut self, store: &Store, index: usize) -> Out {
+        self.close_actions();
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
         if matches!(node.kind, NodeKind::Other(ref k) if k == "option") {
             self.complete_select(&node.label);
@@ -1380,6 +1705,7 @@ impl Model {
 
     /// Shift+Enter: the row's second action, else its first.
     pub fn activate_alternate(&mut self, store: &Store, index: usize) -> Out {
+        self.close_actions();
         let Some(node) = self.rows.get(index).cloned() else { return Out::None };
         match fs_menu::actions::second_action(&self.subject(store, &node)) {
             Some(action) => self.run(store, &node, &action),
@@ -1406,7 +1732,7 @@ impl Model {
         let held: Vec<fs_menu::frecency::Record> =
             picks(store).into_iter().filter(|r| !(apps_known && r.id.starts_with("app:")) || resolves(store, &r.id)).collect();
         let mut fields = vec![state::Field::Picks(json!(fs_menu::frecency::record(&held, &id, now, None)))];
-        let q = self.query.text();
+        let q = self.list_text();
         let q_norm = fs_menu::search::normalize(q.trim());
         let exact = fs_menu::search::tier(node, &q_norm, &fs_menu::search::slug(&q_norm)) == fs_menu::search::TIER_EXACT;
         if !exact && fs_menu::abbrev::key(q).is_some() {
@@ -1435,13 +1761,62 @@ impl Model {
         let out = match &action.run {
             Run::Into(id) => {
                 self.picked(store, node);
+                if node.kind == NodeKind::App && *id == fs_menu::actions::subject_id(node) {
+                    self.children = Some(Children { id: id.clone(), label: node.label.clone() });
+                    self.query.clear();
+                    self.from_keys = true;
+                    self.dirty = true;
+                    return Out::None;
+                }
                 let to = if store.menu.nodes().contains_key(id) { id.clone() } else { node.id.clone() };
                 self.enter_level(store, Some(to));
                 return Out::None;
             }
+            Run::Input(prompt) => {
+                let subject = fs_menu::actions::subject_id(node);
+                let editing = self.abbrev_key.clone().map(|q| (subject, q));
+                self.open_input(prompt, ABBREV_EDIT, false);
+                self.editing = editing;
+                return Out::None;
+            }
+            Run::Target(_) | Run::Note => return Out::None,
             Run::Ipc(name) => {
                 let (verb, arg) = name.split_once(':').unwrap_or((name, ""));
                 match verb {
+                    // An abbreviation's own actions are no pick: picking
+                    // would teach the pair straight back.
+                    "abbrev.forget" | "abbrev.pin" => {
+                        let subject = fs_menu::actions::subject_id(node);
+                        let book = abbreviation_book(store);
+                        let book = if verb == "abbrev.pin" {
+                            fs_menu::abbrev::pin(&book, arg, &subject)
+                        } else {
+                            fs_menu::abbrev::forget(&book, arg, &subject)
+                        };
+                        state::set(vec![state::Field::Abbreviations(json!(book))]);
+                        self.dirty = true;
+                        if action.keep_open {
+                            return Out::None;
+                        }
+                        self.close();
+                        return Out::Close;
+                    }
+                    "window.focus" => {
+                        compositor::focus_window(arg);
+                        Out::None
+                    }
+                    "window.close" => {
+                        compositor::close_window(arg);
+                        Out::None
+                    }
+                    "window.float" => {
+                        compositor::send(compositor::Command::ToggleFloating(arg.to_owned()));
+                        Out::None
+                    }
+                    "window.fullscreen" => {
+                        compositor::send(compositor::Command::ToggleFullscreen(arg.to_owned()));
+                        Out::None
+                    }
                     "app.open" => {
                         let Some(entry) = node.entry.as_ref().filter(|e| e.id == arg) else { return Out::None };
                         let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
@@ -1511,6 +1886,13 @@ impl Model {
             self.mirror_cycle(store, 1);
             return Out::None;
         }
+        let column = self.column.is_some();
+        let caret_end = self.query.caret() == self.query.text().len() && self.query.selection().is_none();
+        let into = key == nav::Key::Right
+            && !column
+            && caret_end
+            && self.view == View::Rows
+            && self.rows.get(self.cursor).is_some_and(|n| fs_menu::actions::into_action(&self.subject(store, n)).is_some());
         let ctx = KeyCtx {
             mode: self.key_mode(),
             query: !self.query.is_empty(),
@@ -1518,24 +1900,34 @@ impl Model {
             app_view: false,
             scrollable: false,
             variants: self.picker_switch(store),
-            level: self.level.is_some(),
+            level: self.level.is_some() || self.children.is_some(),
+            column,
+            into,
         };
         let action = nav::key_action(key, mods, repeat, &ctx);
+        if column {
+            match action {
+                KeyAction::Up => self.column_move(Dir::Up),
+                KeyAction::Down => self.column_move(Dir::Down),
+                KeyAction::PageUp => self.column_move(Dir::PageUp),
+                KeyAction::PageDown => self.column_move(Dir::PageDown),
+                KeyAction::Home => self.column_move(Dir::Home),
+                KeyAction::End => self.column_move(Dir::End),
+                KeyAction::Back => self.column_back(),
+                KeyAction::Activate | KeyAction::ActivateAlternate => return self.column_run(store),
+                KeyAction::Pass => return self.edit(store, edit, mods, text),
+                _ => {}
+            }
+            self.dirty = true;
+            return Out::None;
+        }
         let out = match action {
-            KeyAction::Pass => {
-                match self.query.key(edit, mods, text) {
-                    field::Outcome::Pass => return Out::None,
-                    field::Outcome::Held => {}
-                    field::Outcome::Edited => self.query_changed(store),
-                    field::Outcome::Copy(t) => clipboard::command(clipboard::Cmd::SetText(t)),
-                    field::Outcome::Cut(t) => {
-                        clipboard::command(clipboard::Cmd::SetText(t));
-                        self.query_changed(store);
-                    }
-                    field::Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
-                }
+            KeyAction::Pass => return self.edit(store, edit, mods, text),
+            KeyAction::Actions => {
+                self.open_actions(store, self.cursor);
                 Out::None
             }
+            KeyAction::Into => self.step_into(store, self.cursor).unwrap_or(Out::None),
             KeyAction::Up => self.dir(Dir::Up),
             KeyAction::Down => self.dir(Dir::Down),
             KeyAction::Left => self.dir(Dir::Left),
@@ -1569,6 +1961,23 @@ impl Model {
         };
         self.dirty = true;
         out
+    }
+
+    /// A key the field takes.
+    fn edit(&mut self, store: &Store, edit: field::Key, mods: nav::Modifiers, text: Option<&str>) -> Out {
+        match self.query.key(edit, mods, text) {
+            field::Outcome::Pass => return Out::None,
+            field::Outcome::Held => {}
+            field::Outcome::Edited => self.query_changed(store),
+            field::Outcome::Copy(t) => clipboard::command(clipboard::Cmd::SetText(t)),
+            field::Outcome::Cut(t) => {
+                clipboard::command(clipboard::Cmd::SetText(t));
+                self.query_changed(store);
+            }
+            field::Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
+        }
+        self.dirty = true;
+        Out::None
     }
 
     fn dir(&mut self, d: Dir) -> Out {
@@ -1670,6 +2079,60 @@ fn app_windows(store: &Store, entry: &fs_menu::node::DesktopEntry) -> Vec<String
         .map(|w| fs_menu::appmatch::Window { id: w.id.clone(), app_id: w.app_id.clone() })
         .collect();
     fs_menu::appmatch::match_windows(Some(entry), &windows)
+}
+
+/// An app subject's windows as rows, each a window subject: its title
+/// over the app's icon, its workspace trailing.
+fn window_rows(store: &Store, subject: &str, q: &str) -> Vec<Node> {
+    let Some(app) = model::subject_node(store.menu.nodes(), subject) else { return Vec::new() };
+    let Some(entry) = &app.entry else { return Vec::new() };
+    let snap = &store.compositor.snapshot;
+    let q = q.trim().to_lowercase();
+    app_windows(store, entry)
+        .iter()
+        .filter_map(|id| store.compositor.window(id))
+        .filter(|w| q.is_empty() || w.title.to_lowercase().contains(&q))
+        .map(|w| Node {
+            path: w.id.clone(),
+            icon: app.icon.clone(),
+            icon_source: app.icon_source.clone(),
+            meta: snap.workspaces.iter().find(|ws| ws.id == w.workspace_id).map(|ws| ws.name.clone()),
+            ..Node::new(
+                format!("window:{}", w.id),
+                if w.title.is_empty() { app.label.clone() } else { w.title.clone() },
+                NodeKind::Other(fs_menu::actions::WINDOW_KIND.into()),
+            )
+        })
+        .collect()
+}
+
+/// What a target action picks from. Workspaces: the focused output's, by
+/// slot, then the next free one as a new one.
+fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
+    match kind {
+        TargetKind::Workspace => {
+            let snap = &store.compositor.snapshot;
+            let output = &snap.focused_output_name;
+            let mut slots: Vec<(i64, String)> = snap
+                .workspaces
+                .iter()
+                .filter(|w| w.idx >= 1 && (output.is_empty() || w.output == *output))
+                .map(|w| (w.idx, w.name.clone()))
+                .collect();
+            slots.sort_by_key(|(idx, _)| *idx);
+            slots.dedup_by_key(|(idx, _)| *idx);
+            // One past every output's: Hyprland's idx is global, so one past
+            // this output's alone can name another output's workspace.
+            let next = snap.workspaces.iter().map(|w| w.idx).max().unwrap_or(0).max(0) + 1;
+            let row = |idx: i64, meta: Option<String>| Node {
+                meta,
+                ..Node::new(format!("workspace:{idx}"), format!("Workspace {idx}"), NodeKind::Other("workspace".into()))
+            };
+            let mut out: Vec<Node> = slots.into_iter().map(|(idx, name)| row(idx, (!name.is_empty() && name != idx.to_string()).then_some(name))).collect();
+            out.push(row(next, Some("New".into())));
+            out
+        }
+    }
 }
 
 pub fn selection_path() -> std::path::PathBuf {
@@ -1992,8 +2455,17 @@ impl Shown {
             let out = |r: IRect| IRect::new(r.x + on_output.0, r.y + on_output.1, r.w, r.h);
             (out(feed), pic.map(out))
         });
-        // The split preview: the cursor row's whole content beside the list.
-        if m.split() && body_h > 0.0 {
+        // The actions column over the right half, else a split route's
+        // preview there: the cursor row's whole content beside the list.
+        if m.column.is_some() && body_h > 0.0 {
+            let half = (body_w / 2.0).round();
+            let r = Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h);
+            let (el, settling) = column_el(m, theme, r.height(), now, self.scale);
+            let d = self.preview.draw(&el, r, Some(body_clip), alpha, theme, kit, scene, now);
+            if d.animating || settling {
+                self.wake = Some(now);
+            }
+        } else if m.split() && body_h > 0.0 {
             let half = (inner_w / 2.0).round();
             let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - side, body_top + body_h - s.md);
             let el = split_preview(m, store, theme, kit, r.width(), r.height());
@@ -2033,7 +2505,7 @@ impl Shown {
             }
             None => (x, y),
         };
-        self.body.hit(x, y).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
+        self.body.hit(x, y).or_else(|| self.preview.hit(x, y)).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
     }
 
     /// The mode token's box on the output, while one is drawn.
@@ -2049,6 +2521,7 @@ impl Shown {
     pub fn set_hover(&mut self, path: Option<String>) -> bool {
         let changed = self.body.hover != path;
         self.body.hover = path.clone();
+        self.preview.hover = path.clone();
         self.head.hover = path.clone();
         self.foot.hover = path;
         changed
@@ -2063,6 +2536,10 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
         parts.push(w::token(s, &token).on("token"));
         parts.push(w::space(s.sm));
     }
+    for word in m.column_tokens() {
+        parts.push(w::token(s, &[word]).on("column-token"));
+        parts.push(w::space(s.sm));
+    }
     parts.push(w::edit(&m.query, &m.placeholder(store), Type::Field));
     w::row(0.0, parts).fill()
 }
@@ -2074,6 +2551,11 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     let node = m.rows.get(m.cursor);
     let mut hints: Vec<(String, Vec<&'static str>, &'static str)> = Vec::new();
     match m.mode {
+        Mode::Menu if m.column.is_some() => {
+            let label = if m.column_armed().is_some() { "Confirm" } else { "Run" };
+            hints.push((label.into(), vec!["Enter"], "column-run"));
+            hints.push(("Back".into(), vec!["Shift", "Tab"], "column-back"));
+        }
         Mode::Input => hints.push(("Submit".into(), vec!["Enter"], "primary")),
         Mode::Select => {
             if node.is_some() {
@@ -2096,17 +2578,12 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 }
                 if m.picker_switch(store) {
                     let label = if m.picker.light { "Show dark" } else { "Show light" };
-                    hints.push((label.into(), vec!["Tab"], "variant"));
-                } else if !subject.inert() {
+                    hints.push((label.into(), vec!["Ctrl", "Tab"], "variant"));
+                } else if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
                     hints.push(("Actions".into(), vec!["Tab"], "actions"));
                 }
                 if !subject.inert() {
-                    let into = match n.kind {
-                        NodeKind::Submenu | NodeKind::Provider | NodeKind::Link => true,
-                        NodeKind::App => subject.windows > 0,
-                        _ => false,
-                    };
-                    if into {
+                    if m.view == View::Rows && fs_menu::actions::into_action(&subject).is_some() {
                         hints.push(("Into".into(), vec!["Right"], "into"));
                     }
                     let all = fs_menu::actions::actions_for(&subject);
@@ -2125,6 +2602,68 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
     // A band a `controlHeight` tall whether or not a hint is in it.
     parts.push(El::new(ui::el::Kind::Swatch { color: fs_theme::color::Rgba::TRANSPARENT, w: 0.0, h: s.control_height, radius: 0.0, border: false }));
     w::row(s.xs, parts).fill()
+}
+
+/// The actions column, or the targets one of them asks for: rows of the
+/// list's height and inset, the cursor's row filled, faded in on `effects`
+/// as it opens. True while that fade runs.
+fn column_el(m: &Model, theme: &Theme, height: f64, now: Instant, scale: f64) -> (El, bool) {
+    let s = &theme.space;
+    let Some(c) = &m.column else { return (w::space(0.0), false) };
+    let row_h = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height);
+    let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
+    let armed = m.column_armed();
+    let fits = (((height - s.sm * 2.0) / row_h).floor() as usize).max(1);
+    let first = (c.cursor + 1).saturating_sub(fits);
+    let mut rows = Vec::new();
+    for (at, &i) in c.shown.iter().enumerate().skip(first).take(fits) {
+        let selected = at == c.cursor;
+        let (label, icon, trail, dim, destructive) = match &c.target {
+            Some((_, targets)) => {
+                let t = &targets[i];
+                let meta = t.meta.clone().map(|v| w::text(v).size(Type::BodySmall).ink(Ink::Dim));
+                (t.label.clone(), None, meta, false, false)
+            }
+            None => {
+                let a = &c.actions[i];
+                let label = if armed == Some(i) { format!("Confirm {}?", a.label) } else { a.label.clone() };
+                let trail = matches!(a.run, Run::Into(_)).then(|| w::icon("chevron-right").ink(Ink::Dim));
+                (label, a.icon.clone(), trail, a.run == Run::Note, a.destructive)
+            }
+        };
+        let mut lead = Vec::new();
+        if let Some(name) = icon {
+            let ink = if destructive { Ink::Destructive } else { Ink::Fg };
+            lead.push(w::icon(name).ink(ink).width(Size::Px(icon_px)).height(icon_px));
+        }
+        let mut name = w::text(label).weight(if selected { Weight::Semibold } else { Weight::Normal }).elide();
+        if dim {
+            name = name.ink(Ink::Dim);
+        }
+        lead.push(name);
+        let mut parts = vec![w::row(s.lg, lead).fill()];
+        parts.extend(trail);
+        let confirming = armed == Some(i) && c.target.is_none();
+        rows.push(
+            w::cell(w::row(s.lg, parts).fill())
+                .ghost()
+                .selected(selected)
+                .interactive()
+                .cell_state(|st| {
+                    st.row = true;
+                    st.destructive = confirming;
+                })
+                .on(format!("action:{at}"))
+                .height(row_h),
+        );
+    }
+    if rows.is_empty() {
+        rows.push(w::text("No matches").ink(Ink::Muted).pad(s.lg, s.md, s.lg, s.md));
+    }
+    let ms = Clock::Effects.ms(theme) * scale;
+    let t = if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(c.opened).as_secs_f64() * 1000.0 / ms).min(1.0) };
+    let el = w::column(0.0, rows).pad(s.sm, s.sm, s.sm, s.sm);
+    (if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el }, t < 1.0)
 }
 
 /// The body's widgets for the slots inside the viewport, the rest as room.

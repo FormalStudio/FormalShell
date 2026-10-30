@@ -1242,22 +1242,36 @@ named by the row's own kind: Select, Open, Run, Choose (`Set wallpaper` on
 the wallpaper route), Copy, Paste or Share on clipboard and emoji rows, or a
 confirm prompt once a confirm-gated row is armed; a row that can't be
 activated shows no keys at all. Then `Actions` on `Tab` (the picker's other
-Dark/Light set while its switcher is up), `Into` on `→` where the row has
-children (a route's rows, an app's windows), and `Shift+Enter` named after
-the row's second action where it has one (New window on an app row, an ssh
-send on a clipboard image, Forget on a saved network).
+Dark/Light set on `Ctrl+Tab` while its switcher is up), `Into` on `→` where
+the row has children (a route's rows, an app's windows), and `Shift+Enter`
+named after the row's second action where it has one (New window on an app
+row, an ssh send on a clipboard image, Forget on a saved network).
+
+`Tab` opens the selected row's actions in a column beside the list: the
+card widens from 560 to 840, the list keeps the left half with the row
+still selected, and the column takes the right (on the clipboard it stands
+in for the preview). The field then filters the actions, its query held
+until the column closes, and reads `Actions` after the mode's token. `↑`
+`↓`, Page and Home/End move in the column, Enter or a click runs an
+action, and `Shift+Tab`, Escape or `←` on an empty filter close it. An
+action that needs an argument (`Move to workspace…`) lists those in the
+column under a third token (`Workspace`), `Shift+Tab` going back to the
+actions; one that needs words (`Edit abbreviation`) asks for them in the
+input step. `→` on an app with windows lists them, each with Focus, Close,
+Move to workspace…, Toggle floating and Fullscreen.
 
 | Key | Does |
 | --- | --- |
 | `↑` / `↓` | Move the cursor a row, or a whole row of cells on a grid |
-| `←` / `→` | Move the cursor a column on a grid; `←` on an empty field leaves the mode; the text field's cursor everywhere else |
+| `←` / `→` | Move the cursor a column on a grid; `←` on an empty field leaves the mode; `→` at the end of the query steps into the row's children; the text field's cursor everywhere else |
 | `Page Up` / `Page Down` | Move a page |
 | `Home` / `End` | Jump to the first or last row |
 | `Enter` | Submit (input mode); otherwise activate the row under the cursor |
 | `Shift+Enter` | The row's second action, else its first |
 | `Escape` | Cancel and close (select and input mode); otherwise clear the query, then leave the mode, then close at the root |
 | `Backspace` | Pop a level, only when the search field is empty; `Ctrl+Backspace` deletes a word |
-| `Tab` / `Shift+Tab` | Swap the picker's Dark/Light set, only while its switcher is showing |
+| `Tab` / `Shift+Tab` | Open and close the row's actions column |
+| `Ctrl+Tab` | Swap the picker's Dark/Light set, only while its switcher is showing |
 
 Hover moves the cursor only when the pointer is what moved. Rows sliding
 under a parked pointer never take the cursor, and the first real pointer
@@ -1304,10 +1318,14 @@ That `checked` is an ordinary shell condition, resolved like any other. Only
 the `@state:` paths are in-process.
 
 Every row has a list of actions: its kind's own (an app's Open, New window,
-its desktop file's `[Desktop Action]`s, Open on discrete GPU on a machine
-with one, Copy desktop file path), then its `alternate`, then an `actions`
-array of your own. Enter runs the first, `Shift+Enter` the second. An entry
-with a built-in's id changes that action, `"hidden": true` removes it:
+its desktop file's `[Desktop Action]`s, Show its windows and Move to
+workspace… while it has any, Open on discrete GPU on a machine with one,
+Copy desktop file path), then its `alternate`, then an `actions` array of
+your own, then its abbreviation's (Forget, Edit and Pin for a learned one,
+Forget and Edit for a pinned one, a note for one set in settings.json).
+Enter runs the first, `Shift+Enter` the second, and `Tab` lists them all.
+An entry with a built-in's id changes that action, `"hidden": true` removes
+it:
 
 ```jsonc
 // ~/.config/formalshell/menu.jsonc
@@ -1416,14 +1434,21 @@ fs menu refresh               # re-read menu.jsonc after an editor save
 fs menu status                # {isOpen, level, view, scrollTop, placeholder, sections, columns, rows, cursorId, …}
 fs menu activate <index>      # Enter on that row
 fs menu activateAlternate <index>   # Shift+Enter on that row
+fs menu actions <index>       # Tab on that row: its actions column
+fs menu runAction <index> <id>    # run that action id on that row
+fs menu into <index>          # → on that row
 fs menu abbreviations         # configured, pinned and learned abbreviations
 fs menu filter <text>         # type into the search field
 fs menu ping                  # "pong"
 ```
 
 `toggle` takes no argument on purpose: it is the verb to bind a bare menu key
-to. `activate`, `activateAlternate` and `filter` answer `error: menu not open`
-while it is closed.
+to. `activate`, `activateAlternate`, `actions`, `runAction`, `into` and
+`filter` answer `error: menu not open` while it is closed. `runAction` on an
+action that asks for a target opens the column on its list.
+
+`status` also carries `actionsOpen`, `actions` (the column's ids, or its
+targets' while it lists them) and `actionCursor`.
 
 `status`'s `scrollTop` is how far the live view is scrolled, in pixels, 0 at
 the top. `placeholder` is what the empty field currently says, `sections` the

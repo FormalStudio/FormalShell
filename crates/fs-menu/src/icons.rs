@@ -147,6 +147,7 @@ pub fn fallback_for(node: Option<&Node>) -> &'static str {
         Some(Kind::App) => "app-window",
         Some(Kind::Submenu | Kind::Provider | Kind::Link) => "folder",
         Some(Kind::Action) => "terminal",
+        Some(Kind::Other(k)) if k == crate::actions::WINDOW_KIND => "app-window",
         _ => "circle-help",
     }
 }

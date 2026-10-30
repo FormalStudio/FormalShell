@@ -299,6 +299,15 @@
 {"argv":["call","menu","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","menu","abbreviations"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","menu","abbreviations","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function abbreviations(): string\n","stderr":"","exit":0}
+{"argv":["call","menu","actions","0"],"live":true,"stdout":"error: menu not open\n","stderr":"","exit":0}
+{"argv":["call","menu","actions","x"],"live":true,"stdout":"Unable to parse argument 1 as \"int\". Provided argument: \"x\"\nFunction definition: function actions(index: int): string\n","stderr":"","exit":0}
+{"argv":["call","menu","actions"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function actions(index: int): string\n","stderr":"","exit":0}
+{"argv":["call","menu","runAction","0","new-window"],"live":true,"stdout":"error: menu not open\n","stderr":"","exit":0}
+{"argv":["call","menu","runAction","x","open"],"live":true,"stdout":"Unable to parse argument 1 as \"int\". Provided argument: \"x\"\nFunction definition: function runAction(index: int, action: string): string\n","stderr":"","exit":0}
+{"argv":["call","menu","runAction","0"],"live":true,"stdout":"Too few arguments provided (2 required but 1 were provided.)\nFunction definition: function runAction(index: int, action: string): string\n","stderr":"","exit":0}
+{"argv":["call","menu","into","2"],"live":true,"stdout":"error: menu not open\n","stderr":"","exit":0}
+{"argv":["call","menu","into","x"],"live":true,"stdout":"Unable to parse argument 1 as \"int\". Provided argument: \"x\"\nFunction definition: function into(index: int): string\n","stderr":"","exit":0}
+{"argv":["call","menu","into","1","2"],"live":true,"stdout":"Too many arguments provided (1 required but 2 were provided.)\nFunction definition: function into(index: int): string\n","stderr":"","exit":0}
 {"argv":["call","menu","select","Pick"," [\"a\",\"b\",\"c\"]","tok1"],"live":true,"stdout":"select Pick  [\"a\",\"b\",\"c\"] tok1\n","stderr":"","exit":0}
 {"argv":["call","menu","select","Pick","[\"a\",\"b\"]","tok1"],"live":true,"stdout":"Too many arguments provided (3 required but 4 were provided.)\nFunction definition: function select(prompt: string, optionsJson: string, token: string): string\n","stderr":"","exit":0}
 {"argv":["call","menu","select","Pick","x"],"live":true,"stdout":"Too few arguments provided (3 required but 2 were provided.)\nFunction definition: function select(prompt: string, optionsJson: string, token: string): string\n","stderr":"","exit":0}

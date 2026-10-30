@@ -164,6 +164,10 @@ pub enum Command {
     /// from the focused app; none removes the bind. `name` keys the bind.
     EscapeBind { name: &'static str, argv: Option<Vec<String>> },
     FloatWindow(String),
+    ToggleFloating(String),
+    ToggleFullscreen(String),
+    /// Onto the workspace slot `idx` of `output`, focus staying put.
+    MoveWindowTo { id: String, idx: i64, output: String },
     PlaceFloatingWindow { id: String, x: f64, y: f64, width: f64, height: f64 },
     ParkWindow(String),
     UnparkWindow(String),

@@ -196,6 +196,11 @@ pub struct KeyCtx {
     pub variants: bool,
     /// Standing inside a mode rather than at the root.
     pub level: bool,
+    /// The actions column is open and has the keys.
+    pub column: bool,
+    /// → would step into the selected subject: a row list, the caret at
+    /// the query's end, a subject with children.
+    pub into: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -223,6 +228,13 @@ pub enum KeyAction {
     Pop,
     Swallow,
     Variant,
+    /// Tab: the selected subject's actions beside the list.
+    Actions,
+    /// One step back inside the column: a target list to its actions,
+    /// the actions to the list.
+    Back,
+    /// →: into the selected subject's children.
+    Into,
 }
 
 impl KeyAction {
@@ -252,6 +264,9 @@ impl KeyAction {
             KeyAction::Pop => "pop",
             KeyAction::Swallow => "swallow",
             KeyAction::Variant => "variant",
+            KeyAction::Actions => "actions",
+            KeyAction::Back => "back",
+            KeyAction::Into => "into",
         }
     }
 }
@@ -263,6 +278,24 @@ impl KeyAction {
 pub fn key_action(key: Key, mods: Modifiers, auto_repeat: bool, ctx: &KeyCtx) -> KeyAction {
     let plain = !mods.ctrl && !mods.shift && !mods.alt;
     let input = ctx.mode == KeyMode::Input;
+
+    if ctx.column {
+        return match key {
+            Key::Left if plain && !ctx.query => KeyAction::Back,
+            Key::Escape if ctx.query => KeyAction::Clear,
+            Key::Escape | Key::Backtab => KeyAction::Back,
+            Key::Backspace if !ctx.query => if auto_repeat { KeyAction::Swallow } else { KeyAction::Back },
+            Key::Tab => KeyAction::Swallow,
+            Key::Return | Key::Enter => KeyAction::Activate,
+            Key::Up => KeyAction::Up,
+            Key::Down => KeyAction::Down,
+            Key::PageUp => KeyAction::PageUp,
+            Key::PageDown => KeyAction::PageDown,
+            Key::Home if plain => KeyAction::Home,
+            Key::End if plain => KeyAction::End,
+            _ => KeyAction::Pass,
+        };
+    }
 
     match key {
         Key::Up => if ctx.app_view { KeyAction::ScrollUp } else { KeyAction::Up },
@@ -276,7 +309,15 @@ pub fn key_action(key: Key, mods: Modifiers, auto_repeat: bool, ctx: &KeyCtx) ->
                 KeyAction::Pass
             }
         }
-        Key::Right => if plain && ctx.grid && !ctx.app_view { KeyAction::Right } else { KeyAction::Pass },
+        Key::Right => {
+            if plain && ctx.grid && !ctx.app_view {
+                KeyAction::Right
+            } else if plain && ctx.into && ctx.mode == KeyMode::Menu {
+                KeyAction::Into
+            } else {
+                KeyAction::Pass
+            }
+        }
         Key::PageUp => {
             if ctx.app_view {
                 return if ctx.scrollable { KeyAction::ScrollPageUp } else { KeyAction::Pass };
@@ -330,7 +371,9 @@ pub fn key_action(key: Key, mods: Modifiers, auto_repeat: bool, ctx: &KeyCtx) ->
             // tree and close the launcher.
             if auto_repeat { KeyAction::Swallow } else { KeyAction::Pop }
         }
-        Key::Tab | Key::Backtab => if ctx.variants { KeyAction::Variant } else { KeyAction::Swallow },
+        Key::Tab | Key::Backtab if ctx.variants && mods.ctrl => KeyAction::Variant,
+        Key::Tab if plain && ctx.mode == KeyMode::Menu => KeyAction::Actions,
+        Key::Tab | Key::Backtab => KeyAction::Swallow,
         Key::Other => KeyAction::Pass,
     }
 }

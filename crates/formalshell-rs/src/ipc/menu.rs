@@ -23,6 +23,9 @@ pub fn target() -> Target<App> {
             Function { name: "ping", params: &[], ret: Type::String, call: |_, _| text("pong") },
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "abbreviations", params: &[], ret: Type::String, call: abbreviations },
+            Function { name: "actions", params: &[("index", Type::Int)], ret: Type::String, call: actions },
+            Function { name: "runAction", params: &[("index", Type::Int), ("action", Type::String)], ret: Type::String, call: run_action },
+            Function { name: "into", params: &[("index", Type::Int)], ret: Type::String, call: into },
             Function {
                 name: "select",
                 params: &[("prompt", Type::String), ("optionsJson", Type::String), ("token", Type::String)],
@@ -52,6 +55,26 @@ fn activate(app: &mut App, args: &[Value]) -> Value {
 fn activate_alternate(app: &mut App, args: &[Value]) -> Value {
     let i = usize::try_from(args[0].int()).unwrap_or(usize::MAX);
     text(if app.menu_activate(i, true) { "ok" } else { "error: menu not open" })
+}
+
+fn index(args: &[Value]) -> usize {
+    usize::try_from(args[0].int()).unwrap_or(usize::MAX)
+}
+
+fn answer(r: Result<(), String>) -> Value {
+    text(r.map_or_else(|e| e, |()| "ok".into()))
+}
+
+fn actions(app: &mut App, args: &[Value]) -> Value {
+    answer(app.menu_actions(index(args)))
+}
+
+fn run_action(app: &mut App, args: &[Value]) -> Value {
+    answer(app.menu_run_action(index(args), args[1].str()))
+}
+
+fn into(app: &mut App, args: &[Value]) -> Value {
+    answer(app.menu_into(index(args)))
 }
 
 fn filter(app: &mut App, args: &[Value]) -> Value {

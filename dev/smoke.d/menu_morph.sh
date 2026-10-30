@@ -12,9 +12,14 @@
 # card's left edge. The root and the rest frames have to land on the two
 # tokens' edges (a card centred on the output), and at least one frame in
 # between has to sit strictly between them: a card that jumped never does.
+#
+# Then the actions column: back at the root, a real Tab on the first row
+# opens it and the card travels from 560 to 840 the same way, and a real
+# Shift+Tab closes it and the card travels back, each read off the same
+# row with a frame caught between the two widths.
 leg_menu_morph_flag="--menu-morph"
 leg_menu_morph_order=126
-leg_menu_morph_needs="convert"
+leg_menu_morph_needs="convert wtype"
 
 menu_morph_frames=24
 menu_morph_gap=0.12
@@ -35,7 +40,7 @@ leg_menu_morph_validate() {
 }
 
 leg_menu_morph_timing() {
-  leg_timing 34 70
+  leg_timing 60 100
 }
 
 leg_menu_morph_drive() {
@@ -55,6 +60,17 @@ for i in \$(seq 1 $menu_morph_frames); do
 done
 sleep 6
 "$grim_bin" "$shot_dir/menu-morph-rest.png" > /dev/null 2>&1
+call menu summon "" > /dev/null 2>&1
+sleep 6
+for phase in tab back; do
+  if [ "\$phase" = tab ]; then "$wtype_bin" -k Tab; else "$wtype_bin" -M shift -k Tab -m shift; fi
+  for i in \$(seq 1 $menu_morph_frames); do
+    "$grim_bin" "$shot_dir/menu-morph-\$phase-\$i.png" > /dev/null 2>&1
+    sleep $menu_morph_gap
+  done
+  sleep 6
+  "$grim_bin" "$shot_dir/menu-morph-\$phase-rest.png" > /dev/null 2>&1
+done
 call debug motionScale 100 > /dev/null 2>&1
 call menu close > /dev/null 2>&1
 EOF
@@ -90,4 +106,24 @@ leg_menu_morph_assert() {
   echo "left edge per frame:$seen"
   [ "$between" -ge 1 ] || fail "no frame caught the card between its two widths: it jumped"
   echo "SMOKE_MENU_MORPH $shot_dir/menu-morph-rest.png ($between frames mid-morph)"
+  local phase want
+  for phase in tab back; do
+    want=$menu_morph_split_left
+    [ "$phase" = back ] && want=$menu_morph_root_left
+    rest=$(menu_morph_left "$shot_dir/menu-morph-$phase-rest.png")
+    [ "$(( rest - want ))" -ge -2 ] && [ "$(( rest - want ))" -le 2 ] \
+      || fail "after the $phase key the card's left edge is $rest, not $want"
+    between=0
+    seen=""
+    for i in $(seq 1 $menu_morph_frames); do
+      left=$(menu_morph_left "$shot_dir/menu-morph-$phase-$i.png")
+      seen="$seen $left"
+      if [ "$left" -gt $((menu_morph_split_left + 4)) ] && [ "$left" -lt $((menu_morph_root_left - 4)) ]; then
+        between=$((between + 1))
+      fi
+    done
+    echo "$phase: left edge per frame:$seen, rest $rest"
+    [ "$between" -ge 1 ] || fail "no frame caught the card between its widths after the $phase key: it jumped"
+    echo "SMOKE_MENU_MORPH $shot_dir/menu-morph-$phase-rest.png ($between frames mid-morph)"
+  done
 }

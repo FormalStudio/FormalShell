@@ -166,7 +166,7 @@ const CTRL: Modifiers = Modifiers { ctrl: true, shift: false, alt: false };
 const SHIFT: Modifiers = Modifiers { ctrl: false, shift: true, alt: false };
 
 fn ctx() -> KeyCtx {
-    KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, variants: false, level: false }
+    KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, variants: false, level: false, column: false, into: false }
 }
 
 fn act(key: Key, mods: Modifiers, repeat: bool, ctx: KeyCtx) -> &'static str {
@@ -232,10 +232,38 @@ fn escape_clears_then_pops() {
 }
 
 #[test]
-fn tab_never_leaves_the_field() {
-    assert_eq!(act(Key::Tab, NONE, false, ctx()), "swallow");
+fn tab_opens_the_actions_and_never_leaves_the_field() {
+    assert_eq!(act(Key::Tab, NONE, false, ctx()), "actions");
+    assert_eq!(act(Key::Tab, NONE, false, KeyCtx { variants: true, ..ctx() }), "actions");
+    assert_eq!(act(Key::Tab, CTRL, false, KeyCtx { variants: true, ..ctx() }), "variant");
     assert_eq!(act(Key::Backtab, SHIFT, false, ctx()), "swallow");
-    assert_eq!(act(Key::Tab, NONE, false, KeyCtx { variants: true, ..ctx() }), "variant");
+    assert_eq!(act(Key::Tab, NONE, false, KeyCtx { mode: KeyMode::Select, ..ctx() }), "swallow");
+}
+
+#[test]
+fn the_column_has_the_keys_while_open() {
+    let column = KeyCtx { column: true, ..ctx() };
+    assert_eq!(act(Key::Down, NONE, false, column), "down");
+    assert_eq!(act(Key::Return, SHIFT, false, column), "activate");
+    assert_eq!(act(Key::Tab, NONE, false, column), "swallow");
+    assert_eq!(act(Key::Backtab, SHIFT, false, column), "back");
+    assert_eq!(act(Key::Escape, NONE, false, KeyCtx { query: true, ..column }), "clear");
+    assert_eq!(act(Key::Escape, NONE, false, column), "back");
+    assert_eq!(act(Key::Left, NONE, false, column), "back");
+    assert_eq!(act(Key::Left, NONE, false, KeyCtx { query: true, ..column }), "pass");
+    assert_eq!(act(Key::Backspace, NONE, false, column), "back");
+    assert_eq!(act(Key::Backspace, NONE, true, column), "swallow");
+    assert_eq!(act(Key::Backspace, NONE, false, KeyCtx { query: true, ..column }), "pass");
+}
+
+#[test]
+fn right_steps_into_a_subject_only_when_it_can() {
+    let into = KeyCtx { into: true, ..ctx() };
+    assert_eq!(act(Key::Right, NONE, false, into), "into");
+    assert_eq!(act(Key::Right, CTRL, false, into), "pass");
+    assert_eq!(act(Key::Right, NONE, false, ctx()), "pass");
+    assert_eq!(act(Key::Right, NONE, false, KeyCtx { mode: KeyMode::Select, ..into }), "pass");
+    assert_eq!(act(Key::Right, NONE, false, KeyCtx { grid: true, ..into }), "right");
 }
 
 #[test]

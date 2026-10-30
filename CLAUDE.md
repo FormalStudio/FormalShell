@@ -606,7 +606,23 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   taught 60 days ago not leading, a configured abbreviation in
   settings.json beating a pin in state.json for the same query and a pin
   alone leading, `menu abbreviations` holding the two picks, and
-  settings.json's sha256 unchanged.
+  settings.json's sha256 unchanged. Then the column, through `menu
+  actions` and `menu runAction`: a configured abbreviation's column the
+  settings.json note alone, a learned one's ending Forget, Edit and Pin,
+  Pin writing `pinned.fx`, Edit answered `fo` on real keys moving the pin
+  to `fo` and dropping `fx`, and Forget emptying it.
+- `launcher_actions.sh` `--launcher-actions`: the actions column off
+  `menu status`'s `actionsOpen` and `actions` and `hyprctl clients`, over a
+  staged app opening a foot window of its own app id: a real Tab listing
+  exactly its actions in order (a menu.jsonc entry hiding Copy desktop file
+  path and adding one), `new` typed filtering to New window and Enter
+  mapping a second window, → listing its two windows, Tab on one, `move`,
+  Enter, `2` and Enter moving it to workspace 2, Shift+Enter on the list
+  mapping a third, Shift+Tab, Escape and ← each closing the column onto the
+  list's query, `menu runAction` running the menu.jsonc entry, and
+  `actions`, `runAction` and `into` answering `error: menu not open` shut.
+  The column, the targets and the windows photographed dark, the column
+  light.
 - `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
   read off `menu status`'s `level` and `token`: every route the rig lists
   entered by its name and Enter and by `menu summon`, the four prefixes
@@ -736,6 +752,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   speed, then re-levelled onto the clipboard's split route, its left edge read
   off one header row per frame: the root and the rest frames on the
   `popupWidthMenu` and `popupWidthMenuSplit` edges, a frame between them.
+  Then a real Tab on the root's first row and a real Shift+Tab, the card
+  travelling to the split edge for the actions column and back, a frame
+  between each way.
 - `menu_resize.sh` `--menu-resize`: the root, the monitor view reached by
   typing `sysmon` and a real Return (so the card's look grows past the size
   it was first drawn at), a real Escape back to the root and `menu summon

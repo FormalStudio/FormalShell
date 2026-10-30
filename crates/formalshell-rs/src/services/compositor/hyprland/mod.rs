@@ -285,6 +285,9 @@ async fn commands(
                     dispatch(&lua::float_window(&id)).await;
                 }
             }
+            Command::ToggleFloating(id) => dispatch(&lua::toggle_floating(&id)).await,
+            Command::ToggleFullscreen(id) => dispatch(&lua::toggle_fullscreen(&id)).await,
+            Command::MoveWindowTo { id, idx, .. } => dispatch(&lua::move_to_workspace(&id, idx)).await,
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
                 let (w, h) = ((width.round() as i64).max(1), (height.round() as i64).max(1));
                 dispatch(&lua::resize_window(&id, w, h)).await;

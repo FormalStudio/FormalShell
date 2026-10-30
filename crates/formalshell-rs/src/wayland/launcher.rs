@@ -16,7 +16,7 @@ use super::{App, Owner};
 use crate::services::menu::{self as index, Ask};
 use crate::surface::{PixelSurface, Surface};
 use crate::surfaces::card::Ends;
-use crate::surfaces::launcher::{Out, Shown};
+use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
 
@@ -269,6 +269,38 @@ impl App {
         true
     }
 
+    /// `menu actions`: row `index`'s actions beside the list, as Tab.
+    pub fn menu_actions(&mut self, index: usize) -> Result<(), String> {
+        if !self.launcher.open {
+            return Err("error: menu not open".into());
+        }
+        self.resolve_launcher();
+        self.launcher_resolve = true;
+        if self.launcher.open_actions(&self.store, index) { Ok(()) } else { Err(format!("error: row {index} has no actions")) }
+    }
+
+    /// `menu runAction`: the action `id` on row `index`.
+    pub fn menu_run_action(&mut self, index: usize, id: &str) -> Result<(), String> {
+        if !self.launcher.open {
+            return Err("error: menu not open".into());
+        }
+        self.resolve_launcher();
+        let out = self.launcher.run_action(&self.store, index, id)?;
+        self.launcher_out(out);
+        Ok(())
+    }
+
+    /// `menu into`: →, on row `index`.
+    pub fn menu_into(&mut self, index: usize) -> Result<(), String> {
+        if !self.launcher.open {
+            return Err("error: menu not open".into());
+        }
+        self.resolve_launcher();
+        let out = self.launcher.step_into(&self.store, index).ok_or_else(|| format!("error: row {index} has nothing to step into"))?;
+        self.launcher_out(out);
+        Ok(())
+    }
+
     /// The rows again, now, so an IPC read answers off the same state a
     /// frame would draw.
     pub fn resolve_launcher(&mut self) {
@@ -514,6 +546,8 @@ impl App {
                 self.reminder_answer(value, cancelled);
             } else if token == LIGHTS_COLOR {
                 self.lights_answer(value, cancelled);
+            } else if token == ABBREV_EDIT {
+                self.launcher.edit_answer(&self.store, value, cancelled);
             }
         }
     }
@@ -960,6 +994,7 @@ impl App {
             Keysym::KP_Enter => nav::Key::Enter,
             Keysym::Escape => nav::Key::Escape,
             Keysym::BackSpace => nav::Key::Backspace,
+            Keysym::Tab if self.mods.shift => nav::Key::Backtab,
             Keysym::Tab => nav::Key::Tab,
             Keysym::ISO_Left_Tab => nav::Key::Backtab,
             _ => nav::Key::Other,
@@ -1001,7 +1036,7 @@ impl App {
                 }
                 // An enter alone is the card mapping under a pointer that has
                 // not moved, which leaves the cursor where the keys put it.
-                let moved = matches!(e.kind, PointerEventKind::Motion { .. });
+                let moved = matches!(e.kind, PointerEventKind::Motion { .. }) && !self.launcher.actions_open();
                 if let Some(i) = hit.and_then(|h| h.on).filter(|_| moved).and_then(|on| on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok())) {
                     self.launcher.set_cursor(i);
                 }
@@ -1038,14 +1073,32 @@ impl App {
                         let i = self.launcher.cursor;
                         self.menu_activate(i, true);
                     }
-                    Some(hint @ ("actions" | "into")) => {
-                        let key = if hint == "actions" { nav::Key::Tab } else { nav::Key::Right };
+                    Some(hint @ ("actions" | "into" | "column-run" | "column-back" | "column-token")) => {
+                        let key = match hint {
+                            "actions" => nav::Key::Tab,
+                            "into" => nav::Key::Right,
+                            "column-run" => nav::Key::Return,
+                            _ => nav::Key::Backtab,
+                        };
+                        self.resolve_launcher();
                         let out = self.launcher.key(&self.store, key, fs_menu::field::Key::Other, nav::Modifiers::default(), false, None);
                         self.launcher_out(out);
                     }
                     Some(r) => {
-                        if let Some(i) = r.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
-                            self.menu_activate(i, false);
+                        if let Some(i) = r.strip_prefix("action:").and_then(|i| i.parse::<usize>().ok()) {
+                            self.resolve_launcher();
+                            let out = self.launcher.column_pick(&self.store, i);
+                            self.launcher_out(out);
+                        } else if let Some(i) = r.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
+                            // A click on the list while the column is open
+                            // only closes it onto the clicked row.
+                            if self.launcher.actions_open() {
+                                self.launcher.close_actions();
+                                self.launcher.set_cursor(i);
+                                self.launcher_resolve = true;
+                            } else {
+                                self.menu_activate(i, false);
+                            }
                         }
                     }
                     None => {}

@@ -6,6 +6,7 @@
 //! better says so in the row's own `verb`. A `dim` row gets no primary action
 //! rather than a verb that would do nothing. Keys are names, one per cap.
 
+use crate::abbrev::Source;
 use crate::model::Mode;
 use crate::node::{ActionEntry, Kind, Node};
 
@@ -16,8 +17,32 @@ pub enum Run {
     Command(String),
     /// An in-process name, the part of an `@ipc:` action after the prefix.
     Ipc(String),
-    /// A level to step into, by node id.
+    /// What → reaches: a level by node id, or a subject's own children by
+    /// its subject id (an app's windows).
     Into(String),
+    /// An argument to pick from a list first, replacing the column's
+    /// actions.
+    Target(TargetKind),
+    /// Words to type first, in the launcher's Input step; the string is
+    /// its prompt.
+    Input(String),
+    /// A line the column shows that runs nothing.
+    Note,
+}
+
+/// What a `Run::Target` action asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetKind {
+    Workspace,
+}
+
+impl TargetKind {
+    /// The field's third token while its list is up.
+    pub fn label(self) -> &'static str {
+        match self {
+            TargetKind::Workspace => "Workspace",
+        }
+    }
 }
 
 impl Run {
@@ -99,11 +124,17 @@ pub struct Subject<'a> {
     /// The machine has a discrete GPU to offer an app.
     pub discrete_gpu: bool,
     pub picker_select: bool,
+    /// The abbreviation the field's query is for this subject, and its
+    /// source.
+    pub abbrev: Option<(&'a str, Source)>,
 }
+
+/// A row's kind for one compositor window, its id in the node's `path`.
+pub const WINDOW_KIND: &str = "window";
 
 impl<'a> Subject<'a> {
     pub fn of(node: &'a Node) -> Subject<'a> {
-        Subject { node, windows: 0, discrete_gpu: false, picker_select: false }
+        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None }
     }
 
     /// A dim note, a keybind, an unavailable row: Enter, Shift+Enter and a
@@ -143,12 +174,29 @@ fn builtins(s: &Subject) -> Vec<Action> {
             for (key, name) in &e.actions {
                 out.push(Action::new(&format!("desktop:{key}"), name.clone(), Run::Ipc(format!("app.action:{}:{key}", e.id))));
             }
+            if s.windows > 0 {
+                let label = if s.windows == 1 { "Show its window".to_owned() } else { format!("Show its {} windows", s.windows) };
+                out.push(Action::new("windows", label, Run::Into(subject_id(n))));
+            }
             if s.discrete_gpu {
                 out.push(Action::new("discrete-gpu", "Open on discrete GPU", Run::Ipc(format!("app.gpu:{}", e.id))));
+            }
+            if s.windows > 0 {
+                out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
             }
             if !e.path.is_empty() {
                 out.push(copy("copy-path", "Copy desktop file path", &e.path));
             }
+        }
+        Kind::Other(k) if k == WINDOW_KIND => {
+            let id = &n.path;
+            out.push(Action::new("focus", "Focus", Run::Ipc(format!("window.focus:{id}"))));
+            let mut close = Action::new("close", "Close", Run::Ipc(format!("window.close:{id}")));
+            close.destructive = true;
+            out.push(close);
+            out.push(Action::new("move-to-workspace", "Move to workspace\u{2026}", Run::Target(TargetKind::Workspace)));
+            out.push(Action::new("float", "Toggle floating", Run::Ipc(format!("window.float:{id}"))));
+            out.push(Action::new("fullscreen", "Fullscreen", Run::Ipc(format!("window.fullscreen:{id}"))));
         }
         Kind::Submenu | Kind::Provider | Kind::Link => {
             let to = n.target.clone().filter(|_| n.kind == Kind::Link).unwrap_or_else(|| n.id.clone());
@@ -189,10 +237,34 @@ fn builtins(s: &Subject) -> Vec<Action> {
     out
 }
 
+/// What the column offers for the abbreviation that put the subject where
+/// it is: a configured one is settings.json's, so only a line saying so.
+fn abbreviation_actions(s: &Subject) -> Vec<Action> {
+    let Some((q, source)) = s.abbrev else { return Vec::new() };
+    let ipc = |verb: &str| Run::Ipc(format!("abbrev.{verb}:{q}"));
+    let keep = |mut a: Action| {
+        a.keep_open = true;
+        a
+    };
+    match source {
+        Source::Configured => vec![Action::new("abbrev-configured", "Set in settings.json", Run::Note)],
+        Source::Pinned | Source::Learned => {
+            let mut out = vec![
+                keep(Action::new("abbrev-forget", format!("Forget \u{201C}{q}\u{201D}"), ipc("forget"))),
+                Action::new("abbrev-edit", "Edit abbreviation", Run::Input(format!("Abbreviation for {}", s.node.label))),
+            ];
+            if source == Source::Learned {
+                out.push(keep(Action::new("abbrev-pin", format!("Pin \u{201C}{q}\u{201D}"), ipc("pin"))));
+            }
+            out
+        }
+    }
+}
+
 /// A subject's actions in order: the kind's, then the node's own (a
 /// provider's and `menu.jsonc`'s, where an entry with a built-in's id
-/// overrides it and `hidden: true` removes it). Built on Tab, never per
-/// keystroke.
+/// overrides it and `hidden: true` removes it), then its abbreviation's.
+/// Built on Tab, never per keystroke.
 pub fn actions_for(s: &Subject) -> Vec<Action> {
     let mut out = builtins(s);
     for e in &s.node.actions {
@@ -205,25 +277,45 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
             None => out.extend(Action::from_entry(e)),
         }
     }
+    out.extend(abbreviation_actions(s));
     out
+}
+
+fn runnable(s: &Subject) -> impl Iterator<Item = Action> {
+    let all = if s.inert() { Vec::new() } else { actions_for(s) };
+    all.into_iter().filter(|a| a.run != Run::Note)
 }
 
 /// The action Enter runs, `None` on an inert subject.
 pub fn first_action(s: &Subject) -> Option<Action> {
-    if s.inert() {
-        return None;
-    }
-    actions_for(s).into_iter().next()
+    runnable(s).next()
 }
 
 /// The action Shift+Enter runs: the second, else the first.
 pub fn second_action(s: &Subject) -> Option<Action> {
-    if s.inert() {
-        return None;
-    }
-    let mut all = actions_for(s).into_iter();
+    let mut all = runnable(s);
     let first = all.next();
     all.next().or(first)
+}
+
+/// What → runs on the subject: its first action stepping into something.
+pub fn into_action(s: &Subject) -> Option<Action> {
+    runnable(s).find(|a| matches!(a.run, Run::Into(_)))
+}
+
+/// The positions of the labels holding every word of `query`,
+/// in order.
+pub fn filter(labels: &[&str], query: &str) -> Vec<usize> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    labels
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| {
+            let l = l.to_lowercase();
+            words.iter().all(|w| l.contains(w.as_str()))
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// One legend entry: the keys of a chord (or keys offered side by side) and

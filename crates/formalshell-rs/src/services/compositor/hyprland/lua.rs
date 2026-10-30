@@ -48,6 +48,18 @@ pub fn float_window(id: &str) -> String {
     format!("hl.dsp.window.float({{ window = {}, action = \"set\" }})", string(&selector(id)))
 }
 
+pub fn toggle_floating(id: &str) -> String {
+    format!("hl.dsp.window.float({{ window = {}, action = \"toggle\" }})", string(&selector(id)))
+}
+
+pub fn toggle_fullscreen(id: &str) -> String {
+    format!("hl.dsp.window.fullscreen({{ window = {}, mode = \"fullscreen\", action = \"toggle\" }})", string(&selector(id)))
+}
+
+pub fn move_to_workspace(id: &str, idx: i64) -> String {
+    format!("hl.dsp.window.move({{ window = {}, workspace = {idx}, follow = false }})", string(&selector(id)))
+}
+
 pub fn resize_window(id: &str, w: i64, h: i64) -> String {
     format!("hl.dsp.window.resize({{ window = {}, x = {w}, y = {h} }})", string(&selector(id)))
 }
@@ -109,6 +121,12 @@ mod tests {
             park_window("ab"),
             "hl.dsp.window.move({ window = \"address:0xab\", workspace = \"special:formalshell-console\", follow = false })"
         );
+        assert_eq!(toggle_floating("ab"), "hl.dsp.window.float({ window = \"address:0xab\", action = \"toggle\" })");
+        assert_eq!(
+            toggle_fullscreen("ab"),
+            "hl.dsp.window.fullscreen({ window = \"address:0xab\", mode = \"fullscreen\", action = \"toggle\" })"
+        );
+        assert_eq!(move_to_workspace("ab", 2), "hl.dsp.window.move({ window = \"address:0xab\", workspace = 2, follow = false })");
         assert_eq!(toggle_special(), "hl.dsp.workspace.toggle_special(\"formalshell-console\")");
         assert_eq!(
             bind_escape("fs_esc", &["ipc".into(), "x".into()]),
