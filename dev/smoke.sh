@@ -84,11 +84,13 @@ leg_arg() {
 }
 
 # Merged by max across the active legs, so a combination always outlives its
-# slowest half.
+# slowest half. The fourth is how long the shot may wait on a drive still
+# running, for a drive whose length the leg cannot know (a real install).
 leg_timing() {
   if [ "${1:-0}" -gt "$screenshot_delay" ]; then screenshot_delay="$1"; fi
   if [ "${2:-0}" -gt "$session_timeout" ]; then session_timeout="$2"; fi
   if [ "${3:-0}" -gt "$tail_gap" ]; then tail_gap="$3"; fi
+  if [ "${4:-0}" -gt "$drive_cap" ]; then drive_cap="$4"; fi
 }
 
 settings_fragment() {
@@ -844,7 +846,7 @@ session_env=(
   "XDG_CONFIG_HOME=$iso_home/.config"
   "XDG_STATE_HOME=$iso_home/.local/state"
   "XDG_DATA_HOME=$iso_home/.local/share"
-  "XDG_DATA_DIRS=$iso_home/.local/share"
+  "XDG_DATA_DIRS=$iso_home/.local/share${session_data_dirs:+:$session_data_dirs}"
   "XDG_CACHE_HOME=$iso_home/.cache"
 )
 if [ "$session_mode" = "nested" ]; then

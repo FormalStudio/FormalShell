@@ -517,6 +517,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   panel and a sticky toast over a flat bright wallpaper photographed in
   both states, the share of the right half dark enough to be their opaque
   fill at least halving.
+- `firefox_install.sh` `--firefox-install` (vm_only): Firefox installed
+  from the launcher for real under `layout: sidebar`: Install mode, "firefox"
+  typed, Down to `zypper:MozillaFirefox` and Return on real keys, the
+  guest's fspec running `app install --detach` against a clone of the
+  owner's public spec whose upstream is a bare copy in the guest. The
+  install's group running with the Activity card under notifications
+  (photographed), then succeeded, the pushed commit authored `fspec
+  <fspec@fstestvm<n>>` (the guest has no git identity), and a root search
+  for "firefox" listing Firefox's app row (photographed). Several minutes,
+  most of them zypper.
 - `gallery.sh` `--gallery`: the dev gallery sheet, every shared component
   drawn against the live theme. The power flow is drawn from
   `fs_system::power::flow::sample_flow` (labelled a sample), the only

@@ -140,6 +140,11 @@ paths = [
 ]
 runs = ["--launcher-install", "--launcher-install --light", "--sidebar-software", "--sidebar-software --light"]
 
+# A real Firefox install through the guest's fspec, on the VM rig.
+[[rule]]
+paths = ["dev/smoke.d/firefox_install.sh"]
+runs = ["--firefox-install"]
+
 [[rule]]
 paths = ["dev/smoke.d/sidebar_software.sh"]
 runs = ["--sidebar-software", "--sidebar-software --light"]

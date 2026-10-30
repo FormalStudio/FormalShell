@@ -162,6 +162,7 @@
 --panel weather
 --device-routes
 --launcher-send
+--firefox-install
 --logind-lock
 --mirror
 --panel-morph
