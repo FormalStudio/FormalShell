@@ -19,12 +19,21 @@
 # Where the rig's fspec has `fspec run`, one real `fspec run --detach` of a
 # small package is read as a `run` item; an fspec without it prints why the
 # check was skipped.
+#
+# The Activity panel (`surfaces/panel/activity.rs`) is photographed with the
+# apply at 3/4 beside the running update, and again with the apply
+# succeeded and the update failed. A stubbed `run` that fails is retried
+# over `activity retry`, which reaches a PATH-shimmed `fspec` with exactly
+# `run --detach smoke-pkg` (any other call goes on to the real fspec);
+# `activity open` on an fspec row opens the panel, and `activity dismiss`
+# takes a running group's card away while its row stays.
 leg_activity_flag="--activity"
 leg_activity_order=236
 leg_activity_needs="jq python3 notify-send"
 
 act_marks="$shot_dir/act"
 act_app_id="formalshell-smoke-activity"
+act_shim_dir="$shot_dir/activity-shim"
 
 leg_activity_fixture() {
   cat > "$iso_home/.local/share/applications/$act_app_id.desktop" <<'EOF'
@@ -34,10 +43,26 @@ Name=Smoke Activity
 Exec=true
 Icon=folder
 EOF
+  local real
+  real=$(command -v fspec || true)
+  mkdir -p "$act_shim_dir"
+  cat > "$act_shim_dir/fspec" <<EOF
+#!/usr/bin/env bash
+if [ "\$*" = "run --detach smoke-pkg" ]; then
+  echo "\$*" > "$act_marks-retried.txt"
+  exit 0
+fi
+[ -n "$real" ] || exit 127
+exec "$real" "\$@"
+EOF
+  chmod +x "$act_shim_dir/fspec"
+  # PATH rides the rig's environment into the session (see clipssh.sh), so
+  # the shell's compositor spawn of a retry finds the shim first.
+  export PATH="$act_shim_dir:$PATH"
 }
 
 leg_activity_timing() {
-  leg_timing 44 90
+  leg_timing 60 110
 }
 
 leg_activity_drive() {
@@ -75,6 +100,7 @@ EOF
 m="$act_marks"
 dir="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}/fspec/activity"
 status() { $ipc call activity status > "\$m-\$1.json" 2>&1; }
+shot() { $ipc call panel open activity > /dev/null; sleep 0.8; "$grim_bin" "$shot_dir/activity-panel-\$1.png" > /dev/null 2>&1; $ipc call panel close > /dev/null; sleep 0.4; }
 await() { for _ in \$(seq 200); do [ -e "\$1" ] && return 0; sleep 0.05; done; echo "timed out on \$1" >> "\$m-drive.log"; }
 for _ in \$(seq 100); do
   $ipc call activity status 2>/dev/null | jq -e '.fspec.watching' > /dev/null 2>&1 && break
@@ -90,8 +116,11 @@ touch "\$m.ok.go1"; await "\$m.ok.2"; sleep 0.5; status ok-2
 "$python3_bin" "$stub" "\$dir" smoke-fail fail "\$m.fail" 2>> "\$m-drive.log" &
 await "\$m.fail.1"; sleep 0.5; status fail-1
 $ipc call debug dump > "\$m-dump.json" 2>&1
+shot running
+$ipc call activity dismiss fspec:apply:smoke > "\$m-dismiss.txt" 2>&1; sleep 0.3; status dismissed
 touch "\$m.ok.go2"; await "\$m.ok.3"; sleep 0.5; status ok-3
 touch "\$m.fail.go1"; await "\$m.fail.2"; sleep 0.5; status fail-2
+shot failed
 "$python3_bin" "$stub" "\$dir" smoke-die die "\$m.die" 2>> "\$m-drive.log" &
 await "\$m.die.1"; sleep 0.5; status die-1
 touch "\$m.die.go1"; await "\$m.die.2"; sleep 0.5; status die-2
@@ -117,6 +146,18 @@ sleep 0.5; status n-2
 "$notify_send_bin" -r "\$id" -a smoke-dl Downloaded a.iso
 sleep 0.5; status n-3
 
+# A failed run retried, and an fspec row opening the panel.
+"$python3_bin" "$stub" "\$dir" smoke-rf runfail "\$m.rf" 2>> "\$m-drive.log" &
+await "\$m.rf.1"; touch "\$m.rf.go1"; await "\$m.rf.2"; sleep 0.5; status rf
+$ipc call activity open fspec:run:smoke-pkg > "\$m-open.txt" 2>&1; sleep 0.8
+$ipc call panel state > "\$m-open-panel.txt" 2>&1
+"$grim_bin" "$shot_dir/activity-panel-retry.png" > /dev/null 2>&1
+$ipc call panel close > /dev/null
+$ipc call activity retry fspec:run:smoke-pkg > "\$m-retry.txt" 2>&1
+for _ in \$(seq 60); do [ -s "\$m-retried.txt" ] && break; sleep 0.1; done
+$ipc call activity retry fspec:apply:smoke > "\$m-retry-none.txt" 2>&1
+sleep 0.3; status retried
+
 # A real fspec run, where this fspec publishes one.
 if command -v fspec > /dev/null 2>&1 && fspec run --help > /dev/null 2>&1; then
   fspec run --detach jq -- --version > "\$m-run.log" 2>&1 &
@@ -137,7 +178,7 @@ EOF
 leg_activity_assert() {
   local m="$act_marks" f id
   [ -s "$m-drive-done.txt" ] || fail "activity: the drive script never finished ($(cat "$m-drive.log" 2>/dev/null))"
-  for f in idle ok-1 ok-2 fail-1 ok-3 fail-2 die-1 die-2 folded seen l-1 l-2 l-3 l-gone n-1 n-2 n-3; do
+  for f in idle ok-1 ok-2 fail-1 dismissed ok-3 fail-2 die-1 die-2 folded seen l-1 l-2 l-3 l-gone n-1 n-2 n-3 rf retried; do
     [ -s "$m-$f.json" ] || fail "activity: $m-$f.json missing or empty"
     jq -e . "$m-$f.json" > /dev/null || fail "activity: $f is not JSON: $(cat "$m-$f.json")"
   done
@@ -203,6 +244,30 @@ leg_activity_assert() {
     "$m-n-2.json" > /dev/null || fail "activity: the synchronous tag did not update in place: $(cat "$m-n-2.json")"
   jq -e --arg id "notification:$id" "$item"' | .state == "done" and .title == "Downloaded"' "$m-n-3.json" > /dev/null \
     || fail "activity: a replace without a value did not end the item: $(cat "$m-n-3.json")"
+
+  jq -e '.toasts == ["fspec:apply:smoke", "fspec:update:/smoke/spec"]' "$m-fail-1.json" > /dev/null \
+    || fail "activity: two running fspec groups are not two cards: $(cat "$m-fail-1.json")"
+  grep -qx ok "$m-dismiss.txt" || fail "activity: dismiss answered $(cat "$m-dismiss.txt")"
+  jq -e '.toasts == ["fspec:update:/smoke/spec"] and (.groups | length) == 2' "$m-dismissed.json" > /dev/null \
+    || fail "activity: a dismissed running group kept its card or lost its row: $(cat "$m-dismissed.json")"
+  jq -e '.toasts | index("fspec:apply:smoke") != null' "$m-ok-3.json" > /dev/null \
+    || fail "activity: the apply's card did not come back once it succeeded: $(cat "$m-ok-3.json")"
+  jq -e '.toasts | all(startswith("app:smoke-") | not)' "$m-n-2.json" > /dev/null \
+    || fail "activity: a value notification got a second card: $(cat "$m-n-2.json")"
+  jq -e '.groups[] | select(.source == "fspec:run:smoke-pkg") | .state == "failed" and .items[0].progress.unit == "percent"' \
+    "$m-rf.json" > /dev/null || fail "activity: the stubbed run did not fail with percent progress: $(cat "$m-rf.json")"
+  grep -qx ok "$m-open.txt" || fail "activity: open answered $(cat "$m-open.txt")"
+  grep -q activity "$m-open-panel.txt" || fail "activity: open on an fspec row did not open the panel: $(cat "$m-open-panel.txt")"
+  grep -qx ok "$m-retry.txt" || fail "activity: retry answered $(cat "$m-retry.txt")"
+  grep -qx 'run --detach smoke-pkg' "$m-retried.txt" 2>/dev/null \
+    || fail "activity: retry never reached fspec as run --detach smoke-pkg: $(cat "$m-retried.txt" 2>&1)"
+  grep -q "^error:" "$m-retry-none.txt" || fail "activity: retrying an apply answered $(cat "$m-retry-none.txt")"
+  jq -e '[.groups[].source] | index("fspec:run:smoke-pkg") | not' "$m-retried.json" > /dev/null \
+    || fail "activity: the retried failure stayed live: $(cat "$m-retried.json")"
+  for f in running failed retry; do
+    [ -s "$shot_dir/activity-panel-$f.png" ] || fail "activity: no panel frame $f"
+    echo "SMOKE_ACTIVITY_PANEL_$(printf %s "$f" | tr a-z A-Z) $shot_dir/activity-panel-$f.png"
+  done
 
   if [ -s "$m-run-skipped.txt" ]; then
     echo "SMOKE_ACTIVITY_FSPEC_RUN skipped: $(cat "$m-run-skipped.txt")"

@@ -186,11 +186,37 @@ impl Group<'_> {
     }
 }
 
+/// How a failed fspec operation is run again: what its stream line names
+/// is all there is to go on, so only a `run` (its package) and an `update`
+/// (its spec dir) can be.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Retry {
+    pub cwd: Option<String>,
+    pub argv: Vec<String>,
+}
+
+impl Retry {
+    pub fn of(item: &Item) -> Option<Retry> {
+        if item.origin != Origin::Fspec {
+            return None;
+        }
+        let arg = item.source.strip_prefix(&format!("fspec:{}:", item.kind)).filter(|a| !a.is_empty())?;
+        match item.kind.as_str() {
+            "run" => Some(Retry { cwd: None, argv: vec!["fspec".into(), "run".into(), "--detach".into(), arg.into()] }),
+            "update" => Some(Retry { cwd: Some(arg.into()), argv: vec!["fspec".into(), "update".into()] }),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Activity {
     live: Vec<Item>,
     history: VecDeque<Item>,
     badges: BTreeMap<String, Badge>,
+    /// Sources whose live card was put away, with the group's state then:
+    /// the card comes back once the state moves on.
+    dismissed: BTreeMap<String, State>,
 }
 
 impl Activity {
@@ -267,7 +293,42 @@ impl Activity {
         }
         self.live = kept;
         self.history.truncate(HISTORY);
+        let live = &self.live;
+        self.dismissed.retain(|source, _| live.iter().any(|i| &i.source == source));
         self.live.len() != before
+    }
+
+    /// Put a group away: a running one loses its card until its state
+    /// changes, a finished or failed one folds now. False for a source
+    /// nothing live holds.
+    pub fn dismiss(&mut self, source: &str) -> bool {
+        let Some(state) = self.groups().iter().find(|g| g.source == source).map(Group::state) else { return false };
+        if state == State::Running {
+            return self.dismissed.insert(source.to_owned(), state) != Some(state);
+        }
+        self.fold_where(|i| i.source == source)
+    }
+
+    /// The sources that get a live card: fspec and LauncherEntry groups
+    /// (a notification with a `value` is its own card), not put away.
+    pub fn toasts(&self) -> Vec<&str> {
+        self.groups()
+            .into_iter()
+            .filter(|g| g.items.iter().any(|i| i.origin != Origin::Notification))
+            .filter(|g| self.dismissed.get(g.source) != Some(&g.state()))
+            .map(|g| g.source)
+            .collect()
+    }
+
+    /// How the source's failed operation runs again, where it can.
+    pub fn retry(&self, source: &str) -> Option<Retry> {
+        self.live.iter().filter(|i| i.source == source && i.state == State::Failed).find_map(Retry::of)
+    }
+
+    pub fn clear_history(&mut self) -> bool {
+        let had = !self.history.is_empty();
+        self.history.clear();
+        had
     }
 
     /// When the next finished item folds, if any is waiting to.
@@ -410,6 +471,7 @@ impl Activity {
             "groups": groups,
             "history": self.history.iter().map(Item::to_json).collect::<Vec<_>>(),
             "badges": badges,
+            "toasts": self.toasts(),
         })
     }
 }
@@ -549,5 +611,39 @@ mod tests {
         }
         a.fold(FOLD_MS);
         assert_eq!(a.history().count(), HISTORY);
+    }
+
+    #[test]
+    fn a_dismissed_card_comes_back_when_its_state_moves() {
+        let mut a = Activity::default();
+        a.upsert(op("1", "s", "running", 1, 10), 0);
+        a.notification(notice(7, Some(40)), 0);
+        assert_eq!(a.toasts(), vec!["s"], "a value notification got a second card");
+        assert!(a.dismiss("s"));
+        assert!(!a.dismiss("s"));
+        assert!(a.toasts().is_empty());
+        a.upsert(op("1", "s", "running", 3, 10), 100);
+        assert!(a.toasts().is_empty(), "progress alone brought the card back");
+        a.upsert(op("1", "s", "failed", 3, 10), 200);
+        assert_eq!(a.toasts(), vec!["s"]);
+        assert!(a.dismiss("s"), "dismissing a failure did not fold it");
+        assert!(a.get("fspec:1").is_none());
+        assert!(!a.dismiss("nothing"));
+    }
+
+    #[test]
+    fn only_a_run_and_an_update_retry() {
+        let line = |kind: &str, source: &str| {
+            fspec::parse(&format!(r#"{{"v":1,"type":"update","op":{{"id":"{kind}","kind":"{kind}","source":"{source}","title":"t","started":1,"updated":1,"state":"failed","error":"boom"}}}}"#))
+                .unwrap()
+                .item()
+        };
+        let mut a = Activity::default();
+        a.upsert(line("run", "fspec:run:jq"), 0);
+        a.upsert(line("update", "fspec:update:/home/k/spec"), 0);
+        a.upsert(line("apply", "fspec:apply:g815"), 0);
+        assert_eq!(a.retry("fspec:run:jq").unwrap().argv, ["fspec", "run", "--detach", "jq"]);
+        assert_eq!(a.retry("fspec:update:/home/k/spec"), Some(Retry { cwd: Some("/home/k/spec".into()), argv: vec!["fspec".into(), "update".into()] }));
+        assert_eq!(a.retry("fspec:apply:g815"), None);
     }
 }

@@ -406,6 +406,8 @@ runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--cen
 paths = [
   "crates/formalshell-rs/src/services/activity.rs",
   "crates/formalshell-rs/src/ipc/activity.rs",
+  "crates/formalshell-rs/src/surfaces/activity.rs",
+  "crates/formalshell-rs/src/surfaces/panel/activity.rs",
   "crates/fs-activity/**",
   "dev/fspec-activity-stub.py",
 ]

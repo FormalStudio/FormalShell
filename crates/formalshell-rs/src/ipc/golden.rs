@@ -401,7 +401,13 @@ fn stub() -> Registry<()> {
             },
             Target {
                 name: "activity",
-                functions: vec![f("status", &[], Type::String, |_, _| s("{}")), f("seen", &[], Type::String, |_, _| s("ok"))],
+                functions: vec![
+                    f("status", &[], Type::String, |_, _| s("{}")),
+                    f("seen", &[], Type::String, |_, _| s("ok")),
+                    f("open", &[("source", Type::String)], Type::String, |_, a| s(format!("error: no activity from '{}'", a[0].str()))),
+                    f("dismiss", &[("source", Type::String)], Type::String, |_, a| s(format!("error: no activity from '{}'", a[0].str()))),
+                    f("retry", &[("source", Type::String)], Type::String, |_, a| s(format!("error: no activity from '{}'", a[0].str()))),
+                ],
             },
             Target {
                 name: "mirror",

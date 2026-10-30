@@ -16,6 +16,7 @@
 //! [`Panel::activate`], `x` calls [`Panel::delete`], and any other
 //! printable key reaches [`Panel::key`].
 
+pub mod activity;
 pub mod appmenu;
 pub mod audio;
 pub mod bluetooth;
@@ -191,7 +192,8 @@ pub trait Panel {
 
 /// The panels `panel` can open, each one's
 /// module.
-pub const PANELS: [&str; 19] = [
+pub const PANELS: [&str; 20] = [
+    "activity",
     "appmenu",
     "audio",
     "calendar",
@@ -223,6 +225,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
     }
     let id = known(name)?;
     Some(match id {
+        "activity" => Box::new(activity::Activity),
         "appmenu" => Box::new(appmenu::AppMenu),
         "audio" => Box::new(audio::Audio::default()),
         "calendar" => Box::new(calendar::Calendar::new(true)),

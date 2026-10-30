@@ -50,6 +50,13 @@ def scenario(name, op_id):
             o(state="failed", phase="resolving", progress={"done": 1, "total": 2, "unit": "packages"},
               error="resolve hello: no release on github"),
         ]
+    if name == "runfail":
+        o = lambda **f: op(op_id, "run", "fspec:run:smoke-pkg", "Running smoke-pkg", **f)
+        return [
+            o(phase="preparing", progress={"done": 40, "total": 100, "unit": "percent"}, item="smoke-pkg"),
+            o(state="failed", phase="preparing", progress={"done": 40, "total": 100, "unit": "percent"},
+              error="download smoke-pkg: connection reset"),
+        ]
     if name == "die":
         o = lambda **f: op(op_id, "rollback", "fspec:rollback:smoke", "Rolling back smoke", host="smoke", **f)
         return [o(phase="planning"), None]

@@ -77,6 +77,17 @@ impl Progress {
         }
     }
 
+    /// How far, for people: `3 of 12 resources`, `40%`; none while it
+    /// cannot say.
+    pub fn words(&self) -> Option<String> {
+        match self {
+            Progress::Indeterminate => None,
+            Progress::Steps { done, unit: Unit::Other(u), .. } if u == "percent" => Some(format!("{done}%")),
+            Progress::Steps { done, total, unit } => Some(format!("{done} of {total} {}", unit.as_str())),
+            Progress::Fraction(f) => Some(format!("{}%", f.as_percent())),
+        }
+    }
+
     /// `null` while indeterminate; steps keep their count and unit beside
     /// the fraction.
     pub fn to_json(&self) -> Value {

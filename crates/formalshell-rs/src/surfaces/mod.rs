@@ -1,6 +1,7 @@
 //! Each surface reads its slices of the store; [`changed`] routes a store
 //! change to the surfaces that read that slice.
 
+pub mod activity;
 pub mod atlas;
 pub mod bar;
 pub mod battery;

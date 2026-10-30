@@ -1,0 +1,88 @@
+//! What is running and what just ended: `Now`, every live group as a
+//! row (`surfaces/activity.rs`), then `Earlier`, the history. Enter opens a
+//! row, `x` dismisses it, `r` retries a failed fspec run or update. Without
+//! fspec the last line says so; LauncherEntry and notification progress
+//! still show.
+
+use super::{Effect, Panel, View};
+use crate::store::Topic;
+use crate::surfaces::activity::{self, Verb};
+use crate::ui::{El, Event, Ink, w};
+
+const EARLIER: usize = 10;
+
+pub struct Activity;
+
+/// An fspec row's open asks for this panel, which is already up.
+fn run(verb: Verb, source: &str, fx: &mut Effect) {
+    let _ = activity::act(fx.store, fx.runtime, verb, source);
+}
+
+impl Panel for Activity {
+    fn id(&self) -> &'static str {
+        "activity"
+    }
+
+    fn title(&self, _: &View) -> String {
+        "Activity".into()
+    }
+
+    fn icon(&self, _: &View) -> String {
+        "loader-circle".into()
+    }
+
+    fn reads(&self) -> &'static [Topic] {
+        &[Topic::Activity]
+    }
+
+    fn body(&self, v: &View) -> El {
+        let s = &v.theme.space;
+        let a = &v.store.activity;
+        let running = activity::list(v.theme, v.store, usize::MAX);
+        let earlier = activity::history(v.theme, v.store, EARLIER);
+        let mut parts = Vec::new();
+        if running.is_empty() && earlier.is_empty() {
+            parts.push(w::section_label(s, "Nothing running", None, false));
+        }
+        if !running.is_empty() {
+            let mut col = vec![w::heading(s, "Now", Some(running.len()), false)];
+            col.extend(running);
+            parts.push(w::column(s.row_gap, col));
+        }
+        if !earlier.is_empty() {
+            let mut col = vec![w::heading(s, "Earlier", None, false)];
+            col.extend(earlier);
+            parts.push(w::column(s.row_gap, col));
+        }
+        let f = &a.fspec;
+        let unavailable = match &f.error {
+            _ if !f.installed => Some("fspec is not installed: installs and updates do not show here".to_owned()),
+            Some(err) => Some(err.clone()),
+            None => None,
+        };
+        if let Some(line) = unavailable {
+            parts.push(w::caption(line).ink(Ink::Dim));
+        }
+        w::column(s.section_gap, parts)
+    }
+
+    fn event(&mut self, ev: &Event, fx: &mut Effect) {
+        if let Some((verb, source)) = Verb::parse(&ev.on) {
+            run(verb, source, fx);
+        }
+    }
+
+    fn activate(&mut self, stop: &str, fx: &mut Effect) {
+        run(Verb::Open, stop, fx);
+    }
+
+    fn delete(&mut self, stop: &str, fx: &mut Effect) {
+        run(Verb::Dismiss, stop, fx);
+    }
+
+    fn key(&mut self, stop: Option<&str>, text: &str, fx: &mut Effect) {
+        if let (Some(stop), "r") = (stop, text) {
+            run(Verb::Retry, stop, fx);
+        }
+    }
+}

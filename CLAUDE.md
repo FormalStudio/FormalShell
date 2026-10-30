@@ -244,6 +244,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   place through `-r` and through `x-canonical-private-synchronous`, and a
   replace without a value ends it. One real `fspec run --detach jq` is read
   as a `run` item where the rig's fspec has `run`, else skipped saying so.
+  The Activity panel photographed with the apply at 3/4 beside the running
+  update and again with the update failed; `activity dismiss` taking a
+  running group's card (`toasts`) and not its row, the card back once it
+  succeeds, no second card for a `value` notification; a stubbed failed
+  `run` retried over `activity retry`, reaching a PATH-shimmed `fspec` as
+  exactly `run --detach smoke-pkg`, and `activity open` on it opening the
+  panel.
 - `airplay.sh` `--airplay`: `services/airplay.rs` against a PATH-shimmed
   `uxplay` (the real one decodes into a GL texture this rig's software KMS
   card has no path for), which prints uxplay's own connect log line and

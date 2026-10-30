@@ -105,6 +105,8 @@ pub enum Input {
     NoticeClosed(u32),
     /// The failures were looked at.
     Seen,
+    /// A group put away (`Activity::dismiss`).
+    Dismiss(String),
 }
 
 static INPUT: OnceLock<Sender<Input>> = OnceLock::new();
@@ -155,6 +157,7 @@ fn take(activity: &mut Activity, input: Input, now: i64) -> bool {
         Input::Notice(n) => activity.notification(n, now),
         Input::NoticeClosed(id) => activity.notification_closed(id, now),
         Input::Seen => activity.seen(),
+        Input::Dismiss(source) => activity.dismiss(&source),
     }
 }
 
