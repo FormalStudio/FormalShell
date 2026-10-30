@@ -68,7 +68,8 @@ pub(super) struct State {
     reveal: bool,
     /// The arrival has hidden the pointer: Hyprland 0.56 draws it at start
     /// whatever the config's `cursor.invisible` says, and only a runtime
-    /// eval takes it away.
+    /// eval takes it away. The lift waits on it, or the reveal would come
+    /// first and the hide never.
     hidden: bool,
 }
 
@@ -261,7 +262,7 @@ impl App {
             // With no picture to decode, the plain colour is the wallpaper.
             let plain = self.store.desktop().is_empty();
             let walls = self.heads.iter().all(|h| h.backdrop.as_ref().is_none_or(|b| b.landed.1 || (plain && b.landed.0)));
-            if (bar && walls && !self.heads.is_empty()) || now >= self.started + ARRIVE_WAIT {
+            if (bar && walls && self.veil.hidden && !self.heads.is_empty()) || now >= self.started + ARRIVE_WAIT {
                 self.lift();
             }
         }
