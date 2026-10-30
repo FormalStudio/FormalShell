@@ -1,19 +1,14 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --deform proves the velocity deform (M54 D7): a card arriving does not stop
-# dead on its rect. It passes it, squashes into the bar it came out of, and
-# unwinds through its rest rather than snapping to it, so the last frame of an
+# --deform proves the velocity deform (M54 D7) unwinds: the last frame of an
 # open is the same rect as a card that has been sitting there for a second.
+# The table's curves never overshoot (formalshell.json's motion note), so a
+# frame past the resting card is not asked for.
 #
-# Two numbers off one burst, both the card's own silhouette in the band under
-# the bar's line, measured as the bounding box of everything that differs
-# between a frame and the same output with the panel shut:
+# One number off one burst, the card's own silhouette in the band under the
+# bar's line, measured as the bounding box of everything that differs between
+# a frame and the same output with the panel shut:
 #
-#   past    at least one frame reaches further down than the resting card
-#           does. Both halves of the movement land there: the emerge rides a
-#           spatial curve, whose control point above 1 carries the card a few
-#           pixels beyond rest, and the deform stretches it along the same
-#           direction of travel on top of that.
 #   rest    the last frame of the burst is the resting box exactly, all four
 #           numbers. The springs are still integrating well past the travel
 #           they were driven by (stiffness 200, damping 16, so a couple of
@@ -59,9 +54,7 @@ deform_mid_paths=(
 # The travel's own clock (Theme.motion.spatial, M54 D2) and the moment this
 # rig has the window up, in milliseconds; every sample is the map plus a
 # fraction of that clock, so a change to the token moves the sampling with it.
-# The overshoot peaks around three quarters of the way through, which is what
-# the middle of the spread is for; the last one is three clocks out, past the
-# springs as well as the travel.
+# The last one is three clocks out, past the springs as well as the travel.
 deform_clock_ms=500
 deform_map_ms=200
 deform_mid_fractions=(0 20 40 60 75 90 110 150 300)
@@ -175,22 +168,16 @@ leg_deform_assert() {
   fi
   echo "SMOKE_DEFORM_REST_BOX $rest_box"
 
-  local box height past=false last_box="" ladder=""
+  local box height last_box="" ladder=""
   for i in "${!deform_mid_paths[@]}"; do
     box=$(deform_box "${deform_mid_paths[$i]}" "mid-$((i + 1))")
     height=$(deform_height "$box")
     ladder+=" $height"
     echo "deform: sample $((i + 1)) at +${deform_mid_sleeps[$i]}s box $box"
-    if [ "$height" -gt "$rest_h" ]; then
-      past=true
-    fi
     last_box="$box"
   done
   echo "SMOKE_DEFORM_LADDER$ladder rest=$rest_h"
 
-  if ! $past; then
-    fail "no frame of the open reached past the resting card (heights$ladder against ${rest_h}px): the card stopped dead on its own rect"
-  fi
   if [ "$last_box" != "$rest_box" ]; then
     fail "the last sample is $last_box against the resting $rest_box: the deform had not unwound to identity three clocks past the travel"
   fi

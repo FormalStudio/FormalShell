@@ -407,10 +407,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   own edge moving right to left.
 - `console.sh` `--console`: the quake console parking on a special workspace
   and coming back with the same window id.
-- `deform.sh` `--deform`: a burst through one open showing the card past its
-  own resting box on at least one frame (the spatial curve's overshoot and
-  the velocity deform on top of it) and back on it exactly three clocks
-  later, the springs unwound.
+- `deform.sh` `--deform`: a burst through one open ending on the card's
+  resting box exactly three clocks later, the springs unwound. The table's
+  curves never overshoot, so no frame past rest is asked for.
 - `depth.sh` `--depth`: rides `--lock`; a seeded wallpaper with a
   `.depth/` map beside it marking an orange band through the clock digits
   as the subject: `lock status` reporting `depth` true and the band drawn
