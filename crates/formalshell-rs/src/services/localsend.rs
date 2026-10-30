@@ -81,6 +81,15 @@ pub enum Payload {
     Text(String),
 }
 
+impl Payload {
+    pub fn of(entry: &fs_menu::clipboard::history::Entry) -> Payload {
+        match entry.kind {
+            fs_menu::clipboard::history::EntryKind::Image => Payload::Path(entry.path.clone().unwrap_or_default()),
+            fs_menu::clipboard::history::EntryKind::Text => Payload::Text(entry.text.clone().unwrap_or_default()),
+        }
+    }
+}
+
 pub enum Cmd {
     /// `localsend.receive`, `.alias` and `.dir` as read.
     Config { receive: bool, alias: String, dir: String },

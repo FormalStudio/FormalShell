@@ -190,17 +190,20 @@ fn station() {
 fn clipboard_entry() {
     let rows = clipboard_provider(&[Entry::image("b", "/img/one.png"), Entry::text("a", "hello")], ClipMode::Copy, true);
     let image = of(&rows[0]);
-    assert_eq!(ids(&image), ["run", "alternate", "copy-only", "delete"]);
+    assert_eq!(ids(&image), ["run", "alternate", "copy-only", "send-to", "delete"]);
     assert_eq!(image[0].label, "Paste");
     assert!(image[0].paste_after);
     assert_eq!(image[1].label, "Send over SSH");
     assert_eq!(image[1].run, Run::Ipc("clipssh.image:b:/img/one.png".into()));
     assert!(!image[2].paste_after);
-    assert_eq!(image[3].run, Run::Ipc("clipboard.remove:b".into()));
-    assert!(image[3].keep_open && image[3].destructive);
-    assert_eq!(ids(&of(&rows[1])), ["run", "copy-only", "delete"]);
+    assert_eq!(image[3].run, Run::Target(TargetKind::Peer));
+    assert_eq!(image[4].run, Run::Ipc("clipboard.remove:b".into()));
+    assert!(image[4].keep_open && image[4].destructive);
+    assert_eq!(ids(&of(&rows[1])), ["run", "copy-only", "send-to", "delete"]);
     let copy = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Copy, false);
-    assert_eq!(ids(&of(&copy[0])), ["run", "delete"]);
+    assert_eq!(ids(&of(&copy[0])), ["run", "send-to", "delete"]);
+    let share = clipboard_provider(&[Entry::text("a", "hello")], ClipMode::Share, false);
+    assert!(!ids(&of(&share[0])).contains(&"send-to"));
 }
 
 #[test]

@@ -1504,6 +1504,14 @@ hands the newest entry to the app, `Pick From History` lists the clipboard to
 choose from, and `Receive` opens the app. An empty clipboard shows
 `Nothing to share`. With neither installed there is no `Share` node.
 
+`Send to…` in a clipboard entry's or a file's actions does the same from
+the row itself: the column lists the peers LocalSend's scan finds, each
+with its address, and follows the scan while it is open; Enter sends the
+entry (text as a `.txt` file, an image as its file) or the file to that
+peer. Until the first scan is back it reads `Looking for devices…`, then
+`No devices found` when nothing answered, and `LocalSend is not installed`
+without `localsend-cli`.
+
 ### Menu IPC
 
 ```sh

@@ -146,6 +146,7 @@
 --panel calendar
 --panel weather
 --device-routes
+--launcher-send
 --logind-lock
 --mirror
 --panel-morph

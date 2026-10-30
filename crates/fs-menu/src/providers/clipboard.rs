@@ -46,7 +46,7 @@ pub enum ClipMode {
 pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<Node> {
     let share = mode == ClipMode::Share;
     let paste_after = !share && paste;
-    let id_prefix = if share { "share.history." } else { "clipboard." };
+    let id_prefix = if share { "share.history." } else { CLIPBOARD_ENTRY_PREFIX };
     items
         .iter()
         .map(|entry| {
@@ -99,6 +99,13 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
             }
         })
         .collect()
+}
+
+const CLIPBOARD_ENTRY_PREFIX: &str = "clipboard.";
+
+/// The history entry id a Clipboard route row stands for.
+pub fn clipboard_entry_id(node: &Node) -> Option<&str> {
+    node.id.strip_prefix(CLIPBOARD_ENTRY_PREFIX).filter(|_| node.kind == Kind::Action)
 }
 
 /// wtype's modifier vocabulary. `wtype -M <name>` was run against each

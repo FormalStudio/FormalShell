@@ -100,7 +100,7 @@ pipewire, PAM or Wayland to link.
   checkout the uncommitted files include other agents' edits, so it can
   pick more than your change alone needs.
 - `just smoke-all [list]`: every run in `dev/smoke-all.list` (one line of
-  flags each, every leg the nested rig can run, then the eight vm_only legs
+  flags each, every leg the nested rig can run, then the nine vm_only legs
   spread over the VM rig's four guests, ~5m30s for those alone), **for
   milestones only** (a
   phase shipping, a release) or when the owner asks: ~15 min (884s for 127
@@ -673,6 +673,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the selection leaves the window and once the card closes. The Files mode
   over a staged `recently-used.xbel` and `user-dirs.dirs`, a file that has
   gone left out. Photographed dark and light.
+- `launcher_send.sh` `--launcher-send` (vm_only): `Send to…` on a
+  clipboard entry and on a recent file, a second `localsend-cli recv` in a
+  network namespace of the guest's (veth, the multicast range routed onto
+  it) as the peer: LocalSend never lists a `recv` on its own host, and its
+  port is fixed at 53317. With no peer
+  the list settles on one `No devices found` note; with the peer up the
+  next scan lists it under a `Send to` token, a real Enter delivers the
+  copied text word for word and the file byte-identical (sha256), read
+  off the peer's directory. The empty list and the peer photographed.
 - `light.sh` `--light`: pins `theme.mode` light (a `settings_pin`) and
   rides any leg, so its frames are read in light mode; asserts `theme
   status` reports light.

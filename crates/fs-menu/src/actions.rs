@@ -9,7 +9,7 @@
 use crate::abbrev::Source;
 use crate::model::Mode;
 use crate::node::{ActionEntry, Kind, Node};
-use crate::providers::{FILE_KIND, FOLDER_KIND, is_wifi_network};
+use crate::providers::{FILE_KIND, FOLDER_KIND, clipboard_entry_id, is_wifi_network};
 
 /// What running an action does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,6 +277,9 @@ fn builtins(s: &Subject) -> Vec<Action> {
                 out.push(a);
             }
             out.extend(copy_only);
+            if clipboard_entry_id(n).is_some() {
+                out.push(Action::new("send-to", "Send to\u{2026}", Run::Target(TargetKind::Peer)));
+            }
             if plain_command {
                 out.push(copy("copy-command", "Copy command", action));
             }

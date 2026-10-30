@@ -707,11 +707,7 @@ impl App {
             return crate::surfaces::changed(self, crate::store::Topic::Notifications);
         };
         let Some(entry) = self.store.clipboard.items.iter().find(|e| e.id == id) else { return };
-        let payload = match entry.kind {
-            fs_menu::clipboard::history::EntryKind::Image => Payload::Path(entry.path.clone().unwrap_or_default()),
-            fs_menu::clipboard::history::EntryKind::Text => Payload::Text(entry.text.clone().unwrap_or_default()),
-        };
-        localsend::command(Cmd::Send { peer, payload });
+        localsend::command(Cmd::Send { peer, payload: Payload::of(entry) });
     }
 
     /// What the preview pane needs for the selected subject, asked for

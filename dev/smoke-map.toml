@@ -144,7 +144,7 @@ runs = ["--app-grid", "--grid-relaunch", "--menu"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/actions.rs", "crates/fs-menu/src/calc.rs"]
-runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-preview"]
+runs = ["--menu-actions", "--toggles", "--launcher-actions", "--launcher-abbrev", "--launcher-preview", "--launcher-send"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/clipboard/emoji.rs", "crates/fs-menu/src/providers/emoji.rs"]
@@ -157,7 +157,7 @@ paths = [
   "crates/formalshell-rs/src/services/clipboard.rs",
   "crates/formalshell-rs/src/ipc/clipboard.rs",
 ]
-runs = ["--clipboard", "--clipssh-image", "--launcher-preview"]
+runs = ["--clipboard", "--clipssh-image", "--launcher-preview", "--launcher-send"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/clipssh.rs", "crates/formalshell-rs/src/services/clipssh.rs"]
@@ -169,7 +169,7 @@ runs = ["--device-routes"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/share.rs", "crates/formalshell-rs/src/services/localsend.rs", "crates/formalshell-rs/src/ipc/localsend.rs", "crates/fs-devices/src/localsend.rs"]
-runs = ["--share", "--localsend"]
+runs = ["--share", "--localsend", "--launcher-send"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/files.rs", "dev/smoke.d/launcher_preview.sh"]

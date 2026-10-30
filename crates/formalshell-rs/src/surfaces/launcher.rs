@@ -1078,6 +1078,7 @@ impl Model {
             plugins::send(id, plugins::query_event(text));
         }
         self.plugin_query = asked;
+        self.refresh_peers(store);
         self.lookup = self.lookup(store);
         self.abbrev_key = if self.mode == Mode::Menu { fs_menu::abbrev::key(self.list_text()) } else { None };
         let (view, rows, app_count, empty, searching, key) = self.resolve_rows(store);
@@ -1146,6 +1147,21 @@ impl Model {
             self.follow();
         }
         self.dirty = true;
+    }
+
+    /// A `Send to…` list open in the column follows LocalSend's scan.
+    fn refresh_peers(&mut self, store: &Store) {
+        let q = self.query.text().to_owned();
+        let Some(c) = &mut self.column else { return };
+        let Some((action, targets)) = &mut c.target else { return };
+        if action.run != Run::Target(TargetKind::Peer) {
+            return;
+        }
+        let fresh = peer_targets(store);
+        if fresh.iter().map(|n| (&n.id, &n.label)).ne(targets.iter().map(|n| (&n.id, &n.label))) {
+            *targets = fresh;
+            c.refilter(&q);
+        }
     }
 
     /// Starts the transitions a re-rank owes, from where each row was.
@@ -2039,7 +2055,14 @@ impl Model {
                 let Some(peer) = target.id.strip_prefix("peer:").and_then(|i| i.parse::<usize>().ok()).and_then(|i| store.localsend.peers.get(i)) else {
                     return Out::None;
                 };
-                localsend::command(localsend::Cmd::Send { peer: peer.clone(), payload: localsend::Payload::Path(node.path.clone()) });
+                let payload = match fs_menu::providers::clipboard_entry_id(node) {
+                    Some(id) => {
+                        let Some(entry) = store.clipboard.items.iter().find(|e| e.id == id) else { return Out::None };
+                        localsend::Payload::of(entry)
+                    }
+                    None => localsend::Payload::Path(node.path.clone()),
+                };
+                localsend::command(localsend::Cmd::Send { peer: peer.clone(), payload });
             }
             Run::Target(TargetKind::Workspace) => {
                 let Some(idx) = target.id.strip_prefix("workspace:").and_then(|i| i.parse::<i64>().ok()) else { return Out::None };
@@ -2539,6 +2562,26 @@ fn folder_rows(store: &Store, path: &str, q: &str) -> Vec<Node> {
     }
 }
 
+/// LocalSend's peers off its last scan, each trailing its address; with
+/// none, one note saying why.
+fn peer_targets(store: &Store) -> Vec<Node> {
+    let ls = &store.localsend;
+    if !ls.installed {
+        return vec![Node::note("peer:none", "LocalSend is not installed")];
+    }
+    let peers: Vec<Node> = ls
+        .peers
+        .iter()
+        .enumerate()
+        .map(|(i, p)| Node { meta: Some(p.ip.clone()), ..Node::new(format!("peer:{i}"), p.name.clone(), NodeKind::Other("target".into())) })
+        .collect();
+    match (peers.is_empty(), ls.scanning || ls.last_scan_at == 0.0) {
+        (false, _) => peers,
+        (true, true) => vec![Node::note("peer:scanning", "Looking for devices\u{2026}")],
+        (true, false) => vec![Node::note("peer:none", "No devices found")],
+    }
+}
+
 /// What a target action picks from. Workspaces: the focused output's, by
 /// slot, then the next free one as a new one. Apps: every installed one,
 /// by name. Peers: LocalSend's last scan, which a listing asks again.
@@ -2555,14 +2598,7 @@ fn targets_for(store: &Store, kind: TargetKind) -> Vec<Node> {
         TargetKind::Peer => {
             use crate::services::localsend;
             localsend::command(localsend::Cmd::Scan { force: false });
-            let peers: Vec<Node> = store
-                .localsend
-                .peers
-                .iter()
-                .enumerate()
-                .map(|(i, p)| Node { meta: Some(p.ip.clone()), ..Node::new(format!("peer:{i}"), p.name.clone(), NodeKind::Other("target".into())) })
-                .collect();
-            if peers.is_empty() { vec![Node::note("peer:none", "No devices found")] } else { peers }
+            peer_targets(store)
         }
         TargetKind::Workspace => {
             let snap = &store.compositor.snapshot;

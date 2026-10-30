@@ -166,11 +166,16 @@ rsync -az --delete \
 
 # The build goes from g815's /tmp to the guest without leaving g815, over
 # the agent this mac forwards. /var/tmp, not the home, so the greeter
-# account can read it. Its links into the fspec formalshell package resolve
-# in the guest, which has the same package installed.
+# account can read it. Its links name g815's fspec formalshell package; a
+# guest saved at another rev of it has its own, so a link that does not
+# resolve there is pointed at the same file in the guest's package.
 result=/var/tmp/formalshell-result
 if [ -n "${FS_VM_RESULT:-}" ]; then
   ssh "${ssh_opts[@]}" -A "$host" "rsync -a --delete -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p $port' $(printf '%q' "$FS_VM_RESULT")/ kyan@127.0.0.1:$result/"
+  guest_ssh "pkg=\$(readlink -f /opt/fspec/current/bin/formalshell) && pkg=\${pkg%/bin/formalshell} &&
+    find $result -type l ! -exec test -e {} \\; -print | while read -r link; do
+      to=\$(readlink \"\$link\"); ln -sfn \"\$pkg/\${to#*/formalshell/}\" \"\$link\"
+    done"
 fi
 
 artifacts="${FS_ARTIFACTS:-$repo_root/artifacts}"
