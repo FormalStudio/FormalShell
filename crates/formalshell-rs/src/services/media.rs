@@ -141,10 +141,18 @@ impl Player {
         if self.length > 0.0 { at.min(self.length) } else { at }
     }
 
+    /// A position read off the player's own clock is no change; one past
+    /// `SEEK_SLACK` from where that clock puts it is a seek, and a paused
+    /// pane has nothing else to redraw it.
     fn same(&self, other: &Self) -> bool {
-        Self { at: other.at, position: other.position, ..self.clone() } == *other
+        (self.position_now(other.at) - other.position).abs() < SEEK_SLACK
+            && Self { at: other.at, position: other.position, ..self.clone() } == *other
     }
 }
+
+/// Seconds a polled position may sit off the player's own clock and still
+/// be the same playback.
+const SEEK_SLACK: f64 = 0.25;
 
 /// What every bar and IPC read of "the active source" resolves to.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -775,6 +783,17 @@ mod tests {
             station: Some(fs_media::radio::stations::Station { uuid: "r".into(), name: "Smoke Radio".into(), url: "http://h/s".into(), ..Default::default() }),
             ..radio::State::default()
         }
+    }
+
+    #[test]
+    fn a_paused_seek_is_a_change_and_a_playing_clock_is_not() {
+        let paused = mpris("p", false);
+        let sought = Player { position: 30.6, ..paused.clone() };
+        assert!(!paused.same(&sought));
+        assert!(paused.same(&Player { at: paused.at + std::time::Duration::from_secs(2), ..paused.clone() }));
+        let playing = mpris("p", true);
+        let later = Player { at: playing.at + std::time::Duration::from_secs(2), position: 7.0, ..playing.clone() };
+        assert!(playing.same(&later));
     }
 
     #[test]
