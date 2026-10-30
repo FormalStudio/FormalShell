@@ -22,6 +22,7 @@ use vello_cpu::kurbo::Affine;
 use crate::scene::{Bitmap, Fade, IRect, NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
 use crate::text::{self, Family, ShapedText, Text, TextStyle};
+use crate::ui::el::Ring;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Button {
@@ -123,6 +124,9 @@ pub enum Part {
     Cover { image: crate::ui::el::Pic, size: f64 },
     /// A window's app icon, `size` square, bare: the bar's one image icon.
     AppIcon { image: crate::ui::el::Pic, size: f64 },
+    /// A progress ring in the icon's slot (`ui::ring_strokes`), in the
+    /// cell's own ink; an unknown one turns while motion is on.
+    Ring(Ring),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -167,6 +171,11 @@ impl View {
     pub fn tone(mut self, tone: Tone) -> Self {
         self.tone = tone;
         self
+    }
+
+    /// A part moves on its own every frame: a ring with no progress.
+    pub fn turning(&self, look: &Look) -> bool {
+        look.motion && self.shown && self.parts.iter().any(|p| matches!(p, Part::Ring(Ring::Unknown)))
     }
 }
 
@@ -612,6 +621,7 @@ pub struct Frame<'a> {
     /// A text part's outgoing string while its replacement fades in: the
     /// part's index, the old part and the new one's opacity.
     pub ghost: Option<(usize, &'a Part, f32)>,
+    pub now: Instant,
 }
 
 impl Measured {
@@ -649,6 +659,7 @@ impl Kit {
         match part {
             Part::Icon { name, .. } | Part::SlotIcon { name, .. } => self.icon(name),
             Part::Cover { .. } | Part::AppIcon { .. } => self.icon("music"),
+            Part::Ring(_) => self.icon("circle"),
             Part::Glyph { text, family } => self.shape(text, TextStyle { family: Family::Named(family), size: look.body * GLYPH_SCALE, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }),
             Part::Label { text, weight } => {
                 let w = if band { WEIGHTS.semibold } else { weight.unwrap_or(WEIGHTS.medium as f32) as f64 };
@@ -693,6 +704,7 @@ impl Kit {
                     let across = icon_h.max(*size);
                     if vertical { (across, *size) } else { (*size, across) }
                 }
+                Part::Ring(_) => (icon_h, icon_h),
                 Part::Label { .. } | Part::DimLabel { .. } | Part::Meta { .. } => {
                     if vertical && w > look.content_across() + 0.5 {
                         (0.0, 0.0)
@@ -793,6 +805,19 @@ impl Kit {
                             let dot_r = IRect::new((bx + size) as i32 - d, (if vertical { by } else { across_mid as f64 - b.1 / 2.0 }) as i32, d, d);
                             p.rect(dot_r, ink.of(look.primary), d as f32 / 2.0);
                         }
+                    }
+                    Part::Ring(ring) => {
+                        let d = b.0;
+                        let centre = if vertical { (across_mid as f64, at + d / 2.0) } else { (at + d / 2.0, across_mid as f64) };
+                        let fill = if *ring == Ring::Failed { look.destructive } else { ink.fg };
+                        let turn = if look.motion { crate::ui::ring_turn(f.now, self.motion_scale) } else { 0.0 };
+                        let strokes = crate::ui::ring_strokes(centre, d, look.xxs, *ring, turn, ink.of(look.muted_fill), ink.of(fill));
+                        let bounds = crate::scene::Scene::cover(
+                            vello_cpu::kurbo::Rect::new(centre.0 - d / 2.0, centre.1 - d / 2.0, centre.0 + d / 2.0, centre.1 + d / 2.0),
+                            Affine::IDENTITY,
+                            2.0,
+                        );
+                        p.shape(bounds, crate::scene::Paint::Shape { fill: None, strokes });
                     }
                     Part::AppIcon { image, size } => {
                         let n = size.round() as i32;

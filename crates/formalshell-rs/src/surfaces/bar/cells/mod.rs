@@ -7,6 +7,7 @@
 //! stand-in readout, so the strip never shows a value nothing measured.
 
 mod absent;
+mod activity;
 mod active_window;
 mod audio;
 mod battery;

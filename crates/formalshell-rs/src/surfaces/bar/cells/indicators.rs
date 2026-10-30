@@ -1,7 +1,7 @@
 //! The things running in the background, a rail of cells
 //! that each exist only while their thing runs, each with its own hover,
-//! tooltip and click. The loud ones lead. A service joins by adding one
-//! [`Indicator`] to [`rail`].
+//! tooltip and click. The loud ones lead, Activity's ring first. A service
+//! joins by adding one [`Indicator`] to [`rail`].
 
 use std::time::{Duration, Instant};
 
@@ -58,7 +58,9 @@ pub fn rail() -> Vec<Box<dyn Cell>> {
         Indicator::new(&[Topic::NightLight], |env| env.store.nightlight.active.then(|| Item::new("lightbulb", "NIGHT LIGHT ON")), true, Action::None),
         Indicator::new(&[Topic::State], |env| (!env.store.state.data.overnight.is_null()).then(|| Item::new("moon-star", "OVERNIGHT ON")), true, Action::OvernightOff),
     ];
-    cells.into_iter().map(|c| Box::new(c) as Box<dyn Cell>).collect()
+    let mut rail: Vec<Box<dyn Cell>> = vec![Box::new(super::activity::Activity::default())];
+    rail.extend(cells.into_iter().map(|c| Box::new(c) as Box<dyn Cell>));
+    rail
 }
 
 fn recording(env: &Env) -> Option<Item> {

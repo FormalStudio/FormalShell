@@ -224,6 +224,7 @@ impl Slot {
     pub fn animating(&mut self, kit: &Kit, visible: bool, now: Instant) -> bool {
         let custom = self.cell.custom().is_some_and(|c| c.animating(now));
         custom
+            || self.view.turning(&kit.look)
             || self.along.running(now)
             || self.fade.running(now)
             || self.mark.running(now)
@@ -252,8 +253,8 @@ impl Slot {
     }
 
     /// The cell's own drawing moves this frame.
-    pub fn drawing(&mut self, now: Instant) -> bool {
-        self.cell.custom().is_some_and(|c| c.animating(now))
+    pub fn drawing(&mut self, kit: &Kit, now: Instant) -> bool {
+        self.cell.custom().is_some_and(|c| c.animating(now)) || self.view.turning(&kit.look)
     }
 
     pub fn hide(&mut self, scene: &mut Scene) {
@@ -299,6 +300,7 @@ impl Slot {
             band,
             scroll,
             ghost: self.ghost.as_ref().map(|(i, part)| (*i, part, self.cross.value(now).clamp(0.0, 1.0) as f32)),
+            now,
         };
         match self.cell.custom() {
             Some(custom) => {

@@ -27,9 +27,15 @@
 # `run --detach smoke-pkg` (any other call goes on to the real fspec);
 # `activity open` on an fspec row opens the panel, and `activity dismiss`
 # takes a running group's card away while its row stays.
+#
+# The bar cell (`surfaces/bar/cells/activity.rs`, first in the Indicators
+# rail) is read off `bar room`: no indicators cell at idle, one while the
+# apply runs, and photographed at 1/4 and with the update failed in front of
+# the finished apply. Last, a second rollback alone leads with a ring that
+# cannot say how far: two frames 300ms apart differ inside the cell.
 leg_activity_flag="--activity"
 leg_activity_order=236
-leg_activity_needs="jq python3 notify-send"
+leg_activity_needs="jq python3 notify-send convert"
 
 act_marks="$shot_dir/act"
 act_app_id="formalshell-smoke-activity"
@@ -99,7 +105,8 @@ EOF
 #!/usr/bin/env bash
 m="$act_marks"
 dir="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}/fspec/activity"
-status() { $ipc call activity status > "\$m-\$1.json" 2>&1; }
+status() { $ipc call activity status > "\$m-\$1.json" 2>&1; $ipc call bar room > "\$m-room-\$1.json" 2>&1; }
+bar() { "$grim_bin" "$shot_dir/activity-bar-\$1.png" > /dev/null 2>&1; }
 shot() { $ipc call panel open activity > /dev/null; sleep 0.8; "$grim_bin" "$shot_dir/activity-panel-\$1.png" > /dev/null 2>&1; $ipc call panel close > /dev/null; sleep 0.4; }
 await() { for _ in \$(seq 200); do [ -e "\$1" ] && return 0; sleep 0.05; done; echo "timed out on \$1" >> "\$m-drive.log"; }
 for _ in \$(seq 100); do
@@ -111,7 +118,7 @@ status idle
 
 # fspec: an apply that succeeds, an update that fails, a rollback that dies.
 "$python3_bin" "$stub" "\$dir" smoke-ok ok "\$m.ok" 2>> "\$m-drive.log" &
-await "\$m.ok.1"; sleep 0.5; status ok-1
+await "\$m.ok.1"; sleep 0.5; status ok-1; bar progress
 touch "\$m.ok.go1"; await "\$m.ok.2"; sleep 0.5; status ok-2
 "$python3_bin" "$stub" "\$dir" smoke-fail fail "\$m.fail" 2>> "\$m-drive.log" &
 await "\$m.fail.1"; sleep 0.5; status fail-1
@@ -119,7 +126,7 @@ $ipc call debug dump > "\$m-dump.json" 2>&1
 shot running
 $ipc call activity dismiss fspec:apply:smoke > "\$m-dismiss.txt" 2>&1; sleep 0.3; status dismissed
 touch "\$m.ok.go2"; await "\$m.ok.3"; sleep 0.5; status ok-3
-touch "\$m.fail.go1"; await "\$m.fail.2"; sleep 0.5; status fail-2
+touch "\$m.fail.go1"; await "\$m.fail.2"; sleep 0.5; status fail-2; bar failed
 shot failed
 "$python3_bin" "$stub" "\$dir" smoke-die die "\$m.die" 2>> "\$m-drive.log" &
 await "\$m.die.1"; sleep 0.5; status die-1
@@ -145,6 +152,7 @@ sleep 0.5; status n-1
 sleep 0.5; status n-2
 "$notify_send_bin" -r "\$id" -a smoke-dl Downloaded a.iso
 sleep 0.5; status n-3
+"$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy Copied b.img
 
 # A failed run retried, and an fspec row opening the panel.
 "$python3_bin" "$stub" "\$dir" smoke-rf runfail "\$m.rf" 2>> "\$m-drive.log" &
@@ -157,6 +165,13 @@ $ipc call activity retry fspec:run:smoke-pkg > "\$m-retry.txt" 2>&1
 for _ in \$(seq 60); do [ -s "\$m-retried.txt" ] && break; sleep 0.1; done
 $ipc call activity retry fspec:apply:smoke > "\$m-retry-none.txt" 2>&1
 sleep 0.3; status retried
+
+# A ring that cannot say how far, alone in the bar.
+sleep 4.2
+"$python3_bin" "$stub" "\$dir" smoke-die2 die "\$m.die2" 2>> "\$m-drive.log" &
+await "\$m.die2.1"; sleep 0.5; status turning; $ipc call bar room > "\$m-room-turning.json" 2>&1
+bar turning; sleep 0.3; bar turning-2
+touch "\$m.die2.go1"; await "\$m.die2.2"; $ipc call activity seen > /dev/null
 
 # A real fspec run, where this fspec publishes one.
 if command -v fspec > /dev/null 2>&1 && fspec run --help > /dev/null 2>&1; then
@@ -267,6 +282,24 @@ leg_activity_assert() {
   for f in running failed retry; do
     [ -s "$shot_dir/activity-panel-$f.png" ] || fail "activity: no panel frame $f"
     echo "SMOKE_ACTIVITY_PANEL_$(printf %s "$f" | tr a-z A-Z) $shot_dir/activity-panel-$f.png"
+  done
+
+  local cells='[.[0].cells[] | select(.name == "indicators")] | length'
+  jq -e "$cells == 0" "$m-room-idle.json" > /dev/null || fail "activity: an indicators cell showed at idle: $(cat "$m-room-idle.json")"
+  jq -e "$cells == 1" "$m-room-ok-1.json" > /dev/null || fail "activity: no bar cell while the apply ran: $(cat "$m-room-ok-1.json")"
+  jq -e "$cells == 0" "$m-room-seen.json" > /dev/null || fail "activity: the bar cell outlived its groups: $(cat "$m-room-seen.json")"
+  jq -e '.groups | length == 1 and .[0].items[0].progress == null' "$m-turning.json" > /dev/null \
+    || fail "activity: the rollback was not alone with no progress for the turning frames: $(cat "$m-turning.json")"
+  local cell
+  cell=$(jq -r '[.[0].cells[] | select(.name == "indicators")][0] | "\(.width)x\(.height)+\(.x)+\(.y)"' "$m-room-turning.json")
+  [ -n "$cell" ] && [ "$cell" != "nullxnull+null+null" ] || fail "activity: no cell for the turning ring: $(cat "$m-room-turning.json")"
+  "$convert_bin" "$shot_dir/activity-bar-turning.png" -crop "$cell" +repage "$shot_dir/activity-cell-a.png"
+  "$convert_bin" "$shot_dir/activity-bar-turning-2.png" -crop "$cell" +repage "$shot_dir/activity-cell-b.png"
+  cmp -s "$shot_dir/activity-cell-a.png" "$shot_dir/activity-cell-b.png" \
+    && fail "activity: the ring with no progress did not turn between two frames"
+  for f in progress turning failed; do
+    [ -s "$shot_dir/activity-bar-$f.png" ] || fail "activity: no bar frame $f"
+    echo "SMOKE_ACTIVITY_BAR_$(printf %s "$f" | tr a-z A-Z) $shot_dir/activity-bar-$f.png"
   done
 
   if [ -s "$m-run-skipped.txt" ]; then

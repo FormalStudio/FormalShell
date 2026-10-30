@@ -250,7 +250,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   succeeds, no second card for a `value` notification; a stubbed failed
   `run` retried over `activity retry`, reaching a PATH-shimmed `fspec` as
   exactly `run --detach smoke-pkg`, and `activity open` on it opening the
-  panel.
+  panel. The bar cell off `bar room`: no indicators cell at idle, one
+  while the apply runs, none after `seen`, photographed at 1/4 and with the
+  update failed, and a lone rollback's ring with no progress differing
+  inside the cell between two frames 300ms apart.
 - `airplay.sh` `--airplay`: `services/airplay.rs` against a PATH-shimmed
   `uxplay` (the real one decodes into a GL texture this rig's software KMS
   card has no path for), which prints uxplay's own connect log line and

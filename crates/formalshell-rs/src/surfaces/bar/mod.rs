@@ -818,7 +818,7 @@ impl Bar {
         let edge = self.edge;
         let (band, bare) = (&self.band_box, &self.bare_inks);
         for (i, slot) in self.slots.iter_mut().enumerate() {
-            if slot.rect.is_empty() || !(slot.drawing(now) || slot.marquee_due(&self.kit, visible, now)) {
+            if slot.rect.is_empty() || !(slot.drawing(&self.kit, now) || slot.marquee_due(&self.kit, visible, now)) {
                 continue;
             }
             let ink = slot_ink(band, bare, slot.ink);
