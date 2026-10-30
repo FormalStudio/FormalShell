@@ -35,6 +35,17 @@ pub struct Op {
     pub keys: Vec<String>,
     pub result: Option<Outcome>,
     pub error: Option<String>,
+    pub step: Option<Step>,
+}
+
+/// What one long resource is doing inside its `item` (a package build's
+/// `compiling`), with its own measure where one is knowable.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Step {
+    pub name: String,
+    pub progress: Option<Steps>,
+    pub stalled: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -77,10 +88,25 @@ impl Op {
 
     pub fn item(&self) -> Item {
         let state = self.state();
-        let progress = match &self.progress {
+        let steps = |s: &Option<Steps>| match s {
             Some(s) => Progress::Steps { done: s.done, total: s.total, unit: Unit::parse(&s.unit) },
             None => Progress::Indeterminate,
         };
+        // A step stands in for the operation's count while its resource
+        // runs: the count stays at the resource's own `done` until it ends,
+        // which reads as a frozen 0% through a whole package build.
+        let step = self.step.as_ref().filter(|_| state == State::Running);
+        let progress = match step {
+            Some(st) => steps(&st.progress),
+            None => steps(&self.progress),
+        };
+        let mut detail = self.item.clone().or_else(|| self.phase.clone()).unwrap_or_default();
+        if let Some(st) = step.filter(|st| !st.name.is_empty()) {
+            detail = if detail.is_empty() { st.name.clone() } else { format!("{detail}, {}", st.name) };
+        }
+        if step.is_some_and(|st| st.stalled) {
+            detail.push_str(", no output for a minute");
+        }
         let summary = match state {
             State::Succeeded => self.result.as_ref().map(|r| r.summary.clone()),
             State::Failed => self.error.clone(),
@@ -94,7 +120,7 @@ impl Op {
             kind: if self.kind.is_empty() { "apply".into() } else { self.kind.clone() },
             app: None,
             title: self.title.clone(),
-            detail: self.item.clone().or_else(|| self.phase.clone()).unwrap_or_default(),
+            detail,
             phase: self.phase.clone(),
             progress,
             state,
@@ -154,5 +180,18 @@ mod tests {
         assert_eq!((item.kind.as_str(), item.state, item.detail.as_str()), ("rebase", State::Running, "thinking"));
         assert_eq!(item.progress, Progress::Steps { done: 1, total: 2, unit: Unit::Other("bytes".into()) });
         assert_eq!(item.source, "fspec:rebase");
+    }
+
+    #[test]
+    fn a_step_stands_in_for_a_long_resource() {
+        let line = |step: &str| format!(r#"{{"v":1,"type":"update","op":{{"id":"d","kind":"apply","state":"running","phase":"preparing","progress":{{"done":0,"total":3,"unit":"resources"}},"item":"store: formalshell","step":{step}}}}}"#);
+        let item = parse(&line(r#"{"name":"compiling","progress":{"done":120,"total":450,"unit":"units"},"stalled":false}"#)).unwrap().item();
+        assert_eq!(item.progress.fraction(), Fraction::of(120, 450));
+        assert_eq!(item.detail, "store: formalshell, compiling");
+        let item = parse(&line(r#"{"name":"fetching dependencies","progress":null,"stalled":true}"#)).unwrap().item();
+        assert_eq!(item.progress, Progress::Indeterminate);
+        assert_eq!(item.detail, "store: formalshell, fetching dependencies, no output for a minute");
+        let item = parse(&line("null")).unwrap().item();
+        assert_eq!(item.progress.fraction(), Fraction::of(0, 3));
     }
 }

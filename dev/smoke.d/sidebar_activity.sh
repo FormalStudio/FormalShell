@@ -4,12 +4,16 @@
 # installs card (shell/installs/SidebarCard.qml). dev/fspec-activity-stub.py
 # plays three fspec operations on the session's real stream: an install of
 # Firefox held at 40%, an install of "Visual Studio Code Insiders" held at
-# resolving (no measure) and an apply held at 1/4. Read off `sidebar
-# status`: the `activity` card straight after `notifications`, one line a
+# resolving (no measure) and an apply of a package build whose ring follows
+# FormalSpec's `step`: indeterminate fetching dependencies, compiling
+# rising 120 then 300 of 450 units, packaging stalled, read off `activity
+# status` at each step while the operation's own count sits at 0 of 3.
+# Read off `sidebar status`: the `activity` card straight after `notifications`, one line a
 # group, each line's hit 32 tall and the next 32 below it, and tesseract
 # over the card's crop reading "Firefox" whole, where the old row cut a
 # title to its first letter. Then the Firefox install runs to success and
-# its line reads done. The card mid-install and done is cropped for reading.
+# its line reads done. The card mid-install, mid-compile and done is
+# cropped for reading.
 leg_sidebar_activity_flag="--sidebar-activity"
 leg_sidebar_activity_order=238
 leg_sidebar_activity_needs="jq python3 convert tesseract"
@@ -48,20 +52,26 @@ FSPEC_STUB_PKG=flatpak:org.mozilla.firefox FSPEC_STUB_TITLE=Firefox "$python3_bi
 await "\$m.ff.1"; touch "\$m.ff.go1"; await "\$m.ff.2"
 FSPEC_STUB_PKG=flatpak:com.visualstudio.code.insiders FSPEC_STUB_TITLE="Visual Studio Code Insiders" "$python3_bin" "$stub" "\$dir" sa-code install "\$m.code" 2>> "\$m-drive.log" &
 await "\$m.code.1"
-"$python3_bin" "$stub" "\$dir" sa-apply ok "\$m.ok" 2>> "\$m-drive.log" &
-await "\$m.ok.1"
+"$python3_bin" "$stub" "\$dir" sa-build build "\$m.build" 2>> "\$m-drive.log" &
+await "\$m.build.1"
 sleep 1
 $ipc call sidebar status > "\$m-status-running.json" 2>&1
 $ipc call activity status > "\$m-activity-running.json" 2>&1
 "$hyprctl_bin" -j layers > "\$m-layers.json" 2>&1
 "$grim_bin" "\$m-running.png" > /dev/null 2>&1
+# The build through its steps: compiling twice, then packaging stalled.
+for n in 1 2 3; do
+  touch "\$m.build.go\$n"; await "\$m.build.\$((n + 1))"; sleep 0.5
+  $ipc call activity status > "\$m-activity-build\$((n + 1)).json" 2>&1
+  [ \$n = 2 ] && "$grim_bin" "\$m-rising.png" > /dev/null 2>&1
+done
 # Firefox on to committing and succeeded; read inside the fold's 4s.
 touch "\$m.ff.go2"; await "\$m.ff.3"; touch "\$m.ff.go3"; await "\$m.ff.4"
 sleep 0.8
 $ipc call sidebar status > "\$m-status-done.json" 2>&1
 $ipc call activity status > "\$m-activity-done.json" 2>&1
 "$grim_bin" "\$m-done.png" > /dev/null 2>&1
-touch "\$m.code.go1" "\$m.ok.go1" "\$m.ok.go2" "\$m.ok.go3" "\$m-drive.done"
+touch "\$m.code.go1" "\$m.build.go4" "\$m-drive.done"
 EOF
   hypr_exec_once "bash $script"
 }
@@ -97,8 +107,22 @@ leg_sidebar_activity_assert() {
     "$sa_marks-activity-done.json" > /dev/null || fail "--sidebar-activity: the Firefox install never read succeeded"
   "$jq_bin" -e '[.hits[] | select(.on == "open:fspec:install:flatpak:org.mozilla.firefox")] | length == 1' "$done" > /dev/null \
     || fail "--sidebar-activity: the finished Firefox line left the card before its fold"
+  # The build's ring off FormalSpec's `step`: none while fetching, rising
+  # through compiling, none again while packaging stalls, never the
+  # operation's own 0 of 3.
+  local build='[.. | objects | select(.source? == "fspec:apply:smoke-build" and has("detail") and has("progress"))] | first'
+  "$jq_bin" -e "$build | .progress == null" "$sa_marks-activity-running.json" > /dev/null \
+    || fail "--sidebar-activity: fetching dependencies is not indeterminate: $("$jq_bin" -c "$build" "$sa_marks-activity-running.json")"
+  "$jq_bin" -e "$build | .progress.done == 120 and .progress.total == 450" "$sa_marks-activity-build2.json" > /dev/null \
+    || fail "--sidebar-activity: compiling does not read 120 of 450: $("$jq_bin" -c "$build" "$sa_marks-activity-build2.json")"
+  "$jq_bin" -e "$build | .progress.done == 300" "$sa_marks-activity-build3.json" > /dev/null \
+    || fail "--sidebar-activity: compiling did not rise to 300: $("$jq_bin" -c "$build" "$sa_marks-activity-build3.json")"
+  "$jq_bin" -e "$build | .progress == null and (.detail | test(\"packaging, no output\"))" "$sa_marks-activity-build4.json" > /dev/null \
+    || fail "--sidebar-activity: the stalled packaging step does not read so: $("$jq_bin" -c "$build" "$sa_marks-activity-build4.json")"
+  sa_crop "$running" "$sa_marks-rising.png" "$shot_dir/sidebar-activity-card-rising.png"
   sa_crop "$done" "$sa_marks-done.png" "$shot_dir/sidebar-activity-card-done.png"
   echo "SMOKE_SIDEBAR_ACTIVITY_RUNNING $shot_dir/sidebar-activity-card-running.png"
+  echo "SMOKE_SIDEBAR_ACTIVITY_RISING $shot_dir/sidebar-activity-card-rising.png"
   echo "SMOKE_SIDEBAR_ACTIVITY_DONE $shot_dir/sidebar-activity-card-done.png"
   echo "SMOKE_SIDEBAR_ACTIVITY_FRAME $sa_marks-running.png"
 }

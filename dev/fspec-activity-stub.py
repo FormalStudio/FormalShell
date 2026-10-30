@@ -10,6 +10,10 @@ reads the shell's status at a known step.
 
   ok    an apply: preparing 1/4, committing 3/4, succeeded
   fail  an update: resolving 0/2, failed
+  build  an apply whose one resource is a package build (FormalSpec's
+        `step`): fetching dependencies with no measure, compiling 120/450
+        then 300/450 units, packaging stalled, succeeded; the operation's
+        own count stays 0/3 throughout, as fspec's does
   die   a rollback: planning with no progress, then a final line cut short
         and the socket gone, the way a killed fspec leaves a reader
   install  an install from the launcher (FSPEC_STUB_PKG, FSPEC_STUB_TITLE):
@@ -102,6 +106,19 @@ def scenario(name, op_id):
             o(phase="preparing", scope="system", progress={"done": 40, "total": 100, "unit": "percent"}, item=title),
             o(phase="committing", scope="system", progress={"done": 1, "total": 2, "unit": "resources"}, item=pkg),
             o(state="succeeded", phase="pushing", result={"changes": 2, "summary": "2 changes"}),
+        ]
+    if name == "build":
+        o = lambda **f: op(op_id, "apply", "fspec:apply:smoke-build", "Applying smoke-build", host="smoke-build",
+                           phase="preparing", scope="system", progress={"done": 0, "total": 3, "unit": "resources"},
+                           item="store: formalshell", keys=["pkg:formalshell"], **f)
+        units = lambda done: {"done": done, "total": 450, "unit": "units"}
+        return [
+            o(step={"name": "fetching dependencies", "progress": None, "stalled": False}),
+            o(step={"name": "compiling", "progress": units(120), "stalled": False}),
+            o(step={"name": "compiling", "progress": units(300), "stalled": False}),
+            o(step={"name": "packaging", "progress": None, "stalled": True}),
+            dict(o(), state="succeeded", phase="committing", progress={"done": 3, "total": 3, "unit": "resources"},
+                 result={"changes": 3, "summary": "3 changes"}),
         ]
     if name == "die":
         o = lambda **f: op(op_id, "rollback", "fspec:rollback:smoke", "Rolling back smoke", host="smoke", **f)

@@ -1511,8 +1511,14 @@ fn indicator(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
         Ring::Failed => Some((shape(cx, "!", &Font { size: Type::Title, weight: Weight::Bold, mono: false }), cx.a(t.colors.get("destructive")))),
         _ => None,
     };
-    // Pond clamps an unknown measure to none: the groove alone, still.
-    let r = if r == Ring::Unknown { Ring::Progress(0.0) } else { r };
+    // Pond draws an unknown measure as the bare groove; that reads as a
+    // frozen 0% through a long build, so it turns like the panel's ring.
+    let turn = if r == Ring::Unknown && t.motion_enabled {
+        cx.animate();
+        ring_turn(cx.now, cx.motion_scale)
+    } else {
+        0.0
+    };
     let groove = cx.a(Rgba { a: ink.a * 0.2, ..ink });
     let fill = cx.a(ink);
     let mut p = cx.painter(path);
@@ -1522,7 +1528,7 @@ fn indicator(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
             p.text(&glyph, at, ink, &[]);
         }
         None => {
-            let strokes = ring_strokes(centre, INDICATOR, INDICATOR_STROKE, r, 0.0, groove, fill);
+            let strokes = ring_strokes(centre, INDICATOR, INDICATOR_STROKE, r, turn, groove, fill);
             let half = INDICATOR / 2.0;
             let bounds = Scene::cover(Rect::new(centre.0 - half, centre.1 - half, centre.0 + half, centre.1 + half), Affine::IDENTITY, 2.0);
             p.shape(bounds, Paint::Shape { fill: None, strokes });

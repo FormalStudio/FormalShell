@@ -1175,9 +1175,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `sidebar_activity.sh` `--sidebar-activity`: the Activity card under
   `layout: sidebar`, Pond's installs card: three stubbed fspec operations
   (Firefox installing at 40%, a long-named install with no measure, an
-  apply at 1/4) as three 32-tall lines straight under the notifications
-  card, read off `sidebar status`, tesseract reading "Firefox" whole off
-  the card's crop, and the install's line reading done once it succeeds.
+  apply of a package build) as three 32-tall lines straight under the
+  notifications card, read off `sidebar status`, tesseract reading
+  "Firefox" whole off the card's crop, and the install's line reading done
+  once it succeeds. The build's ring follows FormalSpec's `step` while its
+  own count sits at 0 of 3: indeterminate fetching dependencies, 120 then
+  300 of 450 units compiling, indeterminate and "no output" once
+  packaging stalls.
 - `sidebar_join.sh` `--sidebar-join`: `layout: sidebar` over a flat grey
   wallpaper, the network panel and the launcher each opened at a tenth
   speed with a burst of frames, the card read as what is darker than the
