@@ -26,8 +26,9 @@
 # drops it.
 #
 # Then the whole grid opened again and walked on real keys (Down, Page_Down,
-# End): at each stop the bottom band of the body's viewport, half a cell
-# tall and clear of the grid's own inset, has to carry emoji ink. A grid
+# End): at each stop the bottom band of the body's viewport, a cell tall
+# and clear of the grid's own inset, has to carry emoji ink (half a cell
+# could land between two rows' glyphs). A grid
 # whose lines came out shorter than their slots stacked every row up the
 # card and left that band empty card fill. The viewport and the cursor's
 # slot come off `menu status` (`body`, `viewCursor`), so nothing here
@@ -175,7 +176,7 @@ emoji_grid_assert() {
       [ "$scroll" = 0 ] || fail "the grid did not open at the top: $(cat "$f")"
       inset=$top
     fi
-    band=$((ch / 2))
+    band=$ch
     ink=$(emoji_ink "$png" "${bw}x${band}+${bx}+$((by + bh - inset - band))")
     mid=$(emoji_ink "$png" "${bw}x${band}+${bx}+$((by + bh / 2))")
     echo "emoji grid $stop: scroll $scroll, cell ${ch}px, viewport ${bw}x${bh}+${bx}+${by}, bottom band ink $ink, middle band ink $mid"
