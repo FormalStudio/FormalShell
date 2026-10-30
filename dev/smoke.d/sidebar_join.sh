@@ -134,7 +134,7 @@ leg_sidebar_join_assert() {
   local name edge out
   [ -s "$sidebar_join_status" ] || fail "sidebar-join: no sidebar status"
   edge=$("$jq_bin" -r '.width' "$sidebar_join_status")
-  [ "$edge" = 160 ] || fail "sidebar-join: the column is not 160 wide: $(cat "$sidebar_join_status")"
+  [ "$edge" = 154 ] || fail "sidebar-join: the column is not 154 wide: $(cat "$sidebar_join_status")"
   for name in panel menu; do
     local tag i
     tag=$(echo "$name" | tr a-z A-Z)

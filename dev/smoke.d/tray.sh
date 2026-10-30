@@ -12,6 +12,11 @@
 # shell-owned menu has to open, walk two rows and fire the third; and the
 # launcher's tray route has to be searchable from inside while staying
 # invisible from the root.
+# Ridden by --sidebar, which has no strip, the same then runs once more off
+# the sidebar's status card: its tray button in `sidebar status`, a real
+# click on it opening the second bar, a real click on fixture 1's square
+# (found by its colour in the frame) reaching the stub as Activate, and a
+# real right click on fixture 2's opening its menu.
 leg_tray_flag="--tray"
 leg_tray_order=170
 leg_tray_needs="python3"
@@ -33,6 +38,12 @@ tray_menu_path="$shot_dir/tray-menu.png"
 tray_menuactivate_reply_path="$shot_dir/tray-menuactivate-reply.txt"
 tray_query_root_path="$shot_dir/tray-query-root.json"
 tray_query_route_path="$shot_dir/tray-query-route.json"
+tray_sidebar_status_path="$shot_dir/tray-sidebar-status.json"
+tray_sidebar_open_path="$shot_dir/tray-sidebar-open.json"
+tray_sidebar_png="$shot_dir/tray-sidebar-open.png"
+tray_sidebar_menu_png="$shot_dir/tray-sidebar-menu.png"
+tray_sidebar_menu_reply_path="$shot_dir/tray-sidebar-menu-reply.txt"
+tray_activate_before_path="$shot_dir/tray-activate-before-sidebar.txt"
 
 leg_tray_fixture() {
   settings_fragment ', "tray": {"maxVisible": -1}'
@@ -45,7 +56,7 @@ leg_tray_timing() {
   # as their own cells and the route closed again. Getting this wrong is not a
   # slow run but a false failure: the kill script takes the stubs down right
   # after that frame, so a drive step landing later reads an empty item list.
-  leg_timing 26 50
+  if leg_on sidebar; then leg_timing 40 64; else leg_timing 26 50; fi
 }
 
 leg_tray_drive() {
@@ -63,6 +74,46 @@ sleep 1
 $ipc call menu close > /dev/null 2>&1
 STEPS
 )
+  local sidebar_steps=""
+  if leg_on sidebar; then
+    sidebar_steps=$(cat <<STEPS
+cp "$tray_activate_path" "$tray_activate_before_path"
+$ipc call sidebar status > "$tray_sidebar_status_path" 2>&1
+origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
+read -r ox oy <<< "\$origin"
+read -r tx ty <<< "\$("$jq_bin" -r --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == "panel:trayoverflow") | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' "$tray_sidebar_status_path" | head -1)"
+to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; sleep 0.4; }
+to "\$tx" "\$ty"
+"$wlrctl_bin" pointer click left > /dev/null 2>&1
+sleep 2
+$ipc call tray status > "$tray_sidebar_open_path" 2>&1
+"$grim_bin" "$tray_sidebar_png" > /dev/null 2>&1
+# A fixture's square: the centre of the pixels carrying its colour.
+square() { "$python3_bin" -c 'import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+want = tuple(int(sys.argv[2][i:i + 2], 16) for i in (0, 2, 4))
+px = im.load()
+hit = [(x, y) for y in range(0, im.height, 2) for x in range(0, im.width, 2) if all(abs(a - b) < 8 for a, b in zip(px[x, y], want))]
+print(sum(p[0] for p in hit) // len(hit), sum(p[1] for p in hit) // len(hit)) if hit else print("0 0")' "\$@"; }
+read -r ax ay <<< "\$(square "$tray_sidebar_png" c0392b)"
+to "\$ax" "\$ay"
+"$wlrctl_bin" pointer click left > /dev/null 2>&1
+sleep 2
+to "\$tx" "\$ty"
+"$wlrctl_bin" pointer click left > /dev/null 2>&1
+sleep 2
+"$grim_bin" "$tray_sidebar_png.again.png" > /dev/null 2>&1
+read -r mx my <<< "\$(square "$tray_sidebar_png.again.png" 27ae60)"
+to "\$mx" "\$my"
+"$wlrctl_bin" pointer click right > /dev/null 2>&1
+sleep 2
+"$grim_bin" "$tray_sidebar_menu_png" > /dev/null 2>&1
+$ipc call tray menucursor 1 > "$tray_sidebar_menu_reply_path" 2>&1
+$ipc call panel close > /dev/null 2>&1
+STEPS
+)
+  fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 1
@@ -88,6 +139,7 @@ $ipc call tray menucursor 1 > /dev/null 2>&1
 $ipc call tray menuactivate > "$tray_menuactivate_reply_path" 2>&1
 sleep 1
 $route_steps
+$sidebar_steps
 EOF
 
   # The stubs sit in GLib.MainLoop().run() forever, so they are killed by PID
@@ -154,7 +206,9 @@ leg_tray_assert() {
   if ! grep -q '^tray-fixture-2 menu: Event(3, clicked)$' "$tray_activate_path"; then
     fail "tray-activate.txt does not record the menu Event round trip on entry 3, got: $(cat "$tray_activate_path")"
   fi
-  tray_activate_lines=$(wc -l < "$tray_activate_path" | tr -d ' ')
+  local counted="$tray_activate_path"
+  leg_on sidebar && counted="$tray_activate_before_path"
+  tray_activate_lines=$(wc -l < "$counted" | tr -d ' ')
   if [ "$tray_activate_lines" != "4" ]; then
     fail "expected exactly Activate + opened + clicked + closed (got $tray_activate_lines lines), got: $(cat "$tray_activate_path")"
   fi
@@ -177,4 +231,15 @@ leg_tray_assert() {
   if ! grep -q '"id":"tray\.tray-fixture-2"' "$tray_query_route_path"; then
     fail "the tray route cannot search its own rows, got: $(cat "$tray_query_route_path")"
   fi
+  leg_on sidebar || return 0
+  "$jq_bin" -e '[.hits[] | select(.on == "panel:trayoverflow")] | length == 1' "$tray_sidebar_status_path" > /dev/null 2>&1 \
+    || fail "the sidebar's status card carries no tray button with items registered: $(cat "$tray_sidebar_status_path" 2>/dev/null)"
+  [ "$("$jq_bin" -r '.overflow.open' "$tray_sidebar_open_path" 2>/dev/null)" = "true" ] \
+    || fail "a real click on the sidebar's tray button did not open the second bar: $(cat "$tray_sidebar_open_path" 2>/dev/null)"
+  echo "SMOKE_TRAY_SIDEBAR $tray_sidebar_png"
+  echo "SMOKE_TRAY_SIDEBAR_MENU $tray_sidebar_menu_png"
+  grep -q '^tray-fixture-1: Activate(' "$tray_activate_path" \
+    || fail "a real click on fixture 1 in the sidebar's second bar did not reach it as Activate: $(cat "$tray_activate_path")"
+  grep -q '^ok$' "$tray_sidebar_menu_reply_path" 2>/dev/null \
+    || fail "a real right click on fixture 2 in the sidebar's second bar opened no menu: $(cat "$tray_sidebar_menu_reply_path" 2>/dev/null)"
 }

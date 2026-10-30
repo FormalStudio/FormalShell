@@ -148,6 +148,8 @@
 --panel network --tooltip-travel
 --tray
 --tray-overflow
+--tray --sidebar
+--tray-overflow --sidebar
 --use
 --visualizer
 --visualizer-styles

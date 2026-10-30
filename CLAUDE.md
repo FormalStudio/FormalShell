@@ -1151,8 +1151,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `share.sh` `--share`: the share route present (the copied text reaching
   LocalSend as a real file) and honestly absent with no binary on PATH.
 - `sidebar.sh` `--sidebar`: `layout: sidebar` from settings.json alone,
-  the formalshell:bar layer read off `hyprctl -j layers` as a column 160
-  wide down the left edge, under Hyprland's `gaps_out` 10 the fixture
+  the formalshell:bar layer read off `hyprctl -j layers` as a column 154
+  wide down the left edge (Pond's sidebar at 136/156, the cards 9 off the
+  screen and 9 off the windows), under Hyprland's `gaps_out` 10 the fixture
   window's border as far off the cards as the cards are off the screen's
   edge (the column's zone leaves the outer gap to the compositor, read at
   runtime off `getoption`), `sidebar status` naming the time, Spaces and
@@ -1162,9 +1163,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `sidebarCollapsed`, `sidebar expand` opening it again, and settings.json
   rewritten with `bar.position: right` moving it to that edge. The open,
   panel and rail frames are read dark and light (`--sidebar --light`).
-  Ridden by `--idle` or `--menu-budget` it pins the layout alone, and
-  `--menu-budget` skips its bar frame claims, the sidebar having no badge
-  to spin.
+  Ridden by `--idle`, `--menu-budget`, `--tray` or `--tray-overflow` it
+  pins the layout alone, and `--menu-budget` skips its bar frame claims,
+  the sidebar having no badge to spin.
 - `showcase.sh` `--showcase`: seeds state.json with a generated wallpaper
   before the shell starts, so the leg it rides photographs a matugen palette
   over a real desktop. The README's screenshots and GIFs are taken under it.
@@ -1324,10 +1325,17 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   tooltip layer in both dumps: the group's grace window, not a second delay.
 - `tray.sh` `--tray`: six real StatusNotifierItem producers on a strip pinned
   to carry them (`tray.maxVisible: -1`), the D-Bus Activate round trip, and
-  the shell-owned menu.
+  the shell-owned menu. Ridden by `--sidebar`, which has no strip, the
+  status card's tray button in `sidebar status`, a real click on it
+  opening the second bar off the column, a real click on fixture 1's
+  square (found by its colour) reaching the stub as Activate and a real
+  right click on fixture 2's opening its menu.
 - `tray_overflow.sh` `--tray-overflow`: the shipped default, the whole tray
   in its second bar behind the strip's dots toggle with no settings at all,
-  read off `tray status`.
+  read off `tray status`. Ridden by `--sidebar` the status card's tray
+  button stands in for the dots: the chevron round trip is skipped and the
+  four real clicks (open, desktop, reopen, the time card's calendar) start
+  on that button.
 - `unlock.sh` `--unlock`: the lock handing over to the desktop
   (`wayland/veil.rs`): over a flat grey wallpaper the real password typed
   at a tenth speed and the unlock photographed back to back, each frame's

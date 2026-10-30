@@ -125,7 +125,7 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 29] = [
     ("switcherThumb", 128.0),
     ("switcherInset", 64.0),
     ("keycapHeight", 20.0),
-    ("sidebarWidth", 160.0),
+    ("sidebarWidth", 154.0),
     ("sidebarRail", 48.0),
 ];
 

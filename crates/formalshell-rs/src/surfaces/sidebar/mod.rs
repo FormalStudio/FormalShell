@@ -1,35 +1,127 @@
+// Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
 //! The sidebar (docs/superpowers/specs/2026-10-30-sidebar.md): the bar's
 //! body under `layout: sidebar`. The bar keeps its window, its edge, its
 //! zone and its joins; instead of cells it draws a column of cards through
-//! the ui kit, the status row pinned to its foot, or the rail while
+//! the ui kit, the status card pinned to its foot, or the rail while
 //! collapsed. Every input lands as a cell [`Action`], so the bar's own
 //! routing opens what a cell would.
+//!
+//! The composition and its lengths are Pond's sidebar (`Theme.qml`,
+//! `Sidebar.qml`, `calendar/Clock.qml`); [`Geo`] carries them. What the
+//! kit's type scale cannot draw (the clock's digits, its period and the
+//! date box) is painted over the time card's reserved box.
 
 pub mod minimap;
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use fs_chrome::types::Edge;
-use fs_info::clock::{CLOCK_FORMATS, format_qt, substitute_iso_week};
+use fs_info::clock::{CLOCK_FORMATS, format_qt};
+use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
 
-use crate::scene::{IRect, NodeId, Scene};
+use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::compositor::Command;
 use crate::services::state::{self, Field};
 use crate::store::Store;
 use crate::surfaces::activity;
+use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::panel::center;
-use crate::surfaces::bar::cell::{Action, Kit};
+use crate::text::TextStyle;
 use crate::ui::{El, Ink, Type, Ui, Variant, Weight, w};
 
 /// The cards in the order they give up their place when the column runs
 /// short: the first is the first to go.
-const DROPS: [&str; 4] = ["media", "software", "notifications", "activity"];
+const DROPS: [&str; 4] = ["media", "software", "activity", "notifications"];
+
+/// Pond's sidebar lengths at our card: Pond's 156 wide card is 136 here, so
+/// each is Pond's times 136/156, rounded (Pond's in the comments). They
+/// grow with `sidebarWidth` (154: the card and a margin either side).
+pub struct Geo {
+    /// Screen edge to card, and card to the windows [10].
+    pub margin: f64,
+    /// Between cards [6].
+    pub gap: f64,
+    /// A simple row's inset from the card's side [16] and its height [48].
+    pub row_pad: f64,
+    pub row_h: f64,
+    /// The time card [58]: the digits [39] at x [12], the period [11], and
+    /// the date box [40] inset [12] with its radius [6] and words [13],
+    /// whose baselines sit [18] and [31] down the box.
+    pub time_h: f64,
+    pub time_x: f64,
+    pub digits: f64,
+    pub period: f64,
+    pub date_box: f64,
+    pub date_inset: f64,
+    pub date_radius: f64,
+    pub date_words: f64,
+    pub date_lines: (f64, f64),
+    /// The media card [62] and its art [38].
+    pub media_h: f64,
+    pub art: f64,
+    /// Between neighbours in a row [8].
+    pub spacing: f64,
+    /// A notification's app icon [14] and the rule before them [14].
+    pub glyph: f64,
+    /// A window's circle on the minimap [40], its icon [16], the gap
+    /// between circles and rows [8], an empty slot's dot [4], and the
+    /// current row's plate inset from the card's side [4].
+    pub slot: f64,
+    pub icon: f64,
+    pub slot_gap: f64,
+    pub dot: f64,
+    pub plate_inset: f64,
+    /// A row's number pill [14 x 20] and its digits [11].
+    pub pill: (f64, f64),
+    pub pill_words: f64,
+}
+
+impl Geo {
+    pub fn of(theme: &Theme) -> Self {
+        let k = theme.space.sidebar_width / 154.0;
+        let p = |v: f64| (v * k).round();
+        Self {
+            margin: p(9.0),
+            gap: p(5.0),
+            row_pad: p(14.0),
+            row_h: p(42.0),
+            time_h: p(50.0),
+            time_x: p(10.0),
+            digits: p(34.0),
+            period: p(10.0),
+            date_box: p(35.0),
+            date_inset: p(10.0),
+            date_radius: p(5.0),
+            date_words: p(11.0),
+            date_lines: (p(16.0), p(27.0)),
+            media_h: p(54.0),
+            art: p(33.0),
+            spacing: p(7.0),
+            glyph: p(12.0),
+            slot: p(35.0),
+            icon: p(14.0),
+            slot_gap: p(6.0),
+            dot: p(4.0),
+            plate_inset: p(4.0),
+            pill: (p(12.0), p(17.0)),
+            pill_words: p(10.0),
+        }
+    }
+}
+
+/// The hairline round a window's circle, the date box and a row's number:
+/// Pond's inner outline, a tenth of the ink over the card.
+pub fn outline(theme: &Theme) -> Rgba {
+    let fg = theme.colors.get("foreground");
+    fg.with_alpha(fg.a * 0.14)
+}
 
 pub struct Sidebar {
-    /// The cards from the top, and the status row at the foot.
+    /// The cards from the top, and the status card at the foot.
     top: Ui,
     foot: Ui,
     pub map: minimap::Map,
@@ -41,6 +133,10 @@ pub struct Sidebar {
     strip: IRect,
     /// The control a press landed on, by its `on`.
     pressed: Option<String>,
+    /// The clock's face over the time card.
+    face: Vec<NodeId>,
+    /// Notification app icons fitted at `Geo::glyph`, by entry id.
+    icons: HashMap<String, Option<Bitmap>>,
 }
 
 impl Sidebar {
@@ -61,6 +157,8 @@ impl Sidebar {
             wake: None,
             strip: IRect::new(0, 0, 0, 0),
             pressed: None,
+            face: Vec::new(),
+            icons: HashMap::new(),
         }
     }
 
@@ -80,7 +178,8 @@ impl Sidebar {
     ) {
         let theme = &store.theme.theme;
         let s = &theme.space;
-        let pad = if collapsed { s.xs } else { s.screen_padding };
+        let g = Geo::of(theme);
+        let pad = if collapsed { s.xs } else { g.margin };
         let width = (strip.w as f64 - pad * 2.0).max(1.0);
         let (x0, y0) = (strip.x as f64 + pad, strip.y as f64 + pad);
         let bottom = (strip.y + strip.h) as f64 - pad;
@@ -88,10 +187,12 @@ impl Sidebar {
         self.foot.motion_scale = kit.motion_scale;
         self.map.read(store, output, theme);
         self.strip = strip;
+        self.fit_icons(store, &g);
 
-        let foot = if collapsed { rail_foot(theme, edge) } else { foot_row(edge) };
+        let foot = if collapsed { rail_foot(theme, edge) } else { foot_card(store, edge, &g) };
         let (_, foot_h) = crate::ui::measure(&foot, width, theme, kit);
-        let room = (bottom - foot_h - s.section_gap - y0).max(0.0);
+        let gap = if collapsed { s.section_gap } else { g.gap };
+        let room = (bottom - foot_h - gap - y0).max(0.0);
         let mut kept: Vec<&'static str> = Vec::new();
         let top = if collapsed {
             rail(theme, store, &self.map)
@@ -100,13 +201,11 @@ impl Sidebar {
             let want = self.map.first;
             self.map.fits = usize::MAX;
             self.map.first = 0;
-            let label = crate::ui::measure(&w::caption(self.map.widest_label()).mono(), width, theme, kit).0;
-            self.map.across = minimap::across(theme, width, label);
             let fits = |cards: &[(&str, El)], kit: &mut Kit| {
-                let col = w::column(s.section_gap, cards.iter().map(|(_, c)| c.clone()).collect());
+                let col = w::column(gap, cards.iter().map(|(_, c)| c.clone()).collect());
                 crate::ui::measure(&col, width, theme, kit).1 <= room
             };
-            let mut cards = cards(theme, store, &self.map, now);
+            let mut cards = cards(theme, store, &self.map, &g, &self.icons, width, kit, now);
             for drop in DROPS {
                 if fits(&cards, kit) {
                     break;
@@ -124,7 +223,7 @@ impl Sidebar {
                 self.map.fits = n;
                 self.map.first = self.map.first_for(want, n);
                 let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
-                cards = self::cards(theme, store, &self.map, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
+                cards = self::cards(theme, store, &self.map, &g, &self.icons, width, kit, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
             }
             if n < total {
                 self.map.first = want;
@@ -134,7 +233,7 @@ impl Sidebar {
                 self.map.first = 0;
             }
             kept = cards.iter().map(|(n, _)| *n).collect();
-            w::column(s.section_gap, cards.into_iter().map(|(_, c)| c).collect())
+            w::column(gap, cards.into_iter().map(|(_, c)| c).collect())
         };
         self.cards = kept;
         let clip = Some(strip);
@@ -145,10 +244,39 @@ impl Sidebar {
         self.foot.anchor = drawn.last.or(anchor);
         let at = bottom - foot_h;
         let feet = self.foot.draw(&foot, Rect::new(x0, at, x0 + width, bottom), clip, 1.0, theme, kit, scene, now);
+        let face = self.paint_face(collapsed, store, &g, kit, scene, feet.last.or(self.foot.anchor), strip);
         let hits = if collapsed { &[][..] } else { &self.top.hits[..] };
-        let gliding = self.map.paint(hits, theme, kit, scene, feet.last.or(self.foot.anchor), strip, now);
+        let card = (x0, width);
+        let gliding = self.map.paint(hits, theme, kit, scene, face, strip, card, edge == Edge::Right, now);
         self.animating = drawn.animating || feet.animating || gliding;
         self.wake = [drawn.wake, feet.wake, self.map.wake()].into_iter().flatten().min();
+    }
+
+    /// Fits each notification's picture at the row's icon size once, and
+    /// lets go of the ones whose entries are gone.
+    fn fit_icons(&mut self, store: &Store, g: &Geo) {
+        let n = &store.notifications;
+        let scale = crate::scene::raster_scale();
+        self.icons.retain(|id, _| n.icons.contains_key(id));
+        for (id, raw) in &n.icons {
+            self.icons.entry(id.clone()).or_insert_with(|| raw.bitmap(g.glyph as u32, scale));
+        }
+    }
+
+    /// The clock's digits, its period and the date box over the time
+    /// card's reserved box; the last node drawn.
+    #[allow(clippy::too_many_arguments)]
+    fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
+        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some("panel:calendar")).map(|h| h.rect).filter(|_| !collapsed);
+        let mut nodes = std::mem::take(&mut self.face);
+        let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
+        if let Some(card) = card {
+            clock_face(&mut p, kit, store, g, card);
+        }
+        let last = p.last();
+        p.finish();
+        self.face = nodes;
+        last
     }
 
     /// The clickable rect under a point, as an index past the top column's
@@ -173,15 +301,18 @@ impl Sidebar {
 
     /// The pointer over hit `i`; true when the column needs a pass.
     pub fn hover(&mut self, i: Option<usize>) -> bool {
-        let path = i.and_then(|i| self.hit_at(i)).map(|h| h.path.clone());
+        let hit = i.and_then(|i| self.hit_at(i));
+        let path = hit.map(|h| h.path.clone());
+        let over = hit.and_then(|h| h.on.as_deref()).is_some_and(minimap::on_map);
         let n = self.top.hits.len();
         let (top, foot) = match i {
             Some(i) if i >= n => (None, path),
             _ => (path, None),
         };
-        let moved = top != self.top.hover || foot != self.foot.hover;
+        let moved = top != self.top.hover || foot != self.foot.hover || over != self.map.over;
         self.top.hover = top;
         self.foot.hover = foot;
+        self.map.over = over;
         moved
     }
 
@@ -199,7 +330,7 @@ impl Sidebar {
 
     /// A wheel over hit `i`: on the minimap it scrolls its rows.
     pub fn wheel(&mut self, i: usize, notches: f64) -> bool {
-        let on_map = self.hit_at(i).and_then(|h| h.on.as_deref()).is_some_and(|on| on == "new" || on.starts_with("row:") || on.starts_with("window:"));
+        let on_map = self.hit_at(i).and_then(|h| h.on.as_deref()).is_some_and(minimap::on_map);
         on_map && notches != 0.0 && self.map.scroll(notches.signum() as i32)
     }
 
@@ -261,13 +392,13 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "audio" => Action::Panel("audio"),
             "media" => Action::Panel("media"),
             "activity" => Action::Panel("activity"),
+            "trayoverflow" => Action::Panel("trayoverflow"),
             center::ID => Action::Center,
             _ => Action::None,
         },
         // An Activity row: the panel holds its actions.
         "open" => Action::Panel("activity"),
         "summon" => Action::Summon("system"),
-        "media" => Action::MediaPlayPause,
         "software" => match arg {
             "apply" => Action::Software(crate::services::packages::Change::Apply),
             "undo" => Action::Software(crate::services::packages::Change::Undo),
@@ -289,94 +420,186 @@ fn clock_format(store: &Store) -> String {
     if saved.is_empty() { CLOCK_FORMATS[0].to_owned() } else { saved.clone() }
 }
 
-/// Every card that has something to show, top to bottom, by name.
-fn cards(theme: &Theme, store: &Store, map: &minimap::Map, now: Instant) -> Vec<(&'static str, El)> {
-    let s = &theme.space;
+/// The time the card's digits read and the period after them: the clock
+/// format's own hour (padded or not) with its minutes, and its AM/PM in its
+/// own case where it carries one. The date it may carry is the box's.
+fn time_parts(store: &Store) -> (String, Option<String>) {
+    let format = clock_format(store);
+    // Quoted runs are literal text, never a marker.
+    let bare: String = format.split('\'').step_by(2).collect();
+    let hour = if bare.contains("hh") || bare.contains("HH") { "hh" } else if bare.contains('h') || bare.contains('H') { "h" } else { "hh" };
+    let period = if bare.contains('A') { Some("AP") } else if bare.contains('a') { Some("ap") } else { None };
     let clock = store.clock.now;
-    let time = format_qt(clock, &substitute_iso_week(&clock_format(store), clock.date()));
+    match period {
+        Some(ap) => {
+            let both = format_qt(clock, &format!("{hour}:mm {ap}"));
+            match both.split_once(' ') {
+                Some((time, ap)) => (time.to_owned(), Some(ap.to_owned())),
+                None => (both, None),
+            }
+        }
+        None => (format_qt(clock, &format!("{hour}:mm")), None),
+    }
+}
+
+fn style(kit: &Kit, size: f64, weight: f32, tracking: f32) -> TextStyle {
+    TextStyle { family: kit.look.sans, size: size as f32, weight, tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None }
+}
+
+/// Pond's clock card: light digits with the period on their baseline, and
+/// the weekday over the day in an outlined box at the far end.
+fn clock_face(p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) {
+    let theme = &store.theme.theme;
+    let fg = theme.colors.get("foreground");
+    let clock = store.clock.now;
+    let b = g.date_box as i32;
+    let (bx, by) = (card.right() - g.date_inset as i32 - b, card.y + (card.h - b) / 2);
+    p.framed(IRect::new(bx, by, b, b), Rgba::TRANSPARENT, g.date_radius as f32, outline(theme), theme.border_width as f32);
+    for (words, line) in [(format_qt(clock, "ddd"), g.date_lines.0), (format_qt(clock, "d"), g.date_lines.1)] {
+        let t = kit.shape(&words, style(kit, g.date_words, 400.0, 0.0));
+        p.text(&t, (bx + (b - t.width) / 2, by + line as i32 - t.ascent.round() as i32), fg, &[]);
+    }
+    let (time, period) = time_parts(store);
+    let period = period.map(|ap| kit.shape(&ap, style(kit, g.period, 500.0, 0.0)));
+    let after = period.as_ref().map_or(0, |t| t.width + g.dot as i32);
+    let room = bx - g.spacing as i32 - (card.x + g.time_x as i32);
+    // A format wider than the room shrinks rather than cut.
+    let mut size = g.digits;
+    let mut digits = kit.shape(&time, style(kit, size, 300.0, -1.0));
+    while digits.width + after > room && size > g.date_words {
+        size -= 1.0;
+        digits = kit.shape(&time, style(kit, size, 300.0, -1.0));
+    }
+    // Cap height near 0.7 of the size, centred on the card.
+    let baseline = card.y + ((card.h as f64 + size * 0.7) / 2.0).round() as i32;
+    let x = card.x + g.time_x as i32;
+    p.text(&digits, (x, baseline - digits.ascent.round() as i32), fg, &[]);
+    if let Some(t) = period {
+        let x = x + digits.width + g.dot as i32 - 1;
+        p.text(&t, (x, baseline - t.ascent.round() as i32), fg.with_alpha(fg.a * 0.7), &[]);
+    }
+}
+
+/// Every card that has something to show, top to bottom, by name.
+#[allow(clippy::too_many_arguments)]
+fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, icons: &HashMap<String, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
+    let s = &theme.space;
+    let inner = |h: f64| (h - s.md * 2.0).max(0.0);
     let mut out = vec![(
         "time",
-        w::card(w::column(
-            s.xxs,
-            vec![
-                w::para(time, Type::Title, Weight::Semibold, Ink::Fg, 1).mono(),
-                w::caption(format_qt(clock, "dddd d MMMM")).ink(Ink::Muted).elide(),
-            ],
-        ))
-        .interactive()
-        .on("panel:calendar")
-        .fill(),
+        w::card(w::column(0.0, vec![w::space(inner(g.time_h))])).interactive().on("panel:calendar").fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
-    out.push(("software", w::card(w::column(s.row_gap, crate::surfaces::packages::software_rows(theme, store))).fill()));
-    out.push(("notifications", w::card(notifications(theme, store)).interactive().on(format!("panel:{}", center::ID)).fill()));
+    if let Some(media) = media(theme, store, g) {
+        out.push(("media", w::card(media.height(inner(g.media_h))).fill()));
+    }
+    let row = notifications(theme, store, g, icons, width - g.row_pad * 2.0, kit);
+    out.push(("notifications", w::card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md)).interactive().on(format!("panel:{}", center::ID)).fill()));
     if let Some(card) = activity::installs_card(store) {
         out.push(("activity", card));
     }
-    if let Some(media) = media(theme, store) {
-        out.push(("media", w::card(media).fill()));
-    }
+    out.push(("software", w::card(w::column(s.row_gap, crate::surfaces::packages::software_rows(theme, store))).fill()));
     out
 }
 
-fn notifications(theme: &Theme, store: &Store) -> El {
+/// The bell and how many are new (or how many there are), a rule, and the
+/// apps the latest came from, as many as fit `room`.
+fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<String, Option<Bitmap>>, room: f64, kit: &mut Kit) -> El {
     let s = &theme.space;
     let m = &store.notifications.model;
-    let icon = if m.dnd { "bell-off" } else { "bell" };
+    let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
+    let mut all: Vec<&fs_info::notifications::Entry> = m.popups.iter().chain(&m.pending).chain(&m.past).collect();
+    if all.is_empty() {
+        return w::row(s.icon_gap, vec![bell, w::caption("Notifications").ink(Ink::Muted).elide()]);
+    }
     // A toast still up is as new as one filed unseen.
     let new = m.popups.len() + m.pending.len();
-    let Some(newest) = m.popups.iter().chain(&m.pending).chain(&m.past).max_by_key(|e| e.arrived_at) else {
-        return w::row(s.icon_gap, vec![w::icon(icon).ink(Ink::Muted), w::caption("No notifications").ink(Ink::Muted).fill()]);
-    };
-    let count = if new == 0 { format!("{} seen", m.past.len()) } else { format!("{new} new") };
-    let head = w::row(s.icon_gap, vec![w::icon(icon), w::label(count).fill()]);
-    w::column(s.xxs, vec![head, w::caption(newest.summary.clone()).ink(Ink::Muted).elide()])
+    let count = if new == 0 { all.len() } else { new }.to_string();
+    all.sort_by_key(|e| std::cmp::Reverse(e.arrived_at));
+    let mut apps: Vec<(&str, Bitmap)> = Vec::new();
+    for e in all {
+        if let Some(Some(b)) = icons.get(&e.id)
+            && !apps.iter().any(|(app, _)| *app == e.app_name)
+        {
+            apps.push((&e.app_name, b.clone()));
+        }
+    }
+    let shaped = kit.shape(&count, style(kit, theme.font_size.caption, 500.0, 0.0));
+    let head = theme.font_size.caption + s.xxs + shaped.width as f64;
+    let fit = ((room - head - g.spacing * 2.0 - theme.border_width + g.spacing) / (g.glyph + g.spacing)).floor().max(0.0) as usize;
+    let mut row = vec![w::row(s.xxs, vec![bell, w::caption(count).weight(Weight::Medium).ink(Ink::Muted)])];
+    if fit > 0 && !apps.is_empty() {
+        row.push(w::swatch(theme.colors.get("border"), theme.border_width, g.glyph, 0.0));
+        for (i, (_, b)) in apps.into_iter().take(fit).enumerate() {
+            let pic = w::picture(Some(b), g.glyph);
+            row.push(if i == 0 { pic } else { pic.fade(0.4) });
+        }
+    }
+    w::row(g.spacing, row)
 }
 
-fn media(theme: &Theme, store: &Store) -> Option<El> {
-    let s = &theme.space;
+/// The art (it opens the media panel), the title over the artist.
+fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
     let a = store.media.active()?;
-    let size = s.control_height;
-    let (px, radius) = w::cover_inner(theme, size);
+    let (px, radius) = w::cover_inner(theme, g.art);
     let cover = (!a.art_url.is_empty()).then(|| store.media.cover(&a.art_url, px, radius, crate::scene::raster_scale())).flatten();
     let words = w::column(
         0.0,
-        vec![w::label(a.title.clone()).elide(), w::caption(a.artist.clone()).ink(Ink::Muted).elide()],
+        vec![
+            w::label(a.title.clone()).size(Type::BodySmall).weight(Weight::Semibold).elide(),
+            w::caption(a.artist.clone()).ink(Ink::Muted).elide(),
+        ],
     )
     .fill();
-    let play = w::icon_button(if a.playing { "pause" } else { "play" }).variant(Variant::Ghost).on("media:toggle");
-    let row = w::row(s.sm, vec![w::cover(cover, size).on("panel:media"), words, play]);
-    Some(row)
+    Some(w::row(g.spacing, vec![w::cover(cover, g.art).on("panel:media"), words]))
 }
 
-/// The status row: network, audio, settings and collapse, on a card like
-/// every other piece of the column, so no glyph sits bare on the wallpaper.
-/// The four share the card's inner width, which is narrower than four
-/// square buttons.
-fn foot_row(edge: Edge) -> El {
-    w::card(w::row(0.0, foot_buttons(edge, false).into_iter().map(El::fill).collect()).fill()).fill()
+/// The status card: network, audio, settings, the tray's second bar while
+/// it has items, and collapse, sharing the card's width.
+fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
+    let theme = &store.theme.theme;
+    let tall = (g.row_h - theme.space.md * 2.0).max(0.0);
+    let button = |glyph: &str, tip: &str, on: &str| {
+        w::cell(w::column(0.0, vec![w::icon(glyph).size(Type::Caption).ink(Ink::Muted).centred()]))
+            .ghost()
+            .cell_state(|c| c.tight = true)
+            .interactive()
+            .tip(tip)
+            .on(on)
+            .height(tall)
+            .fill()
+    };
+    let mut row = vec![
+        button("wifi", "Network", "panel:network"),
+        button("volume-2", "Audio", "panel:audio"),
+        button("settings", "System", "summon:system"),
+    ];
+    if !store.tray.items.is_empty() {
+        row.push(button("ellipsis", "Tray", "panel:trayoverflow"));
+    }
+    row.push(button(fold_glyph(edge, false), "Collapse", "collapse"));
+    w::card(w::row(0.0, row).fill()).fill()
 }
 
-fn foot_buttons(edge: Edge, collapsed: bool) -> Vec<El> {
-    let right = edge == Edge::Right;
-    let fold = match (collapsed, right) {
+fn fold_glyph(edge: Edge, collapsed: bool) -> &'static str {
+    match (collapsed, edge == Edge::Right) {
         (false, false) => "panel-left-close",
         (false, true) => "panel-right-close",
         (true, false) => "panel-left-open",
         (true, true) => "panel-right-open",
-    };
-    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on);
-    vec![
+    }
+}
+
+/// The rail's foot: network, audio, settings and expand, stacked.
+fn rail_foot(theme: &Theme, edge: Edge) -> El {
+    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on).centred();
+    let buttons = vec![
         button("wifi", "Network", "panel:network"),
         button("volume-2", "Audio", "panel:audio"),
         button("settings", "System", "summon:system"),
-        button(fold, if collapsed { "Expand" } else { "Collapse" }, if collapsed { "expand" } else { "collapse" }),
-    ]
-}
-
-/// The rail's foot: the same four buttons stacked.
-fn rail_foot(theme: &Theme, edge: Edge) -> El {
-    w::column(theme.space.xs, foot_buttons(edge, true).into_iter().map(El::centred).collect()).fill()
+        button(fold_glyph(edge, true), "Expand", "expand"),
+    ];
+    w::column(theme.space.xs, buttons).fill()
 }
 
 /// The rail: the clock as hours over minutes, the workspace chips and the

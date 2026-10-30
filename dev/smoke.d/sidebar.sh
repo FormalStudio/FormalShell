@@ -2,7 +2,7 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --sidebar: `layout: sidebar` from settings.json alone
 # (docs/superpowers/specs/2026-10-30-sidebar.md). The bar's own
-# formalshell:bar layer is the column, read off `hyprctl -j layers`: 160
+# formalshell:bar layer is the column, read off `hyprctl -j layers`: 154
 # wide on the left edge the whole output tall, its zone reserved. `sidebar
 # status` names the cards it drew (time, spaces, notifications, the last
 # one carrying the notification sent once its toast has gone) and the minimap's row holding the fixture window. A
@@ -17,7 +17,9 @@
 # geometry and the time card's hit rect. The open, panel and rail frames
 # are pulled for reading.
 # Ridden by a budget leg (`--idle`, `--menu-budget`) it pins the layout
-# alone, so the budget is read with the sidebar on and nothing driven.
+# alone, so the budget is read with the sidebar on and nothing driven; by
+# `--tray` or `--tray-overflow` the same, those legs reading the tray off
+# the status card's tray button.
 leg_sidebar_flag="--sidebar"
 leg_sidebar_order=237
 leg_sidebar_needs="jq wlrctl notify-send"
@@ -38,7 +40,7 @@ sidebar_panel_png="$shot_dir/sidebar-panel.png"
 sidebar_rail_png="$shot_dir/sidebar-rail.png"
 
 sidebar_rider() {
-  leg_on idle || leg_on menu_budget
+  leg_on idle || leg_on menu_budget || leg_on tray || leg_on tray_overflow
 }
 
 leg_sidebar_validate() {
@@ -136,8 +138,8 @@ leg_sidebar_assert() {
   read -r mw mh <<< "$("$jq_bin" -r 'first | "\(.width / .scale | floor) \(.height / .scale | floor)"' "$sidebar_monitors")"
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_open")"
   echo "sidebar layer open: x=$bx y=$by w=$bw h=$bh on ${mw}x${mh}"
-  [ "$bx" -eq 0 ] && [ "$bw" -eq 160 ] && [ "$bh" -eq "$mh" ] \
-    || fail "sidebar: the open column is not 160 wide down the left edge: x=$bx y=$by w=$bw h=$bh"
+  [ "$bx" -eq 0 ] && [ "$bw" -eq 154 ] && [ "$bh" -eq "$mh" ] \
+    || fail "sidebar: the open column is not 154 wide down the left edge: x=$bx y=$by w=$bw h=$bh"
   local cx cw wx outer inner
   read -r cx cw <<< "$("$jq_bin" -r '.hits[] | select(.on == "panel:calendar") | "\(.x) \(.w)"' "$sidebar_status_open" | head -1)"
   wx=$("$jq_bin" -r '[.[] | select(.workspace.id == 1 and .mapped and .hidden != true) | .at[0]] | min' "$sidebar_clients")
@@ -146,7 +148,7 @@ leg_sidebar_assert() {
   echo "sidebar gaps: screen edge to card $outer, card to window $inner (window at $wx)"
   [ -n "$cw" ] && [ "$wx" != null ] && [ "$inner" -eq "$outer" ] \
     || fail "sidebar: the card sits $outer off the screen's edge but $inner off the window: $(cat "$sidebar_clients")"
-  "$jq_bin" -e '.collapsed == false and .edge == "left" and .width == 160
+  "$jq_bin" -e '.collapsed == false and .edge == "left" and .width == 154
       and (.cards | index("time") != null and index("spaces") != null and index("notifications") != null)
       and ([.rows[] | .windows | length] | add) >= 1' "$sidebar_status_open" > /dev/null \
     || fail "sidebar: status did not report the open column's cards and a window on the map: $(cat "$sidebar_status_open")"
@@ -159,10 +161,10 @@ leg_sidebar_assert() {
     || fail "sidebar: status after collapse: $(cat "$sidebar_status_rail" 2>/dev/null)"
   "$jq_bin" -e '.sidebarCollapsed == true' "$sidebar_state_copy" > /dev/null 2>&1 \
     || fail "sidebar: state.json does not carry sidebarCollapsed: $(cat "$sidebar_state_copy" 2>/dev/null)"
-  "$jq_bin" -e '.collapsed == false and .width == 160' "$sidebar_status_expanded" > /dev/null 2>&1 \
+  "$jq_bin" -e '.collapsed == false and .width == 154' "$sidebar_status_expanded" > /dev/null 2>&1 \
     || fail "sidebar: sidebar expand did not open the column: $(cat "$sidebar_status_expanded" 2>/dev/null)"
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_right")"
   echo "sidebar layer right: x=$bx y=$by w=$bw h=$bh"
-  [ $((bx + bw)) -eq "$mw" ] && [ "$bw" -eq 160 ] \
+  [ $((bx + bw)) -eq "$mw" ] && [ "$bw" -eq 154 ] \
     || fail "sidebar: bar.position right did not move the column to the right edge: x=$bx w=$bw on $mw"
 }

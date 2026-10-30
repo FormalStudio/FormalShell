@@ -25,6 +25,11 @@
 # (owner, 2026-10-09): a click on the desktop shuts it, and a click on the
 # clock shuts it and opens the calendar in its place.
 #
+# Ridden by --sidebar there is no strip and no chevron: the tray button on
+# the status card stands in for the dots, so the chevron round trip is
+# skipped and the four real clicks start on that button, the handoff
+# landing on the time card's calendar.
+#
 # It owns bar.layout, so it does not combine with --bar-layout, --bar-position
 # or --chevron, and it registers stubs of its own, so --tray's own count
 # assert does not survive that pair either.
@@ -68,6 +73,52 @@ leg_tray_overflow_drive() {
   local kill_script="$shot_dir/tray-overflow-kill.sh"
   local stub="$PWD/dev/sni-stub.py"
   local settings_path="$iso_home/.config/formalshell/settings.json"
+  local tail_steps
+  if leg_on sidebar; then
+    tail_steps=$(cat <<STEPS
+sidebar_at() { $ipc call sidebar status 2>/dev/null | "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' | head -n 1; }
+origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
+read -r ox oy <<< "\$origin"
+to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
+click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
+check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
+to \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check clicked-open
+to 900 700; click; sleep 1.5; check outside
+"$grim_bin" "$tray_overflow_outside_path" > /dev/null 2>&1
+to \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check reopened
+to \$(sidebar_at panel:calendar); click; sleep 1.5; check handoff
+"$grim_bin" "$tray_overflow_handoff_path" > /dev/null 2>&1
+$ipc call panel close > /dev/null 2>&1
+STEPS
+)
+  else
+    tail_steps=$(cat <<STEPS
+$ipc call bar chevron collapse > /dev/null 2>&1
+sleep 2
+"$grim_bin" "$tray_overflow_collapsed_path" > /dev/null 2>&1
+$ipc call bar chevron expand > /dev/null 2>&1
+sleep 2
+"$grim_bin" "$tray_overflow_expanded_path" > /dev/null 2>&1
+$ipc call bar chevron collapse > /dev/null 2>&1
+$ipc call panel close > /dev/null 2>&1
+"$jq_bin" '.bar.layout.right = ["tray", "clock"]' "$settings_path" > "$settings_path.tmp"
+cat "$settings_path.tmp" > "$settings_path"
+sleep 3
+$ipc call bar room > "$tray_overflow_room_path" 2>&1
+cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$tray_overflow_room_path" | head -n 1; }
+to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
+click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
+check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
+to \$(cell tray); click; sleep 1.5; check clicked-open
+to 900 700; click; sleep 1.5; check outside
+"$grim_bin" "$tray_overflow_outside_path" > /dev/null 2>&1
+to \$(cell tray); click; sleep 1.5; check reopened
+to \$(cell clock); click; sleep 1.5; check handoff
+"$grim_bin" "$tray_overflow_handoff_path" > /dev/null 2>&1
+$ipc call panel close > /dev/null 2>&1
+STEPS
+)
+  fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 1
@@ -94,29 +145,7 @@ $ipc call tray status > "$tray_overflow_menu_path" 2>&1
 sleep 1
 $ipc call panel close > /dev/null 2>&1
 sleep 1
-$ipc call bar chevron collapse > /dev/null 2>&1
-sleep 2
-"$grim_bin" "$tray_overflow_collapsed_path" > /dev/null 2>&1
-$ipc call bar chevron expand > /dev/null 2>&1
-sleep 2
-"$grim_bin" "$tray_overflow_expanded_path" > /dev/null 2>&1
-$ipc call bar chevron collapse > /dev/null 2>&1
-$ipc call panel close > /dev/null 2>&1
-"$jq_bin" '.bar.layout.right = ["tray", "clock"]' "$settings_path" > "$settings_path.tmp"
-cat "$settings_path.tmp" > "$settings_path"
-sleep 3
-$ipc call bar room > "$tray_overflow_room_path" 2>&1
-cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$tray_overflow_room_path" | head -n 1; }
-to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
-check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
-to \$(cell tray); click; sleep 1.5; check clicked-open
-to 900 700; click; sleep 1.5; check outside
-"$grim_bin" "$tray_overflow_outside_path" > /dev/null 2>&1
-to \$(cell tray); click; sleep 1.5; check reopened
-to \$(cell clock); click; sleep 1.5; check handoff
-"$grim_bin" "$tray_overflow_handoff_path" > /dev/null 2>&1
-$ipc call panel close > /dev/null 2>&1
+$tail_steps
 EOF
 
   # The stubs sit in GLib.MainLoop().run() forever, same as --tray's.
@@ -194,13 +223,17 @@ leg_tray_overflow_assert() {
   # The regression the model cannot see: the toggle has to draw again after a
   # collapse, and it is the only cell on its side of the chevron, so these two
   # frames differ by it alone.
-  if [ ! -f "$tray_overflow_collapsed_path" ] || [ ! -f "$tray_overflow_expanded_path" ]; then
+  if leg_on sidebar; then
+    echo "SMOKE_TRAY_OVERFLOW chevron round trip skipped: the sidebar has no chevron"
+  elif [ ! -f "$tray_overflow_collapsed_path" ] || [ ! -f "$tray_overflow_expanded_path" ]; then
     fail "no chevron round-trip screenshots produced"
   fi
-  echo "SMOKE_TRAY_OVERFLOW_COLLAPSED $tray_overflow_collapsed_path"
-  echo "SMOKE_TRAY_OVERFLOW_EXPANDED $tray_overflow_expanded_path"
-  if cmp -s "$tray_overflow_collapsed_path" "$tray_overflow_expanded_path"; then
-    fail "the tray's toggle did not come back from a chevron collapse: the two frames are byte-identical"
+  if ! leg_on sidebar; then
+    echo "SMOKE_TRAY_OVERFLOW_COLLAPSED $tray_overflow_collapsed_path"
+    echo "SMOKE_TRAY_OVERFLOW_EXPANDED $tray_overflow_expanded_path"
+    if cmp -s "$tray_overflow_collapsed_path" "$tray_overflow_expanded_path"; then
+      fail "the tray's toggle did not come back from a chevron collapse: the two frames are byte-identical"
+    fi
   fi
   echo "SMOKE_TRAY_OVERFLOW_OUTSIDE $tray_overflow_outside_path"
   echo "SMOKE_TRAY_OVERFLOW_HANDOFF $tray_overflow_handoff_path"

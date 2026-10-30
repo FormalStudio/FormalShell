@@ -66,7 +66,6 @@ pub enum Action {
     Launcher,
     /// The launcher opened on a route.
     Summon(&'static str),
-    MediaPlayPause,
     /// The sidebar folded to its rail, or opened out of it.
     Sidebar(bool),
     /// The Software card's Apply or Undo.

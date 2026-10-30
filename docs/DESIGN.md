@@ -762,6 +762,13 @@ translucent paint, a pinned paint and a covered output keep one ink
 across, since the fill is what the words sit on. `bar paint`'s `cells`
 lists what each placed cell settled on.
 
+**Sidebar** (`formalshell-rs/src/surfaces/sidebar/`, the sidebar spec).
+Its composition and lengths are Pond's sidebar (BSD-3-Clause, Butterfly
+Interaction) at 136/156 of Pond's size: the time card, the Spaces map of
+outlined circles on a current-row plate, now playing, notifications, then
+Activity and Software, the status card pinned to the foot. The colours,
+the faces and the `card` box stay this table's.
+
 **Frame.** `frame.thickness` alone decides, under every table. Off by
 default (`frame.thickness` 0), when the `window` role's own gaps are the
 whole margin round a window. On, the bar's own fill continues round the other

@@ -249,7 +249,7 @@ runs = ["--systemupdate"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
-runs = ["--tray", "--tray-overflow"]
+runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum.rs"]
@@ -661,6 +661,11 @@ runs = ["--wifi", "--menu"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/sidebar/", "crates/formalshell-rs/src/ipc/sidebar.rs", "dev/smoke.d/sidebar.sh"]
 runs = ["--sidebar", "--sidebar --light", "--minimap", "--sidebar-software", "--sidebar-activity"]
+
+# The status card's tray button and the second bar it opens off the column.
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/sidebar/mod.rs", "dev/smoke.d/tray.sh", "dev/smoke.d/tray_overflow.sh"]
+runs = ["--tray --sidebar", "--tray-overflow --sidebar"]
 
 # Cards budding off the sidebar's inner edge.
 [[rule]]

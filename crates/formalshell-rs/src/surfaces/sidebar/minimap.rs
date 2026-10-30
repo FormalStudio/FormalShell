@@ -1,9 +1,13 @@
-//! The Spaces minimap: a row per workspace on the sidebar's output, its
-//! ordinal and its windows' icons three across in screen order, one empty
-//! row under the last for a new workspace. Icons come off compositor
-//! metadata through `appicon`; nothing is captured.
+// Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
+//! The Spaces minimap, Pond's (`minimap/Map.qml`): a row per workspace on
+//! the sidebar's output, its windows three across in screen order, each in
+//! an outlined circle, an empty slot a dot, and one empty row under the
+//! last for a new workspace. The current row stands on a plate; the rows'
+//! numbers show as pills over the card's edge only while the pointer is on
+//! the map or an icon is lifted. Icons come off compositor metadata through
+//! `appicon`; nothing is captured.
 //!
-//! The ui kit lays each row out with an empty slot per icon; the icons are
+//! The ui kit lays each row out with a circle per icon; the icons are
 //! painted over those slots here, each gliding to its slot on the spatial
 //! clock, so a reorder (a drag, a key, the compositor's own) moves them
 //! rather than cutting. A drag lifts its icon under the pointer, the rows
@@ -16,6 +20,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use fs_chrome::bar::workspaces::{self, SlotOpts};
+use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 
@@ -28,18 +33,20 @@ use crate::services::appicon;
 use crate::store::Store;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::bar::cells::workspaces::{window, workspace};
-use crate::ui::{El, Ink, Variant, w};
+use crate::text::TextStyle;
+use crate::ui::{El, Variant, w};
+
+use super::Geo;
 
 /// Icons a row lays across before it wraps.
 pub const ACROSS: usize = 3;
+/// Rows the map draws at the least, dots filling past the empty row.
+const MIN_ROWS: usize = 3;
 
-/// Icons a row's grid holds across `width` (the column inside its
-/// padding), past a label `label` wide.
-pub fn across(theme: &Theme, width: f64, label: f64) -> usize {
-    let s = &theme.space;
-    let room = width - 2.0 * s.md - 2.0 * s.control_padding_x - s.sm - label;
-    let cell = icon_size(theme) + 2.0 * s.xs;
-    (((room + s.xxs) / (cell + s.xxs)).floor() as usize).clamp(1, ACROSS)
+/// Whether a control is the map's own: a pass over it shows the rows'
+/// numbers, and a wheel over it scrolls the rows.
+pub fn on_map(on: &str) -> bool {
+    on == "new" || on.starts_with("row:") || on.starts_with("window:")
 }
 /// The cap past which a row stops listing windows.
 const MAX: usize = 64;
@@ -48,9 +55,7 @@ pub const HOLD_MS: u64 = 600;
 /// Pointer travel past which a press on an icon lifts it.
 const LIFT_PX: f64 = 6.0;
 /// The lifted icon's size step.
-const LIFT_SCALE: f64 = 1.25;
-/// The other icons' alpha while one is lifted.
-const DIMMED: f32 = 0.7;
+const LIFT_SCALE: f64 = 1.15;
 
 #[derive(Clone)]
 pub struct Win {
@@ -117,8 +122,8 @@ pub struct Map {
     pub first: usize,
     pub fits: usize,
     seen: Option<usize>,
-    /// Icons across a row's grid, set for the column's width.
-    pub across: usize,
+    /// The pointer is on the map: the rows' numbers show.
+    pub over: bool,
     nodes: Vec<NodeId>,
     /// Each tiled window's column (its x) on a workspace that reorders by
     /// column: a column moves whole.
@@ -302,34 +307,32 @@ impl Map {
     }
 
     pub fn view(&self, theme: &Theme, _now: Instant) -> El {
-        let s = &theme.space;
-        let size = icon_size(theme);
+        let g = Geo::of(theme);
         let target = self.drag.as_ref().filter(|d| d.lifted).and_then(|d| d.target).map(|t| t.0);
         let shown = self.shown();
         let last = shown.len() - 1;
-        let col: Vec<El> = shown
+        let mut col: Vec<El> = shown
             .iter()
             .enumerate()
             .skip(self.first)
             .take(self.fits)
             .map(|(i, ids)| {
-                let (label, current) = match self.rows.get(i) {
-                    Some(r) => (r.label.clone(), r.current),
-                    None => (format!("{}", self.next_idx() + (i - self.rows.len()) as i64), false),
-                };
+                let current = self.rows.get(i).is_some_and(|r| r.current);
                 let on = if i == last { "new".to_owned() } else { format!("row:{i}") };
                 let stop = if i == last { "new".to_owned() } else { format!("r:{i}") };
-                row(theme, &label, current, target == Some(i), ids, |id| self.win(id), size, self.across.max(1)).on(on).stop(stop)
+                row(theme, &g, current, target == Some(i), ids, &on).on(on).stop(stop)
             })
             .collect();
-        w::column(s.xxs, col).fill()
-    }
-
-    /// The widest ordinal a row's label carries.
-    pub fn widest_label(&self) -> String {
-        let mut labels: Vec<String> = self.rows.iter().map(|r| r.label.clone()).collect();
-        labels.push(self.next_idx().to_string());
-        labels.into_iter().max_by_key(|l| l.chars().count()).unwrap_or_default()
+        // Pond's grid is never under three rows: dots stand in for the rest.
+        if self.fits >= shown.len() {
+            while col.len() < MIN_ROWS {
+                col.push(row(theme, &g, false, false, &[], ""));
+            }
+        }
+        // The plates reach half a gap past the rows, so the card's own
+        // padding gives that much back above the first and below the last.
+        let half = (g.slot_gap / 2.0).floor();
+        w::column(0.0, col).pad(0.0, -half, 0.0, -half).fill()
     }
 
     /// The rows in the list, the empty one counted.
@@ -445,7 +448,9 @@ impl Map {
     /// The icons over the slots `hits` laid out, after `anchor` in paint
     /// order; true while one is still gliding.
     #[allow(clippy::too_many_arguments)]
-    pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, now: Instant) -> bool {
+    /// `card` is the cards' left edge and width, which the rows' numbers
+    /// straddle (the right one on a right edge).
+    pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, card: (f64, f64), right: bool, now: Instant) -> bool {
         self.slots = hits.iter().filter_map(|h| Some((h.on.as_ref()?.strip_prefix("window:")?.to_owned(), h.rect))).collect();
         let last = self.rows.len();
         self.row_boxes = hits
@@ -460,8 +465,21 @@ impl Map {
         let lifted = self.drag.as_ref().filter(|d| d.lifted).map(|d| (d.id.clone(), d.at));
         self.glides.retain(|id, _| self.slots.contains_key(id) || lifted.as_ref().is_some_and(|l| &l.0 == id));
         let fg = theme.colors.get("foreground");
+        let g = Geo::of(theme);
         let mut nodes = std::mem::take(&mut self.nodes);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
+        if self.over || lifted.is_some() {
+            self.pills(&mut p, kit, theme, &g, card, right);
+        }
+        let ring = super::outline(theme);
+        let focus = theme.colors.get("ring");
+        let at = self.cursor.as_ref().and_then(|c| c.window.as_ref()).map(|id| format!("window:{id}"));
+        let d = g.slot.round() as i32;
+        for h in hits.iter().filter(|h| h.rect.w == d && h.rect.h == d && h.on.as_deref().is_some_and(on_map)) {
+            // The swatches draw no cursor of their own, so the keyboard's ring is this one.
+            let (ink, width) = if h.on == at { (focus, theme.border_width * 2.0) } else { (ring, theme.border_width) };
+            p.framed(h.rect, Rgba::TRANSPARENT, d as f32 / 2.0, ink, width as f32);
+        }
         let mut moving = false;
         let ids: Vec<String> = self.slots.keys().cloned().collect();
         for id in &ids {
@@ -472,18 +490,19 @@ impl Map {
             g.1.set(now, y, ms);
             moving |= g.0.running(now) || g.1.running(now);
             let at = (g.0.value(now), g.1.value(now));
-            let alpha = if lifted.is_some() { DIMMED } else { 1.0 };
             let icon = self.win(id).and_then(|w| w.icon.clone());
-            draw_icon(&mut p, kit, icon.as_ref(), at, 1.0, alpha, fg);
+            draw_icon(&mut p, kit, icon.as_ref(), at, 1.0, 1.0, fg);
         }
         if let Some((id, at)) = lifted {
-            let size = icon_size(theme) * LIFT_SCALE;
-            let halo = theme.colors.get("foreground").with_alpha(0.12);
-            let card = theme.colors.get("card");
-            let reach = (size * 1.6).round() as i32;
-            p.rect(IRect::new(at.0 as i32 - reach / 2, at.1 as i32 - reach / 2, reach, reach), halo, reach as f32 / 2.0);
-            let plate = (size + theme.space.sm).round() as i32;
-            p.framed(IRect::new(at.0 as i32 - plate / 2, at.1 as i32 - plate / 2, plate, plate), card, theme.radii.md as f32, theme.colors.get("border"), 1.0);
+            // Pond's lifted circle: a shadow dropped under and to the right,
+            // the circle filled, its ring the wallpaper colour.
+            let d = g.slot.round() as i32;
+            let (cx, cy) = (at.0.round() as i32, at.1.round() as i32);
+            let shadow = theme.colors.get("shadow");
+            let drop = (g.dot / 2.0).round() as i32;
+            let spread = d + drop * 2;
+            p.rect(IRect::new(cx + drop - spread / 2, cy + drop * 2 - spread / 2, spread, spread), shadow.with_alpha(0.35), spread as f32 / 2.0);
+            p.framed(IRect::new(cx - d / 2, cy - d / 2, d, d), theme.colors.get("popover"), d as f32 / 2.0, theme.colors.get("primary"), theme.border_width as f32);
             let icon = self.win(&id).and_then(|w| w.icon.clone());
             draw_icon(&mut p, kit, icon.as_ref(), at, LIFT_SCALE, 1.0, fg);
             // It lands from where it was let go.
@@ -494,6 +513,22 @@ impl Map {
         p.finish();
         self.nodes = nodes;
         moving
+    }
+
+    /// Each workspace row's number on a pill straddling the card's edge.
+    fn pills(&self, p: &mut Painter, kit: &mut Kit, theme: &Theme, g: &Geo, card: (f64, f64), right: bool) {
+        let (pw, ph) = (g.pill.0.round() as i32, g.pill.1.round() as i32);
+        let edge = if right { card.0 + card.1 } else { card.0 };
+        let x = edge.round() as i32 - pw / 2;
+        let fg = theme.colors.get("foreground");
+        let style = TextStyle { family: kit.look.sans, size: g.pill_words as f32, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+        for (i, r) in &self.row_boxes {
+            let Some(row) = self.rows.get(*i) else { continue };
+            let y = r.y + (r.h - ph) / 2;
+            p.framed(IRect::new(x, y, pw, ph), theme.colors.get("muted"), pw as f32 / 2.0, super::outline(theme), theme.border_width as f32);
+            let t = kit.shape(&row.label, style);
+            p.text(&t, (x + (pw - t.width) / 2, y + (ph - t.line_height()) / 2), fg, &[]);
+        }
     }
 
     /// The rail's chips: one ordinal per workspace, the focused one filled.
@@ -573,9 +608,9 @@ fn align(held: &[(i64, Vec<String>)], rows: &[Row]) -> Vec<Vec<String>> {
     out
 }
 
-/// An icon three across a sidebar card, past the ordinal.
+/// An icon in its circle.
 fn icon_size(theme: &Theme) -> f64 {
-    theme.space.control_height * 0.75
+    Geo::of(theme).icon
 }
 
 /// One icon centred on `at`, `scale` about its centre.
@@ -687,37 +722,38 @@ fn drop_on(order: &[Vec<String>], from: usize, id: &str, t: usize, j: usize, idx
     (commands, out)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn row<'a>(theme: &Theme, label: &str, current: bool, lit: bool, ids: &[String], win: impl Fn(&str) -> Option<&'a Win>, size: f64, across: usize) -> El {
+/// One workspace's row: a circle per window (the slot a lifted icon would
+/// land on filled), dots filling the rest of each line of three, and on
+/// the current row an empty one's first slot as a circle too. The row is
+/// its plate, `plate_inset` in from the card's side and half a gap past
+/// the circles, drawn where it is current or a drag's target.
+fn row(theme: &Theme, g: &Geo, current: bool, lit: bool, ids: &[String], row_on: &str) -> El {
     let s = &theme.space;
-    let icons: Vec<El> = ids
+    // The rings are painted over the circles' hits (`Map::paint`).
+    let circle = |fill: Rgba| w::dot(fill, g.slot);
+    let mut slots: Vec<El> = ids
         .iter()
         .map(|id| {
-            let slot = w::cell(w::picture(None, size));
             if id.is_empty() {
-                return slot.cell_state(|c| {
-                    c.chip = true;
-                    c.small = true;
-                    c.tight = true;
-                    c.ghost = true;
-                });
+                return circle(theme.colors.get("muted"));
             }
-            let focused = win(id).is_some_and(|w| w.focused);
-            slot.cell_state(|c| {
-                c.chip = true;
-                c.small = true;
-                c.tight = true;
-                c.ghost = !focused;
-                c.selected = focused;
-            })
-            .interactive()
-            .on(format!("window:{id}"))
-            .stop(format!("w:{id}"))
+            circle(Rgba::TRANSPARENT).on(format!("window:{id}")).stop(format!("w:{id}"))
         })
         .collect();
-    let label = w::caption(label.to_owned()).mono().ink(if current { Ink::Fg } else { Ink::Dim });
-    let body = w::row(s.sm, vec![label, w::grid(across, s.xxs, icons).fill()]);
-    w::cell(body).ghost().selected(current).cell_state(|c| c.hovered = lit).interactive().fill()
+    if slots.is_empty() && current {
+        slots.push(circle(Rgba::TRANSPARENT).on(row_on.to_owned()));
+    }
+    let lines = slots.len().div_ceil(ACROSS).max(1);
+    let dot = theme.colors.get("mutedForeground").with_alpha(0.3);
+    let inset = (g.slot - g.dot) / 2.0;
+    while slots.len() < lines * ACROSS {
+        slots.push(w::dot(dot, g.dot).pad(inset, inset, inset, inset));
+    }
+    let out = (s.md - g.plate_inset).max(0.0);
+    let inner = (out - s.xs).max(0.0);
+    let grid = w::grid(ACROSS, g.slot_gap, slots).pad(inner, 0.0, inner, 0.0);
+    let tall = lines as f64 * (g.slot + g.slot_gap);
+    w::cell(grid).ghost().selected(current || lit).cell_state(|c| c.tight = true).pad(-out, 0.0, -out, 0.0).height(tall)
 }
 
 #[cfg(test)]
