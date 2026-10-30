@@ -136,7 +136,15 @@ fn resolve(cx: &Cx, ink: Ink) -> Rgba {
 }
 
 /// A launcher row keeps `lg` either side, the token `sm`.
-fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
+fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> (f64, f64) {
+    if let Some(inset) = state.inset {
+        return inset;
+    }
+    let x = cell_pad_x(s, state);
+    (x, x)
+}
+
+fn cell_pad_x(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
     if state.row {
         s.lg
     } else if state.card {
@@ -287,10 +295,10 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             ((t.width as f64).min(*max), t.line_height() as f64)
         }
         Kind::Cell { state, child, .. } => {
-            let pad_x = cell_pad(&s, state);
+            let (pad_x, pad_y) = cell_pad(&s, state);
             let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            let h = if state.card { ch + pad_x * 2.0 } else { across(cx, state.chip, ch) };
+            let h = if state.card { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
             (cw + pad_x * 2.0, h)
         }
         Kind::Button { text, icon, square, .. } => {
@@ -333,7 +341,8 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             (s.keycap_height.max(w + s.sm * 2.0), s.keycap_height)
         }
         Kind::Swatch { w, h, .. } => (*w, *h),
-        Kind::Ring(_) => (s.control_height, s.control_height),
+        Kind::Ring { indicator: false, .. } => (s.control_height, s.control_height),
+        Kind::Ring { indicator: true, .. } => (INDICATOR, INDICATOR),
         Kind::Sparkline(_) => (inner, s.control_height),
         Kind::Matrix { rows } => {
             let side = matrix_module(inner, rows.len()) * rows.len() as f64;
@@ -728,7 +737,8 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             p.finish();
             cx.done(last);
         }
-        Kind::Ring(r) => ring(cx, inner, *r, path),
+        Kind::Ring { ring: r, indicator: false } => ring(cx, inner, *r, path),
+        Kind::Ring { ring: r, indicator: true } => indicator(cx, inner, *r, path),
         Kind::Sparkline(series) => sparkline(cx, inner, series, path),
         Kind::Matrix { rows } => matrix(cx, inner, rows, path),
         Kind::Flow(f) => flow::paint(cx, inner, f, path),
@@ -838,7 +848,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     p.finish();
     cx.done(last);
 
-    let pad_x = cell_pad(&cx.theme.space, &state);
+    let (pad_x, _) = cell_pad(&cx.theme.space, &state);
     let content_w = (r.width() - pad_x * 2.0).max(0.0);
     let (cw, ch) = measure(cx, child, content_w);
     let cw = if child.width == Size::Fill { content_w } else { cw };
@@ -1479,6 +1489,44 @@ fn shoulders(cx: &mut Cx, r: Rect, edge: fs_chrome::types::Edge, span: f64, dept
     p.shape(Scene::cover(r, Affine::IDENTITY, 2.0), Paint::Shape { fill: Some((fill_path, fill)), strokes: vec![(outer, line, border.1)] });
     for s in segs {
         p.rect(s, sep, 0.0);
+    }
+    let last = p.last();
+    p.finish();
+    cx.done(last);
+}
+
+// Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
+/// Pond's installs/Indicator.qml: 16px across, a 2.5px groove at a fifth of
+/// the ink, the arc from twelve o'clock in the ink, Pond's check once done
+/// and a bold `!` once failed (`title`, the table's nearest to Pond's 16px).
+const INDICATOR: f64 = 16.0;
+const INDICATOR_STROKE: f64 = 2.5;
+
+fn indicator(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
+    let t = cx.theme;
+    let centre = (inner.center().x, inner.center().y);
+    let ink = t.colors.get("foreground");
+    let mark = match r {
+        Ring::Done => Some((icon(cx, "check", Type::Body), cx.a(ink))),
+        Ring::Failed => Some((shape(cx, "!", &Font { size: Type::Title, weight: Weight::Bold, mono: false }), cx.a(t.colors.get("destructive")))),
+        _ => None,
+    };
+    // Pond clamps an unknown measure to none: the groove alone, still.
+    let r = if r == Ring::Unknown { Ring::Progress(0.0) } else { r };
+    let groove = cx.a(Rgba { a: ink.a * 0.2, ..ink });
+    let fill = cx.a(ink);
+    let mut p = cx.painter(path);
+    match mark {
+        Some((glyph, ink)) => {
+            let at = ((centre.0 - glyph.width as f64 / 2.0).round() as i32, (centre.1 - glyph.line_height() as f64 / 2.0).round() as i32);
+            p.text(&glyph, at, ink, &[]);
+        }
+        None => {
+            let strokes = ring_strokes(centre, INDICATOR, INDICATOR_STROKE, r, 0.0, groove, fill);
+            let half = INDICATOR / 2.0;
+            let bounds = Scene::cover(Rect::new(centre.0 - half, centre.1 - half, centre.0 + half, centre.1 + half), Affine::IDENTITY, 2.0);
+            p.shape(bounds, Paint::Shape { fill: None, strokes });
+        }
     }
     let last = p.last();
     p.finish();

@@ -433,8 +433,9 @@ paths = [
   "crates/formalshell-rs/src/surfaces/bar/cells/activity.rs",
   "crates/fs-activity/**",
   "dev/fspec-activity-stub.py",
+  "dev/smoke.d/sidebar_activity.sh",
 ]
-runs = ["--activity", "--launch", "--launcher-install"]
+runs = ["--activity", "--launch", "--launcher-install", "--sidebar-activity"]
 
 # Launch feedback, and the paths that spawn a desktop entry through it.
 [[rule]]
@@ -651,7 +652,7 @@ runs = ["--wifi", "--menu"]
 # The sidebar: the bar's body under layout sidebar, its cards and minimap.
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/sidebar/", "crates/formalshell-rs/src/ipc/sidebar.rs", "dev/smoke.d/sidebar.sh"]
-runs = ["--sidebar", "--sidebar --light", "--minimap", "--sidebar-software"]
+runs = ["--sidebar", "--sidebar --light", "--minimap", "--sidebar-software", "--sidebar-activity"]
 
 # Cards budding off the sidebar's inner edge.
 [[rule]]

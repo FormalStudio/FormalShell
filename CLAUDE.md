@@ -1172,6 +1172,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `lock.blankAfterSeconds` and waking on a real Shift, and from the first
   black frame on no frame's mean luminance past the settled lock's (the
   white flash a light theme's background put through every fade).
+- `sidebar_activity.sh` `--sidebar-activity`: the Activity card under
+  `layout: sidebar`, Pond's installs card: three stubbed fspec operations
+  (Firefox installing at 40%, a long-named install with no measure, an
+  apply at 1/4) as three 32-tall lines straight under the notifications
+  card, read off `sidebar status`, tesseract reading "Firefox" whole off
+  the card's crop, and the install's line reading done once it succeeds.
 - `sidebar_join.sh` `--sidebar-join`: `layout: sidebar` over a flat grey
   wallpaper, the network panel and the launcher each opened at a tenth
   speed with a burst of frames, the card read as what is darker than the

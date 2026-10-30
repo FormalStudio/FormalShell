@@ -1,7 +1,7 @@
 //! Activity's one row (`docs/superpowers/specs/2026-10-30-activity.md`):
 //! a ring, the group's title, a line of detail and its actions. The panel,
 //! the live toast and the notification centre all build from [`row`] and
-//! [`folded`], and a sidebar card is [`list`] with a small `max`.
+//! [`folded`]. The sidebar's card is [`installs_card`], one line a group.
 //!
 //! A row's `on` actions are `open:<source>`, `dismiss:<source>`,
 //! `retry:<source>` and `open-app:<source>`; [`event`] turns one into
@@ -96,6 +96,53 @@ pub fn list(theme: &Theme, store: &Store, max: usize) -> Vec<El> {
         rows.push(w::caption(format!("+{}", groups.len() - max)).mono().ink(Ink::Dim));
     }
     rows
+}
+
+// Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
+// Pond's installs/SidebarCard.qml, expanded: the card's contents start 8 in
+// from its top and bottom, each line 32 tall; a line's hover fill starts 4
+// in with the name 12 inside it, and the 16px indicator sits 8 down and 16
+// in from the far edge, 12 past the fill's end.
+const LINE: f64 = 32.0;
+const CARD_INSET: (f64, f64) = (4.0, 8.0);
+const NAME_INSET: f64 = 12.0;
+const INDICATOR_GAP: f64 = 12.0;
+/// Lines past this count fold into a `+N`.
+const MAX_LINES: usize = 3;
+
+/// The sidebar's card under the notifications card, after Pond's installs
+/// card: a line a live group, its name taking the width and Pond's
+/// indicator at the far edge. None with nothing live. The detail is the
+/// line's tooltip and the Activity panel the line opens.
+pub fn installs_card(store: &Store) -> Option<El> {
+    let groups = store.activity.activity.groups();
+    if groups.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<El> = groups
+        .iter()
+        .take(MAX_LINES)
+        .map(|g| {
+            let lead = g.lead();
+            let name = if g.items.len() > 1 { format!("{} x{}", lead.subject(), g.items.len()) } else { lead.subject().to_owned() };
+            let fill = w::cell(w::label(name).elide())
+                .ghost()
+                .interactive()
+                .cell_state(|c| c.inset = Some((NAME_INSET, 0.0)))
+                .height(LINE)
+                .fill()
+                .on(format!("open:{}", g.source))
+                .stop(g.source.to_owned());
+            let tip = detail(lead);
+            let fill = if tip.is_empty() { fill } else { fill.tip(tip) };
+            let mark = w::indicator(ring(lead)).pad(INDICATOR_GAP, (LINE - 16.0) / 2.0, INDICATOR_GAP, (LINE - 16.0) / 2.0);
+            w::row(0.0, vec![fill, mark]).fill()
+        })
+        .collect();
+    if groups.len() > MAX_LINES {
+        lines.push(w::caption(format!("+{}", groups.len() - MAX_LINES)).mono().ink(Ink::Dim).pad(NAME_INSET, 0.0, 0.0, 0.0).height(LINE));
+    }
+    Some(w::card(w::column(0.0, lines).fill()).cell_state(|c| c.inset = Some(CARD_INSET)).fill())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

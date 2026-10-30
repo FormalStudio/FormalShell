@@ -26,6 +26,7 @@
 --glass
 --sidebar
 --sidebar --light
+--sidebar-activity
 --sidebar-join
 --sidebar-join --light
 --sidebar-software

@@ -301,12 +301,11 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, now: Instant) -> Vec<
         .fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
-    let rows = activity::list(theme, store, 3);
-    if !rows.is_empty() {
-        out.push(("activity", w::card(w::column(s.row_gap, rows)).fill()));
-    }
     out.push(("software", w::card(w::column(s.row_gap, crate::surfaces::packages::software_rows(theme, store))).fill()));
     out.push(("notifications", w::card(notifications(theme, store)).interactive().on(format!("panel:{}", center::ID)).fill()));
+    if let Some(card) = activity::installs_card(store) {
+        out.push(("activity", card));
+    }
     if let Some(media) = media(theme, store) {
         out.push(("media", w::card(media).fill()));
     }

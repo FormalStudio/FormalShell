@@ -98,6 +98,16 @@ pub struct Item {
 }
 
 impl Item {
+    /// What the item is about, for a line too narrow for the whole title:
+    /// an fspec install's app name (fspec titles one `Installing <name>`,
+    /// FormalSpec's `app.rs`), else the title.
+    pub fn subject(&self) -> &str {
+        match self.kind.as_str() {
+            "install" => self.title.strip_prefix("Installing ").unwrap_or(&self.title),
+            _ => &self.title,
+        }
+    }
+
     fn due(&self, now: i64) -> bool {
         match (self.state, self.ended_ms) {
             (State::Running | State::Failed, _) | (_, None) => false,
@@ -771,5 +781,17 @@ mod tests {
         assert_eq!(a.retry("fspec:run:jq").unwrap().argv, ["fspec", "run", "--detach", "jq"]);
         assert_eq!(a.retry("fspec:update:/home/k/spec"), Some(Retry { cwd: Some("/home/k/spec".into()), argv: vec!["fspec".into(), "update".into()] }));
         assert_eq!(a.retry("fspec:apply:g815"), None);
+    }
+
+    #[test]
+    fn an_install_is_about_its_app() {
+        let item = |kind: &str, title: &str| {
+            fspec::parse(&format!(r#"{{"v":1,"type":"update","op":{{"id":"a","kind":"{kind}","source":"fspec:{kind}:x","title":"{title}","started":1,"updated":1,"state":"running"}}}}"#))
+                .unwrap()
+                .item()
+        };
+        assert_eq!(item("install", "Installing Firefox").subject(), "Firefox");
+        assert_eq!(item("uninstall", "Uninstalling Firefox").subject(), "Uninstalling Firefox");
+        assert_eq!(item("apply", "Applying g815").subject(), "Applying g815");
     }
 }

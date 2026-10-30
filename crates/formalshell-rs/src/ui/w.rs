@@ -272,7 +272,13 @@ pub fn trigger(s: &Space, glyph: &str, label: &str, open: bool) -> El {
 }
 
 pub fn ring(ring: super::el::Ring) -> El {
-    El::new(Kind::Ring(ring))
+    El::new(Kind::Ring { ring, indicator: false })
+}
+
+/// Pond's install indicator: a 16px ring in the foreground, a check once
+/// done and a `!` once failed.
+pub fn indicator(ring: super::el::Ring) -> El {
+    El::new(Kind::Ring { ring, indicator: true })
 }
 
 pub fn sparkline(values: Vec<f64>, secondary: Vec<f64>, ceiling: f64, capacity: usize) -> El {

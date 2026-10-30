@@ -124,6 +124,8 @@ pub struct CellState {
     /// `xs` either side instead of the control padding: an icon chip in a
     /// narrow grid.
     pub tight: bool,
+    /// The padding across and along, in place of the state's own.
+    pub inset: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -262,8 +264,8 @@ pub enum Kind {
     Separator { vertical: bool, inset: f64, bleed: f64 },
     Keycap { key: String },
     Swatch { color: Rgba, w: f64, h: f64, radius: f64, border: bool },
-    /// A `controlHeight` progress ring.
-    Ring(Ring),
+    /// A `controlHeight` progress ring, or with `indicator` Pond's 16px one.
+    Ring { ring: Ring, indicator: bool },
     Sparkline(Series),
     /// A shape budding off a line on `edge`, for the gallery.
     Shoulders { edge: fs_chrome::types::Edge, span: f64, depth: f64, run: f64 },
