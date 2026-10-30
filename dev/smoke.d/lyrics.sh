@@ -720,11 +720,15 @@ sleep 1
 # with every row under it still to come.
 lyrics_mpv "$lyrics_sock1_path" '{"command":["seek",27.5,"absolute"]}'
 lyrics_wait_position "$lyrics_wrap_early_json_path" 27.5
+# The position answers before the pane's redraw for it commits; with the
+# player paused nothing else moves, so the wait costs nothing.
+sleep 0.5
 "$grim_bin" "$lyrics_wrap_early_png_path" > /dev/null 2>&1
 # 30.6s: a third of the way into the chunk that wraps, so the row above it is
 # done, the row it is on is half sung, and the row under it has not started.
 lyrics_mpv "$lyrics_sock1_path" '{"command":["seek",30.6,"absolute"]}'
 lyrics_wait_position "$lyrics_wrap_late_json_path" 30.6
+sleep 0.5
 "$grim_bin" "$lyrics_wrap_late_png_path" > /dev/null 2>&1
 
 # The output latency, three paused frames around line1's start at 15s. The
