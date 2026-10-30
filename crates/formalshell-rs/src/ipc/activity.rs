@@ -19,7 +19,10 @@ fn seen(_: &mut App, _: &[Value]) -> Value {
 fn verb(app: &mut App, verb: Verb, source: &str) -> Value {
     match row::act(&app.store, app.runtime.as_ref(), verb, source) {
         Ok(Done::Panel) => {
-            app.set_panel("activity", true, None);
+            if app.panel_open() != Some("activity") {
+                app.set_panel("activity", true, None);
+            }
+            app.panel_call("activity", "select", source);
             Value::Str("ok".into())
         }
         Ok(Done::Nothing) => Value::Str("ok".into()),

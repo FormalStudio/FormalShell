@@ -239,7 +239,21 @@ impl Activity {
     /// Replaces the item holding `item.id` whole, or adds it. An item that
     /// arrives ended is stamped `now`; one that was already ended keeps its
     /// stamp. Returns whether anything changed.
-    pub fn upsert(&mut self, mut item: Item, now: i64) -> bool {
+    pub fn upsert(&mut self, item: Item, now: i64) -> bool {
+        let changed = self.put(item, now);
+        self.settle_dismissed();
+        changed
+    }
+
+    /// A dismissal lasts while its group holds the state it was put away
+    /// in: once that moves on (a run ends, or ends and starts again before
+    /// it folds) the card is back for good.
+    fn settle_dismissed(&mut self) {
+        let states: BTreeMap<String, State> = self.groups().iter().map(|g| (g.source.to_owned(), g.state())).collect();
+        self.dismissed.retain(|source, state| states.get(source) == Some(state));
+    }
+
+    fn put(&mut self, mut item: Item, now: i64) -> bool {
         let at = self.live.iter().position(|i| i.id == item.id);
         if item.state != State::Running {
             item.ended_ms = at.and_then(|i| self.live[i].ended_ms).or(item.ended_ms).or(Some(now));
@@ -268,6 +282,7 @@ impl Activity {
             item.summary = summary;
         }
         item.ended_ms = Some(now);
+        self.settle_dismissed();
         true
     }
 
@@ -293,8 +308,7 @@ impl Activity {
         }
         self.live = kept;
         self.history.truncate(HISTORY);
-        let live = &self.live;
-        self.dismissed.retain(|source, _| live.iter().any(|i| &i.source == source));
+        self.settle_dismissed();
         self.live.len() != before
     }
 
@@ -624,10 +638,13 @@ mod tests {
         assert!(a.toasts().is_empty());
         a.upsert(op("1", "s", "running", 3, 10), 100);
         assert!(a.toasts().is_empty(), "progress alone brought the card back");
-        a.upsert(op("1", "s", "failed", 3, 10), 200);
+        a.upsert(op("1", "s", "succeeded", 4, 10), 150);
+        a.upsert(op("2", "s", "running", 0, 160), 160);
+        assert_eq!(a.toasts(), vec!["s"], "a restart before the fold hid the card again");
+        a.upsert(op("2", "s", "failed", 3, 160), 200);
         assert_eq!(a.toasts(), vec!["s"]);
         assert!(a.dismiss("s"), "dismissing a failure did not fold it");
-        assert!(a.get("fspec:1").is_none());
+        assert!(a.get("fspec:2").is_none());
         assert!(!a.dismiss("nothing"));
     }
 

@@ -11,7 +11,11 @@ use crate::ui::{El, Event, Ink, w};
 
 const EARLIER: usize = 10;
 
-pub struct Activity;
+#[derive(Default)]
+pub struct Activity {
+    /// The row `activity open` asked for, for the host to put the cursor on.
+    cursor: Option<String>,
+}
 
 /// An fspec row's open asks for this panel, which is already up.
 fn run(verb: Verb, source: &str, fx: &mut Effect) {
@@ -33,6 +37,17 @@ impl Panel for Activity {
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Activity]
+    }
+
+    fn call(&mut self, verb: &str, arg: &str) -> Option<String> {
+        (verb == "select").then(|| {
+            self.cursor = Some(arg.to_owned());
+            "ok".into()
+        })
+    }
+
+    fn take_cursor(&mut self) -> Option<String> {
+        self.cursor.take()
     }
 
     fn body(&self, v: &View) -> El {

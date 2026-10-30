@@ -225,7 +225,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
     }
     let id = known(name)?;
     Some(match id {
-        "activity" => Box::new(activity::Activity),
+        "activity" => Box::new(activity::Activity::default()),
         "appmenu" => Box::new(appmenu::AppMenu),
         "audio" => Box::new(audio::Audio::default()),
         "calendar" => Box::new(calendar::Calendar::new(true)),

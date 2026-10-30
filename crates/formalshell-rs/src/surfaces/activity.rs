@@ -194,5 +194,5 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
 /// The history, newest first, `max` rows.
 pub fn history(theme: &Theme, store: &Store, max: usize) -> Vec<El> {
     let now = now_ms();
-    store.activity.activity.history().take(max).map(|i| folded(theme, i, now)).collect()
+    store.activity.activity.history().take(max).map(|i| w::cell(folded(theme, i, now)).ghost().interactive().stop(i.id.clone())).collect()
 }
