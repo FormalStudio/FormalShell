@@ -9,14 +9,14 @@
 # app opens foot windows of its own app id; two are up before the first
 # open.
 #
-# The card is 560 with no pane on the app, and → on it lists its two
+# The card is 640 with no pane on the app, and → on it lists its two
 # windows with the pane holding one captured frame: exactly one launcher
 # capture session in `debug dump`, on the selected window, moving to the
 # second with Down, none once ← leaves for the app row and none after the
-# card closes. A root search reaches the text file at 840 with its first
+# card closes. A root search reaches the text file in the same 640 card, its first
 # line in the pane, the folder with its entry count and names, and the
 # PNG with its picture decoded; → on the folder lists it folders first
-# with the hidden entry only after typing `.`. A clipboard image is 840
+# with the hidden entry only after typing `.`. A clipboard image keeps 640
 # with the pane carrying the capture's own colour, and `menu summon files`
 # lists the user directories and the recent files. The app, a window, the
 # text file and the folder are photographed in dark, then in light.
@@ -173,24 +173,25 @@ launcher_preview_colour() {
   local png="$shot_dir/launcher-preview-$1.png" box x y w h
   box=$("$jq_bin" -r '.paneBox | "\(.x) \(.y) \(.width) \(.height)"' "$shot_dir/launcher-preview-$1.json")
   read -r x y w h <<< "$box"
-  $convert_bin "$png" -crop "24x24+$((x + w / 2 - 12))+$((y + (h - 60) / 2 - 12))" +repage \
+  # The picture hangs from the pane's top, fitted to its width.
+  $convert_bin "$png" -crop "24x24+$((x + w / 2 - 12))+$((y + 40))" +repage \
     -format '%[fx:int(255*mean.r)] %[fx:int(255*mean.g)] %[fx:int(255*mean.b)]' info:
 }
 
 leg_launcher_preview_assert() {
   local mode
   for mode in dark light; do
-    launcher_preview_expect "app-$mode" ".cursorId == \"$launcher_preview_app\" and .pane == null and .cardWidth == 560" "the app is not 560 with no pane"
-    launcher_preview_expect "window-$mode" '.pane.kind == "window" and .pane.picture and .cardWidth == 840 and (.ids | length) == 2' "→ on the app did not show a window's captured frame at 840"
-    launcher_preview_expect "text-$mode" ".pane.kind == \"file\" and .pane.lines[0] == \"$launcher_preview_first\" and (.pane.lines | length) == 40 and .cardWidth == 840" "the text file's pane does not hold its first 40 lines"
+    launcher_preview_expect "app-$mode" ".cursorId == \"$launcher_preview_app\" and .pane == null and .cardWidth == 640" "the app is not 640 with no pane"
+    launcher_preview_expect "window-$mode" '.pane.kind == "window" and .pane.picture and .cardWidth == 640 and (.ids | length) == 2' "→ on the app did not show a window's captured frame"
+    launcher_preview_expect "text-$mode" ".pane.kind == \"file\" and .pane.lines[0] == \"$launcher_preview_first\" and (.pane.lines | length) == 40 and .cardWidth == 640" "the text file's pane does not hold its first 40 lines"
     launcher_preview_expect "folder-$mode" '.pane.kind == "folder" and .pane.count == 3 and .pane.names == ["gamma", "alpha.txt", "beta.txt"]' "the folder's pane does not name its three visible entries"
   done
   local card
   card=$("$jq_bin" '[.modals[] | select(.namespace == "formalshell:menu" and .open) | .card.width] | first' "$shot_dir/launcher-preview-dump-app-dark.json")
-  [ "$card" = 560 ] || fail "launcher-preview: the card on the app settled at $card, not 560"
+  [ "$card" = 640 ] || fail "launcher-preview: the card on the app settled at $card, not 640"
   card=$("$jq_bin" '[.modals[] | select(.namespace == "formalshell:menu" and .open) | .card.width] | first' "$shot_dir/launcher-preview-dump-window-dark.json")
-  [ "$card" = 840 ] || fail "launcher-preview: the card on a window settled at $card, not 840"
-  echo "SMOKE_LAUNCHER_PREVIEW 560 on the app, 840 on a window, the text file's 40 lines and the folder's names"
+  [ "$card" = 640 ] || fail "launcher-preview: the pane widened the card on a window to $card, not 640"
+  echo "SMOKE_LAUNCHER_PREVIEW 640 on the app and on a window, the text file's 40 lines and the folder's names"
 
   local first second
   first=$("$jq_bin" -r '.pane.id // ""' "$shot_dir/launcher-preview-window-dark.json")
@@ -210,12 +211,13 @@ leg_launcher_preview_assert() {
   launcher_preview_expect folder-hidden '[.drawn[].label] | index(".hidden-entry") != null' "typing . did not list the hidden entry"
   echo "SMOKE_LAUNCHER_PREVIEW → listed the folder, its hidden entry only after ."
 
-  launcher_preview_expect image-dark '.pane.kind == "file" and .pane.image and .pane.picture and .cardWidth == 840' "the PNG's pane did not decode its picture"
+  launcher_preview_expect image-dark '.pane.kind == "file" and .pane.image and .pane.picture and .cardWidth == 640' "the PNG's pane did not decode its picture"
   local rgb r g b
+  echo "SMOKE_LAUNCHER_PREVIEW_IMAGE $shot_dir/launcher-preview-image-dark.png"
   rgb=$(launcher_preview_colour image-dark)
   read -r r g b <<< "$rgb"
   [ "$r" -gt 180 ] && [ "$g" -lt 90 ] && [ "$b" -gt 90 ] || fail "launcher-preview: the PNG's pane is not its magenta, read $rgb"
-  launcher_preview_expect clip-dark '.level == "clipboard" and .pane.kind == "clipboard" and .pane.picture and .cardWidth == 840' "the clipboard image is not 840 with its picture"
+  launcher_preview_expect clip-dark '.level == "clipboard" and .pane.kind == "clipboard" and .pane.picture and .cardWidth == 640' "the clipboard image is not 640 with its picture"
   rgb=$(launcher_preview_colour clip-dark)
   read -r r g b <<< "$rgb"
   [ "$r" -lt 90 ] && [ "$g" -gt 120 ] && [ "$b" -gt 180 ] || fail "launcher-preview: the clipboard image's pane is not its blue, read $rgb"

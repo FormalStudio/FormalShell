@@ -1,10 +1,23 @@
 //! Clipboard history rows, the route-local filter and the paste chord.
 
-use chrono::{DateTime, Local, Timelike};
+use chrono::{DateTime, Datelike, Local, Timelike};
 
 use crate::clipboard::emoji::is_emoji_only;
 use crate::clipboard::history::{Entry, EntryKind};
 use crate::node::{ActionEntry, Kind, Node};
+
+/// The day heading a capture falls under: `Today`, `Yesterday`, then the
+/// date. None for a legacy entry with no timestamp.
+pub fn captured_day_label(captured_at: Option<i64>, now: DateTime<Local>) -> Option<String> {
+    let day = DateTime::from_timestamp_millis(captured_at?)?.with_timezone(&Local).date_naive();
+    let today = now.date_naive();
+    Some(match (today - day).num_days() {
+        0 => "Today".to_string(),
+        1 => "Yesterday".to_string(),
+        _ if day.year() == today.year() => day.format("%B %-d").to_string(),
+        _ => day.format("%B %-d, %Y").to_string(),
+    })
+}
 
 /// Local `HH:MM` of a capture time. A legacy entry with no timestamp reads
 /// "NaN:NaN", which is what an invalid date formats to.
@@ -47,6 +60,7 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
     let share = mode == ClipMode::Share;
     let paste_after = !share && paste;
     let id_prefix = if share { "share.history." } else { CLIPBOARD_ENTRY_PREFIX };
+    let now = Local::now();
     items
         .iter()
         .map(|entry| {
@@ -76,6 +90,7 @@ pub fn clipboard_provider(items: &[Entry], mode: ClipMode, paste: bool) -> Vec<N
                 // meta line needs a capture time regardless of kind.
                 full_text: if is_image { String::new() } else { text.to_string() },
                 emoji_only,
+                section: captured_day_label(entry.captured_at, now),
                 time,
                 // The action bar's verb, overriding what the kind alone
                 // implies: "Run" describes a clipboard row about as well as

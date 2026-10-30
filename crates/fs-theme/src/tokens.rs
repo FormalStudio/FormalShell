@@ -120,7 +120,7 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 29] = [
     ("popupWidthMenuApp", 900.0),
     ("popupWidthBubble", 332.0),
     ("popupHeightMenu", 520.0),
-    ("popupHeightMenuSplit", 560.0),
+    ("popupHeightMenuSplit", 462.0),
     ("popupHeightMenuApp", 720.0),
     ("switcherThumb", 128.0),
     ("switcherInset", 64.0),
@@ -278,11 +278,19 @@ pub struct Launcher {
     pub emoji_columns: u32,
     /// The most rows `Recent` lists at rest.
     pub recent: u32,
-    /// The field's type, a ratio on the base size, between the ramp's
-    /// `heading` and `display`.
+    /// The field's type, a ratio on the base size, past the ramp's
+    /// `display`: Pond's field size in the shell's sans.
     pub field_size: f64,
     pub row_height: f64,
     pub row_icon: f64,
+    /// The card's one width: a preview pane or the actions column splits
+    /// it rather than widening it.
+    pub width: f64,
+    /// The field's band, whether a mode token stands in it or not.
+    pub field_band: f64,
+    /// The tiles the opened state shows, and their height.
+    pub tiles: u32,
+    pub tile_height: f64,
 }
 
 pub const LAUNCHER: Launcher = Launcher {
@@ -291,9 +299,13 @@ pub const LAUNCHER: Launcher = Launcher {
     picker_columns: 4,
     emoji_columns: 8,
     recent: 8,
-    field_size: 1.615,
-    row_height: 40.0,
-    row_icon: 22.0,
+    field_size: 2.0,
+    row_height: 48.0,
+    row_icon: 24.0,
+    width: 640.0,
+    field_band: 64.0,
+    tiles: 3,
+    tile_height: 144.0,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]

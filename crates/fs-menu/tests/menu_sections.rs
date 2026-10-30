@@ -85,12 +85,12 @@ fn a_query_draws_no_headings() {
     assert_eq!(sections_for(&rows, &ctx), ["", "", ""]);
 }
 
-// The back chip above the list already says "Clipboard", so a CLIPBOARD
-// heading under it separates nothing.
+// The mode token already says "Panels", so a PANELS heading under it
+// separates nothing.
 #[test]
 fn a_single_group_level_draws_no_heading() {
-    let rows = [row("clipboard.a"), row("clipboard.b")];
-    let ctx = SectionCtx { level: Some("clipboard"), level_label: "Clipboard", ..menu_ctx() };
+    let rows = [row("panels.a"), row("panels.b")];
+    let ctx = SectionCtx { level: Some("panels"), level_label: "Panels", ..menu_ctx() };
     let sections = sections_for(&rows, &ctx);
     assert_eq!(sections, ["", ""]);
     assert!(section_names(&sections).is_empty());

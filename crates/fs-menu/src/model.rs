@@ -348,9 +348,10 @@ pub fn sections_for(rows: &[Node], ctx: &SectionCtx) -> Vec<String> {
 }
 
 /// A level whose rows are all one group is already named by the mode token,
-/// so its heading goes. A level that splits keeps every one.
+/// so its heading goes. A level that splits keeps every one, and the
+/// clipboard's day headings stay even when the whole history is today's.
 fn collapse_single_level_group(sections: Vec<String>, ctx: &SectionCtx) -> Vec<String> {
-    if ctx.level.is_none() || ctx.searching {
+    if ctx.level.is_none() || ctx.searching || matches!(ctx.level, Some("clipboard" | "share.history")) {
         return sections;
     }
     if ctx.mode.is_some_and(|m| m != Mode::Menu) {

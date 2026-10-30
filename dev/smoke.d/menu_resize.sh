@@ -41,15 +41,15 @@ leg_menu_resize_needs="convert wtype jq"
 
 menu_resize_frames=24
 menu_resize_gap=0.04
-menu_resize_rows="352 600 1016"
+menu_resize_rows="352 450 1016"
 menu_resize_cols="560 1300"
 # The probes skip the bar's band.
 menu_resize_col_from=60
 # Desktop patches clear of both cards: x y w h.
 menu_resize_patches="80,150,100,100 1740,700,100,100"
-# Cards centred on the 1920 output: the root's popupWidthMenu (560) and the
+# Cards centred on the 1920 output: the root's 640 card and the
 # monitor view's popupWidthMenuApp (900), read along the middle row.
-menu_resize_root_run="680 1240"
+menu_resize_root_run="640 1280"
 menu_resize_monitor_run="510 1410"
 
 leg_menu_resize_validate() {
@@ -220,6 +220,10 @@ leg_menu_resize_assert() {
   grep -q '^ok$' "$shot_dir/menu-resize-summon2.txt" 2>/dev/null \
     || fail "menu summon monitor did not answer ok: $(cat "$shot_dir/menu-resize-summon2.txt" 2>/dev/null)"
   thr=$(menu_resize_threshold "$shot_dir/menu-resize-monitor.png")
+  echo "monitor status: $("$jq_bin" -c '{level, view, query, cardWidth, cardBox}' "$shot_dir/menu-resize-monitor-status.json" 2>&1)"
+  for f in root0 monitor root monitor2; do
+    echo "$f card: $("$jq_bin" -c '[.modals[] | select(.namespace == "formalshell:menu") | {card, content}] | first' "$shot_dir/menu-resize-dump-$f.json" 2>&1)"
+  done
   echo "card threshold: gray > $thr"
   # Card fill under the content, settled and at the end of each resize.
   local filled
@@ -247,11 +251,11 @@ leg_menu_resize_assert() {
     report=$(menu_resize_frame "$png" "${f%%:*}" "$thr")
     echo "$report"
     grep -q '^BAD' <<< "$report" && bad="$bad ${f%%:*}"
-    mid=$(menu_resize_line "$png" row 600 | menu_resize_runs "$thr")
-    [ "$(wc -w <<< "$mid")" -eq 1 ] || fail "${f%%:*}: the card spans '$mid' on row 600, not one run on the ${f#*:} card's $want"
+    mid=$(menu_resize_line "$png" row 450 | menu_resize_runs "$thr")
+    [ "$(wc -w <<< "$mid")" -eq 1 ] || fail "${f%%:*}: the card spans '$mid' on row 450, not one run on the ${f#*:} card's $want"
     local s=${mid%-*} e=${mid#*-} ws=${want% *} we=${want#* }
     if [ "$(( s - ws ))" -lt -3 ] || [ "$(( s - ws ))" -gt 3 ] || [ "$(( e + 1 - we ))" -lt -3 ] || [ "$(( e + 1 - we ))" -gt 3 ]; then
-      fail "${f%%:*}: the card spans '$mid' on row 600, not the ${f#*:} card's $want"
+      fail "${f%%:*}: the card spans '$mid' on row 450, not the ${f#*:} card's $want"
     fi
   done
   for f in into back forth; do

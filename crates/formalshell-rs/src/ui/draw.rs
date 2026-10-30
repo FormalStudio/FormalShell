@@ -153,7 +153,9 @@ fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> (f64, f64) {
 }
 
 fn cell_pad_x(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
-    if state.row {
+    if state.tile {
+        s.xl
+    } else if state.row {
         s.lg
     } else if state.card {
         s.md
@@ -306,7 +308,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             let (pad_x, pad_y) = cell_pad(&s, state);
             let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            let h = if state.card { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
+            let h = if state.card || state.tile { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
             (cw + pad_x * 2.0, h)
         }
         Kind::Button { text, icon, square, .. } => {
@@ -413,6 +415,10 @@ pub fn keycap(key: &str) -> (String, &'static str) {
     let raw = key.trim();
     let low = raw.to_lowercase();
     let icon = match low.as_str() {
+        // The launcher's foot draws its keys as glyphs.
+        "enter-glyph" => "corner-down-left",
+        "tab-glyph" => "arrow-right-to-line",
+        "shift-glyph" => "arrow-big-up",
         "up" => "arrow-up",
         "down" => "arrow-down",
         "left" => "arrow-left",
@@ -600,7 +606,13 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let color = cx.color(&format!("{path}.ink"), color);
             let color = cx.a(color);
             let y = (inner.y0 + (inner.height() - t.line_height() as f64) / 2.0).round() as i32;
-            let x = if el.mid { inner.x0 + (inner.width() - t.width as f64) / 2.0 } else { inner.x0 };
+            let x = if el.mid {
+                inner.x0 + (inner.width() - t.width as f64) / 2.0
+            } else if el.end {
+                inner.x1 - t.width as f64
+            } else {
+                inner.x0
+            };
             let mut p = cx.painter(path);
             p.text(&t, (x.round() as i32, y), color, &[]);
             let last = p.last();
@@ -683,12 +695,15 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         Kind::Edit { text, placeholder, caret, size } => {
             let font = Font { size: *size, weight: Weight::Normal, mono: false };
             let room = irect(inner);
-            let line = line_parts(cx, text, placeholder, Some(*caret), &font, room.w);
+            // The launcher's field: a caret twice the hairline in the
+            // wallpaper colour, as the mockup draws it.
+            let bold = (cx.theme.border_width.max(1.0) * 2.0) as i32;
+            let line = line_parts(cx, text, placeholder, Some(*caret), &font, room.w, bold);
             let ty = room.y + (room.h - line.shown.line_height()) / 2;
             let t = cx.theme;
             let alpha = cx.alpha;
             let mut p = cx.painter(path);
-            paint_line(&mut p, t, &line, (room.x, ty), room, alpha);
+            paint_line(&mut p, t, &line, (room.x, ty), room, alpha, (bold, "primary"));
             let last = p.last();
             p.finish();
             cx.done(last);
@@ -824,7 +839,8 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else if state.token {
         t.box_style("launcher.token", None)
     } else if state.row {
-        let mut b = t.box_style("launcher.row", Some(if state.selected && !owned { "selected" } else { "rest" }));
+        let role = if state.tile { "launcher.tile" } else { "launcher.row" };
+        let mut b = t.box_style(role, Some(if state.selected && !owned { "selected" } else { "rest" }));
         if state.destructive {
             b.border = t.box_style("cell", Some("destructive")).border;
         }
@@ -837,7 +853,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let hovered = state.hovered || (interactive && cx.hover(path));
     let washing = hovered && !state.active && !state.selected;
-    b.wash = t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
+    b.wash = t.box_style(if state.tile { "launcher.tile" } else if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
     let (_, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
@@ -1186,7 +1202,8 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
     let body = Font { size: Type::Body, weight: Weight::Normal, mono: false };
     // An entry's own padding, `_entries.scss`'s 9px.
     let inner_w = (frame.w as f64 - s.md * 2.0).max(0.0);
-    let line = line_parts(cx, text, placeholder, caret, &body, inner_w as i32);
+    let caret_w = t.border_width.max(1.0) as i32;
+    let line = line_parts(cx, text, placeholder, caret, &body, inner_w as i32, caret_w);
     let err = error.filter(|e| !e.is_empty()).map(|e| {
         let st = style(cx, &Font { size: Type::Caption, weight: Weight::Normal, mono: false });
         cx.kit.shape(e, st)
@@ -1201,7 +1218,7 @@ fn input(cx: &mut Cx, r: Rect, text: &str, placeholder: &str, caret: Option<(usi
         p.rect(IRect::new(frame.x - sp, frame.y - sp, frame.w + sp * 2, frame.h + sp * 2), ring.color.with_alpha(ring.color.a * ring_a * alpha), (radius + ring.spread) as f32);
     }
     boxes::paint(&mut p, frame, &b, radius, alpha, 0.0);
-    paint_line(&mut p, t, &line, (tx, ty), IRect::new(tx, frame.y, inner_w as i32, frame.h), alpha);
+    paint_line(&mut p, t, &line, (tx, ty), IRect::new(tx, frame.y, inner_w as i32, frame.h), alpha, (caret_w, "foreground"));
     if let Some(e) = &err {
         p.text(e, (frame.x, frame.bottom() + s.xs as i32), destructive.with_alpha(destructive.a * alpha), &[]);
     }
@@ -1221,9 +1238,8 @@ struct LineParts {
     scroll: i32,
 }
 
-fn line_parts(cx: &mut Cx, text: &str, placeholder: &str, caret: Option<(usize, usize)>, font: &Font, room: i32) -> LineParts {
+fn line_parts(cx: &mut Cx, text: &str, placeholder: &str, caret: Option<(usize, usize)>, font: &Font, room: i32, caret_w: i32) -> LineParts {
     let empty = text.is_empty();
-    let caret_w = cx.theme.border_width.max(1.0) as i32;
     if empty {
         let gap = if caret.is_some() { caret_w } else { 0 };
         let shown = elided(cx, placeholder, font, f64::from((room - gap).max(0)));
@@ -1249,8 +1265,8 @@ fn line_parts(cx: &mut Cx, text: &str, placeholder: &str, caret: Option<(usize, 
 /// covers, that text in `primaryForeground`, and the caret, which holds
 /// still rather than blinking (a blink is a clock) and steps aside while
 /// anything is selected.
-fn paint_line(p: &mut crate::surfaces::bar::cell::Painter, t: &fs_theme::theme::Theme, line: &LineParts, at: (i32, i32), room: IRect, alpha: f32) {
-    let caret_w = t.border_width.max(1.0) as i32;
+fn paint_line(p: &mut crate::surfaces::bar::cell::Painter, t: &fs_theme::theme::Theme, line: &LineParts, at: (i32, i32), room: IRect, alpha: f32, caret: (i32, &str)) {
+    let (caret_w, caret_ink) = caret;
     let h = line.shown.line_height();
     let x0 = at.0 - line.scroll;
     let clip = p.clip.map_or(room, |c| c.intersect(&room));
@@ -1271,7 +1287,7 @@ fn paint_line(p: &mut crate::surfaces::bar::cell::Painter, t: &fs_theme::theme::
     }
     if let Some(x) = line.caret.filter(|_| sel.is_none()) {
         let cx = (x0 + x).min(room.x + room.w - caret_w);
-        p.rect(IRect::new(cx, at.1, caret_w, h), t.colors.get("foreground").with_alpha(alpha), 0.0);
+        p.rect(IRect::new(cx, at.1, caret_w, h), t.colors.get(caret_ink).with_alpha(alpha), 0.0);
     }
 }
 

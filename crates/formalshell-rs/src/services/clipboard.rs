@@ -18,7 +18,6 @@
 //! exits. Every eviction's orphaned images are removed here, and only
 //! under the image store.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -43,11 +42,6 @@ pub const THUMB_SIZE: u32 = 512;
 #[derive(Default)]
 pub struct State {
     pub items: Vec<Entry>,
-    /// Row thumbnails by capture path, decoded to `thumb_box`.
-    pub thumbs: HashMap<String, Option<Bitmap>>,
-    pub thumb_box: (u32, u32),
-    /// The scale `thumbs` were made at.
-    pub thumb_scale: f64,
     /// An image just captured, for `clipssh.autoSendImages`, taken by the
     /// one reader. A re-copied image only moves its entry, so the list
     /// alone cannot say a capture happened.
@@ -72,7 +66,6 @@ pub enum Diff {
     Items(Vec<Entry>),
     Captured,
     Preview(Preview),
-    Thumbs(((u32, u32), f64), Vec<(String, Option<Bitmap>)>),
     Pasted(String),
 }
 
@@ -88,13 +81,6 @@ impl State {
             Diff::Captured => self.captured = true,
             Diff::Pasted(text) => self.pasted = Some(text),
             Diff::Preview(preview) => self.preview = Some(preview),
-            Diff::Thumbs((size, scale), list) => {
-                if (size, scale) != (self.thumb_box, self.thumb_scale) {
-                    self.thumbs.clear();
-                    (self.thumb_box, self.thumb_scale) = (size, scale);
-                }
-                self.thumbs.extend(list);
-            }
         }
         true
     }
@@ -114,8 +100,6 @@ pub enum Cmd {
     Paste,
     Remove(String),
     Clear,
-    /// Decode these captures' `fit` thumbnails into a `(w, h)` box.
-    Thumbs(Vec<String>, ((u32, u32), f64)),
     /// The launcher pane's picture of a capture or an image file, fitted to
     /// `(w, h)`.
     Preview(String, ((u32, u32), f64)),
@@ -302,14 +286,6 @@ pub async fn run(ctx: Ctx) {
                     if let Some((dims, mut list)) = decoded {
                         let bitmap = list.pop().and_then(|(_, b)| b);
                         c.publish(store::Diff::Clipboard(Diff::Preview(Preview { path, size, bitmap, dims })));
-                    }
-                });
-            }
-            Event::Cmd(Cmd::Thumbs(paths, size)) => {
-                let c = ctx.clone();
-                ctx.spawn(async move {
-                    if let Some(list) = c.pool().run(move || decode_thumbs(&paths, size.0, size.1)).await {
-                        c.publish(store::Diff::Clipboard(Diff::Thumbs(size, list)));
                     }
                 });
             }

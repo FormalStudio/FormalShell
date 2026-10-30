@@ -8,7 +8,7 @@
 # A staged app whose name runs 200 characters, searched by its first two
 # words: every row's drawn box sits inside the card's. A launcher plugin
 # whose mode holds one row carrying 40 actions of its own: Tab on it opens
-# the 840 card, which fits the 1280 output whole, the column's last visible
+# the column inside the 640 card, 45% of it, the column's last visible
 # row reading `n more`; a real End then takes the cursor to the last action
 # with the column scrolled to its end and nothing more below. The long row
 # and the column at both ends are photographed off that output alone, the
@@ -19,9 +19,8 @@
 # wider than 40% of the row and its left edge one gap from the elided
 # name's, so the name takes the rest.
 #
-# A second headless output 800x600, narrower than the 840 card plus
-# `screenPadding` either side: the same Tab cuts the card to the output
-# less 12 either side, the column at most 45% of it, photographed there.
+# A second headless output 800x600: the same Tab keeps the card at 640,
+# well inside the output, the column 45% of it, photographed there.
 leg_launcher_overflow_flag="--launcher-overflow"
 leg_launcher_overflow_order=34
 leg_launcher_overflow_needs="jq wtype python3"
@@ -211,19 +210,19 @@ PY
 
   launcher_overflow_expect mode '.level == "plugin:overflow-probe" and .ids == ["plugin:overflow-probe.many"]' "the plugin's mode did not list its one row"
   launcher_overflow_expect column '.actionsOpen and (.actions | length) == 41 and .actions[0] == "run" and .actions[-1] == "act-40"' "Tab did not list the row's activate and its 40 actions"
-  launcher_overflow_expect column '.cardWidth == 840 and .cardBox.x >= 0 and .cardBox.x + .cardBox.width <= 1280 and .cardBox.width >= 840' "the 840 card does not fit the 1280 output"
+  launcher_overflow_expect column '.cardWidth == 640 and .cardBox.x >= 0 and .cardBox.x + .cardBox.width <= 1280 and .cardBox.width == 640' "the column widened the 640 card"
   launcher_overflow_expect column "$inside"' .cardBox as $c | (.actionsBox | inside($c)) and all(.rowBoxes[]; inside($c))' "the column or a row reached past the card"
   launcher_overflow_expect column '.actionCursor == 0 and .actionsScroll == 0 and .actionsMore > 0' "the column's last visible row does not read n more"
   launcher_overflow_expect end '.actionCursor == 40 and .actionsScrollMax > 0 and .actionsScroll == .actionsScrollMax and .actionsMore == 0' "End did not scroll the column to its last action"
-  launcher_overflow_expect column '((.actionsBox.width - .cardBox.width / 2) | fabs) <= 1' "the column on a wide output is not half the card"
-  echo "SMOKE_LAUNCHER_OVERFLOW 41 actions in the 840 card on 1280x720, n more, End scrolling to the last"
+  launcher_overflow_expect column '.actionsBox.width <= .cardBox.width * 0.45 + 1 and .actionsBox.width >= .cardBox.width * 0.4' "the column is not 45% of the card"
+  echo "SMOKE_LAUNCHER_OVERFLOW 41 actions in the 640 card on 1280x720, n more, End scrolling to the last"
 
   "$jq_bin" -e --arg o "$launcher_overflow_narrow" '.[] | select(.name == $o and .width == 800 and .height == 600)' "$shot_dir/launcher-overflow-monitors-narrow.json" > /dev/null \
     || fail "launcher-overflow: no 800x600 headless output: $("$jq_bin" -c '[.[] | {name, width, height}]' "$shot_dir/launcher-overflow-monitors-narrow.json")"
-  launcher_overflow_expect narrow '.actionsOpen and .cardWidth == 776 and .cardBox.x >= 12 and .cardBox.x + .cardBox.width <= 788' "the split card is not cut to the 800 output less 12 either side"
+  launcher_overflow_expect narrow '.actionsOpen and .cardWidth == 640 and .cardBox.x >= 12 and .cardBox.x + .cardBox.width <= 788' "the card is not 640 inside the 800 output"
   launcher_overflow_expect narrow "$inside"' .cardBox as $c | (.actionsBox | inside($c)) and all(.rowBoxes[]; inside($c))' "on the narrow output the column or a row reached past the card"
   launcher_overflow_expect narrow '.actionsBox.width <= .cardBox.width * 0.45 + 1 and .actionsBox.width >= .cardBox.width * 0.4' "the column on the narrow output is not 45% of the card"
-  echo "SMOKE_LAUNCHER_OVERFLOW the split card cut to 776 on an 800 output, the column 45% of it"
+  echo "SMOKE_LAUNCHER_OVERFLOW the 640 card inside an 800 output, the column 45% of it"
 
   local shot
   for shot in long trail column end narrow column-light; do

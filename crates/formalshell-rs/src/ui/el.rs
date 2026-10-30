@@ -119,6 +119,8 @@ pub struct CellState {
     pub row: bool,
     /// The launcher's mode chip, in the `launcher.token` box.
     pub token: bool,
+    /// With `row`, a launcher tile: the `launcher.tile` box, `xl` all round.
+    pub tile: bool,
     /// A sidebar card, in the `card` box with its own padding all round.
     pub card: bool,
     /// `xs` either side instead of the control padding: an icon chip in a
@@ -317,6 +319,8 @@ pub struct El {
     pub top: bool,
     /// Text centred in the width it is given.
     pub mid: bool,
+    /// Text against the far end of the width it is given.
+    pub end: bool,
     /// Text laid out at least as wide as this one shaped in its own font
     /// (a column of times sized off its widest).
     pub gauge: Option<String>,
@@ -346,7 +350,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None }
     }
 
     pub fn float(mut self, list: El) -> Self {
@@ -447,6 +451,11 @@ impl El {
 
     pub fn mid(mut self) -> Self {
         self.mid = true;
+        self
+    }
+
+    pub fn end(mut self) -> Self {
+        self.end = true;
         self
     }
 

@@ -21,8 +21,8 @@
 # `menu runAction` runs the menu.jsonc entry, and the three new verbs answer
 # `error: menu not open` with the launcher shut. A route's column (Clipboard,
 # searched by name) is Open then Pin to Recent; a real Down and Enter pins
-# it, state.json's `recentPinned` holds it, and the root at rest heads
-# `Recent` with it; Unpin from Recent off the root's own row lets it go.
+# it, state.json's `recentPinned` holds it, and the root at rest shows it
+# as the first tile; Unpin from Recent off that tile lets it go.
 # The column, the targets, the windows and the pinned root are photographed
 # in dark, the column again in light.
 leg_launcher_actions_flag="--launcher-actions"
@@ -288,7 +288,7 @@ leg_launcher_actions_assert() {
   launcher_actions_expect pin-ran '.isOpen and (.actionsOpen | not)' "Pin to Recent did not leave the launcher open on the list"
   "$jq_bin" -e '.recentPinned == ["clipboard"]' "$shot_dir/launcher-actions-pin-state.json" > /dev/null \
     || fail "launcher-actions: state.json's recentPinned is not [clipboard] after the pin: $("$jq_bin" -c '.recentPinned' "$shot_dir/launcher-actions-pin-state.json" 2>&1)"
-  launcher_actions_expect pin-root '.query == "" and .sections == ["Recent"] and .ids[0] == "clipboard"' "the pinned route does not head Recent at rest"
+  launcher_actions_expect pin-root '.query == "" and .view == "tiles" and .ids[0] == "clipboard"' "the pinned route does not take the first tile at rest"
   launcher_actions_expect unpin-column '.actions == ["open", "unpin-recent"]' "the pinned route's column does not offer Unpin from Recent"
   "$jq_bin" -e '.recentPinned == []' "$shot_dir/launcher-actions-unpin-state.json" > /dev/null \
     || fail "launcher-actions: Unpin from Recent left recentPinned $("$jq_bin" -c '.recentPinned' "$shot_dir/launcher-actions-unpin-state.json" 2>&1)"

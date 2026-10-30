@@ -658,8 +658,7 @@ impl App {
         }
     }
 
-    /// The clipboard route's rows off the ledger, and its image rows'
-    /// thumbnails asked for at the row's own size.
+    /// The clipboard route's rows off the ledger.
     pub fn launcher_clipboard(&mut self) {
         if std::mem::take(&mut self.store.clipboard.captured) {
             use crate::services::clipssh;
@@ -671,17 +670,6 @@ impl App {
         let c = &self.store.clipboard;
         let paste = self.store.config.bool("clipboard.paste").unwrap_or(true);
         let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste);
-        let h = crate::surfaces::launcher::thumb_height(&self.store.theme.theme, &mut self.bar.kit).round() as u32;
-        let (size, scale) = ((h * 3, h), self.launcher_scale());
-        let want: Vec<String> = c
-            .items
-            .iter()
-            .filter_map(|e| e.path.clone())
-            .filter(|p| (size, scale) != (c.thumb_box, c.thumb_scale) || !c.thumbs.contains_key(p))
-            .collect();
-        if !want.is_empty() {
-            crate::services::clipboard::command(crate::services::clipboard::Cmd::Thumbs(want, (size, scale)));
-        }
         let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste);
         let moved = self.store.menu.apply(index::Diff::Source("clipboard".into(), rows));
         if self.store.menu.apply(index::Diff::Source("shareHistory".into(), shared)) || moved {
@@ -761,10 +749,7 @@ impl App {
             self.peek_asked = None;
         }
         let theme = &self.store.theme.theme;
-        let s = &theme.space;
-        let inner = self.launcher.content_width(theme);
-        let width = inner - (inner / 2.0).round() - s.sm * 2.0;
-        let height = self.launcher.body_height() - s.md * 2.0;
+        let (_, width, height) = self.launcher.pane_extent(theme);
         let size = (crate::surfaces::launcher::preview_box(theme, &mut self.bar.kit, width, height), self.launcher_scale());
         if let Some(n) = row.as_ref().filter(|n| matches!(pane_kind(n), Some(PaneKind::File | PaneKind::Folder)))
             && self.peek_asked.as_deref() != Some(n.path.as_str())

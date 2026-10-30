@@ -41,6 +41,8 @@ use crate::ui::{self, El, Ink, Size, Type, Ui, Weight, w};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     Rows,
+    /// The opened state: the best few subjects as tiles under the field.
+    Tiles,
     Emoji,
     AppGrid,
     Picker,
@@ -54,6 +56,7 @@ impl View {
     fn name(self) -> &'static str {
         match self {
             View::Rows => "rows",
+            View::Tiles => "tiles",
             View::Emoji => "emoji",
             View::AppGrid => "appGrid",
             View::Picker => "picker",
@@ -707,6 +710,16 @@ impl Model {
         self.dirty = true;
     }
 
+    /// The opened state's tiles stand alone: no foot under them.
+    pub fn footless(&self) -> bool {
+        self.mode == Mode::Menu && self.view == View::Tiles
+    }
+
+    /// A card whose height follows its list rather than the level's kind.
+    fn content_tall(&self) -> bool {
+        self.mode != Mode::Input && !self.app_view() && !self.split() && !self.halved() && matches!(self.view, View::Rows | View::Tiles | View::AppGrid)
+    }
+
     /// The routes that draw a whole view of their own.
     pub fn app_view(&self) -> bool {
         self.mode == Mode::Menu && matches!(self.level.as_deref(), Some(MONITOR_ROUTE | MIRROR_ROUTE))
@@ -721,20 +734,13 @@ impl Model {
     }
 
     fn kind_width(&self, theme: &Theme) -> f64 {
-        let s = &theme.space;
-        if self.app_view() {
-            s.popup_width_menu_app
-        } else if self.halved() {
-            s.popup_width_menu_split
-        } else {
-            s.popup_width_menu
-        }
+        if self.app_view() { theme.space.popup_width_menu_app } else { launcher_px(theme, fs_theme::tokens::LAUNCHER.width) }
     }
 
-    /// The list's share of a halved body: half, or 55% on a card cut to a
-    /// narrow output, the side column at most 45%.
-    fn list_share(&self, theme: &Theme) -> f64 {
-        if self.card_width(theme) < self.kind_width(theme) { 0.55 } else { 0.5 }
+    /// The list's share of a halved body, the side column taking the rest
+    /// (Pond's clipboard, 348 of 638).
+    fn list_share(&self, _theme: &Theme) -> f64 {
+        0.55
     }
 
     /// The width inside the card's padding.
@@ -745,11 +751,21 @@ impl Model {
     /// A row list runs the card's whole width, its rows an `sm` inset off
     /// the edge; the other views keep the card's padding.
     pub fn bleeds(&self) -> bool {
-        matches!(self.view, View::Rows | View::AppGrid)
+        matches!(self.view, View::Rows | View::AppGrid | View::Tiles)
     }
 
     fn body_width(&self, theme: &Theme) -> f64 {
         if self.bleeds() { self.card_width(theme) } else { self.content_width(theme) }
+    }
+
+    /// The preview pane's offset into the body and its size: the side
+    /// column past the list's share, `lg` in from its divider and the
+    /// body's edges. The pane's draw and its picture's decode both read it.
+    pub fn pane_extent(&self, theme: &Theme) -> (f64, f64, f64) {
+        let lg = theme.space.lg;
+        let body_w = self.body_width(theme);
+        let half = (body_w * self.list_share(theme)).round();
+        (half + lg, (body_w - half - lg * 2.0).max(0.0), (self.body_h - lg * 2.0).max(0.0))
     }
 
     /// The card's height for the level kind, capped by a share of the
@@ -786,10 +802,6 @@ impl Model {
         let s = &theme.space;
         let w = self.content_width(theme) - s.sm * 2.0;
         (w.round(), (w * 3.0 / 4.0).min(self.body_h - s.md * 2.0).max(1.0).round())
-    }
-
-    pub fn body_height(&self) -> f64 {
-        self.body_h
     }
 
     pub fn on_picker(&self) -> bool {
@@ -924,6 +936,9 @@ impl Model {
         if let Some(c) = &self.column {
             return if c.target.is_some() { "Search targets".into() } else { "Search actions".into() };
         }
+        if !self.children.is_empty() {
+            return "Search".into();
+        }
         match self.level.as_deref().and_then(|l| store.menu.nodes().get(l)) {
             Some(node) => model::prompt_for(Some(node)),
             None => "Search apps, files, commands".into(),
@@ -995,6 +1010,8 @@ impl Model {
             View::Emoji
         } else if menu && grid_wanted && !route_rows {
             View::AppGrid
+        } else if menu && level.is_none() && children.is_none() && q.is_empty() {
+            View::Tiles
         } else {
             View::Rows
         };
@@ -1045,6 +1062,8 @@ impl Model {
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
+                } else if view == View::Tiles {
+                    rest.into_iter().take(fs_theme::tokens::LAUNCHER.tiles as usize).collect()
                 } else {
                     rest
                 }
@@ -1132,7 +1151,7 @@ impl Model {
                 &rows,
                 &SectionCtx {
                     mode: Some(self.mode),
-                    grid: view == View::Emoji,
+                    grid: matches!(view, View::Emoji | View::Tiles),
                     cells: app_count,
                     searching,
                     level: self.level.as_deref(),
@@ -1283,6 +1302,25 @@ impl Model {
             if band == prev { String::new() } else { band }
         };
         match self.view {
+            View::Tiles => {
+                // Pond's opened state: the tiles an `xl` under the field's
+                // rule, `xxl` in from either side and under them.
+                let n = fs_theme::tokens::LAUNCHER.tiles.max(1) as usize;
+                let side = s.xxl;
+                let cell_w = ((width - side * 2.0 - s.xl * (n - 1) as f64) / n as f64).max(1.0);
+                let cell_h = launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height);
+                for i in 0..self.rows.len().min(n) {
+                    out.slots.push(Slot { x: side + i as f64 * (cell_w + s.xl), y: s.xl, w: cell_w, h: cell_h, band: 0.0 });
+                }
+                out.columns = n;
+                out.cell_w = cell_w;
+                out.cell_h = cell_h;
+                out.content_h = s.xl + cell_h + s.xxl;
+                out.halved = halved;
+                out.body_w = body_w;
+                self.layout = out;
+                return;
+            }
             View::AppGrid | View::Emoji | View::Picker => {
                 if self.picker_switch_h > 0.0 {
                     y += self.picker_switch_h + s.row_gap;
@@ -1394,7 +1432,7 @@ impl Model {
     fn cells(&self) -> usize {
         match self.view {
             View::AppGrid => self.app_count,
-            View::Emoji | View::Picker => self.rows.len(),
+            View::Emoji | View::Picker | View::Tiles => self.rows.len(),
             View::Rows | View::Monitor | View::Mirror => 0,
         }
     }
@@ -1509,7 +1547,7 @@ impl Model {
         };
         let drawn: Vec<Value> = match self.view {
             View::AppGrid => self.rows[..self.app_count].iter().map(|r| json!({"id": r.id, "label": r.label})).collect(),
-            View::Rows | View::Monitor | View::Mirror => {
+            View::Rows | View::Tiles | View::Monitor | View::Mirror => {
                 self.rows
                     .iter()
                     .map(|r| {
@@ -2750,21 +2788,31 @@ pub fn selection_path() -> std::path::PathBuf {
     state::state_path().with_file_name("menu-selection.txt")
 }
 
-/// A clipboard image row's thumbnail height: twice a body line. The slot is three times as wide and letterboxes.
-pub fn thumb_height(theme: &Theme, kit: &mut Kit) -> f64 {
-    ui::measure(&w::text("Ag"), 100.0, theme, kit).1 * 2.0
-}
-
 fn row_height(node: &Node, theme: &Theme, kit: &mut Kit) -> f64 {
     let s = &theme.space;
-    if !node.thumb_source.is_empty() {
-        return thumb_height(theme, kit) + s.control_padding_y * 2.0;
-    }
+    let row = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height);
     if node.emoji_only {
         let h = ui::measure(&w::text("Ag").size(Type::Display), 100.0, theme, kit).1;
-        return h + s.control_padding_y * 2.0;
+        return row.max(h + s.control_padding_y * 2.0);
     }
-    launcher_px(theme, fs_theme::tokens::LAUNCHER.row_height)
+    row
+}
+
+/// A clipboard entry's glyph by what it holds, as Pond marks them: the
+/// picture itself shows in the pane, never in the row.
+fn clip_glyph(row: &Node) -> Option<&'static str> {
+    let clip = fs_menu::providers::clipboard_entry_id(row).is_some() || row.id.starts_with("share.history.");
+    if !clip || row.emoji_only {
+        return None;
+    }
+    let text = row.full_text.trim();
+    Some(if !row.thumb_source.is_empty() {
+        "image"
+    } else if !text.contains(char::is_whitespace) && (text.starts_with("http://") || text.starts_with("https://") || text.starts_with("www.")) {
+        "link"
+    } else {
+        "text"
+    })
 }
 
 /// A `LAUNCHER` length at the theme's type scale.
@@ -2887,11 +2935,19 @@ impl Shown {
     /// the foot band's, each band with its rule.
     fn metrics(theme: &Theme, m: &Model, output_h: f64, kit: &mut Kit) -> (f64, f64, f64, f64) {
         let s = &theme.space;
-        let line = ui::measure(&w::text("Ag").size(Type::Field), 100.0, theme, kit).1;
-        let line = if m.mode == Mode::Menu && m.level.is_some() { line.max(s.control_height) } else { line };
-        let head = s.lg + line + s.lg + theme.border_width;
-        let foot = theme.border_width + s.control_height;
-        let body = if m.mode == Mode::Input { 0.0 } else { (m.kind_height(theme, output_h) - head - foot).max(0.0) };
+        let line = ui::measure(&w::text("Ag").size(Type::Field), 100.0, theme, kit).1.max(s.control_height);
+        let head = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band) + theme.border_width;
+        let foot = if m.footless() { 0.0 } else { theme.border_width + s.control_height };
+        let cap = (m.kind_height(theme, output_h) - head - foot).max(0.0);
+        let body = if m.mode == Mode::Input {
+            0.0
+        } else if m.content_tall() {
+            // The card hugs its list, never shorter than the opened state.
+            let rest = s.xl + launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height) + s.xxl;
+            m.layout.content_h.max(rest - foot).min(cap)
+        } else {
+            cap
+        };
         (line, head, foot, body)
     }
 
@@ -2920,9 +2976,9 @@ impl Shown {
 
     /// Lays the card out and draws the three bands.
     pub fn layout(&mut self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
-        let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, self.output.1, kit);
         m.output_w = self.output.0;
         m.relayout(theme, kit);
+        let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, self.output.1, kit);
         let chrome = head_h + foot_h;
         if (m.body_h - body_h).abs() > 0.5 {
             m.body_h = body_h;
@@ -3008,15 +3064,18 @@ impl Shown {
         self.body.motion_scale = self.scale;
         self.foot.motion_scale = self.scale;
 
-        // The field band: `lg` round the line, a full-bleed rule under it.
-        let head_rect = Rect::new(fx + s.lg, fy + s.lg, fx + fw - s.lg, fy + s.lg + line);
+        // The field band: the line centred in it `xxl` in from either side,
+        // a rule as far in under it.
+        let band = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band);
+        let line_top = fy + ((band - line) / 2.0).round();
+        let head_rect = Rect::new(fx + s.xxl, line_top, fx + fw - s.xxl, line_top + line);
         let head = header(m, store, theme);
         let d = self.head.draw(&head, head_rect, Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
         }
         let bw = theme.border_width.round().max(1.0) as i32;
-        let rule_top = (fy + s.lg + line + s.lg).round() as i32;
+        let rule_top = (fy + band).round() as i32;
         let body_top = rule_top as f64 + theme.border_width;
         let (body_x, body_w) = if m.bleeds() { (fx, fw) } else { (fx + pad, inner_w) };
         let sep = theme.box_style("separator", None).fill;
@@ -3056,7 +3115,9 @@ impl Shown {
                 self.sel_on = Some(on);
                 let [x, y, w_, h] = [0, 1, 2, 3].map(|i| self.sel[i].value(now));
                 let r = ui::irect(Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w_, origin.1 + y + h));
-                let b = if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
+                let b = if m.view == View::Tiles {
+                    theme.box_style("launcher.tile", Some("selected"))
+                } else if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
                     theme.box_style("launcher.row", Some("selected"))
                 } else {
                     let mut b = theme.box_style("cell", Some("selected"));
@@ -3113,8 +3174,8 @@ impl Shown {
             self.column_rect = Some(r);
             self.pane_since = None;
         } else if let Some(row) = m.pane().filter(|_| body_h > 0.0) {
-            let half = (inner_w * m.list_share(theme)).round();
-            let r = Rect::new(fx + pad + half + s.sm, body_top + s.md, fx + pad + inner_w - s.sm, body_top + body_h - s.md);
+            let (dx, pw, ph) = m.pane_extent(theme);
+            let r = Rect::new(body_x + dx, body_top + s.lg, body_x + dx + pw, body_top + s.lg + ph);
             let el = preview_el(m, store, row, theme, kit, r.width(), r.height());
             // The pane's arrival fades its content in on `effects` while the
             // card widens, as the actions column's does.
@@ -3135,16 +3196,26 @@ impl Shown {
         // The foot band: a full-bleed rule, then the selected subject's keys.
         let foot_rule = (body_top + body_h).round() as i32;
         let foot_top = if body_h > 0.0 { foot_rule as f64 + theme.border_width } else { body_top };
-        let foot = footer(m, store, theme);
+        let foot = if m.footless() { w::space(0.0) } else { footer(m, store, theme) };
         let d = self.foot.draw(&foot, Rect::new(fx + s.sm, foot_top, fx + fw - s.sm, foot_top + s.control_height), Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
         }
 
         let mut p = Painter::new(scene, &mut self.rules, Some(clip));
-        p.rect(IRect::new(frame.x, rule_top, frame.w, bw), sep, 0.0);
-        if body_h > 0.0 {
+        let inset = s.xxl.round() as i32;
+        p.rect(IRect::new(frame.x + inset, rule_top, (frame.w - inset * 2).max(0), bw), sep, 0.0);
+        if body_h > 0.0 && !m.footless() {
             p.rect(IRect::new(frame.x, foot_rule, frame.w, bw), sep, 0.0);
+        }
+        // Pond's divider between the list and the side column, `lg` short
+        // of the body's ends.
+        if let Some(r) = self.column_rect.or(self.pane_rect.map(|_| {
+            let half = (body_w * m.list_share(theme)).round();
+            Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h)
+        })) {
+            let top = (body_top + s.lg).round() as i32;
+            p.rect(IRect::new(r.x0.round() as i32, top, bw, ((body_h - s.lg * 2.0).round() as i32).max(0)), sep, 0.0);
         }
         p.finish();
     }
@@ -3255,6 +3326,8 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
         parts.push(w::space(s.sm));
     }
     parts.push(w::edit(&m.query, &m.placeholder(store), Type::Field));
+    parts.push(w::space(s.lg));
+    parts.push(w::icon("search").size(Type::Heading).ink(Ink::Dim));
     w::row(0.0, parts).fill()
 }
 
@@ -3290,6 +3363,12 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 if let Some(p) = bar.primary {
                     hints.push((p.label, vec!["Enter"], "primary"));
                 }
+                if !subject.inert() {
+                    let all = fs_menu::actions::actions_for(&subject);
+                    if let Some(second) = all.get(1).filter(|_| !m.confirming(&n.id)) {
+                        hints.push((second.label.clone(), vec!["Shift", "Enter"], "alternate"));
+                    }
+                }
                 if m.picker_switch(store) {
                     let label = if m.picker.light { "Show dark" } else { "Show light" };
                     hints.push((label.into(), vec!["Ctrl", "Tab"], "variant"));
@@ -3297,20 +3376,24 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 if m.view != View::Mirror {
                     hints.push(("Actions".into(), vec!["Tab"], "actions"));
                 }
-                if !subject.inert() {
-                    if m.view == View::Rows && fs_menu::actions::into_action(&subject).is_some() {
-                        hints.push(("Into".into(), vec!["Right"], "into"));
-                    }
-                    let all = fs_menu::actions::actions_for(&subject);
-                    if let Some(second) = all.get(1).filter(|_| !m.confirming(&n.id)) {
-                        hints.push((second.label.clone(), vec!["Shift", "Enter"], "alternate"));
-                    }
+                if !subject.inert() && m.view == View::Rows && fs_menu::actions::into_action(&subject).is_some() {
+                    hints.push(("Into".into(), vec!["Right"], "into"));
                 }
             }
         }
     }
     let mut parts = vec![w::spacer()];
     for (label, keys, on) in hints {
+        // The mockup's keys: ↵, ⇥ and ⇧ as glyphs rather than words.
+        let keys: Vec<&str> = keys
+            .iter()
+            .map(|k| match *k {
+                "Enter" => "enter-glyph",
+                "Tab" => "tab-glyph",
+                "Shift" => "shift-glyph",
+                other => other,
+            })
+            .collect();
         let content = w::row(s.sm, vec![w::text(label).size(Type::Caption).ink(Ink::Muted), w::chord_keys(s, &keys)]);
         parts.push(w::cell(content).ghost().interactive().cell_state(|c| c.chip = true).on(on));
     }
@@ -3455,7 +3538,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         }
         let row = &m.rows[i];
         let selected = i == m.cursor;
-        let el = if i < cells && m.view == View::AppGrid {
+        let el = if i < cells && m.view == View::Tiles {
+            tile(store, row, i, selected, slot, theme, kit)
+        } else if i < cells && m.view == View::AppGrid {
             let gutter = s.sm;
             let image = store.menu.icons.get(&row.icon_source).cloned().flatten();
             let pic = if image.is_some() {
@@ -3506,9 +3591,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         } else {
             let checked = toggles::checked_for(Some(row), Some(&snap), Some(&store.menu.checked));
             let alpha = m.motion.alpha(&row.id, now);
-            let thumb = (!row.thumb_source.is_empty())
-                .then(|| (store.clipboard.thumbs.get(&row.thumb_source).cloned().flatten(), f64::from(store.clipboard.thumb_box.1)));
-            let el = menu_row(m, store, row, i, selected, checked, thumb, theme).width(Size::Px(slot.w)).height(slot.h - slot.band);
+            let el = menu_row(m, store, row, i, selected, checked, theme).width(Size::Px(slot.w)).height(slot.h - slot.band);
             if alpha < 1.0 { el.fade(alpha) } else { el }
         };
         let dy = if i >= cells && matches!(m.view, View::Rows | View::AppGrid) { m.motion.offset(&row.id, now) } else { 0.0 };
@@ -3525,7 +3608,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             continue;
         }
         let fade = 1.0 - Clock::EffectsFast.curve().ease(t) as f32;
-        let el = menu_row(m, store, node, usize::MAX, false, false, None, theme).width(Size::Px(slot.w)).height(slot.h - slot.band).fade(fade);
+        let el = menu_row(m, store, node, usize::MAX, false, false, theme).width(Size::Px(slot.w)).height(slot.h - slot.band).fade(fade);
         let top = slot.y + slot.band;
         overlays.push((El { on: None, ..el }, Rect::new(slot.x, top, slot.x + slot.w, top + slot.h - slot.band)));
     }
@@ -3754,8 +3837,7 @@ fn pane_foot_h(theme: &Theme, kit: &mut Kit, w: f64) -> f64 {
 
 /// The pane's picture box for a pane `w` by `h`.
 pub fn preview_box(theme: &Theme, kit: &mut Kit, w: f64, h: f64) -> (u32, u32) {
-    let pad = theme.space.control_padding_x * 2.0;
-    ((w - pad).max(1.0).round() as u32, (h - pane_foot_h(theme, kit, w) - pad).max(1.0).round() as u32)
+    (w.max(1.0).round() as u32, (h - pane_foot_h(theme, kit, w) - theme.space.lg).max(1.0).round() as u32)
 }
 
 /// A frame of a `from` window fitted inside `box_`, its shape kept.
@@ -3781,7 +3863,15 @@ fn preview_el(m: &Model, store: &Store, row: &Node, theme: &Theme, kit: &mut Kit
     let decoded = |path: &str| {
         store.clipboard.preview.as_ref().filter(|p| p.path == path && p.size.0 == (bw, bh)).map(|p| (p.bitmap.clone(), p.dims))
     };
-    let picture = |image: Option<crate::scene::Bitmap>| boxed(w::picture(image, bh_f));
+    // The picture hangs from the pane's top at its own shape, the space
+    // under it keeping the name and facts on the pane's foot.
+    let picture = |image: Option<crate::scene::Bitmap>| {
+        let h = image.as_ref().map_or(bh_f, |b| {
+            let (iw, ih) = (f64::from(b.pixmap.width()).max(1.0), f64::from(b.pixmap.height()));
+            (bw_f * ih / iw).min(bh_f).round()
+        });
+        boxed(w::column(0.0, vec![w::picture(image, h).width(Size::Px(bw_f)).height(h), w::space((bh_f - h).max(0.0))]))
+    };
     let line = ui::measure(&w::caption("Ag").mono(), width, theme, kit).1.max(1.0);
     let lines_el = |lines: &[String]| {
         let fits = ((bh_f / line).floor() as usize).max(1);
@@ -3850,9 +3940,11 @@ fn preview_el(m: &Model, store: &Store, row: &Node, theme: &Theme, kit: &mut Kit
     pane_card(content, &title, &facts, s)
 }
 
+/// Pond's pane: the preview at the top, its name and facts at the foot,
+/// no card of its own round them.
 fn pane_card(content: El, title: &str, facts: &str, s: &fs_theme::tokens::Space) -> El {
-    let foot = vec![content, w::text(title.to_owned()).elide(), w::caption(facts.to_owned()).mono().elide()];
-    w::cell(w::column(s.row_gap, foot).fill()).fill()
+    let foot = vec![content, w::space((s.lg - s.row_gap).max(0.0)), w::text(title.to_owned()).weight(Weight::Medium).elide(), w::caption(facts.to_owned()).ink(Ink::Muted).elide()];
+    w::column(s.row_gap, foot).fill()
 }
 
 /// The wallpaper route's Dark | Light switcher.
@@ -3883,10 +3975,52 @@ fn slot_x_of(m: &Model, el: &El) -> f64 {
     m.rows.iter().position(|r| r.id == id).and_then(|i| m.layout.slots.get(i)).map_or(0.0, |s| s.x)
 }
 
+/// One tile of the opened state: the subject's icon at its top-left, its
+/// name at the bottom-left, muted until selected.
+fn tile(store: &Store, row: &Node, i: usize, selected: bool, slot: &Slot, theme: &Theme, kit: &mut Kit) -> El {
+    let s = &theme.space;
+    let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
+    let glyph = match fs_menu::icons::icon_for(Some(row)) {
+        "" if row.id.starts_with(fs_chrome::plugins::PLUGIN_PREFIX) => row.icon.as_str(),
+        named => named,
+    };
+    let picture = (!row.icon_source.is_empty() && glyph.is_empty())
+        .then(|| store.menu.row_icons.get(&row.icon_source).cloned().flatten())
+        .flatten();
+    let mark = match picture {
+        Some(image) => {
+            let density = image.pixmap.width() as f64 / icon_px.max(1.0);
+            w::picture(Some(image.at(density)), icon_px)
+        }
+        None if fs_menu::actions::subject_id(row).starts_with(fs_menu::actions::EMOJI_SUBJECT) => w::text(row.icon.clone()).size(Type::Heading),
+        None => {
+            let name = if glyph.is_empty() { fs_menu::icons::fallback_for(Some(row)) } else { glyph };
+            w::icon(name).size(Type::Heading).width(Size::Px(icon_px)).height(icon_px)
+        }
+    };
+    let name = w::text(row.label.clone()).size(Type::Heading).weight(Weight::Normal).ink(if selected { Ink::Fg } else { Ink::Muted }).elide();
+    let inner_h = slot.h - s.xl * 2.0;
+    let name_h = ui::measure(&name, slot.w, theme, kit).1;
+    let mark_h = ui::measure(&mark, slot.w, theme, kit).1;
+    let content = w::column(0.0, vec![mark, w::space((inner_h - mark_h - name_h).max(0.0)), name]).height(inner_h);
+    w::cell(content)
+        .ghost()
+        .selected(selected)
+        .interactive()
+        .cell_state(|st| {
+            st.row = true;
+            st.tile = true;
+        })
+        .on(format!("row:{i}"))
+        .stop(format!("t:{}", row.id))
+        .width(Size::Px(slot.w))
+        .height(slot.h)
+}
+
 /// One row: a `row_icon` mark, the label at 400 (600 under the selection),
 /// a dim trailing value, `lg` either side.
 #[allow(clippy::too_many_arguments)]
-fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, checked: bool, thumb: Option<(Option<crate::scene::Bitmap>, f64)>, theme: &Theme) -> El {
+fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, checked: bool, theme: &Theme) -> El {
     let s = &theme.space;
     let confirming = m.confirming(&row.id);
     let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
@@ -3896,12 +4030,10 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     let ringed = live.as_ref().is_some_and(|l| l.ring.is_some());
     if let Some(ring) = live.as_ref().and_then(|l| l.ring) {
         lead.push(w::ring(ring).width(Size::Px(icon_px)).height(icon_px));
-    } else if let Some((image, h)) = thumb {
-        lead.push(w::picture(image, h).width(Size::Px(h * 3.0)));
     }
     // A plugin's rows and its mode carry icon names from the active set,
     // where every other node's own icon is a raw glyph.
-    let glyph = match fs_menu::icons::icon_for(Some(row)) {
+    let glyph = match clip_glyph(row).unwrap_or(fs_menu::icons::icon_for(Some(row))) {
         "" if row.id.starts_with(fs_chrome::plugins::PLUGIN_PREFIX) => row.icon.as_str(),
         named => named,
     };
@@ -3912,7 +4044,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     let emoji = fs_menu::actions::subject_id(row).starts_with(fs_menu::actions::EMOJI_SUBJECT);
     let drawn = if !glyph.is_empty() {
         glyph.to_owned()
-    } else if picture.is_none() && !row.emoji_only && !emoji && row.thumb_source.is_empty() {
+    } else if picture.is_none() && !row.emoji_only && !emoji {
         fs_menu::icons::fallback_for(Some(row)).to_owned()
     } else {
         String::new()
@@ -3951,7 +4083,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     };
     let mut trail = Vec::new();
     if !value.is_empty() {
-        trail.push(w::text(value).size(Type::BodySmall).ink(Ink::Dim).elide());
+        trail.push(w::text(value).size(Type::BodySmall).ink(Ink::Dim).elide().end());
     }
     if checked && !confirming {
         trail.push(w::icon("check"));

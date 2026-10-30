@@ -368,7 +368,11 @@ leg_menu_emerge_assert() {
   # 0.85, and across the close both fall through one: a card that travels
   # at full opacity and is then cut has no such frame, and the pair of
   # neighbours where it goes from 0.9 or over to 0.1 or under is named.
-  local card_box="$((cw - 16))x$((ch - 16))+$((cx + 8))+$((cy + 8))" card_rest scrim_rest
+  # The card's box runs up to the line it buds off: the card travels
+  # through that span on both legs, and a content-tall card leaves its own
+  # resting box within a frame or two of the close while still drawn.
+  local card_top=$((menu_emerge_line_row + 2))
+  local card_box="$((cw - 16))x$((cy + ch - 8 - card_top))+$((cx + 8))+${card_top}" card_rest scrim_rest
   card_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$card_box")
   scrim_rest=$(awk -v c="$d_closed" -v r="$d_rest" 'BEGIN { print c - r }')
   awk -v v="$card_rest" 'BEGIN { exit !(v > 0.01) }' || fail \

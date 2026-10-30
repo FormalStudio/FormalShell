@@ -1276,6 +1276,32 @@
                 }
             }
         },
+        "launcher.tile": {
+            "rest": {
+                "fill": "foreground",
+                "fillAlpha": {
+                    "light": 0.05,
+                    "dark": 0.06
+                },
+                "radius": "md"
+            },
+            "hover": {
+                "wash": {
+                    "color": "foreground",
+                    "alpha": {
+                        "light": 0.025,
+                        "dark": 0.03
+                    }
+                }
+            },
+            "selected": {
+                "fill": "foreground",
+                "fillAlpha": {
+                    "light": 0.09,
+                    "dark": 0.1
+                }
+            }
+        },
         "launcher.token": {
             "fill": "primary",
             "fillAlpha": 0.16,
@@ -1518,6 +1544,9 @@
         ],
         "roles.launcher.row": [
             "A launcher row (launcher spec §2): nothing at rest, a lighter wash under the pointer that never travels, and one soft fill under the selection that does, `selected` winning over `hover` on the same row. Dark takes the mockup's two values; light is read off `--gallery`'s light sheet, the selected row plain against the hovered one at a glance."
+        ],
+        "roles.launcher.tile": [
+            "A tile in the launcher's opened state (Pond's rest): a soft fill at rest, a wash under the pointer, a firmer fill under the selection, which travels between tiles as the row fill does."
         ],
         "roles.launcher.token": [
             "The mode chip standing in the launcher's field (launcher spec §2, §4): the wallpaper colour at 0.16 under its own ink, `radiusSm`, the label in `caption` at 600."

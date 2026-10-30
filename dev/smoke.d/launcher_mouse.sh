@@ -9,7 +9,8 @@
 #
 # Where rows are comes off the open status: row 0's `viewCursor` and the
 # pitch a real Down moves it by, the levels read here being one section
-# each. The pointer crossing five root rows leaves `cursorId` on row 0 and
+# each. The root at rest is tiles, so the rows are a root search for `e`.
+# The pointer crossing five of its rows leaves `cursorId` on row 0 and
 # moves `hover` row by row. In the toggle hub a click on Caffeinate runs
 # it (caffeinated, ticked, the hub still open on it); a right-click on Do
 # Not Disturb opens its actions with it selected and DND as it was; a
@@ -79,6 +80,8 @@ sleep 4
 "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
 call menu summon "" > /dev/null 2>&1
 sleep 1.5
+"$wtype_bin" e
+sleep 1
 status root
 "$wtype_bin" -k Down
 sleep 0.5
@@ -164,7 +167,7 @@ at "\$x" "\$(row_y 1)"
 sleep 1
 status list-wheel
 
-# Left of the 840 card the column widened it to.
+# Left of the card.
 ox=\$("$jq_bin" -r '.body.x' "$p-list-wheel.json")
 at \$((ox - 80)) \$((by + 40))
 click
