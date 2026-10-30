@@ -394,12 +394,12 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "media" => Action::Panel("media"),
             "activity" => Action::Panel("activity"),
             "trayoverflow" => Action::Panel("trayoverflow"),
+            "info" => Action::Panel("info"),
             center::ID => Action::Center,
             _ => Action::None,
         },
         // An Activity row: the panel holds its actions.
         "open" => Action::Panel("activity"),
-        "summon" => Action::Summon("system"),
         "software" => match arg {
             "apply" => Action::Software(crate::services::packages::Change::Apply),
             "undo" => Action::Software(crate::services::packages::Change::Undo),
@@ -574,7 +574,7 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     let mut row = vec![
         button("wifi", "Network", "panel:network"),
         button("volume-2", "Audio", "panel:audio"),
-        button("settings", "System", "summon:system"),
+        button("settings", "Information", "panel:info"),
     ];
     if !store.tray.items.is_empty() {
         row.push(button("ellipsis", "Tray", "panel:trayoverflow"));
@@ -598,7 +598,7 @@ fn rail_foot(theme: &Theme, edge: Edge) -> El {
     let buttons = vec![
         button("wifi", "Network", "panel:network"),
         button("volume-2", "Audio", "panel:audio"),
-        button("settings", "System", "summon:system"),
+        button("settings", "Information", "panel:info"),
         button(fold_glyph(edge, true), "Expand", "expand"),
     ];
     w::column(theme.space.xs, buttons).fill()

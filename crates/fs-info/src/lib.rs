@@ -1,10 +1,11 @@
-//! Pure logic behind the notification, reminder, calendar, weather,
+//! Pure logic behind the information, notification, reminder, calendar, weather,
 //! location, agents, usage and flake-update surfaces: plain data in, plain
 //! data out, no IO.
 //!
 //! Months handed to and returned from this crate are 1-based (chrono's
 //! convention), unlike JS's 0-based months.
 
+pub mod about;
 pub mod agents;
 pub mod calendar;
 pub mod clock;

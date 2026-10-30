@@ -53,8 +53,16 @@ fn shape(cx: &mut Cx, s: &str, font: &Font) -> ShapedText {
     cx.kit.shape(s, st)
 }
 
+/// A Lucide glyph by name, or `distro:<os-release ID>` for that distro's
+/// logo (Tux for one the table lacks).
 fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
-    let g = fs_theme::icons::glyph(name);
+    let g = match name.strip_prefix("distro:") {
+        Some(id) => fs_theme::icons::Glyph {
+            text: fs_theme::icons::distro_logo(id).unwrap_or(fs_theme::icons::TUX),
+            family: fs_theme::icons::SYMBOLS_FAMILY,
+        },
+        None => fs_theme::icons::glyph(name),
+    };
     let st = TextStyle { family: Family::Named(g.family), size: px(cx, size), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
     cx.kit.shape(g.text, st)
 }
@@ -340,6 +348,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             };
             (s.keycap_height.max(w + s.sm * 2.0), s.keycap_height)
         }
+        Kind::Ordinal { .. } => (s.lg * 2.0, s.lg * 2.0),
         Kind::Swatch { w, h, .. } => (*w, *h),
         Kind::Ring { indicator: false, .. } => (s.control_height, s.control_height),
         Kind::Ring { indicator: true, .. } => (INDICATOR, INDICATOR),
@@ -727,6 +736,20 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             p.finish();
             cx.done(last);
         }
+        Kind::Ordinal { n } => {
+            let t = shape(cx, &n.to_string(), &Font { size: Type::Caption, weight: Weight::Semibold, mono: true });
+            let line = cx.a(cx.theme.colors.get("border"));
+            let ink = cx.a(cx.theme.colors.get("mutedForeground"));
+            let bw = cx.theme.border_width as f32;
+            let r = irect(inner);
+            let at = (r.x + (r.w - t.width) / 2, r.y + (r.h - t.line_height()) / 2);
+            let mut p = cx.painter(path);
+            p.framed(r, Rgba::TRANSPARENT, r.w.min(r.h) as f32 / 2.0, line, bw);
+            p.text(&t, at, ink, &[]);
+            let last = p.last();
+            p.finish();
+            cx.done(last);
+        }
         Kind::Swatch { color, radius, border, .. } => {
             let line = cx.theme.colors.get("border");
             let bw = if *border { cx.theme.border_width as f32 } else { 0.0 };
@@ -778,6 +801,8 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
         "active"
     } else if state.selected && !owned {
         "selected"
+    } else if state.open {
+        "ghostOpen"
     } else if state.ghost {
         "ghost"
     } else {

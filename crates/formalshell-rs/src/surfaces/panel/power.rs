@@ -1,18 +1,18 @@
-//! A hero for the battery (state icon, the state word, the
-//! percent as the readout, the charge as the rail), a ledger of label and
-//! mono value rows, the power flow diagram, then the profiles as one
-//! `ButtonGroup`. The group is the panel's one cursor stop: Left and Right
-//! walk its buttons and Enter applies the one under the ring. A machine
-//! with no battery shows the honest "AC power" row instead of a 0%, and a
-//! flow with nothing to draw is "No power sources".
+// Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
+//! Pond's Battery card: a dim "Battery" with the charge state at the far
+//! end, the percent large beside the draw and the time left, a thick bar
+//! for the charge, then "Power profile" with the active one named over the
+//! profiles as three equal buttons, one `ButtonGroup`. The group is the
+//! panel's one cursor stop: Left and Right walk its buttons and Enter
+//! applies the one under the ring. Under them the power flow diagram where
+//! the machine reports a supply; a machine with neither battery nor supply
+//! says "No power sources".
 
 use std::cell::Cell;
 
 use fs_system::power::flow::{self, Extras, Link};
-use fs_system::power::model::{
-    self, DEFAULT_WARN_PCT, DeviceState, charge_state_label, charge_threshold_active, format_health_percent, format_wh, rate_row_label,
-    rate_row_value, time_row_label, time_row_value,
-};
+use fs_system::power::model::{self, DeviceState, charge_threshold_active, format_duration, format_rate};
+use fs_theme::tokens::Space;
 use fs_upower::Profile;
 
 use super::{Effect, Panel, View};
@@ -20,7 +20,7 @@ use crate::services::devices;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::ui::el::{Flow, FlowNode, FlowPort, Opt};
-use crate::ui::{El, Event, What, w};
+use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
 const PROFILES: [Profile; 3] = [Profile::PowerSaver, Profile::Balanced, Profile::Performance];
 const ICONS: [&str; 3] = ["leaf", "gauge", "zap"];
@@ -70,6 +70,51 @@ pub fn flow_view(f: &flow::Flow, animate: bool) -> Flow {
     }
 }
 
+/// What the battery card shows, read off UPower by the panel or made up
+/// by the gallery's sample.
+pub struct Card {
+    pub percent: f64,
+    /// The words at the card's far end, and whether they are the lit ink.
+    pub state: Option<(&'static str, bool)>,
+    pub rate: Option<String>,
+    pub time: Option<String>,
+    pub details: Vec<String>,
+}
+
+/// The battery half of Pond's card.
+pub fn battery_card(s: &Space, c: &Card) -> El {
+    let mut head = vec![w::label("Battery").ink(Ink::Dim).fill()];
+    if let Some((words, lit)) = c.state {
+        head.push(w::label(words).ink(if lit { Ink::Primary } else { Ink::Dim }));
+    }
+    let mut side = Vec::new();
+    if let Some(r) = &c.rate {
+        side.push(w::label(r.clone()).ink(Ink::Muted));
+    }
+    if let Some(t) = &c.time {
+        side.push(w::label(t.clone()).ink(Ink::Dim));
+    }
+    let readout = w::row(s.md, vec![w::text(format!("{}%", c.percent.round())).size(Type::DisplayLarge).weight(Weight::Heavy).fill(), w::column(s.xxs, side)]);
+    let mut parts = vec![w::row(0.0, head).fill(), readout.fill(), w::track(c.percent / 100.0).height(s.xl)];
+    if !c.details.is_empty() {
+        parts.push(w::caption(c.details.join(" \u{00b7} ")));
+    }
+    w::column(s.md, parts)
+}
+
+/// "Power profile", the active one named, over the three buttons.
+pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El {
+    let options = (0..3)
+        .map(|i| {
+            let mut o = Opt::new("").icon(ICONS[i]);
+            o.enabled = PROFILES[i] != Profile::Performance || performance;
+            o
+        })
+        .collect();
+    let head = w::row(0.0, vec![w::label("Power profile").ink(Ink::Dim).fill(), w::label(NAMES[active])]).fill();
+    w::column(s.sm, vec![head, w::group(options, active, true).ring(ring).on("profile").stop("profile")])
+}
+
 pub struct Power {
     /// Where the group's ring sits: the active profile on a fresh open.
     cursor: Cell<Option<usize>>,
@@ -88,10 +133,43 @@ fn active(v: &View) -> usize {
     v.store.devices.profiles.as_ref().and_then(|p| PROFILES.iter().position(|x| *x == p.active)).unwrap_or(0)
 }
 
-/// A label and its mono value, `controlHeight` tall and flat.
-fn stat(v: &View, label: &str, value: String) -> El {
-    let s = &v.theme.space;
-    w::cell(w::row(s.icon_gap, vec![w::section_label(s, label, None, false).elide(), w::text(value).mono()]).fill()).ghost()
+/// The card off UPower's battery and the supply's charge limit.
+fn card(v: &View, b: &devices::power::Battery) -> Card {
+    let power = &v.store.devices.power;
+    let charging = b.state == DeviceState::Charging;
+    let held = charge_threshold_active(b.percent, b.state, b.rate, b.time_to_full, power.on_battery);
+    let state = if held {
+        Some(("Holding at limit", false))
+    } else if power.on_battery {
+        None
+    } else if b.state == DeviceState::FullyCharged || b.percent >= 100.0 {
+        Some(("Charged", true))
+    } else {
+        Some(("Charging", true))
+    };
+    let seconds = if charging { b.time_to_full } else { b.time_to_empty };
+    let time = (seconds > 0.0 && !held).then(|| format!("{} {}", format_duration(seconds), if charging { "to full" } else { "left" }));
+    let limit = v
+        .store
+        .info
+        .power_flow
+        .snapshot
+        .supplies
+        .iter()
+        .find(|s| s.kind == "Battery")
+        .and_then(|s| s.limit)
+        .and_then(|l| model::parse_charge_limit(&l.to_string()));
+    let mut details = Vec::new();
+    if let Some(h) = b.health {
+        details.push(format!("Health {}%", h.round()));
+    }
+    if b.size_wh > 0.0 {
+        details.push(format!("{:.1} Wh", b.size_wh));
+    }
+    if let Some(l) = limit {
+        details.push(format!("Limit {l}%"));
+    }
+    Card { percent: b.percent, state, rate: (b.rate > 0.0).then(|| format_rate(b.rate)), time, details }
 }
 
 impl Panel for Power {
@@ -107,6 +185,14 @@ impl Panel for Power {
         if v.store.devices.power.battery.is_some() { "battery" } else { "zap" }.into()
     }
 
+    fn header(&self) -> bool {
+        false
+    }
+
+    fn width(&self, v: &View) -> f64 {
+        v.theme.space.popup_width_narrow
+    }
+
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices, Topic::Info, Topic::Config]
     }
@@ -117,52 +203,7 @@ impl Panel for Power {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let power = &v.store.devices.power;
         let mut parts = Vec::new();
-
-        if let Some(b) = &power.battery {
-            let charging = b.state == DeviceState::Charging;
-            let held = charge_threshold_active(b.percent, b.state, b.rate, b.time_to_full, power.on_battery);
-            let warn = v.store.config.f64("battery.warnPercent").unwrap_or(DEFAULT_WARN_PCT);
-            let glyph = model::battery_icon(b.percent, power.on_battery, held, Some(warn));
-            parts.push(w::hero_with(
-                s,
-                w::Hero {
-                    glyph: String::new(),
-                    title: "Battery".into(),
-                    meta: charge_state_label(b.percent, b.state, power.on_battery, held).into(),
-                    readout: format!("{}%", b.percent),
-                    trailing: None,
-                    rail: Some(b.percent / 100.0),
-                    rail_on: None,
-                },
-                false,
-                crate::ui::Type::Display,
-                Some(w::icon(glyph).size(crate::ui::Type::Heading).pulse(charging)),
-            ));
-
-            let flow_state = &v.store.info.power_flow;
-            let limit = flow_state
-                .snapshot
-                .supplies
-                .iter()
-                .find(|s| s.kind == "Battery")
-                .and_then(|s| s.limit)
-                .and_then(|l| model::parse_charge_limit(&l.to_string()));
-            let mut rows = vec![
-                w::heading(s, "Battery", None, true),
-                stat(v, "Capacity", format_health_percent(b.health.unwrap_or(0.0), b.health.is_some())),
-                stat(v, "Size", format_wh(b.size_wh)),
-                stat(v, time_row_label(charging), time_row_value(charging, b.time_to_full, b.time_to_empty)),
-                stat(v, rate_row_label(charging, held), rate_row_value(b.rate, flow_state.cpu_w)),
-            ];
-            if let Some(l) = limit {
-                rows.push(stat(v, "Charge limit", format!("{l}%")));
-            }
-            parts.push(w::column(s.row_gap, rows));
-        } else {
-            parts.push(w::section_label(s, "AC power", None, true));
-        }
 
         let sample = &v.store.info.power_flow;
         let gpu_w = {
@@ -174,35 +215,28 @@ impl Panel for Power {
             &sample.snapshot,
             &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.info.iphone.battery.map(|b| b * 100.0) },
         );
-        let mut flow_rows = vec![w::heading(s, "Power flow", None, true)];
-        flow_rows.push(if model.available {
-            w::flow(flow_view(&model, true))
-        } else {
-            w::section_label(s, "No power sources", None, true)
-        });
-        parts.push(w::column(s.row_gap, flow_rows));
+        match &v.store.devices.power.battery {
+            Some(b) => parts.push(battery_card(s, &card(v, b))),
+            None => {
+                let mut none = vec![w::label("Power").ink(Ink::Dim)];
+                if !model.available {
+                    none.push(w::text("No power sources").size(Type::Heading).ink(Ink::Muted));
+                }
+                parts.push(w::column(s.sm, none));
+            }
+        }
 
-        let offered = v.store.devices.profiles.as_ref();
-        let options = (0..3)
-            .map(|i| {
-                let mut o = Opt::new(NAMES[i]).icon(ICONS[i]);
-                o.enabled = PROFILES[i] != Profile::Performance || offered.is_none_or(|p| p.has_performance());
-                o
-            })
-            .collect();
         let at = self.cursor.get().unwrap_or_else(|| {
             let a = active(v);
             self.cursor.set(Some(a));
             a
         });
-        parts.push(w::column(
-            s.row_gap,
-            vec![
-                w::heading(s, "Profile", None, true),
-                w::group(options, active(v), true).ring(at).on("profile").stop("profile"),
-            ],
-        ));
-        w::column(s.section_gap, parts)
+        let performance = v.store.devices.profiles.as_ref().is_none_or(|p| p.has_performance());
+        parts.push(profiles(s, active(v), at, performance));
+        if model.available {
+            parts.push(w::column(s.sm, vec![w::label("Power flow").ink(Ink::Dim), w::flow(flow_view(&model, true))]));
+        }
+        w::column(s.xl, parts)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

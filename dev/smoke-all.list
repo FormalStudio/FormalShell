@@ -158,6 +158,7 @@
 --workspaces
 --panel network
 --panel power
+--panel info
 --panel calendar
 --panel weather
 --device-routes

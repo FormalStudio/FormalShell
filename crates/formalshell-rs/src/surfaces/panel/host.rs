@@ -430,12 +430,13 @@ impl Host {
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
         let mut parts = Vec::new();
+        let display = self.module.display_title();
         let glyph = self.module.icon(v);
-        if !glyph.is_empty() {
+        if !glyph.is_empty() && !display {
             parts.push(w::icon(glyph).size(ui::Type::Subtitle));
             parts.push(w::space(s.icon_gap));
         }
-        parts.push(w::label(self.module.title(v)).size(ui::Type::Subtitle).elide());
+        parts.push(w::label(self.module.title(v)).size(if display { ui::Type::Display } else { ui::Type::Subtitle }).elide());
         parts.push(w::space(s.icon_gap));
         let actions = self.module.actions(v);
         if !actions.is_empty() {
@@ -473,7 +474,8 @@ impl Host {
             let d = self.head.draw(&head, r, Some(clip), alpha, theme, kit, scene, now);
             self.wake = if d.animating { Some(now) } else { d.wake };
             let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
-            let seam = IRect::new(frame.x, (fy + pad + head_h + pad).round() as i32, frame.w, theme.border_width.round().max(1.0) as i32);
+            let (sx, sw) = if self.module.display_title() { ((fx + pad).round() as i32, inner_w.round() as i32) } else { (frame.x, frame.w) };
+            let seam = IRect::new(sx, (fy + pad + head_h + pad).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
             let sep = theme.box_style("separator", None).fill;
             p.rect(seam, sep.with_alpha(sep.a * alpha), 0.0);
             p.finish();

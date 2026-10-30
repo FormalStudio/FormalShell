@@ -331,7 +331,7 @@ runs = ["--panel audio", "--panel-keys", "--osd"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
-runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--device-routes"]
+runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--panel network --tooltip-travel", "--device-routes"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/bluetooth.rs", "crates/formalshell-rs/src/services/devices/bluetooth.rs", "crates/formalshell-rs/src/ipc/bluetooth.rs", "crates/fs-devices/src/bluetooth.rs", "crates/fs-bluez/**"]
@@ -400,6 +400,10 @@ runs = ["--monitor", "--processes", "--gpu"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/power.rs", "crates/formalshell-rs/src/surfaces/battery.rs", "crates/formalshell-rs/src/services/devices/power.rs", "crates/formalshell-rs/src/services/info/powerflow.rs"]
 runs = ["--gallery", "--panel power"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/info.rs", "crates/formalshell-rs/src/services/info/about.rs", "crates/fs-info/src/about.rs"]
+runs = ["--panel info"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/iphone.rs", "crates/formalshell-rs/src/services/info/iphone.rs", "crates/formalshell-rs/src/ipc/iphone.rs", "crates/formalshell-rs/src/services/ams.rs", "crates/fs-devices/src/iphone.rs"]

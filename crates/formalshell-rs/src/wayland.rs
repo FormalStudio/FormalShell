@@ -1521,7 +1521,6 @@ impl App {
                 surfaces::changed(self, Topic::Notifications);
             }
             Action::Launcher => self.menu_toggle(),
-            Action::Summon(route) => self.menu_open(Some(route)),
             Action::Sidebar(collapsed) => surfaces::sidebar::set_collapsed(collapsed),
             Action::Software(change) => crate::services::packages::send(crate::services::packages::Cmd::Change(change)),
         }

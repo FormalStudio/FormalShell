@@ -126,6 +126,9 @@ pub struct CellState {
     pub tight: bool,
     /// The padding across and along, in place of the state's own.
     pub inset: Option<(f64, f64)>,
+    /// The `ghostOpen` soft fill: the row a list is on now (the connected
+    /// network), quieter than `selected`.
+    pub open: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -263,6 +266,8 @@ pub enum Kind {
     Edit { text: String, placeholder: String, caret: (usize, usize), size: Type },
     Separator { vertical: bool, inset: f64, bleed: f64 },
     Keycap { key: String },
+    /// A row's number in a hairline ring, a `sm` step under the row's text.
+    Ordinal { n: usize },
     Swatch { color: Rgba, w: f64, h: f64, radius: f64, border: bool },
     /// A `controlHeight` progress ring, or with `indicator` Pond's 16px one.
     Ring { ring: Ring, indicator: bool },

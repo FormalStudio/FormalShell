@@ -9,7 +9,7 @@ use fs_chrome::types::Edge;
 use super::{Effect, Panel, View};
 use crate::store::Topic;
 use crate::ui::el::{CellState, Opt, Ring};
-use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
+use crate::ui::{El, Event, Ink, Size, Type, Variant, Weight, What, w};
 
 #[derive(Default)]
 pub struct Gallery {
@@ -285,6 +285,9 @@ impl Panel for Gallery {
                     .interactive()
                     .tip("Tooltip / the real card, loaded by this cell"),
                 label("Tooltip opens under the row above, over this panel"),
+                label("Battery / sample, not live"),
+                w::cell(w::column(s.xl, vec![super::power::battery_card(s, &battery_sample()), super::power::profiles(s, 0, 0, true)]))
+                    .width(Size::Px(s.popup_width_narrow)),
             ],
         )
         .fill();
@@ -300,5 +303,17 @@ impl Panel for Gallery {
             ("level", What::Fraction(f)) => self.level = *f,
             _ => {}
         }
+    }
+}
+
+/// A laptop half way through a charge cycle, for the battery card's
+/// populated look on a rig with no battery.
+fn battery_sample() -> super::power::Card {
+    super::power::Card {
+        percent: 49.0,
+        state: None,
+        rate: Some("8.0W".into()),
+        time: Some("2h 30m left".into()),
+        details: vec!["Health 94%".into(), "52.0 Wh".into(), "Limit 80%".into()],
     }
 }

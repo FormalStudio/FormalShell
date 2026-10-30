@@ -28,6 +28,7 @@ pub mod earbuds;
 pub mod gallery;
 pub mod github;
 pub mod host;
+pub mod info;
 pub mod iphone;
 pub mod media;
 pub mod monitor;
@@ -114,6 +115,11 @@ pub trait Panel {
     fn header(&self) -> bool {
         true
     }
+    /// The title in the display role with no glyph, over a hairline inset
+    /// to the content (Pond's Wi-Fi and Information cards).
+    fn display_title(&self) -> bool {
+        false
+    }
     /// The header's own controls, ahead of the close button.
     fn actions(&self, _v: &View) -> Vec<El> {
         Vec::new()
@@ -192,7 +198,7 @@ pub trait Panel {
 
 /// The panels `panel` can open, each one's
 /// module.
-pub const PANELS: [&str; 20] = [
+pub const PANELS: [&str; 21] = [
     "activity",
     "appmenu",
     "audio",
@@ -213,6 +219,7 @@ pub const PANELS: [&str; 20] = [
     "monitor",
     "trayoverflow",
     "radio",
+    "info",
 ];
 
 pub fn known(name: &str) -> Option<&'static str> {
@@ -240,6 +247,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         "github" => Box::new(github::Github::new()),
         "monitor" => Box::new(monitor::Monitor::new()),
         "power" => Box::new(power::Power::new()),
+        "info" => Box::new(info::Info::new()),
         "systemupdate" => Box::new(systemupdate::SystemUpdate::new()),
         "tailscale" => Box::new(tailscale::Tailscale::new()),
         "usage" => Box::new(usage::Usage::new()),

@@ -234,6 +234,11 @@ pub fn keycap(key: &str) -> El {
     El::new(Kind::Keycap { key: key.into() })
 }
 
+/// A row's number in a hairline ring.
+pub fn ordinal(n: usize) -> El {
+    El::new(Kind::Ordinal { n })
+}
+
 /// One cap per key, `xxs` apart.
 pub fn chord(s: &Space, keys: &str) -> El {
     row(s.xxs, super::draw::split_chord(keys).iter().map(|k| keycap(k)).collect())

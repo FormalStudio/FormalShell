@@ -278,9 +278,9 @@ leg_wifi_assert_ghost() {
   closed_text=$(wifi_ocr "$wifi_ghost_closed_path")
   open_text=$(wifi_ocr "$wifi_ghost_open_path")
   printf 'closed frame text:\n%s\nopen frame text:\n%s\n' "$closed_text" "$open_text"
-  # Tesseract reads the count's closing paren as `]` and the header's K as
-  # lowercase on some frames.
-  grep -qE "^Networks \($near[])]" <<< "$closed_text" || fail "the closed frame does not read \"Networks ($near)\", the in-range count"
+  # Tesseract reads the header's K as lowercase on some frames.
+  [ "$near" -gt 0 ] || fail "no network in range under the closed disclosure"
+  grep -qF FORMALTEST <<< "$closed_text" || fail "the closed frame does not list FORMALTEST, a network in range"
   grep -qiF "Known networks" <<< "$closed_text" || fail "the closed frame carries no Known networks header"
   grep -qiF "Known networks" <<< "$open_text" || fail "the open frame lost the Known networks header"
   if grep -qF FORMALGHOST <<< "$closed_text"; then

@@ -30,9 +30,10 @@ pub enum Source {
     Display,
     Processes,
     PowerFlow,
+    About,
 }
 
-pub const COUNT: usize = 11;
+pub const COUNT: usize = 12;
 
 const SOURCES: [Source; COUNT] = [
     Source::Weather,
@@ -46,6 +47,7 @@ const SOURCES: [Source; COUNT] = [
     Source::Display,
     Source::Processes,
     Source::PowerFlow,
+    Source::About,
 ];
 
 /// How long a source with no wanter keeps running.
@@ -125,6 +127,7 @@ fn start(source: Source, ctx: Ctx) -> Pin<Box<dyn Future<Output = ()>>> {
         Source::Display => Box::pin(super::display::run(ctx)),
         Source::Processes => Box::pin(info::procs::run(ctx)),
         Source::PowerFlow => Box::pin(info::powerflow::run(ctx)),
+        Source::About => Box::pin(info::about::run(ctx)),
     }
 }
 

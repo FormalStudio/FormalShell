@@ -7,6 +7,7 @@
 //! thread hands them settings.json through [`configure`], and each poll
 //! reads the keys it owns again whenever that changes.
 
+pub mod about;
 pub mod calendar;
 pub mod geoclue;
 pub mod github;
@@ -40,6 +41,8 @@ pub struct State {
     pub calendar: calendar::State,
     pub procs: procs::State,
     pub power_flow: powerflow::State,
+    /// None until the first read lands.
+    pub about: Option<fs_info::about::About>,
 }
 
 pub enum Diff {
@@ -53,6 +56,7 @@ pub enum Diff {
     Calendar(calendar::State),
     Procs(procs::Diff),
     PowerFlow(powerflow::State),
+    About(fs_info::about::About),
 }
 
 impl State {
@@ -73,6 +77,7 @@ impl State {
             Diff::Calendar(v) => set(&mut self.calendar, v),
             Diff::Procs(d) => self.procs.apply(d),
             Diff::PowerFlow(v) => set(&mut self.power_flow, v),
+            Diff::About(v) => set(&mut self.about, Some(v)),
         }
     }
 }
