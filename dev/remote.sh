@@ -291,22 +291,33 @@ remote_run() {
 
 cmd_sync() {
   # .rig-used marks when a checkout last ran here; a worktree's copy and its
-  # target go once it has sat unused for three days.
+  # target go once it has sat unused for six hours: eight agents with a copy
+  # per slot filled g815's disk inside a day.
+  # A copy synced before checksum mode (below) can hold a stale build that no
+  # later sync touches, so its sources are touched once to force a rebuild.
   ssh "${ssh_opts[@]}" "$target" "mkdir -p ~/$remote_dir && touch ~/$remote_dir/.rig-used
+    if [ ! -e ~/$remote_dir/.rig-sync-v2 ]; then
+      find ~/$remote_dir/crates -path '*/target' -prune -o -type f -exec touch {} + 2>/dev/null
+      touch ~/$remote_dir/.rig-sync-v2
+    fi
     for d in ~/formalshell-wt/*/; do
-      [ -n \"\$(find \"\$d.rig-used\" -mtime +3 2>/dev/null)\" ] && rm -rf \"\$d\"
+      [ -n \"\$(find \"\$d.rig-used\" -mmin +360 2>/dev/null)\" ] && rm -rf \"\$d\"
     done; true"
   # .gitignore's patterns keep crates/target, result and artifacts on their
   # own side. macOS's openrsync reads a `:- .gitignore` dir-merge for the
   # sending side only and lets --delete remove the same paths on the
   # receiver, which wiped crates/target before every build; --exclude-from
   # protects them there too.
-  rsync -az --delete \
+  # Files are compared by checksum and written with the time of the sync,
+  # never the sender's mtime: a slot's target can be newer than a source
+  # carried over from another checkout, and cargo would skip rebuilding it.
+  rsync -rlpcz --delete \
     --exclude-from="$repo_root/.gitignore" \
     --filter=':- .gitignore' \
     --exclude '/.git' \
     --exclude '/.claude/' \
     --exclude '/.rig-used' \
+    --exclude '/.rig-sync-v2' \
     -e "ssh ${ssh_opts[*]}" \
     "$repo_root/" "$target:$remote_dir/"
 }
