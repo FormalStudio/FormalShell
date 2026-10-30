@@ -207,7 +207,7 @@ impl Network {
             let open = n.qr != net::Qr::Closed;
             out.push(action_row(v, "share-2", if open { "Hide network code" } else { "Share network" }, Vec::new()).stop("share").on("share"));
             match &n.qr {
-                net::Qr::Generating => out.push(w::section_label(s, "Generating", None, true)),
+                net::Qr::Generating => out.push(w::panel_empty(s, "Generating")),
                 net::Qr::Failed(e) => out.push(w::section_label(s, e, None, true)),
                 net::Qr::Shown(rows) => out.push(w::cell(w::matrix(rows.clone()))),
                 net::Qr::Closed => {}
@@ -243,7 +243,7 @@ impl Network {
         let result = w::value(format!("\u{2193} {down}  \u{2191} {up} Mbps"));
         out.push(action_row(v, "gauge", label, vec![result]).stop("speedtest").on("speedtest"));
         if !st.error.is_empty() {
-            out.push(w::section_label(s, &st.error, None, true).ink(Ink::Destructive));
+            out.push(w::panel_text(s, w::caption(st.error.clone()).ink(Ink::Destructive)));
         }
         out
     }
@@ -277,13 +277,6 @@ impl Panel for Network {
         "Wi-Fi".into()
     }
 
-    fn display_title(&self) -> bool {
-        true
-    }
-
-    fn icon(&self, _: &View) -> String {
-        "wifi".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -315,14 +308,14 @@ impl Panel for Network {
             })
             .collect();
         if n.wired_rows.is_empty() && n.wifi_device.is_none() {
-            rows.push(w::section_label(s, "No devices", None, true));
+            rows.push(w::panel_empty(s, "No devices"));
         }
         let mut away = Vec::new();
         if n.wifi_device.is_some() {
             let (near, out): (Vec<&net::Row>, Vec<&net::Row>) = n.rows.iter().partition(|r| r.in_range);
             away = out;
             if near.is_empty() {
-                rows.push(w::section_label(s, if n.wifi_enabled { "Scanning" } else { "Wi-Fi is off" }, None, true).pad(0.0, s.sm, 0.0, s.sm));
+                rows.push(w::panel_empty(s, if n.wifi_enabled { "Scanning" } else { "Wi-Fi is off" }));
             }
             rows.extend(near.iter().map(|r| self.wifi_row(v, r)));
         }

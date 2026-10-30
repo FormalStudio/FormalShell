@@ -31,9 +31,6 @@ impl Panel for Activity {
         "Activity".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "loader-circle".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Activity]

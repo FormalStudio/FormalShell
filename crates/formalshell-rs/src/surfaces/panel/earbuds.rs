@@ -319,7 +319,7 @@ fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
             w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), w::track(b.level / 100.0)])).ghost()
         })
         .collect();
-    Some(w::column(s.row_gap, vec![w::heading(s, "Battery", None, true), w::column(0.0, rows)]))
+    Some(w::column(s.row_gap, vec![w::panel_heading(s, "Battery"), w::column(0.0, rows)]))
 }
 
 impl Panel for Earbuds {
@@ -331,9 +331,6 @@ impl Panel for Earbuds {
         "Earbuds".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "headphones".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -354,13 +351,13 @@ impl Panel for Earbuds {
         let dev = e.active();
         let mut out = Vec::new();
         if !e.available() {
-            out.push(w::section_label(s, "No daemon", None, true));
+            out.push(w::panel_empty(s, "No daemon"));
         } else if dev.is_none() {
-            out.push(w::section_label(s, "No earbuds connected", None, true));
+            out.push(w::panel_empty(s, "No earbuds connected"));
         }
         if e.devices().len() > 1 {
             let (opts, selected) = devices(e);
-            out.push(w::column(s.row_gap, vec![w::heading(s, "Device", None, true), self.group(DEVICE, &opts, selected, None)]));
+            out.push(w::column(s.row_gap, vec![w::panel_heading(s, "Device"), self.group(DEVICE, &opts, selected, None)]));
         }
         let Some(dev) = dev else { return w::column(s.section_gap, out) };
         match art(dev, "duo", s.control_height * 3.0) {
@@ -408,7 +405,7 @@ impl Panel for Earbuds {
                     ControlKind::Range => rows.push(range_row(s, ctl)),
                 }
             }
-            out.push(w::column(s.row_gap, vec![w::heading(s, &section.section, None, true), w::column(0.0, rows)]));
+            out.push(w::column(s.row_gap, vec![w::panel_heading(s, &section.section), w::column(0.0, rows)]));
         }
         w::column(s.section_gap, out)
     }

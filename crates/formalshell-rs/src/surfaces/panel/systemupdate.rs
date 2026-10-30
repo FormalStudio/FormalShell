@@ -41,9 +41,6 @@ impl Panel for SystemUpdate {
         "System update".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "package".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Config]
@@ -67,7 +64,7 @@ impl Panel for SystemUpdate {
         let mut parts = Vec::new();
 
         if dir.is_empty() {
-            parts.push(w::section_label(s, &summary, None, true));
+            parts.push(w::panel_empty(s, summary));
         } else {
             let name = dir.split('/').rfind(|p| !p.is_empty()).unwrap_or("");
             parts.push(w::hero(
@@ -86,7 +83,7 @@ impl Panel for SystemUpdate {
 
         if !u.inputs.is_empty() {
             let warning = Ink::Color(v.theme.colors.get("warning"));
-            let mut head = vec![w::heading(s, "Inputs", Some(u.inputs.len()), true)];
+            let mut head = vec![w::panel_heading(s, "Inputs")];
             if ok && counts.unknown > 0 {
                 head.push(w::section_label(s, &format!("{} unknown", counts.unknown), None, true));
             }

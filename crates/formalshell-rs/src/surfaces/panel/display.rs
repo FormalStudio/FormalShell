@@ -168,9 +168,6 @@ impl Panel for Display {
         "Display".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "monitor".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::Display, Topic::State, Topic::Config]
@@ -201,17 +198,17 @@ impl Panel for Display {
                 OutputsState::Ok => "No outputs",
                 OutputsState::Unknown => "Loading",
             };
-            parts.push(w::section_label(s, text, None, true));
+            parts.push(w::panel_empty(s, text));
         } else {
             let main = display::main_output(store);
             let list = rows.iter().map(|r| output_row(v, &rows, r, &main)).collect();
-            parts.push(w::section(s, "Outputs", Some(rows.len()), list));
+            parts.push(w::panel_section(s, "Outputs", list));
         }
 
         let devices = store.display.devices();
-        let mut bright = vec![w::heading(s, "Brightness", Some(devices.len()), true)];
+        let mut bright = vec![w::panel_heading(s, "Brightness")];
         if devices.is_empty() {
-            bright.push(w::section_label(s, "No backlight", None, true));
+            bright.push(w::panel_empty(s, "No backlight"));
         } else {
             bright.push(w::column(0.0, devices.iter().map(|d| brightness_row(v, d)).collect()));
         }
@@ -223,16 +220,16 @@ impl Panel for Display {
                 .iter()
                 .map(|n| switch_row(v, "sun", n, display::hdr_on(store, n), format!("hdr:{n}"), format!("hdr:{n}")))
                 .collect();
-            parts.push(w::section(s, "HDR", Some(hdr.len()), list));
+            parts.push(w::panel_section(s, "HDR", list));
         }
 
         if !rows.is_empty() {
-            let mut mirror = vec![w::heading(s, "Mirror", None, true)];
+            let mut mirror = vec![w::panel_heading(s, "Mirror")];
             let plan = outputs::mirror_plan(&rows, focused(store));
             if !display::config_available() {
-                mirror.push(w::section_label(s, "Mirror unsupported", None, true));
+                mirror.push(w::panel_empty(s, "Mirror unsupported"));
             } else if !plan.ok {
-                mirror.push(w::section_label(s, "Single display", None, true));
+                mirror.push(w::panel_empty(s, "Single display"));
             }
             if mirror_actionable(store, &rows) {
                 let on = !outputs::mirrored_names(&rows).is_empty();

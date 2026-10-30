@@ -94,9 +94,6 @@ impl Panel for WorkspacePreview {
         format!("Workspace {}", self.label)
     }
 
-    fn icon(&self, _: &View) -> String {
-        "layout-grid".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::AppIcon]

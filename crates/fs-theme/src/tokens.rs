@@ -97,7 +97,7 @@ pub const SPACING_BASE: [(&str, f64); 8] = [
     ("huge", 36.0),
 ];
 
-pub const SEMANTIC_SPACING_BASE: [(&str, f64); 29] = [
+pub const SEMANTIC_SPACING_BASE: [(&str, f64); 39] = [
     ("controlGap", 6.0),
     ("controlPaddingX", 10.0),
     ("controlPaddingY", 5.0),
@@ -127,6 +127,18 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 29] = [
     ("keycapHeight", 20.0),
     ("sidebarWidth", 154.0),
     ("sidebarRail", 48.0),
+    // The panel language's 4px grid (specs/2026-10-30-panel-language.md §2),
+    // Pond's numbers rounded onto it.
+    ("panelInset", 20.0),
+    ("panelRowInset", 8.0),
+    ("panelRow", 44.0),
+    ("panelRowCompact", 40.0),
+    ("panelGap", 8.0),
+    ("panelSection", 16.0),
+    ("panelIcon", 20.0),
+    ("panelMark", 16.0),
+    ("panelWidth", 320.0),
+    ("panelWidthWide", 400.0),
 ];
 
 /// `spacingTokens(scale)`: every scale step and semantic spacing token,
@@ -170,6 +182,16 @@ pub struct Space {
     pub keycap_height: f64,
     pub sidebar_width: f64,
     pub sidebar_rail: f64,
+    pub panel_inset: f64,
+    pub panel_row_inset: f64,
+    pub panel_row: f64,
+    pub panel_row_compact: f64,
+    pub panel_gap: f64,
+    pub panel_section: f64,
+    pub panel_icon: f64,
+    pub panel_mark: f64,
+    pub panel_width: f64,
+    pub panel_width_wide: f64,
 }
 
 impl Space {
@@ -214,6 +236,16 @@ impl Space {
             "keycapHeight" => self.keycap_height,
             "sidebarWidth" => self.sidebar_width,
             "sidebarRail" => self.sidebar_rail,
+            "panelInset" => self.panel_inset,
+            "panelRowInset" => self.panel_row_inset,
+            "panelRow" => self.panel_row,
+            "panelRowCompact" => self.panel_row_compact,
+            "panelGap" => self.panel_gap,
+            "panelSection" => self.panel_section,
+            "panelIcon" => self.panel_icon,
+            "panelMark" => self.panel_mark,
+            "panelWidth" => self.panel_width,
+            "panelWidthWide" => self.panel_width_wide,
             _ => return None,
         })
     }
@@ -266,6 +298,16 @@ pub fn spacing_tokens(scale: f64) -> Space {
         keycap_height: s("keycapHeight"),
         sidebar_width: s("sidebarWidth"),
         sidebar_rail: s("sidebarRail"),
+        panel_inset: s("panelInset"),
+        panel_row_inset: s("panelRowInset"),
+        panel_row: s("panelRow"),
+        panel_row_compact: s("panelRowCompact"),
+        panel_gap: s("panelGap"),
+        panel_section: s("panelSection"),
+        panel_icon: s("panelIcon"),
+        panel_mark: s("panelMark"),
+        panel_width: s("panelWidth"),
+        panel_width_wide: s("panelWidthWide"),
     }
 }
 

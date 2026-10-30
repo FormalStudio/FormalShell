@@ -20,9 +20,6 @@ use crate::ui::{El, Event, Ink, w};
 /// What a plugin surface answers to on the `panel` target.
 pub const PREFIX: &str = "plugin:";
 
-/// The glyph of a plugin's header; the manifest has no key for one.
-const ICON: &str = "puzzle";
-
 /// Panel names are `&'static str` end to end, so a plugin's is leaked once
 /// and reused: one short string per plugin id ever seen.
 pub fn intern(name: &str) -> &'static str {
@@ -61,14 +58,14 @@ fn stop(row: &Row) -> String {
 pub fn body(s: &Space, run: Option<&Run>) -> El {
     let label = |text: &str| w::section_label(s, text, None, true);
     let rows = match run {
-        None => return w::column(s.section_gap, vec![label("Loading")]),
+        None => return w::column(s.section_gap, vec![w::panel_empty(s, "Loading")]),
         Some(Run::Failed(reason)) => {
             return w::column(s.row_gap, vec![label("PLUGIN ERROR"), w::caption(reason.clone()).ink(Ink::Dim).pad_start(s.control_padding_x)]);
         }
         Some(Run::Live(display)) => &display.rows,
     };
     if rows.is_empty() {
-        return w::column(s.section_gap, vec![label("No rows")]);
+        return w::column(s.section_gap, vec![w::panel_empty(s, "No rows")]);
     }
     let els = rows
         .iter()
@@ -85,7 +82,7 @@ pub fn body(s: &Space, run: Option<&Run>) -> El {
                 } else if !r.detail.is_empty() {
                     trailing.push(w::value(r.detail.clone()).ink(Ink::Dim));
                 }
-                w::list_row(s, &r.icon, &r.text, trailing).stop(stop(r)).on(stop(r))
+                w::panel_row(s, &r.icon, &r.text, None, trailing).stop(stop(r)).on(stop(r))
             }
         })
         .collect();
@@ -130,9 +127,6 @@ impl Panel for PluginPanel {
         find(v.store, self.key).map_or_else(|| self.id.clone(), |p| p.name.clone())
     }
 
-    fn icon(&self, _: &View) -> String {
-        ICON.into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Plugins, Topic::PluginOutput]

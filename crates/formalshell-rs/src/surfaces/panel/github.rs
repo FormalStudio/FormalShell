@@ -38,9 +38,6 @@ impl Panel for Github {
         "GitHub".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "git-branch".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
@@ -53,7 +50,7 @@ impl Panel for Github {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let g = &v.store.info.github;
-        let label = |text: &str| w::section_label(s, text, None, true);
+        let label = |text: &str| w::panel_empty(s, text);
         let mut parts = Vec::new();
         match g.poll {
             Poll::Unknown => parts.push(label("Loading")),
@@ -76,8 +73,8 @@ impl Panel for Github {
                 rail_on: None,
             },
         ));
-        let section = |title: &str, count: u64, rows: &[Row], first: usize| {
-            let mut head = vec![w::heading(s, title, Some(count as usize), true)];
+        let section = |title: &str, rows: &[Row], first: usize| {
+            let mut head = vec![w::panel_heading(s, title)];
             if rows.is_empty() {
                 head.push(label("None"));
             }
@@ -96,8 +93,8 @@ impl Panel for Github {
             head.push(w::column(0.0, cells));
             w::column(s.row_gap, head)
         };
-        parts.push(section("Pull requests", g.prs, &g.pr_rows, 0));
-        parts.push(section("Issues", g.issues, &g.issue_rows, g.pr_rows.len()));
+        parts.push(section("Pull requests", &g.pr_rows, 0));
+        parts.push(section("Issues", &g.issue_rows, g.pr_rows.len()));
         w::column(s.section_gap, parts)
     }
 

@@ -54,9 +54,6 @@ impl Panel for Tailscale {
         "Tailscale".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "network".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
@@ -75,7 +72,7 @@ impl Panel for Tailscale {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let t = &v.store.info.tailscale;
-        let label = |text: &str| w::section_label(s, text, None, true);
+        let label = |text: &str| w::panel_empty(s, text);
         let mut parts = Vec::new();
         match t.poll {
             Poll::Unknown => parts.push(label("Loading")),
@@ -119,7 +116,7 @@ impl Panel for Tailscale {
 
         let primary = v.theme.colors.get("primary");
         let muted = v.theme.colors.get("mutedForeground");
-        let mut peers = vec![w::heading(s, "Peers", Some(status.peers.len()), true)];
+        let mut peers = vec![w::panel_heading(s, "Peers")];
         if status.peers.is_empty() {
             peers.push(label("None"));
         }

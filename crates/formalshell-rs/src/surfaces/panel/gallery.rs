@@ -39,9 +39,6 @@ impl Panel for Gallery {
         "DEV GALLERY".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        String::new()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Theme]
@@ -54,7 +51,7 @@ impl Panel for Gallery {
     fn body(&self, v: &View) -> El {
         let t = v.theme;
         let s = &t.space;
-        let label = |text: &str| w::heading(s, text, None, true);
+        let label = |text: &str| w::panel_heading(s, text);
 
         let controls = w::column(
             s.section_gap,

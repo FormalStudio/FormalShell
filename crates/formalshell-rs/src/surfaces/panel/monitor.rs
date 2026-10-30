@@ -71,9 +71,6 @@ impl Panel for Monitor {
         "Monitor".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "activity".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Compositor, Topic::Config]
@@ -101,7 +98,7 @@ impl Panel for Monitor {
             parts.push(w::column(
                 s.row_gap,
                 vec![
-                    w::heading(s, &m.label, None, true),
+                    w::panel_heading(s, &m.label),
                     w::cell(w::column(s.xxs, content).fill()).ghost().interactive().stop(format!("metric{i}")),
                 ],
             ));
@@ -110,7 +107,7 @@ impl Panel for Monitor {
         parts.push(w::column(
             s.row_gap,
             vec![
-                w::heading(s, "Main display", None, true),
+                w::panel_heading(s, "Main display"),
                 w::cell(w::text(if name.is_empty() { "--".into() } else { name }).mono().weight(Weight::Medium))
                     .ghost()
                     .interactive()

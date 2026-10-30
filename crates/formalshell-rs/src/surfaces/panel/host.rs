@@ -343,7 +343,7 @@ impl Host {
         let p = &self.place;
         let width = self.module.width(&v);
         let body = self.module.body(&v);
-        let content_w = (width - s.panel_padding * 2.0).max(0.0);
+        let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
         let content_h = ui::measure(&body, content_w, theme, kit).1;
         let (head, gap) = self.header_metrics(theme);
         let max_frame = if vertical {
@@ -351,14 +351,17 @@ impl Host {
         } else {
             (p.across_len() - p.line_at - p.far_inset - s.bar_margin - s.screen_padding).max(0.0)
         };
-        let max_content = (max_frame - s.panel_padding * 2.0 - head - gap).max(0.0);
-        let height = s.panel_padding * 2.0 + head + gap + content_h.min(max_content);
+        let max_content = (max_frame - s.panel_gap * 2.0 - head - gap).max(0.0);
+        let height = s.panel_gap * 2.0 + head + gap + content_h.min(max_content);
         self.fit.set((height, max_frame, content_h > max_content));
         (width, height, content_h)
     }
 
+    /// The header row and the gap under it, the hairline in its middle
+    /// (specs/2026-10-30-panel-language.md §3).
     fn header_metrics(&self, theme: &Theme) -> (f64, f64) {
-        if self.module.header() { (theme.space.control_height, theme.space.panel_padding * 2.0 + theme.border_width) } else { (0.0, 0.0) }
+        let s = &theme.space;
+        if self.module.header() { (s.panel_row, s.panel_gap * 2.0 + theme.border_width) } else { (0.0, 0.0) }
     }
 
     /// Lays the frame out for this frame and draws everything on it.
@@ -435,18 +438,10 @@ impl Host {
     }
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
-        let mut parts = Vec::new();
-        let display = self.module.display_title();
-        let glyph = self.module.icon(v);
-        if !glyph.is_empty() && !display {
-            parts.push(w::icon(glyph).size(ui::Type::Subtitle));
-            parts.push(w::space(s.icon_gap));
-        }
-        parts.push(w::label(self.module.title(v)).size(if display { ui::Type::Display } else { ui::Type::Subtitle }).elide());
-        parts.push(w::space(s.icon_gap));
+        let mut parts = vec![w::label(self.module.title(v)).size(ui::Type::Display).weight(ui::Weight::Semibold).elide(), w::space(s.panel_gap)];
         let actions = self.module.actions(v);
         if !actions.is_empty() {
-            parts.push(w::row(s.xs, actions));
+            parts.push(w::row(s.panel_gap, actions));
         }
         if self.module.closable() {
             parts.push(w::icon_button("x").tip("Close").on("close").key("close"));
@@ -459,12 +454,17 @@ impl Host {
         let alpha = card_alpha * self.handoff.as_ref().map_or(1.0, |h| h.alpha.value(now).clamp(0.0, 1.0) as f32);
         let clip = self.card.content_clip();
         let s = theme.space.clone();
-        let pad = s.panel_padding;
+        // The body's rows start `panelRowInset` in, their text at
+        // `panelInset`; the header's title sits on that text column and its
+        // last button's glyph ends on it.
+        let pad = s.panel_row_inset;
+        let vpad = s.panel_gap;
         let (head_h, head_gap) = self.header_metrics(theme);
         let fx = frame.x as f64;
         let fy = frame.y as f64;
         let fw = frame.w as f64;
         let inner_w = (fw - pad * 2.0).max(0.0);
+        let head_end = s.panel_inset - (s.control_height - s.panel_mark) / 2.0;
         let ring = theme.ring_width();
 
         self.wake = None;
@@ -476,12 +476,12 @@ impl Host {
         let scene = &mut self.card.scene;
         if let Some(head) = head {
             self.head.halo_owned = false;
-            let r = Rect::new(fx + pad, fy + pad, fx + pad + inner_w, fy + pad + head_h);
+            let r = Rect::new(fx + s.panel_inset, fy + vpad, fx + fw - head_end, fy + vpad + head_h);
             let d = self.head.draw(&head, r, Some(clip), alpha, theme, kit, scene, now);
             self.wake = if d.animating { Some(now) } else { d.wake };
             let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
-            let (sx, sw) = if self.module.display_title() { ((fx + pad).round() as i32, inner_w.round() as i32) } else { (frame.x, frame.w) };
-            let seam = IRect::new(sx, (fy + pad + head_h + pad).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
+            let (sx, sw) = ((fx + s.panel_inset).round() as i32, (fw - s.panel_inset * 2.0).max(0.0).round() as i32);
+            let seam = IRect::new(sx, (fy + vpad + head_h + s.panel_gap).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
             let sep = theme.box_style("separator", None).fill;
             p.rect(seam, sep.with_alpha(sep.a * alpha), 0.0);
             p.finish();
@@ -491,8 +491,8 @@ impl Host {
             p.finish();
         }
 
-        let top = fy + pad + head_h + head_gap;
-        let viewport_h = (frame.h as f64 - pad * 2.0 - head_h - head_gap).max(0.0);
+        let top = fy + vpad + head_h + head_gap;
+        let viewport_h = (frame.h as f64 - vpad * 2.0 - head_h - head_gap).max(0.0);
         self.viewport = IRect::new((fx + pad).round() as i32, top.round() as i32, inner_w.round() as i32, viewport_h.round() as i32);
         let max_scroll = (self.content_h - viewport_h).max(0.0);
         if self.scroll.target() > max_scroll {

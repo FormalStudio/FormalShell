@@ -139,9 +139,6 @@ impl Panel for Bluetooth {
         "Bluetooth".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "bluetooth".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -160,7 +157,7 @@ impl Panel for Bluetooth {
         let s = &v.theme.space;
         let bt = &v.store.devices.bluetooth;
         if bt.powered.is_none() {
-            return w::column(s.section_gap, vec![w::section_label(s, "No adapter", None, true)]);
+            return w::column(s.section_gap, vec![w::panel_empty(s, "No adapter")]);
         }
         let all = rows(bt);
         let connected: Vec<&Device> = all.iter().filter(|(b, _)| *b == Bucket::Connected).map(|(_, d)| *d).collect();
@@ -196,15 +193,13 @@ impl Panel for Bluetooth {
         let paired: Vec<El> = all.iter().filter(|(b, _)| *b != Bucket::Available).map(|(b, d)| row(v, bt, *b, d)).collect();
         let available: Vec<El> = all.iter().filter(|(b, _)| *b == Bucket::Available).map(|(b, d)| row(v, bt, *b, d)).collect();
         if paired.is_empty() && available.is_empty() {
-            out.push(w::section_label(s, if enabled { "Scanning\u{2026}" } else { "Turn on to scan" }, None, true));
+            out.push(w::panel_empty(s, if enabled { "Scanning\u{2026}" } else { "Turn on to scan" }));
         }
         if !paired.is_empty() {
-            let n = paired.len();
-            out.push(w::section(s, "Paired", Some(n), paired));
+            out.push(w::panel_section(s, "Paired", paired));
         }
         if !available.is_empty() {
-            let n = available.len();
-            out.push(w::section(s, "Available", Some(n), available));
+            out.push(w::panel_section(s, "Available", available));
         }
         w::column(s.section_gap, out)
     }

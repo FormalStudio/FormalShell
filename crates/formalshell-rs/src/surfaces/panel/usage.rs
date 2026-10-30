@@ -74,9 +74,6 @@ impl Panel for Usage {
         "Usage".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "gauge".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
@@ -136,22 +133,22 @@ impl Panel for Usage {
 
         if u.claude_enabled {
             let title = if u.claude_tier.is_empty() { "Claude".to_owned() } else { format!("Claude / {}", u.claude_tier) };
-            let mut section = vec![w::heading(s, &title, None, true)];
+            let mut section = vec![w::panel_heading(s, &title)];
             if u.claude != Claude::Ok {
                 section.push(label(&claude_hint(u)));
             } else if claude_rows(u).is_empty() {
-                section.push(label("No data"));
+                section.push(w::panel_empty(s, "No data"));
             }
             section.push(rows(claude_rows(u), 0));
             parts.push(w::column(s.row_gap, section));
         }
         if u.codex_enabled {
             let title = if u.codex_tier.is_empty() { "Codex".to_owned() } else { format!("Codex / {}", u.codex_tier) };
-            let mut section = vec![w::heading(s, &title, None, true)];
+            let mut section = vec![w::panel_heading(s, &title)];
             if u.codex != Codex::Ok {
                 section.push(label(codex_hint(u)));
             } else if codex_rows(u).is_empty() {
-                section.push(label("No data"));
+                section.push(w::panel_empty(s, "No data"));
             }
             section.push(rows(codex_rows(u), claude_rows(u).len()));
             parts.push(w::column(s.row_gap, section));

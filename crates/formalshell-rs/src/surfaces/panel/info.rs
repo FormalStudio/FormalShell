@@ -74,13 +74,6 @@ impl Panel for Info {
         "Information".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "info".into()
-    }
-
-    fn display_title(&self) -> bool {
-        true
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]

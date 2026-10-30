@@ -41,9 +41,6 @@ impl Panel for Settings {
         "Settings".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "settings".into()
-    }
 
     fn header(&self) -> bool {
         false

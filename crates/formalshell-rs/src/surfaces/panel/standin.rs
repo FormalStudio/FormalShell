@@ -44,9 +44,6 @@ impl Panel for StandIn {
         header(self.id).0.into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        header(self.id).1.into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[]

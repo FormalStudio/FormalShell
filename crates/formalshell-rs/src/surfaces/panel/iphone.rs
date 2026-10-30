@@ -59,9 +59,6 @@ impl Panel for Iphone {
         "iPhone".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "smartphone".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Media, Topic::Clock]
@@ -92,13 +89,13 @@ impl Panel for Iphone {
 
         let mut parts: Vec<El> = Vec::new();
         if not_installed {
-            parts.push(w::section_label(s, "No bridge on PATH", None, true));
+            parts.push(w::panel_empty(s, "No bridge on PATH"));
         }
         if daemon_down {
             parts.push(w::column(
                 s.xxs,
                 vec![
-                    w::section_label(s, "Bridge not running", None, true),
+                    w::panel_empty(s, "Bridge not running"),
                     w::para("Enable services.formalshell.iphone.enable and rebuild", Type::BodySmall, Weight::Normal, Ink::Muted, 4).pad_start(s.control_padding_x),
                 ],
             ));
@@ -158,9 +155,9 @@ impl Panel for Iphone {
             ));
         }
         if connected {
-            let mut np = vec![w::heading(s, "Now playing", None, true)];
+            let mut np = vec![w::panel_heading(s, "Now playing")];
             if !now_playing {
-                np.push(w::section_label(s, "Not available yet", None, true));
+                np.push(w::panel_empty(s, "Not available yet"));
             } else {
                 let mut lines = vec![w::label(&ams.title).elide().pad(s.control_padding_x, 0.0, s.control_padding_x, 0.0)];
                 if !ams.artist.is_empty() {

@@ -219,9 +219,6 @@ impl Panel for Media {
         "Media".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "music".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Media, Topic::Visualizer, Topic::Config, Topic::Lyrics]
@@ -278,7 +275,7 @@ impl Panel for Media {
             motion_art::want(motion_art::PANEL, None);
             self.sections.borrow_mut().clear();
             let radio = w::icon_text_button("radio", "Radio").variant(crate::ui::Variant::Outline).stop("transport").on("radio");
-            return w::column(s.section_gap, vec![w::row(0.0, vec![w::section_label(s, "No player", None, true), w::spacer(), radio]).fill()]);
+            return w::column(s.section_gap, vec![w::row(0.0, vec![w::panel_empty(s, "No player").fill(), radio]).fill()]);
         };
         let mut col = Vec::new();
 

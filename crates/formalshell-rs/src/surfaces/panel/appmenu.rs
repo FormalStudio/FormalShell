@@ -66,9 +66,6 @@ impl Panel for AppMenu {
         "App menu".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "menu".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::AppIcon]
@@ -93,7 +90,7 @@ impl Panel for AppMenu {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let Some(sub) = subject(v.store) else {
-            return w::column(s.section_gap, vec![w::section_label(s, "No window", None, true)]);
+            return w::column(s.section_gap, vec![w::panel_empty(s, "No window")]);
         };
         let actions: &[Action] = sub.entry.as_ref().map_or(&[], |e| &e.actions);
         let name = sub.entry.as_ref().map_or_else(|| sub.window.app_id.clone(), |e| e.name.clone());
@@ -114,11 +111,11 @@ impl Panel for AppMenu {
         );
 
         let mut action_rows: Vec<El> = Vec::new();
-        let mut action_col = vec![w::heading(s, "Actions", Some(actions.len()), true)];
+        let mut action_col = vec![w::panel_heading(s, "Actions")];
         if sub.entry.is_none() {
-            action_col.push(w::section_label(s, "No desktop entry", None, true));
+            action_col.push(w::panel_empty(s, "No desktop entry"));
         } else if actions.is_empty() {
-            action_col.push(w::section_label(s, "No actions", None, true));
+            action_col.push(w::panel_empty(s, "No actions"));
         }
         for (i, a) in actions.iter().enumerate() {
             action_rows.push(w::cell(w::label(&a.name).elide()).ghost().interactive().stop(format!("action:{i}")).on(format!("action:{i}")));
@@ -146,7 +143,7 @@ impl Panel for AppMenu {
             .collect();
         let windows = w::column(
             s.row_gap,
-            vec![w::heading(s, "Windows", Some(sub.windows.len()), true), w::column(0.0, window_rows)],
+            vec![w::panel_heading(s, "Windows"), w::column(0.0, window_rows)],
         );
         let close = w::cell(w::row(s.icon_gap, vec![w::icon("x"), w::label("Close window").weight(Weight::Medium).elide()]).fill())
             .ghost()

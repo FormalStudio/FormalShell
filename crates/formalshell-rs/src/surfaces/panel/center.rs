@@ -110,9 +110,6 @@ impl Panel for Center {
         "Notifications".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        String::new()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Notifications, Topic::Activity]

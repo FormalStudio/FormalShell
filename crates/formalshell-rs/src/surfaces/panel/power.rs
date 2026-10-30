@@ -181,9 +181,6 @@ impl Panel for Power {
         "Power".into()
     }
 
-    fn icon(&self, v: &View) -> String {
-        if v.store.devices.power.battery.is_some() { "battery" } else { "zap" }.into()
-    }
 
     fn header(&self) -> bool {
         false

@@ -104,7 +104,6 @@ impl Effect<'_> {
 pub trait Panel {
     fn id(&self) -> &'static str;
     fn title(&self, v: &View) -> String;
-    fn icon(&self, v: &View) -> String;
     /// The store slices whose change redraws this panel.
     fn reads(&self) -> &'static [Topic];
     /// The card's width (`panelWidth`): `popupWidthDefault` unless said.
@@ -120,11 +119,6 @@ pub trait Panel {
     /// The header row; off for a strip rather than a sheet.
     fn header(&self) -> bool {
         true
-    }
-    /// The title in the display role with no glyph, over a hairline inset
-    /// to the content (Pond's Wi-Fi and Information cards).
-    fn display_title(&self) -> bool {
-        false
     }
     /// The header's own controls, ahead of the close button.
     fn actions(&self, _v: &View) -> Vec<El> {

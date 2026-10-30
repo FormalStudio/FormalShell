@@ -150,9 +150,6 @@ impl Panel for Audio {
         "Audio".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "volume-2".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -187,7 +184,7 @@ impl Panel for Audio {
             out.push(hero);
         }
         if l.outputs.is_empty() && l.inputs.is_empty() {
-            out.push(w::section_label(s, "No devices", None, true));
+            out.push(w::panel_empty(s, "No devices"));
         }
         let output_pick = is_pick(l.outputs.len());
         let output_rows: Vec<El> = if output_pick {
@@ -200,8 +197,7 @@ impl Panel for Audio {
                 .collect()
         };
         if !output_rows.is_empty() {
-            let n = if output_pick { l.outputs.len() } else { output_rows.len() };
-            out.push(w::section(s, "Output", Some(n), output_rows));
+            out.push(w::panel_section(s, "Output", output_rows));
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume), r.muted));
@@ -215,7 +211,7 @@ impl Panel for Audio {
             } else {
                 l.inputs.iter().map(|r| device_row(format!("input-device:{}", r.id), "mic", r, Some(r.id) == source, s)).collect()
             };
-            out.push(w::section(s, "Input", Some(l.inputs.len()), rows));
+            out.push(w::panel_section(s, "Input", rows));
         }
         if !l.streams.is_empty() {
             let rows = l
@@ -228,7 +224,7 @@ impl Panel for Audio {
                     w::cell(mixer_row(s, None, label, r.volume, r.muted, &key, track)).ghost().interactive().stop(key)
                 })
                 .collect();
-            out.push(w::section(s, "Apps", Some(l.streams.len()), rows));
+            out.push(w::panel_section(s, "Apps", rows));
         }
         w::column(s.section_gap, out)
     }

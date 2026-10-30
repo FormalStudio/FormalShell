@@ -106,11 +106,6 @@ pub fn heading(s: &Space, text: &str, count: Option<usize>, inset: bool) -> El {
     section_label(s, text, count, inset)
 }
 
-/// A named group of rows: the heading `rowGap` over them, the rows abutting.
-pub fn section(s: &Space, title: &str, count: Option<usize>, rows: Vec<El>) -> El {
-    column(s.row_gap, vec![heading(s, title, count, true), column(0.0, rows)])
-}
-
 /// A `Cell` around one child.
 pub fn cell(child: El) -> El {
     El::new(Kind::Cell { state: CellState::default(), interactive: false, child: Box::new(child) })
@@ -144,18 +139,6 @@ pub fn token<S: AsRef<str>>(s: &Space, path: &[S]) -> El {
         c.chip = true;
         c.token = true;
     })
-}
-
-/// A list row: a ghost cell answering the pointer, holding an icon, a name
-/// that elides and whatever trails it.
-pub fn list_row(s: &Space, glyph: &str, name: &str, trailing: Vec<El>) -> El {
-    let mut parts = Vec::new();
-    if !glyph.is_empty() {
-        parts.push(icon(glyph).ink(Ink::Fg));
-    }
-    parts.push(label(name).elide());
-    parts.extend(trailing);
-    cell(row(s.icon_gap, parts).fill()).ghost().interactive()
 }
 
 pub fn button(text: impl Into<String>) -> El {
@@ -318,11 +301,12 @@ pub struct Hero {
     pub rail_on: Option<String>,
 }
 
-/// Panel hero: a flat ghost cell leading the content column, a
-/// `subtitle` title over a `bodySmall` meta, a `display` readout, a trailing
-/// control, and an optional rail under all of it.
+/// A panel's lead row (the panel language's §4 row, not a banner): a
+/// `panelIcon` glyph, the title in `body` 500 over a `caption` meta, a
+/// `mono` readout in `muted`, a trailing control, and an optional rail
+/// under all of it.
 pub fn hero(s: &Space, h: Hero) -> El {
-    hero_with(s, h, false, Type::Display, None)
+    hero_with(s, h, false, Type::Body, None)
 }
 
 /// `hero` with `metaMono`, `readoutSize` and a `leading` element standing in
@@ -330,22 +314,26 @@ pub fn hero(s: &Space, h: Hero) -> El {
 pub fn hero_with(s: &Space, h: Hero, meta_mono: bool, readout_size: Type, leading: Option<El>) -> El {
     let mut top = Vec::new();
     if let Some(l) = leading {
-        top.push(l.width(super::Size::Px(s.lg * 2.0)));
+        top.push(l);
     } else if !h.glyph.is_empty() {
-        top.push(El::new(Kind::Icon { name: h.glyph.clone(), size: Type::Heading, ink: Ink::Fg }).width(super::Size::Px(s.lg * 2.0)));
+        top.push(El::new(Kind::Icon { name: h.glyph.clone(), size: Type::Heading, ink: Ink::Fg }));
     }
-    let mut words = vec![text_el(h.title, Type::Subtitle, Weight::Bold, false, Ink::Fg).elide()];
+    let mut words = vec![text_el(h.title, Type::Body, Weight::Medium, false, Ink::Fg).elide()];
     if !h.meta.is_empty() {
-        words.push(text_el(h.meta, Type::BodySmall, Weight::Normal, meta_mono, Ink::Dim).elide());
+        words.push(text_el(h.meta, Type::Caption, Weight::Normal, meta_mono, Ink::Muted).elide());
     }
-    top.push(column(s.xxs, words).fill());
+    top.push(column(0.0, words).fill());
+    // A big readout (a temperature, a pairing code) sets its own height;
+    // anything else sits in a row's band.
+    let big = readout_size != Type::Body && !h.readout.is_empty();
     if !h.readout.is_empty() {
-        top.push(text_el(h.readout, readout_size, Weight::Normal, true, Ink::Fg));
+        top.push(text_el(h.readout, readout_size, Weight::Normal, true, if big { Ink::Fg } else { Ink::Muted }));
     }
     if let Some(t) = h.trailing {
         top.push(t);
     }
-    let mut parts = vec![row(s.icon_gap, top).fill()];
+    let lead = row(s.panel_gap, top).fill().mid();
+    let mut parts = vec![if big { lead } else { lead.height(s.panel_row) }];
     if let Some(v) = h.rail {
         let rail = match h.rail_on {
             Some(on) => slider(v).on(on),
@@ -353,5 +341,79 @@ pub fn hero_with(s: &Space, h: Hero, meta_mono: bool, readout_size: Type, leadin
         };
         parts.push(rail);
     }
-    cell(column(s.xxs, parts).fill()).ghost().cell_state(|c| c.hero = true)
+    let x = text_inset(s);
+    cell(column(s.panel_gap, parts).fill()).ghost().cell_state(|c| {
+        c.hero = true;
+        c.inset = Some((x, 0.0));
+    })
+}
+
+// The panel language (specs/2026-10-30-panel-language.md). A panel's body
+// starts `panelRowInset` in from the card; rows reach that edge, and
+// everything else sits on the text column `panelInset` in.
+
+/// What lifts an element from the body's edge onto the text column.
+fn text_inset(s: &Space) -> f64 {
+    s.panel_inset - s.panel_row_inset
+}
+
+/// Anything that is not a row, on the text column.
+pub fn panel_text(s: &Space, el: El) -> El {
+    let i = text_inset(s);
+    el.pad(i, 0.0, i, 0.0)
+}
+
+/// §4's row: a `panelIcon` glyph, the name in `body` 500 with an optional
+/// `caption` line under it, and at most one trailing value, mark or
+/// control. Rows abut; the list's current one takes `.cell_state(|c|
+/// c.open = true)`.
+pub fn panel_row(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, trailing: Vec<El>) -> El {
+    let mut parts = Vec::new();
+    if !glyph.is_empty() {
+        parts.push(icon(glyph).size(Type::Heading).ink(Ink::Fg));
+    }
+    let mut words = vec![label(name).elide()];
+    if let Some(d) = detail.filter(|d| !d.is_empty()) {
+        words.push(caption(d).elide());
+    }
+    parts.push(column(0.0, words).fill());
+    parts.extend(trailing);
+    let x = text_inset(s);
+    cell(row(s.panel_gap, parts).fill()).ghost().interactive().cell_state(|c| c.inset = Some((x, 0.0))).height(s.panel_row)
+}
+
+/// A row's trailing value: `mono` in `muted`.
+pub fn panel_value(text: impl Into<String>) -> El {
+    text_el(text, Type::BodySmall, Weight::Normal, true, Ink::Muted)
+}
+
+/// §5's heading: `caption` 600 in `muted` on the text column, a section's
+/// worth of room above it.
+pub fn panel_heading(s: &Space, text: &str) -> El {
+    let i = text_inset(s);
+    text_el(text, Type::Caption, Weight::Semibold, false, Ink::Muted).pad(i, s.panel_section - s.panel_gap, i, 0.0)
+}
+
+/// A heading over its rows, the rows abutting.
+pub fn panel_section(s: &Space, title: &str, rows: Vec<El>) -> El {
+    column(s.panel_gap, vec![panel_heading(s, title), column(0.0, rows)])
+}
+
+/// §7's empty or unavailable line: `body` in `muted`, centred in a row's
+/// band.
+pub fn panel_empty(s: &Space, text: impl Into<String>) -> El {
+    column(0.0, vec![text_el(text, Type::Body, Weight::Normal, false, Ink::Muted).centred()]).height(s.panel_row).mid()
+}
+
+/// §7's footer row: a row in `muted`, the last thing in the card.
+pub fn panel_footer(s: &Space, glyph: &str, text: &str) -> El {
+    let x = text_inset(s);
+    let parts = vec![icon(glyph).size(Type::Heading).ink(Ink::Muted), text_el(text, Type::Body, Weight::Medium, false, Ink::Muted).elide().fill()];
+    cell(row(s.panel_gap, parts).fill()).ghost().interactive().cell_state(|c| c.inset = Some((x, 0.0))).height(s.panel_row)
+}
+
+/// §6's label row over a control: the name in `muted`, the current value
+/// at the right.
+pub fn panel_label(s: &Space, name: &str, current: impl Into<String>) -> El {
+    panel_text(s, row(0.0, vec![text_el(name, Type::Body, Weight::Medium, false, Ink::Muted).fill(), label(current)]).fill())
 }

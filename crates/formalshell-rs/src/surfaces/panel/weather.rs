@@ -43,12 +43,6 @@ impl Panel for Weather {
         if place.is_empty() { "Weather".into() } else { place.clone() }
     }
 
-    fn icon(&self, v: &View) -> String {
-        match &v.store.info.weather.weather {
-            Some(w) => openmeteo::icon_for_code(w.current.code, Some(is_day())).into(),
-            None => "cloud".into(),
-        }
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock]
@@ -67,7 +61,7 @@ impl Panel for Weather {
         let state = &v.store.info.weather;
         let mut parts = Vec::new();
         if !state.located {
-            parts.push(w::section_label(s, "No location", None, true));
+            parts.push(w::panel_empty(s, "No location"));
         } else if let Some(e) = state.error {
             parts.push(
                 w::cell(w::column(s.xxs, vec![
@@ -77,7 +71,7 @@ impl Panel for Weather {
                 .ghost(),
             );
         } else if state.weather.is_none() {
-            parts.push(w::section_label(s, "Loading", None, true));
+            parts.push(w::panel_empty(s, "Loading"));
         }
         if let Some(reading) = &state.weather {
             let day = is_day();
@@ -110,10 +104,10 @@ impl Panel for Weather {
                         let temps = format!("{}\u{b0} / {}\u{b0}", round(d.high), round(d.low));
                         let day_name = openmeteo::weekday_label(&d.date).unwrap_or("");
                         let glyph = openmeteo::icon_for_code(d.code, Some(true));
-                        w::list_row(s, glyph, day_name, vec![w::value(temps)]).stop(format!("day:{i}"))
+                        w::panel_row(s, glyph, day_name, None, vec![w::panel_value(temps)]).stop(format!("day:{i}"))
                     })
                     .collect();
-                parts.push(w::section(s, "Forecast", Some(reading.forecast.len()), rows));
+                parts.push(w::panel_section(s, "Forecast", rows));
             }
         }
         w::column(s.section_gap, parts)

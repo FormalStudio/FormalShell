@@ -30,9 +30,6 @@ impl Panel for Dualsense {
         "DualSense".into()
     }
 
-    fn icon(&self, _: &View) -> String {
-        "gamepad-2".into()
-    }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -46,7 +43,7 @@ impl Panel for Dualsense {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let Some(supply) = &v.store.devices.power.dualsense else {
-            return w::column(s.section_gap, vec![w::section_label(s, "No controller", None, true)]);
+            return w::column(s.section_gap, vec![w::panel_empty(s, "No controller")]);
         };
         let hero = w::hero_with(
             s,
@@ -82,7 +79,7 @@ impl Panel for Dualsense {
         }
         if !halves.is_empty() {
             let halves = halves.into_iter().map(El::fill).collect();
-            out.push(w::column(s.row_gap, vec![w::heading(s, "Status", None, true), w::row(s.row_gap, halves).fill()]));
+            out.push(w::column(s.row_gap, vec![w::panel_heading(s, "Status"), w::row(s.row_gap, halves).fill()]));
         }
         w::column(s.section_gap, out)
     }

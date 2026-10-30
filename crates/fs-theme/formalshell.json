@@ -950,7 +950,7 @@
                         }
                     }
                 ],
-                "padding": 3
+                "padding": 2
             },
             "on": {
                 "fill": "primary",
@@ -960,7 +960,7 @@
         "switch.knob": {
             "fill": "secondary",
             "radius": "pill",
-            "size": 20,
+            "size": 24,
             "layers": [
                 {
                     "y": 2,
