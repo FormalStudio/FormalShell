@@ -38,8 +38,9 @@ pipewire, PAM or Wayland to link.
   (`formalshell-rig-parent.service`), with screenshots and artifacts pulled
   into `./artifacts/`. A command takes the free slot its checkout last ran
   on first (a warm target: a no-op build is ~3s, a change to
-  `formalshell-rs` alone ~25s, a cold one ~50s), and a worktree syncs to
-  `~/formalshell-wt/<name>` rather than over the main checkout's copy. Any
+  `formalshell-rs` alone ~25s, a cold one ~50s). Every checkout syncs into
+  the slot's one `~/formalshell` with its one target (capped at 8G), so
+  the rig's disk holds eight targets however many worktrees run. Any
   number of agents can run at once; past eight they queue. Its header
   carries the slot model.
 - **The VM rig** is four persistent openSUSE Tumbleweed guests on g815,

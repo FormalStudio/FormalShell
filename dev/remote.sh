@@ -23,11 +23,12 @@
 # the VM rig instead (dev/vm.sh), smoke-all's and smoke-affected's included.
 #
 # The working tree, not a commit, is what runs: `sync` rsyncs it into the
-# slot user's ~/formalshell (a worktree into ~/formalshell-wt/<name>, so two
-# checkouts sharing a slot do not rebuild over each other), leaving
-# crates/target alone so cargo stays incremental between runs. A command
-# takes the free slot this checkout last ran on before any other, for a warm
-# target. cargo runs in dev.star's environment
+# slot user's ~/formalshell, whichever checkout it comes from, leaving
+# crates/target alone so cargo stays incremental between runs. One copy and
+# one target per slot keeps the rig's disk to eight targets; a copy per
+# checkout per slot filled g815's 256G. A command takes the free slot this
+# checkout last ran on before any other, so only what differs from the
+# checkout before it rebuilds. cargo runs in dev.star's environment
 # (`fspec dev`), and dev/build.sh links the art and helpers no distro
 # carries out of g815's installed formalshell package.
 #
@@ -81,10 +82,7 @@ if [ "$rig" = mac ] && [ -z "${FS_RIG_SLOT:-}" ]; then
   "$repo_root/dev/mac-vm.sh" start
 fi
 
-case "$repo_root" in
-  */FormalShell) remote_dir=formalshell ;;
-  *) remote_dir="formalshell-wt/$(basename "$repo_root")" ;;
-esac
+remote_dir=formalshell
 
 # Every run's own time on its slot, kept across runs so a list starts with
 # its longest legs and the last one to finish is not the slowest started last.
@@ -290,19 +288,26 @@ remote_run() {
 }
 
 cmd_sync() {
-  # .rig-used marks when a checkout last ran here; a worktree's copy and its
-  # target go once it has sat unused for six hours: eight agents with a copy
-  # per slot filled g815's disk inside a day.
-  # A copy synced before checksum mode (below) can hold a stale build that no
-  # later sync touches, so its sources are touched once to force a rebuild.
-  ssh "${ssh_opts[@]}" "$target" "mkdir -p ~/$remote_dir && touch ~/$remote_dir/.rig-used
-    if [ ! -e ~/$remote_dir/.rig-sync-v2 ]; then
-      find ~/$remote_dir/crates -path '*/target' -prune -o -type f -exec touch {} + 2>/dev/null
-      touch ~/$remote_dir/.rig-sync-v2
+  # The copy is shared by every checkout that lands on this slot, which is
+  # safe because the sync below rewrites every file whose content differs, at
+  # the sync's own time: whatever the target was built from, a changed source
+  # is newer than it. The slot lock holds the whole command, so no other
+  # checkout's build runs between this sync and the command after it.
+  # A target past 8G (dependency builds piling up across Cargo.lock and
+  # feature changes) goes and is rebuilt cold, checked at most hourly.
+  # ~/formalshell-wt is the copy-per-checkout layout this replaced.
+  # A copy synced before checksum mode can hold a stale build that no later
+  # sync touches, so its sources are touched once to force a rebuild.
+  ssh "${ssh_opts[@]}" "$target" "rm -rf ~/formalshell-wt
+    mkdir -p ~/$remote_dir && cd ~/$remote_dir
+    if [ ! -e .rig-sync-v2 ]; then
+      find crates -path '*/target' -prune -o -type f -exec touch {} + 2>/dev/null
+      touch .rig-sync-v2
     fi
-    for d in ~/formalshell-wt/*/; do
-      [ -n \"\$(find \"\$d.rig-used\" -mmin +360 2>/dev/null)\" ] && rm -rf \"\$d\"
-    done; true"
+    if [ -z \"\$(find .rig-target-checked -mmin -60 2>/dev/null)\" ]; then
+      touch .rig-target-checked
+      [ \"\$(du -sm crates/target 2>/dev/null | cut -f1)\" -gt 8192 ] 2>/dev/null && rm -rf crates/target
+    fi; true"
   # .gitignore's patterns keep crates/target, result and artifacts on their
   # own side. macOS's openrsync reads a `:- .gitignore` dir-merge for the
   # sending side only and lets --delete remove the same paths on the
@@ -316,8 +321,8 @@ cmd_sync() {
     --filter=':- .gitignore' \
     --exclude '/.git' \
     --exclude '/.claude/' \
-    --exclude '/.rig-used' \
     --exclude '/.rig-sync-v2' \
+    --exclude '/.rig-target-checked' \
     -e "ssh ${ssh_opts[*]}" \
     "$repo_root/" "$target:$remote_dir/"
 }
