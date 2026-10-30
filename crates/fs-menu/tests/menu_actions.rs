@@ -107,12 +107,16 @@ fn route() {
     let tree = real_tree();
     let clip = &tree.nodes["clipboard"];
     let all = of(clip);
-    assert_eq!(ids(&all), ["open"]);
+    assert_eq!(ids(&all), ["open", "pin-recent"]);
     assert_eq!(all[0].run, Run::Into("clipboard".into()));
+    assert_eq!(all[1].run, Run::Ipc("recent.pin:clipboard".into()));
+    assert!(all[1].keep_open);
     let link = Node { target: Some("system".into()), ..Node::new("power", "Power", Kind::Link) };
     assert_eq!(of(&link)[0].run, Run::Into("system".into()));
-    // A single action is both Enter and Shift+Enter.
-    assert_eq!(second_action(&Subject::of(clip)).unwrap().id, "open");
+    assert_eq!(second_action(&Subject::of(clip)).unwrap().id, "pin-recent");
+    let pinned = actions_for(&Subject { pinned: true, ..Subject::of(clip) });
+    assert_eq!(ids(&pinned), ["open", "unpin-recent"]);
+    assert_eq!(pinned[1].run, Run::Ipc("recent.unpin:clipboard".into()));
 }
 
 #[test]

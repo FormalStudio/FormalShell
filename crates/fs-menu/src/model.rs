@@ -262,12 +262,14 @@ pub fn subject_node<'a>(nodes: &'a IndexMap<String, Node>, id: &str) -> Option<&
     }
 }
 
-/// What the root lists with an empty field: the `limit` best picks that
-/// still resolve and pass their `when`, any kind, under `Recent`; with fewer
-/// than [`RECENT_MIN`] of them, the root's routes in declaration order under
+/// What the root lists with an empty field: the subjects pinned to it,
+/// then the best picks, that still resolve and pass their `when`, any kind,
+/// `limit` in all, under `Recent`; with no pin and fewer than
+/// [`RECENT_MIN`] picks, the root's routes in declaration order under
 /// `Modes`. Never both, and nothing else.
 pub fn root_rest(
     nodes: &IndexMap<String, Node>,
+    pinned: &[String],
     picks: &[crate::frecency::Record],
     now_ms: f64,
     limit: usize,
@@ -278,15 +280,18 @@ pub fn root_rest(
         let (sa, sb) = (crate::frecency::score_of(Some(a), now_ms), crate::frecency::score_of(Some(b), now_ms));
         sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
     });
+    let visible = |id: &str| subject_node(nodes, id).filter(|n| is_when_visible(n, cond_results));
+    let pins: Vec<&Node> = pinned.iter().filter_map(|id| visible(id)).collect();
     let mut seen = HashSet::new();
-    let recent: Vec<Node> = ranked
-        .into_iter()
-        .filter_map(|r| subject_node(nodes, &r.id))
-        .filter(|n| is_when_visible(n, cond_results) && seen.insert(n.id.clone()))
+    let recent: Vec<Node> = pins
+        .iter()
+        .copied()
+        .chain(ranked.into_iter().filter_map(|r| visible(&r.id)))
+        .filter(|n| seen.insert(n.id.clone()))
         .take(limit)
         .map(|n| Node { section: Some(RECENT_SECTION.into()), ..n.clone() })
         .collect();
-    if recent.len() >= RECENT_MIN {
+    if !pins.is_empty() || recent.len() >= RECENT_MIN {
         return recent;
     }
     visible_children(nodes, None, cond_results)

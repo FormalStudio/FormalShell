@@ -16,8 +16,12 @@
 # the second action, a third window. Shift+Tab, Escape and ← with an empty
 # filter each close the column and give the list its query back.
 # `menu runAction` runs the menu.jsonc entry, and the three new verbs answer
-# `error: menu not open` with the launcher shut. The column, the targets and
-# the windows are photographed in dark, the column again in light.
+# `error: menu not open` with the launcher shut. A route's column (Clipboard,
+# searched by name) is Open then Pin to Recent; a real Down and Enter pins
+# it, state.json's `recentPinned` holds it, and the root at rest heads
+# `Recent` with it; Unpin from Recent off the root's own row lets it go.
+# The column, the targets, the windows and the pinned root are photographed
+# in dark, the column again in light.
 leg_launcher_actions_flag="--launcher-actions"
 leg_launcher_actions_order=30
 leg_launcher_actions_needs="jq wtype foot"
@@ -49,7 +53,7 @@ EOF
 }
 
 leg_launcher_actions_timing() {
-  leg_timing 70 120
+  leg_timing 85 135
 }
 
 leg_launcher_actions_drive() {
@@ -141,6 +145,39 @@ i=\$("$jq_bin" --arg id "$launcher_actions_app" '.ids | index(\$id) // -1' "$sho
 call menu runAction "\$i" probe-note > "$shot_dir/launcher-actions-ipc-run.txt" 2>&1
 sleep 1
 
+call menu summon "" > /dev/null 2>&1
+sleep 0.4
+call menu filter Clipboard > /dev/null 2>&1
+sleep 0.6
+status pin-list
+i=\$("$jq_bin" '.ids | index("clipboard") // -1' "$shot_dir/launcher-actions-pin-list.json")
+call menu actions "\$i" > /dev/null 2>&1
+sleep 0.6
+status pin-column
+key -k Down
+key -k Return
+sleep 1
+status pin-ran
+cp "$iso_home/.local/state/formalshell/state.json" "$shot_dir/launcher-actions-pin-state.json" 2>/dev/null
+call menu close > /dev/null 2>&1
+sleep 0.4
+call menu summon "" > /dev/null 2>&1
+sleep 1
+status pin-root
+shoot pin-root-dark
+call menu actions 0 > /dev/null 2>&1
+sleep 0.6
+status unpin-column
+call menu runAction 0 unpin-recent > /dev/null 2>&1
+sleep 1
+cp "$iso_home/.local/state/formalshell/state.json" "$shot_dir/launcher-actions-unpin-state.json" 2>/dev/null
+call menu close > /dev/null 2>&1
+sleep 0.4
+call menu summon "" > /dev/null 2>&1
+sleep 1
+status unpin-root
+call menu close > /dev/null 2>&1
+
 call theme mode light > /dev/null 2>&1
 sleep 2
 probe
@@ -212,8 +249,19 @@ leg_launcher_actions_assert() {
   [ -e "$launcher_actions_note" ] || fail "launcher-actions: the menu.jsonc action did not run"
   echo "SMOKE_LAUNCHER_ACTIONS menu actions opened the column and runAction ran the menu.jsonc entry"
 
+  launcher_actions_expect pin-column '.actionsOpen and .actions == ["open", "pin-recent"]' "a route's column is not Open then Pin to Recent"
+  launcher_actions_expect pin-ran '.isOpen and (.actionsOpen | not)' "Pin to Recent did not leave the launcher open on the list"
+  "$jq_bin" -e '.recentPinned == ["clipboard"]' "$shot_dir/launcher-actions-pin-state.json" > /dev/null \
+    || fail "launcher-actions: state.json's recentPinned is not [clipboard] after the pin: $("$jq_bin" -c '.recentPinned' "$shot_dir/launcher-actions-pin-state.json" 2>&1)"
+  launcher_actions_expect pin-root '.query == "" and .sections == ["Recent"] and .ids[0] == "clipboard"' "the pinned route does not head Recent at rest"
+  launcher_actions_expect unpin-column '.actions == ["open", "unpin-recent"]' "the pinned route's column does not offer Unpin from Recent"
+  "$jq_bin" -e '.recentPinned == []' "$shot_dir/launcher-actions-unpin-state.json" > /dev/null \
+    || fail "launcher-actions: Unpin from Recent left recentPinned $("$jq_bin" -c '.recentPinned' "$shot_dir/launcher-actions-unpin-state.json" 2>&1)"
+  launcher_actions_expect unpin-root '.ids[0] != "clipboard"' "the unpinned route still heads the root"
+  echo "SMOKE_LAUNCHER_ACTIONS Pin to Recent put Clipboard at the head of Recent, Unpin took it off"
+
   local shot
-  for shot in column-dark into-dark targets-dark column-light; do
+  for shot in column-dark into-dark targets-dark pin-root-dark column-light; do
     [ -s "$shot_dir/launcher-actions-$shot.png" ] || fail "launcher-actions: no $shot frame"
     echo "SMOKE_LAUNCHER_ACTIONS_SHOT $shot_dir/launcher-actions-$shot.png"
   done

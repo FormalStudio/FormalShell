@@ -134,6 +134,8 @@ pub struct Subject<'a> {
     /// The abbreviation the field's query is for this subject, and its
     /// source.
     pub abbrev: Option<(&'a str, Source)>,
+    /// Pinned to the root's `Recent`.
+    pub pinned: bool,
 }
 
 /// A row's kind for one compositor window, its id in the node's `path`.
@@ -141,7 +143,7 @@ pub const WINDOW_KIND: &str = "window";
 
 impl<'a> Subject<'a> {
     pub fn of(node: &'a Node) -> Subject<'a> {
-        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None }
+        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false }
     }
 
     /// A dim note, a keybind, an unavailable row: Enter, Shift+Enter and a
@@ -229,6 +231,13 @@ fn builtins(s: &Subject) -> Vec<Action> {
         Kind::Submenu | Kind::Provider | Kind::Link => {
             let to = n.target.clone().filter(|_| n.kind == Kind::Link).unwrap_or_else(|| n.id.clone());
             out.push(Action::new("open", "Open", Run::Into(to)));
+            let mut pin = if s.pinned {
+                Action::new("unpin-recent", "Unpin from Recent", Run::Ipc(format!("recent.unpin:{}", subject_id(n))))
+            } else {
+                Action::new("pin-recent", "Pin to Recent", Run::Ipc(format!("recent.pin:{}", subject_id(n))))
+            };
+            pin.keep_open = true;
+            out.push(pin);
         }
         Kind::Other(k) if k == FILE_KIND => {
             out.push(Action::new("open", "Open", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));

@@ -989,7 +989,7 @@ impl Model {
             // The plugin ranks its own rows against the query it was sent.
             Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
-                let rest = model::root_rest(nodes, &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond);
+                let rest = model::root_rest(nodes, &recent_pinned(store), &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
@@ -1768,13 +1768,15 @@ impl Model {
             Some(entry) if node.kind == NodeKind::App => app_windows(store, entry).len(),
             _ => 0,
         };
-        let abbrev = self.abbrev_key.as_deref().zip(self.lookup.source_of(&fs_menu::actions::subject_id(node)));
+        let id = fs_menu::actions::subject_id(node);
+        let abbrev = self.abbrev_key.as_deref().zip(self.lookup.source_of(&id));
         fs_menu::actions::Subject {
             node,
             windows,
             discrete_gpu: store.info.monitor.cards.iter().any(|c| c.discrete),
             picker_select: self.picker.select,
             abbrev,
+            pinned: recent_pinned(store).contains(&id),
         }
     }
 
@@ -2177,6 +2179,20 @@ impl Model {
                         self.close();
                         return Out::Close;
                     }
+                    // A pin is no pick either: it would count twice.
+                    "recent.pin" | "recent.unpin" => {
+                        let mut pinned: Vec<String> = recent_pinned(store).into_iter().filter(|id| id != arg).collect();
+                        if verb == "recent.pin" {
+                            pinned.push(arg.to_owned());
+                        }
+                        state::set(vec![state::Field::RecentPinned(json!(pinned))]);
+                        self.dirty = true;
+                        if action.keep_open {
+                            return Out::None;
+                        }
+                        self.close();
+                        return Out::Close;
+                    }
                     "plugin.send" => {
                         if let Some((id, line)) = arg.split_once(':') {
                             plugins::send(id, line.to_owned());
@@ -2422,6 +2438,11 @@ fn now_ms() -> f64 {
 
 pub fn picks(store: &Store) -> Vec<fs_menu::frecency::Record> {
     serde_json::from_value(store.state.data.picks.clone()).unwrap_or_default()
+}
+
+/// The subject ids pinned to `Recent`, in pin order.
+fn recent_pinned(store: &Store) -> Vec<String> {
+    serde_json::from_value(store.state.data.recent_pinned.clone()).unwrap_or_default()
 }
 
 /// The app subjects' picks, keyed by desktop id as the apps source orders by.

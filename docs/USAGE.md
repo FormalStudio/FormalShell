@@ -1249,7 +1249,11 @@ With the field empty the root lists one thing: `Recent`, your eight best
 picks of any kind (an app, a mode like Clipboard, a row like Shutdown), or,
 until three picks exist, `Modes`, the root routes in the order the tree
 declares them. A pick whose app or row has gone is skipped, and dropped from
-the ledger on the next pick. Everything else the root used to show still
+the ledger on the next pick. A route's actions carry `Pin to Recent`
+(`Shift+Enter` on its row): a pinned route heads `Recent` in the order you
+pinned it, whatever the picks say, and shows `Recent` on a fresh profile
+too; `Unpin from Recent` in the same place lets it go. Pins live in
+`state.json` under `recentPinned`. Everything else the root used to show still
 ranks under a query. Elsewhere rows come in groups, each under a heading:
 `Options` in select mode, and a level's own sections; a query's results
 draw under none. A level whose rows are all one group draws no heading,

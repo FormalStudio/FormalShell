@@ -215,7 +215,7 @@ fn pick(id: &str, count: f64) -> fs_menu::frecency::Record {
 #[test]
 fn root_rest_lists_modes_on_a_fresh_profile() {
     let tree = rest_tree();
-    let rows = fs_menu::model::root_rest(&tree.nodes, &[pick("app:firefox", 1.0)], 1_000.0, 8, &HashMap::new());
+    let rows = fs_menu::model::root_rest(&tree.nodes, &[], &[pick("app:firefox", 1.0)], 1_000.0, 8, &HashMap::new());
     let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, ["apps", "clipboard", "system", "toggles"]);
     assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::MODES_SECTION)));
@@ -232,7 +232,7 @@ fn root_rest_lists_the_best_picks_of_any_kind_skipping_the_gone() {
         pick("hidden", 8.0),
         pick("toggles.dnd", 1.0),
     ];
-    let rows = fs_menu::model::root_rest(&tree.nodes, &picks, 1_000.0, 3, &HashMap::new());
+    let rows = fs_menu::model::root_rest(&tree.nodes, &[], &picks, 1_000.0, 3, &HashMap::new());
     let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, ["apps.firefox", "system.suspend", "clipboard"]);
     assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::RECENT_SECTION)));
@@ -242,8 +242,22 @@ fn root_rest_lists_the_best_picks_of_any_kind_skipping_the_gone() {
 fn root_rest_falls_back_to_modes_when_too_few_picks_resolve() {
     let tree = rest_tree();
     let picks = [pick("app:firefox", 5.0), pick("app:gone", 9.0), pick("gone.too", 9.0), pick("clipboard", 1.0)];
-    let rows = fs_menu::model::root_rest(&tree.nodes, &picks, 1_000.0, 8, &HashMap::new());
+    let rows = fs_menu::model::root_rest(&tree.nodes, &[], &picks, 1_000.0, 8, &HashMap::new());
     assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::MODES_SECTION)));
+}
+
+#[test]
+fn a_pin_leads_recent_and_shows_it_on_a_fresh_profile() {
+    let tree = rest_tree();
+    let pinned = ["toggles".to_owned(), "gone".to_owned(), "hidden".to_owned()];
+    let rows = fs_menu::model::root_rest(&tree.nodes, &pinned, &[pick("app:firefox", 1.0)], 1_000.0, 8, &HashMap::new());
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["toggles", "apps.firefox"]);
+    assert!(rows.iter().all(|r| r.section.as_deref() == Some(fs_menu::model::RECENT_SECTION)));
+    let picks = [pick("toggles", 9.0), pick("clipboard", 5.0), pick("system.suspend", 4.0)];
+    let rows = fs_menu::model::root_rest(&tree.nodes, &["system.suspend".to_owned()], &picks, 1_000.0, 2, &HashMap::new());
+    let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(ids, ["system.suspend", "toggles"]);
 }
 
 // The shipped prefixes live in default-menu.jsonc: a prefix and a space name

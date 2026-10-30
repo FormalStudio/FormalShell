@@ -39,6 +39,8 @@ pub struct Data {
     pub picks: Value,
     /// `{pinned, learned}`, fs-menu's `abbrev::Book`.
     pub abbreviations: Value,
+    /// Subject ids pinned to the launcher's `Recent`, in pin order.
+    pub recent_pinned: Value,
     pub emoji_uses: Value,
     pub reminders: Value,
     pub battery_show_percent: Value,
@@ -61,6 +63,7 @@ impl Default for Data {
             clock_format: String::new(),
             picks: Value::Array(vec![]),
             abbreviations: Value::Null,
+            recent_pinned: Value::Array(vec![]),
             emoji_uses: Value::Array(vec![]),
             reminders: Value::Array(vec![]),
             battery_show_percent: Value::Null,
@@ -86,6 +89,7 @@ pub enum Field {
     ClockFormat(String),
     Picks(Value),
     Abbreviations(Value),
+    RecentPinned(Value),
     EmojiUses(Value),
     Reminders(Value),
     BatteryShowPercent(Value),
@@ -111,6 +115,7 @@ impl Field {
             Field::ClockFormat(v) => data.clock_format = v,
             Field::Picks(v) => data.picks = v,
             Field::Abbreviations(v) => data.abbreviations = v,
+            Field::RecentPinned(v) => data.recent_pinned = v,
             Field::EmojiUses(v) => data.emoji_uses = v,
             Field::Reminders(v) => data.reminders = v,
             Field::BatteryShowPercent(v) => data.battery_show_percent = v,
@@ -123,7 +128,7 @@ impl Field {
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 17] {
+    fn fields(&self) -> [Field; 18] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
             Field::WallpaperColor(self.wallpaper_color.clone()),
@@ -135,6 +140,7 @@ impl Data {
             Field::ClockFormat(self.clock_format.clone()),
             Field::Picks(self.picks.clone()),
             Field::Abbreviations(self.abbreviations.clone()),
+            Field::RecentPinned(self.recent_pinned.clone()),
             Field::EmojiUses(self.emoji_uses.clone()),
             Field::Reminders(self.reminders.clone()),
             Field::BatteryShowPercent(self.battery_show_percent.clone()),
@@ -188,6 +194,7 @@ impl Data {
         // never written again.
         data.picks = array(take("picks")).or_else(|| array(take("appLaunches")).map(app_picks)).unwrap_or(data.picks);
         data.abbreviations = take("abbreviations").filter(Value::is_object).unwrap_or(Value::Null);
+        data.recent_pinned = array(take("recentPinned")).unwrap_or(data.recent_pinned);
         data.emoji_uses = array(take("emojiUses")).unwrap_or(data.emoji_uses);
         data.reminders = array(take("reminders")).unwrap_or(data.reminders);
         data.battery_show_percent = take("batteryShowPercent").unwrap_or(Value::Null);
@@ -211,6 +218,7 @@ impl Data {
         map.insert("clockFormat".into(), self.clock_format.clone().into());
         map.insert("picks".into(), self.picks.clone());
         map.insert("abbreviations".into(), self.abbreviations.clone());
+        map.insert("recentPinned".into(), self.recent_pinned.clone());
         map.insert("emojiUses".into(), self.emoji_uses.clone());
         map.insert("reminders".into(), self.reminders.clone());
         map.insert("batteryShowPercent".into(), self.battery_show_percent.clone());
@@ -463,7 +471,7 @@ mod tests {
         assert!(text.starts_with("{\n    \"abbreviations\": null,\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 17);
+        assert_eq!(keys.len(), 18);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -482,6 +490,7 @@ mod tests {
             clock_format: "%H".into(),
             picks: json!([{"id": "app:a", "count": 2, "lastMs": 3}]),
             abbreviations: json!({"pinned": {"ff": "app:firefox"}, "learned": {}}),
+            recent_pinned: json!(["clipboard"]),
             emoji_uses: json!([{"id": "emoji.x", "count": 1, "lastMs": 1}]),
             reminders: json!([{"id": 1, "message": "m", "setAt": 1, "dueAt": 2}]),
             battery_show_percent: json!(false),
