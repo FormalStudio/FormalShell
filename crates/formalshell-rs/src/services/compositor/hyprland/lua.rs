@@ -60,6 +60,10 @@ pub fn move_to_workspace(id: &str, idx: i64) -> String {
     format!("hl.dsp.window.move({{ window = {}, workspace = {idx}, follow = false }})", string(&selector(id)))
 }
 
+pub fn swap_windows(a: &str, b: &str) -> String {
+    format!("hl.dsp.window.swap({{ window = {}, target = {} }})", string(&selector(a)), string(&selector(b)))
+}
+
 pub fn resize_window(id: &str, w: i64, h: i64) -> String {
     format!("hl.dsp.window.resize({{ window = {}, x = {w}, y = {h} }})", string(&selector(id)))
 }
@@ -126,6 +130,7 @@ mod tests {
             toggle_fullscreen("ab"),
             "hl.dsp.window.fullscreen({ window = \"address:0xab\", mode = \"fullscreen\", action = \"toggle\" })"
         );
+        assert_eq!(swap_windows("ab", "cd"), "hl.dsp.window.swap({ window = \"address:0xab\", target = \"address:0xcd\" })");
         assert_eq!(move_to_workspace("ab", 2), "hl.dsp.window.move({ window = \"address:0xab\", workspace = 2, follow = false })");
         assert_eq!(toggle_special(), "hl.dsp.workspace.toggle_special(\"formalshell-console\")");
         assert_eq!(

@@ -38,10 +38,28 @@ pub struct Row {
     pub windows: Vec<Win>,
 }
 
+/// The keyboard's place on the map: the window it is on, or a row with no
+/// window under it (the empty row is `rows.len()`). It follows its window
+/// to wherever the compositor puts it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Cursor {
+    pub window: Option<String>,
+    pub row: usize,
+}
+
+/// A carry the compositor is asked to make.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Move {
+    Swap(String, String),
+    /// To the workspace with this ordinal.
+    To(String, i64),
+}
+
 #[derive(Default)]
 pub struct Map {
     pub rows: Vec<Row>,
     probed: Option<(u32, Vec<appicon::Query>)>,
+    pub cursor: Option<Cursor>,
 }
 
 impl Map {
@@ -83,6 +101,82 @@ impl Map {
                 current: s.current,
             })
             .collect();
+        if let Some(c) = &mut self.cursor {
+            match c.window.as_ref().and_then(|id| self.rows.iter().position(|r| r.windows.iter().any(|w| &w.id == id))) {
+                Some(row) => c.row = row,
+                None => {
+                    c.window = None;
+                    c.row = c.row.min(self.rows.len());
+                }
+            }
+        }
+    }
+
+    /// The cursor's row and its column in that row.
+    fn at(&self) -> Option<(usize, usize)> {
+        let c = self.cursor.as_ref()?;
+        let col = c.window.as_ref().and_then(|id| self.rows.get(c.row)?.windows.iter().position(|w| &w.id == id)).unwrap_or(0);
+        Some((c.row, col))
+    }
+
+    /// The cursor on the focused window, else on the current row.
+    pub fn take_keyboard(&mut self) {
+        let row = self.rows.iter().position(|r| r.current).unwrap_or(0);
+        let window = self.rows.get(row).and_then(|r| r.windows.iter().find(|w| w.focused).or(r.windows.first())).map(|w| w.id.clone());
+        self.cursor = Some(Cursor { window, row });
+    }
+
+    /// An arrow: the cursor moves, or with `carry` the window under it does
+    /// (along its row a swap with its neighbour, across rows onto that
+    /// workspace, past the last onto a new one).
+    pub fn step(&mut self, dx: i32, dy: i32, carry: bool) -> Option<Move> {
+        let (row, col) = self.at()?;
+        let windows = |r: usize| self.rows.get(r).map_or(&[][..], |r| r.windows.as_slice());
+        if carry {
+            let id = self.cursor.as_ref()?.window.clone()?;
+            if dx != 0 {
+                let other = windows(row).get(col.checked_add_signed(dx as isize)?)?.id.clone();
+                return Some(Move::Swap(id, other));
+            }
+            let to = row.checked_add_signed(dy as isize)?;
+            let idx = match self.rows.get(to) {
+                Some(r) => r.idx,
+                None if to == self.rows.len() && windows(row).len() > 1 => self.next_idx(),
+                None => return None,
+            };
+            if let Some(c) = &mut self.cursor {
+                c.row = to;
+            }
+            return Some(Move::To(id, idx));
+        }
+        let (row, col) = if dx != 0 {
+            (row, col.saturating_add_signed(dx as isize).min(windows(row).len().saturating_sub(1)))
+        } else {
+            (row.saturating_add_signed(dy as isize).min(self.rows.len()), col)
+        };
+        let window = windows(row).get(col.min(windows(row).len().saturating_sub(1))).map(|w| w.id.clone());
+        self.cursor = Some(Cursor { window, row });
+        None
+    }
+
+    /// Enter on the cursor: its window, its row's workspace, or a new one.
+    pub fn enter(&self, output: &str) -> Action {
+        let Some(c) = &self.cursor else { return Action::None };
+        match (&c.window, self.rows.get(c.row)) {
+            (Some(id), _) => Action::Window(id.clone()),
+            (None, Some(_)) => self.action(&format!("row:{}", c.row), output),
+            (None, None) => self.action("new", output),
+        }
+    }
+
+    /// The cursor's stop, for the ring.
+    pub fn cursor_key(&self) -> Option<String> {
+        let c = self.cursor.as_ref()?;
+        Some(match &c.window {
+            Some(id) => format!("w:{id}"),
+            None if c.row < self.rows.len() => format!("r:{}", c.row),
+            None => "new".into(),
+        })
     }
 
     /// The ordinal a window dropped on the empty row gets.
@@ -95,7 +189,7 @@ impl Map {
         let size = icon_size(theme);
         let mut col: Vec<El> = self.rows.iter().enumerate().map(|(i, r)| row(theme, i, r, size)).collect();
         let empty = w::row(s.sm, vec![w::caption(format!("{}", self.next_idx())).mono().ink(Ink::Dim), w::spacer()]);
-        col.push(w::cell(empty).ghost().interactive().on("new").fill());
+        col.push(w::cell(empty).ghost().interactive().on("new").stop("new").fill());
         w::column(s.xxs, col).fill()
     }
 
@@ -135,6 +229,10 @@ impl Map {
                 .collect(),
         )
     }
+
+    pub fn cursor_status(&self) -> Value {
+        self.cursor.as_ref().map_or(Value::Null, |c| json!({"window": c.window, "row": c.row}))
+    }
 }
 
 /// An icon three across a sidebar card, past the ordinal.
@@ -160,9 +258,10 @@ fn row(theme: &Theme, i: usize, r: &Row, size: f64) -> El {
             })
             .interactive()
             .on(format!("window:{}", win.id))
+            .stop(format!("w:{}", win.id))
         })
         .collect();
     let label = w::caption(r.label.clone()).mono().ink(if r.current { Ink::Fg } else { Ink::Dim });
     let body = w::row(s.sm, vec![label, w::grid(ACROSS, s.xxs, icons).fill()]);
-    w::cell(body).ghost().selected(r.current).interactive().on(format!("row:{i}")).fill()
+    w::cell(body).ghost().selected(r.current).interactive().on(format!("row:{i}")).stop(format!("r:{i}")).fill()
 }

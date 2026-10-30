@@ -94,6 +94,8 @@ impl Sidebar {
         self.cards = kept;
         let clip = Some(strip);
         self.top.anchor = anchor;
+        self.top.cursor = self.map.cursor_key();
+        self.top.ring = self.top.cursor.is_some();
         let drawn = self.top.draw(&top, Rect::new(x0, y0, x0 + width, y0 + room), clip, 1.0, theme, kit, scene, now);
         self.foot.anchor = drawn.last.or(anchor);
         let at = bottom - foot_h;
@@ -162,6 +164,7 @@ impl Sidebar {
             "width": width,
             "cards": self.cards,
             "rows": self.map.status(),
+            "cursor": self.map.cursor_status(),
             "hits": self
                 .top
                 .hits

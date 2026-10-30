@@ -596,4 +596,9 @@ runs = ["--wifi", "--menu"]
 # The sidebar: the bar's body under layout sidebar, its cards and minimap.
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/sidebar/", "crates/formalshell-rs/src/ipc/sidebar.rs", "dev/smoke.d/sidebar.sh"]
-runs = ["--sidebar", "--sidebar --light"]
+runs = ["--sidebar", "--sidebar --light", "--minimap"]
+
+# The minimap's moves: the keyboard, and the compositor commands they send.
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "dev/smoke.d/minimap.sh"]
+runs = ["--minimap"]

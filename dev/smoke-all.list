@@ -25,6 +25,7 @@
 --glass
 --sidebar
 --sidebar --light
+--minimap
 --capture
 --capture-edit
 --center

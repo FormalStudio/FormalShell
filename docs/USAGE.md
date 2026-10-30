@@ -640,7 +640,14 @@ fs sidebar toggle    # fold to the rail, or open it out
 fs sidebar collapse
 fs sidebar expand
 fs sidebar status    # {"collapsed":false,"edge":"left","width":160,"cards":[…],"rows":[…],"hits":[…]}
+fs sidebar focus     # the map takes the keyboard
 ```
+
+Bound to a key, `sidebar focus` puts a cursor on the focused window's
+icon. The arrows move it; Shift with an arrow carries the window: along
+its row it trades places with its neighbour, up or down it moves onto that
+workspace, and down past the last row onto a new one. Enter focuses what
+the cursor is on, and Enter or Escape hands the keyboard back.
 
 ## Theming
 

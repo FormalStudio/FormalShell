@@ -288,6 +288,12 @@ async fn commands(
             Command::ToggleFloating(id) => dispatch(&lua::toggle_floating(&id)).await,
             Command::ToggleFullscreen(id) => dispatch(&lua::toggle_fullscreen(&id)).await,
             Command::MoveWindowTo { id, idx, .. } => dispatch(&lua::move_to_workspace(&id, idx)).await,
+            Command::SwapWindows { a, b } => {
+                dispatch(&lua::swap_windows(&a, &b)).await;
+                // A swap moves no window between workspaces and raises no
+                // event, so the rects are asked for again.
+                let _ = dirty.try_send(());
+            }
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
                 let (w, h) = ((width.round() as i64).max(1), (height.round() as i64).max(1));
                 dispatch(&lua::resize_window(&id, w, h)).await;

@@ -168,6 +168,8 @@ pub enum Command {
     ToggleFullscreen(String),
     /// Onto the workspace slot `idx` of `output`, focus staying put.
     MoveWindowTo { id: String, idx: i64, output: String },
+    /// Two windows trade places in the layout, focus staying put.
+    SwapWindows { a: String, b: String },
     PlaceFloatingWindow { id: String, x: f64, y: f64, width: f64, height: f64 },
     ParkWindow(String),
     UnparkWindow(String),

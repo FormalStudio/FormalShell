@@ -793,6 +793,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   their place slide, new ones fade in, gone ones fade out.
 - `mic.sh` `--mic`: the opt-in mic cell rendering its honest no-device state
   on a machine with no capture device.
+- `minimap.sh` `--minimap`: the sidebar's Spaces map acted on under
+  `layout: sidebar`, three foot windows over two workspaces: `sidebar
+  focus` putting the cursor on the focused window, then real keys off
+  `wtype`: Left to the row's first window, Shift+Right swapping it with its
+  neighbour (their places traded in `hyprctl clients` and in the row's
+  order), Shift+Down carrying it onto workspace 2 and again past the last
+  row onto a new workspace 3, the cursor following it, and Escape giving
+  the keyboard back. The cursor's frame and the carried one pulled.
 - `mirror.sh` `--mirror`: the launcher's camera mirror against two v4l2loopback
   nodes (built by the VM rig, loaded by the leg) fed by real ffmpeg
   writers, a colour pattern on video10 and a GREY one on video11 standing in
