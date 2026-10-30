@@ -7,6 +7,8 @@
 #   dev/seams.sh      artifacts/seams/{boot,logout,reboot,shutdown}/frames/
 #
 # Frame n is n x 100 ms into its recording, so a file's number is its time.
+# dev/seams-check.py reads them at the end (sheets and report.txt beside the
+# frames) and the run exits with its verdict.
 #   boot      power-on: OVMF, Limine, systemd-boot, the FormalOS splash, the
 #             greeter, the password typed, the desktop with its bar
 #   logout    SUPER+SHIFT+E out of the desktop and back to the greeter
@@ -98,3 +100,5 @@ done
 say "saving $vm again, which the cold boot dropped"
 f start | tail -1
 f save | tail -1
+
+dev/seams-check.py "$out"
