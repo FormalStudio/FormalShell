@@ -1,11 +1,13 @@
 //! Activity: fspec's operation stream, `com.canonical.Unity.LauncherEntry`
-//! on the session bus and the notification `value` hint (fed by
-//! `services/notifications.rs`), folded into one [`fs_activity::Activity`]
-//! on the service thread and published whole when it changes.
+//! on the session bus, the notification `value` hint (fed by
+//! `services/notifications.rs`) and the shell's own launches (fed by
+//! `services/launch.rs`), folded into one [`fs_activity::Activity`] on the
+//! service thread and published whole when it changes.
 //!
 //! Nothing here polls. fspec operations are found by inotify on their
 //! directory and read off their sockets; LauncherEntry is a match rule; the
-//! only timer is the next fold, armed while a finished item waits for it.
+//! only timer is the next fold, armed while a finished item waits for it or
+//! a launch for its window.
 
 use std::collections::{HashMap, HashSet};
 use std::os::unix::net::UnixStream;
@@ -110,6 +112,10 @@ pub enum Input {
     LauncherGone(String),
     Notice(Notice),
     NoticeClosed(u32),
+    /// The shell spawned desktop entry `app` (`services/launch.rs`).
+    Launch { app: String, title: String },
+    /// A window of `app` mapped.
+    Launched(String),
     /// The failures were looked at.
     Seen,
     /// A group put away (`Activity::dismiss`).
@@ -165,6 +171,8 @@ fn take(activity: &mut Activity, input: Input, now: i64) -> bool {
         Input::LauncherGone(app) => activity.launcher_gone(&app, now),
         Input::Notice(n) => activity.notification(n, now),
         Input::NoticeClosed(id) => activity.notification_closed(id, now),
+        Input::Launch { app, title } => activity.launch(&app, &title, now),
+        Input::Launched(app) => activity.launched(&app),
         Input::Seen => activity.seen(),
         Input::Dismiss(source) => activity.dismiss(&source),
         Input::ClearHistory => activity.clear_history(),

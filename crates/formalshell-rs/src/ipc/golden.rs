@@ -411,6 +411,7 @@ fn stub() -> Registry<()> {
                     f("open", &[("source", Type::String)], Type::String, |_, a| s(format!("error: no activity from '{}'", a[0].str()))),
                     f("dismiss", &[("source", Type::String)], Type::String, |_, a| s(format!("error: no activity from '{}'", a[0].str()))),
                     f("retry", &[("source", Type::String)], Type::String, |_, a| s(format!("error: no activity from '{}'", a[0].str()))),
+                    f("launch", &[("desktopId", Type::String)], Type::String, |_, a| s(format!("error: no desktop entry '{}'", a[0].str()))),
                 ],
             },
             Target {

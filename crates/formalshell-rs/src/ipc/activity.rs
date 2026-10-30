@@ -1,6 +1,7 @@
 //! `activity`: what is running, grouped by source (`services/activity.rs`),
-//! `seen`, which folds the failures that stay until looked at, and a row's
-//! own verbs by source (`surfaces/activity.rs`).
+//! `seen`, which folds the failures that stay until looked at, a row's own
+//! verbs by source (`surfaces/activity.rs`), and `launch`, a desktop entry
+//! spawned with its launch shown (`services/launch.rs`), for a keybind.
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::activity::{self, Input};
@@ -42,6 +43,15 @@ fn retry(app: &mut App, args: &[Value]) -> Value {
     verb(app, Verb::Retry, args[0].str())
 }
 
+fn launch(app: &mut App, args: &[Value]) -> Value {
+    let id = args[0].str();
+    let Some(argv) = crate::services::menu::launch_argv(&app.store.menu, id) else {
+        return Value::Str(format!("error: no desktop entry '{id}'"));
+    };
+    crate::services::launch::spawn(&app.store, id, &argv);
+    Value::Str("ok".into())
+}
+
 pub fn target() -> Target<App> {
     Target {
         name: "activity",
@@ -51,6 +61,7 @@ pub fn target() -> Target<App> {
             Function { name: "open", params: &[("source", Type::String)], ret: Type::String, call: open },
             Function { name: "dismiss", params: &[("source", Type::String)], ret: Type::String, call: dismiss },
             Function { name: "retry", params: &[("source", Type::String)], ret: Type::String, call: retry },
+            Function { name: "launch", params: &[("desktopId", Type::String)], ret: Type::String, call: launch },
         ],
     }
 }

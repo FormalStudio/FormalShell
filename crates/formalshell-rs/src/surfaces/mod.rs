@@ -34,6 +34,9 @@ pub fn changed(app: &mut App, topic: Topic) {
         crate::services::display::reconcile(&app.store);
     }
     app.switcher_changed(topic);
+    if topic == Topic::Compositor {
+        crate::services::launch::windows_changed(&app.store);
+    }
     app.atlas_changed(topic);
     app.overlay_changed(topic);
     app.preview_changed(topic);

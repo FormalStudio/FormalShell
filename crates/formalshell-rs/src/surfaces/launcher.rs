@@ -2077,9 +2077,10 @@ impl Model {
     fn run_target(&mut self, store: &Store, node: &Node, action: &Action, target: &Node) -> Out {
         match action.run {
             Run::Target(TargetKind::App) => {
-                let Some(mut argv) = target.id.strip_prefix("target-app:").and_then(|id| index::launch_argv(&store.menu, id)) else { return Out::None };
+                let Some(id) = target.id.strip_prefix("target-app:") else { return Out::None };
+                let Some(mut argv) = index::launch_argv(&store.menu, id) else { return Out::None };
                 argv.push(node.path.clone());
-                compositor::spawn(&argv);
+                crate::services::launch::spawn(store, id, &argv);
             }
             Run::Target(TargetKind::Peer) => {
                 use crate::services::localsend;
@@ -2301,17 +2302,17 @@ impl Model {
                         if !target.is_empty() {
                             compositor::focus_window(&target);
                         } else if let Some(argv) = index::launch_argv(&store.menu, arg) {
-                            compositor::spawn(&argv);
+                            crate::services::launch::spawn(store, arg, &argv);
                         }
                         Out::None
                     }
                     "app.new" | "app.action" => {
-                        let key = match arg.split_once(':') {
-                            Some((id, action)) if verb == "app.action" => index::action_key(id, action),
-                            _ => arg.to_owned(),
+                        let (id, key) = match arg.split_once(':') {
+                            Some((id, action)) if verb == "app.action" => (id, index::action_key(id, action)),
+                            _ => (arg, arg.to_owned()),
                         };
                         if let Some(argv) = index::launch_argv(&store.menu, &key) {
-                            compositor::spawn(&argv);
+                            crate::services::launch::spawn(store, id, &argv);
                         }
                         Out::None
                     }

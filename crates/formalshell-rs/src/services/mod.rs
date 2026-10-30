@@ -35,6 +35,7 @@ pub mod notifications;
 pub mod overnight;
 pub mod picker;
 pub mod info;
+pub mod launch;
 pub mod lyrics;
 pub mod plugins;
 pub mod polkit;

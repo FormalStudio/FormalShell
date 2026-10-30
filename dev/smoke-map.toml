@@ -419,7 +419,16 @@ paths = [
   "crates/fs-activity/**",
   "dev/fspec-activity-stub.py",
 ]
-runs = ["--activity"]
+runs = ["--activity", "--launch"]
+
+# Launch feedback, and the paths that spawn a desktop entry through it.
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/launch.rs", "dev/smoke.d/launch.sh"]
+runs = ["--launch", "--launcher-actions"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/appmenu.rs"]
+runs = ["--launch"]
 
 [[rule]]
 paths = ["crates/fs-info/src/reminders.rs"]

@@ -1,7 +1,8 @@
 //! Activity: what is running on the machine right now, from the three live
 //! activity sources a Linux desktop has (FormalOS plan, decisions 6 and 12):
 //! fspec's operation stream, `com.canonical.Unity.LauncherEntry` and the
-//! notification spec's `value` hint. One list of items, grouped by source.
+//! notification spec's `value` hint, and the shell's own app launches until
+//! their window maps. One list of items, grouped by source.
 //!
 //! Nothing piles up: a finished item stays [`FOLD_MS`] and then folds into
 //! the history; a failed one stays until [`Activity::seen`]. Time is passed
@@ -22,12 +23,16 @@ use progress::{Fraction, Progress};
 pub const FOLD_MS: i64 = 4000;
 /// Folded items kept, newest first.
 pub const HISTORY: usize = 50;
+/// How long a launch waits for its window before it reads as failed.
+pub const LAUNCH_MS: i64 = 15_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
     Fspec,
     LauncherEntry,
     Notification,
+    /// An app the shell spawned, until a window of it maps.
+    Launch,
 }
 
 impl Origin {
@@ -36,6 +41,7 @@ impl Origin {
             Origin::Fspec => "fspec",
             Origin::LauncherEntry => "launcherEntry",
             Origin::Notification => "notification",
+            Origin::Launch => "launch",
         }
     }
 }
@@ -64,13 +70,14 @@ impl State {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Item {
     /// Unique across origins: `fspec:<op id>`, `launcher:<desktop id>`,
-    /// `notification:<id>`.
+    /// `notification:<id>`, `launch:<desktop id>`.
     pub id: String,
     pub origin: Origin,
     /// The grouping key: one row per source.
     pub source: String,
     /// fspec's kind (`apply`, `update`, `rollback`, `run`, or one this
-    /// reader does not know), `progress` or `notification` otherwise.
+    /// reader does not know), `progress`, `notification` or `launch`
+    /// otherwise.
     pub kind: String,
     /// The desktop entry id the item belongs to, where there is one.
     pub app: Option<String>,
@@ -151,6 +158,15 @@ pub fn notification_id(id: u32) -> String {
 
 fn launcher_id(app: &str) -> String {
     format!("launcher:{app}")
+}
+
+fn launch_id(app: &str) -> String {
+    format!("launch:{app}")
+}
+
+/// A running launch's end, when its window has not mapped by then.
+fn launch_due(item: &Item) -> Option<i64> {
+    (item.origin == Origin::Launch && item.state == State::Running).then_some(item.started_ms + LAUNCH_MS)
 }
 
 /// The items sharing one source, in the order they started.
@@ -286,9 +302,16 @@ impl Activity {
         true
     }
 
-    /// Moves every item whose time is up into the history.
+    /// Fails every launch whose window is overdue, and moves every item
+    /// whose time is up into the history.
     pub fn fold(&mut self, now: i64) -> bool {
-        self.fold_where(|i| i.due(now))
+        let overdue: Vec<(String, String)> =
+            self.live.iter().filter(|i| launch_due(i).is_some_and(|at| now >= at)).map(|i| (i.id.clone(), i.title.clone())).collect();
+        let mut changed = false;
+        for (id, title) in overdue {
+            changed |= self.end(&id, State::Failed, Some(format!("{title} has not opened a window")), now);
+        }
+        self.fold_where(|i| i.due(now)) || changed
     }
 
     /// The failures have been looked at: they fold now.
@@ -324,11 +347,12 @@ impl Activity {
     }
 
     /// The sources that get a live card: fspec and LauncherEntry groups
-    /// (a notification with a `value` is its own card), not put away.
+    /// (a notification with a `value` is its own card, a launch has the
+    /// bar's ring alone), not put away.
     pub fn toasts(&self) -> Vec<&str> {
         self.groups()
             .into_iter()
-            .filter(|g| g.items.iter().any(|i| i.origin != Origin::Notification))
+            .filter(|g| g.items.iter().any(|i| !matches!(i.origin, Origin::Notification | Origin::Launch)))
             .filter(|g| self.dismissed.get(g.source) != Some(&g.state()))
             .map(|g| g.source)
             .collect()
@@ -345,9 +369,47 @@ impl Activity {
         had
     }
 
-    /// When the next finished item folds, if any is waiting to.
+    /// When the next finished item folds or the next launch runs out, if
+    /// any is waiting to.
     pub fn next_fold(&self) -> Option<i64> {
-        self.live.iter().filter_map(Item::fold_at).min()
+        self.live.iter().filter_map(|i| i.fold_at().or_else(|| launch_due(i))).min()
+    }
+
+    /// The shell spawned desktop entry `app`: running, with no progress to
+    /// tell, until [`Activity::launched`] or [`LAUNCH_MS`] passes.
+    pub fn launch(&mut self, app: &str, title: &str, now: i64) -> bool {
+        self.upsert(
+            Item {
+                id: launch_id(app),
+                origin: Origin::Launch,
+                source: launch_id(app),
+                kind: "launch".into(),
+                app: Some(app.to_owned()),
+                title: title.to_owned(),
+                detail: "Opening".into(),
+                phase: None,
+                progress: Progress::Indeterminate,
+                state: State::Running,
+                urgent: false,
+                keys: Vec::new(),
+                summary: None,
+                started_ms: now,
+                updated_ms: now,
+                ended_ms: None,
+            },
+            now,
+        )
+    }
+
+    /// A window of `app` mapped: its launch goes, failed or not, seen
+    /// into the history or not.
+    pub fn launched(&mut self, app: &str) -> bool {
+        let id = launch_id(app);
+        let before = (self.live.len(), self.history.len());
+        self.live.retain(|i| i.id != id);
+        self.history.retain(|i| i.id != id);
+        self.settle_dismissed();
+        (self.live.len(), self.history.len()) != before
     }
 
     /// One LauncherEntry's merged properties. Progress while it shows a
@@ -503,6 +565,50 @@ mod tests {
 
     fn notice(id: u32, value: Option<u8>) -> Notice {
         Notice { id, app: "firefox".into(), title: "Downloading".into(), body: "a.iso".into(), value: value.map(Fraction::from_percent), urgent: false }
+    }
+
+    #[test]
+    fn a_launch_runs_until_its_window_maps() {
+        let mut a = Activity::default();
+        assert!(a.launch("foot", "Foot", 1000));
+        let item = a.get("launch:foot").unwrap();
+        assert_eq!((item.state, item.progress.clone()), (State::Running, Progress::Indeterminate));
+        assert!(a.toasts().is_empty(), "a launch raised a toast card");
+        assert_eq!(a.next_fold(), Some(1000 + LAUNCH_MS));
+        assert!(a.launched("foot"));
+        assert!(a.live().is_empty());
+        assert_eq!(a.history().count(), 0, "a launch that mapped went into the history");
+        assert!(!a.launched("foot"));
+    }
+
+    #[test]
+    fn a_launch_with_no_window_fails() {
+        let mut a = Activity::default();
+        a.launch("ghost", "Ghost", 0);
+        assert!(!a.fold(LAUNCH_MS - 1));
+        assert!(a.fold(LAUNCH_MS));
+        let item = a.get("launch:ghost").unwrap();
+        assert_eq!((item.state, item.urgent), (State::Failed, true));
+        assert_eq!(item.summary.as_deref(), Some("Ghost has not opened a window"));
+        assert_eq!(a.next_fold(), None, "a failed launch asked for a timer");
+        assert!(a.seen());
+        assert_eq!(a.history().next().unwrap().id, "launch:ghost");
+    }
+
+    #[test]
+    fn a_late_window_takes_the_failure_back() {
+        let mut a = Activity::default();
+        a.launch("slow", "Slow", 0);
+        a.fold(LAUNCH_MS);
+        assert!(a.launched("slow"));
+        assert!(a.live().is_empty());
+        assert_eq!(a.history().count(), 0);
+
+        a.launch("slow", "Slow", 0);
+        a.fold(LAUNCH_MS);
+        a.seen();
+        assert!(a.launched("slow"), "a seen failure stayed in the history");
+        assert_eq!(a.history().count(), 0);
     }
 
     #[test]

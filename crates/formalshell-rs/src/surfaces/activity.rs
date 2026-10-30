@@ -141,7 +141,7 @@ fn focus_app(store: &Store, app: &str) {
         Some(win) => compositor::focus_window(&win.id),
         None => {
             if let Some(argv) = menu::launch_argv(&store.menu, id) {
-                compositor::spawn(&argv);
+                crate::services::launch::spawn(store, id, &argv);
             }
         }
     }
@@ -170,7 +170,7 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
             let lead = g.lead();
             match (lead.origin, lead.app.as_deref(), notification(lead)) {
                 (Origin::Fspec, ..) => return Ok(Done::Panel),
-                (Origin::LauncherEntry, Some(app), _) => focus_app(store, app),
+                (Origin::LauncherEntry | Origin::Launch, Some(app), _) => focus_app(store, app),
                 (Origin::Notification, _, Some(id)) => notify(runtime, Op::Invoke(id, "default".into())),
                 _ => {}
             }

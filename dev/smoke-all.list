@@ -64,6 +64,7 @@
 --join
 --keybinds
 --launcher-abbrev
+--launch
 --launcher-actions
 --launcher-glass
 --launcher-glass --no-morph
