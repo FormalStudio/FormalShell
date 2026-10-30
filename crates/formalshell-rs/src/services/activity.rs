@@ -366,9 +366,13 @@ impl Conn {
 async fn ask_again(path: &Path, seen: &mut Seen, tx: &Sender<Input>) -> Option<(Conn, usize)> {
     let stream = Async::<UnixStream>::connect(path).await.ok()?;
     let mut fresh = Conn { stream, pending: Vec::new() };
-    match fresh.step(seen, tx).await {
-        Got::Lines(n) if n > 0 => Some((fresh, n)),
-        _ => None,
+    // A snapshot can arrive in pieces: read on until a whole line lands.
+    loop {
+        match fresh.step(seen, tx).await {
+            Got::Lines(0) => {}
+            Got::Lines(n) => return Some((fresh, n)),
+            Got::Quiet | Got::Closed => return None,
+        }
     }
 }
 
@@ -618,6 +622,31 @@ mod tests {
         block_on(read_operation(&path, &tx));
         server.join().unwrap();
         assert_eq!(drain(&rx), ["running 25", "succeeded 100"]);
+    }
+
+    /// A second connection whose snapshot arrives in two writes is still
+    /// the one kept.
+    #[test]
+    fn a_split_snapshot_on_the_second_ask_is_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("g.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let (tx, rx) = async_channel::unbounded();
+        let server = std::thread::spawn(move || {
+            let (mut stranded, _) = listener.accept().unwrap();
+            stranded.write_all(line("g", "running", 1).as_bytes()).unwrap();
+            let (mut s, _) = listener.accept().unwrap();
+            let snapshot = line("g", "running", 3);
+            let (head, tail) = snapshot.split_at(snapshot.len() / 2);
+            s.write_all(head.as_bytes()).unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            s.write_all(tail.as_bytes()).unwrap();
+            s.write_all(line("g", "succeeded", 4).as_bytes()).unwrap();
+            drop(stranded);
+        });
+        block_on(read_operation(&path, &tx));
+        server.join().unwrap();
+        assert_eq!(drain(&rx), ["running 25", "running 75", "succeeded 100"]);
     }
 
     #[test]
