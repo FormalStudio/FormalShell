@@ -141,6 +141,8 @@ pub struct Model {
     motion: RowMotion,
     /// `debug motionScale`, which the row transitions run at.
     pub motion_scale: f64,
+    /// What the query's abbreviations say, for the ranking and `abbrev`.
+    lookup: fs_menu::abbrev::Lookup,
 }
 
 /// AddTransition, MoveTransition and RemoveTransition: an arriving row
@@ -255,6 +257,7 @@ impl Default for Model {
             monitor_history: MonitorHistory::default(),
             motion: RowMotion::default(),
             motion_scale: 1.0,
+            lookup: Default::default(),
             placed: false,
             want: String::new(),
             from_keys: true,
@@ -703,7 +706,9 @@ impl Model {
                 if level == Some("calc") {
                     calc.into_iter().collect()
                 } else {
-                    let ranked = fs_menu::search::rank(nodes, q, cond, level).into_iter().cloned();
+                    let picks = picks(store);
+                    let boost = fs_menu::search::Boost { abbrev: Some(&self.lookup), picks: &picks, now: now_ms() };
+                    let ranked = fs_menu::search::rank_with(nodes, q, cond, level, boost).into_iter().cloned();
                     calc.into_iter().chain(ranked).collect()
                 }
             }
@@ -736,8 +741,18 @@ impl Model {
         (view, rows, app_count, empty, searching, key)
     }
 
+    /// The query's abbreviations, read once per resolve.
+    fn lookup(&self, store: &Store) -> fs_menu::abbrev::Lookup {
+        if self.mode != Mode::Menu {
+            return Default::default();
+        }
+        let book = abbreviation_book(store);
+        fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, self.query.text(), now_ms(), |id| resolves(store, id))
+    }
+
     /// Commits the rows, their headings and the cursor.
     pub fn resolve(&mut self, store: &Store, theme: &Theme, kit: &mut Kit) {
+        self.lookup = self.lookup(store);
         let (view, rows, app_count, empty, searching, key) = self.resolve_rows(store);
         let fresh = key != self.key;
         let level_label = self.level.as_deref().and_then(|l| store.menu.nodes().get(l)).map(|n| n.label.clone()).unwrap_or_default();
@@ -750,7 +765,6 @@ impl Model {
                 searching,
                 level: self.level.as_deref(),
                 level_label: &level_label,
-                nodes: Some(store.menu.nodes()),
             },
         );
         let view_changed = view != self.view;
@@ -1101,6 +1115,7 @@ impl Model {
             "ids": self.rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
             "checked": checked,
             "drawn": drawn,
+            "abbrev": self.rows.get(self.cursor).and_then(|n| self.lookup.source_of(&fs_menu::actions::subject_id(n))).map(fs_menu::abbrev::Source::as_str),
         })
     }
 
@@ -1342,6 +1357,29 @@ impl Model {
         }
     }
 
+    /// One pick of `node` into the picks ledger, and the query it was
+    /// picked under taught to the learned abbreviations, unless the query
+    /// already names it exactly. Emoji keep their own ledger.
+    fn picked(&self, store: &Store, node: &Node) {
+        if self.mode != Mode::Menu || node.id.starts_with("emoji.") {
+            return;
+        }
+        let id = fs_menu::actions::subject_id(node);
+        if !resolves(store, &id) {
+            return;
+        }
+        let now = now_ms();
+        let mut fields = vec![state::Field::Picks(json!(fs_menu::frecency::record(&picks(store), &id, now, None)))];
+        let q = self.query.text();
+        let q_norm = fs_menu::search::normalize(q.trim());
+        let exact = fs_menu::search::tier(node, &q_norm, &fs_menu::search::slug(&q_norm)) == fs_menu::search::TIER_EXACT;
+        if !exact && fs_menu::abbrev::key(q).is_some() {
+            let book = fs_menu::abbrev::learn(&abbreviation_book(store), q, &id, now);
+            fields.push(state::Field::Abbreviations(json!(book)));
+        }
+        state::set(fields);
+    }
+
     /// Whether a confirm action on row `id` is armed.
     pub fn confirming(&self, id: &str) -> bool {
         !self.confirm.is_empty() && self.confirm.split('\u{1}').next() == Some(id)
@@ -1360,6 +1398,7 @@ impl Model {
         self.confirm.clear();
         let out = match &action.run {
             Run::Into(id) => {
+                self.picked(store, node);
                 let to = if store.menu.nodes().contains_key(id) { id.clone() } else { node.id.clone() };
                 self.enter_level(store, Some(to));
                 return Out::None;
@@ -1375,7 +1414,6 @@ impl Model {
                         } else if let Some(argv) = index::launch_argv(&store.menu, arg) {
                             compositor::spawn(&argv);
                         }
-                        record_launch(store, arg);
                         Out::None
                     }
                     "app.new" | "app.action" => {
@@ -1386,10 +1424,10 @@ impl Model {
                         if let Some(argv) = index::launch_argv(&store.menu, &key) {
                             compositor::spawn(&argv);
                         }
-                        record_launch(store, arg.split(':').next().unwrap_or(arg));
                         Out::None
                     }
                     "wallpaper.set" => {
+                        self.picked(store, node);
                         return if self.choose_image(store, arg) { Out::Close } else { Out::None };
                     }
                     "monitor.end" => {
@@ -1415,6 +1453,7 @@ impl Model {
         if action.paste_after {
             self.paste = true;
         }
+        self.picked(store, node);
         if node.id.starts_with("emoji.") {
             let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
             let next = fs_menu::frecency::record(&uses, &node.id, now_ms(), None);
@@ -1530,18 +1569,21 @@ impl Model {
         }
         let nodes = store.menu.nodes();
         let snap = snapshot(store);
-        let mut rows: Vec<Value> = fs_menu::search::rank(nodes, q, &store.menu.cond, self.level.as_deref())
+        let picks = picks(store);
+        let book = abbreviation_book(store);
+        let lookup = fs_menu::abbrev::lookup(&configured_abbreviations(store), &book, q, now_ms(), |id| resolves(store, id));
+        let boost = fs_menu::search::Boost { abbrev: Some(&lookup), picks: &picks, now: now_ms() };
+        let mut rows: Vec<Value> = fs_menu::search::rank_with(nodes, q, &store.menu.cond, self.level.as_deref(), boost)
             .into_iter()
             .map(|n| {
                 json!({
                     "id": n.id, "label": n.label, "kind": n.kind.as_str(), "iconSource": n.icon_source,
-                    "checked": toggles::checked_for(Some(n), Some(&snap), Some(&store.menu.checked)),
-                    "section": model::search_section_of(Some(nodes), n),
+                    "checked": toggles::checked_for(Some(n), Some(&snap), Some(&store.menu.checked))
                 })
             })
             .collect();
         if let Some(calc) = fs_menu::calc::result_node(q) {
-            rows.insert(0, json!({"id": calc.id, "label": calc.label, "kind": calc.kind.as_str(), "section": model::search_section_of(Some(nodes), &calc)}));
+            rows.insert(0, json!({"id": calc.id, "label": calc.label, "kind": calc.kind.as_str()}));
         }
         Value::Array(rows)
     }
@@ -1551,13 +1593,39 @@ fn now_ms() -> f64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64)
 }
 
-pub fn launches(store: &Store) -> Vec<fs_menu::frecency::Record> {
-    serde_json::from_value(store.state.data.app_launches.clone()).unwrap_or_default()
+pub fn picks(store: &Store) -> Vec<fs_menu::frecency::Record> {
+    serde_json::from_value(store.state.data.picks.clone()).unwrap_or_default()
 }
 
-fn record_launch(store: &Store, id: &str) {
-    let next = fs_menu::frecency::record(&launches(store), id, now_ms(), None);
-    state::set(vec![state::Field::AppLaunches(serde_json::to_value(next).unwrap_or_default())]);
+/// The app subjects' picks, keyed by desktop id as the apps source orders by.
+pub fn launches(store: &Store) -> Vec<fs_menu::frecency::Record> {
+    picks(store)
+        .into_iter()
+        .filter_map(|r| Some(fs_menu::frecency::Record { id: r.id.strip_prefix("app:")?.to_owned(), ..r }))
+        .collect()
+}
+
+pub fn abbreviation_book(store: &Store) -> fs_menu::abbrev::Book {
+    serde_json::from_value(store.state.data.abbreviations.clone()).unwrap_or_default()
+}
+
+/// `menu.abbreviations` in settings.json, query to subject id.
+pub fn configured_abbreviations(store: &Store) -> std::collections::HashMap<String, String> {
+    match store.config.get("menu.abbreviations") {
+        Some(Value::Object(map)) => {
+            map.iter().filter_map(|(q, id)| Some((fs_menu::abbrev::key(q)?, id.as_str()?.to_owned()))).collect()
+        }
+        _ => Default::default(),
+    }
+}
+
+/// Whether a subject id names something in the tree now.
+fn resolves(store: &Store, id: &str) -> bool {
+    let nodes = store.menu.nodes();
+    match id.strip_prefix("app:") {
+        Some(app) => nodes.contains_key(&format!("apps.{app}")),
+        None => nodes.contains_key(id),
+    }
 }
 
 /// The compositor's windows an app's entry claims.

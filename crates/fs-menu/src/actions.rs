@@ -113,6 +113,15 @@ impl<'a> Subject<'a> {
     }
 }
 
+/// The id a pick, an abbreviation and `Recent` know a subject by:
+/// `app:<desktop id>` for an app, the node id for everything else.
+pub fn subject_id(node: &Node) -> String {
+    match &node.entry {
+        Some(e) if node.kind == Kind::App => format!("app:{}", e.id),
+        _ => node.id.clone(),
+    }
+}
+
 /// A single-quoted shell word.
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))

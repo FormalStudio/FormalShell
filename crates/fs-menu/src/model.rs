@@ -263,7 +263,6 @@ pub struct SectionCtx<'a> {
     pub searching: bool,
     pub level: Option<&'a str>,
     pub level_label: &'a str,
-    pub nodes: Option<&'a IndexMap<String, Node>>,
 }
 
 /// One heading per row, index-aligned with `rows`. The launcher draws a
@@ -317,7 +316,7 @@ fn section_of(row: &Node, ctx: &SectionCtx) -> String {
         _ => {}
     }
     if ctx.searching {
-        return search_section_of(ctx.nodes, row);
+        return String::new();
     }
     if row.recent {
         return "Recent".to_string();
@@ -329,22 +328,6 @@ fn section_of(row: &Node, ctx: &SectionCtx) -> String {
         return ROOT_SECTION.to_string();
     }
     ctx.level_label.to_string()
-}
-
-/// The heading a whole-tree search result sits under: the label of the root
-/// route it descends from, or the root's own heading for a route row itself.
-/// Walked by `parent_id` rather than the dotted id, since an app's own id can
-/// carry dots.
-pub fn search_section_of(nodes: Option<&IndexMap<String, Node>>, row: &Node) -> String {
-    let Some(nodes) = nodes else { return ROOT_SECTION.to_string() };
-    let mut node = row;
-    let mut moved = false;
-    while let Some(parent_id) = &node.parent_id {
-        let Some(parent) = nodes.get(parent_id) else { break };
-        node = parent;
-        moved = true;
-    }
-    if moved { node.label.clone() } else { ROOT_SECTION.to_string() }
 }
 
 /// The distinct headings of a `sections_for` result, in first-seen order.

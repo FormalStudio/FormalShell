@@ -2,19 +2,18 @@ mod common;
 
 use common::*;
 use fs_menu::node::{Kind, Node, Tree};
-use fs_menu::search::{self, score};
+use fs_menu::search::{self, tier};
 use serde_json::json;
 
 fn node(id: &str, label: &str) -> Node {
     Node::new(id, label, Kind::Submenu)
 }
 
-// depth 3 keeps every case clear of the root bonus so only the tier value
-// itself is under test. "files" slugs to itself, so the query and its slug
-// are the same literal here.
+// "files" slugs to itself, so the query and its slug are the same literal
+// here.
 #[test]
 fn score_tier_ordering() {
-    let s = |n: &Node| score(n, "files", "files", 3);
+    let s = |n: &Node| tier(n, "files", "files");
     assert_eq!(s(&node("a", "Files")), 1000);
     assert_eq!(s(&node("a", "Filesystem")), 800);
     assert_eq!(s(&node("a", "My Files Manager")), 600);
@@ -32,8 +31,8 @@ fn score_tier_ordering() {
 fn alias_tier_ignores_the_parent_route_prefix() {
     let n = Node { parent_id: Some("apps".into()), ..node("apps.org.mozilla.firefox", "Firefox") };
     // "p" is only in "apps", never in "org.mozilla.firefox".
-    assert_eq!(score(&n, "p", "p", 3), 0);
-    assert_eq!(score(&n, "moz", "moz", 3), 400);
+    assert_eq!(tier(&n, "p", "p"), 0);
+    assert_eq!(tier(&n, "moz", "moz"), 400);
 }
 
 fn ranked_ids(tree: &Tree, query: &str, within: Option<&str>) -> Vec<String> {
@@ -53,10 +52,19 @@ fn score_tiers_rank_in_declared_order() {
 }
 
 #[test]
-fn score_root_bonus() {
-    let n = node("a", "Files");
-    assert_eq!(score(&n, "files", "files", 0), 1100);
-    assert_eq!(score(&n, "files", "files", 1), 1000);
+fn initials_and_subsequence_tiers() {
+    let vsc = node("a", "Visual Studio Code");
+    assert_eq!(tier(&vsc, "vsc", "vsc"), search::TIER_INITIALS);
+    let ff = node("b", "Firefox");
+    assert_eq!(tier(&ff, "ff", "ff"), search::TIER_SUBSEQUENCE);
+    assert_eq!(tier(&ff, "fz", "fz"), 0);
+    // One character is the contains tier's or nothing.
+    assert_eq!(tier(&node("c", "Nautilus"), "z", "z"), 0);
+    let tree = tree_of(json!({
+        "sub": { "label": "Firefox" },
+        "title": { "label": "Browser", "title": "ff tools" }
+    }));
+    assert_eq!(ranked_ids(&tree, "ff", None), ["title", "sub"]);
 }
 
 #[test]
@@ -84,15 +92,15 @@ fn rank_ties_break_by_declaration_order() {
 }
 
 #[test]
-fn score_app_kind_demotes_within_its_own_tier() {
-    let app = Node::new("a", "Files", Kind::App);
-    let menu = node("b", "Files");
-    assert_eq!(score(&app, "files", "files", 3), 950);
-    assert!(score(&app, "files", "files", 3) < score(&menu, "files", "files", 3));
-    // ...but a demoted exact-tier app still outranks a menu row one full tier
-    // down (the demotion never crosses a tier boundary).
-    let starts_with = node("c", "Filesystem");
-    assert!(score(&app, "files", "files", 3) > score(&starts_with, "files", "files", 3));
+fn app_kind_demotes_within_its_own_tier() {
+    let tree = tree_of(json!({
+        "x.y.starts": { "label": "Filesystem" },
+        "x.y.app": { "label": "Files", "kind": "app" },
+        "x.y.menu": { "label": "Files" }
+    }));
+    // The demoted exact app still outranks a row one tier down: a bonus
+    // never crosses a tier.
+    assert_eq!(ranked_ids(&tree, "files", None), ["x.y.menu", "x.y.app", "x.y.starts"]);
 }
 
 // routeOnly: a route whose provider names its rows after things the launcher
@@ -148,12 +156,10 @@ fn route_only_route_row_still_matches_from_the_root() {
     assert_eq!(ranked_ids(&route_only_tree(), "Tray", None), ["tray"]);
 }
 
-// The score picks the cut and which group leads; the group picks where a row
-// lands. Bonfire (600) comes out above Firefox (750) because System's best hit
-// outscored Apps' best hit, and the exact clipboard match still heads the
-// whole list.
+// One list in rank order, never grouped by root route: a strong hit of one
+// route sits above a weaker hit of the route that leads.
 #[test]
-fn rank_deals_the_cut_out_by_root_route() {
+fn rank_is_one_list_in_score_order() {
     let tree = tree_of(json!({
         "apps": { "provider": "apps" },
         "apps.firefox": { "label": "Firefox", "kind": "app" },
@@ -166,21 +172,20 @@ fn rank_deals_the_cut_out_by_root_route() {
     }));
     assert_eq!(
         ranked_ids(&tree, "fire", None),
-        ["clipboard.1", "system.firewall", "system.bonfire", "apps.firefox", "apps.campfire"]
+        ["clipboard.1", "system.firewall", "apps.firefox", "system.bonfire", "apps.campfire"]
     );
 }
 
-// Grouping happens after the cap, so it can only reorder the forty best rows,
-// never let a weaker row in on the strength of its group.
 #[test]
-fn rank_groups_after_the_cap() {
+fn rank_keeps_the_forty_best() {
     let mut def = serde_json::Map::new();
     def.insert("top".into(), json!({}));
     for i in 0..40 {
         def.insert(format!("top.item{i}"), json!({ "label": format!("Item {i}") }));
     }
     def.insert("other".into(), json!({}));
-    def.insert("other.item".into(), json!({ "label": "Item last" }));
+    def.insert("other.deeper".into(), json!({}));
+    def.insert("other.deeper.item".into(), json!({ "label": "Item last" }));
     let tree = tree_of(serde_json::Value::Object(def));
     let ranked = search::rank(&tree.nodes, "item", &no_conds(), None);
     assert_eq!(ranked.len(), 40);

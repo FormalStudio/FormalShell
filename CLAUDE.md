@@ -582,6 +582,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   top bar, so those runs print each claim as skipped and are read by eye.
 - `keybinds.sh` `--keybinds`: the launcher's binds route rendering rows off
   Hyprland's own expanded bind table.
+- `launcher_abbrev.sh` `--launcher-abbrev`: abbreviations off `menu
+  status`'s `ids` and `abbrev`: `fx` leading with an app labelled `fx`
+  until Foxtrot is picked twice under it and leads as `learned`, a record
+  taught 60 days ago not leading, a configured abbreviation in
+  settings.json beating a pin in state.json for the same query and a pin
+  alone leading, `menu abbreviations` holding the two picks, and
+  settings.json's sha256 unchanged.
 - `light.sh` `--light`: pins `theme.mode` light (a `settings_pin`) and
   rides any leg, so its frames are read in light mode; asserts `theme
   status` reports light.

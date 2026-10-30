@@ -1,22 +1,33 @@
-//! Omarchy-style tiered fuzzy scorer for the launcher's search field.
+//! Tiered fuzzy scorer for the launcher's search field.
 //!
-//! Tiers sit 200 points apart so the root bonus (+100) and the app demotion
-//! (-50) only reorder rows within a tier. The score picks which rows make the
-//! cut and which group leads; the group picks where a row lands: the capped
-//! list is dealt out by root route in the order each route's best hit earned.
+//! A hit ranks by a pair, compared tier first: `(tier, bonus)`. The bonus
+//! (the root bonus, the app demotion, a learned abbreviation's boost) only
+//! reorders rows inside a tier, however large it grows. Then shallower
+//! depth, then the picks ledger's frecency, then declaration order. The 40
+//! best come back as one list in that order.
 
 use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 
-use crate::model::search_section_of;
+use crate::abbrev::{Lookup, Source};
+use crate::actions::subject_id;
+use crate::frecency::{self, Record};
 use crate::node::{Kind, Node};
 
+/// A configured or pinned abbreviation for the query.
+pub const TIER_SET: i32 = 1400;
+/// A learned abbreviation that dominates the query.
+pub const TIER_LEARNED: i32 = 1200;
 pub const TIER_EXACT: i32 = 1000;
 pub const TIER_STARTS_WITH: i32 = 800;
 pub const TIER_CONTAINS: i32 = 600;
 pub const TIER_ALIAS: i32 = 400;
 pub const TIER_TITLE: i32 = 200;
+/// The query is the initials of the label's words: `vsc`, Visual Studio Code.
+pub const TIER_INITIALS: i32 = 150;
+/// Every query character appears in the label in order: `ff`, Firefox.
+pub const TIER_SUBSEQUENCE: i32 = 100;
 pub const ROOT_BONUS: i32 = 100;
 pub const APP_DEMOTION: i32 = 50;
 pub const MAX_RESULTS: usize = 40;
@@ -52,14 +63,28 @@ fn own_id(node: &Node) -> &str {
     }
 }
 
-/// `q_norm` and `q_slug` are the query normalized and slugged once by
-/// `rank`, since a query is invariant across the whole tree walk.
-pub fn score(node: &Node, q_norm: &str, q_slug: &str, depth: usize) -> i32 {
+fn words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty())
+}
+
+fn initials(label: &str) -> String {
+    words(label).filter_map(|w| w.chars().next()).flat_map(char::to_lowercase).collect()
+}
+
+fn subsequence(label: &str, q: &str) -> bool {
+    let mut rest = label.chars();
+    q.chars().all(|c| rest.any(|l| l == c))
+}
+
+/// The match tier alone, 0 for no match. `q_norm` and `q_slug` are the
+/// query normalized and slugged once by `rank`, since a query is invariant
+/// across the whole tree walk.
+pub fn tier(node: &Node, q_norm: &str, q_slug: &str) -> i32 {
     if q_norm.is_empty() {
         return 0;
     }
     let label = normalize(&node.label);
-    let mut tier = if label == q_norm {
+    if label == q_norm {
         TIER_EXACT
     } else if label.starts_with(q_norm) {
         TIER_STARTS_WITH
@@ -69,16 +94,34 @@ pub fn score(node: &Node, q_norm: &str, q_slug: &str, depth: usize) -> i32 {
         TIER_ALIAS
     } else if word_boundary_match(&node.title, q_norm) {
         TIER_TITLE
+    } else if q_norm.chars().count() >= 2 && initials(&node.label) == q_norm {
+        TIER_INITIALS
+    } else if q_norm.chars().count() >= 2 && subsequence(&label, q_norm) {
+        TIER_SUBSEQUENCE
     } else {
-        return 0;
-    };
+        0
+    }
+}
+
+/// The root bonus and the app demotion.
+fn bonus(node: &Node, depth: usize) -> i32 {
+    let mut b = 0;
     if depth == 0 {
-        tier += ROOT_BONUS;
+        b += ROOT_BONUS;
     }
     if node.kind == Kind::App {
-        tier -= APP_DEMOTION;
+        b -= APP_DEMOTION;
     }
-    tier
+    b
+}
+
+/// What lifts a hit past its own match: the query's abbreviations and the
+/// picks ledger.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Boost<'a> {
+    pub abbrev: Option<&'a Lookup>,
+    pub picks: &'a [Record],
+    pub now: f64,
 }
 
 /// The id itself plus every dotted prefix of it.
@@ -100,16 +143,16 @@ fn ancestry(id: Option<&str>) -> HashSet<String> {
 
 struct Hit<'a> {
     node: &'a Node,
-    score: i32,
+    tier: i32,
+    bonus: i32,
     depth: usize,
+    picked: f64,
     decl_index: usize,
 }
 
 /// Depth-first walk of `nodes` from its roots, scoring every when-visible
 /// node against `query` (a node whose `when` is not satisfied is skipped with
-/// its whole subtree). Returns the 40 best matches (score, ties broken by
-/// shallower depth then declaration order) grouped by root route, groups in
-/// the order of their best hit, score order inside each.
+/// its whole subtree). Returns the 40 best matches in rank order.
 ///
 /// `within_id` is the level the search runs from. It matters for a
 /// `route_only` node, whose children are reachable only while standing
@@ -121,6 +164,16 @@ pub fn rank<'a>(
     query: &str,
     cond_results: &HashMap<String, bool>,
     within_id: Option<&str>,
+) -> Vec<&'a Node> {
+    rank_with(nodes, query, cond_results, within_id, Boost::default())
+}
+
+pub fn rank_with<'a>(
+    nodes: &'a IndexMap<String, Node>,
+    query: &str,
+    cond_results: &HashMap<String, bool>,
+    within_id: Option<&str>,
+    boost: Boost,
 ) -> Vec<&'a Node> {
     let open = ancestry(within_id);
     let q_norm = normalize(query);
@@ -134,6 +187,8 @@ pub fn rank<'a>(
         open: &'w HashSet<String>,
         q_norm: &'w str,
         q_slug: &'w str,
+        boost: Boost<'w>,
+        picks: &'w HashMap<&'w str, &'w Record>,
     }
 
     fn visit<'a>(w: &Walk<'_, 'a>, id: &str, depth: usize, decl_index: &mut usize, hits: &mut Vec<Hit<'a>>) {
@@ -144,9 +199,20 @@ pub fn rank<'a>(
         let idx = *decl_index;
         *decl_index += 1;
         let parent_open = node.parent_id.as_ref().is_some_and(|p| w.open.contains(p));
-        let s = if node.local_only && !parent_open { 0 } else { score(node, w.q_norm, w.q_slug, depth) };
-        if s > 0 {
-            hits.push(Hit { node, score: s, depth, decl_index: idx });
+        if !(node.local_only && !parent_open) {
+            let id = subject_id(node);
+            let abbrev = w.boost.abbrev.filter(|_| node.kind != Kind::Note);
+            let leads = abbrev.and_then(|l| l.lead.as_ref()).filter(|(lead, _)| *lead == id).map(|(_, source)| *source);
+            let tier = match leads {
+                Some(Source::Configured | Source::Pinned) => TIER_SET,
+                Some(Source::Learned) => TIER_LEARNED,
+                None => tier(node, w.q_norm, w.q_slug),
+            };
+            if tier > 0 {
+                let learned = abbrev.and_then(|l| l.boost.get(&id)).copied().unwrap_or(0);
+                let picked = frecency::score_of(w.picks.get(id.as_str()).copied(), w.boost.now);
+                hits.push(Hit { node, tier, bonus: bonus(node, depth) + learned, depth, picked, decl_index: idx });
+            }
         }
         if node.route_only == Some(true) && !w.open.contains(id) {
             return;
@@ -156,7 +222,8 @@ pub fn rank<'a>(
         }
     }
 
-    let walk = Walk { nodes, cond_results, open: &open, q_norm: &q_norm, q_slug: &q_slug };
+    let picks: HashMap<&str, &Record> = boost.picks.iter().map(|r| (r.id.as_str(), r)).collect();
+    let walk = Walk { nodes, cond_results, open: &open, q_norm: &q_norm, q_slug: &q_slug, boost, picks: &picks };
     for (id, node) in nodes {
         if node.parent_id.is_none() {
             visit(&walk, id, 0, &mut decl_index, &mut hits);
@@ -164,17 +231,12 @@ pub fn rank<'a>(
     }
 
     hits.sort_by(|a, b| {
-        b.score.cmp(&a.score).then(a.depth.cmp(&b.depth)).then(a.decl_index.cmp(&b.decl_index))
+        b.tier
+            .cmp(&a.tier)
+            .then(b.bonus.cmp(&a.bonus))
+            .then(a.depth.cmp(&b.depth))
+            .then(b.picked.partial_cmp(&a.picked).unwrap_or(std::cmp::Ordering::Equal))
+            .then(a.decl_index.cmp(&b.decl_index))
     });
-
-    let mut order: Vec<String> = Vec::new();
-    let mut groups: HashMap<String, Vec<&'a Node>> = HashMap::new();
-    for hit in hits.into_iter().take(MAX_RESULTS) {
-        let key = search_section_of(Some(nodes), hit.node);
-        if !groups.contains_key(&key) {
-            order.push(key.clone());
-        }
-        groups.entry(key).or_default().push(hit.node);
-    }
-    order.iter().flat_map(|key| groups.remove(key).unwrap_or_default()).collect()
+    hits.into_iter().take(MAX_RESULTS).map(|h| h.node).collect()
 }

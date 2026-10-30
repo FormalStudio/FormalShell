@@ -1091,9 +1091,8 @@ impl App {
             self.menu_buttons = Some(inputs.clone());
             index::ask(Ask::Base(inputs));
         }
-        let launches = self.store.state.data.app_launches.clone();
-        if self.menu_launches.as_ref() != Some(&launches) {
-            self.menu_launches = Some(launches);
+        if self.menu_launches.as_ref() != Some(&self.store.state.data.picks) {
+            self.menu_launches = Some(self.store.state.data.picks.clone());
             index::ask(Ask::Apps(crate::surfaces::launcher::launches(&self.store)));
         }
     }

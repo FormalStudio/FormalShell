@@ -1139,11 +1139,30 @@ tier to hit wins. There is no fuzzy fallback: Electron and wrapper-launched
 apps routinely report an app id unrelated to their `.desktop` name, and a
 fuzzy hit would focus the wrong window.
 
-Rows are ordered by launch frecency, a per-entry count with a 14-day
-half-life, persisted to `state.json` as `appLaunches` and capped at the 200
-best records. It only decides the order equal-scoring rows come in, so a
-better match still wins outright and a fresh profile browses apps in the
-system's own order.
+Every pick (an app, a mode, an action row, a toggle) is recorded in
+`state.json`'s `picks`: a count per subject with a 14-day half-life,
+capped at the 200 best records (an older `appLaunches` is read into it
+once). It only decides the order equal-scoring rows come in, so a better
+match still wins outright and a fresh profile browses apps in the system's
+own order.
+
+A query ranks the whole tree into one list, best first, under no heading:
+an exact label, then one it starts with, contains, an alias, a word of the
+row's title, the initials of its words (`vsc` for Visual Studio Code), and
+last every letter in order (`ff` for Firefox).
+
+Abbreviations put one subject first for a short query (1 to 8 characters).
+The launcher learns them: pick Foxtrot twice while the field reads `fx` and
+`fx` leads with Foxtrot for the next fortnight, renewed by every pick, while
+a query you use for two things ranks both higher without either taking
+over. Typing a row's whole name teaches nothing. Set your own in
+`settings.json`; they win over learned ones, and `fs menu abbreviations`
+lists all of them:
+
+```jsonc
+// ~/.config/formalshell/settings.json
+{ "menu": { "abbreviations": { "ff": "app:firefox.desktop", "wf": "wifi" } } }
+```
 
 `menu.appGrid` (bool, default true) swaps the app rows for a grid of icons
 with the app's name centred underneath each one. It only touches app
@@ -1167,8 +1186,7 @@ at the root and the level's own prompt inside one (`Search apps`,
 `Type an expression`).
 
 Rows come in groups, each under a heading: `Suggestions` then `Commands` at
-the root, `Results` for a query that ranks the whole tree, and `Options` in
-select mode. A level whose rows are all one group draws no heading, since its
+the root and `Options` in select mode; a query's results draw under none. A level whose rows are all one group draws no heading, since its
 breadcrumb chip already names it. Nothing is reordered to make a group: the
 heading appears wherever the run of rows changes.
 
@@ -1372,6 +1390,7 @@ fs menu refresh               # re-read menu.jsonc after an editor save
 fs menu status                # {isOpen, level, view, scrollTop, placeholder, sections, columns, rows, cursorId, …}
 fs menu activate <index>      # Enter on that row
 fs menu activateAlternate <index>   # Shift+Enter on that row
+fs menu abbreviations         # configured, pinned and learned abbreviations
 fs menu filter <text>         # type into the search field
 fs menu ping                  # "pong"
 ```

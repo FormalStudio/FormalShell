@@ -2,7 +2,7 @@ mod common;
 
 use common::*;
 use fs_menu::model::{
-    Mode, SectionCtx, build_tree, parse_jsonc, prompt_for, search_section_of, section_names, sections_for,
+    Mode, SectionCtx, build_tree, parse_jsonc, prompt_for, section_names, sections_for,
     visible_children,
 };
 use fs_menu::node::{Entries, Kind, Node};
@@ -67,14 +67,10 @@ fn level_names_its_own_rows() {
     assert_eq!(section_names(&sections), ["Recent", "Apps"]);
 }
 
-// A ranked list is not a level's children: a row's own declared section would
-// cut the results into a heading per row, in score order. A ranked list mixes
-// every kind the tree holds, so each result is named after the root route it
-// came from, and a route row itself sits under the root's own heading. The
-// app's dotted id is the one the apps provider builds from a desktop entry
-// id, parented by `parent_id` rather than by splitting the id.
+// A ranked list is one list in score order under no heading: a heading per
+// root route would cut it back into the groups the ranking no longer makes.
 #[test]
-fn a_query_names_each_row_after_its_root_route() {
+fn a_query_draws_no_headings() {
     let mut tree = tree_of(json!({
         "apps": { "provider": "apps", "section": "Suggestions" },
         "emoji": { "label": "Emoji", "section": "Suggestions" },
@@ -85,17 +81,8 @@ fn a_query_names_each_row_after_its_root_route() {
     let app = Node { parent_id: Some("apps".into()), ..Node::new("apps.org.gnome.Nautilus", "Files", Kind::App) };
     tree.nodes.insert(app.id.clone(), app.clone());
     let rows = [tree.nodes["emoji"].clone(), tree.nodes["system.power.reboot"].clone(), app];
-    let ctx = SectionCtx { searching: true, nodes: Some(&tree.nodes), ..menu_ctx() };
-    assert_eq!(sections_for(&rows, &ctx), ["Commands", "System", "Apps"]);
-}
-
-// The CALC answer row hangs off the calc route, so a root query that parses
-// leads with a CALCULATOR block ahead of the ranked ones.
-#[test]
-fn the_calc_answer_is_its_own_search_group() {
-    let tree = tree_of(json!({ "calc": { "label": "Calculator", "provider": "calc" } }));
-    let calc = Node { parent_id: Some("calc".into()), ..Node::new("calc.result", "= 8", Kind::Submenu) };
-    assert_eq!(search_section_of(Some(&tree.nodes), &calc), "Calculator");
+    let ctx = SectionCtx { searching: true, ..menu_ctx() };
+    assert_eq!(sections_for(&rows, &ctx), ["", "", ""]);
 }
 
 // The back chip above the list already says "Clipboard", so a CLIPBOARD

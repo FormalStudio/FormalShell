@@ -126,7 +126,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--launcher-abbrev"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]
@@ -552,7 +552,11 @@ runs = ["--systemupdate"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/search.rs", "crates/fs-menu/data/default-menu.jsonc"]
-runs = ["--menu", "--menu-rows"]
+runs = ["--menu", "--menu-rows", "--launcher-abbrev"]
+
+[[rule]]
+paths = ["crates/fs-menu/src/abbrev.rs", "dev/smoke.d/launcher_abbrev.sh"]
+runs = ["--launcher-abbrev"]
 
 [[rule]]
 paths = ["crates/fs-menu/data/emoji.json"]

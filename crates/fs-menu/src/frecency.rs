@@ -40,7 +40,8 @@ impl Record {
     }
 }
 
-fn score_of(record: Option<&Record>, now_ms: f64) -> f64 {
+/// One record's decayed score, 0 for none.
+pub fn score_of(record: Option<&Record>, now_ms: f64) -> f64 {
     let Some(record) = record else { return 0.0 };
     let count = record.count;
     if !count.is_finite() || count <= 0.0 {

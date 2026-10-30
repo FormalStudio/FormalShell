@@ -297,6 +297,8 @@
 {"argv":["call","menu","refresh"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
 {"argv":["call","menu","ping"],"live":true,"stdout":"pong\n","stderr":"","exit":0}
 {"argv":["call","menu","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
+{"argv":["call","menu","abbreviations"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
+{"argv":["call","menu","abbreviations","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function abbreviations(): string\n","stderr":"","exit":0}
 {"argv":["call","menu","select","Pick"," [\"a\",\"b\",\"c\"]","tok1"],"live":true,"stdout":"select Pick  [\"a\",\"b\",\"c\"] tok1\n","stderr":"","exit":0}
 {"argv":["call","menu","select","Pick","[\"a\",\"b\"]","tok1"],"live":true,"stdout":"Too many arguments provided (3 required but 4 were provided.)\nFunction definition: function select(prompt: string, optionsJson: string, token: string): string\n","stderr":"","exit":0}
 {"argv":["call","menu","select","Pick","x"],"live":true,"stdout":"Too few arguments provided (3 required but 2 were provided.)\nFunction definition: function select(prompt: string, optionsJson: string, token: string): string\n","stderr":"","exit":0}

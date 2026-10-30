@@ -22,6 +22,7 @@ pub fn target() -> Target<App> {
             Function { name: "refresh", params: &[], ret: Type::String, call: refresh },
             Function { name: "ping", params: &[], ret: Type::String, call: |_, _| text("pong") },
             Function { name: "status", params: &[], ret: Type::String, call: status },
+            Function { name: "abbreviations", params: &[], ret: Type::String, call: abbreviations },
             Function {
                 name: "select",
                 params: &[("prompt", Type::String), ("optionsJson", Type::String), ("token", Type::String)],
@@ -74,6 +75,12 @@ fn status(app: &mut App, _: &[Value]) -> Value {
         v["body"] = serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
     }
     text(v.to_string())
+}
+
+fn abbreviations(app: &mut App, _: &[Value]) -> Value {
+    use crate::surfaces::launcher as l;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64);
+    text(fs_menu::abbrev::report(&l::configured_abbreviations(&app.store), &l::abbreviation_book(&app.store), now).to_string())
 }
 
 fn select(app: &mut App, args: &[Value]) -> Value {

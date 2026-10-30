@@ -34,7 +34,11 @@ pub struct Data {
     pub calendar_birth_year: i64,
     pub calendar_life_expectancy: i64,
     pub clock_format: String,
-    pub app_launches: Value,
+    /// Every pick's frecency record, keyed by subject id (`app:<desktop id>`,
+    /// a node id, ...).
+    pub picks: Value,
+    /// `{pinned, learned}`, fs-menu's `abbrev::Book`.
+    pub abbreviations: Value,
     pub emoji_uses: Value,
     pub reminders: Value,
     pub battery_show_percent: Value,
@@ -54,7 +58,8 @@ impl Default for Data {
             calendar_birth_year: 0,
             calendar_life_expectancy: 0,
             clock_format: String::new(),
-            app_launches: Value::Array(vec![]),
+            picks: Value::Array(vec![]),
+            abbreviations: Value::Null,
             emoji_uses: Value::Array(vec![]),
             reminders: Value::Array(vec![]),
             battery_show_percent: Value::Null,
@@ -77,7 +82,8 @@ pub enum Field {
     CalendarBirthYear(i64),
     CalendarLifeExpectancy(i64),
     ClockFormat(String),
-    AppLaunches(Value),
+    Picks(Value),
+    Abbreviations(Value),
     EmojiUses(Value),
     Reminders(Value),
     BatteryShowPercent(Value),
@@ -100,7 +106,8 @@ impl Field {
             Field::CalendarBirthYear(v) => data.calendar_birth_year = v,
             Field::CalendarLifeExpectancy(v) => data.calendar_life_expectancy = v,
             Field::ClockFormat(v) => data.clock_format = v,
-            Field::AppLaunches(v) => data.app_launches = v,
+            Field::Picks(v) => data.picks = v,
+            Field::Abbreviations(v) => data.abbreviations = v,
             Field::EmojiUses(v) => data.emoji_uses = v,
             Field::Reminders(v) => data.reminders = v,
             Field::BatteryShowPercent(v) => data.battery_show_percent = v,
@@ -112,7 +119,7 @@ impl Field {
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 15] {
+    fn fields(&self) -> [Field; 16] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
             Field::WallpaperColor(self.wallpaper_color.clone()),
@@ -122,7 +129,8 @@ impl Data {
             Field::CalendarBirthYear(self.calendar_birth_year),
             Field::CalendarLifeExpectancy(self.calendar_life_expectancy),
             Field::ClockFormat(self.clock_format.clone()),
-            Field::AppLaunches(self.app_launches.clone()),
+            Field::Picks(self.picks.clone()),
+            Field::Abbreviations(self.abbreviations.clone()),
             Field::EmojiUses(self.emoji_uses.clone()),
             Field::Reminders(self.reminders.clone()),
             Field::BatteryShowPercent(self.battery_show_percent.clone()),
@@ -171,7 +179,10 @@ impl Data {
         data.calendar_birth_year = typed(take("calendarBirthYear")).unwrap_or(0);
         data.calendar_life_expectancy = typed(take("calendarLifeExpectancy")).unwrap_or(0);
         data.clock_format = typed(take("clockFormat")).unwrap_or(data.clock_format);
-        data.app_launches = array(take("appLaunches")).unwrap_or(data.app_launches);
+        // `appLaunches` predates `picks`: read once into it as app subjects,
+        // never written again.
+        data.picks = array(take("picks")).or_else(|| array(take("appLaunches")).map(app_picks)).unwrap_or(data.picks);
+        data.abbreviations = take("abbreviations").filter(Value::is_object).unwrap_or(Value::Null);
         data.emoji_uses = array(take("emojiUses")).unwrap_or(data.emoji_uses);
         data.reminders = array(take("reminders")).unwrap_or(data.reminders);
         data.battery_show_percent = take("batteryShowPercent").unwrap_or(Value::Null);
@@ -192,7 +203,8 @@ impl Data {
         map.insert("calendarBirthYear".into(), self.calendar_birth_year.into());
         map.insert("calendarLifeExpectancy".into(), self.calendar_life_expectancy.into());
         map.insert("clockFormat".into(), self.clock_format.clone().into());
-        map.insert("appLaunches".into(), self.app_launches.clone());
+        map.insert("picks".into(), self.picks.clone());
+        map.insert("abbreviations".into(), self.abbreviations.clone());
         map.insert("emojiUses".into(), self.emoji_uses.clone());
         map.insert("reminders".into(), self.reminders.clone());
         map.insert("batteryShowPercent".into(), self.battery_show_percent.clone());
@@ -212,6 +224,22 @@ impl Data {
 
 /// Every object's keys in order at every depth: serde_json keeps insertion
 /// order once any crate in the build asks for `preserve_order`.
+/// `appLaunches`' records as picks: each desktop id an `app:` subject.
+fn app_picks(launches: Value) -> Value {
+    let Value::Array(items) = launches else { return Value::Array(vec![]) };
+    Value::Array(
+        items
+            .into_iter()
+            .map(|mut r| {
+                if let Some(id) = r.get("id").and_then(Value::as_str).map(|id| format!("app:{id}")) {
+                    r["id"] = Value::String(id);
+                }
+                r
+            })
+            .collect(),
+    )
+}
+
 fn sort_keys(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -417,7 +445,7 @@ mod tests {
     fn defaults_match_the_adapter() {
         let d = Data::default();
         assert_eq!((d.wallpaper.as_str(), d.mode.as_str(), d.dnd), ("", "dark", false));
-        assert_eq!(d.app_launches, json!([]));
+        assert_eq!(d.picks, json!([]));
         assert_eq!(d.mode_override, Value::Null);
         assert_eq!((d.calendar_birth_year, d.calendar_life_expectancy), (0, 0));
     }
@@ -425,10 +453,10 @@ mod tests {
     #[test]
     fn written_file_has_every_key_sorted_with_four_space_indent() {
         let text = Data::default().to_text();
-        assert!(text.starts_with("{\n    \"appLaunches\": [],\n"), "{text}");
+        assert!(text.starts_with("{\n    \"abbreviations\": null,\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 15);
+        assert_eq!(keys.len(), 16);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -445,7 +473,8 @@ mod tests {
             calendar_birth_year: 1990,
             calendar_life_expectancy: 80,
             clock_format: "%H".into(),
-            app_launches: json!([{"id": "a", "count": 2, "lastMs": 3}]),
+            picks: json!([{"id": "app:a", "count": 2, "lastMs": 3}]),
+            abbreviations: json!({"pinned": {"ff": "app:firefox"}, "learned": {}}),
             emoji_uses: json!([{"id": "emoji.x", "count": 1, "lastMs": 1}]),
             reminders: json!([{"id": 1, "message": "m", "setAt": 1, "dueAt": 2}]),
             battery_show_percent: json!(false),
@@ -457,11 +486,20 @@ mod tests {
     }
 
     #[test]
+    fn app_launches_are_read_once_into_picks() {
+        let d = Data::parse(r#"{"appLaunches":[{"id":"firefox","count":3,"lastMs":9}]}"#).unwrap();
+        assert_eq!(d.picks, json!([{"id": "app:firefox", "count": 3, "lastMs": 9}]));
+        assert!(!d.to_text().contains("appLaunches"));
+        let both = Data::parse(r#"{"picks":[{"id":"wifi","count":1,"lastMs":1}],"appLaunches":[{"id":"x","count":1,"lastMs":1}]}"#).unwrap();
+        assert_eq!(both.picks, json!([{"id": "wifi", "count": 1, "lastMs": 1}]));
+    }
+
+    #[test]
     fn unknown_keys_are_dropped_and_wrong_types_take_the_default() {
         let d = Data::parse(r#"{"future":1,"dnd":"yes","mode":"light","appLaunches":{"a":1},"calendarBirthYear":"x"}"#).unwrap();
         assert_eq!(d.mode, "light");
         assert!(!d.dnd);
-        assert_eq!(d.app_launches, json!([]));
+        assert_eq!(d.picks, json!([]));
         assert_eq!(d.calendar_birth_year, 0);
         assert!(!d.to_text().contains("future"));
     }

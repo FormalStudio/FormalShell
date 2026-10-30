@@ -1,5 +1,5 @@
-//! The launcher's pure logic: the tree model, fuzzy search, cursor and key
-//! policy, launch frecency, the calculator, toggle conditions, route icons,
+//! The launcher's pure logic: the tree model, fuzzy search, abbreviations,
+//! cursor and key policy, pick frecency, the calculator, toggle conditions, route icons,
 //! the providers that build each source's rows, clipboard history and emoji
 //! detection, window matching for app rows, and the text field every input
 //! edits through.
@@ -8,6 +8,7 @@
 //! source as an argument and return nodes, so a caller can recompute one
 //! source alone and re-attach it with `providers::attach_children`.
 
+pub mod abbrev;
 pub mod actions;
 pub mod appgrid;
 pub mod appmatch;

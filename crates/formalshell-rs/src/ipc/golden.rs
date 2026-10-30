@@ -261,6 +261,7 @@ fn stub() -> Registry<()> {
                     f("summon", &[("route", Type::String)], Type::String, |_, a| s(format!("summon {}", a[0].str()))),
                     f("activate", &[("index", Type::Int)], Type::String, |_, a| s(format!("activate {}", a[0].int()))),
                     f("activateAlternate", &[("index", Type::Int)], Type::String, |_, a| s(format!("activateAlternate {}", a[0].int()))),
+                    f("abbreviations", &[], Type::String, |_, _| s("{}")),
                     f("filter", &[("text", Type::String)], Type::String, |_, a| s(format!("filter {}", a[0].str()))),
                     f("close", &[], Type::String, |_, _| s("ok")),
                     f("refresh", &[], Type::String, |_, _| s("ok")),

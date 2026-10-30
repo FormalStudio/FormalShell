@@ -1,12 +1,11 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --menu: the launcher summoned at root, its fuzzy ranking against the live
-# tree (`debug query`), a root query grouped by the route each row came
-# from, the emoji route's grid, and the select round trip. The run's own
+# tree (`debug query`), a root query as one list in score order, the emoji route's grid, and the select round trip. The run's own
 # smoke.png lands in select mode; menu-root.png is the root level, where
 # the row icons, the group headings and the tree's own chrome are,
-# menu-search.png is the same field with a query in it, one heading per
-# route block, and menu-emoji.png is the grid.
+# menu-search.png is the same field with a query in it under no heading,
+# and menu-emoji.png is the grid.
 #
 # The chrome that a frame cannot state is asserted off `menu status` instead
 # (M48): the field's placeholder, the group headings in the order they
@@ -15,9 +14,7 @@
 # eight cells of a grid or one wide row of a list. The root is the app grid
 # (M72 T4): its apps under Applications, then the tree's own commands under
 # their headings, so the leg stages one desktop entry for the isolated
-# session to list, and the root has to report that order. Whether a search heading
-# names one block or two comes off `debug query`'s per-row `section`
-# instead, since `menu status` lists each heading once.
+# session to list, and the root has to report that order.
 #
 # Every status read here also checks the cursor against the view (M72 T1):
 # `cursorId` is the row Enter acts on, and `viewCursor` is where the live
@@ -254,17 +251,6 @@ leg_menu_assert() {
     fail "no emoji-grid screenshot produced"
   fi
   echo "SMOKE_MENU_EMOJI $menu_emoji_path"
-  # A root query: the rows of `debug query` come out one block per
-  # heading (a heading that appears, stops, and appears again is the
-  # score order leaking through the grouping), every row carries one, and
-  # the live tree groups the query into at least two of them, since a
-  # single heading over the whole list says nothing about what any row is.
-  if ! "$jq_bin" -e 'all(.[]; (.section // "") != "")
-      and ([.[].section] as $s
-        | ([range(1; $s | length) | select($s[.] != $s[. - 1])] | length) + 1
-          == ($s | unique | length))' "$query_path" > /dev/null 2>&1; then
-    fail "debug query rows are not one contiguous block per heading, got: $(cat "$query_path")"
-  fi
   if [ ! -f "$menu_search_path" ]; then
     fail "no search-level menu screenshot produced"
   fi
@@ -273,10 +259,12 @@ leg_menu_assert() {
     fail "no search-level menu status produced"
   fi
   cat "$menu_status_search_path"; echo
-  search_sections=$("$jq_bin" -r '.sections | length' "$menu_status_search_path" 2>/dev/null)
-  if [ -z "$search_sections" ] || [ "$search_sections" -lt 2 ]; then
-    fail "a root query for 'e' grouped into ${search_sections:-0} heading(s), got: $(cat "$menu_status_search_path")"
-  fi
+  # A root query is one list in score order under no heading: the view
+  # draws no section and its rows lead in the order `debug query` ranks.
+  "$jq_bin" -e '(.sections | length) == 0' "$menu_status_search_path" > /dev/null 2>&1 \
+    || fail "a root query for 'e' drew headings, got: $(cat "$menu_status_search_path")"
+  "$jq_bin" -e --slurpfile q "$query_path" '.ids[0:5] == ($q[0] | map(.id))[0:5]' "$menu_status_search_path" > /dev/null 2>&1 \
+    || fail "a root query for 'e' is not in debug query's order: $(cat "$menu_status_search_path") vs $(cat "$query_path")"
   menu_cursor_agrees "$menu_status_search_path" "root query"
   # The field on real keys: typed, selected whole, replaced, emptied.
   "$jq_bin" -e '.query == "fire" and .caret == 4 and (.selection | not)' "$shot_dir/menu-status-typed.json" > /dev/null 2>&1 \
