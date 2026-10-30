@@ -121,7 +121,7 @@ impl Shown {
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, a: &mut Atlas, r: &radio::State, theme: &Theme, kit: &mut Kit, now: Instant, (cw, chh): (f64, f64)) {
         let (frame, alpha) = self.modal.card.content;
-        let clip = self.modal.card.clip;
+        let clip = self.modal.card.content_clip();
         let s = theme.space.clone();
         let p = s.panel_padding;
         let bw = theme.border_width;

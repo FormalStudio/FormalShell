@@ -1888,7 +1888,7 @@ impl Shown {
                 let size = IRect::new(0, 0, target.0.round() as i32, target.1.round() as i32);
                 (size, 1.0, size)
             }
-            None => (self.modal.card.content.0, self.modal.card.content.1, self.modal.card.clip),
+            None => (self.modal.card.content.0, self.modal.card.content.1, self.modal.card.content_clip()),
         };
         let s = theme.space.clone();
         let pad = s.panel_padding;

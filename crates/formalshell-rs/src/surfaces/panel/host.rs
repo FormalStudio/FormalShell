@@ -419,7 +419,7 @@ impl Host {
     fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
         let (frame, card_alpha) = self.card.content;
         let alpha = card_alpha * self.handoff.as_ref().map_or(1.0, |h| h.alpha.value(now).clamp(0.0, 1.0) as f32);
-        let clip = self.card.clip;
+        let clip = self.card.content_clip();
         let s = theme.space.clone();
         let pad = s.panel_padding;
         let (head_h, head_gap) = self.header_metrics(theme);

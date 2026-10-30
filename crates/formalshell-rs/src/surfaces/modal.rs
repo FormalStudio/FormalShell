@@ -5,7 +5,7 @@
 //! only as the card lets go of the line (`1 - attach`), and the rest of the
 //! output. The launcher, the polkit dialog and the radio atlas are each one
 //! of these; the owner lays its content out in `card.content` under
-//! `card.clip`.
+//! `card.content_clip()`.
 
 use std::time::Instant;
 
@@ -315,7 +315,13 @@ impl Layer {
         let at = self.place(card, settled);
         let (now, rest) = (card.content.0, card.content_rest());
         let (x, y) = if settled { (rest.x, rest.y) } else { (now.x, now.y) };
-        at.intersect(&IRect::new(x, y, rest.w, rest.h)).intersect(&card.clip)
+        let shown = at.intersect(&IRect::new(x, y, rest.w, rest.h)).intersect(&card.clip);
+        // A cut has to start at the content's own origin (see `cut`), so
+        // the shape holds the content in on its right and bottom only.
+        match card.shape_clip {
+            Some(s) => shown.intersect(&IRect::new(at.x, at.y, (s.right() - at.x).max(0), (s.bottom() - at.y).max(0))),
+            None => shown,
+        }
     }
 
     /// The layer's draw, then its place, cut and fade off the card's pose.

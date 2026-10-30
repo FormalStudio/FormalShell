@@ -160,6 +160,10 @@ pub struct Card {
     pub compositor_look: bool,
     /// The band content may draw in, held to the bud while it is clamped.
     pub clip: IRect,
+    /// The deformed shape's inner rect, rounded inward. Content drawn in the
+    /// card's own scene takes it through `content_clip`; a modal layer takes
+    /// its far sides alone (`modal.rs` `visible`).
+    pub shape_clip: Option<IRect>,
 }
 
 impl Card {
@@ -225,6 +229,7 @@ impl Card {
             popover_frame: (IRect::default(), 0.0),
             compositor_look: false,
             clip: IRect::default(),
+            shape_clip: None,
         }
     }
 
@@ -458,6 +463,7 @@ impl Card {
         self.popover_frame = (device, if shown { alpha } else { 0.0 });
         self.content = (device, if shown { self.content_alpha(pose) * self.frame_alpha } else { 0.0 });
         self.clip = self.scene.size;
+        self.shape_clip = None;
         self.joins.clear();
     }
 
@@ -612,11 +618,11 @@ impl Card {
         }
         // Nor past the deformed shape's border, rounded inward: the deform
         // squeezes the shape under the undeformed content, which is opaque.
-        if visible {
+        self.shape_clip = visible.then(|| {
             let r = item.transform_rect_bbox(Rect::new(over + border, 0.0, over + clamped_length - border, (shape_depth - border).max(0.0)));
             let (x0, y0) = (r.x0.ceil() as i32, r.y0.ceil() as i32);
-            clip = clip.intersect(&IRect::new(x0, y0, (r.x1.floor() as i32 - x0).max(0), (r.y1.floor() as i32 - y0).max(0)));
-        }
+            IRect::new(x0, y0, (r.x1.floor() as i32 - x0).max(0), (r.y1.floor() as i32 - y0).max(0))
+        });
         self.clip = clip;
 
         self.joins.clear();
@@ -653,7 +659,7 @@ impl Card {
             let cut = self.line_at + self.look.border_width;
             return Scene::cover(Rect::new(-FAR, cut, FAR, FAR), self.edge_map(), 0.0).intersect(&self.scene.size);
         }
-        self.clip
+        self.shape_clip.map_or(self.clip, |s| self.clip.intersect(&s))
     }
 
     /// The card's own join along its line, as the bar takes it.

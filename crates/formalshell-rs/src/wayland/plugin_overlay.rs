@@ -246,7 +246,7 @@ impl App {
         w.modal.place(Rect::new(x0, y0, x0 + card_w, y0 + card_h), now);
         // The content rides the card's own travel and fades in on its pose.
         let (frame, alpha) = w.modal.card.content;
-        let clip = w.modal.card.clip;
+        let clip = w.modal.card.content_clip();
         let top = w.modal.card.top_node();
         let scene = &mut w.modal.card.scene;
         let (x, y) = (frame.x as f64 + s.panel_padding, frame.y as f64 + s.panel_padding);
