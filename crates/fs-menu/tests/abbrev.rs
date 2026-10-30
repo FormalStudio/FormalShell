@@ -113,3 +113,12 @@ fn a_learned_lead_ranks_above_an_exact_label() {
     let b = taught(&[("fx", "apps.foxtrot", NOW), ("fx", "apps.foxtrot", NOW)]);
     assert_eq!(ids(&lookup(&none(), &b, "fx", NOW, all)), ["apps.foxtrot", "apps.fx"]);
 }
+
+// A record decayed past keeping is dropped before the pick, so one pick 60
+// days ago and one now is one pick, which does not lead.
+#[test]
+fn a_pick_after_a_stale_one_starts_again_from_one() {
+    let book = taught(&[("fx", "app:foxtrot", NOW - 60.0 * DAY), ("fx", "app:foxtrot", NOW)]);
+    assert_eq!(book.learned["fx"][0].count, 1.0);
+    assert_eq!(lookup(&none(), &book, "fx", NOW, all).lead, None);
+}

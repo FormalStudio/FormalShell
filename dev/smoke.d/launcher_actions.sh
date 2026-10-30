@@ -14,7 +14,10 @@
 # them, `move` and Enter list the workspaces under a `Workspace` step, `2`
 # and Enter move that window to workspace 2. Shift+Enter on the list runs
 # the second action, a third window. Shift+Tab, Escape and ← with an empty
-# filter each close the column and give the list its query back.
+# filter each close the column and give the list its query back; Escape over
+# a typed filter clears it and keeps the column. Confirm probe, a menu.jsonc
+# action with `confirm: true`, arms on its first Enter in the column and
+# runs (touches its file) on the second.
 # `menu runAction` runs the menu.jsonc entry, and the three new verbs answer
 # `error: menu not open` with the launcher shut. A route's column (Clipboard,
 # searched by name) is Open then Pin to Recent; a real Down and Enter pins
@@ -28,6 +31,7 @@ leg_launcher_actions_needs="jq wtype foot"
 
 launcher_actions_app="apps.formalshell-actions-probe"
 launcher_actions_note="$shot_dir/launcher-actions-note"
+launcher_actions_confirmed="$shot_dir/launcher-actions-confirmed"
 
 leg_launcher_actions_fixture() {
   mkdir -p "$iso_home/.local/share/applications" "$iso_home/.config/formalshell"
@@ -46,14 +50,15 @@ EOF
 {
   "$launcher_actions_app": { "actions": [
     { "id": "copy-path", "hidden": true },
-    { "id": "probe-note", "label": "Write probe note", "action": "touch $launcher_actions_note" }
+    { "id": "probe-note", "label": "Write probe note", "action": "touch $launcher_actions_note" },
+    { "id": "probe-confirm", "label": "Confirm probe", "action": "touch $launcher_actions_confirmed", "confirm": true }
   ] }
 }
 EOF
 }
 
 leg_launcher_actions_timing() {
-  leg_timing 85 135
+  leg_timing 100 150
 }
 
 leg_launcher_actions_drive() {
@@ -136,6 +141,25 @@ status close-escape
 key -k Tab
 key -k Left
 status close-left
+key -k Tab
+key new
+status escape-filter-0
+key -k Escape
+status escape-filter-1
+key -k Escape
+status escape-filter-2
+
+probe
+key -k Tab
+key confirm
+status confirm-0
+key -k Return
+status confirm-armed
+[ -e "$launcher_actions_confirmed" ]; echo \$? > "$shot_dir/launcher-actions-confirm-armed.txt"
+key -k Return
+sleep 1
+status confirm-ran
+probe
 call menu actions 0 > "$shot_dir/launcher-actions-ipc-actions.txt" 2>&1
 sleep 0.4
 status ipc-actions
@@ -209,7 +233,7 @@ leg_launcher_actions_assert() {
   echo "SMOKE_LAUNCHER_ACTIONS the three verbs answer shut"
 
   launcher_actions_expect list ".ids[0] == \"$launcher_actions_app\"" "the probe does not lead its own name"
-  launcher_actions_expect tab '.actionsOpen and ([.actions[] | select(. != "discrete-gpu")] == ["open", "new-window", "desktop:quiet", "windows", "move-to-workspace", "probe-note"])' "Tab did not list the app's actions in order, with copy-path hidden and probe-note added"
+  launcher_actions_expect tab '.actionsOpen and ([.actions[] | select(. != "discrete-gpu")] == ["open", "new-window", "desktop:quiet", "windows", "move-to-workspace", "probe-note", "probe-confirm"])' "Tab did not list the app's actions in order, with copy-path hidden and probe-note and probe-confirm added"
   launcher_actions_expect tab '.query == "" and .cursorId == "'"$launcher_actions_app"'"' "the column did not take the field or the row lost the selection"
   launcher_actions_expect filtered '.actions == ["new-window"]' "'new' did not filter the column to New window"
   launcher_actions_expect after-new '.isOpen == false' "New window did not close the launcher"
@@ -242,6 +266,17 @@ leg_launcher_actions_assert() {
     launcher_actions_expect "close-$how" '.isOpen and (.actionsOpen | not) and .query == "Actions Probe"' "$how did not close the column back onto the list's query"
   done
   echo "SMOKE_LAUNCHER_ACTIONS Shift+Tab, Escape and Left each closed the column"
+  launcher_actions_expect escape-filter-0 '.actionsOpen and .actions == ["new-window"]' "'new' did not filter the column"
+  launcher_actions_expect escape-filter-1 '.actionsOpen and .query == "" and (.actions | length) > 1' "Escape over a filter did not clear it and keep the column"
+  launcher_actions_expect escape-filter-2 '.isOpen and (.actionsOpen | not) and .query == "Actions Probe"' "Escape on an empty filter did not close the column"
+  echo "SMOKE_LAUNCHER_ACTIONS Escape cleared the column's filter, then closed it"
+
+  launcher_actions_expect confirm-0 '.actionsOpen and .actions == ["probe-confirm"]' "'confirm' did not filter the column to Confirm probe"
+  launcher_actions_expect confirm-armed '.isOpen and .actionsOpen' "the first Enter on a confirm action did not keep the column up, armed"
+  [ "$(cat "$shot_dir/launcher-actions-confirm-armed.txt" 2>/dev/null)" = 1 ] || fail "launcher-actions: the arming Enter already ran the confirm action"
+  [ -e "$launcher_actions_confirmed" ] || fail "launcher-actions: the second Enter did not run the confirm action"
+  launcher_actions_expect confirm-ran '.isOpen == false' "the confirmed action did not close the launcher"
+  echo "SMOKE_LAUNCHER_ACTIONS a confirm action armed on the first Enter in the column and ran on the second"
 
   grep -q '^ok$' "$shot_dir/launcher-actions-ipc-actions.txt" || fail "launcher-actions: menu actions did not answer ok: $(cat "$shot_dir/launcher-actions-ipc-actions.txt")"
   launcher_actions_expect ipc-actions '.actionsOpen' "menu actions did not open the column"

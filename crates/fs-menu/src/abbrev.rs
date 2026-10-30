@@ -135,9 +135,11 @@ pub fn lookup(configured: &HashMap<String, String>, book: &Book, query: &str, no
 }
 
 /// The book with `(query, subject)` taught once more, decayed records
-/// dropped and the pairs capped.
+/// dropped and the pairs capped. A record decayed past keeping goes before
+/// the pick, so the pick starts it again from one.
 pub fn learn(book: &Book, query: &str, subject: &str, now: f64) -> Book {
     let mut out = book.clone();
+    prune(&mut out, now);
     if let Some(q) = key(query) {
         let records = out.learned.remove(&q).unwrap_or_default();
         let existing = records.iter().find(|r| same_subject(&r.id, subject)).map_or_else(|| canonical(subject), |r| r.id.clone());

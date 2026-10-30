@@ -20,6 +20,9 @@
 # row's own `wl-copy` is what makes the recorded use a real use, and without
 # it a reordered query would only prove the shell wrote its own state file.
 #
+# The copy is a pick too: state.json's `picks` holds `emoji:😿`, and with
+# two other picks seeded the root at rest lists it under Recent.
+#
 # Both queries go through `debug query`, which ranks against the same dataset
 # the surface does with no keyboard delivery needed, and both are narrow on
 # purpose: the whole 3,944-entry set is a 300KB reply and the IPC socket
@@ -51,11 +54,21 @@ emoji_status_path="$shot_dir/emoji-status.json"
 emoji_clipboard_path="$shot_dir/emoji-clipboard.txt"
 emoji_state_path="$shot_dir/emoji-state.json"
 emoji_png="$shot_dir/emoji-search.png"
+emoji_recent_path="$shot_dir/emoji-recent.json"
+emoji_recent_png="$shot_dir/emoji-recent.png"
+
+leg_emoji_fixture() {
+  local state="$iso_home/.local/state/formalshell/state.json" now
+  now=$(($(date +%s) * 1000))
+  mkdir -p "${state%/*}"
+  # A leg riding along that seeds its own state keeps it.
+  [ -e "$state" ] || printf '{"picks":[{"id":"clipboard","count":1,"lastMs":%s},{"id":"toggles","count":1,"lastMs":%s}]}\n' "$now" "$now" > "$state"
+}
 
 leg_emoji_timing() {
   local t0
   t0=$(emoji_t0)
-  leg_timing $((t0 + 13)) $((t0 + 70))
+  leg_timing $((t0 + 13)) $((t0 + 76))
 }
 
 leg_emoji_drive() {
@@ -77,6 +90,11 @@ sleep 3
 "$wl_paste_bin" -n > "$emoji_clipboard_path" 2>&1
 cat "$iso_home/.local/state/formalshell/state.json" > "$emoji_state_path" 2>&1
 $ipc call debug query ':e cry' > "$emoji_after_path" 2>&1
+$ipc call menu summon "" > /dev/null 2>&1
+sleep 2
+$ipc call menu status > "$emoji_recent_path" 2>&1
+"$grim_bin" "$emoji_recent_png" > /dev/null 2>&1
+$ipc call menu close > /dev/null 2>&1
 sleep 2
 $ipc call menu summon emoji > /dev/null 2>&1
 sleep 3
@@ -150,6 +168,12 @@ leg_emoji_assert() {
     fail "the copy did more than reorder its own rank: $(cat "$emoji_after_path")"
   fi
   echo "SMOKE_EMOJI $emoji_png (':e sob' → 😭, one copy leads its rank)"
+  "$jq_bin" -e '[.picks[].id] | index("emoji:😿") != null' "$emoji_state_path" > /dev/null \
+    || fail "the copy recorded no pick in state.json: $("$jq_bin" -c '.picks' "$emoji_state_path")"
+  [ -s "$emoji_recent_path" ] && [ -f "$emoji_recent_png" ] || fail "no root status or frame after the copy"
+  "$jq_bin" -e '.sections == ["Recent"] and (.ids | index("emoji.😿")) != null' "$emoji_recent_path" > /dev/null \
+    || fail "the copied emoji is not in Recent at the root: $("$jq_bin" -c '{sections, ids}' "$emoji_recent_path")"
+  echo "SMOKE_EMOJI_RECENT $emoji_recent_png (the copied emoji is a pick and lists under Recent)"
   emoji_grid_assert
 }
 

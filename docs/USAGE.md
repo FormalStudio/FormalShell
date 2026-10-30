@@ -1189,7 +1189,8 @@ tier to hit wins. There is no fuzzy fallback: Electron and wrapper-launched
 apps routinely report an app id unrelated to their `.desktop` name, and a
 fuzzy hit would focus the wrong window.
 
-Every pick (an app, a mode, an action row, a toggle) is recorded in
+Every pick (an app, a mode, an action row, a toggle, a file or folder, an
+emoji) is recorded in
 `state.json`'s `picks`: a count per subject with a 14-day half-life,
 capped at the 200 best records (an older `appLaunches` is read into it
 once). It only decides the order equal-scoring rows come in, so a better
@@ -1241,15 +1242,17 @@ A route you step into is a mode: a token naming it sits before the query
 inside it. A mode inside a mode carries its path (`Radio Stations ›
 Search`), past two levels `… ›` and the last two. You get in by Enter or a
 click on its row, by `menu summon <id>` or its chord, or by its
-prefix and a space (`:e `, `:k `, `:r `, `:f `). You get out one level at a time by
+prefix and a space (`:e `, `:k `, `:r `, `:f `), from any level, a folder's
+listing or an app's windows included. You get out one level at a time by
 Backspace or `←` on an empty field, by Escape once the query is empty, or
 by a click on the token.
 
 With the field empty the root lists one thing: `Recent`, your eight best
-picks of any kind (an app, a mode like Clipboard, a row like Shutdown), or,
+picks of any kind (an app, a mode like Clipboard, a row like Shutdown, a
+file, an emoji; never a window, which does not outlast itself), or,
 until three picks exist, `Modes`, the root routes in the order the tree
-declares them. A pick whose app or row has gone is skipped, and dropped from
-the ledger on the next pick. A route's actions carry `Pin to Recent`
+declares them. A pick whose app, row or file has gone is skipped, and an app or file
+that has gone is dropped from the ledger on the next pick. A route's actions carry `Pin to Recent`
 (`Shift+Enter` on its row): a pinned route heads `Recent` in the order you
 pinned it, whatever the picks say, and shows `Recent` on a fresh profile
 too; `Unpin from Recent` in the same place lets it go. Pins live in
@@ -1294,7 +1297,9 @@ card, it is cut to the output less `screenPadding` either side and the
 column (or the preview) takes 45% of it. The field then filters the actions, its query held
 until the column closes, and reads `Actions` after the mode's token. `↑`
 `↓`, Page and Home/End move in the column, Enter or a click runs an
-action, and `Shift+Tab`, Escape or `←` on an empty filter close it. An
+action. Escape clears a typed filter; `Shift+Tab`, Escape or `←` on an
+empty filter close the column. A wallpaper cell (Set wallpaper, Open file,
+Copy path) and a process row (End, Kill) have a column too. An
 action that needs an argument (`Move to workspace…`) lists those in the
 column under a third token (`Workspace`), `Shift+Tab` going back to the
 actions; one that needs words (`Edit abbreviation`) asks for them in the
@@ -1379,7 +1384,8 @@ your own, then its abbreviation's (Forget, Edit and Pin for a learned one,
 Forget and Edit for a pinned one, a note for one set in settings.json).
 Enter runs the first, `Shift+Enter` the second, and `Tab` lists them all.
 An entry with a built-in's id changes that action, `"hidden": true` removes
-it:
+it. On a row a route's provider lists (a saved network, `wifi.net.<ssid>`),
+your `alternate` and `alternateLabel` replace the provider's own:
 
 ```jsonc
 // ~/.config/formalshell/menu.jsonc
@@ -3786,11 +3792,13 @@ own `actions`. A mode reads Loading before the first line, No results with
 no rows, and `<name> failed: <reason>` while the plugin is down.
 
 A line whose top level carries `actions` is the answer to an `actions` event
-and leaves the rows alone. `subject` echoes the event's `subject.id`; an
-answer for any other subject, or one past 300ms, is dropped:
+and leaves the rows alone. Answers are read in the order the events were
+sent, each one for the oldest event not yet answered; an optional `subject`
+naming the event's `subject.id` ties it to that one instead. An answer for a
+subject the column has since left, or one past 300ms, is dropped:
 
 ```json
-{"subject": "files.3f2a…", "actions": [{"id": "share", "label": "Share note", "icon": "share"}]}
+{"actions": [{"id": "share", "label": "Share note", "icon": "share"}]}
 ```
 
 ```json
@@ -3810,15 +3818,15 @@ answer for any other subject, or one past 300ms, is dropped:
 {"event": "activate", "id": "profile"}
 {"event": "activate", "id": "turbo", "checked": true}
 {"event": "query", "text": "fo"}
-{"event": "actions", "subject": {"id": "files.3f2a…", "kind": "file", "path": "/home/me/notes.txt"}}
-{"event": "activate", "id": "files.3f2a…", "action": "share"}
+{"event": "actions", "subject": {"id": "file:/home/me/notes.txt", "kind": "file", "path": "/home/me/notes.txt"}}
+{"event": "activate", "id": "file:/home/me/notes.txt", "action": "share"}
 ```
 
 `button` is `left`, `right` or `middle`, `direction` is `up` or `down`, and
 `activate` carries the `id` of the row that was activated, by Enter, Space or
 a click. On a toggle it also carries `checked`, the state the user asked for.
 A launcher plugin gets `query` with the field's words while its mode is
-open, `actions` on Tab over a subject of a kind it declared, and `activate`
+open (the last one again first thing after a restart), `actions` on Tab over a subject of a kind it declared, and `activate`
 with `action` when one of its actions runs, on its own row (the row's `id`)
 or on a subject (the subject's `id`).
 The shell does not flip the switch itself: the plugin prints its rows again

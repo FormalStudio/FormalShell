@@ -248,7 +248,7 @@ fn folder() {
     assert_eq!(ids(&all), ["open", "copy-path", "contents"]);
     assert_eq!(all[0].label, "Open in the file manager");
     assert_eq!(all[0].run, Run::Command("xdg-open '/h/Documents'".into()));
-    assert_eq!(into_action(&Subject::of(row)).unwrap().run, Run::Into(row.id.clone()));
+    assert_eq!(into_action(&Subject::of(row)).unwrap().run, Run::Into("file:/h/Documents".into()));
 }
 
 #[test]
@@ -314,4 +314,35 @@ fn menu_jsonc_actions() {
     assert_eq!(ids(&build), ["run", "clean"]);
     assert_eq!(build[1].label, "Clean all");
     assert_eq!(build[1].run, Run::Command("make clean".into()));
+}
+
+// A menu.jsonc entry on a provider's row overrides its alternate as well as
+// its actions, so Shift+Enter on a saved network runs the declared one.
+#[test]
+fn a_declared_alternate_survives_the_provider() {
+    let default = entries(json!({ "wifi": { "provider": "wifi" } }));
+    let user = entries(json!({ "wifi.net.Home": { "alternate": "notify-send home", "alternateLabel": "Say hi" } }));
+    let mut tree = build_tree(&default, &user);
+    let net = WifiNetwork { name: "Home".into(), known: true, secured: true, in_range: true, ..WifiNetwork::default() };
+    let st = WifiState { has_device: true, enabled: true, networks: vec![net], ..WifiState::default() };
+    attach_children(&mut tree, "wifi", wifi_rows(&st));
+    let row = &tree.nodes["wifi.net.Home"];
+    let second = second_action(&Subject::of(row)).unwrap();
+    assert_eq!((second.label.as_str(), &second.run), ("Say hi", &Run::Command("notify-send home".into())));
+    assert_eq!(of(row)[0].label, "Connect");
+}
+
+// Files, folders and emoji are known by what they are, not by a row id
+// that only lives in one listing.
+#[test]
+fn subjects_outside_the_tree_carry_their_own_ids() {
+    use fs_menu::actions::subject_id;
+    use fs_menu::providers::subject;
+    assert_eq!(subject_id(&subject("/home/u/a b.txt", false, None)), "file:/home/u/a b.txt");
+    assert_eq!(subject_id(&subject("/home/u/Music", true, None)), "file:/home/u/Music");
+    let index = EmojiIndex::new(vec![EmojiEntry { ch: "\u{1F62D}".into(), name: "loudly crying face".into(), ..EmojiEntry::default() }]);
+    let row = index.row_for("\u{1F62D}", true).unwrap();
+    assert_eq!(subject_id(&row), "emoji:\u{1F62D}");
+    assert_eq!(row, index.rows("loudly", true, &[], None).remove(0));
+    assert!(index.row_for("x", true).is_none());
 }

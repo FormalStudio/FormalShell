@@ -1020,7 +1020,8 @@ impl Model {
             // The plugin ranks its own rows against the query it was sent.
             Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
-                let rest = model::root_rest(nodes, &recent_pinned(store), &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond);
+                let outside = |id: &str| outside_subject(store, id);
+                let rest = model::root_rest(nodes, &recent_pinned(store), &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond, outside);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
@@ -1091,7 +1092,9 @@ impl Model {
 
     /// Commits the rows, their headings and the cursor.
     pub fn resolve(&mut self, store: &Store, theme: &Theme, kit: &mut Kit) {
-        let asked = self.plugin_mode().map(|id| (id.to_owned(), self.query.text().to_owned()));
+        // Only while open: the plugin runs only then, and a query cached
+        // while it is down would never be sent once it is back.
+        let asked = self.plugin_mode().filter(|_| self.open).map(|id| (id.to_owned(), self.query.text().to_owned()));
         if let Some((id, text)) = asked.as_ref().filter(|a| self.plugin_query.as_ref() != Some(a)) {
             plugins::send(id, plugins::query_event(text));
         }
@@ -1615,6 +1618,10 @@ impl Model {
         index::ask(Ask::Conds(conds));
         index::ask(Ask::Binds);
         index::ask(Ask::Files);
+        let paths: Vec<String> = picks(store).into_iter().filter_map(|r| Some(r.id.strip_prefix(fs_menu::actions::FILE_SUBJECT)?.to_owned())).collect();
+        if !paths.is_empty() {
+            index::ask(Ask::Stat(paths));
+        }
     }
 
     pub fn open_select(&mut self, prompt: &str, options: Vec<String>, token: &str) {
@@ -1803,7 +1810,7 @@ impl Model {
             c.refilter(self.query.text());
             return;
         }
-        if self.mode != Mode::Menu || !self.children.is_empty() {
+        if self.mode != Mode::Menu {
             return;
         }
         let Some((level, rest)) = model::prefixed(store.menu.nodes(), self.query.text()).and_then(|(n, rest)| Some((Self::level_of(store, n)?, rest.to_owned()))) else {
@@ -1845,7 +1852,7 @@ impl Model {
     /// Tab, a right-click and `menu actions`: the row's actions in the
     /// column beside the list. False with nothing to list.
     pub fn open_actions(&mut self, store: &Store, index: usize) -> bool {
-        if self.mode != Mode::Menu || !matches!(self.view, View::Rows | View::AppGrid | View::Emoji) {
+        if self.mode != Mode::Menu || matches!(self.view, View::Mirror) {
             return false;
         }
         let Some(node) = self.rows.get(index).cloned() else { return false };
@@ -2007,6 +2014,10 @@ impl Model {
             return Out::None;
         }
         self.close_actions();
+        // Closing the column disarms; this run is the confirmed one.
+        if action.confirm {
+            self.confirm = armed;
+        }
         self.run(store, node, action)
     }
 
@@ -2141,27 +2152,36 @@ impl Model {
 
     /// One pick of `node` into the picks ledger, and the query it was
     /// picked under taught to the learned abbreviations, unless the query
-    /// already names it exactly. Emoji keep their own ledger.
+    /// already names it exactly or the subject never ranks in the tree (an
+    /// emoji, a folder's entry). An emoji's grid order keeps its own ledger.
     fn picked(&self, store: &Store, node: &Node) {
-        if self.mode != Mode::Menu || node.id.starts_with("emoji.") {
+        if self.mode != Mode::Menu {
             return;
         }
         let id = fs_menu::actions::subject_id(node);
-        if !resolves(store, &id) {
+        let file = id.strip_prefix(fs_menu::actions::FILE_SUBJECT);
+        if file.is_none() && !resolves(store, &id) {
             return;
         }
+        if let Some(path) = file {
+            index::ask(Ask::Stat(vec![path.to_owned()]));
+        }
         let now = now_ms();
-        // Only an uninstalled app is pruned, once the apps scan has landed:
-        // a provider's rows (a network out of range, a stopped player) come
-        // back, and before the scan no app resolves at all.
+        // Only an uninstalled app, once the apps scan has landed, and a
+        // deleted file are pruned: a provider's rows (a network out of
+        // range, a stopped player) come back, and before the scan no app
+        // resolves at all.
         let apps_known = !store.menu.exec.is_empty();
-        let held: Vec<fs_menu::frecency::Record> =
-            picks(store).into_iter().filter(|r| !(apps_known && r.id.starts_with("app:")) || resolves(store, &r.id)).collect();
+        let gone = |id: &str| match id.strip_prefix(fs_menu::actions::FILE_SUBJECT) {
+            Some(path) => store.menu.files.get(path) == Some(&None),
+            None => apps_known && id.starts_with("app:") && !resolves(store, id),
+        };
+        let held: Vec<fs_menu::frecency::Record> = picks(store).into_iter().filter(|r| !gone(&r.id)).collect();
         let mut fields = vec![state::Field::Picks(json!(fs_menu::frecency::record(&held, &id, now, None)))];
         let q = self.list_text();
         let q_norm = fs_menu::search::normalize(q.trim());
         let exact = fs_menu::search::tier(node, &q_norm, &fs_menu::search::slug(&q_norm)) == fs_menu::search::TIER_EXACT;
-        if !exact && fs_menu::abbrev::key(q).is_some() {
+        if !exact && fs_menu::abbrev::key(q).is_some() && store.menu.nodes().contains_key(&node.id) {
             let book = fs_menu::abbrev::learn(&abbreviation_book(store), q, &id, now);
             fields.push(state::Field::Abbreviations(json!(book)));
         }
@@ -2372,6 +2392,7 @@ impl Model {
                 KeyAction::Home => self.column_move(Dir::Home),
                 KeyAction::End => self.column_move(Dir::End),
                 KeyAction::Back => self.column_back(),
+                KeyAction::Clear => self.set_query(store, ""),
                 KeyAction::Activate | KeyAction::ActivateAlternate => return self.column_run(store),
                 KeyAction::Pass => return self.edit(store, edit, mods, text),
                 _ => {}
@@ -2527,9 +2548,23 @@ pub fn configured_abbreviations(store: &Store) -> std::collections::HashMap<Stri
     }
 }
 
-/// Whether a subject id names something in the tree now.
+/// Whether a subject id names something now: in the tree, or a file still
+/// on disk, or an emoji in the dataset.
 fn resolves(store: &Store, id: &str) -> bool {
-    model::subject_node(store.menu.nodes(), id).is_some()
+    model::subject_node(store.menu.nodes(), id).is_some() || outside_subject(store, id).is_some()
+}
+
+/// A subject id naming no tree node, as a row: a file or folder still on
+/// disk, an emoji in the dataset. Windows are left out: their ids do not
+/// outlive the window.
+fn outside_subject(store: &Store, id: &str) -> Option<Node> {
+    if let Some(path) = id.strip_prefix(fs_menu::actions::FILE_SUBJECT) {
+        // Read off the service's stat of the picks, never the disk here.
+        let dir = (*store.menu.files.get(path)?)?;
+        return Some(fs_menu::providers::recent_subject(path, dir, &std::env::var("HOME").unwrap_or_default()));
+    }
+    let ch = id.strip_prefix(fs_menu::actions::EMOJI_SUBJECT)?;
+    store.menu.emoji.as_ref()?.row_for(ch, store.config.bool("clipboard.paste").unwrap_or(true))
 }
 
 /// The compositor's windows an app's entry claims.
@@ -3189,7 +3224,8 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 if m.picker_switch(store) {
                     let label = if m.picker.light { "Show dark" } else { "Show light" };
                     hints.push((label.into(), vec!["Ctrl", "Tab"], "variant"));
-                } else if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
+                }
+                if m.view != View::Mirror {
                     hints.push(("Actions".into(), vec!["Tab"], "actions"));
                 }
                 if !subject.inert() {
@@ -3329,7 +3365,10 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         }
     }
     if m.monitor_strip_h > 0.0 {
-        items.push((lay.slots.first().map_or(s.md, |s0| s0.y) - m.monitor_strip_h - s.section_gap, m.monitor_strip_h, monitor_strip(store, theme, &m.monitor_history)));
+        // The list's half while the actions column holds the other.
+        let width = if lay.halved { (lay.body_w * m.list_share(theme)).round() } else { lay.body_w };
+        let strip = monitor_strip(store, theme, &m.monitor_history).width(Size::Px(width));
+        items.push((lay.slots.first().map_or(s.md, |s0| s0.y) - m.monitor_strip_h - s.section_gap, m.monitor_strip_h, strip));
     }
     if m.picker_switch_h > 0.0 {
         let top = lay.slots.first().map_or(0.0, |s0| s0.y) - m.picker_switch_h - s.row_gap;
@@ -3780,9 +3819,11 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     let picture = (!row.icon_source.is_empty() && glyph.is_empty())
         .then(|| store.menu.row_icons.get(&row.icon_source).cloned().flatten())
         .flatten();
+    // An emoji in Recent is its own picture, drawn as text.
+    let emoji = fs_menu::actions::subject_id(row).starts_with(fs_menu::actions::EMOJI_SUBJECT);
     let drawn = if !glyph.is_empty() {
         glyph.to_owned()
-    } else if picture.is_none() && !row.emoji_only && row.thumb_source.is_empty() {
+    } else if picture.is_none() && !row.emoji_only && !emoji && row.thumb_source.is_empty() {
         fs_menu::icons::fallback_for(Some(row)).to_owned()
     } else {
         String::new()
@@ -3792,6 +3833,8 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
         lead.push(w::picture(Some(image.at(density)), icon_px));
     } else if !drawn.is_empty() {
         lead.push(w::icon(drawn).size(Type::Heading).width(Size::Px(icon_px)).height(icon_px));
+    } else if emoji {
+        lead.push(w::text(row.icon.clone()).size(Type::Heading).centred().width(Size::Px(icon_px)));
     }
     let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
     let mut name = w::text(label).weight(if selected { Weight::Semibold } else { Weight::Normal }).elide();

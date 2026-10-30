@@ -154,13 +154,28 @@ impl<'a> Subject<'a> {
 }
 
 /// The id a pick, an abbreviation and `Recent` know a subject by:
-/// `app:<desktop id>` for an app, the node id for everything else.
+/// `app:<desktop id>` for an app, `file:<path>` for a file or folder,
+/// `emoji:<char>` for an emoji, the node id for everything else. The last
+/// two name subjects outside the tree, so `Recent` rebuilds them off the id.
 pub fn subject_id(node: &Node) -> String {
     match &node.entry {
-        Some(e) if node.kind == Kind::App => format!("app:{}", e.id),
+        Some(e) if node.kind == Kind::App => return format!("app:{}", e.id),
+        _ => {}
+    }
+    if matches!(&node.kind, Kind::Other(k) if k == FILE_KIND || k == FOLDER_KIND) {
+        return format!("{FILE_SUBJECT}{}", node.path);
+    }
+    match node.id.strip_prefix(EMOJI_ROW) {
+        Some(ch) if node.kind == Kind::Action => format!("{EMOJI_SUBJECT}{ch}"),
         _ => node.id.clone(),
     }
 }
+
+/// A file or folder's subject id prefix, before its absolute path.
+pub const FILE_SUBJECT: &str = "file:";
+/// An emoji's subject id prefix, before the emoji itself.
+pub const EMOJI_SUBJECT: &str = "emoji:";
+const EMOJI_ROW: &str = "emoji.";
 
 /// A single-quoted shell word.
 pub fn shell_quote(s: &str) -> String {

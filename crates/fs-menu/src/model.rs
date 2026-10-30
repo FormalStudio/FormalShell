@@ -266,7 +266,8 @@ pub fn subject_node<'a>(nodes: &'a IndexMap<String, Node>, id: &str) -> Option<&
 /// then the best picks, that still resolve and pass their `when`, any kind,
 /// `limit` in all, under `Recent`; with no pin and fewer than
 /// [`RECENT_MIN`] picks, the root's routes in declaration order under
-/// `Modes`. Never both, and nothing else.
+/// `Modes`. Never both, and nothing else. `outside` resolves the ids that
+/// name no tree node (a file, an emoji), `None` for one that is gone.
 pub fn root_rest(
     nodes: &IndexMap<String, Node>,
     pinned: &[String],
@@ -274,24 +275,28 @@ pub fn root_rest(
     now_ms: f64,
     limit: usize,
     cond_results: &HashMap<String, bool>,
+    outside: impl Fn(&str) -> Option<Node>,
 ) -> Vec<Node> {
     let mut ranked: Vec<&crate::frecency::Record> = picks.iter().filter(|r| crate::frecency::score_of(Some(r), now_ms) > 0.0).collect();
     ranked.sort_by(|a, b| {
         let (sa, sb) = (crate::frecency::score_of(Some(a), now_ms), crate::frecency::score_of(Some(b), now_ms));
         sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
     });
-    let visible = |id: &str| subject_node(nodes, id).filter(|n| is_when_visible(n, cond_results));
-    let pins: Vec<&Node> = pinned.iter().filter_map(|id| visible(id)).collect();
+    let visible = |id: &str| match subject_node(nodes, id) {
+        Some(n) => is_when_visible(n, cond_results).then(|| n.clone()),
+        None => outside(id),
+    };
+    let pins: Vec<Node> = pinned.iter().filter_map(|id| visible(id)).collect();
+    let pinned_any = !pins.is_empty();
     let mut seen = HashSet::new();
     let recent: Vec<Node> = pins
-        .iter()
-        .copied()
+        .into_iter()
         .chain(ranked.into_iter().filter_map(|r| visible(&r.id)))
         .filter(|n| seen.insert(n.id.clone()))
         .take(limit)
-        .map(|n| Node { section: Some(RECENT_SECTION.into()), ..n.clone() })
+        .map(|n| Node { section: Some(RECENT_SECTION.into()), ..n })
         .collect();
-    if !pins.is_empty() || recent.len() >= RECENT_MIN {
+    if pinned_any || recent.len() >= RECENT_MIN {
         return recent;
     }
     visible_children(nodes, None, cond_results)

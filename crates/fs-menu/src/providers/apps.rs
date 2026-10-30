@@ -72,12 +72,19 @@ pub type ProviderFn<'a> = Box<dyn Fn() -> Vec<Node> + 'a>;
 /// a node earlier in the same batch that lists it in its own `child_ids`.
 ///
 /// A child whose id `menu.jsonc` already declared takes the declared
-/// node's place, keeping that node's `actions` over its own.
+/// node's place, keeping that node's `actions`, `alternate` and
+/// `alternateLabel` over its own.
 pub fn attach_children(tree: &mut Tree, provider_id: &str, children: Vec<Node>) {
     for mut child in children {
         let declared = match tree.nodes.get(&child.id) {
             Some(d) => {
                 child.actions = crate::node::merge_actions(&child.actions, &d.actions);
+                if d.alternate.is_some() {
+                    child.alternate = d.alternate.clone();
+                }
+                if d.alternate_label.is_some() {
+                    child.alternate_label = d.alternate_label.clone();
+                }
                 true
             }
             None => false,

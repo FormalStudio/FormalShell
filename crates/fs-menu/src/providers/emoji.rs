@@ -152,16 +152,22 @@ impl EmojiIndex {
     /// the focused client accepts a remapped keysym off a virtual keyboard; a
     /// paste works wherever the user's own paste chord already works.
     pub fn rows(&self, query: &str, paste: bool, uses: &[Record], now: Option<f64>) -> Vec<Node> {
-        self.search(query, uses, now)
-            .into_iter()
-            .map(|e| Node {
-                icon: e.ch.clone(),
-                verb: Some(if paste { "Paste" } else { "Copy" }.to_string()),
-                action: Some(format!("wl-copy -- '{}'", e.ch)),
-                paste_after: paste,
-                ..Node::new(emoji_usage_id(e), e.name.to_uppercase(), Kind::Action)
-            })
-            .collect()
+        self.search(query, uses, now).into_iter().map(|e| emoji_row(e, paste)).collect()
+    }
+
+    /// The row for one emoji, as `Recent` draws a pick of it.
+    pub fn row_for(&self, ch: &str, paste: bool) -> Option<Node> {
+        self.entries.iter().find(|i| i.entry.ch == ch).map(|i| emoji_row(&i.entry, paste))
+    }
+}
+
+fn emoji_row(e: &EmojiEntry, paste: bool) -> Node {
+    Node {
+        icon: e.ch.clone(),
+        verb: Some(if paste { "Paste" } else { "Copy" }.to_string()),
+        action: Some(format!("wl-copy -- '{}'", e.ch)),
+        paste_after: paste,
+        ..Node::new(emoji_usage_id(e), e.name.to_uppercase(), Kind::Action)
     }
 }
 

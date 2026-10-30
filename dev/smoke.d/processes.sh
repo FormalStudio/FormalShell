@@ -13,8 +13,13 @@
 # takes. It is called TWICE on purpose: this route arms on the first press
 # and fires on the second, and the `kill -0` written between the two is what
 # proves the arming press did not already kill.
+#
+# Before the kill, `menu actions 0` opens the process row's actions column
+# (End, Kill) beside the halved table; the first `menu activate` closes it
+# and arms End as before.
 leg_processes_flag="--processes"
 leg_processes_order=150
+leg_processes_needs="jq"
 
 processes_victim_pid_path="$shot_dir/processes-victim.pid"
 processes_restart_pid_path="$shot_dir/processes-restart.pid"
@@ -30,12 +35,14 @@ processes_full_png="$shot_dir/processes-full.png"
 processes_view_png="$shot_dir/processes-view.png"
 processes_confirm_png="$shot_dir/processes-confirm.png"
 processes_killed_png="$shot_dir/processes-killed.png"
+processes_actions_png="$shot_dir/processes-actions.png"
+processes_actions_status_path="$shot_dir/processes-actions.json"
 
 leg_processes_timing() {
-  leg_timing 32 70
+  leg_timing 35 73
   # --monitor owns the same launcher route, and this leg waits out its whole
   # timeline before summoning.
-  if leg_on monitor; then leg_timing 52 95; fi
+  if leg_on monitor; then leg_timing 55 98; fi
 }
 
 leg_processes_drive() {
@@ -67,6 +74,10 @@ $ipc call menu filter smokevictim > "$processes_filter_reply_path" 2>&1
 sleep 3
 "$grim_bin" "$processes_view_png" > /dev/null 2>&1
 $ipc call monitor processes smokevictim > "$processes_filtered_path" 2>&1
+$ipc call menu actions 0 > /dev/null 2>&1
+sleep 1.5
+$ipc call menu status > "$processes_actions_status_path" 2>&1
+"$grim_bin" "$processes_actions_png" > /dev/null 2>&1
 $ipc call menu activate 0 > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$processes_confirm_png" > /dev/null 2>&1
@@ -138,6 +149,10 @@ leg_processes_assert() {
   if [ "$(cat "$processes_restart_pids_path" 2>/dev/null | tr -d ' \n')" = "$restart_pid" ]; then
     fail "the restarted process kept its old pid ($restart_pid), nothing was re-run"
   fi
+  [ -f "$processes_actions_png" ] || fail "no processes actions screenshot produced"
+  "$jq_bin" -e '.view == "monitor" and .actionsOpen and .actions == ["end", "kill"]' "$processes_actions_status_path" > /dev/null \
+    || fail "a process row's column is not End, Kill: $("$jq_bin" -c '{view, actionsOpen, actions}' "$processes_actions_status_path" 2>&1)"
+  echo "SMOKE_PROCESSES_ACTIONS $processes_actions_png"
   echo "SMOKE_PROCESSES_FULL $processes_full_png"
   echo "SMOKE_PROCESSES_VIEW $processes_view_png"
   echo "SMOKE_PROCESSES_CONFIRM $processes_confirm_png"

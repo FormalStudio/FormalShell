@@ -7,9 +7,9 @@
 //! - stdout: one JSON object per line, `{"text", "icon", "tooltip", "class",
 //!   "rows"}`. Each line replaces everything the last one said; keys it
 //!   leaves out are empty. A line that is not an object is skipped. A line
-//!   whose top level carries `actions` is a launcher plugin's answer to an
-//!   `actions` event, naming the event's subject id in `subject`, and
-//!   leaves what it shows alone.
+//!   whose top level carries `actions` is a launcher plugin's answer to the
+//!   oldest `actions` event it has not answered (or, with a `subject`, to
+//!   that subject's), and leaves what it shows alone.
 //! - stdin: one JSON object per line, `{"event": "click", "button":
 //!   "left"|"right"|"middle"}`, `{"event": "scroll", "direction":
 //!   "up"|"down"}` and `{"event": "activate", "id": "<row id>"}` (a toggle
@@ -28,7 +28,7 @@
 //! nothing on a plugin's behalf while it prints nothing: no timer, no
 //! polling, only a read parked on its stdout.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -51,6 +51,10 @@ const STABLE: Duration = Duration::from_secs(30);
 /// How long a plugin let go of has to exit on its closed stdin before it is
 /// killed.
 const LET_GO: Duration = Duration::from_secs(1);
+/// How long a plugin let go of gets for the events still queued for it and
+/// its exit, all told: one that stops reading blocks the write, which
+/// [`LET_GO`] never gets to bound.
+const DRAIN: Duration = Duration::from_secs(2);
 
 /// What a panel row is drawn as.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -111,8 +115,8 @@ pub struct Answer {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Line {
     Display(Display),
-    /// The subject's id and its actions.
-    Actions(String, Vec<RowAction>),
+    /// The subject's id where the plugin named it, and its actions.
+    Actions(Option<String>, Vec<RowAction>),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -261,7 +265,8 @@ pub fn parse_line(line: &str) -> Option<Line> {
     let value: Value = serde_json::from_str(line.trim()).ok()?;
     let object = value.as_object()?;
     if object.contains_key("actions") {
-        return Some(Line::Actions(text(object, "subject"), row_actions(object.get("actions"))));
+        let subject = object.get("subject").and_then(Value::as_str).map(str::to_owned);
+        return Some(Line::Actions(subject, row_actions(object.get("actions"))));
     }
     let rows = object
         .get("rows")
@@ -399,10 +404,25 @@ enum Wake {
     Event(Option<String>),
 }
 
+/// The subject an `actions` answer is for: the one it names, else the
+/// oldest asked and not yet answered.
+fn answered(pending: &mut VecDeque<String>, named: Option<String>) -> String {
+    match named {
+        Some(subject) => {
+            if let Some(i) = pending.iter().position(|p| *p == subject) {
+                pending.remove(i);
+            }
+            subject
+        }
+        None => pending.pop_front().unwrap_or_default(),
+    }
+}
+
 /// One run of the plugin: its stdout lines become what it shows, queued
-/// events go to its stdin. Answers why it ended, or nothing when the shell
-/// let go of it.
-async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<String>) -> Option<String> {
+/// events go to its stdin. `last_query` is the newest `query` event, written
+/// first to a run that restarts with the mode still open. Answers why it
+/// ended, or nothing when the shell let go of it.
+async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<String>, last_query: &mut Option<String>) -> Option<String> {
     let dir = PathBuf::from(&plugin.dir);
     let child = crate::services::proc::command(dir.join(&plugin.entry))
         .current_dir(&dir)
@@ -417,6 +437,10 @@ async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<St
     };
     let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else { return Some("no pipes".to_owned()) };
     let mut lines = BufReader::new(stdout).lines();
+    if let Some(query) = last_query.as_deref() {
+        let _ = stdin.write_all(format!("{query}\n").as_bytes()).await;
+    }
+    let mut pending = VecDeque::new();
     loop {
         let wake = async { Wake::Line(lines.next().await) }.or(async { Wake::Event(events.recv().await.ok()) }).await;
         match wake {
@@ -424,13 +448,20 @@ async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<St
             Wake::Line(Some(Ok(_))) if events.is_closed() => {}
             Wake::Line(Some(Ok(line))) => match parse_line(&line) {
                 Some(Line::Display(display)) => publish(ctx, Diff::Run(plugin.id.clone(), Some(Run::Live(display)))),
-                Some(Line::Actions(subject, actions)) => {
+                Some(Line::Actions(named, actions)) => {
+                    let subject = answered(&mut pending, named);
                     publish(ctx, Diff::Answer(plugin.id.clone(), Answer { at: Instant::now(), subject, actions }));
                 }
                 None => eprintln!("plugin {}: skipped a line that is not a JSON object", plugin.id),
             },
             Wake::Line(_) => return Some(ended(child.status().await)),
             Wake::Event(Some(line)) => {
+                let event: Value = serde_json::from_str(&line).unwrap_or_default();
+                match event["event"].as_str() {
+                    Some("query") => *last_query = Some(line.clone()),
+                    Some("actions") => pending.push_back(event["subject"]["id"].as_str().unwrap_or_default().to_owned()),
+                    _ => {}
+                }
                 // A plugin that closed its stdin may still be printing.
                 let _ = stdin.write_all(format!("{line}\n").as_bytes()).await;
             }
@@ -451,9 +482,10 @@ async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<St
 
 async fn host(ctx: Ctx, plugin: Plugin, events: async_channel::Receiver<String>) {
     let mut backoff = BASE_BACKOFF;
+    let mut last_query = None;
     loop {
         let started = Instant::now();
-        let Some(reason) = session(&ctx, &plugin, &events).await else { return };
+        let Some(reason) = session(&ctx, &plugin, &events, &mut last_query).await else { return };
         // One let go of that ended on its own is neither failed nor started
         // again: what it showed went when it was let go of.
         if events.is_closed() {
@@ -465,8 +497,13 @@ async fn host(ctx: Ctx, plugin: Plugin, events: async_channel::Receiver<String>)
         if events.is_closed() {
             return;
         }
-        // Whatever was clicked while it was down is not for the next run.
-        while events.try_recv().is_ok() {}
+        // Whatever was clicked while it was down is not for the next run,
+        // but a query typed meanwhile is the one the next run answers.
+        while let Ok(line) = events.try_recv() {
+            if serde_json::from_str::<Value>(&line).is_ok_and(|e| e["event"] == "query") {
+                last_query = Some(line);
+            }
+        }
         backoff = if started.elapsed() >= STABLE { BASE_BACKOFF } else { (backoff * 2).min(MAX_BACKOFF) };
     }
 }
@@ -487,9 +524,16 @@ fn starts(plugin: &Plugin) -> bool {
 type Hosts = HashMap<String, (async_channel::Sender<String>, async_channel::Sender<()>, async_channel::Receiver<String>)>;
 
 /// Hosts let go of while they still owe their plugin the events queued
-/// before: each runs until its events run out, its stop sender kept here so
-/// a rescan still ends it.
+/// before: each runs until its events run out or [`DRAIN`] passes, its stop
+/// sender kept here so a rescan still ends it.
 type Draining = Vec<async_channel::Sender<()>>;
+
+/// Every draining host ended now.
+fn end_draining(draining: &mut Draining) {
+    for stop in draining.drain(..) {
+        let _ = stop.try_send(());
+    }
+}
 
 fn start(ctx: &Ctx, hosts: &mut Hosts, plugin: &Plugin) {
     if hosts.contains_key(&plugin.id) {
@@ -522,6 +566,11 @@ fn show(ctx: &Ctx, hosts: &mut Hosts, draining: &mut Draining, open: &mut HashSe
         start(ctx, hosts, plugin);
     } else if let Some((events, stop, _)) = hosts.remove(&id) {
         drop(events);
+        let deadline = stop.clone();
+        ctx.spawn(async move {
+            Timer::after(DRAIN).await;
+            let _ = deadline.try_send(());
+        });
         draining.retain(|s| !s.is_closed());
         draining.push(stop);
         // What it last printed goes with it.
@@ -571,7 +620,7 @@ pub async fn run(ctx: Ctx) {
         match next.await {
             Next::Cmd(None) => return,
             Next::Cmd(Some(Cmd::Rescan)) => {
-                draining.clear();
+                end_draining(&mut draining);
                 resolved = rescan(&ctx, &mut hosts, &open).await;
             }
             Next::Cmd(Some(Cmd::Shown(id, on))) => show(&ctx, &mut hosts, &mut draining, &mut open, &resolved, id, on),
@@ -595,7 +644,7 @@ pub async fn run(ctx: Ctx) {
                 let now = disabled();
                 if now != off {
                     off = now;
-                    draining.clear();
+                    end_draining(&mut draining);
                     resolved = rescan(&ctx, &mut hosts, &open).await;
                 }
             }
@@ -630,9 +679,20 @@ mod tests {
     fn a_launcher_row_carries_its_actions_and_an_actions_line_is_an_answer() {
         let d = display(r#"{"rows":[{"id":"n1","text":"Note","actions":[{"id":"pin","label":"Pin","icon":"pin"},{"label":"no id"}]}]}"#);
         assert_eq!(d.rows[0].actions, [RowAction { id: "pin".into(), label: "Pin".into(), icon: "pin".into() }]);
-        let line = parse_line(r#"{"subject":"files.ab","actions":[{"id":"share","label":"Share"}],"rows":[]}"#);
-        assert_eq!(line, Some(Line::Actions("files.ab".into(), vec![RowAction { id: "share".into(), label: "Share".into(), icon: String::new() }])));
-        assert_eq!(parse_line(r#"{"actions":7}"#), Some(Line::Actions(String::new(), Vec::new())));
+        let line = parse_line(r#"{"subject":"file:/a","actions":[{"id":"share","label":"Share"}],"rows":[]}"#);
+        assert_eq!(line, Some(Line::Actions(Some("file:/a".into()), vec![RowAction { id: "share".into(), label: "Share".into(), icon: String::new() }])));
+        assert_eq!(parse_line(r#"{"actions":7}"#), Some(Line::Actions(None, Vec::new())));
+    }
+
+    #[test]
+    fn an_answer_is_for_the_oldest_subject_asked() {
+        let mut pending: VecDeque<String> = ["a", "b", "c"].into_iter().map(String::from).collect();
+        assert_eq!(answered(&mut pending, Some("b".into())), "b");
+        assert_eq!(answered(&mut pending, None), "a");
+        assert_eq!(answered(&mut pending, None), "c");
+        assert!(pending.is_empty());
+        assert_eq!(answered(&mut pending, None), "");
+        assert_eq!(answered(&mut pending, Some("z".into())), "z");
     }
 
     #[test]

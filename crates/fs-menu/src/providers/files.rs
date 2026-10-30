@@ -120,6 +120,12 @@ pub fn subject(path: &str, dir: bool, meta: Option<String>) -> Node {
     }
 }
 
+/// A file or folder picked from anywhere, as `Recent` lists it: trailing
+/// its parent, the home directory written `~`.
+pub fn recent_subject(path: &str, dir: bool, home: &str) -> Node {
+    subject(path, dir, Some(tilde(parent(path), home)))
+}
+
 pub fn is_file_subject(node: &Node) -> bool {
     matches!(&node.kind, Kind::Other(k) if k == FILE_KIND)
 }

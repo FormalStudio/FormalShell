@@ -18,12 +18,15 @@
 # variant light` is the segmented switcher's own action over IPC. The route
 # is left open so the run's own screenshot is the grid.
 #
+# Before the first pick, `menu actions 0` opens a cell's actions column
+# (Set wallpaper, Open file, Copy path) beside the halved grid.
+#
 # picker_done_path is this leg's own finish marker: the picker and the
 # clipboard routes are the same launcher surface, so a run carrying both has
 # the clipboard leg wait on this file rather than summoning over the grid.
 leg_picker_flag="--picker"
 leg_picker_order=120
-leg_picker_needs="convert"
+leg_picker_needs="convert jq"
 
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the grid
 # covers the whole output, so under --wallpaper it starts after that leg's
@@ -35,6 +38,8 @@ picker_t0() {
 picker_done_path="$shot_dir/picker-drive.done"
 picker_grid_png="$shot_dir/picker-grid.png"
 picker_variant_png="$shot_dir/picker-variant.png"
+picker_actions_png="$shot_dir/picker-actions.png"
+picker_actions_status_path="$shot_dir/picker-actions.json"
 picker_flat_status_path="$shot_dir/picker-status-flat.json"
 picker_dark_status_path="$shot_dir/picker-status-dark.json"
 picker_light_status_path="$shot_dir/picker-status-light.json"
@@ -83,7 +88,7 @@ leg_picker_timing() {
   # grid up, so the run's own frame is that grid.
   local t0
   t0=$(picker_t0)
-  leg_timing $((24 + t0 - 4)) $((56 + t0 - 4))
+  leg_timing $((28 + t0 - 4)) $((60 + t0 - 4))
 }
 
 leg_picker_drive() {
@@ -96,6 +101,14 @@ $ipc call picker summon > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$picker_grid_png" > /dev/null 2>&1
 $ipc call picker status > "$picker_flat_status_path" 2>&1
+$ipc call menu actions 0 > /dev/null 2>&1
+sleep 1.5
+$ipc call menu status > "$picker_actions_status_path" 2>&1
+"$grim_bin" "$picker_actions_png" > /dev/null 2>&1
+$ipc call menu close > /dev/null 2>&1
+sleep 0.5
+$ipc call picker summon > /dev/null 2>&1
+sleep 1.5
 $ipc call picker choose "$picker_dir/img-3.png" > /dev/null 2>&1
 sleep 3
 $ipc call theme status > "$picker_theme_status_path" 2>&1
@@ -127,6 +140,10 @@ leg_picker_assert() {
     fail "no picker-grid screenshot produced"
   fi
   echo "SMOKE_PICKER_GRID $picker_grid_png"
+  [ -f "$picker_actions_png" ] || fail "no picker actions screenshot produced"
+  "$jq_bin" -e '.view == "picker" and .actionsOpen and .actions == ["set", "open-file", "copy-path"]' "$picker_actions_status_path" > /dev/null \
+    || fail "a wallpaper cell's column is not Set, Open file, Copy path: $("$jq_bin" -c '{view, actionsOpen, actions}' "$picker_actions_status_path" 2>&1)"
+  echo "SMOKE_PICKER_ACTIONS $picker_actions_png"
   # The flat listing first: with no subdirectory pair the route lists the
   # directory itself and raises no switcher, which is what every setup that
   # does not use variants must keep doing.

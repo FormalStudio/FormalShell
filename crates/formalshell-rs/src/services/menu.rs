@@ -75,6 +75,9 @@ pub struct State {
     pub folder: Option<(String, Listing)>,
     /// What the preview pane last read off a file or folder, by path.
     pub peek: Option<(String, Peeked)>,
+    /// Picked files and folders by path: whether each is a folder, `None`
+    /// once it is gone. Absent is not looked at yet.
+    pub files: HashMap<String, Option<bool>>,
 }
 
 /// A folder's sorted entries, or why it could not be read.
@@ -90,6 +93,7 @@ pub enum Diff {
     Exec(HashMap<String, Vec<String>>),
     Folder(String, Listing),
     Peek(String, Peeked),
+    Files(HashMap<String, Option<bool>>),
 }
 
 impl State {
@@ -129,6 +133,14 @@ impl State {
             }
             Diff::Folder(path, listing) => self.folder = Some((path, listing)),
             Diff::Peek(path, peeked) => self.peek = Some((path, peeked)),
+            Diff::Files(files) => {
+                let before = self.files.len();
+                let changed = files.iter().any(|(p, k)| self.files.get(p) != Some(k));
+                self.files.extend(files);
+                if !changed && self.files.len() == before {
+                    return false;
+                }
+            }
         }
         true
     }
@@ -211,6 +223,8 @@ pub enum Ask {
     Folder(String),
     /// A file or folder's preview.
     Peek(String),
+    /// Whether each picked path is still there, and a folder.
+    Stat(Vec<String>),
 }
 
 static ASK: OnceLock<async_channel::Sender<Ask>> = OnceLock::new();
@@ -295,6 +309,15 @@ pub async fn run(ctx: Ctx) {
                 let p = path.clone();
                 if let Some(listing) = ctx.pool().run(move || list_folder(&p).map(Arc::from)).await {
                     ctx.publish(store::Diff::Menu(Diff::Folder(path, listing)));
+                }
+            }
+            Ask::Stat(paths) => {
+                let stat = move || paths.into_iter().map(|p| {
+                    let kind = std::fs::metadata(&p).ok().map(|m| m.is_dir());
+                    (p, kind)
+                }).collect();
+                if let Some(files) = ctx.pool().run(stat).await {
+                    ctx.publish(store::Diff::Menu(Diff::Files(files)));
                 }
             }
             Ask::Peek(path) => {

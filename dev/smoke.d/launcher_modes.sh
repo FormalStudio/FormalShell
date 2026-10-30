@@ -6,7 +6,9 @@
 # and Enter on its row (`menu activate`), `menu summon <id>`, and for the
 # five with a `prefix` (`:e`, `:k`, `:r`, `:f`, and the fixture's `:m`
 # from menu.jsonc) the prefix and a space typed on real keys, what follows
-# staying as the query. Share, Clipssh and Install are left out: the first
+# staying as the query; `:e ` typed inside a folder (Files, a staged
+# Documents named in user-dirs.dirs, stepped into) enters Emoji from there
+# too. Share, Clipssh and Install are left out: the first
 # two are gated on tools the rig lacks, the last does not exist yet.
 #
 # The fixture menu.jsonc nests three modes (Fixture › Outer › Inner, a
@@ -49,6 +51,9 @@ modesfix|Fixture"
 leg_launcher_modes_fixture() {
   mkdir -p "$iso_home/.local/share/applications" "$iso_home/.config/formalshell"
   printf '[Desktop Entry]\nType=Application\nName=Modes Probe\nExec=true\n' > "$iso_home/.local/share/applications/formalshell-modes-probe.desktop"
+  mkdir -p "$iso_home/Documents"
+  # A leg riding along that names its own user directories keeps them.
+  [ -e "$iso_home/.config/user-dirs.dirs" ] || printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$iso_home/.config/user-dirs.dirs"
   cat > "$iso_home/.config/formalshell/menu.jsonc" <<'EOF'
 {
   "modesfix": { "label": "Fixture", "prefix": ":m" },
@@ -60,7 +65,7 @@ EOF
 }
 
 leg_launcher_modes_timing() {
-  leg_timing 80 130
+  leg_timing 84 134
 }
 
 leg_launcher_modes_drive() {
@@ -97,6 +102,15 @@ done
 call menu summon ":k SUPER" > /dev/null 2>&1
 sleep 0.3
 status summon-prefixed
+call menu summon files > /dev/null 2>&1
+sleep 0.5
+call menu filter Documents > /dev/null 2>&1
+sleep 0.5
+call menu into 0 > /dev/null 2>&1
+sleep 0.6
+status folder
+key -d 30 ":e "
+status prefix-in-folder
 
 root
 call menu filter "Modes Probe" > /dev/null 2>&1
@@ -201,6 +215,8 @@ ROUTES
   launcher_modes_expect prefix-files '.level == "files" and .token == ["Files"] and .query == ""' "':f ' did not become the Files token"
   launcher_modes_expect prefix-modesfix '.level == "modesfix" and .token == ["Fixture"]' "menu.jsonc's ':m' prefix did not enter its route"
   launcher_modes_expect summon-prefixed '.level == "keybinds" and .query == "SUPER"' "'menu summon \":k SUPER\"' did not keep SUPER as the query in Keybinds"
+  launcher_modes_expect folder '.level == "files" and .token == ["Files", "Documents"]' "Documents was not stepped into"
+  launcher_modes_expect prefix-in-folder '.level == "emoji" and .token == ["Emoji"] and .query == "" and .view == "emoji"' "':e ' inside a folder did not become the Emoji token"
   echo "SMOKE_LAUNCHER_MODES prefixes :e :k :r and menu.jsonc's :m typed on real keys"
 
   launcher_modes_expect scope-root "(.ids | index(\"$launcher_modes_app\")) != null" "the staged app is not found from the root"

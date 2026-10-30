@@ -29,10 +29,13 @@
 # is open. `menu summon plugin:smoke-launcher` stands its mode in the field
 # as a token over the two rows it prints; `beta` typed there reaches it as
 # a `query` event and it answers with that row alone, which a real Enter
-# activates. Its rows also rank in a root search. Tab over the staged
-# recent file sends an `actions` event carrying the file's kind and path,
-# the plugin's answer joins the column, and running it sends `activate`
-# with the file's id and the action.
+# activates. It prints Alpha alone at start and both rows only in answer to
+# a query, so the same mode opened again after the launcher shut has to
+# send its query again to list both. Its rows also rank in a root search.
+# Tab over the staged recent file sends an `actions` event carrying the
+# file's kind, path and `file:` id, the plugin's answer (the spec's shape,
+# no `subject`) joins the column, and running it sends `activate` with the
+# file's id and the action.
 leg_plugins_flag="--plugins"
 leg_plugins_order=200
 leg_plugins_needs="jq wlrctl wtype"
@@ -196,12 +199,12 @@ rows() {
   case beta in *"\$1"*) out+=('{"id":"beta","icon":"moon","text":"Beta note","detail":"second","actions":[{"id":"pin","label":"Pin note"}]}') ;; esac
   printf '{"rows":[%s]}\n' "\$(IFS=,; echo "\${out[*]}")"
 }
-rows ""
+rows alpha
 while IFS= read -r line; do
   printf '%s\n' "\$line" >> "$plugins_launcher_events_path"
   case \$(jq -r .event <<<"\$line") in
     query) rows "\$(jq -r .text <<<"\$line")" ;;
-    actions) jq -c '{subject: .subject.id, actions: [{id: "smoke-file", label: "Smoke file action", icon: "zap"}]}' <<<"\$line" ;;
+    actions) jq -c '{actions: [{id: "smoke-file", label: "Smoke file action", icon: "zap"}]}' <<<"\$line" ;;
   esac
 done
 EOF
@@ -219,7 +222,7 @@ EOF
 leg_plugins_timing() {
   # A 5s startup wait plus two dumps and one grim; 12 leaves llvmpipe real
   # margin on the capture rather than racing the default 8s frame.
-  leg_timing 12 130
+  leg_timing 12 136
 }
 
 leg_plugins_drive() {
@@ -293,6 +296,11 @@ lstatus query
 "$wtype_bin" -k Return
 sleep 2
 echo "closed: \$(lprocs)" >> "$plugins_launcher_procs_path"
+$ipc call menu summon plugin:smoke-launcher > /dev/null 2>&1
+sleep 2
+lstatus reopen
+$ipc call menu close > /dev/null 2>&1
+sleep 2
 $ipc call menu summon "" > /dev/null 2>&1
 sleep 1.5
 $ipc call menu filter "Alpha note" > /dev/null 2>&1
@@ -412,15 +420,16 @@ leg_plugins_assert_launcher() {
   done
   plugins_launcher_expect mode '.level == "plugin:smoke-launcher" and .token == ["Smoke Mode"] and .ids == ["plugin:smoke-launcher.alpha", "plugin:smoke-launcher.beta"]' "the plugin's mode did not stand as a token over its two rows"
   plugins_launcher_expect query '.query == "beta" and .ids == ["plugin:smoke-launcher.beta"]' "the plugin's answer to the query did not replace its rows"
+  plugins_launcher_expect reopen '.level == "plugin:smoke-launcher" and .ids == ["plugin:smoke-launcher.alpha", "plugin:smoke-launcher.beta"]' "the mode opened again after the launcher shut did not send its query"
   plugins_launcher_expect root '.level == null and (.ids | index("plugin:smoke-launcher.alpha")) != null' "the plugin's rows did not rank in a root search"
   plugins_launcher_expect actions '.actionsOpen and (.actions | index("smoke-file")) != null and (.actions | index("open")) < (.actions | index("smoke-file"))' "the plugin's action did not join the file's column under its built-ins"
   jq -se '[.[] | select(.event == "query" and .text == "beta")] | length >= 1' "$events" > /dev/null \
     || fail "typing in the plugin's mode sent no query event: $(cat "$events")"
   jq -se '[.[] | select(.event == "activate" and .id == "beta" and (has("action") | not))] | length == 1' "$events" > /dev/null \
     || fail "Enter on the plugin's row did not send exactly one activate: $(cat "$events")"
-  jq -se --arg p "$plugins_launcher_file" '[.[] | select(.event == "actions" and .subject.kind == "file" and .subject.path == $p and (.subject.id | startswith("files.")))] | length == 1' "$events" > /dev/null \
+  jq -se --arg p "$plugins_launcher_file" '[.[] | select(.event == "actions" and .subject.kind == "file" and .subject.path == $p and .subject.id == "file:" + $p)] | length == 1' "$events" > /dev/null \
     || fail "Tab over the file did not send one actions event with its kind and path: $(cat "$events")"
-  jq -se '[.[] | select(.event == "activate" and .action == "smoke-file" and (.id | startswith("files.")))] | length == 1' "$events" > /dev/null \
+  jq -se --arg p "$plugins_launcher_file" '[.[] | select(.event == "activate" and .action == "smoke-file" and .id == "file:" + $p)] | length == 1' "$events" > /dev/null \
     || fail "running the plugin's action on the file did not reach it: $(cat "$events")"
   for step in mode query root actions; do
     [ -s "$shot_dir/plugins-launcher-$step.png" ] || fail "plugins: no launcher $step frame"
