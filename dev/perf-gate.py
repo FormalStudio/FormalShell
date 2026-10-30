@@ -8,7 +8,8 @@ apart by the `shell cpu quota:` line smoke.sh prints). A run that failed is
 refused, never counted.
 
   dev/perf-gate.py run [--legs idle,r0,menu] [--runs 3]
-      the matrix on the rig, each leg --runs times plain and under quota,
+      the matrix on the rig, each leg --runs times plain and under quota
+      (--idle at least five times),
       outputs kept in artifacts/perf/<stamp>/, then `check` over them
   dev/perf-gate.py check <run-output>...
       the median of the given runs per number against the baseline; exits 1
@@ -23,6 +24,11 @@ median plus the baseline's spread (max minus min of its three runs). RSS
 gets 2 MB over the median instead, the idle commit count and the shell's
 engine time stay exactly 0, the compositor's engine time stays at or under
 its median, and the DRM fd count is reported only.
+
+The compositor's engine time is read on the median of five --idle runs:
+over a window the shell commits once in, it is one or two of the nested
+Hyprland's frames, and the same build reads 595k to 705k ns from run to run
+on g815 (the iGPU's power state), so three runs leave the median to luck.
 """
 import json
 import os
@@ -35,6 +41,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASELINE = os.path.join(REPO, "docs/perf/baseline.json")
 QUOTA_ENV = {"FS_CPU_QUOTA": "10%", "FS_CPU_QUOTA_PERIOD": "2ms"}
 LEGS = {"idle": ["--idle"], "r0": ["--r0-measure", "300"], "menu": ["--menu-budget"]}
+MIN_RUNS = {"idle": 5}
 
 # number -> (leg flag, rule)
 NUMBERS = {
@@ -201,8 +208,8 @@ def cmd_check(paths):
                 over.append(f"{mode} {k}")
             shown = "reported" if limit is None else f"gate {limit:g}"
             print(f"{'ok  ' if ok else 'OVER'} {mode:5} {k:30} median {m:g} of {xs} ({shown}, baseline {b['median']:g})")
-            if len(xs) != 3:
-                print(f"     {mode} {k}: {len(xs)} runs, the gate is read on three")
+            if len(xs) < 3:
+                print(f"     {mode} {k}: {len(xs)} runs, the gate is read on three or more")
     if over:
         print("over the gate: " + ", ".join(over))
         sys.exit(1)
@@ -227,8 +234,9 @@ def cmd_run(args):
     paths = []
     # Interleaved, so a drift on the host over the hour lands on every leg
     # and both modes rather than on whichever ran last.
-    for i in range(1, count + 1):
-        for leg in legs:
+    runs = {leg: max(count, MIN_RUNS.get(leg, 0)) for leg in legs}
+    for i in range(1, max(runs.values()) + 1):
+        for leg in (leg for leg in legs if i <= runs[leg]):
             for mode in ("plain", "quota"):
                 # The baseline is g815's; never the mac rig's fallback.
                 env = dict(os.environ, FS_RIG="g815")
