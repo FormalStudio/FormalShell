@@ -340,7 +340,7 @@ runs = ["--appmenu", "--spaces"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/center.rs"]
-runs = ["--center"]
+runs = ["--center", "--activity"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/display.rs", "crates/formalshell-rs/src/services/display.rs", "crates/formalshell-rs/src/ipc/display.rs", "crates/fs-system/src/display/**"]

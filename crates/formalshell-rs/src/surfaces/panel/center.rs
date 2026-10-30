@@ -6,11 +6,16 @@
 //!
 //! Panels see the store read-only, so every change a row asks for goes
 //! back to the UI thread as a notifications diff.
+//!
+//! Finished Activity folds here (`surfaces/activity.rs`): an `Activity`
+//! section over the rest, the newest [`FOLDED`] rows and a `Clear`.
 
 use fs_info::notifications::{self as model, Group, Urgency};
 
 use super::{Effect, Panel, View};
+use crate::services::activity::{self as activity_service, Input};
 use crate::services::notifications::{Diff, Op, now_ms};
+use crate::surfaces::activity;
 use crate::store::{self, Topic};
 use crate::ui::el::Kind;
 use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
@@ -18,6 +23,8 @@ use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
 pub const ID: &str = "notifications-center";
 
 const FILTERS: [&str; 3] = ["All", "This PC", "iPhone"];
+/// Folded Activity rows shown; the panel holds more.
+const FOLDED: usize = 5;
 
 /// Which source the list shows, an index into [`FILTERS`].
 #[derive(Default)]
@@ -108,7 +115,7 @@ impl Panel for Center {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Notifications]
+        &[Topic::Notifications, Topic::Activity]
     }
 
     fn width(&self, v: &View) -> f64 {
@@ -145,7 +152,19 @@ impl Panel for Center {
         }
         let pending: Vec<Group> = pending.into_iter().filter(|g| self.shows(g)).collect();
         let seen: Vec<Group> = seen.into_iter().filter(|g| self.shows(g)).collect();
-        if pending.is_empty() && seen.is_empty() {
+        let folded = if self.filter == 2 { Vec::new() } else { activity::history(v.theme, v.store, FOLDED) };
+        let any_folded = !folded.is_empty();
+        if any_folded {
+            let head = w::row(
+                s.sm,
+                vec![w::heading(s, "Activity", None, false).fill(), w::button("Clear").variant(Variant::Ghost).on("activity-clear").stop("activity-clear")],
+            )
+            .fill();
+            let mut col = vec![head];
+            col.extend(folded);
+            out.push(w::column(s.row_gap, col));
+        }
+        if pending.is_empty() && seen.is_empty() && !any_folded {
             out.push(w::section_label(s, "No notifications", None, false));
             return w::column(s.section_gap, out);
         }
@@ -179,6 +198,7 @@ impl Panel for Center {
             }
             "dnd" => send(fx, Op::SetDnd(!fx.store.notifications.model.dnd)),
             "clear" => send(fx, Op::ClearHistory),
+            "activity-clear" => activity_service::send(Input::ClearHistory),
             _ => {
                 if let Some(key) = on.strip_prefix("dismiss:") {
                     if let Some(g) = find(fx.store, key) {
@@ -202,6 +222,7 @@ impl Panel for Center {
             "filter" => self.filter = (self.filter + 1) % FILTERS.len(),
             "dnd" => send(fx, Op::SetDnd(!fx.store.notifications.model.dnd)),
             "clear" => send(fx, Op::ClearHistory),
+            "activity-clear" => activity_service::send(Input::ClearHistory),
             key => activate_row(fx, key),
         }
     }

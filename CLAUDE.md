@@ -236,7 +236,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   then 3/4 resources and succeeded, an update that fails, and a rollback
   whose final line is cut short with its socket gone, read as failed. Four
   seconds on the success has folded into the history with both failures
-  kept, and `activity seen` folds them. A Gio client's
+  kept, and `activity seen` folds them: the notification centre
+  photographed with the three under Activity, and a real Down, Up and
+  Return on its Clear emptying the history. A Gio client's
   `com.canonical.Unity.LauncherEntry` updates for a staged desktop entry
   land as progress, a badge count and urgency, merged property by
   property, the progress hidden ends the item and the client leaving the

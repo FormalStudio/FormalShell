@@ -107,6 +107,8 @@ pub enum Input {
     Seen,
     /// A group put away (`Activity::dismiss`).
     Dismiss(String),
+    /// The centre's `Clear` on folded activity.
+    ClearHistory,
 }
 
 static INPUT: OnceLock<Sender<Input>> = OnceLock::new();
@@ -158,6 +160,7 @@ fn take(activity: &mut Activity, input: Input, now: i64) -> bool {
         Input::NoticeClosed(id) => activity.notification_closed(id, now),
         Input::Seen => activity.seen(),
         Input::Dismiss(source) => activity.dismiss(&source),
+        Input::ClearHistory => activity.clear_history(),
     }
 }
 

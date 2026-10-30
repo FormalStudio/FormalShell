@@ -9,7 +9,9 @@
 # inotify: an apply at 1/4 then 3/4 resources and succeeded, an update that
 # fails, and a rollback whose final line is cut short with its socket gone,
 # which reads failed. Four seconds after the apply succeeds it has folded
-# into the history while both failures stay; `activity seen` folds them.
+# into the history while both failures stay; `activity seen` folds them,
+# and the notification centre shows the three folded rows under Activity
+# until a real Down, Up and Return reach its Clear and empty the history.
 # A Gio client sends `com.canonical.Unity.LauncherEntry` updates for a staged
 # desktop entry (progress, count, urgent, then progress hidden) and leaves
 # the bus, taking its badge. notify-send sends a `value` hint replaced
@@ -42,7 +44,7 @@
 # rest counted as `+9`, and the panel listing all ten.
 leg_activity_flag="--activity"
 leg_activity_order=236
-leg_activity_needs="jq python3 notify-send convert"
+leg_activity_needs="jq python3 notify-send convert wtype"
 
 act_marks="$shot_dir/act"
 act_app_id="formalshell-smoke-activity"
@@ -140,6 +142,12 @@ await "\$m.die.1"; sleep 0.5; status die-1
 touch "\$m.die.go1"; await "\$m.die.2"; sleep 0.5; status die-2
 sleep 4; status folded
 $ipc call activity seen > "\$m-seen.txt" 2>&1; sleep 0.3; status seen
+# The folded rows in the notification centre, then its Clear on real keys.
+$ipc call notifications showHistory > /dev/null; sleep 0.8
+"$grim_bin" "$shot_dir/activity-center.png" > /dev/null 2>&1
+"$wtype_bin" -k Down -k Up -k Return; sleep 0.5; status cleared
+"$grim_bin" "$shot_dir/activity-center-cleared.png" > /dev/null 2>&1
+$ipc call panel close > /dev/null; sleep 0.4
 
 # com.canonical.Unity.LauncherEntry from a client that stays on the bus.
 "$python3_bin" "$launcher" "application://$act_app_id.desktop" "\$m.l" 2>> "\$m-drive.log" &
@@ -298,6 +306,12 @@ leg_activity_assert() {
     [ -s "$shot_dir/activity-panel-$f.png" ] || fail "activity: no panel frame $f"
     echo "SMOKE_ACTIVITY_PANEL_$(printf %s "$f" | tr a-z A-Z) $shot_dir/activity-panel-$f.png"
   done
+
+  for f in center center-cleared; do
+    [ -s "$shot_dir/activity-$f.png" ] || fail "activity: no frame $f"
+    echo "SMOKE_ACTIVITY_$(printf %s "$f" | tr a-z- A-Z_) $shot_dir/activity-$f.png"
+  done
+  jq -e '.history == []' "$m-cleared.json" > /dev/null || fail "activity: the centre's Clear left history: $(cat "$m-cleared.json")"
 
   local cells='[.[0].cells[] | select(.name == "indicators")] | length'
   jq -e "$cells == 0" "$m-room-idle.json" > /dev/null || fail "activity: an indicators cell showed at idle: $(cat "$m-room-idle.json")"
