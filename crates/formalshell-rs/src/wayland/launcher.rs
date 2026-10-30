@@ -380,6 +380,7 @@ impl App {
             // The rest go through the same in-process handlers the IPC
             // targets answer with.
             "lock.lock" => self.call_self("lock", "lock", &[]),
+            "lock.session" => self.call_self("lock", "session", &[]),
             "power.logout" => self.call_self("power", "logout", &[]),
             "nightlight.toggle" => self.call_self("nightlight", "toggle", &[]),
             "lights.toggle" => self.call_self("lights", "toggle", &[]),

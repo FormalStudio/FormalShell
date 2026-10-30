@@ -100,7 +100,7 @@ pipewire, PAM or Wayland to link.
   checkout the uncommitted files include other agents' edits, so it can
   pick more than your change alone needs.
 - `just smoke-all [list]`: every run in `dev/smoke-all.list` (one line of
-  flags each, every leg the nested rig can run, then the seven vm_only legs
+  flags each, every leg the nested rig can run, then the eight vm_only legs
   spread over the VM rig's four guests, ~5m30s for those alone), **for
   milestones only** (a
   phase shipping, a release) or when the owner asks: ~15 min (884s for 127
@@ -669,6 +669,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   theme's `card` box, a band of its padding (`mediaCard` off the report)
   one flat fill in both modes, dark then light. The real password typed
   last still unlocks.
+- `logind_lock.sh` `--logind-lock`: logind's Lock signal on the VM rig's
+  real logind, the shell started with `XDG_SESSION_ID` emptied the way uwsm
+  starts it, so it finds its session through logind's `auto`: `loginctl
+  lock-session <id>` locking (`lock status`, LockedHint yes), `loginctl
+  unlock-session` leaving it locked, the real password unlocking with
+  LockedHint no, then the launcher's Lock row, typed for and activated, coming back
+  through the same signal, locked again and unlocked by the password.
 - `lyrics.sh` `--lyrics`: three tracks (two cached, one a sibling `.lrc` of
   the shape a line-synced provider really returns), the lit set on a duet and
   background overlap, quality and estimated timing, the estimated wipe read

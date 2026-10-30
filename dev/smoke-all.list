@@ -135,6 +135,7 @@
 --panel calendar
 --panel weather
 --device-routes
+--logind-lock
 --mirror
 --panel-morph
 --polkit

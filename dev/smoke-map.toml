@@ -434,7 +434,7 @@ paths = [
   "crates/fs-auth/src/pam.rs",
   "crates/fs-system/src/lock.rs",
 ]
-runs = ["--lock", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output"]
+runs = ["--lock", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/depth.rs"]
@@ -443,6 +443,10 @@ runs = ["--lock --depth", "--desktop-clock"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/sleep.rs"]
 runs = ["--sleep"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/session.rs"]
+runs = ["--logind-lock", "--sleep"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/screensaver.rs", "crates/formalshell-rs/src/wayland/screensaver.rs", "crates/formalshell-rs/src/ipc/screensaver.rs", "crates/fs-screensaver/**"]
@@ -554,7 +558,7 @@ runs = ["--systemupdate"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/search.rs", "crates/fs-menu/data/default-menu.jsonc"]
-runs = ["--menu", "--menu-rows", "--launcher-abbrev", "--launcher-modes"]
+runs = ["--menu", "--menu-rows", "--launcher-abbrev", "--launcher-modes", "--logind-lock"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/abbrev.rs", "dev/smoke.d/launcher_abbrev.sh"]

@@ -127,9 +127,9 @@
     "gpu": { "label": "GPU", "provider": "gpu" },
 
     "system": { "label": "System" },
-    // Deliberately disabled -- flipping it on is the owner's call, not
-    // something to change incidentally.
-    "system.lock": { "action": "@ipc:lock.lock", "when": "false" },
+    // Asked of logind, so the lock comes back on the session's Lock signal
+    // like every other locker's.
+    "system.lock": { "action": "@ipc:lock.session" },
     // logind over D-Bus in process, never a spawned `systemctl`: logind's
     // answer has to reach the shell, a refusal as a toast.
     "system.suspend": { "action": "@ipc:power.suspend" },

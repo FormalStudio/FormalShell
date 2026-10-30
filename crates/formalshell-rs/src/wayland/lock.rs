@@ -60,6 +60,10 @@ pub enum LockMsg {
     /// Whether the sleep delay inhibitor is held.
     Inhibiting(bool),
     Monitoring(bool),
+    /// The logind session whose Lock signal is watched, once found.
+    Session(Option<String>),
+    /// logind's Lock (true) or Unlock (false) for that session.
+    Logind(bool),
     /// An action's covering surface unmapped at `at`, with the cursor
     /// where the compositor put it then.
     ActionEnded { action: String, at: i64, cursor: Option<(f64, f64)> },
@@ -132,6 +136,8 @@ pub struct Lock {
     with_saver: bool,
     slept_at: Option<(f64, Instant)>,
     pub sleep: Sleep,
+    /// The logind session [`crate::services::session`] watches.
+    logind: Option<String>,
     /// Each output's last report, kept past the unlock until the next lock.
     reports: Map<String, Value>,
 }
@@ -168,6 +174,7 @@ impl Lock {
             with_saver: false,
             slept_at: None,
             sleep: Sleep::default(),
+            logind: None,
             reports: Map::new(),
         }
     }
@@ -201,6 +208,10 @@ fn command(app: &App) -> Vec<String> {
     if argv.len() == items.len() { argv } else { Vec::new() }
 }
 
+fn via_logind(app: &App) -> bool {
+    command(app).first().is_some_and(|b| b.rsplit('/').next() == Some("loginctl"))
+}
+
 fn on_path(name: &str) -> bool {
     if name.contains('/') {
         return std::path::Path::new(name).is_file();
@@ -225,6 +236,7 @@ impl App {
         if let Some(rt) = &self.runtime {
             let polkit = tx.clone();
             rt.service(move |ctx| {
+                crate::services::session::start(ctx, tx.clone());
                 crate::services::sleep::start(ctx, tx);
                 crate::services::polkit::start(ctx, polkit);
             });
@@ -245,8 +257,31 @@ impl App {
         self.raise_lock()
     }
 
+    /// `lock session`: the lock asked of logind, so it comes back through
+    /// the same Lock signal every other locker sends. With no logind
+    /// session found, the lock itself.
+    pub fn lock_session(&mut self) -> String {
+        match (&self.runtime, self.lock.logind.is_some()) {
+            (Some(rt), true) => {
+                rt.service(|ctx| {
+                    crate::services::session::request(ctx);
+                });
+                "ok".into()
+            }
+            _ => self.lock(),
+        }
+    }
+
+    fn locked_hint(&self, locked: bool) {
+        if let Some(rt) = &self.runtime {
+            rt.service(move |ctx| crate::services::session::locked_hint(ctx, locked));
+        }
+    }
+
+    /// A `lock.command` that is loginctl comes back as logind's Lock, which
+    /// raises the built-in lock: that one is not external.
     pub fn lock_external(&self) -> bool {
-        command(self).first().is_some_and(|b| on_path(b))
+        !via_logind(self) && command(self).first().is_some_and(|b| on_path(b))
     }
 
     fn raise_lock(&mut self) -> String {
@@ -483,6 +518,23 @@ impl App {
             }
             LockMsg::Inhibiting(on) => self.lock.sleep.inhibiting = on,
             LockMsg::Monitoring(on) => self.lock.sleep.monitoring = on,
+            LockMsg::Session(id) => {
+                // A lock that went secure before the session was found, and a
+                // hint left set by a shell that died locked.
+                if id.is_some() {
+                    self.locked_hint(self.lock.secure);
+                }
+                self.lock.logind = id;
+            }
+            LockMsg::Logind(true) => {
+                eprintln!("lock: logind asked for the lock");
+                if via_logind(self) {
+                    self.raise_lock();
+                } else if !self.lock.locked || self.lock_external() {
+                    self.lock();
+                }
+            }
+            LockMsg::Logind(false) => eprintln!("lock: logind's Unlock ignored, the password is the only way out"),
             LockMsg::ActionEnded { action, at, cursor } => self.hot_corner_ended(&action, at, cursor),
             LockMsg::Polkit(event) => self.polkit_event(event),
         }
@@ -544,6 +596,7 @@ impl App {
         self.sync_agents();
         self.sync_shards();
         self.lock.secure = false;
+        self.locked_hint(false);
         self.lock.password = field();
         self.lock.error.clear();
         if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
@@ -834,6 +887,7 @@ impl App {
             })
         };
         let s = &self.lock.sleep;
+        state["logindSession"] = self.lock.logind.clone().map_or(Value::Null, Value::String);
         state["beforeSleep"] = json!({
             "enabled": self.lock_before_sleep(),
             "monitoring": s.monitoring,
@@ -948,6 +1002,7 @@ fn epoch_ms() -> u64 {
 impl SessionLockHandler for App {
     fn locked(&mut self, _: &Connection, _: &QueueHandle<Self>, _: SessionLock) {
         self.lock.secure = true;
+        self.locked_hint(true);
         eprintln!("lock: secure");
     }
 
@@ -961,6 +1016,7 @@ impl SessionLockHandler for App {
         self.sync_agents();
         self.sync_shards();
         self.lock.secure = false;
+        self.locked_hint(false);
         self.saver_rehost();
     }
 

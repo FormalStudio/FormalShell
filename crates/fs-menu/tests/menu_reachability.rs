@@ -103,20 +103,14 @@ fn capture_entries_covers_the_rest_of_the_sweep() {
     assert_eq!(action("theme.mode-light"), format!("{call}theme mode light"));
 }
 
-// system.lock stays a deliberate dead route (owner's call, not part of this
-// sweep), asserted so a future edit that quietly flips it on gets caught here
-// rather than only in a live session.
+// In-process through logind's Lock, not a spawned `loginctl lock-session`:
+// a child of a shell running under the user manager is in no session, and
+// logind refuses its empty session name.
 #[test]
-fn system_lock_stays_disabled() {
-    assert_eq!(real_tree().nodes["system.lock"].when.as_deref(), Some("false"));
-}
-
-// In-process through the lock service, not a spawned IPC command: that form
-// only ever resolves on the smoke rig, where the whole shell package is
-// installed (the same trap the clipboard rows fell into).
-#[test]
-fn system_lock_routes_in_process() {
-    assert_eq!(real_tree().nodes["system.lock"].action.as_deref(), Some("@ipc:lock.lock"));
+fn system_lock_asks_logind_in_process() {
+    let node = &real_tree().nodes["system.lock"];
+    assert_eq!(node.when, None);
+    assert_eq!(node.action.as_deref(), Some("@ipc:lock.session"));
 }
 
 #[test]
