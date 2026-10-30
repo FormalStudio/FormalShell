@@ -63,6 +63,7 @@
 --launcher-actions
 --launcher-modes
 --launcher-mouse
+--launcher-overflow
 --launcher-preview
 --lights
 --localsend

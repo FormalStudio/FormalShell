@@ -649,6 +649,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   list scrolling the list alone; a click outside closing the card. The
   hover beside the selection and the right-click column photographed dark
   and light.
+- `launcher_overflow.sh` `--launcher-overflow`: §11's overflow on a
+  headless 1280x720 output made for it, read off `menu status`'s
+  `cardBox`, `rowBoxes`, `actionsBox` and the column's keys: a staged app
+  named 200 characters long with every row's box inside the card's, and a
+  launcher plugin's row carrying 40 actions of its own, Tab opening the 840
+  card whole on that output with the column's last visible row reading
+  `n more`, a real End scrolling it to the last action. Photographed off
+  that output alone, the column dark and light.
 - `launcher_preview.sh` `--launcher-preview`: the preview pane, read off
   `menu status`'s `cardWidth` and `pane`, the dump's modal card and
   `captures`: a staged app at 560 with no pane, a foot window at 840 with
@@ -930,7 +938,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   directory's own contents, since a warmed cell and a fallback cell paint
   the same picture), with no colour swatches ahead of the pictures.
 - `plugins.sh` `--plugins`: a plugin directory dropped into the config home
-  placing its own bar cell, no `bar` key involved.
+  placing its own bar cell, no `bar` key involved; panel, overlay and
+  crashing plugins; and a `launcher` plugin running only while the
+  launcher is open, its mode a token over the rows it prints, a typed
+  query reaching it as a `query` event and answered, its rows in a root
+  search, and its action joining a recent file's column and reaching it
+  with the file's id.
 - `polkit.sh` `--polkit`: a real `pkexec` conversation through the shell's
   agent, the prompt, the error state and pkexec's own exit code, with the
   card's own open off the top line sampled at a tenth speed first. Before

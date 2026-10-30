@@ -79,7 +79,15 @@ pub fn changed(app: &mut App, topic: Topic) {
             lights::record(app.store.state.data.lights.clone());
             app.refresh_bar(Some(topic));
         }
-        Topic::Plugins => app.apply_config(),
+        Topic::Plugins => {
+            app.apply_config();
+            app.launcher_inputs();
+            app.launcher_plugins();
+        }
+        Topic::PluginOutput => {
+            app.launcher_plugins();
+            app.refresh_bar(Some(topic));
+        }
         Topic::Theme => {
             app.set_bar_theme();
             app.restyle_cards();

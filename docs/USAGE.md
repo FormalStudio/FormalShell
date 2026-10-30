@@ -3673,18 +3673,20 @@ and nothing of it runs inside the shell.
 }
 ```
 
-Exactly eight keys are legal:
+Exactly ten keys are legal:
 
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `apiVersion` | number | yes | must be `1`, anything else drops the plugin |
 | `id` | string | yes | must equal the directory name; lowercase, digits, dashes |
-| `kind` | string | yes | `bar`, `panel`, `overlay` or `service` |
+| `kind` | string | yes | `bar`, `panel`, `overlay`, `service` or `launcher` |
 | `entry` | string | yes | an executable inside the plugin directory, never an absolute path |
 | `name` | string | no | display name, defaults to `id` |
 | `region` | string | `bar` only | `left`, `center` or `right`, default `right` |
 | `keepLoaded` | bool | `panel` and `overlay` | start the plugin with the shell, default false |
 | `width` | string | `panel` only | `narrow`, `default`, `wide` or `menu` |
+| `mode` | string | `launcher` only | the launcher mode's name; no mode when absent |
+| `subjects` | array | `launcher` only | subject kinds the plugin adds actions to: `app`, `file`, `folder`, `window`, `action`, ... |
 
 - **`bar`** is one cell in a region. Place it with `"plugin:<id>"` in
   `bar.layout` like a builtin. A bar plugin named in no region is appended to
@@ -3700,10 +3702,22 @@ Exactly eight keys are legal:
 - **`overlay`** is the same rows on a centred modal card over a scrim, summoned
   with `panel open plugin:<id>`, taking the keyboard while open. Escape or a
   click outside closes it.
+- **`launcher`** adds to the launcher. With `mode` it is a mode with id
+  `plugin:<id>`: its row ranks among the modes, `menu summon plugin:<id>`
+  opens it, and a `prefix` for it goes in `menu.jsonc` like any route's
+  (`"plugin:<id>": {"prefix": ":n"}`). Inside the mode the list is the rows
+  it printed, in its order, and every word typed is sent to it as a `query`
+  event; outside, its rows rank in a root search like any other. With
+  `subjects`, Tab over a subject of one of those kinds asks it for actions,
+  which join the column under the built-ins when they arrive; one that has
+  not answered in 300ms is left out of that opening.
 
 A plugin that is not `keepLoaded` runs only while its card is open: the shell
 starts it on open and ends it on close, so its rows start from nothing each
-time. `plugin:<id>` answers `error: unknown panel` for an id that is not a
+time. A `launcher` plugin runs only while the launcher is open, the same way.
+Closing writes what was already sent (the activate of the row Enter ran as the
+launcher closed), then closes the plugin's stdin; one still running a second
+later is ended. `plugin:<id>` answers `error: unknown panel` for an id that is not a
 panel or overlay plugin.
 
 Bar and service plugins, and `keepLoaded` panels and overlays, start with the
@@ -3721,7 +3735,7 @@ are skipped.
 | `icon` | string | an icon name from the active set (`lucide` by default) |
 | `tooltip` | string | the hover text |
 | `class` | string | `warning` tints the cell, `critical` and `urgent` mark it destructive |
-| `rows` | array | for a panel or overlay: the row objects below |
+| `rows` | array | for a panel, overlay or launcher mode: the row objects below |
 
 A bar cell with neither `text` nor `icon` is hidden, and one that has not
 printed anything yet takes no room.
@@ -3736,6 +3750,7 @@ printed anything yet takes no room.
 | `icon` | string | an icon name from the active set, left of the text |
 | `detail` | string | `row` only: a dim value at the end |
 | `checked` | bool | `toggle` only: the switch's state, default false |
+| `actions` | array | `launcher` only: `{"id", "label", "icon"}` objects, the row's own actions after its activate |
 
 `row` is an icon, the text and the detail. `button` is a button carrying the
 text, with the icon beside it when there is one. `toggle` is a row with a
@@ -3743,6 +3758,20 @@ switch at the end. `label` is a dim section heading with no keyboard stop and
 no `id`. Every other type is one keyboard stop and one click target. Before the
 first line a panel reads Loading, a plugin that printed no rows reads No rows,
 and an exited plugin reads PLUGIN ERROR with its reason.
+
+In a launcher mode a row is a launcher row: its text, icon and `detail`, a
+toggle's state as On or Off with Toggle as its Enter, and a `label` heading
+the rows under it. Enter runs the row's activate, Tab lists it and the row's
+own `actions`. A mode reads Loading before the first line, No results with
+no rows, and `<name> failed: <reason>` while the plugin is down.
+
+A line whose top level carries `actions` is the answer to an `actions` event
+and leaves the rows alone. `subject` echoes the event's `subject.id`; an
+answer for any other subject, or one past 300ms, is dropped:
+
+```json
+{"subject": "files.3f2a…", "actions": [{"id": "share", "label": "Share note", "icon": "share"}]}
+```
 
 ```json
 {"rows": [
@@ -3760,11 +3789,18 @@ and an exited plugin reads PLUGIN ERROR with its reason.
 {"event": "scroll", "direction": "up"}
 {"event": "activate", "id": "profile"}
 {"event": "activate", "id": "turbo", "checked": true}
+{"event": "query", "text": "fo"}
+{"event": "actions", "subject": {"id": "files.3f2a…", "kind": "file", "path": "/home/me/notes.txt"}}
+{"event": "activate", "id": "files.3f2a…", "action": "share"}
 ```
 
 `button` is `left`, `right` or `middle`, `direction` is `up` or `down`, and
 `activate` carries the `id` of the row that was activated, by Enter, Space or
 a click. On a toggle it also carries `checked`, the state the user asked for.
+A launcher plugin gets `query` with the field's words while its mode is
+open, `actions` on Tab over a subject of a kind it declared, and `activate`
+with `action` when one of its actions runs, on its own row (the row's `id`)
+or on a subject (the subject's `id`).
 The shell does not flip the switch itself: the plugin prints its rows again
 with the new `checked`, or without it to refuse. A plugin that does not read
 stdin never hears about any of them.
@@ -3802,7 +3838,7 @@ directory is zero plugins and zero warnings.
 
 ```sh
 fs plugins list     # the resolved manifests
-fs plugins status   # {"directory":…,"loaded":…,"count":…,"bar":…,"surface":…,"service":…,"errors":[…],"warnings":[…]}
+fs plugins status   # {"directory":…,"loaded":…,"count":…,"bar":…,"surface":…,"service":…,"launcher":…,"errors":[…],"warnings":[…]}
 fs plugins reload   # scan again and restart every plugin
 ```
 

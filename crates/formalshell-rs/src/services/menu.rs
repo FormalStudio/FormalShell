@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime};
 use fs_menu::frecency::Record;
 use fs_menu::keybinds::Bind;
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
-use fs_menu::node::{DesktopEntry, Entries, Kind, Node, Tree};
+use fs_menu::node::{DesktopEntry, Entries, Entry, Kind, Node, Tree};
 use fs_menu::providers::{self, CustomPowerButton, Listed, Peeked};
 use serde_json::Value;
 
@@ -181,6 +181,8 @@ pub struct BaseInputs {
     pub lights: Option<Vec<providers::LightEffect>>,
     /// The share subtree: LocalSend's state and what it can send.
     pub share: Option<ShareInputs>,
+    /// Each launcher plugin's mode, `(route id, name)`.
+    pub plugin_modes: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -325,6 +327,10 @@ fn base(inputs: &BaseInputs) -> Tree {
     }
     for (k, v) in providers::custom_power_button_entries(&power_buttons(&inputs.buttons)) {
         merged.insert(k, v);
+    }
+    for (route, name) in &inputs.plugin_modes {
+        let entry = Entry { provider: Some(route.clone()), ..Entry::labelled(name).with_icon("puzzle") };
+        merged.insert(route.clone(), entry);
     }
     let user = user_menu_path();
     let user = std::fs::read_to_string(&user)

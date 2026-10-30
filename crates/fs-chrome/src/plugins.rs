@@ -2,7 +2,7 @@
 //! (`~/.config/formalshell/plugins/<id>/manifest.json`). One scan payload in,
 //! resolved plugin records out.
 //!
-//! Manifest schema, exactly eight legal keys:
+//! Manifest schema, exactly ten legal keys:
 //!   apiVersion  number, required, must be [`API_VERSION`]
 //!   id          string, required, must equal the plugin's directory name and
 //!               match `^[a-z0-9][a-z0-9-]*$` (it is what `bar.layout` writes
@@ -13,6 +13,10 @@
 //!   region      string, kind "bar" only, default "right"
 //!   keepLoaded  bool, kind "panel"/"overlay" only, default false
 //!   width       string, kind "panel" only, one of [`Width`], default "default"
+//!   mode        string, kind "launcher" only: the launcher mode's name, no
+//!               mode when absent
+//!   subjects    array of strings, kind "launcher" only: the subject kinds
+//!               (`file`, `app`, ...) the plugin adds actions to, default []
 //!
 //! Failure contract: absent or malformed input is never fatal. Each problem
 //! pushes one warning string and drops the smallest unit that fixes it. A
@@ -58,6 +62,7 @@ pub enum Kind {
     Panel,
     Overlay,
     Service,
+    Launcher,
 }
 
 impl Kind {
@@ -67,6 +72,7 @@ impl Kind {
             "panel" => Some(Kind::Panel),
             "overlay" => Some(Kind::Overlay),
             "service" => Some(Kind::Service),
+            "launcher" => Some(Kind::Launcher),
             _ => None,
         }
     }
@@ -77,6 +83,7 @@ impl Kind {
             Kind::Panel => "panel",
             Kind::Overlay => "overlay",
             Kind::Service => "service",
+            Kind::Launcher => "launcher",
         }
     }
 }
@@ -123,6 +130,8 @@ pub struct Plugin {
     pub region: Option<Region>,
     pub keep_loaded: Option<bool>,
     pub width: Option<Width>,
+    pub mode: Option<String>,
+    pub subjects: Option<Vec<String>>,
     pub entry_url: String,
 }
 
@@ -354,10 +363,11 @@ pub fn validate_record(record: &Record) -> (Option<Plugin>, Vec<String>) {
     for (key, _) in &entries {
         let allowed: &[Kind] = match key.as_str() {
             "apiVersion" | "id" | "kind" | "entry" => continue,
-            "name" => &[Kind::Bar, Kind::Panel, Kind::Overlay, Kind::Service],
+            "name" => &[Kind::Bar, Kind::Panel, Kind::Overlay, Kind::Service, Kind::Launcher],
             "region" => &[Kind::Bar],
             "keepLoaded" => &[Kind::Panel, Kind::Overlay],
             "width" => &[Kind::Panel],
+            "mode" | "subjects" => &[Kind::Launcher],
             _ => {
                 warnings.push(format!("{prefix}unknown manifest key \"{key}\""));
                 continue;
@@ -423,6 +433,28 @@ pub fn validate_record(record: &Record) -> (Option<Plugin>, Vec<String>) {
         }
     }
 
+    let mut mode = None;
+    let mut subjects = None;
+    if kind == Kind::Launcher {
+        if let Some(v) = get("mode") {
+            match v.as_str() {
+                Some(s) if !s.is_empty() => mode = Some(s.to_owned()),
+                _ => warnings.push(format!("{prefix}\"mode\" must be a non-empty string, the plugin gets no mode")),
+            }
+        }
+        let mut kinds = Vec::new();
+        if let Some(v) = get("subjects") {
+            match v.as_array().filter(|a| a.iter().all(|k| k.as_str().is_some_and(|k| !k.is_empty()))) {
+                Some(a) => kinds = a.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+                None => warnings.push(format!("{prefix}\"subjects\" must be an array of subject kinds, using []")),
+            }
+        }
+        if mode.is_none() && kinds.is_empty() {
+            warnings.push(format!("{prefix}a launcher plugin with no \"mode\" and no \"subjects\" adds nothing"));
+        }
+        subjects = Some(kinds);
+    }
+
     let mut plugin = Plugin {
         id: record.id.clone(),
         kind,
@@ -432,6 +464,8 @@ pub fn validate_record(record: &Record) -> (Option<Plugin>, Vec<String>) {
         region,
         keep_loaded,
         width,
+        mode,
+        subjects,
         entry_url: String::new(),
     };
     plugin.entry_url = entry_url(&plugin);
@@ -476,6 +510,10 @@ pub fn service_plugins(plugins: &[Plugin]) -> Vec<Plugin> {
         .filter(|p| p.kind == Kind::Service)
         .cloned()
         .collect()
+}
+
+pub fn launcher_plugins(plugins: &[Plugin]) -> impl Iterator<Item = &Plugin> {
+    plugins.iter().filter(|p| p.kind == Kind::Launcher)
 }
 
 #[cfg(test)]
@@ -705,6 +743,62 @@ mod tests {
         assert_eq!(over.width, None);
     }
 
+    fn launcher_manifest() -> Value {
+        json!({ "apiVersion": 1, "id": "notes", "kind": "launcher", "entry": "N.sh", "mode": "Notes", "subjects": ["file", "app"] })
+    }
+
+    #[test]
+    fn valid_launcher_manifest_carries_its_mode_and_subjects() {
+        let r = run(&one("notes", launcher_manifest()));
+        assert_eq!(r.warnings, Vec::<String>::new());
+        let p = &r.plugins[0];
+        assert_eq!(p.kind, Kind::Launcher);
+        assert_eq!(p.mode.as_deref(), Some("Notes"));
+        assert_eq!(p.subjects, Some(vec!["file".to_owned(), "app".to_owned()]));
+        assert_eq!((p.region, p.keep_loaded, p.width), (None, None, None));
+    }
+
+    #[test]
+    fn launcher_keys_default_and_mean_nothing_elsewhere() {
+        let mut m = launcher_manifest();
+        m.as_object_mut().unwrap().remove("subjects");
+        let p = run(&one("notes", m)).plugins.remove(0);
+        assert_eq!(p.subjects, Some(Vec::new()));
+        let p = run(&one("diskwatch", bar_manifest())).plugins.remove(0);
+        assert_eq!((p.mode, p.subjects), (None, None));
+        for key in ["mode", "subjects"] {
+            let mut m = bar_manifest();
+            m[key] = json!("x");
+            let r = run(&one("diskwatch", m));
+            assert_eq!(r.plugins.len(), 1);
+            assert!(r.warnings[0].contains(&format!("\"{key}\" is not a valid key for kind \"bar\"")), "{:?}", r.warnings);
+            assert_eq!((r.plugins[0].mode.clone(), r.plugins[0].subjects.clone()), (None, None));
+        }
+    }
+
+    #[test]
+    fn bad_launcher_values_drop_to_their_default_with_a_warning() {
+        let mut m = launcher_manifest();
+        m["mode"] = json!("");
+        m["subjects"] = json!(["file", 3]);
+        let r = run(&one("notes", m));
+        assert_eq!(r.plugins.len(), 1);
+        assert_eq!((r.plugins[0].mode.clone(), r.plugins[0].subjects.clone()), (None, Some(Vec::new())));
+        assert_eq!(r.warnings.len(), 3, "{:?}", r.warnings);
+        assert!(r.warnings[0].contains("\"mode\" must be a non-empty string"));
+        assert!(r.warnings[1].contains("\"subjects\" must be an array"));
+        assert!(r.warnings[2].contains("adds nothing"));
+    }
+
+    #[test]
+    fn a_launcher_plugin_with_only_subjects_has_no_mode() {
+        let mut m = launcher_manifest();
+        m.as_object_mut().unwrap().remove("mode");
+        let r = run(&one("notes", m));
+        assert_eq!(r.warnings.len(), 0);
+        assert_eq!(r.plugins[0].mode, None);
+    }
+
     #[test]
     fn illegal_enum_value_falls_back_with_warning() {
         let mut m = bar_manifest();
@@ -825,14 +919,16 @@ mod tests {
             plain("p", "panel", "P.sh"),
             plain("o", "overlay", "O.sh"),
             plain("s", "service", "S.sh"),
+            plain("l", "launcher", "L.sh"),
         ]);
         let all = run(&text).plugins;
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 5);
         assert_eq!(bar_plugins(&all).len(), 1);
         assert_eq!(surface_plugins(&all).len(), 2);
         assert_eq!(service_plugins(&all).len(), 1);
+        assert_eq!(launcher_plugins(&all).count(), 1);
         assert_eq!(
-            bar_plugins(&all).len() + surface_plugins(&all).len() + service_plugins(&all).len(),
+            bar_plugins(&all).len() + surface_plugins(&all).len() + service_plugins(&all).len() + launcher_plugins(&all).count(),
             all.len()
         );
         assert_eq!(bar_plugins(&[]).len(), 0);

@@ -845,6 +845,19 @@ impl App {
         }
     }
 
+    /// The plugin modes' rows off what their plugins print, and any
+    /// `actions` answers into the open column.
+    pub fn launcher_plugins(&mut self) {
+        let mut moved = false;
+        for (route, rows) in crate::surfaces::launcher::plugin_sources(&self.store) {
+            moved |= self.store.menu.apply(index::Diff::Source(route, rows));
+        }
+        moved |= self.launcher.plugin_answers(&self.store);
+        if moved {
+            self.launcher_store_changed();
+        }
+    }
+
     /// `menu refresh`: the base and the apps read again.
     pub fn menu_refresh(&mut self) {
         self.menu_buttons = None;
@@ -1204,6 +1217,7 @@ impl App {
                     },
                 })
             },
+            plugin_modes: crate::surfaces::launcher::plugin_modes(&self.store),
         };
         if self.menu_buttons.as_ref() != Some(&inputs) || !self.store.config.loaded {
             self.menu_buttons = Some(inputs.clone());

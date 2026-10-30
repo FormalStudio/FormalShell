@@ -23,6 +23,16 @@
 # a kept-loaded panel that exits, so its card reads PLUGIN ERROR and it is
 # started again on the backoff. smoke-overlay is an overlay plugin opened
 # over IPC, one real Enter reaching it and a real Escape closing it.
+#
+# smoke-launcher is a launcher plugin (launcher spec §10) with a mode and
+# `subjects: ["file"]`. No process while the launcher is shut, one while it
+# is open. `menu summon plugin:smoke-launcher` stands its mode in the field
+# as a token over the two rows it prints; `beta` typed there reaches it as
+# a `query` event and it answers with that row alone, which a real Enter
+# activates. Its rows also rank in a root search. Tab over the staged
+# recent file sends an `actions` event carrying the file's kind and path,
+# the plugin's answer joins the column, and running it sends `activate`
+# with the file's id and the action.
 leg_plugins_flag="--plugins"
 leg_plugins_order=200
 leg_plugins_needs="jq wlrctl wtype"
@@ -46,6 +56,9 @@ plugins_panel_png="$shot_dir/plugins-panel.png"
 plugins_panel_after_png="$shot_dir/plugins-panel-activated.png"
 plugins_panel_crash_png="$shot_dir/plugins-panel-crash.png"
 plugins_overlay_png="$shot_dir/plugins-overlay.png"
+plugins_launcher_events_path="$shot_dir/plugins-launcher-events.log"
+plugins_launcher_procs_path="$shot_dir/plugins-launcher-procs.txt"
+plugins_launcher_file="$iso_home/Documents/smoke-plugin-file.txt"
 plugin_dir="$iso_home/.config/formalshell/plugins/smoke-bar"
 plugin_crash_dir="$iso_home/.config/formalshell/plugins/smoke-crash"
 
@@ -158,12 +171,55 @@ while IFS= read -r line; do
 done
 EOF
   chmod +x "$plugins_root/smoke-panel/entry.sh" "$plugins_root/smoke-panel-crash/entry.sh" "$plugins_root/smoke-overlay/entry.sh"
+  leg_plugins_launcher_fixture
+}
+
+leg_plugins_launcher_fixture() {
+  local d="$plugins_root/smoke-launcher" xbel="$iso_home/.local/share/recently-used.xbel"
+  mkdir -p "$d" "$iso_home/Documents" "$iso_home/.local/share"
+  cat > "$d/manifest.json" <<'EOF'
+{
+  "apiVersion": 1,
+  "id": "smoke-launcher",
+  "kind": "launcher",
+  "entry": "entry.sh",
+  "name": "Smoke Launcher",
+  "mode": "Smoke Mode",
+  "subjects": ["file"]
+}
+EOF
+  cat > "$d/entry.sh" <<EOF
+#!/usr/bin/env bash
+rows() {
+  local out=()
+  case alpha in *"\$1"*) out+=('{"id":"alpha","icon":"zap","text":"Alpha note","detail":"first"}') ;; esac
+  case beta in *"\$1"*) out+=('{"id":"beta","icon":"moon","text":"Beta note","detail":"second","actions":[{"id":"pin","label":"Pin note"}]}') ;; esac
+  printf '{"rows":[%s]}\n' "\$(IFS=,; echo "\${out[*]}")"
+}
+rows ""
+while IFS= read -r line; do
+  printf '%s\n' "\$line" >> "$plugins_launcher_events_path"
+  case \$(jq -r .event <<<"\$line") in
+    query) rows "\$(jq -r .text <<<"\$line")" ;;
+    actions) jq -c '{subject: .subject.id, actions: [{id: "smoke-file", label: "Smoke file action", icon: "zap"}]}' <<<"\$line" ;;
+  esac
+done
+EOF
+  chmod +x "$d/entry.sh"
+  printf 'smoke plugin file\n' > "$plugins_launcher_file"
+  # A leg riding along that stages its own recent list keeps it.
+  [ -e "$xbel" ] || cat > "$xbel" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<xbel version="1.0">
+  <bookmark href="file://$plugins_launcher_file" added="2026-10-29T10:00:00Z" modified="2026-10-29T12:00:00Z" visited="2026-10-29T12:00:00Z"/>
+</xbel>
+EOF
 }
 
 leg_plugins_timing() {
   # A 5s startup wait plus two dumps and one grim; 12 leaves llvmpipe real
   # margin on the capture rather than racing the default 8s frame.
-  leg_timing 12 90
+  leg_timing 12 130
 }
 
 leg_plugins_drive() {
@@ -222,6 +278,38 @@ sleep 1
 "$wtype_bin" -k Escape
 sleep 2
 $ipc call panel state >> "$plugins_overlay_state_path" 2>&1
+lprocs() { pgrep -fc '$plugins_root/smoke-launcher/entry.sh' || true; }
+lstatus() { $ipc call menu status > "$shot_dir/plugins-launcher-\$1.json" 2>&1; }
+echo "before: \$(lprocs)" > "$plugins_launcher_procs_path"
+$ipc call menu summon plugin:smoke-launcher > /dev/null 2>&1
+sleep 2
+echo "open: \$(lprocs)" >> "$plugins_launcher_procs_path"
+lstatus mode
+"$grim_bin" "$shot_dir/plugins-launcher-mode.png" > /dev/null 2>&1
+"$wtype_bin" beta
+sleep 1.5
+lstatus query
+"$grim_bin" "$shot_dir/plugins-launcher-query.png" > /dev/null 2>&1
+"$wtype_bin" -k Return
+sleep 2
+echo "closed: \$(lprocs)" >> "$plugins_launcher_procs_path"
+$ipc call menu summon "" > /dev/null 2>&1
+sleep 1.5
+$ipc call menu filter "Alpha note" > /dev/null 2>&1
+sleep 1
+lstatus root
+"$grim_bin" "$shot_dir/plugins-launcher-root.png" > /dev/null 2>&1
+$ipc call menu filter smoke-plugin-file > /dev/null 2>&1
+sleep 1.5
+lstatus file
+i=\$(jq '[.ids[] | startswith("files.")] | index(true) // -1' "$shot_dir/plugins-launcher-file.json")
+$ipc call menu actions "\$i" > /dev/null 2>&1
+sleep 1
+lstatus actions
+"$grim_bin" "$shot_dir/plugins-launcher-actions.png" > /dev/null 2>&1
+$ipc call menu runAction "\$i" smoke-file > /dev/null 2>&1
+sleep 2
+echo "after: \$(lprocs)" >> "$plugins_launcher_procs_path"
 $ipc call plugins status > "$plugins_status_path" 2>&1
 EOF
   hypr_exec_once "bash $script"
@@ -270,9 +358,9 @@ leg_plugins_assert_surfaces() {
   done
   jq -e '[.[] | select(.kind == "panel" or .kind == "overlay")] | length == 3' "$plugins_list_path" > /dev/null \
     || fail "the panel and overlay plugins did not all resolve: $(cat "$plugins_list_path")"
-  jq -e '.loaded == true and .count == 5 and .bar == 2 and .surface == 3 and .warnings == [] and (.surfaces | index("plugin:smoke-panel") != null)' \
+  jq -e '.loaded == true and .count == 6 and .bar == 2 and .surface == 3 and .launcher == 1 and .warnings == [] and (.surfaces | index("plugin:smoke-panel") != null)' \
     "$plugins_status_path" > /dev/null \
-    || fail "plugins status did not report two bar and three surface plugins: $(cat "$plugins_status_path")"
+    || fail "plugins status did not report two bar, three surface and one launcher plugin: $(cat "$plugins_status_path")"
   jq -e '([.errors[].id] | sort) == ["smoke-crash", "smoke-panel-crash"] and ([.errors[] | select(.id == "smoke-panel-crash") | .message | test("status 4")] | all)' \
     "$plugins_status_path" > /dev/null \
     || fail "exactly the two plugins that exited should read as failed, the closed panel plugin not among them: $(cat "$plugins_status_path")"
@@ -305,4 +393,38 @@ leg_plugins_assert_surfaces() {
   echo "SMOKE_PLUGINS_PANEL_ACTIVATED $plugins_panel_after_png"
   echo "SMOKE_PLUGINS_PANEL_CRASH $plugins_panel_crash_png"
   echo "SMOKE_PLUGINS_OVERLAY $plugins_overlay_png"
+  leg_plugins_assert_launcher
+}
+
+# `<step> <jq claim> <what it means>`, against that step's menu status.
+plugins_launcher_expect() {
+  local f="$shot_dir/plugins-launcher-$1.json"
+  [ -s "$f" ] || fail "plugins: no launcher status for $1"
+  jq -e "$2" "$f" > /dev/null || fail "plugins launcher $1: $3, got $(jq -c '{isOpen, level, token, query, ids: .ids[:6], actions}' "$f")"
+}
+
+leg_plugins_assert_launcher() {
+  local events="$plugins_launcher_events_path" procs="$plugins_launcher_procs_path" step
+  jq -e '.[] | select(.id == "smoke-launcher" and .kind == "launcher" and .mode == "Smoke Mode" and .subjects == ["file"])' "$plugins_list_path" > /dev/null \
+    || fail "the launcher plugin did not resolve with its mode and subjects: $(cat "$plugins_list_path")"
+  for step in "before: 0" "open: 1" "closed: 0" "after: 0"; do
+    grep -qxF "$step" "$procs" || fail "the launcher plugin did not run exactly while the launcher was open ($step): $(cat "$procs")"
+  done
+  plugins_launcher_expect mode '.level == "plugin:smoke-launcher" and .token == ["Smoke Mode"] and .ids == ["plugin:smoke-launcher.alpha", "plugin:smoke-launcher.beta"]' "the plugin's mode did not stand as a token over its two rows"
+  plugins_launcher_expect query '.query == "beta" and .ids == ["plugin:smoke-launcher.beta"]' "the plugin's answer to the query did not replace its rows"
+  plugins_launcher_expect root '.level == null and (.ids | index("plugin:smoke-launcher.alpha")) != null' "the plugin's rows did not rank in a root search"
+  plugins_launcher_expect actions '.actionsOpen and (.actions | index("smoke-file")) != null and (.actions | index("open")) < (.actions | index("smoke-file"))' "the plugin's action did not join the file's column under its built-ins"
+  jq -se '[.[] | select(.event == "query" and .text == "beta")] | length >= 1' "$events" > /dev/null \
+    || fail "typing in the plugin's mode sent no query event: $(cat "$events")"
+  jq -se '[.[] | select(.event == "activate" and .id == "beta" and (has("action") | not))] | length == 1' "$events" > /dev/null \
+    || fail "Enter on the plugin's row did not send exactly one activate: $(cat "$events")"
+  jq -se --arg p "$plugins_launcher_file" '[.[] | select(.event == "actions" and .subject.kind == "file" and .subject.path == $p and (.subject.id | startswith("files.")))] | length == 1' "$events" > /dev/null \
+    || fail "Tab over the file did not send one actions event with its kind and path: $(cat "$events")"
+  jq -se '[.[] | select(.event == "activate" and .action == "smoke-file" and (.id | startswith("files.")))] | length == 1' "$events" > /dev/null \
+    || fail "running the plugin's action on the file did not reach it: $(cat "$events")"
+  for step in mode query root actions; do
+    [ -s "$shot_dir/plugins-launcher-$step.png" ] || fail "plugins: no launcher $step frame"
+    echo "SMOKE_PLUGINS_LAUNCHER_SHOT $shot_dir/plugins-launcher-$step.png"
+  done
+  echo "SMOKE_PLUGINS_LAUNCHER a mode as a token, its query answered, its rows in a root search, its action on a file"
 }

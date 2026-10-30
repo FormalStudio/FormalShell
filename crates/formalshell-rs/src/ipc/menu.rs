@@ -111,6 +111,10 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     if let Some(r) = shown.and_then(|w| w.pane_box()) {
         v["paneBox"] = rect(r);
     }
+    if let Some(w) = shown {
+        v["cardBox"] = rect(w.card_box());
+        v["rowBoxes"] = w.row_boxes().into_iter().map(|(i, r)| serde_json::json!({"index": i, "x": r.x, "y": r.y, "width": r.w, "height": r.h})).collect();
+    }
     v["footHints"] = shown
         .map_or_else(Vec::new, |w| w.foot_hints())
         .into_iter()

@@ -126,7 +126,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-preview", "--menu-hover"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--menu-hover", "--plugins"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/field.rs"]
@@ -259,7 +259,7 @@ runs = ["--hotcorner", "--hotcorner-relock"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/plugins.rs", "crates/formalshell-rs/src/services/plugins.rs", "crates/formalshell-rs/src/ipc/plugins.rs", "crates/formalshell-rs/src/surfaces/panel/plugin.rs", "crates/formalshell-rs/src/surfaces/bar/cells/plugin.rs", "crates/formalshell-rs/src/wayland/plugin_overlay.rs"]
-runs = ["--plugins"]
+runs = ["--plugins", "--launcher-overflow"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/shards.rs", "crates/formalshell-rs/src/shards.rs"]

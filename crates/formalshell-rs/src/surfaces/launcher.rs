@@ -31,7 +31,7 @@ use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{IRect, NodeId};
 use crate::scroll::{Touchpad, Travel};
 use crate::services::menu::{self as index, Ask};
-use crate::services::{clipboard, compositor, state};
+use crate::services::{clipboard, compositor, plugins, state};
 use crate::store::Store;
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::surfaces::modal::Modal;
@@ -160,6 +160,8 @@ pub struct Model {
     /// `Edit abbreviation`'s subject and the abbreviation it edits, while
     /// its Input step is up.
     editing: Option<(String, String)>,
+    /// The launcher plugin and words last sent as a `query` event.
+    plugin_query: Option<(String, String)>,
 }
 
 /// The token an `Edit abbreviation` answer comes back under.
@@ -211,7 +213,18 @@ struct Column {
     /// A row's pitch and the rows' viewport, as the window last laid it out.
     row_h: f64,
     view_h: f64,
+    /// The launcher plugins sent an `actions` event for this subject that
+    /// have not answered, and when it went.
+    asked: Vec<String>,
+    asked_at: Instant,
+    /// Where the first plugin answer joined the actions and when, for its
+    /// fade.
+    joined: Option<(usize, Instant)>,
 }
+
+/// How long a plugin has to answer `actions` before the column opens
+/// without it.
+const PLUGIN_ANSWER: std::time::Duration = std::time::Duration::from_millis(300);
 
 impl Column {
     fn labels(&self) -> Vec<&str> {
@@ -240,6 +253,18 @@ impl Column {
 
     fn max_scroll(&self) -> f64 {
         (self.shown.len() as f64 * self.row_h - self.view_h).max(0.0)
+    }
+
+    /// The last whole row in view, when the list runs past it and the
+    /// cursor is elsewhere: that row reads `n more` instead, `n` counting it
+    /// and everything below.
+    fn more(&self, scroll: f64) -> Option<(usize, usize)> {
+        if self.row_h <= 0.0 {
+            return None;
+        }
+        let last = ((scroll + self.view_h) / self.row_h).floor() as usize;
+        let last = last.checked_sub(1)?;
+        (last + 1 < self.shown.len() && last != self.cursor).then(|| (last, self.shown.len() - last))
     }
 
     /// The smallest scroll that shows the cursor's row.
@@ -421,6 +446,7 @@ impl Default for Model {
             children: Vec::new(),
             pane_frame: None,
             editing: None,
+            plugin_query: None,
             placed: false,
             want: String::new(),
             from_keys: true,
@@ -537,6 +563,75 @@ pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
         ("audio", p::audio_rows(&audio)),
         ("radio", p::radio_rows(&radio)),
     ]
+}
+
+/// Every launcher plugin with a mode, as `(route id, name)`.
+pub fn plugin_modes(store: &Store) -> Vec<(String, String)> {
+    fs_chrome::plugins::launcher_plugins(&store.plugins.resolved.plugins)
+        .filter_map(|p| Some((fs_chrome::plugins::surface_key(p), p.mode.clone()?)))
+        .collect()
+}
+
+/// Each plugin mode's rows off what its plugin last printed, or the one dim
+/// row that says why there are none.
+pub fn plugin_sources(store: &Store) -> Vec<(String, Vec<Node>)> {
+    use crate::services::plugins::Run as Printed;
+    let state = &store.plugins;
+    fs_chrome::plugins::launcher_plugins(&state.resolved.plugins)
+        .filter(|p| p.mode.is_some())
+        .map(|p| {
+            let route = fs_chrome::plugins::surface_key(p);
+            // Only the mode's own view shows why it has no rows.
+            let note = |text: String| vec![Node { local_only: true, ..Node::note(format!("{route}.note"), text) }];
+            let rows = match state.runs.get(&p.id) {
+                None => note(format!("Loading {}", p.name)),
+                Some(Printed::Failed(why)) => note(format!("{} failed: {why}", p.name)),
+                Some(Printed::Live(d)) => {
+                    let rows = plugin_rows(&p.id, &route, &d.rows);
+                    if rows.is_empty() { note("No results".into()) } else { rows }
+                }
+            };
+            (route, rows)
+        })
+        .collect()
+}
+
+/// The `@ipc:` action that writes `line` to plugin `id`'s stdin.
+fn plugin_send(id: &str, line: &str) -> String {
+    format!("plugin.send:{id}:{line}")
+}
+
+/// A plugin mode's rows: each activates its row, then its own actions; a
+/// `label` row heads the rows under it.
+fn plugin_rows(id: &str, route: &str, rows: &[plugins::Row]) -> Vec<Node> {
+    use plugins::RowKind;
+    let mut section = None;
+    let mut out = Vec::new();
+    for r in rows {
+        if r.kind == RowKind::Label {
+            section = Some(r.text.clone()).filter(|t| !t.is_empty());
+            continue;
+        }
+        let toggle = r.kind == RowKind::Toggle;
+        let activate = plugins::activate_event(&r.id, toggle.then_some(!r.checked));
+        let mut n = Node::new(format!("{route}.{}", r.id), r.text.clone(), NodeKind::Action).with_action(format!("@ipc:{}", plugin_send(id, &activate)));
+        n.icon = r.icon.clone();
+        n.desc = if toggle { Some(if r.checked { "On" } else { "Off" }.to_owned()) } else { Some(r.detail.clone()).filter(|d| !d.is_empty()) };
+        n.verb = toggle.then(|| "Toggle".to_owned());
+        n.keep_open = toggle.then_some(true);
+        n.section = section.clone();
+        n.actions = r
+            .actions
+            .iter()
+            .map(|a| {
+                let label = if a.label.is_empty() { &a.id } else { &a.label };
+                let run = format!("@ipc:{}", plugin_send(id, &plugins::action_event(&r.id, &a.id)));
+                ActionEntry { icon: Some(a.icon.clone()).filter(|i| !i.is_empty()), ..ActionEntry::new(&a.id, label, run) }
+            })
+            .collect();
+        out.push(n);
+    }
+    out
 }
 
 impl Model {
@@ -797,6 +892,12 @@ impl Model {
         }
     }
 
+    /// The launcher plugin whose mode the list holds.
+    fn plugin_mode(&self) -> Option<&str> {
+        let route = self.level.as_deref().filter(|_| self.mode == Mode::Menu && self.children.is_empty())?;
+        route.strip_prefix(fs_chrome::plugins::PLUGIN_PREFIX)
+    }
+
     /// The mode token's labels, outermost first; none at the root or
     /// outside Menu mode.
     pub fn token(&self, store: &Store) -> Vec<String> {
@@ -828,7 +929,8 @@ impl Model {
         let cond = &store.menu.cond;
         let emoji = menu && level == Some("emoji");
         let children = self.children.last().filter(|_| menu);
-        let route_rows = children.is_some() || matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
+        let plugin = self.plugin_mode().is_some();
+        let route_rows = children.is_some() || plugin || matches!(level, Some("keybinds" | "calc" | "radio.search" | "clipboard" | "share.history"));
         let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
         let picker = menu && children.is_none() && level == Some(PICKER_ROUTE);
         let monitor = menu && children.is_none() && level == Some(MONITOR_ROUTE);
@@ -884,6 +986,8 @@ impl Model {
                 fs_menu::keybinds::rows_for(reply, q)
             }
             Mode::Menu if level == Some("radio.search") => radio_search_rows(store, q),
+            // The plugin ranks its own rows against the query it was sent.
+            Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
                 let rest = model::root_rest(nodes, &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
@@ -956,6 +1060,11 @@ impl Model {
 
     /// Commits the rows, their headings and the cursor.
     pub fn resolve(&mut self, store: &Store, theme: &Theme, kit: &mut Kit) {
+        let asked = self.plugin_mode().map(|id| (id.to_owned(), self.query.text().to_owned()));
+        if let Some((id, text)) = asked.as_ref().filter(|a| self.plugin_query.as_ref() != Some(a)) {
+            plugins::send(id, plugins::query_event(text));
+        }
+        self.plugin_query = asked;
         self.lookup = self.lookup(store);
         self.abbrev_key = if self.mode == Mode::Menu { fs_menu::abbrev::key(self.list_text()) } else { None };
         let (view, rows, app_count, empty, searching, key) = self.resolve_rows(store);
@@ -1364,6 +1473,7 @@ impl Model {
             "actionCursor": self.column.as_ref().map_or(-1, |c| c.cursor as i64),
             "actionsScroll": self.column.as_ref().map_or(0, |c| (c.scroll + c.touch.value(Instant::now())).round() as i64),
             "actionsScrollMax": self.column.as_ref().map_or(0, |c| c.max_scroll().round() as i64),
+            "actionsMore": self.column.as_ref().and_then(|c| c.more(c.scroll + c.touch.value(Instant::now()))).map_or(0, |(_, n)| n),
             "pane": self.pane().map(|n| self.pane_status(store, n)),
             "cardWidth": self.card_width(&store.theme.theme).round() as i64,
         })
@@ -1418,6 +1528,7 @@ impl Model {
     pub fn open(&mut self, store: &Store, route: Option<&str>) {
         self.abandon_select();
         self.ask_fresh(store);
+        plugins::launcher(true);
         let route = route.filter(|r| !r.is_empty());
         let prefill = route.filter(|r| r.starts_with(':')).unwrap_or("").to_owned();
         let mut target = None;
@@ -1494,6 +1605,8 @@ impl Model {
         self.confirm.clear();
         self.column = None;
         self.children.clear();
+        plugins::launcher(false);
+        self.plugin_query = None;
     }
 
     /// Every input and select answer since the last call, for the in-process
@@ -1684,8 +1797,18 @@ impl Model {
         }
         let Some(node) = self.rows.get(index).cloned() else { return false };
         let actions = fs_menu::actions::actions_for(&self.subject(store, &node));
-        if actions.is_empty() {
+        let kind = node.kind.as_str();
+        let asked: Vec<String> = fs_chrome::plugins::launcher_plugins(&store.plugins.resolved.plugins)
+            .filter(|p| p.subjects.as_ref().is_some_and(|k| k.iter().any(|k| k == kind)))
+            .map(|p| p.id.clone())
+            .collect();
+        if actions.is_empty() && asked.is_empty() {
             return false;
+        }
+        let subject = fs_menu::actions::subject_id(&node);
+        let asked_at = Instant::now();
+        for id in &asked {
+            plugins::send(id, plugins::actions_event(&subject, kind, &node.path));
         }
         self.close_actions();
         self.select(index);
@@ -1707,9 +1830,52 @@ impl Model {
             travels: false,
             row_h: 0.0,
             view_h: 0.0,
+            asked,
+            asked_at,
+            joined: None,
         });
         self.dirty = true;
         true
+    }
+
+    /// The plugins' answers to the open column's `actions` events, joined
+    /// under its actions as they arrive. One later than [`PLUGIN_ANSWER`]
+    /// is left out of this opening; the selected action stays where it is.
+    pub fn plugin_answers(&mut self, store: &Store) -> bool {
+        let filter = self.query.text().to_owned();
+        let Some(c) = self.column.as_mut().filter(|c| c.target.is_none() && !c.asked.is_empty()) else { return false };
+        let subject = fs_menu::actions::subject_id(&c.node);
+        let mut joined = false;
+        for id in std::mem::take(&mut c.asked) {
+            let answer = store.plugins.answers.get(&id).filter(|a| a.at >= c.asked_at && a.subject == subject);
+            let Some(answer) = answer else {
+                c.asked.push(id);
+                continue;
+            };
+            if answer.at > c.asked_at + PLUGIN_ANSWER {
+                continue;
+            }
+            let base = c.actions.len();
+            for a in &answer.actions {
+                if c.actions.iter().any(|have| have.id == a.id) {
+                    continue;
+                }
+                let label = if a.label.is_empty() { a.id.clone() } else { a.label.clone() };
+                let mut action = Action::new(&a.id, label, Run::Ipc(plugin_send(&id, &plugins::action_event(&subject, &a.id))));
+                action.icon = Some(a.icon.clone()).filter(|i| !i.is_empty());
+                c.actions.push(action);
+            }
+            let labels: Vec<&str> = c.actions[base..].iter().map(|a| a.label.as_str()).collect();
+            c.shown.extend(fs_menu::actions::filter(&labels, &filter).into_iter().map(|i| i + base));
+            if c.actions.len() > base {
+                c.joined.get_or_insert((base, Instant::now()));
+                joined = true;
+            }
+        }
+        if joined {
+            self.dirty = true;
+        }
+        joined
     }
 
     /// The column gone, the list's query back in the field.
@@ -2010,6 +2176,12 @@ impl Model {
                         }
                         self.close();
                         return Out::Close;
+                    }
+                    "plugin.send" => {
+                        if let Some((id, line)) = arg.split_once(':') {
+                            plugins::send(id, line.to_owned());
+                        }
+                        Out::None
                     }
                     "window.focus" => {
                         compositor::focus_window(arg);
@@ -2828,6 +3000,24 @@ impl Shown {
         self.pane_rect.map(|r| self.on_output(ui::irect(r)))
     }
 
+    /// The card's settled box on the output.
+    pub fn card_box(&self) -> IRect {
+        match &self.modal.layer {
+            Some(l) => l.place(&self.modal.card, true),
+            None => self.modal.card.live_rect(),
+        }
+    }
+
+    /// Every list row drawn, by index, its box on the output cut to what
+    /// shows.
+    pub fn row_boxes(&self) -> Vec<(usize, IRect)> {
+        self.body
+            .hits
+            .iter()
+            .filter_map(|h| Some((h.on.as_deref()?.strip_prefix("row:")?.parse().ok()?, self.on_output(h.rect))))
+            .collect()
+    }
+
     /// The foot's buttons on the output, each by what a click on it does.
     pub fn foot_hints(&self) -> Vec<(String, IRect)> {
         self.foot.hits.iter().filter_map(|h| Some((h.on.clone()?, self.on_output(h.rect)))).collect()
@@ -2942,8 +3132,18 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
     let first = (scroll / row_h).floor().max(0.0) as usize;
     let fits = (c.view_h / row_h).ceil() as usize + 1;
     let last = (first + fits).min(c.shown.len());
+    let more = c.more(scroll);
+    let ms = Clock::Effects.ms(theme) * scale;
+    let progress = |since: Instant| if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(since).as_secs_f64() * 1000.0 / ms).min(1.0) };
+    let joined = c.joined.map(|(from, at)| (from, progress(at)));
     let mut rows = vec![w::space(first.min(last) as f64 * row_h)];
+    let mut drawn_to = last;
     for (at, &i) in c.shown.iter().enumerate().skip(first).take(fits) {
+        if let Some((_, n)) = more.filter(|(row, _)| *row == at) {
+            rows.push(w::cell(w::text(format!("{n} more")).ink(Ink::Dim)).ghost().height(row_h));
+            drawn_to = at + 1;
+            break;
+        }
         let selected = at == c.cursor;
         let (label, icon, trail, dim, destructive) = match &c.target {
             Some((_, targets)) => {
@@ -2971,8 +3171,9 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
         let mut parts = vec![w::row(s.lg, lead).fill()];
         parts.extend(trail);
         let confirming = armed == Some(i) && c.target.is_none();
-        rows.push(
-            w::cell(w::row(s.lg, parts).fill())
+        // A plugin's actions fade in under the built-ins as they join.
+        let fade = joined.filter(|(from, t)| c.target.is_none() && i >= *from && *t < 1.0).map(|(_, t)| Clock::Effects.curve().ease(t) as f32);
+        let row = w::cell(w::row(s.lg, parts).fill())
                 .ghost()
                 .selected(selected)
                 .interactive()
@@ -2982,17 +3183,20 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
                 })
                 .on(format!("action:{at}"))
                 .key(format!("a{at}"))
-                .height(row_h),
-        );
+                .height(row_h);
+        rows.push(match fade {
+            Some(f) => row.fade(f),
+            None => row,
+        });
     }
     if c.shown.is_empty() {
         rows.push(w::text("No matches").ink(Ink::Muted).pad(s.lg, s.md, s.lg, s.md));
     }
-    rows.push(w::space(c.shown.len().saturating_sub(last) as f64 * row_h));
-    let ms = Clock::Effects.ms(theme) * scale;
-    let t = if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(c.opened).as_secs_f64() * 1000.0 / ms).min(1.0) };
+    rows.push(w::space(c.shown.len().saturating_sub(drawn_to) as f64 * row_h));
+    let t = progress(c.opened);
+    let settling = t < 1.0 || joined.is_some_and(|(_, j)| j < 1.0);
     let el = w::column(0.0, rows).pad(s.sm, s.sm, s.sm, s.sm);
-    (if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el }, t < 1.0)
+    (if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el }, settling)
 }
 
 /// The body's widgets for the slots inside the viewport, the rest as room.
@@ -3472,7 +3676,12 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     if let Some((image, h)) = thumb {
         lead.push(w::picture(image, h).width(Size::Px(h * 3.0)));
     }
-    let glyph = fs_menu::icons::icon_for(Some(row));
+    // A plugin's rows and its mode carry icon names from the active set,
+    // where every other node's own icon is a raw glyph.
+    let glyph = match fs_menu::icons::icon_for(Some(row)) {
+        "" if row.id.starts_with(fs_chrome::plugins::PLUGIN_PREFIX) => row.icon.as_str(),
+        named => named,
+    };
     let picture = (!row.icon_source.is_empty() && glyph.is_empty())
         .then(|| store.menu.row_icons.get(&row.icon_source).cloned().flatten())
         .flatten();

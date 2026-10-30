@@ -6,15 +6,22 @@
 //!
 //! - stdout: one JSON object per line, `{"text", "icon", "tooltip", "class",
 //!   "rows"}`. Each line replaces everything the last one said; keys it
-//!   leaves out are empty. A line that is not an object is skipped.
+//!   leaves out are empty. A line that is not an object is skipped. A line
+//!   whose top level carries `actions` is a launcher plugin's answer to an
+//!   `actions` event, naming the event's subject id in `subject`, and
+//!   leaves what it shows alone.
 //! - stdin: one JSON object per line, `{"event": "click", "button":
 //!   "left"|"right"|"middle"}`, `{"event": "scroll", "direction":
 //!   "up"|"down"}` and `{"event": "activate", "id": "<row id>"}` (a toggle
-//!   row adds `"checked"`, the state it was asked to take).
+//!   row adds `"checked"`, the state it was asked to take, and a launcher
+//!   action adds `"action"`). A launcher plugin is also sent `{"event":
+//!   "query", "text"}` while its mode is open and `{"event": "actions",
+//!   "subject": {"id", "kind", "path"}}` on Tab over a subject of a kind it
+//!   declared.
 //!
 //! A bar or service plugin, and a panel or overlay with `keepLoaded`, runs
 //! from the shell's start; any other panel or overlay runs while its card is
-//! open.
+//! open, and a launcher plugin while the launcher is.
 //!
 //! A plugin that exits for any reason, or cannot be started, is a PLUGIN
 //! ERROR cell and is started again on a doubling backoff. The shell does
@@ -41,6 +48,9 @@ const BASE_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// A run this long was healthy, so its next restart starts from the base.
 const STABLE: Duration = Duration::from_secs(30);
+/// How long a plugin let go of has to exit on its closed stdin before it is
+/// killed.
+const LET_GO: Duration = Duration::from_secs(1);
 
 /// What a panel row is drawn as.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -76,6 +86,33 @@ pub struct Row {
     pub icon: String,
     pub detail: String,
     pub checked: bool,
+    /// A launcher row's own actions after its activate.
+    pub actions: Vec<RowAction>,
+}
+
+/// One action a launcher plugin offers, on its own row or on a subject.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RowAction {
+    pub id: String,
+    pub label: String,
+    pub icon: String,
+}
+
+/// A launcher plugin's answer to an `actions` event: the subject it is
+/// for, its actions, and when it came.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Answer {
+    pub at: Instant,
+    pub subject: String,
+    pub actions: Vec<RowAction>,
+}
+
+/// One stdout line.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Line {
+    Display(Display),
+    /// The subject's id and its actions.
+    Actions(String, Vec<RowAction>),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -101,11 +138,14 @@ pub struct State {
     /// Only plugins that have printed or failed: one that has not is
     /// starting, and shows nothing.
     pub runs: BTreeMap<String, Run>,
+    /// Each launcher plugin's last `actions` answer.
+    pub answers: BTreeMap<String, Answer>,
 }
 
 pub enum Diff {
     Scanned { directory: String, resolved: Resolved },
     Run(String, Option<Run>),
+    Answer(String, Answer),
 }
 
 /// What a diff changed: the plugin list (the layout is resolved again) or
@@ -121,6 +161,7 @@ impl State {
             Diff::Scanned { directory, resolved } => {
                 let same = self.loaded && self.directory == directory && self.resolved == resolved;
                 self.runs.retain(|id, _| resolved.by_id(id).is_some());
+                self.answers.retain(|id, _| resolved.by_id(id).is_some());
                 (self.directory, self.resolved, self.loaded) = (directory, resolved, true);
                 (!same).then_some(Change::List)
             }
@@ -134,6 +175,10 @@ impl State {
                     None => self.runs.remove(&id),
                 };
                 changed.then_some(Change::Output)
+            }
+            Diff::Answer(id, answer) => {
+                self.answers.insert(id, answer);
+                Some(Change::Output)
             }
         }
     }
@@ -158,6 +203,8 @@ impl State {
                         "region": p.region.map(|r| r.as_str()),
                         "keepLoaded": p.keep_loaded,
                         "width": p.width.map(|w| w.as_str()),
+                        "mode": p.mode,
+                        "subjects": p.subjects,
                         "entryUrl": p.entry_url,
                     })
                 })
@@ -184,6 +231,7 @@ impl State {
             "bar": count(Kind::Bar),
             "surface": count(Kind::Panel) + count(Kind::Overlay),
             "service": count(Kind::Service),
+            "launcher": count(Kind::Launcher),
             "surfaces": surfaces,
             "errors": errors,
             "warnings": self.resolved.warnings,
@@ -191,11 +239,30 @@ impl State {
     }
 }
 
-/// One stdout line as what the plugin now shows.
-pub fn parse_line(line: &str) -> Option<Display> {
+fn text(o: &serde_json::Map<String, Value>, key: &str) -> String {
+    o.get(key).and_then(Value::as_str).unwrap_or("").to_owned()
+}
+
+/// An `actions` array's entries; one with no id is dropped.
+fn row_actions(v: Option<&Value>) -> Vec<RowAction> {
+    v.and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_object)
+                .map(|a| RowAction { id: text(a, "id"), label: text(a, "label"), icon: text(a, "icon") })
+                .filter(|a| !a.id.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// One stdout line: what the plugin now shows, or an answer to `actions`.
+pub fn parse_line(line: &str) -> Option<Line> {
     let value: Value = serde_json::from_str(line.trim()).ok()?;
     let object = value.as_object()?;
-    let text = |o: &serde_json::Map<String, Value>, key: &str| o.get(key).and_then(Value::as_str).unwrap_or("").to_owned();
+    if object.contains_key("actions") {
+        return Some(Line::Actions(text(object, "subject"), row_actions(object.get("actions"))));
+    }
     let rows = object
         .get("rows")
         .and_then(Value::as_array)
@@ -210,13 +277,14 @@ pub fn parse_line(line: &str) -> Option<Display> {
                         icon: text(r, "icon"),
                         detail: text(r, "detail"),
                         checked: r.get("checked").and_then(Value::as_bool).unwrap_or(false),
+                        actions: row_actions(r.get("actions")),
                     })
                 })
                 .filter(|r| r.kind == RowKind::Label || !r.id.is_empty())
                 .collect()
         })
         .unwrap_or_default();
-    Some(Display { text: text(object, "text"), icon: text(object, "icon"), tooltip: text(object, "tooltip"), class: text(object, "class"), rows })
+    Some(Line::Display(Display { text: text(object, "text"), icon: text(object, "icon"), tooltip: text(object, "tooltip"), class: text(object, "class"), rows }))
 }
 
 pub fn click_event(button: &str) -> String {
@@ -237,11 +305,28 @@ pub fn activate_event(id: &str, checked: Option<bool>) -> String {
     .to_string()
 }
 
+/// A launcher plugin's action run on a row or subject `id`.
+pub fn action_event(id: &str, action: &str) -> String {
+    json!({"event": "activate", "id": id, "action": action}).to_string()
+}
+
+/// The field's words while a launcher plugin's mode is open.
+pub fn query_event(text: &str) -> String {
+    json!({"event": "query", "text": text}).to_string()
+}
+
+/// Tab over a subject of a kind a launcher plugin declared.
+pub fn actions_event(id: &str, kind: &str, path: &str) -> String {
+    json!({"event": "actions", "subject": {"id": id, "kind": kind, "path": path}}).to_string()
+}
+
 enum Cmd {
     Rescan,
     Event(String, String),
     /// A card opened (true) or closed (false) on a plugin.
     Shown(String, bool),
+    /// The launcher opened or closed.
+    Launcher(bool),
 }
 
 static CMDS: OnceLock<async_channel::Sender<Cmd>> = OnceLock::new();
@@ -265,6 +350,14 @@ pub fn send(id: &str, line: String) {
 pub fn shown(id: &str, open: bool) {
     if let Some(tx) = CMDS.get() {
         let _ = tx.try_send(Cmd::Shown(id.to_owned(), open));
+    }
+}
+
+/// The launcher opened or closed: every launcher plugin runs while it is
+/// open.
+pub fn launcher(open: bool) {
+    if let Some(tx) = CMDS.get() {
+        let _ = tx.try_send(Cmd::Launcher(open));
     }
 }
 
@@ -327,8 +420,13 @@ async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<St
     loop {
         let wake = async { Wake::Line(lines.next().await) }.or(async { Wake::Event(events.recv().await.ok()) }).await;
         match wake {
+            // Let go of, what it prints is no longer for anything.
+            Wake::Line(Some(Ok(_))) if events.is_closed() => {}
             Wake::Line(Some(Ok(line))) => match parse_line(&line) {
-                Some(display) => publish(ctx, Diff::Run(plugin.id.clone(), Some(Run::Live(display)))),
+                Some(Line::Display(display)) => publish(ctx, Diff::Run(plugin.id.clone(), Some(Run::Live(display)))),
+                Some(Line::Actions(subject, actions)) => {
+                    publish(ctx, Diff::Answer(plugin.id.clone(), Answer { at: Instant::now(), subject, actions }));
+                }
                 None => eprintln!("plugin {}: skipped a line that is not a JSON object", plugin.id),
             },
             Wake::Line(_) => return Some(ended(child.status().await)),
@@ -336,7 +434,17 @@ async fn session(ctx: &Ctx, plugin: &Plugin, events: &async_channel::Receiver<St
                 // A plugin that closed its stdin may still be printing.
                 let _ = stdin.write_all(format!("{line}\n").as_bytes()).await;
             }
-            Wake::Event(None) => return None,
+            Wake::Event(None) => {
+                // Let go of: the events written last still have to be read,
+                // so its stdin closes and it gets a moment to exit on that.
+                drop(stdin);
+                let _ = child.status().or(async {
+                    Timer::after(LET_GO).await;
+                    Err(std::io::ErrorKind::TimedOut.into())
+                })
+                .await;
+                return None;
+            }
         }
     }
 }
@@ -346,9 +454,17 @@ async fn host(ctx: Ctx, plugin: Plugin, events: async_channel::Receiver<String>)
     loop {
         let started = Instant::now();
         let Some(reason) = session(&ctx, &plugin, &events).await else { return };
+        // One let go of that ended on its own is neither failed nor started
+        // again: what it showed went when it was let go of.
+        if events.is_closed() {
+            return;
+        }
         eprintln!("plugin {}: {reason}, restarting in {}s", plugin.id, backoff.as_secs());
         publish(&ctx, Diff::Run(plugin.id.clone(), Some(Run::Failed(reason))));
         Timer::after(backoff).await;
+        if events.is_closed() {
+            return;
+        }
         // Whatever was clicked while it was down is not for the next run.
         while events.try_recv().is_ok() {}
         backoff = if started.elapsed() >= STABLE { BASE_BACKOFF } else { (backoff * 2).min(MAX_BACKOFF) };
@@ -357,15 +473,23 @@ async fn host(ctx: Ctx, plugin: Plugin, events: async_channel::Receiver<String>)
 
 /// Plugins that run from the start: bar cells and services always, a panel
 /// or overlay only when its manifest keeps it loaded (the others start when
-/// their card opens).
+/// their card opens), a launcher plugin never (it starts with the launcher).
 fn starts(plugin: &Plugin) -> bool {
     match plugin.kind {
         Kind::Bar | Kind::Service => true,
         Kind::Panel | Kind::Overlay => plugin.keep_loaded == Some(true),
+        Kind::Launcher => false,
     }
 }
 
-type Hosts = HashMap<String, (async_channel::Sender<String>, async_channel::Sender<()>)>;
+/// Each running host's event sender, its stop sender, and a receiver on the
+/// same events for dropping the oldest when a stuck plugin fills them.
+type Hosts = HashMap<String, (async_channel::Sender<String>, async_channel::Sender<()>, async_channel::Receiver<String>)>;
+
+/// Hosts let go of while they still owe their plugin the events queued
+/// before: each runs until its events run out, its stop sender kept here so
+/// a rescan still ends it.
+type Draining = Vec<async_channel::Sender<()>>;
 
 fn start(ctx: &Ctx, hosts: &mut Hosts, plugin: &Plugin) {
     if hosts.contains_key(&plugin.id) {
@@ -373,6 +497,7 @@ fn start(ctx: &Ctx, hosts: &mut Hosts, plugin: &Plugin) {
     }
     let (events_tx, events_rx) = async_channel::bounded(64);
     let (stop_tx, stop_rx) = async_channel::bounded::<()>(1);
+    let events_rx_oldest = events_rx.clone();
     let task = host(ctx.clone(), plugin.clone(), events_rx);
     ctx.spawn(async move {
         task.or(async {
@@ -380,7 +505,28 @@ fn start(ctx: &Ctx, hosts: &mut Hosts, plugin: &Plugin) {
         })
         .await
     });
-    hosts.insert(plugin.id.clone(), (events_tx, stop_tx));
+    hosts.insert(plugin.id.clone(), (events_tx, stop_tx, events_rx_oldest));
+}
+
+/// A plugin that runs only while something of it is open, opened or closed.
+/// Closing lets the host write what was queued first (the activate a row
+/// sent as the launcher closed over it), then close the plugin's stdin.
+fn show(ctx: &Ctx, hosts: &mut Hosts, draining: &mut Draining, open: &mut HashSet<String>, resolved: &Resolved, id: String, on: bool) {
+    if on {
+        open.insert(id.clone());
+    } else {
+        open.remove(&id);
+    }
+    let Some(plugin) = resolved.by_id(&id).filter(|p| !starts(p)) else { return };
+    if on {
+        start(ctx, hosts, plugin);
+    } else if let Some((events, stop, _)) = hosts.remove(&id) {
+        drop(events);
+        draining.retain(|s| !s.is_closed());
+        draining.push(stop);
+        // What it last printed goes with it.
+        publish(ctx, Diff::Run(id, None));
+    }
 }
 
 async fn rescan(ctx: &Ctx, hosts: &mut Hosts, open: &HashSet<String>) -> Resolved {
@@ -413,6 +559,7 @@ pub async fn run(ctx: Ctx) {
         let _ = settings.recv().await;
     }
     let mut hosts = Hosts::new();
+    let mut draining = Draining::new();
     let mut off = disabled();
     let mut open = HashSet::new();
     let mut resolved = rescan(&ctx, &mut hosts, &open).await;
@@ -423,24 +570,24 @@ pub async fn run(ctx: Ctx) {
         });
         match next.await {
             Next::Cmd(None) => return,
-            Next::Cmd(Some(Cmd::Rescan)) => resolved = rescan(&ctx, &mut hosts, &open).await,
-            Next::Cmd(Some(Cmd::Shown(id, on))) => {
-                if on {
-                    open.insert(id.clone());
-                } else {
-                    open.remove(&id);
-                }
-                let Some(plugin) = resolved.by_id(&id).filter(|p| !starts(p)) else { continue };
-                if on {
-                    start(&ctx, &mut hosts, plugin);
-                } else if hosts.remove(&id).is_some() {
-                    // The stop sender dropped with the entry ends the host
-                    // and kills the child; what it last printed goes too.
-                    publish(&ctx, Diff::Run(id, None));
+            Next::Cmd(Some(Cmd::Rescan)) => {
+                draining.clear();
+                resolved = rescan(&ctx, &mut hosts, &open).await;
+            }
+            Next::Cmd(Some(Cmd::Shown(id, on))) => show(&ctx, &mut hosts, &mut draining, &mut open, &resolved, id, on),
+            Next::Cmd(Some(Cmd::Launcher(on))) => {
+                let ids: Vec<String> = plugins::launcher_plugins(&resolved.plugins).map(|p| p.id.clone()).collect();
+                for id in ids {
+                    show(&ctx, &mut hosts, &mut draining, &mut open, &resolved, id, on);
                 }
             }
             Next::Cmd(Some(Cmd::Event(id, line))) => {
-                if let Some((events, _)) = hosts.get(&id) {
+                // The newest event wins a full queue: a query typed while
+                // the plugin is stuck is the one it has to answer.
+                if let Some((events, _, oldest)) = hosts.get(&id)
+                    && let Err(async_channel::TrySendError::Full(line)) = events.try_send(line)
+                {
+                    let _ = oldest.try_recv();
                     let _ = events.try_send(line);
                 }
             }
@@ -448,6 +595,7 @@ pub async fn run(ctx: Ctx) {
                 let now = disabled();
                 if now != off {
                     off = now;
+                    draining.clear();
                     resolved = rescan(&ctx, &mut hosts, &open).await;
                 }
             }
@@ -459,16 +607,32 @@ pub async fn run(ctx: Ctx) {
 mod tests {
     use super::*;
 
+    fn display(line: &str) -> Display {
+        match parse_line(line) {
+            Some(Line::Display(d)) => d,
+            other => panic!("{line} is not a display: {other:?}"),
+        }
+    }
+
     #[test]
     fn a_line_is_the_whole_display() {
-        let d = parse_line(r#"{"text":"42","icon":"cpu","class":"warning","tooltip":"t","rows":[{"id":"a","text":"A"},{"text":"no id"},7]}"#).unwrap();
+        let d = display(r#"{"text":"42","icon":"cpu","class":"warning","tooltip":"t","rows":[{"id":"a","text":"A"},{"text":"no id"},7]}"#);
         assert_eq!((d.text.as_str(), d.icon.as_str(), d.class.as_str(), d.tooltip.as_str()), ("42", "cpu", "warning", "t"));
         assert_eq!(d.rows, [Row { id: "a".into(), text: "A".into(), ..Row::default() }]);
-        assert_eq!(parse_line("{}").unwrap(), Display::default());
-        let d = parse_line(r#"{"rows":[{"type":"toggle","id":"t","text":"T","checked":true},{"type":"label","text":"L"},{"type":"nope","id":"x"},{"type":"button","text":"no id"}]}"#).unwrap();
+        assert_eq!(display("{}"), Display::default());
+        let d = display(r#"{"rows":[{"type":"toggle","id":"t","text":"T","checked":true},{"type":"label","text":"L"},{"type":"nope","id":"x"},{"type":"button","text":"no id"}]}"#);
         let kinds: Vec<_> = d.rows.iter().map(|r| (r.kind, r.checked)).collect();
         assert_eq!(kinds, [(RowKind::Toggle, true), (RowKind::Label, false)]);
-        assert_eq!(parse_line(r#"{"text": 3}"#).unwrap().text, "");
+        assert_eq!(display(r#"{"text": 3}"#).text, "");
+    }
+
+    #[test]
+    fn a_launcher_row_carries_its_actions_and_an_actions_line_is_an_answer() {
+        let d = display(r#"{"rows":[{"id":"n1","text":"Note","actions":[{"id":"pin","label":"Pin","icon":"pin"},{"label":"no id"}]}]}"#);
+        assert_eq!(d.rows[0].actions, [RowAction { id: "pin".into(), label: "Pin".into(), icon: "pin".into() }]);
+        let line = parse_line(r#"{"subject":"files.ab","actions":[{"id":"share","label":"Share"}],"rows":[]}"#);
+        assert_eq!(line, Some(Line::Actions("files.ab".into(), vec![RowAction { id: "share".into(), label: "Share".into(), icon: String::new() }])));
+        assert_eq!(parse_line(r#"{"actions":7}"#), Some(Line::Actions(String::new(), Vec::new())));
     }
 
     #[test]
@@ -488,6 +652,12 @@ mod tests {
         assert_eq!((v["event"].as_str(), v["id"].as_str(), v.get("checked")), (Some("activate"), Some("r1"), None));
         let v: Value = serde_json::from_str(&activate_event("t1", Some(true))).unwrap();
         assert_eq!(v["checked"], json!(true));
+        let v: Value = serde_json::from_str(&action_event("files.ab", "share")).unwrap();
+        assert_eq!(v, json!({"event": "activate", "id": "files.ab", "action": "share"}));
+        let v: Value = serde_json::from_str(&query_event("fo")).unwrap();
+        assert_eq!(v, json!({"event": "query", "text": "fo"}));
+        let v: Value = serde_json::from_str(&actions_event("files.ab", "file", "/x")).unwrap();
+        assert_eq!(v, json!({"event": "actions", "subject": {"id": "files.ab", "kind": "file", "path": "/x"}}));
     }
 
     #[test]

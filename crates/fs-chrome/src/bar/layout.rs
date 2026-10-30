@@ -944,6 +944,8 @@ mod tests {
             region: Some(region),
             keep_loaded: None,
             width: None,
+            mode: None,
+            subjects: None,
             entry_url: format!("file:///p/{id}/E.sh"),
         }
     }
