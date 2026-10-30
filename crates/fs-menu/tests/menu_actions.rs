@@ -236,6 +236,8 @@ fn wallpaper() {
     assert_eq!(all[0].label, "Set wallpaper");
     assert_eq!(all[0].run, Run::Ipc("wallpaper.set:/w/sea.jpg".into()));
     assert_eq!(actions_for(&Subject { picker_select: true, ..Subject::of(row) })[0].label, "Choose");
+    let sky = &image_rows(&["sky:6".into()], "")[0];
+    assert_eq!(ids(&of(sky)), ["set"]);
 }
 
 #[test]

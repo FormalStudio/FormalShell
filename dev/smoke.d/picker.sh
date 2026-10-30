@@ -21,6 +21,11 @@
 # Before the first pick, `menu actions 0` opens a cell's actions column
 # (Set wallpaper, Open file, Copy path) beside the halved grid.
 #
+# Every wallpaper listing ends on a Sky cell (`sky:<step>`, the sky as it
+# stands now, drawn rather than read off a file): choosing it puts the sky
+# on the desktop the way `wallpaper set sky` does, with state.json's
+# `wallpaperColor` reading `sky`. A select request lists the pictures alone.
+#
 # picker_done_path is this leg's own finish marker: the picker and the
 # clipboard routes are the same launcher surface, so a run carrying both has
 # the clipboard leg wait on this file rather than summoning over the grid.
@@ -45,6 +50,10 @@ picker_dark_status_path="$shot_dir/picker-status-dark.json"
 picker_light_status_path="$shot_dir/picker-status-light.json"
 picker_variant_reply_path="$shot_dir/picker-variant-reply.txt"
 picker_theme_status_path="$shot_dir/picker-theme-status.json"
+picker_sky_status_path="$shot_dir/picker-sky-status.json"
+picker_sky_state_path="$shot_dir/picker-sky-state.json"
+picker_sky_png="$shot_dir/picker-sky.png"
+picker_select_status_path="$shot_dir/picker-status-select.json"
 picker_cached_status_path="$shot_dir/picker-status-cached.json"
 picker_cache_listing_path="$shot_dir/picker-thumb-cache.txt"
 picker_select_reply_path="$shot_dir/picker-select-reply.txt"
@@ -88,7 +97,7 @@ leg_picker_timing() {
   # grid up, so the run's own frame is that grid.
   local t0
   t0=$(picker_t0)
-  leg_timing $((28 + t0 - 4)) $((60 + t0 - 4))
+  leg_timing $((34 + t0 - 4)) $((66 + t0 - 4))
 }
 
 leg_picker_drive() {
@@ -109,12 +118,20 @@ $ipc call menu close > /dev/null 2>&1
 sleep 0.5
 $ipc call picker summon > /dev/null 2>&1
 sleep 1.5
+$ipc call picker choose "\$("$jq_bin" -r .sky "$picker_flat_status_path")" > /dev/null 2>&1
+sleep 3
+$ipc call theme status > "$picker_sky_status_path" 2>&1
+cp "$iso_home/.local/state/formalshell/state.json" "$picker_sky_state_path" 2>/dev/null
+"$grim_bin" "$picker_sky_png" > /dev/null 2>&1
+$ipc call picker summon > /dev/null 2>&1
+sleep 1.5
 $ipc call picker choose "$picker_dir/img-3.png" > /dev/null 2>&1
 sleep 3
 $ipc call theme status > "$picker_theme_status_path" 2>&1
 sleep 1
 $ipc call picker select "$picker_dir" tok-picker > "$picker_select_reply_path" 2>&1
 sleep 2
+$ipc call picker status > "$picker_select_status_path" 2>&1
 $ipc call picker choose "$picker_dir/img-1.png" > /dev/null 2>&1
 sleep 1
 cat "$iso_home/.local/state/formalshell/picker-selection.txt" > "$picker_selection_path" 2>&1
@@ -153,9 +170,19 @@ leg_picker_assert() {
   cat "$picker_flat_status_path"; echo
   if ! grep -q '"hasVariants":false' "$picker_flat_status_path" \
     || ! grep -q '"variant":"none"' "$picker_flat_status_path" \
-    || ! grep -q '"count":12' "$picker_flat_status_path"; then
-    fail "the flat listing did not report all 12 fixtures with no variants, got: $(cat "$picker_flat_status_path")"
+    || ! grep -q '"count":13' "$picker_flat_status_path" \
+    || ! "$jq_bin" -e '.sky | startswith("sky:")' "$picker_flat_status_path" > /dev/null 2>&1; then
+    fail "the flat listing did not report all 12 fixtures and the sky with no variants, got: $(cat "$picker_flat_status_path")"
   fi
+  # The Sky cell chosen: the sky on the desktop, saved as the picker's pick.
+  "$jq_bin" -e '.desktop | startswith("sky:")' "$picker_sky_status_path" > /dev/null 2>&1 \
+    || fail "choosing the Sky cell did not put the sky on the desktop: $(cat "$picker_sky_status_path")"
+  "$jq_bin" -e '.wallpaperColor == "sky"' "$picker_sky_state_path" > /dev/null 2>&1 \
+    || fail "the Sky pick is not saved as wallpaperColor sky: $("$jq_bin" -c .wallpaperColor "$picker_sky_state_path")"
+  [ -f "$picker_sky_png" ] || fail "no frame of the picked sky"
+  echo "SMOKE_PICKER_SKY $picker_sky_png"
+  "$jq_bin" -e '.mode == "select" and .count == 12 and .sky == null' "$picker_select_status_path" > /dev/null 2>&1 \
+    || fail "a select request listed more than the 12 pictures: $(cat "$picker_select_status_path")"
   # Choosing over IPC has to have run State.setWallpaper() through to the
   # ThemeEngine, which is what `theme status` reports back.
   if [ ! -s "$picker_theme_status_path" ]; then
@@ -201,8 +228,8 @@ leg_picker_assert() {
   fi
   cat "$picker_light_status_path"; echo
   if ! grep -q '"variant":"light"' "$picker_light_status_path" \
-    || ! grep -q "\"count\":3" "$picker_light_status_path"; then
-    fail "the switcher did not swap the listing to the light set, got: $(cat "$picker_light_status_path")"
+    || ! grep -q "\"count\":4" "$picker_light_status_path"; then
+    fail "the switcher did not swap the listing to the light set and the sky, got: $(cat "$picker_light_status_path")"
   fi
   if [ ! -f "$picker_variant_png" ]; then
     fail "no picker-variant screenshot produced"
@@ -227,8 +254,9 @@ leg_picker_assert() {
     fail "the thumbnail warm left partial files behind: $(cat "$picker_cache_listing_path")"
   fi
   cat "$picker_cached_status_path"; echo
-  if ! grep -q "\"count\":3" "$picker_cached_status_path" \
+  # Three pictures and the drawn sky, which has no thumbnail to cache.
+  if ! grep -q "\"count\":4" "$picker_cached_status_path" \
     || ! grep -q "\"cachedThumbnails\":3" "$picker_cached_status_path"; then
-    fail "the light listing is not fully backed by cached thumbnails, got: $(cat "$picker_cached_status_path")"
+    fail "the light listing's pictures are not fully backed by cached thumbnails, got: $(cat "$picker_cached_status_path")"
   fi
 }

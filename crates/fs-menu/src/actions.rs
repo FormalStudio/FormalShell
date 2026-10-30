@@ -279,6 +279,10 @@ fn builtins(s: &Subject) -> Vec<Action> {
         Kind::Image => {
             let label = if s.picker_select { "Choose" } else { "Set wallpaper" };
             out.push(Action::new("set", label, Run::Ipc(format!("wallpaper.set:{}", n.path))));
+            // The sky cell is drawn by the shell: no file to open or copy.
+            if !n.path.starts_with('/') {
+                return out;
+            }
             out.push(Action::new("open-file", "Open file", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
             out.push(copy("copy-path", "Copy path", &n.path));
         }

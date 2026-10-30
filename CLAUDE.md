@@ -1018,7 +1018,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the prerendered thumbnail cache (`fs-menu` `thumbnails`) backing every
   cell (the cache
   directory's own contents, since a warmed cell and a fallback cell paint
-  the same picture), with no colour swatches ahead of the pictures.
+  the same picture), with no colour swatches ahead of the pictures. The
+  Sky cell after the pictures, picked like any other, putting the sky on
+  the desktop with state.json's `wallpaperColor` reading `sky`, and a
+  select request listing no Sky cell.
 - `plugins.sh` `--plugins`: a plugin directory dropped into the config home
   placing its own bar cell, no `bar` key involved; panel, overlay and
   crashing plugins; and a `launcher` plugin running only while the

@@ -804,16 +804,28 @@ impl Model {
         Some(if self.picker.light { Variant::Light } else { Variant::Dark })
     }
 
-    /// The directory's pictures.
+    /// The directory's pictures, then the sky as it stands now, after
+    /// every picture so no swatch goes ahead of them. A select request
+    /// asks for a file, so it lists the pictures alone.
     pub fn picker_listing(&self, store: &Store) -> Vec<String> {
         let variants = self.picker_variants(store);
-        fs_menu::providers::wallpaper_listing(&variants, self.picker_variant()).to_vec()
+        let mut listing = fs_menu::providers::wallpaper_listing(&variants, self.picker_variant()).to_vec();
+        if !self.picker.select {
+            listing.push(crate::services::wallpaper::sky_source(store.sky_step()));
+        }
+        listing
     }
 
     fn picker_rows(&self, store: &Store, query: &str) -> Vec<Node> {
         let q = query.trim().to_lowercase();
         fs_menu::providers::image_rows(&self.picker_listing(store), "")
             .into_iter()
+            .map(|mut row| {
+                if crate::services::wallpaper::sky(&row.path).is_some() {
+                    row.label = "Sky".into();
+                }
+                row
+            })
             .filter(|row| q.is_empty() || row.label.to_lowercase().contains(&q))
             .collect()
     }
@@ -841,6 +853,8 @@ impl Model {
             self.picker.token.clear();
         } else {
             let mode = fs_menu::providers::wallpaper_pick_mode(&self.picker_variants(store), self.picker_variant());
+            // The sky is filed under neither set, so it leaves the mode be.
+            let mode = mode.filter(|_| crate::services::wallpaper::sky(path).is_none());
             let mode = mode.map(|v| if v == fs_menu::providers::Variant::Light { "light" } else { "dark" });
             state::set_wallpaper(path, mode);
         }
@@ -870,6 +884,7 @@ impl Model {
             "mode": if self.picker.select { "select" } else { "wallpaper" },
             "directory": self.picker.dir,
             "count": listing.len(),
+            "sky": listing.iter().find(|p| crate::services::wallpaper::sky(p).is_some()),
             "variant": if v.has_variants { if self.picker.light { "light" } else { "dark" } } else { "none" },
             "hasVariants": v.has_variants,
             "cachedThumbnails": listing.iter().filter(|p| store.picker.cached.contains(*p)).count(),

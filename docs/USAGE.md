@@ -1028,8 +1028,9 @@ picture. The sun is read off `location.latitude` and `location.longitude`
 fallback window instead, up at 06:00 and down at 20:00. The sky moves in
 steps of two degrees of the sun's height, so it changes every ten minutes
 or so through the twilights and holds still through the day and the
-night; nothing redraws in between. `fs wallpaper set sky` picks it the
-way a picture is picked, saved in `state.json` over the setting.
+night; nothing redraws in between. The wallpaper picker lists it as its
+last cell, Sky, after the pictures; choosing it (or `fs wallpaper set sky`)
+saves it in `state.json` over the setting, as picking a picture does.
 
 ```jsonc
 // ~/.config/formalshell/settings.json

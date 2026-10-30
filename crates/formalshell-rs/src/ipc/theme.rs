@@ -72,11 +72,12 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     text(out.to_string())
 }
 
-/// An absolute picture path, or `sky` for the sky over the picture, as
-/// `wallpaper.color: "sky"` sets it.
+/// An absolute picture path, or `sky` (or the picker's `sky:<step>` cell)
+/// for the sky over the picture, as `wallpaper.color: "sky"` sets it.
 fn wallpaper_set(_: &mut App, args: &[Value]) -> Value {
     let path = args[0].str();
-    if !path.starts_with('/') && path != fs_theme::theme::SKY {
+    let sky = path == fs_theme::theme::SKY || crate::services::wallpaper::sky(path).is_some();
+    if !path.starts_with('/') && !sky {
         return text("error: path must be absolute or sky");
     }
     state::set_wallpaper(path, None);

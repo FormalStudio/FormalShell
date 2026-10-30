@@ -232,8 +232,9 @@ leg_wheel_assert() {
   # Printed on the happy path too: the only evidence of where the pointer
   # ended up and that the axis event was sent at all.
   cat "$wheel_dispatch_path" 2>/dev/null || true
-  if ! grep -q '"count":120' "$wheel_picker_before_path"; then
-    fail "the grid did not list all 120 fixtures, so an unscrolled view proves nothing, got: $(cat "$wheel_picker_before_path")"
+  # 120 fixtures and the Sky cell after them.
+  if ! grep -q '"count":121' "$wheel_picker_before_path"; then
+    fail "the grid did not list all 120 fixtures and the sky, so an unscrolled view proves nothing, got: $(cat "$wheel_picker_before_path")"
   fi
   before_scroll=$(wheel_field "$wheel_menu_before_path" scrollTop)
   after_scroll=$(wheel_field "$wheel_menu_after_path" scrollTop)
