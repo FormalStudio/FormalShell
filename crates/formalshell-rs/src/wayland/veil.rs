@@ -9,7 +9,6 @@
 //! logind's inhibitor goes (shutdown) or the compositor is told to exit
 //! (logout).
 
-use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -66,31 +65,39 @@ pub(super) struct State {
     generation: u64,
     /// The pointer is still to be shown once the shell is up.
     reveal: bool,
-    /// The arrival has hidden the pointer: Hyprland 0.56 draws it at start
-    /// whatever the config's `cursor.invisible` says, and only a runtime
-    /// eval takes it away. The lift waits on it, or the reveal would come
-    /// first and the hide never.
+    /// The arrival has hidden the pointer through eval, for a config that
+    /// does not hide it at start. The lift waits on it, or the reveal would
+    /// come first and the hide never.
     hidden: bool,
 }
 
-/// The first start for this compositor instance, marked so a restart
-/// inside the session is not.
-fn first_arrival() -> bool {
+/// The instance's marker, written once the arrival has shown the pointer.
+/// The config hides the pointer while it is absent, and the shell's first
+/// theme publish reloads the config mid-arrival, so it cannot be written
+/// any earlier. A shell that starts with it present is a restart.
+fn arrival_marker() -> PathBuf {
     let id = ["HYPRLAND_INSTANCE_SIGNATURE", "MANGO_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
         .into_iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
         .unwrap_or_default();
     let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("formalshell");
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join(format!("arrived-{}", id.replace('/', "_")));
-    match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-        Ok(_) => true,
-        Err(err) if err.kind() == ErrorKind::AlreadyExists => false,
-        Err(err) => {
-            eprintln!("veil: {}: {err}", path.display());
-            false
-        }
+    dir.join(format!("arrived-{}", id.replace('/', "_")))
+}
+
+fn mark_arrived() {
+    let path = arrival_marker();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
     }
+    if let Err(err) = std::fs::write(&path, b"") {
+        eprintln!("veil: {}: {err}", path.display());
+    }
+}
+
+/// Shows the pointer, and marks the arrival over so a reload keeps it shown.
+fn reveal_cursor() {
+    mark_arrived();
+    compositor::send(Command::Cursor { hidden: false });
 }
 
 impl App {
@@ -98,7 +105,7 @@ impl App {
     /// first surfaces committed.
     pub(super) fn begin_arrival(&mut self) {
         self.veil.reveal = true;
-        if first_arrival() {
+        if !arrival_marker().exists() {
             self.veil.phase = Some(Phase::Arriving);
         }
     }
@@ -250,7 +257,7 @@ impl App {
     pub(super) fn present_veils(&mut self, now: Instant) {
         if self.veil.reveal && self.veil.phase.is_none() && (self.faces_warmed || now >= self.started + ARRIVE_WAIT) {
             self.veil.reveal = false;
-            compositor::send(Command::Cursor { hidden: false });
+            reveal_cursor();
         }
         let Some(phase) = self.veil.phase else { return };
         if phase == Phase::Arriving && !self.veil.hidden && compositor::ready() {
@@ -274,7 +281,7 @@ impl App {
             self.veil.veils.clear();
             (self.veil.phase, self.veil.lifting) = (None, false);
             self.veil.reveal = false;
-            compositor::send(Command::Cursor { hidden: false });
+            reveal_cursor();
         } else if phase != Phase::Arriving && !self.veil.lifting && !self.veil.ended && settled {
             self.end_departure();
         }

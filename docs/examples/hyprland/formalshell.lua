@@ -107,10 +107,10 @@ hl.config({
   },
 })
 
--- The pointer stays hidden until the shell has faded the desktop in, and the
--- shell shows it then. Only before that: a reload (the shell's own after each
--- publish) finds the shell's marker for this instance and leaves the cursor
--- alone. A shell that never starts gets it back ten seconds in.
+-- The pointer stays hidden until the shell has faded the desktop in; the
+-- shell then writes its marker for this instance and shows it, so a reload
+-- after that (the shell's own after each publish) leaves it shown. A shell
+-- that never starts gets it back ten seconds in, marker and all.
 local arrived = (os.getenv("XDG_RUNTIME_DIR") or "") .. "/formalshell/arrived-" .. (os.getenv("HYPRLAND_INSTANCE_SIGNATURE") or "")
 local marker = io.open(arrived, "r")
 if marker then
@@ -119,7 +119,7 @@ else
   hl.config({ cursor = { invisible = true } })
 end
 hl.on("hyprland.start", function()
-  hl.exec_cmd([==[sleep 10 && hyprctl eval 'hl.config({ cursor = { invisible = false } })']==])
+  hl.exec_cmd([==[sleep 10 && mkdir -p "$XDG_RUNTIME_DIR/formalshell" && touch "$XDG_RUNTIME_DIR/formalshell/arrived-$HYPRLAND_INSTANCE_SIGNATURE" && hyprctl eval 'hl.config({ cursor = { invisible = false } })']==])
 end)
 
 -- Steam starts each Proton game under XWayland with a steam_app_<id> class.
