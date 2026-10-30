@@ -10,13 +10,14 @@
 use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
-use vello_cpu::kurbo::{Affine, Arc, Circle, Rect, Shape};
+use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::scene::{Paint, Scene};
 use crate::services::devices::headsets::Headset;
 use crate::store::Store;
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::text::TextStyle;
+use crate::ui::el::Ring;
 use crate::ui::{self, El, Ink, Type, w};
 
 /// At or under this a ring takes the destructive ink (`battery.warnPercent`'s default).
@@ -173,18 +174,9 @@ pub fn paint_rings(p: &mut Painter, alpha: f32, f: &Face, inner: Rect, theme: &T
     for part in &f.parts {
         let cw = column_width(part, theme, kit);
         let (cx, cy) = (x + cw / 2.0, top + d / 2.0);
-        let r = (d - width) / 2.0;
         let frac = (part.percent / 100.0).clamp(0.0, 1.0);
-        let mut strokes = vec![(Circle::new((cx, cy), r).to_path(0.1), with_alpha(groove, alpha), width)];
-        if frac > 0.0 {
-            let colour = if part.percent <= LOW { low } else { fill };
-            let path = if frac >= 0.999 {
-                Circle::new((cx, cy), r).to_path(0.1)
-            } else {
-                Arc::new((cx, cy), (r, r), -std::f64::consts::FRAC_PI_2, std::f64::consts::TAU * frac, 0.0).to_path(0.1)
-            };
-            strokes.push((path, with_alpha(colour, alpha), width));
-        }
+        let colour = if part.percent <= LOW { low } else { fill };
+        let strokes = ui::ring_strokes((cx, cy), d, width, Ring::Progress(frac), 0.0, with_alpha(groove, alpha), with_alpha(colour, alpha));
         let bounds = Scene::cover(Rect::new(cx - d / 2.0, cy - d / 2.0, cx + d / 2.0, cy + d / 2.0), Affine::IDENTITY, 2.0);
         p.shape(bounds, Paint::Shape { fill: None, strokes });
         let pct = kit.shape(&format!("{}", part.percent.round() as i64), style(theme, kit, true));

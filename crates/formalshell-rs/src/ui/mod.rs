@@ -23,6 +23,7 @@
 
 pub mod boxes;
 mod draw;
+pub use draw::ring_strokes;
 pub mod el;
 pub mod lyrics;
 mod spectrum;

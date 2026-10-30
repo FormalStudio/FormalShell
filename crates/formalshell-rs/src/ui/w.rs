@@ -236,6 +236,10 @@ pub fn trigger(s: &Space, glyph: &str, label: &str, open: bool) -> El {
         .interactive()
 }
 
+pub fn ring(ring: super::el::Ring) -> El {
+    El::new(Kind::Ring(ring))
+}
+
 pub fn sparkline(values: Vec<f64>, secondary: Vec<f64>, ceiling: f64, capacity: usize) -> El {
     El::new(Kind::Sparkline(Series { values, secondary, ceiling, capacity })).fill()
 }

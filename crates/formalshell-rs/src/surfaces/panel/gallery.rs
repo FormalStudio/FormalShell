@@ -8,7 +8,7 @@ use fs_chrome::types::Edge;
 
 use super::{Effect, Panel, View};
 use crate::store::Topic;
-use crate::ui::el::{CellState, Opt};
+use crate::ui::el::{CellState, Opt, Ring};
 use crate::ui::{El, Event, Ink, Type, Variant, What, w};
 
 #[derive(Default)]
@@ -110,6 +110,13 @@ impl Panel for Gallery {
                         label("Track"),
                         w::slider(self.level).on("level"),
                         w::track(1.0 / 1.5).notch(1.0 / 1.5),
+                    ],
+                ),
+                w::column(
+                    s.row_gap,
+                    vec![
+                        label("Ring"),
+                        w::row(s.sm, vec![w::ring(Ring::Progress(0.4)), w::ring(Ring::Done), w::ring(Ring::Failed)]),
                     ],
                 ),
                 w::column(

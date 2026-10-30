@@ -2,14 +2,17 @@
 //! with the same arithmetic it measured them by, so a paint never disagrees
 //! with the size it reported.
 
+use std::sync::OnceLock;
+use std::time::Instant;
+
 use fs_theme::color::Rgba;
 use fs_theme::style::{BoxStyle, Line};
 use fs_theme::tokens::WEIGHTS;
-use vello_cpu::kurbo::{Affine, BezPath, Rect};
+use vello_cpu::kurbo::{Affine, Arc, BezPath, Circle, Rect, Shape};
 
-use super::el::{CellState, Font, Kind, Size, Type, Variant, Weight};
+use super::el::{CellState, Font, Kind, Ring, Size, Type, Variant, Weight};
 use super::{Cx, El, Hit, HitWhat, Ink, Stop, boxes, irect};
-use crate::motion::Kind as Clock;
+use crate::motion::{Kind as Clock, PULSE_MS};
 use crate::scene::{IRect, Paint, Scene};
 use crate::text::{self, Family, ShapedText, TextStyle};
 
@@ -310,6 +313,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             (s.keycap_height.max(w + s.sm * 2.0), s.keycap_height)
         }
         Kind::Swatch { w, h, .. } => (*w, *h),
+        Kind::Ring(_) => (s.control_height, s.control_height),
         Kind::Sparkline(_) => (inner, s.control_height),
         Kind::Matrix { rows } => {
             let side = matrix_module(inner, rows.len()) * rows.len() as f64;
@@ -704,6 +708,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             p.finish();
             cx.done(last);
         }
+        Kind::Ring(r) => ring(cx, inner, *r, path),
         Kind::Sparkline(series) => sparkline(cx, inner, series, path),
         Kind::Matrix { rows } => matrix(cx, inner, rows, path),
         Kind::Flow(f) => flow::paint(cx, inner, f, path),
@@ -1294,6 +1299,67 @@ fn matrix(cx: &mut Cx, r: Rect, rows: &[String], path: &str) {
             let ry = y0 + y as f64 * m;
             p.rect(irect(Rect::new(rx, ry, rx + (x - start) as f64 * m, ry + m)), module, 0.0);
         }
+    }
+    let last = p.last();
+    p.finish();
+    cx.done(last);
+}
+
+/// Where a turning ring's arc starts, the same for every ring on screen.
+pub fn ring_turn(now: Instant) -> f64 {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    let ms = now.saturating_duration_since(*EPOCH.get_or_init(|| now)).as_secs_f64() * 1000.0;
+    // One turn every two pulses, slow enough to read as work, not alarm.
+    (ms / (PULSE_MS * 2.0)).fract() * std::f64::consts::TAU
+}
+
+/// A ring's strokes: the `track.groove` circle and, over it, the arc from
+/// twelve o'clock in `fill` (a turning ring's quarter starts at `turn`).
+/// `d` is the outer diameter, `width` the stroke.
+pub fn ring_strokes(centre: (f64, f64), d: f64, width: f64, ring: Ring, turn: f64, groove: Rgba, fill: Rgba) -> Vec<(BezPath, Rgba, f64)> {
+    use std::f64::consts::{FRAC_PI_2, TAU};
+    let r = (d - width) / 2.0;
+    let circle = || Circle::new(centre, r).to_path(0.1);
+    let arc = |start: f64, sweep: f64| Arc::new(centre, (r, r), start, sweep, 0.0).to_path(0.1);
+    let mut strokes = vec![(circle(), groove, width)];
+    match ring {
+        Ring::Progress(f) if f >= 0.999 => strokes.push((circle(), fill, width)),
+        Ring::Progress(f) if f > 0.0 => strokes.push((arc(-FRAC_PI_2, TAU * f), fill, width)),
+        Ring::Progress(_) => {}
+        Ring::Unknown => strokes.push((arc(-FRAC_PI_2 + turn, TAU / 4.0), fill, width)),
+        Ring::Done | Ring::Failed => strokes.push((circle(), fill, width)),
+    }
+    strokes
+}
+
+fn ring(cx: &mut Cx, inner: Rect, r: Ring, path: &str) {
+    let t = cx.theme;
+    let d = inner.width().min(inner.height());
+    let centre = (inner.center().x, inner.center().y);
+    let groove = cx.a(t.box_style("track.groove", None).fill);
+    let fill = cx.a(match r {
+        Ring::Failed => t.colors.get("destructive"),
+        _ => t.box_style("track.fill", None).fill,
+    });
+    let turn = if r == Ring::Unknown && t.motion_enabled {
+        cx.animate();
+        ring_turn(cx.now)
+    } else {
+        0.0
+    };
+    let mark = match r {
+        Ring::Done => Some(("check", t.colors.get("foreground"))),
+        Ring::Failed => Some(("x", t.colors.get("destructive"))),
+        _ => None,
+    };
+    let mark = mark.map(|(name, ink)| (icon(cx, name, Type::Caption), cx.a(ink)));
+    let strokes = ring_strokes(centre, d, t.space.xs, r, turn, groove, fill);
+    let bounds = Scene::cover(Rect::new(centre.0 - d / 2.0, centre.1 - d / 2.0, centre.0 + d / 2.0, centre.1 + d / 2.0), Affine::IDENTITY, 2.0);
+    let mut p = cx.painter(path);
+    p.shape(bounds, Paint::Shape { fill: None, strokes });
+    if let Some((glyph, ink)) = mark {
+        let at = ((centre.0 - glyph.width as f64 / 2.0).round() as i32, (centre.1 - glyph.line_height() as f64 / 2.0).round() as i32);
+        p.text(&glyph, at, ink, &[]);
     }
     let last = p.last();
     p.finish();

@@ -145,6 +145,18 @@ impl PartialEq for Pic {
     }
 }
 
+/// What a [`Kind::Ring`] says: how far something is, that it cannot say,
+/// or how it ended.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ring {
+    /// 0..1 of the way.
+    Progress(f64),
+    /// Running with no measure: a short arc that turns.
+    Unknown,
+    Done,
+    Failed,
+}
+
 /// A series for a `Sparkline`: newest last, read against `ceiling`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Series {
@@ -235,6 +247,8 @@ pub enum Kind {
     Separator { vertical: bool, inset: f64, bleed: f64 },
     Keycap { key: String },
     Swatch { color: Rgba, w: f64, h: f64, radius: f64, border: bool },
+    /// A `controlHeight` progress ring.
+    Ring(Ring),
     Sparkline(Series),
     /// A shape budding off a line on `edge`, for the gallery.
     Shoulders { edge: fs_chrome::types::Edge, span: f64, depth: f64, run: f64 },
