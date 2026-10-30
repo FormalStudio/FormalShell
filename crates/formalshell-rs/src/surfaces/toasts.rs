@@ -381,7 +381,7 @@ impl Toasts {
             cards.insert(k, Card { el, critical: g.urgency == Urgency::Critical, members: g.member_ids.clone() });
         }
         for g in &live {
-            let el = activity::row(theme, g, true).on("body");
+            let el = activity::row(theme, g, true);
             let critical = g.state() == fs_activity::State::Failed;
             cards.insert(format!("{ACTIVITY}{}", g.source), Card { el, critical, members: Vec::new() });
         }
@@ -700,6 +700,9 @@ impl Toasts {
         let Some(slot) = self.slots.get_mut(&sw.key).filter(|s| !s.departing) else { return (false, Act::None) };
         if swipe_dismisses(sw.pull, sw.velocity.at_lift(time), dir) {
             slot.dx.set(now, dir * slot.width.value(now), ms);
+            if let Some(source) = sw.key.strip_prefix(ACTIVITY) {
+                return (true, Act::Activity(Verb::Dismiss, source.to_owned()));
+            }
             return (true, Act::Dismiss(slot.members.clone()));
         }
         slot.dx.set(now, 0.0, ms);
