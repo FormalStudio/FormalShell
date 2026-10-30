@@ -13,10 +13,19 @@
 //! a second client lock a session whose locker died under
 //! `misc.allow_session_lock_restore`.
 //!
+//! The boot's lock (docs/superpowers/specs/2026-10-30-locked-login.md):
+//! the login script leaves `$XDG_RUNTIME_DIR/formalshell/login-lock`, its
+//! content the splash's last picture or empty, and the shell raises the lock
+//! off it before anything else, that picture alone on its first frame. The
+//! first unlock deletes it; until then the card offers "Other user".
+//!
 //! The screensaver can show inside the lock: its scene is presented on the
 //! lock surfaces in place of the card, input dismisses it back to the card,
 //! and a lock raised over it brings it back on idle rather than blanking.
 
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use calloop::RegistrationToken;
@@ -46,10 +55,10 @@ use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, Kind as Clock, SPATIAL};
 use crate::scene::Bitmap;
 use crate::surface::Ignore;
 use crate::services::wallpaper::DepthCut;
-use crate::services::{clipboard, compositor};
+use crate::services::{clipboard, compositor, power};
 use crate::surface::Surface;
 use crate::store::Topic;
-use crate::surfaces::lock::{self as view, NowPlaying, Shared, TKey, View};
+use crate::surfaces::lock::{self as view, Boot, Button, Buttons, NowPlaying, Shared, TKey, View};
 
 /// What finishes off the UI thread and comes back to the lock.
 pub enum LockMsg {
@@ -74,6 +83,8 @@ pub enum LockMsg {
     /// where the compositor put it then.
     ActionEnded { action: String, at: i64, cursor: Option<(f64, f64)> },
     Polkit(crate::services::polkit::Event),
+    /// logind refused one of the lock's buttons: said under the field.
+    Refused(String),
 }
 
 struct Out {
@@ -85,6 +96,11 @@ struct Out {
     saver: bool,
     /// Where the pointer last was on it.
     pointer: Option<(f64, f64)>,
+    /// The boot lock's first frame, the splash alone, has been committed.
+    splashed: bool,
+    /// The departure's black was committed as this commit, and has been shown.
+    dark: Option<u64>,
+    dark_landed: bool,
 }
 
 #[derive(Default)]
@@ -146,6 +162,16 @@ pub struct Lock {
     logind: Option<String>,
     /// Each output's last report, kept past the unlock until the next lock.
     reports: Map<String, Value>,
+    /// Raised off the login marker, until the first unlock.
+    login: bool,
+    /// The splash's picture off its decode thread, once per output scale.
+    splash: Vec<Bitmap>,
+    splash_taken: bool,
+    /// A button asked once, which the next Return on it carries out.
+    armed: Option<Button>,
+    /// PrepareForShutdown while locked: the lock itself fades to black, 1 at rest.
+    depart: Animated,
+    departing: bool,
 }
 
 impl Lock {
@@ -183,6 +209,12 @@ impl Lock {
             sleep: Sleep::default(),
             logind: None,
             reports: Map::new(),
+            login: false,
+            splash: Vec::new(),
+            splash_taken: false,
+            armed: None,
+            depart: Animated::new(1.0, EFFECTS),
+            departing: false,
         }
     }
 }
@@ -233,6 +265,39 @@ fn mark_held(held: bool) {
     }
 }
 
+fn login_marker() -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("formalshell").join("login-lock")
+}
+
+static SPLASH: Mutex<Option<JoinHandle<Option<Bitmap>>>> = Mutex::new(None);
+
+/// The boot lock's picture decoded on a thread of its own, started before
+/// the Wayland connection so the lock's first frame never waits on it.
+pub fn preload_login() {
+    let Ok(text) = std::fs::read_to_string(login_marker()) else { return };
+    let path = text.trim().to_owned();
+    if path.is_empty() {
+        return;
+    }
+    let decode = move || {
+        let img = image::ImageReader::open(&path).ok().and_then(|r| r.with_guessed_format().ok()).and_then(|r| r.decode().ok()).map(|i| i.to_rgba8());
+        let bitmap = img.and_then(|i| Some(Bitmap::from_rgba(u16::try_from(i.width()).ok()?, u16::try_from(i.height()).ok()?, i.into_raw())));
+        if bitmap.is_none() {
+            eprintln!("lock: the login picture {path} is unreadable, starting on black");
+        }
+        bitmap
+    };
+    match std::thread::Builder::new().name("fs-splash".into()).spawn(decode) {
+        Ok(handle) => *SPLASH.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle),
+        Err(err) => eprintln!("lock: login picture: {err}"),
+    }
+}
+
+fn take_splash() -> Option<Bitmap> {
+    let handle = SPLASH.lock().unwrap_or_else(|e| e.into_inner()).take()?;
+    handle.join().ok().flatten()
+}
+
 fn via_logind(app: &App) -> bool {
     command(app).first().is_some_and(|b| b.rsplit('/').next() == Some("loginctl"))
 }
@@ -258,7 +323,11 @@ impl App {
             return;
         }
         self.lock.tx = Some(tx.clone());
-        if held_marker().exists() {
+        if self.lock.login && self.lock.session.is_some() {
+            self.dress_lock();
+            self.sync_agents();
+            self.sync_shards();
+        } else if held_marker().exists() {
             eprintln!("lock: the session was left locked, taking the lock back");
             let result = self.raise_lock();
             if result != "ok" {
@@ -316,34 +385,66 @@ impl App {
         !via_logind(self) && command(self).first().is_some_and(|b| on_path(b))
     }
 
+    /// The boot's lock, called before any other surface is made and before
+    /// the services start: the session lock and a surface per output, the
+    /// rest left to [`Self::start_lock`].
+    pub(super) fn raise_login_lock(&mut self) {
+        if !login_marker().exists() {
+            return;
+        }
+        if let Err(err) = self.acquire_lock() {
+            eprintln!("lock: login lock: {err}");
+            return;
+        }
+        self.lock.login = true;
+        self.lock.locked = true;
+        self.lock.dirty = true;
+        crate::phase("login lock asked");
+    }
+
     fn raise_lock(&mut self) -> String {
         self.lock.error.clear();
         if self.lock.session.is_none() {
-            match self.lock.manager.lock(&self.qh) {
-                Ok(session) => self.lock.session = Some(session),
-                Err(_) => return "error: lock failed to acquire session lock".into(),
+            if let Err(err) = self.acquire_lock() {
+                return err;
             }
-            self.lock.secure = false;
-            self.lock.outs.clear();
-            self.lock.reports.clear();
-            self.lock.password = field();
-            self.lock.checking = false;
-            self.lock_outputs();
-            self.load_lock_pictures();
-            self.lock.transport = -1;
-            self.lock.art = None;
-            self.load_lock_art();
-            self.arm_lock_clock();
-            self.lock.entered = false;
-            (self.lock.idle, self.lock.resume_guard, self.lock.with_saver) = (false, false, false);
-            self.watch_lock_idle();
-            self.saver_rehost();
+            self.dress_lock();
         }
         self.lock.locked = true;
         self.sync_agents();
         self.sync_shards();
         self.lock.dirty = true;
         "ok".into()
+    }
+
+    fn acquire_lock(&mut self) -> Result<(), String> {
+        match self.lock.manager.lock(&self.qh) {
+            Ok(session) => self.lock.session = Some(session),
+            Err(_) => return Err("error: lock failed to acquire session lock".into()),
+        }
+        self.lock.secure = false;
+        self.lock.outs.clear();
+        self.lock.reports.clear();
+        self.lock.password = field();
+        self.lock.checking = false;
+        self.lock.transport = -1;
+        self.lock.armed = None;
+        self.lock.entered = false;
+        self.lock.departing = false;
+        self.lock.depart.jump(1.0);
+        self.lock_outputs();
+        Ok(())
+    }
+
+    /// What the lock draws besides its card, and its watches.
+    fn dress_lock(&mut self) {
+        self.load_lock_pictures();
+        self.lock.art = None;
+        self.load_lock_art();
+        self.arm_lock_clock();
+        (self.lock.idle, self.lock.resume_guard, self.lock.with_saver) = (false, false, false);
+        self.watch_lock_idle();
+        self.saver_rehost();
     }
 
     /// `lock.blankAfterSeconds` of no input anywhere blanks the lock.
@@ -429,7 +530,7 @@ impl App {
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
             let surface = Surface::on("lock", ls, &self.shm, self.started, &output);
-            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None });
+            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, dark: None, dark_landed: false });
         }
     }
 
@@ -569,6 +670,12 @@ impl App {
             LockMsg::Logind(false) => eprintln!("lock: logind's Unlock ignored, the password is the only way out"),
             LockMsg::ActionEnded { action, at, cursor } => self.hot_corner_ended(&action, at, cursor),
             LockMsg::Polkit(event) => self.polkit_event(event),
+            LockMsg::Refused(why) => {
+                if self.lock.session.is_some() {
+                    self.lock.error = why;
+                    self.lock.dirty = true;
+                }
+            }
         }
     }
 
@@ -603,6 +710,15 @@ impl App {
             Outcome::Success => self.begin_unlock(),
             Outcome::Failed(_) => self.lock.error = "Wrong password".into(),
             Outcome::MaxTries(_) => self.lock.error = "Account locked".into(),
+            Outcome::AccountUnavailable(why) => {
+                eprintln!("lock: pam account: {why}");
+                self.lock.error = "Account unavailable".into();
+            }
+            // The lock has no step to set a new password in.
+            Outcome::NewPasswordRequired(why) => {
+                eprintln!("lock: pam account: {why}");
+                self.lock.error = "Password expired, change it on tty2".into();
+            }
             Outcome::StartFailed(why) | Outcome::Error(why) => {
                 eprintln!("lock: pam: {why}");
                 self.lock.error = "PAM error".into();
@@ -655,6 +771,15 @@ impl App {
         mark_held(false);
         self.lock.password = field();
         self.lock.error.clear();
+        self.lock.armed = None;
+        if std::mem::take(&mut self.lock.login) {
+            self.lock.splash.clear();
+            if let Err(err) = std::fs::remove_file(login_marker())
+                && err.kind() != std::io::ErrorKind::NotFound
+            {
+                eprintln!("lock: {}: {err}", login_marker().display());
+            }
+        }
         if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
             handle.remove(t);
         }
@@ -666,10 +791,27 @@ impl App {
         self.store.media.active().filter(|a| a.kind != "stream")
     }
 
-    /// The transport's keys first (Lock/model.js's `transportKey` through
-    /// the field's own key filter), then the field's.
+    /// Shutdown and Reboot, and Other user on the boot's lock.
+    fn lock_buttons(&self) -> Vec<Button> {
+        let mut buttons = vec![Button::PowerOff, Button::Reboot];
+        if self.lock.login {
+            buttons.push(Button::OtherUser);
+        }
+        buttons
+    }
+
+    /// The transport's stops, then the buttons'.
+    fn lock_media_stops(&self) -> i32 {
+        if self.lock_media().is_some() { view::TRANSPORT as i32 } else { 0 }
+    }
+
+    /// The transport's and the buttons' keys first (Lock/model.js's
+    /// `transportKey` through the field's own key filter, over both), then
+    /// the field's.
     fn transport_key(&mut self, event: &KeyEvent) -> bool {
-        let count = if self.lock_media().is_some() { view::TRANSPORT as i32 } else { 0 };
+        let media = self.lock_media_stops();
+        let buttons = self.lock_buttons();
+        let count = media + buttons.len() as i32;
         let key = match event.keysym {
             Keysym::Tab => TKey::Tab,
             Keysym::ISO_Left_Tab => TKey::Backtab,
@@ -683,14 +825,54 @@ impl App {
         };
         let step = view::transport_key(self.lock.transport, count, key);
         self.lock.transport = step.index;
+        let on = usize::try_from(step.index - media).ok().and_then(|i| buttons.get(i).copied());
+        if on != self.lock.armed {
+            self.lock.armed = None;
+        }
         if step.press {
-            match step.index {
-                0 => self.store.media.previous(),
-                1 => self.store.media.play_pause(),
-                _ => self.store.media.next(),
+            match on {
+                Some(b) if self.lock.armed == Some(b) => {
+                    self.lock.armed = None;
+                    self.lock_button(b);
+                }
+                Some(b) => self.lock.armed = Some(b),
+                None => match step.index {
+                    0 => self.store.media.previous(),
+                    1 => self.store.media.play_pause(),
+                    _ => self.store.media.next(),
+                },
             }
         }
         step.taken
+    }
+
+    /// A confirmed button. logind is asked without interactive
+    /// authorization: no polkit agent can show over the lock.
+    fn lock_button(&mut self, b: Button) {
+        self.lock.error.clear();
+        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        eprintln!("lock: {} confirmed", b.id());
+        match b {
+            Button::PowerOff | Button::Reboot => {
+                let action = if b == Button::PowerOff { power::Action::PowerOff } else { power::Action::Reboot };
+                rt.service(move |ctx| {
+                    ctx.spawn(async move {
+                        let method = action.method();
+                        match power::call_quiet(method).await {
+                            Ok(()) => eprintln!("lock: {method} accepted"),
+                            Err(err) => {
+                                eprintln!("lock: {method}: {err}");
+                                let _ = tx.send(LockMsg::Refused(format!("{} refused", b.label())));
+                            }
+                        }
+                    });
+                });
+            }
+            Button::OtherUser => match self.lock.logind.clone() {
+                Some(id) => rt.service(move |ctx| crate::services::session::terminate(ctx, id, tx)),
+                None => self.lock.error = "Could not end the session".into(),
+            },
+        }
     }
 
     /// Redraws for what the lock shows; a new wallpaper is decoded again.
@@ -776,7 +958,10 @@ impl App {
         }
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => self.submit_password(),
-            Keysym::Escape => self.lock.password = field(),
+            Keysym::Escape => {
+                self.lock.password = field();
+                self.lock.error.clear();
+            }
             // A secret field hands nothing out, so a paste is all that can
             // come back from it.
             sym if !self.lock.checking => {
@@ -796,6 +981,11 @@ impl App {
         if let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface) {
             let s = &mut o.surface;
             (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+            // No commit goes out while a callback is pending, so this one
+            // is the black frame's own.
+            if o.dark.is_some() {
+                o.dark_landed = true;
+            }
             self.lock.dirty = true;
         }
     }
@@ -832,11 +1022,62 @@ impl App {
         }
     }
 
+    /// An output of the boot's lock still owes its first frame: nothing
+    /// else is drawn until it has gone out.
+    pub(super) fn lock_splash_pending(&self) -> bool {
+        self.lock.login && !self.lock.unlocking && self.lock.outs.iter().any(|o| !o.splashed)
+    }
+
+    fn present_splash(&mut self) {
+        if !std::mem::replace(&mut self.lock.splash_taken, true) {
+            self.lock.splash = take_splash().into_iter().collect();
+        }
+        let qh = self.qh.clone();
+        let mut first = false;
+        for o in self.lock.outs.iter_mut().filter(|o| o.surface.configured && !o.splashed) {
+            let k = o.surface.scale();
+            let picture = self.lock.splash.first().map(|b| b.clone().at(k));
+            o.view.draw_splash(picture.as_ref());
+            o.surface.present(&mut o.view.scene, true, &qh);
+            o.splashed = true;
+            first |= o.surface.commits() == 1;
+        }
+        if first {
+            crate::phase("login lock first commit");
+        }
+        self.lock.dirty = true;
+    }
+
+    /// PrepareForShutdown (or its cancel) while this shell's lock is up:
+    /// the lock fades itself, since the compositor draws no overlay over a
+    /// session lock. False when there is no lock to fade.
+    pub(super) fn lock_depart(&mut self, going: bool, ms: f64) -> bool {
+        if self.lock.session.is_none() || (!going && !self.lock.departing) {
+            return false;
+        }
+        self.lock.departing = going;
+        for o in &mut self.lock.outs {
+            (o.dark, o.dark_landed) = (None, false);
+        }
+        self.lock.depart.set(Instant::now(), if going { 0.0 } else { 1.0 }, ms);
+        self.lock.dirty = true;
+        true
+    }
+
+    /// Every output has shown the departure's black.
+    pub(super) fn lock_departed(&self) -> bool {
+        !self.lock.departing || self.lock.outs.iter().filter(|o| o.surface.configured).all(|o| o.dark_landed)
+    }
+
     pub(super) fn present_lock(&mut self) {
         if self.lock.outs.is_empty() || !self.lock.dirty || self.lock.unlocking {
             return;
         }
         self.lock.dirty = false;
+        if self.lock_splash_pending() {
+            self.present_splash();
+            return;
+        }
         self.lock_shards();
         let now = Instant::now();
         let theme = &self.store.theme.theme;
@@ -853,8 +1094,11 @@ impl App {
         let blanked = self.lock_blanked();
         let reveal = if theme.motion_enabled { theme.motion().families.reveal * self.motion_scale } else { 0.0 };
         self.lock.wake.set(now, if blanked { 0.0 } else { 1.0 }, reveal);
-        let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now);
-        let has_wallpaper = !self.store.desktop().is_empty();
+        let departing = self.lock.departing || self.lock.depart.running(now);
+        let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now) || departing;
+        let dark = self.lock.departing && !self.lock.depart.running(now);
+        let login = self.lock.login;
+        let has_wallpaper = !self.store.desktop().is_empty() || login;
         let shared = Shared {
             now: Local::now(),
             name: crate::greeter::users::own_name(),
@@ -864,16 +1108,25 @@ impl App {
             backdrop: None,
             foreground: None,
             shards: None,
-            picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.desktop()),
+            picture: self.store.wallpaper.latest().filter(|p| !login && has_wallpaper && p.path == self.store.desktop()),
             avatar: None,
             media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
             blanked,
-            wake: self.lock.wake.value(now).clamp(0.0, 1.0) as f32,
+            wake: (self.lock.wake.value(now) * self.lock.depart.value(now)).clamp(0.0, 1.0) as f32,
+            boot: None,
+            buttons: Buttons::default(),
         };
         let active = self.lock_media();
         let mpris = active.as_ref().and_then(|a| self.store.media.mpris.iter().find(|p| p.id == a.id));
         let arts = self.lock.art.as_ref().filter(|(u, _)| active.as_ref().is_some_and(|a| a.art_url == *u)).map(|(_, b)| b.as_slice());
+        let media = self.lock_media_stops();
+        let shown = self.lock_buttons();
+        for k in self.lock.outs.iter().map(|o| o.surface.scale()).collect::<Vec<_>>() {
+            if let Some(b) = self.lock.splash.first().filter(|_| !self.lock.splash.iter().any(|b| f64::from(b.density) == k)).cloned() {
+                self.lock.splash.push(b.at(k));
+            }
+        }
         let mut shared = Shared {
             media: active.as_ref().map(|a| NowPlaying {
                 title: &a.title,
@@ -884,12 +1137,14 @@ impl App {
                 can_next: mpris.is_none_or(|p| p.can_next),
                 progress: (a.length > 0.0).then(|| a.position / a.length),
                 art: None,
-                cursor: self.lock.transport,
+                cursor: if self.lock.transport < media { self.lock.transport } else { -1 },
             }),
+            buttons: Buttons { shown, cursor: if self.lock.transport >= media { self.lock.transport - media } else { -1 }, armed: self.lock.armed },
             ..shared
         };
         let qh = self.qh.clone();
         let saver = &mut self.saver;
+        let going = self.lock.departing;
         for o in &mut self.lock.outs {
             if !o.surface.configured {
                 continue;
@@ -903,11 +1158,16 @@ impl App {
             shared.foreground = pair.and_then(|(_, f)| f.as_ref());
             shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
+            if login {
+                shared.boot = Some(Boot { splash: self.lock.splash.iter().find(|b| f64::from(b.density) == k) });
+                (shared.backdrop, shared.foreground, shared.shards) = (None, None, None);
+            }
             if let Some(m) = &mut shared.media {
                 m.art = arts.and_then(|a| crate::scene::nearest(a, k));
             }
-            // One renderer behind two scenes: a switch repaints all of it.
-            if let Some(scene) = saver.lock_scene(&o.output, (size.w, size.h)) {
+            // One renderer behind two scenes: a switch repaints all of it. A
+            // departure fades the lock's own scene, the screensaver's too.
+            if let Some(scene) = saver.lock_scene(&o.output, (size.w, size.h)).filter(|_| !going) {
                 if !std::mem::replace(&mut o.saver, true) {
                     scene.touch(size);
                 }
@@ -926,7 +1186,11 @@ impl App {
             if !o.name.is_empty() && !blanked {
                 self.lock.reports.insert(o.name.clone(), o.view.report.clone());
             }
-            o.surface.present(&mut o.view.scene, moving, &qh);
+            let commits = o.surface.commits();
+            o.surface.present(&mut o.view.scene, moving || (self.lock.departing && !o.dark_landed), &qh);
+            if dark && o.dark.is_none() && o.surface.commits() > commits {
+                o.dark = Some(o.surface.commits());
+            }
         }
     }
 
@@ -944,6 +1208,10 @@ impl App {
                 "authError": self.lock.error,
                 "blanked": self.lock_blanked(),
                 "outputs": outputs,
+                "boot": self.lock.login,
+                "buttons": self.lock_buttons().iter().map(|b| b.id()).collect::<Vec<_>>(),
+                "buttonCursor": usize::try_from(self.lock.transport - self.lock_media_stops()).ok().and_then(|i| self.lock_buttons().get(i).map(|b| b.id())),
+                "armed": self.lock.armed.map(Button::id),
             })
         };
         let s = &self.lock.sleep;

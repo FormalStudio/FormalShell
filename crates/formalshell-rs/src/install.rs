@@ -16,20 +16,42 @@ const GREETD_CONFIG: &str = "/etc/greetd/config.toml";
 const GREETD_BACKUP: &str = "/etc/greetd/config.toml.pre-formalshell";
 const GREETD_SESSION: &str = "/etc/greetd/formalshell-session.sh";
 const GREETD_TMPFILES: &str = "/etc/tmpfiles.d/formalshell-greeter.conf";
+const GREETD_LOGIN: &str = "/etc/greetd/formalshell-login.sh";
+const LOGIN_PAM: &str = "/etc/pam.d/formalshell-login";
+const LOGIN_ENV: &str = "/etc/formalshell/login-env.conf";
+const LOGIN_SERVICE: &str = "formalshell-login";
 const UNITS: [&str; 3] = ["formalshell.service", "formalshell-watchdog.service", "formalshell-watchdog.timer"];
 
-const USAGE: &str = "usage: formalshell install [--yes] [--no-system]
-       formalshell update [--yes] [--no-system] [--from <tarball>]
+const USAGE: &str = "usage: formalshell install [--yes] [--no-system] [--login autologin|greeter]
+       formalshell update [--yes] [--no-system] [--login autologin|greeter] [--from <tarball>]
        formalshell uninstall [--yes]
 
   --yes        answer yes to every sudo prompt (the PAM file, greetd)
   --no-system  write only files under your home, never anything in /etc
+  --login      autologin: boot straight into Hyprland behind the lock, the
+               greeter only after a logout; greeter: the greeter at every boot
   --from       update from a local tarball instead of the latest release
 ";
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Login {
+    Autologin,
+    Greeter,
+}
+
+impl Login {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Autologin => "autologin",
+            Self::Greeter => "greeter",
+        }
+    }
+}
 
 struct Opts {
     yes: bool,
     no_system: bool,
+    login: Option<Login>,
     from: Option<PathBuf>,
 }
 
@@ -59,12 +81,17 @@ impl Layout {
 }
 
 pub fn main(cmd: &str, args: &[String]) -> i32 {
-    let mut opts = Opts { yes: false, no_system: false, from: None };
+    let mut opts = Opts { yes: false, no_system: false, login: None, from: None };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--yes" | "-y" => opts.yes = true,
             "--no-system" => opts.no_system = true,
+            "--login" => match it.next().map(String::as_str) {
+                Some("autologin") => opts.login = Some(Login::Autologin),
+                Some("greeter") => opts.login = Some(Login::Greeter),
+                _ => return usage(),
+            },
             "--from" if cmd == "update" => match it.next() {
                 Some(p) => opts.from = Some(PathBuf::from(p)),
                 None => return usage(),
@@ -197,6 +224,9 @@ fn update(l: &Layout, opts: &Opts) -> Result<(), String> {
     if opts.no_system {
         cmd.arg("--no-system");
     }
+    if let Some(login) = opts.login {
+        cmd.args(["--login", login.name()]);
+    }
     run(&mut cmd, false)?;
     systemctl(&["try-restart", "formalshell.service"]);
     Ok(())
@@ -229,7 +259,8 @@ fn uninstall(l: &Layout, opts: &Opts) -> Result<(), String> {
         if Path::new(GREETD_BACKUP).exists() {
             run(Command::new("mv").args(["-f", GREETD_BACKUP, GREETD_CONFIG]), sudo)?;
         }
-        remove_files(&[PathBuf::from(GREETD_SESSION), PathBuf::from(GREETD_TMPFILES)], sudo)?;
+        let files = [GREETD_SESSION, GREETD_TMPFILES, GREETD_LOGIN, LOGIN_PAM, LOGIN_ENV].map(PathBuf::from);
+        remove_files(&files, sudo)?;
     }
 
     let manifest = fs::read_to_string(l.share().join("MANIFEST")).map_err(|e| e.to_string())?;
@@ -246,9 +277,12 @@ fn uninstall(l: &Layout, opts: &Opts) -> Result<(), String> {
     Ok(())
 }
 
+/// No `After=graphical-session.target`: uwsm reaches it only once the
+/// compositor says it is ready, and a locked login starts the shell from
+/// Hyprland's `--locked-cmd` before that, to raise its lock in time.
 fn unit_service(l: &Layout) -> String {
     format!(
-        "{}\n[Unit]\nDescription=FormalShell\nPartOf=graphical-session.target\nAfter=graphical-session.target\n\n[Service]\nExecStart={}\nRestart=on-failure\n\n[Install]\nWantedBy=graphical-session.target\n",
+        "{}\n[Unit]\nDescription=FormalShell\nPartOf=graphical-session.target\n\n[Service]\nExecStart={}\nRestart=on-failure\n\n[Install]\nWantedBy=graphical-session.target\n",
         unit_marker(),
         l.bin("formalshell").display()
     )
@@ -287,6 +321,10 @@ fn hypr_include(example: &str, ipc: &Path) -> String {
     format!("{MARKER}\n{}", example.replace("\"formalshell-ipc call \"", &format!("\"{} call \"", ipc.display())))
 }
 
+/// How a session starts the shell: the include's `hyprland.start` hook, and
+/// a locked login's `--locked-cmd`, which runs before that hook would.
+const START: &str = "systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && systemctl --user start formalshell.service formalshell-watchdog.timer";
+
 /// hyprland.lua loads the shell's include, then the user's own file. A
 /// hyprland.lua the installer did not write becomes that user file, once.
 fn hypr_entry(l: &Layout) -> Result<(), String> {
@@ -308,9 +346,8 @@ fn hypr_entry(l: &Layout) -> Result<(), String> {
     if !user.exists() {
         write_new(&user, "-- Your own Hyprland settings (monitors, input, binds). FormalShell never rewrites this file.\n")?;
     }
-    let systemctl = "systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && systemctl --user start formalshell.service formalshell-watchdog.timer";
     let body = format!(
-        "{MARKER}\n-- Put your own settings in hypr-user.lua.\nlocal dir = (os.getenv(\"XDG_CONFIG_HOME\") or (os.getenv(\"HOME\") .. \"/.config\")) .. \"/hypr/\"\ndofile(dir .. \"formalshell.lua\")\ndofile(dir .. \"hypr-user.lua\")\n-- hypr-user.lua may set XCURSOR_THEME; the arrival's blank pointer goes back on over it.\nif formalshell_blank_cursor then formalshell_blank_cursor() end\n\n-- A plain Hyprland login never reaches graphical-session.target.\nhl.on(\"hyprland.start\", function() hl.exec_cmd([==[{systemctl}]==]) end)\n"
+        "{MARKER}\n-- Put your own settings in hypr-user.lua.\nlocal dir = (os.getenv(\"XDG_CONFIG_HOME\") or (os.getenv(\"HOME\") .. \"/.config\")) .. \"/hypr/\"\ndofile(dir .. \"formalshell.lua\")\ndofile(dir .. \"hypr-user.lua\")\n-- hypr-user.lua may set XCURSOR_THEME; the arrival's blank pointer goes back on over it.\nif formalshell_blank_cursor then formalshell_blank_cursor() end\n\n-- A plain Hyprland login never reaches graphical-session.target.\nhl.on(\"hyprland.start\", function() hl.exec_cmd([==[{START}]==]) end)\n"
     );
     write_owned(&entry, &body)
 }
@@ -372,22 +409,34 @@ fn remove_owned(path: &Path) -> Result<(), String> {
 /// `common-auth` on Debian, Ubuntu and openSUSE, `system-auth` on Arch and
 /// Fedora: the same stack the distro's own login uses. `include` rather than
 /// `@include`, which is a Debian patch that openSUSE's PAM rejects.
+///
+/// pam_gnome_keyring's `auth` step unlocks a running daemon's login keyring
+/// with the typed password: after a locked login, which typed none, the
+/// lock's first unlock is what opens it.
 fn pam_file() -> Option<String> {
-    pam_for(Path::new("/etc/pam.d/common-auth").exists(), Path::new("/etc/pam.d/system-auth").exists())
+    let keyring = ["/usr/lib64/security", "/usr/lib/security", "/lib/security", "/usr/lib/x86_64-linux-gnu/security", "/usr/lib/aarch64-linux-gnu/security"]
+        .iter()
+        .any(|d| Path::new(d).join("pam_gnome_keyring.so").exists());
+    pam_for(Path::new("/etc/pam.d/common-auth").exists(), Path::new("/etc/pam.d/system-auth").exists(), keyring)
 }
 
-fn pam_for(common: bool, system: bool) -> Option<String> {
-    if common {
-        Some("#%PAM-1.0\nauth       include      common-auth\naccount    include      common-account\n".into())
+fn pam_for(common: bool, system: bool, keyring: bool) -> Option<String> {
+    let (auth, account) = if common {
+        ("common-auth", "common-account")
     } else if system {
-        Some("#%PAM-1.0\nauth       include      system-auth\naccount    include      system-auth\n".into())
+        ("system-auth", "system-auth")
     } else {
-        None
-    }
+        return None;
+    };
+    let keyring = if keyring { "auth       optional     pam_gnome_keyring.so\n" } else { "" };
+    Some(format!("#%PAM-1.0\nauth       include      {auth}\n{keyring}account    include      {account}\n"))
 }
 
 /// The greeter runs under sway, as nixosModules.formalshell-greeter does,
-/// and only where greetd and sway are both installed.
+/// and only where greetd and sway are both installed. With autologin,
+/// greetd's `initial_session` logs the installing user straight into a
+/// locked Hyprland once per boot (docs/superpowers/specs/2026-10-30-locked-login.md),
+/// and the greeter only shows after a logout.
 fn greetd(l: &Layout, opts: &Opts) -> Result<(), String> {
     if !Path::new("/etc/greetd").is_dir() {
         return Ok(());
@@ -397,13 +446,31 @@ fn greetd(l: &Layout, opts: &Opts) -> Result<(), String> {
         return Ok(());
     }
     let current = fs::read_to_string(GREETD_CONFIG).unwrap_or_default();
-    let user = greetd_user(&current);
+    let greeter = greetd_user(&current);
+    let mut login = opts.login.or_else(|| current_login(&current));
+    let autologin_user = std::env::var("SUDO_USER").or_else(|_| std::env::var("USER")).ok().filter(|u| !u.is_empty() && u != "root");
+    let greetd_pam = fs::read_to_string("/etc/pam.d/greetd").ok();
+    let login_pam = greetd_pam.as_deref().and_then(login_pam);
+    if login == Some(Login::Autologin) && (autologin_user.is_none() || login_pam.is_none() || !on_path("uwsm")) {
+        println!("note: autologin needs a user to log in, uwsm and greetd's own /etc/pam.d/greetd; the greeter shows at every boot instead");
+        login = Some(Login::Greeter);
+    }
     let session = greeter_session(l);
-    let tmpfiles = format!("d /run/formalshell-greeter 0700 {user} {user} -\nd /var/lib/formalshell-greeter 0700 {user} {user} -\n");
-    let config = format!("[terminal]\nvt = 1\n\n[default_session]\ncommand = \"{GREETD_SESSION}\"\nuser = \"{user}\"\n");
+    let tmpfiles = format!("d /run/formalshell-greeter 0700 {greeter} {greeter} -\nd /var/lib/formalshell-greeter 0700 {greeter} {greeter} -\n");
+    let autologin = match (login, &autologin_user, &login_pam) {
+        (Some(Login::Autologin), Some(user), Some(pam)) => Some((user.as_str(), pam.as_str())),
+        _ => None,
+    };
+    let config = greetd_config(&greeter, autologin.map(|(user, _)| user));
     let current_session = fs::read_to_string(GREETD_SESSION).unwrap_or_default();
-    if current == config && current_session == session && fs::read_to_string(GREETD_TMPFILES).is_ok_and(|t| t == tmpfiles) {
+    let same = |path: &str, body: &str| fs::read_to_string(path).is_ok_and(|t| t == body);
+    let login_same = autologin.is_none_or(|(_, pam)| same(GREETD_LOGIN, &login_script()) && same(LOGIN_PAM, pam) && same(LOGIN_ENV, LOGIN_ENV_BODY));
+    if current == config && current_session == session && same(GREETD_TMPFILES, &tmpfiles) && login_same {
         return Ok(());
+    }
+    if login.is_none() {
+        let auto = ask("Boot straight into Hyprland behind the lock screen, the greeter only after a logout (no: the greeter at every boot)?", opts);
+        return greetd(l, &Opts { login: Some(if auto { Login::Autologin } else { Login::Greeter }), from: None, ..*opts });
     }
     if !ask("Make the FormalShell greeter greetd's login screen (rewrites /etc/greetd/config.toml, keeping a backup)?", opts) {
         return Ok(());
@@ -415,19 +482,91 @@ fn greetd(l: &Layout, opts: &Opts) -> Result<(), String> {
     put(GREETD_SESSION, &session, "755", sudo)?;
     put(GREETD_TMPFILES, &tmpfiles, "644", sudo)?;
     run(Command::new("systemd-tmpfiles").args(["--create", GREETD_TMPFILES]), sudo)?;
-    put(GREETD_CONFIG, &config, "644", sudo)?;
-    println!("greetd now starts the FormalShell greeter; `systemctl enable greetd` makes it the login screen");
+    match autologin {
+        Some((user, pam)) => {
+            put(GREETD_LOGIN, &login_script(), "755", sudo)?;
+            put(LOGIN_PAM, pam, "644", sudo)?;
+            put(LOGIN_ENV, LOGIN_ENV_BODY, "644", sudo)?;
+            put(GREETD_CONFIG, &config, "644", sudo)?;
+            println!("greetd now logs {user} into Hyprland behind the lock at boot, the FormalShell greeter after a logout; `systemctl enable greetd` makes it the login screen");
+        }
+        None => {
+            remove_files(&[GREETD_LOGIN, LOGIN_PAM, LOGIN_ENV].map(PathBuf::from), sudo)?;
+            put(GREETD_CONFIG, &config, "644", sudo)?;
+            println!("greetd now starts the FormalShell greeter; `systemctl enable greetd` makes it the login screen");
+        }
+    }
     Ok(())
 }
 
-fn greetd_user(config: &str) -> String {
+/// The choice an earlier install made, read back so an update keeps it.
+fn current_login(config: &str) -> Option<Login> {
+    if config.contains(GREETD_LOGIN) {
+        Some(Login::Autologin)
+    } else if config.contains(GREETD_SESSION) {
+        Some(Login::Greeter)
+    } else {
+        None
+    }
+}
+
+/// greetd 0.10 opens `initial_session` under `[general] service`, and the
+/// greeter's logins too, so that service is greetd's own stack.
+fn greetd_config(greeter: &str, autologin: Option<&str>) -> String {
+    let mut config = String::from("[terminal]\nvt = 1\n");
+    if autologin.is_some() {
+        config.push_str(&format!("\n[general]\nservice = \"{LOGIN_SERVICE}\"\n"));
+    }
+    config.push_str(&format!("\n[default_session]\ncommand = \"{GREETD_SESSION}\"\nuser = \"{greeter}\"\n"));
+    if let Some(user) = autologin {
+        config.push_str(&format!("\n[initial_session]\ncommand = \"{GREETD_LOGIN}\"\nuser = \"{user}\"\n"));
+    }
     config
+}
+
+fn greetd_user(config: &str) -> String {
+    let default = config.split("[initial_session]").next().unwrap_or_default();
+    default
         .lines()
         .filter_map(|line| line.trim().strip_prefix("user"))
         .filter_map(|rest| rest.trim_start().strip_prefix('='))
         .map(|v| v.trim().trim_matches('"').to_string())
         .find(|v| !v.is_empty())
         .unwrap_or_else(|| "greeter".into())
+}
+
+/// greetd's own stack with pam_env ahead of its session stack: `initial_session`
+/// passes no environment, so pam_systemd would register the session as `tty`.
+/// A greeter's own values still win.
+fn login_pam(greetd: &str) -> Option<String> {
+    let line = format!("session    required     pam_env.so readenv=0 conffile={LOGIN_ENV}\n");
+    let at = greetd.lines().position(|l| l.split_whitespace().next() == Some("session"))?;
+    let mut out = String::new();
+    for (i, l) in greetd.lines().enumerate() {
+        if i == at {
+            out.push_str(&line);
+        }
+        out.push_str(l);
+        out.push('\n');
+    }
+    Some(out)
+}
+
+const LOGIN_ENV_BODY: &str = "XDG_SESSION_TYPE DEFAULT=wayland OVERRIDE=${XDG_SESSION_TYPE}\nXDG_SESSION_DESKTOP DEFAULT=Hyprland OVERRIDE=${XDG_SESSION_DESKTOP}\n";
+
+/// greetd's `initial_session`: Hyprland locked before its first output
+/// (`--locked-cmd`), its locked command starting the shell, which finds the
+/// marker and takes the lock over. The unit is the shell's only launcher,
+/// so the include's own start of it later does nothing.
+fn login_script() -> String {
+    format!(
+        "#!/bin/sh
+# Written by `formalshell install`; `formalshell update` rewrites it.
+mkdir -p \"$XDG_RUNTIME_DIR/formalshell\"
+: > \"$XDG_RUNTIME_DIR/formalshell/login-lock\"
+exec uwsm start -e -D Hyprland -- hyprland.desktop -- --locked-cmd '{START}'
+"
+    )
 }
 
 /// greetd execs this with PAM's environment alone, and the greeter account's
@@ -550,15 +689,43 @@ mod tests {
 
     #[test]
     fn pam_follows_the_distro_stack() {
-        assert!(pam_for(true, true).unwrap().contains("auth       include      common-auth"));
-        assert!(pam_for(false, true).unwrap().contains("include      system-auth"));
-        assert_eq!(pam_for(false, false), None);
+        assert!(pam_for(true, true, false).unwrap().contains("auth       include      common-auth"));
+        assert!(pam_for(false, true, false).unwrap().contains("include      system-auth"));
+        assert_eq!(pam_for(false, false, true), None);
+        assert!(!pam_for(true, false, false).unwrap().contains("gnome_keyring"));
+        let keyring = pam_for(true, false, true).unwrap();
+        let (auth, keyring_line) = (keyring.find("include      common-auth").unwrap(), keyring.find("pam_gnome_keyring.so").unwrap());
+        assert!(auth < keyring_line, "the keyring takes the password after the stack has checked it");
     }
 
     #[test]
     fn greetd_user_comes_from_the_existing_config() {
         assert_eq!(greetd_user("[default_session]\ncommand = \"agreety\"\nuser = \"_greetd\"\n"), "_greetd");
         assert_eq!(greetd_user(""), "greeter");
+        assert_eq!(greetd_user(&greetd_config("greeter", Some("kyan"))), "greeter");
+    }
+
+    #[test]
+    fn autologin_adds_the_login_service_and_initial_session() {
+        let greeter = greetd_config("greeter", None);
+        assert!(!greeter.contains("[general]") && !greeter.contains("[initial_session]"));
+        assert_eq!(current_login(&greeter), Some(Login::Greeter));
+        let auto = greetd_config("greeter", Some("kyan"));
+        assert!(auto.contains("[general]\nservice = \"formalshell-login\""));
+        assert!(auto.contains(&format!("[initial_session]\ncommand = \"{GREETD_LOGIN}\"\nuser = \"kyan\"")));
+        assert_eq!(current_login(&auto), Some(Login::Autologin));
+        assert_eq!(current_login("[default_session]\ncommand = \"agreety\"\n"), None);
+    }
+
+    #[test]
+    fn the_login_pam_sets_the_session_type_before_the_session_stack() {
+        let greetd = "#%PAM-1.0\nauth     include        common-auth\naccount  include        common-account\nsession  required       pam_loginuid.so\nsession  include        common-session\n";
+        let out = login_pam(greetd).unwrap();
+        let env = out.find("pam_env.so").unwrap();
+        assert!(env < out.find("pam_loginuid.so").unwrap() && env > out.find("common-account").unwrap());
+        assert_eq!(out.matches("pam_env.so").count(), 1);
+        assert_eq!(login_pam("auth include common-auth\n"), None);
+        assert!(login_script().contains("--locked-cmd '") && login_script().contains("formalshell.service"));
     }
 
     #[test]

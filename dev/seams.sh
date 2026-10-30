@@ -6,14 +6,17 @@
 #
 #   dev/seams.sh      artifacts/seams/{boot,logout,reboot,shutdown}/frames/
 #
-# Frame n is n x 100 ms into its recording, so a file's number is its time.
+# Frame n is n x 100 ms into its recording (the boot leg's n x 20 ms), so a
+# file's number is its time.
 # dev/seams-check.py reads them at the end (sheets and report.txt beside the
 # frames) and the run exits with its verdict.
 #   boot      power-on: OVMF, Limine, systemd-boot, the FormalOS splash, the
-#             greeter, the password typed, the desktop with its bar
+#             locked login's lock over the splash picture
+#             (docs/superpowers/specs/2026-10-30-locked-login.md), the
+#             password typed, the desktop with its bar
 #   logout    SUPER+SHIFT+E out of the desktop and back to the greeter
 #   reboot    the launcher's Reboot, through the shutdown splash, the
-#             firmware and the boot again, to the greeter
+#             firmware and the boot again, to the lock
 #   shutdown  the launcher's Shutdown, to the last frame before power-off
 #
 # The slot boots its applied disk, the guest's installed formalshell
@@ -47,6 +50,7 @@ until_guest() {
   say "$what after $((SECONDS - t0))s"
 }
 greeter_up() { until_guest "the greeter" "$1" 'sudo sh -c "ls /run/formalshell-greeter/wayland-? >/dev/null" && pgrep -u greeter -f formalshell-rs'; sleep 3; }
+lock_up() { until_guest "the boot lock" "$1" '/opt/fspec/current/bin/formalshell ipc --any-display call lock status | grep "\"boot\":true" | grep -q "\"secure\":true"'; sleep 3; }
 desktop_up() { until_guest "the desktop's bar" "$1" 'hyprctl -j layers -i 0 | grep -q "\"namespace\": *\"formalshell:bar\""'; sleep 3; }
 
 rm -rf "$out"
@@ -54,11 +58,13 @@ mkdir -p "$out"
 
 f stop >/dev/null 2>&1 || true
 say "boot, from power-on"
-f record --boot --seconds 60 | tail -1
-greeter_up 60
+# At 20 ms a frame, since the locked login's bound is 100 ms of black.
+f record --boot --every-ms 20 --seconds 60 | tail -1
+lock_up 60
 f type "$password" --enter
 desktop_up 60
 f frames "$out/boot" | tail -1
+echo 20 > "$out/boot/every-ms"
 
 say "logout"
 f record --seconds 20 | tail -1
@@ -68,7 +74,7 @@ f frames "$out/logout" | tail -1
 f type "$password" --enter
 desktop_up 60
 
-say "reboot, to the greeter again"
+say "reboot, to the lock again"
 f record --seconds 90 | tail -1
 f key meta_l-spc
 sleep 1
@@ -78,7 +84,7 @@ f key ret
 sleep 1
 f key ret
 f frames "$out/reboot" | tail -1
-greeter_up 30
+lock_up 30
 f type "$password" --enter
 desktop_up 60
 

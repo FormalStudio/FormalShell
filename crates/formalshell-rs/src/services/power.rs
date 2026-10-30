@@ -32,7 +32,7 @@ impl Action {
         }
     }
 
-    fn method(self) -> &'static str {
+    pub(crate) fn method(self) -> &'static str {
         match self {
             Self::Suspend => "Suspend",
             Self::Reboot => "Reboot",
@@ -82,8 +82,18 @@ pub async fn run(ctx: Ctx) {
 /// The interactive argument and the header flag both: logind's plain
 /// methods read the first, polkit's check the second.
 pub(crate) async fn call(method: &str) -> zbus::Result<()> {
-    let conn = crate::services::bus::system().await?;
-    let proxy = Proxy::new(&conn, "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await?;
+    let proxy = manager().await?;
     proxy.call_with_flags::<_, _, ()>(method, MethodFlags::AllowInteractiveAuth.into(), &(true,)).await?;
     Ok(())
+}
+
+/// The lock's buttons: no polkit agent can show over the lock, so a call
+/// that would need a password is refused rather than left waiting on one.
+pub(crate) async fn call_quiet(method: &str) -> zbus::Result<()> {
+    manager().await?.call::<_, _, ()>(method, &(false,)).await
+}
+
+async fn manager() -> zbus::Result<Proxy<'static>> {
+    let conn = crate::services::bus::system().await?;
+    Proxy::new(&conn, "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await
 }

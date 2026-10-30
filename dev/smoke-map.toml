@@ -478,12 +478,12 @@ paths = [
   "crates/fs-auth/src/pam.rs",
   "crates/fs-system/src/lock.rs",
 ]
-runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep"]
+runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep", "--login-lock"]
 
 # The veils: the arrival every run starts under, and the unlock's hand-over.
 [[rule]]
 paths = ["crates/formalshell-rs/src/wayland/veil.rs", "crates/formalshell-rs/src/surfaces/veil.rs", "dev/smoke.d/unlock.sh"]
-runs = ["--unlock", "--lock", "--menu", "--multi-output"]
+runs = ["--unlock", "--lock", "--menu", "--multi-output", "--login-lock"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/depth.rs"]
@@ -495,7 +495,7 @@ runs = ["--sleep"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/session.rs"]
-runs = ["--logind-lock", "--sleep"]
+runs = ["--logind-lock", "--sleep", "--login-lock"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/screensaver.rs", "crates/formalshell-rs/src/wayland/screensaver.rs", "crates/formalshell-rs/src/ipc/screensaver.rs", "crates/fs-screensaver/**"]
@@ -515,7 +515,7 @@ runs = ["--polkit"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/power.rs", "crates/formalshell-rs/src/services/shutdown.rs", "crates/formalshell-rs/src/ipc/power.rs"]
-runs = ["--power"]
+runs = ["--power", "--login-lock"]
 
 # Wallpaper and theme
 [[rule]]

@@ -1,5 +1,7 @@
 //! A PAM conversation for the lock screen: one `pam_authenticate` run on its
-//! own thread, its messages and result posted back over a channel.
+//! own thread, its messages and result posted back over a channel, then
+//! `pam_acct_mgmt`, so an account expired or locked out since login is
+//! refused even with the right password.
 //!
 //! Straight onto libpam through pam-sys2 rather than a wrapper crate: the
 //! answer is copied from the caller's zeroizing buffer into the one malloc'd
@@ -30,7 +32,8 @@ pub enum Message {
     Error(String),
 }
 
-/// How `pam_authenticate` ended. The strings are PAM's own `pam_strerror`.
+/// How `pam_authenticate` and the account check after it ended. The strings
+/// are PAM's own `pam_strerror`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Success,
@@ -38,6 +41,11 @@ pub enum Outcome {
     Failed(String),
     /// `PAM_MAXTRIES`: a module has locked the account for now.
     MaxTries(String),
+    /// The password was right but `pam_acct_mgmt` refused the account:
+    /// expired, inactive, or shut out by a module (`pam_access`, `pam_nologin`).
+    AccountUnavailable(String),
+    /// The password was right and is past its age (`PAM_NEW_AUTHTOK_REQD`).
+    NewPasswordRequired(String),
     /// `pam_start` failed, usually a service with no file under /etc/pam.d.
     StartFailed(String),
     /// Any other PAM error.
@@ -128,12 +136,36 @@ fn authenticate(service: &str, user: &str, events: &Sender<Event>, responses: Re
     }
     // SAFETY: `handle` came from a successful pam_start and is ended once.
     let status = unsafe { sys::pam_authenticate(handle, 0) };
-    let text = strerror(handle, status);
-    unsafe { sys::pam_end(handle, status) };
+    let mut outcome = auth_outcome(status, strerror(handle, status));
+    let mut last = status;
+    if outcome == Outcome::Success {
+        // SAFETY: the same live handle, before pam_end.
+        last = unsafe { sys::pam_acct_mgmt(handle, 0) };
+        outcome = account_outcome(last, strerror(handle, last));
+    }
+    unsafe { sys::pam_end(handle, last) };
+    outcome
+}
+
+fn auth_outcome(status: c_int, text: String) -> Outcome {
     match status {
         s if s == sys::PAM_SUCCESS as c_int => Outcome::Success,
         s if s == sys::PAM_AUTH_ERR as c_int => Outcome::Failed(text),
         s if s == sys::PAM_MAXTRIES as c_int => Outcome::MaxTries(text),
+        _ => Outcome::Error(text),
+    }
+}
+
+fn account_outcome(status: c_int, text: String) -> Outcome {
+    match status {
+        s if s == sys::PAM_SUCCESS as c_int => Outcome::Success,
+        s if s == sys::PAM_NEW_AUTHTOK_REQD as c_int => Outcome::NewPasswordRequired(text),
+        s if [sys::PAM_ACCT_EXPIRED, sys::PAM_AUTHTOK_EXPIRED, sys::PAM_PERM_DENIED, sys::PAM_USER_UNKNOWN, sys::PAM_AUTH_ERR]
+            .iter()
+            .any(|c| s == *c as c_int) =>
+        {
+            Outcome::AccountUnavailable(text)
+        }
         _ => Outcome::Error(text),
     }
 }
@@ -258,6 +290,24 @@ mod tests {
         let copied = unsafe { CStr::from_ptr(buf) }.to_bytes().to_vec();
         unsafe { libc::free(buf.cast()) };
         assert_eq!(copied, b"hunter2");
+    }
+
+    #[test]
+    fn authentication_maps_its_status() {
+        assert_eq!(auth_outcome(sys::PAM_SUCCESS as c_int, String::new()), Outcome::Success);
+        assert_eq!(auth_outcome(sys::PAM_AUTH_ERR as c_int, "x".into()), Outcome::Failed("x".into()));
+        assert_eq!(auth_outcome(sys::PAM_MAXTRIES as c_int, "x".into()), Outcome::MaxTries("x".into()));
+        assert_eq!(auth_outcome(sys::PAM_NEW_AUTHTOK_REQD as c_int, "x".into()), Outcome::Error("x".into()));
+    }
+
+    #[test]
+    fn the_account_check_keeps_an_expired_or_aged_account_out() {
+        assert_eq!(account_outcome(sys::PAM_SUCCESS as c_int, String::new()), Outcome::Success);
+        for s in [sys::PAM_ACCT_EXPIRED, sys::PAM_AUTHTOK_EXPIRED, sys::PAM_PERM_DENIED, sys::PAM_USER_UNKNOWN, sys::PAM_AUTH_ERR] {
+            assert_eq!(account_outcome(s as c_int, "x".into()), Outcome::AccountUnavailable("x".into()));
+        }
+        assert_eq!(account_outcome(sys::PAM_NEW_AUTHTOK_REQD as c_int, "x".into()), Outcome::NewPasswordRequired("x".into()));
+        assert_eq!(account_outcome(sys::PAM_SYSTEM_ERR as c_int, "x".into()), Outcome::Error("x".into()));
     }
 
     #[test]

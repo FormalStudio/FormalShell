@@ -720,6 +720,7 @@ fn card<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available
         busy: checking,
         caret: field.caret_chars(),
         below: None,
+        under_field: None,
     }
 }
 
@@ -799,6 +800,8 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
             enter: (1.0, 0.0),
             blanked: false,
             wake: 1.0,
+            boot: None,
+            buttons: lock::Buttons { shown: vec![lock::Button::PowerOff, lock::Button::Reboot], cursor: -1, armed: None },
         };
         view.draw(&shared, &theme, &mut kit, Instant::now());
         let mut r = Renderer::new(w as u16, h as u16);

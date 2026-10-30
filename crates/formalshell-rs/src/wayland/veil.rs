@@ -274,7 +274,10 @@ impl App {
         if self.veil.phase == Some(phase) && !self.veil.lifting {
             return;
         }
-        let outputs: Vec<WlOutput> = self.heads.iter().map(|h| h.output.clone()).collect();
+        // Hyprland draws no overlay over a session lock, so the lock fades
+        // itself and no veil is made.
+        let locked = self.lock_depart(true, DEPART_MS * self.motion_scale);
+        let outputs: Vec<WlOutput> = if locked { Vec::new() } else { self.heads.iter().map(|h| h.output.clone()).collect() };
         for output in outputs {
             if !self.veil.veils.iter().any(|(o, _)| *o == output) {
                 let veil = self.new_veil(&output, 0.0);
@@ -299,6 +302,7 @@ impl App {
     fn lift(&mut self) {
         self.veil.lifting = true;
         let ms = if self.veil.phase == Some(Phase::Arriving) { ARRIVE_MS } else { DEPART_MS };
+        self.lock_depart(false, ms * self.motion_scale);
         self.fade_veils(0.0, ms);
     }
 
@@ -373,7 +377,7 @@ impl App {
             (self.veil.phase, self.veil.lifting) = (None, false);
             self.veil.reveal = false;
             reveal_cursor();
-        } else if phase != Phase::Arriving && !self.veil.lifting && !self.veil.ended && settled {
+        } else if phase != Phase::Arriving && !self.veil.lifting && !self.veil.ended && settled && self.lock_departed() {
             self.end_departure();
         }
     }

@@ -43,6 +43,8 @@ pub struct Card<'a> {
     pub caret: (usize, usize),
     /// Under the clock: the greeter's controls or the lock's now playing.
     pub below: Option<El>,
+    /// Under the field: the lock's buttons.
+    pub under_field: Option<El>,
 }
 
 impl Card<'_> {
@@ -91,6 +93,9 @@ impl Card<'_> {
             trailing.push(w::input(&self.text, self.placeholder, self.enabled, error).caret(self.caret).width(Size::Px(field_w)).enabled(self.enabled).pulse(self.busy));
         } else {
             trailing.push(w::text(self.unavailable).size(Type::BodySmall).ink(Ink::Muted).width(Size::Px(field_w)).centred());
+        }
+        if let Some(el) = &self.under_field {
+            trailing.push(el.clone());
         }
 
         w::row(gap(theme), vec![self.leading(clock, theme), w::column(s.sm, trailing).width(Size::Px(field_w))]).width(Size::Px(width(theme)))

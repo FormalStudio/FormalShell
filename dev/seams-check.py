@@ -10,10 +10,13 @@ picture) and <dir>/report.txt, and exits non-zero on a failure:
   text   tesseract reads console or boot-loader words on a frame (VT1, systemd,
          uwsm, Limine's menu); firmware frames (OVMF's own lines) are listed,
          not judged
-  black  black held between two stages past 1.5 s; the firmware's (before the
-         first splash, or next to a firmware frame) and the leg's tail excepted
+  black  black held between two stages past 1.5 s, or on the boot leg past
+         100 ms (the locked login, 2026-10-30-locked-login.md); the
+         firmware's (before the first splash, or next to a firmware frame)
+         and the leg's tail excepted
 
-Frame n is n x 100 ms. Needs Pillow and tesseract.
+Frame n is n x 100 ms, or n x <leg>/every-ms where dev/seams.sh filmed a
+leg faster. Needs Pillow and tesseract.
 """
 import hashlib
 import os
@@ -26,7 +29,16 @@ from PIL import Image, ImageDraw, ImageStat
 LEGS = ["boot", "logout", "reboot", "shutdown"]
 # A frame is black when nothing on it is brighter than this (the splash averages under 1).
 BLACK = 24
-HELD = 15
+# The longest black a leg may hold between two stages, in ms.
+HELD_MS = {"boot": 100}
+
+
+def every_ms(root, leg):
+    try:
+        with open(os.path.join(root, leg, "every-ms")) as f:
+            return int(f.read())
+    except OSError:
+        return 100
 SPLASH = re.compile(r"Formal\w{0,2}S")
 FIRMWARE = re.compile(r"BdsDxe|TianoCore|Guest has not", re.I)
 CONSOLE = re.compile(
@@ -63,7 +75,7 @@ def read_leg(root, leg):
     return rows
 
 
-def judge(leg, rows):
+def judge(leg, rows, every):
     lines, failed = [], False
     splash = next((r["n"] for r in rows if SPLASH.search(r["text"]) and not CONSOLE.search(r["text"])), None)
     for r in rows:
@@ -86,8 +98,8 @@ def judge(leg, rows):
             start = i - len(run)
             before_splash = (leg == "boot" and (splash is None or first < splash)) or (start > 0 and firmware[start - 1]) or (r is not None and firmware[i])
             tail = r is None
-            what = f"black {first:05d} to {run[-1]['n']:05d} ({length * 100} ms)"
-            if length > HELD and not before_splash and not tail:
+            what = f"black {first:05d} to {run[-1]['n']:05d} ({length * every} ms)"
+            if length * every > HELD_MS.get(leg, 1500) and not before_splash and not tail:
                 lines.append(f"FAIL {what}")
                 failed = True
             else:
@@ -96,7 +108,7 @@ def judge(leg, rows):
     return lines, failed
 
 
-def sheet(root, leg, rows):
+def sheet(root, leg, rows, every):
     d = os.path.join(root, leg, "frames")
     tiles = [r for r in rows if r["changed"]]
     if len(tiles) > 80:
@@ -108,7 +120,7 @@ def sheet(root, leg, rows):
         im = Image.open(os.path.join(d, r["file"])).convert("RGB").resize((w, h))
         x, y = (i % cols) * w, (i // cols) * (h + 18)
         out.paste(im, (x, y + 18))
-        ImageDraw.Draw(out).text((x + 4, y + 3), f"{r['n']:05d}  {r['n'] / 10:.1f}s  L{r['mean']:.1f}", fill=(220, 220, 220))
+        ImageDraw.Draw(out).text((x + 4, y + 3), f"{r['n']:05d}  {r['n'] * every / 1000:.2f}s  L{r['mean']:.1f}", fill=(220, 220, 220))
     path = os.path.join(root, f"{leg}-sheet.png")
     out.save(path)
     return path
@@ -122,9 +134,10 @@ def main():
         if rows is None:
             report.append(f"{leg}: no frames")
             continue
-        lines, bad = judge(leg, rows)
+        every = every_ms(root, leg)
+        lines, bad = judge(leg, rows, every)
         failed |= bad
-        report.append(f"{leg}: {len(rows)} frames, {sum(r['changed'] for r in rows)} changes, {'FAIL' if bad else 'ok'}, {sheet(root, leg, rows)}")
+        report.append(f"{leg}: {len(rows)} frames, {sum(r['changed'] for r in rows)} changes, {'FAIL' if bad else 'ok'}, {sheet(root, leg, rows, every)}")
         report += lines
     text = "\n".join(report) + "\n"
     with open(os.path.join(root, "report.txt"), "w") as f:

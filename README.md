@@ -81,6 +81,9 @@ and runs `formalshell install`: the systemd user units, the Hyprland files
 (`~/.config/hypr/formalshell.lua`, a `hyprland.lua` that loads it, and your
 own `hypr-user.lua`, which already holds any `hyprland.lua` you had), and,
 after asking, the lock screen's PAM file and a greetd config for the greeter.
+That config either boots you straight into Hyprland behind the lock screen,
+the greeter showing only after a logout, or shows the greeter at every boot
+(`formalshell install --login autologin|greeter` answers without asking).
 A tool your distro does not carry is skipped and its widget says so.
 Debian trixie and Fedora carry no Hyprland package, so there you install
 Hyprland 0.56 or newer yourself first.

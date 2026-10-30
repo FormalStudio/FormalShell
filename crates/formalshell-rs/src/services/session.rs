@@ -47,6 +47,23 @@ pub fn request(ctx: &Ctx) -> bool {
     true
 }
 
+/// logind's TerminateSession on `id`, the lock's "Other user". The answer
+/// comes back as [`LockMsg::Refused`] when logind says no.
+pub fn terminate(ctx: &Ctx, id: String, tx: Sender<LockMsg>) {
+    ctx.spawn(async move {
+        let result = async {
+            let conn = crate::services::bus::system().await?;
+            let manager = Proxy::new(&conn, LOGIN1, "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await?;
+            manager.call::<_, _, ()>("TerminateSession", &(id.as_str(),)).await
+        }
+        .await;
+        if let Err(err) = result {
+            eprintln!("session: TerminateSession {id}: {err}");
+            let _ = tx.send(LockMsg::Refused("Could not end the session".into()));
+        }
+    });
+}
+
 /// SetLockedHint, sent once per change.
 pub fn locked_hint(ctx: &Ctx, locked: bool) {
     let Some(proxy) = PROXY.with(|p| p.borrow().clone()) else { return };

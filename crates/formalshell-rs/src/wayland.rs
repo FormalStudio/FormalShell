@@ -398,7 +398,9 @@ impl App {
             battery_watch: Default::default(),
             wake: None,
             rims: Default::default(),
-            motion_scale: 1.0,
+            // A leg that has to photograph the first frames of something
+            // the shell does at start, before `debug motionScale` can reach it.
+            motion_scale: std::env::var("FORMALSHELL_SMOKE_MOTION_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).map_or(1.0, |p| p / 100.0),
             shard_word: None,
             cast: false,
             debug_join: None,
@@ -428,6 +430,7 @@ impl App {
             desktop_clock: Default::default(),
             veil: Default::default(),
         };
+        app.raise_login_lock();
         app.begin_arrival();
         app.sync_heads();
         app
@@ -1526,6 +1529,10 @@ impl App {
     }
 
     pub fn present(&mut self) {
+        if self.lock_splash_pending() {
+            self.present_lock();
+            return;
+        }
         self.released.sweep();
         self.preview_present();
         crate::surfaces::capture::flush(self);

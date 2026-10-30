@@ -83,6 +83,7 @@
 --unlock
 --lock-restore
 --lock-media
+--login-lock
 --lyrics
 --lyrics-blur
 --media

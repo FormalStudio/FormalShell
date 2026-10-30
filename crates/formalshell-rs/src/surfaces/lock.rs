@@ -18,7 +18,7 @@ use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::wallpaper::{self, DepthCut, Picture};
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::surfaces::login;
-use crate::ui::el::Opt;
+use crate::ui::el::{Opt, Variant};
 use crate::ui::{El, Ink, Type, Ui, w};
 
 /// The modal scrim's opacity over the wallpaper.
@@ -52,6 +52,88 @@ pub struct Shared<'a> {
     /// The blank and wake crossfade: 0 is
     /// black, 1 the whole screen.
     pub wake: f32,
+    /// The boot's lock, raised over the splash's last picture: that picture
+    /// on black in place of the wallpaper.
+    pub boot: Option<Boot<'a>>,
+    pub buttons: Buttons,
+}
+
+pub struct Boot<'a> {
+    /// At the output's scale, so it lands 1:1 on its pixels; none is black.
+    pub splash: Option<&'a Bitmap>,
+}
+
+/// The buttons under the field, in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    PowerOff,
+    Reboot,
+    /// Ends this session for the greeter: the boot's lock only.
+    OtherUser,
+}
+
+impl Button {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::PowerOff => "poweroff",
+            Self::Reboot => "reboot",
+            Self::OtherUser => "otheruser",
+        }
+    }
+
+    /// The launcher's row names, armed as `Confirm <label>?` the same way.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PowerOff => "Shutdown",
+            Self::Reboot => "Reboot",
+            Self::OtherUser => "Other user",
+        }
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Self::PowerOff => "power",
+            Self::Reboot => "rotate-cw",
+            Self::OtherUser => "users",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Buttons {
+    pub shown: Vec<Button>,
+    /// The keyboard's cursor among them, -1 on the field or the transport.
+    pub cursor: i32,
+    /// Asked once: the next Return on it goes ahead.
+    pub armed: Option<Button>,
+}
+
+impl Buttons {
+    /// Icons alone, the armed one carrying its question in the destructive
+    /// variant, centred under the field.
+    fn el(&self) -> Option<El> {
+        if self.shown.is_empty() {
+            return None;
+        }
+        let row = self
+            .shown
+            .iter()
+            .map(|b| {
+                let el = if self.armed == Some(*b) {
+                    w::icon_text_button(b.icon(), format!("Confirm {}?", b.label())).variant(Variant::Destructive)
+                } else {
+                    w::icon_button(b.icon())
+                };
+                el.stop(stop(*b)).on(stop(*b))
+            })
+            .collect();
+        Some(w::row(0.0, row).centred())
+    }
+}
+
+/// A button's cursor stop and action.
+pub fn stop(b: Button) -> String {
+    format!("lock:{}", b.id())
 }
 
 /// The password field and what sits over it.
@@ -202,6 +284,7 @@ impl View {
             busy: pr.busy,
             caret: pr.caret,
             below: media,
+            under_field: s.buttons.el(),
         };
         let clock = card.clock(theme, kit);
         let body = card.body(&clock, theme);
@@ -216,26 +299,32 @@ impl View {
         // in a dark room on every blank and wake.
         let black = Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
         p.rect(full, black, 0.0);
-        match s.backdrop {
-            Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), s.wake),
-            // The desktop's picture made at the output's own scale.
-            Some(b) if fills(b, (w, h)) => {
-                p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+        if let Some(boot) = &s.boot {
+            if let Some(b) = boot.splash {
+                p.image(b, splash_at(b, (w, h)), s.wake);
             }
-            // The wallpaper still decoding: dark, never the theme's background.
-            None if s.has_wallpaper => {}
-            _ => {
-                let bg = theme.colors.get("background");
-                p.rect(full, bg.with_alpha(bg.a * s.wake), 0.0);
-                if s.has_wallpaper {
-                    p.rect(full, black.with_alpha(SCRIM as f32), 0.0);
+        } else {
+            match s.backdrop {
+                Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), s.wake),
+                // The desktop's picture made at the output's own scale.
+                Some(b) if fills(b, (w, h)) => {
+                    p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+                }
+                // The wallpaper still decoding: dark, never the theme's background.
+                None if s.has_wallpaper => {}
+                _ => {
+                    let bg = theme.colors.get("background");
+                    p.rect(full, bg.with_alpha(bg.a * s.wake), 0.0);
+                    if s.has_wallpaper {
+                        p.rect(full, black.with_alpha(SCRIM as f32), 0.0);
+                    }
                 }
             }
+            if let Some(b) = s.shards {
+                p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+            }
+            login::paint_grid(&mut p, theme, (w, h), s.wake);
         }
-        if let Some(b) = s.shards {
-            p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
-        }
-        login::paint_grid(&mut p, theme, (w, h), s.wake);
         login::paint(&mut p, card_rect, theme, fade);
         let clock_rect = card.paint_clock(&mut p, &clock, inner, theme, kit, fade);
         let front = s.foreground.and_then(|fg| over_clock(&mut self.over_clock, fg, clock_rect, card_rect, theme, (w, h)));
@@ -248,8 +337,12 @@ impl View {
 
         self.ui.anchor = last;
         let cursor = s.media.as_ref().map_or(-1, |m| m.cursor);
-        self.ui.cursor = (cursor >= 0).then(|| "transport".to_owned());
-        self.ui.ring = cursor >= 0;
+        let button = usize::try_from(s.buttons.cursor).ok().and_then(|i| s.buttons.shown.get(i).copied());
+        self.ui.cursor = match button {
+            Some(b) => Some(stop(b)),
+            None => (cursor >= 0).then(|| "transport".to_owned()),
+        };
+        self.ui.ring = self.ui.cursor.is_some();
         let drawn = self.ui.draw(&body, inner, None, fade, theme, kit, &mut self.scene, now);
         let card_json = json!({"x": rest.x, "y": rest.y, "width": rest.w, "height": rest.h});
         self.report = json!({
@@ -265,6 +358,27 @@ impl View {
         });
         drawn.animating
     }
+
+    /// The boot lock's first frame on this output: the splash's picture on
+    /// black and nothing else, so no text is shaped before it is shown.
+    pub fn draw_splash(&mut self, splash: Option<&Bitmap>) {
+        let (w, h) = (self.scene.size.w, self.scene.size.h);
+        let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
+        p.rect(IRect::new(0, 0, w, h), Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+        if let Some(b) = splash {
+            p.image(b, splash_at(b, (w, h)), 1.0);
+        }
+        p.finish();
+        self.ui.hide(&mut self.scene);
+    }
+}
+
+/// Centred on its own pixels, as sway's `bg <png> center` puts the splash's
+/// frame: the offset whole in device pixels, rounded down.
+fn splash_at(b: &Bitmap, (w, h): (i32, i32)) -> (i32, i32) {
+    let k = f64::from(b.density);
+    let at = |screen: i32, px: u16| ((f64::from(screen) * k - f64::from(px)) / 2.0).floor() / k;
+    (at(w, b.pixmap.width()).round() as i32, at(h, b.pixmap.height()).round() as i32)
 }
 
 /// The card's cover, words and controls.
@@ -525,6 +639,23 @@ mod tests {
     }
 
     #[test]
+    fn the_splash_frame_is_the_picture_centred_on_black() {
+        use crate::render::Renderer;
+        let (w, h) = (64, 48);
+        let pink = Bitmap::from_rgba(16, 8, [224u8, 69, 123, 255].repeat(16 * 8));
+        let mut view = View::new(w, h);
+        view.draw_splash(Some(&pink));
+        let mut r = Renderer::new(w as u16, h as u16);
+        r.render(&view.scene, IRect::new(0, 0, w, h));
+        let px = |x: i32, y: i32| r.canvas().data()[(y * w + x) as usize];
+        assert_eq!((px(0, 0).r, px(0, 0).a), (0, 255));
+        assert_eq!(px(23, 19).r, 0);
+        assert_eq!(px(24, 20).r, 224);
+        assert_eq!(px(39, 27).r, 224);
+        assert_eq!(px(40, 28).r, 0);
+    }
+
+    #[test]
     fn transport_keys_follow_the_model() {
         let t = |i, k| transport_key(i, 3, k);
         assert_eq!(t(-1, TKey::Tab), Step { index: 0, taken: true, press: false });
@@ -561,6 +692,8 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: true,
                 wake,
+                boot: None,
+                buttons: Buttons::default(),
             };
             let mut view = View::new(w, h);
             view.draw(&shared, &theme, &mut kit, Instant::now());
@@ -595,6 +728,8 @@ mod tests {
             enter: (1.0, 0.0),
             blanked: false,
             wake: 1.0,
+            boot: None,
+            buttons: Buttons::default(),
         };
         let mut view = View::new(w, h);
         view.draw(&shared(None), &theme, &mut kit, Instant::now());
@@ -645,6 +780,8 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: true,
                 wake,
+                boot: None,
+                buttons: Buttons::default(),
             };
             let mut view = View::new(w, h);
             view.draw(&shared, &theme, &mut kit, Instant::now());
@@ -685,6 +822,8 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: false,
                 wake: 1.0,
+                boot: None,
+                buttons: Buttons::default(),
             };
             let mut view = View::new(900, 700);
             let now = Instant::now();

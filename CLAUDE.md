@@ -173,10 +173,16 @@ pipewire, PAM or Wayland to link.
   log shows a real `pam_authenticate: AUTH_ERR` on the wrong attempt and the
   bar comes up. ~55s.
 - `dev/seams.sh`: the boot chain on film, from a VM rig guest's power-on
-  (OVMF, Limine, systemd-boot, the FormalOS splash, the greeter, the
-  password, the desktop) and out of it by logout, reboot and shutdown to
-  power-off, as PNG frames over QMP screendump (frame n is n x 100ms), typed
-  over QMP send-key, into `artifacts/seams/{boot,logout,reboot,shutdown}/frames/`.
+  (OVMF, Limine, systemd-boot, the FormalOS splash, the locked login's
+  lock over the splash picture, the password, the desktop) and out of it by
+  logout (to the greeter), reboot (to the lock) and shutdown to power-off,
+  as PNG frames over QMP screendump (frame n is n x 100ms, the boot leg's
+  n x 20ms), typed over QMP send-key, into
+  `artifacts/seams/{boot,logout,reboot,shutdown}/frames/`. The boot fails on
+  more than 100ms of black after the splash, the other legs past 1.5s.
+  The guests autologin at boot (greetd's `initial_session`,
+  `docs/superpowers/specs/2026-10-30-locked-login.md`), so `just greeter`'s
+  greetd restart is what brings the greeter up.
   The guest's installed package, not the tree's build. ~4 min, the guest
   saved again at the end.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
@@ -788,6 +794,18 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `lock status` locked and secure, the avatar fixture on screen, and the
   real password unlocking it. Runs alone, since it kills the session's
   shell.
+- `login_lock.sh` `--login-lock`: the boot's lock
+  (`docs/superpowers/specs/2026-10-30-locked-login.md`) raised by the shell
+  itself off a `login-lock` marker written before it starts, naming a flat
+  pink picture, with no `lock lock` anywhere and the shell at a hundredth
+  of its speed (`FORMALSHELL_SMOKE_MOTION_SCALE`). The lock's first commit
+  ahead of any bar or wallpaper commit off the shell's log, `lock status`
+  locked, secure and `boot` before anything asks; the first frame the
+  picture alone at 1:1 in the output's centre, a later one the card over
+  it; real Tabs reaching Shutdown, Reboot and Other user (`buttonCursor`),
+  Return arming Other user, a confirmed Reboot the nested rig's empty
+  system bus refuses saying so under the field, and the real password
+  unlocking with `boot` false and the marker gone.
 - `logind_lock.sh` `--logind-lock`: logind's Lock signal on the VM rig's
   real logind, the shell started with `XDG_SESSION_ID` emptied the way uwsm
   starts it, so it finds its session through logind's `auto`: `loginctl
