@@ -298,7 +298,7 @@ pub async fn run(ctx: Ctx) {
     INNER.with_borrow_mut(|i| i.ctx = Some(ctx.clone()));
     ctx.spawn(holds(ctx.clone()));
     let publish_none = || ctx.publish(store::Diff::Devices(super::Diff::Network(Network::default())));
-    let Ok(conn) = zbus::Connection::system().await else { return publish_none() };
+    let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish_none() };
     let nm = match NetworkManager::connect(&conn).await {
         Ok(nm) => nm,
         Err(err) => {

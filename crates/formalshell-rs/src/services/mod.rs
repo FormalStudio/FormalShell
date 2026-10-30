@@ -9,6 +9,7 @@ pub mod ams;
 pub mod appicon;
 pub mod barpaint;
 pub mod brightness;
+pub mod bus;
 pub mod caffeinate;
 pub mod capture;
 pub mod clipboard;

@@ -58,7 +58,7 @@ async fn fix(conn: &zbus::Connection, path: &OwnedObjectPath) -> Option<(f64, f6
 
 /// Sends each fix GeoClue reports until the bus goes away or the receiver does.
 pub async fn run(fixes: async_channel::Sender<(f64, f64)>) {
-    let Ok(conn) = zbus::Connection::system().await else { return };
+    let Ok(conn) = crate::services::bus::system().await else { return };
     let Ok(manager) = ManagerProxy::new(&conn).await else { return };
     let Ok(path) = manager.get_client().await else { return };
     let Ok(builder) = ClientProxy::builder(&conn).path(path) else { return };

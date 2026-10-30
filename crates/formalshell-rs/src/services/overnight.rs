@@ -87,7 +87,7 @@ async fn output(argv: &[&str]) -> Option<(i32, String)> {
 }
 
 async fn profiles() -> Option<PowerProfiles> {
-    let conn = zbus::Connection::system().await.ok()?;
+    let conn = crate::services::bus::system().await.ok()?;
     PowerProfiles::connect(&conn).await.ok()
 }
 

@@ -439,7 +439,7 @@ async fn launcher_entries(ctx: Ctx, tx: Sender<Input>) {
 }
 
 async fn listen_launcher(ctx: &Ctx, tx: &Sender<Input>) -> zbus::Result<()> {
-    let conn = zbus::Connection::session().await?;
+    let conn = crate::services::bus::session().await?;
     let rule = MatchRule::builder().msg_type(Type::Signal).interface(LAUNCHER_ENTRY)?.member("Update")?.build();
     let updates = MessageStream::for_match_rule(rule, &conn, None).await?.filter_map(|m| m.ok().map(Bus::Update));
     let owners = fdo::DBusProxy::new(&conn).await?.receive_name_owner_changed().await?.filter_map(|s| {

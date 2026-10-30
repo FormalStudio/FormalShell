@@ -41,7 +41,7 @@ pub fn release() {
 }
 
 async fn run() {
-    let Ok(conn) = zbus::Connection::system().await else { return };
+    let Ok(conn) = crate::services::bus::system().await else { return };
     let proxy = match Proxy::new(&conn, "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await {
         Ok(p) => p,
         Err(err) => return eprintln!("sleep: logind: {err}"),

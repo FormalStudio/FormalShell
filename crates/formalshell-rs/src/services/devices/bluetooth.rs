@@ -180,7 +180,7 @@ fn on_adapter<F: Future<Output = ()> + 'static>(bluez: &fs_bluez::Bluez, ctx: &C
 }
 
 pub async fn run(ctx: Ctx) {
-    let Ok(conn) = zbus::Connection::system().await else { return absent(&ctx) };
+    let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return absent(&ctx) };
     let (bluez, events, monitor) = match fs_bluez::Bluez::connect(&conn).await {
         Ok(v) => v,
         Err(err) => {

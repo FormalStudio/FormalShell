@@ -61,7 +61,7 @@ pub fn locked_hint(ctx: &Ctx, locked: bool) {
 }
 
 async fn run(tx: Sender<LockMsg>) {
-    let Ok(conn) = zbus::Connection::system().await else { return };
+    let Ok(conn) = crate::services::bus::system().await else { return };
     let manager = match Proxy::new(&conn, LOGIN1, "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await {
         Ok(p) => p,
         Err(err) => return eprintln!("session: logind: {err}"),

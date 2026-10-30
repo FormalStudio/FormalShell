@@ -45,7 +45,7 @@ pub fn start(ctx: &Ctx, tx: Sender<LockMsg>) {
 }
 
 async fn run(tx: Sender<LockMsg>, cmds: async_channel::Receiver<Cmd>) {
-    let conn = match zbus::Connection::system().await {
+    let conn = match crate::services::bus::system().await {
         Ok(c) => c,
         Err(err) => return eprintln!("polkit: system bus: {err}"),
     };

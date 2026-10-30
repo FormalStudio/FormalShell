@@ -82,7 +82,7 @@ pub async fn run(ctx: Ctx) {
 /// The interactive argument and the header flag both: logind's plain
 /// methods read the first, polkit's check the second.
 pub(crate) async fn call(method: &str) -> zbus::Result<()> {
-    let conn = zbus::Connection::system().await?;
+    let conn = crate::services::bus::system().await?;
     let proxy = Proxy::new(&conn, "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await?;
     proxy.call_with_flags::<_, _, ()>(method, MethodFlags::AllowInteractiveAuth.into(), &(true,)).await?;
     Ok(())

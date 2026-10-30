@@ -112,7 +112,7 @@ impl Seen {
 
 pub async fn run(ctx: Ctx) {
     let publish = |p| ctx.publish(store::Diff::Devices(super::Diff::Power(p)));
-    let Ok(conn) = zbus::Connection::system().await else { return publish(Power::default()) };
+    let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish(Power::default()) };
     let Ok(upower) = UPower::connect(&conn).await else { return publish(Power::default()) };
     // Subscribed before the snapshot, so nothing falls between the two.
     let changes = upower.changes().await;
@@ -211,7 +211,7 @@ pub async fn lights(ctx: Ctx) {
 /// while the daemon is not on the bus.
 pub async fn run_profiles(ctx: Ctx) {
     let publish = |p| ctx.publish(store::Diff::Devices(super::Diff::Profiles(p)));
-    let Ok(conn) = zbus::Connection::system().await else { return publish(None) };
+    let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish(None) };
     let Ok(profiles) = PowerProfiles::connect(&conn).await else { return publish(None) };
     let Ok(changes) = profiles.changes().await else { return publish(None) };
     let mut changes = std::pin::pin!(changes);
@@ -224,7 +224,7 @@ pub async fn run_profiles(ctx: Ctx) {
 /// property, and with it the group, where it was.
 pub fn set_profile(ctx: &Ctx, profile: Profile) {
     ctx.spawn(async move {
-        let Ok(conn) = zbus::Connection::system().await else { return };
+        let Ok(conn) = crate::services::bus::system().await else { return };
         if let Ok(profiles) = PowerProfiles::connect(&conn).await {
             let _ = profiles.set_active(profile).await;
         }

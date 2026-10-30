@@ -147,7 +147,7 @@ async fn publish_menu(ctx: &Ctx, tray: &fs_tray::Tray, key: &str) {
 }
 
 pub async fn run(ctx: Ctx) {
-    let conn = match zbus::Connection::session().await {
+    let conn = match crate::services::bus::session().await {
         Ok(conn) => conn,
         Err(err) => return eprintln!("tray: no session bus: {err}"),
     };

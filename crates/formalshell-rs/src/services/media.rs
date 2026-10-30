@@ -719,7 +719,7 @@ fn publish(ctx: &Ctx, mpris: &Mpris) {
 }
 
 pub async fn run(ctx: Ctx) {
-    let conn = match zbus::Connection::session().await {
+    let conn = match crate::services::bus::private(&ctx, zbus::connection::Builder::session()).await {
         Ok(conn) => conn,
         Err(err) => return eprintln!("media: no session bus: {err}"),
     };

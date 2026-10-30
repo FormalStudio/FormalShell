@@ -8,6 +8,7 @@ publish = false
 async-channel = "2.5"
 async-executor = "1.14"
 async-io = "2.6"
+async-lock = "3.4"
 async-process = "2"
 base64 = "0.22"
 # Held below 1.7.0, whose idle threads never exit and wake every 500 ms
