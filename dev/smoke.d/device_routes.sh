@@ -5,6 +5,8 @@
 # (its `checked` list is where the tick is readable) and each service's own
 # status. Wi-Fi runs against the two hostapd radios --wifi uses: a wrong
 # password typed into the launcher's masked step, the real one after it,
+# then Show password drawing the saved one in its secret step (read off
+# the frame by tesseract, masked in `menu status`) and Escape dropping it,
 # then a Shift+Enter forget, with the password absent from
 # menu-selection.txt and the shell log. While connected, → on the network
 # lists its details: Security reading WPA2 Personal, Signal a percentage,
@@ -23,7 +25,7 @@
 leg_device_routes_flag="--device-routes"
 leg_device_routes_order=217
 leg_device_routes_vm_only="it connects and forgets networks through NetworkManager against the hostapd radios"
-leg_device_routes_needs="jq wtype pactl ffmpeg mpv"
+leg_device_routes_needs="jq wtype pactl ffmpeg mpv convert tesseract"
 
 device_routes_track_path="$shot_dir/device-routes-station.mp3"
 device_routes_module_path="$shot_dir/device-routes-sink-module.txt"
@@ -187,6 +189,35 @@ ip -4 -o addr show dev wlan0 | awk '{print \$4}' > "$shot_dir/device-routes-wifi
 ipc menu close > /dev/null 2>&1
 sleep 1
 
+# Show password on the saved network: NetworkManager's GetSecrets, through
+# the shell's polkit agent if it asks, into the secret step drawn in the
+# clear, and Escape dropping it.
+route wifi FORMALTEST
+idx=\$(row_index "$shot_dir/device-routes-wifi-show-list.json" wifi.net.FORMALTEST)
+ipc menu runAction "\$idx" show-password > "$shot_dir/device-routes-wifi-show-run.txt" 2>&1
+SECONDS=0
+while [ "\$SECONDS" -lt 20 ]; do
+  ipc debug dump > "$shot_dir/device-routes-wifi-show-dump.json" 2>&1
+  if "$jq_bin" -e 'any(.modals[]; .namespace == "formalshell:polkit" and .open)' "$shot_dir/device-routes-wifi-show-dump.json" > /dev/null 2>&1 \
+    && [ ! -e "$shot_dir/device-routes-wifi-show-polkit" ]; then
+    touch "$shot_dir/device-routes-wifi-show-polkit"
+    sleep 1
+    "$wtype_bin" formalshell-test
+    "$wtype_bin" -k Return
+  fi
+  ipc menu status > "$shot_dir/device-routes-wifi-show.json" 2>&1
+  "$jq_bin" -e '.secretShown == true' "$shot_dir/device-routes-wifi-show.json" > /dev/null 2>&1 && break
+  sleep 0.5
+done
+sleep 1
+ipc debug dump > "$shot_dir/device-routes-wifi-show-dump.json" 2>&1
+"$grim_bin" "$shot_dir/device-routes-wifi-show.png" > /dev/null 2>&1
+"$wtype_bin" -k Escape
+sleep 1
+ipc menu status > "$shot_dir/device-routes-wifi-show-after.json" 2>&1
+ipc menu close > /dev/null 2>&1
+sleep 1
+
 # A root query reaches what is saved, sunk or a favourite, never what is
 # merely nearby.
 ipc menu summon "" > /dev/null 2>&1
@@ -315,6 +346,20 @@ leg_device_routes_assert() {
   real_ips=$(sort "$p-wifi-addresses.txt")
   [ "$drawn_ips" = "$real_ips" ] || fail "the details' IP addresses ($drawn_ips) are not wlan0's ($real_ips)"
   echo "SMOKE_DEVICE_ROUTES_WIFI_DETAILS $("$jq_bin" -c '[.drawn[] | [.label, .value]]' "$p-wifi-details.json")"
+  [ -e "$p-wifi-show-polkit" ] && echo "SMOKE_DEVICE_ROUTES_WIFI_SHOW_POLKIT asked"
+  "$jq_bin" -e '.mode == "input" and .prompt == "Password for FORMALTEST" and .secretShown == true
+      and .query == ("\u2022" * ("formaltest-psk" | length))' "$p-wifi-show.json" > /dev/null \
+    || fail "Show password did not open the step with the saved password: $(cat "$p-wifi-show-run.txt") $("$jq_bin" -c '{mode, prompt, secretShown, query}' "$p-wifi-show.json")"
+  echo "SMOKE_DEVICE_ROUTES_WIFI_SHOW $p-wifi-show.png"
+  local box ocr
+  box=$("$jq_bin" -r '.modals[] | select(.namespace == "formalshell:menu") | .card | "\(.width)x\(.height)+\(.x)+\(.y)"' "$p-wifi-show-dump.json")
+  [ -n "$box" ] || fail "no launcher card in the dump under Show password"
+  "$convert_bin" "$p-wifi-show.png" -crop "$box" -resize 200% "$p-wifi-show-card.png"
+  ocr=$("$tesseract_bin" "$p-wifi-show-card.png" - 2>/dev/null)
+  grep -qiE 'formaltest.?psk' <<< "$ocr" \
+    || fail "the saved password is not drawn in the step: $(tr '\n' ' ' <<< "$ocr")"
+  "$jq_bin" -e '.secretShown == false and .mode != "input"' "$p-wifi-show-after.json" > /dev/null \
+    || fail "Escape did not drop the shown password: $("$jq_bin" -c '{mode, secretShown, query}' "$p-wifi-show-after.json")"
   "$jq_bin" -e 'any(.[]; .id == "wifi.net.FORMALTEST" and .checked == true)' "$p-root-wifi.json" > /dev/null \
     || fail "a root query did not reach the ticked saved network: $(cat "$p-root-wifi.json")"
   "$jq_bin" -e 'any(.[]; .id == "wifi.net.FORMALTEST-EAP") | not' "$p-root-nearby.json" > /dev/null \

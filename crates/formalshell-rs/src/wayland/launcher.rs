@@ -25,6 +25,7 @@ const LAUNCHER_SLICE: std::time::Duration = std::time::Duration::from_millis(3);
 /// How long the launcher's buffers outlive its last close.
 const KEPT_FOR: std::time::Duration = std::time::Duration::from_secs(300);
 const WIFI_PASSWORD: &str = "wifi-password";
+const WIFI_SHOWN: &str = "wifi-shown";
 const WIFI_IDENTITY: &str = "wifi-identity";
 const REMINDER_SET: &str = "reminder-set";
 const LIGHTS_COLOR: &str = "lights-color";
@@ -502,6 +503,12 @@ impl App {
         match (group, verb) {
             ("wifi", "enable") => service(Box::new(|ctx| net::set_wifi(ctx, true))),
             ("wifi", "forget") => service(Box::new(move |ctx| net::forget(ctx, value))),
+            ("wifi", "reveal") => {
+                self.wifi_reveals += 1;
+                let request = self.wifi_reveals;
+                self.wifi_reveal = Some((request, self.launcher.sessions));
+                service(Box::new(move |ctx| net::reveal(ctx, value, request)));
+            }
             ("wifi", "activate") => {
                 let n = &self.store.devices.network;
                 let Some(row) = n.row(&value).cloned() else { return };
@@ -567,6 +574,10 @@ impl App {
         for (token, value, cancelled) in self.launcher.take_resolved() {
             if token == WIFI_IDENTITY || token == WIFI_PASSWORD {
                 self.wifi_answer(&token, value, cancelled);
+            } else if token == WIFI_SHOWN {
+                if !cancelled {
+                    self.menu_open(Some("wifi"));
+                }
             } else if token == REMINDER_SET {
                 self.reminder_answer(value, cancelled);
             } else if token == LIGHTS_COLOR {
@@ -574,6 +585,25 @@ impl App {
             } else if token == ABBREV_EDIT {
                 self.launcher.edit_answer(&self.store, value, cancelled);
             }
+        }
+    }
+
+    /// Show password's answer: the passphrase in the secret step, drawn in
+    /// the clear, or why there is none. Dropped once the session it was
+    /// asked in has closed.
+    fn wifi_revealed(&mut self, r: crate::services::devices::network::Revealed) {
+        if !self.launcher.open || self.wifi_reveal != Some((r.request, self.launcher.sessions)) {
+            return;
+        }
+        self.wifi_reveal = None;
+        match r.secret {
+            Ok(Some(psk)) => {
+                self.launcher.open_shown(&format!("Password for {}", r.ssid), WIFI_SHOWN, &psk);
+                self.launcher_resolve = true;
+                self.show_launcher();
+            }
+            Ok(None) => self.menu_input_as(&format!("No password saved for {}", r.ssid), WIFI_SHOWN, true),
+            Err(_) => self.menu_input_as(&format!("Could not read the password for {}", r.ssid), WIFI_SHOWN, true),
         }
     }
 
@@ -841,6 +871,9 @@ impl App {
 
     /// The device routes' rows, again from the store.
     pub fn launcher_devices(&mut self) {
+        if let Some(r) = self.store.devices.revealed.take() {
+            self.wifi_revealed(r);
+        }
         let mut moved = false;
         for (name, rows) in crate::surfaces::launcher::device_sources(&self.store) {
             moved |= self.store.menu.apply(index::Diff::Source(name.into(), rows));

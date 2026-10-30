@@ -260,6 +260,7 @@ need_wtype() {
   chmod 755 "$wtype_bin"
 }
 need_jq() { need_tool jq_bin jq jq; }
+need_tesseract() { need_tool tesseract_bin tesseract tesseract-ocr; }
 need_wl_copy() { need_tool wl_copy_bin wl-copy wl-clipboard; }
 need_wl_paste() { need_tool wl_paste_bin wl-paste wl-clipboard; }
 

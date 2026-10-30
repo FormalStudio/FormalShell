@@ -159,17 +159,25 @@ fn wifi_network() {
     let net = |known| WifiNetwork { name: "Home".into(), known, secured: true, in_range: true, ..WifiNetwork::default() };
     let st = WifiState { has_device: true, enabled: true, networks: vec![net(true)], ..WifiState::default() };
     let saved = of(&wifi_rows(&st)[0]);
-    assert_eq!(ids(&saved), ["run", "alternate", "panel", "details"]);
+    assert_eq!(ids(&saved), ["run", "alternate", "show-password", "panel", "details"]);
     assert_eq!(saved[0].label, "Connect");
     assert_eq!(saved[1].label, "Forget");
     assert_eq!(saved[1].run, Run::Ipc("wifi.forget:Home".into()));
-    assert_eq!(saved[2].run, Run::Ipc("panel.open:network".into()));
-    assert_eq!(saved[3].run, Run::Into("wifi.net.Home".into()));
+    assert_eq!(saved[2].label, "Show password");
+    assert_eq!(saved[2].run, Run::Ipc("wifi.reveal:Home".into()));
+    assert_eq!(saved[3].run, Run::Ipc("panel.open:network".into()));
+    assert_eq!(saved[4].run, Run::Into("wifi.net.Home".into()));
     assert_eq!(into_action(&Subject::of(&wifi_rows(&st)[0])).unwrap().id, "details");
     let st = WifiState { networks: vec![net(false)], ..st };
     let row = &wifi_rows(&st)[0];
     assert_eq!(ids(&of(row)), ["run", "panel", "details"]);
     assert_eq!(second_action(&Subject::of(row)).unwrap().id, "panel");
+    let open = WifiNetwork { secured: false, ..net(true) };
+    let enterprise = WifiNetwork { enterprise: true, ..net(true) };
+    for n in [open, enterprise] {
+        let st = WifiState { networks: vec![n], ..st.clone() };
+        assert_eq!(ids(&of(&wifi_rows(&st)[0])), ["run", "alternate", "panel", "details"]);
+    }
 }
 
 #[test]

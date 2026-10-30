@@ -72,13 +72,16 @@ pub struct Field<S = String> {
     anchor: Option<usize>,
     /// Shown masked: nothing leaves it through copy or cut.
     pub secret: bool,
+    /// A secret drawn in the clear (a saved Wi-Fi password asked for), which
+    /// still never leaves through copy or cut.
+    pub shown: bool,
 }
 
 impl<S: Buffer> Field<S> {
     /// The caret at the end of `text`.
     pub fn new(text: S) -> Self {
         let caret = text.buf().len();
-        Self { text, caret, anchor: None, secret: false }
+        Self { text, caret, anchor: None, secret: false, shown: false }
     }
 
     pub fn secret(mut self) -> Self {

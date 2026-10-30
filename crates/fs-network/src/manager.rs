@@ -31,6 +31,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 /// becomes one refresh.
 const QUIET: Duration = Duration::from_millis(150);
 
+/// The setting a WPA personal profile keeps its `psk` in.
+const SECURITY: &str = "802-11-wireless-security";
+
 #[proxy(
     interface = "org.freedesktop.NetworkManager",
     default_service = "org.freedesktop.NetworkManager",
@@ -467,6 +470,31 @@ impl NetworkManager {
             return Ok(());
         }
         Ok(())
+    }
+
+    /// The passphrase saved for the SSID, `Ok(None)` when no profile for it
+    /// holds one. NetworkManager asks polkit before it hands a secret out,
+    /// so the call allows interactive authorization.
+    pub async fn saved_psk(&self, ssid: &str) -> zbus::Result<Option<String>> {
+        for (path, profile) in self.profiles().await? {
+            if profile.ssid != ssid {
+                continue;
+            }
+            let saved = self.saved(&path).await?;
+            let reply = saved
+                .inner()
+                .call_with_flags::<_, _, Settings>(
+                    "GetSecrets",
+                    zbus::proxy::MethodFlags::AllowInteractiveAuth.into(),
+                    &(SECURITY,),
+                )
+                .await?;
+            let Some(secrets) = reply else { continue };
+            if let Some(psk) = secrets.get(SECURITY).and_then(|s| s.get("psk")).and_then(|v| v.downcast_ref::<String>().ok()) {
+                return Ok(Some(psk));
+            }
+        }
+        Ok(None)
     }
 
     /// Deletes every saved profile for the SSID. `Ok(false)` when there was

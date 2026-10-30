@@ -27,6 +27,8 @@ pub struct State {
     pub earbuds: earbuds::Earbuds,
     pub lights: power::Lights,
     pub profiles: power::Profiles,
+    /// A saved Wi-Fi passphrase on its way to the launcher, which takes it.
+    pub revealed: Option<network::Revealed>,
 }
 
 pub enum Diff {
@@ -37,6 +39,7 @@ pub enum Diff {
     Earbuds(earbuds::Diff),
     Lights(power::Lights),
     Profiles(power::Profiles),
+    Revealed(network::Revealed),
 }
 
 fn set<T: PartialEq>(slot: &mut T, v: T) -> bool {
@@ -55,6 +58,10 @@ impl State {
             Diff::Earbuds(d) => self.earbuds.apply(d),
             Diff::Lights(v) => set(&mut self.lights, v),
             Diff::Profiles(v) => set(&mut self.profiles, v),
+            Diff::Revealed(v) => {
+                self.revealed = Some(v);
+                true
+            }
         }
     }
 }

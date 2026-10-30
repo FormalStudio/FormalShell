@@ -130,6 +130,9 @@ pub struct Model {
     pub dirty: bool,
     /// A `pasteAfter` row ran: the chord goes out once the window is gone.
     pub paste: bool,
+    /// Counts closes, so an answer asked for in one session can tell it
+    /// arrived in another.
+    pub sessions: u64,
     pub picker: Picker,
     /// The Dark | Light switcher's height at the head of the body, 0 when
     /// the route has none.
@@ -438,6 +441,7 @@ impl Default for Model {
             cursor: 0,
             cursor_id: String::new(),
             paste: false,
+            sessions: 0,
             picker: Picker::default(),
             picker_switch_h: 0.0,
             output_w: 0.0,
@@ -1526,7 +1530,9 @@ impl Model {
             "viewHeight": self.body_h.round() as i64,
             "wheelStep": self.wheel_step().round() as i64,
             "placeholder": self.placeholder(store),
-            "query": w::shown(&self.query),
+            "query": w::masked(&self.query),
+            "prompt": (self.mode == Mode::Input).then_some(self.select_prompt.as_str()),
+            "secretShown": self.query.secret && self.query.shown,
             "caret": self.query.caret_chars().0,
             "selection": self.query.selection().is_some(),
             "sections": self.section_names(),
@@ -1662,6 +1668,7 @@ impl Model {
         self.begin_selection();
         self.mode = Mode::Input;
         self.query.secret = secret;
+        self.query.shown = false;
         self.select_prompt = prompt.into();
         self.select_options.clear();
         self.select_token = token.into();
@@ -1671,7 +1678,15 @@ impl Model {
         self.key.clear();
     }
 
+    /// A secret input step holding `text`, drawn in the clear.
+    pub fn open_shown(&mut self, prompt: &str, token: &str, text: &str) {
+        self.open_input(prompt, token, true);
+        self.query.set(text);
+        self.query.shown = true;
+    }
+
     pub fn close(&mut self) {
+        self.sessions += 1;
         self.abandon_select();
         if self.on_picker() {
             self.picker_abandon();
@@ -1712,6 +1727,7 @@ impl Model {
         if self.query.secret {
             self.query.clear();
             self.query.secret = false;
+            self.query.shown = false;
         }
     }
 

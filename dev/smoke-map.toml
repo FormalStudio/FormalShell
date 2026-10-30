@@ -318,7 +318,7 @@ runs = ["--panel audio", "--panel-keys", "--osd"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
-runs = ["--panel network", "--speedtest", "--panel network --tooltip"]
+runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--device-routes"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/bluetooth.rs", "crates/formalshell-rs/src/services/devices/bluetooth.rs", "crates/formalshell-rs/src/ipc/bluetooth.rs", "crates/fs-devices/src/bluetooth.rs", "crates/fs-bluez/**"]

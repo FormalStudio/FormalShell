@@ -428,8 +428,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   (its `ids` and `checked` lists) and each service's own status. The Wi-Fi
   row on the two hostapd radios opens the masked password step, a wrong
   password comes back as "Wrong password" on the row and Enter asks again,
-  the real one connects and ticks the row, Shift+Enter forgets it, and
-  neither password reaches `menu-selection.txt` or the shell log. A null
+  the real one connects and ticks the row, Show password draws it back in
+  the secret step (NetworkManager's `GetSecrets`, through the shell's
+  polkit agent if it asks; read off the frame by tesseract, masked in `menu
+  status`) and Escape drops it, Shift+Enter forgets it, and no password
+  reaches `menu-selection.txt` or the shell log. A null
   sink of the leg's own becomes the default over Enter, read back with
   `pactl`, the tick moving with it. Bluetooth is the honest no-adapter row
   while `panel open bluetooth` still opens the panel. A favourite served by

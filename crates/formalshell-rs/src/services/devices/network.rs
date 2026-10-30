@@ -465,6 +465,29 @@ pub fn disconnect(ctx: &Ctx, ssid: String) {
     });
 }
 
+/// A saved passphrase read back for the launcher, held in the store only
+/// until the launcher takes it.
+#[derive(Clone, PartialEq)]
+pub struct Revealed {
+    pub ssid: String,
+    /// The caller's id for the request this answers.
+    pub request: u64,
+    /// The passphrase, `Ok(None)` with none saved, or why it was not read.
+    pub secret: Result<Option<String>, String>,
+}
+
+pub fn reveal(ctx: &Ctx, ssid: String, request: u64) {
+    let Some(nm) = nm() else { return };
+    let ctx = ctx.clone();
+    ctx.clone().spawn(async move {
+        let secret = nm.saved_psk(&ssid).await.map_err(|err| err.to_string());
+        if let Err(err) = &secret {
+            eprintln!("network: no passphrase read for {ssid}: {err}");
+        }
+        ctx.publish(store::Diff::Devices(super::Diff::Revealed(Revealed { ssid, request, secret })));
+    });
+}
+
 pub fn forget(ctx: &Ctx, ssid: String) {
     let Some(nm) = nm() else { return };
     if !begin(ctx, ActionKind::Forget, &ssid) {

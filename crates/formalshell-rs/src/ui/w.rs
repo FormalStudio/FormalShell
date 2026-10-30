@@ -198,8 +198,13 @@ pub fn input(text: &str, placeholder: &str, focused: bool, error: Option<&str>) 
     El::new(Kind::Input { text: text.into(), placeholder: placeholder.into(), focused, error: error.map(str::to_owned), caret: None })
 }
 
-/// What a field shows: one dot per char of a secret one.
+/// What a field shows: one dot per char of a secret one not asked shown.
 pub fn shown<S: Buffer>(f: &Field<S>) -> String {
+    if f.secret && !f.shown { masked(f) } else { f.text().to_owned() }
+}
+
+/// What a field reports outside the frame: one dot per char of any secret.
+pub fn masked<S: Buffer>(f: &Field<S>) -> String {
     if f.secret { "\u{2022}".repeat(f.text().chars().count()) } else { f.text().to_owned() }
 }
 

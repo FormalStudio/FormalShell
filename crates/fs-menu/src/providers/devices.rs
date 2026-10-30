@@ -73,7 +73,8 @@ impl WifiRowLike for WifiNetwork {
 /// sit one level down under "Known networks". Saved networks are reachable
 /// from a root query; nearby ones are `local_only`, so a stranger's SSID
 /// never turns up in a search typed outside the level. Enter on a secured
-/// unknown network asks for a password, Shift+Enter on a saved one forgets it.
+/// unknown network asks for a password, Shift+Enter on a saved one forgets it,
+/// and a saved personal one can show its password.
 pub fn wifi_rows(st: &WifiState) -> Vec<Node> {
     if !st.has_device {
         return vec![Node::note("wifi.unavailable", "No Wi-Fi device")];
@@ -143,6 +144,10 @@ fn wifi_row(st: &WifiState, n: WifiNetwork) -> Node {
     if n.known {
         row.alternate = Some(format!("@ipc:wifi.forget:{}", n.name));
         row.alternate_label = Some("Forget".to_string());
+        if n.secured && !n.enterprise {
+            let show = ActionEntry { keep_open: Some(true), ..ActionEntry::new("show-password", "Show password", format!("@ipc:wifi.reveal:{}", n.name)) };
+            row.actions.insert(0, show);
+        }
     }
     row
 }

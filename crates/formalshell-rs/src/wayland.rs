@@ -312,6 +312,10 @@ pub struct App {
     /// The network the launcher's password step is for, and the identity
     /// an enterprise one was given first (WifiService.pendingSsid).
     wifi_pending: Option<(String, String)>,
+    /// The Show password request still awaited, and the launcher session it
+    /// was asked in; `wifi_reveals` numbers the requests.
+    wifi_reveal: Option<(u64, u64)>,
+    wifi_reveals: u64,
     mods: fs_menu::nav::Modifiers,
     menu_buttons: Option<crate::services::menu::BaseInputs>,
     /// The split pane's last picture request, so a frame asks once.
@@ -409,6 +413,8 @@ impl App {
             kept_generation: 0,
             fresh_asked: false,
             wifi_pending: None,
+            wifi_reveal: None,
+            wifi_reveals: 0,
             mods: Default::default(),
             menu_buttons: None,
             preview_asked: None,
