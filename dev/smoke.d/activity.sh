@@ -36,6 +36,10 @@
 # same frames carry the live cards in the toast stack (one per fspec group,
 # the failure in front), and one more holds the `value` notifications'
 # own bubbles with the ring inside them.
+#
+# The overflow case: ten long-titled runs at once leave one cell, its title
+# cut to the room the strip hands it and no right-region cell hidden, the
+# rest counted as `+9`, and the panel listing all ten.
 leg_activity_flag="--activity"
 leg_activity_order=236
 leg_activity_needs="jq python3 notify-send convert"
@@ -176,6 +180,14 @@ await "\$m.die2.1"; sleep 0.5; status turning; $ipc call bar room > "\$m-room-tu
 bar turning; sleep 0.3; bar turning-2
 touch "\$m.die2.go1"; await "\$m.die2.2"; $ipc call activity seen > /dev/null
 
+# Ten at once, each titled past the bar.
+for i in \$(seq 0 9); do "$python3_bin" "$stub" "\$dir" smoke-many-\$i long "\$m.many\$i" 2>> "\$m-drive.log" & done
+for i in \$(seq 0 9); do await "\$m.many\$i.1"; done
+sleep 0.5; status many; bar many; shot many
+for i in \$(seq 0 9); do touch "\$m.many\$i.go1"; done
+for i in \$(seq 0 9); do await "\$m.many\$i.2"; done
+sleep 0.5; $ipc call activity seen > /dev/null
+
 # A real fspec run, where this fspec publishes one.
 if command -v fspec > /dev/null 2>&1 && fspec run --help > /dev/null 2>&1; then
   fspec run --detach jq -- --version > "\$m-run.log" 2>&1 &
@@ -300,7 +312,14 @@ leg_activity_assert() {
   "$convert_bin" "$shot_dir/activity-bar-turning-2.png" -crop "$cell" +repage "$shot_dir/activity-cell-b.png"
   cmp -s "$shot_dir/activity-cell-a.png" "$shot_dir/activity-cell-b.png" \
     && fail "activity: the ring with no progress did not turn between two frames"
-  for f in progress turning failed notify; do
+  jq -e '[.groups[] | select(.source | startswith("fspec:run:smoke-many-"))] | length == 10' "$m-many.json" > /dev/null \
+    || fail "activity: ten runs are not ten groups: $(cat "$m-many.json")"
+  jq -e "$cells == 1" "$m-room-many.json" > /dev/null || fail "activity: ten groups are not one cell: $(cat "$m-room-many.json")"
+  jq -e '.[0].regions.right.hidden == 0 and all(.[0].cells[]; .whole)' "$m-room-many.json" > /dev/null \
+    || fail "activity: a long title pushed a cell off or cut one: $(cat "$m-room-many.json")"
+  [ -s "$shot_dir/activity-panel-many.png" ] || fail "activity: no panel frame for ten groups"
+  echo "SMOKE_ACTIVITY_PANEL_MANY $shot_dir/activity-panel-many.png"
+  for f in progress turning failed notify many; do
     [ -s "$shot_dir/activity-bar-$f.png" ] || fail "activity: no bar frame $f"
     echo "SMOKE_ACTIVITY_BAR_$(printf %s "$f" | tr a-z A-Z) $shot_dir/activity-bar-$f.png"
   done

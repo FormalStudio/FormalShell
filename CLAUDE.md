@@ -255,7 +255,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   update failed, and a lone rollback's ring with no progress differing
   inside the cell between two frames 300ms apart. The same frames carry
   the live toast cards, and one more the `value` notifications' bubbles
-  with their ring.
+  with their ring. Ten long-titled runs at once: one cell, no right-region
+  cell hidden or cut, and the panel photographed with all ten.
 - `airplay.sh` `--airplay`: `services/airplay.rs` against a PATH-shimmed
   `uxplay` (the real one decodes into a GL texture this rig's software KMS
   card has no path for), which prints uxplay's own connect log line and

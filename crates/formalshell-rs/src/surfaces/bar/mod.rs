@@ -618,8 +618,11 @@ impl Bar {
         };
         let mut at = Vec::new();
         let mut labels = Vec::new();
-        for name in LABELS {
-            let Some(i) = self.slots.iter().position(|s| s.name == name && s.present()) else { continue };
+        // Any other free label (Activity's title) first, so the window
+        // title and the track stay last, the ones that take what is left.
+        let named = LABELS.iter().filter_map(|n| self.slots.iter().position(|s| s.name == *n && s.present()));
+        let others = (0..self.slots.len()).filter(|&i| !LABELS.contains(&self.slots[i].name.as_str()) && self.slots[i].present());
+        for i in others.chain(named).collect::<Vec<_>>() {
             let s = &self.slots[i];
             let Some(limits) = s.limits else { continue };
             labels.push(Label { region: s.region, extent: s.free_extent(), natural: s.free_natural(), cap: limits.cap, min: limits.min });

@@ -57,6 +57,10 @@ def scenario(name, op_id):
             o(state="failed", phase="preparing", progress={"done": 40, "total": 100, "unit": "percent"},
               error="download smoke-pkg: connection reset"),
         ]
+    if name == "long":
+        o = lambda **f: op(op_id, "run", f"fspec:run:{op_id}",
+                           f"Running a package whose name runs well past the bar {op_id}", **f)
+        return [o(phase="resolving", progress={"done": 1, "total": 3, "unit": "packages"}, item=op_id), None]
     if name == "die":
         o = lambda **f: op(op_id, "rollback", "fspec:rollback:smoke", "Rolling back smoke", host="smoke", **f)
         return [o(phase="planning"), None]

@@ -818,6 +818,18 @@ impl Kit {
                             2.0,
                         );
                         p.shape(bounds, crate::scene::Paint::Shape { fill: None, strokes });
+                        let mark = match ring {
+                            Ring::Done => Some("check"),
+                            Ring::Failed => Some("x"),
+                            _ => None,
+                        };
+                        if let Some(name) = mark {
+                            let g = fs_theme::icons::glyph(name);
+                            let size = (d - look.xxs * 4.0).max(1.0) as f32;
+                            let glyph = self.shape(g.text, TextStyle { family: Family::Named(g.family), size, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None });
+                            let at = ((centre.0 - glyph.width as f64 / 2.0).round() as i32, (centre.1 - glyph.line_height() as f64 / 2.0).round() as i32);
+                            p.text(&glyph, at, ink.of(fill), &[]);
+                        }
                     }
                     Part::AppIcon { image, size } => {
                         let n = size.round() as i32;
