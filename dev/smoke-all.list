@@ -25,6 +25,8 @@
 --glass
 --sidebar
 --sidebar --light
+--sidebar-join
+--sidebar-join --light
 --minimap
 --capture
 --capture-edit

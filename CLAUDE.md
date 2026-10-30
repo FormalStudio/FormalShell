@@ -1059,6 +1059,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `lock.blankAfterSeconds` and waking on a real Shift, and from the first
   black frame on no frame's mean luminance past the settled lock's (the
   white flash a light theme's background put through every fade).
+- `sidebar_join.sh` `--sidebar-join`: `layout: sidebar` over a flat grey
+  wallpaper, the network panel and the launcher each opened at a tenth
+  speed with a burst of frames, the card read as what is darker than the
+  scrimmed grey or well lighter than the grey right of the column: its
+  first frame on the column's edge, a frame still on it part way out, none
+  further off the edge than it rests, the panel resting within the bar's
+  margin of the edge and the launcher travelling on to its place 30%
+  across. Read dark and `--light`.
 - `spaces.sh` `--spaces`: the Spaces cell over windows on two workspaces,
   each listed with its icon under its own chip in `workspaces status`, every
   occupied chip showing its icons and every chip its ordinal, and the chip
