@@ -672,8 +672,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   state.json, Activity's Open (`activity openApp`) running it, and a search
   for it heading with the app above its package, which reads Installed; a
   failing install's reason on the row and in Activity, and `activity
-  retry` reaching the shim as the same install. Photographed dark and
-  light (`--launcher-install --light`).
+  retry` reaching the shim as the same install. Then Uninstall on a
+  staged app the shim's `app owner` names this host's spec's a second
+  late: a real Tab before that answer, Uninstall joining the open column
+  last, End and Return only arming it (`Uninstall Foxberry?`), the second
+  Return reaching the shim as exactly `app uninstall
+  flatpak:org.example.Foxberry --detach`, Activity reading it succeeded,
+  the app gone from the rows once its entry is, and a staged app the
+  distro owns offering no Uninstall. Photographed dark and light
+  (`--launcher-install --light`).
 - `launcher_modes.sh` `--launcher-modes`: modes as a token in the field,
   read off `menu status`'s `level` and `token`: every route the rig lists
   entered by its name and Enter and by `menu summon`, the five prefixes

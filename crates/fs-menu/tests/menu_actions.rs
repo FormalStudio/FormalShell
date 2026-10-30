@@ -94,6 +94,18 @@ fn abbreviation() {
 }
 
 #[test]
+fn uninstall_is_an_owned_apps_last_action() {
+    let node = firefox();
+    assert!(actions_for(&Subject::of(&node)).iter().all(|a| a.id != "uninstall"));
+    let owned = actions_for(&Subject { abbrev: Some(("ff", Source::Learned)), removable: Some("flatpak:org.mozilla.firefox"), ..Subject::of(&node) });
+    let last = owned.last().unwrap();
+    assert_eq!(last.id, "uninstall");
+    assert_eq!(last.label, "Uninstall Firefox");
+    assert!(last.confirm && last.destructive);
+    assert_eq!(last.run, Run::Ipc("package.uninstall:flatpak:org.mozilla.firefox".into()));
+}
+
+#[test]
 fn filtering() {
     let labels = ["Open", "New window", "New private window", "Move to workspace\u{2026}"];
     assert_eq!(filter(&labels, "new"), [1, 2]);

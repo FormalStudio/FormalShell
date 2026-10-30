@@ -1828,10 +1828,19 @@ impl Model {
     }
 
     /// The row as a subject, with what the shell knows about it.
-    pub fn subject<'a>(&'a self, store: &Store, node: &'a Node) -> fs_menu::actions::Subject<'a> {
+    pub fn subject<'a>(&'a self, store: &'a Store, node: &'a Node) -> fs_menu::actions::Subject<'a> {
         let windows = match &node.entry {
             Some(entry) if node.kind == NodeKind::App => app_windows(store, entry).len(),
             _ => 0,
+        };
+        let removable = match &node.entry {
+            Some(entry) if node.kind == NodeKind::App && store.activity.fspec.installed => {
+                if !store.packages.owners.contains_key(&entry.id) {
+                    crate::services::packages::send(crate::services::packages::Cmd::Owner(entry.id.clone()));
+                }
+                store.packages.removable(&entry.id)
+            }
+            _ => None,
         };
         let id = fs_menu::actions::subject_id(node);
         let abbrev = self.abbrev_key.as_deref().zip(self.lookup.source_of(&id));
@@ -1842,6 +1851,7 @@ impl Model {
             picker_select: self.picker.select,
             abbrev,
             pinned: recent_pinned(store).contains(&id),
+            removable,
         }
     }
 
@@ -1943,6 +1953,22 @@ impl Model {
             self.dirty = true;
         }
         joined
+    }
+
+    /// Uninstall joining an app's open column when the owner query answers
+    /// after Tab; the selected action stays where it is.
+    pub fn owner_answer(&mut self, store: &Store) -> bool {
+        let filter = self.query.text().to_owned();
+        let Some(c) = self.column.as_ref().filter(|c| c.target.is_none() && !c.actions.iter().any(|a| a.id == "uninstall")) else { return false };
+        let Some(action) = fs_menu::actions::uninstall_action(&self.subject(store, &c.node)) else { return false };
+        let Some(c) = self.column.as_mut() else { return false };
+        let at = c.actions.len();
+        if !fs_menu::actions::filter(&[action.label.as_str()], &filter).is_empty() {
+            c.shown.push(at);
+        }
+        c.actions.push(action);
+        self.dirty = true;
+        true
     }
 
     /// The column gone, the list's query back in the field.
@@ -3293,7 +3319,12 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
             }
             None => {
                 let a = &c.actions[i];
-                let label = if armed == Some(i) { format!("Confirm {}?", a.label) } else { a.label.clone() };
+                // A destructive label already names what it does (`Uninstall Firefox?`).
+                let label = match armed == Some(i) {
+                    true if a.destructive => format!("{}?", a.label),
+                    true => format!("Confirm {}?", a.label),
+                    false => a.label.clone(),
+                };
                 let trail = matches!(a.run, Run::Into(_)).then(|| w::icon("chevron-right").ink(Ink::Dim));
                 (label, a.icon.clone(), trail, a.run == Run::Note, a.destructive)
             }

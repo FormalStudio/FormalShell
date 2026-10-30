@@ -136,6 +136,9 @@ pub struct Subject<'a> {
     pub abbrev: Option<(&'a str, Source)>,
     /// Pinned to the root's `Recent`.
     pub pinned: bool,
+    /// The fspec package id an Uninstall of this app takes out, once
+    /// `fspec app owner` said this host's spec holds it.
+    pub removable: Option<&'a str>,
 }
 
 /// A row's kind for one compositor window, its id in the node's `path`.
@@ -143,7 +146,7 @@ pub const WINDOW_KIND: &str = "window";
 
 impl<'a> Subject<'a> {
     pub fn of(node: &'a Node) -> Subject<'a> {
-        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false }
+        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None }
     }
 
     /// A dim note, a keybind, an unavailable row: Enter, Shift+Enter and a
@@ -357,7 +360,17 @@ pub fn actions_for(s: &Subject) -> Vec<Action> {
         out.push(Action::new("details", "Details", Run::Into(subject_id(s.node))));
     }
     out.extend(abbreviation_actions(s));
+    out.extend(uninstall_action(s));
     out
+}
+
+/// An app's last action, once fspec said this host's spec holds it.
+pub fn uninstall_action(s: &Subject) -> Option<Action> {
+    let id = s.removable.filter(|_| s.node.kind == Kind::App)?;
+    let mut uninstall = Action::new("uninstall", format!("Uninstall {}", s.node.label), Run::Ipc(format!("package.uninstall:{id}")));
+    uninstall.confirm = true;
+    uninstall.destructive = true;
+    Some(uninstall)
 }
 
 fn runnable(s: &Subject) -> impl Iterator<Item = Action> {

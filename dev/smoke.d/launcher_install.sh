@@ -21,9 +21,15 @@
 # Open running the entry's Exec, and a search for it now heading with the
 # app subject above the package, which reads Installed and is ticked.
 # Foxfire's failure puts its reason on the row and in Activity, and
-# `activity retry` reaches the shim as the same install. The rows with the
-# description pane, the ring mid-download, the toast and a dim state are
-# photographed.
+# `activity retry` reaches the shim as the same install. Then Uninstall on
+# a staged Foxberry, the shim's `app owner` saying a second late that this
+# host's spec holds it: a real Tab before that answer, Uninstall joining
+# the open column last, End and Return only arming it, the second Return
+# reaching the shim as exactly `app uninstall flatpak:org.example.Foxberry
+# --detach`, Activity reading it succeeded and the app gone from the rows
+# once its entry is, and a staged Foxtail the distro owns offering no
+# Uninstall. The rows with the description pane, the ring mid-download, the
+# toast, a dim state and the armed Uninstall are photographed.
 leg_launcher_install_flag="--launcher-install"
 leg_launcher_install_order=34
 leg_launcher_install_needs="jq python3 wtype convert"
@@ -74,8 +80,14 @@ case "\$1 \$2" in
   "app install")
     title=\$("$jq_bin" -r --arg id "\$3" 'select(.id == \$id) | .name' "$li_dir/search.jsonl")
     start install "\$3" "\$title" ;;
+  "app uninstall")
+    start uninstall "\$3" Foxberry ;;
   "app owner")
-    printf '{"path":null,"id":null,"pkg":null,"source":null,"owner":null,"removable":false}\n' ;;
+    case "\$3" in
+      org.example.Foxberry) sleep 1; printf '{"path":null,"id":"flatpak:org.example.Foxberry","pkg":"org.example.Foxberry","source":"flatpak","owner":"spec","removable":true}\n' ;;
+      org.example.Foxtail) printf '{"path":null,"id":"zypper:foxtail","pkg":"foxtail","source":"zypper","owner":"distro","removable":false}\n' ;;
+      *) printf '{"path":null,"id":null,"pkg":null,"source":null,"owner":null,"removable":false}\n' ;;
+    esac ;;
   *) echo "fspec shim: \$* is not shimmed" >&2; exit 2 ;;
 esac
 EOF
@@ -85,7 +97,7 @@ EOF
 }
 
 leg_launcher_install_timing() {
-  leg_timing 70 110
+  leg_timing 95 140
 }
 
 leg_launcher_install_drive() {
@@ -182,6 +194,69 @@ call menu close > /dev/null 2>&1
 sleep 0.3
 call activity retry "fspec:install:flatpak:org.example.Foxfire" > "$li_dir/retry.txt" 2>&1
 sleep 2
+
+cat > "$li_apps/org.example.Foxberry.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Foxberry
+Exec=true
+Icon=folder
+DESKTOP
+sleep 1.5
+call menu summon install > /dev/null 2>&1
+sleep 0.5
+call menu filter foxb > /dev/null 2>&1
+until_status own '.ids[0] == "apps.org.example.Foxberry"' 10
+# Tab before the owner query answers: Uninstall joins the open column.
+"$wtype_bin" -k Tab
+until_status early '.actionsOpen' 3
+until_status column '.actions[-1] == "uninstall"' 5
+"$wtype_bin" -k End
+sleep 0.3
+"$wtype_bin" -k Return
+sleep 0.4
+status armed
+shoot armed
+before=\$(cat "$li_dir/last-op")
+"$wtype_bin" -k Return
+for _ in \$(seq 1 30); do [ "\$(cat "$li_dir/last-op")" != "\$before" ] && break; sleep 0.2; done
+uop=\$(cat "$li_dir/last-op")
+step "\$uop.1"
+go "\$uop.go1"; step "\$uop.2"
+rm -f "$li_apps/org.example.Foxberry.desktop"
+sleep 1.5
+go "\$uop.go2"
+for _ in \$(seq 1 30); do
+  pkgs removed
+  "$jq_bin" -e '.started[] | select(.verb == "uninstall") | .op != null' "$li_dir/removed.json" > /dev/null 2>&1 && break
+  sleep 0.3
+done
+sleep 1.5
+acts uninstalled
+call menu summon install > /dev/null 2>&1
+sleep 0.5
+call menu filter foxb > /dev/null 2>&1
+until_status gonerows '(.ids | length) > 0 and (.ids | index("apps.org.example.Foxberry")) == null' 10
+
+cat > "$li_apps/org.example.Foxtail.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Foxtail
+Exec=true
+Icon=folder
+DESKTOP
+sleep 1.5
+call menu filter foxtail > /dev/null 2>&1
+until_status distro '.ids[0] == "apps.org.example.Foxtail"' 10
+for _ in \$(seq 1 30); do
+  pkgs distroowner
+  "$jq_bin" -e '.owners["org.example.Foxtail"] != null' "$li_dir/distroowner.json" > /dev/null 2>&1 && break
+  sleep 0.2
+done
+call menu actions 0 > /dev/null 2>&1
+sleep 0.3
+status distrocolumn
+call menu close > /dev/null 2>&1
 for m in "$li_dir"/smoke-*.[0-9]; do touch "\${m%.*}.go1" "\${m%.*}.go2" "\${m%.*}.go3"; done
 EOF
   hypr_exec_once "bash $script"
@@ -227,10 +302,19 @@ leg_launcher_install_assert() {
   [ "$(cat "$li_dir/retry.txt")" = "ok" ] || fail "launcher-install: activity retry answered $(cat "$li_dir/retry.txt")"
   [ "$(rg -c 'app install flatpak:org.example.Foxfire --detach' "$li_dir/shim.log")" = "2" ] || fail "launcher-install: retry did not reach the shim as the same install: $(cat "$li_dir/shim.log")"
   echo "SMOKE_LAUNCHER_INSTALL a failure on the row and in Activity, retried as the same install"
-  if rg -qv '^(search --json|app install|app owner)' "$li_dir/shim.log"; then fail "launcher-install: the shell asked fspec something unshimmed: $(cat "$li_dir/shim.log")"; fi
+  li_expect early '.actionsOpen and (.actions | index("uninstall")) == null' "the owner query answered before Tab, so a late answer joining the column went unexercised"
+  li_expect column '.actions[-1] == "uninstall"' "Uninstall never joined the open column of an app fspec owns, or not last"
+  li_expect armed '.isOpen and .actionsOpen and .actions[.actionCursor] == "uninstall"' "the first Enter on Uninstall did not only arm it"
+  rg -qx 'app uninstall flatpak:org.example.Foxberry --detach' "$li_dir/shim.log" || fail "launcher-install: the second Enter never reached the shim as app uninstall --detach: $(cat "$li_dir/shim.log")"
+  [ "$(rg -c '^app uninstall' "$li_dir/shim.log")" = "1" ] || fail "launcher-install: the first Enter ran the uninstall too: $(cat "$li_dir/shim.log")"
+  li_expect uninstalled '.groups | map(select(.source == "fspec:uninstall:flatpak:org.example.Foxberry" and .state == "succeeded")) | length == 1' "Activity did not read the uninstall succeeded"
+  li_expect gonerows '(.ids | index("apps.org.example.Foxberry")) == null' "the uninstalled app is still among the rows"
+  li_expect distrocolumn '.actionsOpen and (.actions | index("open")) != null and (.actions | index("uninstall")) == null' "an app the distro owns offered Uninstall"
+  echo "SMOKE_LAUNCHER_INSTALL uninstall: listed last, armed then run, the app gone, none on a distro app"
+  if rg -qv '^(search --json|app install|app uninstall|app owner)' "$li_dir/shim.log"; then fail "launcher-install: the shell asked fspec something unshimmed: $(cat "$li_dir/shim.log")"; fi
 
   local shot
-  for shot in rows failed ring toast; do
+  for shot in rows failed ring toast armed; do
     [ -s "$li_dir/$shot.png" ] || fail "launcher-install: no $shot frame"
     echo "SMOKE_LAUNCHER_INSTALL_SHOT $li_dir/$shot.png"
   done

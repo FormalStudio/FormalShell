@@ -46,7 +46,10 @@ pub fn changed(app: &mut App, topic: Topic) {
             packages::land(&mut app.store);
             app.launcher_store_changed();
         }
-        Topic::Packages => app.launcher_store_changed(),
+        Topic::Packages => {
+            app.launcher.owner_answer(&app.store);
+            app.launcher_store_changed()
+        }
         Topic::Config => {
             app.launcher_inputs();
             crate::services::picker::command(crate::services::picker::Cmd::Boot(app.store.config.str("picker.directory").unwrap_or("").to_owned()));

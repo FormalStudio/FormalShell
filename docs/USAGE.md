@@ -1523,6 +1523,12 @@ launcher never runs a package manager or asks for a password itself;
 privilege prompts are the shell's polkit agent's. With no fspec on `PATH`
 the mode is one dim row, `Installing apps needs fspec`.
 
+An app fspec installed (one in your spec's `apps.star`, as `fspec app
+owner` reports) carries **Uninstall** last in its actions. The first
+Enter arms it (`Uninstall Firefox?`), the second closes the launcher and
+runs `fspec app uninstall`, which Activity follows like an install. Apps
+your distro or another tool installed have no Uninstall.
+
  and a `Plugins`
 submenu (`List Plugins`, `Reload Plugins`), and the root has `Notifications`
 (`Clear All`, `Mark All Seen`, `Dismiss Popups`), `Theme` (`Retheme`, `Dark
