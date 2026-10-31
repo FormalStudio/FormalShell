@@ -7,8 +7,12 @@
 # status` names the cards it drew (time, spaces, notifications, the last
 # one carrying the notification sent once its toast has gone) and the minimap's row holding the fixture window. A
 # real click on the status row's network button opens the network panel; a
-# real click on its collapse button folds the column to the 48 wide rail,
-# state.json carrying `sidebarCollapsed`; `sidebar expand` opens it again.
+# real click on its collapse button folds the column to the 60 wide rail
+# (Pond's collapsed column: a 42 wide card a margin either side), state.json
+# carrying `sidebarCollapsed`, `sidebar status` naming the time, spaces and
+# notifications cards it drew and its time card reading the hour (two
+# digits, 12 hour under the clock card case's "h:mm AP") and the minutes
+# `date` gives; `sidebar expand` opens it again.
 # Then settings.json rewritten with `bar.position: right` moves it to the
 # right edge. The session runs with Hyprland's `gaps_out` 10 and
 # `border_size` 2, and the fixture window's visible left edge (its `at`
@@ -41,6 +45,7 @@ leg_sidebar_fixture_window=keep
 
 sidebar_status_open="$shot_dir/sidebar-status-open.json"
 sidebar_status_rail="$shot_dir/sidebar-status-rail.json"
+sidebar_rail_clock="$shot_dir/sidebar-rail-clock.txt"
 sidebar_status_expanded="$shot_dir/sidebar-status-expanded.json"
 sidebar_layers_open="$shot_dir/sidebar-layers-open.json"
 sidebar_layers_rail="$shot_dir/sidebar-layers-rail.json"
@@ -200,7 +205,9 @@ read -r cx cy <<< "\$(at collapse "$sidebar_layers_open" "$sidebar_status_open")
 click "\$cx" "\$cy"
 "$wlrctl_bin" pointer move 600 0 > /dev/null 2>&1
 sleep 2
+LC_ALL=C date +'%I %H %M' > "$sidebar_rail_clock"
 $ipc call sidebar status > "$sidebar_status_rail" 2>&1
+LC_ALL=C date +'%I %H %M' >> "$sidebar_rail_clock"
 "$hyprctl_bin" -j layers > "$sidebar_layers_rail" 2>&1
 cp "$state_path" "$sidebar_state_copy" 2>/dev/null
 "$grim_bin" "$sidebar_rail_png" > /dev/null 2>&1
@@ -256,9 +263,21 @@ leg_sidebar_assert() {
   sidebar_through_assert
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_rail")"
   echo "sidebar layer rail: x=$bx y=$by w=$bw h=$bh"
-  [ "$bw" -eq 48 ] || fail "sidebar: the collapse button did not fold the column to the 48 wide rail: w=$bw"
-  "$jq_bin" -e '.collapsed == true and .width == 48' "$sidebar_status_rail" > /dev/null \
+  [ "$bw" -eq 60 ] || fail "sidebar: the collapse button did not fold the column to the 60 wide rail: w=$bw"
+  "$jq_bin" -e '.collapsed == true and .width == 60
+      and (.cards | index("time") != null and index("spaces") != null and index("notifications") != null)' "$sidebar_status_rail" > /dev/null \
     || fail "sidebar: status after collapse: $(cat "$sidebar_status_rail" 2>/dev/null)"
+  local rail_time i12 h24 mm ok=""
+  rail_time=$("$jq_bin" -r '.rail.time | join(" ")' "$sidebar_status_rail" 2>/dev/null)
+  echo "sidebar rail clock: $rail_time (date: $(tr '\n' ',' < "$sidebar_rail_clock"))"
+  while read -r i12 h24 mm; do
+    if sidebar_clock_case; then
+      [[ "$rail_time" =~ ^$i12\ $mm\ (AM|PM)$ ]] && ok=1
+    else
+      { [ "$rail_time" = "$h24 $mm" ] || [[ "$rail_time" =~ ^$i12\ $mm\ (AM|PM)$ ]]; } && ok=1
+    fi
+  done < "$sidebar_rail_clock"
+  [ -n "$ok" ] || fail "sidebar: the rail's time card does not read the hour and minutes: '$rail_time' against $(cat "$sidebar_rail_clock")"
   "$jq_bin" -e '.sidebarCollapsed == true' "$sidebar_state_copy" > /dev/null 2>&1 \
     || fail "sidebar: state.json does not carry sidebarCollapsed: $(cat "$sidebar_state_copy" 2>/dev/null)"
   "$jq_bin" -e '.collapsed == false and .width == 154' "$sidebar_status_expanded" > /dev/null 2>&1 \

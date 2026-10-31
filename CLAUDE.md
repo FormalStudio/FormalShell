@@ -1205,8 +1205,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   runtime off `getoption`), `sidebar status` naming the time, Spaces and
   notifications cards and a window on the map, a real click on the status
   row's network button opening its panel, one on its collapse button
-  folding the column to the 48 wide rail with state.json carrying
-  `sidebarCollapsed`, `sidebar expand` opening it again, and settings.json
+  folding the column to the 60 wide rail (Pond's collapsed column, a 42
+  wide card a margin either side) with state.json carrying
+  `sidebarCollapsed`, `sidebar status` naming the rail's time, Spaces and
+  notifications cards and its time card reading the hour and minutes
+  `date` gives, `sidebar expand` opening it again, and settings.json
   rewritten with `bar.position: right` moving it to that edge. The open,
   panel and rail frames are read dark and light (`--sidebar --light`).
   The bar layer's input region the cards and controls alone (`sidebar

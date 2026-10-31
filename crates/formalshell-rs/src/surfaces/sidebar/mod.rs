@@ -33,7 +33,7 @@ use crate::surfaces::activity;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::panel::{center, tray};
 use crate::text::TextStyle;
-use crate::ui::{El, Ink, Type, Ui, Variant, Weight, w};
+use crate::ui::{El, Ink, Type, Ui, Weight, w};
 use crate::wayland::desktop_clock::{self as glass, Digits, FaceSettings, Glass, Under};
 
 /// The cards in the order they give up their place when the column runs
@@ -81,6 +81,45 @@ pub struct Geo {
     /// A row's number pill [14 x 20] and its digits [11].
     pub pill: (f64, f64),
     pub pill_words: f64,
+    pub rail: Rail,
+}
+
+/// Pond's collapsed column (its 48 wide card) at our scale.
+pub struct Rail {
+    /// Its words [13] in the mono face, a line apart [13].
+    pub words: f64,
+    pub line: f64,
+    /// The time card [113]: the hour's cap top [16], the divider [16 x 1]
+    /// centred at [63], and the weekday's cap top [75].
+    pub time_h: f64,
+    pub cap_top: f64,
+    pub divider: f64,
+    pub divider_y: f64,
+    pub date_top: f64,
+    /// A workspace row [41] and the gap under it [8], the current row's
+    /// header [above its windows, 37], its windows' circles [32] at a
+    /// pitch [40], the plate's inset [4], and its reach past the last
+    /// circle and the card's padding above and below the rows [4].
+    pub row: f64,
+    pub row_gap: f64,
+    pub header: f64,
+    pub circle: f64,
+    pub pitch: f64,
+    pub plate_inset: f64,
+    pub plate_pad: f64,
+    /// A row's window dots [4], apart [2], under the number's baseline
+    /// [4], at most [4].
+    pub dot: f64,
+    pub dot_gap: f64,
+    pub dot_drop: f64,
+    /// A square card [48], the art in it [32].
+    pub square: f64,
+    pub art: f64,
+    /// The installs and the foot cards' padding [4] and their rows [40].
+    pub pad: f64,
+    pub button: f64,
+    /// Bell to count in the notifications card [2].
+    pub tight: f64,
 }
 
 impl Geo {
@@ -112,6 +151,36 @@ impl Geo {
             plate_inset: p(4.0),
             pill: (p(12.0), p(17.0)),
             pill_words: p(10.0),
+            rail: Rail::of(&|v| (v * 0.875 * k).round()),
+        }
+    }
+}
+
+impl Rail {
+    fn of(p: &dyn Fn(f64) -> f64) -> Self {
+        Self {
+            words: p(13.0),
+            line: p(13.0),
+            time_h: p(113.0),
+            cap_top: p(16.0),
+            divider: p(16.0),
+            divider_y: p(63.0),
+            date_top: p(75.0),
+            row: p(41.0),
+            row_gap: p(8.0),
+            header: p(37.0),
+            circle: p(32.0),
+            pitch: p(40.0),
+            plate_inset: p(4.0),
+            plate_pad: p(4.0),
+            dot: p(4.0),
+            dot_gap: p(2.0),
+            dot_drop: p(4.0),
+            square: p(48.0),
+            art: p(32.0),
+            pad: p(4.0),
+            button: p(40.0),
+            tight: p(2.0),
         }
     }
 }
@@ -141,6 +210,9 @@ pub struct Sidebar {
     /// Notification app icons fitted at `Geo::glyph`, by entry id.
     icons: HashMap<String, Option<Bitmap>>,
     clock: ClockCard,
+    /// Folded to the rail, as last drawn, and the rail clock's lines.
+    collapsed: bool,
+    rail_lines: Vec<String>,
 }
 
 impl Sidebar {
@@ -164,6 +236,8 @@ impl Sidebar {
             face: Vec::new(),
             icons: HashMap::new(),
             clock: ClockCard::default(),
+            collapsed: false,
+            rail_lines: Vec::new(),
         }
     }
 
@@ -198,64 +272,71 @@ impl Sidebar {
         now: Instant,
     ) {
         let theme = &store.theme.theme;
-        let s = &theme.space;
         let g = Geo::of(theme);
-        let pad = if collapsed { s.xs } else { g.margin };
+        let pad = g.margin;
         let width = (strip.w as f64 - pad * 2.0).max(1.0);
         let (x0, y0) = (strip.x as f64 + pad, strip.y as f64 + pad);
         let bottom = (strip.y + strip.h) as f64 - pad;
         self.top.motion_scale = kit.motion_scale;
         self.foot.motion_scale = kit.motion_scale;
+        self.collapsed = collapsed;
+        self.map.rail = collapsed;
         self.map.read(store, output, theme);
         self.strip = strip;
         self.fit_icons(store, &g);
 
-        let foot = if collapsed { rail_foot(theme, edge) } else { foot_card(store, edge, &g) };
+        let foot = if collapsed { rail_foot(edge, &g) } else { foot_card(store, edge, &g) };
         let (_, foot_h) = crate::ui::measure(&foot, width, theme, kit);
-        let gap = if collapsed { s.section_gap } else { g.gap };
+        let gap = g.gap;
         let room = (bottom - foot_h - gap - y0).max(0.0);
-        let mut kept: Vec<&'static str> = Vec::new();
-        let top = if collapsed {
-            rail(theme, store, &self.map)
-        } else {
-            // Measured whole first: every row, from the top.
-            let want = self.map.first;
-            self.map.fits = usize::MAX;
-            self.map.first = 0;
-            let fits = |cards: &[(&str, El)], kit: &mut Kit| {
-                let col = w::column(gap, cards.iter().map(|(_, c)| c.clone()).collect());
-                crate::ui::measure(&col, width, theme, kit).1 <= room
-            };
-            let mut cards = cards(theme, store, &self.map, &g, &self.icons, width, kit, now);
-            for drop in DROPS {
-                if fits(&cards, kit) {
-                    break;
-                }
-                cards.retain(|(name, _)| *name != drop);
+        let build = |map: &minimap::Map, kit: &mut Kit| {
+            if collapsed { rail(theme, store, map, &g) } else { cards(theme, store, map, &g, &self.icons, width, kit, now) }
+        };
+        // Measured whole first: every row, from the top.
+        let want = self.map.first;
+        self.map.fits = usize::MAX;
+        self.map.circles = usize::MAX;
+        self.map.first = 0;
+        let fits = |cards: &[(&str, El)], kit: &mut Kit| {
+            let col = w::column(gap, cards.iter().map(|(_, c)| c.clone()).collect());
+            crate::ui::measure(&col, width, theme, kit).1 <= room
+        };
+        let mut cards = build(&self.map, kit);
+        for drop in DROPS {
+            if fits(&cards, kit) {
+                break;
             }
-            // Time and Spaces alone still too tall: the minimap shows the
-            // rows that fit and scrolls through the rest. Each pass measures
-            // the rows it would show (`first_for`), so what settles once
-            // after it is what was measured.
-            let total = self.map.len();
-            let mut n = total;
-            while !fits(&cards, kit) && n > 1 {
+            cards.retain(|(name, _)| *name != drop);
+        }
+        // Time and Spaces alone still too tall: the minimap shows the
+        // rows that fit and scrolls through the rest. Each pass measures
+        // the rows it would show (`first_for`), so what settles once
+        // after it is what was measured.
+        // On the rail the current row's circles go first, down to one.
+        let total = self.map.len();
+        let mut n = total;
+        let mut circles = if collapsed { self.map.current_windows() } else { 0 };
+        while !fits(&cards, kit) && (n > 1 || circles > 1) {
+            if circles > 1 {
+                circles -= 1;
+                self.map.circles = circles;
+            } else {
                 n -= 1;
                 self.map.fits = n;
                 self.map.first = self.map.first_for(want, n);
-                let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
-                cards = self::cards(theme, store, &self.map, &g, &self.icons, width, kit, now).into_iter().filter(|(name, _)| names.contains(name)).collect();
             }
-            if n < total {
-                self.map.first = want;
-                self.map.keep_in_view();
-            }
-            if self.map.fits == usize::MAX {
-                self.map.first = 0;
-            }
-            kept = cards.iter().map(|(n, _)| *n).collect();
-            w::column(gap, cards.into_iter().map(|(_, c)| c).collect())
-        };
+            let names: Vec<&str> = cards.iter().map(|(name, _)| *name).collect();
+            cards = build(&self.map, kit).into_iter().filter(|(name, _)| names.contains(name)).collect();
+        }
+        if n < total {
+            self.map.first = want;
+            self.map.keep_in_view();
+        }
+        if self.map.fits == usize::MAX {
+            self.map.first = 0;
+        }
+        let kept: Vec<&'static str> = cards.iter().map(|(n, _)| *n).collect();
+        let top = w::column(gap, cards.into_iter().map(|(_, c)| c).collect());
         self.cards = kept;
         let clip = Some(strip);
         self.top.anchor = anchor;
@@ -266,9 +347,8 @@ impl Sidebar {
         let at = bottom - foot_h;
         let feet = self.foot.draw(&foot, Rect::new(x0, at, x0 + width, bottom), clip, 1.0, theme, kit, scene, now);
         let face = self.paint_face(collapsed, store, &g, kit, scene, feet.last.or(self.foot.anchor), strip);
-        let hits = if collapsed { &[][..] } else { &self.top.hits[..] };
         let card = (x0, width);
-        let gliding = self.map.paint(hits, theme, kit, scene, face, strip, card, edge == Edge::Right, now);
+        let gliding = self.map.paint(&self.top.hits, theme, kit, scene, face, strip, card, edge == Edge::Right, now);
         self.animating = drawn.animating || feet.animating || gliding;
         self.wake = [drawn.wake, feet.wake, self.map.wake()].into_iter().flatten().min();
     }
@@ -285,14 +365,17 @@ impl Sidebar {
     }
 
     /// The clock's digits, its period and the date box over the time
-    /// card's reserved box; the last node drawn.
+    /// card's reserved box, or the rail's lines; the last node drawn.
     #[allow(clippy::too_many_arguments)]
     fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
-        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some("panel:calendar")).map(|h| h.rect).filter(|_| !collapsed);
+        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some("panel:calendar")).map(|h| h.rect);
         let mut nodes = std::mem::take(&mut self.face);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
-        if let Some(card) = card {
-            self.clock.paint(&mut p, kit, store, g, card);
+        self.rail_lines.clear();
+        match card {
+            Some(card) if collapsed => self.rail_lines = rail_clock(&mut p, kit, store, g, card),
+            Some(card) => self.clock.paint(&mut p, kit, store, g, card),
+            None => {}
         }
         let last = p.last();
         p.finish();
@@ -368,7 +451,9 @@ impl Sidebar {
     /// can renumber the hits.
     pub fn press(&mut self, i: usize, at: (f64, f64)) {
         let on = self.hit_at(i).and_then(|h| h.on.clone());
-        self.map.press(on.as_deref().unwrap_or_default(), at);
+        // Pond lifts no icon off its collapsed column.
+        let lift = if self.collapsed { "" } else { on.as_deref().unwrap_or_default() };
+        self.map.press(lift, at);
         self.pressed = on;
     }
 
@@ -396,6 +481,7 @@ impl Sidebar {
             "edge": edge.as_str(),
             "width": width,
             "cards": self.cards,
+            "rail": collapsed.then(|| json!({"time": self.rail_lines.get(..self.rail_lines.len().saturating_sub(2)), "date": self.rail_lines.get(self.rail_lines.len().saturating_sub(2)..)})),
             "input": self.input_rects().iter().map(|r| json!({"x": r.x, "y": r.y, "w": r.w, "h": r.h})).collect::<Vec<_>>(),
             "rows": self.map.status(),
             "cursor": self.map.cursor_status(),
@@ -675,34 +761,123 @@ fn fold_glyph(edge: Edge, collapsed: bool) -> &'static str {
     }
 }
 
-/// The rail's foot: network, audio, settings and expand, stacked.
-fn rail_foot(theme: &Theme, edge: Edge) -> El {
-    let button = |glyph: &str, tip: &str, on: &str| w::icon_button(glyph).variant(Variant::Ghost).tip(tip).on(on).centred();
+/// The rail's foot, Pond's collapsed controls: network, audio, settings
+/// and expand, stacked.
+fn rail_foot(edge: Edge, g: &Geo) -> El {
+    let r = &g.rail;
+    let button = |glyph: &str, tip: &str, on: &str| {
+        w::cell(w::column(0.0, vec![w::icon(glyph).size(Type::Caption).ink(Ink::Muted).centred()]).fill())
+            .ghost()
+            .cell_state(|c| c.inset = Some((0.0, 0.0)))
+            .interactive()
+            .tip(tip)
+            .on(on)
+            .height(r.button)
+            .fill()
+    };
     let buttons = vec![
         button("wifi", "Network", "panel:network"),
         button("volume-2", "Audio", "panel:audio"),
         button("settings", "Settings", "panel:settings"),
         button(fold_glyph(edge, true), "Expand", "expand"),
     ];
-    w::column(theme.space.xs, buttons).fill()
+    w::card(w::column(0.0, buttons).fill()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()
 }
 
-/// The rail: the clock as hours over minutes, the workspace chips and the
-/// Activity ring while something runs.
-fn rail(theme: &Theme, store: &Store, map: &minimap::Map) -> El {
-    let s = &theme.space;
-    let clock = store.clock.now;
-    let mut col = vec![
-        w::column(
-            0.0,
-            vec![w::value(time_parts(store).0.split(':').next().unwrap_or_default().to_owned()).centred(), w::value(format_qt(clock, "mm")).centred()],
-        )
-        .fill()
-        .on("panel:calendar"),
-    ];
-    col.push(map.rail(theme));
-    if let Some(g) = store.activity.activity.groups().first() {
-        col.push(w::ring(activity::ring(g.lead())).centred().on("panel:activity"));
+/// The rail's cards, Pond's collapsed column: the time card (painted over
+/// by `rail_clock`), the workspace rows, the art while a player plays, the
+/// bell, and a ring per running group.
+fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo) -> Vec<(&'static str, El)> {
+    let r = &g.rail;
+    let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
+    let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
+    let mut out = vec![("time", w::card(w::space(r.time_h)).cell_state(bare).interactive().on("panel:calendar").fill())];
+    out.push(("spaces", w::card(map.rail_view(theme)).cell_state(bare).fill()));
+    if let Some(a) = store.media.active() {
+        let (px, radius) = w::cover_inner(theme, r.art);
+        let cover = (!a.art_url.is_empty()).then(|| store.media.cover(&a.art_url, px, radius, crate::scene::raster_scale())).flatten();
+        out.push(("media", w::card(square(w::cover(cover, r.art))).cell_state(bare).interactive().on("panel:media").fill()));
     }
-    w::column(s.section_gap, col).fill()
+    let m = &store.notifications.model;
+    let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
+    let all = m.popups.len() + m.pending.len() + m.past.len();
+    // A toast still up is as new as one filed unseen.
+    let new = m.popups.len() + m.pending.len();
+    let bell = match if new == 0 { all } else { new } {
+        0 => bell,
+        n => w::row(r.tight, vec![bell, w::caption(n.to_string()).mono().weight(Weight::Medium).ink(Ink::Muted)]),
+    };
+    out.push(("notifications", w::card(square(bell)).cell_state(bare).interactive().on(format!("panel:{}", center::ID)).fill()));
+    let groups = store.activity.activity.groups();
+    if !groups.is_empty() {
+        let rows = groups
+            .iter()
+            .take(3)
+            .map(|grp| {
+                let lead = grp.lead();
+                w::cell(w::column(0.0, vec![w::indicator(activity::ring(lead)).centred()]).fill())
+                    .ghost()
+                    .cell_state(bare)
+                    .interactive()
+                    .tip(lead.subject().to_owned())
+                    .on(format!("open:{}", grp.source))
+                    .height(r.button)
+                    .fill()
+            })
+            .collect();
+        out.push(("activity", w::card(w::column(0.0, rows).fill()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
+    }
+    out
+}
+
+/// The rail clock's lines, Pond's: the two-digit hour, the minutes, and
+/// the period at 0.3 where the format is 12 hour; then the weekday's first
+/// two letters at 0.5 and the two-digit day.
+fn rail_lines(store: &Store) -> [Vec<Line>; 2] {
+    let format = clock_format(store);
+    // Quoted runs are literal text, never a marker.
+    let bare: String = format.split('\'').step_by(2).collect();
+    let period = if bare.contains('A') { Some("AP") } else if bare.contains('a') { Some("ap") } else { None };
+    let clock = store.clock.now;
+    let hour = match period {
+        Some(_) => format_qt(clock, "hh AP").split(' ').next().unwrap_or_default().to_owned(),
+        None => format_qt(clock, "HH"),
+    };
+    let mut time = vec![(hour, 1.0), (format_qt(clock, "mm"), 1.0)];
+    if let Some(ap) = period {
+        time.push((format_qt(clock, ap), 0.3));
+    }
+    let day = format_qt(clock, "ddd").chars().take(2).collect::<String>().to_uppercase();
+    [time, vec![(day, 0.5), (format_qt(clock, "dd"), 1.0)]]
+}
+
+/// A rail clock line and its opacity.
+type Line = (String, f32);
+
+/// The rail clock over the time card's box; the lines it drew.
+fn rail_clock(p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) -> Vec<String> {
+    let theme = &store.theme.theme;
+    let r = &g.rail;
+    let fg = theme.colors.get("foreground");
+    let style = TextStyle { family: kit.look.mono, size: r.words as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+    let cap = cap_height(r.words);
+    let [time, date] = rail_lines(store);
+    let mut drawn = Vec::new();
+    for (lines, top) in [(&time, r.cap_top), (&date, r.date_top)] {
+        for (i, (words, alpha)) in lines.iter().enumerate() {
+            let t = kit.shape(words, style);
+            let baseline = card.y as f64 + top + i as f64 * r.line + cap;
+            p.text(&t, (card.x + (card.w - t.width) / 2, (baseline - f64::from(t.ascent)).round() as i32), fg.with_alpha(fg.a * alpha), &[]);
+            drawn.push(words.clone());
+        }
+    }
+    let d = r.divider as i32;
+    p.rect(IRect::new(card.x + (card.w - d) / 2, card.y + r.divider_y as i32, d, theme.border_width.max(1.0) as i32), outline(theme), 0.0);
+    drawn
+}
+
+/// A face's cap height at `size`: the mono faces we ask for stand theirs
+/// at about 0.7 of the size.
+pub fn cap_height(size: f64) -> f64 {
+    (size * 0.7).round()
 }

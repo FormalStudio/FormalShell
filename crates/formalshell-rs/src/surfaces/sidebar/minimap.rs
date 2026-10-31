@@ -34,7 +34,7 @@ use crate::store::Store;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::bar::cells::workspaces::{window, workspace};
 use crate::text::TextStyle;
-use crate::ui::{El, Variant, w};
+use crate::ui::{El, w};
 
 use super::Geo;
 
@@ -138,6 +138,10 @@ pub struct Map {
     /// Each tiled window's column (its x) on a workspace that reorders by
     /// column: a column moves whole.
     cols: HashMap<String, i64>,
+    /// Drawn as the rail's rows (`rail_view`).
+    pub rail: bool,
+    /// The current rail row's circles, cut to what the column holds.
+    pub circles: usize,
 }
 
 impl Map {
@@ -346,6 +350,12 @@ impl Map {
         w::column(0.0, col).pad(0.0, -half, 0.0, -half).fill()
     }
 
+    /// The windows on the current row, as the rail would draw them.
+    pub fn current_windows(&self) -> usize {
+        let Some(i) = self.rows.iter().position(|r| r.current) else { return 0 };
+        self.held().get(i).map_or(0, Vec::len)
+    }
+
     /// The rows in the list, the empty one counted.
     pub fn len(&self) -> usize {
         self.shown().len()
@@ -511,17 +521,19 @@ impl Map {
         let g = Geo::of(theme);
         let mut nodes = std::mem::take(&mut self.nodes);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
-        if self.over || lifted.is_some() {
+        if self.rail {
+            self.rail_marks(&mut p, kit, theme, &g);
+        } else if self.over || lifted.is_some() {
             self.pills(&mut p, kit, theme, &g, card, right);
         }
         let ring = super::outline(theme);
         let focus = theme.colors.get("ring");
         let at = self.cursor.as_ref().and_then(|c| c.window.as_ref()).map(|id| format!("window:{id}"));
         let d = g.slot.round() as i32;
-        for h in hits.iter().filter(|h| h.rect.w == d && h.rect.h == d && h.on.as_deref().is_some_and(on_map)) {
+        for h in hits.iter().filter(|h| h.rect.w == h.rect.h && h.rect.w <= d && h.on.as_deref().is_some_and(on_map)) {
             // The swatches draw no cursor of their own, so the keyboard's ring is this one.
             let (ink, width) = if h.on == at { (focus, theme.border_width * 2.0) } else { (ring, theme.border_width) };
-            p.framed(h.rect, Rgba::TRANSPARENT, d as f32 / 2.0, ink, width as f32);
+            p.framed(h.rect, Rgba::TRANSPARENT, h.rect.w as f32 / 2.0, ink, width as f32);
         }
         let mut moving = false;
         let ids: Vec<String> = self.slots.keys().cloned().collect();
@@ -574,18 +586,78 @@ impl Map {
         }
     }
 
-    /// The rail's chips: one ordinal per workspace, the focused one filled.
-    pub fn rail(&self, theme: &Theme) -> El {
-        let chips = self
-            .rows
+    /// Pond's collapsed rows: one per workspace and the empty one, each a
+    /// plate (the current row's, else the hover's) whose number and window
+    /// dots `paint` draws; the current row holds its windows' circles.
+    pub fn rail_view(&self, theme: &Theme) -> El {
+        let r = Geo::of(theme).rail;
+        let shown = self.held();
+        let last = shown.len() - 1;
+        let rows = shown
             .iter()
             .enumerate()
-            .map(|(i, r)| {
-                let v = if r.current { Variant::Default } else { Variant::Ghost };
-                w::button(r.label.clone()).variant(v).on(format!("row:{i}")).centred()
+            .skip(self.first)
+            .take(self.fits)
+            .map(|(i, ids)| {
+                let current = self.rows.get(i).is_some_and(|r| r.current);
+                let on = if i == last { "new".to_owned() } else { format!("row:{i}") };
+                let n = if current { ids.len().min(self.circles) } else { 0 };
+                let plate = if n == 0 { r.row } else { r.header + n as f64 * r.pitch - r.row_gap + r.plate_pad };
+                let mut col = vec![w::space(if n == 0 { plate } else { r.header })];
+                if n > 0 {
+                    let circles = ids.iter().take(n).map(|id| w::dot(Rgba::TRANSPARENT, r.circle).on(format!("window:{id}")).centred()).collect();
+                    col.push(w::column(r.pitch - r.circle, circles).fill());
+                    col.push(w::space(r.plate_pad));
+                }
+                w::cell(w::column(0.0, col).fill())
+                    .ghost()
+                    .selected(current)
+                    .cell_state(|c| c.inset = Some((0.0, 0.0)))
+                    .interactive()
+                    .on(on)
+                    .height(plate)
+                    .pad(r.plate_inset, 0.0, r.plate_inset, 0.0)
+                    .fill()
             })
             .collect();
-        w::column(theme.space.xxs, chips).fill()
+        w::column(r.row_gap, rows).pad(0.0, r.plate_pad, 0.0, r.plate_pad).fill()
+    }
+
+    /// Each rail row's number, its window dots off the current row, and
+    /// the hairline between rows.
+    fn rail_marks(&self, p: &mut Painter, kit: &mut Kit, theme: &Theme, g: &Geo) {
+        let r = &g.rail;
+        let fg = theme.colors.get("foreground");
+        let style = TextStyle { family: kit.look.mono, size: r.words as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+        let cap = super::cap_height(r.words);
+        let shown = self.held();
+        let mut boxes = self.row_boxes.clone();
+        boxes.sort_by_key(|(_, b)| b.y);
+        for (k, (i, b)) in boxes.iter().enumerate() {
+            let row = self.rows.get(*i);
+            let current = row.is_some_and(|r| r.current);
+            let idx = row.map_or_else(|| self.next_idx(), |r| r.idx);
+            let ids = shown.get(*i).map_or(&[][..], |v| v.as_slice());
+            let dots = if current { 0 } else { ids.len().min(4) };
+            let words = if idx > 0 { format!("{idx:02}") } else { row.map(|r| r.label.clone()).unwrap_or_default() };
+            let t = kit.shape(&words, style);
+            let tall = cap + if dots > 0 { r.row_gap } else { 0.0 };
+            let baseline = (b.y as f64 + (r.row - tall) / 2.0 + cap).round();
+            let alpha = if current { 1.0 } else { 0.5 };
+            p.text(&t, (b.x + (b.w - t.width) / 2, (baseline - f64::from(t.ascent)).round() as i32), fg.with_alpha(fg.a * alpha), &[]);
+            let (d, gap) = (r.dot as i32, r.dot_gap as i32);
+            let span = dots as i32 * d + (dots as i32 - 1).max(0) * gap;
+            let y = (baseline + r.dot_drop) as i32;
+            for (j, id) in ids.iter().take(dots).enumerate() {
+                let tint = self.win(id).and_then(|w| w.icon.as_ref()).and_then(mean_colour).unwrap_or(fg.with_alpha(fg.a * 0.5));
+                p.rect(IRect::new(b.x + (b.w - span) / 2 + j as i32 * (d + gap), y, d, d), tint, d as f32 / 2.0);
+            }
+            if let Some((_, next)) = boxes.get(k + 1) {
+                let w = r.divider as i32;
+                let y = (b.bottom() + next.y) / 2;
+                p.rect(IRect::new(b.x + (b.w - w) / 2, y, w, theme.border_width.max(1.0) as i32), super::outline(theme), 0.0);
+            }
+        }
     }
 
     pub fn action(&self, on: &str, output: &str) -> Action {
@@ -649,6 +721,19 @@ fn align(held: &[(i64, Vec<String>)], rows: &[Row]) -> Vec<Vec<String>> {
         }
     }
     out
+}
+
+/// A picture's mean colour over its ink, straight alpha: what Pond's
+/// one-colour quantizer gives a window's dot.
+fn mean_colour(b: &Bitmap) -> Option<Rgba> {
+    let (mut sum, mut ink) = ([0.0f64; 3], 0.0f64);
+    for px in b.pixmap.data_as_u8_slice().as_chunks::<4>().0 {
+        for (s, c) in sum.iter_mut().zip(px) {
+            *s += f64::from(*c);
+        }
+        ink += f64::from(px[3]);
+    }
+    (ink > 0.0).then(|| Rgba { r: (sum[0] / ink) as f32, g: (sum[1] / ink) as f32, b: (sum[2] / ink) as f32, a: 1.0 })
 }
 
 /// An icon in its circle.

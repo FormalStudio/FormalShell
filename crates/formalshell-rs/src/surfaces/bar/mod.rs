@@ -205,7 +205,7 @@ impl Bar {
         let before = self.thickness();
         self.collapsed = collapsed;
         self.strip_key = None;
-        // The rail draws no minimap for a cursor to stand on.
+        // The rail's rows are not walked by the keys (`sidebar focus` refuses it).
         if let Some(sb) = self.sidebar.as_mut().filter(|_| collapsed) {
             sb.map.cursor = None;
         }

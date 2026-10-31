@@ -126,7 +126,7 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 39] = [
     ("switcherInset", 64.0),
     ("keycapHeight", 20.0),
     ("sidebarWidth", 154.0),
-    ("sidebarRail", 48.0),
+    ("sidebarRail", 60.0),
     // The panel language's 4px grid (specs/2026-10-30-panel-language.md §2),
     // Pond's numbers rounded onto it.
     ("panelInset", 20.0),
