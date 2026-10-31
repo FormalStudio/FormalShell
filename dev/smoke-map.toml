@@ -714,7 +714,7 @@ runs = ["--minimap"]
 
 # Input settling re-reads the windows Hyprland moved without an event.
 [[rule]]
-paths = ["crates/formalshell-rs/src/wayland/settle.rs"]
+paths = ["crates/formalshell-rs/src/wayland/settle.rs", "crates/formalshell-rs/src/services/compositor/hyprland/mod.rs"]
 runs = ["--minimap", "--spaces", "--idle"]
 
 # HyprExpo's overview: the minimap's long press and cross-row drag, the

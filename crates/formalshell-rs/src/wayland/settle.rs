@@ -1,11 +1,8 @@
-//! Hyprland posts no event for a window moved inside its workspace: a swap
-//! or a scrolling column move leaves socket2 quiet (`movewindow` is posted
-//! from `CWindow::moveToWorkspace` alone, 0.56.2), so the Spaces map and
-//! chips would keep the old order. Every such move comes off a bind or a
-//! drag, so the windows are read again each time input settles: an input
-//! idle notification fires once after a burst of keys or pointer motion, and
-//! never while nothing is touched. A read that finds nothing new publishes
-//! nothing (`compositor::State::apply`).
+//! Tells the compositor service each time input settles: an input idle
+//! notification fires once after a burst of keys or pointer motion, and
+//! never while nothing is touched. The backend decides what that is worth
+//! (`compositor::Command::InputSettled`); a read that finds nothing new
+//! publishes nothing (`compositor::State::apply`).
 
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -40,7 +37,7 @@ pub struct Settled;
 impl Dispatch2<ExtIdleNotificationV1, App> for Settled {
     fn event(&self, _: &mut App, _: &ExtIdleNotificationV1, event: ext_idle_notification_v1::Event, _: &Connection, _: &QueueHandle<App>) {
         if let ext_idle_notification_v1::Event::Idled = event {
-            compositor::send(compositor::Command::RefreshWindows);
+            compositor::send(compositor::Command::InputSettled);
         }
     }
 }

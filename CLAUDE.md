@@ -972,8 +972,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Hyprland posts no event for, each off a real bind the leg declares
   (scrolling's `swapcol r`, then dwindle's `hl.dsp.window.swap` right): the
   windows' order by position changing in `hyprctl clients` and the map's
-  row following it, off the read `wayland/settle.rs` makes once input
-  settles. Then `sidebar focus` over an
+  row following it, off the Hyprland backend's re-read once input settles
+  (`compositor::Command::InputSettled`, sent by `wayland/settle.rs`). Then `sidebar focus` over an
   open launcher closing it with the cursor up, `sidebar collapse` taking
   the cursor down, and 26 more workspaces: the map cut to the rows that
   fit above the foot's buttons and a real wheel notch moving the first

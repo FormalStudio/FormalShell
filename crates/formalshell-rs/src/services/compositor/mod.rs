@@ -212,6 +212,10 @@ pub enum Command {
     ParkWindow(String),
     UnparkWindow(String),
     RefreshWindows,
+    /// Input went quiet after a burst of keys or pointer motion
+    /// (`wayland/settle.rs`): a backend whose events miss some window moves
+    /// reads the windows again.
+    InputSettled,
     RefreshOutputs,
     SetOutputEnabled(String, bool),
     SetOutputScale(String, f64),

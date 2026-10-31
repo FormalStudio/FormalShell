@@ -279,6 +279,8 @@ async fn commands(shared: Shared, rx: async_channel::Receiver<Command>, dirty: a
             Command::RefreshWindows | Command::RefreshOutputs => {
                 let _ = dirty.try_send(());
             }
+            // The `all-clients` watch already sends every move.
+            Command::InputSettled => {}
             Command::SetOutputEnabled(name, on) => dispatch(&dispatch::enable_output(&name, on)).await,
             Command::SetOutputScale(..) => unsupported("an output scale change"),
             Command::SetOutputMirror(..) => unsupported("output mirroring"),

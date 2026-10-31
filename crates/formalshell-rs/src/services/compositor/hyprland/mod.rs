@@ -363,7 +363,11 @@ async fn commands(
             }
             Command::ParkWindow(id) => park(&ctx, &shared, &id, false).await,
             Command::UnparkWindow(id) => park(&ctx, &shared, &id, true).await,
-            Command::RefreshWindows => {
+            // Hyprland posts no event for a window moved inside its
+            // workspace: a swap or a scrolling column move leaves socket2
+            // quiet (`movewindow` comes from `CWindow::moveToWorkspace`
+            // alone, 0.56.2), and every such move comes off a bind or a drag.
+            Command::RefreshWindows | Command::InputSettled => {
                 let _ = dirty.try_send(());
             }
             Command::RefreshOutputs => refresh_outputs(&ctx, &shared).await,
