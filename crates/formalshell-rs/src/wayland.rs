@@ -21,6 +21,7 @@ mod picker;
 mod preview;
 mod rims;
 mod screensaver;
+mod settle;
 mod sidebar;
 pub mod switcher;
 mod toasts;
@@ -225,6 +226,7 @@ pub struct App {
     pub runtime: Option<Runtime>,
     pub store: Store,
     caffeinate: caffeinate::Caffeinate,
+    settle: settle::Settle,
     console: console::Console,
     saver: screensaver::Saver,
     pub lock: lock::Lock,
@@ -357,6 +359,7 @@ impl App {
             runtime: None,
             store,
             caffeinate: caffeinate::Caffeinate::bind(globals, qh),
+            settle: settle::Settle::bind(globals, qh),
             console: console::Console::default(),
             saver: screensaver::Saver::default(),
             lock: lock::Lock::bind(globals, qh),
@@ -651,6 +654,7 @@ impl App {
         nightlight::configure(self.store.config.settings());
         info::configure(self.store.config.settings());
         self.arm_caffeinate();
+        self.arm_settle();
         let edge = self.chrome_edge();
         let moved = self.bar.set_edge(edge);
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
@@ -2524,6 +2528,7 @@ impl SeatHandler for App {
 
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {
         self.arm_idle();
+        self.arm_settle();
     }
 
     fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, capability: Capability) {

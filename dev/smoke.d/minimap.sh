@@ -20,6 +20,11 @@
 # dragged past the last moves its column to the tape's end (e f d by x,
 # where a swap would give f e d), with a frame mid-drag and one after; then
 # `sidebar focus` and Shift+Left carry that column back one (e d f).
+# Then two moves inside workspace 4 that Hyprland posts no event for, each
+# off a real bind this leg declares: the scrolling layout's `swapcol r`
+# and, under dwindle, `hl.dsp.window.swap` to the right, the first window
+# by position focused first. Each has to change the windows' order by
+# position in `hyprctl clients`, and the map's row has to follow it.
 # After them, the map's rows photographed as the drags left them and
 # again once a collapse and expand draws them whole: no pixel differs, so
 # no drag left a trail behind its lifted icon. Then
@@ -47,6 +52,7 @@ minimap_carried_png="$shot_dir/minimap-carried.png"
 minimap_trail_png="$shot_dir/minimap-trail.png"
 minimap_redrawn_png="$shot_dir/minimap-redrawn.png"
 minimap_trail_status="$shot_dir/minimap-trail.json"
+minimap_inner=(scrolling dwindle)
 
 leg_minimap_validate() {
   if leg_on bar_position || leg_on frame; then
@@ -60,11 +66,15 @@ leg_minimap_fixture() {
 }
 
 leg_minimap_timing() {
-  leg_timing 30 110
+  leg_timing 30 120
 }
 
 leg_minimap_drive() {
   local script="$shot_dir/minimap-drive.sh"
+  # wtype's keymap and Hyprland's keycodes disagree; switcher_keys.sh says why.
+  echo 'hl.config({ input = { resolve_binds_by_sym = true } })'
+  echo 'hl.bind("SUPER + period", hl.dsp.layout("swapcol r"))'
+  echo 'hl.bind("SUPER + Right", hl.dsp.window.swap({ direction = "right" }))'
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 for _ in \$(seq 1 40); do
@@ -175,6 +185,26 @@ sleep 1.5
 "$hyprctl_bin" -j clients > "${minimap_clients[10]}" 2>&1
 "$wtype_bin" -k Escape
 sleep 0.5
+# A move inside workspace 4 off a real bind, its first window by position
+# focused first and left a second for the focus read to settle.
+inner() {
+  local tag=\$1 addr
+  shift
+  addr=\$("$hyprctl_bin" -j clients | "$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0], .at[1]) | .[0].address')
+  "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'address:\$addr' })" > /dev/null 2>&1
+  sleep 1
+  $ipc call sidebar status > "$shot_dir/minimap-inner-\$tag-before.json" 2>&1
+  "$hyprctl_bin" -j clients > "$shot_dir/minimap-inner-\$tag-before-clients.json" 2>&1
+  "$wtype_bin" "\$@"
+  sleep 1
+  $ipc call sidebar status > "$shot_dir/minimap-inner-\$tag.json" 2>&1
+  "$hyprctl_bin" -j clients > "$shot_dir/minimap-inner-\$tag-clients.json" 2>&1
+  "$hyprctl_bin" -j binds > "$shot_dir/minimap-inner-\$tag-binds.json" 2>&1
+}
+inner scrolling -M logo -P Super_L -k period -p Super_L -m logo
+"$hyprctl_bin" eval 'hl.config({ general = { layout = "dwindle" } })' > /dev/null 2>&1
+sleep 1
+inner dwindle -M logo -P Super_L -k Right -p Super_L -m logo
 # Every drag has settled and the keyboard is back: the map as the drags
 # left it, then drawn whole again by a collapse and expand, the pointer
 # parked off the column for both so no hover differs. It comes after
@@ -220,6 +250,11 @@ EOS
 # A window by its sidebar id in a clients dump: "<x> <workspace id>".
 minimap_where() {
   "$jq_bin" -r --arg id "$1" '.[] | select((.address | ltrimstr("0x") | sub("^0+"; "")) == $id) | "\(.at[0]) \(.at[1]) \(.workspace.id)"' "$2"
+}
+
+# Workspace 4's windows by position as sidebar ids, the map's own order.
+minimap_order() {
+  "$jq_bin" -r '[.[] | select(.workspace.id == 4)] | sort_by(.at[0], .at[1]) | map(.address | ltrimstr("0x") | sub("^0+"; "")) | join(" ")' "$1"
 }
 
 leg_minimap_assert() {
@@ -292,6 +327,17 @@ leg_minimap_assert() {
       9) [ "$order" = "e f d" ] || fail "minimap: the drag past the last column did not move d's column to the end: $order" ;;
       10) [ "$order" = "e d f" ] || fail "minimap: Shift+Left did not carry d's column back one: $order" ;;
     esac
+  done
+  local tag before after map row
+  for tag in "${minimap_inner[@]}"; do
+    before=$(minimap_order "$shot_dir/minimap-inner-$tag-before-clients.json")
+    after=$(minimap_order "$shot_dir/minimap-inner-$tag-clients.json")
+    row=$("$jq_bin" '[.rows[] | .windows | length] | index(3)' "$shot_dir/minimap-inner-$tag.json")
+    map=$("$jq_bin" -r --argjson r "$row" '.rows[$r].windows | join(" ")' "$shot_dir/minimap-inner-$tag.json")
+    echo "minimap $tag move inside workspace 4: clients $before -> $after, map $map"
+    [ -n "$before" ] && [ "$before" != "$after" ] \
+      || fail "minimap: the $tag bind did not move a window inside workspace 4: $before; binds $("$jq_bin" -c '[.[] | select(.modmask == 64)]' "$shot_dir/minimap-inner-$tag-binds.json"); clients $("$jq_bin" -c '[.[] | select(.workspace.id == 4) | [.address, .at, .focusHistoryID]]' "$shot_dir/minimap-inner-$tag-clients.json")"
+    [ "$map" = "$after" ] || fail "minimap: the map did not follow the $tag move inside workspace 4: map $map, clients $after"
   done
   "$jq_bin" -e '.isOpen == false' "$shot_dir/minimap-menu-status.json" > /dev/null \
     || fail "minimap: sidebar focus left the launcher open: $(cat "$shot_dir/minimap-menu-status.json")"

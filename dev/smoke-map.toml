@@ -712,6 +712,11 @@ runs = ["--sidebar-join", "--sidebar-join --light"]
 paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "dev/smoke.d/minimap.sh"]
 runs = ["--minimap"]
 
+# Input settling re-reads the windows Hyprland moved without an event.
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/settle.rs"]
+runs = ["--minimap", "--spaces", "--idle"]
+
 # HyprExpo's overview: the minimap's long press and cross-row drag, the
 # compositor command and the IPC verb that open it.
 [[rule]]

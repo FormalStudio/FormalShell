@@ -968,7 +968,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   column to the tape's end (`e f d` by x, where a swap gives `f e d`) and
   Shift+Left carrying it back one (`e d f`), the map's rows between the
   two matching a whole redraw (a collapse and expand) pixel for pixel, so
-  no lifted icon left a trail. Then `sidebar focus` over an
+  no lifted icon left a trail. Then two moves inside workspace 4 that
+  Hyprland posts no event for, each off a real bind the leg declares
+  (scrolling's `swapcol r`, then dwindle's `hl.dsp.window.swap` right): the
+  windows' order by position changing in `hyprctl clients` and the map's
+  row following it, off the read `wayland/settle.rs` makes once input
+  settles. Then `sidebar focus` over an
   open launcher closing it with the cursor up, `sidebar collapse` taking
   the cursor down, and 26 more workspaces: the map cut to the rows that
   fit above the foot's buttons and a real wheel notch moving the first
