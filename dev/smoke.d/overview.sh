@@ -10,9 +10,12 @@
 # naming hyprexpo, its `columns` reaching it from hl.config, and the
 # `debug dump`'s `overview` true. Then the
 # overview opened four ways, each read back off `hyprctl submap` (the
-# plugin enters its `hyprexpo` submap while it is up) and closed over IPC:
-# Super+O typed by wtype, `workspaces overview open`, a 900ms press on a
-# minimap icon, an icon dragged off its row onto the next, and the pointer
+# plugin enters its `hyprexpo` submap while it is up, and only one the
+# config defines, as the owner's does) and closed over IPC:
+# Super+O typed by wtype, `workspaces overview open`, an icon dragged off
+# its row onto the next, then a 900ms press on a minimap icon (the second
+# gesture after a handed-off release, which an unpatched HyprExpo leaves
+# held in Hyprland, so the press never reaches the bar), and the pointer
 # parked in the top-left hot corner: closed under it, the overview stays
 # closed 2s with the pointer still there, and a leave past the cooldown
 # and a new approach open it again. The bind's
@@ -69,7 +72,12 @@ end
 if hl.plugin.hyprexpo then
   hl.config({ plugin = { hyprexpo = { columns = 3, gaps_in = 8, gaps_out = 24, keynav_enable = 1, skip_empty = 0 } } })
 end
+-- wtype's keymap and Hyprland's keycodes disagree; switcher_keys.sh says why.
+hl.config({ input = { resolve_binds_by_sym = true } })
 hl.bind("SUPER + O", function() if hl.plugin.hyprexpo then hl.plugin.hyprexpo.expo("toggle") end end)
+hl.define_submap("hyprexpo", function()
+  hl.bind("escape", function() if hl.plugin.hyprexpo then hl.plugin.hyprexpo.expo("cancel") end end)
+end)
 EOF
   write_script "$script" <<EOS
 #!/usr/bin/env bash
@@ -90,7 +98,7 @@ submap() { printf '%s %s\n' "\$1" "\$("$hyprctl_bin" submap 2>&1 | tr -d '\n')" 
 sleep 0.5
 "$grim_bin" "$overview_desktop_png" > /dev/null 2>&1
 submap rest
-"$wtype_bin" -M logo -k o -m logo
+"$wtype_bin" -M logo -P Super_L -k o -p Super_L -m logo
 sleep 1.5
 submap bind-open
 "$grim_bin" "$overview_bind_png" > /dev/null 2>&1
@@ -109,20 +117,6 @@ centre() {
 }
 first=\$($ipc call sidebar status | "$jq_bin" -r '.rows[0].windows[0]')
 read -r ax ay <<< "\$(centre "window:\$first")"
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move "\$ax" "\$ay" > /dev/null 2>&1
-sleep 0.3
-"$python3_bin" "$overview_vpointer" down wait 1500 up > /dev/null 2>&1 &
-sleep 1.1
-submap press-open
-wait
-sleep 1
-submap press-released
-$ipc call workspaces overview close > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 1 })" > /dev/null 2>&1
-sleep 1
-first=\$($ipc call sidebar status | "$jq_bin" -r '.rows[0].windows[0]')
-read -r ax ay <<< "\$(centre "window:\$first")"
 read -r bx by <<< "\$(centre row:1)"
 "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
 "$wlrctl_bin" pointer move "\$ax" "\$ay" > /dev/null 2>&1
@@ -137,6 +131,20 @@ wait
 sleep 1
 submap drag-released
 $ipc call workspaces overview close > /dev/null 2>&1
+sleep 1
+first=\$($ipc call sidebar status | "$jq_bin" -r '.rows[0].windows[0]')
+read -r ax ay <<< "\$(centre "window:\$first")"
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+"$wlrctl_bin" pointer move "\$ax" "\$ay" > /dev/null 2>&1
+sleep 0.3
+"$python3_bin" "$overview_vpointer" down wait 1500 up > /dev/null 2>&1 &
+sleep 1.1
+submap press-open
+wait
+sleep 1
+submap press-released
+$ipc call workspaces overview close > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 1 })" > /dev/null 2>&1
 sleep 1
 "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
 sleep 1.2

@@ -352,7 +352,7 @@ pull_one() {
 cmd_smoke() {
   cmd_sync
   local out status=0 forward="" name
-  for name in FS_RESULT SMOKE_WALLPAPER_DITHER FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_DEPTH_PICTURE FS_DEPTH_GENERATE FS_SMOKE_SCALE; do
+  for name in FS_RESULT SMOKE_WALLPAPER_DITHER FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_DEPTH_PICTURE FS_DEPTH_GENERATE FS_SMOKE_SCALE FS_HYPREXPO; do
     [ -z "${!name:-}" ] || forward+="$name=$(printf '%q' "${!name}") "
   done
   out=$(remote_run "${forward}./dev/smoke.sh $*" 2>&1) || status=$?
