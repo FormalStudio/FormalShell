@@ -48,7 +48,25 @@ struct ShmBuffer {
 
 /// The surfaces drawn on the GPU when `render.backend` resolves to it.
 fn on_gpu(name: &str) -> bool {
-    matches!(name, "menu" | "menu-content" | "bar" | "desktop-clock")
+    matches!(
+        name,
+        "menu"
+            | "menu-content"
+            | "bar"
+            | "desktop-clock"
+            | "panel"
+            | "tooltip"
+            | "toasts"
+            | "osd"
+            | "switcher"
+            | "capture"
+            | "debug-join"
+            | "screensaver"
+            | "polkit"
+            | "polkit-content"
+            | "radio"
+            | "plugin-overlay"
+    )
 }
 
 /// A renderer for `name`: the GPU's where the backend is, else the CPU's.
