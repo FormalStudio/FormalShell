@@ -1,5 +1,5 @@
 //! `trayoverflow`: the tray's second bar, every StatusNotifier item as an
-//! icon button on a headerless card, a row at a time. A click is the item's
+//! icon in a `panel.chip` square on a headerless card, a row at a time. A click is the item's
 //! Activate (its menu for an item that is only a menu), a middle click its
 //! SecondaryActivate, and a right click its shell-owned menu, hung off this
 //! card.
@@ -93,14 +93,14 @@ impl Panel for Tray {
     fn width(&self, v: &View) -> f64 {
         let s = &v.theme.space;
         let n = columns(v.store.tray.items.len()) as f64;
-        n * s.control_height + (n - 1.0) * s.xs + s.panel_padding * 2.0
+        n * s.control_height + (n - 1.0) * s.panel_gap + s.panel_padding * 2.0
     }
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let items = &v.store.tray.items;
         if items.is_empty() {
-            return w::column(0.0, vec![w::section_label(s, "No items", None, true)]);
+            return w::panel_empty(s, "No items");
         }
         let size = v.theme.font_size.body.round().max(1.0);
         let pictures = self.pictures(items, size as u32);
@@ -117,17 +117,21 @@ impl Panel for Tray {
                     None => w::icon("circle-help").ink(crate::ui::Ink::Muted),
                 };
                 let tip = [&item.tooltip, &item.title, &item.id].into_iter().find(|t| !t.is_empty()).cloned().unwrap_or_default();
-                w::cell(w::row(0.0, vec![mark]).centred().mid().fill())
-                    .ghost()
+                w::cell(w::row(0.0, vec![w::spacer(), mark, w::spacer()]).fill().height(s.control_height))
+                    .cell_state(|c| {
+                        c.glyph = true;
+                        c.inset = Some((0.0, 0.0));
+                    })
                     .interactive()
                     .width(Size::Px(s.control_height))
+                    .height(s.control_height)
                     .stop(stop(item))
                     .on(stop(item))
                     .tip(tip)
             })
             .collect();
-        let rows = cells.chunks(cols).map(|r| w::row(s.xs, r.to_vec())).collect();
-        w::column(s.xs, rows)
+        let rows = cells.chunks(cols).map(|r| w::row(s.panel_gap, r.to_vec())).collect();
+        w::column(s.panel_gap, rows)
     }
 
     fn columns(&self) -> usize {
