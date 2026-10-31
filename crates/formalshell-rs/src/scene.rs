@@ -35,10 +35,12 @@ impl IRect {
         self.y + self.h
     }
 
+    /// Empty, never negative, where the two miss: a clip of negative
+    /// height is an inverted rect, which the rasteriser fills.
     pub fn intersect(&self, o: &IRect) -> IRect {
         let x = self.x.max(o.x);
         let y = self.y.max(o.y);
-        IRect::new(x, y, self.right().min(o.right()) - x, self.bottom().min(o.bottom()) - y)
+        IRect::new(x, y, (self.right().min(o.right()) - x).max(0), (self.bottom().min(o.bottom()) - y).max(0))
     }
 
     pub fn intersects(&self, o: &IRect) -> bool {
@@ -524,6 +526,16 @@ mod tests {
 
     fn made(w: u16, scale: f64) -> Bitmap {
         Bitmap::from_rgba(w, w, vec![0; usize::from(w) * usize::from(w) * 4]).at(scale)
+    }
+
+    #[test]
+    fn rects_that_miss_intersect_empty() {
+        let band = IRect::new(0, 889, 100, 7);
+        let view = IRect::new(0, 0, 100, 880);
+        let cut = band.intersect(&view);
+        assert!(cut.is_empty());
+        assert!(cut.w >= 0 && cut.h >= 0);
+        assert_eq!(view.intersect(&IRect::new(10, 870, 20, 26)), IRect::new(10, 870, 20, 10));
     }
 
     #[test]

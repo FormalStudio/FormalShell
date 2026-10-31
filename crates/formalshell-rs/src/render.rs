@@ -363,7 +363,7 @@ impl Caches {
         // inside the clip, moved by a plain translation at most) needs none.
         // A launcher frame is a few hundred rows under the body's one clip.
         let mut active: Option<IRect> = None;
-        for node in scene.nodes().filter(|n| n.bounds.intersects(&rect)) {
+        for node in scene.nodes().filter(|n| n.bounds.intersects(&rect) && !n.clip.is_some_and(|c| c.is_empty())) {
             // Casts and glows paint past their own box.
             let (paint, fade) = match &node.paint {
                 Paint::Faded { paint, fade } => (&**paint, Some(*fade)),
