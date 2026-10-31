@@ -551,7 +551,18 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     }
     if el.stop && let Some(key) = &el.key {
         let radius = stop_radius(cx, el, inner.height());
-        cx.stop(Stop { key: key.clone(), rect: irect(inner), radius });
+        // A squares group's stop is the square the cursor is on, so the
+        // halo marks one option rather than the row.
+        let rect = match &el.kind {
+            Kind::Group { options, cursor_index, squares: true, .. } => {
+                let (gap, n) = (cx.theme.space.panel_gap, options.len().max(1));
+                let bw = ((inner.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
+                let x = inner.x0 + (bw + gap) * (*cursor_index).min(n - 1) as f64;
+                Rect::new(x, inner.y0, x + bw, inner.y1)
+            }
+            _ => inner,
+        };
+        cx.stop(Stop { key: key.clone(), rect: irect(rect), radius });
     }
     let stop_key = el.stop.then(|| el.key.clone()).flatten();
     match &el.kind {
@@ -687,7 +698,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         }
         Kind::Switch { checked, enabled } => switch(cx, el, inner, *checked, *enabled, path, stop_key),
         Kind::Track { value, notch, interactive } => track(cx, el, inner, *value, *notch, *interactive, path, stop_key),
-        Kind::Group { options, index, cursor_index, squares: true, .. } => squares(cx, el, inner, options, *index, *cursor_index, path, stop_key),
+        Kind::Group { options, index, squares: true, .. } => squares(cx, el, inner, options, *index, path, stop_key),
         Kind::Group { options, index, exclusive, cursor_index, wrap, .. } => {
             group(cx, el, inner, options, *index, *exclusive, *cursor_index, *wrap, path, stop_key)
         }
@@ -1155,14 +1166,14 @@ fn group(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize
 }
 
 /// The squares group: each option a `panel.chip` box, the chosen one `on`,
-/// with a ghost button over it for the glyph, the hover and the ring.
+/// with a ghost button over it for the glyph and the hover; the halo
+/// rides the cursor's square off its stop (`paint_body`).
 #[allow(clippy::too_many_arguments)]
-fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, cursor_index: usize, path: &str, stop: Option<String>) {
+fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, path: &str, stop: Option<String>) {
     let t = cx.theme;
     let gap = t.space.panel_gap;
     let n = options.len().max(1);
     let bw = ((r.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
-    let (on, _) = cx.cursor(stop.as_deref());
     for (i, o) in options.iter().enumerate() {
         let x = r.x0 + (bw + gap) * i as f64;
         let b = Rect::new(x, r.y0, x + bw, r.y1);
@@ -1176,7 +1187,7 @@ fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usi
         cx.done(last);
         let child = El::new(Kind::Button { variant: Variant::Ghost, text: o.label.clone(), icon: o.icon.clone(), enabled: o.enabled, square: false });
         let child = El { on: el.on.clone(), ..child };
-        button(cx, &child, b, Variant::Ghost, &o.label, &o.icon, o.enabled, false, &format!("{path}/{i}"), Some(radius), stop.clone(), Some((i, on && i == cursor_index)));
+        button(cx, &child, b, Variant::Ghost, &o.label, &o.icon, o.enabled, false, &format!("{path}/{i}"), Some(radius), stop.clone(), Some((i, false)));
     }
 }
 

@@ -449,20 +449,24 @@ fn regroup(r: El, x: f64, d: f64) -> El {
                 .into_iter()
                 .map(|c| match c.kind {
                     Kind::Cell { .. } => regroup(c, x, d),
-                    _ => {
-                        let [l, t, rt, b] = c.pad;
-                        c.pad((l - d).max(0.0), t, rt, b)
-                    }
+                    _ => unpad(c, d),
                 })
                 .collect();
             El { kind: Kind::Column { gap, children }, ..r }
         }
-        _ => r.cell_state(|c| {
+        Kind::Cell { .. } => r.cell_state(|c| {
             if let Some((_, y)) = c.inset {
                 c.inset = Some((x, y));
             }
         }),
+        _ => unpad(r, d),
     }
+}
+
+/// Text-column padding less the group's own, on both sides.
+fn unpad(e: El, d: f64) -> El {
+    let [l, t, r, b] = e.pad;
+    e.pad((l - d).max(0.0), t, (r - d).max(0.0), b)
 }
 
 /// A heading over its rows in one group.

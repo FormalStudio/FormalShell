@@ -92,6 +92,9 @@ impl Panel for Tray {
 
     fn width(&self, v: &View) -> f64 {
         let s = &v.theme.space;
+        if v.store.tray.items.is_empty() {
+            return s.panel_width;
+        }
         let n = columns(v.store.tray.items.len()) as f64;
         n * s.control_height + (n - 1.0) * s.panel_gap + s.panel_padding * 2.0
     }
