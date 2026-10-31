@@ -62,9 +62,9 @@ impl Panel for Settings {
                 let face = w::column(
                     0.0,
                     vec![
-                        w::icon(*glyph).size(Type::Display),
+                        w::icon(*glyph).size(Type::DisplayLarge),
                         w::space(tile_h - s.xl * 2.0 - s.huge * 2.0),
-                        w::text(*name).size(Type::Heading).weight(Weight::Medium).elide(),
+                        w::text(*name).size(Type::Display).weight(Weight::Medium).elide(),
                     ],
                 )
                 .pad(s.lg, s.xl, s.lg, s.xl);
@@ -86,7 +86,7 @@ impl Panel for Settings {
             .map(|(id, glyph, tip)| {
                 let armed = self.armed == Some(*id);
                 let side = button_h - s.lg * 2.0;
-                let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(*glyph).size(Type::Title), w::spacer()]).fill().height(side))
+                let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(*glyph).size(Type::Display), w::spacer()]).fill().height(side))
                     .cell_state(|c| {
                         c.glyph = true;
                         c.round = true;

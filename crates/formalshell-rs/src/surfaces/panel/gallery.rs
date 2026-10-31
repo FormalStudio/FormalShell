@@ -192,24 +192,26 @@ impl Panel for Gallery {
             ("heading", f.heading, Type::Heading),
             ("display", f.display, Type::Display),
             ("displayLarge", f.display_large, Type::DisplayLarge),
+            ("hero", f.display_large * 1.5, Type::Hero),
         ] {
             let row = w::row(s.sm, vec![w::section_label(s, &format!("{name} {px}"), None, false), w::text("Aa").size(ty)]);
             types.push(w::cell(row).ghost());
         }
-        types.push(
-            w::column(
-                s.row_gap,
-                vec![
-                    label("PowerFlow / sample snapshot, not live"),
-                    w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)),
-                    label("Battery / sample, not live"),
-                    w::cell(w::column(s.xl, vec![super::power::battery_card(s, &battery_sample()), super::power::profiles(s, 0, 0, true)]))
-                        .width(Size::Px(s.popup_width_narrow)),
-                ],
-            )
-            .pad_top(s.section_gap - s.row_gap),
-        );
         let type_column = w::column(s.row_gap, types).fill();
+        // A rig has no battery and no radio: these samples, built from the
+        // panels' own rows, are where their populated look is read.
+        let samples = w::column(
+            s.row_gap,
+            vec![
+                label("PowerFlow / sample snapshot, not live"),
+                w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)),
+                label("Battery / sample, not live"),
+                w::panel_text(s, w::column(s.xl, vec![super::power::battery_card(s, &battery_sample()), super::power::profiles(s, 0, 0, true)])),
+                label("Wi-Fi / sample, not live"),
+                wifi_sample(s),
+            ],
+        )
+        .width(Size::Px(s.panel_width));
 
         let mut seps = vec![label("Separator")];
         seps.push(w::column(s.row_gap, vec![label("Full bleed"), w::separator()]));
@@ -250,7 +252,7 @@ impl Panel for Gallery {
         )
         .fill();
 
-        let top = w::row(s.section_gap, vec![controls, cell_column, type_column, token_column]).fill().top();
+        let top = w::row(s.section_gap, vec![controls, cell_column, type_column, samples, token_column]).fill().top();
 
         let mut steps = Vec::new();
         for (name, px) in [("xxs", s.xxs), ("xs", s.xs), ("sm", s.sm), ("md", s.md), ("lg", s.lg), ("xl", s.xl), ("xxl", s.xxl), ("huge", s.huge)] {
@@ -303,6 +305,29 @@ impl Panel for Gallery {
             _ => {}
         }
     }
+}
+
+/// Five networks with one connected, for the Wi-Fi rows' populated look
+/// on a rig with no radio.
+fn wifi_sample(s: &fs_theme::tokens::Space) -> El {
+    let nets = [("HomeNet-5G", 0.9, true, true), ("Office Wifi", 0.7, true, false), ("Cafe Net", 0.5, true, false), ("Library Wifi", 0.4, true, false), ("GuestNet-5G", 0.2, false, false)];
+    let rows = nets
+        .iter()
+        .map(|&(ssid, signal, secured, connected)| {
+            let trailing = if connected {
+                vec![w::button("Disconnect").variant(Variant::Ghost)]
+            } else if secured {
+                vec![w::icon("lock").ink(Ink::Muted)]
+            } else {
+                Vec::new()
+            };
+            let name = w::label(ssid).weight(Weight::Medium).elide().fill();
+            w::panel_cell(s, super::network::wifi_line(s, super::network::signal_glyph(signal), name, connected, trailing))
+                .cell_state(|c| c.open = connected)
+                .height(s.panel_row)
+        })
+        .collect();
+    w::panel_group(s, rows)
 }
 
 /// A laptop half way through a charge cycle, for the battery card's

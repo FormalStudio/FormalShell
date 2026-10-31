@@ -160,17 +160,17 @@ impl Network {
         // a weak signal.
         let name = name.weight(Weight::Medium).elide().fill();
         let glyph = if r.in_range { signal_glyph(r.signal) } else { "wifi-off" };
-        let mut top = vec![w::panel_chip(s, glyph, r.connected), name];
+        let mut trailing = Vec::new();
         // Forget reveals on the row the pointer is on.
         if r.known && !r.connected && v.hovered.as_deref() == Some(key.as_str()) && n.action.is_none() {
-            top.push(w::icon("trash").ink(Ink::Muted).on(format!("forget:{}", r.ssid)).tip("Forget"));
+            trailing.push(w::icon("trash").ink(Ink::Muted).on(format!("forget:{}", r.ssid)).tip("Forget"));
         }
         if r.connected {
-            top.push(w::button("Disconnect").variant(Variant::Ghost).enabled(n.action.is_none()).on(format!("row:{}", r.ssid)));
+            trailing.push(w::button("Disconnect").variant(Variant::Ghost).enabled(n.action.is_none()).on(format!("row:{}", r.ssid)));
         } else if r.secured {
-            top.push(w::icon("lock").ink(Ink::Muted));
+            trailing.push(w::icon("lock").ink(Ink::Muted));
         }
-        let mut parts = vec![w::row(s.panel_gap, top).fill().height(s.panel_row)];
+        let mut parts = vec![wifi_line(s, glyph, name, r.connected, trailing)];
         if let Some((text, failed)) = status {
             parts.push(w::caption(text).ink(if failed { Ink::Destructive } else { Ink::Muted }).pad(s.panel_mark * 2.0 + s.panel_gap, 0.0, 0.0, s.panel_gap));
         }
@@ -253,8 +253,16 @@ impl Network {
     }
 }
 
+/// A network's line: its signal in a chip, lit on the connected one, the
+/// name, then what trails it.
+pub(super) fn wifi_line(s: &fs_theme::tokens::Space, glyph: &str, name: El, connected: bool, trailing: Vec<El>) -> El {
+    let mut top = vec![w::panel_chip(s, glyph, connected), name];
+    top.extend(trailing);
+    w::row(s.panel_gap, top).fill().height(s.panel_row)
+}
+
 /// Bars for a 0..1 signal, Pond's three steps plus none.
-fn signal_glyph(signal: f64) -> &'static str {
+pub(super) fn signal_glyph(signal: f64) -> &'static str {
     match signal {
         x if x >= 0.67 => "wifi",
         x if x >= 0.34 => "wifi-high",

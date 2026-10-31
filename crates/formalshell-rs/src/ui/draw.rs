@@ -29,6 +29,7 @@ fn px(cx: &Cx, t: Type) -> f32 {
         Type::Heading => f.heading,
         Type::Display => f.display,
         Type::DisplayLarge => f.display_large,
+        Type::Hero => f.display_large * 1.5,
         Type::Field => (f.base_size * fs_theme::tokens::LAUNCHER.field_size).round(),
     }) as f32
 }
@@ -1185,9 +1186,22 @@ fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usi
         let last = p.last();
         p.finish();
         cx.done(last);
-        let child = El::new(Kind::Button { variant: Variant::Ghost, text: o.label.clone(), icon: o.icon.clone(), enabled: o.enabled, square: false });
+        // The button carries the hover and the hit; the glyph is drawn here,
+        // larger than a button's and in the chip's own ink.
+        let child = El::new(Kind::Button { variant: Variant::Ghost, text: o.label.clone(), icon: String::new(), enabled: o.enabled, square: false });
         let child = El { on: el.on.clone(), ..child };
-        button(cx, &child, b, Variant::Ghost, &o.label, &o.icon, o.enabled, false, &format!("{path}/{i}"), Some(radius), stop.clone(), Some((i, false)));
+        button(cx, &child, b, Variant::Ghost, &o.label, "", o.enabled, false, &format!("{path}/{i}"), Some(radius), stop.clone(), Some((i, false)));
+        if !o.icon.is_empty() {
+            let g = icon(cx, &o.icon, Type::Heading);
+            let ink = chip.ink.with_alpha(chip.ink.a * alpha);
+            let gx = (b.x0 + (b.width() - g.width as f64) / 2.0).round() as i32;
+            let gy = (b.y0 + (b.height() - g.line_height() as f64) / 2.0).round() as i32;
+            let mut p = cx.painter(&format!("{path}/{i}.glyph"));
+            p.text(&g, (gx, gy), ink, &[]);
+            let last = p.last();
+            p.finish();
+            cx.done(last);
+        }
     }
 }
 

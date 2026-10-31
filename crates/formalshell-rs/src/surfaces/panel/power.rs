@@ -1,6 +1,7 @@
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
-//! Pond's Battery card: a dim "Battery" with the charge state at the far
-//! end, the percent large beside the draw and the time left, a thick bar
+//! Pond's Battery card under the panel's header: a dim "Battery" with the
+//! charge state at the far end, the percent at hero size beside the draw
+//! and the time left, a thick bar
 //! for the charge, then "Power profile" with the active one named over the
 //! profiles as three equal buttons, one `ButtonGroup`. The group is the
 //! panel's one cursor stop: Left and Right walk its buttons and Enter
@@ -83,19 +84,20 @@ pub struct Card {
 
 /// The battery half of Pond's card.
 pub fn battery_card(s: &Space, c: &Card) -> El {
-    let mut head = vec![w::label("Battery").ink(Ink::Dim).fill()];
+    let mut head = vec![w::text("Battery").size(Type::Title).weight(Weight::Normal).ink(Ink::Dim).fill()];
     if let Some((words, lit)) = c.state {
-        head.push(w::label(words).ink(if lit { Ink::Primary } else { Ink::Dim }));
+        head.push(w::text(words).size(Type::Title).weight(Weight::Normal).ink(if lit { Ink::Primary } else { Ink::Dim }));
     }
     let mut side = Vec::new();
     if let Some(r) = &c.rate {
-        side.push(w::label(r.clone()).ink(Ink::Muted));
+        side.push(w::text(r.clone()).size(Type::Title).weight(Weight::Normal).ink(Ink::Muted));
     }
     if let Some(t) = &c.time {
-        side.push(w::label(t.clone()).ink(Ink::Dim));
+        side.push(w::text(t.clone()).size(Type::Title).weight(Weight::Normal).ink(Ink::Dim));
     }
-    let readout = w::row(s.md, vec![w::text(format!("{}%", c.percent.round())).size(Type::DisplayLarge).weight(Weight::Heavy).fill(), w::column(s.xxs, side)]);
-    let mut parts = vec![w::row(0.0, head).fill(), readout.fill(), w::track(c.percent / 100.0).height(s.xl)];
+    let percent = w::text(format!("{}%", c.percent.round())).size(Type::Hero).weight(Weight::Medium).fill();
+    let readout = w::row(s.md, vec![percent, w::column(s.xxs, side)]);
+    let mut parts = vec![w::row(0.0, head).fill(), readout.fill(), w::track(c.percent / 100.0).height(s.panel_icon)];
     if !c.details.is_empty() {
         parts.push(w::caption(c.details.join(" \u{00b7} ")));
     }
@@ -111,7 +113,8 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
             o
         })
         .collect();
-    let head = w::row(0.0, vec![w::label("Power profile").ink(Ink::Dim).fill(), w::label(NAMES[active])]).fill();
+    let title = |t: &str| w::text(t.to_owned()).size(Type::Title).weight(Weight::Normal);
+    let head = w::row(0.0, vec![title("Power profile").ink(Ink::Dim).fill(), title(NAMES[active])]).fill();
     w::column(s.sm, vec![head, w::group(options, active, true).squares().ring(ring).on("profile").stop("profile")])
 }
 
@@ -179,10 +182,6 @@ impl Panel for Power {
 
     fn title(&self, _: &View) -> String {
         "Power".into()
-    }
-
-    fn header(&self) -> bool {
-        false
     }
 
     fn width(&self, v: &View) -> f64 {

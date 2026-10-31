@@ -42,6 +42,9 @@ pub enum Type {
     Heading,
     Display,
     DisplayLarge,
+    /// A readout that is the panel's subject (the battery's percent),
+    /// `displayLarge` and a half.
+    Hero,
     /// The launcher's field, `LAUNCHER.field_size` on the base size.
     Field,
 }
@@ -53,7 +56,7 @@ impl Type {
         match self {
             Type::Subtitle | Type::Title | Type::Heading => Some(Weight::Bold),
             Type::Display => Some(Weight::Heavy),
-            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge | Type::Field => None,
+            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge | Type::Hero | Type::Field => None,
         }
     }
 }
