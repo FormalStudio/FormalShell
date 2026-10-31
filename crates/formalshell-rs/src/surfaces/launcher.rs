@@ -102,6 +102,17 @@ struct Layout {
     foot: f64,
 }
 
+/// What input moves: the rows key, the field, the cursor, an armed row, and
+/// the actions column's cursor and target step.
+#[derive(PartialEq)]
+struct ViewId {
+    key: String,
+    query: String,
+    cursor: String,
+    confirm: String,
+    column: Option<(usize, bool)>,
+}
+
 pub struct Model {
     resolved: Vec<(String, Option<String>, bool)>,
     pub open: bool,
@@ -698,6 +709,16 @@ fn plugin_rows(id: &str, route: &str, rows: &[plugins::Row]) -> Vec<Node> {
 }
 
 impl Model {
+    fn view_id(&self) -> ViewId {
+        ViewId {
+            key: self.key.clone(),
+            query: self.query.text().to_owned(),
+            cursor: self.cursor_id.clone(),
+            confirm: self.confirm.clone(),
+            column: self.column.as_ref().map(|c| (c.cursor, c.target.is_some())),
+        }
+    }
+
     fn key_mode(&self) -> KeyMode {
         match self.mode {
             Mode::Menu => KeyMode::Menu,
@@ -2963,8 +2984,8 @@ pub struct Shown {
     top_node: NodeId,
     /// The card size the content was last laid out for.
     laid_for: (f64, f64),
-    /// The model's view (rows key, cursor, actions column) it was laid out for.
-    laid_view: (String, String, bool),
+    /// The view the content was last laid out for.
+    laid_view: Option<ViewId>,
     /// The cursor's fill and ring, one for the whole body, painted between
     /// `sel_anchor` and the body's own nodes so the cells draw over it.
     sel_anchor: NodeId,
@@ -3019,7 +3040,7 @@ impl Shown {
             overlays: Vec::new(),
             top_node: top,
             laid_for: (0.0, 0.0),
-            laid_view: Default::default(),
+            laid_view: None,
             morph: (Animated::new(theme.space.popup_width_menu, Clock::Spatial.curve()), Animated::new(0.0, Clock::Spatial.curve())),
             sel_anchor,
             sel_nodes: Vec::new(),
@@ -3226,7 +3247,7 @@ impl Shown {
             p.cursor.travels = false;
         }
         self.laid_for = (tw, th);
-        self.laid_view = (m.key.clone(), m.cursor_id.clone(), m.column.is_some());
+        self.laid_view = Some(m.view_id());
     }
 
     /// On a layer, the card is morphing toward a size its content is
@@ -3236,13 +3257,10 @@ impl Shown {
     /// click or call that moved the view is never held.
     pub fn hold_layout(&self, m: &Model, now: Instant) -> bool {
         let morphing = self.morph.0.running(now) || self.morph.1.running(now);
-        let (key, cursor, column) = &self.laid_view;
         morphing
             && self.modal.layer.is_some()
             && self.laid_for == (self.morph.0.target(), self.morph.1.target())
-            && *key == m.key
-            && *cursor == m.cursor_id
-            && *column == m.column.is_some()
+            && self.laid_view.as_ref() == Some(&m.view_id())
     }
 
     #[allow(clippy::too_many_arguments)]
