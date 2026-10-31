@@ -114,7 +114,7 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
             o
         })
         .collect();
-    w::column(s.panel_gap, vec![w::panel_heading_with(s, "Power profile", NAMES[active]), w::group(options, active, true).squares().ring(ring).on("profile").stop("profile")])
+    w::column(s.panel_gap, vec![w::panel_heading_with(s, "Power profile", NAMES[active]), w::panel_text(s, w::group(options, active, true).squares().ring(ring).on("profile").stop("profile"))])
 }
 
 pub struct Power {
