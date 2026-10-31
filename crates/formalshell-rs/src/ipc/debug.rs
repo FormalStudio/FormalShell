@@ -148,7 +148,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     });
     // Past json!'s recursion limit inside the literal.
     dump["panel"] = match app.panel.as_ref() {
-        Some(h) => json!({"id": h.id(), "open": h.is_open(), "rest": rect(&h.card.rest_rect()), "live": rect(&h.card.live_rect())}),
+        Some(h) => json!({"id": h.id(), "open": h.is_open(), "header": h.module.header(), "rest": rect(&h.card.rest_rect()), "live": rect(&h.card.live_rect())}),
         None => serde_json::Value::Null,
     };
     dump["toastCards"] = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect();

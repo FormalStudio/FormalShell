@@ -75,6 +75,10 @@ panel_header_assert() {
   rest=$("$jq_bin" -c '.panel.rest' "$panel_dump_path" 2>/dev/null)
   [ -n "$rest" ] && [ "$rest" != "null" ] || fail "panel: no rest rect in debug dump"
   [ -s "$panel_header_shot" ] || fail "panel: no header frame"
+  if [ "$("$jq_bin" -r '.panel.header' "$panel_dump_path")" = false ]; then
+    echo "panel: $1 draws no header, skipped"
+    return
+  fi
   out=$("$python3_bin" - "$panel_header_shot" "$rest" <<'PY'
 import json, sys
 from PIL import Image
@@ -108,10 +112,11 @@ peak = max(n for _, n in counts)
 base = max(y for y, n in counts if n >= peak * 0.3)
 print(ink[0] - y0, line - base - 1)
 PY
-)
+) || fail "panel: header check crashed: $out"
   case $out in
-    none) echo "panel: no header hairline, skipped"; return ;;
+    none) fail "panel: $1 has a header but no hairline was found under it" ;;
     noink) fail "panel: header hairline but no title ink" ;;
+    *[!0-9\ -]*|'') fail "panel: header check printed '$out'" ;;
   esac
   local above below
   read -r above below <<< "$out"
