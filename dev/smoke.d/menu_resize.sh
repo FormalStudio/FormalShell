@@ -63,7 +63,9 @@ leg_menu_resize_validate() {
 }
 
 leg_menu_resize_timing() {
-  leg_timing 36 80
+  # 72 grims at a 1080p frame each: on the mac rig's vkms the drive runs
+  # past the 52s default cap, which ended the session before its last dump.
+  leg_timing 36 110 0 100
 }
 
 leg_menu_resize_drive() {
