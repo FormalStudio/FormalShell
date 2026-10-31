@@ -320,12 +320,13 @@ pub struct Launcher {
     pub emoji_columns: u32,
     /// The most rows `Recent` lists at rest.
     pub recent: u32,
-    /// The field's type, a ratio on the base size, past the ramp's
-    /// `display`: Pond's field size in the shell's sans.
+    /// The field's type, a ratio on the base size. Sized by x-height, not
+    /// em: Pond's field (Gramercy at 26px) has an x-height 1.46 times its
+    /// rows', which our sans (x-height 0.53 of the em) reaches at 21px.
     pub field_size: f64,
-    /// A row's words, a ratio on the base size: Pond's title, subtitle and
-    /// accessory at its 13pt regular size (17.3px), so the rows hold their
-    /// own under the field.
+    /// A row's words, the title, subtitle and accessory alike, a ratio on
+    /// the base size. Pond's 17.3px rows carry a 7.8px x-height, which our
+    /// sans reaches at 15px.
     pub row_size: f64,
     pub row_height: f64,
     pub row_icon: f64,
@@ -345,8 +346,8 @@ pub const LAUNCHER: Launcher = Launcher {
     picker_columns: 4,
     emoji_columns: 8,
     recent: 8,
-    field_size: 2.0,
-    row_size: 4.0 / 3.0,
+    field_size: 21.0 / 13.0,
+    row_size: 15.0 / 13.0,
     row_height: 48.0,
     row_icon: 24.0,
     width: 640.0,
