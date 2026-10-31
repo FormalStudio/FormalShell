@@ -80,8 +80,12 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
   sides, so the row fill reaches 12 past the text column.
 - Rows live in a group (Pond's inset row card, GNOME's boxed list): one
   `panel.group` box (the glass fill and outline, `foreground` at 0.04 and
-  0.08 dark, 0.03 and 0.1 light, `lg` radius) a hair in from the body's
-  edge, a hairline between its rows on the text column.
+  0.08 dark, 0.03 and 0.1 light, `lg` radius) whose edges sit on the
+  text column (owner, 2026-10-31), the same column as the title, the
+  captions, the sliders and the buttons; its rows' text sits one text
+  inset further in, a hairline between them on that inner column. No
+  box, group or control ever starts outside the text column; only a bare
+  row's hover wash reaches `panelRowInset`.
 - Leading glyph `panelIcon` in a 32 square `panel.chip` (`foreground` at
   0.08, `md` radius), the chip `primary` at 0.18 with a `primary` glyph
   on the row a list is on now. Text `panelGap` after the chip.

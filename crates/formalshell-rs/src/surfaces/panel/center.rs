@@ -69,7 +69,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     if e.source == "iphone" {
         chip = chip.badge("smartphone");
     }
-    head.push(w::caption(e.app_name.clone()).weight(Weight::Semibold).ink(Ink::Fg));
+    head.push(w::caption(e.app_name.clone()).weight(Weight::Semibold).ink(Ink::Fg).elide());
     head.push(w::caption(meta).mono());
     head.push(w::spacer());
     head.push(w::icon_button("x").tip("Dismiss").on(format!("dismiss:{key}")));

@@ -419,9 +419,10 @@ pub fn panel_heading(s: &Space, text: &str) -> El {
     text_el(text, Type::Caption, Weight::Semibold, false, Ink::Muted).pad(i, s.panel_section, i, 0.0)
 }
 
-/// GNOME's boxed list in Pond's material: rows inside one `panel.group`
-/// box a hair in from its edge, a hairline between them on the text
-/// column, each row's text still on the card's text column.
+/// GNOME's boxed list in Pond's material: one `panel.group` box whose
+/// edges sit on the card's text column, like every caption, slider and
+/// button, its rows' text one text inset further in, a hairline between
+/// them on that inner column.
 pub fn panel_group(s: &Space, rows: Vec<El>) -> El {
     let pad = s.panel_row_inset / 2.0;
     let x = text_inset(s) - pad;
@@ -434,10 +435,11 @@ pub fn panel_group(s: &Space, rows: Vec<El>) -> El {
         }
         out.push(regroup(r, x, pad));
     }
-    cell(column(0.0, out).fill()).cell_state(|c| {
+    let group = cell(column(0.0, out).fill()).cell_state(|c| {
         c.group = true;
         c.inset = Some((pad, pad));
-    })
+    });
+    panel_text(s, column(0.0, vec![group]).fill())
 }
 
 /// A row's own inset onto the group's column, `d` in from where it was;

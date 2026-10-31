@@ -1,9 +1,10 @@
-//! CPU, memory and one row per GPU card, each a section
+//! CPU, memory and one row per measured GPU card, each a section
 //! label over a `display` mono figure and a track, then the screen
 //! `display.outputPriority` resolves to, then the hinge into the
 //! launcher's full monitor view. A figure nobody can measure yet is `--`,
-//! a machine with no card is one dim "No GPU" row, and a card with no
-//! unprivileged counter is "No metrics" with no track under it.
+//! a machine with no card is one dim "No GPU" row, and cards with no
+//! unprivileged counter are left out, or folded into one "GPUs" row saying
+//! so when none has one.
 
 use fs_system::display::priority;
 use fs_system::monitor::format::pct;
@@ -27,7 +28,7 @@ struct Metric {
     label: String,
     figure: String,
     fill: Option<f64>,
-    state: &'static str,
+    state: String,
 }
 
 fn fill(fraction: Option<f64>) -> Option<f64> {
@@ -37,21 +38,21 @@ fn fill(fraction: Option<f64>) -> Option<f64> {
 fn metrics(v: &View) -> Vec<Metric> {
     let m = &v.store.info.monitor;
     let mut out = vec![
-        Metric { label: "CPU".into(), figure: pct(m.cpu.aggregate), fill: fill(m.cpu.aggregate), state: "" },
+        Metric { label: "CPU".into(), figure: pct(m.cpu.aggregate), fill: fill(m.cpu.aggregate), state: String::new() },
     ];
     let memory = m.mem.as_ref().map(|mem| mem.used_fraction);
-    out.push(Metric { label: "Memory".into(), figure: pct(memory), fill: fill(memory), state: "" });
+    out.push(Metric { label: "Memory".into(), figure: pct(memory), fill: fill(memory), state: String::new() });
     if m.cards.is_empty() {
-        out.push(Metric { label: "GPU".into(), figure: String::new(), fill: None, state: "No GPU" });
+        out.push(Metric { label: "GPU".into(), figure: String::new(), fill: None, state: "No GPU".into() });
     }
-    for card in &m.cards {
-        let busy = card.record.metrics.busy.filter(|_| card.record.metrics.available);
-        out.push(Metric {
-            label: format!("GPU {}", card.name),
-            figure: busy.map_or_else(String::new, |b| pct(Some(b))),
-            fill: fill(busy),
-            state: if busy.is_some() { "" } else { "No metrics" },
-        });
+    let measured: Vec<_> = m.cards.iter().filter_map(|c| c.record.metrics.busy.filter(|_| c.record.metrics.available).map(|b| (c, b))).collect();
+    if measured.is_empty() && !m.cards.is_empty() {
+        let n = m.cards.len();
+        let state = if n == 1 { "1 card, no metrics".to_owned() } else { format!("{n} cards, no metrics") };
+        out.push(Metric { label: "GPUs".into(), figure: String::new(), fill: None, state });
+    }
+    for (card, busy) in measured {
+        out.push(Metric { label: format!("GPU {}", card.name), figure: pct(Some(busy)), fill: fill(Some(busy)), state: String::new() });
     }
     out
 }

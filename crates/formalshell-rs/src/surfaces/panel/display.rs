@@ -108,9 +108,6 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
         w::icon(if row.enabled { "monitor" } else { "monitor-off" }).size(Type::Heading).ink(if row.name == focused(store) { Ink::Primary } else { Ink::Fg }),
         w::label(&row.name).weight(Weight::Medium).elide().fill(),
     ];
-    if configurable {
-        head.push(w::panel_value(outputs::format_scale(row.scale)));
-    }
     let toggles = display::enable_available() && outputs::can_toggle(rows, &row.name);
     head.push(w::switch(row.enabled).enabled(toggles).on(format!("enable:{}", row.name)));
 
@@ -141,6 +138,7 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
         lines.push(value_line(card));
     }
     if configurable {
+        lines.push(w::row(s.panel_gap, vec![dim("Scale").fill(), w::panel_value(outputs::format_scale(row.scale))]).fill().pad(0.0, s.xs, 0.0, 0.0));
         lines.push(w::slider(outputs::fraction_for_scale(row.scale)).on(format!("scale:{}", row.name)));
     }
     w::panel_cell(s, w::column(s.xxs, lines).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("output:{}", row.name))

@@ -191,8 +191,12 @@ if [ ${#active_legs[@]} -eq 0 ]; then screenshot_delay=$drive_cap; fi
 
 # A VM rig guest autologins and its own login leaves the boot's marker in
 # this runtime dir; the run's shell would take it and start locked. Only
-# --login-lock's validate writes one for a run.
-rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell/login-lock"
+# --login-lock's validate writes one for a run. A real host keeps its
+# runtime dir, so the marker there is the live session's: only a rig, which
+# loads vkms, clears it.
+if [ -d /sys/module/vkms ]; then
+  rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell/login-lock"
+fi
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
@@ -357,6 +361,12 @@ on_exit() {
   restore_host_env
   if [ -n "$system_bus_pid" ]; then kill "$system_bus_pid" 2>/dev/null || true; fi
   if [ -n "$quiet_sink_module" ]; then "$pactl_bin" unload-module "$quiet_sink_module" 2>/dev/null || true; fi
+  # The slot's PipeWire outlives the session, so modules a leg loaded go
+  # here too, for a run that never reached the session's own teardown.
+  if [ -s "${panel_audio_modules:-}" ]; then
+    while read -r m; do pactl unload-module "$m" 2>/dev/null || true; done < "$panel_audio_modules"
+    : > "$panel_audio_modules"
+  fi
 }
 trap on_exit EXIT
 
