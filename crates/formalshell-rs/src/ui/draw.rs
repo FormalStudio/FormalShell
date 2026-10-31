@@ -72,24 +72,9 @@ fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
 /// The text cut to `max` with an ellipsis, or whole.
 pub(super) fn elided(cx: &mut Cx, s: &str, font: &Font, max: f64) -> ShapedText {
     let st = style(cx, font);
-    elided_in(cx, s, st, max)
+    cx.kit.elided(s, st, max)
 }
 
-fn elided_in(cx: &mut Cx, s: &str, st: TextStyle, max: f64) -> ShapedText {
-    let whole = cx.kit.shape(s, st);
-    if whole.width as f64 <= max + 0.5 || s.is_empty() {
-        return whole;
-    }
-    let chars: Vec<char> = s.chars().collect();
-    let (mut lo, mut hi) = (0usize, chars.len());
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let t: String = chars[..mid].iter().collect::<String>().trim_end().to_owned() + "\u{2026}";
-        if cx.kit.shape(&t, st).width as f64 <= max { lo = mid } else { hi = mid - 1 }
-    }
-    let t: String = chars[..lo].iter().collect::<String>().trim_end().to_owned() + "\u{2026}";
-    cx.kit.shape(&t, st)
-}
 
 /// `text` broken on spaces to lines no wider than `max`, newlines kept, the
 /// last line that fits `lines` ending in an ellipsis when words are left.
@@ -618,7 +603,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         Kind::Space { .. } => {}
         Kind::Text { text, font, ink, elide } => {
             let st = style(cx, font);
-            let t = if *elide { elided_in(cx, text, st, inner.width()) } else { cx.kit.shape(text, st) };
+            let t = if *elide { cx.kit.elided(text, st, inner.width()) } else { cx.kit.shape(text, st) };
             let color = resolve(cx, *ink);
             let color = cx.color(&format!("{path}.ink"), color);
             let color = cx.a(color);

@@ -248,6 +248,7 @@ impl App {
             Owner::Switcher => self.switcher.dirty = true,
             Owner::Preview => self.preview_thumbs_changed(),
             Owner::Launcher => self.launcher.dirty = true,
+            Owner::Overview => self.overview_thumbs_changed(),
         }
     }
 

@@ -28,7 +28,7 @@ use vello_cpu::kurbo::Affine;
 
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
-use crate::services::compositor::{self, Command, Overview};
+use crate::services::compositor::Command;
 use crate::services::appicon;
 use crate::store::Store;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
@@ -129,10 +129,10 @@ pub struct Map {
     seen: Option<usize>,
     /// The pointer is on the map: the rows' numbers show.
     pub over: bool,
-    /// The compositor has an overview to open (`compositor::State`).
-    overview: bool,
-    /// The press went to the overview. HyprExpo lets a release through
-    /// when it is barely open, and that one is not a click.
+    /// The cards' left edge and width, past which a lifted icon opens the
+    /// overview.
+    column: Option<(f64, f64)>,
+    /// The press went to the overview, so its release is no click.
     handed: bool,
     nodes: Vec<NodeId>,
     /// Each tiled window's column (its x) on a workspace that reorders by
@@ -147,7 +147,6 @@ pub struct Map {
 impl Map {
     /// The rows for `output` off the compositor's snapshot.
     pub fn read(&mut self, store: &Store, output: &str, theme: &Theme) {
-        self.overview = store.compositor.overview;
         let c = &store.compositor.snapshot;
         let ws: Vec<workspaces::Workspace> = c.workspaces.iter().map(workspace).collect();
         let wins: Vec<workspaces::Window> = c.windows.iter().map(window).collect();
@@ -408,18 +407,18 @@ impl Map {
         });
     }
 
-    /// A drag that leaves its row, or a press held past `LONG_PRESS`,
-    /// opens the compositor's overview and hands it the gesture: HyprExpo
-    /// takes every pointer event while it is up, so the release picks a
-    /// workspace there and never reaches this map.
+    /// An icon lifted out past the column, or a press held past
+    /// `LONG_PRESS`, opens the overview. The press stays this surface's
+    /// until it lets go, so the gesture ends here and its release does
+    /// nothing.
     fn open_overview(&mut self, now: Instant) {
-        let Some(d) = self.drag.as_ref().filter(|_| self.overview) else { return };
-        let left = d.lifted && d.target.is_some_and(|(t, _)| Some(t) != d.row);
+        let Some(d) = self.drag.as_ref() else { return };
+        let left = d.lifted && self.column.is_some_and(|(x, w)| d.at.0 < x || d.at.0 >= x + w);
         let held = !d.lifted && now >= d.pressed + LONG_PRESS;
         if left || held {
             self.drag = None;
             self.handed = true;
-            compositor::send(Command::Overview(Overview::Open));
+            crate::wayland::overview::ask(crate::wayland::overview::Action::Open);
         }
     }
 
@@ -493,7 +492,7 @@ impl Map {
     /// When the held order lets go, or a press still down becomes a long
     /// one.
     pub fn wake(&self) -> Option<Instant> {
-        let press = self.drag.as_ref().filter(|d| self.overview && !d.lifted).map(|d| d.pressed + LONG_PRESS);
+        let press = self.drag.as_ref().filter(|d| !d.lifted).map(|d| d.pressed + LONG_PRESS);
         [self.hold.as_ref().map(|h| h.1), press].into_iter().flatten().min()
     }
 
@@ -503,6 +502,7 @@ impl Map {
     /// `card` is the cards' left edge and width, which the rows' numbers
     /// straddle (the right one on a right edge).
     pub fn paint(&mut self, hits: &[crate::ui::Hit], theme: &Theme, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect, card: (f64, f64), right: bool, now: Instant) -> bool {
+        self.column = Some(card);
         self.open_overview(now);
         self.slots = hits.iter().filter_map(|h| Some((h.on.as_ref()?.strip_prefix("window:")?.to_owned(), h.rect))).collect();
         let last = self.rows.len();

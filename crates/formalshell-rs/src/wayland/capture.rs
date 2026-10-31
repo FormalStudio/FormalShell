@@ -6,11 +6,12 @@
 //! identifier instead, matched against the handle's own. Either way a
 //! thumbnail is asked for by the same opaque id every other surface carries.
 //!
-//! Only three owners ever hold one (the switcher and the Spaces preview, the
-//! capture exception in the 2026-10-06 spec, and the launcher's preview
-//! pane, launcher spec §7), and only while their card is up: dropping an
-//! owner's set destroys every frame, session and source it held. The pane
-//! holds one window's single frame, and only while it shows that window. A frame lands in a wl_shm buffer, is copied out and fitted to the
+//! Only four owners ever hold one (the switcher and the Spaces preview, the
+//! capture exception in the 2026-10-06 spec, the launcher's preview pane,
+//! launcher spec §7, and the overview, its 2026-10-31 spec), and only while
+//! their card is up: dropping an owner's set destroys every frame, session
+//! and source it held. The pane holds one window's single frame, and only
+//! while it shows that window. A frame lands in a wl_shm buffer, is copied out and fitted to the
 //! size the owner draws on the blocking pool, and comes back as a `Bitmap`.
 
 use std::collections::HashMap;
@@ -71,6 +72,7 @@ pub enum Owner {
     Switcher,
     Preview,
     Launcher,
+    Overview,
 }
 
 struct Thumb {
@@ -324,7 +326,7 @@ impl App {
 
 /// `bgra` (wl_shm's ARGB8888 or XRGB8888 in memory, premultiplied) averaged
 /// down to `to` by area, or sampled up to it.
-fn fit(bgra: &[u8], from: (u32, u32), opaque: bool, to: (u32, u32)) -> Bitmap {
+pub(crate) fn fit(bgra: &[u8], from: (u32, u32), opaque: bool, to: (u32, u32)) -> Bitmap {
     let (sw, sh) = (from.0 as usize, from.1 as usize);
     let (tw, th) = (to.0.min(u16::MAX as u32) as usize, to.1.min(u16::MAX as u32) as usize);
     let mut out = vec![0u8; tw * th * 4];

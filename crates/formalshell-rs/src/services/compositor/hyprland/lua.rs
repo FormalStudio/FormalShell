@@ -2,8 +2,6 @@
 //! Window ids reach this module as the backend's opaque strings; the
 //! `address:0x...` selector is built here and nowhere else.
 
-use crate::services::compositor::Overview;
-
 pub const PARK_WORKSPACE: &str = "special:formalshell-console";
 const PARK_NAME: &str = "formalshell-console";
 
@@ -130,17 +128,6 @@ pub fn exit() -> String {
     "hl.dsp.exit()".into()
 }
 
-/// HyprExpo's own Lua entry (`hl.plugin.hyprexpo.expo`). `on` leaves an
-/// open overview alone and `off` closes it on the workspace it shows.
-pub fn overview(action: Overview) -> String {
-    let arg = match action {
-        Overview::Open => "on",
-        Overview::Close => "off",
-        Overview::Toggle => "toggle",
-    };
-    format!("hl.plugin.hyprexpo.expo({})", string(arg))
-}
-
 pub fn unbind(global: &str) -> String {
     format!("if {global} then {global}:remove() {global} = nil end")
 }
@@ -183,8 +170,6 @@ mod tests {
         assert_eq!(cursor(true), "hl.config({ cursor = { invisible = true } })");
         assert_eq!(cursor(false), "if formalshell_arrived then formalshell_arrived() else hl.config({ cursor = { invisible = false } }) end");
         assert_eq!(exit(), "hl.dsp.exit()");
-        assert_eq!(overview(Overview::Open), r#"hl.plugin.hyprexpo.expo("on")"#);
-        assert_eq!(overview(Overview::Close), r#"hl.plugin.hyprexpo.expo("off")"#);
         assert_eq!(value("-3"), "-3");
         assert_eq!(value("+"), "\"+\"");
         assert_eq!(string(r#"a"b\c"#), r#""a\"b\\c""#);

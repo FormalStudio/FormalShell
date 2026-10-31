@@ -579,8 +579,11 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_fixture" >/dev/null; then "leg_${leg_name}_fixture"; fi
 done
 
+# The top-left corner opens the overview by default, and most legs park the
+# pointer there to start their relative moves from a known place: it is off
+# unless a leg writes `hotCorners` (a later key wins) or deletes this one.
 cat > "$iso_home/.config/formalshell/settings.json" <<EOF
-{"calendar": {"icsDir": "$iso_home/.local/share/formalshell/calendar"}, "location": {"latitude": 52.52, "longitude": 13.41}, "nightlight": {"schedule": "off"}$settings_extra}
+{"calendar": {"icsDir": "$iso_home/.local/share/formalshell/calendar"}, "location": {"latitude": 52.52, "longitude": 13.41}, "nightlight": {"schedule": "off"}, "hotCorners": {"topLeft": "none"}$settings_extra}
 EOF
 if [ ${#settings_pins[@]} -gt 0 ]; then
   need_jq

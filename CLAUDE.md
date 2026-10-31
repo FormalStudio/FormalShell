@@ -586,16 +586,17 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   share), then 60 s undriven, CPU ticks and voluntary switches (wakeups)
   per thread and the commits made, then 20 s of `strace -f` naming each
   waker.
-- `hotcorner.sh` `--hotcorner`: the screensaver's and the lock's hot
-  corner surfaces mapped on the right layer, and none for the default
-  top-left overview corner on a rig with no HyprExpo, logged as off.
+- `hotcorner.sh` `--hotcorner`: the screensaver's, the lock's and the
+  top-left overview corner surfaces mapped on the right layer, then a
+  headless second output beside the first, level with its top: no surface
+  for a corner on an edge the two share, which the pointer can never stop
+  in.
 - `hotcorner_relock.sh` `--hotcorner-relock`: locks from the corner, unlocks
   by typing, proves the corner stays quiet while the pointer sits in it and
   fires again only after a leave plus the 400ms cooldown. Then the same on
   the screensaver corner: dismissed with the cursor parked in it, quiet for
   3s after the overlay unmaps, firing again after a leave. Then
-  `topLeft: "overview"` written under a Hyprland with no HyprExpo,
-  mapping no surface for it.
+  `topLeft: "overview"` written, mapping its surface.
 - `hypr_motion.sh` `--hypr-motion`: Hyprland's window animations on the
   shell's two clock families. The rig boots with animations off; the leg
   appends the shipped `docs/examples/hyprland/formalshell.lua` motion block,
@@ -963,12 +964,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   dragged onto workspace 2's row (status read mid-drag, lifted over row
   1), the two there trading places by a drag along the row, one dropped
   on the empty row making workspace 3, and a drag let go past the column
-  moving nothing and holding no order. Last the scrolling layout, three
-  windows on workspace 4: the first icon dragged past the last moving its
-  column to the tape's end (`e f d` by x, where a swap gives `f e d`) and
-  Shift+Left carrying it back one (`e d f`), the map's rows between the
-  two matching a whole redraw (a collapse and expand) pixel for pixel, so
-  no lifted icon left a trail. Then two moves inside workspace 4 that
+  opening the overview, moving nothing and holding no order. Last the
+  scrolling layout, three windows on workspace 4: the first icon dragged
+  past the last moving its column to the tape's end (`e f d` by x, where
+  a swap gives `f e d`) and Shift+Left carrying it back one (`e d f`),
+  the map's rows between the two matching a whole redraw (a collapse and
+  expand) pixel for pixel, so no lifted icon left a trail. Then two
+  moves inside workspace 4 that
   Hyprland posts no event for, each off a real bind the leg declares
   (scrolling's `swapcol r`, then dwindle's `hl.dsp.window.swap` right): the
   windows' order by position changing in `hyprctl clients` and the map's
@@ -1051,20 +1053,20 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   by frame under `debug motionScale`, ink on the output's very last row early
   and a plain pill a `screenPadding` clear of it at rest, then at full speed a
   manual call, a real `wpctl` change, and a machine with no backlight.
-- `overview.sh` `--overview`: HyprExpo, the workspace overview the
-  owner's spec builds as the fspec package `hyprexpo` (`FS_HYPREXPO` points
-  at another build), loaded only by this leg and only while `hl.version()`
-  is the Hyprland its `hyprland-version` file names: `hyprctl plugin list`
-  naming it, `plugin:hyprexpo:columns` taking hl.config's 3 and `debug
-  dump`'s `overview` true. Under `layout: sidebar` it is opened by Super+O,
-  by `workspaces overview open`, by a 900ms press on a minimap icon, by an
-  icon dragged off its row and by the top-left hot corner (not again
-  while parked under it, again after a leave), each read off
-  `hyprctl submap` (the plugin's `hyprexpo` submap while it is up), and
-  closed over IPC; g815 only, since its hooks need x86_64. The bind's and
-  the IPC's frames differ from the desktop's and are read by eye for the
-  grid. The plugin takes every pointer event while it is up, so the
-  minimap hands it the gesture and the release lands on the overview.
+- `overview.sh` `--overview`: the shell's own overview
+  (`docs/superpowers/specs/2026-10-31-overview.md`) under `layout: sidebar`
+  over three foot windows on two workspaces, read off `debug dump`'s
+  `overview` and `captures`: opened by Super+O, `workspaces overview open`,
+  the top-left hot corner (staying open while parked, closing after a
+  leave and a return), a 900ms press on a minimap icon and an icon dragged
+  out past the column; Up, Down, Left, Right and the wheel moving the
+  selection across workspaces and windows; Return focusing the named
+  window (`hyprctl activewindow`); a drag of a window onto workspace 2's
+  card moving it there with the overview left open; every close holding
+  no capture session. The request to the first frame under 50ms (g815
+  only), at least 12 commits in the zoom's first 400ms and none at rest.
+  Frames open, mid-zoom and mid-glide at a tenth speed, and after the
+  drop; read dark and `--light`.
 - `panel.sh` `--panel <name>`: one popout opened over the `panel` route, with
   `panel state` agreeing it is the only open one.
 - `panel_anchor.sh` `--panel-anchor`: `panel toggle` hanging its card under
@@ -1655,13 +1657,15 @@ a Linux host.
   `docs/DESIGN.md` §1 "Motion": the two clock families in
   `crates/formalshell-rs/src/motion.rs`, and the joined shape a card hanging
   off the bar draws instead of a plain card.
-- **Capture rule**: the shell captures windows in exactly three places, the
+- **Capture rule**: the shell captures windows in exactly four places, the
   Spaces preview (`wayland/preview.rs`, drawn by
   `surfaces/panel/workspace_preview.rs`), the Alt+Tab switcher
   (`wayland/switcher.rs`, `surfaces/switcher/`) and the launcher's preview
   pane (`wayland/launcher.rs`, drawn by `surfaces/launcher.rs`: one frame of
   the selected window, never live, held only while the pane shows that
-  window), and only while their card is open. All three go through `wayland/capture.rs` (ext-image-copy-capture on
+  window) and the overview (`wayland/overview.rs`, drawn by
+  `surfaces/overview.rs`: one frame per window of the output's workspaces,
+  never live), and only while their card is open. All four go through `wayland/capture.rs` (ext-image-copy-capture on
   each window's foreign-toplevel handle); closing the card drops every
   frame, session and source it held. The lock surface never captures
   anything, and no other surface gets window capture. Screenshots and

@@ -6,8 +6,9 @@
 //! sits on it at that moment, so a cursor parked in the corner through an
 //! unlock never fires it again.
 //!
-//! The overview corner exists only while the compositor has HyprExpo
-//! loaded: a square that can open nothing would take the bar's pixels.
+//! A corner gets a surface only where the desktop ends on both its edges
+//! (`corners::outer`): one on an edge shared with another output can never
+//! be hit. The overview corner toggles the shell's own overview.
 //!
 //! The screensaver corner locks the session and shows the screensaver inside
 //! the lock, so like the lock corner it ends at the unlock.
@@ -62,9 +63,6 @@ pub struct HotCorners {
     wins: Vec<Win>,
     /// When each action last ended, on [`App::corner_ms`]'s clock.
     ended_at: HashMap<String, i64>,
-    /// An overview corner is configured and HyprExpo is not loaded, so it
-    /// has no surface over the bar's pixels.
-    overview_off: bool,
 }
 
 impl App {
@@ -93,24 +91,31 @@ impl App {
                 eprintln!("HotCorners: {w}");
             }
         }
-        let outputs: Vec<(WlOutput, String)> =
-            self.outputs.outputs().map(|o| (o.clone(), self.outputs.info(&o).and_then(|i| i.name).unwrap_or_default())).collect();
-        let names: Vec<String> = outputs.iter().map(|(_, n)| n.clone()).collect();
+        let outputs: Vec<(WlOutput, String, Option<(f64, f64, f64, f64)>)> = self
+            .outputs
+            .outputs()
+            .map(|o| {
+                let info = self.outputs.info(&o);
+                let rect = info.as_ref().and_then(|i| {
+                    let (x, y) = i.logical_position?;
+                    let (w, h) = i.logical_size?;
+                    Some((f64::from(x), f64::from(y), f64::from(w), f64::from(h)))
+                });
+                (o.clone(), info.and_then(|i| i.name).unwrap_or_default(), rect)
+            })
+            .collect();
+        let names: Vec<String> = outputs.iter().map(|(_, n, _)| n.clone()).collect();
         // Down while a fullscreen window covers the output, so its scanout
         // is free and a corner cannot fire mid-game.
         let hide = self.store.config.bool("fullscreen.hideChrome").unwrap_or(true);
         let covered = &self.store.compositor.snapshot.fullscreen_outputs;
         let all = corners::windows(&config, &names);
-        let overview = self.store.compositor.overview;
-        let off = !overview && self.store.compositor.overview_answered && all.iter().any(|w| w.action == Action::Overview);
-        if off && !self.hot.overview_off {
-            eprintln!("HotCorners: overview: hyprexpo is not loaded, the corner is off");
-        }
-        self.hot.overview_off = off;
-        let windows: Vec<_> = all
-            .into_iter()
-            .filter(|w| !(hide && covered.contains(&w.screen)) && (overview || w.action != Action::Overview))
-            .collect();
+        let outer = |w: &corners::CornerWindow| {
+            let Some(screen) = outputs.iter().find(|(_, n, _)| *n == w.screen).and_then(|o| o.2) else { return true };
+            let others: Vec<_> = outputs.iter().filter(|(_, n, _)| *n != w.screen).filter_map(|o| o.2).collect();
+            corners::outer(w.corner, screen, &others)
+        };
+        let windows: Vec<_> = all.into_iter().filter(|w| !(hide && covered.contains(&w.screen)) && outer(w)).collect();
         let key: Vec<(String, Corner, String, i64)> =
             windows.iter().map(|w| (w.screen.clone(), w.corner, w.action.as_str().to_owned(), config.size)).collect();
         self.hot.config = Some(config.clone());
@@ -121,7 +126,7 @@ impl App {
         self.hot.wins.clear();
         let now = self.corner_ms();
         for w in windows {
-            let Some((output, _)) = outputs.iter().find(|(_, n)| *n == w.screen) else { continue };
+            let Some((output, _, _)) = outputs.iter().find(|(_, n, _)| *n == w.screen) else { continue };
             let edges = corners::edges(w.corner);
             let mut anchor = Anchor::empty();
             for (on, a) in [(edges.top, Anchor::TOP), (edges.bottom, Anchor::BOTTOM), (edges.left, Anchor::LEFT), (edges.right, Anchor::RIGHT)] {
@@ -179,6 +184,7 @@ impl App {
                     let armed = arm::is_armed(w.arm, now);
                     let active = self.action_active(&w.action);
                     self.hot.wins[i].arm = arm::on_enter(w.arm, now);
+                    self.log(&format!("hot corner {} entered armed={armed} active={active}", self.hot.wins[i].action.as_str()));
                     if armed && !active {
                         self.start_dwell(i);
                     }
@@ -245,7 +251,7 @@ impl App {
                     self.saver_start();
                 }
             }
-            Action::Overview => compositor::send(compositor::Command::Overview(compositor::Overview::Open)),
+            Action::Overview => self.overview_action(super::overview::Action::Toggle),
             other => eprintln!("HotCorners: {} has no surface in this shell yet", other.as_str()),
         }
     }

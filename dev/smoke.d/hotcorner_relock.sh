@@ -44,9 +44,8 @@
 # in which it must not lock again. Leaving and coming back fires it again,
 # and this time a pointer move is what drops it back to the card.
 #
-# Last the top-left corner written "overview", which this rig's Hyprland
-# has no HyprExpo for: the rebuild maps the other two corners and none
-# for it. Its leave-and-cooldown rule is --overview's, on g815.
+# Last the top-left corner written "overview": the rebuild maps it beside
+# the other two. Its leave-and-cooldown rule is --overview's.
 leg_hotcorner_relock_flag="--hotcorner-relock"
 leg_hotcorner_relock_order=161
 leg_hotcorner_relock_needs="wlrctl wtype jq"
@@ -224,9 +223,9 @@ hotcorner_relock_saver_expect() {
 leg_hotcorner_relock_assert() {
   local f
   [ -s "$hotcorner_relock_overview_path" ] || fail "no layer dump at $hotcorner_relock_overview_path"
-  [ "$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_relock_overview_path")" = 2 ] \
-    || fail "topLeft overview with no HyprExpo mapped a corner surface: $(cat "$hotcorner_relock_overview_path")"
-  echo "SMOKE_HOTCORNER_RELOCK the overview corner has no surface with no HyprExpo loaded"
+  [ "$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_relock_overview_path")" = 3 ] \
+    || fail "topLeft overview did not map its corner beside the other two: $(cat "$hotcorner_relock_overview_path")"
+  echo "SMOKE_HOTCORNER_RELOCK the overview corner maps beside the other two"
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_on_path" true \
     "the bottom-left corner started the screensaver"
   hotcorner_relock_expect "$hotcorner_relock_saver_on_lock_path" true \

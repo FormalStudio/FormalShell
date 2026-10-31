@@ -60,8 +60,8 @@ pub const REARM_COOLDOWN_MS: i64 = 400;
 /// shell's own lock. The screensaver being dismissed back to the password
 /// card is not the end, the corner is still covered.
 ///
-/// "overview" is HyprExpo's, which tells the shell nothing when it closes,
-/// so it takes the launcher path too.
+/// "overview" toggles: the corner that opened it closes it again, so its
+/// cooldown starts at the fire, as the launcher's does.
 pub fn reports_end(action: &Action, external_lock: bool) -> bool {
     match action {
         Action::Lock | Action::Screensaver => !external_lock,

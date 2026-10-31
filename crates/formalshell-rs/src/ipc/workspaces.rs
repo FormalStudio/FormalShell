@@ -1,6 +1,5 @@
 //! `workspaces peek <n>|close|overview <open|close|toggle>|status`:
-//! `overview` is HyprExpo's grid of every workspace, the compositor's
-//! plugin rather than a surface of the shell. `peek` opens the
+//! `overview` is the workspace overview (`wayland::overview`). `peek` opens the
 //! preview of workspace `n` (the number on its chip) off the Spaces cell,
 //! the pointer's hover open for a keybind or the rig; `status` is the chips
 //! the cell resolved and the preview's state.
@@ -8,7 +7,7 @@
 use serde_json::json;
 
 use super::registry::{Function, Target, Type, Value};
-use crate::services::compositor::{self, Command, Overview};
+use crate::wayland::overview::Action;
 use crate::wayland::App;
 
 pub fn target() -> Target<App> {
@@ -32,14 +31,14 @@ fn close(app: &mut App, _: &[Value]) -> Value {
     Value::Str("ok".into())
 }
 
-fn overview(_: &mut App, args: &[Value]) -> Value {
+fn overview(app: &mut App, args: &[Value]) -> Value {
     let action = match args[0].str() {
-        "open" => Overview::Open,
-        "close" => Overview::Close,
-        "toggle" => Overview::Toggle,
+        "open" => Action::Open,
+        "close" => Action::Close,
+        "toggle" => Action::Toggle,
         other => return Value::Str(format!("error: overview takes open, close or toggle, not {other:?}")),
     };
-    compositor::send(Command::Overview(action));
+    app.overview_action(action);
     Value::Str("ok".into())
 }
 

@@ -348,6 +348,7 @@ fs_bind("SUPER + CTRL + S", "menu summon share")
 fs_bind("SUPER + CTRL + R", "menu summon reminder")
 fs_bind("SUPER + Escape", "menu summon system")
 fs_bind("SUPER + K", "menu summon keybinds")
+fs_bind("SUPER + O", "workspaces overview toggle")
 fs_bind("SUPER + CTRL + Q", "menu summon calc")
 fs_bind("SUPER + CTRL + M", "mirror toggle")
 

@@ -116,7 +116,6 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
         refresh_blur(&ctx).await;
         refresh_gaps(&ctx).await;
         refresh_border(&ctx).await;
-        refresh_overview(&ctx).await;
 
         let mut lines = BufReader::new(stream).lines();
         while let Some(line) = lines.next().await {
@@ -142,8 +141,7 @@ async fn events(ctx: Ctx, shared: Shared, dirty: async_channel::Sender<()>) {
                     refresh_blur(&ctx).await;
                     refresh_gaps(&ctx).await;
                     refresh_border(&ctx).await;
-                    refresh_overview(&ctx).await;
-                }
+                            }
                 "monitoradded" | "monitoraddedv2" | "monitorremoved" | "monitorremovedv2" => {
                     refresh_outputs(&ctx, &shared).await;
                 }
@@ -234,11 +232,6 @@ async fn refresh_gaps(ctx: &Ctx) {
     ctx.publish(store::Diff::Compositor(Diff::GapsOut(gaps)));
 }
 
-/// Whether HyprExpo is loaded; a config load is what loads it.
-async fn refresh_overview(ctx: &Ctx) {
-    let loaded = request("j/plugin list").await.is_ok_and(|text| hyprexpo_loaded(&text));
-    ctx.publish(store::Diff::Compositor(Diff::Overview(loaded)));
-}
 
 /// `general:col.active_border`, the light the focused window gives a
 /// card's rim.
@@ -275,12 +268,6 @@ fn blur_enabled(text: &str) -> bool {
     v.get("bool").and_then(serde_json::Value::as_bool).or_else(|| v.get("int").and_then(serde_json::Value::as_i64).map(|i| i != 0)).unwrap_or(false)
 }
 
-/// `plugin list` as JSON names each loaded plugin; with none Hyprland
-/// answers plain text, which is no plugin either.
-fn hyprexpo_loaded(text: &str) -> bool {
-    serde_json::from_str::<Vec<serde_json::Value>>(text).is_ok_and(|list| list.iter().any(|p| p.get("name").and_then(serde_json::Value::as_str) == Some("hyprexpo")))
-}
-
 async fn dispatch(lua: &str) {
     report("dispatch", request(&format!("dispatch {lua}")).await);
 }
@@ -305,6 +292,14 @@ fn report(what: &str, answer: io::Result<String>) {
         Ok(text) => eprintln!("hyprland: {what}: {}", text.trim()),
         Err(err) => eprintln!("hyprland: {what}: {err}"),
     }
+}
+
+/// Hyprland numbers workspaces across every monitor: slot `idx` of
+/// `output` is that workspace unless another monitor holds it, then a new
+/// one past the last.
+fn slot(snapshot: &Snapshot, idx: i64, output: &str) -> i64 {
+    let elsewhere = !output.is_empty() && snapshot.workspaces.iter().any(|w| w.idx == idx && w.output != output);
+    if elsewhere { snapshot.workspaces.iter().map(|w| w.idx).max().unwrap_or(0) + 1 } else { idx }
 }
 
 async fn commands(
@@ -332,11 +327,6 @@ async fn commands(
             Command::WorkspaceNames(_) => {}
             Command::Cursor { hidden } => eval(&ctx, &lua::cursor(hidden)).await,
             Command::Exit => dispatch(&lua::exit()).await,
-            Command::Overview(action) => match request("j/plugin list").await {
-                Ok(text) if hyprexpo_loaded(&text) => eval(&ctx, &lua::overview(action)).await,
-                Ok(_) => eprintln!("hyprland: overview: hyprexpo is not loaded"),
-                Err(err) => eprintln!("hyprland: overview: {err}"),
-            },
             Command::FloatWindow(id) => {
                 let floating = shared.borrow().snapshot.windows.iter().any(|w| w.id == id && w.is_floating);
                 if !floating {
@@ -345,7 +335,10 @@ async fn commands(
             }
             Command::ToggleFloating(id) => dispatch(&lua::toggle_floating(&id)).await,
             Command::ToggleFullscreen(id) => dispatch(&lua::toggle_fullscreen(&id)).await,
-            Command::MoveWindowTo { id, idx, .. } => dispatch(&lua::move_to_workspace(&id, idx)).await,
+            Command::MoveWindowTo { id, idx, output } => {
+                let idx = slot(&shared.borrow().snapshot, idx, &output);
+                dispatch(&lua::move_to_workspace(&id, idx)).await;
+            }
             Command::SwapWindows { a, b } => {
                 dispatch(&lua::swap_windows(&a, &b)).await;
                 // A swap moves no window between workspaces and raises no
@@ -421,13 +414,17 @@ async fn park(ctx: &Ctx, shared: &Shared, id: &str, show: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{active_border, hyprexpo_loaded};
+    use super::{Snapshot, active_border, slot};
+    use crate::services::compositor::model::Workspace;
 
     #[test]
-    fn hyprexpo_is_loaded_only_when_listed() {
-        assert!(hyprexpo_loaded(r#"[{"name":"hyprexpo","author":"sandwich","handle":"0x1","version":"v0.56.2+4","description":""}]"#));
-        assert!(!hyprexpo_loaded(r#"[{"name":"hyprbars"}]"#));
-        assert!(!hyprexpo_loaded("no plugins loaded"));
+    fn a_slot_another_monitor_holds_is_a_new_workspace() {
+        let ws = |idx: i64, output: &str| Workspace { id: idx.to_string(), idx, output: output.into(), ..Default::default() };
+        let snapshot = Snapshot { workspaces: vec![ws(1, "HDMI-A-1"), ws(2, "eDP-1"), ws(3, "HDMI-A-1")], ..Default::default() };
+        assert_eq!(slot(&snapshot, 2, "HDMI-A-1"), 4);
+        assert_eq!(slot(&snapshot, 2, "eDP-1"), 2);
+        assert_eq!(slot(&snapshot, 4, "eDP-1"), 4);
+        assert_eq!(slot(&snapshot, 2, ""), 2);
     }
 
     #[test]

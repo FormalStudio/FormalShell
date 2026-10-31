@@ -23,6 +23,7 @@ mod rims;
 mod screensaver;
 mod settle;
 mod sidebar;
+pub mod overview;
 pub mod switcher;
 mod toasts;
 mod veil;
@@ -209,6 +210,7 @@ enum Owner {
     /// The launcher's card or one of its two scrims.
     Launcher(crate::surfaces::modal::Part),
     Switcher,
+    Overview,
     Picker(usize),
     Atlas(crate::surfaces::modal::Part),
 }
@@ -237,6 +239,7 @@ pub struct App {
     headset: headset::Headset,
     thumbnails: capture::Capture,
     pub switcher: switcher::State,
+    pub overview: overview::State,
     pub atlas: atlas::State,
     peek: preview::State,
     pub bar: Bar,
@@ -370,6 +373,7 @@ impl App {
             headset: headset::Headset::default(),
             thumbnails: capture::Capture::bind(globals, qh),
             switcher: switcher::State::default(),
+            overview: overview::State::default(),
             atlas: atlas::State::default(),
             peek: preview::State::default(),
             bar,
@@ -1636,6 +1640,7 @@ impl App {
         self.present_launcher(now);
         self.present_atlas(now);
         self.switcher_present();
+        self.overview_present();
         self.present_saver(now);
         self.present_tooltip(now);
         self.present_toasts(now);
@@ -1717,7 +1722,7 @@ impl App {
     fn arm_wake(&mut self, now: Instant) {
         let hosts = [&self.panel, &self.outgoing];
         let notifications = self.store.notifications.wake().map(|at| crate::services::notifications::instant_at(at, now));
-        let at = [self.bar.wake(now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY), self.veil_deadline(now)]
+        let at = [self.bar.wake(now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.overview_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY), self.veil_deadline(now)]
             .into_iter()
             .chain(hosts.iter().filter_map(|h| h.as_ref()).flat_map(|h| [h.prime_until, h.wake.filter(|w| *w > now)]))
             .flatten()
@@ -1786,6 +1791,9 @@ impl App {
         }
         if self.switcher.owns(surface) {
             return Some(Owner::Switcher);
+        }
+        if self.overview.owns(surface) {
+            return Some(Owner::Overview);
         }
         if let Some(i) = self.picker_owner(surface) {
             return Some(Owner::Picker(i));
@@ -1945,6 +1953,9 @@ impl App {
                 continue;
             }
             if self.atlas_pointer(e) {
+                continue;
+            }
+            if self.overview_pointer(e) {
                 continue;
             }
             if self.overlay_pointer(e) {
@@ -2172,7 +2183,7 @@ impl App {
     }
 
     fn key_event_from(&mut self, event: KeyEvent, repeat: bool) {
-        if self.lock_key(&event, repeat) || self.polkit_key(&event) || self.overlay_key(&event) || self.picker_key_event(&event) || self.atlas_key(&event) || self.launcher_key(&event, repeat) || self.switcher_key(event.keysym) || self.sidebar_key(&event) {
+        if self.lock_key(&event, repeat) || self.polkit_key(&event) || self.overlay_key(&event) || self.picker_key_event(&event) || self.atlas_key(&event) || self.launcher_key(&event, repeat) || self.switcher_key(event.keysym) || self.overview_key(&event) || self.sidebar_key(&event) {
             return;
         }
         let editing = self.panel.as_ref().is_some_and(|h| h.editing());
@@ -2270,6 +2281,7 @@ impl crate::surface::ScaleHandler for App {
         self.toasts_dirty = true;
         self.lock.dirty = true;
         self.switcher.dirty = true;
+        self.overview.dirty = true;
         for p in &mut self.pickers.surfaces {
             p.dirty = true;
         }
@@ -2373,6 +2385,7 @@ impl CompositorHandler for App {
                 (c.frame_pending, c.mapped, c.callbacks) = (false, true, c.callbacks + 1);
             }
             Some(Owner::Switcher) => self.switcher_frame(),
+            Some(Owner::Overview) => self.overview_frame(),
             Some(Owner::Atlas(p)) => self.atlas_frame(p, now),
             Some(Owner::Launcher(part)) => self.launcher_frame(part, now),
             Some(Owner::Picker(i)) => self.picker_frame(i),
@@ -2428,6 +2441,7 @@ impl LayerShellHandler for App {
             Some(Owner::Head(i, part)) => self.head_closed(i, part),
             Some(Owner::Launcher(crate::surfaces::modal::Part::Card)) => self.launcher_closed(),
             Some(Owner::Switcher) => self.switcher_close(),
+            Some(Owner::Overview) => self.overview_closed(),
             Some(Owner::Atlas(_)) => self.atlas_closed(),
             Some(Owner::Picker(i)) => self.picker_closed(i),
             None if self.saver_index(layer.wl_surface()).is_some() => self.saver_closed(layer.wl_surface()),
@@ -2508,6 +2522,7 @@ impl LayerShellHandler for App {
             Some(Owner::Head(i, part)) => self.head_configure(i, part, width, height),
             Some(Owner::Launcher(part)) => self.launcher_configure(part, width, height),
             Some(Owner::Switcher) => self.switcher_configure(width, height),
+            Some(Owner::Overview) => self.overview_configure(width, height),
             Some(Owner::Atlas(p)) => self.atlas_configure(p, width, height),
             Some(Owner::Picker(i)) => self.picker_configure(i, width, height),
             None if self.veil_owns(layer.wl_surface()) => self.veil_configure(layer.wl_surface(), width, height),

@@ -13,7 +13,7 @@ pub mod model;
 use std::time::{Duration, Instant};
 
 use fs_theme::color::Rgba;
-use fs_theme::style::{BoxStyle, Line};
+use fs_theme::style::Line;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 
@@ -21,7 +21,7 @@ use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::compositor::model::Window;
 use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::{Family, ShapedText, TextStyle};
+use crate::text::{Family, TextStyle};
 use crate::ui::boxes;
 
 /// How long the card waits before it maps (macOS's Cmd+Tab).
@@ -105,33 +105,12 @@ impl Metrics {
             pad: s.panel_padding,
         }
     }
-
-    /// The schematic's icon, as a window thumbnail sizes it for a thumbnail
-    /// `thumb_w` wide.
-    pub fn schematic_icon(&self, theme: &Theme, thumb_w: f64) -> f64 {
-        (theme.space.xl * 2.0).min(thumb_w / 2.0).min(self.thumb_h / 2.0)
-    }
 }
 
 fn caption_style(kit: &Kit, selected: bool) -> TextStyle {
     TextStyle { family: kit.look.sans, size: kit.look.caption, weight: if selected { 500.0 } else { 400.0 }, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
-/// `text` cut to `max` with an ellipsis.
-fn elided(kit: &mut Kit, text: &str, style: TextStyle, max: f64) -> ShapedText {
-    let whole = kit.shape(text, style);
-    if whole.width as f64 <= max + 0.5 || text.is_empty() {
-        return whole;
-    }
-    let chars: Vec<char> = text.chars().collect();
-    let (mut lo, mut hi) = (0usize, chars.len());
-    let cut = |n: usize| chars[..n].iter().collect::<String>().trim_end().to_owned() + "\u{2026}";
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        if kit.shape(&cut(mid), style).width as f64 <= max { lo = mid } else { hi = mid - 1 }
-    }
-    kit.shape(&cut(lo), style)
-}
 
 impl Switcher {
     /// A window took focus: it goes to the front of the history.
@@ -260,29 +239,8 @@ impl Switcher {
             boxes::paint(&mut p, rects.cell, &b, t.box_radius(&b, rects.cell.h as f64), alpha, 0.0);
 
             let th = rects.thumb;
-            let cover = t.cover_radius(th.w.min(th.h) as f64);
-            match input.thumbs.get(i).and_then(Option::as_ref) {
-                Some(image) => {
-                    p.shape(th, Paint::Picture { image: image.clone(), alpha, radius: cover as f32 });
-                    let ink = if selected { t.colors.get("ring") } else { t.colors.get("border") };
-                    p.framed(th, Rgba::TRANSPARENT, cover as f32, a(ink), t.border_width as f32);
-                }
-                None => {
-                    let cb: BoxStyle<Rgba> = t.box_style("cell", Some("rest"));
-                    boxes::paint(&mut p, th, &cb, t.box_radius(&cb, th.h as f64), alpha, 0.0);
-                    let size = m.schematic_icon(t, th.w as f64).round() as i32;
-                    let at = IRect::new(th.x + (th.w - size) / 2, th.y + (th.h - size) / 2, size, size);
-                    match icon.and_then(|i| i.2.clone()) {
-                        Some(big) => p.shape(at, Paint::Picture { image: big, alpha, radius: 0.0 }),
-                        None => {
-                            let glyph = fs_theme::icons::glyph("app-window");
-                            let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
-                            let g = kit.shape(glyph.text, st);
-                            p.text(&g, (at.x + (at.w - g.width) / 2, at.y + (at.h - g.line_height()) / 2), a(muted), &[]);
-                        }
-                    }
-                }
-            }
+            let thumb = crate::ui::thumb::Thumb { picture: input.thumbs.get(i).and_then(Option::as_ref), icon: icon.and_then(|i| i.2.as_ref()), title: "", selected: false, badge: false, edge: 1.0 };
+            crate::ui::thumb::paint(&mut p, kit, t, &thumb, th, selected, false, alpha);
 
             let (n, of) = ordinals.get(i).copied().unwrap_or((1, 1));
             if of > 1 {
@@ -309,7 +267,7 @@ impl Switcher {
             let title_x = ir.right() + s.icon_gap as i32;
             let max = (th.right() - title_x) as f64;
             let style = caption_style(kit, selected);
-            let title = elided(kit, &win.title, style, max.max(0.0));
+            let title = kit.elided(&win.title, style, max.max(0.0));
             let cap_y = rects.thumb.bottom() as f64 + s.icon_gap;
             let ty = (cap_y + (m.caption_h - title.line_height() as f64) / 2.0).round() as i32;
             p.text(&title, (title_x, ty), a(if selected { fg } else { muted }), &[]);

@@ -120,6 +120,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             "switcher": app.capture_sessions(crate::wayland::capture::Owner::Switcher),
             "spaces": app.capture_sessions(crate::wayland::capture::Owner::Preview),
             "launcher": app.capture_sessions(crate::wayland::capture::Owner::Launcher),
+            "overview": app.capture_sessions(crate::wayland::capture::Owner::Overview),
         },
         "backdrop": app.backdrop_state(),
         "desktopClock": app.desktop_clock_state(),
@@ -154,7 +155,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     dump["toastCards"] = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect();
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();
-    dump["overview"] = json!(h.overview);
+    dump["overview"] = app.overview_status();
     dump["sidebarClock"] = app.sidebar_clock_state();
     text(dump.to_string())
 }

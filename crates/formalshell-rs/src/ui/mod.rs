@@ -28,6 +28,7 @@ pub mod el;
 pub mod lyrics;
 mod spectrum;
 mod strip;
+pub mod thumb;
 pub mod w;
 
 use std::collections::HashMap;
@@ -538,13 +539,19 @@ impl Cx<'_> {
     }
 
     pub fn painter(&mut self, path: &str) -> crate::surfaces::bar::cell::Painter<'_> {
+        self.painter_kit(path).0
+    }
+
+    /// [`painter`](Self::painter) and the kit beside it, for drawing that
+    /// shapes text as it goes.
+    pub fn painter_kit(&mut self, path: &str) -> (crate::surfaces::bar::cell::Painter<'_>, &mut Kit) {
         let frame = self.ui.frame;
         let g = self.ui.groups.entry(path.to_owned()).or_default();
         g.seen = frame;
         // The next group follows this one's last node whatever it draws.
         self.last = g.nodes.last().copied().or(self.last);
         let anchor = if g.nodes.is_empty() { self.last } else { None };
-        crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor)
+        (crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor), self.kit)
     }
 
     /// Records where the group just painted ended in paint order.

@@ -20,6 +20,7 @@ pub mod popup;
 pub mod rim;
 pub mod shoulders;
 pub mod sidebar;
+pub mod overview;
 pub mod switcher;
 pub mod tray_menu;
 pub mod toasts;
@@ -37,6 +38,7 @@ pub fn changed(app: &mut App, topic: Topic) {
         crate::services::display::reconcile(&app.store);
     }
     app.switcher_changed(topic);
+    app.overview_changed(topic);
     if topic == Topic::Compositor {
         crate::services::launch::windows_changed(&app.store);
     }

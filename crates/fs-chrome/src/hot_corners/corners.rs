@@ -46,8 +46,8 @@ pub enum Action {
     None,
     Screensaver,
     Lock,
-    /// The compositor's workspace overview (HyprExpo), the same command as
-    /// `workspaces overview open`.
+    /// The shell's workspace overview, toggled, the same command as
+    /// `workspaces overview toggle`.
     Overview,
     Launcher(String),
 }
@@ -289,6 +289,20 @@ pub fn windows(config: &Config, screens: &[String]) -> Vec<CornerWindow> {
     out
 }
 
+/// Whether `corner` of `screen` (an output's logical box) is a corner of
+/// the whole desktop: no other output holds the point a pixel past it
+/// sideways, upward or downward, or diagonally. A corner on an edge shared
+/// with a neighbour can never be hit, since the pointer walks on into the
+/// neighbour instead of stopping in it.
+pub fn outer(corner: Corner, screen: (f64, f64, f64, f64), others: &[(f64, f64, f64, f64)]) -> bool {
+    let e = edges(corner);
+    let (x, y, w, h) = screen;
+    let (cx, cy) = (if e.right { x + w - 0.5 } else { x + 0.5 }, if e.bottom { y + h - 0.5 } else { y + 0.5 });
+    let (dx, dy) = (if e.right { 1.0 } else { -1.0 }, if e.bottom { 1.0 } else { -1.0 });
+    let held = |px: f64, py: f64| others.iter().any(|&(ox, oy, ow, oh)| px >= ox && px < ox + ow && py >= oy && py < oy + oh);
+    !(held(cx + dx, cy) || held(cx, cy + dy) || held(cx + dx, cy + dy))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -463,4 +477,20 @@ mod tests {
         let c = run(json!({ "topLeft": "none", "bottomLeft": "none", "bottomRight": "none" }));
         assert_eq!(windows(&c, &screens(&["HDMI-1"])).len(), 0);
     }
+
+    #[test]
+    fn a_corner_on_a_shared_edge_is_not_outer() {
+        // g815: HDMI-A-1 at 0,0, eDP-1 right of it at 1.25 (2048x1280).
+        let hdmi = (0.0, 0.0, 2560.0, 1440.0);
+        let edp = (2560.0, 0.0, 2048.0, 1280.0);
+        assert!(outer(Corner::TopLeft, hdmi, &[edp]));
+        assert!(!outer(Corner::TopRight, hdmi, &[edp]));
+        assert!(!outer(Corner::TopLeft, edp, &[hdmi]));
+        assert!(!outer(Corner::BottomLeft, edp, &[hdmi]));
+        assert!(outer(Corner::BottomRight, edp, &[hdmi]));
+        // HDMI-A-1's bottom-right sits below eDP-1's bottom edge.
+        assert!(outer(Corner::BottomRight, hdmi, &[edp]));
+        assert!(outer(Corner::TopLeft, hdmi, &[]));
+    }
+
 }

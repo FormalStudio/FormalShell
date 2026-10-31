@@ -458,11 +458,14 @@ pub struct Painter<'a> {
     anchor: Option<NodeId>,
     /// While set, every node drawn fades out toward its view's ends.
     pub fade: Option<Fade>,
+    /// Applied over every node's own transform (a zoom over a whole
+    /// layout).
+    pub transform: Affine,
 }
 
 impl<'a> Painter<'a> {
     pub fn new(scene: &'a mut Scene, nodes: &'a mut Vec<NodeId>, clip: Option<IRect>) -> Self {
-        Self { scene, nodes, used: 0, clip, anchor: None, fade: None }
+        Self { scene, nodes, used: 0, clip, anchor: None, fade: None, transform: Affine::IDENTITY }
     }
 
     /// New nodes start right after `anchor` rather than on top of the scene.
@@ -493,7 +496,7 @@ impl<'a> Painter<'a> {
             Some(fade) => Paint::Faded { paint: Box::new(paint), fade },
             None => paint,
         };
-        self.scene.update_with(id, bounds, paint, true, transform, clip);
+        self.scene.update_with(id, bounds, paint, true, self.transform * transform, clip);
     }
 
     pub fn rect(&mut self, r: IRect, fill: Rgba, radius: f32) {
@@ -650,6 +653,22 @@ impl Kit {
             seen.push(style);
         }
         self.text.shape(source, style)
+    }
+
+    /// `source` cut to `max` with an ellipsis, or whole.
+    pub fn elided(&mut self, source: &str, style: TextStyle, max: f64) -> ShapedText {
+        let whole = self.shape(source, style);
+        if whole.width as f64 <= max + 0.5 || source.is_empty() {
+            return whole;
+        }
+        let chars: Vec<char> = source.chars().collect();
+        let cut = |n: usize| chars[..n].iter().collect::<String>().trim_end().to_owned() + "\u{2026}";
+        let (mut lo, mut hi) = (0usize, chars.len());
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            if self.shape(&cut(mid), style).width as f64 <= max { lo = mid } else { hi = mid - 1 }
+        }
+        self.shape(&cut(lo), style)
     }
 
     pub fn icon(&mut self, name: &str) -> ShapedText {

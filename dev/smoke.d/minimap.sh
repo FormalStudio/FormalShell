@@ -15,7 +15,8 @@
 # with the button still down: lifted, its target row 1), the two then
 # trading places by a drag along that row, mm-c dragged to the empty row
 # making workspace 3 again, and a drag let go past the column's edge
-# moving nothing, the map holding no order after it. Last the scrolling
+# opening the overview and moving nothing, the map holding no order after
+# it. Last the scrolling
 # layout, three windows on workspace 4, one column each: the first icon
 # dragged past the last moves its column to the tape's end (e f d by x,
 # where a swap would give f e d), with a frame mid-drag and one after; then
@@ -66,7 +67,7 @@ leg_minimap_fixture() {
 }
 
 leg_minimap_timing() {
-  leg_timing 30 120
+  leg_timing 36 130
 }
 
 leg_minimap_drive() {
@@ -157,6 +158,9 @@ drag "\$ax" "\$ay" 600 "\$ay" 200
 sleep 1.5
 $ipc call sidebar status > "${minimap_status[10]}" 2>&1
 "$hyprctl_bin" -j clients > "${minimap_clients[7]}" 2>&1
+$ipc call debug dump 2>/dev/null | "$jq_bin" -r '.overview.phase' > "$shot_dir/minimap-out-overview.txt" 2>&1
+$ipc call workspaces overview close > /dev/null 2>&1
+sleep 1
 "$hyprctl_bin" eval 'hl.config({ general = { layout = "scrolling" } })' > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ workspace = 4 })" > /dev/null 2>&1
 for app in d e f; do
@@ -312,6 +316,8 @@ leg_minimap_assert() {
   [ "$ws" = "3" ] || fail "minimap: the drop on the empty row did not make workspace 3 (on $ws)"
   [ "$(minimap_where "$second" "${minimap_clients[7]}")" = "$(minimap_where "$second" "${minimap_clients[6]}")" ] \
     || fail "minimap: a drag let go past the column moved its window"
+  [ "$(cat "$shot_dir/minimap-out-overview.txt" 2>/dev/null)" = open ] \
+    || fail "minimap: a drag let go past the column did not open the overview ($(cat "$shot_dir/minimap-out-overview.txt" 2>/dev/null))"
   "$jq_bin" -e '.minimap.drag == null and .minimap.held == null' "${minimap_status[10]}" > /dev/null \
     || fail "minimap: the cancelled drag left a drag or a held order: $(cat "${minimap_status[10]}")"
   echo "SMOKE_MINIMAP_COLUMN_LIFTED $minimap_column_lifted_png"

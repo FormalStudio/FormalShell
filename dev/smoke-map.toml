@@ -294,7 +294,7 @@ runs = ["--frame", "--multi-output", "--bar-style corners --frame"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/hot_corners/**", "crates/formalshell-rs/src/wayland/hotcorners.rs"]
-runs = ["--hotcorner", "--hotcorner-relock"]
+runs = ["--hotcorner", "--hotcorner-relock", "--overview"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/plugins.rs", "crates/formalshell-rs/src/services/plugins.rs", "crates/formalshell-rs/src/ipc/plugins.rs", "crates/formalshell-rs/src/surfaces/panel/plugin.rs", "crates/formalshell-rs/src/surfaces/bar/cells/plugin.rs", "crates/formalshell-rs/src/wayland/plugin_overlay.rs"]
@@ -717,10 +717,10 @@ runs = ["--minimap"]
 paths = ["crates/formalshell-rs/src/wayland/settle.rs", "crates/formalshell-rs/src/services/compositor/hyprland/mod.rs"]
 runs = ["--minimap", "--spaces", "--idle"]
 
-# HyprExpo's overview: the minimap's long press and cross-row drag, the
-# compositor command and the IPC verb that open it.
+# The overview: its surface, the minimap's long press and drag out, the
+# IPC verb and the hot corner that open it.
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "crates/formalshell-rs/src/services/compositor/hyprland/", "crates/formalshell-rs/src/ipc/workspaces.rs", "dev/smoke.d/overview.sh"]
+paths = ["crates/formalshell-rs/src/surfaces/overview.rs", "crates/formalshell-rs/src/wayland/overview.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "crates/formalshell-rs/src/ipc/workspaces.rs", "dev/smoke.d/overview.sh"]
 runs = ["--overview"]
 
 # A subsurface's scale follows its parent's
