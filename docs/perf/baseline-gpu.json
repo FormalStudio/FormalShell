@@ -1,0 +1,462 @@
+{
+  "commit": "4a9a0b0d",
+  "host": "g815",
+  "backend": "gpu",
+  "taken": "2026-10-31",
+  "note": "The GPU path forced (--backend gpu) on the rig's Intel ARL, built from 4a9a0b0d with the fenced presents and Sol's round 1 fixes of the commit after it in flight; idle runs 1 to 3 of five. Two other nested sessions shared g815.",
+  "modes": {
+    "plain": {
+      "quota": null,
+      "numbers": {
+        "cold_start_ms": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            48,
+            55,
+            54
+          ],
+          "median": 54,
+          "spread": 7
+        },
+        "idle_ticks": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "idle_wakeups": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            9,
+            9,
+            9
+          ],
+          "median": 9,
+          "spread": 0
+        },
+        "idle_commits": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_engine_ns": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            603460,
+            707200,
+            712556
+          ],
+          "median": 707200,
+          "spread": 109096
+        },
+        "shell_drm_fds": {
+          "leg": "--idle",
+          "gate": "report",
+          "runs": [
+            2,
+            2,
+            2
+          ],
+          "median": 2,
+          "spread": 0
+        },
+        "compositor_engine_ns": {
+          "leg": "--idle",
+          "gate": "median",
+          "runs": [
+            707408,
+            796640,
+            1391728
+          ],
+          "median": 796640,
+          "spread": 684320
+        },
+        "idle_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.0,
+            0.0,
+            0.017
+          ],
+          "median": 0.0,
+          "spread": 0.017
+        },
+        "spinner_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            2.498,
+            2.382,
+            2.332
+          ],
+          "median": 2.382,
+          "spread": 0.16600000000000037
+        },
+        "rss_kb": {
+          "leg": "--r0-measure 300",
+          "gate": "rss",
+          "runs": [
+            112384,
+            118304,
+            111304
+          ],
+          "median": 112384,
+          "spread": 7000
+        },
+        "threads": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            17,
+            17,
+            17
+          ],
+          "median": 17,
+          "spread": 0
+        },
+        "panel_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            3,
+            4,
+            3
+          ],
+          "median": 3,
+          "spread": 1
+        },
+        "panel_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            12,
+            11,
+            11
+          ],
+          "median": 11,
+          "spread": 1
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            4725,
+            4886,
+            4594
+          ],
+          "median": 4725,
+          "spread": 292
+        },
+        "scrim_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0,
+            0,
+            1
+          ],
+          "median": 0,
+          "spread": 1
+        },
+        "scrim_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1,
+            1,
+            1
+          ],
+          "median": 1,
+          "spread": 0
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            12,
+            9,
+            12
+          ],
+          "median": 12,
+          "spread": 3
+        },
+        "launcher_first_commit_ms_p50": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            7,
+            6,
+            7
+          ],
+          "median": 7,
+          "spread": 1
+        },
+        "launcher_first_commit_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            18,
+            17,
+            17
+          ],
+          "median": 17,
+          "spread": 1
+        },
+        "bar_gap_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            19,
+            18,
+            22
+          ],
+          "median": 19,
+          "spread": 4
+        }
+      }
+    },
+    "quota": {
+      "quota": {
+        "FS_CPU_QUOTA": "10%",
+        "FS_CPU_QUOTA_PERIOD": "2ms"
+      },
+      "numbers": {
+        "cold_start_ms": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            68,
+            58,
+            54
+          ],
+          "median": 58,
+          "spread": 14
+        },
+        "idle_ticks": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "idle_wakeups": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            10,
+            11,
+            10
+          ],
+          "median": 10,
+          "spread": 1
+        },
+        "idle_commits": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_engine_ns": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            705848,
+            721812,
+            715260
+          ],
+          "median": 715260,
+          "spread": 15964
+        },
+        "shell_drm_fds": {
+          "leg": "--idle",
+          "gate": "report",
+          "runs": [
+            2,
+            2,
+            2
+          ],
+          "median": 2,
+          "spread": 0
+        },
+        "compositor_engine_ns": {
+          "leg": "--idle",
+          "gate": "median",
+          "runs": [
+            1520844,
+            1264276,
+            1410968
+          ],
+          "median": 1410968,
+          "spread": 256568
+        },
+        "idle_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.017,
+            0.017,
+            0.033
+          ],
+          "median": 0.017,
+          "spread": 0.016
+        },
+        "spinner_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            3.797,
+            2.315,
+            2.398
+          ],
+          "median": 2.398,
+          "spread": 1.4820000000000002
+        },
+        "rss_kb": {
+          "leg": "--r0-measure 300",
+          "gate": "rss",
+          "runs": [
+            115132,
+            115436,
+            114536
+          ],
+          "median": 115132,
+          "spread": 900
+        },
+        "threads": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            17,
+            17,
+            17
+          ],
+          "median": 17,
+          "spread": 0
+        },
+        "panel_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            3,
+            3,
+            4
+          ],
+          "median": 3,
+          "spread": 1
+        },
+        "panel_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            11,
+            11,
+            11
+          ],
+          "median": 11,
+          "spread": 0
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            4810,
+            4817,
+            4614
+          ],
+          "median": 4810,
+          "spread": 203
+        },
+        "scrim_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0,
+            1,
+            1
+          ],
+          "median": 1,
+          "spread": 1
+        },
+        "scrim_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1,
+            1,
+            1
+          ],
+          "median": 1,
+          "spread": 0
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            15,
+            13,
+            17
+          ],
+          "median": 15,
+          "spread": 4
+        },
+        "launcher_first_commit_ms_p50": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            7,
+            6,
+            6
+          ],
+          "median": 6,
+          "spread": 1
+        },
+        "launcher_first_commit_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            19,
+            17,
+            16
+          ],
+          "median": 17,
+          "spread": 3
+        },
+        "bar_gap_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            20,
+            20,
+            21
+          ],
+          "median": 20,
+          "spread": 1
+        }
+      }
+    }
+  }
+}

@@ -40,7 +40,8 @@ leg_r0_measure_validate() {
   esac
   [ "$(leg_arg r0_measure)" -ge 300 ] || { echo "usage: --r0-measure needs at least 300s for its timeline" >&2; exit 1; }
   for other in "${legs[@]}"; do
-    if [ "$other" != r0_measure ] && leg_on "$other"; then
+    # --backend only pins a setting, so the numbers are read on either path.
+    if [ "$other" != r0_measure ] && [ "$other" != backend ] && leg_on "$other"; then
       echo "usage: --r0-measure times the shell alone and cannot combine with --${other//_/-}" >&2
       exit 1
     fi

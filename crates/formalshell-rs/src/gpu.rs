@@ -13,7 +13,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::CStr;
-use std::os::fd::{AsFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -147,10 +147,10 @@ fn take_started() {
 fn settle(asked: Backend, tried: Result<Gpu, String>) {
     let status = match tried {
         Ok(gpu) => {
-            let device = gpu.name.clone();
-            eprintln!("formalshell: render: drawing on the GPU ({device})");
+            let (device, why) = (gpu.name.clone(), gpu.why.clone());
+            eprintln!("formalshell: render: drawing on the GPU ({device}){}", why.as_ref().map_or(String::new(), |w| format!(": {w}")));
             GPU.with(|g| *g.borrow_mut() = Some(gpu));
-            Status { asked, backend: "gpu", reason: None, device: Some(device) }
+            Status { asked, backend: "gpu", reason: why, device: Some(device) }
         }
         Err(reason) => {
             if asked != Backend::Cpu {
@@ -173,16 +173,15 @@ fn with<T>(f: impl FnOnce(&mut Gpu) -> T) -> Option<T> {
 pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
     let started = match asked {
         Backend::Cpu => Err("render.backend is cpu".to_string()),
-        // Measured on g815 (2026-10-30), the Vulkan driver alone puts the
-        // shell at 141 MB of RSS against the 54 MB baseline, and three
-        // threads and ~230ms of cold start over it.
-        Backend::Auto => Err("auto draws on the CPU until the GPU path meets the performance baseline".to_string()),
-        Backend::Gpu => wayland(conn, globals),
+        Backend::Auto | Backend::Gpu => wayland(conn, globals),
     };
     let (wl, wl_queue, node) = match started {
         Ok(w) => w,
         Err(reason) => return settle(asked, Err(reason)),
     };
+    if asked == Backend::Auto && on_root_bus(&node) {
+        return settle(asked, Err(format!("auto: {} is an integrated GPU on the root PCI bus, where the CPU draws for less", node.path)));
+    }
     let (tx, opened) = std::sync::mpsc::channel();
     let (ping, source) = match calloop::ping::make_ping() {
         Ok(p) => p,
@@ -190,7 +189,7 @@ pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
     };
     WOKEN.with(|w| *w.borrow_mut() = Some(source));
     let spawned = std::thread::Builder::new().name("gpu-start".into()).spawn(move || {
-        let _ = tx.send(Device::open(&node));
+        let _ = tx.send(Device::open(&node, asked));
         ping.ping();
     });
     if let Err(e) = spawned {
@@ -248,11 +247,14 @@ struct Uploaded {
 
 pub struct Gpu {
     name: String,
+    why: Option<String>,
     instance: ash::Instance,
     physical: vk::PhysicalDevice,
     raw: ash::Device,
     family: u32,
     fd_fns: ash::khr::external_memory_fd::Device,
+    /// Dropped ahead of the device.
+    fence: Option<Fence>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: vello_hybrid::Renderer,
@@ -299,14 +301,114 @@ fn wayland(conn: &Connection, globals: &GlobalList) -> Result<(Wl, EventQueue<Wl
     Ok((wl, wl_queue, node))
 }
 
+/// What `auto` draws on, off the Vulkan device behind the compositor's
+/// render node (never a software one, which `on_node` passes over): the
+/// GPU, and why, or the CPU, and why. The measurements behind it are in
+/// docs/superpowers/specs/2026-10-31-gpu-rendering.md.
+fn auto_picks(info: &wgpu::AdapterInfo) -> Result<String, String> {
+    let name = &info.name;
+    match info.device_type {
+        wgpu::DeviceType::DiscreteGpu => Ok(format!("auto: {name} is a discrete GPU the compositor renders on")),
+        // Measured on two (Arrow Lake, Alder Lake-N): an animated bar frame
+        // costs three to five times the CPU's CPU time there, and 50 MB.
+        wgpu::DeviceType::IntegratedGpu => Err(format!("auto: {name} is an integrated GPU, where the CPU draws for less")),
+        wgpu::DeviceType::Cpu => Err(format!("auto: {name} is a software Vulkan device")),
+        other => Err(format!("auto: {name} is a {other:?} device, unmeasured")),
+    }
+}
+
+/// A binary semaphore signalled after each present's submit, exported as
+/// a sync_file and put on the dmabuf as its write fence: the compositor's
+/// read waits on the GPU and the shell does not. Exporting a SYNC_FD
+/// unsignals it, so the one semaphore serves every present.
+struct Fence {
+    raw: ash::Device,
+    fns: ash::khr::external_semaphore_fd::Device,
+    semaphore: vk::Semaphore,
+}
+
+impl Fence {
+    /// None on a driver or kernel that cannot export or take one.
+    fn new(instance: &ash::Instance, physical: vk::PhysicalDevice, raw: &ash::Device) -> Option<Self> {
+        // SAFETY: the device is live and was opened with the extension
+        // (`sync_fd` checked it first).
+        unsafe {
+            let info = vk::PhysicalDeviceExternalSemaphoreInfo::default().handle_type(vk::ExternalSemaphoreHandleTypeFlags::SYNC_FD);
+            let mut props = vk::ExternalSemaphoreProperties::default();
+            instance.get_physical_device_external_semaphore_properties(physical, &info, &mut props);
+            if !props.external_semaphore_features.contains(vk::ExternalSemaphoreFeatureFlags::EXPORTABLE) {
+                return None;
+            }
+            let mut export = vk::ExportSemaphoreCreateInfo::default().handle_types(vk::ExternalSemaphoreHandleTypeFlags::SYNC_FD);
+            let semaphore = raw.create_semaphore(&vk::SemaphoreCreateInfo::default().push_next(&mut export), None).ok()?;
+            Some(Self { raw: raw.clone(), fns: ash::khr::external_semaphore_fd::Device::new(instance, raw), semaphore })
+        }
+    }
+
+    /// A signal after everything submitted so far, in a batch of its own:
+    /// one wgpu dropped is a failure here and now, never a signal left
+    /// queued for a later submit.
+    fn signal(&self, queue: &wgpu::Queue) -> Result<(), String> {
+        // SAFETY: the semaphore is this device's and unsignalled (every
+        // earlier signal was exported, which unsignals it, or waited on),
+        // and only this thread submits to the queue.
+        unsafe {
+            let q = queue.as_hal::<wgpu::hal::api::Vulkan>().ok_or("not a Vulkan queue")?;
+            let semaphores = [self.semaphore];
+            self.raw.queue_submit(q.as_raw(), &[vk::SubmitInfo::default().signal_semaphores(&semaphores)], vk::Fence::null()).map_err(|e| format!("vkQueueSubmit: {e}"))
+        }
+    }
+
+    /// The signal a submit just made, put on `dmabuf` as its write fence.
+    fn attach(&self, dmabuf: &OwnedFd) -> Result<(), String> {
+        // SAFETY: a signal of the semaphore was submitted just before.
+        let fd = unsafe { self.fns.get_semaphore_fd(&vk::SemaphoreGetFdInfoKHR::default().semaphore(self.semaphore).handle_type(vk::ExternalSemaphoreHandleTypeFlags::SYNC_FD)) }
+            .map_err(|e| format!("vkGetSemaphoreFdKHR: {e}"))?;
+        // -1 is a signal already reached: nothing to wait on.
+        if fd < 0 {
+            return Ok(());
+        }
+        // SAFETY: the export hands the fd over.
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        #[repr(C)]
+        struct ImportSyncFile {
+            flags: u32,
+            fd: i32,
+        }
+        // _IOW('b', 3, struct dma_buf_import_sync_file), Linux 6.0.
+        const DMA_BUF_IOCTL_IMPORT_SYNC_FILE: u64 = 0x4008_6203;
+        const DMA_BUF_SYNC_WRITE: u32 = 2;
+        let mut arg = ImportSyncFile { flags: DMA_BUF_SYNC_WRITE, fd: fd.as_raw_fd() };
+        // SAFETY: both fds are live; the kernel reads `arg` alone.
+        let r = unsafe { libc::ioctl(dmabuf.as_raw_fd(), DMA_BUF_IOCTL_IMPORT_SYNC_FILE as _, &mut arg as *mut ImportSyncFile) };
+        if r < 0 {
+            return Err(format!("DMA_BUF_IOCTL_IMPORT_SYNC_FILE: {}", std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+}
+
+impl Drop for Fence {
+    fn drop(&mut self) {
+        // SAFETY: nothing still on the queue can signal it once it idles.
+        unsafe {
+            let _ = self.raw.device_wait_idle();
+            self.raw.destroy_semaphore(self.semaphore, None);
+        }
+    }
+}
+
 /// Everything Vulkan, opened off the main thread.
 struct Device {
     name: String,
+    /// Why `auto` took the GPU, when it did.
+    why: Option<String>,
     instance: ash::Instance,
     physical: vk::PhysicalDevice,
     raw: ash::Device,
     family: u32,
     fd_fns: ash::khr::external_memory_fd::Device,
+    fence: Option<Fence>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: vello_hybrid::Renderer,
@@ -316,14 +418,15 @@ struct Device {
 }
 
 impl Device {
-    fn open(node: &Node) -> Result<Self, String> {
+    fn open(node: &Node, asked: Backend) -> Result<Self, String> {
         let adapter = adapter(node)?;
         let info = adapter.get_info();
         let name = format!("{} on {}", info.name, node.path);
+        let why = if asked == Backend::Auto { Some(auto_picks(&info)?) } else { None };
 
         // SAFETY: the hal adapter is this wgpu adapter's own and outlives
         // the calls; the extensions added are checked as supported first.
-        let (hal_device, instance_raw, physical) = unsafe {
+        let (hal_device, instance_raw, physical, sync_fd) = unsafe {
             let hal = adapter.as_hal::<wgpu::hal::api::Vulkan>().ok_or("not a Vulkan adapter")?;
             let instance_raw = hal.shared_instance().raw_instance().clone();
             let physical = hal.raw_physical_device();
@@ -334,12 +437,13 @@ impl Device {
                     return Err(format!("{} lacks {}", info.name, need.to_string_lossy()));
                 }
             }
+            let sync_fd = has(ash::khr::external_semaphore_fd::NAME);
             let open = hal
                 .open_with_callback(
                     wgpu::Features::empty(),
                     &adapter.limits(),
                     &wgpu::MemoryHints::MemoryUsage,
-                    Some(Box::new(|args| {
+                    Some(Box::new(move |args| {
                         // wgpu enables neither; the second is what lets a
                         // barrier name VK_QUEUE_FAMILY_FOREIGN_EXT.
                         for ext in [ash::ext::image_drm_format_modifier::NAME, ash::ext::queue_family_foreign::NAME] {
@@ -347,14 +451,18 @@ impl Device {
                                 args.extensions.push(ext);
                             }
                         }
+                        if sync_fd && !args.extensions.contains(&ash::khr::external_semaphore_fd::NAME) {
+                            args.extensions.push(ash::khr::external_semaphore_fd::NAME);
+                        }
                     })),
                 )
                 .map_err(|e| format!("opening {}: {e}", info.name))?;
-            (open, instance_raw, physical)
+            (open, instance_raw, physical, sync_fd)
         };
         let raw = hal_device.device.raw_device().clone();
         let family = hal_device.device.queue_family_index();
         let fd_fns = ash::khr::external_memory_fd::Device::new(&instance_raw, &raw);
+        let fence = if sync_fd { Fence::new(&instance_raw, physical, &raw) } else { None };
         // SAFETY: the device was opened on this adapter with no features.
         let (device, queue) = unsafe {
             adapter.create_device_from_hal(
@@ -386,20 +494,22 @@ impl Device {
             view_formats: &[],
         });
         let tile_view = tile.create_view(&wgpu::TextureViewDescriptor::default());
-        Ok(Self { name, instance: instance_raw, physical, raw, family, fd_fns, device, queue, renderer, resources, tile, tile_view })
+        Ok(Self { name, why, instance: instance_raw, physical, raw, family, fd_fns, fence, device, queue, renderer, resources, tile, tile_view })
     }
 }
 
 impl Gpu {
     fn assemble(d: Device, wl: Wl, wl_queue: EventQueue<Wl>) -> Result<Self, String> {
-        let Device { name, instance, physical, raw, family, fd_fns, device, queue, renderer, resources, tile, tile_view } = d;
+        let Device { name, why, instance, physical, raw, family, fd_fns, fence, device, queue, renderer, resources, tile, tile_view } = d;
         let mut gpu = Self {
             name,
+            why,
             instance,
             physical,
             raw,
             family,
             fd_fns,
+            fence,
             device,
             queue,
             renderer,
@@ -482,7 +592,6 @@ impl Gpu {
             params.add(fd.as_fd(), 0, plane.offset as u32, plane.row_pitch as u32, DRM_FORMAT_MOD_LINEAR);
             let (wl_buffer, params) = params.create_immed(w as i32, h as i32, DRM_FORMAT_ABGR8888, zwp_linux_buffer_params_v1::Flags::empty(), &self.wl_queue.handle());
             params.destroy();
-            drop(fd);
 
             let size = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
             let hal_desc = wgpu::hal::TextureDescriptor {
@@ -514,7 +623,7 @@ impl Gpu {
             );
             let released = Rc::new(Cell::new(true));
             self.wl.released.insert(wl_buffer.id(), released.clone());
-            Ok(Buffer { texture, image, wl_buffer, released, held: Cell::new(None), stale: Vec::new() })
+            Ok(Buffer { texture, image, fd, wl_buffer, released, held: Cell::new(None), stale: Vec::new() })
         }
     }
 
@@ -751,6 +860,17 @@ fn on_node(instance: &wgpu::Instance, node: &Node, found: &mut Vec<String>) -> O
     let adapters = futures_lite::future::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
     found.extend(adapters.iter().map(|a| a.get_info().name));
     adapters.into_iter().find(|a| a.get_info().device_type != wgpu::DeviceType::Cpu && unsafe { drm_node(a) } == Some(node.rdev))
+}
+
+/// A PCI GPU straight on a root bus, with no port between: the CPU's own
+/// graphics (Intel's at 00:02.0). Telling it so needs no driver loaded,
+/// and a driver once loaded keeps ~7 MB of the shell's RSS for good. A
+/// GPU behind a port (any discrete one, AMD's APUs too) is left to the
+/// Vulkan device's own type.
+fn on_root_bus(node: &Node) -> bool {
+    let (major, minor) = node.rdev;
+    let Ok(device) = std::fs::canonicalize(format!("/sys/dev/char/{major}:{minor}/device")) else { return false };
+    device.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("pci"))
 }
 
 /// The driver libraries that can drive `node`, by its kernel driver, in the
@@ -1054,6 +1174,8 @@ pub fn tiles(r: IRect) -> impl Iterator<Item = IRect> {
 pub struct Buffer {
     texture: wgpu::Texture,
     image: vk::Image,
+    /// The dmabuf, for the write fence a present puts on it.
+    fd: OwnedFd,
     wl_buffer: WlBuffer,
     /// Handed to the compositor (queue family FOREIGN, layout GENERAL),
     /// and the layout wgpu still believes it is in, to take it back into.
@@ -1083,8 +1205,8 @@ impl Buffer {
 
     /// `rects` (canvas pixels) copied from `canvas`, at `opacity` out of
     /// 256, handed over to the compositor (Vulkan's external ownership
-    /// release) and waited on, so it never reads a half-drawn buffer. False,
-    /// and the GPU path given up, when the GPU did not finish.
+    /// release), fenced so it never reads a half-drawn buffer. False, and the
+    /// GPU path given up, when the GPU did not finish.
     pub fn fill(&self, canvas: &mut Canvas, rects: &[IRect], opacity: u16) -> bool {
         with(|g| {
             let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell present") });
@@ -1162,15 +1284,36 @@ impl Buffer {
     }
 
     /// Submits `encoder` with the image handed to the compositor after it,
-    /// and waits on it. wgpu cannot hand an image to another queue family,
-    /// so the ownership transfers go in command buffers of their own, around
-    /// the work: the acquire puts the image back in the layout wgpu last
-    /// left it in, which is where its own tracking starts from.
+    /// fenced: the submit signals the fence the dmabuf then carries, so the
+    /// compositor waits on the GPU and the shell goes on. With no fence the
+    /// shell waits on the GPU itself. wgpu cannot hand an image to another
+    /// queue family, so the ownership transfers go in command buffers of
+    /// their own, around the work: the acquire puts the image back in the
+    /// layout wgpu last left it in, which is where its own tracking starts
+    /// from.
     fn hand_over(&self, g: &mut Gpu, encoder: wgpu::CommandEncoder, layout: vk::ImageLayout) -> bool {
         let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
         let release = g.ownership(self.image, true, layout);
         self.held.set(Some(layout));
         let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
+        if let Some(fence) = &g.fence {
+            match fence.signal(&g.queue).and_then(|()| fence.attach(&self.fd)) {
+                Ok(()) => {
+                    // Frees what finished; never blocks.
+                    let _ = g.device.poll(wgpu::PollType::Poll);
+                    return true;
+                }
+                Err(e) => {
+                    eprintln!("formalshell: render: {e}; waiting on the GPU instead");
+                    g.fence = None;
+                    return self.wait(g, index);
+                }
+            }
+        }
+        self.wait(g, index)
+    }
+
+    fn wait(&self, g: &Gpu, index: wgpu::SubmissionIndex) -> bool {
         match g.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: Some(std::time::Duration::from_secs(1)) }) {
             Ok(_) => true,
             Err(e) => {

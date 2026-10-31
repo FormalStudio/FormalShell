@@ -1256,9 +1256,9 @@ pub struct Backdrop {
     pub landed: (bool, bool),
 }
 
-/// What a backdrop picture holds: a wallpaper by its path and dither, or
-/// the plain colour under its grid.
-type PictureKey = (String, Option<usize>, [u8; 4], Option<Grid>);
+/// What a backdrop picture holds: a wallpaper by its path, dither and
+/// grid, or the plain colour under its grid. A size change drops them all.
+type PictureKey = (String, Option<usize>, Option<Grid>, [u8; 4], Option<Grid>);
 
 struct Fade {
     from: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
@@ -1366,6 +1366,16 @@ impl Backdrop {
     /// Buffer pixels to a logical one.
     pub fn scale(&self) -> f64 {
         self.scaler.wanted(self.layer.wl_surface())
+    }
+
+    /// Paints what is up again, on the GPU once it has come up.
+    pub fn repaint(&mut self, qh: &QueueHandle<App>) {
+        let Some((_, _, _, _, color, grid)) = self.drawn.clone() else { return };
+        if self.fade.is_some() {
+            return;
+        }
+        let shown = self.shown.clone();
+        self.paint(None, shown.as_deref(), color, grid, 1.0, qh);
     }
 
     /// Already showing `path` at this logical size, though at another
@@ -1500,8 +1510,13 @@ impl Backdrop {
     ) -> Option<usize> {
         crate::gpu::dispatch();
         let key = |p: Option<&crate::services::wallpaper::Picture>| -> PictureKey {
-            p.map_or_else(|| (String::new(), None, color, grid), |p| (p.path.clone(), p.dither, [0; 4], None))
+            p.map_or_else(|| (String::new(), None, None, color, grid), |p| (p.path.clone(), p.dither, p.grid, [0; 4], None))
         };
+        if self.dmabuf_size != (w, h) {
+            self.textures.clear();
+            self.dmabufs.clear();
+            self.dmabuf_size = (w, h);
+        }
         let wanted: Vec<_> = std::iter::once(to).chain(from).map(|p| (key(p), p)).collect();
         self.textures.retain(|(k, _)| wanted.iter().any(|(w, _)| w == k));
         for (k, p) in &wanted {
@@ -1517,10 +1532,6 @@ impl Backdrop {
                 }
             };
             self.textures.push((k.clone(), picture));
-        }
-        if self.dmabuf_size != (w, h) {
-            self.dmabufs.clear();
-            self.dmabuf_size = (w, h);
         }
         let at = match self.dmabufs.iter().position(crate::gpu::Buffer::free) {
             Some(at) => at,

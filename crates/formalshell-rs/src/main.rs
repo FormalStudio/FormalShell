@@ -152,7 +152,7 @@ pub fn thread_ticks() {
 /// the threads' small allocations from each holding their own slack.
 /// `render.backend`, read once: the backend is picked before the first
 /// surface, so a new value takes effect at the next start.
-fn render_backend() -> fs_theme::theme::Backend {
+pub(crate) fn render_backend() -> fs_theme::theme::Backend {
     let text = std::fs::read_to_string(services::config::settings_path()).unwrap_or_default();
     let settings: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
     fs_theme::theme::Backend::parse(settings.pointer("/render/backend"))

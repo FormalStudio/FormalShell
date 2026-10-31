@@ -713,6 +713,9 @@ impl App {
     /// The GPU is up: every surface drawn so far draws once more, moving
     /// across to it on that present.
     pub fn gpu_up(&mut self) {
+        for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
+            b.repaint(&self.qh);
+        }
         self.bar_dirty = true;
         self.panel_dirty = true;
         self.toasts_dirty = true;

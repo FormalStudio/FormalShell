@@ -288,6 +288,7 @@ pub fn main(args: &[String]) {
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
     let (globals, queue) = registry_queue_init::<Greeter>(&conn).expect("wl_registry");
     let qh = queue.handle();
+    crate::gpu::resolve(crate::render_backend(), &conn, &globals);
     let mut event_loop: EventLoop<'static, Greeter> = EventLoop::try_new().expect("event loop");
     let handle = event_loop.handle();
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
@@ -369,6 +370,7 @@ pub fn main(args: &[String]) {
         TimeoutAction::Drop
     });
 
+    crate::gpu::watch(&handle, |g: &mut Greeter| g.dirty = true);
     let signal = event_loop.get_signal();
     let ended = event_loop.run(None, &mut g, |g| {
         g.released.sweep();

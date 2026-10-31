@@ -5,11 +5,14 @@
 Reads the stdout of `dev/remote.sh smoke --idle`, `--r0-measure 300` and
 `--menu-budget` runs saved one per file, plain or under FS_CPU_QUOTA (told
 apart by the `shell cpu quota:` line smoke.sh prints). A run that failed is
-refused, never counted.
+refused, never counted. Each backend has a baseline of its own, the CPU's
+docs/perf/baseline.json and the GPU's docs/perf/baseline-gpu.json, told
+apart by the `SMOKE_BACKEND` line `--backend` prints (a run without one
+drew on the CPU); a run asking for the GPU that fell back is refused.
 
-  dev/perf-gate.py run [--legs idle,r0,menu] [--runs 3]
+  dev/perf-gate.py run [--backend cpu|gpu] [--legs idle,r0,menu] [--runs 3]
       the matrix on the rig, each leg --runs times plain and under quota
-      (--idle at least five times),
+      (--idle at least five times) on that backend (cpu unless asked),
       outputs kept in artifacts/perf/<stamp>/, then `check` over them
   dev/perf-gate.py check <run-output>...
       the median of the given runs per number against the baseline; exits 1
@@ -38,7 +41,7 @@ import sys
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASELINE = os.path.join(REPO, "docs/perf/baseline.json")
+BASELINES = {"cpu": os.path.join(REPO, "docs/perf/baseline.json"), "gpu": os.path.join(REPO, "docs/perf/baseline-gpu.json")}
 QUOTA_ENV = {"FS_CPU_QUOTA": "10%", "FS_CPU_QUOTA_PERIOD": "2ms"}
 LEGS = {"idle": ["--idle"], "r0": ["--r0-measure", "300"], "menu": ["--menu-budget"]}
 MIN_RUNS = {"idle": 5}
@@ -89,6 +92,13 @@ def extract(path):
         raise SystemExit(f"{path}: quota {m.group(1)} per {m.group(2)}, the baseline's is 10% per 2ms")
     n = {}
     lines = text.splitlines()
+    backend = "cpu"
+    told = next((l for l in lines if l.startswith("SMOKE_BACKEND ")), None)
+    if told:
+        b = json.loads(told.split(" ", 1)[1])
+        if b["backend"] != b["asked"]:
+            raise SystemExit(f"{path}: asked for {b['asked']} and drew on {b['backend']} ({b.get('reason')}), not counted")
+        backend = b["backend"]
 
     def pick(prefix):
         return next((l for l in lines if l.startswith(prefix)), None)
@@ -137,20 +147,24 @@ def extract(path):
         n["bar_gap_ms_max"] = int(worst["bar_gap_ms"])
     if not n:
         raise SystemExit(f"{path}: carries no --idle, --r0-measure or --menu-budget output")
-    return mode, n
+    return backend, mode, n
 
 
 def group(paths):
-    runs = {"plain": {}, "quota": {}}
+    """The runs per mode and number, and the one backend they all drew on."""
+    runs, backends = {"plain": {}, "quota": {}}, set()
     for p in paths:
-        mode, n = extract(p)
+        backend, mode, n = extract(p)
+        backends.add(backend)
         for k, v in n.items():
             runs[mode].setdefault(k, []).append(v)
-    return runs
+    if len(backends) != 1:
+        raise SystemExit(f"runs drawn on {', '.join(sorted(backends))}: one backend at a time")
+    return backends.pop(), runs
 
 
 def cmd_extract(paths):
-    print(json.dumps({p: dict(zip(("mode", "numbers"), extract(p))) for p in paths}, indent=2))
+    print(json.dumps({p: dict(zip(("backend", "mode", "numbers"), extract(p))) for p in paths}, indent=2))
 
 
 def cmd_baseline(args):
@@ -159,10 +173,11 @@ def cmd_baseline(args):
     commit, paths, note = args[1], args[2:], None
     if paths[:1] == ["--note"] and len(paths) > 2:
         note, paths = paths[1], paths[2:]
-    runs = group(paths)
+    backend, runs = group(paths)
     out = {
         "commit": commit,
         "host": "g815",
+        "backend": backend,
         "taken": time.strftime("%Y-%m-%d"),
         **({"note": note} if note else {}),
         "modes": {
@@ -179,18 +194,18 @@ def cmd_baseline(args):
                 "leg": leg, "gate": rule, "runs": xs,
                 "median": median(xs), "spread": max(xs) - min(xs),
             }
-    os.makedirs(os.path.dirname(BASELINE), exist_ok=True)
-    with open(BASELINE, "w") as f:
+    os.makedirs(os.path.dirname(BASELINES[backend]), exist_ok=True)
+    with open(BASELINES[backend], "w") as f:
         json.dump(out, f, indent=2)
         f.write("\n")
-    print(f"wrote {BASELINE}")
+    print(f"wrote {BASELINES[backend]}")
 
 
 def cmd_check(paths):
-    base = json.load(open(BASELINE))
-    runs = group(paths)
+    backend, runs = group(paths)
+    base = json.load(open(BASELINES[backend]))
     over = []
-    print(f"baseline {base['commit'][:12]} on {base['host']}")
+    print(f"{backend} baseline {base['commit'][:12]} on {base['host']}")
     for mode, numbers in runs.items():
         for k, xs in sorted(numbers.items(), key=lambda kv: list(NUMBERS).index(kv[0])):
             b = base["modes"][mode]["numbers"][k]
@@ -216,16 +231,19 @@ def cmd_check(paths):
 
 
 def cmd_run(args):
-    legs, count = list(LEGS), 3
+    legs, count, backend = list(LEGS), 3, "cpu"
     while args:
-        if args[0] == "--legs" and len(args) > 1:
+        if args[0] == "--backend" and len(args) > 1 and args[1] in BASELINES:
+            backend = args[1]
+            args = args[2:]
+        elif args[0] == "--legs" and len(args) > 1:
             legs = args[1].split(",")
             args = args[2:]
         elif args[0] == "--runs" and len(args) > 1:
             count = int(args[1])
             args = args[2:]
         else:
-            raise SystemExit("usage: perf-gate.py run [--legs idle,r0,menu] [--runs 3]")
+            raise SystemExit("usage: perf-gate.py run [--backend cpu|gpu] [--legs idle,r0,menu] [--runs 3]")
     for leg in legs:
         if leg not in LEGS:
             raise SystemExit(f"unknown leg {leg}, one of {', '.join(LEGS)}")
@@ -244,10 +262,10 @@ def cmd_run(args):
                     env.pop(k, None)
                 if mode == "quota":
                     env.update(QUOTA_ENV)
-                path = os.path.join(out, f"{leg}-{mode}-{i}.txt")
+                path = os.path.join(out, f"{leg}-{backend}-{mode}-{i}.txt")
                 print(f"{time.strftime('%H:%M:%S')} {leg} {mode} {i}", flush=True)
                 with open(path, "w") as f:
-                    status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", *LEGS[leg]],
+                    status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", "--backend", backend, *LEGS[leg]],
                                              stdout=f, stderr=subprocess.STDOUT, env=env, cwd=REPO)
                 if status != 0:
                     raise SystemExit(f"{path}: the run failed (exit {status})")
