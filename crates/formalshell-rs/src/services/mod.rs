@@ -33,6 +33,7 @@ pub mod motion_art;
 pub mod nightlight;
 pub mod notifications;
 pub mod overnight;
+pub mod overrides;
 pub mod packages;
 pub mod picker;
 pub mod info;

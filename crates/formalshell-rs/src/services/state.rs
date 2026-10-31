@@ -48,6 +48,9 @@ pub struct Data {
     pub lights: Value,
     pub hdr: Value,
     pub sidebar_collapsed: bool,
+    /// The settings UI's overrides, a settings.json-shaped object the config
+    /// service merges under settings.json.
+    pub settings: Value,
 }
 
 impl Default for Data {
@@ -71,6 +74,7 @@ impl Default for Data {
             lights: Value::Null,
             hdr: Value::Null,
             sidebar_collapsed: false,
+            settings: Value::Object(Map::new()),
         }
     }
 }
@@ -97,6 +101,11 @@ pub enum Field {
     Lights(Value),
     Hdr(Value),
     SidebarCollapsed(bool),
+    Settings(Value),
+    /// One override at a dotted path, `None` dropping it: a setter only,
+    /// applied onto the object as it is when it lands, so two quick edits
+    /// never undo each other. Diffs carry the whole `Settings`.
+    SettingKey(String, Option<Value>),
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -123,12 +132,14 @@ impl Field {
             Field::Lights(v) => data.lights = v,
             Field::Hdr(v) => data.hdr = v,
             Field::SidebarCollapsed(v) => data.sidebar_collapsed = v,
+            Field::Settings(v) => data.settings = v,
+            Field::SettingKey(path, v) => super::config::set_path(&mut data.settings, &path, v),
         }
     }
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 18] {
+    fn fields(&self) -> [Field; 19] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
             Field::WallpaperColor(self.wallpaper_color.clone()),
@@ -148,6 +159,7 @@ impl Data {
             Field::Lights(self.lights.clone()),
             Field::Hdr(self.hdr.clone()),
             Field::SidebarCollapsed(self.sidebar_collapsed),
+            Field::Settings(self.settings.clone()),
         ]
     }
 
@@ -202,6 +214,7 @@ impl Data {
         data.lights = take("lights").unwrap_or(Value::Null);
         data.hdr = take("hdr").unwrap_or(Value::Null);
         data.sidebar_collapsed = typed(take("sidebarCollapsed")).unwrap_or(false);
+        data.settings = take("settings").filter(Value::is_object).unwrap_or(data.settings);
         Ok(data)
     }
 
@@ -226,6 +239,7 @@ impl Data {
         map.insert("lights".into(), self.lights.clone());
         map.insert("hdr".into(), self.hdr.clone());
         map.insert("sidebarCollapsed".into(), self.sidebar_collapsed.into());
+        map.insert("settings".into(), self.settings.clone());
         let mut doc = Value::Object(map);
         sort_keys(&mut doc);
         let mut out = Vec::new();
@@ -389,6 +403,7 @@ pub async fn run(ctx: Ctx) {
         shared.borrow_mut().written = Some(text.clone());
     }
     let first = shared.borrow().data.diff(&Data::default());
+    super::config::overrides(shared.borrow().data.settings.clone());
     ctx.publish(store::Diff::State(first));
     if absent {
         write(&ctx, &path, &shared).await;
@@ -415,6 +430,7 @@ pub async fn run(ctx: Ctx) {
                         shared.data = next;
                         shared.written = Some(text);
                         if !diff.0.is_empty() {
+                            hand_over(&diff);
                             ctx.publish(store::Diff::State(diff));
                         }
                     }
@@ -433,10 +449,20 @@ pub async fn run(ctx: Ctx) {
         }
         let diff = shared.borrow_mut().data.set(fields);
         if !diff.0.is_empty() {
+            hand_over(&diff);
             ctx.publish(store::Diff::State(diff));
             write(&ctx, &path, &shared).await;
         }
         shared.borrow_mut().dirty = false;
+    }
+}
+
+/// Overrides that moved go to the config service, which resolves them.
+fn hand_over(diff: &Diff) {
+    for field in &diff.0 {
+        if let Field::Settings(v) = field {
+            super::config::overrides(v.clone());
+        }
     }
 }
 
@@ -472,7 +498,7 @@ mod tests {
         assert!(text.starts_with("{\n    \"abbreviations\": null,\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 18);
+        assert_eq!(keys.len(), 19);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -499,6 +525,7 @@ mod tests {
             lights: json!({"source": "palette"}),
             hdr: json!({"DP-1": {"prior": {}}}),
             sidebar_collapsed: true,
+            settings: json!({"bar": {"style": "solid"}}),
         };
         assert_eq!(Data::parse(&data.to_text()).unwrap(), data);
     }
@@ -577,5 +604,17 @@ mod tests {
             let d = Data::parse(&format!(r#"{{"wallpaperColor":{text}}}"#)).unwrap();
             assert_eq!(d.wallpaper_color, want, "{text}");
         }
+    }
+
+    #[test]
+    fn setting_keys_land_on_the_object_as_it_is() {
+        let mut data = Data::default();
+        let diff = data.set(vec![
+            Field::SettingKey("bar.style".into(), Some(json!("solid"))),
+            Field::SettingKey("layout".into(), Some(json!("sidebar"))),
+            Field::SettingKey("bar.style".into(), None),
+        ]);
+        assert_eq!(diff, Diff(vec![Field::Settings(json!({"layout": "sidebar"}))]));
+        assert_eq!(Data::parse(r#"{"settings":[1]}"#).unwrap().settings, json!({}));
     }
 }

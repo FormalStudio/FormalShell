@@ -1,8 +1,13 @@
-//! `~/.config/formalshell/settings.json`, read and never written. Every
-//! consumer asks for a dotted path and brings its own default, so the state
-//! is the parsed document and a diff names the keys that changed.
+//! `~/.config/formalshell/settings.json`, read and never written, over the
+//! settings UI's overrides (state.json's `settings`). Every consumer asks
+//! for a dotted path and brings its own default, so the state is the
+//! resolved document (the overrides with settings.json merged over them)
+//! and a diff names the keys that changed.
 
 use std::path::PathBuf;
+use std::sync::LazyLock;
+
+use futures_lite::future;
 
 use serde_json::{Map, Value};
 
@@ -12,6 +17,8 @@ use crate::store;
 
 pub struct State {
     settings: Value,
+    /// settings.json alone: what pins a key against the settings UI.
+    file: Value,
     /// True once settings.json has been resolved one way or another (parsed,
     /// or confirmed absent), and never false again.
     pub loaded: bool,
@@ -19,7 +26,7 @@ pub struct State {
 
 impl Default for State {
     fn default() -> Self {
-        Self { settings: Value::Object(Map::new()), loaded: false }
+        Self { settings: Value::Object(Map::new()), file: Value::Object(Map::new()), loaded: false }
     }
 }
 
@@ -36,6 +43,8 @@ pub struct Change {
 pub struct Diff {
     pub loaded: bool,
     pub changes: Vec<Change>,
+    /// settings.json's whole document, when it moved.
+    pub file: Option<Value>,
 }
 
 impl State {
@@ -43,6 +52,10 @@ impl State {
     pub fn apply(&mut self, diff: Diff) -> bool {
         let mut changed = diff.loaded && !self.loaded;
         self.loaded |= diff.loaded;
+        if let Some(file) = diff.file {
+            changed |= file != self.file;
+            self.file = file;
+        }
         for change in diff.changes {
             changed = true;
             set(&mut self.settings, &change.path, change.value);
@@ -58,15 +71,18 @@ impl State {
     /// segment); `None` where the path leaves the document, `Some(Null)`
     /// where it ends on a null.
     pub fn get(&self, path: &str) -> Option<&Value> {
-        let mut node = &self.settings;
-        for part in path.split('.') {
-            node = match node {
-                Value::Object(map) => map.get(part)?,
-                Value::Array(items) => items.get(part.parse::<usize>().ok()?)?,
-                _ => return None,
-            };
-        }
-        Some(node)
+        lookup(&self.settings, path)
+    }
+
+    /// What settings.json alone says at `path`.
+    pub fn file_get(&self, path: &str) -> Option<&Value> {
+        lookup(&self.file, path)
+    }
+
+    /// settings.json decides `path`: the path is in the file, or the file
+    /// has a value that is not an object on the way to it.
+    pub fn pinned(&self, path: &str) -> bool {
+        pinned(&self.file, path)
     }
 
     pub fn str(&self, path: &str) -> Option<&str> {
@@ -87,6 +103,69 @@ impl State {
             Some(p) if !p.is_empty() => p.to_string(),
             _ => format!("{home}/.face"),
         }
+    }
+}
+
+pub fn lookup<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
+    let mut node = root;
+    for part in path.split('.') {
+        node = match node {
+            Value::Object(map) => map.get(part)?,
+            Value::Array(items) => items.get(part.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(node)
+}
+
+pub fn pinned(file: &Value, path: &str) -> bool {
+    let mut node = file;
+    for part in path.split('.') {
+        node = match node {
+            Value::Object(map) => match map.get(part) {
+                Some(next) => next,
+                None => return false,
+            },
+            _ => return true,
+        };
+    }
+    true
+}
+
+/// `top` over `base`: objects merge key by key, anything else in `top`
+/// replaces what `base` holds there.
+pub fn merge(base: &Value, top: &Value) -> Value {
+    match (base, top) {
+        (Value::Object(a), Value::Object(b)) => {
+            let mut out = a.clone();
+            for (key, value) in b {
+                let merged = match out.get(key) {
+                    Some(under) => merge(under, value),
+                    None => value.clone(),
+                };
+                out.insert(key.clone(), merged);
+            }
+            Value::Object(out)
+        }
+        _ => top.clone(),
+    }
+}
+
+/// Writes `value` at the dotted `path` (`None` removes it), making objects
+/// on the way.
+pub fn set_path(root: &mut Value, path: &str, value: Option<Value>) {
+    let parts: Vec<String> = path.split('.').map(str::to_owned).collect();
+    set(root, &parts, value);
+    prune(root);
+}
+
+/// Drops objects left empty under the root.
+fn prune(node: &mut Value) {
+    if let Value::Object(map) = node {
+        for child in map.values_mut() {
+            prune(child);
+        }
+        map.retain(|_, v| !v.as_object().is_some_and(Map::is_empty));
     }
 }
 
@@ -139,13 +218,16 @@ fn walk(path: &mut Vec<String>, old: Option<&Value>, new: Option<&Value>, out: &
 /// keys that moved.
 pub struct Resolver {
     published: Option<String>,
+    file: Value,
+    overrides: Value,
     settings: Value,
     loaded: bool,
 }
 
 impl Default for Resolver {
     fn default() -> Self {
-        Self { published: None, settings: Value::Object(Map::new()), loaded: false }
+        let empty = || Value::Object(Map::new());
+        Self { published: None, file: empty(), overrides: empty(), settings: empty(), loaded: false }
     }
 }
 
@@ -169,10 +251,39 @@ impl Resolver {
                 Err(e) => return (diff, Some(format!("Config: failed to parse settings.json: {e}"))),
             }
         };
-        walk(&mut Vec::new(), Some(&self.settings), Some(&next), &mut diff.changes);
-        self.settings = next;
+        if next != self.file {
+            diff.file = Some(next.clone());
+        }
+        self.file = next;
+        self.resolve(&mut diff);
         (diff, None)
     }
+
+    /// The settings UI's overrides moved. Before the first [`publish`] it
+    /// only records them, so the first publish is already layered.
+    pub fn overrides(&mut self, overrides: Value) -> Diff {
+        let mut diff = Diff::default();
+        self.overrides = if overrides.is_object() { overrides } else { Value::Object(Map::new()) };
+        if self.loaded {
+            self.resolve(&mut diff);
+        }
+        diff
+    }
+
+    fn resolve(&mut self, diff: &mut Diff) {
+        let next = merge(&self.overrides, &self.file);
+        walk(&mut Vec::new(), Some(&self.settings), Some(&next), &mut diff.changes);
+        self.settings = next;
+    }
+}
+
+/// The state service hands the overrides over here whenever they move, the
+/// first time as it reads state.json at start.
+static OVERRIDES: LazyLock<(async_channel::Sender<Value>, async_channel::Receiver<Value>)> =
+    LazyLock::new(async_channel::unbounded);
+
+pub fn overrides(value: Value) {
+    let _ = OVERRIDES.0.try_send(value);
 }
 
 pub fn settings_path() -> PathBuf {
@@ -183,14 +294,19 @@ pub fn settings_path() -> PathBuf {
     dir.join("formalshell").join("settings.json")
 }
 
-fn describe(diff: &Diff) -> String {
+fn describe(diff: &Diff, what: &str) -> String {
     let paths: Vec<String> = diff.changes.iter().map(|c| c.path.join(".")).collect();
-    format!("config: settings.json read, {} key(s) changed [{}]", paths.len(), paths.join(", "))
+    format!("config: {what}, {} key(s) changed [{}]", paths.len(), paths.join(", "))
 }
 
 pub async fn run(ctx: Ctx) {
     let path = settings_path();
     let mut resolver = Resolver::default();
+    // The first publish waits for the overrides, so a start never draws
+    // the defaults and then jumps to them.
+    if let Ok(first) = OVERRIDES.1.recv().await {
+        resolver.overrides(first);
+    }
     let mut watch = match Watch::new(path.clone()) {
         Ok(watch) => Some(watch),
         Err(e) => {
@@ -207,13 +323,26 @@ pub async fn run(ctx: Ctx) {
         }
         if diff.loaded || !diff.changes.is_empty() {
             if !diff.changes.is_empty() {
-                eprintln!("{}", describe(&diff));
+                eprintln!("{}", describe(&diff, "settings.json read"));
             }
             ctx.publish(store::Diff::Config(diff));
         }
-        match watch.as_mut() {
-            Some(watch) => watch.changed().await,
-            None => std::future::pending().await,
+        loop {
+            let file = async {
+                match watch.as_mut() {
+                    Some(watch) => watch.changed().await,
+                    None => std::future::pending().await,
+                }
+                None
+            };
+            // The sender is a static, so the channel never closes.
+            let moved = async { OVERRIDES.1.recv().await.ok() };
+            let Some(next) = future::or(file, moved).await else { break };
+            let diff = resolver.overrides(next);
+            if !diff.changes.is_empty() {
+                eprintln!("{}", describe(&diff, "overrides moved"));
+                ctx.publish(store::Diff::Config(diff));
+            }
         }
     }
 }
@@ -332,9 +461,44 @@ mod tests {
     #[test]
     fn apply_reports_whether_the_slice_moved() {
         let mut s = State::default();
-        assert!(s.apply(Diff { loaded: true, changes: vec![] }));
-        assert!(!s.apply(Diff { loaded: true, changes: vec![] }));
+        assert!(s.apply(Diff { loaded: true, ..Diff::default() }));
+        assert!(!s.apply(Diff { loaded: true, ..Diff::default() }));
         let change = Change { path: vec!["a".into()], value: Some(json!(1)) };
-        assert!(s.apply(Diff { loaded: false, changes: vec![change] }));
+        assert!(s.apply(Diff { changes: vec![change], ..Diff::default() }));
+    }
+
+    #[test]
+    fn overrides_sit_under_the_file() {
+        let mut r = Resolver::default();
+        assert_eq!(r.overrides(json!({"bar": {"style": "solid", "position": "left"}, "layout": "sidebar"})), Diff::default(), "nothing before the first read");
+        let (first, _) = r.publish(r#"{"bar":{"position":"bottom"}}"#);
+        let mut s = State::default();
+        s.apply(first);
+        assert_eq!(s.settings, json!({"bar": {"style": "solid", "position": "bottom"}, "layout": "sidebar"}));
+        assert!(s.pinned("bar.position") && !s.pinned("bar.style") && !s.pinned("layout"));
+        assert_eq!(s.file_get("bar.position"), Some(&json!("bottom")));
+        let moved = r.overrides(json!({"bar": {"style": "corners"}}));
+        let paths: Vec<_> = moved.changes.iter().map(|c| (c.path.join("."), c.value.clone())).collect();
+        assert_eq!(paths, [("bar.style".to_string(), Some(json!("corners"))), ("layout".to_string(), None)]);
+        assert_eq!(moved.file, None);
+        s.apply(moved);
+        assert_eq!(s.get("bar.style"), Some(&json!("corners")));
+    }
+
+    #[test]
+    fn a_scalar_on_the_way_pins_everything_under_it() {
+        assert!(pinned(&json!({"bar": "x"}), "bar.style"));
+        assert!(!pinned(&json!({"bar": {}}), "bar.style"));
+        assert!(pinned(&json!({"bar": {"style": null}}), "bar.style"));
+    }
+
+    #[test]
+    fn set_path_writes_and_prunes() {
+        let mut v = json!({});
+        set_path(&mut v, "desktopClock.face", Some(json!("serif")));
+        set_path(&mut v, "layout", Some(json!("sidebar")));
+        assert_eq!(v, json!({"desktopClock": {"face": "serif"}, "layout": "sidebar"}));
+        set_path(&mut v, "desktopClock.face", None);
+        assert_eq!(v, json!({"layout": "sidebar"}));
     }
 }
