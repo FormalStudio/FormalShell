@@ -111,7 +111,7 @@ impl Panel for Tailscale {
 
         let primary = v.theme.colors.get("primary");
         let muted = v.theme.colors.get("mutedForeground");
-        let mut peers = vec![w::panel_heading_with(s, "Peers", status.peers.len().to_string())];
+        let mut peers = vec![if status.peers.is_empty() { w::panel_heading(s, "Peers") } else { w::panel_heading_with(s, "Peers", status.peers.len().to_string()) }];
         if status.peers.is_empty() {
             peers.push(label("None"));
         }

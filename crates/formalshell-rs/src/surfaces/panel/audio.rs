@@ -193,7 +193,7 @@ impl Panel for Audio {
                 .collect()
         };
         if !output_rows.is_empty() {
-            out.push(w::panel_section_n(s, "Output", l.outputs.len(), output_rows));
+            out.push(w::panel_section_n(s, "Output", if output_pick { l.outputs.len() } else { output_rows.len() }, output_rows));
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume), r.muted));

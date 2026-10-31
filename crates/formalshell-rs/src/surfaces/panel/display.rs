@@ -196,7 +196,7 @@ impl Panel for Display {
         }
 
         let devices = store.display.devices();
-        let mut bright = vec![w::panel_heading_with(s, "Brightness", devices.len().to_string())];
+        let mut bright = vec![if devices.is_empty() { w::panel_heading(s, "Brightness") } else { w::panel_heading_with(s, "Brightness", devices.len().to_string()) }];
         if devices.is_empty() {
             bright.push(w::panel_empty(s, "No backlight"));
         } else {

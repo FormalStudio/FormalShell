@@ -11,6 +11,8 @@ pub struct About {
     pub os: Option<String>,
     /// os-release's `ID`, for the footer's mark.
     pub os_id: Option<String>,
+    /// os-release's `NAME`, the footer's word beside the mark.
+    pub os_name: Option<String>,
     pub host: Option<String>,
     pub board: Option<String>,
     pub cpu: Option<String>,
@@ -102,6 +104,7 @@ pub fn parse(text: &str) -> About {
     About {
         os: os_release(os, "PRETTY_NAME").or_else(|| os_release(os, "NAME")),
         os_id: os_release(os, "ID"),
+        os_name: os_release(os, "NAME"),
         host: s.get("host").map(|h| h.trim().to_owned()).filter(|h| !h.is_empty()),
         board,
         cpu: s.get("cpu").and_then(|c| cpu_label(c)),
@@ -126,6 +129,7 @@ mod tests {
         let a = parse(SAMPLE);
         assert_eq!(a.os.as_deref(), Some("openSUSE Tumbleweed"));
         assert_eq!(a.os_id.as_deref(), Some("opensuse-tumbleweed"));
+        assert_eq!(a.os_name.as_deref(), Some("openSUSE Tumbleweed"));
         assert_eq!(a.host.as_deref(), Some("g815"));
         assert_eq!(a.board.as_deref(), Some("G815LP"));
         assert_eq!(a.cpu.as_deref(), Some("Intel Core Ultra 9 275HX (2 Threads)"));

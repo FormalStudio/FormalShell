@@ -4,7 +4,7 @@
 //! label and the value, hairlines between. The Manual button under them
 //! opens USAGE.md, and the footer signs the card: an FS monogram on the
 //! wallpaper's colour, the name over its version badge, a field of dots
-//! with a wave lit through it, and the distro's own mark and name. The static facts come from one read per open
+//! with a wave lit through it, and the distro's own mark and `NAME`. The static facts come from one read per open
 //! (`Source::About`), the GPU, memory and disk from the system monitor; a
 //! fact the machine does not report says so instead of a guess.
 
@@ -156,7 +156,7 @@ fn footer(v: &View) -> El {
         c.chip = true;
         c.small = true;
     });
-    let name = w::column(s.xs, vec![w::text("FormalShell").size(Type::Title).weight(Weight::Semibold), w::row(0.0, vec![badge])]);
+    let name = w::column(s.xs, vec![w::text("FormalShell").size(Type::Title).weight(Weight::Semibold).elide(), w::row(0.0, vec![badge])]);
 
     let off = v.theme.colors.get("border");
     let field = w::column(
@@ -169,9 +169,9 @@ fn footer(v: &View) -> El {
 
     let about = v.store.info.about.as_ref();
     if let Some(id) = about.and_then(|a| a.os_id.clone()) {
-        let word = about.and_then(|a| a.os.as_deref()).and_then(|o| o.split_whitespace().next()).unwrap_or_default().to_owned();
+        let word = about.and_then(|a| a.os_name.clone()).unwrap_or_default();
         parts.push(w::icon(format!("distro:{id}")).size(Type::DisplayLarge).ink(Ink::Muted));
-        parts.push(w::text(word).size(Type::Title).weight(Weight::Semibold).ink(Ink::Muted));
+        parts.push(w::text(word).size(Type::Title).weight(Weight::Semibold).ink(Ink::Muted).elide());
     }
     w::row(s.lg, parts).fill()
 }
