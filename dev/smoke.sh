@@ -189,6 +189,11 @@ drive_cap=52
 session_timeout=75
 if [ ${#active_legs[@]} -eq 0 ]; then screenshot_delay=$drive_cap; fi
 
+# A VM rig guest autologins and its own login leaves the boot's marker in
+# this runtime dir; the run's shell would take it and start locked. Only
+# --login-lock's validate writes one for a run.
+rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell/login-lock"
+
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
 done

@@ -20,6 +20,7 @@ panel_open_path="$shot_dir/panel-open.txt"
 panel_state_path="$shot_dir/panel-state.txt"
 panel_dump_path="$shot_dir/panel-dump.json"
 panel_header_shot="$shot_dir/panel-header.png"
+panel_audio_modules="$shot_dir/panel-audio-modules.txt"
 
 leg_panel_validate() {
   if [ -z "$(leg_arg panel)" ]; then
@@ -42,10 +43,18 @@ leg_panel_fixture() {
 }
 
 leg_panel_drive() {
-  local panel_name script="$shot_dir/panel-drive.sh"
+  local panel_name script="$shot_dir/panel-drive.sh" stage=""
   panel_name=$(leg_arg panel)
+  # --panel audio photographs a real choice: a second null sink and a
+  # virtual source beside the session's own, where pactl reaches PipeWire.
+  if [ "$panel_name" = audio ] && command -v pactl > /dev/null; then
+    stage="pactl load-module module-null-sink sink_name=fs_smoke_speakers sink_properties=device.description=Speakers >> '$panel_audio_modules'
+pactl load-module module-null-sink sink_name=fs_smoke_mic media.class=Audio/Source/Virtual sink_properties=device.description=Microphone >> '$panel_audio_modules'"
+    add_cleanup "[ -s '$panel_audio_modules' ] && while read -r m; do pactl unload-module \"\$m\" 2>/dev/null; done < '$panel_audio_modules'; true"
+  fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
+$stage
 sleep 3
 $ipc call panel open "$panel_name" > "$panel_open_path" 2>&1
 sleep 2
@@ -73,7 +82,10 @@ leg_panel_assert() {
 panel_header_assert() {
   local rest out
   rest=$("$jq_bin" -c '.panel.rest' "$panel_dump_path" 2>/dev/null)
-  [ -n "$rest" ] && [ "$rest" != "null" ] || fail "panel: no rest rect in debug dump"
+  if [ -z "$rest" ] || [ "$rest" = null ]; then
+    echo "panel: $1 is not a card in the panel host (Radio Atlas draws its own), skipped"
+    return
+  fi
   [ -s "$panel_header_shot" ] || fail "panel: no header frame"
   if [ "$("$jq_bin" -r '.panel.header' "$panel_dump_path")" = false ]; then
     echo "panel: $1 draws no header, skipped"

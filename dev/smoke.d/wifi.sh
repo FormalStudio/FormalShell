@@ -259,6 +259,10 @@ leg_wifi_assert_ghost() {
   for f in "$wifi_ghost_closed_status_path" "$wifi_ghost_open_status_path" "$wifi_ghost_gone_status_path"; do
     [ -s "$f" ] || fail "no network status produced at $f"
   done
+  [ -f "$wifi_ghost_closed_path" ] || fail "no wifi-ghost-closed screenshot produced"
+  [ -f "$wifi_ghost_open_path" ] || fail "no wifi-ghost-open screenshot produced"
+  echo "SMOKE_WIFI_GHOST_CLOSED $wifi_ghost_closed_path"
+  echo "SMOKE_WIFI_GHOST_OPEN $wifi_ghost_open_path"
   cat "$wifi_ghost_add_path"
   cat "$wifi_ghost_closed_status_path"; echo
   "$jq_bin" -e '.knownOpen == false and any(.networks[]; .name == "FORMALGHOST" and .known and (.inRange | not))' \
@@ -270,10 +274,6 @@ leg_wifi_assert_ghost() {
   if grep -qF '"name":"FORMALGHOST"' "$wifi_ghost_gone_status_path"; then
     fail "FORMALGHOST's profile outlived the leg: $(cat "$wifi_ghost_gone_status_path")"
   fi
-  [ -f "$wifi_ghost_closed_path" ] || fail "no wifi-ghost-closed screenshot produced"
-  [ -f "$wifi_ghost_open_path" ] || fail "no wifi-ghost-open screenshot produced"
-  echo "SMOKE_WIFI_GHOST_CLOSED $wifi_ghost_closed_path"
-  echo "SMOKE_WIFI_GHOST_OPEN $wifi_ghost_open_path"
   near=$("$jq_bin" '[.networks[] | select(.inRange)] | length' "$wifi_ghost_closed_status_path")
   closed_text=$(wifi_ocr "$wifi_ghost_closed_path")
   open_text=$(wifi_ocr "$wifi_ghost_open_path")
