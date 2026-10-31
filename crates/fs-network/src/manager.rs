@@ -148,6 +148,7 @@ pub struct NetworkManager {
     conn: Connection,
     manager: ManagerProxy<'static>,
     settings: SettingsRootProxy<'static>,
+    owner: Option<String>,
 }
 
 /// What a [`Snapshot`] is built from, kept between bursts so a signal that
@@ -246,7 +247,9 @@ struct WifiDevice {
 }
 
 impl NetworkManager {
-    pub async fn connect(conn: &Connection) -> zbus::Result<Self> {
+    /// `owner` is the login name a profile this makes belongs to; `None`
+    /// makes system-wide ones.
+    pub async fn connect(conn: &Connection, owner: Option<String>) -> zbus::Result<Self> {
         let manager = ManagerProxy::builder(conn)
             .cache_properties(CacheProperties::No)
             .build()
@@ -261,6 +264,7 @@ impl NetworkManager {
             conn: conn.clone(),
             manager,
             settings,
+            owner,
         })
     }
 
@@ -540,7 +544,8 @@ impl NetworkManager {
                     .await?;
             }
             (Method::Saved, None) if !security.is_secured() => {
-                created = Some(self.add_and_activate(base_open(ssid), &device, &specific).await?);
+                let new = settings::open_profile(ssid, self.owner.as_deref());
+                created = Some(self.add_and_activate(new, &device, &specific).await?);
             }
             (Method::Saved, None) => return Err(ConnectError::SecretsRequired),
             (Method::Psk(psk), Some((path, _))) => {
@@ -551,18 +556,18 @@ impl NetworkManager {
                     .await?;
             }
             (Method::Psk(psk), None) => {
-                let new = settings::psk_profile(ssid, security, psk);
+                let new = settings::psk_profile(ssid, self.owner.as_deref(), security, psk);
                 created = Some(self.add_and_activate(new, &device, &specific).await?);
             }
             (Method::Eap { identity, password }, Some((path, _))) => {
-                let new = settings::eap_profile(ssid, identity, password);
+                let new = settings::eap_profile(ssid, self.owner.as_deref(), identity, password);
                 self.saved(path).await?.update(to_owned_settings(new)?).await?;
                 self.manager
                     .activate_connection(path, &device.path, &specific)
                     .await?;
             }
             (Method::Eap { identity, password }, None) => {
-                let new = settings::eap_profile(ssid, identity, password);
+                let new = settings::eap_profile(ssid, self.owner.as_deref(), identity, password);
                 created = Some(self.add_and_activate(new, &device, &specific).await?);
             }
         }
@@ -735,13 +740,6 @@ impl NetworkManager {
             addresses,
         })
     }
-}
-
-fn base_open(ssid: &str) -> NewSettings {
-    // An open profile is the base with no security section.
-    let mut s = settings::psk_profile(ssid, Security::Open, "");
-    s.remove("802-11-wireless-security");
-    s
 }
 
 fn to_owned_settings(new: NewSettings) -> zbus::Result<Settings> {

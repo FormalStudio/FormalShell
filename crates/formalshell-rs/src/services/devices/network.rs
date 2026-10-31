@@ -299,7 +299,7 @@ pub async fn run(ctx: Ctx) {
     ctx.spawn(holds(ctx.clone()));
     let publish_none = || ctx.publish(store::Diff::Devices(super::Diff::Network(Network::default())));
     let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish_none() };
-    let nm = match NetworkManager::connect(&conn).await {
+    let nm = match NetworkManager::connect(&conn, fs_auth::pam::current_user()).await {
         Ok(nm) => nm,
         Err(err) => {
             eprintln!("network: {err}");

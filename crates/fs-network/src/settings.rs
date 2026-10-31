@@ -13,16 +13,22 @@ fn section(entries: Vec<(&str, Value<'static>)>) -> HashMap<String, Value<'stati
     entries.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
 }
 
-fn base(ssid: &str) -> NewSettings {
+/// Every profile the shell makes starts here. With an `owner` it is that
+/// user's own (`connection.permissions`, as GNOME and plasma-nm write it), so
+/// adding, changing and deleting it falls under polkit's
+/// `settings.modify.own` rather than `settings.modify.system`, which distros
+/// leave at auth_admin.
+fn base(ssid: &str, owner: Option<&str>) -> NewSettings {
+    let mut connection = section(vec![
+        ("id", Value::from(ssid.to_owned())),
+        ("type", Value::from("802-11-wireless".to_owned())),
+        ("autoconnect", Value::from(true)),
+    ]);
+    if let Some(owner) = owner {
+        connection.insert("permissions".to_owned(), Value::from(vec![format!("user:{owner}:")]));
+    }
     NewSettings::from([
-        (
-            "connection".to_owned(),
-            section(vec![
-                ("id", Value::from(ssid.to_owned())),
-                ("type", Value::from("802-11-wireless".to_owned())),
-                ("autoconnect", Value::from(true)),
-            ]),
-        ),
+        ("connection".to_owned(), connection),
         (
             "802-11-wireless".to_owned(),
             section(vec![("ssid", Value::from(ssid.as_bytes().to_vec()))]),
@@ -30,15 +36,20 @@ fn base(ssid: &str) -> NewSettings {
     ])
 }
 
+/// A profile for a network with no security.
+pub(crate) fn open_profile(ssid: &str, owner: Option<&str>) -> NewSettings {
+    base(ssid, owner)
+}
+
 /// A profile for a passphrase network. SAE access points get `sae`, every
 /// other secured one `wpa-psk`.
-pub(crate) fn psk_profile(ssid: &str, security: Security, psk: &str) -> NewSettings {
+pub(crate) fn psk_profile(ssid: &str, owner: Option<&str>, security: Security, psk: &str) -> NewSettings {
     let key_mgmt = if security == Security::Sae {
         "sae"
     } else {
         "wpa-psk"
     };
-    let mut settings = base(ssid);
+    let mut settings = base(ssid, owner);
     settings.insert(
         "802-11-wireless-security".to_owned(),
         section(vec![
@@ -52,8 +63,8 @@ pub(crate) fn psk_profile(ssid: &str, security: Security, psk: &str) -> NewSetti
 /// PEAP with MSCHAPv2, the same profile `dev/smoke.d/wifi.sh`'s nmcli script
 /// builds, with the 8 second auth timeout it sets. No CA certificate is
 /// pinned, as there.
-pub(crate) fn eap_profile(ssid: &str, identity: &str, password: &str) -> NewSettings {
-    let mut settings = base(ssid);
+pub(crate) fn eap_profile(ssid: &str, owner: Option<&str>, identity: &str, password: &str) -> NewSettings {
+    let mut settings = base(ssid, owner);
     settings.insert(
         "802-11-wireless-security".to_owned(),
         section(vec![("key-mgmt", Value::from("wpa-eap".to_owned()))]),
@@ -143,7 +154,7 @@ mod tests {
 
     #[test]
     fn psk_profile_reads_back_as_a_wifi_profile() {
-        let p = Profile::parse(&owned(psk_profile("FORMALTEST", Security::Wpa2Psk, "pw")))
+        let p = Profile::parse(&owned(psk_profile("FORMALTEST", None, Security::Wpa2Psk, "pw")))
             .expect("wifi profile");
         assert_eq!(p.ssid, "FORMALTEST");
         assert_eq!(p.key_mgmt.as_deref(), Some("wpa-psk"));
@@ -152,7 +163,7 @@ mod tests {
 
     #[test]
     fn sae_access_points_get_sae() {
-        let s = psk_profile("x", Security::Sae, "pw");
+        let s = psk_profile("x", None, Security::Sae, "pw");
         let key_mgmt: String = s["802-11-wireless-security"]["key-mgmt"]
             .try_clone()
             .unwrap()
@@ -163,7 +174,7 @@ mod tests {
 
     #[test]
     fn eap_profile_is_peap_mschapv2() {
-        let s = eap_profile("CORP", "user", "pw");
+        let s = eap_profile("CORP", None, "user", "pw");
         let x = &s["802-1x"];
         let phase2: String = x["phase2-auth"].try_clone().unwrap().try_into().unwrap();
         assert_eq!(phase2, "mschapv2");
@@ -174,8 +185,22 @@ mod tests {
     }
 
     #[test]
+    fn an_owned_profile_names_its_user_alone() {
+        for s in [
+            open_profile("x", Some("kyan")),
+            psk_profile("x", Some("kyan"), Security::Wpa2Psk, "pw"),
+            eap_profile("x", Some("kyan"), "user", "pw"),
+        ] {
+            let permissions: Vec<String> =
+                s["connection"]["permissions"].try_clone().unwrap().try_into().unwrap();
+            assert_eq!(permissions, ["user:kyan:"]);
+        }
+        assert!(!open_profile("x", None)["connection"].contains_key("permissions"));
+    }
+
+    #[test]
     fn other_profile_types_are_not_wifi() {
-        let mut s = owned(psk_profile("x", Security::Wpa2Psk, "pw"));
+        let mut s = owned(psk_profile("x", None, Security::Wpa2Psk, "pw"));
         s.get_mut("connection").unwrap().insert(
             "type".to_owned(),
             Value::from("802-3-ethernet".to_owned())
@@ -187,7 +212,7 @@ mod tests {
 
     #[test]
     fn with_psk_overwrites_only_the_secret() {
-        let saved = owned(psk_profile("x", Security::Wpa2Psk, "old"));
+        let saved = owned(psk_profile("x", None, Security::Wpa2Psk, "old"));
         let updated = with_psk(saved, "new");
         let sec = &updated["802-11-wireless-security"];
         let psk: String = sec["psk"].try_clone().unwrap().try_into().unwrap();

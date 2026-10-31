@@ -8,6 +8,13 @@
 # enterprise round trip through hostapd's integrated PEAP/MSCHAPv2 server,
 # and a closing forget.
 #
+# Both profiles the shell adds belong to the session user
+# (`connection.permissions` reading `user:<name>`), and NetworkManager asks
+# polkit for `settings.modify.own` and never `settings.modify.system`, which
+# openSUSE leaves at auth_admin. The guest's rule answers every
+# NetworkManager action yes, so polkitd logs nothing either way; the calls
+# are read off NetworkManager's own trace (its auth manager logs under CORE).
+#
 # Before the first connect, a saved profile for FORMALGHOST, an SSID neither
 # radio broadcasts: it has to stay out of the panel's Networks list and its
 # count, and show up under the closed "Known networks" disclosure once real
@@ -38,6 +45,10 @@ wifi_forget_status_path="$shot_dir/wifi-forget-status.json"
 wifi_eap_connected_path="$shot_dir/wifi-eap-connected.png"
 wifi_eap_status_path="$shot_dir/wifi-eap-status.json"
 wifi_eap_forget_status_path="$shot_dir/wifi-eap-forget-status.json"
+wifi_auth_since_path="$shot_dir/wifi-auth-since.txt"
+wifi_auth_path="$shot_dir/wifi-auth.txt"
+wifi_psk_permissions_path="$shot_dir/wifi-psk-permissions.txt"
+wifi_eap_permissions_path="$shot_dir/wifi-eap-permissions.txt"
 
 leg_wifi_timing() {
   # Every ceiling below is a poll that breaks the moment the state settles;
@@ -59,6 +70,10 @@ sleep 3
 # its own. Cheap and idempotent, so it runs unconditionally.
 sudo systemctl restart wpa_supplicant-wlan0.service
 sleep 2
+
+# The overlay drops this with the rest of the run.
+sudo nmcli general logging level INFO domains ALL,CORE:TRACE > "$wifi_auth_path" 2>&1 || echo "SETLOGGING_FAILED" >> "$wifi_auth_path"
+date '+%Y-%m-%d %H:%M:%S' > "$wifi_auth_since_path"
 
 $ipc call panel open network > /dev/null 2>&1
 
@@ -155,6 +170,7 @@ while [ "\$SECONDS" -lt 25 ]; do
   sleep 1
 done
 "$grim_bin" "$wifi_connected_path" > /dev/null 2>&1
+nmcli --escape no -g connection.permissions connection show FORMALTEST > "$wifi_psk_permissions_path" 2>&1
 
 $ipc call network forget FORMALTEST > /dev/null 2>&1
 # known:false alone is not enough to move on: the panel's own action
@@ -179,6 +195,7 @@ while [ "\$SECONDS" -lt 35 ]; do
   sleep 1
 done
 "$grim_bin" "$wifi_eap_connected_path" > /dev/null 2>&1
+nmcli --escape no -g connection.permissions connection show FORMALTEST-EAP > "$wifi_eap_permissions_path" 2>&1
 
 # Symmetric with the FORMALTEST forget above: leaving this out is exactly how
 # an earlier run corrupted the VM's persistent NM state and broke every scan
@@ -192,6 +209,8 @@ while [ "\$SECONDS" -lt 15 ]; do
   fi
   sleep 1
 done
+sudo journalctl -u NetworkManager -o cat --since "\$(cat "$wifi_auth_since_path")" \
+  | grep -F 'CheckAuthorization(org.freedesktop.NetworkManager.settings.modify' >> "$wifi_auth_path"
 EOF
   hypr_exec_once "bash $script"
 }
@@ -245,6 +264,29 @@ leg_wifi_assert() {
     fail "closing forget did not settle FORMALTEST-EAP to known:false/stateChanging:false within the poll budget"
   fi
   cat "$wifi_eap_forget_status_path"; echo
+  leg_wifi_assert_owned
+}
+
+leg_wifi_assert_owned() {
+  local f user
+  user=$(id -un)
+  for f in "$wifi_psk_permissions_path" "$wifi_eap_permissions_path"; do
+    [ -s "$f" ] || fail "no connection.permissions read at $f"
+    cat "$f"
+    grep -qxE "user:$user:?" "$f" || fail "the profile the shell added is not $user's own: $(cat "$f")"
+  done
+  [ -f "$wifi_auth_path" ] || fail "NetworkManager's auth trace was never read"
+  cat "$wifi_auth_path"
+  if grep -qF SETLOGGING_FAILED "$wifi_auth_path"; then
+    fail "nmcli could not turn NetworkManager's CORE trace on"
+  fi
+  # The leg's own sudo nmcli for FORMALGHOST asks as root, which NetworkManager
+  # grants without polkit; only the shell's uid counts.
+  grep -F "uid=$(id -u)," "$wifi_auth_path" | grep -qF 'settings.modify.own)' \
+    || fail "NetworkManager's auth trace carries no settings.modify.own check for the shell, so it says nothing"
+  if grep -F "uid=$(id -u)," "$wifi_auth_path" | grep -qF 'settings.modify.system)'; then
+    fail "NetworkManager asked polkit for settings.modify.system for the shell"
+  fi
 }
 
 # The host's tesseract, the one `capture text` runs.

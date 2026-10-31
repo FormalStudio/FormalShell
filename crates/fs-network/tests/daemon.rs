@@ -93,7 +93,7 @@ impl Seen {
 fn wifi_round_trip_against_real_networkmanager() {
     block_on(async {
         let conn = Connection::system().await.unwrap();
-        let nm = NetworkManager::connect(&conn).await.unwrap();
+        let nm = NetworkManager::connect(&conn, std::env::var("USER").ok()).await.unwrap();
         let mut changes = Box::pin(nm.changes().await.unwrap());
 
         let first = changes.next().await.expect("the initial snapshot");
