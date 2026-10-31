@@ -58,7 +58,10 @@ fn mark(v: &View, key: &Key) -> Option<El> {
         .map(|_| w::icon_button("rotate-ccw").tip("Reset").on(format!("reset:{}", key.key)).stop(format!("reset:{}", key.key)))
 }
 
-fn row(v: &View, key: &Key) -> El {
+/// A key's row in its group, and for a choice the segmented control that
+/// sits on the card under the group (one inset level: nothing boxed inside
+/// a group), which then carries the key's stop.
+fn row(v: &View, key: &Key) -> (El, Option<El>) {
     let s = &v.theme.space;
     let pinned = v.store.config.pinned(key.key);
     let shown = overrides::current(v.store, key);
@@ -67,7 +70,7 @@ fn row(v: &View, key: &Key) -> El {
     match key.control {
         Control::Switch(_) => {
             trailing.push(w::switch(shown.as_bool().unwrap_or(false)).enabled(!pinned).on(stop(key)));
-            w::panel_row(s, "", key.label, detail, trailing).stop(stop(key))
+            (w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)), None)
         }
         Control::Choice(values, _) => {
             let at = values.iter().position(|(x, _)| shown.as_str() == Some(*x));
@@ -77,16 +80,13 @@ fn row(v: &View, key: &Key) -> El {
                 let raw = v.store.config.get(key.key).map(|r| r.as_str().map_or_else(|| r.to_string(), str::to_owned));
                 let name = at.map(|i| values[i].1.to_owned()).or(raw).unwrap_or_default();
                 trailing.push(w::label(name).ink(Ink::Muted));
-                return w::panel_row(s, "", key.label, detail, trailing).stop(stop(key));
+                return (w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)), None);
             }
             let at = at.unwrap_or(0);
-            let mut head = vec![w::label(key.label).elide().fill()];
-            head.extend(trailing);
-            head.push(w::label(values[at].1).ink(Ink::Muted));
+            trailing.push(w::label(values[at].1).ink(Ink::Muted));
             let names = values.iter().map(|(_, name)| (*name).to_owned()).collect();
-            let picker = w::segmented(names, at).fill().on(stop(key));
-            let body = w::column(s.panel_gap, vec![w::row(s.panel_gap, head).fill().height(s.panel_row_compact), picker]).fill();
-            w::panel_cell(s, body.pad(0.0, 0.0, 0.0, s.panel_row_inset)).stop(stop(key))
+            let picker = w::segmented(names, at).fill().on(stop(key)).stop(stop(key));
+            (w::panel_row(s, "", key.label, detail, trailing), Some(picker))
         }
     }
 }
@@ -118,15 +118,35 @@ impl Panel for SettingsPage {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let mut sections: Vec<(&str, Vec<El>)> = Vec::new();
+        let mut out: Vec<El> = Vec::new();
+        let mut section = "";
+        let mut parts: Vec<El> = Vec::new();
+        let mut rows: Vec<El> = Vec::new();
+        let flush = |parts: &mut Vec<El>, rows: &mut Vec<El>| {
+            if !rows.is_empty() {
+                parts.push(w::panel_group(s, std::mem::take(rows)));
+            }
+        };
         for key in overrides::keys(self.page.id) {
-            let el = row(v, key);
-            match sections.last_mut() {
-                Some((name, rows)) if *name == key.section => rows.push(el),
-                _ => sections.push((key.section, vec![el])),
+            if key.section != section {
+                flush(&mut parts, &mut rows);
+                if !parts.is_empty() {
+                    out.push(w::column(s.panel_gap, std::mem::take(&mut parts)));
+                }
+                section = key.section;
+                parts.push(w::panel_heading(s, section));
+            }
+            let (el, picker) = row(v, key);
+            rows.push(el);
+            if let Some(picker) = picker {
+                flush(&mut parts, &mut rows);
+                parts.push(picker);
             }
         }
-        let mut out: Vec<El> = sections.into_iter().map(|(name, rows)| w::panel_section(s, name, rows)).collect();
+        flush(&mut parts, &mut rows);
+        if !parts.is_empty() {
+            out.push(w::column(s.panel_gap, parts));
+        }
         if let Some((glyph, label, _)) = link(self.page.id) {
             let row = w::panel_row(s, glyph, label, None, vec![w::icon("chevron-right").ink(Ink::Muted)]).stop("route").on("route");
             out.push(w::panel_group(s, vec![row]).pad_top(s.panel_section));
