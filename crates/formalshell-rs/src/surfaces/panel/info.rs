@@ -2,8 +2,9 @@
 //! Pond's Information card: the machine in seven numbered rows (OS, host,
 //! board, CPU, GPU, memory, disk), each a ring holding its number, a dim
 //! label and the value, hairlines between. The Manual button under them
-//! opens USAGE.md, and the footer carries FormalShell's version and the
-//! distro's mark. The static facts come from one read per open
+//! opens USAGE.md, and the footer signs the card: an FS monogram on the
+//! wallpaper's colour, the name over its version badge, a field of dots
+//! with a wave lit through it, and the distro's own mark and name. The static facts come from one read per open
 //! (`Source::About`), the GPU, memory and disk from the system monitor; a
 //! fact the machine does not report says so instead of a guess.
 
@@ -105,19 +106,7 @@ impl Panel for Info {
             .interactive()
             .stop("manual")
             .on("manual");
-        let os_id = v.store.info.about.as_ref().and_then(|a| a.os_id.clone());
-        let mut foot = vec![
-            w::text("FormalShell").weight(Weight::Bold),
-            w::cell(w::value(format!("v{}", env!("CARGO_PKG_VERSION")))).cell_state(|c| {
-                c.chip = true;
-                c.small = true;
-            }),
-            w::spacer(),
-        ];
-        if let Some(id) = os_id {
-            foot.push(w::icon(format!("distro:{id}")).size(Type::Display).ink(Ink::Muted));
-        }
-        w::panel_text(s, w::column(s.lg, vec![w::column(0.0, rows), manual, w::row(s.sm, foot).fill().pad_top(s.sm)]))
+        w::panel_text(s, w::column(s.lg, vec![w::column(0.0, rows), manual, footer(v).pad_top(s.sm)]))
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
@@ -131,6 +120,60 @@ impl Panel for Info {
             open_manual(fx);
         }
     }
+}
+
+/// Which row of the dot field each column lights, low to high and back.
+const WAVE: [usize; 11] = [2, 2, 1, 0, 0, 1, 2, 2, 1, 0, 0];
+
+fn footer(v: &View) -> El {
+    let s = &v.theme.space;
+    let side = s.panel_row * 2.0;
+    let letter = |t: &str| w::text(t).size(Type::Display).weight(Weight::Bold).ink(Ink::Primary);
+    let primary = v.theme.colors.get("primary");
+    let pip = || w::dot(primary, s.sm);
+    let monogram = w::cell(
+        w::column(
+            0.0,
+            vec![
+                w::row(0.0, vec![letter("F"), w::spacer(), pip()]).fill(),
+                w::spacer(),
+                w::row(0.0, vec![pip(), w::spacer(), letter("S")]).fill(),
+            ],
+        )
+        .fill()
+        .height(side - s.md * 2.0)
+        .pad(s.md, s.md, s.md, s.md),
+    )
+    .cell_state(|c| {
+        c.glyph = true;
+        c.open = true;
+        c.inset = Some((0.0, 0.0));
+    })
+    .width(Size::Px(side))
+    .height(side);
+
+    let badge = w::cell(w::value(format!("v{}", env!("CARGO_PKG_VERSION")))).cell_state(|c| {
+        c.chip = true;
+        c.small = true;
+    });
+    let name = w::column(s.xs, vec![w::text("FormalShell").size(Type::Title).weight(Weight::Semibold), w::row(0.0, vec![badge])]);
+
+    let off = v.theme.colors.get("border");
+    let field = w::column(
+        s.sm,
+        (0..3)
+            .map(|r| w::row(s.sm, WAVE.iter().map(|&lit| w::dot(if lit == r { primary } else { off }, s.sm)).collect()))
+            .collect(),
+    );
+    let mut parts = vec![monogram, name, w::spacer(), field, w::spacer()];
+
+    let about = v.store.info.about.as_ref();
+    if let Some(id) = about.and_then(|a| a.os_id.clone()) {
+        let word = about.and_then(|a| a.os.as_deref()).and_then(|o| o.split_whitespace().next()).unwrap_or_default().to_owned();
+        parts.push(w::icon(format!("distro:{id}")).size(Type::DisplayLarge).ink(Ink::Muted));
+        parts.push(w::text(word).size(Type::Title).weight(Weight::Semibold).ink(Ink::Muted));
+    }
+    w::row(s.lg, parts).fill()
 }
 
 fn open_manual(fx: &mut Effect) {
