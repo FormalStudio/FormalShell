@@ -163,6 +163,8 @@ pub struct Ui {
     /// Nodes this surface adds go after this one in paint order.
     pub anchor: Option<NodeId>,
     pub hits: Vec<Hit>,
+    /// Every sidebar card's box, as last drawn.
+    pub cards: Vec<IRect>,
     pub stops: Vec<Stop>,
     /// The hit path under the pointer, and the one a button went down on.
     pub hover: Option<String>,
@@ -198,6 +200,7 @@ impl Ui {
             frame: 0,
             anchor,
             hits: Vec::new(),
+            cards: Vec::new(),
             stops: Vec::new(),
             hover: None,
             pressed: None,
@@ -228,6 +231,7 @@ impl Ui {
         self.frame += 1;
         self.measured.clear();
         self.hits.clear();
+        self.cards.clear();
         self.stops.clear();
         let frame = self.frame;
         let last = self.anchor;

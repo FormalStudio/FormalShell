@@ -908,6 +908,9 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let alpha = cx.alpha;
     let base = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
     let mut rim = if state.card { cx.take_rim(path, ri, base) } else { None };
+    if state.card {
+        cx.ui.cards.push(ri);
+    }
     let now = cx.now;
     let mut p = cx.painter(path);
     boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));

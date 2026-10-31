@@ -256,10 +256,19 @@ impl App {
                 Edge::Left => IRect::new(0, 0, t, h),
                 Edge::Right => IRect::new(w - t, 0, t, h),
             };
-            region.subtract(band.x, band.y, band.w, band.h);
+            // Under the sidebar only its cards and controls, offset by the
+            // band's own place on the output.
+            let holes = match s.bar.input_rects().filter(|_| s.bar.sidebar.is_some()) {
+                Some(rects) => rects.into_iter().map(|r| IRect::new(r.x + band.x, r.y + band.y, r.w, r.h)).collect(),
+                None => vec![band],
+            };
+            for r in holes {
+                region.subtract(r.x, r.y, r.w, r.h);
+            }
         }
         if let Some(c) = &head.catcher {
             c.layer.set_input_region(Some(region.wl_region()));
+            c.layer.commit();
         }
     }
 
@@ -301,6 +310,7 @@ impl App {
         } else {
             let (surface, zones) = self.build_chrome(&spare.bar, &output);
             spare.bar.reserved = spare.bar.zone();
+            spare.bar.input_sent = None;
             (Some(surface), zones)
         };
         spare.dirty = true;
@@ -345,18 +355,25 @@ impl App {
         for c in self.heads.iter_mut().filter_map(|h| h.catcher.as_mut()) {
             c.present(0.0, false, &qh);
         }
-        for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
+        let mut moved = Vec::new();
+        for (i, s) in self.heads.iter_mut().enumerate().filter_map(|(i, h)| Some((i, h.spare.as_mut()?))) {
             let Some(surface) = &mut s.surface else { continue };
             let animating = s.bar.animating(now);
             let stepping = animating || s.bar.marquee_due(now);
             if all || s.dirty || (stepping && !s.bar.step_in_place(now)) {
                 s.bar.layout(&self.store, now);
                 s.dirty = false;
+                if Self::set_input_region_for(&self.compositor, &mut s.bar, surface) {
+                    moved.push(i);
+                }
             }
             surface.present(&mut s.bar.scene, animating, &qh);
             for (_, z) in &mut s.zones {
                 z.present(0.0, false, &qh);
             }
+        }
+        for i in moved {
+            self.set_catcher_input(i);
         }
         self.present_desktop_clocks();
     }
@@ -607,10 +624,10 @@ impl App {
                 }
                 s.bar.read(&self.store, None, Instant::now());
                 s.dirty = true;
-                if let Some(s) = &self.heads[i].spare
+                if let Some(s) = &mut self.heads[i].spare
                     && let Some(surface) = &s.surface
                 {
-                    self.set_input_region_for(&s.bar, surface);
+                    Self::set_input_region_for(&self.compositor, &mut s.bar, surface);
                 }
             }
             Part::Zone(z) => {

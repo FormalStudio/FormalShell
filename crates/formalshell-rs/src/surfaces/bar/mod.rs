@@ -128,6 +128,8 @@ pub struct Bar {
     pub sidebar: Option<Sidebar>,
     /// The sidebar folded to its rail (state.json's `sidebarCollapsed`).
     collapsed: bool,
+    /// The input region the window was last given.
+    pub input_sent: Option<Vec<IRect>>,
 }
 
 #[derive(Default, Clone)]
@@ -169,6 +171,7 @@ impl Bar {
             room: Room::default(),
             sidebar: None,
             collapsed: false,
+            input_sent: None,
         };
         let (w, h) = bar.placed_size(true);
         bar.scene = Scene::new(w, h);
@@ -310,6 +313,17 @@ impl Bar {
     /// the strip alone.
     pub fn strip_only(&self) -> bool {
         !self.framed() && self.style.corners <= 0.0
+    }
+
+    /// The boxes of the window that take the pointer: under the sidebar its
+    /// cards and controls alone, else the strip; `None` for the whole
+    /// window.
+    pub fn input_rects(&self) -> Option<Vec<IRect>> {
+        match &self.sidebar {
+            Some(sb) => Some(sb.input_rects()),
+            None if self.strip_only() => None,
+            None => Some(vec![self.strip()]),
+        }
     }
 
     /// The strip's own box in the window: the whole window, or the bar's

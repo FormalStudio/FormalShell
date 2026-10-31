@@ -300,6 +300,14 @@ impl Sidebar {
         last
     }
 
+    /// The boxes that take the pointer: every card and every control (the
+    /// rail's buttons), so a press anywhere else in the column reaches
+    /// what is under it.
+    pub fn input_rects(&self) -> Vec<IRect> {
+        let controls = self.top.hits.iter().chain(&self.foot.hits).filter(|h| h.on.is_some()).map(|h| h.rect);
+        self.top.cards.iter().chain(&self.foot.cards).copied().chain(controls).filter(|r| !r.is_empty()).collect()
+    }
+
     /// The clickable rect under a point, as an index past the top column's
     /// hits into the foot's.
     pub fn hit(&self, x: f64, y: f64) -> Option<usize> {
@@ -388,6 +396,7 @@ impl Sidebar {
             "edge": edge.as_str(),
             "width": width,
             "cards": self.cards,
+            "input": self.input_rects().iter().map(|r| json!({"x": r.x, "y": r.y, "w": r.w, "h": r.h})).collect::<Vec<_>>(),
             "rows": self.map.status(),
             "cursor": self.map.cursor_status(),
             "minimap": self.map.drag_status(),

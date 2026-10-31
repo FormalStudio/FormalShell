@@ -171,7 +171,7 @@ pub struct Host {
     pub wake: Option<Instant>,
     scale: f64,
     /// The input region last set, so it is sent only on a change.
-    region: Option<(IRect, IRect)>,
+    region: Option<(IRect, Vec<IRect>)>,
     /// The frame's height, the most the output leaves it and whether the
     /// content was cut to that, as of the last layout.
     pub fit: std::cell::Cell<(f64, f64, bool)>,
@@ -418,29 +418,30 @@ impl Host {
     }
 
     /// Input everywhere while open (a click outside closes) but over the
-    /// bar's `strip`, over the card's resting rect alone for a card that
+    /// boxes the bar takes the pointer over (`holes`: its strip, or the
+    /// sidebar's cards), over the card's resting rect alone for a card that
     /// takes no keyboard, and nowhere once closing. The strip stays the
     /// bar's: a click on another cell opens that cell's panel, and one
     /// landing as this surface goes away is not lost with it.
-    pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState, strip: IRect) {
-        let (want, hole) = match (self.open, self.module.takes_keyboard()) {
-            (false, _) => (IRect::default(), IRect::default()),
-            (true, true) => (self.card.scene.size, strip),
-            (true, false) => (self.card.rest_rect(), IRect::default()),
+    pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState, holes: &[IRect]) {
+        let (want, holes) = match (self.open, self.module.takes_keyboard()) {
+            (false, _) => (IRect::default(), Vec::new()),
+            (true, true) => (self.card.scene.size, holes.to_vec()),
+            (true, false) => (self.card.rest_rect(), Vec::new()),
         };
-        if self.region == Some((want, hole)) {
+        if self.region.as_ref().is_some_and(|(w, h)| *w == want && *h == holes) {
             return;
         }
-        self.region = Some((want, hole));
         if let Ok(region) = smithay_client_toolkit::compositor::Region::new(compositor) {
             if !want.is_empty() {
                 region.add(want.x, want.y, want.w, want.h);
             }
-            if !hole.is_empty() {
+            for hole in &holes {
                 region.subtract(hole.x, hole.y, hole.w, hole.h);
             }
             self.surface.layer.set_input_region(Some(region.wl_region()));
         }
+        self.region = Some((want, holes));
     }
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {

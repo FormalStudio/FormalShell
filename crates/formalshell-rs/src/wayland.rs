@@ -528,6 +528,7 @@ impl App {
         let Some(output) = self.bar_wl.clone() else { return };
         let (surface, zones) = self.build_chrome(&self.bar, &output);
         self.bar.reserved = self.bar.zone();
+        self.bar.input_sent = None;
         self.bar_surface = Some(surface);
         self.zones = zones;
         self.bar_dirty = true;
@@ -572,21 +573,60 @@ impl App {
         (surface, zones)
     }
 
-    fn set_input_region(&self) {
-        if let Some(s) = &self.bar_surface {
-            self.set_input_region_for(&self.bar, s);
+    /// The bar window's input region off what it last drew; true when it
+    /// changed.
+    fn set_input_region(&mut self) -> bool {
+        match &self.bar_surface {
+            Some(s) => Self::set_input_region_for(&self.compositor, &mut self.bar, s),
+            None => false,
         }
     }
 
-    fn set_input_region_for(&self, bar: &Bar, s: &Surface) {
-        if bar.strip_only() {
-            return;
+    fn set_input_region_for(compositor: &CompositorState, bar: &mut Bar, s: &Surface) -> bool {
+        let Some(rects) = bar.input_rects() else {
+            // A window that took a region and now takes input everywhere.
+            if bar.input_sent.take().is_some() {
+                s.layer.set_input_region(None);
+                s.layer.commit();
+                return true;
+            }
+            return false;
+        };
+        if !s.configured || bar.input_sent.as_ref() == Some(&rects) {
+            return false;
         }
-        if let Ok(region) = Region::new(&self.compositor) {
-            let r = bar.strip();
-            region.add(r.x, r.y, r.w, r.h);
+        if let Ok(region) = Region::new(compositor) {
+            for r in &rects {
+                region.add(r.x, r.y, r.w, r.h);
+            }
             s.layer.set_input_region(Some(region.wl_region()));
             s.layer.commit();
+        }
+        bar.input_sent = Some(rects);
+        true
+    }
+
+    /// The live bar's input region off what it last drew, and what holds a
+    /// hole for it (the open panel, the second bar's catcher) following.
+    fn sync_bar_input(&mut self) {
+        if !self.set_input_region() {
+            return;
+        }
+        self.panel_dirty = true;
+        if let Some(c) = self.overflow.as_ref().and_then(|p| p.catcher.as_ref()) {
+            self.set_overflow_catcher_input(&c.layer);
+        }
+    }
+
+    /// What of the live output the bar takes the pointer over, in the
+    /// output's own coordinates.
+    fn bar_input(&self) -> Vec<IRect> {
+        match self.bar.input_rects().filter(|_| self.bar.sidebar.is_some()) {
+            Some(rects) => {
+                let (ox, oy) = self.edge_origin(self.bar.thickness());
+                rects.into_iter().map(|r| IRect::new(r.x + ox, r.y + oy, r.w, r.h)).collect()
+            }
+            None => vec![self.bar_strip()],
         }
     }
 
@@ -1106,15 +1146,20 @@ impl App {
     /// the bar strip's, so one outside an open second bar closes it.
     fn overflow_catcher(&self) -> PixelSurface {
         let layer = self.overlay("formalshell:catcher", Layer::Top, Anchor::all(), (0, 0), -1);
+        self.set_overflow_catcher_input(&layer);
+        PixelSurface::new("catcher", layer, 0.0, &self.pixels, &self.qh, self.started)
+    }
+
+    fn set_overflow_catcher_input(&self, layer: &LayerSurface) {
         if let Ok(region) = Region::new(&self.compositor) {
             let (w, h) = self.output_size();
-            let strip = self.bar_strip();
             region.add(0, 0, w as i32, h as i32);
-            region.subtract(strip.x, strip.y, strip.w, strip.h);
+            for r in self.bar_input() {
+                region.subtract(r.x, r.y, r.w, r.h);
+            }
             layer.set_input_region(Some(region.wl_region()));
             layer.commit();
         }
-        PixelSurface::new("catcher", layer, 0.0, &self.pixels, &self.qh, self.started)
     }
 
     /// The input region over a popout's resting rect.
@@ -1523,6 +1568,7 @@ impl App {
             self.bar.layout(&self.store, now);
             self.bar_dirty = false;
             self.sync_sidebar_keys();
+            self.sync_bar_input();
         }
         if let Some(s) = &mut self.bar_surface {
             s.present(&mut self.bar.scene, animating, &qh);
@@ -1550,7 +1596,7 @@ impl App {
             let animating = p.card.animating(now) || content || morphing;
             p.surface.present(&mut p.card.scene, animating, &qh);
         }
-        let strip = self.bar_strip();
+        let strip = self.bar_input();
         let theme = &self.store.theme.theme;
         for h in [&mut self.outgoing, &mut self.panel].into_iter().flatten() {
             if h.prime_until.is_some_and(|t| t <= now) {
@@ -1559,7 +1605,7 @@ impl App {
             let animating = h.animating(now) || h.content_animating(now);
             let _raster = crate::scene::raster_at(h.surface.scale());
             if self.panel_dirty || animating {
-                h.sync_region(&self.compositor, strip);
+                h.sync_region(&self.compositor, &strip);
                 h.layout(&self.store, theme, &mut self.bar.kit, now);
             }
             let animating = h.animating(now) || h.content_animating(now);
@@ -1890,8 +1936,8 @@ impl App {
             // A pointer left still over the strip once a panel maps gets its
             // presses on the panel's surface, though that surface's input
             // region leaves the strip out; they are the bar's.
-            let strip = self.bar_strip();
-            if owner == Some(Owner::Panel) && x >= strip.x as f64 && x < strip.right() as f64 && y >= strip.y as f64 && y < strip.bottom() as f64 {
+            let on_bar = self.bar_input().iter().any(|r| x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64);
+            if owner == Some(Owner::Panel) && on_bar {
                 owner = Some(Owner::Bar);
                 if !self.bar.framed() {
                     let (ox, oy) = self.edge_origin(self.bar.thickness());
@@ -2390,7 +2436,7 @@ impl LayerShellHandler for App {
                         s.present(&mut self.bar.scene, false, &self.qh);
                     }
                 }
-                self.set_input_region();
+                self.sync_bar_input();
                 // The size the bar was laid out and drawn at ahead of this
                 // configure needs nothing more; only a new one is re-read.
                 if size != current {

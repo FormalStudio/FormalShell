@@ -24,13 +24,19 @@
 # the band's orange over their middle row, the date box carrying its words,
 # the time and period the bar clock's format writes and `date` agrees with,
 # the first draw of the time under 50ms, and no bar commit in 3s at rest.
+# The column's empty stretches pass the pointer through: `sidebar status`'s
+# `input` (the bar layer's input region) is the cards and controls alone, a
+# real click (dev/vpointer.py) in the gap between the first two cards with
+# the network panel open closes it, and one in the column's widest gap
+# lands on a foot window floated under it, Hyprland making that window the
+# active one (`hyprctl activewindow`, `cursorpos` beside it).
 # Ridden by a budget leg (`--idle`, `--menu-budget`) it pins the layout
 # alone, so the budget is read with the sidebar on and nothing driven; by
 # `--tray` or `--tray-overflow` the same, those legs reading the tray off
 # the status card's tray button.
 leg_sidebar_flag="--sidebar"
 leg_sidebar_order=237
-leg_sidebar_needs="jq wlrctl notify-send convert"
+leg_sidebar_needs="jq wlrctl notify-send convert foot python3"
 leg_sidebar_fixture_window=keep
 
 sidebar_status_open="$shot_dir/sidebar-status-open.json"
@@ -50,6 +56,13 @@ sidebar_clock_dir="$shot_dir/sidebar-clock-wallpapers"
 sidebar_clock_dump="$shot_dir/sidebar-clock.json"
 sidebar_clock_results="$shot_dir/sidebar-clock-results.txt"
 sidebar_clock_png="$shot_dir/sidebar-clock.png"
+sidebar_vpointer="$PWD/dev/vpointer.py"
+sidebar_gaps_jq="$shot_dir/sidebar-gaps.jq"
+sidebar_status_panel="$shot_dir/sidebar-status-panel.json"
+sidebar_gap_state="$shot_dir/sidebar-gap-state.txt"
+sidebar_through="$shot_dir/sidebar-through.txt"
+sidebar_gap_png="$shot_dir/sidebar-gap.png"
+sidebar_through_png="$shot_dir/sidebar-through.png"
 
 sidebar_rider() {
   leg_on idle || leg_on menu_budget || leg_on tray || leg_on tray_overflow
@@ -89,6 +102,16 @@ leg_sidebar_drive() {
   local script="$shot_dir/sidebar-drive.sh"
   local settings_path="$iso_home/.config/formalshell/settings.json"
   local state_path="$iso_home/.local/state/formalshell/state.json"
+  # The runs down the column's middle no input rect covers, between the
+  # first rect's top and the last one's bottom, as "top bottom" lines.
+  cat > "$sidebar_gaps_jq" <<'JQ'
+(.width / 2 | floor) as $m
+| [.input[] | select(.x <= $m and .x + .w > $m) | [.y, .y + .h]] | sort
+| reduce .[] as $r ({end: null, out: []};
+    (if .end != null and $r[0] > .end then .out += [[.end, $r[0]]] else . end)
+    | .end = ([(.end // 0), $r[1]] | max))
+| .out[] | "\(.[0]) \(.[1])"
+JQ
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 for _ in \$(seq 1 40); do
@@ -134,7 +157,44 @@ click "\$nx" "\$ny"
 sleep 2
 $ipc call panel state > "$sidebar_panel_state" 2>&1
 "$grim_bin" "$sidebar_panel_png" > /dev/null 2>&1
+# A press with the button held and let go, off the vpointer at a point.
+vclick() {
+  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+  "$wlrctl_bin" pointer move \$1 \$2 > /dev/null 2>&1
+  sleep 0.4
+  "$python3_bin" "$sidebar_vpointer" down wait 60 up > /dev/null 2>&1
+}
+$ipc call sidebar status > "$sidebar_status_panel" 2>&1
+read -r ox oy <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"' "$sidebar_layers_open")"
+mx=\$(( ox + \$("$jq_bin" '.width / 2 | floor' "$sidebar_status_panel") ))
+read -r g0 g1 <<< "\$("$jq_bin" -r -f "$sidebar_gaps_jq" "$sidebar_status_panel" | head -1)"
+read -r w0 w1 <<< "\$("$jq_bin" -r -f "$sidebar_gaps_jq" "$sidebar_status_panel" | awk '{ print \$2 - \$1, \$0 }' | sort -n | tail -1 | cut -d' ' -f2-)"
+echo "gap=\$g0 \$g1 widest=\$w0 \$w1 x=\$mx" > "$sidebar_gap_state"
+vclick "\$mx" \$(( oy + (g0 + g1) / 2 ))
+sleep 1.5
+echo "panel=\$($ipc call panel state 2>&1)" >> "$sidebar_gap_state"
+"$grim_bin" "$sidebar_gap_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
+sleep 1
+probe='class:^(formalshell-sidebar-probe)\$'
+"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-sidebar-probe sh -c 'sleep 300']==])" > /dev/null 2>&1
+for _ in \$(seq 1 40); do
+  "$hyprctl_bin" -j clients 2>/dev/null | grep -q formalshell-sidebar-probe && break
+  sleep 0.25
+done
+wy=\$(( oy + (w0 + w1) / 2 ))
+"$hyprctl_bin" dispatch "hl.dsp.window.float({ window = '\$probe', action = 'toggle' })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 400, y = 200, window = '\$probe' })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = \$(( wy - 100 )), window = '\$probe' })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
+sleep 0.5
+{ echo "before=\$("$hyprctl_bin" -j activewindow | "$jq_bin" -r .class)"; } > "$sidebar_through" 2>&1
+vclick "\$mx" "\$wy"
+sleep 1
+{ echo "at=\$mx,\$wy cursor=\$("$hyprctl_bin" cursorpos)"; echo "after=\$("$hyprctl_bin" -j activewindow | "$jq_bin" -r .class)"; } >> "$sidebar_through" 2>&1
+"$grim_bin" "$sidebar_through_png" > /dev/null 2>&1
+kill \$("$hyprctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-sidebar-probe") | .pid') 2>/dev/null
+"$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
 sleep 1
 read -r cx cy <<< "\$(at collapse "$sidebar_layers_open" "$sidebar_status_open")"
 click "\$cx" "\$cy"
@@ -193,6 +253,7 @@ leg_sidebar_assert() {
     || fail "sidebar: status did not report the open column's cards and a window on the map: $(cat "$sidebar_status_open")"
   grep -q '^network$' "$sidebar_panel_state" 2>/dev/null \
     || fail "sidebar: the network button's click did not open the network panel: $(cat "$sidebar_panel_state" 2>/dev/null)"
+  sidebar_through_assert
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_rail")"
   echo "sidebar layer rail: x=$bx y=$by w=$bw h=$bh"
   [ "$bw" -eq 48 ] || fail "sidebar: the collapse button did not fold the column to the 48 wide rail: w=$bw"
@@ -255,4 +316,20 @@ sidebar_clock_assert() {
   [ "$(_sidebar_clock '.minuteUs')" -lt 50000 ] || fail "sidebar: the clock card's draw took $(_sidebar_clock '.minuteUs')us"
   [ "$(sed -n 's/^rest=//p' "$sidebar_clock_results")" = 0 ] \
     || fail "sidebar: $(sed -n 's/^rest=//p' "$sidebar_clock_results") bar commits in 3s at rest"
+}
+
+# The column's gaps reaching what is under them.
+sidebar_through_assert() {
+  echo "SMOKE_SIDEBAR_GAP $sidebar_gap_png"
+  echo "SMOKE_SIDEBAR_THROUGH $sidebar_through_png"
+  echo "sidebar passthrough: $(tr '\n' ' ' < "$sidebar_gap_state" 2>/dev/null) $(tr '\n' ' ' < "$sidebar_through" 2>/dev/null)"
+  "$jq_bin" -e '(.input | length) >= 3' "$sidebar_status_panel" > /dev/null \
+    || fail "sidebar: status carries no input rects: $(cat "$sidebar_status_panel" 2>/dev/null)"
+  local g0 g1
+  read -r g0 g1 _ <<< "$(sed -n 's/^gap=//p' "$sidebar_gap_state")"
+  [ -n "$g1" ] && [ "$g1" -gt "$g0" ] || fail "sidebar: the input region leaves no gap between the cards: $(cat "$sidebar_status_panel")"
+  grep -qx 'panel=' "$sidebar_gap_state" \
+    || fail "sidebar: a click in the gap between two cards left the panel open: $(cat "$sidebar_gap_state")"
+  grep -qx 'before=formalshell-smoke-iconic' "$sidebar_through" && grep -qx 'after=formalshell-sidebar-probe' "$sidebar_through" \
+    || fail "sidebar: a click in the column's empty stretch did not reach the window under it: $(cat "$sidebar_through")"
 }

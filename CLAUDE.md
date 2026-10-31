@@ -1198,6 +1198,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `sidebarCollapsed`, `sidebar expand` opening it again, and settings.json
   rewritten with `bar.position: right` moving it to that edge. The open,
   panel and rail frames are read dark and light (`--sidebar --light`).
+  The bar layer's input region the cards and controls alone (`sidebar
+  status`'s `input`): a real click (`dev/vpointer.py`) in the gap between
+  two cards closing the open network panel, and one in the column's
+  widest gap focusing a foot window floated under it (`hyprctl
+  activewindow`).
   The time card's clock over a staged red and green wallpaper with a
   depth-mapped orange band, read off `debug dump`'s `sidebarClock`: the
   desktop clock's pixel face frosted, red at the digits' left end and
