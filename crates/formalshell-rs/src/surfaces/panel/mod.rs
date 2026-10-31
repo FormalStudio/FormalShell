@@ -239,6 +239,45 @@ pub const PANELS: [&str; 26] = [
     "settings:system",
 ];
 
+/// A panel card's frame round its body, one set of numbers wherever the
+/// card is drawn (the panel host, a page the launcher holds;
+/// specs/2026-10-30-panel-language.md §2, §3): the header row `panelGap`
+/// under the card's edge, the hairline `panelGap` under the row, the body
+/// `panelGap` past the hairline, and the room under the body.
+#[derive(Clone, Copy)]
+pub struct Frame {
+    pub top: f64,
+    pub head: f64,
+    pub gap: f64,
+    pub foot: f64,
+}
+
+impl Frame {
+    /// Under a header the body ends the `panelInset` the title keeps from
+    /// the card's edge; a headerless card (the tiles) keeps its rows' own
+    /// inset on all four sides.
+    pub fn new(theme: &Theme, header: bool) -> Self {
+        let s = &theme.space;
+        let (head, gap) = if header { (s.panel_row, s.panel_gap * 2.0 + theme.border_width) } else { (0.0, 0.0) };
+        Frame { top: s.panel_gap, head, gap, foot: if header { s.panel_inset } else { s.panel_gap } }
+    }
+
+    /// The hairline's offset under the card's top edge.
+    pub fn rule(&self, theme: &Theme) -> f64 {
+        self.top + self.head + theme.space.panel_gap
+    }
+
+    /// The body's offset under the card's top edge.
+    pub fn body(&self) -> f64 {
+        self.top + self.head + self.gap
+    }
+}
+
+/// A panel's title in its header row.
+pub fn title(text: String) -> El {
+    crate::ui::w::label(text).size(crate::ui::Type::Display).weight(crate::ui::Weight::Semibold).elide()
+}
+
 pub fn known(name: &str) -> Option<&'static str> {
     PANELS.iter().find(|n| **n == name).copied()
 }

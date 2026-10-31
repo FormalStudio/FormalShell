@@ -467,32 +467,22 @@ impl Host {
         let body = self.module.body(&v);
         let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
         let content_h = ui::measure(&body, content_w, theme, kit).1;
-        let (head, gap) = self.header_metrics(theme);
+        let f = self.frame(theme);
+        let (head, gap) = (f.head, f.gap);
         let max_frame = if vertical {
             (p.output.1 - p.ends.inset_start - p.ends.inset_end - s.screen_padding * 2.0).max(0.0)
         } else {
             (p.across_len() - p.line_at - p.far_inset - s.bar_margin - s.screen_padding).max(0.0)
         };
-        let ends = s.panel_gap + self.foot(theme);
+        let ends = f.top + f.foot;
         let max_content = (max_frame - ends - head - gap).max(0.0);
         let height = ends + head + gap + content_h.min(max_content);
         self.fit.set((height, max_frame, content_h > max_content));
         (width, height, content_h)
     }
 
-    /// The header row and the gap under it, the hairline in its middle
-    /// (specs/2026-10-30-panel-language.md §3).
-    fn header_metrics(&self, theme: &Theme) -> (f64, f64) {
-        let s = &theme.space;
-        if self.module.header() { (s.panel_row, s.panel_gap * 2.0 + theme.border_width) } else { (0.0, 0.0) }
-    }
-
-    /// The room under the body: under a header, the same `panelInset` the
-    /// title keeps from the card's edge; a headerless card (the tiles) keeps
-    /// its rows' own inset on all four sides.
-    fn foot(&self, theme: &Theme) -> f64 {
-        let s = &theme.space;
-        if self.module.header() { s.panel_inset } else { s.panel_gap }
+    fn frame(&self, theme: &Theme) -> super::Frame {
+        super::Frame::new(theme, self.module.header())
     }
 
     /// Lays the frame out for this frame and draws everything on it.
@@ -570,7 +560,7 @@ impl Host {
     }
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
-        let mut parts = vec![w::label(self.module.title(v)).size(ui::Type::Display).weight(ui::Weight::Semibold).elide(), w::space(s.panel_gap)];
+        let mut parts = vec![super::title(self.module.title(v)), w::space(s.panel_gap)];
         let actions = self.module.actions(v);
         if !actions.is_empty() {
             parts.push(w::row(s.panel_gap, actions));
@@ -593,9 +583,8 @@ impl Host {
         // `panelInset`; the header's title sits on that text column and its
         // last button's glyph ends on it.
         let pad = s.panel_row_inset;
-        let vpad = s.panel_gap;
-        let (head_h, head_gap) = self.header_metrics(theme);
-        let foot = self.foot(theme);
+        let f = self.frame(theme);
+        let (vpad, head_h, head_gap, foot) = (f.top, f.head, f.gap, f.foot);
         let fx = frame.x as f64;
         let fy = frame.y as f64;
         let fw = frame.w as f64;
@@ -617,7 +606,7 @@ impl Host {
             self.wake = if d.animating { Some(now) } else { d.wake };
             let mut p = Painter::new(scene, &mut self.rule_nodes, Some(clip));
             let (sx, sw) = ((fx + s.panel_inset).round() as i32, (fw - s.panel_inset * 2.0).max(0.0).round() as i32);
-            let seam = IRect::new(sx, (fy + vpad + head_h + s.panel_gap).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
+            let seam = IRect::new(sx, (fy + f.rule(theme)).round() as i32, sw, theme.border_width.round().max(1.0) as i32);
             let sep = theme.box_style("separator", None).fill;
             p.rect(seam, sep.with_alpha(sep.a * alpha), 0.0);
             p.finish();
@@ -627,7 +616,7 @@ impl Host {
             p.finish();
         }
 
-        let top = fy + vpad + head_h + head_gap;
+        let top = fy + f.body();
         let viewport_h = (frame.h as f64 - vpad - foot - head_h - head_gap).max(0.0);
         self.viewport = IRect::new((fx + pad).round() as i32, top.round() as i32, inner_w.round() as i32, viewport_h.round() as i32);
         let max_scroll = (self.content_h - viewport_h).max(0.0);

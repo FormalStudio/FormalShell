@@ -3054,8 +3054,18 @@ impl Shown {
     fn metrics(theme: &Theme, m: &Model, store: &Store, output_h: f64, kit: &mut Kit) -> (f64, f64, f64, f64) {
         let s = &theme.space;
         let line = ui::measure(&w::text("Ag").size(Type::Field), 100.0, theme, kit).1.max(s.control_height);
-        let head = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band) + theme.border_width;
-        let foot = if m.footless() { 0.0 } else { theme.border_width + s.control_height };
+        // A held page wears a panel card's frame: its header row, hairline
+        // and the room under its body.
+        let page = m.on_panel().then(|| crate::surfaces::panel::Frame::new(theme, true));
+        let head = match page {
+            Some(f) => f.body(),
+            None => launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band) + theme.border_width,
+        };
+        let foot = match page {
+            Some(f) => f.foot,
+            None if m.footless() => 0.0,
+            None => theme.border_width + s.control_height,
+        };
         let cap = (m.kind_height(theme, output_h) - head - foot).max(0.0);
         let body = if m.mode == Mode::Input {
             0.0
@@ -3103,9 +3113,7 @@ impl Shown {
     fn panel_el(&self, m: &Model, store: &Store, theme: &Theme) -> Option<El> {
         let p = m.panel.as_ref().filter(|_| m.on_panel())?;
         let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: p.cursor.shown(), hovered: self.hovered_stop() };
-        let s = &theme.space;
-        let bottom = if p.module.header() { s.panel_inset } else { s.panel_row_inset };
-        Some(w::column(0.0, vec![w::space(s.panel_row_inset), p.module.body(&v), w::space(bottom)]))
+        Some(p.module.body(&v))
     }
 
     fn measure_panel(&self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit) {
@@ -3262,14 +3270,21 @@ impl Shown {
         self.foot.motion_scale = self.scale;
 
         // The field band: the line centred in it `xxl` in from either side,
-        // a rule as far in under it.
-        let band = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band);
-        let line_top = fy + ((band - line) / 2.0).round();
+        // a rule as far in under it. A held page's band is a panel card's
+        // header, row and hairline where the panel host draws them.
+        let page = m.on_panel().then(|| crate::surfaces::panel::Frame::new(theme, true));
+        let (band, row_top, row_h) = match page {
+            Some(f) => (f.rule(theme), fy + f.top, f.head),
+            None => {
+                let band = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band);
+                (band, fy + ((band - line) / 2.0).round(), line)
+            }
+        };
         let field_x = m.field_inset(theme);
-        let head_rect = Rect::new(fx + field_x, line_top, fx + fw - field_x, line_top + line);
-        // The row stands the field's height whatever it holds, so a token
-        // with no query beside it (a held panel) centres in the band too.
-        let head = header(m, store, theme).height(line);
+        let head_rect = Rect::new(fx + field_x, row_top, fx + fw - field_x, row_top + row_h);
+        // The row stands the band's height whatever it holds, so a token
+        // with no query beside it centres in the band too.
+        let head = header(m, store, theme).height(row_h);
         self.field_rect = Some(Rect::new(fx, fy, fx + fw, fy + band));
         let d = self.head.draw(&head, head_rect, Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
@@ -3277,7 +3292,10 @@ impl Shown {
         }
         let bw = theme.border_width.round().max(1.0) as i32;
         let rule_top = (fy + band).round() as i32;
-        let body_top = rule_top as f64 + theme.border_width;
+        let body_top = match page {
+            Some(f) => fy + f.body(),
+            None => rule_top as f64 + theme.border_width,
+        };
         let (body_x, body_w) = if m.on_panel() {
             let (x, w_) = m.panel_body(theme);
             (fx + x, w_)
@@ -3560,7 +3578,7 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
         let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None };
         let title = p.module.title(&v);
         if token.last() != Some(&title) {
-            parts.push(w::text(title).size(Type::Field));
+            parts.push(crate::surfaces::panel::title(title));
         }
         parts.push(w::spacer());
         return w::row(0.0, parts).fill();
