@@ -66,6 +66,10 @@ fn on_gpu(name: &str) -> bool {
             | "polkit-content"
             | "radio"
             | "plugin-overlay"
+            | "lock"
+            | "unlock"
+            | "greeter"
+            | "greeter-veil"
     )
 }
 
@@ -797,6 +801,15 @@ impl<R: Role> Surface<R> {
         }
         let damage = std::mem::take(&mut self.raster);
         self.commit_frame(damage, scene.size, request, qh);
+    }
+
+    pub fn is_gpu(&self) -> bool {
+        self.renderer.is_gpu()
+    }
+
+    /// The canvas's size in device pixels.
+    pub fn pixels(&self) -> (i32, i32) {
+        self.renderer.pixels()
     }
 
     /// The CPU canvas as it stands: what the last frame drew.

@@ -7,14 +7,19 @@
 //!
 //! A frame is one pass over the output's pixels, written straight into the
 //! surface's canvas: each cell row is worked out once and copied down the
-//! rest of its rows.
+//! rest of its rows. A surface drawing on the GPU has no canvas to write
+//! into, so it draws the same frame as a scene: each picture's cells as a
+//! picture one pixel to a cell, stretched back over the output unfiltered,
+//! the first cut to the cells not yet flipped.
 
+use std::sync::Arc;
 use std::time::Instant;
 
-use vello_cpu::Pixmap;
+use vello_cpu::kurbo::{BezPath, Rect, Shape};
+use vello_cpu::{PixelMetadata, Pixmap};
 
 use crate::render::Renderer;
-use crate::scene::{IRect, Scene};
+use crate::scene::{Bitmap, IRect, Paint, Scene, VOp};
 
 /// The largest cell, `2^MAX_K` device pixels, which the flips are cut on.
 const MAX_K: u32 = 5;
@@ -125,6 +130,23 @@ pub fn frame(from: &[u8], to: Option<&[u8]>, (w, h): (usize, usize), order: &[f3
     }
 }
 
+/// `src`'s cells `c` pixels wide, one pixel each: the pixel [`frame`]
+/// fills its cell with.
+fn cells(src: &Pixmap, c: usize) -> Pixmap {
+    let (w, h) = (usize::from(src.width()), usize::from(src.height()));
+    let (cw, ch) = (w.div_ceil(c), h.div_ceil(c));
+    let data = src.data_as_u8_slice();
+    let mut out = Vec::with_capacity(cw * ch * 4);
+    for j in 0..ch {
+        let sy = (j * c + c / 2).min(h - 1);
+        for i in 0..cw {
+            let at = sy * w * 4 + (i * c + c / 2).min(w - 1) * 4;
+            out.extend_from_slice(&data[at..at + 4]);
+        }
+    }
+    Pixmap::from_parts(out, cw as u16, ch as u16, PixelMetadata::default())
+}
+
 /// One dissolve on one output, by the clock.
 pub struct Dissolve {
     from: Pixmap,
@@ -132,6 +154,10 @@ pub struct Dissolve {
     order: Vec<f32>,
     at: Instant,
     ms: f64,
+    /// Each picture's cells at each cell size, made the first time a GPU
+    /// frame asks for them.
+    levels: [Option<(Arc<Pixmap>, Option<Arc<Pixmap>>)>; MAX_K as usize + 1],
+    scene: Option<Scene>,
 }
 
 impl Dissolve {
@@ -139,7 +165,7 @@ impl Dissolve {
     pub fn new(from: Pixmap, to: Option<Pixmap>, ms: f64, now: Instant) -> Self {
         let order = thresholds(usize::from(from.width()), usize::from(from.height()));
         let to = to.filter(|t| (t.width(), t.height()) == (from.width(), from.height()));
-        Self { from, to, order, at: now, ms }
+        Self { from, to, order, at: now, ms, levels: Default::default(), scene: None }
     }
 
     pub fn progress(&self, now: Instant) -> f64 {
@@ -165,6 +191,55 @@ impl Dissolve {
         eprintln!("dissolve frame {:.2}", t0.elapsed().as_secs_f64() * 1000.0);
         true
     }
+
+    /// This moment's frame as a scene `size` logical pixels at `scale`, for
+    /// a surface drawing on the GPU; none when `device` (its canvas) is not
+    /// the size the pictures were made at.
+    pub fn scene(&mut self, now: Instant, size: IRect, scale: f64, device: (i32, i32)) -> Option<&mut Scene> {
+        let (w, h) = (usize::from(self.from.width()), usize::from(self.from.height()));
+        if device != (w as i32, h as i32) {
+            return None;
+        }
+        let p = self.progress(now);
+        let k = cell_k(p) as usize;
+        let c = 1usize << k;
+        let f = flip(p);
+        let (from, to) = self.levels[k].get_or_insert_with(|| {
+            let made = |src: &Pixmap| Arc::new(if c == 1 { src.clone() } else { cells(src, c) });
+            (made(&self.from), self.to.as_ref().map(made))
+        });
+        let picture = |pixmap: &Arc<Pixmap>| VOp::Image(Bitmap { pixmap: pixmap.clone(), density: (scale / c as f64) as f32 }, (0.0, 0.0), 1.0);
+        let mut ops = Vec::new();
+        if let Some(to) = to.as_ref().filter(|_| f > 0.0) {
+            ops.push(picture(to));
+        }
+        if f < 1.0 {
+            // The cells still on the first picture, a run of them a rect.
+            let cols = w.div_ceil(GRID);
+            let mut keep = BezPath::new();
+            for (row, line) in self.order.chunks(cols).enumerate() {
+                let (y0, y1) = ((row * GRID) as f64 / scale, ((row + 1) * GRID).min(h) as f64 / scale);
+                let mut col = 0;
+                while col < cols {
+                    if line[col] < f {
+                        col += 1;
+                        continue;
+                    }
+                    let start = col;
+                    while col < cols && line[col] >= f {
+                        col += 1;
+                    }
+                    let (x0, x1) = ((start * GRID) as f64 / scale, (col * GRID).min(w) as f64 / scale);
+                    keep.extend(Rect::new(x0, y0, x1, y1).path_elements(0.1));
+                }
+            }
+            ops.extend([VOp::Clip(keep), picture(from), VOp::Pop]);
+        }
+        // A scene of its own each frame, damaged whole.
+        let mut scene = Scene::new(size.w, size.h);
+        scene.add(size, Paint::Vector(Arc::new(ops)));
+        Some(self.scene.insert(scene))
+    }
 }
 
 #[cfg(test)]
@@ -178,6 +253,30 @@ mod tests {
     /// Every pixel its own colour, so a frame's cells read off it.
     fn ramp(w: usize, h: usize) -> Vec<u8> {
         (0..w * h).flat_map(|i| [(i % 251) as u8, (i / 251 % 251) as u8, (i % 7) as u8 * 30, 255]).collect()
+    }
+
+    #[test]
+    fn the_scene_draws_the_frame_the_canvas_gets() {
+        let (w, h) = (100usize, 70usize);
+        let pix = |b: Vec<u8>| Pixmap::from_parts(b, w as u16, h as u16, PixelMetadata::default());
+        let from = ramp(w, h);
+        let to: Vec<u8> = ramp(h, w).into_iter().rev().collect();
+        let order = thresholds(w, h);
+        let at = Instant::now();
+        for to in [None, Some(&to)] {
+            let mut d = Dissolve::new(pix(from.clone()), to.map(|t| pix(t.clone())), 1000.0, at);
+            for p in [0.0, 0.1, 0.2, 0.4, 0.5, 0.6, 0.8, 0.9, 1.0] {
+                let mut want = vec![0u8; w * h * 4];
+                frame(&from, to.map(Vec::as_slice), (w, h), &order, p, &mut want);
+                let now = at + std::time::Duration::from_secs_f64(p);
+                let scene = d.scene(now, IRect::new(0, 0, w as i32, h as i32), 1.0, (w as i32, h as i32)).unwrap();
+                let mut r = Renderer::new(w as u16, h as u16);
+                r.render(scene, scene.size);
+                let got = r.canvas().data_as_u8_slice();
+                let off = got.chunks(4).zip(want.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 1)).count();
+                assert_eq!(off, 0, "{off} pixels off the canvas frame at {p}, to {}", to.is_some());
+            }
+        }
     }
 
     #[test]

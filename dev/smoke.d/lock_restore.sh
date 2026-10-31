@@ -23,7 +23,7 @@ leg_lock_restore_validate() {
   # The shell it kills is every other leg's shell too.
   local v
   for v in $(compgen -v | grep -E '^leg_[a-z0-9_]+_on$'); do
-    if [ "$v" != leg_lock_restore_on ] && [ "${!v}" = true ]; then
+    if [ "$v" != leg_lock_restore_on ] && [ "$v" != leg_backend_on ] && [ "${!v}" = true ]; then
       echo "usage: --lock-restore kills the session's shell and cannot combine with --$(echo "${v#leg_}" | sed 's/_on$//; s/_/-/g')" >&2
       exit 1
     fi

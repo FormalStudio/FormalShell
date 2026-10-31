@@ -133,7 +133,8 @@ impl Veil {
     /// A committed picture dissolves into clear over `ms`; anything else
     /// fades out.
     pub fn dissolve(&mut self, ms: f64, now: Instant) {
-        let from = self.surface.canvas_pixmap().filter(|_| self.held && self.surface.commits() > 0 && ms > 0.0);
+        let from = (self.held && self.surface.commits() > 0 && ms > 0.0)
+            .then(|| self.surface.canvas_pixmap().unwrap_or_else(|| crate::surfaces::dissolve::picture(&self.scene, self.surface.scale())));
         self.dissolve = from.map(|from| Dissolve::new(from, None, ms, now));
         self.fade(0.0, ms, now);
     }
@@ -174,9 +175,15 @@ impl Veil {
             self.shown_end = true;
             return false;
         }
-        if let Some(d) = &self.dissolve {
+        if let Some(d) = &mut self.dissolve {
             let size = self.scene.size;
-            if !self.surface.present_pixels(size, |buf, px| d.draw(now, buf, px), qh) {
+            let drawn = if self.surface.is_gpu() {
+                let (scale, device) = (self.surface.scale(), self.surface.pixels());
+                d.scene(now, size, scale, device).map(|scene| self.surface.present(scene, true, qh)).is_some()
+            } else {
+                self.surface.present_pixels(size, |buf, px| d.draw(now, buf, px), qh)
+            };
+            if !drawn {
                 self.dissolve = None;
             }
             return true;

@@ -47,7 +47,7 @@ leg_login_lock_validate() {
   # could reach anything under it.
   local v
   for v in $(compgen -v | grep -E '^leg_[a-z0-9_]+_on$'); do
-    if [ "$v" != leg_login_lock_on ] && [ "${!v}" = true ]; then
+    if [ "$v" != leg_login_lock_on ] && [ "$v" != leg_backend_on ] && [ "${!v}" = true ]; then
       echo "usage: --login-lock locks the session from its start and cannot combine with --$(echo "${v#leg_}" | sed 's/_on$//; s/_/-/g')" >&2
       exit 1
     fi

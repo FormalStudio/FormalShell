@@ -1276,7 +1276,7 @@ impl App {
                 // The store is empty until state.json is read, after the
                 // boot lock went up: no wallpaper before then is not none.
                 if o.dissolve.is_none() && (shared.backdrop.is_some() || (self.store.state.loaded && !has_wallpaper) || waited)
-                    && let Some(from) = o.surface.canvas_pixmap()
+                    && let Some(from) = o.surface.canvas_pixmap().or_else(|| o.splashed.then(|| dissolve::picture(&o.view.scene, k)))
                 {
                     // A scale the compositor sent after the splash went out:
                     // the splash is drawn again at it before it dissolves.
@@ -1289,9 +1289,14 @@ impl App {
                     let to = dissolve::picture(&view::backdrop_scene(&shared, theme, (size.w, size.h)), k);
                     o.dissolve = Some(Dissolve::new(from, Some(to), boot_ms, now));
                 }
-                if let Some(d) = &o.dissolve {
+                if let Some(d) = &mut o.dissolve {
                     let (done, commits) = (d.done(now), o.surface.commits());
-                    let drawn = o.surface.present_pixels(size, |buf, px| d.draw(now, buf, px), &qh);
+                    let drawn = if o.surface.is_gpu() {
+                        let device = o.surface.pixels();
+                        d.scene(now, size, k, device).map(|scene| o.surface.present(scene, true, &qh)).is_some()
+                    } else {
+                        o.surface.present_pixels(size, |buf, px| d.draw(now, buf, px), &qh)
+                    };
                     if !drawn || (done && o.surface.commits() > commits) {
                         (o.dissolve, o.dissolved) = (None, true);
                         o.view.scene.touch(size);

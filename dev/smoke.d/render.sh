@@ -9,12 +9,12 @@
 # machine with no Vulkan driver at all: cpu, saying no Vulkan device was
 # found. Each is photographed on the bare desktop (the bar and the desktop
 # clock), with the audio panel open, with the launcher open and with a
-# sticky toast over the volume OSD; the launcher card is cropped off `menu
-# status`'s cardBox. The GPU's frames within 3% RMSE of the CPU's, and the
+# sticky toast over the volume OSD, and locked (the real password typed
+# after); the launcher card is cropped off `menu status`'s cardBox. The GPU's frames within 3% RMSE of the CPU's, and the
 # fallback's too, the card not flat.
 leg_render_flag="--render"
 leg_render_order=113
-leg_render_needs="jq convert notify-send"
+leg_render_needs="jq convert notify-send wtype"
 
 render_dump() { echo "$shot_dir/render-$1.json"; }
 render_frame() { echo "$shot_dir/render-$1.png"; }
@@ -37,7 +37,7 @@ leg_render_fixture() {
 }
 
 # The frames every turn takes beside the launcher's.
-render_scenes="desktop panel toast"
+render_scenes="desktop panel toast lock"
 
 leg_render_timing() {
   leg_timing 45 80
@@ -77,6 +77,18 @@ turn() {
   "$grim_bin" "$shot_dir/render-\$name-toast.png" > /dev/null 2>&1
   date +%H%M > "$shot_dir/render-\$name-toast.minute"
   $ipc call osd close > /dev/null 2>&1
+  sleep 1
+  $ipc call lock lock > /dev/null 2>&1
+  sleep 3
+  $ipc call lock status > "$shot_dir/render-\$name-lock.json" 2>&1
+  "$grim_bin" "$shot_dir/render-\$name-lock.png" > /dev/null 2>&1
+  date +%H%M > "$shot_dir/render-\$name-lock.minute"
+  "$wtype_bin" -s 300 "formalshell-test"
+  "$wtype_bin" -s 300 -k Return
+  for _ in \$(seq 1 80); do
+    [ "\$($ipc call lock isLocked 2>/dev/null)" = false ] && break
+    sleep 0.25
+  done
 }
 sleep 4
 turn gpu gpu
@@ -143,9 +155,13 @@ leg_render_assert() {
       # is then left out of that one comparison.
       mask=()
       if [ "$scene" != card ] && ! cmp -s "$shot_dir/render-$t-$scene.minute" "$shot_dir/render-cpu-$scene.minute"; then
-        box=$("$jq_bin" -r '.desktopClock[0].rect | "\(.[0]),\(.[1]) \(.[0] + .[2]),\(.[1] + .[3])"' "$(render_dump cpu)" 2>/dev/null)
+        if [ "$scene" = lock ]; then
+          box=$("$jq_bin" -r '.outputs | to_entries | .[0].value.clockRect | "\(.x | floor),\(.y | floor) \(.x + .width | ceil),\(.y + .height | ceil)"' "$shot_dir/render-cpu-lock.json" 2>/dev/null)
+        else
+          box=$("$jq_bin" -r '.desktopClock[0].rect | "\(.[0]),\(.[1]) \(.[0] + .[2]),\(.[1] + .[3])"' "$(render_dump cpu)" 2>/dev/null)
+        fi
         [ -n "$box" ] && mask=(-fill black -draw "rectangle $box")
-        echo "render $t $scene: the minute rolled since the CPU's frame, the desktop clock left out"
+        echo "render $t $scene: the minute rolled since the CPU's frame, the clock left out"
       fi
       rmse=$("$convert_bin" \( "$shot_dir/render-$t-$scene.png" "${mask[@]}" \) \( "$shot_dir/render-cpu-$scene.png" "${mask[@]}" \) -metric RMSE -compare -format '%[distortion]' info: 2>/dev/null)
       echo "render $t $scene against cpu: RMSE ${rmse:-none}"
