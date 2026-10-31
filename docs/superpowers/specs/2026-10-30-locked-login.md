@@ -47,15 +47,20 @@ compositor from boot there is no second hand-over to bridge.
    path it already takes for its predecessor's held marker. Hyprland lets it
    take the forced lock (`onNewSessionLock`: allowed while a locked command
    is set, and under `misc.allow_session_lock_restore` after). Its first
-   frame on each output is the `login-lock` picture, the lock card fading in
-   over it on the `effects` clock; with no picture it fades in from black.
+   frame on each output is the `login-lock` picture, which then dissolves
+   into the lock's backdrop before the card enters (the pixel dissolve,
+   below); with no picture it fades in from black.
    From here on Hyprland's `m_startLocked` is cleared, so a shell dying
    while locked shows the dead-locker page, still locked, and the restarted
    shell takes the lock back off its held marker as today. That needs
    `misc.allow_session_lock_restore = true` (Hyprland's default is false):
    the shipped include sets it, and the VM's own config gains it.
-5. The first successful unlock deletes `login-lock` and hands over to the
-   desktop as stage 10 does. The arrival veil (stage 7) runs under the lock
+5. The shell deletes `login-lock` as it raises the lock: the runtime
+   directory outlives the compositor, and a marker left by a boot lock
+   nobody unlocked (a VM saved at the greeter, a crashed login) would
+   otherwise make a later session's shell raise a boot lock of its own. A
+   shell restarted under the lock takes it back off the held marker. The
+   first successful unlock hands over to the desktop as stage 10 does. The arrival veil (stage 7) runs under the lock
    and is not seen.
 
 The only black left is Hyprland's primer between its first modeset and the
@@ -77,6 +82,54 @@ and services before anything is drawn. The login lock takes neither path:
   record --every-ms 20`) and fails on more than 100 ms of black between the
   splash and the lock. The shell logs its own `phase` stamps from launch to
   the lock's first commit, so a miss names its stage.
+
+## The pixel dissolve
+
+Owner, 2026-10-31: the whole way from boot to the desktop is one piece,
+with a pixel effect, and never a black frame or a cut. The first boot
+showed the splash's picture raw under the card, the card cutting across the
+logo. The shell owns two of the hand-overs and does both the same way:
+
+- **Splash to lock.** The lock's first frame stays the splash picture at
+  1:1, which is what plymouth (quit with `--retain-splash`) leaves scanned
+  out, so the takeover itself changes nothing on screen. Once the lock's
+  backdrop is made (the wallpaper blurred and scrimmed, with its shards and
+  grid, as every lock draws it) the splash dissolves into it. The card
+  enters only after the dissolve has ended, on the `effects` clock as
+  today, so it never sits over the splash art. A backdrop not made within
+  2 s dissolves into the dark fallback the lock already draws.
+- **Lock to desktop.** The unlock's hand-over veil (`wayland/veil.rs`)
+  carries the lock's last picture as now, and dissolves it into
+  transparency instead of fading it, so the desktop shows through cell by
+  cell. The shell never captures the desktop (the capture rule): the
+  desktop is simply what lies under the veil.
+
+One effect, `surfaces/dissolve.rs`, for both:
+
+- The output is cut into square cells of `2^k` device pixels, k from 0 to
+  5 (1 to 32 px). Each cell shows the pixel at its centre, unaveraged, so
+  the picture breaks into hard pixels rather than blurring.
+- Over its length the first third coarsens the source from 1 px cells to
+  32, the middle third flips cells from the source to the destination, and
+  the last third refines the destination back to 1 px. A cell flips when
+  the progress passes its threshold: its distance from the output's centre
+  (0 at the centre, 1 at a corner) weighted 0.6, plus a hash of its
+  position weighted 0.4, so the change opens out from the middle with a
+  ragged pixel edge. The thresholds are cut on the 32 px grid, so a
+  flipped region stays whole as the cells refine.
+- Boot 1100 ms, unlock 700 ms, both scaled by `debug motionScale`, by the
+  clock at the output's refresh rate off its frame callbacks. The cell size
+  steps in whole powers of two by design (that is the pixel look); the flip
+  front moves every frame.
+- Both pictures are rendered to pixmaps once. A frame is one pass over the
+  output's pixels into its buffer: under 6 ms at 2560x1440 on g815,
+  logged per frame as `dissolve frame`. A frame the CPU cannot make in time
+  is dropped and the clock carries on.
+- `motion.enabled: false` cuts straight to the destination, as every other
+  surface does with motion off.
+
+Plymouth's own frames (firmware to splash) are not the shell's and are
+left as they are.
 
 ## What the greeter's login gave
 
@@ -124,7 +177,7 @@ and services before anything is drawn. The login lock takes neither path:
 - Logout from the locked-login session lands in greetd's `default_session`,
   the sway greeter, since `initial_session` runs once per boot: other users
   log in there, as today.
-- The boot lock (only while `login-lock` is present, before the first
+- The boot lock (the lock raised off `login-lock`, before the first
   unlock, when nothing of the autologin user's has started past the
   shell) carries an "Other user" button: Return arms it, a second Return
   ends this session through logind's `TerminateSession` on its own id, and
@@ -157,7 +210,7 @@ and KDE's do: `loginctl unlock-session` lifts it with the same fade as a
 password unlock and clears LockedHint. polkit already gates
 `unlock-session`, and a process running as the user can defeat a screen
 lock without it anyway, so ignoring the signal bought nothing. It applies
-to the boot lock too, whose marker the unlock deletes as a password's does.
+to the boot lock too.
 
 ## Measured
 
@@ -175,7 +228,12 @@ host's number waits on its next boot, which this work does not force.
 
 - `dev/seams.sh`: the boot leg waits for the lock instead of the greeter,
   types the password, and reads no black past 100 ms from the splash to the
-  desktop; logout still reaches the greeter; reboot reaches the lock.
+  desktop; logout still reaches the greeter; reboot reaches the lock. Its
+  boot film carries frames part way through both dissolves (neither
+  picture, cells of both), and `artifacts/seams/boot.mp4` is the film.
+- `--login-lock` and `--unlock` at a tenth speed: mid-dissolve frames with
+  both pictures' colours in 32 px aligned cells, no card pixel before the
+  boot dissolve ends, and the unlock never darker than either end.
 - `just greeter`, `--lock-restore`, the lock legs, smoke-affected.
 - A new vm_only leg `--login-lock` on a guest booted cold: the lock up and
   secure before any desktop frame (frames read for the bar), the keyring

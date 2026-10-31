@@ -507,6 +507,11 @@ runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth"
 paths = ["crates/formalshell-rs/src/wayland/veil.rs", "crates/formalshell-rs/src/surfaces/veil.rs", "dev/smoke.d/unlock.sh"]
 runs = ["--unlock", "--lock", "--menu", "--multi-output", "--login-lock"]
 
+# The pixel dissolve: the boot's splash into the lock, the lock into the desktop.
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/dissolve.rs", "dev/dissolve-cells.py"]
+runs = ["--unlock", "--login-lock"]
+
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/depth.rs", "packaging/formalshell-depth.py"]
 runs = ["--lock --depth", "--desktop-clock"]

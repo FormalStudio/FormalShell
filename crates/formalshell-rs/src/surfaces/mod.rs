@@ -7,6 +7,7 @@ pub mod bar;
 pub mod battery;
 pub mod capture;
 pub mod card;
+pub mod dissolve;
 pub mod headset;
 pub mod launcher;
 pub mod lock;

@@ -16,8 +16,10 @@
 //! The boot's lock (docs/superpowers/specs/2026-10-30-locked-login.md):
 //! the login script leaves `$XDG_RUNTIME_DIR/formalshell/login-lock`, its
 //! content the splash's last picture or empty, and the shell raises the lock
-//! off it before anything else, that picture alone on its first frame. The
-//! first unlock deletes it; until then the card offers "Other user".
+//! off it before anything else, that picture alone on its first frame. Once
+//! the lock's backdrop is made the picture dissolves into it, and only then
+//! does the card enter. The first unlock deletes the marker; until then the
+//! card offers "Other user".
 //!
 //! The screensaver can show inside the lock: its scene is presented on the
 //! lock surfaces in place of the card, input dismisses it back to the card,
@@ -59,7 +61,8 @@ use crate::services::wallpaper::DepthCut;
 use crate::services::{clipboard, compositor, power};
 use crate::surface::Surface;
 use crate::store::Topic;
-use crate::surfaces::lock::{self as view, Boot, Button, Buttons, NowPlaying, Shared, TKey, View};
+use crate::surfaces::dissolve::{self, Dissolve};
+use crate::surfaces::lock::{self as view, Button, Buttons, NowPlaying, Shared, TKey, View};
 
 /// What finishes off the UI thread and comes back to the lock.
 pub enum LockMsg {
@@ -99,6 +102,9 @@ struct Out {
     pointer: Option<(f64, f64)>,
     /// The boot lock's first frame, the splash alone, has been committed.
     splashed: bool,
+    /// The splash going into the backdrop, and that having ended.
+    dissolve: Option<Dissolve>,
+    dissolved: bool,
     /// The departure's black was committed as this commit, and has been shown.
     dark: Option<u64>,
     dark_landed: bool,
@@ -170,6 +176,8 @@ pub struct Lock {
     /// The splash's picture off its decode thread, once per output scale.
     splash: Vec<Bitmap>,
     splash_taken: bool,
+    /// When the boot lock's first frame went out.
+    splashed_at: Option<Instant>,
     /// A button asked once, which the next Return on it carries out.
     armed: Option<Button>,
     /// PrepareForShutdown while locked: the lock itself fades to black, 1 at rest.
@@ -216,6 +224,7 @@ impl Lock {
             login: false,
             splash: Vec::new(),
             splash_taken: false,
+            splashed_at: None,
             armed: None,
             depart: Animated::new(1.0, EFFECTS),
             departing: false,
@@ -282,6 +291,9 @@ const CHECK_DEADLINE: Duration = Duration::from_secs(15);
 /// The keyring is unlocked after the lock has lifted, so this only bounds a
 /// thread nobody waits on.
 const KEYRING_DEADLINE: Duration = Duration::from_secs(5);
+/// How long the boot's splash waits for the lock's backdrop before it
+/// dissolves into the dark fallback.
+const BOOT_WAIT: Duration = Duration::from_secs(2);
 
 static SPLASH: Mutex<Option<JoinHandle<Option<Bitmap>>>> = Mutex::new(None);
 
@@ -402,9 +414,20 @@ impl App {
     /// The boot's lock, called before any other surface is made and before
     /// the services start: the session lock and a surface per output, the
     /// rest left to [`Self::start_lock`].
+    ///
+    /// The marker is spent here, not at the unlock: it lives in the user's
+    /// runtime directory, which outlives the compositor that read it, and a
+    /// shell in a later session finding one left by a boot lock nobody
+    /// unlocked would raise a boot lock of its own. A shell restarted under
+    /// this lock takes it back off the held marker instead.
     pub(super) fn raise_login_lock(&mut self) {
-        if !login_marker().exists() {
-            return;
+        match std::fs::remove_file(login_marker()) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
+            Err(err) => {
+                eprintln!("lock: {}: {err}", login_marker().display());
+                return;
+            }
         }
         if let Err(err) = self.acquire_lock() {
             eprintln!("lock: login lock: {err}");
@@ -548,7 +571,7 @@ impl App {
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
             let surface = Surface::on("lock", ls, &self.shm, self.started, &output);
-            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, dark: None, dark_landed: false });
+            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, dissolve: None, dissolved: false, dark: None, dark_landed: false });
         }
     }
 
@@ -857,11 +880,6 @@ impl App {
         self.lock.armed = None;
         if std::mem::take(&mut self.lock.login) {
             self.lock.splash.clear();
-            if let Err(err) = std::fs::remove_file(login_marker())
-                && err.kind() != std::io::ErrorKind::NotFound
-            {
-                eprintln!("lock: {}: {err}", login_marker().display());
-            }
         }
         if let (Some(handle), Some(t)) = (&self.handle, self.lock.clock.take()) {
             handle.remove(t);
@@ -1121,12 +1139,24 @@ impl App {
             let k = o.surface.scale();
             let picture = self.lock.splash.first().map(|b| b.clone().at(k));
             o.view.draw_splash(picture.as_ref());
+            let commits = o.surface.commits();
             o.surface.present(&mut o.view.scene, true, &qh);
-            o.splashed = true;
+            // A callback still out holds the frame: the splash goes with
+            // the next one.
+            o.splashed = o.surface.commits() > commits;
             first |= o.surface.commits() == 1;
         }
         if first {
             crate::phase("login lock first commit");
+        }
+        if self.lock.splashed_at.is_none() && self.lock.outs.iter().any(|o| o.splashed) {
+            self.lock.splashed_at = Some(Instant::now());
+            if let Some(handle) = &self.handle {
+                let _ = handle.insert_source(Timer::from_duration(BOOT_WAIT), |_, _, app: &mut App| {
+                    app.lock.dirty = true;
+                    TimeoutAction::Drop
+                });
+            }
         }
         self.lock.dirty = true;
     }
@@ -1164,9 +1194,14 @@ impl App {
         self.lock_shards();
         let now = Instant::now();
         let theme = &self.store.theme.theme;
+        // The boot's lock enters once the splash has dissolved into its
+        // backdrop, so the card never sits over the splash.
+        let login = self.lock.login;
+        let boot = login && self.lock.outs.iter().any(|o| o.surface.configured && !o.dissolved);
+        let waited = self.lock.splashed_at.is_none_or(|at| now >= at + BOOT_WAIT);
         // The entrance: a fade that must
         // not overshoot and a rise that does, once the first output can draw.
-        if !self.lock.entered && self.lock.outs.iter().any(|o| o.surface.configured) {
+        if !self.lock.entered && !boot && self.lock.outs.iter().any(|o| o.surface.configured) {
             self.lock.entered = true;
             let scale = self.motion_scale;
             self.lock.fade.jump(0.0);
@@ -1180,8 +1215,7 @@ impl App {
         let departing = self.lock.departing || self.lock.depart.running(now);
         let entering = self.lock.fade.running(now) || self.lock.rise.running(now) || self.lock.wake.running(now) || departing;
         let dark = self.lock.departing && !self.lock.depart.running(now);
-        let login = self.lock.login;
-        let has_wallpaper = !self.store.desktop().is_empty() || login;
+        let has_wallpaper = !self.store.desktop().is_empty();
         let shared = Shared {
             now: Local::now(),
             name: crate::greeter::users::own_name(),
@@ -1191,13 +1225,12 @@ impl App {
             backdrop: None,
             foreground: None,
             shards: None,
-            picture: self.store.wallpaper.latest().filter(|p| !login && has_wallpaper && p.path == self.store.desktop()),
+            picture: self.store.wallpaper.latest().filter(|p| has_wallpaper && p.path == self.store.desktop()),
             avatar: None,
             media: None,
             enter: (self.lock.fade.value(now).clamp(0.0, 1.0) as f32, self.lock.rise.value(now)),
             blanked,
             wake: (self.lock.wake.value(now) * self.lock.depart.value(now)).clamp(0.0, 1.0) as f32,
-            boot: None,
             buttons: Buttons::default(),
         };
         let active = self.lock_media();
@@ -1205,11 +1238,6 @@ impl App {
         let arts = self.lock.art.as_ref().filter(|(u, _)| active.as_ref().is_some_and(|a| a.art_url == *u)).map(|(_, b)| b.as_slice());
         let media = self.lock_media_stops();
         let shown = self.lock_buttons();
-        for k in self.lock.outs.iter().map(|o| o.surface.scale()).collect::<Vec<_>>() {
-            if let Some(b) = self.lock.splash.first().filter(|_| !self.lock.splash.iter().any(|b| f64::from(b.density) == k)).cloned() {
-                self.lock.splash.push(b.at(k));
-            }
-        }
         let mut shared = Shared {
             media: active.as_ref().map(|a| NowPlaying {
                 title: &a.title,
@@ -1228,6 +1256,7 @@ impl App {
         let qh = self.qh.clone();
         let saver = &mut self.saver;
         let going = self.lock.departing;
+        let boot_ms = if theme.motion_enabled { dissolve::BOOT_MS * self.motion_scale } else { 0.0 };
         for o in &mut self.lock.outs {
             if !o.surface.configured {
                 continue;
@@ -1241,9 +1270,35 @@ impl App {
             shared.foreground = pair.and_then(|(_, f)| f.as_ref());
             shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
-            if login {
-                shared.boot = Some(Boot { splash: self.lock.splash.iter().find(|b| f64::from(b.density) == k) });
-                (shared.backdrop, shared.foreground, shared.shards) = (None, None, None);
+            if login && !o.dissolved {
+                // The splash stays as it went out until the backdrop is
+                // made, or BOOT_WAIT has gone and the dark fallback is it.
+                // The store is empty until state.json is read, after the
+                // boot lock went up: no wallpaper before then is not none.
+                if o.dissolve.is_none() && (shared.backdrop.is_some() || (self.store.state.loaded && !has_wallpaper) || waited)
+                    && let Some(from) = o.surface.canvas_pixmap()
+                {
+                    // A scale the compositor sent after the splash went out:
+                    // the splash is drawn again at it before it dissolves.
+                    if (i32::from(from.width()), i32::from(from.height())) != device {
+                        o.splashed = false;
+                        self.lock.dirty = true;
+                        continue;
+                    }
+                    let _raster = crate::scene::raster_at(k);
+                    let to = dissolve::picture(&view::backdrop_scene(&shared, theme, (size.w, size.h)), k);
+                    o.dissolve = Some(Dissolve::new(from, Some(to), boot_ms, now));
+                }
+                if let Some(d) = &o.dissolve {
+                    let (done, commits) = (d.done(now), o.surface.commits());
+                    let drawn = o.surface.present_pixels(size, |buf, px| d.draw(now, buf, px), &qh);
+                    if !drawn || (done && o.surface.commits() > commits) {
+                        (o.dissolve, o.dissolved) = (None, true);
+                        o.view.scene.touch(size);
+                        self.lock.dirty = true;
+                    }
+                }
+                continue;
             }
             if let Some(m) = &mut shared.media {
                 m.art = arts.and_then(|a| crate::scene::nearest(a, k));
@@ -1442,6 +1497,12 @@ impl SessionLockHandler for App {
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: SessionLockSurface, configure: SessionLockSurfaceConfigure, _: u32) {
         let (w, h) = (configure.new_size.0 as i32, configure.new_size.1 as i32);
         let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface.wl_surface()) else { return };
+        // A boot lock's output taking its mode after the first frame (a
+        // nested output does) shows the splash again at the new size, and
+        // the dissolve starts over from it.
+        if self.lock.login && !o.dissolved && o.splashed && (o.view.scene.size.w, o.view.scene.size.h) != (w, h) {
+            (o.splashed, o.dissolve) = (false, None);
+        }
         o.view.resize(w, h);
         o.surface.configure(w, h);
         let output = o.output.clone();

@@ -775,7 +775,49 @@ impl<R: Role> Surface<R> {
         if !self.draw(scene) {
             return;
         }
-        let mut damage = std::mem::take(&mut self.raster);
+        let damage = std::mem::take(&mut self.raster);
+        self.commit_frame(damage, scene.size, request, qh);
+    }
+
+    /// The CPU canvas as it stands: what the last frame drew.
+    pub fn canvas_pixmap(&self) -> Option<vello_cpu::Pixmap> {
+        (!self.renderer.is_gpu()).then(|| self.renderer.canvas().clone())
+    }
+
+    /// A whole frame written straight into the CPU canvas by `fill` (its
+    /// bytes and size in device pixels) rather than drawn from a scene,
+    /// then committed with a callback asked for. Skipped while a callback
+    /// is outstanding; false when `fill` refused the canvas. The scene
+    /// drawn next has to be touched whole, since the canvas no longer
+    /// holds what it last drew.
+    pub fn present_pixels<D>(&mut self, size: IRect, fill: impl FnOnce(&mut [u8], (i32, i32)) -> bool, qh: &QueueHandle<D>) -> bool
+    where
+        D: Dispatch<WlCallback, FrameCallbackData> + Dispatch<WpFractionalScaleV1, Preferred> + Dispatch<WpViewport, Inert> + 'static,
+    {
+        self.scaler.follow(self.layer.role_surface(), qh);
+        if self.frame_pending || !self.configured || self.renderer.is_gpu() {
+            return true;
+        }
+        if (self.renderer.width() as i32, self.renderer.height() as i32) != (size.w, size.h) {
+            return false;
+        }
+        let t0 = Instant::now();
+        let pixels = self.renderer.pixels();
+        if !fill(self.renderer.canvas_bytes_mut(), pixels) {
+            return false;
+        }
+        (self.react_us, self.render_us, self.slices) = (self.landed_at.take().map_or(0, |at| at.elapsed().as_micros()), t0.elapsed().as_micros(), 1);
+        self.left.clear();
+        self.raster.clear();
+        self.commit_frame(vec![size], size, true, qh);
+        true
+    }
+
+    /// The canvas's `damage` copied into a buffer and committed.
+    fn commit_frame<D>(&mut self, mut damage: Vec<IRect>, size: IRect, request: bool, qh: &QueueHandle<D>)
+    where
+        D: Dispatch<WlCallback, FrameCallbackData> + Dispatch<WpFractionalScaleV1, Preferred> + Dispatch<WpViewport, Inert> + 'static,
+    {
         let (react_us, render_us) = (self.react_us, self.render_us);
         if std::mem::take(&mut self.refade) {
             damage.extend(self.drawn);
@@ -783,7 +825,6 @@ impl<R: Role> Surface<R> {
         self.drawn = damage.iter().fold(self.drawn, |u, r| Some(u.map_or(*r, |u| u.union(r))));
 
         let t1 = Instant::now();
-        let size = scene.size;
         let (pw, ph) = self.renderer.pixels();
         let at = if self.renderer.is_gpu() { self.fill_dmabuf(&damage, size) } else { Some(self.fill_shm(&damage, size)) };
         let Some(at) = at else {

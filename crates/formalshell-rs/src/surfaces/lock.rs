@@ -52,15 +52,7 @@ pub struct Shared<'a> {
     /// The blank and wake crossfade: 0 is
     /// black, 1 the whole screen.
     pub wake: f32,
-    /// The boot's lock, raised over the splash's last picture: that picture
-    /// on black in place of the wallpaper.
-    pub boot: Option<Boot<'a>>,
     pub buttons: Buttons,
-}
-
-pub struct Boot<'a> {
-    /// At the output's scale, so it lands 1:1 on its pixels; none is black.
-    pub splash: Option<&'a Bitmap>,
 }
 
 /// The buttons under the field, in order.
@@ -299,32 +291,7 @@ impl View {
         // in a dark room on every blank and wake.
         let black = Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
         p.rect(full, black, 0.0);
-        if let Some(boot) = &s.boot {
-            if let Some(b) = boot.splash {
-                p.image(b, splash_at(b, (w, h)), s.wake);
-            }
-        } else {
-            match s.backdrop {
-                Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), s.wake),
-                // The desktop's picture made at the output's own scale.
-                Some(b) if fills(b, (w, h)) => {
-                    p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
-                }
-                // The wallpaper still decoding: dark, never the theme's background.
-                None if s.has_wallpaper => {}
-                _ => {
-                    let bg = theme.colors.get("background");
-                    p.rect(full, bg.with_alpha(bg.a * s.wake), 0.0);
-                    if s.has_wallpaper {
-                        p.rect(full, black.with_alpha(SCRIM as f32), 0.0);
-                    }
-                }
-            }
-            if let Some(b) = s.shards {
-                p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
-            }
-            login::paint_grid(&mut p, theme, (w, h), s.wake);
-        }
+        paint_backdrop(&mut p, s, theme, (w, h));
         login::paint(&mut p, card_rect, theme, fade);
         let clock_rect = card.paint_clock(&mut p, &clock, inner, theme, kit, fade);
         let front = s.foreground.and_then(|fg| over_clock(&mut self.over_clock, fg, clock_rect, card_rect, theme, (w, h)));
@@ -371,6 +338,43 @@ impl View {
         p.finish();
         self.ui.hide(&mut self.scene);
     }
+}
+
+/// The lock under its card, as it stands with nothing over it: what the
+/// boot's splash dissolves into.
+pub fn backdrop_scene(s: &Shared, theme: &Theme, (w, h): (i32, i32)) -> Scene {
+    let mut scene = Scene::new(w, h);
+    let mut nodes = Vec::new();
+    let mut p = Painter::new(&mut scene, &mut nodes, None);
+    p.rect(IRect::new(0, 0, w, h), Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+    paint_backdrop(&mut p, s, theme, (w, h));
+    p.finish();
+    scene
+}
+
+/// The wallpaper, the sculpture and the grid over the black under them.
+fn paint_backdrop(p: &mut Painter, s: &Shared, theme: &Theme, (w, h): (i32, i32)) {
+    let full = IRect::new(0, 0, w, h);
+    match s.backdrop {
+        Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), s.wake),
+        // The desktop's picture made at the output's own scale.
+        Some(b) if fills(b, (w, h)) => {
+            p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+        }
+        // The wallpaper still decoding: dark, never the theme's background.
+        None if s.has_wallpaper => {}
+        _ => {
+            let bg = theme.colors.get("background");
+            p.rect(full, bg.with_alpha(bg.a * s.wake), 0.0);
+            if s.has_wallpaper {
+                p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: SCRIM as f32 }, 0.0);
+            }
+        }
+    }
+    if let Some(b) = s.shards {
+        p.shape(full, Paint::Picture { image: b.clone(), alpha: s.wake, radius: 0.0 });
+    }
+    login::paint_grid(p, theme, (w, h), s.wake);
 }
 
 /// Centred on its own pixels, as sway's `bg <png> center` puts the splash's
@@ -692,7 +696,6 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: true,
                 wake,
-                boot: None,
                 buttons: Buttons::default(),
             };
             let mut view = View::new(w, h);
@@ -728,7 +731,6 @@ mod tests {
             enter: (1.0, 0.0),
             blanked: false,
             wake: 1.0,
-            boot: None,
             buttons: Buttons::default(),
         };
         let mut view = View::new(w, h);
@@ -780,7 +782,6 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: true,
                 wake,
-                boot: None,
                 buttons: Buttons::default(),
             };
             let mut view = View::new(w, h);
@@ -822,7 +823,6 @@ mod tests {
                 enter: (1.0, 0.0),
                 blanked: false,
                 wake: 1.0,
-                boot: None,
                 buttons: Buttons::default(),
             };
             let mut view = View::new(900, 700);

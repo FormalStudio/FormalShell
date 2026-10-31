@@ -184,8 +184,13 @@ pipewire, PAM or Wayland to link.
   The guests autologin at boot (greetd's `initial_session`,
   `docs/superpowers/specs/2026-10-30-locked-login.md`), so `just greeter`'s
   greetd restart is what brings the greeter up.
-  The guest's installed package, not the tree's build. ~4 min, the guest
-  saved again at the end.
+  The boot leg also has to carry frames part way through both pixel
+  dissolves (the splash into the lock, the lock into the desktop), read by
+  `dev/seams-check.py` as runs of frames standing in square cells of two
+  colours. The guest's installed package, or with `FS_SEAMS_TREE=1` the
+  tree's build linked over it on the guest's disk for the film and the
+  package's links put back after. ~4 min, the guest saved again at the end
+  at the greeter, with no boot lock's marker left in `/run`.
 - `crates/formalshell-rs/tests/ipc-golden.jsonl` is the recorded IPC
   contract, kept fixed: argument parsing, argument errors and output
   strings, replayed through `formalshell-ipc`'s parser and the registry by
@@ -815,15 +820,18 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `login_lock.sh` `--login-lock`: the boot's lock
   (`docs/superpowers/specs/2026-10-30-locked-login.md`) raised by the shell
   itself off a `login-lock` marker written before it starts, naming a flat
-  pink picture, with no `lock lock` anywhere and the shell at a hundredth
+  pink picture, with no `lock lock` anywhere and the shell at a tenth
   of its speed (`FORMALSHELL_SMOKE_MOTION_SCALE`). The lock's first commit
   ahead of any bar or wallpaper commit off the shell's log, `lock status`
   locked, secure and `boot` before anything asks; the first frame the
-  picture alone at 1:1 in the output's centre, a later one the card over
-  it; real Tabs reaching Shutdown, Reboot and Other user (`buttonCursor`),
+  picture alone at 1:1 in the output's centre; a burst through the pixel
+  dissolve (`surfaces/dissolve.rs`) with one frame of 32 px cells of both
+  the splash and the lock (`dev/dissolve-cells.py`), no frame carrying the
+  splash's pink and the card's avatar green together, the card first seen
+  after the pink is gone, and `dissolve frame` logged; real Tabs reaching Shutdown, Reboot and Other user (`buttonCursor`),
   Return arming Other user, a confirmed Reboot the nested rig's empty
   system bus refuses saying so under the field, and the real password
-  unlocking with `boot` false and the marker gone.
+  unlocking with `boot` false, the marker spent once the lock is up.
 - `logind_lock.sh` `--logind-lock`: logind's Lock signal on the VM rig's
   real logind, the shell started with `XDG_SESSION_ID` emptied the way uwsm
   starts it, so it finds its session through logind's `auto`: `loginctl
@@ -1402,11 +1410,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   four real clicks (open, desktop, reopen, the time card's calendar) start
   on that button.
 - `unlock.sh` `--unlock`: the lock handing over to the desktop
-  (`wayland/veil.rs`): over a flat grey wallpaper the real password typed
-  at a tenth speed and the unlock photographed back to back, each frame's
-  mean grey read against the locked and unlocked frames: none outside
-  them (no flash), never turning back, at least one part way between (a
-  fade, where a cut has none), and the last ones the desktop.
+  (`wayland/veil.rs`), its last picture dissolving into clear
+  (`surfaces/dissolve.rs`): over a flat grey wallpaper the real password
+  typed at a tenth speed and the unlock photographed back to back, each
+  frame's mean grey read against the locked and unlocked frames: none
+  outside them (no flash), never turning back, at least one part way
+  between (where a cut has none), the last ones the desktop, and one frame
+  of 32 px cells of both the lock and the desktop
+  (`dev/dissolve-cells.py`).
 - `visualizer.sh` `--visualizer`: the `cava` child owned and killed with
   playback, proven by pgrep rather than by the frame.
 - `visualizer_styles.sh` `--visualizer-styles`: pink noise through a real

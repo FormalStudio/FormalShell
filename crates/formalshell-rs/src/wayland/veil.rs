@@ -11,7 +11,7 @@
 //!
 //! An unlock hands the lock's last picture to a veil per output, committed
 //! while the session is still locked, so the compositor's first unlocked
-//! frame is that picture over the desktop; it then fades off it.
+//! frame is that picture over the desktop; it then dissolves off it.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -25,10 +25,10 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 
 use super::App;
-use crate::motion::Kind as Clock;
 use crate::scene::Scene;
 use crate::services::compositor::{self, Command};
 use crate::surface::{PixelSurface, Surface};
+use crate::surfaces::dissolve;
 use crate::surfaces::veil::Veil;
 
 /// The lift once the desktop is in, and how long it waits for the bar and
@@ -255,13 +255,13 @@ impl App {
     }
 
     /// The session is unlocked: a picture never committed is dropped
-    /// rather than shown late over the desktop, and the rest fade off it.
+    /// rather than shown late over the desktop, and the rest dissolve off it.
     pub(super) fn lift_handover(&mut self) {
         self.veil.handover.retain(|(_, v)| v.surface.commits() > 0);
-        let ms = Clock::Effects.ms(&self.store.theme.theme) * self.motion_scale;
+        let ms = if self.store.theme.theme.motion_enabled { dissolve::UNLOCK_MS * self.motion_scale } else { 0.0 };
         let now = Instant::now();
         for (_, v) in &mut self.veil.handover {
-            v.fade(0.0, ms, now);
+            v.dissolve(ms, now);
         }
     }
 

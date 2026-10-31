@@ -14,6 +14,10 @@ picture) and <dir>/report.txt, and exits non-zero on a failure:
          100 ms (the locked login, 2026-10-30-locked-login.md); the
          firmware's (before the first splash, or next to a firmware frame)
          and the leg's tail excepted
+  cells  the boot leg carries frames part way through both of the shell's
+         pixel dissolves (2026-10-30-locked-login.md, "The pixel dissolve"):
+         two runs of frames whose picture stands in square cells of two
+         colours, the splash into the lock and the lock into the desktop
 
 Frame n is n x 100 ms, or n x <leg>/every-ms where dev/seams.sh filmed a
 leg faster. Needs Pillow and tesseract.
@@ -24,7 +28,7 @@ import re
 import subprocess
 import sys
 
-from PIL import Image, ImageDraw, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageStat
 
 LEGS = ["boot", "logout", "reboot", "shutdown"]
 # A frame is black when nothing on it is brighter than this (the splash averages under 1).
@@ -73,6 +77,49 @@ def read_leg(root, leg):
         rows.append({"n": int(f[:-4]), "file": f, "mean": mean, "black": black, "key": key, "changed": key != last, "text": texts[key]})
         last = key
     return rows
+
+
+def cells(path):
+    """Whether the frame stands in square cells of more than one picture:
+    two flat colours each over 5% of it, one not black, and its edges on a
+    few columns and rows, as a grid of cells puts them. The guest's output
+    reaches the screendump scaled, so the cells are not on the frame's own
+    32 px grid. A photograph, a blurred wallpaper and a card with text on it
+    have edges everywhere or no second flat colour."""
+    im = Image.open(path).convert("RGB")
+    w, h = im.size
+    colours = im.getcolors(1 << 16) or []
+    big = [c for n, c in colours if n * 20 >= w * h]
+    if len(big) < 2 or not any(max(c) > 0 for c in big):
+        return False
+    g = im.convert("L")
+
+    def lined(diff, n, length, along):
+        edges = diff.point(lambda v: 255 if v > 3 else 0).resize(along, Image.BOX)
+        counts = sorted((v * length / 255 for v in edges.get_flattened_data()), reverse=True)
+        total = sum(counts)
+        # A boundary scaled by the guest's output spreads over two lines.
+        return total >= length and sum(counts[: 2 * (n // 28)]) >= total * 0.8
+
+    dx = ImageChops.difference(g.crop((0, 0, w - 1, h)), g.crop((1, 0, w, h)))
+    dy = ImageChops.difference(g.crop((0, 0, w, h - 1)), g.crop((0, 1, w, h)))
+    return lined(dx, w, h, (w - 1, 1)) and lined(dy, h, w, (1, h - 1))
+
+
+def dissolves(root, leg, rows):
+    """Runs of frames standing in cells: (first, last, frames)."""
+    d = os.path.join(root, leg, "frames")
+    runs, run = [], []
+    for r in rows:
+        hit = cells(os.path.join(d, r["file"])) if r["changed"] else bool(run)
+        if hit:
+            run.append(r["n"])
+        elif run:
+            runs.append((run[0], run[-1], len(run)))
+            run = []
+    if run:
+        runs.append((run[0], run[-1], len(run)))
+    return runs
 
 
 def judge(leg, rows, every):
@@ -136,6 +183,13 @@ def main():
             continue
         every = every_ms(root, leg)
         lines, bad = judge(leg, rows, every)
+        if leg == "boot":
+            runs = dissolves(root, leg, rows)
+            for first, last, n in runs:
+                lines.append(f"  cells {first:05d} to {last:05d} ({n} frames, {n * every} ms)")
+            if len(runs) < 2:
+                lines.append(f"FAIL cells: {len(runs)} runs of cell frames, where the splash's and the unlock's dissolves make two")
+                bad = True
         failed |= bad
         report.append(f"{leg}: {len(rows)} frames, {sum(r['changed'] for r in rows)} changes, {'FAIL' if bad else 'ok'}, {sheet(root, leg, rows, every)}")
         report += lines

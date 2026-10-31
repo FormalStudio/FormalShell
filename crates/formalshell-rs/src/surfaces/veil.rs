@@ -1,7 +1,8 @@
 //! Black over a whole output, faded in or out by its surface's opacity:
 //! the greeter's way out to the session, and the shell's arrival from black
 //! and departure into it (docs/superpowers/specs/2026-10-30-seams.md). On
-//! unlock it carries the lock's last picture instead of black. The
+//! unlock it carries the lock's last picture instead of black, and leaves
+//! by the pixel dissolve rather than a fade (`surfaces/dissolve.rs`). The
 //! caller makes the layer surface (Overlay, every edge anchored, an empty
 //! input region) and routes its configure and frame callbacks here. The
 //! shell's is a [`PixelSurface`], so a fade step is one multiplier; the
@@ -18,6 +19,7 @@ use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_vie
 use smithay_client_toolkit::shell::wlr_layer::LayerSurface;
 
 use crate::scene::{IRect, NodeId, Scene};
+use crate::surfaces::dissolve::Dissolve;
 use crate::surface::{Inert, PixelSurface, Preferred, Surface};
 use crate::surfaces::bar::cell::Painter;
 use crate::wayland::App;
@@ -42,12 +44,14 @@ pub struct Veil<S = Surface<LayerSurface>> {
     shown_end: bool,
     /// The scene is a picture handed over whole, drawn as it stands.
     held: bool,
+    /// The picture going clear cell by cell, in place of the fade out.
+    dissolve: Option<Dissolve>,
 }
 
 impl<S> Veil<S> {
     /// A veil standing at `opacity` until the first `fade`.
     pub fn new(surface: S, opacity: f32, now: Instant) -> Self {
-        Self { surface, scene: Scene::new(1, 1), nodes: Vec::new(), fade: Fade { at: now, from: opacity, to: opacity, ms: 0.0 }, committed_end: false, shown_end: false, held: false }
+        Self { surface, scene: Scene::new(1, 1), nodes: Vec::new(), fade: Fade { at: now, from: opacity, to: opacity, ms: 0.0 }, committed_end: false, shown_end: false, held: false, dissolve: None }
     }
 
     /// An opaque veil drawing `scene` rather than black.
@@ -126,6 +130,14 @@ impl Veil {
         self.held && self.surface.commits() > 0 && (self.scene.size.w, self.scene.size.h) != (width.max(1), height.max(1))
     }
 
+    /// A committed picture dissolves into clear over `ms`; anything else
+    /// fades out.
+    pub fn dissolve(&mut self, ms: f64, now: Instant) {
+        let from = self.surface.canvas_pixmap().filter(|_| self.held && self.surface.commits() > 0 && ms > 0.0);
+        self.dissolve = from.map(|from| Dissolve::new(from, None, ms, now));
+        self.fade(0.0, ms, now);
+    }
+
     pub fn configure(&mut self, width: i32, height: i32) {
         let (w, h) = (width.max(1), height.max(1));
         if self.held {
@@ -161,6 +173,13 @@ impl Veil {
         if self.fade.to == 0.0 && self.done(now) {
             self.shown_end = true;
             return false;
+        }
+        if let Some(d) = &self.dissolve {
+            let size = self.scene.size;
+            if !self.surface.present_pixels(size, |buf, px| d.draw(now, buf, px), qh) {
+                self.dissolve = None;
+            }
+            return true;
         }
         self.surface.set_opacity(self.opacity(now));
         let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending);

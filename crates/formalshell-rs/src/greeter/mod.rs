@@ -800,7 +800,6 @@ fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
             enter: (1.0, 0.0),
             blanked: false,
             wake: 1.0,
-            boot: None,
             buttons: lock::Buttons { shown: vec![lock::Button::PowerOff, lock::Button::Reboot], cursor: -1, armed: None },
         };
         view.draw(&shared, &theme, &mut kit, Instant::now());

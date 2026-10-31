@@ -3,19 +3,22 @@
 # --unlock proves the lock hands over to the desktop (wayland/veil.rs's
 # hand-over, docs/superpowers/specs/2026-10-30-seams.md stage 10): each
 # output's last lock picture committed on a veil while the session is still
-# locked, then faded off the desktop on the effects curve, so no frame of
-# the unlock is a cut or a flash.
+# locked, then dissolved off the desktop in pixel cells
+# (surfaces/dissolve.rs), so no frame of the unlock is a cut or a flash.
 #
 # A flat grey wallpaper puts a wide luminance gap between the scrimmed lock
 # and the bare desktop. The real password is typed at a tenth of the
 # shell's speed (`debug motionScale`) and the unlock photographed back to
 # back, each frame's mean grey read against the locked and the unlocked
 # ends: no frame outside them (a flash to black, or to anything else), the
-# means never turning back, at least one frame part way between (the fade,
-# where a cut has none), and the last ones on the desktop.
+# means never turning back, at least one frame part way between (where a
+# cut has none), and the last ones on the desktop. One frame from the
+# dissolve's middle third is read on its 32 px grid (dev/dissolve-cells.py):
+# nearly every cell one colour, some carrying the locked frame's pixel at
+# their centre and some the desktop's.
 leg_unlock_flag="--unlock"
 leg_unlock_order=111
-leg_unlock_needs="wtype convert"
+leg_unlock_needs="wtype convert python3"
 
 unlock_wallpaper="$shot_dir/unlock-grey.png"
 unlock_locked_path="$shot_dir/unlock-locked.png"
@@ -23,7 +26,7 @@ unlock_unlocked_path="$shot_dir/unlock-unlocked.png"
 unlock_scale_path="$shot_dir/unlock-scale.txt"
 unlock_islocked_path="$shot_dir/unlock-islocked.txt"
 unlock_stamp_path="$shot_dir/unlock-stamps.txt"
-unlock_frames=30
+unlock_frames=60
 unlock_frame_gap=0.05
 unlock_scale=1000
 
@@ -69,6 +72,17 @@ call lock isLocked > "$unlock_islocked_path" 2>&1
 call debug motionScale 100 > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
+}
+
+# dev/dissolve-cells.py's line: at least 90% of the 32 px cells one
+# colour, and at least 20 cells of each picture among them.
+unlock_mixed() {
+  local cells uniform from to
+  cells=$(sed -n 's/.*cells=\([0-9]*\).*/\1/p' <<< "$1")
+  uniform=$(sed -n 's/.*uniform=\([0-9]*\).*/\1/p' <<< "$1")
+  from=$(sed -n 's/.*from=\([0-9]*\).*/\1/p' <<< "$1")
+  to=$(sed -n 's/.* to=\([0-9]*\).*/\1/p' <<< "$1")
+  [ "${cells:-0}" -gt 0 ] && [ "$((uniform * 10))" -ge "$((cells * 9))" ] && [ "${from:-0}" -ge 20 ] && [ "${to:-0}" -ge 20 ]
 }
 
 # A frame's mean grey, 0 to 1000.
@@ -123,7 +137,18 @@ leg_unlock_assert() {
   echo "unlock: frame means ${means[*]}"
   [ "$outside" -eq 0 ] || fail "$outside unlock frames fall outside the locked and unlocked means ($lo to $hi): a flash"
   [ "$back" -eq 0 ] || fail "the unlock's means turn back $back times: not one fade"
-  [ "$between" -ge 1 ] || fail "no unlock frame lies part way between the locked and unlocked means: a cut, not a fade"
+  [ "$between" -ge 1 ] || fail "no unlock frame lies part way between the locked and unlocked means: a cut"
+  local cells mixed=""
+  for i in $(seq 1 $unlock_frames); do
+    cells=$("$python3_bin" "$script_dir/dissolve-cells.py" "$convert_bin" "$shot_dir/unlock-$i.png" "$unlock_locked_path" "$unlock_unlocked_path")
+    if unlock_mixed "$cells"; then
+      echo "unlock: frame $i mid-dissolve, $cells"
+      echo "SMOKE_UNLOCK_MID $shot_dir/unlock-$i.png"
+      mixed=$i
+      break
+    fi
+  done
+  [ -n "$mixed" ] || fail "no unlock frame shows 32 px cells of both the lock and the desktop: not the pixel dissolve"
   m=${means[$((unlock_frames - 1))]}
   if [ "$m" -lt $((unlocked - tol)) ] || [ "$m" -gt $((unlocked + tol)) ]; then
     fail "the last unlock frame ($m) is not the desktop ($unlocked)"

@@ -3,21 +3,26 @@
 # --login-lock: the boot's lock (docs/superpowers/specs/2026-10-30-locked-login.md)
 # raised by the shell itself at start, with no `lock lock` anywhere. The
 # login marker is written before the shell starts, naming a flat-coloured
-# picture smaller than the output, and the shell runs at a hundredth of its
+# picture smaller than the output, and the shell runs at a tenth of its
 # speed (FORMALSHELL_SMOKE_MOTION_SCALE, since the first frames come before
-# any IPC call can reach it), so the card's fade is long enough to catch.
+# any IPC call can reach it), so the splash's dissolve into the backdrop
+# (surfaces/dissolve.rs, 11s here) is long enough to photograph.
 #
 # An early script, started beside the shell rather than after the arrival
 # like a drive, polls `lock status` until the lock is secure and grabs the
 # first frame: the picture at 1:1 in the output's centre on black, no card.
-# The drive then waits out the fade for the card over the picture, Tabs
+# The drive then grabs a burst through the dissolve: one frame from its
+# middle third read on its 32 px grid (dev/dissolve-cells.py) carrying
+# cells of the splash and of the lock, and no frame still showing the
+# splash's colour carrying any of the card's (the avatar fixture's green).
+# Once the card has entered, the splash's colour is gone. It then Tabs
 # onto the buttons (`buttonCursor`, `armed`), arms Other user, confirms a
 # Reboot logind refuses (the nested run's system bus is a private, empty
 # one, checked before the confirm is typed), and types the real password:
-# unlocked, and the marker gone.
+# unlocked, the marker spent as the lock went up.
 leg_login_lock_flag="--login-lock"
 leg_login_lock_order=113
-leg_login_lock_needs="wtype convert"
+leg_login_lock_needs="wtype convert python3"
 
 login_lock_marker="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell/login-lock"
 login_lock_picture="$shot_dir/login-lock-splash.png"
@@ -34,6 +39,8 @@ login_lock_refused_json="$shot_dir/login-lock-refused.json"
 login_lock_after_json="$shot_dir/login-lock-after.json"
 login_lock_marker_after="$shot_dir/login-lock-marker-after.txt"
 login_lock_early_done="$shot_dir/login-lock-early.done"
+login_lock_avatar='#1FB86A'
+login_lock_frames=50
 
 leg_login_lock_validate() {
   # The lock covers the session from its first frame: no other leg's drive
@@ -52,8 +59,8 @@ leg_login_lock_fixture() {
   mkdir -p "$(dirname "$login_lock_marker")"
   printf '%s\n' "$login_lock_picture" > "$login_lock_marker"
   add_cleanup "rm -f '$login_lock_marker'"
-  $convert_bin -size 256x256 xc:'#1FB86A' "png:$iso_home/.face"
-  shell_env="${shell_env:+$shell_env }FORMALSHELL_SMOKE_MOTION_SCALE=10000"
+  $convert_bin -size 256x256 xc:"$login_lock_avatar" "png:$iso_home/.face"
+  shell_env="${shell_env:+$shell_env }FORMALSHELL_SMOKE_MOTION_SCALE=1000"
 }
 
 leg_login_lock_timing() {
@@ -81,6 +88,7 @@ done
 sleep 0.2
 "$grim_bin" "$login_lock_early_png" > /dev/null 2>&1
 $ipc call lock status > "$login_lock_early_json" 2>&1
+if [ -e "$login_lock_marker" ]; then echo present; else echo gone; fi > "$login_lock_marker_after"
 touch "$login_lock_early_done"
 EOF
   # Beside the shell's own start, not behind the arrival a drive waits on.
@@ -89,8 +97,13 @@ EOF
 #!/usr/bin/env bash
 call() { $ipc call "\$@"; }
 for _ in \$(seq 1 200); do [ -e "$login_lock_early_done" ] && break; sleep 0.1; done
-# The effects clock at a hundredth of its speed is 20s from the first frame.
-sleep 24
+# The dissolve is 11s at a tenth of its speed, from the backdrop or 2s after
+# the first frame, and the card's entrance 2s after it.
+for i in \$(seq 1 $login_lock_frames); do
+  "$grim_bin" "$shot_dir/login-lock-burst-\$i.png" > /dev/null 2>&1
+  sleep 0.15
+done
+sleep 5
 "$grim_bin" "$login_lock_card_png" > /dev/null 2>&1
 call debug motionScale 100 > /dev/null 2>&1
 "$wtype_bin" -s 300 -k Tab
@@ -120,14 +133,25 @@ fi
 "$wtype_bin" -s 300 "formalshell-test" -k Return
 sleep 4
 call lock status > "$login_lock_after_json" 2>&1
-if [ -e "$login_lock_marker" ]; then echo present; else echo gone; fi > "$login_lock_marker_after"
 EOF
   hypr_exec_once "bash $script"
 }
 
-# Pixels of the fixture's colour in a frame.
+# Pixels of the fixture's colour (or the one given) in a frame.
 login_lock_pixels() {
-  $convert_bin "$1" -fuzz 15% -fill black +opaque "$login_lock_colour" -fill white -opaque "$login_lock_colour" -format '%[fx:int(mean*w*h)]' info: 2>/dev/null
+  local colour=${2:-$login_lock_colour}
+  $convert_bin "$1" -fuzz 15% -fill black +opaque "$colour" -fill white -opaque "$colour" -format '%[fx:int(mean*w*h)]' info: 2>/dev/null
+}
+
+# dev/dissolve-cells.py's line: at least 90% of the 32 px cells one
+# colour, and at least 20 cells of each picture among them.
+login_lock_mixed() {
+  local cells uniform from to
+  cells=$(sed -n 's/.*cells=\([0-9]*\).*/\1/p' <<< "$1")
+  uniform=$(sed -n 's/.*uniform=\([0-9]*\).*/\1/p' <<< "$1")
+  from=$(sed -n 's/.*from=\([0-9]*\).*/\1/p' <<< "$1")
+  to=$(sed -n 's/.* to=\([0-9]*\).*/\1/p' <<< "$1")
+  [ "${cells:-0}" -gt 0 ] && [ "$((uniform * 10))" -ge "$((cells * 9))" ] && [ "${from:-0}" -ge 20 ] && [ "${to:-0}" -ge 20 ]
 }
 
 leg_login_lock_assert() {
@@ -175,8 +199,41 @@ leg_login_lock_assert() {
   [ "$box" = "640x360+$(((w - 640) / 2))+$(((h - 360) / 2))" ] \
     || fail "the early frame's picture is not 640x360 centred at 1:1 (box $box)"
   [ "${early:-0}" -ge $((area * 95 / 100)) ] || fail "the early frame does not show the picture whole: a card over it already ($early of $area)"
-  [ "${card:-0}" -le $((area / 2)) ] || fail "the later frame shows no card over the picture ($card of $area)"
-  [ "${card:-0}" -ge 1 ] || fail "the later frame lost the picture under the card"
+  [ "${card:-0}" -le $((area / 100)) ] || fail "the card's frame still shows the splash ($card of $area): it never dissolved"
+  local green
+  green=$(login_lock_pixels "$login_lock_card_png" "$login_lock_avatar")
+  [ "${green:-0}" -ge 1000 ] || fail "the card's frame shows no avatar: no card entered after the dissolve ($green)"
+
+  echo "-- dissolve --"
+  local frames max i pink cells mixed="" over=0 last_pink=0 first_card=0
+  frames=$(grep -c '^dissolve frame ' "$shell_log_path")
+  max=$(grep '^dissolve frame ' "$shell_log_path" | awk '{ if ($3 > m) m = $3 } END { print m + 0 }')
+  echo "login lock: $frames dissolve frames, the slowest ${max}ms"
+  [ "${frames:-0}" -ge 10 ] || fail "the shell logged $frames dissolve frames: the splash did not dissolve"
+  for i in $(seq 1 $login_lock_frames); do
+    f="$shot_dir/login-lock-burst-$i.png"
+    [ -f "$f" ] || fail "no screenshot at $f"
+    pink=$(login_lock_pixels "$f")
+    green=$(login_lock_pixels "$f" "$login_lock_avatar")
+    [ "${pink:-0}" -gt $((area / 100)) ] && last_pink=$i
+    [ "${green:-0}" -gt 0 ] && [ "$first_card" -eq 0 ] && first_card=$i
+    if [ "${pink:-0}" -gt $((area / 100)) ] && [ "${green:-0}" -gt 0 ]; then
+      over=$((over + 1))
+      echo "login lock: frame $i carries the splash ($pink) and the card ($green)"
+    fi
+    if [ -z "$mixed" ]; then
+      cells=$("$python3_bin" "$script_dir/dissolve-cells.py" "$convert_bin" "$f" "$login_lock_early_png" "$login_lock_card_png")
+      if login_lock_mixed "$cells"; then
+        mixed=$i
+        echo "login lock: frame $i mid-dissolve, $cells"
+        echo "SMOKE_LOGIN_LOCK_MID $f"
+      fi
+    fi
+  done
+  echo "login lock: the splash last seen in frame $last_pink, the card first in frame $first_card of $login_lock_frames"
+  [ "$over" -eq 0 ] || fail "$over frames show the card over the splash"
+  [ -n "$mixed" ] || fail "no frame shows 32 px cells of both the splash and the lock: not the pixel dissolve"
+  [ "$first_card" -eq 0 ] || [ "$first_card" -gt "$last_pink" ] || fail "the card entered before the splash was gone"
 
   cat "$login_lock_tab_json"; echo
   grep -q '"buttonCursor":"poweroff"' "$login_lock_tab_json" || fail "Tab did not reach the Shutdown button. Got: $(cat "$login_lock_tab_json")"
@@ -194,5 +251,5 @@ leg_login_lock_assert() {
   cat "$login_lock_after_json"; echo
   grep -q '"locked":false' "$login_lock_after_json" || fail "the real password did not unlock the login lock. Got: $(cat "$login_lock_after_json")"
   grep -q '"boot":false' "$login_lock_after_json" || fail "the boot lock outlived its unlock"
-  grep -q '^gone$' "$login_lock_marker_after" || fail "the login marker is still there after the unlock"
+  grep -q '^gone$' "$login_lock_marker_after" || fail "the login marker was still there once the boot lock was up"
 }
