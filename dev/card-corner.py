@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """A dark card's rim read off a frame at its own pixels.
 
-usage: card-corner.py <png> <x> <y> [name]
+usage: card-corner.py <png> <name> <x> <y>
+       card-corner.py <png> <name> --over <frame without the card>
 
-(x, y) is a pixel inside the card's fill, left of its right edge and below
-its top edge, over a light flat wallpaper. From there the top edge is found
-straight up and the right edge straight across, and each is read along its
-normal: the border has to be one pixel at full depth with the wallpaper
-side of it clearly lighter (a line on a part pixel spreads over two at half
-depth, which reads as a soft doubled rim). Then the top-right arc: nothing lit on it brighter than the top
-edge's own line, which is the brightest one the card draws.
+The card is dark, over a light flat wallpaper. It is named by a pixel inside
+its fill, left of its right edge and below its top edge, or found as what
+went dark between a frame without it and this one (a panel, the launcher),
+when all four edges are read, each from the middle of its own padding.
+
+Each edge is read along its normal: the border has to be one pixel at full
+depth with the wallpaper side of it clearly lighter (a line on a part pixel
+spreads over two at half depth, which reads as a soft doubled rim). Then the
+top-right arc: nothing lit just inside its border, read down the corner's
+diagonal, brighter than the top
+edge's own line, the brightest one the card draws.
 
 Prints one line of numbers and exits non-zero naming the claim that missed.
 """
@@ -17,8 +22,7 @@ import sys
 
 from PIL import Image
 
-png, x, y = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-name = sys.argv[4] if len(sys.argv) > 4 else "card"
+png, name = sys.argv[1], sys.argv[2]
 img = Image.open(png).convert("L")
 w, h = img.size
 px = img.load()
@@ -29,18 +33,42 @@ DEEP = 40
 # A part pixel of the border over the wallpaper sits between the two; the
 # pixel past a crisp one is the wallpaper under the card's cast.
 CLEAR = 40
+# How much lighter the cast leaves the next pixel out.
+SHADE = 24
+# Darker than any cast over the wallpaper: the card itself.
+CARD = 100
 
-fill = px[x, y]
+if sys.argv[3] == "--over":
+    before = Image.open(sys.argv[4]).convert("L").load()
+    dark = [(i, j) for j in range(h) for i in range(w) if px[i, j] < CARD and before[i, j] >= CARD]
+    if not dark:
+        sys.exit(f"FAIL {name}: nothing went dark between the two frames")
+    # The card is the run of rows and columns that went dark across most
+    # of its own width: a scrim's darkened specks elsewhere are left out.
+    rows, cols = [0] * h, [0] * w
+    for i, j in dark:
+        rows[j] += 1
+        cols[i] += 1
+    dense = lambda counts: [k for k, n in enumerate(counts) if n > max(counts) / 2]
+    x0, x1 = min(dense(cols)), max(dense(cols))
+    y0, y1 = min(dense(rows)), max(dense(rows))
+    top_at, right_at = ((x0 + x1) // 2, y0 + 4), (x1 - 4, (y0 + y1) // 2)
+    sides = [((x0 + 4, (y0 + y1) // 2), (-1, 0), "left"), (((x0 + x1) // 2, y1 - 4), (0, 1), "bottom")]
+else:
+    top_at = right_at = (int(sys.argv[3]), int(sys.argv[4]))
+    sides = []
+
 fails = []
 
 
-def profile(points):
-    return [px[p] for p in points if 0 <= p[0] < w and 0 <= p[1] < h]
-
-
-def edge(points, label):
-    """The rim along `points`, walking out of the fill to the wallpaper."""
-    values = profile(points)
+def edge(start, step, label):
+    """The rim walking out of the fill at `start` along `step`."""
+    fill = px[start]
+    values = []
+    x, y = start
+    while 0 <= x < w and 0 <= y < h:
+        values.append(px[x, y])
+        x, y = x + step[0], y + step[1]
     out = next((i for i, v in enumerate(values) if v > fill + 60), None)
     if out is None or out < 2:
         fails.append(f"{label}: no wallpaper past the card ({values[:12]})")
@@ -50,37 +78,36 @@ def edge(points, label):
         fails.append(f"{label}: the border pixel is {border}, not a whole one (spread over two)")
     if outside - border < CLEAR:
         fails.append(f"{label}: the pixel past the border is {outside}, a half-drawn border beside {border}")
-    return {"border": border, "lip": lip, "outside": outside, "at": out}
+    # Past a whole border the wallpaper starts at once, give or take the
+    # cast's own falloff; a border on a part pixel leaves one in between.
+    beyond = values[out + 1] if out + 1 < len(values) else outside
+    if beyond - outside > SHADE:
+        fails.append(f"{label}: the pixel past the border is {outside} before the wallpaper's {beyond}, part of the border")
+    at = (start[0] + step[0] * (out - 1), start[1] + step[1] * (out - 1))
+    return {"fill": fill, "border": border, "lip": lip, "outside": outside, "at": at}
 
 
-top = edge([(x, y - i) for i in range(h)], f"{name} top")
-right = edge([(x + i, y) for i in range(w)], f"{name} right")
+top = edge(top_at, (0, -1), f"{name} top")
+right = edge(right_at, (1, 0), f"{name} right")
+others = {label: edge(at, step, f"{name} {label}") for at, step, label in sides}
 arc = None
 if top and right:
-    # The corner's own circle, its radius where the top border row and the
-    # right border column each stop being straight. Only the band just
-    # inside the border is read, where the lit lines run: the arc's
-    # antialiased pixels over the wallpaper lie outside it and the card's
-    # content well inside.
-    x1 = x + right["at"] - 1
-    y0 = y - top["at"] + 1
-    across = x1 - min((i for i in range(x, x1 + 1) if px[i, y0] > DEEP), default=x1)
-    down = min((j for j in range(y0, y + 1) if px[x1, j] <= DEEP), default=y0) - y0
-    radius = (across + down) / 2
-    cx, cy = x1 + 1 - radius, y0 + radius
-    band = [
-        px[i, j]
-        for i in range(int(cx), x1 + 1)
-        for j in range(y0, int(cy) + 1)
-        if radius - 4.5 < ((i + 0.5 - cx) ** 2 + (j + 0.5 - cy) ** 2) ** 0.5 < radius - 1.2
-    ]
-    arc = max(band) if band else None
-    if radius < 3 or arc is None:
-        fails.append(f"{name} arc: no corner found off the border (radius {radius})")
+    # Down the corner's diagonal from the outside in, and the two beside
+    # it: past the antialiased arc over the wallpaper, the darkest pixel is
+    # the border and the two after it are what lights the arc.
+    x1, y0 = right["at"][0], top["at"][1]
+    lit = []
+    for shift in (-1, 0, 1):
+        line = [px[x1 - t + shift, y0 + t] for t in range(40) if 0 <= x1 - t + shift < w and y0 + t < h]
+        deepest = line.index(min(line[:30]))
+        lit += line[deepest + 1 : deepest + 3]
+    arc = max(lit) if lit else None
+    if arc is None:
+        fails.append(f"{name} arc: no corner found off the border")
     elif arc > top["lip"] + 6:
         fails.append(f"{name} arc: lit to {arc}, past the top edge's line {top['lip']}")
 
-print(f"{name}: fill={fill} top={top} right={right} arc={arc}")
+print(f"{name}: top={top} right={right} arc={arc}" + "".join(f" {k}={v}" for k, v in others.items()))
 if fails:
     print("FAIL " + "; ".join(fails))
     sys.exit(1)

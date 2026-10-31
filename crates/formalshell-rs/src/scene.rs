@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use vello_cpu::kurbo::{Affine, BezPath, Rect};
+use vello_cpu::kurbo::{Affine, BezPath, Rect, Shape};
 use vello_cpu::{PixelMetadata, Pixmap};
 
 use crate::text::ShapedText;
@@ -233,9 +233,8 @@ pub enum Paint {
     /// with the outer corner `radius`.
     Face { from: Rgba, to: Rgba, radius: f32, border: f32 },
     /// Casts under a rounded rect, cut out of the rect's own shape so a
-    /// translucent fill over them shows the desktop and not the shadow;
-    /// no cutout is the rect's own outline.
-    Casts { rect: Rect, radius: f64, layers: Vec<Cast>, cutout: Option<BezPath> },
+    /// translucent fill over them shows the desktop and not the shadow.
+    Casts { rect: Rect, radius: f64, layers: Vec<Cast>, cutout: Fit },
     /// A row of terminal cells (the screensaver's): plain rects and glyph
     /// outlines placed at their own origins, each in its own colour.
     Cells { rects: Vec<(Rect, Rgba)>, glyphs: Vec<(std::sync::Arc<BezPath>, f64, f64, Rgba)> },
@@ -245,24 +244,68 @@ pub enum Paint {
     Vector(Arc<Vec<VOp>>),
     /// A card's reactive rim (`surfaces/rim.rs`): lines stroked with a sweep
     /// gradient held in surface pixels, whatever the node's transform.
-    /// A box's rim carries the box, and is drawn off its outline on whole
-    /// pixels the way `Framed` is.
+    /// A rim drawn off `Fit`'s outline on whole pixels, or off its own
+    /// paths with none.
     Rim(Vec<RimLine>, Option<Fit>),
+    /// A card's fill under its border, and the near edge a joined card
+    /// fades out as it lets go of its line.
+    Outlined { fit: Fit, fill: Rgba, border: Rgba, near: Rgba },
 }
 
-/// The rounded rect a box's paint was built off, in the node's own
-/// coordinates.
+/// How a fitted outline meets the canvas's pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Snap {
+    /// Its edges and lines on whole pixels in the node's own space, the
+    /// node's transform still moving it by fractions.
+    Edges,
+    /// At rest, the transform's own offset rounded too: for a node whose
+    /// transform is where it stands (a card hanging off its line).
+    Placed,
+}
+
+/// The outline a card's paints are built off, in the node's coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Outline {
+    /// A rounded rect with a border `border` wide inside its edge.
+    Box { rect: Rect, radius: f64, border: f64 },
+    /// A card hanging off its line (`surfaces/shoulders.rs`).
+    Join(Joined),
+}
+
+/// `shoulders::paths_with`'s arguments: the item `size`, its origin at
+/// the top-left.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Joined {
+    pub size: (f64, f64),
+    pub radius: f64,
+    pub border: f64,
+    pub attach: f64,
+    pub near_inset: f64,
+    pub walls: crate::surfaces::shoulders::Walls,
+    pub far_gap: Option<(f64, f64)>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Fit {
-    pub rect: Rect,
-    pub radius: f64,
+    pub outline: Outline,
+    pub snap: Snap,
+}
+
+/// An outline built on the canvas's pixels: the fill, the faces the border
+/// strokes, the near edge where a joined card has one, and the border's
+/// width.
+pub struct Drawn {
+    pub fill: BezPath,
+    pub outer: BezPath,
+    pub near: Option<BezPath>,
+    pub width: f64,
 }
 
 impl Paint {
-    /// A rim drawn off the box `rect`, `radius`.
-    pub fn fit(self, rect: Rect, radius: f64) -> Paint {
+    /// A rim drawn off `fit`.
+    pub fn fit(self, fit: Fit) -> Paint {
         match self {
-            Paint::Rim(lines, _) => Paint::Rim(lines, Some(Fit { rect, radius })),
+            Paint::Rim(lines, _) => Paint::Rim(lines, Some(fit)),
             other => other,
         }
     }
@@ -282,26 +325,21 @@ pub struct RimLine {
 }
 
 impl RimLine {
-    /// This line rebuilt off the outline `rect`, `radius`, its widths put
-    /// through `line`: a fill (wash, spill) over the outline, the specular
-    /// line one border deep inside it, the border stroked inside its edge.
-    pub fn fitted(&self, line: impl Fn(f64) -> f64, rect: Rect, radius: f64) -> RimLine {
-        let rounded = |r: Rect, radius: f64| vello_cpu::kurbo::Shape::to_path(&vello_cpu::kurbo::RoundedRect::from_rect(r, radius.max(0.0)), 0.1);
-        let fill = rounded(rect, radius);
+    /// This line rebuilt off `drawn`: a fill (wash, spill) over the
+    /// outline, the specular line one border deep inside it, the border
+    /// stroked along its faces.
+    pub fn fitted(&self, drawn: &Drawn) -> RimLine {
         let mut out = self.clone();
         if let Some(mask) = &mut out.mask {
-            out.path = fill;
-            mask.rect = rect;
+            out.path = drawn.fill.clone();
+            mask.rect = drawn.fill.bounding_box();
         } else if out.clip.is_some() {
-            out.width = line(self.width / 2.0) * 2.0;
-            out.path = fill.clone();
-            out.clip = Some(fill);
+            out.width = drawn.width * 2.0;
+            out.path = drawn.fill.clone();
+            out.clip = Some(drawn.fill.clone());
         } else {
-            let w = line(self.width);
-            let mut path = rounded(rect.inflate(-w / 2.0, -w / 2.0), radius - w / 2.0);
-            path.close_path();
-            out.path = path;
-            out.width = w;
+            out.path = drawn.outer.clone();
+            out.width = drawn.width;
         }
         out
     }
@@ -555,6 +593,9 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
             a1 == a2 && r1 == r2 && i1.same_as(i2)
         }
         (Paint::Shape { fill: f1, strokes: s1 }, Paint::Shape { fill: f2, strokes: s2 }) => f1 == f2 && s1 == s2,
+        (Paint::Outlined { fit: a1, fill: f1, border: b1, near: n1 }, Paint::Outlined { fit: a2, fill: f2, border: b2, near: n2 }) => {
+            a1 == a2 && f1 == f2 && b1 == b2 && n1 == n2
+        }
         (
             Paint::Casts { rect: r1, radius: a1, layers: l1, cutout: c1 },
             Paint::Casts { rect: r2, radius: a2, layers: l2, cutout: c2 },

@@ -12,7 +12,8 @@ use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Rect, RoundedRect, Shape, Str
 use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::{Bitmap, Brush, Fade, IRect, Paint, Scene, VOp};
+use crate::scene::{Bitmap, Brush, Drawn, Fade, IRect, Outline, Paint, Scene, Snap, VOp};
+use crate::surfaces::shoulders::{self, Walls};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
 
@@ -407,28 +408,27 @@ impl Caches {
                     }
                 }
                 Paint::Framed { fill, radius, border, width } => {
-                    let g = Grid::new(origin, node.transform, s);
-                    ctx.set_transform(g.lift);
+                    let g = Grid::new(origin, node.transform, s, Snap::Edges);
                     let b = node.bounds;
-                    let (r, radius) = g.outline(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), *radius as f64);
-                    if fill.to_u8()[3] > 0 {
-                        ctx.set_color(color(*fill));
-                        ctx.fill_path(&rounded(r, radius));
-                    }
-                    let width = g.line(*width as f64);
-                    if width > 0.0 && border.to_u8()[3] > 0 {
-                        let half = width / 2.0;
-                        ctx.set_stroke(Stroke::new(width));
-                        ctx.set_color(color(*border));
-                        ctx.stroke_path(&rounded(r.inflate(-half, -half), radius - half));
-                    }
+                    let rect = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
+                    let drawn = g.drawn(&Outline::Box { rect, radius: *radius as f64, border: *width as f64 });
+                    ctx.set_transform(g.lift);
+                    outlined(ctx, &drawn, *fill, *border, Rgba::TRANSPARENT, Stroke::new(drawn.width));
+                }
+                Paint::Outlined { fit, fill, border, near } => {
+                    let g = Grid::new(origin, node.transform, s, fit.snap);
+                    let drawn = g.drawn(&fit.outline);
+                    ctx.set_transform(g.lift);
+                    // ShapePath's own defaults, which the joined shape's runs want.
+                    let stroke = Stroke::new(drawn.width).with_caps(Cap::Square).with_join(Join::Bevel);
+                    outlined(ctx, &drawn, *fill, *border, *near, stroke);
                 }
                 Paint::Lips { radius, border, lips } => {
                     // CSS's unblurred inset shadow: the body less itself
                     // moved by the offset, which runs the line along its
                     // edge and thins it to nothing round both arcs, so two
                     // lips meeting at a corner never stack on the arc.
-                    let g = Grid::new(origin, node.transform, s);
+                    let g = Grid::new(origin, node.transform, s, Snap::Edges);
                     ctx.set_transform(g.lift);
                     let b = node.bounds;
                     let (outer, radius) = g.outline(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), *radius as f64);
@@ -454,7 +454,7 @@ impl Caches {
                     }
                 }
                 Paint::Face { from, to, radius, border } => {
-                    let g = Grid::new(origin, node.transform, s);
+                    let g = Grid::new(origin, node.transform, s, Snap::Edges);
                     ctx.set_transform(g.lift);
                     let b = node.bounds;
                     let (outer, radius) = g.outline(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), *radius as f64);
@@ -631,9 +631,9 @@ impl Caches {
                     // A box's rim goes on the pixels its fill takes, each
                     // line rebuilt off the snapped outline.
                     let grid = fit.map(|f| {
-                        let g = Grid::new(origin, node.transform, s);
-                        let outline = g.outline(f.rect, f.radius);
-                        (g, outline)
+                        let g = Grid::new(origin, node.transform, s, f.snap);
+                        let drawn = g.drawn(&f.outline);
+                        (g, drawn)
                     });
                     let at = grid.as_ref().map_or(at, |(g, _)| g.lift);
                     ctx.set_transform(at);
@@ -641,14 +641,14 @@ impl Caches {
                     // undoes the node's own transform (and the snapped
                     // geometry's canvas units).
                     let back = match &grid {
-                        Some((g, _)) => g.origin * node.transform.inverse(),
+                        Some((g, _)) => g.lift.inverse() * g.origin,
                         None => node.transform.inverse(),
                     };
                     for line in lines {
                         if line.stops.iter().all(|(_, c)| c.to_u8()[3] == 0) {
                             continue;
                         }
-                        let fitted = grid.as_ref().map(|(g, (r, radius))| line.fitted(|w| g.line(w), *r, *radius));
+                        let fitted = grid.as_ref().map(|(_, drawn)| line.fitted(drawn));
                         let line = fitted.as_ref().unwrap_or(line);
                         if let Some(clip) = &line.clip {
                             ctx.push_clip_layer(clip);
@@ -699,16 +699,9 @@ impl Caches {
                     }
                     ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
                     ctx.set_color(color(Rgba::hex(0)));
-                    match cutout {
-                        Some(cutout) => ctx.fill_path(cutout),
-                        // The box's own outline, on the pixels its fill takes.
-                        None => {
-                            let g = Grid::new(origin, node.transform, s);
-                            let (r, radius) = g.outline(*card, *radius);
-                            ctx.set_transform(g.lift);
-                            ctx.fill_path(&rounded(r, radius));
-                        }
-                    }
+                    let g = Grid::new(origin, node.transform, s, cutout.snap);
+                    ctx.set_transform(g.lift);
+                    ctx.fill_path(&g.drawn(&cutout.outline).fill);
                     ctx.pop_layer();
                     ctx.pop_layer();
                 }
@@ -950,13 +943,14 @@ fn fits(at: Affine, rect: Rect, size: (f64, f64)) -> Option<(f64, f64)> {
     (near(rect.width(), size.0) && near(rect.height(), size.1)).then(|| ((rect.x0 * a + e).round(), (rect.y0 * a + f).round()))
 }
 
-/// A box's paint put on canvas pixels. At a fractional scale a logical
-/// edge lands part way into a pixel and a 1px line spreads over two, read
-/// as a soft doubled rim, so a box's edges are rounded to whole pixels and
-/// its lines to whole pixel widths, as a browser draws a CSS border. The
+/// A card's paint put on canvas pixels: the one place every box, card and
+/// joined card is drawn through. At a fractional scale a logical edge lands
+/// part way into a pixel and a 1px line spreads over two, read as a soft
+/// doubled rim, so an outline's edges are rounded to whole pixels and its
+/// lines to whole pixel widths, as a browser draws a CSS border. The
 /// geometry is in canvas pixels under `lift`, the node's own transform
-/// carried into canvas units, so a moving box still moves by fractions and
-/// only one at rest is crisp.
+/// carried into canvas units, so a node moving by its transform still moves
+/// by fractions; one at rest (`Snap::Placed`) has that offset rounded too.
 struct Grid {
     origin: Affine,
     lift: Affine,
@@ -964,16 +958,21 @@ struct Grid {
 }
 
 impl Grid {
-    fn new(origin: Affine, transform: Affine, scale: f64) -> Self {
-        Self { origin, lift: origin * transform * origin.inverse(), scale }
+    fn new(origin: Affine, transform: Affine, scale: f64, snap: Snap) -> Self {
+        let mut lift = origin * transform * origin.inverse();
+        let [a, b, c, d, e, f] = lift.as_coeffs();
+        // Rounding the offset lands whole pixels on whole pixels only under
+        // a quarter turn, a mirror or nothing.
+        let square = [a, b, c, d].iter().all(|v| v.abs() < 1e-9 || (v.abs() - 1.0).abs() < 1e-9);
+        if snap == Snap::Placed && square {
+            lift = Affine::new([a, b, c, d, half_up(e), half_up(f)]);
+        }
+        Self { origin, lift, scale }
     }
 
-    /// Rounded half up, so every GPU tile, whose origin differs by whole
-    /// pixels, rounds an edge the same way.
     fn rect(&self, r: Rect) -> Rect {
         let d = self.origin.transform_rect_bbox(r);
-        let snap = |v: f64| (v + 0.5).floor();
-        Rect::new(snap(d.x0), snap(d.y0), snap(d.x1), snap(d.y1))
+        Rect::new(half_up(d.x0), half_up(d.y0), half_up(d.x1), half_up(d.y1))
     }
 
     /// A line's width in whole canvas pixels, never thinner than one.
@@ -989,6 +988,63 @@ impl Grid {
     fn outline(&self, r: Rect, radius: f64) -> (Rect, f64) {
         let r = self.rect(r);
         (r, self.radius(radius).min(r.width() / 2.0).min(r.height() / 2.0))
+    }
+
+    /// `outline` built on the canvas's pixels.
+    fn drawn(&self, outline: &Outline) -> Drawn {
+        match outline {
+            Outline::Box { rect, radius, border } => {
+                let (r, radius) = self.outline(*rect, *radius);
+                let width = self.line(*border);
+                let half = width / 2.0;
+                let mut outer = rounded(r.inflate(-half, -half), radius - half);
+                outer.close_path();
+                Drawn { fill: rounded(r, radius), outer, near: None, width }
+            }
+            Outline::Join(j) => {
+                let r = self.rect(Rect::new(0.0, 0.0, j.size.0, j.size.1));
+                let k = self.scale;
+                let width = self.line(j.border);
+                let walls = Walls { start: scaled_wall(j.walls.start, k), end: scaled_wall(j.walls.end, k), attach: j.walls.attach, radius: j.walls.radius * k };
+                let far_gap = j.far_gap.map(|(a, b)| (a * k, b * k));
+                // The near edge is a straight edge too, so its inset is whole pixels.
+                let near_inset = (j.near_inset * k).round();
+                let paths = shoulders::paths_with(r.width(), r.height(), j.radius * k, width, j.attach, near_inset, walls, far_gap);
+                let at = Affine::translate((r.x0, r.y0));
+                Drawn { fill: at * paths.fill, outer: at * paths.outer, near: Some(at * paths.near), width }
+            }
+        }
+    }
+}
+
+/// A wall's reach scaled, its no-wall sign kept.
+fn scaled_wall(v: f64, k: f64) -> f64 {
+    if v < 0.0 { v } else { v * k }
+}
+
+/// Rounded half up, so every GPU tile, whose origin differs by whole
+/// pixels, rounds an edge the same way.
+fn half_up(v: f64) -> f64 {
+    (v + 0.5).floor()
+}
+
+/// An outline's fill, its border along the faces and its near edge.
+fn outlined(ctx: &mut impl Raster, drawn: &Drawn, fill: Rgba, border: Rgba, near: Rgba, stroke: Stroke) {
+    if fill.to_u8()[3] > 0 {
+        ctx.set_color(color(fill));
+        ctx.fill_path(&drawn.fill);
+    }
+    if drawn.width <= 0.0 {
+        return;
+    }
+    ctx.set_stroke(stroke);
+    if border.to_u8()[3] > 0 {
+        ctx.set_color(color(border));
+        ctx.stroke_path(&drawn.outer);
+    }
+    if let Some(path) = drawn.near.as_ref().filter(|_| near.to_u8()[3] > 0) {
+        ctx.set_color(color(near));
+        ctx.stroke_path(path);
     }
 }
 

@@ -8,7 +8,7 @@ use fs_theme::color::Rgba;
 use fs_theme::style::{BoxStyle, Edge};
 use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
-use crate::scene::{Cast, IRect, Paint, Scene};
+use crate::scene::{Cast, Fit, IRect, Outline, Paint, Scene, Snap};
 use crate::surfaces::bar::cell::Painter;
 use crate::surfaces::rim::Rim;
 
@@ -35,6 +35,8 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
     }
     let a = |c: Rgba| c.with_alpha(c.a * alpha);
     let rect = frect(r);
+    let bw = b.border.as_ref().map_or(0.0, |l| l.width);
+    let fit = Fit { outline: Outline::Box { rect, radius, border: bw }, snap: Snap::Edges };
     if !b.casts.is_empty() {
         let layers: Vec<Cast> = b
             .casts
@@ -44,19 +46,19 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
         let reach = fs_theme::style::geometry::cast_pad(&b.casts);
         p.shape(
             Scene::cover(rect, vello_cpu::kurbo::Affine::IDENTITY, reach + 2.0),
-            Paint::Casts { rect, radius, layers, cutout: None },
+            Paint::Casts { rect, radius, layers, cutout: fit },
         );
     }
     for ring in &b.rings {
         let s = ring.spread.round() as i32;
         p.rect(IRect::new(r.x - s, r.y - s, r.w + s * 2, r.h + s * 2), a(ring.color), (radius + ring.spread) as f32);
     }
-    let (bc, bw) = b.border.as_ref().map_or((Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
+    let bc = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
     let half = bw / 2.0;
     let lit = rim.filter(|_| bw > 0.0).and_then(|(rim, now, at)| {
         let mut line = rr(rect.inflate(-half, -half), radius - half);
         line.close_path();
-        rim.paint(now, line, bw, rr(rect, radius), at.transform_rect_bbox(rect), alpha, None).map(|lit| lit.fit(rect, radius))
+        rim.paint(now, line, bw, rr(rect, radius), at.transform_rect_bbox(rect), alpha, None).map(|lit| lit.fit(fit))
     });
     p.framed(r, a(b.fill), radius as f32, if lit.is_some() { Rgba::TRANSPARENT } else { a(bc) }, bw as f32);
     if let Some(lit) = lit {

@@ -23,7 +23,7 @@ use fs_chrome::types::Edge;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, EMERGE, SPATIAL_FAST, SPATIAL_FAST_MS};
-use crate::scene::{Cast, IRect, NodeId, Paint, Scene};
+use crate::scene::{Cast, Fit, IRect, Joined, NodeId, Outline, Paint, Scene, Snap};
 use crate::surfaces::rim::{Lit, Rim};
 use crate::surfaces::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
@@ -437,10 +437,11 @@ impl Card {
         let reach = Self::cast_reach(look);
         let rr = |r: Rect, radius: f64| vello_cpu::kurbo::Shape::to_path(&vello_cpu::kurbo::RoundedRect::from_rect(r, radius.max(0.0)), 0.1);
         let size = scene.size;
+        let fit = Fit { outline: Outline::Box { rect: card, radius, border: look.border_width }, snap: Snap::Edges };
         scene.update_with(
             nodes.0,
             Scene::cover(card, Affine::IDENTITY, reach).intersect(&size),
-            Paint::Casts { rect: card, radius, layers, cutout: Some(rr(card, radius)) },
+            Paint::Casts { rect: card, radius, layers, cutout: fit },
             shown && !look.casts.is_empty(),
             Affine::IDENTITY,
             None,
@@ -450,11 +451,11 @@ impl Card {
         let mut line = rr(card.inflate(-half, -half), radius - half);
         line.close_path();
         let lit = rim.and_then(|(rim, now, node)| {
-            let paint = rim.paint(now, line.clone(), look.border_width, rr(card, radius), card, alpha, None)?;
-            Some((node, paint))
+            let paint = rim.paint(now, line, look.border_width, rr(card, radius), card, alpha, None)?;
+            Some((node, paint.fit(fit)))
         });
         let border = if lit.is_some() { Rgba::TRANSPARENT } else { look.border.with_alpha(look.border.a * alpha) };
-        let paint = Paint::Shape { fill: Some((rr(card, radius), fill)), strokes: vec![(line, border, look.border_width)] };
+        let paint = Paint::Outlined { fit, fill, border, near: Rgba::TRANSPARENT };
         let bounds = Scene::cover(card, Affine::IDENTITY, 2.0);
         scene.update_with(nodes.1, bounds, paint, shown, Affine::IDENTITY, None);
         if let Some((node, paint)) = lit {
@@ -634,16 +635,18 @@ impl Card {
         let line = self.look.border.with_alpha(self.look.border.a * fa);
         let near = line.with_alpha(line.a * (1.0 - a) as f32);
         let bounds = Scene::cover(item_rect, item, 2.0).intersect(&band);
-        let cutout = paths.fill.clone();
+        let join = Joined { size: (item_w, item_h), radius, border, attach: a, near_inset, walls, far_gap };
+        let snap = if settled && self.deform.at_rest { Snap::Placed } else { Snap::Edges };
+        let fit = Fit { outline: Outline::Join(join), snap };
         let frame_box = Scene::cover(Rect::new(live.x0, frame_y, live.x1, frame_y + extent), map, 0.0);
         let centre = Rect::new(frame_box.x as f64, frame_box.y as f64, frame_box.right() as f64, frame_box.bottom() as f64);
         let mute = (a > 0.0).then(|| self.line_normal());
-        let lit = self.rim.paint(now, paths.outer.clone(), border, paths.fill.clone(), centre, fa, mute);
+        let lit = self.rim.paint(now, paths.outer, border, paths.fill, centre, fa, mute).map(|lit| lit.fit(fit));
         let outer_line = if lit.is_some() { Rgba::TRANSPARENT } else { line };
         self.scene.update_with(
             self.shape,
             bounds,
-            Paint::Shape { fill: Some((paths.fill, fill)), strokes: vec![(paths.outer, outer_line, border), (paths.near, near, border)] },
+            Paint::Outlined { fit, fill, border: outer_line, near },
             visible && fa > 0.0,
             item,
             Some(band),
@@ -665,7 +668,7 @@ impl Card {
         self.scene.update_with(
             self.casts,
             Scene::cover(card, item, reach_out * 1.25 + 2.0).intersect(&band),
-            Paint::Casts { rect: card, radius, layers, cutout: Some(cutout) },
+            Paint::Casts { rect: card, radius, layers, cutout: fit },
             visible && cast_alpha > 0.0 && !self.look.casts.is_empty(),
             item,
             Some(band),
