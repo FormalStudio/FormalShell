@@ -2943,6 +2943,8 @@ pub struct Shown {
     /// drawn.
     column_scroll: Animated,
     column_rect: Option<Rect>,
+    /// The field band over the rule, which the token and the query centre in.
+    field_rect: Option<Rect>,
     /// The preview pane's box on the surface while it is drawn, and when
     /// it last arrived.
     pane_rect: Option<Rect>,
@@ -3002,6 +3004,7 @@ impl Shown {
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             column_scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             column_rect: None,
+            field_rect: None,
             pane_rect: None,
             pane_since: None,
             overlays: Vec::new(),
@@ -3256,7 +3259,10 @@ impl Shown {
         let band = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band);
         let line_top = fy + ((band - line) / 2.0).round();
         let head_rect = Rect::new(fx + s.xxl, line_top, fx + fw - s.xxl, line_top + line);
-        let head = header(m, store, theme);
+        // The row stands the field's height whatever it holds, so a token
+        // with no query beside it (a held panel) centres in the band too.
+        let head = header(m, store, theme).height(line);
+        self.field_rect = Some(Rect::new(fx, fy, fx + fw, fy + band));
         let d = self.head.draw(&head, head_rect, Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
@@ -3468,6 +3474,11 @@ impl Shown {
     pub fn token_rect(&self) -> Option<IRect> {
         let r = self.head.hits.iter().find(|h| h.on.as_deref() == Some("token"))?.rect;
         Some(self.on_output(r))
+    }
+
+    /// The field band on the output.
+    pub fn field_box(&self) -> Option<IRect> {
+        self.field_rect.map(|r| self.on_output(ui::irect(r)))
     }
 
     /// The actions column's box on the output, while it is drawn.

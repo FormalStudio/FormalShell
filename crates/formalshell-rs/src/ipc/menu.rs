@@ -99,6 +99,9 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     if let Some(r) = shown.and_then(|w| w.body_rect) {
         v["body"] = rect(r);
     }
+    if let Some(r) = shown.and_then(|w| w.field_box()) {
+        v["fieldBox"] = rect(r);
+    }
     if let Some(r) = shown.and_then(|w| w.token_rect()) {
         v["tokenBox"] = rect(r);
     }
