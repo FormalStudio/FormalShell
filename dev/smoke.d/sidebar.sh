@@ -127,9 +127,9 @@ $ipc call sidebar status > "$sidebar_status_open" 2>&1
 "$grim_bin" "$sidebar_open_png" > /dev/null 2>&1
 if [ "$(sidebar_clock_case && echo 1)" = 1 ]; then
   out="$sidebar_clock_results"
-  echo "before=\$(date +%-I:%M) \$(date +%p)" > "\$out"
+  echo "before=\$(LC_ALL=C date +%-I:%M) \$(LC_ALL=C date +%p)" > "\$out"
   $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.sidebarClock' > "$sidebar_clock_dump"
-  echo "after=\$(date +%-I:%M) \$(date +%p)" >> "\$out"
+  echo "after=\$(LC_ALL=C date +%-I:%M) \$(LC_ALL=C date +%p)" >> "\$out"
   commits() { $ipc call debug dump 2>/dev/null | "$jq_bin" '.sidebarClock.commits'; }
   # Clear of a minute boundary, so the minute's own redraw is not counted.
   s=\$((10#\$(date +%S)))
