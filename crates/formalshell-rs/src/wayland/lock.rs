@@ -102,6 +102,8 @@ struct Out {
     pointer: Option<(f64, f64)>,
     /// The boot lock's first frame, the splash alone, has been committed.
     splashed: bool,
+    /// The scale that frame was drawn at.
+    splash_scale: f64,
     /// The splash going into the backdrop, and that having ended.
     dissolve: Option<Dissolve>,
     dissolved: bool,
@@ -564,14 +566,17 @@ impl App {
         let Some(session) = self.lock.session.clone() else { return };
         let outputs: Vec<WlOutput> = self.outputs.outputs().collect();
         for output in outputs {
-            if self.lock.outs.iter().any(|o| o.output == output) {
+            if let Some(o) = self.lock.outs.iter_mut().find(|o| o.output == output) {
+                if crate::surface::output_scale(&output).is_some_and(|k| o.surface.take_scale(k)) {
+                    self.lock.dirty = true;
+                }
                 continue;
             }
             let name = self.outputs.info(&output).and_then(|i| i.name).unwrap_or_default();
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
             let surface = Surface::on("lock", ls, &self.shm, self.started, &output);
-            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, dissolve: None, dissolved: false, dark: None, dark_landed: false });
+            self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, splash_scale: 0.0, dissolve: None, dissolved: false, dark: None, dark_landed: false });
         }
     }
 
@@ -1144,6 +1149,7 @@ impl App {
             // A callback still out holds the frame: the splash goes with
             // the next one.
             o.splashed = o.surface.commits() > commits;
+            o.splash_scale = k;
             first |= o.surface.commits() == 1;
         }
         if first {
@@ -1271,6 +1277,15 @@ impl App {
             shared.shards = self.lock.shards.iter().find(|b| (i32::from(b.pixmap.width()), i32::from(b.pixmap.height())) == device);
             shared.avatar = crate::scene::nearest(&self.lock.avatar, k);
             if login && !o.dissolved {
+                // A scale the compositor sent after the splash went out (an
+                // output whose rule lands after the lock is up): the splash
+                // is drawn again at it, rather than held at the old one until
+                // the dissolve.
+                if o.dissolve.is_none() && o.splashed && o.splash_scale != k {
+                    o.splashed = false;
+                    self.lock.dirty = true;
+                    continue;
+                }
                 // The splash stays as it went out until the backdrop is
                 // made, or BOOT_WAIT has gone and the dark fallback is it.
                 // The store is empty until state.json is read, after the
@@ -1278,13 +1293,6 @@ impl App {
                 if o.dissolve.is_none() && (shared.backdrop.is_some() || (self.store.state.loaded && !has_wallpaper) || waited)
                     && let Some(from) = o.surface.canvas_pixmap().or_else(|| o.splashed.then(|| dissolve::picture(&o.view.scene, k)))
                 {
-                    // A scale the compositor sent after the splash went out:
-                    // the splash is drawn again at it before it dissolves.
-                    if (i32::from(from.width()), i32::from(from.height())) != device {
-                        o.splashed = false;
-                        self.lock.dirty = true;
-                        continue;
-                    }
                     let _raster = crate::scene::raster_at(k);
                     let to = dissolve::picture(&view::backdrop_scene(&shared, theme, (size.w, size.h)), k);
                     o.dissolve = Some(Dissolve::new(from, Some(to), boot_ms, now));

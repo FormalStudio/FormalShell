@@ -204,9 +204,14 @@ pub fn largest_scale() -> f64 {
 
 /// The scale a surface made on `output` starts at.
 pub fn scale_on(output: &WlOutput) -> f64 {
+    output_scale(output).unwrap_or_else(primary_scale)
+}
+
+/// `output`'s scale where its info says it.
+pub fn output_scale(output: &WlOutput) -> Option<f64> {
     let id = output.id().protocol_id();
     let table = OUTPUTS.lock().unwrap();
-    table.iter().find(|(o, _)| *o == id).map_or_else(primary_scale, |(_, s)| f64::from(*s) / 120.0)
+    table.iter().find(|(o, _)| *o == id).map(|(_, s)| f64::from(*s) / 120.0)
 }
 
 pub fn bind_scaling<D>(globals: &GlobalList, qh: &QueueHandle<D>)
@@ -563,6 +568,15 @@ impl<R: Role> Surface<R> {
     /// pictures its scene asks for are made at.
     pub fn scale(&self) -> f64 {
         self.scaler.wanted(self.layer.role_surface())
+    }
+
+    /// Takes `scale` as the preferred scale, for a surface whose output's
+    /// scale changes with no new one sent: Hyprland sends a session lock
+    /// surface its fractional scale once, as it is made
+    /// (`src/protocols/SessionLock.cpp`). True when it moved.
+    pub fn take_scale(&mut self, scale: f64) -> bool {
+        let s = (scale * 120.0).round() as u32;
+        self.scaler.preferred.0.swap(s, Ordering::Relaxed) != s
     }
 
     /// Draws at `parent`'s scale, for a subsurface of it.

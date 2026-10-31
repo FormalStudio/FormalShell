@@ -9,8 +9,11 @@
 # (surfaces/dissolve.rs, 11s here) is long enough to photograph.
 #
 # An early script, started beside the shell rather than after the arrival
-# like a drive, polls `lock status` until the lock is secure and grabs the
-# first frame: the picture at 1:1 in the output's centre on black, no card.
+# like a drive, polls `lock status` until the lock is secure, then moves the
+# output's scale under it (1.25, or 1 for a run already at 1.25), the way a
+# host's monitor rule can land after the boot's lock is up, and grabs the
+# first frame at the new scale: the picture at 1:1 in the output's centre on
+# black, no card.
 # The drive then grabs a burst through the dissolve: one frame from its
 # middle third read on its 32 px grid (dev/dissolve-cells.py) carrying
 # cells of the splash and of the lock, and no frame still showing the
@@ -41,6 +44,8 @@ login_lock_marker_after="$shot_dir/login-lock-marker-after.txt"
 login_lock_early_done="$shot_dir/login-lock-early.done"
 login_lock_avatar='#1FB86A'
 login_lock_frames=50
+login_lock_rescale=1.25
+[ "${FS_SMOKE_SCALE:-1}" = 1.25 ] && login_lock_rescale=1
 
 leg_login_lock_validate() {
   # The lock covers the session from its first frame: no other leg's drive
@@ -75,6 +80,7 @@ for _ in \$(seq 1 200); do
   $ipc call lock status 2>/dev/null | grep -q '"secure":true' && break
   sleep 0.05
 done
+"$hyprctl_bin" eval 'hl.monitor({ output = "", mode = "1920x1080@60", position = "0x0", scale = $login_lock_rescale })' > /dev/null 2>&1
 # The nested output starts at the backend's window size and takes its mode a
 # moment later, Hyprland stretching the lock's first buffer until the shell
 # commits one at the new size: the grab waits for the mode to hold.

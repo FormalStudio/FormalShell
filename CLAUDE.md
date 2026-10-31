@@ -847,8 +847,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   pink picture, with no `lock lock` anywhere and the shell at a tenth
   of its speed (`FORMALSHELL_SMOKE_MOTION_SCALE`). The lock's first commit
   ahead of any bar or wallpaper commit off the shell's log, `lock status`
-  locked, secure and `boot` before anything asks; the first frame the
-  picture alone at 1:1 in the output's centre; a burst through the pixel
+  locked, secure and `boot` before anything asks; the output's scale moved
+  under the lock (to 1.25, or 1 from 1.25) and the first frame the picture
+  alone at 1:1 in the output's centre; a burst through the pixel
   dissolve (`surfaces/dissolve.rs`) with one frame of 32 px cells of both
   the splash and the lock (`dev/dissolve-cells.py`), no frame carrying the
   splash's pink and the card's avatar green together, the card first seen
