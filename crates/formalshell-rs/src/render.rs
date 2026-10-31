@@ -407,29 +407,65 @@ impl Caches {
                     }
                 }
                 Paint::Framed { fill, radius, border, width } => {
-                    ctx.set_transform(at);
+                    let g = Grid::new(origin, node.transform, s);
+                    ctx.set_transform(g.lift);
                     let b = node.bounds;
-                    let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
-                    let rr = |r: Rect, radius: f64| RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1);
+                    let (r, radius) = g.outline(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), *radius as f64);
                     if fill.to_u8()[3] > 0 {
                         ctx.set_color(color(*fill));
-                        ctx.fill_path(&rr(r, *radius as f64));
+                        ctx.fill_path(&rounded(r, radius));
                     }
-                    if *width > 0.0 && border.to_u8()[3] > 0 {
-                        let half = *width as f64 / 2.0;
-                        ctx.set_stroke(Stroke::new(*width as f64));
+                    let width = g.line(*width as f64);
+                    if width > 0.0 && border.to_u8()[3] > 0 {
+                        let half = width / 2.0;
+                        ctx.set_stroke(Stroke::new(width));
                         ctx.set_color(color(*border));
-                        ctx.stroke_path(&rr(r.inflate(-half, -half), *radius as f64 - half));
+                        ctx.stroke_path(&rounded(r.inflate(-half, -half), radius - half));
                     }
                 }
-                Paint::Face { from, to, radius } => {
-                    ctx.set_transform(at);
+                Paint::Lips { radius, border, lips } => {
+                    // CSS's unblurred inset shadow: the body less itself
+                    // moved by the offset, which runs the line along its
+                    // edge and thins it to nothing round both arcs, so two
+                    // lips meeting at a corner never stack on the arc.
+                    let g = Grid::new(origin, node.transform, s);
+                    ctx.set_transform(g.lift);
                     let b = node.bounds;
-                    let r = Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64);
-                    let gradient = vello_cpu::peniko::Gradient::new_linear((r.x0, r.y0), (r.x0, r.y1))
-                        .with_stops([color(*from), color(*to)]);
-                    ctx.set_gradient(gradient);
-                    ctx.fill_path(&RoundedRect::from_rect(r, (*radius as f64).max(0.0)).to_path(0.1));
+                    let (outer, radius) = g.outline(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), *radius as f64);
+                    let bw = g.line(*border as f64);
+                    let body = outer.inflate(-bw, -bw);
+                    let inner = (radius - bw).min(body.width() / 2.0).min(body.height() / 2.0).max(0.0);
+                    if body.width() > 0.0 && body.height() > 0.0 {
+                        let shape = rounded(body, inner);
+                        ctx.push_clip_layer(&shape);
+                        ctx.set_fill_rule(Fill::EvenOdd);
+                        for (dx, dy, ink) in lips {
+                            if ink.to_u8()[3] == 0 {
+                                continue;
+                            }
+                            let off = Vec2::new(dx.signum() * g.line(dx.abs()), dy.signum() * g.line(dy.abs()));
+                            let mut path = body.inflate(2.0, 2.0).to_path(0.1);
+                            path.extend(rounded(body + off, inner));
+                            ctx.set_color(color(*ink));
+                            ctx.fill_path(&path);
+                        }
+                        ctx.set_fill_rule(Fill::NonZero);
+                        ctx.pop_layer();
+                    }
+                }
+                Paint::Face { from, to, radius, border } => {
+                    let g = Grid::new(origin, node.transform, s);
+                    ctx.set_transform(g.lift);
+                    let b = node.bounds;
+                    let (outer, radius) = g.outline(Rect::new(b.x as f64, b.y as f64, b.right() as f64, b.bottom() as f64), *radius as f64);
+                    let bw = g.line(*border as f64);
+                    let r = outer.inflate(-bw, -bw);
+                    if r.width() > 0.0 && r.height() > 0.0 {
+                        let inner = (radius - bw).min(r.width() / 2.0).min(r.height() / 2.0).max(0.0);
+                        let gradient = vello_cpu::peniko::Gradient::new_linear((r.x0, r.y0), (r.x0, r.y1)).with_stops([color(*from), color(*to)]);
+                        ctx.set_gradient(gradient);
+                        ctx.fill_path(&rounded(r, inner));
+                    }
                 }
                 Paint::Glow { text, color: ink, x, y, blur } if self.cached_glow(ctx, node.bounds, at, text, *ink, (*x, *y, *blur)) => {}
                 Paint::Glow { text, color: ink, x, y, blur } => {
@@ -591,15 +627,29 @@ impl Caches {
                         ctx.stroke_path(path);
                     }
                 }
-                Paint::Rim(lines) => {
+                Paint::Rim(lines, fit) => {
+                    // A box's rim goes on the pixels its fill takes, each
+                    // line rebuilt off the snapped outline.
+                    let grid = fit.map(|f| {
+                        let g = Grid::new(origin, node.transform, s);
+                        let outline = g.outline(f.rect, f.radius);
+                        (g, outline)
+                    });
+                    let at = grid.as_ref().map_or(at, |(g, _)| g.lift);
                     ctx.set_transform(at);
                     // The stops are placed in surface pixels, so the sweep
-                    // undoes the node's own transform.
-                    let back = node.transform.inverse();
+                    // undoes the node's own transform (and the snapped
+                    // geometry's canvas units).
+                    let back = match &grid {
+                        Some((g, _)) => g.origin * node.transform.inverse(),
+                        None => node.transform.inverse(),
+                    };
                     for line in lines {
                         if line.stops.iter().all(|(_, c)| c.to_u8()[3] == 0) {
                             continue;
                         }
+                        let fitted = grid.as_ref().map(|(g, (r, radius))| line.fitted(|w| g.line(w), *r, *radius));
+                        let line = fitted.as_ref().unwrap_or(line);
                         if let Some(clip) = &line.clip {
                             ctx.push_clip_layer(clip);
                         }
@@ -649,7 +699,16 @@ impl Caches {
                     }
                     ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
                     ctx.set_color(color(Rgba::hex(0)));
-                    ctx.fill_path(cutout);
+                    match cutout {
+                        Some(cutout) => ctx.fill_path(cutout),
+                        // The box's own outline, on the pixels its fill takes.
+                        None => {
+                            let g = Grid::new(origin, node.transform, s);
+                            let (r, radius) = g.outline(*card, *radius);
+                            ctx.set_transform(g.lift);
+                            ctx.fill_path(&rounded(r, radius));
+                        }
+                    }
                     ctx.pop_layer();
                     ctx.pop_layer();
                 }
@@ -891,6 +950,52 @@ fn fits(at: Affine, rect: Rect, size: (f64, f64)) -> Option<(f64, f64)> {
     (near(rect.width(), size.0) && near(rect.height(), size.1)).then(|| ((rect.x0 * a + e).round(), (rect.y0 * a + f).round()))
 }
 
+/// A box's paint put on canvas pixels. At a fractional scale a logical
+/// edge lands part way into a pixel and a 1px line spreads over two, read
+/// as a soft doubled rim, so a box's edges are rounded to whole pixels and
+/// its lines to whole pixel widths, as a browser draws a CSS border. The
+/// geometry is in canvas pixels under `lift`, the node's own transform
+/// carried into canvas units, so a moving box still moves by fractions and
+/// only one at rest is crisp.
+struct Grid {
+    origin: Affine,
+    lift: Affine,
+    scale: f64,
+}
+
+impl Grid {
+    fn new(origin: Affine, transform: Affine, scale: f64) -> Self {
+        Self { origin, lift: origin * transform * origin.inverse(), scale }
+    }
+
+    /// Rounded half up, so every GPU tile, whose origin differs by whole
+    /// pixels, rounds an edge the same way.
+    fn rect(&self, r: Rect) -> Rect {
+        let d = self.origin.transform_rect_bbox(r);
+        let snap = |v: f64| (v + 0.5).floor();
+        Rect::new(snap(d.x0), snap(d.y0), snap(d.x1), snap(d.y1))
+    }
+
+    /// A line's width in whole canvas pixels, never thinner than one.
+    fn line(&self, width: f64) -> f64 {
+        if width <= 0.0 { 0.0 } else { (width * self.scale).round().max(1.0) }
+    }
+
+    fn radius(&self, radius: f64) -> f64 {
+        (radius * self.scale).max(0.0)
+    }
+
+    /// A box's outline: its snapped rect and corner radius.
+    fn outline(&self, r: Rect, radius: f64) -> (Rect, f64) {
+        let r = self.rect(r);
+        (r, self.radius(radius).min(r.width() / 2.0).min(r.height() / 2.0))
+    }
+}
+
+fn rounded(r: Rect, radius: f64) -> BezPath {
+    RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1)
+}
+
 /// A node's box where it lands, when its transform is a translation (or
 /// nothing); `None` for anything that scales, rotates or skews it.
 fn drawn_box(bounds: IRect, transform: Affine) -> Option<IRect> {
@@ -993,6 +1098,47 @@ mod tests {
             let worst = want.iter().zip(&got).map(|(a, b)| a.abs_diff(*b)).max().unwrap_or(0);
             assert!(worst <= 2, "scale {scale} marquee: a channel off by {worst}");
         }
+    }
+
+    #[test]
+    fn a_box_at_a_fractional_scale_keeps_a_one_pixel_border_and_lips_that_thin_round_the_arc() {
+        // x 17 lands at 21.25: unsnapped, the border spreads over two pixels.
+        let (x, y, w, h) = (17, 13, 61, 41);
+        let mut scene = Scene::new(100, 70);
+        let border = Rgba::BLACK.with_alpha(0.75);
+        scene.add(IRect::new(x, y, w, h), Paint::Framed { fill: Rgba::hex(0x18181b), radius: 8.0, border, width: 1.0 });
+        // The card's own lips in light: top, bottom and the two sides.
+        let lip = |a: f32| Rgba::WHITE.with_alpha(a);
+        let lips = vec![(0.0, 1.0, lip(0.3)), (0.0, -1.0, lip(0.2)), (1.0, 0.0, lip(0.07)), (-1.0, 0.0, lip(0.07))];
+        scene.add(IRect::new(x, y, w, h), Paint::Lips { radius: 8.0, border: 1.0, lips });
+        let mut r = Renderer::new(100, 70);
+        r.set_scale(1.25);
+        r.render(&scene, IRect::new(0, 0, 100, 70));
+        let (cw, _) = r.pixels();
+        let data = r.canvas().data_as_u8_slice().to_vec();
+        let px = |x: i32, y: i32| {
+            let i = ((y * cw + x) * 4) as usize;
+            [data[i], data[i + 1], data[i + 2], data[i + 3]]
+        };
+        // The left edge: one opaque border pixel, one lit, then the fill.
+        let (left, mid) = (21, 40);
+        assert_eq!(px(left - 1, mid)[3], 0, "nothing outside the box");
+        assert_eq!(px(left, mid)[3], 255);
+        assert!(px(left + 1, mid)[0] > px(left + 2, mid)[0]);
+        assert_eq!(px(left + 2, mid), px(left + 6, mid), "the fill starts two pixels in");
+        // The top: one border row, one lit row, then the fill.
+        let (top, col) = (16, 50);
+        assert_eq!(px(col, top - 1)[3], 0);
+        assert_eq!(px(col, top)[3], 255);
+        let (lit, fill) = (px(col, top + 1)[0], px(col, top + 2)[0]);
+        assert!(lit > fill + 40, "the lip is lit: {lit} over {fill}");
+        assert_eq!(px(col, top + 2), px(col, top + 8), "one row deep");
+        // Round the top-right arc nothing is lit past the top lip: the two
+        // lips meeting there each thin out along it rather than both
+        // running its whole length.
+        let right = super::scaled(x + w, 1.25);
+        let arc = (top..top + 12).flat_map(|yy| (right - 12..right).map(move |xx| (xx, yy))).map(|(xx, yy)| px(xx, yy)[0]).max().unwrap();
+        assert!(arc <= lit + 2, "the arc {arc} past a lip {lit}");
     }
 
     #[test]

@@ -440,7 +440,7 @@ impl Card {
         scene.update_with(
             nodes.0,
             Scene::cover(card, Affine::IDENTITY, reach).intersect(&size),
-            Paint::Casts { rect: card, radius, layers, cutout: rr(card, radius) },
+            Paint::Casts { rect: card, radius, layers, cutout: Some(rr(card, radius)) },
             shown && !look.casts.is_empty(),
             Affine::IDENTITY,
             None,
@@ -665,7 +665,7 @@ impl Card {
         self.scene.update_with(
             self.casts,
             Scene::cover(card, item, reach_out * 1.25 + 2.0).intersect(&band),
-            Paint::Casts { rect: card, radius, layers, cutout },
+            Paint::Casts { rect: card, radius, layers, cutout: Some(cutout) },
             visible && cast_alpha > 0.0 && !self.look.casts.is_empty(),
             item,
             Some(band),

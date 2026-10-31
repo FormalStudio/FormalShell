@@ -735,3 +735,8 @@ runs = ["--overview"]
 [[rule]]
 paths = ["dev/smoke.d/launcher_density.sh"]
 runs = ["--launcher-density"]
+
+# A box's rim on whole pixels at a fractional scale
+[[rule]]
+paths = ["crates/formalshell-rs/src/render.rs", "crates/formalshell-rs/src/ui/boxes.rs", "crates/formalshell-rs/src/surfaces/rim.rs", "dev/card-corner.py", "dev/smoke.d/card_corner.sh"]
+runs = ["--card-corner"]

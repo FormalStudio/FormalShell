@@ -215,6 +215,10 @@ pub enum Paint {
     Picture { image: Bitmap, alpha: f32, radius: f32 },
     /// A rounded rect's fill under a border drawn inside its edge.
     Framed { fill: Rgba, radius: f32, border: Rgba, width: f32 },
+    /// A box's inset lines (`inset-shadow` with no blur), each an offset
+    /// and its colour, inside the border `border` wide of the rounded rect
+    /// on the node's bounds.
+    Lips { radius: f32, border: f32, lips: Vec<(f64, f64, Rgba)> },
     Text { text: ShapedText, color: Rgba },
     /// A line under a real Gaussian blur of `blur` px (the lyrics pane's
     /// depth of field), placed the way `Text` is.
@@ -225,11 +229,13 @@ pub enum Paint {
     /// A filled outline and its strokes, in the node's own coordinates.
     Shape { fill: Option<(BezPath, Rgba)>, strokes: Vec<(BezPath, Rgba, f64)> },
     /// A rounded rect filled top to bottom from one colour to another
-    /// (a Box's `face`).
-    Face { from: Rgba, to: Rgba, radius: f32 },
+    /// (a Box's `face`), inside a border `border` wide of the node's bounds
+    /// with the outer corner `radius`.
+    Face { from: Rgba, to: Rgba, radius: f32, border: f32 },
     /// Casts under a rounded rect, cut out of the rect's own shape so a
-    /// translucent fill over them shows the desktop and not the shadow.
-    Casts { rect: Rect, radius: f64, layers: Vec<Cast>, cutout: BezPath },
+    /// translucent fill over them shows the desktop and not the shadow;
+    /// no cutout is the rect's own outline.
+    Casts { rect: Rect, radius: f64, layers: Vec<Cast>, cutout: Option<BezPath> },
     /// A row of terminal cells (the screensaver's): plain rects and glyph
     /// outlines placed at their own origins, each in its own colour.
     Cells { rects: Vec<(Rect, Rgba)>, glyphs: Vec<(std::sync::Arc<BezPath>, f64, f64, Rgba)> },
@@ -239,7 +245,27 @@ pub enum Paint {
     Vector(Arc<Vec<VOp>>),
     /// A card's reactive rim (`surfaces/rim.rs`): lines stroked with a sweep
     /// gradient held in surface pixels, whatever the node's transform.
-    Rim(Vec<RimLine>),
+    /// A box's rim carries the box, and is drawn off its outline on whole
+    /// pixels the way `Framed` is.
+    Rim(Vec<RimLine>, Option<Fit>),
+}
+
+/// The rounded rect a box's paint was built off, in the node's own
+/// coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Fit {
+    pub rect: Rect,
+    pub radius: f64,
+}
+
+impl Paint {
+    /// A rim drawn off the box `rect`, `radius`.
+    pub fn fit(self, rect: Rect, radius: f64) -> Paint {
+        match self {
+            Paint::Rim(lines, _) => Paint::Rim(lines, Some(Fit { rect, radius })),
+            other => other,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -253,6 +279,32 @@ pub struct RimLine {
     pub centre: (f64, f64),
     pub stops: Vec<(f32, Rgba)>,
     pub mask: Option<RimMask>,
+}
+
+impl RimLine {
+    /// This line rebuilt off the outline `rect`, `radius`, its widths put
+    /// through `line`: a fill (wash, spill) over the outline, the specular
+    /// line one border deep inside it, the border stroked inside its edge.
+    pub fn fitted(&self, line: impl Fn(f64) -> f64, rect: Rect, radius: f64) -> RimLine {
+        let rounded = |r: Rect, radius: f64| vello_cpu::kurbo::Shape::to_path(&vello_cpu::kurbo::RoundedRect::from_rect(r, radius.max(0.0)), 0.1);
+        let fill = rounded(rect, radius);
+        let mut out = self.clone();
+        if let Some(mask) = &mut out.mask {
+            out.path = fill;
+            mask.rect = rect;
+        } else if out.clip.is_some() {
+            out.width = line(self.width / 2.0) * 2.0;
+            out.path = fill.clone();
+            out.clip = Some(fill);
+        } else {
+            let w = line(self.width);
+            let mut path = rounded(rect.inflate(-w / 2.0, -w / 2.0), radius - w / 2.0);
+            path.close_path();
+            out.path = path;
+            out.width = w;
+        }
+        out
+    }
 }
 
 /// A rim line that fills its path instead of stroking it, the sweep
@@ -494,6 +546,7 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
             Paint::Framed { fill: f1, radius: r1, border: b1, width: w1 },
             Paint::Framed { fill: f2, radius: r2, border: b2, width: w2 },
         ) => f1 == f2 && r1 == r2 && b1 == b2 && w1 == w2,
+        (Paint::Lips { radius: r1, border: b1, lips: l1 }, Paint::Lips { radius: r2, border: b2, lips: l2 }) => r1 == r2 && b1 == b2 && l1 == l2,
         (Paint::Glow { text: t1, color: c1, x: x1, y: y1, blur: b1 }, Paint::Glow { text: t2, color: c2, x: x2, y: y2, blur: b2 }) => {
             c1 == c2 && t1.same_as(t2) && x1 == x2 && y1 == y2 && b1 == b2
         }
@@ -506,11 +559,11 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
             Paint::Casts { rect: r1, radius: a1, layers: l1, cutout: c1 },
             Paint::Casts { rect: r2, radius: a2, layers: l2, cutout: c2 },
         ) => r1 == r2 && a1 == a2 && c1 == c2 && l1.len() == l2.len() && l1.iter().zip(l2).all(|(a, b)| a.same(b)),
-        (Paint::Face { from: f1, to: t1, radius: r1 }, Paint::Face { from: f2, to: t2, radius: r2 }) => {
-            f1 == f2 && t1 == t2 && r1 == r2
+        (Paint::Face { from: f1, to: t1, radius: r1, border: b1 }, Paint::Face { from: f2, to: t2, radius: r2, border: b2 }) => {
+            f1 == f2 && t1 == t2 && r1 == r2 && b1 == b2
         }
         (Paint::Vector(a), Paint::Vector(b)) => Arc::ptr_eq(a, b),
-        (Paint::Rim(a), Paint::Rim(b)) => a == b,
+        (Paint::Rim(a, f1), Paint::Rim(b, f2)) => a == b && f1 == f2,
         (Paint::Cells { rects: r1, glyphs: g1 }, Paint::Cells { rects: r2, glyphs: g2 }) => {
             r1 == r2
                 && g1.len() == g2.len()

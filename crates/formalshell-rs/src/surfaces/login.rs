@@ -169,7 +169,7 @@ pub fn paint_grid(p: &mut Painter, theme: &Theme, size: (i32, i32), alpha: f32) 
         } else {
             let top = ink.with_alpha(ink.a * alpha);
             p.rect(at(l.x0, l.y0, l.x1, from), top, 0.0);
-            p.shape(at(l.x0, from, l.x1, h), Paint::Face { from: top, to: top.with_alpha(0.0), radius: 0.0 });
+            p.shape(at(l.x0, from, l.x1, h), Paint::Face { from: top, to: top.with_alpha(0.0), radius: 0.0, border: 0.0 });
         }
     }
 }

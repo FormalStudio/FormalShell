@@ -396,6 +396,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   record commit, and the cancel path.
 - `capture_edit.sh` `--capture-edit`: the SAVED notification's EDIT action
   reaching a real editor with the capture's own path on argv.
+- `card_corner.sh` `--card-corner`: a card's 1px rim at scale 1.25 (g815's
+  panel), `layout: sidebar` on a headless second output made at 1.25 over
+  a flat light wallpaper, whose cards' right edge lands on a part pixel.
+  `dev/card-corner.py`, the shared check, reads the Spaces card along its
+  top and right edges: each border one whole pixel at full depth with the
+  wallpaper side clearly lighter, and nothing on the top-right arc lit past
+  the top edge's own line. The same read on the session's scale 1 output
+  is printed beside it.
 - `center.sh` `--center`: the notification centre listing the pending tier,
   with the toast stack suppressed for as long as it is open, content-tall on
   a short history and capped and scrolling on thirty rows, then one open at

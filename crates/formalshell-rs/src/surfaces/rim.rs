@@ -241,7 +241,7 @@ impl Rim {
             lines.push(RimLine { path: fill.clone(), width: width * 2.0, clip: Some(fill), centre, stops: sweep(&stops.specular, true), mask: None });
         }
         lines.push(RimLine { path: outer, width, clip: None, centre, stops: sweep(&stops.border, false), mask: None });
-        Some(Paint::Rim(lines))
+        Some(Paint::Rim(lines, None))
     }
 
     /// For the dump: the mean lift on each side, top, right, bottom, left.
