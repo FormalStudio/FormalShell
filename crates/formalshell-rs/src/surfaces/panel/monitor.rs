@@ -12,7 +12,7 @@ use fs_system::monitor::format::pct;
 use super::{Effect, Panel, View};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Ink, Weight, w};
+use crate::ui::{El, w};
 
 pub struct Monitor {
     _want: Want,
@@ -84,18 +84,14 @@ impl Panel for Monitor {
         let s = &v.theme.space;
         let mut parts = Vec::new();
         for (i, m) in metrics(v).into_iter().enumerate() {
-            let mut line = vec![w::label(&m.label).weight(Weight::Medium).elide().fill()];
+            let mut values = Vec::new();
             if !m.state.is_empty() {
-                line.push(w::caption(m.state).ink(Ink::Muted));
+                values.push(w::caption(m.state));
             }
             if !m.figure.is_empty() {
-                line.push(w::panel_value(m.figure));
+                values.push(w::panel_value(m.figure));
             }
-            let mut content = vec![w::row(s.panel_gap, line).fill().height(s.panel_row_compact).mid()];
-            if let Some(f) = m.fill {
-                content.push(w::track(f));
-            }
-            parts.push(w::panel_cell(s, w::column(0.0, content).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("metric{i}")));
+            parts.push(w::panel_meter(s, None, &m.label, values, m.fill.map(w::track)).stop(format!("metric{i}")));
         }
         let name = main_output(v);
         parts.push(w::panel_row(s, "monitor", "Main display", None, vec![w::panel_value(if name.is_empty() { "--".into() } else { name })]).stop("main"));

@@ -15,7 +15,7 @@ use crate::services::info::usage::{Claude, Codex, State};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Weight, w};
+use crate::ui::{El, Event, Ink, w};
 
 pub struct Usage {
     _want: Want,
@@ -104,46 +104,30 @@ impl Panel for Usage {
         }
 
         let now = now_ms() as f64;
-        let rows = |rows: &[UsageRow], first: usize| -> El {
-            let cells = rows
-                .iter()
+        let rows = |rows: &[UsageRow], first: usize| -> Vec<El> {
+            rows.iter()
                 .enumerate()
                 .map(|(i, r)| {
-                    let mut top = vec![w::label(&r.label).weight(Weight::Medium).elide().fill()];
+                    let mut values = Vec::new();
                     if !r.resets_at.is_empty() {
-                        top.push(w::caption(format_reset(now, &r.resets_at)).mono().ink(Ink::Muted));
+                        values.push(w::caption(format_reset(now, &r.resets_at)).mono());
                     }
                     let figure = w::panel_value(format!("{}%", (r.percent * 100.0).round()));
-                    top.push(if r.percent >= 0.9 { figure.ink(Ink::Destructive) } else { figure });
-                    let top = w::row(s.panel_gap, top).fill().height(s.panel_row_compact).mid();
-                    w::panel_cell(s, w::column(0.0, vec![top, w::track(r.percent)]).fill().pad(0.0, 0.0, 0.0, s.panel_gap))
-                        .stop(format!("row{}", first + i))
+                    values.push(if r.percent >= 0.9 { figure.ink(Ink::Destructive) } else { figure });
+                    w::panel_meter(s, None, &r.label, values, Some(w::track(r.percent))).stop(format!("row{}", first + i))
                 })
-                .collect();
-            w::column(0.0, cells)
+                .collect()
         };
 
         if u.claude_enabled {
             let title = if u.claude_tier.is_empty() { "Claude".to_owned() } else { format!("Claude / {}", u.claude_tier) };
-            let mut section = vec![w::panel_heading(s, &title)];
-            if u.claude != Claude::Ok {
-                section.push(w::panel_empty(s, claude_hint(u)));
-            } else if claude_rows(u).is_empty() {
-                section.push(w::panel_empty(s, "No data"));
-            }
-            section.push(rows(claude_rows(u), 0));
-            parts.push(w::column(s.panel_gap, section));
+            let empty = if u.claude == Claude::Ok { "No data".to_owned() } else { claude_hint(u) };
+            parts.push(w::panel_section(s, &title, rows(claude_rows(u), 0), &empty));
         }
         if u.codex_enabled {
             let title = if u.codex_tier.is_empty() { "Codex".to_owned() } else { format!("Codex / {}", u.codex_tier) };
-            let mut section = vec![w::panel_heading(s, &title)];
-            if u.codex != Codex::Ok {
-                section.push(w::panel_empty(s, codex_hint(u)));
-            } else if codex_rows(u).is_empty() {
-                section.push(w::panel_empty(s, "No data"));
-            }
-            section.push(rows(codex_rows(u), claude_rows(u).len()));
-            parts.push(w::column(s.panel_gap, section));
+            let empty = if u.codex == Codex::Ok { "No data" } else { codex_hint(u) };
+            parts.push(w::panel_section(s, &title, rows(codex_rows(u), claude_rows(u).len()), empty));
         }
         w::column(0.0, parts)
     }

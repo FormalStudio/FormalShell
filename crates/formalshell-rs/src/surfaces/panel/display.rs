@@ -92,14 +92,6 @@ fn set_brightness(fx: &Effect, d: &Brightness, percent: f64) {
     fx.service(move |ctx| display::set_percent(ctx, &id, percent, max));
 }
 
-fn dim(text: impl Into<String>) -> El {
-    w::caption(text).ink(Ink::Muted).elide()
-}
-
-fn value_line(text: String) -> El {
-    w::caption(text).mono().ink(Ink::Muted).elide()
-}
-
 fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
     let s = &v.theme.space;
     let store = v.store;
@@ -113,52 +105,40 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
 
     let mut lines = vec![w::row(s.panel_gap, head).fill().height(s.panel_row).mid()];
     if !row.enabled {
-        lines.push(dim("Disabled"));
+        lines.push(w::caption("Disabled").elide());
     }
     if !row.mirror_of.is_empty() {
-        lines.push(dim(format!("Mirrors {}", row.mirror_of)));
+        lines.push(w::caption(format!("Mirrors {}", row.mirror_of)).elide());
     }
     let reason = display::hdr_reason(store, &row.name);
     if row.enabled && !display::hdr_supported(store, &row.name) && reason != "Checking" {
-        lines.push(dim(format!("HDR unavailable: {reason}")));
+        lines.push(w::caption(format!("HDR unavailable: {reason}")).elide());
     }
     if rows.len() > 1 && !main.is_empty() && row.name == main {
-        lines.push(dim("Main display"));
+        lines.push(w::caption("Main display").elide());
     }
     let mode = outputs::mode_label(row);
     if !mode.is_empty() {
-        lines.push(value_line(mode));
+        lines.push(w::caption(mode).mono().elide());
     }
     let identity = outputs::describe(row);
     if !identity.is_empty() {
-        lines.push(value_line(identity));
+        lines.push(w::caption(identity).mono().elide());
     }
     let card = outputs::output_card_label(&row.name, &store.display.cards);
     if !card.is_empty() {
-        lines.push(value_line(card));
+        lines.push(w::caption(card).mono().elide());
     }
     if configurable {
-        lines.push(w::row(s.panel_gap, vec![dim("Scale").fill(), w::panel_value(outputs::format_scale(row.scale))]).fill().pad(0.0, s.xs, 0.0, 0.0));
-        lines.push(w::slider(outputs::fraction_for_scale(row.scale)).on(format!("scale:{}", row.name)));
+        let slider = w::slider(outputs::fraction_for_scale(row.scale)).on(format!("scale:{}", row.name));
+        lines.push(w::meter(s, None, "Scale", vec![w::panel_value(outputs::format_scale(row.scale))], Some(slider)));
     }
     w::panel_cell(s, w::column(s.xxs, lines).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("output:{}", row.name))
 }
 
 fn brightness_row(v: &View, d: &Brightness) -> El {
-    let s = &v.theme.space;
-    let head = w::row(
-        s.panel_gap,
-        vec![w::icon("sun").size(Type::Heading), w::label(&d.label).weight(Weight::Medium).elide().fill(), w::panel_value(format!("{}%", d.percent))],
-    )
-    .fill()
-    .height(s.panel_row_compact)
-    .mid();
     let track = w::slider(d.percent as f64 / 100.0).on(format!("brightness:{}", d.id));
-    w::panel_cell(s, w::column(0.0, vec![head, track]).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("brightness:{}", d.id))
-}
-
-fn switch_row(v: &View, glyph: &str, name: &str, checked: bool, on: String, stop: String) -> El {
-    w::panel_row(&v.theme.space, glyph, name, None, vec![w::switch(checked).on(on)]).stop(stop)
+    w::panel_meter(&v.theme.space, Some("sun"), &d.label, vec![w::panel_value(format!("{}%", d.percent))], Some(track)).stop(format!("brightness:{}", d.id))
 }
 
 impl Panel for Display {
@@ -190,41 +170,32 @@ impl Panel for Display {
         } else {
             let main = display::main_output(store);
             let list = rows.iter().map(|r| output_row(v, &rows, r, &main)).collect();
-            parts.push(w::panel_section_n(s, "Outputs", rows.len(), list));
+            parts.push(w::panel_section_n(s, "Outputs", rows.len(), list, ""));
         }
 
         let devices = store.display.devices();
-        let mut bright = vec![if devices.is_empty() { w::panel_heading(s, "Brightness") } else { w::panel_heading_with(s, "Brightness", devices.len().to_string()) }];
-        if devices.is_empty() {
-            bright.push(w::panel_empty(s, "No backlight"));
-        } else {
-            bright.push(w::column(0.0, devices.iter().map(|d| brightness_row(v, d)).collect()));
-        }
-        parts.push(w::column(s.panel_gap, bright));
+        let bright = devices.iter().map(|d| brightness_row(v, d)).collect();
+        parts.push(w::panel_section_n(s, "Brightness", devices.len(), bright, "No backlight"));
 
         let hdr = hdr_names(store, &rows);
         if !hdr.is_empty() {
             let list = hdr
                 .iter()
-                .map(|n| switch_row(v, "sun", n, display::hdr_on(store, n), format!("hdr:{n}"), format!("hdr:{n}")))
+                .map(|n| w::panel_switch(s, "sun", n.as_str(), None, display::hdr_on(store, n), format!("hdr:{n}")).stop(format!("hdr:{n}")))
                 .collect();
-            parts.push(w::panel_section_n(s, "HDR", hdr.len(), list));
+            parts.push(w::panel_section_n(s, "HDR", hdr.len(), list, ""));
         }
 
         if !rows.is_empty() {
-            let mut mirror = vec![w::panel_heading(s, "Mirror")];
             let plan = outputs::mirror_plan(&rows, focused(store));
-            if !display::config_available() {
-                mirror.push(w::panel_empty(s, "Mirror unsupported"));
-            } else if !plan.ok {
-                mirror.push(w::panel_empty(s, "Single display"));
-            }
+            let empty = if display::config_available() { "Single display" } else { "Mirror unsupported" };
+            let mut mirror = Vec::new();
             if mirror_actionable(store, &rows) {
                 let on = !outputs::mirrored_names(&rows).is_empty();
                 let source = if on { outputs::mirror_source(&rows) } else { plan.primary.clone() };
-                mirror.push(switch_row(v, "copy", &source, on, "mirror".into(), "mirror".into()));
+                mirror.push(w::panel_switch(s, "copy", source, None, on, "mirror").stop("mirror"));
             }
-            parts.push(w::column(s.panel_gap, mirror));
+            parts.push(w::panel_section(s, "Mirror", mirror, empty));
         }
 
         w::column(0.0, parts)

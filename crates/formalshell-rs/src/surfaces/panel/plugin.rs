@@ -15,7 +15,7 @@ use fs_theme::tokens::Space;
 use super::{Effect, Panel, View};
 use crate::services::plugins::{self, Row, RowKind, Run};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Variant, w};
+use crate::ui::{El, Event, Variant, w};
 
 /// What a plugin surface answers to on the `panel` target.
 pub const PREFIX: &str = "plugin:";
@@ -56,11 +56,10 @@ fn stop(row: &Row) -> String {
 /// The rows as a body. Every row but a label is one keyboard stop and one
 /// click target, both named `row:<id>`.
 pub fn body(s: &Space, run: Option<&Run>) -> El {
-    let label = |text: &str| w::panel_heading(s, text);
     let rows = match run {
         None => return w::column(s.section_gap, vec![w::panel_empty(s, "Loading")]),
         Some(Run::Failed(reason)) => {
-            return w::column(s.panel_gap, vec![label("Plugin error"), w::panel_text(s, w::caption(reason.clone()).ink(Ink::Destructive))]);
+            return w::column(s.panel_gap, vec![w::panel_heading(s, "Plugin error"), w::panel_error(s, reason.clone())]);
         }
         Some(Run::Live(display)) => &display.rows,
     };
@@ -70,19 +69,15 @@ pub fn body(s: &Space, run: Option<&Run>) -> El {
     let els = rows
         .iter()
         .map(|r| match r.kind {
-            RowKind::Label => label(&r.text),
+            RowKind::Label => w::panel_heading(s, &r.text),
             RowKind::Button => {
                 let button = if r.icon.is_empty() { w::button(r.text.clone()) } else { w::icon_text_button(r.icon.clone(), r.text.clone()) };
                 w::panel_text(s, w::row(0.0, vec![button.variant(Variant::Outline).stop(stop(r)).on(stop(r))]))
             }
-            RowKind::Row | RowKind::Toggle => {
-                let mut trailing = Vec::new();
-                if r.kind == RowKind::Toggle {
-                    trailing.push(w::switch(r.checked));
-                } else if !r.detail.is_empty() {
-                    trailing.push(w::panel_value(r.detail.clone()));
-                }
-                w::panel_row(s, &r.icon, &r.text, None, trailing).stop(stop(r)).on(stop(r))
+            RowKind::Toggle => w::panel_switch(s, &r.icon, &r.text, None, r.checked, stop(r)).stop(stop(r)).on(stop(r)),
+            RowKind::Row => {
+                let trailing = (!r.detail.is_empty()).then(|| w::panel_value(r.detail.clone()));
+                w::panel_row(s, &r.icon, &r.text, None, trailing.into_iter().collect()).stop(stop(r)).on(stop(r))
             }
         })
         .collect();

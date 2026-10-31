@@ -18,7 +18,7 @@ use super::{Edit, Effect, Panel, View};
 use crate::services::clipboard;
 use crate::services::devices::{self, network as net};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Variant, Weight, What, w};
+use crate::ui::{El, Event, Ink, Variant, What, w};
 
 /// The mask the passphrase field draws.
 const MASK: char = '\u{25CF}';
@@ -158,7 +158,6 @@ impl Network {
         let name = if r.ssid.is_empty() { w::label("Hidden network").ink(Ink::Muted) } else { w::label(r.ssid.clone()) };
         // Out of range has no bars to show, and an empty glyph would read as
         // a weak signal.
-        let name = name.weight(Weight::Medium).elide().fill();
         let glyph = if r.in_range { signal_glyph(r.signal) } else { "wifi-off" };
         let mut trailing = Vec::new();
         // Forget reveals on the row the pointer is on.
@@ -170,10 +169,8 @@ impl Network {
         } else if r.secured {
             trailing.push(w::icon("lock").ink(Ink::Muted));
         }
-        let mut parts = vec![wifi_line(s, glyph, name, r.connected, trailing)];
-        if let Some((text, failed)) = status {
-            parts.push(w::caption(text).ink(if failed { Ink::Destructive } else { Ink::Muted }).pad(s.panel_mark * 2.0 + s.panel_gap, 0.0, 0.0, s.panel_gap));
-        }
+        let detail = status.map(|(text, failed)| w::caption(text).ink(if failed { Ink::Destructive } else { Ink::Muted }));
+        let mut parts = vec![w::panel_line(s, Some(w::panel_chip(s, glyph, r.connected)), name, detail, trailing)];
         if self.prompt_for(n).is_some_and(|p| p.ssid == r.ssid) {
             let mut fields = Vec::new();
             if r.enterprise {
@@ -212,7 +209,7 @@ impl Network {
             out.push(action_row(v, "share-2", if open { "Hide network code" } else { "Share network" }, Vec::new()).stop("share").on("share"));
             match &n.qr {
                 net::Qr::Generating => out.push(w::panel_empty(s, "Generating")),
-                net::Qr::Failed(e) => out.push(w::panel_text(s, w::caption(e.to_string()).ink(Ink::Destructive))),
+                net::Qr::Failed(e) => out.push(w::panel_error(s, e.to_string())),
                 net::Qr::Shown(rows) => out.push(w::panel_text(s, w::cell(w::matrix(rows.clone())))),
                 net::Qr::Closed => {}
             }
@@ -247,18 +244,10 @@ impl Network {
         let result = w::panel_value(format!("\u{2193} {down}  \u{2191} {up} Mbps"));
         out.push(action_row(v, "gauge", label, vec![result]).stop("speedtest").on("speedtest"));
         if !st.error.is_empty() {
-            out.push(w::panel_text(s, w::caption(st.error.clone()).ink(Ink::Destructive)));
+            out.push(w::panel_error(s, st.error.clone()));
         }
         out
     }
-}
-
-/// A network's line: its signal in a chip, lit on the connected one, the
-/// name, then what trails it.
-pub(super) fn wifi_line(s: &fs_theme::tokens::Space, glyph: &str, name: El, connected: bool, trailing: Vec<El>) -> El {
-    let mut top = vec![w::panel_chip(s, glyph, connected), name];
-    top.extend(trailing);
-    w::row(s.panel_gap, top).fill().height(s.panel_row)
 }
 
 /// Bars for a 0..1 signal, Pond's three steps plus none.
@@ -275,9 +264,7 @@ pub(super) fn signal_glyph(signal: f64) -> &'static str {
 /// pointer is on it, whatever it carries trailing.
 fn action_row(v: &View, glyph: &str, label: &str, trailing: Vec<El>) -> El {
     let s = &v.theme.space;
-    let mut parts = vec![w::panel_chip(s, glyph, false), w::label(label).weight(Weight::Medium).ink(Ink::Muted).elide().fill()];
-    parts.extend(trailing);
-    w::panel_cell(s, w::row(s.panel_gap, parts).fill()).height(s.panel_row)
+    w::panel_row_with(s, Some(w::panel_chip(s, glyph, false)), w::label(label).ink(Ink::Muted), None, trailing)
 }
 
 impl Panel for Network {
@@ -308,10 +295,8 @@ impl Panel for Network {
             .wired_rows
             .iter()
             .map(|d| {
-                let mut r = vec![w::panel_chip(s, "ethernet-port", d.connected), w::label(d.name.clone()).weight(Weight::Medium).elide().fill()];
-                r.push(w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(format!("wired:{}", d.name)));
-                w::panel_cell(s, w::row(s.panel_gap, r).fill())
-                    .height(s.panel_row)
+                let button = w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(format!("wired:{}", d.name));
+                w::panel_row_with(s, Some(w::panel_chip(s, "ethernet-port", d.connected)), w::label(d.name.clone()), None, vec![button])
                     .stop(format!("wired:{}", d.name))
                     .on(format!("wired:{}", d.name))
             })

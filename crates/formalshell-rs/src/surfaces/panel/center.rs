@@ -46,13 +46,6 @@ fn send(fx: &Effect, op: Op) {
     fx.service(move |ctx| ctx.publish(store::Diff::Notifications(Diff::Op(op))));
 }
 
-/// An activity row (built for the sidebar too) with its text on the
-/// panel's text column.
-pub(super) fn inset(s: &fs_theme::tokens::Space, row: El) -> El {
-    let x = w::text_inset(s);
-    row.cell_state(|c| c.inset = Some((x, 0.0)))
-}
-
 fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     let s = &v.theme.space;
     let e = &g.entry;
@@ -161,7 +154,7 @@ impl Panel for Center {
         let any_folded = !folded.is_empty();
         if any_folded {
             let head = w::panel_heading_action(s, "Activity", "Clear", "activity-clear");
-            out.push(w::column(s.panel_gap, vec![head, w::panel_group(s, folded.into_iter().map(|r| inset(s, r)).collect())]));
+            out.push(w::panel_section_with(s, head, folded.into_iter().map(|r| w::panel_inset(s, r)).collect(), ""));
         }
         if pending.is_empty() && seen.is_empty() && !any_folded {
             out.push(w::panel_empty(s, "No notifications"));
@@ -169,7 +162,7 @@ impl Panel for Center {
         }
         let mut section = |title: &str, rows: &[Group], unread: bool| {
             let n = rows.iter().map(|g| g.count).sum();
-            out.push(w::panel_section_n(s, title, n, rows.iter().map(|g| row(v, g, unread, now)).collect()));
+            out.push(w::panel_section_n(s, title, n, rows.iter().map(|g| row(v, g, unread, now)).collect(), ""));
         };
         if !pending.is_empty() {
             section("Pending", &pending, true);

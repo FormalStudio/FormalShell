@@ -62,8 +62,7 @@ impl Panel for Weather {
         if !state.located {
             parts.push(w::panel_empty(s, "No location"));
         } else if let Some(e) = state.error {
-            parts.push(w::panel_empty(s, "Unavailable"));
-            parts.push(w::panel_text(s, w::caption(e.as_str().to_owned()).elide()));
+            parts.push(w::panel_empty_with(s, "Unavailable", e.as_str()));
         } else if state.weather.is_none() {
             parts.push(w::panel_empty(s, "Loading"));
         }
@@ -101,7 +100,7 @@ impl Panel for Weather {
                         w::panel_row(s, glyph, day_name, None, vec![w::panel_value(temps)]).stop(format!("day:{i}"))
                     })
                     .collect();
-                parts.push(w::panel_section_n(s, "Forecast", reading.forecast.len(), rows));
+                parts.push(w::panel_section_n(s, "Forecast", reading.forecast.len(), rows, ""));
             }
         }
         w::column(0.0, parts)

@@ -13,7 +13,7 @@ use crate::services::info::tailscale::{Action, Poll};
 use crate::services::info::{kick, tailscale};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, w};
+use crate::ui::{El, Event, w};
 
 pub struct Tailscale {
     _want: Want,
@@ -71,12 +71,11 @@ impl Panel for Tailscale {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let t = &v.store.info.tailscale;
-        let label = |text: &str| w::panel_empty(s, text);
         let mut parts = Vec::new();
         match t.poll {
-            Poll::Unknown => parts.push(label("Loading")),
-            Poll::Missing | Poll::Error => parts.push(label("No Tailscale")),
-            Poll::NeedsLogin => parts.push(label("Needs login")),
+            Poll::Unknown => parts.push(w::panel_empty(s, "Loading")),
+            Poll::Missing | Poll::Error => parts.push(w::panel_empty(s, "No Tailscale")),
+            Poll::NeedsLogin => parts.push(w::panel_empty(s, "Needs login")),
             Poll::Ok => {}
         }
         let Some(status) = t.status.as_ref().filter(|_| t.poll == Poll::Ok) else { return w::column(0.0, parts) };
@@ -103,7 +102,7 @@ impl Panel for Tailscale {
             .stop("status"),
         );
         if !t.error.is_empty() {
-            parts.push(w::panel_text(s, w::caption(t.error).ink(Ink::Destructive)));
+            parts.push(w::panel_error(s, t.error));
         }
         if let Some(ip) = model::self_ip(status) {
             parts.push(w::panel_row(s, "copy", "IP", None, vec![w::panel_value(ip.clone())]).stop("self").on(format!("copy:{ip}")));
@@ -111,10 +110,6 @@ impl Panel for Tailscale {
 
         let primary = v.theme.colors.get("primary");
         let muted = v.theme.colors.get("mutedForeground");
-        let mut peers = vec![if status.peers.is_empty() { w::panel_heading(s, "Peers") } else { w::panel_heading_with(s, "Peers", status.peers.len().to_string()) }];
-        if status.peers.is_empty() {
-            peers.push(label("None"));
-        }
         let rows = status
             .peers
             .iter()
@@ -129,8 +124,7 @@ impl Panel for Tailscale {
                 }
             })
             .collect();
-        peers.push(w::column(0.0, rows));
-        parts.push(w::column(s.panel_gap, peers));
+        parts.push(w::panel_section_n(s, "Peers", status.peers.len(), rows, "None"));
         w::column(0.0, parts)
     }
 

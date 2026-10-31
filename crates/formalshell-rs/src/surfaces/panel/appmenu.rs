@@ -12,7 +12,7 @@ use super::{Effect, Panel, View};
 use crate::services::appicon::{self, Action, Entry};
 use crate::services::compositor::{self, model::Window};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, w};
+use crate::ui::{El, Event, w};
 
 /// The probe's key in the appicon slice: the workspaces cell asks for the
 /// same windows at its own size under their ids.
@@ -109,17 +109,9 @@ impl Panel for AppMenu {
             Some(w::picture(sub.image.clone(), s.panel_icon)),
         );
 
-        let mut action_rows: Vec<El> = Vec::new();
-        let mut action_col = vec![if actions.is_empty() { w::panel_heading(s, "Actions") } else { w::panel_heading_with(s, "Actions", actions.len().to_string()) }];
-        if sub.entry.is_none() {
-            action_col.push(w::panel_empty(s, "No desktop entry"));
-        } else if actions.is_empty() {
-            action_col.push(w::panel_empty(s, "No actions"));
-        }
-        for (i, a) in actions.iter().enumerate() {
-            action_rows.push(w::panel_row(s, "", &a.name, None, Vec::new()).stop(format!("action:{i}")).on(format!("action:{i}")));
-        }
-        action_col.push(w::column(0.0, action_rows));
+        let action_rows = actions.iter().enumerate().map(|(i, a)| w::panel_row(s, "", &a.name, None, Vec::new()).stop(format!("action:{i}")).on(format!("action:{i}"))).collect();
+        let empty = if sub.entry.is_none() { "No desktop entry" } else { "No actions" };
+        let action_section = w::panel_section_n(s, "Actions", actions.len(), action_rows, empty);
 
         let window_rows: Vec<El> = sub
             .windows
@@ -128,16 +120,14 @@ impl Panel for AppMenu {
             .map(|(i, win)| {
                 let current = win.id == sub.window.id;
                 let title = if win.title.is_empty() { &win.app_id } else { &win.title };
-                let trailing = if current { vec![w::icon("circle-check").ink(Ink::Primary)] } else { Vec::new() };
-                w::panel_row(s, "", title, None, trailing)
-                    .current(current)
+                w::panel_row_checked(s, "", title, None, Vec::new(), current)
                     .stop(format!("window:{i}"))
                     .on(format!("window:{i}"))
             })
             .collect();
-        let windows = w::panel_section_n(s, "Windows", sub.windows.len(), window_rows);
+        let windows = w::panel_section_n(s, "Windows", sub.windows.len(), window_rows, "");
         let close = w::panel_footer(s, "x", "Close window").stop("close-window").on("close-window");
-        w::column(0.0, vec![hero, w::column(s.panel_gap, action_col), windows, close])
+        w::column(0.0, vec![hero, action_section, windows, close])
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

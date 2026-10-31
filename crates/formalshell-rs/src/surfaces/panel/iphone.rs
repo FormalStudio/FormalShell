@@ -17,7 +17,7 @@ use crate::services::ams;
 use crate::services::info::iphone::{self as service, Cmd};
 use crate::services::wants::{Source, Want};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
+use crate::ui::{El, Event, Ink, Type, Variant, What, w};
 use crate::ui::el::Opt;
 
 const TRANSPORT: [(&str, &str); 3] = [("skip-back", "prev"), ("", "toggle"), ("skip-forward", "next")];
@@ -91,16 +91,10 @@ impl Panel for Iphone {
             parts.push(w::panel_empty(s, "No bridge on PATH"));
         }
         if daemon_down {
-            parts.push(w::column(
-                s.xxs,
-                vec![
-                    w::panel_empty(s, "Bridge not running"),
-                    w::row(0.0, vec![w::spacer(), w::caption("Start the ancs4linux observer service"), w::spacer()]).fill(),
-                ],
-            ));
+            parts.push(w::panel_empty_with(s, "Bridge not running", "Start the ancs4linux observer service"));
         }
         if !error.is_empty() && !not_installed && !daemon_down {
-            parts.push(w::panel_text(s, w::para(error, Type::BodySmall, Weight::Normal, Ink::Destructive, 4)));
+            parts.push(w::panel_error(s, error));
         }
         if connected && !pairing {
             let pct = st.battery.map(|b| format!("{}%", (b * 100.0 + 0.5).floor()));
@@ -145,18 +139,12 @@ impl Panel for Iphone {
             ));
         }
         if connected && st.in_focus {
-            parts.push(w::panel_text(s, w::row(
-                s.panel_gap,
-                vec![
-                    w::icon("moon").ink(Ink::Muted),
-                    w::para("Focus likely on, so notifications are held back", Type::BodySmall, Weight::Normal, Ink::Muted, 4),
-                ],
-            )));
+            parts.push(w::panel_note(s, "Focus likely on, so notifications are held back"));
         }
         if connected {
-            let mut np = vec![w::panel_heading(s, "Now playing")];
+            let heading = w::panel_heading(s, "Now playing");
             if !now_playing {
-                np.push(w::panel_empty(s, "Not available yet"));
+                parts.push(w::panel_section_with(s, heading, Vec::new(), "Not available yet"));
             } else {
                 let mut lines = vec![w::panel_text(s, w::label(&ams.title).elide())];
                 if !ams.artist.is_empty() {
@@ -169,9 +157,8 @@ impl Panel for Iphone {
                     .collect();
                 let group = w::group(options, 0, false).ring(self.np_index);
                 lines.push(w::panel_text(s, group.hug().stop("np").on("np")));
-                np.push(w::column(s.xxs, lines));
+                parts.push(w::panel_runs(s, Some(heading), vec![w::Part::Loose(w::column(s.xxs, lines))]));
             }
-            parts.push(w::column(s.panel_gap, np));
         }
         if no_phone {
             let label = if pairing {

@@ -186,54 +186,31 @@ impl Panel for Calendar {
         } else if let Some(e) = next {
             side_text.push(format!("Next {}", agenda::clock_time(e.start, twelve)));
         }
-        let mut agenda_col = vec![w::panel_heading_with(s, &heading, side_text.join("  \u{b7}  "))];
+        let agenda_heading = w::panel_heading_with(s, &heading, side_text.join("  \u{b7}  "));
         let rows: Vec<El> = day_events
             .iter()
             .map(|e| {
                 let status = agenda::status(e, now);
                 let past = status == agenda::Status::Past;
                 let dot = w::dot(if past { c.get("mutedForeground") } else { c.get("primary") }, s.sm);
-                let words = w::column(
-                    0.0,
-                    vec![w::label(&e.summary).ink(if past { Ink::Muted } else { Ink::Fg }).elide(), w::caption(agenda::time_label(e, twelve)).mono()],
-                )
-                .fill();
-                let mut parts = vec![dot, words];
-                if status == agenda::Status::Now {
-                    parts.push(w::caption("Now").weight(Weight::Semibold).ink(Ink::Primary));
-                }
-                w::panel_cell(s, w::row(s.panel_gap, parts).fill()).height(s.panel_row)
+                let name = w::label(&e.summary).ink(if past { Ink::Muted } else { Ink::Fg });
+                let time = w::caption(agenda::time_label(e, twelve)).mono();
+                let now = (status == agenda::Status::Now).then(|| w::caption("Now").weight(Weight::Semibold).ink(Ink::Primary));
+                w::panel_row_with(s, Some(dot), name, Some(time), now.into_iter().collect())
             })
             .collect();
-        if rows.is_empty() {
-            agenda_col.push(w::panel_group(s, vec![w::panel_text(s, w::label("No events").ink(Ink::Muted).fill().height(s.panel_row))]));
-        } else {
-            agenda_col.push(w::panel_group(s, rows));
-        }
 
         let year = progress::year_fraction(&now);
         let life = Self::life(v.store, now);
         let show_life = self.show_life.unwrap_or(life.is_some()) && life.is_some();
-        let bar = |name: &str, fraction: f64| {
-            w::column(
-                0.0,
-                vec![
-                    w::row(s.panel_gap, vec![w::label(name).weight(Weight::Medium).fill(), w::panel_value(progress::format_percent(fraction))])
-                        .fill()
-                        .height(s.panel_row_compact)
-                        .mid(),
-                    w::track(fraction),
-                ],
-            )
-            .fill()
-            .pad(0.0, 0.0, 0.0, s.panel_gap)
-        };
-        let mut progress_rows = vec![w::panel_cell(s, bar("Year", year)).on("year")];
+        let bar = |name: &str, fraction: f64| w::panel_meter(s, None, name, vec![w::panel_value(progress::format_percent(fraction))], Some(w::track(fraction)));
+        let mut progress_rows = vec![bar("Year", year).on("year")];
         if show_life {
-            progress_rows.push(w::panel_cell(s, bar("Life", life.unwrap_or(0.0))));
+            progress_rows.push(bar("Life", life.unwrap_or(0.0)));
         }
 
-        w::column(0.0, vec![month, w::column(s.panel_gap, agenda_col), w::panel_section(s, "Progress", progress_rows)])
+        let agenda = w::panel_section_with(s, agenda_heading, rows, "No events");
+        w::column(0.0, vec![month, agenda, w::panel_section(s, "Progress", progress_rows, "")])
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

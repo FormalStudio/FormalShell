@@ -114,7 +114,7 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
             o
         })
         .collect();
-    w::column(s.panel_gap, vec![w::panel_heading_with(s, "Power profile", NAMES[active]), w::panel_text(s, w::group(options, active, true).squares().ring(ring).on("profile").stop("profile"))])
+    w::panel_control(s, w::panel_heading_with(s, "Power profile", NAMES[active]), w::group(options, active, true).squares().ring(ring).on("profile").stop("profile"))
 }
 
 pub struct Power {
@@ -226,7 +226,7 @@ impl Panel for Power {
         let performance = v.store.devices.profiles.as_ref().is_none_or(|p| p.has_performance());
         parts.push(profiles(s, active(v), at, performance));
         if model.available {
-            parts.push(w::column(s.panel_gap, vec![w::panel_heading(s, "Power flow"), w::panel_text(s, w::flow(flow_view(&model, true)))]));
+            parts.push(w::panel_control(s, w::panel_heading(s, "Power flow"), w::flow(flow_view(&model, true))));
         }
         w::column(0.0, parts)
     }

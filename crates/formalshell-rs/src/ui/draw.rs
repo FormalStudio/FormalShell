@@ -309,7 +309,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             let (pad_x, pad_y) = cell_pad(&s, state);
             let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            let h = if state.card || state.tile || state.group || state.glyph { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
+            let h = if state.card || state.tile || state.group || state.glyph || state.hero { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
             (cw + pad_x * 2.0, h)
         }
         Kind::Button { text, icon, square, .. } => {

@@ -108,7 +108,7 @@ impl Panel for WorkspacePreview {
 
     fn actions(&self, v: &View) -> Vec<El> {
         let n = self.windows(v).len();
-        vec![w::section_label(&v.theme.space, &format!("{n} {}", if n == 1 { "window" } else { "windows" }), None, false)]
+        vec![w::caption(format!("{n} {}", if n == 1 { "window" } else { "windows" }))]
     }
 
     fn body(&self, v: &View) -> El {
@@ -170,7 +170,7 @@ impl Panel for WorkspacePreview {
             None => w::caption("Click a window to jump to it"),
         };
         let mini = if tiles.is_empty() {
-            w::section_label(s, "No windows", None, false).centred()
+            w::panel_empty(s, "No windows")
         } else {
             w::strip((mini_w, mini_h), inset, content, scroll, tiles).on("mini")
         };

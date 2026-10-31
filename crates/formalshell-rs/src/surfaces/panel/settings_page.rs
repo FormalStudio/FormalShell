@@ -58,10 +58,9 @@ fn mark(v: &View, key: &Key) -> Option<El> {
         .map(|_| w::icon_button("rotate-ccw").tip("Reset").on(format!("reset:{}", key.key)).stop(format!("reset:{}", key.key)))
 }
 
-/// A key's row in its group; for a choice, its caption and the segmented
-/// control that sit on the card between groups (one inset level: nothing
-/// boxed inside a group), the control carrying the key's stop.
-fn row(v: &View, key: &Key) -> (El, Option<El>) {
+/// A key's row in its group; for a choice, its caption over the segmented
+/// control, which sits on the card between groups, carrying the key's stop.
+fn row(v: &View, key: &Key) -> w::Part {
     let s = &v.theme.space;
     let pinned = v.store.config.pinned(key.key);
     let shown = overrides::current(v.store, key);
@@ -70,7 +69,7 @@ fn row(v: &View, key: &Key) -> (El, Option<El>) {
     match key.control {
         Control::Switch(_) => {
             trailing.push(w::switch(shown.as_bool().unwrap_or(false)).enabled(!pinned).on(stop(key)));
-            (w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)), None)
+            w::Part::Row(w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)))
         }
         Control::Choice(values, _) => {
             let at = values.iter().position(|(x, _)| shown.as_str() == Some(*x));
@@ -80,16 +79,16 @@ fn row(v: &View, key: &Key) -> (El, Option<El>) {
                 let raw = v.store.config.get(key.key).map(|r| r.as_str().map_or_else(|| r.to_string(), str::to_owned));
                 let name = at.map(|i| values[i].1.to_owned()).or(raw).unwrap_or_default();
                 trailing.push(w::label(name).ink(Ink::Muted));
-                return (w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)), None);
+                return w::Part::Row(w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)));
             }
             // The label over a segmented choice is a section caption with the
             // current choice at its far end (panel-language spec §6).
             let at = at.unwrap_or(0);
             let names = values.iter().map(|(_, name)| (*name).to_owned()).collect();
-            let picker = w::panel_choice(s, names, at).on(stop(key)).stop(stop(key));
+            let picker = w::segmented(names, at).fill().on(stop(key)).stop(stop(key));
             let mut label = vec![w::panel_heading_with(s, key.label, values[at].1).fill()];
             label.extend(trailing);
-            (w::row(s.panel_gap, label).fill(), Some(picker))
+            w::Part::Loose(w::panel_control(s, w::row(s.panel_gap, label).fill(), picker))
         }
     }
 }
@@ -122,39 +121,19 @@ impl Panel for SettingsPage {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let mut out: Vec<El> = Vec::new();
-        let mut section = "";
-        let mut parts: Vec<El> = Vec::new();
-        let mut rows: Vec<El> = Vec::new();
-        let flush = |parts: &mut Vec<El>, rows: &mut Vec<El>| {
-            if !rows.is_empty() {
-                parts.push(w::panel_group(s, std::mem::take(rows)));
-            }
-        };
+        let mut sections: Vec<(&str, Vec<w::Part>)> = Vec::new();
         for key in overrides::keys(self.page.id) {
-            if key.section != section {
-                flush(&mut parts, &mut rows);
-                if !parts.is_empty() {
-                    out.push(w::column(s.panel_gap, std::mem::take(&mut parts)));
-                }
-                section = key.section;
-                parts.push(w::panel_heading(s, section));
+            if sections.last().is_none_or(|(name, _)| *name != key.section) {
+                sections.push((key.section, Vec::new()));
             }
-            match row(v, key) {
-                (el, None) => rows.push(el),
-                (label, Some(picker)) => {
-                    flush(&mut parts, &mut rows);
-                    parts.push(label);
-                    parts.push(picker);
-                }
+            if let Some((_, parts)) = sections.last_mut() {
+                parts.push(row(v, key));
             }
         }
-        flush(&mut parts, &mut rows);
-        if !parts.is_empty() {
-            out.push(w::column(s.panel_gap, parts));
-        }
+        out.extend(sections.into_iter().map(|(name, parts)| w::panel_runs(s, Some(w::panel_heading(s, name)), parts)));
         if let Some((glyph, label, _)) = link(self.page.id) {
             let row = w::panel_row(s, glyph, label, None, vec![w::icon("chevron-right").ink(Ink::Muted)]).stop("route").on("route");
-            out.push(w::panel_group(s, vec![row]).pad_top(s.panel_section));
+            out.push(w::panel_runs(s, None, vec![w::Part::Row(row)]));
         }
         w::column(0.0, out)
     }

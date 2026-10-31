@@ -56,14 +56,11 @@ impl Panel for Activity {
             parts.push(w::panel_empty(s, "Nothing running"));
         }
         if !running.is_empty() {
-            let mut col = vec![w::panel_heading_with(s, "Now", running.len().to_string())];
-            col.extend(running.into_iter().map(|r| super::center::inset(s, r)));
-            parts.push(w::column(s.panel_gap, col));
+            let n = running.len();
+            parts.push(w::panel_section_n(s, "Now", n, running.into_iter().map(|r| w::panel_inset(s, r)).collect(), ""));
         }
         if !earlier.is_empty() {
-            let mut col = vec![w::panel_heading(s, "Earlier")];
-            col.extend(earlier.into_iter().map(|r| super::center::inset(s, r)));
-            parts.push(w::column(s.panel_gap, col));
+            parts.push(w::panel_section(s, "Earlier", earlier.into_iter().map(|r| w::panel_inset(s, r)).collect(), ""));
         }
         let f = &a.fspec;
         let unavailable = match &f.error {
@@ -72,7 +69,7 @@ impl Panel for Activity {
             None => None,
         };
         if let Some(line) = unavailable {
-            parts.push(w::panel_text(s, w::caption(line).pad_top(s.panel_section)));
+            parts.push(w::panel_note(s, line));
         }
         w::column(0.0, parts)
     }

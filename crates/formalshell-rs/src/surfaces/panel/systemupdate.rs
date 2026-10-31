@@ -92,9 +92,9 @@ impl Panel for SystemUpdate {
                     w::panel_row(s, "", &input.name, Some(rev), vec![w::caption(status).ink(ink)]).stop(format!("input{i}"))
                 })
                 .collect();
-            parts.push(w::panel_section_n(s, "Inputs", u.inputs.len(), rows));
+            parts.push(w::panel_section_n(s, "Inputs", u.inputs.len(), rows, ""));
             if ok && counts.unknown > 0 {
-                parts.push(w::panel_text(s, w::caption(format!("{} unknown", counts.unknown)).ink(Ink::Muted)));
+                parts.push(w::panel_note(s, format!("{} unknown", counts.unknown)));
             }
         }
 
@@ -106,8 +106,7 @@ impl Panel for SystemUpdate {
             .height(s.panel_row)
             .stop("check")
             .on("check");
-        let i = w::text_inset(s);
-        parts.push(w::column(0.0, vec![check]).pad(i, s.panel_section, i, 0.0));
+        parts.push(w::panel_text(s, w::column(0.0, vec![check]).pad_top(s.panel_section)));
         w::column(0.0, parts)
     }
 

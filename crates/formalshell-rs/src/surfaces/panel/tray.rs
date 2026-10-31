@@ -10,7 +10,7 @@ use super::{Effect, Panel, View};
 use crate::scene::Bitmap;
 use crate::services::tray::{self, Item};
 use crate::store::Topic;
-use crate::ui::{El, Event, Size, What, w};
+use crate::ui::{El, Event, What, w};
 
 pub const ID: &str = "trayoverflow";
 
@@ -120,14 +120,8 @@ impl Panel for Tray {
                     None => w::icon("circle-help").ink(crate::ui::Ink::Muted),
                 };
                 let tip = [&item.tooltip, &item.title, &item.id].into_iter().find(|t| !t.is_empty()).cloned().unwrap_or_default();
-                w::cell(w::row(0.0, vec![w::spacer(), mark, w::spacer()]).fill().height(s.control_height))
-                    .cell_state(|c| {
-                        c.glyph = true;
-                        c.inset = Some((0.0, 0.0));
-                    })
+                w::glyph_cell(mark, s.control_height)
                     .interactive()
-                    .width(Size::Px(s.control_height))
-                    .height(s.control_height)
                     .stop(stop(item))
                     .on(stop(item))
                     .tip(tip)

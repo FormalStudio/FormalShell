@@ -16,7 +16,7 @@ use fs_system::audio::{clamp_device, clamp_stream};
 use super::{Effect, Panel, View};
 use crate::services::devices::audio::{self, Lists, Row};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Type, Weight, What, w};
+use crate::ui::{El, Event, What, w};
 
 /// AudioModel's step.
 const STEP: f64 = 0.05;
@@ -59,21 +59,14 @@ fn by_key<'a>(l: &'a Lists, key: &str) -> Option<(&'static str, &'a Row)> {
 }
 
 fn device_row(id_key: String, glyph: &str, r: &Row, selected: bool, s: &fs_theme::tokens::Space) -> El {
-    let trailing = if selected { vec![w::icon("circle-check").ink(Ink::Primary)] } else { Vec::new() };
-    w::panel_row(s, glyph, &r.label, None, trailing).current(selected).stop(id_key.clone()).on(id_key)
+    w::panel_row_checked(s, glyph, &r.label, None, Vec::new(), selected).stop(id_key.clone()).on(id_key)
 }
 
 /// A label, a percent and a mute switch over a track: the input master
 /// and every stream row.
 fn mixer_row(s: &fs_theme::tokens::Space, glyph: Option<&str>, label: &str, volume: f64, muted: bool, key: &str, track: El) -> El {
-    let mut top = Vec::new();
-    if let Some(g) = glyph {
-        top.push(w::icon(g).size(Type::Heading));
-    }
-    top.push(w::label(label).weight(Weight::Medium).elide().fill());
-    top.push(w::panel_value(format!("{}%", (volume * 100.0).round())));
-    top.push(w::switch(!muted).on(format!("mute:{key}")));
-    w::column(0.0, vec![w::row(s.panel_gap, top).fill().height(s.panel_row_compact).mid(), track]).pad(0.0, 0.0, 0.0, s.panel_gap)
+    let values = vec![w::panel_value(format!("{}%", (volume * 100.0).round())), w::switch(!muted).on(format!("mute:{key}"))];
+    w::panel_meter(s, glyph, label, values, Some(track))
 }
 
 impl Audio {
@@ -148,18 +141,18 @@ impl Panel for Audio {
         // one inset level, never a picker boxed inside the group.
         if l.outputs.len() > 1 {
             let rows = l.outputs.iter().map(|r| device_row(format!("output-device:{}", r.id), "volume-2", r, Some(r.id) == l.sink, s)).collect();
-            out.push(w::panel_section_n(s, "Output", l.outputs.len(), rows));
+            out.push(w::panel_section_n(s, "Output", l.outputs.len(), rows, ""));
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume), r.muted));
             let track = w::slider(volume).on("volume:input-slider");
             let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, "input-slider", track);
             let source = l.source.as_ref().map(|r| r.id);
-            let mut rows = vec![w::panel_cell(s, master).stop("input-slider")];
+            let mut rows = vec![master.stop("input-slider")];
             if l.inputs.len() > 1 {
                 rows.extend(l.inputs.iter().map(|r| device_row(format!("input-device:{}", r.id), "mic", r, Some(r.id) == source, s)));
             }
-            out.push(w::panel_section_n(s, "Input", l.inputs.len(), rows));
+            out.push(w::panel_section_n(s, "Input", l.inputs.len(), rows, ""));
         }
         if !l.streams.is_empty() {
             let rows = l
@@ -169,10 +162,10 @@ impl Panel for Audio {
                     let key = format!("stream:{}", r.id);
                     let track = w::slider(r.volume / 1.5).notch(1.0 / 1.5).on(format!("volume:{key}"));
                     let label = if r.label.is_empty() { "Stream" } else { &r.label };
-                    w::panel_cell(s, mixer_row(s, None, label, r.volume, r.muted, &key, track)).stop(key)
+                    mixer_row(s, None, label, r.volume, r.muted, &key, track).stop(key)
                 })
                 .collect();
-            out.push(w::panel_section_n(s, "Apps", l.streams.len(), rows));
+            out.push(w::panel_section_n(s, "Apps", l.streams.len(), rows, ""));
         }
         w::column(0.0, out)
     }

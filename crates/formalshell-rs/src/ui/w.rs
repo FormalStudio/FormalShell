@@ -371,8 +371,25 @@ pub fn panel_choice(s: &Space, options: Vec<String>, index: usize) -> El {
 
 /// A ghost cell whose child sits on the text column: what every row is.
 pub fn panel_cell(s: &Space, child: El) -> El {
+    panel_inset(s, cell(child).ghost().interactive())
+}
+
+/// A row cell built elsewhere (an activity row the sidebar shares) moved
+/// onto the text column.
+pub fn panel_inset(s: &Space, cell: El) -> El {
     let x = text_inset(s);
-    cell(child).ghost().interactive().cell_state(|c| c.inset = Some((x, 0.0)))
+    cell.cell_state(|c| c.inset = Some((x, 0.0)))
+}
+
+/// A mark centred in a `side` square glyph cell: a chip's shape.
+pub fn glyph_cell(mark: El, side: f64) -> El {
+    cell(row(0.0, vec![spacer(), mark, spacer()]).fill().height(side))
+        .cell_state(|c| {
+            c.glyph = true;
+            c.inset = Some((0.0, 0.0));
+        })
+        .width(super::Size::Px(side))
+        .height(side)
 }
 
 /// Pond's icon chip: a `panelIcon` glyph centred in a 32 square
@@ -383,33 +400,59 @@ pub fn panel_chip(s: &Space, glyph: &str, on: bool) -> El {
 
 /// A chip whose glyph keeps an ink of its own: a critical notification's.
 pub fn panel_chip_ink(s: &Space, glyph: &str, on: bool, ink: Ink) -> El {
-    let side = s.panel_mark * 2.0;
-    let glyph = icon(glyph).size(Type::Heading).ink(ink);
-    cell(row(0.0, vec![spacer(), glyph, spacer()]).fill().height(side))
-        .cell_state(|c| {
-            c.glyph = true;
-            c.open = on;
-            c.inset = Some((0.0, 0.0));
-        })
-        .width(super::Size::Px(side))
-        .height(side)
+    glyph_cell(icon(glyph).size(Type::Heading).ink(ink), s.panel_mark * 2.0).cell_state(|c| c.open = on)
 }
 
 /// §4's row: a glyph in its chip, the name in `body` 500 with an optional
 /// `caption` line under it, and at most one trailing value, mark or
 /// control. Rows abut; the list's current one takes `.current(true)`.
 pub fn panel_row(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, trailing: Vec<El>) -> El {
-    let mut parts = Vec::new();
-    if !glyph.is_empty() {
-        parts.push(panel_chip(s, glyph, false));
-    }
-    let mut words = vec![label(name).weight(Weight::Medium).elide()];
-    if let Some(d) = detail.filter(|d| !d.is_empty()) {
-        words.push(caption(d).elide());
-    }
+    let lead = (!glyph.is_empty()).then(|| panel_chip(s, glyph, false));
+    panel_row_with(s, lead, label(name), detail.filter(|d| !d.is_empty()).map(caption), trailing)
+}
+
+/// `panel_row` with its own lead (a lit chip, a dot), name and detail.
+pub fn panel_row_with(s: &Space, lead: Option<El>, name: El, detail: Option<El>, trailing: Vec<El>) -> El {
+    panel_cell(s, panel_line(s, lead, name, detail, trailing)).height(s.panel_row)
+}
+
+/// A row's line alone, for a row cell that carries more under it.
+pub fn panel_line(s: &Space, lead: Option<El>, name: El, detail: Option<El>, trailing: Vec<El>) -> El {
+    let mut parts: Vec<El> = lead.into_iter().collect();
+    let mut words = vec![name.elide()];
+    words.extend(detail.map(El::elide));
     parts.push(column(0.0, words).fill());
     parts.extend(trailing);
-    panel_cell(s, row(s.panel_gap, parts).fill()).height(s.panel_row)
+    row(s.panel_gap, parts).fill().height(s.panel_row)
+}
+
+/// The row a list is on now carries a check circle in `primary` (§4).
+pub fn panel_row_checked(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, mut trailing: Vec<El>, checked: bool) -> El {
+    if checked {
+        trailing.push(icon("circle-check").ink(Ink::Primary));
+    }
+    panel_row(s, glyph, name, detail, trailing).current(checked)
+}
+
+/// A row whose one trailing control is a switch firing `on`.
+pub fn panel_switch(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, checked: bool, on: impl Into<String>) -> El {
+    panel_row(s, glyph, name, detail, vec![switch(checked).on(on)])
+}
+
+/// §6's slider or meter as a row: the name and its values on a compact
+/// line over the track.
+pub fn panel_meter(s: &Space, glyph: Option<&str>, name: &str, values: Vec<El>, track: Option<El>) -> El {
+    panel_cell(s, meter(s, glyph, name, values, track).pad(0.0, 0.0, 0.0, s.panel_gap))
+}
+
+/// A meter's line and track, for a row cell that carries more.
+pub fn meter(s: &Space, glyph: Option<&str>, name: &str, values: Vec<El>, track: Option<El>) -> El {
+    let mut top: Vec<El> = glyph.map(|g| icon(g).size(Type::Heading)).into_iter().collect();
+    top.push(label(name).elide().fill());
+    top.extend(values);
+    let mut parts = vec![row(s.panel_gap, top).fill().height(s.panel_row_compact).mid()];
+    parts.extend(track);
+    column(0.0, parts).fill()
 }
 
 /// A row's trailing value: `mono` in `muted`.
@@ -492,20 +535,93 @@ pub fn panel_heading_action(s: &Space, text: &str, action: &str, on: &str) -> El
     row(s.panel_gap, vec![panel_heading(s, text).fill(), button.pad(0.0, s.panel_section, i - s.xs, 0.0)]).fill()
 }
 
-/// A heading over its rows in one group.
-pub fn panel_section(s: &Space, title: &str, rows: Vec<El>) -> El {
-    column(s.panel_gap, vec![panel_heading(s, title), panel_group(s, rows)])
+/// A heading over its rows in one group, or over §7's `empty` line when
+/// there are none.
+pub fn panel_section_with(s: &Space, heading: El, rows: Vec<El>, empty: &str) -> El {
+    let body = if rows.is_empty() { panel_empty(s, empty) } else { panel_group(s, rows) };
+    column(s.panel_gap, vec![heading, body])
 }
 
-/// A section whose heading carries how many things it lists.
-pub fn panel_section_n(s: &Space, title: &str, n: usize, rows: Vec<El>) -> El {
-    column(s.panel_gap, vec![panel_heading_with(s, title, n.to_string()), panel_group(s, rows)])
+pub fn panel_section(s: &Space, title: &str, rows: Vec<El>, empty: &str) -> El {
+    panel_section_with(s, panel_heading(s, title), rows, empty)
+}
+
+/// A section whose heading carries how many things it lists, while it
+/// lists any.
+pub fn panel_section_n(s: &Space, title: &str, n: usize, rows: Vec<El>, empty: &str) -> El {
+    let heading = if rows.is_empty() { panel_heading(s, title) } else { panel_heading_with(s, title, n.to_string()) };
+    panel_section_with(s, heading, rows, empty)
+}
+
+/// One thing in a section: a row its group gathers, or a control that
+/// stands on the panel between groups (§2's one inset level).
+pub enum Part {
+    Row(El),
+    Loose(El),
+}
+
+/// A heading over runs of rows, one group each, with the loose controls
+/// between them. With no heading it keeps a section's room above.
+pub fn panel_runs(s: &Space, heading: Option<El>, parts: Vec<Part>) -> El {
+    let mut out: Vec<El> = heading.into_iter().collect();
+    let titled = !out.is_empty();
+    let mut run = Vec::new();
+    for p in parts {
+        match p {
+            Part::Row(r) => run.push(r),
+            Part::Loose(c) => {
+                if !run.is_empty() {
+                    out.push(panel_group(s, std::mem::take(&mut run)));
+                }
+                out.push(c);
+            }
+        }
+    }
+    if !run.is_empty() {
+        out.push(panel_group(s, run));
+    }
+    let col = column(s.panel_gap, out);
+    if titled { col } else { col.pad_top(s.panel_section) }
+}
+
+/// §6's label row over a control on the text column: a segmented choice,
+/// a button group, a flow.
+pub fn panel_control(s: &Space, heading: El, control: El) -> El {
+    column(s.panel_gap, vec![heading, panel_text(s, control)])
 }
 
 /// §7's empty or unavailable line: `body` in `muted`, centred in a row's
 /// band.
 pub fn panel_empty(s: &Space, text: impl Into<String>) -> El {
     row(0.0, vec![spacer(), text_el(text, Type::Body, Weight::Normal, false, Ink::Muted), spacer()]).fill().height(s.panel_row)
+}
+
+/// The empty line with the fix the user can make centred under it (§7).
+pub fn panel_empty_with(s: &Space, text: impl Into<String>, hint: impl Into<String>) -> El {
+    column(s.xxs, vec![panel_empty(s, text), row(0.0, vec![spacer(), caption(hint), spacer()]).fill()])
+}
+
+/// A note under the body: `caption` in `muted` on the text column.
+pub fn panel_note(s: &Space, text: impl Into<String>) -> El {
+    panel_text(s, para(text, Type::Caption, Weight::Normal, Ink::Muted, 3).pad_top(s.panel_section))
+}
+
+/// §7's error: a `caption` line in `destructive` under what it belongs to.
+pub fn panel_error(s: &Space, text: impl Into<String>) -> El {
+    panel_text(s, para(text, Type::Caption, Weight::Normal, Ink::Destructive, 4))
+}
+
+/// One entry of a float menu: its glyph, or a check while current, and
+/// the label. An entry with no glyph keeps the check's room.
+pub fn menu_item(s: &Space, glyph: &str, text: impl Into<String>, current: bool, trailing: Vec<El>) -> El {
+    let lead = match (current, glyph.is_empty()) {
+        (true, _) => icon("check"),
+        (false, true) => icon("check").ink(Ink::Color(Rgba::TRANSPARENT)),
+        (false, false) => icon(glyph),
+    };
+    let mut parts = vec![lead.size(Type::BodySmall), text_el(text, Type::BodySmall, Weight::Normal, false, Ink::Fg).elide()];
+    parts.extend(trailing);
+    cell(row(s.icon_gap, parts)).selected(current).interactive()
 }
 
 /// §7's footer row: a row in `muted`, the last thing in the card.

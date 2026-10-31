@@ -11,7 +11,7 @@ use fs_theme::color::Rgba;
 use super::{Panel, View};
 use crate::store::Topic;
 use crate::ui::el::Kind;
-use crate::ui::{El, Ink, w};
+use crate::ui::{El, w};
 
 #[derive(Default)]
 pub struct Dualsense;
@@ -68,9 +68,9 @@ impl Panel for Dualsense {
             rows.push(status_row(s, "Player LEDs", "circle-dot", w::row(s.sm, pips), format!("{lit} / 5"), "leds"));
         }
         if !rows.is_empty() {
-            out.push(w::panel_section(s, "Status", rows));
+            out.push(w::panel_section(s, "Status", rows, ""));
         }
-        out.push(w::panel_text(s, w::caption("Read only").ink(Ink::Muted).pad_top(s.panel_section)));
+        out.push(w::panel_note(s, "Read only"));
         w::column(0.0, out)
     }
 }

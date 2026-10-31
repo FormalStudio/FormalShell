@@ -78,15 +78,12 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
         trailing.push(if idle { el.on(format!("forget:{}", d.address)).tip("Forget") } else { el });
     }
     let connected = bucket == Bucket::Connected;
-    if connected {
-        trailing.push(w::icon("circle-check").ink(Ink::Primary));
-    }
     let glyph = if connected { "bluetooth-connected" } else { "bluetooth" };
     let detail = (failed.is_none() && !status.is_empty()).then(|| status.clone());
-    let row = w::panel_row(s, glyph, label(d), detail, trailing).stop(key).current(connected);
+    let row = w::panel_row_checked(s, glyph, label(d), detail, trailing, connected).stop(key);
     let row = if idle { row.on(format!("row:{}", d.address)) } else { row };
     match failed {
-        Some(_) => w::column(0.0, vec![row, w::panel_text(s, w::caption(status).ink(Ink::Destructive))]),
+        Some(_) => w::column(0.0, vec![row, w::panel_error(s, status)]),
         None => row,
     }
 }
@@ -163,13 +160,13 @@ impl Panel for Bluetooth {
             out.push(w::panel_empty(s, if enabled { "Scanning\u{2026}" } else { "Turn on to scan" }));
         }
         if !paired.is_empty() {
-            out.push(w::panel_section_n(s, "Paired", paired.len(), paired));
+            out.push(w::panel_section_n(s, "Paired", paired.len(), paired, ""));
         }
         if !available.is_empty() {
-            out.push(w::panel_section_n(s, "Available", available.len(), available));
+            out.push(w::panel_section_n(s, "Available", available.len(), available, ""));
         }
         let adapter = format!("{} \u{b7} {}", bt.adapter, bt.state);
-        out.push(w::panel_text(s, w::caption(adapter).ink(Ink::Muted).elide().pad_top(s.panel_section)));
+        out.push(w::panel_note(s, adapter));
         w::column(0.0, out)
     }
 

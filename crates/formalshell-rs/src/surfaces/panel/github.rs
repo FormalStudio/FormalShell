@@ -49,12 +49,11 @@ impl Panel for Github {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let g = &v.store.info.github;
-        let label = |text: &str| w::panel_empty(s, text);
         let mut parts = Vec::new();
         match g.poll {
-            Poll::Unknown => parts.push(label("Loading")),
-            Poll::Missing | Poll::Error => parts.push(label("No gh")),
-            Poll::NoAuth => parts.push(label("No auth")),
+            Poll::Unknown => parts.push(w::panel_empty(s, "Loading")),
+            Poll::Missing | Poll::Error => parts.push(w::panel_empty(s, "No gh")),
+            Poll::NoAuth => parts.push(w::panel_empty(s, "No auth")),
             Poll::Ok => {}
         }
         if g.poll != Poll::Ok {
@@ -73,10 +72,6 @@ impl Panel for Github {
             },
         ));
         let section = |title: &str, total: u64, rows: &[Row], first: usize| {
-            let mut head = vec![w::panel_heading(s, title)];
-            if rows.is_empty() {
-                head.push(label("None"));
-            }
             let cells = rows
                 .iter()
                 .enumerate()
@@ -88,8 +83,7 @@ impl Panel for Github {
                     w::panel_row(s, "", r.title.clone(), repo, trailing).stop(format!("row{}", first + i)).on(format!("open:{}", r.url))
                 })
                 .collect();
-            head.push(w::column(0.0, cells));
-            w::column(s.panel_gap, head)
+            w::panel_section(s, title, cells, "None")
         };
         parts.push(section("Pull requests", g.prs, &g.pr_rows, 0));
         parts.push(section("Issues", g.issues, &g.issue_rows, g.pr_rows.len()));

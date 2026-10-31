@@ -167,17 +167,8 @@ impl Media {
         }
         rows.into_iter()
             .map(|(id, label, icon, playing, current)| {
-                let glyph = if current { "check" } else { icon };
-                let mut parts = vec![
-                    w::icon(if glyph.is_empty() { "check" } else { glyph })
-                        .size(Type::BodySmall)
-                        .ink(if glyph.is_empty() { Ink::Color(fs_theme::color::Rgba::TRANSPARENT) } else { Ink::Fg }),
-                    w::text(label).size(Type::BodySmall).elide(),
-                ];
-                if playing {
-                    parts.push(w::icon("play").size(Type::Caption).ink(Ink::Muted));
-                }
-                w::cell(w::row(s.icon_gap, parts)).selected(current).interactive().stop(format!("pick:{id}")).on(format!("pick:{id}"))
+                let playing = playing.then(|| w::icon("play").size(Type::Caption).ink(Ink::Muted));
+                w::menu_item(s, icon, label, current, playing.into_iter().collect()).stop(format!("pick:{id}")).on(format!("pick:{id}"))
             })
             .collect()
     }
@@ -274,7 +265,7 @@ impl Panel for Media {
             motion_art::want(motion_art::PANEL, None);
             self.sections.borrow_mut().clear();
             let radio = w::icon_text_button("radio", "Radio").variant(crate::ui::Variant::Outline).stop("transport").on("radio");
-            return w::row(0.0, vec![w::panel_empty(s, "No player").fill(), w::column(0.0, vec![radio]).pad(0.0, 0.0, w::text_inset(s), 0.0)]).fill().mid();
+            return w::panel_text(s, w::row(0.0, vec![w::panel_empty(s, "No player").fill(), radio]).fill().mid());
         };
         let mut col = Vec::new();
 

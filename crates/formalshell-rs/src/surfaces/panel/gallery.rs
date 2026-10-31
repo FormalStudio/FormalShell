@@ -50,15 +50,13 @@ impl Panel for Gallery {
     fn body(&self, v: &View) -> El {
         let t = v.theme;
         let s = &t.space;
-        let label = |text: &str| w::panel_heading(s, text);
-
+        let control = |title: &str, parts: Vec<El>| w::panel_control(s, w::panel_heading(s, title), w::column(s.row_gap, parts));
         let controls = w::column(
-            s.section_gap,
+            0.0,
             vec![
-                w::column(
-                    s.row_gap,
+                control(
+                    "Button",
                     vec![
-                        label("Button"),
                         w::row(
                             s.sm,
                             [Variant::Default, Variant::Outline, Variant::Ghost, Variant::Selected, Variant::Destructive]
@@ -77,17 +75,10 @@ impl Panel for Gallery {
                         ),
                     ],
                 ),
-                w::column(
-                    s.row_gap,
+                control("Switch", vec![w::row(s.sm, vec![w::switch(self.switch).on("switch"), w::switch(!self.switch).on("switch")])]),
+                control(
+                    "ButtonGroup",
                     vec![
-                        label("Switch"),
-                        w::row(s.sm, vec![w::switch(self.switch).on("switch"), w::switch(!self.switch).on("switch")]),
-                    ],
-                ),
-                w::column(
-                    s.row_gap,
-                    vec![
-                        label("ButtonGroup"),
                         w::group(
                             vec![Opt::new("Saver").icon("leaf"), Opt::new("Balanced").icon("scale"), Opt::new("Performance").icon("zap")],
                             self.pick,
@@ -96,45 +87,25 @@ impl Panel for Gallery {
                         .on("pick"),
                     ],
                 ),
-                w::column(
-                    s.row_gap,
-                    vec![label("Segmented"), w::segmented(vec!["Dark".into(), "Light".into()], self.segment).on("segment")],
-                ),
-                w::column(
-                    s.row_gap,
+                control("Segmented", vec![w::segmented(vec!["Dark".into(), "Light".into()], self.segment).on("segment")]),
+                control("Track", vec![w::slider(self.level).on("level"), w::track(1.0 / 1.5).notch(1.0 / 1.5)]),
+                control("Ring", vec![w::row(s.sm, vec![w::ring(Ring::Progress(0.4)), w::ring(Ring::Done), w::ring(Ring::Failed)])]),
+                control(
+                    "Input",
                     vec![
-                        label("Track"),
-                        w::slider(self.level).on("level"),
-                        w::track(1.0 / 1.5).notch(1.0 / 1.5),
-                    ],
-                ),
-                w::column(
-                    s.row_gap,
-                    vec![
-                        label("Ring"),
-                        w::row(s.sm, vec![w::ring(Ring::Progress(0.4)), w::ring(Ring::Done), w::ring(Ring::Failed)]),
-                    ],
-                ),
-                w::column(
-                    s.row_gap,
-                    vec![
-                        label("Input"),
                         w::input("", "Placeholder", false, None),
                         w::input("formaltest", "", true, None),
                         w::input("hunter2", "", false, Some("Wrong password")),
                     ],
                 ),
-                w::column(
-                    s.row_gap,
-                    vec![
-                        label("Sparkline"),
-                        w::sparkline(
-                            (0..40).map(|i| 0.5 + 0.35 * ((i as f64) / 4.0).sin()).collect(),
-                            (0..40).map(|i| 0.3 + 0.2 * ((i as f64) / 6.0).cos()).collect(),
-                            1.0,
-                            60,
-                        ),
-                    ],
+                control(
+                    "Sparkline",
+                    vec![w::sparkline(
+                        (0..40).map(|i| 0.5 + 0.35 * ((i as f64) / 4.0).sin()).collect(),
+                        (0..40).map(|i| 0.3 + 0.2 * ((i as f64) / 6.0).cos()).collect(),
+                        1.0,
+                        60,
+                    )],
                 ),
             ],
         )
@@ -149,9 +120,9 @@ impl Panel for Gallery {
             ("Destructive", |s| s.destructive = true),
             ("Warning", |s| s.warning = true),
         ];
-        let mut cells = vec![label("Cell")];
+        let mut cells = vec![w::panel_heading(s, "Cell")];
         cells.extend(states.iter().map(|(name, f)| w::cell(w::label(*name)).cell_state(|s| f(s))));
-        let mut rows = vec![label("Launcher row / token")];
+        let mut rows = vec![w::panel_heading(s, "Launcher row / token")];
         rows.extend([("Rest", false, false), ("Hovered", true, false), ("Selected", false, true)].into_iter().map(|(name, hovered, selected)| {
             let weight = if selected { Weight::Semibold } else { Weight::Normal };
             w::cell(w::row(s.lg, vec![w::icon("terminal").size(Type::Heading), w::text(name).weight(weight)]))
@@ -175,14 +146,14 @@ impl Panel for Gallery {
             vec![
                 w::column(s.row_gap, cells),
                 w::column(0.0, rows),
-                label("Dim / unavailable"),
-                w::column(s.row_gap, vec![label("Shoulders / joined to the bar"), joins]),
+                w::panel_heading(s, "Dim / unavailable"),
+                w::column(s.row_gap, vec![w::panel_heading(s, "Shoulders / joined to the bar"), joins]),
             ],
         )
         .fill();
 
         let f = &t.font_size;
-        let mut types = vec![label("Type scale")];
+        let mut types = vec![w::panel_heading(s, "Type scale")];
         for (name, px, ty) in [
             ("caption", f.caption, Type::Caption),
             ("bodySmall", f.body_small, Type::BodySmall),
@@ -203,21 +174,21 @@ impl Panel for Gallery {
         let samples = w::column(
             s.row_gap,
             vec![
-                label("PowerFlow / sample snapshot, not live"),
+                w::panel_heading(s, "PowerFlow / sample snapshot, not live"),
                 w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)),
-                label("Battery / sample, not live"),
+                w::panel_heading(s, "Battery / sample, not live"),
                 w::column(0.0, vec![w::panel_text(s, super::power::battery_card(s, &battery_sample())), super::power::profiles(s, 0, 0, true)]),
-                label("Wi-Fi / sample, not live"),
+                w::panel_heading(s, "Wi-Fi / sample, not live"),
                 wifi_sample(s),
             ],
         )
         .width(Size::Px(s.panel_width));
 
-        let mut seps = vec![label("Separator")];
-        seps.push(w::column(s.row_gap, vec![label("Full bleed"), w::separator()]));
-        seps.push(w::column(s.row_gap, vec![label("Inset"), w::separator_inset(s.control_padding_x)]).pad_top(s.section_gap - s.row_gap));
+        let mut seps = vec![w::panel_heading(s, "Separator")];
+        seps.push(w::column(s.row_gap, vec![w::panel_heading(s, "Full bleed"), w::separator()]));
+        seps.push(w::column(s.row_gap, vec![w::panel_heading(s, "Inset"), w::separator_inset(s.control_padding_x)]).pad_top(s.section_gap - s.row_gap));
         seps.push(
-            w::column(s.row_gap, vec![label("Vertical"), w::separator_vertical().pad_start(s.control_padding_x)])
+            w::column(s.row_gap, vec![w::panel_heading(s, "Vertical"), w::separator_vertical().pad_start(s.control_padding_x)])
                 .pad_top(s.section_gap - s.row_gap),
         );
         let keycaps = w::row(
@@ -225,7 +196,7 @@ impl Panel for Gallery {
             vec![w::chord(s, "Enter"), w::chord_keys(s, &["Up", "Down"]), w::chord(s, "Shift+Enter"), w::chord(s, "Super+Alt+Space"), w::chord(s, "Esc")],
         )
         .pad_start(s.control_padding_x);
-        let mut swatches = vec![label("Color tokens")];
+        let mut swatches = vec![w::panel_heading(s, "Color tokens")];
         for key in fs_theme::palette::COLOR_KEYS {
             let c = t.colors.get(key);
             let row = w::row(
@@ -238,13 +209,13 @@ impl Panel for Gallery {
             s.section_gap,
             vec![
                 w::column(s.row_gap, seps),
-                w::column(s.row_gap, vec![label("Keycap"), keycaps]),
+                w::column(s.row_gap, vec![w::panel_heading(s, "Keycap"), keycaps]),
                 w::column(s.row_gap, swatches),
                 w::column(
                     s.row_gap,
                     vec![
-                        label("Metalabel"),
-                        label("Metalabel / caption"),
+                        w::panel_heading(s, "Metalabel"),
+                        w::panel_heading(s, "Metalabel / caption"),
                         w::section_label(s, "Metalabel / subtitle", None, true).size(Type::Subtitle),
                     ],
                 ),
@@ -262,12 +233,12 @@ impl Panel for Gallery {
             );
             steps.push(w::cell(row).ghost());
         }
-        let spacing = w::column(s.row_gap, vec![label("Spacing scale"), w::grid(3, 0.0, steps)]).fill();
+        let spacing = w::column(s.row_gap, vec![w::panel_heading(s, "Spacing scale"), w::grid(3, 0.0, steps)]).fill();
         let marquee_w = (v.output.0 - s.panel_padding * 4.0 - s.section_gap * 2.0) / 3.0;
         let marquee = w::column(
             s.row_gap,
             vec![
-                label("MarqueeText"),
+                w::panel_heading(s, "MarqueeText"),
                 w::cell(w::column(s.xxs, vec![w::section_label(s, "Fits / never moves", None, false), w::marquee("A title that fits", marquee_w)])).ghost(),
                 w::cell(w::column(
                     s.xxs,
@@ -283,12 +254,12 @@ impl Panel for Gallery {
         let surfaces = w::column(
             s.row_gap,
             vec![
-                label("Surfaces"),
-                label("Panel / this surface"),
+                w::panel_heading(s, "Surfaces"),
+                w::panel_heading(s, "Panel / this surface"),
                 w::cell(w::section_label(s, "Tooltip / real tooltipText", None, false).ink(Ink::Fg))
                     .interactive()
                     .tip("Tooltip / the real card, loaded by this cell"),
-                label("Tooltip opens under the row above, over this panel"),
+                w::panel_heading(s, "Tooltip opens under the row above, over this panel"),
             ],
         )
         .fill();
@@ -321,9 +292,7 @@ fn wifi_sample(s: &fs_theme::tokens::Space) -> El {
             } else {
                 Vec::new()
             };
-            let name = w::label(ssid).weight(Weight::Medium).elide().fill();
-            w::panel_cell(s, super::network::wifi_line(s, super::network::signal_glyph(signal), name, connected, trailing))
-                .height(s.panel_row)
+            w::panel_row_with(s, Some(w::panel_chip(s, super::network::signal_glyph(signal), connected)), w::label(ssid), None, trailing)
         })
         .collect();
     w::panel_group(s, rows)

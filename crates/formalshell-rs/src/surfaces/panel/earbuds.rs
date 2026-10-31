@@ -168,36 +168,40 @@ impl Earbuds {
         }
     }
 
-    /// A choice's rows: segmented, with the picked tier's members under it,
-    /// or a dropdown listing every option while it is open.
-    fn choice_rows(&self, s: &fs_theme::tokens::Space, ctl: &Control) -> Vec<El> {
+    /// A choice: segmented under its label, with the picked tier's members
+    /// under it, or a row whose dropdown lists every option while it is open.
+    /// `heading` false leaves the label to the section's own caption.
+    fn choice(&self, s: &fs_theme::tokens::Space, ctl: &Control, heading: bool) -> Vec<w::Part> {
         let key = &ctl.key;
         let opts = ctl.options.as_deref().unwrap_or_default();
         let selected = model::option_index(Some(ctl));
         let es = entries(ctl);
         if es.len() <= SEGMENTS {
             let at = picked(ctl, &es);
-            let mut rows = vec![w::panel_choice(s, es.iter().map(|e| e.label.clone()).collect(), at.unwrap_or(usize::MAX)).stop(key.clone()).on(format!("seg:{key}"))];
+            let options = es.iter().map(|e| e.label.clone()).collect();
+            let mut parts = vec![w::Part::Loose(if heading {
+                w::panel_control(s, choice_heading(s, ctl), w::segmented(options, at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(format!("seg:{key}")))
+            } else {
+                w::panel_choice(s, options, at.unwrap_or(usize::MAX)).stop(key.clone()).on(format!("seg:{key}"))
+            })];
             if let Some(e) = at.map(|a| &es[a]).filter(|e| e.tier) {
                 let inner = e.members.iter().position(|m| Some(*m) == selected);
                 let labels = e.members.iter().map(|m| opts[*m].label.clone()).collect();
-                rows.push(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(format!("{key}{TIER}")).on(format!("tier:{key}")));
+                parts.push(w::Part::Loose(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(format!("{key}{TIER}")).on(format!("tier:{key}"))));
             }
-            return rows;
+            return parts;
         }
         let open = self.menu == *key;
         let current = selected.map_or("Choose", |i| opts[i].label.as_str());
         let mut trigger = w::trigger(s, "", current, open).stop(key.clone()).on(format!("menu:{key}"));
         if open {
             let list = opts.iter().enumerate().map(|(i, o)| {
-                let current = Some(i) == selected;
-                let check = w::icon("check").size(Type::BodySmall).ink(if current { Ink::Fg } else { Ink::Color(fs_theme::color::Rgba::TRANSPARENT) });
                 let stop = format!("opt:{key}:{i}");
-                w::cell(w::row(s.icon_gap, vec![check, w::text(&o.label).size(Type::BodySmall).elide()])).selected(current).interactive().stop(stop.clone()).on(stop)
+                w::menu_item(s, "", &o.label, Some(i) == selected, Vec::new()).stop(stop.clone()).on(stop)
             });
             trigger = trigger.float(w::column(0.0, list.collect()));
         }
-        vec![w::panel_cell(s, w::row(s.panel_gap, vec![w::label(&ctl.label).weight(Weight::Medium).elide().fill(), trigger]).fill()).height(s.panel_row)]
+        vec![w::Part::Row(w::panel_row_with(s, None, w::label(&ctl.label), None, vec![trigger]))]
     }
 
     fn toggle_menu(&mut self, key: &str) {
@@ -221,6 +225,15 @@ impl Earbuds {
         if let Value::Num(n) = ctl.value {
             set(fx, &ctl.key, num(n + direction * ctl.step));
         }
+    }
+}
+
+/// A choice's label row: its name, and the option it holds at the far end.
+fn choice_heading(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
+    let opts = ctl.options.as_deref().unwrap_or_default();
+    match model::option_index(Some(ctl)) {
+        Some(i) => w::panel_heading_with(s, &ctl.label, opts[i].label.clone()),
+        None => w::panel_heading(s, &ctl.label),
     }
 }
 
@@ -288,20 +301,12 @@ fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
     let hint = (!ctl.hint.is_empty()).then(|| ctl.hint.clone());
-    w::panel_row(s, "", &ctl.label, hint, vec![w::switch(on).on(format!("toggle:{}", ctl.key))]).stop(ctl.key.clone()).on(format!("toggle:{}", ctl.key))
+    w::panel_switch(s, "", &ctl.label, hint, on, format!("toggle:{}", ctl.key)).stop(ctl.key.clone()).on(format!("toggle:{}", ctl.key))
 }
 
 fn range_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let track = w::slider(model::range_fraction(Some(ctl))).on(format!("range:{}", ctl.key));
-    slider_row(s, &ctl.label, vec![w::panel_value(model::range_text(Some(ctl)))], track).stop(ctl.key.clone())
-}
-
-/// A name and its value over a track, the row's fill reaching the card.
-fn slider_row(s: &fs_theme::tokens::Space, name: &str, values: Vec<El>, track: El) -> El {
-    let mut top = vec![w::label(name).weight(Weight::Medium).elide().fill()];
-    top.extend(values);
-    let top = w::row(s.panel_gap, top).fill().height(s.panel_row_compact).mid();
-    w::panel_cell(s, w::column(0.0, vec![top, track]).fill().pad(0.0, 0.0, 0.0, s.panel_gap))
+    w::panel_meter(s, None, &ctl.label, vec![w::panel_value(model::range_text(Some(ctl)))], Some(track)).stop(ctl.key.clone())
 }
 
 /// The plain battery rows, for a device with no pictures.
@@ -315,13 +320,13 @@ fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
         .map(|b| {
             let mut values = Vec::new();
             if !b.hint.is_empty() {
-                values.push(w::caption(b.hint.clone()).ink(Ink::Muted));
+                values.push(w::caption(b.hint.clone()));
             }
             values.push(w::panel_value(percent(b.level)));
-            slider_row(s, &b.label, values, w::track(b.level / 100.0))
+            w::panel_meter(s, None, &b.label, values, Some(w::track(b.level / 100.0)))
         })
         .collect();
-    Some(w::panel_section(s, "Battery", rows))
+    Some(w::panel_section(s, "Battery", rows, ""))
 }
 
 impl Panel for Earbuds {
@@ -358,7 +363,7 @@ impl Panel for Earbuds {
         }
         if e.devices().len() > 1 {
             let (opts, selected) = devices(e);
-            out.push(w::column(s.panel_gap, vec![w::panel_heading(s, "Device"), w::panel_text(s, self.group(DEVICE, &opts, selected, None))]));
+            out.push(w::panel_control(s, w::panel_heading(s, "Device"), self.group(DEVICE, &opts, selected, None)));
         }
         let Some(dev) = dev else { return w::column(0.0, out) };
         match art(dev, "duo", s.control_height * 3.0) {
@@ -385,28 +390,22 @@ impl Panel for Earbuds {
             }
         }
         for section in model::sections(Some(dev)) {
-            // One inset level: toggles, ranges and dropdown choices abut in a
-            // group, and a segmented choice is a control of its own, so it
-            // sits on the panel between groups rather than boxed in one.
-            let mut parts = vec![w::panel_heading(s, &section.section)];
-            let mut run: Vec<El> = Vec::new();
+            // A segmented choice named like its section takes the section's
+            // caption for its label row rather than a second one under it.
+            let named = |c: &Control| c.kind == ControlKind::Choice && entries(c).len() <= SEGMENTS && c.label == section.section;
+            let heading = match section.controls.iter().find(|c| named(c)) {
+                Some(c) => choice_heading(s, c),
+                None => w::panel_heading(s, &section.section),
+            };
+            let mut parts = Vec::new();
             for ctl in &section.controls {
                 match ctl.kind {
-                    ControlKind::Choice if entries(ctl).len() <= SEGMENTS => {
-                        if !run.is_empty() {
-                            parts.push(w::panel_group(s, std::mem::take(&mut run)));
-                        }
-                        parts.extend(self.choice_rows(s, ctl));
-                    }
-                    ControlKind::Choice => run.extend(self.choice_rows(s, ctl)),
-                    ControlKind::Toggle => run.push(toggle_row(s, ctl)),
-                    ControlKind::Range => run.push(range_row(s, ctl)),
+                    ControlKind::Choice => parts.extend(self.choice(s, ctl, !named(ctl))),
+                    ControlKind::Toggle => parts.push(w::Part::Row(toggle_row(s, ctl))),
+                    ControlKind::Range => parts.push(w::Part::Row(range_row(s, ctl))),
                 }
             }
-            if !run.is_empty() {
-                parts.push(w::panel_group(s, run));
-            }
-            out.push(w::column(s.panel_gap, parts));
+            out.push(w::panel_runs(s, Some(heading), parts));
         }
         w::column(0.0, out)
     }
