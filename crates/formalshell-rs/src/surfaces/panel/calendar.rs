@@ -1,6 +1,9 @@
-//! A hero naming today, a month grid of day cells under
-//! a weekday row with the ISO week numbers in a gutter, the selected day's
-//! events as rows, and the year and life progress tracks. Wide, for the
+//! Today's date as the header's title with the month and its two
+//! chevrons beside the close button, a month grid of round day cells under
+//! a weekday row (today a filled `primary` circle, the selected day an
+//! `accent` one, a dot under a day with events), the selected day's events
+//! as grouped rows with a dot and their time, its ISO week on the agenda's
+//! caption line, and the year and life progress tracks. Wide, for the
 //! seven day columns.
 //!
 //! The cursor addresses the 42 grid cells as a grid (`columns`), Enter
@@ -28,7 +31,6 @@ use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Size, Type, Weight, w};
 
 const WEEKDAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-const MONTHS: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 pub struct Calendar {
@@ -94,7 +96,7 @@ impl Panel for Calendar {
     }
 
     fn title(&self, _: &View) -> String {
-        "Calendar".into()
+        today().format("%A %-d").to_string()
     }
 
     fn reads(&self) -> &'static [Topic] {
@@ -122,7 +124,12 @@ impl Panel for Calendar {
     }
 
     fn actions(&self, _: &View) -> Vec<El> {
-        vec![w::icon_button("chevron-left").on("prev").key("prev"), w::icon_button("chevron-right").on("next").key("next")]
+        let month = NaiveDate::from_ymd_opt(self.year, self.month, 1).map(|d| d.format("%B %Y").to_string()).unwrap_or_default();
+        vec![
+            w::icon_button("chevron-left").tip("Previous month").on("prev").key("prev"),
+            w::label(month).ink(Ink::Muted),
+            w::icon_button("chevron-right").tip("Next month").on("next").key("next"),
+        ]
     }
 
     fn body(&self, v: &View) -> El {
@@ -131,97 +138,78 @@ impl Panel for Calendar {
         let now = Local::now();
         let t = now.date_naive();
         let cells = self.cells();
-        let weeks = grid::week_numbers(&cells);
         let events = &v.store.info.calendar.events;
         let twelve = clock::uses_meridiem(&crate::surfaces::bar::cells::clock::clock_format(v.store));
 
-        let hero = w::hero(
-            s,
-            w::Hero {
-                glyph: String::new(),
-                title: t.format("%A").to_string(),
-                meta: format!("Week {}", clock::pad2(clock::iso_week(t).into())),
-                readout: t.day().to_string(),
-                trailing: None,
-                rail: None,
-                rail_on: None,
-            },
-        );
-
-        let month_name = NaiveDate::from_ymd_opt(self.year, self.month, 1).map(|d| d.format("%B %Y").to_string()).unwrap_or_default();
-        let mut head: Vec<El> = vec![w::space(s.md)];
-        head.extend(WEEKDAYS.iter().map(|d| w::section_label(s, d, None, false).mid().fill()));
-        let mut lines = vec![w::row(s.row_gap, head).fill()];
+        // One square per day, centred in its seventh of the row, so the
+        // circles keep the same rhythm across and down.
+        let side = s.panel_row - s.xs;
+        let slot = |el: El| w::row(0.0, vec![w::spacer(), el, w::spacer()]).fill();
+        let head: Vec<El> = WEEKDAYS.iter().map(|d| slot(w::caption(*d).weight(Weight::Semibold).ink(Ink::Muted))).collect();
+        let mut lines = vec![w::row(0.0, head).fill().height(s.panel_row_compact)];
         for (r, line) in cells.chunks(grid::COLUMNS).enumerate() {
-            let week = w::value(clock::pad2(weeks[r].into())).size(Type::Caption).ink(Ink::Muted).width(Size::Px(s.md)).mid();
             let mut row = Vec::new();
             for (k, cell) in line.iter().enumerate() {
                 let i = r * grid::COLUMNS + k;
                 let date = cell.date();
                 let is_today = cell.in_month && grid::same_date(&date, &t);
-                let is_selected = cell.in_month && grid::same_date(&date, &self.selected);
+                let is_selected = cell.in_month && grid::same_date(&date, &self.selected) && !is_today;
                 let count = if cell.in_month { ics::events_on_date(events, date).len() } else { 0 };
-                let lit = is_today && !is_selected || is_selected;
-                let dot_color = if is_selected {
-                    c.get("accentForeground")
-                } else if is_today {
-                    c.get("primaryForeground")
-                } else {
-                    c.get("primary")
-                };
+                let dot_color = if is_today { c.get("primaryForeground") } else { c.get("primary") };
                 let dot = if grid::shows_event_dot(Some(cell), count) { dot_color } else { fs_theme::color::Rgba::TRANSPARENT };
-                let _ = lit;
-                let day = w::value(cell.day.to_string()).ink(if cell.in_month { Ink::Fg } else { Ink::Muted }).centred();
-                row.push(
-                    w::cell(w::column(s.xxs, vec![day, w::dot(dot, s.xs).centred()]))
-                        .cell_state(|st| st.small = true)
-                        .active(is_today && !is_selected)
-                        .selected(is_selected)
-                        .interactive()
-                        .stop(key(i))
-                        .on(key(i)),
-                );
+                let day = w::value(cell.day.to_string()).size(Type::Body).ink(if cell.in_month { Ink::Fg } else { Ink::Muted }).centred();
+                let face = w::column(0.0, vec![w::spacer(), day, w::dot(dot, s.xs).centred(), w::spacer()]).fill();
+                let circle = w::cell(face)
+                    .ghost()
+                    .cell_state(|st| st.round = true)
+                    .active(is_today)
+                    .selected(is_selected)
+                    .interactive()
+                    .width(Size::Px(side))
+                    .height(side)
+                    .stop(key(i))
+                    .on(key(i));
+                row.push(slot(circle));
             }
-            let days = w::row(s.row_gap, row).fill().swap(i64::from(self.year) * 12 + i64::from(self.month));
-            lines.push(w::row(s.row_gap, vec![week, days]).fill());
+            lines.push(w::row(0.0, row).fill().swap(i64::from(self.year) * 12 + i64::from(self.month)));
         }
-        let month = w::column(s.panel_gap, vec![w::panel_heading(s, &month_name), w::panel_text(s, w::column(s.row_gap, lines))]);
+        let month = w::panel_text(s, w::column(s.xxs, lines).pad_top(s.panel_gap));
 
         let selected_is_today = grid::same_date(&self.selected, &t);
         let day_events = agenda::sort_for_day(&ics::events_on_date(events, self.selected));
         let running = selected_is_today && agenda::has_running(&day_events, now);
         let next = if selected_is_today { agenda::next_up(&day_events, now) } else { None };
-        let heading = if selected_is_today { "Today".to_owned() } else { format!("{} {}", MONTHS[self.selected.month0() as usize], self.selected.day()) };
-        let mut label_row = vec![w::panel_heading(s, &heading).fill()];
-        let side = if running {
-            Some("Now".to_owned())
-        } else {
-            next.map(|e| format!("Next {}", agenda::clock_time(e.start, twelve)))
-        };
-        if let Some(text) = side {
-            label_row.push(w::caption(text).ink(Ink::Muted).pad(0.0, s.panel_section, w::text_inset(s), 0.0));
+        let heading = if selected_is_today { "Today".to_owned() } else { self.selected.format("%A, %B %-d").to_string() };
+        let mut side_text = vec![format!("Week {}", clock::iso_week(self.selected))];
+        if running {
+            side_text.push("Now".to_owned());
+        } else if let Some(e) = next {
+            side_text.push(format!("Next {}", agenda::clock_time(e.start, twelve)));
         }
-        let mut agenda_col = vec![w::row(s.panel_gap, label_row).fill()];
-        if day_events.is_empty() {
-            agenda_col.push(w::panel_empty(s, "No events"));
-        }
-        let gauge = agenda::widest_label(&day_events, twelve);
+        let mut agenda_col = vec![w::panel_heading_with(s, &heading, side_text.join("  \u{b7}  "))];
         let rows: Vec<El> = day_events
             .iter()
             .map(|e| {
                 let status = agenda::status(e, now);
-                let time_ink = if status == agenda::Status::Past { Ink::Muted } else { Ink::Fg };
-                let mut parts = vec![
-                    w::value(agenda::time_label(e, twelve)).size(Type::BodySmall).ink(time_ink).gauge(gauge.clone()),
-                    w::label(&e.summary).weight(Weight::Medium).elide().fill(),
-                ];
+                let past = status == agenda::Status::Past;
+                let dot = w::dot(if past { c.get("mutedForeground") } else { c.get("primary") }, s.sm);
+                let words = w::column(
+                    0.0,
+                    vec![w::label(&e.summary).ink(if past { Ink::Muted } else { Ink::Fg }).elide(), w::caption(agenda::time_label(e, twelve)).mono()],
+                )
+                .fill();
+                let mut parts = vec![dot, words];
                 if status == agenda::Status::Now {
                     parts.push(w::caption("Now").weight(Weight::Semibold).ink(Ink::Primary));
                 }
                 w::panel_cell(s, w::row(s.panel_gap, parts).fill()).height(s.panel_row)
             })
             .collect();
-        agenda_col.push(w::column(0.0, rows));
+        if rows.is_empty() {
+            agenda_col.push(w::panel_group(s, vec![w::panel_text(s, w::label("No events").ink(Ink::Muted).fill().height(s.panel_row))]));
+        } else {
+            agenda_col.push(w::panel_group(s, rows));
+        }
 
         let year = progress::year_fraction(&now);
         let life = Self::life(v.store, now);
@@ -240,12 +228,12 @@ impl Panel for Calendar {
             .fill()
             .pad(0.0, 0.0, 0.0, s.panel_gap)
         };
-        let mut progress_col = vec![w::panel_heading(s, "Progress"), w::panel_cell(s, bar("Year", year)).on("year")];
+        let mut progress_rows = vec![w::panel_cell(s, bar("Year", year)).on("year")];
         if show_life {
-            progress_col.push(w::panel_cell(s, bar("Life", life.unwrap_or(0.0))));
+            progress_rows.push(w::panel_cell(s, bar("Life", life.unwrap_or(0.0))));
         }
 
-        w::column(0.0, vec![hero, month, w::column(s.panel_gap, agenda_col), w::column(s.panel_gap, progress_col)])
+        w::column(0.0, vec![month, w::column(s.panel_gap, agenda_col), w::panel_section(s, "Progress", progress_rows)])
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
