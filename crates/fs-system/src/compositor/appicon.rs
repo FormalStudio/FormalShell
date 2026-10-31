@@ -12,13 +12,18 @@
 //!      case-folded. Then a reverse-DNS tier: the last dot segment of either side
 //!      against the other, case-folded, which is what joins a Flatpak's
 //!      `com.discordapp.Discord` to a window classed `discord` and
-//!      `org.wezfurlong.wezterm` to an entry called `wezterm`.
+//!      `org.wezfurlong.wezterm` to an entry called `wezterm`. Last, a Steam
+//!      game's `steam_app_<id>` against the shortcut Steam writes for it
+//!      (`Exec=steam steam://rungameid/<id>`, no StartupWMClass).
 //!   2. The process. The window's own pid against each entry's Exec program, by
 //!      absolute path or by basename; then up to three ancestors, by absolute
 //!      path only. An app launched through a script (`Exec=~/bin/x` running
 //!      `sh ~/bin/x`, which starts the real binary) leaves the script's path in
 //!      an ancestor's argv, while a basename match that far up would hand a
 //!      class-less window launched from a terminal the terminal's own icon.
+//!      A Steam game's shortcut claims no process: its program is Steam
+//!      itself, so it would hand Steam's own windows (the class-less
+//!      "Updating Steam..." one) the game's picture.
 //!   3. The initial title against an entry's Name, case-folded. A native Wayland
 //!      app that never sets an app id and runs from a wrapper the process walk
 //!      cannot see through still usually titles its first window with its own
@@ -80,6 +85,16 @@ fn basename(path: &str) -> &str {
     WRAPPED.captures(name).map_or(name, |m| m.get(1).map_or(name, |g| g.as_str()))
 }
 
+/// The game a Steam game's window class names (`steam_app_2386720`).
+fn steam_game(class: &str) -> Option<&str> {
+    class.strip_prefix("steam_app_").filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The game a Steam shortcut launches (`steam steam://rungameid/2386720`).
+fn launches_game(entry: &DesktopEntry) -> Option<&str> {
+    entry.command.iter().skip(1).find_map(|a| a.strip_prefix("steam://rungameid/"))
+}
+
 fn class_tiers<'a>(needle: &str, entries: &'a [DesktopEntry]) -> Option<&'a DesktopEntry> {
     let lower = needle.to_lowercase();
     let needle_tail = tail(needle).to_lowercase();
@@ -89,9 +104,10 @@ fn class_tiers<'a>(needle: &str, entries: &'a [DesktopEntry]) -> Option<&'a Desk
         2 => e.startup_class == needle,
         3 => !e.startup_class.is_empty() && e.startup_class.to_lowercase() == lower,
         4 => tail(&e.id).to_lowercase() == lower,
-        _ => e.id.to_lowercase() == needle_tail,
+        5 => e.id.to_lowercase() == needle_tail,
+        _ => steam_game(needle).is_some_and(|id| launches_game(e) == Some(id)),
     };
-    (0..6).find_map(|tier| entries.iter().find(|e| hits(tier, e)))
+    (0..7).find_map(|tier| entries.iter().find(|e| hits(tier, e)))
 }
 
 /// The entry the first class tier finds. Split out so the service can tell
@@ -133,7 +149,7 @@ fn proc_matches(proc: &ProcInfo, program: &str, depth: usize) -> bool {
 pub fn by_process<'a>(procs: Option<&[ProcInfo]>, entries: &'a [DesktopEntry]) -> Option<&'a DesktopEntry> {
     let chain = procs.unwrap_or(&[]);
     for (depth, proc) in chain.iter().enumerate().take(ANCESTOR_DEPTH + 1) {
-        for entry in entries {
+        for entry in entries.iter().filter(|e| launches_game(e).is_none()) {
             let prog = program(entry);
             if !prog.is_empty() && proc_matches(proc, prog, depth) {
                 return Some(entry);
@@ -407,6 +423,47 @@ mod tests {
         let es = entries();
         let procs = [proc("/usr/bin/sh", &["sh", "-c", "run"])];
         assert_eq!(entry_for(Some(&win(|_| {})), &es, Some(&procs)), None);
+    }
+
+    // --- Steam, as on the owner's g815 ---
+
+    /// The shortcut Steam writes for an installed game, read ahead of Steam's
+    /// own entry since ~/.local comes first.
+    fn steam_entries() -> Vec<DesktopEntry> {
+        vec![
+            entry("STRAFTAT", |e| {
+                e.icon = "steam_icon_2386720".into();
+                e.command = cmd(&["steam", "steam://rungameid/2386720"]);
+            }),
+            entry("steam", |e| {
+                e.name = "Steam".into();
+                e.command = cmd(&["/usr/bin/steam", "%U"]);
+            }),
+        ]
+    }
+
+    #[test]
+    fn steams_classless_updater_is_steam() {
+        let es = steam_entries();
+        let exe = "/home/kyandesutter/.local/share/Steam/ubuntu12_32/steam";
+        let procs = [proc(exe, &[exe, "-srt-logger-opened"]), proc("/usr/bin/bash", &["/usr/bin/bash", "/usr/bin/steam"])];
+        let w = win(|w| w.initial_title = "Updating Steam...".into());
+        assert_eq!(id_of(entry_for(Some(&w), &es, Some(&procs))), Some("steam"));
+    }
+
+    #[test]
+    fn steams_own_window_is_steam() {
+        let es = steam_entries();
+        assert_eq!(id_of(entry_for(Some(&win(|w| w.app_id = "steam".into())), &es, None)), Some("steam"));
+    }
+
+    #[test]
+    fn a_steam_game_is_its_shortcut_by_its_app_id() {
+        let es = steam_entries();
+        let w = win(|w| w.app_id = "steam_app_2386720".into());
+        assert_eq!(id_of(entry_for(Some(&w), &es, None)), Some("STRAFTAT"));
+        let other = win(|w| w.app_id = "steam_app_2386721".into());
+        assert_eq!(entry_for(Some(&other), &es, None), None);
     }
 
     // --- tier 3: the initial title ---
