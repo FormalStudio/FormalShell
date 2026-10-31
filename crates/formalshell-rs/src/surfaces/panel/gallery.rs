@@ -323,7 +323,6 @@ fn wifi_sample(s: &fs_theme::tokens::Space) -> El {
             };
             let name = w::label(ssid).weight(Weight::Medium).elide().fill();
             w::panel_cell(s, super::network::wifi_line(s, super::network::signal_glyph(signal), name, connected, trailing))
-                .cell_state(|c| c.open = connected)
                 .height(s.panel_row)
         })
         .collect();

@@ -1,12 +1,12 @@
 //! A hero for the default sink (its rail the master slider,
-//! its mute a `Switch`), Output listing the other sinks, an Input master row
-//! over the default source with Input under it, and Apps for the live
-//! playback streams. Two or three candidates render as a `ButtonGroup` pick
-//! carrying the active one, four or more as rows without it (M48 D1).
+//! its mute a `Switch`), then Output, Input and Apps as one group each:
+//! every sink with the default checked, the source's level over every
+//! source, and the live playback streams. One inset level throughout
+//! (specs/2026-10-30-panel-language.md), so no picker sits boxed in a group.
 //!
 //! One cursor walks every row: Left and Right step the slider under it by
-//! 5% or walk a pick's ring, `m` mutes, Enter switches the default on a
-//! device row or pick and mutes on a slider. Masters clamp to 0..1, streams
+//! 5%, `m` mutes, Enter switches the default on a device row and mutes on a
+//! slider. Masters clamp to 0..1, streams
 //! to 0..1.5 with a notch at 1.0. The lists come from fs-audio's graph,
 //! published only while the panel is open.
 
@@ -16,18 +16,13 @@ use fs_system::audio::{clamp_device, clamp_stream};
 use super::{Effect, Panel, View};
 use crate::services::devices::audio::{self, Lists, Row};
 use crate::store::{Store, Topic};
-use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
 /// AudioModel's step.
 const STEP: f64 = 0.05;
 
 #[derive(Default)]
-pub struct Audio {
-    /// Each pick's ring, once a key or the pointer has moved it.
-    output_ring: Option<usize>,
-    input_ring: Option<usize>,
-}
+pub struct Audio;
 
 fn send(fx: &Effect, c: Command) {
     fx.service(move |_| audio::command(c));
@@ -41,17 +36,8 @@ fn set_muted(fx: &Effect, node: u32, muted: bool) {
     send(fx, Command::SetMuted { node, muted });
 }
 
-/// Two or three candidates read as one pick.
-fn is_pick(n: usize) -> bool {
-    (2..=3).contains(&n)
-}
-
 fn lists(store: &Store) -> Option<&Lists> {
     store.devices.audio.lists.as_ref()
-}
-
-fn selected(rows: &[Row], id: Option<u32>) -> usize {
-    id.and_then(|id| rows.iter().position(|r| r.id == id)).unwrap_or(0)
 }
 
 /// A stop's row: `output-device:<id>`, `input-device:<id>`, `stream:<id>`.
@@ -91,25 +77,6 @@ fn mixer_row(s: &fs_theme::tokens::Space, glyph: Option<&str>, label: &str, volu
 }
 
 impl Audio {
-    fn ring(&self, input: bool, l: &Lists) -> usize {
-        let (ring, rows, id) = if input {
-            (self.input_ring, &l.inputs, l.source.as_ref().map(|r| r.id))
-        } else {
-            (self.output_ring, &l.outputs, l.sink)
-        };
-        ring.filter(|i| *i < rows.len()).unwrap_or_else(|| selected(rows, id))
-    }
-
-    fn pick(&self, s: &fs_theme::tokens::Space, l: &Lists, input: bool) -> El {
-        let (rows, glyph, id, key) = if input {
-            (&l.inputs, "mic", l.source.as_ref().map(|r| r.id), "input-pick")
-        } else {
-            (&l.outputs, "volume-2", l.sink, "output-pick")
-        };
-        let opts = rows.iter().map(|r| Opt::new(r.label.clone()).icon(glyph)).collect();
-        w::panel_text(s, w::group(opts, selected(rows, id), true).ring(self.ring(input, l)).stop(key).on(key))
-    }
-
     fn make_default(fx: &Effect, input: bool, r: &Row) {
         let name = r.name.clone();
         send(fx, if input { Command::SetDefaultSource(Some(name)) } else { Command::SetDefaultSink(Some(name)) });
@@ -151,11 +118,6 @@ impl Panel for Audio {
         &[Topic::Devices]
     }
 
-    fn opened(&mut self) {
-        self.output_ring = None;
-        self.input_ring = None;
-    }
-
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let a = &v.store.devices.audio;
@@ -182,31 +144,21 @@ impl Panel for Audio {
         if l.outputs.is_empty() && l.inputs.is_empty() {
             out.push(w::panel_empty(s, "No devices"));
         }
-        let output_pick = is_pick(l.outputs.len());
-        let output_rows: Vec<El> = if output_pick {
-            vec![self.pick(s, l, false)]
-        } else {
-            l.outputs
-                .iter()
-                .filter(|r| Some(r.id) != l.sink)
-                .map(|r| device_row(format!("output-device:{}", r.id), "volume-2", r, false, s))
-                .collect()
-        };
-        if !output_rows.is_empty() {
-            out.push(w::panel_section_n(s, "Output", if output_pick { l.outputs.len() } else { output_rows.len() }, output_rows));
+        // Device choice is the section's own rows, the current one checked:
+        // one inset level, never a picker boxed inside the group.
+        if l.outputs.len() > 1 {
+            let rows = l.outputs.iter().map(|r| device_row(format!("output-device:{}", r.id), "volume-2", r, Some(r.id) == l.sink, s)).collect();
+            out.push(w::panel_section_n(s, "Output", l.outputs.len(), rows));
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume), r.muted));
             let track = w::slider(volume).on("volume:input-slider");
-            let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Input", volume, muted, "input-slider", track);
-            out.push(w::panel_cell(s, master).stop("input-slider"));
-            let input_pick = is_pick(l.inputs.len());
+            let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, "input-slider", track);
             let source = l.source.as_ref().map(|r| r.id);
-            let rows: Vec<El> = if input_pick {
-                vec![self.pick(s, l, true)]
-            } else {
-                l.inputs.iter().map(|r| device_row(format!("input-device:{}", r.id), "mic", r, Some(r.id) == source, s)).collect()
-            };
+            let mut rows = vec![w::panel_cell(s, master).stop("input-slider")];
+            if l.inputs.len() > 1 {
+                rows.extend(l.inputs.iter().map(|r| device_row(format!("input-device:{}", r.id), "mic", r, Some(r.id) == source, s)));
+            }
             out.push(w::panel_section_n(s, "Input", l.inputs.len(), rows));
         }
         if !l.streams.is_empty() {
@@ -258,18 +210,6 @@ impl Panel for Audio {
                     }
                 }
             }
-            ("output-pick", What::Pick(i)) => {
-                self.output_ring = Some(*i);
-                if let Some(r) = l.outputs.get(*i) {
-                    Self::make_default(fx, false, r);
-                }
-            }
-            ("input-pick", What::Pick(i)) => {
-                self.input_ring = Some(*i);
-                if let Some(r) = l.inputs.get(*i) {
-                    Self::make_default(fx, true, r);
-                }
-            }
             (_, What::Click) => self.activate(&ev.on.clone(), fx),
             _ => {}
         }
@@ -282,22 +222,10 @@ impl Panel for Audio {
             }
             return;
         };
-        match stop {
-            "output-pick" => {
-                if let Some(r) = l.outputs.get(self.ring(false, &l)) {
-                    Self::make_default(fx, false, r);
-                }
-            }
-            "input-pick" => {
-                if let Some(r) = l.inputs.get(self.ring(true, &l)) {
-                    Self::make_default(fx, true, r);
-                }
-            }
-            _ => match by_key(&l, stop) {
-                Some(("output", r)) => Self::make_default(fx, false, r),
-                Some(("input", r)) => Self::make_default(fx, true, r),
-                _ => Self::mute(fx, stop),
-            },
+        match by_key(&l, stop) {
+            Some(("output", r)) => Self::make_default(fx, false, r),
+            Some(("input", r)) => Self::make_default(fx, true, r),
+            _ => Self::mute(fx, stop),
         }
     }
 
@@ -305,8 +233,6 @@ impl Panel for Audio {
         let Some(l) = lists(fx.store).cloned() else { return };
         let d = direction as f64 * STEP;
         match stop {
-            "output-pick" => self.output_ring = Some((self.ring(false, &l) as i32 + direction).clamp(0, (l.outputs.len() as i32 - 1).max(0)) as usize),
-            "input-pick" => self.input_ring = Some((self.ring(true, &l) as i32 + direction).clamp(0, (l.inputs.len() as i32 - 1).max(0)) as usize),
             "output-slider" => {
                 if let (Some(id), Some(v)) = (l.sink, fx.store.devices.audio.volume) {
                     set_volume(fx, id, clamp_device(v + d));

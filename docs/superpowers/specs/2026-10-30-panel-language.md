@@ -43,6 +43,21 @@ multiple of 4, read from the panel tokens in fs-theme's spacing table
 | `panelWidth` | 320 | `PanelStyle.width` 316, on the grid |
 | `panelWidthWide` | 400 | a panel with a second column of values (Information, Earbuds) |
 
+One padding frames the card: the title keeps `panelInset` from the top
+edge and the text column keeps it from the sides, and under a header the
+body ends `panelInset` above the bottom edge, whether its last thing is a
+row, a group or a footer. A headerless card (the Settings tiles) keeps
+`panelRowInset` on all four sides instead.
+
+One inset level (owner, 2026-10-31): the card holds groups, and a group
+holds rows. Nothing boxed goes inside a group: no segmented control,
+button group, picker or card in a card. A choice between devices is the
+section's own rows with the current one checked; a segmented control sits
+on the panel between groups, never in one. A selected or current row
+never takes a fill or border of its own (that reads as one more card): it
+shows by its tinted chip and a trailing check, and the hover wash is the
+only fill a row ever takes.
+
 Radii are the table's libadwaita ladder: rows `lg` (12, Pond's 12),
 buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
 (15, Pond's 16).
@@ -89,8 +104,12 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
 ## 5. Sections
 
 - A heading is `caption` 600 in `muted`, sentence case, at the text
-  column, `panelSection` above it and `panelGap` under it. No counts in
-  headings; a count goes trailing on the section's last row or not at all.
+  column, `panelSection` above it and `panelGap` under it. A count, the
+  selected day's week or a next time goes at its far end in `caption`
+  `muted`.
+- A section's own action (Activity's Clear) is a small text button at the
+  heading's far end on the caption line, `caption` 600 in `primary` with
+  no box until hovered. Never a button in the middle of the row.
 - A disclosure (Known networks) is a row with a trailing chevron that
   turns, never a heading that toggles.
 - Tabs (audio's Output and Input) are a segmented choice (§6), not text.

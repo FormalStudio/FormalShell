@@ -69,8 +69,9 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     if e.source == "iphone" {
         chip = chip.badge("smartphone");
     }
-    head.push(w::section_label(s, &e.app_name, None, false));
-    head.push(w::caption(meta).mono().fill());
+    head.push(w::caption(e.app_name.clone()).weight(Weight::Semibold).ink(Ink::Fg));
+    head.push(w::caption(meta).mono());
+    head.push(w::spacer());
     head.push(w::icon_button("x").tip("Dismiss").on(format!("dismiss:{key}")));
     let mut parts = vec![w::row(s.icon_gap, head), w::para(e.summary.clone(), Type::Body, Weight::Medium, Ink::Fg, 2)];
     let body = model::sanitize_body(&e.body, &e.app_name, &e.app_icon);
@@ -86,7 +87,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
         parts.push(w::row(s.sm, buttons));
     }
     let words = w::column(s.row_gap, parts).fill();
-    w::panel_cell(s, w::row(s.panel_gap, vec![w::column(0.0, vec![chip]), words]).fill().pad(0.0, s.md, 0.0, s.md)).on(format!("row:{key}")).stop(key)
+    w::panel_cell(s, w::row(s.panel_gap, vec![chip, words]).fill().pad(0.0, s.md, 0.0, s.md)).on(format!("row:{key}")).stop(key)
 }
 
 /// Pending oldest first, seen newest first, each grouped.
@@ -159,8 +160,7 @@ impl Panel for Center {
         let folded = if self.filter == 2 { Vec::new() } else { activity::history(v.theme, v.store, FOLDED) };
         let any_folded = !folded.is_empty();
         if any_folded {
-            let clear = w::button("Clear").variant(Variant::Outline).on("activity-clear").stop("activity-clear");
-            let head = w::row(s.panel_gap, vec![w::panel_heading(s, "Activity").fill(), w::column(0.0, vec![clear]).pad(0.0, s.panel_section, w::text_inset(s), 0.0)]).fill();
+            let head = w::panel_heading_action(s, "Activity", "Clear", "activity-clear");
             out.push(w::column(s.panel_gap, vec![head, w::panel_group(s, folded.into_iter().map(|r| inset(s, r)).collect())]));
         }
         if pending.is_empty() && seen.is_empty() && !any_folded {

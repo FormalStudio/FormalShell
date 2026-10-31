@@ -476,6 +476,15 @@ pub fn panel_heading_with(s: &Space, text: &str, side: impl Into<String>) -> El 
     row(s.panel_gap, vec![panel_heading(s, text).fill(), side]).fill()
 }
 
+/// A heading with a section's own action at its far end: a small text
+/// button on the caption line, `primary` words with no box until hovered.
+pub fn panel_heading_action(s: &Space, text: &str, action: &str, on: &str) -> El {
+    let i = text_inset(s);
+    let words = text_el(action, Type::Caption, Weight::Semibold, false, Ink::Primary);
+    let button = cell(words).ghost().interactive().cell_state(|c| c.inset = Some((s.xs, 0.0))).width(super::Size::Hug).on(on).stop(on);
+    row(s.panel_gap, vec![panel_heading(s, text).fill(), button.pad(0.0, s.panel_section, i - s.xs, 0.0)]).fill()
+}
+
 /// A heading over its rows in one group.
 pub fn panel_section(s: &Space, title: &str, rows: Vec<El>) -> El {
     column(s.panel_gap, vec![panel_heading(s, title), panel_group(s, rows)])

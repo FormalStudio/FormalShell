@@ -385,28 +385,28 @@ impl Panel for Earbuds {
             }
         }
         for section in model::sections(Some(dev)) {
-            let mut rows = Vec::new();
-            let mut prev: Option<ControlKind> = None;
+            // One inset level: toggles, ranges and dropdown choices abut in a
+            // group, and a segmented choice is a control of its own, so it
+            // sits on the panel between groups rather than boxed in one.
+            let mut parts = vec![w::panel_heading(s, &section.section)];
+            let mut run: Vec<El> = Vec::new();
             for ctl in &section.controls {
-                // Rows abut; a group is a boxed control and keeps `rowGap`.
-                if prev.is_some_and(|p| p == ControlKind::Choice || ctl.kind == ControlKind::Choice) {
-                    rows.push(w::space(s.panel_gap));
-                }
-                prev = Some(ctl.kind);
                 match ctl.kind {
-                    ControlKind::Choice => {
-                        for (i, row) in self.choice_rows(s, ctl).into_iter().enumerate() {
-                            if i > 0 {
-                                rows.push(w::space(s.panel_gap));
-                            }
-                            rows.push(row);
+                    ControlKind::Choice if entries(ctl).len() <= SEGMENTS => {
+                        if !run.is_empty() {
+                            parts.push(w::panel_group(s, std::mem::take(&mut run)));
                         }
+                        parts.extend(self.choice_rows(s, ctl));
                     }
-                    ControlKind::Toggle => rows.push(toggle_row(s, ctl)),
-                    ControlKind::Range => rows.push(range_row(s, ctl)),
+                    ControlKind::Choice => run.extend(self.choice_rows(s, ctl)),
+                    ControlKind::Toggle => run.push(toggle_row(s, ctl)),
+                    ControlKind::Range => run.push(range_row(s, ctl)),
                 }
             }
-            out.push(w::panel_section(s, &section.section, rows));
+            if !run.is_empty() {
+                parts.push(w::panel_group(s, run));
+            }
+            out.push(w::column(s.panel_gap, parts));
         }
         w::column(0.0, out)
     }

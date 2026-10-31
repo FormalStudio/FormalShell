@@ -590,11 +590,12 @@ impl El {
         self.cell_state(|s| s.active = on)
     }
 
-    /// The row a list is on now: the `ghostOpen` fill, and its leading
-    /// icon chip tinted.
+    /// The row a list is on now: its leading icon chip tinted, the row
+    /// itself left bare. A filled row inside a group reads as a card in a
+    /// card (specs/2026-10-30-panel-language.md §2), so the hover wash is
+    /// the only fill a row takes.
     pub fn current(mut self, on: bool) -> Self {
-        if let Kind::Cell { state, child, .. } = &mut self.kind {
-            state.open = on;
+        if let Kind::Cell { child, .. } = &mut self.kind {
             if let Kind::Row { children, .. } = &mut child.kind
                 && let Some(Kind::Cell { state, child, .. }) = children.first_mut().map(|c| &mut c.kind)
                 && state.glyph

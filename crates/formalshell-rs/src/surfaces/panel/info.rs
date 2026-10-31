@@ -106,7 +106,7 @@ impl Panel for Info {
             .interactive()
             .stop("manual")
             .on("manual");
-        w::panel_text(s, w::column(s.lg, vec![w::column(0.0, rows), manual, footer(v).pad_top(s.sm)]))
+        w::panel_text(s, w::column(s.lg, vec![w::column(0.0, rows), manual, footer(v)]))
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
@@ -123,7 +123,7 @@ impl Panel for Info {
 }
 
 /// Which row of the dot field each column lights, low to high and back.
-const WAVE: [usize; 11] = [2, 2, 1, 0, 0, 1, 2, 2, 1, 0, 0];
+const WAVE: [usize; 7] = [2, 1, 0, 0, 1, 2, 2];
 
 fn footer(v: &View) -> El {
     let s = &v.theme.space;
@@ -156,7 +156,7 @@ fn footer(v: &View) -> El {
         c.chip = true;
         c.small = true;
     });
-    let name = w::column(s.xs, vec![w::text("FormalShell").size(Type::Title).weight(Weight::Semibold).elide(), w::row(0.0, vec![badge])]);
+    let name = w::column(s.xs, vec![w::text("FormalShell").size(Type::Title).weight(Weight::Semibold), w::row(0.0, vec![badge])]);
 
     let off = v.theme.colors.get("border");
     let field = w::column(
@@ -169,9 +169,12 @@ fn footer(v: &View) -> El {
 
     let about = v.store.info.about.as_ref();
     if let Some(id) = about.and_then(|a| a.os_id.clone()) {
-        let word = about.and_then(|a| a.os_name.clone()).unwrap_or_default();
-        parts.push(w::icon(format!("distro:{id}")).size(Type::DisplayLarge).ink(Ink::Muted));
-        parts.push(w::text(word).size(Type::Title).weight(Weight::Semibold).ink(Ink::Muted).elide());
+        // A NAME past 13 characters ("openSUSE Tumbleweed") pushes the row
+        // past the card, so it gives way to its first word.
+        let name = about.and_then(|a| a.os_name.clone()).unwrap_or_default();
+        let word = if name.chars().count() > 13 { name.split_whitespace().next().unwrap_or_default().to_owned() } else { name };
+        let mark = w::icon(format!("distro:{id}")).size(Type::DisplayLarge).ink(Ink::Muted);
+        parts.push(w::column(s.xs, vec![mark, w::label(word).ink(Ink::Muted)]));
     }
     w::row(s.lg, parts).fill()
 }

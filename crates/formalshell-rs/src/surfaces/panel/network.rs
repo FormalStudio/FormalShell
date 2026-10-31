@@ -185,7 +185,7 @@ impl Network {
             parts.push(w::column(s.panel_gap, fields).pad(0.0, 0.0, 0.0, s.panel_gap));
         }
         let bare = parts.len() == 1;
-        let cell = w::panel_cell(s, w::column(0.0, parts).fill()).cell_state(|c| c.open = r.connected).stop(key).on(format!("row:{}", r.ssid));
+        let cell = w::panel_cell(s, w::column(0.0, parts).fill()).stop(key).on(format!("row:{}", r.ssid));
         if bare { cell.height(s.panel_row) } else { cell }
     }
 
@@ -312,7 +312,6 @@ impl Panel for Network {
                 r.push(w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(format!("wired:{}", d.name)));
                 w::panel_cell(s, w::row(s.panel_gap, r).fill())
                     .height(s.panel_row)
-                    .cell_state(|c| c.open = d.connected)
                     .stop(format!("wired:{}", d.name))
                     .on(format!("wired:{}", d.name))
             })

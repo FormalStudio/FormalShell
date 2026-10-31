@@ -357,8 +357,9 @@ impl Host {
         } else {
             (p.across_len() - p.line_at - p.far_inset - s.bar_margin - s.screen_padding).max(0.0)
         };
-        let max_content = (max_frame - s.panel_gap * 2.0 - head - gap).max(0.0);
-        let height = s.panel_gap * 2.0 + head + gap + content_h.min(max_content);
+        let ends = s.panel_gap + self.foot(theme);
+        let max_content = (max_frame - ends - head - gap).max(0.0);
+        let height = ends + head + gap + content_h.min(max_content);
         self.fit.set((height, max_frame, content_h > max_content));
         (width, height, content_h)
     }
@@ -368,6 +369,14 @@ impl Host {
     fn header_metrics(&self, theme: &Theme) -> (f64, f64) {
         let s = &theme.space;
         if self.module.header() { (s.panel_row, s.panel_gap * 2.0 + theme.border_width) } else { (0.0, 0.0) }
+    }
+
+    /// The room under the body: under a header, the same `panelInset` the
+    /// title keeps from the card's edge; a headerless card (the tiles) keeps
+    /// its rows' own inset on all four sides.
+    fn foot(&self, theme: &Theme) -> f64 {
+        let s = &theme.space;
+        if self.module.header() { s.panel_inset } else { s.panel_gap }
     }
 
     /// Lays the frame out for this frame and draws everything on it.
@@ -470,6 +479,7 @@ impl Host {
         let pad = s.panel_row_inset;
         let vpad = s.panel_gap;
         let (head_h, head_gap) = self.header_metrics(theme);
+        let foot = self.foot(theme);
         let fx = frame.x as f64;
         let fy = frame.y as f64;
         let fw = frame.w as f64;
@@ -502,7 +512,7 @@ impl Host {
         }
 
         let top = fy + vpad + head_h + head_gap;
-        let viewport_h = (frame.h as f64 - vpad * 2.0 - head_h - head_gap).max(0.0);
+        let viewport_h = (frame.h as f64 - vpad - foot - head_h - head_gap).max(0.0);
         self.viewport = IRect::new((fx + pad).round() as i32, top.round() as i32, inner_w.round() as i32, viewport_h.round() as i32);
         let max_scroll = (self.content_h - viewport_h).max(0.0);
         if self.scroll.target() > max_scroll {
