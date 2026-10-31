@@ -356,6 +356,11 @@ fs_bind("SUPER + CTRL + M", "mirror toggle")
 fs_bind("SUPER + CTRL + Space", "menu summon wallpaper")
 fs_bind("SUPER + SHIFT + CTRL + Space", "menu summon theme")
 
+-- Settings and Information open centred in the launcher card, as Pond's
+-- settings window does. SUPER + comma is the notifications' (Omarchy).
+fs_bind("SUPER + ALT + S", "panel toggle settings")
+fs_bind("SUPER + ALT + I", "panel toggle info")
+
 -- Panels by name. `display` is the brightness and output panel, not a bar
 -- cell of its own.
 fs_bind("SUPER + CTRL + A", "panel toggle audio")

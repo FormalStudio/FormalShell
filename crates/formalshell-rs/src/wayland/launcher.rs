@@ -240,6 +240,120 @@ impl App {
         self.show_launcher();
     }
 
+    /// `name`'s panel (Settings, a settings page, Information) held in the
+    /// launcher card, the launcher opening on its route if it is not up.
+    pub fn menu_panel(&mut self, name: &str) {
+        self.atlas_close();
+        self.overlay_close();
+        self.close_panels();
+        if !self.launcher.open {
+            self.launcher.open(&self.store, None);
+        }
+        if self.launcher.show_panel(&self.store, name) {
+            self.launcher_panel_start();
+            self.show_launcher();
+        }
+    }
+
+    /// The panel the open launcher holds, by its `panel` name.
+    pub fn launcher_panel(&self) -> Option<&'static str> {
+        self.launcher.panel.as_ref().filter(|_| self.launcher.open && self.launcher.on_panel()).map(|p| p.name)
+    }
+
+    /// `Panel::start` once for a panel the launcher took up.
+    fn launcher_panel_start(&mut self) {
+        if let Some(p) = self.launcher.panel.as_mut().filter(|p| !p.started) {
+            p.started = true;
+            let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
+            p.module.start(&mut fx);
+        }
+    }
+
+    /// What a key or click in the held panel asked for. `Back` with nothing
+    /// asked of it climbs out of the route, as Backspace does in a mode.
+    fn launcher_panel_out(&mut self, out: crate::surfaces::panel::host::Out, back: bool) {
+        use crate::surfaces::panel::{self, host::Out as P};
+        self.launcher.dirty = true;
+        match out {
+            P::None if back => {
+                let out = self.launcher.pop(&self.store);
+                self.launcher_out(out);
+            }
+            P::None => {}
+            P::Close => self.menu_close(),
+            P::Panel(name) if panel::launcher_route(name).is_some() => self.menu_panel(name),
+            P::Panel(name) => {
+                self.menu_close();
+                self.set_panel(name, true, None);
+            }
+            P::Summon(panel::ATLAS) => {
+                self.menu_close();
+                self.atlas_show();
+            }
+            P::Summon(route) => {
+                self.launcher.close();
+                self.menu_open(Some(route));
+            }
+            P::Call(target, function) => {
+                self.menu_close();
+                self.call_self(target, function, &[]);
+            }
+            P::Menu(..) => {}
+        }
+        self.launcher_resolve = true;
+    }
+
+    /// One level up: a settings page goes back to its tiles, anything else
+    /// leaves the level.
+    fn launcher_up(&mut self) {
+        let page = self.launcher_panel().filter(|n| crate::surfaces::panel::launcher_route(n) != Some(*n));
+        match page.and_then(crate::surfaces::panel::launcher_route) {
+            Some(route) => self.menu_panel(route),
+            None => {
+                let out = self.launcher.pop(&self.store);
+                self.launcher_out(out);
+            }
+        }
+    }
+
+    /// One key into the held panel, through the panel host's cursor model.
+    fn launcher_panel_key(&mut self, event: &KeyEvent, repeat: bool) {
+        use crate::surfaces::panel::host::{Driven, Key, drive};
+        let key = match event.keysym {
+            Keysym::BackSpace => Key::Back,
+            Keysym::Escape => Key::Escape,
+            Keysym::Tab if self.mods.shift => Key::Tab(-1),
+            Keysym::Tab => Key::Tab(1),
+            Keysym::ISO_Left_Tab => Key::Tab(-1),
+            Keysym::Down => Key::Move(0, 1),
+            Keysym::Up => Key::Move(0, -1),
+            Keysym::Right => Key::Move(1, 0),
+            Keysym::Left => Key::Move(-1, 0),
+            Keysym::Return | Keysym::KP_Enter | Keysym::space if repeat => return,
+            Keysym::Return | Keysym::KP_Enter | Keysym::space => Key::Activate,
+            _ => match event.utf8.clone() {
+                Some(t) if t.chars().count() == 1 && t.chars().all(|c| c as u32 >= 0x20) => Key::Text(t),
+                _ => return,
+            },
+        };
+        let back = key == Key::Back;
+        let Some(w) = &self.launch else { return };
+        let Some(p) = self.launcher.panel.as_mut() else { return };
+        let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
+        let driven = drive(p.module.as_mut(), &mut p.cursor, w.shown.stops(), key, &mut fx);
+        let out = fx.out();
+        match driven {
+            Driven::Escape => return self.launcher_up(),
+            Driven::Walked => {
+                if let Some(w) = &self.launch {
+                    w.shown.follow_panel(&mut self.launcher);
+                }
+            }
+            Driven::Done => {}
+        }
+        self.launcher_panel_out(out, back);
+    }
+
     pub fn menu_toggle(&mut self) {
         if self.launcher.open {
             self.menu_close();
@@ -1101,6 +1215,10 @@ impl App {
             Keysym::ISO_Left_Tab => nav::Key::Backtab,
             _ => nav::Key::Other,
         };
+        if self.launcher.on_panel() {
+            self.launcher_panel_key(event, repeat);
+            return true;
+        }
         let text = event.utf8.as_deref().filter(|t| t.chars().all(|c| c as u32 >= 0x20 && c != '\u{7f}') && !t.is_empty());
         self.resolve_launcher();
         let out = self.launcher.key(&self.store, key, super::field_key(event.keysym), self.mods, repeat, text);
@@ -1137,17 +1255,35 @@ impl App {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                 if w.shown.set_hover(w.shown.hit(x, y).map(|h| h.path)) {
                     self.launcher.dirty = true;
+                    if let Some(p) = self.launcher.panel.as_mut() {
+                        p.module.pointed(w.shown.hovered_stop().as_deref());
+                    }
                 }
             }
             PointerEventKind::Leave { .. } => {
                 if w.shown.set_hover(None) {
                     self.launcher.dirty = true;
+                    if let Some(p) = self.launcher.panel.as_mut() {
+                        p.module.pointed(None);
+                    }
                 }
             }
             PointerEventKind::Press { button, .. } => w.pressed = on(w).map(|o| (o, button)),
             PointerEventKind::Release { button, .. } => {
                 let pressed = w.pressed.take();
                 let Some(on) = on(w).filter(|o| pressed.as_ref() == Some(&(o.clone(), button))) else { return true };
+                if self.launcher.on_panel()
+                    && let Some(e) = w.shown.panel_event(x, y)
+                {
+                    if let Some(p) = self.launcher.panel.as_mut() {
+                        let mut fx = crate::surfaces::panel::Effect::new(&self.store, self.runtime.as_ref());
+                        p.module.event(&e, &mut fx);
+                        p.cursor.take(p.module.as_mut(), w.shown.stops());
+                        let out = fx.out();
+                        self.launcher_panel_out(out, false);
+                    }
+                    return true;
+                }
                 if button == BTN_RIGHT {
                     if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
                         self.resolve_launcher();
@@ -1202,10 +1338,7 @@ impl App {
                 let light = !self.launcher.picker.light;
                 self.picker_variant(light);
             }
-            "token" => {
-                let out = self.launcher.pop(&self.store);
-                self.launcher_out(out);
-            }
+            "token" => self.launcher_up(),
             _ => {
                 self.resolve_launcher();
                 if let Some(depth) = on.strip_prefix("token:").and_then(|i| i.parse::<usize>().ok()) {

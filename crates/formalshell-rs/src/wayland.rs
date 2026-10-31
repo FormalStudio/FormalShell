@@ -770,6 +770,9 @@ impl App {
         if self.panel.as_ref().is_some_and(|p| topic.is_none_or(|t| p.module.reads().contains(&t) || t == Topic::Theme)) {
             self.panel_dirty = true;
         }
+        if self.launcher.open && self.launcher.panel.as_ref().is_some_and(|p| topic.is_none_or(|t| p.module.reads().contains(&t))) {
+            self.launcher.dirty = true;
+        }
         self.sync_open(now);
         self.refresh_spares(topic, now);
         self.update_backdrops();
@@ -818,7 +821,12 @@ impl App {
 
     /// The open panel by its `panel` name; the gallery is no panel's.
     pub fn panel_open(&self) -> Option<&str> {
-        self.panel.as_ref().filter(|p| p.is_open()).map(|p| p.id()).and_then(|id| panel::known(id).or_else(|| id.starts_with(panel::plugin::PREFIX).then_some(id)))
+        self.panel
+            .as_ref()
+            .filter(|p| p.is_open())
+            .map(|p| p.id())
+            .and_then(|id| panel::known(id).or_else(|| id.starts_with(panel::plugin::PREFIX).then_some(id)))
+            .or_else(|| self.launcher_panel())
     }
 
     pub fn gallery_open(&self) -> bool {
@@ -1059,6 +1067,15 @@ impl App {
     }
 
     fn set_panel_from(&mut self, name: &str, open: bool, anchor: Option<f64>, nested: bool) {
+        // Settings and Information live in the launcher card.
+        if panel::launcher_route(name).is_some() {
+            if open {
+                self.menu_panel(name);
+            } else if self.launcher_panel() == Some(name) {
+                self.menu_close();
+            }
+            return;
+        }
         let now = Instant::now();
         // A menu hangs off the popout under it and goes with it, or with
         // whatever replaces it.
@@ -1114,7 +1131,7 @@ impl App {
         let mut surface = Surface::new("panel", layer, &self.shm, self.started);
         surface.wait_map = true;
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
-        host.module.start(&mut panel::Effect { store: &self.store, runtime: self.runtime.as_ref(), close: false, summon: None, panel: None, call: None, menu: None });
+        host.module.start(&mut panel::Effect::new(&self.store, self.runtime.as_ref()));
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
                 host.take_over(old.card.live(), now);

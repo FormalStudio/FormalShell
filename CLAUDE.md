@@ -1192,7 +1192,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `screenshot.sh` `--screenshot`: the `screenshot` target's region cancel and
   full-screen routes.
 - `settings_ui.sh` `--settings-ui`: the settings pages
-  (`docs/superpowers/specs/2026-10-31-settings-ui.md`) on real keys, with
+  (`docs/superpowers/specs/2026-10-31-settings-ui.md`) held in the launcher
+  card, centred, on real keys, with
   settings.json pinning `motion.morph` false: Down and Return on the
   Settings tiles opening Appearance, Return on Reactive rims writing
   `settings.theme.reactiveRims` false into state.json and the resolved
@@ -1200,8 +1201,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `settings set`/`reset` on it answering the pinned error, `x` dropping
   the override, Backspace back to the tiles, Right on the Bar page's style
   repainting the bar solid (`bar paint`) and `settings reset` clearing it,
-  settings.json's sha256 unchanged. Every page photographed, dark and
-  `--light`.
+  settings.json's sha256 unchanged, `menu status` reading the page held at
+  each step, Escape back to the tiles and out to the root, the root's
+  Settings row and `panel open info` landing in the card and `panel close`
+  closing it. Every page photographed, dark and `--light`.
 - `share.sh` `--share`: the share route present (the copied text reaching
   LocalSend as a real file) and honestly absent with no binary on PATH.
 - `sidebar.sh` `--sidebar`: `layout: sidebar` from settings.json alone,

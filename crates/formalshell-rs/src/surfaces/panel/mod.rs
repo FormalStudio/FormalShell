@@ -96,7 +96,11 @@ pub struct Effect<'a> {
     pub menu: Option<String>,
 }
 
-impl Effect<'_> {
+impl<'a> Effect<'a> {
+    pub fn new(store: &'a Store, runtime: Option<&'a Runtime>) -> Self {
+        Self { store, runtime, close: false, summon: None, panel: None, call: None, menu: None }
+    }
+
     /// Runs `f` on the service thread.
     pub fn service(&self, f: impl FnOnce(&crate::runtime::Ctx) + Send + 'static) {
         if let Some(rt) = self.runtime {
@@ -237,6 +241,17 @@ pub const PANELS: [&str; 26] = [
 
 pub fn known(name: &str) -> Option<&'static str> {
     PANELS.iter().find(|n| **n == name).copied()
+}
+
+/// The launcher route a panel lives in: the launcher card holds these, centred
+/// like Pond's settings, rather than a card hanging off the bar.
+pub fn launcher_route(name: &str) -> Option<&'static str> {
+    match name {
+        "info" => Some("info"),
+        "settings" => Some("settings"),
+        page if page.starts_with("settings:") && known(page).is_some() => Some("settings"),
+        _ => None,
+    }
 }
 
 pub fn build(name: &str) -> Option<Box<dyn Panel>> {

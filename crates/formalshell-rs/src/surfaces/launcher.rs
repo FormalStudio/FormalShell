@@ -50,6 +50,9 @@ pub enum View {
     Monitor,
     /// One camera's feed.
     Mirror,
+    /// A panel the launcher holds, centred: Settings and its pages, and
+    /// Information, Pond's way.
+    Panel,
 }
 
 impl View {
@@ -62,6 +65,7 @@ impl View {
             View::Picker => "picker",
             View::Monitor => "monitor",
             View::Mirror => "mirror",
+            View::Panel => "panel",
         }
     }
 }
@@ -173,6 +177,36 @@ pub struct Model {
     editing: Option<(String, String)>,
     /// The launcher plugin and words last sent as a `query` event.
     plugin_query: Option<(String, String)>,
+    /// The panel the settings and info routes hold.
+    pub panel: Option<Embedded>,
+}
+
+/// A panel module drawn as the launcher's body, with the panel host's own
+/// cursor model.
+pub struct Embedded {
+    pub module: Box<dyn crate::surfaces::panel::Panel>,
+    pub cursor: crate::surfaces::panel::host::Cursor,
+    /// Its `panel` name (`settings:bar`).
+    pub name: &'static str,
+    /// `Panel::start` has run.
+    pub started: bool,
+    /// The module's width, as the window last read it.
+    pub width: f64,
+}
+
+impl Embedded {
+    fn new(name: &'static str) -> Option<Self> {
+        let mut module = crate::surfaces::panel::build(name)?;
+        module.opened();
+        let cursor = crate::surfaces::panel::host::Cursor::starting(module.cursor_start());
+        Some(Self { module, cursor, name, started: false, width: 0.0 })
+    }
+}
+
+impl Drop for Embedded {
+    fn drop(&mut self) {
+        self.module.closed();
+    }
 }
 
 /// The token an `Edit abbreviation` answer comes back under.
@@ -452,6 +486,7 @@ impl Default for Model {
             monitor_wants: None,
             monitor_armed: None,
             mirror_current: String::new(),
+            panel: None,
             monitor_history: MonitorHistory::default(),
             motion: RowMotion::default(),
             motion_scale: 1.0,
@@ -712,7 +747,7 @@ impl Model {
 
     /// The opened state's tiles stand alone: no foot under them.
     pub fn footless(&self) -> bool {
-        self.mode == Mode::Menu && self.view == View::Tiles
+        self.mode == Mode::Menu && matches!(self.view, View::Tiles | View::Panel)
     }
 
     /// A card whose height follows its list rather than the level's kind.
@@ -737,6 +772,9 @@ impl Model {
     }
 
     fn kind_width(&self, theme: &Theme) -> f64 {
+        if let Some(p) = self.panel.as_ref().filter(|p| self.on_panel() && p.width > 0.0) {
+            return p.width;
+        }
         if self.app_view() { theme.space.popup_width_menu_app } else { launcher_px(theme, fs_theme::tokens::LAUNCHER.width) }
     }
 
@@ -761,6 +799,13 @@ impl Model {
         if self.bleeds() { self.card_width(theme) } else { self.content_width(theme) }
     }
 
+    /// A held panel's body: `panelRowInset` in from the card's sides, its
+    /// rows' text then on `panelInset` as in the panel host.
+    fn panel_body(&self, theme: &Theme) -> (f64, f64) {
+        let i = theme.space.panel_row_inset;
+        (i, self.card_width(theme) - i * 2.0)
+    }
+
     /// The preview pane's offset into the body and its size: the side
     /// column past the list's share, `lg` in from its divider and the
     /// body's edges. The pane's draw and its picture's decode both read it.
@@ -775,7 +820,7 @@ impl Model {
     /// output's.
     fn kind_height(&self, theme: &Theme, output_h: f64) -> f64 {
         let s = &theme.space;
-        let (kind, share) = if self.app_view() {
+        let (kind, share) = if self.app_view() || self.on_panel() {
             (s.popup_height_menu_app, fs_theme::tokens::LAUNCHER.app_height_share)
         } else if self.split() {
             (s.popup_height_menu_split, fs_theme::tokens::LAUNCHER.height_share)
@@ -783,6 +828,28 @@ impl Model {
             (s.popup_height_menu, fs_theme::tokens::LAUNCHER.height_share)
         };
         if output_h > 0.0 { kind.min(output_h * share) } else { kind }
+    }
+
+    /// The level holds a panel (Settings, Information) as its body.
+    pub fn on_panel(&self) -> bool {
+        self.mode == Mode::Menu && self.children.is_empty() && self.panel.is_some()
+    }
+
+    /// `name`'s panel in the launcher: its route as the level, then the
+    /// page itself in the module's place.
+    pub fn show_panel(&mut self, store: &Store, name: &str) -> bool {
+        let Some(route) = crate::surfaces::panel::launcher_route(name) else { return false };
+        let Some(name) = crate::surfaces::panel::known(name) else { return false };
+        if self.mode != Mode::Menu || self.level.as_deref() != Some(route) {
+            self.abandon_select();
+            self.children.clear();
+            self.enter_level(store, Some(route.to_owned()));
+        }
+        if self.panel.as_ref().is_none_or(|p| p.name != name) {
+            self.panel = Embedded::new(name);
+        }
+        self.dirty = true;
+        true
     }
 
     pub fn on_mirror(&self) -> bool {
@@ -1002,8 +1069,11 @@ impl Model {
         let picker = menu && children.is_none() && level == Some(PICKER_ROUTE);
         let monitor = menu && children.is_none() && level == Some(MONITOR_ROUTE);
         let mirror = menu && children.is_none() && level == Some(MIRROR_ROUTE);
+        let embedded = menu && children.is_none() && self.panel.is_some();
         let emoji = emoji && children.is_none() && !picker && !monitor && !mirror;
-        let view = if mirror {
+        let view = if embedded {
+            View::Panel
+        } else if mirror {
             View::Mirror
         } else if monitor {
             View::Monitor
@@ -1036,7 +1106,7 @@ impl Model {
             }),
             Mode::Menu if picker => self.picker_rows(store, q),
             Mode::Menu if monitor => monitor_rows(store, q),
-            Mode::Menu if mirror => Vec::new(),
+            Mode::Menu if mirror || embedded => Vec::new(),
             Mode::Menu if matches!(level, Some("clipboard" | "share.history")) => {
                 let history: Vec<Node> = model::visible_children(nodes, level, cond).into_iter().cloned().collect();
                 if history.is_empty() {
@@ -1374,7 +1444,7 @@ impl Model {
                     y += band + row_h;
                 }
             }
-            View::Mirror => out.columns = 1,
+            View::Mirror | View::Panel => out.columns = 1,
             View::Rows | View::Monitor => {
                 out.columns = 1;
                 let side = s.sm;
@@ -1436,7 +1506,7 @@ impl Model {
         match self.view {
             View::AppGrid => self.app_count,
             View::Emoji | View::Picker | View::Tiles => self.rows.len(),
-            View::Rows | View::Monitor | View::Mirror => 0,
+            View::Rows | View::Monitor | View::Mirror | View::Panel => 0,
         }
     }
 
@@ -1468,7 +1538,7 @@ impl Model {
 
     /// The pixels one wheel notch scrolls: a row, or a grid row of cells.
     pub fn wheel_step(&self) -> f64 {
-        if matches!(self.view, View::Rows | View::Monitor) { 32.0 } else { self.layout.cell_h.max(1.0) }
+        if matches!(self.view, View::Rows | View::Monitor | View::Panel) { 32.0 } else { self.layout.cell_h.max(1.0) }
     }
 
     /// One axis frame over the view, with the cursor left where it is: a
@@ -1559,7 +1629,7 @@ impl Model {
                     })
                     .collect()
             }
-            View::Emoji | View::Picker => Vec::new(),
+            View::Emoji | View::Picker | View::Panel => Vec::new(),
         };
         json!({
             "isOpen": self.open,
@@ -1578,6 +1648,8 @@ impl Model {
             "selection": self.query.selection().is_some(),
             "sections": self.section_names(),
             "view": self.view.name(),
+            "panel": self.panel.as_ref().filter(|_| self.on_panel()).map(|p| p.name),
+            "panelCursor": self.panel.as_ref().filter(|_| self.on_panel()).and_then(|p| p.cursor.shown()),
             "columns": self.columns(),
             "cursor": self.cursor,
             "cursorId": self.cursor_id,
@@ -1741,6 +1813,7 @@ impl Model {
         self.confirm.clear();
         self.column = None;
         self.children.clear();
+        self.panel = None;
         plugins::launcher(false);
         self.plugin_query = None;
     }
@@ -1816,6 +1889,12 @@ impl Model {
             use crate::services::wants::{Source, Want};
             (Want::new(Source::Monitor), Want::new(Source::Processes))
         });
+        let route = id.as_deref().and_then(crate::surfaces::panel::launcher_route).filter(|r| id.as_deref() == Some(*r));
+        match route {
+            Some(r) if self.level.as_deref() != Some(r) || self.panel.is_none() => self.panel = Embedded::new(r),
+            Some(_) => {}
+            None => self.panel = None,
+        }
         self.level = id;
         if entering {
             self.picker_enter(store);
@@ -2864,6 +2943,10 @@ pub struct Shown {
     /// The level and query it was last drawn on, while it is shown: a move
     /// inside the same list travels, anything else lands at once.
     sel_on: Option<(Option<String>, String)>,
+    /// The card centred both ways, as Pond's settings is.
+    centred: bool,
+    /// The embedded panel's content top on the surface, scroll included.
+    panel_origin: f64,
 }
 
 impl Shown {
@@ -2909,6 +2992,8 @@ impl Shown {
             sel_nodes: Vec::new(),
             sel: [sel(), sel(), sel(), sel()],
             sel_on: None,
+            centred: false,
+            panel_origin: 0.0,
         }
     }
 
@@ -2944,6 +3029,8 @@ impl Shown {
         let cap = (m.kind_height(theme, output_h) - head - foot).max(0.0);
         let body = if m.mode == Mode::Input {
             0.0
+        } else if m.on_panel() {
+            m.layout.content_h.min(cap)
         } else if m.content_tall() {
             // The card hugs its list, never shorter than the opened state.
             let rest = s.xl + launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height) + s.xxl;
@@ -2960,6 +3047,64 @@ impl Shown {
             cap
         };
         (line, head, foot, body)
+    }
+
+    /// The stop under the pointer, whichever of its parts it is on, as the
+    /// panel host reads it.
+    pub fn hovered_stop(&self) -> Option<String> {
+        let path = self.body.hover.as_ref()?;
+        let hit = self.body.hits.iter().find(|h| &h.path == path)?;
+        if hit.stop.is_some() {
+            return hit.stop.clone();
+        }
+        let r = hit.rect;
+        self.body
+            .hits
+            .iter()
+            .filter(|h| h.stop.is_some() && h.rect.x <= r.x && h.rect.y <= r.y && h.rect.right() >= r.right() && h.rect.bottom() >= r.bottom())
+            .min_by_key(|h| h.rect.w * h.rect.h)
+            .and_then(|h| h.stop.clone())
+    }
+
+    /// The embedded panel's body. A page under a title ends `panelInset`
+    /// above the card's edge; a headerless tile card keeps `panelRowInset`
+    /// all round (panel-language spec §2).
+    fn panel_el(&self, m: &Model, store: &Store, theme: &Theme) -> Option<El> {
+        let p = m.panel.as_ref().filter(|_| m.on_panel())?;
+        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: p.cursor.shown(), hovered: self.hovered_stop() };
+        let s = &theme.space;
+        let bottom = if p.module.header() { s.panel_inset } else { s.panel_row_inset };
+        Some(w::column(0.0, vec![w::space(s.panel_row_inset), p.module.body(&v), w::space(bottom)]))
+    }
+
+    fn measure_panel(&self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit) {
+        let Some(p) = m.panel.as_mut() else { return };
+        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: None, hovered: None };
+        p.width = p.module.width(&v);
+        let Some(el) = self.panel_el(m, store, theme) else { return };
+        m.layout.content_h = ui::measure(&el, m.panel_body(theme).1, theme, kit).1;
+    }
+
+    /// The body's stops, for the embedded panel's cursor.
+    pub fn stops(&self) -> &[ui::Stop] {
+        &self.body.stops
+    }
+
+    /// The smallest scroll that shows the embedded panel's cursor stop.
+    pub fn follow_panel(&self, m: &mut Model) {
+        let Some(st) = m.panel.as_ref().and_then(|p| p.cursor.shown()).and_then(|k| self.body.stops.iter().find(|st| st.key == k)) else { return };
+        let top = st.rect.y as f64 - self.panel_origin;
+        let (h, view) = (st.rect.h as f64, m.body_h);
+        let mut next = m.scroll;
+        if top < next {
+            next = top;
+        } else if top + h > next + view {
+            next = top + h - view;
+        }
+        m.scroll = next.clamp(0.0, (m.layout.content_h - view).max(0.0));
+        m.travels = true;
+        m.wheeled = false;
+        m.touch.settle();
     }
 
     /// The card at this frame of its size morph. Off a top bar it is
@@ -2980,6 +3125,7 @@ impl Shown {
         let (x, y) = match self.modal.card.edge {
             Edge::Left => (line + centred(self.output.0 - line, w_), centred(self.output.1, h_)),
             Edge::Right => (centred(self.output.0 - line, w_), centred(self.output.1, h_)),
+            _ if self.centred => (((self.output.0 - w_) / 2.0).round(), centred(self.output.1, h_)),
             _ => (((self.output.0 - w_) / 2.0).round(), near(self.output.1, h_)),
         };
         self.modal.place(Rect::new(x, y, x + w_, y + h_), now);
@@ -2989,6 +3135,10 @@ impl Shown {
     pub fn layout(&mut self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
         m.output_w = self.output.0;
         m.relayout(theme, kit);
+        self.centred = m.on_panel();
+        if m.on_panel() {
+            self.measure_panel(m, store, theme, kit);
+        }
         let (line, head_h, foot_h, body_h) = Self::metrics(theme, m, store, self.output.1, kit);
         let chrome = head_h + foot_h;
         if (m.body_h - body_h).abs() > 0.5 {
@@ -3029,6 +3179,10 @@ impl Shown {
             None => self.column_scroll.jump(0.0),
         }
         self.draw(m, store, theme, kit, now, line, body_h, (tw, th));
+        if let Some(p) = m.panel.as_mut() {
+            p.cursor.sync(&self.body.stops);
+            p.cursor.travels = false;
+        }
         self.laid_for = (tw, th);
     }
 
@@ -3055,6 +3209,7 @@ impl Shown {
         };
         let s = theme.space.clone();
         let pad = s.panel_padding;
+        let panel = self.panel_el(m, store, theme);
         let (fx, fy, fw) = (frame.x as f64, frame.y as f64, frame.w as f64);
         let inner_w = (fw - pad * 2.0).max(0.0);
         self.wake = None;
@@ -3088,7 +3243,14 @@ impl Shown {
         let bw = theme.border_width.round().max(1.0) as i32;
         let rule_top = (fy + band).round() as i32;
         let body_top = rule_top as f64 + theme.border_width;
-        let (body_x, body_w) = if m.bleeds() { (fx, fw) } else { (fx + pad, inner_w) };
+        let (body_x, body_w) = if m.on_panel() {
+            let (x, w_) = m.panel_body(theme);
+            (fx + x, w_)
+        } else if m.bleeds() {
+            (fx, fw)
+        } else {
+            (fx + pad, inner_w)
+        };
         let sep = theme.box_style("separator", None).fill;
         let sep = sep.with_alpha(sep.a * alpha);
 
@@ -3098,11 +3260,18 @@ impl Shown {
         self.body_rect = (body_h > 0.0).then(|| IRect::new(viewport.x + on_output.0, viewport.y + on_output.1, viewport.w, viewport.h));
         let scroll = self.scroll.value(now) + m.touch.value(now);
         let mut overlays = Vec::new();
-        let body = if body_h > 0.0 { body_el(m, store, theme, kit, scroll, body_h, &mut overlays) } else { w::space(0.0) };
+        let body = match panel {
+            Some(el) => el,
+            None if body_h > 0.0 => body_el(m, store, theme, kit, scroll, body_h, &mut overlays),
+            None => w::space(0.0),
+        };
+        let held = m.panel.as_ref().filter(|_| m.on_panel());
         self.body.halo_owned = false;
-        self.body.fill_owned = true;
-        self.body.cursor = None;
+        self.body.fill_owned = held.is_none();
+        self.body.cursor = held.and_then(|p| p.cursor.shown()).map(str::to_owned);
+        self.body.ring = held.is_some_and(|p| p.cursor.keyed);
         let origin = (body_x, body_top - scroll);
+        self.panel_origin = origin.1;
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + body_w, origin.1 + m.layout.content_h), Some(body_clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
@@ -3238,6 +3407,12 @@ impl Shown {
         self.body.hit(x, y).or_else(|| self.preview.hit(x, y)).or_else(|| self.head.hit(x, y)).or_else(|| self.foot.hit(x, y)).cloned()
     }
 
+    /// What a click at an output point means to the held panel's body.
+    pub fn panel_event(&self, x: f64, y: f64) -> Option<crate::ui::Event> {
+        let (x, y) = self.local(x, y);
+        Ui::event(self.body.hit(x, y)?, x)
+    }
+
     /// An output point in the surface's own pixels.
     fn local(&self, x: f64, y: f64) -> (f64, f64) {
         match &self.modal.layer {
@@ -3335,6 +3510,17 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
     for word in m.column_tokens() {
         parts.push(w::token(s, &[word]).on("column-token"));
         parts.push(w::space(s.sm));
+    }
+    // A held panel takes the keys the field would: its page's title stands
+    // where the query would be.
+    if let Some(p) = m.panel.as_ref().filter(|_| m.on_panel()) {
+        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None };
+        let title = p.module.title(&v);
+        if token.last() != Some(&title) {
+            parts.push(w::text(title).size(Type::Field));
+        }
+        parts.push(w::spacer());
+        return w::row(0.0, parts).fill();
     }
     parts.push(w::edit(&m.query, &m.placeholder(store), Type::Field));
     parts.push(w::space(s.lg));

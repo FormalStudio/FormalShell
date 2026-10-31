@@ -40,10 +40,21 @@ the merge; it comes back if the file drops the key.
 
 The Settings panel (`panel:settings`, Pond's tile grid) is the entry. Its
 tiles are Appearance, Bar, Desktop, System, Bluetooth and Information, two
-by three; the first four open `settings:<page>`, the other two their own
-panels, as before. Each page is a panel of its own, so `panel open
-settings:bar` opens it straight, and opening one from a tile is a panel
-handoff.
+by three; the first four open `settings:<page>`, Bluetooth its own panel
+and Information the `info` route. Each page is a panel of its own, so
+`panel open settings:bar` opens it straight.
+
+Settings and Information live in the launcher card, as Pond's settings
+window does (owner, 2026-10-31): the `settings` and `info` routes hold the
+panel module as their level's body (`View::Panel`), the card centred both
+ways and as wide as the module, its height the module's content capped at
+the app views' share, no foot, the head the route's token and the page's
+title. The panel host's cursor model (`panel::host::drive`) runs the keys.
+`panel open|toggle settings[:<page>]|info` lands there, as do the
+sidebar's settings button, the launcher root's Settings and Information
+rows and `Super Alt S` / `Super Alt I`; `panel state` and `menu status`'s
+`panel` name the page, and `panel close` closes the launcher holding it.
+A tile opening a page swaps the module in the same card.
 
 | page | key | control | values, the default in bold |
 | --- | --- | --- | --- |
@@ -102,8 +113,10 @@ override carries a reset button (`rotate-ccw`) in its row, which drops the
 override. Rows are the panel's stops in reading order: Up and Down walk
 them, Enter or Space flips a switch, Left and Right move a choice and
 apply it at once (Enter steps a choice round), `x` resets the key under
-the cursor, Backspace or the back button returns to the tiles, Escape
-closes.
+the cursor, Backspace or Escape returns to the tiles, and on the tiles
+Backspace or Escape leaves the route for the launcher's root. In the
+launcher card the header (title, back and close buttons) gives way to the
+launcher's head, whose token click is the back.
 
 ## 6. IPC
 
@@ -125,4 +138,7 @@ closes.
 changed on real keys and read back in state.json's `settings` and in
 `debug dump`'s `configLoaded`, a key pinned by settings.json refusing the
 edit (keys and IPC), reset clearing the override, settings.json's sha256
-unchanged across the run. Photographed dark and `--light`.
+unchanged across the run, every step read off `menu status` as the
+launcher holding the page, Escape back to the tiles and out to the root,
+the root's Settings row and `panel open info` landing there, `panel close`
+closing it. Photographed dark and `--light`.

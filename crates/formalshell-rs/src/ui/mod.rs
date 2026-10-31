@@ -336,10 +336,6 @@ impl Ui {
             p.scroll(delta);
         }
     }
-
-    pub fn stop_index(&self, key: &str) -> Option<usize> {
-        self.stops.iter().position(|s| s.key == key)
-    }
 }
 
 /// An element's size at `width` without drawing it.

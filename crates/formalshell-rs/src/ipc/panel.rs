@@ -52,6 +52,9 @@ fn close(app: &mut App, _: &[Value]) -> Value {
     app.atlas_close();
     app.overlay_close();
     app.close_panels();
+    if app.launcher_panel().is_some() {
+        app.menu_close();
+    }
     text("ok")
 }
 

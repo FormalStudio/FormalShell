@@ -94,12 +94,128 @@ impl Place {
 /// The cursor: where it is, whether it shows, and whether the
 /// keyboard put it there.
 #[derive(Default)]
-struct Cursor {
-    index: usize,
-    key: Option<String>,
-    active: bool,
-    keyed: bool,
-    travels: bool,
+pub struct Cursor {
+    pub index: usize,
+    pub key: Option<String>,
+    pub active: bool,
+    pub keyed: bool,
+    pub travels: bool,
+}
+
+impl Cursor {
+    pub fn starting(key: Option<String>) -> Self {
+        Self { key, ..Self::default() }
+    }
+
+    /// The stop under the cursor, while it shows.
+    pub fn shown(&self) -> Option<&str> {
+        self.key.as_deref().filter(|_| self.active)
+    }
+
+    /// Keeps the cursor on its stop through a relayout, or on the nearest
+    /// one when its stop went.
+    pub fn sync(&mut self, stops: &[ui::Stop]) {
+        if stops.is_empty() {
+            self.key = None;
+            return;
+        }
+        if let Some(i) = self.key.as_ref().and_then(|k| stops.iter().position(|st| &st.key == k)) {
+            self.index = i;
+        } else {
+            self.index = self.index.min(stops.len() - 1);
+            self.key = Some(stops[self.index].key.clone());
+        }
+    }
+
+    /// The stop a panel moved the cursor to by itself.
+    pub fn take(&mut self, module: &mut dyn Panel, stops: &[ui::Stop]) {
+        if let Some(k) = module.take_cursor() {
+            if let Some(i) = stops.iter().position(|st| st.key == k) {
+                self.index = i;
+            }
+            self.travels = self.active;
+            self.key = Some(k);
+        }
+    }
+
+    /// An arrow: steps the value on a stop that carries one, else walks.
+    /// True when the cursor landed on another stop.
+    fn walk(&mut self, module: &mut dyn Panel, stops: &[ui::Stop], dx: i32, dy: i32, fx: &mut Effect) -> bool {
+        if module.steps() && self.active && dy == 0 && dx != 0 {
+            if let Some(k) = self.key.clone() {
+                module.step(&k, dx.signum(), fx);
+            }
+            self.keyed = true;
+            return false;
+        }
+        if stops.is_empty() {
+            return false;
+        }
+        let next = step(self.index, stops.len(), self.active, dx, dy, module.columns());
+        self.travels = self.active && next != self.index;
+        self.index = next;
+        self.key = Some(stops[next].key.clone());
+        self.active = true;
+        self.keyed = true;
+        true
+    }
+}
+
+/// What a key did to a panel, for whoever holds its card.
+#[derive(Debug, PartialEq)]
+pub enum Driven {
+    /// Escape the panel did not take: the card's to close.
+    Escape,
+    /// The cursor walked onto another stop: the card scrolls to it.
+    Walked,
+    Done,
+}
+
+/// One key into a panel outside a text field: the cursor model every card
+/// holding a panel shares, the host's and the launcher's.
+pub fn drive(module: &mut dyn Panel, cursor: &mut Cursor, stops: &[ui::Stop], name: Key, fx: &mut Effect) -> Driven {
+    let stop = cursor.shown().map(str::to_owned);
+    let mut walked = false;
+    match name {
+        Key::Escape if module.escape() => {}
+        Key::Escape => return Driven::Escape,
+        Key::Tab(d) => {
+            if let Some(k) = module.tab(cursor.key.as_deref(), d) {
+                if let Some(i) = stops.iter().position(|st| st.key == k) {
+                    cursor.index = i;
+                }
+                cursor.travels = cursor.active;
+                cursor.key = Some(k);
+            }
+            cursor.active = true;
+            cursor.keyed = true;
+        }
+        Key::Move(dx, dy) => walked = cursor.walk(module, stops, dx, dy, fx),
+        Key::Back => module.back(fx),
+        Key::Edit(..) => {}
+        Key::Activate => {
+            if let Some(k) = stop.filter(|_| !stops.is_empty()) {
+                module.activate(&k, fx);
+            }
+        }
+        Key::Text(t) => match t.as_str() {
+            "j" => walked = cursor.walk(module, stops, 0, 1, fx),
+            "k" => walked = cursor.walk(module, stops, 0, -1, fx),
+            "l" => walked = cursor.walk(module, stops, 1, 0, fx),
+            "h" => walked = cursor.walk(module, stops, -1, 0, fx),
+            "x" => {
+                if let Some(k) = stop {
+                    module.delete(&k, fx);
+                }
+            }
+            _ => module.key(stop.as_deref(), &t, fx),
+        },
+    }
+    if let Some(k) = cursor.shown().map(str::to_owned) {
+        module.reached(&k, fx);
+    }
+    cursor.take(module, stops);
+    if walked { Driven::Walked } else { Driven::Done }
 }
 
 struct Handoff {
@@ -126,7 +242,7 @@ pub enum Out {
 }
 
 impl Effect<'_> {
-    fn out(&mut self) -> Out {
+    pub fn out(&mut self) -> Out {
         if let Some(id) = self.menu.take() {
             return Out::Menu(id, None);
         }
@@ -208,7 +324,7 @@ impl Host {
             handed: false,
             morph: None,
             morph_armed: false,
-            cursor: Cursor { key: start, ..Cursor::default() },
+            cursor: Cursor::starting(start),
             halo: std::array::from_fn(|_| Animated::new(0.0, SPATIAL)),
             halo_shown: false,
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
@@ -576,17 +692,7 @@ impl Host {
 
     /// Keeps the cursor on its row by identity when the rows renumber.
     fn sync_cursor(&mut self) {
-        let count = self.body.stops.len();
-        if count == 0 {
-            self.cursor.key = None;
-            return;
-        }
-        if let Some(i) = self.cursor.key.as_ref().and_then(|k| self.body.stop_index(k)) {
-            self.cursor.index = i;
-        } else {
-            self.cursor.index = self.cursor.index.min(count - 1);
-            self.cursor.key = Some(self.body.stops[self.cursor.index].key.clone());
-        }
+        self.cursor.sync(&self.body.stops);
     }
 
     /// Whether the content asks for frames on its own (a marquee, a fade).
@@ -595,30 +701,7 @@ impl Host {
     }
 
     fn effect<'a>(store: &'a Store, runtime: Option<&'a Runtime>) -> Effect<'a> {
-        Effect { store, runtime, close: false, summon: None, panel: None, call: None, menu: None }
-    }
-
-    /// Move the cursor.
-    fn move_cursor(&mut self, dx: i32, dy: i32, fx: &mut Effect) {
-        let count = self.body.stops.len();
-        if self.module.steps() && self.cursor.active && dy == 0 && dx != 0 {
-            if let Some(k) = self.cursor.key.clone() {
-                self.module.step(&k, dx.signum(), fx);
-            }
-            self.cursor.keyed = true;
-            return;
-        }
-        if count == 0 {
-            return;
-        }
-        let next = step(self.cursor.index, count, self.cursor.active, dx, dy, self.module.columns());
-        self.cursor.travels = self.cursor.active && next != self.cursor.index;
-        self.cursor.index = next;
-        self.cursor.key = Some(self.body.stops[next].key.clone());
-        self.cursor.active = true;
-        self.cursor.keyed = true;
-        self.touch.settle();
-        self.follow();
+        Effect::new(store, runtime)
     }
 
     /// cursor.js `follow`: the smallest scroll that shows the cursor row.
@@ -657,7 +740,6 @@ impl Host {
             return Out::None;
         }
         let mut fx = Self::effect(store, runtime);
-        let stop = self.cursor.key.clone().filter(|_| self.cursor.active);
         if self.module.editing() {
             let edit = match name {
                 Key::Escape => Edit::Cancel,
@@ -669,57 +751,19 @@ impl Host {
             self.module.edit(edit, &mut fx);
             return fx.out();
         }
-        match name {
-            Key::Escape if self.module.escape() => {}
-            Key::Escape => return Out::Close,
-            Key::Tab(d) => {
-                if let Some(k) = self.module.tab(self.cursor.key.as_deref(), d) {
-                    if let Some(i) = self.body.stop_index(&k) {
-                        self.cursor.index = i;
-                    }
-                    self.cursor.travels = self.cursor.active;
-                    self.cursor.key = Some(k);
-                }
-                self.cursor.active = true;
-                self.cursor.keyed = true;
+        match drive(self.module.as_mut(), &mut self.cursor, &self.body.stops, name, &mut fx) {
+            Driven::Escape => return Out::Close,
+            Driven::Walked => {
+                self.touch.settle();
+                self.follow();
             }
-            Key::Move(dx, dy) => self.move_cursor(dx, dy, &mut fx),
-            Key::Back => self.module.back(&mut fx),
-            Key::Edit(..) => {}
-            Key::Activate => {
-                if let Some(k) = stop.filter(|_| !self.body.stops.is_empty()) {
-                    self.module.activate(&k, &mut fx);
-                }
-            }
-            Key::Text(t) => match t.as_str() {
-                "j" => self.move_cursor(0, 1, &mut fx),
-                "k" => self.move_cursor(0, -1, &mut fx),
-                "l" => self.move_cursor(1, 0, &mut fx),
-                "h" => self.move_cursor(-1, 0, &mut fx),
-                "x" => {
-                    if let Some(k) = stop {
-                        self.module.delete(&k, &mut fx);
-                    }
-                }
-                _ => self.module.key(stop.as_deref(), &t, &mut fx),
-            },
+            Driven::Done => {}
         }
-        if let Some(k) = self.cursor.key.clone().filter(|_| self.cursor.active) {
-            self.module.reached(&k, &mut fx);
-        }
-        self.take_module_cursor();
         fx.out()
     }
 
-    /// The stop a panel moved the cursor to by itself.
     fn take_module_cursor(&mut self) {
-        if let Some(k) = self.module.take_cursor() {
-            if let Some(i) = self.body.stop_index(&k) {
-                self.cursor.index = i;
-            }
-            self.cursor.travels = self.cursor.active;
-            self.cursor.key = Some(k);
-        }
+        self.cursor.take(self.module.as_mut(), &self.body.stops);
     }
 
     fn hit_at(&self, x: f64, y: f64) -> Option<(bool, ui::Hit)> {

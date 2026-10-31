@@ -26,6 +26,8 @@ pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("wallpaper", "image"),
     ("monitor", "cpu"),
     ("mirror", "camera"),
+    ("settings", "settings-2"),
+    ("info", "info"),
     ("panels", "grid-2x2"),
     ("tray", "inbox"),
     ("gpu", "gpu"),

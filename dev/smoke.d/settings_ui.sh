@@ -13,6 +13,11 @@
 # Return, three Downs and Right set the Bar page's style to solid, read
 # off `configLoaded` and `bar paint`'s style, then reset over IPC.
 # settings.json's sha256 is the same at the end. Every page photographed.
+# The panels live in the launcher card, centred (Pond's settings window):
+# `menu status` reads open, `view` panel and the page's name at each step,
+# `panel open info` lands there too, Escape on a page goes back to the
+# tiles and Escape on the tiles leaves the route for the root, where
+# typing "settings" and Return opens the tiles again.
 leg_settings_ui_flag="--settings-ui"
 leg_settings_ui_order=260
 leg_settings_ui_needs="jq wtype"
@@ -25,7 +30,7 @@ leg_settings_ui_fixture() {
 }
 
 leg_settings_ui_timing() {
-  leg_timing 26 80
+  leg_timing 34 90
 }
 
 leg_settings_ui_drive() {
@@ -46,6 +51,7 @@ read_back() {
   cp "$settings_ui_state" "\$d/state-\$1.json" 2>/dev/null
   $ipc call debug dump > "\$d/dump-\$1.json" 2>&1
   $ipc call panel state > "\$d/panel-\$1.txt" 2>&1
+  $ipc call menu status > "\$d/menu-\$1.json" 2>&1
 }
 sleep 3
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-before"
@@ -84,7 +90,21 @@ for page in desktop system; do
   sleep 1.5
   "$grim_bin" "\$d/settings-ui-\$page.png" > /dev/null 2>&1
 done
+key Escape
+read_back escape-page
+key Escape
+read_back escape-tiles
+for c in s e t t i n g s; do "$wtype_bin" "\$c"; sleep 0.05; done
+sleep 0.6
+key Return
+read_back root
+$ipc call panel open info > /dev/null 2>&1
+sleep 1.5
+read_back info
+"$grim_bin" "\$d/settings-ui-info.png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
+sleep 0.5
+read_back closed
 sleep 0.5
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-after"
 EOF
@@ -105,7 +125,9 @@ settings_ui_text() {
 }
 
 leg_settings_ui_assert() {
+  settings_ui_jq "panel open settings opened the launcher on the tiles" menu-appearance.json '.isOpen == true and .level == "settings" and .view == "panel"'
   settings_ui_text "Down, Return on the tiles opened Appearance" panel-appearance.txt "settings:appearance"
+  settings_ui_jq "the launcher holds Appearance" menu-appearance.json '.panel == "settings:appearance"' 
   settings_ui_jq "Return on Reactive rims wrote the override" state-flipped.json '.settings.theme.reactiveRims == false'
   settings_ui_jq "the resolved config carries it" dump-flipped.json '.configLoaded.theme.reactiveRims == false'
   settings_ui_jq "settings get reads it back" get-flipped.json '.override == false and .value == false and .pinned == false'
@@ -123,6 +145,12 @@ leg_settings_ui_assert() {
   settings_ui_jq "the resolved config is solid" dump-solid.json '.configLoaded.bar.style == "solid"'
   settings_ui_jq "the bar repainted solid" paint-solid.json '.[0].paint.style == "solid"'
   settings_ui_text "settings reset bar.style" reset-style.txt "ok"
+  settings_ui_jq "Escape on a page went back to the tiles" menu-escape-page.json '.isOpen == true and .panel == "settings"'
+  settings_ui_jq "Escape on the tiles left the route" menu-escape-tiles.json '.isOpen == true and .level == null and .view != "panel"'
+  settings_ui_jq "the root's Settings row opened the tiles" menu-root.json '.level == "settings" and .panel == "settings"'
+  settings_ui_jq "panel open info landed in the launcher" menu-info.json '.isOpen == true and .level == "info" and .panel == "info"'
+  settings_ui_text "panel state names info" panel-info.txt "info"
+  settings_ui_jq "panel close closed the launcher" menu-closed.json '.isOpen == false' 
   settings_ui_jq "the style override is gone" state-style-reset.json '.settings == {}'
   local before after
   before=$(cat "$shot_dir/settings-ui/sha-before" 2>/dev/null)
@@ -130,7 +158,7 @@ leg_settings_ui_assert() {
   [ -n "$before" ] && [ "$before" = "$after" ] || fail "settings-ui: settings.json changed ($before -> $after)"
   echo "SMOKE_SETTINGS_UI settings.json unchanged $after"
   local shot
-  for shot in grid appearance appearance-flipped appearance-pinned bar desktop system; do
+  for shot in grid appearance appearance-flipped appearance-pinned bar desktop system info; do
     [ -s "$shot_dir/settings-ui/settings-ui-$shot.png" ] || fail "settings-ui: no settings-ui-$shot.png"
     echo "SMOKE_SETTINGS_UI_SHOT $shot_dir/settings-ui/settings-ui-$shot.png"
   done

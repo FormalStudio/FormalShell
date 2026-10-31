@@ -408,11 +408,15 @@ runs = ["--gallery", "--panel power"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/info.rs", "crates/formalshell-rs/src/services/info/about.rs", "crates/fs-info/src/about.rs"]
-runs = ["--panel info"]
+runs = ["--settings-ui"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/settings.rs"]
-runs = ["--panel settings", "--panel settings --light", "--settings-ui", "--settings-ui --light"]
+runs = ["--settings-ui", "--settings-ui --light"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/launcher.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs"]
+runs = ["--settings-ui"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/formalshell-rs/src/services/overrides.rs", "crates/formalshell-rs/src/ipc/settings.rs", "crates/formalshell-rs/src/services/config.rs", "crates/formalshell-rs/src/services/state.rs"]

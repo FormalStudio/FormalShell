@@ -71,6 +71,12 @@
     // or "screen mirroring" (Menu/providers.js PANEL_NAMES).
     "mirror": { "label": "Mirror", "provider": "mirror", "aliases": ["camera", "webcam", "selfie", "ir camera"], "section": "Suggestions", "prompt": "Tab switches camera" },
 
+    // "settings" and "info" register no provider fn either: the launcher
+    // holds the Settings and Information panels as their levels, centred
+    // like Pond's settings window (`panel open settings` lands here too).
+    "settings": { "label": "Settings", "provider": "settings", "aliases": ["preferences", "session", "settings"], "section": "Suggestions" },
+    "info": { "label": "Information", "provider": "info", "aliases": ["about", "system information", "about this computer"], "section": "Suggestions" },
+
     // "keybinds" registers no provider fn either: a summonable route
     // (`menu summon keybinds`) whose level the launcher fills from the parsed
     // compositor binds (Compositor/keybinds.js). Rows are inert notes, never
