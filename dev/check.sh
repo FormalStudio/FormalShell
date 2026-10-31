@@ -123,6 +123,8 @@ case "$1" in
     echo "$out"
     grep -q 'cancel rc=126' <<<"$out" || fail "polkit_probe: the cancelled request did not end in pkexec's 126"
     grep -q 'auth rc=0 failed=1' <<<"$out" || fail "polkit_probe: no wrong-then-right authentication"
+    echo "== keyring prompter"
+    ../dev/keyring-prompter.sh "$bin/examples/prompter_probe" || fail "keyring prompter failed"
     ;;
   fs-audio)
     run_tests env

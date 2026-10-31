@@ -5,11 +5,17 @@ edition = "2024"
 publish = false
 
 [dependencies]
+aes = "0.8"
 async-channel = "2.5"
 async-io = "2.6"
+base64 = "0.22"
+cbc = { version = "0.1", features = ["alloc"] }
 futures-lite = "2.6"
+hkdf = "0.12"
 libc = "0.2"
+num-bigint = "0.4"
 pam-sys2 = "1.0"
+sha2 = "0.10"
 zbus = { version = "5", default-features = false, features = ["async-io"] }
 zeroize = "1.8"
 

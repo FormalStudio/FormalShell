@@ -4,3 +4,4 @@
 pub mod keyring;
 pub mod pam;
 pub mod polkit;
+pub mod prompter;

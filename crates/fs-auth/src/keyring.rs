@@ -5,11 +5,13 @@
 //!
 //! The lock's PAM stack carries no pam_gnome_keyring: a session logged in
 //! without a password starts the daemon with its login keyring locked, the
-//! first Secret Service client then has it raise an unlock prompt, and while
-//! that prompt is up the daemon accepts nothing on this socket. The prompt
+//! first client then has it raise an unlock prompt, and one raised for the
+//! Secret portal is run on the daemon's main thread, which then reads
+//! nothing on this socket. The prompt
 //! draws under the session lock, so a PAM step waiting on the daemon never
 //! returns and the lock never lifts. Here a daemon that does not answer in
-//! time is left alone; its prompt is on the desktop once the lock is gone.
+//! time is left alone. On the boot's lock that prompt is held by
+//! [`crate::prompter`] and answered with the same password first.
 
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt};

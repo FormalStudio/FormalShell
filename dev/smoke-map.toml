@@ -36,6 +36,7 @@ paths = [
   "dev/smoke-affected.py",
   "dev/lint.sh",
   "dev/check.sh",
+  "dev/keyring-prompter.sh",
   "dev/tarball.sh",
   "dev/smoke-greeter.sh",
   "packaging/**",

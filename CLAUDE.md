@@ -139,7 +139,10 @@ pipewire, PAM or Wayland to link.
   `fs-upower` drive real system daemons and run on the VM rig: `dev/check.sh
   build` compiles their test binaries (ignored tests included) and probes
   on a rig slot, and the guest runs them against its own PAM and polkit
-  (`pam_probe`, `polkit_probe` over a real pkexec), PipeWire (the probe
+  (`pam_probe`, `polkit_probe` over a real pkexec), gnome-keyring
+  (`dev/keyring-prompter.sh`: the Secret portal's unlock prompt blocking
+  the daemon's control socket, and `prompter_probe` holding the system
+  prompter answering it), PipeWire (the probe
   against two null sinks), BlueZ (`fake_bluez` and the no-controller test;
   the two-controller one needs btvirt, which Tumbleweed does not build),
   NetworkManager and the hostapd radios, and UPower and
