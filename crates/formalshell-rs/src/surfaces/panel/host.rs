@@ -29,7 +29,7 @@ use crate::scene::{IRect, NodeId, Paint};
 use crate::scroll::{Touchpad, Travel};
 use crate::store::Store;
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::surfaces::bar::cell::{Button, Kit, Painter};
 use crate::surfaces::card::{Card, Ends, Target};
 use crate::ui::{self, El, Event, Ui, What, w};
 
@@ -120,10 +120,16 @@ pub enum Out {
     Panel(&'static str),
     /// Close, then call this IPC target's function on the shell itself.
     Call(&'static str, &'static str),
+    /// A tray item's menu off this card, centred on `anchor` along the line
+    /// (the item's own button) or at the line's end.
+    Menu(String, Option<f64>),
 }
 
 impl Effect<'_> {
-    fn out(&self) -> Out {
+    fn out(&mut self) -> Out {
+        if let Some(id) = self.menu.take() {
+            return Out::Menu(id, None);
+        }
         match (self.summon, self.panel, self.call, self.close) {
             (Some(route), ..) => Out::Summon(route),
             (None, Some(name), ..) => Out::Panel(name),
@@ -575,7 +581,7 @@ impl Host {
     }
 
     fn effect<'a>(store: &'a Store, runtime: Option<&'a Runtime>) -> Effect<'a> {
-        Effect { store, runtime, close: false, summon: None, panel: None, call: None }
+        Effect { store, runtime, close: false, summon: None, panel: None, call: None, menu: None }
     }
 
     /// Move the cursor.
@@ -780,7 +786,7 @@ impl Host {
         }
     }
 
-    pub fn release(&mut self, x: f64, y: f64, store: &Store, runtime: Option<&Runtime>) -> Out {
+    pub fn release(&mut self, x: f64, y: f64, button: Button, store: &Store, runtime: Option<&Runtime>) -> Out {
         let pressed = self.pressed.take();
         self.body.pressed = None;
         self.head.pressed = None;
@@ -794,14 +800,28 @@ impl Host {
             return Out::Close;
         }
         let Some((_, h)) = hit.filter(|(_, h)| Some(&h.path) == pressed.as_ref()) else { return Out::None };
-        let Some(e) = Ui::event(&h, x) else { return Out::None };
+        let Some(mut e) = Ui::event(&h, x) else { return Out::None };
         if e.on == "close" {
             return Out::Close;
+        }
+        // Only the tray tells the buttons apart; every other panel takes any
+        // button as a click.
+        if e.what == What::Click && self.module.id() == super::tray::ID {
+            e.what = match button {
+                Button::Right => What::Right,
+                Button::Middle => What::Middle,
+                Button::Left => What::Click,
+            };
         }
         let mut fx = Self::effect(store, runtime);
         self.module.event(&e, &mut fx);
         self.take_module_cursor();
-        fx.out()
+        let r = h.rect;
+        let along = if self.place.edge.is_vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 };
+        match fx.out() {
+            Out::Menu(id, None) => Out::Menu(id, Some(along)),
+            out => out,
+        }
     }
 
     /// A scroll of `dx`, `dy` wheel notches: a scroll region under the

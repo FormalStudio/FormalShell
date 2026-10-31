@@ -30,7 +30,7 @@ use crate::store::Store;
 use crate::surfaces::bar::cells::clock::clock_format;
 use crate::surfaces::activity;
 use crate::surfaces::bar::cell::{Action, Kit, Painter};
-use crate::surfaces::panel::center;
+use crate::surfaces::panel::{center, tray};
 use crate::text::TextStyle;
 use crate::ui::{El, Ink, Type, Ui, Variant, Weight, w};
 
@@ -393,7 +393,7 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "audio" => Action::Panel("audio"),
             "media" => Action::Panel("media"),
             "activity" => Action::Panel("activity"),
-            "trayoverflow" => Action::Panel("trayoverflow"),
+            tray::ID => Action::Panel(tray::ID),
             "info" => Action::Panel("info"),
             "settings" => Action::Panel("settings"),
             center::ID => Action::Center,
@@ -578,7 +578,7 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
         button("settings", "Settings", "panel:settings"),
     ];
     if !store.tray.items.is_empty() {
-        row.push(button("ellipsis", "Tray", "panel:trayoverflow"));
+        row.push(button("ellipsis", "Tray", &format!("panel:{}", tray::ID)));
     }
     row.push(button(fold_glyph(edge, false), "Collapse", "collapse"));
     w::card(w::row(0.0, row).fill()).fill()

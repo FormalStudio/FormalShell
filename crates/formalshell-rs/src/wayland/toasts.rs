@@ -4,6 +4,8 @@
 
 use std::time::Instant;
 
+use fs_chrome::types::Insets;
+use fs_info::notifications::PositionSpec;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
 use super::App;
@@ -97,12 +99,13 @@ impl App {
         // Placed off the same line as every panel: its insets, and beside a
         // side line, that line's side.
         let place = self.panel_place(None, false);
-        let insets = place.insets();
+        let mut insets = place.insets();
         let spec = place.corner(fs_info::notifications::position_spec(self.store.config.str("notifications.position")));
         let right = spec.right;
         let theme = &self.store.theme.theme;
         let cast = *self.toast_cast.get_or_insert_with(|| surfaces::toasts::column_cast(theme));
         let column = (right, surfaces::toasts::column_width(theme, cast, &insets, right));
+        self.clear_of_panel(&mut insets, spec);
         // The column stays mapped between toasts (see above), so it is moved
         // to the live bar's output only when a toast arrives on an empty one.
         let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl.as_ref());
@@ -134,6 +137,10 @@ impl App {
         let (out_w, _) = self.output_size();
         let theme = &self.store.theme.theme;
         let Some(t) = &mut self.toasts else { return };
+        if t.insets != insets {
+            t.insets = insets;
+            self.toasts_dirty = true;
+        }
         let generation = |l: &Option<crate::surfaces::rim::Lit>| l.as_ref().map(|l| l.generation);
         if generation(&t.lit) != generation(&self.rims.lit) {
             t.lit = self.rims.lit.clone();
@@ -167,6 +174,44 @@ impl App {
         if lifted {
             self.log(&format!("toasts layer {}", if layer == Layer::Top { "top" } else { "overlay" }));
         }
+    }
+
+    /// Moves the stack clear of the open panel's card where the card
+    /// crosses the stack's column: a stack at the top drops below it, one
+    /// at the bottom rises above it. A card on the column's far half is the
+    /// stack's to overlap, as one that left no room either way would be.
+    /// Read off the card's resting rect, so the stack moves once rather
+    /// than following the card's entrance.
+    fn clear_of_panel(&self, insets: &mut Insets, spec: PositionSpec) {
+        let Some(r) = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest_rect()).filter(|r| !r.is_empty()) else { return };
+        let theme = &self.store.theme.theme;
+        let (out_w, out_h) = self.output_size();
+        let (pad, width) = (theme.space.screen_padding, surfaces::toasts::card_width(theme));
+        let x0 = if spec.left { insets.left + pad } else { out_w - insets.right - pad - width };
+        if f64::from(r.right()) <= x0 || f64::from(r.x) >= x0 + width {
+            return;
+        }
+        let mid = f64::from(r.y) + f64::from(r.h) / 2.0;
+        // A panel that leaves no room past it for one bubble (its picture
+        // slot and padding) is the stack's to overlap: a toast squashed out
+        // of sight is worse.
+        let bubble = theme.space.control_height + theme.space.panel_padding * 2.0;
+        let room = |top: f64, bottom: f64| out_h - top - bottom - pad * 2.0 >= bubble;
+        if spec.top && mid < out_h / 2.0 {
+            let top = insets.top.max(f64::from(r.bottom()));
+            if room(top, insets.bottom) {
+                insets.top = top;
+            }
+        } else if !spec.top && mid >= out_h / 2.0 {
+            let bottom = insets.bottom.max(out_h - f64::from(r.y));
+            if room(insets.top, bottom) {
+                insets.bottom = bottom;
+            }
+        }
+    }
+
+    pub fn toast_cards(&self) -> Vec<(String, crate::scene::IRect)> {
+        self.toasts.as_ref().map(|t| t.cards()).unwrap_or_default()
     }
 
     pub(crate) fn hover_toasts(&mut self, at: Option<(f64, f64)>) {

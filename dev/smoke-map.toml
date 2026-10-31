@@ -253,7 +253,7 @@ paths = ["crates/formalshell-rs/src/surfaces/bar/cells/system_update.rs", "crate
 runs = ["--systemupdate"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/panel/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
 runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 
 [[rule]]
@@ -442,7 +442,7 @@ paths = [
   "crates/fs-info/src/notification_icon.rs",
   "crates/fs-info/src/toast_stack.rs",
 ]
-runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--center", "--activity"]
+runs = ["--notify", "--toast-swipe", "--notify-close", "--notify-emerge", "--center", "--activity", "--tray-overflow --sidebar"]
 
 # Activity
 [[rule]]

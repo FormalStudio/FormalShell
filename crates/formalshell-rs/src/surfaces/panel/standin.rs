@@ -30,7 +30,6 @@ fn header(id: &str) -> (&'static str, &'static str) {
         "tailscale" => ("Tailscale", "network"),
         "systemupdate" => ("System update", "package"),
         "monitor" => ("Monitor", "activity"),
-        "trayoverflow" => ("Tray", "ellipsis"),
         _ => ("", ""),
     }
 }

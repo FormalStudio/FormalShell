@@ -224,6 +224,8 @@ pub struct Toasts {
     /// output.
     pub lit: Option<Lit>,
     pub origin_x: f64,
+    /// What the stack was last placed inside, an open panel's card included.
+    pub insets: Insets,
 }
 
 /// Elementary's bubble: the picture in a
@@ -272,7 +274,7 @@ fn bubble(theme: &Theme, g: &Group, now: i64, picture: Option<Bitmap>, hovered: 
     w::row(s.sm, vec![mark, w::column(s.row_gap, words).fill()]).top().on("body")
 }
 
-fn card_width(theme: &Theme) -> f64 {
+pub fn card_width(theme: &Theme) -> f64 {
     theme.space.popup_width_bubble
 }
 
@@ -312,6 +314,7 @@ impl Toasts {
             right: true,
             lit: None,
             origin_x: 0.0,
+            insets: Insets::default(),
         }
     }
 
@@ -646,6 +649,18 @@ impl Toasts {
     /// expanded.
     pub fn members(&self) -> HashSet<String> {
         self.slots.values().filter(|s| !s.departing).flat_map(|s| s.members.iter().cloned()).collect()
+    }
+
+    /// Every card still on the stack, as drawn this frame, in output pixels.
+    pub fn cards(&self) -> Vec<(String, IRect)> {
+        let mut out: Vec<(String, IRect)> = self
+            .slots
+            .iter()
+            .filter(|(_, s)| !s.departing && !s.rect.is_empty())
+            .map(|(k, s)| (k.clone(), IRect::new(s.rect.x + self.origin_x.round() as i32, s.rect.y, s.rect.w, s.rect.h)))
+            .collect();
+        out.sort_by_key(|(_, r)| r.y);
+        out
     }
 
     /// Any card on the stack, a group that left included until its fade

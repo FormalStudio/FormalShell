@@ -88,9 +88,9 @@ fn edge_anchor(edge: Edge) -> Anchor {
     }
 }
 
-/// The chevron's second bar: a card holding the governed cells.
+/// The chevron's second bar, a card holding the governed cells, or a tray
+/// item's menu.
 pub struct Popout {
-    pub name: String,
     pub region: Option<BarRegion>,
     pub card: Card,
     surface: Surface,
@@ -778,17 +778,16 @@ impl App {
 
     /// The open panel by its `panel` name; the gallery is no panel's.
     pub fn panel_open(&self) -> Option<&str> {
-        let tray = self.overflow.as_ref().filter(|p| p.name == "trayoverflow" && p.card.is_open());
-        tray.map(|_| "trayoverflow").or_else(|| self.panel.as_ref().filter(|p| p.is_open()).map(|p| p.id()).and_then(|id| panel::known(id).or_else(|| id.starts_with(panel::plugin::PREFIX).then_some(id))))
+        self.panel.as_ref().filter(|p| p.is_open()).map(|p| p.id()).and_then(|id| panel::known(id).or_else(|| id.starts_with(panel::plugin::PREFIX).then_some(id)))
     }
 
     pub fn gallery_open(&self) -> bool {
         self.panel.as_ref().is_some_and(|p| p.is_open() && p.id() == "gallery")
     }
 
-    /// Either second bar, the chevron's or the tray's, up.
+    /// The chevron's second bar up, on either side.
     pub fn overflow_open_any(&self) -> bool {
-        self.overflow.as_ref().is_some_and(|p| p.card.is_open())
+        self.overflow_open().is_some()
     }
 
     pub fn overflow_open(&self) -> Option<BarRegion> {
@@ -968,7 +967,6 @@ impl App {
         let catcher = Some(self.overflow_catcher());
         let surface = self.popout_surface(&card, Layer::Top);
         self.overflow = Some(Popout {
-            name: format!("overflow:{}", region.as_str()),
             region: Some(region),
             card,
             surface,
@@ -1039,17 +1037,7 @@ impl App {
         }
         self.atlas_close();
         self.overlay_close();
-        if name == "trayoverflow" {
-            if let Some(h) = &mut self.panel {
-                h.close(now);
-                self.panel_dirty = true;
-            }
-            self.open_tray_overflow(anchor);
-            return;
-        }
-        if nested {
-            self.close_tray_overflow(now);
-        } else {
+        if !nested {
             self.close_overflow(now);
         }
         let Some(module) = panel::build(name) else { return };
@@ -1086,7 +1074,7 @@ impl App {
         let mut surface = Surface::new("panel", layer, &self.shm, self.started);
         surface.wait_map = true;
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
-        host.module.start(&mut panel::Effect { store: &self.store, runtime: self.runtime.as_ref(), close: false, summon: None, panel: None, call: None });
+        host.module.start(&mut panel::Effect { store: &self.store, runtime: self.runtime.as_ref(), close: false, summon: None, panel: None, call: None, menu: None });
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
                 host.take_over(old.card.live(), now);
@@ -1104,50 +1092,7 @@ impl App {
         self.log(&format!("panel {id} mapped"));
     }
 
-    /// The tray overflow: the whole tray as a strip-sized card hanging off
-    /// the toggle that replaced it on the bar.
-    fn open_tray_overflow(&mut self, anchor: Option<f64>) {
-        let now = Instant::now();
-        let edge = self.bar.edge();
-        let env = Env { store: &self.store, edge, output: &self.bar.output };
-        let mut slot = Slot::of("tray".into(), BarRegion::Right, Box::new(tray_cell::Tray::rail()));
-        slot.refresh(&mut self.bar.kit, &env, false, false, 0.0, now);
-        let look = self.bar.kit.look.clone();
-        let across = if edge.is_vertical() { look.cell_width } else { look.cell_height };
-        let size = (slot.natural + look.panel_padding * 2.0, across + look.panel_padding * 2.0);
-        let anchor = anchor.or_else(|| self.bar.panel_anchor("trayoverflow")).unwrap_or(self.bar.length() as f64);
-        let mut card = self.new_card(anchor, size);
-        card.ends = self.panel_place(None, false).ends;
-        // Made before the card's own surface, which then stacks over it.
-        let catcher = Some(self.overflow_catcher());
-        let surface = self.popout_surface(&card, Layer::Top);
-        self.overflow = Some(Popout {
-            name: "trayoverflow".to_owned(),
-            region: None,
-            card,
-            surface,
-            slots: vec![slot],
-            hover: None,
-            anchor,
-            menu: None,
-            fit: None,
-            catcher,
-        });
-        self.tips.hide(None, now);
-        self.sync_open(now);
-        self.log("panel trayoverflow mapped");
-    }
-
-    /// Shuts the tray's second bar, if that is what the second bar is.
-    fn close_tray_overflow(&mut self, now: Instant) {
-        if let Some(p) = self.overflow.as_mut().filter(|p| p.name == "trayoverflow" && p.card.is_open()) {
-            p.card.set_open(now, false);
-            p.catcher = None;
-            self.sync_open(now);
-        }
-    }
-
-    /// Shuts the second bar, whichever it is.
+    /// Shuts the chevron's second bar.
     pub(crate) fn close_overflow(&mut self, now: Instant) {
         if let Some(p) = self.overflow.as_mut().filter(|p| p.card.is_open()) {
             p.card.set_open(now, false);
@@ -1184,8 +1129,9 @@ impl App {
     }
 
     /// A tray item's menu, hung off `anchor` along the line (its icon's
-    /// centre) or at the strip's end, and off `over` when that is the popout
-    /// the icon is in, which it then stands clear of.
+    /// centre) or at the strip's end, and off `over` when that is the card
+    /// the icon is in (the chevron's second bar or the tray's panel), which
+    /// it then stands clear of.
     fn open_tray_menu(&mut self, id: &str, anchor: Option<f64>, over: Option<Owner>) -> Result<(), String> {
         let Some(item) = self.store.tray.by_id(id).cloned() else { return Err(format!("error: no tray item with id '{id}'")) };
         if !item.has_menu {
@@ -1193,11 +1139,12 @@ impl App {
         }
         let now = Instant::now();
         self.drop_tray_menu();
-        let owner = match over {
-            Some(Owner::Overflow) => self.overflow.as_ref(),
+        self.tips.hide(None, now);
+        let owner_edge = match over {
+            Some(Owner::Overflow) => self.overflow.as_ref().filter(|p| p.card.is_open()).map(|p| p.card.rest().y1),
+            Some(Owner::Panel) => self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest().y1),
             _ => None,
         };
-        let owner_edge = owner.filter(|p| p.card.is_open()).map(|p| p.card.rest().y1);
         if owner_edge.is_none() {
             self.close_panels();
         }
@@ -1220,7 +1167,6 @@ impl App {
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
         self.menu = Some(Popout {
-            name: "traymenu".to_owned(),
             region: None,
             card,
             surface,
@@ -1372,7 +1318,7 @@ impl App {
     /// `tray menu`: opens over the second bar while that is up, as a right
     /// click on its cell does.
     pub fn tray_menu(&mut self, id: &str) -> String {
-        let over = (self.panel_open() == Some("trayoverflow")).then_some(Owner::Overflow);
+        let over = (self.panel_open() == Some(panel::tray::ID)).then_some(Owner::Panel);
         match self.open_tray_menu(id, None, over) {
             Ok(()) => "ok".into(),
             Err(e) => e,
@@ -1408,7 +1354,6 @@ impl App {
         if let Some(p) = &mut self.panel {
             p.close(now);
         }
-        self.close_tray_overflow(now);
         self.panel_dirty = true;
         self.tips.hide(None, now);
         self.sync_open(now);
@@ -1493,10 +1438,6 @@ impl App {
                         TrayClick::Secondary => tray::secondary_activate(ctx, key),
                         _ => tray::activate(ctx, key),
                     });
-                }
-                // Reaching an item is the second bar's whole errand.
-                if self.act_owner == Some(Owner::Overflow) {
-                    self.close_tray_overflow(Instant::now());
                 }
             }
             Action::Caffeinate(on) => self.set_caffeinated(on),
@@ -2022,12 +1963,17 @@ impl App {
                 }
                 PointerEventKind::Release { button, .. } => {
                     let Some((o, i)) = self.pressed.take() else { continue };
+                    let button = match button {
+                        0x111 => Button::Right,
+                        0x112 => Button::Middle,
+                        _ => Button::Left,
+                    };
                     if o == Owner::Toasts {
                         self.release_toasts(x, y);
                         continue;
                     }
                     if o == Owner::Panel {
-                        let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, &self.store, self.runtime.as_ref()));
+                        let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, button, &self.store, self.runtime.as_ref()));
                         self.panel_out(out);
                         self.panel_dirty = true;
                         continue;
@@ -2038,11 +1984,6 @@ impl App {
                         self.minimap_drop(commands);
                         continue;
                     }
-                    let button = match button {
-                        0x111 => Button::Right,
-                        0x112 => Button::Middle,
-                        _ => Button::Left,
-                    };
                     self.click(o, i, button, (x, y));
                 }
                 PointerEventKind::Axis { time, vertical, horizontal, source } => {
@@ -2193,6 +2134,16 @@ impl App {
                 _ => return,
             },
         };
+        // A tray item's menu over its panel takes the keys while it is up.
+        if self.menu.as_ref().is_some_and(|p| p.card.is_open()) {
+            match key {
+                Key::Escape => self.close_tray_menu(),
+                Key::Move(0, dy) => drop(self.tray_menu_cursor(dy)),
+                Key::Activate => drop(self.tray_menu_activate()),
+                _ => {}
+            }
+            return;
+        }
         let Some(h) = &mut self.panel else { return };
         let out = h.key(key, &self.store, self.runtime.as_ref());
         self.panel_dirty = true;
@@ -2227,6 +2178,9 @@ impl App {
             Out::Call(target, function) => {
                 self.close_panels();
                 self.call_self(target, function, &[]);
+            }
+            Out::Menu(id, anchor) => {
+                let _ = self.open_tray_menu(&id, anchor, Some(Owner::Panel));
             }
         }
     }

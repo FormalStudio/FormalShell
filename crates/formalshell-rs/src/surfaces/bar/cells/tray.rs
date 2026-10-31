@@ -1,8 +1,8 @@
 //! The StatusNotifier items as a rail of icon
 //! cells, or, under the default `tray.maxVisible` of 0 and whenever the
 //! strip has no room, one dots toggle with the whole tray in the second bar
-//! (the overflow). All or nothing: the strip carries every icon or the
-//! toggle alone. The second bar holds the same cell in its rail form.
+//! (the `trayoverflow` panel). All or nothing: the strip carries every icon
+//! or the toggle alone.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -37,8 +37,6 @@ fn fits(total: usize, budget: f64, cell: f64, spacing: f64, max_visible: i64) ->
 }
 
 pub struct Tray {
-    /// The second bar's form: every item, always.
-    rail: bool,
     items: Vec<Item>,
     max_visible: i64,
     /// The strip's answer for this tray, and whether it has given one.
@@ -55,16 +53,7 @@ pub struct Tray {
 
 impl Tray {
     pub fn strip() -> Self {
-        Self::new(false)
-    }
-
-    pub fn rail() -> Self {
-        Self::new(true)
-    }
-
-    fn new(rail: bool) -> Self {
         Self {
-            rail,
             items: Vec::new(),
             max_visible: 0,
             fit: false,
@@ -80,7 +69,7 @@ impl Tray {
     }
 
     fn inline(&self) -> usize {
-        if self.rail || (self.decided && self.fit) { self.items.len() } else { 0 }
+        if self.decided && self.fit { self.items.len() } else { 0 }
     }
 
     /// The icons drawn on this surface: all of them, or none (the toggle).
@@ -89,9 +78,7 @@ impl Tray {
     }
 
     fn publish(&self) {
-        if !self.rail {
-            INLINE.store(self.inline(), Ordering::Relaxed);
-        }
+        INLINE.store(self.inline(), Ordering::Relaxed);
     }
 
     /// Where each box starts along the cell, and its extent.
@@ -121,7 +108,7 @@ impl Cell for Tray {
 
     fn read(&mut self, env: &Env) -> bool {
         let items = env.store.tray.items.clone();
-        let max_visible = if self.rail { -1 } else { env.store.config.f64("tray.maxVisible").map_or(0, |n| n as i64) };
+        let max_visible = env.store.config.f64("tray.maxVisible").map_or(0, |n| n as i64);
         let vertical = env.edge.is_vertical();
         let changed = items != self.items || max_visible != self.max_visible || vertical != self.vertical;
         if items.len() != self.items.len() || max_visible != self.max_visible {
@@ -146,12 +133,12 @@ impl Cell for Tray {
             return View::new(Vec::new(), 0.0);
         }
         let name = if self.vertical { "more-vertical" } else { "ellipsis" };
-        View::icon(name, look).panel("trayoverflow").tooltip(format!("TRAY / {} ITEMS", self.items.len()))
+        View::icon(name, look).panel(crate::surfaces::panel::tray::ID).tooltip(format!("TRAY / {} ITEMS", self.items.len()))
     }
 
     fn click(&mut self, button: Button, at: (f64, f64), _: &Env) -> Action {
         if !self.icons() {
-            return if button == Button::Left { Action::Panel("trayoverflow") } else { Action::None };
+            return if button == Button::Left { Action::Panel(crate::surfaces::panel::tray::ID) } else { Action::None };
         }
         let along = if self.vertical { at.1 } else { at.0 };
         let Some(i) = self.box_at(along) else { return Action::None };
@@ -249,9 +236,6 @@ impl Custom for Tray {
     }
 
     fn room(&mut self, budget: f64) -> bool {
-        if self.rail {
-            return false;
-        }
         let fit = fits(self.items.len(), budget, self.unit, self.gap, self.max_visible);
         let was = self.inline();
         self.fit = fit;

@@ -39,6 +39,7 @@ pub mod settings;
 pub mod standin;
 pub mod systemupdate;
 pub mod tailscale;
+pub mod tray;
 pub mod usage;
 pub mod weather;
 pub mod workspace_preview;
@@ -90,6 +91,8 @@ pub struct Effect<'a> {
     /// An IPC target and function the shell calls on itself as the panel
     /// closes (`lock`, `lock`).
     pub call: Option<(&'static str, &'static str)>,
+    /// A tray item whose menu opens off this card, by id.
+    pub menu: Option<String>,
 }
 
 impl Effect<'_> {
@@ -255,6 +258,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         "systemupdate" => Box::new(systemupdate::SystemUpdate::new()),
         "tailscale" => Box::new(tailscale::Tailscale::new()),
         "usage" => Box::new(usage::Usage::new()),
+        tray::ID => Box::new(tray::Tray::default()),
         _ => Box::new(standin::StandIn::new(id)),
     })
 }

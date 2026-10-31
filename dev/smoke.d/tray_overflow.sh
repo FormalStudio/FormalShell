@@ -5,7 +5,8 @@
 # toggle and no icons, whatever room it has (Bar/tray.js's `maxVisible` 0
 # default). What has to be true is that the tray moved WHOLE, nothing of it
 # left on the strip but the toggle and every registered item reachable in the
-# second bar, and that the bar itself opens as a real popout.
+# second bar, and that the bar itself opens as a real panel, the
+# `trayoverflow` panel in the panel host like any other.
 # `tray.maxVisible: -1` is the other half of that key, the strip carrying
 # what fits; --tray pins it and reads the six-cell strip back.
 # The unit tests pin the arithmetic behind both.
@@ -28,7 +29,12 @@
 # Ridden by --sidebar there is no strip and no chevron: the tray button on
 # the status card stands in for the dots, so the chevron round trip is
 # skipped and the four real clicks start on that button, the handoff
-# landing on the time card's calendar.
+# landing on the time card's calendar. Then the second bar opened once more
+# by a real click and a sticky toast sent under it: the toast column is the
+# bottom-left one beside the column, the same stretch the card hangs in
+# (owner, 2026-10-30: an Activity toast drawn over the bar), so the card's
+# rest rect and every toast card's rect in `debug dump` share x and must
+# never intersect.
 #
 # It owns bar.layout, so it does not combine with --bar-layout, --bar-position
 # or --chevron, and it registers stubs of its own, so --tray's own count
@@ -37,7 +43,7 @@ leg_tray_overflow_flag="--tray-overflow"
 leg_tray_overflow_order=172
 # need_python3 is tray.sh's (sourced first, alphabetically), the same shared
 # `need_<bin>` resolution every leg uses.
-leg_tray_overflow_needs="python3 jq wlrctl"
+leg_tray_overflow_needs="python3 jq wlrctl notify-send"
 
 tray_overflow_pids_path="$shot_dir/tray-overflow-pids.txt"
 tray_overflow_status_path="$shot_dir/tray-overflow-status.json"
@@ -54,6 +60,8 @@ tray_overflow_room_path="$shot_dir/tray-overflow-room.json"
 tray_overflow_clicks_path="$shot_dir/tray-overflow-clicks.txt"
 tray_overflow_outside_path="$shot_dir/tray-overflow-outside.png"
 tray_overflow_handoff_path="$shot_dir/tray-overflow-handoff.png"
+tray_overflow_toast_path="$shot_dir/tray-overflow-toast.png"
+tray_overflow_toast_dump_path="$shot_dir/tray-overflow-toast-dump.json"
 
 leg_tray_overflow_fixture() {
   # The chevron governs what precedes it in a right region, so the tray is the
@@ -63,9 +71,10 @@ leg_tray_overflow_fixture() {
 }
 
 leg_tray_overflow_timing() {
-  # The drive's last step lands ~24s in; the run's own frame is taken past
-  # it, with the second bar closed and the chevron expanded again.
-  leg_timing 44 76
+  # The drive's last step lands ~24s in (~30s under --sidebar, with the
+  # toast case); the run's own frame is taken past it, with the second bar
+  # closed and the chevron expanded again.
+  leg_timing 48 80
 }
 
 leg_tray_overflow_drive() {
@@ -88,6 +97,12 @@ to 900 700; click; sleep 1.5; check outside
 to \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check reopened
 to \$(sidebar_at panel:calendar); click; sleep 1.5; check handoff
 "$grim_bin" "$tray_overflow_handoff_path" > /dev/null 2>&1
+to \$(sidebar_at panel:trayoverflow); click; sleep 1.5
+"$notify_send_bin" -u critical 'Applying g815' 'system scope apply failed'
+to 900 400
+sleep 3
+$ipc call debug dump > "$tray_overflow_toast_dump_path" 2>&1
+"$grim_bin" "$tray_overflow_toast_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 STEPS
 )
@@ -242,6 +257,30 @@ leg_tray_overflow_assert() {
   _tray_overflow_click_expect outside 'open=false panel=' "a click on the desktop shuts it"
   _tray_overflow_click_expect reopened 'open=true panel=' "the dots open it again"
   _tray_overflow_click_expect handoff 'open=false panel=calendar' "a click on the clock shuts it and opens the calendar"
+  if leg_on sidebar; then
+    _tray_overflow_toast_clear
+  fi
+}
+
+# The second bar's rest rect against every toast card's rect, both off the
+# same `debug dump`: sharing x, apart in y.
+_tray_overflow_toast_clear() {
+  local panel cards overlap
+  [ -f "$tray_overflow_toast_path" ] || fail "no frame of the second bar with a toast under it"
+  echo "SMOKE_TRAY_OVERFLOW_TOAST $tray_overflow_toast_path"
+  panel=$("$jq_bin" -c '.panel' "$tray_overflow_toast_dump_path" 2>/dev/null)
+  cards=$("$jq_bin" -c '.toastCards' "$tray_overflow_toast_dump_path" 2>/dev/null)
+  echo "second bar: $panel"
+  echo "toast cards: $cards"
+  "$jq_bin" -e '.panel.id == "trayoverflow" and .panel.open' "$tray_overflow_toast_dump_path" > /dev/null 2>&1 \
+    || fail "a real click on the tray button did not leave the trayoverflow panel open for the toast case: $panel"
+  "$jq_bin" -e '.toastCards | length >= 1' "$tray_overflow_toast_dump_path" > /dev/null 2>&1 \
+    || fail "the sticky toast never reached the stack: $cards"
+  "$jq_bin" -e '.panel.rest as $p | all(.toastCards[].rect; .x < $p.x + $p.width and $p.x < .x + .width)' "$tray_overflow_toast_dump_path" > /dev/null 2>&1 \
+    || fail "the toast column and the second bar do not share x, so this case proves nothing: $panel $cards"
+  overlap=$("$jq_bin" -r '[.panel.rest, .panel.live] as $ps | [.toastCards[].rect as $t | $ps[] | select($t.x < .x + .width and .x < $t.x + $t.width and $t.y < .y + .height and .y < $t.y + $t.height)] | length' "$tray_overflow_toast_dump_path" 2>/dev/null)
+  [ "${overlap:-1}" = "0" ] || fail "a toast card intersects the open second bar: $panel $cards"
+  echo "SMOKE_TRAY_OVERFLOW the toast keeps clear of the open second bar"
 }
 
 _tray_overflow_click_expect() {

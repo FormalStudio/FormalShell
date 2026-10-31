@@ -57,6 +57,10 @@ pub enum What {
     /// A scroll over a viewport, in wheel notches along x and y, positive
     /// moving the view right and down.
     Scroll(f64, f64),
+    /// A right click on what a left click would have clicked.
+    Right,
+    /// A middle click on the same.
+    Middle,
 }
 
 #[derive(Clone, Debug, PartialEq)]

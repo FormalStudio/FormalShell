@@ -1366,8 +1366,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   square (found by its colour) reaching the stub as Activate and a real
   right click on fixture 2's opening its menu.
 - `tray_overflow.sh` `--tray-overflow`: the shipped default, the whole tray
-  in its second bar behind the strip's dots toggle with no settings at all,
-  read off `tray status`. Ridden by `--sidebar` the status card's tray
+  in its second bar (the `trayoverflow` panel, in the panel host like any
+  other) behind the strip's dots toggle with no settings at all, read off
+  `tray status`. Ridden by `--sidebar`, the second bar opened off the status
+  card's tray button with a sticky toast arriving under it: the panel's rest
+  rect and every toast card's rect in `debug dump` (`panel`, `toastCards`)
+  sharing x and never intersecting, both photographed. Ridden by `--sidebar` the status card's tray
   button stands in for the dots: the chevron round trip is skipped and the
   four real clicks (open, desktop, reopen, the time card's calendar) start
   on that button.

@@ -35,7 +35,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     text(
         json!({
             "items": listed,
-            "overflow": {"open": app.panel_open() == Some("trayoverflow"), "inline": inline, "hidden": hidden},
+            "overflow": {"open": app.panel_open() == Some(crate::surfaces::panel::tray::ID), "inline": inline, "hidden": hidden},
         })
         .to_string(),
     )
