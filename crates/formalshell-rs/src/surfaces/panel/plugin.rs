@@ -15,7 +15,7 @@ use fs_theme::tokens::Space;
 use super::{Effect, Panel, View};
 use crate::services::plugins::{self, Row, RowKind, Run};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, w};
+use crate::ui::{El, Event, Ink, Variant, w};
 
 /// What a plugin surface answers to on the `panel` target.
 pub const PREFIX: &str = "plugin:";
@@ -56,11 +56,11 @@ fn stop(row: &Row) -> String {
 /// The rows as a body. Every row but a label is one keyboard stop and one
 /// click target, both named `row:<id>`.
 pub fn body(s: &Space, run: Option<&Run>) -> El {
-    let label = |text: &str| w::section_label(s, text, None, true);
+    let label = |text: &str| w::panel_heading(s, text);
     let rows = match run {
         None => return w::column(s.section_gap, vec![w::panel_empty(s, "Loading")]),
         Some(Run::Failed(reason)) => {
-            return w::column(s.row_gap, vec![label("PLUGIN ERROR"), w::caption(reason.clone()).ink(Ink::Dim).pad_start(s.control_padding_x)]);
+            return w::column(s.panel_gap, vec![label("Plugin error"), w::panel_text(s, w::caption(reason.clone()).ink(Ink::Destructive))]);
         }
         Some(Run::Live(display)) => &display.rows,
     };
@@ -73,14 +73,14 @@ pub fn body(s: &Space, run: Option<&Run>) -> El {
             RowKind::Label => label(&r.text),
             RowKind::Button => {
                 let button = if r.icon.is_empty() { w::button(r.text.clone()) } else { w::icon_text_button(r.icon.clone(), r.text.clone()) };
-                w::row(0.0, vec![button.stop(stop(r)).on(stop(r))])
+                w::panel_text(s, w::row(0.0, vec![button.variant(Variant::Outline).stop(stop(r)).on(stop(r))]))
             }
             RowKind::Row | RowKind::Toggle => {
                 let mut trailing = Vec::new();
                 if r.kind == RowKind::Toggle {
                     trailing.push(w::switch(r.checked));
                 } else if !r.detail.is_empty() {
-                    trailing.push(w::value(r.detail.clone()).ink(Ink::Dim));
+                    trailing.push(w::panel_value(r.detail.clone()));
                 }
                 w::panel_row(s, &r.icon, &r.text, None, trailing).stop(stop(r)).on(stop(r))
             }
@@ -126,7 +126,6 @@ impl Panel for PluginPanel {
     fn title(&self, v: &View) -> String {
         find(v.store, self.key).map_or_else(|| self.id.clone(), |p| p.name.clone())
     }
-
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Plugins, Topic::PluginOutput]

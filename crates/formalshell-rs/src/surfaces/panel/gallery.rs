@@ -39,7 +39,6 @@ impl Panel for Gallery {
         "DEV GALLERY".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Theme]
     }

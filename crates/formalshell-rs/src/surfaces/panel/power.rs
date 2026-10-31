@@ -181,7 +181,6 @@ impl Panel for Power {
         "Power".into()
     }
 
-
     fn header(&self) -> bool {
         false
     }
@@ -215,11 +214,9 @@ impl Panel for Power {
         match &v.store.devices.power.battery {
             Some(b) => parts.push(battery_card(s, &card(v, b))),
             None => {
-                let mut none = vec![w::label("Power").ink(Ink::Dim)];
                 if !model.available {
-                    none.push(w::text("No power sources").size(Type::Heading).ink(Ink::Muted));
+                    parts.push(w::panel_empty(s, "No power sources"));
                 }
-                parts.push(w::column(s.sm, none));
             }
         }
 
@@ -233,7 +230,7 @@ impl Panel for Power {
         if model.available {
             parts.push(w::column(s.sm, vec![w::label("Power flow").ink(Ink::Dim), w::flow(flow_view(&model, true))]));
         }
-        w::column(s.xl, parts)
+        w::panel_text(s, w::column(s.xl, parts))
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

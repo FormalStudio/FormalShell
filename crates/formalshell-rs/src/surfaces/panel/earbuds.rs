@@ -177,11 +177,11 @@ impl Earbuds {
         let es = entries(ctl);
         if es.len() <= SEGMENTS {
             let at = picked(ctl, &es);
-            let mut rows = vec![w::segmented(es.iter().map(|e| e.label.clone()).collect(), at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(format!("seg:{key}"))];
+            let mut rows = vec![w::panel_text(s, w::segmented(es.iter().map(|e| e.label.clone()).collect(), at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(format!("seg:{key}")))];
             if let Some(e) = at.map(|a| &es[a]).filter(|e| e.tier) {
                 let inner = e.members.iter().position(|m| Some(*m) == selected);
                 let labels = e.members.iter().map(|m| opts[*m].label.clone()).collect();
-                rows.push(w::segmented(labels, inner.unwrap_or(usize::MAX)).fill().stop(format!("{key}{TIER}")).on(format!("tier:{key}")));
+                rows.push(w::panel_text(s, w::segmented(labels, inner.unwrap_or(usize::MAX)).fill().stop(format!("{key}{TIER}")).on(format!("tier:{key}"))));
             }
             return rows;
         }
@@ -197,7 +197,7 @@ impl Earbuds {
             });
             trigger = trigger.float(w::column(0.0, list.collect()));
         }
-        vec![w::cell(w::row(s.icon_gap, vec![w::label(&ctl.label).elide(), w::spacer(), trigger]).fill()).ghost()]
+        vec![w::panel_cell(s, w::row(s.panel_gap, vec![w::label(&ctl.label).weight(Weight::Medium).elide().fill(), trigger]).fill()).height(s.panel_row)]
     }
 
     fn toggle_menu(&mut self, key: &str) {
@@ -282,23 +282,26 @@ fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
             w::cell(w::column(s.xxs, parts).fill())
         })
         .collect::<Vec<_>>();
-    w::grid(tiles.len().max(1), s.row_gap, tiles)
+    w::grid(tiles.len().max(1), s.panel_gap, tiles)
 }
 
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
-    let mut words = vec![w::label(&ctl.label).elide()];
-    if !ctl.hint.is_empty() {
-        words.push(w::text(&ctl.hint).size(Type::BodySmall).ink(Ink::Dim).elide());
-    }
-    let parts = vec![w::column(s.xxs, words).fill(), w::switch(on).on(format!("toggle:{}", ctl.key))];
-    w::cell(w::row(s.icon_gap, parts).fill()).ghost().interactive().stop(ctl.key.clone()).on(format!("toggle:{}", ctl.key))
+    let hint = (!ctl.hint.is_empty()).then(|| ctl.hint.clone());
+    w::panel_row(s, "", &ctl.label, hint, vec![w::switch(on).on(format!("toggle:{}", ctl.key))]).stop(ctl.key.clone()).on(format!("toggle:{}", ctl.key))
 }
 
 fn range_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
-    let top = vec![w::label(&ctl.label).elide(), w::value(model::range_text(Some(ctl))).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg)];
     let track = w::slider(model::range_fraction(Some(ctl))).on(format!("range:{}", ctl.key));
-    w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), track])).ghost().stop(ctl.key.clone())
+    slider_row(s, &ctl.label, vec![w::panel_value(model::range_text(Some(ctl)))], track).stop(ctl.key.clone())
+}
+
+/// A name and its value over a track, the row's fill reaching the card.
+fn slider_row(s: &fs_theme::tokens::Space, name: &str, values: Vec<El>, track: El) -> El {
+    let mut top = vec![w::label(name).weight(Weight::Medium).elide().fill()];
+    top.extend(values);
+    let top = w::row(s.panel_gap, top).fill().height(s.panel_row_compact).mid();
+    w::panel_cell(s, w::column(0.0, vec![top, track]).fill().pad(0.0, 0.0, 0.0, s.panel_gap))
 }
 
 /// The plain battery rows, for a device with no pictures.
@@ -310,16 +313,15 @@ fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
     let rows = batteries
         .iter()
         .map(|b| {
-            let mut value = Vec::new();
+            let mut values = Vec::new();
             if !b.hint.is_empty() {
-                value.push(w::section_label(s, &b.hint, None, false).ink(Ink::Dim));
+                values.push(w::caption(b.hint.clone()).ink(Ink::Muted));
             }
-            value.push(w::value(percent(b.level)).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg));
-            let top = vec![w::label(&b.label).elide(), w::row(s.icon_gap, value)];
-            w::cell(w::column(s.xxs, vec![w::row(s.icon_gap, top).fill(), w::track(b.level / 100.0)])).ghost()
+            values.push(w::panel_value(percent(b.level)));
+            slider_row(s, &b.label, values, w::track(b.level / 100.0))
         })
         .collect();
-    Some(w::column(s.row_gap, vec![w::panel_heading(s, "Battery"), w::column(0.0, rows)]))
+    Some(w::panel_section(s, "Battery", rows))
 }
 
 impl Panel for Earbuds {
@@ -330,7 +332,6 @@ impl Panel for Earbuds {
     fn title(&self, _: &View) -> String {
         "Earbuds".into()
     }
-
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -357,14 +358,14 @@ impl Panel for Earbuds {
         }
         if e.devices().len() > 1 {
             let (opts, selected) = devices(e);
-            out.push(w::column(s.row_gap, vec![w::panel_heading(s, "Device"), self.group(DEVICE, &opts, selected, None)]));
+            out.push(w::column(s.panel_gap, vec![w::panel_heading(s, "Device"), w::panel_text(s, self.group(DEVICE, &opts, selected, None))]));
         }
-        let Some(dev) = dev else { return w::column(s.section_gap, out) };
+        let Some(dev) = dev else { return w::column(0.0, out) };
         match art(dev, "duo", s.control_height * 3.0) {
             Some(picture) => {
-                out.push(hero(s, dev, picture));
+                out.push(w::panel_text(s, hero(s, dev, picture)));
                 if !dev.batteries.iter().all(|b| b.id == BatteryId::Single) {
-                    out.push(battery_tiles(s, dev));
+                    out.push(w::panel_text(s, battery_tiles(s, dev).pad_top(s.panel_gap)));
                 }
             }
             None => {
@@ -389,14 +390,14 @@ impl Panel for Earbuds {
             for ctl in &section.controls {
                 // Rows abut; a group is a boxed control and keeps `rowGap`.
                 if prev.is_some_and(|p| p == ControlKind::Choice || ctl.kind == ControlKind::Choice) {
-                    rows.push(w::space(s.row_gap));
+                    rows.push(w::space(s.panel_gap));
                 }
                 prev = Some(ctl.kind);
                 match ctl.kind {
                     ControlKind::Choice => {
                         for (i, row) in self.choice_rows(s, ctl).into_iter().enumerate() {
                             if i > 0 {
-                                rows.push(w::space(s.xs));
+                                rows.push(w::space(s.panel_gap));
                             }
                             rows.push(row);
                         }
@@ -405,9 +406,9 @@ impl Panel for Earbuds {
                     ControlKind::Range => rows.push(range_row(s, ctl)),
                 }
             }
-            out.push(w::column(s.row_gap, vec![w::panel_heading(s, &section.section), w::column(0.0, rows)]));
+            out.push(w::panel_section(s, &section.section, rows));
         }
-        w::column(s.section_gap, out)
+        w::column(0.0, out)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

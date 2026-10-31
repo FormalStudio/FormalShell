@@ -11,7 +11,7 @@ use super::{Effect, Panel, View};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Type, w};
+use crate::ui::{El, Event, Type, w};
 
 pub struct Weather {
     _want: Want,
@@ -43,7 +43,6 @@ impl Panel for Weather {
         if place.is_empty() { "Weather".into() } else { place.clone() }
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock]
     }
@@ -63,13 +62,8 @@ impl Panel for Weather {
         if !state.located {
             parts.push(w::panel_empty(s, "No location"));
         } else if let Some(e) = state.error {
-            parts.push(
-                w::cell(w::column(s.xxs, vec![
-                    w::section_label(s, "Unavailable", None, false),
-                    w::value(e.as_str()).ink(Ink::Muted).elide(),
-                ]))
-                .ghost(),
-            );
+            parts.push(w::panel_empty(s, "Unavailable"));
+            parts.push(w::panel_text(s, w::caption(e.as_str().to_owned()).elide()));
         } else if state.weather.is_none() {
             parts.push(w::panel_empty(s, "Loading"));
         }
@@ -110,7 +104,7 @@ impl Panel for Weather {
                 parts.push(w::panel_section(s, "Forecast", rows));
             }
         }
-        w::column(s.section_gap, parts)
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, _: &mut Effect) {

@@ -59,7 +59,6 @@ impl Panel for Iphone {
         "iPhone".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Media, Topic::Clock]
     }
@@ -96,12 +95,12 @@ impl Panel for Iphone {
                 s.xxs,
                 vec![
                     w::panel_empty(s, "Bridge not running"),
-                    w::para("Enable services.formalshell.iphone.enable and rebuild", Type::BodySmall, Weight::Normal, Ink::Muted, 4).pad_start(s.control_padding_x),
+                    w::panel_text(s, w::para("Enable services.formalshell.iphone.enable and rebuild", Type::BodySmall, Weight::Normal, Ink::Muted, 4)),
                 ],
             ));
         }
         if !error.is_empty() && !not_installed && !daemon_down {
-            parts.push(w::para(error, Type::BodySmall, Weight::Normal, Ink::Destructive, 4).pad_start(s.control_padding_x));
+            parts.push(w::panel_text(s, w::para(error, Type::BodySmall, Weight::Normal, Ink::Destructive, 4)));
         }
         if connected && !pairing {
             let pct = st.battery.map(|b| format!("{}%", (b * 100.0 + 0.5).floor()));
@@ -146,22 +145,22 @@ impl Panel for Iphone {
             ));
         }
         if connected && st.in_focus {
-            parts.push(w::row(
-                s.icon_gap,
+            parts.push(w::panel_text(s, w::row(
+                s.panel_gap,
                 vec![
                     w::icon("moon").ink(Ink::Muted),
                     w::para("Focus likely on, so notifications are held back", Type::BodySmall, Weight::Normal, Ink::Muted, 4),
                 ],
-            ));
+            )));
         }
         if connected {
             let mut np = vec![w::panel_heading(s, "Now playing")];
             if !now_playing {
                 np.push(w::panel_empty(s, "Not available yet"));
             } else {
-                let mut lines = vec![w::label(&ams.title).elide().pad(s.control_padding_x, 0.0, s.control_padding_x, 0.0)];
+                let mut lines = vec![w::panel_text(s, w::label(&ams.title).elide())];
                 if !ams.artist.is_empty() {
-                    lines.push(w::value(&ams.artist).size(Type::BodySmall).ink(Ink::Muted).elide().pad(s.control_padding_x, 0.0, s.control_padding_x, 0.0));
+                    lines.push(w::panel_text(s, w::value(&ams.artist).size(Type::BodySmall).ink(Ink::Muted).elide()));
                 }
                 let toggle = if ams.playback == "playing" { "pause" } else { "play" };
                 let options = TRANSPORT
@@ -169,13 +168,12 @@ impl Panel for Iphone {
                     .map(|(glyph, verb)| Opt::new("").icon(if *verb == "toggle" { toggle } else { glyph }))
                     .collect();
                 let group = w::group(options, 0, false).ring(self.np_index);
-                lines.push(group.hug().pad_start(s.control_padding_x).stop("np").on("np"));
+                lines.push(w::panel_text(s, group.hug().stop("np").on("np")));
                 np.push(w::column(s.xxs, lines));
             }
-            parts.push(w::column(s.row_gap, np));
+            parts.push(w::column(s.panel_gap, np));
         }
         if no_phone {
-            parts.push(w::separator());
             let label = if pairing {
                 "Pairing"
             } else if stale_bond {
@@ -183,9 +181,9 @@ impl Panel for Iphone {
             } else {
                 "Pair"
             };
-            parts.push(w::icon_text_button("smartphone", label).variant(Variant::Outline).enabled(!pairing).stop("pair").on("pair"));
+            parts.push(w::panel_text(s, w::icon_text_button("smartphone", label).variant(Variant::Outline).enabled(!pairing).stop("pair").on("pair").pad_top(s.panel_section)));
         }
-        w::column(s.section_gap, parts)
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, _: &mut Effect) {

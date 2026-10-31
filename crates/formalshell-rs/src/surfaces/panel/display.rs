@@ -21,7 +21,7 @@ use crate::services::compositor::{self, Command};
 use crate::services::wants::{Source, Want};
 use crate::store::{Store, Topic};
 use crate::services::compositor::OutputsState;
-use crate::ui::{El, Event, Ink, Type, What, w};
+use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
 /// The brightness step, the wheel's and the keyboard's.
 const STEP: f64 = 5.0;
@@ -92,12 +92,12 @@ fn set_brightness(fx: &Effect, d: &Brightness, percent: f64) {
     fx.service(move |ctx| display::set_percent(ctx, &id, percent, max));
 }
 
-fn dim(text: impl Into<String>, v: &View) -> El {
-    w::section_label(&v.theme.space, &text.into(), None, false).ink(Ink::Dim)
+fn dim(text: impl Into<String>) -> El {
+    w::caption(text).ink(Ink::Muted).elide()
 }
 
 fn value_line(text: String) -> El {
-    w::value(text).elide()
+    w::caption(text).mono().ink(Ink::Muted).elide()
 }
 
 fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
@@ -105,28 +105,28 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
     let store = v.store;
     let configurable = row.enabled && display::config_available();
     let mut head = vec![
-        w::icon(if row.enabled { "monitor" } else { "monitor-off" }).ink(if row.name == focused(store) { Ink::Primary } else { Ink::Fg }),
-        w::label(&row.name).elide(),
+        w::icon(if row.enabled { "monitor" } else { "monitor-off" }).size(Type::Heading).ink(if row.name == focused(store) { Ink::Primary } else { Ink::Fg }),
+        w::label(&row.name).weight(Weight::Medium).elide().fill(),
     ];
     if configurable {
-        head.push(w::value(outputs::format_scale(row.scale)));
+        head.push(w::panel_value(outputs::format_scale(row.scale)));
     }
     let toggles = display::enable_available() && outputs::can_toggle(rows, &row.name);
     head.push(w::switch(row.enabled).enabled(toggles).on(format!("enable:{}", row.name)));
 
-    let mut lines = vec![w::row(s.icon_gap, head).fill()];
+    let mut lines = vec![w::row(s.panel_gap, head).fill().height(s.panel_row).mid()];
     if !row.enabled {
-        lines.push(dim("Disabled", v));
+        lines.push(dim("Disabled"));
     }
     if !row.mirror_of.is_empty() {
-        lines.push(dim(format!("Mirrors {}", row.mirror_of), v));
+        lines.push(dim(format!("Mirrors {}", row.mirror_of)));
     }
     let reason = display::hdr_reason(store, &row.name);
     if row.enabled && !display::hdr_supported(store, &row.name) && reason != "Checking" {
-        lines.push(dim(format!("HDR unavailable: {reason}"), v));
+        lines.push(dim(format!("HDR unavailable: {reason}")));
     }
     if rows.len() > 1 && !main.is_empty() && row.name == main {
-        lines.push(dim("Main display", v));
+        lines.push(dim("Main display"));
     }
     let mode = outputs::mode_label(row);
     if !mode.is_empty() {
@@ -143,20 +143,24 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
     if configurable {
         lines.push(w::slider(outputs::fraction_for_scale(row.scale)).on(format!("scale:{}", row.name)));
     }
-    w::cell(w::column(s.xs, lines).fill()).ghost().interactive().stop(format!("output:{}", row.name))
+    w::panel_cell(s, w::column(s.xxs, lines).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("output:{}", row.name))
 }
 
 fn brightness_row(v: &View, d: &Brightness) -> El {
     let s = &v.theme.space;
-    let head = w::row(s.icon_gap, vec![w::icon("sun"), w::label(&d.label).elide(), w::value(format!("{}%", d.percent))]).fill();
+    let head = w::row(
+        s.panel_gap,
+        vec![w::icon("sun").size(Type::Heading), w::label(&d.label).weight(Weight::Medium).elide().fill(), w::panel_value(format!("{}%", d.percent))],
+    )
+    .fill()
+    .height(s.panel_row_compact)
+    .mid();
     let track = w::slider(d.percent as f64 / 100.0).on(format!("brightness:{}", d.id));
-    w::cell(w::column(s.xs, vec![head, track]).fill()).ghost().interactive().stop(format!("brightness:{}", d.id))
+    w::panel_cell(s, w::column(0.0, vec![head, track]).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("brightness:{}", d.id))
 }
 
 fn switch_row(v: &View, glyph: &str, name: &str, checked: bool, on: String, stop: String) -> El {
-    let s = &v.theme.space;
-    let row = w::row(s.icon_gap, vec![w::icon(glyph), w::text(name).mono().elide(), w::switch(checked).on(on)]).fill();
-    w::cell(row).ghost().interactive().stop(stop)
+    w::panel_row(&v.theme.space, glyph, name, None, vec![w::switch(checked).on(on)]).stop(stop)
 }
 
 impl Panel for Display {
@@ -168,7 +172,6 @@ impl Panel for Display {
         "Display".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::Display, Topic::State, Topic::Config]
     }
@@ -178,19 +181,6 @@ impl Panel for Display {
         let store = v.store;
         let rows = sorted(store);
         let mut parts = Vec::new();
-
-        if let Some(f) = outputs::find_output(&rows, focused(store)) {
-            let hero = w::Hero {
-                glyph: "monitor".into(),
-                title: f.name.clone(),
-                meta: outputs::mode_label(f),
-                readout: String::new(),
-                trailing: None,
-                rail: None,
-                rail_on: None,
-            };
-            parts.push(w::hero_with(s, hero, true, Type::Display, None));
-        }
 
         if rows.is_empty() {
             let text = match store.compositor.outputs_state {
@@ -212,7 +202,7 @@ impl Panel for Display {
         } else {
             bright.push(w::column(0.0, devices.iter().map(|d| brightness_row(v, d)).collect()));
         }
-        parts.push(w::column(s.row_gap, bright));
+        parts.push(w::column(s.panel_gap, bright));
 
         let hdr = hdr_names(store, &rows);
         if !hdr.is_empty() {
@@ -236,10 +226,10 @@ impl Panel for Display {
                 let source = if on { outputs::mirror_source(&rows) } else { plan.primary.clone() };
                 mirror.push(switch_row(v, "copy", &source, on, "mirror".into(), "mirror".into()));
             }
-            parts.push(w::column(s.row_gap, mirror));
+            parts.push(w::column(s.panel_gap, mirror));
         }
 
-        w::column(s.section_gap, parts)
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

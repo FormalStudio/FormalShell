@@ -11,7 +11,7 @@ use fs_system::monitor::format::pct;
 use super::{Effect, Panel, View};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Ink, Type, Variant, Weight, w};
+use crate::ui::{El, Ink, Weight, w};
 
 pub struct Monitor {
     _want: Want,
@@ -71,7 +71,6 @@ impl Panel for Monitor {
         "Monitor".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Compositor, Topic::Config]
     }
@@ -84,39 +83,23 @@ impl Panel for Monitor {
         let s = &v.theme.space;
         let mut parts = Vec::new();
         for (i, m) in metrics(v).into_iter().enumerate() {
-            let mut line = Vec::new();
-            if !m.figure.is_empty() {
-                line.push(w::text(m.figure).size(Type::Display).mono());
-            }
+            let mut line = vec![w::label(&m.label).weight(Weight::Medium).elide().fill()];
             if !m.state.is_empty() {
-                line.push(w::section_label(s, m.state, None, false).ink(Ink::Dim));
+                line.push(w::caption(m.state).ink(Ink::Muted));
             }
-            let mut content = vec![w::row(s.icon_gap, line)];
+            if !m.figure.is_empty() {
+                line.push(w::panel_value(m.figure));
+            }
+            let mut content = vec![w::row(s.panel_gap, line).fill().height(s.panel_row_compact).mid()];
             if let Some(f) = m.fill {
                 content.push(w::track(f));
             }
-            parts.push(w::column(
-                s.row_gap,
-                vec![
-                    w::panel_heading(s, &m.label),
-                    w::cell(w::column(s.xxs, content).fill()).ghost().interactive().stop(format!("metric{i}")),
-                ],
-            ));
+            parts.push(w::panel_cell(s, w::column(0.0, content).fill().pad(0.0, 0.0, 0.0, s.panel_gap)).stop(format!("metric{i}")));
         }
         let name = main_output(v);
-        parts.push(w::column(
-            s.row_gap,
-            vec![
-                w::panel_heading(s, "Main display"),
-                w::cell(w::text(if name.is_empty() { "--".into() } else { name }).mono().weight(Weight::Medium))
-                    .ghost()
-                    .interactive()
-                    .stop("main"),
-            ],
-        ));
-        parts.push(w::separator());
-        parts.push(w::icon_text_button("external-link", "Open monitor").variant(Variant::Ghost).stop("open").on("open").width(crate::ui::Size::Hug));
-        w::column(s.section_gap, parts)
+        parts.push(w::panel_row(s, "monitor", "Main display", None, vec![w::panel_value(if name.is_empty() { "--".into() } else { name })]).stop("main"));
+        parts.push(w::panel_footer(s, "external-link", "Open monitor").stop("open").on("open"));
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &crate::ui::Event, fx: &mut Effect) {

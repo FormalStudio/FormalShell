@@ -15,7 +15,7 @@ use crate::services::info::usage::{Claude, Codex, State};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Type, w};
+use crate::ui::{El, Event, Ink, Weight, w};
 
 pub struct Usage {
     _want: Want,
@@ -74,7 +74,6 @@ impl Panel for Usage {
         "Usage".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -86,7 +85,7 @@ impl Panel for Usage {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let u = &v.store.info.usage;
-        let label = |text: &str| w::section_label(s, text, None, true);
+        let label = |text: &str| w::panel_text(s, w::caption(text.to_owned()).ink(Ink::Muted));
         let top = peak(u);
         let meta = match top {
             Some(r) => r.label.clone(),
@@ -113,18 +112,14 @@ impl Panel for Usage {
                 .iter()
                 .enumerate()
                 .map(|(i, r)| {
-                    let mut lines = vec![
-                        w::section_label(s, &r.label, None, false),
-                        w::text(format!("{}%", (r.percent * 100.0).round())).size(Type::Display).mono(),
-                        w::track(r.percent),
-                    ];
+                    let mut top = vec![w::label(&r.label).weight(Weight::Medium).elide().fill()];
                     if !r.resets_at.is_empty() {
-                        lines.push(w::section_label(s, &format_reset(now, &r.resets_at), None, false).mono());
+                        top.push(w::caption(format_reset(now, &r.resets_at)).mono().ink(Ink::Muted));
                     }
-                    w::cell(w::column(s.xxs, lines).fill())
-                        .ghost()
-                        .cell_state(|c| c.destructive = r.percent >= 0.9)
-                        .interactive()
+                    let figure = w::panel_value(format!("{}%", (r.percent * 100.0).round()));
+                    top.push(if r.percent >= 0.9 { figure.ink(Ink::Destructive) } else { figure });
+                    let top = w::row(s.panel_gap, top).fill().height(s.panel_row_compact).mid();
+                    w::panel_cell(s, w::column(0.0, vec![top, w::track(r.percent)]).fill().pad(0.0, 0.0, 0.0, s.panel_gap))
                         .stop(format!("row{}", first + i))
                 })
                 .collect();
@@ -140,7 +135,7 @@ impl Panel for Usage {
                 section.push(w::panel_empty(s, "No data"));
             }
             section.push(rows(claude_rows(u), 0));
-            parts.push(w::column(s.row_gap, section));
+            parts.push(w::column(s.panel_gap, section));
         }
         if u.codex_enabled {
             let title = if u.codex_tier.is_empty() { "Codex".to_owned() } else { format!("Codex / {}", u.codex_tier) };
@@ -151,9 +146,9 @@ impl Panel for Usage {
                 section.push(w::panel_empty(s, "No data"));
             }
             section.push(rows(codex_rows(u), claude_rows(u).len()));
-            parts.push(w::column(s.row_gap, section));
+            parts.push(w::column(s.panel_gap, section));
         }
-        w::column(s.section_gap, parts)
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, _: &mut Effect) {

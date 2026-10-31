@@ -14,7 +14,7 @@ use fs_devices::bluetooth::{self as model, Device};
 use super::{Effect, Panel, View};
 use crate::services::devices::bluetooth::{ActionKind, Ask, Bluetooth as Bt, ask};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, What, w};
+use crate::ui::{El, Event, Ink, Variant, What, w};
 
 #[derive(Default)]
 pub struct Bluetooth;
@@ -66,33 +66,30 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     let mut trailing = Vec::new();
     let battery = model::battery_text(Some(d));
     if !battery.is_empty() {
-        trailing.push(w::value(battery).ink(Ink::Dim));
+        trailing.push(w::panel_value(battery));
     }
     let idle = bt.action.is_none();
     if d.paired && revealed {
         let word = if d.trusted { "Untrust" } else { "Trust" };
-        let el = w::section_label(s, word, None, false).ink(Ink::Dim);
-        trailing.push(if idle { el.on(format!("trust:{}", d.address)) } else { el });
+        let el = w::button(word).variant(Variant::Outline);
+        trailing.push(if idle { el.on(format!("trust:{}", d.address)) } else { el.enabled(false) });
     }
     if bucket == Bucket::Paired && revealed {
-        let el = w::icon("trash").ink(Ink::Dim);
+        let el = w::icon("trash").ink(Ink::Muted);
         trailing.push(if idle { el.on(format!("forget:{}", d.address)).tip("Forget") } else { el });
     }
-    if bucket == Bucket::Connected {
-        trailing.push(w::icon("check").ink(Ink::Primary));
+    let connected = bucket == Bucket::Connected;
+    if connected {
+        trailing.push(w::icon("circle-check").ink(Ink::Primary));
     }
-    let glyph = if bucket == Bucket::Connected { "bluetooth-connected" } else { "bluetooth" };
-    let mut line = vec![w::icon(glyph)];
-    line.push(w::label(label(d)).elide());
-    line.extend(trailing);
-    let mut parts = vec![w::row(s.icon_gap, line).fill()];
-    if !status.is_empty() {
-        let ink = if failed.is_some() { Ink::Destructive } else { Ink::Dim };
-        parts.push(w::section_label(s, &status, None, false).ink(ink));
+    let glyph = if connected { "bluetooth-connected" } else { "bluetooth" };
+    let detail = (failed.is_none() && !status.is_empty()).then(|| status.clone());
+    let row = w::panel_row(s, glyph, label(d), detail, trailing).stop(key).cell_state(|c| c.open = connected);
+    let row = if idle { row.on(format!("row:{}", d.address)) } else { row };
+    match failed {
+        Some(_) => w::column(0.0, vec![row, w::panel_text(s, w::caption(status).ink(Ink::Destructive))]),
+        None => row,
     }
-    let cell = w::cell(w::column(s.xs, parts)).ghost().stop(key);
-    let cell = if idle { cell.interactive().on(format!("row:{}", d.address)) } else { cell };
-    cell
 }
 
 fn run(address: &str, kind: ActionKind) {
@@ -139,7 +136,6 @@ impl Panel for Bluetooth {
         "Bluetooth".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
     }
@@ -160,36 +156,8 @@ impl Panel for Bluetooth {
             return w::column(s.section_gap, vec![w::panel_empty(s, "No adapter")]);
         }
         let all = rows(bt);
-        let connected: Vec<&Device> = all.iter().filter(|(b, _)| *b == Bucket::Connected).map(|(_, d)| *d).collect();
-        let hero_dev = (connected.len() == 1).then(|| connected[0]);
         let enabled = bt.powered == Some(true);
-        let glyph = if !enabled {
-            "bluetooth-off"
-        } else if connected.is_empty() {
-            "bluetooth"
-        } else {
-            "bluetooth-connected"
-        };
-        let (title, meta, battery) = match hero_dev {
-            Some(d) => {
-                let activity = model::activity_text(Some(d));
-                (label(d).to_owned(), if activity.is_empty() { "Connected".to_owned() } else { activity.to_owned() }, model::battery_text(Some(d)))
-            }
-            None => (bt.adapter.clone(), bt.state.to_owned(), String::new()),
-        };
-        let hero = w::hero(
-            s,
-            w::Hero {
-                glyph: glyph.into(),
-                title,
-                meta,
-                readout: String::new(),
-                trailing: (!battery.is_empty()).then(|| w::value(battery).ink(Ink::Dim)),
-                rail: None,
-                rail_on: None,
-            },
-        );
-        let mut out = vec![hero];
+        let mut out = Vec::new();
         let paired: Vec<El> = all.iter().filter(|(b, _)| *b != Bucket::Available).map(|(b, d)| row(v, bt, *b, d)).collect();
         let available: Vec<El> = all.iter().filter(|(b, _)| *b == Bucket::Available).map(|(b, d)| row(v, bt, *b, d)).collect();
         if paired.is_empty() && available.is_empty() {
@@ -201,7 +169,7 @@ impl Panel for Bluetooth {
         if !available.is_empty() {
             out.push(w::panel_section(s, "Available", available));
         }
-        w::column(s.section_gap, out)
+        w::column(0.0, out)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

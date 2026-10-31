@@ -94,7 +94,6 @@ impl Panel for WorkspacePreview {
         format!("Workspace {}", self.label)
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Compositor, Topic::AppIcon]
     }

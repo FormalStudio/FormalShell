@@ -13,7 +13,7 @@ use crate::services::info::tailscale::{Action, Poll};
 use crate::services::info::{kick, tailscale};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Weight, w};
+use crate::ui::{El, Event, Ink, w};
 
 pub struct Tailscale {
     _want: Want,
@@ -54,7 +54,6 @@ impl Panel for Tailscale {
         "Tailscale".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -80,7 +79,7 @@ impl Panel for Tailscale {
             Poll::NeedsLogin => parts.push(label("Needs login")),
             Poll::Ok => {}
         }
-        let Some(status) = t.status.as_ref().filter(|_| t.poll == Poll::Ok) else { return w::column(s.section_gap, parts) };
+        let Some(status) = t.status.as_ref().filter(|_| t.poll == Poll::Ok) else { return w::column(0.0, parts) };
 
         let meta = match t.action {
             Action::Up => "Connecting",
@@ -101,17 +100,13 @@ impl Panel for Tailscale {
                     rail_on: None,
                 },
             )
-            .interactive()
             .stop("status"),
         );
         if !t.error.is_empty() {
-            parts.push(
-                w::cell(w::section_label(s, t.error, None, false).ink(Ink::Destructive)).cell_state(|c| c.destructive = true),
-            );
+            parts.push(w::panel_text(s, w::caption(t.error).ink(Ink::Destructive)));
         }
         if let Some(ip) = model::self_ip(status) {
-            let row = w::row(s.icon_gap, vec![w::section_label(s, "IP", None, false), w::spacer(), w::text(ip.clone()).mono().weight(Weight::Medium)]).fill();
-            parts.push(w::cell(row).interactive().stop("self").on(format!("copy:{ip}")));
+            parts.push(w::panel_row(s, "copy", "IP", None, vec![w::panel_value(ip.clone())]).stop("self").on(format!("copy:{ip}")));
         }
 
         let primary = v.theme.colors.get("primary");
@@ -125,29 +120,18 @@ impl Panel for Tailscale {
             .iter()
             .enumerate()
             .map(|(i, p)| {
-                let mut detail = Vec::new();
-                if let Some(os) = &p.os {
-                    detail.push(w::caption(os.clone()).ink(Ink::Dim));
-                }
-                if let Some(ip) = &p.ip {
-                    detail.push(w::caption(ip.clone()).mono().ink(Ink::Dim));
-                }
-                let words = w::column(
-                    s.xxs,
-                    vec![w::text(p.name.clone()).mono().weight(Weight::Medium).elide(), w::row(s.icon_gap, detail)],
-                )
-                .fill();
-                let row = w::row(s.icon_gap, vec![w::dot(if p.online { primary } else { muted }, s.sm).pulse(t.action == Action::Up), words]).fill();
-                let cell = w::cell(row).ghost().stop(format!("peer{i}"));
+                let detail = [p.os.clone(), p.ip.clone()].into_iter().flatten().collect::<Vec<_>>().join("  ");
+                let dot = w::dot(if p.online { primary } else { muted }, s.sm).pulse(t.action == Action::Up);
+                let row = w::panel_row(s, "", p.name.clone(), Some(detail), vec![dot]).stop(format!("peer{i}"));
                 match &p.ip {
-                    Some(ip) => cell.interactive().on(format!("copy:{ip}")),
-                    None => cell,
+                    Some(ip) => row.on(format!("copy:{ip}")),
+                    None => row,
                 }
             })
             .collect();
         peers.push(w::column(0.0, rows));
-        parts.push(w::column(s.row_gap, peers));
-        w::column(s.section_gap, parts)
+        parts.push(w::column(s.panel_gap, peers));
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

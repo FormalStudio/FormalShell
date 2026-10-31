@@ -18,7 +18,7 @@ use super::{Edit, Effect, Panel, View};
 use crate::services::clipboard;
 use crate::services::devices::{self, network as net};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Variant, What, w};
+use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
 
 /// The mask the passphrase field draws.
 const MASK: char = '\u{25CF}';
@@ -158,19 +158,20 @@ impl Network {
         let name = if r.ssid.is_empty() { w::label("Hidden network").ink(Ink::Muted) } else { w::label(r.ssid.clone()) };
         // Out of range has no bars to show, and an empty glyph would read as
         // a weak signal.
-        let mut top = if r.in_range { vec![w::icon(signal_glyph(r.signal)), name.elide().fill()] } else { vec![w::icon("wifi-off").ink(Ink::Dim), name.elide().fill()] };
+        let name = name.weight(Weight::Medium).elide().fill();
+        let mut top = if r.in_range { vec![w::icon(signal_glyph(r.signal)).size(Type::Heading), name] } else { vec![w::icon("wifi-off").size(Type::Heading).ink(Ink::Muted), name] };
         // Forget reveals on the row the pointer is on.
         if r.known && !r.connected && v.hovered.as_deref() == Some(key.as_str()) && n.action.is_none() {
-            top.push(w::icon("trash").ink(Ink::Dim).on(format!("forget:{}", r.ssid)).tip("Forget"));
+            top.push(w::icon("trash").ink(Ink::Muted).on(format!("forget:{}", r.ssid)).tip("Forget"));
         }
         if r.connected {
-            top.push(w::button("Disconnect").variant(Variant::Ghost).enabled(n.action.is_none()).on(format!("row:{}", r.ssid)));
+            top.push(w::button("Disconnect").variant(Variant::Outline).enabled(n.action.is_none()).on(format!("row:{}", r.ssid)));
         } else if r.secured {
-            top.push(w::icon("lock").ink(Ink::Dim));
+            top.push(w::icon("lock").ink(Ink::Muted));
         }
-        let mut parts = vec![w::row(s.md, top).fill().height(s.control_height)];
+        let mut parts = vec![w::row(s.panel_gap, top).fill().height(s.panel_row)];
         if let Some((text, failed)) = status {
-            parts.push(w::section_label(s, &text, None, false).ink(if failed { Ink::Destructive } else { Ink::Dim }).pad_start(s.lg + s.md));
+            parts.push(w::caption(text).ink(if failed { Ink::Destructive } else { Ink::Muted }).pad(s.panel_icon + s.panel_gap, 0.0, 0.0, s.panel_gap));
         }
         if self.prompt_for(n).is_some_and(|p| p.ssid == r.ssid) {
             let mut fields = Vec::new();
@@ -180,9 +181,9 @@ impl Network {
             let masked: String = std::iter::repeat_n(MASK, self.password.text().chars().count()).collect();
             let error = n.failure.as_ref().filter(|f| failed && mine(&f.ssid)).map(|f| f.text.as_str());
             fields.push(w::input(&masked, "Passphrase", self.field == Some(Field::Password), error).caret(self.password.caret_chars()).key("passphrase"));
-            parts.push(w::column(s.xs, fields).pad(0.0, s.xs, 0.0, s.sm));
+            parts.push(w::column(s.panel_gap, fields).pad(0.0, 0.0, 0.0, s.panel_gap));
         }
-        w::cell(w::column(0.0, parts).fill()).ghost().cell_state(|c| c.open = r.connected).interactive().stop(key).on(format!("row:{}", r.ssid))
+        w::panel_cell(s, w::column(0.0, parts).fill()).cell_state(|c| c.open = r.connected).stop(key).on(format!("row:{}", r.ssid))
     }
 
     /// The disclosure row over saved networks out of range, then those rows
@@ -208,8 +209,8 @@ impl Network {
             out.push(action_row(v, "share-2", if open { "Hide network code" } else { "Share network" }, Vec::new()).stop("share").on("share"));
             match &n.qr {
                 net::Qr::Generating => out.push(w::panel_empty(s, "Generating")),
-                net::Qr::Failed(e) => out.push(w::section_label(s, e, None, true)),
-                net::Qr::Shown(rows) => out.push(w::cell(w::matrix(rows.clone()))),
+                net::Qr::Failed(e) => out.push(w::panel_text(s, w::caption(e.to_string()).ink(Ink::Destructive))),
+                net::Qr::Shown(rows) => out.push(w::panel_text(s, w::cell(w::matrix(rows.clone())))),
                 net::Qr::Closed => {}
             }
         }
@@ -217,8 +218,8 @@ impl Network {
             let (label, value) = match &n.reveal {
                 net::Reveal::Idle => ("Show password", None),
                 net::Reveal::Shown(secret) => ("Hide password", Some(w::value(secret.clone()).ink(Ink::Fg))),
-                net::Reveal::Reading => ("Hide password", Some(w::section_label(s, "Reading", None, false).ink(Ink::Dim))),
-                net::Reveal::Failed(e) => ("Show password", Some(w::section_label(s, e, None, false).ink(Ink::Destructive))),
+                net::Reveal::Reading => ("Hide password", Some(w::panel_value("Reading"))),
+                net::Reveal::Failed(e) => ("Show password", Some(w::caption(e.to_string()).ink(Ink::Destructive))),
             };
             out.push(action_row(v, "key-round", label, value.into_iter().collect()).stop("password").on("password"));
         }
@@ -240,7 +241,7 @@ impl Network {
             net::Phase::Up => "Measuring up",
             _ => "Speed test",
         };
-        let result = w::value(format!("\u{2193} {down}  \u{2191} {up} Mbps"));
+        let result = w::panel_value(format!("\u{2193} {down}  \u{2191} {up} Mbps"));
         out.push(action_row(v, "gauge", label, vec![result]).stop("speedtest").on("speedtest"));
         if !st.error.is_empty() {
             out.push(w::panel_text(s, w::caption(st.error.clone()).ink(Ink::Destructive)));
@@ -263,9 +264,9 @@ fn signal_glyph(signal: f64) -> &'static str {
 /// pointer is on it, whatever it carries trailing.
 fn action_row(v: &View, glyph: &str, label: &str, trailing: Vec<El>) -> El {
     let s = &v.theme.space;
-    let mut parts = vec![w::icon(glyph).ink(Ink::Dim), w::label(label).ink(Ink::Dim).elide().fill()];
+    let mut parts = vec![w::icon(glyph).size(Type::Heading).ink(Ink::Muted), w::label(label).weight(Weight::Medium).ink(Ink::Muted).elide().fill()];
     parts.extend(trailing);
-    w::cell(w::row(s.md, parts).fill().height(s.control_height)).ghost().interactive()
+    w::panel_cell(s, w::row(s.panel_gap, parts).fill()).height(s.panel_row)
 }
 
 impl Panel for Network {
@@ -276,7 +277,6 @@ impl Panel for Network {
     fn title(&self, _: &View) -> String {
         "Wi-Fi".into()
     }
-
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
@@ -297,12 +297,11 @@ impl Panel for Network {
             .wired_rows
             .iter()
             .map(|d| {
-                let mut r = vec![w::icon("ethernet-port"), w::label(d.name.clone()).elide().fill()];
-                r.push(w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Ghost).on(format!("wired:{}", d.name)));
-                w::cell(w::row(s.md, r).fill().height(s.control_height))
-                    .ghost()
+                let mut r = vec![w::icon("ethernet-port").size(Type::Heading), w::label(d.name.clone()).weight(Weight::Medium).elide().fill()];
+                r.push(w::button(if d.connected { "Disconnect" } else { "Connect" }).variant(Variant::Outline).on(format!("wired:{}", d.name)));
+                w::panel_cell(s, w::row(s.panel_gap, r).fill())
+                    .height(s.panel_row)
                     .cell_state(|c| c.open = d.connected)
-                    .interactive()
                     .stop(format!("wired:{}", d.name))
                     .on(format!("wired:{}", d.name))
             })
@@ -326,7 +325,7 @@ impl Panel for Network {
         }
         more.extend(self.footer(v, n.wifi_device.is_some()));
         parts.push(w::column(0.0, more));
-        w::column(s.sm, parts)
+        w::column(s.panel_gap, parts)
     }
 
     fn opened(&mut self) {

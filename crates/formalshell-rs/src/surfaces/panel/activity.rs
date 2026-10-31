@@ -7,7 +7,7 @@
 use super::{Effect, Panel, View};
 use crate::store::Topic;
 use crate::surfaces::activity::{self, Verb};
-use crate::ui::{El, Event, Ink, w};
+use crate::ui::{El, Event, w};
 
 const EARLIER: usize = 10;
 
@@ -31,7 +31,6 @@ impl Panel for Activity {
         "Activity".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Activity]
     }
@@ -54,17 +53,17 @@ impl Panel for Activity {
         let earlier = activity::history(v.theme, v.store, EARLIER);
         let mut parts = Vec::new();
         if running.is_empty() && earlier.is_empty() {
-            parts.push(w::section_label(s, "Nothing running", None, false));
+            parts.push(w::panel_empty(s, "Nothing running"));
         }
         if !running.is_empty() {
-            let mut col = vec![w::heading(s, "Now", Some(running.len()), false)];
-            col.extend(running);
-            parts.push(w::column(s.row_gap, col));
+            let mut col = vec![w::panel_heading(s, "Now")];
+            col.extend(running.into_iter().map(|r| super::center::inset(s, r)));
+            parts.push(w::column(s.panel_gap, col));
         }
         if !earlier.is_empty() {
-            let mut col = vec![w::heading(s, "Earlier", None, false)];
-            col.extend(earlier);
-            parts.push(w::column(s.row_gap, col));
+            let mut col = vec![w::panel_heading(s, "Earlier")];
+            col.extend(earlier.into_iter().map(|r| super::center::inset(s, r)));
+            parts.push(w::column(s.panel_gap, col));
         }
         let f = &a.fspec;
         let unavailable = match &f.error {
@@ -73,9 +72,9 @@ impl Panel for Activity {
             None => None,
         };
         if let Some(line) = unavailable {
-            parts.push(w::caption(line).ink(Ink::Dim));
+            parts.push(w::panel_text(s, w::caption(line).pad_top(s.panel_section)));
         }
-        w::column(s.section_gap, parts)
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

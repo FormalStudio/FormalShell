@@ -74,7 +74,6 @@ impl Panel for Info {
         "Information".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -114,7 +113,7 @@ impl Panel for Info {
         if let Some(id) = os_id {
             foot.push(w::icon(format!("distro:{id}")).size(Type::Display).ink(Ink::Muted));
         }
-        w::column(s.lg, vec![w::column(0.0, rows), manual, w::row(s.sm, foot).fill().pad_top(s.sm)])
+        w::panel_text(s, w::column(s.lg, vec![w::column(0.0, rows), manual, w::row(s.sm, foot).fill().pad_top(s.sm)]))
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

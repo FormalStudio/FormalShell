@@ -12,7 +12,7 @@ use crate::services::info::github::{Poll, Row};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Weight, w};
+use crate::ui::{El, Event, w};
 
 pub struct Github {
     _want: Want,
@@ -38,7 +38,6 @@ impl Panel for Github {
         "GitHub".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info]
     }
@@ -59,7 +58,7 @@ impl Panel for Github {
             Poll::Ok => {}
         }
         if g.poll != Poll::Ok {
-            return w::column(s.section_gap, parts);
+            return w::column(0.0, parts);
         }
         parts.push(w::hero(
             s,
@@ -73,7 +72,7 @@ impl Panel for Github {
                 rail_on: None,
             },
         ));
-        let section = |title: &str, rows: &[Row], first: usize| {
+        let section = |title: &str, total: u64, rows: &[Row], first: usize| {
             let mut head = vec![w::panel_heading(s, title)];
             if rows.is_empty() {
                 head.push(label("None"));
@@ -82,20 +81,19 @@ impl Panel for Github {
                 .iter()
                 .enumerate()
                 .map(|(i, r)| {
-                    let mut lines = Vec::new();
-                    if !r.repo.is_empty() {
-                        lines.push(w::caption(r.repo.clone()).mono().ink(Ink::Dim).elide());
-                    }
-                    lines.push(w::label(r.title.clone()).weight(Weight::Medium).elide());
-                    w::cell(w::column(s.xxs, lines).fill()).ghost().interactive().stop(format!("row{}", first + i)).on(format!("open:{}", r.url))
+                    let repo = (!r.repo.is_empty()).then(|| r.repo.clone());
+                    // The query fetches a page; the last row says what it left out.
+                    let hidden = (total as usize).saturating_sub(rows.len());
+                    let trailing = if i + 1 == rows.len() && hidden > 0 { vec![w::panel_value(format!("{hidden} more"))] } else { Vec::new() };
+                    w::panel_row(s, "", r.title.clone(), repo, trailing).stop(format!("row{}", first + i)).on(format!("open:{}", r.url))
                 })
                 .collect();
             head.push(w::column(0.0, cells));
-            w::column(s.row_gap, head)
+            w::column(s.panel_gap, head)
         };
-        parts.push(section("Pull requests", &g.pr_rows, 0));
-        parts.push(section("Issues", &g.issue_rows, g.pr_rows.len()));
-        w::column(s.section_gap, parts)
+        parts.push(section("Pull requests", g.prs, &g.pr_rows, 0));
+        parts.push(section("Issues", g.issues, &g.issue_rows, g.pr_rows.len()));
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

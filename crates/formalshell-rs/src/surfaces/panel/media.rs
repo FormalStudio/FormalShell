@@ -219,7 +219,6 @@ impl Panel for Media {
         "Media".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Media, Topic::Visualizer, Topic::Config, Topic::Lyrics]
     }
@@ -275,7 +274,7 @@ impl Panel for Media {
             motion_art::want(motion_art::PANEL, None);
             self.sections.borrow_mut().clear();
             let radio = w::icon_text_button("radio", "Radio").variant(crate::ui::Variant::Outline).stop("transport").on("radio");
-            return w::column(s.section_gap, vec![w::row(0.0, vec![w::panel_empty(s, "No player").fill(), radio]).fill()]);
+            return w::row(0.0, vec![w::panel_empty(s, "No player").fill(), w::column(0.0, vec![radio]).pad(0.0, 0.0, w::text_inset(s), 0.0)]).fill().mid();
         };
         let mut col = Vec::new();
 
@@ -420,7 +419,7 @@ impl Panel for Media {
         }
         sections.push(menu);
         *self.sections.borrow_mut() = sections;
-        body
+        w::panel_text(s, body)
     }
 
     fn wake(&self, v: &View) -> Option<Instant> {

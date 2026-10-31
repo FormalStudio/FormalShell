@@ -25,7 +25,7 @@ use super::{Effect, Panel, View};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::{Store, Topic};
-use crate::ui::{El, Event, Ink, Size, Type, w};
+use crate::ui::{El, Event, Ink, Size, Type, Weight, w};
 
 const WEEKDAYS: [&str; 7] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const MONTHS: [&str; 12] = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -96,7 +96,6 @@ impl Panel for Calendar {
     fn title(&self, _: &View) -> String {
         "Calendar".into()
     }
-
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Clock, Topic::State, Topic::Config]
@@ -186,7 +185,7 @@ impl Panel for Calendar {
             let days = w::row(s.row_gap, row).fill().swap(i64::from(self.year) * 12 + i64::from(self.month));
             lines.push(w::row(s.row_gap, vec![week, days]).fill());
         }
-        let month = w::column(s.row_gap, vec![w::panel_heading(s, &month_name), w::column(s.row_gap, lines)]);
+        let month = w::column(s.panel_gap, vec![w::panel_heading(s, &month_name), w::panel_text(s, w::column(s.row_gap, lines))]);
 
         let selected_is_today = grid::same_date(&self.selected, &t);
         let day_events = agenda::sort_for_day(&ics::events_on_date(events, self.selected));
@@ -200,9 +199,9 @@ impl Panel for Calendar {
             next.map(|e| format!("Next {}", agenda::clock_time(e.start, twelve)))
         };
         if let Some(text) = side {
-            label_row.push(w::section_label(s, &text, None, false).pad(0.0, 0.0, s.control_padding_x, 0.0));
+            label_row.push(w::caption(text).ink(Ink::Muted).pad(0.0, s.panel_section, w::text_inset(s), 0.0));
         }
-        let mut agenda_col = vec![w::row(s.icon_gap, label_row).fill()];
+        let mut agenda_col = vec![w::row(s.panel_gap, label_row).fill()];
         if day_events.is_empty() {
             agenda_col.push(w::panel_empty(s, "No events"));
         }
@@ -212,11 +211,14 @@ impl Panel for Calendar {
             .map(|e| {
                 let status = agenda::status(e, now);
                 let time_ink = if status == agenda::Status::Past { Ink::Muted } else { Ink::Fg };
-                let mut parts = vec![w::value(agenda::time_label(e, twelve)).ink(time_ink).gauge(gauge.clone()), w::label(&e.summary).elide()];
+                let mut parts = vec![
+                    w::value(agenda::time_label(e, twelve)).size(Type::BodySmall).ink(time_ink).gauge(gauge.clone()),
+                    w::label(&e.summary).weight(Weight::Medium).elide().fill(),
+                ];
                 if status == agenda::Status::Now {
-                    parts.push(w::section_label(s, "Now", None, false).ink(Ink::Primary));
+                    parts.push(w::caption("Now").weight(Weight::Semibold).ink(Ink::Primary));
                 }
-                w::cell(w::row(s.icon_gap, parts).fill()).ghost()
+                w::panel_cell(s, w::row(s.panel_gap, parts).fill()).height(s.panel_row)
             })
             .collect();
         agenda_col.push(w::column(0.0, rows));
@@ -226,22 +228,24 @@ impl Panel for Calendar {
         let show_life = self.show_life.unwrap_or(life.is_some()) && life.is_some();
         let bar = |name: &str, fraction: f64| {
             w::column(
-                s.xxs,
+                0.0,
                 vec![
-                    w::row(s.icon_gap, vec![w::section_label(s, name, None, false).fill(), w::value(progress::format_percent(fraction)).ink(Ink::Fg)]).fill(),
+                    w::row(s.panel_gap, vec![w::label(name).weight(Weight::Medium).fill(), w::panel_value(progress::format_percent(fraction))])
+                        .fill()
+                        .height(s.panel_row_compact)
+                        .mid(),
                     w::track(fraction),
                 ],
             )
+            .fill()
+            .pad(0.0, 0.0, 0.0, s.panel_gap)
         };
-        let mut progress_col = vec![w::panel_heading(s, "Progress"), w::cell(bar("Year", year)).ghost().on("year")];
+        let mut progress_col = vec![w::panel_heading(s, "Progress"), w::panel_cell(s, bar("Year", year)).on("year")];
         if show_life {
-            progress_col.push(w::cell(bar("Life", life.unwrap_or(0.0))).ghost());
+            progress_col.push(w::panel_cell(s, bar("Life", life.unwrap_or(0.0))));
         }
 
-        w::column(
-            s.section_gap,
-            vec![hero, month, w::column(s.row_gap, agenda_col), w::column(s.row_gap, progress_col)],
-        )
+        w::column(0.0, vec![hero, month, w::column(s.panel_gap, agenda_col), w::column(s.panel_gap, progress_col)])
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

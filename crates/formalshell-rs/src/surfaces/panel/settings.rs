@@ -41,7 +41,6 @@ impl Panel for Settings {
         "Settings".into()
     }
 
-
     fn header(&self) -> bool {
         false
     }

@@ -46,6 +46,13 @@ fn send(fx: &Effect, op: Op) {
     fx.service(move |ctx| ctx.publish(store::Diff::Notifications(Diff::Op(op))));
 }
 
+/// An activity row (built for the sidebar too) with its text on the
+/// panel's text column.
+pub(super) fn inset(s: &fs_theme::tokens::Space, row: El) -> El {
+    let x = w::text_inset(s);
+    row.cell_state(|c| c.inset = Some((x, 0.0)))
+}
+
 fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
     let s = &v.theme.space;
     let e = &g.entry;
@@ -76,7 +83,7 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
             .collect();
         parts.push(w::row(s.sm, buttons));
     }
-    w::cell(w::column(s.row_gap, parts)).ghost().interactive().on(format!("row:{key}")).stop(key)
+    w::panel_cell(s, w::column(s.row_gap, parts)).on(format!("row:{key}")).stop(key)
 }
 
 /// Pending oldest first, seen newest first, each grouped.
@@ -110,7 +117,6 @@ impl Panel for Center {
         "Notifications".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Notifications, Topic::Activity]
     }
@@ -129,12 +135,9 @@ impl Panel for Center {
     }
 
     fn actions(&self, v: &View) -> Vec<El> {
-        let s = &v.theme.space;
         vec![
-            w::section_label(s, "DND", None, false),
-            w::switch(v.store.notifications.model.dnd).on("dnd").stop("dnd"),
-            w::space(s.section_gap),
-            w::button("Clear all").variant(Variant::Ghost).on("clear").stop("clear"),
+            w::switch(v.store.notifications.model.dnd).tip("Do not disturb").on("dnd").stop("dnd"),
+            w::icon_button("trash-2").tip("Clear all").on("clear").stop("clear"),
         ]
     }
 
@@ -145,44 +148,40 @@ impl Panel for Center {
         let phone = pending.iter().chain(&seen).any(|g| g.entry.source == "iphone");
         let mut out = Vec::new();
         if phone || self.filter != 0 {
-            out.push(w::segmented(FILTERS.iter().map(|f| (*f).to_owned()).collect(), self.filter).on("filter").stop("filter"));
+            out.push(w::panel_text(s, w::segmented(FILTERS.iter().map(|f| (*f).to_owned()).collect(), self.filter).on("filter").stop("filter")));
         }
         let pending: Vec<Group> = pending.into_iter().filter(|g| self.shows(g)).collect();
         let seen: Vec<Group> = seen.into_iter().filter(|g| self.shows(g)).collect();
         let folded = if self.filter == 2 { Vec::new() } else { activity::history(v.theme, v.store, FOLDED) };
         let any_folded = !folded.is_empty();
         if any_folded {
-            let head = w::row(
-                s.sm,
-                vec![w::heading(s, "Activity", None, false).fill(), w::button("Clear").variant(Variant::Ghost).on("activity-clear").stop("activity-clear")],
-            )
-            .fill();
+            let clear = w::button("Clear").variant(Variant::Outline).on("activity-clear").stop("activity-clear");
+            let head = w::row(s.panel_gap, vec![w::panel_heading(s, "Activity").fill(), w::column(0.0, vec![clear]).pad(0.0, s.panel_section, w::text_inset(s), 0.0)]).fill();
             let mut col = vec![head];
-            col.extend(folded);
-            out.push(w::column(s.row_gap, col));
+            col.extend(folded.into_iter().map(|r| inset(s, r)));
+            out.push(w::column(s.panel_gap, col));
         }
         if pending.is_empty() && seen.is_empty() && !any_folded {
-            out.push(w::section_label(s, "No notifications", None, false));
-            return w::column(s.section_gap, out);
+            out.push(w::panel_empty(s, "No notifications"));
+            return w::column(0.0, out);
         }
-        let count = |rows: &[Group]| rows.iter().map(|g| g.count).sum::<usize>();
-        let mut section = |title: &str, count: usize, rows: &[Group], unread: bool| {
-            let mut col = vec![w::heading(s, title, Some(count), false)];
+        let mut section = |title: &str, rows: &[Group], unread: bool| {
+            let mut col = vec![w::panel_heading(s, title)];
             for (i, g) in rows.iter().enumerate() {
                 if i > 0 {
-                    col.push(w::separator());
+                    col.push(w::space(s.panel_gap));
                 }
                 col.push(row(v, g, unread, now));
             }
-            out.push(w::column(s.row_gap, col));
+            out.push(w::column(s.panel_gap, col));
         };
         if !pending.is_empty() {
-            section("Pending", count(&pending), &pending, true);
+            section("Pending", &pending, true);
         }
         if !seen.is_empty() {
-            section("Seen", count(&seen), &seen, false);
+            section("Seen", &seen, false);
         }
-        w::column(s.section_gap, out)
+        w::column(0.0, out)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

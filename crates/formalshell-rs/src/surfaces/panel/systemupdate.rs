@@ -12,7 +12,7 @@ use super::{Effect, Panel, View};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::{El, Event, Ink, Type, Variant, w};
+use crate::ui::{El, Event, Ink, Variant, w};
 
 pub struct SystemUpdate {
     _want: Want,
@@ -40,7 +40,6 @@ impl Panel for SystemUpdate {
     fn title(&self, _: &View) -> String {
         "System update".into()
     }
-
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Info, Topic::Config]
@@ -83,53 +82,34 @@ impl Panel for SystemUpdate {
 
         if !u.inputs.is_empty() {
             let warning = Ink::Color(v.theme.colors.get("warning"));
-            let mut head = vec![w::panel_heading(s, "Inputs")];
-            if ok && counts.unknown > 0 {
-                head.push(w::section_label(s, &format!("{} unknown", counts.unknown), None, true));
-            }
             let rows = u
                 .inputs
                 .iter()
                 .enumerate()
                 .map(|(i, input)| {
                     let status = system_update::row_status(input, &u.heads);
-                    let behind = status == "Behind";
-                    let row = w::row(
-                        s.icon_gap,
-                        vec![
-                            w::label(&input.name).elide(),
-                            w::caption(system_update::short_rev(&input.rev)).mono().ink(Ink::Dim),
-                            w::section_label(s, status, None, false).ink(if behind { warning } else { Ink::Dim }),
-                        ],
-                    )
-                    .fill();
-                    w::cell(row).ghost().cell_state(|c| c.warning = behind).interactive().stop(format!("input{i}"))
+                    let ink = if status == "Behind" { warning } else { Ink::Muted };
+                    let rev = system_update::short_rev(&input.rev);
+                    w::panel_row(s, "", &input.name, Some(rev), vec![w::caption(status).ink(ink)]).stop(format!("input{i}"))
                 })
                 .collect();
-            head.push(w::column(0.0, rows));
-            parts.push(w::column(s.row_gap, head));
+            parts.push(w::panel_section(s, "Inputs", rows));
+            if ok && counts.unknown > 0 {
+                parts.push(w::panel_text(s, w::caption(format!("{} unknown", counts.unknown)).ink(Ink::Muted)));
+            }
         }
 
         let checking = u.poll == PollState::Checking;
-        let figure = if ok { counts.behind.to_string() } else { "--".into() };
-        parts.push(w::separator());
-        parts.push(
-            w::row(
-                s.xs,
-                vec![
-                    w::icon_text_button("refresh-cw", if checking { "Checking" } else { "Check" })
-                        .variant(Variant::Outline)
-                        .enabled(!dir.is_empty() && !checking)
-                        .stop("check")
-                        .on("check"),
-                    w::spacer(),
-                    w::text(figure).size(Type::Display).mono(),
-                    w::section_label(s, "Behind", None, false),
-                ],
-            )
-            .fill(),
-        );
-        w::column(s.section_gap, parts)
+        let check = w::icon_text_button("refresh-cw", if checking { "Checking" } else { "Check" })
+            .variant(Variant::Outline)
+            .enabled(!dir.is_empty() && !checking)
+            .fill()
+            .height(s.panel_row)
+            .stop("check")
+            .on("check");
+        let i = w::text_inset(s);
+        parts.push(w::column(0.0, vec![check]).pad(i, s.panel_section, i, 0.0));
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, _: &mut Effect) {

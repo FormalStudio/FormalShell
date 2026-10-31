@@ -11,14 +11,13 @@ use fs_theme::color::Rgba;
 use super::{Panel, View};
 use crate::store::Topic;
 use crate::ui::el::Kind;
-use crate::ui::{El, Ink, Type, Weight, w};
+use crate::ui::{El, w};
 
 #[derive(Default)]
 pub struct Dualsense;
 
-fn half(s: &fs_theme::tokens::Space, title: &str, glyph: &str, middle: El, value: String, key: &str) -> El {
-    let line = w::row(s.icon_gap, vec![w::icon(glyph), middle, w::space(0.0).fill(), w::value(value).size(Type::Body).weight(Weight::Medium).ink(Ink::Fg)]).fill();
-    w::cell(w::column(s.xxs, vec![w::heading(s, title, None, false), line])).ghost().stop(key)
+fn status_row(s: &fs_theme::tokens::Space, title: &str, glyph: &str, middle: El, value: String, key: &str) -> El {
+    w::panel_row(s, glyph, title, None, vec![middle, w::panel_value(value)]).stop(key)
 }
 
 impl Panel for Dualsense {
@@ -30,14 +29,8 @@ impl Panel for Dualsense {
         "DualSense".into()
     }
 
-
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Devices]
-    }
-
-    fn actions(&self, v: &View) -> Vec<El> {
-        let s = &v.theme.space;
-        vec![w::cell(w::section_label(s, "Read only", None, false)).cell_state(|c| c.chip = true)]
     }
 
     fn body(&self, v: &View) -> El {
@@ -45,7 +38,7 @@ impl Panel for Dualsense {
         let Some(supply) = &v.store.devices.power.dualsense else {
             return w::column(s.section_gap, vec![w::panel_empty(s, "No controller")]);
         };
-        let hero = w::hero_with(
+        let hero = w::hero(
             s,
             w::Hero {
                 glyph: "gamepad-2".into(),
@@ -56,18 +49,15 @@ impl Panel for Dualsense {
                 rail: Some(supply.percent as f64 / 100.0),
                 rail_on: None,
             },
-            false,
-            Type::DisplayLarge,
-            None,
         )
         .stop("battery");
         let mut out = vec![hero];
         let lights = &v.store.devices.lights;
-        let mut halves = Vec::new();
+        let mut rows = Vec::new();
         if let Some(hex) = &lights.lightbar {
             let fill = Rgba::parse(hex).unwrap_or(Rgba::TRANSPARENT);
             let body = v.theme.font_size.body;
-            halves.push(half(s, "Lightbar", "lightbulb", w::swatch(fill, body, body, v.theme.radii.sm), hex.clone(), "lightbar"));
+            rows.push(status_row(s, "Lightbar", "lightbulb", w::swatch(fill, body, body, v.theme.radii.sm), hex.clone(), "lightbar"));
         }
         if let Some(lit) = lights.player_leds {
             let primary = v.theme.colors.get("primary");
@@ -75,12 +65,11 @@ impl Panel for Dualsense {
             let pips = (0..5)
                 .map(|i| El::new(Kind::Swatch { color: if i < lit { primary } else { muted }, w: s.sm, h: s.sm, radius: s.sm / 2.0, border: false }))
                 .collect();
-            halves.push(half(s, "Player LEDs", "circle-dot", w::row(s.sm, pips), format!("{lit} / 5"), "leds"));
+            rows.push(status_row(s, "Player LEDs", "circle-dot", w::row(s.sm, pips), format!("{lit} / 5"), "leds"));
         }
-        if !halves.is_empty() {
-            let halves = halves.into_iter().map(El::fill).collect();
-            out.push(w::column(s.row_gap, vec![w::panel_heading(s, "Status"), w::row(s.row_gap, halves).fill()]));
+        if !rows.is_empty() {
+            out.push(w::panel_section(s, "Status", rows));
         }
-        w::column(s.section_gap, out)
+        w::column(0.0, out)
     }
 }
