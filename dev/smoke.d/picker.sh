@@ -37,7 +37,7 @@ leg_picker_needs="convert jq"
 # covers the whole output, so under --wallpaper it starts after that leg's
 # last frame (t=14).
 picker_t0() {
-  if leg_on wallpaper; then echo 16; else echo 4; fi
+  cover_t0 4
 }
 
 picker_done_path="$shot_dir/picker-drive.done"

@@ -29,7 +29,7 @@ share_peers_path="$shot_dir/share-peers.json"
 # This leg's own clock: the menu covers the whole output, so under
 # --wallpaper it starts past that leg's last frame.
 share_t0() {
-  if leg_on wallpaper; then echo 14; else echo 2; fi
+  cover_t0 2
 }
 
 leg_share_timing() {

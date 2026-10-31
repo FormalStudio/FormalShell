@@ -18,7 +18,7 @@ gallery_log_path="$shot_dir/gallery.log"
 # --wallpaper it starts past that leg's last frame, the same rule menu_t0
 # draws.
 gallery_t0() {
-  if leg_on wallpaper; then echo 16; else echo 3; fi
+  cover_t0 3
 }
 
 leg_gallery_timing() {

@@ -35,7 +35,7 @@ lock_unlock_ms_path="$shot_dir/lock-unlock-ms.txt"
 # wallpaper frames land first, which puts a real matugen-recoloured gradient
 # behind the lock plate in the bargain.
 lock_t0() {
-  if leg_on wallpaper; then echo 16; else echo 5; fi
+  cover_t0 5
 }
 
 leg_lock_fixture() {

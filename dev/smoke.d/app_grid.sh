@@ -51,7 +51,7 @@ leg_app_grid_needs="convert wtype jq"
 # This leg's own clock: the launcher covers the whole output, so under
 # --wallpaper it starts after that leg's last frame, the rule menu_t0 draws.
 app_grid_t0() {
-  if leg_on wallpaper; then echo 16; else echo 3; fi
+  cover_t0 3
 }
 
 app_grid_dir="$iso_home/.local/share/applications"

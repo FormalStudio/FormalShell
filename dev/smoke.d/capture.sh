@@ -68,7 +68,7 @@ capture_rec_stopped_path="$shot_dir/capture-rec-stopped.json"
 # --wallpaper it starts past that leg's last frame, the same rule menu_t0
 # and lock_t0 draw.
 capture_t0() {
-  if leg_on wallpaper; then echo 16; else echo 5; fi
+  cover_t0 5
 }
 
 leg_capture_timing() {

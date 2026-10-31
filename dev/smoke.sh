@@ -78,6 +78,20 @@ leg_on() {
   [ "${!v:-false}" = true ]
 }
 
+# A leg photographing the bare desktop declares leg_<n>_desktop_until, the
+# second its last such frame is taken. A leg covering the whole output
+# starts at cover_t0 <its own start> [<seconds past the samplers>]: past
+# every sampler in the run, or its own start with none.
+cover_t0() {
+  local v n until=0
+  for v in $(compgen -v | grep '^leg_.*_desktop_until$'); do
+    n=${v#leg_}; n=${n%_desktop_until}
+    if leg_on "$n" && [ "${!v}" -gt "$until" ]; then until=${!v}; fi
+  done
+  [ "$until" -eq 0 ] || until=$((until + ${2:-0}))
+  echo $((until > $1 ? until : $1))
+}
+
 leg_arg() {
   local v="leg_${1}_arg"
   printf '%s' "${!v:-}"

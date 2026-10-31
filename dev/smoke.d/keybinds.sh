@@ -39,7 +39,7 @@ keybinds_menu_png="$shot_dir/keybinds-menu.png"
 # This leg's own clock: the launcher covers the whole output, so under
 # --wallpaper it starts after that leg's last frame.
 keybinds_t0() {
-  if leg_on wallpaper; then echo 16; else echo 4; fi
+  cover_t0 4
 }
 
 leg_keybinds_timing() {

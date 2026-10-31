@@ -50,4 +50,7 @@ Exported: `shot_dir`, `iso_home`, `shell_path`, `shell_log_path`, `*_bin`,
 `ipc`, `ipc_wrapper`, `write_script`, `leg_on <n>`,
 `host_notifications_owner_after`. Legs sharing a surface wait
 on the owner's marker (`picker_done_path`); one covering the whole output
-starts at its `<n>_t0`, past any desktop sampler (`--wallpaper` sets 16).
+starts at its `<n>_t0`, `cover_t0 <own start>`, past every desktop sampler in
+the run: a leg photographing the bare desktop declares
+`leg_<n>_desktop_until`, the second of its last such frame (`--wallpaper` 16,
+`--osd` 37).

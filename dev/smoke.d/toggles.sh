@@ -34,7 +34,7 @@ toggles_toggled_png="$shot_dir/toggles-toggled.png"
 # --wallpaper it starts after that leg's last frame, the same rule menu_t0
 # draws.
 toggles_t0() {
-  if leg_on wallpaper; then echo 16; else echo 4; fi
+  cover_t0 4
 }
 
 leg_toggles_timing() {

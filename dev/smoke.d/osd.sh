@@ -35,6 +35,8 @@
 # read against the same resting pose.
 leg_osd_flag="--osd"
 leg_osd_order=50
+# The brightness frame, the last of the desktop with the pill on it.
+leg_osd_desktop_until=37
 leg_osd_needs="wpctl convert jq"
 
 osd_manual_path="$shot_dir/osd-manual.png"

@@ -34,7 +34,7 @@ need_ffmpeg() { need_tool ffmpeg_bin ffmpeg ffmpeg; }
 # frame (t=14). The guard holds until this clock runs out either way, since the
 # fixture track is still playing.
 screensaver_t0() {
-  if leg_on wallpaper; then echo 16; else echo 4; fi
+  cover_t0 4
 }
 
 ss_pid_path="$shot_dir/ss-mpv.pid"

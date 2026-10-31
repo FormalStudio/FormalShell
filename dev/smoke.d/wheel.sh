@@ -106,7 +106,7 @@ leg_wheel_fixture() {
 # The grid covers the whole output, so under --wallpaper this starts past
 # that leg's own last frame, the same clock picker_t0 keeps.
 wheel_t0() {
-  if leg_on wallpaper; then echo 16; else echo 4; fi
+  cover_t0 4
 }
 
 leg_wheel_timing() {

@@ -31,7 +31,7 @@ leg_nightlight_fixture() {
 # under --wallpaper it starts after that leg's last frame rather than warming
 # the exact colours its dither assertions read back.
 nightlight_t0() {
-  if leg_on wallpaper; then echo 16; else echo 3; fi
+  cover_t0 3
 }
 
 leg_nightlight_timing() {

@@ -53,7 +53,7 @@ need_pkexec() {
 # The dialog covers the whole output, so under --wallpaper this starts after
 # that leg's last frame rather than sampling the desktop through a scrim.
 polkit_t0() {
-  if leg_on wallpaper; then echo 16; else echo 3; fi
+  cover_t0 3
 }
 
 # How many frames the open is photographed across, and at what fraction of

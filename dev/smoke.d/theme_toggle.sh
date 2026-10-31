@@ -31,7 +31,7 @@ theme_toggle_json="$iso_home/.local/state/formalshell/theme.json"
 # last frame at 14s: a toggle landing on the same second re-runs matugen for
 # the other mode and the border answers in that mode's primary instead.
 theme_toggle_t0() {
-  if leg_on wallpaper; then echo 18; else echo 4; fi
+  cover_t0 4 2
 }
 
 leg_theme_toggle_timing() {

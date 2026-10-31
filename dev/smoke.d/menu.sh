@@ -35,7 +35,7 @@ leg_menu_needs="jq wtype"
 # --wallpaper it starts after that leg's last frame (t=14) rather than
 # sampling the desktop through a scrim, the same rule lock_t0 draws.
 menu_t0() {
-  if leg_on wallpaper; then echo 16; else echo 3; fi
+  cover_t0 3
 }
 
 query_path="$shot_dir/query.json"
