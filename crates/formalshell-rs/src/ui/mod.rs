@@ -339,6 +339,46 @@ impl Ui {
     }
 }
 
+/// Where a viewport can end on whole rows: the bottom of every child of
+/// every column in `root` laid out at `width`, top down. A cell is one row,
+/// so a grouped card is never cut through.
+pub fn row_ends(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> Vec<f64> {
+    fn walk(node: &El, top: f64, width: f64, theme: &Theme, kit: &mut Kit, out: &mut Vec<f64>) {
+        let el::Kind::Column { gap, children } = &node.kind else { return };
+        let [ps, pt, pe, _] = node.pad;
+        let inner = (width - ps - pe).max(0.0);
+        let mut y = top + pt;
+        for (i, c) in children.iter().enumerate() {
+            if i > 0 {
+                y += gap;
+            }
+            let h = if let el::Kind::Space { along } = c.kind { along } else { measure(c, inner, theme, kit).1 };
+            walk(c, y, inner, theme, kit, out);
+            y += h;
+            // A column's first child heads the rest (a section's caption,
+            // a choice's label): no end strands it over nothing.
+            if i > 0 || children.len() == 1 {
+                out.push(y);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, 0.0, width, theme, kit, &mut out);
+    out
+}
+
+/// A body `content_h` tall shown in at most `cap`: all of it when it fits,
+/// else down to the last whole row of `ends` (`row_ends`) that does.
+pub fn fit_rows(ends: &[f64], content_h: f64, cap: f64) -> f64 {
+    if content_h <= cap {
+        return content_h;
+    }
+    match ends.iter().copied().filter(|&e| e <= cap && e > 0.0).fold(0.0, f64::max) {
+        0.0 => cap,
+        e => e,
+    }
+}
+
 /// An element's size at `width` without drawing it.
 pub fn measure(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
     let mut scene = Scene::clear(1, 1);

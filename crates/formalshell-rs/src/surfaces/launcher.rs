@@ -100,6 +100,9 @@ struct Layout {
     /// The list's inset under its last row, kept clear of rows while it
     /// scrolls so the body always ends on a whole one.
     foot: f64,
+    /// A held page's row ends (`ui::row_ends`), so a page taller than the
+    /// card rests on a whole row.
+    row_ends: Vec<f64>,
 }
 
 /// What input moves: the rows key, the field, the cursor, an armed row, and
@@ -3100,7 +3103,7 @@ impl Shown {
         let body = if m.mode == Mode::Input {
             0.0
         } else if m.on_panel() {
-            m.layout.content_h.min(cap)
+            ui::fit_rows(&m.layout.row_ends, m.layout.content_h, cap)
         } else if m.content_tall() {
             // The card hugs its list, never shorter than the opened state.
             let rest = s.xl + launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height) + s.xxl;
@@ -3151,7 +3154,9 @@ impl Shown {
         let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: None, hovered: None };
         p.width = p.module.width(&v);
         let Some(el) = self.panel_el(m, store, theme) else { return };
-        m.layout.content_h = ui::measure(&el, m.panel_body(theme).1, theme, kit).1;
+        let width = m.panel_body(theme).1;
+        m.layout.content_h = ui::measure(&el, width, theme, kit).1;
+        m.layout.row_ends = ui::row_ends(&el, width, theme, kit);
     }
 
     /// The body's stops, for the embedded panel's cursor.

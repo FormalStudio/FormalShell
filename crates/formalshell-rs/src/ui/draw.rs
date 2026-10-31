@@ -529,28 +529,94 @@ fn badge(cx: &mut Cx, rect: Rect, name: &str, path: &str) {
     cx.done(last);
 }
 
+fn stop(cx: &mut Cx, el: &El, inner: Rect) {
+    let (true, Some(key)) = (el.stop, &el.key) else { return };
+    let radius = stop_radius(cx, el, inner.height());
+    // A squares group's stop is the square the cursor is on, so the halo
+    // marks one option rather than the row.
+    let rect = match &el.kind {
+        Kind::Group { options, cursor_index, squares: true, .. } => {
+            let (gap, n) = (cx.theme.space.panel_gap, options.len().max(1));
+            let bw = ((inner.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
+            let x = inner.x0 + (bw + gap) * (*cursor_index).min(n - 1) as f64;
+            Rect::new(x, inner.y0, x + bw, inner.y1)
+        }
+        _ => inner,
+    };
+    cx.stop(Stop { key: key.clone(), rect: irect(rect), radius });
+}
+
+/// The stops of a subtree the clip culls, laid out as `paint_body` lays
+/// them, with nothing drawn.
+fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect) {
+    let [ps, pt, pe, pb] = el.pad;
+    let inner = Rect::new(rect.x0 + ps, rect.y0 + pt, rect.x1 - pe, rect.y1 - pb);
+    stop(cx, el, inner);
+    match &el.kind {
+        Kind::Column { gap, children } => {
+            let mut y = inner.y0;
+            for (i, c) in children.iter().enumerate() {
+                if i > 0 {
+                    y += gap;
+                }
+                if let Kind::Space { along } = c.kind {
+                    y += along;
+                    continue;
+                }
+                let (cw, ch) = measure(cx, c, inner.width());
+                let x = if c.centred { inner.x0 + (inner.width() - cw) / 2.0 } else { inner.x0 };
+                offscreen_stops(cx, c, Rect::new(x, y, x + cw, y + ch));
+                y += ch;
+            }
+        }
+        Kind::Row { gap, children } => {
+            let widths = row_widths(cx, children, inner.width(), *gap);
+            let mut x = inner.x0;
+            for (c, w) in children.iter().zip(widths) {
+                let (cw, ch) = measure(cx, c, w);
+                let cw = if c.width == Size::Fill { w } else { cw };
+                let y = if el.top { inner.y0 } else { inner.y0 + (inner.height() - ch) / 2.0 };
+                offscreen_stops(cx, c, Rect::new(x, y, x + cw, y + ch));
+                x += w + gap;
+            }
+        }
+        Kind::Grid { columns, gap, children } => {
+            let n = (*columns).max(1);
+            let cw = ((inner.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
+            let mut y = inner.y0;
+            for line in children.chunks(n) {
+                let lh = line.iter().map(|c| measure(cx, c, cw).1).fold(0.0, f64::max);
+                for (k, c) in line.iter().enumerate() {
+                    let x = inner.x0 + (cw + gap) * k as f64;
+                    let (w, h) = measure(cx, c, cw);
+                    offscreen_stops(cx, c, Rect::new(x, y, x + w, y + h));
+                }
+                y += lh + gap;
+            }
+        }
+        Kind::Cell { state, child, .. } => {
+            let (pad_x, _) = cell_pad(&cx.theme.space, state);
+            let content_w = (inner.width() - pad_x * 2.0).max(0.0);
+            let (cw, ch) = measure(cx, child, content_w);
+            let cw = if child.width == Size::Fill { content_w } else { cw };
+            let y = inner.y0 + (inner.height() - ch) / 2.0;
+            offscreen_stops(cx, child, Rect::new(inner.x0 + pad_x, y, inner.x0 + pad_x + cw, y + ch));
+        }
+        _ => {}
+    }
+}
+
 fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     let [ps, pt, pe, pb] = el.pad;
     let inner = Rect::new(rect.x0 + ps, rect.y0 + pt, rect.x1 - pe, rect.y1 - pb);
     if cx.clip.is_some_and(|c| !c.intersects(&irect(rect).union(&IRect::new(irect(rect).x - 4, irect(rect).y - 4, irect(rect).w + 8, irect(rect).h + 8)))) {
-        // Wholly outside the clip: its nodes go dark, and nothing is hit.
+        // Wholly outside the clip: its nodes go dark and nothing is hit,
+        // but its stops stay, so the keys can walk onto a row the
+        // viewport does not reach yet.
+        offscreen_stops(cx, el, rect);
         return;
     }
-    if el.stop && let Some(key) = &el.key {
-        let radius = stop_radius(cx, el, inner.height());
-        // A squares group's stop is the square the cursor is on, so the
-        // halo marks one option rather than the row.
-        let rect = match &el.kind {
-            Kind::Group { options, cursor_index, squares: true, .. } => {
-                let (gap, n) = (cx.theme.space.panel_gap, options.len().max(1));
-                let bw = ((inner.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
-                let x = inner.x0 + (bw + gap) * (*cursor_index).min(n - 1) as f64;
-                Rect::new(x, inner.y0, x + bw, inner.y1)
-            }
-            _ => inner,
-        };
-        cx.stop(Stop { key: key.clone(), rect: irect(rect), radius });
-    }
+    stop(cx, el, inner);
     let stop_key = el.stop.then(|| el.key.clone()).flatten();
     match &el.kind {
         Kind::Column { gap, children } => {

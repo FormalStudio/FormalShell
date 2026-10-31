@@ -1225,8 +1225,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   settings.json's sha256 unchanged, `menu status` reading the page held at
   each step, Escape back to the tiles and out to the root, the root's
   Settings row and `panel open info` landing in the card and `panel close`
-  closing it. Every page photographed, dark and `--light`, and each shot
-  read by the shared panel-language check off `menu status`'s `cardBox`.
+  closing it. Desktop, longer than the card, resting on a whole row with
+  real Downs still reaching its last control below it. Every page
+  photographed, dark and `--light`, and each shot read by the shared
+  panel-language check off `menu status`'s `cardBox`.
 - `share.sh` `--share`: the share route present (the copied text reaching
   LocalSend as a real file) and honestly absent with no binary on PATH.
 - `sidebar.sh` `--sidebar`: `layout: sidebar` from settings.json alone,

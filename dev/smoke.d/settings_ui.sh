@@ -12,6 +12,8 @@
 # resolved document. Backspace goes back to the tiles, and Down, Down,
 # Return, three Downs and Right set the Bar page's style to solid, read
 # off `configLoaded` and `bar paint`'s style, then reset over IPC.
+# Desktop runs past the card, which rests on a whole row: fourteen Downs
+# and a Left reach Bottom right below it and set it to screensaver.
 # settings.json's sha256 is the same at the end. Every page photographed.
 # The panels live in the launcher card, centred (Pond's settings window):
 # `menu status` reads open, `view` panel and the page's name at each step,
@@ -93,6 +95,11 @@ for page in desktop system; do
   $ipc call panel open "settings:\$page" > /dev/null 2>&1
   sleep 1.5
   shot \$page
+  if [ "\$page" = desktop ]; then
+    key Down Down Down Down Down Down Down Down Down Down Down Down Down Down Left
+    $ipc call settings get hotCorners.bottomRight > "\$d/get-below.json" 2>&1
+    $ipc call settings reset hotCorners.bottomRight > /dev/null 2>&1
+  fi
 done
 key Escape
 read_back escape-page
@@ -149,6 +156,9 @@ leg_settings_ui_assert() {
   settings_ui_jq "the resolved config is solid" dump-solid.json '.configLoaded.bar.style == "solid"'
   settings_ui_jq "the bar repainted solid" paint-solid.json '.[0].paint.style == "solid"'
   settings_ui_text "settings reset bar.style" reset-style.txt "ok"
+  # The Desktop page runs past the card, which rests on a whole row: the
+  # keys still walk onto its last control, below the viewport.
+  settings_ui_jq "Downs reach Desktop's last control below the card" get-below.json '.override == "screensaver"'
   settings_ui_jq "Escape on a page went back to the tiles" menu-escape-page.json '.isOpen == true and .panel == "settings"'
   settings_ui_jq "Escape on the tiles left the route" menu-escape-tiles.json '.isOpen == true and .level == null and .view != "panel"'
   settings_ui_jq "the root's Settings row opened the tiles" menu-root.json '.level == "settings" and .panel == "settings"'
