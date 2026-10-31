@@ -83,6 +83,7 @@ pub struct Status {
 static STATUS: Mutex<Option<Status>> = Mutex::new(None);
 
 pub fn status() -> Status {
+    take_started();
     let lost = LOST.load(Ordering::Relaxed);
     let mut s = STATUS.lock().unwrap().clone().unwrap_or(Status { asked: Backend::Auto, backend: "cpu", reason: None, device: None });
     if lost && s.backend == "gpu" {
@@ -92,25 +93,43 @@ pub fn status() -> Status {
     s
 }
 
-/// True while surfaces should draw on the GPU.
+/// True while surfaces should draw on the GPU. Takes the device over once
+/// the thread opening it is done, so surfaces drawn on the CPU before then
+/// move across on their next present.
 pub fn active() -> bool {
+    take_started();
     !LOST.load(Ordering::Relaxed) && GPU.with(|g| g.borrow().is_some())
 }
 
-fn with<T>(f: impl FnOnce(&mut Gpu) -> T) -> Option<T> {
-    GPU.with(|g| g.borrow_mut().as_mut().map(f))
+thread_local! {
+    static STARTING: RefCell<Option<Starting>> = const { RefCell::new(None) };
 }
 
-/// Picks the backend for this run, once, before any surface is made.
-pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
-    let tried = match asked {
-        Backend::Cpu => Err("render.backend is cpu".to_string()),
-        // Measured on g815 (2026-10-30), the Vulkan driver alone puts the
-        // shell at 141 MB of RSS against the 54 MB baseline, and three
-        // threads and ~230ms of cold start over it.
-        Backend::Auto => Err("auto draws on the CPU until the GPU path meets the performance baseline".to_string()),
-        Backend::Gpu => Gpu::new(conn, globals),
-    };
+/// The Wayland half, kept on the main thread while `gpu-start` opens the
+/// device.
+struct Starting {
+    asked: Backend,
+    wl: Wl,
+    wl_queue: EventQueue<Wl>,
+    opened: std::sync::mpsc::Receiver<Result<Device, String>>,
+}
+
+fn take_started() {
+    let done = STARTING.with(|s| {
+        let mut s = s.borrow_mut();
+        let opened = s.as_ref()?.opened.try_recv();
+        match opened {
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Ok(device) => s.take().map(|st| (st, device)),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => s.take().map(|st| (st, Err("the thread opening the GPU died".to_string()))),
+        }
+    });
+    let Some((st, device)) = done else { return };
+    let tried = device.and_then(|d| Gpu::assemble(d, st.wl, st.wl_queue));
+    settle(st.asked, tried);
+}
+
+fn settle(asked: Backend, tried: Result<Gpu, String>) {
     let status = match tried {
         Ok(gpu) => {
             let device = gpu.name.clone();
@@ -126,6 +145,38 @@ pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
         }
     };
     *STATUS.lock().unwrap() = Some(status);
+}
+
+fn with<T>(f: impl FnOnce(&mut Gpu) -> T) -> Option<T> {
+    GPU.with(|g| g.borrow_mut().as_mut().map(f))
+}
+
+/// Picks the backend for this run, once, before any surface is made. The
+/// compositor's render node is read here; the driver and device open on a
+/// thread of their own (NVIDIA's takes 0.75s on g815), and every surface
+/// draws on the CPU until they are up.
+pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
+    let started = match asked {
+        Backend::Cpu => Err("render.backend is cpu".to_string()),
+        // Measured on g815 (2026-10-30), the Vulkan driver alone puts the
+        // shell at 141 MB of RSS against the 54 MB baseline, and three
+        // threads and ~230ms of cold start over it.
+        Backend::Auto => Err("auto draws on the CPU until the GPU path meets the performance baseline".to_string()),
+        Backend::Gpu => wayland(conn, globals),
+    };
+    let (wl, wl_queue, node) = match started {
+        Ok(w) => w,
+        Err(reason) => return settle(asked, Err(reason)),
+    };
+    let (tx, opened) = std::sync::mpsc::channel();
+    let spawned = std::thread::Builder::new().name("gpu-start".into()).spawn(move || {
+        let _ = tx.send(Device::open(&node));
+    });
+    if let Err(e) = spawned {
+        return settle(asked, Err(format!("starting the GPU thread: {e}")));
+    }
+    *STATUS.lock().unwrap() = Some(Status { asked, backend: "cpu", reason: Some("the GPU is starting".into()), device: None });
+    STARTING.with(|s| *s.borrow_mut() = Some(Starting { asked, wl, wl_queue, opened }));
 }
 
 /// The linux-dmabuf objects, on a queue of their own so the protocol's
@@ -199,32 +250,52 @@ pub struct Gpu {
     wl: Wl,
 }
 
-impl Gpu {
-    fn new(conn: &Connection, globals: &GlobalList) -> Result<Self, String> {
-        let wl_queue = conn.new_event_queue::<Wl>();
-        let qh = wl_queue.handle();
-        let mut wl = Wl { dmabuf: DmabufState::new(globals, &qh), feedback: None, released: HashMap::new() };
-        let mut wl_queue = wl_queue;
-        if wl.dmabuf.version().unwrap_or(0) < 4 {
-            return Err("the compositor offers no linux-dmabuf v4".into());
+/// The compositor's dmabuf feedback and the render node it names.
+fn wayland(conn: &Connection, globals: &GlobalList) -> Result<(Wl, EventQueue<Wl>, Node), String> {
+    let wl_queue = conn.new_event_queue::<Wl>();
+    let qh = wl_queue.handle();
+    let mut wl = Wl { dmabuf: DmabufState::new(globals, &qh), feedback: None, released: HashMap::new() };
+    let mut wl_queue = wl_queue;
+    if wl.dmabuf.version().unwrap_or(0) < 4 {
+        return Err("the compositor offers no linux-dmabuf v4".into());
+    }
+    wl.dmabuf.get_default_feedback(&qh).map_err(|e| format!("linux-dmabuf feedback: {e}"))?;
+    for _ in 0..3 {
+        if wl.feedback.is_some() {
+            break;
         }
-        wl.dmabuf.get_default_feedback(&qh).map_err(|e| format!("linux-dmabuf feedback: {e}"))?;
-        for _ in 0..3 {
-            if wl.feedback.is_some() {
-                break;
-            }
-            wl_queue.roundtrip(&mut wl).map_err(|e| format!("linux-dmabuf roundtrip: {e}"))?;
-        }
-        let feedback = wl.feedback.as_ref().ok_or("the compositor sent no dmabuf feedback")?;
-        let linear = feedback.tranches().iter().any(|t| {
-            t.formats.iter().any(|&i| feedback.format_table().get(i as usize).is_some_and(|f| f.format == DRM_FORMAT_ABGR8888 && f.modifier == DRM_FORMAT_MOD_LINEAR))
-        });
-        if !linear {
-            return Err("the compositor takes no linear ABGR8888 dmabuf".into());
-        }
-        let node = render_node(feedback.main_device()).ok_or("the compositor's main device has no render node")?;
+        wl_queue.roundtrip(&mut wl).map_err(|e| format!("linux-dmabuf roundtrip: {e}"))?;
+    }
+    let feedback = wl.feedback.as_ref().ok_or("the compositor sent no dmabuf feedback")?;
+    let linear = feedback.tranches().iter().any(|t| {
+        t.formats.iter().any(|&i| feedback.format_table().get(i as usize).is_some_and(|f| f.format == DRM_FORMAT_ABGR8888 && f.modifier == DRM_FORMAT_MOD_LINEAR))
+    });
+    if !linear {
+        return Err("the compositor takes no linear ABGR8888 dmabuf".into());
+    }
+    let node = render_node(feedback.main_device()).ok_or("the compositor's main device has no render node")?;
+    Ok((wl, wl_queue, node))
+}
 
-        let adapter = adapter(&node)?;
+/// Everything Vulkan, opened off the main thread.
+struct Device {
+    name: String,
+    instance: ash::Instance,
+    physical: vk::PhysicalDevice,
+    raw: ash::Device,
+    family: u32,
+    fd_fns: ash::khr::external_memory_fd::Device,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: vello_hybrid::Renderer,
+    resources: vello_hybrid::Resources,
+    tile: wgpu::Texture,
+    tile_view: wgpu::TextureView,
+}
+
+impl Device {
+    fn open(node: &Node) -> Result<Self, String> {
+        let adapter = adapter(node)?;
         let info = adapter.get_info();
         let name = format!("{} on {}", info.name, node.path);
 
@@ -293,9 +364,16 @@ impl Gpu {
             view_formats: &[],
         });
         let tile_view = tile.create_view(&wgpu::TextureViewDescriptor::default());
+        Ok(Self { name, instance: instance_raw, physical, raw, family, fd_fns, device, queue, renderer, resources, tile, tile_view })
+    }
+}
+
+impl Gpu {
+    fn assemble(d: Device, wl: Wl, wl_queue: EventQueue<Wl>) -> Result<Self, String> {
+        let Device { name, instance, physical, raw, family, fd_fns, device, queue, renderer, resources, tile, tile_view } = d;
         let mut gpu = Self {
             name,
-            instance: instance_raw,
+            instance,
             physical,
             raw,
             family,

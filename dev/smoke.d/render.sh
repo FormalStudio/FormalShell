@@ -46,7 +46,7 @@ leg_render_drive() {
 turn() {
   local name=\$1 asked=\$2
   for _ in \$(seq 1 80); do
-    $ipc call debug dump 2>/dev/null | "$jq_bin" -e --arg a "\$asked" '.render.asked == \$a' > /dev/null 2>&1 && break
+    $ipc call debug dump 2>/dev/null | "$jq_bin" -e --arg a "\$asked" '.render.asked == \$a and .render.reason != "the GPU is starting"' > /dev/null 2>&1 && break
     sleep 0.25
   done
   sleep 2

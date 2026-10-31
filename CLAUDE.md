@@ -308,6 +308,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   then no commit in 5 s under a fullscreen foot window and
   none with the same window tiled over the whole output (`covered`), and
   the frames moving again once it goes to workspace 2.
+- `backend.sh` `--backend <gpu|cpu>`: pins `render.backend` (a
+  `settings_pin`) and rides any leg, so the budget legs read either path
+  whatever `auto` picks on the machine; asserts `debug dump`'s render block
+  draws on the asked backend once the device is up (it opens on a thread
+  of its own), or for gpu where none is usable, on the CPU with the reason.
 - `bar_adaptive.sh` `--bar-adaptive`: the wingpanel band reading its own
   paint off the wallpaper under it, four wallpapers in one session (a flat
   bright field, a flat dark one, a half-and-half field, and the dark one

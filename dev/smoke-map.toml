@@ -616,7 +616,11 @@ runs = ["--panel audio", "--panel calendar", "--panel weather", "--panel display
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/gpu.rs"]
-runs = ["--render", "--menu", "--dump"]
+runs = ["--render", "--menu", "--dump", "--backend gpu --menu"]
+
+[[rule]]
+paths = ["dev/smoke.d/backend.sh"]
+runs = ["--backend gpu --dump", "--backend cpu --dump"]
 
 [[rule]]
 paths = ["crates/fs-system/src/compositor/keyboard.rs", "crates/formalshell-rs/src/surfaces/bar/cells/keyboard_layout.rs"]

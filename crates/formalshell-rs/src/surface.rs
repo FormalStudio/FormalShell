@@ -739,6 +739,8 @@ impl<R: Role> Surface<R> {
         }
         if self.renderer.is_gpu() && !crate::gpu::active() {
             self.leave_gpu(scene);
+        } else if !self.renderer.is_gpu() && on_gpu(self.name) && crate::gpu::active() {
+            self.enter_gpu(scene);
         }
         // A scene resized ahead of the compositor's configure (the bar
         // moving edge) keeps its damage until the buffers match it.
@@ -995,6 +997,18 @@ impl<R: Role> Surface<R> {
 
     /// The GPU is gone: a CPU canvas of the same size and scale, and the
     /// whole scene drawn into it again.
+    /// A surface drawn on the CPU while the device was still opening.
+    fn enter_gpu(&mut self, scene: &mut Scene) {
+        let (w, h, scale) = (self.renderer.width(), self.renderer.height(), self.renderer.scale());
+        let Some(mut renderer) = Renderer::gpu(1, 1) else { return };
+        self.drop_buffers();
+        self.retired_dmabuf = None;
+        renderer.set_scale(scale);
+        renderer.resize(w, h);
+        self.renderer = renderer;
+        scene.touch(IRect::new(0, 0, scene.size.w, scene.size.h));
+    }
+
     fn leave_gpu(&mut self, scene: &mut Scene) {
         let (w, h, scale) = (self.renderer.width(), self.renderer.height(), self.renderer.scale());
         self.drop_buffers();
