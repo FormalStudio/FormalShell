@@ -84,7 +84,7 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     }
     let glyph = if connected { "bluetooth-connected" } else { "bluetooth" };
     let detail = (failed.is_none() && !status.is_empty()).then(|| status.clone());
-    let row = w::panel_row(s, glyph, label(d), detail, trailing).stop(key).cell_state(|c| c.open = connected);
+    let row = w::panel_row(s, glyph, label(d), detail, trailing).stop(key).current(connected);
     let row = if idle { row.on(format!("row:{}", d.address)) } else { row };
     match failed {
         Some(_) => w::column(0.0, vec![row, w::panel_text(s, w::caption(status).ink(Ink::Destructive))]),

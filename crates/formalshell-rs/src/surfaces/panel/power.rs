@@ -112,7 +112,7 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
         })
         .collect();
     let head = w::row(0.0, vec![w::label("Power profile").ink(Ink::Dim).fill(), w::label(NAMES[active])]).fill();
-    w::column(s.sm, vec![head, w::group(options, active, true).ring(ring).on("profile").stop("profile")])
+    w::column(s.sm, vec![head, w::group(options, active, true).squares().ring(ring).on("profile").stop("profile")])
 }
 
 pub struct Power {

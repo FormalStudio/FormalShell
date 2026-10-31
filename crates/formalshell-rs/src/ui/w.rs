@@ -170,7 +170,7 @@ pub fn slider(value: f64) -> El {
 /// A choice among several when `exclusive`, a set of
 /// actions when not.
 pub fn group(options: Vec<Opt>, index: usize, exclusive: bool) -> El {
-    El::new(Kind::Group { options, index, exclusive, cursor_index: index, wrap: false })
+    El::new(Kind::Group { options, index, exclusive, cursor_index: index, wrap: false, squares: false })
 }
 
 pub fn segmented(options: Vec<String>, index: usize) -> El {
@@ -370,16 +370,35 @@ pub fn panel_cell(s: &Space, child: El) -> El {
     cell(child).ghost().interactive().cell_state(|c| c.inset = Some((x, 0.0)))
 }
 
-/// §4's row: a `panelIcon` glyph, the name in `body` 500 with an optional
+/// Pond's icon chip: a `panelIcon` glyph centred in a 32 square
+/// of the `panel.chip` box, tinted `primary` while `on`.
+pub fn panel_chip(s: &Space, glyph: &str, on: bool) -> El {
+    panel_chip_ink(s, glyph, on, if on { Ink::Primary } else { Ink::Fg })
+}
+
+/// A chip whose glyph keeps an ink of its own: a critical notification's.
+pub fn panel_chip_ink(s: &Space, glyph: &str, on: bool, ink: Ink) -> El {
+    let side = s.panel_mark * 2.0;
+    let glyph = icon(glyph).size(Type::Heading).ink(ink);
+    cell(row(0.0, vec![spacer(), glyph, spacer()]).fill().height(side))
+        .cell_state(|c| {
+            c.glyph = true;
+            c.open = on;
+            c.inset = Some((0.0, 0.0));
+        })
+        .width(super::Size::Px(side))
+        .height(side)
+}
+
+/// §4's row: a glyph in its chip, the name in `body` 500 with an optional
 /// `caption` line under it, and at most one trailing value, mark or
-/// control. Rows abut; the list's current one takes `.cell_state(|c|
-/// c.open = true)`.
+/// control. Rows abut; the list's current one takes `.current(true)`.
 pub fn panel_row(s: &Space, glyph: &str, name: impl Into<String>, detail: Option<String>, trailing: Vec<El>) -> El {
     let mut parts = Vec::new();
     if !glyph.is_empty() {
-        parts.push(icon(glyph).size(Type::Heading).ink(Ink::Fg));
+        parts.push(panel_chip(s, glyph, false));
     }
-    let mut words = vec![label(name).elide()];
+    let mut words = vec![label(name).weight(Weight::Medium).elide()];
     if let Some(d) = detail.filter(|d| !d.is_empty()) {
         words.push(caption(d).elide());
     }
@@ -400,9 +419,55 @@ pub fn panel_heading(s: &Space, text: &str) -> El {
     text_el(text, Type::Caption, Weight::Semibold, false, Ink::Muted).pad(i, s.panel_section, i, 0.0)
 }
 
-/// A heading over its rows, the rows abutting.
+/// GNOME's boxed list in Pond's material: rows inside one `panel.group`
+/// box a hair in from its edge, a hairline between them on the text
+/// column, each row's text still on the card's text column.
+pub fn panel_group(s: &Space, rows: Vec<El>) -> El {
+    let pad = s.panel_row_inset / 2.0;
+    let x = text_inset(s) - pad;
+    let mut out: Vec<El> = Vec::with_capacity(rows.len() * 2);
+    for r in rows {
+        // A spacer between rows is a gap, never a hairline beside one.
+        let gap = |e: &El| matches!(e.kind, Kind::Space { .. });
+        if out.last().is_some_and(|l| !gap(l)) && !gap(&r) {
+            out.push(separator_inset(x));
+        }
+        out.push(regroup(r, x, pad));
+    }
+    cell(column(0.0, out).fill()).cell_state(|c| {
+        c.group = true;
+        c.inset = Some((pad, pad));
+    })
+}
+
+/// A row's own inset onto the group's column, `d` in from where it was;
+/// a row with a line under it (a Column) moves the line's text alike.
+fn regroup(r: El, x: f64, d: f64) -> El {
+    match r.kind {
+        Kind::Column { gap, children } => {
+            let children = children
+                .into_iter()
+                .map(|c| match c.kind {
+                    Kind::Cell { .. } => regroup(c, x, d),
+                    _ => {
+                        let [l, t, rt, b] = c.pad;
+                        c.pad((l - d).max(0.0), t, rt, b)
+                    }
+                })
+                .collect();
+            El { kind: Kind::Column { gap, children }, ..r }
+        }
+        _ => r.cell_state(|c| {
+            if let Some((_, y)) = c.inset {
+                c.inset = Some((x, y));
+            }
+        }),
+    }
+}
+
+/// A heading over its rows in one group.
 pub fn panel_section(s: &Space, title: &str, rows: Vec<El>) -> El {
-    column(s.panel_gap, vec![panel_heading(s, title), column(0.0, rows)])
+    column(s.panel_gap, vec![panel_heading(s, title), panel_group(s, rows)])
 }
 
 /// §7's empty or unavailable line: `body` in `muted`, centred in a row's

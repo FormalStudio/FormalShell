@@ -933,42 +933,47 @@
         },
         "switch.track": {
             "off": {
-                "fill": "black",
-                "fillAlpha": {
-                    "light": 0.08,
-                    "dark": 0.4
+                "fill": "transparent",
+                "radius": "pill",
+                "border": {
+                    "color": "border",
+                    "width": 1
                 },
-                "radius": 14,
-                "layers": [
-                    {
-                        "inset": true,
-                        "y": 1,
-                        "color": "black",
-                        "alpha": {
-                            "light": 0.1,
-                            "dark": 0.3
-                        }
-                    }
-                ],
                 "padding": 2
             },
             "on": {
-                "fill": "primary",
-                "fillAlpha": 1
+                "border": {
+                    "color": "primary",
+                    "alpha": 0.5,
+                    "width": 1
+                }
             }
         },
         "switch.knob": {
-            "fill": "secondary",
-            "radius": "pill",
-            "size": 24,
-            "layers": [
-                {
-                    "y": 2,
-                    "blur": 4,
-                    "color": "black",
-                    "alpha": 0.2
-                }
-            ]
+            "off": {
+                "fill": "muted",
+                "radius": "pill",
+                "size": 24,
+                "ink": [
+                    "mutedForeground",
+                    1
+                ],
+                "layers": [
+                    {
+                        "y": 2,
+                        "blur": 4,
+                        "color": "black",
+                        "alpha": 0.2
+                    }
+                ]
+            },
+            "on": {
+                "fill": "primary",
+                "ink": [
+                    "primaryForeground",
+                    1
+                ]
+            }
         },
         "track.groove": {
             "fill": "black",
@@ -1103,6 +1108,44 @@
         "hero": {
             "fill": "transparent",
             "radius": "sm"
+        },
+        "panel.group": {
+            "fill": "foreground",
+            "fillAlpha": {
+                "light": 0.03,
+                "dark": 0.04
+            },
+            "radius": "lg",
+            "border": {
+                "color": "foreground",
+                "alpha": {
+                    "light": 0.1,
+                    "dark": 0.08
+                },
+                "width": 1
+            }
+        },
+        "panel.chip": {
+            "rest": {
+                "fill": "foreground",
+                "fillAlpha": {
+                    "light": 0.06,
+                    "dark": 0.08
+                },
+                "radius": "md",
+                "ink": [
+                    "foreground",
+                    1
+                ]
+            },
+            "on": {
+                "fill": "primary",
+                "fillAlpha": 0.18,
+                "ink": [
+                    "primary",
+                    1
+                ]
+            }
         },
         "bar.cell": {
             "fill": "transparent"

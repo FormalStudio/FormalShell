@@ -68,7 +68,15 @@ impl Panel for Settings {
                     ],
                 )
                 .pad(s.lg, s.xl, s.lg, s.xl);
-                w::cell(face).height(tile_h).interactive().stop(format!("tile:{id}")).on(format!("tile:{id}"))
+                w::cell(face)
+                    .cell_state(|c| {
+                        c.group = true;
+                        c.inset = Some((0.0, 0.0));
+                    })
+                    .height(tile_h)
+                    .interactive()
+                    .stop(format!("tile:{id}"))
+                    .on(format!("tile:{id}"))
             })
             .collect();
         let gap = s.sm;
@@ -77,8 +85,22 @@ impl Panel for Settings {
             .iter()
             .map(|(id, glyph, tip)| {
                 let armed = self.armed == Some(*id);
-                w::cell(w::column(0.0, vec![w::icon(*glyph).size(Type::Title).centred()]))
-                    .cell_state(|c| c.destructive = armed)
+                let side = button_h - s.lg * 2.0;
+                let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(*glyph).size(Type::Title), w::spacer()]).fill().height(side))
+                    .cell_state(|c| {
+                        c.glyph = true;
+                        c.round = true;
+                        c.open = armed;
+                        c.inset = Some((0.0, 0.0));
+                    })
+                    .width(Size::Px(side))
+                    .height(side);
+                w::cell(w::row(0.0, vec![w::spacer(), chip, w::spacer()]).fill().height(button_h))
+                    .cell_state(|c| {
+                        c.group = true;
+                        c.open = armed;
+                        c.inset = Some((0.0, 0.0));
+                    })
                     .height(button_h)
                     .interactive()
                     .tip(*tip)

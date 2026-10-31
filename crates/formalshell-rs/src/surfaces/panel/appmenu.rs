@@ -130,7 +130,7 @@ impl Panel for AppMenu {
                 let title = if win.title.is_empty() { &win.app_id } else { &win.title };
                 let trailing = if current { vec![w::icon("circle-check").ink(Ink::Primary)] } else { Vec::new() };
                 w::panel_row(s, "", title, None, trailing)
-                    .cell_state(|c| c.open = current)
+                    .current(current)
                     .stop(format!("window:{i}"))
                     .on(format!("window:{i}"))
             })

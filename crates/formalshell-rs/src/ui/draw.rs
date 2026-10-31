@@ -308,7 +308,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             let (pad_x, pad_y) = cell_pad(&s, state);
             let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            let h = if state.card || state.tile { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
+            let h = if state.card || state.tile || state.group || state.glyph { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
             (cw + pad_x * 2.0, h)
         }
         Kind::Button { text, icon, square, .. } => {
@@ -320,6 +320,10 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
         }
         Kind::Switch { .. } => (switch_track(cx.theme).0, s.control_height),
         Kind::Track { .. } => (inner, s.track_thickness),
+        Kind::Group { options, squares: true, .. } => {
+            let n = options.len() as f64;
+            (group_natural(cx, options) * n + s.panel_gap * (n - 1.0).max(0.0), s.panel_row)
+        }
         Kind::Group { options, wrap, .. } => {
             let widest = group_natural(cx, options);
             let rows = if *wrap { group_grid(widest, options.len(), inner, s.xs).0 } else { 1 };
@@ -683,7 +687,8 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         }
         Kind::Switch { checked, enabled } => switch(cx, el, inner, *checked, *enabled, path, stop_key),
         Kind::Track { value, notch, interactive } => track(cx, el, inner, *value, *notch, *interactive, path, stop_key),
-        Kind::Group { options, index, exclusive, cursor_index, wrap } => {
+        Kind::Group { options, index, cursor_index, squares: true, .. } => squares(cx, el, inner, options, *index, *cursor_index, path, stop_key),
+        Kind::Group { options, index, exclusive, cursor_index, wrap, .. } => {
             group(cx, el, inner, options, *index, *exclusive, *cursor_index, *wrap, path, stop_key)
         }
         Kind::Segmented { options, index } => segmented(cx, el, inner, options, *index, path, stop_key),
@@ -834,6 +839,12 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let mut b = if state.hero {
         t.box_style("hero", None)
+    } else if state.group && state.open {
+        BoxStyle { radius: t.box_style("panel.group", None).radius, ..t.box_style("panel.chip", Some("on")) }
+    } else if state.group {
+        t.box_style("panel.group", None)
+    } else if state.glyph {
+        t.box_style("panel.chip", Some(if state.open { "on" } else { "rest" }))
     } else if state.card {
         t.box_style("card", None)
     } else if state.token {
@@ -858,7 +869,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
     let ri = irect(r);
-    let radius = if state.small { t.radii.sm } else { t.box_radius(&b, ri.h as f64) };
+    let radius = if state.round { ri.w.min(ri.h) as f64 / 2.0 } else if state.small { t.radii.sm } else { t.box_radius(&b, ri.h as f64) };
     let fill = cx.color(&format!("{path}.fill"), b.fill);
     let border = b.border.clone().map(|l| Line { color: cx.color(&format!("{path}.border"), l.color), width: l.width });
     let b = BoxStyle { fill, border, ..b };
@@ -1006,26 +1017,39 @@ fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &st
     let (_, ring) = cx.cursor(stop.as_deref());
     if ring {
         track = t.with_cursor(track, true, !cx.halo_owned());
-    } else {
-        let cursor = t.box_style("cursor", None).border.map_or(Rgba::TRANSPARENT, |l| l.color);
-        track.border = Some(Line { color: cursor, width: 0.0 });
     }
     let fill = cx.color(&format!("{path}.fill"), track.fill);
     let track = BoxStyle { fill, ..track };
-    let knob = t.box_style("switch.knob", None);
+    let knob = t.box_style("switch.knob", Some(if checked { "on" } else { "off" }));
     let tr = Rect::new(r.x0, r.y0 + (r.height() - track_h) / 2.0, r.x0 + track_w, r.y0 + (r.height() + track_h) / 2.0);
     let size = t.metric("switch.knob", "size");
-    let target = if checked { track_w - size - inset } else { inset };
-    let kx = cx.tween(&format!("{path}.knob"), target, Clock::SpatialFast);
+    let (rest, travel) = (inset, track_w - size - inset * 2.0);
+    let kx = cx.tween(&format!("{path}.knob"), if checked { rest + travel } else { rest }, Clock::SpatialFast);
+    let along = if travel > 0.0 { ((kx - rest) / travel).clamp(0.0, 1.0) } else { 0.0 };
     let kr = IRect::new((r.x0 + kx).round() as i32, (tr.y0 + inset).round() as i32, size.round() as i32, size.round() as i32);
     let tri = irect(tr);
     let tr_radius = t.box_radius(&track, tri.h as f64);
     let kn_radius = t.box_radius(&knob, size);
     // A disabled switch dims the way a button does.
     let alpha = if enabled { cx.alpha } else { cx.alpha * 0.5 };
+    // Pond's toggle: the empty track carries an off dash where the knob
+    // rests off and an on bar where it rests on, and the knob's own bar
+    // turns from the one to the other as it travels.
+    let mark = track.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
+    let unit = size / 24.0;
+    let slot = |cx: f64, w: f64, h: f64| IRect::new((cx - w / 2.0).round() as i32, (tr.y0 + track_h / 2.0 - h / 2.0).round() as i32, w.round() as i32, h.round() as i32);
+    let off_slot = slot(tr.x0 + rest + size / 2.0, 13.0 * unit, 5.0 * unit);
+    let on_slot = slot(tr.x0 + rest + travel + size / 2.0, 5.0 * unit, 13.0 * unit);
+    let (bw, bh) = (12.0 + (4.0 - 12.0) * along, 4.0 + (12.0 - 4.0) * along);
+    let bar = slot(r.x0 + kx + size / 2.0, bw * unit, bh * unit);
     let mut p = cx.painter(path);
     boxes::paint(&mut p, tri, &track, tr_radius, alpha, 0.0);
+    for s in [off_slot, on_slot] {
+        let outline = BoxStyle { fill: Rgba::TRANSPARENT, border: Some(Line { color: mark, width: 1.0 }), casts: Vec::new(), ..track.clone() };
+        boxes::paint(&mut p, s, &outline, s.w.min(s.h) as f64 / 2.0, alpha * 0.6, 0.0);
+    }
     boxes::paint(&mut p, kr, &knob, kn_radius, alpha, 0.0);
+    p.rect(bar, knob.ink.with_alpha(knob.ink.a * alpha), (bar.w.min(bar.h) as f32) / 2.0);
     let last = p.last();
     p.finish();
     cx.done(last);
@@ -1127,6 +1151,32 @@ fn group(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize
         let child = El::new(Kind::Button { variant, text: o.label.clone(), icon: o.icon.clone(), enabled: o.enabled, square: false });
         let child = El { on: el.on.clone(), ..child };
         button(cx, &child, b, variant, &o.label, &o.icon, o.enabled, false, &format!("{path}/{i}"), Some(radius), stop.clone(), Some((i, on && i == cursor_index)));
+    }
+}
+
+/// The squares group: each option a `panel.chip` box, the chosen one `on`,
+/// with a ghost button over it for the glyph, the hover and the ring.
+#[allow(clippy::too_many_arguments)]
+fn squares(cx: &mut Cx, el: &El, r: Rect, options: &[super::el::Opt], index: usize, cursor_index: usize, path: &str, stop: Option<String>) {
+    let t = cx.theme;
+    let gap = t.space.panel_gap;
+    let n = options.len().max(1);
+    let bw = ((r.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
+    let (on, _) = cx.cursor(stop.as_deref());
+    for (i, o) in options.iter().enumerate() {
+        let x = r.x0 + (bw + gap) * i as f64;
+        let b = Rect::new(x, r.y0, x + bw, r.y1);
+        let chip = t.box_style("panel.chip", Some(if i == index { "on" } else { "rest" }));
+        let radius = t.box_radius(&chip, b.height());
+        let alpha = if o.enabled { cx.alpha } else { cx.alpha * 0.5 };
+        let mut p = cx.painter(&format!("{path}/{i}.chip"));
+        boxes::paint(&mut p, irect(b), &chip, radius, alpha, 0.0);
+        let last = p.last();
+        p.finish();
+        cx.done(last);
+        let child = El::new(Kind::Button { variant: Variant::Ghost, text: o.label.clone(), icon: o.icon.clone(), enabled: o.enabled, square: false });
+        let child = El { on: el.on.clone(), ..child };
+        button(cx, &child, b, Variant::Ghost, &o.label, &o.icon, o.enabled, false, &format!("{path}/{i}"), Some(radius), stop.clone(), Some((i, on && i == cursor_index)));
     }
 }
 

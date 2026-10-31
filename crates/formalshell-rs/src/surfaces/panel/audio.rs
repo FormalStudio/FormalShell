@@ -74,7 +74,7 @@ fn by_key<'a>(l: &'a Lists, key: &str) -> Option<(&'static str, &'a Row)> {
 
 fn device_row(id_key: String, glyph: &str, r: &Row, selected: bool, s: &fs_theme::tokens::Space) -> El {
     let trailing = if selected { vec![w::icon("circle-check").ink(Ink::Primary)] } else { Vec::new() };
-    w::panel_row(s, glyph, &r.label, None, trailing).cell_state(|c| c.open = selected).stop(id_key.clone()).on(id_key)
+    w::panel_row(s, glyph, &r.label, None, trailing).current(selected).stop(id_key.clone()).on(id_key)
 }
 
 /// A label, a percent and a mute switch over a track: the input master

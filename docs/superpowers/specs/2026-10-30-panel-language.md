@@ -63,7 +63,13 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
 
 - `panelRow` tall, `lg` radius, inset `panelRowInset` from the card's
   sides, so the row fill reaches 12 past the text column.
-- Leading glyph `panelIcon` at the row's 12, text `panelGap` after it.
+- Rows live in a group (Pond's inset row card, GNOME's boxed list): one
+  `panel.group` box (the glass fill and outline, `foreground` at 0.04 and
+  0.08 dark, 0.03 and 0.1 light, `lg` radius) a hair in from the body's
+  edge, a hairline between its rows on the text column.
+- Leading glyph `panelIcon` in a 32 square `panel.chip` (`foreground` at
+  0.08, `md` radius), the chip `primary` at 0.18 with a `primary` glyph
+  on the row a list is on now. Text `panelGap` after the chip.
   Primary text `body` 500, a secondary line `caption` in `muted`. One line
   each; long text elides, the marquee only where it already runs.
 - Trailing, right-aligned at the text column's end, exactly one of: a
@@ -74,8 +80,11 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
   profile) carries the `ghostOpen` soft fill and its trailing action
   (Disconnect) or a filled check circle. `selected` is never used for a
   list's current row.
-- No dividers between rows. Information's numbered list is the one
-  exception: hairlines between its facts, inset to the text column.
+- Hairlines only inside a group. Information's numbered list stands
+  outside one, with hairlines between its facts and Manual as one
+  outlined `panel.group` card under them.
+- Pond's tiles (Settings) are `panel.group` boxes too; its session
+  buttons a round `panel.chip` inside one, the armed one `primary`.
 
 ## 5. Sections
 
@@ -89,9 +98,13 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
 ## 6. Controls
 
 - Toggle: Pond's pill, 52 x 28 (on the grid), a round knob 24 with 2 in
-  inset, travelling on `effects`. Off: `border` outline, no fill. On:
-  `primary` fill, the knob in `primaryForeground`. One per header at
-  most; in a row it sits trailing.
+  inset, travelling on `spatialFast`. The track is never filled: a
+  `border` outline, `primary` at 0.5 when on, carrying an outlined dash
+  slot where the knob rests off and an upright slot where it rests on.
+  The knob is `muted` off and `primary` on, and carries a bar in its own
+  ink that turns from the dash to the upright as it travels. GNOME's
+  colours stand in for Pond's red and green. One per header at most; in
+  a row it sits trailing.
 - Slider: a `panelRowCompact` control, the track 12 tall at `md`
   radius in `muted`, the fill in `primary`, a knob 24 round in
   `primary` with a `border` ring. The value sits trailing in `mono`, not

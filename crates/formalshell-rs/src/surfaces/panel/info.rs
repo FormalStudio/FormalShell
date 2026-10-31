@@ -97,7 +97,11 @@ impl Panel for Info {
             let line = w::row(s.xl, vec![w::ordinal(i + 1), w::label(label).ink(Ink::Dim).width(Size::Px(s.huge * 2.0)), value]);
             rows.push(line.fill().height(s.huge + s.lg));
         }
-        let manual = w::cell(w::row(s.md, vec![w::icon("book-open"), w::label("Manual").fill()]).fill().height(s.huge))
+        let manual = w::cell(w::row(s.md, vec![w::icon("book-open"), w::label("Manual").weight(Weight::Medium).fill()]).fill().height(s.huge))
+            .cell_state(|c| {
+                c.group = true;
+                c.inset = Some((s.lg, 0.0));
+            })
             .interactive()
             .stop("manual")
             .on("manual");

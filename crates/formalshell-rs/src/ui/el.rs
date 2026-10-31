@@ -131,6 +131,14 @@ pub struct CellState {
     /// The `ghostOpen` soft fill: the row a list is on now (the connected
     /// network), quieter than `selected`.
     pub open: bool,
+    /// A panel's inset group of rows, in the `panel.group` box, as tall as
+    /// its rows.
+    pub group: bool,
+    /// A row's icon chip, in the `panel.chip` box, its `on` state with
+    /// `open`.
+    pub glyph: bool,
+    /// Drawn round whatever its role's radius: Pond's session chips.
+    pub round: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -258,7 +266,7 @@ pub enum Kind {
     Switch { checked: bool, enabled: bool },
     Track { value: f64, notch: Option<f64>, interactive: bool },
     /// `wrap`: rows of equal buttons when every whole label cannot fit one.
-    Group { options: Vec<Opt>, index: usize, exclusive: bool, cursor_index: usize, wrap: bool },
+    Group { options: Vec<Opt>, index: usize, exclusive: bool, cursor_index: usize, wrap: bool, squares: bool },
     Segmented { options: Vec<String>, index: usize },
     /// `caret`: the caret and the selection's other end as char counts
     /// into `text`; none puts the caret at its end.
@@ -533,6 +541,15 @@ impl El {
         self
     }
 
+    /// §6's segmented choice: each option its own `panel.chip` square,
+    /// `panelRow` tall and `panelGap` apart, with no trough round them.
+    pub fn squares(mut self) -> Self {
+        if let Kind::Group { squares, .. } = &mut self.kind {
+            *squares = true;
+        }
+        self
+    }
+
     /// A group breaks into rows rather than cut a label.
     pub fn wrap(mut self) -> Self {
         if let Kind::Group { wrap, .. } = &mut self.kind {
@@ -568,6 +585,28 @@ impl El {
 
     pub fn active(self, on: bool) -> Self {
         self.cell_state(|s| s.active = on)
+    }
+
+    /// The row a list is on now: the `ghostOpen` fill, and its leading
+    /// icon chip tinted.
+    pub fn current(mut self, on: bool) -> Self {
+        if let Kind::Cell { state, child, .. } = &mut self.kind {
+            state.open = on;
+            if let Kind::Row { children, .. } = &mut child.kind
+                && let Some(Kind::Cell { state, child, .. }) = children.first_mut().map(|c| &mut c.kind)
+                && state.glyph
+            {
+                state.open = on;
+                if let Kind::Row { children, .. } = &mut child.kind {
+                    for c in children {
+                        if let Kind::Icon { ink, .. } = &mut c.kind {
+                            *ink = if on { Ink::Primary } else { Ink::Fg };
+                        }
+                    }
+                }
+            }
+        }
+        self
     }
 
     pub fn interactive(mut self) -> Self {

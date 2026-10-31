@@ -65,8 +65,10 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
         let d = s.sm;
         head.push(El::new(Kind::Swatch { color: v.theme.colors.get("primary"), w: d, h: d, radius: d / 2.0, border: false }));
     }
-    let mark = w::icon(if critical { "triangle-alert" } else { "bell" }).ink(if critical { Ink::Destructive } else { Ink::Muted });
-    head.push(if e.source == "iphone" { mark.badge("smartphone") } else { mark });
+    let mut chip = if critical { w::panel_chip_ink(s, "triangle-alert", false, Ink::Destructive) } else { w::panel_chip(s, "bell", false) };
+    if e.source == "iphone" {
+        chip = chip.badge("smartphone");
+    }
     head.push(w::section_label(s, &e.app_name, None, false));
     head.push(w::caption(meta).mono().fill());
     head.push(w::icon_button("x").tip("Dismiss").on(format!("dismiss:{key}")));
@@ -83,7 +85,8 @@ fn row(v: &View, g: &Group, unread: bool, now: i64) -> El {
             .collect();
         parts.push(w::row(s.sm, buttons));
     }
-    w::panel_cell(s, w::column(s.row_gap, parts)).on(format!("row:{key}")).stop(key)
+    let words = w::column(s.row_gap, parts).fill();
+    w::panel_cell(s, w::row(s.panel_gap, vec![w::column(0.0, vec![chip]), words]).fill().pad(0.0, s.md, 0.0, s.md)).on(format!("row:{key}")).stop(key)
 }
 
 /// Pending oldest first, seen newest first, each grouped.
@@ -157,23 +160,14 @@ impl Panel for Center {
         if any_folded {
             let clear = w::button("Clear").variant(Variant::Outline).on("activity-clear").stop("activity-clear");
             let head = w::row(s.panel_gap, vec![w::panel_heading(s, "Activity").fill(), w::column(0.0, vec![clear]).pad(0.0, s.panel_section, w::text_inset(s), 0.0)]).fill();
-            let mut col = vec![head];
-            col.extend(folded.into_iter().map(|r| inset(s, r)));
-            out.push(w::column(s.panel_gap, col));
+            out.push(w::column(s.panel_gap, vec![head, w::panel_group(s, folded.into_iter().map(|r| inset(s, r)).collect())]));
         }
         if pending.is_empty() && seen.is_empty() && !any_folded {
             out.push(w::panel_empty(s, "No notifications"));
             return w::column(0.0, out);
         }
         let mut section = |title: &str, rows: &[Group], unread: bool| {
-            let mut col = vec![w::panel_heading(s, title)];
-            for (i, g) in rows.iter().enumerate() {
-                if i > 0 {
-                    col.push(w::space(s.panel_gap));
-                }
-                col.push(row(v, g, unread, now));
-            }
-            out.push(w::column(s.panel_gap, col));
+            out.push(w::panel_section(s, title, rows.iter().map(|g| row(v, g, unread, now)).collect()));
         };
         if !pending.is_empty() {
             section("Pending", &pending, true);

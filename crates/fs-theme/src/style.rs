@@ -22,7 +22,7 @@ use crate::tokens::{self, Easing, Motion};
 /// carries one paint per answer `bar.style` and its wallpaper reading give,
 /// the frame the same (its band is a stretch of the ring once
 /// `frame.thickness` is set), and an open cell on a band fills.
-pub const ROLES: [(&str, &[&str]); 38] = [
+pub const ROLES: [(&str, &[&str]); 40] = [
     ("bar", BAND_PAINTS),
     ("frame", BAND_PAINTS),
     ("card", &["rest", "opaque", "dialog"]),
@@ -39,7 +39,7 @@ pub const ROLES: [(&str, &[&str]); 38] = [
     ("input", &["rest", "focus", "error"]),
     ("input.selection", &[]),
     ("switch.track", &["off", "on"]),
-    ("switch.knob", &[]),
+    ("switch.knob", &["off", "on"]),
     ("track.groove", &[]),
     ("track.fill", &[]),
     ("track.notch", &[]),
@@ -47,6 +47,8 @@ pub const ROLES: [(&str, &[&str]); 38] = [
     ("segmented.chip", &[]),
     ("cursor", &[]),
     ("hero", &[]),
+    ("panel.group", &[]),
+    ("panel.chip", &["rest", "on"]),
     ("bar.cell", &[]),
     ("backdrop.grid", &[]),
     ("backdrop.shards", &[]),
@@ -1209,9 +1211,9 @@ pub(crate) mod tests {
         assert_eq!(ghost.border, None);
         assert_eq!(ghost.radius, Radius::Px(9.0));
 
-        let on = r(m, "switch.track", Some("on"), "dark");
+        let on = r(m, "switch.knob", Some("on"), "dark");
         assert_eq!(on.fill, "role:primary");
-        assert_eq!(on.radius, Radius::Px(14.0));
+        assert_eq!(on.radius, Radius::Pill);
     }
 
     #[test]
