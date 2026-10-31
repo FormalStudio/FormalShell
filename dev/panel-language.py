@@ -19,6 +19,10 @@ failure exiting 1:
   (an empty line, a caption) has them inside the last row's band.
 - one inset level: no two box borders standing side by side down the text
   column's left edge, which is what a box inside a group draws.
+- even insets: the room from the card's left edge to its first ink equals
+  the room after its last ink, and on a headerless card (a strip of chips)
+  the room above equals the room below, within 1px; a header card's is
+  read when its body closes on a box (words end inside a row's band).
 
 Ink is anything off the card's fill, the fill being the commonest colour
 down each gutter, taken per side so a rim leaning one way does not count. The pointer stays off the card in these
@@ -158,5 +162,29 @@ if nested:
     say("one inset level", False, f"box edges {p[0] - x0}px and {q[0] - x0}px in, side by side from y+{max(p[1], q[1]) - y0}")
 else:
     say("one inset level", True, f"{len(borders)} box edge(s) down the column")
+
+
+# Even insets: the ink's own extent inside the card, the border and the
+# corners left out.
+def ink_in(x, y, side):
+    return d(px[x, y], fills[side]) > INK
+
+
+ys = range(y0 + RADIUS, y1 - RADIUS)
+lead = next((x - x0 for x in range(x0 + 3, x1 - 2) if any(ink_in(x, y, "left") for y in ys)), None)
+trail = next((x1 - x for x in range(x1 - 3, x0 + 2, -1) if any(ink_in(x, y, "right") for y in ys)), None)
+if lead is None or trail is None:
+    say("even insets", True, "an empty card")
+else:
+    say("even insets", abs(lead - trail) <= 1, f"{lead}px before the first ink, {trail}px after the last")
+    xs = range(x0 + RADIUS, x1 - RADIUS)
+    # A header's top is its title's side: a control on the right of the
+    # row stands taller than the words and is centred on the same line.
+    head_xs = range(x0 + RADIUS, (x0 + x1) // 2) if header else xs
+    top = next((y - y0 for y in range(y0 + 3, y1 - 2) if any(d(px[x, y], fill) > INK for x in head_xs)), None)
+    bottom = next((y1 - y for y in range(y1 - 3, y0 + 2, -1) if any(d(px[x, y], fill) > INK for x in xs)), None)
+    closing = low is not None and low[1] >= len(xs) // 2
+    if top is not None and (not header or closing):
+        say("even insets top/bottom", abs(top - bottom) <= 1, f"{top}px above the first ink, {bottom}px under the last")
 
 sys.exit(1 if failed else 0)

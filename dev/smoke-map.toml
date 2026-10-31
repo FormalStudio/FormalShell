@@ -612,7 +612,7 @@ runs = ["--dump", "--render"]
 
 [[rule]]
 paths = ["dev/panel-language.py"]
-runs = ["--panel audio", "--panel calendar", "--panel weather", "--panel display", "--panel trayoverflow", "--settings-ui", "--settings-ui --light"]
+runs = ["--panel audio", "--panel calendar", "--panel weather", "--panel display", "--panel trayoverflow", "--settings-ui", "--settings-ui --light", "--tray-overflow", "--tray-overflow --sidebar"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/gpu.rs"]

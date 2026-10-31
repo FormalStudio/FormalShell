@@ -463,7 +463,7 @@ impl Host {
         let v = self.view(store, theme);
         let vertical = self.place.edge.is_vertical();
         let p = &self.place;
-        let width = self.module.width(&v);
+        let width = super::card_width(self.module.as_ref(), &v, kit);
         let body = self.module.body(&v);
         let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
         let content_h = ui::measure(&body, content_w, theme, kit).1;

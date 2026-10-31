@@ -118,6 +118,12 @@ pub trait Panel {
     fn width(&self, v: &View) -> f64 {
         v.theme.space.popup_width_default
     }
+    /// Whether the card is its body's own width (a strip of chips) rather
+    /// than `width`; see [`card_width`]. Only the body's root is made to
+    /// hug, so everything under it has to hug or carry a fixed width.
+    fn fits(&self, _v: &View) -> bool {
+        false
+    }
     /// Whether the card takes the keyboard. One that does not (a preview a
     /// pointer opened) takes input over its own rect alone, so whatever it
     /// hangs off keeps the pointer around it.
@@ -209,6 +215,19 @@ pub trait Panel {
 }
 
 pub use fs_chrome::bar::panels::{PANELS, known, launcher_route};
+
+/// The card's width wherever it is drawn. A card that fits its content is
+/// the body's natural width plus the rows' inset on either side, the same
+/// inset its body sits at, so the room after the last chip is the room
+/// before the first.
+pub fn card_width(module: &dyn Panel, v: &View, kit: &mut crate::surfaces::bar::cell::Kit) -> f64 {
+    if !module.fits(v) {
+        return module.width(v);
+    }
+    let inset = v.theme.space.panel_row_inset;
+    let natural = crate::ui::measure(&module.body(v).hug(), v.output.0.max(1.0), v.theme, kit).0;
+    natural + inset * 2.0
+}
 
 /// A panel card's frame round its body, one set of numbers wherever the
 /// card is drawn (the panel host, a page the launcher holds;

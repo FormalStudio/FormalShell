@@ -3152,7 +3152,7 @@ impl Shown {
     fn measure_panel(&self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit) {
         let Some(p) = m.panel.as_mut() else { return };
         let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: None, hovered: None };
-        p.width = p.module.width(&v);
+        p.width = crate::surfaces::panel::card_width(p.module.as_ref(), &v, kit);
         let Some(el) = self.panel_el(m, store, theme) else { return };
         let width = m.panel_body(theme).1;
         m.layout.content_h = ui::measure(&el, width, theme, kit).1;

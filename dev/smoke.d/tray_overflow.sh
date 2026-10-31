@@ -51,6 +51,7 @@ tray_overflow_open_path="$shot_dir/tray-overflow-open.json"
 tray_overflow_layers_path="$shot_dir/tray-overflow-layers.json"
 tray_overflow_strip_path="$shot_dir/tray-overflow-strip.png"
 tray_overflow_bar_path="$shot_dir/tray-overflow-bar.png"
+tray_overflow_bar_dump_path="$shot_dir/tray-overflow-bar-dump.json"
 tray_overflow_collapsed_path="$shot_dir/tray-overflow-collapsed.png"
 tray_overflow_expanded_path="$shot_dir/tray-overflow-expanded.png"
 tray_overflow_menu_reply_path="$shot_dir/tray-overflow-menu-reply.txt"
@@ -150,6 +151,7 @@ sleep 1
 $ipc call panel toggle trayoverflow > /dev/null 2>&1
 sleep 2
 $ipc call tray status > "$tray_overflow_open_path" 2>&1
+$ipc call debug dump > "$tray_overflow_bar_dump_path" 2>&1
 "$hyprctl_bin" -j layers > "$tray_overflow_layers_path" 2>&1
 "$grim_bin" "$tray_overflow_bar_path" > /dev/null 2>&1
 sleep 1
@@ -217,6 +219,10 @@ leg_tray_overflow_assert() {
     fail "no second-bar screenshot produced"
   fi
   echo "SMOKE_TRAY_OVERFLOW_BAR $tray_overflow_bar_path"
+  # The second bar is a headerless panel: the shared panel-language check,
+  # its chips' room even on every side.
+  panel_language_assert trayoverflow "$tray_overflow_bar_path" "$("$jq_bin" -c '.panel.rest' "$tray_overflow_bar_dump_path")" no "$tray_overflow_bar_dump_path" rowInset
+  panel_language_verdict
   # An item's own menu belongs to the bar its cell is in, so opening one
   # leaves that bar where it was. It used to take the bar down with it, which
   # is the gesture cancelling itself (owner, 2026-08-28: "right clicking a
