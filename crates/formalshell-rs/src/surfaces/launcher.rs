@@ -2963,6 +2963,8 @@ pub struct Shown {
     top_node: NodeId,
     /// The card size the content was last laid out for.
     laid_for: (f64, f64),
+    /// The model's view (rows key, cursor, actions column) it was laid out for.
+    laid_view: (String, String, bool),
     /// The cursor's fill and ring, one for the whole body, painted between
     /// `sel_anchor` and the body's own nodes so the cells draw over it.
     sel_anchor: NodeId,
@@ -3017,6 +3019,7 @@ impl Shown {
             overlays: Vec::new(),
             top_node: top,
             laid_for: (0.0, 0.0),
+            laid_view: Default::default(),
             morph: (Animated::new(theme.space.popup_width_menu, Clock::Spatial.curve()), Animated::new(0.0, Clock::Spatial.curve())),
             sel_anchor,
             sel_nodes: Vec::new(),
@@ -3223,15 +3226,23 @@ impl Shown {
             p.cursor.travels = false;
         }
         self.laid_for = (tw, th);
+        self.laid_view = (m.key.clone(), m.cursor_id.clone(), m.column.is_some());
     }
 
     /// On a layer, the card is morphing toward a size its content is
     /// already laid out for: another layout (a monitor refresh, rows
     /// settling) waits for the morph to land, since on a starved CPU one
-    /// layout of a long view outlasts several frames of the morph.
-    pub fn hold_layout(&self, now: Instant) -> bool {
+    /// layout of a long view outlasts several frames of the morph. A key,
+    /// click or call that moved the view is never held.
+    pub fn hold_layout(&self, m: &Model, now: Instant) -> bool {
         let morphing = self.morph.0.running(now) || self.morph.1.running(now);
-        morphing && self.modal.layer.is_some() && self.laid_for == (self.morph.0.target(), self.morph.1.target())
+        let (key, cursor, column) = &self.laid_view;
+        morphing
+            && self.modal.layer.is_some()
+            && self.laid_for == (self.morph.0.target(), self.morph.1.target())
+            && *key == m.key
+            && *cursor == m.cursor_id
+            && *column == m.column.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
