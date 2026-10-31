@@ -31,6 +31,7 @@ fn px(cx: &Cx, t: Type) -> f32 {
         Type::DisplayLarge => f.display_large,
         Type::Hero => f.display_large * 1.5,
         Type::Field => (f.base_size * fs_theme::tokens::LAUNCHER.field_size).round(),
+        Type::Row => (f.base_size * fs_theme::tokens::LAUNCHER.row_size).round(),
     }) as f32
 }
 

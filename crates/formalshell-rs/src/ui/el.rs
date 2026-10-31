@@ -47,6 +47,8 @@ pub enum Type {
     Hero,
     /// The launcher's field, `LAUNCHER.field_size` on the base size.
     Field,
+    /// A launcher row's words, `LAUNCHER.row_size` on the base size.
+    Row,
 }
 
 impl Type {
@@ -56,7 +58,7 @@ impl Type {
         match self {
             Type::Subtitle | Type::Title | Type::Heading => Some(Weight::Bold),
             Type::Display => Some(Weight::Heavy),
-            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge | Type::Hero | Type::Field => None,
+            Type::Caption | Type::BodySmall | Type::Body | Type::DisplayLarge | Type::Hero | Type::Field | Type::Row => None,
         }
     }
 }

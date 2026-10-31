@@ -1295,7 +1295,7 @@ impl Model {
             // shaped here, so a step never waits on the shaper.
             for r in self.rows.iter().take(ROWS_SHAPED_AHEAD) {
                 for weight in [Weight::Normal, Weight::Semibold] {
-                    ui::measure(&w::text(r.label.clone()).weight(weight), f64::MAX, theme, kit);
+                    ui::measure(&row_words(r.label.clone()).weight(weight), f64::MAX, theme, kit);
                 }
             }
         }
@@ -2945,6 +2945,12 @@ fn heading_el(s: &fs_theme::tokens::Space, text: &str) -> El {
     w::text(text.to_owned()).size(Type::Caption).weight(Weight::Semibold).ink(Ink::Muted).pad_start(s.control_padding_x)
 }
 
+/// A list row's words, the label, description and value alike, at Pond's
+/// one row size.
+fn row_words(text: String) -> El {
+    w::text(text).size(Type::Row).elide()
+}
+
 /// A `LAUNCHER` length at the theme's type scale.
 fn launcher_px(theme: &Theme, base: f64) -> f64 {
     (base * fs_theme::tokens::font_scale(theme.font_size.base_size)).round()
@@ -3711,7 +3717,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
     let mut drawn_to = last;
     for (at, &i) in c.shown.iter().enumerate().skip(first).take(fits) {
         if let Some((_, n)) = more.filter(|(row, _)| *row == at) {
-            rows.push(w::cell(w::text(format!("{n} more")).ink(Ink::Dim)).ghost().height(row_h));
+            rows.push(w::cell(row_words(format!("{n} more")).ink(Ink::Dim)).ghost().height(row_h));
             drawn_to = at + 1;
             break;
         }
@@ -3719,7 +3725,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
         let (label, icon, trail, dim, destructive) = match &c.target {
             Some((_, targets)) => {
                 let t = &targets[i];
-                let meta = t.meta.clone().map(|v| w::text(v).size(Type::BodySmall).ink(Ink::Dim));
+                let meta = t.meta.clone().map(|v| row_words(v).ink(Ink::Dim));
                 (t.label.clone(), None, meta, false, false)
             }
             None => {
@@ -3739,7 +3745,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
             let ink = if destructive { Ink::Destructive } else { Ink::Fg };
             lead.push(w::icon(name).ink(ink).width(Size::Px(icon_px)).height(icon_px));
         }
-        let mut name = w::text(label).elide();
+        let mut name = row_words(label);
         if dim {
             name = name.ink(Ink::Dim);
         }
@@ -4417,7 +4423,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
         lead.push(w::text(row.icon.clone()).size(Type::Heading).centred().width(Size::Px(icon_px)));
     }
     let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
-    let mut name = w::text(label).elide();
+    let mut name = row_words(label);
     if row.dim == Some(true) {
         name = name.ink(Ink::Dim);
     }
@@ -4426,7 +4432,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     }
     lead.push(name);
     if let Some(desc) = row.desc.clone().filter(|d| !d.is_empty()) {
-        lead.push(w::text(desc).size(Type::BodySmall).ink(Ink::Dim).elide());
+        lead.push(row_words(desc).ink(Ink::Dim));
     }
     let windows = match &row.entry {
         Some(entry) if row.kind == NodeKind::App && row.meta.as_deref().unwrap_or("").is_empty() => app_windows(store, entry).len(),
@@ -4440,7 +4446,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
     };
     let mut trail = Vec::new();
     if !value.is_empty() {
-        trail.push(w::text(value).size(Type::BodySmall).ink(Ink::Dim).elide().end());
+        trail.push(row_words(value).ink(Ink::Dim).end());
     }
     if checked && !confirming {
         trail.push(w::icon("check"));

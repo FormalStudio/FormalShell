@@ -323,6 +323,10 @@ pub struct Launcher {
     /// The field's type, a ratio on the base size, past the ramp's
     /// `display`: Pond's field size in the shell's sans.
     pub field_size: f64,
+    /// A row's words, a ratio on the base size: Pond's title, subtitle and
+    /// accessory at its 13pt regular size (17.3px), so the rows hold their
+    /// own under the field.
+    pub row_size: f64,
     pub row_height: f64,
     pub row_icon: f64,
     /// The card's one width: a preview pane or the actions column splits
@@ -342,6 +346,7 @@ pub const LAUNCHER: Launcher = Launcher {
     emoji_columns: 8,
     recent: 8,
     field_size: 2.0,
+    row_size: 4.0 / 3.0,
     row_height: 48.0,
     row_icon: 24.0,
     width: 640.0,
