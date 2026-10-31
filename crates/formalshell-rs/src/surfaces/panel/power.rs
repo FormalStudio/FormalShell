@@ -104,7 +104,8 @@ pub fn battery_card(s: &Space, c: &Card) -> El {
     w::column(s.md, parts)
 }
 
-/// "Power profile", the active one named, over the three buttons.
+/// The "Power profile" caption, the active one named at its far end, over
+/// the three buttons.
 pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El {
     let options = (0..3)
         .map(|i| {
@@ -113,9 +114,7 @@ pub fn profiles(s: &Space, active: usize, ring: usize, performance: bool) -> El 
             o
         })
         .collect();
-    let title = |t: &str| w::text(t.to_owned()).size(Type::Title).weight(Weight::Normal);
-    let head = w::row(0.0, vec![title("Power profile").ink(Ink::Dim).fill(), title(NAMES[active])]).fill();
-    w::column(s.sm, vec![head, w::group(options, active, true).squares().ring(ring).on("profile").stop("profile")])
+    w::column(s.panel_gap, vec![w::panel_heading_with(s, "Power profile", NAMES[active]), w::group(options, active, true).squares().ring(ring).on("profile").stop("profile")])
 }
 
 pub struct Power {
@@ -211,7 +210,7 @@ impl Panel for Power {
             &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.info.iphone.battery.map(|b| b * 100.0) },
         );
         match &v.store.devices.power.battery {
-            Some(b) => parts.push(battery_card(s, &card(v, b))),
+            Some(b) => parts.push(w::panel_text(s, battery_card(s, &card(v, b)))),
             None => {
                 if !model.available {
                     parts.push(w::panel_empty(s, "No power sources"));
@@ -227,9 +226,9 @@ impl Panel for Power {
         let performance = v.store.devices.profiles.as_ref().is_none_or(|p| p.has_performance());
         parts.push(profiles(s, active(v), at, performance));
         if model.available {
-            parts.push(w::column(s.sm, vec![w::label("Power flow").ink(Ink::Dim), w::flow(flow_view(&model, true))]));
+            parts.push(w::column(s.panel_gap, vec![w::panel_heading(s, "Power flow"), w::panel_text(s, w::flow(flow_view(&model, true)))]));
         }
-        w::panel_text(s, w::column(s.xl, parts))
+        w::column(0.0, parts)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

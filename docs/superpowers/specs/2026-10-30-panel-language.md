@@ -133,7 +133,8 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
   radius, `panelGap` apart, a 20 glyph centred and the name under it
   only when every option has room. Rest `muted`, hover `accent`, the
   chosen one `ghostOpen` with the glyph in `primary`. Over it, a label
-  row: the name at the left in `muted`, the current choice at the right.
+  row: the name at the left in `muted`, the current choice at the right,
+  drawn as a section caption (§5), never a larger face.
   Power profiles, audio's Output/Input, the visualizer styles and the
   theme mode all use it.
 - Buttons in a footer: `outline`, `md` radius, `panelRow` tall, equal
@@ -144,7 +145,10 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
 - Empty or unavailable: one line of `body` in `muted`, centred in a
   `panelRow` band under the header, saying what is missing
   ("No Wi-Fi adapter", "No power sources"). No glyph, no illustration, no
-  invented device (CLAUDE.md's honest unavailable rule).
+  invented device (CLAUDE.md's honest unavailable rule). A fix the user
+  can make goes on one `caption` line under it, centred the same way. A
+  section with nothing to show keeps its caption and puts the same line
+  under it; it never repeats the panel's title as a row.
 - An error: one `caption` line in `destructive` under the row it belongs
   to.
 - Lists scroll inside the card past the output's room; the card never

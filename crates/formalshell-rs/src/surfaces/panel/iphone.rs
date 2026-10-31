@@ -95,7 +95,7 @@ impl Panel for Iphone {
                 s.xxs,
                 vec![
                     w::panel_empty(s, "Bridge not running"),
-                    w::panel_text(s, w::para("Enable services.formalshell.iphone.enable and rebuild", Type::BodySmall, Weight::Normal, Ink::Muted, 4)),
+                    w::row(0.0, vec![w::spacer(), w::caption("Enable services.formalshell.iphone.enable and rebuild"), w::spacer()]).fill(),
                 ],
             ));
         }

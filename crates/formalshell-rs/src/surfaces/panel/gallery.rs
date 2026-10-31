@@ -206,7 +206,7 @@ impl Panel for Gallery {
                 label("PowerFlow / sample snapshot, not live"),
                 w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)),
                 label("Battery / sample, not live"),
-                w::panel_text(s, w::column(s.xl, vec![super::power::battery_card(s, &battery_sample()), super::power::profiles(s, 0, 0, true)])),
+                w::column(0.0, vec![w::panel_text(s, super::power::battery_card(s, &battery_sample())), super::power::profiles(s, 0, 0, true)]),
                 label("Wi-Fi / sample, not live"),
                 wifi_sample(s),
             ],

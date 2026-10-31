@@ -85,26 +85,23 @@ impl Panel for Usage {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let u = &v.store.info.usage;
-        let label = |text: &str| w::panel_text(s, w::caption(text.to_owned()).ink(Ink::Muted));
-        let top = peak(u);
-        let meta = match top {
-            Some(r) => r.label.clone(),
-            None if !u.claude_enabled && !u.codex_enabled => "Disabled".into(),
-            None if (u.claude_enabled && u.claude == Claude::Unknown) || (u.codex_enabled && u.codex == Codex::Unknown) => "Loading".into(),
-            None => "No data".into(),
-        };
-        let mut parts = vec![w::hero(
-            s,
-            w::Hero {
-                glyph: "gauge".into(),
-                title: "Usage".into(),
-                meta,
-                readout: top.map_or_else(String::new, |r| format!("{}%", (r.percent * 100.0).round())),
-                trailing: None,
-                rail: top.map(|r| r.percent),
-                rail_on: None,
-            },
-        )];
+        let mut parts = Vec::new();
+        if let Some(top) = peak(u) {
+            parts.push(w::hero(
+                s,
+                w::Hero {
+                    glyph: "gauge".into(),
+                    title: "Usage".into(),
+                    meta: top.label.clone(),
+                    readout: format!("{}%", (top.percent * 100.0).round()),
+                    trailing: None,
+                    rail: Some(top.percent),
+                    rail_on: None,
+                },
+            ));
+        } else if !u.claude_enabled && !u.codex_enabled {
+            parts.push(w::panel_empty(s, "Usage disabled"));
+        }
 
         let now = now_ms() as f64;
         let rows = |rows: &[UsageRow], first: usize| -> El {
@@ -130,7 +127,7 @@ impl Panel for Usage {
             let title = if u.claude_tier.is_empty() { "Claude".to_owned() } else { format!("Claude / {}", u.claude_tier) };
             let mut section = vec![w::panel_heading(s, &title)];
             if u.claude != Claude::Ok {
-                section.push(label(&claude_hint(u)));
+                section.push(w::panel_empty(s, claude_hint(u)));
             } else if claude_rows(u).is_empty() {
                 section.push(w::panel_empty(s, "No data"));
             }
@@ -141,7 +138,7 @@ impl Panel for Usage {
             let title = if u.codex_tier.is_empty() { "Codex".to_owned() } else { format!("Codex / {}", u.codex_tier) };
             let mut section = vec![w::panel_heading(s, &title)];
             if u.codex != Codex::Ok {
-                section.push(label(codex_hint(u)));
+                section.push(w::panel_empty(s, codex_hint(u)));
             } else if codex_rows(u).is_empty() {
                 section.push(w::panel_empty(s, "No data"));
             }
