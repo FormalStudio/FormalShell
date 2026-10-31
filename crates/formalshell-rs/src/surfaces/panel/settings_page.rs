@@ -58,9 +58,9 @@ fn mark(v: &View, key: &Key) -> Option<El> {
         .map(|_| w::icon_button("rotate-ccw").tip("Reset").on(format!("reset:{}", key.key)).stop(format!("reset:{}", key.key)))
 }
 
-/// A key's row in its group, and for a choice the segmented control that
-/// sits on the card under the group (one inset level: nothing boxed inside
-/// a group), which then carries the key's stop.
+/// A key's row in its group; for a choice, its caption and the segmented
+/// control that sit on the card between groups (one inset level: nothing
+/// boxed inside a group), the control carrying the key's stop.
 fn row(v: &View, key: &Key) -> (El, Option<El>) {
     let s = &v.theme.space;
     let pinned = v.store.config.pinned(key.key);
@@ -82,11 +82,14 @@ fn row(v: &View, key: &Key) -> (El, Option<El>) {
                 trailing.push(w::label(name).ink(Ink::Muted));
                 return (w::panel_row(s, "", key.label, detail, trailing).stop(stop(key)), None);
             }
+            // The label over a segmented choice is a section caption with the
+            // current choice at its far end (panel-language spec §6).
             let at = at.unwrap_or(0);
-            trailing.push(w::label(values[at].1).ink(Ink::Muted));
             let names = values.iter().map(|(_, name)| (*name).to_owned()).collect();
             let picker = w::segmented(names, at).fill().on(stop(key)).stop(stop(key));
-            (w::panel_row(s, "", key.label, detail, trailing), Some(picker))
+            let mut label = vec![w::panel_heading_with(s, key.label, values[at].1).fill()];
+            label.extend(trailing);
+            (w::row(s.panel_gap, label).fill(), Some(picker))
         }
     }
 }
@@ -136,11 +139,13 @@ impl Panel for SettingsPage {
                 section = key.section;
                 parts.push(w::panel_heading(s, section));
             }
-            let (el, picker) = row(v, key);
-            rows.push(el);
-            if let Some(picker) = picker {
-                flush(&mut parts, &mut rows);
-                parts.push(picker);
+            match row(v, key) {
+                (el, None) => rows.push(el),
+                (label, Some(picker)) => {
+                    flush(&mut parts, &mut rows);
+                    parts.push(label);
+                    parts.push(picker);
+                }
             }
         }
         flush(&mut parts, &mut rows);
