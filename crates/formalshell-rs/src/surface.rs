@@ -1236,6 +1236,11 @@ pub struct Backdrop {
     pub layer: LayerSurface,
     pool: SlotPool,
     buffer: Option<Buffer>,
+    /// While the GPU draws: the pictures a frame blends, in device memory,
+    /// and the dmabufs it blends them into, with their size.
+    textures: Vec<(PictureKey, crate::gpu::Picture)>,
+    dmabufs: Vec<crate::gpu::Buffer>,
+    dmabuf_size: (i32, i32),
     size: Option<(i32, i32)>,
     drawn: Option<(String, Option<usize>, i32, i32, [u8; 4], Option<Grid>)>,
     /// What is on screen once any fade lands.
@@ -1250,6 +1255,10 @@ pub struct Backdrop {
     committed: (bool, bool),
     pub landed: (bool, bool),
 }
+
+/// What a backdrop picture holds: a wallpaper by its path and dither, or
+/// the plain colour under its grid.
+type PictureKey = (String, Option<usize>, [u8; 4], Option<Grid>);
 
 struct Fade {
     from: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
@@ -1267,6 +1276,9 @@ impl Backdrop {
             layer,
             pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
             buffer: None,
+            textures: Vec::new(),
+            dmabufs: Vec::new(),
+            dmabuf_size: (0, 0),
             size: None,
             drawn: None,
             shown: None,
@@ -1429,11 +1441,10 @@ impl Backdrop {
         let (w, h) = (scaled(size.0, scale), scaled(size.1, scale));
         // The grid rides on its own layer over the sculpture.
         let grid = grid.filter(|_| self.shards.is_none());
-        let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888) else { return };
         // A picture made for the output's last scale (an output given its
         // scale just after it appeared) waits for its own size; the plain
         // colour stands in until it lands.
-        let len = canvas.len();
+        let len = w as usize * h as usize * 4;
         let fits = |p: &&crate::services::wallpaper::Picture| p.bgra.len() == len;
         let (from, to) = (from.map(|f| f.filter(fits)), to.filter(fits));
         let plain = |canvas: &mut [u8]| {
@@ -1445,6 +1456,96 @@ impl Backdrop {
                 Grid { color: [b, gr, r, a], ..g }.paint(canvas, w as usize, h as usize);
             }
         };
+        let surface = self.layer.wl_surface().clone();
+        let on_gpu = crate::gpu::active().then(|| self.blend_on_gpu(from, to, (color, grid), a, (w, h), &plain)).flatten();
+        if let Some(at) = on_gpu {
+            surface.attach(Some(self.dmabufs[at].wl_buffer()), 0, 0);
+            self.dmabufs[at].attached();
+            self.buffer = None;
+        } else {
+            self.textures.clear();
+            self.dmabufs.clear();
+            let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888) else { return };
+            Self::blend_on_cpu(canvas, from, to, a, &plain);
+            if buffer.attach_to(&surface).is_err() {
+                return;
+            }
+            self.buffer = Some(buffer);
+        }
+        self.scaler.sync(&surface, scale, size, Some(qh));
+        surface.damage_buffer(0, 0, w, h);
+        let committed = (true, self.committed.1 || (from.is_none() && to.is_some()));
+        if committed != self.committed && from.is_none() {
+            surface.frame(qh, FrameCallbackData(surface.clone()));
+        }
+        self.committed = committed;
+        self.layer.commit();
+        self.painted = Some(size);
+        if from.is_none() {
+            eprintln!("commit surface=wallpaper {}x{} picture={} gpu={}", w, h, to.is_some(), on_gpu.is_some());
+        }
+    }
+
+    /// `to` over `from` at `a` into a dmabuf, the pictures uploaded to
+    /// device memory the first time a frame asks for them and dropped once
+    /// no frame does; none when the GPU could not.
+    fn blend_on_gpu(
+        &mut self,
+        from: Option<Option<&crate::services::wallpaper::Picture>>,
+        to: Option<&crate::services::wallpaper::Picture>,
+        (color, grid): ([u8; 4], Option<Grid>),
+        a: f32,
+        (w, h): (i32, i32),
+        plain: &dyn Fn(&mut [u8]),
+    ) -> Option<usize> {
+        crate::gpu::dispatch();
+        let key = |p: Option<&crate::services::wallpaper::Picture>| -> PictureKey {
+            p.map_or_else(|| (String::new(), None, color, grid), |p| (p.path.clone(), p.dither, [0; 4], None))
+        };
+        let wanted: Vec<_> = std::iter::once(to).chain(from).map(|p| (key(p), p)).collect();
+        self.textures.retain(|(k, _)| wanted.iter().any(|(w, _)| w == k));
+        for (k, p) in &wanted {
+            if self.textures.iter().any(|(have, _)| have == k) {
+                continue;
+            }
+            let picture = match p {
+                Some(p) => crate::gpu::Picture::bgra(w as u32, h as u32, &p.bgra)?,
+                None => {
+                    let mut flat = vec![0; w as usize * h as usize * 4];
+                    plain(&mut flat);
+                    crate::gpu::Picture::bgra(w as u32, h as u32, &flat)?
+                }
+            };
+            self.textures.push((k.clone(), picture));
+        }
+        if self.dmabuf_size != (w, h) {
+            self.dmabufs.clear();
+            self.dmabuf_size = (w, h);
+        }
+        let at = match self.dmabufs.iter().position(crate::gpu::Buffer::free) {
+            Some(at) => at,
+            None => {
+                self.dmabufs.push(crate::gpu::Buffer::new(w as u32, h as u32)?);
+                self.dmabufs.len() - 1
+            }
+        };
+        let get = |k: &PictureKey| self.textures.iter().find(|(have, _)| have == k).map(|(_, t)| t);
+        let dst = get(&wanted[0].0)?;
+        let (src, a) = match wanted.get(1) {
+            Some((k, _)) => (get(k)?, a),
+            None => (dst, 1.0),
+        };
+        self.dmabufs[at].blend(src, dst, a).then_some(at)
+    }
+
+    /// The same blend into a CPU canvas, in its own BGRA bytes.
+    fn blend_on_cpu(
+        canvas: &mut [u8],
+        from: Option<Option<&crate::services::wallpaper::Picture>>,
+        to: Option<&crate::services::wallpaper::Picture>,
+        a: f32,
+        plain: &dyn Fn(&mut [u8]),
+    ) {
         match (from, to) {
             (None, Some(p)) => canvas.copy_from_slice(&p.bgra),
             (None, None) => plain(canvas),
@@ -1462,23 +1563,6 @@ impl Backdrop {
                     *c = ((s0 * (256 - k) + d0 * k) >> 8) as u8;
                 }
             }
-        }
-        let surface = self.layer.wl_surface();
-        if buffer.attach_to(surface).is_err() {
-            return;
-        }
-        self.scaler.sync(surface, scale, size, Some(qh));
-        surface.damage_buffer(0, 0, w, h);
-        let committed = (true, self.committed.1 || (from.is_none() && to.is_some()));
-        if committed != self.committed && from.is_none() {
-            surface.frame(qh, FrameCallbackData(surface.clone()));
-        }
-        self.committed = committed;
-        self.layer.commit();
-        self.painted = Some(size);
-        self.buffer = Some(buffer);
-        if from.is_none() {
-            eprintln!("commit surface=wallpaper {}x{} picture={}", w, h, to.is_some());
         }
     }
 }

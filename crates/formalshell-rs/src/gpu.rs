@@ -267,6 +267,7 @@ pub struct Gpu {
     frame: u64,
     uploads: Option<wgpu::CommandEncoder>,
     fade: Option<Fade>,
+    blend: Option<Fade>,
     wl_queue: EventQueue<Wl>,
     wl: Wl,
 }
@@ -413,6 +414,7 @@ impl Gpu {
             frame: 0,
             uploads: None,
             fade: None,
+            blend: None,
             wl_queue,
             wl,
         };
@@ -1099,7 +1101,7 @@ impl Buffer {
             } else {
                 let fade = g.fade.get_or_insert_with(|| Fade::new(&g.device));
                 g.queue.write_buffer(&fade.uniform, 0, &(f32::from(opacity) / 256.0).to_le_bytes());
-                let group = canvas.fade.get_or_insert_with(|| fade.group(&g.device, &canvas.texture));
+                let group = canvas.fade.get_or_insert_with(|| fade.group(&g.device, &[&canvas.texture]));
                 let view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("formalshell fade"),
@@ -1123,23 +1125,86 @@ impl Buffer {
                 drop(pass);
                 vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
             };
-            // wgpu cannot hand an image to another queue family, so the
-            // ownership transfers go in command buffers of their own, around
-            // the copy: the acquire puts the image back in the layout wgpu
-            // last left it in, which is where its own tracking starts from.
-            let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
-            let release = g.ownership(self.image, true, layout);
-            self.held.set(Some(layout));
-            let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
-            match g.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: Some(std::time::Duration::from_secs(1)) }) {
-                Ok(_) => true,
-                Err(e) => {
-                    fail(format!("waiting on the GPU: {e}"));
-                    false
-                }
-            }
+            self.hand_over(g, encoder, layout)
         })
         .unwrap_or(false)
+    }
+
+    /// `to` over `from` at `a` (0 is `from` alone) into the whole buffer,
+    /// handed over as [`Buffer::fill`] hands its copy over.
+    pub fn blend(&self, from: &Picture, to: &Picture, a: f32) -> bool {
+        with(|g| {
+            let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell blend") });
+            let blend = g.blend.get_or_insert_with(|| Fade::with(&g.device, "formalshell blend", BLEND_WGSL, 2));
+            g.queue.write_buffer(&blend.uniform, 0, &a.clamp(0.0, 1.0).to_le_bytes());
+            let group = blend.group(&g.device, &[&from.texture, &to.texture]);
+            let view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("formalshell blend"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&blend.pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.draw(0..3, 0..1);
+            drop(pass);
+            self.hand_over(g, encoder, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+        })
+        .unwrap_or(false)
+    }
+
+    /// Submits `encoder` with the image handed to the compositor after it,
+    /// and waits on it. wgpu cannot hand an image to another queue family,
+    /// so the ownership transfers go in command buffers of their own, around
+    /// the work: the acquire puts the image back in the layout wgpu last
+    /// left it in, which is where its own tracking starts from.
+    fn hand_over(&self, g: &mut Gpu, encoder: wgpu::CommandEncoder, layout: vk::ImageLayout) -> bool {
+        let acquire = self.held.take().map(|was| g.ownership(self.image, false, was));
+        let release = g.ownership(self.image, true, layout);
+        self.held.set(Some(layout));
+        let index = g.queue.submit(acquire.into_iter().chain([encoder.finish(), release]));
+        match g.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: Some(std::time::Duration::from_secs(1)) }) {
+            Ok(_) => true,
+            Err(e) => {
+                fail(format!("waiting on the GPU: {e}"));
+                false
+            }
+        }
+    }
+}
+
+/// A whole-output picture in device memory, uploaded from the BGRA bytes
+/// the wallpaper keeps: sampled through a BGRA texture, it reads as RGBA.
+pub struct Picture {
+    texture: wgpu::Texture,
+}
+
+impl Picture {
+    /// None once the device is gone.
+    pub fn bgra(w: u32, h: u32, bytes: &[u8]) -> Option<Self> {
+        with(|g| {
+            let size = wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 };
+            let texture = g.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("formalshell wallpaper"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bgra8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            g.queue.write_texture(texture.as_image_copy(), bytes, wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: None }, size);
+            Self { texture }
+        })
     }
 }
 
@@ -1185,29 +1250,51 @@ fn fs(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
 }
 ";
 
+/// The wallpaper's crossfade: `to` over `from` by one factor, in the same
+/// 8-bit pixels the CPU blends.
+const BLEND_WGSL: &str = r"
+@group(0) @binding(0) var under: texture_2d<f32>;
+@group(0) @binding(1) var over: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> k: vec4<f32>;
+
+@vertex
+fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+    let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
+    return vec4<f32>(p * 2.0 - 1.0, 0.0, 1.0);
+}
+
+@fragment
+fn fs(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
+    let p = vec2<i32>(at.xy);
+    return mix(textureLoad(under, p, 0), textureLoad(over, p, 0), k.x);
+}
+";
+
 impl Fade {
     fn new(device: &wgpu::Device) -> Self {
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("formalshell fade"), source: wgpu::ShaderSource::Wgsl(FADE_WGSL.into()) });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("formalshell fade"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-                    count: None,
-                },
-            ],
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("formalshell fade"), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
+        Self::with(device, "formalshell fade", FADE_WGSL, 1)
+    }
+
+    /// A full-screen pass over `textures` textures and one uniform after them.
+    fn with(device: &wgpu::Device, label: &str, wgsl: &str, textures: u32) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(label), source: wgpu::ShaderSource::Wgsl(wgsl.into()) });
+        let texture = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+            count: None,
+        };
+        let uniform = wgpu::BindGroupLayoutEntry {
+            binding: textures,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+            count: None,
+        };
+        let entries: Vec<_> = (0..textures).map(texture).chain([uniform]).collect();
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some(label), entries: &entries });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some(label), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("formalshell fade"),
+            label: Some(label),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs"), compilation_options: Default::default(), buffers: &[] },
             fragment: Some(wgpu::FragmentState {
@@ -1222,20 +1309,19 @@ impl Fade {
             multiview_mask: None,
             cache: None,
         });
-        let uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some("formalshell fade"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         Self { pipeline, layout, uniform }
     }
 
-    fn group(&self, device: &wgpu::Device, canvas: &wgpu::Texture) -> wgpu::BindGroup {
-        let view = canvas.create_view(&wgpu::TextureViewDescriptor::default());
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("formalshell fade"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: self.uniform.as_entire_binding() },
-            ],
-        })
+    fn group(&self, device: &wgpu::Device, textures: &[&wgpu::Texture]) -> wgpu::BindGroup {
+        let views: Vec<_> = textures.iter().map(|t| t.create_view(&wgpu::TextureViewDescriptor::default())).collect();
+        let entries: Vec<_> = views
+            .iter()
+            .enumerate()
+            .map(|(i, v)| wgpu::BindGroupEntry { binding: i as u32, resource: wgpu::BindingResource::TextureView(v) })
+            .chain([wgpu::BindGroupEntry { binding: views.len() as u32, resource: self.uniform.as_entire_binding() }])
+            .collect();
+        device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &self.layout, entries: &entries })
     }
 }
 

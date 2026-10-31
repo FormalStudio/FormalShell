@@ -5,7 +5,9 @@
 # path whatever `auto` picks on the machine (`dev/perf-gate.py --backend`).
 # Its own claim: `debug dump`'s render block drawing on the asked backend
 # once the device is up, or, asking gpu where none is usable, on the CPU
-# with the reason.
+# with the reason; and a GPU that came up never given up later in the run
+# (the shell's `; drawing on the CPU` line), which the ridden leg's own
+# frames would not show.
 leg_backend_flag="--backend <backend>"
 leg_backend_order=8
 leg_backend_needs="jq"
@@ -47,4 +49,9 @@ leg_backend_assert() {
   "$jq_bin" -e --arg a "$asked" '.render.asked == $a and (.render.backend == $a or ($a == "gpu" and .render.reason != null))' "$backend_dump_path" > /dev/null \
     || fail "the dump's render block does not draw on $asked: $("$jq_bin" -c .render "$backend_dump_path")"
   echo "SMOKE_BACKEND $("$jq_bin" -c .render "$backend_dump_path")"
+  if "$jq_bin" -e '.render.backend == "gpu"' "$backend_dump_path" > /dev/null; then
+    local lost
+    lost=$(grep -m1 '^formalshell: render: .*; drawing on the CPU$' "$shell_log_path" || true)
+    [ -z "$lost" ] || fail "the GPU path gave up during the run: $lost"
+  fi
 }

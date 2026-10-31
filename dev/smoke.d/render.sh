@@ -8,7 +8,8 @@
 # cpu. The third asks for gpu with VK_DRIVER_FILES naming no driver, a
 # machine with no Vulkan driver at all: cpu, saying no Vulkan device was
 # found. Each is photographed on the bare desktop (the bar and the desktop
-# clock), with the audio panel open, with the launcher open and with a
+# clock over a gradient wallpaper it is given, which a GPU shell blends on
+# the GPU), with the audio panel open, with the launcher open and with a
 # sticky toast over the volume OSD, and locked (the real password typed
 # after); the launcher card is cropped off `menu status`'s cardBox. The GPU's frames within 3% RMSE of the CPU's, and the
 # fallback's too, the card not flat.
@@ -40,11 +41,12 @@ leg_render_fixture() {
 render_scenes="desktop panel toast lock"
 
 leg_render_timing() {
-  leg_timing 45 80
+  leg_timing 60 100
 }
 
 leg_render_drive() {
   local script="$shot_dir/render-drive.sh" settings="$iso_home/.config/formalshell/settings.json" launch="$PWD/result/bin/formalshell"
+  "$convert_bin" -size 1080x1920 gradient:'#3fb07a-#0b2d20' -rotate 90 "$shot_dir/render-wallpaper.png"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 # One shell's turn: wait for it to answer with the asked backend, dump,
@@ -55,7 +57,8 @@ turn() {
     $ipc call debug dump 2>/dev/null | "$jq_bin" -e --arg a "\$asked" '.render.asked == \$a and .render.reason != "the GPU is starting"' > /dev/null 2>&1 && break
     sleep 0.25
   done
-  sleep 2
+  $ipc call wallpaper set "$shot_dir/render-wallpaper.png" > /dev/null 2>&1
+  sleep 4
   $ipc call debug dump > "$shot_dir/render-\$name.json" 2>&1
   "$grim_bin" "$shot_dir/render-\$name-desktop.png" > /dev/null 2>&1
   date +%H%M > "$shot_dir/render-\$name-desktop.minute"
@@ -127,6 +130,7 @@ leg_render_assert() {
   done
   if [ "$session_mode" = nested ]; then
     render_expect gpu '.render.asked == "gpu" and .render.backend == "gpu" and (.render.device | test("renderD"))' "a nested session has a render node, and the GPU path did not take it"
+    grep -q 'commit surface=wallpaper .* picture=true gpu=true' "$shell_log_path" || fail "--render gpu: the wallpaper was never blended on the GPU"
   else
     render_expect gpu '.render.asked == "gpu" and .render.backend == "cpu" and (.render.reason | test("render node|Vulkan device"))' "a $session_mode session has no render node to draw on, and the reason does not say so"
   fi

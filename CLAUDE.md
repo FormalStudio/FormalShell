@@ -312,7 +312,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `settings_pin`) and rides any leg, so the budget legs read either path
   whatever `auto` picks on the machine; asserts `debug dump`'s render block
   draws on the asked backend once the device is up (it opens on a thread
-  of its own), or for gpu where none is usable, on the CPU with the reason.
+  of its own), or for gpu where none is usable, on the CPU with the reason,
+  and that a GPU which came up was never given up later in the run.
 - `bar_adaptive.sh` `--bar-adaptive`: the wingpanel band reading its own
   paint off the wallpaper under it, four wallpapers in one session (a flat
   bright field, a flat dark one, a half-and-half field, and the dark one
@@ -1201,7 +1202,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   node) and falling back to cpu with the reason on a vkms rig, `cpu`
   asked, and `gpu` under a `VK_DRIVER_FILES` naming no driver falling back
   saying no Vulkan device was found. Each is photographed on the bare
-  desktop (the bar and `desktopClock`), with the audio panel open, with the
+  desktop (the bar and `desktopClock` over a gradient wallpaper it is
+  given, which the GPU shell has to have blended on the GPU), with the
+  audio panel open, with the
   launcher open (its card cropped off `menu status`'s `cardBox`, not flat)
   with a sticky toast over the volume OSD, and locked (the real password
   typed after): the GPU's and the fallback's frames within 3% RMSE of the
