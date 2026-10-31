@@ -18,8 +18,12 @@ use fs_menu::search;
 
 const PANEL_NAMES: &[&str] = &[
     "appmenu", "audio", "calendar", "network", "bluetooth", "earbuds", "iphone", "dualsense", "power", "weather",
-    "media", "github", "usage", "tailscale", "systemupdate", "display", "monitor", "radio", "info", "settings",
+    "media", "github", "usage", "tailscale", "systemupdate", "display", "monitor", "radio",
 ];
+
+// Settings and Information are pages the launcher holds as routes of their
+// own, not rows under Panels.
+const LAUNCHER_PAGES: &[(&str, &str)] = &[("settings", "Settings"), ("info", "Information")];
 
 // The headline guard: every panel name has a "panels.<name>" row whose action
 // actually opens it, and the submenu has no extra/stale rows.
@@ -33,6 +37,20 @@ fn shipped_tree_covers_every_panel() {
         assert_eq!(node.kind, Kind::Action);
         let action = node.action.as_deref().expect("action");
         assert!(action.contains(&format!("call panel open {name}")), "panels.{name} does not open panel '{name}'");
+    }
+}
+
+// Each page the launcher holds is a root route with its own provider, reached
+// by typing its name at root, and never also a Panels row.
+#[test]
+fn launcher_pages_are_root_routes() {
+    let tree = real_tree();
+    for (id, label) in LAUNCHER_PAGES {
+        let node = tree.nodes.get(*id).unwrap_or_else(|| panic!("missing launcher route '{id}'"));
+        assert_eq!(node.provider.as_deref(), Some(*id), "{id} is not held by its own provider");
+        assert!(!tree.nodes.contains_key(&format!("panels.{id}")), "{id} is still a Panels row");
+        let ranked = search::rank(&tree.nodes, label, &no_conds(), None);
+        assert!(ids(&ranked).contains(id), "root query '{label}' does not reach {id}");
     }
 }
 
