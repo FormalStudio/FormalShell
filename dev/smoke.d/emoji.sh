@@ -133,7 +133,7 @@ leg_emoji_assert() {
   if [ "$icon" != "😭" ]; then
     fail "':e sob' led with '$icon', not the emoji whose only 'sob' is a CLDR keyword"
   fi
-  if ! grep -qF '"label":"LOUDLY CRYING FACE"' "$emoji_keyword_path"; then
+  if ! grep -qF '"label":"Loudly crying face"' "$emoji_keyword_path"; then
     fail "':e sob' did not name the row it matched: $(cat "$emoji_keyword_path")"
   fi
 

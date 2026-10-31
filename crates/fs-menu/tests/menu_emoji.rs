@@ -71,7 +71,7 @@ fn known_mapping() {
     let rows = REAL.rows("thumbs up", true, &[], None);
     assert!(!rows.is_empty());
     assert_eq!(rows[0].icon, "\u{1F44D}");
-    assert_eq!(rows[0].label, "THUMBS UP");
+    assert_eq!(rows[0].label, "Thumbs up");
     assert_eq!(rows[0].kind, fs_menu::node::Kind::Action);
     assert_eq!(rows[0].action.as_deref(), Some("wl-copy -- '\u{1F44D}'"));
     // paste_after marks the row for the post-close paste hook, the same field
@@ -95,7 +95,7 @@ fn exact_beats_earlier_substring() {
     // "grinning cat" (Smileys & Emotion) precedes "cat" (Animals & Nature) in
     // file order; the exact-name tier must still win.
     let rows = REAL.rows("cat", true, &[], None);
-    assert_eq!(rows[0].label, "CAT");
+    assert_eq!(rows[0].label, "Cat");
     assert_eq!(rows[0].icon, "\u{1F408}");
 }
 
@@ -123,7 +123,7 @@ fn the_four_tiers_rank_in_order() {
 fn browse_shows_the_whole_set() {
     let all = REAL.rows("", true, &[], None);
     assert_eq!(all.len(), DATASET.len());
-    assert_eq!(all[0].label, "GRINNING FACE");
+    assert_eq!(all[0].label, "Grinning face");
     assert_eq!(REAL.rows("zzzznotanemoji", true, &[], None).len(), 0);
 }
 
@@ -202,7 +202,7 @@ fn usage_leads_the_browse_grid() {
     let uses = [Record::new("emoji.\u{1F62D}", 4.0, t)];
     assert_eq!(REAL.rows("", true, &uses, Some(t))[0].icon, "\u{1F62D}");
     // No ledger, no reordering: a fresh profile browses file order.
-    assert_eq!(REAL.rows("", true, &[], Some(t))[0].label, "GRINNING FACE");
+    assert_eq!(REAL.rows("", true, &[], Some(t))[0].label, "Grinning face");
 }
 
 // A stale ledger entry decays rather than ruling forever: the same half-life

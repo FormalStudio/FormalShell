@@ -140,10 +140,11 @@ impl EmojiIndex {
 
     /// Emoji rows are plain "action" nodes: Enter runs `wl-copy` through the
     /// existing activation path and closes, and the clipboard service captures
-    /// the copy like any other. The char rides the icon slot, the uppercase
-    /// name is the label. Single quotes are required around the char: keycap
-    /// sequences start with ASCII `#`/`*`/digits (comment and glob hazards
-    /// unquoted), and no emoji contains an ASCII apostrophe.
+    /// the copy like any other. The char rides the icon slot, and CLDR's short
+    /// name (emoji-test.txt's) is the label in sentence case. Single quotes
+    /// are required around the char: keycap sequences start with ASCII
+    /// `#`/`*`/digits (comment and glob hazards unquoted), and no emoji
+    /// contains an ASCII apostrophe.
     ///
     /// `paste` is `clipboard.paste`, threaded in so this stays pure: it marks
     /// the row for the paste hook, which synthesizes the chord into whatever
@@ -167,7 +168,7 @@ fn emoji_row(e: &EmojiEntry, paste: bool) -> Node {
         verb: Some(if paste { "Paste" } else { "Copy" }.to_string()),
         action: Some(format!("wl-copy -- '{}'", e.ch)),
         paste_after: paste,
-        ..Node::new(emoji_usage_id(e), e.name.to_uppercase(), Kind::Action)
+        ..Node::new(emoji_usage_id(e), crate::model::title_case(&e.name), Kind::Action)
     }
 }
 
