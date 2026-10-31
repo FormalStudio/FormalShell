@@ -684,6 +684,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `actions`, `runAction` and `into` answering `error: menu not open` shut.
   The column, the targets and the windows photographed dark, the column
   light.
+- `launcher_apps.sh` `--launcher-apps`: five desktop entries naming icons
+  copied out of the rig host's hicolor theme (Steam, mpv, foot, Files,
+  Celluloid), the Apps route listing them with every row's `picture` true
+  in `menu status`'s `drawn` (photographed for the Pond comparison), then a
+  root search for "e" longer than the card: every row box the body touches
+  whole inside it at the full row height.
 - `launcher_density.sh` `--launcher-density`: the launcher as a popover
   (`motion.morph` false) on a headless second output at scale 1.25 beside
   the session's own at 1, the bar's: every buffer the card, its look's four

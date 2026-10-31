@@ -127,7 +127,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--menu-budget", "--glass-behind", "--glass-behind --no-morph", "--launcher-density"]
+runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--menu-budget", "--glass-behind", "--glass-behind --no-morph", "--launcher-density", "--launcher-apps"]
 
 # Install mode and the sidebar's Software card: fspec as the package manager
 [[rule]]
@@ -191,6 +191,10 @@ runs = ["--device-routes"]
 [[rule]]
 paths = ["crates/fs-menu/src/providers/share.rs", "crates/formalshell-rs/src/services/localsend.rs", "crates/formalshell-rs/src/ipc/localsend.rs", "crates/fs-devices/src/localsend.rs"]
 runs = ["--share", "--localsend", "--launcher-send"]
+
+[[rule]]
+paths = ["dev/smoke.d/launcher_apps.sh"]
+runs = ["--launcher-apps"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/files.rs", "dev/smoke.d/launcher_preview.sh"]

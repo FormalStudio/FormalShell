@@ -97,6 +97,9 @@ struct Layout {
     /// The body width it was laid out in, which an output narrower than
     /// the card changes.
     body_w: f64,
+    /// The list's inset under its last row, kept clear of rows while it
+    /// scrolls so the body always ends on a whole one.
+    foot: f64,
 }
 
 pub struct Model {
@@ -1360,10 +1363,12 @@ impl Model {
         let body_w = self.body_width(theme);
         let halved = self.halved();
         let width = if halved { (body_w * self.list_share(theme)).round() } else { body_w };
-        let inset = if self.bleeds() { s.sm } else { s.md };
+        // Pond's list sits a clear `lg` in from the card and under the
+        // field's rule; the grids keep their own gutters.
+        let inset = if self.view == View::Rows { s.lg } else if self.bleeds() { s.sm } else { s.md };
         let gutter = s.sm;
         let heading_x = if self.bleeds() { s.sm + s.lg - s.control_padding_x } else { 0.0 };
-        let heading_h = ui::measure(&w::heading(s, "Ag", None, true), width, theme, kit).1;
+        let heading_h = ui::measure(&heading_el(s, "Ag"), width, theme, kit).1;
         let mut out = Layout::default();
         let mut y = inset;
         let band_of = |section: &str, first: bool| -> f64 {
@@ -1447,7 +1452,8 @@ impl Model {
             View::Mirror | View::Panel => out.columns = 1,
             View::Rows | View::Monitor => {
                 out.columns = 1;
-                let side = s.sm;
+                let side = if self.view == View::Rows { s.lg } else { s.sm };
+                let heading_x = heading_x + side - s.sm;
                 if self.monitor_strip_h > 0.0 {
                     y += self.monitor_strip_h + s.section_gap;
                 }
@@ -1464,6 +1470,7 @@ impl Model {
             }
         }
         out.content_h = y + inset;
+        out.foot = if self.view == View::Rows { inset } else { 0.0 };
         out.halved = halved;
         out.body_w = body_w;
         self.layout = out;
@@ -1479,6 +1486,13 @@ impl Model {
         }
     }
 
+    /// The tallest body under `cap` that ends on a whole row and the list's
+    /// `inset` under it, so a long list never rests on half a row.
+    fn whole_rows(&self, cap: f64, inset: f64) -> f64 {
+        let bottom = self.layout.slots.iter().map(|s| s.y + s.h).filter(|b| b + inset <= cap).fold(0.0, f64::max);
+        if bottom > 0.0 { bottom + inset } else { cap }
+    }
+
     /// The smallest scroll that shows the cursor's slot.
     fn follow(&mut self) {
         let Some(slot) = self.layout.slots.get(self.cursor) else {
@@ -1488,7 +1502,7 @@ impl Model {
         // A row heading its section brings the heading with it, and the
         // first row the list's own inset.
         let (top, bottom) = (slot.y, slot.y + slot.h);
-        let view = self.body_h;
+        let view = self.body_h - self.layout.foot;
         let mut next = self.scroll;
         let first = self.cursor == 0 || (!matches!(self.view, View::Rows | View::Monitor) && self.cursor < self.cells() && self.cursor < self.layout.columns);
         let top = if first { 0.0 } else { top };
@@ -1498,7 +1512,7 @@ impl Model {
         } else if top + h > next + view {
             next = top + h - view;
         }
-        let max = (self.layout.content_h - view).max(0.0);
+        let max = (self.layout.content_h - self.body_h).max(0.0);
         self.scroll = next.clamp(0.0, max);
     }
 
@@ -2897,6 +2911,12 @@ fn clip_glyph(row: &Node) -> Option<&'static str> {
     })
 }
 
+/// A section heading over the rows: the panels' `caption` 600 in `muted`
+/// (panel-language spec §5), on the rows' text column.
+fn heading_el(s: &fs_theme::tokens::Space, text: &str) -> El {
+    w::text(text.to_owned()).size(Type::Caption).weight(Weight::Semibold).ink(Ink::Muted).pad_start(s.control_padding_x)
+}
+
 /// A `LAUNCHER` length at the theme's type scale.
 fn launcher_px(theme: &Theme, base: f64) -> f64 {
     (base * fs_theme::tokens::font_scale(theme.font_size.base_size)).round()
@@ -3042,7 +3062,8 @@ impl Shown {
                 }
                 None => 0.0,
             };
-            m.layout.content_h.max(pane).max(rest - foot).min(cap)
+            let tall = m.layout.content_h.max(pane).max(rest - foot);
+            if tall > cap && pane == 0.0 && m.view == View::Rows { m.whole_rows(cap, s.lg) } else { tall.min(cap) }
         } else {
             cap
         };
@@ -3256,7 +3277,9 @@ impl Shown {
 
         // The body.
         let viewport = IRect::new(body_x.round() as i32, body_top.round() as i32, body_w.round() as i32, body_h.round() as i32);
-        let body_clip = viewport.intersect(&clip);
+        let rows_end = IRect::new(viewport.x, viewport.y, viewport.w, (body_h - m.layout.foot).max(0.0).round() as i32);
+        let body_clip = rows_end.intersect(&clip);
+        let view_clip = viewport.intersect(&clip);
         self.body_rect = (body_h > 0.0).then(|| IRect::new(viewport.x + on_output.0, viewport.y + on_output.1, viewport.w, viewport.h));
         let scroll = self.scroll.value(now) + m.touch.value(now);
         let mut overlays = Vec::new();
@@ -3346,7 +3369,7 @@ impl Shown {
             let r = Rect::new(body_x + half, body_top, body_x + body_w, body_top + body_h);
             let scroll = self.column_scroll.value(now) + c.touch.value(now);
             let (el, settling) = column_el(m, theme, scroll, now, self.scale);
-            let clip = ui::irect(r).intersect(&body_clip);
+            let clip = ui::irect(r).intersect(&view_clip);
             let d = self.preview.draw(&el, Rect::new(r.x0, r.y0 - scroll, r.x1, r.y1 - scroll), Some(clip), alpha, theme, kit, scene, now);
             if d.animating || settling {
                 self.wake = Some(now);
@@ -3363,7 +3386,7 @@ impl Shown {
             let ms = Clock::Effects.ms(theme) * self.scale;
             let t = if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(since).as_secs_f64() * 1000.0 / ms).min(1.0) };
             let el = if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el };
-            let d = self.preview.draw(&el, r, Some(body_clip), alpha, theme, kit, scene, now);
+            let d = self.preview.draw(&el, r, Some(view_clip), alpha, theme, kit, scene, now);
             if d.animating || t < 1.0 {
                 self.wake = Some(now);
             }
@@ -3373,11 +3396,12 @@ impl Shown {
             self.preview.draw(&w::space(0.0), Rect::new(0.0, 0.0, 0.0, 0.0), Some(body_clip), alpha, theme, kit, scene, now);
         }
 
-        // The foot band: a full-bleed rule, then the selected subject's keys.
+        // The foot band: the selected subject's keys under the list, on the
+        // rows' inset, its rule as short as the field's.
         let foot_rule = (body_top + body_h).round() as i32;
         let foot_top = if body_h > 0.0 { foot_rule as f64 + theme.border_width } else { body_top };
         let foot = if m.footless() { w::space(0.0) } else { footer(m, store, theme) };
-        let d = self.foot.draw(&foot, Rect::new(fx + s.sm, foot_top, fx + fw - s.sm, foot_top + s.control_height), Some(clip), alpha, theme, kit, scene, now);
+        let d = self.foot.draw(&foot, Rect::new(fx + s.lg, foot_top, fx + fw - s.lg, foot_top + s.control_height), Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
             self.wake = Some(now);
         }
@@ -3386,7 +3410,7 @@ impl Shown {
         let inset = s.xxl.round() as i32;
         p.rect(IRect::new(frame.x + inset, rule_top, (frame.w - inset * 2).max(0), bw), sep, 0.0);
         if body_h > 0.0 && !m.footless() {
-            p.rect(IRect::new(frame.x, foot_rule, frame.w, bw), sep, 0.0);
+            p.rect(IRect::new(frame.x + inset, foot_rule, (frame.w - inset * 2).max(0), bw), sep, 0.0);
         }
         // Pond's divider between the list and the side column, `lg` short
         // of the body's ends.
@@ -3591,7 +3615,8 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 other => other,
             })
             .collect();
-        let content = w::row(s.sm, vec![w::text(label).size(Type::Caption).ink(Ink::Muted), w::chord_keys(s, &keys)]);
+        // Quieter than the rows: Pond's card has nothing at its foot.
+        let content = w::row(s.sm, vec![w::text(label).size(Type::Caption).ink(Ink::Dim), w::chord_keys(s, &keys).fade(0.6)]);
         parts.push(w::cell(content).ghost().interactive().cell_state(|c| c.chip = true).on(on));
     }
     // A band a `controlHeight` tall whether or not a hint is in it.
@@ -3648,7 +3673,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
             let ink = if destructive { Ink::Destructive } else { Ink::Fg };
             lead.push(w::icon(name).ink(ink).width(Size::Px(icon_px)).height(icon_px));
         }
-        let mut name = w::text(label).weight(if selected { Weight::Semibold } else { Weight::Normal }).elide();
+        let mut name = w::text(label).elide();
         if dim {
             name = name.ink(Ink::Dim);
         }
@@ -3713,9 +3738,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
     let snap = snapshot(store);
     let mut items: Vec<(f64, f64, El)> = Vec::new();
     for (text, y, x) in &lay.headings {
-        let h = ui::measure(&w::heading(s, text, None, true), 400.0, theme, kit).1;
+        let h = ui::measure(&heading_el(s, text), 400.0, theme, kit).1;
         if visible(*y, h) {
-            items.push((*y, h, w::heading(s, text, None, true).pad_start(s.control_padding_x + x)));
+            items.push((*y, h, heading_el(s, text).pad_start(s.control_padding_x + x)));
         }
     }
     if m.monitor_strip_h > 0.0 {
@@ -4326,7 +4351,7 @@ fn menu_row(m: &Model, store: &Store, row: &Node, i: usize, selected: bool, chec
         lead.push(w::text(row.icon.clone()).size(Type::Heading).centred().width(Size::Px(icon_px)));
     }
     let label = if confirming { format!("Confirm {}?", row.label) } else { row.label.clone() };
-    let mut name = w::text(label).weight(if selected { Weight::Semibold } else { Weight::Normal }).elide();
+    let mut name = w::text(label).elide();
     if row.dim == Some(true) {
         name = name.ink(Ink::Dim);
     }
