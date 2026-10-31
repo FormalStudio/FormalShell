@@ -412,7 +412,11 @@ runs = ["--panel info"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/settings.rs"]
-runs = ["--panel settings", "--panel settings --light"]
+runs = ["--panel settings", "--panel settings --light", "--settings-ui", "--settings-ui --light"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/formalshell-rs/src/services/overrides.rs", "crates/formalshell-rs/src/ipc/settings.rs", "crates/formalshell-rs/src/services/config.rs", "crates/formalshell-rs/src/services/state.rs"]
+runs = ["--settings-ui", "--settings-ui --light"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/iphone.rs", "crates/formalshell-rs/src/services/info/iphone.rs", "crates/formalshell-rs/src/ipc/iphone.rs", "crates/formalshell-rs/src/services/ams.rs", "crates/fs-devices/src/iphone.rs"]

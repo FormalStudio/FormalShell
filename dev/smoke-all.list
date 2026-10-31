@@ -161,6 +161,8 @@
 --panel power
 --panel info
 --panel settings
+--settings-ui
+--settings-ui --light
 --panel calendar
 --panel weather
 --device-routes

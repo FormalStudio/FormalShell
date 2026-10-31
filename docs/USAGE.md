@@ -1854,6 +1854,27 @@ Alt+Tab switches to the previous window with no card at all, the way Cmd+Tab
 does on macOS. The release bind fires on every Alt release, open or not; a
 commit with nothing open answers `error: nothing to commit` and does nothing.
 
+## Settings pages
+
+The Settings panel's Appearance, Bar, Desktop and System tiles open pages
+of settings: the theme style, reactive rims, motion and morph, the
+layout (bar or sidebar), the bar's edge and style, where toasts go, the
+desktop clock, the hot corners and a handful of switches. A change there
+applies at once and lands in `state.json` under `settings`, never in
+settings.json. settings.json wins: a key it sets shows on its page with a
+lock and "Set in settings.json", and takes no edit until you remove it
+from the file. On a page, Up and Down walk the rows, Enter or Space flips
+a switch, Left and Right move a choice, `x` drops the change under the
+cursor, Backspace goes back to the tiles.
+
+```sh
+fs panel open settings:bar        # also appearance, desktop, system
+fs settings get bar.style         # {"key":…,"value":…,"override":…,"file":…,"pinned":…}
+fs settings set bar.style solid   # JSON, or a bare word as a string
+fs settings reset bar.style
+fs settings list
+```
+
 ## Panels
 
 Popouts share one frame: a card anchored under the bar cell that opened it,

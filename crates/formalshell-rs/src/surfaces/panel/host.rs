@@ -671,7 +671,8 @@ impl Host {
                 self.cursor.keyed = true;
             }
             Key::Move(dx, dy) => self.move_cursor(dx, dy, &mut fx),
-            Key::Back | Key::Edit(..) => {}
+            Key::Back => self.module.back(&mut fx),
+            Key::Edit(..) => {}
             Key::Activate => {
                 if let Some(k) = stop.filter(|_| !self.body.stops.is_empty()) {
                     self.module.activate(&k, &mut fx);

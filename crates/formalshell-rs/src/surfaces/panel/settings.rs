@@ -1,8 +1,9 @@
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
-//! Pond's settings page: four square tiles, two by two (Appearance,
-//! Bluetooth, System, Information), each a glyph over its name, beside a
+//! Pond's settings page: six square tiles, two by three (Appearance, Bar,
+//! Desktop, System, Bluetooth, Information), each a glyph over its name,
+//! the first four opening a page of settings (`settings_page`), beside a
 //! column of round session buttons (lock, suspend, reboot, power off).
-//! A tile hands over to the panel or launcher route it names; a session
+//! A tile hands over to the panel it names; a session
 //! button closes the card and asks the shell or logind, restart and shut
 //! down only on a second press, as the launcher's rows do.
 
@@ -17,16 +18,13 @@ pub struct Settings {
     armed: Option<&'static str>,
 }
 
-enum Go {
-    Panel(&'static str),
-    Route(&'static str),
-}
-
-const TILES: [(&str, &str, &str, Go); 4] = [
-    ("appearance", "paint-bucket", "Appearance", Go::Route("theme")),
-    ("bluetooth", "bluetooth", "Bluetooth", Go::Panel("bluetooth")),
-    ("system", "hexagon", "System", Go::Route("system")),
-    ("info", "info", "Information", Go::Panel("info")),
+const TILES: [(&str, &str, &str, &str); 6] = [
+    ("appearance", "paint-bucket", "Appearance", "settings:appearance"),
+    ("bar", "panel-top", "Bar", "settings:bar"),
+    ("desktop", "monitor", "Desktop", "settings:desktop"),
+    ("system", "hexagon", "System", "settings:system"),
+    ("bluetooth", "bluetooth", "Bluetooth", "bluetooth"),
+    ("info", "info", "Information", "info"),
 ];
 
 const SESSION: [(&str, &str, &str); 4] =
@@ -55,7 +53,8 @@ impl Panel for Settings {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let tile_h = s.huge * 5.0;
+        let tile_h = s.huge * 4.0;
+        let rows = TILES.len().div_ceil(2) as f64;
         let tiles = TILES
             .iter()
             .map(|(id, glyph, name, _)| {
@@ -80,7 +79,7 @@ impl Panel for Settings {
             })
             .collect();
         let gap = s.sm;
-        let button_h = (tile_h * 2.0 + gap - gap * 3.0) / 4.0;
+        let button_h = (tile_h * rows + gap * (rows - 1.0) - gap * 3.0) / 4.0;
         let session = SESSION
             .iter()
             .map(|(id, glyph, tip)| {
@@ -144,10 +143,8 @@ impl Settings {
     fn go(&mut self, on: &str, fx: &mut Effect) {
         let armed = self.armed.take();
         if let Some(id) = on.strip_prefix("tile:") {
-            match TILES.iter().find(|t| t.0 == id).map(|t| &t.3) {
-                Some(Go::Panel(name)) => fx.panel = Some(name),
-                Some(Go::Route(route)) => fx.summon = Some(route),
-                None => {}
+            if let Some(t) = TILES.iter().find(|t| t.0 == id) {
+                fx.panel = Some(t.3);
             }
             return;
         }

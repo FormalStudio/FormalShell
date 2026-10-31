@@ -36,6 +36,7 @@ pub mod network;
 pub mod plugin;
 pub mod power;
 pub mod settings;
+pub mod settings_page;
 pub mod standin;
 pub mod systemupdate;
 pub mod tailscale;
@@ -187,6 +188,8 @@ pub trait Panel {
     fn reached(&mut self, _stop: &str, _fx: &mut Effect) {}
     /// The stop under the pointer changed, `None` once it is over none.
     fn pointed(&mut self, _stop: Option<&str>) {}
+    /// Backspace outside a text field: a page going back up a level.
+    fn back(&mut self, _fx: &mut Effect) {}
     /// `x` on a stop.
     fn delete(&mut self, _stop: &str, _fx: &mut Effect) {}
     /// A printable key no binding took.
@@ -203,7 +206,7 @@ pub trait Panel {
 
 /// The panels `panel` can open, each one's
 /// module.
-pub const PANELS: [&str; 22] = [
+pub const PANELS: [&str; 26] = [
     "activity",
     "appmenu",
     "audio",
@@ -226,6 +229,10 @@ pub const PANELS: [&str; 22] = [
     "radio",
     "info",
     "settings",
+    "settings:appearance",
+    "settings:bar",
+    "settings:desktop",
+    "settings:system",
 ];
 
 pub fn known(name: &str) -> Option<&'static str> {
@@ -255,6 +262,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         "power" => Box::new(power::Power::new()),
         "info" => Box::new(info::Info::new()),
         "settings" => Box::<settings::Settings>::default(),
+        page if page.starts_with("settings:") => Box::new(settings_page::SettingsPage::new(page)?),
         "systemupdate" => Box::new(systemupdate::SystemUpdate::new()),
         "tailscale" => Box::new(tailscale::Tailscale::new()),
         "usage" => Box::new(usage::Usage::new()),
