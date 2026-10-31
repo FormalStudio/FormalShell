@@ -12,3 +12,6 @@ libc = "0.2"
 pam-sys2 = "1.0"
 zbus = { version = "5", default-features = false, features = ["async-io"] }
 zeroize = "1.8"
+
+[dev-dependencies]
+tempfile = "3"

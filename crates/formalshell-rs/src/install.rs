@@ -410,17 +410,14 @@ fn remove_owned(path: &Path) -> Result<(), String> {
 /// Fedora: the same stack the distro's own login uses. `include` rather than
 /// `@include`, which is a Debian patch that openSUSE's PAM rejects.
 ///
-/// pam_gnome_keyring's `auth` step unlocks a running daemon's login keyring
-/// with the typed password: after a locked login, which typed none, the
-/// lock's first unlock is what opens it.
+/// No pam_gnome_keyring: its `auth` step waits on the daemon, which accepts
+/// nothing while its unlock prompt is up under the lock. The lock unlocks
+/// the keyring itself once PAM has said yes (`fs_auth::keyring`).
 fn pam_file() -> Option<String> {
-    let keyring = ["/usr/lib64/security", "/usr/lib/security", "/lib/security", "/usr/lib/x86_64-linux-gnu/security", "/usr/lib/aarch64-linux-gnu/security"]
-        .iter()
-        .any(|d| Path::new(d).join("pam_gnome_keyring.so").exists());
-    pam_for(Path::new("/etc/pam.d/common-auth").exists(), Path::new("/etc/pam.d/system-auth").exists(), keyring)
+    pam_for(Path::new("/etc/pam.d/common-auth").exists(), Path::new("/etc/pam.d/system-auth").exists())
 }
 
-fn pam_for(common: bool, system: bool, keyring: bool) -> Option<String> {
+fn pam_for(common: bool, system: bool) -> Option<String> {
     let (auth, account) = if common {
         ("common-auth", "common-account")
     } else if system {
@@ -428,8 +425,7 @@ fn pam_for(common: bool, system: bool, keyring: bool) -> Option<String> {
     } else {
         return None;
     };
-    let keyring = if keyring { "auth       optional     pam_gnome_keyring.so\n" } else { "" };
-    Some(format!("#%PAM-1.0\nauth       include      {auth}\n{keyring}account    include      {account}\n"))
+    Some(format!("#%PAM-1.0\nauth       include      {auth}\naccount    include      {account}\n"))
 }
 
 /// The greeter runs under sway, as nixosModules.formalshell-greeter does,
@@ -689,13 +685,10 @@ mod tests {
 
     #[test]
     fn pam_follows_the_distro_stack() {
-        assert!(pam_for(true, true, false).unwrap().contains("auth       include      common-auth"));
-        assert!(pam_for(false, true, false).unwrap().contains("include      system-auth"));
-        assert_eq!(pam_for(false, false, true), None);
-        assert!(!pam_for(true, false, false).unwrap().contains("gnome_keyring"));
-        let keyring = pam_for(true, false, true).unwrap();
-        let (auth, keyring_line) = (keyring.find("include      common-auth").unwrap(), keyring.find("pam_gnome_keyring.so").unwrap());
-        assert!(auth < keyring_line, "the keyring takes the password after the stack has checked it");
+        assert!(pam_for(true, true).unwrap().contains("auth       include      common-auth"));
+        assert!(pam_for(false, true).unwrap().contains("include      system-auth"));
+        assert_eq!(pam_for(false, false), None);
+        assert!(!pam_for(true, false).unwrap().contains("gnome_keyring"));
     }
 
     #[test]

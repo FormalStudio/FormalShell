@@ -10,6 +10,12 @@
 # ordinary client. wtype is a real virtual-keyboard-unstable-v1 client;
 # LockIpc deliberately has no "type this password" verb (see its header), so
 # the only way to prove the unlock path is to actually type into it.
+#
+# The real password goes in over a gnome-keyring control socket that
+# listens and never accepts, the state a daemon is in while its unlock
+# prompt waits under the lock (fs_auth::keyring's header): the unlock has to
+# land as fast as without it, and the shell has to log the keyring left
+# locked rather than wait on it.
 leg_lock_flag="--lock"
 leg_lock_order=110
 leg_lock_needs="wtype convert"
@@ -22,6 +28,8 @@ lock_islocked1_path="$shot_dir/lock-islocked-1.txt"
 lock_islocked2_path="$shot_dir/lock-islocked-2.txt"
 lock_status_path="$shot_dir/lock-status.json"
 lock_call_rc_path="$shot_dir/lock-call-rc.txt"
+lock_keyring_path="$shot_dir/lock-keyring.txt"
+lock_unlock_ms_path="$shot_dir/lock-unlock-ms.txt"
 
 # This leg's own clock. It starts late under --wallpaper so the two
 # wallpaper frames land first, which puts a real matugen-recoloured gradient
@@ -69,8 +77,23 @@ sleep 1
 sleep 5
 "$grim_bin" "$lock_error_path" > /dev/null 2>&1
 sleep 2
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+control="\$XDG_RUNTIME_DIR/keyring/control"
+if [ -e "\$control" ]; then
+  echo "taken: a keyring daemon already listens at \$control" > "$lock_keyring_path"
+else
+  mkdir -p "\$(dirname "\$control")"
+  python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8); time.sleep(60)' "\$control" &
+  stuck=\$!
+  for _ in \$(seq 50); do [ -S "\$control" ] && break; sleep 0.1; done
+  echo "stuck" > "$lock_keyring_path"
+fi
+"$wtype_bin" -s 300 "formalshell-test"
+t0=\$(date +%s%N)
+"$wtype_bin" -s 300 -k Return
+until [ "\$($ipc call lock isLocked 2>/dev/null)" = false ] || [ \$(( (\$(date +%s%N) - t0) / 1000000 )) -gt 20000 ]; do sleep 0.05; done
+echo \$(( (\$(date +%s%N) - t0) / 1000000 )) > "$lock_unlock_ms_path"
 sleep 3
+[ -n "\${stuck:-}" ] && { kill "\$stuck"; rm -f "\$control"; }
 "$grim_bin" "$lock_unlocked_path" > /dev/null 2>&1
 sleep 1
 $ipc call lock isLocked > "$lock_islocked2_path" 2>&1
@@ -103,6 +126,14 @@ leg_lock_assert() {
   cat "$lock_status_path"; echo
   if ! grep -q '"locked":false' "$lock_status_path"; then
     fail "lock status did not report locked:false after unlock. Got: $(cat "$lock_status_path")"
+  fi
+  local ms
+  ms=$(cat "$lock_unlock_ms_path" 2>/dev/null)
+  echo "lock unlock over a stuck keyring: ${ms:-none} ms ($(cat "$lock_keyring_path" 2>/dev/null))"
+  if grep -q '^stuck$' "$lock_keyring_path" 2>/dev/null; then
+    [ "${ms:-99999}" -lt 6000 ] || fail "the unlock waited on a keyring daemon that never accepts: ${ms:-none} ms"
+    grep -q "lock: login keyring left locked" "$shell_log_path" \
+      || fail "no 'login keyring left locked' in the shell log: $(grep -E 'lock:' "$shell_log_path" | tail -8)"
   fi
   # The swappable-locker half (M45 D2): this run writes no `lock.command`, so
   # the built-in surface is the one that came up and `external` has to say so.

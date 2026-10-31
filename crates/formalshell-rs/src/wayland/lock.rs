@@ -32,6 +32,7 @@ use calloop::RegistrationToken;
 use calloop::channel::{self, Sender};
 use calloop::timer::{TimeoutAction, Timer};
 use chrono::{Local, Timelike};
+use fs_auth::keyring;
 use fs_auth::pam::{self, Outcome};
 use serde_json::{Map, Value, json};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -140,6 +141,8 @@ pub struct Lock {
     /// output's pixels.
     shards: Vec<Bitmap>,
     clock: Option<RegistrationToken>,
+    /// Ends a password check PAM has not answered in `CHECK_DEADLINE`.
+    check_deadline: Option<RegistrationToken>,
     pub(super) dirty: bool,
     transport: i32,
     /// The track's cover at each output's scale, for the art URL it was
@@ -193,6 +196,7 @@ impl Lock {
             depth_cut: None,
             shards: Vec::new(),
             clock: None,
+            check_deadline: None,
             dirty: false,
             transport: -1,
             art: None,
@@ -271,6 +275,13 @@ fn mark_held(held: bool) {
 fn login_marker() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("formalshell").join("login-lock")
 }
+
+/// pam_unix's own failure delay is 2s; a stack still busy past this is
+/// waiting on something that is not coming.
+const CHECK_DEADLINE: Duration = Duration::from_secs(15);
+/// The keyring is unlocked after the lock has lifted, so this only bounds a
+/// thread nobody waits on.
+const KEYRING_DEADLINE: Duration = Duration::from_secs(5);
 
 static SPLASH: Mutex<Option<JoinHandle<Option<Bitmap>>>> = Mutex::new(None);
 
@@ -457,8 +468,12 @@ impl App {
         self.lock.idle_watch = Some(notifier.get_input_idle_notification((seconds * 1000.0) as u32, &seat, &self.qh, LockIdle));
     }
 
+    /// Idle never blanks a password being checked or a lock lifting: the
+    /// field is what says the check is still running.
     pub fn lock_blanked(&self) -> bool {
-        self.lock.session.is_some() && !self.saver.active && ((self.lock.idle && !self.lock.with_saver) || self.lock.resume_guard)
+        self.lock.session.is_some()
+            && !self.saver.active
+            && ((self.lock.idle && !self.lock.with_saver && !self.lock.checking && !self.lock.unlocking) || self.lock.resume_guard)
     }
 
     /// This shell's lock surfaces are up, so nothing on a layer is seen.
@@ -704,21 +719,70 @@ impl App {
         self.lock.dirty = true;
         let attempt = self.lock.attempt;
         let spawned = std::thread::Builder::new().name("fs-lock-auth".into()).spawn(move || {
+            let keyring_password = password.clone();
             let outcome = match pam::current_user() {
                 Some(user) => pam::check(pam::LOCK_SERVICE, &user, password),
                 None => Outcome::StartFailed("no user".into()),
             };
+            let unlocked = outcome == Outcome::Success;
             let _ = tx.send(LockMsg::Pam(attempt, outcome));
+            // After the lock has its answer, never before it (fs_auth::keyring).
+            if unlocked {
+                match keyring::unlock_login(&keyring_password, KEYRING_DEADLINE) {
+                    keyring::Unlock::Unlocked => eprintln!("lock: login keyring unlocked"),
+                    keyring::Unlock::NoDaemon => {}
+                    other => eprintln!("lock: login keyring left locked: {other:?}"),
+                }
+            }
         });
         if spawned.is_err() {
             self.lock.checking = false;
             self.lock.error = "PAM error".into();
+            return;
+        }
+        self.arm_check_deadline(attempt);
+    }
+
+    /// A PAM module that never returns (one waiting on a daemon that is
+    /// not answering) cannot hold the field: the check is dropped, its
+    /// thread left to finish into an attempt nobody waits on, and the
+    /// field asks again.
+    fn arm_check_deadline(&mut self, attempt: u64) {
+        let Some(handle) = &self.handle else { return };
+        if let Some(t) = self.lock.check_deadline.take() {
+            handle.remove(t);
+        }
+        self.lock.check_deadline = handle
+            .insert_source(Timer::from_duration(CHECK_DEADLINE), move |_, _, app: &mut App| {
+                app.lock.check_deadline = None;
+                if app.lock.checking && app.lock.attempt == attempt {
+                    eprintln!("lock: pam gave no answer in {}s", CHECK_DEADLINE.as_secs());
+                    app.lock.attempt += 1;
+                    app.end_check();
+                    app.lock.error = "The password check timed out, try again".into();
+                }
+                TimeoutAction::Drop
+            })
+            .ok();
+    }
+
+    /// The check is over. Idle time spent waiting on it does not blank the
+    /// lock soon after the answer shows, so the idle watch starts again.
+    fn end_check(&mut self) {
+        self.lock.checking = false;
+        self.lock.dirty = true;
+        if let (Some(handle), Some(t)) = (&self.handle, self.lock.check_deadline.take()) {
+            handle.remove(t);
+        }
+        self.lock.idle = false;
+        if let Some(w) = self.lock.idle_watch.take() {
+            w.destroy();
+            self.watch_lock_idle();
         }
     }
 
     fn lock_result(&mut self, outcome: Outcome) {
-        self.lock.checking = false;
-        self.lock.dirty = true;
+        self.end_check();
         match outcome {
             Outcome::Success => self.begin_unlock(),
             Outcome::Failed(_) => self.lock.error = "Wrong password".into(),

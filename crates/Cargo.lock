@@ -894,6 +894,7 @@ dependencies = [
  "futures-lite",
  "libc",
  "pam-sys2",
+ "tempfile",
  "zbus",
  "zeroize",
 ]

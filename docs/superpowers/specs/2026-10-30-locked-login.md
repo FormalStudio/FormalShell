@@ -82,12 +82,24 @@ and services before anything is drawn. The login lock takes neither path:
 
 - **Keyring**: greetd's PAM session (`session optional pam_gnome_keyring.so
   auto_start`) still starts gnome-keyring, locked, since no password was
-  typed. `/etc/pam.d/formalshell-lock` gains `auth optional
-  pam_gnome_keyring.so`, whose `auth` step unlocks a running daemon's login
-  keyring over `$XDG_RUNTIME_DIR/keyring/control` with the typed password.
-  Every unlock repeats it harmlessly. kwallet is not covered: pam_kwallet
-  hands its key over only in `open_session`, which a lock never runs, and
-  no host configures it today.
+  typed. The lock's PAM stack carries no pam_gnome_keyring. The first boot
+  on g815 and e1504g (2026-10-31) hung every unlock on "Unlocking..." when
+  it did: a Secret Service client at login asks for the locked login
+  keyring, the daemon raises gcr-prompter's unlock prompt and blocks on it
+  (`futex_do_wait`, SIGTERM ignored, its control socket's backlog never
+  accepted), the prompt draws under the session lock where nobody can
+  answer it, and pam_gnome_keyring's `auth` step waits on that socket
+  forever. GNOME has the same prompt after an autologin; it only works
+  there because nothing covers it. The shell instead unlocks the keyring
+  itself once PAM has said yes (`fs_auth::keyring`, gkr-pam-client's
+  control protocol, 5s deadlines), on the auth thread after the result is
+  sent, so the lock lifts first. A daemon stuck in its prompt is left
+  alone, logged as `lock: login keyring left locked`, and its prompt is
+  on the desktop once the lock is gone. Any PAM stack that hangs anyway
+  ends at a 15s deadline with "The password check timed out, try again"
+  under the field, and the lock never blanks while a check is running.
+  kwallet is not covered: pam_kwallet hands its key over only in
+  `open_session`, which a lock never runs, and no host configures it today.
 - **logind session**: greetd's worker sets `XDG_SEAT=seat0`, the class and
   the VT before `pam_open_session`, but `initial_session` passes no
   environment, so pam_systemd would register type `tty` where the greeter's
