@@ -103,6 +103,21 @@ pub fn active() -> bool {
 
 thread_local! {
     static STARTING: RefCell<Option<Starting>> = const { RefCell::new(None) };
+    static WOKEN: RefCell<Option<calloop::ping::PingSource>> = const { RefCell::new(None) };
+}
+
+/// Calls `up` on the loop's own thread once the device is up, so surfaces
+/// with nothing to draw move across too.
+pub fn watch<D: 'static>(handle: &calloop::LoopHandle<'static, D>, up: fn(&mut D)) {
+    let Some(source) = WOKEN.with(|w| w.borrow_mut().take()) else { return };
+    let inserted = handle.insert_source(source, move |_, _, data| {
+        if active() {
+            up(data);
+        }
+    });
+    if let Err(e) = inserted {
+        eprintln!("formalshell: render: watching the GPU start: {e}");
+    }
 }
 
 /// The Wayland half, kept on the main thread while `gpu-start` opens the
@@ -169,8 +184,14 @@ pub fn resolve(asked: Backend, conn: &Connection, globals: &GlobalList) {
         Err(reason) => return settle(asked, Err(reason)),
     };
     let (tx, opened) = std::sync::mpsc::channel();
+    let (ping, source) = match calloop::ping::make_ping() {
+        Ok(p) => p,
+        Err(e) => return settle(asked, Err(format!("a wakeup for the GPU thread: {e}"))),
+    };
+    WOKEN.with(|w| *w.borrow_mut() = Some(source));
     let spawned = std::thread::Builder::new().name("gpu-start".into()).spawn(move || {
         let _ = tx.send(Device::open(&node));
+        ping.ping();
     });
     if let Err(e) = spawned {
         return settle(asked, Err(format!("starting the GPU thread: {e}")));

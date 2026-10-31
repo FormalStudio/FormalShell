@@ -7,12 +7,14 @@
 # rig (no render node) it reads cpu with the reason. The second asks for
 # cpu. The third asks for gpu with VK_DRIVER_FILES naming no driver, a
 # machine with no Vulkan driver at all: cpu, saying no Vulkan device was
-# found. Each opens the launcher, and the card is cropped off `menu
-# status`'s cardBox: the GPU's crop within 3% RMSE of the CPU's, and the
-# fallback's too, none of them flat.
+# found. Each is photographed on the bare desktop (the bar and the desktop
+# clock), with the audio panel open, with the launcher open and with a
+# sticky toast over the volume OSD; the launcher card is cropped off `menu
+# status`'s cardBox. The GPU's frames within 3% RMSE of the CPU's, and the
+# fallback's too, the card not flat.
 leg_render_flag="--render"
 leg_render_order=113
-leg_render_needs="jq convert"
+leg_render_needs="jq convert notify-send"
 
 render_dump() { echo "$shot_dir/render-$1.json"; }
 render_frame() { echo "$shot_dir/render-$1.png"; }
@@ -31,7 +33,11 @@ leg_render_validate() {
 
 leg_render_fixture() {
   settings_pin '.render.backend = "gpu"'
+  settings_pin '.desktopClock.enabled = true'
 }
+
+# The frames every turn takes beside the launcher's.
+render_scenes="desktop panel toast"
 
 leg_render_timing() {
   leg_timing 45 80
@@ -51,12 +57,26 @@ turn() {
   done
   sleep 2
   $ipc call debug dump > "$shot_dir/render-\$name.json" 2>&1
+  "$grim_bin" "$shot_dir/render-\$name-desktop.png" > /dev/null 2>&1
+  date +%H%M > "$shot_dir/render-\$name-desktop.minute"
+  $ipc call panel open audio > /dev/null 2>&1
+  sleep 1.5
+  "$grim_bin" "$shot_dir/render-\$name-panel.png" > /dev/null 2>&1
+  date +%H%M > "$shot_dir/render-\$name-panel.minute"
+  $ipc call panel close > /dev/null 2>&1
+  sleep 1
   $ipc call menu toggle > /dev/null 2>&1
   sleep 2.5
   $ipc call menu status > "$shot_dir/render-\$name-menu.json" 2>&1
   "$grim_bin" "$shot_dir/render-\$name.png" > /dev/null 2>&1
   $ipc call menu toggle > /dev/null 2>&1
   sleep 1.5
+  notify-send -u critical -t 0 "Render check" "One sticky toast for each shell" > /dev/null 2>&1
+  $ipc call osd volume > /dev/null 2>&1
+  sleep 1.2
+  "$grim_bin" "$shot_dir/render-\$name-toast.png" > /dev/null 2>&1
+  date +%H%M > "$shot_dir/render-\$name-toast.minute"
+  $ipc call osd close > /dev/null 2>&1
 }
 sleep 4
 turn gpu gpu
@@ -111,9 +131,25 @@ leg_render_assert() {
     echo "render $t card spread: $spread"
     awk -v s="${spread:-0}" 'BEGIN { exit !(s > 0.02) }' || fail "--render $t: the launcher card is flat (spread ${spread:-none}), nothing was drawn"
   done
+  local scene box mask
+  for scene in $render_scenes; do
+    echo "SMOKE_RENDER_CPU_$(echo "$scene" | tr a-z A-Z) $shot_dir/render-cpu-$scene.png"
+  done
   for t in gpu nodriver; do
-    rmse=$("$convert_bin" "$shot_dir/render-$t-card.png" "$shot_dir/render-cpu-card.png" -metric RMSE -compare -format '%[distortion]' info: 2>/dev/null)
-    echo "render $t card against cpu: RMSE ${rmse:-none}"
-    awk -v r="${rmse:-1}" 'BEGIN { exit !(r < 0.03) }' || fail "--render $t: the launcher card differs from the CPU's (RMSE ${rmse:-none}, over 0.03)"
+    for scene in card $render_scenes; do
+      [ -f "$shot_dir/render-$t-$scene.png" ] || fail "--render $t: no $scene frame"
+      [ "$scene" = card ] || echo "SMOKE_RENDER_$(echo "$t" | tr a-z A-Z)_$(echo "$scene" | tr a-z A-Z) $shot_dir/render-$t-$scene.png"
+      # The desktop clock's minute can roll between two turns: its rect
+      # is then left out of that one comparison.
+      mask=()
+      if [ "$scene" != card ] && ! cmp -s "$shot_dir/render-$t-$scene.minute" "$shot_dir/render-cpu-$scene.minute"; then
+        box=$("$jq_bin" -r '.desktopClock[0].rect | "\(.[0]),\(.[1]) \(.[0] + .[2]),\(.[1] + .[3])"' "$(render_dump cpu)" 2>/dev/null)
+        [ -n "$box" ] && mask=(-fill black -draw "rectangle $box")
+        echo "render $t $scene: the minute rolled since the CPU's frame, the desktop clock left out"
+      fi
+      rmse=$("$convert_bin" \( "$shot_dir/render-$t-$scene.png" "${mask[@]}" \) \( "$shot_dir/render-cpu-$scene.png" "${mask[@]}" \) -metric RMSE -compare -format '%[distortion]' info: 2>/dev/null)
+      echo "render $t $scene against cpu: RMSE ${rmse:-none}"
+      awk -v r="${rmse:-1}" 'BEGIN { exit !(r < 0.03) }' || fail "--render $t: the $scene frame differs from the CPU's (RMSE ${rmse:-none}, over 0.03)"
+    done
   done
 }

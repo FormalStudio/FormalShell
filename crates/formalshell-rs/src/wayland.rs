@@ -710,6 +710,15 @@ impl App {
         self.refresh_bar(None);
     }
 
+    /// The GPU is up: every surface drawn so far draws once more, moving
+    /// across to it on that present.
+    pub fn gpu_up(&mut self) {
+        self.bar_dirty = true;
+        self.panel_dirty = true;
+        self.toasts_dirty = true;
+        self.launcher.dirty = true;
+    }
+
     /// Every card open across a theme change takes the new look: the
     /// launcher's, the open panel's and the second bar's.
     pub fn restyle_cards(&mut self) {

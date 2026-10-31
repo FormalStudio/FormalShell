@@ -98,6 +98,7 @@ fn main() {
     app.runtime = Some(runtime);
     phase("runtime");
     app.set_handle(handle.clone());
+    gpu::watch(&handle, App::gpu_up);
     ipc::listen(&handle);
 
     let signal = event_loop.get_signal();

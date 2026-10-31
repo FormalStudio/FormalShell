@@ -1200,9 +1200,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   in a nested session (`debug dump`'s `render` block naming the render
   node) and falling back to cpu with the reason on a vkms rig, `cpu`
   asked, and `gpu` under a `VK_DRIVER_FILES` naming no driver falling back
-  saying no Vulkan device was found. Each opens the launcher: the card's
-  crop off `menu status`'s `cardBox` not flat, and the GPU's and the
-  fallback's within 3% RMSE of the CPU's. Runs alone.
+  saying no Vulkan device was found. Each is photographed on the bare
+  desktop (the bar and `desktopClock`), with the audio panel open, with the
+  launcher open (its card cropped off `menu status`'s `cardBox`, not flat)
+  and with a sticky toast over the volume OSD: the GPU's and the
+  fallback's frames within 3% RMSE of the CPU's, the desktop clock left
+  out of a pair whose minute rolled between them. Runs alone.
 - `screensaver.sh` `--screensaver`: the live media guard, auto-activation off
   the idle timer alone, and the manual start/stop path.
 - `screensaver_gif.sh` `--screensaver-gif`: five ttfx effects recorded frame
