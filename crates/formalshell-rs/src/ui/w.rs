@@ -364,6 +364,11 @@ pub fn panel_text(s: &Space, el: El) -> El {
     el.pad(i, top, i, bottom)
 }
 
+/// A segmented choice in a panel, on the text column like a group's box.
+pub fn panel_choice(s: &Space, options: Vec<String>, index: usize) -> El {
+    panel_text(s, segmented(options, index).fill())
+}
+
 /// A ghost cell whose child sits on the text column: what every row is.
 pub fn panel_cell(s: &Space, child: El) -> El {
     let x = text_inset(s);

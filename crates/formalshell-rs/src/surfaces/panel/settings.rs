@@ -107,7 +107,7 @@ impl Panel for Settings {
                     .on(format!("session:{id}"))
             })
             .collect();
-        w::row(gap, vec![w::grid(2, gap, tiles), w::column(gap, session).width(Size::Px(s.huge * 2.5))])
+        w::panel_text(s, w::row(gap, vec![w::grid(2, gap, tiles), w::column(gap, session).width(Size::Px(s.huge * 2.5))]).fill())
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

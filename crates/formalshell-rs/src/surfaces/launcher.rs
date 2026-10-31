@@ -809,6 +809,13 @@ impl Model {
         (i, self.card_width(theme) - i * 2.0)
     }
 
+    /// How far in the field and its rules sit: a held panel's text column
+    /// (its body plus the kit's text inset), so its title and the rule
+    /// above its groups and tiles line up with them.
+    fn field_inset(&self, theme: &Theme) -> f64 {
+        if self.on_panel() { self.panel_body(theme).0 + w::text_inset(&theme.space) } else { theme.space.xxl }
+    }
+
     /// The preview pane's offset into the body and its size: the side
     /// column past the list's share, `lg` in from its divider and the
     /// body's edges. The pane's draw and its picture's decode both read it.
@@ -3258,7 +3265,8 @@ impl Shown {
         // a rule as far in under it.
         let band = launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band);
         let line_top = fy + ((band - line) / 2.0).round();
-        let head_rect = Rect::new(fx + s.xxl, line_top, fx + fw - s.xxl, line_top + line);
+        let field_x = m.field_inset(theme);
+        let head_rect = Rect::new(fx + field_x, line_top, fx + fw - field_x, line_top + line);
         // The row stands the field's height whatever it holds, so a token
         // with no query beside it (a held panel) centres in the band too.
         let head = header(m, store, theme).height(line);
@@ -3413,7 +3421,7 @@ impl Shown {
         }
 
         let mut p = Painter::new(scene, &mut self.rules, Some(clip));
-        let inset = s.xxl.round() as i32;
+        let inset = field_x.round() as i32;
         p.rect(IRect::new(frame.x + inset, rule_top, (frame.w - inset * 2).max(0), bw), sep, 0.0);
         if body_h > 0.0 && !m.footless() {
             p.rect(IRect::new(frame.x + inset, foot_rule, (frame.w - inset * 2).max(0), bw), sep, 0.0);

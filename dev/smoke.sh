@@ -978,6 +978,24 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_assert" >/dev/null; then "leg_${leg_name}_assert"; fi
 done
 
+# Every launcher status a leg saved with a token drawn, whatever level put
+# it there: the token's vertical centre on the field band's within 1px. The
+# boxes are the last frame's, so a read taken before a new view's first
+# frame carries no token box and is not counted.
+token_reads=0
+token_files=$(grep -rl --include='*.json' '"tokenBox"' "$shot_dir" 2>/dev/null || true)
+[ -z "$token_files" ] || need_jq
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  off=$("$jq_bin" -r 'select(type == "object" and .isOpen == true and .tokenBox != null) | if .fieldBox then (.tokenBox.y + .tokenBox.height / 2) - (.fieldBox.y + .fieldBox.height / 2) else "missing" end' "$f" 2>/dev/null) || continue
+  [ -n "$off" ] || continue
+  token_reads=$((token_reads + 1))
+  [ "$off" != missing ] || fail "launcher token: $(basename "$f") drew a token with no field band"
+  awk -v o="$off" 'BEGIN { exit !(o <= 1 && o >= -1) }' \
+    || fail "launcher token: ${off}px off the field band's centre in $(basename "$f")"
+done <<< "$token_files"
+[ "$token_reads" -eq 0 ] || printf "\nSMOKE_LAUNCHER_TOKEN centred in the field band in %s status reads\n" "$token_reads"
+
 # The shell logs every commit it makes, which is the evidence that a
 # strip at rest commits nothing.
 grep -E '^(start|commit|exit|ipc|text:|hyprland:|event loop:) ' "$shell_log_path" 2>/dev/null || true

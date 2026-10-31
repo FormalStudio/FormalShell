@@ -177,11 +177,11 @@ impl Earbuds {
         let es = entries(ctl);
         if es.len() <= SEGMENTS {
             let at = picked(ctl, &es);
-            let mut rows = vec![w::panel_text(s, w::segmented(es.iter().map(|e| e.label.clone()).collect(), at.unwrap_or(usize::MAX)).fill().stop(key.clone()).on(format!("seg:{key}")))];
+            let mut rows = vec![w::panel_choice(s, es.iter().map(|e| e.label.clone()).collect(), at.unwrap_or(usize::MAX)).stop(key.clone()).on(format!("seg:{key}"))];
             if let Some(e) = at.map(|a| &es[a]).filter(|e| e.tier) {
                 let inner = e.members.iter().position(|m| Some(*m) == selected);
                 let labels = e.members.iter().map(|m| opts[*m].label.clone()).collect();
-                rows.push(w::panel_text(s, w::segmented(labels, inner.unwrap_or(usize::MAX)).fill().stop(format!("{key}{TIER}")).on(format!("tier:{key}"))));
+                rows.push(w::panel_choice(s, labels, inner.unwrap_or(usize::MAX)).stop(format!("{key}{TIER}")).on(format!("tier:{key}")));
             }
             return rows;
         }

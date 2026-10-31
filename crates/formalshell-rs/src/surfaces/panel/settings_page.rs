@@ -86,7 +86,7 @@ fn row(v: &View, key: &Key) -> (El, Option<El>) {
             // current choice at its far end (panel-language spec §6).
             let at = at.unwrap_or(0);
             let names = values.iter().map(|(_, name)| (*name).to_owned()).collect();
-            let picker = w::segmented(names, at).fill().on(stop(key)).stop(stop(key));
+            let picker = w::panel_choice(s, names, at).on(stop(key)).stop(stop(key));
             let mut label = vec![w::panel_heading_with(s, key.label, values[at].1).fill()];
             label.extend(trailing);
             (w::row(s.panel_gap, label).fill(), Some(picker))

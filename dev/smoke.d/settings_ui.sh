@@ -124,26 +124,7 @@ settings_ui_text() {
   echo "SMOKE_SETTINGS_UI $what"
 }
 
-# Every status read with a token drawn: its box's vertical centre on the
-# field band's within 1px, whatever stands beside it. The boxes are the last
-# frame's, so a read taken before a new view's first frame has no token box
-# yet and is not counted.
-settings_ui_token_centred() {
-  local f off read=0
-  for f in "$@"; do
-    off=$("$jq_bin" -r 'select(.isOpen and .tokenBox) | if .fieldBox then (.tokenBox.y + .tokenBox.height / 2) - (.fieldBox.y + .fieldBox.height / 2) else "missing" end' "$f" 2>/dev/null)
-    [ -n "$off" ] || continue
-    read=$((read + 1))
-    [ "$off" != missing ] || fail "$(basename "$f") drew a token with no field band"
-    awk -v o="$off" 'BEGIN { exit !(o <= 1 && o >= -1) }' \
-      || fail "settings-ui: the token sits ${off}px off the field band's centre in $(basename "$f")"
-  done
-  [ "$read" -gt 0 ] || fail "settings-ui: no status read carried a token and the field band"
-  echo "SMOKE_SETTINGS_UI the token centred in the field band in $read status reads"
-}
-
 leg_settings_ui_assert() {
-  settings_ui_token_centred "$shot_dir"/settings-ui/menu-*.json
   settings_ui_jq "panel open settings opened the launcher on the tiles" menu-appearance.json '.isOpen == true and .level == "settings" and .view == "panel"'
   settings_ui_text "Down, Return on the tiles opened Appearance" panel-appearance.txt "settings:appearance"
   settings_ui_jq "the launcher holds Appearance" menu-appearance.json '.panel == "settings:appearance"' 

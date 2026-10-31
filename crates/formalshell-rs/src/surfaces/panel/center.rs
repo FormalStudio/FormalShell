@@ -153,7 +153,7 @@ impl Panel for Center {
         let phone = pending.iter().chain(&seen).any(|g| g.entry.source == "iphone");
         let mut out = Vec::new();
         if phone || self.filter != 0 {
-            out.push(w::panel_text(s, w::segmented(FILTERS.iter().map(|f| (*f).to_owned()).collect(), self.filter).on("filter").stop("filter")));
+            out.push(w::panel_choice(s, FILTERS.iter().map(|f| (*f).to_owned()).collect(), self.filter).on("filter").stop("filter"));
         }
         let pending: Vec<Group> = pending.into_iter().filter(|g| self.shows(g)).collect();
         let seen: Vec<Group> = seen.into_iter().filter(|g| self.shows(g)).collect();
