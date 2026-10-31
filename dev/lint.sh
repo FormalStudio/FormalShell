@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # clippy over the workspace (its deny-level lints fail the run, warnings
-# print), then the pure crates' tests, on a Linux host
+# print), then the pure crates' tests and the shell's own (none of which
+# need a session), on a Linux host
 # (dev/remote.sh lint runs it on g815, ci.yml on a GitHub runner). Release
 # profile throughout, so the tests share dev/build.sh's dependency builds.
 # cargo runs in dev.star's environment where fspec is installed; CI sets up
@@ -16,7 +17,7 @@ cargo() {
 }
 
 pure=()
-for crate in fs-js fs-chrome fs-info fs-activity fs-system fs-devices fs-media fs-menu fs-screensaver fs-theme fs-audio; do
+for crate in formalshell-rs fs-js fs-chrome fs-info fs-activity fs-system fs-devices fs-media fs-menu fs-screensaver fs-theme fs-audio; do
   pure+=(--package "$crate")
 done
 

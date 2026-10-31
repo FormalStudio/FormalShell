@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(ids, ["HDMI-A-1:1", "eDP-1:1", "eDP-1:2"], "an empty unviewed tag is left out");
         assert_eq!(
             serde_json::to_string(&s.workspaces[1]).unwrap(),
-            r#"{"id":"eDP-1:1","idx":1,"name":"web","output":"eDP-1","isActive":false,"isFocused":false,"isUrgent":true}"#
+            r#"{"id":"eDP-1:1","idx":1,"name":"web","output":"eDP-1","isActive":false,"isFocused":false,"isUrgent":true,"columns":false}"#
         );
         assert_eq!(s.workspaces[2].name, "2", "an empty name falls back to the number");
         assert!(s.workspaces[2].is_focused);

@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(s.fullscreen_outputs, ["Virtual-1"]);
         assert_eq!(
             serde_json::to_string(&s.workspaces[0]).unwrap(),
-            r#"{"id":"1","idx":1,"name":"1","output":"Virtual-1","isActive":false,"isFocused":false,"isUrgent":true}"#
+            r#"{"id":"1","idx":1,"name":"1","output":"Virtual-1","isActive":false,"isFocused":false,"isUrgent":true,"columns":false}"#
         );
         assert!(serde_json::to_string(&s.windows[1]).unwrap().ends_with(r#""isUrgent":false,"rect":null}"#));
     }
