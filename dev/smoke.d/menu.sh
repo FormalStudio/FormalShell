@@ -224,22 +224,18 @@ leg_menu_assert() {
   if ! grep -q '"placeholder":"Search apps, files, commands"' "$menu_status_root_path"; then
     fail "the root field did not carry the launcher's placeholder, got: $(cat "$menu_status_root_path")"
   fi
-  if ! "$jq_bin" -e '.view == "tiles" and .columns == 3 and .sections == [] and (.ids | length) == 3
+  root_tiles_assert "$menu_status_root_path" '.columns == 3 and (.ids | length) == 3
       and .ids[0] == "apps" and (.ids | index("clipboard")) and ([.ids[] | select(startswith("apps."))] | length) == 0' \
-      "$menu_status_root_path" > /dev/null 2>&1; then
-    fail "the root at rest did not tile the first three root routes, got: $(cat "$menu_status_root_path")"
-  fi
+    "the root at rest did not tile the first three root routes"
   echo "SMOKE_MENU_MODES $("$jq_bin" -c '.ids' "$menu_status_root_path")"
   # A third pick: the tiles are the three fixture apps and not the one that
   # is not installed.
   [ -f "$menu_recent_path" ] || fail "no Recent screenshot produced"
   echo "SMOKE_MENU_RECENT $menu_recent_path"
   cat "$menu_status_recent_path"; echo
-  if ! "$jq_bin" -e '.view == "tiles" and .sections == []
-      and (.ids | sort) == ["apps.formalshell-menu-fixture-01", "apps.formalshell-menu-fixture-02", "apps.formalshell-menu-fixture-03"]' \
-      "$menu_status_recent_path" > /dev/null 2>&1; then
-    fail "the root after a third pick did not tile the three picks, got: $(cat "$menu_status_recent_path")"
-  fi
+  root_tiles_assert "$menu_status_recent_path" \
+    '(.ids | sort) == ["apps.formalshell-menu-fixture-01", "apps.formalshell-menu-fixture-02", "apps.formalshell-menu-fixture-03"]' \
+    "the root after a third pick did not tile the three picks"
   menu_cursor_agrees "$menu_status_recent_path" "recent"
   menu_cursor_agrees "$menu_status_root_path" "root"
   # One real Right straight after opening: the tile it lands on has to be

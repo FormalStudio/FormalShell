@@ -884,11 +884,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   every sample, each frame cropped to its own panel rect (the panel narrows
   when lyrics go) and the track found as the longest bar three rows deep
   off the card's own shade.
-- `menu.sh` `--menu`: the launcher's root at rest, one heading and nothing
-  else: `Modes` (the root routes in declaration order, no app among them)
-  over a state.json staging two fixture picks and one of an app not
-  installed, then `Recent` holding exactly the three fixture apps once a
-  real search and Enter makes the third pick; its fuzzy ranking against the
+- `menu.sh` `--menu`: the launcher's root at rest, three tiles under no
+  heading (`root_tiles_assert` in `dev/smoke.sh`, which `--emoji` shares):
+  the first root routes in declaration order, no app among them, over a
+  state.json staging two fixture picks and one of an app not installed,
+  then exactly the three fixture apps once a real search and Enter makes
+  the third pick; its fuzzy ranking against the
   live tree, and the select round trip, with every status read's
   `cursorId` checked against the row the live view holds its current item
   on (`viewCursor`). Real arrow keys on the `Modes` rows: one Down from a

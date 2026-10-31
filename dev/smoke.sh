@@ -967,6 +967,15 @@ fail() {
   exit 1
 }
 
+# The launcher's root at rest (launcher spec, Pond's opened state): tiles
+# under no heading, three at most, read off a `menu status` file. <status>
+# <a jq claim on .ids> <what failed>.
+root_tiles_assert() {
+  "$jq_bin" -e '.view == "tiles" and .sections == [] and (.ids | length) <= 3 and (.ids | length) > 0' "$1" > /dev/null 2>&1 \
+    || fail "$3: the root at rest is not three tiles under no heading: $("$jq_bin" -c '{view, sections, ids}' "$1" 2>/dev/null)"
+  "$jq_bin" -e "$2" "$1" > /dev/null 2>&1 || fail "$3: $("$jq_bin" -c '.ids' "$1" 2>/dev/null)"
+}
+
 # One card's frame against the panel language (dev/panel-language.py), the
 # same claims for every panel and settings page: <name> <png> <card rect
 # json> <header yes|no> <the dump carrying panelSpace> <inset|rowInset>.
