@@ -205,8 +205,10 @@ pub enum Cmd {
     Check,
     Change(Change),
     /// One package's details for the Install pane, and its screenshot,
-    /// asked once each.
+    /// asked once each until one of them fails.
     Info(String),
+    /// `fspec info` or the screenshot's fetch failed: ask again next time.
+    InfoFailed(String),
 }
 
 static CHANNEL: LazyLock<(Sender<Cmd>, Receiver<Cmd>)> = LazyLock::new(async_channel::unbounded);
@@ -264,11 +266,17 @@ fn spawn_info(ctx: &Ctx, id: String) {
             code => Err(p::failure(&done.stderr, code)),
         };
         let url = info.as_ref().ok().and_then(|i| i.screenshot.clone()).filter(|u| u.starts_with("https://") || u.starts_with("http://"));
-        c.publish(store::Diff::Packages(Diff::Info(id, info)));
+        if info.is_err() {
+            send(Cmd::InfoFailed(id.clone()));
+        }
+        c.publish(store::Diff::Packages(Diff::Info(id.clone(), info)));
         let Some(url) = url else { return };
         let path = shot_path(&url);
         let have = std::fs::metadata(&path).is_ok_and(|m| m.len() > 0);
         let got = have || fetch_shot(&url, &path).await;
+        if !got {
+            send(Cmd::InfoFailed(id));
+        }
         c.publish(store::Diff::Packages(Diff::Shot(url, got.then(|| path.to_string_lossy().into_owned()))));
     });
 }
@@ -514,6 +522,9 @@ pub async fn run(ctx: Ctx) {
                     continue;
                 }
                 spawn_info(&ctx, id);
+            }
+            Wake::Cmd(Cmd::InfoFailed(id)) => {
+                asked_info.remove(&id);
             }
         }
     }

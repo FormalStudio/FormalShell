@@ -751,6 +751,7 @@ impl App {
         let row = self.launcher.open.then(|| self.launcher.pane().cloned()).flatten();
         if !self.launcher.open {
             self.peek_asked = None;
+            self.info_asked = None;
         }
         let theme = &self.store.theme.theme;
         let (_, width, height) = self.launcher.pane_extent(theme);
