@@ -655,14 +655,14 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, icons: &Hash
     let inner = |h: f64| (h - s.md * 2.0).max(0.0);
     let mut out = vec![(
         "time",
-        w::card(w::column(0.0, vec![w::space(inner(g.time_h))])).interactive().on("panel:calendar").fill(),
+        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h))]), "panel:calendar").fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
     if let Some(media) = media(theme, store, g) {
-        out.push(("media", w::card(media.height(inner(g.media_h))).fill()));
+        out.push(("media", w::action_card(media.height(inner(g.media_h)), "panel:media").fill()));
     }
     let row = notifications(theme, store, g, icons, width - g.row_pad * 2.0, kit);
-    out.push(("notifications", w::card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md)).interactive().on(format!("panel:{}", center::ID)).fill()));
+    out.push(("notifications", w::action_card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md), format!("panel:{}", center::ID)).fill()));
     if let Some(card) = activity::installs_card(store) {
         out.push(("activity", card));
     }
@@ -709,7 +709,7 @@ fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<String, 
     w::row(g.spacing, row)
 }
 
-/// The art (it opens the media panel), the title over the artist.
+/// The art, the title over the artist.
 fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
     let a = store.media.active()?;
     let (px, radius) = w::cover_inner(theme, g.art);
@@ -722,7 +722,7 @@ fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
         ],
     )
     .fill();
-    Some(w::row(g.spacing, vec![w::cover(cover, g.art).on("panel:media"), words]))
+    Some(w::row(g.spacing, vec![w::cover(cover, g.art), words]))
 }
 
 /// The status card: network, audio, settings, the tray's second bar while
@@ -791,12 +791,12 @@ fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo) -> Vec<(&'sta
     let r = &g.rail;
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
-    let mut out = vec![("time", w::card(w::space(r.time_h)).cell_state(bare).interactive().on("panel:calendar").fill())];
+    let mut out = vec![("time", w::action_card(w::space(r.time_h), "panel:calendar").cell_state(bare).fill())];
     out.push(("spaces", w::card(map.rail_view(theme)).cell_state(bare).fill()));
     if let Some(a) = store.media.active() {
         let (px, radius) = w::cover_inner(theme, r.art);
         let cover = (!a.art_url.is_empty()).then(|| store.media.cover(&a.art_url, px, radius, crate::scene::raster_scale())).flatten();
-        out.push(("media", w::card(square(w::cover(cover, r.art))).cell_state(bare).interactive().on("panel:media").fill()));
+        out.push(("media", w::action_card(square(w::cover(cover, r.art)), "panel:media").cell_state(bare).fill()));
     }
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
@@ -807,7 +807,7 @@ fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo) -> Vec<(&'sta
         0 => bell,
         n => w::row(r.tight, vec![bell, w::caption(n.to_string()).mono().weight(Weight::Medium).ink(Ink::Muted)]),
     };
-    out.push(("notifications", w::card(square(bell)).cell_state(bare).interactive().on(format!("panel:{}", center::ID)).fill()));
+    out.push(("notifications", w::action_card(square(bell), format!("panel:{}", center::ID)).cell_state(bare).fill()));
     let groups = store.activity.activity.groups();
     if !groups.is_empty() {
         let rows = groups
@@ -825,7 +825,7 @@ fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo) -> Vec<(&'sta
                     .fill()
             })
             .collect();
-        out.push(("activity", w::card(w::column(0.0, rows).fill()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
+        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), "panel:activity").cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
     }
     out
 }

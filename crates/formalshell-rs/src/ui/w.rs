@@ -116,6 +116,12 @@ pub fn card(child: El) -> El {
     cell(child).cell_state(|c| c.card = true)
 }
 
+/// A sidebar card that opens something: the whole card takes the click,
+/// and the controls inside it keep their own hits over it.
+pub fn action_card(child: El, action: impl Into<String>) -> El {
+    card(child).interactive().on(action)
+}
+
 /// The launcher's mode chip: the mode path in `caption` at 600 in
 /// `launcher.token`, `System › Power`, the ancestors muted. Past two levels
 /// it reads `… › ` and the last two. Each ancestor fires `token:<depth>`,

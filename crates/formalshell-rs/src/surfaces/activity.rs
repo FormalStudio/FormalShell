@@ -142,7 +142,7 @@ pub fn installs_card(store: &Store) -> Option<El> {
     if groups.len() > MAX_LINES {
         lines.push(w::caption(format!("+{}", groups.len() - MAX_LINES)).mono().ink(Ink::Dim).pad(NAME_INSET, 0.0, 0.0, 0.0).height(LINE));
     }
-    Some(w::card(w::column(0.0, lines).fill()).cell_state(|c| c.inset = Some(CARD_INSET)).fill())
+    Some(w::action_card(w::column(0.0, lines).fill(), "panel:activity").cell_state(|c| c.inset = Some(CARD_INSET)).fill())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

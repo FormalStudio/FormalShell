@@ -40,7 +40,7 @@
 # the status card's tray button.
 leg_sidebar_flag="--sidebar"
 leg_sidebar_order=237
-leg_sidebar_needs="jq wlrctl notify-send convert foot python3"
+leg_sidebar_needs="jq wlrctl notify-send convert foot python3 mpv ffmpeg"
 leg_sidebar_fixture_window=keep
 
 sidebar_status_open="$shot_dir/sidebar-status-open.json"
@@ -68,6 +68,10 @@ sidebar_gap_state="$shot_dir/sidebar-gap-state.txt"
 sidebar_through="$shot_dir/sidebar-through.txt"
 sidebar_gap_png="$shot_dir/sidebar-gap.png"
 sidebar_through_png="$shot_dir/sidebar-through.png"
+sidebar_track="$shot_dir/sidebar-track.flac"
+sidebar_status_cards="$shot_dir/sidebar-status-cards.json"
+sidebar_status_cards_rail="$shot_dir/sidebar-status-cards-rail.json"
+sidebar_card_clicks="$shot_dir/sidebar-card-clicks.txt"
 
 sidebar_rider() {
   leg_on idle || leg_on menu_budget || leg_on tray || leg_on tray_overflow
@@ -87,6 +91,8 @@ leg_sidebar_validate() {
 
 leg_sidebar_fixture() {
   settings_fragment ', "layout": "sidebar"'
+  "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "anullsrc=r=48000:cl=stereo" -t 30 \
+    -metadata "title=Sidebar Card" -metadata "artist=FormalShell" -c:a flac -y "$sidebar_track"
   sidebar_clock_case || return 0
   local wall="$sidebar_clock_dir/split.png" state="$iso_home/.local/state/formalshell/state.json"
   mkdir -p "$sidebar_clock_dir/.depth" "$(dirname "$state")"
@@ -99,7 +105,7 @@ leg_sidebar_fixture() {
 }
 
 leg_sidebar_timing() {
-  leg_timing 30 90
+  leg_timing 30 180 0 170
 }
 
 leg_sidebar_drive() {
@@ -201,6 +207,40 @@ sleep 1
 kill \$("$hyprctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-sidebar-probe") | .pid') 2>/dev/null
 "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\$' })" > /dev/null 2>&1
 sleep 1
+# Every card that opens something, clicked at its centre and 4px in from
+# its top left corner: \$1 names the column, \$2 its status, \$3 its layers.
+cardclicks() {
+  local on x y w h where px py ox oy
+  read -r ox oy <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"' "\$3")"
+  while read -r -u 3 on x y w h; do
+    for where in centre corner; do
+      if [ "\$where" = centre ]; then px=\$((ox + x + w / 2)) py=\$((oy + y + h / 2)); else px=\$((ox + x + 4)) py=\$((oy + y + 4)); fi
+      click "\$px" "\$py"
+      sleep 1.5
+      echo "\$1 \$on \$where panel=\$($ipc call panel state 2>&1 | tr -d '\n') center=\$($ipc call notifications status 2>/dev/null | "$jq_bin" .centerOpen)" >> "$sidebar_card_clicks"
+      $ipc call panel close > /dev/null 2>&1
+      sleep 0.3
+      $ipc call notifications status 2>/dev/null | grep -q '"centerOpen":true' && $ipc call notifications showHistory > /dev/null 2>&1
+      sleep 1
+    done
+  done 3< <("$jq_bin" -r '.hits[] | select(.on | IN("panel:calendar", "panel:media", "panel:notifications-center", "panel:activity")) | "\(.on) \(.x) \(.y) \(.w) \(.h)"' "\$2")
+}
+: > "$sidebar_card_clicks"
+"$mpv_bin" --no-video --really-quiet --loop-file=inf "$sidebar_track" &
+sidebar_mpv=\$!
+# A notification's value hint is a live Activity item, the activity card's;
+# it ends with its toast, so each column raises its own. \$1: the status.
+livecards() {
+  "$notify_send_bin" -t 120000 -a smoke-dl -h int:value:40 Downloading a.iso > /dev/null 2>&1
+  for _ in \$(seq 1 20); do
+    $ipc call sidebar status 2>/dev/null | grep -q '"media".*"activity"\|"activity".*"media"' && break
+    sleep 0.5
+  done
+  sleep 1
+  $ipc call sidebar status > "\$1" 2>&1
+}
+livecards "$sidebar_status_cards"
+cardclicks open "$sidebar_status_cards" "$sidebar_layers_open"
 read -r cx cy <<< "\$(at collapse "$sidebar_layers_open" "$sidebar_status_open")"
 click "\$cx" "\$cy"
 "$wlrctl_bin" pointer move 600 0 > /dev/null 2>&1
@@ -211,6 +251,9 @@ LC_ALL=C date +'%I %H %M' >> "$sidebar_rail_clock"
 "$hyprctl_bin" -j layers > "$sidebar_layers_rail" 2>&1
 cp "$state_path" "$sidebar_state_copy" 2>/dev/null
 "$grim_bin" "$sidebar_rail_png" > /dev/null 2>&1
+livecards "$sidebar_status_cards_rail"
+cardclicks rail "$sidebar_status_cards_rail" "$sidebar_layers_rail"
+kill "\$sidebar_mpv" 2>/dev/null
 $ipc call sidebar expand > /dev/null 2>&1
 sleep 2
 $ipc call sidebar status > "$sidebar_status_expanded" 2>&1
@@ -261,6 +304,7 @@ leg_sidebar_assert() {
   grep -q '^network$' "$sidebar_panel_state" 2>/dev/null \
     || fail "sidebar: the network button's click did not open the network panel: $(cat "$sidebar_panel_state" 2>/dev/null)"
   sidebar_through_assert
+  sidebar_cards_assert open
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_rail")"
   echo "sidebar layer rail: x=$bx y=$by w=$bw h=$bh"
   [ "$bw" -eq 60 ] || fail "sidebar: the collapse button did not fold the column to the 60 wide rail: w=$bw"
@@ -280,6 +324,7 @@ leg_sidebar_assert() {
   [ -n "$ok" ] || fail "sidebar: the rail's time card does not read the hour and minutes: '$rail_time' against $(cat "$sidebar_rail_clock")"
   "$jq_bin" -e '.sidebarCollapsed == true' "$sidebar_state_copy" > /dev/null 2>&1 \
     || fail "sidebar: state.json does not carry sidebarCollapsed: $(cat "$sidebar_state_copy" 2>/dev/null)"
+  sidebar_cards_assert rail
   "$jq_bin" -e '.collapsed == false and .width == 154' "$sidebar_status_expanded" > /dev/null 2>&1 \
     || fail "sidebar: sidebar expand did not open the column: $(cat "$sidebar_status_expanded" 2>/dev/null)"
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_right")"
@@ -351,4 +396,23 @@ sidebar_through_assert() {
     || fail "sidebar: a click in the gap between two cards left the panel open: $(cat "$sidebar_gap_state")"
   grep -qx 'before=formalshell-smoke-iconic' "$sidebar_through" && grep -qx 'after=formalshell-sidebar-probe' "$sidebar_through" \
     || fail "sidebar: a click in the column's empty stretch did not reach the window under it: $(cat "$sidebar_through")"
+}
+
+# $1: the column. A real click at each opening card's centre and 4px in
+# from its corner opened what the card opens, the media card's included.
+sidebar_cards_assert() {
+  local on where got want
+  echo "sidebar $1 card clicks: $(grep "^$1 " "$sidebar_card_clicks" | tr '\n' ';')"
+  for on in panel:calendar panel:media panel:notifications-center panel:activity; do
+    for where in centre corner; do
+      grep -q "^$1 $on $where " "$sidebar_card_clicks" || fail "sidebar: the $1 column has no $on card to click at its $where: $(cat "$sidebar_status_cards")"
+    done
+  done
+  while read -r _ on where got; do
+    case "$on" in
+      panel:notifications-center) want="center=true" ;;
+      *) want="panel=${on#panel:} " ;;
+    esac
+    [[ "$got " == *"$want"* ]] || fail "sidebar: a click at the $1 $on card's $where opened nothing it should: $got"
+  done < <(grep "^$1 " "$sidebar_card_clicks")
 }

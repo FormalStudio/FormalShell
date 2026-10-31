@@ -1257,6 +1257,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the date box carrying its words, `clockFormat` "h:mm AP" read as the
   bar clock's own output and `date`'s, the draw under 50ms, and no bar
   commit in 3s at rest.
+  With a real mpv playing, every card that opens something (time,
+  now playing, notifications, activity) clicked at its centre and 4px in
+  from its corner, open and on the rail, opening its panel or the centre.
   Ridden by `--idle`, `--menu-budget`, `--tray` or `--tray-overflow` it
   pins the layout alone, and `--menu-budget` skips its bar frame claims,
   the sidebar having no badge to spin.
