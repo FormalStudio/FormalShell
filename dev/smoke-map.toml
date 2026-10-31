@@ -304,6 +304,11 @@ runs = ["--backdrop"]
 paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs", "crates/formalshell-rs/src/services/clock.rs"]
 runs = ["--desktop-clock", "--lock"]
 
+# The sidebar's clock card draws its digits through the desktop clock's glass.
+[[rule]]
+paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs"]
+runs = ["--sidebar", "--sidebar --light"]
+
 [[rule]]
 paths = ["crates/fs-chrome/src/dither.rs"]
 runs = ["--wallpaper"]

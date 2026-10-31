@@ -8,7 +8,7 @@ mod atlas;
 mod caffeinate;
 pub mod capture;
 mod console;
-mod desktop_clock;
+pub(crate) mod desktop_clock;
 mod headset;
 mod heads;
 mod hotcorners;
@@ -2395,6 +2395,9 @@ impl LayerShellHandler for App {
                 // configure needs nothing more; only a new one is re-read.
                 if size != current {
                     self.refresh_bar(None);
+                    // The sidebar clock frosts the picture under the window's
+                    // new place.
+                    self.sync_desktop_clocks();
                 }
             }
             Some(o @ (Owner::Overflow | Owner::Menu)) => {

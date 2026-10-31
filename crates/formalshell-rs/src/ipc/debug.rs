@@ -155,6 +155,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();
     dump["overview"] = json!(h.overview);
+    dump["sidebarClock"] = app.sidebar_clock_state();
     text(dump.to_string())
 }
 

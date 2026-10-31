@@ -1198,6 +1198,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `sidebarCollapsed`, `sidebar expand` opening it again, and settings.json
   rewritten with `bar.position: right` moving it to that edge. The open,
   panel and rail frames are read dark and light (`--sidebar --light`).
+  The time card's clock over a staged red and green wallpaper with a
+  depth-mapped orange band, read off `debug dump`'s `sidebarClock`: the
+  desktop clock's pixel face frosted, red at the digits' left end and
+  green at their right, the band's orange laid back over their middle,
+  the date box carrying its words, `clockFormat` "h:mm AP" read as the
+  bar clock's own output and `date`'s, the draw under 50ms, and no bar
+  commit in 3s at rest.
   Ridden by `--idle`, `--menu-budget`, `--tray` or `--tray-overflow` it
   pins the layout alone, and `--menu-budget` skips its bar frame claims,
   the sidebar having no badge to spin.

@@ -9,7 +9,8 @@
 //! The composition and its lengths are Pond's sidebar (`Theme.qml`,
 //! `Sidebar.qml`, `calendar/Clock.qml`); [`Geo`] carries them. What the
 //! kit's type scale cannot draw (the clock's digits, its period and the
-//! date box) is painted over the time card's reserved box.
+//! date box) is painted over the time card's reserved box, the digits in
+//! the desktop clock's own face and glass (`desktopClock.*`).
 
 pub mod minimap;
 
@@ -33,6 +34,7 @@ use crate::surfaces::bar::cell::{Action, Kit, Painter};
 use crate::surfaces::panel::{center, tray};
 use crate::text::TextStyle;
 use crate::ui::{El, Ink, Type, Ui, Variant, Weight, w};
+use crate::wayland::desktop_clock::{self as glass, Digits, FaceSettings, Glass, Under};
 
 /// The cards in the order they give up their place when the column runs
 /// short: the first is the first to go.
@@ -138,6 +140,7 @@ pub struct Sidebar {
     face: Vec<NodeId>,
     /// Notification app icons fitted at `Geo::glyph`, by entry id.
     icons: HashMap<String, Option<Bitmap>>,
+    clock: ClockCard,
 }
 
 impl Sidebar {
@@ -160,7 +163,24 @@ impl Sidebar {
             pressed: None,
             face: Vec::new(),
             icons: HashMap::new(),
+            clock: ClockCard::default(),
         }
+    }
+
+    /// What the clock card's digits are frosted over; true when it moved.
+    pub fn set_clock(&mut self, under: Option<Under>) -> bool {
+        let same = match (&self.clock.under, &under) {
+            (Some(a), Some(b)) => a.same(b),
+            (None, None) => true,
+            _ => false,
+        };
+        self.clock.under = under;
+        !same
+    }
+
+    /// The clock card for `debug dump`.
+    pub fn clock_state(&self, store: &Store) -> Value {
+        self.clock.state(store)
     }
 
     /// The column inside `strip`, after `anchor` in paint order.
@@ -272,7 +292,7 @@ impl Sidebar {
         let mut nodes = std::mem::take(&mut self.face);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
         if let Some(card) = card {
-            clock_face(&mut p, kit, store, g, card);
+            self.clock.paint(&mut p, kit, store, g, card);
         }
         let last = p.last();
         p.finish();
@@ -443,40 +463,93 @@ fn style(kit: &Kit, size: f64, weight: f32, tracking: f32) -> TextStyle {
     TextStyle { family: kit.look.sans, size: size as f32, weight, tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
-/// Pond's clock card: light digits with the period on their baseline, and
+/// Pond's clock card: the digits with the period on their baseline, and
 /// the weekday over the day in an outlined box at the far end.
-fn clock_face(p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) {
-    let theme = &store.theme.theme;
-    let fg = theme.colors.get("foreground");
-    let clock = store.clock.now;
-    let b = g.date_box as i32;
-    let (bx, by) = (card.right() - g.date_inset as i32 - b, card.y + (card.h - b) / 2);
-    p.framed(IRect::new(bx, by, b, b), Rgba::TRANSPARENT, g.date_radius as f32, outline(theme), theme.border_width as f32);
-    for (words, line) in [(format_qt(clock, "ddd"), g.date_lines.0), (format_qt(clock, "d"), g.date_lines.1)] {
-        let t = kit.shape(&words, style(kit, g.date_words, 400.0, 0.0));
-        p.text(&t, (bx + (b - t.width) / 2, by + line as i32 - t.ascent.round() as i32), fg, &[]);
+struct ClockCard {
+    under: Option<Under>,
+    glass: Glass,
+    face: Option<fs_chrome::clock_face::Face>,
+    /// The digits' box, their ink, the time and period they read, and what
+    /// the draw that first read that time cost.
+    rect: IRect,
+    ink: Rgba,
+    time: String,
+    period: Option<String>,
+    minute_us: u64,
+}
+
+impl Default for ClockCard {
+    fn default() -> Self {
+        Self { under: None, glass: Glass::default(), face: None, rect: IRect::default(), ink: Rgba::TRANSPARENT, time: String::new(), period: None, minute_us: 0 }
     }
-    let (time, period) = time_parts(store);
-    let period = period.map(|ap| kit.shape(&ap, style(kit, g.period, 500.0, 0.0)));
-    let after = period.as_ref().map_or(0, |t| t.width + g.dot as i32);
-    let room = bx - g.dot as i32 - (card.x + g.time_x as i32);
-    // Weight 100 is the family's lightest: matching falls to the nearest
-    // face, and a wght axis clamps to its own floor.
-    let face = |kit: &mut Kit, size: f64| kit.shape(&time, style(kit, size, 100.0, -(size * 0.03) as f32));
-    // A time wider than the room shrinks rather than cut.
-    let mut size = g.digits;
-    let mut digits = face(kit, size);
-    while digits.width + after > room && size > g.date_words {
-        size -= 1.0;
-        digits = face(kit, size);
+}
+
+/// The share of the type size Pond's digits' figures stand.
+const FIGURE: f64 = 0.7;
+
+impl ClockCard {
+    fn paint(&mut self, p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) {
+        let started = Instant::now();
+        let theme = &store.theme.theme;
+        let fg = theme.colors.get("foreground");
+        let clock = store.clock.now;
+        let b = g.date_box as i32;
+        let (bx, by) = (card.right() - g.date_inset as i32 - b, card.y + (card.h - b) / 2);
+        p.framed(IRect::new(bx, by, b, b), Rgba::TRANSPARENT, g.date_radius as f32, outline(theme), theme.border_width as f32);
+        for (words, line) in [(format_qt(clock, "ddd"), g.date_lines.0), (format_qt(clock, "d"), g.date_lines.1)] {
+            let t = kit.shape(&words, style(kit, g.date_words, 400.0, 0.0));
+            p.text(&t, (bx + (b - t.width) / 2, by + line as i32 - t.ascent.round() as i32), fg, &[]);
+        }
+        let (time, period) = time_parts(store);
+        let shaped = period.as_ref().map(|ap| kit.shape(ap, style(kit, g.period, 500.0, 0.0)));
+        let after = shaped.as_ref().map_or(0.0, |t| f64::from(t.width) + g.dot);
+        let room = f64::from(bx - (card.x + g.time_x as i32)) - g.dot;
+        let face = FaceSettings::read(&store.config);
+        let scale = crate::scene::raster_scale();
+        let (hours, minutes) = time.split_once(':').unwrap_or((&time, ""));
+        // A time wider than the room shrinks rather than cut.
+        let mut digit_h = (g.digits * FIGURE).round();
+        let mut digits = Digits::lay(kit, &face, hours, minutes, digit_h, scale);
+        while digits.width() + after > room && digit_h > g.date_words * FIGURE {
+            digit_h -= 1.0;
+            digits = Digits::lay(kit, &face, hours, minutes, digit_h, scale);
+        }
+        let digits_w = digits.width();
+        let top = (f64::from(card.y) + (f64::from(card.h) - digit_h) / 2.0).round();
+        let x = f64::from(card.x) + g.time_x;
+        // `auto` reads what is behind the digits, which here is the card.
+        let ink = face.ink(store).unwrap_or_else(|| glass::auto_ink(glass::luma(theme.box_style("card", None).fill)));
+        self.rect = self.glass.paint(p, digits, &face, (x, top), digit_h, scale, ink, self.under.as_ref(), card);
+        if let Some(t) = shaped {
+            let baseline = (top + digit_h) as i32;
+            let x = (x + digits_w).ceil() as i32 + g.dot as i32 - 1;
+            p.text(&t, (x, baseline - t.ascent.round() as i32), fg.with_alpha(fg.a * 0.7), &[]);
+        }
+        self.face = Some(face.face);
+        self.ink = ink;
+        self.period = period;
+        if time != self.time {
+            self.time = time;
+            self.minute_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+        }
     }
-    // Cap height near 0.7 of the size, centred on the card.
-    let baseline = card.y + ((card.h as f64 + size * 0.7) / 2.0).round() as i32;
-    let x = card.x + g.time_x as i32;
-    p.text(&digits, (x, baseline - digits.ascent.round() as i32), fg, &[]);
-    if let Some(t) = period {
-        let x = x + digits.width + g.dot as i32 - 1;
-        p.text(&t, (x, baseline - t.ascent.round() as i32), fg.with_alpha(fg.a * 0.7), &[]);
+
+    fn state(&self, store: &Store) -> Value {
+        let r = self.rect;
+        let format = clock_format(store);
+        json!({
+            "face": self.face.map_or("", |f| f.as_str()),
+            "rect": [r.x, r.y, r.w, r.h],
+            "ink": glass::hex(self.ink),
+            "frosted": self.glass.frosted(),
+            "depth": self.under.as_ref().is_some_and(|u| u.subject.is_some()),
+            "cut": self.glass.cut(),
+            "text": self.time,
+            "period": self.period,
+            "format": format,
+            "formatted": format_qt(store.clock.now, &format),
+            "minuteUs": self.minute_us,
+        })
     }
 }
 

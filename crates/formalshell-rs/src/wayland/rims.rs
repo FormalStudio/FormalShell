@@ -42,10 +42,7 @@ impl App {
             let generation = self.rims.lit.as_ref().map_or(0, |l| l.generation) + 1;
             self.rims.lit = field.map(|f| Lit { generation, field: Rc::new(f) });
         }
-        // The sidebar's window: the whole output under a frame, else its
-        // edge's strip.
-        let (out_w, _) = self.output_size();
-        let origin: (f64, f64) = if self.bar.framed() || self.bar.edge() != Edge::Right { (0.0, 0.0) } else { (out_w - f64::from(self.bar.scene.size.w), 0.0) };
+        let origin = self.bar_origin();
         let lit = self.rims.lit.clone().map(|l| (l, origin));
         let key = lit.as_ref().map(|(l, o)| (l.generation, o.0.to_bits(), o.1.to_bits()));
         if let Some(sb) = &mut self.bar.sidebar
@@ -58,6 +55,13 @@ impl App {
         if self.bar.sidebar.is_none() {
             self.rims.sidebar = None;
         }
+    }
+
+    /// The bar window's top left on its output: the whole output under a
+    /// frame, else its edge's strip.
+    pub(super) fn bar_origin(&self) -> (f64, f64) {
+        let (out_w, _) = self.output_size();
+        if self.bar.framed() || self.bar.edge() != Edge::Right { (0.0, 0.0) } else { (out_w - f64::from(self.bar.scene.size.w), 0.0) }
     }
 
     fn rim_field(&mut self) -> Field {

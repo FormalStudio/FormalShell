@@ -767,7 +767,11 @@ Its composition and lengths are Pond's sidebar (BSD-3-Clause, Butterfly
 Interaction) at 136/156 of Pond's size: the time card, the Spaces map of
 outlined circles on a current-row plate, now playing, notifications, then
 Activity and Software, the status card pinned to the foot. The colours,
-the faces and the `card` box stay this table's.
+the faces and the `card` box stay this table's. The time card's digits are
+the desktop clock's own (its face, width and colour keys, its frosted
+glass over the wallpaper under the card and its subject laid back over
+them), read whether or not the desktop clock is on; `auto` ink reads the
+card behind them rather than the wallpaper.
 
 **Frame.** `frame.thickness` alone decides, under every table. Off by
 default (`frame.thickness` 0), when the `window` role's own gaps are the
