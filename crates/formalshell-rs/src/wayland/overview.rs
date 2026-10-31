@@ -34,6 +34,8 @@ use crate::surfaces::overview::{self as ov, Drag, Geometry, Overview, Phase, Sel
 const WAIT: Duration = Duration::from_millis(150);
 /// Scroll travel (wl_pointer axis units) that moves the selection one step.
 const SCROLL_STEP: f64 = 15.0;
+/// The backdrop's picture is the wallpaper at this fraction of its size.
+const BACKDROP_DOWN: u32 = 48;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -59,7 +61,7 @@ pub struct State {
     win: Option<(Surface, Scene, WlOutput)>,
     pub dirty: bool,
     /// The wallpaper picture's address and the bitmap made of it.
-    wallpaper: Option<(usize, Bitmap)>,
+    wallpaper: Option<(usize, Bitmap, Bitmap)>,
     scroll: f64,
     /// The press, before it lifts or lets go: the row and window under it.
     pressed: Option<(usize, Option<usize>)>,
@@ -325,7 +327,7 @@ impl App {
         let area = (f64::from(scene.size.w), f64::from(scene.size.h));
         let output = self.overview_output().map_or(area, |o| o.3);
         let offset = band_offset(self.bar.edge(), output, area);
-        self.overview.model.geo = Geometry::new(area, output, offset, self.store.theme.theme.space.xl);
+        self.overview.model.geo = Geometry::new(area, output, offset);
         let (ms, curve) = self.overview_curve();
         let sel = self.overview.model.sel;
         let m = &mut self.overview.model;
@@ -343,8 +345,10 @@ impl App {
         self.overview_unmap();
     }
 
-    /// The output's wallpaper as one bitmap, made once per picture.
-    fn overview_wallpaper(&mut self) -> (Option<Bitmap>, Option<Rgba>) {
+    /// The output's wallpaper as one bitmap for the cards and a small one
+    /// for the backdrop, both made once per picture off the one the
+    /// wallpaper surface already holds; or its flat colour.
+    fn overview_wallpaper(&mut self) -> (Option<(Bitmap, Bitmap)>, Option<Rgba>) {
         let wanted = self.store.desktop();
         if let Some([r, g, b]) = wallpaper::flat(&wanted) {
             return (None, Some(Rgba::hex(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))));
@@ -357,14 +361,18 @@ impl App {
             return (None, None);
         };
         let at = std::sync::Arc::as_ptr(&picture) as usize;
-        if let Some((seen, bitmap)) = &self.overview.wallpaper
+        if let Some((seen, card, back)) = &self.overview.wallpaper
             && *seen == at
         {
-            return (Some(bitmap.clone()), None);
+            return (Some((card.clone(), back.clone())), None);
         }
-        let bitmap = capture::fit(&picture.bgra, (picture.width, picture.height), true, (picture.width, picture.height));
-        self.overview.wallpaper = Some((at, bitmap.clone()));
-        (Some(bitmap), None)
+        let size = (picture.width, picture.height);
+        let card = capture::fit(&picture.bgra, size, true, size);
+        // Averaged down this far and drawn back up at the output's size,
+        // the picture reads as blurred without a blur pass.
+        let back = capture::fit(&picture.bgra, size, true, ((size.0 / BACKDROP_DOWN).max(1), (size.1 / BACKDROP_DOWN).max(1)));
+        self.overview.wallpaper = Some((at, card.clone(), back.clone()));
+        (Some((card, back)), None)
     }
 
     pub fn overview_present(&mut self) {
@@ -418,7 +426,7 @@ impl App {
         }
         // Until the zoom starts the surface is clear over the desktop.
         let clear = self.overview.model.phase == Phase::Opening;
-        let input = ov::Input { theme: &self.store.theme.theme, wallpaper: picture.as_ref(), flat, thumbs: &thumbs, icons: &icons, now };
+        let input = ov::Input { theme: &self.store.theme.theme, wallpaper: picture.as_ref().map(|p| &p.0), backdrop: picture.as_ref().map(|p| &p.1), flat, thumbs: &thumbs, icons: &icons, now };
         let Some((surface, scene, _)) = &mut self.overview.win else { return };
         let _raster = crate::scene::raster_at(scale);
         if clear {

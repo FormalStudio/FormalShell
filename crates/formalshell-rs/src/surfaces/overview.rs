@@ -29,6 +29,12 @@ use crate::text::{Family, TextStyle};
 
 /// niri's default zoom.
 pub const ZOOM: f64 = 0.5;
+/// The gap between two workspaces at rest, a share of the output's height
+/// (niri's 16px over a 1080p output at its 0.5 zoom).
+pub const GAP: f64 = 0.05;
+/// The black over the backdrop at rest. Darker than the modal scrim: at niri's the
+/// backdrop reads at about a quarter of the cards' brightness, which is what lifts them.
+pub const DIM: f64 = 0.75;
 /// How far a press travels before it lifts the window.
 pub const LIFT_PX: f64 = 6.0;
 
@@ -186,9 +192,9 @@ pub struct Geometry {
 }
 
 impl Geometry {
-    pub fn new(area: (f64, f64), output: (f64, f64), offset: (f64, f64), gap: f64) -> Self {
+    pub fn new(area: (f64, f64), output: (f64, f64), offset: (f64, f64)) -> Self {
         let card = (output.0 * ZOOM, output.1 * ZOOM);
-        Self { area, output, offset, card, gap, left: ((area.0 - card.0) / 2.0).round() }
+        Self { area, output, offset, card, gap: (output.1 * GAP).round(), left: ((area.0 - card.0) / 2.0).round() }
     }
 
     /// Row `i`'s card in stack space.
@@ -267,6 +273,8 @@ pub struct Input<'a> {
     pub theme: &'a Theme,
     /// The output's wallpaper as drawn, or a flat colour.
     pub wallpaper: Option<&'a Bitmap>,
+    /// The wallpaper averaged down, drawn back up as the backdrop.
+    pub backdrop: Option<&'a Bitmap>,
     pub flat: Option<Rgba>,
     pub thumbs: &'a HashMap<String, Bitmap>,
     pub icons: &'a HashMap<String, Bitmap>,
@@ -372,7 +380,16 @@ impl Overview {
         let slides: Vec<f64> = (0..self.rows.len()).map(|i| self.slide(i, now)).collect();
         let mut nodes = std::mem::take(&mut self.nodes);
         let mut painter = Painter::new(scene, &mut nodes, None);
-        painter.rect(area, fade(t.colors.get("background"), p), 0.0);
+        // The backdrop is the wallpaper softened under the modal scrim,
+        // opaque from the zoom's first frame so the live desktop never
+        // shows behind the shrinking workspace.
+        let output = IRect::new(-self.geo.offset.0.round() as i32, -self.geo.offset.1.round() as i32, self.geo.output.0.round() as i32, self.geo.output.1.round() as i32);
+        match (input.backdrop, input.flat) {
+            (_, Some(c)) => painter.rect(area, c, 0.0),
+            (Some(image), None) => painter.shape(output, Paint::Picture { image: image.clone(), alpha: 1.0, radius: 0.0 }),
+            (None, None) => painter.rect(area, t.colors.get("background"), 0.0),
+        }
+        painter.rect(area, Rgba { r: 0.0, g: 0.0, b: 0.0, a: (DIM * p) as f32 }, 0.0);
         painter.transform = base;
 
         let over = self.drag.as_ref().filter(|d| d.lifted).and_then(|d| d.over);
@@ -386,7 +403,7 @@ impl Overview {
                 continue;
             }
             let card = irect(self.geo.card_at(i));
-            let radius = t.cover_radius(card.w.min(card.h) as f64) as f32;
+            let radius = t.radii.xl as f32;
             let selected = i == self.sel.row && self.sel.win.is_none() || over == Some(i);
             let edge = if selected { ring } else { border };
             if row.workspace_id.is_empty() {
@@ -434,7 +451,6 @@ impl Overview {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 /// A window through the shared thumbnail, its edge coming in with the
 /// zoom: at the live desktop the window wears the compositor's own border.
 #[allow(clippy::too_many_arguments)]
@@ -536,7 +552,7 @@ mod tests {
 
     #[test]
     fn the_zoom_starts_on_the_output_and_rests_centred() {
-        let g = Geometry::new((1766.0, 1080.0), (1920.0, 1080.0), (154.0, 0.0), 24.0);
+        let g = Geometry::new((1766.0, 1080.0), (1920.0, 1080.0), (154.0, 0.0));
         let live = g.transform(0.0, 0.0) * kurbo::Point::new(g.left, 0.0);
         assert!((live.x + 154.0).abs() < 1e-9 && live.y.abs() < 1e-9);
         let far = g.transform(0.0, 0.0) * kurbo::Point::new(g.left + g.card.0, g.card.1);
@@ -547,7 +563,7 @@ mod tests {
 
     #[test]
     fn a_row_slides_until_its_window_is_whole() {
-        let g = Geometry::new((1920.0, 1080.0), (1920.0, 1080.0), (0.0, 0.0), 24.0);
+        let g = Geometry::new((1920.0, 1080.0), (1920.0, 1080.0), (0.0, 0.0));
         let off = Win { id: "c".into(), rect: (2200.0, 0.0, 800.0, 1000.0), floating: false };
         let s = g.slide_for(0, &off);
         let (x, _, w, _) = g.win_at(0, &off);
