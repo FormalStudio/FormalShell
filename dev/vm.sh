@@ -227,7 +227,7 @@ case "$verb" in
       mkdir -p "$artifacts"
       rsync -a -e "ssh ${ssh_opts[*]}" "$vm:$ok" "$artifacts/smoke-$ts.png" && echo "pulled screenshot: $artifacts/smoke-$ts.png"
     fi
-    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Z0-9_]+ [^[:space:]]+\.(png|log|tar)' | grep -v '^SMOKE_OK ' | awk '{print $2}'); do
+    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+\.(png|log|tar)' | grep -v '^SMOKE_OK ' | awk '{print $2}'); do
       case "$remote" in
         *.tar) mkdir -p "$artifacts/$(basename "$remote" .tar)"; guest_ssh "cat $(printf '%q' "$remote")" | tar -xf - -C "$artifacts/$(basename "$remote" .tar)" ;;
         *) pull "$remote" ;;

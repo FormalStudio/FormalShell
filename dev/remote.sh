@@ -361,7 +361,7 @@ cmd_smoke() {
   local ts line remote
   ts=$(date +%Y%m%d-%H%M%S)
   if [ "$status" -ne 0 ]; then
-    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Z0-9_]+ [^[:space:]]+\.(png|log|tar)' | awk '{print $2}'); do
+    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+\.(png|log|tar)' | awk '{print $2}'); do
       pull_one "$remote"
     done
     echo "$rig: smoke run failed (exit $status)" >&2
@@ -389,7 +389,7 @@ cmd_smoke() {
     [ -n "$line" ] || continue
     remote=$(printf '%s\n' "$line" | awk '{print $2}')
     case "$remote" in *.png|*.log|*.tar) pull_one "$remote" ;; esac
-  done <<< "$(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Z0-9_]+ [^[:space:]]+' | grep -v '^SMOKE_OK ')"
+  done <<< "$(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+' | grep -v '^SMOKE_OK ')"
 
   # Legs whose output is committed write it into the checkout's docs/.
   local glob dir
