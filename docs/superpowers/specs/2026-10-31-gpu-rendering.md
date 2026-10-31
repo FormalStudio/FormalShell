@@ -59,6 +59,11 @@ first frame is faster. A discrete GPU is not measured: the rig nests on
 g815's Intel, and the owner's session on its NVIDIA is not a test target.
 It takes the GPU because it is the compositor's own device there and the
 per-frame overhead is a submit, not raster work the CPU would also do.
+The one discrete host, g815 under Hyprland on its NVIDIA, never gets that
+far: the compositor's feedback carries no linear ABGR8888, and the shell
+exports linear dmabufs only, so it draws on the CPU (read off its log at
+a4ccb4d0). Taking a modifier from the feedback the driver also exports is
+what would put it on the GPU.
 
 Power state (battery, power-saver) is not read: the integrated hosts are
 on the CPU on mains already, and the quota runs (the power-saver
@@ -68,7 +73,7 @@ Every start logs the pick and why, and `debug dump`'s `render.reason`
 carries it:
 
     formalshell: render: drawing on the CPU: auto: /dev/dri/renderD128 is an integrated GPU on the root PCI bus, where the CPU draws for less
-    formalshell: render: drawing on the GPU (NVIDIA GeForce RTX 5070 Laptop GPU on /dev/dri/renderD129): auto: NVIDIA GeForce RTX 5070 Laptop GPU is a discrete GPU the compositor renders on
+    formalshell: render: drawing on the CPU: the compositor takes no linear ABGR8888 dmabuf
 
 `gpu` takes the node's hardware device whatever its type; `cpu` never
 opens one.
@@ -77,7 +82,7 @@ opens one.
 
 | Host | Compositor's device | Vulkan device | auto |
 | --- | --- | --- | --- |
-| g815 (owner's session) | renderD129, nvidia, behind 00:06.0 | NVIDIA GeForce RTX 5070 Laptop GPU, 595.112.07 | GPU, discrete |
+| g815 (owner's session) | renderD129, nvidia, behind 00:06.0 | NVIDIA GeForce RTX 5070 Laptop GPU, 595.112.07 | CPU, no linear ABGR8888 offered |
 | g815 (nested rig) | renderD128, i915, 00:02.0 | Intel(R) Graphics (ARL) | CPU, root bus |
 | e1504g | renderD128, i915, 00:02.0 | Intel(R) Graphics (ADL-N) | CPU, root bus |
 
