@@ -110,7 +110,7 @@ impl Panel for AppMenu {
         );
 
         let mut action_rows: Vec<El> = Vec::new();
-        let mut action_col = vec![w::panel_heading(s, "Actions")];
+        let mut action_col = vec![if actions.is_empty() { w::panel_heading(s, "Actions") } else { w::panel_heading_with(s, "Actions", actions.len().to_string()) }];
         if sub.entry.is_none() {
             action_col.push(w::panel_empty(s, "No desktop entry"));
         } else if actions.is_empty() {
@@ -135,7 +135,7 @@ impl Panel for AppMenu {
                     .on(format!("window:{i}"))
             })
             .collect();
-        let windows = w::panel_section(s, "Windows", window_rows);
+        let windows = w::panel_section_n(s, "Windows", sub.windows.len(), window_rows);
         let close = w::panel_footer(s, "x", "Close window").stop("close-window").on("close-window");
         w::column(0.0, vec![hero, w::column(s.panel_gap, action_col), windows, close])
     }

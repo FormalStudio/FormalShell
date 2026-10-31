@@ -1,4 +1,4 @@
-//! A read-only readout, the header's "Read only" chip
+//! A read-only readout, a "Read only" line under it
 //! saying so, since the owner's host units own the lightbar and LED writes.
 //! No controller is the dim "No controller" row; past it the hero carries
 //! the battery as its readout and rail, and a Status row holds the lightbar
@@ -11,7 +11,7 @@ use fs_theme::color::Rgba;
 use super::{Panel, View};
 use crate::store::Topic;
 use crate::ui::el::Kind;
-use crate::ui::{El, w};
+use crate::ui::{El, Ink, w};
 
 #[derive(Default)]
 pub struct Dualsense;
@@ -70,6 +70,7 @@ impl Panel for Dualsense {
         if !rows.is_empty() {
             out.push(w::panel_section(s, "Status", rows));
         }
+        out.push(w::panel_text(s, w::caption("Read only").ink(Ink::Muted).pad_top(s.panel_section)));
         w::column(0.0, out)
     }
 }

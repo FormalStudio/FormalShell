@@ -5,7 +5,8 @@
 //! value with a lock and takes no edit. Up and Down walk the rows, Enter
 //! flips a switch or steps a choice round, Left and Right move a choice
 //! and apply it, `x` drops the override under the cursor, Backspace goes
-//! back to the tiles.
+//! back to the tiles. A page with a launcher route of its own ends on a
+//! row handing over to it.
 
 use super::{Effect, Panel, View};
 use crate::services::overrides::{self, Control, Key, Page};
@@ -22,6 +23,14 @@ impl SettingsPage {
         let page = overrides::page(name.strip_prefix("settings:")?)?;
         Some(Self { name, page })
     }
+}
+
+/// The launcher route past each page's switches: (page, glyph, label, route).
+const LINKS: [(&str, &str, &str, &str); 2] =
+    [("appearance", "palette", "Theme and wallpaper", "theme"), ("system", "settings", "System actions", "system")];
+
+fn link(page: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    LINKS.iter().find(|(p, ..)| *p == page).map(|(_, glyph, label, route)| (*glyph, *label, *route))
 }
 
 fn stop(key: &Key) -> String {
@@ -117,12 +126,21 @@ impl Panel for SettingsPage {
                 _ => sections.push((key.section, vec![el])),
             }
         }
-        w::column(0.0, sections.into_iter().map(|(name, rows)| w::panel_section(s, name, rows)).collect())
+        let mut out: Vec<El> = sections.into_iter().map(|(name, rows)| w::panel_section(s, name, rows)).collect();
+        if let Some((glyph, label, _)) = link(self.page.id) {
+            let row = w::panel_row(s, glyph, label, None, vec![w::icon("chevron-right").ink(Ink::Muted)]).stop("route").on("route");
+            out.push(w::panel_group(s, vec![row]).pad_top(s.panel_section));
+        }
+        w::column(0.0, out)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         if ev.on == "back" {
             fx.panel = Some("settings");
+            return;
+        }
+        if ev.on == "route" {
+            fx.summon = link(self.page.id).map(|(.., route)| route);
             return;
         }
         if let Some(key) = ev.on.strip_prefix("reset:").and_then(overrides::find) {
@@ -144,6 +162,10 @@ impl Panel for SettingsPage {
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
         if stop == "back" {
             fx.panel = Some("settings");
+            return;
+        }
+        if stop == "route" {
+            fx.summon = link(self.page.id).map(|(.., route)| route);
             return;
         }
         let Some(key) = key_of(stop) else { return };

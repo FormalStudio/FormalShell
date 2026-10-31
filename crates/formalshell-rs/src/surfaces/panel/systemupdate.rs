@@ -1,8 +1,7 @@
 //! Are the flake's inputs behind their upstream
 //! refs. A hero naming the flake and carrying the summary, an inputs
 //! section of rows (name, locked rev in mono, status that goes `warning`
-//! on Behind), and a footer pairing an outline Check button with the
-//! behind count. It never applies an update. The poll is the one shared
+//! on Behind), and an outline Check button under them. It never applies an update. The poll is the one shared
 //! service the bar cell reads; this panel asks it to go again on open and
 //! on Check.
 
@@ -93,7 +92,7 @@ impl Panel for SystemUpdate {
                     w::panel_row(s, "", &input.name, Some(rev), vec![w::caption(status).ink(ink)]).stop(format!("input{i}"))
                 })
                 .collect();
-            parts.push(w::panel_section(s, "Inputs", rows));
+            parts.push(w::panel_section_n(s, "Inputs", u.inputs.len(), rows));
             if ok && counts.unknown > 0 {
                 parts.push(w::panel_text(s, w::caption(format!("{} unknown", counts.unknown)).ink(Ink::Muted)));
             }

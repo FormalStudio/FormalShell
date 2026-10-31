@@ -193,7 +193,7 @@ impl Panel for Audio {
                 .collect()
         };
         if !output_rows.is_empty() {
-            out.push(w::panel_section(s, "Output", output_rows));
+            out.push(w::panel_section_n(s, "Output", l.outputs.len(), output_rows));
         }
         if !l.inputs.is_empty() {
             let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume), r.muted));
@@ -207,7 +207,7 @@ impl Panel for Audio {
             } else {
                 l.inputs.iter().map(|r| device_row(format!("input-device:{}", r.id), "mic", r, Some(r.id) == source, s)).collect()
             };
-            out.push(w::panel_section(s, "Input", rows));
+            out.push(w::panel_section_n(s, "Input", l.inputs.len(), rows));
         }
         if !l.streams.is_empty() {
             let rows = l
@@ -220,7 +220,7 @@ impl Panel for Audio {
                     w::panel_cell(s, mixer_row(s, None, label, r.volume, r.muted, &key, track)).stop(key)
                 })
                 .collect();
-            out.push(w::panel_section(s, "Apps", rows));
+            out.push(w::panel_section_n(s, "Apps", l.streams.len(), rows));
         }
         w::column(0.0, out)
     }

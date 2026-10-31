@@ -139,6 +139,7 @@ impl Panel for Center {
 
     fn actions(&self, v: &View) -> Vec<El> {
         vec![
+            w::icon("bell-off").ink(Ink::Muted),
             w::switch(v.store.notifications.model.dnd).tip("Do not disturb").on("dnd").stop("dnd"),
             w::icon_button("trash-2").tip("Clear all").on("clear").stop("clear"),
         ]
@@ -167,7 +168,8 @@ impl Panel for Center {
             return w::column(0.0, out);
         }
         let mut section = |title: &str, rows: &[Group], unread: bool| {
-            out.push(w::panel_section(s, title, rows.iter().map(|g| row(v, g, unread, now)).collect()));
+            let n = rows.iter().map(|g| g.count).sum();
+            out.push(w::panel_section_n(s, title, n, rows.iter().map(|g| row(v, g, unread, now)).collect()));
         };
         if !pending.is_empty() {
             section("Pending", &pending, true);

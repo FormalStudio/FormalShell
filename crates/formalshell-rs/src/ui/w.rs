@@ -469,9 +469,21 @@ fn unpad(e: El, d: f64) -> El {
     e.pad((l - d).max(0.0), t, (r - d).max(0.0), b)
 }
 
+/// A heading with a `caption` at its far end: a count, a next time.
+pub fn panel_heading_with(s: &Space, text: &str, side: impl Into<String>) -> El {
+    let i = text_inset(s);
+    let side = text_el(side, Type::Caption, Weight::Normal, true, Ink::Muted).pad(0.0, s.panel_section, i, 0.0);
+    row(s.panel_gap, vec![panel_heading(s, text).fill(), side]).fill()
+}
+
 /// A heading over its rows in one group.
 pub fn panel_section(s: &Space, title: &str, rows: Vec<El>) -> El {
     column(s.panel_gap, vec![panel_heading(s, title), panel_group(s, rows)])
+}
+
+/// A section whose heading carries how many things it lists.
+pub fn panel_section_n(s: &Space, title: &str, n: usize, rows: Vec<El>) -> El {
+    column(s.panel_gap, vec![panel_heading_with(s, title, n.to_string()), panel_group(s, rows)])
 }
 
 /// §7's empty or unavailable line: `body` in `muted`, centred in a row's

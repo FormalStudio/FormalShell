@@ -56,7 +56,7 @@ impl Panel for Activity {
             parts.push(w::panel_empty(s, "Nothing running"));
         }
         if !running.is_empty() {
-            let mut col = vec![w::panel_heading(s, "Now")];
+            let mut col = vec![w::panel_heading_with(s, "Now", running.len().to_string())];
             col.extend(running.into_iter().map(|r| super::center::inset(s, r)));
             parts.push(w::column(s.panel_gap, col));
         }

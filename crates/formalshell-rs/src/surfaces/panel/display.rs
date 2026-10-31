@@ -1,4 +1,4 @@
-//! A hero for the focused output, then one row per
+//! One row per
 //! output (an on/off switch, the scale, mirror and HDR lines, mode, make
 //! and model, the card driving it, and a scale track), the backlight and
 //! DDC monitors, a switch per output that can do HDR, and the one mirror
@@ -192,11 +192,11 @@ impl Panel for Display {
         } else {
             let main = display::main_output(store);
             let list = rows.iter().map(|r| output_row(v, &rows, r, &main)).collect();
-            parts.push(w::panel_section(s, "Outputs", list));
+            parts.push(w::panel_section_n(s, "Outputs", rows.len(), list));
         }
 
         let devices = store.display.devices();
-        let mut bright = vec![w::panel_heading(s, "Brightness")];
+        let mut bright = vec![w::panel_heading_with(s, "Brightness", devices.len().to_string())];
         if devices.is_empty() {
             bright.push(w::panel_empty(s, "No backlight"));
         } else {
@@ -210,7 +210,7 @@ impl Panel for Display {
                 .iter()
                 .map(|n| switch_row(v, "sun", n, display::hdr_on(store, n), format!("hdr:{n}"), format!("hdr:{n}")))
                 .collect();
-            parts.push(w::panel_section(s, "HDR", list));
+            parts.push(w::panel_section_n(s, "HDR", hdr.len(), list));
         }
 
         if !rows.is_empty() {

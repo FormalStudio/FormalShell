@@ -101,7 +101,7 @@ impl Panel for Weather {
                         w::panel_row(s, glyph, day_name, None, vec![w::panel_value(temps)]).stop(format!("day:{i}"))
                     })
                     .collect();
-                parts.push(w::panel_section(s, "Forecast", rows));
+                parts.push(w::panel_section_n(s, "Forecast", reading.forecast.len(), rows));
             }
         }
         w::column(0.0, parts)

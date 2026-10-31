@@ -1,7 +1,6 @@
 //! The adapter's power `Switch` and a rescan button in
-//! the header, a hero naming the one connected device (or the adapter), and
-//! the rows split into Paired (connected first, each carrying a check) and
-//! Available. Enter connects or disconnects the row under the cursor, or
+//! the header, the rows split into Paired (connected first, each carrying a
+//! check) and Available, and the adapter's name and state under them. Enter connects or disconnects the row under the cursor, or
 //! pairs, trusts and connects an available one; `x` forgets a paired one.
 //! Trust and forget show on the row holding the cursor.
 //!
@@ -164,11 +163,13 @@ impl Panel for Bluetooth {
             out.push(w::panel_empty(s, if enabled { "Scanning\u{2026}" } else { "Turn on to scan" }));
         }
         if !paired.is_empty() {
-            out.push(w::panel_section(s, "Paired", paired));
+            out.push(w::panel_section_n(s, "Paired", paired.len(), paired));
         }
         if !available.is_empty() {
-            out.push(w::panel_section(s, "Available", available));
+            out.push(w::panel_section_n(s, "Available", available.len(), available));
         }
+        let adapter = format!("{} \u{b7} {}", bt.adapter, bt.state);
+        out.push(w::panel_text(s, w::caption(adapter).ink(Ink::Muted).elide().pad_top(s.panel_section)));
         w::column(0.0, out)
     }
 
