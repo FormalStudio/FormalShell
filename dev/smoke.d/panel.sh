@@ -7,11 +7,11 @@
 # the claim a screenshot cannot make is that the shell's own bookkeeping
 # says this panel, and only this one, is the open one.
 #
-# The header read off one frame against `debug dump`'s rest rect: the gap
-# from the card's top edge to the title's ink and the gap from its baseline
-# to the hairline under it agree within 2px (owner, 2026-10-31: titles stuck
-# to the top). The baseline is the lowest row of dense ink, so a descender
-# does not count; a panel with no header (settings, the tray) skips it.
+# One frame against `debug dump`'s rest rect through the shared
+# panel-language assertion (dev/panel-language.py): the header centred, the
+# text column clear on both sides, the body ending panelInset above the
+# edge, one inset level. A headerless card (the tray's second bar) is read
+# at panelRowInset with no header claim.
 leg_panel_flag="--panel <name>"
 leg_panel_needs="jq grim python3"
 leg_panel_order=60
@@ -76,63 +76,20 @@ leg_panel_assert() {
     fail "panel state is not '$panel_name', got: $(cat "$panel_state_path" 2>/dev/null)"
   fi
   cat "$panel_state_path"
-  panel_header_assert "$panel_name"
+  panel_language_check "$panel_name"
 }
 
-panel_header_assert() {
-  local rest out
+panel_language_check() {
+  local rest header=no space=rowInset
   rest=$("$jq_bin" -c '.panel.rest' "$panel_dump_path" 2>/dev/null)
   if [ -z "$rest" ] || [ "$rest" = null ]; then
     echo "panel: $1 is not a card in the panel host (Radio Atlas draws its own), skipped"
     return
   fi
-  [ -s "$panel_header_shot" ] || fail "panel: no header frame"
-  if [ "$("$jq_bin" -r '.panel.header' "$panel_dump_path")" = false ]; then
-    echo "panel: $1 draws no header, skipped"
-    return
+  if [ "$("$jq_bin" -r '.panel.header' "$panel_dump_path")" = true ]; then
+    header=yes space=inset
   fi
-  out=$("$python3_bin" - "$panel_header_shot" "$rest" <<'PY'
-import json, sys
-from PIL import Image
-im = Image.open(sys.argv[1]).convert("RGB")
-r = json.loads(sys.argv[2])
-x0, y0, w = int(r["x"]), int(r["y"]), int(r["width"])
-px = im.load()
-fill = px[x0 + w // 2, y0 + 3]
-def far(c, d):
-    return sum(abs(a - b) for a, b in zip(c, fill)) > d
-# The hairline: the first row under the top whose middle half is all off
-# the fill by a little and level.
-line = None
-for y in range(y0 + 8, y0 + 120):
-    row = [px[x, y] for x in range(x0 + w // 4, x0 + 3 * w // 4)]
-    if all(far(c, 6) for c in row) and max(c[0] for c in row) - min(c[0] for c in row) < 12:
-        line = y
-        break
-if line is None:
-    print("none")
-    sys.exit()
-# The title's ink, left of the middle, above the hairline.
-counts = []
-for y in range(y0 + 1, line):
-    counts.append((y, sum(1 for x in range(x0 + 12, x0 + w // 2) if far(px[x, y], 120))))
-ink = [y for y, n in counts if n]
-if not ink:
-    print("noink")
-    sys.exit()
-peak = max(n for _, n in counts)
-base = max(y for y, n in counts if n >= peak * 0.3)
-print(ink[0] - y0, line - base - 1)
-PY
-) || fail "panel: header check crashed: $out"
-  case $out in
-    none) fail "panel: $1 has a header but no hairline was found under it" ;;
-    noink) fail "panel: header hairline but no title ink" ;;
-    *[!0-9\ -]*|'') fail "panel: header check printed '$out'" ;;
-  esac
-  local above below
-  read -r above below <<< "$out"
-  echo "panel header: ${above}px above the title, ${below}px from its baseline to the hairline"
-  [ $((above - below)) -le 2 ] && [ $((below - above)) -le 2 ] \
-    || fail "panel header: title off centre, ${above}px above against ${below}px below"
+  echo "SMOKE_PANEL_DUMP $panel_dump_path"
+  panel_language_assert "$1" "$panel_header_shot" "$rest" "$header" "$panel_dump_path" "$space"
+  panel_language_verdict
 }

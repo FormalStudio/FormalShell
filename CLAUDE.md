@@ -1068,7 +1068,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Frames open, mid-zoom and mid-glide at a tenth speed, and after the
   drop; read dark and `--light`.
 - `panel.sh` `--panel <name>`: one popout opened over the `panel` route, with
-  `panel state` agreeing it is the only open one.
+  `panel state` agreeing it is the only open one, and its frame read by
+  the shared panel-language check (`dev/panel-language.py`, through
+  `panel_language_assert` in `dev/smoke.sh`) off `debug dump`'s rest rect
+  and `panelSpace`: the title centred between the card's top and the
+  hairline within 2px, no ink between either side and the text column,
+  nothing in the last `panelInset` rows with a closing box exactly that
+  far up, and no box standing inside another down the column. A headerless
+  card is read at `panelRowInset`. Every `--panel` and `--settings-ui`
+  shot runs the same claims, so a layout outlier fails on any surface.
 - `panel_anchor.sh` `--panel-anchor`: `panel toggle` hanging its card under
   the cell that owns the panel, read off one crop of the box under a
   left-region audio cell, the card in it once and the bare desktop once.
@@ -1217,7 +1225,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   settings.json's sha256 unchanged, `menu status` reading the page held at
   each step, Escape back to the tiles and out to the root, the root's
   Settings row and `panel open info` landing in the card and `panel close`
-  closing it. Every page photographed, dark and `--light`.
+  closing it. Every page photographed, dark and `--light`, and each shot
+  read by the shared panel-language check off `menu status`'s `cardBox`.
 - `share.sh` `--share`: the share route present (the copied text reaching
   LocalSend as a real file) and honestly absent with no binary on PATH.
 - `sidebar.sh` `--sidebar`: `layout: sidebar` from settings.json alone,

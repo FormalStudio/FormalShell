@@ -953,6 +953,28 @@ fail() {
   exit 1
 }
 
+# One card's frame against the panel language (dev/panel-language.py), the
+# same claims for every panel and settings page: <name> <png> <card rect
+# json> <header yes|no> <the dump carrying panelSpace> <inset|rowInset>.
+# Every frame is read before panel_language_verdict fails the run, so one
+# bad page does not hide the next.
+panel_language_failures=""
+panel_language_assert() {
+  local inset row out status=0
+  inset=$("$jq_bin" -r ".panelSpace.$6 // empty" "$5" 2>/dev/null)
+  [ -n "$inset" ] || fail "panel-language: $1: no panelSpace in $5"
+  [ -s "$2" ] || fail "panel-language: $1: no frame $2"
+  row=$("$jq_bin" -r '.panelSpace.row // 40' "$5" 2>/dev/null)
+  out=$("$python3_bin" "$PWD/dev/panel-language.py" "$2" "$3" "$4" "${inset%.*}" "$1" "${row%.*}" "${FS_SMOKE_SCALE:-1}" 2>&1) || status=$?
+  echo "$out"
+  if [ "$status" -ne 0 ]; then
+    panel_language_failures+="$1 exited $status: $( (grep -E 'FAIL|Error' <<< "$out" || tail -1 <<< "$out") | head -3 | tr '\n' ' ')"
+  fi
+}
+panel_language_verdict() {
+  [ -z "$panel_language_failures" ] || fail "panel-language: $panel_language_failures"
+}
+
 if [ -n "$orphans" ]; then
   fail "the shell left children running after it was gone: $(echo "$orphans" | tr "\n" ";")"
 fi

@@ -164,6 +164,20 @@
 --settings-ui --light
 --panel calendar
 --panel weather
+--panel activity
+--panel appmenu
+--panel bluetooth
+--panel earbuds
+--panel iphone
+--panel dualsense
+--panel media
+--panel github
+--panel usage
+--panel tailscale
+--panel systemupdate
+--panel display
+--panel monitor
+--panel trayoverflow
 --device-routes
 --launcher-send
 --firefox-install

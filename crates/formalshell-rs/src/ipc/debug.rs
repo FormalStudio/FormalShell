@@ -152,6 +152,8 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         Some(h) => json!({"id": h.id(), "open": h.is_open(), "header": h.module.header(), "rest": rect(&h.card.rest_rect()), "live": rect(&h.card.live_rect())}),
         None => serde_json::Value::Null,
     };
+    // dev/panel-language.py reads the card's column off these.
+    dump["panelSpace"] = json!({"inset": theme.space.panel_inset, "rowInset": theme.space.panel_row_inset, "row": theme.space.panel_row});
     dump["toastCards"] = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect();
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();

@@ -20,7 +20,7 @@
 # typing "settings" and Return opens the tiles again.
 leg_settings_ui_flag="--settings-ui"
 leg_settings_ui_order=260
-leg_settings_ui_needs="jq wtype"
+leg_settings_ui_needs="jq wtype python3"
 
 settings_ui_settings="$iso_home/.config/formalshell/settings.json"
 settings_ui_state="$iso_home/.local/state/formalshell/state.json"
@@ -53,24 +53,28 @@ read_back() {
   $ipc call panel state > "\$d/panel-\$1.txt" 2>&1
   $ipc call menu status > "\$d/menu-\$1.json" 2>&1
 }
+shot() {
+  "$grim_bin" "\$d/settings-ui-\$1.png" > /dev/null 2>&1
+  $ipc call menu status > "\$d/box-\$1.json" 2>&1
+}
 sleep 3
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-before"
 $ipc call panel open settings > /dev/null 2>&1
 sleep 1.5
-"$grim_bin" "\$d/settings-ui-grid.png" > /dev/null 2>&1
+shot grid
 key Down Return
 read_back appearance
-"$grim_bin" "\$d/settings-ui-appearance.png" > /dev/null 2>&1
+shot appearance
 key Down Down Return
 read_back flipped
 $ipc call settings get theme.reactiveRims > "\$d/get-flipped.json" 2>&1
-"$grim_bin" "\$d/settings-ui-appearance-flipped.png" > /dev/null 2>&1
+shot appearance-flipped
 key Down Down Down Return Right
 read_back pinned
 $ipc call settings get motion.morph > "\$d/get-pinned.json" 2>&1
 $ipc call settings set motion.morph true > "\$d/set-pinned.txt" 2>&1
 $ipc call settings reset motion.morph > "\$d/reset-pinned.txt" 2>&1
-"$grim_bin" "\$d/settings-ui-appearance-pinned.png" > /dev/null 2>&1
+shot appearance-pinned
 key Up Up Up x
 read_back reset
 $ipc call settings get theme.reactiveRims > "\$d/get-reset.json" 2>&1
@@ -81,14 +85,14 @@ read_back bar
 key Down Down Down Right
 read_back solid
 $ipc call bar paint > "\$d/paint-solid.json" 2>&1
-"$grim_bin" "\$d/settings-ui-bar.png" > /dev/null 2>&1
+shot bar
 $ipc call settings reset bar.style > "\$d/reset-style.txt" 2>&1
 sleep 1
 read_back style-reset
 for page in desktop system; do
   $ipc call panel open "settings:\$page" > /dev/null 2>&1
   sleep 1.5
-  "$grim_bin" "\$d/settings-ui-\$page.png" > /dev/null 2>&1
+  shot \$page
 done
 key Escape
 read_back escape-page
@@ -101,7 +105,7 @@ read_back root
 $ipc call panel open info > /dev/null 2>&1
 sleep 1.5
 read_back info
-"$grim_bin" "\$d/settings-ui-info.png" > /dev/null 2>&1
+shot info
 $ipc call panel close > /dev/null 2>&1
 sleep 0.5
 read_back closed
@@ -161,5 +165,9 @@ leg_settings_ui_assert() {
   for shot in grid appearance appearance-flipped appearance-pinned bar desktop system info; do
     [ -s "$shot_dir/settings-ui/settings-ui-$shot.png" ] || fail "settings-ui: no settings-ui-$shot.png"
     echo "SMOKE_SETTINGS_UI_SHOT $shot_dir/settings-ui/settings-ui-$shot.png"
+    panel_language_assert "settings-ui $shot" "$shot_dir/settings-ui/settings-ui-$shot.png" \
+      "$("$jq_bin" -c '.cardBox' "$shot_dir/settings-ui/box-$shot.json" 2>/dev/null)" yes \
+      "$shot_dir/settings-ui/dump-appearance.json" inset
   done
+  panel_language_verdict
 }

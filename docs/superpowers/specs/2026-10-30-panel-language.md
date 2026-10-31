@@ -178,3 +178,11 @@ spacing literal is a bug against this spec.
 `artifacts/panels-before.png` and `artifacts/panels-after.png`: every
 panel on one sheet each, dark, in the same order. Each redesign commit
 keeps its legs green and updates the probes the new geometry moves.
+
+One check reads these rules off every frame (owner, 2026-10-31: fixed
+once, never per panel): `dev/panel-language.py`, run by every `--panel`
+leg and by `--settings-ui` on each page, with the numbers taken from the
+shell's own `panelSpace`. It holds the header centred within 2px, the
+text column clear on both sides, the last `panelInset` rows empty with a
+closing box exactly that far up, and one inset level. A rule added here
+gets its claim there in the same commit.
