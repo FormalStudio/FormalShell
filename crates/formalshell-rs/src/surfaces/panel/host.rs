@@ -453,7 +453,10 @@ impl Host {
         if self.module.closable() {
             parts.push(w::icon_button("x").tip("Close").on("close").key("close"));
         }
-        w::row(0.0, parts).fill()
+        // The row takes the header's whole height so the title and its
+        // buttons centre in it: the card's edge to the title then matches
+        // the title to the hairline.
+        w::row(0.0, parts).fill().height(s.panel_row)
     }
 
     fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
