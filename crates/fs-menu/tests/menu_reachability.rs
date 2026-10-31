@@ -1,8 +1,6 @@
-// The launcher-reachability guard: every panel has a route in the launcher.
-// PANEL_NAMES here is a second, independently kept copy of the providers'
-// own panel list (not imported: a typo or a dropped entry in the shipped list
-// must show up as a mismatch between two independently-written sources, not
-// disappear because both read the same array).
+// The launcher-reachability guard: every panel the shell can open
+// (fs-chrome's registry) is a Panels row, a page the launcher holds, or the
+// tray route, and every Panels row is in the shipped tree and opens its panel.
 
 mod common;
 
@@ -11,15 +9,10 @@ use std::collections::{HashMap, HashSet};
 use common::*;
 use fs_menu::node::Kind;
 use fs_menu::providers::{
-    ProviderFn, RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panels_provider, radio_result_rows,
-    radio_rows, tray_provider,
+    ProviderFn, RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panel_ids, panels_provider,
+    radio_result_rows, radio_rows, tray_provider,
 };
 use fs_menu::search;
-
-const PANEL_NAMES: &[&str] = &[
-    "appmenu", "audio", "calendar", "network", "bluetooth", "earbuds", "iphone", "dualsense", "power", "weather",
-    "media", "github", "usage", "tailscale", "systemupdate", "display", "monitor", "radio",
-];
 
 // Settings and Information are pages the launcher holds as routes of their
 // own, not rows under Panels.
@@ -31,12 +24,27 @@ const LAUNCHER_PAGES: &[(&str, &str)] = &[("settings", "Settings"), ("info", "In
 fn shipped_tree_covers_every_panel() {
     let tree = real_tree();
     let panels = tree.nodes.get("panels").expect("panels node");
-    assert_eq!(panels.child_ids.len(), PANEL_NAMES.len());
-    for name in PANEL_NAMES {
+    let names: Vec<&str> = panel_ids().collect();
+    assert_eq!(panels.child_ids, names.iter().map(|n| format!("panels.{n}")).collect::<Vec<_>>());
+    for name in names {
         let node = tree.nodes.get(&format!("panels.{name}")).unwrap_or_else(|| panic!("missing launcher route for panel '{name}'"));
         assert_eq!(node.kind, Kind::Action);
         let action = node.action.as_deref().expect("action");
         assert!(action.contains(&format!("call panel open {name}")), "panels.{name} does not open panel '{name}'");
+    }
+}
+
+#[test]
+fn every_panel_reaches_the_launcher() {
+    use fs_chrome::bar::panels::{PANELS, TRAY_OVERFLOW, known, launcher_route};
+    let rows: Vec<&str> = panel_ids().collect();
+    for name in PANELS {
+        let listed = rows.contains(&name);
+        let elsewhere = launcher_route(name).is_some() || name == TRAY_OVERFLOW;
+        assert!(listed != elsewhere, "panel '{name}': a Panels row {listed}, held elsewhere {elsewhere}");
+    }
+    for row in &rows {
+        assert!(known(row).is_some(), "Panels row '{row}' opens no panel");
     }
 }
 
@@ -68,8 +76,9 @@ fn root_query_reaches_every_panel() {
 #[test]
 fn panels_provider_action_shape() {
     let rows = panels_provider("formalshell-ipc");
-    assert_eq!(rows.len(), PANEL_NAMES.len());
-    for (row, name) in rows.iter().zip(PANEL_NAMES) {
+    let names: Vec<&str> = panel_ids().collect();
+    assert_eq!(rows.len(), names.len());
+    for (row, name) in rows.iter().zip(names) {
         assert_eq!(row.id, format!("panels.{name}"));
         assert_eq!(row.kind, Kind::Action);
         assert_eq!(row.action.as_deref(), Some(format!("formalshell-ipc call panel open {name}").as_str()));

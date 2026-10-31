@@ -972,6 +972,7 @@ name = "fs-menu"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "fs-chrome",
  "fs-devices",
  "fs-js",
  "indexmap",

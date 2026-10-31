@@ -12,7 +12,7 @@ use crate::services::tray::{self, Item};
 use crate::store::Topic;
 use crate::ui::{El, Event, What, w};
 
-pub const ID: &str = "trayoverflow";
+pub const ID: &str = fs_chrome::bar::panels::TRAY_OVERFLOW;
 
 /// Items to a row before the card wraps.
 const COLUMNS: usize = 8;

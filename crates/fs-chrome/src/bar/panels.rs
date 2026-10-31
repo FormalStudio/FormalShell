@@ -14,6 +14,55 @@
 
 use super::layout::{Builtin, EntryKind, Resolved};
 
+/// The panels `panel` can open, each one's module in the shell.
+pub const PANELS: [&str; 26] = [
+    "activity",
+    "appmenu",
+    "audio",
+    "calendar",
+    "network",
+    "bluetooth",
+    "earbuds",
+    "iphone",
+    "dualsense",
+    "power",
+    "weather",
+    "media",
+    "github",
+    "usage",
+    "tailscale",
+    "systemupdate",
+    "display",
+    "monitor",
+    TRAY_OVERFLOW,
+    "radio",
+    "info",
+    "settings",
+    "settings:appearance",
+    "settings:bar",
+    "settings:desktop",
+    "settings:system",
+];
+
+/// The tray's second bar, which the launcher reaches through its "tray"
+/// route rather than a Panels row.
+pub const TRAY_OVERFLOW: &str = "trayoverflow";
+
+pub fn known(name: &str) -> Option<&'static str> {
+    PANELS.iter().find(|n| **n == name).copied()
+}
+
+/// The launcher route a panel lives in: the launcher card holds these, centred
+/// like Pond's settings, rather than a card hanging off the bar.
+pub fn launcher_route(name: &str) -> Option<&'static str> {
+    match name {
+        "info" => Some("info"),
+        "settings" => Some("settings"),
+        page if page.starts_with("settings:") && known(page).is_some() => Some("settings"),
+        _ => None,
+    }
+}
+
 /// The panel registry key a widget opens, if it opens one.
 pub fn widget_panel(widget: Builtin) -> Option<&'static str> {
     use Builtin::*;

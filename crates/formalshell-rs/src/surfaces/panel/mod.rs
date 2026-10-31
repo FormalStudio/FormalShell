@@ -208,36 +208,7 @@ pub trait Panel {
     }
 }
 
-/// The panels `panel` can open, each one's
-/// module.
-pub const PANELS: [&str; 26] = [
-    "activity",
-    "appmenu",
-    "audio",
-    "calendar",
-    "network",
-    "bluetooth",
-    "earbuds",
-    "iphone",
-    "dualsense",
-    "power",
-    "weather",
-    "media",
-    "github",
-    "usage",
-    "tailscale",
-    "systemupdate",
-    "display",
-    "monitor",
-    "trayoverflow",
-    "radio",
-    "info",
-    "settings",
-    "settings:appearance",
-    "settings:bar",
-    "settings:desktop",
-    "settings:system",
-];
+pub use fs_chrome::bar::panels::{PANELS, known, launcher_route};
 
 /// A panel card's frame round its body, one set of numbers wherever the
 /// card is drawn (the panel host, a page the launcher holds;
@@ -278,21 +249,6 @@ pub fn title(text: String) -> El {
     crate::ui::w::label(text).size(crate::ui::Type::Display).weight(crate::ui::Weight::Semibold).elide()
 }
 
-pub fn known(name: &str) -> Option<&'static str> {
-    PANELS.iter().find(|n| **n == name).copied()
-}
-
-/// The launcher route a panel lives in: the launcher card holds these, centred
-/// like Pond's settings, rather than a card hanging off the bar.
-pub fn launcher_route(name: &str) -> Option<&'static str> {
-    match name {
-        "info" => Some("info"),
-        "settings" => Some("settings"),
-        page if page.starts_with("settings:") && known(page).is_some() => Some("settings"),
-        _ => None,
-    }
-}
-
 pub fn build(name: &str) -> Option<Box<dyn Panel>> {
     if name.starts_with(plugin::PREFIX) {
         return Some(Box::new(plugin::PluginPanel::new(plugin::intern(name))));
@@ -324,4 +280,5 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         _ => Box::new(standin::StandIn::new(id)),
     })
 }
+
 

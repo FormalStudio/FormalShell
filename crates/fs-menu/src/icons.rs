@@ -95,6 +95,7 @@ pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("gpu.mode", "arrow-left-right"),
     ("gpu.mode.integrated", "laptop"),
     ("gpu.mode.hybrid", "git-fork"),
+    ("panels.activity", "activity"),
     ("panels.appmenu", "layout-grid"),
     ("panels.audio", "volume-2"),
     ("panels.calendar", "calendar"),

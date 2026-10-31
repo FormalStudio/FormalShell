@@ -79,12 +79,12 @@ struct PanelName {
     aliases: &'static [&'static str],
 }
 
-/// One row per name in the shell's panel IPC registry, `trayoverflow` aside
-/// (the "tray" route already lists its items). The registry is declared in
-/// the shell, not discoverable at runtime, so a new panel needs a new entry
-/// here too; the reachability test is the guard that fails when one is
-/// missed.
+/// One row per name in the shell's panel registry (fs-chrome's `PANELS`),
+/// but for the pages the launcher holds as routes of their own and
+/// `trayoverflow` (the "tray" route already lists its items).
+/// `every_panel_reaches_the_launcher` fails when a registry name is missing.
 const PANEL_NAMES: &[PanelName] = &[
+    PanelName { id: "activity", label: "Activity", icon: "", aliases: &[] },
     PanelName { id: "appmenu", label: "App Menu", icon: "\u{F003B}", aliases: &[] },
     PanelName { id: "audio", label: "Audio", icon: "\u{F057E}", aliases: &[] },
     PanelName { id: "calendar", label: "Calendar", icon: "\u{F00EE}", aliases: &[] },
@@ -104,6 +104,11 @@ const PANEL_NAMES: &[PanelName] = &[
     PanelName { id: "monitor", label: "Monitor", icon: "\u{F029A}", aliases: &[] },
     PanelName { id: "radio", label: "Radio", icon: "\u{F0439}", aliases: &[] },
 ];
+
+/// The panels the Panels route lists, in its order.
+pub fn panel_ids() -> impl Iterator<Item = &'static str> {
+    PANEL_NAMES.iter().map(|p| p.id)
+}
 
 pub fn panels_provider(ipc: &str) -> Vec<Node> {
     PANEL_NAMES
