@@ -52,9 +52,8 @@
 # last row whole. The 100px of travel up above lifts after a 100ms pause,
 # so it coasts nothing either.
 leg_wheel_flag="--wheel"
-leg_wheel_scale1="scrolls over the bar's audio cell at logical pixels (1.25: the notch missed it)"
 leg_wheel_order=125
-leg_wheel_needs="wlrctl convert wpctl python3"
+leg_wheel_needs="wlrctl convert wpctl python3 jq"
 
 wheel_before_png="$shot_dir/wheel-before.png"
 wheel_after_png="$shot_dir/wheel-after.png"
@@ -119,17 +118,15 @@ leg_wheel_timing() {
 leg_wheel_drive() {
   local t0 script="$shot_dir/wheel-drive.sh"
   t0=$(wheel_t0)
-  # 893x604 is the middle of a THUMBNAIL, second row, second column: the
-  # card is centred and popupWidthMenu wide, its top edge sits at 30% of a
-  # 1080-tall output, and the grid starts under the header band's rule, its
-  # own inset below that. The middle of the grid is not good enough: 960
-  # lands in the gutter between two cells, where the wheel reaches the
-  # GridView without passing a cell at all, which is the one path that was
-  # never broken.
+  # The middle of a THUMBNAIL, second row, second column, off `menu
+  # status`'s rowBoxes once the grid is up. The middle of the grid is not
+  # good enough: it can land in the gutter between two cells, where the wheel
+  # reaches the GridView without passing a cell at all, which is the one
+  # path that was never broken.
   #
-  # 1731x20 is the bar's audio cell, the leading cell of the right group,
-  # vertically centred in the bar. It is the second half's target, once the
-  # grid is closed and the bar is reachable again.
+  # The bar's audio cell, off `bar room`, is the second half's target, once
+  # the grid is closed and the bar is reachable again. Both are logical
+  # pixels, the space wlrctl's moves are in.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep $t0
@@ -137,7 +134,9 @@ $ipc call picker summon > /dev/null 2>&1
 sleep 2
 "$wlrctl_bin" pointer move -4000 -4000 > "$wheel_dispatch_path" 2>&1
 sleep 1
-"$wlrctl_bin" pointer move 893 604 >> "$wheel_dispatch_path" 2>&1
+read -r gx gy <<< "\$($ipc call menu status 2>/dev/null | "$jq_bin" -r '.rowBoxes | (map(.y) | unique | .[1]) as \$y | (map(.x) | unique | .[1]) as \$x | map(select(.x == \$x and .y == \$y))[0] | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"')"
+echo "grid cell at \$gx \$gy" >> "$wheel_dispatch_path"
+"$wlrctl_bin" pointer move "\$gx" "\$gy" >> "$wheel_dispatch_path" 2>&1
 sleep 2
 "$grim_bin" "$wheel_before_png" > /dev/null 2>&1
 $ipc call menu status > "$wheel_menu_before_path" 2>&1
@@ -207,7 +206,9 @@ sleep 1
 "$wpctl_bin" get-volume @DEFAULT_AUDIO_SINK@ 2>&1 | grep '^Volume:' > "$wheel_volume_before_path"
 "$wlrctl_bin" pointer move -4000 -4000 >> "$wheel_dispatch_path" 2>&1
 sleep 1
-"$wlrctl_bin" pointer move 1731 20 >> "$wheel_dispatch_path" 2>&1
+read -r ax ay <<< "\$($ipc call bar room 2>/dev/null | "$jq_bin" -r '.[0].cells[] | select(.name == "audio") | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' | head -1)"
+echo "audio cell at \$ax \$ay" >> "$wheel_dispatch_path"
+"$wlrctl_bin" pointer move "\$ax" "\$ay" >> "$wheel_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer scroll 10 0 >> "$wheel_dispatch_path" 2>&1
 sleep 2
