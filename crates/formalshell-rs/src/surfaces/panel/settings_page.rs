@@ -5,8 +5,9 @@
 //! value with a lock and takes no edit. Up and Down walk the rows, Enter
 //! flips a switch or steps a choice round, Left and Right move a choice
 //! and apply it, `x` drops the override under the cursor, Backspace goes
-//! back to the tiles. A page with a launcher route of its own ends on a
-//! row handing over to it.
+//! back to the page that opened it (Bar and Desktop sit under Appearance)
+//! or the tiles. A page ends on rows opening the pages under it and the
+//! launcher route of its own.
 
 use super::{Effect, Panel, View};
 use crate::services::overrides::{self, Control, Key, Page};
@@ -25,12 +26,28 @@ impl SettingsPage {
     }
 }
 
-/// The launcher route past each page's switches: (page, glyph, label, route).
-const LINKS: [(&str, &str, &str, &str); 2] =
-    [("appearance", "palette", "Theme and wallpaper", "theme"), ("system", "settings", "System actions", "system")];
+/// The rows past each page's switches: (page, glyph, label, stop), the
+/// stop a `page:` panel to open in the card or a `route:` to summon.
+const LINKS: [(&str, &str, &str, &str); 4] = [
+    ("appearance", "panel-top", "Bar", "page:settings:bar"),
+    ("appearance", "monitor", "Desktop", "page:settings:desktop"),
+    ("appearance", "palette", "Theme and wallpaper", "route:theme"),
+    ("system", "settings", "System actions", "route:system"),
+];
 
-fn link(page: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    LINKS.iter().find(|(p, ..)| *p == page).map(|(_, glyph, label, route)| (*glyph, *label, *route))
+fn links(page: &str) -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str, &'static str)> + '_ {
+    LINKS.iter().filter(move |(p, ..)| *p == page)
+}
+
+/// A link row's stop taken: true when it was one.
+fn follow(stop: &str, fx: &mut Effect) -> bool {
+    let Some(&(.., to)) = LINKS.iter().find(|l| l.3 == stop) else { return false };
+    if let Some(panel) = to.strip_prefix("page:") {
+        fx.panel = Some(panel);
+    } else {
+        fx.summon = to.strip_prefix("route:");
+    }
+    true
 }
 
 fn stop(key: &Key) -> String {
@@ -131,20 +148,23 @@ impl Panel for SettingsPage {
             }
         }
         out.extend(sections.into_iter().map(|(name, parts)| w::panel_runs(s, Some(w::panel_heading(s, name)), parts)));
-        if let Some((glyph, label, _)) = link(self.page.id) {
-            let row = w::panel_row(s, glyph, label, None, vec![w::icon("chevron-right").ink(Ink::Muted)]).stop("route").on("route");
-            out.push(w::panel_runs(s, None, vec![w::Part::Row(row)]));
+        let rows: Vec<w::Part> = links(self.page.id)
+            .map(|&(_, glyph, label, to)| {
+                w::Part::Row(w::panel_row(s, glyph, label, None, vec![w::icon("chevron-right").ink(Ink::Muted)]).stop(to).on(to))
+            })
+            .collect();
+        if !rows.is_empty() {
+            out.push(w::panel_runs(s, None, rows));
         }
         w::column(0.0, out)
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         if ev.on == "back" {
-            fx.panel = Some("settings");
+            self.back(fx);
             return;
         }
-        if ev.on == "route" {
-            fx.summon = link(self.page.id).map(|(.., route)| route);
+        if follow(&ev.on, fx) {
             return;
         }
         if let Some(key) = ev.on.strip_prefix("reset:").and_then(overrides::find) {
@@ -165,11 +185,10 @@ impl Panel for SettingsPage {
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
         if stop == "back" {
-            fx.panel = Some("settings");
+            self.back(fx);
             return;
         }
-        if stop == "route" {
-            fx.summon = link(self.page.id).map(|(.., route)| route);
+        if follow(stop, fx) {
             return;
         }
         let Some(key) = key_of(stop) else { return };
@@ -202,7 +221,7 @@ impl Panel for SettingsPage {
     }
 
     fn back(&mut self, fx: &mut Effect) {
-        fx.panel = Some("settings");
+        fx.panel = Some(self.page.parent.unwrap_or("settings"));
     }
 
     fn delete(&mut self, stop: &str, fx: &mut Effect) {

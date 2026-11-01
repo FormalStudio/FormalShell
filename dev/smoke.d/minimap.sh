@@ -67,7 +67,8 @@ leg_minimap_fixture() {
 }
 
 leg_minimap_timing() {
-  leg_timing 36 130
+  # The drive runs to ~52s on the mac rig, the scaffold's own drive cap.
+  leg_timing 36 130 0 80
 }
 
 leg_minimap_drive() {

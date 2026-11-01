@@ -55,6 +55,10 @@ pub struct Geo {
     /// the date box [40] inset [12] with its radius [6] and words [13],
     /// whose baselines sit [18] and [31] down the box.
     pub time_h: f64,
+    /// Under the time with a laptop battery, Pond's level line [17 more],
+    /// [2] thick.
+    pub battery_h: f64,
+    pub battery_line: f64,
     pub time_x: f64,
     pub digits: f64,
     pub period: f64,
@@ -132,6 +136,8 @@ impl Geo {
             row_pad: p(14.0),
             row_h: p(42.0),
             time_h: p(50.0),
+            battery_h: p(15.0),
+            battery_line: p(2.0),
             time_x: p(10.0),
             digits: p(34.0),
             period: p(10.0),
@@ -374,7 +380,15 @@ impl Sidebar {
         self.rail_lines.clear();
         match card {
             Some(card) if collapsed => self.rail_lines = rail_clock(&mut p, kit, store, g, card),
-            Some(card) => self.clock.paint(&mut p, kit, store, g, card),
+            Some(card) => {
+                // The time keeps its own box; the battery's line runs under it.
+                let line = store.devices.power.battery.as_ref().map(|b| (b, card.h - g.time_h as i32));
+                let face = IRect::new(card.x, card.y, card.w, card.h - line.map_or(0, |(_, h)| h));
+                self.clock.paint(&mut p, kit, store, g, face);
+                if let Some((b, _)) = line {
+                    battery_line(&mut p, &store.theme.theme, g, b, IRect::new(card.x, face.bottom(), card.w, card.h - face.h));
+                }
+            }
             None => {}
         }
         let last = p.last();
@@ -435,9 +449,13 @@ impl Sidebar {
 
     /// Where the control opening `name` sits, for an open with no click.
     pub fn panel_anchor(&self, name: &str) -> Option<f64> {
-        let on = format!("panel:{name}");
+        self.anchor_of(&format!("panel:{name}"))
+    }
+
+    /// Where the control whose click is `on` sits.
+    pub fn anchor_of(&self, on: &str) -> Option<f64> {
         let n = self.top.hits.len() + self.foot.hits.len();
-        (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on.as_str()))).map(|i| self.anchor(i))
+        (0..n).find(|i| self.hit_at(*i).is_some_and(|h| h.on.as_deref() == Some(on))).map(|i| self.anchor(i))
     }
 
     /// A wheel over hit `i`: on the minimap it scrolls its rows.
@@ -521,6 +539,9 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "undo" => Action::Software(crate::services::packages::Change::Undo),
             _ => Action::None,
         },
+        // The column's chevron: the right region's cells it has no room
+        // for, in the second bar the top bar's chevron opens.
+        "overflow" => Action::Overflow(fs_chrome::types::Region::Right),
         "collapse" => Action::Sidebar(true),
         "expand" => Action::Sidebar(false),
         _ => map.action(on, output),
@@ -581,6 +602,33 @@ impl Default for ClockCard {
 
 /// The share of the type size Pond's digits' figures stand.
 const FIGURE: f64 = 0.7;
+
+/// Pond's battery line under the clock (`calendar/Clock.qml`): a trough the
+/// digits' width in the foreground at a fifth, filled to the level, the
+/// fill in the foreground, `primary` while charging and `destructive` low
+/// on battery, centred in `band`.
+fn battery_line(p: &mut Painter, theme: &Theme, g: &Geo, b: &crate::services::devices::power::Battery, band: IRect) {
+    use fs_system::power::model::DeviceState;
+    let fg = theme.colors.get("foreground");
+    let charging = matches!(b.state, DeviceState::Charging | DeviceState::FullyCharged | DeviceState::PendingCharge);
+    let low = !charging && b.percent <= fs_system::power::model::DEFAULT_WARN_PCT;
+    let fill = if charging {
+        theme.colors.get("primary")
+    } else if low {
+        theme.colors.get("destructive")
+    } else {
+        fg.with_alpha(fg.a * 0.7)
+    };
+    let (x, w) = (band.x + g.time_x as i32, band.w - g.time_x as i32 * 2);
+    let h = g.battery_line.max(1.0) as i32;
+    let y = band.y + (band.h - h) / 2;
+    let r = h as f32 / 2.0;
+    p.rect(IRect::new(x, y, w, h), fg.with_alpha(fg.a * 0.2), r);
+    let filled = (w as f64 * (b.percent / 100.0).clamp(0.0, 1.0)).round() as i32;
+    if filled > 0 {
+        p.rect(IRect::new(x, y, filled, h), fill, r);
+    }
+}
 
 impl ClockCard {
     fn paint(&mut self, p: &mut Painter, kit: &mut Kit, store: &Store, g: &Geo, card: IRect) {
@@ -644,6 +692,7 @@ impl ClockCard {
             "format": format,
             "formatted": format_qt(store.clock.now, &format),
             "minuteUs": self.minute_us,
+            "battery": store.devices.power.battery.as_ref().map(|b| b.percent),
         })
     }
 }
@@ -653,9 +702,10 @@ impl ClockCard {
 fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, icons: &HashMap<String, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
     let s = &theme.space;
     let inner = |h: f64| (h - s.md * 2.0).max(0.0);
+    let battery = if store.devices.power.battery.is_some() { g.battery_h } else { 0.0 };
     let mut out = vec![(
         "time",
-        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h))]), "panel:calendar").fill(),
+        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), "panel:calendar").fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
     if let Some(media) = media(theme, store, g) {
@@ -725,8 +775,10 @@ fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
     Some(w::row(g.spacing, vec![w::cover(cover, g.art), words]))
 }
 
-/// The status card: network, audio, settings, the tray's second bar while
-/// it has items, and collapse, sharing the card's width.
+/// The status card: network, the chevron's second bar (audio, the battery
+/// and every right-region cell the column has no card for), settings, the
+/// tray's second bar while it has items, and collapse, sharing the card's
+/// width.
 fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     let theme = &store.theme.theme;
     let tall = (g.row_h - theme.space.md * 2.0).max(0.0);
@@ -742,7 +794,7 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     };
     let mut row = vec![
         button("wifi", "Network", "panel:network"),
-        button("volume-2", "Audio", "panel:audio"),
+        button(chevron_glyph(edge), "More", "overflow"),
         button("settings", "Settings", "panel:settings"),
     ];
     if !store.tray.items.is_empty() {
@@ -750,6 +802,11 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     }
     row.push(button(fold_glyph(edge, false), "Collapse", "collapse"));
     w::card(w::row(0.0, row).fill()).fill()
+}
+
+/// The chevron pointing out of the column, where its second bar opens.
+fn chevron_glyph(edge: Edge) -> &'static str {
+    if edge == Edge::Right { "chevron-left" } else { "chevron-right" }
 }
 
 fn fold_glyph(edge: Edge, collapsed: bool) -> &'static str {
@@ -761,8 +818,8 @@ fn fold_glyph(edge: Edge, collapsed: bool) -> &'static str {
     }
 }
 
-/// The rail's foot, Pond's collapsed controls: network, audio, settings
-/// and expand, stacked.
+/// The rail's foot, Pond's collapsed controls: network, the chevron,
+/// settings and expand, stacked.
 fn rail_foot(edge: Edge, g: &Geo) -> El {
     let r = &g.rail;
     let button = |glyph: &str, tip: &str, on: &str| {
@@ -777,7 +834,7 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
     };
     let buttons = vec![
         button("wifi", "Network", "panel:network"),
-        button("volume-2", "Audio", "panel:audio"),
+        button(chevron_glyph(edge), "More", "overflow"),
         button("settings", "Settings", "panel:settings"),
         button(fold_glyph(edge, true), "Expand", "expand"),
     ];

@@ -11,13 +11,16 @@ use crate::store::Store;
 pub struct Page {
     pub id: &'static str,
     pub title: &'static str,
+    /// The panel a row of which opens this page, where its back goes; none
+    /// for a page the tile grid opens.
+    pub parent: Option<&'static str>,
 }
 
 pub const PAGES: [Page; 4] = [
-    Page { id: "appearance", title: "Appearance" },
-    Page { id: "bar", title: "Bar" },
-    Page { id: "desktop", title: "Desktop" },
-    Page { id: "system", title: "System" },
+    Page { id: "appearance", title: "Appearance", parent: None },
+    Page { id: "bar", title: "Bar", parent: Some("settings:appearance") },
+    Page { id: "desktop", title: "Desktop", parent: Some("settings:appearance") },
+    Page { id: "system", title: "System", parent: None },
 ];
 
 pub enum Control {

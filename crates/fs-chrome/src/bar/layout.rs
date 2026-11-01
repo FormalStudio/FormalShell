@@ -655,6 +655,27 @@ pub fn overflow_entries(entries: &[Entry]) -> Vec<Entry> {
         .collect()
 }
 
+/// What the sidebar's chevron holds: every entry of the right region the
+/// column draws no card or button of its own for, governed or not, as
+/// copies clear of the gate. Audio leads whether or not the layout names
+/// it, since its button in the column's foot is the one the chevron took.
+/// Indicators stay: the Activity card is only the first of their rail.
+pub fn sidebar_overflow_entries(right: &[Entry]) -> Vec<Entry> {
+    use Builtin::*;
+    let own = |e: &Entry| {
+        matches!(
+            e.kind,
+            EntryKind::Builtin(
+                Launcher | Workspaces | ActiveWindow | Clock | NowPlaying | Visualizer | Network | Tray | Bell | Chevron
+            )
+        )
+    };
+    let audio = Entry { kind: EntryKind::Builtin(Audio), region: Region::Right, collapsible: false };
+    let mut out = vec![audio.clone()];
+    out.extend(right.iter().filter(|e| !own(e) && e.kind != audio.kind).map(|e| Entry { collapsible: false, ..e.clone() }));
+    out
+}
+
 pub fn has_chevron(entries: &[Entry]) -> bool {
     entries.iter().any(Entry::is_chevron)
 }
@@ -1232,6 +1253,18 @@ mod tests {
             collapsed_names(&r.regions.right).join(","),
             "bluetooth,weather"
         );
+    }
+
+    #[test]
+    fn sidebar_overflow_is_the_right_region_less_the_column() {
+        let r = resolve_bar(json!({ "layout": { "right": [
+            "display", "tailscale", "chevron", "tray", "battery", "earbuds", "network", "bluetooth", "bell", "indicators"
+        ] } }));
+        let entries = sidebar_overflow_entries(&r.regions.right);
+        assert_eq!(names(&entries), "audio,display,tailscale,battery,earbuds,bluetooth,indicators");
+        assert!(entries.iter().all(|e| !e.collapsible && e.region == Region::Right));
+        let r = resolve_bar(json!({ "layout": { "right": ["battery", "audio"] } }));
+        assert_eq!(names(&sidebar_overflow_entries(&r.regions.right)), "audio,battery");
     }
 
     #[test]

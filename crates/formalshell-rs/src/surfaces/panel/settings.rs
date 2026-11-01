@@ -1,8 +1,9 @@
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
-//! Pond's settings page: six square tiles, two by three (Appearance, Bar,
-//! Desktop, System, Bluetooth, Information), each a glyph over its name,
-//! the first four opening a page of settings (`settings_page`), beside a
-//! column of round session buttons (lock, suspend, reboot, power off).
+//! Pond's settings page: four square tiles, two by two (Appearance,
+//! Bluetooth, System, Information), each a glyph over its name, Appearance
+//! and System opening a page of settings (`settings_page`, Bar and Desktop
+//! under Appearance), beside a column of round session buttons (lock,
+//! suspend, reboot, power off) as tall as the grid.
 //! A tile hands over to the panel it names; a session
 //! button closes the card and asks the shell or logind, restart and shut
 //! down only on a second press, as the launcher's rows do.
@@ -18,12 +19,10 @@ pub struct Settings {
     armed: Option<&'static str>,
 }
 
-const TILES: [(&str, &str, &str, &str); 6] = [
+const TILES: [(&str, &str, &str, &str); 4] = [
     ("appearance", "paint-bucket", "Appearance", "settings:appearance"),
-    ("bar", "panel-top", "Bar", "settings:bar"),
-    ("desktop", "monitor", "Desktop", "settings:desktop"),
-    ("system", "hexagon", "System", "settings:system"),
     ("bluetooth", "bluetooth", "Bluetooth", "bluetooth"),
+    ("system", "hexagon", "System", "settings:system"),
     ("info", "info", "Information", "info"),
 ];
 
@@ -53,7 +52,11 @@ impl Panel for Settings {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let tile_h = s.huge * 4.0;
+        let gap = s.sm;
+        let column = s.huge * 2.5;
+        // Square tiles, as Pond's are: half of what the card leaves beside
+        // the session column.
+        let tile_h = ((self.width(v) - w::text_inset(s) * 2.0 - column - gap * 2.0) / 2.0).floor();
         let rows = TILES.len().div_ceil(2) as f64;
         let tiles = TILES
             .iter()
@@ -78,7 +81,6 @@ impl Panel for Settings {
                     .on(format!("tile:{id}"))
             })
             .collect();
-        let gap = s.sm;
         let button_h = (tile_h * rows + gap * (rows - 1.0) - gap * 3.0) / 4.0;
         let session = SESSION
             .iter()
@@ -107,7 +109,7 @@ impl Panel for Settings {
                     .on(format!("session:{id}"))
             })
             .collect();
-        w::panel_text(s, w::row(gap, vec![w::grid(2, gap, tiles), w::column(gap, session).width(Size::Px(s.huge * 2.5))]).fill())
+        w::panel_text(s, w::row(gap, vec![w::grid(2, gap, tiles), w::column(gap, session).width(Size::Px(column))]).fill())
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {

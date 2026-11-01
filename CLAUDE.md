@@ -417,7 +417,7 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   of the bar's line under the bell like any panel.
 - `chevron.sh` `--chevron`: a right-region chevron holding the five cells
   before it off the strip entirely, and `bar chevron expand` opening them in
-  the second bar under it, the two frames asserted to differ. It also sets a
+  the second bar under it (the tray's chip grid, `surfaces/chips.rs`), the two frames asserted to differ. It also sets a
   flat bright wallpaper first, so the band goes to dark ink, and reads a patch inside the card for a dark plate carrying
   light words: the second bar keeps its own ink whatever the band wears.
 - `chevron_quiet.sh` `--chevron-quiet`: the same second bar OPENING, read
@@ -1158,6 +1158,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   password is never typed: a runtime-masked `reboot.target` and a root
   block inhibitor both failed to stop logind on systemd 261, and the VM
   rebooted.
+- `profiles_pill.sh` `--profiles-pill` (vm_only): the power profile pill
+  (`wayland/profiles.rs`, Pond's ProfileSelector) under `layout: sidebar`
+  against the guest's own power-profiles-daemon: `panel open settings`
+  bringing it up on the right edge with its chips in `debug dump`'s
+  `profilesPill`, a real click on Power Saver making the daemon's
+  `ActiveProfile` power-saver (read off busctl and the pill), one on
+  Balanced putting it back, and the pill gone with the tiles.
 - `processes.sh` `--processes`: the process table's search, the two-press
   TERM, and `monitor restart` re-running the same argv under a new pid.
 - `record.sh` `--record`: `record` start to finished GIF through a real
@@ -1243,18 +1250,23 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `settings_ui.sh` `--settings-ui`: the settings pages
   (`docs/superpowers/specs/2026-10-31-settings-ui.md`) held in the launcher
   card, centred, on real keys, with
-  settings.json pinning `motion.morph` false: Down and Return on the
+  settings.json pinning `motion.morph` false: the root walked as four
+  tiles (Appearance, Bluetooth, System, Information) then the four
+  session buttons, Down and Return on the
   Settings tiles opening Appearance, Return on Reactive rims writing
   `settings.theme.reactiveRims` false into state.json and the resolved
   `configLoaded`, the pinned morph row taking neither Return nor Right and
   `settings set`/`reset` on it answering the pinned error, `x` dropping
-  the override, Backspace back to the tiles, Right on the Bar page's style
+  the override, Appearance's Bar row opening Bar, Right on its style
   repainting the bar solid (`bar paint`) and `settings reset` clearing it,
+  Backspace back to Appearance and again to the tiles,
   settings.json's sha256 unchanged, `menu status` reading the page held at
   each step, Escape back to the tiles and out to the root, the root's
   Settings row and `panel open info` landing in the card and `panel close`
   closing it. Desktop, longer than the card, resting on a whole row with
-  real Downs still reaching its last control below it. Every page
+  real Downs still reaching its last control below it. Restart armed by
+  one Return with the card left open, and the lock button locking the
+  session with the real password unlocking it. Every page
   photographed, dark and `--light`, and each shot read by the shared
   panel-language check off `menu status`'s `cardBox`.
 - `share.sh` `--share`: the share route present (the copied text reaching
@@ -1280,6 +1292,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   two cards closing the open network panel, and one in the column's
   widest gap focusing a foot window floated under it (`hyprctl
   activewindow`).
+  The foot's chevron in audio's place: a real click opening the chevron's
+  second bar (`bar chevron status`) with the owner's `bar.layout.right`
+  pinned, audio among its cells on the shared chip grid
+  (`surfaces/chips.rs`, no row past eight), a click on its audio chip
+  opening the audio panel; and `panel open settings` putting the power
+  profile pill on the right edge, centred (`debug dump`'s `profilesPill`),
+  gone once the tiles close.
   The time card's clock over a staged red and green wallpaper with a
   depth-mapped orange band, read off `debug dump`'s `sidebarClock`: the
   desktop clock's pixel face frosted, red at the digits' left end and

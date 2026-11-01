@@ -234,6 +234,14 @@ paths = ["crates/formalshell-rs/src/surfaces/bar/cells/chevron.rs"]
 runs = ["--chevron", "--chevron-quiet"]
 
 [[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/chips.rs"]
+runs = ["--chevron", "--chevron-quiet", "--tray-overflow", "--tray-overflow --sidebar", "--sidebar", "--sidebar --light"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/profiles.rs"]
+runs = ["--profiles-pill", "--sidebar", "--sidebar --light"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/workspaces.rs", "crates/fs-chrome/src/bar/workspaces.rs", "crates/formalshell-rs/src/ipc/workspaces.rs"]
 runs = ["--workspaces", "--spaces"]
 

@@ -293,6 +293,14 @@ pub struct Look {
     pub meta_tracking: f32,
     pub narrow: f64,
     pub panel_padding: f64,
+    /// A second bar's chips (`surfaces::chips`), the tray's: `controlHeight`
+    /// squares at least, `panelGap` apart, `panelRowInset` in from the
+    /// card, each on the `panel.chip` box.
+    pub panel_gap: f64,
+    pub chip_side: f64,
+    pub chip_inset: f64,
+    pub plate: fs_theme::style::BoxStyle<Rgba>,
+    pub plate_radius: f64,
     pub sans: Family,
     pub mono: Family,
     pub foreground: Rgba,
@@ -362,6 +370,11 @@ impl Look {
             meta_tracking: theme.letter_spacing.meta as f32,
             narrow: s.popup_width_narrow,
             panel_padding: s.panel_padding,
+            panel_gap: s.panel_gap,
+            chip_side: s.control_height,
+            chip_inset: s.panel_row_inset,
+            plate: theme.box_style("panel.chip", None),
+            plate_radius: theme.box_radius(&theme.box_style("panel.chip", None), s.control_height),
             sans: face(theme.faces.words),
             mono: face(theme.faces.values),
             foreground: theme.colors.get("foreground"),

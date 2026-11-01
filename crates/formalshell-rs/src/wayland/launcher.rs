@@ -316,6 +316,16 @@ impl App {
         }
     }
 
+    /// The token's click, one level up as Backspace climbs: a settings page
+    /// opened off another page's row goes back to that page.
+    fn launcher_back(&mut self) {
+        let parent = self.launcher_panel().and_then(|n| n.strip_prefix("settings:")).and_then(crate::services::overrides::page).and_then(|p| p.parent);
+        match parent {
+            Some(parent) => self.menu_panel(parent),
+            None => self.launcher_up(),
+        }
+    }
+
     /// One key into the held panel, through the panel host's cursor model.
     fn launcher_panel_key(&mut self, event: &KeyEvent, repeat: bool) {
         use crate::surfaces::panel::host::{Driven, Key, drive};
@@ -1338,7 +1348,7 @@ impl App {
                 let light = !self.launcher.picker.light;
                 self.picker_variant(light);
             }
-            "token" => self.launcher_up(),
+            "token" => self.launcher_back(),
             _ => {
                 self.resolve_launcher();
                 if let Some(depth) = on.strip_prefix("token:").and_then(|i| i.parse::<usize>().ok()) {

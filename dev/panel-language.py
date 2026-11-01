@@ -22,7 +22,8 @@ failure exiting 1:
 - even insets: the room from the card's left edge to its first ink equals
   the room after its last ink, and on a headerless card (a strip of chips)
   the room above equals the room below, within 1px; a header card's is
-  read when its body closes on a box (words end inside a row's band).
+  read when its body closes on a box (words end inside a row's band),
+  its top off the title's words rather than a control in the row.
 
 Ink is anything off the card's fill, the fill being the commonest colour
 down each gutter, taken per side so a rim leaning one way does not count. The pointer stays off the card in these
@@ -178,10 +179,30 @@ if lead is None or trail is None:
 else:
     say("even insets", abs(lead - trail) <= 1, f"{lead}px before the first ink, {trail}px after the last")
     xs = range(x0 + RADIUS, x1 - RADIUS)
-    # A header's top is its title's side: a control on the right of the
-    # row stands taller than the words and is centred on the same line.
-    head_xs = range(x0 + RADIUS, (x0 + x1) // 2) if header else xs
-    top = next((y - y0 for y in range(y0 + 3, y1 - 2) if any(d(px[x, y], fill) > INK for x in head_xs)), None)
+    # A header's top is its title's words: a control in the row (a button
+    # on the right, the launcher's mode token on the left) stands taller
+    # than the words and is centred on the same line. A box's top border
+    # is the one long run of ink in its first row; its columns are left out.
+    head_xs = list(range(x0 + RADIUS, (x0 + x1) // 2)) if header else list(xs)
+    top = None
+    for y in range(y0 + 3, y1 - 2):
+        inked = [x for x in head_xs if d(px[x, y], fill) > INK]
+        if not inked:
+            continue
+        run, longest = [inked[0]], []
+        for x in inked[1:] + [None]:
+            if x is not None and x - run[-1] <= 1:
+                run.append(x)
+                continue
+            if len(run) > len(longest):
+                longest = run
+            run = [x]
+        if header and len(longest) >= 2 * LINE:
+            box = range(longest[0] - RADIUS, longest[-1] + RADIUS + 1)
+            head_xs = [x for x in head_xs if x not in box]
+            continue
+        top = y - y0
+        break
     bottom = next((y1 - y for y in range(y1 - 3, y0 + 2, -1) if any(d(px[x, y], fill) > INK for x in xs)), None)
     closing = low is not None and low[1] >= len(xs) // 2
     if top is not None and (not header or closing):

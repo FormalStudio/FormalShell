@@ -72,6 +72,13 @@ sidebar_track="$shot_dir/sidebar-track.flac"
 sidebar_status_cards="$shot_dir/sidebar-status-cards.json"
 sidebar_status_cards_rail="$shot_dir/sidebar-status-cards-rail.json"
 sidebar_card_clicks="$shot_dir/sidebar-card-clicks.txt"
+sidebar_more_status="$shot_dir/sidebar-more-status.json"
+sidebar_more_layers="$shot_dir/sidebar-more-layers.json"
+sidebar_more_png="$shot_dir/sidebar-more.png"
+sidebar_more_panel="$shot_dir/sidebar-more-panel.txt"
+sidebar_pill_dump="$shot_dir/sidebar-pill.json"
+sidebar_pill_png="$shot_dir/sidebar-pill.png"
+sidebar_pill_closed="$shot_dir/sidebar-pill-closed.json"
 
 sidebar_rider() {
   leg_on idle || leg_on menu_budget || leg_on tray || leg_on tray_overflow
@@ -91,6 +98,9 @@ leg_sidebar_validate() {
 
 leg_sidebar_fixture() {
   settings_fragment ', "layout": "sidebar"'
+  # The owner's right region (spec modules/linux/home/.config/formalshell),
+  # so the chevron's second bar holds what it holds on his laptops.
+  sidebar_rider || settings_pin '.bar.layout.right = ["display", "dualsense", "tailscale", "github", "usage", "chevron", "tray", "weather", "battery", "earbuds", "iphone", "audio", "network", "bluetooth", "bell", "indicators"]'
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "anullsrc=r=48000:cl=stereo" -t 30 \
     -metadata "title=Sidebar Card" -metadata "artist=FormalShell" -c:a flac -y "$sidebar_track"
   sidebar_clock_case || return 0
@@ -105,7 +115,7 @@ leg_sidebar_fixture() {
 }
 
 leg_sidebar_timing() {
-  leg_timing 30 180 0 170
+  leg_timing 30 200 0 190
 }
 
 leg_sidebar_drive() {
@@ -187,6 +197,30 @@ echo "panel=\$($ipc call panel state 2>&1)" >> "$sidebar_gap_state"
 "$grim_bin" "$sidebar_gap_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 sleep 1
+# The chevron in the foot, where audio was: its second bar on the tray's
+# chip grid, and a click on its audio chip opening the audio panel.
+read -r vx vy <<< "\$(at overflow "$sidebar_layers_open" "$sidebar_status_open")"
+click "\$vx" "\$vy"
+sleep 2
+$ipc call bar chevron status > "$sidebar_more_status" 2>&1
+"$hyprctl_bin" -j layers > "$sidebar_more_layers" 2>&1
+"$grim_bin" "$sidebar_more_png" > /dev/null 2>&1
+read -r px py <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:panel")] | first | "\(.x) \(.y)"' "$sidebar_more_layers")"
+read -r ax ay <<< "\$("$jq_bin" -r '.regions.right.card.cells[] | select(.name == "audio") | .rect | "\(.x + (.w / 2 | floor)) \(.y + (.h / 2 | floor))"' "$sidebar_more_status" | head -1)"
+click \$(( px + ax )) \$(( py + ay ))
+sleep 2
+$ipc call panel state > "$sidebar_more_panel" 2>&1
+$ipc call panel close > /dev/null 2>&1
+$ipc call bar chevron collapse > /dev/null 2>&1
+sleep 1
+# The power profile pill on the right edge while the Settings tiles are up.
+$ipc call panel open settings > /dev/null 2>&1
+sleep 2
+$ipc call debug dump 2>/dev/null | "$jq_bin" -c '.profilesPill' > "$sidebar_pill_dump"
+"$grim_bin" "$sidebar_pill_png" > /dev/null 2>&1
+$ipc call panel close > /dev/null 2>&1
+sleep 1.5
+$ipc call debug dump 2>/dev/null | "$jq_bin" -c '.profilesPill' > "$sidebar_pill_closed"
 probe='class:^(formalshell-sidebar-probe)\$'
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-sidebar-probe sh -c 'sleep 300']==])" > /dev/null 2>&1
 for _ in \$(seq 1 40); do
@@ -304,6 +338,7 @@ leg_sidebar_assert() {
   grep -q '^network$' "$sidebar_panel_state" 2>/dev/null \
     || fail "sidebar: the network button's click did not open the network panel: $(cat "$sidebar_panel_state" 2>/dev/null)"
   sidebar_through_assert
+  sidebar_more_assert "$mw" "$mh"
   sidebar_cards_assert open
   read -r bx by bw bh <<< "$(sidebar_box "$sidebar_layers_rail")"
   echo "sidebar layer rail: x=$bx y=$by w=$bw h=$bh"
@@ -415,4 +450,36 @@ sidebar_cards_assert() {
     esac
     [[ "$got " == *"$want"* ]] || fail "sidebar: a click at the $1 $on card's $where opened nothing it should: $got"
   done < <(grep "^$1 " "$sidebar_card_clicks")
+}
+
+# The foot's chevron (audio's old place, the column as wide), its second
+# bar on the shared chip grid with audio in it, the audio chip's click,
+# and the power profile pill beside the Settings tiles. $1 $2: the output.
+sidebar_more_assert() {
+  echo "SMOKE_SIDEBAR_MORE $sidebar_more_png"
+  echo "SMOKE_SIDEBAR_PILL $sidebar_pill_png"
+  "$jq_bin" -e '[.hits[] | .on] | (index("overflow") != null) and (index("panel:audio") == null)' "$sidebar_status_open" > /dev/null 2>&1 \
+    || fail "sidebar: the foot carries no chevron in audio's place: $(cat "$sidebar_status_open")"
+  "$jq_bin" -e '.regions.right.open == true and (.regions.right.collapses | index("audio") != null)
+      and ([.regions.right.card.cells[] | .name] | index("audio") != null)' "$sidebar_more_status" > /dev/null 2>&1 \
+    || fail "sidebar: the chevron's second bar did not open holding audio: $(cat "$sidebar_more_status" 2>/dev/null)"
+  # The chip grid: no row past eight chips, rows in reading order.
+  "$jq_bin" -e '[.regions.right.card.cells[] | .rect] | group_by(.y) | all(length <= 8)
+      and (map(sort_by(.x) | map(.x)) | all(. == (. | sort)))' "$sidebar_more_status" > /dev/null 2>&1 \
+    || fail "sidebar: the second bar's cells are not on the chip grid: $(cat "$sidebar_more_status" 2>/dev/null)"
+  # The card and every chip inside its surface, which cannot follow a row
+  # widening across the line once it is mapped.
+  "$jq_bin" -e '.regions.right.card | .surface as $s | ([.rest] + [.cells[] | .rect]) | all(.x >= 0 and .y >= 0 and .x + .w <= $s.w and .y + .h <= $s.h)' "$sidebar_more_status" > /dev/null 2>&1 \
+    || fail "sidebar: the second bar runs past its own surface: $(cat "$sidebar_more_status" 2>/dev/null)"
+  echo "sidebar more: $("$jq_bin" -c '[.regions.right.card.cells[] | "\(.name)@\(.rect.x),\(.rect.y)"]' "$sidebar_more_status")"
+  grep -q '^audio$' "$sidebar_more_panel" 2>/dev/null \
+    || fail "sidebar: the audio chip's click did not open the audio panel: $(cat "$sidebar_more_panel" 2>/dev/null)"
+  local x y w h
+  read -r x y w h <<< "$("$jq_bin" -r '.rect | "\(.x | floor) \(.y) \(.w) \(.h)"' "$sidebar_pill_dump" 2>/dev/null)"
+  echo "sidebar pill: $(cat "$sidebar_pill_dump" 2>/dev/null)"
+  [ -n "$w" ] && [ "$((x + w))" -le "$1" ] && [ "$((x + w))" -ge "$(($1 - 24))" ] && [ "$(( (2 * y + h - $2) ))" -le 2 ] && [ "$(( (2 * y + h - $2) ))" -ge -2 ] \
+    || fail "sidebar: the power profile pill is not on the right edge, centred: $(cat "$sidebar_pill_dump" 2>/dev/null) on $1x$2"
+  "$jq_bin" -e '.chips | length == 0 or all(.on | startswith("profile:"))' "$sidebar_pill_dump" > /dev/null 2>&1 \
+    || fail "sidebar: the pill's chips: $(cat "$sidebar_pill_dump")"
+  [ "$(cat "$sidebar_pill_closed" 2>/dev/null)" = null ] || fail "sidebar: the pill outlived the Settings tiles: $(cat "$sidebar_pill_closed" 2>/dev/null)"
 }

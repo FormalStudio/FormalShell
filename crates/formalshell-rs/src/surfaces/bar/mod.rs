@@ -439,11 +439,24 @@ impl Bar {
     }
 
     /// The governed entries of a region, as the second bar holds them.
+    /// Under the sidebar the one chevron is the column's foot button, and
+    /// its second bar the right region's cells the column has no room for.
     pub fn overflow_entries(&self, region: Region) -> Vec<Entry> {
+        if self.sidebar.is_some() {
+            return layout::sidebar_overflow_entries(self.resolved.regions.get(Region::Right));
+        }
         layout::overflow_entries(self.resolved.regions.get(region))
     }
 
+    /// Where the sidebar's control whose click is `on` sits along it.
+    pub fn sidebar_anchor(&self, on: &str) -> Option<f64> {
+        self.sidebar.as_ref()?.anchor_of(on)
+    }
+
     pub fn has_chevron(&self, region: Region) -> bool {
+        if self.sidebar.is_some() {
+            return region == Region::Right;
+        }
         layout::has_chevron(self.resolved.regions.get(region))
     }
 

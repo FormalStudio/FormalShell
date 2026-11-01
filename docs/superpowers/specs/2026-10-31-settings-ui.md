@@ -39,9 +39,16 @@ the merge; it comes back if the file drops the key.
 ## 3. Pages
 
 The Settings panel (`panel:settings`, Pond's tile grid) is the entry. Its
-tiles are Appearance, Bar, Desktop, System, Bluetooth and Information, two
-by three; the first four open `settings:<page>`, Bluetooth its own panel
-and Information the `info` route. Each page is a panel of its own, so
+tiles are Appearance, Bluetooth, System and Information, two by two and
+square, beside a column of four round session buttons as tall as the
+grid (owner, 2026-11-01): Lock (the shell's lock), Suspend (logind),
+Restart and Shut down (`services/power.rs`, through logind's interactive
+auth and the shell's polkit agent; a first press arms the button, a
+second runs it, the cursor or pointer leaving disarms it). Appearance and
+System open `settings:<page>`, Bluetooth its own panel and Information the
+`info` route. Bar and Desktop sit under Appearance: its page ends on a row
+for each (and one handing over to the `theme` route), and Backspace on
+either goes back to Appearance. Each page is a panel of its own, so
 `panel open settings:bar` opens it straight.
 
 Settings and Information live in the launcher card, as Pond's settings
@@ -113,7 +120,8 @@ override carries a reset button (`rotate-ccw`) in its row, which drops the
 override. Rows are the panel's stops in reading order: Up and Down walk
 them, Enter or Space flips a switch, Left and Right move a choice and
 apply it at once (Enter steps a choice round), `x` resets the key under
-the cursor, Backspace or Escape returns to the tiles, and on the tiles
+the cursor, Backspace returns to the page that opened it (Appearance for
+Bar and Desktop) or the tiles, Escape to the tiles, and on the tiles
 Backspace or Escape leaves the route for the launcher's root. In the
 launcher card the header (title, back and close buttons) gives way to the
 launcher's head, whose token click is the back.
@@ -134,7 +142,11 @@ launcher's head, whose token click is the back.
 
 ## 7. Proof
 
-`--settings-ui`: a page opened from the tile grid on real keys, a key
+`--settings-ui`: the root walked on real keys as four tiles then the
+session column, a page opened from the tile grid on real keys, Bar
+reached through Appearance's row and Backspace climbing back one page at
+a time, Restart armed by one Return with the card left open, the lock
+button locking the session and the real password unlocking it, a key
 changed on real keys and read back in state.json's `settings` and in
 `debug dump`'s `configLoaded`, a key pinned by settings.json refusing the
 edit (keys and IPC), reset clearing the override, settings.json's sha256
