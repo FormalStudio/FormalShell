@@ -63,7 +63,6 @@
 # YouTube unfullscreened: nothing covers the output there, and the toast
 # still has to send it no `motion`.
 leg_fullscreen_flag="--fullscreen"
-leg_fullscreen_scale1="parks the pointer at logical pixels (1.25: the pointer lock released)"
 leg_fullscreen_order=200
 leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
 leg_fullscreen_fixture_window=keep
@@ -164,11 +163,11 @@ kill "\$(cat "$fullscreen_mpv_pid_path")" 2>/dev/null
 sleep 2
 lp="window = 'class:^(formalshell-lockpointer)\\\$'"
 "$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = 'enable' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = 1920, y = 1080, \$lp })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = $(to_logical 1920), y = $(to_logical 1080), \$lp })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, \$lp })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
 "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move 960 540 > /dev/null 2>&1
+"$wlrctl_bin" pointer move $(to_logical 960) $(to_logical 540) > /dev/null 2>&1
 sleep 1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\\\$' })" > /dev/null 2>&1
 sleep 0.5
@@ -345,8 +344,10 @@ _fullscreen_lock_assert() {
   echo "--- lockpointer log ---"; cat "$fullscreen_lock_log"
   echo "--- cursor and active window ---"; cat "$fullscreen_lock_state"
 
-  local covering
-  covering=$("$jq_bin" -r '[.[] | select(.class == "formalshell-lockpointer" and .floating and .size == [1920, 1080] and .at == [0, 0])] | length' "$fullscreen_lock_clients" 2>/dev/null)
+  local covering lw lh
+  lw=$(to_logical "$out_w")
+  lh=$(to_logical "$out_h")
+  covering=$("$jq_bin" -r --argjson w "$lw" --argjson h "$lh" '[.[] | select(.class == "formalshell-lockpointer" and .floating and .size == [$w, $h] and .at == [0, 0])] | length' "$fullscreen_lock_clients" 2>/dev/null)
   [ "${covering:-0}" -eq 1 ] || fail "the lock window is not floating over the whole output"
 
   local before during control
@@ -364,7 +365,7 @@ _fullscreen_lock_assert() {
   width=$("$jq_bin" -r '[.[] | .levels["3"][]? | select(.namespace == "formalshell:notifications") | .w] | first // 0' "$fullscreen_lock_toast_layers")
   echo "notifications over the game: surfaces=$toasts width=$width"
   [ "$toasts" -eq 1 ] || fail "expected one notifications layer over the game, got $toasts"
-  [ "$width" -gt 0 ] && [ "$width" -lt 1920 ] || fail "the notifications layer is not a column ($width wide)"
+  [ "$width" -gt 0 ] && [ "$width" -lt "$lw" ] || fail "the notifications layer is not a column ($width wide)"
   grep -q 'toasts input empty' "$shell_log_path" || fail "the shell never set an empty input region on the covered stack"
 
   local osd
