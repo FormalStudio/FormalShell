@@ -227,15 +227,34 @@ host's number waits on its next boot, which this work does not force.
 The HDMI fix (plymouthd gone before a compositor opens the card) put the
 quit ahead of greetd and the black back at 1.1 to 3 s. Run from the top of
 `hyprland.lua` instead, ahead of the DRM backend, the quit costs ~300 ms
-(the 150 ms bar fill and plymouthd's exit) and the film on 2026-11-01 read
-520 ms of black with the tree's build (1.1 s with g815 loaded by other
-runs): plymouthd's exit, Hyprland opening the card and drawing its first
-frames on llvmpipe, then the shell's ~300 ms to its first commit, its
-Wayland roundtrips waiting on Hyprland's loop. Hyprland draws a new
-output's first five frames zoomed 2x whatever `monitorAdded` says, so the
-lock holds black for its first five frame callbacks and the splash lands
-at plymouth's size; `monitorAdded` is off as well, or the zoom eases out
-over the lock after them. The 100 ms bound stays unmet on the VM rig.
+(the 150 ms bar fill and plymouthd's exit). Hyprland draws a new output's
+first five frames zoomed 2x whatever `monitorAdded` says, so the lock
+holds black for its first five frame callbacks, one single-pixel buffer
+each, and the splash lands at plymouth's size; `monitorAdded` is off as
+well, or the zoom eases out over the lock after them.
+
+The film on 2026-11-01 with the tree's build read 560 ms of black, and
+that boot's journal splits the 496 ms from plymouthd's exit to the lock's
+splash commit:
+
+| Stretch | ms | Whose |
+| --- | --- | --- |
+| plymouthd gone to Hyprland opening the card | 86 | Hyprland |
+| card open to Hyprland answering the shell's first roundtrip | 286 | Hyprland |
+| registry done to the lock asked | 4 | shell |
+| lock asked to configured | 21 | Hyprland |
+| configured to the first commit | 3 | shell |
+| five zoomed frames held black | 96 | Hyprland |
+
+The other ~64 ms of the film's reading the journal does not cover (the
+20 ms frame grid, and plymouth's last frame to its exit). The shell is
+exec'd and connected 138 ms after the card opens and its first roundtrip
+waits on Hyprland's loop, so moving more of its startup behind the lock
+would not shorten this boot. `misc.background_color` cannot fill the gap:
+Hyprland's lock primer is hardcoded black, and seams-check counts a frame
+black when no pixel is brighter than 24, as a frame of the splash's black
+ground alone is. The ~490 ms that is Hyprland's on llvmpipe is taken as the
+VM rig's floor by decision; the 100 ms bound is read on g815's real boot.
 
 ## Proof
 

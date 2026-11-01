@@ -296,15 +296,22 @@ Greeter to session with no flash, lock to desktop, first run with no
 settings.json, launch feedback (the spinner in Activity until the window
 maps), every unavailable state.
 
-Done 2026-11-01 except one bound: `dev/seams.sh` on fstestvm0 reads every
-stage with no text, cursor or jump, and logout (500 ms), reboot and
-shutdown (600 ms) inside 1.5 s. The boot's black between plymouth and the
-lock is 520 ms, not 100: the splash now quits from the top of
-`hyprland.lua`, ahead of the card (the HDMI fix holds), and what is left is
-plymouthd's exit, Hyprland's first frames on llvmpipe and the shell's
-first commit (`2026-10-30-locked-login.md`, Measured). The lock's splash
-waits out Hyprland's five 2x-zoomed first frames on black, so it lands at
-plymouth's size.
+Done 2026-11-01, the boot's black at a decided floor: `dev/seams.sh` on
+fstestvm0 reads every stage with no text, cursor or jump, and logout,
+reboot and shutdown (600 ms each) inside 1.5 s. The boot's black between
+plymouth and the lock reads 560 ms on the VM rig against the 100 ms bound.
+The journal of that boot covers 496 ms of it, 7 ms the shell's: plymouthd
+gone to Hyprland opening the card 86 ms, Hyprland's start from there until
+it answers the shell's first roundtrip 286 ms (the shell is exec'd and
+connected 138 ms in, and waits), the lock asked to configured 21 ms, and
+Hyprland's five 2x-zoomed first frames, which the lock waits out on black so
+its splash lands at plymouth's size, 96 ms. That ~490 ms of Hyprland on
+llvmpipe is taken as the VM's floor by decision; g815's real boot is the
+reading that confirms the bound (`2026-10-30-locked-login.md`, Measured). Plymouth frees
+its framebuffer as it exits, so black from its exit to Hyprland's first
+frame stays unless plymouthd outlives the card's open, which is the HDMI
+race, and `misc.background_color` cannot fill it: Hyprland's lock primer is
+hardcoded black and the splash's ground is black already.
 
 ### Phase 7: GPU rendering, configurable
 
