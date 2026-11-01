@@ -21,7 +21,6 @@
 # lists the user directories and the recent files. The app, a window, the
 # text file and the folder are photographed in dark, then in light.
 leg_launcher_preview_flag="--launcher-preview"
-leg_launcher_preview_scale1="reads the pane at logical pixels (1.25: the pane not its magenta)"
 leg_launcher_preview_order=32
 leg_launcher_preview_needs="jq wtype foot convert wl-copy"
 
@@ -171,11 +170,10 @@ launcher_preview_sessions() {
 # The mean colour of a 24px square at the centre of the pane's picture, as
 # `r g b` in 0..255, off the frame the step took.
 launcher_preview_colour() {
-  local png="$shot_dir/launcher-preview-$1.png" box x y w h
-  box=$("$jq_bin" -r '.paneBox | "\(.x) \(.y) \(.width) \(.height)"' "$shot_dir/launcher-preview-$1.json")
-  read -r x y w h <<< "$box"
+  local png="$shot_dir/launcher-preview-$1.png" box
   # The picture hangs from the pane's top, fitted to its width.
-  $convert_bin "$png" -crop "24x24+$((x + w / 2 - 12))+$((y + 40))" +repage \
+  box=$(scaled_jq -r "$geometry_jq"'.paneBox | {x: (.x + .width / 2 - 12), y: (.y + 40), width: 24, height: 24} | geometry' "$shot_dir/launcher-preview-$1.json")
+  $convert_bin "$png" -crop "$box" +repage \
     -format '%[fx:int(255*mean.r)] %[fx:int(255*mean.g)] %[fx:int(255*mean.b)]' info:
 }
 
