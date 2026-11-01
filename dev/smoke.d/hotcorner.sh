@@ -16,7 +16,6 @@
 # surface, its bottom-right does, and the first keeps all three of its own
 # (its bottom-right sits below the shorter second's bottom edge).
 leg_hotcorner_flag="--hotcorner"
-leg_hotcorner_scale1="lays the second output out at logical pixels (1.25: a corner on the shared edge)"
 leg_hotcorner_order=160
 leg_hotcorner_needs="jq"
 # Nothing is summoned over the desktop, so this leg keeps the base run's
@@ -39,7 +38,9 @@ leg_hotcorner_drive() {
 #!/usr/bin/env bash
 sleep 4
 "$hyprctl_bin" -j layers > "$hotcorner_layers_path" 2>&1
-width=\$("$hyprctl_bin" -j monitors | "$jq_bin" '.[0].width')
+# Hyprland lays outputs out in logical pixels: the first one's width over
+# its scale.
+width=\$("$hyprctl_bin" -j monitors | "$jq_bin" '.[0] | .width / .scale | round')
 "$hyprctl_bin" output create headless "$hotcorner_second" > /dev/null 2>&1
 "$hyprctl_bin" eval "hl.monitor({ output = \"$hotcorner_second\", mode = \"1600x1000@60\", position = \"\${width}x0\", scale = 1.25 })" > /dev/null 2>&1
 sleep 2
