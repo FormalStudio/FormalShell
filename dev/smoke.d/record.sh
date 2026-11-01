@@ -23,7 +23,8 @@
 # machine with no /dev/video* the honest WEBCAM UNAVAILABLE leg, and on
 # g815, whose slot users can open its cameras, a real overlay mapped and
 # placed before wf-recorder starts, up to seven seconds in, so the leg
-# waits for `active` rather than reading it at a fixed second.
+# waits for `active` rather than reading it at a fixed second, and fails
+# on an overlay the shell never saw settle.
 leg_record_flag="--record"
 leg_record_order=210
 leg_record_needs="file ffprobe"
@@ -144,6 +145,11 @@ leg_record_assert() {
   fi
   if [ ! -f "$record_active_path" ]; then
     fail "no recording-indicator screenshot produced at $record_active_path"
+  fi
+  # Placed or honestly unavailable: a mapped camera the shell never saw
+  # reach its rect is the overlay left wherever it landed.
+  if grep -q 'webcam overlay did not settle' "$shell_log_path"; then
+    fail "the webcam overlay was placed but never seen to settle: $(grep 'RecordingService' "$shell_log_path" | tr '\n' ' ')"
   fi
 
   if ! grep -q '^ok$' "$record_stop_reply_path"; then
