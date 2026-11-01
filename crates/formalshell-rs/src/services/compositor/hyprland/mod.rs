@@ -353,6 +353,9 @@ async fn commands(
                 let (w, h) = ((width.round() as i64).max(1), (height.round() as i64).max(1));
                 dispatch(&lua::resize_window(&id, w, h)).await;
                 dispatch(&lua::move_window(&id, x.round() as i64, y.round() as i64)).await;
+                // A floating resize and move raise no event either, and the
+                // webcam overlay waits on this rect to start recording.
+                let _ = dirty.try_send(());
             }
             Command::ParkWindow(id) => park(&ctx, &shared, &id, false).await,
             Command::UnparkWindow(id) => park(&ctx, &shared, &id, true).await,
