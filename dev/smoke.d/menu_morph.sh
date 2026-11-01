@@ -22,16 +22,16 @@
 # Shift+Tab closes it and the card travels back, each read off the same
 # column with a frame caught between the two heights.
 leg_menu_morph_flag="--menu-morph"
-leg_menu_morph_scale1="reads the card's left edge at logical pixels (1.25: 561, not 640)"
 leg_menu_morph_order=126
 leg_menu_morph_needs="convert wtype wl-copy"
 
 menu_morph_frames=24
 menu_morph_gap=0.12
-# The header band's row: the card's top sits at 30% of the 1080 output.
-menu_morph_row=345
-# The 640 card centred on the 1920 output.
-menu_morph_left_edge=640
+# The header band's row, 21 logical pixels under the card's top, and the
+# card's left edge, both in frame pixels off the split's `cardBox` at rest
+# (the card keeps its x and top through every level).
+menu_morph_row=0
+menu_morph_left_edge=0
 
 leg_menu_morph_validate() {
   local other
@@ -98,7 +98,7 @@ EOF
 # The first column left of the output's centre, scanning out from it, past
 # which the row turns to scrim: the card's left edge.
 menu_morph_left() {
-  $convert_bin "$1" -crop "960x1+0+$menu_morph_row" +repage -colorspace Gray -depth 8 gray:- 2>/dev/null \
+  $convert_bin "$1" -crop "$((out_w / 2))x1+0+$menu_morph_row" +repage -colorspace Gray -depth 8 gray:- 2>/dev/null \
     | od -An -tu1 -v | tr -s ' ' '\n' | grep -v '^$' \
     | awk '{ v[NR - 1] = $1 } END { for (x = NR - 1; x >= 0; x--) if (v[x] <= 15) { print x + 1; exit } print 0 }'
 }
@@ -107,7 +107,7 @@ menu_morph_left() {
 # to be card: the card's bottom. Read from below, since the card's own
 # hairlines are darker than its fill.
 menu_morph_bottom() {
-  $convert_bin "$1" -crop "1x$((1080 - menu_morph_row))+960+$menu_morph_row" +repage -colorspace Gray -depth 8 gray:- 2>/dev/null \
+  $convert_bin "$1" -crop "1x$((out_h - menu_morph_row))+$((out_w / 2))+$menu_morph_row" +repage -colorspace Gray -depth 8 gray:- 2>/dev/null \
     | od -An -tu1 -v | tr -s ' ' '\n' | grep -v '^$' \
     | awk -v top="$menu_morph_row" '{ v[NR - 1] = $1 } END { for (y = NR - 1; y >= 0; y--) if (v[y] > 15) { print top + y + 1; exit } print top }'
 }
@@ -122,7 +122,7 @@ menu_morph_burst() {
     bottom=$(menu_morph_bottom "$shot_dir/$prefix-$i.png")
     seen="$seen $bottom"
     [ "$(( left - menu_morph_left_edge ))" -ge -2 ] && [ "$(( left - menu_morph_left_edge ))" -le 2 ] \
-      || fail "$prefix-$i: the card's left edge is $left, not the 640 card's $menu_morph_left_edge: its width moved"
+      || fail "$prefix-$i: the card's left edge is $left, not the card at rest's $menu_morph_left_edge: its width moved"
     if [ "$bottom" -gt $((lo + 4)) ] && [ "$bottom" -lt $((hi - 4)) ]; then
       between=$((between + 1))
     fi
@@ -136,6 +136,8 @@ leg_menu_morph_assert() {
   local root rest
   grep -q '^ok$' "$shot_dir/menu-morph-summon.txt" 2>/dev/null \
     || fail "menu summon clipboard did not answer ok: $(cat "$shot_dir/menu-morph-summon.txt" 2>/dev/null)"
+  read -r menu_morph_left_edge menu_morph_row < <(scaled_jq -r '.cardBox | "\(.x * $s | floor) \((.y + 21) * $s | floor)"' "$shot_dir/menu-morph-rest.json" 2>/dev/null)
+  [ -n "$menu_morph_row" ] || fail "no cardBox in the split's status at rest: $(cat "$shot_dir/menu-morph-rest.json" 2>/dev/null)"
   root=$(menu_morph_bottom "$shot_dir/menu-morph-root.png")
   rest=$(menu_morph_bottom "$shot_dir/menu-morph-rest.png")
   echo "card bottom: root $root, split rest $rest; status at rest: $("$jq_bin" -c '{level, view, cardWidth, cardBox, pane: (.pane != null)}' "$shot_dir/menu-morph-rest.json" 2>&1)"
