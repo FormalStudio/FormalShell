@@ -757,6 +757,37 @@ impl<R: Role> Surface<R> {
         }
     }
 
+    /// One single-pixel buffer stretched over the surface's `size` with a
+    /// callback asked for: a frame that costs no drawing and no copy. The
+    /// next [`Surface::present`] draws the whole scene again.
+    pub fn present_pixel(&mut self, size: (i32, i32), pixel: &WlBuffer, qh: &QueueHandle<App>) {
+        self.scaler.follow(self.layer.role_surface(), qh);
+        if self.frame_pending || !self.configured {
+            return;
+        }
+        let surface = self.layer.role_surface();
+        self.scaler.stretch(surface, size, qh);
+        surface.attach(Some(pixel), 0, 0);
+        surface.damage_buffer(0, 0, 1, 1);
+        surface.frame(qh, FrameCallbackData(surface.clone()));
+        self.frame_pending = true;
+        self.asked = Some(Instant::now());
+        self.layer.role_commit();
+        self.cleared = true;
+        self.commits += 1;
+        self.front = None;
+        self.front_view = None;
+        if crate::tracing() {
+            crate::trace(format!(
+                "commit surface={} n={} t={}ms render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel frame_callbacks={} request=1",
+                self.name,
+                self.commits,
+                self.started.elapsed().as_millis(),
+                self.callbacks,
+            ));
+        }
+    }
+
     /// Sizes the canvas ahead of the compositor's first configure, so the
     /// first frame is drawn while it is on its way.
     pub fn presize(&mut self, width: i32, height: i32) {
@@ -1303,13 +1334,16 @@ pub struct Pixels {
     pub alpha: WpAlphaModifierV1,
     /// One clear pixel, attached to any surface showing nothing.
     pub clear: WlBuffer,
+    /// One opaque black pixel.
+    pub black: WlBuffer,
 }
 
 impl Pixels {
     pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Result<Self, BindError> {
         let single_pixel: WpSinglePixelBufferManagerV1 = globals.bind(qh, 1..=1, Ignore)?;
         let clear = single_pixel.create_u32_rgba_buffer(0, 0, 0, 0, qh, Ignore);
-        Ok(Self { subcompositor: globals.bind(qh, 1..=1, Ignore)?, viewporter: globals.bind(qh, 1..=1, Ignore)?, single_pixel, alpha: globals.bind(qh, 1..=1, Ignore)?, clear })
+        let black = single_pixel.create_u32_rgba_buffer(0, 0, 0, u32::MAX, qh, Ignore);
+        Ok(Self { subcompositor: globals.bind(qh, 1..=1, Ignore)?, viewporter: globals.bind(qh, 1..=1, Ignore)?, single_pixel, alpha: globals.bind(qh, 1..=1, Ignore)?, clear, black })
     }
 }
 

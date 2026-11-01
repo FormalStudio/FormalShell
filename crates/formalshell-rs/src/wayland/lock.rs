@@ -335,6 +335,11 @@ pub fn preload_login() {
     }
 }
 
+/// A picture asked for whose decode has not been taken yet.
+fn splash_pending() -> bool {
+    SPLASH.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
 fn take_splash() -> Option<Bitmap> {
     let handle = SPLASH.lock().unwrap_or_else(|e| e.into_inner()).take()?;
     handle.join().ok().flatten()
@@ -590,6 +595,9 @@ impl App {
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
             let surface = Surface::on("lock", ls, &self.shm, self.started, &output);
+            if self.lock.login && self.lock.outs.is_empty() {
+                crate::phase("login lock surface");
+            }
             self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, splash_scale: 0.0, dissolve: None, dissolved: false, dark: None, dark_landed: false });
         }
     }
@@ -1154,19 +1162,28 @@ impl App {
     }
 
     fn present_splash(&mut self) {
-        if !std::mem::replace(&mut self.lock.splash_taken, true) {
-            self.lock.splash = take_splash().into_iter().collect();
-        }
         let qh = self.qh.clone();
         let mut first = false;
         for o in self.lock.outs.iter_mut().filter(|o| o.surface.configured && !o.splashed) {
             let k = o.surface.scale();
-            // With no picture the first black frame is the splash.
-            let zoomed = o.surface.callbacks < ZOOMED_FRAMES && !self.lock.splash.is_empty();
-            let picture = self.lock.splash.first().filter(|_| !zoomed).map(|b| b.clone().at(k));
-            o.view.draw_splash(picture.as_ref());
+            // The picture decodes on a thread of its own, so the black frames
+            // ahead of it never wait on it. With no picture coming the first
+            // black frame is the splash.
+            let coming = if self.lock.splash_taken { !self.lock.splash.is_empty() } else { splash_pending() };
+            let zoomed = o.surface.callbacks < ZOOMED_FRAMES && coming;
+            if !zoomed && !std::mem::replace(&mut self.lock.splash_taken, true) {
+                self.lock.splash = take_splash().into_iter().collect();
+            }
             let commits = o.surface.commits();
-            o.surface.present(&mut o.view.scene, true, &qh);
+            if zoomed {
+                // One black pixel a frame: nothing to draw or copy, and its
+                // damage keeps Hyprland drawing frames for the callbacks.
+                o.surface.present_pixel((o.view.scene.size.w, o.view.scene.size.h), &self.pixels.black, &qh);
+            } else {
+                let picture = self.lock.splash.first().map(|b| b.clone().at(k));
+                o.view.draw_splash(picture.as_ref());
+                o.surface.present(&mut o.view.scene, true, &qh);
+            }
             // A callback still out holds the frame: the splash goes with
             // the next one.
             o.splashed = !zoomed && o.surface.commits() > commits;
@@ -1532,6 +1549,9 @@ impl SessionLockHandler for App {
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: SessionLockSurface, configure: SessionLockSurfaceConfigure, _: u32) {
         let (w, h) = (configure.new_size.0 as i32, configure.new_size.1 as i32);
         let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface.wl_surface()) else { return };
+        if self.lock.login && !o.surface.configured {
+            crate::phase("login lock configured");
+        }
         // A boot lock's output taking its mode after the first frame (a
         // nested output does) shows the splash again at the new size, and
         // the dissolve starts over from it.

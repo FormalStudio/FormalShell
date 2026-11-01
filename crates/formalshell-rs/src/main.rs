@@ -69,6 +69,7 @@ fn main() {
     wayland::lock::preload_login();
 
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
+    phase("wayland connect");
     let (globals, queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
     let qh = queue.handle();
     phase("wayland");
