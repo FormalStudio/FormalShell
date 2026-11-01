@@ -59,12 +59,15 @@
 # edge or with the frame on photographs the same cases over the whole output
 # and prints each claim as skipped instead; those layouts are read by eye.
 leg_join_flag="--join"
-leg_join_scale1="probes the line's row at logical pixels (1.25: no attached frame)"
+leg_join_scale1="at 1.25 the attached card's fill covers a quarter of the line's row (its cut at 39 lands on 48.75, 0D0D0F over 09090B): a render seam, not a probe"
 leg_join_order=182
 leg_join_needs="wlrctl convert jq"
 
-join_region="1380,0 540x600"
-join_region_x=1380
+# The crop the cases are photographed through, cut against the output's
+# right end in logical pixels (grim -g's space) by the drive; every probe
+# below reads its frames in their own pixels, the crop's width read back off
+# the bare desktop's.
+join_region=""
 join_crop_width=540
 join_frames=10
 join_reply_path="$shot_dir/join-replies.txt"
@@ -77,11 +80,11 @@ join_bare_path="$shot_dir/join-bare.png"
 join_owner_path="$shot_dir/join-owner.png"
 join_click_path="$shot_dir/join-click.txt"
 
-# Case a's card in the crop's own coordinates: `panel open network` with no
-# cell is `Theme.space.n` (380) wide and rests one screenPadding (12) off the
-# 1920 output's right edge, and the crop starts at x = 1380, so it ends on
-# the output's own last column. The bar is 40 rows, so its inward line is the
-# last of them.
+# Case a's card in the crop's own logical coordinates: `panel open network`
+# with no cell is `Theme.space.n` (380) wide and rests one screenPadding (12)
+# off the output's right edge, and the crop is 540 wide against that edge, so
+# it ends on the output's own last column. The bar is 40 rows, so its inward
+# line is the last of them. The assert scales all three to the frame's pixels.
 join_card_x=148
 join_card_width=380
 join_line_row=39
@@ -124,18 +127,21 @@ leg_join_timing() {
 
 leg_join_drive() {
   local script="$shot_dir/join-drive.sh" wait_menu=""
+  # 24 logical pixels into the second bar's first cell, in the frames' pixels.
+  local nudge
+  nudge=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 24 * s + 0.5 }')
   if leg_on menu_emerge; then
     # Its launcher and scrim would otherwise sit over these cases, and its
     # motionScale fight this one's.
     wait_menu="for _ in \$(seq 1 120); do [ -e \"$menu_emerge_done_path\" ] && break; sleep 0.5; done"
   fi
   if join_whole_output; then
-    # The output dev/smoke.sh pins for every session. A crop cut for the top
-    # bar's right end holds nothing at all on a left bar, and with the probes
-    # skipped anyway the whole output is what there is to read.
-    join_region="0,0 1920x1080"
-    join_region_x=0
-    join_crop_width=1920
+    # A crop cut for the top bar's right end holds nothing at all on a left
+    # bar, and with the probes skipped anyway the whole output is what there
+    # is to read.
+    join_region="0,0 ${logical_w}x$logical_h"
+  else
+    join_region="$((logical_w - join_crop_width)),0 ${join_crop_width}x600"
   fi
   write_script "$script" <<EOF
 #!/usr/bin/env bash
@@ -151,11 +157,13 @@ sample() {
 # strip's edge and thickness out of the dump, the second bar whatever differs
 # past that thickness between the two whole-output frames, and the cell a
 # little in from the card's own start along the strip. Derived rather than
-# pinned, so the click lands on a cell on any edge.
+# pinned, so the click lands on a cell on any edge. The frames are the
+# output's 1920x1080 pixels and the dump's inset logical, so the inset is
+# scaled in and the click scaled back out to the pointer's logical space.
 cell() {
   local edge inset crop ox=0 oy=0 box bw bh bx by
   edge=\$("$jq_bin" -r '.theme.barPosition' "$join_dump_path")
-  inset=\$("$jq_bin" -r --arg e "\$edge" '.theme.edgeInset[\$e] | floor' "$join_dump_path")
+  inset=\$("$jq_bin" -r --arg e "\$edge" '.theme.edgeInset[\$e] * $FS_SMOKE_SCALE | ceil' "$join_dump_path")
   case \$edge in
     top) crop="1920x\$((1080 - inset))+0+\$inset"; oy=\$inset ;;
     bottom) crop="1920x\$((1080 - inset))+0+0" ;;
@@ -168,10 +176,10 @@ cell() {
   IFS='x+' read -r bw bh bx by <<< "\$box"
   [ -n "\$by" ] || return 1
   if [ "\$bw" -lt "\$bh" ]; then
-    echo "\$((ox + bx + bw / 2)) \$((oy + by + 24))"
+    echo "\$((ox + bx + bw / 2)) \$((oy + by + $nudge))"
   else
-    echo "\$((ox + bx + 24)) \$((oy + by + bh / 2))"
-  fi
+    echo "\$((ox + bx + $nudge)) \$((oy + by + bh / 2))"
+  fi | awk '{ printf "%d %d\\n", \$1 / $FS_SMOKE_SCALE, \$2 / $FS_SMOKE_SCALE }'
 }
 sleep 5
 $wait_menu
@@ -406,6 +414,11 @@ leg_join_assert() {
     return 0
   fi
 
+  # The crop and the card in the frame's own pixels.
+  join_crop_width=$($convert_bin "$join_desktop_path" -format %w info: 2>/dev/null)
+  join_card_x=$(logical_px "$join_card_x")
+  join_card_width=$(logical_px "$join_card_width")
+  join_line_row=$(( $(logical_px $((join_line_row + 1))) - 1 ))
   local col attached seam bar
   col=$((join_card_x + join_card_width / 2))
   attached=$(join_attached_frame "$col") || fail \
@@ -430,7 +443,7 @@ leg_join_assert() {
   mapfile -t rest < <(join_column "$shot_dir/join-a-rest.png" "$edge")
   mapfile -t desk < <(join_column "$join_desktop_path" "$edge")
   local reach room
-  reach=$("$jq_bin" -r '.theme.radiusXl | round' "$join_dump_path" 2>/dev/null)
+  reach=$(scaled_jq -r '.theme.radiusXl * $s | round' "$join_dump_path" 2>/dev/null)
   room=$((join_crop_width - join_card_x - join_card_width))
   if [ -n "$reach" ] && [ "$reach" -le "$room" ]; then
     for ((row = top; row <= bottom; row++)); do
