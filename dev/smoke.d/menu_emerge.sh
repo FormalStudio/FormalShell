@@ -61,7 +61,6 @@
 # card with no line to bud off has no claim to make here, so that last case
 # prints as skipped and keeps its frames.
 leg_menu_emerge_flag="--menu-emerge"
-leg_menu_emerge_scale1="its probes cut the bar's line and the card's rows at logical pixels (1.25: header text ahead of the fill)"
 leg_menu_emerge_order=21
 leg_menu_emerge_needs="convert jq"
 
@@ -104,10 +103,11 @@ menu_emerge_scale=1000
 # The card's own geometry (DESIGN.md §1 Space): `popupWidthMenu` 560
 # centred on the output, top at 30% of its height, both rounded as the
 # launcher rounds them. Neither term moves with the bar's edge or the frame.
-# x and y are cut in the assert, off the output's own size.
+# x and y are cut in the assert, off the output's own size, and the width
+# taken to frame pixels there. Every probe below is in frame pixels.
 menu_emerge_card_w=560
-# Read off the dump in the assert; the top bar's own last row is what it comes
-# to on a default run.
+# Read off the dump in the assert, in frame pixels; the top bar's own last
+# row is what it comes to on a default run at scale 1.
 menu_emerge_line_row=39
 
 # A pixel of the line's own band clear of the join: the card is centred and
@@ -221,6 +221,7 @@ menu_emerge_same() {
 
 leg_menu_emerge_assert() {
   local f i path
+  menu_emerge_card_w=$(logical_px 560)
   menu_emerge_card_x=$(((out_w - menu_emerge_card_w + 1) / 2))
   menu_emerge_card_y=$(((out_h * 3 + 5) / 10))
   menu_emerge_desk_box="8x8+2+$((out_h - 40))"
@@ -248,7 +249,8 @@ leg_menu_emerge_assert() {
   # The first frame that is byte-equal to the rest frame below the search row.
   # The field itself is left out of the comparison: its text cursor blinks, so
   # a crop carrying it is never equal to anything twice.
-  local t0 settle_ns settle_ms stamp n d trace="" rest_box="${out_w}x$((out_h - 440))+0+400"
+  local t0 settle_ns settle_ms stamp n d trace="" rest_top=$((menu_emerge_card_y + $(logical_px 76)))
+  local rest_box="${out_w}x$((out_h - 40 - rest_top))+0+$rest_top"
   t0=$(cat "$menu_emerge_t0_path" 2>/dev/null)
   [ -n "$t0" ] || fail "no summon stamp at $menu_emerge_t0_path"
   settle_ns=""
@@ -338,13 +340,12 @@ leg_menu_emerge_assert() {
   # for the text to lead, and a card still travelling to its rest carries
   # the header's words through the text probe at other heights, past their
   # rest share.
-  local card cx cy ch fill_box text_box fill_rest text_rest ladder="" lead=""
-  card=$("$jq_bin" -r '[.modals[] | select(.namespace == "formalshell:menu") | .card] | first | "\(.x) \(.y) \(.width) \(.height)"' \
-    "$menu_emerge_rest_dump_path" 2>/dev/null)
-  read -r cx cy cw ch <<< "$card"
-  [ -n "$ch" ] && [ "$ch" != null ] || fail "no launcher card rect in the dump at rest: $card"
-  fill_box="6x4+$((cx + 6))+$((cy + 24))"
-  text_box="160x16+$((cx + 24))+$((cy + 20))"
+  local card fill_box text_box fill_rest text_rest ladder="" lead=""
+  card='[.modals[] | select(.namespace == "formalshell:menu") | .card] | first'
+  "$jq_bin" -e "$card"' | .height > 0' "$menu_emerge_rest_dump_path" > /dev/null 2>&1 \
+    || fail "no launcher card rect in the dump at rest: $("$jq_bin" -c "$card" "$menu_emerge_rest_dump_path" 2>&1)"
+  fill_box=$(scaled_jq -r "$geometry_jq$card"' | {x: (.x + 6), y: (.y + 24), width: 6, height: 4} | geometry' "$menu_emerge_rest_dump_path")
+  text_box=$(scaled_jq -r "$geometry_jq$card"' | {x: (.x + 24), y: (.y + 20), width: 160, height: 16} | geometry' "$menu_emerge_rest_dump_path")
   fill_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$fill_box")
   text_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$text_box")
   awk -v f="$fill_rest" -v t="$text_rest" 'BEGIN { exit !(f > 0.005 && t > 0.005) }' || fail \
@@ -375,8 +376,15 @@ leg_menu_emerge_assert() {
   # The card's box runs up to the line it buds off: the card travels
   # through that span on both legs, and a content-tall card leaves its own
   # resting box within a frame or two of the close while still drawn.
+  local inset
+  inset=$("$jq_bin" -r '.theme.edgeInset.top' "$menu_emerge_dump_path" 2>/dev/null)
+  [ -n "$inset" ] && [ "$inset" != "null" ] || fail \
+    "no top inset in the dump at $menu_emerge_dump_path: $(head -c 400 "$menu_emerge_dump_path" 2>/dev/null)"
+  menu_emerge_line_row=$(scaled_jq -nr --argjson i "$inset" '($i * $s | floor) - 1')
   local card_top=$((menu_emerge_line_row + 2))
-  local card_box="$((cw - 16))x$((cy + ch - 8 - card_top))+$((cx + 8))+${card_top}" card_rest scrim_rest
+  local card_box card_rest scrim_rest
+  card_box=$(scaled_jq -r --argjson top "$card_top" "$card"' | ((.x + 8) * $s | floor) as $x | ((.y + .height - 8) * $s | floor) as $b
+    | "\((.width - 16) * $s | floor)x\($b - $top)+\($x)+\($top)"' "$menu_emerge_rest_dump_path")
   card_rest=$(menu_emerge_moved "$menu_emerge_rest_path" "$card_box")
   scrim_rest=$(awk -v c="$d_closed" -v r="$d_rest" 'BEGIN { print c - r }')
   awk -v v="$card_rest" 'BEGIN { exit !(v > 0.01) }' || fail \
@@ -426,14 +434,14 @@ leg_menu_emerge_assert() {
   # own, and only the three numbers the tokens fix are spelled out above.
   local column_x=$((menu_emerge_card_x + menu_emerge_card_w / 2 - 2))
   local rest_bottom=0 row
-  for ((row = menu_emerge_card_y + 40; row < out_h; row += 4)); do
+  for ((row = menu_emerge_card_y + $(logical_px 40); row < out_h; row += 4)); do
     if menu_emerge_covered "$menu_emerge_rest_path" "5x4+${column_x}+${row}"; then
       rest_bottom=$row
     elif [ "$rest_bottom" -gt 0 ]; then
       break
     fi
   done
-  [ "$rest_bottom" -gt $((menu_emerge_card_y + 200)) ] || fail \
+  [ "$rest_bottom" -gt $((menu_emerge_card_y + $(logical_px 200))) ] || fail \
     "the rest frame's card reaches only row $rest_bottom down its own centre column: it is not the card the tokens describe"
   echo "SMOKE_MENU_EMERGE_RESTING card ${menu_emerge_card_w}x$((rest_bottom - menu_emerge_card_y))+${menu_emerge_card_x}+${menu_emerge_card_y}"
 
@@ -441,13 +449,8 @@ leg_menu_emerge_assert() {
   # band the top edge carries, a bar's or a frame ring's, off the shell's own
   # numbers. Nothing there is nothing to bud off, and the claims below have
   # no subject.
-  local inset
-  inset=$("$jq_bin" -r '.theme.edgeInset.top | floor' "$menu_emerge_dump_path" 2>/dev/null)
-  [ -n "$inset" ] && [ "$inset" != "null" ] || fail \
-    "no top inset in the dump at $menu_emerge_dump_path: $(head -c 400 "$menu_emerge_dump_path" 2>/dev/null)"
-  menu_emerge_line_row=$((inset - 1))
   echo "SMOKE_MENU_EMERGE_LINE row $menu_emerge_line_row (top inset $inset)"
-  if [ "$inset" -le 0 ]; then
+  if [ "$menu_emerge_line_row" -lt 0 ]; then
     for f in BUD LIT_BAR PLAIN; do
       echo "SMOKE_MENU_EMERGE_$f skipped (layout): this output's top edge carries no bar and no frame ring, so there is no line to bud off"
     done
