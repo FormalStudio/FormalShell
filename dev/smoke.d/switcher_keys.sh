@@ -39,7 +39,6 @@
 # from either. And keysym resolution, which needs the one config line the
 # drive writes; the comment beside it says why.
 leg_switcher_keys_flag="--switcher-keys"
-leg_switcher_keys_scale1="reads the cells' frames at logical pixels (1.25: scrolling cells with no frame)"
 leg_switcher_keys_order=104
 leg_switcher_keys_needs="foot jq wtype"
 # A fourth window sits on workspace 2 throughout and must not reach the card
@@ -428,14 +427,16 @@ leg_switcher_keys_assert() {
     || fail "the release after Shift+Tab focused $back_active, not $back_id"
 
   # The scrolling layout: the cells Hyprland will not copy are exactly the
-  # windows whose box misses the monitor, and they are the only ones.
+  # windows whose box misses the monitor, and they are the only ones. A
+  # client's box is logical and the monitor's size is its mode's pixels.
   echo "scrolling eval: $(cat "$switcher_keys_scroll_eval")"
   local offscreen uncaptured
   offscreen=$("$jq_bin" -r --slurpfile m "$switcher_keys_scroll_monitors_json" '
     ($m[0][0]) as $mon
+    | ($mon.width / $mon.scale) as $mw | ($mon.height / $mon.scale) as $mh
     | [.[] | select(.workspace.id == 1)
-       | select(.at[0] + .size[0] <= $mon.x or .at[0] >= $mon.x + $mon.width
-             or .at[1] + .size[1] <= $mon.y or .at[1] >= $mon.y + $mon.height)
+       | select(.at[0] + .size[0] <= $mon.x or .at[0] >= $mon.x + $mw
+             or .at[1] + .size[1] <= $mon.y or .at[1] >= $mon.y + $mh)
        | .address | ltrimstr("0x")] | sort | join(" ")' "$switcher_keys_scroll_clients_json")
   uncaptured=$("$jq_bin" -r '[.capturedCells[] | select(.captured | not) | .id | ltrimstr("0x")] | sort | join(" ")' \
     "$switcher_keys_scroll_json")
