@@ -139,6 +139,14 @@ write_script() {
   chmod +x "$path"
 }
 
+# The session's output scale: the g815 panel's 1.25 unless the run asks
+# for one (FS_SMOKE_SCALE) or carries a leg declaring leg_<n>_scale1, one
+# whose probes still read fixed pixels. Set before the legs are sourced,
+# since a leg may read it there; dev/remote.sh's lists run every line at
+# 1.25 and again at 1.
+smoke_scale_asked=${FS_SMOKE_SCALE:-}
+export FS_SMOKE_SCALE=${FS_SMOKE_SCALE:-1.25}
+
 for leg_file in "$script_dir"/smoke.d/*.sh; do
   leg_name=$(basename "$leg_file" .sh)
   # shellcheck source=/dev/null
@@ -194,6 +202,18 @@ done
 for leg_name in "${legs[@]}"; do
   if leg_on "$leg_name"; then active_legs+=("$leg_name"); fi
 done
+
+for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
+  scale1_var="leg_${leg_name}_scale1"
+  [ -n "${!scale1_var:-}" ] || continue
+  if [ -n "$smoke_scale_asked" ] && [ "$smoke_scale_asked" != 1 ]; then
+    flag_var="leg_${leg_name}_flag"
+    echo "usage: ${!flag_var%% *} runs at scale 1 (${!scale1_var}), not FS_SMOKE_SCALE=$smoke_scale_asked" >&2
+    exit 1
+  fi
+  FS_SMOKE_SCALE=1
+done
+echo "output scale: $FS_SMOKE_SCALE"
 
 # Long enough for the base run's drive below and ten seconds of rest after
 # it. Only the base run has that drive; a leg's shot comes at its own delay
@@ -1006,6 +1026,15 @@ root_rows_assert() {
 # json> <header yes|no> <the dump carrying panelSpace> <inset|rowInset>.
 # Every frame is read before panel_language_verdict fails the run, so one
 # bad page does not hide the next.
+# jq's `geometry`: a logical box off the shell's own status or dump as
+# the crop of the same pixels in a frame grim took at the output's scale
+# ($s, out_scale, read before any leg asserts), rounded out to whole
+# pixels. `scaled_jq` is jq with $s bound: scaled_jq -r "$geometry_jq .cardBox | geometry".
+geometry_jq='def geometry: (.x * $s | floor) as $x | (.y * $s | floor) as $y | "\(((.x + .width) * $s | ceil) - $x)x\(((.y + .height) * $s | ceil) - $y)+\($x)+\($y)";'
+scaled_jq() {
+  "$jq_bin" --argjson s "${out_scale:-1}" "$@"
+}
+
 panel_language_failures=""
 panel_language_assert() {
   local inset row row_inset out status=0
@@ -1017,6 +1046,7 @@ panel_language_assert() {
   out=$("$python3_bin" "$PWD/dev/panel-language.py" "$2" "$3" "$4" "${inset%.*}" "$1" "${row%.*}" "${FS_SMOKE_SCALE:-1}" "$row_inset" 2>&1) || status=$?
   echo "$out"
   if [ "$status" -ne 0 ]; then
+    echo "SMOKE_PANEL_LANGUAGE_FRAME $2 $3"
     panel_language_failures+="$1 exited $status: $( (grep -E 'FAIL|Error' <<< "$out" || tail -1 <<< "$out") | head -3 | tr '\n' ' ')"
   fi
 }

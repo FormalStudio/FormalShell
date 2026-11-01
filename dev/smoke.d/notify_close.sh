@@ -20,6 +20,7 @@
 # wlrctl for the reason tooltip.sh documents: only a real virtual-pointer
 # client sends the surface a pointer enter.
 leg_notify_close_flag="--notify-close"
+leg_notify_close_scale1="clicks a button found in device pixels at logical ones (1.25: the close click missed)"
 leg_notify_close_order=32
 leg_notify_close_needs="notify-send convert wlrctl"
 

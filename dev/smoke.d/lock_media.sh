@@ -25,6 +25,7 @@
 # Its clock starts after --lock's whole sequence when both run, since both
 # lock the one session.
 leg_lock_media_flag="--lock-media"
+leg_lock_media_scale1="reads the card's fill at logical pixels (1.25: dark and light fill the same)"
 leg_lock_media_order=111
 leg_lock_media_needs="mpv ffmpeg convert wtype jq"
 

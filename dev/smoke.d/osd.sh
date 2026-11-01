@@ -34,6 +34,7 @@
 # read off `debug dump`'s `theme.morph`, not off the rider, and both are then
 # read against the same resting pose.
 leg_osd_flag="--osd"
+leg_osd_scale1="reads the desktop frame at logical pixels (1.25: no bare desktop frame)"
 leg_osd_order=50
 # The brightness frame, the last of the desktop with the pill on it.
 leg_osd_desktop_until=37

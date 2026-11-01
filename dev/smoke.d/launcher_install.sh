@@ -33,6 +33,7 @@
 # following the `run` item to succeeded. The rows with the description pane, the ring mid-download, the
 # toast, a dim state and the armed Uninstall are photographed.
 leg_launcher_install_flag="--launcher-install"
+leg_launcher_install_scale1="reads the pane at logical pixels (1.25: no screenshot in the pane)"
 leg_launcher_install_order=34
 leg_launcher_install_needs="jq python3 wtype convert"
 

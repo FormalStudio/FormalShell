@@ -47,6 +47,7 @@
 # spacing tokens (panelPadding 12, controlHeight 32, lg 8, a 16px caption
 # line), since nothing over IPC reports it.
 leg_radio_atlas_flag="--radio-atlas"
+leg_radio_atlas_scale1="parks the pointer on the close button at logical pixels (1.25: no tooltip)"
 leg_radio_atlas_order=176
 leg_radio_atlas_needs="ffmpeg wtype wlrctl convert jq python3"
 

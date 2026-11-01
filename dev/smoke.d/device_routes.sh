@@ -352,7 +352,7 @@ leg_device_routes_assert() {
     || fail "Show password did not open the step with the saved password: $(cat "$p-wifi-show-run.txt") $("$jq_bin" -c '{mode, prompt, secretShown, query}' "$p-wifi-show.json")"
   echo "SMOKE_DEVICE_ROUTES_WIFI_SHOW $p-wifi-show.png"
   local box ocr
-  box=$("$jq_bin" -r '.modals[] | select(.namespace == "formalshell:menu") | .card | "\(.width)x\(.height)+\(.x)+\(.y)"' "$p-wifi-show-dump.json")
+  box=$(scaled_jq -r "$geometry_jq"'.modals[] | select(.namespace == "formalshell:menu") | .card | geometry' "$p-wifi-show-dump.json")
   [ -n "$box" ] || fail "no launcher card in the dump under Show password"
   "$convert_bin" "$p-wifi-show.png" -crop "$box" -resize 200% "$p-wifi-show-card.png"
   ocr=$("$tesseract_bin" "$p-wifi-show-card.png" - 2>/dev/null)

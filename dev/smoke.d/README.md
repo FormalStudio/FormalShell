@@ -13,6 +13,14 @@ frame, teardown) and sources every file here. A leg defines:
 - `leg_<n>_budget` `"<why>"` for a leg whose numbers only hold on g815 (its
   CPU and frame budgets): the mac rig
   refuses it, and `dev/remote.sh` leaves it out of that rig's run lists.
+- `leg_<n>_scale1` `"<why>"` for a leg that cannot run at the default
+  1.25 output scale yet (its probes read fixed pixels, or it makes outputs
+  of its own scale): the run then sits at 1, an explicit
+  `FS_SMOKE_SCALE` past 1 is refused, and `dev/remote.sh`'s lists run its
+  lines at 1 alone. Each one is a leg still to convert: a box read off
+  `menu status`, `bar room` or `debug dump` is logical, and a frame grim
+  takes is in the output's pixels, so a crop goes through
+  `scaled_jq -r "$geometry_jq"'<box> | geometry'` (`dev/smoke.sh`).
 - `leg_<n>_fixture_window` `keep` to leave the base run's fixture window in
   the frame; `leg_<n>_validate` usage checks, run before the build.
 - `leg_<n>_fixture` `settings_fragment '<json>'` and staged files;

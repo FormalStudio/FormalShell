@@ -109,7 +109,7 @@ EOF
 # The card's crop off one turn's frame, by its menu status.
 render_crop() {
   local box
-  box=$("$jq_bin" -r '.cardBox | "\(.width)x\(.height)+\(.x)+\(.y)"' "$(render_status "$1")" 2>/dev/null)
+  box=$(scaled_jq -r "$geometry_jq"'.cardBox | geometry' "$(render_status "$1")" 2>/dev/null)
   [ -n "$box" ] && [ "$box" != "nullxnull+null+null" ] || fail "--render $1: menu status carries no cardBox: $(cat "$(render_status "$1")" 2>/dev/null)"
   "$convert_bin" "$(render_frame "$1")" -crop "$box" +repage "$shot_dir/render-$1-card.png" || fail "--render $1: could not crop $box"
   echo "$shot_dir/render-$1-card.png"

@@ -23,6 +23,7 @@
 #            on the green static art and the bar not committing; then the
 #            panel open again on its own decoder, the bar still quiet.
 leg_motion_art_flag="--motion-art"
+leg_motion_art_scale1="crops the bar's cover at logical pixels (1.25: the cover did not move)"
 leg_motion_art_order=36
 leg_motion_art_needs="mpv ffmpeg convert jq"
 

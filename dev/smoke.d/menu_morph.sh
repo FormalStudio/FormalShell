@@ -22,6 +22,7 @@
 # Shift+Tab closes it and the card travels back, each read off the same
 # column with a frame caught between the two heights.
 leg_menu_morph_flag="--menu-morph"
+leg_menu_morph_scale1="reads the card's left edge at logical pixels (1.25: 561, not 640)"
 leg_menu_morph_order=126
 leg_menu_morph_needs="convert wtype wl-copy"
 

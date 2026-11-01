@@ -9,6 +9,7 @@
 # first. It anchors to a panel header's own close button, so it has nothing
 # to park on without a panel open.
 leg_tooltip_flag="--tooltip"
+leg_tooltip_scale1="parks the pointer on the header button at logical pixels (1.25: no tooltip)"
 leg_tooltip_order=80
 leg_tooltip_needs="wlrctl"
 # The panel it rides on has already dropped the base fixture window.

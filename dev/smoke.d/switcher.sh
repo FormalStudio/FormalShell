@@ -36,6 +36,7 @@
 #
 # The switcher is on by default (`switcher.enabled`).
 leg_switcher_flag="--switcher"
+leg_switcher_scale1="reads the captions' icons at logical pixels (1.25: not the fixture icon)"
 leg_switcher_order=102
 leg_switcher_needs="foot jq convert"
 # The base run's fixture window is the third of the three, and the one the

@@ -32,6 +32,7 @@
 # The frame's zones are counted against the shell's own `debug dump`: four
 # with the ring drawn, none without.
 leg_multi_output_flag="--multi-output"
+leg_multi_output_scale1="clicks the second output's cells at logical pixels (1.25: the audio cell click missed)"
 leg_multi_output_order=217
 leg_multi_output_needs="jq wlrctl convert wtype foot"
 

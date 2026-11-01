@@ -23,6 +23,7 @@
 # off the picture rect `mirror status` reports against the same two frames
 # rendered by ffmpeg straight to PNG.
 leg_mirror_flag="--mirror"
+leg_mirror_scale1="reads the feed box at logical pixels (1.25: the IR feed flat)"
 leg_mirror_order=145
 leg_mirror_vm_only="it loads and unloads the v4l2loopback module with sudo"
 leg_mirror_needs="convert ffmpeg jq wtype"

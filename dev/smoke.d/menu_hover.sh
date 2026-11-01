@@ -20,6 +20,7 @@
 # one event onto the third row's fifth cell and nudged a pixel, and later
 # one cell right. Everything is sampled at a tenth speed.
 leg_menu_hover_flag="--menu-hover"
+leg_menu_hover_scale1="moves the pointer onto a cell at logical pixels (1.25: Right did not move the cursor)"
 leg_menu_hover_order=128
 leg_menu_hover_needs="wlrctl wtype convert jq"
 

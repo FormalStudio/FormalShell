@@ -21,6 +21,7 @@
 # pointer for its own run, and a second drive script moving the same pointer
 # under it would decide neither claim.
 leg_tooltip_travel_flag="--tooltip-travel"
+leg_tooltip_travel_scale1="parks the pointer on the header buttons at logical pixels (1.25: no tooltip)"
 leg_tooltip_travel_order=81
 leg_tooltip_travel_needs="wlrctl jq"
 # The panel it rides on has already dropped the base fixture window.

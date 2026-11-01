@@ -21,6 +21,7 @@
 #   own `render_us` under 50ms together (read under FS_CPU_QUOTA for
 #   e1504g's power saver).
 leg_desktop_clock_flag="--desktop-clock"
+leg_desktop_clock_scale1="reads the digits' box at logical pixels (1.25: digits reach 1.000 of the box)"
 leg_desktop_clock_order=112
 leg_desktop_clock_needs="convert jq foot"
 

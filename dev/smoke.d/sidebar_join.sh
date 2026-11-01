@@ -17,6 +17,7 @@
 # sidebar's default transparent column draws no line, so there is no gap
 # in one to read.
 leg_sidebar_join_flag="--sidebar-join"
+leg_sidebar_join_scale1="reads the card's rest against logical pixels (1.25: panel rest off)"
 leg_sidebar_join_order=238
 leg_sidebar_join_needs="jq convert python3"
 

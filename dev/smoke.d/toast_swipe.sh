@@ -23,6 +23,7 @@
 # fading card still reads. A new card maps a new surface under a still
 # pointer, so the pointer is nudged off and back to send it an enter.
 leg_toast_swipe_flag="--toast-swipe"
+leg_toast_swipe_scale1="reads the card's edge in device pixels against logical ones (1.25: the slow swipe)"
 leg_toast_swipe_order=32
 leg_toast_swipe_needs="notify-send convert wlrctl python3"
 

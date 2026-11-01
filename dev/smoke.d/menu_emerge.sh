@@ -61,6 +61,7 @@
 # card with no line to bud off has no claim to make here, so that last case
 # prints as skipped and keeps its frames.
 leg_menu_emerge_flag="--menu-emerge"
+leg_menu_emerge_scale1="its probes cut the bar's line and the card's rows at logical pixels (1.25: header text ahead of the fill)"
 leg_menu_emerge_order=21
 leg_menu_emerge_needs="convert jq"
 

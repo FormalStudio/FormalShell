@@ -18,6 +18,7 @@
 # (found by its colour in the frame) reaching the stub as Activate, and a
 # real right click on fixture 2's opening its menu.
 leg_tray_flag="--tray"
+leg_tray_scale1="clicks the fixtures in the sidebar's second bar at logical pixels (1.25: Activate on the wrong one)"
 leg_tray_order=170
 leg_tray_needs="python3"
 

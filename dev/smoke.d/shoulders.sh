@@ -38,6 +38,7 @@
 # between the open and closed frames for a reason that has nothing to do with
 # the join.
 leg_shoulders_flag="--shoulders"
+leg_shoulders_scale1="reads its reference inks at logical pixels (1.25: two inks the same)"
 leg_shoulders_order=74
 leg_shoulders_needs="convert jq"
 

@@ -24,6 +24,7 @@
 # resizing a layer surface the compositor would then animate against the
 # shell's own motion.
 leg_notify_flag="--notify"
+leg_notify_scale1="reads the toast layer against device pixels (1.25: 408x864 is the output in logical pixels)"
 leg_notify_order=30
 leg_notify_needs="notify-send convert jq"
 

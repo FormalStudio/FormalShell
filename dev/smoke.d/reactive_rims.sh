@@ -23,6 +23,7 @@
 # - settings.json retargeted to `theme.reactiveRims: false` under the
 #   running shell: `rims.enabled` false and the panel's rim gone.
 leg_reactive_rims_flag="--reactive-rims"
+leg_reactive_rims_scale1="reads the rims at logical pixels (1.25: the right rim reads the same)"
 leg_reactive_rims_order=79
 leg_reactive_rims_needs="convert jq foot"
 

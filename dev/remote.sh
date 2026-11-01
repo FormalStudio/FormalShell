@@ -99,9 +99,19 @@ run_list() {
   shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
   mkdir -p "$out" "$(dirname "$times")"
   touch "$times"
-  python3 -c '
+  FS_SMOKE_SCALE="${FS_SMOKE_SCALE:-}" python3 -c '
 import collections, glob, os, re, statistics, sys
 runs = [l.strip() for l in open(sys.argv[1]) if l.strip() and not l.lstrip().startswith("#")]
+# Every line at 1.25 (the g815 panel) and again at 1 (its HDMI output, e1504g),
+# but a line carrying a leg that declares leg_<n>_scale1 at 1 alone, and
+# a run that asks for a scale (FS_SMOKE_SCALE) at that one.
+scale1 = set()
+for path in glob.glob(os.path.join(sys.argv[4], "*.sh")):
+    leg, text = os.path.basename(path)[:-3], open(path).read()
+    flag = re.search(r"^leg_%s_flag=\"(--[a-z0-9-]+)" % leg, text, re.M)
+    if flag and re.search(r"^leg_%s_scale1=" % leg, text, re.M):
+        scale1.add(flag.group(1))
+asked = os.environ["FS_SMOKE_SCALE"]
 # A leg declaring leg_<n>_budget measures numbers that hold on g815 alone,
 # and the VM rig the vm_only legs go to is on g815 too.
 if sys.argv[3] != "g815":
@@ -115,14 +125,22 @@ if sys.argv[3] != "g815":
     if held:
         print("needs g815 (a budget, or the VM rig), not run on %s: %s" % (sys.argv[3], ", ".join(held)), file=sys.stderr)
     runs = [r for r in runs if r not in held]
+scaled = []
+for r in dict.fromkeys(runs):
+    one = scale1 & set(r.split())
+    for scale in ["1"] if one else [asked] if asked else ["1.25", "1"]:
+        scaled.append((scale, r))
+# A run at 1 keeps the key its times were recorded under before scales.
+key = lambda scale, r: r if scale == "1" else "%s @%s" % (r, scale)
 seen = collections.defaultdict(list)
 for line in open(sys.argv[2]):
     parts = line.rstrip("\n").split("\t")
     if len(parts) == 3:
         seen[parts[2]].append(int(parts[1]))
-est = {r: statistics.median(seen[r][-3:]) if seen[r] else float("inf") for r in runs}
-for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
-    print("%s\t%s" % ("?" if est[r] == float("inf") else int(est[r]), r))
+est = {k: statistics.median(seen[k][-3:]) if seen[k] else float("inf") for k in (key(*s) for s in scaled)}
+for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
+    e = est[key(scale, r)]
+    print("%s\t%s\t%s" % ("?" if e == float("inf") else int(e), scale, r))
 ' "$list" "$times" "$rig" "$repo_root/dev/smoke.d" > "$out/order"
   started=$SECONDS
   echo "$label: building once on $rig, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
@@ -134,20 +152,22 @@ for r in sorted(dict.fromkeys(runs), key=lambda r: -est[r]):
   builder=$(sed -n 's/^[a-z0-9]*: slot \([0-9]*\)$/\1/p' "$out/build.log" | head -1)
   echo "$label: built in $((SECONDS - started))s on slot $builder"
   : > "$out/results"
-  while IFS=$'\t' read -r _ flags; do
+  while IFS=$'\t' read -r _ scale flags; do
     n=$((n + 1))
-    slug=$(printf '%03d-%s' "$n" "$(printf '%s' "$flags" | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')")
+    slug=$(printf '%03d-%s-x%s' "$n" "$(printf '%s' "$flags" | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')" "${scale//./}")
+    run="$flags"
+    [ "$scale" = 1 ] || run="$flags @$scale"
     (
       t0=$SECONDS
       status=0
       # shellcheck disable=SC2086 # one line is one run's flags
-      env -u FS_RIG_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
+      env -u FS_RIG_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" FS_SMOKE_SCALE="$scale" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
       slot=$(sed -n 's/^[a-z0-9]*: slot \([a-z]*[0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
       waited=$(sed -n 's/^[a-z0-9]*: waited \([0-9]*\)s for a slot$/\1/p' "$out/$slug.log" | head -1)
       took=$((SECONDS - t0 - ${waited:-0}))
       verdict=PASS; [ "$status" -eq 0 ] || verdict=FAIL
-      printf '%s\t%s\t%s\n' "$(date +%s)" "$took" "$flags" >> "$times"
-      printf '%s %4ss slot%s %s\n' "$verdict" "$took" "$slot" "$flags" | tee -a "$out/results"
+      printf '%s\t%s\t%s\n' "$(date +%s)" "$took" "$run" >> "$times"
+      printf '%s %4ss slot%s %s\n' "$verdict" "$took" "$slot" "$run" | tee -a "$out/results"
     ) &
     running=$((running + 1))
     if [ "$running" -ge "$jobs" ]; then wait -n; running=$((running - 1)); fi

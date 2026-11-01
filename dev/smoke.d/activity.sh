@@ -342,7 +342,7 @@ leg_activity_assert() {
   jq -e '.groups | length == 1 and .[0].items[0].progress == null' "$m-turning.json" > /dev/null \
     || fail "activity: the rollback was not alone with no progress for the turning frames: $(cat "$m-turning.json")"
   local cell
-  cell=$(jq -r '[.[0].cells[] | select(.name == "indicators")][0] | "\(.width)x\(.height)+\(.x)+\(.y)"' "$m-room-turning.json")
+  cell=$(scaled_jq -r "$geometry_jq"'[.[0].cells[] | select(.name == "indicators")][0] | geometry' "$m-room-turning.json")
   [ -n "$cell" ] && [ "$cell" != "nullxnull+null+null" ] || fail "activity: no cell for the turning ring: $(cat "$m-room-turning.json")"
   "$convert_bin" "$shot_dir/activity-bar-turning.png" -crop "$cell" +repage "$shot_dir/activity-cell-a.png"
   "$convert_bin" "$shot_dir/activity-bar-turning-2.png" -crop "$cell" +repage "$shot_dir/activity-cell-b.png"

@@ -31,6 +31,7 @@
 # The pointer is wlrctl, a real virtual-pointer client, for the reason
 # tooltip.sh documents: only one sends the surface a pointer enter.
 leg_headset_card_flag="--headset-card"
+leg_headset_card_scale1="parks the pointer on the card at logical pixels (1.25: the held count)"
 leg_headset_card_order=177
 leg_headset_card_needs="wlrctl jq wtype foot"
 

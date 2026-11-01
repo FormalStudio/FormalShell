@@ -306,7 +306,7 @@ leg_menu_assert() {
   "$jq_bin" -e '.query == "" and .caret == 0 and .isOpen' "$shot_dir/menu-status-emptied.json" > /dev/null 2>&1 \
     || fail "Shift+Home then Backspace did not empty the query: $(cat "$shot_dir/menu-status-emptied.json")"
   local box ocr
-  box=$("$jq_bin" -r 'select(.query == "zqxjvwk" and (.ids | length) == 0) | .cardBox | "\(.width)x\(.height)+\(.x)+\(.y)"' "$shot_dir/menu-status-empty.json" 2>/dev/null)
+  box=$(scaled_jq -r "$geometry_jq"'select(.query == "zqxjvwk" and (.ids | length) == 0) | .cardBox | geometry' "$shot_dir/menu-status-empty.json" 2>/dev/null)
   [ -n "$box" ] || fail "a query nothing matches did not empty the list: $(cat "$shot_dir/menu-status-empty.json")"
   "$convert_bin" "$shot_dir/menu-empty.png" -crop "$box" -resize 200% "$shot_dir/menu-empty-card.png"
   ocr=$("$tesseract_bin" "$shot_dir/menu-empty-card.png" - 2>/dev/null)

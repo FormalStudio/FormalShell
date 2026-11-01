@@ -95,7 +95,7 @@ leg_bar_ink_assert() {
       right) [ "${min:-255}" -le 110 ] || fail "$name over the white half drew no dark glyph (darkest sample $min)"; right_seen=1 ;;
     esac
     checked=$((checked + 1))
-  done < <("$jq_bin" -r '.[0].cells[] | select(.whole) | [.name, .x, .width, "\(.width)x\(.height)+\(.x)+\(.y)"] | @tsv' "$bar_ink_room_json")
+  done < <(scaled_jq -r "$geometry_jq"'.[0].cells[] | select(.whole) | [.name, .x, .width, geometry] | @tsv' "$bar_ink_room_json")
   [ "$left_seen" = 1 ] || fail "no whole cell on the black half to read"
   [ "$right_seen" = 1 ] || fail "no whole cell on the white half to read"
 

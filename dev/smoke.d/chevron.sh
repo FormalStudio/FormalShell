@@ -40,6 +40,7 @@
 # travels to its new size the way a panel card does, rather than keeping the
 # size it opened at or jumping.
 leg_chevron_flag="--chevron"
+leg_chevron_scale1="its ink patch is cut at logical pixels (1.25: the patch lands on the wallpaper)"
 leg_chevron_order=180
 leg_chevron_needs="wlrctl convert jq"
 

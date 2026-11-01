@@ -437,11 +437,10 @@ leg_spaces_assert() {
   # The badge in the frame: what changed in workspace 1's chip when fakehost
   # went from a blocked thread to none, which has to sit on the blocked icon and be
   # red. The icon's own rect comes out of the status read.
-  local geo sx sy sw sh icon_left icon_width diff_box dx dw red_on red_off
-  read -r sx sy sw sh < <("$jq_bin" -r '.slots[0].rect | "\(.x) \(.y) \(.width) \(.height)"' "$spaces_status_one_path")
-  icon_left=$(echo "$blocked" | "$jq_bin" -r .rect.x)
-  icon_width=$(echo "$blocked" | "$jq_bin" -r .rect.width)
-  geo="${sw}x${sh}+${sx}+${sy}"
+  local geo sx icon_left icon_width diff_box dx dw red_on red_off
+  geo=$(scaled_jq -r "$geometry_jq"'.slots[0].rect | geometry' "$spaces_status_one_path")
+  sx=${geo#*+}; sx=${sx%+*}
+  read -r icon_left icon_width < <(echo "$blocked" | scaled_jq -r "$geometry_jq"'.rect | geometry | capture("(?<w>[0-9]+)x[0-9]+\\+(?<x>[0-9]+)") | "\(.x) \(.w)"')
   mkdir -p "$spaces_crop_dir"
   $convert_bin "$spaces_blocked_png" -crop "$geo" +repage "$spaces_crop_dir/slot-blocked.png" \
     || fail "could not crop workspace 1's slot at $geo"
@@ -527,8 +526,8 @@ leg_spaces_assert() {
 
   # The card and the chip row, cropped for reading.
   local card chips
-  card=$("$jq_bin" -r '.preview.rect | "\(.width)x\(.height)+\(.x)+\(.y)"' "$spaces_status_peek_path")
-  chips=$("$jq_bin" -r '[.slots[].rect] | "\((map(.x + .width) | max) - (map(.x) | min) + 8)x\((map(.y + .height) | max) - (map(.y) | min) + 8)+\((map(.x) | min) - 4)+\((map(.y) | min) - 4)"' "$spaces_status_one_path")
+  card=$(scaled_jq -r "$geometry_jq"'.preview.rect | geometry' "$spaces_status_peek_path")
+  chips=$(scaled_jq -r "$geometry_jq"'[.slots[].rect] | {x: (map(.x) | min) - 4, y: (map(.y) | min) - 4, width: (map(.x + .width) | max) - (map(.x) | min) + 8, height: (map(.y + .height) | max) - (map(.y) | min) + 8} | geometry' "$spaces_status_one_path")
   $convert_bin "$spaces_peek_png" -crop "$card" +repage "$spaces_crop_dir/peek-card.png" \
     || fail "could not crop the preview card at $card"
   $convert_bin "$spaces_wheel_png" -crop "$card" +repage "$spaces_crop_dir/wheel-card.png" || true

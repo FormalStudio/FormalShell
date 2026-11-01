@@ -39,6 +39,7 @@
 # from either. And keysym resolution, which needs the one config line the
 # drive writes; the comment beside it says why.
 leg_switcher_keys_flag="--switcher-keys"
+leg_switcher_keys_scale1="reads the cells' frames at logical pixels (1.25: scrolling cells with no frame)"
 leg_switcher_keys_order=104
 leg_switcher_keys_needs="foot jq wtype"
 # A fourth window sits on workspace 2 throughout and must not reach the card

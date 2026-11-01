@@ -36,6 +36,7 @@
 # output within a pixel (`debug dump`'s card rect against the frame's own
 # width).
 leg_menu_resize_flag="--menu-resize"
+leg_menu_resize_scale1="reads the card fill under the content at logical pixels (1.25: no fill under it)"
 leg_menu_resize_order=127
 leg_menu_resize_needs="convert wtype jq"
 

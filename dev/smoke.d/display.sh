@@ -11,6 +11,7 @@
 # taken. The IPC verbs (`display scale|mirror|enable`) reach the same backend
 # calls the panel's slider, mirror switch and output switch do.
 leg_display_flag="--display"
+leg_display_scale1="sets the output's scale itself"
 leg_display_order=216
 leg_display_needs="jq"
 

@@ -52,6 +52,7 @@
 # last row whole. The 100px of travel up above lifts after a 100ms pause,
 # so it coasts nothing either.
 leg_wheel_flag="--wheel"
+leg_wheel_scale1="scrolls over the bar's audio cell at logical pixels (1.25: the notch missed it)"
 leg_wheel_order=125
 leg_wheel_needs="wlrctl convert wpctl python3"
 

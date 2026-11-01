@@ -63,6 +63,7 @@
 # YouTube unfullscreened: nothing covers the output there, and the toast
 # still has to send it no `motion`.
 leg_fullscreen_flag="--fullscreen"
+leg_fullscreen_scale1="parks the pointer at logical pixels (1.25: the pointer lock released)"
 leg_fullscreen_order=200
 leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
 leg_fullscreen_fixture_window=keep

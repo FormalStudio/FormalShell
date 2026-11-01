@@ -113,9 +113,18 @@ pipewire, PAM or Wayland to link.
   three, a run never timed going first), share one build
   (`dev/share-result.sh` copies it where every slot user can read it, each
   run gets it as `FS_RESULT`), put each run's log and artifacts in
-  `artifacts/<smoke-affected|smoke-all>-<ts>/<n>-<flags>/`, list PASS or
+  `artifacts/<smoke-affected|smoke-all>-<ts>/<n>-<flags>-x<scale>/`, list PASS or
   FAIL with seconds and slot in `results`, and exit non-zero on any
-  failure. `FS_SMOKE_JOBS` caps the parallel runs. A slot user's very first
+  failure. `FS_SMOKE_JOBS` caps the parallel runs.
+- **Both run every line twice**, at 1.25 (g815's panel) and at 1 (its
+  HDMI output, e1504g), and both have to pass; `results` marks the 1.25
+  run `@1.25`. A rig run used to sit at 1 alone, which is how damage that
+  left trails at 1.25 went unseen. A line carrying a leg that declares
+  `leg_<n>_scale1 "<why>"` (probes that still read fixed pixels, a leg
+  making outputs of its own scale) runs at 1 alone; `rg _scale1= dev/smoke.d`
+  lists those legs to convert. A probe reading a box off the shell's
+  status or dump crops it through `dev/smoke.sh`'s `geometry` jq def,
+  which scales it to the frame's pixels. `FS_SMOKE_SCALE=<s>` runs every other line at `<s>` only. A slot user's very first
   run has failed `--notify`'s toast-column check once; a second run passes.
 - `just build`: `dev/build.sh` on the rig: `cargo build --locked --release
   -p formalshell-rs` in dev.star's environment (`fspec dev -- cargo`), then
@@ -153,8 +162,9 @@ pipewire, PAM or Wayland to link.
   quick `test -p <crate>` or `clippy`.
 - `just smoke <flags>`: `dev/smoke.sh` on the rig, the runtime loop itself.
   Builds the shell (`dev/build.sh`), brings up an isolated Hyprland session
-  under `dbus-run-session`, drives the legs the flags asked for,
-  screenshots, tears it down. **Read the PNGs rather than assuming they look
+  under `dbus-run-session` with its output at 1.25 (`FS_SMOKE_SCALE`, or 1
+  for a `leg_<n>_scale1` leg; the run prints `output scale:`), drives the
+  legs the flags asked for, screenshots, tears it down. **Read the PNGs rather than assuming they look
   right.** `FS_RESULT=<dir>` runs a result built elsewhere (an unpacked
   release tarball has the same layout) instead of building one. A tool a leg
   needs and the host lacks fails the run naming the openSUSE package that

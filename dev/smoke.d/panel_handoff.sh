@@ -42,6 +42,7 @@
 # The travel is front-loaded, which is why three of the five sit inside its
 # first third: that is where a card is between the two rests.
 leg_panel_handoff_flag="--panel-handoff"
+leg_panel_handoff_scale1="cuts its box at logical pixels (1.25: the box is not bare desktop)"
 leg_panel_handoff_order=78
 leg_panel_handoff_needs="convert"
 

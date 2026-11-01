@@ -23,11 +23,9 @@ launcher_density_png="$shot_dir/launcher-density.png"
 launcher_density_log="$shot_dir/launcher-density.log"
 launcher_density_status="$shot_dir/launcher-density-status.json"
 
+leg_launcher_density_scale1="its own output at 1.25 beside the session's at 1, the bar's"
+
 leg_launcher_density_validate() {
-  if [ "${FS_SMOKE_SCALE:-1}" != 1 ]; then
-    echo "usage: --launcher-density needs the session's output at scale 1 (unset FS_SMOKE_SCALE)" >&2
-    exit 1
-  fi
   if leg_on multi_output || leg_on display || leg_on brightness; then
     echo "usage: --launcher-density makes its own second output and cannot combine with legs that add or remove outputs" >&2
     exit 1
