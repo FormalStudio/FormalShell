@@ -21,7 +21,6 @@
 #   own `render_us` under 50ms together (read under FS_CPU_QUOTA for
 #   e1504g's power saver).
 leg_desktop_clock_flag="--desktop-clock"
-leg_desktop_clock_scale1="reads the digits' box at logical pixels (1.25: digits reach 1.000 of the box)"
 leg_desktop_clock_order=112
 leg_desktop_clock_needs="convert jq foot"
 
@@ -145,8 +144,9 @@ leg_desktop_clock_assert() {
 
   _desktop_clock photo 'length > 0 and all(.enabled and .depth)' | grep -qx true \
     || fail "--desktop-clock: no clock with depth on over the photograph: $(cat "$shot_dir/desktop-clock-photo.json")"
-  local x y w h mask box share grad_on grad_off
-  read -r x y w h < <(_desktop_clock photo '.[0].rect | @tsv')
+  local x y w h geo mask box share grad_on grad_off
+  geo=$(scaled_jq -r "$geometry_jq"'.[0].rect | {x: .[0], y: .[1], width: .[2], height: .[3]} | geometry' "$shot_dir/desktop-clock-photo.json")
+  IFS='x+' read -r w h x y <<< "$geo"
   mask="$shot_dir/desktop-clock-photo-mask.png"
   # The digits' own pixels: where the frame with the clock differs from the
   # one without, less two pixels round each shape so the 3x3 gradient below
