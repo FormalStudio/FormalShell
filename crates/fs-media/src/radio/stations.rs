@@ -336,20 +336,17 @@ pub fn country_request(code: &str) -> Request {
     }
 }
 
-pub fn search_requests(query: &str) -> Vec<Request> {
-    ["name", "country", "tag"]
-        .iter()
-        .map(|field| {
-            let mut p = params(&[(field, query)]);
-            p.extend(params(&SEARCH_ORDER));
-            p.extend(params(&[("limit", "80")]));
-            Request {
-                max: 80,
-                path: "/json/stations/search".into(),
-                params: p,
-            }
-        })
-        .collect()
+pub fn search_requests(query: &str) -> [Request; 3] {
+    ["name", "country", "tag"].map(|field| {
+        let mut p = params(&[(field, query)]);
+        p.extend(params(&SEARCH_ORDER));
+        p.extend(params(&[("limit", "80")]));
+        Request {
+            max: 80,
+            path: "/json/stations/search".into(),
+            params: p,
+        }
+    })
 }
 
 pub fn random_request() -> Request {

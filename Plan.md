@@ -166,7 +166,7 @@ run and read, and lands as one commit. Every visible change is checked by
 reading the PNGs, then shipped to e1504g and photographed there with
 `grim` over ssh (reading the live screen, never driving it).
 
-### Phase 0: a rig without Nix (blocker, running)
+### Phase 0: a rig without Nix (done)
 
 - 0.1 g815 nested rig on cargo: the build staged into the `result/bin`
   layout `dev/smoke.sh` expects (`formalshell-rs`, `formalshell-ipc`),
@@ -197,7 +197,7 @@ reading the PNGs, then shipped to e1504g and photographed there with
 - 1.4 HIG pass over the token table and every surface, `gallery` leg as the
   sheet. Ship to e1504g after 1.3 and after 1.4.
 
-### Phase 2: the launcher
+### Phase 2: the launcher (done)
 
 One calm field over a `Recent` list; every result a subject with actions
 beside it (Tab), things to step into (→), learned and pinned
@@ -209,7 +209,7 @@ selection. Spec: `docs/superpowers/specs/2026-10-29-launcher.md`, whose
 2.7 preview and files, 2.8 plugins, 2.9 gate and ship). Install mode's
 launcher half is specified there and built in phase 5.
 
-### Phase 3: glass and fspec activity
+### Phase 3: glass and fspec activity (done)
 
 - 3.1 Translucent role fills (Pantheon defaults `surfaceOpacity` to 1 and
   toasts to an opaque fill, so compositor blur has nothing to show through)
@@ -221,7 +221,7 @@ launcher half is specified there and built in phase 5.
 - 3.3 Shell: an Activity service over that stream, a progress toast
   (Pond's "installing Firefox" ring), honest unavailable without fspec.
 
-### Phase 4: the sidebar
+### Phase 4: the sidebar (done)
 
 Our take on Pond's left column, kept quiet: about 160 logical px wide
 (Pond's is ~12% of a 1280px screen), compact cards, no card wider than its
@@ -254,10 +254,12 @@ others dimmed slightly), its siblings slide apart live to show the drop
 slot, the target row lights, and the windows themselves glide to the new
 layout while the icon settles, so the map and the screen move together.
 Pond's zoomed-out overview of every workspace's live windows is niri's;
-Hyprland's equivalent is a compositor plugin (hyprexpo), declared in
-fspec if adopted, never captures by the shell.
+ours is the shell's own overview (`docs/superpowers/specs/2026-10-31-overview.md`),
+which replaced the hyprexpo plugin: one captured frame per window of the
+output's workspaces, never live, held only while it is open (the fourth
+place the capture rule allows). The minimap itself never captures.
 
-### Phase 5: installing from the shell
+### Phase 5: installing from the shell (done)
 
 - 5.0 FormalSpec design: how an install from the launcher lands in a
   declarative spec (a user apps module fspec edits, commits and applies),
@@ -295,24 +297,18 @@ maps), every unavailable state.
 presented through dmabuf with damage kept, launcher first, then every
 surface. Lands only at or under the baseline on g815 and e1504g.
 
-### Phase 8: later, each on its own
+### Phase 8: later, each on its own (done)
 
 - Sky wallpaper: the sky's gradient for the sun's position now
   (`fs-theme/src/sun.rs` has the times), feeding matugen like a picture.
 - Hyprland window motion on the shell's curves.
 
-## Open questions for the owner
+## Answered questions
 
-- A settings UI: the shell never writes settings.json. Proposal: the UI
-  writes overrides into state.json and marks keys settings.json pins.
-- Keep a Nix flake for outside users, or ship only install.sh and fspec?
-  This plan deletes it.
-
-## Pending verification
-
-- Desktop clock: raised over the subject (`UNDER` 0.4 to 0.2), harder
-  frost blur with more picture through, and the subject's cut pushed
-  toward 0 or 1 (`harden`, which still leaves exact half coverage at half).
-  Explicit `desktopClock.y`, subjectless placement and the serif face are
-  untouched. Needs the owner's wallpaper and settings reproduced on the rig
-  before it counts as fixed.
+- A settings UI: built (`docs/superpowers/specs/2026-10-31-settings-ui.md`).
+  It writes overrides into state.json under `settings`; a key settings.json
+  sets shows as pinned and is not editable.
+- The Nix flake: deleted in 947e44f7. install.sh and fspec are the ways in.
+- The desktop clock (raised over the subject, harder frost, the subject's
+  cut pushed toward 0 or 1) shipped on 2026-10-29 and is verified by
+  `--desktop-clock`.

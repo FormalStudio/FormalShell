@@ -3,9 +3,10 @@
 //! and uninstall it starts, and which fspec package owns a desktop file.
 //! The work itself is fspec's, on the operation stream Activity reads; this
 //! only starts it and keeps what the launcher draws off. The sidebar's
-//! Software card reads the spec checkout here too: the upstream commits it
-//! does not have yet, and the newest app change `fspec app undo` would
-//! reverse, checked once it is first drawn and every half hour after.
+//! Software card reads the spec checkout here too: the upstream commits the
+//! machine has not applied yet, and the newest app change `fspec app undo`
+//! would reverse while it is a day old at most, checked once it is first
+//! drawn and every half hour after.
 //!
 //! A search waits 250ms after the last query and a newer one drops the
 //! child still answering an older one. `--offline` keeps crates.io and npm
@@ -29,6 +30,8 @@ use crate::store;
 
 const DEBOUNCE: Duration = Duration::from_millis(250);
 const RECHECK: Duration = Duration::from_secs(30 * 60);
+/// How long the card offers the last app change and its Undo.
+const LAST_SHOWN: Duration = Duration::from_secs(24 * 60 * 60);
 const SEARCH_LIMIT: &str = "30";
 /// What a search answers with no fspec to ask.
 pub const NO_FSPEC: &str = "Installing apps needs fspec";
@@ -69,10 +72,12 @@ pub struct Started {
 /// The spec checkout as the Software card shows it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Software {
-    /// The upstream's commits the checkout lacks and the upstream's name,
-    /// why that cannot be told, `None` before the first check.
+    /// The upstream's commits the machine has not applied and the
+    /// upstream's name, why that cannot be told, `None` before the first
+    /// check.
     pub behind: Option<Result<(u32, String), String>>,
-    /// The newest app change on the upstream for this host, and the entry.
+    /// The newest app change on the upstream for this host, and the entry,
+    /// while it is under [`LAST_SHOWN`] old.
     pub last: Option<(Verb, String)>,
     /// An Apply the card started that has not ended.
     pub applying: bool,
@@ -348,8 +353,34 @@ fn app_change(subject: &str, host: &str) -> Option<(Verb, String)> {
     Some((verb, name.to_owned()))
 }
 
-/// The checkout's standing against its upstream, fetched first; a fetch
-/// that fails leaves the last one's answer.
+/// The spec commits the machine's scopes were last applied from, off
+/// `fspec facts --json`'s `applied`. An apply over ssh from another
+/// machine's checkout never moves this one's HEAD, so HEAD says nothing of
+/// what runs here.
+async fn applied() -> Vec<String> {
+    let done = proc::capture(&proc::argv(&["fspec", "facts", "--json"]), Duration::from_secs(10)).await;
+    if done.code != 0 {
+        return Vec::new();
+    }
+    let Ok(facts) = serde_json::from_str::<serde_json::Value>(&done.stdout) else { return Vec::new() };
+    ["system", "user"].iter().filter_map(|scope| facts["applied"][scope].as_str().map(str::to_owned)).collect()
+}
+
+/// The upstream's commits not in `rev`, fetching `rev` off `remote` when
+/// the checkout lacks it.
+async fn behind_of(dir: &Path, remote: &str, rev: &str) -> Option<u32> {
+    let commit = format!("{rev}^{{commit}}");
+    if git(dir, &["cat-file", "-e", &commit], Duration::from_secs(10)).await.code != 0 {
+        let _ = git(dir, &["fetch", "--quiet", remote, rev], Duration::from_secs(60)).await;
+    }
+    let count = git(dir, &["rev-list", "--count", &format!("{rev}..@{{u}}")], Duration::from_secs(10)).await;
+    count.stdout.trim().parse().ok().filter(|_| count.code == 0)
+}
+
+/// The machine's standing against the checkout's upstream, fetched first; a
+/// fetch that fails leaves the last one's answer. Counted from the scope
+/// applied most recently, since an app change applies its own scope alone;
+/// from HEAD where no scope records a commit.
 async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
     let Some(dir) = spec_dir() else { return (Err(NO_SPEC.into()), None) };
     let _ = git(&dir, &["fetch", "--quiet"], Duration::from_secs(60)).await;
@@ -358,16 +389,37 @@ async fn check() -> (Result<(u32, String), String>, Option<(Verb, String)>) {
         return (Err("The spec's branch has no upstream".into()), None);
     }
     let upstream = up.stdout.trim().to_owned();
-    let count = git(&dir, &["rev-list", "--count", "HEAD..@{u}"], Duration::from_secs(10)).await;
-    let behind = match count.stdout.trim().parse::<u32>() {
-        Ok(n) if count.code == 0 => Ok((n, upstream)),
-        _ => Err(p::failure(&count.stderr, count.code)),
+    let remote = upstream.split_once('/').map_or(upstream.as_str(), |(r, _)| r);
+    let mut counts = Vec::new();
+    for rev in applied().await {
+        counts.extend(behind_of(&dir, remote, &rev).await);
+    }
+    let behind = match counts.into_iter().min() {
+        Some(n) => Ok((n, upstream.clone())),
+        None => {
+            let count = git(&dir, &["rev-list", "--count", "HEAD..@{u}"], Duration::from_secs(10)).await;
+            match count.stdout.trim().parse::<u32>() {
+                Ok(n) if count.code == 0 => Ok((n, upstream.clone())),
+                _ => Err(p::failure(&count.stderr, count.code)),
+            }
+        }
     };
     let host = host();
     let grep = format!("--grep=^feat\\(apps\\): (install|uninstall) .+ on {}$", host.replace('.', "\\."));
-    let log = git(&dir, &["log", "-1", "--format=%s", "-E", &grep, "@{u}", "--", "apps.star"], Duration::from_secs(10)).await;
-    let last = log.stdout.lines().find_map(|l| app_change(l, &host));
+    let log = git(&dir, &["log", "-1", "--format=%ct %s", "-E", &grep, "@{u}", "--", "apps.star"], Duration::from_secs(10)).await;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let last = log.stdout.lines().find_map(|l| recent_change(l, &host, now));
     (behind, last)
+}
+
+/// One `%ct %s` line: the app change, while it is under [`LAST_SHOWN`] old.
+fn recent_change(line: &str, host: &str, now: u64) -> Option<(Verb, String)> {
+    let (at, subject) = line.split_once(' ')?;
+    let at = at.parse::<u64>().ok()?;
+    if now.saturating_sub(at) >= LAST_SHOWN.as_secs() {
+        return None;
+    }
+    app_change(subject, host)
 }
 
 fn spawn_check(ctx: &Ctx) {
@@ -547,6 +599,14 @@ mod tests {
         assert_eq!(app_change("feat(apps): uninstall btop on e1504g", "e1504g"), Some((Verb::Uninstall, "btop".into())));
         assert_eq!(app_change("feat(apps): install btop on e1504g", "g815"), None);
         assert_eq!(app_change("feat(apps): pin btop on g815", "g815"), None);
+    }
+
+    #[test]
+    fn an_app_change_shows_for_a_day() {
+        let line = "1000000 feat(apps): uninstall figlet on g815";
+        assert_eq!(recent_change(line, "g815", 1000000 + 3600), Some((Verb::Uninstall, "figlet".into())));
+        assert_eq!(recent_change(line, "g815", 1000000 + 24 * 3600), None);
+        assert_eq!(recent_change("feat(apps): uninstall figlet on g815", "g815", 1000000), None);
     }
 
     #[test]

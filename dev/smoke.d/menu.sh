@@ -9,13 +9,13 @@
 #
 # The chrome that a frame cannot state is asserted off `menu status` instead
 # (M48): the field's placeholder, the headings, the column count and the
-# ids. The root at rest is three tiles under no heading (launcher spec
-# §1): the first three root routes in declaration order while fewer than
-# three picks resolve, then the best three picks of any kind. state.json is
+# ids. The root at rest lists one heading and nothing else (launcher spec
+# §1): `Modes`, the root routes in declaration order, while fewer than three
+# picks resolve, then `Recent`, the best picks of any kind. state.json is
 # staged with two picks of fixture apps and one of an app that is not
-# installed, which is skipped, so the first open is routes; one real pick
+# installed, which is skipped, so the first open is `Modes`; one real pick
 # by search and Enter (the fixture's Exec is `true`) makes three, and the
-# next open is exactly those three apps.
+# next open is `Recent` with exactly those three apps.
 #
 # Every status read here also checks the cursor against the view (M72 T1):
 # `cursorId` is the row Enter acts on, and `viewCursor` is where the live
@@ -102,17 +102,17 @@ sleep 2
 $ipc call debug query 'e' > "$query_path" 2>&1
 "$grim_bin" "$menu_root_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_root_path" 2>&1
-"$wtype_bin" -s 300 -k Right
+"$wtype_bin" -s 300 -k Down
 sleep 1
 "$grim_bin" "$menu_down_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_down_path" 2>&1
 for n in 2 3 4; do
-  "$wtype_bin" -s 300 -k Right
+  "$wtype_bin" -s 300 -k Down
   sleep 0.6
   $ipc call menu status > "$shot_dir/menu-status-down\$n.json" 2>&1
 done
 for n in 1 2 3 4; do
-  "$wtype_bin" -s 300 -k Left
+  "$wtype_bin" -s 300 -k Up
   sleep 0.6
   $ipc call menu status > "$shot_dir/menu-status-up\$n.json" 2>&1
 done
@@ -215,8 +215,8 @@ leg_menu_assert() {
     fail "no root-level menu screenshot produced"
   fi
   echo "SMOKE_MENU_ROOT $menu_root_path"
-  # The root at rest on two resolving picks: three tiles under no heading,
-  # the first root routes in declaration order with no app among them.
+  # The root at rest on two resolving picks: one column of rows under
+  # `Modes`, the root routes in declaration order with no app among them.
   if [ ! -s "$menu_status_root_path" ]; then
     fail "no root menu status produced"
   fi
@@ -224,38 +224,38 @@ leg_menu_assert() {
   if ! grep -q '"placeholder":"Search apps, files, commands"' "$menu_status_root_path"; then
     fail "the root field did not carry the launcher's placeholder, got: $(cat "$menu_status_root_path")"
   fi
-  root_tiles_assert "$menu_status_root_path" '.columns == 3 and (.ids | length) == 3
-      and .ids[0] == "apps" and (.ids | index("clipboard")) and ([.ids[] | select(startswith("apps."))] | length) == 0' \
-    "the root at rest did not tile the first three root routes"
+  root_rows_assert "$menu_status_root_path" Modes '.ids[0] == "apps" and (.ids | index("clipboard"))
+      and ([.ids[] | select(startswith("apps."))] | length) == 0' \
+    "the root at rest did not list the root routes"
   echo "SMOKE_MENU_MODES $("$jq_bin" -c '.ids' "$menu_status_root_path")"
-  # A third pick: the tiles are the three fixture apps and not the one that
+  # A third pick: `Recent` alone, the three fixture apps and not the one that
   # is not installed.
   [ -f "$menu_recent_path" ] || fail "no Recent screenshot produced"
   echo "SMOKE_MENU_RECENT $menu_recent_path"
   cat "$menu_status_recent_path"; echo
-  root_tiles_assert "$menu_status_recent_path" \
+  root_rows_assert "$menu_status_recent_path" Recent \
     '(.ids | sort) == ["apps.formalshell-menu-fixture-01", "apps.formalshell-menu-fixture-02", "apps.formalshell-menu-fixture-03"]' \
-    "the root after a third pick did not tile the three picks"
+    "the root after a third pick did not list the three picks"
   menu_cursor_agrees "$menu_status_recent_path" "recent"
   menu_cursor_agrees "$menu_status_root_path" "root"
-  # One real Right straight after opening: the tile it lands on has to be
+  # One real Down straight after opening: the row it lands on has to be
   # inside the viewport, whole, not scrolled past.
   echo "SMOKE_MENU_DOWN $menu_down_path"
-  menu_cursor_agrees "$menu_status_down_path" "root after Right"
+  menu_cursor_agrees "$menu_status_down_path" "root after Down"
   local top bottom viewport
   top=$("$jq_bin" -r '.viewCursor.top' "$menu_status_down_path" 2>/dev/null)
   bottom=$("$jq_bin" -r '.viewCursor.bottom' "$menu_status_down_path" 2>/dev/null)
   viewport=$("$jq_bin" -r '.viewCursor.viewport' "$menu_status_down_path" 2>/dev/null)
   if [ -z "$top" ] || [ "$top" -lt 0 ] || [ "$bottom" -gt "$viewport" ]; then
-    fail "root after Right: the cursor row spans $top..$bottom in a viewport of $viewport"
+    fail "root after Down: the cursor row spans $top..$bottom in a viewport of $viewport"
   fi
   echo "SMOKE_MENU_DOWN_RECT $top..$bottom of $viewport"
-  # The second tile fits the card, so that Right scrolls nothing.
+  # The second row fits the card, so that Down scrolls nothing: the heading
+  # over the rows stays in sight.
   if [ "$(menu_field "$menu_status_down_path" scrollTop)" != "0" ]; then
-    fail "root after Right: the view scrolled to $(menu_field "$menu_status_down_path" scrollTop) for a row that already fit"
+    fail "root after Down: the view scrolled to $(menu_field "$menu_status_down_path" scrollTop) for a row that already fit"
   fi
-  # Right to the last tile and Left back: every stop whole inside the
-  # viewport.
+  # Four rows down and back up: every stop whole inside the viewport.
   local f
   for f in down2 down3 down4 up1 up2 up3 up4; do
     menu_cursor_on_screen "$shot_dir/menu-status-$f.json" "root after $f"
@@ -263,7 +263,7 @@ leg_menu_assert() {
   local back
   back=$("$jq_bin" -r '.cursor' "$shot_dir/menu-status-up4.json")
   if [ "$back" != "0" ]; then
-    fail "root: three Rights then four Lefts left the cursor on ${back:-nothing}, not the first tile"
+    fail "root: four Downs then four Ups left the cursor on ${back:-nothing}, not the first row"
   fi
   # The emoji route: a grid, filtered, with the route's own prompt in the
   # field. More columns than one is the whole claim, and it is not readable

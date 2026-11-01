@@ -140,9 +140,7 @@ fn cell_pad(s: &fs_theme::tokens::Space, state: &CellState) -> (f64, f64) {
 }
 
 fn cell_pad_x(s: &fs_theme::tokens::Space, state: &CellState) -> f64 {
-    if state.tile {
-        s.xl
-    } else if state.row {
+    if state.row {
         s.lg
     } else if state.card {
         s.md
@@ -295,7 +293,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             let (pad_x, pad_y) = cell_pad(&s, state);
             let content_avail = (inner - pad_x * 2.0).max(0.0);
             let (cw, ch) = measure(cx, child, content_avail);
-            let h = if state.card || state.tile || state.group || state.glyph || state.hero { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
+            let h = if state.card || state.group || state.glyph || state.hero { ch + pad_y * 2.0 } else { across(cx, state.chip, ch) };
             (cw + pad_x * 2.0, h)
         }
         Kind::Button { text, icon, square, .. } => {
@@ -914,8 +912,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else if state.token {
         t.box_style("launcher.token", None)
     } else if state.row {
-        let role = if state.tile { "launcher.tile" } else { "launcher.row" };
-        let mut b = t.box_style(role, Some(if state.selected && !owned { "selected" } else { "rest" }));
+        let mut b = t.box_style("launcher.row", Some(if state.selected && !owned { "selected" } else { "rest" }));
         if state.destructive {
             b.border = t.box_style("cell", Some("destructive")).border;
         }
@@ -928,7 +925,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     };
     let hovered = state.hovered || (interactive && cx.hover(path));
     let washing = hovered && !state.active && !state.selected;
-    b.wash = t.box_style(if state.tile { "launcher.tile" } else if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
+    b.wash = t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
     let (_, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);

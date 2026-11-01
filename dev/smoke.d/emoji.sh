@@ -21,7 +21,8 @@
 # it a reordered query would only prove the shell wrote its own state file.
 #
 # The copy is a pick too: state.json's `picks` holds `emoji:😿`, and with
-# two other picks seeded the root at rest tiles it beside them.
+# two other picks seeded the root at rest lists it under `Recent` beside
+# them.
 #
 # Both queries go through `debug query`, which ranks against the same dataset
 # the surface does with no keyboard delivery needed, and both are narrow on
@@ -171,8 +172,8 @@ leg_emoji_assert() {
   "$jq_bin" -e '[.picks[].id] | index("emoji:😿") != null' "$emoji_state_path" > /dev/null \
     || fail "the copy recorded no pick in state.json: $("$jq_bin" -c '.picks' "$emoji_state_path")"
   [ -s "$emoji_recent_path" ] && [ -f "$emoji_recent_png" ] || fail "no root status or frame after the copy"
-  root_tiles_assert "$emoji_recent_path" '(.ids | sort) == (["clipboard", "toggles", "emoji.😿"] | sort)' \
-    "the copied emoji is not a tile at the root beside the two seeded picks"
+  root_rows_assert "$emoji_recent_path" Recent '(.ids | sort) == (["clipboard", "toggles", "emoji.😿"] | sort)' \
+    "the copied emoji is not a Recent row at the root beside the two seeded picks"
   echo "SMOKE_EMOJI_RECENT $emoji_recent_png (the copied emoji is a pick and lists under Recent)"
   emoji_grid_assert
 }

@@ -124,8 +124,6 @@ pub struct CellState {
     pub row: bool,
     /// The launcher's mode chip, in the `launcher.token` box.
     pub token: bool,
-    /// With `row`, a launcher tile: the `launcher.tile` box, `xl` all round.
-    pub tile: bool,
     /// A sidebar card, in the `card` box with its own padding all round.
     pub card: bool,
     /// `xs` either side instead of the control padding: an icon chip in a

@@ -309,6 +309,26 @@ async fn request(cache: &Bases, request: &stations::Request) -> Option<Vec<Stati
     None
 }
 
+/// A station search's one deadline, every mirror and all three fields
+/// together: past it the search reads failed rather than holding its
+/// searching row while each mirror runs out curl's own cap in turn.
+const SEARCH_BUDGET: Duration = Duration::from_secs(15);
+
+async fn search(cache: &Bases, q: &str) -> Option<Vec<Station>> {
+    let asks = async {
+        discover(cache).await;
+        let [name, country, tag] = stations::search_requests(q);
+        let ((a, b), c) = futures_lite::future::zip(futures_lite::future::zip(request(cache, &name), request(cache, &country)), request(cache, &tag)).await;
+        let lists = [a, b, c];
+        lists.iter().any(Option::is_some).then(|| stations::union(&lists.map(Option::unwrap_or_default), stations::MAX_RECORDS))
+    };
+    asks.or(async {
+        Timer::after(SEARCH_BUDGET).await;
+        None
+    })
+    .await
+}
+
 type Lines =futures_lite::io::Lines<BufReader<ReadHalf<Async<UnixStream>>>>;
 
 struct Mpv {
@@ -720,14 +740,7 @@ impl Radio {
         self.search_busy = true;
         let (bases, follow) = (self.bases.clone(), self.follow.clone());
         self.ctx.spawn(async move {
-            let mut lists = Vec::new();
-            let mut ok = false;
-            for r in stations::search_requests(&q) {
-                let rows = request(&bases, &r).await;
-                ok |= rows.is_some();
-                lists.push(rows.unwrap_or_default());
-            }
-            let found = ok.then(|| stations::union(&lists, stations::MAX_RECORDS));
+            let found = search(&bases, &q).await;
             let _ = follow.try_send(Cmd::Searched(q, found));
         });
     }
@@ -846,14 +859,7 @@ impl Radio {
                     return self.answer(Reply::Rows(token, None));
                 }
                 self.ctx.spawn(async move {
-                    let mut lists = Vec::new();
-                    let mut ok = false;
-                    for r in stations::search_requests(&q) {
-                        let rows = request(&bases, &r).await;
-                        ok |= rows.is_some();
-                        lists.push(rows.unwrap_or_default());
-                    }
-                    let found = ok.then(|| stations::union(&lists, stations::MAX_RECORDS));
+                    let found = search(&bases, &q).await;
                     let _ = follow.try_send(Cmd::Answered(Reply::Rows(token, found)));
                 });
             }

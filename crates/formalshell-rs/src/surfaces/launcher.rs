@@ -41,8 +41,6 @@ use crate::ui::{self, El, Ink, Size, Type, Ui, Weight, w};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     Rows,
-    /// The opened state: the best few subjects as tiles under the field.
-    Tiles,
     Emoji,
     AppGrid,
     Picker,
@@ -59,7 +57,6 @@ impl View {
     fn name(self) -> &'static str {
         match self {
             View::Rows => "rows",
-            View::Tiles => "tiles",
             View::Emoji => "emoji",
             View::AppGrid => "appGrid",
             View::Picker => "picker",
@@ -772,9 +769,9 @@ impl Model {
         self.dirty = true;
     }
 
-    /// The opened state's tiles stand alone: no foot under them.
+    /// A held panel stands alone: no foot under it.
     pub fn footless(&self) -> bool {
-        self.mode == Mode::Menu && matches!(self.view, View::Tiles | View::Panel)
+        self.mode == Mode::Menu && self.view == View::Panel
     }
 
     /// A card whose height follows its list rather than the level's kind.
@@ -782,7 +779,7 @@ impl Model {
     /// what the pane has to say. The clipboard keeps Pond's one height and
     /// the actions column the level's.
     fn content_tall(&self) -> bool {
-        self.mode != Mode::Input && !self.app_view() && !self.split() && self.column.is_none() && matches!(self.view, View::Rows | View::Tiles | View::AppGrid)
+        self.mode != Mode::Input && !self.app_view() && !self.split() && self.column.is_none() && matches!(self.view, View::Rows | View::AppGrid)
     }
 
     /// The routes that draw a whole view of their own.
@@ -819,7 +816,7 @@ impl Model {
     /// A row list runs the card's whole width, its rows an `sm` inset off
     /// the edge; the other views keep the card's padding.
     pub fn bleeds(&self) -> bool {
-        matches!(self.view, View::Rows | View::AppGrid | View::Tiles)
+        matches!(self.view, View::Rows | View::AppGrid)
     }
 
     fn body_width(&self, theme: &Theme) -> f64 {
@@ -1117,8 +1114,6 @@ impl Model {
             View::Emoji
         } else if menu && grid_wanted && !route_rows {
             View::AppGrid
-        } else if menu && level.is_none() && children.is_none() && q.is_empty() {
-            View::Tiles
         } else {
             View::Rows
         };
@@ -1169,8 +1164,6 @@ impl Model {
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
-                } else if view == View::Tiles {
-                    rest.into_iter().take(fs_theme::tokens::LAUNCHER.tiles as usize).collect()
                 } else {
                     rest
                 }
@@ -1258,7 +1251,7 @@ impl Model {
                 &rows,
                 &SectionCtx {
                     mode: Some(self.mode),
-                    grid: matches!(view, View::Emoji | View::Tiles),
+                    grid: view == View::Emoji,
                     cells: app_count,
                     searching,
                     level: self.level.as_deref(),
@@ -1411,25 +1404,6 @@ impl Model {
             if band == prev { String::new() } else { band }
         };
         match self.view {
-            View::Tiles => {
-                // Pond's opened state: the tiles an `xl` under the field's
-                // rule, `xxl` in from either side and under them.
-                let n = fs_theme::tokens::LAUNCHER.tiles.max(1) as usize;
-                let side = s.xxl;
-                let cell_w = ((width - side * 2.0 - s.xl * (n - 1) as f64) / n as f64).max(1.0);
-                let cell_h = launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height);
-                for i in 0..self.rows.len().min(n) {
-                    out.slots.push(Slot { x: side + i as f64 * (cell_w + s.xl), y: s.xl, w: cell_w, h: cell_h, band: 0.0 });
-                }
-                out.columns = n;
-                out.cell_w = cell_w;
-                out.cell_h = cell_h;
-                out.content_h = s.xl + cell_h + s.xxl;
-                out.halved = halved;
-                out.body_w = body_w;
-                self.layout = out;
-                return;
-            }
             View::AppGrid | View::Emoji | View::Picker => {
                 if self.picker_switch_h > 0.0 {
                     y += self.picker_switch_h + s.row_gap;
@@ -1550,7 +1524,7 @@ impl Model {
     fn cells(&self) -> usize {
         match self.view {
             View::AppGrid => self.app_count,
-            View::Emoji | View::Picker | View::Tiles => self.rows.len(),
+            View::Emoji | View::Picker => self.rows.len(),
             View::Rows | View::Monitor | View::Mirror | View::Panel => 0,
         }
     }
@@ -1665,7 +1639,7 @@ impl Model {
         };
         let drawn: Vec<Value> = match self.view {
             View::AppGrid => self.rows[..self.app_count].iter().map(|r| json!({"id": r.id, "label": r.label})).collect(),
-            View::Rows | View::Tiles | View::Monitor | View::Mirror => {
+            View::Rows | View::Monitor | View::Mirror => {
                 self.rows
                     .iter()
                     .map(|r| {
@@ -3105,8 +3079,7 @@ impl Shown {
         } else if m.on_panel() {
             ui::fit_rows(&m.layout.row_ends, m.layout.content_h, cap)
         } else if m.content_tall() {
-            // The card hugs its list, never shorter than the opened state.
-            let rest = s.xl + launcher_px(theme, fs_theme::tokens::LAUNCHER.tile_height) + s.xxl;
+            // The card hugs its list.
             let pane = match m.pane() {
                 Some(row) => {
                     let (_, pw, _) = m.pane_extent(theme);
@@ -3115,7 +3088,7 @@ impl Shown {
                 }
                 None => 0.0,
             };
-            let tall = m.layout.content_h.max(pane).max(rest - foot);
+            let tall = m.layout.content_h.max(pane);
             if tall > cap && pane == 0.0 && m.view == View::Rows { m.whole_rows(cap, s.lg) } else { tall.min(cap) }
         } else {
             cap
@@ -3390,9 +3363,7 @@ impl Shown {
                 self.sel_on = Some(on);
                 let [x, y, w_, h] = [0, 1, 2, 3].map(|i| self.sel[i].value(now));
                 let r = ui::irect(Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w_, origin.1 + y + h));
-                let b = if m.view == View::Tiles {
-                    theme.box_style("launcher.tile", Some("selected"))
-                } else if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
+                let b = if matches!(m.view, View::Rows | View::AppGrid | View::Emoji) {
                     theme.box_style("launcher.row", Some("selected"))
                 } else {
                     let mut b = theme.box_style("cell", Some("selected"));
@@ -3837,9 +3808,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         }
         let row = &m.rows[i];
         let selected = i == m.cursor;
-        let el = if i < cells && m.view == View::Tiles {
-            tile(store, row, i, selected, slot, theme, kit)
-        } else if i < cells && m.view == View::AppGrid {
+        let el = if i < cells && m.view == View::AppGrid {
             let gutter = s.sm;
             let image = store.menu.icons.get(&row.icon_source).cloned().flatten();
             let pic = if image.is_some() {
@@ -4341,48 +4310,6 @@ fn slot_x_of(m: &Model, el: &El) -> f64 {
     let Some(key) = &el.key else { return 0.0 };
     let id = key.split_once(':').map_or("", |(_, id)| id);
     m.rows.iter().position(|r| r.id == id).and_then(|i| m.layout.slots.get(i)).map_or(0.0, |s| s.x)
-}
-
-/// One tile of the opened state: the subject's icon at its top-left, its
-/// name at the bottom-left, muted until selected.
-fn tile(store: &Store, row: &Node, i: usize, selected: bool, slot: &Slot, theme: &Theme, kit: &mut Kit) -> El {
-    let s = &theme.space;
-    let icon_px = launcher_px(theme, fs_theme::tokens::LAUNCHER.row_icon);
-    let glyph = match fs_menu::icons::icon_for(Some(row)) {
-        "" if row.id.starts_with(fs_chrome::plugins::PLUGIN_PREFIX) => row.icon.as_str(),
-        named => named,
-    };
-    let picture = (!row.icon_source.is_empty() && glyph.is_empty())
-        .then(|| store.menu.row_icons.get(&row.icon_source).cloned().flatten())
-        .flatten();
-    let mark = match picture {
-        Some(image) => {
-            let density = image.pixmap.width() as f64 / icon_px.max(1.0);
-            w::picture(Some(image.at(density)), icon_px)
-        }
-        None if fs_menu::actions::subject_id(row).starts_with(fs_menu::actions::EMOJI_SUBJECT) => w::text(row.icon.clone()).size(Type::Heading),
-        None => {
-            let name = if glyph.is_empty() { fs_menu::icons::fallback_for(Some(row)) } else { glyph };
-            w::icon(name).size(Type::Heading).width(Size::Px(icon_px)).height(icon_px)
-        }
-    };
-    let name = w::text(row.label.clone()).size(Type::Heading).weight(Weight::Normal).ink(if selected { Ink::Fg } else { Ink::Muted }).elide();
-    let inner_h = slot.h - s.xl * 2.0;
-    let name_h = ui::measure(&name, slot.w, theme, kit).1;
-    let mark_h = ui::measure(&mark, slot.w, theme, kit).1;
-    let content = w::column(0.0, vec![mark, w::space((inner_h - mark_h - name_h).max(0.0)), name]).height(inner_h);
-    w::cell(content)
-        .ghost()
-        .selected(selected)
-        .interactive()
-        .cell_state(|st| {
-            st.row = true;
-            st.tile = true;
-        })
-        .on(format!("row:{i}"))
-        .stop(format!("t:{}", row.id))
-        .width(Size::Px(slot.w))
-        .height(slot.h)
 }
 
 /// One row: a `row_icon` mark, the label at 400 (600 under the selection),

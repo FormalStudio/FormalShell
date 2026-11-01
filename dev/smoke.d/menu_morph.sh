@@ -2,7 +2,8 @@
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --menu-morph: the launcher's card keeps one width and takes the height of
 # what it shows, travelling into it rather than jumping. The card opens on
-# the root's tiles, content-tall, then `menu summon clipboard` re-levels it
+# the root's three `Recent` rows (three route picks staged in state.json),
+# content-tall, then `menu summon clipboard` re-levels it
 # in place onto `popupHeightMenuSplit`, the list and its preview side by
 # side inside the same width (one wl-copy seeds that row), all at a tenth
 # of its speed (set before the open: a window takes the scale it opened
@@ -16,8 +17,8 @@
 # in between has a bottom strictly between them: a card that jumped never
 # does.
 #
-# Then the actions column: back at the root, a real Tab on the first tile
-# opens it and the card grows to the split height the same way, and a real
+# Then the actions column: back at the root, a real Tab on the first row
+# opens it and the card takes the split height the same way, and a real
 # Shift+Tab closes it and the card travels back, each read off the same
 # column with a frame caught between the two heights.
 leg_menu_morph_flag="--menu-morph"
@@ -39,6 +40,15 @@ leg_menu_morph_validate() {
       exit 1
     fi
   done
+}
+
+# A short root: the Modes list at rest runs about the split height, which
+# leaves no travel to read.
+leg_menu_morph_fixture() {
+  local state="$iso_home/.local/state/formalshell/state.json" now
+  now=$(($(date +%s) * 1000))
+  mkdir -p "${state%/*}"
+  [ -e "$state" ] || printf '{"picks":[{"id":"clipboard","count":3,"lastMs":%s},{"id":"toggles","count":2,"lastMs":%s},{"id":"emoji","count":1,"lastMs":%s}]}\n' "$now" "$now" "$now" > "$state"
 }
 
 leg_menu_morph_timing() {
@@ -126,12 +136,12 @@ leg_menu_morph_assert() {
   root=$(menu_morph_bottom "$shot_dir/menu-morph-root.png")
   rest=$(menu_morph_bottom "$shot_dir/menu-morph-rest.png")
   echo "card bottom: root $root, split rest $rest; status at rest: $("$jq_bin" -c '{level, view, cardWidth, cardBox, pane: (.pane != null)}' "$shot_dir/menu-morph-rest.json" 2>&1)"
-  [ "$rest" -gt $((root + 40)) ] || fail "the clipboard's split card (bottom $rest) is not taller than the root's tiles (bottom $root)"
+  [ "$(( rest - root ))" -gt 40 ] || [ "$(( root - rest ))" -gt 40 ] || fail "the clipboard's split card (bottom $rest) is the root's height (bottom $root)"
   menu_morph_burst menu-morph "$root" "$rest"
   local tab back
   tab=$(menu_morph_bottom "$shot_dir/menu-morph-tab-rest.png")
   back=$(menu_morph_bottom "$shot_dir/menu-morph-back-rest.png")
-  [ "$tab" -gt $((root + 40)) ] || fail "Tab on the first tile left the card's bottom at $tab, not grown past the root's $root"
+  [ "$(( tab - root ))" -gt 40 ] || [ "$(( root - tab ))" -gt 40 ] || fail "Tab on the first row left the card's bottom at $tab, the root's $root"
   [ "$(( back - root ))" -ge -2 ] && [ "$(( back - root ))" -le 2 ] || fail "Shift+Tab left the card's bottom at $back, not back on the root's $root"
   menu_morph_burst menu-morph-tab "$root" "$tab"
   menu_morph_burst menu-morph-back "$tab" "$root"

@@ -905,12 +905,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   every sample, each frame cropped to its own panel rect (the panel narrows
   when lyrics go) and the track found as the longest bar three rows deep
   off the card's own shade.
-- `menu.sh` `--menu`: the launcher's root at rest, three tiles under no
-  heading (`root_tiles_assert` in `dev/smoke.sh`, which `--emoji` shares):
-  the first root routes in declaration order, no app among them, over a
-  state.json staging two fixture picks and one of an app not installed,
-  then exactly the three fixture apps once a real search and Enter makes
-  the third pick; its fuzzy ranking against the
+- `menu.sh` `--menu`: the launcher's root at rest, one column of rows
+  under one heading (`root_rows_assert` in `dev/smoke.sh`, which `--emoji`
+  shares): `Modes`, the root routes in declaration order, no app among
+  them, over a state.json staging two fixture picks and one of an app not
+  installed, then `Recent` with exactly the three fixture apps once a real
+  search and Enter makes the third pick; its fuzzy ranking against the
   live tree, and the select round trip, with every status read's
   `cursorId` checked against the row the live view holds its current item
   on (`viewCursor`). Real arrow keys on the `Modes` rows: one Down from a
@@ -953,13 +953,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and the scrim's share of their rest level rising through the open and
   falling through the close with a frame between 0.15 and 0.85 each way,
   never cut from 0.9 to 0.1 between neighbouring frames.
-- `menu_morph.sh` `--menu-morph`: the card opened on the root at a tenth
-  speed, then re-levelled onto the clipboard's split route, its left edge read
-  off one header row per frame: the root and the rest frames on the
-  `popupWidthMenu` and `popupWidthMenuSplit` edges, a frame between them.
-  Then a real Tab on the root's first row and a real Shift+Tab, the card
-  travelling to the split edge for the actions column and back, a frame
-  between each way.
+- `menu_morph.sh` `--menu-morph`: the card opened at a tenth speed on a
+  root of three staged `Recent` picks, then re-levelled onto the
+  clipboard's split route: its left edge on the 640 card's in every frame
+  and its bottom read per frame, one frame between the root's height and
+  the split's. Then a real Tab on the root's first row and a real
+  Shift+Tab, the card travelling to the actions column's height and back,
+  a frame between each way.
 - `menu_resize.sh` `--menu-resize`: the root, the monitor view reached by
   typing `sysmon` and a real Return (so the card's look grows past the size
   it was first drawn at), a real Escape back to the root and `menu summon
@@ -1350,17 +1350,21 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `sidebar_software.sh` `--sidebar-software`: the sidebar's Software card
   against a PATH-shimmed `fspec` and a fixture spec checkout
   (`FSPEC_SPEC`) cloned from a bare upstream 22 commits ahead, the
-  oldest fspec's own `feat(apps): install ... on <this host>` and 21
-  newer ones for another host, read off `packages status`'s `software`:
-  22 updates behind `origin/main` and `Installed Foxglove`; a real click
-  on Apply fast-forwarding the checkout before reaching the shim as
-  exactly `apply --rev HEAD`, the shim refusing it and the row keeping a
-  retry with nothing behind, and a second click applying, the card then
-  up to date; a real click on Undo
-  reaching it as `app undo --detach`, the shim pushing fspec's uninstall
-  commit and the card re-checking to one update and `Removed Foxglove`;
-  and the branch's upstream unset reading the honest error row. The
-  behind, retry, up-to-date and undone cards photographed, dark and
+  oldest fspec's own `feat(apps): install ... on <this host>` made 25
+  hours ago and 21 newer ones for another host, with the shim's `facts
+  --json` reporting the scopes applied at the 15th and 12th of them (an
+  apply over ssh that never moved the checkout), read off `packages
+  status`'s `software`: 7 updates behind `origin/main` (past the newer
+  scope, not HEAD's 22) and no last change, the install being past the
+  card's day; a real click on Apply fast-forwarding the checkout before
+  reaching the shim as exactly `apply --rev HEAD`, the shim refusing it
+  and the row keeping a retry with the same 7 behind, and a second click
+  applying, the card then up to date; a fresh install through the shim
+  reading `Installed Foxglove`, a real click on Undo reaching it as `app
+  undo --detach`, the shim pushing and recording fspec's uninstall commit
+  and the card re-checking to `Removed Foxglove`, still up to date; and
+  the branch's upstream unset reading the honest error row. The behind,
+  retry, up-to-date, installed and undone cards photographed, dark and
   `--light`.
 - `spaces.sh` `--spaces`: the Spaces cell over windows on two workspaces,
   each listed with its icon under its own chip in `workspaces status`, every

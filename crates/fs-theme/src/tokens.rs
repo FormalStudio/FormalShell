@@ -335,9 +335,6 @@ pub struct Launcher {
     pub width: f64,
     /// The field's band, whether a mode token stands in it or not.
     pub field_band: f64,
-    /// The tiles the opened state shows, and their height.
-    pub tiles: u32,
-    pub tile_height: f64,
 }
 
 pub const LAUNCHER: Launcher = Launcher {
@@ -352,8 +349,6 @@ pub const LAUNCHER: Launcher = Launcher {
     row_icon: 24.0,
     width: 640.0,
     field_band: 64.0,
-    tiles: 3,
-    tile_height: 144.0,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]

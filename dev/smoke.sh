@@ -967,13 +967,14 @@ fail() {
   exit 1
 }
 
-# The launcher's root at rest (launcher spec, Pond's opened state): tiles
-# under no heading, three at most, read off a `menu status` file. <status>
-# <a jq claim on .ids> <what failed>.
-root_tiles_assert() {
-  "$jq_bin" -e '.view == "tiles" and .sections == [] and (.ids | length) <= 3 and (.ids | length) > 0' "$1" > /dev/null 2>&1 \
-    || fail "$3: the root at rest is not three tiles under no heading: $("$jq_bin" -c '{view, sections, ids}' "$1" 2>/dev/null)"
-  "$jq_bin" -e "$2" "$1" > /dev/null 2>&1 || fail "$3: $("$jq_bin" -c '.ids' "$1" 2>/dev/null)"
+# The launcher's root at rest (launcher spec §1): one column of rows under
+# one heading, `Modes` while fewer than three picks resolve, then `Recent`,
+# read off a `menu status` file. <status> <heading> <a jq claim on .ids>
+# <what failed>.
+root_rows_assert() {
+  "$jq_bin" -e --arg h "$2" '.view == "rows" and .columns == 1 and .sections == [$h] and (.ids | length) > 0' "$1" > /dev/null 2>&1 \
+    || fail "$4: the root at rest is not one column of rows under $2: $("$jq_bin" -c '{view, columns, sections, ids}' "$1" 2>/dev/null)"
+  "$jq_bin" -e "$3" "$1" > /dev/null 2>&1 || fail "$4: $("$jq_bin" -c '.ids' "$1" 2>/dev/null)"
 }
 
 # One card's frame against the panel language (dev/panel-language.py), the
