@@ -21,8 +21,6 @@ pub struct Popup {
     ui: Ui,
     /// Nodes the owner paints itself, above the card and under its content.
     extra: Vec<NodeId>,
-    /// The battery nub over the card's top edge (`nub`).
-    nub: Vec<NodeId>,
     region: Option<IRect>,
 }
 
@@ -30,7 +28,7 @@ impl Popup {
     pub fn new(mut surface: Surface, card: Card) -> Self {
         surface.wait_map = true;
         let ui = Ui::new(Some(card.top_node()));
-        Self { surface, card, ui, extra: Vec::new(), nub: Vec::new(), region: None }
+        Self { surface, card, ui, extra: Vec::new(), region: None }
     }
 
     pub fn is_open(&self) -> bool {
@@ -121,22 +119,6 @@ impl Popup {
     /// The `on` of the control under a point, in the surface's own pixels.
     pub fn hit(&self, x: f64, y: f64) -> Option<String> {
         self.ui.hit(x, y).and_then(|h| h.on.clone())
-    }
-
-    /// A battery's nub on the card's top edge, centred, in the card's fill
-    /// and riding its pose: Pond's power profile pill.
-    pub fn nub(&mut self, theme: &Theme) {
-        // In the surface's own pixels: the card's rect is kept along and
-        // across its line, whichever edge that is.
-        let live = self.card.live_rect();
-        let alpha = self.card.content.1;
-        let s = &theme.space;
-        let (w, h) = (s.lg * 2.0, s.xs);
-        let fill = theme.box_style("card", None).fill;
-        let at = IRect::new(live.x + ((live.w as f64 - w) / 2.0).round() as i32, live.y - h.round() as i32, w as i32, h.round() as i32 + 1);
-        let mut p = crate::surfaces::bar::cell::Painter::new(&mut self.card.scene, &mut self.nub, None);
-        p.rect(at, fill.with_alpha(fill.a * alpha), s.xxs as f32);
-        p.finish();
     }
 
     pub fn present(&mut self, animating: bool, qh: &smithay_client_toolkit::reexports::client::QueueHandle<crate::wayland::App>) {

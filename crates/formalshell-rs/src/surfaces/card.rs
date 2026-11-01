@@ -169,6 +169,10 @@ pub struct Card {
     /// card's own scene takes it through `content_clip`; a modal layer takes
     /// its far sides alone (`modal.rs` `visible`).
     pub shape_clip: Option<IRect>,
+    /// A popover's battery nub, (width, height, radius), standing centred
+    /// on its top edge in the card's fill and border: one outline with the
+    /// body ([`battery`]), Pond's power profile pill.
+    pub nub: Option<(f64, f64, f64)>,
 }
 
 impl Card {
@@ -238,6 +242,7 @@ impl Card {
             compositor_look: false,
             clip: IRect::default(),
             shape_clip: None,
+            nub: None,
         }
     }
 
@@ -427,7 +432,8 @@ impl Card {
 
     /// A popover's casts, fill and border for a card at `card`, `alpha`
     /// opaque, onto `nodes` of `scene`.
-    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
+    #[allow(clippy::too_many_arguments)]
+    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, nub: Option<(f64, f64, f64)>, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
         let radius = look.radius;
         let layers: Vec<Cast> = look
             .casts
@@ -448,15 +454,30 @@ impl Card {
         );
         let fill = look.fill.with_alpha(look.fill.a * alpha);
         let half = look.border_width / 2.0;
-        let mut line = rr(card.inflate(-half, -half), radius - half);
-        line.close_path();
+        let line = match nub {
+            Some(nub) => battery(card, radius, nub, half),
+            None => {
+                let mut line = rr(card.inflate(-half, -half), radius - half);
+                line.close_path();
+                line
+            }
+        };
+        let outline = match nub {
+            Some(nub) => battery(card, radius, nub, 0.0),
+            None => rr(card, radius),
+        };
         let lit = rim.and_then(|(rim, now, node)| {
-            let paint = rim.paint(now, line, look.border_width, rr(card, radius), card, alpha, None)?;
-            Some((node, paint.fit(fit)))
+            let paint = rim.paint(now, line.clone(), look.border_width, outline.clone(), card, alpha, None)?;
+            // A box's fit would redraw the rim without the nub.
+            Some((node, if nub.is_some() { paint } else { paint.fit(fit) }))
         });
         let border = if lit.is_some() { Rgba::TRANSPARENT } else { look.border.with_alpha(look.border.a * alpha) };
-        let paint = Paint::Outlined { fit, fill, border, near: Rgba::TRANSPARENT };
-        let bounds = Scene::cover(card, Affine::IDENTITY, 2.0);
+        let paint = match nub {
+            Some(_) => Paint::Shape { fill: Some((outline, fill)), strokes: vec![(line, border, look.border_width)] },
+            None => Paint::Outlined { fit, fill, border, near: Rgba::TRANSPARENT },
+        };
+        let tall = Rect::new(card.x0, card.y0 - nub.map_or(0.0, |n| n.1), card.x1, card.y1);
+        let bounds = Scene::cover(tall, Affine::IDENTITY, 2.0);
         scene.update_with(nodes.1, bounds, paint, shown, Affine::IDENTITY, None);
         if let Some((node, paint)) = lit {
             scene.update_with(node, bounds, paint, shown, Affine::IDENTITY, None);
@@ -485,7 +506,7 @@ impl Card {
     pub fn popover_look(&self, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect) {
         let mut look = self.look.clone();
         look.fill = look.fill.with_alpha(1.0);
-        Self::paint_popover(&look, scene, nodes, card, 1.0, true, None);
+        Self::paint_popover(&look, scene, nodes, card, None, 1.0, true, None);
     }
 
     /// The room a popover's casts need around the card.
@@ -511,7 +532,7 @@ impl Card {
         let here = shown && !self.compositor_look;
         let rim = self.rim.current(now).is_some().then_some((&mut self.rim, now, self.rim_node));
         let lit = rim.is_some();
-        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, alpha, here, rim);
+        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, self.nub, alpha, here, rim);
         if !lit || !here {
             self.scene.set_visible(self.rim_node, false);
         }
@@ -740,6 +761,43 @@ impl Card {
     pub fn border_width(&self) -> f64 {
         self.look.border_width
     }
+}
+
+/// `card`'s rounded rect with `nub` (width, height, radius) standing
+/// centred on its top edge, as one outline `inset` in from its outer edge
+/// all round: a battery on its end.
+pub fn battery(card: Rect, radius: f64, nub: (f64, f64, f64), inset: f64) -> vello_cpu::kurbo::BezPath {
+    use std::f64::consts::{FRAC_PI_2, PI};
+    use vello_cpu::kurbo::{Arc, BezPath, Point, Vec2};
+    let b = card.inflate(-inset, -inset);
+    let r = (radius - inset).clamp(0.0, b.width().min(b.height()) / 2.0);
+    let (cx, half) = (card.center().x, (nub.0 / 2.0 - inset).max(0.0));
+    let (n0, n1, top) = (cx - half, cx + half, card.y0 - nub.1 + inset);
+    let nr = (nub.2 - inset).clamp(0.0, half.min(b.y0 - top));
+    let mut p = BezPath::new();
+    let corner = |p: &mut BezPath, c: (f64, f64), r: f64, start: f64| {
+        if r > 0.0 {
+            Arc { center: Point::new(c.0, c.1), radii: Vec2::new(r, r), start_angle: start, sweep_angle: FRAC_PI_2, x_rotation: 0.0 }
+                .append_iter(0.1)
+                .for_each(|el| p.push(el));
+        }
+    };
+    p.move_to((b.x0, b.y0 + r));
+    corner(&mut p, (b.x0 + r, b.y0 + r), r, PI);
+    p.line_to((n0, b.y0));
+    p.line_to((n0, top + nr));
+    corner(&mut p, (n0 + nr, top + nr), nr, PI);
+    p.line_to((n1 - nr, top));
+    corner(&mut p, (n1 - nr, top + nr), nr, PI + FRAC_PI_2);
+    p.line_to((n1, b.y0));
+    p.line_to((b.x1 - r, b.y0));
+    corner(&mut p, (b.x1 - r, b.y0 + r), r, PI + FRAC_PI_2);
+    p.line_to((b.x1, b.y1 - r));
+    corner(&mut p, (b.x1 - r, b.y1 - r), r, 0.0);
+    p.line_to((b.x0 + r, b.y1));
+    corner(&mut p, (b.x0 + r, b.y1 - r), r, FRAC_PI_2);
+    p.close_path();
+    p
 }
 
 /// A full-output black scrim on the pose a modal drawer rides,

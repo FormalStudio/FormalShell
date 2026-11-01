@@ -1,13 +1,14 @@
 // Portions from Pond (BSD-3-Clause, Copyright 2026 Butterfly Interaction Inc.)
 //! The power profile picker, Pond's `battery/ProfileSelector.qml`: a pill
-//! shaped like a battery (a nub on its top edge) on the output's right
-//! edge, centred, shown while the Settings tiles are open under `layout:
-//! sidebar`, as Pond shows it beside its settings window. It holds power
-//! saver, balanced and performance stacked, the active one on the `open`
-//! chip; a click sets that profile through power-profiles-daemon. Its body
-//! fills from the foot to the laptop battery's level, the charge at a
-//! glance. With no daemon the three glyphs are dim and take no click;
-//! performance alone is dim where the daemon does not offer it.
+//! shaped like a battery (body and nub one outline, `card::battery`) on
+//! the output's right edge, centred, shown while the Settings tiles are
+//! open under `layout: sidebar`, as Pond shows it beside its settings
+//! window. It holds power saver, balanced and performance stacked, the
+//! active one on the `panel.chip` on circle and the rest bare glyphs; a
+//! click sets that profile through power-profiles-daemon. The laptop
+//! battery's charge tints the outline from its foot up, reaching the nub
+//! only when full. With no daemon the three glyphs are dim and take no
+//! click; performance alone is dim where the daemon does not offer it.
 
 use std::time::Instant;
 
@@ -27,6 +28,22 @@ use crate::ui::{El, Ink, Size, Type, w};
 
 const PROFILES: [(Profile, &str, &str); 3] =
     [(Profile::PowerSaver, "leaf", "Power Saver"), (Profile::Balanced, "gauge", "Balanced"), (Profile::Performance, "zap", "Performance")];
+
+/// How strongly the charge tints the outline.
+const LEVEL_ALPHA: f32 = 0.12;
+
+/// The charge's tint: `primary`, `warning` under a fifth on battery and
+/// `destructive` past the low warning.
+fn level_colour(b: &crate::services::devices::power::Battery) -> &'static str {
+    use fs_system::power::model::{DEFAULT_WARN_PCT, DeviceState};
+    let charging = matches!(b.state, DeviceState::Charging | DeviceState::FullyCharged | DeviceState::PendingCharge);
+    match b.percent {
+        _ if charging => "primary",
+        p if p <= DEFAULT_WARN_PCT => "destructive",
+        p if p < 20.0 => "warning",
+        _ => "primary",
+    }
+}
 
 pub(super) struct Pill {
     popup: Popup,
@@ -48,12 +65,13 @@ fn body(store: &crate::store::Store, side: f64, gap: f64) -> El {
         .map(|(i, (profile, glyph, name))| {
             let enabled = offer.as_ref().is_some_and(|(on, _)| on[i]);
             let active = offer.as_ref().is_some_and(|(_, a)| a == profile);
-            let ink = if active { Ink::Fg } else if enabled { Ink::Muted } else { Ink::Dim };
+            let ink = if active { Ink::Primary } else if enabled { Ink::Muted } else { Ink::Dim };
             let chip = w::cell(w::row(0.0, vec![w::spacer(), w::icon(*glyph).size(Type::Body).ink(ink), w::spacer()]).fill().height(side))
                 .cell_state(|c| {
-                    c.glyph = true;
-                    c.round = true;
+                    c.glyph = active;
                     c.open = active;
+                    c.ghost = !active;
+                    c.round = true;
                     c.inset = Some((0.0, 0.0));
                 })
                 .width(Size::Px(side))
@@ -90,7 +108,9 @@ impl App {
         let mut theme = self.store.theme.theme.clone();
         theme.morph = false;
         let (_, oh) = self.output_size();
-        let card = Card::new(&theme, Edge::Right, oh as i32, 0.0, oh / 2.0, (height, width), self.motion_scale, self.cast);
+        let mut card = Card::new(&theme, Edge::Right, oh as i32, 0.0, oh / 2.0, (height, width), self.motion_scale, self.cast);
+        let s = &theme.space;
+        card.nub = Some((s.xl, s.sm, s.xxs));
         let surface = self.popout_surface(&card, Layer::Overlay);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);
@@ -190,22 +210,31 @@ impl App {
         p.popup.sync_region(&self.compositor, open);
         let theme = &self.store.theme.theme;
         let inner = p.popup.inner(theme);
-        let level = self.store.devices.power.battery.as_ref().map(|b| (b.percent / 100.0).clamp(0.0, 1.0));
         {
-            let frame = p.popup.card.content.0;
-            let (mut painter, alpha) = p.popup.painter();
-            if let Some(level) = level {
-                // The charge, a quiet fill rising from the body's foot.
-                let h = (frame.h as f64 * level).round() as i32;
-                let fill = theme.colors.get("primary");
-                let fill = fill.with_alpha(fill.a * 0.16 * alpha);
-                painter.rect(IRect::new(frame.x, frame.y + frame.h - h, frame.w, h), fill, theme.card_radius() as f32);
+            let (frame, alpha) = p.popup.card.popover_frame;
+            let (radius, bw, nub) = (p.popup.card.radius(), p.popup.card.border_width(), p.popup.card.nub.unwrap_or_default());
+            let (mut painter, _) = p.popup.painter();
+            let charge = self.store.devices.power.battery.as_ref().map(|b| (b.percent, level_colour(b)));
+            if let Some((percent, colour)) = charge {
+                // The charge, the outline's own inside tinted from the foot
+                // up: the nub only when full.
+                let level = (percent / 100.0).clamp(0.0, 1.0);
+                let nub_h = nub.1.ceil() as i32;
+                let top = if level >= 1.0 {
+                    frame.y - nub_h
+                } else {
+                    frame.bottom() - bw.round() as i32 - ((frame.h as f64 - bw * 2.0) * level).round() as i32
+                };
+                let card = vello_cpu::kurbo::Rect::new(frame.x as f64, frame.y as f64, frame.right() as f64, frame.bottom() as f64);
+                let tint = theme.colors.get(colour);
+                let fill = (crate::surfaces::card::battery(card, radius, nub, bw), tint.with_alpha(tint.a * LEVEL_ALPHA * alpha));
+                let bounds = IRect::new(frame.x, frame.y - nub_h, frame.w, frame.h + nub_h);
+                painter.shape_in(bounds, crate::scene::Paint::Shape { fill: Some(fill), strokes: Vec::new() }, IRect::new(frame.x, top, frame.w, frame.bottom() - top));
             }
             painter.finish();
         }
         let el = body(&self.store, side, gap);
         let drawn = p.popup.draw_in(&el, inner, theme, &mut self.bar.kit, now);
-        p.popup.nub(theme);
         let animating = p.popup.animating(now) || drawn.animating;
         let qh = self.qh.clone();
         p.popup.present(animating, &qh);
