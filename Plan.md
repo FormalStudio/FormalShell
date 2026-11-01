@@ -296,6 +296,16 @@ Greeter to session with no flash, lock to desktop, first run with no
 settings.json, launch feedback (the spinner in Activity until the window
 maps), every unavailable state.
 
+Done 2026-11-01 except one bound: `dev/seams.sh` on fstestvm0 reads every
+stage with no text, cursor or jump, and logout (500 ms), reboot and
+shutdown (600 ms) inside 1.5 s. The boot's black between plymouth and the
+lock is 520 ms, not 100: the splash now quits from the top of
+`hyprland.lua`, ahead of the card (the HDMI fix holds), and what is left is
+plymouthd's exit, Hyprland's first frames on llvmpipe and the shell's
+first commit (`2026-10-30-locked-login.md`, Measured). The lock's splash
+waits out Hyprland's five 2x-zoomed first frames on black, so it lands at
+plymouth's size.
+
 ### Phase 7: GPU rendering, configurable
 
 `render.backend` (decision 10): `vello_hybrid` behind the existing scene,

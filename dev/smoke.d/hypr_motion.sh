@@ -36,7 +36,7 @@ leg_hypr_motion_drive() {
   local settings_path="$iso_home/.config/formalshell/settings.json"
   # The published table, as the shipped file's `published` helper reads it.
   echo "local chrome = (function() local ok, t = pcall(dofile, \"$published\"); if ok and type(t) == \"table\" then return t end; return {} end)()"
-  awk '/^local motion = chrome.motion/ { on = 1 } on { print } on && /^leaf\("specialWorkspace"/ { on = 0 }' docs/examples/hyprland/formalshell.lua
+  awk '/^local motion = chrome.motion/ { on = 1 } on { print } on && /^hl.animation\({ leaf = "monitorAdded"/ { on = 0 }' docs/examples/hyprland/formalshell.lua
   local script="$shot_dir/hypr-motion-drive.sh"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
@@ -79,6 +79,8 @@ leg_hypr_motion_assert() {
       '.[0][] | select(.name == $l) | .overridden and .enabled and .bezier == $b and ((.speed - $s) | fabs) < 0.01' "$hypr_motion_on" > /dev/null 2>&1 \
       || fail "--hypr-motion: leaf $leaf is $("$jq_bin" -c --arg l "$leaf" '.[0][] | select(.name == $l)' "$hypr_motion_on"), not formalshell_$family at $got"
   done
+  "$jq_bin" -e '.[0][] | select(.name == "monitorAdded") | .overridden and (.enabled | not)' "$hypr_motion_on" > /dev/null 2>&1 \
+    || fail "--hypr-motion: monitorAdded is $("$jq_bin" -c '.[0][] | select(.name == "monitorAdded")' "$hypr_motion_on"), not off"
   "$jq_bin" -e '.int == 1 or .bool == true' "$hypr_motion_enabled_on" > /dev/null 2>&1 \
     || fail "--hypr-motion: animations:enabled is not on with motion on: $(cat "$hypr_motion_enabled_on")"
   "$jq_bin" -e '.int == 0 or .bool == false' "$hypr_motion_enabled_off" > /dev/null 2>&1 \
@@ -100,6 +102,6 @@ leg_hypr_motion_assert() {
   done
   echo "--hypr-motion: edge/middle per strip:$reads (desktop $desk, window $window)"
   [ -n "$moving" ] || fail "--hypr-motion: no strip carried the window's middle over a bare edge, so it arrived at full size"
-  echo "SMOKE_HYPR_MOTION ok six curves, nine leaves, off with motion.enabled false"
+  echo "SMOKE_HYPR_MOTION ok six curves, nine leaves, monitorAdded off, off with motion.enabled false"
   echo "SMOKE_HYPR_MOTION_SETTLED $hypr_motion_settled"
 }

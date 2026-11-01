@@ -25,6 +25,10 @@
 # resume's overlay would not survive it), and the package's links put back
 # before the save. A cold boot drops the slot's save, so the script saves
 # it again at the end, at the greeter with no boot lock's marker left.
+# FS_SEAMS_SCALE=1.25 films every leg with the guest's output at that
+# scale (the monitor rule in its /etc/fstestvm/hyprland.lua, put back
+# before the save): the boot lock's splash still has to land on plymouth's
+# pixels.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
@@ -109,6 +113,11 @@ guest "set -e; mkdir -p ~/.local/state/formalshell; st=~/.local/state/formalshel
     -blur 0x30 /var/tmp/seams-wallpaper.png
   test -e \$st.seams-orig || cp -a \$st \$st.seams-orig 2>/dev/null || echo '{}' > \$st.seams-orig
   jq '.wallpaper = \"/var/tmp/seams-wallpaper.png\"' \$st.seams-orig > \$st; sync"
+if [ -n "${FS_SEAMS_SCALE:-}" ]; then
+  say "the guest's output at scale $FS_SEAMS_SCALE"
+  guest "set -e; c=/etc/fstestvm/hyprland.lua; test -e \$c.seams-orig || sudo cp -a \$c \$c.seams-orig
+    sudo sed -i '/^hl.monitor/s/scale = [0-9.]*/scale = $FS_SEAMS_SCALE/' \$c; grep '^hl.monitor' \$c; sync"
+fi
 f stop | tail -1
 say "boot, from power-on"
 # At 20 ms a frame, since the locked login's bound is 100 ms of black.
@@ -163,8 +172,9 @@ if [ -n "${FS_VM_RESULT:-}" ]; then
   guest "set -e; for b in $bins; do sudo rm -f /opt/fspec/current/bin/\$b; test ! -e $result.orig/\$b -a ! -L $result.orig/\$b || sudo cp -a $result.orig/\$b /opt/fspec/current/bin/; done; sudo rm -rf $result $result.orig; sync"
   say "the package's links put back"
 fi
-guest "st=~/.local/state/formalshell/state.json; mv \$st.seams-orig \$st; rm -f /var/tmp/seams-wallpaper.png; sync"
-say "the user's state.json put back"
+guest "st=~/.local/state/formalshell/state.json; mv \$st.seams-orig \$st; rm -f /var/tmp/seams-wallpaper.png
+  c=/etc/fstestvm/hyprland.lua; test ! -e \$c.seams-orig || sudo mv \$c.seams-orig \$c; sync"
+say "the user's state.json and the guest's hyprland.lua put back"
 # The autologin's boot lock leaves its marker in /run; saved with it, every
 # resumed run's shell would raise the boot lock.
 guest "sudo systemctl restart greetd"

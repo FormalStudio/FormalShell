@@ -296,6 +296,11 @@ const KEYRING_DEADLINE: Duration = Duration::from_secs(5);
 /// How long the boot's splash waits for the lock's backdrop before it
 /// dissolves into the dark fallback.
 const BOOT_WAIT: Duration = Duration::from_secs(2);
+/// Hyprland draws a new output's first five frames zoomed 2x, whatever the
+/// `monitorAdded` animation says (`CMonitor`'s `m_zoomAnimProgress`, held at
+/// 0 until its fifth presentation): the boot's splash waits them out on black,
+/// one frame callback each, so it lands at the size plymouth drew it.
+const ZOOMED_FRAMES: u64 = 5;
 
 static SPLASH: Mutex<Option<JoinHandle<Option<Bitmap>>>> = Mutex::new(None);
 /// The keyring's prompter while the boot's lock waits for its password
@@ -1156,20 +1161,23 @@ impl App {
         let mut first = false;
         for o in self.lock.outs.iter_mut().filter(|o| o.surface.configured && !o.splashed) {
             let k = o.surface.scale();
-            let picture = self.lock.splash.first().map(|b| b.clone().at(k));
+            // With no picture the first black frame is the splash.
+            let zoomed = o.surface.callbacks < ZOOMED_FRAMES && !self.lock.splash.is_empty();
+            let picture = self.lock.splash.first().filter(|_| !zoomed).map(|b| b.clone().at(k));
             o.view.draw_splash(picture.as_ref());
             let commits = o.surface.commits();
             o.surface.present(&mut o.view.scene, true, &qh);
             // A callback still out holds the frame: the splash goes with
             // the next one.
-            o.splashed = o.surface.commits() > commits;
+            o.splashed = !zoomed && o.surface.commits() > commits;
             o.splash_scale = k;
-            first |= o.surface.commits() == 1;
+            first |= commits == 0 && o.surface.commits() == 1;
         }
         if first {
             crate::phase("login lock first commit");
         }
         if self.lock.splashed_at.is_none() && self.lock.outs.iter().any(|o| o.splashed) {
+            crate::phase("login lock splash");
             self.lock.splashed_at = Some(Instant::now());
             if let Some(handle) = &self.handle {
                 let _ = handle.insert_source(Timer::from_duration(BOOT_WAIT), |_, _, app: &mut App| {

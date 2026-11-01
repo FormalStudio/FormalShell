@@ -224,6 +224,19 @@ its socket answering; the shell's own part, connection to the lock's first
 commit, is 57 ms. The 100 ms bound is not met on the VM rig; a real GPU
 host's number waits on its next boot, which this work does not force.
 
+The HDMI fix (plymouthd gone before a compositor opens the card) put the
+quit ahead of greetd and the black back at 1.1 to 3 s. Run from the top of
+`hyprland.lua` instead, ahead of the DRM backend, the quit costs ~300 ms
+(the 150 ms bar fill and plymouthd's exit) and the film on 2026-11-01 read
+520 ms of black with the tree's build (1.1 s with g815 loaded by other
+runs): plymouthd's exit, Hyprland opening the card and drawing its first
+frames on llvmpipe, then the shell's ~300 ms to its first commit, its
+Wayland roundtrips waiting on Hyprland's loop. Hyprland draws a new
+output's first five frames zoomed 2x whatever `monitorAdded` says, so the
+lock holds black for its first five frame callbacks and the splash lands
+at plymouth's size; `monitorAdded` is off as well, or the zoom eases out
+over the lock after them. The 100 ms bound stays unmet on the VM rig.
+
 ## Proof
 
 - `dev/seams.sh`: the boot leg waits for the lock instead of the greeter,

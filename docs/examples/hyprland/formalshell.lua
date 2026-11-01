@@ -145,6 +145,9 @@ leaf("fadeOut", "effectsFast")
 leaf("border", "effectsSlow")
 leaf("workspaces", "spatial")
 leaf("specialWorkspace", "spatial")
+-- A new output's zoom from 2x stays off: at boot it runs over the lock's first
+-- frames, so the splash picture landed at twice the size plymouth drew it.
+hl.animation({ leaf = "monitorAdded", enabled = false })
 
 -- The pointer stays hidden until the shell has faded the desktop in. Hidden
 -- twice over: Hyprland draws it for its first frames whatever
