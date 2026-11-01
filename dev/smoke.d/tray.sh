@@ -18,7 +18,6 @@
 # (found by its colour in the frame) reaching the stub as Activate, and a
 # real right click on fixture 2's opening its menu.
 leg_tray_flag="--tray"
-leg_tray_scale1="clicks the fixtures in the sidebar's second bar at logical pixels (1.25: Activate on the wrong one)"
 leg_tray_order=170
 leg_tray_needs="python3"
 
@@ -89,14 +88,16 @@ to "\$tx" "\$ty"
 sleep 2
 $ipc call tray status > "$tray_sidebar_open_path" 2>&1
 "$grim_bin" "$tray_sidebar_png" > /dev/null 2>&1
-# A fixture's square: the centre of the pixels carrying its colour.
+# A fixture's square: the centre of the pixels carrying its colour, found
+# in the frame's pixels and given back in the pointer's logical ones.
 square() { "$python3_bin" -c 'import sys
 from PIL import Image
 im = Image.open(sys.argv[1]).convert("RGB")
 want = tuple(int(sys.argv[2][i:i + 2], 16) for i in (0, 2, 4))
+s = float(sys.argv[3])
 px = im.load()
 hit = [(x, y) for y in range(0, im.height, 2) for x in range(0, im.width, 2) if all(abs(a - b) < 8 for a, b in zip(px[x, y], want))]
-print(sum(p[0] for p in hit) // len(hit), sum(p[1] for p in hit) // len(hit)) if hit else print("0 0")' "\$@"; }
+print(round(sum(p[0] for p in hit) / len(hit) / s), round(sum(p[1] for p in hit) / len(hit) / s)) if hit else print("0 0")' "\$@" "$FS_SMOKE_SCALE"; }
 read -r ax ay <<< "\$(square "$tray_sidebar_png" c0392b)"
 to "\$ax" "\$ay"
 "$wlrctl_bin" pointer click left > /dev/null 2>&1
