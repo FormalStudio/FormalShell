@@ -39,6 +39,7 @@ chip() {
   local x y
   read -r x y <<< "\$("$jq_bin" -r --arg on "\$1" '.chips[] | select(.on == \$on) | .rect | "\\((.x + .w / 2) | floor) \\((.y + .h / 2) | floor)"' "\$d/\$2.json")"
   "$python3_bin" "$PWD/dev/vpointer.py" move -6000 -6000 move "\$x" "\$y" wait 300 down wait 60 up > /dev/null 2>&1
+  "$hyprctl_bin" cursorpos > "\$d/cursor-\$1.txt" 2>&1
 }
 for _ in \$(seq 1 40); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
@@ -69,10 +70,11 @@ leg_profiles_pill_assert() {
   local d="$profiles_pill_dir"
   [ -s "$d/open.json" ] || fail "profiles-pill: no dump with the tiles open"
   echo "SMOKE_PROFILES_PILL open $(cat "$d/open.json")"
+  echo "profiles-pill log: $(grep -E 'profiles pill|power profile|menu (un)?mapped' "$shell_log_path" 2>/dev/null | tr '\n' ';')"
   "$jq_bin" -e '.rect.w > 0 and ([.chips[] | .on] | index("profile:0") != null and index("profile:1") != null)' "$d/open.json" > /dev/null 2>&1 \
     || fail "profiles-pill: the pill did not come up with Power Saver and Balanced to click: $(cat "$d/open.json")"
   [ "$(cat "$d/saver.txt" 2>/dev/null)" = power-saver ] \
-    || fail "profiles-pill: Power Saver's click left the daemon on '$(cat "$d/saver.txt" 2>/dev/null)' (before: $(cat "$d/before.txt" 2>/dev/null))"
+    || fail "profiles-pill: Power Saver's click at $(cat "$d/cursor-profile:0.txt" 2>/dev/null) left the daemon on '$(cat "$d/saver.txt" 2>/dev/null)' (before: $(cat "$d/before.txt" 2>/dev/null))"
   "$jq_bin" -e '.active == "power-saver"' "$d/saver.json" > /dev/null 2>&1 || fail "profiles-pill: the pill does not read power-saver: $(cat "$d/saver.json")"
   [ "$(cat "$d/balanced.txt" 2>/dev/null)" = balanced ] \
     || fail "profiles-pill: Balanced's click left the daemon on '$(cat "$d/balanced.txt" 2>/dev/null)'"
