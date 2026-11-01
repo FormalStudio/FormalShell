@@ -1,3 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["formalshell-rs", "fs-*"]
+
+# What ships: dev/tarball.sh builds the hosts' package with it, and
+# dev/perf-gate.py measures it (FS_CARGO_PROFILE=ship). Whole-program LTO in
+# one unit takes 3.7 MB off the text at ~4 min a build, which the rig's dev
+# builds on release do not pay.
+[profile.ship]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

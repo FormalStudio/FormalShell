@@ -36,6 +36,11 @@ shell's Overnight mode drops performance to balanced until it is turned off.
 `run` stops before a run on the wrong one. The output scale is held the
 same way: `run` draws at the baseline's (`FS_SMOKE_SCALE`), and a check
 refuses runs drawn at another, since every buffer and draw grows with it.
+`run` builds with the tarball's `ship` profile (FS_CARGO_PROFILE), so the
+numbers are the shipped binary's, and each run carries the cargo profile it
+built with: a check refuses runs built on another than the baseline's (a run
+or baseline that predates the line built release), since fat LTO alone moves
+RSS by megabytes.
 
 `run` holds g815 for its whole matrix: its pid in
 /tmp/formalshell-perf-gate.running, which dev/remote.sh and dev/vm.sh wait
@@ -87,6 +92,7 @@ NUMBERS = {
 }
 RSS_ALLOWANCE_KB = 2048
 PROFILE_LINE = "host platform_profile: "
+CARGO_LINE = "cargo profile: "
 
 
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "LogLevel=ERROR", "g815"]
@@ -125,6 +131,7 @@ def extract(path):
     n = {}
     lines = text.splitlines()
     profile = next((l[len(PROFILE_LINE):].strip() for l in lines if l.startswith(PROFILE_LINE)), None)
+    cargo = next((l[len(CARGO_LINE):].strip() for l in lines if l.startswith(CARGO_LINE)), "release")
     # smoke.sh's line; a run that predates it drew at 1.
     scale = float(next((l.split(":", 1)[1] for l in lines if l.startswith("output scale: ")), 1))
     backend = "cpu"
@@ -182,28 +189,30 @@ def extract(path):
         n["bar_gap_ms_max"] = int(worst["bar_gap_ms"])
     if not n:
         raise SystemExit(f"{path}: carries no --idle, --r0-measure or --menu-budget output")
-    return backend, mode, n, profile, scale
+    return backend, mode, n, profile, scale, cargo
 
 
 def group(paths):
     """The runs per mode and number, the one backend they all drew on, the
     platform profiles they were read on (None for a run that predates the
-    line), and the output scales they drew at."""
-    runs, backends, profiles, scales = {"plain": {}, "quota": {}}, set(), set(), set()
+    line), the output scales they drew at and the cargo profiles they built
+    with."""
+    runs, backends, profiles, scales, cargos = {"plain": {}, "quota": {}}, set(), set(), set(), set()
     for p in paths:
-        backend, mode, n, profile, scale = extract(p)
+        backend, mode, n, profile, scale, cargo = extract(p)
         backends.add(backend)
+        cargos.add(cargo)
         profiles.add(profile)
         scales.add(scale)
         for k, v in n.items():
             runs[mode].setdefault(k, []).append(v)
     if len(backends) != 1:
         raise SystemExit(f"runs drawn on {', '.join(sorted(backends))}: one backend at a time")
-    return backends.pop(), runs, profiles, scales
+    return backends.pop(), runs, profiles, scales, cargos
 
 
 def cmd_extract(paths):
-    print(json.dumps({p: dict(zip(("backend", "mode", "numbers", "platform_profile", "scale"), extract(p))) for p in paths}, indent=2))
+    print(json.dumps({p: dict(zip(("backend", "mode", "numbers", "platform_profile", "scale", "cargo_profile"), extract(p))) for p in paths}, indent=2))
 
 
 def cmd_baseline(args):
@@ -212,7 +221,9 @@ def cmd_baseline(args):
     commit, paths, note = args[1], args[2:], None
     if paths[:1] == ["--note"] and len(paths) > 2:
         note, paths = paths[1], paths[2:]
-    backend, runs, profiles, scales = group(paths)
+    backend, runs, profiles, scales, cargos = group(paths)
+    if len(cargos) != 1:
+        raise SystemExit(f"a baseline takes runs built with one cargo profile, these were built with {sorted(cargos)}")
     if len(profiles) != 1 or None in profiles:
         raise SystemExit(f"a baseline takes runs read on one platform profile, these were read on {sorted(map(str, profiles))}")
     if len(scales) != 1:
@@ -222,6 +233,7 @@ def cmd_baseline(args):
         "host": "g815",
         "platform_profile": profiles.pop(),
         "scale": scales.pop(),
+        "cargo_profile": cargos.pop(),
         "backend": backend,
         "taken": time.strftime("%Y-%m-%d"),
         **({"note": note} if note else {}),
@@ -247,8 +259,10 @@ def cmd_baseline(args):
 
 
 def cmd_check(paths):
-    backend, runs, profiles, scales = group(paths)
+    backend, runs, profiles, scales, cargos = group(paths)
     base = json.load(open(BASELINES[backend]))
+    if cargos != {base.get("cargo_profile", "release")}:
+        raise SystemExit(f"runs built with the {', '.join(sorted(cargos))} cargo profile, the baseline's is {base.get('cargo_profile', 'release')}: record a baseline built the same way")
     if scales != {base["scale"]}:
         raise SystemExit(f"runs drawn at output scale {', '.join(map(str, sorted(scales)))}, the baseline's is {base['scale']}: buffers and draws do not compare")
     other = sorted(p for p in profiles if p is not None and p != base["platform_profile"])
@@ -341,8 +355,9 @@ def run_matrix(legs, count, backend, want, scale):
             for mode in ("plain", "quota"):
                 # The baseline is g815's; never the mac rig's fallback.
                 # At the baseline's own scale, whatever smoke.sh defaults to.
-                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1", FS_SMOKE_SCALE=f"{scale:g}")
-                for k in QUOTA_ENV:
+                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1", FS_SMOKE_SCALE=f"{scale:g}", FS_CARGO_PROFILE="ship")
+                # A result built elsewhere would skip the ship build.
+                for k in (*QUOTA_ENV, "FS_RESULT"):
                     env.pop(k, None)
                 if mode == "quota":
                     env.update(QUOTA_ENV)
@@ -354,8 +369,14 @@ def run_matrix(legs, count, backend, want, scale):
                 print(f"{time.strftime('%H:%M:%S')} {leg} {mode} {i}", flush=True)
                 with open(path, "w") as f:
                     f.write(PROFILE_LINE + profile + "\n")
+                    f.write(CARGO_LINE + env["FS_CARGO_PROFILE"] + "\n")
                     f.flush()
-                    status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", "--backend", backend, *LEGS[leg]],
+                    # A cpu run pins nothing: the shipped `auto` draws on the
+                    # CPU on the rig's integrated render node (gpu.rs
+                    # resolve), and a baseline commit that predates
+                    # --backend runs the same legs.
+                    pin = ["--backend", backend] if backend != "cpu" else []
+                    status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", *pin, *LEGS[leg]],
                                              stdout=f, stderr=subprocess.STDOUT, env=env, cwd=REPO)
                 if status != 0:
                     raise SystemExit(f"{path}: the run failed (exit {status})")

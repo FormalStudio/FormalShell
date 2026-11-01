@@ -17,6 +17,9 @@
 # the one place it is built.
 #
 #   dev/build.sh
+#
+# FS_CARGO_PROFILE=ship builds with the tarball's profile (crates/Cargo.toml)
+# instead of release, at ~4 min a build.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$(pwd)
@@ -34,8 +37,9 @@ for need in lib/formalshell/bin share/formalshell/fonts share/formalshell/tiles;
   [ -d "$pkg/$need" ] || fail "$pkg is not a release tarball's layout: no $need"
 done
 
-(cd crates && fspec dev -- cargo build --locked --release --package formalshell-rs)
-release=$repo/crates/target/release
+profile=${FS_CARGO_PROFILE:-release}
+(cd crates && fspec dev -- cargo build --locked --profile "$profile" --package formalshell-rs)
+release=$repo/crates/target/$profile
 
 rm -rf result
 mkdir -p result/bin result/lib/formalshell/first result/share/formalshell
