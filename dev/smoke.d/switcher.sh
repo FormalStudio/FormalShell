@@ -23,8 +23,8 @@
 # hold a capture source (`capturing`), which has to be all three while open
 # and zero once the commit has closed the card and its fade has run out.
 #
-# Cell positions come from `switcher state` (`cells`, in output pixels as the
-# card draws them) rather than from constants, since a thumbnail's width
+# Cell positions come from `switcher state` (`cells`, in logical pixels,
+# cut out of the frame at the output's scale) rather than from constants, since a thumbnail's width
 # follows its window. The frames are read for the caption icon's pink at the
 # centre of each cell's icon rect, and for the strip of cell fill left of each
 # thumbnail. The selected cell takes the table's `switcher.cell` selected
@@ -36,7 +36,6 @@
 #
 # The switcher is on by default (`switcher.enabled`).
 leg_switcher_flag="--switcher"
-leg_switcher_scale1="reads the captions' icons at logical pixels (1.25: not the fixture icon)"
 leg_switcher_order=102
 leg_switcher_needs="foot jq convert"
 # The base run's fixture window is the third of the three, and the one the
@@ -137,15 +136,13 @@ _switcher_near() {
 }
 
 # A crop geometry for the middle of cell $2's caption icon, and for the strip
-# of cell fill four pixels in from its left edge, read off the state in $1.
+# of cell fill three pixels in from its left edge, read off the state in $1.
 _switcher_icon_patch() {
-  "$jq_bin" -r --argjson i "$2" \
-    '.cells[$i].icon | "6x6+\(.x + .width / 2 - 3 | floor)+\(.y + .height / 2 - 3 | floor)"' "$1"
+  scaled_jq -r --argjson i "$2" "$geometry_jq"'.cells[$i].icon | {x: (.x + .width / 2 - 2), y: (.y + .height / 2 - 2), width: 4, height: 4} | geometry' "$1"
 }
 
 _switcher_margin_patch() {
-  "$jq_bin" -r --argjson i "$2" \
-    '.cells[$i].cell | "4x20+\(.x + 4)+\(.y + .height / 2 - 10 | floor)"' "$1"
+  scaled_jq -r --argjson i "$2" "$geometry_jq"'.cells[$i].cell | {x: (.x + 3), y: (.y + .height / 2 - 8), width: 3, height: 16} | geometry' "$1"
 }
 
 # Hyprland's own address for a window, and the shell's id for it, differ by
