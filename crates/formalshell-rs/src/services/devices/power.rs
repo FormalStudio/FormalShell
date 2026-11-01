@@ -225,8 +225,12 @@ pub async fn run_profiles(ctx: Ctx) {
 pub fn set_profile(ctx: &Ctx, profile: Profile) {
     ctx.spawn(async move {
         let Ok(conn) = crate::services::bus::system().await else { return };
-        if let Ok(profiles) = PowerProfiles::connect(&conn).await {
-            let _ = profiles.set_active(profile).await;
+        let set = match PowerProfiles::connect(&conn).await {
+            Ok(profiles) => profiles.set_active(profile).await,
+            Err(err) => Err(err),
+        };
+        if let Err(err) = set {
+            eprintln!("power profile: {}: {err}", profile.to_wire());
         }
     });
 }
