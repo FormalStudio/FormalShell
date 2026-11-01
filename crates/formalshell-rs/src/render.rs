@@ -8,11 +8,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use vello_cpu::color::{AlphaColor, Srgb};
-use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Rect, RoundedRect, Shape, Stroke, Vec2};
+use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Point, Rect, RoundedRect, Shape, Stroke, Vec2};
 use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::{Bitmap, Brush, Drawn, Fade, IRect, Outline, Paint, Scene, Snap, VOp};
+use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, IRect, Outline, Paint, Scene, Snap, VOp};
 use crate::surfaces::shoulders::{self, Walls};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
@@ -429,7 +429,7 @@ impl Caches {
                     outlined(ctx, &drawn, *fill, *border, Rgba::TRANSPARENT, Stroke::new(drawn.width));
                 }
                 Paint::Outlined { fit, fill, border, near } => {
-                    let g = Grid::new(origin, node.transform, s, fit.snap);
+                    let g = Grid::fit(origin, node.transform, s, fit);
                     let drawn = g.drawn(&fit.outline);
                     ctx.set_transform(g.lift);
                     // ShapePath's own defaults, which the joined shape's runs want.
@@ -644,7 +644,7 @@ impl Caches {
                     // A box's rim goes on the pixels its fill takes, each
                     // line rebuilt off the snapped outline.
                     let grid = fit.map(|f| {
-                        let g = Grid::new(origin, node.transform, s, f.snap);
+                        let g = Grid::fit(origin, node.transform, s, &f);
                         let drawn = g.drawn(&f.outline);
                         (g, drawn)
                     });
@@ -712,7 +712,7 @@ impl Caches {
                     }
                     ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
                     ctx.set_color(color(Rgba::hex(0)));
-                    let g = Grid::new(origin, node.transform, s, cutout.snap);
+                    let g = Grid::fit(origin, node.transform, s, cutout);
                     ctx.set_transform(g.lift);
                     ctx.fill_path(&g.drawn(&cutout.outline).fill);
                     ctx.pop_layer();
@@ -983,6 +983,31 @@ impl Grid {
         Self { origin, lift, scale }
     }
 
+    /// `new` for a fit's outline. A joined card's near edge is the line's
+    /// own, which the bar draws on whole pixels, so while the card is
+    /// attached that edge lands on a whole pixel too, easing off as it lets
+    /// go. Attached, the deform pivots on that edge, so the rounding costs
+    /// no motion; left at a fraction, the fill reaches a quarter into the
+    /// line's row at 1.25.
+    fn fit(origin: Affine, transform: Affine, scale: f64, fit: &Fit) -> Self {
+        let mut g = Self::new(origin, transform, scale, fit.snap);
+        if let Outline::Join(j) = &fit.outline {
+            // Where `drawn` puts the near edge's start, on the canvas.
+            let r = g.rect(Rect::new(0.0, 0.0, j.size.0, j.size.1));
+            let at = g.lift * Point::new(r.x0, r.y0);
+            let k = j.attach.clamp(0.0, 1.0);
+            let [a, b, c, d, e, f] = g.lift.as_coeffs();
+            // The card's depth runs down the canvas's y unless its edge is
+            // a side one, where the edge map turns it onto x.
+            g.lift = if d.abs() >= c.abs() {
+                Affine::new([a, b, c, d, e, f + (half_up(at.y) - at.y) * k])
+            } else {
+                Affine::new([a, b, c, d, e + (half_up(at.x) - at.x) * k, f])
+            };
+        }
+        g
+    }
+
     fn rect(&self, r: Rect) -> Rect {
         let d = self.origin.transform_rect_bbox(r);
         Rect::new(half_up(d.x0), half_up(d.y0), half_up(d.x1), half_up(d.y1))
@@ -1210,6 +1235,40 @@ mod tests {
         let right = super::scaled(x + w, 1.25);
         let arc = (top..top + 12).flat_map(|yy| (right - 12..right).map(move |xx| (xx, yy))).map(|(xx, yy)| px(xx, yy)[0]).max().unwrap();
         assert!(arc <= lit + 2, "the arc {arc} past a lip {lit}");
+    }
+
+    /// A card hanging off a bar 40 high starts its shape a border above
+    /// the line's far side, at 39: 48.75 pixels at 1.25. Attached, its near
+    /// edge lands on row 49 with the bar's line and its fill starts past
+    /// that row rather than a quarter into it, drawn whole or through a
+    /// damage band starting at row 48, and with the deform stretching it
+    /// from that edge.
+    #[test]
+    fn an_attached_join_leaves_the_lines_row_to_the_bar() {
+        use crate::scene::{Fit, Joined, Outline, Snap};
+        use crate::surfaces::shoulders::Walls;
+        let fill = Rgba::hex(0x18181b);
+        let draw = |attach: f64, near_inset: f64, stretch: f64, damage: IRect| {
+            let mut scene = Scene::new(100, 100);
+            let join = Joined { size: (60.0, 40.0), radius: 10.0, border: 1.0, attach, near_inset, walls: Walls::NONE, far_gap: None };
+            let fit = Fit { outline: Outline::Join(join), snap: Snap::Edges };
+            let id = scene.add(IRect::new(0, 0, 100, 100), Paint::Outlined { fit, fill, border: Rgba::BLACK, near: Rgba::TRANSPARENT });
+            scene.set_transform(id, Affine::translate((20.0, 39.0)) * Affine::scale_non_uniform(1.0, stretch));
+            let mut r = Renderer::new(100, 100);
+            r.set_scale(1.25);
+            r.render(&scene, damage);
+            let (cw, _) = r.pixels();
+            let data = r.canvas().data_as_u8_slice().to_vec();
+            move |y: i32| data[((y * cw + 62) * 4 + 3) as usize]
+        };
+        let whole = IRect::new(0, 0, 100, 100);
+        for (stretch, damage) in [(1.0, whole), (1.02, whole), (1.02, IRect::new(0, 39, 100, 61))] {
+            let on = draw(1.0, 0.0, stretch, damage);
+            assert_eq!(on(49), 0, "stretch {stretch} damage {damage:?}: the fill reaches into the line's row");
+            assert_eq!(on(51), 255, "stretch {stretch} damage {damage:?}");
+        }
+        let off = draw(0.0, 4.0, 1.0, whole);
+        assert!((52..57).any(|y| off(y) > 0 && off(y) < 255), "a card off the line keeps its fractional place");
     }
 
     #[test]
