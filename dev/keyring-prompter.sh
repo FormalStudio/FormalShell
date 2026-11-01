@@ -17,7 +17,7 @@ if [ "${1:-}" != --inner ]; then
   done
   python3 -c 'import gi; gi.require_version("Gio", "2.0")' 2>/dev/null || fail "no python gobject; install the openSUSE package python313-gobject"
   dir=$(mktemp -d)
-  trap 'pkill -u "$(id -u)" -f "^$dir/" 2>/dev/null; for p in $(pgrep -u "$(id -u)" -x gnome-keyring-d); do tr "\0" "\n" < /proc/$p/environ 2>/dev/null | grep -qx "HOME=$dir" && kill "$p"; done; rm -rf "$dir"' EXIT
+  trap 'pkill -u "$(id -u)" -f "^$dir/" 2>/dev/null || true; for p in $(pgrep -u "$(id -u)" -x gnome-keyring-d); do tr "\0" "\n" < /proc/$p/environ 2>/dev/null | grep -qx "HOME=$dir" && { kill "$p" || true; }; done; rm -rf "$dir"' EXIT
   export HOME=$dir XDG_DATA_HOME=$dir/data XDG_CONFIG_HOME=$dir/config XDG_RUNTIME_DIR=$dir/run
   unset GNOME_KEYRING_CONTROL SSH_AUTH_SOCK
   mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
