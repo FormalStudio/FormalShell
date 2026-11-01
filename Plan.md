@@ -179,6 +179,11 @@ reading the PNGs, then shipped to e1504g and photographed there with
   that coverage is dropped.
 - 0.4 CLAUDE.md tells the truth: g815 and e1504g are openSUSE under fspec,
   shipping is a `rev` bump in `~/.config/formalspec/system.star`.
+- 0.5 The rig at the owner's scales (done, d007b0c8): smoke-affected and
+  smoke-all run every line at 1.25 and at 1, `debug staleAudit` checks
+  the selection legs' frames against a whole redraw, and the legs whose
+  probes still read fixed pixels declare `leg_<n>_scale1` until they are
+  converted (`rg _scale1= dev/smoke.d`, 35 left).
 
 ### Phase 1: one look, configured
 
