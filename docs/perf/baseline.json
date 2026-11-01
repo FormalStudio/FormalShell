@@ -1,10 +1,12 @@
 {
-  "commit": "3628805a05da558071cdbc2fb29268ca0c9972f1",
+  "commit": "c1bc95969d25f956d22dc91b76572fd614c19e3f",
   "host": "g815",
   "platform_profile": "performance",
   "scale": 1.0,
-  "taken": "2026-10-29",
-  "note": "Crates identical from this commit to 411ea455. The r0 and menu run 1s built 952ab94f with this commit's desktop_clock.rs in flight (code these legs never run). Two to five other nested sessions shared g815 through most runs.",
+  "cargo_profile": "ship",
+  "backend": "cpu",
+  "taken": "2026-11-01",
+  "note": "Ship profile (fat LTO). c1bc9596's crates under 66f857cd's scripts, menu leg as of c1bc9596; c1bc9596 rather than 3628805a since before it a cold start never made the toast column (one main-thread wakeup an idle minute). Runs 1 to 3 of artifacts/perf/20261101-160155 in the perf-base worktree.",
   "modes": {
     "plain": {
       "quota": null,
@@ -13,12 +15,12 @@
           "leg": "--idle",
           "gate": "spread",
           "runs": [
-            64,
-            73,
-            62
+            60,
+            66,
+            60
           ],
-          "median": 64,
-          "spread": 11
+          "median": 60,
+          "spread": 6
         },
         "idle_ticks": {
           "leg": "--idle",
@@ -35,9 +37,237 @@
           "leg": "--idle",
           "gate": "spread",
           "runs": [
-            8,
+            11,
             9,
             10
+          ],
+          "median": 10,
+          "spread": 2
+        },
+        "idle_commits": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_engine_ns": {
+          "leg": "--idle",
+          "gate": "zero",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "shell_drm_fds": {
+          "leg": "--idle",
+          "gate": "report",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "compositor_engine_ns": {
+          "leg": "--idle",
+          "gate": "median",
+          "runs": [
+            659880,
+            662480,
+            662740
+          ],
+          "median": 662480,
+          "spread": 2860
+        },
+        "idle_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "median": 0.0,
+          "spread": 0.0
+        },
+        "spinner_cpu_pct": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0.683,
+            0.716,
+            0.7
+          ],
+          "median": 0.7,
+          "spread": 0.03299999999999992
+        },
+        "rss_kb": {
+          "leg": "--r0-measure 300",
+          "gate": "rss",
+          "runs": [
+            52024,
+            51608,
+            51756
+          ],
+          "median": 51756,
+          "spread": 416
+        },
+        "threads": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            14,
+            14,
+            14
+          ],
+          "median": 14,
+          "spread": 0
+        },
+        "panel_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            8,
+            7,
+            8
+          ],
+          "median": 8,
+          "spread": 1
+        },
+        "panel_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            10,
+            9,
+            9
+          ],
+          "median": 9,
+          "spread": 1
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            2680,
+            2697,
+            2764
+          ],
+          "median": 2697,
+          "spread": 84
+        },
+        "scrim_first_commit_ms_p50": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "scrim_first_commit_ms_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            1,
+            1,
+            1
+          ],
+          "median": 1,
+          "spread": 0
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "spread",
+          "runs": [
+            7,
+            7,
+            6
+          ],
+          "median": 7,
+          "spread": 1
+        },
+        "launcher_first_commit_ms_p50": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            7,
+            7,
+            7
+          ],
+          "median": 7,
+          "spread": 0
+        },
+        "launcher_first_commit_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            8,
+            10,
+            9
+          ],
+          "median": 9,
+          "spread": 2
+        },
+        "bar_gap_ms_max": {
+          "leg": "--menu-budget",
+          "gate": "spread",
+          "runs": [
+            17,
+            18,
+            20
+          ],
+          "median": 18,
+          "spread": 3
+        }
+      }
+    },
+    "quota": {
+      "quota": {
+        "FS_CPU_QUOTA": "10%",
+        "FS_CPU_QUOTA_PERIOD": "2ms"
+      },
+      "numbers": {
+        "cold_start_ms": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            60,
+            67,
+            65
+          ],
+          "median": 65,
+          "spread": 7
+        },
+        "idle_ticks": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "spread": 0
+        },
+        "idle_wakeups": {
+          "leg": "--idle",
+          "gate": "spread",
+          "runs": [
+            9,
+            11,
+            9
           ],
           "median": 9,
           "spread": 2
@@ -79,273 +309,45 @@
           "leg": "--idle",
           "gate": "median",
           "runs": [
-            741988,
-            612716,
-            620308
+            663676,
+            664924,
+            723268
           ],
-          "median": 620308,
-          "spread": 129272
-        },
-        "idle_cpu_pct": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            0.017,
-            0.017,
-            0.017
-          ],
-          "median": 0.017,
-          "spread": 0.0
-        },
-        "spinner_cpu_pct": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            1.167,
-            0.65,
-            0.617
-          ],
-          "median": 0.65,
-          "spread": 0.55
-        },
-        "rss_kb": {
-          "leg": "--r0-measure 300",
-          "gate": "rss",
-          "runs": [
-            54188,
-            54468,
-            52800
-          ],
-          "median": 54188,
-          "spread": 1668
-        },
-        "threads": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            14,
-            14,
-            14
-          ],
-          "median": 14,
-          "spread": 0
-        },
-        "panel_first_commit_ms_p50": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            14,
-            7,
-            8
-          ],
-          "median": 8,
-          "spread": 7
-        },
-        "panel_first_commit_ms_max": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            19,
-            9,
-            10
-          ],
-          "median": 10,
-          "spread": 10
-        },
-        "panel_render_us_max": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            4915,
-            2937,
-            3226
-          ],
-          "median": 3226,
-          "spread": 1978
-        },
-        "scrim_first_commit_ms_p50": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            0,
-            1,
-            0
-          ],
-          "median": 0,
-          "spread": 1
-        },
-        "scrim_first_commit_ms_max": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            1,
-            1,
-            1
-          ],
-          "median": 1,
-          "spread": 0
-        },
-        "scrim_render_us_max": {
-          "leg": "--r0-measure 300",
-          "gate": "spread",
-          "runs": [
-            42,
-            9,
-            9
-          ],
-          "median": 9,
-          "spread": 33
-        },
-        "launcher_first_commit_ms_p50": {
-          "leg": "--menu-budget",
-          "gate": "spread",
-          "runs": [
-            8,
-            7,
-            8
-          ],
-          "median": 8,
-          "spread": 1
-        },
-        "launcher_first_commit_ms_max": {
-          "leg": "--menu-budget",
-          "gate": "spread",
-          "runs": [
-            8,
-            9,
-            11
-          ],
-          "median": 9,
-          "spread": 3
-        },
-        "bar_gap_ms_max": {
-          "leg": "--menu-budget",
-          "gate": "spread",
-          "runs": [
-            18,
-            18,
-            19
-          ],
-          "median": 18,
-          "spread": 1
-        }
-      }
-    },
-    "quota": {
-      "quota": {
-        "FS_CPU_QUOTA": "10%",
-        "FS_CPU_QUOTA_PERIOD": "2ms"
-      },
-      "numbers": {
-        "cold_start_ms": {
-          "leg": "--idle",
-          "gate": "spread",
-          "runs": [
-            58,
-            63,
-            68
-          ],
-          "median": 63,
-          "spread": 10
-        },
-        "idle_ticks": {
-          "leg": "--idle",
-          "gate": "spread",
-          "runs": [
-            0,
-            1,
-            0
-          ],
-          "median": 0,
-          "spread": 1
-        },
-        "idle_wakeups": {
-          "leg": "--idle",
-          "gate": "spread",
-          "runs": [
-            8,
-            8,
-            9
-          ],
-          "median": 8,
-          "spread": 1
-        },
-        "idle_commits": {
-          "leg": "--idle",
-          "gate": "zero",
-          "runs": [
-            0,
-            0,
-            0
-          ],
-          "median": 0,
-          "spread": 0
-        },
-        "shell_engine_ns": {
-          "leg": "--idle",
-          "gate": "zero",
-          "runs": [
-            0,
-            0,
-            0
-          ],
-          "median": 0,
-          "spread": 0
-        },
-        "shell_drm_fds": {
-          "leg": "--idle",
-          "gate": "report",
-          "runs": [
-            0,
-            0,
-            0
-          ],
-          "median": 0,
-          "spread": 0
-        },
-        "compositor_engine_ns": {
-          "leg": "--idle",
-          "gate": "median",
-          "runs": [
-            674440,
-            634400,
-            708448
-          ],
-          "median": 674440,
-          "spread": 74048
+          "median": 664924,
+          "spread": 59592
         },
         "idle_cpu_pct": {
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
             0.0,
-            0.017,
+            0.0,
             0.0
           ],
           "median": 0.0,
-          "spread": 0.017
+          "spread": 0.0
         },
         "spinner_cpu_pct": {
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
-            0.65,
+            0.683,
             0.633,
-            0.683
+            0.75
           ],
-          "median": 0.65,
-          "spread": 0.050000000000000044
+          "median": 0.683,
+          "spread": 0.11699999999999999
         },
         "rss_kb": {
           "leg": "--r0-measure 300",
           "gate": "rss",
           "runs": [
-            52860,
-            52500,
-            52932
+            51296,
+            51768,
+            51984
           ],
-          "median": 52860,
-          "spread": 432
+          "median": 51768,
+          "spread": 688
         },
         "threads": {
           "leg": "--r0-measure 300",
@@ -362,42 +364,42 @@
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
-            11,
-            9,
+            8,
+            8,
             7
           ],
-          "median": 9,
-          "spread": 4
+          "median": 8,
+          "spread": 1
         },
         "panel_first_commit_ms_max": {
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
-            14,
             10,
+            9,
             10
           ],
           "median": 10,
-          "spread": 4
+          "spread": 1
         },
         "panel_render_us_max": {
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
-            4394,
-            4251,
-            2754
+            2723,
+            3382,
+            3346
           ],
-          "median": 4251,
-          "spread": 1640
+          "median": 3346,
+          "spread": 659
         },
         "scrim_first_commit_ms_p50": {
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
+            0,
             1,
-            1,
-            0
+            1
           ],
           "median": 1,
           "spread": 1
@@ -417,12 +419,12 @@
           "leg": "--r0-measure 300",
           "gate": "spread",
           "runs": [
-            12,
+            6,
             11,
-            12
+            7
           ],
-          "median": 12,
-          "spread": 1
+          "median": 7,
+          "spread": 5
         },
         "launcher_first_commit_ms_p50": {
           "leg": "--menu-budget",
@@ -430,9 +432,9 @@
           "runs": [
             7,
             8,
-            8
+            7
           ],
-          "median": 8,
+          "median": 7,
           "spread": 1
         },
         "launcher_first_commit_ms_max": {
@@ -440,22 +442,22 @@
           "gate": "spread",
           "runs": [
             9,
-            16,
-            11
+            10,
+            9
           ],
-          "median": 11,
-          "spread": 7
+          "median": 9,
+          "spread": 1
         },
         "bar_gap_ms_max": {
           "leg": "--menu-budget",
           "gate": "spread",
           "runs": [
-            18,
-            18,
-            18
+            19,
+            19,
+            17
           ],
-          "median": 18,
-          "spread": 0
+          "median": 19,
+          "spread": 2
         }
       }
     }
