@@ -23,7 +23,6 @@
 # off the picture rect `mirror status` reports against the same two frames
 # rendered by ffmpeg straight to PNG.
 leg_mirror_flag="--mirror"
-leg_mirror_scale1="reads the feed box at logical pixels (1.25: the IR feed flat)"
 leg_mirror_order=145
 leg_mirror_vm_only="it loads and unloads the v4l2loopback module with sudo"
 leg_mirror_needs="convert ffmpeg jq wtype"
@@ -115,14 +114,19 @@ EOF
   hypr_exec_once "bash $script"
 }
 
+# The middle half of a logical rect off `mirror status`, cut from a frame at
+# the output's scale.
+mirror_middle() {
+  scaled_jq -r "$geometry_jq"'{x: (.x + .width / 4), y: (.y + .height / 4), width: (.width / 2), height: (.height / 2)} | geometry' <<<"$1"
+}
+
 # Standard deviation of luma and mean saturation over the middle half of the
 # feed box, both 0..255 and 0..100. A flat card is ~0 on both; the colour
 # test pattern is high on both; the grey one is high on luma and ~0 on
 # saturation.
 mirror_measure() {
-  local png="$1" rect="$2" x y w h
-  read -r x y w h < <(jq -r '"\(.x + .width / 4 | floor) \(.y + .height / 4 | floor) \(.width / 2 | floor) \(.height / 2 | floor)"' <<<"$rect")
-  local crop="${w}x${h}+${x}+${y}"
+  local png="$1" crop
+  crop=$(mirror_middle "$2")
   local sd sat
   sd=$($convert_bin "$png" -crop "$crop" +repage -colorspace Gray -format '%[fx:int(standard_deviation*255)]' info: 2>/dev/null)
   sat=$($convert_bin "$png" -crop "$crop" +repage -colorspace HSL -channel G -separate +channel -format '%[fx:int(mean*100)]' info: 2>/dev/null)
@@ -132,10 +136,9 @@ mirror_measure() {
 # Mean and standard deviation of luma, 0..255, over the middle half of a
 # rect of a PNG (the whole PNG when the rect is empty).
 mirror_levels() {
-  local png="$1" rect="$2" crop="" x y w h
+  local png="$1" rect="$2" crop=""
   if [ -n "$rect" ]; then
-    read -r x y w h < <(jq -r '"\(.x + .width / 4 | floor) \(.y + .height / 4 | floor) \(.width / 2 | floor) \(.height / 2 | floor)"' <<<"$rect")
-    crop="${w}x${h}+${x}+${y}"
+    crop=$(mirror_middle "$rect")
   else
     crop="320x180+160+90"
   fi
