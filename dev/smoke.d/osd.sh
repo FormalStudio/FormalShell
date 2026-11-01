@@ -34,7 +34,6 @@
 # read off `debug dump`'s `theme.morph`, not off the rider, and both are then
 # read against the same resting pose.
 leg_osd_flag="--osd"
-leg_osd_scale1="reads the desktop frame at logical pixels (1.25: no bare desktop frame)"
 leg_osd_order=50
 # The brightness frame, the last of the desktop with the pill on it.
 leg_osd_desktop_until=37
@@ -46,13 +45,11 @@ osd_desktop_path="$shot_dir/osd-desktop.png"
 osd_rest_path="$shot_dir/osd-rest.png"
 osd_dump_path="$shot_dir/osd-dump.json"
 
-# The band the entrance is read in: 400px of the output's own bottom 90 rows,
-# centred, so the 320-wide pill sits inside it with the output's last row at
-# the crop's own last. Column 200 of the crop is the output's centre, which is
-# the pill's own.
-osd_region="760,990 400x90"
-osd_column_probe=200
-osd_last_row=89
+# The band the entrance is read in: 400 logical pixels of the output's own
+# bottom 90 rows, centred, so the 320-wide pill sits inside it with the
+# output's last row at the crop's own last. grim takes the band in logical
+# pixels and writes it at the output's scale, so the centre column and the
+# last row are read off the frame itself.
 osd_frames=12
 
 leg_osd_timing() {
@@ -67,7 +64,10 @@ leg_osd_drive() {
   # inside the pill's 1.6s auto-hide window, with enough gap between them that
   # the previous card is long gone before the next fires. The 29s set is not
   # photographed: it exists so the 31s one is always a real change.
-  local script="$shot_dir/osd-drive.sh"
+  local script="$shot_dir/osd-drive.sh" w h
+  w=$(to_logical 1920)
+  h=$(to_logical 1080)
+  local osd_region="$((w / 2 - 200)),$((h - 90)) 400x90"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 start=\$SECONDS
@@ -154,7 +154,8 @@ leg_osd_assert() {
   fi
 
   [ -s "$osd_dump_path" ] || fail "no debug dump produced for the osd check"
-  local emerge
+  local emerge osd_column_probe osd_last_row
+  read -r osd_column_probe osd_last_row < <($convert_bin "$osd_desktop_path" -format '%[fx:int(w/2)] %[fx:h-1]\n' info:)
   emerge=$("$jq_bin" -r 'if .theme.morph == false then "popover" else "join" end' "$osd_dump_path" 2>/dev/null)
   echo "SMOKE_OSD_MORPH emerge=$emerge"
 
@@ -187,13 +188,15 @@ leg_osd_assert() {
   # of bare desktop between its own bottom and the output's edge. The pill's
   # cast lands nearer the edge by the few rows it reaches past the rect,
   # which is the card's own ink and not the pill sitting lower.
-  local rest gap floor=5
+  local rest gap floor ceiling
+  floor=$(to_px 5)
+  ceiling=$(to_px 16)
   rest=$(osd_ink_bottom "$osd_rest_path" "$osd_column_probe")
   [ "$rest" -ge 0 ] || fail \
     "column $osd_column_probe of $osd_rest_path is bare desktop from top to bottom: the pill never settled"
   gap=$((osd_last_row - rest))
-  if [ "$gap" -lt "$floor" ] || [ "$gap" -gt 16 ]; then
-    fail "the pill's own bottom sits ${gap}px off the output's last row in $osd_rest_path against the screenPadding (12) it rests at: it has not let go of the line"
+  if [ "$gap" -lt "$floor" ] || [ "$gap" -gt "$ceiling" ]; then
+    fail "the pill's own bottom sits ${gap}px off the output's last row in $osd_rest_path against the screenPadding (12, $(to_px 12) at scale $FS_SMOKE_SCALE) it rests at: it has not let go of the line"
   fi
   echo "SMOKE_OSD_RESTING ok ${gap}px of desktop under the pill at column $osd_column_probe"
 }
