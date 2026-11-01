@@ -2,6 +2,7 @@
   "commit": "3628805a05da558071cdbc2fb29268ca0c9972f1",
   "host": "g815",
   "platform_profile": "performance",
+  "scale": 1.0,
   "taken": "2026-10-29",
   "note": "Crates identical from this commit to 411ea455. The r0 and menu run 1s built 952ab94f with this commit's desktop_clock.rs in flight (code these legs never run). Two to five other nested sessions shared g815 through most runs.",
   "modes": {

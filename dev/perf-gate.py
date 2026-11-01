@@ -33,7 +33,9 @@ check refuses runs read on another profile than the baseline's: every CPU
 number moves with it (the baseline's own commit reads its launcher first
 commit at 15 to 25 ms on balanced against 8 to 9 on performance), and the
 shell's Overnight mode drops performance to balanced until it is turned off.
-`run` stops before a run on the wrong one.
+`run` stops before a run on the wrong one. The output scale is held the
+same way: `run` draws at the baseline's (`FS_SMOKE_SCALE`), and a check
+refuses runs drawn at another, since every buffer and draw grows with it.
 
 `run` holds g815 for its whole matrix: its pid in
 /tmp/formalshell-perf-gate.running, which dev/remote.sh and dev/vm.sh wait
@@ -123,6 +125,8 @@ def extract(path):
     n = {}
     lines = text.splitlines()
     profile = next((l[len(PROFILE_LINE):].strip() for l in lines if l.startswith(PROFILE_LINE)), None)
+    # smoke.sh's line; a run that predates it drew at 1.
+    scale = float(next((l.split(":", 1)[1] for l in lines if l.startswith("output scale: ")), 1))
     backend = "cpu"
     told = next((l for l in lines if l.startswith("SMOKE_BACKEND ")), None)
     if told:
@@ -178,27 +182,28 @@ def extract(path):
         n["bar_gap_ms_max"] = int(worst["bar_gap_ms"])
     if not n:
         raise SystemExit(f"{path}: carries no --idle, --r0-measure or --menu-budget output")
-    return backend, mode, n, profile
+    return backend, mode, n, profile, scale
 
 
 def group(paths):
-    """The runs per mode and number, the one backend they all drew on, and
-    the platform profiles they were read on (None for a run that predates
-    the line)."""
-    runs, backends, profiles = {"plain": {}, "quota": {}}, set(), set()
+    """The runs per mode and number, the one backend they all drew on, the
+    platform profiles they were read on (None for a run that predates the
+    line), and the output scales they drew at."""
+    runs, backends, profiles, scales = {"plain": {}, "quota": {}}, set(), set(), set()
     for p in paths:
-        backend, mode, n, profile = extract(p)
+        backend, mode, n, profile, scale = extract(p)
         backends.add(backend)
         profiles.add(profile)
+        scales.add(scale)
         for k, v in n.items():
             runs[mode].setdefault(k, []).append(v)
     if len(backends) != 1:
         raise SystemExit(f"runs drawn on {', '.join(sorted(backends))}: one backend at a time")
-    return backends.pop(), runs, profiles
+    return backends.pop(), runs, profiles, scales
 
 
 def cmd_extract(paths):
-    print(json.dumps({p: dict(zip(("backend", "mode", "numbers", "platform_profile"), extract(p))) for p in paths}, indent=2))
+    print(json.dumps({p: dict(zip(("backend", "mode", "numbers", "platform_profile", "scale"), extract(p))) for p in paths}, indent=2))
 
 
 def cmd_baseline(args):
@@ -207,13 +212,16 @@ def cmd_baseline(args):
     commit, paths, note = args[1], args[2:], None
     if paths[:1] == ["--note"] and len(paths) > 2:
         note, paths = paths[1], paths[2:]
-    backend, runs, profiles = group(paths)
+    backend, runs, profiles, scales = group(paths)
     if len(profiles) != 1 or None in profiles:
         raise SystemExit(f"a baseline takes runs read on one platform profile, these were read on {sorted(map(str, profiles))}")
+    if len(scales) != 1:
+        raise SystemExit(f"a baseline takes runs drawn at one output scale, these were drawn at {sorted(scales)}")
     out = {
         "commit": commit,
         "host": "g815",
         "platform_profile": profiles.pop(),
+        "scale": scales.pop(),
         "backend": backend,
         "taken": time.strftime("%Y-%m-%d"),
         **({"note": note} if note else {}),
@@ -239,8 +247,10 @@ def cmd_baseline(args):
 
 
 def cmd_check(paths):
-    backend, runs, profiles = group(paths)
+    backend, runs, profiles, scales = group(paths)
     base = json.load(open(BASELINES[backend]))
+    if scales != {base["scale"]}:
+        raise SystemExit(f"runs drawn at output scale {', '.join(map(str, sorted(scales)))}, the baseline's is {base['scale']}: buffers and draws do not compare")
     other = sorted(p for p in profiles if p is not None and p != base["platform_profile"])
     if other:
         raise SystemExit(f"runs read on the {', '.join(other)} platform profile, the baseline's is {base['platform_profile']}: the CPU numbers do not compare")
@@ -287,7 +297,8 @@ def cmd_run(args):
     for leg in legs:
         if leg not in LEGS:
             raise SystemExit(f"unknown leg {leg}, one of {', '.join(LEGS)}")
-    want = json.load(open(BASELINES[backend]))["platform_profile"]
+    base = json.load(open(BASELINES[backend]))
+    want, scale = base["platform_profile"], base["scale"]
     # One gate at a time. A killed gate can leave its marker, never the flock.
     lock = open(HOLD + ".lock", "w")
     try:
@@ -297,7 +308,7 @@ def cmd_run(args):
     with open(HOLD, "w") as f:
         f.write(f"{os.getpid()}\n")
     try:
-        run_matrix(legs, count, backend, want)
+        run_matrix(legs, count, backend, want, scale)
     finally:
         os.unlink(HOLD)
 
@@ -318,7 +329,7 @@ def quiet_g815():
         time.sleep(30)
 
 
-def run_matrix(legs, count, backend, want):
+def run_matrix(legs, count, backend, want, scale):
     out = os.path.join(REPO, "artifacts/perf", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out)
     paths = []
@@ -329,7 +340,8 @@ def run_matrix(legs, count, backend, want):
         for leg in (leg for leg in legs if i <= runs[leg]):
             for mode in ("plain", "quota"):
                 # The baseline is g815's; never the mac rig's fallback.
-                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1")
+                # At the baseline's own scale, whatever smoke.sh defaults to.
+                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1", FS_SMOKE_SCALE=f"{scale:g}")
                 for k in QUOTA_ENV:
                     env.pop(k, None)
                 if mode == "quota":

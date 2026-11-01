@@ -2,6 +2,7 @@
   "commit": "4a9a0b0d",
   "host": "g815",
   "platform_profile": "performance",
+  "scale": 1.0,
   "backend": "gpu",
   "taken": "2026-10-31",
   "note": "The GPU path forced (--backend gpu) on the rig's Intel ARL, built from 4a9a0b0d with the fenced presents and Sol's round 1 fixes of the commit after it in flight; idle runs 1 to 3 of five. Two other nested sessions shared g815.",
