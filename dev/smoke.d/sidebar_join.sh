@@ -17,7 +17,6 @@
 # sidebar's default transparent column draws no line, so there is no gap
 # in one to read.
 leg_sidebar_join_flag="--sidebar-join"
-leg_sidebar_join_scale1="reads the card's rest against logical pixels (1.25: panel rest off)"
 leg_sidebar_join_order=238
 leg_sidebar_join_needs="jq convert python3"
 
@@ -92,10 +91,10 @@ EOF
 # The card off one target's frames, then the claims, printed as one line
 # of numbers and exiting non-zero with the reason on a miss.
 sidebar_join_read() {
-  "$python3_bin" - "$shot_dir" "$1" "$2" "$sidebar_join_frames" <<'PY'
+  "$python3_bin" - "$shot_dir" "$1" "$(logical_px "$2")" "$sidebar_join_frames" "${out_scale:-1}" <<'PY'
 import sys
 from PIL import Image, ImageChops
-d, name, edge, n = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+d, name, edge, n, s = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), float(sys.argv[5])
 L = lambda p: Image.open(f"{d}/sidebar-join-{name}-{p}.png").convert("RGB")
 bare = L("bare")
 w, h = bare.size
@@ -113,19 +112,19 @@ if not rest:
     sys.exit(f"{name}: nothing differs from the bare desktop at rest")
 x0, y0, x1, y1 = rest
 print(f"{name}: rest x={edge + x0}..{edge + x1} y={y0}..{y1}", end="")
-if name == "panel" and x0 > 12:
+if name == "panel" and x0 > 12 * s:
     sys.exit(f"\n{name}: the resting card stands {x0}px off the column's edge, not against it")
 if name == "menu":
     cx, cy = edge + (x0 + x1) / 2, (y0 + y1) / 2
-    if abs(cx - (edge + w) / 2) > 2 or abs(cy - h / 2) > 2:
+    if abs(cx - (edge + w) / 2) > 2 * s or abs(cy - h / 2) > 2 * s:
         sys.exit(f"\n{name}: the resting card's centre {cx},{cy} is not the area's {(edge + w) / 2},{h / 2}")
 seen = [b for b in (card(L(f"mid-{i}")) for i in range(n)) if b]
 print(f" frames={[(b[0], b[2]) for b in seen]}", end="")
-if not seen or seen[0][0] > 2:
+if not seen or seen[0][0] > 2 * s:
     sys.exit(f"\n{name}: the card's first frame is not on the column's edge: {seen[:1]}")
-if not any(b[0] <= 2 and x1 / 6 < b[2] < x1 * 5 / 6 for b in seen):
+if not any(b[0] <= 2 * s and x1 / 6 < b[2] < x1 * 5 / 6 for b in seen):
     sys.exit(f"\n{name}: no frame carries the card part way out of the edge (rest reaches {x1})")
-if any(b[0] > x0 + 2 for b in seen):
+if any(b[0] > x0 + 2 * s for b in seen):
     sys.exit(f"\n{name}: a frame carries the card further off the edge than it rests")
 print()
 PY
