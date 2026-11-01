@@ -78,6 +78,10 @@ case "$FS_RIG" in
   *) echo "FS_RIG must be g815 or mac, got '$FS_RIG'" >&2; exit 1 ;;
 esac
 rig=$FS_RIG
+if [ "$rig" = g815 ]; then
+  . "$repo_root/dev/perf-hold.sh"
+  perf_gate_wait remote.sh
+fi
 if [ "$rig" = mac ] && [ -z "${FS_RIG_SLOT:-}" ]; then
   "$repo_root/dev/mac-vm.sh" start
 fi

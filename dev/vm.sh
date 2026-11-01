@@ -68,6 +68,9 @@ if [ "$1" = wants ]; then
   exit 1
 fi
 
+. "$repo_root/dev/perf-hold.sh"
+perf_gate_wait vm.sh
+
 verb=$1
 shift
 case "$verb" in

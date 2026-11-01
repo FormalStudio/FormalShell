@@ -35,11 +35,18 @@ commit at 15 to 25 ms on balanced against 8 to 9 on performance), and the
 shell's Overnight mode drops performance to balanced until it is turned off.
 `run` stops before a run on the wrong one.
 
+`run` holds g815 for its whole matrix: its pid in
+/tmp/formalshell-perf-gate.running, which dev/remote.sh and dev/vm.sh wait
+on (dev/perf-hold.sh), and before each run it waits for every other agent's
+slot run, VM guest and apply on g815 to finish. Runs another agent had
+going on g815 used to land in a gate's numbers unseen.
+
 The compositor's engine time is read on the median of five --idle runs:
 over a window the shell commits once in, it is one or two of the nested
 Hyprland's frames, and the same build reads 595k to 705k ns from run to run
 on g815 (the iGPU's power state), so three runs leave the median to luck.
 """
+import fcntl
 import json
 import os
 import re
@@ -80,9 +87,16 @@ RSS_ALLOWANCE_KB = 2048
 PROFILE_LINE = "host platform_profile: "
 
 
+SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "LogLevel=ERROR", "g815"]
+# dev/perf-hold.sh's marker: every other g815 or VM rig run waits while it
+# names a live gate.
+HOLD = "/tmp/formalshell-perf-gate.running"
+# Another agent's slot run, a VM rig guest, or an apply or package build.
+OTHERS = "ps -eo user=,args= | grep -E '^fstest[0-9]+ .*(smoke|cargo|scoped-run)' | grep -v grep; pgrep -fa 'qemu.*fstestvm|fspec (apply|build)|tarball.sh' | grep -v pgrep"
+
+
 def host_profile():
-    out = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "LogLevel=ERROR", "g815", "cat /sys/firmware/acpi/platform_profile"],
-                         capture_output=True, text=True)
+    out = subprocess.run(SSH + ["cat /sys/firmware/acpi/platform_profile"], capture_output=True, text=True)
     if out.returncode != 0:
         raise SystemExit(f"reading g815's platform profile: {out.stderr.strip()}")
     return out.stdout.strip()
@@ -274,6 +288,37 @@ def cmd_run(args):
         if leg not in LEGS:
             raise SystemExit(f"unknown leg {leg}, one of {', '.join(LEGS)}")
     want = json.load(open(BASELINES[backend]))["platform_profile"]
+    # One gate at a time. A killed gate can leave its marker, never the flock.
+    lock = open(HOLD + ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(f"{HOLD}: another gate is measuring")
+    with open(HOLD, "w") as f:
+        f.write(f"{os.getpid()}\n")
+    try:
+        run_matrix(legs, count, backend, want)
+    finally:
+        os.unlink(HOLD)
+
+
+def quiet_g815():
+    """Waits until g815 runs nothing of anyone else's: runs that started
+    before the hold finish on their own time, and land in a run's numbers."""
+    said = False
+    while True:
+        out = subprocess.run(SSH + ["bash", "-s"], input=OTHERS, capture_output=True, text=True)
+        if out.returncode == 255:
+            raise SystemExit(f"reaching g815: {out.stderr.strip()}")
+        if not out.stdout.strip():
+            return
+        if not said:
+            print(f"{time.strftime('%H:%M:%S')} waiting for g815 to go quiet: {out.stdout.strip().splitlines()[0]}", flush=True)
+            said = True
+        time.sleep(30)
+
+
+def run_matrix(legs, count, backend, want):
     out = os.path.join(REPO, "artifacts/perf", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out)
     paths = []
@@ -284,12 +329,13 @@ def cmd_run(args):
         for leg in (leg for leg in legs if i <= runs[leg]):
             for mode in ("plain", "quota"):
                 # The baseline is g815's; never the mac rig's fallback.
-                env = dict(os.environ, FS_RIG="g815")
+                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1")
                 for k in QUOTA_ENV:
                     env.pop(k, None)
                 if mode == "quota":
                     env.update(QUOTA_ENV)
                 path = os.path.join(out, f"{leg}-{backend}-{mode}-{i}.txt")
+                quiet_g815()
                 profile = host_profile()
                 if profile != want:
                     raise SystemExit(f"g815 is on the {profile} platform profile, the baseline's is {want} (Overnight drops performance to balanced): stopped before {leg} {mode} {i}")
