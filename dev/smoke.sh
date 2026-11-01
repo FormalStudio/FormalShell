@@ -214,6 +214,11 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   FS_SMOKE_SCALE=1
 done
 echo "output scale: $FS_SMOKE_SCALE"
+# The output's size in logical pixels, the space the shell's rects and a
+# virtual pointer's moves are in, for a drive placing something against an
+# edge before any frame is read. hypr_base_config pins the mode at 1920x1080.
+logical_w=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1920 / s + 0.5 }')
+logical_h=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1080 / s + 0.5 }')
 
 # Long enough for the base run's drive below and ten seconds of rest after
 # it. Only the base run has that drive; a leg's shot comes at its own delay
@@ -1033,6 +1038,15 @@ root_rows_assert() {
 geometry_jq='def geometry: (.x * $s | floor) as $x | (.y * $s | floor) as $y | "\(((.x + .width) * $s | ceil) - $x)x\(((.y + .height) * $s | ceil) - $y)+\($x)+\($y)";'
 scaled_jq() {
   "$jq_bin" --argjson s "${out_scale:-1}" "$@"
+}
+# A probe with no shell rect to read: a box in logical pixels as the crop
+# of the same pixels in a frame, logical_box <w> <h> <x> <y>, and one
+# logical length or offset in frame pixels, logical_px <n>.
+logical_box() {
+  scaled_jq -nr --argjson w "$1" --argjson h "$2" --argjson x "$3" --argjson y "$4" "$geometry_jq"'{x: $x, y: $y, width: $w, height: $h} | geometry'
+}
+logical_px() {
+  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n * s + (n < 0 ? -0.5 : 0.5) }'
 }
 
 panel_language_failures=""
