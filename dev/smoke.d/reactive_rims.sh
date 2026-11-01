@@ -124,7 +124,7 @@ _reactive_rims_rect() {
 # edge, clear of its corners.
 _reactive_rims_column() {
   local json="$1" side="$2" inset x0 y0 x1 y1 x h
-  inset=$(to_px "$3")
+  inset=$(logical_px "$3")
   read -r x0 y0 x1 y1 < <(_reactive_rims_rect "$json")
   h=$(((y1 - y0) / 2))
   if [ "$side" = left ]; then x=$((x0 + inset)); else x=$((x1 - 1 - inset)); fi
@@ -135,11 +135,11 @@ _reactive_rims_column() {
 # (its top 24px under the card's, 200px tall), 16px clear of either end.
 _reactive_rims_span() {
   local json="$1" side="$2" inset x0 y0 x1 y1 x top bottom
-  inset=$(to_px "$3")
+  inset=$(logical_px "$3")
   read -r x0 y0 x1 y1 < <(_reactive_rims_rect "$json")
-  top=$((y0 + $(to_px 40)))
-  bottom=$((y0 + $(to_px 208)))
-  [ "$bottom" -le $((y1 - $(to_px 16))) ] || bottom=$((y1 - $(to_px 16)))
+  top=$((y0 + $(logical_px 40)))
+  bottom=$((y0 + $(logical_px 208)))
+  [ "$bottom" -le $((y1 - $(logical_px 16))) ] || bottom=$((y1 - $(logical_px 16)))
   if [ "$side" = left ]; then x=$((x0 + inset)); else x=$((x1 - 1 - inset)); fi
   echo "1x$((bottom - top))+$x+$top"
 }

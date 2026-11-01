@@ -220,12 +220,6 @@ echo "output scale: $FS_SMOKE_SCALE"
 logical_w=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1920 / s + 0.5 }')
 logical_h=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1080 / s + 0.5 }')
 
-# A logical coordinate as the output's pixels and back, for a probe with no
-# box of the shell's to cut through `geometry`: a fixture drawn in pixels,
-# a pointer moved (in logical pixels) onto something found in a frame.
-to_px() { awk -v v="$1" -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d\n", int(v * s + 0.5) }'; }
-to_logical() { awk -v v="$1" -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d\n", int(v / s + 0.5) }'; }
-
 # Long enough for the base run's drive below and ten seconds of rest after
 # it. Only the base run has that drive; a leg's shot comes at its own delay
 # (leg_timing) from the scaffold's 8s, or once its drive scripts are done,
@@ -1053,6 +1047,11 @@ logical_box() {
 }
 logical_px() {
   awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n * s + (n < 0 ? -0.5 : 0.5) }'
+}
+# A length found in a frame's pixels as logical ones, for a pointer moved
+# onto it.
+frame_logical() {
+  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", n / s + (n < 0 ? -0.5 : 0.5) }'
 }
 
 panel_language_failures=""

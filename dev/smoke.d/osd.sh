@@ -65,8 +65,8 @@ leg_osd_drive() {
   # the previous card is long gone before the next fires. The 29s set is not
   # photographed: it exists so the 31s one is always a real change.
   local script="$shot_dir/osd-drive.sh" w h
-  w=$(to_logical 1920)
-  h=$(to_logical 1080)
+  w=$logical_w
+  h=$logical_h
   local osd_region="$((w / 2 - 200)),$((h - 90)) 400x90"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
@@ -189,14 +189,14 @@ leg_osd_assert() {
   # cast lands nearer the edge by the few rows it reaches past the rect,
   # which is the card's own ink and not the pill sitting lower.
   local rest gap floor ceiling
-  floor=$(to_px 5)
-  ceiling=$(to_px 16)
+  floor=$(logical_px 5)
+  ceiling=$(logical_px 16)
   rest=$(osd_ink_bottom "$osd_rest_path" "$osd_column_probe")
   [ "$rest" -ge 0 ] || fail \
     "column $osd_column_probe of $osd_rest_path is bare desktop from top to bottom: the pill never settled"
   gap=$((osd_last_row - rest))
   if [ "$gap" -lt "$floor" ] || [ "$gap" -gt "$ceiling" ]; then
-    fail "the pill's own bottom sits ${gap}px off the output's last row in $osd_rest_path against the screenPadding (12, $(to_px 12) at scale $FS_SMOKE_SCALE) it rests at: it has not let go of the line"
+    fail "the pill's own bottom sits ${gap}px off the output's last row in $osd_rest_path against the screenPadding (12, $(logical_px 12) at scale $FS_SMOKE_SCALE) it rests at: it has not let go of the line"
   fi
   echo "SMOKE_OSD_RESTING ok ${gap}px of desktop under the pill at column $osd_column_probe"
 }

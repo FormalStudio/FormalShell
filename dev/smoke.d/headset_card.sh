@@ -87,7 +87,7 @@ leg_headset_card_drive() {
   local state_dir="$iso_home/.local/state/librepods"
   local fs_state="$iso_home/.local/state/formalshell/state.json"
   local headset_park_x headset_region
-  headset_park_x=$(to_logical 960)
+  headset_park_x=$((logical_w / 2))
   headset_region="$((headset_park_x - 300)),30 600x150"
   write_script "$script" <<EOF
 #!/usr/bin/env bash

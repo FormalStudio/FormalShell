@@ -163,11 +163,11 @@ kill "\$(cat "$fullscreen_mpv_pid_path")" 2>/dev/null
 sleep 2
 lp="window = 'class:^(formalshell-lockpointer)\\\$'"
 "$hyprctl_bin" dispatch "hl.dsp.window.float({ \$lp, action = 'enable' })" > /dev/null 2>&1
-"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = $(to_logical 1920), y = $(to_logical 1080), \$lp })" > /dev/null 2>&1
+"$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = $logical_w, y = $logical_h, \$lp })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, \$lp })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
 "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move $(to_logical 960) $(to_logical 540) > /dev/null 2>&1
+"$wlrctl_bin" pointer move $((logical_w / 2)) $((logical_h / 2)) > /dev/null 2>&1
 sleep 1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\\\$' })" > /dev/null 2>&1
 sleep 0.5
@@ -345,8 +345,8 @@ _fullscreen_lock_assert() {
   echo "--- cursor and active window ---"; cat "$fullscreen_lock_state"
 
   local covering lw lh
-  lw=$(to_logical "$out_w")
-  lh=$(to_logical "$out_h")
+  lw=$(frame_logical "$out_w")
+  lh=$(frame_logical "$out_h")
   covering=$("$jq_bin" -r --argjson w "$lw" --argjson h "$lh" '[.[] | select(.class == "formalshell-lockpointer" and .floating and .size == [$w, $h] and .at == [0, 0])] | length' "$fullscreen_lock_clients" 2>/dev/null)
   [ "${covering:-0}" -eq 1 ] || fail "the lock window is not floating over the whole output"
 
