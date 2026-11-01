@@ -170,10 +170,7 @@ pub struct Model {
     pub mirror_current: String,
     /// The monitor tiles' history lines, started when the route opens.
     monitor_history: MonitorHistory,
-    /// The row list's transitions: rows that moved, arrived or left on
-    /// the last re-rank inside one level.
-    motion: RowMotion,
-    /// `debug motionScale`, which the row transitions run at.
+    /// `debug motionScale`, which the scroll's glide and coast run at.
     pub motion_scale: f64,
     /// What the query's abbreviations say, for the ranking and `abbrev`.
     lookup: fs_menu::abbrev::Lookup,
@@ -385,46 +382,9 @@ fn glide(a: &mut Animated, now: Instant, target: f64, wheeled: bool, travels: bo
     }
 }
 
-/// AddTransition, MoveTransition and RemoveTransition: an arriving row
-/// fades in, one that kept its place in the list slides from where it was,
-/// one that left fades out where it stood. Only inside one level and one
-/// view, and not past `ROW_RESET_LIMIT` rows, where the list is refilled.
-#[derive(Default)]
-struct RowMotion {
-    level: Option<Option<String>>,
-    view: Option<View>,
-    moved: std::collections::HashMap<String, (f64, Instant)>,
-    added: std::collections::HashMap<String, Instant>,
-    left: Vec<(Node, Slot, Instant)>,
-    ms: (f64, f64, f64),
-}
-
-const ROW_RESET_LIMIT: usize = 64;
-
 /// The rows whose labels are shaped at both weights on a resolve: more
 /// than a card at `LAUNCHER.row_height` shows.
 const ROWS_SHAPED_AHEAD: usize = 24;
-
-impl RowMotion {
-    fn progress(at: Instant, ms: f64, now: Instant) -> f64 {
-        if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(at).as_secs_f64() * 1000.0 / ms).min(1.0) }
-    }
-
-    fn running(&self, now: Instant) -> bool {
-        self.moved.values().any(|(_, at)| Self::progress(*at, self.ms.0, now) < 1.0)
-            || self.added.values().any(|at| Self::progress(*at, self.ms.1, now) < 1.0)
-            || self.left.iter().any(|(_, _, at)| Self::progress(*at, self.ms.2, now) < 1.0)
-    }
-
-    /// The slide still owed to a row, in body pixels.
-    fn offset(&self, id: &str, now: Instant) -> f64 {
-        self.moved.get(id).map_or(0.0, |(dy, at)| dy * (1.0 - Clock::Spatial.curve().ease(Self::progress(*at, self.ms.0, now))))
-    }
-
-    fn alpha(&self, id: &str, now: Instant) -> f32 {
-        self.added.get(id).map_or(1.0, |at| Clock::Effects.curve().ease(Self::progress(*at, self.ms.1, now)) as f32)
-    }
-}
 
 /// One reading per monitor tick: CPU, memory, GPU, and the network's
 /// receive and send rates. A reading nobody could take is left out.
@@ -451,6 +411,14 @@ fn push(q: &mut std::collections::VecDeque<f64>, v: Option<f64>) {
 
 pub const MONITOR_ROUTE: &str = "monitor";
 pub const MIRROR_ROUTE: &str = "mirror";
+
+/// What the card's size travels on when it changes (`Shown::layout`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SizeKey {
+    level: Option<String>,
+    halved: bool,
+    app_view: bool,
+}
 
 /// The wallpaper route lists `dir`, and in
 /// select mode answers `token` in picker-selection.txt instead of setting
@@ -502,7 +470,6 @@ impl Default for Model {
             mirror_current: String::new(),
             panel: None,
             monitor_history: MonitorHistory::default(),
-            motion: RowMotion::default(),
             motion_scale: 1.0,
             lookup: Default::default(),
             abbrev_key: None,
@@ -750,6 +717,10 @@ impl Model {
     /// The query the list is ranked by: the field's, or while the column
     /// filters through the field, the one it held before.
     fn list_text(&self) -> &str {
+    fn size_key(&self) -> SizeKey {
+        SizeKey { level: self.level.clone(), halved: self.halved(), app_view: self.app_view() }
+    }
+
         self.column.as_ref().map_or(self.query.text(), |c| c.list_query.as_str())
     }
 
@@ -1260,12 +1231,6 @@ impl Model {
             )
         };
         let view_changed = view != self.view;
-        let before: std::collections::HashMap<String, (Node, Slot)> = if matches!(view, View::Rows | View::AppGrid) {
-            let skip = if self.view == View::AppGrid { self.app_count } else { 0 };
-            self.rows.iter().cloned().zip(self.layout.slots.iter().copied()).skip(skip).map(|(n, s)| (n.id.clone(), (n, s))).collect()
-        } else {
-            Default::default()
-        };
         let changed = rows.len() != self.rows.len() || rows.iter().zip(&self.rows).any(|(a, b)| a.id != b.id);
         self.rows = rows;
         self.sections = sections;
@@ -1295,7 +1260,6 @@ impl Model {
                 }
             }
         }
-        self.row_motion(before, view, theme);
         // A key's step resolves the level again before it draws: the cursor
         // landing where the step put it keeps the step's travel.
         let travels = self.travels && !fresh && !view_changed && index == self.cursor;
@@ -1324,52 +1288,9 @@ impl Model {
         }
     }
 
-    /// Starts the transitions a re-rank owes, from where each row was.
-    fn row_motion(&mut self, before: std::collections::HashMap<String, (Node, Slot)>, view: View, theme: &Theme) {
-        let now = Instant::now();
-        let same = self.motion.level.as_ref() == Some(&self.level) && self.motion.view == Some(view);
-        self.motion.level = Some(self.level.clone());
-        self.motion.view = Some(view);
-        let k = self.motion_scale;
-        let m = &mut self.motion;
-        m.ms = (Clock::Spatial.ms(theme) * k, Clock::Effects.ms(theme) * k, Clock::EffectsFast.ms(theme) * k);
-        m.moved.retain(|_, (_, at)| RowMotion::progress(*at, m.ms.0, now) < 1.0);
-        m.added.retain(|_, at| RowMotion::progress(*at, m.ms.1, now) < 1.0);
-        m.left.retain(|(_, _, at)| RowMotion::progress(*at, m.ms.2, now) < 1.0);
-        let animate = same && matches!(view, View::Rows | View::AppGrid) && !before.is_empty() && before.len() <= ROW_RESET_LIMIT && self.rows.len() <= ROW_RESET_LIMIT;
-        if !animate {
-            m.moved.clear();
-            m.added.clear();
-            m.left.clear();
-            return;
-        }
-        let mut seen = std::collections::HashSet::new();
-        let skip = if view == View::AppGrid { self.app_count } else { 0 };
-        for (row, slot) in self.rows.iter().zip(self.layout.slots.iter()).skip(skip) {
-            seen.insert(row.id.as_str());
-            match before.get(&row.id) {
-                Some((_, was)) => {
-                    let owed = m.moved.get(&row.id).map_or(0.0, |(dy, at)| dy * (1.0 - Clock::Spatial.curve().ease(RowMotion::progress(*at, m.ms.0, now))));
-                    let dy = was.y + owed - slot.y;
-                    if dy.abs() > 0.5 {
-                        m.moved.insert(row.id.clone(), (dy, now));
-                    }
-                }
-                None => {
-                    m.added.insert(row.id.clone(), now);
-                }
-            }
-        }
-        for (id, (node, slot)) in before {
-            if !seen.contains(id.as_str()) && node.kind != NodeKind::Note {
-                m.left.push((node, slot, now));
-            }
-        }
-    }
-
-    /// A transition is still running, so the body draws again.
+    /// The list or the column is still scrolling, so the body draws again.
     pub fn rows_moving(&self, now: Instant) -> bool {
-        self.motion.running(now) || self.touch.running(now) || self.column.as_ref().is_some_and(|c| c.touch.running(now))
+        self.touch.running(now) || self.column.as_ref().is_some_and(|c| c.touch.running(now))
     }
 
     fn place(&mut self, index: usize, travels: bool) {
@@ -2962,9 +2883,8 @@ pub struct Shown {
     pane_since: Option<Instant>,
     /// The card's width and height travelling between level kinds.
     morph: (Animated, Animated),
-    /// One widget tree per row mid-transition, drawn over the body.
-    overlays: Vec<Ui>,
-    top_node: NodeId,
+    /// The level and halves the card was last sized for, and the query.
+    sized_for: Option<(SizeKey, String)>,
     /// The card size the content was last laid out for.
     laid_for: (f64, f64),
     /// The view the content was last laid out for.
@@ -3020,14 +2940,13 @@ impl Shown {
             field_rect: None,
             pane_rect: None,
             pane_since: None,
-            overlays: Vec::new(),
-            top_node: top,
             laid_for: (0.0, 0.0),
             laid_view: None,
             morph: (Animated::new(theme.space.popup_width_menu, Clock::Spatial.curve()), Animated::new(0.0, Clock::Spatial.curve())),
             sel_anchor,
             sel_nodes: Vec::new(),
             sel: [sel(), sel(), sel(), sel()],
+            sized_for: None,
             sel_on: None,
             centred: false,
             panel_origin: 0.0,
@@ -3199,11 +3118,21 @@ impl Shown {
             m.body_h = body_h;
             m.follow();
         }
-        // A level that changes kind travels into its size;
-        // the first frame after an open lands on it.
+        // A new level, or the column or pane taking half the card, travels
+        // into its size. A re-rank inside a level lands at once, a typed
+        // query's above all: the list for it is whole on the next frame.
+        // The first frame after an open lands on it too.
         let (tw, th) = (m.card_width(theme), chrome + body_h);
         self.modal.look_hint(tw.round() as i32, th.round() as i32);
-        if self.modal.surface.mapped && self.modal.open {
+        let key = m.size_key();
+        // The query the list is ranked by: the actions column takes the
+        // field over and gives it back on close, which is no typing.
+        let query = m.list_text().to_owned();
+        let typed = self.sized_for.as_ref().is_some_and(|(k, q)| k.level == key.level && *q != query);
+        let resized = self.sized_for.as_ref().is_some_and(|(k, _)| *k != key);
+        let morphing = self.morph.0.running(now) || self.morph.1.running(now);
+        self.sized_for = Some((key, query));
+        if self.modal.surface.mapped && self.modal.open && !typed && (resized || morphing) {
             let ms = Clock::Spatial.ms(theme) * self.scale;
             self.morph.0.set(now, tw, ms);
             self.morph.1.set(now, th, ms);
@@ -3334,10 +3263,9 @@ impl Shown {
         let view_clip = viewport.intersect(&clip);
         self.body_rect = (body_h > 0.0).then(|| IRect::new(viewport.x + on_output.0, viewport.y + on_output.1, viewport.w, viewport.h));
         let scroll = self.scroll.value(now) + m.touch.value(now);
-        let mut overlays = Vec::new();
         let body = match panel {
             Some(el) => el,
-            None if body_h > 0.0 => body_el(m, store, theme, kit, scroll, body_h, &mut overlays),
+            None if body_h > 0.0 => body_el(m, store, theme, kit, scroll, body_h),
             None => w::space(0.0),
         };
         let held = m.panel.as_ref().filter(|_| m.on_panel());
@@ -3386,20 +3314,6 @@ impl Shown {
             None => self.sel_on = None,
         }
         p.finish();
-        while self.overlays.len() < overlays.len() {
-            self.overlays.push(Ui::new(Some(self.top_node)));
-        }
-        for (i, ui) in self.overlays.iter_mut().enumerate() {
-            match overlays.get(i) {
-                Some((el, r)) => {
-                    let at = Rect::new(origin.0 + r.x0, origin.1 + r.y0, origin.0 + r.x1, origin.1 + r.y1);
-                    ui.draw(el, at, Some(body_clip), alpha, theme, kit, scene, now);
-                }
-                None => {
-                    ui.draw(&w::space(0.0), Rect::new(0.0, 0.0, 0.0, 0.0), Some(body_clip), alpha, theme, kit, scene, now);
-                }
-            }
-        }
         self.feed = (m.view == View::Mirror).then(|| {
             let (w, h) = m.mirror_box(theme);
             let feed = IRect::new((fx + pad + s.sm).round() as i32, (body_top + s.md).round() as i32, w as i32, h as i32);
@@ -3781,10 +3695,7 @@ fn empty_words(m: &Model, s: &fs_theme::tokens::Space) -> El {
 }
 
 /// The body's widgets for the slots inside the viewport, the rest as room.
-/// Rows mid-transition go to `overlays` instead, each with its own rect in
-/// body coordinates: they cross other rows, which the stacked column cannot.
-fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, view_h: f64, overlays: &mut Vec<(El, Rect)>) -> El {
-    let now = Instant::now();
+fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, view_h: f64) -> El {
     let s = &theme.space;
     let lay = &m.layout;
     if m.view == View::Mirror {
@@ -3874,27 +3785,9 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
                 .height(slot.h)
         } else {
             let checked = toggles::checked_for(Some(row), Some(&snap), Some(&store.menu.checked));
-            let alpha = m.motion.alpha(&row.id, now);
-            let el = menu_row(m, store, row, i, selected, checked, theme).width(Size::Px(slot.w)).height(slot.h - slot.band);
-            if alpha < 1.0 { el.fade(alpha) } else { el }
+            menu_row(m, store, row, i, selected, checked, theme).width(Size::Px(slot.w)).height(slot.h - slot.band)
         };
-        let dy = if i >= cells && matches!(m.view, View::Rows | View::AppGrid) { m.motion.offset(&row.id, now) } else { 0.0 };
-        if dy.abs() > 0.5 {
-            let (left, top) = (slot.x, slot.y + slot.band + dy);
-            overlays.push((el, Rect::new(left, top, left + slot.w, top + slot.h - slot.band)));
-            continue;
-        }
         items.push((slot.y + slot.band, slot.h - slot.band, el.pad_start(0.0)));
-    }
-    for (node, slot, at) in &m.motion.left {
-        let t = RowMotion::progress(*at, m.motion.ms.2, now);
-        if t >= 1.0 || !visible(slot.y, slot.h) {
-            continue;
-        }
-        let fade = 1.0 - Clock::EffectsFast.curve().ease(t) as f32;
-        let el = menu_row(m, store, node, usize::MAX, false, false, theme).width(Size::Px(slot.w)).height(slot.h - slot.band).fade(fade);
-        let top = slot.y + slot.band;
-        overlays.push((El { on: None, ..el }, Rect::new(slot.x, top, slot.x + slot.w, top + slot.h - slot.band)));
     }
     // Absolutely placed by stacking: a column of rows, each a row of what
     // shares its top.

@@ -469,8 +469,8 @@ Geometry never jumps (M53). Anything whose x, y, width or height changes
 while it is on screen animates the change: a row that moves travels, a list
 adds and removes rows through their own fades, and a container whose size
 follows animated children rides their clock. Sizes follow content live on
-`spatial`, a panel whose section count changes and the launcher's list under
-a query alike, and a closing surface freezes its size first. That rule has
+`spatial`, a panel whose section count changes alike, and a closing surface
+freezes its size first. That rule has
 one shape wherever a card's own width or height is the thing changing (the
 panel host's `morph` in `formalshell-rs/src/surfaces/panel/host.rs`, and the
 launcher's own in `formalshell-rs/src/surfaces/launcher.rs`, M57 D7): the
@@ -479,10 +479,13 @@ mapped rather than its enter having settled, so content landing a tick after
 the open (a Wi-Fi scan, a keyed row sync) retargets the running clock
 instead of jumping through a gate a settled surface would already have
 closed. Bar cells enter and leave through their own presence while the
-strip's rails carry the neighbours. The launcher's rows keep their identity
-across a query, so a re-rank moves rows instead of rebuilding them; only a
-level change or a diff touching more than 64 rows (`ROW_RESET_LIMIT`)
-resets the list.
+strip's rails carry the neighbours. The launcher's list under a typed query is
+the exception (owner, 2026-11-01): a keystroke is the input the shell takes
+most often, so the list for the new query and the card's height for it land
+whole on the next frame, with no row sliding, fading or crossing another and
+nothing left to settle once the keys stop (Raycast, Spotlight). A new level,
+or the column or the preview pane taking half the card, still travels into
+its size.
 
 Content never snaps. What one slot draws crossfades on `effects` when it
 changes: an icon glyph, a label under a width morph, the launcher's empty

@@ -970,9 +970,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and the last ones of each burst card fill under every row and column of
   the content's box (`debug dump`'s `content` rect). Worth running under
   `FS_CPU_QUOTA` too, where the card draws in slices across loop turns.
-- `menu_rows.sh` `--menu-rows`: the toggle hub filtered at a tenth speed, a
-  frame of the rows' band that matches neither settled list: rows that kept
-  their place slide, new ones fade in, gone ones fade out.
+- `menu_rows.sh` `--menu-rows`: typing on real keys, the list for each new
+  query whole on the next frame. Six staged apps re-rank and change the row
+  count across the prefixes of "notebook": each prefix's settled frame, then
+  the word typed at 80ms a key under a back to back grim burst, every frame
+  equal to one settled frame over the card's box (`dev/settled-frames.py`,
+  the shared read), the `menu status` reads through it with no two
+  `rowBoxes` intersecting and none cut but by the body's viewport, and the
+  frame 50ms after the last key the one it settles on. Run it at
+  `FS_SMOKE_SCALE=1.25` too.
 - `mic.sh` `--mic`: the opt-in mic cell rendering its honest no-device state
   on a machine with no capture device.
 - `minimap.sh` `--minimap`: the sidebar's Spaces map acted on under

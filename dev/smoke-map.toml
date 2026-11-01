@@ -529,6 +529,11 @@ runs = ["--unlock", "--lock", "--menu", "--multi-output", "--login-lock"]
 paths = ["crates/formalshell-rs/src/surfaces/dissolve.rs", "dev/dissolve-cells.py"]
 runs = ["--unlock", "--login-lock"]
 
+# The burst-against-settled read typing in the launcher is held to.
+[[rule]]
+paths = ["dev/settled-frames.py"]
+runs = ["--menu-rows"]
+
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/depth.rs", "packaging/formalshell-depth.py"]
 runs = ["--lock --depth", "--desktop-clock"]
