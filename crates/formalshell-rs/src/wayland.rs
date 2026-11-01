@@ -2031,6 +2031,15 @@ impl App {
             if self.overlay_pointer(e) {
                 continue;
             }
+            if owner == Some(Owner::Launcher(crate::surfaces::modal::Part::Card))
+                && let Some(at) = self.profiles_under(e.position)
+            {
+                self.profiles_pointer(Some(Owner::Profiles), &e.kind, at);
+                continue;
+            }
+            if owner != Some(Owner::Profiles) {
+                self.profiles_release_elsewhere(&e.kind);
+            }
             if self.launcher_pointer(e, owner) {
                 continue;
             }

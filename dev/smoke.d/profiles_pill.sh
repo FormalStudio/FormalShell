@@ -37,7 +37,7 @@ pill() { $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.profilesPill' > "\$d/
 # A real press and release at the centre of chip \$1, from the top left.
 chip() {
   local x y
-  read -r x y <<< "\\$("$jq_bin" -r --arg on "\$1" '.chips[] | select(.on == \$on) | .rect | "\\((.x + .w / 2) | floor) \\((.y + .h / 2) | floor)"' "\$d/\$2.json")"
+  read -r x y <<< "\$("$jq_bin" -r --arg on "\$1" '.chips[] | select(.on == \$on) | .rect | "\\((.x + .w / 2) | floor) \\((.y + .h / 2) | floor)"' "\$d/\$2.json")"
   "$python3_bin" "$PWD/dev/vpointer.py" move -6000 -6000 move "\$x" "\$y" wait 300 down wait 60 up > /dev/null 2>&1
 }
 for _ in \$(seq 1 40); do

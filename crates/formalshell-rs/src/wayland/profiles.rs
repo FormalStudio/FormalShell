@@ -114,6 +114,24 @@ impl App {
         self.profiles.as_ref().is_some_and(|p| p.popup.surface.layer.wl_surface() == surface)
     }
 
+    /// An output point over the pill, in its surface's pixels. The
+    /// launcher's card surface covers the whole output to catch a click
+    /// outside it and maps after the pill, so it is the one the
+    /// compositor hands presses over the pill to.
+    pub(super) fn profiles_under(&self, at: (f64, f64)) -> Option<(f64, f64)> {
+        let p = self.profiles.as_ref().filter(|p| p.popup.is_open())?;
+        let local = (at.0 - (self.output_size().0 - p.popup.card.scene.size.w as f64), at.1);
+        let r = p.popup.card.rest_rect();
+        (local.0 >= r.x as f64 && local.0 < r.right() as f64 && local.1 >= r.y as f64 && local.1 < r.bottom() as f64).then_some(local)
+    }
+
+    /// A release that landed anywhere but the pill ends its press.
+    pub(super) fn profiles_release_elsewhere(&mut self, kind: &PointerEventKind) {
+        if let (PointerEventKind::Release { .. }, Some(p)) = (kind, &mut self.profiles) {
+            p.pressed = None;
+        }
+    }
+
     /// A press and release on one profile's chip sets it.
     pub(super) fn profiles_pointer(&mut self, owner: Option<Owner>, kind: &PointerEventKind, at: (f64, f64)) {
         if owner != Some(Owner::Profiles) {
