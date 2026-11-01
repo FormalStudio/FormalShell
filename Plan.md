@@ -230,9 +230,14 @@ with an exclusive zone, one per output, collapsible to a slim rail. Cards,
 top to bottom: time and date; a Spaces minimap (one cell per workspace
 with its windows' icons, from compositor metadata, never captures: the
 capture rule keeps those to the open preview card); Activity; notifications
-summary; now playing when a player exists. A status row at the foot:
-network, audio, settings, collapse. Panels and the launcher bud off its
-inner edge with the same join the bar uses.
+summary; now playing when a player exists, the time card carrying a
+battery line on a laptop. A status row at the foot: network, the
+chevron, settings, the tray's dots, collapse. The chevron's second bar
+holds audio and every right-region cell the column has no card for, on
+the tray's chip grid, each opening its panel. While the Settings tiles
+are open, Pond's power profile pill stands on the output's right edge.
+Panels and the launcher bud off its inner edge with the same join the
+bar uses.
 
 The minimap is a map you can act on (owner, 2026-10-29, after Pond's
 niri map): each workspace is a row and its windows' icons sit left to
@@ -305,7 +310,9 @@ surface. Lands only at or under the baseline on g815 and e1504g.
 
 ## Answered questions
 
-- A settings UI: built (`docs/superpowers/specs/2026-10-31-settings-ui.md`).
+- A settings UI: built (`docs/superpowers/specs/2026-10-31-settings-ui.md`),
+  Pond's root of four tiles beside the session buttons, Bar and Desktop
+  under Appearance.
   It writes overrides into state.json under `settings`; a key settings.json
   sets shows as pinned and is not editable.
 - The Nix flake: deleted in 947e44f7. install.sh and fspec are the ways in.
