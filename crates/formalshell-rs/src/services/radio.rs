@@ -297,11 +297,15 @@ async fn discover(cache: &Bases) -> Vec<String> {
     found
 }
 
+async fn request(cache: &Bases, request: &stations::Request) -> Option<Vec<Station>> {
+    request_on(&discover(cache).await, request).await
+}
+
 /// One request, tried against each mirror in turn; None once every mirror
 /// has failed.
-async fn request(cache: &Bases, request: &stations::Request) -> Option<Vec<Station>> {
-    for base in discover(cache).await {
-        let args = stations::curl_args(&base, request, USER_AGENT);
+async fn request_on(bases: &[String], request: &stations::Request) -> Option<Vec<Station>> {
+    for base in bases {
+        let args = stations::curl_args(base, request, USER_AGENT);
         if let Some(rows) = curl(&args).await.and_then(|t| stations::parse_response(&t, request.max)) {
             return Some(rows);
         }
@@ -316,9 +320,9 @@ const SEARCH_BUDGET: Duration = Duration::from_secs(15);
 
 async fn search(cache: &Bases, q: &str) -> Option<Vec<Station>> {
     let asks = async {
-        discover(cache).await;
+        let bases = discover(cache).await;
         let [name, country, tag] = stations::search_requests(q);
-        let ((a, b), c) = futures_lite::future::zip(futures_lite::future::zip(request(cache, &name), request(cache, &country)), request(cache, &tag)).await;
+        let ((a, b), c) = futures_lite::future::zip(futures_lite::future::zip(request_on(&bases, &name), request_on(&bases, &country)), request_on(&bases, &tag)).await;
         let lists = [a, b, c];
         lists.iter().any(Option::is_some).then(|| stations::union(&lists.map(Option::unwrap_or_default), stations::MAX_RECORDS))
     };
