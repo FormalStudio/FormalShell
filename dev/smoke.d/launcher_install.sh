@@ -33,7 +33,6 @@
 # following the `run` item to succeeded. The rows with the description pane, the ring mid-download, the
 # toast, a dim state and the armed Uninstall are photographed.
 leg_launcher_install_flag="--launcher-install"
-leg_launcher_install_scale1="reads the pane at logical pixels (1.25: no screenshot in the pane)"
 leg_launcher_install_order=34
 leg_launcher_install_needs="jq python3 wtype convert"
 
@@ -359,16 +358,15 @@ li_panes() {
     box=$("$jq_bin" -r '.paneBox | "\(.x) \(.y) \(.width) \(.height)"' "$li_dir/$shot.json")
     read -r x y w h <<< "$box"
     echo "SMOKE_LAUNCHER_INSTALL_SHOT $li_dir/$shot.png"
-    sd=$("$convert_bin" "$li_dir/$shot.png" -crop "${w}x$((h / 4))+${x}+$((y + h - h / 4))" +repage -colorspace Gray -format '%[fx:int(1000*standard_deviation)]' info:)
+    sd=$("$convert_bin" "$li_dir/$shot.png" -crop "$(logical_box "$w" $((h / 4)) "$x" $((y + h - h / 4)))" +repage -colorspace Gray -format '%[fx:int(1000*standard_deviation)]' info:)
     # A pane whose words reach its foot is hugging them, as long as the
     # card is no taller than the rows beside it need.
     rows=$("$jq_bin" -r '([.rowBoxes[] | .y + .height] | max) - ([.rowBoxes[] | .y] | min)' "$li_dir/$shot.json")
     [ "$sd" -le 5 ] || [ "$h" -le $((rows + 32)) ] || fail "launcher-install: $shot's pane is ${h}px with ink in its bottom quarter (sd $sd) beside ${rows}px of rows: stretched past what it says (box $box)"
   done
   echo "SMOKE_LAUNCHER_INSTALL_SHOT $li_dir/pane-shot.png"
-  box=$("$jq_bin" -r '.paneBox | "\(.x) \(.y) \(.width) \(.height)"' "$li_dir/pane-shot.json")
-  read -r x y w h <<< "$box"
-  rgb=$("$convert_bin" "$li_dir/pane-shot.png" -crop "${w}x${h}+${x}+${y}" +repage -fuzz 12% -fill black +opaque '#00c8c8' -format '%[fx:int(1000*mean)]' info:)
+  box=$(scaled_jq -r "$geometry_jq"'.paneBox | geometry' "$li_dir/pane-shot.json")
+  rgb=$("$convert_bin" "$li_dir/pane-shot.png" -crop "$box" +repage -fuzz 12% -fill black +opaque '#00c8c8' -format '%[fx:int(1000*mean)]' info:)
   [ "$rgb" -ge 20 ] || fail "launcher-install: Foxglove's pane does not show its screenshot (cyan share $rgb)"
   echo "SMOKE_LAUNCHER_INSTALL panes: info asked once per row, the screenshot fetched once and drawn, no pane stretched"
 }
