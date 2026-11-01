@@ -370,6 +370,22 @@ pub fn panel_text(s: &Space, el: El) -> El {
     el.pad(i, top, i, bottom)
 }
 
+/// How much further in than a row a panel body's last thing stands: the
+/// text inset for a group, a caption or a slider, nothing for a row.
+pub fn closing_room(s: &Space, body: &El) -> f64 {
+    closing_inset(body).min(text_inset(s))
+}
+
+/// How far in from the body's edge its last thing starts: the start pads
+/// down the run of last children, to the first box (a cell) or leaf.
+fn closing_inset(el: &El) -> f64 {
+    let last = match &el.kind {
+        Kind::Column { children, .. } => children.iter().rev().find(|c| !matches!(c.kind, Kind::Space { .. })),
+        _ => None,
+    };
+    el.pad[0] + last.map_or(0.0, closing_inset)
+}
+
 /// A segmented choice in a panel, on the text column like a group's box.
 pub fn panel_choice(s: &Space, options: Vec<String>, index: usize) -> El {
     panel_text(s, segmented(options, index).fill())

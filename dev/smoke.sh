@@ -1008,12 +1008,13 @@ root_rows_assert() {
 # bad page does not hide the next.
 panel_language_failures=""
 panel_language_assert() {
-  local inset row out status=0
+  local inset row row_inset out status=0
   inset=$("$jq_bin" -r ".panelSpace.$6 // empty" "$5" 2>/dev/null)
   [ -n "$inset" ] || fail "panel-language: $1: no panelSpace in $5"
   [ -s "$2" ] || fail "panel-language: $1: no frame $2"
   row=$("$jq_bin" -r '.panelSpace.row // 40' "$5" 2>/dev/null)
-  out=$("$python3_bin" "$PWD/dev/panel-language.py" "$2" "$3" "$4" "${inset%.*}" "$1" "${row%.*}" "${FS_SMOKE_SCALE:-1}" 2>&1) || status=$?
+  row_inset=$("$jq_bin" -r '.panelSpace.rowInset' "$5" 2>/dev/null)
+  out=$("$python3_bin" "$PWD/dev/panel-language.py" "$2" "$3" "$4" "${inset%.*}" "$1" "${row%.*}" "${FS_SMOKE_SCALE:-1}" "$row_inset" 2>&1) || status=$?
   echo "$out"
   if [ "$status" -ne 0 ]; then
     panel_language_failures+="$1 exited $status: $( (grep -E 'FAIL|Error' <<< "$out" || tail -1 <<< "$out") | head -3 | tr '\n' ' ')"

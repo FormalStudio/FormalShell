@@ -44,10 +44,12 @@ multiple of 4, read from the panel tokens in fs-theme's spacing table
 | `panelWidthWide` | 400 | a panel with a second column of values (Information, Earbuds) |
 
 One padding frames the card: the title keeps `panelInset` from the top
-edge and the text column keeps it from the sides, and under a header the
-body ends `panelInset` above the bottom edge, whether its last thing is a
-row, a group or a footer. A headerless card (the Settings tiles) keeps
-`panelRowInset` on all four sides instead.
+edge and the text column keeps it from the sides. The body ends
+`panelRowInset` above the bottom edge, the room its rows keep from the
+sides (owner, 2026-11-01), whether its last thing is a row, a group or a
+footer: a last row's box sits as far off the bottom as off either side,
+and its words land `panelInset` up like the text column. A headerless card
+(the Settings tiles) keeps `panelRowInset` on all four sides.
 
 One inset level (owner, 2026-10-31): the card holds groups, and a group
 holds rows. Nothing boxed goes inside a group: no segmented control,
@@ -183,6 +185,7 @@ One check reads these rules off every frame (owner, 2026-10-31: fixed
 once, never per panel): `dev/panel-language.py`, run by every `--panel`
 leg and by `--settings-ui` on each page, with the numbers taken from the
 shell's own `panelSpace`. It holds the header centred within 2px, the
-text column clear on both sides, the last `panelInset` rows empty with a
-closing box exactly that far up, and one inset level. A rule added here
+text column clear on both sides, a closing box as far off the bottom edge
+as off the sides, the last words no closer than `panelInset`, and one
+inset level. A rule added here
 gets its claim there in the same commit.

@@ -243,13 +243,21 @@ pub struct Frame {
 }
 
 impl Frame {
-    /// Under a header the body ends the `panelInset` the title keeps from
-    /// the card's edge; a headerless card (the tiles) keeps its rows' own
-    /// inset on all four sides.
+    /// The body ends its rows' own inset above the card's edge, the room
+    /// they keep from the sides; [`Frame::closing`] adds what a body
+    /// closing on the text column needs.
     pub fn new(theme: &Theme, header: bool) -> Self {
         let s = &theme.space;
         let (head, gap) = if header { (s.panel_row, s.panel_gap * 2.0 + theme.border_width) } else { (0.0, 0.0) };
-        Frame { top: s.panel_gap, head, gap, foot: if header { s.panel_inset } else { s.panel_gap } }
+        Frame { top: s.panel_gap, head, gap, foot: s.panel_row_inset }
+    }
+
+    /// The room under `body` its last thing keeps from the sides: a row's
+    /// box ends `panelRowInset` up, a group, caption or slider on the text
+    /// column `panelInset`, and a body scrolled under the edge is cut there.
+    pub fn closing(mut self, theme: &Theme, body: &crate::ui::el::El) -> Self {
+        self.foot += crate::ui::w::closing_room(&theme.space, body);
+        self
     }
 
     /// The hairline's offset under the card's top edge.

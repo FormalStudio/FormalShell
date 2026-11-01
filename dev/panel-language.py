@@ -2,7 +2,7 @@
 """The panel language (docs/superpowers/specs/2026-10-30-panel-language.md)
 read off one frame of one card, for every --panel and --settings-ui shot.
 
-    panel-language.py <png> <rect json> <header yes|no> <inset> <name> <row> <scale>
+    panel-language.py <png> <rect json> <header yes|no> <inset> <name> <row> <scale> <row inset>
 
 The rect is the card's own (`debug dump`'s `.panel.rest`, `menu status`'s
 `cardBox`), in logical pixels from the output's origin; it and the insets
@@ -10,26 +10,29 @@ are multiplied by the output's scale. Four claims, each printed, any
 failure exiting 1:
 
 - header: the gap from the card's top edge to the title's ink and from its
-  baseline to the hairline agree within 2px (a headerless card skips it).
+  baseline to the hairline agree within 2 logical pixels (a headerless
+  card skips it); a title's first ink moves a pixel with its letters.
 - column: no ink between the card's edge and the text column, `inset` in,
   on either side below the header; only the 3px of the card's own border
   and the corner radius are left out.
-- bottom: no ink in the last `inset` rows, and a body ending on a box (a
-  group, a button) ends it `inset` above the edge; one ending on words
-  (an empty line, a caption) has them inside the last row's band.
+- bottom: the body ends `row inset` above the edge, the room its rows keep
+  from the sides. A body ending on a box (a group, a hovered row) has it
+  as far off the bottom as off either side, within 1px; one ending on
+  words (a row's label, a caption) has them no closer than `row inset`
+  and no further than `inset` plus a quarter row, where a row centred on
+  its band puts them.
 - one inset level: no two box borders standing side by side down the text
   column's left edge, which is what a box inside a group draws.
 - even insets: the room from the card's left edge to its first ink equals
   the room after its last ink, and on a headerless card (a strip of chips)
-  the room above equals the room below, within 1px; a header card's is
-  read when its body closes on a box (words end inside a row's band),
-  its top off the title's words rather than a control in the row.
+  the room above equals the room below, within 1px.
 
 Ink is anything off the card's fill, the fill being the commonest colour
 down each gutter, taken per side so a rim leaning one way does not count. The pointer stays off the card in these
 runs, so no hover wash counts against the column.
 """
 import json
+import math
 import sys
 from collections import Counter
 
@@ -43,6 +46,7 @@ RUN = 18
 png, rect, header, name = sys.argv[1], sys.argv[2], sys.argv[3] == "yes", sys.argv[5]
 scale = float(sys.argv[7])
 inset, band = round(int(sys.argv[4]) * scale), round(int(sys.argv[6]) * scale)
+row_inset = round(float(sys.argv[8]) * scale)
 RADIUS = round(RADIUS * scale)
 im = Image.open(png).convert("RGB")
 px = im.load()
@@ -90,7 +94,7 @@ if header:
             peak = max(n for _, n in counts)
             base = max(y for y, n in counts if n >= peak * 0.3)
             above, below = ink[0] - y0, line - base - 1
-            say("header", abs(above - below) <= 2, f"{above}px above the title, {below}px from its baseline to the hairline")
+            say("header", abs(above - below) <= math.ceil(2 * scale), f"{above}px above the title, {below}px from its baseline to the hairline")
         body_top = line + 2
 
 # The column: the gutters either side of the text column carry no ink.
@@ -121,12 +125,18 @@ if low is None:
     say("bottom", True, "an empty body")
 else:
     gap = y1 - low[0]
-    if gap < inset - 1:
-        say("bottom", False, f"ink {gap}px above the bottom edge, inside {inset}px")
-    elif low[1] >= len(xs) // 2:
-        say("bottom", gap <= inset + 3, f"the last box ends {gap}px above the edge (want {inset})")
+    if low[1] >= len(xs) // 2:
+        # The box's own sides, read clear of its rounded bottom corners.
+        y = max(low[0] - RADIUS, body_top)
+        left = next((x - x0 for x in range(x0 + 3, x1 - 2) if d(px[x, y], fills["left"]) > INK), None)
+        right = next((x1 - x for x in range(x1 - 3, x0 + 2, -1) if d(px[x, y], fills["right"]) > INK), None)
+        if left is None or right is None:
+            say("bottom", False, f"the last box ends {gap}px above the edge, its sides not found at y+{y - y0}")
+        else:
+            say("bottom", abs(gap - left) <= 1 and abs(gap - right) <= 1, f"the last box ends {gap}px above the edge, {left}px and {right}px off the sides")
     else:
-        say("bottom", gap <= inset + band // 2, f"the last ink {gap}px above the edge (inside {inset + band // 2})")
+        most = inset + band // 4
+        say("bottom", row_inset - 1 <= gap <= most, f"the last ink {gap}px above the edge (between {row_inset} and {most})")
 
 
 # One inset level: border lines down the column's left edge, by x.
@@ -204,8 +214,7 @@ else:
         top = y - y0
         break
     bottom = next((y1 - y for y in range(y1 - 3, y0 + 2, -1) if any(d(px[x, y], fill) > INK for x in xs)), None)
-    closing = low is not None and low[1] >= len(xs) // 2
-    if top is not None and (not header or closing):
+    if top is not None and not header:
         say("even insets top/bottom", abs(top - bottom) <= 1, f"{top}px above the first ink, {bottom}px under the last")
 
 sys.exit(1 if failed else 0)

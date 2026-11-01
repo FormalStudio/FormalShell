@@ -467,7 +467,7 @@ impl Host {
         let body = self.module.body(&v);
         let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
         let content_h = ui::measure(&body, content_w, theme, kit).1;
-        let f = self.frame(theme);
+        let f = self.frame(theme).closing(theme, &body);
         let (head, gap) = (f.head, f.gap);
         let max_frame = if vertical {
             (p.output.1 - p.ends.inset_start - p.ends.inset_end - s.screen_padding * 2.0).max(0.0)
@@ -584,7 +584,7 @@ impl Host {
         // last button's glyph ends on it.
         let pad = s.panel_row_inset;
         let f = self.frame(theme);
-        let (vpad, head_h, head_gap, foot) = (f.top, f.head, f.gap, f.foot);
+        let (vpad, head_h, head_gap) = (f.top, f.head, f.gap);
         let fx = frame.x as f64;
         let fy = frame.y as f64;
         let fw = frame.w as f64;
@@ -596,6 +596,7 @@ impl Host {
         let v = View { store, theme, output: self.place.output, cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active), hovered: self.hovered_stop() };
         let head = if self.module.header() { Some(self.header(&v, &s)) } else { None };
         let body = self.module.body(&v);
+        let foot = f.closing(theme, &body).foot;
         let module_wake = self.module.wake(&v);
 
         let scene = &mut self.card.scene;

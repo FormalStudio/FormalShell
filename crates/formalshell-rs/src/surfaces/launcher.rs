@@ -100,6 +100,9 @@ struct Layout {
     /// A held page's row ends (`ui::row_ends`), so a page taller than the
     /// card rests on a whole row.
     row_ends: Vec<f64>,
+    /// A held page's room under its body past the frame's own
+    /// (`panel::Frame::closing`).
+    close: f64,
 }
 
 /// What input moves: the rows key, the field, the cursor, an armed row, and
@@ -2988,7 +2991,7 @@ impl Shown {
             None => launcher_px(theme, fs_theme::tokens::LAUNCHER.field_band) + theme.border_width,
         };
         let foot = match page {
-            Some(f) => f.foot,
+            Some(f) => f.foot + m.layout.close,
             None if m.footless() => 0.0,
             None => theme.border_width + s.control_height,
         };
@@ -3039,9 +3042,8 @@ impl Shown {
             .and_then(|h| h.stop.clone())
     }
 
-    /// The embedded panel's body. A page under a title ends `panelInset`
-    /// above the card's edge; a headerless tile card keeps `panelRowInset`
-    /// all round (panel-language spec §2).
+    /// The embedded panel's body, ending as far above the card's edge as
+    /// its last thing stands off the sides (panel-language spec §2).
     fn panel_el(&self, m: &Model, store: &Store, theme: &Theme) -> Option<El> {
         let p = m.panel.as_ref().filter(|_| m.on_panel())?;
         let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: p.cursor.shown(), hovered: self.hovered_stop() };
@@ -3056,6 +3058,7 @@ impl Shown {
         let width = m.panel_body(theme).1;
         m.layout.content_h = ui::measure(&el, width, theme, kit).1;
         m.layout.row_ends = ui::row_ends(&el, width, theme, kit);
+        m.layout.close = w::closing_room(&theme.space, &el);
     }
 
     /// The body's stops, for the embedded panel's cursor.
