@@ -696,7 +696,8 @@ if [ -n "${FS_CPU_QUOTA:-}" ]; then
   echo "shell cpu quota: $FS_CPU_QUOTA per ${FS_CPU_QUOTA_PERIOD:-100ms}"
 fi
 # FS_TRACE: the shell logs every commit, which the budget legs read.
-shell_prefix="env FS_TRACE=1${shell_env:+ $shell_env}${shell_prefix:+ $shell_prefix}"
+# FS_STALE_DIR: where `debug staleAudit` writes its stale crops.
+shell_prefix="env FS_TRACE=1 FS_STALE_DIR=$shot_dir/stale${shell_env:+ $shell_env}${shell_prefix:+ $shell_prefix}"
 if [ -n "$shell_launcher" ]; then
   "$shell_launcher" "$shell_start_script"
 else
@@ -768,6 +769,29 @@ EOF
     hypr_exec_once "bash $fixture_script"
   fi
 } > "$cfg"
+
+# No stale pixels (`debug staleAudit`, surface/audit.rs): every frame any
+# surface commits between start and stop is checked against the same scene
+# drawn whole, so a partial redraw leaving a pixel behind fails the run
+# with the first stale box cropped (buffer over full draw) under
+# $shot_dir/stale. The two halves go into a drive script as lines:
+# `$(stale_audit_start)`, the moves, a settle, `$(stale_audit_stop <label>)`;
+# the leg's assert then calls `stale_audit_assert <label>`.
+stale_audit_start() { echo "$ipc call debug staleAudit start > /dev/null 2>&1"; }
+stale_audit_stop() { echo "$ipc call debug staleAudit stop > $shot_dir/stale-$1.json 2>&1"; }
+stale_audit_assert() {
+  local report="$shot_dir/stale-$1.json"
+  [ -s "$report" ] || fail "stale-audit: $1: no report"
+  "$jq_bin" -e '[.surfaces[].commits] | add > 0' "$report" > /dev/null 2>&1 \
+    || fail "stale-audit: $1: no commit was checked: $(cat "$report")"
+  local tag=${1^^}
+  echo "SMOKE_STALE_${tag//-/_} $report"
+  if "$jq_bin" -e '[.surfaces[] | select(.stale > 0)] | length > 0' "$report" > /dev/null 2>&1; then
+    local png
+    for png in $("$jq_bin" -r '.surfaces[].first.png // empty' "$report"); do echo "SMOKE_STALE_CROP $png"; done
+    fail "stale-audit: $1: frames left pixels a full redraw does not draw: $("$jq_bin" -c '.surfaces | with_entries(select(.value.stale > 0)) | map_values({commits, stale, worstPx, first: .first.box, last: .last.box})' "$report")"
+  fi
+}
 
 # Every drive starts on an arrived desktop: the bar mapped and the shell's
 # arrival veil (wayland/veil.rs) lifted off it, so no frame a leg takes is
@@ -998,6 +1022,7 @@ panel_language_assert() {
 panel_language_verdict() {
   [ -z "$panel_language_failures" ] || fail "panel-language: $panel_language_failures"
 }
+
 
 if [ -n "$orphans" ]; then
   fail "the shell left children running after it was gone: $(echo "$orphans" | tr "\n" ";")"

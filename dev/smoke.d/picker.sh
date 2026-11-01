@@ -18,6 +18,9 @@
 # variant light` is the segmented switcher's own action over IPC. The route
 # is left open so the run's own screenshot is the grid.
 #
+# Then the cursor walked across and down the grid on real keys, scrolling
+# it, with every frame checked against a full redraw (stale_audit_assert).
+#
 # Before the first pick, `menu actions 0` opens a cell's actions column
 # (Set wallpaper, Open file, Copy path) beside the halved grid.
 #
@@ -31,7 +34,7 @@
 # the clipboard leg wait on this file rather than summoning over the grid.
 leg_picker_flag="--picker"
 leg_picker_order=120
-leg_picker_needs="convert jq"
+leg_picker_needs="convert jq wtype"
 
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the grid
 # covers the whole output, so under --wallpaper it starts after that leg's
@@ -110,6 +113,10 @@ $ipc call picker summon > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$picker_grid_png" > /dev/null 2>&1
 $ipc call picker status > "$picker_flat_status_path" 2>&1
+$(stale_audit_start)
+for key in Right Right Right Down Down Down Left Left Up Up Up Down; do "$wtype_bin" -k "\$key"; sleep 0.2; done
+sleep 1.5
+$(stale_audit_stop picker)
 $ipc call menu actions 0 > /dev/null 2>&1
 sleep 1.5
 $ipc call menu status > "$picker_actions_status_path" 2>&1
@@ -157,6 +164,7 @@ leg_picker_assert() {
     fail "no picker-grid screenshot produced"
   fi
   echo "SMOKE_PICKER_GRID $picker_grid_png"
+  stale_audit_assert picker
   [ -f "$picker_actions_png" ] || fail "no picker actions screenshot produced"
   "$jq_bin" -e '.view == "picker" and .actionsOpen and .actions == ["set", "open-file", "copy-path"]' "$picker_actions_status_path" > /dev/null \
     || fail "a wallpaper cell's column is not Set, Open file, Copy path: $("$jq_bin" -c '{view, actionsOpen, actions}' "$picker_actions_status_path" 2>&1)"

@@ -99,6 +99,7 @@ $ipc call menu close > /dev/null 2>&1
 sleep 2
 $ipc call menu summon emoji > /dev/null 2>&1
 sleep 3
+$(stale_audit_start)
 for stop in $emoji_stops; do
   case "\$stop" in
     open) ;;
@@ -109,6 +110,7 @@ for stop in $emoji_stops; do
   $ipc call menu status > "$shot_dir/emoji-grid-\$stop.json" 2>&1
   "$grim_bin" "$shot_dir/emoji-grid-\$stop.png" > /dev/null 2>&1
 done
+$(stale_audit_stop emoji)
 $ipc call menu close > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
@@ -176,6 +178,7 @@ leg_emoji_assert() {
     "the copied emoji is not a Recent row at the root beside the two seeded picks"
   echo "SMOKE_EMOJI_RECENT $emoji_recent_png (the copied emoji is a pick and lists under Recent)"
   emoji_grid_assert
+  stale_audit_assert emoji
 }
 
 # The share of a crop's pixels that are emoji ink: HSL saturation and

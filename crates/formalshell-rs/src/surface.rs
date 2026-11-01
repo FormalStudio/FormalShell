@@ -38,6 +38,8 @@ use crate::render::{Renderer, scaled};
 use crate::scene::{IRect, Scene};
 use crate::wayland::App;
 
+pub mod audit;
+
 /// Past this many pending rects a buffer just takes their union.
 const STALE_LIMIT: usize = 8;
 
@@ -437,6 +439,8 @@ pub struct Surface<R: Role = LayerSurface> {
     front: Option<usize>,
     retired: Option<Buffer>,
     retired_dmabuf: Option<crate::gpu::Buffer>,
+    /// `debug staleAudit`'s full draw of the frame being committed.
+    audit: Option<vello_cpu::Pixmap>,
     /// The scale and logical size that buffer was drawn at.
     front_view: Option<(f64, (i32, i32))>,
     /// [`Pixels::clear`] is attached: the surface shows nothing and holds
@@ -581,6 +585,7 @@ impl<R: Role> Surface<R> {
             retired: None,
             retired_dmabuf: None,
             front_view: None,
+            audit: None,
             cleared: false,
         }
     }
@@ -934,6 +939,9 @@ impl<R: Role> Surface<R> {
             return;
         }
         let damage = std::mem::take(&mut self.raster);
+        if audit::on() && !self.renderer.is_gpu() {
+            self.audit = Some(audit::reference(scene, self.renderer.scale()));
+        }
         self.commit_frame(damage, scene.size, request, qh);
     }
 
@@ -1118,6 +1126,9 @@ impl<R: Role> Surface<R> {
                     }
                 }
             }
+        }
+        if let Some(reference) = self.audit.take() {
+            audit::compare(self.name, self.commits + 1, &reference, canvas, self.format != wl_shm::Format::Abgr8888, k);
         }
         at
     }

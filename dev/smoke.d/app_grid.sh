@@ -181,12 +181,14 @@ $ipc call menu summon apps > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$app_grid_png" > /dev/null 2>&1
 $ipc call menu status > "$app_grid_open_path" 2>&1
+$(stale_audit_start)
 "$wtype_bin" -k Right
 sleep 1
 $ipc call menu status > "$app_grid_right_path" 2>&1
 "$wtype_bin" -k Down
 sleep 1
 $ipc call menu status > "$app_grid_down_path" 2>&1
+$(stale_audit_stop app-grid)
 # A token only the probe entry carries, so the narrowed grid is one cell and
 # the cursor Enter lands on is unambiguous.
 $ipc call menu filter probe > /dev/null 2>&1
@@ -455,4 +457,5 @@ leg_app_grid_assert() {
     fi
   fi
   echo "SMOKE_APP_GRID_DEFAULT rows with no key set (${marked}px of the probe icon)"
+  stale_audit_assert app-grid
 }

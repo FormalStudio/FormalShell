@@ -162,6 +162,12 @@ const COLORS_LIMIT: usize = 512;
 
 /// A logical length at `scale`, rounded half away from zero the way
 /// wp_fractional_scale_v1 asks a buffer to be.
+/// How far past the canvas pixels its logical bounds touch a node can draw
+/// at a fractional scale: an outline's edges round to whole pixels and a
+/// picture goes on one pixel to a pixel from a rounded corner (`fits`,
+/// `one_to_one`), each up to a pixel out.
+const REACH: i32 = 1;
+
 pub fn scaled(n: i32, scale: f64) -> i32 {
     if scale == 1.0 { n } else { (f64::from(n) * scale).round() as i32 }
 }
@@ -244,7 +250,10 @@ impl Renderer {
         }
     }
 
-    /// The canvas pixels a logical rect touches.
+    /// The canvas pixels the nodes inside a logical rect can draw: the
+    /// pixels it touches and, at a fractional scale, [`REACH`] past them.
+    /// Damage, clears and copies all go through this, so a frame redraws
+    /// every pixel a node drew before it moved.
     pub fn device(&self, rect: IRect) -> IRect {
         if self.scale == 1.0 {
             return rect;
@@ -252,8 +261,9 @@ impl Renderer {
         let s = self.scale;
         let (x0, y0) = ((f64::from(rect.x) * s).floor() as i32, (f64::from(rect.y) * s).floor() as i32);
         let (x1, y1) = ((f64::from(rect.right()) * s).ceil() as i32, (f64::from(rect.bottom()) * s).ceil() as i32);
+        let reach = if s.fract() == 0.0 { 0 } else { REACH };
         let (w, h) = self.pixels();
-        IRect::new(x0, y0, x1 - x0, y1 - y0).intersect(&IRect::new(0, 0, w, h))
+        IRect::new(x0 - reach, y0 - reach, x1 - x0 + reach * 2, y1 - y0 + reach * 2).intersect(&IRect::new(0, 0, w, h))
     }
 
     /// The CPU canvas; a GPU renderer's lives on the device and is copied
@@ -326,10 +336,13 @@ impl Renderer {
         if s != 1.0 {
             origin = origin * Affine::scale(s);
             // Every node reaching a canvas pixel the rect only partly covers
-            // is drawn into it, or that pixel loses whatever it misses.
+            // is drawn into it, or that pixel loses whatever it misses: the
+            // nodes whose own pixels touch it, and at a fractional scale the
+            // ones whose snapped draw reaches it from a pixel further on.
             let (x0, y0) = ((f64::from(device.x) / s).floor() as i32, (f64::from(device.y) / s).floor() as i32);
             let (x1, y1) = ((f64::from(device.right()) / s).ceil() as i32, (f64::from(device.bottom()) / s).ceil() as i32);
-            rect = IRect::new(x0, y0, x1 - x0, y1 - y0);
+            let k = if s.fract() == 0.0 { 0 } else { (f64::from(REACH + 1) / s).floor() as i32 + 1 };
+            rect = IRect::new(x0 - k, y0 - k, x1 - x0 + k * 2, y1 - y0 + k * 2);
         }
         let caches = &mut self.caches;
         caches.scale = s;
@@ -758,7 +771,7 @@ impl Caches {
         // The 1x bitmap sits `dx`, `dy` off the pen; the pen goes on a
         // whole canvas pixel, as a 1x glyph's does.
         let pen = (e - f64::from(color.dx) * a, f - f64::from(color.dy) * a);
-        Some((image, pen.0.round() + f64::from(dx), pen.1.round() + f64::from(dy)))
+        Some((image, half_up(pen.0) + f64::from(dx), half_up(pen.1) + f64::from(dy)))
     }
 
     /// A glyph at a scale past 1, rasterised at that scale rather than its
@@ -788,7 +801,7 @@ impl Caches {
         };
         let Some(coverage) = coverage else { return };
         let pixmap = self.inked(&coverage, ink);
-        ctx.set_transform(Affine::translate((x + f64::from(coverage.x), f.round() + f64::from(coverage.y))));
+        ctx.set_transform(Affine::translate((x + f64::from(coverage.x), half_up(f) + f64::from(coverage.y))));
         ctx.set_image(pixmap, vello_cpu::peniko::ImageSampler::default().with_alpha(ink.a));
         ctx.fill_rect(&Rect::new(0.0, 0.0, f64::from(coverage.w), f64::from(coverage.h)));
     }
@@ -928,7 +941,7 @@ impl Caches {
 /// `density` to one canvas pixel, rounded to the whole pixel.
 fn one_to_one(at: Affine, density: f64) -> Option<(f64, f64)> {
     let [a, b, c, d, e, f] = at.as_coeffs();
-    (b == 0.0 && c == 0.0 && a == d && (a - density).abs() < 1e-3).then(|| (e.round(), f.round()))
+    (b == 0.0 && c == 0.0 && a == d && (a - density).abs() < 1e-3).then(|| (half_up(e), half_up(f)))
 }
 
 /// Where `rect`'s top-left lands on the canvas under `at`, rounded, when a
@@ -940,7 +953,7 @@ fn fits(at: Affine, rect: Rect, size: (f64, f64)) -> Option<(f64, f64)> {
         return None;
     }
     let near = |logical: f64, px: f64| (logical * a - px).abs() <= 1.0;
-    (near(rect.width(), size.0) && near(rect.height(), size.1)).then(|| ((rect.x0 * a + e).round(), (rect.y0 * a + f).round()))
+    (near(rect.width(), size.0) && near(rect.height(), size.1)).then(|| (half_up(rect.x0 * a + e), half_up(rect.y0 * a + f)))
 }
 
 /// A card's paint put on canvas pixels: the one place every box, card and
@@ -1022,8 +1035,10 @@ fn scaled_wall(v: f64, k: f64) -> f64 {
     if v < 0.0 { v } else { v * k }
 }
 
-/// Rounded half up, so every GPU tile, whose origin differs by whole
-/// pixels, rounds an edge the same way.
+/// Rounded half up, so every tile a frame is drawn in, whose origin
+/// differs by whole pixels, rounds an edge the same way: `f64::round`
+/// takes a half away from zero, the other way once the tile's origin puts
+/// the edge at a negative half.
 fn half_up(v: f64) -> f64 {
     (v + 0.5).floor()
 }
@@ -1211,6 +1226,42 @@ mod tests {
         assert_eq!(fits(Affine::scale(1.25), rect, (125.0, 70.0)), Some((13.0, 13.0)));
         assert_eq!(fits(Affine::scale(1.25), rect, (124.0, 71.0)), Some((13.0, 13.0)));
         assert_eq!(fits(Affine::scale(1.25), rect, (100.0, 56.0)), None);
+    }
+
+    /// At 1.25 a picture placed 1:1 off a rounded corner reaches a pixel
+    /// past its bounds' cover. Moving it, and repainting the box beside
+    /// it, through the damage alone leaves what a whole draw does.
+    #[test]
+    fn a_partial_redraw_at_a_fractional_scale_matches_a_whole_one() {
+        use crate::scene::Bitmap;
+        let (w, h) = (120, 60);
+        let picture = || Bitmap::from_rgba(26, 26, vec![200; 26 * 26 * 4]).at(1.25);
+        let mut scene = Scene::new(w, h);
+        // x 14 lands at 17.5, rounded to 18, and 26 pixels end on pixel
+        // 43, one past the cover of x 14..34 (17..42). The box at x 35
+        // starts on pixel 43.
+        let pic = scene.add(IRect::new(14, 10, 20, 20), Paint::Picture { image: picture(), alpha: 1.0, radius: 0.0 });
+        let beside = scene.add(IRect::new(35, 10, 20, 20), Paint::Rect { fill: Rgba::hex(0x204060), radius: 0.0 });
+        let mut partial = Renderer::new(w as u16, h as u16);
+        partial.set_scale(1.25);
+        let draw = |r: &mut Renderer, scene: &mut Scene| {
+            for rect in scene.take_damage() {
+                r.render(scene, rect);
+            }
+        };
+        draw(&mut partial, &mut scene);
+        let whole = |scene: &Scene| {
+            let mut r = Renderer::new(w as u16, h as u16);
+            r.set_scale(1.25);
+            r.render(scene, scene.size);
+            r.canvas().data_as_u8_slice().to_vec()
+        };
+        scene.update_with(beside, IRect::new(35, 10, 20, 20), Paint::Rect { fill: Rgba::hex(0x406080), radius: 0.0 }, true, Affine::IDENTITY, None);
+        draw(&mut partial, &mut scene);
+        assert!(partial.canvas().data_as_u8_slice() == whole(&scene).as_slice(), "the box beside it cut the picture's last column");
+        scene.update_with(pic, IRect::new(14, 32, 20, 20), Paint::Picture { image: picture(), alpha: 1.0, radius: 0.0 }, true, Affine::IDENTITY, None);
+        draw(&mut partial, &mut scene);
+        assert!(partial.canvas().data_as_u8_slice() == whole(&scene).as_slice(), "the picture left its last column behind");
     }
 
     #[test]

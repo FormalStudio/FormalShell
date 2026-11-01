@@ -46,6 +46,11 @@ with `]` is split on commas, a `-x` word is refused, and a bare `show`,
 `wait`, `listen` or `prop` switches subcommand. A `--` before the
 arguments stops the last two; only a leading space stops the split.
 
+A leg that moves a selection (keys, a wheel, a scroll) wraps the moves in
+`$(stale_audit_start)` and `$(stale_audit_stop <label>)` in its drive and
+calls `stale_audit_assert <label>` in its assert: every frame committed in
+between has to equal the same scene drawn whole (`debug staleAudit`).
+
 Exported: `shot_dir`, `iso_home`, `shell_path`, `shell_log_path`, `*_bin`,
 `ipc`, `ipc_wrapper`, `write_script`, `leg_on <n>`,
 `host_notifications_owner_after`. Legs sharing a surface wait

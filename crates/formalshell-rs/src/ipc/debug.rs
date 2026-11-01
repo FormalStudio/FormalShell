@@ -32,6 +32,7 @@ pub fn target() -> Target<App> {
             Function { name: "joinClear", params: &[], ret: Type::String, call: join_clear },
             Function { name: "motionScale", params: &[("percent", Type::Int)], ret: Type::String, call: motion_scale },
             Function { name: "query", params: &[("q", Type::String)], ret: Type::String, call: query },
+            Function { name: "staleAudit", params: &[("action", Type::String)], ret: Type::String, call: stale_audit },
             Function { name: "skyAt", params: &[("instant", Type::String)], ret: Type::String, call: sky_at },
             Function { name: "r0Spinner", params: &[("on", Type::Bool)], ret: Type::String, call: r0_spinner },
             Function { name: "r0Panel", params: &[("action", Type::String)], ret: Type::String, call: r0_panel },
@@ -193,6 +194,25 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Value {
 
 /// The sun the sky desktop is drawn for, null while the desktop is
 /// something else.
+/// `start` checks every commit from here on against a full draw of the
+/// same scene, `read` reports what it found per surface, `stop` reports
+/// and ends it.
+fn stale_audit(_: &mut App, args: &[Value]) -> Value {
+    use crate::surface::audit;
+    match args[0].str() {
+        "start" => {
+            audit::start();
+            ok()
+        }
+        "read" => text(audit::report().to_string()),
+        "stop" => {
+            audit::stop();
+            text(audit::report().to_string())
+        }
+        other => text(format!("error: unknown action {other}, expected start, read or stop")),
+    }
+}
+
 fn sky(app: &App) -> serde_json::Value {
     let Some(s) = app.store.theme.sky else { return serde_json::Value::Null };
     let location = crate::services::theme::location(&app.store.config);

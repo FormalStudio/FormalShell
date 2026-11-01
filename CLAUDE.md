@@ -207,6 +207,14 @@ pipewire, PAM or Wayland to link.
 
 How a run works:
 
+- No stale pixels: `debug staleAudit start` has every frame any surface
+  commits checked against its scene drawn whole into a fresh canvas
+  (`surface/audit.rs`), `stop` reports per surface. The legs that move a
+  selection (`--picker`, `--menu`, `--emoji`, `--app-grid`) wrap their
+  moves in it through `dev/smoke.sh`'s `stale_audit_*` helpers and fail on
+  any stale frame, its first box cropped (buffer over full draw) into
+  `artifacts/`. A new leg moving a selection uses the same helpers.
+
 - Session mode is decided by the machine, never by a flag: a machine with a
   vkms card (the VM rig and the mac rig load one) runs Hyprland on that
   software KMS card, and a real host nests it in the running session. A

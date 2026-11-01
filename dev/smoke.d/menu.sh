@@ -103,6 +103,7 @@ sleep 2
 $ipc call debug query 'e' > "$query_path" 2>&1
 "$grim_bin" "$menu_root_path" > /dev/null 2>&1
 $ipc call menu status > "$menu_status_root_path" 2>&1
+$(stale_audit_start)
 "$wtype_bin" -s 300 -k Down
 sleep 1
 "$grim_bin" "$menu_down_path" > /dev/null 2>&1
@@ -118,6 +119,7 @@ for n in 1 2 3 4; do
   $ipc call menu status > "$shot_dir/menu-status-up\$n.json" 2>&1
 done
 sleep 1
+$(stale_audit_stop menu)
 $ipc call menu filter "Fixture App 03" > /dev/null 2>&1
 sleep 1
 "$wtype_bin" -s 300 -k Return
@@ -340,4 +342,5 @@ leg_menu_assert() {
     [ -f "$selection_path" ] && cat "$selection_path" >&2
     fail "menu close in select mode did not write {cancelled:true}"
   fi
+  stale_audit_assert menu
 }
