@@ -9,7 +9,6 @@
 # first. It anchors to a panel header's own close button, so it has nothing
 # to park on without a panel open.
 leg_tooltip_flag="--tooltip"
-leg_tooltip_scale1="parks the pointer on the header button at logical pixels (1.25: no tooltip)"
 leg_tooltip_order=80
 leg_tooltip_needs="wlrctl"
 # The panel it rides on has already dropped the base fixture window.
@@ -33,9 +32,9 @@ leg_tooltip_timing() {
 }
 
 leg_tooltip_drive() {
-  # 1886x74 is the panel header's close button, and it is the same point
-  # whatever the panel's width: the panel pins the frame's RIGHT edge at
-  # screen.width - barMargin, the Card insets by panelPadding, and the
+  # 34 in from the right and 74 down, in logical pixels, is the panel
+  # header's close button, and it is the same point whatever the panel's
+  # width: the panel pins the frame's RIGHT edge at screen.width - barMargin, the Card insets by panelPadding, and the
   # button is controlHeight square against that inset edge, verticalCentred
   # in a header that starts panelPadding below a frame top of
   # barHeight + barMargin.
@@ -55,7 +54,7 @@ sleep 9
 "$hyprctl_bin" -j layers > "$tooltip_layers_before_path" 2>&1
 "$wlrctl_bin" pointer move -4000 -4000 > "$tooltip_dispatch_path" 2>&1
 sleep 1
-"$wlrctl_bin" pointer move 1886 74 >> "$tooltip_dispatch_path" 2>&1
+"$wlrctl_bin" pointer move $((logical_w - 34)) 74 >> "$tooltip_dispatch_path" 2>&1
 sleep 2
 "$hyprctl_bin" cursorpos >> "$tooltip_dispatch_path" 2>&1
 "$hyprctl_bin" -j layers > "$tooltip_layers_after_path" 2>&1

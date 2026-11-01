@@ -24,7 +24,6 @@
 # resizing a layer surface the compositor would then animate against the
 # shell's own motion.
 leg_notify_flag="--notify"
-leg_notify_scale1="reads the toast layer against device pixels (1.25: 408x864 is the output in logical pixels)"
 leg_notify_order=30
 leg_notify_needs="notify-send convert jq"
 
@@ -117,11 +116,11 @@ leg_notify_assert() {
   done
   # Read as one string so a missing key cannot pass by comparing null with
   # null, and checked against the monitor dev/smoke.sh pins rather than
-  # against itself.
+  # against itself, in the logical pixels hyprctl reports layers in.
   collapsed_size=$("$jq_bin" -r '[.[].levels[]?[]? | select(.namespace == "formalshell:notifications")][0] | "\(.w)x\(.h)"' "$notify_layers_collapsed_path")
   expanded_size=$("$jq_bin" -r '[.[].levels[]?[]? | select(.namespace == "formalshell:notifications")][0] | "\(.w)x\(.h)"' "$notify_layers_expanded_path")
   echo "toast layer size collapsed: $collapsed_size, expanded: $expanded_size"
-  if [ "${collapsed_size%x*}" -ge 1920 ] 2>/dev/null || [ "${collapsed_size#*x}" != 1080 ]; then
+  if [ "${collapsed_size%x*}" -ge "$logical_w" ] 2>/dev/null || [ "${collapsed_size#*x}" != "$logical_h" ]; then
     fail "the toast layer surface is not a column the output's height, got $collapsed_size"
   fi
   if [ "$collapsed_size" != "$expanded_size" ]; then

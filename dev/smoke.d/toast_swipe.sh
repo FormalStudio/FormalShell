@@ -18,14 +18,15 @@
 #   wheel  a sideways wheel notch from wlrctl (no axis_source, a wheel to
 #          Hyprland) over a fresh card: nothing moves and one popup is left.
 #
-# Each card's box is the difference from the frame before any toast, below
-# the bar so the bell cell's unread mark stays out of it, cut at 20% so the
-# fading card still reads. A new card maps a new surface under a still
-# pointer, so the pointer is nudged off and back to send it an enter.
+# The pointer parks on the card's centre off `debug dump`'s `toastCards`, in
+# logical pixels. Each frame's card edge is the difference from the frame
+# before any toast, below the bar so the bell cell's unread mark stays out
+# of it, cut at 20% so the fading card still reads, in frame pixels with
+# its thresholds scaled to match. A new card maps a new surface under a
+# still pointer, so the pointer is nudged off and back to send it an enter.
 leg_toast_swipe_flag="--toast-swipe"
-leg_toast_swipe_scale1="reads the card's edge in device pixels against logical ones (1.25: the slow swipe)"
 leg_toast_swipe_order=32
-leg_toast_swipe_needs="notify-send convert wlrctl python3"
+leg_toast_swipe_needs="notify-send convert wlrctl python3 jq"
 
 toast_swipe_vpointer="$PWD/dev/vpointer.py"
 toast_swipe_body_top=60
@@ -39,6 +40,7 @@ toast_swipe_flick_after_path="$shot_dir/toast-swipe-flick-after.png"
 toast_swipe_wheel_after_path="$shot_dir/toast-swipe-wheel-after.png"
 toast_swipe_status_path="$shot_dir/toast-swipe-status.txt"
 toast_swipe_dispatch_path="$shot_dir/toast-swipe-dispatch.txt"
+toast_swipe_dump_path="$shot_dir/toast-swipe-dump.json"
 
 leg_toast_swipe_validate() {
   local other
@@ -56,7 +58,6 @@ leg_toast_swipe_timing() {
 
 leg_toast_swipe_drive() {
   local script="$shot_dir/toast-swipe-drive.sh"
-  local body_h=$((1080 - toast_swipe_body_top))
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 status() { echo "\$1 \$($ipc call notifications status 2>&1)" >> "$toast_swipe_status_path"; }
@@ -72,17 +73,12 @@ sleep 4
 "$notify_send_bin" -u critical 'Swipe me' 'slow, then long'
 sleep 3
 "$grim_bin" "$toast_swipe_settled_path" > /dev/null 2>&1
-rect=\$($convert_bin "$toast_swipe_bare_path" "$toast_swipe_settled_path" \\
-  -crop "1920x${body_h}+0+${toast_swipe_body_top}" +repage \\
-  -compose difference -composite -threshold 20% -format "%@" info: 2>/dev/null)
-w=\${rect%%x*}
-h=\$(echo "\$rect" | sed -n 's/^[0-9]*x\\([0-9]*\\)+.*/\\1/p')
-x=\$(echo "\$rect" | sed -n 's/.*+\\([0-9]*\\)+[0-9]*\$/\\1/p')
-y=\$(echo "\$rect" | sed -n 's/.*+\\([0-9]*\\)\$/\\1/p')
+$ipc call debug dump > "$toast_swipe_dump_path" 2>&1
+read -r x y w h < <("$jq_bin" -r '.toastCards[0].rect | "\(.x) \(.y) \(.width) \(.height)"' "$toast_swipe_dump_path" 2>/dev/null)
 [ -n "\$w" ] && [ -n "\$h" ] && [ -n "\$x" ] && [ -n "\$y" ] || exit 0
 "$wlrctl_bin" pointer move -4000 -4000 >> "$toast_swipe_dispatch_path" 2>&1
 sleep 0.5
-"$wlrctl_bin" pointer move \$((x + w / 2)) \$((y + $toast_swipe_body_top + h / 2)) >> "$toast_swipe_dispatch_path" 2>&1
+"$wlrctl_bin" pointer move \$((x + w / 2)) \$((y + h / 2)) >> "$toast_swipe_dispatch_path" 2>&1
 sleep 1
 status parked
 vp \$(for _ in \$(seq 10); do printf 'hfinger -2 wait 30 '; done)
@@ -122,8 +118,9 @@ EOF
 # The left edge of everything that differs from the bare frame below the
 # bar, or nothing when the two match there.
 toast_swipe_left() {
-  local h=$((1080 - toast_swipe_body_top)) rect
-  rect=$($convert_bin "$toast_swipe_bare_path" "$1" -crop "1920x${h}+0+${toast_swipe_body_top}" +repage \
+  local top rect
+  top=$(logical_px "$toast_swipe_body_top")
+  rect=$($convert_bin "$toast_swipe_bare_path" "$1" -crop "${out_w}x$((out_h - top))+0+${top}" +repage \
     -compose difference -composite -threshold 20% -format "%@" info: 2>/dev/null)
   echo "$rect" | sed -n 's/.*+\([0-9]*\)+[0-9]*$/\1/p'
 }
@@ -148,7 +145,8 @@ leg_toast_swipe_assert() {
   echo "SMOKE_TOAST_SWIPE_STATUS $toast_swipe_status_path"
   # Printed before anything is asserted, so a failing run still says where
   # each frame put the card.
-  local rest slow_mid slow_back long_mid wheel
+  local rest slow_mid slow_back long_mid wheel near far slip
+  near=$(logical_px 12); far=$(logical_px 40); slip=$(logical_px 2)
   rest=$(toast_swipe_left "$toast_swipe_settled_path")
   slow_mid=$(toast_swipe_left "$toast_swipe_slow_mid_path")
   slow_back=$(toast_swipe_left "$toast_swipe_slow_back_path")
@@ -158,13 +156,13 @@ leg_toast_swipe_assert() {
   cat "$toast_swipe_status_path" 2>/dev/null || true
   [ -n "$rest" ] || fail "could not measure the settled card off the bare/settled pair"
   [ "$(toast_swipe_popups parked)" = 1 ] || fail "expected one popup before any swipe"
-  [ -n "$slow_mid" ] && [ "$slow_mid" -ge $((rest + 12)) ] \
+  [ -n "$slow_mid" ] && [ "$slow_mid" -ge $((rest + near)) ] \
     || fail "the slow swipe did not carry the card right mid-gesture: rest $rest, mid ${slow_mid:-none}"
   [ "$(toast_swipe_popups slow-mid)" = 1 ] || fail "the card went before the fingers lifted"
-  [ -n "$slow_back" ] && [ "$slow_back" -le $((rest + 2)) ] && [ "$slow_back" -ge $((rest - 2)) ] \
+  [ -n "$slow_back" ] && [ "$slow_back" -le $((rest + slip)) ] && [ "$slow_back" -ge $((rest - slip)) ] \
     || fail "the slow swipe did not spring back onto its place: rest $rest, after ${slow_back:-none}"
   [ "$(toast_swipe_popups slow-after)" = 1 ] || fail "a 22px slow swipe dismissed the card"
-  [ -n "$long_mid" ] && [ "$long_mid" -ge $((rest + 40)) ] \
+  [ -n "$long_mid" ] && [ "$long_mid" -ge $((rest + far)) ] \
     || fail "the long swipe did not carry the card right: rest $rest, mid ${long_mid:-none}"
   [ "$(toast_swipe_popups long-after)" = 0 ] || fail "a 67px swipe left the card up"
   [ "$(toast_swipe_popups flick-before)" = 1 ] || fail "the flick's card never popped up"

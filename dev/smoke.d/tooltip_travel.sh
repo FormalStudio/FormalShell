@@ -21,7 +21,6 @@
 # pointer for its own run, and a second drive script moving the same pointer
 # under it would decide neither claim.
 leg_tooltip_travel_flag="--tooltip-travel"
-leg_tooltip_travel_scale1="parks the pointer on the header buttons at logical pixels (1.25: no tooltip)"
 leg_tooltip_travel_order=81
 leg_tooltip_travel_needs="wlrctl jq"
 # The panel it rides on has already dropped the base fixture window.
@@ -51,8 +50,8 @@ leg_tooltip_travel_timing() {
 }
 
 leg_tooltip_travel_drive() {
-  # 1886x74 is the panel header's close button and 1846x74 the rescan button
-  # beside it; --tooltip's own header carries where those come from and why
+  # 34 in from the right and 74 down is the panel header's close button and
+  # 40 left of it the rescan button; --tooltip's own header carries where those come from and why
   # this is wlrctl rather than a cursor warp. The second move is relative to
   # the first, so it needs no second slam into the corner, and it leaves the
   # close button and enters the rescan button in one motion, which is what
@@ -63,7 +62,7 @@ leg_tooltip_travel_drive() {
 sleep 9
 "$wlrctl_bin" pointer move -4000 -4000 > "$tooltip_travel_dispatch_path" 2>&1
 sleep 1
-"$wlrctl_bin" pointer move 1886 74 >> "$tooltip_travel_dispatch_path" 2>&1
+"$wlrctl_bin" pointer move $((logical_w - 34)) 74 >> "$tooltip_travel_dispatch_path" 2>&1
 sleep 2
 "$hyprctl_bin" cursorpos >> "$tooltip_travel_dispatch_path" 2>&1
 "$hyprctl_bin" -j layers > "$tooltip_travel_layers_first_path" 2>&1
