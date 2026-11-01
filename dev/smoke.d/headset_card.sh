@@ -31,7 +31,6 @@
 # The pointer is wlrctl, a real virtual-pointer client, for the reason
 # tooltip.sh documents: only one sends the surface a pointer enter.
 leg_headset_card_flag="--headset-card"
-leg_headset_card_scale1="parks the pointer on the card at logical pixels (1.25: the held count)"
 leg_headset_card_order=177
 leg_headset_card_needs="wlrctl jq wtype foot"
 
@@ -50,9 +49,9 @@ headset_buds_address="AC:12:2F:11:22:33"
 headset_cans_address="11:22:33:44:55:66"
 headset_pods_address="AA:BB:CC:DD:EE:01"
 
-# The band the card hangs in: below the bar's strip, centred.
-headset_region="660,30 600x150"
-headset_park_x=960
+# The band the card hangs in, below the bar's strip and centred, in the
+# logical pixels grim -g and the pointer take: the output's centre is x 768
+# at 1.25.
 headset_park_y=85
 
 leg_headset_card_validate() {
@@ -87,6 +86,9 @@ leg_headset_card_drive() {
   local script="$shot_dir/headset-card-drive.sh"
   local state_dir="$iso_home/.local/state/librepods"
   local fs_state="$iso_home/.local/state/formalshell/state.json"
+  local headset_park_x headset_region
+  headset_park_x=$(to_logical 960)
+  headset_region="$((headset_park_x - 300)),30 600x150"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 list() { printf '[{"address":"$headset_buds_address","name":"Liberty 4 NC","connected":%s,"battery":80},{"address":"$headset_cans_address","name":"Studio Cans","connected":%s,"icon":"audio-headphones","battery":55},{"address":"$headset_pods_address","name":"Kyan'"'"'s AirPods Pro","connected":%s}]\n' "\$1" "\$2" "\$3" > "$headset_list"; }
