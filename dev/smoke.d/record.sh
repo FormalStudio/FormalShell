@@ -19,11 +19,12 @@
 # which is why the assertions read the destination back out of `record
 # status` rather than off a path this leg chose. `desktop` audio needs only
 # the VM's own pipewire null-sink monitor, so the finalize pass has a real
-# audio track to normalize. webcam is on to exercise the overlay path
-# against a machine with no /dev/video* at all: the honest WEBCAM
-# UNAVAILABLE leg, which resolves on an empty device glob and costs nothing.
+# audio track to normalize. webcam is on to exercise the overlay path: on a
+# machine with no /dev/video* the honest WEBCAM UNAVAILABLE leg, and on
+# g815, whose slot users can open its cameras, a real overlay mapped and
+# placed before wf-recorder starts, up to seven seconds in, so the leg
+# waits for `active` rather than reading it at a fixed second.
 leg_record_flag="--record"
-leg_record_scale1="records a region cut at logical pixels (1.25: wf-recorder failed)"
 leg_record_order=210
 leg_record_needs="file ffprobe"
 
@@ -46,11 +47,11 @@ leg_record_fixture() {
 }
 
 leg_record_timing() {
-  # The drive script's worst case: 4s startup, 4s recording, 2s, a 15s
-  # stop-settle ceiling and a 40s transcode ceiling. The typical path is
-  # closer to 20s, since both ceilings are polls that break the moment the
+  # The drive script's worst case: 4s startup, a 15s start ceiling, 4s
+  # recording, 2s, a 15s stop-settle ceiling and a 40s transcode ceiling.
+  # The typical path is closer to 20s, since both ceilings are polls that break the moment the
   # state settles.
-  leg_timing 70 95
+  leg_timing 85 110
 }
 
 leg_record_drive() {
@@ -59,6 +60,12 @@ leg_record_drive() {
 #!/usr/bin/env bash
 sleep 4
 $ipc call record start screen desktop > "$record_start_reply_path" 2>&1
+SECONDS=0
+while [ "\$SECONDS" -lt 15 ]; do
+  $ipc call record status > "$record_status1_path" 2>&1
+  grep -qF '"active":true' "$record_status1_path" && break
+  sleep 0.5
+done
 # Long enough that the container holds real frames rather than a header: the
 # GIF transcode below has to have something to read.
 sleep 4
