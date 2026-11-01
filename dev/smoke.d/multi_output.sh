@@ -32,7 +32,6 @@
 # The frame's zones are counted against the shell's own `debug dump`: four
 # with the ring drawn, none without.
 leg_multi_output_flag="--multi-output"
-leg_multi_output_scale1="clicks the second output's cells at logical pixels (1.25: the audio cell click missed)"
 leg_multi_output_order=217
 leg_multi_output_needs="jq wlrctl convert wtype foot"
 
@@ -83,9 +82,11 @@ sleep 4
 "$hyprctl_bin" -j layers > "$multi_output_layers_one" 2>&1
 $ipc call debug dump > "$multi_output_dump" 2>&1
 first=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].name')
-width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
+# Monitor positions and the pointer are in logical pixels.
+lw=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width / .[0].scale | floor')
+lh=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].height / .[0].scale | floor')
 "$hyprctl_bin" output create headless "$multi_output_second" > "$multi_output_create" 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
+"$hyprctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${lw}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
 sleep 4
 "$hyprctl_bin" -j monitors > "$multi_output_monitors" 2>&1
 "$hyprctl_bin" -j layers > "$multi_output_layers_two" 2>&1
@@ -93,8 +94,6 @@ sleep 4
 "$grim_bin" -o "$multi_output_second" "$multi_output_second_png" > /dev/null 2>&1
 sleep 6
 call() { $ipc call "\$@"; }
-lw=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width / .[0].scale | floor')
-lh=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].height / .[0].scale | floor')
 park() {
   "$wlrctl_bin" pointer move -8000 -8000 >> "$multi_output_click" 2>&1
   "$wlrctl_bin" pointer move "\$1" "\$2" >> "$multi_output_click" 2>&1
@@ -158,7 +157,7 @@ sleep 2
 sleep 3
 "$hyprctl_bin" -j layers > "$multi_output_layers_gone" 2>&1
 "$hyprctl_bin" output create headless "$multi_output_second" >> "$multi_output_create" 2>&1
-"$hyprctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${width}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
+"$hyprctl_bin" eval "hl.monitor({ output = \\"$multi_output_second\\", mode = \\"1600x1000@60\\", position = \\"\${lw}x0\\", scale = 1.25 })" >> "$multi_output_create" 2>&1
 sleep 4
 "$hyprctl_bin" -j layers > "$multi_output_saver_readd" 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_saver_readd_png" > /dev/null 2>&1
