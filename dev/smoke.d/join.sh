@@ -59,7 +59,6 @@
 # edge or with the frame on photographs the same cases over the whole output
 # and prints each claim as skipped instead; those layouts are read by eye.
 leg_join_flag="--join"
-leg_join_scale1="at 1.25 the attached card's fill covers a quarter of the line's row (its cut at 39 lands on 48.75, 0D0D0F over 09090B): a render seam, not a probe"
 leg_join_order=182
 leg_join_needs="wlrctl convert jq"
 
