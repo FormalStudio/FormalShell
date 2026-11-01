@@ -23,7 +23,6 @@
 # - settings.json retargeted to `theme.reactiveRims: false` under the
 #   running shell: `rims.enabled` false and the panel's rim gone.
 leg_reactive_rims_flag="--reactive-rims"
-leg_reactive_rims_scale1="reads the rims at logical pixels (1.25: the right rim reads the same)"
 leg_reactive_rims_order=79
 leg_reactive_rims_needs="convert jq foot"
 
@@ -114,11 +113,19 @@ _reactive_rims_mean() {
     -format '%[fx:int(mean.r*255+0.5)] %[fx:int(mean.g*255+0.5)] %[fx:int(mean.b*255+0.5)]\n' info: 2>/dev/null
 }
 
-# A 1px column `inset` pixels in from the card's left (or right) edge,
-# clear of its corners.
+# The card's rect in the frame's pixels, its edges on the first and last
+# whole pixel the 1px rim covers at the output's scale, as "x0 y0 x1 y1"
+# with x1 and y1 past the edge.
+_reactive_rims_rect() {
+  scaled_jq -r '.rims.panel.rect | "\(.[0] * $s | ceil) \(.[1] * $s | ceil) \(.[2] * $s | floor) \(.[3] * $s | floor)"' "$1"
+}
+
+# A 1px column `inset` logical pixels in from the card's left (or right)
+# edge, clear of its corners.
 _reactive_rims_column() {
-  local json="$1" side="$2" inset="$3" x0 y0 x1 y1 x h
-  read -r x0 y0 x1 y1 < <("$jq_bin" -r '.rims.panel.rect | map(round) | "\(.[0]) \(.[1]) \(.[2]) \(.[3])"' "$json")
+  local json="$1" side="$2" inset x0 y0 x1 y1 x h
+  inset=$(to_px "$3")
+  read -r x0 y0 x1 y1 < <(_reactive_rims_rect "$json")
   h=$(((y1 - y0) / 2))
   if [ "$side" = left ]; then x=$((x0 + inset)); else x=$((x1 - 1 - inset)); fi
   echo "1x$h+$x+$((y0 + h / 2))"
@@ -127,11 +134,12 @@ _reactive_rims_column() {
 # The same column cut to the stretch the window beside the card spans
 # (its top 24px under the card's, 200px tall), 16px clear of either end.
 _reactive_rims_span() {
-  local json="$1" side="$2" inset="$3" x0 y0 x1 y1 x top bottom
-  read -r x0 y0 x1 y1 < <("$jq_bin" -r '.rims.panel.rect | map(round) | "\(.[0]) \(.[1]) \(.[2]) \(.[3])"' "$json")
-  top=$((y0 + 40))
-  bottom=$((y0 + 208))
-  [ "$bottom" -le $((y1 - 16)) ] || bottom=$((y1 - 16))
+  local json="$1" side="$2" inset x0 y0 x1 y1 x top bottom
+  inset=$(to_px "$3")
+  read -r x0 y0 x1 y1 < <(_reactive_rims_rect "$json")
+  top=$((y0 + $(to_px 40)))
+  bottom=$((y0 + $(to_px 208)))
+  [ "$bottom" -le $((y1 - $(to_px 16))) ] || bottom=$((y1 - $(to_px 16)))
   if [ "$side" = left ]; then x=$((x0 + inset)); else x=$((x1 - 1 - inset)); fi
   echo "1x$((bottom - top))+$x+$top"
 }
