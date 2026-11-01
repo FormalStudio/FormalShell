@@ -105,7 +105,10 @@ check() {
   m=\$($ipc call menu status 2>/dev/null | "$jq_bin" -c '{isOpen, level}' 2>/dev/null)
   echo "\$1 menu=\$m panel=\$($ipc call panel state 2>/dev/null)" >> "\$d/checks.txt"
 }
-desktop() { to 900 700; click; }
+# Off every surface: the bottom-left corner, which no card hanging off the
+# top bar reaches (the calendar's runs down to y 730 under the clock).
+bare() { to 120 1000; }
+desktop() { bare; click; }
 patch_mean() { $convert_bin "\$1" -crop "\$2" +repage -colorspace gray -format '%[fx:int(mean*255)]' info: 2>/dev/null; }
 # A mode flip under an open card: frames until the card's fill has moved,
 # up to 12s, and how long that took. The palette comes off matugen, a child
@@ -126,7 +129,7 @@ flip() {
 sleep 6
 $ipc call bar room > "\$d/room.json" 2>&1
 # The pointer starts off every surface.
-to 900 700
+bare
 launcher=\$(cell launcher)
 
 log launcher-click
@@ -134,7 +137,7 @@ burst launcher-click 3
 "$grim_bin" "\$d/launcher-click-desktop.png"
 to \$launcher; click; sleep 1.2; check launcher-click-fresh
 "$grim_bin" "\$d/launcher-click-fresh.png"
-key -k Escape; sleep 1.2; to 900 700
+key -k Escape; sleep 1.2; bare
 
 log launcher-spam
 burst launcher-spam 3
