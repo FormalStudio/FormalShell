@@ -412,9 +412,6 @@ fn push(q: &mut std::collections::VecDeque<f64>, v: Option<f64>) {
     }
 }
 
-pub const MONITOR_ROUTE: &str = "monitor";
-pub const MIRROR_ROUTE: &str = "mirror";
-
 /// What the card's size travels on when it changes (`Shown::layout`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SizeKey {
@@ -422,6 +419,9 @@ struct SizeKey {
     halved: bool,
     app_view: bool,
 }
+
+pub const MONITOR_ROUTE: &str = "monitor";
+pub const MIRROR_ROUTE: &str = "mirror";
 
 /// The wallpaper route lists `dir`, and in
 /// select mode answers `token` in picker-selection.txt instead of setting
@@ -717,13 +717,13 @@ impl Model {
         self.column.is_some() || self.pane().is_some()
     }
 
-    /// The query the list is ranked by: the field's, or while the column
-    /// filters through the field, the one it held before.
-    fn list_text(&self) -> &str {
     fn size_key(&self) -> SizeKey {
         SizeKey { level: self.level.clone(), halved: self.halved(), app_view: self.app_view() }
     }
 
+    /// The query the list is ranked by: the field's, or while the column
+    /// filters through the field, the one it held before.
+    fn list_text(&self) -> &str {
         self.column.as_ref().map_or(self.query.text(), |c| c.list_query.as_str())
     }
 
@@ -2946,10 +2946,10 @@ impl Shown {
             laid_for: (0.0, 0.0),
             laid_view: None,
             morph: (Animated::new(theme.space.popup_width_menu, Clock::Spatial.curve()), Animated::new(0.0, Clock::Spatial.curve())),
+            sized_for: None,
             sel_anchor,
             sel_nodes: Vec::new(),
             sel: [sel(), sel(), sel(), sel()],
-            sized_for: None,
             sel_on: None,
             centred: false,
             panel_origin: 0.0,
