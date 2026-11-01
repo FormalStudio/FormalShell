@@ -25,7 +25,6 @@
 # Its clock starts after --lock's whole sequence when both run, since both
 # lock the one session.
 leg_lock_media_flag="--lock-media"
-leg_lock_media_scale1="reads the card's fill at logical pixels (1.25: dark and light fill the same)"
 leg_lock_media_order=111
 leg_lock_media_needs="mpv ffmpeg convert wtype jq"
 
@@ -128,8 +127,7 @@ _lock_media_out() {
 # shell sampled rather than a guess at where the clock landed.
 _lock_media_ink_px() {
   local json="$1" png="$2" geom dark light
-  geom=$("$jq_bin" -r '.outputs | to_entries | .[0].value.clockRect
-    | "\(.width | floor)x\(.height | floor)+\(.x | floor)+\(.y | floor)"' "$json" 2>/dev/null)
+  geom=$(scaled_jq -r "$geometry_jq"'.outputs | to_entries | .[0].value.clockRect | geometry' "$json" 2>/dev/null)
   dark=$($convert_bin "$png" -crop "$geom" +repage -colorspace gray \
     -threshold 27% -negate -format '%[fx:int(mean*w*h)]' info: 2>/dev/null)
   light=$($convert_bin "$png" -crop "$geom" +repage -colorspace gray \
@@ -141,8 +139,8 @@ _lock_media_ink_px() {
 # padding: inside its border and clear of the rounded corners.
 _lock_media_card_band() {
   local json="$1" png="$2" geom
-  geom=$("$jq_bin" -r '.outputs | to_entries | .[0].value.mediaCard // empty
-    | "\((.width - 48) | floor)x6+\((.x + 24) | floor)+\((.y + 3) | floor)"' "$json" 2>/dev/null)
+  geom=$(scaled_jq -r "$geometry_jq"'.outputs | to_entries | .[0].value.mediaCard // empty
+    | {x: (.x + 24), y: (.y + 3), width: (.width - 48), height: 6} | geometry' "$json" 2>/dev/null)
   [ -n "$geom" ] || return 0
   $convert_bin "$png" -crop "$geom" +repage -colorspace gray \
     -format '%[fx:int(mean*1000)] %[fx:int(standard_deviation*1000)]' info: 2>/dev/null
