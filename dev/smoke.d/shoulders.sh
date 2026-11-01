@@ -38,12 +38,12 @@
 # between the open and closed frames for a reason that has nothing to do with
 # the join.
 leg_shoulders_flag="--shoulders"
-leg_shoulders_scale1="reads its reference inks at logical pixels (1.25: two inks the same)"
 leg_shoulders_order=74
 leg_shoulders_needs="convert jq"
 
-# Centred under the bar, and wide enough that both fillets are far from
-# anything else on the strip.
+# Centred under the bar (the drive centres it on the output's logical
+# width), and wide enough that both fillets are far from anything else on
+# the strip.
 shoulders_join_x=800
 shoulders_join_width=320
 
@@ -65,7 +65,6 @@ shoulders_open_crop_path="$shot_dir/shoulders-open-crop.png"
 # shell's own number and only the dump knows it.
 shoulders_crop_width=480
 shoulders_crop_height=110
-shoulders_crop_x=730
 
 leg_shoulders_validate() {
   local other
@@ -91,6 +90,7 @@ leg_shoulders_timing() {
 
 leg_shoulders_drive() {
   local script="$shot_dir/shoulders-drive.sh"
+  shoulders_join_x=$((logical_w / 2 - shoulders_join_width / 2))
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 4
@@ -115,6 +115,11 @@ EOF
 # whole number already, and rounding says so rather than comparing reals.
 shoulders_field() {
   "$jq_bin" -r "$2 | if . == null then \"null\" else (. | round) end" "$1" 2>/dev/null
+}
+
+# The frame's pixel a logical coordinate falls in.
+shoulders_px() {
+  awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", int(n * s) }'
 }
 
 # One pixel's r,g,b out of a frame.
@@ -230,7 +235,7 @@ leg_shoulders_assert() {
   # the wall clock into a PNG's tIME chunk, which would leave two
   # byte-identical pictures comparing unequal (panel_emerge.sh's finding).
   local box
-  box="${shoulders_crop_width}x${shoulders_crop_height}+${shoulders_crop_x}+$((line_row - 1))"
+  box=$(logical_box "$shoulders_crop_width" "$shoulders_crop_height" $((shoulders_join_x - 70)) $((line_row - 1)))
   $convert_bin "$shoulders_closed_path" -crop "$box" +repage -strip "$shoulders_closed_crop_path" > /dev/null 2>&1
   $convert_bin "$shoulders_open_path" -crop "$box" +repage -strip "$shoulders_open_crop_path" > /dev/null 2>&1
   for f in "$shoulders_closed_crop_path" "$shoulders_open_crop_path"; do
@@ -245,15 +250,23 @@ leg_shoulders_assert() {
     fail "the box at $box is identical open and closed: no card was drawn in the gap"
   fi
 
+  # Every probe from here on is in the frame's own pixels: the line's row
+  # is the last one its logical rect covers, the row a whole-pixel border
+  # lands on, and every column is the pixel its logical one falls in.
+  local line_y line_h row mid_x card_row
+  line_y=$line_row
+  line_h=$(shoulders_field "$shoulders_dump_open_path" '.bar[0].line[0].height')
+  row=$(( $(logical_px $((line_y + line_h))) - 1 ))
+  mid_x=$(shoulders_px $((shoulders_join_x + shoulders_join_width / 2)))
+  card_row=$(shoulders_px $((line_y + 60)))
+
   # The three inks, all sampled out of the frames under test rather than
   # restated from a palette: the border off the line a long way from the
   # join, the card fill out of the middle of the card, and the desktop out of
   # the same place with nothing joined.
-  shoulders_border_ink=$(shoulders_pixel "$shoulders_open_path" 200 "$line_row")
-  shoulders_card_ink=$(shoulders_pixel "$shoulders_open_path" \
-    $((shoulders_join_x + shoulders_join_width / 2)) $((line_row + 60)))
-  shoulders_desktop_ink=$(shoulders_pixel "$shoulders_closed_path" \
-    $((shoulders_join_x + shoulders_join_width / 2)) $((line_row + 60)))
+  shoulders_border_ink=$(shoulders_pixel "$shoulders_open_path" "$(shoulders_px 200)" "$row")
+  shoulders_card_ink=$(shoulders_pixel "$shoulders_open_path" "$mid_x" "$card_row")
+  shoulders_desktop_ink=$(shoulders_pixel "$shoulders_closed_path" "$mid_x" "$card_row")
   echo "SMOKE_SHOULDERS_INK border=$shoulders_border_ink card=$shoulders_card_ink desktop=$shoulders_desktop_ink"
   local pair
   for pair in "$shoulders_border_ink:$shoulders_card_ink" \
@@ -267,21 +280,21 @@ leg_shoulders_assert() {
   # Each end of the gap: the line's last pixel and the arc's first, on the
   # same row, both border ink. A gap pixel or a doubled line shows up as one
   # of the two reading something else.
-  shoulders_probe "$shoulders_open_path" $((gap_start - 1)) "$line_row" border "line-into-near-arc"
-  shoulders_probe "$shoulders_open_path" "$gap_start" "$line_row" border "near-arc-end"
-  shoulders_probe "$shoulders_open_path" $((gap_end - 1)) "$line_row" border "far-arc-end"
-  shoulders_probe "$shoulders_open_path" "$gap_end" "$line_row" border "line-out-of-far-arc"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px $((gap_start - 1)))" "$row" border "line-into-near-arc"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px "$gap_start")" "$row" border "near-arc-end"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px $((gap_end - 1)))" "$row" border "far-arc-end"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px "$gap_end")" "$row" border "line-out-of-far-arc"
 
   # Inside the gap the line's own row is still the band's (`--join`'s seam
   # claim: a card filling it too would paint it twice), and one row inward
   # the card is the only thing drawing, so the desktop never shows through.
-  shoulders_probe "$shoulders_open_path" "$shoulders_join_x" "$line_row" border "band-on-the-line"
-  shoulders_probe "$shoulders_open_path" "$shoulders_join_x" $((line_row + 1)) card "card-one-row-inward"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px "$shoulders_join_x")" "$row" border "band-on-the-line"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px "$shoulders_join_x")" $((row + 1)) card "card-one-row-inward"
 
   # And the fillet really is concave: just inside the arc's outer end, two
   # rows in, is desktop rather than card. A square shoulder would fill it.
-  shoulders_probe "$shoulders_open_path" $((gap_start + 3)) $((line_row + 2)) desktop "inside-the-near-fillet"
+  shoulders_probe "$shoulders_open_path" "$(shoulders_px $((gap_start + 3)))" "$(shoulders_px $((line_y + 2)))" desktop "inside-the-near-fillet"
 
   # With nothing joined, that same place on the line is the line itself.
-  shoulders_probe "$shoulders_cleared_path" "$shoulders_join_x" "$line_row" border "line-closed-again"
+  shoulders_probe "$shoulders_cleared_path" "$(shoulders_px "$shoulders_join_x")" "$row" border "line-closed-again"
 }
