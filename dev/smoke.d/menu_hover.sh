@@ -20,7 +20,6 @@
 # one event onto the third row's fifth cell and nudged a pixel, and later
 # one cell right. Everything is sampled at a tenth speed.
 leg_menu_hover_flag="--menu-hover"
-leg_menu_hover_scale1="moves the pointer onto a cell at logical pixels (1.25: Right did not move the cursor)"
 leg_menu_hover_order=128
 leg_menu_hover_needs="wlrctl wtype convert jq"
 
@@ -100,9 +99,10 @@ EOF
 # Mean luminance of a cell's own fill: a 6px patch 6px inside its left
 # edge, halfway down, clear of the glyph and of the corner's radius. `$2`
 # is the cell's left edge inside the crop, for the pair the keys move over.
+# The drive's cell is logical; grim -g crops it at the output's scale.
 menu_hover_luma() {
   local h
-  h=$(cut -d' ' -f4 "$shot_dir/menu-hover-cell.txt")
+  h=$(logical_px "$(cut -d' ' -f4 "$shot_dir/menu-hover-cell.txt")")
   "$convert_bin" "$1" -crop "6x6+$((${2:-0} + 6))+$((h / 2 - 3))" +repage -colorspace Gray -format '%[fx:mean]' info: 2>/dev/null
 }
 
@@ -143,7 +143,7 @@ menu_hover_span() {
 # cell fading out while the other fades in.
 menu_hover_keys() {
   local w rest sel b1 la lb i l r a b between=0 dark=""
-  w=$(cut -d' ' -f3 "$shot_dir/menu-hover-cell.txt")
+  w=$(logical_px "$(cut -d' ' -f3 "$shot_dir/menu-hover-cell.txt")")
   "$jq_bin" -e ".cursor == 1" "$shot_dir/menu-hover-keys.json" > /dev/null \
     || fail "Right did not move the cursor from cell 0 onto cell 1: $(cat "$shot_dir/menu-hover-keys.json")"
   sel=$(menu_hover_luma "$shot_dir/menu-hover-keys-from.png")
