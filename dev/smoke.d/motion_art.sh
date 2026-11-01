@@ -23,7 +23,6 @@
 #            on the green static art and the bar not committing; then the
 #            panel open again on its own decoder, the bar still quiet.
 leg_motion_art_flag="--motion-art"
-leg_motion_art_scale1="crops the bar's cover at logical pixels (1.25: the cover did not move)"
 leg_motion_art_order=36
 leg_motion_art_needs="mpv ffmpeg convert jq"
 
@@ -133,11 +132,10 @@ motion_art_counts() {
 # The bar's now-playing cell off `bar room`, widened past the strip's own
 # inset so the cover is inside it wherever the strip starts.
 motion_art_bar_crop() {
-  local cell x w h
-  cell=$("$jq_bin" -r '[.[0].cells[] | select(.name == "nowPlaying")][0] | "\(.x) \(.width) \(.height)"' "$motion_art_room" 2>/dev/null)
-  read -r x w h <<< "$cell"
-  [ -n "$x" ] && [ "$x" != null ] || return 1
-  $convert_bin "$1" -crop "$((w + 64))x$((h + 64))+$x+0" +repage "$2"
+  local box
+  box=$(scaled_jq -r "$geometry_jq"'[.[0].cells[] | select(.name == "nowPlaying")][0] // empty | {x, y: 0, width: (.width + 64), height: (.height + 64)} | geometry' "$motion_art_room" 2>/dev/null)
+  [ -n "$box" ] || return 1
+  $convert_bin "$1" -crop "$box" +repage "$2"
 }
 
 motion_art_result() {
