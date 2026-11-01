@@ -162,12 +162,19 @@ impl App {
         }
         let lifted = t.sync_layer(layer);
         let moved = t.sync_region(&self.compositor, covered);
-        if moved || lifted {
-            t.scene.touch(crate::scene::IRect::new(0, 0, 1, 1));
-        }
         let passive = moved && covered;
         let animating = t.animating(now);
-        t.surface.present(&mut t.scene, animating, &qh);
+        if !up && !animating && !t.was_animating {
+            // An empty column is one clear pixel: its output-tall canvas and
+            // buffer go until the next toast.
+            t.scene.take_damage();
+            t.surface.present_clear((t.scene.size.w, t.scene.size.h), moved || lifted, &self.pixels, &self.shm, &qh);
+        } else {
+            if moved || lifted {
+                t.scene.touch(crate::scene::IRect::new(0, 0, 1, 1));
+            }
+            t.surface.present(&mut t.scene, animating, &qh);
+        }
         if passive {
             self.log("toasts input empty");
         }

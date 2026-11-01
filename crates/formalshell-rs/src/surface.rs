@@ -350,6 +350,23 @@ impl Scaler {
     }
 }
 
+impl Scaler {
+    /// The viewport for a one-pixel buffer over the whole surface: no
+    /// source, `size` as the destination.
+    fn stretch(&mut self, surface: &WlSurface, size: (i32, i32), qh: &QueueHandle<App>) {
+        if self.viewport.is_none() {
+            if let Some(viewporter) = SCALING.get().and_then(|s| s.viewporter.as_ref()) {
+                self.viewport = Some(viewporter.get_viewport(surface, qh, Inert));
+            }
+        }
+        let Some(viewport) = &self.viewport else { return };
+        viewport.set_source(-1.0, -1.0, -1.0, -1.0);
+        viewport.set_destination(size.0.max(1), size.1.max(1));
+        // The next frame's viewport is sent again whatever it is.
+        self.sent = Some((Some([-1.0; 4]), size));
+    }
+}
+
 impl Drop for Scaler {
     fn drop(&mut self) {
         if let Some(f) = self.fractional.take() {
@@ -422,6 +439,9 @@ pub struct Surface<R: Role = LayerSurface> {
     retired_dmabuf: Option<crate::gpu::Buffer>,
     /// The scale and logical size that buffer was drawn at.
     front_view: Option<(f64, (i32, i32))>,
+    /// [`Pixels::clear`] is attached: the surface shows nothing and holds
+    /// no canvas or buffers ([`Surface::present_clear`]).
+    cleared: bool,
 }
 
 /// Rows per band of a sliced frame.
@@ -561,6 +581,7 @@ impl<R: Role> Surface<R> {
             retired: None,
             retired_dmabuf: None,
             front_view: None,
+            cleared: false,
         }
     }
 
@@ -676,6 +697,66 @@ impl<R: Role> Surface<R> {
         self.layer.role_commit();
     }
 
+    /// Shows nothing until the next [`Surface::present`]: a clear single
+    /// pixel stretched over the surface's `size`, with the pool, buffers and
+    /// canvas let go, so a surface kept mapped while it is empty (the toast
+    /// column, output tall) holds none of their memory. Once clear, it
+    /// commits again only when `commit` asks, for state set beside the
+    /// buffer (its layer, its input region).
+    pub fn present_clear(&mut self, size: (i32, i32), commit: bool, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<App>) {
+        self.scaler.follow(self.layer.role_surface(), qh);
+        if self.frame_pending || !self.configured {
+            return;
+        }
+        let request = self.wait_map && !self.mapped;
+        let surface = self.layer.role_surface();
+        if self.cleared {
+            if commit || (request && self.commits > 0) {
+                if request {
+                    surface.frame(qh, FrameCallbackData(surface.clone()));
+                    self.frame_pending = true;
+                }
+                self.layer.role_commit();
+            }
+            return;
+        }
+        self.scaler.stretch(surface, size, qh);
+        surface.attach(Some(&pixels.clear), 0, 0);
+        surface.damage_buffer(0, 0, 1, 1);
+        if request {
+            surface.frame(qh, FrameCallbackData(surface.clone()));
+            self.frame_pending = true;
+            self.asked = Some(Instant::now());
+        }
+        self.layer.role_commit();
+        self.cleared = true;
+        self.commits += 1;
+        self.front = None;
+        self.retired = None;
+        self.retired_dmabuf = None;
+        self.front_view = None;
+        self.buffers.clear();
+        self.dmabufs.clear();
+        if let Ok(pool) = SlotPool::new(4096, shm) {
+            self.pool = pool;
+            self.pool_clean = true;
+        }
+        self.drawn = None;
+        self.raster.clear();
+        self.left.clear();
+        self.renderer.resize(1, 1);
+        if crate::tracing() {
+            crate::trace(format!(
+                "commit surface={} n={} t={}ms render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=clear frame_callbacks={} request={}",
+                self.name,
+                self.commits,
+                self.started.elapsed().as_millis(),
+                self.callbacks,
+                request as u8,
+            ));
+        }
+    }
+
     /// Sizes the canvas ahead of the compositor's first configure, so the
     /// first frame is drawn while it is on its way.
     pub fn presize(&mut self, width: i32, height: i32) {
@@ -759,6 +840,10 @@ impl<R: Role> Surface<R> {
     /// The compositor's size, which the owner has resized its scene to.
     pub fn configure(&mut self, width: i32, height: i32) {
         self.configured = true;
+        // The canvas comes back at the scene's size on the next frame drawn.
+        if self.cleared {
+            return;
+        }
         if (self.renderer.width() as i32, self.renderer.height() as i32) != (width, height) {
             self.renderer.resize(width as u16, height as u16);
             self.drop_buffers();
@@ -777,6 +862,10 @@ impl<R: Role> Surface<R> {
             self.leave_gpu(scene);
         } else if !self.renderer.is_gpu() && on_gpu(self.name) && crate::gpu::active() {
             self.enter_gpu(scene);
+        }
+        if std::mem::take(&mut self.cleared) {
+            self.renderer.resize(scene.size.w.max(1) as u16, scene.size.h.max(1) as u16);
+            scene.touch(IRect::new(0, 0, scene.size.w, scene.size.h));
         }
         // A scene resized ahead of the compositor's configure (the bar
         // moving edge) keeps its damage until the buffers match it.
@@ -1212,16 +1301,15 @@ pub struct Pixels {
     pub viewporter: WpViewporter,
     pub single_pixel: WpSinglePixelBufferManagerV1,
     pub alpha: WpAlphaModifierV1,
+    /// One clear pixel, attached to any surface showing nothing.
+    pub clear: WlBuffer,
 }
 
 impl Pixels {
     pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Result<Self, BindError> {
-        Ok(Self {
-            subcompositor: globals.bind(qh, 1..=1, Ignore)?,
-            viewporter: globals.bind(qh, 1..=1, Ignore)?,
-            single_pixel: globals.bind(qh, 1..=1, Ignore)?,
-            alpha: globals.bind(qh, 1..=1, Ignore)?,
-        })
+        let single_pixel: WpSinglePixelBufferManagerV1 = globals.bind(qh, 1..=1, Ignore)?;
+        let clear = single_pixel.create_u32_rgba_buffer(0, 0, 0, 0, qh, Ignore);
+        Ok(Self { subcompositor: globals.bind(qh, 1..=1, Ignore)?, viewporter: globals.bind(qh, 1..=1, Ignore)?, single_pixel, alpha: globals.bind(qh, 1..=1, Ignore)?, clear })
     }
 }
 
