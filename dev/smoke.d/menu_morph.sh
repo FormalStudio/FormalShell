@@ -52,7 +52,9 @@ leg_menu_morph_fixture() {
 }
 
 leg_menu_morph_timing() {
-  leg_timing 60 100
+  # Four bursts of frames: the drive runs past the default 52s cap where
+  # grim is slow, so the session waits it out.
+  leg_timing 60 140 0 110
 }
 
 leg_menu_morph_drive() {

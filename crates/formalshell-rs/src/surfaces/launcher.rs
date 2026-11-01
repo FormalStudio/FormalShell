@@ -3088,7 +3088,14 @@ impl Shown {
                 }
                 None => 0.0,
             };
-            let tall = m.layout.content_h.max(pane);
+            // An empty level has no rows to hug: room for its words, a
+            // control height either side.
+            let content = if m.rows.is_empty() {
+                ui::measure(&empty_words(m, s), m.body_width(theme), theme, kit).1 + s.control_height * 2.0
+            } else {
+                m.layout.content_h
+            };
+            let tall = content.max(pane);
             if tall > cap && pane == 0.0 && m.view == View::Rows { m.whole_rows(cap, s.lg) } else { tall.min(cap) }
         } else {
             cap
@@ -3757,6 +3764,22 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
     (if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el }, settling)
 }
 
+/// A level with no rows: its own note, else what the query found nothing
+/// for.
+fn empty_words(m: &Model, s: &fs_theme::tokens::Space) -> El {
+    let title = match &m.empty {
+        Some(n) => n.label.clone(),
+        None if m.mode == Mode::Input => String::new(),
+        None if !m.query.is_empty() => format!("No results for \u{201C}{}\u{201D}", m.query.text()),
+        None => "No results".into(),
+    };
+    let mut col = vec![w::text(title).ink(Ink::Muted).centred()];
+    if let Some(d) = m.empty.as_ref().and_then(|n| n.desc.clone()).filter(|d| !d.is_empty()) {
+        col.push(w::caption(d).mono().centred());
+    }
+    w::column(s.row_gap, col)
+}
+
 /// The body's widgets for the slots inside the viewport, the rest as room.
 /// Rows mid-transition go to `overlays` instead, each with its own rect in
 /// body coordinates: they cross other rows, which the stacked column cannot.
@@ -3768,17 +3791,10 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         return mirror_body(m, store, theme);
     }
     if m.rows.is_empty() {
-        let title = match &m.empty {
-            Some(n) => n.label.clone(),
-            None if m.mode == Mode::Input => String::new(),
-            None if !m.query.is_empty() => format!("No results for \u{201C}{}\u{201D}", m.query.text()),
-            None => "No results".into(),
-        };
-        let mut col = vec![w::space((view_h / 2.0 - s.control_height).max(0.0)), w::text(title).ink(Ink::Muted).centred()];
-        if let Some(d) = m.empty.as_ref().and_then(|n| n.desc.clone()).filter(|d| !d.is_empty()) {
-            col.push(w::caption(d).mono().centred());
-        }
-        return w::column(s.row_gap, col);
+        // A card hugging its content was given a control height either side
+        // of the words; a fixed one sets them a little above its middle.
+        let above = if m.content_tall() { s.control_height } else { (view_h / 2.0 - s.control_height).max(0.0) };
+        return w::column(0.0, vec![w::space(above), empty_words(m, s)]);
     }
     let lo = scroll - view_h * 0.5;
     let hi = scroll + view_h * 1.5;

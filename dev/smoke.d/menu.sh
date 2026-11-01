@@ -26,10 +26,11 @@
 # The field is typed into on real keys: a word, Ctrl+A selecting all of it
 # (menu-selected.png has the selection fill), a second word replacing it,
 # then Shift+Home and Backspace emptying it, each read off `menu status`'s
-# `query`, `caret` and `selection`.
+# `query`, `caret` and `selection`. A query nothing matches leaves a card
+# tall enough for its words: "No results" read whole off menu-empty.png.
 leg_menu_flag="--menu"
 leg_menu_order=20
-leg_menu_needs="jq wtype"
+leg_menu_needs="jq wtype convert tesseract"
 
 # This leg's own clock. The launcher covers the whole output, so under
 # --wallpaper it starts after that leg's last frame (t=14) rather than
@@ -146,6 +147,10 @@ $ipc call menu status > "$shot_dir/menu-status-replaced.json" 2>&1
 "$wtype_bin" -s 300 -k BackSpace
 sleep 0.6
 $ipc call menu status > "$shot_dir/menu-status-emptied.json" 2>&1
+$ipc call menu filter zqxjvwk > /dev/null 2>&1
+sleep 1
+"$grim_bin" "$shot_dir/menu-empty.png" > /dev/null 2>&1
+$ipc call menu status > "$shot_dir/menu-status-empty.json" 2>&1
 $ipc call menu summon emoji > /dev/null 2>&1
 sleep 1
 $ipc call menu filter smiling > /dev/null 2>&1
@@ -298,6 +303,13 @@ leg_menu_assert() {
     || fail "typing over the Ctrl+A selection did not replace it: $(cat "$shot_dir/menu-status-replaced.json")"
   "$jq_bin" -e '.query == "" and .caret == 0 and .isOpen' "$shot_dir/menu-status-emptied.json" > /dev/null 2>&1 \
     || fail "Shift+Home then Backspace did not empty the query: $(cat "$shot_dir/menu-status-emptied.json")"
+  local box ocr
+  box=$("$jq_bin" -r 'select(.query == "zqxjvwk" and (.ids | length) == 0) | .cardBox | "\(.width)x\(.height)+\(.x)+\(.y)"' "$shot_dir/menu-status-empty.json" 2>/dev/null)
+  [ -n "$box" ] || fail "a query nothing matches did not empty the list: $(cat "$shot_dir/menu-status-empty.json")"
+  "$convert_bin" "$shot_dir/menu-empty.png" -crop "$box" -resize 200% "$shot_dir/menu-empty-card.png"
+  ocr=$("$tesseract_bin" "$shot_dir/menu-empty-card.png" - 2>/dev/null)
+  grep -qF 'No results' <<< "$ocr" || fail "the empty card does not carry its No results line whole: $(tr '\n' ' ' <<< "$ocr")"
+  echo "SMOKE_MENU_EMPTY $shot_dir/menu-empty.png"
   echo "SMOKE_MENU_FIELD fire, Ctrl+A, term, Shift+Home and Backspace"
   if [ ! -s "$menu_status_emoji_path" ]; then
     fail "no emoji menu status produced"
