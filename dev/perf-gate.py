@@ -28,6 +28,13 @@ gets 2 MB over the median instead, the idle commit count and the shell's
 engine time stay exactly 0, the compositor's engine time stays at or under
 its median, and the DRM fd count is reported only.
 
+Each run carries g815's ACPI platform profile, read just before it, and a
+check refuses runs read on another profile than the baseline's: every CPU
+number moves with it (the baseline's own commit reads its launcher first
+commit at 15 to 25 ms on balanced against 8 to 9 on performance), and the
+shell's Overnight mode drops performance to balanced until it is turned off.
+`run` stops before a run on the wrong one.
+
 The compositor's engine time is read on the median of five --idle runs:
 over a window the shell commits once in, it is one or two of the nested
 Hyprland's frames, and the same build reads 595k to 705k ns from run to run
@@ -70,6 +77,15 @@ NUMBERS = {
     "bar_gap_ms_max": ("--menu-budget", "spread"),
 }
 RSS_ALLOWANCE_KB = 2048
+PROFILE_LINE = "host platform_profile: "
+
+
+def host_profile():
+    out = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "LogLevel=ERROR", "g815", "cat /sys/firmware/acpi/platform_profile"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        raise SystemExit(f"reading g815's platform profile: {out.stderr.strip()}")
+    return out.stdout.strip()
 
 
 def kv(line):
@@ -92,6 +108,7 @@ def extract(path):
         raise SystemExit(f"{path}: quota {m.group(1)} per {m.group(2)}, the baseline's is 10% per 2ms")
     n = {}
     lines = text.splitlines()
+    profile = next((l[len(PROFILE_LINE):].strip() for l in lines if l.startswith(PROFILE_LINE)), None)
     backend = "cpu"
     told = next((l for l in lines if l.startswith("SMOKE_BACKEND ")), None)
     if told:
@@ -147,24 +164,27 @@ def extract(path):
         n["bar_gap_ms_max"] = int(worst["bar_gap_ms"])
     if not n:
         raise SystemExit(f"{path}: carries no --idle, --r0-measure or --menu-budget output")
-    return backend, mode, n
+    return backend, mode, n, profile
 
 
 def group(paths):
-    """The runs per mode and number, and the one backend they all drew on."""
-    runs, backends = {"plain": {}, "quota": {}}, set()
+    """The runs per mode and number, the one backend they all drew on, and
+    the platform profiles they were read on (None for a run that predates
+    the line)."""
+    runs, backends, profiles = {"plain": {}, "quota": {}}, set(), set()
     for p in paths:
-        backend, mode, n = extract(p)
+        backend, mode, n, profile = extract(p)
         backends.add(backend)
+        profiles.add(profile)
         for k, v in n.items():
             runs[mode].setdefault(k, []).append(v)
     if len(backends) != 1:
         raise SystemExit(f"runs drawn on {', '.join(sorted(backends))}: one backend at a time")
-    return backends.pop(), runs
+    return backends.pop(), runs, profiles
 
 
 def cmd_extract(paths):
-    print(json.dumps({p: dict(zip(("backend", "mode", "numbers"), extract(p))) for p in paths}, indent=2))
+    print(json.dumps({p: dict(zip(("backend", "mode", "numbers", "platform_profile"), extract(p))) for p in paths}, indent=2))
 
 
 def cmd_baseline(args):
@@ -173,10 +193,13 @@ def cmd_baseline(args):
     commit, paths, note = args[1], args[2:], None
     if paths[:1] == ["--note"] and len(paths) > 2:
         note, paths = paths[1], paths[2:]
-    backend, runs = group(paths)
+    backend, runs, profiles = group(paths)
+    if len(profiles) != 1 or None in profiles:
+        raise SystemExit(f"a baseline takes runs read on one platform profile, these were read on {sorted(map(str, profiles))}")
     out = {
         "commit": commit,
         "host": "g815",
+        "platform_profile": profiles.pop(),
         "backend": backend,
         "taken": time.strftime("%Y-%m-%d"),
         **({"note": note} if note else {}),
@@ -202,8 +225,11 @@ def cmd_baseline(args):
 
 
 def cmd_check(paths):
-    backend, runs = group(paths)
+    backend, runs, profiles = group(paths)
     base = json.load(open(BASELINES[backend]))
+    other = sorted(p for p in profiles if p is not None and p != base["platform_profile"])
+    if other:
+        raise SystemExit(f"runs read on the {', '.join(other)} platform profile, the baseline's is {base['platform_profile']}: the CPU numbers do not compare")
     over = []
     print(f"{backend} baseline {base['commit'][:12]} on {base['host']}")
     for mode, numbers in runs.items():
@@ -247,6 +273,7 @@ def cmd_run(args):
     for leg in legs:
         if leg not in LEGS:
             raise SystemExit(f"unknown leg {leg}, one of {', '.join(LEGS)}")
+    want = json.load(open(BASELINES[backend]))["platform_profile"]
     out = os.path.join(REPO, "artifacts/perf", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out)
     paths = []
@@ -263,8 +290,13 @@ def cmd_run(args):
                 if mode == "quota":
                     env.update(QUOTA_ENV)
                 path = os.path.join(out, f"{leg}-{backend}-{mode}-{i}.txt")
+                profile = host_profile()
+                if profile != want:
+                    raise SystemExit(f"g815 is on the {profile} platform profile, the baseline's is {want} (Overnight drops performance to balanced): stopped before {leg} {mode} {i}")
                 print(f"{time.strftime('%H:%M:%S')} {leg} {mode} {i}", flush=True)
                 with open(path, "w") as f:
+                    f.write(PROFILE_LINE + profile + "\n")
+                    f.flush()
                     status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", "--backend", backend, *LEGS[leg]],
                                              stdout=f, stderr=subprocess.STDOUT, env=env, cwd=REPO)
                 if status != 0:

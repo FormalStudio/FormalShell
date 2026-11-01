@@ -17,7 +17,9 @@
 #   stall     the badge spinning across ten panel opens, for the longest gap
 #             between bar frames and the time to the opening surface's first
 #             frame
-#   rss       VmRSS and the thread count at <seconds> after the launch
+#   rss       VmRSS and the thread count at <seconds> after the launch,
+#             the RSS of every mapping holding 256 KB or more, and of
+#             each shm pool on a line of its own
 # Every step is stamped in r0-marks.txt on the wall clock in ns. The shell
 # logs every commit and puts its own zero on the wall clock
 # (`start epoch_us=`). shell-start.ns is the launch stamp a cold start
@@ -140,6 +142,7 @@ mark stall-end
 while [ \$(( (\$(date +%s%N) - start) / 1000000000 )) -lt $(leg_arg r0_measure) ]; do sleep 1; done
 mark rss
 echo "rss \$(awk '/^(VmRSS|VmHWM|Threads):/{printf "%s=%s ", \$1, \$2}' "/proc/\$pid/status")" >> "$r0_results_path"
+awk '/^[0-9a-f]+-[0-9a-f]+ /{n=(NF>=6)?\$6:"[anon]"} /^Size:/{sz=\$2} /^Rss:/{if (n ~ /^\/memfd:/) printf "smaps %s size=%d rss=%d\n", n, sz, \$2; else r[n]+=\$2} END{for(k in r) if(r[k]>=256) printf "smaps %s rss=%d\n", k, r[k]}' "/proc/\$pid/smaps" >> "$r0_results_path"
 touch "$r0_done_path"
 EOF
   hypr_exec_once "bash $script"
