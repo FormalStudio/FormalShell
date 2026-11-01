@@ -18,9 +18,9 @@
 # of full frames afterwards rather than sampled live:
 #   left  over the audio card's resting place
 #   right over the network card's
-#   gap   the 1120px between them, bare desktop at both rests
+#   gap   the 1120px between them (736 at 1.25), bare desktop at both rests
 #   band  the whole strip, for the settled frame
-# A card is 380 wide and the two end boxes are 1300 apart, so one card can
+# A card is 380 wide and the two end boxes are 1300 apart at scale 1 (916 at 1.25), so one card can
 # never be in both: `left is bare OR right is bare` holds for every frame of
 # a handoff and fails for a pair crossing. The gap box is what a card in
 # transit is in, for most of the travel, and nothing at rest is in it, so it
@@ -42,7 +42,6 @@
 # The travel is front-loaded, which is why three of the five sit inside its
 # first third: that is where a card is between the two rests.
 leg_panel_handoff_flag="--panel-handoff"
-leg_panel_handoff_scale1="cuts its box at logical pixels (1.25: the box is not bare desktop)"
 leg_panel_handoff_order=78
 leg_panel_handoff_needs="convert"
 
@@ -76,14 +75,18 @@ for panel_handoff_f in "${panel_handoff_mid_fractions[@]}"; do
   panel_handoff_mid_sleeps+=("$(printf '%d.%03d' $((panel_handoff_at / 1000)) $((panel_handoff_at % 1000)))")
 done
 
-# ImageMagick geometry (WxH+X+Y), since these are cropped out of saved PNGs
-# rather than handed to grim. The band is below the 40px bar and inside any
-# panel card: a card's own top is one barMargin under the bar, and its
-# padding, header row and seam alone already carry it past y=160.
-panel_handoff_left_box="200x100+100+60"
-panel_handoff_right_box="200x100+1600+60"
-panel_handoff_gap_box="1120x100+400+60"
-panel_handoff_band_box="1920x100+0+60"
+# Logical boxes, cut out of the saved PNGs as the frame's own pixels once
+# the run has read the output's scale (panel_handoff_boxes). The band is
+# below the 40px bar and inside any panel card: a card's own top is one
+# barMargin under the bar, and its padding, header row and seam alone
+# already carry it past y=160. The right box and the gap's end hang off the
+# output's logical width, the network card resting against its right edge.
+panel_handoff_boxes() {
+  panel_handoff_left_box=$(logical_box 200 100 100 60)
+  panel_handoff_right_box=$(logical_box 200 100 $((logical_w - 320)) 60)
+  panel_handoff_gap_box=$(logical_box $((logical_w - 800)) 100 400 60)
+  panel_handoff_band_box=$(logical_box "$logical_w" 100 0 60)
+}
 
 leg_panel_handoff_validate() {
   local other
@@ -146,6 +149,7 @@ panel_handoff_crop() {
 
 leg_panel_handoff_assert() {
   local f i
+  panel_handoff_boxes
   for f in "$panel_handoff_audio_open_path" "$panel_handoff_audio_close_path" \
     "$panel_handoff_network_open_path" "$panel_handoff_reply_path"; do
     if ! grep -q '^ok$' "$f" 2>/dev/null; then
