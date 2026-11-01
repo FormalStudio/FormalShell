@@ -4,8 +4,10 @@
 # formalshell-depth writes one (`.depth/<name>.png`, not older than the
 # picture), seeded into state.json before the shell starts. The picture is a
 # dark field with an orange band down the screen through the default
-# theme's clock digits (x 588 to 767 at 1920x1080), and the map is white over
-# that band alone, so the band is the subject.
+# theme's clock digits (x 588 to 767 at 1920x1080 and scale 1), and the map
+# is white over that band alone, so the band is the subject. The card is
+# centred, so at another scale the band and every probe across it sit as
+# far off the output's centre column times the scale (`depth_x`).
 #
 # Two frames of the same lock: the first under the defaults, the band drawn
 # over the clock's digits; the second after settings.json is retargeted to
@@ -26,7 +28,6 @@
 # the picture's size that is not flat and sits within 0.1 mean difference of
 # the committed reference map, and `lock status` reporting `depth` over it.
 leg_depth_flag="--depth"
-leg_depth_scale1="reads the clock's box at logical pixels (1.25: the band did not hide the clock)"
 leg_depth_order=111
 leg_depth_needs="convert jq"
 
@@ -63,6 +64,9 @@ depth_status_off_path="$shot_dir/depth-status-off.json"
 depth_gen1_path="$shot_dir/depth-settings-gen1.json"
 depth_gen2_path="$shot_dir/depth-settings-gen2.json"
 
+# A column at scale 1 as the same place on the card at the run's scale.
+depth_x() { awk -v x="$1" -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d\n", int(960 + (x - 960) * s + 0.5) }'; }
+
 leg_depth_generate() {
   local bin="$PWD/result/lib/formalshell/bin/formalshell-depth" map="$depth_dir/.depth/mountains.jpg.png" log="$shot_dir/depth-generate.log" diff
   [ -x "$bin" ] || fail "FS_DEPTH_GENERATE needs the result's formalshell-depth ($bin)"
@@ -90,8 +94,10 @@ leg_depth_fixture() {
     cp "$map" "$depth_dir/.depth/$(basename "$depth_real").png"
     touch -r "$depth_picture_path" "$depth_dir/.depth/$(basename "$depth_real").png"
   else
-  $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 620,0 739,1079' "$depth_picture_path"
-  $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 620,0 739,1079' "$depth_dir/.depth/band.png.png"
+  local band
+  band="rectangle $(depth_x 620),0 $(depth_x 739),1079"
+  $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw "$band" "$depth_picture_path"
+  $convert_bin -size 1920x1080 xc:black -fill white -draw "$band" "$depth_dir/.depth/band.png.png"
   touch -r "$depth_picture_path" "$depth_dir/.depth/band.png.png"
   fi
   mkdir -p "$iso_home/.local/state/formalshell"
@@ -132,9 +138,8 @@ leg_depth_assert() {
   local rect x y bottom crop
   rect=$("$jq_bin" -c 'first(.. | objects | select(.depthRect != null) | .depthRect)' "$depth_status_on_path")
   [ -n "$rect" ] || fail "lock status reported no depthRect with depth on"
-  x=680
-  y=$("$jq_bin" '.y' <<<"$rect")
-  bottom=$("$jq_bin" '.y + .height' <<<"$rect")
+  x=$(depth_x 680)
+  read -r y bottom < <(scaled_jq -r '"\(.y * $s | floor) \((.y + .height) * $s | ceil)"' <<<"$rect")
   for pair in "$((y - 3)) $((y + 3))" "$((bottom - 4)) $((bottom + 2))"; do
     set -- $pair
     local a b
@@ -149,7 +154,7 @@ leg_depth_assert() {
   done
   # The band clear of its feathered sides, down the drawn rect: one flat
   # fill with the digits hidden, the digits back with depth off.
-  crop="104x$((bottom - y))+628+$y"
+  crop="$(($(depth_x 732) - $(depth_x 628)))x$((bottom - y))+$(depth_x 628)+$y"
   on=$($convert_bin "$depth_on_path" -crop "$crop" +repage -format '%[fx:standard_deviation]' info:)
   off=$($convert_bin "$depth_off_path" -crop "$crop" +repage -format '%[fx:standard_deviation]' info:)
   echo "depth band under the clock, spread: on $on off $off"
