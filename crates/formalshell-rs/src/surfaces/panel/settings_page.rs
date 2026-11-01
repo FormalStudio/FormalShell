@@ -104,7 +104,10 @@ fn row(v: &View, key: &Key) -> w::Part {
             let names = values.iter().map(|(_, name)| (*name).to_owned()).collect();
             let picker = w::segmented(names, at).fill().on(stop(key)).stop(stop(key));
             let mut label = vec![w::panel_heading_with(s, key.label, values[at].1).fill()];
-            label.extend(trailing);
+            // The reset button's glyph ends on the text column, as a
+            // header's last button's does.
+            let end = w::text_inset(s) - (s.control_height - s.panel_mark) / 2.0;
+            label.extend(trailing.into_iter().map(|t| t.pad(0.0, 0.0, end, 0.0)));
             w::Part::Loose(w::panel_control(s, w::row(s.panel_gap, label).fill(), picker))
         }
     }

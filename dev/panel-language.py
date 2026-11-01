@@ -17,15 +17,19 @@ failure exiting 1:
   and the corner radius are left out.
 - bottom: the body ends `row inset` above the edge, the room its rows keep
   from the sides. A body ending on a box (a group, a hovered row) has it
-  as far off the bottom as off either side, within 1px; one ending on
+  as far off the bottom as off either side, within 1px; one under a header ending on
   words (a row's label, a caption) has them no closer than `row inset`
   and no further than `inset` plus a quarter row, where a row centred on
   its band puts them.
 - one inset level: no two box borders standing side by side down the text
-  column's left edge, which is what a box inside a group draws.
+  column's left edge, which is what a box inside a group draws. A line
+  wider than a logical pixel is the focus ring round the selected row and
+  is left out.
 - even insets: the room from the card's left edge to its first ink equals
-  the room after its last ink, and on a headerless card (a strip of chips)
-  the room above equals the room below, within 1px.
+  the room after its last ink, and on a headerless card ending on a box (a
+  strip of chips) the room above and below each equal that side room,
+  within 1px. A headerless card ending on words is an empty line centred
+  in its row, whose ink sits as high as its glyphs do.
 
 Ink is anything off the card's fill, the fill being the commonest colour
 down each gutter, taken per side so a rim leaning one way does not count. The pointer stays off the card in these
@@ -126,17 +130,23 @@ if low is None:
 else:
     gap = y1 - low[0]
     if low[1] >= len(xs) // 2:
-        # The box's own sides, read clear of its rounded bottom corners.
+        # The box's own sides: the nearest ink to either edge over its last
+        # corner radius of rows, so its straight sides and not its rounded
+        # bottom corners, even where it is thinner than that (a rail).
         y = max(low[0] - RADIUS, body_top)
-        left = next((x - x0 for x in range(x0 + 3, x1 - 2) if d(px[x, y], fills["left"]) > INK), None)
-        right = next((x1 - x for x in range(x1 - 3, x0 + 2, -1) if d(px[x, y], fills["right"]) > INK), None)
+        lefts = [next((x - x0 for x in range(x0 + 3, x1 - 2) if d(px[x, r], fills["left"]) > INK), None) for r in range(y, low[0] + 1)]
+        rights = [next((x1 - x for x in range(x1 - 3, x0 + 2, -1) if d(px[x, r], fills["right"]) > INK), None) for r in range(y, low[0] + 1)]
+        left = min((v for v in lefts if v is not None), default=None)
+        right = min((v for v in rights if v is not None), default=None)
         if left is None or right is None:
             say("bottom", False, f"the last box ends {gap}px above the edge, its sides not found at y+{y - y0}")
         else:
             say("bottom", abs(gap - left) <= 1 and abs(gap - right) <= 1, f"the last box ends {gap}px above the edge, {left}px and {right}px off the sides")
-    else:
+    elif header:
         most = inset + band // 4
         say("bottom", row_inset - 1 <= gap <= most, f"the last ink {gap}px above the edge (between {row_inset} and {most})")
+    else:
+        say("bottom", True, f"an empty line {gap}px above the edge, read by even insets")
 
 
 # One inset level: border lines down the column's left edge, by x.
@@ -167,6 +177,18 @@ for x, a, b in runs:
         borders[-1] = (x, min(a, borders[-1][1]), max(b, borders[-1][2]))
     else:
         borders.append((x, a, b))
+
+
+def drawn_width(x, y):
+    tone = sum(px[x, y])
+    left = next((i for i in range(x, x - 8, -1) if abs(sum(px[i - 1, y]) - tone) > LINE), x - 8)
+    right = next((i for i in range(x, x + 8) if abs(sum(px[i + 1, y]) - tone) > LINE), x + 8)
+    return right - left + 1
+
+
+# A box's border is one logical pixel; the focus ring round a selected row
+# is two, and is the one ring the design allows inside a box.
+borders = [(x, a, b) for x, a, b in borders if drawn_width(x, (a + b) // 2) <= math.ceil(scale)]
 nested = [(p, q) for i, p in enumerate(borders) for q in borders[i + 1:] if min(p[2], q[2]) - max(p[1], q[1]) >= RUN]
 if nested:
     p, q = nested[0]
@@ -214,7 +236,7 @@ else:
         top = y - y0
         break
     bottom = next((y1 - y for y in range(y1 - 3, y0 + 2, -1) if any(d(px[x, y], fill) > INK for x in xs)), None)
-    if top is not None and not header:
-        say("even insets top/bottom", abs(top - bottom) <= 1, f"{top}px above the first ink, {bottom}px under the last")
+    if top is not None and not header and low is not None and low[1] >= len(xs) // 2:
+        say("even insets top/bottom", abs(top - lead) <= 1 and abs(bottom - lead) <= 1, f"{top}px above the first ink, {bottom}px under the last, {lead}px off the left")
 
 sys.exit(1 if failed else 0)

@@ -378,12 +378,24 @@ pub fn closing_room(s: &Space, body: &El) -> f64 {
 
 /// How far in from the body's edge its last thing starts: the start pads
 /// down the run of last children, to the first box (a cell) or leaf.
-fn closing_inset(el: &El) -> f64 {
-    let last = match &el.kind {
+fn last_child(el: &El) -> Option<&El> {
+    match &el.kind {
         Kind::Column { children, .. } => children.iter().rev().find(|c| !matches!(c.kind, Kind::Space { .. })),
         _ => None,
-    };
-    el.pad[0] + last.map_or(0.0, closing_inset)
+    }
+}
+
+fn closing_inset(el: &El) -> f64 {
+    // A row's words sit in the middle of its band, but a rail closing a
+    // hero lies on the cell's bottom edge, on the column the cell's inset
+    // puts it.
+    if let Kind::Cell { state, child, .. } = &el.kind
+        && let Some((x, _)) = state.inset
+        && last_child(child).is_some_and(|c| matches!(c.kind, Kind::Track { .. }))
+    {
+        return el.pad[0] + x;
+    }
+    el.pad[0] + last_child(el).map_or(0.0, closing_inset)
 }
 
 /// A segmented choice in a panel, on the text column like a group's box.
