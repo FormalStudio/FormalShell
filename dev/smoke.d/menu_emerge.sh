@@ -333,7 +333,10 @@ leg_menu_emerge_assert() {
   # against how far the card's own fill has, each as a share of its change
   # at rest: the content may never lead the card under it. The fill is read
   # in the header's own left padding, beside the text, where nothing is
-  # drawn on the card.
+  # drawn on the card. Once the fill reads whole there is nothing left
+  # for the text to lead, and a card still travelling to its rest carries
+  # the header's words through the text probe at other heights, past their
+  # rest share.
   local card cx cy ch fill_box text_box fill_rest text_rest ladder="" lead=""
   card=$("$jq_bin" -r '[.modals[] | select(.namespace == "formalshell:menu") | .card] | first | "\(.x) \(.y) \(.width) \(.height)"' \
     "$menu_emerge_rest_dump_path" 2>/dev/null)
@@ -353,7 +356,7 @@ leg_menu_emerge_assert() {
     local pair
     pair=$(awk -v f="$f" -v t="$t" -v fr="$fill_rest" -v tr="$text_rest" 'BEGIN { printf "%.2f/%.2f", t / tr, f / fr }')
     ladder="$ladder $i:$pair"
-    awk -v f="$f" -v t="$t" -v fr="$fill_rest" -v tr="$text_rest" 'BEGIN { exit !(t / tr > f / fr + 0.2) }' && lead="$lead $i"
+    awk -v f="$f" -v t="$t" -v fr="$fill_rest" -v tr="$text_rest" 'BEGIN { exit !(f / fr < 0.95 && t / tr > f / fr + 0.2) }' && lead="$lead $i"
   done
   echo "SMOKE_MENU_EMERGE_CONTENT text/fill$ladder"
   [ -z "$lead" ] || fail "the header's text came in ahead of the card fill under it in frames$lead"
