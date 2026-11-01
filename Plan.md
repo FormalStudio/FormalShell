@@ -302,6 +302,15 @@ maps), every unavailable state.
 presented through dmabuf with damage kept, launcher first, then every
 surface. Lands only at or under the baseline on g815 and e1504g.
 
+Done 2026-11-01 as decided scope: every surface draws through `gpu.rs` when
+`render.backend` is `gpu`, and `auto` stays on the CPU on both Intel hosts.
+The Vulkan driver's resident floor is the reason, measured outside the
+shell: +29.7 MB to open on g815's rig (ARL) and +18.3 MB on e1504g (ADL-N),
++25.2 MB and +14.6 MB still resident after dropping the device, trimming
+the heap and unloading the driver, against the gate's 2 MB RSS allowance
+(spec `2026-10-31-gpu-rendering.md` section 5). g815's NVIDIA offers no
+linear dmabuf and is the owner's session.
+
 ### Phase 8: later, each on its own (done)
 
 - Sky wallpaper: the sky's gradient for the sun's position now

@@ -119,3 +119,33 @@ cold start match `cpu` (69616 against 68916 KB, 45 against 45ms).
 
 Frames match: `--render` reads the GPU's launcher card, desktop, panel,
 toast and lock against the CPU's at RMSE 0.0037 or under.
+
+## 5. The driver's floor, and the decided scope
+
+`auto` stays on the CPU on both Intel hosts for good, not until the GPU
+path gets cheaper: the cost that fails the gate is the Vulkan driver's
+own, and it stays once loaded. Measured 2026-11-01 with a probe outside
+the shell (the shell's own `adapter` and `Device::open`, through
+`VK_LUNARG_direct_driver_loading`, then everything dropped,
+`malloc_trim(0)` and the driver library `dlclose`d), three open and drop
+rounds in one process, RSS in KB over the process before the first open:
+
+| | g815 rig, ARL, anv | e1504g, ADL-N, anv |
+| --- | --- | --- |
+| device and vello_hybrid renderer open, first | +29736, 123 ms | +18316, 36 ms |
+| threads while open | +5 first, +2 after | +2 |
+| left after the drop | +25184 (19024 of it driver file pages) | +14608 (6788 file, 5888 shmem) |
+| each later open and drop | +0 | +550 to +700 more |
+| threads after the drop | +0 | +0 |
+
+The RSS gate allows 2048 KB over the baseline, so a device opened even
+once, lazily for the launcher alone and dropped as soon as it closes,
+leaves the shell 7 to 12 times over it for the rest of the run, and on
+e1504g every reopen grows it. Opening the device only when a GPU surface
+first draws keeps cold start and the idle numbers on the CPU's, but the
+r0 run opens the launcher, so its RSS read fails either way. A smaller
+atlas or allocator moves what the shell allocates, not the driver's
+mappings, which are most of the floor. The discrete GPU, where the
+per-frame trade could pay for it, is g815's NVIDIA, which offers no
+linear ABGR8888 (section 2) and is the owner's session, not a test
+target. `render.backend: gpu` stays for whoever asks for it.
