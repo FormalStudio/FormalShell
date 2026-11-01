@@ -47,7 +47,6 @@
 # spacing tokens (panelPadding 12, controlHeight 32, lg 8, a 16px caption
 # line), since nothing over IPC reports it.
 leg_radio_atlas_flag="--radio-atlas"
-leg_radio_atlas_scale1="parks the pointer on the close button at logical pixels (1.25: no tooltip)"
 leg_radio_atlas_order=176
 leg_radio_atlas_needs="ffmpeg wtype wlrctl convert jq python3"
 
@@ -143,7 +142,9 @@ sleep 1
 $ipc call radio stop > /dev/null 2>&1
 sleep 3
 $ipc call radio status > "$radio_atlas_stopped_path" 2>&1
-read -r out_w out_h < <($convert_bin "$radio_atlas_open_png" -format '%w %h' info:)
+# The panel's layout and the pointer are in logical pixels, the frame in the
+# output's.
+read -r out_w out_h < <($convert_bin "$radio_atlas_open_png" -format '%w %h' info: | awk '{ printf "%d %d\n", \$1 / $FS_SMOKE_SCALE + 0.5, \$2 / $FS_SMOKE_SCALE + 0.5 }')
 cw=\$(( out_w * 85 / 100 < 1180 ? out_w * 85 / 100 : 1180 ))
 ch=\$(( out_h * 85 / 100 < 760 ? out_h * 85 / 100 : 760 ))
 ox=\$(( (out_w - cw - 24) / 2 + 12 ))
@@ -283,7 +284,7 @@ leg_radio_atlas_assert() {
     [ -s "$png" ] || fail "no frame at $png"
   done
   local gl gt gr gb box diff
-  read -r gl gt gr gb _ _ < "$radio_atlas_globe_path"
+  read -r gl gt gr gb < <(awk -v s="$out_scale" '{ printf "%d %d %d %d\n", $1 * s, $2 * s, $3 * s, $4 * s }' "$radio_atlas_globe_path")
   box="$((gr - gl))x$((gb - gt))+$gl+$gt"
   $convert_bin "$radio_atlas_open_png" -crop "$box" +repage -strip "$shot_dir/radio-atlas-globe-open.png" > /dev/null 2>&1
   $convert_bin "$radio_atlas_turned_png" -crop "$box" +repage -strip "$shot_dir/radio-atlas-globe-turned.png" > /dev/null 2>&1
@@ -358,8 +359,8 @@ leg_radio_atlas_assert() {
   awk -v o="${open_kb:-0}" -v a="${after_kb:-0}" 'BEGIN { exit !(o > 0 && a > 0 && o - a >= 16384) }' \
     || fail "closing the zoomed atlas gave back $(( ${open_kb:-0} - ${after_kb:-0} )) kB, under 16 MB"
   local zx zy energy_tiles energy_single
-  zx=$(( (gl + gr) / 2 - 250 ))
-  zy=$(( (gt + gb) / 2 - 230 ))
+  zx=$(( (gl + gr) / 2 - $(awk -v s="$out_scale" 'BEGIN { printf "%d", 250 * s }') ))
+  zy=$(( (gt + gb) / 2 - $(awk -v s="$out_scale" 'BEGIN { printf "%d", 230 * s }') ))
   energy() {
     $convert_bin "$1" -crop "200x200+$zx+$zy" +repage -colorspace gray "$2" > /dev/null 2>&1
     $convert_bin "$2" \( +clone -blur 0x1.5 \) -compose difference -composite -format '%[fx:mean]' info: 2>/dev/null
