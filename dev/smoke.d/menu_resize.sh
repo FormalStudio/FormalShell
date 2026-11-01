@@ -36,22 +36,26 @@
 # output within a pixel (`debug dump`'s card rect against the frame's own
 # width).
 leg_menu_resize_flag="--menu-resize"
-leg_menu_resize_scale1="reads the card fill under the content at logical pixels (1.25: no fill under it)"
 leg_menu_resize_order=127
 leg_menu_resize_needs="convert wtype jq"
 
 menu_resize_frames=24
 menu_resize_gap=0.04
-menu_resize_rows="352 450 1016"
-menu_resize_cols="560 1300"
-# The probes skip the bar's band.
-menu_resize_col_from=60
-# Desktop patches clear of both cards: x y w h.
+# The probes, in frame pixels, set by menu_resize_probes off the settled
+# cards' rects in `debug dump` (the root's 640 card and the monitor view's
+# popupWidthMenuApp, 900): rows through the header, the body (the middle
+# row the settled widths are read along) and the monitor view's footer,
+# columns inside the monitor card and outside the root one, each card's
+# span along the middle row, and the start of the column probes, past the
+# bar's band.
+menu_resize_rows=""
+menu_resize_mid=0
+menu_resize_cols=""
+menu_resize_col_from=0
+menu_resize_root_run=""
+menu_resize_monitor_run=""
+# Desktop patches clear of both cards, in frame pixels: x y w h.
 menu_resize_patches="80,150,100,100 1740,700,100,100"
-# Cards centred on the 1920 output: the root's 640 card and the
-# monitor view's popupWidthMenuApp (900), read along the middle row.
-menu_resize_root_run="640 1280"
-menu_resize_monitor_run="510 1410"
 
 leg_menu_resize_validate() {
   local other
@@ -111,13 +115,33 @@ EOF
   hypr_exec_once "bash $script"
 }
 
+menu_resize_probes() {
+  local card='[.modals[] | select(.namespace == "formalshell:menu") | .card] | first'
+  local rx ry rw mx my mw mh
+  read -r rx ry rw < <(scaled_jq -r "$card"' | "\(.x) \(.y) \(.width)"' "$shot_dir/menu-resize-dump-root0.json" 2>/dev/null)
+  read -r mx my mw mh < <(scaled_jq -r "$card"' | "\(.x) \(.y) \(.width) \(.height)"' "$shot_dir/menu-resize-dump-monitor.json" 2>/dev/null)
+  [[ "$rx $ry $rw $mx $my $mw $mh" =~ ^[0-9.\ ]+$ ]] && [ -n "$mh" ] \
+    || fail "no settled card rects in the root and monitor dumps ($rx $ry $rw / $mx $my $mw $mh)"
+  scaled_jq -nr --argjson rx "$rx" --argjson ry "$ry" --argjson rw "$rw" --argjson mx "$mx" --argjson my "$my" --argjson mw "$mw" --argjson mh "$mh" '
+    def px: . * $s | floor;
+    "\(([$ry, $my] | max) + 28 | px) \($ry + 126 | px) \($my + $mh - 24 | px)",
+    "\($ry + 126 | px)",
+    "\($mx + 50 | px) \($rx + $rw + 20 | px)",
+    "\(60 | px)",
+    "\($rx | px) \($rx + $rw | px)",
+    "\($mx | px) \($mx + $mw | px)"' > "$shot_dir/menu-resize-probes.txt"
+  { read -r menu_resize_rows; read -r menu_resize_mid; read -r menu_resize_cols; read -r menu_resize_col_from
+    read -r menu_resize_root_run; read -r menu_resize_monitor_run; } < "$shot_dir/menu-resize-probes.txt"
+  echo "probes: rows $menu_resize_rows (mid $menu_resize_mid), cols $menu_resize_cols from $menu_resize_col_from, root $menu_resize_root_run, monitor $menu_resize_monitor_run"
+}
+
 # The gray levels of one probe line: "row <y>" or "col <x>".
 menu_resize_line() {
   local png=$1 kind=$2 at=$3 geom
   if [ "$kind" = row ]; then
-    geom="1920x1+0+$at"
+    geom="${out_w}x1+0+$at"
   else
-    geom="1x$((1080 - menu_resize_col_from))+$at+$menu_resize_col_from"
+    geom="1x$((out_h - menu_resize_col_from))+$at+$menu_resize_col_from"
   fi
   $convert_bin "$png" -crop "$geom" +repage -colorspace Gray -depth 8 gray:- 2>/dev/null \
     | od -An -tu1 -v | tr -s ' ' '\n' | grep -v '^$'
@@ -179,13 +203,13 @@ menu_resize_frame() {
 # rather than card fill: a `BAD` line when any does.
 menu_resize_filled() {
   local png=$1 label=$2 thr=$3 dump=$4 box x y w h inset=24
-  box=$("$jq_bin" -r '[.modals[] | select(.namespace == "formalshell:menu") | .content] | first | "\(.x) \(.y) \(.width) \(.height)"' "$dump" 2>/dev/null)
-  read -r x y w h <<< "$box"
-  if ! [[ "$x $y $w $h" =~ ^[0-9]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]]; then
+  box=$(scaled_jq -r "$geometry_jq"'[.modals[] | select(.namespace == "formalshell:menu") | .content] | first
+    | {x: (.x + '$inset'), y: (.y + '$inset'), width: (.width - 2 * '$inset'), height: (.height - 2 * '$inset')} | geometry' "$dump" 2>/dev/null)
+  if ! [[ "$box" =~ ^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$ ]]; then
     echo "BAD $label: no content rect in $(basename "$dump") ($box)"
     return
   fi
-  x=$((x + inset)) y=$((y + inset)) w=$((w - 2 * inset)) h=$((h - 2 * inset))
+  w=${BASH_REMATCH[1]} h=${BASH_REMATCH[2]} x=${BASH_REMATCH[3]} y=${BASH_REMATCH[4]}
   $convert_bin "$png" -crop "${w}x${h}+${x}+${y}" +repage -colorspace Gray -depth 8 gray:- 2>/dev/null \
     | od -An -tu1 -v | tr -s ' ' '\n' | grep -v '^$' \
     | awk -v w="$w" -v h="$h" -v thr="$thr" -v label="$label" -v x0="$x" -v y0="$y" '
@@ -222,6 +246,7 @@ leg_menu_resize_assert() {
     || fail "typing sysmon and Return did not open the monitor view: $(head -c 300 "$shot_dir/menu-resize-monitor-status.json" 2>/dev/null)"
   grep -q '^ok$' "$shot_dir/menu-resize-summon2.txt" 2>/dev/null \
     || fail "menu summon monitor did not answer ok: $(cat "$shot_dir/menu-resize-summon2.txt" 2>/dev/null)"
+  menu_resize_probes
   thr=$(menu_resize_threshold "$shot_dir/menu-resize-monitor.png")
   echo "monitor status: $("$jq_bin" -c '{level, view, query, cardWidth, cardBox}' "$shot_dir/menu-resize-monitor-status.json" 2>&1)"
   for f in root0 monitor root monitor2; do
@@ -254,18 +279,18 @@ leg_menu_resize_assert() {
     report=$(menu_resize_frame "$png" "${f%%:*}" "$thr")
     echo "$report"
     grep -q '^BAD' <<< "$report" && bad="$bad ${f%%:*}"
-    mid=$(menu_resize_line "$png" row 450 | menu_resize_runs "$thr")
-    [ "$(wc -w <<< "$mid")" -eq 1 ] || fail "${f%%:*}: the card spans '$mid' on row 450, not one run on the ${f#*:} card's $want"
+    mid=$(menu_resize_line "$png" row "$menu_resize_mid" | menu_resize_runs "$thr")
+    [ "$(wc -w <<< "$mid")" -eq 1 ] || fail "${f%%:*}: the card spans '$mid' on row $menu_resize_mid, not one run on the ${f#*:} card's $want"
     local s=${mid%-*} e=${mid#*-} ws=${want% *} we=${want#* }
     if [ "$(( s - ws ))" -lt -3 ] || [ "$(( s - ws ))" -gt 3 ] || [ "$(( e + 1 - we ))" -lt -3 ] || [ "$(( e + 1 - we ))" -gt 3 ]; then
-      fail "${f%%:*}: the card spans '$mid' on row 450, not the ${f#*:} card's $want"
+      fail "${f%%:*}: the card spans '$mid' on row $menu_resize_mid, not the ${f#*:} card's $want"
     fi
   done
   for f in into back forth; do
     for i in $(seq 1 $menu_resize_frames); do
       report=$(menu_resize_frame "$shot_dir/menu-resize-$f-$i.png" "$f-$i" "$thr")
       echo "$report"
-      local start=${report#*row352\[}
+      local start=${report#*row${menu_resize_rows%% *}\[}
       start=${start%%-*}
       if [ -n "$start" ] && [ "$start" -gt $((${menu_resize_monitor_run% *} + 4)) ] && [ "$start" -lt $((${menu_resize_root_run% *} - 4)) ]; then
         between=$((between + 1))
@@ -276,18 +301,19 @@ leg_menu_resize_assert() {
       fi
     done
   done
-  # Centred, off the shell's own card rect.
-  local out_w card
+  # Centred, off the shell's own card rect against the frame's width in
+  # logical pixels.
+  local frame_w lw card
   for f in root0 monitor root monitor2; do
-    out_w=$($convert_bin "$shot_dir/menu-resize-$f.png" -format '%w' info: 2>/dev/null)
+    frame_w=$($convert_bin "$shot_dir/menu-resize-$f.png" -format '%w' info: 2>/dev/null)
     card=$("$jq_bin" -r '[.modals[] | select(.namespace == "formalshell:menu") | .card] | first | "\(.x) \(.width)"' \
       "$shot_dir/menu-resize-dump-$f.json" 2>/dev/null)
     local cx=${card% *} cw=${card#* }
-    [ -n "$out_w" ] && [ -n "$cx" ] && [ "$cx" != null ] || fail "$f: no card rect in the dump or no frame width ($card, $out_w)"
-    local off=$(( 2 * cx + cw - out_w ))
-    [ "$off" -ge -2 ] && [ "$off" -le 2 ] || fail \
-      "$f: the card rests at x $cx, ${cw} wide, on a ${out_w} wide output: $((off / 2))px off centre"
-    echo "SMOKE_MENU_RESIZE_CENTRED $f x $cx width $cw output $out_w"
+    [ -n "$frame_w" ] && [ -n "$cx" ] && [ "$cx" != null ] || fail "$f: no card rect in the dump or no frame width ($card, $frame_w)"
+    lw=$(awk -v w="$frame_w" -v s="${out_scale:-1}" 'BEGIN { print w / s }')
+    awk -v cx="$cx" -v cw="$cw" -v lw="$lw" 'BEGIN { off = 2 * cx + cw - lw; exit !(off >= -2 && off <= 2) }' || fail \
+      "$f: the card rests at x $cx, ${cw} wide, on a ${lw} wide output: off centre"
+    echo "SMOKE_MENU_RESIZE_CENTRED $f x $cx width $cw output $lw"
   done
 
   echo "frames caught between the two widths: $between"
