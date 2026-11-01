@@ -126,8 +126,8 @@ if [ ! -f "$gls/lib/pkgconfig/gtk4-layer-shell-0.pc" ] && [ ! -f "$gls/lib/$host
 fi
 export PKG_CONFIG_PATH=$gls/lib/pkgconfig
 
-(cd "$repo/crates" && cargo build --locked --release --package formalshell-rs)
-release=$CARGO_TARGET_DIR/release
+(cd "$repo/crates" && cargo build --locked --profile ship --package formalshell-rs)
+release=$CARGO_TARGET_DIR/ship
 
 # The x86-64 engine's asm objects call libc with PC32 relocations, which a
 # PIE link rejects. An explicit --target keeps the

@@ -36,6 +36,8 @@ shell's Overnight mode drops performance to balanced until it is turned off.
 `run` stops before a run on the wrong one. The output scale is held the
 same way: `run` draws at the baseline's (`FS_SMOKE_SCALE`), and a check
 refuses runs drawn at another, since every buffer and draw grows with it.
+`run` builds with the tarball's `ship` profile (FS_CARGO_PROFILE), so the
+numbers are the shipped binary's.
 
 `run` holds g815 for its whole matrix: its pid in
 /tmp/formalshell-perf-gate.running, which dev/remote.sh and dev/vm.sh wait
@@ -341,7 +343,7 @@ def run_matrix(legs, count, backend, want, scale):
             for mode in ("plain", "quota"):
                 # The baseline is g815's; never the mac rig's fallback.
                 # At the baseline's own scale, whatever smoke.sh defaults to.
-                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1", FS_SMOKE_SCALE=f"{scale:g}")
+                env = dict(os.environ, FS_RIG="g815", FS_PERF_GATE_RUN="1", FS_SMOKE_SCALE=f"{scale:g}", FS_CARGO_PROFILE="ship")
                 for k in QUOTA_ENV:
                     env.pop(k, None)
                 if mode == "quota":
