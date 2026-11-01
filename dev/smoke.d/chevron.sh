@@ -40,7 +40,6 @@
 # travels to its new size the way a panel card does, rather than keeping the
 # size it opened at or jumping.
 leg_chevron_flag="--chevron"
-leg_chevron_scale1="its ink patch is cut at logical pixels (1.25: the patch lands on the wallpaper)"
 leg_chevron_order=180
 leg_chevron_needs="wlrctl convert jq"
 
@@ -208,7 +207,7 @@ _chevron_assert_ink() {
   fi
 
   [ -f "$chevron_open_path" ] || fail "no chevron-open screenshot to read the card's ink off"
-  # One patch of the open frame: 30px either side of the weather cell's
+  # One patch of the open frame, in logical pixels: 30px either side of the weather cell's
   # centre, the point the pointer above is already asserted to land a panel
   # from, and 10px either side of it across, clear of the card's own lit top
   # edge. Two readings off it, since either alone passes for the wrong
@@ -219,7 +218,7 @@ _chevron_assert_ink() {
   [ -n "$centre" ] || fail "the open status carries no weather cell to read the card's ink at: $(cat "$chevron_status_open_path")"
   # shellcheck disable=SC2086
   set -- $centre
-  chevron_card_patch="60x20+$(( $1 - 30 ))+$(( $2 - 10 ))"
+  chevron_card_patch=$(logical_box 60 20 $(( $1 - 30 )) $(( $2 - 10 )))
   $convert_bin "$chevron_open_path" -crop "$chevron_card_patch" +repage \
     "$chevron_card_ink_path" > /dev/null 2>&1
   [ -f "$chevron_card_ink_path" ] && echo "SMOKE_CHEVRON_CARD_INK $chevron_card_ink_path"
