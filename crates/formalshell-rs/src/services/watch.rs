@@ -8,6 +8,9 @@
 //! from the path to the file it finally lands on (and the nearest existing
 //! ancestor while a directory is missing, for a config that shows up later),
 //! and re-resolves after every event so the next retarget is seen the same way.
+//! [`Watch::dirs`] watches what is inside directories as well: every
+//! directory under each one, re-walked after every event, so a subdirectory
+//! made later is watched too.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -17,7 +20,26 @@ use std::time::Duration;
 /// create plus a delete; one wake per burst.
 const SETTLE: Duration = Duration::from_millis(50);
 
+/// A directory of desktop entries changes a file per entry, and a package
+/// lands several entries and icons a few milliseconds apart.
+const DIRS_SETTLE: Duration = Duration::from_millis(200);
+
 const MAX_HOPS: usize = 40;
+
+/// How deep [`Watch::dirs`] follows subdirectories, a symlink loop included.
+const MAX_DEPTH: usize = 8;
+
+/// `dir` and every directory under it.
+fn subtree(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if depth > MAX_DEPTH || !dir.is_dir() {
+        return;
+    }
+    out.push(dir.to_path_buf());
+    let Ok(read) = std::fs::read_dir(dir) else { return };
+    for item in read.flatten() {
+        subtree(&item.path(), depth + 1, out);
+    }
+}
 
 /// Each hop of the symlink chain from `path`, `path` first and the file it
 /// lands on last. A hop that is not a symlink ends the chain.
@@ -80,7 +102,7 @@ mod linux {
     use async_io::{Async, Timer};
     use inotify::{Inotify, WatchDescriptor, WatchMask};
 
-    use super::{SETTLE, targets};
+    use super::{DIRS_SETTLE, SETTLE, subtree, targets};
 
     const MASK: WatchMask = WatchMask::CREATE
         .union(WatchMask::DELETE)
@@ -90,11 +112,16 @@ mod linux {
         .union(WatchMask::ATTRIB);
 
     pub struct Watch {
-        path: PathBuf,
+        paths: Vec<PathBuf>,
+        /// Whether an event inside each path counts, not only the path's own.
+        contents: bool,
+        settle: Duration,
         inotify: Inotify,
         /// A dup of the inotify fd, only to wait for readability on.
         ready: Async<OwnedFd>,
         watches: Vec<WatchDescriptor>,
+        /// The directories inside a path, where every event counts.
+        trees: Vec<WatchDescriptor>,
         names: Vec<OsString>,
         /// Set once a relevant event has been read and cleared when
         /// [`Watch::changed`] returns, so a caller that drops the future
@@ -103,18 +130,29 @@ mod linux {
     }
 
     /// One read of what is queued; true when any event names something in
-    /// the chain.
-    fn read(inotify: &mut Inotify, names: &[OsString]) -> io::Result<bool> {
+    /// the chain or lands inside a watched tree.
+    fn read(inotify: &mut Inotify, names: &[OsString], trees: &[WatchDescriptor]) -> io::Result<bool> {
         let mut buffer = [0u8; 4096];
         let events = inotify.read_events(&mut buffer)?;
-        Ok(events.into_iter().any(|e| e.name.is_some_and(|n| names.iter().any(|m| m == n))))
+        Ok(events.into_iter().any(|e| trees.contains(&e.wd) || e.name.is_some_and(|n| names.iter().any(|m| m == n))))
     }
 
     impl Watch {
         pub fn new(path: PathBuf) -> io::Result<Self> {
+            Self::open(vec![path], false, SETTLE)
+        }
+
+        /// Resolves on any change inside any of `dirs`, one created after
+        /// the watch included.
+        pub fn dirs(dirs: Vec<PathBuf>) -> io::Result<Self> {
+            Self::open(dirs, true, DIRS_SETTLE)
+        }
+
+        fn open(paths: Vec<PathBuf>, contents: bool, settle: Duration) -> io::Result<Self> {
             let inotify = Inotify::init()?;
             let ready = Async::new(inotify.as_fd().try_clone_to_owned()?)?;
-            let mut watch = Self { path, inotify, ready, watches: Vec::new(), names: Vec::new(), pending: false };
+            let mut watch =
+                Self { paths, contents, settle, inotify, ready, watches: Vec::new(), trees: Vec::new(), names: Vec::new(), pending: false };
             watch.rearm();
             Ok(watch)
         }
@@ -124,11 +162,29 @@ mod linux {
             for wd in self.watches.drain(..) {
                 let _ = inotify.watches().remove(wd);
             }
-            let (dirs, names) = targets(&self.path);
-            self.names = names;
-            for dir in dirs {
-                if let Ok(wd) = inotify.watches().add(&dir, MASK) {
-                    self.watches.push(wd);
+            self.trees.clear();
+            self.names.clear();
+            for path in &self.paths {
+                let (dirs, names) = targets(path);
+                for name in names {
+                    if !self.names.contains(&name) {
+                        self.names.push(name);
+                    }
+                }
+                for dir in dirs {
+                    if let Ok(wd) = inotify.watches().add(&dir, MASK) {
+                        self.watches.push(wd);
+                    }
+                }
+                if self.contents {
+                    let mut tree = Vec::new();
+                    subtree(path, 0, &mut tree);
+                    for dir in tree {
+                        if let Ok(wd) = inotify.watches().add(&dir, MASK) {
+                            self.trees.push(wd.clone());
+                            self.watches.push(wd);
+                        }
+                    }
                 }
             }
         }
@@ -136,7 +192,7 @@ mod linux {
         /// Reads until an event names something in the chain.
         async fn wait(&mut self) -> io::Result<()> {
             loop {
-                match read(&mut self.inotify, &self.names) {
+                match read(&mut self.inotify, &self.names, &self.trees) {
                     Ok(true) => return Ok(()),
                     Ok(false) => {}
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => self.ready.readable().await?,
@@ -149,13 +205,13 @@ mod linux {
         pub async fn changed(&mut self) {
             while !self.pending {
                 if let Err(e) = self.wait().await {
-                    eprintln!("watch {}: {e}", self.path.display());
+                    eprintln!("watch {}: {e}", self.paths.first().map(|p| p.display().to_string()).unwrap_or_default());
                     Timer::after(Duration::from_secs(5)).await;
                 }
                 self.pending = true;
             }
-            Timer::after(SETTLE).await;
-            while read(&mut self.inotify, &self.names).is_ok() {}
+            Timer::after(self.settle).await;
+            while read(&mut self.inotify, &self.names, &self.trees).is_ok() {}
             self.rearm();
             self.pending = false;
         }
@@ -251,6 +307,33 @@ mod tests {
             assert!(within(&mut watch, 2000).await, "the directory appearing went unseen");
             std::fs::write(&file, "{}").unwrap();
             assert!(within(&mut watch, 2000).await, "the file appearing in the new directory went unseen");
+        });
+    }
+
+    /// fspec's shape: a data directory made after the watch starts, its
+    /// entries symlinks into a store path, and a subdirectory of them.
+    #[test]
+    fn dirs_see_a_late_directory_and_its_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("store/app.desktop");
+        std::fs::create_dir_all(store.parent().unwrap()).unwrap();
+        std::fs::write(&store, "[Desktop Entry]").unwrap();
+        let apps = dir.path().join("late/share/applications");
+        block_on(async {
+            let mut watch = Watch::dirs(vec![apps.clone()]).unwrap();
+            assert!(!within(&mut watch, 300).await, "woke with nothing changed");
+            std::fs::create_dir_all(&apps).unwrap();
+            assert!(within(&mut watch, 2000).await, "the directory appearing went unseen");
+            symlink(&store, apps.join("app.desktop")).unwrap();
+            assert!(within(&mut watch, 2000).await, "a linked entry went unseen");
+            std::fs::create_dir(apps.join("sub")).unwrap();
+            assert!(within(&mut watch, 2000).await, "a subdirectory appearing went unseen");
+            std::fs::write(apps.join("sub/other.desktop"), "[Desktop Entry]").unwrap();
+            assert!(within(&mut watch, 2000).await, "an entry in the subdirectory went unseen");
+            std::fs::remove_file(apps.join("app.desktop")).unwrap();
+            assert!(within(&mut watch, 2000).await, "a removed entry went unseen");
+            std::fs::write(dir.path().join("late/share/unrelated"), "x").unwrap();
+            assert!(!within(&mut watch, 400).await, "an unrelated name woke the watch");
         });
     }
 }

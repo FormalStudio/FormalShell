@@ -11,7 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
@@ -251,6 +251,10 @@ pub async fn run(ctx: Ctx) {
     let _ = ASK.set(tx);
     let mut launches_seen: Vec<Record> = Vec::new();
     let scan = Arc::new(std::sync::Mutex::new(Scan::default()));
+    // Set by a change under an applications directory: the next scan reads
+    // the entries again even where no directory's mtime moved (an edit in
+    // place, a subdirectory).
+    let rescan = Arc::new(AtomicBool::new(false));
     // The pane's latest ask of each kind. The store holds one reply each, so
     // a slower reply for a row the cursor left is dropped rather than left
     // over the newer one.
@@ -263,12 +267,13 @@ pub async fn run(ctx: Ctx) {
                 }
             }
             Ask::Rescan => {
+                rescan.store(true, Ordering::Relaxed);
                 let _ = ASK.get().map(|tx| tx.try_send(Ask::Apps(launches_seen.clone())));
             }
             Ask::Apps(launches) => {
                 launches_seen = launches.clone();
-                let scan = scan.clone();
-                let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches)).await;
+                let (scan, rescan) = (scan.clone(), rescan.clone());
+                let done = ctx.pool().run(move || scan.lock().unwrap().apps(&launches, rescan.swap(false, Ordering::Relaxed))).await;
                 if let Some((rows, icons, exec)) = done {
                     ctx.publish(store::Diff::Menu(Diff::Exec(exec)));
                     ctx.publish(store::Diff::Menu(Diff::Source("apps".into(), rows)));
@@ -515,13 +520,16 @@ struct Scan {
 }
 
 impl Scan {
-    fn apps(&mut self, launches: &[Record]) -> (Vec<Node>, Vec<Icon>, HashMap<String, Vec<String>>) {
+    fn apps(&mut self, launches: &[Record], rescan: bool) -> (Vec<Node>, Vec<Icon>, HashMap<String, Vec<String>>) {
         let dirs = appicon::applications_dirs();
         let stamp: Vec<Option<SystemTime>> = dirs.iter().map(|d| std::fs::metadata(d).and_then(|m| m.modified()).ok()).collect();
-        if !self.scanned || stamp != self.stamp {
+        if rescan || !self.scanned || stamp != self.stamp {
             self.entries = appicon::scan_apps(&dirs);
             self.stamp = stamp;
             self.scanned = true;
+            // An icon a package links in after its entry: the name that
+            // found no file is looked up again.
+            self.icon_of.retain(|_, path| !path.is_empty());
         }
         let entries: Vec<DesktopEntry> = self
             .entries
@@ -602,29 +610,17 @@ pub fn launch_argv(state: &State, id: &str) -> Option<Vec<String>> {
 }
 
 /// Desktop entries installed or removed while the shell runs reach the
-/// apps source without a summon: an inotify watch on every applications
-/// directory, settled a moment so a package's burst of files is one scan.
+/// apps source without a summon: every applications directory and its
+/// subdirectories watched, one that does not exist yet (`/usr/local/share`
+/// before fspec's first app) from its nearest ancestor.
 #[cfg(target_os = "linux")]
 async fn watch_entries(tx: async_channel::Sender<Ask>) {
-    use std::os::fd::AsFd;
-
-    use inotify::{Inotify, WatchMask};
-
-    let Ok(mut inotify) = Inotify::init() else { return };
-    let mask = WatchMask::CREATE | WatchMask::DELETE | WatchMask::MOVED_TO | WatchMask::MOVED_FROM | WatchMask::CLOSE_WRITE;
-    for dir in appicon::applications_dirs() {
-        let _ = inotify.watches().add(&dir, mask);
-    }
-    let Ok(fd) = inotify.as_fd().try_clone_to_owned() else { return };
-    let Ok(ready) = async_io::Async::new(fd) else { return };
-    let mut buffer = [0u8; 4096];
+    let Ok(mut watch) = super::watch::Watch::dirs(appicon::applications_dirs()) else { return };
     loop {
-        if ready.readable().await.is_err() {
+        watch.changed().await;
+        if tx.try_send(Ask::Rescan).is_err() {
             return;
         }
-        async_io::Timer::after(Duration::from_millis(200)).await;
-        while inotify.read_events(&mut buffer).is_ok_and(|e| e.count() > 0) {}
-        let _ = tx.try_send(Ask::Rescan);
     }
 }
 

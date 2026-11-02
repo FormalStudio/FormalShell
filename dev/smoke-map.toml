@@ -128,7 +128,7 @@ paths = [
   "crates/fs-menu/src/providers/apps.rs",
   "crates/fs-menu/src/icons.rs",
 ]
-runs = ["--menu", "--app-grid", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--menu-budget", "--glass-behind", "--glass-behind --no-morph", "--launcher-density", "--launcher-apps"]
+runs = ["--menu", "--app-grid", "--app-install", "--grid-relaunch", "--menu-rows", "--menu-resize", "--menu-emerge", "--menu-morph", "--launcher-abbrev", "--launcher-modes", "--launcher-actions", "--launcher-mouse", "--launcher-overflow", "--launcher-preview", "--launcher-install", "--menu-hover", "--plugins", "--menu-budget", "--glass-behind", "--glass-behind --no-morph", "--launcher-density", "--launcher-apps"]
 
 # Install mode and the sidebar's Software card: fspec as the package manager
 [[rule]]
@@ -389,7 +389,7 @@ runs = ["--radio-atlas", "--radio-atlas-cold"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/appmenu.rs", "crates/formalshell-rs/src/services/appicon.rs", "crates/fs-system/src/compositor/appicon.rs"]
-runs = ["--appmenu", "--spaces"]
+runs = ["--appmenu", "--spaces", "--app-install"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/center.rs"]

@@ -391,7 +391,9 @@ fn configured_theme() -> String {
 }
 
 fn load_theme(name: &str, bases: &[PathBuf]) -> Option<Theme> {
-    let roots: Vec<PathBuf> = bases.iter().map(|b| b.join(name)).filter(|r| r.is_dir()).collect();
+    // Every base, not only those holding the theme now: a package's first
+    // icon makes `/usr/local/share/icons/hicolor` after the theme is read.
+    let roots: Vec<PathBuf> = bases.iter().map(|b| b.join(name)).collect();
     let index = roots.iter().find_map(|r| std::fs::read_to_string(r.join("index.theme")).ok())?;
     let mut sections: Vec<(String, HashMap<String, String>)> = Vec::new();
     for line in index.lines() {
@@ -472,8 +474,9 @@ impl Themes {
         for theme in self.order() {
             let Some(t) = self.theme(&theme) else { continue };
             let mut found = Vec::new();
+            let roots: Vec<&PathBuf> = t.roots.iter().filter(|r| r.is_dir()).collect();
             for dir in &t.dirs {
-                for root in &t.roots {
+                for root in &roots {
                     for path in files_in(&root.join(&dir.path), name) {
                         found.push(Candidate { path, exact: dir.matches(size), distance: dir.distance(size), nominal: dir.size * dir.scale });
                     }
