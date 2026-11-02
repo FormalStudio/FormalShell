@@ -1230,8 +1230,8 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         assert_eq!(seen.palettes.last().unwrap()["mode"], "light");
         assert_eq!(std::fs::read_to_string(env.hypr_colors()).unwrap(), matugen::hyprland_colors(&light));
         let chrome = std::fs::read_to_string(env.hypr_chrome()).unwrap();
-        assert!(chrome.contains("rounding = 15,"));
-        assert!(std::fs::read_to_string(env.mango_chrome()).unwrap().contains("\nborder_radius=15\n"));
+        assert!(chrome.contains("rounding = 12,"));
+        assert!(std::fs::read_to_string(env.mango_chrome()).unwrap().contains("\nborder_radius=12\n"));
         assert!(log_lines(&log, "matugen").is_empty());
         let dconf = log_lines(&log, "dconf");
         assert!(dconf.contains(&"dconf write /org/gnome/desktop/interface/color-scheme 'prefer-light'".to_owned()));

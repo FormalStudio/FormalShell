@@ -1,6 +1,6 @@
 -- Window rounding, the blur behind the shell's surfaces and the frame and
 -- shadow round every window follow the shell's own theme: ThemeEngine
--- publishes formalshell-chrome.lua, a table with rounding (theme.radius),
+-- publishes formalshell-chrome.lua, a table with rounding (the cards' radius),
 -- blur (theme.blur) and the theme table's own window chrome (gapsIn, gapsOut,
 -- borderSize, borderColor, shadow, shadowRange, shadowPower, shadowOffset,
 -- shadowColor, shadowInactiveColor) and the motion curves (below), and

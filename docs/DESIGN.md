@@ -46,8 +46,10 @@ dropping its opacity instead makes it see-through on a translucent panel.
 **Radius** (the ladder, `fs_theme::tokens::RADII`, fixed): `Sm` 6, `Md` 9,
 `Lg` 12, `Xl` 15, `Full`: libadwaita's `$check_radius`, `$button_radius`,
 `$card_radius` and `$popover_radius`, and NativeDesktop's Adwaita preset
-(`nd-theme/src/preset.rs`) to the pixel. Hyprland's window rounding is `Xl`,
-libadwaita's `--window-radius`. Nested corners are outer minus padding,
+(`nd-theme/src/preset.rs`) to the pixel. Hyprland's window rounding is the
+`card` role's radius (`Lg`), so a window's corners match the shell's cards
+beside it (owner, 2026-11-02), where libadwaita's `--window-radius` is `Xl`.
+Nested corners are outer minus padding,
 floored at `Sm`.
 
 **Border**: 1px `border`. `input` on text fields. No other width exists.
