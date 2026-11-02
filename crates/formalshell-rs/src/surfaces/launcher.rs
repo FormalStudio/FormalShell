@@ -4151,13 +4151,15 @@ fn preview_el(m: &Model, store: &Store, row: &Node, theme: &Theme, kit: &mut Kit
         PaneKind::File | PaneKind::Folder => {
             let p = peeked();
             let facts = p.map(fs_menu::providers::facts).unwrap_or_default();
+            // A picture shows off its own decode, which is asked beside the
+            // peek; the peek only adds its facts.
             let content = match p.map(|p| &p.peek) {
-                None => muted(""),
-                Some(Peek::Image) => {
+                _ if matches!(kind, PaneKind::File) && fs_menu::providers::is_image(&row.path) && !matches!(p.map(|p| &p.peek), Some(Peek::Unreadable(_))) => {
                     let got = decoded(&row.path);
                     let facts = join(vec![dims(got.as_ref().and_then(|g| g.1)).unwrap_or_default(), facts.clone()]);
                     return pane_card(picture(got.and_then(|g| g.0)), &row.label, &facts, s);
                 }
+                None | Some(Peek::Image) => muted(""),
                 Some(Peek::Text(lines)) if lines.iter().all(|l| l.trim().is_empty()) => muted("Empty file"),
                 Some(Peek::Text(lines)) => lines_el(lines),
                 Some(Peek::Binary) => muted("No preview for this file"),

@@ -11,6 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
@@ -250,6 +251,10 @@ pub async fn run(ctx: Ctx) {
     let _ = ASK.set(tx);
     let mut launches_seen: Vec<Record> = Vec::new();
     let scan = Arc::new(std::sync::Mutex::new(Scan::default()));
+    // The pane's latest ask of each kind. The store holds one reply each, so
+    // a slower reply for a row the cursor left is dropped rather than left
+    // over the newer one.
+    let (peek_latest, folder_latest) = (Arc::new(AtomicU64::new(0)), Arc::new(AtomicU64::new(0)));
     while let Ok(a) = rx.recv().await {
         match a {
             Ask::Base(inputs) => {
@@ -315,11 +320,19 @@ pub async fn run(ctx: Ctx) {
                     ctx.publish(store::Diff::Menu(Diff::Source(providers::FILES_ROUTE.into(), rows)));
                 }
             }
+            // The pane's asks answer the row under the cursor, so they never
+            // wait behind a rescan or an icon decode already in this queue.
             Ask::Folder(path) => {
-                let p = path.clone();
-                if let Some(listing) = ctx.pool().run(move || list_folder(&p).map(Arc::from)).await {
-                    ctx.publish(store::Diff::Menu(Diff::Folder(path, listing)));
-                }
+                let (c, latest) = (ctx.clone(), folder_latest.clone());
+                let n = latest.fetch_add(1, Ordering::Relaxed) + 1;
+                ctx.spawn(async move {
+                    let p = path.clone();
+                    if let Some(listing) = c.pool().run(move || list_folder(&p).map(Arc::from)).await
+                        && latest.load(Ordering::Relaxed) == n
+                    {
+                        c.publish(store::Diff::Menu(Diff::Folder(path, listing)));
+                    }
+                });
             }
             Ask::Stat(paths) => {
                 let stat = move || paths.into_iter().map(|p| {
@@ -331,10 +344,16 @@ pub async fn run(ctx: Ctx) {
                 }
             }
             Ask::Peek(path) => {
-                let p = path.clone();
-                if let Some(peeked) = ctx.pool().run(move || peek(&p)).await {
-                    ctx.publish(store::Diff::Menu(Diff::Peek(path, peeked)));
-                }
+                let (c, latest) = (ctx.clone(), peek_latest.clone());
+                let n = latest.fetch_add(1, Ordering::Relaxed) + 1;
+                ctx.spawn(async move {
+                    let p = path.clone();
+                    if let Some(peeked) = c.pool().run(move || peek(&p)).await
+                        && latest.load(Ordering::Relaxed) == n
+                    {
+                        c.publish(store::Diff::Menu(Diff::Peek(path, peeked)));
+                    }
+                });
             }
         }
     }
