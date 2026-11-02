@@ -1,10 +1,15 @@
 //! Tiered fuzzy scorer for the launcher's search field.
 //!
-//! A hit ranks by a pair, compared tier first: `(tier, bonus)`. The bonus
-//! (the root bonus, the app demotion, a learned abbreviation's boost) only
-//! reorders rows inside a tier, however large it grows. Then shallower
-//! depth, then the picks ledger's frecency, then declaration order. The 40
-//! best come back as one list in that order.
+//! A set or learned abbreviation leads, and a loose match (the initials or
+//! subsequence tiers) follows every other. Among the rest a hit ranks by
+//! its type first (`group`: apps and commands, then files and folders, then
+//! clipboard history), so a recent file never sits above the app it was
+//! named after, and a two-letter query's loose app matches never crowd an
+//! exact file out of the 40. Inside a type a hit ranks by a pair, compared tier first:
+//! `(tier, bonus)`. The bonus (the root bonus, the app demotion, a learned
+//! abbreviation's boost) only reorders rows inside a tier, however large it
+//! grows. Then shallower depth, then the picks ledger's frecency, then
+//! declaration order. The 40 best come back as one list in that order.
 
 use std::collections::{HashMap, HashSet};
 
@@ -115,6 +120,18 @@ fn bonus(node: &Node, depth: usize) -> i32 {
     b
 }
 
+/// The type order: apps and commands 0, files and folders 1, clipboard
+/// history 2.
+fn group(node: &Node) -> u8 {
+    if crate::providers::clipboard_entry_id(node).is_some() {
+        2
+    } else if crate::providers::is_file_subject(node) || crate::providers::is_folder_subject(node) {
+        1
+    } else {
+        0
+    }
+}
+
 /// What lifts a hit past its own match: the query's abbreviations and the
 /// picks ledger.
 #[derive(Clone, Copy, Debug, Default)]
@@ -144,6 +161,7 @@ fn ancestry(id: Option<&str>) -> HashSet<String> {
 struct Hit<'a> {
     node: &'a Node,
     tier: i32,
+    group: u8,
     bonus: i32,
     depth: usize,
     picked: f64,
@@ -211,7 +229,7 @@ pub fn rank_with<'a>(
             if tier > 0 {
                 let learned = abbrev.and_then(|l| l.boost.get(&id)).copied().unwrap_or(0);
                 let picked = frecency::score_of(w.picks.get(id.as_str()).copied(), w.boost.now);
-                hits.push(Hit { node, tier, bonus: bonus(node, depth) + learned, depth, picked, decl_index: idx });
+                hits.push(Hit { node, tier, group: group(node), bonus: bonus(node, depth) + learned, depth, picked, decl_index: idx });
             }
         }
         if node.route_only == Some(true) && !w.open.contains(id) {
@@ -229,8 +247,13 @@ pub fn rank_with<'a>(
     }
 
     hits.sort_by(|a, b| {
-        b.tier
-            .cmp(&a.tier)
+        let leads = |h: &Hit| h.tier >= TIER_LEARNED;
+        let loose = |h: &Hit| h.tier <= TIER_INITIALS;
+        leads(b)
+            .cmp(&leads(a))
+            .then(loose(a).cmp(&loose(b)))
+            .then(a.group.cmp(&b.group))
+            .then(b.tier.cmp(&a.tier))
             .then(b.bonus.cmp(&a.bonus))
             .then(a.depth.cmp(&b.depth))
             .then(b.picked.partial_cmp(&a.picked).unwrap_or(std::cmp::Ordering::Equal))

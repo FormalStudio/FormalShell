@@ -218,3 +218,34 @@ fn rank_caps_at_forty() {
     let tree = tree_of(serde_json::Value::Object(def));
     assert_eq!(search::rank(&tree.nodes, "item", &no_conds(), None).len(), 40);
 }
+
+// Type before match strength: an app the query starts, then a file it
+// starts, then clipboard text it only contains, whatever the bonuses.
+#[test]
+fn apps_rank_above_files_above_clipboard() {
+    let mut nodes = indexmap::IndexMap::new();
+    for n in [
+        Node::new("clipboard.7", "update: the messages client", Kind::Action),
+        Node::new("files.recent.png", "messages.png", Kind::Other(fs_menu::providers::FILE_KIND.into())),
+        Node::new("apps.messages.desktop", "Messages", Kind::App),
+    ] {
+        nodes.insert(n.id.clone(), n);
+    }
+    let ids: Vec<&str> = search::rank(&nodes, "messa", &no_conds(), None).iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids, ["apps.messages.desktop", "files.recent.png", "clipboard.7"]);
+}
+
+// A loose app match (every letter in order) never goes above a file the
+// query starts.
+#[test]
+fn a_loose_app_match_ranks_below_a_file() {
+    let mut nodes = indexmap::IndexMap::new();
+    for n in [
+        Node::new("files.recent.ab", "abacus.txt", Kind::Other(fs_menu::providers::FILE_KIND.into())),
+        Node::new("apps.alb.desktop", "Album Browser", Kind::App),
+    ] {
+        nodes.insert(n.id.clone(), n);
+    }
+    let ids: Vec<&str> = search::rank(&nodes, "ab", &no_conds(), None).iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids, ["files.recent.ab", "apps.alb.desktop"]);
+}
