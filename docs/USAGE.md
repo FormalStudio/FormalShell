@@ -910,7 +910,7 @@ compositor reports. Set it to false for the flat border.
 ### Hyprland rounding, blur and window chrome
 
 The shell publishes `formalshell-chrome.lua` next to the colours file, a
-table a `dofile` returns. It carries `rounding` (6), `blur` (`theme.blur`,
+table a `dofile` returns. It carries `rounding` (12, the cards' radius), `blur` (`theme.blur`,
 default true) and the window gaps, frame and shadow the table declares
 (`gapsIn`, `gapsOut`, `borderSize`, `borderColor`, `shadow`, `shadowRange`,
 `shadowPower`, `shadowOffset`, `shadowColor`, `shadowInactiveColor`),
