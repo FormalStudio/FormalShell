@@ -145,7 +145,7 @@
         },
         "panel_first_commit_ms_max": {
           "leg": "--r0-measure 300",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             10,
             9,
@@ -154,9 +154,20 @@
           "median": 9,
           "spread": 1
         },
-        "panel_render_us_max": {
+        "panel_render_us_p50": {
           "leg": "--r0-measure 300",
           "gate": "spread",
+          "runs": [
+            2578.0,
+            2543.5,
+            2478.5
+          ],
+          "median": 2543.5,
+          "spread": 99.5
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "report",
           "runs": [
             2680,
             2697,
@@ -178,7 +189,7 @@
         },
         "scrim_first_commit_ms_max": {
           "leg": "--r0-measure 300",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             1,
             1,
@@ -187,9 +198,20 @@
           "median": 1,
           "spread": 0
         },
-        "scrim_render_us_max": {
+        "scrim_render_us_p50": {
           "leg": "--r0-measure 300",
           "gate": "spread",
+          "runs": [
+            6.0,
+            6.0,
+            6.0
+          ],
+          "median": 6.0,
+          "spread": 0.0
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "report",
           "runs": [
             7,
             7,
@@ -211,7 +233,7 @@
         },
         "launcher_first_commit_ms_max": {
           "leg": "--menu-budget",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             8,
             10,
@@ -222,7 +244,7 @@
         },
         "bar_gap_ms_max": {
           "leg": "--menu-budget",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             17,
             18,
@@ -373,7 +395,7 @@
         },
         "panel_first_commit_ms_max": {
           "leg": "--r0-measure 300",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             10,
             9,
@@ -382,9 +404,20 @@
           "median": 10,
           "spread": 1
         },
-        "panel_render_us_max": {
+        "panel_render_us_p50": {
           "leg": "--r0-measure 300",
           "gate": "spread",
+          "runs": [
+            2595.0,
+            2639.0,
+            2589.5
+          ],
+          "median": 2595.0,
+          "spread": 49.5
+        },
+        "panel_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "report",
           "runs": [
             2723,
             3382,
@@ -406,7 +439,7 @@
         },
         "scrim_first_commit_ms_max": {
           "leg": "--r0-measure 300",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             1,
             1,
@@ -415,9 +448,20 @@
           "median": 1,
           "spread": 0
         },
-        "scrim_render_us_max": {
+        "scrim_render_us_p50": {
           "leg": "--r0-measure 300",
           "gate": "spread",
+          "runs": [
+            5.5,
+            6.0,
+            6.0
+          ],
+          "median": 6.0,
+          "spread": 0.5
+        },
+        "scrim_render_us_max": {
+          "leg": "--r0-measure 300",
+          "gate": "report",
           "runs": [
             6,
             11,
@@ -439,7 +483,7 @@
         },
         "launcher_first_commit_ms_max": {
           "leg": "--menu-budget",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             9,
             10,
@@ -450,7 +494,7 @@
         },
         "bar_gap_ms_max": {
           "leg": "--menu-budget",
-          "gate": "spread",
+          "gate": "report",
           "runs": [
             19,
             19,

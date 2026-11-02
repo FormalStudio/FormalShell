@@ -10,23 +10,42 @@ docs/perf/baseline.json and the GPU's docs/perf/baseline-gpu.json, told
 apart by the `SMOKE_BACKEND` line `--backend` prints (a run without one
 drew on the CPU); a run asking for the GPU that fell back is refused.
 
-  dev/perf-gate.py run [--backend cpu|gpu] [--legs idle,r0,menu] [--runs 3]
+  dev/perf-gate.py run [--against <result>] [--backend cpu|gpu]
+                       [--legs idle,r0,menu] [--runs 3]
       the matrix on the rig, each leg --runs times plain and under quota
       (--idle at least five times) on that backend (cpu unless asked),
-      outputs kept in artifacts/perf/<stamp>/, then `check` over them
+      outputs kept in artifacts/perf/<stamp>/, then `check` over them.
+      With --against (a result directory, or an fspec store package of the
+      shell such as /opt/fspec/store/<id>-formalshell-<rev>), every run of
+      the tree follows one of that result's, then `compare` over the two
   dev/perf-gate.py check <run-output>...
       the median of the given runs per number against the baseline; exits 1
       when any number is over its gate
+  dev/perf-gate.py compare <other runs>... -- <runs>...
+      the same rules with the other build's interleaved runs standing in
+      for the baseline
   dev/perf-gate.py extract <run-output>...
       the numbers each file carries, as JSON
   dev/perf-gate.py baseline --commit <sha> [--note <text>] <run-output>...
       writes docs/perf/baseline.json from three runs per leg and mode
 
 The gate, per number: the median of the new runs at or under the baseline
-median plus the baseline's spread (max minus min of its three runs). RSS
+median plus the baseline's spread (max minus min of its three runs), never
+less than the number's own resolution (one millisecond, one clock tick). RSS
 gets 2 MB over the median instead, the idle commit count and the shell's
 engine time stay exactly 0, the compositor's engine time stays at or under
-its median, and the DRM fd count is reported only.
+its median (under `compare`, its median plus its spread), and the DRM fd
+count is reported only.
+
+A surface's timings are gated on the median open: each of the ten opens'
+first commit and slowest render, the median of the ten. The slowest open
+and the launcher's and bar's worst frames are reported, not gated: g815
+falls into a state where the same build renders 1.5 to 4 times slower, for
+a few opens or a whole run, and one such open decided the old maxima. The
+legs' own budgets (50 ms to a launcher frame, 16 ms on a bar frame) still
+fail any run with a real stall. That state is also why `run --against`
+exists: a baseline read hours earlier on a quiet host cannot tell the state
+from a regression, and two builds interleaved in one session both take it.
 
 Each run carries g815's ACPI platform profile, read just before it, and a
 check refuses runs read on another profile than the baseline's: every CPU
@@ -57,6 +76,7 @@ import fcntl
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -81,14 +101,32 @@ NUMBERS = {
     "rss_kb": ("--r0-measure 300", "rss"),
     "threads": ("--r0-measure 300", "spread"),
     "panel_first_commit_ms_p50": ("--r0-measure 300", "spread"),
-    "panel_first_commit_ms_max": ("--r0-measure 300", "spread"),
-    "panel_render_us_max": ("--r0-measure 300", "spread"),
+    "panel_first_commit_ms_max": ("--r0-measure 300", "report"),
+    "panel_render_us_p50": ("--r0-measure 300", "spread"),
+    "panel_render_us_max": ("--r0-measure 300", "report"),
     "scrim_first_commit_ms_p50": ("--r0-measure 300", "spread"),
-    "scrim_first_commit_ms_max": ("--r0-measure 300", "spread"),
-    "scrim_render_us_max": ("--r0-measure 300", "spread"),
+    "scrim_first_commit_ms_max": ("--r0-measure 300", "report"),
+    "scrim_render_us_p50": ("--r0-measure 300", "spread"),
+    "scrim_render_us_max": ("--r0-measure 300", "report"),
     "launcher_first_commit_ms_p50": ("--menu-budget", "spread"),
-    "launcher_first_commit_ms_max": ("--menu-budget", "spread"),
-    "bar_gap_ms_max": ("--menu-budget", "spread"),
+    "launcher_first_commit_ms_max": ("--menu-budget", "report"),
+    "bar_gap_ms_max": ("--menu-budget", "report"),
+}
+# The smallest step each number moves in: a spread rule's allowance is never
+# under it, so a baseline whose three runs agreed exactly still lets one
+# millisecond or one clock tick through.
+RESOLUTION = {
+    "cold_start_ms": 1,
+    "idle_ticks": 1,
+    "idle_wakeups": 1,
+    "threads": 0,
+    "idle_cpu_pct": 0.017,
+    "spinner_cpu_pct": 0.017,
+    "panel_first_commit_ms_p50": 1,
+    "panel_render_us_p50": 0,
+    "scrim_first_commit_ms_p50": 1,
+    "scrim_render_us_p50": 0,
+    "launcher_first_commit_ms_p50": 1,
 }
 RSS_ALLOWANCE_KB = 2048
 PROFILE_LINE = "host platform_profile: "
@@ -118,6 +156,31 @@ def median(xs):
     s = sorted(xs)
     n = len(s)
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def open_renders(lines, surface):
+    """Each of the first ten opens' slowest render, read off the shell's
+    log the way --r0-measure's own summary reads its `render_us_max`: every
+    commit of the surface from the open's call to the call after it."""
+    calls = {"panel": ('function: "r0Panel"', '"open"'), "scrim": ('function: "r0Scrim"', '"true"')}[surface]
+    t = lambda l: int(re.search(r"t=(\d+)ms", l).group(1))
+    opens, ends = [], []
+    for l in lines:
+        if l.startswith("ipc t=") and calls[0] in l:
+            if calls[1] in l and len(opens) < 10:
+                opens.append(t(l))
+            elif len(opens) <= 10 and len(ends) < len(opens):
+                ends.append(t(l))
+    commits = [(t(l), int(m.group(1))) for l in lines if l.startswith(f"commit surface={surface} ") and (m := re.search(r"render_us=(\d+)", l))]
+    worst = []
+    for i, start in enumerate(opens):
+        end = ends[i] if i < len(ends) else None
+        rs = [r for ct, r in commits if ct >= start and (end is None or ct <= end)]
+        if rs:
+            worst.append(max(rs))
+    if len(worst) != 10:
+        raise SystemExit(f"{surface}: {len(worst)} opens committed in the shell's log, wanted 10")
+    return worst
 
 
 def extract(path):
@@ -179,6 +242,7 @@ def extract(path):
             n[f"{surface}_first_commit_ms_p50"] = int(s["first_commit_ms_p50"])
             n[f"{surface}_first_commit_ms_max"] = int(s["first_commit_ms_max"])
             n[f"{surface}_render_us_max"] = int(s["render_us_max"])
+            n[f"{surface}_render_us_p50"] = median(open_renders(lines, surface))
     if pick("SMOKE_MENU_BUDGET_LOG "):
         opens = [kv(l) for l in lines if re.match(r"SMOKE_MENU_BUDGET open \d+ ", l)]
         worst = kv(pick("SMOKE_MENU_BUDGET worst ") or "")
@@ -276,7 +340,7 @@ def cmd_check(paths):
             m = median(xs)
             rule = b["gate"]
             limit = {
-                "spread": b["median"] + b["spread"],
+                "spread": b["median"] + max(b["spread"], RESOLUTION.get(k, 0)),
                 "rss": b["median"] + RSS_ALLOWANCE_KB,
                 "zero": 0,
                 "median": b["median"],
@@ -294,10 +358,58 @@ def cmd_check(paths):
         sys.exit(1)
 
 
+def cmd_compare(args):
+    if "--" not in args:
+        raise SystemExit("usage: perf-gate.py compare <base runs>... -- <head runs>...")
+    cut = args.index("--")
+    base_backend, base_runs, _, base_scales, _ = group(args[:cut])
+    backend, runs, _, scales, _ = group(args[cut + 1:])
+    if base_backend != backend or base_scales != scales:
+        raise SystemExit("the two sides drew on different backends or output scales")
+    over = []
+    print(f"{backend}: {len(args[cut + 1:])} runs against {cut} of the other build")
+    for mode, numbers in runs.items():
+        for k, xs in sorted(numbers.items(), key=lambda kv: list(NUMBERS).index(kv[0])):
+            bs = base_runs[mode].get(k)
+            if not bs:
+                continue
+            bm, spread = median(bs), max(bs) - min(bs)
+            limit = {
+                "spread": bm + max(spread, RESOLUTION.get(k, 0)),
+                "median": bm + spread,
+                "rss": bm + RSS_ALLOWANCE_KB,
+                "zero": 0,
+                "report": None,
+            }[NUMBERS[k][1]]
+            m = median(xs)
+            ok = limit is None or m <= limit
+            if not ok:
+                over.append(f"{mode} {k}")
+            shown = "reported" if limit is None else f"gate {limit:g}"
+            print(f"{'ok  ' if ok else 'OVER'} {mode:5} {k:30} median {m:g} of {xs} ({shown}, other {bm:g} of {bs})")
+    if over:
+        print("over the gate: " + ", ".join(over))
+        sys.exit(1)
+
+
+def result_dir(path):
+    """A result on g815 to run against: ./result's layout, or an fspec store
+    package of the shell, which holds it under formalshell/. Read as a slot
+    user, who runs it: their homes are closed to each other, so a result in
+    one (or in the owner's) goes through dev/share-result.sh first."""
+    for d in (path, os.path.join(path, "formalshell")):
+        if subprocess.run(SSH + ["sudo", "-n", "-u", "fstest0", "test", "-x", shlex.quote(f"{d}/bin/formalshell")]).returncode == 0:
+            return d
+    raise SystemExit(f"{path}: fstest0 on g815 finds no bin/formalshell in it or under formalshell/ (an absolute path on g815, readable by the slot users)")
+
+
 def cmd_run(args):
-    legs, count, backend = list(LEGS), 3, "cpu"
+    legs, count, backend, against = list(LEGS), 3, "cpu", None
     while args:
-        if args[0] == "--backend" and len(args) > 1 and args[1] in BASELINES:
+        if args[0] == "--against" and len(args) > 1:
+            against = result_dir(args[1])
+            args = args[2:]
+        elif args[0] == "--backend" and len(args) > 1 and args[1] in BASELINES:
             backend = args[1]
             args = args[2:]
         elif args[0] == "--legs" and len(args) > 1:
@@ -307,7 +419,7 @@ def cmd_run(args):
             count = int(args[1])
             args = args[2:]
         else:
-            raise SystemExit("usage: perf-gate.py run [--backend cpu|gpu] [--legs idle,r0,menu] [--runs 3]")
+            raise SystemExit("usage: perf-gate.py run [--against <result>] [--backend cpu|gpu] [--legs idle,r0,menu] [--runs 3]")
     for leg in legs:
         if leg not in LEGS:
             raise SystemExit(f"unknown leg {leg}, one of {', '.join(LEGS)}")
@@ -322,7 +434,7 @@ def cmd_run(args):
     with open(HOLD, "w") as f:
         f.write(f"{os.getpid()}\n")
     try:
-        run_matrix(legs, count, backend, want, scale)
+        run_matrix(legs, count, backend, want, scale, against)
     finally:
         os.unlink(HOLD)
 
@@ -343,10 +455,13 @@ def quiet_g815():
         time.sleep(30)
 
 
-def run_matrix(legs, count, backend, want, scale):
+def run_matrix(legs, count, backend, want, scale, against):
     out = os.path.join(REPO, "artifacts/perf", time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out)
-    paths = []
+    paths = {"base": [], "head": []}
+    # Against another result, each run of the tree follows one of that
+    # result's, so a state the host falls into lands on both sides.
+    sides = ("base", "head") if against else ("head",)
     # Interleaved, so a drift on the host over the hour lands on every leg
     # and both modes rather than on whichever ran last.
     runs = {leg: max(count, MIN_RUNS.get(leg, 0)) for leg in legs}
@@ -361,27 +476,33 @@ def run_matrix(legs, count, backend, want, scale):
                     env.pop(k, None)
                 if mode == "quota":
                     env.update(QUOTA_ENV)
-                path = os.path.join(out, f"{leg}-{backend}-{mode}-{i}.txt")
-                quiet_g815()
-                profile = host_profile()
-                if profile != want:
-                    raise SystemExit(f"g815 is on the {profile} platform profile, the baseline's is {want} (Overnight drops performance to balanced): stopped before {leg} {mode} {i}")
-                print(f"{time.strftime('%H:%M:%S')} {leg} {mode} {i}", flush=True)
-                with open(path, "w") as f:
-                    f.write(PROFILE_LINE + profile + "\n")
-                    f.write(CARGO_LINE + env["FS_CARGO_PROFILE"] + "\n")
-                    f.flush()
-                    # A cpu run pins nothing: the shipped `auto` draws on the
-                    # CPU on the rig's integrated render node (gpu.rs
-                    # resolve), and a baseline commit that predates
-                    # --backend runs the same legs.
-                    pin = ["--backend", backend] if backend != "cpu" else []
-                    status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", *pin, *LEGS[leg]],
-                                             stdout=f, stderr=subprocess.STDOUT, env=env, cwd=REPO)
-                if status != 0:
-                    raise SystemExit(f"{path}: the run failed (exit {status})")
-                paths.append(path)
-    cmd_check(paths)
+                for side in sides:
+                    side_env = dict(env, FS_RESULT=against) if side == "base" else env
+                    name = f"{leg}-{backend}-{mode}-{i}.txt"
+                    path = os.path.join(out, f"{side}-{name}" if against else name)
+                    quiet_g815()
+                    profile = host_profile()
+                    if profile != want:
+                        raise SystemExit(f"g815 is on the {profile} platform profile, the baseline's is {want} (Overnight drops performance to balanced): stopped before {leg} {mode} {i}")
+                    print(f"{time.strftime('%H:%M:%S')} {leg} {mode} {i}{' ' + side if against else ''}", flush=True)
+                    with open(path, "w") as f:
+                        f.write(PROFILE_LINE + profile + "\n")
+                        f.write(CARGO_LINE + ("of " + against if side == "base" else env["FS_CARGO_PROFILE"]) + "\n")
+                        f.flush()
+                        # A cpu run pins nothing: the shipped `auto` draws on the
+                        # CPU on the rig's integrated render node (gpu.rs
+                        # resolve), and a baseline commit that predates
+                        # --backend runs the same legs.
+                        pin = ["--backend", backend] if backend != "cpu" else []
+                        status = subprocess.call([os.path.join(REPO, "dev/remote.sh"), "smoke", *pin, *LEGS[leg]],
+                                                 stdout=f, stderr=subprocess.STDOUT, env=side_env, cwd=REPO)
+                    if status != 0:
+                        raise SystemExit(f"{path}: the run failed (exit {status})")
+                    paths[side].append(path)
+    if against:
+        cmd_compare([*paths["base"], "--", *paths["head"]])
+    else:
+        cmd_check(paths["head"])
 
 
 def main():
@@ -392,6 +513,8 @@ def main():
         cmd_run(args)
     elif verb in ("check", "extract") and args:
         {"check": cmd_check, "extract": cmd_extract}[verb](args)
+    elif verb == "compare" and args:
+        cmd_compare(args)
     elif verb == "baseline":
         cmd_baseline(args)
     else:
