@@ -36,6 +36,11 @@
 # rest rect and every toast card's rect in `debug dump` share x and must
 # never intersect.
 #
+# Fixture 6 registers twice, two processes sharing one `Id` the way two
+# copies of one app do (owner, 2026-11-02: two Beepers left an empty cell
+# in the second bar, both cells keyed by that `Id`): the second bar has to
+# draw both pictures.
+#
 # It owns bar.layout, so it does not combine with --bar-layout, --bar-position
 # or --chevron, and it registers stubs of its own, so --tray's own count
 # assert does not survive that pair either.
@@ -144,6 +149,7 @@ sleep 1
 "$python3_bin" "$stub" --id overflow-fixture-4 --title "Overflow Fixture 4" --color f1c40f & echo \$! >> "$tray_overflow_pids_path"
 "$python3_bin" "$stub" --id overflow-fixture-5 --title "Overflow Fixture 5" --color 8e44ad & echo \$! >> "$tray_overflow_pids_path"
 "$python3_bin" "$stub" --id overflow-fixture-6 --title "Overflow Fixture 6" --color 16a085 & echo \$! >> "$tray_overflow_pids_path"
+"$python3_bin" "$stub" --id overflow-fixture-6 --title "Overflow Fixture 6" --color e67e22 & echo \$! >> "$tray_overflow_pids_path"
 sleep 7
 $ipc call tray status > "$tray_overflow_status_path" 2>&1
 "$grim_bin" "$tray_overflow_strip_path" > /dev/null 2>&1
@@ -178,6 +184,15 @@ EOF
   hypr_exec_once "bash $script"
 }
 
+# How many pixels of the frame carry one fixture's colour.
+tray_overflow_pixels() {
+  "$python3_bin" -c 'import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+want = tuple(int(sys.argv[2][i:i + 2], 16) for i in (0, 2, 4))
+print(sum(n for n, p in im.getcolors(1 << 24) if all(abs(a - b) < 8 for a, b in zip(p, want))))' "$1" "$2"
+}
+
 leg_tray_overflow_assert() {
   local total inline hidden open panels
   if [ ! -s "$tray_overflow_status_path" ]; then
@@ -188,8 +203,8 @@ leg_tray_overflow_assert() {
   inline=$("$jq_bin" -r '.overflow.inline' "$tray_overflow_status_path")
   hidden=$("$jq_bin" -r '.overflow.hidden | length' "$tray_overflow_status_path")
   echo "tray: $inline of $total left on the strip, $hidden in the second bar"
-  if [ "$total" -lt 6 ]; then
-    fail "tray status did not report the 6 fixture items (got $total), stub registration likely failed"
+  if [ "$total" -lt 7 ]; then
+    fail "tray status did not report the 7 fixture items (got $total), stub registration likely failed"
   fi
   if [ "$inline" -ne 0 ]; then
     fail "the tray kept $inline items on a strip with no room for them; it moves whole or not at all"
@@ -219,6 +234,12 @@ leg_tray_overflow_assert() {
     fail "no second-bar screenshot produced"
   fi
   echo "SMOKE_TRAY_OVERFLOW_BAR $tray_overflow_bar_path"
+  local colour
+  for colour in 16a085 e67e22; do
+    if [ "$(tray_overflow_pixels "$tray_overflow_bar_path" "$colour")" -lt 20 ]; then
+      fail "the second bar draws no #$colour square: two items sharing overflow-fixture-6's Id did not both get a cell"
+    fi
+  done
   # The second bar is a headerless panel: the shared panel-language check,
   # its chips' room even on every side.
   panel_language_assert trayoverflow "$tray_overflow_bar_path" "$("$jq_bin" -c '.panel.rest' "$tray_overflow_bar_dump_path")" no "$tray_overflow_bar_dump_path" rowInset

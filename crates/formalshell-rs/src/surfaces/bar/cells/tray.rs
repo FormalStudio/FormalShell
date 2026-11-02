@@ -151,7 +151,7 @@ impl Cell for Tray {
             Button::Right => return Action::None,
         };
         let (start, e) = self.boxes()[i];
-        Action::Tray { id: item.id.clone(), click, offset: start + e / 2.0 - self.along / 2.0 }
+        Action::Tray { key: item.key.clone(), click, offset: start + e / 2.0 - self.along / 2.0 }
     }
 
     fn set_open(&mut self, _: bool) -> bool {

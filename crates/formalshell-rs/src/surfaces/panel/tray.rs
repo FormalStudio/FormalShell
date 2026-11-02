@@ -30,7 +30,7 @@ pub struct Tray {
 }
 
 fn stop(item: &Item) -> String {
-    format!("item:{}", item.id)
+    format!("item:{}", item.key)
 }
 
 impl Tray {
@@ -45,15 +45,14 @@ impl Tray {
     }
 
     fn item<'a>(v: &'a crate::store::Store, stop: &str) -> Option<&'a Item> {
-        let id = stop.strip_prefix("item:")?;
-        v.tray.by_id(id)
+        v.tray.by_key(stop.strip_prefix("item:")?)
     }
 
     fn click(item: &Item, what: &What, fx: &mut Effect) {
         let key = item.key.clone();
         match what {
-            What::Click if item.only_menu && item.has_menu => fx.menu = Some(item.id.clone()),
-            What::Right if item.has_menu => fx.menu = Some(item.id.clone()),
+            What::Click if item.only_menu && item.has_menu => fx.menu = Some(item.key.clone()),
+            What::Right if item.has_menu => fx.menu = Some(item.key.clone()),
             What::Click => {
                 fx.service(move |ctx| tray::activate(ctx, key));
                 fx.close = true;

@@ -72,8 +72,13 @@ impl State {
         }
     }
 
+    /// IPC names an item by its `Id`, which two running copies of one app share.
     pub fn by_id(&self, id: &str) -> Option<&Item> {
         self.items.iter().find(|i| i.id == id)
+    }
+
+    pub fn by_key(&self, key: &str) -> Option<&Item> {
+        self.items.iter().find(|i| i.key == key)
     }
 }
 

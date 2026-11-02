@@ -1265,10 +1265,10 @@ impl App {
     /// centre) or at the strip's end, and off `over` when that is the card
     /// the icon is in (the chevron's second bar or the tray's panel), which
     /// it then stands clear of.
-    fn open_tray_menu(&mut self, id: &str, anchor: Option<f64>, over: Option<Owner>) -> Result<(), String> {
-        let Some(item) = self.store.tray.by_id(id).cloned() else { return Err(format!("error: no tray item with id '{id}'")) };
+    fn open_tray_menu(&mut self, key: &str, anchor: Option<f64>, over: Option<Owner>) -> Result<(), String> {
+        let Some(item) = self.store.tray.by_key(key).cloned() else { return Ok(()) };
         if !item.has_menu {
-            return Err(format!("error: tray item '{id}' has no menu"));
+            return Err(format!("error: tray item '{}' has no menu", item.id));
         }
         let now = Instant::now();
         self.drop_tray_menu();
@@ -1288,7 +1288,7 @@ impl App {
         let (_, output_height) = self.output_size();
         let pad = theme.space.screen_padding;
         let cap = if vertical { output_height - pad * 2.0 } else { output_height - line_at - theme.space.bar_margin - pad };
-        let mut menu = Menu::new(theme, item.id.clone(), item.key.clone(), item.tooltip.clone());
+        let mut menu = Menu::new(theme, item.key.clone(), item.tooltip.clone());
         menu.cap = cap.max(menu.width());
         let width = menu.width();
         let oriented = |h: f64| if vertical { (h, width) } else { (width, h) };
@@ -1407,7 +1407,7 @@ impl App {
     pub fn tray_changed(&mut self) {
         let Some(p) = &mut self.menu else { return };
         let Some(menu) = &mut p.menu else { return };
-        if self.store.tray.by_id(&menu.id).is_none() {
+        if self.store.tray.by_key(&menu.key).is_none() {
             self.close_tray_menu();
             return;
         }
@@ -1453,8 +1453,11 @@ impl App {
     /// `tray menu`: opens over the second bar while that is up, as a right
     /// click on its cell does.
     pub fn tray_menu(&mut self, id: &str) -> String {
+        let Some(key) = self.store.tray.by_id(id).map(|i| i.key.clone()) else {
+            return format!("error: no tray item with id '{id}'");
+        };
         let over = (self.panel_open() == Some(panel::tray::ID)).then_some(Owner::Panel);
-        match self.open_tray_menu(id, None, over) {
+        match self.open_tray_menu(&key, None, over) {
             Ok(()) => "ok".into(),
             Err(e) => e,
         }
@@ -1563,12 +1566,14 @@ impl App {
                     rt.service(move |ctx| devices::run(ctx, op));
                 }
             }
-            Action::Tray { id, click: TrayClick::Menu, offset } => {
+            Action::Tray { key, click: TrayClick::Menu, offset } => {
                 let over = self.act_owner.filter(|o| *o == Owner::Overflow);
-                let _ = self.open_tray_menu(&id, Some(anchor + offset), over);
+                let _ = self.open_tray_menu(&key, Some(anchor + offset), over);
             }
-            Action::Tray { id, click, .. } => {
-                let Some(key) = self.store.tray.by_id(&id).map(|i| i.key.clone()) else { return };
+            Action::Tray { key, click, .. } => {
+                if self.store.tray.by_key(&key).is_none() {
+                    return;
+                }
                 if let Some(rt) = &self.runtime {
                     rt.service(move |ctx| match click {
                         TrayClick::Secondary => tray::secondary_activate(ctx, key),
@@ -2339,8 +2344,8 @@ impl App {
                 self.close_panels();
                 self.call_self(target, function, &[]);
             }
-            Out::Menu(id, anchor) => {
-                let _ = self.open_tray_menu(&id, anchor, Some(Owner::Panel));
+            Out::Menu(key, anchor) => {
+                let _ = self.open_tray_menu(&key, anchor, Some(Owner::Panel));
             }
         }
     }

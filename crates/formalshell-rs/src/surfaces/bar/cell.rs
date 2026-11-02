@@ -46,7 +46,7 @@ pub enum Action {
     Window(String),
     /// A click on one tray item; `offset` is that item's centre along the
     /// strip from the cell's own centre, for a menu to hang under it.
-    Tray { id: String, click: TrayClick, offset: f64 },
+    Tray { key: String, click: TrayClick, offset: f64 },
     /// A write to a device service (a volume step, a mute, a radio).
     Device(crate::services::devices::Op),
     /// Caffeinate on or off (the indicator's click).

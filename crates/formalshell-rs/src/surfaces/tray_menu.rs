@@ -78,8 +78,6 @@ pub enum Hit {
 }
 
 pub struct Menu {
-    /// The tray item's own `Id`, which IPC names it by.
-    pub id: String,
     pub key: String,
     title: String,
     tree: Option<MenuNode>,
@@ -106,9 +104,8 @@ pub struct Menu {
 }
 
 impl Menu {
-    pub fn new(theme: &Theme, id: String, key: String, title: String) -> Self {
+    pub fn new(theme: &Theme, key: String, title: String) -> Self {
         Self {
-            id,
             key,
             title,
             tree: None,
@@ -432,7 +429,7 @@ mod tests {
 
     fn menu() -> Menu {
         let theme = Theme::resolve(getter(json!({})), &fs_theme::palette::fallback("dark"));
-        let mut m = Menu::new(&theme, "id".into(), "key".into(), "Item".into());
+        let mut m = Menu::new(&theme, "key".into(), "Item".into());
         m.set_tree(Some(&tree()));
         m
     }
