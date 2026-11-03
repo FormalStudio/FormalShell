@@ -10,8 +10,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 pub use api::{
-    Client, Empty, Event, EventEnvelope, FavoriteRequest, Favorites, Key, LyricChunk, LyricLine, Lyrics, PlayerState,
-    RateRequest, Rating, Subscription, Table, TrackInfo,
+    Capabilities, Client, Empty, Event, EventEnvelope, FavoriteRequest, Favorites, Key, LyricChunk, LyricLine, Lyrics,
+    PlayerState, SourceInfo, SourceList, Subscription, Table, TrackInfo,
 };
 pub use http2::Error;
 

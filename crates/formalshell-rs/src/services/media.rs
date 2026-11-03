@@ -559,6 +559,7 @@ impl State {
                 "connected": kopuz.is_some(),
                 "key": kopuz.map_or("", |k| k.key.as_str()),
                 "favorite": kopuz.is_some_and(|k| k.favorite),
+                "actions": kopuz.map_or_else(Vec::new, kopuz::State::actions),
             },
         })
     }

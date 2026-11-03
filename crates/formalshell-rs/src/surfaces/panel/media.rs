@@ -8,6 +8,10 @@
 //! position row a readout, no shuffle or loop leaves those buttons out, no
 //! volume leaves the volume out, AirPlay gets no transport at all (UxPlay
 //! takes no remote command), and no source at all is the dim `No player`.
+//! While the player is Kopuz and kopuzd answers for its track, the transport
+//! ends on Kopuz's own heart and, where its source takes it, "don't
+//! recommend" (`services/kopuz.rs`); for any other player the row is as it
+//! always was.
 //!
 //! The panel redraws on its own once per elapsed second while playing,
 //! which keeps the readout and the fill on the position `media status`
@@ -20,7 +24,7 @@ use fs_media::visualizer::styles;
 
 use super::{Effect, Panel, View};
 use crate::services::devices::audio;
-use crate::services::{lyrics, motion_art};
+use crate::services::{kopuz, lyrics, motion_art};
 use crate::services::media::Active;
 use crate::services::visualizer::{self, Avail};
 use crate::store::{self, Topic};
@@ -82,8 +86,9 @@ fn has_timeline(a: &Active) -> bool {
     a.kind == "mpris" || (a.kind == "iphone" && a.length > 0.0)
 }
 
-/// The transport, in the order the buttons draw.
-fn transport(a: &Active) -> Vec<&'static str> {
+/// The transport, in the order the buttons draw: Kopuz's actions, by their
+/// IPC verbs, after the player's own.
+fn transport(a: &Active, k: Option<&kopuz::State>) -> Vec<&'static str> {
     if a.kind == "stream" || a.kind == "airplay" {
         return Vec::new();
     }
@@ -94,16 +99,20 @@ fn transport(a: &Active) -> Vec<&'static str> {
     if a.loop_name.is_some() {
         out.push("loop");
     }
+    out.extend(k.map_or_else(Vec::new, kopuz::State::actions));
     out
 }
 
-fn transport_opt(a: &Active, id: &str) -> Opt {
+fn transport_opt(a: &Active, k: Option<&kopuz::State>, id: &str) -> Opt {
+    let favorite = k.is_some_and(|k| k.favorite);
     let icon = match id {
         "previous" => "skip-back",
         "playpause" if a.playing => "pause",
         "playpause" => "play",
         "next" => "skip-forward",
         "shuffle" => "shuffle",
+        "like" => "heart",
+        "dontRecommend" => "circle-minus",
         _ if a.loop_name == Some("track") => "repeat-1",
         _ => "repeat",
     };
@@ -111,18 +120,30 @@ fn transport_opt(a: &Active, id: &str) -> Opt {
     o.enabled = match id {
         "previous" => a.can_previous,
         "next" => a.can_next,
+        // One setting on the remote with the heart, as Kopuz has it.
+        "dontRecommend" => !favorite,
         _ => true,
     };
     o.active = match id {
         "shuffle" => a.shuffle == Some(true),
         "loop" => a.loop_name.is_some_and(|l| l != "none"),
+        "like" => favorite,
         _ => false,
     };
     o
 }
 
-fn press(store: &store::Store, id: &str) {
-    let m = &store.media;
+fn press(fx: &Effect, id: &str) {
+    let m = &fx.store.media;
+    let action = match (id, m.kopuz()) {
+        ("like", Some(k)) => k.like("toggle").ok(),
+        ("dontRecommend", Some(k)) => k.dont_recommend_action().ok(),
+        _ => None,
+    };
+    if let Some(action) = action {
+        fx.service(move |ctx| kopuz::act(ctx, action));
+        return;
+    }
     match id {
         "previous" => m.previous(),
         "playpause" => m.play_pause(),
@@ -338,10 +359,11 @@ impl Panel for Media {
             );
         }
 
-        let ids = transport(&a);
+        let k = m.kopuz();
+        let ids = transport(&a, k);
         let mut controls = Vec::new();
         if !ids.is_empty() {
-            let options: Vec<Opt> = ids.iter().map(|id| transport_opt(&a, id)).collect();
+            let options: Vec<Opt> = ids.iter().map(|id| transport_opt(&a, k, id)).collect();
             let index = self.transport.min(ids.len() - 1);
             let group = w::group(options, index, false).ring(index);
             controls.push(group.hug().stop("transport").on("transport"));
@@ -449,10 +471,10 @@ impl Panel for Media {
             ("output", _) => self.toggle_menu("output"),
             ("transport", What::Pick(i)) => {
                 if let Some(a) = &a
-                    && let Some(id) = transport(a).get(*i)
+                    && let Some(id) = transport(a, fx.store.media.kopuz()).get(*i)
                 {
                     self.transport = *i;
-                    press(fx.store, id);
+                    press(fx, id);
                 }
             }
             ("progress", What::Fraction(f)) => {
@@ -490,11 +512,12 @@ impl Panel for Media {
             "output" => self.toggle_menu("output"),
             "transport" => {
                 if let Some(a) = fx.store.media.active() {
-                    let ids = transport(&a);
+                    let k = fx.store.media.kopuz();
+                    let ids = transport(&a, k);
                     if let Some(id) = ids.get(self.transport.min(ids.len().saturating_sub(1))) {
-                        let enabled = transport_opt(&a, id).enabled;
+                        let enabled = transport_opt(&a, k, id).enabled;
                         if enabled {
-                            press(fx.store, id);
+                            press(fx, id);
                         }
                     }
                 }
@@ -507,7 +530,7 @@ impl Panel for Media {
     fn step(&mut self, stop: &str, direction: i32, fx: &mut Effect) {
         match stop {
             "transport" => {
-                let n = fx.store.media.active().map_or(0, |a| transport(&a).len());
+                let n = fx.store.media.active().map_or(0, |a| transport(&a, fx.store.media.kopuz()).len());
                 if n > 0 {
                     self.transport = (self.transport as i32 + direction).clamp(0, n as i32 - 1) as usize;
                 }
@@ -564,12 +587,25 @@ mod tests {
     #[test]
     fn airplay_has_no_transport_and_a_player_its_own_toggles() {
         let airplay = Active { kind: "airplay", ..Active::default() };
-        assert!(transport(&airplay).is_empty());
+        assert!(transport(&airplay, None).is_empty());
         let mpv = Active { kind: "mpris", shuffle: Some(true), loop_name: Some("track"), ..Active::default() };
-        assert_eq!(transport(&mpv), ["previous", "playpause", "next", "shuffle", "loop"]);
-        assert_eq!(transport_opt(&mpv, "loop").icon, "repeat-1");
-        assert!(transport_opt(&mpv, "shuffle").active);
-        assert!(!transport_opt(&mpv, "next").enabled);
+        assert_eq!(transport(&mpv, None), ["previous", "playpause", "next", "shuffle", "loop"]);
+        assert_eq!(transport_opt(&mpv, None, "loop").icon, "repeat-1");
+        assert!(transport_opt(&mpv, None, "shuffle").active);
+        assert!(!transport_opt(&mpv, None, "next").enabled);
+    }
+
+    #[test]
+    fn kopuz_ends_the_transport_on_its_heart() {
+        let a = Active { kind: "mpris", ..Active::default() };
+        let k = kopuz::State { favorite: true, dont_recommend: true, ..kopuz::State::default() };
+        assert_eq!(transport(&a, Some(&k)), ["previous", "playpause", "next", "like", "dontRecommend"]);
+        let heart = transport_opt(&a, Some(&k), "like");
+        assert!(heart.active && heart.enabled && heart.icon == "heart");
+        assert!(!transport_opt(&a, Some(&k), "dontRecommend").enabled);
+        let k = kopuz::State { favorite: false, ..k };
+        assert!(!transport_opt(&a, Some(&k), "like").active);
+        assert!(transport_opt(&a, Some(&k), "dontRecommend").enabled);
     }
 
     #[test]

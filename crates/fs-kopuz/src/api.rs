@@ -10,7 +10,7 @@ use crate::http2::{Call, Error};
 use crate::pb::{DecodeError, Message, Reader, Writer};
 
 /// Every empty message: the `Get*Request`s, `SubscribeRequest`, `Unit` and
-/// `SetFavoriteResponse`.
+/// `SetFavoriteResponse`, and the `MutationResult` `Next` answers, unread.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Empty;
 
@@ -92,19 +92,27 @@ impl Message for PlayerState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Table {
     Favorites,
+    /// The configured sources, which kopuzd invalidates when the active one moves.
+    Servers,
     Other(i32),
 }
 
 impl Table {
     const FAVORITES: i32 = 4;
+    const SERVERS: i32 = 6;
 
     fn from_i32(v: i32) -> Self {
-        if v == Self::FAVORITES { Table::Favorites } else { Table::Other(v) }
+        match v {
+            Self::FAVORITES => Table::Favorites,
+            Self::SERVERS => Table::Servers,
+            _ => Table::Other(v),
+        }
     }
 
     fn to_i32(self) -> i32 {
         match self {
             Table::Favorites => Self::FAVORITES,
+            Table::Servers => Self::SERVERS,
             Table::Other(v) => v,
         }
     }
@@ -355,37 +363,43 @@ impl Message for FavoriteRequest {
     }
 }
 
-/// Unknown values read as `Unspecified`, as the proto asks.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Rating {
-    #[default]
-    Unspecified = 0,
-    None = 1,
-    Like = 2,
-    Dislike = 3,
+/// The field of `SourceCapabilities` the shell reads.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Capabilities {
+    /// It takes a "stop recommending this" signal for a track.
+    pub dont_recommend: bool,
 }
 
-impl Rating {
-    pub fn from_i32(v: i32) -> Self {
-        match v {
-            1 => Rating::None,
-            2 => Rating::Like,
-            3 => Rating::Dislike,
-            _ => Rating::Unspecified,
+impl Message for Capabilities {
+    fn encode(&self, w: &mut Writer) {
+        w.bool(17, self.dont_recommend);
+    }
+
+    fn decode(buf: &[u8]) -> Result<Self, DecodeError> {
+        let mut m = Self::default();
+        let mut r = Reader::new(buf);
+        while let Some((field, v)) = r.field()? {
+            if field == 17 {
+                m.dont_recommend = v.bool()?;
+            }
         }
+        Ok(m)
     }
 }
 
+/// The fields of `SourceInfo` the shell reads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RateRequest {
-    pub item_ref: String,
-    pub rating: Rating,
+pub struct SourceInfo {
+    pub id: String,
+    pub active: bool,
+    pub capabilities: Capabilities,
 }
 
-impl Message for RateRequest {
+impl Message for SourceInfo {
     fn encode(&self, w: &mut Writer) {
-        w.string(1, &self.item_ref);
-        w.enumeration(2, self.rating as i32);
+        w.string(1, &self.id);
+        w.bool(5, self.active);
+        w.message(7, &self.capabilities);
     }
 
     fn decode(buf: &[u8]) -> Result<Self, DecodeError> {
@@ -393,9 +407,41 @@ impl Message for RateRequest {
         let mut r = Reader::new(buf);
         while let Some((field, v)) = r.field()? {
             match field {
-                1 => m.item_ref = v.string()?,
-                2 => m.rating = Rating::from_i32(v.int32()?),
+                1 => m.id = v.string()?,
+                5 => m.active = v.bool()?,
+                7 => m.capabilities = v.message()?,
                 _ => {}
+            }
+        }
+        Ok(m)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SourceList {
+    pub sources: Vec<SourceInfo>,
+}
+
+impl SourceList {
+    /// The source playing from, whose capabilities Kopuz's buttons follow.
+    pub fn active(&self) -> Option<&SourceInfo> {
+        self.sources.iter().find(|s| s.active)
+    }
+}
+
+impl Message for SourceList {
+    fn encode(&self, w: &mut Writer) {
+        for s in &self.sources {
+            w.message(1, s);
+        }
+    }
+
+    fn decode(buf: &[u8]) -> Result<Self, DecodeError> {
+        let mut m = Self::default();
+        let mut r = Reader::new(buf);
+        while let Some((field, v)) = r.field()? {
+            if field == 1 {
+                m.sources.push(v.message()?);
             }
         }
         Ok(m)
@@ -448,13 +494,17 @@ impl Client {
         self.unary::<Empty>("SetFavorite", &request).await.map(drop)
     }
 
-    pub async fn rate(&self, item_ref: &str, rating: Rating) -> Result<(), Error> {
-        let request = RateRequest { item_ref: item_ref.to_owned(), rating };
-        self.unary::<Empty>("Rate", &request).await.map(drop)
+    pub async fn sources(&self) -> Result<SourceList, Error> {
+        self.unary("GetSources", &Empty).await
     }
 
     pub async fn dont_recommend(&self, key: &str) -> Result<(), Error> {
         self.unary::<Empty>("DontRecommend", &Key { key: key.to_owned() }).await.map(drop)
+    }
+
+    /// The next track; the `MutationResult` it answers is not read.
+    pub async fn next(&self) -> Result<(), Error> {
+        self.unary::<Empty>("Next", &Empty).await.map(drop)
     }
 }
 

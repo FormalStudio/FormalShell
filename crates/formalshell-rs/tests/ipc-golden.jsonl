@@ -196,6 +196,11 @@
 {"argv":["call","media","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
 {"argv":["call","media","lyrics"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","media","lyrics","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function lyrics(): string\n","stderr":"","exit":0}
+{"argv":["call","media","like","toggle"],"live":true,"stdout":"like toggle\n","stderr":"","exit":0}
+{"argv":["call","media","like","on"],"live":true,"stdout":"like on\n","stderr":"","exit":0}
+{"argv":["call","media","like"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function like(mode: string): string\n","stderr":"","exit":0}
+{"argv":["call","media","dontRecommend"],"live":true,"stdout":"dontRecommend\n","stderr":"","exit":0}
+{"argv":["call","media","dontRecommend","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function dontRecommend(): string\n","stderr":"","exit":0}
 {"argv":["show","media"],"live":true,"stdout":"","stderr":"The following argument was not expected: media\nRun with --help for more information.\n","exit":109}
 {"argv":["call","overnight","toggle"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
 {"argv":["call","overnight","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}

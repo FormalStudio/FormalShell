@@ -4,6 +4,7 @@
 //! rather than "ok" over a call that went nowhere.
 
 use super::registry::{Function, Target, Type, Value};
+use crate::services::kopuz;
 use crate::store::Topic;
 use crate::wayland::App;
 
@@ -30,6 +31,8 @@ pub fn target() -> Target<App> {
             Function { name: "players", params: &[], ret: Type::String, call: players },
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "lyrics", params: &[], ret: Type::String, call: lyrics },
+            Function { name: "like", params: &[("mode", Type::String)], ret: Type::String, call: like },
+            Function { name: "dontRecommend", params: &[], ret: Type::String, call: dont_recommend },
         ],
     }
 }
@@ -150,4 +153,29 @@ fn lyrics(app: &mut App, _: &[Value]) -> Value {
     let position = app.store.media.active().map_or(0.0, |a| a.position);
     let settings = lyrics::Settings::read(&app.store.config);
     text(lyrics::status(&app.store.lyrics, position, &settings).to_string())
+}
+
+/// kopuzd's heart and "don't recommend" for the playing Kopuz track, the
+/// two actions Kopuz's own player bar offers (`media status`'s
+/// `kopuz.actions`).
+fn kopuz_act(app: &mut App, pick: impl FnOnce(&kopuz::State) -> Result<kopuz::Action, String>) -> Value {
+    let Some(k) = app.store.media.kopuz() else { return text("error: no kopuz track") };
+    match pick(k) {
+        Ok(action) => {
+            if let Some(rt) = &app.runtime {
+                rt.service(move |ctx| kopuz::act(ctx, action));
+            }
+            text(OK)
+        }
+        Err(e) => text(e),
+    }
+}
+
+fn like(app: &mut App, args: &[Value]) -> Value {
+    let mode = args[0].str().to_owned();
+    kopuz_act(app, |k| k.like(&mode))
+}
+
+fn dont_recommend(app: &mut App, _: &[Value]) -> Value {
+    kopuz_act(app, kopuz::State::dont_recommend_action)
 }

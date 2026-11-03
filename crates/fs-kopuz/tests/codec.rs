@@ -24,8 +24,6 @@ fn requests_encode() {
     assert_eq!(Key { key: "abc".into() }.to_bytes(), b"\x0a\x03abc");
     assert_eq!(FavoriteRequest { key: "k1".into(), favorite: true }.to_bytes(), b"\x0a\x02k1\x10\x01");
     assert_eq!(FavoriteRequest { key: "k1".into(), favorite: false }.to_bytes(), b"\x0a\x02k1");
-    assert_eq!(RateRequest { item_ref: "r".into(), rating: Rating::Dislike }.to_bytes(), b"\x0a\x01r\x10\x03");
-    assert_eq!(RateRequest { item_ref: "r".into(), rating: Rating::Like }.to_bytes(), b"\x0a\x01r\x10\x02");
 }
 
 #[test]
@@ -58,6 +56,7 @@ fn events_decode() {
         Event::PlayerState(PlayerState { rev: 1, row: None })
     );
     assert_eq!(decode(b"\x12\x04\x32\x02\x08\x04"), Event::LibraryInvalidated(Table::Favorites));
+    assert_eq!(decode(b"\x12\x04\x32\x02\x08\x06"), Event::LibraryInvalidated(Table::Servers));
     assert_eq!(decode(b"\x12\x04\x32\x02\x08\x01"), Event::LibraryInvalidated(Table::Other(1)));
     assert_eq!(decode(b"\x12\x02\x12\x00"), Event::Other);
     assert_eq!(decode(b"\x12\x02\x62\x00"), Event::Other);
@@ -126,14 +125,39 @@ fn favorites_both_ways() {
 fn requests_round_trip() {
     round_trip(Key { key: "abc".into() });
     round_trip(FavoriteRequest { key: "k".into(), favorite: true });
-    round_trip(RateRequest { item_ref: "yt:1".into(), rating: Rating::None });
     assert_eq!(Empty::decode(b"\x08\x01\x12\x01x").unwrap(), Empty);
 }
 
 #[test]
-fn unknown_rating_reads_unspecified() {
-    let r = RateRequest::decode(b"\x10\x09").unwrap();
-    assert_eq!(r.rating, Rating::Unspecified);
+fn sources_both_ways() {
+    let list = SourceList {
+        sources: vec![
+            SourceInfo { id: "local".into(), active: false, capabilities: Capabilities::default() },
+            SourceInfo { id: "y".into(), active: true, capabilities: Capabilities { dont_recommend: true } },
+        ],
+    };
+    let bytes = b"\x0a\x09\x0a\x05local\x3a\x00\x0a\x0a\x0a\x01y\x28\x01\x3a\x03\x88\x01\x01";
+    assert_eq!(list.to_bytes(), bytes);
+    assert_eq!(SourceList::decode(bytes).unwrap(), list);
+    assert_eq!(list.active().map(|s| s.id.as_str()), Some("y"));
+    assert_eq!(SourceList::default().active(), None);
+}
+
+#[test]
+fn sources_decode_past_unknown_fields() {
+    // name, service and the other capabilities (edit_tags, an empty `pages`
+    // entry, rate) around the fields read.
+    let caps: &[u8] = b"\x08\x01\x88\x01\x01\xfa\x01\x00\x80\x02\x01";
+    let mut info = b"\x0a\x02yt\x12\x03YTM\x22\x00\x28\x01\x30\x01\x3a\x0b".to_vec();
+    info.extend_from_slice(caps);
+    info.extend_from_slice(b"\x90\x01\x01");
+    let mut bytes = vec![0x0a, info.len() as u8];
+    bytes.extend_from_slice(&info);
+    let list = SourceList::decode(&bytes).unwrap();
+    assert_eq!(
+        list.sources,
+        [SourceInfo { id: "yt".into(), active: true, capabilities: Capabilities { dont_recommend: true } }]
+    );
 }
 
 #[test]

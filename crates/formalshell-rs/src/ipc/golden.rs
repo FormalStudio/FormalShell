@@ -107,6 +107,8 @@ fn stub() -> Registry<()> {
                     f("players", &[], Type::String, |_, _| s("[]")),
                     f("status", &[], Type::String, |_, _| s("{}")),
                     f("lyrics", &[], Type::String, |_, _| s("{}")),
+                    f("like", &[("mode", Type::String)], Type::String, |_, a| s(format!("like {}", a[0].str()))),
+                    f("dontRecommend", &[], Type::String, |_, _| s("dontRecommend")),
                 ],
             },
             Target {
