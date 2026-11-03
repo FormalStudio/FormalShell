@@ -278,10 +278,6 @@ pub struct Host {
     /// coast after a flick, which moves `scroll` frame by frame.
     touch: Touchpad,
     content_h: f64,
-    /// The body's height with the inline menu open under a trigger, as of
-    /// the last draw: the list floats past the body's own end, so the card
-    /// grows to take it (up to the output's room, then the body scrolls).
-    drawn_h: f64,
     viewport: IRect,
     handoff: Option<Handoff>,
     /// The keyboard's prime: Exclusive until this moment, then OnDemand.
@@ -334,7 +330,6 @@ impl Host {
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             touch: Touchpad::new(),
             content_h: 0.0,
-            drawn_h: 0.0,
             viewport: IRect::default(),
             handoff: None,
             prime_until: keyboard.then(|| Instant::now() + std::time::Duration::from_millis(PRIME_MS)),
@@ -358,6 +353,11 @@ impl Host {
 
     pub fn is_open(&self) -> bool {
         self.open
+    }
+
+    /// The lists floating over the card and how far each is scrolled.
+    pub fn floats(&self) -> &[(IRect, f64)] {
+        &self.body.float_cards
     }
 
     /// The body's viewport, its content's height, how far it is scrolled
@@ -479,7 +479,7 @@ impl Host {
         let width = super::card_width(self.module.as_ref(), &v, kit);
         let body = self.module.body(&v);
         let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
-        let content_h = ui::measure(&body, content_w, theme, kit).1.max(self.drawn_h);
+        let content_h = ui::measure(&body, content_w, theme, kit).1;
         let f = self.frame(theme).closing(theme, &body);
         let (head, gap) = (f.head, f.gap);
         let max_frame = if vertical {
@@ -605,6 +605,12 @@ impl Host {
         let head_end = s.panel_inset - (s.control_height - s.panel_mark) / 2.0;
         let ring = theme.ring_width();
 
+        self.body.float_room = Some(self.card.room().intersect(&IRect::new(
+            s.screen_padding.round() as i32,
+            s.screen_padding.round() as i32,
+            (self.card.scene.size.w as f64 - s.screen_padding * 2.0).round() as i32,
+            (self.card.scene.size.h as f64 - s.screen_padding * 2.0).round() as i32,
+        )));
         self.wake = None;
         let v = View { store, theme, output: self.place.output, cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active), hovered: self.hovered_stop() };
         let head = if self.module.header() { Some(self.header(&v, &s)) } else { None };
@@ -651,11 +657,6 @@ impl Host {
         self.body.ring = self.cursor.keyed;
         let origin = (fx + pad, top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + self.content_h), Some(body_clip), alpha, theme, kit, scene, now);
-        // A menu opening or closing changes what the next layout fits.
-        if (d.height - self.drawn_h).abs() > 0.5 {
-            self.drawn_h = d.height;
-            self.wake = Some(now);
-        }
         if let Some(w) = d.wake {
             self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
         }
@@ -715,6 +716,10 @@ impl Host {
     /// cursor.js `follow`: the smallest scroll that shows the cursor row.
     fn follow(&mut self) {
         let Some(st) = self.body.stops.get(self.cursor.index) else { return };
+        // A floating list keeps its own rows in view.
+        if self.body.in_float(&st.key) {
+            return;
+        }
         let now = Instant::now();
         let scroll = self.scroll.value(now);
         let top = st.rect.y as f64 - self.viewport.y as f64 + scroll;
@@ -775,7 +780,7 @@ impl Host {
     }
 
     fn hit_at(&self, x: f64, y: f64) -> Option<(bool, ui::Hit)> {
-        let in_body = self.viewport.intersects(&IRect::new(x.floor() as i32, y.floor() as i32, 1, 1));
+        let in_body = self.viewport.intersects(&IRect::new(x.floor() as i32, y.floor() as i32, 1, 1)) || self.body.over_float(x, y);
         if in_body && let Some(h) = self.body.hit(x, y) {
             return Some((true, h.clone()));
         }
@@ -906,7 +911,7 @@ impl Host {
             return;
         }
         let point = IRect::new(x.floor() as i32, y.floor() as i32, 1, 1);
-        if self.viewport.intersects(&point)
+        if (self.viewport.intersects(&point) || self.body.over_float(x, y))
             && let Some(h) = self.body.scroll_hit(x, y).cloned()
             && let Some(on) = h.on.clone()
         {

@@ -145,6 +145,9 @@ struct Wrapped {
     seen: u64,
 }
 
+/// The most control heights a floating list shows before it scrolls.
+const FLOAT_ROWS: f64 = 8.0;
+
 /// Everything that persists for one surface between draws.
 pub struct Ui {
     groups: HashMap<String, Group>,
@@ -186,6 +189,16 @@ pub struct Ui {
     /// output; `None` draws every card's border flat.
     pub lit: Option<(crate::surfaces::rim::Lit, (f64, f64))>,
     rims: HashMap<String, crate::surfaces::rim::Rim>,
+    /// Where a floating list may go, over everything this surface drew;
+    /// `None` keeps one inside the tree's own box.
+    pub float_room: Option<IRect>,
+    /// Each floating list's own scroll, by path, and the cursor stop it
+    /// last kept in view.
+    float_scroll: HashMap<String, (f64, Option<String>)>,
+    /// The floating cards drawn last with how far each is scrolled, and
+    /// the stops inside them.
+    pub float_cards: Vec<(IRect, f64)>,
+    float_keys: Vec<String>,
 }
 
 impl Ui {
@@ -212,7 +225,22 @@ impl Ui {
             motion_scale: 1.0,
             lit: None,
             rims: HashMap::new(),
+            float_room: None,
+            float_scroll: HashMap::new(),
+            float_cards: Vec::new(),
+            float_keys: Vec::new(),
         }
+    }
+
+    /// Whether a point lies on a floating list's card.
+    pub fn over_float(&self, x: f64, y: f64) -> bool {
+        let p = IRect::new(x.floor() as i32, y.floor() as i32, 1, 1);
+        self.float_cards.iter().any(|(c, _)| c.intersects(&p))
+    }
+
+    /// Whether a stop is a floating list's row.
+    pub fn in_float(&self, key: &str) -> bool {
+        self.float_keys.iter().any(|k| k == key)
     }
 
     /// Lays `root` out at `rect`'s width from its top-left and paints it
@@ -234,6 +262,8 @@ impl Ui {
         self.hits.clear();
         self.cards.clear();
         self.stops.clear();
+        self.float_cards.clear();
+        self.float_keys.clear();
         let frame = self.frame;
         let last = self.anchor;
         let motion_scale = self.motion_scale;
@@ -335,6 +365,10 @@ impl Ui {
     pub fn scroll(&mut self, path: &str, delta: f64) {
         if let Some(p) = self.panes.get_mut(path) {
             p.scroll(delta);
+        }
+        // Clamped to the list as it next draws.
+        if let Some((s, _)) = self.float_scroll.get_mut(path) {
+            *s -= delta;
         }
     }
 }
@@ -519,39 +553,99 @@ impl Cx<'_> {
         self.floats.push((anchor, list, path, at));
     }
 
-    /// Paints every waiting list on a popover card over the tree: under its
-    /// anchor, or over it when the tree ends too soon below and there is
-    /// room above, kept inside `bounds` across. Its stops go in right after the anchor's. The bottom the
-    /// lowest list reaches, for a surface that has to grow to show it.
+    /// Paints every waiting list on a popover card over the tree, under its
+    /// anchor or over it. With a `float_room` the card lies over everything
+    /// the surface drew, never moving it: at most `FLOAT_ROWS` control
+    /// heights tall, under the anchor where that fits, else above it, else
+    /// on whichever side has more room and cut to it, scrolling inside
+    /// itself and keeping the cursor's row in view. Without one it stays in
+    /// `bounds` and the bottom it reaches is handed back, for a surface that
+    /// grows to show it. Its stops go in right after the anchor's.
     fn paint_floats(&mut self, bounds: Rect) -> f64 {
         let mut reach = bounds.y1;
         let floats = std::mem::take(&mut self.floats);
+        let room = self.ui.float_room.map(|r| Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64));
         let mut shift = 0;
+        // A list that closed opens again at its top.
+        self.ui.float_scroll.retain(|p, _| floats.iter().any(|f| &f.2 == p));
         for (anchor, list, path, at) in floats {
             let s = self.theme.space.clone();
             let pad = s.xxs;
             let card = self.theme.box_style("popover", None);
+            let area = room.unwrap_or(bounds);
             // Rows fill whatever they are given, so the list has no width of
             // its own: the anchor's, never under a narrow popup's.
-            let w = anchor.width().max(s.popup_width_narrow).min(bounds.width());
-            let h = draw::measure(self, &list, w - pad * 2.0).1 + pad * 2.0;
-            let x = anchor.x0.min(bounds.x1 - w).max(bounds.x0);
+            let w = anchor.width().max(s.popup_width_narrow).min(area.width());
+            let content = draw::measure(self, &list, w - pad * 2.0).1;
+            let full = content + pad * 2.0;
+            let x = anchor.x0.min(area.x1 - w).max(area.x0);
             let below = anchor.y1 + s.xxs;
-            let above = anchor.y0 - s.xxs - h;
-            let y = if below + h > bounds.y1 && above >= bounds.y0 { above } else { below };
+            let (y, h) = if room.is_some() {
+                let want = full.min(s.control_height * FLOAT_ROWS + pad * 2.0);
+                let (down, up) = (area.y1 - below, anchor.y0 - s.xxs - area.y0);
+                if want <= down {
+                    (below, want)
+                } else if want <= up {
+                    (anchor.y0 - s.xxs - want, want)
+                } else if down >= up {
+                    (below, down.max(0.0))
+                } else {
+                    (area.y0, up.max(0.0))
+                }
+            } else {
+                let above = anchor.y0 - s.xxs - full;
+                (if below + full > bounds.y1 && above >= bounds.y0 { above } else { below }, full)
+            };
             reach = reach.max(y + h);
             let r = IRect::new(x.round() as i32, y.round() as i32, w.round() as i32, h.round() as i32);
-            let radius = self.theme.box_radius(&card, h.min(s.control_height * 2.0));
+            let view = (h - pad * 2.0).max(0.0);
+            let max = (content - view).max(0.0);
+            let (mut scroll, followed) = self.ui.float_scroll.get(&path).cloned().unwrap_or_default();
+            let cursor = self.ui.cursor.clone();
+            if max > 0.0 && cursor.is_some() && cursor != followed {
+                // Where the cursor's row sits in the list, laid out unscrolled.
+                let before = self.ui.stops.len();
+                draw::offscreen_stops(self, &list, Rect::new(0.0, 0.0, w - pad * 2.0, content), &format!("{path}/list"));
+                let row = self.ui.stops.drain(before..).find(|st| Some(&st.key) == cursor.as_ref());
+                if let Some(st) = row {
+                    let (top, bottom) = (st.rect.y as f64, st.rect.bottom() as f64);
+                    if top < scroll {
+                        scroll = top;
+                    } else if bottom > scroll + view {
+                        scroll = bottom - view;
+                    }
+                }
+            }
+            let scroll = scroll.clamp(0.0, max);
+            self.ui.float_scroll.insert(path.clone(), (scroll, cursor));
             let alpha = self.alpha;
+            let saved = self.clip;
+            self.clip = if room.is_some() { Some(irect(area)) } else { saved };
+            let radius = self.theme.box_radius(&card, h.min(s.control_height * 2.0));
             let mut p = self.painter(&path);
             boxes::paint(&mut p, r, &card, radius, alpha, 0.0);
             let last = p.last();
             p.finish();
             self.done(last);
-            self.hit(Hit { rect: r, path: path.clone(), on: None, tip: None, stop: None, what: HitWhat::Hover });
-            let before = self.ui.stops.len();
-            draw::paint(self, &list, Rect::new(x + pad, y + pad, x + w - pad, y + h - pad), &format!("{path}/list"));
+            let what = if room.is_some() { HitWhat::Scroll } else { HitWhat::Hover };
+            self.hit(Hit { rect: r, path: path.clone(), on: room.map(|_| "float".to_owned()), tip: None, stop: None, what });
+            let inner = IRect::new(r.x, (y + pad).round() as i32, r.w, view.round() as i32);
+            if room.is_some() {
+                self.clip = Some(inner.intersect(&irect(area)));
+            }
+            let (before, hits) = (self.ui.stops.len(), self.ui.hits.len());
+            let top = y + pad - scroll;
+            draw::paint(self, &list, Rect::new(x + pad, top, x + w - pad, top + content), &format!("{path}/list"));
+            self.clip = saved;
+            if room.is_some() {
+                // A row cut by the card's edge answers only inside it.
+                for hit in &mut self.ui.hits[hits..] {
+                    hit.rect = hit.rect.intersect(&inner);
+                }
+                self.ui.float_cards.push((r, scroll));
+            }
             let added: Vec<Stop> = self.ui.stops.drain(before..).collect();
+            self.ui.float_keys.extend(added.iter().map(|st| st.key.clone()));
             let at = (at + shift).min(before);
             shift += added.len();
             self.ui.stops.splice(at..at, added);

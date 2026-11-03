@@ -393,9 +393,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   stream's volume and output), no `stream:` row for its audio, the
   transport reaching the stub as Pause, Next, Play and landing back off
   its PropertiesChanged; then the source menu on real keys under the stale
-  audit, the card capped at the output and the body following the cursor
-  to the last row (`debug dump`'s panel `viewport`, `contentH`, `scroll`,
-  `cursor`), and the wheel over the list scrolling it back to the top.
+  audit: the menu floats over the card (`debug dump`'s panel `rest` the
+  same open as closed, one entry in `floats` inside the output), its own
+  scroll follows the cursor to the last row while the body stays at 0,
+  and the wheel over the list scrolls it back to the top.
 - `bluez_rssi.sh` `--bluez-rssi`: rides `--idle`; the shell's system bus
   a private one where `dev/bluez-stub.py` plays a BlueZ scanning on a
   discovery the shell did not start, ~700 RSSI-only signals a minute over

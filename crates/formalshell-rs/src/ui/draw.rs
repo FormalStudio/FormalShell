@@ -555,7 +555,7 @@ fn offscreen(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
 
 /// The stops of a subtree the clip culls, laid out as `paint_body` lays
 /// them, with nothing drawn.
-fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
+pub(super) fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     let [ps, pt, pe, pb] = el.pad;
     let inner = Rect::new(rect.x0 + ps, rect.y0 + pt, rect.x1 - pe, rect.y1 - pb);
     stop(cx, el, inner);

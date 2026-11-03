@@ -163,6 +163,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
                 "contentH": content_h.round(),
                 "scroll": scroll.round(),
                 "cursor": cursor,
+                "floats": h.floats().iter().map(|(r, scroll)| json!({"rect": rect(r), "scroll": scroll.round()})).collect::<Vec<_>>(),
             })
         }
         None => serde_json::Value::Null,

@@ -19,10 +19,11 @@
 #     Pause, Next, Play on that player, and each lands back in `media
 #     status` off BlueZ's own PropertiesChanged.
 #  3. The source menu, opened and walked on real keys under the stale
-#     audit: thirty-four rows are more than the output holds, so the card stops
-#     at the output's room and the cursor's row stays inside the body's
-#     viewport down to the last one (`debug dump`'s panel block), then a
-#     wheel over the list takes it back to the top.
+#     audit: thirty-four rows float over the card on a list of their own
+#     height, the card's rest rect the same with it open, the list inside
+#     the output and scrolling itself so the cursor's row stays inside it
+#     down to the last one (`debug dump`'s panel `floats` and `cursor`),
+#     then a wheel over the list takes it back to the top.
 leg_bluez_player_flag="--bluez-player"
 leg_bluez_player_order=179
 leg_bluez_player_needs="python3 jq grim wtype wlrctl pactl pw_cat hyprctl"
@@ -136,21 +137,21 @@ $(stale_audit_start)
 cursor source source 4 -M shift -k Tab -m shift
 "$wtype_bin" -k Return
 sleep 1
+$ipc call debug dump > "\$dir/dump-open.json" 2>&1
 shot menu-open
 cursor menu-top "pick:" 3 -k Down
 cursor menu-end "\$last" $((bluez_player_extra + 8)) -k Down
-# The follow glides: read it once the body has settled.
 sleep 1
 $ipc call debug dump > "\$dir/dump-menu-end.json" 2>&1
 shot menu-end
 $(stale_audit_stop bluez-player)
-read -r px py <<< "\$("$jq_bin" -r '.panel.viewport | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "\$dir/dump-menu-end.json")"
+read -r px py <<< "\$("$jq_bin" -r '.panel.floats[0].rect | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "\$dir/dump-menu-end.json")"
 "$wlrctl_bin" pointer move -4000 -4000 > "\$dir/pointer.txt" 2>&1
 sleep 0.5
 "$wlrctl_bin" pointer move "\$px" "\$py" >> "\$dir/pointer.txt" 2>&1
 sleep 0.5
 # One notch a call, a control height each: enough to reach the top.
-for _ in \$(seq 20); do
+for _ in \$(seq 40); do
   "$wlrctl_bin" pointer scroll -15 0 >> "\$dir/pointer.txt" 2>&1
   sleep 0.1
 done
@@ -202,23 +203,32 @@ leg_bluez_player_assert() {
   "$jq_bin" -e '.isPlaying' "$(bluez_player_status resumed)" > /dev/null || fail "--bluez-player: the play never landed"
 
   stale_audit_assert bluez-player
-  local top end wheel
+  local shut open top end wheel
+  shut=$(bluez_player_dump source)
+  open=$(bluez_player_dump open)
   top=$(bluez_player_dump menu-top)
   end=$(bluez_player_dump menu-end)
   wheel=$(bluez_player_dump wheel)
-  echo "SMOKE_BLUEZ_PLAYER_MENU top=$("$jq_bin" -c '.panel | {cursor, viewport, contentH, scroll}' "$top")"
-  echo "SMOKE_BLUEZ_PLAYER_MENU end=$("$jq_bin" -c '.panel | {rest, cursor, viewport, contentH, scroll}' "$end")"
-  echo "SMOKE_BLUEZ_PLAYER_MENU wheel=$("$jq_bin" -c '.panel | {viewport, contentH, scroll}' "$wheel")"
+  echo "SMOKE_BLUEZ_PLAYER_MENU shut=$("$jq_bin" -c '.panel | {rest, floats}' "$shut")"
+  echo "SMOKE_BLUEZ_PLAYER_MENU open=$("$jq_bin" -c '.panel | {rest, floats}' "$open")"
+  echo "SMOKE_BLUEZ_PLAYER_MENU end=$("$jq_bin" -c '.panel | {rest, cursor, floats, scroll}' "$end")"
+  echo "SMOKE_BLUEZ_PLAYER_MENU wheel=$("$jq_bin" -c '.panel | {rest, floats, scroll}' "$wheel")"
+  for name in open menu-end wheel; do
+    [ "$("$jq_bin" -c .panel.rest "$(bluez_player_dump "$name")")" = "$("$jq_bin" -c .panel.rest "$shut")" ] \
+      || fail "--bluez-player: the card moved with the menu ($name): $("$jq_bin" -c .panel.rest "$(bluez_player_dump "$name")") against $("$jq_bin" -c .panel.rest "$shut")"
+  done
+  "$jq_bin" -e '.panel.floats == []' "$shut" > /dev/null || fail "--bluez-player: a list floated before the menu opened"
+  "$jq_bin" -e '.panel.floats | length == 1' "$open" > /dev/null || fail "--bluez-player: the open menu drew no floating list"
   "$jq_bin" -e '.panel.cursor.key == "pick:"' "$top" > /dev/null || fail "--bluez-player: Down from the trigger did not reach Auto"
   "$jq_bin" -e --arg k "pick:$("$jq_bin" -r '.[-1].id' "$players")" '.panel.cursor.key == $k' "$end" > /dev/null \
     || fail "--bluez-player: the keys never reached the last source: $("$jq_bin" -c .panel.cursor "$end")"
-  "$jq_bin" -e '.panel | .contentH > .viewport.height and .scroll > 0' "$end" > /dev/null \
-    || fail "--bluez-player: the open menu did not overflow the card and scroll it: $("$jq_bin" -c '.panel | {contentH, viewport, scroll}' "$end")"
-  "$jq_bin" -e '.panel as $p | $p.cursor.rect as $c | $p.viewport as $v | $c.y >= $v.y and $c.y + $c.height <= $v.y + $v.height' "$end" > /dev/null \
-    || fail "--bluez-player: the last source's row is outside the viewport: $("$jq_bin" -c '.panel | {cursor, viewport}' "$end")"
+  "$jq_bin" -e '.panel | .floats[0].scroll > 0 and .scroll == 0' "$end" > /dev/null \
+    || fail "--bluez-player: the list did not scroll itself to the last row: $("$jq_bin" -c '.panel | {floats, scroll}' "$end")"
+  "$jq_bin" -e '.panel as $p | $p.cursor.rect as $c | $p.floats[0].rect as $f | $c.y >= $f.y and $c.y + $c.height <= $f.y + $f.height' "$end" > /dev/null \
+    || fail "--bluez-player: the last source's row is outside its list: $("$jq_bin" -c '.panel | {cursor, floats}' "$end")"
   out_h=$("$jq_bin" '.[0] | .height / .scale | floor' "$bluez_player_dir/monitors.json")
-  "$jq_bin" -e --argjson h "$out_h" '.panel.rest | .y + .height <= $h' "$end" > /dev/null \
-    || fail "--bluez-player: the card ran past the output's $out_h: $("$jq_bin" -c .panel.rest "$end")"
-  "$jq_bin" -e '.panel.scroll == 0' "$wheel" > /dev/null \
-    || fail "--bluez-player: the wheel over the list did not scroll it back: $("$jq_bin" -c '.panel.scroll' "$wheel")"
+  "$jq_bin" -e --argjson h "$out_h" '.panel.floats[0].rect | .y >= 0 and .y + .height <= $h' "$end" > /dev/null \
+    || fail "--bluez-player: the list ran past the output's $out_h: $("$jq_bin" -c .panel.floats "$end")"
+  "$jq_bin" -e '.panel.floats[0].scroll == 0' "$wheel" > /dev/null \
+    || fail "--bluez-player: the wheel over the list did not scroll it back: $("$jq_bin" -c .panel.floats "$wheel")"
 }

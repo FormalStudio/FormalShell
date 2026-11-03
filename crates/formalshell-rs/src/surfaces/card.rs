@@ -760,6 +760,13 @@ impl Card {
     }
 
     /// The band past the line, where content may draw.
+    /// Everything past the line, whatever the card's own shape: where a
+    /// list floating over the card may go.
+    pub fn room(&self) -> IRect {
+        let cut = self.line_at + self.look.border_width;
+        Scene::cover(Rect::new(-FAR, cut, FAR, FAR), self.edge_map(), 0.0).intersect(&self.scene.size)
+    }
+
     pub fn content_clip(&self) -> IRect {
         if self.clip.is_empty() {
             let cut = self.line_at + self.look.border_width;
