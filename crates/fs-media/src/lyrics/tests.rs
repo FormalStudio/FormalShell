@@ -50,8 +50,28 @@ fn cache_key_lowercases_and_dashes() {
 fn cache_key_strips_punctuation() {
     assert_eq!(
         cache_key("Sigur Rós", "( )", "Takk...", 10.0),
-        "sigur-r-s-takk-10"
+        "sigur-ros-takk-10"
     );
+}
+
+#[test]
+fn cache_key_keeps_non_latin_letters_apart() {
+    assert_eq!(cache_key("米津玄師", "Lemon", "", 255.0), "米津玄師-lemon-255");
+    assert_ne!(
+        cache_key("米津玄師", "馬と鹿", "", 255.0),
+        cache_key("米津玄師", "感電", "", 255.0)
+    );
+}
+
+#[test]
+fn cache_key_keeps_dakuten() {
+    assert_ne!(cache_key("a", "が", "", 1.0), cache_key("a", "か", "", 1.0));
+}
+
+#[test]
+fn cache_key_caps_the_slug() {
+    let long = "あ".repeat(300);
+    assert!(cache_key(&long, "x", "", 1.0).len() <= 210);
 }
 
 #[test]
@@ -542,6 +562,28 @@ fn match_score_of_identical_token_sets_is_one_hundred() {
         ),
         100.0
     );
+}
+
+#[test]
+fn match_score_reads_non_latin_titles() {
+    assert_eq!(match_score("Lemon 米津玄師", "Lemon 米津玄師"), 100.0);
+    assert_eq!(match_score("Кино Группа крови", "Группа крови Кино"), 100.0);
+    assert_eq!(match_score("馬と鹿 米津玄師", "感電 米津玄師"), 50.0);
+}
+
+#[test]
+fn match_score_ignores_latin_accents() {
+    assert_eq!(match_score("DESPECHÁ ROSALÍA", "Despecha Rosalia"), 100.0);
+}
+
+#[test]
+fn best_itunes_song_finds_a_japanese_title() {
+    let songs = [
+        json!({ "trackId": 1, "trackName": "感電", "artistName": "米津玄師", "trackTimeMillis": 266000 }),
+        json!({ "trackId": 2, "trackName": "馬と鹿", "artistName": "米津玄師", "trackTimeMillis": 255000 }),
+    ];
+    let best = best_itunes_song(&songs, "馬と鹿 米津玄師", 255.0).unwrap();
+    assert_eq!(best["trackId"], 2);
 }
 
 #[test]

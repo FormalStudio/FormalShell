@@ -40,6 +40,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use unicode_normalization::UnicodeNormalization;
 
 use fs_js::{
     encode_uri_component, is_space, round, parse_number, to_str, trim, utf16_len,
@@ -146,10 +147,35 @@ fn finite(v: Option<f64>) -> Option<f64> {
     v.filter(|x| x.is_finite())
 }
 
+/// Lowercased, with Latin accents dropped (NFD, then the Combining
+/// Diacritical Marks block), so "Rosalía" and "ROSALIA" agree. Marks outside
+/// that block stay: stripping Japanese dakuten would turn が into か.
+fn fold(value: &str) -> String {
+    value
+        .nfd()
+        .filter(|c| !('\u{300}'..='\u{36f}').contains(c))
+        .nfc()
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// Folded and slugged on any non-alphanumeric run, Unicode letters kept: an
+/// ASCII-only slug left every all-Japanese track of one length on one key,
+/// sharing its lyrics and its miss. Capped so `<key>.json` stays a legal
+/// file name.
 pub fn cache_key(artist: &str, title: &str, album: &str, duration_seconds: f64) -> String {
-    let raw = format!("{artist} {title} {album}").to_lowercase();
-    let slug = NON_ALNUM.replace_all(&raw, "-");
-    let slug = slug.trim_matches('-');
+    let raw = fold(&format!("{artist} {title} {album}"));
+    let mut slug = String::new();
+    for word in raw.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()) {
+        if slug.len() + word.len() > CACHE_SLUG_MAX_BYTES {
+            break;
+        }
+        if !slug.is_empty() {
+            slug.push('-');
+        }
+        slug.push_str(word);
+    }
+    let slug = slug.as_str();
     let seconds = round(duration_seconds);
     let seconds = if seconds.is_finite() {
         seconds as i64
@@ -159,7 +185,7 @@ pub fn cache_key(artist: &str, title: &str, album: &str, duration_seconds: f64) 
     format!("{slug}-{seconds}")
 }
 
-static NON_ALNUM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z0-9]+").unwrap());
+const CACHE_SLUG_MAX_BYTES: usize = 200;
 
 pub fn get_url(artist: &str, title: &str, album: &str, duration_seconds: f64) -> String {
     let mut url = format!(
@@ -591,18 +617,18 @@ pub fn from_paxsenix_apple(body_text: &str) -> Vec<Line> {
     }
 }
 
-/// `lyrics_match_score`'s own tokeniser: lowercased, "(feat."/"(ft."/
+/// `lyrics_match_score`'s own tokeniser: folded (`fold`), "(feat."/"(ft."/
 /// "(featuring" stripped (a featured artist shouldn't cost a match its score),
-/// split on anything that isn't ASCII alphanumeric, duplicates collapsed (the
-/// score is a token-set overlap, not a bag-of-words one).
+/// split on anything that isn't alphanumeric in Unicode's sense, as kopuz
+/// does (an ASCII-only split scored every non-Latin title 0), duplicates
+/// collapsed (the score is a token-set overlap, not a bag-of-words one).
 fn match_tokens(value: &str) -> Vec<String> {
-    let normalized = value
-        .to_lowercase()
+    let normalized = fold(value)
         .replace("(feat.", " ")
         .replace("(ft.", " ")
         .replace("(featuring", " ");
     let mut tokens: Vec<String> = Vec::new();
-    for token in normalized.split(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit())) {
+    for token in normalized.split(|c: char| !c.is_alphanumeric()) {
         if token.is_empty() || tokens.iter().any(|t| t == token) {
             continue;
         }
