@@ -18,7 +18,9 @@
 #     none.
 #  5. A pair of AirPods (the librepods status file staged first) raises a
 #     card with one ring each for left, right and case off the earbuds
-#     backend, and the pointer leaving the card dismisses it.
+#     backend, grown wider than the glyph card once the backend claims the
+#     pair (off `debug dump`'s `headset.rest`), and the pointer leaving the
+#     card dismisses it.
 #  6. Escape, typed by wtype (a real virtual keyboard) into a foot window
 #     that has the focus and never loses it, dismisses a card held up by the
 #     pointer parked on it, through the
@@ -27,6 +29,10 @@
 #     the same foot throughout, and the letters typed around the Escape
 #     reaching foot with the Escape between them.
 #  7. With do-not-disturb on in state.json a connect raises none.
+#  8. settings.json rewritten to `layout: sidebar`, a connect raises a card
+#     off the column's line that is wider than it is tall and starts right
+#     of the column (off `debug dump`'s `headset.rest`): its size runs along
+#     a vertical line, so a card sized for the top bar came out on its side.
 #
 # The pointer is wlrctl, a real virtual-pointer client, for the reason
 # tooltip.sh documents: only one sends the surface a pointer enter.
@@ -44,6 +50,10 @@ headset_dnd_png="$shot_dir/headset-card-dnd.png"
 headset_escape_png="$shot_dir/headset-card-escape.png"
 headset_typed="$headset_dir/typed.txt"
 headset_escape_marks="$headset_dir/escape.txt"
+headset_sidebar_png="$shot_dir/headset-card-sidebar.png"
+headset_sidebar_dump="$headset_dir/sidebar-dump.json"
+headset_bluez_dump="$headset_dir/bluez-dump.json"
+headset_airpods_dump="$headset_dir/airpods-dump.json"
 
 headset_buds_address="AC:12:2F:11:22:33"
 headset_cans_address="11:22:33:44:55:66"
@@ -79,7 +89,7 @@ leg_headset_card_fixture() {
 }
 
 leg_headset_card_timing() {
-  leg_timing 66 100
+  leg_timing 86 120
 }
 
 leg_headset_card_drive() {
@@ -89,6 +99,7 @@ leg_headset_card_drive() {
   local headset_park_x headset_region
   headset_park_x=$((logical_w / 2))
   headset_region="$((headset_park_x - 300)),30 600x150"
+  local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 list() { printf '[{"address":"$headset_buds_address","name":"Liberty 4 NC","connected":%s,"battery":80},{"address":"$headset_cans_address","name":"Studio Cans","connected":%s,"icon":"audio-headphones","battery":55},{"address":"$headset_pods_address","name":"Kyan'"'"'s AirPods Pro","connected":%s}]\n' "\$1" "\$2" "\$3" > "$headset_list"; }
@@ -110,6 +121,7 @@ sleep 6
 mark startup
 list true true false
 sleep 2
+$ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_bluez_dump"
 "$grim_bin" -g "$headset_region" "$headset_bluez_png" > /dev/null 2>&1
 mark connected
 park $headset_park_x $headset_park_y
@@ -129,6 +141,7 @@ cp "$headset_dir/airpods-status.json" "$state_dir/status.json"
 sleep 4
 list true true true
 sleep 2.5
+$ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_airpods_dump"
 "$grim_bin" -g "$headset_region" "$headset_airpods_png" > /dev/null 2>&1
 mark airpods
 park $headset_park_x $headset_park_y
@@ -174,6 +187,20 @@ sleep 2.5
 "$grim_bin" -g "$headset_region" "$headset_dnd_png" > /dev/null 2>&1
 mark dnd
 rm -f "$state_dir/status.json"
+"$jq_bin" '.dnd = false' "$fs_state" > "$fs_state.tmp" && mv "$fs_state.tmp" "$fs_state"
+list true false false
+"$jq_bin" -c '.layout = "sidebar"' "$settings_path" > "$settings_path.new" && mv "$settings_path.new" "$settings_path"
+for _ in \$(seq 1 20); do
+  $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
+  sleep 0.5
+done
+sleep 4
+list true true false
+sleep 2.5
+$ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_sidebar_dump"
+"$grim_bin" "$headset_sidebar_png" > /dev/null 2>&1
+mark sidebar
+$ipc call headset dismiss > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
 }
@@ -211,7 +238,7 @@ leg_headset_card_assert() {
   local png
   [ -s "$headset_log_marks" ] || fail "no headset card checkpoints were written"
   cat "$headset_log_marks"
-  for png in "$headset_bluez_png" "$headset_held_png" "$headset_airpods_png" "$headset_escape_png" "$headset_dnd_png"; do
+  for png in "$headset_bluez_png" "$headset_held_png" "$headset_airpods_png" "$headset_escape_png" "$headset_dnd_png" "$headset_sidebar_png"; do
     [ -s "$png" ] || fail "no screenshot at $png"
   done
   echo "SMOKE_HEADSET_BLUEZ $headset_bluez_png"
@@ -219,6 +246,7 @@ leg_headset_card_assert() {
   echo "SMOKE_HEADSET_AIRPODS $headset_airpods_png"
   echo "SMOKE_HEADSET_ESCAPE $headset_escape_png"
   echo "SMOKE_HEADSET_DND $headset_dnd_png"
+  echo "SMOKE_HEADSET_SIDEBAR $headset_sidebar_png"
 
   headset_expect startup 0 0
   headset_expect connected 1 0
@@ -228,11 +256,25 @@ leg_headset_card_assert() {
   # Off and on inside a second: no second card.
   headset_expect reconnected 1 1
   headset_expect airpods 2 1
+  local glyph_w pods_w
+  glyph_w=$("$jq_bin" -r '.rest.w' "$headset_bluez_dump" 2>/dev/null)
+  pods_w=$("$jq_bin" -r '.rest.w' "$headset_airpods_dump" 2>/dev/null)
+  echo "headset card widths: glyph=$glyph_w airpods=$pods_w"
+  [ -n "$pods_w" ] && [ "$pods_w" != null ] && [ -n "$glyph_w" ] && [ "$glyph_w" != null ] \
+    || fail "headset: debug dump carried no card ($(cat "$headset_bluez_dump") $(cat "$headset_airpods_dump"))"
+  [ "${pods_w%.*}" -gt "${glyph_w%.*}" ] || fail "headset: the AirPods card stayed ${pods_w} wide, the glyph card's ${glyph_w}, with its picture and three rings in it"
   # The pointer leaving is what dismissed the pair.
   headset_expect left 2 2
   # Escape into the focused foot: the card goes, foot keeps the focus and the key.
   headset_expect escaped 3 3
   headset_escape_expect
   headset_expect dnd 3 3
-  echo "SMOKE_HEADSET_CARD ok startup 0, connect 1, held, leave, reconnect none, airpods 1, leave, escape, dnd none"
+  headset_expect sidebar 4 3
+  local x w h
+  read -r x w h <<< "$("$jq_bin" -r '.rest | "\(.x) \(.w) \(.h)"' "$headset_sidebar_dump" 2>/dev/null)"
+  echo "headset sidebar card: x=$x w=$w h=$h"
+  [ -n "$w" ] && [ "$w" != null ] || fail "headset sidebar: debug dump carried no card ($(cat "$headset_sidebar_dump"))"
+  [ "${w%.*}" -gt "${h%.*}" ] || fail "headset sidebar: the card is ${w}x${h}, on its side off the column"
+  [ "${x%.*}" -ge 100 ] || fail "headset sidebar: the card starts at x=$x, over the column"
+  echo "SMOKE_HEADSET_CARD ok startup 0, connect 1, held, leave, reconnect none, airpods 1, leave, escape, dnd none, sidebar ${w}x${h}"
 }

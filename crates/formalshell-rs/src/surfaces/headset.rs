@@ -94,13 +94,14 @@ pub fn face(store: &Store, address: &str) -> Face {
 /// The left half: the icon and the name over its status.
 fn words(f: &Face, theme: &Theme) -> El {
     let s = &theme.space;
-    let size = s.control_height * 2.0;
+    let size = picture_size(theme);
     let icon = match crate::services::devices::earbuds::picture(&f.art, "duo", size) {
         Some(picture) => w::picture(Some(picture), size),
         None => w::icon(f.icon).size(Type::Heading).ink(Ink::Fg),
     };
-    let text = w::column(s.xxs, vec![w::label(f.name.clone()).elide(), w::text("Connected").size(Type::BodySmall).ink(Ink::Dim)]).fill();
-    w::row(s.icon_gap, vec![icon, text]).fill()
+    // The panel hero's words: the name in `body` 500 over a muted caption.
+    let text = w::column(0.0, vec![w::label(f.name.clone()).elide(), w::text("Connected").size(Type::Caption).ink(Ink::Muted).elide()]).fill();
+    w::row(s.panel_gap, vec![icon, text]).fill().mid()
 }
 
 fn style(theme: &Theme, kit: &Kit, mono: bool) -> TextStyle {
@@ -114,6 +115,15 @@ fn diameter(theme: &Theme) -> f64 {
 
 fn stroke(theme: &Theme) -> f64 {
     theme.space.xs
+}
+
+/// A ring's block: the ring over its part's name, or the ring alone when
+/// no part carries a name, so a lone ring sits on the card's middle.
+fn block_height(f: &Face, theme: &Theme, kit: &mut Kit) -> f64 {
+    if f.parts.iter().all(|p| p.label.is_empty()) {
+        return diameter(theme);
+    }
+    diameter(theme) + theme.space.xxs + kit.shape("Case", style(theme, kit, false)).line_height() as f64
 }
 
 /// One column per part: wide enough for its ring and its label.
@@ -130,9 +140,28 @@ fn rings_width(parts: &[Part], theme: &Theme, kit: &mut Kit) -> f64 {
     widths + theme.space.sm * (parts.len() - 1) as f64
 }
 
+fn picture_size(theme: &Theme) -> f64 {
+    theme.space.control_height * 2.0
+}
+
+/// The card's (width, height) for `f`. The earbuds backend claims a device,
+/// and with it the picture and the rings, after the card is up, so the
+/// card travels from its glyph size to this one.
+pub fn size(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
+    let width = if f.art.is_empty() { theme.space.popup_width_narrow } else { theme.space.popup_width_wide };
+    (width, height(f, width, theme, kit))
+}
+
+/// The most room the card can grow to, which its surface is made for.
+pub fn largest(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
+    let (width, height) = size(f, theme, kit);
+    let pictured = picture_size(theme) + theme.space.panel_padding * 2.0;
+    (width.max(theme.space.popup_width_wide), height.max(pictured))
+}
+
 /// The card's own height: padding round the taller of the words and a ring
 /// over its label.
-pub fn height(f: &Face, width: f64, theme: &Theme, kit: &mut Kit) -> f64 {
+fn height(f: &Face, width: f64, theme: &Theme, kit: &mut Kit) -> f64 {
     let s = &theme.space;
     let inner = width - s.panel_padding * 2.0;
     let text = ui::measure(&words(f, theme), inner, theme, kit).1;
@@ -167,8 +196,7 @@ pub fn paint_rings(p: &mut Painter, alpha: f32, f: &Face, inner: Rect, theme: &T
     let ink = theme.colors.get("foreground");
     let muted = theme.colors.get("mutedForeground");
     let low = theme.colors.get("destructive");
-    let label_h = kit.shape("Case", style(theme, kit, false)).line_height() as f64;
-    let block = d + s.xxs + label_h;
+    let block = block_height(f, theme, kit);
     let top = inner.y0 + (inner.height() - block) / 2.0;
     let mut x = inner.x1 - rings_width(&f.parts, theme, kit);
     for part in &f.parts {

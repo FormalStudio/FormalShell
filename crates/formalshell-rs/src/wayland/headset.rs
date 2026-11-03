@@ -27,6 +27,7 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Owner};
+use crate::motion::{Animated, SPATIAL};
 use crate::services::devices::earbuds;
 use crate::services::compositor;
 use crate::surfaces::headset;
@@ -52,6 +53,14 @@ pub(super) struct Shown {
     /// The earbuds service and the Escape bind are held on this card's
     /// account.
     held: bool,
+    /// The card's width and height, on their way to the face's.
+    size: (Animated, Animated),
+}
+
+/// A card's size runs along its line then away from it, so on a
+/// sidebar's vertical line its height is the along.
+fn oriented(vertical: bool, (w, h): (f64, f64)) -> (f64, f64) {
+    if vertical { (h, w) } else { (w, h) }
 }
 
 /// What the Escape bind runs.
@@ -155,11 +164,13 @@ impl App {
         }
         let theme = &self.store.theme.theme;
         let face = headset::face(&self.store, address);
-        // The product picture takes the room a glyph left the name.
-        let width = if face.art.is_empty() { theme.space.popup_width_narrow } else { theme.space.popup_width_default };
-        let height = headset::height(&face, width, theme, &mut self.bar.kit);
+        let (width, height) = headset::size(&face, theme, &mut self.bar.kit);
+        let room = headset::largest(&face, theme, &mut self.bar.kit);
+        let pad = theme.space.screen_padding;
         let anchor = self.bar.length() as f64 / 2.0;
-        let mut card = self.new_card(anchor, (width, height));
+        let vertical = self.bar.edge().is_vertical();
+        let mut card = self.new_card(anchor, oriented(vertical, room));
+        card.resize(now, anchor, self.bar.length(), pad, oriented(vertical, (width, height)));
         card.ends = self.panel_place(None, false).ends;
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
@@ -171,10 +182,31 @@ impl App {
             entered: false,
             pressed: false,
             held: false,
+            size: (Animated::new(width, SPATIAL), Animated::new(height, SPATIAL)),
         };
         shown.hold();
         self.headset.card = Some(shown);
         self.log("headset card mapped");
+    }
+
+    /// The card on its way to the size its face asks for: the earbuds
+    /// backend's picture and rings land after it is up.
+    fn headset_resize(&mut self, face: &headset::Face, now: Instant) {
+        let vertical = self.bar.edge().is_vertical();
+        let theme = &self.store.theme.theme;
+        let (pad, length, anchor) = (theme.space.screen_padding, self.bar.length(), self.bar.length() as f64 / 2.0);
+        let (w, h) = headset::size(face, theme, &mut self.bar.kit);
+        let ms = crate::motion::Kind::Spatial.ms(theme) * self.motion_scale;
+        let Some(c) = &mut self.headset.card else { return };
+        let moved = w != c.size.0.target() || h != c.size.1.target();
+        if moved {
+            c.size.0.set(now, w, ms);
+            c.size.1.set(now, h, ms);
+        }
+        if moved || c.size.0.running(now) || c.size.1.running(now) {
+            let size = (c.size.0.value(now), c.size.1.value(now));
+            c.popup.card.resize(now, anchor, length, pad, oriented(vertical, size));
+        }
     }
 
     fn headset_dismiss(&mut self, now: Instant) {
@@ -245,6 +277,9 @@ impl App {
         if c.popup.is_open() && (down || c.hold_until.is_some_and(|t| t <= now)) {
             self.headset_dismiss(now);
         }
+        let Some(address) = self.headset.card.as_ref().map(|c| c.address.clone()) else { return };
+        let face = headset::face(&self.store, &address);
+        self.headset_resize(&face, now);
         let Some(c) = &mut self.headset.card else { return };
         if c.popup.finished(now) {
             self.headset.card = None;
@@ -254,7 +289,6 @@ impl App {
         }
         let open = c.popup.is_open();
         c.popup.sync_region(&self.compositor, open);
-        let face = headset::face(&self.store, &c.address);
         let theme = &self.store.theme.theme;
         let inner = c.popup.inner(theme);
         let (el, rect) = headset::left(&face, inner, theme, &mut self.bar.kit);
@@ -264,12 +298,33 @@ impl App {
             headset::paint_rings(&mut painter, alpha, &face, inner, theme, &mut self.bar.kit);
             painter.finish();
         }
-        let animating = c.popup.animating(now) || drawn.animating;
+        let animating = c.popup.animating(now) || drawn.animating || c.size.0.running(now) || c.size.1.running(now);
         let qh = self.qh.clone();
         c.popup.present(animating, &qh);
     }
 
     pub(super) fn headset_owns(&self, surface: &wl_surface::WlSurface) -> bool {
         self.headset.card.as_ref().is_some_and(|c| c.popup.surface.layer.wl_surface() == surface)
+    }
+}
+
+impl App {
+    /// The connect card for `debug dump`: open and its resting rect.
+    pub fn headset_status(&self) -> serde_json::Value {
+        match &self.headset.card {
+            Some(c) => {
+                // In output pixels: a right or bottom surface starts its scene's size in from the far side.
+                let (ow, oh) = self.output_size();
+                let size = c.popup.card.scene.size;
+                let (ox, oy) = match c.popup.card.edge {
+                    Edge::Right => (ow - size.w as f64, 0.0),
+                    Edge::Bottom => (0.0, oh - size.h as f64),
+                    _ => (0.0, 0.0),
+                };
+                let r = c.popup.card.rest_rect();
+                serde_json::json!({"open": c.popup.is_open(), "rest": {"x": ox + r.x as f64, "y": oy + r.y as f64, "w": r.w, "h": r.h}})
+            }
+            None => serde_json::Value::Null,
+        }
     }
 }

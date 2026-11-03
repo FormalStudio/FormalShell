@@ -159,6 +159,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();
     dump["profilesPill"] = app.profiles_status();
+    dump["headset"] = app.headset_status();
     dump["overview"] = app.overview_status();
     dump["sidebarClock"] = app.sidebar_clock_state();
     text(dump.to_string())
