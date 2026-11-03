@@ -50,7 +50,6 @@ paths = [
   "crates/fs-auth/src/polkit.rs",
   "crates/fs-network/**",
   "crates/fs-upower/**",
-  "crates/fs-kopuz/**",
   "crates/fs-bluez/src/agent.rs",
   ".gitignore",
   "crates/*/examples/**",
@@ -367,6 +366,10 @@ runs = ["--earbuds", "--headset-card"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshell-rs/src/services/media.rs", "crates/formalshell-rs/src/ipc/media.rs", "crates/fs-media/src/media.rs", "crates/fs-media/src/lib.rs", "crates/fs-mpris/**", "crates/formalshell-rs/src/services/cover.rs", "crates/formalshell-rs/src/services/kopuz.rs"]
 runs = ["--media", "--media-progress", "--lock-media"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-kopuz/**", "crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshell-rs/src/ipc/media.rs", "dev/kopuz-stub.py"]
+runs = ["--kopuz"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/lyrics.rs", "crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-media/src/lyrics.rs", "crates/formalshell-rs/src/ui/lyrics.rs"]

@@ -691,6 +691,20 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   top bar, so those runs print each claim as skipped and are read by eye.
 - `keybinds.sh` `--keybinds`: the launcher's binds route rendering rows off
   Hyprland's own expanded bind table.
+- `kopuz.sh` `--kopuz`: `services/kopuz.rs` against `dev/kopuz-stub.py`:
+  a kopuzd on the session's `$XDG_RUNTIME_DIR/kopuz/kopuzd.sock` (stdlib
+  Python speaking fs-kopuz's h2 and protobuf by hand, every call logged)
+  and Kopuz's MPRIS player owning `org.mpris.MediaPlayer2.kopuz` over Gio.
+  `media status`'s kopuz block carrying the stub's key, `media lyrics`
+  synced off its GetLyrics with source `kopuz`; `media dontRecommend`
+  refused for a source without it; paused, `media like toggle` reaching
+  the stub as exactly SetFavorite{key, true} and the heart's button filled
+  in the panel, the daemon unfavouriting it on its own repainting the
+  first frame, and once the source takes it (LibraryInvalidated{6})
+  `media dontRecommend` reaching it as DontRecommend{key} then Next; a
+  daemon row for another track dropping the block; and the daemon
+  SIGKILLed leaving no block and no heart, the player's next track
+  resolving off its sibling `.lrc` with source `local`.
 - `launch.sh` `--launch`: launch feedback (`services/launch.rs`), read
   off `activity status` and `bar room`: a staged entry whose foot window
   maps two seconds after its spawn, launched by `activity launch` (the
