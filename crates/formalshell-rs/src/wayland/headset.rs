@@ -110,6 +110,14 @@ impl App {
     /// The Bluetooth audio devices moved: a disconnected one that is now
     /// connected earns a card.
     pub fn headset_devices(&mut self) {
+        let learned = headset::learned(&self.store);
+        if !learned.is_empty() {
+            let mut art = self.store.state.data.earbuds_art.clone();
+            if let Some(map) = art.as_object_mut() {
+                map.extend(learned.into_iter().map(|(address, set)| (address, set.into())));
+            }
+            crate::services::state::set(vec![crate::services::state::Field::EarbudsArt(art)]);
+        }
         let Some(list) = self.store.devices.bluetooth.headsets.clone() else { return };
         let now = Instant::now();
         let first = !std::mem::replace(&mut self.headset.primed, true);
@@ -161,7 +169,7 @@ impl App {
         let theme = &self.store.theme.theme;
         let face = headset::face(&self.store, address);
         let (width, height) = headset::size(&face, theme, &mut self.bar.kit);
-        let room = headset::largest(&face, theme, &mut self.bar.kit);
+        let room = headset::largest(theme);
         let pad = theme.space.screen_padding;
         let length = self.output_size().0;
         let anchor = length / 2.0;
@@ -292,14 +300,8 @@ impl App {
         let open = c.popup.is_open();
         c.popup.sync_region(&self.compositor, open);
         let theme = &self.store.theme.theme;
-        let inner = c.popup.inner(theme);
-        let (el, rect) = headset::left(&face, inner, theme, &mut self.bar.kit);
+        let (el, rect) = headset::layout(&face, c.popup.card.content.0, theme, &mut self.bar.kit);
         let drawn = c.popup.draw_in(&el, rect, theme, &mut self.bar.kit, now);
-        {
-            let (mut painter, alpha) = c.popup.painter();
-            headset::paint_rings(&mut painter, alpha, &face, inner, theme, &mut self.bar.kit);
-            painter.finish();
-        }
         let animating = c.popup.animating(now) || drawn.animating || c.size.0.running(now) || c.size.1.running(now);
         let qh = self.qh.clone();
         c.popup.present(animating, &qh);
@@ -311,13 +313,15 @@ impl App {
 }
 
 impl App {
-    /// The connect card for `debug dump`: open and its resting rect.
+    /// The connect card for `debug dump`: open, its picture set and its
+    /// resting rect.
     pub fn headset_status(&self) -> serde_json::Value {
         match &self.headset.card {
             Some(c) => {
                 // The surface hangs from the output's top left, so its pixels are the output's.
                 let r = c.popup.card.rest_rect();
-                serde_json::json!({"open": c.popup.is_open(), "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}})
+                let art = headset::face(&self.store, &c.address).art;
+                serde_json::json!({"open": c.popup.is_open(), "art": art, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}})
             }
             None => serde_json::Value::Null,
         }

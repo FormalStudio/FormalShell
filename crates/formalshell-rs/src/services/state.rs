@@ -48,6 +48,9 @@ pub struct Data {
     pub lights: Value,
     pub hdr: Value,
     pub sidebar_collapsed: bool,
+    /// `{address: set}`: the picture set the earbuds backend last named for
+    /// each device, upper-case addresses.
+    pub earbuds_art: Value,
     /// The settings UI's overrides, a settings.json-shaped object the config
     /// service merges under settings.json.
     pub settings: Value,
@@ -74,6 +77,7 @@ impl Default for Data {
             lights: Value::Null,
             hdr: Value::Null,
             sidebar_collapsed: false,
+            earbuds_art: Value::Object(Map::new()),
             settings: Value::Object(Map::new()),
         }
     }
@@ -101,6 +105,7 @@ pub enum Field {
     Lights(Value),
     Hdr(Value),
     SidebarCollapsed(bool),
+    EarbudsArt(Value),
     Settings(Value),
     /// One override at a dotted path, `None` dropping it: a setter only,
     /// applied onto the object as it is when it lands, so two quick edits
@@ -132,6 +137,7 @@ impl Field {
             Field::Lights(v) => data.lights = v,
             Field::Hdr(v) => data.hdr = v,
             Field::SidebarCollapsed(v) => data.sidebar_collapsed = v,
+            Field::EarbudsArt(v) => data.earbuds_art = v,
             Field::Settings(v) => data.settings = v,
             Field::SettingKey(path, v) => super::config::set_path(&mut data.settings, &path, v),
         }
@@ -139,7 +145,7 @@ impl Field {
 }
 
 impl Data {
-    fn fields(&self) -> [Field; 19] {
+    fn fields(&self) -> [Field; 20] {
         [
             Field::Wallpaper(self.wallpaper.clone()),
             Field::WallpaperColor(self.wallpaper_color.clone()),
@@ -159,6 +165,7 @@ impl Data {
             Field::Lights(self.lights.clone()),
             Field::Hdr(self.hdr.clone()),
             Field::SidebarCollapsed(self.sidebar_collapsed),
+            Field::EarbudsArt(self.earbuds_art.clone()),
             Field::Settings(self.settings.clone()),
         ]
     }
@@ -214,6 +221,7 @@ impl Data {
         data.lights = take("lights").unwrap_or(Value::Null);
         data.hdr = take("hdr").unwrap_or(Value::Null);
         data.sidebar_collapsed = typed(take("sidebarCollapsed")).unwrap_or(false);
+        data.earbuds_art = take("earbudsArt").filter(Value::is_object).unwrap_or(data.earbuds_art);
         data.settings = take("settings").filter(Value::is_object).unwrap_or(data.settings);
         Ok(data)
     }
@@ -239,6 +247,7 @@ impl Data {
         map.insert("lights".into(), self.lights.clone());
         map.insert("hdr".into(), self.hdr.clone());
         map.insert("sidebarCollapsed".into(), self.sidebar_collapsed.into());
+        map.insert("earbudsArt".into(), self.earbuds_art.clone());
         map.insert("settings".into(), self.settings.clone());
         let mut doc = Value::Object(map);
         sort_keys(&mut doc);
@@ -498,7 +507,7 @@ mod tests {
         assert!(text.starts_with("{\n    \"abbreviations\": null,\n"), "{text}");
         assert!(text.ends_with("}\n"));
         let keys: Vec<String> = serde_json::from_str::<Map<String, Value>>(&text).unwrap().keys().cloned().collect();
-        assert_eq!(keys.len(), 19);
+        assert_eq!(keys.len(), 20);
         let mut sorted = keys.clone();
         sorted.sort();
         assert_eq!(keys, sorted);
@@ -525,6 +534,7 @@ mod tests {
             lights: json!({"source": "palette"}),
             hdr: json!({"DP-1": {"prior": {}}}),
             sidebar_collapsed: true,
+            earbuds_art: json!({"2C:BE:EE:65:A0:21": "b175_black"}),
             settings: json!({"bar": {"style": "solid"}}),
         };
         assert_eq!(Data::parse(&data.to_text()).unwrap(), data);

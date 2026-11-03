@@ -1,23 +1,24 @@
 //! The headset connect card's content (new in the Rust shell, spec
-//! `2026-10-06-rust-rewrite.md` under R7): the device's product picture
-//! (its icon for a device with none), its name over "Connected", and one battery ring per part the backend reports, drawn in
-//! the shell's own chrome. The card is a plain `card` role box the drawer
-//! buds off the bar's line; nothing here invents a size, a colour or a curve.
+//! `2026-10-06-rust-rewrite.md` under R7), a compact pill after macOS's
+//! AirPods one: the device's product picture (the earbuds panel's `duo`
+//! set, its icon for a device with none) beside its name over one small
+//! ring and value per part the backend reports, or "Connected" before any
+//! does. The card is a plain `card` role box; nothing here invents a
+//! colour or a curve.
 //!
-//! The ring block's height is reserved whether or not any ring is drawn, so
-//! a backend that reports a second after the card is up does not move it.
+//! The picture's slot is the same size whether a picture or an icon fills
+//! it, so a backend reporting after the card is up widens it and never
+//! makes it taller.
 
 use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
-use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
-use vello_cpu::kurbo::{Affine, Rect};
+use vello_cpu::kurbo::Rect;
 
-use crate::scene::{Paint, Scene};
+use crate::scene::IRect;
 use crate::services::devices::headsets::Headset;
 use crate::store::Store;
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::TextStyle;
-use crate::ui::el::Ring;
+use crate::surfaces::bar::cell::Kit;
+use crate::ui::el::{Ring, Size};
 use crate::ui::{self, El, Ink, Type, w};
 
 /// At or under this a ring takes the destructive ink (`battery.warnPercent`'s default).
@@ -87,134 +88,111 @@ pub fn face(store: &Store, address: &str) -> Face {
     {
         parts.push(Part { label: "", percent: (level * 100.0).round() });
     }
-    let art = claimed.map(|d| d.art.clone()).unwrap_or_default();
+    // nothingctl takes up to ~40s to name a headphone it has just seen
+    // connect, far past the card's hold, so the set it named last time
+    // stands in until it does.
+    let art = claimed
+        .map(|d| d.art.clone())
+        .filter(|a| !a.is_empty())
+        .or_else(|| remembered(store, address))
+        .unwrap_or_default();
     Face { icon, art, name, parts, panel: if claimed.is_some() { "earbuds" } else { "bluetooth" } }
 }
 
-/// The left half: the icon and the name over its status.
-fn words(f: &Face, theme: &Theme) -> El {
+/// The picture set the earbuds backend last named for `address`.
+fn remembered(store: &Store, address: &str) -> Option<String> {
+    store.state.data.earbuds_art.get(address.to_ascii_uppercase())?.as_str().map(str::to_owned)
+}
+
+/// The `address -> set` pairs the earbuds backend names now that
+/// state.json does not hold yet: a device's own address, or for one with
+/// none (the AirPods daemon's) the connected Bluetooth headset of its name.
+pub fn learned(store: &Store) -> Vec<(String, String)> {
+    let headsets = store.devices.bluetooth.headsets.as_deref().unwrap_or_default();
+    store
+        .devices
+        .earbuds
+        .devices()
+        .iter()
+        .filter(|d| !d.art.is_empty())
+        .filter_map(|d| {
+            let address = if d.address.is_empty() {
+                headsets.iter().find(|h| h.connected && !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name))?.address.clone()
+            } else {
+                d.address.clone()
+            };
+            let address = address.to_ascii_uppercase();
+            (remembered(store, &address).as_deref() != Some(d.art.as_str())).then(|| (address, d.art.clone()))
+        })
+        .collect()
+}
+
+/// The picture's square slot, which sets the pill's height.
+fn slot(theme: &Theme) -> f64 {
+    theme.space.control_height + theme.space.sm
+}
+
+/// The pill's padding: `sm` round the picture, `lg` past the words.
+fn pad(theme: &Theme) -> (f64, f64) {
+    (theme.space.sm, theme.space.lg)
+}
+
+fn part(p: &Part, theme: &Theme) -> El {
     let s = &theme.space;
-    let size = picture_size(theme);
-    let icon = match crate::services::devices::earbuds::picture(&f.art, "duo", size) {
+    let value = w::text(format!("{}%", p.percent.round() as i64))
+        .size(Type::Caption)
+        .mono()
+        .ink(if p.percent <= LOW { Ink::Destructive } else { Ink::Fg });
+    let mut row = vec![w::indicator(Ring::Progress((p.percent / 100.0).clamp(0.0, 1.0)))];
+    if !p.label.is_empty() {
+        row.push(w::text(p.label).size(Type::Caption).ink(Ink::Muted));
+    }
+    row.push(value);
+    w::row(s.xs, row).mid()
+}
+
+/// The pill's content: the picture, and the name over the parts.
+fn content(f: &Face, theme: &Theme, words: Size) -> El {
+    let s = &theme.space;
+    let size = slot(theme);
+    let lead = match crate::services::devices::earbuds::picture(&f.art, "duo", size) {
         Some(picture) => w::picture(Some(picture), size),
-        None => w::icon(f.icon).size(Type::Heading).ink(Ink::Fg),
+        None => w::column(0.0, vec![w::icon(f.icon).size(Type::Heading).ink(Ink::Fg).centred()]).width(Size::Px(size)),
     };
-    // The panel hero's words: the name in `body` 500 over a muted caption.
-    let text = w::column(0.0, vec![w::label(f.name.clone()).elide(), w::text("Connected").size(Type::Caption).ink(Ink::Muted).elide()]).fill();
-    w::row(s.panel_gap, vec![icon, text]).fill().mid()
+    let status = if f.parts.is_empty() {
+        w::text("Connected").size(Type::Caption).ink(Ink::Muted)
+    } else {
+        w::row(s.md, f.parts.iter().map(|p| part(p, theme)).collect())
+    };
+    // Eliding fills the row, so a measure for the content's own width
+    // reads the name whole.
+    let name = w::label(f.name.clone());
+    let name = if words == Size::Fill { name.elide() } else { name };
+    let words = w::column(0.0, vec![name, status]).width(words);
+    w::row(s.md, vec![lead, words]).mid()
 }
 
-fn style(theme: &Theme, kit: &Kit, mono: bool) -> TextStyle {
-    TextStyle { family: if mono { kit.look.mono } else { kit.look.sans }, size: theme.font_size.caption as f32, weight: if mono { 500.0 } else { 400.0 }, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
-}
-
-/// The ring's diameter, which is a control's height.
-fn diameter(theme: &Theme) -> f64 {
-    theme.space.control_height
-}
-
-fn stroke(theme: &Theme) -> f64 {
-    theme.space.xs
-}
-
-/// A ring's block: the ring over its part's name, or the ring alone when
-/// no part carries a name, so a lone ring sits on the card's middle.
-fn block_height(f: &Face, theme: &Theme, kit: &mut Kit) -> f64 {
-    if f.parts.iter().all(|p| p.label.is_empty()) {
-        return diameter(theme);
-    }
-    diameter(theme) + theme.space.xxs + kit.shape("Case", style(theme, kit, false)).line_height() as f64
-}
-
-/// One column per part: wide enough for its ring and its label.
-fn column_width(part: &Part, theme: &Theme, kit: &mut Kit) -> f64 {
-    let label = kit.shape(part.label, style(theme, kit, false)).width as f64;
-    diameter(theme).max(label)
-}
-
-fn rings_width(parts: &[Part], theme: &Theme, kit: &mut Kit) -> f64 {
-    if parts.is_empty() {
-        return 0.0;
-    }
-    let widths: f64 = parts.iter().map(|p| column_width(p, theme, kit)).sum();
-    widths + theme.space.sm * (parts.len() - 1) as f64
-}
-
-fn picture_size(theme: &Theme) -> f64 {
-    theme.space.control_height * 2.0
-}
-
-/// The card's (width, height) for `f`. The earbuds backend claims a device,
-/// and with it the picture and the rings, after the card is up, so the
-/// card travels from its glyph size to this one.
+/// The pill's (width, height) for `f`: its content's own width, capped at
+/// `popupWidthNarrow` with the name eliding past it.
 pub fn size(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
-    let width = if f.art.is_empty() { theme.space.popup_width_narrow } else { theme.space.popup_width_wide };
-    (width, height(f, width, theme, kit))
+    let (inset, end) = pad(theme);
+    let cap = theme.space.popup_width_narrow;
+    let natural = ui::measure(&content(f, theme, Size::Hug), cap, theme, kit).0;
+    ((natural + inset + end).min(cap).ceil(), slot(theme) + inset * 2.0)
 }
 
-/// The most room the card can grow to, which its surface is made for.
-pub fn largest(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
-    let (width, height) = size(f, theme, kit);
-    let pictured = picture_size(theme) + theme.space.panel_padding * 2.0;
-    (width.max(theme.space.popup_width_wide), height.max(pictured))
+/// The most room the pill can grow to, which its surface is made for.
+pub fn largest(theme: &Theme) -> (f64, f64) {
+    (theme.space.popup_width_narrow, slot(theme) + pad(theme).0 * 2.0)
 }
 
-/// The card's own height: padding round the taller of the words and a ring
-/// over its label.
-fn height(f: &Face, width: f64, theme: &Theme, kit: &mut Kit) -> f64 {
-    let s = &theme.space;
-    let inner = width - s.panel_padding * 2.0;
-    let text = ui::measure(&words(f, theme), inner, theme, kit).1;
-    let label = kit.shape("Case", style(theme, kit, false)).line_height() as f64;
-    let rings = diameter(theme) + s.xxs + label;
-    text.max(rings) + s.panel_padding * 2.0
-}
-
-/// The words' element and the rect it is laid in, left of the rings.
-pub fn left(f: &Face, inner: Rect, theme: &Theme, kit: &mut Kit) -> (El, Rect) {
-    let gap = if f.parts.is_empty() { 0.0 } else { theme.space.md };
-    let rings = rings_width(&f.parts, theme, kit);
-    let el = words(f, theme);
-    let width = (inner.width() - rings - gap).max(0.0);
-    let h = ui::measure(&el, width, theme, kit).1;
-    let top = inner.y0 + (inner.height() - h) / 2.0;
-    (el, Rect::new(inner.x0, top, inner.x0 + width, top + h))
-}
-
-fn with_alpha(c: Rgba, a: f32) -> Rgba {
-    c.with_alpha(c.a * a)
-}
-
-/// The rings, right-aligned in `inner`, each a groove under an arc from
-/// twelve o'clock with its percentage inside and its part under it.
-pub fn paint_rings(p: &mut Painter, alpha: f32, f: &Face, inner: Rect, theme: &Theme, kit: &mut Kit) {
-    let s = &theme.space;
-    let d = diameter(theme);
-    let width = stroke(theme);
-    let groove = theme.box_style("track.groove", None).fill;
-    let fill = theme.box_style("track.fill", None).fill;
-    let ink = theme.colors.get("foreground");
-    let muted = theme.colors.get("mutedForeground");
-    let low = theme.colors.get("destructive");
-    let block = block_height(f, theme, kit);
-    let top = inner.y0 + (inner.height() - block) / 2.0;
-    let mut x = inner.x1 - rings_width(&f.parts, theme, kit);
-    for part in &f.parts {
-        let cw = column_width(part, theme, kit);
-        let (cx, cy) = (x + cw / 2.0, top + d / 2.0);
-        let frac = (part.percent / 100.0).clamp(0.0, 1.0);
-        let colour = if part.percent <= LOW { low } else { fill };
-        let strokes = ui::ring_strokes((cx, cy), d, width, Ring::Progress(frac), 0.0, with_alpha(groove, alpha), with_alpha(colour, alpha));
-        let bounds = Scene::cover(Rect::new(cx - d / 2.0, cy - d / 2.0, cx + d / 2.0, cy + d / 2.0), Affine::IDENTITY, 2.0);
-        p.shape(bounds, Paint::Shape { fill: None, strokes });
-        let pct = kit.shape(&format!("{}", part.percent.round() as i64), style(theme, kit, true));
-        let at = ((cx - pct.width as f64 / 2.0).round() as i32, (cy - pct.line_height() as f64 / 2.0).round() as i32);
-        p.text(&pct, at, with_alpha(ink, alpha), &[]);
-        if !part.label.is_empty() {
-            let label = kit.shape(part.label, style(theme, kit, false));
-            let at = ((cx - label.width as f64 / 2.0).round() as i32, (top + d + s.xxs).round() as i32);
-            p.text(&label, at, with_alpha(muted, alpha), &[]);
-        }
-        x += cw + s.sm;
-    }
+/// The content's element and the rect it is laid in, inside the card's
+/// `frame` and centred down it.
+pub fn layout(f: &Face, frame: IRect, theme: &Theme, kit: &mut Kit) -> (El, Rect) {
+    let (inset, end) = pad(theme);
+    let (x0, x1) = (frame.x as f64 + inset, (frame.x + frame.w) as f64 - end);
+    let el = content(f, theme, Size::Fill);
+    let h = ui::measure(&el, x1 - x0, theme, kit).1;
+    let top = frame.y as f64 + (frame.h as f64 - h) / 2.0;
+    (el, Rect::new(x0, top, x1, top + h))
 }
