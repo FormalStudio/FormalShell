@@ -68,8 +68,16 @@ pub fn face(store: &Store, address: &str) -> Face {
             || (d.address.is_empty() && d.connected && seen.is_some_and(|h| !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name)))
     });
     let icon = icon_of(seen.map_or("", |h| h.icon.as_str()), claimed.map(|d| d.kind));
-    let named = claimed.map(|d| d.name.as_str()).filter(|n| !n.is_empty()).or_else(|| seen.map(|h| h.name.as_str()).filter(|n| !n.is_empty()));
-    let name = named.unwrap_or(address).to_owned();
+    // BlueZ holds the name the device advertises, which some cut short
+    // ("CMF Head" for a CMF Headphone Pro), and the backend's own comes up
+    // to ~40s after connecting, so the one it gave last stands in until then.
+    let name = claimed
+        .map(|d| d.name.as_str())
+        .filter(|n| !n.is_empty())
+        .or_else(|| remembered(store, address, "name"))
+        .or_else(|| seen.map(|h| h.name.as_str()).filter(|n| !n.is_empty()))
+        .unwrap_or(address)
+        .to_owned();
     let mut parts: Vec<Part> = Vec::new();
     if let Some(d) = claimed {
         for id in [BatteryId::Left, BatteryId::Right, BatteryId::Case, BatteryId::Single] {
@@ -95,27 +103,29 @@ pub fn face(store: &Store, address: &str) -> Face {
     let art = claimed
         .map(|d| d.art.clone())
         .filter(|a| !a.is_empty())
-        .or_else(|| remembered(store, address))
+        .or_else(|| remembered(store, address, "art").map(str::to_owned))
         .unwrap_or_default();
     Face { icon, art, name, parts, panel: if claimed.is_some() { "earbuds" } else { "bluetooth" } }
 }
 
-/// The picture set the earbuds backend last named for `address`.
-fn remembered(store: &Store, address: &str) -> Option<String> {
-    store.state.data.earbuds_art.get(address.to_ascii_uppercase())?.as_str().map(str::to_owned)
+/// What the earbuds backend last called `address` (`key` "name") or the
+/// picture set it named (`key` "art").
+fn remembered<'a>(store: &'a Store, address: &str, key: &str) -> Option<&'a str> {
+    store.state.data.earbuds_faces.get(address.to_ascii_uppercase())?.get(key)?.as_str().filter(|s| !s.is_empty())
 }
 
-/// The `address -> set` pairs the earbuds backend names now that
-/// state.json does not hold yet: a device's own address, or for one with
-/// none (the AirPods daemon's) the connected Bluetooth headset of its name.
-pub fn learned(store: &Store) -> Vec<(String, String)> {
+/// The `address -> {art, name}` entries the earbuds backend reports now
+/// that state.json does not hold yet: a device's own address, or for one
+/// with none (the AirPods daemon's) the connected Bluetooth headset of its
+/// name. A set it has not named yet keeps the one remembered.
+pub fn learned(store: &Store) -> Vec<(String, serde_json::Value)> {
     let headsets = store.devices.bluetooth.headsets.as_deref().unwrap_or_default();
     store
         .devices
         .earbuds
         .devices()
         .iter()
-        .filter(|d| !d.art.is_empty())
+        .filter(|d| !d.art.is_empty() || !d.name.is_empty())
         .filter_map(|d| {
             let address = if d.address.is_empty() {
                 headsets.iter().find(|h| h.connected && !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name))?.address.clone()
@@ -123,7 +133,9 @@ pub fn learned(store: &Store) -> Vec<(String, String)> {
                 d.address.clone()
             };
             let address = address.to_ascii_uppercase();
-            (remembered(store, &address).as_deref() != Some(d.art.as_str())).then(|| (address, d.art.clone()))
+            let art = if d.art.is_empty() { remembered(store, &address, "art").unwrap_or_default() } else { d.art.as_str() };
+            let entry = serde_json::json!({"art": art, "name": d.name});
+            (store.state.data.earbuds_faces.get(&address) != Some(&entry)).then_some((address, entry))
         })
         .collect()
 }

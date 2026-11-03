@@ -48,9 +48,9 @@ pub struct Data {
     pub lights: Value,
     pub hdr: Value,
     pub sidebar_collapsed: bool,
-    /// `{address: set}`: the picture set the earbuds backend last named for
-    /// each device, upper-case addresses.
-    pub earbuds_art: Value,
+    /// `{address: {art, name}}`: the picture set and the name the earbuds
+    /// backend last gave each device, upper-case addresses.
+    pub earbuds_faces: Value,
     /// The settings UI's overrides, a settings.json-shaped object the config
     /// service merges under settings.json.
     pub settings: Value,
@@ -77,7 +77,7 @@ impl Default for Data {
             lights: Value::Null,
             hdr: Value::Null,
             sidebar_collapsed: false,
-            earbuds_art: Value::Object(Map::new()),
+            earbuds_faces: Value::Object(Map::new()),
             settings: Value::Object(Map::new()),
         }
     }
@@ -105,7 +105,7 @@ pub enum Field {
     Lights(Value),
     Hdr(Value),
     SidebarCollapsed(bool),
-    EarbudsArt(Value),
+    EarbudsFaces(Value),
     Settings(Value),
     /// One override at a dotted path, `None` dropping it: a setter only,
     /// applied onto the object as it is when it lands, so two quick edits
@@ -137,7 +137,7 @@ impl Field {
             Field::Lights(v) => data.lights = v,
             Field::Hdr(v) => data.hdr = v,
             Field::SidebarCollapsed(v) => data.sidebar_collapsed = v,
-            Field::EarbudsArt(v) => data.earbuds_art = v,
+            Field::EarbudsFaces(v) => data.earbuds_faces = v,
             Field::Settings(v) => data.settings = v,
             Field::SettingKey(path, v) => super::config::set_path(&mut data.settings, &path, v),
         }
@@ -165,7 +165,7 @@ impl Data {
             Field::Lights(self.lights.clone()),
             Field::Hdr(self.hdr.clone()),
             Field::SidebarCollapsed(self.sidebar_collapsed),
-            Field::EarbudsArt(self.earbuds_art.clone()),
+            Field::EarbudsFaces(self.earbuds_faces.clone()),
             Field::Settings(self.settings.clone()),
         ]
     }
@@ -221,7 +221,7 @@ impl Data {
         data.lights = take("lights").unwrap_or(Value::Null);
         data.hdr = take("hdr").unwrap_or(Value::Null);
         data.sidebar_collapsed = typed(take("sidebarCollapsed")).unwrap_or(false);
-        data.earbuds_art = take("earbudsArt").filter(Value::is_object).unwrap_or(data.earbuds_art);
+        data.earbuds_faces = take("earbudsFaces").filter(Value::is_object).unwrap_or(data.earbuds_faces);
         data.settings = take("settings").filter(Value::is_object).unwrap_or(data.settings);
         Ok(data)
     }
@@ -247,7 +247,7 @@ impl Data {
         map.insert("lights".into(), self.lights.clone());
         map.insert("hdr".into(), self.hdr.clone());
         map.insert("sidebarCollapsed".into(), self.sidebar_collapsed.into());
-        map.insert("earbudsArt".into(), self.earbuds_art.clone());
+        map.insert("earbudsFaces".into(), self.earbuds_faces.clone());
         map.insert("settings".into(), self.settings.clone());
         let mut doc = Value::Object(map);
         sort_keys(&mut doc);
@@ -534,7 +534,7 @@ mod tests {
             lights: json!({"source": "palette"}),
             hdr: json!({"DP-1": {"prior": {}}}),
             sidebar_collapsed: true,
-            earbuds_art: json!({"2C:BE:EE:65:A0:21": "b175_black"}),
+            earbuds_faces: json!({"2C:BE:EE:65:A0:21": {"art": "b175_black", "name": "CMF Headphone Pro"}}),
             settings: json!({"bar": {"style": "solid"}}),
         };
         assert_eq!(Data::parse(&data.to_text()).unwrap(), data);

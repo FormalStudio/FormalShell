@@ -36,8 +36,9 @@
 #     again with the librepods status file gone raise the card off the top
 #     edge's middle all the same, not off the column's line: wider than
 #     tall, centred on the output within 2px and near its top, and wearing
-#     the picture set state.json's `earbudsArt` kept from step 5, since no
-#     backend names the pair this time (off `debug dump`'s `headset`).
+#     the picture set and the name state.json's `earbudsFaces` kept from
+#     step 5, since no backend names the pair this time and BlueZ's name
+#     for them is cut short (off `debug dump`'s `headset`).
 #
 # The pointer is wlrctl, a real virtual-pointer client, for the reason
 # tooltip.sh documents: only one sends the surface a pointer enter.
@@ -107,7 +108,7 @@ leg_headset_card_drive() {
   local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-list() { printf '[{"address":"$headset_buds_address","name":"Liberty 4 NC","connected":%s,"battery":80},{"address":"$headset_cans_address","name":"Studio Cans","connected":%s,"icon":"audio-headphones","battery":55},{"address":"$headset_pods_address","name":"Kyan'"'"'s AirPods Pro","connected":%s}]\n' "\$1" "\$2" "\$3" > "$headset_list"; }
+list() { local pods="Kyan's AirPods Pro"; [ -z "\${4:-}" ] || pods=\$4; printf '[{"address":"$headset_buds_address","name":"Liberty 4 NC","connected":%s,"battery":80},{"address":"$headset_cans_address","name":"Studio Cans","connected":%s,"icon":"audio-headphones","battery":55},{"address":"$headset_pods_address","name":"%s","connected":%s}]\n' "\$1" "\$2" "\$pods" "\$3" > "$headset_list"; }
 mapped() { grep -c 'headset card mapped' "$shell_log_path"; }
 unmapped() { grep -c 'headset card unmapped' "$shell_log_path"; }
 mark() { echo "\$1 mapped=\$(mapped) unmapped=\$(unmapped)" >> "$headset_log_marks"; }
@@ -195,14 +196,14 @@ mark dnd
 rm -f "$state_dir/status.json"
 "$jq_bin" '.dnd = false' "$fs_state" > "$fs_state.tmp" && mv "$fs_state.tmp" "$fs_state"
 list true false false
-"$jq_bin" -c '.earbudsArt' "$fs_state" > "$headset_dir/earbuds-art.json"
+"$jq_bin" -c '.earbudsFaces' "$fs_state" > "$headset_dir/earbuds-art.json"
 "$jq_bin" -c '.layout = "sidebar"' "$settings_path" > "$settings_path.new" && mv "$settings_path.new" "$settings_path"
 for _ in \$(seq 1 20); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
   sleep 0.5
 done
 sleep 4
-list true false true
+list true false true "Kyan's AirP"
 sleep 2.5
 $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_sidebar_dump"
 "$grim_bin" "$headset_sidebar_png" > /dev/null 2>&1
@@ -289,11 +290,14 @@ leg_headset_card_assert() {
   off=$(( ${x%.*} + ${w%.*} / 2 - logical_w / 2 ))
   [ "${off#-}" -le 2 ] || fail "headset sidebar: the card's middle is ${off}px off the output's"
   [ "${y%.*}" -le 40 ] || fail "headset sidebar: the card rests at y=$y, not off the top edge"
-  local kept art
-  kept=$("$jq_bin" -r --arg a "$headset_pods_address" '.[$a] // empty' "$headset_dir/earbuds-art.json" 2>/dev/null)
+  local kept art kept_name name
+  kept=$("$jq_bin" -r --arg a "$headset_pods_address" '.[$a].art // empty' "$headset_dir/earbuds-art.json" 2>/dev/null)
+  kept_name=$("$jq_bin" -r --arg a "$headset_pods_address" '.[$a].name // empty' "$headset_dir/earbuds-art.json" 2>/dev/null)
   art=$("$jq_bin" -r '.art' "$headset_sidebar_dump")
-  echo "headset art: state.json kept '$kept' for the AirPods, the reconnect wore '$art'"
-  [ -n "$kept" ] || fail "headset: state.json's earbudsArt kept no picture set for the AirPods ($(cat "$headset_dir/earbuds-art.json"))"
+  name=$("$jq_bin" -r '.name' "$headset_sidebar_dump")
+  echo "headset face: state.json kept '$kept' '$kept_name' for the AirPods, the reconnect wore '$art' '$name'"
+  [ -n "$kept" ] && [ -n "$kept_name" ] || fail "headset: state.json's earbudsFaces kept no face for the AirPods ($(cat "$headset_dir/earbuds-art.json"))"
   [ "$art" = "$kept" ] || fail "headset: the AirPods reconnecting with no backend wore '$art', not the kept '$kept'"
+  [ "$name" = "$kept_name" ] || fail "headset: the AirPods reconnecting under BlueZ's cut name read '$name', not the kept '$kept_name'"
   echo "SMOKE_HEADSET_CARD ok startup 0, connect 1, held, leave, reconnect none, airpods 1, leave, escape, dnd none, sidebar ${w}x${h} at ${x},${y}"
 }

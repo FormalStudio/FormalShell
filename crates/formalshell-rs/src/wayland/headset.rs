@@ -136,11 +136,11 @@ impl App {
     pub fn headset_devices(&mut self) {
         let learned = headset::learned(&self.store);
         if !learned.is_empty() {
-            let mut art = self.store.state.data.earbuds_art.clone();
-            if let Some(map) = art.as_object_mut() {
-                map.extend(learned.into_iter().map(|(address, set)| (address, set.into())));
+            let mut faces = self.store.state.data.earbuds_faces.clone();
+            if let Some(map) = faces.as_object_mut() {
+                map.extend(learned);
             }
-            crate::services::state::set(vec![crate::services::state::Field::EarbudsArt(art)]);
+            crate::services::state::set(vec![crate::services::state::Field::EarbudsFaces(faces)]);
         }
         let Some(list) = self.store.devices.bluetooth.headsets.clone() else { return };
         let now = Instant::now();
@@ -326,7 +326,7 @@ impl App {
 }
 
 impl App {
-    /// The connect card for `debug dump`: open, its picture set, its
+    /// The connect card for `debug dump`: open, its picture set and name, its
     /// resting rect and corner radius, and the device whose picture set
     /// the earbuds service is still held to learn.
     pub fn headset_status(&self) -> serde_json::Value {
@@ -335,8 +335,8 @@ impl App {
             Some(c) => {
                 // The surface hangs from the output's top left, so its pixels are the output's.
                 let r = c.popup.card.rest_rect();
-                let art = headset::face(&self.store, &c.address).art;
-                serde_json::json!({"open": c.popup.is_open(), "art": art, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.card.radius(), "learning": learning})
+                let face = headset::face(&self.store, &c.address);
+                serde_json::json!({"open": c.popup.is_open(), "art": face.art, "name": face.name, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.card.radius(), "learning": learning})
             }
             None => serde_json::json!({"learning": learning}),
         }
