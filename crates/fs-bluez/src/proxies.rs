@@ -37,3 +37,11 @@ pub trait AgentManager1 {
     fn unregister_agent(&self, agent: &ObjectPath<'_>) -> zbus::Result<()>;
     fn request_default_agent(&self, agent: &ObjectPath<'_>) -> zbus::Result<()>;
 }
+
+#[proxy(interface = "org.bluez.MediaPlayer1", default_service = "org.bluez", gen_blocking = false)]
+pub trait MediaPlayer1 {
+    fn play(&self) -> zbus::Result<()>;
+    fn pause(&self) -> zbus::Result<()>;
+    fn next(&self) -> zbus::Result<()>;
+    fn previous(&self) -> zbus::Result<()>;
+}

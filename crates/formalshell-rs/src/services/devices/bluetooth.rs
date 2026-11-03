@@ -1,6 +1,7 @@
 //! BlueZ through fs-bluez: the default adapter's state for the bar cell and
 //! the Bluetooth panel, the device list the earbuds backends cross their
-//! own lists with, and the panel's one action in flight.
+//! own lists with, the panel's one action in flight, and every device's
+//! AVRCP player as a media source (`media::Remote`).
 //!
 //! The panel's actions run here, one at a time, each settled by BlueZ's own
 //! answer: a method that errors fails its row, one that never answers fails
@@ -11,7 +12,7 @@
 use std::cell::RefCell;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use fs_bluez::state::AdapterState;
@@ -19,6 +20,7 @@ use futures_lite::{FutureExt, future};
 
 use super::headsets::{self, Headset};
 use crate::runtime::Ctx;
+use crate::services::media::{self, Remote};
 use crate::services::watch::Watch;
 use crate::store;
 
@@ -143,6 +145,8 @@ pub enum Ask {
     Run(String, ActionKind),
     Rescan,
     Power(bool),
+    /// A media source's transport, to its `MediaPlayer1`.
+    Player(String, fs_bluez::PlayerCommand),
 }
 
 static ASKS: LazyLock<(Sender<Ask>, Receiver<Ask>)> = LazyLock::new(async_channel::unbounded);
@@ -158,6 +162,27 @@ pub fn panel(open: bool) {
 /// Callable from any thread.
 pub fn ask(a: Ask) {
     let _ = ASKS.0.try_send(a);
+}
+
+pub fn player(path: &str, command: fs_bluez::PlayerCommand) {
+    ask(Ask::Player(path.to_owned(), command));
+}
+
+/// The devices' players as media sources. One whose position and state did
+/// not move keeps the moment it was read at, so its clock runs on unbroken.
+fn remotes(state: &fs_bluez::state::State, last: &[Remote]) -> Vec<Remote> {
+    let now = Instant::now();
+    state
+        .players()
+        .iter()
+        .map(|p| {
+            let r = Remote::from(p, state.device(&p.device).as_ref(), now);
+            match last.iter().find(|l| l.path == r.path) {
+                Some(l) if l.position == r.position && l.playing == r.playing => Remote { at: l.at, ..r },
+                _ => r,
+            }
+        })
+        .collect()
 }
 
 enum Done {
@@ -201,6 +226,7 @@ pub async fn run(ctx: Ctx) {
     let mut last: Option<Bluetooth> = None;
     let mut last_shown: Vec<String> = Vec::new();
     let mut last_buds: Option<Vec<fs_devices::bluetooth::Device>> = None;
+    let mut last_remotes: Vec<Remote> = Vec::new();
     loop {
         // A signal no surface reads costs its own apply in fs-bluez and the
         // wake here, never a copy of the state.
@@ -233,6 +259,11 @@ pub async fn run(ctx: Ctx) {
                 ctx.publish(store::Diff::Devices(super::Diff::Bluetooth(view.clone())));
                 last = Some(view);
                 last_shown = shown;
+            }
+            let next = remotes(&snap, &last_remotes);
+            if next != last_remotes {
+                ctx.publish(store::Diff::Media(media::Diff::Remotes(next.clone())));
+                last_remotes = next;
             }
             let buds = bluez.earbuds_devices(over.as_deref());
             if last_buds.as_ref() != Some(&buds) {
@@ -290,6 +321,14 @@ pub async fn run(ctx: Ctx) {
                     eprintln!("bluetooth: {err}");
                 }
             }),
+            Wake::Ask(Ask::Player(path, command)) => {
+                let b = bluez.clone();
+                ctx.spawn(async move {
+                    if let Err(err) = b.player_command(&path, command).await {
+                        eprintln!("bluetooth: {command:?} on {path}: {err}");
+                    }
+                });
+            }
             Wake::Ask(Ask::Run(address, kind)) => {
                 if action.is_some() {
                     continue;

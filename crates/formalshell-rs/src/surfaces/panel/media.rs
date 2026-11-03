@@ -77,13 +77,14 @@ fn source_icon(kind: &str) -> &'static str {
         "radio" => "radio",
         "iphone" => "smartphone",
         "airplay" => "airplay",
+        "bluetooth" => "bluetooth",
         "stream" => "audio-lines",
         _ => "music",
     }
 }
 
 fn has_timeline(a: &Active) -> bool {
-    a.kind == "mpris" || (a.kind == "iphone" && a.length > 0.0)
+    a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && a.length > 0.0)
 }
 
 /// The transport, in the order the buttons draw: Kopuz's actions, by their

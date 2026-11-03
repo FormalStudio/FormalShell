@@ -13,8 +13,8 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 use zbus::{Connection, MatchRule, Message, MessageStream};
 
 use crate::agent::{AGENT_PATH, Agent, AgentRequest, Capability};
-use crate::proxies::{Adapter1Proxy, AgentManager1Proxy, Device1Proxy};
-use crate::state::{ADAPTER_IFACE, Activity, BATTERY_IFACE, DEVICE_IFACE, Device, Event, Props, State};
+use crate::proxies::{Adapter1Proxy, AgentManager1Proxy, Device1Proxy, MediaPlayer1Proxy};
+use crate::state::{ADAPTER_IFACE, Activity, BATTERY_IFACE, DEVICE_IFACE, Device, Event, PLAYER_IFACE, Props, State};
 
 const BLUEZ: &str = "org.bluez";
 
@@ -58,6 +58,15 @@ impl Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// What a remote's `MediaPlayer1` is asked to do. AVRCP has no toggle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerCommand {
+    Play,
+    Pause,
+    Next,
+    Previous,
+}
 
 type Shared = Arc<Mutex<State>>;
 
@@ -255,6 +264,16 @@ impl Bluez {
         Ok(self.adapter(&d.adapter).await?.remove_device(&path).await?)
     }
 
+    pub async fn player_command(&self, path: &str, command: PlayerCommand) -> Result<()> {
+        let p = MediaPlayer1Proxy::builder(&self.conn).path(path.to_string())?.build().await?;
+        Ok(match command {
+            PlayerCommand::Play => p.play().await,
+            PlayerCommand::Pause => p.pause().await,
+            PlayerCommand::Next => p.next().await,
+            PlayerCommand::Previous => p.previous().await,
+        }?)
+    }
+
     /// Serves an `Agent1` and makes it BlueZ's default. Requests arrive on
     /// the returned receiver until `unregister_agent`.
     pub async fn register_agent(&self, capability: Capability) -> Result<Receiver<AgentRequest>> {
@@ -315,8 +334,8 @@ fn handle_signal(state: &Shared, events: &Sender<Event>, msg: &Message) {
 }
 
 /// The streams for one subscription: everything from BlueZ, or the object
-/// manager's adds and removes, adapter and battery changes, and `Device1`
-/// changes on the known paths alone.
+/// manager's adds and removes, adapter, battery and media player changes,
+/// and `Device1` changes on the known paths alone.
 async fn subscribe(conn: &Connection, wide: bool, known: &BTreeSet<String>) -> zbus::Result<Vec<Pin<Box<MessageStream>>>> {
     let base = || MatchRule::builder().msg_type(MessageType::Signal).sender(BLUEZ);
     let changed = || base()?.interface("org.freedesktop.DBus.Properties")?.member("PropertiesChanged");
@@ -327,6 +346,7 @@ async fn subscribe(conn: &Connection, wide: bool, known: &BTreeSet<String>) -> z
         rules.push(base()?.interface("org.freedesktop.DBus.ObjectManager")?.build());
         rules.push(changed()?.arg(0, ADAPTER_IFACE)?.build());
         rules.push(changed()?.arg(0, BATTERY_IFACE)?.build());
+        rules.push(changed()?.arg(0, PLAYER_IFACE)?.build());
         for path in known {
             rules.push(changed()?.path(path.as_str())?.arg(0, DEVICE_IFACE)?.build());
         }

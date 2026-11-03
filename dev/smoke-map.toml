@@ -353,7 +353,7 @@ runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--panel 
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/bluetooth.rs", "crates/formalshell-rs/src/services/devices/bluetooth.rs", "crates/formalshell-rs/src/ipc/bluetooth.rs", "crates/fs-devices/src/bluetooth.rs", "crates/fs-bluez/**"]
-runs = ["--idle --bluez-rssi", "--headset-card"]
+runs = ["--idle --bluez-rssi", "--headset-card", "--bluez-player"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/headset.rs", "crates/formalshell-rs/src/wayland/headset.rs", "crates/formalshell-rs/src/services/devices/headsets.rs", "crates/formalshell-rs/src/ipc/headset.rs"]
@@ -365,7 +365,7 @@ runs = ["--earbuds", "--headset-card"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshell-rs/src/services/media.rs", "crates/formalshell-rs/src/ipc/media.rs", "crates/fs-media/src/media.rs", "crates/fs-media/src/lib.rs", "crates/fs-mpris/**", "crates/formalshell-rs/src/services/cover.rs", "crates/formalshell-rs/src/services/kopuz.rs"]
-runs = ["--media", "--media-progress", "--lock-media"]
+runs = ["--media", "--media-progress", "--lock-media", "--bluez-player"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-kopuz/**", "crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshell-rs/src/ipc/media.rs", "dev/kopuz-stub.py"]
@@ -433,7 +433,7 @@ runs = ["--settings-ui", "--settings-ui --light"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/launcher.rs", "crates/formalshell-rs/src/wayland/launcher.rs", "crates/formalshell-rs/src/surfaces/panel/host.rs", "crates/formalshell-rs/src/surfaces/panel/mod.rs", "crates/formalshell-rs/src/ipc/panel.rs"]
-runs = ["--settings-ui"]
+runs = ["--settings-ui", "--bluez-player"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/formalshell-rs/src/services/overrides.rs", "crates/formalshell-rs/src/ipc/settings.rs", "crates/formalshell-rs/src/services/config.rs", "crates/formalshell-rs/src/services/state.rs"]
@@ -656,6 +656,10 @@ runs = ["--gpu", "--monitor"]
 [[rule]]
 paths = ["dev/bluez-stub.py"]
 runs = ["--idle --bluez-rssi"]
+
+[[rule]]
+paths = ["dev/bluez-player-stub.py"]
+runs = ["--bluez-player"]
 
 [[rule]]
 paths = ["dev/vpointer.py"]

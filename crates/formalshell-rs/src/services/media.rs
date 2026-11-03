@@ -1,9 +1,12 @@
 //! Every source the bar reads now-playing from, behind one
-//! active pick. Four kinds share the row list: an MPRIS player (fs-mpris),
-//! the radio's own mpv (`radio`), the phone's Apple Media Service (`ams`) and
-//! AirPlay's receiver (`airplay`). An app playing with no MPRIS is a
-//! `stream:<node id>` row, listed from the audio graph only while the media
-//! panel is open or one is picked, and only ever picked by hand.
+//! active pick. Five kinds share the row list: an MPRIS player (fs-mpris),
+//! the radio's own mpv (`radio`), the phone's Apple Media Service (`ams`),
+//! AirPlay's receiver (`airplay`) and a Bluetooth device's AVRCP player
+//! (`bluez:<address>`, BlueZ's `MediaPlayer1` read in `devices::bluetooth`).
+//! An app playing with no MPRIS is a `stream:<node id>` row, listed from the
+//! audio graph only while the media panel is open or one is picked, and only
+//! ever picked by hand; the stream a Bluetooth device plays into is its
+//! player's, never a row of its own.
 //!
 //! `selected` is the one piece of state the UI owns; every source's own
 //! state is published whole by its service.
@@ -15,7 +18,10 @@ use fs_media::media::{self as pick, LabelledRow, PlayerRow};
 use fs_mpris::{LoopStatus, Mpris, PlayerState};
 use serde_json::{Value, json};
 
+use fs_bluez::PlayerCommand;
+
 use super::devices::audio::{self, Routing, StreamInfo};
+use super::devices::bluetooth;
 use super::{airplay, ams, kopuz, radio, visualizer};
 use crate::runtime::Ctx;
 use crate::store;
@@ -150,6 +156,65 @@ impl Player {
     }
 }
 
+/// A Bluetooth device's AVRCP player, named after the device: the app on
+/// it ("YouTube") is only what it happens to be playing through.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Remote {
+    /// `bluez:<the device's address>`.
+    pub id: String,
+    /// The `MediaPlayer1` object, which the transport goes to.
+    pub path: String,
+    /// The device's identity address, the one its PipeWire node carries
+    /// (the object path can carry a random resolvable one instead).
+    pub address: String,
+    pub label: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub playing: bool,
+    /// Seconds at `at`; `position_now` carries it forward while playing.
+    pub position: f64,
+    pub at: Instant,
+    /// 0 when the remote sends no duration.
+    pub length: f64,
+}
+
+impl Remote {
+    pub fn from(p: &fs_bluez::state::Player, device: Option<&fs_bluez::state::Device>, at: Instant) -> Self {
+        let address = device.map(|d| d.info.address.clone()).unwrap_or_default();
+        let label = device.map(|d| if d.info.name.is_empty() { d.info.device_name.clone() } else { d.info.name.clone() }).filter(|l| !l.is_empty()).unwrap_or_else(|| address.clone());
+        Self {
+            id: format!("bluez:{address}"),
+            path: p.path.clone(),
+            address,
+            label,
+            title: p.title.clone(),
+            artist: p.artist.clone(),
+            album: p.album.clone(),
+            playing: p.playing(),
+            position: p.position.as_secs_f64(),
+            at,
+            length: p.duration.map_or(0.0, |d| d.as_secs_f64()),
+        }
+    }
+
+    pub fn position_now(&self, now: Instant) -> f64 {
+        if !self.playing {
+            return self.position;
+        }
+        let at = self.position + now.saturating_duration_since(self.at).as_secs_f64();
+        if self.length > 0.0 { at.min(self.length) } else { at }
+    }
+
+    /// Whether `node` (a PipeWire node.name) is the stream this device
+    /// plays into: BlueZ's PipeWire plugin names it
+    /// `bluez_input.<address, colons as underscores>.<profile>`.
+    fn plays_into(&self, node: &str) -> bool {
+        let want = format!("bluez_input.{}", self.address.replace(':', "_"));
+        !self.address.is_empty() && node.get(..want.len()).is_some_and(|n| n.eq_ignore_ascii_case(&want))
+    }
+}
+
 /// Seconds a polled position may sit off the player's own clock and still
 /// be the same playback.
 const SEEK_SLACK: f64 = 0.25;
@@ -184,7 +249,8 @@ pub struct State {
     pub ams: ams::State,
     /// kopuzd's row, whatever track it is; `kopuz()` is the matched one.
     pub kopuz: kopuz::State,
-    /// A bus name, "radio", "iphone" or "airplay"; "" is auto.
+    pub remotes: Vec<Remote>,
+    /// A bus name, "radio", "iphone", "airplay" or a `bluez:` id; "" is auto.
     pub selected: String,
     /// The sinks and playback streams, published while something wants them.
     pub routing: Routing,
@@ -201,6 +267,7 @@ pub enum Diff {
     Airplay(airplay::State),
     Ams(ams::State),
     Kopuz(kopuz::State),
+    Remotes(Vec<Remote>),
     Cover(String, u32, Option<crate::scene::Bitmap>),
     /// The animated cover's latest frame by album key, none once it stopped.
     Motion(Option<(String, Vec<crate::scene::Bitmap>)>),
@@ -252,6 +319,7 @@ impl State {
                 !same
             }
             Diff::Radio(next) => std::mem::replace(&mut self.radio, next) != self.radio,
+            Diff::Remotes(next) => std::mem::replace(&mut self.remotes, next) != self.remotes,
             Diff::Airplay(next) => std::mem::replace(&mut self.airplay, next) != self.airplay,
             Diff::Ams(next) => {
                 let same = ams_same(&self.ams, &next);
@@ -325,6 +393,9 @@ impl State {
         if self.ams.listed() {
             rows.push(row("iphone", "iphone", "iPhone", self.ams.playing()));
         }
+        for r in &self.remotes {
+            rows.push(row(&r.id, "bluetooth", &r.label, r.playing));
+        }
         // isPlaying stays false: UxPlay reports no pause state at all.
         if self.airplay.active && !self.airplay.title.is_empty() {
             rows.push(row("airplay", "airplay", "AirPlay", false));
@@ -339,10 +410,14 @@ impl State {
     }
 
     /// Whose a playback stream is: the radio's by the client name its mpv
-    /// stamps on it, a player's by name, "" for an app with no MPRIS.
+    /// stamps on it, a Bluetooth device's by its node name, a player's by
+    /// name, "" for an app with no MPRIS.
     fn stream_owner(&self, s: &StreamInfo, mpris: &[PlayerRow]) -> String {
         if s.keys[0].as_deref() == Some(radio::CLIENT_NAME) {
             return "radio".into();
+        }
+        if let Some(r) = self.remotes.iter().find(|r| s.keys[3].as_deref().is_some_and(|n| r.plays_into(n))) {
+            return r.id.clone();
         }
         let keys: Vec<Option<&str>> = s.keys.iter().map(|k| k.as_deref()).collect();
         pick::stream_owner(&keys, mpris)
@@ -476,6 +551,23 @@ impl State {
                 };
                 Active { kind: "airplay", identity: label, title: a.title.clone(), artist: a.artist.clone(), album: a.album.clone(), art_url, ..base }
             }
+            remote if remote.starts_with("bluez:") => {
+                let r = self.remotes.iter().find(|r| r.id == remote)?;
+                Active {
+                    kind: "bluetooth",
+                    identity: label,
+                    title: r.title.clone(),
+                    artist: r.artist.clone(),
+                    album: r.album.clone(),
+                    playing: r.playing,
+                    position: r.position_now(now),
+                    length: r.length,
+                    can_next: true,
+                    can_previous: true,
+                    volume: self.routed_streams().first().and_then(|s| s.volume).map(pick::clamp_volume),
+                    ..base
+                }
+            }
             stream if stream.starts_with("stream:") => {
                 let s = self.routing.streams.iter().find(|s| format!("stream:{}", s.id) == stream)?;
                 Active {
@@ -597,7 +689,15 @@ impl State {
         self.mpris.iter().find(|p| p.id == id)
     }
 
+    fn remote_active(&self) -> Option<&Remote> {
+        let id = self.active_id();
+        self.remotes.iter().find(|r| r.id == id)
+    }
+
     pub fn play_pause(&self) {
+        if let Some(r) = self.remote_active() {
+            return bluetooth::player(&r.path, if r.playing { PlayerCommand::Pause } else { PlayerCommand::Play });
+        }
         match self.active_id().as_str() {
             "radio" => radio::send(radio::Cmd::Toggle),
             "iphone" => {
@@ -612,6 +712,9 @@ impl State {
     }
 
     pub fn next(&self) {
+        if let Some(r) = self.remote_active() {
+            return bluetooth::player(&r.path, PlayerCommand::Next);
+        }
         match self.active_id().as_str() {
             "radio" => radio::send(radio::Cmd::Next),
             "iphone" => {
@@ -626,6 +729,9 @@ impl State {
     }
 
     pub fn previous(&self) {
+        if let Some(r) = self.remote_active() {
+            return bluetooth::player(&r.path, PlayerCommand::Previous);
+        }
         match self.active_id().as_str() {
             "radio" => radio::send(radio::Cmd::Previous),
             "iphone" => {
@@ -674,6 +780,11 @@ impl State {
             "stream" => {
                 if let Some(node) = a.id.strip_prefix("stream:").and_then(|n| n.parse().ok()) {
                     audio::write(fs_audio::Command::SetVolume { node, volume: v as f32 });
+                }
+            }
+            "bluetooth" => {
+                for s in self.routed_streams() {
+                    audio::write(fs_audio::Command::SetVolume { node: s.id, volume: v as f32 });
                 }
             }
             _ => {}
@@ -917,6 +1028,48 @@ mod tests {
         s.radio.output = "sink-b".into();
         assert_eq!(s.output_id(), "sink-b");
         assert_eq!(s.outputs_json().to_string(), r#"[{"id":"sink-a","label":"Speakers"},{"id":"sink-b","label":"Headset"}]"#);
+    }
+
+    fn remote(playing: bool) -> Remote {
+        Remote {
+            id: "bluez:C8:89:F3:45:A7:AA".into(),
+            path: "/org/bluez/hci0/dev_4A_DC_C3_A2_75_EC/avrcp/player0".into(),
+            address: "C8:89:F3:45:A7:AA".into(),
+            label: "FormalPad".into(),
+            title: "OLED iPad Mini".into(),
+            artist: "Marques Brownlee".into(),
+            album: String::new(),
+            playing,
+            position: 359.686,
+            at: Instant::now(),
+            length: 779.141,
+        }
+    }
+
+    #[test]
+    fn a_bluetooth_player_is_a_source_and_its_stream_is_no_row_of_its_own() {
+        let mut s = routed();
+        s.mpris[0].playing = false;
+        s.routing.streams.push(StreamInfo {
+            id: 42,
+            keys: [None, None, None, Some("bluez_input.C8_89_F3_45_A7_AA.2".into())],
+            label: "FormalPad".into(),
+            title: String::new(),
+            volume: Some(0.8),
+            target: "sink-b".into(),
+        });
+        assert!(s.players().iter().any(|r| r.id == "stream:42"));
+        s.remotes = vec![remote(true)];
+        let rows = s.players();
+        assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), ["org.mpris.MediaPlayer2.mpv", "bluez:C8:89:F3:45:A7:AA", "stream:41"]);
+        assert_eq!((rows[1].kind.as_str(), rows[1].label.as_str(), rows[1].auto), ("bluetooth", "FormalPad", true));
+        assert_eq!(s.active_id(), "bluez:C8:89:F3:45:A7:AA");
+        let a = s.active().unwrap();
+        assert_eq!((a.kind, a.title.as_str(), a.artist.as_str(), a.playing, a.volume), ("bluetooth", "OLED iPad Mini", "Marques Brownlee", true, Some(0.8)));
+        assert!(a.position >= 359.686 && a.length == 779.141 && !a.can_seek && a.can_next);
+        assert_eq!((s.output_id().as_str(), s.can_route()), ("sink-b", true));
+        s.remotes = vec![remote(false)];
+        assert_eq!(s.active_id(), "org.mpris.MediaPlayer2.mpv");
     }
 
     #[test]

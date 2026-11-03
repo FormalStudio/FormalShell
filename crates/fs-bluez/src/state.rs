@@ -3,6 +3,7 @@
 //! `InterfacesAdded/Removed` and `PropertiesChanged`, and gets events back.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::time::Duration;
 
 use fs_devices::bluetooth::{self, DeviceState};
 use zbus::zvariant::{OwnedValue, Value};
@@ -12,6 +13,7 @@ pub type Props = HashMap<String, OwnedValue>;
 pub const ADAPTER_IFACE: &str = "org.bluez.Adapter1";
 pub const DEVICE_IFACE: &str = "org.bluez.Device1";
 pub const BATTERY_IFACE: &str = "org.bluez.Battery1";
+pub const PLAYER_IFACE: &str = "org.bluez.MediaPlayer1";
 
 /// The adapter state, read off `PowerState` when BlueZ
 /// reports one (5.65+) and off `Powered` otherwise.
@@ -49,6 +51,34 @@ pub struct Device {
     pub rssi: Option<i16>,
 }
 
+/// A remote's AVRCP target (`MediaPlayer1`, a phone or tablet streaming
+/// to this machine): what the app on it is playing.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Player {
+    pub path: String,
+    /// The owning `Device1`'s path.
+    pub device: String,
+    /// The app playing on the remote ("YouTube").
+    pub name: String,
+    /// `playing`, `stopped`, `paused`, `forward-seek`, `reverse-seek` or
+    /// `error`.
+    pub status: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    /// `Track.Duration`, absent when the target sends none.
+    pub duration: Option<Duration>,
+    /// As of BlueZ's last `Position`; the remote's clock runs on from it
+    /// while playing.
+    pub position: Duration,
+}
+
+impl Player {
+    pub fn playing(&self) -> bool {
+        self.status == "playing"
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     AdapterAdded(Adapter),
@@ -57,6 +87,8 @@ pub enum Event {
     DeviceAdded(Device),
     DeviceChanged(Device),
     DeviceRemoved { path: String, address: String },
+    PlayerChanged(Player),
+    PlayerRemoved { path: String },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,13 +124,23 @@ impl Entry {
 pub struct State {
     adapters: BTreeMap<String, Adapter>,
     devices: BTreeMap<String, Entry>,
+    players: BTreeMap<String, Player>,
+}
+
+/// A value out of an `a{sv}` nested in a property (`Track`'s) is still
+/// wrapped in its variant.
+fn unwrapped<'a>(v: &'a Value<'a>) -> &'a Value<'a> {
+    match v {
+        Value::Value(inner) => unwrapped(inner),
+        v => v,
+    }
 }
 
 fn get<'a, T>(props: &'a Props, key: &str) -> Option<T>
 where
     T: TryFrom<&'a Value<'a>>,
 {
-    props.get(key).and_then(|v| T::try_from(&**v).ok())
+    props.get(key).and_then(|v| T::try_from(unwrapped(v)).ok())
 }
 
 fn get_string(props: &Props, key: &str) -> Option<String> {
@@ -106,7 +148,7 @@ fn get_string(props: &Props, key: &str) -> Option<String> {
 }
 
 fn get_path(props: &Props, key: &str) -> Option<String> {
-    match &**props.get(key)? {
+    match unwrapped(props.get(key)?) {
         Value::ObjectPath(p) => Some(p.to_string()),
         _ => None,
     }
@@ -187,6 +229,29 @@ fn apply_device(d: &mut Device, props: &Props, invalidated: &[String]) {
     }
 }
 
+/// `Position` and `Track.Duration` are milliseconds on the wire. A new
+/// `Track` replaces the whole of the last one.
+fn apply_player(p: &mut Player, props: &Props) {
+    if let Some(v) = get_path(props, "Device") {
+        p.device = v;
+    }
+    if let Some(v) = get_string(props, "Name") {
+        p.name = v;
+    }
+    if let Some(v) = get_string(props, "Status") {
+        p.status = v;
+    }
+    if let Some(v) = get::<u32>(props, "Position") {
+        p.position = Duration::from_millis(v.into());
+    }
+    if let Some(track) = props.get("Track").and_then(|v| v.try_clone().ok()).and_then(|v| Props::try_from(v).ok()) {
+        p.title = get_string(&track, "Title").unwrap_or_default();
+        p.artist = get_string(&track, "Artist").unwrap_or_default();
+        p.album = get_string(&track, "Album").unwrap_or_default();
+        p.duration = get::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
+    }
+}
+
 /// `Battery1.Percentage` is 0..100; the shell's models hold a 0..1 fraction.
 fn apply_battery(d: &mut Device, props: &Props, invalidated: &[String]) {
     if let Some(p) = get::<u8>(props, "Percentage") {
@@ -214,6 +279,7 @@ pub fn matters(e: &Event, open: bool, shown: &[String]) -> bool {
         Event::DeviceAdded(d) | Event::DeviceChanged(d) => open || known(&d.info) || shown.contains(&d.info.address),
         Event::DeviceRemoved { address, .. } => open || shown.contains(address),
         Event::AdapterAdded(_) | Event::AdapterChanged(_) | Event::AdapterRemoved { .. } => true,
+        Event::PlayerChanged(_) | Event::PlayerRemoved { .. } => true,
     }
 }
 
@@ -239,6 +305,10 @@ impl State {
     /// The first adapter by object path, which is the default adapter.
     pub fn default_adapter(&self) -> Option<&Adapter> {
         self.adapters.values().next()
+    }
+
+    pub fn players(&self) -> Vec<Player> {
+        self.players.values().cloned().collect()
     }
 
     pub fn device(&self, path: &str) -> Option<Device> {
@@ -270,8 +340,10 @@ impl State {
             .map(|e| Event::DeviceRemoved { path: e.device.info.dbus_path.clone(), address: e.device.info.address.clone() })
             .collect();
         out.extend(self.adapters.keys().map(|p| Event::AdapterRemoved { path: p.clone() }));
+        out.extend(self.players.keys().map(|p| Event::PlayerRemoved { path: p.clone() }));
         self.devices.clear();
         self.adapters.clear();
+        self.players.clear();
         out
     }
 
@@ -302,8 +374,17 @@ impl State {
                 if known { changed(before, e) } else { vec![Event::DeviceAdded(e.view())] }
             }
             BATTERY_IFACE => self.battery(path, props, &[]),
+            PLAYER_IFACE => self.player(path, props),
             _ => vec![],
         }
+    }
+
+    fn player(&mut self, path: &str, props: &Props) -> Vec<Event> {
+        let known = self.players.contains_key(path);
+        let p = self.players.entry(path.to_string()).or_insert_with(|| Player { path: path.to_string(), ..Default::default() });
+        let before = p.clone();
+        apply_player(p, props);
+        if known && *p == before { vec![] } else { vec![Event::PlayerChanged(p.clone())] }
     }
 
     /// One object's whole interface map, as `InterfacesAdded` and
@@ -348,6 +429,7 @@ impl State {
                 changed(before, e)
             }
             BATTERY_IFACE => self.battery(path, props, invalidated),
+            PLAYER_IFACE if self.players.contains_key(path) => self.player(path, props),
             _ => vec![],
         }
     }
@@ -367,6 +449,7 @@ impl State {
                     }
                 }
                 BATTERY_IFACE => out.extend(self.battery(path, &Props::new(), &["Percentage".to_string()])),
+                PLAYER_IFACE if self.players.remove(path).is_some() => out.push(Event::PlayerRemoved { path: path.to_string() }),
                 _ => {}
             }
         }
@@ -403,6 +486,14 @@ impl State {
                 None => out.push(Event::DeviceAdded(e.view())),
                 Some(old) if old != e.view() => out.push(Event::DeviceChanged(e.view())),
                 _ => {}
+            }
+        }
+        for path in self.players.keys().filter(|p| !fresh.players.contains_key(*p)) {
+            out.push(Event::PlayerRemoved { path: path.clone() });
+        }
+        for (path, p) in &fresh.players {
+            if self.players.get(path) != Some(p) {
+                out.push(Event::PlayerChanged(p.clone()));
             }
         }
         *self = fresh;
@@ -645,6 +736,48 @@ mod tests {
         assert!(ev.iter().any(|e| matches!(e, Event::AdapterRemoved { .. })));
         assert!(ev.iter().any(|e| matches!(e, Event::DeviceChanged(d) if d.info.trusted)));
         assert_eq!(s.device(DEV).unwrap().info.state, DeviceState::Connecting);
+    }
+
+    const PLAYER: &str = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF/avrcp/player0";
+
+    fn track(title: &'static str, duration_ms: u32) -> Value<'static> {
+        let mut t: HashMap<&'static str, Value<'static>> = HashMap::new();
+        t.insert("Title", title.into());
+        t.insert("Artist", "Marques Brownlee".into());
+        t.insert("Duration", duration_ms.into());
+        Value::from(t)
+    }
+
+    #[test]
+    fn a_player_reads_its_track_in_milliseconds_and_goes_with_its_interface() {
+        let mut s = seeded();
+        let ev = s.interface_added(
+            PLAYER,
+            PLAYER_IFACE,
+            &props(vec![
+                ("Device", Value::ObjectPath(ObjectPath::try_from(DEV).unwrap())),
+                ("Name", "YouTube".into()),
+                ("Status", "playing".into()),
+                ("Position", 359_686u32.into()),
+                ("Track", track("OLED iPad Mini", 779_141)),
+            ]),
+        );
+        let [Event::PlayerChanged(p)] = &ev[..] else { panic!("{ev:?}") };
+        assert_eq!((p.device.as_str(), p.name.as_str(), p.title.as_str(), p.artist.as_str()), (DEV, "YouTube", "OLED iPad Mini", "Marques Brownlee"));
+        assert!(p.playing() && p.album.is_empty());
+        assert_eq!((p.position, p.duration), (Duration::from_millis(359_686), Some(Duration::from_millis(779_141))));
+
+        let paused = props(vec![("Status", "paused".into())]);
+        assert_eq!(s.properties_changed(PLAYER, PLAYER_IFACE, &paused, &[]).len(), 1);
+        assert!(s.properties_changed(PLAYER, PLAYER_IFACE, &paused, &[]).is_empty());
+        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Next", 0))]), &[]);
+        let p = &s.players()[0];
+        assert_eq!((p.title.as_str(), p.duration, p.playing()), ("Next", None, false));
+
+        let ev = s.interfaces_removed(PLAYER, &[PLAYER_IFACE.to_string()]);
+        assert_eq!(ev, vec![Event::PlayerRemoved { path: PLAYER.into() }]);
+        assert!(s.players().is_empty());
+        assert!(s.properties_changed(PLAYER, PLAYER_IFACE, &paused, &[]).is_empty());
     }
 
     #[test]

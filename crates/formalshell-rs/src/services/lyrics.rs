@@ -154,7 +154,7 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
     let enabled = config.bool("media.lyrics").unwrap_or(true);
     let a = media.active();
     let ask = match &a {
-        Some(a) if enabled && (a.kind == "mpris" || (a.kind == "iphone" && a.length > 0.0)) && !a.title.is_empty() && !a.artist.is_empty() => Ask {
+        Some(a) if enabled && (a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && a.length > 0.0)) && !a.title.is_empty() && !a.artist.is_empty() => Ask {
             enabled,
             key: model::cache_key(&a.artist, &a.title, &a.album, a.length),
             artist: a.artist.clone(),

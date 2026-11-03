@@ -101,7 +101,7 @@ fn raise(app: &mut App, _: &[Value]) -> Value {
     text(OK)
 }
 
-/// A bus name, "radio", "iphone" or "airplay", exactly as `status` and
+/// A bus name, "radio", "iphone", "airplay" or a `bluez:` id, exactly as `status` and
 /// `players` report it; "" puts the pick back on auto. An unknown one is an
 /// error rather than a selection nothing can satisfy.
 fn select(app: &mut App, args: &[Value]) -> Value {
