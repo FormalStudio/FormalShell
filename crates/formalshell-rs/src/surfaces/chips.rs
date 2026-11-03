@@ -2,9 +2,9 @@
 //! chevron's (`wayland::Popout`): up to [`COLUMNS`] chips a row, the panel
 //! gap between them, each column as wide as its widest chip and no chip
 //! narrower than it is tall. A card held to a width (the sidebar's foot)
-//! wraps its chips row by row at their own widths instead, each row
-//! centred, since one wide chip would otherwise hold every row to one
-//! column.
+//! lays its chips on a grid of equal cells that fills that width, a chip
+//! spanning as many cells as its own width needs and taking the first run
+//! of free cells, so every edge lines up with the ones above it.
 
 /// Chips to a row before the card wraps.
 pub const COLUMNS: usize = 8;
@@ -29,32 +29,29 @@ pub fn grid(widths: &[f64], height: f64, gap: f64, within: Option<f64>) -> (Vec<
     }
 }
 
-/// Rows filled in order while the next chip fits, each centred in `within`.
+/// Equal cells `height` tall, as many to a row as `within` holds and
+/// stretched to fill it; each chip, in order, in the first free run of the
+/// cells it spans, rows left open behind a wide chip filled by the next
+/// narrow one.
 fn wrap(widths: &[f64], height: f64, gap: f64, within: f64) -> (Vec<Place>, (f64, f64)) {
-    let widths: Vec<f64> = widths.iter().map(|w| w.max(height)).collect();
-    let mut rows: Vec<Vec<usize>> = vec![Vec::new()];
-    let mut run = 0.0;
-    for (i, w) in widths.iter().enumerate() {
-        let row = rows.last_mut().expect("one row at least");
-        let next = if row.is_empty() { *w } else { run + gap + w };
-        if row.is_empty() || next <= within {
-            row.push(i);
-            run = next;
-        } else {
-            rows.push(vec![i]);
-            run = *w;
-        }
+    let cols = (((within + gap) / (height + gap)).floor() as usize).max(1);
+    let cell = (within - gap * (cols - 1) as f64) / cols as f64;
+    let mut taken: Vec<Vec<bool>> = Vec::new();
+    let mut at = Vec::with_capacity(widths.len());
+    for w in widths {
+        let span = (((w + gap) / (cell + gap)).ceil() as usize).clamp(1, cols);
+        let (row, col) = (0..)
+            .find_map(|r| {
+                if r == taken.len() {
+                    taken.push(vec![false; cols]);
+                }
+                (0..=cols - span).find(|&c| !taken[r][c..c + span].iter().any(|&t| t)).map(|c| (r, c))
+            })
+            .expect("a fresh row always has room");
+        taken[row][col..col + span].fill(true);
+        at.push((col as f64 * (cell + gap), row as f64 * (height + gap), span as f64 * cell + (span - 1) as f64 * gap));
     }
-    let mut at = vec![(0.0, 0.0, 0.0); widths.len()];
-    for (r, row) in rows.iter().enumerate() {
-        let span = row.iter().map(|&i| widths[i]).sum::<f64>() + gap * (row.len() - 1) as f64;
-        let mut x = ((within - span) / 2.0).max(0.0);
-        for &i in row {
-            at[i] = (x, r as f64 * (height + gap), widths[i]);
-            x += widths[i] + gap;
-        }
-    }
-    let n = rows.len() as f64;
+    let n = taken.len() as f64;
     (at, (within, n * height + gap * (n - 1.0)))
 }
 
@@ -102,15 +99,18 @@ mod tests {
     }
 
     #[test]
-    fn a_held_width_wraps_row_by_row_with_each_row_centred() {
-        // 20 20 | 50 | 20 20 in 50: a wide chip takes a row of its own.
-        let (at, size) = grid(&[20.0, 20.0, 50.0, 20.0, 10.0], 20.0, 4.0, Some(50.0));
-        assert_eq!(size, (50.0, 68.0));
-        assert_eq!(at[0], (3.0, 0.0, 20.0));
-        assert_eq!(at[1], (27.0, 0.0, 20.0));
-        assert_eq!(at[2], (0.0, 24.0, 50.0));
-        assert_eq!(at[4], (27.0, 48.0, 20.0));
-        // A chip wider than the room still gets a row.
-        assert_eq!(grid(&[60.0], 20.0, 4.0, Some(50.0)).1, (50.0, 20.0));
+    fn a_held_width_lays_equal_cells_and_fills_the_gaps_a_wide_chip_leaves() {
+        // 68 holds three 20 cells; 40 spans two, so the second 40 fits only
+        // under the first and the 10 fills the cell the first left on its row.
+        let (at, size) = grid(&[20.0, 20.0, 20.0, 40.0, 40.0, 10.0], 20.0, 4.0, Some(68.0));
+        assert_eq!(at[0], (0.0, 0.0, 20.0));
+        assert_eq!(at[2], (48.0, 0.0, 20.0));
+        assert_eq!(at[3], (0.0, 24.0, 44.0));
+        assert_eq!(at[4], (0.0, 48.0, 44.0));
+        assert_eq!(at[5], (48.0, 24.0, 20.0));
+        assert_eq!(size, (68.0, 68.0));
+        // The cells stretch to the width, and a chip wider than it spans the row.
+        assert_eq!(grid(&[10.0], 20.0, 4.0, Some(50.0)).0[0], (0.0, 0.0, 23.0));
+        assert_eq!(grid(&[90.0], 20.0, 4.0, Some(50.0)), (vec![(0.0, 0.0, 50.0)], (50.0, 20.0)));
     }
 }
