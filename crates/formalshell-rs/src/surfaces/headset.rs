@@ -6,8 +6,9 @@
 //! is the buds' lower level where the backend reports a pair, as macOS
 //! shows one.
 //!
-//! The capsule is the same size whatever fills it, so a backend reporting
-//! after the card is up never moves it.
+//! The capsule is as wide as the name it opens with needs, as macOS's is,
+//! between four slots and `popupWidthNarrow`, and keeps that width while it
+//! is up, so a backend reporting later never moves it; a longer name elides.
 
 use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
 use fs_theme::color::Rgba;
@@ -161,9 +162,15 @@ fn level(f: &Face) -> Option<f64> {
     .or_else(|| of("Case"))
 }
 
-/// The capsule's (width, height): `popupWidthNarrow` by a slot and its padding.
-pub fn size(theme: &Theme) -> (f64, f64) {
-    (theme.space.popup_width_narrow, slot(theme) + pad(theme) * 2.0)
+/// The capsule's (width, height): the picture's and the ring's slots, the
+/// gaps beside the words and the wider of its two lines, by a slot and its
+/// padding.
+pub fn size(f: &Face, theme: &Theme, kit: &mut Kit) -> (f64, f64) {
+    let (p, n) = (pad(theme), slot(theme));
+    let mut wide = |el: El| ui::measure(&el, f64::MAX, theme, kit).0;
+    let words = wide(w::label(f.name.clone())).max(wide(w::text("Connected")));
+    let width = (p + n + theme.space.md) * 2.0 + words;
+    (width.clamp(n * 4.0 + p * 2.0, theme.space.popup_width_narrow).ceil(), n + p * 2.0)
 }
 
 /// The picture and the words; the ring's slot is held empty for

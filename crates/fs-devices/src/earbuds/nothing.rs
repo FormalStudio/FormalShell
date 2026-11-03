@@ -466,7 +466,7 @@ pub fn normalise(state: &State, failure: &str) -> Device {
         key: format!("{BACKEND}:{}", state.address),
         backend: BACKEND.into(),
         address: state.address.clone(),
-        name: if state.name.is_empty() { state.model.name.clone() } else { state.name.clone() },
+        name: shown_name(&state.name, &state.model.name),
         kind: state.model.kind,
         connected: true,
         batteries: state
@@ -482,6 +482,12 @@ pub fn normalise(state: &State, failure: &str) -> Device {
         },
         art: art(&state.model),
     })
+}
+
+/// The device's own name, or the model's where it has none or where it is
+/// the model's cut short: a CMF Headphone Pro advertises "CMF Head".
+fn shown_name(own: &str, model: &str) -> String {
+    if own.is_empty() || (model.len() > own.len() && model.starts_with(own)) { model } else { own }.to_string()
 }
 
 fn pick(available: &[String], value: &Value) -> Option<Token> {
@@ -556,6 +562,14 @@ mod tests {
 
     fn cmd(key: &str, value: impl Into<Value>, state: &State) -> Option<String> {
         command(key, &value.into(), Some(state)).map(|v| v.to_string())
+    }
+
+    #[test]
+    fn a_name_the_model_starts_with_reads_as_the_model() {
+        assert_eq!(shown_name("CMF Head", "CMF Headphone Pro"), "CMF Headphone Pro");
+        assert_eq!(shown_name("", "CMF Headphone Pro"), "CMF Headphone Pro");
+        assert_eq!(shown_name("Kyan's cans", "CMF Headphone Pro"), "Kyan's cans");
+        assert_eq!(shown_name("CMF Headphone Pro", "CMF Headphone Pro"), "CMF Headphone Pro");
     }
 
     #[test]

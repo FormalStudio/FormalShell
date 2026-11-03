@@ -18,9 +18,9 @@
 #     none.
 #  5. A pair of AirPods (the librepods status file staged first) raises a
 #     card wearing the backend's picture set where the headphone's wore
-#     none, both the same capsule (`debug dump`'s `headset`: one size, the
-#     radius half its height), and the pointer leaving the card dismisses
-#     it.
+#     none, both a capsule (`debug dump`'s `headset`: one height, the
+#     radius half of it) as wide as its name, the AirPods' the wider, and
+#     the pointer leaving the card dismisses it.
 #  6. Studio Cans, which no backend names, still has the earbuds service
 #     held to learn its picture set once Escape has taken its card down
 #     (`headset.learning`).
@@ -268,7 +268,10 @@ leg_headset_card_assert() {
   glyph=$("$jq_bin" -r '"\(.rest.w)x\(.rest.h) r\(.radius) art=\(.art)"' "$headset_bluez_dump" 2>/dev/null)
   pods=$("$jq_bin" -r '"\(.rest.w)x\(.rest.h) r\(.radius) art=\(.art)"' "$headset_airpods_dump" 2>/dev/null)
   echo "headset cards: glyph $glyph, airpods $pods"
-  [ "${glyph% art=*}" = "${pods% art=*}" ] || fail "headset: the two cards differ in size or radius ($glyph, $pods)"
+  "$jq_bin" -e --slurpfile p "$headset_airpods_dump" '.rest.h == $p[0].rest.h and .radius == $p[0].radius' "$headset_bluez_dump" > /dev/null \
+    || fail "headset: the two cards differ in height or radius ($glyph, $pods)"
+  "$jq_bin" -e --slurpfile p "$headset_airpods_dump" '.rest.w < $p[0].rest.w' "$headset_bluez_dump" > /dev/null \
+    || fail "headset: the card for \"Kyan's AirPods Pro\" is no wider than the one for \"Studio Cans\" ($glyph, $pods)"
   "$jq_bin" -e '.radius * 2 - .rest.h | fabs <= 1' "$headset_bluez_dump" > /dev/null || fail "headset: the card is not a capsule ($glyph)"
   [ "${glyph#*art=}" = "" ] && [ -n "${pods#*art=}" ] || fail "headset: the headphone wore '${glyph#*art=}', the AirPods '${pods#*art=}'"
   # The pointer leaving is what dismissed the pair.

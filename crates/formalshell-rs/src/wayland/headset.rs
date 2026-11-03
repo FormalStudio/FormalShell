@@ -206,7 +206,8 @@ impl App {
         let length = self.output_size().0;
         let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
         let line_at = if self.bar.edge() == Edge::Top { self.bar.thickness() as f64 } else { ft };
-        let mut card = Card::new(&theme, Edge::Top, length as i32, line_at, length / 2.0, headset::size(&theme), self.motion_scale, self.cast);
+        let size = headset::size(&headset::face(&self.store, address), &theme, &mut self.bar.kit);
+        let mut card = Card::new(&theme, Edge::Top, length as i32, line_at, length / 2.0, size, self.motion_scale, self.cast);
         card.capsule();
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
