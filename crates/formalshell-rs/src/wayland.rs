@@ -245,13 +245,6 @@ fn chips_grid(slots: &[Slot], look: &Look, within: Option<f64>) -> (Vec<crate::s
     crate::surfaces::chips::grid(&widths, look.chip_side, look.panel_gap, within)
 }
 
-/// `theme` with `motion.morph` off, for a card with no line to bud off.
-fn popover(theme: &fs_theme::theme::Theme) -> fs_theme::theme::Theme {
-    let mut theme = theme.clone();
-    theme.morph = false;
-    theme
-}
-
 /// A second bar's card size, along the bar's line and across it, padded.
 fn chips_size(slots: &[Slot], look: &Look, edge: Edge, cells: Edge) -> (f64, f64) {
     let (_, (main, cross)) = chips_grid(slots, look, None);
@@ -813,7 +806,7 @@ impl App {
         }
         for p in [&mut self.overflow, &mut self.menu].into_iter().flatten() {
             if p.rise.is_some() {
-                p.card.restyle(&popover(theme), self.cast);
+                p.card.restyle(&crate::surfaces::card::popover_theme(theme), self.cast);
             } else {
                 p.card.restyle(theme, self.cast);
             }
@@ -1120,7 +1113,7 @@ impl App {
                 let size = (rise.width, chips_grid(&slots, look, Some(rise.within(look))).1.1 + look.chip_inset * 2.0);
                 let cap = oh - line_at - theme.space.bar_margin - pad;
                 // A popover: no line runs along the foot's top for it to bud off.
-                let mut card = Card::new(&popover(theme), Edge::Bottom, rise.length, line_at, at, (size.0, cap.max(size.1)), self.motion_scale, self.cast);
+                let mut card = Card::new(&crate::surfaces::card::popover_theme(theme), Edge::Bottom, rise.length, line_at, at, (size.0, cap.max(size.1)), self.motion_scale, self.cast);
                 card.resize(now, at, rise.length, rise.pad, size);
                 (card, at, Some(rise))
             }

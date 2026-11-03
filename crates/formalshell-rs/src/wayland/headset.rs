@@ -28,15 +28,19 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Owner};
-use crate::motion::{Animated, SPATIAL};
 use crate::services::devices::earbuds;
 use crate::services::compositor;
-use crate::surfaces::card::{Card, Ends};
+use crate::surfaces::card::{Card, popover_theme};
 use crate::surfaces::headset;
 use crate::surfaces::popup::Popup;
 
 const HOLD: Duration = Duration::from_secs(4);
 const RECONNECT: Duration = Duration::from_secs(3);
+/// How long the earbuds service is held to learn a device's picture set:
+/// the backend's own quick-retry window (`services/devices/earbuds.rs`
+/// `QUICK_WINDOW`), since nothingctl can take ~40s to name a headphone that
+/// has just connected, far past the card's hold.
+const LEARN: Duration = Duration::from_secs(90);
 /// The Lua global holding the Escape bind.
 const ESCAPE: &str = "formalshell_headset_escape";
 
@@ -55,8 +59,27 @@ pub(super) struct Shown {
     /// The earbuds service and the Escape bind are held on this card's
     /// account.
     held: bool,
-    /// The card's width and height, on their way to the face's.
-    size: (Animated, Animated),
+}
+
+/// The earbuds service held past the card for a device whose picture set
+/// is not known yet, let go once the backend names it, the device leaves,
+/// or `LEARN` runs out.
+struct Learning {
+    address: String,
+    until: Instant,
+}
+
+impl Learning {
+    fn new(address: &str, until: Instant) -> Self {
+        earbuds::acquire();
+        Self { address: address.to_owned(), until }
+    }
+}
+
+impl Drop for Learning {
+    fn drop(&mut self) {
+        earbuds::release();
+    }
 }
 
 /// What the Escape bind runs.
@@ -71,11 +94,12 @@ pub struct Headset {
     /// The first Bluetooth reading has been seen: what it holds connected
     /// was connected at startup.
     primed: bool,
+    learning: Option<Learning>,
 }
 
 impl Headset {
     pub fn wake(&self) -> Option<Instant> {
-        self.card.as_ref().and_then(|c| c.hold_until)
+        [self.card.as_ref().and_then(|c| c.hold_until), self.learning.as_ref().map(|l| l.until)].into_iter().flatten().min()
     }
 
     /// The gaps this card opens in the lines, for the bar to take.
@@ -144,6 +168,12 @@ impl App {
         if gone {
             self.headset_dismiss(now);
         }
+        let done = self.headset.learning.as_ref().is_some_and(|l| {
+            !headset::face(&self.store, &l.address).art.is_empty() || self.headset.known.get(&l.address).is_none_or(|k| !k.connected)
+        });
+        if done {
+            self.headset.learning = None;
+        }
         if let Some(address) = show {
             self.headset_show(&address, now);
         }
@@ -154,6 +184,10 @@ impl App {
     }
 
     fn headset_show(&mut self, address: &str, now: Instant) {
+        let unknown = headset::face(&self.store, address).art.is_empty();
+        if unknown && self.headset.learning.as_ref().is_none_or(|l| l.address != address) {
+            self.headset.learning = Some(Learning::new(address, now + LEARN));
+        }
         if self.headset_down() {
             return;
         }
@@ -166,22 +200,14 @@ impl App {
             c.hold();
             return;
         }
-        let theme = &self.store.theme.theme;
-        let face = headset::face(&self.store, address);
-        let (width, height) = headset::size(&face, theme, &mut self.bar.kit);
-        let room = headset::largest(theme);
-        let pad = theme.space.screen_padding;
+        // A popover under the top edge's middle whatever the layout: under
+        // a top bar's line, else the frame ring's band or the bare edge.
+        let theme = popover_theme(&self.store.theme.theme);
         let length = self.output_size().0;
-        let anchor = length / 2.0;
-        // Off the top edge's middle whatever the layout: a top bar's line,
-        // else the frame ring's band or the bare edge, as the OSD comes up
-        // from the bottom.
-        let framed = self.bar.framed();
-        let ft = if framed { self.bar.frame_thickness() } else { 0.0 };
+        let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
         let line_at = if self.bar.edge() == Edge::Top { self.bar.thickness() as f64 } else { ft };
-        let mut card = Card::new(theme, Edge::Top, length as i32, line_at, anchor, room, self.motion_scale, self.cast);
-        card.resize(now, anchor, length as i32, pad, (width, height));
-        card.ends = Ends { along: length, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
+        let mut card = Card::new(&theme, Edge::Top, length as i32, line_at, length / 2.0, headset::size(&theme), self.motion_scale, self.cast);
+        card.capsule();
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);
@@ -192,31 +218,10 @@ impl App {
             entered: false,
             pressed: false,
             held: false,
-            size: (Animated::new(width, SPATIAL), Animated::new(height, SPATIAL)),
         };
         shown.hold();
         self.headset.card = Some(shown);
         self.log("headset card mapped");
-    }
-
-    /// The card on its way to the size its face asks for: the earbuds
-    /// backend's picture and rings land after it is up.
-    fn headset_resize(&mut self, face: &headset::Face, now: Instant) {
-        let length = self.output_size().0;
-        let theme = &self.store.theme.theme;
-        let (pad, anchor) = (theme.space.screen_padding, length / 2.0);
-        let (w, h) = headset::size(face, theme, &mut self.bar.kit);
-        let ms = crate::motion::Kind::Spatial.ms(theme) * self.motion_scale;
-        let Some(c) = &mut self.headset.card else { return };
-        let moved = w != c.size.0.target() || h != c.size.1.target();
-        if moved {
-            c.size.0.set(now, w, ms);
-            c.size.1.set(now, h, ms);
-        }
-        if moved || c.size.0.running(now) || c.size.1.running(now) {
-            let size = (c.size.0.value(now), c.size.1.value(now));
-            c.popup.card.resize(now, anchor, length as i32, pad, size);
-        }
     }
 
     fn headset_dismiss(&mut self, now: Instant) {
@@ -282,6 +287,9 @@ impl App {
     }
 
     pub(super) fn headset_present(&mut self, now: Instant) {
+        if self.headset.learning.as_ref().is_some_and(|l| l.until <= now) {
+            self.headset.learning = None;
+        }
         let down = self.headset_down();
         let Some(c) = &mut self.headset.card else { return };
         if c.popup.is_open() && (down || c.hold_until.is_some_and(|t| t <= now)) {
@@ -289,7 +297,6 @@ impl App {
         }
         let Some(address) = self.headset.card.as_ref().map(|c| c.address.clone()) else { return };
         let face = headset::face(&self.store, &address);
-        self.headset_resize(&face, now);
         let Some(c) = &mut self.headset.card else { return };
         if c.popup.finished(now) {
             self.headset.card = None;
@@ -302,7 +309,13 @@ impl App {
         let theme = &self.store.theme.theme;
         let (el, rect) = headset::layout(&face, c.popup.card.content.0, theme, &mut self.bar.kit);
         let drawn = c.popup.draw_in(&el, rect, theme, &mut self.bar.kit, now);
-        let animating = c.popup.animating(now) || drawn.animating || c.size.0.running(now) || c.size.1.running(now);
+        {
+            let frame = c.popup.card.content.0;
+            let (mut painter, alpha) = c.popup.painter();
+            headset::paint_ring(&mut painter, alpha, &face, frame, theme, &mut self.bar.kit);
+            painter.finish();
+        }
+        let animating = c.popup.animating(now) || drawn.animating;
         let qh = self.qh.clone();
         c.popup.present(animating, &qh);
     }
@@ -313,17 +326,19 @@ impl App {
 }
 
 impl App {
-    /// The connect card for `debug dump`: open, its picture set and its
-    /// resting rect.
+    /// The connect card for `debug dump`: open, its picture set, its
+    /// resting rect and corner radius, and the device whose picture set
+    /// the earbuds service is still held to learn.
     pub fn headset_status(&self) -> serde_json::Value {
+        let learning = self.headset.learning.as_ref().map(|l| l.address.clone());
         match &self.headset.card {
             Some(c) => {
                 // The surface hangs from the output's top left, so its pixels are the output's.
                 let r = c.popup.card.rest_rect();
                 let art = headset::face(&self.store, &c.address).art;
-                serde_json::json!({"open": c.popup.is_open(), "art": art, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}})
+                serde_json::json!({"open": c.popup.is_open(), "art": art, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.card.radius(), "learning": learning})
             }
-            None => serde_json::Value::Null,
+            None => serde_json::json!({"learning": learning}),
         }
     }
 }

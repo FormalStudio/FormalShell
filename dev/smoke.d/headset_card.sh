@@ -17,11 +17,14 @@
 #  4. The same device disconnecting and reconnecting a second later raises
 #     none.
 #  5. A pair of AirPods (the librepods status file staged first) raises a
-#     card with one ring each for left, right and case off the earbuds
-#     backend, grown wider than the glyph card once the backend claims the
-#     pair (off `debug dump`'s `headset.rest`), and the pointer leaving the
-#     card dismisses it.
-#  6. Escape, typed by wtype (a real virtual keyboard) into a foot window
+#     card wearing the backend's picture set where the headphone's wore
+#     none, both the same capsule (`debug dump`'s `headset`: one size, the
+#     radius half its height), and the pointer leaving the card dismisses
+#     it.
+#  6. Studio Cans, which no backend names, still has the earbuds service
+#     held to learn its picture set once Escape has taken its card down
+#     (`headset.learning`).
+#     Escape, typed by wtype (a real virtual keyboard) into a foot window
 #     that has the focus and never loses it, dismisses a card held up by the
 #     pointer parked on it, through the
 #     non-consuming bind the card adds while it is up: one Escape bind in
@@ -175,6 +178,7 @@ for i in \$(seq 1 30); do [ "\$(unmapped)" -ge 3 ] && break; sleep 0.2; done
 sleep 0.5
 echo "after active=\$(active) escapes=\$(escapes)" >> "$headset_escape_marks"
 mark escaped
+$ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_dir/escaped-dump.json"
 leave
 "$wtype_bin" cd
 sleep 0.5
@@ -259,18 +263,22 @@ leg_headset_card_assert() {
   # Off and on inside a second: no second card.
   headset_expect reconnected 1 1
   headset_expect airpods 2 1
-  local glyph_w pods_w
-  glyph_w=$("$jq_bin" -r '.rest.w' "$headset_bluez_dump" 2>/dev/null)
-  pods_w=$("$jq_bin" -r '.rest.w' "$headset_airpods_dump" 2>/dev/null)
-  echo "headset card widths: glyph=$glyph_w airpods=$pods_w"
-  [ -n "$pods_w" ] && [ "$pods_w" != null ] && [ -n "$glyph_w" ] && [ "$glyph_w" != null ] \
-    || fail "headset: debug dump carried no card ($(cat "$headset_bluez_dump") $(cat "$headset_airpods_dump"))"
-  [ "${pods_w%.*}" -gt "${glyph_w%.*}" ] || fail "headset: the AirPods card stayed ${pods_w} wide, the glyph card's ${glyph_w}, with its picture and three rings in it"
+  local glyph pods
+  glyph=$("$jq_bin" -r '"\(.rest.w)x\(.rest.h) r\(.radius) art=\(.art)"' "$headset_bluez_dump" 2>/dev/null)
+  pods=$("$jq_bin" -r '"\(.rest.w)x\(.rest.h) r\(.radius) art=\(.art)"' "$headset_airpods_dump" 2>/dev/null)
+  echo "headset cards: glyph $glyph, airpods $pods"
+  [ "${glyph% art=*}" = "${pods% art=*}" ] || fail "headset: the two cards differ in size or radius ($glyph, $pods)"
+  "$jq_bin" -e '.radius * 2 - .rest.h | fabs <= 1' "$headset_bluez_dump" > /dev/null || fail "headset: the card is not a capsule ($glyph)"
+  [ "${glyph#*art=}" = "" ] && [ -n "${pods#*art=}" ] || fail "headset: the headphone wore '${glyph#*art=}', the AirPods '${pods#*art=}'"
   # The pointer leaving is what dismissed the pair.
   headset_expect left 2 2
   # Escape into the focused foot: the card goes, foot keeps the focus and the key.
   headset_expect escaped 3 3
   headset_escape_expect
+  local learning
+  learning=$("$jq_bin" -r '.learning' "$headset_dir/escaped-dump.json" 2>/dev/null)
+  echo "headset learning after escape: $learning"
+  [ "$learning" = "$headset_cans_address" ] || fail "headset: the earbuds service was not held to learn Studio Cans' picture past its card ($learning)"
   headset_expect dnd 3 3
   headset_expect sidebar 4 3
   local x y w h off

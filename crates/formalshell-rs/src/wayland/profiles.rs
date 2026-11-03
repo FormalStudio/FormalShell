@@ -105,8 +105,7 @@ impl App {
         }
         let (_, _, width, height) = self.profiles_size();
         // A popover always: the right edge carries no line to bud off.
-        let mut theme = self.store.theme.theme.clone();
-        theme.morph = false;
+        let theme = crate::surfaces::card::popover_theme(&self.store.theme.theme);
         let (_, oh) = self.output_size();
         let mut card = Card::new(&theme, Edge::Right, oh as i32, 0.0, oh / 2.0, (height, width), self.motion_scale, self.cast);
         let s = &theme.space;

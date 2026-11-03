@@ -175,6 +175,13 @@ pub struct Card {
     pub nub: Option<(f64, f64, f64)>,
 }
 
+/// `theme` with `motion.morph` off, for a card with no line to bud off.
+pub fn popover_theme(theme: &Theme) -> Theme {
+    let mut theme = theme.clone();
+    theme.morph = false;
+    theme
+}
+
 impl Card {
     /// A card `size` (along, depth) centred along the line on `anchor`,
     /// clamped a `screenPadding` in from either end, a `barMargin` off the
@@ -768,6 +775,12 @@ impl Card {
 
     pub fn radius(&self) -> f64 {
         self.look.radius
+    }
+
+    /// Ends rounded right through, macOS's capsule: the radius half the
+    /// card's depth. A restyle puts the theme's back.
+    pub fn capsule(&mut self) {
+        self.look.radius = self.rest.height() / 2.0;
     }
 
     pub fn border_width(&self) -> f64 {
