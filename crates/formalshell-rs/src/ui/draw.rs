@@ -544,9 +544,18 @@ fn stop(cx: &mut Cx, el: &El, inner: Rect) {
     cx.stop(Stop { key: key.clone(), rect: irect(rect), radius });
 }
 
+/// A culled child's stops, and the list it floats: a menu stays open while
+/// its trigger is scrolled out of the viewport.
+fn offscreen(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
+    offscreen_stops(cx, el, rect, path);
+    if let Some(list) = &el.float {
+        cx.float(rect, (**list).clone(), format!("{path}/float"));
+    }
+}
+
 /// The stops of a subtree the clip culls, laid out as `paint_body` lays
 /// them, with nothing drawn.
-fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect) {
+fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     let [ps, pt, pe, pb] = el.pad;
     let inner = Rect::new(rect.x0 + ps, rect.y0 + pt, rect.x1 - pe, rect.y1 - pb);
     stop(cx, el, inner);
@@ -563,18 +572,18 @@ fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect) {
                 }
                 let (cw, ch) = measure(cx, c, inner.width());
                 let x = if c.centred { inner.x0 + (inner.width() - cw) / 2.0 } else { inner.x0 };
-                offscreen_stops(cx, c, Rect::new(x, y, x + cw, y + ch));
+                offscreen(cx, c, Rect::new(x, y, x + cw, y + ch), &child_path(path, c, i));
                 y += ch;
             }
         }
         Kind::Row { gap, children } => {
             let widths = row_widths(cx, children, inner.width(), *gap);
             let mut x = inner.x0;
-            for (c, w) in children.iter().zip(widths) {
+            for (i, (c, w)) in children.iter().zip(widths).enumerate() {
                 let (cw, ch) = measure(cx, c, w);
                 let cw = if c.width == Size::Fill { w } else { cw };
                 let y = if el.top { inner.y0 } else { inner.y0 + (inner.height() - ch) / 2.0 };
-                offscreen_stops(cx, c, Rect::new(x, y, x + cw, y + ch));
+                offscreen(cx, c, Rect::new(x, y, x + cw, y + ch), &child_path(path, c, i));
                 x += w + gap;
             }
         }
@@ -582,12 +591,12 @@ fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect) {
             let n = (*columns).max(1);
             let cw = ((inner.width() - gap * (n - 1) as f64) / n as f64).max(0.0);
             let mut y = inner.y0;
-            for line in children.chunks(n) {
+            for (r, line) in children.chunks(n).enumerate() {
                 let lh = line.iter().map(|c| measure(cx, c, cw).1).fold(0.0, f64::max);
                 for (k, c) in line.iter().enumerate() {
                     let x = inner.x0 + (cw + gap) * k as f64;
                     let (w, h) = measure(cx, c, cw);
-                    offscreen_stops(cx, c, Rect::new(x, y, x + w, y + h));
+                    offscreen(cx, c, Rect::new(x, y, x + w, y + h), &child_path(path, c, r * n + k));
                 }
                 y += lh + gap;
             }
@@ -598,7 +607,7 @@ fn offscreen_stops(cx: &mut Cx, el: &El, rect: Rect) {
             let (cw, ch) = measure(cx, child, content_w);
             let cw = if child.width == Size::Fill { content_w } else { cw };
             let y = inner.y0 + (inner.height() - ch) / 2.0;
-            offscreen_stops(cx, child, Rect::new(inner.x0 + pad_x, y, inner.x0 + pad_x + cw, y + ch));
+            offscreen(cx, child, Rect::new(inner.x0 + pad_x, y, inner.x0 + pad_x + cw, y + ch), &format!("{path}/0"));
         }
         _ => {}
     }
@@ -611,7 +620,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         // Wholly outside the clip: its nodes go dark and nothing is hit,
         // but its stops stay, so the keys can walk onto a row the
         // viewport does not reach yet.
-        offscreen_stops(cx, el, rect);
+        offscreen_stops(cx, el, rect, path);
         return;
     }
     stop(cx, el, inner);

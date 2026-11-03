@@ -278,6 +278,10 @@ pub struct Host {
     /// coast after a flick, which moves `scroll` frame by frame.
     touch: Touchpad,
     content_h: f64,
+    /// The body's height with the inline menu open under a trigger, as of
+    /// the last draw: the list floats past the body's own end, so the card
+    /// grows to take it (up to the output's room, then the body scrolls).
+    drawn_h: f64,
     viewport: IRect,
     handoff: Option<Handoff>,
     /// The keyboard's prime: Exclusive until this moment, then OnDemand.
@@ -330,6 +334,7 @@ impl Host {
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             touch: Touchpad::new(),
             content_h: 0.0,
+            drawn_h: 0.0,
             viewport: IRect::default(),
             handoff: None,
             prime_until: keyboard.then(|| Instant::now() + std::time::Duration::from_millis(PRIME_MS)),
@@ -353,6 +358,14 @@ impl Host {
 
     pub fn is_open(&self) -> bool {
         self.open
+    }
+
+    /// The body's viewport, its content's height, how far it is scrolled
+    /// and the row the cursor sits on, as last drawn.
+    pub fn viewport(&self) -> (IRect, f64, f64, Option<(&str, IRect)>) {
+        let key = self.cursor.key.as_deref().filter(|_| self.cursor.active);
+        let row = key.and_then(|k| self.body.stops.iter().find(|s| s.key == k)).map(|s| (s.key.as_str(), s.rect));
+        (self.viewport, self.content_h, self.scroll.target(), row)
     }
 
     /// A text field in the body holds the keyboard.
@@ -466,7 +479,7 @@ impl Host {
         let width = super::card_width(self.module.as_ref(), &v, kit);
         let body = self.module.body(&v);
         let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
-        let content_h = ui::measure(&body, content_w, theme, kit).1;
+        let content_h = ui::measure(&body, content_w, theme, kit).1.max(self.drawn_h);
         let f = self.frame(theme).closing(theme, &body);
         let (head, gap) = (f.head, f.gap);
         let max_frame = if vertical {
@@ -638,6 +651,11 @@ impl Host {
         self.body.ring = self.cursor.keyed;
         let origin = (fx + pad, top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + self.content_h), Some(body_clip), alpha, theme, kit, scene, now);
+        // A menu opening or closing changes what the next layout fits.
+        if (d.height - self.drawn_h).abs() > 0.5 {
+            self.drawn_h = d.height;
+            self.wake = Some(now);
+        }
         if let Some(w) = d.wake {
             self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
         }
