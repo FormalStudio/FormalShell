@@ -16,7 +16,7 @@ use fs_mpris::{LoopStatus, Mpris, PlayerState};
 use serde_json::{Value, json};
 
 use super::devices::audio::{self, Routing, StreamInfo};
-use super::{airplay, ams, radio, visualizer};
+use super::{airplay, ams, kopuz, radio, visualizer};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -182,6 +182,8 @@ pub struct State {
     pub radio: radio::State,
     pub airplay: airplay::State,
     pub ams: ams::State,
+    /// kopuzd's row, whatever track it is; `kopuz()` is the matched one.
+    pub kopuz: kopuz::State,
     /// A bus name, "radio", "iphone" or "airplay"; "" is auto.
     pub selected: String,
     /// The sinks and playback streams, published while something wants them.
@@ -198,6 +200,7 @@ pub enum Diff {
     Radio(radio::State),
     Airplay(airplay::State),
     Ams(ams::State),
+    Kopuz(kopuz::State),
     Cover(String, u32, Option<crate::scene::Bitmap>),
     /// The animated cover's latest frame by album key, none once it stopped.
     Motion(Option<(String, Vec<crate::scene::Bitmap>)>),
@@ -255,6 +258,7 @@ impl State {
                 self.ams = next;
                 !same
             }
+            Diff::Kopuz(next) => return std::mem::replace(&mut self.kopuz, next) != self.kopuz,
         };
         if changed {
             self.sync_gate();
@@ -507,6 +511,13 @@ impl State {
         })
     }
 
+    /// kopuzd's row when the active player is Kopuz and the row is the
+    /// track it reports.
+    pub fn kopuz(&self) -> Option<&kopuz::State> {
+        let a = self.active()?;
+        (a.kind == "mpris" && kopuz::is_kopuz(&a.id) && self.kopuz.matches(&a.title, &a.artist)).then_some(&self.kopuz)
+    }
+
     /// Feeds the visualizer's run gate, which the UI thread owns the inputs of.
     fn sync_gate(&self) {
         let a = self.active();
@@ -519,6 +530,7 @@ impl State {
     pub fn status(&self) -> Value {
         let a = self.active().unwrap_or_default();
         let available = !a.id.is_empty();
+        let kopuz = self.kopuz();
         json!({
             "available": available,
             "id": a.id,
@@ -543,6 +555,11 @@ impl State {
             "loop": a.loop_name.unwrap_or("none"),
             "volumeSupported": a.volume.is_some(),
             "volume": num(a.volume.unwrap_or(0.0)),
+            "kopuz": {
+                "connected": kopuz.is_some(),
+                "key": kopuz.map_or("", |k| k.key.as_str()),
+                "favorite": kopuz.is_some_and(|k| k.favorite),
+            },
         })
     }
 

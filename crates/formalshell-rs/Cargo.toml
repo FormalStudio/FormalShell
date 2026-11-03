@@ -22,6 +22,7 @@ fs-chrome = { path = "../fs-chrome" }
 fs-system = { path = "../fs-system" }
 fs-mpris = { path = "../fs-mpris" }
 fs-media = { path = "../fs-media" }
+fs-kopuz = { path = "../fs-kopuz" }
 fastrand = "2.5.0"
 fs-bluez = { path = "../fs-bluez" }
 fs-tray = { path = "../fs-tray" }

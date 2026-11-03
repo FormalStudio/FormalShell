@@ -881,6 +881,7 @@ dependencies = [
  "fs-devices",
  "fs-info",
  "fs-js",
+ "fs-kopuz",
  "fs-media",
  "fs-menu",
  "fs-mpris",

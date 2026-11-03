@@ -4,7 +4,7 @@
 
 use crate::services::{
     activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
-    compositor, info, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, recording, screensaver, state, theme, tray,
+    compositor, info, kopuz, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
 
@@ -152,6 +152,9 @@ impl Store {
     /// `None` when the diff left the slice as it was, so nothing redraws.
     pub fn apply(&mut self, diff: Diff) -> Option<Topic> {
         let topic = self.apply_slice(diff);
+        if topic == Some(Topic::Media) {
+            kopuz::sync(&self.media);
+        }
         if matches!(topic, Some(Topic::Media | Topic::Config | Topic::Lyrics)) {
             lyrics::sync(&self.media, &self.config, &self.lyrics);
         }

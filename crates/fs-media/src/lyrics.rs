@@ -334,10 +334,18 @@ fn parse_words(rest: &str) -> (Vec<Word>, String) {
         })
         .collect();
 
+    let joined: String = raw.iter().map(|&(_, text)| text).collect();
+    (raw_chunk_words(&raw), trim(&joined).to_string())
+}
+
+/// Raw timed chunks (seconds, untrimmed text) to words: a chunk trimming to
+/// nothing is dropped, and `joins_next` holds only when this chunk's raw text
+/// carries no trailing whitespace and the very next raw chunk carries no
+/// leading whitespace and trims to something. Enhanced LRC's stamps and
+/// kopuzd's `LyricChunk`s both arrive this way.
+pub fn raw_chunk_words(raw: &[(f64, &str)]) -> Vec<Word> {
     let mut words = Vec::new();
-    let mut joined = String::new();
     for (j, &(time, raw_text)) in raw.iter().enumerate() {
-        joined.push_str(raw_text);
         let text = trim(raw_text);
         if text.is_empty() {
             continue;
@@ -353,7 +361,7 @@ fn parse_words(rest: &str) -> (Vec<Word>, String) {
             joins_next,
         });
     }
-    (words, trim(&joined).to_string())
+    words
 }
 
 /// A merged-in translation line (an equal stamp, or a second raw line with no

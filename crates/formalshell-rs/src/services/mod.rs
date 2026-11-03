@@ -38,6 +38,7 @@ pub mod packages;
 pub mod picker;
 pub mod info;
 pub mod launch;
+pub mod kopuz;
 pub mod lyrics;
 pub mod plugins;
 pub mod polkit;
@@ -71,6 +72,7 @@ pub fn start(ctx: &Ctx) {
     ctx.spawn(cover::run(ctx.clone()));
     ctx.spawn(motion_art::run(ctx.clone()));
     ctx.spawn(lyrics::run(ctx.clone()));
+    ctx.spawn(kopuz::run(ctx.clone()));
     ctx.spawn(radio::run(ctx.clone()));
     ctx.spawn(airplay::run(ctx.clone()));
     ctx.spawn(ams::run(ctx.clone()));

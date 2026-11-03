@@ -1767,3 +1767,14 @@ fn a_line_round_trips_through_the_cache_shape() {
     assert!(!text.contains("interlude"));
     assert_eq!(serde_json::from_str::<Line>(&text).unwrap(), l);
 }
+
+// raw_chunk_words
+
+#[test]
+fn raw_chunks_join_only_across_no_whitespace() {
+    let raw = [(1.0, "Hel"), (1.2, "lo "), (1.5, " "), (1.6, "world"), (2.0, " again")];
+    assert_eq!(
+        raw_chunk_words(&raw),
+        vec![word(1.0, "Hel", true), word(1.2, "lo", false), word(1.6, "world", false), word(2.0, "again", false)]
+    );
+}

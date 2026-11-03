@@ -107,6 +107,7 @@ fn select(app: &mut App, args: &[Value]) -> Value {
         return text(format!("error: no player {id}"));
     }
     app.store.media.select(id);
+    crate::services::kopuz::sync(&app.store.media);
     crate::services::lyrics::sync(&app.store.media, &app.store.config, &app.store.lyrics);
     crate::surfaces::changed(app, Topic::Media);
     text(OK)

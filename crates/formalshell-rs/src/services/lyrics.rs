@@ -3,7 +3,9 @@
 //! panel opens on its final width.
 //!
 //! The chain: a sibling `.lrc` beside the player's `xesam:url` (never
-//! cached, the file can change under it), the disk cache (`<key>.json` kept
+//! cached, the file can change under it), kopuzd's own lyrics when the
+//! player is Kopuz and its row is this track (cached with source `kopuz`;
+//! it may hold server or embedded lyrics no web provider has), the disk cache (`<key>.json` kept
 //! forever, `<key>.miss` fresh for seven days), then paxsenix Apple Music,
 //! paxsenix YouTube and lrclib raced. The first answer with real word
 //! timing wins at once; otherwise every provider is waited for and the best
@@ -41,6 +43,10 @@ pub struct Ask {
     pub album: String,
     pub length: f64,
     pub url: String,
+    /// kopuzd's key for this track, when the player is Kopuz and its row
+    /// matches. It can land after the track does, so it is part of what
+    /// makes a new ask.
+    pub kopuz: String,
 }
 
 #[derive(Clone, Debug)]
@@ -156,11 +162,12 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
             album: a.album.clone(),
             length: a.length,
             url: media.url_of(&a.id),
+            kopuz: media.kopuz().map(|k| k.key.clone()).unwrap_or_default(),
         },
         _ => Ask { enabled, ..Ask::default() },
     };
     if let Ok(mut last) = LAST.lock()
-        && last.as_ref().is_none_or(|l| l.key != ask.key || l.enabled != ask.enabled)
+        && last.as_ref().is_none_or(|l| l.key != ask.key || l.enabled != ask.enabled || l.kopuz != ask.kopuz)
     {
         *last = Some(ask.clone());
         if let Some(tx) = ASK.get() {
@@ -299,6 +306,37 @@ fn local(url: &str) -> Option<Vec<Line>> {
     (!lines.is_empty()).then_some(lines)
 }
 
+fn seconds(ms: u64) -> f64 {
+    ms as f64 / 1000.0
+}
+
+/// kopuzd's synced lines in the shell's model, one for one, so a line's
+/// `parent_line_index` still points at its main line. Chunks arrive raw,
+/// spaces and all, the way enhanced LRC's do.
+pub fn kopuz_lines(lyrics: &fs_kopuz::Lyrics) -> Vec<Line> {
+    lyrics
+        .synced
+        .iter()
+        .map(|l| {
+            let chunks: Vec<(f64, &str)> = l.chunks.iter().map(|c| (seconds(c.start_ms), c.text.as_str())).collect();
+            Line {
+                words: model::raw_chunk_words(&chunks),
+                parent: l.parent_line_index.map(|i| i as usize),
+                background: l.background,
+                opposite_turn: l.opposite_turn,
+                ..Line::new(seconds(l.start_ms), l.end_ms.map(seconds), fs_js::trim(&l.text))
+            }
+        })
+        .collect()
+}
+
+async fn kopuz(key: &str) -> Option<Vec<Line>> {
+    let client = super::kopuz::client()?;
+    let lyrics = super::kopuz::timed(client.lyrics(key)).await?.ok()?;
+    let lines = kopuz_lines(&lyrics);
+    model::has_usable_timing(&lines).then_some(lines)
+}
+
 fn cached(key: &str) -> Option<Result<Vec<Line>, ()>> {
     let dir = cache_dir();
     if let Ok(text) = std::fs::read_to_string(dir.join(format!("{key}.json")))
@@ -341,18 +379,39 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
     if ask.key.is_empty() {
         return publish(ctx, "", "idle", "", Vec::new());
     }
-    if let Some((state, source, lines)) = session.get(&ask.key).cloned() {
+    // A track resolved before kopuzd's key arrived asks kopuzd once more,
+    // keeping what it shows meanwhile.
+    let known = session.get(&ask.key).cloned();
+    if let Some((state, source, lines)) = &known
+        && (ask.kopuz.is_empty() || source == "kopuz" || source == "local")
+    {
+        return publish(ctx, &ask.key, state, source, lines.clone());
+    }
+    let dir = cache_dir();
+    if known.is_none() {
+        publish(ctx, &ask.key, "loading", "", Vec::new());
+        async_io::Timer::after(Duration::from_secs(1)).await;
+        let url = ask.url.clone();
+        if let Some(Some(lines)) = ctx.pool().run(move || local(&url)).await {
+            return remember(ctx, session, &ask.key, "synced", "local", lines);
+        }
+    }
+    if !ask.kopuz.is_empty()
+        && let Some(lines) = kopuz(&ask.kopuz).await
+    {
+        let path = dir.join(format!("{}.json", ask.key));
+        let body = json!({ "source": "kopuz", "lines": lines }).to_string();
+        ctx.pool().run(move || write_atomic(path, body.as_bytes())).await;
+        return remember(ctx, session, &ask.key, "synced", "kopuz", lines);
+    }
+    if let Some((state, source, lines)) = known {
         return publish(ctx, &ask.key, state, &source, lines);
     }
-    publish(ctx, &ask.key, "loading", "", Vec::new());
-    async_io::Timer::after(Duration::from_secs(1)).await;
 
-    let (url, key) = (ask.url.clone(), ask.key.clone());
-    let disk = ctx.pool().run(move || (local(&url), cached(&key))).await;
-    match disk {
-        Some((Some(lines), _)) => return remember(ctx, session, &ask.key, "synced", "local", lines),
-        Some((None, Some(Ok(lines)))) => return remember(ctx, session, &ask.key, "synced", "cache", lines),
-        Some((None, Some(Err(())))) => return remember(ctx, session, &ask.key, "none", "", Vec::new()),
+    let key = ask.key.clone();
+    match ctx.pool().run(move || cached(&key)).await {
+        Some(Some(Ok(lines))) => return remember(ctx, session, &ask.key, "synced", "cache", lines),
+        Some(Some(Err(()))) => return remember(ctx, session, &ask.key, "none", "", Vec::new()),
         _ => {}
     }
 
@@ -392,7 +451,6 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
         })
         .collect();
     let winner = decided.or_else(|| model::pick_best(&candidates).cloned());
-    let dir = cache_dir();
     match winner {
         None if erred => publish(ctx, &ask.key, "error", "", Vec::new()),
         None => {
@@ -517,4 +575,41 @@ pub fn status(lyrics: &State, position: f64, settings: &Settings) -> Value {
         "latency": { "ms": lyrics.latency.ms, "via": lyrics.latency.via.as_str() },
         "hold": hold,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fs_kopuz::{LyricChunk, LyricLine, Lyrics};
+    use fs_media::lyrics::Word;
+
+    fn chunk(start_ms: u64, text: &str) -> LyricChunk {
+        LyricChunk { start_ms, text: text.into() }
+    }
+
+    #[test]
+    fn kopuz_lines_keep_timing_parents_and_raw_chunk_joins() {
+        let lyrics = Lyrics {
+            plain: None,
+            synced: vec![
+                LyricLine {
+                    start_ms: 1500,
+                    end_ms: Some(3000),
+                    text: " Hello world ".into(),
+                    chunks: vec![chunk(1500, "Hel"), chunk(1700, "lo"), chunk(2000, " world")],
+                    parent_line_index: None,
+                    background: false,
+                    opposite_turn: true,
+                },
+                LyricLine { start_ms: 2000, end_ms: None, text: "(ooh)".into(), chunks: vec![], parent_line_index: Some(0), background: true, opposite_turn: false },
+            ],
+        };
+        let lines = kopuz_lines(&lyrics);
+        assert_eq!(lines.len(), 2);
+        assert_eq!((lines[0].time, lines[0].end, lines[0].text.as_str(), lines[0].opposite_turn), (1.5, Some(3.0), "Hello world", true));
+        let word = |time, text: &str, joins_next| Word { time, text: text.into(), joins_next };
+        assert_eq!(lines[0].words, vec![word(1.5, "Hel", true), word(1.7, "lo", false), word(2.0, "world", false)]);
+        assert_eq!((lines[1].parent, lines[1].background, lines[1].end), (Some(0), true, None));
+        assert!(model::has_usable_timing(&lines));
+    }
 }
