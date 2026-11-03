@@ -50,6 +50,7 @@ paths = [
   "crates/fs-auth/src/polkit.rs",
   "crates/fs-network/**",
   "crates/fs-upower/**",
+  "crates/fs-kopuz/**",
   "crates/fs-bluez/src/agent.rs",
   ".gitignore",
   "crates/*/examples/**",

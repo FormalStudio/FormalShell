@@ -140,7 +140,7 @@ pipewire, PAM or Wayland to link.
   --all-targets` (deny-level lints fail it, warnings print), then the pure
   crates' tests (fs-js,
   fs-chrome, fs-info, fs-activity, fs-system, fs-devices, fs-media, fs-menu,
-  fs-screensaver, fs-theme, fs-audio). ci.yml runs the same script on a
+  fs-screensaver, fs-theme, fs-audio, fs-kopuz). ci.yml runs the same script on a
   GitHub runner.
 - `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd` and
   `fs-mpris` run their tests under `dbus-run-session` against their own

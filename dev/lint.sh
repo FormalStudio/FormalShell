@@ -17,7 +17,7 @@ cargo() {
 }
 
 pure=()
-for crate in formalshell-rs fs-js fs-chrome fs-info fs-activity fs-system fs-devices fs-media fs-menu fs-screensaver fs-theme fs-audio; do
+for crate in formalshell-rs fs-js fs-chrome fs-info fs-activity fs-system fs-devices fs-media fs-menu fs-screensaver fs-theme fs-audio fs-kopuz; do
   pure+=(--package "$crate")
 done
 
