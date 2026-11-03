@@ -105,7 +105,7 @@ impl App {
         let theme = &self.store.theme.theme;
         let cast = *self.toast_cast.get_or_insert_with(|| surfaces::toasts::column_cast(theme));
         let column = (right, surfaces::toasts::column_width(theme, cast, &insets, right));
-        self.clear_of_panel(&mut insets, spec);
+        self.clear_of_cards(&mut insets, spec);
         // The column stays mapped between toasts (see above), so it is moved
         // to the live bar's output only when a toast arrives on an empty one.
         let stray = up && self.toasts.as_ref().is_some_and(|t| !t.holds_cards() && t.output.as_ref() != self.bar_wl.as_ref());
@@ -183,14 +183,22 @@ impl App {
         }
     }
 
-    /// Moves the stack clear of the open panel's card where the card
-    /// crosses the stack's column: a stack at the top drops below it, one
-    /// at the bottom rises above it. A card on the column's far half is the
-    /// stack's to overlap, as one that left no room either way would be.
-    /// Read off the card's resting rect, so the stack moves once rather
-    /// than following the card's entrance.
-    fn clear_of_panel(&self, insets: &mut Insets, spec: PositionSpec) {
-        let Some(r) = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest_rect()).filter(|r| !r.is_empty()) else { return };
+    /// Moves the stack clear of the open panel's card and the open second
+    /// bar's where either crosses the stack's column: a stack at the top
+    /// drops below it, one at the bottom rises above it. A card on the
+    /// column's far half is the stack's to overlap, as one that left no room
+    /// either way would be. Read off the cards' resting rects, so the stack
+    /// moves once rather than following an entrance.
+    fn clear_of_cards(&self, insets: &mut Insets, spec: PositionSpec) {
+        let out = self.output_size();
+        let panel = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest_on(out));
+        let overflow = self.overflow.as_ref().filter(|p| p.card.is_open()).map(|p| p.card.rest_on(out));
+        for r in [panel, overflow].into_iter().flatten().filter(|r| !r.is_empty()) {
+            self.clear_of(r, insets, spec);
+        }
+    }
+
+    fn clear_of(&self, r: crate::scene::IRect, insets: &mut Insets, spec: PositionSpec) {
         let theme = &self.store.theme.theme;
         let (out_w, out_h) = self.output_size();
         let (pad, width) = (theme.space.screen_padding, surfaces::toasts::card_width(theme));

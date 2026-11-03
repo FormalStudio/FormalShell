@@ -312,6 +312,18 @@ impl Card {
         Scene::cover(self.rest, self.edge_map(), 0.0)
     }
 
+    /// The card's resting rect in output pixels, on an output `size` big: a
+    /// surface on the bottom or right edge starts its scene's size in from
+    /// the far side.
+    pub fn rest_on(&self, size: (f64, f64)) -> IRect {
+        let (r, scene) = (self.rest_rect(), self.scene.size);
+        match self.edge {
+            Edge::Right => IRect::new(r.x + size.0 as i32 - scene.w, r.y, r.w, r.h),
+            Edge::Bottom => IRect::new(r.x, r.y + size.1 as i32 - scene.h, r.w, r.h),
+            _ => r,
+        }
+    }
+
     /// The frame's rect this frame, in surface pixels, before its slide.
     pub fn live_rect(&self) -> IRect {
         Scene::cover(self.live, self.edge_map(), 0.0)

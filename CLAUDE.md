@@ -1318,9 +1318,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   activewindow`).
   The foot's chevron in audio's place: a real click opening the chevron's
   second bar (`bar chevron status`) with the owner's `bar.layout.right`
-  pinned, audio among its cells on the shared chip grid
-  (`surfaces/chips.rs`, no row past eight), a click on its audio chip
-  opening the audio panel; and `panel open settings` putting the power
+  pinned, rising off the status card at the card's width, audio among its
+  cells on the shared chip grid (`surfaces/chips.rs`, wrapped to the
+  card), a click on its audio chip opening the audio panel; and `panel open settings` putting the power
   profile pill on the right edge, centred (`debug dump`'s `profilesPill`),
   gone once the tiles close.
   The time card's clock over a staged red and green wallpaper with a

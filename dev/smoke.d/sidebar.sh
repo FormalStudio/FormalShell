@@ -76,6 +76,7 @@ sidebar_more_status="$shot_dir/sidebar-more-status.json"
 sidebar_more_layers="$shot_dir/sidebar-more-layers.json"
 sidebar_more_png="$shot_dir/sidebar-more.png"
 sidebar_more_panel="$shot_dir/sidebar-more-panel.txt"
+sidebar_more_origin="$shot_dir/sidebar-more-origin.txt"
 sidebar_pill_dump="$shot_dir/sidebar-pill.json"
 sidebar_pill_png="$shot_dir/sidebar-pill.png"
 sidebar_pill_closed="$shot_dir/sidebar-pill-closed.json"
@@ -206,6 +207,7 @@ $ipc call bar chevron status > "$sidebar_more_status" 2>&1
 "$hyprctl_bin" -j layers > "$sidebar_more_layers" 2>&1
 "$grim_bin" "$sidebar_more_png" > /dev/null 2>&1
 read -r px py <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:panel")] | first | "\(.x) \(.y)"' "$sidebar_more_layers")"
+echo "\$px \$py" > "$sidebar_more_origin"
 read -r ax ay <<< "\$("$jq_bin" -r '.regions.right.card.cells[] | select(.name == "audio") | .rect | "\(.x + (.w / 2 | floor)) \(.y + (.h / 2 | floor))"' "$sidebar_more_status" | head -1)"
 click \$(( px + ax )) \$(( py + ay ))
 sleep 2
@@ -453,8 +455,10 @@ sidebar_cards_assert() {
 }
 
 # The foot's chevron (audio's old place, the column as wide), its second
-# bar on the shared chip grid with audio in it, the audio chip's click,
-# and the power profile pill beside the Settings tiles. $1 $2: the output.
+# bar on the shared chip grid with audio in it, rising off the status card
+# at the card's own width (the column's gap above it, never past the
+# column), the audio chip's click, and the power profile pill beside the
+# Settings tiles. $1 $2: the output.
 sidebar_more_assert() {
   echo "SMOKE_SIDEBAR_MORE $sidebar_more_png"
   echo "SMOKE_SIDEBAR_PILL $sidebar_pill_png"
@@ -472,6 +476,18 @@ sidebar_more_assert() {
   "$jq_bin" -e '.regions.right.card | .surface as $s | ([.rest] + [.cells[] | .rect]) | all(.x >= 0 and .y >= 0 and .x + .w <= $s.w and .y + .h <= $s.h)' "$sidebar_more_status" > /dev/null 2>&1 \
     || fail "sidebar: the second bar runs past its own surface: $(cat "$sidebar_more_status" 2>/dev/null)"
   echo "sidebar more: $("$jq_bin" -c '[.regions.right.card.cells[] | "\(.name)@\(.rect.x),\(.rect.y)"]' "$sidebar_more_status")"
+  local px py fx fy fw cx cw cb
+  read -r px py < "$sidebar_more_origin"
+  # The status card: the widest input rect holding the chevron.
+  read -r fx fy fw <<< "$("$jq_bin" -r '([.hits[] | select(.on == "overflow")] | first) as $c
+      | [.input[] | select(.x <= $c.x and .y <= $c.y and .x + .w >= $c.x + $c.w and .y + .h >= $c.y + $c.h)] | max_by(.w) | "\(.x) \(.y) \(.w)"' "$sidebar_status_open")"
+  read -r cx cw cb <<< "$("$jq_bin" -r '.regions.right.card.rest | "\(.x) \(.w) \(.y + .h)"' "$sidebar_more_status")"
+  cx=$((px + cx)); cb=$((py + cb))
+  echo "sidebar more card: x=$cx w=$cw bottom=$cb over the status card x=$fx y=$fy w=$fw"
+  [ "$cx" -eq "$fx" ] && [ "$cw" -eq "$fw" ] \
+    || fail "sidebar: the chevron's second bar is not the status card's width over it (x=$cx w=$cw, the card x=$fx w=$fw)"
+  [ "$cb" -le "$fy" ] && [ "$cb" -ge "$((fy - 12))" ] \
+    || fail "sidebar: the chevron's second bar does not rest just above the status card (its bottom $cb, the card's top $fy)"
   grep -q '^audio$' "$sidebar_more_panel" 2>/dev/null \
     || fail "sidebar: the audio chip's click did not open the audio panel: $(cat "$sidebar_more_panel" 2>/dev/null)"
   local x y w h

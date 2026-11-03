@@ -115,6 +115,25 @@ pub struct Popout {
     /// The `panel.chip` plate under each chip, as the tray's second bar
     /// draws its items.
     plates: Vec<crate::scene::NodeId>,
+    /// Held to the sidebar's foot, rising off its status card.
+    rise: Option<Rise>,
+}
+
+/// A second bar rising off the expanded sidebar's status card, the card's
+/// own width, its chips wrapping to fit it, rather than hanging off the
+/// column's line: on the output's bottom edge, `pad` in from its start.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Rise {
+    width: f64,
+    pad: f64,
+    length: i32,
+}
+
+impl Rise {
+    /// The chips' room inside the card.
+    fn within(&self, look: &Look) -> f64 {
+        self.width - look.chip_inset * 2.0
+    }
 }
 
 impl Popout {
@@ -128,7 +147,11 @@ impl Popout {
         if self.menu.is_some() || !self.card.is_open() {
             return false;
         }
-        let (along, across) = chips_size(&self.slots, look, self.card.edge, self.cells);
+        let (along, across) = match self.rise {
+            Some(r) => (r.width, chips_grid(&self.slots, look, Some(r.within(look))).1.1 + look.chip_inset * 2.0),
+            None => chips_size(&self.slots, look, self.card.edge, self.cells),
+        };
+        let (length, pad) = self.rise.map_or((length, pad), |r| (r.length, r.pad));
         let armed = self.surface.mapped;
         let fit = self.fit.get_or_insert_with(|| crate::motion::Animated::new(along, crate::motion::SPATIAL));
         if armed && look.motion {
@@ -156,9 +179,12 @@ impl Popout {
             return;
         }
         let look = bar.kit.look.clone();
-        let (ox, oy) = (rect.x as f64 + look.chip_inset, rect.y as f64 + look.chip_inset);
+        let within = self.rise.map(|r| r.within(&look));
+        let (places, (grid_w, _)) = chips_grid(&self.slots, &look, within);
+        // Held to a width, the grid sits in the middle of it.
+        let centre = within.map_or(0.0, |w| ((w - grid_w) / 2.0).max(0.0));
+        let (ox, oy) = (rect.x as f64 + look.chip_inset + centre, rect.y as f64 + look.chip_inset);
         let vertical = self.cells.is_vertical();
-        let (places, _) = chips_grid(&self.slots, &look);
         let mut places = places.into_iter();
         let mut plates = Vec::new();
         for (i, slot) in self.slots.iter_mut().enumerate() {
@@ -214,14 +240,21 @@ impl Popout {
 /// The shown cells of a second bar on the chip grid (`surfaces::chips`),
 /// in the cells' own axes: each one's place along their line, across it
 /// and its column's width, and the grid's size the same way.
-fn chips_grid(slots: &[Slot], look: &Look) -> (Vec<crate::surfaces::chips::Place>, (f64, f64)) {
+fn chips_grid(slots: &[Slot], look: &Look, within: Option<f64>) -> (Vec<crate::surfaces::chips::Place>, (f64, f64)) {
     let widths: Vec<f64> = slots.iter().filter(|s| s.present()).map(|s| s.natural).collect();
-    crate::surfaces::chips::grid(&widths, look.chip_side, look.panel_gap)
+    crate::surfaces::chips::grid(&widths, look.chip_side, look.panel_gap, within)
+}
+
+/// `theme` with `motion.morph` off, for a card with no line to bud off.
+fn popover(theme: &fs_theme::theme::Theme) -> fs_theme::theme::Theme {
+    let mut theme = theme.clone();
+    theme.morph = false;
+    theme
 }
 
 /// A second bar's card size, along the bar's line and across it, padded.
 fn chips_size(slots: &[Slot], look: &Look, edge: Edge, cells: Edge) -> (f64, f64) {
-    let (_, (main, cross)) = chips_grid(slots, look);
+    let (_, (main, cross)) = chips_grid(slots, look, None);
     let (along, across) = if edge.is_vertical() == cells.is_vertical() { (main, cross) } else { (cross, main) };
     (along + look.chip_inset * 2.0, across + look.chip_inset * 2.0)
 }
@@ -779,7 +812,11 @@ impl App {
             self.panel_dirty = true;
         }
         for p in [&mut self.overflow, &mut self.menu].into_iter().flatten() {
-            p.card.restyle(theme, self.cast);
+            if p.rise.is_some() {
+                p.card.restyle(&popover(theme), self.cast);
+            } else {
+                p.card.restyle(theme, self.cast);
+            }
             p.card.tick(now);
         }
         self.bar_dirty = true;
@@ -1076,10 +1113,25 @@ impl App {
         let theme = &self.store.theme.theme;
         let (pad, line_at) = (theme.space.screen_padding, self.bar.thickness() as f64);
         let (ow, oh) = self.output_size();
-        let cap = if edge.is_vertical() { ow - line_at - pad } else { oh - line_at - theme.space.bar_margin - pad };
-        let mut card = self.new_card(anchor, (size.0, cap.max(size.1)));
-        card.resize(now, anchor, self.bar.length(), pad, size);
-        card.ends = self.panel_place(None, false).ends;
+        let rise = self.overflow_rise();
+        let (card, anchor, rise) = match rise {
+            Some((rise, at, line_at)) => {
+                let look = &self.bar.kit.look;
+                let size = (rise.width, chips_grid(&slots, look, Some(rise.within(look))).1.1 + look.chip_inset * 2.0);
+                let cap = oh - line_at - theme.space.bar_margin - pad;
+                // A popover: no line runs along the foot's top for it to bud off.
+                let mut card = Card::new(&popover(theme), Edge::Bottom, rise.length, line_at, at, (size.0, cap.max(size.1)), self.motion_scale, self.cast);
+                card.resize(now, at, rise.length, rise.pad, size);
+                (card, at, Some(rise))
+            }
+            None => {
+                let cap = if edge.is_vertical() { ow - line_at - pad } else { oh - line_at - theme.space.bar_margin - pad };
+                let mut card = self.new_card(anchor, (size.0, cap.max(size.1)));
+                card.resize(now, anchor, self.bar.length(), pad, size);
+                card.ends = self.panel_place(None, false).ends;
+                (card, anchor, None)
+            }
+        };
         // Made before the card's own surface, which then stacks over it.
         let catcher = Some(self.overflow_catcher());
         let surface = self.popout_surface(&card, Layer::Top);
@@ -1095,10 +1147,26 @@ impl App {
             fit: None,
             catcher,
             plates: Vec::new(),
+            rise,
         });
         self.tips.hide(None, now);
         self.sync_open(now);
         self.log("overflow mapped");
+    }
+
+    /// Under the expanded sidebar the chevron's second bar rises off the
+    /// status card at the column's foot: the rise, the card's centre along
+    /// the bottom edge, and its line, so the card rests the column's own gap
+    /// above the status card (a card sits `barMargin` off its line).
+    fn overflow_rise(&self) -> Option<(Rise, f64, f64)> {
+        let theme = &self.store.theme.theme;
+        let (foot, gap) = self.bar.sidebar.as_ref()?.foot(theme)?;
+        let (ox, oy) = self.bar_origin();
+        let (out_w, out_h) = self.output_size();
+        let x = ox + f64::from(foot.x);
+        let rise = Rise { width: f64::from(foot.w), pad: x, length: out_w as i32 };
+        let line_at = out_h - (oy + f64::from(foot.y)) + gap - theme.space.bar_margin;
+        Some((rise, x + rise.width / 2.0, line_at))
     }
 
     /// Where a panel hangs: off the bar's line, or off the second bar's far
@@ -1311,6 +1379,7 @@ impl App {
             fit: None,
             catcher: None,
             plates: Vec::new(),
+            rise: None,
         });
         if let Some(p) = &self.menu {
             self.set_popout_input(p);
@@ -2243,17 +2312,22 @@ impl App {
                 return self.menu_outcome(outcome);
             }
             Owner::Overflow => {
+                let out_h = self.output_size().1;
                 let Some(p) = &mut self.overflow else { return };
                 let cells = p.cells;
+                // A rising card's surface stands on the bottom edge.
+                let (rise, oy) = (p.rise.is_some(), if p.rise.is_some() { out_h - f64::from(p.card.scene.size.h) } else { 0.0 });
                 let Some(s) = p.slots.get_mut(i) else { return };
                 let env = Env { store: &self.store, edge: cells, output: &self.bar.output };
                 let r = s.rect;
                 let a = s.cell.click(button, (at.0 - r.x as f64, at.1 - r.y as f64), &env);
-                let anchor = if edge.is_vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 };
-                // A cell in the second bar opens its panel off that card.
+                let anchor = if edge.is_vertical() { oy + r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 };
+                // A cell in the second bar opens its panel off that card, or
+                // off the column level with the cell when the card rises off
+                // the sidebar's foot, which has no far edge on the line.
                 if let Action::Panel(name) = a {
                     let open = self.panel_open() != Some(name);
-                    self.set_panel_from(name, open, Some(anchor), true);
+                    self.set_panel_from(name, open, Some(anchor), !rise);
                 } else {
                     self.act_owner = Some(owner);
                     self.act(a, anchor);

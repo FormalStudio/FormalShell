@@ -447,6 +447,15 @@ impl Sidebar {
         self.hit_at(i).map_or(0.0, |h| h.rect.y as f64 + h.rect.h as f64 / 2.0)
     }
 
+    /// The status card at the column's foot and the gap the column keeps
+    /// between its cards, in the bar window's pixels; none on the rail.
+    pub fn foot(&self, theme: &Theme) -> Option<(IRect, f64)> {
+        if self.collapsed {
+            return None;
+        }
+        Some((*self.foot.cards.first()?, Geo::of(theme).gap))
+    }
+
     /// Where the control opening `name` sits, for an open with no click.
     pub fn panel_anchor(&self, name: &str) -> Option<f64> {
         self.anchor_of(&format!("panel:{name}"))
