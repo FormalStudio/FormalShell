@@ -29,10 +29,10 @@
 #     the same foot throughout, and the letters typed around the Escape
 #     reaching foot with the Escape between them.
 #  7. With do-not-disturb on in state.json a connect raises none.
-#  8. settings.json rewritten to `layout: sidebar`, a connect raises a card
-#     off the column's line that is wider than it is tall and starts right
-#     of the column (off `debug dump`'s `headset.rest`): its size runs along
-#     a vertical line, so a card sized for the top bar came out on its side.
+#  8. settings.json rewritten to `layout: sidebar`, a connect raises the card
+#     off the top edge's middle all the same, not off the column's line:
+#     wider than tall, centred on the output within 2px and near its top
+#     (off `debug dump`'s `headset.rest`).
 #
 # The pointer is wlrctl, a real virtual-pointer client, for the reason
 # tooltip.sh documents: only one sends the surface a pointer enter.
@@ -270,11 +270,13 @@ leg_headset_card_assert() {
   headset_escape_expect
   headset_expect dnd 3 3
   headset_expect sidebar 4 3
-  local x w h
-  read -r x w h <<< "$("$jq_bin" -r '.rest | "\(.x) \(.w) \(.h)"' "$headset_sidebar_dump" 2>/dev/null)"
-  echo "headset sidebar card: x=$x w=$w h=$h"
+  local x y w h off
+  read -r x y w h <<< "$("$jq_bin" -r '.rest | "\(.x) \(.y) \(.w) \(.h)"' "$headset_sidebar_dump" 2>/dev/null)"
+  echo "headset sidebar card: x=$x y=$y w=$w h=$h on a $logical_w wide output"
   [ -n "$w" ] && [ "$w" != null ] || fail "headset sidebar: debug dump carried no card ($(cat "$headset_sidebar_dump"))"
-  [ "${w%.*}" -gt "${h%.*}" ] || fail "headset sidebar: the card is ${w}x${h}, on its side off the column"
-  [ "${x%.*}" -ge 100 ] || fail "headset sidebar: the card starts at x=$x, over the column"
-  echo "SMOKE_HEADSET_CARD ok startup 0, connect 1, held, leave, reconnect none, airpods 1, leave, escape, dnd none, sidebar ${w}x${h}"
+  [ "${w%.*}" -gt "${h%.*}" ] || fail "headset sidebar: the card is ${w}x${h}, on its side"
+  off=$(( ${x%.*} + ${w%.*} / 2 - logical_w / 2 ))
+  [ "${off#-}" -le 2 ] || fail "headset sidebar: the card's middle is ${off}px off the output's"
+  [ "${y%.*}" -le 40 ] || fail "headset sidebar: the card rests at y=$y, not off the top edge"
+  echo "SMOKE_HEADSET_CARD ok startup 0, connect 1, held, leave, reconnect none, airpods 1, leave, escape, dnd none, sidebar ${w}x${h} at ${x},${y}"
 }

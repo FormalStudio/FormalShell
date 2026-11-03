@@ -1,6 +1,7 @@
 //! The headset connect card (new in the Rust shell, after macOS's AirPods
 //! popup): when a Bluetooth audio device goes from disconnected to
-//! connected, a card buds off the bar's line in the joined-shape motion
+//! connected, a card buds off the top edge's middle (a top bar's line, else
+//! the frame ring or the bare edge) in the joined-shape motion
 //! with the device's icon, its name over "Connected" and one battery ring
 //! per part that reports a level. It never fires for a device already
 //! connected when the shell started or one that reconnects inside
@@ -30,6 +31,7 @@ use super::{App, Owner};
 use crate::motion::{Animated, SPATIAL};
 use crate::services::devices::earbuds;
 use crate::services::compositor;
+use crate::surfaces::card::{Card, Ends};
 use crate::surfaces::headset;
 use crate::surfaces::popup::Popup;
 
@@ -55,12 +57,6 @@ pub(super) struct Shown {
     held: bool,
     /// The card's width and height, on their way to the face's.
     size: (Animated, Animated),
-}
-
-/// A card's size runs along its line then away from it, so on a
-/// sidebar's vertical line its height is the along.
-fn oriented(vertical: bool, (w, h): (f64, f64)) -> (f64, f64) {
-    if vertical { (h, w) } else { (w, h) }
 }
 
 /// What the Escape bind runs.
@@ -167,11 +163,17 @@ impl App {
         let (width, height) = headset::size(&face, theme, &mut self.bar.kit);
         let room = headset::largest(&face, theme, &mut self.bar.kit);
         let pad = theme.space.screen_padding;
-        let anchor = self.bar.length() as f64 / 2.0;
-        let vertical = self.bar.edge().is_vertical();
-        let mut card = self.new_card(anchor, oriented(vertical, room));
-        card.resize(now, anchor, self.bar.length(), pad, oriented(vertical, (width, height)));
-        card.ends = self.panel_place(None, false).ends;
+        let length = self.output_size().0;
+        let anchor = length / 2.0;
+        // Off the top edge's middle whatever the layout: a top bar's line,
+        // else the frame ring's band or the bare edge, as the OSD comes up
+        // from the bottom.
+        let framed = self.bar.framed();
+        let ft = if framed { self.bar.frame_thickness() } else { 0.0 };
+        let line_at = if self.bar.edge() == Edge::Top { self.bar.thickness() as f64 } else { ft };
+        let mut card = Card::new(theme, Edge::Top, length as i32, line_at, anchor, room, self.motion_scale, self.cast);
+        card.resize(now, anchor, length as i32, pad, (width, height));
+        card.ends = Ends { along: length, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);
@@ -192,9 +194,9 @@ impl App {
     /// The card on its way to the size its face asks for: the earbuds
     /// backend's picture and rings land after it is up.
     fn headset_resize(&mut self, face: &headset::Face, now: Instant) {
-        let vertical = self.bar.edge().is_vertical();
+        let length = self.output_size().0;
         let theme = &self.store.theme.theme;
-        let (pad, length, anchor) = (theme.space.screen_padding, self.bar.length(), self.bar.length() as f64 / 2.0);
+        let (pad, anchor) = (theme.space.screen_padding, length / 2.0);
         let (w, h) = headset::size(face, theme, &mut self.bar.kit);
         let ms = crate::motion::Kind::Spatial.ms(theme) * self.motion_scale;
         let Some(c) = &mut self.headset.card else { return };
@@ -205,7 +207,7 @@ impl App {
         }
         if moved || c.size.0.running(now) || c.size.1.running(now) {
             let size = (c.size.0.value(now), c.size.1.value(now));
-            c.popup.card.resize(now, anchor, length, pad, oriented(vertical, size));
+            c.popup.card.resize(now, anchor, length as i32, pad, size);
         }
     }
 
@@ -313,16 +315,9 @@ impl App {
     pub fn headset_status(&self) -> serde_json::Value {
         match &self.headset.card {
             Some(c) => {
-                // In output pixels: a right or bottom surface starts its scene's size in from the far side.
-                let (ow, oh) = self.output_size();
-                let size = c.popup.card.scene.size;
-                let (ox, oy) = match c.popup.card.edge {
-                    Edge::Right => (ow - size.w as f64, 0.0),
-                    Edge::Bottom => (0.0, oh - size.h as f64),
-                    _ => (0.0, 0.0),
-                };
+                // The surface hangs from the output's top left, so its pixels are the output's.
                 let r = c.popup.card.rest_rect();
-                serde_json::json!({"open": c.popup.is_open(), "rest": {"x": ox + r.x as f64, "y": oy + r.y as f64, "w": r.w, "h": r.h}})
+                serde_json::json!({"open": c.popup.is_open(), "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}})
             }
             None => serde_json::Value::Null,
         }
