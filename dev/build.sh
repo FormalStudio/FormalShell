@@ -73,6 +73,7 @@ export FS_BRANDING_DIR="${FS_BRANDING_DIR-$prefix/share/formalshell/branding}"
 export FS_EARTH_IMAGE="${FS_EARTH_IMAGE-$prefix/share/formalshell/earth.jpg}"
 export FS_EARTH_TILES="${FS_EARTH_TILES-$prefix/share/formalshell/tiles}"
 export FS_EARBUDS_ART="${FS_EARBUDS_ART-$prefix/share/formalshell/earbuds}"
+export FS_WALLPAPERS="${FS_WALLPAPERS-$prefix/share/formalshell/wallpapers}"
 export PATH="$prefix/lib/formalshell/first:$prefix/bin:$PATH:$prefix/lib/formalshell/bin"
 exec "$prefix/lib/formalshell/formalshell-rs" "$@"
 EOF

@@ -11,7 +11,8 @@
 # `-flexoki`/`-zenbones` siblings that stay two. FS_WALLPAPERS points at a
 # fixture catalog of two generated pairs with credits, so Included holds
 # them and the Sky; PICKER_INCLUDED=real leaves the result's own set there
-# instead and reads Included as whatever it ships.
+# instead and reads Included as whatever it ships, every built-in carrying
+# an author, a licence and a source.
 #
 # Read off `picker status`: the sections, the two Style previews (kind
 # `mode`) showing the slots, every tile's kind, filing and title, nothing
@@ -332,6 +333,11 @@ if real != "real":
     wanted = [("Meadow", "pair", "Fixture One", "CC0-1.0"), ("Harbour", "pair", "Fixture Two", "CC0-1.0"), ("Sky", "sky", None, None)]
     if titles != wanted:
         print(f"Included {titles}, wanted {wanted}")
+        ok = False
+else:
+    bare = [i["title"] for i in included[:-1] if not (i["author"] and i["license"] and i["source"])]
+    if len(included) < 2 or bare:
+        print(f"Included has no built-in, or ones without a credit: {bare}")
         ok = False
 if not included or included[-1]["kind"] != "sky":
     print("Included does not end on the Sky")

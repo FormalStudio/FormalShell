@@ -96,6 +96,17 @@ if ! { [ -f "$earth" ] && echo "$earth_sum  $earth" | sha256sum -c --quiet 2>/de
   echo "$earth_sum  $earth" | sha256sum -c --quiet
 fi
 
+# The included wallpapers' originals, pinned in packaging/wallpapers.json.
+walls_pins=$(python3 -c 'import json, sys
+for r in json.load(open(sys.argv[1])): print(r["id"], r["url"], r["sha256"])' "$repo/packaging/wallpapers.json")
+while read -r id url sum; do
+  file=$dl/wallpaper-$id.jpg
+  if ! { [ -f "$file" ] && echo "$sum  $file" | sha256sum -c --quiet 2>/dev/null; }; then
+    curl -fsSL --retry 5 --retry-all-errors -o "$file" "$url"
+    echo "$sum  $file" | sha256sum -c --quiet
+  fi
+done <<<"$walls_pins"
+
 # formalshell-depth's model: Depth Anything V2 Small (Apache-2.0), the int8
 # export, 27 MB where the fp32 one is 99. On a photograph its map is 0.0033
 # off the fp32 map on average (0..1 scale), 0.043 at worst.
@@ -229,6 +240,19 @@ if [ ! -f "$art/done" ]; then
   touch "$art/done"
 fi
 cp -R "$art/earth.jpg" "$art/tiles" "$art/earbuds" "$share/"
+# Kept apart from the art above so a change to the set or the depth model
+# does not cut the globe again. The share directory is read-only at run
+# time, so the depth maps are drawn here; cp -a keeps each map's mtime equal
+# to its picture's, which is what the shell reads as current.
+walls_key=$({ printf '%s\n' "${sources[@]}" "$walls_pins" "$depth_sum"; cat "$repo/packaging/wallpapers.py" "$repo/packaging/formalshell-depth.py"; } | sha256sum | cut -c1-16)
+walls=$work/wallpapers/$walls_key
+if [ ! -f "$walls/done" ]; then
+  rm -rf "$work/wallpapers"; mkdir -p "$walls/out"
+  python3 "$repo/packaging/wallpapers.py" "$repo/packaging/wallpapers.json" "$dl" "$walls/out"
+  "$lib/bin/formalshell-depth" "$walls/out"
+  touch "$walls/done"
+fi
+cp -a "$walls/out" "$share/wallpapers"
 install -m644 "$repo/LICENSE" "$share/LICENSE"
 echo "$VERSION" > "$share/VERSION"
 
@@ -244,6 +268,7 @@ export FS_BRANDING_DIR="${FS_BRANDING_DIR-$prefix/share/formalshell/branding}"
 export FS_EARTH_IMAGE="${FS_EARTH_IMAGE-$prefix/share/formalshell/earth.jpg}"
 export FS_EARTH_TILES="${FS_EARTH_TILES-$prefix/share/formalshell/tiles}"
 export FS_EARBUDS_ART="${FS_EARBUDS_ART-$prefix/share/formalshell/earbuds}"
+export FS_WALLPAPERS="${FS_WALLPAPERS-$prefix/share/formalshell/wallpapers}"
 export PATH="$prefix/lib/formalshell/bin:$prefix/bin:$PATH"
 exec "$prefix/lib/formalshell/formalshell-rs" "$@"
 EOF
