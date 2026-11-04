@@ -97,7 +97,7 @@ pub const SPACING_BASE: [(&str, f64); 8] = [
     ("huge", 36.0),
 ];
 
-pub const SEMANTIC_SPACING_BASE: [(&str, f64); 39] = [
+pub const SEMANTIC_SPACING_BASE: [(&str, f64); 40] = [
     ("controlGap", 6.0),
     ("controlPaddingX", 10.0),
     ("controlPaddingY", 5.0),
@@ -139,6 +139,8 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 39] = [
     ("panelMark", 16.0),
     ("panelWidth", 320.0),
     ("panelWidthWide", 400.0),
+    // The wallpaper picker's narrowest 16:9 tile; columns are as many as fit.
+    ("pickerTile", 180.0),
 ];
 
 /// `spacingTokens(scale)`: every scale step and semantic spacing token,
@@ -192,6 +194,7 @@ pub struct Space {
     pub panel_mark: f64,
     pub panel_width: f64,
     pub panel_width_wide: f64,
+    pub picker_tile: f64,
 }
 
 impl Space {
@@ -246,6 +249,7 @@ impl Space {
             "panelMark" => self.panel_mark,
             "panelWidth" => self.panel_width,
             "panelWidthWide" => self.panel_width_wide,
+            "pickerTile" => self.picker_tile,
             _ => return None,
         })
     }
@@ -308,6 +312,7 @@ pub fn spacing_tokens(scale: f64) -> Space {
         panel_mark: s("panelMark"),
         panel_width: s("panelWidth"),
         panel_width_wide: s("panelWidthWide"),
+        picker_tile: s("pickerTile"),
     }
 }
 

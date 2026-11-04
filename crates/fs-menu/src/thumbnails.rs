@@ -1,5 +1,6 @@
 //! Cache names for the prerendered thumbnails (thumbnails.js): the wallpaper
-//! picker's `cover` squares and a clipboard capture's `fit` box. A cached
+//! picker's `cover` squares and 16:9 `wide` tiles (`size` wide), and a
+//! clipboard capture's `fit` box. A cached
 //! name is `<basename>-<key>-<mode><size>.jpg`; size and mode are in it so
 //! changing either invalidates the files by construction. The key hashes
 //! UTF-16 units.
@@ -8,18 +9,24 @@
 pub enum Mode {
     Cover,
     Fit,
+    Wide,
 }
 
 impl Mode {
-    /// Anything that is not "fit" is "cover".
+    /// Anything that is not "fit" or "wide" is "cover".
     pub fn parse(mode: &str) -> Mode {
-        if mode == "fit" { Mode::Fit } else { Mode::Cover }
+        match mode {
+            "fit" => Mode::Fit,
+            "wide" => Mode::Wide,
+            _ => Mode::Cover,
+        }
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
             Mode::Cover => "cover",
             Mode::Fit => "fit",
+            Mode::Wide => "wide",
         }
     }
 }
@@ -85,6 +92,9 @@ pub fn warm_script(concurrency: u32) -> String {
         "find \"$dir\" -maxdepth 1 -type f \\( -name \"*.part.jpg\" -o -mtime +30 \\) -delete 2>/dev/null",
         "if [ \"$mode\" = fit ]; then",
         "  vf=\"scale=w='min(iw,$size)':h='min(ih,$size)':force_original_aspect_ratio=decrease:flags=lanczos\"",
+        "elif [ \"$mode\" = wide ]; then",
+        "  h=$((size * 9 / 16))",
+        "  vf=\"scale=$size:$h:force_original_aspect_ratio=increase:flags=lanczos,crop=$size:$h\"",
         "else",
         "  vf=\"scale=$size:$size:force_original_aspect_ratio=increase:flags=lanczos,crop=$size:$size\"",
         "fi",
@@ -114,5 +124,9 @@ mod tests {
         assert!(cache_file_name("/pics/.hidden", 512, Mode::Cover).starts_with(".hidden"));
         assert!(cache_file_name(&format!("/pics/{}.jpg", "x y".repeat(80)), 512, Mode::Cover).len() < 100);
         assert_eq!(cache_path("/cache/", "/p/a.png", 512, Mode::Fit), format!("/cache/{}", cache_file_name("/p/a.png", 512, Mode::Fit)));
+        let wide = cache_file_name("/pics/a.jpg", 640, Mode::Wide);
+        assert!(wide.starts_with("a-") && wide.ends_with("-wide640.jpg"));
+        assert_ne!(wide, cache_file_name("/pics/a.jpg", 640, Mode::Cover));
+        assert_eq!(Mode::parse(Mode::Wide.as_str()), Mode::Wide);
     }
 }

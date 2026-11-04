@@ -210,6 +210,10 @@ paths = ["crates/fs-menu/src/providers/**"]
 runs = ["--menu"]
 
 [[rule]]
+paths = ["crates/fs-menu/src/providers/wallpaper.rs"]
+runs = ["--picker", "--wheel"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/scroll.rs"]
 runs = ["--wheel", "--menu", "--launcher-mouse"]
 

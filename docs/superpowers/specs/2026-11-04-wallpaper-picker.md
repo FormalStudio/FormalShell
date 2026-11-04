@@ -45,7 +45,7 @@ the hosts) shows what the model has to carry. Read 2026-11-04 on the mac:
 
 | What | Files |
 | --- | --- |
-| Root | 20 pictures, hidden today because `dark/` and `light/` exist (USAGE.md: "Files sitting directly in the directory are not listed in that case") |
+| Root | 19 pictures, hidden today because `dark/` and `light/` exist (USAGE.md: "Files sitting directly in the directory are not listed in that case") |
 | `dark/` | 33 |
 | `light/` | 7 |
 | Same name in both, byte-identical | `clouds.61220450.png`, `field.5aa40e21.png`, `pylon.7a79ac39.png`, `water.2d2b7d25.png`: one picture filed for both modes |
@@ -53,8 +53,8 @@ the hosts) shows what the model has to carry. Read 2026-11-04 on the mac:
 | Same name in root and `dark/`, identical | `flexoki-dark-orb.png` |
 | Siblings that are not a pair | `wallhaven-yq2zwl-flexoki.png` and `-zenbones.png` (two pinned palettes) |
 
-Under this spec that directory reads as 54 tiles: 1 pair, 4 both-mode
-pictures, 28 dark-only, 2 light-only and 19 unfiled, with nothing hidden.
+Under this spec that directory reads as 53 tiles: 1 pair, 4 both-mode
+pictures, 28 dark-only, 2 light-only and 18 unfiled, with nothing hidden.
 
 ## 2. The references
 

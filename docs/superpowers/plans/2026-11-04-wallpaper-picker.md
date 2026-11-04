@@ -61,7 +61,7 @@ other agents' work, never rewrite theirs.
   callers.
 - Unit tests: the owner's listing from spec §1 as names, with a predicate
   answering identical for the five twins, giving 1 pair, 4 both-mode, 28
-  dark, 2 light and 19 unfiled; `fold-l.jxl`/`fold-d.jxl`; a `-dark` token
+  dark, 2 light and 18 unfiled; `fold-l.jxl`/`fold-d.jxl`; a `-dark` token
   in `Light/` named by the token; `-flexoki`/`-zenbones` left apart; two
   dark candidates for one light; titles for every stem in the owner's
   listing; a catalog entry with a missing file dropped.
@@ -189,7 +189,7 @@ other agents' work, never rewrite theirs.
   `fspec update formalshell`, commit and push the spec (with Task 1's
   mirror change), `fspec apply --host g815` and `--host e1504g`. Read
   `formalshell-ipc call picker status` on g815 (the live shell, read-only:
-  no surface driven) for the owner's directory giving spec §1's 54 tiles.
+  no surface driven) for the owner's directory giving spec §1's 53 tiles.
 - Verify: `rg -n 'picker variant|Dark / Light|Dark \| Light' docs CLAUDE.md`
   returns nothing; `just smoke-affected` runs nothing.
 
