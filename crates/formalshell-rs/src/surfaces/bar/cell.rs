@@ -19,7 +19,7 @@ use fs_theme::tokens::WEIGHTS;
 use parley::GenericFamily;
 use vello_cpu::kurbo::Affine;
 
-use crate::scene::{Bitmap, Fade, IRect, NodeId, Paint, Scene};
+use crate::scene::{Bitmap, Fade, IRect, LitLine, NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
 use crate::text::{self, Family, ShapedText, Text, TextStyle};
 use crate::ui::el::Ring;
@@ -458,6 +458,27 @@ impl Ink {
     }
 }
 
+/// `paint` with every colour it carries at `k` of its brightness; a
+/// picture keeps its own.
+fn shaded(paint: Paint, k: f32) -> Paint {
+    let c = |c: Rgba| Rgba { r: c.r * k, g: c.g * k, b: c.b * k, a: c.a };
+    match paint {
+        Paint::Rect { fill, radius } => Paint::Rect { fill: c(fill), radius },
+        Paint::Faded { paint, fade } => Paint::Faded { paint: Box::new(shaded(*paint, k)), fade },
+        Paint::Framed { fill, radius, border, width } => Paint::Framed { fill: c(fill), radius, border: c(border), width },
+        Paint::Lips { radius, border, lips } => Paint::Lips { radius, border, lips: lips.into_iter().map(|(x, y, l)| (x, y, c(l))).collect() },
+        Paint::Text { text, color } => Paint::Text { text, color: c(color) },
+        Paint::Blur { text, color, blur } => Paint::Blur { text, color: c(color), blur },
+        Paint::Glow { text, color, x, y, blur } => Paint::Glow { text, color: c(color), x, y, blur },
+        Paint::Shape { fill, strokes } => Paint::Shape { fill: fill.map(|(p, f)| (p, c(f))), strokes: strokes.into_iter().map(|(p, s, w)| (p, c(s), w)).collect() },
+        Paint::Face { from, to, radius, border } => Paint::Face { from: c(from), to: c(to), radius, border },
+        Paint::Outlined { fit, fill, border, near, lit } => {
+            Paint::Outlined { fit, fill: c(fill), border: c(border), near: c(near), lit: lit.map(|l| LitLine { color: c(l.color), ..l }) }
+        }
+        other => other,
+    }
+}
+
 /// Writes one owner's nodes in call order, reusing what it wrote last time,
 /// so an unchanged frame damages nothing. `finish` hides whatever was not
 /// written this time.
@@ -474,11 +495,13 @@ pub struct Painter<'a> {
     /// Applied over every node's own transform (a zoom over a whole
     /// layout).
     pub transform: Affine,
+    /// The brightness share taken off every colour drawn (`El::shade`).
+    pub shade: f32,
 }
 
 impl<'a> Painter<'a> {
     pub fn new(scene: &'a mut Scene, nodes: &'a mut Vec<NodeId>, clip: Option<IRect>) -> Self {
-        Self { scene, nodes, used: 0, clip, anchor: None, fade: None, transform: Affine::IDENTITY }
+        Self { scene, nodes, used: 0, clip, anchor: None, fade: None, transform: Affine::IDENTITY, shade: 0.0 }
     }
 
     /// New nodes start right after `anchor` rather than on top of the scene.
@@ -505,6 +528,7 @@ impl<'a> Painter<'a> {
         }
         let id = self.nodes[self.used];
         self.used += 1;
+        let paint = if self.shade > 0.0 { shaded(paint, 1.0 - self.shade) } else { paint };
         let paint = match self.fade {
             Some(fade) => Paint::Faded { paint: Box::new(paint), fade },
             None => paint,

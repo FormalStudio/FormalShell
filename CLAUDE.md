@@ -1249,8 +1249,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the Volume track moving the sink 0.10 on the cube-root scale (`pactl`); the
   Volume arrow opened by a real Down from Power and Return at a tenth
   speed, its burst reading the rows under it moving down and the menu's
-  rows fading in only once its height lands, the dim up throughout and the
-  last toggle reading 0.6 of its luminance in the settled frame; Down to
+  rows fading in only once its height lands, the dim up throughout, the
+  last toggle reading 0.6 of its luminance in the settled frame and the
+  card's own fill beside it unchanged; Down to
   the second sink under the stale audit and Return making it the default
   (`pactl get-default-sink`); Escape closing the menu, then the card. The
   Power menu on the rig's empty system bus is Log out alone, one Return

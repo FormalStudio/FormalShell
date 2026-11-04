@@ -20,7 +20,7 @@ use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
-use vello_cpu::kurbo::{Rect, RoundedRect, Shape};
+use vello_cpu::kurbo::Rect;
 
 use super::{Edit, Effect, Panel, View};
 use crate::motion::{Animated, Kind as Clock, SPATIAL};
@@ -274,7 +274,6 @@ pub struct Host {
     head: Ui,
     body: Ui,
     halo_nodes: Vec<NodeId>,
-    dim_nodes: Vec<NodeId>,
     rule_nodes: Vec<NodeId>,
     pub place: Place,
     open: bool,
@@ -330,7 +329,6 @@ impl Host {
             head: Ui::new(Some(rule)),
             body: Ui::new(Some(rule)),
             halo_nodes: vec![halo],
-            dim_nodes: Vec::new(),
             rule_nodes: vec![rule],
             place,
             open: true,
@@ -638,7 +636,6 @@ impl Host {
         let body = self.module.body(&v);
         let foot = f.closing(theme, &body).foot;
         let module_wake = self.module.wake(&v);
-        let dim = self.module.dim(&v);
 
         let scene = &mut self.card.scene;
         if let Some(head) = head {
@@ -686,7 +683,6 @@ impl Host {
         // its rows show), not only after a key.
         self.take_module_cursor();
         self.sync_cursor();
-        self.draw_dim(dim, theme, alpha, clip);
 
         // One halo for the whole list (M53 D4), travelling on a key step,
         // with the cursor's fill riding it.
@@ -723,25 +719,6 @@ impl Host {
         if d.animating {
             self.wake = Some(now);
         }
-    }
-
-    /// The scrim over the card but the box under `dim`'s key, GNOME's
-    /// brightness -0.4 behind an open quick settings menu.
-    fn draw_dim(&mut self, dim: Option<(String, f64)>, theme: &Theme, alpha: f32, clip: IRect) {
-        const DIM: f32 = 0.4;
-        let hole = dim.as_ref().and_then(|(key, _)| self.body.quick.iter().find(|(k, _)| k == key).map(|(_, r)| *r));
-        let (card, radius) = (self.card.content.0, self.card.radius());
-        let mut p = Painter::new(&mut self.card.scene, &mut self.dim_nodes, Some(clip));
-        if let (Some((_, share)), Some(hole)) = (dim, hole)
-            && share > 0.0
-        {
-            let rect = |r: IRect| Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64);
-            let mut path = RoundedRect::from_rect(rect(card), radius).to_path(0.1);
-            path.extend(RoundedRect::from_rect(rect(hole), theme.box_radius(&theme.box_style("panel.group", None), hole.h as f64)).to_path(0.1));
-            let fill = theme.box_style("scrim", None).fill;
-            p.shape(card, Paint::Shape { fill: Some((path, fill.with_alpha(DIM * share as f32 * alpha))), strokes: Vec::new() });
-        }
-        p.finish();
     }
 
     /// Keeps the cursor on its row by identity when the rows renumber.

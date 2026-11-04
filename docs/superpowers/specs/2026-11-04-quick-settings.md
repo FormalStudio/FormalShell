@@ -100,8 +100,10 @@ Two roles join the table, declared once, owned by the theme:
   off and `primaryForeground` at 0.15 on, its separator `foreground` at 0.25
   off and `primaryForeground` at 0.3 on.
 
-The dim behind an open menu is the `scrim` role at 0.4 over the card's
-content rect, everything but the menu group (GNOME's brightness -0.4).
+The dim behind an open menu takes 0.4 of the brightness off every item
+but the menu group (GNOME's brightness -0.4): a filled box gets the `scrim`
+role at 0.4 over its own shape, ink, marks and a slider's fill darken to
+0.6, and the card's own fill between them stays as it is (`El::shade`).
 Focus is the table's one `ring`, drawn by the keyboard only. The card is
 the panel host's card, so the shared-kit polish pass (border opacity,
 shadows, menu radius, eased hover) reaches it with no change here.

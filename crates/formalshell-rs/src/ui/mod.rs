@@ -282,6 +282,8 @@ impl Ui {
             ui: self,
             now,
             alpha,
+            shade: 0.0,
+            covered: false,
             clip,
             ink: (Rgba::TRANSPARENT, Rgba::TRANSPARENT),
             last,
@@ -438,6 +440,8 @@ pub fn measure(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> (f64, f64
         ui: &mut ui,
         now: Instant::now(),
         alpha: 1.0,
+        shade: 0.0,
+        covered: false,
         clip: None,
         ink: (Rgba::TRANSPARENT, Rgba::TRANSPARENT),
         last: None,
@@ -456,6 +460,11 @@ pub struct Cx<'a> {
     ui: &'a mut Ui,
     pub now: Instant,
     pub alpha: f32,
+    /// The brightness share taken off what is drawn (`El::shade`).
+    pub shade: f32,
+    /// A box under the shade already covers this node, so the boxes inside
+    /// it darken their colours rather than covering a second time.
+    pub covered: bool,
     pub clip: Option<IRect>,
     /// The enclosing cell's foreground and dim inks.
     pub ink: (Rgba, Rgba),
@@ -699,7 +708,9 @@ impl Cx<'_> {
         // The next group follows this one's last node whatever it draws.
         self.last = g.nodes.last().copied().or(self.last);
         let anchor = if g.nodes.is_empty() { self.last } else { None };
-        (crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor), self.kit)
+        let mut p = crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor);
+        p.shade = self.shade;
+        (p, self.kit)
     }
 
     /// Records where the group just painted ended in paint order.

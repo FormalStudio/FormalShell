@@ -102,6 +102,10 @@ impl Tile {
 /// Power mode's menu, top to bottom, with each profile's glyph.
 const PROFILES: [(Profile, &str); 3] = [(Profile::Performance, "zap"), (Profile::Balanced, "gauge"), (Profile::PowerSaver, "leaf")];
 
+/// The brightness an open menu takes off every other row, GNOME's
+/// `DIM_BRIGHTNESS`.
+const DIM: f32 = 0.4;
+
 /// The networks Wi-Fi's menu lists at most, as GNOME's does.
 const NETWORKS: usize = 8;
 
@@ -452,7 +456,7 @@ struct MenuState {
     height: Animated,
     /// The rows' opacity, `effects`.
     content: Animated,
-    /// The scrim's share, `effectsSlow`.
+    /// The dim's share, `effectsSlow`.
     dim: Animated,
     /// The power row a first Enter armed.
     armed: Option<String>,
@@ -485,6 +489,8 @@ struct Frame {
     content: f32,
     /// Its rows take the keyboard: the box has landed open.
     ready: bool,
+    /// The dim's share over everything but the menu.
+    dim: f32,
 }
 
 impl MenuState {
@@ -523,7 +529,13 @@ impl MenuState {
             self.content.set(now, 1.0, ms(Clock::Effects));
         }
         let ready = self.want.is_some() && self.content.target() == 1.0;
-        Frame { id: self.shown.clone(), height: self.height.value(now).clamp(0.0, 1.0), content: self.content.value(now).clamp(0.0, 1.0) as f32, ready }
+        Frame {
+            id: self.shown.clone(),
+            height: self.height.value(now).clamp(0.0, 1.0),
+            content: self.content.value(now).clamp(0.0, 1.0) as f32,
+            ready,
+            dim: self.dim.value(now).clamp(0.0, 1.0) as f32,
+        }
     }
 
     fn running(&self, v: &View) -> bool {
@@ -690,6 +702,9 @@ impl Panel for QuickSettings {
             rows[r].1.push(el.width(Size::Px(rect.width())));
         }
         parts.extend(rows.into_iter().map(|(ids, r)| (ids, w::row(s.quick_gap, r).fill())));
+        if frame.dim > 0.0 {
+            parts = parts.into_iter().map(|(ids, el)| (ids, el.shade(DIM * frame.dim))).collect();
+        }
 
         // The menu under its owner's row, the gap before it growing with it.
         let mut owner = None;
@@ -760,11 +775,6 @@ impl Panel for QuickSettings {
     fn follows(&self, v: &View) -> bool {
         let m = self.menu.borrow();
         m.want != m.aimed || m.height.running(v.now)
-    }
-
-    fn dim(&self, v: &View) -> Option<(String, f64)> {
-        let share = self.menu.borrow().dim.value(v.now).clamp(0.0, 1.0);
-        (share > 0.0).then(|| ("menu".to_owned(), share))
     }
 
     fn escape(&mut self) -> bool {

@@ -244,11 +244,6 @@ pub trait Panel {
     fn follows(&self, _v: &View) -> bool {
         false
     }
-    /// The `scrim` over the card at this share of the theme's 0.4, all but
-    /// the box drawn under the key given (an open menu).
-    fn dim(&self, _v: &View) -> Option<(String, f64)> {
-        None
-    }
 }
 
 pub use fs_chrome::bar::panels::{PANELS, known, launcher_route};

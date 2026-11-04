@@ -21,6 +21,16 @@ fn frect(r: IRect) -> Rect {
     Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64)
 }
 
+/// `color` over `r`'s outline, its start and end corners rounded as
+/// [`paint_ends`] rounds them: a shaded box's scrim (`El::shade`).
+pub fn cover(p: &mut Painter, r: IRect, (start, end): (f64, f64), color: Rgba) {
+    if r.is_empty() || color.a <= 0.0 {
+        return;
+    }
+    let path = RoundedRect::from_rect(frect(r), RoundedRectRadii::new(start.max(0.0), end.max(0.0), end.max(0.0), start.max(0.0))).to_path(0.1);
+    p.shape(r, Paint::Shape { fill: Some((path, color)), strokes: Vec::new() });
+}
+
 /// `b`'s fill and border already resolved (and crossfaded) by the caller;
 /// `wash` is the wash's own fade, 0 to 1.
 pub fn paint(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, alpha: f32, wash: f32) {
