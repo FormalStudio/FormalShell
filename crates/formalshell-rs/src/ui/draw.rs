@@ -908,12 +908,13 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else {
         "rest"
     };
+    let hovered = state.hovered || (interactive && cx.hover(path));
     let mut b = if state.hero {
         t.box_style("hero", None)
     } else if state.group && state.open {
         BoxStyle { radius: t.box_style("panel.group", None).radius, ..t.box_style("panel.chip", Some("on")) }
     } else if state.group {
-        t.box_style("panel.group", None)
+        t.box_style("panel.group", Some(if hovered { "hover" } else { "rest" }))
     } else if state.glyph {
         t.box_style("panel.chip", Some(if state.open { "on" } else { "rest" }))
     } else if state.card {
@@ -932,7 +933,6 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
         b.border = Some(t.box_style("cell", Some(border_state)).border.unwrap_or(Line { color: rest_border, width: 0.0 }));
         b
     };
-    let hovered = state.hovered || (interactive && cx.hover(path));
     let washing = hovered && !state.active && !state.selected;
     b.wash = t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
     let (_, ring) = cx.cursor(stop.as_deref());

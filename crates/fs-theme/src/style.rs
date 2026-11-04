@@ -47,7 +47,7 @@ pub const ROLES: [(&str, &[&str]); 39] = [
     ("segmented.chip", &[]),
     ("cursor", &[]),
     ("hero", &[]),
-    ("panel.group", &[]),
+    ("panel.group", &["rest", "hover"]),
     ("panel.chip", &["rest", "on"]),
     ("bar.cell", &[]),
     ("backdrop.grid", &[]),

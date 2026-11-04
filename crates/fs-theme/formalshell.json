@@ -1112,19 +1112,31 @@
             "radius": "sm"
         },
         "panel.group": {
-            "fill": "foreground",
-            "fillAlpha": {
-                "light": 0.03,
-                "dark": 0.04
-            },
-            "radius": "lg",
-            "border": {
-                "color": "foreground",
-                "alpha": {
-                    "light": 0.1,
-                    "dark": 0.08
+            "rest": {
+                "fill": "foreground",
+                "fillAlpha": {
+                    "light": 0.03,
+                    "dark": 0.04
                 },
-                "width": 1
+                "radius": "lg",
+                "border": {
+                    "color": "foreground",
+                    "alpha": {
+                        "light": 0.1,
+                        "dark": 0.08
+                    },
+                    "width": 1
+                }
+            },
+            "hover": {
+                "border": {
+                    "color": "foreground",
+                    "alpha": {
+                        "light": 0.2,
+                        "dark": 0.16
+                    },
+                    "width": 1
+                }
             }
         },
         "panel.chip": {
@@ -1541,6 +1553,9 @@
         ],
         "roles.trough": [
             "The well a `ButtonGroup`'s row and a `Segmented`'s segments sit in: elementary's linked container, sunk the way an entry is. The chip that marks the chosen segment is the raised button, concentric inside it, so the trough takes the step above the chip's own 3."
+        ],
+        "roles.panel.group": [
+            "`hover` is Pond's tile outline answering the pointer (`settings/CategoryButton.qml`, `SessionButton.qml`, pond-2026-11-04): its `menuCardBorder`, white 0.4, under the outline's 0.4, so dark 0.16 and light a step over that to read on a pale card. Only an interactive group takes it (a Settings tile, a session button, Information's Manual); a boxed list of rows never does. The border crossfades on the colour clock beside the wash."
         ],
         "roles.cursor": [
             "Focus as libadwaita draws it (`_colors.scss`, `_drawing.scss`): a 2px ring of the accent at 0.5, with no halo outside the box, the same mark NativeDesktop's `focus_ring` draws. `Theme.ringWidth` is 0, so a clipping list reserves no room for it."

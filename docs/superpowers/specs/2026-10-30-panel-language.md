@@ -106,6 +106,9 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
   outlined `panel.group` card under them.
 - Pond's tiles (Settings) are `panel.group` boxes too; its session
   buttons a round `panel.chip` inside one, the armed one `primary`.
+  Under the pointer an interactive group's outline steps up to
+  `panel.group.hover` (`foreground` 0.16 dark, 0.2 light) as its wash
+  comes in; a boxed list of rows keeps its rest outline.
 
 ## 5. Sections
 
