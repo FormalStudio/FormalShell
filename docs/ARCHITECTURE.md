@@ -506,8 +506,8 @@ palette. `formalshell install` can write the greetd config.
   container, holding every binary to glibc 2.36: the shell and
   `formalshell-ipc`, the helpers no distro carries in `lib/formalshell/bin`
   (ttfx, matugen, tensaku, clipssh, localsend-cli, the iPhone bridge, the
-  earbuds CLIs, formalshell-eds), the fonts, Blue Marble tiles and earbuds
-  art in `share/formalshell`, and a `bin/formalshell` launcher that puts
+  earbuds CLIs, formalshell-eds), the fonts, Blue Marble tiles, earbuds
+  art and the included wallpapers in `share/formalshell`, and a `bin/formalshell` launcher that puts
   those helpers first on PATH. It also builds `formalshell-watchdog` from
   `packaging/formalshell-watchdog.in`: a probe that restarts the service
   after two IPC timeouts in a row, since a hung main loop leaves a live

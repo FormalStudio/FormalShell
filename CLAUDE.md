@@ -131,7 +131,8 @@ pipewire, PAM or Wayland to link.
   `./result` laid out as the release tarball unpacks (`bin/formalshell`,
   `bin/formalshell-ipc`, `lib/formalshell/{formalshell-rs,bin}`,
   `share/formalshell`). The binaries, templates, branding and examples come
-  from the tree; the fonts, Blue Marble tiles, earbuds art and the helpers
+  from the tree; the fonts, Blue Marble tiles, earbuds art, the included
+  wallpapers (`FS_WALLPAPERS`) and the helpers
   no distro carries (ttfx, localsend-cli, tensaku, clipssh, the iPhone
   bridge, the earbuds CLIs, matugen) are linked out of the host's installed
   fspec `formalshell` package, the same tarball at its pinned rev. A host
@@ -1182,7 +1183,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and `Light/`, an identical twin, a `-dark`/`-light` pair across
   directories, an `-l`/`-d` pair, a dark-only and a light-only single,
   `-flexoki`/`-zenbones` siblings) and a fixture catalog under the leg's
-  own `FS_WALLPAPERS` (`PICKER_INCLUDED=real` keeps the result's own),
+  own `FS_WALLPAPERS` (`PICKER_INCLUDED=real` keeps the result's own, and
+  reads every built-in carrying an author, a licence and a source),
   read off `picker status`: Style, Your wallpapers and Included, every
   tile's kind, filing and title. Off the frame: a pair's halves either
   side of its diagonal, a filed single's badge and the current mark in

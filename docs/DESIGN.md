@@ -963,8 +963,13 @@ them where a depth map says it stands nearer than the far plane, its top edge ac
 minute's redraw, and under a fullscreen window, locked or under the
 screensaver, it commits nothing.
 
-**Picker.** Thumbnail cells with `radiusMd`; cursor is the ring;
-`Dark | Light` is a segmented control.
+**Picker.** 16:9 tiles at least `pickerTile` (180) wide with `lg` corners and
+`lg` gaps, in three sections (Style, Your wallpapers, Included) under the
+launcher's headings; the caption sits under the picture and the cursor is the
+ring round both. A light/dark pair is one tile split on the diagonal, light
+above and dark below; a filed single carries a `moon` or `sun` badge
+top-left and the tile holding the shown slot a check disc bottom-right. The
+Style previews are two tiles, the mode in effect ringed.
 
 **Tooltip, tray menu, polkit, console, capture, hot corners.** Same tokens,
 no exceptions.

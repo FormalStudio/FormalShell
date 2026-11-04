@@ -1040,7 +1040,8 @@ way it would from a picture. It takes a `#rrggbb` hex or one of five
 names: `sage` (#a1c8bc), `purple` (#402484), `green` (#68bc64), `silver`
 (#bdc3c9) and `orange` (#ff8000). `false` or `null` brings the picture
 back. A picture picked in the wallpaper picker is saved in `state.json`
-and wins over the setting until you pick again.
+and wins over the setting until you pick again; it fills both the light and
+the dark slot.
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -1058,8 +1059,8 @@ picture. The sun is read off `location.latitude` and `location.longitude`
 fallback window instead, up at 06:00 and down at 20:00. The sky moves in
 steps of two degrees of the sun's height, so it changes every ten minutes
 or so through the twilights and holds still through the day and the
-night; nothing redraws in between. The wallpaper picker lists it as its
-last cell, Sky, after the pictures; choosing it (or `fs wallpaper set sky`)
+night; nothing redraws in between. The wallpaper picker lists it as the last
+tile under Included; choosing it (or `fs wallpaper set sky`)
 saves it in `state.json` over the setting, as picking a picture does.
 
 ```jsonc
@@ -1373,8 +1374,8 @@ right-aligned, each a button that does what its key does. Enter comes first,
 named by the row's own kind: Select, Open, Run, Choose (`Set wallpaper` on
 the wallpaper route), Copy, Paste or Share on clipboard and emoji rows, or a
 confirm prompt once a confirm-gated row is armed; a row that can't be
-activated shows no keys at all. Then `Actions` on `Tab` (the picker's other
-Dark/Light set on `Ctrl+Tab` while its switcher is up), `Into` on `→` where
+activated shows no keys at all. Then `Actions` on `Tab` (on the picker, `Next
+section` on `Ctrl+Tab` too), `Into` on `→` where
 the row has children (a route's rows, an app's windows), and `Shift+Enter`
 named after the row's second action where it has one (New window on an app
 row, an ssh send on a clipboard image, Forget on a saved network).
@@ -1411,7 +1412,7 @@ as `address/prefix`.
 | `Escape` | Cancel and close (select and input mode); otherwise clear the query, then leave the mode, then close at the root |
 | `Backspace` | Pop a level, only when the search field is empty; `Ctrl+Backspace` deletes a word |
 | `Tab` / `Shift+Tab` | Open and close the row's actions column |
-| `Ctrl+Tab` | Swap the picker's Dark/Light set, only while its switcher is showing |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | The picker's next and previous section, only on the picker |
 
 The pointer never moves the selection. The row or cell under it, in the
 list and in the actions column, takes a lighter tint than the selected
@@ -1501,8 +1502,9 @@ declares, so nothing changes and nothing warns.
 ### Built-in routes
 
 **Wallpaper** is a level like any other, except the menu draws it as the
-[picker](#picker) grid: image cells from `picker.directory`, the search field
-filtering by filename, Enter setting the wallpaper. `picker summon` and
+[picker](#picker): sections of image tiles from `picker.directory` and the
+included set, the search field filtering by title and file name, Enter setting
+the wallpaper. `picker summon` and
 `menu summon wallpaper` land in the same place.
 
 **Panels** lists one row per panel and Enter opens it, so a panel stays
@@ -3402,17 +3404,31 @@ There is no IPC target: every action a corner fires has its own verb.
 
 ## Picker
 
-The picker is a route inside the menu rather than a surface of its own. The
-`Wallpaper` row, `menu summon wallpaper` and `picker summon` all descend into
-a level whose rows are the images in a directory, drawn as a grid of thumbnail
-cells; the cursor is a ring around the cell rather than a fill, since the
-thumbnail already covers it.
+The picker is a route inside the menu rather than a surface of its own, drawn
+as a scrolling card 900 wide. The `Wallpaper` row, `menu summon wallpaper`,
+`picker summon` and Settings, Appearance, Wallpaper (whose value is the
+current picture's title, and Backspace lands back on Appearance) all open the
+same route. Tiles are 16:9 pictures at least 180 wide with their caption
+under them (four to a line at 900); the cursor is a ring round the tile and
+its caption, since the picture already covers it. A tile holding the slot the
+current mode shows carries a check disc bottom-right.
 
 ![The picker grid](screenshots/picker-hyprland.png)
 
-Everything else is the menu's: the search field filters by filename, the
-arrow keys move the cursor in 2D, Enter confirms, Escape pops back out, and
-the footer names what Enter will do.
+Three sections stand under headings, and a query hides the first:
+
+- **Style**: a Light and a Dark preview, each the picture that mode shows now,
+  the mode in effect ringed. Enter or a click runs `theme mode light|dark`, so
+  a pinned `theme.mode` refuses it (the heading reads "Set in settings.json")
+  and under `"auto"` it snoozes one cycle (the heading reads "Auto, dark until
+  07:42").
+- **Your wallpapers**: `picker.directory`, else `Wallpapers` in the user's
+  pictures directory (`XDG_PICTURES_DIR`, so `~/Pictures/Wallpapers`). The
+  heading's far end names the directory. A directory that is missing or holds
+  no picture reads "No pictures in <dir>" with "Set picker.directory in
+  settings.json" under it.
+- **Included**: the shell's own set, then the Sky, the heading's far end
+  naming the licence (`CC0`).
 
 ```jsonc
 // ~/.config/formalshell/settings.json
@@ -3424,24 +3440,71 @@ the footer names what Enter will do.
 programs.formalshell.settings.picker.directory = "/home/youruser/Pictures/Wallpapers";
 ```
 
-The listing is scanned on every entry into the route, so a directory edited
-between visits is picked up. Thumbnails come from a prerendered cache, so a
-large photo costs a small decode per cell. An empty or unset directory is an
-empty grid.
+**Pairs and singles.** The directory and its `Dark` and `Light`
+subdirectories (either name, any case, one level down) are listed together
+and read as tiles, with nothing hidden. A picture that has a light and a
+dark half is one tile, the light half above the diagonal from the bottom-left
+corner to the top-right and the dark half below it. Halves are found, in
+order:
 
-**Dark and Light variants.** The scan looks one level down for `Dark` and
-`Light` subdirectories (either name, any case). If either exists, the grid
-shows one variant at a time with a two-way `Dark` / `Light` switch between the
-search field and the grid, `Tab` swaps it, and the route opens on whichever
-matches the current mode. Choosing an image out of a set also switches the
-theme to that set's mode. Files sitting directly in the directory are not
-listed in that case. A directory with neither subdirectory is listed flat and
-shows no switch.
+1. The same file name in `Dark` and `Light`. Byte-identical files are one
+   picture for both modes; different bytes are a pair. A copy of it in the
+   root folds into the one a subdirectory files.
+2. Names that differ by a mode token, wherever the two files sit. The stem is
+   cut on `-`, `_`, `.`, spaces and brackets; a whole `dark` against `light`
+   (any case), or a last `d` against `l` (`fold-d`, `fold-l`), with every
+   other token equal. The extension may differ. `x-dark` never pairs with
+   `x-l`, and `-flexoki` next to `-zenbones` is two pictures. Two dark
+   candidates for one light half: the one in the same folder wins, then the
+   first by name.
+3. Anything left is a single. One in `Dark` or `Light` is filed under that
+   mode and carries a moon or sun badge top-left; the rest are for both modes.
 
-The route does two jobs. In **wallpaper mode** choosing an image makes the
-same call `wallpaper set` makes, so the retheme runs through one path. In
-**select mode** (`picker select <dir> <token>`) it scans any directory you
-point it at and writes the answer to
+A tile's title is its file stem with the mode token, any `<w>x<h>` token and
+any number of five digits or more dropped (`flexoki-dark-orb` reads "Flexoki
+orb"). Search matches the title and the file names. Tiles sort by title.
+
+**Two slots.** state.json keeps `wallpaper` (the light slot, and the picture
+for both modes while the other is empty), `wallpaperDark` and `wallpaperColor`
+(a flat colour or `sky`, covering both slots). Enter or a click on a tile
+writes:
+
+| Picked | Written |
+| --- | --- |
+| a pair | both slots, the mode untouched |
+| a single for both modes | `wallpaper`, `wallpaperDark` emptied, the mode untouched |
+| a single filed under a mode | that slot only, and the mode switches to it (the slot alone under a pinned `theme.mode`) |
+| the Sky | `wallpaperColor` `sky`, the slots kept under it |
+
+Over a flat colour or the sky any picture pick sets both slots. `Tab` opens
+the tile's actions: Set wallpaper, Use in light mode only and Use in dark mode
+only (singles; the mode is left alone), Open file and Copy path (a pair's is
+the half shown now). Style tiles and the Sky have no column.
+
+**Included.** `FS_WALLPAPERS` names a directory holding `catalog.json` and
+the pictures it lists; the release tarball's launcher sets it to
+`share/formalshell/wallpapers`, `dev/build.sh` to the same under its result.
+It ships nine CC0 nature photographs, each a single for both modes with its
+photographer in the caption ("Lake Matheson · Jingwei Ke") and a licence and
+source in `picker status`; `CREDITS` beside the catalog lists them. A catalog
+entry with `light` and `dark` in place of `file` is a pair, and an entry whose
+file is missing is dropped. With the variable unset or the directory absent,
+Included holds the Sky alone.
+
+Keys beyond the menu's: arrows move across section boundaries, `Page Up`,
+`Page Down`, `Home` and `End` move by a viewport and to the ends, `Ctrl+Tab`
+and `Ctrl+Shift+Tab` jump to the next and previous section's first tile. The
+cursor opens on the current tile, the search field filters every section, and
+`Escape` clears the query, then leaves the route. The listing is scanned on
+every entry, so a directory edited between visits is picked up. Tiles are
+decoded from a prerendered 640x360 thumbnail cache, so a large photo costs a
+small decode per tile.
+
+The route does two jobs. In **wallpaper mode** a pick makes the same calls
+`wallpaper set`, `pair` and `setFor` make, so the retheme runs through one
+path. In **select mode** (`picker select <dir> <token>`) it scans any
+directory you point it at and lists its files flat, with no pairing, Style,
+Included or badges, and writes the answer to
 `$XDG_STATE_HOME/formalshell/picker-selection.txt`, the same handshake the
 menu's `select` uses but a file of its own, so one answer can never satisfy
 the other's poll.
@@ -3449,13 +3512,18 @@ the other's poll.
 ```sh
 fs picker summon                        # wallpaper mode
 fs picker select /path/to/dir tok1      # select mode, correlated by token
-fs picker choose /path/to/dir/img.png   # same as Enter or a click on that cell
-fs picker variant light                 # same as Tab or the Dark / Light switch
+fs picker choose /path/to/dir/img.png   # same as Enter on that tile; either half of a pair, or sky
+fs picker chooseFor /path/to/img.png dark   # same as "Use in dark mode only", singles only
 fs picker close
-fs picker status   # {"open":…,"mode":…,"directory":…,"count":…,"variant":…,"hasVariants":…,"cursor":…}
+fs picker status   # {"open":…,"mode":…,"directory":…,"included":…,"count":…,"cursor":…,"cursorId":…,"cachedThumbnails":…,"current":{"light":…,"dark":…,"shown":…},"sections":[{"id","title","far","count"}],"items":[{"id","section","kind","title","author","license","source","light","dark","filed","current"}]}
 
 cat $XDG_STATE_HOME/formalshell/picker-selection.txt
 ```
+
+`kind` is `mode`, `pair`, `single` or `sky`; `filed` is `light`, `dark` or
+null. `choose` answers `error: not on the picker route, or path not in the
+current listing` and `chooseFor` `error: mode must be light or dark` or `error:
+not on the picker route, or path not a single in the current listing`.
 
 ## Screenshots
 
