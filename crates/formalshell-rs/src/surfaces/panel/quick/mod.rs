@@ -8,6 +8,8 @@ pub mod grid;
 use std::cell::RefCell;
 
 use fs_audio::Command;
+use fs_info::reminders;
+use fs_system::capture::elapsed_label;
 use fs_system::power::model::{self, battery_icon, charge_threshold_active};
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
@@ -17,8 +19,11 @@ use crate::motion::{Animated, Kind as Clock};
 use crate::services::devices::bluetooth::{ActionKind as BtAction, Ask as BtAsk};
 use crate::services::devices::{self, Op, audio, bluetooth as bt, network as net};
 use crate::services::power::{self, Action};
+use crate::services::notifications::now_ms;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
+use crate::surfaces::activity;
+use crate::ui::el::Ring;
 use crate::ui::{El, Event, Ink, Size, What, w};
 
 pub const ID: &str = "quicksettings";
@@ -33,6 +38,8 @@ pub enum Kind {
     Toggle,
     /// A toggle with a menu behind its arrow.
     Split,
+    /// The row of things running in the background (§6).
+    Background,
 }
 
 impl Kind {
@@ -42,6 +49,7 @@ impl Kind {
             Kind::Slider => "slider",
             Kind::Toggle => "toggle",
             Kind::Split => "split",
+            Kind::Background => "background",
         }
     }
 }
@@ -134,8 +142,14 @@ fn audio_devices(store: &Store, sinks: bool) -> Vec<(&str, &str)> {
 
 /// Every control in reading order: the system row, the sliders, then the
 /// toggles in GNOME's order, each one the store cannot back left out or
-/// disabled with its reason (§3).
+/// disabled with its reason (§3), then Background.
 pub fn tiles(store: &Store) -> Vec<Tile> {
+    tiles_with(store, None)
+}
+
+/// [`tiles`] with `open` the menu drawn: Background stays while its own
+/// menu is open, as GNOME's does, whatever is left running.
+pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     let mut out = Vec::new();
     if let Some((glyph, percent)) = battery(store) {
         out.push(Tile::new("battery", Kind::System, glyph, "Battery").subtitle(Some(percent)));
@@ -226,6 +240,78 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
     if let Some(output) = store.compositor.outputs.iter().find(|o| display::hdr_supported(store, &o.name)) {
         out.push(Tile::toggle("hdr", "sun-medium", "HDR", display::hdr_active(store)).subtitle(Some(output.name.clone())));
     }
+
+    let n = background(store).len();
+    if n > 0 || open == Some(BACKGROUND) {
+        let title = match n {
+            0 => "No background tasks".to_owned(),
+            1 => "1 background task".to_owned(),
+            n => format!("{n} background tasks"),
+        };
+        out.push(Tile { menu: true, ..Tile::new(BACKGROUND, Kind::Background, "chevron-right", &title) });
+    }
+    out
+}
+
+pub const BACKGROUND: &str = "background";
+
+/// One thing running in the background (§6), in the indicators rail's
+/// order: Activity's groups, a recording, the clipboard image going to a
+/// host, AirPlay, then pending reminders as one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Task {
+    /// `activity:<source>`, `recording`, `clipssh`, `airplay`, `reminders`.
+    pub what: String,
+    pub glyph: &'static str,
+    /// An Activity group's lead ring, drawn in place of the glyph.
+    pub ring: Option<Ring>,
+    pub title: String,
+    pub state: String,
+    /// The trailing button where the thing can be stopped: its glyph and
+    /// its word.
+    pub stop: Option<(&'static str, &'static str)>,
+}
+
+pub fn background(store: &Store) -> Vec<Task> {
+    let mut out = Vec::new();
+    for g in store.activity.activity.groups() {
+        let lead = g.lead();
+        let running = g.state() == fs_activity::State::Running;
+        out.push(Task {
+            what: format!("activity:{}", g.source),
+            glyph: "activity",
+            ring: Some(activity::ring(lead)),
+            title: lead.title.clone(),
+            state: activity::detail(lead),
+            stop: (!running).then_some(("x", "Dismiss")),
+        });
+    }
+    let rec = &store.recording;
+    if rec.active {
+        let state = if rec.stopping { "Stopping".to_owned() } else { elapsed_label(rec.elapsed_ms as f64) };
+        out.push(Task { what: "recording".into(), glyph: "circle-dot", ring: None, title: "Recording".into(), state, stop: (!rec.stopping).then_some(("square", "Stop")) });
+    }
+    let target = &store.clipssh.target;
+    if !target.is_empty() {
+        out.push(Task { what: "clipssh".into(), glyph: "terminal", ring: None, title: "Sending clipboard image".into(), state: format!("To {target}"), stop: None });
+    }
+    let airplay = &store.media.airplay;
+    if airplay.active {
+        let state = if airplay.client.is_empty() { "Receiving".to_owned() } else { format!("From {}", airplay.client) };
+        out.push(Task { what: "airplay".into(), glyph: "airplay", ring: None, title: "AirPlay".into(), state, stop: None });
+    }
+    let pending = &store.notifications.reminders;
+    if let Some(first) = pending.first() {
+        let title = if pending.len() == 1 { first.message.clone() } else { format!("{} reminders", pending.len()) };
+        out.push(Task {
+            what: "reminders".into(),
+            glyph: "alarm-clock",
+            ring: None,
+            title,
+            state: reminders::bar_label(pending, now_ms() as f64),
+            stop: Some(("x", "Clear")),
+        });
+    }
     out
 }
 
@@ -240,6 +326,9 @@ pub enum Line {
     /// A dim line standing for rows there are none of ("Wi-Fi is off").
     Note(String),
     Separator,
+    /// Something running in the background: Enter or a click on the row
+    /// stops it where it has a `stop` button, else opens where it lives.
+    Task { key: String, task: Task },
 }
 
 impl Line {
@@ -264,7 +353,7 @@ impl Line {
     /// The stop it is, if any.
     fn key(&self) -> Option<&str> {
         match self {
-            Line::Row { key, .. } | Line::Slider { key, .. } => Some(key),
+            Line::Row { key, .. } | Line::Slider { key, .. } | Line::Task { key, .. } => Some(key),
             Line::Note(_) | Line::Separator => None,
         }
     }
@@ -302,6 +391,13 @@ const POWER: [(&str, &str, &str); 4] = [
 /// `id`'s menu off the store, `armed` the power row a first Enter armed;
 /// none for a control with no menu now.
 pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
+    if id == BACKGROUND {
+        let mut lines: Vec<Line> = background(store).into_iter().map(|task| Line::Task { key: format!("m:{BACKGROUND}:{}", task.what), task }).collect();
+        if lines.is_empty() {
+            lines.push(Line::Note("Nothing is running in the background".into()));
+        }
+        return Some(MenuView { glyph: "activity", title: "Background", subtitle: None, on: false, lines, settings: Some(("Activity", Hand::Panel("activity"))) });
+    }
     let tile = tiles(store).into_iter().find(|t| t.id == id && t.menu)?;
     let row = Line::row;
     let a = &store.devices.audio;
@@ -439,7 +535,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
 
 /// The stop a closing menu hands the cursor back to.
 fn opener(id: &str) -> String {
-    if id == "power" { id.to_owned() } else { format!("{id}:menu") }
+    if id == "power" || id == BACKGROUND { id.to_owned() } else { format!("{id}:menu") }
 }
 
 /// The one in-place menu: what is asked for, what is drawn, and its three
@@ -606,6 +702,12 @@ fn menu_el(v: &View, m: &MenuView, content: f32, ready: bool) -> El {
             }
             Line::Note(text) => w::panel_empty(s, text),
             Line::Separator => w::separator(),
+            Line::Task { key, task } => {
+                let lead = task.ring.map_or_else(|| w::panel_chip(s, task.glyph, false), w::ring);
+                let detail = (!task.state.is_empty()).then(|| w::caption(task.state.clone()));
+                let trailing = task.stop.map(|(glyph, tip)| w::icon_button(glyph).tip(tip).on(key.clone())).into_iter().collect();
+                stop(w::panel_row_with(s, Some(lead), w::label(task.title.clone()), detail, trailing), key)
+            }
         })
         .collect();
     let settings = m.settings.map(|(label, _)| {
@@ -633,7 +735,21 @@ impl Panel for QuickSettings {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices, Topic::Display, Topic::Compositor, Topic::Config, Topic::State, Topic::Notifications, Topic::NightLight, Topic::Lights, Topic::Caffeinate]
+        &[
+            Topic::Devices,
+            Topic::Display,
+            Topic::Compositor,
+            Topic::Config,
+            Topic::State,
+            Topic::Notifications,
+            Topic::NightLight,
+            Topic::Lights,
+            Topic::Caffeinate,
+            Topic::Activity,
+            Topic::Recording,
+            Topic::Clipssh,
+            Topic::Media,
+        ]
     }
 
     fn width(&self, v: &View) -> f64 {
@@ -642,13 +758,13 @@ impl Panel for QuickSettings {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let all = tiles(v.store);
+        let mut state = self.menu.borrow_mut();
+        let frame = state.tick(v);
+        let all = tiles_with(v.store, frame.id.as_deref());
         let system: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::System).collect();
         let sliders: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Slider).collect();
         let toggles: Vec<&Tile> = all.iter().filter(|t| matches!(t.kind, Kind::Toggle | Kind::Split)).collect();
-
-        let mut state = self.menu.borrow_mut();
-        let frame = state.tick(v);
+        let tail: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Background).collect();
         let scanning = state.want.as_deref() == Some("wifi");
         if scanning != self.scan.borrow().is_some() {
             *self.scan.borrow_mut() = scanning.then(net::Hold::new);
@@ -669,8 +785,10 @@ impl Panel for QuickSettings {
         }
         drop(state);
 
-        // Each part is one row of the card, keyed by what it holds.
+        // Each part is one row of the card, keyed by what it holds, and the
+        // Tab section it belongs to.
         let mut parts: Vec<(Vec<&str>, El)> = Vec::new();
+        let mut part_section: Vec<usize> = Vec::new();
         let mut row = Vec::new();
         for t in &system {
             if t.id == "battery" {
@@ -680,9 +798,11 @@ impl Panel for QuickSettings {
         row.push(w::spacer());
         row.extend(system.iter().filter(|t| t.id != "battery").map(|t| w::quick_button(s, t.id, t.glyph, &t.title)));
         parts.push((system.iter().map(|t| t.id).collect(), w::row(s.quick_gap, row).fill().height(s.quick_button)));
+        part_section.push(0);
 
         for t in &sliders {
             parts.push((vec![t.id], w::quick_slider(s, t.id, t.glyph, t.value.unwrap_or(0.0), t.menu)));
+            part_section.push(1);
         }
 
         let items = vec![grid::Item { span: 1, height: s.quick_toggle }; toggles.len()];
@@ -701,7 +821,12 @@ impl Panel for QuickSettings {
             rows[r].0.push(t.id);
             rows[r].1.push(el.width(Size::Px(rect.width())));
         }
+        part_section.extend(rows.iter().map(|_| 2));
         parts.extend(rows.into_iter().map(|(ids, r)| (ids, w::row(s.quick_gap, r).fill())));
+        for t in &tail {
+            parts.push((vec![t.id], w::quick_background(s, t.id, &t.title)));
+            part_section.push(3);
+        }
         if frame.dim > 0.0 {
             parts = parts.into_iter().map(|(ids, el)| (ids, el.shade(DIM * frame.dim))).collect();
         }
@@ -727,14 +852,13 @@ impl Panel for QuickSettings {
             }
             out
         };
-        let mut sections = vec![usable(&system), usable(&sliders), usable(&toggles)];
+        let mut sections = vec![usable(&system), usable(&sliders), usable(&toggles), tail.iter().map(|t| t.id.to_owned()).collect()];
         if let (Some(m), true, Some(at)) = (&open, frame.ready, owner) {
             let mut keys: Vec<String> = m.lines.iter().filter_map(|l| l.key().map(str::to_owned)).collect();
             if m.settings.is_some() {
                 keys.push("m:settings".into());
             }
-            let section = if at == 0 { 0 } else if at <= sliders.len() { 1 } else { 2 };
-            sections.insert(section + 1, keys);
+            sections.insert(part_section[at] + 1, keys);
         }
         *self.sections.borrow_mut() = sections;
 
@@ -769,7 +893,12 @@ impl Panel for QuickSettings {
     }
 
     fn wake(&self, v: &View) -> Option<std::time::Instant> {
-        self.menu.borrow().running(v).then_some(v.now)
+        if self.menu.borrow().running(v) {
+            return Some(v.now);
+        }
+        // Background's menu counts reminders down a second at a time.
+        let counting = self.menu.borrow().shown.as_deref() == Some(BACKGROUND) && !v.store.notifications.reminders.is_empty();
+        counting.then(|| v.now + std::time::Duration::from_secs(1))
     }
 
     fn follows(&self, v: &View) -> bool {
@@ -867,7 +996,8 @@ impl QuickSettings {
         if let Some(rest) = id.strip_prefix("m:") {
             return self.menu_row(rest, fx);
         }
-        let Some(tile) = tiles(fx.store).into_iter().find(|t| t.id == id && t.available()) else { return };
+        let open = self.menu.get_mut().want.clone();
+        let Some(tile) = tiles_with(fx.store, open.as_deref()).into_iter().find(|t| t.id == id && t.available()) else { return };
         match tile.id {
             "battery" => fx.panel = Some("power"),
             "screenshot" => {
@@ -876,7 +1006,7 @@ impl QuickSettings {
             }
             "settings" => fx.panel = Some("settings"),
             "lock" => fx.call = Some(("lock", "lock")),
-            "power" => self.toggle_menu("power", fx.store),
+            "power" | BACKGROUND => self.toggle_menu(tile.id, fx.store),
             "volume" | "microphone" => mute(tile.id, fx),
             "wired" => {
                 let n = &fx.store.devices.network;
@@ -941,6 +1071,7 @@ impl QuickSettings {
             }
             "keyboard" => fx.ipc(&["lights", "effect", &what]),
             "power" => self.power(&what, fx),
+            BACKGROUND => background_row(&what, fx),
             _ => {}
         }
     }
@@ -1034,6 +1165,27 @@ fn wifi_row(ssid: String, fx: &mut Effect) {
     fx.service(move |ctx| net::connect(ctx, ssid, net::Secret::Saved));
 }
 
+/// Enter or a click on one of Background's rows: what can be stopped
+/// stops (a finished Activity group is dismissed), a running group hands
+/// the card over to Activity and AirPlay to the media panel.
+fn background_row(what: &str, fx: &mut Effect) {
+    let Some(task) = background(fx.store).into_iter().find(|t| t.what == what) else { return };
+    match (task.what.as_str(), task.stop) {
+        ("recording", Some(_)) => fx.ipc(&["record", "stop"]),
+        ("reminders", Some(_)) => fx.ipc(&["reminder", "clear"]),
+        ("airplay", _) => fx.panel = Some("media"),
+        (what, stop) => {
+            if let Some(source) = what.strip_prefix("activity:") {
+                if stop.is_some() {
+                    fx.ipc(&["activity", "dismiss", source]);
+                } else {
+                    fx.panel = Some("activity");
+                }
+            }
+        }
+    }
+}
+
 /// A slider's icon (or Enter on its track): mute its device.
 fn mute(id: &str, fx: &mut Effect) {
     let op = match id {
@@ -1057,6 +1209,7 @@ pub fn status_menu(store: &Store, state: &str) -> (Json, bool) {
             .filter_map(|l| match l {
                 Line::Row { key, title, detail, checked, armed, .. } => Some(json!({ "id": key, "title": title, "detail": detail, "checked": checked, "armed": armed })),
                 Line::Slider { key, title, value } => Some(json!({ "id": key, "title": title, "value": value })),
+                Line::Task { key, task } => Some(json!({ "id": key, "title": task.title, "detail": task.state, "stop": task.stop.map(|(_, word)| word) })),
                 Line::Note(_) | Line::Separator => None,
             })
             .chain(m.settings.map(|(label, hand)| match hand {

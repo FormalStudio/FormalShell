@@ -35,7 +35,8 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     let host = app.panel.as_ref().filter(|h| h.is_open() && h.id() == ID);
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
     let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| rect(r));
-    let rows: Vec<Json> = quick::tiles(&app.store)
+    let shown = state.as_deref().and_then(|s| serde_json::from_str::<Json>(s).ok()).and_then(|s| s["shown"].as_str().map(str::to_owned));
+    let rows: Vec<Json> = quick::tiles_with(&app.store, shown.as_deref())
         .into_iter()
         .map(|t| {
             json!({

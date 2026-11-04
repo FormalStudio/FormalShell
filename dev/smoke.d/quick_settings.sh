@@ -44,7 +44,7 @@ need_pw_record() { need_tool pw_record_bin pw-record pipewire-tools; }
 
 leg_quick_settings_timing() {
   # Two opens of the card past the first, one of them at a tenth speed.
-  leg_timing 60 200 0 170
+  leg_timing 60 240 0 210
 }
 
 leg_quick_settings_drive() {
@@ -229,6 +229,41 @@ status power-closed
 "$wtype_bin" -k Escape
 sleep 1
 
+# Background: a real recording and a reminder as its two tasks.
+$ipc call record start screen desktop > "\$d/record-start.txt" 2>&1
+for i in \$(seq 1 20); do
+  $ipc call record status 2>/dev/null | grep -qF '"active":true' && break
+  sleep 0.5
+done
+$ipc call reminder set 10m "Quick settings reminder" > "\$d/reminder-set.txt" 2>&1
+sleep 1
+$ipc call panel open quicksettings > /dev/null 2>&1
+sleep 1.5
+status bg-two
+walk_to background walk-background.txt
+press 1.5
+status bg-open
+shot background-open
+walk_to m:background:recording walk-bg-recording.txt
+press 1.5
+for i in \$(seq 1 30); do
+  $ipc call record status 2>/dev/null | grep -qF '"active":false' && break
+  sleep 0.5
+done
+$ipc call record status > "\$d/record-after.json" 2>&1
+sleep 0.5
+status bg-stopped
+walk_to m:background:reminders walk-bg-reminders.txt
+press 1.2
+$ipc call reminder status > "\$d/reminder-after.json" 2>&1
+status bg-cleared
+shot background-cleared
+"$wtype_bin" -k Escape
+sleep 1.5
+status bg-closed
+"$wtype_bin" -k Escape
+sleep 1
+
 pactl set-default-sink "\$(cat "\$d/default-sink-before.txt")" 2>/dev/null
 pactl set-default-source "\$(cat "\$d/default-source-before.txt")" 2>/dev/null
 pactl unload-module "\$(cat "\$d/module-one.txt")" 2>/dev/null
@@ -334,7 +369,8 @@ leg_quick_settings_assert() {
   [ -n "$before" ] && [ "$before" = "$after" ] || fail "quick-settings: settings.json changed ($before -> $after)"
   echo "SMOKE_QUICK_SETTINGS settings.json unchanged $after"
   quick_settings_menu_assert
-  for shot in open on menu-open power-armed; do
+  quick_settings_background_assert
+  for shot in open on menu-open power-armed background-open background-cleared; do
     [ -s "$quick_settings_dir/quick-settings-$shot.png" ] || fail "quick-settings: no quick-settings-$shot.png"
     echo "SMOKE_QUICK_SETTINGS_SHOT $quick_settings_dir/quick-settings-$shot.png"
   done
@@ -458,4 +494,33 @@ quick_settings_menu_assert() {
   quick_settings_text "the card stayed up armed" panel-armed.txt "quicksettings"
   quick_settings_jq "Escape closed the menu disarmed" status-power-closed.json '.open == true and .menu == null and .cursor == "power"'
   echo "SMOKE_QUICK_SETTINGS_SHOT $d/quick-settings-burst-6.png"
+}
+
+# Background (§6) over a real recording and a reminder: the row, its menu
+# stopping one and clearing the other, and the row gone once its menu
+# closes on nothing.
+quick_settings_background_assert() {
+  quick_settings_jq "nothing in the background, no Background row" status-shot-open.json '[.rows[] | select(.kind == "background")] == []'
+  quick_settings_jq "a recording and a reminder read 2 background tasks, last and the grid's width, 40 tall" status-bg-two.json '
+    def near($a; $b): ($a - $b) | fabs <= 1;
+    (.rows[-1] | .id == "background" and .kind == "background" and .title == "2 background tasks")
+    and (.rows[-1].rect | near(.width; 368) and near(.height; 40))'
+  quick_settings_walked "arrows reached Background" walk-background.txt background
+  quick_settings_jq "its menu lists the recording, the reminder and Activity" status-bg-open.json '
+    .menu.id == "background" and .dim == true
+    and ([.menu.rows[].id] == ["m:background:recording", "m:background:reminders", "m:settings"])
+    and .menu.rows[0].stop == "Stop" and .menu.rows[1].title == "Quick settings reminder" and .menu.rows[1].stop == "Clear"
+    and .menu.rows[2].panel == "activity" and .menu.header.title == "Background"'
+  quick_settings_walked "arrows reached the recording" walk-bg-recording.txt m:background:recording
+  quick_settings_jq "Return on it stopped the recording" record-after.json '.active == false'
+  quick_settings_jq "the row reads 1 background task, the recording gone from the menu" status-bg-stopped.json '
+    (.rows[-1] | .id == "background" and .title == "1 background task")
+    and ([.menu.rows[].id] == ["m:background:reminders", "m:settings"])'
+  quick_settings_walked "arrows reached the reminder" walk-bg-reminders.txt m:background:reminders
+  quick_settings_jq "Return on it cleared the reminders" reminder-after.json '.count == 0'
+  quick_settings_jq "with nothing left the open menu keeps the row, saying so" status-bg-cleared.json '
+    (.rows[-1] | .id == "background" and .title == "No background tasks")
+    and .menu.id == "background" and ([.menu.rows[].id] == ["m:settings"]) and .menu.notes == ["Nothing is running in the background"]'
+  quick_settings_jq "Escape closed the menu and the row went with it" status-bg-closed.json '
+    .open == true and .menu == null and ([.rows[] | select(.kind == "background")] == [])'
 }

@@ -1255,7 +1255,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the second sink under the stale audit and Return making it the default
   (`pactl get-default-sink`); Escape closing the menu, then the card. The
   Power menu on the rig's empty system bus is Log out alone, one Return
-  arming it and Escape closing it with nothing run.
+  arming it and Escape closing it with nothing run. Then Background over a
+  real `record start` and a `reminder set`: "2 background tasks" as the
+  last row, the grid's width and 40 tall; its menu listing the recording
+  (Stop), the reminder (Clear) and Activity; Return on the recording
+  ending it (`record status`) and on the reminder clearing it (`reminder
+  status`), the open menu then reading "No background tasks", and Escape
+  taking the row away. The menu photographed open and emptied.
 - `quick_settings_power.sh` `--quick-settings-power` (vm_only): the
   Power button's menu against the guest's real logind, its rows the ones
   CanSuspend, CanReboot and CanPowerOff allow with Log out last; real

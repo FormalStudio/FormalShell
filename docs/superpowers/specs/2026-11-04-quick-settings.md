@@ -196,11 +196,18 @@ overnight are toggles in the grid instead.
   as its title ("1 background task", "n background tasks") and
   `chevron-right` after it, shown while the count is above 0 or its menu is
   open.
-- Its menu lists each one as a `panel_row` (its own icon, its title, its
-  state under it) with a trailing ghost icon button where the thing can be
-  stopped: Stop for a recording (`record stop`), Clear for reminders,
-  Dismiss for a finished Activity group. Then "Activity" (the `activity`
-  panel).
+- Its menu, headed "Background", lists each one as a `panel_row` (its own
+  icon, an Activity group's ring, its title, its state under it) with a
+  trailing ghost icon button where the thing can be stopped: Stop for a
+  recording (`record stop`), Clear for reminders (`reminder clear`, one row
+  for all of them), Dismiss for a finished Activity group (`activity
+  dismiss`). The row is one stop: Enter or a click on it does what its
+  button does, and with no button hands the card over to where the thing
+  lives (Activity for a running group, `media` for AirPlay). Then
+  "Activity" (the `activity` panel).
+- Open with nothing left, the row reads "No background tasks" and the menu
+  "Nothing is running in the background"; the row goes once the menu
+  closes, as GNOME's does.
 
 ## 7. Extras: what the chevron governs
 

@@ -337,6 +337,7 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
     let mut system = vec![w::spacer()];
     system.extend(buttons);
     out.insert(0, w::row(s.quick_gap, system).fill());
+    out.push(w::quick_background(s, "q:background", "2 background tasks"));
     w::column(s.quick_gap, out).fill().pad(s.quick_inset, s.quick_inset, s.quick_inset, s.quick_inset)
 }
 

@@ -740,6 +740,19 @@ pub fn quick_info(s: &Space, id: &str, glyph: &str, title: &str, value: Option<&
     quick_toggle(s, id, glyph, title, value, false, true)
 }
 
+/// Background (§6): a flat full-width row, `quickBackground` tall, the
+/// count as its title and an arrow after it, opening its menu.
+pub fn quick_background(s: &Space, id: &str, title: &str) -> El {
+    let line = row(s.panel_gap, vec![quick_words(title, None), icon("chevron-right").size(Type::Title)]).fill().pad(s.panel_mark, 0.0, s.lg, 0.0);
+    cell(line)
+        .ghost()
+        .interactive()
+        .cell_state(|c| c.inset = Some((0.0, 0.0)))
+        .height(s.quick_background)
+        .on(id)
+        .stop(id)
+}
+
 /// The system row's round button, `quickButton` across.
 pub fn quick_button(s: &Space, id: &str, glyph: &str, tip: &str) -> El {
     quick_disc(glyph, Type::Title, s.quick_button, false).interactive().on(id).stop(id).tip(tip)
