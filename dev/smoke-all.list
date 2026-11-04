@@ -123,6 +123,7 @@
 --panel-handoff
 --panel-keys
 --picker
+--picker --light
 --plugins
 --processes
 --radio

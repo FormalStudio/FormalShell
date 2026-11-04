@@ -321,7 +321,6 @@ pub fn spacing_tokens(scale: f64) -> Space {
 pub struct Launcher {
     pub height_share: f64,
     pub app_height_share: f64,
-    pub picker_columns: u32,
     pub emoji_columns: u32,
     /// The most rows `Recent` lists at rest.
     pub recent: u32,
@@ -345,7 +344,6 @@ pub struct Launcher {
 pub const LAUNCHER: Launcher = Launcher {
     height_share: 0.6,
     app_height_share: 0.82,
-    picker_columns: 4,
     emoji_columns: 8,
     recent: 8,
     field_size: 21.0 / 13.0,

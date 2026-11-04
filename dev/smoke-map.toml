@@ -211,7 +211,7 @@ runs = ["--menu"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/wallpaper.rs"]
-runs = ["--picker", "--wheel"]
+runs = ["--picker", "--picker --light", "--wheel"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/scroll.rs"]
@@ -597,7 +597,7 @@ runs = ["--glass"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/picker.rs", "crates/formalshell-rs/src/wayland/picker.rs", "crates/formalshell-rs/src/ipc/picker.rs"]
-runs = ["--picker", "--wheel"]
+runs = ["--picker", "--picker --light", "--wheel"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/nightlight.rs", "crates/formalshell-rs/src/ipc/nightlight.rs"]
@@ -703,7 +703,7 @@ runs = ["--emoji"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/thumbnails.rs"]
-runs = ["--picker"]
+runs = ["--picker", "--picker --light", "--wheel"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/toggles.rs"]

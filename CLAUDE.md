@@ -1176,15 +1176,23 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   NO PLAYER to a real track. The band is cut for a top bar with no frame, so
   a run on another edge drives the same three cases, prints each claim as
   skipped and is read by eye.
-- `picker.sh` `--picker`: the wallpaper grid, the pick becoming the
-  wallpaper, the select token round trip, the Dark/Light variants, and
-  the prerendered thumbnail cache (`fs-menu` `thumbnails`) backing every
-  cell (the cache
-  directory's own contents, since a warmed cell and a fallback cell paint
-  the same picture), with no colour swatches ahead of the pictures. The
-  Sky cell after the pictures, picked like any other, putting the sky on
-  the desktop with state.json's `wallpaperColor` reading `sky`, and a
-  select request listing no Sky cell.
+- `picker.sh` `--picker`: the wallpaper picker
+  (`docs/superpowers/specs/2026-11-04-wallpaper-picker.md`) over a fixture
+  directory carrying every pairing case (a same-name pair across `Dark/`
+  and `Light/`, an identical twin, a `-dark`/`-light` pair across
+  directories, an `-l`/`-d` pair, a dark-only and a light-only single,
+  `-flexoki`/`-zenbones` siblings) and a fixture catalog under the leg's
+  own `FS_WALLPAPERS` (`PICKER_INCLUDED=real` keeps the result's own),
+  read off `picker status`: Your wallpapers and Included, every tile's
+  kind, filing and title. Off the frame: a pair's halves either side of
+  its diagonal, a filed single's badge and the current mark in their
+  corners. Enter on a pair writing both slots and the next summon opening
+  on it, a light-only and a dark-only pick writing their slot and the mode
+  (the slot alone under a pinned `theme.mode`), `chooseFor` one slot and
+  no mode, the Sky, Ctrl+Tab and Ctrl+Shift+Tab between sections, a query,
+  the empty Your wallpapers, `picker select` listing the files flat, the
+  `wide` thumbnail cache, and the cursor's walk under the stale audit.
+  Read dark and `--light`.
 - `plugins.sh` `--plugins`: a plugin directory dropped into the config home
   placing its own bar cell, no `bar` key involved; panel, overlay and
   crashing plugins; and a `launcher` plugin running only while the

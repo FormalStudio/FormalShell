@@ -424,12 +424,12 @@ fn power_buttons(v: &Value) -> Vec<CustomPowerButton> {
         .collect()
 }
 
-fn home() -> String {
+pub(crate) fn home() -> String {
     std::env::var("HOME").unwrap_or_default()
 }
 
 /// `$XDG_<var>`, else `$HOME/<fallback>`.
-fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
+pub(crate) fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
     std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(home()).join(fallback))
 }
 

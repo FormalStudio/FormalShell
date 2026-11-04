@@ -1,6 +1,6 @@
 //! `picker`: the wallpaper route summoned, the generic image
-//! selector opened on a directory, and `choose` doing what Enter on a cell
-//! does.
+//! selector opened on a directory, `choose` doing what Enter on a tile
+//! does and `chooseFor` what its "Use in … mode only" does.
 
 use super::registry::{Function, Target, Type, Value};
 use crate::wayland::App;
@@ -28,15 +28,15 @@ fn choose(app: &mut App, a: &[Value]) -> Value {
     }
 }
 
-fn variant(app: &mut App, a: &[Value]) -> Value {
-    let name = a[0].str();
-    if name != "dark" && name != "light" {
-        return text("error: variant must be dark or light");
-    }
-    if app.picker_variant(name == "light") {
+fn choose_for(app: &mut App, a: &[Value]) -> Value {
+    let Some(half) = crate::services::state::Half::parse(a[1].str()) else {
+        return text("error: mode must be light or dark");
+    };
+    app.resolve_launcher();
+    if app.picker_choose_for(a[0].str(), half) {
         text("ok")
     } else {
-        text("error: not on the picker route, or the listing has no Dark/Light variants")
+        text("error: not on the picker route, or path not a single in the current listing")
     }
 }
 
@@ -56,7 +56,7 @@ pub fn target() -> Target<App> {
             Function { name: "summon", params: &[], ret: Type::String, call: summon },
             Function { name: "select", params: &[("directory", Type::String), ("token", Type::String)], ret: Type::String, call: select },
             Function { name: "choose", params: &[("path", Type::String)], ret: Type::String, call: choose },
-            Function { name: "variant", params: &[("name", Type::String)], ret: Type::String, call: variant },
+            Function { name: "chooseFor", params: &[("path", Type::String), ("mode", Type::String)], ret: Type::String, call: choose_for },
             Function { name: "close", params: &[], ret: Type::String, call: close },
             Function { name: "status", params: &[], ret: Type::String, call: status },
         ],

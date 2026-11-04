@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn enter_installs_and_keeps_the_launcher_open() {
         let rows = package_rows(&parse_search(FIREFOX));
-        let s = crate::actions::Subject { node: &rows[0], windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None };
+        let s = crate::actions::Subject { node: &rows[0], windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None, single: false };
         let first = crate::actions::first_action(&s).expect("an install");
         assert_eq!(first.id, "install");
         assert!(first.keep_open);

@@ -192,8 +192,8 @@ pub struct KeyCtx {
     pub app_view: bool,
     /// That app view declared something to scroll.
     pub scrollable: bool,
-    /// The picker's Dark | Light switcher is up.
-    pub variants: bool,
+    /// The level's tiles are laid out in sections Ctrl+Tab steps through.
+    pub sections: bool,
     /// Standing inside a mode rather than at the root.
     pub level: bool,
     /// The actions column is open and has the keys.
@@ -227,7 +227,10 @@ pub enum KeyAction {
     Clear,
     Pop,
     Swallow,
-    Variant,
+    /// Ctrl+Tab and Ctrl+Shift+Tab: the next and previous section's first
+    /// tile.
+    NextSection,
+    PrevSection,
     /// Tab: the selected subject's actions beside the list.
     Actions,
     /// One step back inside the column: a target list to its actions,
@@ -263,7 +266,8 @@ impl KeyAction {
             KeyAction::Clear => "clear",
             KeyAction::Pop => "pop",
             KeyAction::Swallow => "swallow",
-            KeyAction::Variant => "variant",
+            KeyAction::NextSection => "nextSection",
+            KeyAction::PrevSection => "prevSection",
             KeyAction::Actions => "actions",
             KeyAction::Back => "back",
             KeyAction::Into => "into",
@@ -371,7 +375,8 @@ pub fn key_action(key: Key, mods: Modifiers, auto_repeat: bool, ctx: &KeyCtx) ->
             // tree and close the launcher.
             if auto_repeat { KeyAction::Swallow } else { KeyAction::Pop }
         }
-        Key::Tab | Key::Backtab if ctx.variants && mods.ctrl => KeyAction::Variant,
+        Key::Tab if ctx.sections && mods.ctrl && !mods.shift => KeyAction::NextSection,
+        Key::Tab | Key::Backtab if ctx.sections && mods.ctrl => KeyAction::PrevSection,
         Key::Tab if plain && ctx.mode == KeyMode::Menu => KeyAction::Actions,
         Key::Tab | Key::Backtab => KeyAction::Swallow,
         Key::Other => KeyAction::Pass,

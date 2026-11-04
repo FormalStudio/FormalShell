@@ -809,17 +809,22 @@ impl App {
     /// are in the cache (or the warm gave up on them).
     pub fn launcher_picker(&mut self) {
         if self.launcher.open && self.launcher.on_picker() {
-            let px = (crate::surfaces::launcher::picker_cell_px(&self.store.theme.theme), self.launcher_scale());
+            use crate::services::picker::{self, Px};
+            let theme = &self.store.theme.theme;
+            let (w, h) = self.launcher.picker_tile_px(theme);
+            let px = Px { w, h, radius: theme.radii.lg, scale: self.launcher_scale() };
             let p = &self.store.picker;
+            let sky = crate::services::wallpaper::sky_source(self.store.sky_step());
             let want: Vec<String> = self
                 .launcher
-                .picker_listing(&self.store)
+                .picker_tiles(&self.store)
                 .into_iter()
-                .filter(|path| px != p.thumb_px || !p.thumbs.contains_key(path))
-                .filter(|path| p.cached.contains(path) || !p.cached.is_empty() || crate::services::wallpaper::generated(path))
+                .filter(|(_, item)| p.warm(item) || !p.cached.is_empty() || item.kind == fs_menu::providers::ItemKind::Sky)
+                .map(|(_, item)| picker::tile_key(&item, &sky))
+                .filter(|key| px != p.thumb_px || !p.thumbs.contains_key(key))
                 .collect();
             if !want.is_empty() {
-                crate::services::picker::command(crate::services::picker::Cmd::Thumbs(want, px));
+                picker::command(picker::Cmd::Thumbs(want, px));
             }
         }
         self.launcher_store_changed();
@@ -844,11 +849,12 @@ impl App {
         chosen
     }
 
-    pub fn picker_variant(&mut self, light: bool) -> bool {
-        let ok = self.launcher.set_picker_variant(&self.store, light);
-        self.launcher_resolve = true;
-        self.launcher_picker();
-        ok
+    pub fn picker_choose_for(&mut self, path: &str, half: crate::services::state::Half) -> bool {
+        let chosen = self.launcher.choose_for(&self.store, path, half);
+        if chosen {
+            self.hide_launcher();
+        }
+        chosen
     }
 
     /// LocalsendService.sendClipboardEntryAt: a ledger entry to the peer at
@@ -1334,6 +1340,7 @@ impl App {
             "primary" | "column-run" => key(nav::Key::Return, false),
             "alternate" => key(nav::Key::Return, true),
             "column-back" | "column-token" => key(nav::Key::Backtab, false),
+            "section" => Some((nav::Key::Tab, nav::Modifiers { ctrl: true, ..Default::default() })),
             _ => None,
         };
         if let Some((key, mods)) = hint {
@@ -1348,10 +1355,6 @@ impl App {
         }
         match on {
             "outside" | "close" => self.menu_close(),
-            "variant" => {
-                let light = !self.launcher.picker.light;
-                self.picker_variant(light);
-            }
             "token" => self.launcher_back(),
             _ => {
                 self.resolve_launcher();

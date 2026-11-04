@@ -15,8 +15,7 @@ use fs_menu::icons::icon_for;
 use fs_menu::model::build_tree;
 use fs_menu::node::{Entries, Kind, Node};
 use fs_menu::providers::{
-    Item, ItemKind, Mode, ProviderFn, Variant, apply_providers, catalog, image_basename, image_rows, items, title_of,
-    wallpaper_listing, wallpaper_pick_mode, wallpaper_variants,
+    Item, ItemKind, Mode, ProviderFn, apply_providers, catalog, image_basename, image_rows, items, tile_rows, title_of,
 };
 use serde_json::json;
 
@@ -95,108 +94,8 @@ fn image_rows_tolerate_an_empty_listing() {
     assert_eq!(image_rows(&[], "x").len(), 0);
 }
 
-// Dark/Light variants. The scan hands over the picker directory AND its
-// Dark/Light subdirectories in one listing; this is the split the route's
-// switcher reads.
-#[test]
-fn variants_split_the_listing_by_subdirectory() {
-    let v = wallpaper_variants(&strs(&["/pics/Dark/night.png", "/pics/Light/day.png", "/pics/Light/noon.jpg"]), "/pics");
-    assert!(v.has_variants);
-    assert_eq!(v.dark.len(), 1);
-    assert_eq!(v.light.len(), 2);
-    assert_eq!(v.root.len(), 0);
-    assert_eq!(v.dark[0], "/pics/Dark/night.png");
-}
-
-// Either case, since the owner's own directories may be either and a
-// case-insensitive filesystem makes the distinction meaningless anyway.
-#[test]
-fn variant_directory_names_are_case_insensitive() {
-    let v = wallpaper_variants(&strs(&["/pics/dark/night.png", "/pics/LIGHT/day.png"]), "/pics");
-    assert_eq!(v.dark.len(), 1);
-    assert_eq!(v.light.len(), 1);
-}
-
-// No subdirectory pair: one flat listing, no switcher, exactly the behavior
-// every existing setup has today.
-#[test]
-fn a_directory_without_the_pair_lists_flat() {
-    let v = wallpaper_variants(&strs(&["/pics/a.png", "/pics/b.png"]), "/pics");
-    assert!(!v.has_variants);
-    assert_eq!(v.root.len(), 2);
-    assert_eq!(v.dark.len(), 0);
-    assert_eq!(v.light.len(), 0);
-}
-
-// Classification is by position relative to the scanned directory, not by the
-// parent directory's name: a picker directory that is itself called Dark must
-// not turn its own root listing into a variant.
-#[test]
-fn a_base_directory_named_dark_is_still_the_root_listing() {
-    let v = wallpaper_variants(&strs(&["/pics/Dark/night.png"]), "/pics/Dark");
-    assert!(!v.has_variants);
-    assert_eq!(v.root.len(), 1);
-}
-
-// Any other subdirectory is neither variant: only the two names mean anything,
-// and a directory of, say, archived wallpapers must not become one mode's set.
-// The scan's own -maxdepth 1 means neither case reaches here in practice; the
-// rule is the first path segment either way, so something nested under Dark/
-// would still be dark rather than unsorted.
-#[test]
-fn unrelated_subdirectories_are_not_variants() {
-    let v = wallpaper_variants(&strs(&["/pics/archive/old.png"]), "/pics");
-    assert!(!v.has_variants);
-    assert_eq!(v.root.len(), 1);
-
-    let nested = wallpaper_variants(&strs(&["/pics/Dark/deep/deeper.png"]), "/pics");
-    assert_eq!(nested.dark.len(), 1);
-}
-
-// One variant present is still variant mode: the empty side reads honestly
-// under its own header, where falling back to the root listing would look like
-// the switcher did nothing.
-#[test]
-fn one_variant_alone_still_raises_the_switcher() {
-    let v = wallpaper_variants(&strs(&["/pics/Dark/night.png"]), "/pics");
-    assert!(v.has_variants);
-    assert_eq!(wallpaper_listing(&v, Some(Variant::Light)).len(), 0);
-    assert_eq!(wallpaper_listing(&v, Some(Variant::Dark)).len(), 1);
-}
-
-// The one function the grid, `picker choose`'s membership check and `picker
-// status`'s count all read, so they cannot disagree about what is on screen. An
-// unknown variant name resolves to dark rather than to nothing.
-#[test]
-fn listing_picks_the_variant_or_the_flat_root() {
-    let pair = wallpaper_variants(&strs(&["/pics/Dark/n.png", "/pics/Light/d.png"]), "/pics");
-    assert_eq!(wallpaper_listing(&pair, Some(Variant::Dark))[0], "/pics/Dark/n.png");
-    assert_eq!(wallpaper_listing(&pair, Some(Variant::Light))[0], "/pics/Light/d.png");
-    assert_eq!(wallpaper_listing(&pair, None)[0], "/pics/Dark/n.png");
-
-    let flat = wallpaper_variants(&strs(&["/pics/a.png"]), "/pics");
-    assert_eq!(wallpaper_listing(&flat, Some(Variant::Light))[0], "/pics/a.png");
-}
-
-#[test]
-fn a_pick_out_of_a_set_commits_that_mode() {
-    let pair = wallpaper_variants(&strs(&["/pics/Dark/n.png", "/pics/Light/d.png"]), "/pics");
-    assert_eq!(wallpaper_pick_mode(&pair, Some(Variant::Dark)), Some(Variant::Dark));
-    assert_eq!(wallpaper_pick_mode(&pair, Some(Variant::Light)), Some(Variant::Light));
-    let flat = wallpaper_variants(&strs(&["/pics/a.png"]), "/pics");
-    assert_eq!(wallpaper_pick_mode(&flat, Some(Variant::Dark)), None);
-}
-
-#[test]
-fn variants_tolerate_an_empty_scan() {
-    let v = wallpaper_variants(&[], "/pics");
-    assert!(!v.has_variants);
-    assert_eq!(wallpaper_listing(&v, Some(Variant::Dark)).len(), 0);
-    assert_eq!(wallpaper_variants(&[], "").root.len(), 0);
-}
-
-// The pairing model (specs/2026-11-04-wallpaper-picker.md §3).
-
+// Pairs and singles. The scan hands over the picker directory AND its
+// Dark/Light subdirectories in one listing.
 fn listing(base: &str, names: &[&str]) -> Vec<String> {
     names.iter().map(|n| format!("{base}/{n}")).collect()
 }
@@ -456,4 +355,21 @@ fn the_catalog() {
     assert_eq!(got[1].kind, ItemKind::Pair { light: "/share/wallpapers/fold-l.jpg".into(), dark: "/share/wallpapers/fold-d.jpg".into() });
     assert_eq!(got[1].title, "Fold");
     assert!(catalog("not json", "/share", |_| true).is_empty());
+}
+
+#[test]
+fn tile_rows_show_the_modes_half_and_match_title_and_files() {
+    let items = vec![
+        Item { id: "/p/x-light.png".into(), kind: ItemKind::Pair { light: "/p/x-light.png".into(), dark: "/p/x-dark.png".into() }, title: "X".into(), credit: None },
+        Item { id: "/p/sea.jpg".into(), kind: ItemKind::Single { path: "/p/sea.jpg".into(), filed: None }, title: "Sea".into(), credit: None },
+        Item { id: "sky".into(), kind: ItemKind::Sky, title: "Sky".into(), credit: None },
+    ];
+    let light = tile_rows(&items, "yours", false, "sky:3", "");
+    assert_eq!(light.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), ["/p/x-light.png", "/p/sea.jpg", "sky:3"]);
+    assert_eq!(light[0].id, "wallpaper./p/x-light.png");
+    assert_eq!(light[1].section.as_deref(), Some("yours"));
+    assert_eq!(tile_rows(&items, "yours", true, "sky:3", "")[0].path, "/p/x-dark.png");
+    assert_eq!(tile_rows(&items, "yours", false, "", "x-dark").len(), 1);
+    assert_eq!(tile_rows(&items, "yours", false, "", "SEA")[0].label, "Sea");
+    assert_eq!(tile_rows(&items, "yours", false, "", "nothing").len(), 0);
 }

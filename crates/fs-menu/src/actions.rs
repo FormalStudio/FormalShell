@@ -139,6 +139,9 @@ pub struct Subject<'a> {
     /// The fspec package id an Uninstall of this app takes out, once
     /// `fspec app owner` said this host's spec holds it.
     pub removable: Option<&'a str>,
+    /// A wallpaper tile holding one picture, which can fill one mode's
+    /// slot alone.
+    pub single: bool,
 }
 
 /// A row's kind for one compositor window, its id in the node's `path`.
@@ -146,7 +149,7 @@ pub const WINDOW_KIND: &str = "window";
 
 impl<'a> Subject<'a> {
     pub fn of(node: &'a Node) -> Subject<'a> {
-        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None }
+        Subject { node, windows: 0, discrete_gpu: false, picker_select: false, abbrev: None, pinned: false, removable: None, single: false }
     }
 
     /// A dim note, a keybind, an unavailable row: Enter, Shift+Enter and a
@@ -285,6 +288,10 @@ fn builtins(s: &Subject) -> Vec<Action> {
             // The sky cell is drawn by the shell: no file to open or copy.
             if !n.path.starts_with('/') {
                 return out;
+            }
+            if s.single && !s.picker_select {
+                out.push(Action::new("light-only", "Use in light mode only", Run::Ipc(format!("wallpaper.setFor:light:{}", n.path))));
+                out.push(Action::new("dark-only", "Use in dark mode only", Run::Ipc(format!("wallpaper.setFor:dark:{}", n.path))));
             }
             out.push(Action::new("open-file", "Open file", Run::Command(format!("xdg-open {}", shell_quote(&n.path)))));
             out.push(copy("copy-path", "Copy path", &n.path));
@@ -431,13 +438,6 @@ pub struct ActionBar {
     pub hints: Vec<KeyHint>,
 }
 
-/// Which variant the wallpaper route's Tab would show.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Variant {
-    Dark,
-    Light,
-}
-
 /// What the menu hands the footer.
 #[derive(Clone, Debug)]
 pub struct ActionCtx<'a> {
@@ -445,8 +445,6 @@ pub struct ActionCtx<'a> {
     pub node: Option<&'a Node>,
     pub at_root: bool,
     pub picker_select: bool,
-    /// The variant Tab would switch to, `None` wherever Tab does nothing.
-    pub variant_switch: Option<Variant>,
     pub confirming: bool,
     /// The row's second action, "" for none.
     pub alternate_label: &'a str,
@@ -459,7 +457,6 @@ impl Default for ActionCtx<'_> {
             node: None,
             at_root: false,
             picker_select: false,
-            variant_switch: None,
             confirming: false,
             alternate_label: "",
         }
@@ -468,7 +465,6 @@ impl Default for ActionCtx<'_> {
 
 const KEY_ENTER: &[&str] = &["Enter"];
 const KEY_ESC: &[&str] = &["Esc"];
-const KEY_TAB: &[&str] = &["Tab"];
 const KEY_SHIFT_ENTER: &[&str] = &["Shift", "Enter"];
 
 fn hint(keys: &[&'static str], label: impl Into<String>) -> KeyHint {
@@ -507,11 +503,6 @@ pub fn hints(c: &ActionCtx) -> Vec<KeyHint> {
         return vec![hint(KEY_ESC, "Cancel")];
     }
     let mut out = Vec::new();
-    match c.variant_switch {
-        Some(Variant::Light) => out.push(hint(KEY_TAB, "Show light")),
-        Some(Variant::Dark) => out.push(hint(KEY_TAB, "Show dark")),
-        None => {}
-    }
     if !c.alternate_label.is_empty() && !c.confirming {
         out.push(hint(KEY_SHIFT_ENTER, c.alternate_label));
     }
@@ -619,10 +610,10 @@ mod tests {
         assert_eq!(labels(&hints(&ActionCtx { at_root: true, ..Default::default() })), ["Close"]);
         assert_eq!(labels(&hints(&ActionCtx::default())), ["Back"]);
         assert_eq!(labels(&hints(&ActionCtx { mode: Mode::Select, ..Default::default() })), ["Cancel"]);
-        let c = ActionCtx { node: Some(&app), variant_switch: Some(Variant::Light), alternate_label: "New window", ..Default::default() };
-        assert_eq!(labels(&hints(&c)), ["Show light", "New window", "Back"]);
-        assert_eq!(hints(&c)[1].keys, ["Shift", "Enter"]);
-        assert_eq!(labels(&hints(&ActionCtx { confirming: true, ..c })), ["Show light", "Back"]);
+        let c = ActionCtx { node: Some(&app), alternate_label: "New window", ..Default::default() };
+        assert_eq!(labels(&hints(&c)), ["New window", "Back"]);
+        assert_eq!(hints(&c)[0].keys, ["Shift", "Enter"]);
+        assert_eq!(labels(&hints(&ActionCtx { confirming: true, ..c })), ["Back"]);
     }
 
     #[test]

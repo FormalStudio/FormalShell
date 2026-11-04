@@ -166,7 +166,7 @@ const CTRL: Modifiers = Modifiers { ctrl: true, shift: false, alt: false };
 const SHIFT: Modifiers = Modifiers { ctrl: false, shift: true, alt: false };
 
 fn ctx() -> KeyCtx {
-    KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, variants: false, level: false, column: false, into: false }
+    KeyCtx { mode: KeyMode::Menu, query: false, grid: false, app_view: false, scrollable: false, sections: false, level: false, column: false, into: false }
 }
 
 fn act(key: Key, mods: Modifiers, repeat: bool, ctx: KeyCtx) -> &'static str {
@@ -234,8 +234,12 @@ fn escape_clears_then_pops() {
 #[test]
 fn tab_opens_the_actions_and_never_leaves_the_field() {
     assert_eq!(act(Key::Tab, NONE, false, ctx()), "actions");
-    assert_eq!(act(Key::Tab, NONE, false, KeyCtx { variants: true, ..ctx() }), "actions");
-    assert_eq!(act(Key::Tab, CTRL, false, KeyCtx { variants: true, ..ctx() }), "variant");
+    assert_eq!(act(Key::Tab, NONE, false, KeyCtx { sections: true, ..ctx() }), "actions");
+    assert_eq!(act(Key::Tab, CTRL, false, KeyCtx { sections: true, ..ctx() }), "nextSection");
+    let ctrl_shift = Modifiers { ctrl: true, shift: true, alt: false };
+    assert_eq!(act(Key::Backtab, ctrl_shift, false, KeyCtx { sections: true, ..ctx() }), "prevSection");
+    assert_eq!(act(Key::Tab, ctrl_shift, false, KeyCtx { sections: true, ..ctx() }), "prevSection");
+    assert_eq!(act(Key::Tab, CTRL, false, ctx()), "swallow");
     assert_eq!(act(Key::Backtab, SHIFT, false, ctx()), "swallow");
     assert_eq!(act(Key::Tab, NONE, false, KeyCtx { mode: KeyMode::Select, ..ctx() }), "swallow");
 }

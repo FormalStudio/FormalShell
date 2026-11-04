@@ -455,7 +455,9 @@ fn stub() -> Registry<()> {
                         s(format!("select {} {}", a[0].str(), a[1].str()))
                     }),
                     f("choose", &[("path", Type::String)], Type::String, |_, a| s(format!("choose {}", a[0].str()))),
-                    f("variant", &[("name", Type::String)], Type::String, |_, a| s(format!("variant {}", a[0].str()))),
+                    f("chooseFor", &[("path", Type::String), ("mode", Type::String)], Type::String, |_, a| {
+                        s(format!("chooseFor {} {}", a[0].str(), a[1].str()))
+                    }),
                     f("close", &[], Type::String, |_, _| s("ok")),
                     f("status", &[], Type::String, |_, _| s("{}")),
                 ],

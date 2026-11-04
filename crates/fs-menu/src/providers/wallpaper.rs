@@ -1,11 +1,11 @@
-//! The wallpaper route: image rows for the grid, the picker directory scan,
-//! the Dark/Light variant split, and the pairing model that reads a listing
-//! as light/dark pairs and singles (specs/2026-11-04-wallpaper-picker.md §3).
+//! The wallpaper route: the picker directory scan, the pairing model that
+//! reads a listing as light/dark pairs and singles
+//! (specs/2026-11-04-wallpaper-picker.md §3), and the tiles' rows.
 //!
-//! The picker's grid lives inside the launcher, so its cells are ordinary
-//! display rows, kind "image", carrying the absolute path; every piece of
-//! machinery the launcher has (cursor wrap, `activate(index)` over IPC, the
-//! confirm and close paths) applies to them unchanged.
+//! The picker's tiles live inside the launcher, so they are ordinary display
+//! rows, kind "image", carrying the file shown; every piece of machinery the
+//! launcher has (`activate(index)` over IPC, the actions column, the close
+//! paths) applies to them unchanged.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -28,7 +28,7 @@ pub fn image_basename(path: &str) -> &str {
 /// prerender its thumbnails. One definition of what counts as a pickable
 /// image, so the grid and the cache can never disagree about the listing.
 ///
-/// Both variant subdirectories are named as starting points alongside the
+/// Both mode subdirectories are named as starting points alongside the
 /// directory itself: `find` reports a missing one on stderr (swallowed) and
 /// carries on with the rest, so one invocation covers every layout, and
 /// `-maxdepth 1` per starting point is what keeps an unrelated subdirectory
@@ -39,7 +39,7 @@ pub fn picker_scan_command(dir: &str) -> Vec<String> {
         "sh",
         "-c",
         "find \"$1\" \"$1/Dark\" \"$1/dark\" \"$1/Light\" \"$1/light\" -maxdepth 1 -type f \
-         \\( -iname \"*.png\" -o -iname \"*.jpg\" -o -iname \"*.jpeg\" -o -iname \"*.webp\" -o -iname \"*.bmp\" \\) \
+         \\( -iname \"*.png\" -o -iname \"*.jpg\" -o -iname \"*.jpeg\" -o -iname \"*.webp\" \\) \
          2>/dev/null | sort -u",
         "sh",
         dir,
@@ -47,54 +47,6 @@ pub fn picker_scan_command(dir: &str) -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect()
-}
-
-/// The scan's listing split by variant.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct WallpaperVariants {
-    pub has_variants: bool,
-    pub dark: Vec<String>,
-    pub light: Vec<String>,
-    pub root: Vec<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Variant {
-    Dark,
-    Light,
-}
-
-/// The scan hands over everything it found directly under the picker
-/// directory AND directly under its `Dark`/`Light` subdirectories (either
-/// case) in one listing; this decides which of the three each path belongs
-/// to, from its position relative to `base_dir` rather than from its parent
-/// directory's name alone: a picker directory itself called `Dark` must not
-/// turn its own root listing into a variant.
-///
-/// `has_variants` is what the route keys its switcher off: neither
-/// subdirectory means one flat listing and no switcher at all. One of the two
-/// present is still variant mode, with the other variant simply empty: an
-/// empty grid under a LIGHT header reads honestly, where silently falling back
-/// to the root listing would look like the switcher did nothing.
-pub fn wallpaper_variants(paths: &[String], base_dir: &str) -> WallpaperVariants {
-    let base = base_dir.trim_end_matches('/');
-    let mut out = WallpaperVariants::default();
-    for p in paths {
-        match path_variant(p, base) {
-            Some(Variant::Dark) => out.dark.push(p.clone()),
-            Some(Variant::Light) => out.light.push(p.clone()),
-            None => out.root.push(p.clone()),
-        }
-    }
-    out.has_variants = !out.dark.is_empty() || !out.light.is_empty();
-    out
-}
-
-fn path_variant(path: &str, base: &str) -> Option<Variant> {
-    filed_mode(path, base).map(|m| match m {
-        Mode::Dark => Variant::Dark,
-        Mode::Light => Variant::Light,
-    })
 }
 
 /// The mode a path's first directory under `base` files it in.
@@ -112,30 +64,6 @@ fn filed_mode(path: &str, base: &str) -> Option<Mode> {
     }
 }
 
-/// The listing one variant shows: the single entry point for it, so the grid,
-/// `picker choose`'s membership check and `picker status`'s count can never
-/// disagree about what is currently on screen. An unknown variant resolves to
-/// dark rather than to nothing, which is what `None` stands for here.
-pub fn wallpaper_listing(variants: &WallpaperVariants, variant: Option<Variant>) -> &[String] {
-    if !variants.has_variants {
-        return &variants.root;
-    }
-    if variant == Some(Variant::Light) { &variants.light } else { &variants.dark }
-}
-
-/// The mode a pick commits to: the set it came from when the listing is
-/// split, `None` for a flat listing, where the pick says nothing about mode
-/// and the theme keeps whatever it was in. A wallpaper filed under Dark is a
-/// dark-mode wallpaper by the owner's own sorting, so choosing it while the
-/// theme is light must flip the theme along with it, otherwise the Dark |
-/// Light switch reads as a browsing filter that never does anything.
-pub fn wallpaper_pick_mode(variants: &WallpaperVariants, variant: Option<Variant>) -> Option<Variant> {
-    if !variants.has_variants {
-        return None;
-    }
-    Some(if variant == Some(Variant::Light) { Variant::Light } else { Variant::Dark })
-}
-
 /// Rows for the "wallpaper" route. `query` filters on the basename only: a
 /// path's directory component is identical for every row in a listing, so
 /// matching it would make every query match everything.
@@ -148,6 +76,35 @@ pub fn image_rows(paths: &[String], query: &str) -> Vec<Node> {
             parent_id: Some("wallpaper".to_string()),
             path: p.clone(),
             ..Node::new(format!("wallpaper.{p}"), image_basename(p), Kind::Image)
+        })
+        .collect()
+}
+
+/// The picker's rows for `items` in `section`: each tile's node id is
+/// `wallpaper.<item id>`, its label the title, its path the file it shows now
+/// (a pair's dark half when `dark`, the Sky's `sky` source). `query` matches
+/// the title and the file names.
+pub fn tile_rows(items: &[Item], section: &str, dark: bool, sky: &str, query: &str) -> Vec<Node> {
+    let q = fs_js::trim(query).to_lowercase();
+    items
+        .iter()
+        .filter(|item| {
+            q.is_empty()
+                || item.title.to_lowercase().contains(&q)
+                || item.files().iter().any(|f| image_basename(f).to_lowercase().contains(&q))
+        })
+        .map(|item| {
+            let path = match &item.kind {
+                ItemKind::Pair { light, dark: d } => if dark { d.clone() } else { light.clone() },
+                ItemKind::Single { path, .. } => path.clone(),
+                ItemKind::Sky => sky.to_owned(),
+            };
+            Node {
+                parent_id: Some("wallpaper".to_string()),
+                path,
+                section: Some(section.to_owned()),
+                ..Node::new(format!("wallpaper.{}", item.id), item.title.clone(), Kind::Image)
+            }
         })
         .collect()
 }
@@ -183,6 +140,17 @@ pub struct Item {
     pub kind: ItemKind,
     pub title: String,
     pub credit: Option<Credit>,
+}
+
+impl Item {
+    /// The files the tile stands for: a pair's two halves, a single's one.
+    pub fn files(&self) -> Vec<&str> {
+        match &self.kind {
+            ItemKind::Pair { light, dark } => vec![light, dark],
+            ItemKind::Single { path, .. } => vec![path],
+            ItemKind::Sky => Vec::new(),
+        }
+    }
 }
 
 /// The scan's listing read as pairs and singles, ordered by title.

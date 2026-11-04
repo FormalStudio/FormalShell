@@ -244,6 +244,12 @@ fn wallpaper() {
     assert_eq!(all[0].label, "Set wallpaper");
     assert_eq!(all[0].run, Run::Ipc("wallpaper.set:/w/sea.jpg".into()));
     assert_eq!(actions_for(&Subject { picker_select: true, ..Subject::of(row) })[0].label, "Choose");
+    let single = actions_for(&Subject { single: true, ..Subject::of(row) });
+    assert_eq!(ids(&single), ["set", "light-only", "dark-only", "open-file", "copy-path"]);
+    assert_eq!(single[1].label, "Use in light mode only");
+    assert_eq!(single[2].run, Run::Ipc("wallpaper.setFor:dark:/w/sea.jpg".into()));
+    let choosing = actions_for(&Subject { single: true, picker_select: true, ..Subject::of(row) });
+    assert_eq!(ids(&choosing), ["set", "open-file", "copy-path"]);
     let sky = &image_rows(&["sky:6".into()], "")[0];
     assert_eq!(ids(&of(sky)), ["set"]);
 }

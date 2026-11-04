@@ -82,8 +82,12 @@ struct Slot {
 #[derive(Default)]
 struct Layout {
     slots: Vec<Slot>,
-    /// The headings: text and the band's top, in body coordinates.
-    headings: Vec<(String, f64, f64)>,
+    /// The headings: text, the band's top and its x, in body coordinates,
+    /// and the words at the band's far end.
+    headings: Vec<(String, f64, f64, String)>,
+    /// A section's empty state under its heading: its top, the line and
+    /// the caption under it.
+    notes: Vec<(f64, String, String)>,
     content_h: f64,
     columns: usize,
     cell_w: f64,
@@ -158,9 +162,8 @@ pub struct Model {
     /// arrived in another.
     pub sessions: u64,
     pub picker: Picker,
-    /// The Dark | Light switcher's height at the head of the body, 0 when
-    /// the route has none.
-    picker_switch_h: f64,
+    /// The picker's sections while it is the level.
+    picker_sections: Vec<PickerSection>,
     /// The output's width, which the card is cut to.
     pub output_w: f64,
     /// The monitor route's tile strip height, 0 off the route.
@@ -431,10 +434,23 @@ pub struct Picker {
     pub select: bool,
     pub dir: String,
     pub token: String,
-    pub light: bool,
     /// `picker select` set this up for the open that follows.
     pending: bool,
 }
+
+/// One of the picker's sections: its id, heading, and the words at the
+/// heading's far end.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PickerSection {
+    pub id: &'static str,
+    pub title: String,
+    pub far: String,
+}
+
+pub const YOURS: &str = "yours";
+pub const INCLUDED: &str = "included";
+/// A select request's one flat section.
+const FILES: &str = "files";
 
 pub const PICKER_ROUTE: &str = "wallpaper";
 
@@ -465,7 +481,7 @@ impl Default for Model {
             paste: false,
             sessions: 0,
             picker: Picker::default(),
-            picker_switch_h: 0.0,
+            picker_sections: Vec::new(),
             output_w: 0.0,
             monitor_strip_h: 0.0,
             monitor_wants: None,
@@ -758,7 +774,7 @@ impl Model {
 
     /// The routes that draw a whole view of their own.
     pub fn app_view(&self) -> bool {
-        self.mode == Mode::Menu && matches!(self.level.as_deref(), Some(MONITOR_ROUTE | MIRROR_ROUTE))
+        self.mode == Mode::Menu && matches!(self.level.as_deref(), Some(MONITOR_ROUTE | MIRROR_ROUTE | PICKER_ROUTE))
     }
 
     /// One card width per level kind, which the content is laid out at
@@ -883,105 +899,192 @@ impl Model {
         self.mode == Mode::Menu && self.level.as_deref() == Some(PICKER_ROUTE)
     }
 
-    pub fn picker_variants(&self, store: &Store) -> fs_menu::providers::WallpaperVariants {
-        if store.picker.dir != self.picker.dir {
-            return Default::default();
+    /// The picker's tiles by section: the directory's pairs and singles
+    /// under Your wallpapers, then the built-ins and the Sky under Included.
+    /// A select request lists the directory's files alone, one flat section.
+    pub fn picker_tiles(&self, store: &Store) -> Vec<(&'static str, fs_menu::providers::Item)> {
+        use fs_menu::providers::{Item, ItemKind, image_basename};
+        let p = &store.picker;
+        let scanned = p.dir == self.picker.dir;
+        if self.picker.select {
+            let files = if scanned { p.scanned.as_slice() } else { &[] };
+            return files
+                .iter()
+                .map(|f| (FILES, Item { id: f.clone(), kind: ItemKind::Single { path: f.clone(), filed: None }, title: image_basename(f).to_owned(), credit: None }))
+                .collect();
         }
-        fs_menu::providers::wallpaper_variants(&store.picker.scanned, &self.picker.dir)
+        let yours = if scanned { p.items.as_slice() } else { &[] };
+        let sky = Item { id: "sky".into(), kind: ItemKind::Sky, title: "Sky".into(), credit: None };
+        yours.iter().map(|i| (YOURS, i.clone())).chain(p.included.iter().chain([&sky]).map(|i| (INCLUDED, i.clone()))).collect()
     }
 
-    fn picker_variant(&self) -> Option<fs_menu::providers::Variant> {
-        use fs_menu::providers::Variant;
-        Some(if self.picker.light { Variant::Light } else { Variant::Dark })
-    }
-
-    /// The directory's pictures, then the sky as it stands now, after
-    /// every picture so no swatch goes ahead of them. A select request
-    /// asks for a file, so it lists the pictures alone.
-    pub fn picker_listing(&self, store: &Store) -> Vec<String> {
-        let variants = self.picker_variants(store);
-        let mut listing = fs_menu::providers::wallpaper_listing(&variants, self.picker_variant()).to_vec();
-        if !self.picker.select {
-            listing.push(crate::services::wallpaper::sky_source(store.sky_step()));
+    /// The sections the picker shows, in order.
+    fn picker_sections(&self, store: &Store) -> Vec<PickerSection> {
+        if self.picker.select {
+            return vec![PickerSection { id: FILES, ..Default::default() }];
         }
-        listing
+        let home = crate::services::menu::home();
+        let dir = match self.picker.dir.strip_prefix(home.trim_end_matches('/')) {
+            Some(rest) if !home.is_empty() && rest.starts_with('/') => format!("~{rest}"),
+            _ => self.picker.dir.clone(),
+        };
+        let mut licences: Vec<&str> = store.picker.included.iter().filter_map(|i| i.credit.as_ref()).map(|c| c.license.as_str()).collect();
+        licences.dedup();
+        let licence = match licences.as_slice() {
+            [one] => licence_name(one),
+            _ => String::new(),
+        };
+        vec![
+            PickerSection { id: YOURS, title: "Your wallpapers".into(), far: dir },
+            PickerSection { id: INCLUDED, title: "Included".into(), far: licence },
+        ]
     }
 
     fn picker_rows(&self, store: &Store, query: &str) -> Vec<Node> {
-        let q = query.trim().to_lowercase();
-        fs_menu::providers::image_rows(&self.picker_listing(store), "")
-            .into_iter()
-            .map(|mut row| {
-                if crate::services::wallpaper::sky(&row.path).is_some() {
-                    row.label = "Sky".into();
-                }
-                row
-            })
-            .filter(|row| q.is_empty() || row.label.to_lowercase().contains(&q))
-            .collect()
+        let dark = store.state.data.mode == "dark";
+        let sky = crate::services::wallpaper::sky_source(store.sky_step());
+        let tiles = self.picker_tiles(store);
+        let mut rows = Vec::new();
+        for section in [FILES, YOURS, INCLUDED] {
+            let items: Vec<fs_menu::providers::Item> = tiles.iter().filter(|(s, _)| *s == section).map(|(_, i)| i.clone()).collect();
+            rows.extend(fs_menu::providers::tile_rows(&items, section, dark, &sky, query));
+        }
+        rows
     }
 
-    /// The wallpaper route's segmented switcher shows.
-    pub fn picker_switch(&self, store: &Store) -> bool {
-        self.on_picker() && self.picker_variants(store).has_variants
+    /// The tile a row stands for.
+    fn picker_tile_of(&self, store: &Store, id: &str) -> Option<fs_menu::providers::Item> {
+        let id = id.strip_prefix("wallpaper.")?;
+        self.picker_tiles(store).into_iter().map(|(_, i)| i).find(|i| i.id == id)
+    }
+
+    /// The tile holds the slot the mode shows: a pair both slots, a single
+    /// the picture shown, the Sky while it is up.
+    pub fn picker_current(store: &Store, item: &fs_menu::providers::Item) -> bool {
+        use fs_menu::providers::ItemKind;
+        match &item.kind {
+            ItemKind::Pair { light, dark } => store.desktop_for("light") == *light && store.desktop_for("dark") == *dark,
+            ItemKind::Single { path, .. } => store.desktop() == *path,
+            ItemKind::Sky => crate::services::wallpaper::sky(&store.desktop()).is_some(),
+        }
+    }
+
+    /// A tile's picture size: `pickerTile` wide at the least, as many
+    /// columns as fit the card's content an `lg` apart, 16:9. The cursor's
+    /// ring sits `xs` outside the picture, inside the content.
+    pub fn picker_tile_px(&self, theme: &Theme) -> (f64, f64) {
+        let s = &theme.space;
+        let width = self.content_width(theme) - s.xs * 2.0;
+        let columns = fs_menu::appgrid::columns_for(width + s.lg, s.picker_tile + s.lg).max(1);
+        let w = ((width - s.lg * (columns - 1) as f64) / columns as f64).floor().max(1.0);
+        (w, (w * 9.0 / 16.0).round())
     }
 
     /// `openImageSelect`.
     pub fn open_image_select(&mut self, store: &Store, dir: &str, token: &str) {
         self.picker_abandon();
-        let dir = if dir.is_empty() { store.config.str("picker.directory").unwrap_or("").to_owned() } else { dir.to_owned() };
-        self.picker = Picker { select: true, dir, token: token.into(), light: self.picker.light, pending: true };
+        let dir = crate::services::picker::directory(if dir.is_empty() { store.config.str("picker.directory").unwrap_or("") } else { dir });
+        self.picker = Picker { select: true, dir, token: token.into(), pending: true };
         self.open(store, Some(PICKER_ROUTE));
     }
 
-    /// `chooseImage`: false off the route or for a path not listed.
+    /// `chooseImage`: false off the route or for a path no tile holds. A
+    /// pair sets both slots, a picture for both modes both, one filed under
+    /// a mode its slot and that mode (unless settings.json pins the mode),
+    /// the Sky the sky over both.
     pub fn choose_image(&mut self, store: &Store, path: &str) -> bool {
-        if !self.open || !self.on_picker() || !self.picker_listing(store).iter().any(|p| p == path) {
+        use fs_menu::providers::{ItemKind, Mode as Filed};
+        if !self.open || !self.on_picker() {
             return false;
         }
+        let sky = path == fs_theme::theme::SKY || crate::services::wallpaper::sky(path).is_some();
+        let tiles = self.picker_tiles(store);
+        let Some((_, item)) = tiles.iter().find(|(_, i)| if sky { i.kind == ItemKind::Sky } else { i.files().contains(&path) }) else {
+            return false;
+        };
         if self.picker.select {
             write_picker_selection(&json!({"token": self.picker.token, "value": path}));
             self.picker.token.clear();
         } else {
-            let mode = fs_menu::providers::wallpaper_pick_mode(&self.picker_variants(store), self.picker_variant());
-            // The sky is filed under neither set, so it leaves the mode be.
-            let mode = mode.filter(|_| crate::services::wallpaper::sky(path).is_none());
-            let mode = mode.map(|v| if v == fs_menu::providers::Variant::Light { "light" } else { "dark" });
-            state::set_wallpaper(state::Choice::Both(path.into()), mode);
+            match &item.kind {
+                ItemKind::Sky => state::set_wallpaper(state::Choice::Both(fs_theme::theme::SKY.into()), None),
+                ItemKind::Pair { light, dark } => state::set_wallpaper(state::Choice::Pair(light.clone(), dark.clone()), None),
+                ItemKind::Single { path, filed: None } => state::set_wallpaper(state::Choice::Both(path.clone()), None),
+                ItemKind::Single { path, filed: Some(filed) } => {
+                    let (half, name) = if *filed == Filed::Light { (state::Half::Light, "light") } else { (state::Half::Dark, "dark") };
+                    let key = crate::services::theme::mode_key(store.config.settings());
+                    let mode = crate::services::theme::request_mode(name, &store.state.data.mode, key).ok();
+                    state::set_wallpaper(state::Choice::Slot(half, path.clone()), mode.as_deref());
+                }
+            }
         }
         self.close();
         true
     }
 
-    /// `setPickerVariant`.
-    pub fn set_picker_variant(&mut self, store: &Store, light: bool) -> bool {
-        if !self.open || !self.picker_switch(store) {
+    /// `picker chooseFor`: one single for one mode's slot, the mode left as
+    /// it is. False off the route, in select mode, or for anything but a
+    /// listed single.
+    pub fn choose_for(&mut self, store: &Store, path: &str, half: state::Half) -> bool {
+        use fs_menu::providers::ItemKind;
+        if !self.open || !self.on_picker() || self.picker.select {
             return false;
         }
-        if self.picker.light != light {
-            self.picker.light = light;
-            self.from_keys = true;
-            self.dirty = true;
+        let single = self.picker_tiles(store).iter().any(|(_, i)| matches!(&i.kind, ItemKind::Single { path: p, .. } if p == path));
+        if !single {
+            return false;
         }
+        state::set_wallpaper(state::Choice::Slot(half, path.into()), None);
+        self.close();
         true
     }
 
     /// `pickerStatus`.
     pub fn picker_status(&self, store: &Store) -> Value {
-        let v = self.picker_variants(store);
-        let listing = self.picker_listing(store);
+        use fs_menu::providers::{ItemKind, Mode as Filed};
+        let tiles = self.picker_tiles(store);
+        let sections = self.picker_sections(store);
+        let filed = |m: &Option<Filed>| m.map(|m| if m == Filed::Light { "light" } else { "dark" });
+        let items: Vec<Value> = tiles
+            .iter()
+            .map(|(section, i)| {
+                let credit = i.credit.clone().unwrap_or_default();
+                let (kind, light, dark, filing) = match &i.kind {
+                    ItemKind::Pair { light, dark } => ("pair", Some(light.as_str()), Some(dark.as_str()), None),
+                    ItemKind::Single { path, filed: f } => {
+                        let f = filed(f);
+                        ("single", (f != Some("dark")).then_some(path.as_str()), (f != Some("light")).then_some(path.as_str()), f)
+                    }
+                    ItemKind::Sky => ("sky", None, None, None),
+                };
+                json!({
+                    "id": i.id,
+                    "section": section,
+                    "kind": kind,
+                    "title": i.title,
+                    "author": (!credit.author.is_empty()).then_some(credit.author),
+                    "license": (!credit.license.is_empty()).then_some(credit.license),
+                    "source": (!credit.source.is_empty()).then_some(credit.source),
+                    "light": light,
+                    "dark": dark,
+                    "filed": filing,
+                    "current": !self.picker.select && Self::picker_current(store, i),
+                })
+            })
+            .collect();
+        let count = |id: &str| tiles.iter().filter(|(s, _)| *s == id).count();
         json!({
             "open": self.open && self.on_picker(),
             "mode": if self.picker.select { "select" } else { "wallpaper" },
             "directory": self.picker.dir,
-            "count": listing.len(),
-            "sky": listing.iter().find(|p| crate::services::wallpaper::sky(p).is_some()),
-            "variant": if v.has_variants { if self.picker.light { "light" } else { "dark" } } else { "none" },
-            "hasVariants": v.has_variants,
-            "cachedThumbnails": listing.iter().filter(|p| store.picker.cached.contains(*p)).count(),
-            "darkCount": v.dark.len(),
-            "lightCount": v.light.len(),
+            "included": (!store.picker.included_dir.is_empty()).then_some(&store.picker.included_dir),
+            "count": tiles.len(),
             "cursor": self.cursor,
+            "cursorId": self.cursor_id,
+            "cachedThumbnails": tiles.iter().filter(|(_, i)| store.picker.warm(i)).count(),
+            "current": {"light": store.desktop_for("light"), "dark": store.desktop_for("dark"), "shown": store.desktop()},
+            "sections": sections.iter().map(|s| json!({"id": s.id, "title": s.title, "count": count(s.id)})).collect::<Vec<_>>(),
+            "items": items,
         })
     }
 
@@ -989,11 +1092,10 @@ impl Model {
         if !self.picker.pending {
             self.picker_abandon();
             self.picker.select = false;
-            self.picker.dir = store.config.str("picker.directory").unwrap_or("").to_owned();
+            self.picker.dir = crate::services::picker::directory(store.config.str("picker.directory").unwrap_or(""));
             self.picker.token.clear();
         }
         self.picker.pending = false;
-        self.picker.light = store.state.data.mode == "light";
         crate::services::picker::command(crate::services::picker::Cmd::Scan(self.picker.dir.clone()));
     }
 
@@ -1189,7 +1291,7 @@ impl Model {
             level.unwrap_or(""),
             children.map_or("", Children::key),
             q,
-            if picker && self.picker.light { "light" } else { "" }
+            if picker && self.picker.select { "select" } else { "" }
         );
         (view, rows, app_count, empty, searching, key)
     }
@@ -1218,7 +1320,9 @@ impl Model {
         let (view, rows, app_count, empty, searching, key) = self.resolve_rows(store);
         let fresh = key != self.key;
         let level_label = self.level.as_deref().and_then(|l| store.menu.nodes().get(l)).map(|n| n.label.clone()).unwrap_or_default();
-        let sections = if !self.children.is_empty() {
+        let sections = if view == View::Picker {
+            rows.iter().map(|r| r.section.clone().unwrap_or_default()).collect()
+        } else if !self.children.is_empty() {
             vec![String::new(); rows.len()]
         } else {
             model::sections_for(
@@ -1249,10 +1353,16 @@ impl Model {
             self.want.clear();
         }
         let ids: Vec<&str> = self.rows.iter().map(|r| r.id.as_str()).collect();
-        let index = nav::rederive(&self.want, self.cursor as i64, &ids, fresh, self.placed);
+        let mut index = nav::rederive(&self.want, self.cursor as i64, &ids, fresh, self.placed);
+        if view == View::Picker && !self.placed && !self.picker.select {
+            // The cursor opens on the tile on the desktop.
+            let tiles = self.picker_tiles(store);
+            let current = tiles.iter().find(|(_, i)| Self::picker_current(store, i)).map(|(_, i)| format!("wallpaper.{}", i.id));
+            index = current.and_then(|id| ids.iter().position(|r| *r == id)).unwrap_or(0);
+        }
         self.key = key;
         self.monitor_strip_h = if view == View::Monitor { ui::measure(&monitor_strip(store, theme, &self.monitor_history), self.content_width(theme), theme, kit).1 } else { 0.0 };
-        self.picker_switch_h = if self.picker_switch(store) { ui::measure(&picker_switch(self), 400.0, theme, kit).1 } else { 0.0 };
+        self.picker_sections = if view == View::Picker { self.picker_sections(store) } else { Vec::new() };
         self.layout(theme, kit);
         if changed && matches!(view, View::Rows | View::AppGrid) {
             // The selection sets its row's label at 600: both weights are
@@ -1271,6 +1381,9 @@ impl Model {
         if fresh || view_changed {
             self.scroll = 0.0;
             self.touch.settle();
+            self.follow();
+        } else if changed && view == View::Picker {
+            // A rescan that shrank the grid leaves the scroll past its end.
             self.follow();
         }
         self.dirty = true;
@@ -1328,10 +1441,10 @@ impl Model {
             if band == prev { String::new() } else { band }
         };
         match self.view {
-            View::AppGrid | View::Emoji | View::Picker => {
-                if self.picker_switch_h > 0.0 {
-                    y += self.picker_switch_h + s.row_gap;
-                }
+            View::Picker => {
+                y = self.picker_layout(&mut out, theme, kit, width, heading_h, y);
+            }
+            View::AppGrid | View::Emoji => {
                 let (cells, min_cell) = if self.view == View::AppGrid {
                     (self.app_count, s.control_height * 4.0)
                 } else {
@@ -1339,9 +1452,7 @@ impl Model {
                 };
                 let grid_x = if self.view == View::AppGrid { gutter } else { 0.0 };
                 let width = width - grid_x * 2.0;
-                let columns = if self.view == View::Picker {
-                    fs_theme::tokens::LAUNCHER.picker_columns as usize
-                } else if self.view == View::Emoji {
+                let columns = if self.view == View::Emoji {
                     fs_theme::tokens::LAUNCHER.emoji_columns as usize
                 } else {
                     fs_menu::appgrid::columns_for(width, min_cell)
@@ -1355,7 +1466,7 @@ impl Model {
                 };
                 let heading_text = if self.view == View::AppGrid && cells > 0 { self.sections.first().cloned().unwrap_or_default() } else { String::new() };
                 if !heading_text.is_empty() {
-                    out.headings.push((heading_text, y, gutter));
+                    out.headings.push((heading_text, y, gutter, String::new()));
                     y += heading_h + s.row_gap;
                 }
                 for i in 0..cells {
@@ -1371,7 +1482,7 @@ impl Model {
                     let h_text = heading(i, &self.sections);
                     let band = band_of(&h_text, i == 0);
                     if !h_text.is_empty() {
-                        out.headings.push((h_text, y + band - heading_h - s.row_gap, heading_x));
+                        out.headings.push((h_text, y + band - heading_h - s.row_gap, heading_x, String::new()));
                     }
                     let row_h = row_height(&self.rows[i], theme, kit);
                     out.slots.push(Slot { x: gutter, y, w: width - gutter * 2.0, h: band + row_h, band });
@@ -1390,7 +1501,7 @@ impl Model {
                     let h_text = heading(i, &self.sections);
                     let band = band_of(&h_text, i == 0);
                     if !h_text.is_empty() {
-                        out.headings.push((h_text, y + band - heading_h - s.row_gap, heading_x));
+                        out.headings.push((h_text, y + band - heading_h - s.row_gap, heading_x, String::new()));
                     }
                     let row_h = row_height(&self.rows[i], theme, kit);
                     out.slots.push(Slot { x: side, y, w: width - side * 2.0, h: band + row_h, band });
@@ -1403,6 +1514,58 @@ impl Model {
         out.halved = halved;
         out.body_w = body_w;
         self.layout = out;
+    }
+
+    /// The picker's sections down the body: each heading, then its tiles
+    /// `lg` apart in as many columns as `width` holds, a section's first row
+    /// carrying its heading as their band. Your wallpapers with nothing in
+    /// it says so under its heading. Returns the content's foot.
+    fn picker_layout(&self, out: &mut Layout, theme: &Theme, kit: &mut Kit, width: f64, heading_h: f64, top: f64) -> f64 {
+        let s = &theme.space;
+        let (gap, ring) = (s.lg, s.xs);
+        let (tile_w, pic_h) = self.picker_tile_px(theme);
+        let caption_h = ui::measure(&w::caption("Ag"), width, theme, kit).1;
+        // A slot is the picture and its caption with the ring's margin
+        // round them; the pictures stand `lg` apart either way.
+        let (slot_w, slot_h) = (tile_w + ring * 2.0, pic_h + s.row_gap + caption_h + ring * 2.0);
+        let pitch = slot_h - ring * 2.0 + gap;
+        let columns = (((width - ring * 2.0 + gap) / (tile_w + gap)).floor() as usize).max(1);
+        let mut y = top;
+        let mut first = true;
+        for sec in &self.picker_sections {
+            let tiles: Vec<usize> = (0..self.rows.len()).filter(|&i| self.sections.get(i).map(String::as_str) == Some(sec.id)).collect();
+            let note = tiles.is_empty() && sec.id == YOURS && self.query.is_empty();
+            if tiles.is_empty() && !note {
+                continue;
+            }
+            if !first {
+                y += s.section_gap;
+            }
+            first = false;
+            let band = if sec.title.is_empty() { 0.0 } else { heading_h + s.row_gap };
+            if band > 0.0 {
+                out.headings.push((sec.title.clone(), y, ring - s.control_padding_x, sec.far.clone()));
+            }
+            if note {
+                let line_h = ui::measure(&w::text("Ag"), width, theme, kit).1;
+                out.notes.push((y + band, format!("No pictures in {}", sec.far), "Set picker.directory in settings.json".into()));
+                y += band + line_h + s.row_gap + caption_h;
+                continue;
+            }
+            for (k, _) in tiles.iter().enumerate() {
+                let (r, c) = (k / columns, k % columns);
+                let x = c as f64 * (tile_w + gap);
+                out.slots.push(match r {
+                    0 => Slot { x, y, w: slot_w, h: band + slot_h, band },
+                    _ => Slot { x, y: y + band + r as f64 * pitch, w: slot_w, h: slot_h, band: 0.0 },
+                });
+            }
+            y += band + tiles.len().div_ceil(columns) as f64 * pitch - gap + ring * 2.0;
+        }
+        out.columns = columns;
+        out.cell_w = tile_w;
+        out.cell_h = pitch;
+        y
     }
 
     /// The body laid out again where the selection has moved onto or off a
@@ -1458,8 +1621,11 @@ impl Model {
         if n == 0 {
             return;
         }
-        let page = self.page_step();
-        let next = nav::step(self.cursor, dir, n, self.cells(), self.columns(), page);
+        let next = if self.view == View::Picker {
+            self.picker_step(dir)
+        } else {
+            nav::step(self.cursor, dir, n, self.cells(), self.columns(), self.page_step())
+        };
         self.place(next.index, next.travels);
         self.placed = true;
         self.want = self.cursor_id.clone();
@@ -1469,6 +1635,56 @@ impl Model {
         self.touch.settle();
         self.follow();
         self.dirty = true;
+    }
+
+    /// One key's move over the picker's tiles, by where they sit: Up and
+    /// Down to the nearest tile of the row above or under, across
+    /// sections; a page a viewport of rows; Left and Right in reading order.
+    fn picker_step(&self, dir: Dir) -> nav::Step {
+        let slots = &self.layout.slots;
+        let n = slots.len().min(self.rows.len());
+        let i = self.cursor.min(n.saturating_sub(1));
+        let snap = |index| nav::Step { index, travels: false };
+        let Some(at) = slots.get(i) else { return snap(0) };
+        // A row's tiles share the top of their picture.
+        let top = |k: usize| slots[k].y + slots[k].band;
+        let mut rows: Vec<f64> = (0..n).map(top).collect();
+        rows.sort_by(f64::total_cmp);
+        rows.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+        let row = rows.iter().position(|y| (*y - top(i)).abs() < 0.5).unwrap_or(0);
+        let nearest = |r: usize| (0..n).filter(|&k| (top(k) - rows[r]).abs() < 0.5).min_by(|&a, &b| (slots[a].x - at.x).abs().total_cmp(&(slots[b].x - at.x).abs()));
+        let page = ((self.body_h / self.layout.cell_h.max(1.0)).floor() as usize).max(1);
+        match dir {
+            Dir::Home => snap(0),
+            Dir::End => snap(n - 1),
+            Dir::Left if i > 0 => nav::Step { index: i - 1, travels: true },
+            Dir::Right if i + 1 < n => nav::Step { index: i + 1, travels: true },
+            Dir::Up if row > 0 => nearest(row - 1).map_or(snap(i), |k| nav::Step { index: k, travels: true }),
+            Dir::Down if row + 1 < rows.len() => nearest(row + 1).map_or(snap(i), |k| nav::Step { index: k, travels: true }),
+            Dir::PageUp => nearest(row.saturating_sub(page)).map_or(snap(i), snap),
+            Dir::PageDown => nearest((row + page).min(rows.len() - 1)).map_or(snap(i), snap),
+            _ => snap(i),
+        }
+    }
+
+    /// Ctrl+Tab and Ctrl+Shift+Tab: the first tile of the next or the
+    /// previous section.
+    fn section_step(&mut self, forward: bool) -> Out {
+        let Some(here) = self.sections.get(self.cursor).cloned() else { return Out::None };
+        let firsts: Vec<usize> = (0..self.rows.len()).filter(|&k| k == 0 || self.sections[k] != self.sections[k - 1]).collect();
+        let current = firsts.iter().rposition(|&k| self.sections[k] == here).unwrap_or(0);
+        let target = if forward { firsts.get(current + 1) } else { current.checked_sub(1).and_then(|c| firsts.get(c)) };
+        if let Some(&index) = target {
+            self.place(index, false);
+            self.placed = true;
+            self.want = self.cursor_id.clone();
+            self.confirm.clear();
+            self.from_keys = true;
+            self.touch.settle();
+            self.follow();
+            self.dirty = true;
+        }
+        Out::None
     }
 
     fn page_step(&self) -> usize {
@@ -1946,6 +2162,9 @@ impl Model {
             abbrev,
             pinned: recent_pinned(store).contains(&id),
             removable,
+            single: node.kind == NodeKind::Image
+                && self.on_picker()
+                && self.picker_tile_of(store, &node.id).is_some_and(|t| matches!(t.kind, fs_menu::providers::ItemKind::Single { .. })),
         }
     }
 
@@ -1967,6 +2186,10 @@ impl Model {
             return false;
         }
         let Some(node) = self.rows.get(index).cloned() else { return false };
+        // The sky has no file to open or slot of its own to fill.
+        if self.view == View::Picker && !node.path.starts_with('/') {
+            return false;
+        }
         let actions = fs_menu::actions::actions_for(&self.subject(store, &node));
         let kind = node.kind.as_str();
         let asked: Vec<String> = fs_chrome::plugins::launcher_plugins(&store.plugins.resolved.plugins)
@@ -2447,6 +2670,10 @@ impl Model {
                         self.picked(store, node);
                         return if self.choose_image(store, arg) { Out::Close } else { Out::None };
                     }
+                    "wallpaper.setFor" => {
+                        let Some((half, path)) = arg.split_once(':').and_then(|(m, p)| Some((state::Half::parse(m)?, p))) else { return Out::None };
+                        return if self.choose_for(store, path, half) { Out::Close } else { Out::None };
+                    }
                     "monitor.end" => {
                         let Ok(pid) = arg.parse::<u64>() else { return Out::None };
                         self.dirty = true;
@@ -2505,7 +2732,7 @@ impl Model {
             grid: !matches!(self.view, View::Rows | View::Monitor),
             app_view: false,
             scrollable: false,
-            variants: self.picker_switch(store),
+            sections: self.view == View::Picker && self.picker_sections.len() > 1,
             level: self.level.is_some() || !self.children.is_empty(),
             column,
             into,
@@ -2555,11 +2782,8 @@ impl Model {
                 Out::None
             }
             KeyAction::Pop => self.pop(store),
-            KeyAction::Variant => {
-                let light = !self.picker.light;
-                self.set_picker_variant(store, light);
-                Out::None
-            }
+            KeyAction::NextSection => self.section_step(true),
+            KeyAction::PrevSection => self.section_step(false),
             KeyAction::Close => {
                 self.close();
                 Out::Close
@@ -3562,9 +3786,8 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                         hints.push((second.label.clone(), vec!["Shift", "Enter"], "alternate"));
                     }
                 }
-                if m.picker_switch(store) {
-                    let label = if m.picker.light { "Show dark" } else { "Show light" };
-                    hints.push((label.into(), vec!["Ctrl", "Tab"], "variant"));
+                if m.view == View::Picker && m.picker_sections.len() > 1 {
+                    hints.push(("Next section".into(), vec!["Ctrl", "Tab"], "section"));
                 }
                 if m.view != View::Mirror {
                     hints.push(("Actions".into(), vec!["Tab"], "actions"));
@@ -3687,6 +3910,7 @@ fn empty_words(m: &Model, s: &fs_theme::tokens::Space) -> El {
     let title = match &m.empty {
         Some(n) => n.label.clone(),
         None if m.mode == Mode::Input => String::new(),
+        None if m.view == View::Picker && !m.query.is_empty() => "No wallpapers match".into(),
         None if !m.query.is_empty() => format!("No results for \u{201C}{}\u{201D}", m.query.text()),
         None => "No results".into(),
     };
@@ -3715,11 +3939,26 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
     let visible = |y: f64, h: f64| y + h >= lo && y <= hi;
     let snap = snapshot(store);
     let mut items: Vec<(f64, f64, El)> = Vec::new();
-    for (text, y, x) in &lay.headings {
+    for (text, y, x, far) in &lay.headings {
         let h = ui::measure(&heading_el(s, text), 400.0, theme, kit).1;
-        if visible(*y, h) {
-            items.push((*y, h, heading_el(s, text).pad_start(s.control_padding_x + x)));
+        if !visible(*y, h) {
+            continue;
         }
+        let heading = heading_el(s, text).pad_start(s.control_padding_x + x);
+        if far.is_empty() {
+            items.push((*y, h, heading));
+        } else {
+            // The pictures' own width, so the far words end on the last
+            // column's edge.
+            let columns = lay.columns.max(1) as f64;
+            let grid = columns * lay.cell_w + (columns - 1.0) * s.lg + s.xs;
+            let far = w::caption(far.clone()).elide().hug();
+            items.push((*y, h, w::row(s.sm, vec![heading.hug(), w::spacer(), far]).width(Size::Px(grid))));
+        }
+    }
+    for (y, line, caption) in &lay.notes {
+        let note = w::column(s.row_gap, vec![w::text(line.clone()).ink(Ink::Muted), w::caption(caption.clone())]).pad_start(s.xs);
+        items.push((*y, ui::measure(&note, 400.0, theme, kit).1, note));
     }
     if m.monitor_strip_h > 0.0 {
         // The list's half while the actions column holds the other.
@@ -3727,12 +3966,8 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         let strip = monitor_strip(store, theme, &m.monitor_history).width(Size::Px(width));
         items.push((lay.slots.first().map_or(s.md, |s0| s0.y) - m.monitor_strip_h - s.section_gap, m.monitor_strip_h, strip));
     }
-    if m.picker_switch_h > 0.0 {
-        let top = lay.slots.first().map_or(0.0, |s0| s0.y) - m.picker_switch_h - s.row_gap;
-        items.push((top, m.picker_switch_h, picker_switch(m).pad_start(s.sm)));
-    }
     let cells = m.cells();
-    let desktop = (m.view == View::Picker && !m.picker.select).then(|| store.desktop());
+    let tiles = if m.view == View::Picker { m.picker_tiles(store) } else { Vec::new() };
     for (i, slot) in lay.slots.iter().enumerate() {
         if !visible(slot.y, slot.h) {
             continue;
@@ -3762,20 +3997,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         } else if m.view == View::Monitor {
             proc_row(m, row, i, selected, theme).width(Size::Px(slot.w))
         } else if i < cells && m.view == View::Picker {
-            let gutter = s.sm;
-            let edge = (slot.w - (gutter + s.sm) * 2.0).max(1.0);
-            let image = store.picker.thumbs.get(&row.path).cloned().flatten();
-            let pic = if desktop.as_ref() == Some(&row.path) { w::checked_picture(image, edge) } else { w::picture(image, edge) }.centred();
-            w::cell(pic)
-                .ghost()
-                .selected(selected)
-                .interactive()
-                .cell_state(|st| st.cursor = selected && m.from_keys)
-                .on(format!("row:{i}"))
-                .stop(format!("p:{}", row.id))
-                .width(Size::Px(slot.w))
-                .height(slot.h - gutter * 2.0)
-                .pad(gutter, gutter, gutter, gutter)
+            picker_tile(m, store, theme, &tiles, row, i, selected, slot)
         } else if i < cells {
             let glyph = w::text(row.icon.clone()).size(Type::Display).centred();
             w::cell(w::column(0.0, vec![glyph]))
@@ -4199,17 +4421,51 @@ fn pane_card(content: El, title: &str, facts: &str, s: &fs_theme::tokens::Space)
     w::column(s.row_gap, foot).fill()
 }
 
-/// The wallpaper route's Dark | Light switcher.
-fn picker_switch(m: &Model) -> El {
-    w::segmented(vec!["Dark".into(), "Light".into()], usize::from(m.picker.light)).on("variant")
+/// A picker tile: its picture 16:9 with the current mark and a filed
+/// single's mode badge, the caption under it, the cursor's ring round both.
+#[allow(clippy::too_many_arguments)]
+fn picker_tile(m: &Model, store: &Store, theme: &Theme, tiles: &[(&str, fs_menu::providers::Item)], row: &Node, i: usize, selected: bool, slot: &Slot) -> El {
+    use fs_menu::providers::{ItemKind, Mode as Filed};
+    let s = &theme.space;
+    let item = tiles.iter().map(|(_, t)| t).find(|t| row.id.strip_prefix("wallpaper.") == Some(t.id.as_str()));
+    let (w, h) = m.picker_tile_px(theme);
+    let key = item.map(|t| crate::services::picker::tile_key(t, &row.path)).unwrap_or_default();
+    let image = store.picker.thumbs.get(&key).cloned().flatten();
+    let current = !m.picker.select && item.is_some_and(|t| Model::picker_current(store, t));
+    let badge = match item.map(|t| &t.kind) {
+        Some(ItemKind::Single { filed: Some(Filed::Dark), .. }) if !m.picker.select => Some("moon"),
+        Some(ItemKind::Single { filed: Some(Filed::Light), .. }) if !m.picker.select => Some("sun"),
+        _ => None,
+    };
+    let by = match item.map(|t| &t.kind) {
+        Some(ItemKind::Sky) => "Follows the sun".to_owned(),
+        _ => item.and_then(|t| t.credit.as_ref()).map(|c| c.author.clone()).unwrap_or_default(),
+    };
+    let mut words = vec![w::text(row.label.clone()).size(Type::Caption).weight(Weight::Medium).elide().hug()];
+    if !by.is_empty() {
+        words.push(w::text(format!("\u{B7} {by}")).size(Type::Caption).weight(Weight::Medium).ink(Ink::Muted).elide());
+    }
+    let caption = w::row(s.xs, words).width(Size::Px(w));
+    let content = w::column(s.row_gap, vec![w::tile_picture(image, w, h, current, badge), caption]);
+    w::cell(content)
+        .ghost()
+        .interactive()
+        .cell_state(|st| {
+            st.cursor = selected && m.from_keys;
+            st.inset = Some((s.xs, s.xs));
+        })
+        .on(format!("row:{i}"))
+        .stop(format!("p:{}", row.id))
+        .width(Size::Px(slot.w))
+        .height(slot.h - slot.band)
 }
 
-/// A picker cell's picture edge for a slot `w` wide.
-pub fn picker_cell_px(theme: &Theme) -> u32 {
-    let s = &theme.space;
-    let width = s.popup_width_menu - s.panel_padding * 2.0;
-    let cell = width / f64::from(fs_theme::tokens::LAUNCHER.picker_columns.max(1));
-    (cell - (s.sm + s.sm) * 2.0).max(1.0).round() as u32
+/// An SPDX licence id as a heading names it: `CC0-1.0` reads `CC0`.
+fn licence_name(spdx: &str) -> String {
+    match spdx.rsplit_once('-') {
+        Some((name, version)) if !name.is_empty() && version.chars().all(|c| c.is_ascii_digit() || c == '.') => name.to_owned(),
+        _ => spdx.to_owned(),
+    }
 }
 
 fn write_picker_selection(payload: &Value) {
