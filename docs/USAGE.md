@@ -174,6 +174,7 @@ as the bind's action.
 | `SUPER+SHIFT+CTRL+SPACE` | `menu summon theme` |
 | `SUPER+CTRL+A` / `B` / `W` / `P` / `D` / `ALT+D` | `panel toggle audio` / `bluetooth` / `network` / `power` / `display` / `calendar` |
 | `SUPER+CTRL+1..9` | `panel toggleAt n` |
+| `SUPER+S` | `panel toggle quicksettings`, GNOME's chord |
 | `SUPER+comma` / `SHIFT` / `ALT` / `SHIFT+ALT` | `notifications dismissOne` / `dismissAll` / `invokeLast` / `showHistory` |
 | `SUPER+CTRL+comma` | `notifications toggleDnd` |
 | `SUPER+CTRL+I` | `caffeinate toggle`, the idle inhibitor |
@@ -426,7 +427,8 @@ toggle alone, and a strip with no room for all of them falls back to the
 toggle.
 
 **Chevron** collapses the cells on one side of itself behind a single cell,
-and expands them into a second bar on click. In a left or center region it
+and opens [quick settings](#quick-settings) on click, where the cells the
+card does not already draw become tiles. In a left or center region it
 governs what follows it; in a right region it governs what precedes it, so
 the group opens inward and nothing outboard of the chevron ever moves.
 
@@ -446,7 +448,7 @@ Only the first chevron in a region survives, and a chevron with nothing on
 its governed side is dropped, both with a warning.
 
 ```sh
-fs bar chevron status              # which regions collapse, and which one is open
+fs bar chevron status              # which regions collapse, and which one opened quick settings
 fs bar chevron toggle              # expand | collapse | toggle | status
 fs bar chevronAt expand right      # name the region when several have a chevron
 fs bar room                        # per screen: slack, each region's cells and hidden ones, nowPlaying budget
@@ -622,8 +624,10 @@ fs tray menuactivate        # Enter on the cursor row
 side edge, one per output: the time and date, a Spaces map with a row per
 workspace and its windows' icons, Activity while something runs, a
 notifications summary and now playing while a player exists. A status row
-at its foot opens the network and audio panels, the launcher's System
-route, and folds the column to a 48 wide rail. `bar.position` picks the
+at its foot opens the network panel, [quick settings](#quick-settings)
+(the chevron, budding off the column beside it), the Settings panel and,
+while the tray holds anything, the tray's second bar, and folds the column
+to a 48 wide rail. `bar.position` picks the
 edge: `left` (also what `top` and `bottom` give) or `right`. `bar.layout`
 and the frame are not read under it.
 
@@ -1892,6 +1896,73 @@ fs settings reset bar.style
 fs settings list
 ```
 
+## Quick settings
+
+GNOME's quick settings menu as a panel of its own. A click on the bar's
+`chevron` cell hangs it off the strip under the chevron, the sidebar's
+chevron button buds it off the column, and `SUPER+S` or `fs panel toggle
+quicksettings` opens it at the end of the bar's line. It has no header:
+Escape and a click outside close it, and a tile or a menu's last row hands
+the card over to the panel behind it. It writes nothing to settings.json.
+
+Top to bottom:
+
+- **System row.** The battery's level and percent (absent with no battery;
+  a click opens the Power panel), then Screenshot (the region picker, the
+  card closing first), Settings, Lock and Power off. Power off's menu holds
+  Suspend, Restart… and Power off… where logind allows each, then Log out…;
+  the last three arm on the first Enter ("Confirm restart?") and run on
+  the second.
+- **Sliders.** Volume on the default sink, its icon muting it; Microphone
+  only while something records; Brightness, which moves every backlight
+  and DDC display together. With two or more devices an arrow after the
+  slider opens the sinks or sources to pick the default, or one slider per
+  display.
+- **Toggles**, two columns: Wired (only with an Ethernet device), Wi-Fi,
+  Bluetooth, Power mode, Night light, Dark style, Do not disturb, Keyboard
+  (only with asusctl), Caffeinate, Overnight and HDR (only while an output
+  supports it). Wired, Wi-Fi, Bluetooth, Power mode and Keyboard are split:
+  the left part toggles, and the arrow opens a menu under its row of
+  connections, up to eight networks, paired devices, profiles or lighting
+  effects, ending on a row that opens the full panel. Power mode is on
+  while the profile is not Balanced, and its click flips between Balanced
+  and the last other profile. Wi-Fi, Bluetooth, Power mode and Night light
+  with nothing behind them stay in place, dimmed, the reason as the
+  subtitle ("No Wi-Fi adapter", "No adapter", "power-profiles-daemon is not
+  running", wlsunset's own), and Dark style dims while settings.json pins
+  `theme.mode`.
+- **Info tiles.** The cells the chevron governs that the card does not
+  draw itself (`audio`, `network`, `bluetooth`, `battery`, `display`,
+  `indicators` and `microphone` are its own) become tiles in `bar.layout`
+  order, each its cell's icon, name and value ("12 / 15" for GitHub, the
+  temperature). A click hands the card over to that cell's panel, or runs
+  the cell's own click where it has none. Under the sidebar they are the
+  right region's entries the column has no card for; opened by key, the
+  right region's chevron's, or none.
+- **Background**, the grid's width, while anything runs: Activity's groups,
+  a recording, the clipboard image going to a host, AirPlay and pending
+  reminders. Its menu lists each with Stop (a recording), Clear (the
+  reminders) or Dismiss (a finished Activity group); Enter on a running
+  group or on AirPlay opens the Activity or media panel instead.
+
+One menu is open at a time, under its own row, the rows after it moving
+down and the rest of the card dimmed. On keys the grid is spatial: the
+arrows move by row and column, and a split toggle's arrow is a stop of its
+own to the right of it. Enter or Space activates, Left and Right on a
+slider step it by 5%, Tab walks the sections, Left from a menu row or
+Escape closes the menu, and a second Escape closes the card.
+
+```sh
+fs quicksettings status          # {open, from, card, cursor, rows: [{id, kind, title, subtitle, on, available, reason, rect, arrow}], menu, dim}
+fs quicksettings activate wifi   # Enter on a control or a tile, by id
+fs quicksettings menu bluetooth  # open its menu
+fs quicksettings back            # close the menu
+```
+
+`from` is `chevron:<region>`, `sidebar` or `ipc`. Each verb answers an error
+string while the card is shut, for an unknown id, for an unavailable
+control and for one with no menu.
+
 ## Panels
 
 Popouts share one frame: a card anchored under the bar cell that opened it,
@@ -1921,6 +1992,7 @@ anchor to, it hangs at the end of the bar's line.
 | `dualsense` | sysfs, read-only | `dualsense` |
 | `monitor` | `/proc`, `/sys/class/drm`, `nvidia-smi` | `monitor` |
 | `trayoverflow` | the tray's second bar | `tray` (the dots toggle) |
+| `quicksettings` | the services behind each control, see [Quick settings](#quick-settings) | `chevron` |
 
 Every bar cell draws a 2px `primary` line inside its edge while its panel is
 open. Panels that poll do it in the panel rather than the cell, so opening one

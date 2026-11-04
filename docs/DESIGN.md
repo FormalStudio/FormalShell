@@ -358,8 +358,8 @@ along it, the reach) off its frame's live position (`Card::joins` in
 `App::sync_join` in `formalshell-rs/src/wayland.rs`), so a size morph and a
 handoff carry the gap with them frame by frame; that rect is the only thing
 the two windows share, and it is gone once the card has let go (§1 Motion).
-The panels take the shoulders, and the chevron's and
-the tray's second bars with them, on a framed screen as on a bare one: the
+The panels take the shoulders, quick settings and the tray's second bar
+with them, on a framed screen as on a bare one: the
 ring's hairline runs the bar's edge there and opens the same gap. The
 notification centre is one of those panels: it hangs off the bar's line
 under the bell (or the sidebar's Notifications card), at the line's end
@@ -419,16 +419,11 @@ own edge, so a frame ring opens its line there too. Which sides are walled
 is decided off the card's resting rect, never its live one, so a card
 mid-emerge or mid-handoff never walls and unwalls itself as it travels.
 
-A panel takes its line from the bar, framed or bare. A panel hanging off
-another panel (a tray item's menu off the tray's second bar) takes that
-panel's far edge instead, which opens the same gap in its own border, and
-buds from what that edge can give it (M57 D3, the nested bud): the
-silhouette's rect along the line is clamped into the edge less its own
-corners at either end, widening to the card's own rect on the attach clock,
-so a card wider than the strip it hangs off never hangs its fillets past
-either end of it. A span too tight for two fillets and a sliver of card
-leaves it joining nothing, coming out plain from under the owner's edge
-instead. The notification centre hangs off the bar's line like any
+A panel takes its line from the bar, framed or bare, and no panel hangs
+off another: a quick settings tile hands the card over to the panel it
+names rather than budding one off its edge. A tray item's menu opened in
+the tray's second bar takes that card's far edge as its line instead of
+the bar's. The notification centre hangs off the bar's line like any
 panel. A card that floats in
 the middle of the output does the same thing off the top line (M57 D5): the
 launcher, the polkit request and the radio atlas all take the top bar's
@@ -598,7 +593,7 @@ only when two surfaces need the same new thing.
 | icon button (`w::icon_button`) | a ghost button that is `controlHeight` square, one icon | as button |
 | card (`surfaces::card::Card`) | the `card` role at `panelPadding`, opaque on a surface the compositor does not blur; the surface's own frame, never nested | rest, opaque |
 | shoulders (`formalshell-rs/src/surfaces/shoulders.rs`) | the `card` role with the anchored edge left open and a concave fillet outside each of its two corners, running out to the line it came out of (§1 Motion), and, at `attach` 0, a plain card again: what every surface coming out of a line draws | attached, letting go, free |
-| drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by `motion.morph` (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls, the nested bud's span and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
+| drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by `motion.morph` (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
 | picture (`w::picture`) | content imagery, bare: no frame and no rounding | none |
 | cover (`w::cover`) | a picture in a `muted` well with a 1px `border`, clipped to `Theme::cover_radius`: album art, a notification's app icon | none |
 | section label (`w::section_label`, `w::section`) | `caption`, `medium`, `mutedForeground`, sentence case; optional trailing count `(3)` | none |
@@ -695,13 +690,14 @@ surfaces and the cut never moves under the user when something else on the bar
 resizes. Room has the last word over any ceiling, since the tray is the one
 region cell with no fixed number of items and so the one that gives ground
 when the strip runs out of edge. That second bar is a card of the same ghost
-cells at `panelPadding`, one item deep, sitting where any panel would; it is
-the tray's own overflow, and the chevron has one of its own: everything on a
-chevron's governed side lives in the same kind of second bar, always, and the
-chevron cell opens and closes it. It is a fixed home rather than a state a
-crowded bar falls into, the same call the tray's dots take: the group is
-somewhere else rather than sometimes here and sometimes there, so nothing on
-the strip moves when a track starts playing.
+cells at `panelPadding`, one item deep, sitting where any panel would, and it
+is the tray's alone. The chevron opens quick settings instead: everything on
+a chevron's governed side lives there, always, the cells the card already
+draws as its own controls and the rest as info tiles, and the chevron cell
+opens and closes it. It is a fixed home rather than a state a crowded bar
+falls into, the same call the tray's dots take: the group is somewhere else
+rather than sometimes here and sometimes there, so nothing on the strip
+moves when a track starts playing.
 
 A crowded strip gives up room in a fixed order rather than clipping a cell
 in half. The two free-running labels, the now-playing track and the window
@@ -759,8 +755,8 @@ white. The sampler runs on the main display alone
 (`display.outputPriority`) and every band and frame ring wears its answer.
 A window covering an output is the one term that stays that output's own.
 
-The ink goes where the band does and no further. A cell in the chevron's
-second bar or the tray's is on a popover card with a fill of its own, so it
+The ink goes where the band does and no further. A quick settings tile or
+a cell in the tray's second bar is on a card with a fill of its own, so it
 resolves its ink from its state against that card, never off the band's
 reading of a wallpaper it is not drawn on.
 
@@ -935,6 +931,20 @@ floating card off the right edge, content-tall and capped at the output;
 DND is a switch in a ruled header; unread rows carry a 6px `primary` dot.
 Its rows are multi-line, so a separator runs between them (§1's ladder,
 rung 4) and the two tiers stay labelled sections `sectionGap` apart.
+
+**Quick settings** (`formalshell-rs/src/surfaces/panel/quick/`, the
+quick settings spec). GNOME 51's menu in this table's material: a
+headerless panel `panelWidthWide` across, `quickInset` in from every edge
+and `quickGap` between rows and columns, holding the system row of
+`quickButton` circles, full-width sliders, a two-column grid of
+`quickToggle` pills and Background last. A toggle is the `quick.toggle`
+role, a `primary` fill with `primaryForeground` ink when on; a split
+toggle's arrow is `quick.arrow` behind a 1px inset rule. A toggle with no
+adapter or daemon behind it stays in place at the kit's disabled opacity,
+the reason as the subtitle. The one in-place menu is a `panel.group` box on the card's fill under its own row, growing on
+`spatialFast` with its rows fading in on `effects` once it lands, and the
+rest of the card dims to 0.6 on `effectsSlow` (`El::shade`) while the
+card's own fill stays as it is.
 
 **OSD** (`formalshell-rs/src/surfaces/osd.rs`). A pill bottom-centre,
 budding off the bottom line: icon, track, tabular percentage.

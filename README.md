@@ -40,7 +40,8 @@ cast, on a palette that follows the wallpaper.
   your keybinds, wallpapers, Wi-Fi, Bluetooth, audio devices, radio,
   toggles, and a `select`/`input` mode that replaces dmenu.
 - Bar: workspaces with live window previews, now playing, tray, and a
-  chevron that tucks cells away into a second bar. Top, bottom, left or right.
+  chevron that tucks cells away and opens quick settings, after GNOME's.
+  Top, bottom, left or right.
 - Panels: audio, network, Bluetooth, calendar, weather, power, displays,
   system monitor, media with synced lyrics and 31 visualizer styles, iPhone
   and earbuds, and more.

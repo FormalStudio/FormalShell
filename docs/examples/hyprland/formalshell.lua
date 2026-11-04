@@ -375,6 +375,10 @@ fs_bind("SUPER + SHIFT + CTRL + Space", "menu summon theme")
 fs_bind("SUPER + ALT + S", "panel toggle settings")
 fs_bind("SUPER + ALT + I", "panel toggle info")
 
+-- Quick settings, on GNOME's own chord. Opened from a key it hangs at the
+-- end of the bar's line rather than under the chevron.
+fs_bind("SUPER + S", "panel toggle quicksettings")
+
 -- Panels by name. `display` is the brightness and output panel, not a bar
 -- cell of its own.
 fs_bind("SUPER + CTRL + A", "panel toggle audio")

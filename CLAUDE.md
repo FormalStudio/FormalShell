@@ -355,7 +355,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   (`services/commands.rs`) in the one frame.
 - `bar_position.sh` `--bar-position <edge>`: the strip on a bottom, left or
   right edge, read off the compositor's own layer geometry, with a chevron
-  collapsing and expanding along it and a panel hanging off its inner edge.
+  collapsing along it and opening quick settings off its inner edge
+  (`quicksettings status` open from `chevron:right`, carrying info tiles,
+  wholly off the strip), and a panel hanging off that edge.
   Ridden by a leg that photographs its own frames (`--join`,
   `--menu-emerge`, `--panel-morph`) it pins the edge alone: the layout, the
   chevron and the panel are then the rider's business.
@@ -448,13 +450,21 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   a tenth speed over a band down the trailing edge, for the card coming out
   of the bar's line under the bell like any panel.
 - `chevron.sh` `--chevron`: a right-region chevron holding the five cells
-  before it off the strip entirely, and `bar chevron expand` opening them in
-  the second bar under it (the tray's chip grid, `surfaces/chips.rs`), the two frames asserted to differ. It also sets a
-  flat bright wallpaper first, so the band goes to dark ink, and reads a patch inside the card for a dark plate carrying
-  light words: the second bar keeps its own ink whatever the band wears.
-- `chevron_quiet.sh` `--chevron-quiet`: the same second bar OPENING, read
-  off a stamped burst of frames: the card is never narrower than the width
-  it settles on, and nothing inside it moves once its own entrance is over.
+  before it off the strip entirely, and `bar chevron expand` opening quick
+  settings under it (`quicksettings status` open from `chevron:right`, an
+  info tile for every governed cell the card does not draw itself), the two
+  frames asserted to differ. It also sets a flat bright wallpaper first, so
+  the band goes to dark ink, and reads a patch inside the Weather tile for
+  a dark plate carrying light words: the card keeps its own ink whatever
+  the band wears. A real click on that tile handing the card over to the
+  weather panel; a `command` module's tile appearing once its file gives it
+  a label, every tile inside the card's rect; and under a real pointer a
+  click on the desktop shutting the card and one on the clock opening the
+  calendar in its place.
+- `chevron_quiet.sh` `--chevron-quiet`: the same card OPENING, read off a
+  stamped burst of frames: the card is never narrower than the width it
+  settles on, and crops off `quicksettings status`'s card rect once its
+  entrance is over are byte-identical, nothing inside it moving.
 - `clipboard.sh` `--clipboard`: the ledger's capture order and in-process row
   activation, with the image entry's preview and a copied-markup row's own
   angle brackets in the frame, and a `text/uri-list` copy of one jpeg (how a
@@ -695,12 +705,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   again", and `iphone pair` reaching the bridge shim with `--forget
   <address>`, the bond cleared and a pairing code landing in the panel.
 - `join.sh` `--join`: the join itself mid-flight under `debug motionScale`,
-  four opens sampled frame by frame: a panel against the far end of the
-  line, the chevron's second bar, a panel clicked out of a cell inside that
-  second bar, and one hanging off the line's own start. Asserts the line's
-  row painted once, the walled run-out to the screen's edge, a bud held
-  inside its owner's span and bordered on both sides while it widens. It
-  rides `--bar-position <edge>` and `--frame`, which put the same four cases
+  three opens sampled frame by frame: a panel against the far end of the
+  line, quick settings budding off the line under the chevron, and one
+  hanging off the line's own start. Asserts the line's row painted once,
+  the walled run-out to the screen's edge, and quick settings open from
+  `chevron:right` at rest. It
+  rides `--bar-position <edge>` and `--frame`, which put the same three cases
   on a vertical hairline or against a ring's line; every probe is cut for the
   top bar, so those runs print each claim as skipped and are read by eye.
 - `keybinds.sh` `--keybinds`: the launcher's binds route rendering rows off
@@ -1413,11 +1423,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   two cards closing the open network panel, and one in the column's
   widest gap focusing a foot window floated under it (`hyprctl
   activewindow`).
-  The foot's chevron in audio's place: a real click opening the chevron's
-  second bar (`bar chevron status`) with the owner's `bar.layout.right`
-  pinned, rising off the status card at the card's width, audio among its
-  cells on the shared chip grid (`surfaces/chips.rs`, wrapped to the
-  card), a click on its audio chip opening the audio panel; and `panel open settings` putting the power
+  The foot's chevron in audio's place, with the owner's `bar.layout.right`
+  pinned: a real click opening quick settings (`quicksettings status` from
+  `sidebar`, `bar chevron status` reading it open) off the column's inner
+  edge, its info tiles the right region's cells the column has no card
+  for less the card's own, in that order, Weather among them, and a real
+  click on the Weather tile handing over to the weather panel; and `panel
+  open settings` putting the power
   profile pill on the right edge, centred (`debug dump`'s `profilesPill`),
   gone once the tiles close.
   The time card's clock over a staged red and green wallpaper with a
@@ -1598,20 +1610,25 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   to carry them (`tray.maxVisible: -1`), the D-Bus Activate round trip, and
   the shell-owned menu. Ridden by `--sidebar`, which has no strip, the
   status card's tray button in `sidebar status`, a real click on it
-  opening the second bar off the column, a real click on fixture 1's
-  square (found by its colour) reaching the stub as Activate and a real
-  right click on fixture 2's opening its menu.
+  opening the tray's second bar (`trayoverflow`) off the column, a real
+  click on fixture 1's square (found by its colour) reaching the stub as
+  Activate and a real right click on fixture 2's opening its menu.
 - `tray_overflow.sh` `--tray-overflow`: the shipped default, the whole tray
   in its second bar (the `trayoverflow` panel, in the panel host like any
   other) behind the strip's dots toggle with no settings at all, read off
   `tray status`, its open frame through `dev/panel-language.py` (the card
-  its chips' width, the same room on every side). Ridden by `--sidebar`, the second bar opened off the status
-  card's tray button with a sticky toast arriving under it: the panel's rest
-  rect and every toast card's rect in `debug dump` (`panel`, `toastCards`)
-  sharing x and never intersecting, both photographed. Ridden by `--sidebar` the status card's tray
-  button stands in for the dots: the chevron round trip is skipped and the
+  its chips' width, the same room on every side). The tray behind a
+  chevron, alone on its governed side: quick settings carrying it as one
+  info tile reading the item count, and a real click on the tile handing
+  the card over to `trayoverflow`. Then the dots alone beside the clock and
+  four real clicks: open, the desktop shutting it, reopen, and the clock
+  opening the calendar in its place. Ridden by `--sidebar` the status card's
+  tray button stands in for the dots: the chevron tile is skipped and the
   four real clicks (open, desktop, reopen, the time card's calendar) start
-  on that button.
+  on that button, then the second bar opened off it once more with a
+  sticky toast arriving under it: the panel's rest rect and every toast
+  card's rect in `debug dump` (`panel`, `toastCards`) sharing x and never
+  intersecting, both photographed.
 - `unlock.sh` `--unlock`: the lock handing over to the desktop
   (`wayland/veil.rs`), its last picture dissolving into clear
   (`surfaces/dissolve.rs`): over a flat grey wallpaper the real password
@@ -1621,6 +1638,21 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   between (where a cut has none), the last ones the desktop, and one frame
   of 32 px cells of both the lock and the desktop
   (`dev/dissolve-cells.py`).
+- `use.sh` `--use`: the shell driven the way a hand does, real keys through
+  real binds (`wtype`) and a real pointer (`wlrctl`), fast and
+  overlapping, with `bar room`, `menu status` and `panel state` only read
+  and a burst of frames per step into `use/<step>/`: the launcher cell's
+  click opening the launcher fresh, after Escape and over a panel; ten
+  fast launcher presses leaving it shut and one more opening it; Escape
+  and Backspace climbing one level from Keybinds and Emoji, and the key
+  opening it again after Escape closed it; bar cells clicked over each
+  other's panels opening their own, three fast clicks on one leaving its
+  panel open, toasts leaving it alone; a theme flip and a wallpaper change
+  under the open launcher and panel keeping them open, each card taking
+  the new mode's fill and the bar never blank through the recolour; and
+  three fast clicks on a chevron leaving quick settings open with no
+  tooltip over it, a fourth shutting it. Nothing on the system bus or
+  the owner's audio is touched.
 - `visualizer.sh` `--visualizer`: the `cava` child owned and killed with
   playback, proven by pgrep rather than by the frame.
 - `visualizer_styles.sh` `--visualizer-styles`: pink noise through a real

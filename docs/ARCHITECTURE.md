@@ -129,8 +129,8 @@ header is the guide for building a new surface):
 ## Wayland side
 
 `src/wayland.rs` holds `App`: the bar's layer surface, the frame's four
-exclusion zones, the cards hanging off the bar (a panel, the chevron's
-second bar, a tray menu), the tooltip, the scrim, the pointer and keyboard,
+exclusion zones, the cards hanging off the bar (a panel, quick settings
+among them, and a tray menu), the tooltip, the scrim, the pointer and keyboard,
 and which owner a configure, frame callback or input event belongs to.
 `App::present` runs after every dispatch: due notification timers, panels
 and menus whose exit has finished, then a commit for each surface with
@@ -266,7 +266,8 @@ is the whole output and paints the ring under its cells.
 
 - `bar/cell.rs`: the `Cell` trait, the kit every cell is built from.
 - `bar/slot.rs`: one placed cell (its measure, presence, fade, marquee
-  clock). The strip and the chevron's second bar both hold slots.
+  clock). The strip holds them, and quick settings builds one per info
+  tile to read its `Cell::summary`.
 - `bar/cells/`: one module per cell, and `cells::build`, the one place a
   layout entry becomes cells. A builtin maps to its module, a `bar.modules`
   entry of type `command` to `cells::command`, a plugin to `cells::plugin`.
@@ -282,7 +283,7 @@ is the whole output and paints the ring under its cells.
   mapped to the others by `Card::edge_map`.
 - `surfaces/panel/mod.rs`: the `Panel` trait (id, title, icon, the topics it
   reads, a body built from `ui` widgets, header actions, what its stops do)
-  and `PANELS`, the 19 names `panel open|toggle` accepts. `panel::build`
+  and `PANELS`, the 27 names `panel open|toggle` accepts. `panel::build`
   registers a module against its name.
 - `surfaces/panel/host.rs`: `Host` owns everything a panel does not: the
   full-output layer surface that turns a click outside the card into a
@@ -305,6 +306,7 @@ is the whole output and paints the ring under its cells.
 | `surfaces/launcher.rs` | the launcher: header, body (app grid and rows), footer, every route |
 | `surfaces/toasts.rs` | the toast stack, one overlay surface for as long as anything is up |
 | `surfaces/panel/center.rs` | the notification centre |
+| `surfaces/panel/quick/` | quick settings, the chevron's card (`quicksettings` target) |
 | `surfaces/osd.rs`, `surfaces/headset.rs` | popup content |
 | `surfaces/lock.rs` | one output's lock screen |
 | `surfaces/switcher/` | the Alt+Tab card and its pure model |
