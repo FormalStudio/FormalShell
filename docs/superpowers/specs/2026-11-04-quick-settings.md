@@ -344,6 +344,9 @@ Ours by design, the table's material and not a defect:
 - The slider: GNOME's round knob over an accent track; ours the kit's
   slider.
 - Clocks: the menu's grow and fade run on our `spatialFast` and `effects`.
+- Light: under Settings' Default style (`color-scheme` `default`) GNOME
+  51.0 keeps its shell dark, so its light captures show a dark card; ours
+  follows `theme.mode` like every surface and goes light.
 
 What differs on the rig alone, not in the card: no Wired toggle (no
 Ethernet device), Wi-Fi, Bluetooth and Power mode disabled with their
