@@ -37,7 +37,7 @@ pub enum Action {
     None,
     /// Open or close the named panel from this cell.
     Panel(&'static str),
-    /// Open or close the chevron's second bar for its region.
+    /// Open or close quick settings from its region's chevron.
     Overflow(Region),
     Workspace(String),
     /// A persistent placeholder has no id: the workspace by ordinal, on
@@ -264,7 +264,7 @@ pub trait Cell {
     /// Whether the window this cell is on is on screen, told on every paint
     /// (a cell running a child process only while it is seen).
     fn visible(&mut self, _on: bool) {}
-    /// Whether the panel or second bar this cell opens is up; true when
+    /// Whether the panel this cell opens is up; true when
     /// the view changed with it.
     fn set_open(&mut self, _open: bool) -> bool {
         false
@@ -317,7 +317,6 @@ pub trait Custom {
 pub struct Look {
     pub pad_x: f64,
     pub pad_y: f64,
-    pub cell_height: f64,
     pub cell_width: f64,
     pub xxs: f64,
     pub huge: f64,
@@ -332,14 +331,6 @@ pub struct Look {
     pub meta_tracking: f32,
     pub narrow: f64,
     pub panel_padding: f64,
-    /// A second bar's chips (`surfaces::chips`), the tray's: `controlHeight`
-    /// squares at least, `panelGap` apart, `panelRowInset` in from the
-    /// card, each on the `panel.chip` box.
-    pub panel_gap: f64,
-    pub chip_side: f64,
-    pub chip_inset: f64,
-    pub plate: fs_theme::style::BoxStyle<Rgba>,
-    pub plate_radius: f64,
     pub sans: Family,
     pub mono: Family,
     pub foreground: Rgba,
@@ -396,7 +387,6 @@ impl Look {
         Self {
             pad_x: s.control_padding_x,
             pad_y: s.control_padding_y,
-            cell_height: s.bar_cell_height,
             cell_width: s.bar_cell_width,
             xxs: s.xxs,
             huge: s.xl,
@@ -409,11 +399,6 @@ impl Look {
             meta_tracking: theme.letter_spacing.meta as f32,
             narrow: s.popup_width_narrow,
             panel_padding: s.panel_padding,
-            panel_gap: s.panel_gap,
-            chip_side: s.control_height,
-            chip_inset: s.panel_row_inset,
-            plate: theme.box_style("panel.chip", None),
-            plate_radius: theme.box_radius(&theme.box_style("panel.chip", None), s.control_height),
             sans: face(theme.faces.words),
             mono: face(theme.faces.values),
             foreground: theme.colors.get("foreground"),

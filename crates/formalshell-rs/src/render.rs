@@ -1054,10 +1054,9 @@ impl Grid {
                 let k = self.scale;
                 let width = self.line(j.border);
                 let walls = Walls { start: scaled_wall(j.walls.start, k), end: scaled_wall(j.walls.end, k), attach: j.walls.attach, radius: j.walls.radius * k };
-                let far_gap = j.far_gap.map(|(a, b)| (a * k, b * k));
                 // The near edge is a straight edge too, so its inset is whole pixels.
                 let near_inset = (j.near_inset * k).round();
-                let paths = shoulders::paths_with(r.width(), r.height(), j.radius * k, width, j.attach, near_inset, walls, far_gap);
+                let paths = shoulders::paths_with(r.width(), r.height(), j.radius * k, width, j.attach, near_inset, walls);
                 let at = Affine::translate((r.x0, r.y0));
                 Drawn { fill: at * paths.fill, outer: at * paths.outer, near: Some(at * paths.near), width, rounded: None }
             }
@@ -1313,7 +1312,7 @@ mod tests {
         let fill = Rgba::hex(0x18181b);
         let draw = |attach: f64, near_inset: f64, stretch: f64, damage: IRect| {
             let mut scene = Scene::new(100, 100);
-            let join = Joined { size: (60.0, 40.0), radius: 10.0, border: 1.0, attach, near_inset, walls: Walls::NONE, far_gap: None };
+            let join = Joined { size: (60.0, 40.0), radius: 10.0, border: 1.0, attach, near_inset, walls: Walls::NONE };
             let fit = Fit { outline: Outline::Join(join), snap: Snap::Edges };
             let id = scene.add(IRect::new(0, 0, 100, 100), Paint::Outlined { fit, fill, border: Rgba::BLACK, near: Rgba::TRANSPARENT, lit: None });
             scene.set_transform(id, Affine::translate((20.0, 39.0)) * Affine::scale_non_uniform(1.0, stretch));

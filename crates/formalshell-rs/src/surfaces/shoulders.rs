@@ -35,15 +35,13 @@ impl Walls {
 
 pub struct Outline {
     pub p: [Point; 8],
-    /// Where the far edge's stroke stops and resumes around a child's gap.
-    pub g: [Point; 2],
     /// Per corner arc in path order: radius and whether it is concave.
     pub arcs: [(f64, bool); 4],
     pub walled: [bool; 2],
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn outline(width: f64, height: f64, radius: f64, inset: f64, near: f64, corner: f64, far_gap: Option<(f64, f64)>, lip: f64, walls: Walls) -> Outline {
+pub fn outline(width: f64, height: f64, radius: f64, inset: f64, near: f64, corner: f64, lip: f64, walls: Walls) -> Outline {
     let r = radius.max(0.0);
     let i = inset.max(0.0);
     let n = near.max(0.0);
@@ -78,11 +76,6 @@ pub fn outline(width: f64, height: f64, radius: f64, inset: f64, near: f64, corn
     let u_end = if we >= 0.0 { length - i + we * at - l } else { length - i };
     let run_start = if ws >= 0.0 { u_start + rn } else { i + rc };
     let run_end = if we >= 0.0 { u_end - rn } else { length - i - rc };
-    let (mut ga, mut gb) = (run_end, run_end);
-    if let Some((a, b)) = far_gap {
-        ga = run_start.max(run_end.min(a - over));
-        gb = ga.max(run_end.min(b - over));
-    }
     let head = if ws >= 0.0 {
         [(u_start + rq, top), (u_start, top + rq), (u_start, far + signed), (run_start, far)]
     } else {
@@ -97,7 +90,6 @@ pub fn outline(width: f64, height: f64, radius: f64, inset: f64, near: f64, corn
     let p = [map(head[0]), map(head[1]), map(head[2]), map(head[3]), map(tail[0]), map(tail[1]), map(tail[2]), map(tail[3])];
     Outline {
         p,
-        g: [map((ga, far)), map((gb, far))],
         arcs: [
             if ws >= 0.0 { (rq, false) } else { (rn, concave) },
             if ws >= 0.0 { (rn, concave) } else { (rc, false) },
@@ -124,7 +116,7 @@ fn arc_to(path: &mut BezPath, from: Point, to: Point, (r, concave): (f64, bool))
 
 pub struct Paths {
     pub fill: BezPath,
-    /// The faces toward the desktop, in two runs around a child's gap.
+    /// The faces toward the desktop.
     pub outer: BezPath,
     /// The near edge (and a walled side), drawn at `1 - attach` of the
     /// border's alpha.
@@ -133,16 +125,16 @@ pub struct Paths {
 
 /// A Shoulders item `width` x `height`, origin at its top-left.
 pub fn paths(width: f64, height: f64, radius: f64, border: f64, attach: f64, near_inset: f64) -> Paths {
-    paths_with(width, height, radius, border, attach, near_inset, Walls::NONE, None)
+    paths_with(width, height, radius, border, attach, near_inset, Walls::NONE)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn paths_with(width: f64, height: f64, radius: f64, border: f64, attach: f64, near_inset: f64, walls: Walls, far_gap: Option<(f64, f64)>) -> Paths {
+pub fn paths_with(width: f64, height: f64, radius: f64, border: f64, attach: f64, near_inset: f64, walls: Walls) -> Paths {
     let a = attach.clamp(0.0, 1.0);
     let corner = radius * (2.0 * a - 1.0);
     let walls = Walls { attach: a, ..walls };
 
-    let f = outline(width, height, radius, 0.0, near_inset, corner, None, border * a, walls);
+    let f = outline(width, height, radius, 0.0, near_inset, corner, border * a, walls);
     let mut fill = BezPath::new();
     fill.move_to(f.p[0]);
     arc_to(&mut fill, f.p[0], f.p[1], f.arcs[0]);
@@ -154,7 +146,7 @@ pub fn paths_with(width: f64, height: f64, radius: f64, border: f64, attach: f64
     arc_to(&mut fill, f.p[6], f.p[7], f.arcs[3]);
     fill.close_path();
 
-    let s = outline(width, height, radius, border / 2.0, near_inset, corner, far_gap, 0.0, walls);
+    let s = outline(width, height, radius, border / 2.0, near_inset, corner, 0.0, walls);
     let [ws, we] = s.walled;
     let mut outer = BezPath::new();
     let start = if ws { s.p[2] } else { s.p[0] };
@@ -164,8 +156,6 @@ pub fn paths_with(width: f64, height: f64, radius: f64, border: f64, attach: f64
     }
     outer.line_to(s.p[2]);
     arc_to(&mut outer, s.p[2], s.p[3], s.arcs[1]);
-    outer.line_to(s.g[0]);
-    outer.move_to(s.g[1]);
     outer.line_to(s.p[4]);
     arc_to(&mut outer, s.p[4], s.p[5], s.arcs[2]);
     if !we {
@@ -231,16 +221,9 @@ mod tests {
         let walls = Walls { start: -1.0, end: 13.0, attach: 1.0, radius: 0.0 };
         let over = overhang(14.0, walls.start, walls.end);
         assert_eq!(over, 14.0);
-        let o = outline(200.0 + over * 2.0, 100.0 + 14.0, 14.0, 0.0, 0.0, 14.0, None, 0.0, walls);
+        let o = outline(200.0 + over * 2.0, 100.0 + 14.0, 14.0, 0.0, 0.0, 14.0, 0.0, walls);
         assert!(o.walled[1] && !o.walled[0]);
         assert_eq!(o.p[7].x, over + 200.0 + 13.0);
         assert_eq!(o.p[0].x, over - 14.0);
-    }
-
-    #[test]
-    fn a_far_gap_splits_the_far_edge() {
-        let o = outline(228.0, 100.0, 14.0, 0.5, 0.0, 14.0, Some((80.0, 120.0)), 0.0, Walls::NONE);
-        assert_eq!(o.g[0].x, 80.0);
-        assert_eq!(o.g[1].x, 120.0);
     }
 }

@@ -447,15 +447,6 @@ impl Sidebar {
         self.hit_at(i).map_or(0.0, |h| h.rect.y as f64 + h.rect.h as f64 / 2.0)
     }
 
-    /// The status card at the column's foot and the gap the column keeps
-    /// between its cards, in the bar window's pixels; none on the rail.
-    pub fn foot(&self, theme: &Theme) -> Option<(IRect, f64)> {
-        if self.collapsed {
-            return None;
-        }
-        Some((*self.foot.cards.first()?, Geo::of(theme).gap))
-    }
-
     /// Where the control opening `name` sits, for an open with no click.
     pub fn panel_anchor(&self, name: &str) -> Option<f64> {
         self.anchor_of(&format!("panel:{name}"))
@@ -548,8 +539,9 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
             "undo" => Action::Software(crate::services::packages::Change::Undo),
             _ => Action::None,
         },
-        // The column's chevron: the right region's cells it has no room
-        // for, in the second bar the top bar's chevron opens.
+        // The column's chevron: the quick settings card the top bar's
+        // chevron opens, the right region's cells it has no card for as
+        // info tiles.
         "overflow" => Action::Overflow(fs_chrome::types::Region::Right),
         "collapse" => Action::Sidebar(true),
         "expand" => Action::Sidebar(false),
@@ -784,10 +776,9 @@ fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
     Some(w::row(g.spacing, vec![w::cover(cover, g.art), words]))
 }
 
-/// The status card: network, the chevron's second bar (audio, the battery
-/// and every right-region cell the column has no card for), settings, the
-/// tray's second bar while it has items, and collapse, sharing the card's
-/// width.
+/// The status card: network, the chevron opening quick settings, settings,
+/// the tray's second bar while it has items, and collapse, sharing the
+/// card's width.
 fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     let theme = &store.theme.theme;
     let tall = (g.row_h - theme.space.md * 2.0).max(0.0);
@@ -803,7 +794,7 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     };
     let mut row = vec![
         button("wifi", "Network", "panel:network"),
-        button(chevron_glyph(edge), "More", "overflow"),
+        button(chevron_glyph(edge), "Quick settings", "overflow"),
         button("settings", "Settings", "panel:settings"),
     ];
     if !store.tray.items.is_empty() {
@@ -813,7 +804,7 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
     w::card(w::row(0.0, row).fill()).fill()
 }
 
-/// The chevron pointing out of the column, where its second bar opens.
+/// The chevron pointing out of the column, where quick settings opens.
 fn chevron_glyph(edge: Edge) -> &'static str {
     if edge == Edge::Right { "chevron-left" } else { "chevron-right" }
 }
@@ -843,7 +834,7 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
     };
     let buttons = vec![
         button("wifi", "Network", "panel:network"),
-        button(chevron_glyph(edge), "More", "overflow"),
+        button(chevron_glyph(edge), "Quick settings", "overflow"),
         button("settings", "Settings", "panel:settings"),
         button(fold_glyph(edge, true), "Expand", "expand"),
     ];

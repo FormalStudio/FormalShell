@@ -1,15 +1,15 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
-# --chevron-quiet asks the one thing --chevron does not: that the chevron's
-# second bar OPENS quiet. The card is built fresh on every open, so its cells
-# measure themselves for the first time while it is arriving, and with the
-# layout rule armed (M53 D2) every one of them grew from nothing, slid its
-# neighbours along the rail behind it and inflated the card around the lot,
-# on every single open (owner, 2026-09-09: "every time there's an animation
-# moving the icons and text, which is annoying"). The card's own entrance
-# stays; what must not be there is a second movement inside it.
+# --chevron-quiet asks the one thing --chevron does not: that the card the
+# chevron opens, quick settings, OPENS quiet. The card is built fresh on
+# every open, so its info tiles' cells read themselves for the first time
+# while it is arriving; the chevron's old second bar grew every one of them
+# from nothing and inflated the card around the lot, on every single open
+# (owner, 2026-09-09: "every time there's an animation moving the icons and
+# text, which is annoying"). The card's own entrance stays; what must not be
+# there is a second movement inside it.
 #
-# Same fixture as --chevron, so the group in the card is the same five cells,
+# Same fixture as --chevron, so the card carries the same governed cells,
 # which is why the two cannot share a session: both own bar.layout and both
 # drive the same chevron.
 #
@@ -30,9 +30,10 @@
 #          and comparing the two raw would call a perfectly rigid card 16%
 #          narrow. The radius comes off `debug dump` rather than a constant,
 #          so a change to the radius moves it.
-#   quiet  three captures taken back to back once the entrance is over, and
-#          two more half a second apart after them, are byte-identical: once
-#          the card is up, nothing inside it moves on its own.
+#   quiet  three captures of the whole card, cropped off `quicksettings
+#          status`'s card rect, taken back to back once the entrance is over,
+#          and two more half a second apart after them, are byte-identical:
+#          once the card is up, nothing inside it moves on its own.
 #
 # Only the opening window counts toward the width claim, and the window is
 # read off the expand calls' own stamps rather than off the pictures: a card
@@ -50,9 +51,9 @@
 # Do not tighten the sampling to chase it; the lanes below already lock in step
 # under load.
 #
-# The quiet claim only means anything if the band is quiet at rest, so the
+# The quiet claim only means anything if the card is quiet at rest, so the
 # settled capture is checked against a second one half a second later before
-# any of it is believed: a cell repainting on its own would otherwise read as
+# any of it is believed: a tile repainting on its own would otherwise read as
 # layout motion that is not there.
 leg_chevron_quiet_flag="--chevron-quiet"
 leg_chevron_quiet_order=181
@@ -88,6 +89,9 @@ chevron_quiet_burst_log="$shot_dir/chevron-quiet-burst.tsv"
 chevron_quiet_call_path="$shot_dir/chevron-quiet-calls.tsv"
 chevron_quiet_reply_path="$shot_dir/chevron-quiet-replies.txt"
 chevron_quiet_status_path="$shot_dir/chevron-quiet-status.json"
+chevron_quiet_first_path="$shot_dir/chevron-quiet-first.json"
+chevron_quiet_card_path="$shot_dir/chevron-quiet-card.png"
+chevron_quiet_card_rest_path="$shot_dir/chevron-quiet-card-rest.png"
 chevron_quiet_dump_path="$shot_dir/chevron-quiet-dump.json"
 chevron_quiet_shut_path="$shot_dir/chevron-quiet-shut.png"
 chevron_quiet_settled_path="$shot_dir/chevron-quiet-settled.png"
@@ -115,9 +119,9 @@ leg_chevron_quiet_fixture() {
 }
 
 leg_chevron_quiet_timing() {
-  # The drive below runs about seventeen seconds; the run's own frame is taken
+  # The drive below runs about twenty seconds; the run's own frame is taken
   # past it, on the card left open.
-  leg_timing 22 70
+  leg_timing 25 70
 }
 
 leg_chevron_quiet_drive() {
@@ -128,6 +132,12 @@ mkdir -p "$chevron_quiet_burst_dir"
 sleep 5
 $ipc call debug dump > "$chevron_quiet_dump_path" 2>&1
 "$grim_bin" -g "$chevron_quiet_band_region" "$chevron_quiet_shut_path" > /dev/null 2>&1
+# The card's own rect, off one open before the cycles.
+$ipc call bar chevron expand > /dev/null 2>&1
+sleep 1.5
+$ipc call quicksettings status > "$chevron_quiet_first_path" 2>&1
+$ipc call bar chevron collapse > /dev/null 2>&1
+card=\$("$jq_bin" -r '.card | "\(.x),\(.y) \(.width)x\(.height)"' "$chevron_quiet_first_path")
 sleep 1
 burst() {
   local lane=\$1 i t0 t1
@@ -158,15 +168,17 @@ wait "\${burst_pids[@]}"
 # back to back once the entrance is over, then the card the run settles on.
 $ipc call bar chevron expand >> "$chevron_quiet_reply_path" 2>&1
 sleep 0.9
-"$grim_bin" -g "$chevron_quiet_band_region" "${chevron_quiet_tail_paths[0]}" > /dev/null 2>&1
-"$grim_bin" -g "$chevron_quiet_band_region" "${chevron_quiet_tail_paths[1]}" > /dev/null 2>&1
-"$grim_bin" -g "$chevron_quiet_band_region" "${chevron_quiet_tail_paths[2]}" > /dev/null 2>&1
+"$grim_bin" -g "\$card" "${chevron_quiet_tail_paths[0]}" > /dev/null 2>&1
+"$grim_bin" -g "\$card" "${chevron_quiet_tail_paths[1]}" > /dev/null 2>&1
+"$grim_bin" -g "\$card" "${chevron_quiet_tail_paths[2]}" > /dev/null 2>&1
 sleep 1
-$ipc call bar chevron status > "$chevron_quiet_status_path" 2>&1
+$ipc call quicksettings status > "$chevron_quiet_status_path" 2>&1
 "$grim_bin" -g "$chevron_quiet_band_region" "$chevron_quiet_settled_path" > /dev/null 2>&1
+"$grim_bin" -g "\$card" "$chevron_quiet_card_path" > /dev/null 2>&1
 "$grim_bin" "$chevron_quiet_open_path" > /dev/null 2>&1
 sleep 0.5
 "$grim_bin" -g "$chevron_quiet_band_region" "$chevron_quiet_rest_path" > /dev/null 2>&1
+"$grim_bin" -g "\$card" "$chevron_quiet_card_rest_path" > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
 }
@@ -196,8 +208,8 @@ chevron_quiet_card_width() {
 
 leg_chevron_quiet_assert() {
   local f
-  for f in "$chevron_quiet_shut_path" "$chevron_quiet_settled_path" \
-    "$chevron_quiet_rest_path" "$chevron_quiet_open_path" "${chevron_quiet_tail_paths[@]}"; do
+  for f in "$chevron_quiet_shut_path" "$chevron_quiet_settled_path" "$chevron_quiet_rest_path" \
+    "$chevron_quiet_card_path" "$chevron_quiet_card_rest_path" "$chevron_quiet_open_path" "${chevron_quiet_tail_paths[@]}"; do
     [ -f "$f" ] || fail "no screenshot produced at $f"
   done
   [ -s "$chevron_quiet_burst_log" ] || fail "the burst produced no frames at all"
@@ -210,12 +222,18 @@ leg_chevron_quiet_assert() {
   if [ "$replies" -ne $((chevron_quiet_cycles * 2 + 1)) ]; then
     fail "the chevron did not answer ok to all $((chevron_quiet_cycles * 2 + 1)) expand/collapse calls, got $replies. Replies: $(cat "$chevron_quiet_reply_path" 2>/dev/null)"
   fi
-  if ! grep -q '"open":true' "$chevron_quiet_status_path" 2>/dev/null; then
-    fail "the last expand did not leave the group's own bar up. Got: $(cat "$chevron_quiet_status_path" 2>/dev/null)"
+  if ! "$jq_bin" -e '.open == true and .from == "chevron:right" and .card.width > 0' "$chevron_quiet_status_path" > /dev/null 2>&1; then
+    fail "the last expand did not leave quick settings up from the right chevron. Got: $(cat "$chevron_quiet_status_path" 2>/dev/null)"
+  fi
+  if ! "$jq_bin" -e --slurpfile a "$chevron_quiet_first_path" '.card == $a[0].card' "$chevron_quiet_status_path" > /dev/null 2>&1; then
+    fail "the card the tail frames were cropped to ($("$jq_bin" -c .card "$chevron_quiet_first_path" 2>/dev/null)) is not the one the run settled on ($("$jq_bin" -c .card "$chevron_quiet_status_path" 2>/dev/null))"
   fi
 
   if ! cmp -s "$chevron_quiet_settled_path" "$chevron_quiet_rest_path"; then
-    fail "the card's own band is not still at rest: $chevron_quiet_settled_path and $chevron_quiet_rest_path differ half a second apart, so nothing below could tell layout motion from a cell repainting"
+    fail "the card's own band is not still at rest: $chevron_quiet_settled_path and $chevron_quiet_rest_path differ half a second apart, so nothing below could tell layout motion from a tile repainting"
+  fi
+  if ! cmp -s "$chevron_quiet_card_path" "$chevron_quiet_card_rest_path"; then
+    fail "the card is not still at rest: $chevron_quiet_card_path and $chevron_quiet_card_rest_path differ half a second apart, so nothing below could tell layout motion from a tile repainting"
   fi
   local settled_width
   settled_width=$(chevron_quiet_card_width "$chevron_quiet_settled_path")
@@ -235,7 +253,7 @@ leg_chevron_quiet_assert() {
   # Nothing moved once the entrance was over.
   local i
   for i in "${!chevron_quiet_tail_paths[@]}"; do
-    if ! cmp -s "${chevron_quiet_tail_paths[$i]}" "$chevron_quiet_settled_path"; then
+    if ! cmp -s "${chevron_quiet_tail_paths[$i]}" "$chevron_quiet_card_path"; then
       fail "the card was still moving $((i + 1)) frames past its own entrance: ${chevron_quiet_tail_paths[$i]} differs from the card the run settled on"
     fi
   done

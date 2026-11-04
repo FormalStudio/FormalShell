@@ -438,9 +438,9 @@ impl Bar {
         self.set_idle(self.idle);
     }
 
-    /// The governed entries of a region, as the second bar holds them.
+    /// The governed entries of a region, which `bar chevron status` lists.
     /// Under the sidebar the one chevron is the column's foot button, and
-    /// its second bar the right region's cells the column has no room for.
+    /// its entries the right region's cells the column has no room for.
     pub fn overflow_entries(&self, region: Region) -> Vec<Entry> {
         if self.sidebar.is_some() {
             return layout::sidebar_overflow_entries(self.resolved.regions.get(Region::Right));
@@ -521,7 +521,8 @@ impl Bar {
         self.slots.iter().find_map(|s| s.cell.status())
     }
 
-    /// Which panel or second bar each cell has open.
+    /// Which panel each cell has open; a chevron reads as open while the
+    /// quick settings card it opened is up.
     pub fn set_open(&mut self, panel: Option<&str>, overflow: Option<Region>, now: Instant) {
         for slot in &mut self.slots {
             let open = match &slot.view.panel {

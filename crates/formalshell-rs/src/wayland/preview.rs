@@ -99,7 +99,7 @@ impl App {
         self.peek.hover_at = None;
         self.peek.close_at = None;
         let now = Instant::now();
-        self.open_host(Box::new(module), Some(along), false, now);
+        self.open_host(Box::new(module), Some(along), now);
     }
 
     /// `workspaces peek <n>`.

@@ -39,8 +39,8 @@
 # wheel goes over the workspaces cell, and the launcher's levels are
 # Keybinds and Emoji.
 #
-# The layout carries a chevron (chevron.sh's) so its second bar is part of
-# the clicking. The fixture window stays: it is what a stray key lands in.
+# The layout carries a chevron (chevron.sh's) so the quick settings card it
+# opens is part of the clicking. The fixture window stays: it is what a stray key lands in.
 leg_use_flag="--use"
 leg_use_order=400
 leg_use_needs="wlrctl wtype jq notify-send convert"
@@ -372,14 +372,14 @@ leg_use_assert() {
   use_expect wallpaper-launcher '"isOpen":true' "a wallpaper change keeps the launcher open"
   use_expect wallpaper-panel 'panel=calendar' "a wallpaper change keeps the panel open"
   "$jq_bin" -e '.regions.right.open == true' "$use_dir/chevron.json" > /dev/null 2>&1 \
-    || fail "three fast clicks on the chevron left its second bar shut: $(cat "$use_dir/chevron.json" 2>/dev/null)"
-  echo "SMOKE_USE three fast clicks on the chevron leave its second bar open"
+    || fail "three fast clicks on the chevron left quick settings shut: $(cat "$use_dir/chevron.json" 2>/dev/null)"
+  echo "SMOKE_USE three fast clicks on the chevron leave quick settings open"
   if grep -q 'formalshell:tooltip' "$use_dir/chevron-layers.json" 2>/dev/null; then
-    fail "the chevron's tooltip hangs over the second bar it opened"
+    fail "the chevron's tooltip hangs over the card it opened"
   fi
-  echo "SMOKE_USE no tooltip over the open second bar"
+  echo "SMOKE_USE no tooltip over the open card"
   "$jq_bin" -e '.regions.right.open == false' "$use_dir/chevron-closed.json" > /dev/null 2>&1 \
-    || fail "a fourth click left the second bar open: $(cat "$use_dir/chevron-closed.json" 2>/dev/null)"
+    || fail "a fourth click left quick settings open: $(cat "$use_dir/chevron-closed.json" 2>/dev/null)"
   echo "SMOKE_USE a fourth click shuts it"
   local blank b
   for b in theme-under-launcher wallpaper-under-panel; do

@@ -1,6 +1,6 @@
 //! `trayoverflow`: the tray's second bar, every StatusNotifier item as an
-//! icon in a `panel.chip` square on a headerless card, on the grid the
-//! chevron's second bar shares (`surfaces::chips`). A click is the item's
+//! icon in a `panel.chip` square on a headerless card, up to [`COLUMNS`] to a
+//! row. A click is the item's
 //! Activate (its menu for an item that is only a menu), a middle click its
 //! SecondaryActivate, and a right click its shell-owned menu, hung off this
 //! card.
@@ -14,6 +14,13 @@ use crate::store::Topic;
 use crate::ui::{El, Event, What, w};
 
 pub const ID: &str = fs_chrome::bar::panels::TRAY_OVERFLOW;
+
+/// Chips to a row before the card wraps.
+pub const COLUMNS: usize = 8;
+
+pub fn columns(n: usize) -> usize {
+    n.clamp(1, COLUMNS)
+}
 
 /// The pictures last fitted, and the items and size they were fitted for.
 #[derive(Default)]
@@ -99,7 +106,7 @@ impl Panel for Tray {
         }
         let size = v.theme.font_size.body.round().max(1.0);
         let pictures = self.pictures(items, size as u32);
-        let cols = crate::surfaces::chips::columns(items.len());
+        let cols = columns(items.len());
         self.columns.set(cols);
         let cells: Vec<El> = items
             .iter()

@@ -301,7 +301,6 @@ pub struct Joined {
     pub attach: f64,
     pub near_inset: f64,
     pub walls: crate::surfaces::shoulders::Walls,
-    pub far_gap: Option<(f64, f64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

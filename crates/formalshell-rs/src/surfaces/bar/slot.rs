@@ -1,7 +1,7 @@
 //! One placed cell (a region's delegate): the cell, its measure, its
 //! presence along the strip and fade, its open mark, its marquee clock and
-//! the nodes it last drew. The strip and the chevron's second bar both hold
-//! their cells as slots.
+//! the nodes it last drew. The strip holds its cells as slots, and quick
+//! settings holds the ones its info tiles read.
 
 use std::time::{Duration, Instant};
 

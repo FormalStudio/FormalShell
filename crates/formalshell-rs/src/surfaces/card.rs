@@ -122,15 +122,6 @@ impl LineCut {
     }
 }
 
-/// The card this one hangs off (a tray item's menu off the second bar):
-/// its span along the shared line and its corner.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Target {
-    pub along: f64,
-    pub length: f64,
-    pub radius: f64,
-}
-
 /// The line's ends, for the walls: the output's length along the line and
 /// what each end gives up to a frame ring (0 on a bare edge), and the corner
 /// the ring's two lines meet in.
@@ -178,10 +169,7 @@ pub struct Card {
     deform_running: bool,
     last_tick: Option<Instant>,
     scale: f64,
-    pub target: Option<Target>,
     pub ends: Ends,
-    /// A child's gap in this card's far edge, `(start, end)` along the line.
-    pub far_gap: Option<(f64, f64)>,
     /// The frame's whole opacity: 0 cuts a handed-over card outright.
     pub frame_alpha: f32,
     /// The deform amount: the pill is small and travels its whole
@@ -272,9 +260,7 @@ impl Card {
             deform_running: false,
             last_tick: None,
             scale,
-            target: None,
             ends: Ends::default(),
-            far_gap: None,
             frame_alpha: 1.0,
             deform_amount: DEFORM_AMOUNT,
             casts,
@@ -629,17 +615,11 @@ impl Card {
         let shape_depth = (extent + depth - slide).max(0.0);
         let neck = (depth - slide).max(0.0);
 
-        // The span the card may bud in, and whether it is too
-        // tight to bud at all.
-        let spanned = self.target.is_some_and(|t| t.length > 0.0);
+        // The span the card may bud in: the line less what a frame ring
+        // takes at either end.
         let ends = self.ends;
-        let (span_start, span_end) = match self.target {
-            Some(t) if spanned => (t.along + t.radius, t.along + t.length - t.radius),
-            _ => (ends.inset_start, ends.along - ends.inset_end),
-        };
-        let span_length = (span_end - span_start).max(0.0);
-        let span_tight = spanned && span_length < 4.0 * radius;
-        let joinable = self.joined && !span_tight;
+        let (span_start, span_end) = (ends.inset_start, ends.along - ends.inset_end);
+        let joinable = self.joined;
 
         let attach_target = if joinable && !(self.open && pose >= release_at) { 1.0 } else { 0.0 };
         if shown && !self.bypass {
@@ -651,24 +631,23 @@ impl Card {
         let near_inset = neck * (1.0 - a);
         let reach = shoulders::fillet_radius(radius * (2.0 * a - 1.0), shape_depth - near_inset);
 
-        let can_wall = joinable && self.target.is_none() && radius > 0.0 && ends.along > 0.0 && rest.width() > 0.0;
+        let can_wall = joinable && radius > 0.0 && ends.along > 0.0 && rest.width() > 0.0;
         let room_start = rest.x0 - ends.inset_start;
         let room_end = ends.along - ends.inset_end - rest.x1;
         let wall = |room: f64, inset: f64| {
             if can_wall && room < radius { room.max(0.0) + if inset > 0.0 { border } else { radius } } else { -1.0 }
         };
         let (wall_start, wall_end) = (wall(room_start, ends.inset_start), wall(room_end, ends.inset_end));
-        let clampable = joinable && (spanned || ends.along > 0.0);
+        let clampable = joinable && ends.along > 0.0;
         let bud_start = if clampable && wall_start < 0.0 { (along + length).min(along.max(span_start + radius)) } else { along };
         let bud_end = if clampable && wall_end < 0.0 { bud_start.max((along + length).min(span_end - radius)) } else { along + length };
         let clamped = bud_start > along || bud_end < along + length;
         let clamped_along = along + (bud_start - along) * a;
         let clamped_length = (along + length + (bud_end - along - length) * a - clamped_along).max(0.0);
-        let span_clip = (shown && span_tight && slide > 0.0).then_some((span_start, span_length));
         // Inside the clamped sides' border, where content fills at rest: the
         // content is undeformed and opaque, so any wider and it paints over
         // the border and past it while the bud widens.
-        let bud_clip = (shown && !span_tight && a > 0.0 && clamped).then_some((clamped_along + border, (clamped_length - border * 2.0).max(0.0)));
+        let bud_clip = (shown && a > 0.0 && clamped).then_some((clamped_along + border, (clamped_length - border * 2.0).max(0.0)));
         let along_pivot = if clamped && a > 0.0 {
             clamped_along + clamped_length / 2.0 - along
         } else if (wall_start >= 0.0) == (wall_end >= 0.0) {
@@ -698,11 +677,7 @@ impl Card {
 
         let map = self.edge_map();
         let cut = rest.y0 - depth;
-        let mut band_local = Rect::new(-FAR, cut.floor(), FAR, FAR);
-        if let Some((s, l)) = span_clip {
-            band_local.x0 = s;
-            band_local.x1 = s + l;
-        }
+        let band_local = Rect::new(-FAR, cut.floor(), FAR, FAR);
         let band = Scene::cover(band_local, map, 0.0).intersect(&self.scene.size);
 
         let walls = Walls { start: wall_start, end: wall_end, attach: a, radius: ends.radius };
@@ -714,14 +689,13 @@ impl Card {
         let item = map * frame * Affine::translate((origin - along, slide - depth));
         let item_rect = Rect::new(0.0, 0.0, item_w, item_h);
         let visible = shown && shape_depth > 0.0;
-        let far_gap = self.far_gap.map(|(s, e)| (s - origin, e - origin));
-        let paths = shoulders::paths_with(item_w, item_h, radius, border, a, near_inset, walls, far_gap);
+        let paths = shoulders::paths_with(item_w, item_h, radius, border, a, near_inset, walls);
         let fa = self.frame_alpha;
         let fill = self.look.fill.with_alpha(self.look.fill.a * fa);
         let line = self.look.border.with_alpha(self.look.border.a * fa);
         let near = line.with_alpha(line.a * (1.0 - a) as f32);
         let bounds = Scene::cover(item_rect, item, 2.0).intersect(&band);
-        let join = Joined { size: (item_w, item_h), radius, border, attach: a, near_inset, walls, far_gap };
+        let join = Joined { size: (item_w, item_h), radius, border, attach: a, near_inset, walls };
         let snap = if settled && self.deform.at_rest { Snap::Placed } else { Snap::Edges };
         let fit = Fit { outline: Outline::Join(join), snap };
         let frame_box = Scene::cover(Rect::new(live.x0, frame_y, live.x1, frame_y + extent), map, 0.0);
@@ -818,11 +792,6 @@ impl Card {
             return Scene::cover(Rect::new(-FAR, cut, FAR, FAR), self.edge_map(), 0.0).intersect(&self.scene.size);
         }
         self.shape_clip.map_or(self.clip, |s| self.clip.intersect(&s))
-    }
-
-    /// The card's own join along its line, as the bar takes it.
-    pub fn join(&self) -> Option<(f64, f64, f64)> {
-        self.joins.first().map(|j| (j.x, j.width, j.reach))
     }
 
     pub fn radius(&self) -> f64 {

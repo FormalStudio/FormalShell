@@ -6,8 +6,8 @@
 #
 #   a  `panel open network` with no cell, which lands against the far end of
 #      the bar, a `screenPadding` off the screen's own edge
-#   b  the chevron's second bar
-#   c  a panel opened by a click on a cell inside that second bar
+#   b  quick settings, opened by the chevron and budding off the line under
+#      it (docs/superpowers/specs/2026-11-04-quick-settings.md §8)
 #   d  `panel toggle usage`, which hangs off the one cell in the left region
 #      and so rests against the START of the line: the other wall, and the
 #      only case here that is not at the line's far end
@@ -17,12 +17,10 @@
 # copy of this leg per layout. Riding a position, this leg carries it into its
 # own `bar` key (two top-level keys leave only the later one standing) and
 # --bar-position stands its own drive down. Nothing in the drive knows which
-# edge it is on: the strip's thickness and its position come out of `debug
-# dump`, and the cell case c clicks is found by diffing the second bar out of
-# the output past that thickness.
+# edge it is on.
 #
-# Every frame is saved for reading by eye; four claims are asserted, the
-# first two on an attached frame of case a and the last two on case c:
+# Every frame is saved for reading by eye; two claims are asserted on an
+# attached frame of case a, and case b's card has to be there at rest:
 #
 #   the seam (M57 D1)   the line's own row inside the gap must be byte-equal
 #                       to the bar's fill two rows above it: the bar paints
@@ -38,22 +36,6 @@
 #                       table's radiusXl of 10 in a 12px room), that column
 #                       stays bare desktop throughout. At rest it is bare
 #                       desktop again either way.
-#   the bud (M57 D3)    case c's 380px card hangs off a second bar a third of
-#                       its width. On the frames taken before it lets go of
-#                       that bar's edge, nothing it paints under that edge may
-#                       lie outside the bar's own columns, and at rest it is
-#                       the full card again. Everything the claim is measured
-#                       against, the second bar's rect and the card's resting
-#                       rect, is read off the rig's own pixels: the strip is
-#                       as wide as its cells measured themselves at, which is
-#                       no number to pin.
-#   the border (M57)    and on a frame where that same card is far enough out
-#                       to read its sides and still widening, no row
-#                       well inside it carries the card's own fill at its
-#                       outermost painted column on either side. A clip taken
-#                       along the line from the undeformed rect cuts the
-#                       border off whichever side the deform, or the last of
-#                       the attach clock, has carried past it.
 #
 # Every probe is pinned to the top bar's own numbers, so a run on another
 # edge or with the frame on photographs the same cases over the whole output
@@ -70,14 +52,9 @@ join_region=""
 join_crop_width=540
 join_frames=10
 join_reply_path="$shot_dir/join-replies.txt"
+join_quick_path="$shot_dir/join-quick.json"
 join_desktop_path="$shot_dir/join-desktop.png"
 join_dump_path="$shot_dir/join-dump.json"
-# Two whole-output frames, either side of the chevron's expand: what the
-# second bar's own box is diffed out of, in the output's coordinates whatever
-# region the cases themselves are cropped to.
-join_bare_path="$shot_dir/join-bare.png"
-join_owner_path="$shot_dir/join-owner.png"
-join_click_path="$shot_dir/join-click.txt"
 
 # Case a's card in the crop's own logical coordinates: `panel open network`
 # with no cell is `Theme.space.n` (380) wide and rests one screenPadding (12)
@@ -126,9 +103,6 @@ leg_join_timing() {
 
 leg_join_drive() {
   local script="$shot_dir/join-drive.sh" wait_menu=""
-  # 24 logical pixels into the second bar's first cell, in the frames' pixels.
-  local nudge
-  nudge=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 24 * s + 0.5 }')
   if leg_on menu_emerge; then
     # Its launcher and scrim would otherwise sit over these cases, and its
     # motionScale fight this one's.
@@ -152,34 +126,6 @@ sample() {
     "$grim_bin" -g "$join_region" "$shot_dir/join-\$name-\$i.png" > /dev/null 2>&1
   done
 }
-# Where the group's first cell is, in the output's own coordinates: the
-# strip's edge and thickness out of the dump, the second bar whatever differs
-# past that thickness between the two whole-output frames, and the cell a
-# little in from the card's own start along the strip. Derived rather than
-# pinned, so the click lands on a cell on any edge. The frames are the
-# output's 1920x1080 pixels and the dump's inset logical, so the inset is
-# scaled in and the click scaled back out to the pointer's logical space.
-cell() {
-  local edge inset crop ox=0 oy=0 box bw bh bx by
-  edge=\$("$jq_bin" -r '.theme.barPosition' "$join_dump_path")
-  inset=\$("$jq_bin" -r --arg e "\$edge" '.theme.edgeInset[\$e] * $FS_SMOKE_SCALE | ceil' "$join_dump_path")
-  case \$edge in
-    top) crop="1920x\$((1080 - inset))+0+\$inset"; oy=\$inset ;;
-    bottom) crop="1920x\$((1080 - inset))+0+0" ;;
-    left) crop="\$((1920 - inset))x1080+\$inset+0"; ox=\$inset ;;
-    right) crop="\$((1920 - inset))x1080+0+0" ;;
-  esac
-  box=\$($convert_bin "$join_owner_path" "$join_bare_path" -compose difference -composite \
-    -colorspace Gray -crop "\$crop" +repage -threshold 2% -format '%@' info: 2>/dev/null)
-  echo "edge=\$edge inset=\$inset crop=\$crop box=\$box" >> "$join_click_path"
-  IFS='x+' read -r bw bh bx by <<< "\$box"
-  [ -n "\$by" ] || return 1
-  if [ "\$bw" -lt "\$bh" ]; then
-    echo "\$((ox + bx + bw / 2)) \$((oy + by + $nudge))"
-  else
-    echo "\$((ox + bx + $nudge)) \$((oy + by + bh / 2))"
-  fi | awk '{ printf "%d %d\\n", \$1 / $FS_SMOKE_SCALE, \$2 / $FS_SMOKE_SCALE }'
-}
 sleep 5
 $wait_menu
 call debug motionScale 1000
@@ -187,7 +133,6 @@ call debug motionScale 1000
 # reply log.
 $ipc call debug dump > "$join_dump_path" 2>&1
 "$grim_bin" -g "$join_region" "$join_desktop_path" > /dev/null 2>&1
-"$grim_bin" "$join_bare_path" > /dev/null 2>&1
 call panel open network
 sample a
 sleep 3
@@ -199,23 +144,7 @@ call bar chevron expand
 sample b
 sleep 3
 "$grim_bin" -g "$join_region" "$shot_dir/join-b-rest.png" > /dev/null 2>&1
-"$grim_bin" "$join_owner_path" > /dev/null 2>&1
-at=\$(cell) || at=""
-echo "click \$at" >> "$join_click_path"
-"$wlrctl_bin" pointer move -4000 -4000 >> "$join_reply_path" 2>&1
-sleep 0.5
-if [ -n "\$at" ]; then
-  "$wlrctl_bin" pointer move \$at >> "$join_reply_path" 2>&1
-  sleep 0.2
-  "$wlrctl_bin" pointer click left >> "$join_reply_path" 2>&1
-fi
-"$wlrctl_bin" pointer move -4000 -4000 >> "$join_reply_path" 2>&1
-sample c
-sleep 3
-"$grim_bin" -g "$join_region" "$shot_dir/join-c-rest.png" > /dev/null 2>&1
-call panel close
-sample c-close
-sleep 2
+$ipc call quicksettings status > "$join_quick_path" 2>&1
 call bar chevron collapse
 sample b-close
 sleep 2
@@ -252,72 +181,6 @@ join_column() {
 join_row() {
   $convert_bin "$1" -crop "4096x1+$2+$3" +repage -depth 8 txt:- 2>/dev/null \
     | awk 'NR > 1 { print toupper(substr($3, 2, 6)) }'
-}
-
-# The card's own fill, as the ink column $2 of frame $1 carries on most of the
-# rows between $3 and $4: one number read off the rig's own pixels, since a
-# theme colour spelled out here would be a second copy of the palette. Four
-# columns in from the card's own side is its padding, which is plain fill on
-# every row but the few a rule or a hovered row runs the full width of.
-join_fill() {
-  join_column "$1" "$2" \
-    | awk -v t="$3" -v b="$4" 'NR - 1 >= t && NR - 1 <= b { n[$1]++ }
-        END { for (k in n) if (n[k] > m) { m = n[k]; v = k } print v }'
-}
-
-# Every row of frame $1, from row $2 down for $3 rows, whose outermost painted
-# column on either side carries the card's own fill ($4) instead of its
-# border: the silhouette running into the desktop with no edge on it, one
-# "<side> <row> <column>" per line. What counts as painted is a channel sum
-# more than 6 off the second bar's own resting frame, which has the pointer's
-# hover on the strip in it already. A row carrying fewer than 40 painted
-# columns is no card at all and is skipped. A dark theme's border over a
-# dark desktop, antialiased across a fractional edge, lands inside that
-# tolerance, so a fill column is bordered when the column past it is darker
-# than the desktop, or when the column after that is still painted. The
-# second case is a 0.75 black border on a fractional edge: the fill and the
-# stroke each cover part of the outer pixels, and coverage compositing lets
-# the fill outweigh the border there, so they read as the desktop or a step
-# lighter. A clip that cuts the border, or a fill with none, leaves one
-# partial column at most before the desktop.
-join_borderless() {
-  $convert_bin "$shot_dir/join-b-rest.png" -crop "${join_crop_width}x$3+0+$2" +repage \
-    -depth 8 txt:- 2>/dev/null > "$shot_dir/join-base.txt"
-  $convert_bin "$1" -crop "${join_crop_width}x$3+0+$2" +repage -depth 8 txt:- 2>/dev/null \
-    | awk -v top="$2" -v fill="$4" '
-      function delta(a, b,   x, y, i, s) {
-        split(a, x, ","); split(b, y, ",");
-        s = 0;
-        for (i = 1; i <= 3; i++) s += (x[i] > y[i] ? x[i] - y[i] : y[i] - x[i]);
-        return s
-      }
-      function darker(a, b,   x, y) {
-        if (a == "" || b == "") return 0;
-        split(a, x, ","); split(b, y, ",");
-        return x[1] + x[2] + x[3] < y[1] + y[2] + y[3]
-      }
-      function edged(k, d, y,   k1, k2) {
-        k1 = (k + d) "," y; k2 = (k + 2 * d) "," y;
-        if (darker(cur[k1], base[k1])) return 1;
-        return cur[k2] != "" && delta(cur[k2], base[k2]) > 0
-      }
-      FNR == 1 { next }
-      { split($1, c, ","); sub(":", "", c[2]); gsub(/[()]/, "", $2);
-        x = c[1] + 0; y = c[2] + 0 }
-      NR == FNR { base[x "," y] = $2; next }
-      { hex[x "," y] = toupper(substr($3, 2, 6)); cur[x "," y] = $2
-        if (delta($2, base[x "," y]) > 6) {
-          if (!(y in first)) first[y] = x;
-          last[y] = x
-        } }
-      END {
-        for (y in first) {
-          a = first[y]; b = last[y];
-          if (b - a < 40) continue;
-          if (hex[a "," y] == fill && !edged(a, -1, y)) print "L", y + top, a;
-          if (hex[b "," y] == fill && !edged(b, 1, y)) print "R", y + top, b
-        }
-      }' "$shot_dir/join-base.txt" -
 }
 
 # How far under the line the shape reaches at column $2 of frame $1: the last
@@ -375,27 +238,22 @@ join_attached_frame() {
 
 leg_join_assert() {
   local name i path
-  for name in a a-close b c c-close b-close d d-close; do
+  for name in a a-close b b-close d d-close; do
     for i in $(seq 1 $join_frames); do
       path="$shot_dir/join-$name-$i.png"
       [ -f "$path" ] || fail "no join frame $path"
       echo "SMOKE_JOIN_$(echo "$name" | tr 'a-z-' 'A-Z_')_$i $path"
     done
   done
-  for name in a b c d; do
+  for name in a b d; do
     path="$shot_dir/join-$name-rest.png"
     [ -f "$path" ] || fail "no join frame $path"
     echo "SMOKE_JOIN_$(echo "$name" | tr 'a-z' 'A-Z')_REST $path"
   done
   [ -f "$join_desktop_path" ] || fail "no bare desktop frame at $join_desktop_path"
   echo "SMOKE_JOIN_DESKTOP $join_desktop_path"
-  for path in "$join_bare_path" "$join_owner_path"; do
-    [ -f "$path" ] || fail "no whole-output frame at $path"
-  done
-  echo "SMOKE_JOIN_OWNER $join_owner_path"
-  cat "$join_click_path" 2>/dev/null || true
-  grep -qE '^click [0-9]+ [0-9]+$' "$join_click_path" 2>/dev/null || fail \
-    "no cell was found inside the chevron's second bar, so case c clicked nothing: $(cat "$join_click_path" 2>/dev/null)"
+  "$jq_bin" -e '.open == true and .from == "chevron:right"' "$join_quick_path" > /dev/null 2>&1 || fail \
+    "case b's chevron did not leave quick settings open: $(cat "$join_quick_path" 2>/dev/null)"
 
   # The edge every case above was photographed on, off the shell's own
   # numbers: a position that landed late would otherwise photograph a top bar
@@ -407,7 +265,7 @@ leg_join_assert() {
   echo "SMOKE_JOIN_EDGE ok $want"
 
   if join_whole_output; then
-    for name in SEAM WALL BUD BUD_BORDER; do
+    for name in SEAM WALL B; do
       echo "SMOKE_JOIN_$name skipped (layout): the probes are pinned to the top bar's own crop; the frames above carry this case"
     done
     return 0
@@ -478,82 +336,8 @@ leg_join_assert() {
     echo "SMOKE_JOIN_WALL ok $ink rows $top-$bottom at column $edge $attached"
   fi
 
-  # --- The bud (M57 D3) ------------------------------------------------
-  #
-  # The second bar itself, off the frame taken with it open and nothing
-  # hanging off it, and the child's resting top under it. join-b-rest.png is
-  # the reference the whole claim is read against: the bare desktop has no
-  # second bar in it at all, and the rows the second bar covers carry the
-  # pointer's own hover by the time case c is photographed, which is why the
-  # band starts one row past its far edge.
-  local box owner_w owner_h owner_x owner_y owner_bottom
-  box=$(join_bbox "$shot_dir/join-b-rest.png" "$join_desktop_path" $((join_line_row + 1))) || fail \
-    "nothing under the bar differs from the bare desktop in join-b-rest.png: the chevron's second bar never opened"
-  read -r owner_w owner_h owner_x owner_y <<< "$box"
-  owner_bottom=$((owner_y + owner_h - 1))
-
-  local rest_w rest_h rest_x rest_y
-  box=$(join_bbox "$shot_dir/join-c-rest.png" "$shot_dir/join-b-rest.png" $((owner_bottom + 1))) || fail \
-    "nothing under the second bar differs from join-b-rest.png in join-c-rest.png: the child never opened"
-  read -r rest_w rest_h rest_x rest_y <<< "$box"
-  if [ "$rest_w" -lt $((join_card_width - 2)) ] || [ "$rest_w" -gt $((join_card_width + 4)) ]; then
-    fail "the card in join-c-rest.png is ${rest_w}px wide against the $join_card_width it rests at: it never widened out of the bud"
-  fi
-
-  # Everything under the second bar's far edge, on the frames taken before the
-  # card lets go of it. How far out the card is stands in for the pose: the
-  # shape reaches `releaseAt` (0.85) of its resting depth on the tick the
-  # attach clock starts, so a frame under four fifths of that depth is one the
-  # card is still wholly on the edge for. Past it the card widens to its own
-  # rect as it pulls away, which is what the clock is for, and those frames
-  # say nothing about the bud.
-  local band_top frames_attached bw bh bx by right
-  band_top=$((owner_bottom + 1))
-  frames_attached=0
-  for i in $(seq 1 $join_frames); do
-    path="$shot_dir/join-c-$i.png"
-    box=$(join_bbox "$path" "$shot_dir/join-b-rest.png" "$band_top") || continue
-    read -r bw bh bx by <<< "$box"
-    [ $((bh * 100)) -lt $((rest_h * 80)) ] || continue
-    frames_attached=$((frames_attached + 1))
-    right=$((bx + bw - 1))
-    if [ "$bx" -lt "$owner_x" ] || [ "$right" -ge $((owner_x + owner_w)) ]; then
-      fail "$path paints columns $bx-$right under the second bar's own $owner_x-$((owner_x + owner_w - 1)) while the card is still on its edge: the bud is wider than the edge it buds from"
-    fi
-  done
-  [ "$frames_attached" -gt 0 ] || fail \
-    "no attached frame among join-c-1..$join_frames: nothing under row $band_top is shallower than four fifths of the card's own $rest_h rows"
-  echo "SMOKE_JOIN_BUD ok $frames_attached attached frame(s) inside columns $owner_x-$((owner_x + owner_w - 1)), rest ${rest_w}x$rest_h at row $rest_y"
-
-  # And the bud's own border while it widens. The card is far enough out of
-  # the owner's edge to read its two sides and still narrower than its own
-  # resting rect; on every row well inside it,
-  # the outermost painted column on either side has to be the border's ink
-  # rather than the fill's. A clip taken along the line from the undeformed
-  # rect cuts exactly that column off whichever side the deform's stretch has
-  # carried past the band, and the silhouette runs into the desktop with no
-  # edge there for as long as that lasts. The card's own two ends are left out
-  # of the scan by `inset`: inside a corner's radius the outermost pixel is
-  # the arc's own antialiased tip, which is not the border's flat ink and
-  # never was.
-  local mid=0 inset=32 bare fill seen=""
-  fill=$(join_fill "$shot_dir/join-c-rest.png" $((rest_x + 4)) \
-    $((rest_y + inset)) $((rest_y + rest_h - inset)))
-  [ -n "$fill" ] || fail "could not read the card's own fill out of join-c-rest.png"
-  for i in $(seq 1 $join_frames); do
-    path="$shot_dir/join-c-$i.png"
-    box=$(join_bbox "$path" "$shot_dir/join-b-rest.png" "$band_top") || continue
-    read -r bw bh bx by <<< "$box"
-    seen="$seen ${bw}x$bh"
-    [ $((bh * 100)) -ge $((rest_h * 60)) ] || continue
-    [ "$bw" -lt $((rest_w - 6)) ] || continue
-    [ "$bh" -gt $((inset * 3)) ] || continue
-    bare=$(join_borderless "$path" $((by + inset)) $((bh - inset * 2)) "$fill")
-    [ -z "$bare" ] || fail \
-      "$path runs into the desktop with the card's own fill $fill at its outermost column, at side/row/column:$(echo "$bare" | tr '\n' ';') while the bud widens"
-    mid=$((mid + 1))
-  done
-  [ "$mid" -gt 0 ] || fail \
-    "no widening frame among join-c-1..$join_frames: no box under row $band_top is both three fifths of the card's own $rest_h rows deep and still narrower than its $rest_w columns (saw$seen)"
-  echo "SMOKE_JOIN_BUD_BORDER ok $mid widening frame(s) bordered on every row of both sides against the fill $fill"
+  # Case b's card at rest under the line, off its own pixels.
+  join_bbox "$shot_dir/join-b-rest.png" "$join_desktop_path" $((join_line_row + 1)) > /dev/null || fail \
+    "nothing under the bar differs from the bare desktop in join-b-rest.png: the chevron's card never opened"
+  echo "SMOKE_JOIN_B ok quick settings at rest under the line"
 }

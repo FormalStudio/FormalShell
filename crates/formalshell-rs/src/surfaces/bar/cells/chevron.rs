@@ -1,6 +1,6 @@
-//! The boundary of its region's governed group, which
-//! lives in its own second bar. Points away from the bar while that bar is
-//! shut and back at it while it is up.
+//! The boundary of its region's governed group, which the quick settings
+//! card it opens shows as info tiles. Points away from the bar while that
+//! card is shut and back at it while it is up.
 
 use fs_chrome::bar::layout::{self, Entry};
 use fs_chrome::types::{Edge, Region};

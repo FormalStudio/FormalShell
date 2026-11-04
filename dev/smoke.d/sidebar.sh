@@ -73,10 +73,10 @@ sidebar_status_cards="$shot_dir/sidebar-status-cards.json"
 sidebar_status_cards_rail="$shot_dir/sidebar-status-cards-rail.json"
 sidebar_card_clicks="$shot_dir/sidebar-card-clicks.txt"
 sidebar_more_status="$shot_dir/sidebar-more-status.json"
-sidebar_more_layers="$shot_dir/sidebar-more-layers.json"
+sidebar_more_chevron="$shot_dir/sidebar-more-chevron.json"
 sidebar_more_png="$shot_dir/sidebar-more.png"
 sidebar_more_panel="$shot_dir/sidebar-more-panel.txt"
-sidebar_more_origin="$shot_dir/sidebar-more-origin.txt"
+sidebar_more_handoff_png="$shot_dir/sidebar-more-handoff.png"
 sidebar_pill_dump="$shot_dir/sidebar-pill.json"
 sidebar_pill_png="$shot_dir/sidebar-pill.png"
 sidebar_pill_closed="$shot_dir/sidebar-pill-closed.json"
@@ -100,7 +100,7 @@ leg_sidebar_validate() {
 leg_sidebar_fixture() {
   settings_fragment ', "layout": "sidebar"'
   # The owner's right region (spec modules/linux/home/.config/formalshell),
-  # so the chevron's second bar holds what it holds on his laptops.
+  # so quick settings carries the info tiles it carries on his laptops.
   sidebar_rider || settings_pin '.bar.layout.right = ["display", "dualsense", "tailscale", "github", "usage", "chevron", "tray", "weather", "battery", "earbuds", "iphone", "audio", "network", "bluetooth", "bell", "indicators"]'
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "anullsrc=r=48000:cl=stereo" -t 30 \
     -metadata "title=Sidebar Card" -metadata "artist=FormalShell" -c:a flac -y "$sidebar_track"
@@ -198,22 +198,20 @@ echo "panel=\$($ipc call panel state 2>&1)" >> "$sidebar_gap_state"
 "$grim_bin" "$sidebar_gap_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 sleep 1
-# The chevron in the foot, where audio was: its second bar on the tray's
-# chip grid, and a click on its audio chip opening the audio panel.
+# The chevron in the foot, where audio was: quick settings budding off the
+# column beside it, and a click on its Weather tile handing over.
 read -r vx vy <<< "\$(at overflow "$sidebar_layers_open" "$sidebar_status_open")"
 click "\$vx" "\$vy"
-sleep 2
-$ipc call bar chevron status > "$sidebar_more_status" 2>&1
-"$hyprctl_bin" -j layers > "$sidebar_more_layers" 2>&1
+sleep 3
+$ipc call quicksettings status > "$sidebar_more_status" 2>&1
+$ipc call bar chevron status > "$sidebar_more_chevron" 2>&1
 "$grim_bin" "$sidebar_more_png" > /dev/null 2>&1
-read -r px py <<< "\$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:panel")] | first | "\(.x) \(.y)"' "$sidebar_more_layers")"
-echo "\$px \$py" > "$sidebar_more_origin"
-read -r ax ay <<< "\$("$jq_bin" -r '.regions.right.card.cells[] | select(.name == "audio") | .rect | "\(.x + (.w / 2 | floor)) \(.y + (.h / 2 | floor))"' "$sidebar_more_status" | head -1)"
-click \$(( px + ax )) \$(( py + ay ))
+read -r ax ay <<< "\$("$jq_bin" -r '.rows[] | select(.id == "weather") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"' "$sidebar_more_status" | head -1)"
+click "\$ax" "\$ay"
 sleep 2
 $ipc call panel state > "$sidebar_more_panel" 2>&1
+"$grim_bin" "$sidebar_more_handoff_png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
-$ipc call bar chevron collapse > /dev/null 2>&1
 sleep 1
 # The power profile pill on the right edge while the Settings tiles are up.
 $ipc call panel open settings > /dev/null 2>&1
@@ -454,42 +452,41 @@ sidebar_cards_assert() {
   done < <(grep "^$1 " "$sidebar_card_clicks")
 }
 
-# The foot's chevron (audio's old place, the column as wide), its second
-# bar on the shared chip grid with audio in it, rising off the status card
-# at the card's own width (the column's gap above it, never past the
-# column), the audio chip's click, and the power profile pill beside the
-# Settings tiles. $1 $2: the output.
+# The foot's chevron (audio's old place, the column as wide) opening quick
+# settings off the column's inner edge (§8), its info tiles the right
+# region's cells the column draws no card for less what the card draws
+# itself, in that order, Weather's click handing the card over, and the
+# power profile pill beside the Settings tiles. $1 $2: the output.
 sidebar_more_assert() {
   echo "SMOKE_SIDEBAR_MORE $sidebar_more_png"
+  echo "SMOKE_SIDEBAR_MORE_HANDOFF $sidebar_more_handoff_png"
   echo "SMOKE_SIDEBAR_PILL $sidebar_pill_png"
   "$jq_bin" -e '[.hits[] | .on] | (index("overflow") != null) and (index("panel:audio") == null)' "$sidebar_status_open" > /dev/null 2>&1 \
     || fail "sidebar: the foot carries no chevron in audio's place: $(cat "$sidebar_status_open")"
-  "$jq_bin" -e '.regions.right.open == true and (.regions.right.collapses | index("audio") != null)
-      and ([.regions.right.card.cells[] | .name] | index("audio") != null)' "$sidebar_more_status" > /dev/null 2>&1 \
-    || fail "sidebar: the chevron's second bar did not open holding audio: $(cat "$sidebar_more_status" 2>/dev/null)"
-  # The chip grid: no row past eight chips, rows in reading order.
-  "$jq_bin" -e '[.regions.right.card.cells[] | .rect] | group_by(.y) | all(length <= 8)
-      and (map(sort_by(.x) | map(.x)) | all(. == (. | sort)))' "$sidebar_more_status" > /dev/null 2>&1 \
-    || fail "sidebar: the second bar's cells are not on the chip grid: $(cat "$sidebar_more_status" 2>/dev/null)"
-  # The card and every chip inside its surface, which cannot follow a row
-  # widening across the line once it is mapped.
-  "$jq_bin" -e '.regions.right.card | .surface as $s | ([.rest] + [.cells[] | .rect]) | all(.x >= 0 and .y >= 0 and .x + .w <= $s.w and .y + .h <= $s.h)' "$sidebar_more_status" > /dev/null 2>&1 \
-    || fail "sidebar: the second bar runs past its own surface: $(cat "$sidebar_more_status" 2>/dev/null)"
-  echo "sidebar more: $("$jq_bin" -c '[.regions.right.card.cells[] | "\(.name)@\(.rect.x),\(.rect.y)"]' "$sidebar_more_status")"
-  local px py fx fy fw cx cw cb
-  read -r px py < "$sidebar_more_origin"
-  # The status card: the widest input rect holding the chevron.
-  read -r fx fy fw <<< "$("$jq_bin" -r '([.hits[] | select(.on == "overflow")] | first) as $c
-      | [.input[] | select(.x <= $c.x and .y <= $c.y and .x + .w >= $c.x + $c.w and .y + .h >= $c.y + $c.h)] | max_by(.w) | "\(.x) \(.y) \(.w)"' "$sidebar_status_open")"
-  read -r cx cw cb <<< "$("$jq_bin" -r '.regions.right.card.rest | "\(.x) \(.w) \(.y + .h)"' "$sidebar_more_status")"
-  cx=$((px + cx)); cb=$((py + cb))
-  echo "sidebar more card: x=$cx w=$cw bottom=$cb over the status card x=$fx y=$fy w=$fw"
-  [ "$cx" -eq "$fx" ] && [ "$cw" -eq "$fw" ] \
-    || fail "sidebar: the chevron's second bar is not the status card's width over it (x=$cx w=$cw, the card x=$fx w=$fw)"
-  [ "$cb" -le "$fy" ] && [ "$cb" -ge "$((fy - 12))" ] \
-    || fail "sidebar: the chevron's second bar does not rest just above the status card (its bottom $cb, the card's top $fy)"
-  grep -q '^audio$' "$sidebar_more_panel" 2>/dev/null \
-    || fail "sidebar: the audio chip's click did not open the audio panel: $(cat "$sidebar_more_panel" 2>/dev/null)"
+  "$jq_bin" -e '.open == true and .from == "sidebar"' "$sidebar_more_status" > /dev/null 2>&1 \
+    || fail "sidebar: the chevron did not open quick settings: $(cat "$sidebar_more_status" 2>/dev/null)"
+  "$jq_bin" -e '.regions.right.open == true' "$sidebar_more_chevron" > /dev/null 2>&1 \
+    || fail "sidebar: bar chevron status does not read the card open: $(cat "$sidebar_more_chevron" 2>/dev/null)"
+  local tiles want
+  tiles=$("$jq_bin" -c '[.rows[] | select(.kind == "info") | .id]' "$sidebar_more_status")
+  want=$("$jq_bin" -c --argjson tiles "$tiles" '.regions.right.collapses
+    | map(select(. as $n | ["audio", "network", "bluetooth", "battery", "display", "indicators", "microphone"] | index($n) | not))
+    | map(select(. as $n | $tiles | index($n)))' "$sidebar_more_chevron")
+  echo "sidebar more: rows $("$jq_bin" -c '[.rows[] | "\(.id):\(.kind)"]' "$sidebar_more_status")"
+  [ "$tiles" = "$want" ] && [ "$tiles" != "[]" ] \
+    || fail "sidebar: the info tiles $tiles are not the column's uncarded right-region cells less the card's own, in order ($want)"
+  "$jq_bin" -e '[.rows[] | select(.kind == "info") | .id] | index("weather") != null' "$sidebar_more_status" > /dev/null 2>&1 \
+    || fail "sidebar: the owner's layout gave no Weather tile: $tiles"
+  # The card off the column's inner edge: its left edge past the column and
+  # within a card's margin of it.
+  local col cx
+  col=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | .x + .w' "$sidebar_layers_open")
+  cx=$("$jq_bin" -r '.card.x' "$sidebar_more_status")
+  echo "sidebar more card: x=$cx off the column's edge at $col"
+  [ "$cx" -ge "$col" ] && [ "$cx" -le "$((col + 24))" ] \
+    || fail "sidebar: quick settings does not bud off the column's inner edge (card x=$cx, the column ends at $col)"
+  grep -q '^weather$' "$sidebar_more_panel" 2>/dev/null \
+    || fail "sidebar: the Weather tile's click did not hand over to the weather panel: $(cat "$sidebar_more_panel" 2>/dev/null)"
   local x y w h
   read -r x y w h <<< "$("$jq_bin" -r '.rect | "\(.x | floor) \(.y) \(.w) \(.h)"' "$sidebar_pill_dump" 2>/dev/null)"
   echo "sidebar pill: $(cat "$sidebar_pill_dump" 2>/dev/null)"

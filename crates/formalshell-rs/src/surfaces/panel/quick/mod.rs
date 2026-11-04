@@ -35,6 +35,35 @@ use crate::ui::{El, Event, Ink, Size, What, w};
 
 pub const ID: &str = "quicksettings";
 
+/// What opened the card (§10): a chevron in a region of the strip, the
+/// sidebar's chevron button, or an IPC call or keybind.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Origin {
+    Chevron(Region),
+    Sidebar,
+    #[default]
+    Ipc,
+}
+
+impl Origin {
+    pub fn label(self) -> String {
+        match self {
+            Origin::Chevron(r) => format!("chevron:{}", r.as_str()),
+            Origin::Sidebar => "sidebar".into(),
+            Origin::Ipc => "ipc".into(),
+        }
+    }
+
+    /// The region whose governed cells become info tiles; with no chevron,
+    /// the right region's.
+    fn region(self) -> Region {
+        match self {
+            Origin::Chevron(r) => r,
+            Origin::Sidebar | Origin::Ipc => Region::Right,
+        }
+    }
+}
+
 /// A slider's and a brightness row's step, Left, Right and a wheel notch.
 const STEP: f64 = 0.05;
 
@@ -710,6 +739,7 @@ impl MenuState {
 }
 
 pub struct QuickSettings {
+    origin: Origin,
     /// The profile the Power mode toggle goes back to from Balanced: the
     /// last other one it left, as GNOME's does.
     last_profile: Profile,
@@ -731,6 +761,7 @@ pub struct QuickSettings {
 impl Default for QuickSettings {
     fn default() -> Self {
         Self {
+            origin: Origin::Ipc,
             last_profile: Profile::PowerSaver,
             start: None,
             sections: RefCell::new(Vec::new()),
@@ -958,7 +989,7 @@ impl Panel for QuickSettings {
         }
         self.start = tiles(fx.store).into_iter().find(|t| matches!(t.kind, Kind::Toggle | Kind::Split) && t.available()).map(|t| t.id.to_owned());
         fx.service(power::ask);
-        let entries = extra_entries(fx.store, Region::Right);
+        let entries = extra_entries(fx.store, self.origin.region());
         let extras = self.extras.get_mut();
         for (n, e) in entries.iter().enumerate() {
             for mut slot in Slot::rail(e, &entries, n) {
@@ -1018,7 +1049,7 @@ impl Panel for QuickSettings {
                     .iter()
                     .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel }))
                     .collect();
-                let state = json!({ "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
+                let state = json!({ "from": self.origin.label(), "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
                 Some(state.to_string())
             }
             _ => None,
@@ -1075,6 +1106,10 @@ impl Panel for QuickSettings {
 }
 
 impl QuickSettings {
+    pub fn opened_by(origin: Origin) -> Self {
+        Self { origin, ..Self::default() }
+    }
+
     /// Every info tile as its cell reads now, in `bar.layout` order; a cell
     /// whose view is hidden has none.
     fn extras_now(&self, store: &Store) -> Vec<Extra> {

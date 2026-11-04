@@ -63,7 +63,7 @@ impl App {
             }
         } else if !self.center_open() {
             let anchor = anchor.or_else(|| self.bar.panel_anchor(center::ID));
-            self.open_host(Box::new(center::Center::default()), anchor, false, now);
+            self.open_host(Box::new(center::Center::default()), anchor, now);
         }
         self.tick_notifications();
         "ok"
@@ -98,7 +98,7 @@ impl App {
         let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
         // Placed off the same line as every panel: its insets, and beside a
         // side line, that line's side.
-        let place = self.panel_place(None, false);
+        let place = self.panel_place(None);
         let mut insets = place.insets();
         let spec = place.corner(fs_info::notifications::position_spec(self.store.config.str("notifications.position")));
         let right = spec.right;
@@ -183,17 +183,15 @@ impl App {
         }
     }
 
-    /// Moves the stack clear of the open panel's card and the open second
-    /// bar's where either crosses the stack's column: a stack at the top
-    /// drops below it, one at the bottom rises above it. A card on the
-    /// column's far half is the stack's to overlap, as one that left no room
-    /// either way would be. Read off the cards' resting rects, so the stack
-    /// moves once rather than following an entrance.
+    /// Moves the stack clear of the open panel's card where it crosses the
+    /// stack's column: a stack at the top drops below it, one at the bottom
+    /// rises above it. A card on the column's far half is the stack's to
+    /// overlap, as one that left no room either way would be. Read off the
+    /// card's resting rect, so the stack moves once rather than following
+    /// an entrance.
     fn clear_of_cards(&self, insets: &mut Insets, spec: PositionSpec) {
         let out = self.output_size();
-        let panel = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest_on(out));
-        let overflow = self.overflow.as_ref().filter(|p| p.card.is_open()).map(|p| p.card.rest_on(out));
-        for r in [panel, overflow].into_iter().flatten().filter(|r| !r.is_empty()) {
+        if let Some(r) = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest_on(out)).filter(|r| !r.is_empty()) {
             self.clear_of(r, insets, spec);
         }
     }

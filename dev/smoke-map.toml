@@ -235,11 +235,7 @@ runs = ["--bar-layout", "--bar-room", "--bar-title", "--bar-position bottom", "-
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/chevron.rs"]
-runs = ["--chevron", "--chevron-quiet"]
-
-[[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/chips.rs"]
-runs = ["--chevron", "--chevron-quiet", "--tray-overflow", "--tray-overflow --sidebar", "--sidebar", "--sidebar --light"]
+runs = ["--chevron", "--chevron-quiet", "--quick-settings"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/wayland/profiles.rs"]
@@ -421,7 +417,7 @@ runs = ["--gallery"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshell-rs/src/ipc/quicksettings.rs"]
-runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light"]
+runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light", "--chevron"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]
@@ -733,7 +729,7 @@ runs = ["--wifi", "--menu"]
 # The sidebar: the bar's body under layout sidebar, its cards and minimap.
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/sidebar/", "crates/formalshell-rs/src/ipc/sidebar.rs", "dev/smoke.d/sidebar.sh"]
-runs = ["--sidebar", "--sidebar --light", "--minimap", "--sidebar-software", "--sidebar-activity"]
+runs = ["--sidebar", "--sidebar --light", "--minimap", "--sidebar-software", "--sidebar-activity", "--quick-settings"]
 
 # The status card's tray button and the second bar it opens off the column.
 [[rule]]

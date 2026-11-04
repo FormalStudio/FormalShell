@@ -127,7 +127,7 @@ impl App {
         for h in [&mut self.outgoing, &mut self.panel].into_iter().flatten() {
             h.card.light(now, lit, (0.0, 0.0), ms);
         }
-        for p in [&mut self.overflow, &mut self.menu].into_iter().flatten() {
+        if let Some(p) = &mut self.menu {
             let d = p.card.depth() as f64;
             let origin = match p.card.edge {
                 Edge::Top | Edge::Left => (0.0, 0.0),
@@ -159,7 +159,7 @@ impl App {
     /// cards never close, so they take the model's own events alone.
     fn rim_card_open(&self) -> bool {
         let toasts = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
-        self.rims.lit.is_some() && (self.panel.is_some() || self.overflow.is_some() || self.menu.is_some() || self.modal_shown() || self.osd.pill.is_some() || toasts)
+        self.rims.lit.is_some() && (self.panel.is_some() || self.menu.is_some() || self.modal_shown() || self.osd.pill.is_some() || toasts)
     }
 
     fn arm_rim_poll(&mut self) {

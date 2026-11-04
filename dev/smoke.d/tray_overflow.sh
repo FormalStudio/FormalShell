@@ -11,15 +11,15 @@
 # what fits; --tray pins it and reads the six-cell strip back.
 # The unit tests pin the arithmetic behind both.
 #
-# It also puts the tray behind a bar chevron, alone on its governed side, and
-# rides it down and back up. Collapsed and expanded then differ by exactly one
-# cell, this one, so two byte-identical frames mean the toggle did not come
-# back: the bar reveals a governed entry only while it measures more than 0,
-# and a tray drawing nothing until it has decided something measures 0 and
-# stays hidden forever. That shipped (owner, 2026-08-28: "I just opened the
-# chevron and its not there"), with `tray status` reporting the collapse
-# correctly the whole time, which is why the claim here is a picture and not
-# a reply.
+# It also puts the tray behind a bar chevron, alone on its governed side.
+# The chevron opens quick settings, where a governed tray is an info tile
+# (docs/superpowers/specs/2026-11-04-quick-settings.md §7, §11): the tile
+# reads the tray's item count, and a real click on it hands the card over
+# to this second bar. The governed tray drawing nothing until it has
+# measured shipped once (owner, 2026-08-28: "I just opened the chevron and
+# its not there"), with `tray status` reporting the collapse correctly the
+# whole time, which is why the claim here is the tile and a picture rather
+# than a reply.
 #
 # Last, settings.json rewritten to put the dots alone on the strip beside
 # the clock, and the second bar under a real pointer behaving like a panel
@@ -68,6 +68,9 @@ tray_overflow_outside_path="$shot_dir/tray-overflow-outside.png"
 tray_overflow_handoff_path="$shot_dir/tray-overflow-handoff.png"
 tray_overflow_toast_path="$shot_dir/tray-overflow-toast.png"
 tray_overflow_toast_dump_path="$shot_dir/tray-overflow-toast-dump.json"
+tray_overflow_quick_path="$shot_dir/tray-overflow-quick.json"
+tray_overflow_tile_panel_path="$shot_dir/tray-overflow-tile-panel.txt"
+tray_overflow_tile_path="$shot_dir/tray-overflow-tile.png"
 
 leg_tray_overflow_fixture() {
   # The chevron governs what precedes it in a right region, so the tray is the
@@ -77,9 +80,9 @@ leg_tray_overflow_fixture() {
 }
 
 leg_tray_overflow_timing() {
-  # The drive's last step lands ~24s in (~30s under --sidebar, with the
+  # The drive's last step lands ~26s in (~30s under --sidebar, with the
   # toast case); the run's own frame is taken past it, with the second bar
-  # closed and the chevron expanded again.
+  # closed.
   leg_timing 48 80
 }
 
@@ -114,21 +117,24 @@ STEPS
 )
   else
     tail_steps=$(cat <<STEPS
-$ipc call bar chevron collapse > /dev/null 2>&1
-sleep 2
+to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
+click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
 "$grim_bin" "$tray_overflow_collapsed_path" > /dev/null 2>&1
 $ipc call bar chevron expand > /dev/null 2>&1
 sleep 2
+$ipc call quicksettings status > "$tray_overflow_quick_path" 2>&1
 "$grim_bin" "$tray_overflow_expanded_path" > /dev/null 2>&1
-$ipc call bar chevron collapse > /dev/null 2>&1
+to \$("$jq_bin" -r '.rows[] | select(.id == "tray") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"' "$tray_overflow_quick_path" | head -n 1)
+click
+sleep 2
+$ipc call panel state > "$tray_overflow_tile_panel_path" 2>&1
+"$grim_bin" "$tray_overflow_tile_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 "$jq_bin" '.bar.layout.right = ["tray", "clock"]' "$settings_path" > "$settings_path.tmp"
 cat "$settings_path.tmp" > "$settings_path"
 sleep 3
 $ipc call bar room > "$tray_overflow_room_path" 2>&1
 cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$tray_overflow_room_path" | head -n 1; }
-to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
 check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
 to \$(cell tray); click; sleep 1.5; check clicked-open
 to 900 700; click; sleep 1.5; check outside
@@ -262,20 +268,26 @@ leg_tray_overflow_assert() {
     fail "no menu-over-the-second-bar screenshot produced"
   fi
   echo "SMOKE_TRAY_OVERFLOW_MENU $tray_overflow_menu_shot_path"
-  # The regression the model cannot see: the toggle has to draw again after a
-  # collapse, and it is the only cell on its side of the chevron, so these two
-  # frames differ by it alone.
+  # The governed tray as a quick settings tile: the chevron opens the card
+  # with a Tray tile reading every item, and a real click on it hands the
+  # card over to this second bar.
   if leg_on sidebar; then
-    echo "SMOKE_TRAY_OVERFLOW chevron round trip skipped: the sidebar has no chevron"
-  elif [ ! -f "$tray_overflow_collapsed_path" ] || [ ! -f "$tray_overflow_expanded_path" ]; then
-    fail "no chevron round-trip screenshots produced"
-  fi
-  if ! leg_on sidebar; then
+    echo "SMOKE_TRAY_OVERFLOW chevron tile skipped: the sidebar has no chevron"
+  else
+    [ -f "$tray_overflow_collapsed_path" ] && [ -f "$tray_overflow_expanded_path" ] \
+      || fail "no chevron screenshots produced"
     echo "SMOKE_TRAY_OVERFLOW_COLLAPSED $tray_overflow_collapsed_path"
     echo "SMOKE_TRAY_OVERFLOW_EXPANDED $tray_overflow_expanded_path"
+    echo "SMOKE_TRAY_OVERFLOW_TILE $tray_overflow_tile_path"
     if cmp -s "$tray_overflow_collapsed_path" "$tray_overflow_expanded_path"; then
-      fail "the tray's toggle did not come back from a chevron collapse: the two frames are byte-identical"
+      fail "the chevron opened nothing: the two frames are byte-identical"
     fi
+    echo "tray tile: $("$jq_bin" -c '.rows[] | select(.id == "tray")' "$tray_overflow_quick_path" 2>/dev/null)"
+    "$jq_bin" -e --argjson n "$total" '.from == "chevron:right" and ([.rows[] | select(.kind == "info") | .id] == ["tray"])
+        and (.rows[] | select(.id == "tray") | (.subtitle | tostring | contains($n | tostring)))' "$tray_overflow_quick_path" > /dev/null 2>&1 \
+      || fail "the chevron's card does not carry the governed tray as one tile reading its $total items: $(cat "$tray_overflow_quick_path" 2>/dev/null)"
+    grep -q '^trayoverflow$' "$tray_overflow_tile_panel_path" 2>/dev/null \
+      || fail "a real click on the Tray tile did not hand over to the tray's second bar: $(cat "$tray_overflow_tile_panel_path" 2>/dev/null)"
   fi
   echo "SMOKE_TRAY_OVERFLOW_OUTSIDE $tray_overflow_outside_path"
   echo "SMOKE_TRAY_OVERFLOW_HANDOFF $tray_overflow_handoff_path"

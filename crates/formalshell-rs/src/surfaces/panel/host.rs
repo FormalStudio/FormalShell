@@ -30,7 +30,7 @@ use crate::scroll::{Touchpad, Travel};
 use crate::store::Store;
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::{Button, Kit, Painter};
-use crate::surfaces::card::{Card, Ends, Target};
+use crate::surfaces::card::{Card, Ends};
 use crate::ui::{self, El, Event, Ui, What, w};
 
 /// Where a card hangs: the line it comes out of, its ends, and the cell
@@ -47,8 +47,6 @@ pub struct Place {
     pub far_inset: f64,
     /// The opening cell's centre along the line, or none for the line's end.
     pub anchor: Option<f64>,
-    /// A card this one hangs off rather than the bar.
-    pub target: Option<Target>,
 }
 
 impl Place {
@@ -317,7 +315,6 @@ impl Host {
         let rest = Rect::new(0.0, place.line_at, 0.0, place.line_at);
         let mut card = Card::build(theme, "card", place.edge, size, place.line_at, rest, scale, cast, true);
         card.ends = place.ends;
-        card.target = place.target;
         let top = card.top_node();
         let halo = card.scene.add_after(Some(top), IRect::default(), Paint::Rect { fill: Rgba::TRANSPARENT, radius: 0.0 });
         card.scene.set_visible(halo, false);
@@ -1074,7 +1071,7 @@ mod tests {
 
     fn place(edge: Edge) -> Place {
         let ends = Ends { along: 1080.0, inset_start: 6.0, inset_end: 6.0, radius: 0.0 };
-        Place { edge, output: (1920.0, 1080.0), line_at: 160.0, ends, far_inset: 6.0, anchor: None, target: None }
+        Place { edge, output: (1920.0, 1080.0), line_at: 160.0, ends, far_inset: 6.0, anchor: None }
     }
 
     #[test]

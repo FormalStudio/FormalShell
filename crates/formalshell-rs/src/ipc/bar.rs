@@ -1,4 +1,4 @@
-//! `bar`: the chevron's second bar opened and shut
+//! `bar`: the quick settings card opened and shut from a chevron
 //! headlessly, `room` (what the strip shares out and what it hid) and
 //! `paint` (the band's reading of the wallpaper).
 
@@ -6,6 +6,7 @@ use fs_chrome::types::Region;
 use serde_json::{Map, json};
 
 use super::registry::{Function, Target, Type, Value};
+use crate::surfaces::panel::quick;
 use crate::wayland::App;
 
 fn text(s: impl Into<String>) -> Value {
@@ -41,12 +42,13 @@ fn act(app: &mut App, action: &str, region: &str) -> Value {
         return text(format!("error: no chevron in bar.layout.{region}"));
     }
     let open = app.overflow_open() == Some(r);
+    let origin = if app.bar.sidebar.is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(r) };
     match action {
-        "toggle" => app.set_overflow(r, !open, None),
-        "expand" => app.set_overflow(r, true, None),
+        "toggle" => app.set_quick(origin, !open),
+        "expand" => app.set_quick(origin, true),
         "collapse" => {
             if open {
-                app.set_overflow(r, false, None);
+                app.set_quick(origin, false);
             }
         }
         _ => return text(format!("error: unknown chevron action '{action}' (toggle|expand|collapse)")),
@@ -58,7 +60,7 @@ fn status(app: &App) -> Value {
     let mut regions = Map::new();
     for r in Region::ALL {
         // Under the sidebar the right region's chevron is the column's foot
-        // button, holding what the column has no room for.
+        // button.
         let chevron = app.bar.has_chevron(r);
         let collapses: Vec<String> = if chevron { app.bar.overflow_entries(r).iter().map(|e| e.name()).collect() } else { Vec::new() };
         regions.insert(
@@ -69,16 +71,6 @@ fn status(app: &App) -> Value {
                 "open": app.overflow_open() == Some(r),
             }),
         );
-    }
-    // The open second bar's card at rest and this frame, and every shown
-    // cell in it, in the card surface's pixels, with that surface's size.
-    let rect = |r: crate::scene::IRect| json!({"x": r.x, "y": r.y, "w": r.w, "h": r.h});
-    if let Some(p) = app.overflow.as_ref().filter(|p| p.card.is_open())
-        && let Some(entry) = p.region.and_then(|r| regions.get_mut(r.as_str()))
-    {
-        let cells: Vec<_> = p.slots.iter().filter(|s| s.present()).map(|s| json!({"name": s.name, "rect": rect(s.rect)})).collect();
-        let size = p.card.scene.size;
-        entry["card"] = json!({"rest": rect(p.card.rest_rect()), "live": rect(p.card.live_rect()), "cells": cells, "surface": {"w": size.w, "h": size.h}});
     }
     let names: Vec<&str> = chevron_regions(app).iter().map(|r| r.as_str()).collect();
     text(json!({"regions": regions, "chevronRegions": names}).to_string())

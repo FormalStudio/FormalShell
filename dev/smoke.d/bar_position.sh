@@ -8,12 +8,11 @@
 # whole output tall; on a bottom bar it ends on the output's last row.
 #
 # It carries a right region long enough to be worth a chevron (thirteen
-# governed cells ahead of it, battery/audio/network outboard), which on a
-# 1080-tall vertical strip is more than fits under the centre once opened:
-# the expanded frame is where the overflow rule shows, the outboard cells
-# still against the screen edge and the group clipped on the centre's side
-# (the bar's region rule). Collapsed frame, `bar chevron expand`,
-# expanded frame, the two asserted to differ. Then `panel open audio` hangs a panel
+# governed cells ahead of it, battery/audio/network outboard). Collapsed
+# frame, `bar chevron expand`, expanded frame, the two asserted to differ:
+# the chevron opens quick settings, read off `quicksettings status` as open
+# from that chevron and lying wholly off the strip on its inner side, its
+# governed cells as info tiles. Then `panel open audio` hangs a panel
 # off the bar's inner edge for the run's own frame, with `panel state`
 # agreeing it is the open one. This leg owns the `bar` key, so it does not
 # combine with --chevron or --bar-layout, which write the same key.
@@ -36,6 +35,7 @@ bar_position_layers_path="$shot_dir/bar-position-layers.json"
 bar_position_monitors_path="$shot_dir/bar-position-monitors.json"
 bar_position_status_collapsed_path="$shot_dir/bar-position-chevron-collapsed.json"
 bar_position_status_expanded_path="$shot_dir/bar-position-chevron-expanded.json"
+bar_position_quick_path="$shot_dir/bar-position-quick.json"
 bar_position_expand_reply_path="$shot_dir/bar-position-expand-reply.txt"
 bar_position_collapsed_path="$shot_dir/bar-position-collapsed.png"
 bar_position_expanded_path="$shot_dir/bar-position-expanded.png"
@@ -93,6 +93,7 @@ $ipc call bar chevron status > "$bar_position_status_collapsed_path" 2>&1
 $ipc call bar chevron expand > "$bar_position_expand_reply_path" 2>&1
 sleep 2
 $ipc call bar chevron status > "$bar_position_status_expanded_path" 2>&1
+$ipc call quicksettings status > "$bar_position_quick_path" 2>&1
 "$grim_bin" "$bar_position_expanded_path" > /dev/null 2>&1
 $ipc call panel open audio > "$bar_position_panel_open_path" 2>&1
 sleep 2
@@ -181,10 +182,10 @@ leg_bar_position_assert() {
     return 0
   fi
 
-  # What the chevron governs, and whether its own second bar is up: since the
-  # group moved off the strip into that bar (M53), the governed names are off
-  # the strip for the whole session and `collapses` is the only list there is
-  # to report, so `open` is what the expand changes.
+  # What the chevron governs, and whether the card it opens is up: the
+  # governed names are off the strip for the whole session (M53) and
+  # `collapses` is the only list there is to report, so `open` is what the
+  # expand changes.
   local hidden_names='"bluetooth","weather","tray","bell","indicators","monitor","keyboardLayout","display","github","usage","tailscale","systemUpdate","clock"'
   if ! grep -q "\"chevron\":true,\"collapses\":\[$hidden_names\],\"open\":false" "$bar_position_status_collapsed_path" 2>/dev/null; then
     fail "bar chevron status did not report the governed names off the strip while collapsed. Got: $(cat "$bar_position_status_collapsed_path" 2>/dev/null)"
@@ -193,8 +194,23 @@ leg_bar_position_assert() {
     fail "bar chevron expand was refused. Got: $(cat "$bar_position_expand_reply_path" 2>/dev/null)"
   fi
   if ! grep -q "\"chevron\":true,\"collapses\":\[$hidden_names\],\"open\":true" "$bar_position_status_expanded_path" 2>/dev/null; then
-    fail "bar chevron expand did not open the group's own bar. Got: $(cat "$bar_position_status_expanded_path" 2>/dev/null)"
+    fail "bar chevron expand did not open quick settings. Got: $(cat "$bar_position_status_expanded_path" 2>/dev/null)"
   fi
+  # The card off the strip's inner side, on whichever edge the strip is.
+  "$jq_bin" -e '.open == true and .from == "chevron:right" and ([.rows[] | select(.kind == "info")] | length > 0)' "$bar_position_quick_path" > /dev/null 2>&1 \
+    || fail "the chevron's card is not quick settings carrying its governed cells as tiles: $(cat "$bar_position_quick_path" 2>/dev/null)"
+  local card
+  card=$("$jq_bin" -r '.card | "\(.x) \(.y) \(.width) \(.height)"' "$bar_position_quick_path")
+  echo "quick settings card on the $edge bar: $card"
+  # shellcheck disable=SC2086
+  set -- $card
+  case "$edge" in
+    top) [ "$2" -ge $((by + bh)) ] ;;
+    bottom) [ $(($2 + $4)) -le "$by" ] ;;
+    left) [ "$1" -ge $((bx + bw)) ] ;;
+    right) [ $(($1 + $3)) -le "$bx" ] ;;
+    *) true ;;
+  esac || fail "the card at $card overlaps the $edge strip at x=$bx y=$by w=$bw h=$bh"
   for f in "$bar_position_collapsed_path" "$bar_position_expanded_path"; do
     if [ ! -f "$f" ]; then
       fail "no screenshot produced at $f"

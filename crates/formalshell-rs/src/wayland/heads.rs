@@ -1,6 +1,6 @@
 //! What every output carries: its own wallpaper, and a bar of its own.
 //!
-//! One of those bars is live: it is `App::bar`, the one panels, second bars,
+//! One of those bars is live: it is `App::bar`, the one panels, menus,
 //! joins and tooltips hang off, and every other bar is a spare drawn from the
 //! same store at its own output's size. The live bar follows the focused
 //! output, swapping with that output's spare, but only while nothing hangs
@@ -136,7 +136,6 @@ impl App {
 
     /// Everything hanging off the live bar, shut at once.
     fn close_bar_cards(&mut self) {
-        self.overflow = None;
         self.panel = None;
         self.drop_tray_menu();
         self.outgoing = None;
@@ -185,7 +184,6 @@ impl App {
     pub(super) fn catches(&self) -> bool {
         self.panel.as_ref().is_some_and(|h| h.is_open() && h.module.takes_keyboard())
             || self.menu.as_ref().is_some_and(|p| p.card.is_open())
-            || self.overflow_open_any()
             || self.launcher.open
             || self.atlas_open()
             || self.overlay_open().is_some()
@@ -199,7 +197,6 @@ impl App {
         self.atlas_close();
         self.overlay_close();
         self.close_panels();
-        self.close_overflow(Instant::now());
     }
 
     /// A press on head `i`'s spare bar: whatever a click outside closes is
@@ -213,7 +210,7 @@ impl App {
         if self.catches() {
             self.dismiss();
         }
-        if self.panel.is_some() || self.outgoing.is_some() || self.overflow.is_some() || self.menu.is_some() {
+        if self.panel.is_some() || self.outgoing.is_some() || self.menu.is_some() {
             self.close_bar_cards();
             self.panel_dirty = true;
             self.sync_join();
@@ -272,9 +269,9 @@ impl App {
         }
     }
 
-    /// A card, a second bar or a join hangs off the live bar.
+    /// A card or a join hangs off the live bar.
     fn bar_busy(&self) -> bool {
-        self.panel.is_some() || self.outgoing.is_some() || self.overflow.is_some() || self.menu.is_some() || !self.joins().is_empty()
+        self.panel.is_some() || self.outgoing.is_some() || self.menu.is_some() || !self.joins().is_empty()
     }
 
     pub(super) fn head_part(&self, surface: &WlSurface) -> Option<(usize, Part)> {
