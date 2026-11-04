@@ -199,14 +199,15 @@ other agents' work, never rewrite theirs.
   `gnome-shell --version` reading 51 and gnome-backgrounds 51.0.1
   installed; Settings, Appearance open.
 - Capture GNOME at scale 1 and 1.25, dark and light (`gsettings set
-  org.gnome.desktop.interface color-scheme`): the page at rest with Fold
-  set. Ours: `FS_RESULT=<unpacked tarball> PICKER_INCLUDED=real just smoke
-  --picker` and `--picker --light`, Fold set, scrolled to Included.
+  org.gnome.desktop.interface color-scheme`): the page at rest with a
+  light/dark pair set. Ours: `FS_RESULT=<unpacked tarball>
+  PICKER_INCLUDED=real just smoke --picker` and `--picker --light`, the
+  leg's fixture pair set, then scrolled to Included.
 - Compose each pair at equal physical size with ImageMagick into
   `artifacts/wallpaper-picker-vs-gnome-{dark,light}.png` and read them:
-  preview placement, tile size and gap, sections, the pair split, the
-  current mark, and the colour of each converted half against GNOME's own
-  draw of the same file (mean difference read at four points). A structural
+  preview placement, tile size and gap, sections, the pair split and the
+  current mark. The included sets differ (ours is the nature set), so
+  pictures are not compared, only how the page holds them. A structural
   difference is fixed in this commit; a material one (radius, fill, ring)
   is listed in spec §8 as the table's.
 - Remove the VM.
