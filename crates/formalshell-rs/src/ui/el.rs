@@ -370,6 +370,9 @@ pub struct El {
     pub fade: Option<f32>,
     /// A height set outright, over what the node measures to.
     pub height: Option<f64>,
+    /// The share of its measured height the node takes, 0 to 1, its
+    /// content cut at that edge (an in-place menu growing open).
+    pub reveal: Option<f64>,
     /// A list floating over everything else under this node (a dropdown's
     /// options): it takes no room in the layout, and its stops follow this
     /// node's.
@@ -385,7 +388,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, float: None }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, reveal: None, float: None }
     }
 
     pub fn float(mut self, list: El) -> Self {
@@ -395,6 +398,11 @@ impl El {
 
     pub fn fade(mut self, alpha: f32) -> Self {
         self.fade = Some(alpha);
+        self
+    }
+
+    pub fn reveal(mut self, share: f64) -> Self {
+        self.reveal = Some(share.clamp(0.0, 1.0));
         self
     }
 

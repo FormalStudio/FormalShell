@@ -316,7 +316,8 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
             w::panel_row_checked(s, "wifi", "HomeNet-5G", None, Vec::new(), true),
             w::panel_row(s, "wifi", "Office Wifi", None, vec![w::icon("lock").ink(Ink::Muted)]),
         ],
-        ("All networks", "q:network"),
+        Some(w::quick_menu_settings(s, "All networks", "q:network")),
+        1.0,
     );
     let items: Vec<Item> = tiles.iter().map(|(i, _)| *i).collect();
     // Only where the menu goes is read here: the tree measures its height.

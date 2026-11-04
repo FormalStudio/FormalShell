@@ -349,7 +349,7 @@ runs = ["--panel audio", "--panel-anchor", "--panel-at 1", "--panel-emerge", "--
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/audio.rs", "crates/formalshell-rs/src/services/devices/audio.rs", "crates/fs-audio/src/backend.rs", "crates/fs-audio/src/lib.rs", "crates/fs-system/src/audio.rs"]
-runs = ["--panel audio", "--panel-keys", "--osd"]
+runs = ["--panel audio", "--panel-keys", "--osd", "--quick-settings"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
@@ -421,7 +421,7 @@ runs = ["--gallery"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshell-rs/src/ipc/quicksettings.rs"]
-runs = ["--quick-settings", "--quick-settings --light"]
+runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]
@@ -576,7 +576,7 @@ runs = ["--polkit"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/power.rs", "crates/formalshell-rs/src/services/shutdown.rs", "crates/formalshell-rs/src/ipc/power.rs"]
-runs = ["--power", "--login-lock"]
+runs = ["--power", "--login-lock", "--quick-settings-power"]
 
 # Wallpaper and theme
 [[rule]]

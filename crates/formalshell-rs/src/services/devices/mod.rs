@@ -29,6 +29,8 @@ pub struct State {
     pub profiles: power::Profiles,
     /// A saved Wi-Fi passphrase on its way to the launcher, which takes it.
     pub revealed: Option<network::Revealed>,
+    /// What logind lets this session do, as last asked.
+    pub logind: crate::services::power::Can,
 }
 
 pub enum Diff {
@@ -40,6 +42,7 @@ pub enum Diff {
     Lights(power::Lights),
     Profiles(power::Profiles),
     Revealed(network::Revealed),
+    Logind(crate::services::power::Can),
 }
 
 fn set<T: PartialEq>(slot: &mut T, v: T) -> bool {
@@ -58,6 +61,7 @@ impl State {
             Diff::Earbuds(d) => self.earbuds.apply(d),
             Diff::Lights(v) => set(&mut self.lights, v),
             Diff::Profiles(v) => set(&mut self.profiles, v),
+            Diff::Logind(v) => set(&mut self.logind, v),
             Diff::Revealed(v) => {
                 self.revealed = Some(v);
                 true
@@ -80,6 +84,7 @@ pub fn start(ctx: &Ctx) {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Op {
     Volume(f64),
+    SourceVolume(f64),
     ToggleMute,
     ToggleSourceMute,
     ToggleWifi,
@@ -97,6 +102,7 @@ pub enum Op {
 pub fn run(ctx: &Ctx, op: Op) {
     match op {
         Op::Volume(v) => audio::set_volume(ctx, v),
+        Op::SourceVolume(v) => audio::set_source_volume(ctx, v),
         Op::ToggleMute => audio::toggle_mute(ctx),
         Op::ToggleSourceMute => audio::toggle_source_mute(ctx),
         Op::ToggleWifi => network::toggle_wifi(ctx),

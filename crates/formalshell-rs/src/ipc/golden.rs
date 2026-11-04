@@ -296,6 +296,8 @@ fn stub() -> Registry<()> {
                 functions: vec![
                     f("status", &[], Type::String, |_, _| s("{}")),
                     f("activate", &[("id", Type::String)], Type::String, |_, a| s(format!("activate {}", a[0].str()))),
+                    f("menu", &[("id", Type::String)], Type::String, |_, a| s(format!("menu {}", a[0].str()))),
+                    f("back", &[], Type::String, |_, _| s("ok")),
                 ],
             },
             Target {

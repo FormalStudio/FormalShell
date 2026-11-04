@@ -63,6 +63,10 @@ pub struct View<'a> {
     /// The stop of the row the pointer is over, whichever of its parts it is
     /// on; the keyboard cursor does not count.
     pub hovered: Option<String>,
+    /// The frame being drawn, for a body that moves on its own clock.
+    pub now: std::time::Instant,
+    /// The card's `debug motionScale`, 1 at full speed.
+    pub motion_scale: f64,
 }
 
 /// A key reaching an inline text field.
@@ -217,6 +221,11 @@ pub trait Panel {
     fn steps(&self) -> bool {
         false
     }
+    /// `steps` for the one stop under the cursor, for a panel where only
+    /// some stops carry a value.
+    fn steps_at(&self, _stop: &str) -> bool {
+        self.steps()
+    }
     /// Above 1, the stops are a grid this many wide (Calendar's month).
     fn columns(&self) -> usize {
         1
@@ -225,6 +234,17 @@ pub trait Panel {
     /// than by reading order: a grid whose rows hold different counts.
     fn spatial(&self) -> bool {
         false
+    }
+    /// The body is moving its own height (an in-place menu opening): the
+    /// card takes each frame's height outright rather than morphing after
+    /// it.
+    fn follows(&self, _v: &View) -> bool {
+        false
+    }
+    /// The `scrim` over the card at this share of the theme's 0.4, all but
+    /// the box drawn under the key given (an open menu).
+    fn dim(&self, _v: &View) -> Option<(String, f64)> {
+        None
     }
 }
 

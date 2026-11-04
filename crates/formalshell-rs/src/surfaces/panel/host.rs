@@ -20,7 +20,7 @@ use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
-use vello_cpu::kurbo::Rect;
+use vello_cpu::kurbo::{Rect, RoundedRect, Shape};
 
 use super::{Edit, Effect, Panel, View};
 use crate::motion::{Animated, Kind as Clock, SPATIAL};
@@ -141,7 +141,7 @@ impl Cursor {
     /// An arrow: steps the value on a stop that carries one, else walks.
     /// True when the cursor landed on another stop.
     fn walk(&mut self, module: &mut dyn Panel, stops: &[ui::Stop], dx: i32, dy: i32, fx: &mut Effect) -> bool {
-        if module.steps() && self.active && dy == 0 && dx != 0 {
+        if self.active && dy == 0 && dx != 0 && self.key.as_deref().is_some_and(|k| module.steps_at(k)) {
             if let Some(k) = self.key.clone() {
                 module.step(&k, dx.signum(), fx);
             }
@@ -273,6 +273,7 @@ pub struct Host {
     head: Ui,
     body: Ui,
     halo_nodes: Vec<NodeId>,
+    dim_nodes: Vec<NodeId>,
     rule_nodes: Vec<NodeId>,
     pub place: Place,
     open: bool,
@@ -328,6 +329,7 @@ impl Host {
             head: Ui::new(Some(rule)),
             body: Ui::new(Some(rule)),
             halo_nodes: vec![halo],
+            dim_nodes: Vec::new(),
             rule_nodes: vec![rule],
             place,
             open: true,
@@ -459,8 +461,16 @@ impl Host {
             || self.touch.running(now)
     }
 
-    fn view<'a>(&'a self, store: &'a Store, theme: &'a Theme) -> View<'a> {
-        View { store, theme, output: self.place.output, cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active), hovered: self.hovered_stop() }
+    fn view<'a>(&'a self, store: &'a Store, theme: &'a Theme, now: Instant) -> View<'a> {
+        View {
+            store,
+            theme,
+            output: self.place.output,
+            cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active),
+            hovered: self.hovered_stop(),
+            now,
+            motion_scale: self.scale,
+        }
     }
 
     /// The stop under the pointer: the hit's own, else the smallest row
@@ -481,9 +491,9 @@ impl Host {
     }
 
     /// The frame's target size off the content, before the morph.
-    fn target_size(&self, theme: &Theme, kit: &mut Kit, store: &Store) -> (f64, f64, f64) {
+    fn target_size(&self, theme: &Theme, kit: &mut Kit, store: &Store, now: Instant) -> (f64, f64, f64, bool) {
         let s = &theme.space;
-        let v = self.view(store, theme);
+        let v = self.view(store, theme, now);
         let vertical = self.place.edge.is_vertical();
         let p = &self.place;
         let width = super::card_width(self.module.as_ref(), &v, kit);
@@ -501,7 +511,7 @@ impl Host {
         let max_content = (max_frame - ends - head - gap).max(0.0);
         let height = ends + head + gap + content_h.min(max_content);
         self.fit.set((height, max_frame, content_h > max_content));
-        (width, height, content_h)
+        (width, height, content_h, self.module.follows(&v))
     }
 
     fn frame(&self, theme: &Theme) -> super::Frame {
@@ -510,14 +520,14 @@ impl Host {
 
     /// Lays the frame out for this frame and draws everything on it.
     pub fn layout(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
-        let (tw, th, content_h) = self.target_size(theme, kit, store);
+        let (tw, th, content_h, follows) = self.target_size(theme, kit, store, now);
         self.content_h = content_h;
         let spatial = Clock::Spatial.ms(theme) * self.scale;
         let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, SPATIAL), Animated::new(th, SPATIAL)));
         if self.open {
             let armed = self.surface.mapped && self.handoff.is_none() && self.morph_armed;
-            for (a, t) in [(&mut morph.0, tw), (&mut morph.1, th)] {
-                if armed { a.set(now, t, spatial) } else { a.jump(t) }
+            for (a, t, morphs) in [(&mut morph.0, tw, true), (&mut morph.1, th, !follows)] {
+                if armed && morphs { a.set(now, t, spatial) } else { a.jump(t) }
             }
             self.morph_armed = true;
         }
@@ -622,11 +632,12 @@ impl Host {
             (self.card.scene.size.h as f64 - s.screen_padding * 2.0).round() as i32,
         )));
         self.wake = None;
-        let v = View { store, theme, output: self.place.output, cursor: self.cursor.key.as_deref().filter(|_| self.cursor.active), hovered: self.hovered_stop() };
+        let v = self.view(store, theme, now);
         let head = if self.module.header() { Some(self.header(&v, &s)) } else { None };
         let body = self.module.body(&v);
         let foot = f.closing(theme, &body).foot;
         let module_wake = self.module.wake(&v);
+        let dim = self.module.dim(&v);
 
         let scene = &mut self.card.scene;
         if let Some(head) = head {
@@ -670,7 +681,11 @@ impl Host {
         if let Some(w) = d.wake {
             self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
         }
+        // A panel moves the cursor on its own clock too (into a menu once
+        // its rows show), not only after a key.
+        self.take_module_cursor();
         self.sync_cursor();
+        self.draw_dim(dim, theme, alpha, clip);
 
         // One halo for the whole list (M53 D4), travelling on a key step,
         // with the cursor's fill riding it.
@@ -707,6 +722,25 @@ impl Host {
         if d.animating {
             self.wake = Some(now);
         }
+    }
+
+    /// The scrim over the card but the box under `dim`'s key, GNOME's
+    /// brightness -0.4 behind an open quick settings menu.
+    fn draw_dim(&mut self, dim: Option<(String, f64)>, theme: &Theme, alpha: f32, clip: IRect) {
+        const DIM: f32 = 0.4;
+        let hole = dim.as_ref().and_then(|(key, _)| self.body.quick.iter().find(|(k, _)| k == key).map(|(_, r)| *r));
+        let (card, radius) = (self.card.content.0, self.card.radius());
+        let mut p = Painter::new(&mut self.card.scene, &mut self.dim_nodes, Some(clip));
+        if let (Some((_, share)), Some(hole)) = (dim, hole)
+            && share > 0.0
+        {
+            let rect = |r: IRect| Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64);
+            let mut path = RoundedRect::from_rect(rect(card), radius).to_path(0.1);
+            path.extend(RoundedRect::from_rect(rect(hole), theme.box_radius(&theme.box_style("panel.group", None), hole.h as f64)).to_path(0.1));
+            let fill = theme.box_style("scrim", None).fill;
+            p.shape(card, Paint::Shape { fill: Some((path, fill.with_alpha(DIM * share as f32 * alpha))), strokes: Vec::new() });
+        }
+        p.finish();
     }
 
     /// Keeps the cursor on its row by identity when the rows renumber.
@@ -767,9 +801,16 @@ impl Host {
         fx.out()
     }
 
-    /// Every quick settings piece's box by its key, as last drawn.
-    pub fn quick_boxes(&self) -> &[(String, IRect)] {
-        &self.body.quick
+    /// Every quick settings piece's box by its key, as last drawn, then
+    /// every other stop's (a slider's track, a menu's rows).
+    pub fn quick_boxes(&self) -> Vec<(String, IRect)> {
+        let mut out = self.body.quick.clone();
+        for st in &self.body.stops {
+            if !out.iter().any(|(k, _)| *k == st.key) {
+                out.push((st.key.clone(), st.rect));
+            }
+        }
+        out
     }
 
     /// The clipboard's text into the field holding the keyboard.

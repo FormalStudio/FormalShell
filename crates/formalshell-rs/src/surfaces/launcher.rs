@@ -3325,13 +3325,13 @@ impl Shown {
     /// its last thing stands off the sides (panel-language spec §2).
     fn panel_el(&self, m: &Model, store: &Store, theme: &Theme) -> Option<El> {
         let p = m.panel.as_ref().filter(|_| m.on_panel())?;
-        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: p.cursor.shown(), hovered: self.hovered_stop() };
+        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: p.cursor.shown(), hovered: self.hovered_stop(), now: Instant::now(), motion_scale: self.scale };
         Some(p.module.body(&v))
     }
 
     fn measure_panel(&self, m: &mut Model, store: &Store, theme: &Theme, kit: &mut Kit) {
         let Some(p) = m.panel.as_mut() else { return };
-        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: None, hovered: None };
+        let v = crate::surfaces::panel::View { store, theme, output: self.output, cursor: None, hovered: None, now: Instant::now(), motion_scale: self.scale };
         p.width = crate::surfaces::panel::card_width(p.module.as_ref(), &v, kit);
         let Some(el) = self.panel_el(m, store, theme) else { return };
         let width = m.panel_body(theme).1;
@@ -3789,7 +3789,7 @@ fn header(m: &Model, store: &Store, theme: &Theme) -> El {
     // A held panel takes the keys the field would: its page's title stands
     // where the query would be.
     if let Some(p) = m.panel.as_ref().filter(|_| m.on_panel()) {
-        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None };
+        let v = crate::surfaces::panel::View { store, theme, output: (0.0, 0.0), cursor: None, hovered: None, now: Instant::now(), motion_scale: 1.0 };
         let title = p.module.title(&v);
         if token.last() != Some(&title) {
             parts.push(crate::surfaces::panel::title(title));

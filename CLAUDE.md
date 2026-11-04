@@ -1243,7 +1243,23 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `caffeinate status` (under `--light` Dark style disabled, "Set in
   settings.json"); Escape closing it and settings.json's sha256 unchanged.
   Photographed at rest and with the toggles on, dark and `--light`; ride
-  `--showcase` for the `on` fill in a wallpaper's colour.
+  `--showcase` for the `on` fill in a wallpaper's colour. Then two null
+  sinks of the leg's own: Volume a slider with its arrow, Microphone only
+  while pw-record reads a pw-loopback source; Right twice on
+  the Volume track moving the sink 0.10 on the cube-root scale (`pactl`); the
+  Volume arrow opened by a real Down from Power and Return at a tenth
+  speed, its burst reading the rows under it moving down and the menu's
+  rows fading in only once its height lands, the dim up throughout; Down to
+  the second sink under the stale audit and Return making it the default
+  (`pactl get-default-sink`); Escape closing the menu, then the card. The
+  Power menu on the rig's empty system bus is Log out alone, one Return
+  arming it and Escape closing it with nothing run.
+- `quick_settings_power.sh` `--quick-settings-power` (vm_only): the
+  Power button's menu against the guest's real logind, its rows the ones
+  CanSuspend, CanReboot and CanPowerOff allow with Log out last; real
+  Downs to Power off, one Return arming it ("Confirm power off?") with the
+  card up, and two Escapes closing the menu disarmed and then the card. The
+  second Return is never pressed.
 - `record.sh` `--record`: `record` start to finished GIF through a real
   wf-recorder child, with the bar's recording cell mid-run.
 - `r0_measure.sh` `--r0-measure <seconds>`: R0's numbers on one

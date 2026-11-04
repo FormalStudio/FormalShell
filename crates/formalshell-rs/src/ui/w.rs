@@ -778,21 +778,33 @@ pub fn quick_slider(s: &Space, id: &str, glyph: &str, value: f64, menu: bool) ->
     row(s.sm, parts).fill().height(s.quick_slider)
 }
 
-/// An open menu (§4): a `panel.group` box holding a header (the toggle's
-/// glyph in a round chip, `on` while the toggle is, its title and
-/// subtitle), the menu's rows, a hairline, and the settings row (`label`
-/// firing `id`) last.
-pub fn quick_menu(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, rows: Vec<El>, settings: (&str, &str)) -> El {
+/// An open menu (§4), keyed `menu`: a `panel.group` box holding a header
+/// (the toggle's glyph in a round chip, `on` while the toggle is, its title
+/// and subtitle), the menu's rows, and with `settings` a hairline and that
+/// row last. `shown` fades what it holds: the box grows open before its
+/// rows arrive.
+#[allow(clippy::too_many_arguments)]
+pub fn quick_menu(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, rows: Vec<El>, settings: Option<El>, shown: f32) -> El {
     let mut words = vec![text_el(title, Type::Title, Weight::Semibold, false, Ink::Fg).elide()];
     words.extend(subtitle.filter(|t| !t.is_empty()).map(|t| text_el(t, Type::Caption, Weight::Semibold, false, Ink::Muted).elide()));
     let header = row(s.lg, vec![quick_disc(glyph, Type::Display, s.panel_row_compact, on), column(s.xxs, words).fill()]).fill();
-    let (label, id) = settings;
     let mut parts = vec![header, space(s.quick_gap)];
     parts.extend(rows);
-    parts.push(separator());
-    parts.push(panel_row(s, "", label, None, Vec::new()).on(id).stop(id));
-    cell(column(0.0, parts).fill()).cell_state(|c| {
-        c.group = true;
-        c.inset = Some((s.lg, s.lg));
-    })
+    if let Some(settings) = settings {
+        parts.push(separator());
+        parts.push(settings);
+    }
+    let content = column(0.0, parts).fill();
+    let content = if shown < 1.0 { content.fade(shown) } else { content };
+    cell(content)
+        .cell_state(|c| {
+            c.group = true;
+            c.inset = Some((s.lg, s.lg));
+        })
+        .key("menu")
+}
+
+/// A menu's settings row: `label`, handing the card over to `id`'s panel.
+pub fn quick_menu_settings(s: &Space, label: &str, id: &str) -> El {
+    panel_row(s, "", label, None, Vec::new()).on(id).stop(id)
 }

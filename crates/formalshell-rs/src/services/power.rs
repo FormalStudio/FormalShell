@@ -49,6 +49,32 @@ impl Action {
     }
 }
 
+/// Which of the three logind would take from this session, a password
+/// prompt counting as yes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Can {
+    pub suspend: bool,
+    pub reboot: bool,
+    pub power_off: bool,
+}
+
+/// Asks logind's `Can*` methods and publishes the answers; no logind, or
+/// no system bus, answers no to each.
+pub fn ask(ctx: &Ctx) {
+    let c = ctx.clone();
+    ctx.spawn(async move {
+        let can = match manager().await {
+            Ok(m) => Can { suspend: allowed(&m, "CanSuspend").await, reboot: allowed(&m, "CanReboot").await, power_off: allowed(&m, "CanPowerOff").await },
+            Err(_) => Can::default(),
+        };
+        c.publish(store::Diff::Devices(crate::services::devices::Diff::Logind(can)));
+    });
+}
+
+async fn allowed(m: &Proxy<'_>, method: &str) -> bool {
+    m.call::<_, _, String>(method, &()).await.is_ok_and(|a| a == "yes" || a == "challenge")
+}
+
 static CHANNEL: LazyLock<(Sender<Action>, Receiver<Action>)> = LazyLock::new(async_channel::unbounded);
 
 /// Callable from any thread.

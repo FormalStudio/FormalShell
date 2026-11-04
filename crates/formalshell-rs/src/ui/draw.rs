@@ -207,6 +207,12 @@ fn row_widths(cx: &mut Cx, children: &[El], inner: f64, gap: f64) -> Vec<f64> {
 
 /// (width, height) at `avail` wide.
 pub fn measure(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
+    let (w, h) = natural(cx, el, avail);
+    (w, el.reveal.map_or(h, |r| h * r))
+}
+
+/// What `el` measures to whatever share of it shows.
+fn natural(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
     // Containers only: they live as long as the tree being drawn, where a
     // separator painted from a temporary could reuse a freed address.
     if !matches!(el.kind, Kind::Column { .. } | Kind::Row { .. } | Kind::Grid { .. }) {
@@ -483,6 +489,21 @@ pub fn paint(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
 
 fn paint_node(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
     let pulse = el.pulse && cx.theme.motion_enabled;
+    if let Some(share) = el.reveal.filter(|r| *r < 1.0) {
+        if share <= 0.0 {
+            return offscreen(cx, el, rect, path);
+        }
+        let saved = cx.clip;
+        let cut = irect(rect);
+        cx.clip = Some(saved.map_or(cut, |c| c.intersect(&cut)));
+        paint_shown(cx, el, rect, path, pulse);
+        cx.clip = saved;
+        return;
+    }
+    paint_shown(cx, el, rect, path, pulse);
+}
+
+fn paint_shown(cx: &mut Cx, el: &El, rect: Rect, path: &str, pulse: bool) {
     if !pulse && el.swap.is_none() && el.badge.is_none() && el.fade.is_none() {
         return paint_body(cx, el, rect, path);
     }
@@ -1029,7 +1050,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     if state.card {
         cx.ui.cards.push(ri);
     }
-    if quick && let Some(key) = &el.key {
+    if (quick || state.group) && let Some(key) = &el.key {
         cx.ui.quick.push((key.clone(), ri));
     }
     let now = cx.now;
