@@ -101,6 +101,9 @@ leg_wheel_fixture() {
     $convert_bin -size 320x180 "xc:hsl($((i * 9)),70%,45%)" "$wheel_dir/img-$(printf '%02d' "$i").png"
   done
   settings_fragment ', "picker": {"directory": "'"$wheel_dir"'"}'
+  # Included the Sky alone, whatever set the result bundles, so the count
+  # below holds on a package with the nine pictures and on one without.
+  shell_env="${shell_env:+$shell_env }FS_WALLPAPERS=$wheel_dir-none"
 }
 
 # The grid covers the whole output, so under --wallpaper this starts past

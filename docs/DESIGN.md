@@ -980,7 +980,7 @@ launcher's headings; the caption sits under the picture and the cursor is the
 ring round both. A light/dark pair is one tile split on the diagonal, light
 above and dark below; a filed single carries a `moon` or `sun` badge
 top-left and the tile holding the shown slot a check disc bottom-right. The
-Style previews are two tiles, the mode in effect ringed.
+Style previews are two tiles centred over the grid, the mode in effect ringed.
 
 **Tooltip, tray menu, polkit, console, capture, hot corners.** Same tokens,
 no exceptions.

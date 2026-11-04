@@ -1597,9 +1597,12 @@ impl Model {
                 y += band + line_h + s.row_gap + caption_h;
                 continue;
             }
+            // GNOME centres its two Style previews over the page
+            // (`cc-background-panel.blp`).
+            let indent = if sec.id == STYLE && tiles.len() < columns { (columns - tiles.len()) as f64 * (tile_w + gap) / 2.0 } else { 0.0 };
             for (k, _) in tiles.iter().enumerate() {
                 let (r, c) = (k / columns, k % columns);
-                let x = c as f64 * (tile_w + gap);
+                let x = indent + c as f64 * (tile_w + gap);
                 out.slots.push(match r {
                     0 => Slot { x, y, w: slot_w, h: band + slot_h, band },
                     _ => Slot { x, y: y + band + r as f64 * pitch, w: slot_w, h: slot_h, band: 0.0 },

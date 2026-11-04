@@ -319,8 +319,8 @@ The route becomes a launcher app view like `monitor` and `mirror`
 Three sections down one scrolling body, each under the launcher's heading
 (`heading_el`, `caption` 600 `muted`, panel-language §5):
 
-1. **Style**: two preview tiles, Light and Dark, left-aligned in the grid's
-   first two columns. Each is the picture that mode shows now (its slot
+1. **Style**: two preview tiles, Light and Dark, the grid's tile size and
+   gap, centred over the grid as GNOME centres its two. Each is the picture that mode shows now (its slot
    through `source`), captioned "Light" or "Dark"; the mode in effect
    carries the `ring` role's outline at rest (GNOME's checked ring, our
    ring). Under `auto` the heading's far end reads "Auto, dark until
@@ -473,3 +473,45 @@ change here.
   dark and light, `artifacts/wallpaper-picker-vs-gnome-{dark,light}.png`,
   each side showing its own built-ins; every structural difference fixed
   or listed here as the table's.
+
+## 9. Against GNOME 51.0
+
+Read 2026-11-04 in a throwaway Fedora 45 Workstation live VM on g815
+(gnome-shell 51.0, gnome-control-center 51.0, gnome-backgrounds 51.0.1),
+Settings, Appearance maximised with the `adwaita` pair set, at scale 1 and
+1.25, dark and light, beside `PICKER_INCLUDED=real` `--picker` and
+`--light` at the same scales:
+`artifacts/wallpaper-picker-vs-gnome-{dark,light}.png`, each row one scale
+so a logical pixel is one size across it. The included sets differ by
+design (§4), so only how the page holds them is compared.
+
+The same: Style first with two previews, the mode in effect ringed, a pick
+writing `color-scheme`; the grid after it, single click, user pictures
+before the built-ins; a pair as one tile with both halves; the current
+mark a check disc bottom-right; no picture's credit drawn over it.
+
+Fixed here: the two Style previews sat left in the grid's first two
+columns; GNOME centres them, and so do we now.
+
+Ours by design, not a defect:
+
+- Accent Color: GNOME's row of nine accents sits between Style and
+  Background. Our accent is the wallpaper's own palette (matugen,
+  theme-boundary spec), so there is nothing to pick.
+- Add Picture… in the Background header: not taken (§2); Your wallpapers
+  is the folder, its path at the heading's far end.
+- Sections: GNOME runs one grid under "Background", user pictures first
+  past a separator; ours names Your wallpapers and Included, with credits
+  and "CC0" (§4).
+- Tiles: GNOME's 144 by 108 (4:3), three a line at its 576 clamp, no
+  caption; ours 16:9 at `pickerTile` or wider, four a line in the 900
+  card, a caption under each (§5).
+- The pair split: GNOME's vertical, ours the diagonal (§5).
+- Style previews: GNOME's are larger than its tiles, draw two mock windows
+  over the picture and are captioned "Default" and "Dark" centred under
+  them; ours are tiles of the grid's size, the picture alone, captioned
+  "Light" and "Dark" as every tile is.
+- Material: GNOME's boxed groups behind each section, its 9 radius, accent
+  ring and disc; ours flat sections on the launcher card, `lg` corners,
+  the table's `ring` and the `checked` disc.
+
