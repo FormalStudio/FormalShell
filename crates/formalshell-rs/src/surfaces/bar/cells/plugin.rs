@@ -5,7 +5,7 @@
 
 use crate::services::plugins::{self, Display, Run};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
 
 pub struct Plugin {
     id: String,
@@ -48,6 +48,19 @@ impl Cell for Plugin {
                     return View::hidden();
                 }
                 View::new(parts, look.xs).tone(super::command::tone(class)).tooltip(tooltip.clone())
+            }
+        }
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        match self.run.as_ref()? {
+            Run::Failed(_) => Some(Summary::new("puzzle", self.id.clone(), "Plugin error").tone(Tone::Destructive)),
+            Run::Live(Display { text, icon, class, .. }) => {
+                if text.is_empty() && icon.is_empty() {
+                    return None;
+                }
+                let icon = if icon.is_empty() { "puzzle" } else { icon.as_str() };
+                Some(Summary::new(icon, self.id.clone(), text.clone()).tone(super::command::tone(class)))
             }
         }
     }

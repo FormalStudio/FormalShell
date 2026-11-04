@@ -5,7 +5,7 @@
 use crate::services::info::update::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
 
 pub struct SystemUpdate {
     want: Want,
@@ -47,6 +47,12 @@ impl Cell for SystemUpdate {
             .tone(if behind > 0 { Tone::Warning } else { Tone::Rest })
             .panel("systemupdate")
             .tooltip(format!("FLAKE INPUTS / {}", summary.to_uppercase()))
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let behind = self.state.counts().behind;
+        let icon = if behind > 0 { "package-plus" } else { "package" };
+        Some(Summary::new(icon, "Updates", self.state.summary()).tone(if behind > 0 { Tone::Warning } else { Tone::Rest }))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

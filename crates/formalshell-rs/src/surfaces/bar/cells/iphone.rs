@@ -5,7 +5,7 @@
 use crate::services::info::iphone::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 pub struct Iphone {
     _want: Want,
@@ -53,6 +53,19 @@ impl Cell for Iphone {
         let mut view = View::new(parts, look.xs).panel("iphone").tooltip(tooltip.join(" / "));
         view.opacity = if s.connected { 1.0 } else { 0.6 };
         view
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let s = &self.state;
+        if !s.installed {
+            return None;
+        }
+        let name = if s.device_name.is_empty() { "iPhone" } else { s.device_name.as_str() };
+        let mut value = if s.connected { "Connected" } else { "Out of range" }.to_owned();
+        if let Some(b) = s.battery {
+            value.push_str(&format!(", {}%", (b * 100.0 + 0.5).floor()));
+        }
+        Some(Summary::new("smartphone", name, value))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

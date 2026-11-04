@@ -5,7 +5,7 @@
 
 use crate::services::appicon;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, Summary, View};
 use crate::ui::el::Pic;
 
 #[derive(Default)]
@@ -79,6 +79,11 @@ impl Cell for ActiveWindow {
 
     fn limits(&self, look: &Look, _along: f64, rest: f64) -> Option<Limits> {
         Some(Limits { cap: (look.narrow - rest).max(0.0), min: look.cell_width * 2.0 })
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let w = self.window.as_ref()?;
+        Some(Summary::new("app-window", w.name.clone().unwrap_or_else(|| w.app_id.clone()), w.title.clone()))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

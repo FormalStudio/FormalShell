@@ -676,6 +676,27 @@ pub fn sidebar_overflow_entries(right: &[Entry]) -> Vec<Entry> {
     out
 }
 
+/// What quick settings draws itself (specs/2026-11-04-quick-settings.md
+/// §7): a governed cell of these kinds is absorbed by the card's own
+/// controls rather than shown as an info tile.
+fn absorbed(e: &Entry) -> bool {
+    use Builtin::*;
+    matches!(e.kind, EntryKind::Builtin(Audio | Network | Bluetooth | Battery | Display | Indicators | Microphone | Chevron))
+}
+
+/// The info tiles quick settings opened off a region's chevron carries:
+/// the entries it governs, less what the card already draws, in layout
+/// order.
+pub fn quick_extras(entries: &[Entry]) -> Vec<Entry> {
+    overflow_entries(entries).into_iter().filter(|e| !absorbed(e)).collect()
+}
+
+/// The same under the sidebar: the right region's entries the column has
+/// no card for, governed or not, less what the card already draws.
+pub fn sidebar_quick_extras(right: &[Entry]) -> Vec<Entry> {
+    sidebar_overflow_entries(right).into_iter().filter(|e| !absorbed(e)).collect()
+}
+
 pub fn has_chevron(entries: &[Entry]) -> bool {
     entries.iter().any(Entry::is_chevron)
 }
@@ -1265,6 +1286,29 @@ mod tests {
         assert!(entries.iter().all(|e| !e.collapsible && e.region == Region::Right));
         let r = resolve_bar(json!({ "layout": { "right": ["battery", "audio"] } }));
         assert_eq!(names(&sidebar_overflow_entries(&r.regions.right)), "audio,battery");
+    }
+
+    #[test]
+    fn quick_extras_are_the_governed_cells_the_card_does_not_draw() {
+        let r = resolve_bar(json!({
+            "layout": { "right": ["bluetooth", "weather", "tray", "bell", "indicators", "custom:cpu", "github", "chevron", "battery", "audio", "network"] },
+            "modules": [{ "id": "cpu", "type": "command", "command": ["true"], "interval": 1000 }]
+        }));
+        let extras = quick_extras(&r.regions.right);
+        assert_eq!(names(&extras), "weather,tray,bell,custom:cpu,github");
+        assert!(extras.iter().all(|e| !e.collapsible));
+        let r = resolve_bar(json!({ "layout": { "right": ["audio", "microphone", "display", "network", "chevron", "battery"] } }));
+        assert!(quick_extras(&r.regions.right).is_empty());
+        let r = resolve_bar(json!({ "layout": { "right": ["battery", "audio"] } }));
+        assert!(quick_extras(&r.regions.right).is_empty());
+    }
+
+    #[test]
+    fn sidebar_quick_extras_drop_what_the_card_draws() {
+        let r = resolve_bar(json!({ "layout": { "right": [
+            "display", "tailscale", "chevron", "tray", "battery", "earbuds", "network", "bluetooth", "bell", "indicators", "usage"
+        ] } }));
+        assert_eq!(names(&sidebar_quick_extras(&r.regions.right)), "tailscale,earbuds,usage");
     }
 
     #[test]

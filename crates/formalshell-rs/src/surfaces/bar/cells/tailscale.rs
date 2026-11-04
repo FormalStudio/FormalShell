@@ -5,7 +5,7 @@
 use crate::services::info::tailscale::{Poll, State};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 pub struct Tailscale {
     want: Want,
@@ -49,6 +49,18 @@ impl Cell for Tailscale {
         View::new(vec![Part::Icon { name: "network".into(), dim: !running, dot: false }], look.xxs)
             .panel("tailscale")
             .tooltip(tooltip)
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let running = self.state.status.as_ref().is_some_and(|s| s.running);
+        let value = match self.state.poll {
+            Poll::Unknown | Poll::Missing => return None,
+            Poll::NeedsLogin => "Needs login",
+            Poll::Ok if running => "Connected",
+            Poll::Ok => "Stopped",
+            _ => "Unavailable",
+        };
+        Some(Summary::new("network", "Tailscale", value))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

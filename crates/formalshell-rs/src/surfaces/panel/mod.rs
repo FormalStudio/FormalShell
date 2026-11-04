@@ -105,11 +105,14 @@ pub struct Effect<'a> {
     /// IPC calls (target, function, arguments) the shell runs on itself
     /// through `ipc::dispatch`, the card left open unless `close` is set.
     pub ipc: Vec<Vec<String>>,
+    /// A bar cell's own click, run as the card closes (an info tile whose
+    /// cell opens no panel).
+    pub act: Option<crate::surfaces::bar::cell::Action>,
 }
 
 impl<'a> Effect<'a> {
     pub fn new(store: &'a Store, runtime: Option<&'a Runtime>) -> Self {
-        Self { store, runtime, close: false, summon: None, panel: None, then: None, call: None, menu: None, ipc: Vec::new() }
+        Self { store, runtime, close: false, summon: None, panel: None, then: None, call: None, menu: None, ipc: Vec::new(), act: None }
     }
 
     /// Queues one IPC call, `argv` as `formalshell-ipc call` takes it.

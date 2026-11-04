@@ -7,7 +7,7 @@ use crate::services::info::usage::{Claude, State};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
 
 pub struct Usage {
     want: Want,
@@ -63,6 +63,22 @@ impl Cell for Usage {
             .tone(if worst >= 0.9 { Tone::Destructive } else { Tone::Rest })
             .panel("usage")
             .tooltip(format!("USAGE / {reading}"))
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        if !self.state.settled() {
+            return None;
+        }
+        let worst = self.state.worst();
+        let status = self.state.status_label();
+        let value = if worst >= 0.0 {
+            format!("{}%", (worst * 100.0 + 0.5).floor())
+        } else if !status.is_empty() {
+            status.to_owned()
+        } else {
+            "Unavailable".to_owned()
+        };
+        Some(Summary::new("gauge", "Usage", value).tone(if worst >= 0.9 { Tone::Destructive } else { Tone::Rest }))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

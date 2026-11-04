@@ -6,7 +6,7 @@ use fs_info::clock::{CLOCK_FORMATS, format_qt, next_format, stacked_lines, subst
 
 use crate::services::state::{self, Field};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 #[derive(Default)]
 pub struct Clock {
@@ -70,6 +70,10 @@ impl Cell for Clock {
         View::new(parts, if self.vertical { 0.0 } else { look.xs })
             .panel("calendar")
             .tooltip("RIGHT CYCLE FORMAT / MIDDLE CALENDAR")
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        Some(Summary::new("clock", "Clock", self.text.clone()))
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {

@@ -8,7 +8,7 @@ use fs_info::weather as openmeteo;
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 pub struct Weather {
     want: Want,
@@ -62,6 +62,12 @@ impl Cell for Weather {
             None => "WEATHER / UNAVAILABLE".to_owned(),
         };
         View::new(parts, look.xs).panel("weather").tooltip(format!("{head} / RIGHT REFRESH"))
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let code = self.reading.as_ref().map_or(-1.0, |w| w.current.code);
+        let value = self.reading.as_ref().map_or_else(|| "Unavailable".to_owned(), |w| format!("{}\u{b0}", round(w.current.temperature)));
+        Some(Summary::new(openmeteo::icon_for_code(code, Some(self.day)), "Weather", value))
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {

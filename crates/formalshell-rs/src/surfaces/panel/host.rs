@@ -247,12 +247,17 @@ pub enum Out {
     /// Run these IPC calls on the shell itself, closing the card first
     /// when the flag is set.
     Ipc(Vec<Vec<String>>, bool),
+    /// Close, then run a bar cell's own click.
+    Act(crate::surfaces::bar::cell::Action),
 }
 
 impl Effect<'_> {
     pub fn out(&mut self) -> Out {
         if let Some(id) = self.menu.take() {
             return Out::Menu(id, None);
+        }
+        if let Some(action) = self.act.take() {
+            return Out::Act(action);
         }
         if !self.ipc.is_empty() {
             return Out::Ipc(std::mem::take(&mut self.ipc), self.close);

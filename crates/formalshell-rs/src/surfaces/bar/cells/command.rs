@@ -3,7 +3,7 @@
 //! runs themselves are the commands service's.
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Cell, Env, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Cell, Env, Look, Part, Summary, Tone, View};
 
 pub struct Command {
     id: String,
@@ -35,6 +35,10 @@ impl Cell for Command {
         let changed = out != self.out;
         self.out = out;
         changed
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        (!self.out.text.is_empty()).then(|| Summary::new("terminal", self.id.clone(), self.out.text.clone()).tone(tone(&self.out.class)))
     }
 
     fn view(&self, look: &Look) -> View {

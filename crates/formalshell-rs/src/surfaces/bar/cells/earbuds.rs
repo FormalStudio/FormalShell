@@ -7,7 +7,7 @@ use fs_devices::earbuds::{battery_summary, worst_level};
 
 use crate::services::devices::earbuds;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 #[derive(Default, PartialEq)]
 struct Read {
@@ -60,6 +60,10 @@ impl Cell for Earbuds {
             parts.push(Part::Label { text: format!("{}%", r.worst), weight: None });
         }
         View::new(parts, look.xs).panel("earbuds").tooltip(r.tooltip.clone())
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        (self.r.worst >= 0.0).then(|| Summary::new("headphones", "Earbuds", format!("{}%", self.r.worst)))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

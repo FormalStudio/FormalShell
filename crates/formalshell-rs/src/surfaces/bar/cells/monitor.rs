@@ -5,7 +5,7 @@
 
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 pub struct Monitor {
     want: Want,
@@ -59,6 +59,14 @@ impl Cell for Monitor {
             parts.push(Part::Name { text: "Monitor".into(), max: f64::INFINITY, dim: false });
         }
         View::new(parts, look.xxs).panel("monitor").tooltip(tooltip)
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let mut value = format!("CPU {}  Mem {}", pct(self.cpu), pct(self.mem));
+        if self.gpu.is_some() {
+            value.push_str(&format!("  GPU {}", pct(self.gpu)));
+        }
+        Some(Summary::new("activity", "Monitor", value))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

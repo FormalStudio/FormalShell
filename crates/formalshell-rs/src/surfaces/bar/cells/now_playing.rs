@@ -7,7 +7,7 @@
 use crate::scene::Bitmap;
 use crate::services::motion_art;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, Summary, View};
 
 /// The cell's own ceiling on a strip long enough to afford it.
 const CAP: f64 = 220.0;
@@ -104,6 +104,11 @@ impl Cell for NowPlaying {
     fn limits(&self, look: &Look, along: f64, _rest: f64) -> Option<Limits> {
         let cap = CAP.min(along * 0.15);
         Some(Limits { cap, min: cap.min(look.narrow / 2.0) })
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let value = self.track.as_ref().map_or_else(|| "Nothing playing".to_owned(), |(title, _)| title.clone());
+        Some(Summary::new("music", "Now playing", value))
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {

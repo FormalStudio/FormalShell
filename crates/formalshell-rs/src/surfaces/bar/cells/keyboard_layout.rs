@@ -5,7 +5,7 @@
 use fs_system::compositor::keyboard::{self, Layout};
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Cell, Env, Look, Part, Summary, View};
 
 #[derive(Default)]
 pub struct KeyboardLayout {
@@ -25,6 +25,12 @@ impl Cell for KeyboardLayout {
         let changed = layout != self.layout || label != self.label;
         (self.layout, self.label) = (layout, label);
         changed
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let layout = self.layout.as_ref().filter(|l| !l.available || keyboard::has_choice(l))?;
+        let value = if layout.available { keyboard::short_label(&layout.current) } else { "No layout".to_owned() };
+        Some(Summary::new("keyboard", "Keyboard layout", value))
     }
 
     fn view(&self, look: &Look) -> View {

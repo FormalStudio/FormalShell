@@ -20,7 +20,7 @@ use crate::services::appicon::{self, Icon};
 use crate::services::agents;
 use crate::services::compositor::{Window, Workspace};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, Summary, Tone, View};
 use crate::text::{Family, TextStyle};
 
 /// `workspaces.persistent`'s default: slots 1..n show even when empty.
@@ -425,6 +425,23 @@ impl Cell for Workspaces {
 
     fn view(&self, _: &Look) -> View {
         View::new(Vec::new(), 0.0)
+    }
+
+    /// The focused workspace, or T3 Code's agents where one waits or works.
+    fn summary(&self) -> Option<Summary> {
+        let states: Vec<&str> = if self.agents { self.agent_state.values().map(String::as_str).collect() } else { Vec::new() };
+        let count = |state: &str| states.iter().filter(|s| **s == state).count();
+        let (blocked, working) = (count("blocked"), count("working"));
+        let agents = |n: usize, what: &str| if n == 1 { format!("1 agent {what}") } else { format!("{n} agents {what}") };
+        let (value, tone) = if blocked > 0 {
+            (agents(blocked, "waiting"), Tone::Destructive)
+        } else if working > 0 {
+            (agents(working, "working"), Tone::Rest)
+        } else {
+            let focused = self.slots.iter().find(|s| s.is_focused)?;
+            (format!("Workspace {}", focused.label), Tone::Rest)
+        };
+        Some(Summary::new("layout-grid", "Workspaces", value).tone(tone))
     }
 
     fn click(&mut self, button: Button, at: (f64, f64), _: &Env) -> Action {

@@ -35,8 +35,9 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     let host = app.panel.as_ref().filter(|h| h.is_open() && h.id() == ID);
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
     let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| rect(r));
-    let shown = state.as_deref().and_then(|s| serde_json::from_str::<Json>(s).ok()).and_then(|s| s["shown"].as_str().map(str::to_owned));
-    let rows: Vec<Json> = quick::tiles_with(&app.store, shown.as_deref())
+    let parsed: Json = state.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Json::Null);
+    let shown = parsed["shown"].as_str();
+    let mut rows: Vec<Json> = quick::tiles_with(&app.store, shown)
         .into_iter()
         .map(|t| {
             json!({
@@ -54,6 +55,30 @@ fn status(app: &mut App, _: &[Value]) -> Value {
             })
         })
         .collect();
+    // The info tiles as the card last drew them, after the toggles and
+    // before Background.
+    let at = rows.iter().position(|r| r["kind"] == "background").unwrap_or(rows.len());
+    let extras = parsed["extras"].as_array().cloned().unwrap_or_default();
+    let info = extras.iter().map(|x| {
+        let id = x["id"].as_str().unwrap_or_default();
+        json!({
+            "id": id,
+            "kind": quick::Kind::Info.as_str(),
+            "title": x["title"],
+            "subtitle": x["subtitle"],
+            "glyph": x["icon"],
+            "tone": x["tone"],
+            "panel": x["panel"],
+            "on": false,
+            "available": true,
+            "reason": null,
+            "value": null,
+            "rect": boxed(id),
+            "icon": null,
+            "arrow": null,
+        })
+    });
+    rows.splice(at..at, info);
     let (menu, dim) = match &state {
         Some(state) => {
             let (mut menu, dim) = quick::status_menu(&app.store, state);
@@ -89,6 +114,10 @@ fn activate(app: &mut App, args: &[Value]) -> Value {
         return text("error: quick settings is not open");
     }
     match quick::tiles(&app.store).into_iter().find(|t| t.id == id) {
+        None if extra(app, id) => {
+            app.panel_activate(ID, id);
+            text("ok")
+        }
         None => text(format!("error: unknown control '{id}'")),
         Some(t) if !t.available() => text(format!("error: {id} is unavailable: {}", t.reason.unwrap_or_default())),
         Some(_) => {
@@ -96,6 +125,12 @@ fn activate(app: &mut App, args: &[Value]) -> Value {
             text("ok")
         }
     }
+}
+
+/// Whether `id` is an info tile the open card drew last.
+fn extra(app: &mut App, id: &str) -> bool {
+    let state: Json = app.panel_call(ID, "state", "").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Json::Null);
+    state["extras"].as_array().is_some_and(|x| x.iter().any(|x| x["id"] == id))
 }
 
 fn menu(app: &mut App, args: &[Value]) -> Value {

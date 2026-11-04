@@ -10,7 +10,7 @@ use std::time::Instant;
 use crate::scene::{Bitmap, IRect, Paint};
 use crate::services::tray::Item;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, TrayClick, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, Summary, TrayClick, View};
 
 /// How many icons the strip kept, for `tray status`.
 static INLINE: AtomicUsize = AtomicUsize::new(0);
@@ -134,6 +134,11 @@ impl Cell for Tray {
         }
         let name = if self.vertical { "more-vertical" } else { "ellipsis" };
         View::icon(name, look).panel(crate::surfaces::panel::tray::ID).tooltip(format!("TRAY / {} ITEMS", self.items.len()))
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let n = self.items.len();
+        (n > 0).then(|| Summary::new("ellipsis", "Tray", if n == 1 { "1 app".to_owned() } else { format!("{n} apps") }))
     }
 
     fn click(&mut self, button: Button, at: (f64, f64), _: &Env) -> Action {

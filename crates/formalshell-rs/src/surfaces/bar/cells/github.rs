@@ -5,7 +5,7 @@
 use crate::services::info::github::Poll;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 pub struct Github {
     want: Want,
@@ -57,6 +57,16 @@ impl Cell for Github {
             _ => "GITHUB / UNAVAILABLE".to_owned(),
         };
         View::new(parts, look.xs).panel("github").tooltip(tooltip)
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let value = match self.poll {
+            Poll::Unknown | Poll::Missing => return None,
+            Poll::Ok => format!("{} / {}", self.counts.0, self.counts.1),
+            Poll::NoAuth => "Not authenticated".to_owned(),
+            _ => "Unavailable".to_owned(),
+        };
+        Some(Summary::new("git-branch", "GitHub", value))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

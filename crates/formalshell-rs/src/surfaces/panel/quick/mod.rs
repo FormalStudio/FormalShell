@@ -1,16 +1,21 @@
 //! Quick settings (specs/2026-11-04-quick-settings.md): the system row,
 //! the sliders and a grid of toggles, each driving its service through the
-//! shell's own IPC verbs or its service call, and one in-place menu at a
-//! time opening under the row that owns it (§4).
+//! shell's own IPC verbs or its service call, the bar cells the chevron
+//! governs as info tiles after them (§7), and one in-place menu at a time
+//! opening under the row that owns it (§4).
 
 pub mod grid;
 
 use std::cell::RefCell;
 
 use fs_audio::Command;
+use fs_chrome::bar::layout::{self, Builtin, Entry, EntryKind};
+use fs_chrome::bar::panels::widget_panel;
+use fs_chrome::types::{Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 use fs_system::power::model::{self, battery_icon, charge_threshold_active};
+use fs_theme::theme::Layout;
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
 
@@ -23,6 +28,8 @@ use crate::services::notifications::now_ms;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
 use crate::surfaces::activity;
+use crate::surfaces::bar::cell::{Action as CellAction, Button, Env, Summary};
+use crate::surfaces::bar::slot::Slot;
 use crate::ui::el::Ring;
 use crate::ui::{El, Event, Ink, Size, What, w};
 
@@ -40,6 +47,8 @@ pub enum Kind {
     Split,
     /// The row of things running in the background (§6).
     Background,
+    /// A bar cell the chevron governs, its value as the subtitle (§7).
+    Info,
 }
 
 impl Kind {
@@ -50,6 +59,7 @@ impl Kind {
             Kind::Toggle => "toggle",
             Kind::Split => "split",
             Kind::Background => "background",
+            Kind::Info => "info",
         }
     }
 }
@@ -254,6 +264,52 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
 }
 
 pub const BACKGROUND: &str = "background";
+
+/// The entries the card shows as info tiles (§7): what `region`'s chevron
+/// governs less what the card draws itself, or under the sidebar the right
+/// region's entries the column has no card for.
+pub fn extra_entries(store: &Store, region: Region) -> Vec<Entry> {
+    let resolved = layout::resolve(store.config.get("bar"), &store.plugins.bar_plugins());
+    if store.theme.theme.layout == Layout::Sidebar {
+        layout::sidebar_quick_extras(&resolved.regions.right)
+    } else {
+        layout::quick_extras(resolved.regions.get(region))
+    }
+}
+
+/// An info tile as its cell reads now.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Extra {
+    /// The entry's `bar.layout` name, the tile's stop.
+    pub id: String,
+    pub summary: Summary,
+    /// The panel a click hands the card over to, none where the cell's own
+    /// click runs instead.
+    pub panel: Option<&'static str>,
+}
+
+/// Where a click on `entry`'s tile goes.
+enum Tap {
+    Panel(&'static str),
+    Ipc(&'static [&'static str]),
+    Cell,
+}
+
+fn tap(entry: &Entry) -> Tap {
+    match entry.kind {
+        EntryKind::Builtin(Builtin::Tray) => Tap::Panel(super::tray::ID),
+        // The cell's own click focuses whichever chip it lands on.
+        EntryKind::Builtin(Builtin::Workspaces) => Tap::Ipc(&["workspaces", "overview", "open"]),
+        EntryKind::Builtin(b) => widget_panel(b).map_or(Tap::Cell, Tap::Panel),
+        _ => Tap::Cell,
+    }
+}
+
+/// The output a cell reads its slice of the compositor for: the focused
+/// workspace's.
+fn focused_output(store: &Store) -> String {
+    store.compositor.snapshot.workspaces.iter().find(|w| w.is_focused).map(|w| w.output.clone()).unwrap_or_default()
+}
 
 /// One thing running in the background (§6), in the indicators rail's
 /// order: Activity's groups, a recording, the clipboard image going to a
@@ -665,6 +721,11 @@ pub struct QuickSettings {
     /// NetworkManager scans while Wi-Fi's menu is open, as the network
     /// panel has it scan while it is.
     scan: RefCell<Option<net::Hold>>,
+    /// Each info tile's entry and its cell, built as the card opens and
+    /// held seen while it is open, so the cell's own wants run.
+    extras: RefCell<Vec<(Entry, Slot)>>,
+    /// The tiles as last drawn, for `quicksettings status`.
+    drawn: RefCell<Vec<Extra>>,
 }
 
 impl Default for QuickSettings {
@@ -675,6 +736,8 @@ impl Default for QuickSettings {
             sections: RefCell::new(Vec::new()),
             menu: RefCell::new(MenuState::default()),
             scan: RefCell::new(None),
+            extras: RefCell::new(Vec::new()),
+            drawn: RefCell::new(Vec::new()),
         }
     }
 }
@@ -749,6 +812,13 @@ impl Panel for QuickSettings {
             Topic::Recording,
             Topic::Clipssh,
             Topic::Media,
+            Topic::Info,
+            Topic::Clock,
+            Topic::Tray,
+            Topic::Agents,
+            Topic::AppIcon,
+            Topic::Commands,
+            Topic::PluginOutput,
         ]
     }
 
@@ -765,6 +835,7 @@ impl Panel for QuickSettings {
         let sliders: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Slider).collect();
         let toggles: Vec<&Tile> = all.iter().filter(|t| matches!(t.kind, Kind::Toggle | Kind::Split)).collect();
         let tail: Vec<&Tile> = all.iter().filter(|t| t.kind == Kind::Background).collect();
+        let extras = self.extras_now(v.store);
         let scanning = state.want.as_deref() == Some("wifi");
         if scanning != self.scan.borrow().is_some() {
             *self.scan.borrow_mut() = scanning.then(net::Hold::new);
@@ -805,20 +876,28 @@ impl Panel for QuickSettings {
             part_section.push(1);
         }
 
-        let items = vec![grid::Item { span: 1, height: s.quick_toggle }; toggles.len()];
+        // The toggles, then the info tiles, on one grid.
+        let mut cells: Vec<(&str, El)> = toggles
+            .iter()
+            .map(|t| {
+                let subtitle = t.reason.as_deref().or(t.subtitle.as_deref());
+                let el = if t.kind == Kind::Split {
+                    w::quick_split(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
+                } else {
+                    w::quick_toggle(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
+                };
+                (t.id, el)
+            })
+            .collect();
+        cells.extend(extras.iter().map(|x| (x.id.as_str(), w::quick_info(s, &x.id, &x.summary.icon, &x.summary.name, x.summary.value.as_deref()))));
+        let items = vec![grid::Item { span: 1, height: s.quick_toggle }; cells.len()];
         let placed = grid::place(&items, self.width(v) - s.quick_inset * 2.0, s.quick_gap, None);
         let mut rows: Vec<(Vec<&str>, Vec<El>)> = Vec::new();
-        for ((t, &r), rect) in toggles.iter().zip(&placed.rows).zip(&placed.rects) {
+        for (((id, el), &r), rect) in cells.into_iter().zip(&placed.rows).zip(&placed.rects) {
             if rows.len() <= r {
                 rows.push((Vec::new(), Vec::new()));
             }
-            let subtitle = t.reason.as_deref().or(t.subtitle.as_deref());
-            let el = if t.kind == Kind::Split {
-                w::quick_split(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
-            } else {
-                w::quick_toggle(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
-            };
-            rows[r].0.push(t.id);
+            rows[r].0.push(id);
             rows[r].1.push(el.width(Size::Px(rect.width())));
         }
         part_section.extend(rows.iter().map(|_| 2));
@@ -852,7 +931,9 @@ impl Panel for QuickSettings {
             }
             out
         };
-        let mut sections = vec![usable(&system), usable(&sliders), usable(&toggles), tail.iter().map(|t| t.id.to_owned()).collect()];
+        let mut grid_stops = usable(&toggles);
+        grid_stops.extend(extras.iter().map(|x| x.id.clone()));
+        let mut sections = vec![usable(&system), usable(&sliders), grid_stops, tail.iter().map(|t| t.id.to_owned()).collect()];
         if let (Some(m), true, Some(at)) = (&open, frame.ready, owner) {
             let mut keys: Vec<String> = m.lines.iter().filter_map(|l| l.key().map(str::to_owned)).collect();
             if m.settings.is_some() {
@@ -877,6 +958,14 @@ impl Panel for QuickSettings {
         }
         self.start = tiles(fx.store).into_iter().find(|t| matches!(t.kind, Kind::Toggle | Kind::Split) && t.available()).map(|t| t.id.to_owned());
         fx.service(power::ask);
+        let entries = extra_entries(fx.store, Region::Right);
+        let extras = self.extras.get_mut();
+        for (n, e) in entries.iter().enumerate() {
+            for mut slot in Slot::rail(e, &entries, n) {
+                slot.cell.visible(true);
+                extras.push((e.clone(), slot));
+            }
+        }
     }
 
     fn cursor_start(&self) -> Option<String> {
@@ -890,6 +979,8 @@ impl Panel for QuickSettings {
     fn closed(&mut self) {
         *self.menu.get_mut() = MenuState::default();
         *self.scan.get_mut() = None;
+        self.extras.get_mut().clear();
+        self.drawn.get_mut().clear();
     }
 
     fn wake(&self, v: &View) -> Option<std::time::Instant> {
@@ -921,7 +1012,14 @@ impl Panel for QuickSettings {
             "state" => {
                 let now = std::time::Instant::now();
                 let share = |a: &Animated| (a.value(now).clamp(0.0, 1.0) * 1000.0).round() / 1000.0;
-                Some(json!({ "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content) }).to_string())
+                let extras: Vec<Json> = self
+                    .drawn
+                    .get_mut()
+                    .iter()
+                    .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel }))
+                    .collect();
+                let state = json!({ "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
+                Some(state.to_string())
             }
             _ => None,
         }
@@ -977,6 +1075,52 @@ impl Panel for QuickSettings {
 }
 
 impl QuickSettings {
+    /// Every info tile as its cell reads now, in `bar.layout` order; a cell
+    /// whose view is hidden has none.
+    fn extras_now(&self, store: &Store) -> Vec<Extra> {
+        let output = focused_output(store);
+        let env = Env { store, edge: Edge::Top, output: &output };
+        let mut held = self.extras.borrow_mut();
+        let out: Vec<Extra> = held
+            .iter_mut()
+            .filter_map(|(entry, slot)| {
+                slot.cell.read(&env);
+                let panel = match tap(entry) {
+                    Tap::Panel(p) => Some(p),
+                    _ => None,
+                };
+                slot.cell.summary().map(|summary| Extra { id: slot.name.clone(), summary, panel })
+            })
+            .collect();
+        *self.drawn.borrow_mut() = out.clone();
+        out
+    }
+
+    /// A click or Enter on an info tile: its panel takes the card's place,
+    /// or the cell's own click runs. False when `id` is no tile now.
+    fn open_extra(&mut self, id: &str, fx: &mut Effect) -> bool {
+        let output = focused_output(fx.store);
+        let env = Env { store: fx.store, edge: Edge::Top, output: &output };
+        let Some((entry, slot)) = self.extras.get_mut().iter_mut().find(|(_, s)| s.name == id) else { return false };
+        slot.cell.read(&env);
+        if slot.cell.summary().is_none() {
+            return false;
+        }
+        match tap(entry) {
+            Tap::Panel(p) => fx.panel = Some(p),
+            Tap::Ipc(argv) => {
+                fx.close = true;
+                fx.ipc(argv);
+            }
+            Tap::Cell => match slot.cell.click(Button::Left, (0.0, 0.0), &env) {
+                CellAction::None => {}
+                CellAction::Panel(p) => fx.panel = Some(p),
+                action => fx.act = Some(action),
+            },
+        }
+        true
+    }
+
     fn go(&mut self, id: &str, fx: &mut Effect) {
         if let Some(owner) = id.strip_suffix(":menu") {
             return self.toggle_menu(owner, fx.store);
@@ -995,6 +1139,9 @@ impl QuickSettings {
         }
         if let Some(rest) = id.strip_prefix("m:") {
             return self.menu_row(rest, fx);
+        }
+        if self.open_extra(id, fx) {
+            return;
         }
         let open = self.menu.get_mut().want.clone();
         let Some(tile) = tiles_with(fx.store, open.as_deref()).into_iter().find(|t| t.id == id && t.available()) else { return };

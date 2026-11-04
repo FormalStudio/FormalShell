@@ -3,7 +3,7 @@
 //! closes the launcher.
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 #[derive(Default)]
 pub struct Launcher {
@@ -53,6 +53,10 @@ impl Cell for Launcher {
             v => Part::Icon { name: v.into(), dim: false, dot: false },
         };
         View::new(vec![part], look.xxs).tooltip("LAUNCHER")
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        Some(Summary::new("command", "Launcher", ""))
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {

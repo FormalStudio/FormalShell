@@ -2425,6 +2425,11 @@ impl App {
                 }
                 self.run_ipc(&calls);
             }
+            Out::Act(action) => {
+                let anchor = self.panel.as_ref().and_then(|h| h.place.anchor).unwrap_or(self.bar.length() as f64);
+                self.close_panels();
+                self.act(action, anchor);
+            }
         }
     }
 

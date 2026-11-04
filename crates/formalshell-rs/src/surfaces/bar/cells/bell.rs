@@ -3,7 +3,7 @@
 
 use crate::store::Topic;
 use crate::surfaces::panel::center;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
 
 #[derive(Default)]
 pub struct Bell {
@@ -41,6 +41,17 @@ impl Cell for Bell {
             parts.push(Part::Label { text: self.pending.to_string(), weight: None });
         }
         View::new(parts, look.xxs).panel(center::ID).tooltip(tooltip)
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let value = if self.dnd {
+            "Do not disturb".to_owned()
+        } else if self.pending > 0 {
+            format!("{} pending", self.pending)
+        } else {
+            "None pending".to_owned()
+        };
+        Some(Summary::new(if self.dnd { "bell-off" } else { "bell" }, "Notifications", value))
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {

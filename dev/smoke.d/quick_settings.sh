@@ -32,15 +32,34 @@
 # rig's private system bus, where logind answers nothing, is Log out alone:
 # one Return arms it ("Confirm log out?") and Escape closes the menu with
 # nothing run. The menu photographed open dark and with `--light`.
+#
+# The extras (§7) over the --chevron leg's right region, its `custom:`
+# module a fixed line here: the cells that chevron governs and the card
+# does not draw itself are info tiles after the toggles, in the order
+# `bar chevron status` collapses them, each the toggles' size, Weather's
+# value its temperature (or Unavailable before a reading), Notifications'
+# the pending count `notifications status` gives, the module's its line,
+# and Tray only where `tray status` lists an item. A real click on the
+# Weather tile hands the card over to the weather panel.
 leg_quick_settings_flag="--quick-settings"
 leg_quick_settings_order=262
-leg_quick_settings_needs="jq wtype grim convert pactl pw-loopback pw-record"
+leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback pw-record"
 
 quick_settings_dir="$shot_dir/quick-settings"
 quick_settings_settings="$iso_home/.config/formalshell/settings.json"
 
 need_pw_loopback() { need_tool pw_loopback_bin pw-loopback pipewire-tools; }
 need_pw_record() { need_tool pw_record_bin pw-record pipewire-tools; }
+
+quick_settings_module="$shot_dir/quick-settings-module.sh"
+
+leg_quick_settings_fixture() {
+  write_script "$quick_settings_module" <<'EOF'
+#!/usr/bin/env bash
+printf '{"text": "42 units"}'
+EOF
+  settings_pin ".bar.layout.right = [\"bluetooth\", \"weather\", \"tray\", \"bell\", \"indicators\", \"custom:qsmod\", \"chevron\", \"battery\", \"audio\", \"network\"] | .bar.modules = ((.bar.modules // []) + [{\"id\": \"qsmod\", \"type\": \"command\", \"command\": [\"bash\", \"$quick_settings_module\"], \"interval\": 1000}])"
+}
 
 leg_quick_settings_timing() {
   # Two opens of the card past the first, one of them at a tenth speed.
@@ -131,6 +150,28 @@ $ipc call notifications dndState > "\$d/dnd-back.txt" 2>&1
 sleep 1
 $ipc call panel state > "\$d/panel-closed.txt" 2>&1
 status closed
+
+# The extras: their cells start as the card opens, so the weather reading
+# gets a few seconds to land.
+$ipc call bar chevron status > "\$d/chevron-status.json" 2>&1
+$ipc call tray status > "\$d/tray-status.json" 2>&1
+$ipc call notifications status > "\$d/notifications-status.json" 2>&1
+$ipc call panel open quicksettings > /dev/null 2>&1
+sleep 4
+shot extras
+centre=\$("$jq_bin" -r '.rows[] | select(.id == "weather") | .rect | "\\(.x + (.width / 2 | floor)) \\(.y + (.height / 2 | floor))"' "\$d/status-shot-extras.json")
+echo "\$centre" > "\$d/weather-centre.txt"
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+# shellcheck disable=SC2086
+"$wlrctl_bin" pointer move \$centre > /dev/null 2>&1
+sleep 0.4
+"$wlrctl_bin" pointer click left > /dev/null 2>&1
+sleep 1.5
+$ipc call panel state > "\$d/panel-weather.txt" 2>&1
+"$grim_bin" "\$d/quick-settings-weather.png" > /dev/null 2>&1
+$ipc call panel close > /dev/null 2>&1
+"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+sleep 1
 
 pactl() { "$pactl_bin" "\$@"; }
 pactl get-default-sink > "\$d/default-sink-before.txt" 2>&1
@@ -305,22 +346,22 @@ leg_quick_settings_assert() {
   # GNOME's order, less what this machine has no service for.
   quick_settings_jq "the rows in the spec's order" "$open" '
     ["battery","screenshot","settings","lock","power","volume","microphone","brightness","wired","wifi","bluetooth","power-mode","night-light","dark-style","dnd","keyboard","caffeinate","overnight","hdr"] as $order
-    | [.rows[].id] as $ids
+    | [.rows[] | select(.kind != "info") | .id] as $ids
     | ($ids | map(. as $i | $order | index($i))) as $at
     | ($at | all(. != null)) and $at == ($at | sort)
       and (["screenshot","settings","lock","power","wifi","bluetooth","power-mode","night-light","dark-style","dnd","caffeinate","overnight"] - $ids) == []'
-  quick_settings_jq "the system row, the sliders, then the toggles" "$open" '
-    [.rows[].kind] as $k | ($k | all(. == "system" or . == "slider" or . == "toggle" or . == "split"))
-      and $k == ($k | sort_by(if . == "system" then 0 elif . == "slider" then 1 else 2 end))'
+  quick_settings_jq "the system row, the sliders, the toggles, then the info tiles" "$open" '
+    [.rows[].kind] as $k | ($k | all(. == "system" or . == "slider" or . == "toggle" or . == "split" or . == "info"))
+      and $k == ($k | sort_by(if . == "system" then 0 elif . == "slider" then 1 elif . == "info" then 3 else 2 end))'
   # Every edge off the card's own rect, the toggles off each other.
   # A split toggle's rect is its toggle part, its arrow the rest of the pill.
   local pill='def pill: if .arrow then {x: .rect.x, y: .rect.y, width: (.arrow.x + .arrow.width - .rect.x), height: .rect.height} else .rect end;'
-  quick_settings_jq "the card is 400 wide, the toggles 178 by 48" "$open" "$pill"'
-    .card.width == 400 and ([.rows[] | select(.kind == "toggle" or .kind == "split") | pill | .width == 178 and .height == 48] | all)'
+  quick_settings_jq "the card is 400 wide, the toggles and info tiles 178 by 48" "$open" "$pill"'
+    .card.width == 400 and ([.rows[] | select(.kind == "toggle" or .kind == "split" or .kind == "info") | pill | .width == 178 and .height == 48] | all)'
   quick_settings_jq "12 between columns and rows, 16 from every edge" "$open" "$pill"'
     def near($a; $b): ($a - $b) | fabs <= 1;
     .card as $c
-    | [.rows[] | select(.kind == "toggle" or .kind == "split") | pill] as $t
+    | [.rows[] | select(.kind == "toggle" or .kind == "split" or .kind == "info") | pill] as $t
     | [.rows[] | select(.kind == "system") | .rect] as $s
     | ([.rows[] | select(.kind == "slider")] | length) as $n
     | ($t | map(.x) | min) as $left
@@ -370,7 +411,8 @@ leg_quick_settings_assert() {
   echo "SMOKE_QUICK_SETTINGS settings.json unchanged $after"
   quick_settings_menu_assert
   quick_settings_background_assert
-  for shot in open on menu-open power-armed background-open background-cleared; do
+  quick_settings_extras_assert
+  for shot in open on menu-open power-armed background-open background-cleared extras weather; do
     [ -s "$quick_settings_dir/quick-settings-$shot.png" ] || fail "quick-settings: no quick-settings-$shot.png"
     echo "SMOKE_QUICK_SETTINGS_SHOT $quick_settings_dir/quick-settings-$shot.png"
   done
@@ -523,4 +565,29 @@ quick_settings_background_assert() {
     and .menu.id == "background" and ([.menu.rows[].id] == ["m:settings"]) and .menu.notes == ["Nothing is running in the background"]'
   quick_settings_jq "Escape closed the menu and the row went with it" status-bg-closed.json '
     .open == true and .menu == null and ([.rows[] | select(.kind == "background")] == [])'
+}
+
+# The extras (§7): the governed cells the card does not draw, as info
+# tiles after the toggles in `bar.layout` order, each value its cell's own.
+quick_settings_extras_assert() {
+  local d="$quick_settings_dir" want items pending words
+  [ -s "$d/chevron-status.json" ] || fail "quick-settings: no bar chevron status"
+  items=$("$jq_bin" -r '.items | length' "$d/tray-status.json" 2>/dev/null)
+  pending=$("$jq_bin" -r '.pending' "$d/notifications-status.json" 2>/dev/null)
+  want=$("$jq_bin" -c --argjson items "${items:-0}" '.regions.right.collapses
+    | map(select(. as $n | ["bluetooth", "indicators"] | index($n) | not))
+    | map(select(. != "tray" or $items > 0))' "$d/chevron-status.json")
+  [ -n "$want" ] || fail "quick-settings: bar chevron status names no collapses: $(cat "$d/chevron-status.json")"
+  quick_settings_jq "the info tiles are the governed cells the card does not draw, in bar.layout order: $want" status-shot-extras.json \
+    "[.rows[] | select(.kind == \"info\") | .id] == $want"
+  quick_settings_jq "after the toggles" status-shot-extras.json '
+    [.rows[].kind] as $k | ([$k | to_entries[] | select(.value == "toggle" or .value == "split") | .key] | max) < ($k | index("info"))'
+  quick_settings_jq "Weather reads its temperature, or Unavailable before a reading" status-shot-extras.json '
+    .rows[] | select(.id == "weather") | .title == "Weather" and (.subtitle | test("^-?[0-9]+°$") or . == "Unavailable") and .panel == "weather"'
+  if [ "${pending:-0}" -eq 0 ]; then words="None pending"; else words="$pending pending"; fi
+  quick_settings_jq "Notifications reads $words" status-shot-extras.json \
+    ".rows[] | select(.id == \"bell\") | .title == \"Notifications\" and .subtitle == \"$words\""
+  quick_settings_jq "the module reads its own line" status-shot-extras.json '
+    .rows[] | select(.id == "custom:qsmod") | .title == "qsmod" and .subtitle == "42 units" and .on == false and .available == true'
+  quick_settings_text "a click on the Weather tile hands over to the weather panel ($(cat "$d/weather-centre.txt" 2>/dev/null))" panel-weather.txt "weather"
 }

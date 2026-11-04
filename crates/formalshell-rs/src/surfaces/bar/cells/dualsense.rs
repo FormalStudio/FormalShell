@@ -5,7 +5,7 @@
 use fs_system::dualsense::{Supply, state_line};
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
 
 #[derive(Default)]
 pub struct Dualsense {
@@ -43,6 +43,18 @@ impl Cell for Dualsense {
             Tone::Rest
         };
         View::new(parts, look.xs).panel("dualsense").tooltip(tooltip).tone(tone)
+    }
+
+    fn summary(&self) -> Option<Summary> {
+        let s = self.supply.as_ref()?;
+        let tone = if s.critical {
+            Tone::Destructive
+        } else if s.warn {
+            Tone::Warning
+        } else {
+            Tone::Rest
+        };
+        Some(Summary::new("gamepad-2", "DualSense", format!("{}%", s.percent)).tone(tone))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

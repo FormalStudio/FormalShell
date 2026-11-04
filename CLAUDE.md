@@ -1261,7 +1261,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   (Stop), the reminder (Clear) and Activity; Return on the recording
   ending it (`record status`) and on the reminder clearing it (`reminder
   status`), the open menu then reading "No background tasks", and Escape
-  taking the row away. The menu photographed open and emptied.
+  taking the row away. The menu photographed open and emptied. Then the
+  extras over the `--chevron` leg's right region (its module a fixed
+  line): the governed cells the card does not draw as info tiles after
+  the toggles in the order `bar chevron status` collapses them, 178 by
+  48, Weather's temperature, Notifications' pending count off
+  `notifications status`, the module's line, Tray only with a tray item;
+  a real click on Weather leaving `panel state` on `weather`.
+  Photographed with the tiles and the weather panel.
 - `quick_settings_power.sh` `--quick-settings-power` (vm_only): the
   Power button's menu against the guest's real logind, its rows the ones
   CanSuspend, CanReboot and CanPowerOff allow with Log out last; real

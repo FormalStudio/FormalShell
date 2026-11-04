@@ -96,6 +96,18 @@ pub enum Tone {
     Warning,
 }
 
+impl Tone {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Tone::Rest => "rest",
+            Tone::Active => "active",
+            Tone::Selected => "selected",
+            Tone::Destructive => "destructive",
+            Tone::Warning => "warning",
+        }
+    }
+}
+
 /// Nerd Font distro logos sit small in their em box next to Lucide icons of the same size.
 const GLYPH_SCALE: f32 = 1.4;
 
@@ -183,6 +195,28 @@ impl View {
     }
 }
 
+/// What a quick settings info tile shows of a cell it stands for
+/// (specs/2026-11-04-quick-settings.md §7): its icon, its name, its value
+/// in words, and its tone.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Summary {
+    pub icon: String,
+    pub name: String,
+    pub value: Option<String>,
+    pub tone: Tone,
+}
+
+impl Summary {
+    pub fn new(icon: impl Into<String>, name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self { icon: icon.into(), name: name.into(), value: Some(value.into()).filter(|v: &String| !v.is_empty()), tone: Tone::Rest }
+    }
+
+    pub fn tone(mut self, tone: Tone) -> Self {
+        self.tone = tone;
+        self
+    }
+}
+
 /// A free-running label's ceiling and floor (`labelCap`, `labelMin`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -241,6 +275,11 @@ pub trait Cell {
     }
     /// What `workspaces status` reads off the cell that carries it.
     fn status(&self) -> Option<serde_json::Value> {
+        None
+    }
+    /// The cell as a quick settings info tile, read after `read`; none
+    /// where its view is hidden or it has nothing to say in words.
+    fn summary(&self) -> Option<Summary> {
         None
     }
 }
