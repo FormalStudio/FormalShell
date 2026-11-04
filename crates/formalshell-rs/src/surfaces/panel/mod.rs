@@ -94,6 +94,9 @@ pub struct Effect<'a> {
     pub summon: Option<&'static str>,
     /// Another panel to open in this one's place.
     pub panel: Option<&'static str>,
+    /// A stop of `panel`'s to press Enter on once it is open (a network's
+    /// row, opening its passphrase step).
+    pub then: Option<String>,
     /// An IPC target and function the shell calls on itself as the panel
     /// closes (`lock`, `lock`).
     pub call: Option<(&'static str, &'static str)>,
@@ -106,7 +109,7 @@ pub struct Effect<'a> {
 
 impl<'a> Effect<'a> {
     pub fn new(store: &'a Store, runtime: Option<&'a Runtime>) -> Self {
-        Self { store, runtime, close: false, summon: None, panel: None, call: None, menu: None, ipc: Vec::new() }
+        Self { store, runtime, close: false, summon: None, panel: None, then: None, call: None, menu: None, ipc: Vec::new() }
     }
 
     /// Queues one IPC call, `argv` as `formalshell-ipc call` takes it.

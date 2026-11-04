@@ -281,10 +281,13 @@ impl App {
             }
             P::None => {}
             P::Close => self.menu_close(),
-            P::Panel(name) if panel::launcher_route(name).is_some() => self.menu_panel(name),
-            P::Panel(name) => {
+            P::Panel(name, _) if panel::launcher_route(name).is_some() => self.menu_panel(name),
+            P::Panel(name, then) => {
                 self.menu_close();
                 self.set_panel(name, true, None);
+                if let Some(stop) = then {
+                    self.panel_activate(name, &stop);
+                }
             }
             P::Summon(panel::ATLAS) => {
                 self.menu_close();

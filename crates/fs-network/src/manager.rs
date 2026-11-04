@@ -679,12 +679,20 @@ impl NetworkManager {
             _ => return Ok(None),
         };
         let nm_state = get(&props, "State").unwrap_or(0);
+        let mut connection = None;
+        if let Some(active) = get::<OwnedObjectPath>(&props, "ActiveConnection")
+            && active.as_str() != "/"
+            && let Ok(active) = self.props(&active, ACTIVE_INTERFACE).await
+        {
+            connection = get::<String>(&active, "Id").filter(|id| !id.is_empty());
+        }
         Ok(Some(Device {
             path,
             interface: get(&props, "Interface").unwrap_or_default(),
             kind,
             state: ConnectionState::from_device_state(nm_state),
             nm_state,
+            connection,
         }))
     }
 
@@ -910,6 +918,7 @@ mod tests {
             kind: DeviceKind::Wifi,
             state: ConnectionState::Disconnected,
             nm_state: 30,
+            connection: None,
         }
     }
 

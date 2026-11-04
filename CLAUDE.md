@@ -1261,6 +1261,18 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Downs to Power off, one Return arming it ("Confirm power off?") with the
   card up, and two Escapes closing the menu disarmed and then the card. The
   second Return is never pressed.
+- `quick_settings_devices.sh` `--quick-settings-devices` (vm_only): the
+  split toggles on the guest's daemons. FORMALTEST saved and left down
+  through the `network` verbs; Wi-Fi's menu listing both hostapd SSIDs
+  with "All networks" last, a real Return on FORMALTEST connecting it with
+  the SSID as the tile's subtitle and the row checked, one on
+  FORMALTEST-EAP (secured, unknown) handing over to the network panel with
+  its passphrase step open (`network status`'s `prompt`), and `activate
+  wifi` turning `nmcli radio wifi` off and on. The wired NIC as Wired with
+  its connection's name off `nmcli`; Bluetooth disabled, "No adapter", no
+  menu; Power mode's menu picking Power saver on real keys (busctl's
+  `ActiveProfile`) and the tile flipping it back to balanced. The menu and
+  the hand-over photographed, dark and `--light`.
 - `record.sh` `--record`: `record` start to finished GIF through a real
   wf-recorder child, with the bar's recording cell mid-run.
 - `r0_measure.sh` `--r0-measure <seconds>`: R0's numbers on one

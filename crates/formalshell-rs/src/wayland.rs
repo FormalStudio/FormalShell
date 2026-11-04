@@ -2406,7 +2406,12 @@ impl App {
                 self.close_panels();
                 self.menu_open(Some(route));
             }
-            Out::Panel(name) => self.set_panel(name, true, None),
+            Out::Panel(name, then) => {
+                self.set_panel(name, true, None);
+                if let Some(stop) = then {
+                    self.panel_activate(name, &stop);
+                }
+            }
             Out::Call(target, function) => {
                 self.close_panels();
                 self.call_self(target, function, &[]);

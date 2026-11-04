@@ -14,7 +14,8 @@ use serde_json::{Value as Json, json};
 
 use super::{Effect, Panel, View};
 use crate::motion::{Animated, Kind as Clock};
-use crate::services::devices::{self, Op, audio, network as net};
+use crate::services::devices::bluetooth::{ActionKind as BtAction, Ask as BtAsk};
+use crate::services::devices::{self, Op, audio, bluetooth as bt, network as net};
 use crate::services::power::{self, Action};
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
@@ -76,6 +77,13 @@ impl Tile {
         Self { on, value: Some(value), menu, ..Self::new(id, Kind::Slider, glyph, title) }
     }
 
+    /// A toggle with a menu behind its arrow, opening while `menu`.
+    fn split(mut self, menu: bool) -> Self {
+        self.kind = Kind::Split;
+        self.menu = menu;
+        self
+    }
+
     fn subtitle(mut self, s: Option<String>) -> Self {
         self.subtitle = s.filter(|s| !s.is_empty());
         self
@@ -90,6 +98,12 @@ impl Tile {
         self.reason.is_none()
     }
 }
+
+/// Power mode's menu, top to bottom, with each profile's glyph.
+const PROFILES: [(Profile, &str); 3] = [(Profile::Performance, "zap"), (Profile::Balanced, "gauge"), (Profile::PowerSaver, "leaf")];
+
+/// The networks Wi-Fi's menu lists at most, as GNOME's does.
+const NETWORKS: usize = 8;
 
 fn profile_name(p: Profile) -> &'static str {
     match p {
@@ -145,7 +159,8 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
     let n = &d.network;
     if !n.wired_rows.is_empty() {
         let up = n.wired_rows.iter().find(|r| r.connected);
-        out.push(Tile { kind: Kind::Split, menu: true, ..Tile::toggle("wired", "ethernet-port", "Wired", up.is_some()) }.subtitle(up.map(|r| r.name.clone())));
+        let name = up.map(|r| r.connection.clone().unwrap_or_else(|| r.name.clone()));
+        out.push(Tile::toggle("wired", "ethernet-port", "Wired", up.is_some()).split(true).subtitle(name));
     }
     let wifi_reason = if !n.known {
         Some("No NetworkManager")
@@ -157,6 +172,7 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
     let wifi_on = n.wifi_enabled && wifi_reason.is_none();
     out.push(
         Tile::toggle("wifi", if wifi_on { "wifi" } else { "wifi-off" }, "Wi-Fi", wifi_on)
+            .split(wifi_reason.is_none())
             .subtitle(n.ssid.as_ref().filter(|_| wifi_on).map(|(s, _)| s.clone()))
             .unless(wifi_reason),
     );
@@ -172,6 +188,7 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
     };
     out.push(
         Tile::toggle("bluetooth", if bt_on { "bluetooth" } else { "bluetooth-off" }, "Bluetooth", bt_on)
+            .split(bt.powered.is_some())
             .subtitle(bt_sub)
             .unless(bt.powered.is_none().then_some("No adapter")),
     );
@@ -179,6 +196,7 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
     let profiles = d.profiles.as_ref();
     out.push(
         Tile::toggle("power-mode", "gauge", "Power mode", profiles.is_some_and(|p| p.active != Profile::Balanced))
+            .split(profiles.is_some())
             .subtitle(profiles.map(|p| profile_name(p.active).to_owned()))
             .unless(profiles.is_none().then_some("power-profiles-daemon is not running")),
     );
@@ -195,7 +213,7 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
     let l = &store.lights;
     if l.available {
         let effect = l.effects.iter().find(|(id, _)| *id == l.effect).map(|(_, label)| label.clone());
-        out.push(Tile::toggle("keyboard", "keyboard", "Keyboard", l.brightness > 0).subtitle(effect));
+        out.push(Tile::toggle("keyboard", "keyboard", "Keyboard", l.brightness > 0).split(true).subtitle(effect));
     }
 
     out.push(Tile::toggle("caffeinate", "coffee", "Caffeinate", store.caffeinate.active));
@@ -210,11 +228,50 @@ pub fn tiles(store: &Store) -> Vec<Tile> {
 /// One line of an open menu.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Line {
-    /// `m:<menu>:<what>`, Enter or a click acting on it.
-    Row { key: String, glyph: &'static str, title: String, checked: bool, armed: bool },
+    /// `m:<menu>:<what>`, Enter or a click acting on it; `detail` under its
+    /// title, `mark` a glyph at its end (a secured network's lock).
+    Row { key: String, glyph: &'static str, title: String, detail: Option<String>, mark: Option<&'static str>, checked: bool, armed: bool },
     /// A device's own level (a display's brightness).
     Slider { key: String, title: String, value: f64 },
+    /// A dim line standing for rows there are none of ("Wi-Fi is off").
+    Note(String),
     Separator,
+}
+
+impl Line {
+    fn row(menu: &str, what: &str, glyph: &'static str, title: &str, checked: bool) -> Self {
+        Line::Row { key: format!("m:{menu}:{what}"), glyph, title: title.to_owned(), detail: None, mark: None, checked, armed: false }
+    }
+
+    fn detail(mut self, d: Option<String>) -> Self {
+        if let Line::Row { detail, .. } = &mut self {
+            *detail = d;
+        }
+        self
+    }
+
+    fn mark(mut self, m: Option<&'static str>) -> Self {
+        if let Line::Row { mark, .. } = &mut self {
+            *mark = m;
+        }
+        self
+    }
+
+    /// The stop it is, if any.
+    fn key(&self) -> Option<&str> {
+        match self {
+            Line::Row { key, .. } | Line::Slider { key, .. } => Some(key),
+            Line::Note(_) | Line::Separator => None,
+        }
+    }
+}
+
+/// Where a menu's settings row hands the card over to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hand {
+    Panel(&'static str),
+    /// A launcher route ("Keyboard lights" is the launcher's effect level).
+    Route(&'static str),
 }
 
 /// An open menu as the store has it: its header and lines, and the panel
@@ -226,7 +283,7 @@ pub struct MenuView {
     pub subtitle: Option<String>,
     pub on: bool,
     pub lines: Vec<Line>,
-    pub settings: Option<(&'static str, &'static str)>,
+    pub settings: Option<(&'static str, Hand)>,
 }
 
 /// The power menu's actions as `m:power:<what>` names them, with their
@@ -242,7 +299,7 @@ const POWER: [(&str, &str, &str); 4] = [
 /// none for a control with no menu now.
 pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
     let tile = tiles(store).into_iter().find(|t| t.id == id && t.menu)?;
-    let row = |menu: &str, what: &str, glyph, title: &str, checked| Line::Row { key: format!("m:{menu}:{what}"), glyph, title: title.to_owned(), checked, armed: false };
+    let row = Line::row;
     let a = &store.devices.audio;
     Some(match id {
         "volume" => MenuView {
@@ -251,7 +308,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             subtitle: Some(a.name.clone()),
             on: tile.on,
             lines: audio_devices(store, true).into_iter().map(|(name, label)| row(id, name, "speaker", label, name == a.default_sink)).collect(),
-            settings: Some(("Sound settings", "audio")),
+            settings: Some(("Sound settings", Hand::Panel("audio"))),
         },
         "microphone" => MenuView {
             glyph: tile.glyph,
@@ -259,7 +316,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             subtitle: None,
             on: tile.on,
             lines: audio_devices(store, false).into_iter().map(|(name, label)| row(id, name, "mic", label, name == a.default_source)).collect(),
-            settings: Some(("Sound settings", "audio")),
+            settings: Some(("Sound settings", Hand::Panel("audio"))),
         },
         "brightness" => MenuView {
             glyph: tile.glyph,
@@ -272,16 +329,84 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 .into_iter()
                 .map(|d| Line::Slider { key: format!("m:brightness:{}", d.id), title: d.label, value: d.percent as f64 / 100.0 })
                 .collect(),
-            settings: Some(("Display settings", "display")),
+            settings: Some(("Display settings", Hand::Panel("display"))),
         },
         "wired" => MenuView {
             glyph: tile.glyph,
             title: "Wired",
             subtitle: tile.subtitle.clone(),
             on: tile.on,
-            lines: store.devices.network.wired_rows.iter().map(|r| row(id, &r.name, "ethernet-port", &r.name, r.connected)).collect(),
-            settings: Some(("Network settings", "network")),
+            lines: store
+                .devices
+                .network
+                .wired_rows
+                .iter()
+                .map(|r| row(id, &r.name, "ethernet-port", r.connection.as_deref().unwrap_or(&r.name), r.connected).detail((r.connection.is_some()).then(|| r.name.clone())))
+                .collect(),
+            settings: Some(("Network settings", Hand::Panel("network"))),
         },
+        "wifi" => {
+            let n = &store.devices.network;
+            let mut lines: Vec<Line> = n
+                .rows
+                .iter()
+                .filter(|r| r.in_range && !r.ssid.is_empty())
+                .take(NETWORKS)
+                .map(|r| {
+                    let status = match (&n.action, &n.failure) {
+                        (Some((kind, ssid)), _) if *ssid == r.ssid => Some(
+                            match kind {
+                                net::ActionKind::Connect => "Connecting",
+                                net::ActionKind::Disconnect => "Disconnecting",
+                                net::ActionKind::Forget => "Forgetting",
+                            }
+                            .to_owned(),
+                        ),
+                        (_, Some(f)) if f.ssid == r.ssid => Some(f.text.clone()),
+                        _ => None,
+                    };
+                    row(id, &r.ssid, super::network::signal_glyph(r.signal), &r.ssid, r.connected).detail(status).mark(r.secured.then_some("lock"))
+                })
+                .collect();
+            if lines.is_empty() {
+                lines.push(Line::Note(if n.wifi_enabled { "Scanning" } else { "Wi-Fi is off" }.into()));
+            }
+            MenuView { glyph: tile.glyph, title: "Wi-Fi", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("All networks", Hand::Panel("network"))) }
+        }
+        "bluetooth" => {
+            let b = &store.devices.bluetooth;
+            let mut lines: Vec<Line> = Vec::new();
+            if b.powered == Some(true) {
+                for d in b.devices.iter().filter(|d| d.paired) {
+                    let name = if d.name.is_empty() { &d.device_name } else { &d.name };
+                    let doing = b.action.as_ref().filter(|(a, _)| *a == d.address).map(|(_, k)| k.text().to_owned());
+                    let failed = b.failure.as_ref().filter(|(a, _)| *a == d.address).map(|(_, why)| (*why).to_owned());
+                    let word = if d.connected { "Disconnect" } else { "Connect" };
+                    let glyph = if d.connected { "bluetooth-connected" } else { "bluetooth" };
+                    lines.push(row(id, &d.address, glyph, name, d.connected).detail(doing.or(failed).or_else(|| Some(word.to_owned()))));
+                }
+                if lines.is_empty() {
+                    lines.push(Line::Note("No paired devices".into()));
+                }
+            } else {
+                lines.push(Line::Note("Turn on Bluetooth to connect to devices".into()));
+            }
+            MenuView { glyph: tile.glyph, title: "Bluetooth", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("Bluetooth settings", Hand::Panel("bluetooth"))) }
+        }
+        "power-mode" => {
+            let p = store.devices.profiles.as_ref()?;
+            let lines = PROFILES
+                .iter()
+                .filter(|(x, _)| *x != Profile::Performance || p.has_performance())
+                .map(|&(x, glyph)| row(id, x.to_wire(), glyph, profile_name(x), p.active == x))
+                .collect();
+            MenuView { glyph: tile.glyph, title: "Power mode", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("Power settings", Hand::Panel("power"))) }
+        }
+        "keyboard" => {
+            let l = &store.lights;
+            let lines = l.effects.iter().map(|(effect, label)| row(id, effect, "", label, *effect == l.effect)).collect();
+            MenuView { glyph: tile.glyph, title: "Keyboard", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("Keyboard lights", Hand::Route("lights.effect"))) }
+        }
         "power" => {
             let can = store.devices.logind;
             let mut lines = Vec::new();
@@ -299,7 +424,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 };
                 if shown {
                     let armed = armed == Some(what);
-                    lines.push(Line::Row { key: format!("m:power:{what}"), glyph: "", title: (if armed { confirm } else { rest }).to_owned(), checked: false, armed });
+                    lines.push(Line::Row { key: format!("m:power:{what}"), glyph: "", title: (if armed { confirm } else { rest }).to_owned(), detail: None, mark: None, checked: false, armed });
                 }
             }
             MenuView { glyph: "power", title: "Power off", subtitle: None, on: false, lines, settings: None }
@@ -429,11 +554,20 @@ pub struct QuickSettings {
     /// Each section's usable stops as last drawn, for Tab.
     sections: RefCell<Vec<Vec<String>>>,
     menu: RefCell<MenuState>,
+    /// NetworkManager scans while Wi-Fi's menu is open, as the network
+    /// panel has it scan while it is.
+    scan: RefCell<Option<net::Hold>>,
 }
 
 impl Default for QuickSettings {
     fn default() -> Self {
-        Self { last_profile: Profile::PowerSaver, start: None, sections: RefCell::new(Vec::new()), menu: RefCell::new(MenuState::default()) }
+        Self {
+            last_profile: Profile::PowerSaver,
+            start: None,
+            sections: RefCell::new(Vec::new()),
+            menu: RefCell::new(MenuState::default()),
+            scan: RefCell::new(None),
+        }
     }
 }
 
@@ -445,11 +579,12 @@ fn menu_el(v: &View, m: &MenuView, content: f32, ready: bool) -> El {
         .lines
         .iter()
         .map(|l| match l {
-            Line::Row { key, glyph, title, checked, armed } => {
+            Line::Row { key, glyph, title, detail, mark, checked, armed } => {
                 let row = if *armed {
                     w::panel_row_with(s, None, w::label(title).ink(Ink::Destructive), None, Vec::new())
                 } else {
-                    w::panel_row_checked(s, glyph, title, None, Vec::new(), *checked)
+                    let marks = mark.iter().map(|m| w::icon(*m).ink(Ink::Muted)).collect();
+                    w::panel_row_checked(s, glyph, title, detail.clone(), marks, *checked)
                 };
                 stop(row, key)
             }
@@ -457,6 +592,7 @@ fn menu_el(v: &View, m: &MenuView, content: f32, ready: bool) -> El {
                 let track = w::slider(*value).on(key.clone());
                 stop(w::panel_meter(s, Some("monitor"), title, vec![w::panel_value(format!("{}%", (value * 100.0).round()))], Some(track)), key)
             }
+            Line::Note(text) => w::panel_empty(s, text),
             Line::Separator => w::separator(),
         })
         .collect();
@@ -501,6 +637,10 @@ impl Panel for QuickSettings {
 
         let mut state = self.menu.borrow_mut();
         let frame = state.tick(v);
+        let scanning = state.want.as_deref() == Some("wifi");
+        if scanning != self.scan.borrow().is_some() {
+            *self.scan.borrow_mut() = scanning.then(net::Hold::new);
+        }
         let open = frame.id.as_deref().and_then(|id| menu(v.store, id, state.armed.as_deref()));
         // A menu whose devices went (a sink unplugged to one) closes.
         if frame.id.is_some() && open.is_none() {
@@ -510,12 +650,7 @@ impl Panel for QuickSettings {
         if frame.ready
             && frame.content > 0.0
             && !state.entered
-            && let Some(first) = open.as_ref().and_then(|m| {
-                m.lines.iter().find_map(|l| match l {
-                    Line::Row { key, .. } | Line::Slider { key, .. } => Some(key.clone()),
-                    Line::Separator => None,
-                })
-            })
+            && let Some(first) = open.as_ref().and_then(|m| m.lines.iter().find_map(|l| l.key().map(str::to_owned)).or_else(|| m.settings.map(|_| "m:settings".to_owned())))
         {
             state.entered = true;
             state.cursor = Some(first);
@@ -579,11 +714,7 @@ impl Panel for QuickSettings {
         };
         let mut sections = vec![usable(&system), usable(&sliders), usable(&toggles)];
         if let (Some(m), true, Some(at)) = (&open, frame.ready, owner) {
-            let keys = m.lines.iter().filter_map(|l| match l {
-                Line::Row { key, .. } | Line::Slider { key, .. } => Some(key.clone()),
-                Line::Separator => None,
-            });
-            let mut keys: Vec<String> = keys.collect();
+            let mut keys: Vec<String> = m.lines.iter().filter_map(|l| l.key().map(str::to_owned)).collect();
             if m.settings.is_some() {
                 keys.push("m:settings".into());
             }
@@ -619,6 +750,7 @@ impl Panel for QuickSettings {
 
     fn closed(&mut self) {
         *self.menu.get_mut() = MenuState::default();
+        *self.scan.get_mut() = None;
     }
 
     fn wake(&self, v: &View) -> Option<std::time::Instant> {
@@ -715,8 +847,10 @@ impl QuickSettings {
         }
         if id == "m:settings" {
             let shown = self.menu.get_mut().want.clone();
-            if let Some(panel) = shown.and_then(|m| menu(fx.store, &m, None)).and_then(|m| m.settings).map(|(_, p)| p) {
-                fx.panel = Some(panel);
+            match shown.and_then(|m| menu(fx.store, &m, None)).and_then(|m| m.settings).map(|(_, h)| h) {
+                Some(Hand::Panel(p)) => fx.panel = Some(p),
+                Some(Hand::Route(r)) => fx.summon = Some(r),
+                None => {}
             }
             return;
         }
@@ -779,6 +913,23 @@ impl QuickSettings {
                     fx.service(move |ctx| net::wired_toggle(ctx, what, connected));
                 }
             }
+            "wifi" => wifi_row(what, fx),
+            "bluetooth" => {
+                let b = &fx.store.devices.bluetooth;
+                if b.action.is_none()
+                    && let Some(d) = b.devices.iter().find(|d| d.address == what && d.paired)
+                {
+                    bt::ask(BtAsk::Run(what, if d.connected { BtAction::Disconnect } else { BtAction::Connect }));
+                }
+            }
+            "power-mode" => {
+                let Some(p) = Profile::from_wire(&what) else { return };
+                if p != Profile::Balanced {
+                    self.last_profile = p;
+                }
+                fx.service(move |ctx| devices::run(ctx, Op::Profile(p)));
+            }
+            "keyboard" => fx.ipc(&["lights", "effect", &what]),
             "power" => self.power(&what, fx),
             _ => {}
         }
@@ -854,6 +1005,25 @@ impl QuickSettings {
     }
 }
 
+/// Enter on a network in Wi-Fi's menu: a saved or open one connects, a
+/// secured one nobody knows (or whose password just failed) hands the card
+/// over to the network panel with its passphrase step open, and the
+/// connected one stays as it is.
+fn wifi_row(ssid: String, fx: &mut Effect) {
+    let n = &fx.store.devices.network;
+    let Some(row) = n.row(&ssid).filter(|r| !r.connected) else { return };
+    if n.action.is_some() {
+        return;
+    }
+    let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
+    if retype || (row.secured && !row.known) {
+        fx.panel = Some("network");
+        fx.then = Some(format!("wifi:{ssid}"));
+        return;
+    }
+    fx.service(move |ctx| net::connect(ctx, ssid, net::Secret::Saved));
+}
+
 /// A slider's icon (or Enter on its track): mute its device.
 fn mute(id: &str, fx: &mut Effect) {
     let op = match id {
@@ -870,16 +1040,25 @@ pub fn status_menu(store: &Store, state: &str) -> (Json, bool) {
     let state: Json = serde_json::from_str(state).unwrap_or(Json::Null);
     let id = state["menu"].as_str();
     let armed = state["armed"].as_str();
-    let lines = id.and_then(|id| menu(store, id, armed)).map(|m| {
+    let open = id.and_then(|id| menu(store, id, armed));
+    let lines = open.as_ref().map(|m| {
         m.lines
             .iter()
             .filter_map(|l| match l {
-                Line::Row { key, title, checked, armed, .. } => Some(json!({ "id": key, "title": title, "checked": checked, "armed": armed })),
+                Line::Row { key, title, detail, checked, armed, .. } => Some(json!({ "id": key, "title": title, "detail": detail, "checked": checked, "armed": armed })),
                 Line::Slider { key, title, value } => Some(json!({ "id": key, "title": title, "value": value })),
-                Line::Separator => None,
+                Line::Note(_) | Line::Separator => None,
             })
-            .chain(m.settings.map(|(label, panel)| json!({ "id": "m:settings", "title": label, "panel": panel })))
+            .chain(m.settings.map(|(label, hand)| match hand {
+                Hand::Panel(p) => json!({ "id": "m:settings", "title": label, "panel": p }),
+                Hand::Route(r) => json!({ "id": "m:settings", "title": label, "route": r }),
+            }))
             .collect::<Vec<_>>()
     });
-    (json!({ "id": id, "shown": state["shown"], "height": state["height"], "content": state["content"], "rows": lines }), state["dim"].as_bool().unwrap_or(false))
+    let notes: Option<Vec<&str>> = open.as_ref().map(|m| m.lines.iter().filter_map(|l| if let Line::Note(t) = l { Some(t.as_str()) } else { None }).collect());
+    let header = open.as_ref().map(|m| json!({ "title": m.title, "subtitle": m.subtitle, "on": m.on }));
+    (
+        json!({ "id": id, "shown": state["shown"], "height": state["height"], "content": state["content"], "header": header, "rows": lines, "notes": notes }),
+        state["dim"].as_bool().unwrap_or(false),
+    )
 }

@@ -340,7 +340,11 @@ impl Panel for Network {
     }
 
     fn call(&mut self, verb: &str, _arg: &str) -> Option<String> {
-        (verb == "knownOpen").then(|| self.known_open.to_string())
+        match verb {
+            "knownOpen" => Some(self.known_open.to_string()),
+            "prompt" => Some(serde_json::to_string(&self.prompt).unwrap_or_default()),
+            _ => None,
+        }
     }
 
     fn edit(&mut self, e: Edit, fx: &mut Effect) {

@@ -75,6 +75,8 @@ pub struct Device {
     pub state: ConnectionState,
     /// The raw `NMDeviceState` behind `state`; 10 is unmanaged.
     pub nm_state: u32,
+    /// The name (`Id`) of the connection active on it, if any.
+    pub connection: Option<String>,
 }
 
 impl Device {

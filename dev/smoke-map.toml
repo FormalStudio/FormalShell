@@ -353,7 +353,7 @@ runs = ["--panel audio", "--panel-keys", "--osd", "--quick-settings"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
-runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--panel network --tooltip-travel", "--device-routes"]
+runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--panel network --tooltip-travel", "--device-routes", "--quick-settings-devices"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/bluetooth.rs", "crates/formalshell-rs/src/services/devices/bluetooth.rs", "crates/formalshell-rs/src/ipc/bluetooth.rs", "crates/fs-devices/src/bluetooth.rs", "crates/fs-bluez/**"]
@@ -421,7 +421,7 @@ runs = ["--gallery"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshell-rs/src/ipc/quicksettings.rs"]
-runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power"]
+runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]

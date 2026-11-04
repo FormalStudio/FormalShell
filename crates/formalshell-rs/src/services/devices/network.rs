@@ -57,8 +57,11 @@ pub struct Row {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Wired {
+    /// The interface.
     pub name: String,
     pub connected: bool,
+    /// The active connection's name.
+    pub connection: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -260,7 +263,7 @@ fn view(i: &Inner) -> Network {
         .devices
         .iter()
         .filter(|d| d.kind == DeviceKind::Wired && d.managed())
-        .map(|d| Wired { name: d.interface.clone(), connected: d.connected() })
+        .map(|d| Wired { name: d.interface.clone(), connected: d.connected(), connection: d.connection.clone() })
         .collect();
     n.rows = s
         .networks

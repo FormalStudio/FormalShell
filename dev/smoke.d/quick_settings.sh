@@ -277,12 +277,14 @@ leg_quick_settings_assert() {
     [.rows[].kind] as $k | ($k | all(. == "system" or . == "slider" or . == "toggle" or . == "split"))
       and $k == ($k | sort_by(if . == "system" then 0 elif . == "slider" then 1 else 2 end))'
   # Every edge off the card's own rect, the toggles off each other.
-  quick_settings_jq "the card is 400 wide, the toggles 178 by 48" "$open" '
-    .card.width == 400 and ([.rows[] | select(.kind == "toggle" or .kind == "split") | .rect | .width == 178 and .height == 48] | all)'
-  quick_settings_jq "12 between columns and rows, 16 from every edge" "$open" '
+  # A split toggle's rect is its toggle part, its arrow the rest of the pill.
+  local pill='def pill: if .arrow then {x: .rect.x, y: .rect.y, width: (.arrow.x + .arrow.width - .rect.x), height: .rect.height} else .rect end;'
+  quick_settings_jq "the card is 400 wide, the toggles 178 by 48" "$open" "$pill"'
+    .card.width == 400 and ([.rows[] | select(.kind == "toggle" or .kind == "split") | pill | .width == 178 and .height == 48] | all)'
+  quick_settings_jq "12 between columns and rows, 16 from every edge" "$open" "$pill"'
     def near($a; $b): ($a - $b) | fabs <= 1;
     .card as $c
-    | [.rows[] | select(.kind == "toggle" or .kind == "split") | .rect] as $t
+    | [.rows[] | select(.kind == "toggle" or .kind == "split") | pill] as $t
     | [.rows[] | select(.kind == "system") | .rect] as $s
     | ([.rows[] | select(.kind == "slider")] | length) as $n
     | ($t | map(.x) | min) as $left

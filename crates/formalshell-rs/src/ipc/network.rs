@@ -63,7 +63,9 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     let enabled = n.wifi_enabled;
     // The panel's "Known networks" disclosure, null while the panel is closed.
     let known_open = app.panel_call("network", "knownOpen", "").unwrap_or_else(|| "null".into());
-    Value::Str(format!("{{\"wifiEnabled\":{enabled},\"knownOpen\":{known_open},\"networks\":[{}]}}", rows.join(",")))
+    // The SSID whose passphrase step is open, null with none or the panel shut.
+    let prompt = app.panel_call("network", "prompt", "").unwrap_or_else(|| "null".into());
+    Value::Str(format!("{{\"wifiEnabled\":{enabled},\"knownOpen\":{known_open},\"prompt\":{prompt},\"networks\":[{}]}}", rows.join(",")))
 }
 
 /// A network action already in flight is refused rather than queued.

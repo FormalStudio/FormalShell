@@ -236,8 +236,9 @@ pub enum Out {
     Close,
     /// Close, then open the launcher on this route.
     Summon(&'static str),
-    /// Open this panel in the open one's place.
-    Panel(&'static str),
+    /// Open this panel in the open one's place, then press Enter on this
+    /// stop of its.
+    Panel(&'static str, Option<String>),
     /// Close, then call this IPC target's function on the shell itself.
     Call(&'static str, &'static str),
     /// A tray item's menu off this card, centred on `anchor` along the line
@@ -258,7 +259,7 @@ impl Effect<'_> {
         }
         match (self.summon, self.panel, self.call, self.close) {
             (Some(route), ..) => Out::Summon(route),
-            (None, Some(name), ..) => Out::Panel(name),
+            (None, Some(name), ..) => Out::Panel(name, self.then.take()),
             (None, None, Some((target, function)), _) => Out::Call(target, function),
             (None, None, None, true) => Out::Close,
             (None, None, None, false) => Out::None,
