@@ -25,7 +25,7 @@ use crate::tokens::{self, Easing, Motion};
 pub const ROLES: [(&str, &[&str]); 39] = [
     ("bar", BAND_PAINTS),
     ("frame", BAND_PAINTS),
-    ("card", &["rest", "opaque", "dialog"]),
+    ("card", &["rest", "opaque", "raised", "dialog"]),
     ("notification", &["rest", "critical", "flat", "flatCritical"]),
     ("popover", &[]),
     ("menu", &[]),
@@ -1016,6 +1016,13 @@ pub(crate) mod tests {
         assert_eq!(card.casts[1].spread, -3.0);
         assert_eq!(card.casts[1].color, "#000000@0.45");
         assert_eq!(r(p, "card", Some("opaque"), "dark").fill, "role:card");
+        let raised = r(p, "card", Some("raised"), "dark");
+        assert_eq!(raised.hairlines.len(), 4);
+        assert_eq!(raised.casts.len(), 5);
+        assert_eq!(raised.casts[4].y, 6.0);
+        assert_eq!(raised.casts[4].color, "#000000@0.19");
+        assert_eq!(r(p, "card", Some("raised"), "light").casts[4].color, "#000000@0.095");
+        assert_eq!(raised.casts, r(p, "notification", None, "dark").casts);
     }
 
     #[test]
@@ -1052,11 +1059,10 @@ pub(crate) mod tests {
         let bubble = r(p, "notification", Some("rest"), "dark");
         assert_eq!(bubble.fill, "role:card@0.85");
         assert_eq!(bubble.radius, Radius::Px(12.0));
-        assert_eq!(bubble.casts.len(), 2);
-        assert_eq!(bubble.casts[1].blur, 9.0);
-        // Light mode wears libadwaita's toast cast instead.
+        assert_eq!(bubble.casts.len(), 5);
+        assert_eq!(bubble.casts[0].blur, 33.5);
         let light = r(p, "notification", Some("rest"), "light");
-        assert_eq!(light.casts.iter().map(|c| (c.y, c.blur, c.spread)).collect::<Vec<_>>(), [(1.0, 3.0, 1.0), (2.0, 6.0, 2.0)]);
+        assert_eq!(light.casts[4].color, "#000000@0.095");
         assert_eq!(bubble.border.unwrap().color, "#000000@0.75");
         assert_eq!(r(p, "notification", Some("critical"), "dark").border.unwrap().color, "role:destructive");
 

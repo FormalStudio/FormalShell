@@ -33,9 +33,10 @@ use fs_theme::theme::Theme;
 
 /// The deform amount for a popout.
 const DEFORM_AMOUNT: f64 = 0.15;
-/// Room past the card's resting rect for the overshoot, the deform's
-/// stretch and the cast, on a surface sized to one card.
-pub const SLACK: i32 = 48;
+/// Room past the card's resting rect for the overshoot and the deform's
+/// stretch, on a surface sized to one card; the cast takes more where it
+/// reaches further.
+const SLACK: i32 = 48;
 /// Past any output's edge, for the half-plane beyond the line.
 const FAR: f64 = 1.0e5;
 
@@ -59,10 +60,10 @@ impl Look {
         let card = theme.box_style(role, state);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
         let popover = !theme.morph;
-        let casts = if popover {
+        let casts = if popover && role != "card" {
             card.casts.clone()
-        } else if cast {
-            theme.box_style("card", None).casts
+        } else if popover || cast {
+            theme.box_style("card", Some("raised")).casts
         } else {
             Vec::new()
         };
@@ -194,8 +195,8 @@ impl Card {
         let u = (anchor - w / 2.0).clamp(pad, (length as f64 - w - pad).max(pad)).round();
         let v = line_at + theme.space.bar_margin;
         let rest = Rect::new(u, v, u + w, v + h);
-        let depth = rest.y1 as i32 + SLACK;
-        Self::build(theme, "card", edge, (length, depth), line_at, rest, scale, cast, false)
+        let slack = SLACK.max(Self::cast_reach(&Look::new(theme, "card", None, cast)).ceil() as i32);
+        Self::build(theme, "card", edge, (length, rest.y1 as i32 + slack), line_at, rest, scale, cast, false)
     }
 
     /// A card on a surface `size` (along, across) at `rest`, all in the
@@ -449,10 +450,15 @@ impl Card {
         self.rim.painted();
     }
 
+    /// The surface past the line the card drops out of, in device pixels.
+    fn beyond_line(&self) -> IRect {
+        Scene::cover(Rect::new(-FAR, self.line_at, FAR, FAR), self.edge_map(), 0.0)
+    }
+
     /// A popover's casts, fill and border for a card at `card`, `alpha`
-    /// opaque, onto `nodes` of `scene`.
+    /// opaque, onto `nodes` of `scene`, the casts kept to `beyond`.
     #[allow(clippy::too_many_arguments)]
-    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, nub: Option<(f64, f64, f64)>, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
+    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, beyond: IRect, nub: Option<(f64, f64, f64)>, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
         let radius = look.radius;
         let layers: Vec<Cast> = look
             .casts
@@ -463,13 +469,14 @@ impl Card {
         let rr = |r: Rect, radius: f64| vello_cpu::kurbo::Shape::to_path(&vello_cpu::kurbo::RoundedRect::from_rect(r, radius.max(0.0)), 0.1);
         let size = scene.size;
         let fit = Fit { outline: Outline::Box { rect: card, radius, border: look.border_width }, snap: Snap::Edges };
+        let spread = Scene::cover(card, Affine::IDENTITY, reach).intersect(&size);
         scene.update_with(
             nodes.0,
-            Scene::cover(card, Affine::IDENTITY, reach).intersect(&size),
+            spread,
             Paint::Casts { rect: card, radius, layers, cutout: fit },
             shown && !look.casts.is_empty(),
             Affine::IDENTITY,
-            None,
+            Some(beyond).filter(|b| !b.contains(&spread)),
         );
         let fill = look.fill.with_alpha(look.fill.a * alpha);
         let half = look.border_width / 2.0;
@@ -525,7 +532,8 @@ impl Card {
     pub fn popover_look(&self, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect) {
         let mut look = self.look.clone();
         look.fill = look.fill.with_alpha(1.0);
-        Self::paint_popover(&look, scene, nodes, card, None, 1.0, true, None);
+        let beyond = self.beyond_line();
+        Self::paint_popover(&look, scene, nodes, card, beyond, None, 1.0, true, None);
     }
 
     /// The room a popover's casts need around the card.
@@ -549,9 +557,10 @@ impl Card {
         // Painted by the compositor instead (`popover_look`): the card's own
         // surface carries nothing of it.
         let here = shown && !self.compositor_look;
+        let beyond = self.beyond_line();
         let rim = self.rim.current(now).is_some().then_some((&mut self.rim, now, self.rim_node));
         let lit = rim.is_some();
-        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, self.nub, alpha, here, rim);
+        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, beyond, self.nub, alpha, here, rim);
         if !lit || !here {
             self.scene.set_visible(self.rim_node, false);
         }

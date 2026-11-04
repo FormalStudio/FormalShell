@@ -95,7 +95,15 @@ two windows cannot be opaque on one side of the seam. The modal namespaces
 carry a plain black 0.5 scrim, so they take `ignore_alpha = 0.6` rather than
 0.2: the scrim falls under the mark and only darkens the desktop, while the
 card over it stays above and keeps its blur (owner, 2026-09-17: "make the
-overlay just darken instead of blur").
+overlay just darken instead of blur"). `formalshell:panel` and
+`formalshell:notifications` take 0.6 too: a floating card and a toast hang
+Pond's five-layer cast (`card.raised`), whose sum passes 0.2 just outside
+the card, so at 0.2 Hyprland would frost a halo round each one; the cast
+stays under 0.6 and the 0.85 card over it (`--glass-behind` reads a band
+outside each card as sharp as the text with nothing open). The blur block
+sets `vibrancy = 0`, Pond's niri `saturation 1.0`, so the blur behind a
+card keeps the wallpaper's saturation rather than tinting the card toward
+it.
 
 **The table**: the chrome every primitive draws comes out of one table,
 `fs-theme/formalshell.json`, embedded and read through `fs_theme::table()`.

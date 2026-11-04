@@ -20,6 +20,12 @@
 # with nothing open, eroded past its border and casts, less its own
 # content's edges.
 #
+# No halo either: a card's casts sit under the layer's `ignore_alpha`, so
+# a band 8px outside each card shows the text as sharp as the frame with
+# nothing open, its edge energy over its own contrast at least 0.8 of
+# that frame's (the cast darkens the band, which the contrast takes out;
+# a blurred band keeps its contrast and loses its edges).
+#
 # Ridden by `--no-morph` it reads the popover cards, which draw their look
 # on viewport-cropped subsurfaces Hyprland 0.56 never blurs under; by
 # `--light` the light cards, over a dark wallpaper rather than a bright
@@ -46,7 +52,7 @@ leg_glass_behind_drive() {
   # The shipped rules, as the owner's hyprland.lua loads them.
   echo 'local chrome = { blur = true }'
   awk '/^hl.layer_rule\(\{/ { on = 1 } on { print } on && /^\}\)/ { on = 0 }' docs/examples/hyprland/formalshell.lua
-  echo 'hl.config({ decoration = { blur = { enabled = true, size = 8, passes = 2, new_optimizations = true } } })'
+  echo 'hl.config({ decoration = { blur = { enabled = true, size = 8, passes = 2, new_optimizations = true, vibrancy = 0 } } })'
   local script="$shot_dir/glass-behind-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
@@ -125,12 +131,23 @@ leg_glass_behind_assert() {
   "$python3_bin" - "$shot_dir" "$scale" "$box" $glass_behind_surfaces > "$glass_behind_numbers" <<'PY' \
     || fail "glass-behind: $(cat "$glass_behind_numbers")"
 import sys
-from PIL import Image, ImageChops, ImageFilter, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 d, scale, box = sys.argv[1], float(sys.argv[2]), [int(v) for v in sys.argv[3].split()]
 names = sys.argv[5:]
 L = lambda p, s: Image.open(f"{d}/glass-behind-{p}-{s}.png").convert("L")
 t0, b0 = L("text", "none"), L("bare", "none")
-text = ImageChops.difference(t0, b0).filter(ImageFilter.FIND_EDGES)
+raw = ImageChops.difference(t0, b0)
+text = raw.filter(ImageFilter.FIND_EDGES)
+
+def grow(m, n):
+    for _ in range(n):
+        m = m.filter(ImageFilter.MaxFilter(3))
+    return m
+
+def sharpness(diff, m):
+    contrast = ImageStat.Stat(diff, m).mean[0]
+    return ImageStat.Stat(diff.filter(ImageFilter.FIND_EDGES), m).mean[0] / contrast if contrast > 5 else None
+
 bad = []
 for s in names:
     ts, bs = L("text", s), L("bare", s)
@@ -138,10 +155,28 @@ for s in names:
         x, y, w, h = (round(v * scale) for v in box)
         mask = Image.new("L", ts.size, 0)
         mask.paste(255, (x + 20, y + 20, x + w - 20, y + h - 20))
+        card = Image.new("L", ts.size, 0)
+        card.paste(255, (x, y, x + w, y + h))
     else:
         # Where the card covers the flat wallpaper, short of its border and
         # its casts.
-        mask = ImageChops.difference(bs, b0).point(lambda v: 255 if v > 80 else 0).filter(ImageFilter.MinFilter(15))
+        card = ImageChops.difference(bs, b0).point(lambda v: 255 if v > 80 else 0)
+        mask = card.filter(ImageFilter.MinFilter(15))
+    # The band from 8 to 14px outside the card, the holes its content left
+    # in it filled from an output corner the card does not reach.
+    near = grow(card, 8)
+    w_, h_ = near.size
+    seed = next(c for c in [(0, 0), (w_ - 1, 0), (0, h_ - 1), (w_ - 1, h_ - 1)] if near.getpixel(c) == 0)
+    ImageDraw.floodfill(near, seed, 128)
+    near = near.point(lambda v: 0 if v == 128 else 255)
+    band = ImageChops.subtract(grow(near, 6), near)
+    open_sharp, bare_sharp = sharpness(ImageChops.difference(ts, bs), band), sharpness(raw, band)
+    if open_sharp is None or bare_sharp is None:
+        print(f"{s} halo: no text in the band outside the card")
+    else:
+        print(f"{s} halo open={open_sharp:.3f} bare={bare_sharp:.3f} ratio={open_sharp / bare_sharp:.3f}")
+        if open_sharp < 0.8 * bare_sharp:
+            bad.append(f"{s}: the text round the card is blurred ({open_sharp / bare_sharp:.3f} of its sharpness)")
     # Less the card's own content, whose antialiased edges composite
     # differently over the two backgrounds whatever is behind them.
     content = bs.filter(ImageFilter.FIND_EDGES).point(lambda v: 255 if v > 16 else 0).filter(ImageFilter.MaxFilter(7))

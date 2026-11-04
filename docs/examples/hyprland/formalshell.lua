@@ -57,10 +57,14 @@ end
 hl.config({
   decoration = {
     rounding = chrome.rounding,
+    -- vibrancy 0 is Pond's niri `saturation 1.0`: the blur behind a card
+    -- keeps the wallpaper's own saturation instead of tinting the card
+    -- toward it.
     blur = {
       enabled = chrome.blur,
       size = 8,
       passes = 2,
+      vibrancy = 0,
     },
     shadow = {
       enabled = chrome.shadow,
@@ -225,6 +229,11 @@ hl.window_rule({
 -- blur. A `theme.surfaceOpacity` under 0.6 puts the card under the mark too and
 -- loses the blur on those three (docs/USAGE.md).
 --
+-- The panel and notification namespaces take 0.6 too: their cards hang a
+-- five-layer cast whose sum passes 0.2 just outside the card, so at 0.2
+-- Hyprland would frost a halo round every panel and toast. The cast stays
+-- under 0.6 and the 0.85 card over it.
+--
 -- no_anim on every one of them: the shell animates its own surfaces (DESIGN.md
 -- section 1 Motion), so a compositor animation on the layer runs a second one
 -- over the top of it.
@@ -240,7 +249,7 @@ hl.layer_rule({
   name = "formalshell-panel",
   match = { namespace = "formalshell:panel" },
   blur = chrome.blur,
-  ignore_alpha = 0.2,
+  ignore_alpha = 0.6,
   no_anim = true,
 })
 
@@ -317,12 +326,13 @@ hl.layer_rule({
 })
 
 -- The toast cards are drawn at surfaceOpacity too; the layer between and
--- around them is clear, which the 0.2 mark leaves unblurred.
+-- around them carries nothing but their casts, which the 0.6 mark above
+-- leaves unblurred.
 hl.layer_rule({
   name = "formalshell-notifications",
   match = { namespace = "formalshell:notifications" },
   blur = chrome.blur,
-  ignore_alpha = 0.2,
+  ignore_alpha = 0.6,
   no_anim = true,
 })
 

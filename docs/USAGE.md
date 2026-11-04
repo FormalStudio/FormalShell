@@ -870,7 +870,9 @@ it buds off.
 The launcher and the polkit request cover the whole output and sit over a
 0.5 black scrim, so their layer rules (`formalshell:menu`,
 `formalshell:radio` and `formalshell:polkit`) leave anything at or below 0.6 unblurred: the scrim
-darkens the desktop and the card over it keeps its blur. A `surfaceOpacity`
+darkens the desktop and the card over it keeps its blur. `formalshell:panel`
+and `formalshell:notifications` take the same 0.6 so the casts round their
+cards are never blurred. A `surfaceOpacity`
 under 0.6 puts the card under that mark too and it loses its blur there;
 lower those namespaces' `ignore_alpha` to match if you want it back.
 
