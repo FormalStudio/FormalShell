@@ -291,7 +291,9 @@ pub enum Kind {
     /// Words wrapped at the width they get, cut with an ellipsis past `lines`.
     Para { text: String, font: Font, ink: Ink, lines: usize },
     /// A bitmap fitted at its own size in a `size` square; blank without one.
-    Picture { pic: Pic, size: f64 },
+    /// `checked` marks it the one in use with a check on a disc in its
+    /// bottom-right corner.
+    Picture { pic: Pic, size: f64, checked: bool },
     /// A square of modules, one string of `1`s and `0`s per row (a QR
     /// code), centred at the largest whole module that fits.
     Matrix { rows: Vec<String> },

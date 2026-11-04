@@ -24,6 +24,10 @@
 # Before the first pick, `menu actions 0` opens a cell's actions column
 # (Set wallpaper, Open file, Copy path) beside the halved grid.
 #
+# The cell of the wallpaper on the desktop carries a check on a primary
+# disc in its corner: none on img-3's cell before it is picked, one after,
+# and none on its neighbour.
+#
 # Every wallpaper listing ends on a Sky cell (`sky:<step>`, the sky as it
 # stands now, drawn rather than read off a file): choosing it puts the sky
 # on the desktop the way `wallpaper set sky` does, with state.json's
@@ -34,7 +38,7 @@
 # the clipboard leg wait on this file rather than summoning over the grid.
 leg_picker_flag="--picker"
 leg_picker_order=120
-leg_picker_needs="convert jq wtype"
+leg_picker_needs="convert jq wtype python3"
 
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the grid
 # covers the whole output, so under --wallpaper it starts after that leg's
@@ -45,6 +49,10 @@ picker_t0() {
 
 picker_done_path="$shot_dir/picker-drive.done"
 picker_grid_png="$shot_dir/picker-grid.png"
+picker_grid_menu_path="$shot_dir/picker-grid-menu.json"
+picker_current_png="$shot_dir/picker-current.png"
+picker_current_menu_path="$shot_dir/picker-current-menu.json"
+picker_current_theme_path="$shot_dir/picker-current-theme.json"
 picker_variant_png="$shot_dir/picker-variant.png"
 picker_actions_png="$shot_dir/picker-actions.png"
 picker_actions_status_path="$shot_dir/picker-actions.json"
@@ -112,6 +120,7 @@ sleep $t0
 $ipc call picker summon > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$picker_grid_png" > /dev/null 2>&1
+$ipc call menu status > "$picker_grid_menu_path" 2>&1
 $ipc call picker status > "$picker_flat_status_path" 2>&1
 $(stale_audit_start)
 for key in Right Right Right Down Down Down Left Left Up Up Up Down; do "$wtype_bin" -k "\$key"; sleep 0.2; done
@@ -135,6 +144,12 @@ sleep 1.5
 $ipc call picker choose "$picker_dir/img-3.png" > /dev/null 2>&1
 sleep 3
 $ipc call theme status > "$picker_theme_status_path" 2>&1
+$ipc call picker summon > /dev/null 2>&1
+sleep 2
+"$grim_bin" "$picker_current_png" > /dev/null 2>&1
+$ipc call menu status > "$picker_current_menu_path" 2>&1
+cp "$iso_home/.local/state/formalshell/theme.json" "$picker_current_theme_path" 2>/dev/null
+$ipc call menu close > /dev/null 2>&1
 sleep 1
 $ipc call picker select "$picker_dir" tok-picker > "$picker_select_reply_path" 2>&1
 sleep 2
@@ -203,6 +218,62 @@ leg_picker_assert() {
   if ! grep -q "\"desktop\":\"$picker_dir/img-3.png\"" "$picker_theme_status_path"; then
     fail "the picked picture is not what the desktop shows, got: $(cat "$picker_theme_status_path")"
   fi
+  # The current wallpaper's mark, read off each cell's picture: the box its
+  # fixture colour covers in the cell's bottom-right quarter, and what in
+  # that box is not the fixture (the disc, its ring and the check).
+  [ -f "$picker_current_png" ] || fail "no frame of the grid after the pick"
+  echo "SMOKE_PICKER_CURRENT $picker_current_png"
+  local primary
+  primary=$("$jq_bin" -r '.primary // empty' "$picker_current_theme_path" 2>/dev/null)
+  [ -n "$primary" ] || fail "no primary in theme.json after the pick"
+  "$python3_bin" - "${out_scale:-1}" "$primary" "$picker_dir" \
+    "$picker_grid_png" "$picker_grid_menu_path" "$picker_current_png" "$picker_current_menu_path" <<'PY' \
+    || fail "picker: the current wallpaper's mark is wrong"
+import json, sys
+from PIL import Image
+scale, primary, pictures = float(sys.argv[1]), sys.argv[2], sys.argv[3]
+hexrgb = lambda h: tuple(int(h.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+far = lambda a, b: max(abs(x - y) for x, y in zip(a, b))
+prim = hexrgb(primary)
+
+def read(png, menu, name, fixture):
+    status = json.load(open(menu))
+    index = status["ids"].index(f"wallpaper.{pictures}/{name}")
+    box = next(b for b in status["rowBoxes"] if b["index"] == index)
+    x0, y0 = round((box["x"] + box["width"] / 2) * scale), round((box["y"] + box["height"] / 2) * scale)
+    x1, y1 = round((box["x"] + box["width"]) * scale), round((box["y"] + box["height"]) * scale)
+    im = Image.open(png).convert("RGB").crop((x0, y0, x1, y1))
+    px = im.load()
+    fix = hexrgb(fixture)
+    on = [(x, y) for y in range(im.height) for x in range(im.width) if far(px[x, y], fix) <= 24]
+    if not on:
+        return None
+    bx0, by0 = min(x for x, _ in on), min(y for _, y in on)
+    bx1, by1 = max(x for x, _ in on), max(y for _, y in on)
+    inside = [px[x, y] for y in range(by0, by1 + 1) for x in range(bx0, bx1 + 1)]
+    marked = sum(far(p, fix) > 60 for p in inside)
+    near = sum(far(p, prim) <= 24 for p in inside)
+    return marked, near
+
+ok = True
+area = scale * scale
+for what, png, menu, name, fixture, want in [
+    ("img-3 before its pick", sys.argv[4], sys.argv[5], "img-3.png", "f1c40f", False),
+    ("img-3 once picked", sys.argv[6], sys.argv[7], "img-3.png", "f1c40f", True),
+    ("img-2 beside it", sys.argv[6], sys.argv[7], "img-2.png", "2980b9", False),
+]:
+    got = read(png, menu, name, fixture)
+    if got is None:
+        print(f"{what}: no picture of its fixture colour in the cell's corner")
+        ok = False
+        continue
+    marked, near = got
+    good = marked >= 100 * area and near >= 300 * area if want else marked < 10
+    print(f"{what}: {marked} marked px, {near} px of primary {primary}, {'a mark' if want else 'no mark'} wanted: {'ok' if good else 'WRONG'}")
+    ok = ok and good
+sys.exit(0 if ok else 1)
+PY
+  echo "SMOKE_PICKER the current wallpaper's cell alone carries the check"
   # Generic image-selector proof: the second choose(), made against a
   # select()-mode request, must resolve that request's token with the chosen
   # path.

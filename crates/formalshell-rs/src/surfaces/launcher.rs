@@ -3732,6 +3732,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
         items.push((top, m.picker_switch_h, picker_switch(m).pad_start(s.sm)));
     }
     let cells = m.cells();
+    let desktop = (m.view == View::Picker && !m.picker.select).then(|| store.desktop());
     for (i, slot) in lay.slots.iter().enumerate() {
         if !visible(slot.y, slot.h) {
             continue;
@@ -3764,7 +3765,7 @@ fn body_el(m: &Model, store: &Store, theme: &Theme, kit: &mut Kit, scroll: f64, 
             let gutter = s.sm;
             let edge = (slot.w - (gutter + s.sm) * 2.0).max(1.0);
             let image = store.picker.thumbs.get(&row.path).cloned().flatten();
-            let pic = w::picture(image, edge).centred();
+            let pic = if desktop.as_ref() == Some(&row.path) { w::checked_picture(image, edge) } else { w::picture(image, edge) }.centred();
             w::cell(pic)
                 .ghost()
                 .selected(selected)

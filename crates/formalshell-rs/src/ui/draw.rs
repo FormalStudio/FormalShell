@@ -710,12 +710,26 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             cx.done(last);
         }
         Kind::Strip { inset, scroll, tiles, .. } => super::strip::paint(cx, el, inner, *inset, *scroll, tiles, path),
-        Kind::Picture { pic, .. } => {
+        Kind::Picture { pic, checked, .. } => {
             let alpha = cx.alpha;
             let r = irect(inner);
+            let check = checked.then(|| icon(cx, "check", Type::Body));
+            let t = cx.theme;
+            let (ring, disc, ink) = (cx.a(t.colors.get("card")), cx.a(t.colors.get("primary")), cx.a(t.colors.get("primaryForeground")));
+            let (d, inset, bw) = ((t.space.control_height - 8.0).round() as i32, t.space.sm.round() as i32, (t.border_width * 2.0).round() as i32);
             let mut p = cx.painter(path);
             if let Some(image) = &pic.0 {
                 centred(&mut p, image, r, alpha);
+            }
+            if let Some(glyph) = check {
+                let (w, h) = pic.0.as_ref().map_or((r.w, r.h), |i| i.size());
+                let (x1, y1) = (r.x + (r.w + w) / 2, r.y + (r.h + h) / 2);
+                let at = IRect::new(x1 - inset - d, y1 - inset - d, d, d);
+                // A disc of primary sits on the very picture primary was
+                // taken from, so a ring of the card keeps it apart.
+                p.rect(IRect::new(at.x - bw, at.y - bw, d + bw * 2, d + bw * 2), ring, (d + bw * 2) as f32 / 2.0);
+                p.rect(at, disc, d as f32 / 2.0);
+                p.text(&glyph, (at.x + (d - glyph.width) / 2, at.y + (d - glyph.line_height()) / 2), ink, &[]);
             }
             let last = p.last();
             p.finish();

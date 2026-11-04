@@ -61,7 +61,12 @@ pub fn para(s: impl Into<String>, size: Type, weight: Weight, ink: Ink, lines: u
 
 /// A bitmap (an app's icon) in a `size` square.
 pub fn picture(image: Option<crate::scene::Bitmap>, size: f64) -> El {
-    El::new(Kind::Picture { pic: Pic(image), size })
+    El::new(Kind::Picture { pic: Pic(image), size, checked: false })
+}
+
+/// The picture in use among its peers (the wallpaper on the desktop).
+pub fn checked_picture(image: Option<crate::scene::Bitmap>, size: f64) -> El {
+    El::new(Kind::Picture { pic: Pic(image), size, checked: true })
 }
 
 /// Tiles placed freely over `content` in a framed viewport `size` big,
