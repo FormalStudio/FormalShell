@@ -930,31 +930,37 @@
         },
         "switch.track": {
             "off": {
-                "fill": "transparent",
+                "fill": "foreground",
+                "fillAlpha": 0.15,
                 "radius": "pill",
-                "border": {
-                    "color": "border",
-                    "width": 1
-                },
-                "padding": 2
+                "padding": 3,
+                "width": 48,
+                "wash": {
+                    "color": "foreground",
+                    "alpha": 0.06
+                }
             },
             "on": {
-                "border": {
-                    "color": "primary",
-                    "alpha": 0.5,
-                    "width": 1
+                "fill": "primary",
+                "fillAlpha": 1,
+                "wash": {
+                    "color": "white",
+                    "alpha": 0.1
                 }
             }
         },
         "switch.knob": {
             "off": {
-                "fill": "muted",
-                "radius": "pill",
-                "size": 24,
-                "ink": [
-                    "mutedForeground",
-                    1
+                "fill": "card",
+                "tint": [
+                    "white",
+                    {
+                        "light": 1,
+                        "dark": 0.8
+                    }
                 ],
+                "radius": "pill",
+                "size": 22,
                 "layers": [
                     {
                         "y": 2,
@@ -965,9 +971,8 @@
                 ]
             },
             "on": {
-                "fill": "primary",
-                "ink": [
-                    "primaryForeground",
+                "tint": [
+                    "white",
                     1
                 ]
             }
@@ -1523,10 +1528,10 @@
             "`selected_bg_color`, which is the accent."
         ],
         "roles.switch.track": [
-            "The switch (`widgets/switch.scss`) in libadwaita's shape (`_switch.scss`): radius 14 and 3px of `padding` round a knob, so the track is two knobs and the padding wide. A sunken trough under the accent when on. The fill takes a deeper black than elementary's 0.05, which over zinc is nothing, and the sunken line sits on top of it."
+            "FormalShell's own switch on GNOME's (gnome-shell 51.1 `widgets/_switches.scss`): a pill 48 wide holding a knob with 3px of `padding` round it. Off is a `foreground` wash at GNOME's `transparentize(.., .85)` with no border, and its pointer wash takes it to GNOME's 0.2. On fills it `primary`, the wallpaper colour, and a white wash under the pointer stands in for `st-lighten(.., 5%)`. The fill tweens with the knob's travel."
         ],
         "roles.switch.knob": [
-            "The knob: libadwaita's 20px `size` and its cast, y2 blur4 black at 0.2 (`_switch.scss`). Pill rather than elementary's 99, which is the same circle by another name."
+            "The knob: GNOME's handle, a plain disc with no mark on it, `mix(white, $bg_color, 80%)` off in dark (white over `card` at 0.8) and white otherwise, with its cast y2 blur4 black at 0.2. 22 rather than GNOME's 20 so the track is 28 tall, on the 4px grid."
         ],
         "roles.track.groove": [
             "The scale (`widgets/scale.scss`): a sunken trough with the accent filling it, both round. The groove's dark is deepened for the same reason the switch track's is, and the sunken line runs along whatever the fill leaves of it. No rim: the fill sits inside the groove rather than over it, so a line round the trough would be drawn on one side of the knob and painted over on the other."

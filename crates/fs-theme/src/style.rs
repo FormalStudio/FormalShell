@@ -1232,9 +1232,10 @@ pub(crate) mod tests {
         assert_eq!(ghost.border, None);
         assert_eq!(ghost.radius, Radius::Px(9.0));
 
-        let on = r(m, "switch.knob", Some("on"), "dark");
+        let on = r(m, "switch.track", Some("on"), "dark");
         assert_eq!(on.fill, "role:primary");
         assert_eq!(on.radius, Radius::Pill);
+        assert_eq!(r(m, "switch.knob", Some("on"), "dark").fill, "role:card+#ffffff");
     }
 
     #[test]

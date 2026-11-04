@@ -6,7 +6,7 @@ close button. This spec wins over `docs/DESIGN.md` where the two disagree
 about a panel; the theme-boundary spec still decides what a theme owns,
 and the token table (`crates/fs-theme/formalshell.json`) still owns every
 colour, face and radius. Pond's numbers are read off its BSD-3 source in
-`artifacts/pond/src/shell/` (PanelStyle.qml, Toggle.qml, Slider.qml,
+`artifacts/pond/src/shell/` (PanelStyle.qml, Slider.qml,
 DeviceList.qml, battery/Card.qml); its captures are in
 `artifacts/pond/{liked,vm}/`.
 
@@ -122,14 +122,16 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
 
 ## 6. Controls
 
-- Toggle: Pond's pill, 52 x 28 (on the grid), a round knob 24 with 2 in
-  inset, travelling on `spatialFast`. The track is never filled: a
-  `border` outline, `primary` at 0.5 when on, carrying an outlined dash
-  slot where the knob rests off and an upright slot where it rests on.
-  The knob is `muted` off and `primary` on, and carries a bar in its own
-  ink that turns from the dash to the upright as it travels. GNOME's
-  colours stand in for Pond's red and green. One per header at most; in
-  a row it sits trailing.
+- Toggle: FormalShell's own switch on GNOME's behaviour (gnome-shell
+  51.1 `widgets/_switches.scss`), not Pond's. A pill 48 x 28 holding a
+  round knob 22 with 3 in inset, the knob travelling on `spatialFast`.
+  Off, the track is a `foreground` wash at 0.15 (0.2 under the pointer)
+  with no border, and the knob a plain near-white disc (white over
+  `card` at 0.8 in dark, white in light) with GNOME's soft cast. On, the
+  track fills `primary`, lightened a step under the pointer, and the
+  knob is white; the fill tweens with the knob's travel. No slots, no
+  mark on the knob. Disabled draws the whole switch at the kit's dim.
+  One per header at most; in a row it sits trailing.
 - Slider: a `panelRowCompact` control, the track 12 tall at `md`
   radius in `muted`, the fill in `primary`, a knob 24 round in
   `primary` with a `border` ring. The value sits trailing in `mono`, not

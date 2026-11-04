@@ -75,7 +75,18 @@ impl Panel for Gallery {
                         ),
                     ],
                 ),
-                control("Switch", vec![w::row(s.sm, vec![w::switch(self.switch).on("switch"), w::switch(!self.switch).on("switch")])]),
+                control(
+                    "Switch",
+                    vec![w::row(
+                        s.sm,
+                        vec![
+                            w::switch(self.switch).on("switch"),
+                            w::switch(!self.switch).on("switch"),
+                            w::switch(true).enabled(false),
+                            w::switch(false).enabled(false),
+                        ],
+                    )],
+                ),
                 control(
                     "ButtonGroup",
                     vec![

@@ -1075,54 +1075,42 @@ fn button(
     }
 }
 
-/// The track's (width, height): two knobs and the padding around them,
-/// as libadwaita's switch is.
+/// The track's (width, height): the table's width, and the knob with its
+/// padding above and below.
 fn switch_track(t: &fs_theme::theme::Theme) -> (f64, f64) {
     let (knob, pad) = (t.metric("switch.knob", "size"), t.metric("switch.track", "padding"));
-    (knob * 2.0 + pad * 2.0, knob + pad * 2.0)
+    (t.metric("switch.track", "width"), knob + pad * 2.0)
 }
 
 fn switch(cx: &mut Cx, el: &El, r: Rect, checked: bool, enabled: bool, path: &str, stop: Option<String>) {
     let t = cx.theme;
     let inset = t.metric("switch.track", "padding");
     let (track_w, track_h) = switch_track(t);
-    let mut track = t.box_style("switch.track", Some(if checked { "on" } else { "off" }));
-    let (_, ring) = cx.cursor(stop.as_deref());
-    if ring {
-        track = t.with_cursor(track, true, !cx.halo_owned());
-    }
-    let fill = cx.color(&format!("{path}.fill"), track.fill);
-    let track = BoxStyle { fill, ..track };
-    let knob = t.box_style("switch.knob", Some(if checked { "on" } else { "off" }));
-    let tr = Rect::new(r.x0, r.y0 + (r.height() - track_h) / 2.0, r.x0 + track_w, r.y0 + (r.height() + track_h) / 2.0);
     let size = t.metric("switch.knob", "size");
     let (rest, travel) = (inset, track_w - size - inset * 2.0);
     let kx = cx.tween(&format!("{path}.knob"), if checked { rest + travel } else { rest }, Clock::SpatialFast);
-    let along = if travel > 0.0 { ((kx - rest) / travel).clamp(0.0, 1.0) } else { 0.0 };
+    let along = if travel > 0.0 { ((kx - rest) / travel).clamp(0.0, 1.0) as f32 } else { 0.0 };
+    let between = |off: BoxStyle<Rgba>, on: BoxStyle<Rgba>| BoxStyle {
+        fill: off.fill.mix(on.fill, along),
+        wash: off.wash.zip(on.wash).map(|(a, b)| a.mix(b, along)),
+        ..off
+    };
+    let mut track = between(t.box_style("switch.track", Some("off")), t.box_style("switch.track", Some("on")));
+    let (_, ring) = cx.cursor(stop.as_deref());
+    track = t.with_cursor(track, ring, !cx.halo_owned());
+    let knob = between(t.box_style("switch.knob", Some("off")), t.box_style("switch.knob", Some("on")));
+    let hovered = enabled && cx.hover(path);
+    let wash = cx.tween(&format!("{path}.wash"), if hovered { 1.0 } else { 0.0 }, Clock::Effects) as f32;
+    let tr = Rect::new(r.x0, r.y0 + (r.height() - track_h) / 2.0, r.x0 + track_w, r.y0 + (r.height() + track_h) / 2.0);
     let kr = IRect::new((r.x0 + kx).round() as i32, (tr.y0 + inset).round() as i32, size.round() as i32, size.round() as i32);
     let tri = irect(tr);
     let tr_radius = t.box_radius(&track, tri.h as f64);
     let kn_radius = t.box_radius(&knob, size);
     // A disabled switch dims the way a button does.
     let alpha = if enabled { cx.alpha } else { cx.alpha * 0.5 };
-    // Pond's toggle: the empty track carries an off dash where the knob
-    // rests off and an on bar where it rests on, and the knob's own bar
-    // turns from the one to the other as it travels.
-    let mark = track.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
-    let unit = size / 24.0;
-    let slot = |cx: f64, w: f64, h: f64| IRect::new((cx - w / 2.0).round() as i32, (tr.y0 + track_h / 2.0 - h / 2.0).round() as i32, w.round() as i32, h.round() as i32);
-    let off_slot = slot(tr.x0 + rest + size / 2.0, 13.0 * unit, 5.0 * unit);
-    let on_slot = slot(tr.x0 + rest + travel + size / 2.0, 5.0 * unit, 13.0 * unit);
-    let (bw, bh) = (12.0 + (4.0 - 12.0) * along, 4.0 + (12.0 - 4.0) * along);
-    let bar = slot(r.x0 + kx + size / 2.0, bw * unit, bh * unit);
     let mut p = cx.painter(path);
-    boxes::paint(&mut p, tri, &track, tr_radius, alpha, 0.0);
-    for s in [off_slot, on_slot] {
-        let outline = BoxStyle { fill: Rgba::TRANSPARENT, border: Some(Line { color: mark, width: 1.0 }), casts: Vec::new(), ..track.clone() };
-        boxes::paint(&mut p, s, &outline, s.w.min(s.h) as f64 / 2.0, alpha * 0.6, 0.0);
-    }
+    boxes::paint(&mut p, tri, &track, tr_radius, alpha, wash);
     boxes::paint(&mut p, kr, &knob, kn_radius, alpha, 0.0);
-    p.rect(bar, knob.ink.with_alpha(knob.ink.a * alpha), (bar.w.min(bar.h) as f32) / 2.0);
     let last = p.last();
     p.finish();
     cx.done(last);
