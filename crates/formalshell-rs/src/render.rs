@@ -699,7 +699,7 @@ impl Caches {
                             ctx.stroke_path(&line.path);
                             ctx.reset_paint_transform();
                             if let Some(fade) = line.fade {
-                                fade_down(ctx, line.path.bounding_box(), fade);
+                                fade_down(ctx, &line.path, line.width, fade);
                                 ctx.pop_layer();
                             }
                         }
@@ -1047,7 +1047,7 @@ impl Grid {
                 let half = width / 2.0;
                 let mut outer = rounded(r.inflate(-half, -half), radius - half);
                 outer.close_path();
-                Drawn { fill: rounded(r, radius), outer, near: None, width }
+                Drawn { fill: rounded(r, radius), outer, near: None, width, rounded: Some((r, radius)) }
             }
             Outline::Join(j) => {
                 let r = self.rect(Rect::new(0.0, 0.0, j.size.0, j.size.1));
@@ -1059,7 +1059,7 @@ impl Grid {
                 let near_inset = (j.near_inset * k).round();
                 let paths = shoulders::paths_with(r.width(), r.height(), j.radius * k, width, j.attach, near_inset, walls, far_gap);
                 let at = Affine::translate((r.x0, r.y0));
-                Drawn { fill: at * paths.fill, outer: at * paths.outer, near: Some(at * paths.near), width }
+                Drawn { fill: at * paths.fill, outer: at * paths.outer, near: Some(at * paths.near), width, rounded: None }
             }
         }
     }
@@ -1099,14 +1099,31 @@ fn outlined(ctx: &mut impl Raster, drawn: &Drawn, fill: Rgba, border: Rgba, near
 }
 
 /// `lit`, `width` canvas pixels wide, on the band just inside the border
-/// of `drawn`, following its arcs.
+/// of `drawn`, following its arcs. A box's band is a rounded rect stroked
+/// straight; a layer costs a launcher card's frame four times its fill,
+/// and a resize drawn in slices past the slice budget never lands.
 fn lit_line(ctx: &mut impl Raster, drawn: &Drawn, width: f64, lit: &LitLine) {
     if lit.color.to_u8()[3] == 0 || width <= 0.0 {
         return;
     }
+    let bounds = drawn.fill.bounding_box();
+    match lit.fade {
+        Some(fade) => {
+            let bottom = lit.color.with_alpha(lit.color.a * fade.clamp(0.0, 1.0) as f32);
+            ctx.set_gradient(Gradient::new_linear((bounds.x0, bounds.y0), (bounds.x0, bounds.y1)).with_stops([color(lit.color), color(bottom)]));
+        }
+        None => ctx.set_color(color(lit.color)),
+    }
+    if let Some((r, radius)) = drawn.rounded {
+        let inset = drawn.width + width / 2.0;
+        let mut line = rounded(r.inflate(-inset, -inset), (radius - inset).max(0.0));
+        line.close_path();
+        ctx.set_stroke(Stroke::new(width));
+        ctx.stroke_path(&line);
+        return;
+    }
     ctx.push_clip_layer(&drawn.fill);
     ctx.push_group();
-    ctx.set_color(color(lit.color));
     ctx.set_stroke(Stroke::new((drawn.width + width) * 2.0).with_join(Join::Round));
     ctx.stroke_path(&drawn.fill);
     if drawn.width > 0.0 {
@@ -1116,20 +1133,21 @@ fn lit_line(ctx: &mut impl Raster, drawn: &Drawn, width: f64, lit: &LitLine) {
         ctx.stroke_path(&drawn.fill);
         ctx.pop_layer();
     }
-    if let Some(fade) = lit.fade {
-        fade_down(ctx, drawn.fill.bounding_box(), fade);
-    }
     ctx.pop_layer();
     ctx.pop_layer();
 }
 
-/// Erases the open group down `bounds`: none of it at the top, all but
-/// `fade` of it at the bottom.
-fn fade_down(ctx: &mut impl Raster, bounds: Rect, fade: f64) {
+/// Erases the open group's stroke along `path`, `width` wide, down the
+/// path's bounds: none of it at the top, all but `fade` of it at the
+/// bottom. Erased along a stroke a pixel wider each side rather than over
+/// the bounds, so only the tiles the line crosses are blended.
+fn fade_down(ctx: &mut impl Raster, path: &BezPath, width: f64, fade: f64) {
+    let bounds = path.bounding_box();
     ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
     let erase = Rgba::BLACK.with_alpha((1.0 - fade.clamp(0.0, 1.0)) as f32);
     ctx.set_gradient(Gradient::new_linear((bounds.x0, bounds.y0), (bounds.x0, bounds.y1)).with_stops([color(Rgba::TRANSPARENT), color(erase)]));
-    ctx.fill_rect(&bounds);
+    ctx.set_stroke(Stroke::new(width + 2.0).with_caps(Cap::Square).with_join(Join::Bevel));
+    ctx.stroke_path(path);
     ctx.pop_layer();
 }
 
@@ -1314,6 +1332,31 @@ mod tests {
         }
         let off = draw(0.0, 4.0, 1.0, whole);
         assert!((52..57).any(|y| off(y) > 0 && off(y) < 255), "a card off the line keeps its fractional place");
+    }
+
+    /// A box's lit line, stroked straight, lands on the band the layered
+    /// cut leaves inside its border, faded or not.
+    #[test]
+    fn a_boxs_lit_line_is_the_band_inside_its_border() {
+        use super::{Drawn, Pixmap, RenderContext, Resources, lit_line, rounded};
+        use crate::scene::LitLine;
+        for fade in [None, Some(0.0)] {
+            let lit = LitLine { color: Rgba::WHITE.with_alpha(0.3), width: 1.0, fade };
+            let draw = |boxed: bool| {
+                let (r, radius) = (Rect::new(10.0, 10.0, 290.0, 190.0), 15.0);
+                let mut outer = rounded(r.inflate(-0.5, -0.5), radius - 0.5);
+                outer.close_path();
+                let drawn = Drawn { fill: rounded(r, radius), outer, near: None, width: 1.0, rounded: boxed.then_some((r, radius)) };
+                let mut ctx = RenderContext::new(300, 200);
+                lit_line(&mut ctx, &drawn, 1.0, &lit);
+                ctx.flush();
+                let mut px = Pixmap::new(300, 200);
+                ctx.render(&mut px, &mut Resources::new());
+                px.data_as_u8_slice().to_vec()
+            };
+            let worst = draw(true).iter().zip(&draw(false)).map(|(x, y)| (i32::from(*x) - i32::from(*y)).abs()).max();
+            assert!(worst.is_some_and(|w| w <= 1), "fade {fade:?}: {worst:?} levels off the layered band");
+        }
     }
 
     #[test]

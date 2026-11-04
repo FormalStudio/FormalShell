@@ -1140,9 +1140,13 @@ impl App {
             w.shown.layout(&mut self.launcher, &self.store, theme, &mut self.bar.kit, now);
             self.launcher_styles = self.bar.kit.seen.take().unwrap_or_default();
             self.launcher.dirty = false;
-        } else {
+        } else if !rastering {
             // Every turn, not only while the morph runs: its last step lands
             // after the morph has stopped running, and a no-op once there.
+            // Never under a sliced frame: a card moved every turn damages
+            // the whole card again, and a card one slice budget can't draw
+            // never lands until the morph stops. The commit that ends the
+            // frame brings the next turn.
             w.shown.place_card(theme, now);
         }
         let laid = t1.elapsed();

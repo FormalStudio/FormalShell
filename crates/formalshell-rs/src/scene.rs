@@ -311,13 +311,14 @@ pub struct Fit {
 }
 
 /// An outline built on the canvas's pixels: the fill, the faces the border
-/// strokes, the near edge where a joined card has one, and the border's
-/// width.
+/// strokes, the near edge where a joined card has one, the border's
+/// width, and a box's rect and corner radius.
 pub struct Drawn {
     pub fill: BezPath,
     pub outer: BezPath,
     pub near: Option<BezPath>,
     pub width: f64,
+    pub rounded: Option<(Rect, f64)>,
 }
 
 impl Paint {
