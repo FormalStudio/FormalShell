@@ -1228,14 +1228,25 @@ fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interact
     let ri = irect(r);
     let radius = t.box_radius(&groove, ri.h as f64);
     let fill_radius = t.box_radius(&fill, ri.h as f64);
-    let w = cx.tween(&format!("{path}.fill"), ri.w as f64 * value.clamp(0.0, 1.0), Clock::SpatialFast);
+    // A slider carries a knob, GNOME's handle: it travels the track less its
+    // own width, so it never hangs past either end, and the fill ends under
+    // its centre.
+    let knob = interactive.then(|| (t.box_style("track.knob", None), t.metric("track.knob", "size")));
+    let inset = knob.as_ref().map_or(0.0, |(_, size)| size / 2.0);
+    let travel = (ri.w as f64 - inset * 2.0).max(0.0);
+    let w = cx.tween(&format!("{path}.fill"), inset + travel * value.clamp(0.0, 1.0), Clock::SpatialFast);
     let alpha = cx.alpha;
     let mut p = cx.painter(path);
     boxes::paint(&mut p, ri, &groove, radius, alpha, 0.0);
     p.rect(IRect::new(ri.x, ri.y, w.round() as i32, ri.h), fill.fill.with_alpha(fill.fill.a * alpha), fill_radius as f32);
     if let Some(n) = notch {
         let bw = cx_border(t);
-        p.rect(IRect::new(ri.x + (ri.w as f64 * n - bw as f64 / 2.0).round() as i32, ri.y, bw, ri.h), notch_fill.with_alpha(notch_fill.a * alpha), 0.0);
+        p.rect(IRect::new(ri.x + (inset + travel * n - bw as f64 / 2.0).round() as i32, ri.y, bw, ri.h), notch_fill.with_alpha(notch_fill.a * alpha), 0.0);
+    }
+    if let Some((style, size)) = &knob {
+        let (cx0, cy) = (r.x0 + w, r.y0 + r.height() / 2.0);
+        let kr = IRect::new((cx0 - size / 2.0).round() as i32, (cy - size / 2.0).round() as i32, size.round() as i32, size.round() as i32);
+        boxes::paint(&mut p, kr, style, t.box_radius(style, *size), alpha, 0.0);
     }
     let last = p.last();
     p.finish();
@@ -1245,7 +1256,7 @@ fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interact
         // can hit.
         let s = cx.theme.space.control_height as i32;
         let hit = IRect::new(ri.x, ri.y + ri.h / 2 - s / 2, ri.w, s);
-        cx.hit(Hit { rect: hit, path: path.into(), on: el.on.clone(), tip: el.tip.clone(), stop, what: HitWhat::Track });
+        cx.hit(Hit { rect: hit, path: path.into(), on: el.on.clone(), tip: el.tip.clone(), stop, what: HitWhat::Track(inset) });
     }
 }
 

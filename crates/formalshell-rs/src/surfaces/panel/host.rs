@@ -294,7 +294,7 @@ pub struct Host {
     /// The keyboard's prime: Exclusive until this moment, then OnDemand.
     pub prime_until: Option<Instant>,
     pressed: Option<String>,
-    dragging: Option<(String, IRect)>,
+    dragging: Option<(String, IRect, f64)>,
     pub wake: Option<Instant>,
     scale: f64,
     /// The input region last set, so it is sent only on a change.
@@ -866,9 +866,9 @@ impl Host {
     /// The pointer moved, or left (`None`). True when what is under it
     /// changed.
     pub fn pointer(&mut self, at: Option<(f64, f64)>, store: &Store, runtime: Option<&Runtime>) -> bool {
-        if let (Some((path, rect)), Some((x, _))) = (self.dragging.clone(), at) {
+        if let (Some((path, rect, inset)), Some((x, _))) = (self.dragging.clone(), at) {
             if let Some(on) = self.body.hits.iter().chain(self.head.hits.iter()).find(|h| h.path == path).and_then(|h| h.on.clone()) {
-                let f = ((x - rect.x as f64) / rect.w.max(1) as f64).clamp(0.0, 1.0);
+                let f = ui::track_fraction(rect, inset, x);
                 let mut fx = Self::effect(store, runtime);
                 self.module.event(&Event { on, what: What::Fraction(f) }, &mut fx);
             }
@@ -924,9 +924,9 @@ impl Host {
         self.body.pressed = self.pressed.clone();
         self.head.pressed = self.pressed.clone();
         if let Some((_, h)) = hit
-            && h.what == ui::HitWhat::Track
+            && let ui::HitWhat::Track(inset) = h.what
         {
-            self.dragging = Some((h.path.clone(), h.rect));
+            self.dragging = Some((h.path.clone(), h.rect, inset));
             if let Some(e) = Ui::event(&h, x) {
                 let mut fx = Self::effect(store, runtime);
                 self.module.event(&e, &mut fx);
@@ -1001,7 +1001,7 @@ impl Host {
         }
         let up = dy < 0.0;
         if let Some((_, h)) = self.hit_at(x, y)
-            && h.what == ui::HitWhat::Track
+            && matches!(h.what, ui::HitWhat::Track(_))
             && let Some(on) = h.on.clone()
         {
             let mut fx = Self::effect(store, runtime);

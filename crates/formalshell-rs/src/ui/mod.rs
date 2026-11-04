@@ -87,7 +87,9 @@ pub struct Hit {
 pub enum HitWhat {
     Click,
     Switch(bool),
-    Track,
+    /// A track, its value running between this far in from either end
+    /// (a slider's knob radius).
+    Track(f64),
     Pick(usize),
     /// Hover only (a tooltip carrier, a static row).
     Hover,
@@ -354,7 +356,7 @@ impl Ui {
         let what = match hit.what {
             HitWhat::Click => What::Click,
             HitWhat::Switch(checked) => What::Toggle(!checked),
-            HitWhat::Track => What::Fraction(((x - hit.rect.x as f64) / hit.rect.w.max(1) as f64).clamp(0.0, 1.0)),
+            HitWhat::Track(inset) => What::Fraction(track_fraction(hit.rect, inset, x)),
             HitWhat::Pick(i) => What::Pick(i),
             HitWhat::Hover | HitWhat::Scroll => return None,
         };
@@ -382,6 +384,12 @@ impl Ui {
 /// Where a viewport can end on whole rows: the bottom of every child of
 /// every column in `root` laid out at `width`, top down. A cell is one row,
 /// so a grouped card is never cut through.
+/// Where `x` falls along a track's hit `rect`, 0 to 1, its ends `inset` in.
+pub fn track_fraction(rect: IRect, inset: f64, x: f64) -> f64 {
+    let travel = (rect.w as f64 - inset * 2.0).max(1.0);
+    ((x - rect.x as f64 - inset) / travel).clamp(0.0, 1.0)
+}
+
 pub fn row_ends(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> Vec<f64> {
     fn walk(node: &El, top: f64, width: f64, theme: &Theme, kit: &mut Kit, out: &mut Vec<f64>) {
         let el::Kind::Column { gap, children } = &node.kind else { return };

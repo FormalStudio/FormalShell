@@ -1003,6 +1003,15 @@
         "track.notch": {
             "fill": "background"
         },
+        "track.knob": {
+            "fill": "primary",
+            "radius": "pill",
+            "size": 16,
+            "border": {
+                "color": "border",
+                "width": 1
+            }
+        },
         "trough": {
             "fill": "black",
             "fillAlpha": {

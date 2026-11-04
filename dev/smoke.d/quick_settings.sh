@@ -25,7 +25,7 @@
 # Power button by a real Down and opened by Return at a tenth speed, its
 # frames and statuses read as the rows under it moving down and the menu's
 # rows fading in only once its height has landed, the dim up from the first
-# frame. Down to the second sink inside the stale audit and Return making
+# frame and the last toggle reading 0.6 of its luminance once it settles. Down to the second sink inside the stale audit and Return making
 # it the default (`pactl get-default-sink`); Escape closing the menu, then
 # the card. The Power button's menu on this rig's private system bus, where
 # logind answers nothing, is Log out alone: one Return arms it ("Confirm log
@@ -33,7 +33,7 @@
 # open dark and with `--light`.
 leg_quick_settings_flag="--quick-settings"
 leg_quick_settings_order=262
-leg_quick_settings_needs="jq wtype grim pactl pw-loopback pw-record"
+leg_quick_settings_needs="jq wtype grim convert pactl pw-loopback pw-record"
 
 quick_settings_dir="$shot_dir/quick-settings"
 quick_settings_settings="$iso_home/.config/formalshell/settings.json"
@@ -182,6 +182,7 @@ walk_to power walk-power.txt
 "$wtype_bin" -k Down
 sleep 0.8
 status at-arrow
+"$grim_bin" "\$d/quick-settings-at-arrow.png" > /dev/null 2>&1
 "$wtype_bin" -k Return
 for i in \$(seq 1 18); do
   status "burst-\$i"
@@ -336,6 +337,25 @@ leg_quick_settings_assert() {
   done
 }
 
+# The dim behind the open menu off the frames: the last toggle's mean
+# luminance with the menu open over the same toggle's before it opened,
+# GNOME's brightness -0.4 reading 0.6 of it.
+quick_settings_dim() {
+  local d="$quick_settings_dir" id before after ratio
+  id=$("$jq_bin" -r '[.rows[] | select(.kind == "toggle" or .kind == "split")][-1].id' "$d/status-at-arrow.json")
+  luma() {
+    local box
+    box=$(scaled_jq -r --arg id "$id" "$geometry_jq"'.rows[] | select(.id == $id) | .rect | geometry' "$d/$2")
+    "$convert_bin" "$d/$1" -crop "$box" +repage -colorspace Gray -format '%[fx:mean]' info: 2>/dev/null
+  }
+  before=$(luma quick-settings-at-arrow.png status-at-arrow.json)
+  after=$(luma quick-settings-menu-open.png status-shot-menu-open.json)
+  ratio=$(awk -v a="$before" -v b="$after" 'BEGIN { if (a > 0) printf "%.3f", b / a }')
+  awk -v r="$ratio" 'BEGIN { exit !(r != "" && r >= 0.5 && r <= 0.7) }' \
+    || fail "quick-settings: $id under the open menu reads $after against $before before it opened ($ratio), not dimmed to 0.6"
+  echo "SMOKE_QUICK_SETTINGS the dim: $id reads $ratio of its luminance under the open menu"
+}
+
 # The jq over one burst status: the menu's height and content shares.
 quick_settings_burst() {
   "$jq_bin" -r '[(.menu.height // 0), (.menu.content // 0), ([.rows[] | select(.kind == "toggle" or .kind == "split")][0].rect.y), .dim, .cursor] | @tsv' "$quick_settings_dir/status-burst-$1.json" 2>/dev/null
@@ -398,6 +418,7 @@ quick_settings_menu_assert() {
   awk -v a="$rest" -v b="$open" -v h="$menu_h" 'BEGIN { d = b - a - h - 12; exit !(d >= -1 && d <= 1) }' \
     || fail "quick-settings: the toggles moved $rest -> $open under a menu $menu_h tall, not by its height and a gap"
   echo "SMOKE_QUICK_SETTINGS the rows after the menu moved down by its height and a gap: $rest -> $open, menu $menu_h"
+  quick_settings_dim
   quick_settings_jq "Down walked inside the menu to the second sink" status-menu-at-two.json '.cursor == "m:volume:qs_two"'
   stale_audit_assert quick-settings-menu
   quick_settings_text "Return made the second sink the default" default-sink-after.txt qs_two

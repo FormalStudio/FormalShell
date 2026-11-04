@@ -135,11 +135,12 @@ buttons and segment squares `md` (9, Pond's 8 and 10), the card `xl`
   knob is white; the fill tweens with the knob's travel. No slots, no
   mark on the knob. Disabled draws the whole switch at the kit's dim.
   One per header at most; in a row it sits trailing.
-- Slider: a `panelRowCompact` control, the track 12 tall at `md`
-  radius in `muted`, the fill in `primary`, a knob 24 round in
-  `primary` with a `border` ring. The value sits trailing in `mono`, not
-  in a bubble. A muted channel draws the track outlined and the fill 2
-  tall.
+- Slider: a `panelRowCompact` control, the track `trackThickness` tall
+  and pill round in `track.groove`, the fill in `primary`, and GNOME's
+  round handle as `track.knob`: 16 across in `primary` with a 1px
+  `border` ring, travelling the track less its own width so the fill
+  ends under its centre. A meter (`w::track`) is the same track with no
+  knob. The value sits trailing in `mono`, not in a bubble.
 - Segmented choice: N equal squares in one row, `panelRow` tall, `md`
   radius, `panelGap` apart, a 20 glyph centred and the name under it
   only when every option has room. Rest `muted`, hover `accent`, the
