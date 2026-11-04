@@ -416,7 +416,7 @@ paths = ["crates/formalshell-rs/src/services/overnight.rs", "crates/formalshell-
 runs = ["--overnight", "--brightness"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/ui/draw/flow.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/ui/draw/flow.rs", "crates/formalshell-rs/src/surfaces/panel/quick/**"]
 runs = ["--gallery"]
 
 [[rule]]

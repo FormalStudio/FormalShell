@@ -10,7 +10,7 @@ use fs_theme::style::{BoxStyle, Line};
 use fs_theme::tokens::WEIGHTS;
 use vello_cpu::kurbo::{Affine, Arc, BezPath, Circle, Rect, Shape};
 
-use super::el::{CellState, Font, Kind, Ring, Size, Type, Variant, Weight};
+use super::el::{CellState, Font, Half, Kind, Ring, Size, Type, Variant, Weight};
 use super::{Cx, El, Hit, HitWhat, Ink, Stop, boxes, irect};
 use crate::motion::{Kind as Clock, PULSE_MS};
 use crate::scene::{IRect, Paint, Scene};
@@ -909,6 +909,7 @@ fn centred(p: &mut crate::surfaces::bar::cell::Painter, image: &crate::scene::Bi
 
 fn stop_radius(cx: &Cx, el: &El, h: f64) -> f64 {
     match &el.kind {
+        Kind::Cell { state, .. } if state.quick || state.arrow => cx.theme.box_radius(&cx.theme.box_style("quick.toggle", None), h),
         Kind::Cell { .. } => cx.theme.box_radius(&cx.theme.box_style("cell", None), h),
         Kind::Track { .. } => cx.theme.box_radius(&cx.theme.box_style("track.groove", None), h),
         Kind::Group { .. } | Kind::Segmented { .. } => cx.theme.box_radius(&cx.theme.box_style("trough", None), h),
@@ -942,9 +943,19 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else {
         "rest"
     };
-    let hovered = state.hovered || (interactive && cx.hover(path));
+    let hovered = !state.disabled && (state.hovered || (interactive && cx.hover(path)));
+    let quick = state.quick || state.arrow;
+    let quick_state = if state.disabled {
+        "disabled"
+    } else if state.open {
+        "on"
+    } else {
+        "rest"
+    };
     let mut b = if state.hero {
         t.box_style("hero", None)
+    } else if quick {
+        t.box_style("quick.toggle", Some(quick_state))
     } else if state.group && state.open {
         BoxStyle { radius: t.box_style("panel.group", None).radius, ..t.box_style("panel.chip", Some("on")) }
     } else if state.group {
@@ -968,7 +979,18 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
         b
     };
     let washing = hovered && !state.active && !state.selected;
-    b.wash = t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash;
+    b.wash = if quick {
+        // A filled box takes the table's filled wash, as a default button does.
+        let pressed = cx.pressed(path);
+        Some(match (state.open && !state.disabled, pressed) {
+            (true, false) => t.wash("filledHover"),
+            (true, true) => t.wash("filledPress"),
+            (false, false) => t.hover_fill(),
+            (false, true) => t.press_fill(),
+        })
+    } else {
+        t.box_style(if state.row { "launcher.row" } else { "cell" }, Some("hover")).wash
+    };
     let (_, ring) = cx.cursor(stop.as_deref());
     let ring = (ring || state.cursor) && !owned && !state.row;
     let b = t.with_cursor(b, ring, !cx.halo_owned() || state.cursor);
@@ -979,7 +1001,7 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let b = BoxStyle { fill, border, ..b };
     let wash_clock = if state.row { Clock::EffectsFast } else { Clock::Effects };
     let wash = cx.tween(&format!("{path}.wash"), if washing { 1.0 } else { 0.0 }, wash_clock) as f32;
-    let fg = if state.token {
+    let fg = if state.token || quick {
         b.ink
     } else if state.row && !state.destructive {
         t.colors.get("foreground")
@@ -994,9 +1016,13 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     } else {
         t.colors.get("foreground")
     };
-    let dim = if (state.active || state.selected) && !state.row { fg } else { t.colors.get("mutedForeground") };
+    let dim = if quick || ((state.active || state.selected) && !state.row) { fg } else { t.colors.get("mutedForeground") };
     let fg = cx.color(&format!("{path}.fg"), fg);
     let dim = cx.color(&format!("{path}.dim"), dim);
+    let segment = state.arrow.then(|| {
+        let a = t.box_style("quick.arrow", Some(if state.open && !state.disabled { "on" } else { "rest" }));
+        BoxStyle { fill: cx.color(&format!("{path}.arrow"), a.fill), ..a }
+    });
     let alpha = cx.alpha;
     let base = b.border.as_ref().map_or(Rgba::TRANSPARENT, |l| l.color);
     let mut rim = if state.card { cx.take_rim(path, ri, base) } else { None };
@@ -1005,7 +1031,16 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     }
     let now = cx.now;
     let mut p = cx.painter(path);
-    boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));
+    if state.half == Half::Whole && segment.is_none() {
+        boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));
+    } else {
+        let (start, end) = match state.half {
+            Half::Whole => (radius, radius),
+            Half::Start => (radius, 0.0),
+            Half::End => (0.0, radius),
+        };
+        boxes::paint_ends(&mut p, ri, &b, segment.as_ref(), (start, end), alpha, wash);
+    }
     let last = p.last();
     p.finish();
     if let Some(rim) = rim {

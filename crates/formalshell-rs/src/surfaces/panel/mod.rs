@@ -35,6 +35,7 @@ pub mod monitor;
 pub mod network;
 pub mod plugin;
 pub mod power;
+pub mod quick;
 pub mod settings;
 pub mod settings_page;
 pub mod standin;

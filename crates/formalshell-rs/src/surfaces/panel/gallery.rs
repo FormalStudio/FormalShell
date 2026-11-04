@@ -234,7 +234,8 @@ impl Panel for Gallery {
         )
         .fill();
 
-        let top = w::row(s.section_gap, vec![controls, cell_column, type_column, samples, token_column]).fill().top();
+        let quick = w::column(s.row_gap, vec![w::panel_heading(s, "Quick settings / sample, not live"), quick_sample(s)]).width(Size::Px(s.panel_width_wide));
+        let top = w::row(s.section_gap, vec![controls, cell_column, quick, samples, token_column]).fill().top();
 
         let mut steps = Vec::new();
         for (name, px) in [("xxs", s.xxs), ("xs", s.xs), ("sm", s.sm), ("md", s.md), ("lg", s.lg), ("xl", s.xl), ("xxl", s.xxl), ("huge", s.huge)] {
@@ -274,7 +275,7 @@ impl Panel for Gallery {
             ],
         )
         .fill();
-        let bottom = w::row(s.section_gap, vec![spacing, marquee, surfaces]).fill().top();
+        let bottom = w::row(s.section_gap, vec![spacing, marquee, surfaces, type_column]).fill().top();
         w::column(s.section_gap, vec![top, bottom])
     }
 
@@ -287,6 +288,55 @@ impl Panel for Gallery {
             _ => {}
         }
     }
+}
+
+/// Quick settings' pieces off, on, disabled and split, placed by the card's
+/// own grid with a menu open under the first row.
+fn quick_sample(s: &fs_theme::tokens::Space) -> El {
+    use super::quick::grid::{self, Item, Menu};
+    let tile = Item { span: 1, height: s.quick_toggle };
+    let tiles = vec![
+        (tile, w::quick_split(s, "q:wifi", "wifi", "Wi-Fi", Some("HomeNet-5G"), true, true)),
+        (tile, w::quick_split(s, "q:bluetooth", "bluetooth-off", "Bluetooth", None, false, true)),
+        (tile, w::quick_toggle(s, "q:dark", "moon", "Dark style", None, true, true)),
+        (tile, w::quick_toggle(s, "q:dnd", "bell-off", "Do not disturb", None, false, true)),
+        (tile, w::quick_split(s, "q:power", "gauge", "Power mode", Some("power-profiles-daemon is not running"), false, false)),
+        (tile, w::quick_toggle(s, "q:night", "lightbulb", "Night light", Some("No gamma control"), false, false)),
+        (tile, w::quick_info(s, "q:weather", "cloud-sun", "Weather", Some("14°"))),
+        (tile, w::quick_info(s, "q:github", "git-branch", "GitHub", Some("12 / 15"))),
+        (Item { span: grid::COLUMNS, height: s.quick_slider }, w::quick_slider(s, "q:volume", "volume-2", 0.6, true)),
+    ];
+    let menu = w::quick_menu(
+        s,
+        "wifi",
+        "Wi-Fi",
+        Some("HomeNet-5G"),
+        true,
+        vec![
+            w::panel_row_checked(s, "wifi", "HomeNet-5G", None, Vec::new(), true),
+            w::panel_row(s, "wifi", "Office Wifi", None, vec![w::icon("lock").ink(Ink::Muted)]),
+        ],
+        ("All networks", "q:network"),
+    );
+    let items: Vec<Item> = tiles.iter().map(|(i, _)| *i).collect();
+    // Only where the menu goes is read here: the tree measures its height.
+    let placed = grid::place(&items, s.panel_width_wide - s.quick_inset * 2.0, s.quick_gap, Some(Menu { under: 0, height: 1.0 }));
+    let mut rows: Vec<Vec<El>> = Vec::new();
+    for ((_, el), (&row, rect)) in tiles.into_iter().zip(placed.rows.iter().zip(&placed.rects)) {
+        if rows.len() <= row {
+            rows.push(Vec::new());
+        }
+        rows[row].push(el.width(Size::Px(rect.width())));
+    }
+    let mut out: Vec<El> = rows.into_iter().map(|r| w::row(s.quick_gap, r).fill()).collect();
+    if placed.menu.is_some() {
+        out.insert(1, menu);
+    }
+    let buttons = ["camera", "settings", "lock", "power"].map(|g| w::quick_button(s, &format!("q:{g}"), g, g));
+    let mut system = vec![w::spacer()];
+    system.extend(buttons);
+    out.insert(0, w::row(s.quick_gap, system).fill());
+    w::column(s.quick_gap, out).fill().pad(s.quick_inset, s.quick_inset, s.quick_inset, s.quick_inset)
 }
 
 /// Five networks with one connected, for the Wi-Fi rows' populated look

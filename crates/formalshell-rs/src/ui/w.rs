@@ -7,7 +7,7 @@ use fs_menu::field::{Buffer, Field};
 use fs_theme::color::Rgba;
 use fs_theme::tokens::Space;
 
-use super::el::{CellState, El, Flow, Font, Ink, Kind, Opt, Pic, Series, Type, Variant, Weight};
+use super::el::{CellState, El, Flow, Font, Half, Ink, Kind, Opt, Pic, Series, Type, Variant, Weight};
 
 pub fn column(gap: f64, children: Vec<El>) -> El {
     El::new(Kind::Column { gap, children })
@@ -670,4 +670,122 @@ pub fn menu_item(s: &Space, glyph: &str, text: impl Into<String>, current: bool,
 pub fn panel_footer(s: &Space, glyph: &str, text: &str) -> El {
     let parts = vec![icon(glyph).size(Type::Heading).ink(Ink::Muted), text_el(text, Type::Body, Weight::Medium, false, Ink::Muted).elide().fill()];
     panel_cell(s, row(s.panel_gap, parts).fill()).height(s.panel_row)
+}
+
+// Quick settings' pieces (specs/2026-11-04-quick-settings.md §2-§4), each
+// in the `quick.toggle` box. `id` is a piece's click and its cursor stop; an
+// unavailable piece takes neither and dims the way a disabled button does.
+
+/// A toggle's words: the title over an optional subtitle in the same ink,
+/// each one line.
+fn quick_words(title: &str, subtitle: Option<&str>) -> El {
+    let mut words = vec![text_el(title, Type::Body, Weight::Semibold, false, Ink::Fg).elide()];
+    words.extend(subtitle.filter(|t| !t.is_empty()).map(|t| text_el(t, Type::Caption, Weight::Normal, false, Ink::Fg).elide()));
+    column(0.0, words).fill()
+}
+
+/// A toggle's line: its glyph a mark's width in from the start, the words
+/// after it, clear of the end by `lg`.
+fn quick_line(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>) -> El {
+    row(s.panel_gap, vec![icon(glyph).size(Type::Title), quick_words(title, subtitle)]).fill().pad(s.panel_mark, 0.0, s.lg, 0.0)
+}
+
+fn quick_cell(c: El, id: &str, on: bool, available: bool) -> El {
+    let c = c.cell_state(|c| {
+        c.quick = true;
+        c.open = on;
+        c.disabled = !available;
+        c.inset = Some((0.0, 0.0));
+    });
+    if available { c.interactive().on(id).stop(id) } else { c.key(id) }
+}
+
+fn quick_disc(glyph: &str, size: Type, side: f64, on: bool) -> El {
+    cell(row(0.0, vec![spacer(), icon(glyph).size(size), spacer()]).fill().height(side))
+        .cell_state(|c| {
+            c.quick = true;
+            c.round = true;
+            c.open = on;
+            c.inset = Some((0.0, 0.0));
+        })
+        .width(super::Size::Px(side))
+        .height(side)
+}
+
+/// A plain toggle, `quickToggle` tall, as wide as its grid column.
+pub fn quick_toggle(s: &Space, id: &str, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
+    let t = quick_cell(cell(quick_line(s, glyph, title, subtitle)), id, on, available).height(s.quick_toggle);
+    if available { t } else { t.fade(0.5) }
+}
+
+/// A toggle with a menu: the toggle part (`id`) and the arrow
+/// (`<id>:menu`) side by side in one pill, a separator between them.
+pub fn quick_split(s: &Space, id: &str, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
+    let part = quick_cell(cell(quick_line(s, glyph, title, subtitle)), id, on, available).cell_state(|c| c.half = Half::Start);
+    let arrow = quick_cell(cell(row(0.0, vec![spacer(), icon("chevron-right"), spacer()]).fill()), &format!("{id}:menu"), on, available)
+        .cell_state(|c| {
+            c.quick = false;
+            c.arrow = true;
+            c.half = Half::End;
+        })
+        .width(super::Size::Px(s.quick_arrow))
+        .height(s.quick_toggle);
+    let pill = row(0.0, vec![part.height(s.quick_toggle), arrow]).fill().height(s.quick_toggle);
+    if available { pill } else { pill.fade(0.5) }
+}
+
+/// An extra's tile (§7): a toggle that is never on, the cell's value as
+/// its subtitle, a click handing over to the cell's panel.
+pub fn quick_info(s: &Space, id: &str, glyph: &str, title: &str, value: Option<&str>) -> El {
+    quick_toggle(s, id, glyph, title, value, false, true)
+}
+
+/// The system row's round button, `quickButton` across.
+pub fn quick_button(s: &Space, id: &str, glyph: &str, tip: &str) -> El {
+    quick_disc(glyph, Type::Title, s.quick_button, false).interactive().on(id).stop(id).tip(tip)
+}
+
+/// A flat round button beside a slider, washed only under the pointer.
+fn quick_flat(s: &Space, id: &str, glyph: &str) -> El {
+    cell(row(0.0, vec![spacer(), icon(glyph).size(Type::Title), spacer()]).fill().height(s.quick_button))
+        .ghost()
+        .interactive()
+        .cell_state(|c| {
+            c.round = true;
+            c.inset = Some((0.0, 0.0));
+        })
+        .width(super::Size::Px(s.quick_button))
+        .height(s.quick_button)
+        .on(id)
+        .stop(id)
+}
+
+/// A slider row, `quickSlider` tall: its glyph a button (`<id>:icon`, a
+/// mute), the kit's slider (`id`), and with `menu` the arrow
+/// (`<id>:menu`) opening its devices.
+pub fn quick_slider(s: &Space, id: &str, glyph: &str, value: f64, menu: bool) -> El {
+    let mut parts = vec![quick_flat(s, &format!("{id}:icon"), glyph), slider(value).fill().on(id).stop(id)];
+    if menu {
+        parts.push(quick_flat(s, &format!("{id}:menu"), "chevron-right"));
+    }
+    row(s.sm, parts).fill().height(s.quick_slider)
+}
+
+/// An open menu (§4): a `panel.group` box holding a header (the toggle's
+/// glyph in a round chip, `on` while the toggle is, its title and
+/// subtitle), the menu's rows, a hairline, and the settings row (`label`
+/// firing `id`) last.
+pub fn quick_menu(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, rows: Vec<El>, settings: (&str, &str)) -> El {
+    let mut words = vec![text_el(title, Type::Title, Weight::Semibold, false, Ink::Fg).elide()];
+    words.extend(subtitle.filter(|t| !t.is_empty()).map(|t| text_el(t, Type::Caption, Weight::Semibold, false, Ink::Muted).elide()));
+    let header = row(s.lg, vec![quick_disc(glyph, Type::Display, s.panel_row_compact, on), column(s.xxs, words).fill()]).fill();
+    let (label, id) = settings;
+    let mut parts = vec![header, space(s.quick_gap)];
+    parts.extend(rows);
+    parts.push(separator());
+    parts.push(panel_row(s, "", label, None, Vec::new()).on(id).stop(id));
+    cell(column(0.0, parts).fill()).cell_state(|c| {
+        c.group = true;
+        c.inset = Some((s.lg, s.lg));
+    })
 }

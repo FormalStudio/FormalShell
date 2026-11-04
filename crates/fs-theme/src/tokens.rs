@@ -97,7 +97,7 @@ pub const SPACING_BASE: [(&str, f64); 8] = [
     ("huge", 36.0),
 ];
 
-pub const SEMANTIC_SPACING_BASE: [(&str, f64); 40] = [
+pub const SEMANTIC_SPACING_BASE: [(&str, f64); 47] = [
     ("controlGap", 6.0),
     ("controlPaddingX", 10.0),
     ("controlPaddingY", 5.0),
@@ -141,6 +141,15 @@ pub const SEMANTIC_SPACING_BASE: [(&str, f64); 40] = [
     ("panelWidthWide", 400.0),
     // The wallpaper picker's narrowest 16:9 tile; columns are as many as fit.
     ("pickerTile", 180.0),
+    // Quick settings (specs/2026-11-04-quick-settings.md §2), GNOME 51's
+    // numbers on the same grid.
+    ("quickInset", 16.0),
+    ("quickGap", 12.0),
+    ("quickToggle", 48.0),
+    ("quickArrow", 36.0),
+    ("quickButton", 36.0),
+    ("quickSlider", 40.0),
+    ("quickBackground", 40.0),
 ];
 
 /// `spacingTokens(scale)`: every scale step and semantic spacing token,
@@ -195,6 +204,13 @@ pub struct Space {
     pub panel_width: f64,
     pub panel_width_wide: f64,
     pub picker_tile: f64,
+    pub quick_inset: f64,
+    pub quick_gap: f64,
+    pub quick_toggle: f64,
+    pub quick_arrow: f64,
+    pub quick_button: f64,
+    pub quick_slider: f64,
+    pub quick_background: f64,
 }
 
 impl Space {
@@ -250,6 +266,13 @@ impl Space {
             "panelWidth" => self.panel_width,
             "panelWidthWide" => self.panel_width_wide,
             "pickerTile" => self.picker_tile,
+            "quickInset" => self.quick_inset,
+            "quickGap" => self.quick_gap,
+            "quickToggle" => self.quick_toggle,
+            "quickArrow" => self.quick_arrow,
+            "quickButton" => self.quick_button,
+            "quickSlider" => self.quick_slider,
+            "quickBackground" => self.quick_background,
             _ => return None,
         })
     }
@@ -313,6 +336,13 @@ pub fn spacing_tokens(scale: f64) -> Space {
         panel_width: s("panelWidth"),
         panel_width_wide: s("panelWidthWide"),
         picker_tile: s("pickerTile"),
+        quick_inset: s("quickInset"),
+        quick_gap: s("quickGap"),
+        quick_toggle: s("quickToggle"),
+        quick_arrow: s("quickArrow"),
+        quick_button: s("quickButton"),
+        quick_slider: s("quickSlider"),
+        quick_background: s("quickBackground"),
     }
 }
 

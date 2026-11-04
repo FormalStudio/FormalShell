@@ -453,6 +453,11 @@ impl Theme {
         style::wash(self.style, "press", &self.ctx())
     }
 
+    /// One of the table's washes by its key, as a colour laid over a box.
+    pub fn wash(&self, key: &str) -> Rgba {
+        style::wash(self.style, key, &self.ctx())
+    }
+
     pub fn hover_filled(&self, c: Rgba) -> Rgba {
         c.tint(style::wash(self.style, "filledHover", &self.ctx()))
     }
