@@ -331,6 +331,10 @@
 {"argv":["call","calendar","select"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function select(date: string): string\n","stderr":"","exit":0}
 {"argv":["call","calendar","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","calendar","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
+{"argv":["call","quicksettings","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
+{"argv":["call","quicksettings","activate","dnd"],"live":true,"stdout":"activate dnd\n","stderr":"","exit":0}
+{"argv":["call","quicksettings","activate"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function activate(id: string): string\n","stderr":"","exit":0}
+{"argv":["call","quicksettings","status","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function status(): string\n","stderr":"","exit":0}
 {"argv":["show","calendar"],"live":true,"stdout":"","stderr":"The following argument was not expected: calendar\nRun with --help for more information.\n","exit":109}
 {"argv":["call","iphone","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
 {"argv":["call","iphone","pair"],"live":true,"stdout":"ok\n","stderr":"","exit":0}

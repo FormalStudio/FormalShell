@@ -1263,7 +1263,7 @@ impl App {
         let mut surface = Surface::new("panel", layer, &self.shm, self.started);
         surface.wait_map = true;
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
-        host.module.start(&mut panel::Effect::new(&self.store, self.runtime.as_ref()));
+        host.start(&self.store, self.runtime.as_ref());
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
                 host.take_over(old.card.live(), now);
@@ -2414,7 +2414,34 @@ impl App {
             Out::Menu(key, anchor) => {
                 let _ = self.open_tray_menu(&key, anchor, Some(Owner::Panel));
             }
+            Out::Ipc(calls, close) => {
+                if close {
+                    self.close_panels();
+                }
+                self.run_ipc(&calls);
+            }
         }
+    }
+
+    /// IPC calls a panel asked for, run on the shell itself in order.
+    pub(crate) fn run_ipc(&mut self, calls: &[Vec<String>]) {
+        for argv in calls {
+            if let [target, function, args @ ..] = argv.as_slice() {
+                let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                self.call_self(target, function, &args);
+            }
+        }
+        self.panel_dirty = true;
+    }
+
+    /// Enter on `stop` in the open panel `name`, as the keyboard would;
+    /// `false` when that panel is not up.
+    pub fn panel_activate(&mut self, name: &str, stop: &str) -> bool {
+        let Some(h) = self.panel.as_mut().filter(|p| p.is_open() && p.id() == name) else { return false };
+        let out = h.activate(stop, &self.store, self.runtime.as_ref());
+        self.panel_dirty = true;
+        self.panel_out(out);
+        true
     }
 
     fn popout_of(&mut self, owner: Owner) -> Option<&mut Popout> {

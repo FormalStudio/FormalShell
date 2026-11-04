@@ -44,6 +44,7 @@ mod panel;
 mod picker;
 mod plugins;
 mod power;
+mod quicksettings;
 mod radio;
 mod record;
 mod screensaver;
@@ -126,6 +127,7 @@ fn registry() ->&'static Registry<App> {
             localsend::target(),
             mirror::target(),
             settings::target(),
+            quicksettings::target(),
         ],
     })
 }

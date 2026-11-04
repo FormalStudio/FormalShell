@@ -745,6 +745,13 @@ pub fn quick_button(s: &Space, id: &str, glyph: &str, tip: &str) -> El {
     quick_disc(glyph, Type::Title, s.quick_button, false).interactive().on(id).stop(id).tip(tip)
 }
 
+/// The system row's pill (the battery), as wide as its glyph and its value
+/// in `mono`, `quickButton` tall.
+pub fn quick_pill(s: &Space, id: &str, glyph: &str, value: &str) -> El {
+    let line = row(s.sm, vec![icon(glyph).size(Type::Title), text_el(value, Type::Body, Weight::Semibold, true, Ink::Fg)]).pad(s.lg, 0.0, s.lg, 0.0).height(s.quick_button);
+    quick_cell(cell(line), id, false, true).height(s.quick_button)
+}
+
 /// A flat round button beside a slider, washed only under the pointer.
 fn quick_flat(s: &Space, id: &str, glyph: &str) -> El {
     cell(row(0.0, vec![spacer(), icon(glyph).size(Type::Title), spacer()]).fill().height(s.quick_button))

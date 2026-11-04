@@ -292,6 +292,13 @@ fn stub() -> Registry<()> {
                 ],
             },
             Target {
+                name: "quicksettings",
+                functions: vec![
+                    f("status", &[], Type::String, |_, _| s("{}")),
+                    f("activate", &[("id", Type::String)], Type::String, |_, a| s(format!("activate {}", a[0].str()))),
+                ],
+            },
+            Target {
                 name: "calendar",
                 functions: vec![
                     f("select", &[("date", Type::String)], Type::String, |_, a| s(format!("select {}", a[0].str()))),
@@ -669,6 +676,7 @@ fn signatures_match_golden() {
         super::picker::target(),
         super::localsend::target(),
         super::mirror::target(),
+        super::quicksettings::target(),
     ] {
         let defs: Vec<String> = real.functions.iter().map(|f| f.definition()).collect();
         let golden = stub.targets.iter().find(|t| t.name == real.name).expect("a stub target");

@@ -151,7 +151,11 @@ impl Cursor {
         if stops.is_empty() {
             return false;
         }
-        let next = step(self.index, stops.len(), self.active, dx, dy, module.columns());
+        let next = if module.spatial() && self.active && self.index < stops.len() {
+            nearest(stops, self.index, dx, dy)
+        } else {
+            step(self.index, stops.len(), self.active, dx, dy, module.columns())
+        };
         self.travels = self.active && next != self.index;
         self.index = next;
         self.key = Some(stops[next].key.clone());
@@ -239,12 +243,18 @@ pub enum Out {
     /// A tray item's menu off this card, centred on `anchor` along the line
     /// (the item's own button) or at the line's end.
     Menu(String, Option<f64>),
+    /// Run these IPC calls on the shell itself, closing the card first
+    /// when the flag is set.
+    Ipc(Vec<Vec<String>>, bool),
 }
 
 impl Effect<'_> {
     pub fn out(&mut self) -> Out {
         if let Some(id) = self.menu.take() {
             return Out::Menu(id, None);
+        }
+        if !self.ipc.is_empty() {
+            return Out::Ipc(std::mem::take(&mut self.ipc), self.close);
         }
         match (self.summon, self.panel, self.call, self.close) {
             (Some(route), ..) => Out::Summon(route),
@@ -737,6 +747,31 @@ impl Host {
         }
     }
 
+    /// `Panel::start` with the store in reach, then the cursor's start
+    /// asked again, since a panel may only know it once it has read the
+    /// store.
+    pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) {
+        self.module.start(&mut Self::effect(store, runtime));
+        if let Some(key) = self.module.cursor_start() {
+            self.cursor.key = Some(key);
+        }
+    }
+
+    /// Enter on `stop` as though the cursor sat there, for an IPC verb.
+    pub fn activate(&mut self, stop: &str, store: &Store, runtime: Option<&Runtime>) -> Out {
+        if !self.open {
+            return Out::None;
+        }
+        let mut fx = Self::effect(store, runtime);
+        self.module.activate(stop, &mut fx);
+        fx.out()
+    }
+
+    /// Every quick settings piece's box by its key, as last drawn.
+    pub fn quick_boxes(&self) -> &[(String, IRect)] {
+        &self.body.quick
+    }
+
     /// The clipboard's text into the field holding the keyboard.
     pub fn paste(&mut self, text: String, store: &Store, runtime: Option<&Runtime>) -> Out {
         if !self.open || !self.module.editing() {
@@ -979,9 +1014,38 @@ pub fn step(index: usize, count: usize, active: bool, dx: i32, dy: i32, columns:
     }
 }
 
+/// The stop an arrow from `from` lands on by the boxes on screen: Up and
+/// Down the closest row past this one, Left and Right the closest stop
+/// along this row, each the one nearest across; none there stays put.
+pub fn nearest(stops: &[ui::Stop], from: usize, dx: i32, dy: i32) -> usize {
+    let a = stops[from].rect;
+    let centre = |r: IRect| (r.x as f64 + r.w as f64 / 2.0, r.y as f64 + r.h as f64 / 2.0);
+    let (ax, ay) = centre(a);
+    let mut best: Option<(i32, f64, usize)> = None;
+    for (i, st) in stops.iter().enumerate() {
+        let r = st.rect;
+        let (rx, ry) = centre(r);
+        let (along, across) = if dy != 0 {
+            (if dy > 0 { r.y - a.bottom() } else { a.y - r.bottom() }, (rx - ax).abs())
+        } else {
+            if r.y >= a.bottom() || r.bottom() <= a.y {
+                continue;
+            }
+            (if dx > 0 { r.x - a.right() } else { a.x - r.right() }, (ry - ay).abs())
+        };
+        if i == from || along < 0 {
+            continue;
+        }
+        if best.is_none_or(|(d, c, _)| along < d || (along == d && across < c)) {
+            best = Some((along, across, i));
+        }
+    }
+    best.map_or(from, |(.., i)| i)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Edge, Ends, Place, step};
+    use super::{Edge, Ends, Place, nearest, step};
     use fs_info::notifications::position_spec;
 
     fn place(edge: Edge) -> Place {
@@ -1009,6 +1073,32 @@ mod tests {
         assert_eq!(step(2, 3, true, 0, 1, 1), 2);
         assert_eq!(step(0, 1, true, 0, 1, 1), 0);
         assert_eq!(step(5, 3, false, 0, 1, 1), 2);
+    }
+
+    #[test]
+    fn spatial_arrows_land_on_the_nearest_box_in_their_direction() {
+        use crate::scene::IRect;
+        let stop = |x, y, w, h| crate::ui::Stop { key: String::new(), rect: IRect::new(x, y, w, h), radius: 0.0 };
+        // Two buttons at the right end of a short row, then a grid of two
+        // 178 wide tiles, the second row's first tile split by its arrow.
+        let stops = [
+            stop(284, 0, 36, 36),
+            stop(332, 0, 36, 36),
+            stop(0, 48, 178, 48),
+            stop(190, 48, 178, 48),
+            stop(0, 108, 142, 48),
+            stop(142, 108, 36, 48),
+            stop(190, 108, 178, 48),
+        ];
+        assert_eq!(nearest(&stops, 1, 0, 1), 3);
+        assert_eq!(nearest(&stops, 3, 0, -1), 0);
+        assert_eq!(nearest(&stops, 2, 0, -1), 0);
+        assert_eq!(nearest(&stops, 4, 1, 0), 5);
+        assert_eq!(nearest(&stops, 5, 1, 0), 6);
+        assert_eq!(nearest(&stops, 6, -1, 0), 5);
+        assert_eq!(nearest(&stops, 5, 0, -1), 2);
+        assert_eq!(nearest(&stops, 6, 0, 1), 6);
+        assert_eq!(nearest(&stops, 0, -1, 0), 0);
     }
 
     #[test]

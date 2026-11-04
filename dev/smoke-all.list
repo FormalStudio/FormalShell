@@ -168,6 +168,8 @@
 --panel power
 --settings-ui
 --settings-ui --light
+--quick-settings
+--quick-settings --light
 --panel calendar
 --panel weather
 --panel activity

@@ -416,8 +416,12 @@ paths = ["crates/formalshell-rs/src/services/overnight.rs", "crates/formalshell-
 runs = ["--overnight", "--brightness"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/ui/draw/flow.rs", "crates/formalshell-rs/src/surfaces/panel/quick/**"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/ui/draw/flow.rs", "crates/formalshell-rs/src/surfaces/panel/quick/grid.rs"]
 runs = ["--gallery"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshell-rs/src/ipc/quicksettings.rs"]
+runs = ["--quick-settings", "--quick-settings --light"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]

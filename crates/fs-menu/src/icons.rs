@@ -114,6 +114,7 @@ pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("panels.monitor", "gauge"),
     ("panels.iphone", "smartphone"),
     ("panels.radio", "radio"),
+    ("panels.quicksettings", "sliders-horizontal"),
 ];
 
 static ROUTE_ICON_INDEX: LazyLock<HashMap<&'static str, &'static str>> =

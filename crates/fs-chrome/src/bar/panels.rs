@@ -15,7 +15,7 @@
 use super::layout::{Builtin, EntryKind, Resolved};
 
 /// The panels `panel` can open, each one's module in the shell.
-pub const PANELS: [&str; 26] = [
+pub const PANELS: [&str; 27] = [
     "activity",
     "appmenu",
     "audio",
@@ -42,6 +42,7 @@ pub const PANELS: [&str; 26] = [
     "settings:bar",
     "settings:desktop",
     "settings:system",
+    "quicksettings",
 ];
 
 /// The tray's second bar, which the launcher reaches through its "tray"

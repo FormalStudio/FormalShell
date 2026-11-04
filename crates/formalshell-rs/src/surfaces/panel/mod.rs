@@ -95,11 +95,19 @@ pub struct Effect<'a> {
     pub call: Option<(&'static str, &'static str)>,
     /// A tray item whose menu opens off this card, by id.
     pub menu: Option<String>,
+    /// IPC calls (target, function, arguments) the shell runs on itself
+    /// through `ipc::dispatch`, the card left open unless `close` is set.
+    pub ipc: Vec<Vec<String>>,
 }
 
 impl<'a> Effect<'a> {
     pub fn new(store: &'a Store, runtime: Option<&'a Runtime>) -> Self {
-        Self { store, runtime, close: false, summon: None, panel: None, call: None, menu: None }
+        Self { store, runtime, close: false, summon: None, panel: None, call: None, menu: None, ipc: Vec::new() }
+    }
+
+    /// Queues one IPC call, `argv` as `formalshell-ipc call` takes it.
+    pub fn ipc(&mut self, argv: &[&str]) {
+        self.ipc.push(argv.iter().map(|a| (*a).to_owned()).collect());
     }
 
     /// Runs `f` on the service thread.
@@ -213,6 +221,11 @@ pub trait Panel {
     fn columns(&self) -> usize {
         1
     }
+    /// Arrows walk to the nearest stop on screen in their direction rather
+    /// than by reading order: a grid whose rows hold different counts.
+    fn spatial(&self) -> bool {
+        false
+    }
 }
 
 pub use fs_chrome::bar::panels::{PANELS, known, launcher_route};
@@ -298,6 +311,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
         "github" => Box::new(github::Github::new()),
         "monitor" => Box::new(monitor::Monitor::new()),
         "power" => Box::new(power::Power::new()),
+        "quicksettings" => Box::<quick::QuickSettings>::default(),
         "info" => Box::new(info::Info::new()),
         "settings" => Box::<settings::Settings>::default(),
         page if page.starts_with("settings:") => Box::new(settings_page::SettingsPage::new(page)?),

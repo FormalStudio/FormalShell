@@ -1231,6 +1231,19 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   Balanced putting it back, and the pill gone with the tiles.
 - `processes.sh` `--processes`: the process table's search, the two-press
   TERM, and `monitor restart` re-running the same argv under a new pid.
+- `quick_settings.sh` `--quick-settings`: the quick settings card
+  (`docs/superpowers/specs/2026-11-04-quick-settings.md`) over `panel open
+  quicksettings`, read off `quicksettings status`: the system row then the
+  toggles in the spec's order; the card 400 wide, every toggle 178 by 48,
+  12 between columns and rows and 16 from every edge, off the card's own
+  rect; Wi-Fi, Bluetooth and Power mode disabled with their reasons on the
+  rig's empty system bus and `activate` refusing them; Dark style, Do not
+  disturb and Caffeinate walked to on real arrows and flipped by Return
+  each way, read off `theme status`, `notifications dndState` and
+  `caffeinate status` (under `--light` Dark style disabled, "Set in
+  settings.json"); Escape closing it and settings.json's sha256 unchanged.
+  Photographed at rest and with the toggles on, dark and `--light`; ride
+  `--showcase` for the `on` fill in a wallpaper's colour.
 - `record.sh` `--record`: `record` start to finished GIF through a real
   wf-recorder child, with the bar's recording cell mid-run.
 - `r0_measure.sh` `--r0-measure <seconds>`: R0's numbers on one

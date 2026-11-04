@@ -303,6 +303,12 @@ impl App {
                 self.call_self(target, function, &[]);
             }
             P::Menu(..) => {}
+            P::Ipc(calls, close) => {
+                if close {
+                    self.menu_close();
+                }
+                self.run_ipc(&calls);
+            }
         }
         self.launcher_resolve = true;
     }

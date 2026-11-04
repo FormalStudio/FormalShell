@@ -103,6 +103,7 @@ const PANEL_NAMES: &[PanelName] = &[
     PanelName { id: "display", label: "Display", icon: "\u{F0379}", aliases: &["mirror display", "screen mirroring", "screens", "outputs"] },
     PanelName { id: "monitor", label: "Monitor", icon: "\u{F029A}", aliases: &[] },
     PanelName { id: "radio", label: "Radio", icon: "\u{F0439}", aliases: &[] },
+    PanelName { id: "quicksettings", label: "Quick Settings", icon: "", aliases: &["control center", "toggles"] },
 ];
 
 /// The panels the Panels route lists, in its order.

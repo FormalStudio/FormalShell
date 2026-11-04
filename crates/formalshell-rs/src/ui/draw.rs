@@ -1029,6 +1029,9 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     if state.card {
         cx.ui.cards.push(ri);
     }
+    if quick && let Some(key) = &el.key {
+        cx.ui.quick.push((key.clone(), ri));
+    }
     let now = cx.now;
     let mut p = cx.painter(path);
     if state.half == Half::Whole && segment.is_none() {
