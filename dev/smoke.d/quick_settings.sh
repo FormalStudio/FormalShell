@@ -373,6 +373,15 @@ leg_quick_settings_assert() {
       and near(($t[0].y) - ($s | map(.y + .height) | max); 12 + $n * 52)
       and near($t[1].x - ($t[0].x + $t[0].width); 12)
       and near($t[2].y - ($t[0].y + $t[0].height); 12)'
+  # GNOME's two spacers: on a laptop the battery alone holds the left
+  # edge; with no battery Screenshot and Settings do, Lock and Power the right.
+  quick_settings_jq "the system row's spacer where GNOME puts it" "$open" '
+    def near($a; $b): ($a - $b) | fabs <= 1;
+    .card as $c | (.rows | map({key: .id, value: .rect}) | from_entries) as $r
+    | near($c.x + $c.width - ($r.power.x + $r.power.width); 16)
+      and if $r.battery then near($r.battery.x - $c.x; 16) and $r.screenshot.x - ($r.battery.x + $r.battery.width) > 40
+      else near($r.screenshot.x - $c.x; 16) and near($r.settings.x - ($r.screenshot.x + $r.screenshot.width); 12)
+        and near($r.power.x - ($r.lock.x + $r.lock.width); 12) and $r.lock.x - ($r.settings.x + $r.settings.width) > 100 end'
   quick_settings_jq "Wi-Fi disabled with no NetworkManager" "$open" '.rows[] | select(.id == "wifi") | .available == false and .reason == "No NetworkManager" and .on == false'
   quick_settings_jq "Bluetooth disabled with no adapter" "$open" '.rows[] | select(.id == "bluetooth") | .available == false and .reason == "No adapter"'
   quick_settings_jq "Power mode disabled with no daemon" "$open" '.rows[] | select(.id == "power-mode") | .available == false and .reason == "power-profiles-daemon is not running"'

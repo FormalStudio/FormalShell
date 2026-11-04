@@ -310,7 +310,6 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
         s,
         "wifi",
         "Wi-Fi",
-        Some("HomeNet-5G"),
         true,
         vec![
             w::panel_row_checked(s, "wifi", "HomeNet-5G", None, Vec::new(), true),

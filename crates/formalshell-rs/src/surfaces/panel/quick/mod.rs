@@ -458,7 +458,6 @@ pub enum Hand {
 pub struct MenuView {
     pub glyph: &'static str,
     pub title: &'static str,
-    pub subtitle: Option<String>,
     pub on: bool,
     pub lines: Vec<Line>,
     pub settings: Option<(&'static str, Hand)>,
@@ -481,7 +480,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         if lines.is_empty() {
             lines.push(Line::Note("Nothing is running in the background".into()));
         }
-        return Some(MenuView { glyph: "activity", title: "Background", subtitle: None, on: false, lines, settings: Some(("Activity", Hand::Panel("activity"))) });
+        return Some(MenuView { glyph: "activity", title: "Background", on: false, lines, settings: Some(("Activity", Hand::Panel("activity"))) });
     }
     let tile = tiles(store).into_iter().find(|t| t.id == id && t.menu)?;
     let row = Line::row;
@@ -490,7 +489,6 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         "volume" => MenuView {
             glyph: tile.glyph,
             title: "Sound output",
-            subtitle: Some(a.name.clone()),
             on: tile.on,
             lines: audio_devices(store, true).into_iter().map(|(name, label)| row(id, name, "speaker", label, name == a.default_sink)).collect(),
             settings: Some(("Sound settings", Hand::Panel("audio"))),
@@ -498,7 +496,6 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         "microphone" => MenuView {
             glyph: tile.glyph,
             title: "Sound input",
-            subtitle: None,
             on: tile.on,
             lines: audio_devices(store, false).into_iter().map(|(name, label)| row(id, name, "mic", label, name == a.default_source)).collect(),
             settings: Some(("Sound settings", Hand::Panel("audio"))),
@@ -506,7 +503,6 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         "brightness" => MenuView {
             glyph: tile.glyph,
             title: "Brightness",
-            subtitle: None,
             on: true,
             lines: store
                 .display
@@ -518,8 +514,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         },
         "wired" => MenuView {
             glyph: tile.glyph,
-            title: "Wired",
-            subtitle: tile.subtitle.clone(),
+            title: "Wired connections",
             on: tile.on,
             lines: store
                 .devices
@@ -556,7 +551,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             if lines.is_empty() {
                 lines.push(Line::Note(if n.wifi_enabled { "Scanning" } else { "Wi-Fi is off" }.into()));
             }
-            MenuView { glyph: tile.glyph, title: "Wi-Fi", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("All networks", Hand::Panel("network"))) }
+            MenuView { glyph: tile.glyph, title: "Wi-Fi", on: tile.on, lines, settings: Some(("All networks", Hand::Panel("network"))) }
         }
         "bluetooth" => {
             let b = &store.devices.bluetooth;
@@ -576,7 +571,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             } else {
                 lines.push(Line::Note("Turn on Bluetooth to connect to devices".into()));
             }
-            MenuView { glyph: tile.glyph, title: "Bluetooth", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("Bluetooth settings", Hand::Panel("bluetooth"))) }
+            MenuView { glyph: tile.glyph, title: "Bluetooth", on: tile.on, lines, settings: Some(("Bluetooth settings", Hand::Panel("bluetooth"))) }
         }
         "power-mode" => {
             let p = store.devices.profiles.as_ref()?;
@@ -585,12 +580,12 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 .filter(|(x, _)| *x != Profile::Performance || p.has_performance())
                 .map(|&(x, glyph)| row(id, x.to_wire(), glyph, profile_name(x), p.active == x))
                 .collect();
-            MenuView { glyph: tile.glyph, title: "Power mode", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("Power settings", Hand::Panel("power"))) }
+            MenuView { glyph: tile.glyph, title: "Power mode", on: tile.on, lines, settings: Some(("Power settings", Hand::Panel("power"))) }
         }
         "keyboard" => {
             let l = &store.lights;
             let lines = l.effects.iter().map(|(effect, label)| row(id, effect, "", label, *effect == l.effect)).collect();
-            MenuView { glyph: tile.glyph, title: "Keyboard", subtitle: tile.subtitle.clone(), on: tile.on, lines, settings: Some(("Keyboard lights", Hand::Route("lights.effect"))) }
+            MenuView { glyph: tile.glyph, title: "Keyboard", on: tile.on, lines, settings: Some(("Keyboard lights", Hand::Route("lights.effect"))) }
         }
         "power" => {
             let can = store.devices.logind;
@@ -612,7 +607,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                     lines.push(Line::Row { key: format!("m:power:{what}"), glyph: "", title: (if armed { confirm } else { rest }).to_owned(), detail: None, mark: None, checked: false, armed });
                 }
             }
-            MenuView { glyph: "power", title: "Power off", subtitle: None, on: false, lines, settings: None }
+            MenuView { glyph: "power", title: "Power off", on: false, lines, settings: None }
         }
         _ => return None,
     })
@@ -808,7 +803,7 @@ fn menu_el(v: &View, m: &MenuView, content: f32, ready: bool) -> El {
         let row = w::panel_row(s, "", label, None, Vec::new());
         stop(row, "m:settings")
     });
-    w::quick_menu(s, m.glyph, m.title, m.subtitle.as_deref(), m.on, rows, settings, content)
+    w::quick_menu(s, m.glyph, m.title, m.on, rows, settings, content)
 }
 
 impl Panel for QuickSettings {
@@ -891,14 +886,20 @@ impl Panel for QuickSettings {
         // Tab section it belongs to.
         let mut parts: Vec<(Vec<&str>, El)> = Vec::new();
         let mut part_section: Vec<usize> = Vec::new();
+        // GNOME's two spacers (`system.js` 275-292): after the battery on a
+        // laptop, between Settings and Lock on a desktop.
+        let laptop = system.iter().any(|t| t.id == "battery");
         let mut row = Vec::new();
         for t in &system {
             if t.id == "battery" {
                 row.push(w::quick_pill(s, t.id, t.glyph, t.subtitle.as_deref().unwrap_or("")));
+            } else {
+                if (laptop && row.len() == 1) || (!laptop && t.id == "lock") {
+                    row.push(w::spacer());
+                }
+                row.push(w::quick_button(s, t.id, t.glyph, &t.title));
             }
         }
-        row.push(w::spacer());
-        row.extend(system.iter().filter(|t| t.id != "battery").map(|t| w::quick_button(s, t.id, t.glyph, &t.title)));
         parts.push((system.iter().map(|t| t.id).collect(), w::row(s.quick_gap, row).fill().height(s.quick_button)));
         part_section.push(0);
 
@@ -1401,7 +1402,7 @@ pub fn status_menu(store: &Store, state: &str) -> (Json, bool) {
             .collect::<Vec<_>>()
     });
     let notes: Option<Vec<&str>> = open.as_ref().map(|m| m.lines.iter().filter_map(|l| if let Line::Note(t) = l { Some(t.as_str()) } else { None }).collect());
-    let header = open.as_ref().map(|m| json!({ "title": m.title, "subtitle": m.subtitle, "on": m.on }));
+    let header = open.as_ref().map(|m| json!({ "title": m.title, "on": m.on }));
     (
         json!({ "id": id, "shown": state["shown"], "height": state["height"], "content": state["content"], "header": header, "rows": lines, "notes": notes }),
         state["dim"].as_bool().unwrap_or(false),

@@ -202,7 +202,7 @@ leg_quick_settings_devices_assert() {
   quick_settings_devices_jq "real Downs reached FORMALTEST" status-at-formaltest.json '.cursor == "m:wifi:FORMALTEST"'
   quick_settings_devices_jq "Return connected it, the SSID the tile's subtitle" status-wifi-connected.json '.rows[] | select(.id == "wifi") | .on and .subtitle == "FORMALTEST"'
   quick_settings_devices_jq "NetworkManager has it connected" network-connected.json '.networks[] | select(.name == "FORMALTEST") | .connected'
-  quick_settings_devices_jq "the menu checks it" status-shot-wifi-menu.json '[.menu.rows[] | select(.id == "m:wifi:FORMALTEST")][0].checked == true and .menu.header.subtitle == "FORMALTEST"'
+  quick_settings_devices_jq "the menu checks it" status-shot-wifi-menu.json '[.menu.rows[] | select(.id == "m:wifi:FORMALTEST")][0].checked == true'
   quick_settings_devices_jq "real Downs reached FORMALTEST-EAP" status-at-eap.json '.cursor == "m:wifi:FORMALTEST-EAP"'
   quick_settings_devices_text "Return on the secured unknown network handed over to the network panel" panel-handed.txt "network"
   quick_settings_devices_jq "with FORMALTEST-EAP's passphrase step open" network-prompt.json '.prompt == "FORMALTEST-EAP"'

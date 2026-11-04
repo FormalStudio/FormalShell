@@ -792,15 +792,13 @@ pub fn quick_slider(s: &Space, id: &str, glyph: &str, value: f64, menu: bool) ->
 }
 
 /// An open menu (§4), keyed `menu`: a `panel.group` box holding a header
-/// (the toggle's glyph in a round chip, `on` while the toggle is, its title
-/// and subtitle), the menu's rows, and with `settings` a hairline and that
+/// (the toggle's glyph in a round chip, `on` while the toggle is, and its
+/// title; GNOME's menus set no subtitle), the menu's rows, and with `settings` a hairline and that
 /// row last. `shown` fades what it holds: the box grows open before its
 /// rows arrive.
-#[allow(clippy::too_many_arguments)]
-pub fn quick_menu(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, rows: Vec<El>, settings: Option<El>, shown: f32) -> El {
-    let mut words = vec![text_el(title, Type::Title, Weight::Semibold, false, Ink::Fg).elide()];
-    words.extend(subtitle.filter(|t| !t.is_empty()).map(|t| text_el(t, Type::Caption, Weight::Semibold, false, Ink::Muted).elide()));
-    let header = row(s.lg, vec![quick_disc(glyph, Type::Display, s.panel_row_compact, on), column(s.xxs, words).fill()]).fill();
+pub fn quick_menu(s: &Space, glyph: &str, title: &str, on: bool, rows: Vec<El>, settings: Option<El>, shown: f32) -> El {
+    let words = text_el(title, Type::Title, Weight::Semibold, false, Ink::Fg).elide();
+    let header = row(s.lg, vec![quick_disc(glyph, Type::Display, s.panel_row_compact, on), words.fill()]).fill();
     let mut parts = vec![header, space(s.quick_gap)];
     parts.extend(rows);
     if let Some(settings) = settings {

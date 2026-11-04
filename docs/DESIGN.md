@@ -936,7 +936,8 @@ rung 4) and the two tiers stay labelled sections `sectionGap` apart.
 quick settings spec). GNOME 51's menu in this table's material: a
 headerless panel `panelWidthWide` across, `quickInset` in from every edge
 and `quickGap` between rows and columns, holding the system row of
-`quickButton` circles, full-width sliders, a two-column grid of
+`quickButton` circles (Screenshot and Settings left, Lock and Power right,
+the battery pill alone on the left on a laptop), full-width sliders, a two-column grid of
 `quickToggle` pills and Background last. A toggle is the `quick.toggle`
 role, a `primary` fill with `primaryForeground` ink when on; a split
 toggle's arrow is `quick.arrow` behind a 1px inset rule. A toggle with no

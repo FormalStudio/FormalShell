@@ -29,11 +29,11 @@ taken as they are; fills, rings, radii and clocks come from our table
 | In-place menu | a card in an overlay bound to the grid's width, placed under the toggle's row; the rows after it move down by its height | `quickSettings.js:367-383, 733-735, 784-819` |
 | Menu motion | height grows over 200ms, then the content fades in over 200ms; closing reverses; the rest of the menu dims to brightness -0.4 over 400ms ease-out-quad | `quickSettings.js:16-17, 463-525, 860-875` |
 | Menu box | `%card`, radius 24, padding 12, 12 under its row | `_quick-settings.scss:150-160` |
-| Menu header | icon 24 in a round chip 9 padding (`fg` at 0.2, accent when the toggle is on), title `%title_3`, subtitle `%caption_heading`, 12 under it | `quickSettings.js:390-454`, `_quick-settings.scss:167-199` |
+| Menu header | icon 24 in a round chip 9 padding (`fg` at 0.2, accent when the toggle is on), title `%title_3`, 12 under it; `setHeader` takes a subtitle (`%caption_heading`) but no menu in 51.0 passes one: "Sound Output", "Sound Input", "Wired Connections", "Wi-Fi", "Bluetooth", "Power Mode", "Power Off" | `quickSettings.js:390-454`, `_quick-settings.scss:167-199` |
 | Menu rows | `popup-menu-item` 9 by 12 padding, radius 12; a separator, then a settings row last ("All Networks", "Bluetooth Settings", "Power Settings", "Sound Settings") | `scss/widgets/_popovers.scss:36-40`, `js/ui/popupMenu.js:710-728` |
 | One menu at a time | opening one closes the other; closing the card closes it | `quickSettings.js:535-538, 852-858` |
 | Slider row | `[icon button | slider | menu button]`, 6 apart; the icon mutes on volume; the arrow shows only with more than one device | `quickSettings.js:240-361`, `_quick-settings.scss:138-148`, `js/ui/status/volume.js:39-73, 173` |
-| System row | battery toggle (percent and level icon, opens Power settings, hidden with no battery), spacer, screenshot, settings, lock, power menu; 12 apart, round icon buttons | `js/ui/status/system.js:53-105, 262-298`, `_quick-settings.scss:205-216` |
+| System row | battery toggle (percent and level icon, opens Power settings, hidden with no battery), a spacer shown with the battery, screenshot, settings, a spacer shown without it, lock, power menu; 12 apart, round icon buttons | `js/ui/status/system.js:53-105, 262-298` (51.0: `_laptopSpacer` 275-279, `_desktopSpacer` 287-292), `_quick-settings.scss:205-216` |
 | Power menu | Suspend, Restart…, Power Off…, separator, Log Out…, Switch User…, each shown only when allowed | `system.js:177-207` |
 | Order | system row, output volume, input volume (only while something records), brightness, then wired, Wi-Fi, mobile, tether, VPN, Bluetooth, Power Mode, Night Light, Dark Style, Do Not Disturb, Keyboard, Airplane Mode, Auto Rotate; extensions' toggles; Background Apps last, full width | `panel.js:379-437` |
 | Background Apps | a flat 40 tall full-width toggle, "%d Background Apps", shown while any exist or its menu is open; its menu lists each app with a close button | `js/ui/status/backgroundApps.js:136-242`, `_quick-settings.scss:244-272` |
@@ -157,8 +157,10 @@ privacy indicators in GNOME's top bar, not toggles; they stay out.
   The rows after that row move down by the menu's height. One inset level
   holds: card, group, rows.
 - Its header: a 40 round chip (`quick.toggle`, `on` while the toggle is on)
-  holding the toggle's icon at 24, the title in `title` at 600, the
-  subtitle in `caption` at 600 in `muted`, `quickGap` under it.
+  holding the toggle's icon at 24, the title in `title` at 600 and no
+  subtitle (GNOME's menus pass none; the toggle already carries it),
+  `quickGap` under it. The wired menu is "Wired connections", GNOME's
+  title.
 - Its rows are the kit's `panel_row`s (44, `lg` radius, the current one with
   its check, never a fill), a hairline, then the settings row last, which
   hands the card over to the full panel.
@@ -172,8 +174,8 @@ Left to right, `quickGap` apart: the battery pill, a spacer, Screenshot
 (`camera`, `screenshot region`, the card closing first), Settings
 (`settings`, the launcher's `settings` route), Lock (`lock`, `lock lock`)
 and Power (`power`, an in-place menu). With no battery the spacer moves
-before Screenshot so the buttons sit at the right end, as GNOME's
-`_desktopSpacer` does.
+between Settings and Lock, so Screenshot and Settings hold the left edge
+and Lock and Power the right, as GNOME's `_desktopSpacer` does.
 
 - Battery: a `quick.toggle` pill as wide as its content, the battery level
   glyph (`battery`, `battery-low`, `battery-medium`, `battery-full`,
@@ -308,3 +310,44 @@ opens this card from that chevron, `status` keeps `collapses` and `open`.
   with a menu open, `artifacts/quick-settings-vs-gnome-{dark,light}.png`,
   with every difference either fixed or listed here as a material the
   table owns.
+
+## 13. Against GNOME 51.0
+
+Read 2026-11-04 in a throwaway Fedora 45 Workstation live VM on g815
+(gnome-shell 51.0, gnome-control-center 51.0), two null sinks, at scale 1
+and 1.25, dark and light, beside `--quick-settings` and `--light` at the
+same scales: `artifacts/quick-settings-vs-gnome-{dark,light}.png`, each
+row one scale so a logical pixel is one size across it.
+
+The same: the card's width (400), the two columns of 48-tall pill toggles
+12 apart, the order (system row, sliders, the toggle grid), split toggles'
+separator and arrow, the menu opening in place under its own row with the
+rows after it moved down, the dim over the rest, the menu's round header
+chip, its hairline and the settings row last, the Power menu under the
+system row.
+
+Fixed here: the system row's spacer (Screenshot and Settings at the left
+with no battery, not every button at the right), and the menu header's
+subtitle, which no GNOME menu carries.
+
+Ours by design, the table's material and not a defect:
+
+- Fills, inks and rings: GNOME's accent blue for an on toggle and the
+  slider's fill, its lighter card and button greys; ours `primary` off the
+  wallpaper, `quick.toggle` and `quick.arrow`, the table's ring.
+- Radii: GNOME's 36 card and 24 menu box; ours the panel host's card and
+  `panel.group`.
+- Type: GNOME's 700 toggle titles and its `%title_3` menu header read
+  larger; ours the table's `body` and `title` at 600, sentence case.
+- Menu rows: GNOME's 9 by 12 rows with a trailing tick; ours the kit's 44
+  `panel_row` with its device chip and check mark.
+- The slider: GNOME's round knob over an accent track; ours the kit's
+  slider.
+- Clocks: the menu's grow and fade run on our `spatialFast` and `effects`.
+
+What differs on the rig alone, not in the card: no Wired toggle (no
+Ethernet device), Wi-Fi, Bluetooth and Power mode disabled with their
+reasons where GNOME hides a missing device, a Brightness slider for the
+display the rig reports, Caffeinate, Overnight and the extras after the GNOME
+set, and a Power menu holding Log out alone where logind answers nothing.
+
