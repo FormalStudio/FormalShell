@@ -139,7 +139,7 @@ impl Store {
     /// What the desktop shows ([`wallpaper::source`]).
     pub fn desktop(&self) -> String {
         let data = &self.state.data;
-        wallpaper::source(self.theme.theme.wallpaper_color.as_deref(), &data.wallpaper_color, &data.wallpaper, self.sky_step())
+        wallpaper::source(self.theme.theme.wallpaper_color.as_deref(), &data.wallpaper_color, &data.wallpaper, &data.wallpaper_dark, &data.mode, self.sky_step())
     }
 
     /// The step a sky desktop shows: the engine's last reading, else the

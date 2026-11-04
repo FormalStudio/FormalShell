@@ -2844,7 +2844,7 @@ pub fn theme_inputs(app: &App) {
     let color = get("wallpaper.color").and_then(|v| fs_theme::theme::wallpaper_color(&v)).flatten();
     theme::send_inputs(theme::Inputs {
         settings: settings.clone(),
-        wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper, app.store.sky_step()),
+        wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper, &state.data.wallpaper_dark, &state.data.mode, app.store.sky_step()),
         mode: state.data.mode.clone(),
         mode_override: theme::parse_override(&state.data.mode_override),
         location,

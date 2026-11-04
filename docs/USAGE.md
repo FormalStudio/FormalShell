@@ -733,13 +733,23 @@ instead of coming out in the wrong syntax. And a name no pinned role answers
 named in a log warning that the pin left them alone.
 
 ```sh
-fs wallpaper set /path/to/image.jpg
+fs wallpaper set /path/to/image.jpg   # one picture for both modes
 fs wallpaper set sky   # the sky for the sun's position, see "Sky desktop"
-fs wallpaper get              # the current path
+fs wallpaper pair /path/light.jpg /path/dark.jpg   # each mode shows its half
+fs wallpaper setFor dark /path/night.jpg           # one mode's half, the other kept
+fs wallpaper get              # the picture shown now
 fs theme mode toggle          # dark | light | toggle
 fs theme retheme              # run matugen again on the current wallpaper
-fs theme status               # {"wallpaper":…,"mode":…,"modeKey":…,"effective":…,"schedule":…,"override":…}
+fs theme status               # {"wallpaper":…,"wallpaperDark":…,"desktop":…,"mode":…,"modeKey":…,"effective":…,"schedule":…,"override":…}
 ```
+
+state.json keeps two pictures, `wallpaper` and `wallpaperDark`, as GNOME
+keeps `picture-uri` and `picture-uri-dark`. While `wallpaperDark` is empty
+`wallpaper` shows in both modes; once it is set, dark mode shows it, so
+every mode change crossfades the desktop and the lock to the other half and
+reruns matugen on it. `setFor light` over a single picture moves that
+picture to the dark slot first, so dark mode keeps showing it. A colour or
+the sky covers both halves, and a `setFor` while one is up sets both.
 
 `theme.mode` decides who owns light and dark. Unset leaves it to the shell's
 own state: the mode a toggle flips and the session remembers. `"dark"` and

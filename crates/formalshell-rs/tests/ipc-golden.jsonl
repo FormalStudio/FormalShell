@@ -170,6 +170,12 @@
 {"argv":["call","wallpaper","set"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function set(path: string): string\n","stderr":"","exit":0}
 {"argv":["call","wallpaper","get"],"live":true,"stdout":"\n","stderr":"","exit":0}
 {"argv":["call","wallpaper","get","x"],"live":true,"stdout":"Too many arguments provided (0 required but 1 were provided.)\nFunction definition: function get(): string\n","stderr":"","exit":0}
+{"argv":["call","wallpaper","pair","/tmp/l.png","/tmp/d.png"],"live":true,"stdout":"pair /tmp/l.png /tmp/d.png\n","stderr":"","exit":0}
+{"argv":["call","wallpaper","pair","/tmp/l.png"],"live":true,"stdout":"Too few arguments provided (2 required but 1 were provided.)\nFunction definition: function pair(light: string, dark: string): string\n","stderr":"","exit":0}
+{"argv":["call","wallpaper","pair","/a","/b","/c"],"live":true,"stdout":"Too many arguments provided (2 required but 3 were provided.)\nFunction definition: function pair(light: string, dark: string): string\n","stderr":"","exit":0}
+{"argv":["call","wallpaper","setFor","dark","/tmp/d.png"],"live":true,"stdout":"setFor dark /tmp/d.png\n","stderr":"","exit":0}
+{"argv":["call","wallpaper","setFor","sepia","/tmp/d.png"],"live":true,"stdout":"error: mode must be light or dark\n","stderr":"","exit":0}
+{"argv":["call","wallpaper","setFor","dark"],"live":true,"stdout":"Too few arguments provided (2 required but 1 were provided.)\nFunction definition: function setFor(mode: string, path: string): string\n","stderr":"","exit":0}
 {"argv":["show","theme"],"live":true,"stdout":"","stderr":"The following argument was not expected: theme\nRun with --help for more information.\n","exit":109}
 {"argv":["show","wallpaper"],"live":true,"stdout":"","stderr":"The following argument was not expected: wallpaper\nRun with --help for more information.\n","exit":109}
 {"argv":["show","wallpaper","set"],"live":true,"stdout":"","stderr":"The following arguments were not expected: wallpaper set\nRun with --help for more information.\n","exit":109}

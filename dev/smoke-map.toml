@@ -437,7 +437,7 @@ runs = ["--settings-ui", "--bluez-player"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/formalshell-rs/src/services/overrides.rs", "crates/formalshell-rs/src/ipc/settings.rs", "crates/formalshell-rs/src/services/config.rs", "crates/formalshell-rs/src/services/state.rs"]
-runs = ["--settings-ui", "--settings-ui --light"]
+runs = ["--settings-ui", "--settings-ui --light", "--wallpaper-pair"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/iphone.rs", "crates/formalshell-rs/src/services/info/iphone.rs", "crates/formalshell-rs/src/ipc/iphone.rs", "crates/formalshell-rs/src/services/ams.rs", "crates/fs-devices/src/iphone.rs"]
@@ -573,7 +573,7 @@ runs = ["--power", "--login-lock"]
 # Wallpaper and theme
 [[rule]]
 paths = ["crates/formalshell-rs/src/services/wallpaper.rs", "crates/formalshell-rs/src/services/theme.rs", "crates/formalshell-rs/src/ipc/theme.rs"]
-runs = ["--wallpaper", "--theme-toggle", "--theme-auto", "--flexoki", "--glass", "--sky"]
+runs = ["--wallpaper", "--wallpaper-pair", "--theme-toggle", "--theme-auto", "--flexoki", "--glass", "--sky"]
 
 # Hyprland's window motion off the published chrome, and the shipped
 # example a hyprland.lua loads it from (a rule wins over `none`).

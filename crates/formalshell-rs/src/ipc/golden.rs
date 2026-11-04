@@ -67,6 +67,13 @@ fn stub() -> Registry<()> {
                 name: "wallpaper",
                 functions: vec![
                     f("set", &[("path", Type::String)], Type::String, |_, a| s(format!("set {}", a[0].str()))),
+                    f("pair", &[("light", Type::String), ("dark", Type::String)], Type::String, |_, a| {
+                        s(format!("pair {} {}", a[0].str(), a[1].str()))
+                    }),
+                    f("setFor", &[("mode", Type::String), ("path", Type::String)], Type::String, |_, a| match a[0].str() {
+                        "light" | "dark" => s(format!("setFor {} {}", a[0].str(), a[1].str())),
+                        _ => s("error: mode must be light or dark"),
+                    }),
                     f("get", &[], Type::String, |_, _| s("")),
                 ],
             },

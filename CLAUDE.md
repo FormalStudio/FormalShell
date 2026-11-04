@@ -1563,6 +1563,16 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   channels present and not silent.
 - `wallpaper.sh` `--wallpaper`: the matugen recolour on a set wallpaper, the
   crossfade to a second one, and both sides of the opt-in dither key.
+- `wallpaper_pair.sh` `--wallpaper-pair`: a light and a dark picture set
+  as one pair (`wallpaper pair`), the mode choosing the half: `theme
+  status`'s `desktop` and `wallpaper get` the dark half, the light half
+  after `theme mode toggle` and the dark one after a second, each toggle at
+  a tenth speed with a grim burst through the backdrop's crossfade (no
+  frame's mean outside the two halves', one part way between),
+  theme.json's primary cool under the dark half and warm under the light,
+  the lock in dark mode carrying the dark half's band and the real
+  password unlocking, and settings.json retargeted to `theme.mode: "auto"`
+  showing the half `effective` names.
 - `wifi.sh` `--wifi`: the network panel against two real hostapd radios:
   scan, wrong password, connect, forget, and the enterprise round trip.
   First a saved profile for an SSID neither radio broadcasts: `inRange`

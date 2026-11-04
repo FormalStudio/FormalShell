@@ -394,11 +394,16 @@ impl App {
             // Under the sculpture the grid is a layer of its own, over it.
             let under = grid.filter(|_| !animate);
             crate::services::wallpaper::show(wanted, w as u32, h as u32, dither, under);
-            let picture = self.store.wallpaper.sized(w as u32, h as u32).cloned();
-            if picture.is_none() && b.holds(wanted) {
+            let made = self.store.wallpaper.sized(w as u32, h as u32).cloned();
+            let picture = made.clone().filter(|p| p.path == *wanted && p.dither == dither && p.grid == under);
+            // Another picture still at this size means the wanted one is
+            // being made (a failed one empties the size): keep what is up
+            // and crossfade once it lands, rather than cut to the plain
+            // colour first.
+            if picture.is_none() && (made.is_some() || b.holds(wanted)) {
                 continue;
             }
-            b.draw(picture.filter(|p| p.path == *wanted && p.dither == dither && p.grid == under), background, under, reveal, &self.qh);
+            b.draw(picture, background, under, reveal, &self.qh);
         }
         self.sync_shards();
         self.sync_desktop_clocks();

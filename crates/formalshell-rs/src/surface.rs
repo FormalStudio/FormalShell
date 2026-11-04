@@ -1552,6 +1552,19 @@ impl Backdrop {
         }
         let first = self.drawn.is_none();
         self.drawn = Some(key);
+        // The same picture under a new colour or grid (the palette a mode
+        // change reruns lands mid-fade) carries on the running fade.
+        let same = |a: &Option<std::sync::Arc<crate::services::wallpaper::Picture>>| match (a, &picture) {
+            (Some(a), Some(b)) => (&a.path, a.dither) == (&b.path, b.dither),
+            (None, None) => true,
+            _ => false,
+        };
+        if let Some(f) = self.fade.as_mut().filter(|f| same(&f.to)) {
+            (f.color, f.grid) = (color, grid);
+            self.shown = picture;
+            self.step(Instant::now(), qh);
+            return;
+        }
         let from = match self.fade.take() {
             Some(f) => f.to,
             None => self.shown.clone(),

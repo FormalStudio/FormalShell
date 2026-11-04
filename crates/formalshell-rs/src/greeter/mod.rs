@@ -207,7 +207,8 @@ fn wallpaper_source(settings: &Value, env: &theme::Env) -> Option<String> {
     };
     let location = get("location.latitude").and_then(|v| v.as_f64()).zip(get("location.longitude").and_then(|v| v.as_f64()));
     let sky = theme::Sky::read(location, None).step;
-    let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""), sky);
+    // The mirror already copied the half the session's mode shows.
+    let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""), "", "", sky);
     (!source.is_empty()).then_some(source)
 }
 

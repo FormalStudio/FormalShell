@@ -947,7 +947,7 @@ impl Model {
             // The sky is filed under neither set, so it leaves the mode be.
             let mode = mode.filter(|_| crate::services::wallpaper::sky(path).is_none());
             let mode = mode.map(|v| if v == fs_menu::providers::Variant::Light { "light" } else { "dark" });
-            state::set_wallpaper(path, mode);
+            state::set_wallpaper(state::Choice::Both(path.into()), mode);
         }
         self.close();
         true
