@@ -247,9 +247,28 @@ pub enum Paint {
     /// A rim drawn off `Fit`'s outline on whole pixels, or off its own
     /// paths with none.
     Rim(Vec<RimLine>, Option<Fit>),
-    /// A card's fill under its border, and the near edge a joined card
-    /// fades out as it lets go of its line.
-    Outlined { fit: Fit, fill: Rgba, border: Rgba, near: Rgba },
+    /// A card's fill under its border, the near edge a joined card fades
+    /// out as it lets go of its line, and the lit line inside the border.
+    Outlined { fit: Fit, fill: Rgba, border: Rgba, near: Rgba, lit: Option<LitLine> },
+}
+
+/// An inset ring: a line `width` wide just inside a box's border, its
+/// alpha at the bottom `fade` of the top's where it fades.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LitLine {
+    pub color: Rgba,
+    pub width: f64,
+    pub fade: Option<f64>,
+}
+
+impl LitLine {
+    pub fn of(ring: &fs_theme::style::Ring<Rgba>) -> Self {
+        Self { color: ring.color, width: ring.spread, fade: ring.fade }
+    }
+
+    pub fn with_alpha(self, alpha: f32) -> Self {
+        Self { color: self.color.with_alpha(self.color.a * alpha), ..self }
+    }
 }
 
 /// How a fitted outline meets the canvas's pixels.
@@ -322,6 +341,8 @@ pub struct RimLine {
     pub centre: (f64, f64),
     pub stops: Vec<(f32, Rgba)>,
     pub mask: Option<RimMask>,
+    /// A stroke's alpha at the bottom of its path as a share of the top.
+    pub fade: Option<f64>,
 }
 
 impl RimLine {
@@ -593,8 +614,8 @@ fn paint_eq(a: &Paint, b: &Paint) -> bool {
             a1 == a2 && r1 == r2 && i1.same_as(i2)
         }
         (Paint::Shape { fill: f1, strokes: s1 }, Paint::Shape { fill: f2, strokes: s2 }) => f1 == f2 && s1 == s2,
-        (Paint::Outlined { fit: a1, fill: f1, border: b1, near: n1 }, Paint::Outlined { fit: a2, fill: f2, border: b2, near: n2 }) => {
-            a1 == a2 && f1 == f2 && b1 == b2 && n1 == n2
+        (Paint::Outlined { fit: a1, fill: f1, border: b1, near: n1, lit: l1 }, Paint::Outlined { fit: a2, fill: f2, border: b2, near: n2, lit: l2 }) => {
+            a1 == a2 && f1 == f2 && b1 == b2 && n1 == n2 && l1 == l2
         }
         (
             Paint::Casts { rect: r1, radius: a1, layers: l1, cutout: c1 },

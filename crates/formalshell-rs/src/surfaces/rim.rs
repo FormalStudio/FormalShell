@@ -198,9 +198,10 @@ impl Rim {
     /// `width` wide) and whose fill is `fill`, both in the node's
     /// coordinates; `centre` is the card's centre in surface pixels and
     /// `alpha` the frame's opacity. A stop whose normal is `mute` (the side
-    /// a joined card hangs off its line by) draws no specular line.
+    /// a joined card hangs off its line by) draws no specular line, which
+    /// fades down the card as the box's own lit line does (`fade`).
     #[allow(clippy::too_many_arguments)]
-    pub fn paint(&mut self, now: Instant, outer: BezPath, width: f64, fill: BezPath, card: Rect, alpha: f32, mute: Option<(f64, f64)>) -> Option<Paint> {
+    pub fn paint(&mut self, now: Instant, outer: BezPath, width: f64, fill: BezPath, card: Rect, alpha: f32, mute: Option<(f64, f64)>, fade: Option<f64>) -> Option<Paint> {
         let stops = self.current(now)?;
         let sweep = |colours: &[Rgba; STOPS], muted: bool| -> Vec<(f32, Rgba)> {
             let mut v: Vec<(f32, Rgba)> = (0..=STOPS)
@@ -224,7 +225,7 @@ impl Rim {
         if stops.wash.a > 0.0 {
             let flat = self.flat.get_or_insert_with(|| Bitmap::from_premultiplied(1, 1, vec![255; 4])).clone();
             let wash = stops.wash.with_alpha(stops.wash.a * alpha);
-            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: vec![(0.0, wash), (1.0, wash)], mask: Some(RimMask { image: flat, rect: bounds }) });
+            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: vec![(0.0, wash), (1.0, wash)], mask: Some(RimMask { image: flat, rect: bounds }), fade: None });
         }
         if stops.spill.iter().any(|c| c.a > 0.0) && bounds.width() > 0.0 && bounds.height() > 0.0 {
             // Made again only when the fill grows or shrinks by a mask pixel.
@@ -233,14 +234,14 @@ impl Rim {
                 self.mask = Some((cells, spill_mask((bounds.width(), bounds.height()), cells)));
             }
             let image = self.mask.as_ref().map(|(_, m)| m.clone()).expect("made above");
-            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: sweep(&stops.spill, false), mask: Some(RimMask { image, rect: bounds }) });
+            lines.push(RimLine { path: fill.clone(), width: 0.0, clip: None, centre, stops: sweep(&stops.spill, false), mask: Some(RimMask { image, rect: bounds }), fade: None });
         }
         if stops.specular.iter().any(|c| c.a > 0.0) {
             // One border deep on the fill's own edge, cut to the fill, under
             // the border: the pixel inside the border is what shows.
-            lines.push(RimLine { path: fill.clone(), width: width * 2.0, clip: Some(fill), centre, stops: sweep(&stops.specular, true), mask: None });
+            lines.push(RimLine { path: fill.clone(), width: width * 2.0, clip: Some(fill), centre, stops: sweep(&stops.specular, true), mask: None, fade });
         }
-        lines.push(RimLine { path: outer, width, clip: None, centre, stops: sweep(&stops.border, false), mask: None });
+        lines.push(RimLine { path: outer, width, clip: None, centre, stops: sweep(&stops.border, false), mask: None, fade: None });
         Some(Paint::Rim(lines, None))
     }
 

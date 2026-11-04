@@ -149,39 +149,13 @@
                 "layers": [
                     {
                         "inset": true,
-                        "y": 1,
+                        "spread": 1,
                         "color": "white",
                         "alpha": {
                             "light": 0.3,
-                            "dark": 0.06
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "y": -1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.2,
-                            "dark": 0.04
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "x": 1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.07,
-                            "dark": 0.014
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "x": -1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.07,
-                            "dark": 0.014
-                        }
+                            "dark": 0.12
+                        },
+                        "fade": 0
                     },
                     {
                         "y": 3,
@@ -211,39 +185,13 @@
                 "layers": [
                     {
                         "inset": true,
-                        "y": 1,
+                        "spread": 1,
                         "color": "white",
                         "alpha": {
                             "light": 0.3,
-                            "dark": 0.06
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "y": -1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.2,
-                            "dark": 0.04
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "x": 1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.07,
-                            "dark": 0.014
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "x": -1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.07,
-                            "dark": 0.014
-                        }
+                            "dark": 0.12
+                        },
+                        "fade": 0
                     },
                     {
                         "y": -21,
@@ -313,39 +261,13 @@
                 "layers": [
                     {
                         "inset": true,
-                        "y": 1,
+                        "spread": 1,
                         "color": "white",
                         "alpha": {
                             "light": 0.3,
-                            "dark": 0.06
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "y": -1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.2,
-                            "dark": 0.04
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "x": 1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.07,
-                            "dark": 0.014
-                        }
-                    },
-                    {
-                        "inset": true,
-                        "x": -1,
-                        "color": "white",
-                        "alpha": {
-                            "light": 0.07,
-                            "dark": 0.014
-                        }
+                            "dark": 0.12
+                        },
+                        "fade": 0
                     },
                     {
                         "y": -21,
@@ -456,39 +378,13 @@
             "layers": [
                 {
                     "inset": true,
-                    "y": 1,
+                    "spread": 1,
                     "color": "white",
                     "alpha": {
                         "light": 0.3,
-                        "dark": 0.06
-                    }
-                },
-                {
-                    "inset": true,
-                    "y": -1,
-                    "color": "white",
-                    "alpha": {
-                        "light": 0.2,
-                        "dark": 0.04
-                    }
-                },
-                {
-                    "inset": true,
-                    "x": 1,
-                    "color": "white",
-                    "alpha": {
-                        "light": 0.07,
-                        "dark": 0.014
-                    }
-                },
-                {
-                    "inset": true,
-                    "x": -1,
-                    "color": "white",
-                    "alpha": {
-                        "light": 0.07,
-                        "dark": 0.014
-                    }
+                        "dark": 0.12
+                    },
+                    "fade": 0
                 },
                 {
                     "y": 3,
@@ -1531,7 +1427,8 @@
         ],
         "HIGHLIGHT": [
             "HIGHLIGHT, inlined wherever it appears: [{\"inset\":true,\"y\":1,\"color\":\"white\",\"alpha\":{\"light\":0.3,\"dark\":0.06}},{\"inset\":true,\"y\":-1,\"color\":\"white\",\"alpha\":{\"light\":0.2,\"dark\":0.04}},{\"inset\":true,\"x\":1,\"color\":\"white\",\"alpha\":{\"light\":0.07,\"dark\":0.014}},{\"inset\":true,\"x\":-1,\"color\":\"white\",\"alpha\":{\"light\":0.07,\"dark\":0.014}}].",
-            "`outset-highlight(\"full\")`: the lit rim inside a raised control, top brightest, sides barely there. The dark column is the product described above (0.3/0.2/0.07 of white at 0.2)."
+            "`outset-highlight(\"full\")`: the lit rim inside a raised control, top brightest, sides barely there. The dark column is the product described above (0.3/0.2/0.07 of white at 0.2).",
+            "The floating boxes left it on 2026-11-04 (`card.rest`, `card.raised`, `notification.rest`, `menu`): they wear one inset ring instead, Pond's outline (`shell/PanelBorder.qml`, pond-2026-11-04), full at the top and gone at the bottom (`fade: 0`). Controls keep it: a button's lit lip is what reads it as raised."
         ],
         "FACE": [
             "FACE, inlined wherever it appears: {\"from\":[\"white\",{\"light\":0.2,\"dark\":0.04}],\"to\":[\"white\",0]}.",
@@ -1582,16 +1479,18 @@
         ],
         "roles.card": [
             "The card (`widgets/card.scss`): the view fill, the lit rim, a 1px black line round it and shadow(2) under it. elementary hangs that line outside as `0 0 0 1px`, and it is a border here instead: a card is drawn by three different things (a Box, a `Shoulders` shape joined to the bar, a Drawer's own frame) and only the first of them draws a ring layer, so the line would go missing on the two that matter most. Its alpha is the toplevel `borders` rather than elementary's 0.1, which is a line over a #fafafa desktop and nothing at all over ours. `opaque` is the same card on a namespace the compositor does not blur (the capture picker, over a frozen screenshot), the rule DESIGN.md §1 states for every theme. `rest` keeps shadow(2) because the sidebar's cards sit in a column and must not cast past it.",
-            "`raised` is a card floating over the desktop (a panel, the centre, the launcher, the headset card): the same lit rim over Pond's five-layer cast (`shell/PanelStyle.qml` `frontShadows`, drawn by `shell/Shadow.qml`, pond-2026-11-04), which Pond hangs under its battery card, calendar, notification centre and toasts. Pond is dark only, so the dark column is its alphas and the light one is half of each, our call. `surfaces/card.rs` reads its casts on the popover path and under a joined card that casts."
+            "`raised` is a card floating over the desktop (a panel, the centre, the launcher, the headset card): the same lit rim over Pond's five-layer cast (`shell/PanelStyle.qml` `frontShadows`, drawn by `shell/Shadow.qml`, pond-2026-11-04), which Pond hangs under its battery card, calendar, notification centre and toasts. Pond is dark only, so the dark column is its alphas and the light one is half of each, our call. `surfaces/card.rs` reads its casts on the popover path and under a joined card that casts.",
+            "Its lit rim is Pond's fading outline (`shell/PanelBorder.qml`, pond-2026-11-04): one 1px white line inside the border, its alpha falling to nothing down the sides (`fade` 0, the bottom's share of the top), in place of HIGHLIGHT's four lips. Dark 0.12 sits between Pond's Daylight line (about 0.03 over its fill) and its Hazel and North ones (0.16 to 0.24, `panelBorder` at 0.4) and still reads on zinc; light keeps elementary's 0.3 top. A reactive rim's specular line takes the same fade."
         ],
         "roles.notification": [
-            "The notification bubble (`notifications/data/application.css`, `src/AbstractBubble.vala`): the view, radius `lg`, the `borders` line. At `surfaceOpacity` like every card: `formalshell:notifications` carries the blur layerrule, so the desktop behind reads frosted, and the card goes opaque with the rest where the compositor blurs nothing. The line is a border for the reason the card's is, which also lets urgency swap it for `destructive` rather than draw a second one inside it. `flat` is a row inside the notification centre, which already carries a card of its own: it drops the fill and every layer, and critical keeps its rim through the flattening because that rim is what urgency asked for. Its casts are no longer elementary's: the bubble floats like `card.raised` and wears the same five layers out of Pond's `frontShadows` (`notifications/ToastWindow.qml` hangs them under a toast), dark at Pond's alphas and light at half."
+            "The notification bubble (`notifications/data/application.css`, `src/AbstractBubble.vala`): the view, radius `lg`, the `borders` line. At `surfaceOpacity` like every card: `formalshell:notifications` carries the blur layerrule, so the desktop behind reads frosted, and the card goes opaque with the rest where the compositor blurs nothing. The line is a border for the reason the card's is, which also lets urgency swap it for `destructive` rather than draw a second one inside it. `flat` is a row inside the notification centre, which already carries a card of its own: it drops the fill and every layer, and critical keeps its rim through the flattening because that rim is what urgency asked for. Its casts are no longer elementary's: the bubble floats like `card.raised` and wears the same five layers out of Pond's `frontShadows` (`notifications/ToastWindow.qml` hangs them under a toast), dark at Pond's alphas and light at half.",
+            "Its lit rim is the card's fading outline, Pond's `PanelBorder.qml` on a toast."
         ],
         "roles.popover": [
             "The tooltip (`widgets/tooltip.scss`): a dark plate at 0.9 on shadow(1), radius `md`, and no rim at all, the cast being what lifts it off whatever it is over."
         ],
         "roles.menu": [
-            "The tray menu, which is GTK's popover (`widgets/popover.scss`): the background fill, a toplevel rim, the lit inside edge and shadow(2) under it, radius 6. Rows in it hover at `fg 0.15`, which is the wash below."
+            "The tray menu, which is GTK's popover (`widgets/popover.scss`): the background fill, a toplevel rim, the card's fading outline for its lit inside edge and shadow(2) under it, radius 6. Rows in it hover at `fg 0.15`, which is the wash below."
         ],
         "roles.cell": [
             "Every bar cell, list row and chip. elementary's list row carries no chrome at all and answers the pointer with `fg 0.15`, so the resting tile here is the plate a row sits on rather than a raised button: a panel is a column of these, and rows wearing a button's material would read as a stack of buttons. `ghost` is the bar's own cells, and the filled states stay opaque, a fill IS the statement."

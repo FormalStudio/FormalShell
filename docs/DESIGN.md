@@ -114,7 +114,9 @@ literal), `fillAlpha` (a number or `"surface"`), `radius` (a step off the
 ladder or a literal), `border` (`{ color, alpha, width }` or none), `face`
 (the one top-to-bottom gradient a material has, or none), `layers` (CSS
 `box-shadow` order, a hairline, a ring or a cast depending on its own blur
-and spread), `tint` (a colour blended into an opaque fill under the pointer,
+and spread; an inset ring sits inside the border, as CSS's does, and may
+carry `fade`, its alpha at the box's bottom as a share of its top, the way
+Pond's `PanelBorder.qml` outline fades down a floating card), `tint` (a colour blended into an opaque fill under the pointer,
 never its alpha dropped), `wash` (a translucent surface's own hover and
 press, a colour laid over the fill rather than blended into it) and `edge`
 (a hairline drawn outside the box, the bar strip's line against the

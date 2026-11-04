@@ -23,7 +23,7 @@ use fs_chrome::types::Edge;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, EMERGE, SPATIAL_FAST, SPATIAL_FAST_MS};
-use crate::scene::{Cast, Fade, Fit, IRect, Joined, NodeId, Outline, Paint, Scene, Snap};
+use crate::scene::{Cast, Fade, Fit, IRect, Joined, LitLine, NodeId, Outline, Paint, Scene, Snap};
 use crate::surfaces::rim::{Lit, Rim};
 use crate::surfaces::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
@@ -48,6 +48,8 @@ struct Look {
     border_width: f64,
     radius: f64,
     casts: Vec<fs_theme::style::Cast<Rgba>>,
+    /// The line inside the border.
+    lit: Option<LitLine>,
     /// Off the line, on the popover path.
     popover: bool,
     emerge_ms: f64,
@@ -79,6 +81,7 @@ impl Look {
                 Radius::Pill => theme.radii.xl,
             },
             casts,
+            lit: card.inset_rings.first().map(LitLine::of),
             popover,
             emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
             emerge_curve: Curve::from_table(&motion.emerge_curve),
@@ -524,14 +527,14 @@ impl Card {
             None => rr(card, radius),
         };
         let lit = rim.and_then(|(rim, now, node)| {
-            let paint = rim.paint(now, line.clone(), look.border_width, outline.clone(), card, alpha, None)?;
+            let paint = rim.paint(now, line.clone(), look.border_width, outline.clone(), card, alpha, None, look.lit.and_then(|l| l.fade))?;
             // A box's fit would redraw the rim without the nub.
             Some((node, if nub.is_some() { paint } else { paint.fit(fit) }))
         });
         let border = if lit.is_some() { Rgba::TRANSPARENT } else { look.border.with_alpha(look.border.a * alpha) };
         let paint = match nub {
             Some(_) => Paint::Shape { fill: Some((outline, fill)), strokes: vec![(line, border, look.border_width)] },
-            None => Paint::Outlined { fit, fill, border, near: Rgba::TRANSPARENT },
+            None => Paint::Outlined { fit, fill, border, near: Rgba::TRANSPARENT, lit: look.lit.map(|l| l.with_alpha(alpha)) },
         };
         let tall = Rect::new(card.x0, card.y0 - nub.map_or(0.0, |n| n.1), card.x1, card.y1);
         let bounds = Scene::cover(tall, Affine::IDENTITY, 2.0);
@@ -724,12 +727,15 @@ impl Card {
         let frame_box = Scene::cover(Rect::new(live.x0, frame_y, live.x1, frame_y + extent), map, 0.0);
         let centre = Rect::new(frame_box.x as f64, frame_box.y as f64, frame_box.right() as f64, frame_box.bottom() as f64);
         let mute = (a > 0.0).then(|| self.line_normal());
-        let lit = self.rim.paint(now, paths.outer, border, paths.fill, centre, fa, mute).map(|lit| lit.fit(fit));
+        let lit = self.rim.paint(now, paths.outer, border, paths.fill, centre, fa, mute, self.look.lit.and_then(|l| l.fade)).map(|lit| lit.fit(fit));
         let outer_line = if lit.is_some() { Rgba::TRANSPARENT } else { line };
+        // Its top would run across the opening while the card hangs off the
+        // line, so it comes in as the card lets go, with the casts.
+        let inner = self.look.lit.map(|l| l.with_alpha((1.0 - a) as f32 * fa));
         self.scene.update_with(
             self.shape,
             bounds,
-            Paint::Outlined { fit, fill, border: outer_line, near },
+            Paint::Outlined { fit, fill, border: outer_line, near, lit: inner },
             visible && fa > 0.0,
             item,
             Some(band),

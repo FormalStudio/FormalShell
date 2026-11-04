@@ -349,6 +349,9 @@ pub struct Glow<C> {
 pub struct Ring<C> {
     pub spread: f64,
     pub color: C,
+    /// An inset ring's alpha at the box's bottom edge as a share of its
+    /// top, fading down the sides between (Pond's `PanelBorder.qml`).
+    pub fade: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -463,6 +466,7 @@ pub fn resolve<C: Ctx>(style: &Value, role: &str, state: Option<&str>, ctx: &C) 
         let ring = Ring {
             spread: num(layer.get("spread")).unwrap_or(0.0),
             color: paint(layer.get("color"), layer.get("alpha"), ctx),
+            fade: num(layer.get("fade")).map(|f| f.clamp(0.0, 1.0)),
         };
         if truthy(layer.get("inset")) {
             out.inset_rings.push(ring);
@@ -1007,8 +1011,11 @@ pub(crate) mod tests {
         let border = card.border.clone().unwrap();
         assert_eq!(border.color, "#000000@0.75");
         assert_eq!(border.width, 1.0);
-        assert_eq!(card.hairlines.len(), 4);
+        assert!(card.hairlines.is_empty());
         assert_eq!(card.rings.len(), 0);
+        assert_eq!(card.inset_rings.len(), 1);
+        assert_eq!(card.inset_rings[0].spread, 1.0);
+        assert_eq!(card.inset_rings[0].fade, Some(0.0));
         assert_eq!(card.casts.len(), 2);
         assert_eq!(card.casts[0].y, 3.0);
         assert_eq!(card.casts[0].blur, 4.0);
@@ -1017,7 +1024,7 @@ pub(crate) mod tests {
         assert_eq!(card.casts[1].color, "#000000@0.45");
         assert_eq!(r(p, "card", Some("opaque"), "dark").fill, "role:card");
         let raised = r(p, "card", Some("raised"), "dark");
-        assert_eq!(raised.hairlines.len(), 4);
+        assert_eq!(raised.inset_rings, card.inset_rings);
         assert_eq!(raised.casts.len(), 5);
         assert_eq!(raised.casts[4].y, 6.0);
         assert_eq!(raised.casts[4].color, "#000000@0.19");
@@ -1028,14 +1035,23 @@ pub(crate) mod tests {
     #[test]
     fn the_pantheon_highlight_is_the_product_in_dark() {
         let p = crate::table();
-        let light = r(p, "card", None, "light");
-        let dark = r(p, "card", None, "dark");
-        assert_eq!(light.hairlines[0].color, "#ffffff@0.3");
-        assert_eq!(dark.hairlines[0].color, "#ffffff@0.06");
-        assert_eq!(light.hairlines[1].color, "#ffffff@0.2");
-        assert_eq!(dark.hairlines[1].color, "#ffffff@0.04");
-        assert_eq!(dark.hairlines[2].color, "#ffffff@0.014");
+        let button = r(p, "button.outline", Some("rest"), "dark");
+        assert_eq!(button.hairlines[1].color, "#ffffff@0.04");
+        assert_eq!(button.hairlines[2].color, "#ffffff@0.014");
         assert_eq!(r(p, "button.outline", Some("rest"), "dark").face.unwrap().from, "#ffffff@0.04");
+    }
+
+    #[test]
+    fn floating_boxes_carry_ponds_fading_outline() {
+        let p = crate::table();
+        for (role, state) in [("card", None), ("card", Some("raised")), ("notification", Some("rest")), ("menu", None)] {
+            let dark = r(p, role, state, "dark");
+            assert!(dark.hairlines.is_empty(), "{role}");
+            assert_eq!(dark.inset_rings.len(), 1, "{role}");
+            assert_eq!(dark.inset_rings[0].color, "#ffffff@0.12", "{role}");
+            assert_eq!(dark.inset_rings[0].fade, Some(0.0), "{role}");
+            assert_eq!(r(p, role, state, "light").inset_rings[0].color, "#ffffff@0.3", "{role}");
+        }
     }
 
     #[test]

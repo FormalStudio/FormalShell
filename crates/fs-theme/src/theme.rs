@@ -433,7 +433,7 @@ impl Theme {
     /// The halo the `cursor` entry declares; nothing when it declares none.
     pub fn cursor_ring(&self) -> Ring<Rgba> {
         let cursor = self.box_style("cursor", None);
-        cursor.rings.into_iter().next().unwrap_or(Ring { spread: 0.0, color: Rgba::TRANSPARENT })
+        cursor.rings.into_iter().next().unwrap_or(Ring { spread: 0.0, color: Rgba::TRANSPARENT, fade: None })
     }
 
     /// The room the cursor's halo needs outside a row.
@@ -641,7 +641,7 @@ mod tests {
     #[test]
     fn a_box_with_no_hairlines_draws_none() {
         assert!(theme().box_style("scrim", None).hairlines.is_empty());
-        assert_eq!(theme().box_style("card", None).hairlines.len(), 4);
+        assert_eq!(theme().box_style("button.outline", Some("rest")).hairlines.len(), 4);
     }
 
     #[test]

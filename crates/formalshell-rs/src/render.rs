@@ -12,7 +12,7 @@ use vello_cpu::kurbo::{Affine, BezPath, Cap, Join, Point, Rect, RoundedRect, Sha
 use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
-use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, IRect, Outline, Paint, Scene, Snap, VOp};
+use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, IRect, LitLine, Outline, Paint, Scene, Snap, VOp};
 use crate::surfaces::shoulders::{self, Walls};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
@@ -428,13 +428,16 @@ impl Caches {
                     ctx.set_transform(g.lift);
                     outlined(ctx, &drawn, *fill, *border, Rgba::TRANSPARENT, Stroke::new(drawn.width));
                 }
-                Paint::Outlined { fit, fill, border, near } => {
+                Paint::Outlined { fit, fill, border, near, lit } => {
                     let g = Grid::fit(origin, node.transform, s, fit);
                     let drawn = g.drawn(&fit.outline);
                     ctx.set_transform(g.lift);
                     // ShapePath's own defaults, which the joined shape's runs want.
                     let stroke = Stroke::new(drawn.width).with_caps(Cap::Square).with_join(Join::Bevel);
                     outlined(ctx, &drawn, *fill, *border, *near, stroke);
+                    if let Some(lit) = lit {
+                        lit_line(ctx, &drawn, g.line(lit.width), lit);
+                    }
                 }
                 Paint::Lips { radius, border, lips } => {
                     // CSS's unblurred inset shadow: the body less itself
@@ -687,11 +690,18 @@ impl Caches {
                             ctx.pop_layer();
                             ctx.pop_layer();
                         } else {
+                            if line.fade.is_some() {
+                                ctx.push_group();
+                            }
                             ctx.set_paint_transform(back);
                             ctx.set_gradient(g);
                             ctx.set_stroke(Stroke::new(line.width).with_caps(Cap::Square).with_join(Join::Bevel));
                             ctx.stroke_path(&line.path);
                             ctx.reset_paint_transform();
+                            if let Some(fade) = line.fade {
+                                fade_down(ctx, line.path.bounding_box(), fade);
+                                ctx.pop_layer();
+                            }
                         }
                         if line.clip.is_some() {
                             ctx.pop_layer();
@@ -1088,6 +1098,41 @@ fn outlined(ctx: &mut impl Raster, drawn: &Drawn, fill: Rgba, border: Rgba, near
     }
 }
 
+/// `lit`, `width` canvas pixels wide, on the band just inside the border
+/// of `drawn`, following its arcs.
+fn lit_line(ctx: &mut impl Raster, drawn: &Drawn, width: f64, lit: &LitLine) {
+    if lit.color.to_u8()[3] == 0 || width <= 0.0 {
+        return;
+    }
+    ctx.push_clip_layer(&drawn.fill);
+    ctx.push_group();
+    ctx.set_color(color(lit.color));
+    ctx.set_stroke(Stroke::new((drawn.width + width) * 2.0).with_join(Join::Round));
+    ctx.stroke_path(&drawn.fill);
+    if drawn.width > 0.0 {
+        ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
+        ctx.set_color(color(Rgba::BLACK));
+        ctx.set_stroke(Stroke::new(drawn.width * 2.0).with_join(Join::Round));
+        ctx.stroke_path(&drawn.fill);
+        ctx.pop_layer();
+    }
+    if let Some(fade) = lit.fade {
+        fade_down(ctx, drawn.fill.bounding_box(), fade);
+    }
+    ctx.pop_layer();
+    ctx.pop_layer();
+}
+
+/// Erases the open group down `bounds`: none of it at the top, all but
+/// `fade` of it at the bottom.
+fn fade_down(ctx: &mut impl Raster, bounds: Rect, fade: f64) {
+    ctx.push_blend_layer(BlendMode::new(Mix::Normal, Compose::DestOut));
+    let erase = Rgba::BLACK.with_alpha((1.0 - fade.clamp(0.0, 1.0)) as f32);
+    ctx.set_gradient(Gradient::new_linear((bounds.x0, bounds.y0), (bounds.x0, bounds.y1)).with_stops([color(Rgba::TRANSPARENT), color(erase)]));
+    ctx.fill_rect(&bounds);
+    ctx.pop_layer();
+}
+
 fn rounded(r: Rect, radius: f64) -> BezPath {
     RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1)
 }
@@ -1252,7 +1297,7 @@ mod tests {
             let mut scene = Scene::new(100, 100);
             let join = Joined { size: (60.0, 40.0), radius: 10.0, border: 1.0, attach, near_inset, walls: Walls::NONE, far_gap: None };
             let fit = Fit { outline: Outline::Join(join), snap: Snap::Edges };
-            let id = scene.add(IRect::new(0, 0, 100, 100), Paint::Outlined { fit, fill, border: Rgba::BLACK, near: Rgba::TRANSPARENT });
+            let id = scene.add(IRect::new(0, 0, 100, 100), Paint::Outlined { fit, fill, border: Rgba::BLACK, near: Rgba::TRANSPARENT, lit: None });
             scene.set_transform(id, Affine::translate((20.0, 39.0)) * Affine::scale_non_uniform(1.0, stretch));
             let mut r = Renderer::new(100, 100);
             r.set_scale(1.25);

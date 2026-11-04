@@ -1,6 +1,7 @@
 //! One role's box, in paint order: casts under
 //! everything, rings, the fill with its border, the face, the inset
-//! hairlines and rings, then the pointer's wash.
+//! hairlines and rings, then the pointer's wash. An inset ring sits inside
+//! the border, as CSS's inset shadow sits inside the border box.
 
 use std::time::Instant;
 
@@ -8,7 +9,7 @@ use fs_theme::color::Rgba;
 use fs_theme::style::{BoxStyle, Edge};
 use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
-use crate::scene::{Cast, Fit, IRect, Outline, Paint, Scene, Snap};
+use crate::scene::{Cast, Fit, IRect, LitLine, Outline, Paint, Scene, Snap};
 use crate::surfaces::bar::cell::Painter;
 use crate::surfaces::rim::Rim;
 
@@ -58,7 +59,8 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
     let lit = rim.filter(|_| bw > 0.0).and_then(|(rim, now, at)| {
         let mut line = rr(rect.inflate(-half, -half), radius - half);
         line.close_path();
-        rim.paint(now, line, bw, rr(rect, radius), at.transform_rect_bbox(rect), alpha, None).map(|lit| lit.fit(fit))
+        let fade = b.inset_rings.first().and_then(|r| r.fade);
+        rim.paint(now, line, bw, rr(rect, radius), at.transform_rect_bbox(rect), alpha, None, fade).map(|lit| lit.fit(fit))
     });
     p.framed(r, a(b.fill), radius as f32, if lit.is_some() { Rgba::TRANSPARENT } else { a(bc) }, bw as f32);
     if let Some(lit) = lit {
@@ -85,9 +87,8 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
         p.shape(r, Paint::Lips { radius: radius as f32, border: bw as f32, lips });
     }
     for ring in &b.inset_rings {
-        let half = ring.spread / 2.0;
-        let line = rr(rect.inflate(-half, -half), (radius - half).max(0.0));
-        p.shape(r, Paint::Shape { fill: None, strokes: vec![(line, a(ring.color), ring.spread)] });
+        let lit = LitLine::of(ring).with_alpha(alpha);
+        p.shape(r, Paint::Outlined { fit, fill: Rgba::TRANSPARENT, border: Rgba::TRANSPARENT, near: Rgba::TRANSPARENT, lit: Some(lit) });
     }
     if let Some(w) = b.wash.filter(|_| wash > 0.0) {
         p.rect(r, w.with_alpha(w.a * alpha * wash), radius as f32);
