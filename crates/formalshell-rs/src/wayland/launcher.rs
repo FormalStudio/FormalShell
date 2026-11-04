@@ -291,8 +291,12 @@ impl App {
                 self.atlas_show();
             }
             P::Summon(route) => {
+                let from = self.launcher_panel();
                 self.launcher.close();
                 self.menu_open(Some(route));
+                if route == crate::surfaces::launcher::PICKER_ROUTE {
+                    self.launcher.picker.from = from;
+                }
             }
             P::Call(target, function) => {
                 self.menu_close();
@@ -819,7 +823,7 @@ impl App {
                 .launcher
                 .picker_tiles(&self.store)
                 .into_iter()
-                .filter(|(_, item)| p.warm(item) || !p.cached.is_empty() || item.kind == fs_menu::providers::ItemKind::Sky)
+                .filter(|(_, item)| p.warm(item) || !p.cached.is_empty() || matches!(item.kind, fs_menu::providers::ItemKind::Sky | fs_menu::providers::ItemKind::Mode { .. }))
                 .map(|(_, item)| picker::tile_key(&item, &sky))
                 .filter(|key| px != p.thumb_px || !p.thumbs.contains_key(key))
                 .collect();

@@ -108,7 +108,7 @@ fn kinds(items: &[Item]) -> (usize, usize, usize, usize) {
             ItemKind::Single { filed: None, .. } => n.1 += 1,
             ItemKind::Single { filed: Some(Mode::Dark), .. } => n.2 += 1,
             ItemKind::Single { filed: Some(Mode::Light), .. } => n.3 += 1,
-            ItemKind::Sky => {}
+            ItemKind::Sky | ItemKind::Mode { .. } => {}
         }
     }
     n
@@ -372,4 +372,17 @@ fn tile_rows_show_the_modes_half_and_match_title_and_files() {
     assert_eq!(tile_rows(&items, "yours", false, "", "x-dark").len(), 1);
     assert_eq!(tile_rows(&items, "yours", false, "", "SEA")[0].label, "Sea");
     assert_eq!(tile_rows(&items, "yours", false, "", "nothing").len(), 0);
+}
+
+#[test]
+fn style_previews_carry_their_slot_and_hide_under_a_query() {
+    let items = vec![
+        Item { id: "mode-light".into(), kind: ItemKind::Mode { mode: Mode::Light, path: "/p/x-light.png".into() }, title: "Light".into(), credit: None },
+        Item { id: "mode-dark".into(), kind: ItemKind::Mode { mode: Mode::Dark, path: "/p/x-dark.png".into() }, title: "Dark".into(), credit: None },
+    ];
+    let rows = tile_rows(&items, "style", false, "", "");
+    assert_eq!(rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), ["/p/x-light.png", "/p/x-dark.png"]);
+    assert_eq!(rows[0].kind, Kind::Other(fs_menu::providers::MODE_KIND.into()));
+    assert!(items[0].files().is_empty());
+    assert!(tile_rows(&items, "style", false, "", "light").is_empty());
 }

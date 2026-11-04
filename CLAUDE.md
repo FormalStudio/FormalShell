@@ -1183,11 +1183,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   directories, an `-l`/`-d` pair, a dark-only and a light-only single,
   `-flexoki`/`-zenbones` siblings) and a fixture catalog under the leg's
   own `FS_WALLPAPERS` (`PICKER_INCLUDED=real` keeps the result's own),
-  read off `picker status`: Your wallpapers and Included, every tile's
-  kind, filing and title. Off the frame: a pair's halves either side of
-  its diagonal, a filed single's badge and the current mark in their
-  corners. Enter on a pair writing both slots and the next summon opening
-  on it, a light-only and a dark-only pick writing their slot and the mode
+  read off `picker status`: Style, Your wallpapers and Included, every
+  tile's kind, filing and title. Off the frame: a pair's halves either
+  side of its diagonal, a filed single's badge and the current mark in
+  their corners, and the Style previews showing the two slots with the
+  theme's `ring` on the mode in effect. Enter on a pair writing both slots
+  and the next summon opening on it, Return on the Light and Dark previews
+  flipping `theme status`'s mode with the card left open (refused, the
+  heading saying so, under a pinned `theme.mode`), a light-only and a dark-only pick writing their slot and the mode
   (the slot alone under a pinned `theme.mode`), `chooseFor` one slot and
   no mode, the Sky, Ctrl+Tab and Ctrl+Shift+Tab between sections, a query,
   the empty Your wallpapers, `picker select` listing the files flat, the
@@ -1318,7 +1321,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `settings set`/`reset` on it answering the pinned error, `x` dropping
   the override, Appearance's Bar row opening Bar, Right on its style
   repainting the bar solid (`bar paint`) and `settings reset` clearing it,
-  Backspace back to Appearance and again to the tiles,
+  Backspace back to Appearance, its Wallpaper row opening the picker in
+  the card and Backspace there landing back on Appearance, then the tiles,
   settings.json's sha256 unchanged, `menu status` reading the page held at
   each step, Escape back to the tiles and out to the root, the root's
   Settings row and `panel open info` landing in the card and `panel close`

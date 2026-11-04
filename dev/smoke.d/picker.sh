@@ -13,14 +13,19 @@
 # them and the Sky; PICKER_INCLUDED=real leaves the result's own set there
 # instead and reads Included as whatever it ships.
 #
-# Read off `picker status`: the sections, every tile's kind, filing and
-# title, nothing hidden. Read off the frame: the pair tile's light half
+# Read off `picker status`: the sections, the two Style previews (kind
+# `mode`) showing the slots, every tile's kind, filing and title, nothing
+# hidden. Read off the frame: the pair tile's light half
 # above its diagonal and its dark half under it, a filed single's badge in
 # its top-left corner and none on an unfiled one, and the current mark in
-# the bottom-right corner of the tile on the desktop alone.
+# the bottom-right corner of the tile on the desktop alone, and the Style
+# previews carrying the two halves of the pair once it is picked.
 #
 # Then the picks: Enter on the pair writing both slots, the cursor opening
-# on that tile at the next summon, a light-only and a dark-only pick each
+# on that tile at the next summon, Ctrl+Shift+Tab onto the Light preview
+# and Return, then Right and Return on Dark, each flipping `theme status`'s
+# mode with the card left open and the ring moving to it (under `--light`
+# both refused, the heading saying "Set in settings.json"), a light-only and a dark-only pick each
 # writing its slot and the mode (under `--light`, which pins theme.mode,
 # the slot alone), `chooseFor` (the column's Use in light mode only)
 # writing one slot and no mode, and the Sky. Ctrl+Tab and Ctrl+Shift+Tab
@@ -61,6 +66,15 @@ picker_current_png="$shot_dir/picker-current.png"
 picker_current_menu="$shot_dir/picker-current-menu.json"
 picker_current_status="$shot_dir/picker-current-status.json"
 picker_current_theme="$shot_dir/picker-current-theme.json"
+picker_style_at="$shot_dir/picker-style-at.json"
+picker_style_light_png="$shot_dir/picker-style-light.png"
+picker_style_light_menu="$shot_dir/picker-style-light-menu.json"
+picker_style_light_status="$shot_dir/picker-style-light-status.json"
+picker_style_light_theme="$shot_dir/picker-style-light-theme.json"
+picker_style_dark_png="$shot_dir/picker-style-dark.png"
+picker_style_dark_menu="$shot_dir/picker-style-dark-menu.json"
+picker_style_dark_status="$shot_dir/picker-style-dark-status.json"
+picker_style_dark_theme="$shot_dir/picker-style-dark-theme.json"
 picker_light_state="$shot_dir/picker-light-only-state.json"
 picker_light_theme="$shot_dir/picker-light-only-theme.json"
 picker_dark_state="$shot_dir/picker-dark-only-state.json"
@@ -136,7 +150,7 @@ leg_picker_timing() {
   # frame is the grid.
   local t0
   t0=$(picker_t0)
-  leg_timing $((56 + t0)) $((90 + t0))
+  leg_timing $((66 + t0)) $((100 + t0))
 }
 
 leg_picker_drive() {
@@ -182,6 +196,25 @@ sleep 2.5
 $ipc call menu status > "$picker_current_menu" 2>&1
 $ipc call picker status > "$picker_current_status" 2>&1
 cp "$iso_home/.local/state/formalshell/theme.json" "$picker_current_theme" 2>/dev/null
+"$wtype_bin" -M ctrl -M shift -k Tab -m shift -m ctrl
+sleep 0.8
+$ipc call picker status > "$picker_style_at" 2>&1
+"$wtype_bin" -k Return
+sleep 3
+$ipc call theme status > "$picker_style_light_theme" 2>&1
+$ipc call picker status > "$picker_style_light_status" 2>&1
+$ipc call menu status > "$picker_style_light_menu" 2>&1
+"$grim_bin" "$picker_style_light_png" > /dev/null 2>&1
+cp "$iso_home/.local/state/formalshell/theme.json" "$shot_dir/picker-style-light-colours.json" 2>/dev/null
+"$wtype_bin" -k Right
+sleep 0.4
+"$wtype_bin" -k Return
+sleep 3
+$ipc call theme status > "$picker_style_dark_theme" 2>&1
+$ipc call picker status > "$picker_style_dark_status" 2>&1
+$ipc call menu status > "$picker_style_dark_menu" 2>&1
+"$grim_bin" "$picker_style_dark_png" > /dev/null 2>&1
+cp "$iso_home/.local/state/formalshell/theme.json" "$shot_dir/picker-style-dark-colours.json" 2>/dev/null
 $ipc call picker choose "$picker_dir/Light/noon.png" > /dev/null 2>&1
 sleep 3
 cp "$picker_state" "$picker_light_state" 2>/dev/null
@@ -245,11 +278,13 @@ EOF
 
 leg_picker_assert() {
   local f
-  for f in "$picker_grid_png" "$picker_current_png" "$picker_actions_png" "$picker_sky_png" "$picker_empty_png" "$picker_nomatch_png"; do
+  for f in "$picker_grid_png" "$picker_current_png" "$picker_style_light_png" "$picker_style_dark_png" "$picker_actions_png" "$picker_sky_png" "$picker_empty_png" "$picker_nomatch_png"; do
     [ -f "$f" ] || fail "picker: no frame at $f"
   done
   echo "SMOKE_PICKER_GRID $picker_grid_png"
   echo "SMOKE_PICKER_CURRENT $picker_current_png"
+  echo "SMOKE_PICKER_STYLE_LIGHT $picker_style_light_png"
+  echo "SMOKE_PICKER_STYLE_DARK $picker_style_dark_png"
   echo "SMOKE_PICKER_ACTIONS $picker_actions_png"
   echo "SMOKE_PICKER_SKY $picker_sky_png"
   echo "SMOKE_PICKER_EMPTY $picker_empty_png"
@@ -261,6 +296,7 @@ leg_picker_assert() {
 import json, sys
 d, real, status = sys.argv[1], sys.argv[2], json.load(open(sys.argv[3]))
 items = status["items"]
+style = [i for i in items if i["section"] == "style"]
 yours = [i for i in items if i["section"] == "yours"]
 included = [i for i in items if i["section"] == "included"]
 want = {
@@ -276,6 +312,12 @@ want = {
     "Wave zenbones": ("single", f"{d}/wave-zenbones.png", f"{d}/wave-zenbones.png", None),
 }
 ok = True
+cur = status["current"]
+got = [(i["id"], i["kind"], i["title"], i["light"], i["dark"]) for i in style]
+wanted = [("mode-light", "mode", "Light", cur["light"], None), ("mode-dark", "mode", "Dark", None, cur["dark"])]
+if items[:2] != style or got != wanted:
+    print(f"Style {got}, wanted {wanted} first")
+    ok = False
 got = [i["title"] for i in yours]
 if got != list(want):
     print(f"Your wallpapers in order {got}, wanted {list(want)}")
@@ -295,22 +337,23 @@ if not included or included[-1]["kind"] != "sky":
     print("Included does not end on the Sky")
     ok = False
 sections = [(s["id"], s["title"], s["count"]) for s in status["sections"]]
-if sections != [("yours", "Your wallpapers", 10), ("included", "Included", len(included))]:
+if sections != [("style", "Style", 2), ("yours", "Your wallpapers", 10), ("included", "Included", len(included))]:
     print(f"sections {sections}")
     ok = False
-if status["count"] != len(items) or status["cursor"] != 0:
+if status["count"] != len(items) or status["cursor"] != 2:
     print(f"count {status['count']} cursor {status['cursor']}")
     ok = False
 print("listing: " + ("ok" if ok else "WRONG"))
 sys.exit(0 if ok else 1)
 PY
-  # Ctrl+Tab from Your wallpapers lands on Included's first tile, and
-  # Ctrl+Shift+Tab back on the first of Your wallpapers.
-  "$jq_bin" -e '.cursor == 10' "$picker_next_status" > /dev/null \
+  # The cursor opens past the Style previews; Ctrl+Tab from Your wallpapers
+  # lands on Included's first tile, and Ctrl+Shift+Tab back on the first of
+  # Your wallpapers.
+  "$jq_bin" -e '.cursor == 12' "$picker_next_status" > /dev/null \
     || fail "Ctrl+Tab did not land on Included's first tile: $("$jq_bin" -c '{cursor, cursorId}' "$picker_next_status")"
-  "$jq_bin" -e '.cursor == 0' "$picker_prev_status" > /dev/null \
+  "$jq_bin" -e '.cursor == 2' "$picker_prev_status" > /dev/null \
     || fail "Ctrl+Shift+Tab did not land back on the first tile: $("$jq_bin" -c '{cursor, cursorId}' "$picker_prev_status")"
-  echo "SMOKE_PICKER_SECTIONS Ctrl+Tab to 10, Ctrl+Shift+Tab to 0"
+  echo "SMOKE_PICKER_SECTIONS Ctrl+Tab to 12, Ctrl+Shift+Tab to 2"
   "$jq_bin" -e '.actionsOpen and .actions == ["set", "light-only", "dark-only", "open-file", "copy-path"]' "$picker_single_actions" > /dev/null \
     || fail "a single's column is not Set, Use in light mode only, Use in dark mode only, Open file, Copy path: $("$jq_bin" -c '{actionsOpen, actions}' "$picker_single_actions")"
   "$jq_bin" -e '.actionsOpen and .actions == ["set", "open-file", "copy-path"]' "$picker_pair_actions" > /dev/null \
@@ -320,9 +363,29 @@ PY
     || fail "the cursor did not open on the first tile: $("$jq_bin" -c '{cursor, cursorId}' "$picker_before_enter")"
   "$jq_bin" -e --arg l "$picker_dir/Light/dusk.png" --arg d "$picker_dir/Dark/dusk.png" '.wallpaper == $l and .wallpaperDark == $d and .wallpaperColor == false' "$picker_pair_state" > /dev/null \
     || fail "Enter on the pair did not write both slots: $("$jq_bin" -c '{wallpaper, wallpaperDark, wallpaperColor}' "$picker_pair_state")"
-  "$jq_bin" -e --arg id "$picker_dir/Light/dusk.png" '.cursorId == "wallpaper." + $id and ([.items[] | select(.current)] | map(.id)) == [$id]' "$picker_current_status" > /dev/null \
-    || fail "the next summon did not open on the pair, marked current alone: $("$jq_bin" -c '{cursorId, current: [.items[] | select(.current) | .id]}' "$picker_current_status")"
+  "$jq_bin" -e --arg id "$picker_dir/Light/dusk.png" '.cursorId == "wallpaper." + $id and ([.items[] | select(.current and .kind != "mode")] | map(.id)) == [$id]' "$picker_current_status" > /dev/null \
+    || fail "the next summon did not open on the pair, marked current alone: $("$jq_bin" -c '{cursorId, current: [.items[] | select(.current and .kind != "mode") | .id]}' "$picker_current_status")"
   echo "SMOKE_PICKER_PAIR both slots written, the cursor opening on the pair"
+  # The Style previews: Ctrl+Shift+Tab off the pair onto Light, Return on
+  # it and on Dark running `theme mode`, the card left open and the ring
+  # (the preview `current`) on the mode in effect.
+  local style_key want_light=light want_dark=dark want_note=""
+  style_key=$("$jq_bin" -r '.modeKey' "$picker_style_light_theme")
+  if [ "$style_key" = light ] || [ "$style_key" = dark ]; then
+    want_light=$style_key want_dark=$style_key want_note="Set in settings.json"
+  fi
+  "$jq_bin" -e '.items[.cursor].id == "mode-light"' "$picker_style_at" > /dev/null \
+    || fail "Ctrl+Shift+Tab off the pair did not land on the Light preview: $("$jq_bin" -c '{cursor, cursorId}' "$picker_style_at")"
+  local step
+  for step in light dark; do
+    local theme_f="$shot_dir/picker-style-$step-theme.json" status_f="$shot_dir/picker-style-$step-status.json" want=$want_light
+    [ "$step" = dark ] && want=$want_dark
+    "$jq_bin" -e --arg m "$want" '.mode == $m' "$theme_f" > /dev/null \
+      || fail "Return on the $step preview left the mode at $("$jq_bin" -r .mode "$theme_f"), wanted $want"
+    "$jq_bin" -e --arg m "$want" --arg n "$want_note" '.open and .items[.cursor].id == "mode-'"$step"'" and ([.items[] | select(.kind == "mode" and .current) | .id] == ["mode-" + $m]) and ([.sections[] | select(.id == "style") | .far] == [$n])' "$status_f" > /dev/null \
+      || fail "after Return on the $step preview: $("$jq_bin" -c '{open, cursor, style: [.items[] | select(.kind == "mode") | {id, current}], far: [.sections[] | select(.id == "style") | .far]}' "$status_f")"
+  done
+  echo "SMOKE_PICKER_STYLE Return on Light then Dark: mode $want_light then $want_dark, the card open (theme.mode '${style_key}')"
   # A light-only then a dark-only pick: their slot, and the mode unless
   # settings.json pins it.
   local pinned
@@ -344,7 +407,7 @@ PY
     || fail "the Sky pick is not saved as wallpaperColor sky: $("$jq_bin" -c .wallpaperColor "$picker_sky_state")"
   "$jq_bin" -e '.desktop | startswith("sky:")' "$picker_sky_theme" > /dev/null \
     || fail "choosing the Sky did not put the sky on the desktop: $("$jq_bin" -c .desktop "$picker_sky_theme")"
-  "$jq_bin" -e '.items[.cursor].kind == "sky" and ([.items[] | select(.current) | .kind] == ["sky"])' "$picker_sky_status" > /dev/null \
+  "$jq_bin" -e '.items[.cursor].kind == "sky" and ([.items[] | select(.current and .kind != "mode") | .kind] == ["sky"])' "$picker_sky_status" > /dev/null \
     || fail "the Sky is not the current tile under the cursor: $("$jq_bin" -c '{cursor, current: [.items[] | select(.current) | .id]}' "$picker_sky_status")"
   echo "SMOKE_PICKER_SKY_PICK the sky on the desktop and current"
   "$jq_bin" -e --arg id "wallpaper.$picker_dir/fold-l.png" '.ids == [$id]' "$picker_query_menu" > /dev/null \
@@ -366,7 +429,7 @@ PY
   if grep -q '\.part\.jpg$' "$picker_cache_listing"; then
     fail "the thumbnail warm left partial files behind: $(cat "$picker_cache_listing")"
   fi
-  "$jq_bin" -e '.cachedThumbnails == ([.items[] | select(.kind != "sky")] | length)' "$picker_cached_status" > /dev/null \
+  "$jq_bin" -e '.cachedThumbnails == ([.items[] | select(.kind != "sky" and .kind != "mode")] | length)' "$picker_cached_status" > /dev/null \
     || fail "not every tile is backed by cached thumbnails: $("$jq_bin" -c '{count, cachedThumbnails}' "$picker_cached_status")"
   # The frames: the pair's halves either side of its diagonal, the badges,
   # and the current mark on the pair alone.
@@ -374,7 +437,11 @@ PY
   primary=$("$jq_bin" -r '.primary // empty' "$picker_current_theme" 2>/dev/null)
   [ -n "$primary" ] || fail "no primary in theme.json after the pair pick"
   "$python3_bin" - "${out_scale:-1}" "$primary" "$picker_dir" \
-    "$picker_grid_png" "$picker_grid_menu" "$picker_current_png" "$picker_current_menu" <<'PY' || fail "picker: a tile's picture, badge or mark is wrong"
+    "$picker_grid_png" "$picker_grid_menu" "$picker_current_png" "$picker_current_menu" \
+    "$picker_style_light_png" "$picker_style_light_menu" "$picker_style_dark_png" "$picker_style_dark_menu" \
+    "$("$jq_bin" -r .mode "$picker_style_light_theme")" "$("$jq_bin" -r .mode "$picker_style_dark_theme")" \
+    "$("$jq_bin" -r '.ring // empty' "$shot_dir/picker-style-light-colours.json" 2>/dev/null)" \
+    "$("$jq_bin" -r '.ring // empty' "$shot_dir/picker-style-dark-colours.json" 2>/dev/null)" <<'PY' || fail "picker: a tile's picture, badge or mark is wrong"
 import json, sys
 from PIL import Image
 scale, primary, d = float(sys.argv[1]), sys.argv[2], sys.argv[3]
@@ -435,6 +502,30 @@ for name, colour in [("fold-l.png", "e8dcc3"), ("root-a.png", "c0392b")]:
     path = f"{d}/{name}"
     marked, _ = corner(picture(*after, path), hexrgb("24344f" if name == "fold-l.png" else colour), False, False)
     claim(f"{name}: {marked} px off its colour in the bottom-right corner, no mark wanted", marked < 10)
+
+# The Style previews after the pair pick: the light half on Light, the dark
+# half on Dark, and the theme's ring colour along the picture's top edge on
+# the mode in effect alone.
+light, dark = hexrgb("fbf7ee"), hexrgb("2f3f5c")
+for tile, want in [("mode-light", light), ("mode-dark", dark)]:
+    got = mean(picture(*after, tile), 0.5, 0.5)
+    claim(f"the {tile} preview after the pair pick reads {got}", far(got, want) <= 24)
+
+def ringed(im, ring):
+    # Rows of ring colour along the middle of the top edge.
+    px = im.load()
+    xs = range(round(im.width * 0.3), round(im.width * 0.7))
+    rows = range(0, int(5 * scale) + 1)
+    return sum(1 for y in rows if sum(far(px[x, y], ring) <= 30 for x in xs) >= 0.9 * len(xs))
+
+for png, menu, mode, ring in [(sys.argv[8], sys.argv[9], sys.argv[12], sys.argv[14]), (sys.argv[10], sys.argv[11], sys.argv[13], sys.argv[15])]:
+    if not ring:
+        claim(f"mode {mode}: theme.json carries a ring colour", False)
+        continue
+    for tile in ["mode-light", "mode-dark"]:
+        rows = ringed(picture(png, menu, tile), hexrgb(ring))
+        on = tile == f"mode-{mode}"
+        claim(f"mode {mode}: {rows} rows of ring {ring} along {tile}'s top edge, {'the ring' if on else 'none'} wanted", rows >= 1 if on else rows == 0)
 sys.exit(0 if ok else 1)
 PY
   echo "SMOKE_PICKER_TILES the pair split on its diagonal, the badges and the current mark in their corners"

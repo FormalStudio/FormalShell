@@ -31,9 +31,16 @@ impl SettingsPage {
 const LINKS: [(&str, &str, &str, &str); 4] = [
     ("appearance", "panel-top", "Bar", "page:settings:bar"),
     ("appearance", "monitor", "Desktop", "page:settings:desktop"),
-    ("appearance", "palette", "Theme and wallpaper", "route:theme"),
+    ("appearance", "image", "Wallpaper", "route:wallpaper"),
     ("system", "settings", "System actions", "route:system"),
 ];
+
+/// A link row's value: the wallpaper's title on the picker's.
+fn link_value(v: &View, to: &str) -> Option<String> {
+    (to == "route:wallpaper")
+        .then(|| crate::services::picker::title(&v.store.picker, &v.store.desktop()))
+        .filter(|t| !t.is_empty())
+}
 
 fn links(page: &str) -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str, &'static str)> + '_ {
     LINKS.iter().filter(move |(p, ..)| *p == page)
@@ -123,7 +130,7 @@ impl Panel for SettingsPage {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Config, Topic::State]
+        &[Topic::Config, Topic::State, Topic::Picker]
     }
 
     fn width(&self, v: &View) -> f64 {
@@ -153,7 +160,9 @@ impl Panel for SettingsPage {
         out.extend(sections.into_iter().map(|(name, parts)| w::panel_runs(s, Some(w::panel_heading(s, name)), parts)));
         let rows: Vec<w::Part> = links(self.page.id)
             .map(|&(_, glyph, label, to)| {
-                w::Part::Row(w::panel_row(s, glyph, label, None, vec![w::icon("chevron-right").ink(Ink::Muted)]).stop(to).on(to))
+                let mut trailing: Vec<El> = link_value(v, to).map(|value| w::label(value).ink(Ink::Muted)).into_iter().collect();
+                trailing.push(w::icon("chevron-right").ink(Ink::Muted));
+                w::Part::Row(w::panel_row(s, glyph, label, None, trailing).stop(to).on(to))
             })
             .collect();
         if !rows.is_empty() {

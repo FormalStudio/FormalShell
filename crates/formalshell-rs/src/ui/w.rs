@@ -61,14 +61,15 @@ pub fn para(s: impl Into<String>, size: Type, weight: Weight, ink: Ink, lines: u
 
 /// A bitmap (an app's icon) in a `size` square.
 pub fn picture(image: Option<crate::scene::Bitmap>, size: f64) -> El {
-    El::new(Kind::Picture { pic: Pic(image), size: (size, size), checked: false, badge: None })
+    El::new(Kind::Picture { pic: Pic(image), size: (size, size), checked: false, ringed: false, badge: None, well: false })
 }
 
 /// A wallpaper tile's picture in a `width` by `height` box: `checked` the
-/// one in use (the wallpaper on the desktop), `badge` an icon naming what
-/// it is filed as.
-pub fn tile_picture(image: Option<crate::scene::Bitmap>, width: f64, height: f64, checked: bool, badge: Option<&'static str>) -> El {
-    El::new(Kind::Picture { pic: Pic(image), size: (width, height), checked, badge }).width(super::Size::Px(width))
+/// one in use (the wallpaper on the desktop), `ringed` the choice in effect
+/// among its peers (the mode), `badge` an icon naming what it is filed as;
+/// a `muted` field until the picture is there, or where there is none.
+pub fn tile_picture(image: Option<crate::scene::Bitmap>, width: f64, height: f64, checked: bool, ringed: bool, badge: Option<&'static str>) -> El {
+    El::new(Kind::Picture { pic: Pic(image), size: (width, height), checked, ringed, badge, well: true }).width(super::Size::Px(width))
 }
 
 /// Tiles placed freely over `content` in a framed viewport `size` big,

@@ -292,9 +292,10 @@ pub enum Kind {
     Para { text: String, font: Font, ink: Ink, lines: usize },
     /// A bitmap fitted at its own size in a `size` box (width, height);
     /// blank without one. `checked` marks it the one in use with a check on
-    /// a disc in its bottom-right corner, and `badge` names an icon on a
-    /// disc in its top-left one.
-    Picture { pic: Pic, size: (f64, f64), checked: bool, badge: Option<&'static str> },
+    /// a disc in its bottom-right corner, `ringed` the choice in effect with
+    /// the `ring` round its edge, and `badge` names an icon on a disc in its
+    /// top-left one. `well` draws a `muted` field where there is no bitmap.
+    Picture { pic: Pic, size: (f64, f64), checked: bool, ringed: bool, badge: Option<&'static str>, well: bool },
     /// A square of modules, one string of `1`s and `0`s per row (a QR
     /// code), centred at the largest whole module that fits.
     Matrix { rows: Vec<String> },

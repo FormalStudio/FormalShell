@@ -102,12 +102,28 @@ impl State {
 }
 
 /// The key a tile's picture is kept under: a pair's two halves, a single's
-/// file, the Sky's source now.
+/// file, the Sky's source now, a Style preview's slot.
 pub fn tile_key(item: &Item, sky: &str) -> String {
     match &item.kind {
         ItemKind::Pair { light, dark } => format!("{light}{HALVES}{dark}"),
-        ItemKind::Single { path, .. } => path.clone(),
+        ItemKind::Single { path, .. } | ItemKind::Mode { path, .. } => path.clone(),
         ItemKind::Sky => sky.to_owned(),
+    }
+}
+
+/// What `source` (the desktop's) is called: the title of the tile holding
+/// it, else one read off its file name; the Sky and a flat field by name.
+pub fn title(state: &State, source: &str) -> String {
+    if super::wallpaper::sky(source).is_some() {
+        return "Sky".into();
+    }
+    if super::wallpaper::generated(source) {
+        return "Colour".into();
+    }
+    match state.items.iter().chain(&state.included).find(|i| i.files().contains(&source)) {
+        Some(item) => item.title.clone(),
+        None if source.is_empty() => String::new(),
+        None => providers::title_of(providers::image_basename(source)),
     }
 }
 
@@ -329,6 +345,18 @@ mod tests {
         }
         assert_eq!(img.get_pixel(8, 0)[3], 255);
         assert_eq!(img.get_pixel(20, 15)[3], 255);
+    }
+
+    #[test]
+    fn the_desktop_is_named_by_its_tile() {
+        let state = State {
+            items: vec![Item { id: "/w/dusk-l.png".into(), kind: ItemKind::Pair { light: "/w/dusk-l.png".into(), dark: "/w/dusk-d.png".into() }, title: "Dusk".into(), credit: None }],
+            ..State::default()
+        };
+        assert_eq!(title(&state, "/w/dusk-d.png"), "Dusk");
+        assert_eq!(title(&state, "/elsewhere/3840x2160_lake-dark.jpg"), "Lake");
+        assert_eq!(title(&state, &super::super::wallpaper::sky_source(4)), "Sky");
+        assert_eq!(title(&state, ""), "");
     }
 
     #[test]

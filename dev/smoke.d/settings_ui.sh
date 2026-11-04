@@ -13,8 +13,10 @@
 # override gone from state.json and from the resolved document. Downs to
 # Appearance's Bar row and Return open Bar, three Downs and Right set its
 # style to solid, read off `configLoaded` and `bar paint`'s style, then
-# reset over IPC; Backspace goes back to Appearance and again to the
-# tiles. Desktop runs past the card, which rests on a whole row: fourteen
+# reset over IPC; Backspace goes back to Appearance. Downs to its last
+# row, Wallpaper, and Return open the picker in the card (`menu status`
+# level `wallpaper`, view `picker`), and Backspace there lands back on
+# Appearance; Backspace again goes to the tiles. Desktop runs past the card, which rests on a whole row: fourteen
 # Downs and a Left reach Bottom right below it and set it to screensaver,
 # and a real click on its token climbs to Appearance. settings.json's sha256 is the same at the end. Every page photographed.
 # The panels live in the launcher card, centred (Pond's settings window):
@@ -110,6 +112,13 @@ sleep 1
 read_back style-reset
 key BackSpace
 read_back back-sub
+walk_to route:wallpaper walk-wallpaper.txt
+key Return
+sleep 1
+read_back wallpaper
+"$grim_bin" "\$d/settings-ui-wallpaper.png" > /dev/null 2>&1
+key BackSpace
+read_back wallpaper-back
 key BackSpace
 read_back back
 walk_to session:lock walk-tiles.txt
@@ -205,6 +214,12 @@ leg_settings_ui_assert() {
   settings_ui_jq "the bar repainted solid" paint-solid.json '.[0].paint.style == "solid"'
   settings_ui_text "settings reset bar.style" reset-style.txt "ok"
   settings_ui_text "Backspace on Bar went back to Appearance" panel-back-sub.txt "settings:appearance"
+  tail -n1 "$shot_dir/settings-ui/walk-wallpaper.txt" > "$shot_dir/settings-ui/walk-wallpaper-end.txt" 2>/dev/null
+  settings_ui_text "Downs reached Appearance's Wallpaper row" walk-wallpaper-end.txt "route:wallpaper"
+  settings_ui_jq "Return on it opened the picker in the card" menu-wallpaper.json '.isOpen == true and .level == "wallpaper" and .view == "picker"'
+  settings_ui_jq "Backspace in the picker went back to Appearance" menu-wallpaper-back.json '.isOpen == true and .panel == "settings:appearance"'
+  [ -s "$shot_dir/settings-ui/settings-ui-wallpaper.png" ] || fail "settings-ui: no settings-ui-wallpaper.png"
+  echo "SMOKE_SETTINGS_UI_SHOT $shot_dir/settings-ui/settings-ui-wallpaper.png"
   settings_ui_text "Backspace on Appearance went back to the tiles" panel-back.txt "settings"
   local tiles
   tiles=$(grep -E '^(tile|session):' "$shot_dir/settings-ui/walk-tiles.txt" 2>/dev/null | uniq | tr '\n' ' ')

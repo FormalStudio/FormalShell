@@ -91,7 +91,8 @@ pub fn changed(app: &mut App, topic: Topic) {
         }
         Topic::State => {
             app.launcher_inputs();
-            app.launcher_store_changed();
+            // The picker's Style previews show the slots.
+            app.launcher_picker();
             theme_inputs(app);
             lights::record(app.store.state.data.lights.clone());
             app.refresh_bar(Some(topic));

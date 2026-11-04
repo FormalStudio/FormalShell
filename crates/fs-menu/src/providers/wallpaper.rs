@@ -80,30 +80,39 @@ pub fn image_rows(paths: &[String], query: &str) -> Vec<Node> {
         .collect()
 }
 
+/// A Style preview's node kind: no wallpaper of its own to set, open or
+/// copy, so it carries no image actions.
+pub const MODE_KIND: &str = "wallpaper-mode";
+
 /// The picker's rows for `items` in `section`: each tile's node id is
 /// `wallpaper.<item id>`, its label the title, its path the file it shows now
 /// (a pair's dark half when `dark`, the Sky's `sky` source). `query` matches
-/// the title and the file names.
+/// the title and the file names; the Style previews stand only while there
+/// is none.
 pub fn tile_rows(items: &[Item], section: &str, dark: bool, sky: &str, query: &str) -> Vec<Node> {
     let q = fs_js::trim(query).to_lowercase();
     items
         .iter()
-        .filter(|item| {
-            q.is_empty()
-                || item.title.to_lowercase().contains(&q)
-                || item.files().iter().any(|f| image_basename(f).to_lowercase().contains(&q))
+        .filter(|item| match item.kind {
+            ItemKind::Mode { .. } => q.is_empty(),
+            _ => {
+                q.is_empty()
+                    || item.title.to_lowercase().contains(&q)
+                    || item.files().iter().any(|f| image_basename(f).to_lowercase().contains(&q))
+            }
         })
         .map(|item| {
-            let path = match &item.kind {
-                ItemKind::Pair { light, dark: d } => if dark { d.clone() } else { light.clone() },
-                ItemKind::Single { path, .. } => path.clone(),
-                ItemKind::Sky => sky.to_owned(),
+            let (path, kind) = match &item.kind {
+                ItemKind::Pair { light, dark: d } => (if dark { d.clone() } else { light.clone() }, Kind::Image),
+                ItemKind::Single { path, .. } => (path.clone(), Kind::Image),
+                ItemKind::Sky => (sky.to_owned(), Kind::Image),
+                ItemKind::Mode { path, .. } => (path.clone(), Kind::Other(MODE_KIND.to_owned())),
             };
             Node {
                 parent_id: Some("wallpaper".to_string()),
                 path,
                 section: Some(section.to_owned()),
-                ..Node::new(format!("wallpaper.{}", item.id), item.title.clone(), Kind::Image)
+                ..Node::new(format!("wallpaper.{}", item.id), item.title.clone(), kind)
             }
         })
         .collect()
@@ -131,6 +140,8 @@ pub enum ItemKind {
     /// picture for both modes.
     Single { path: String, filed: Option<Mode> },
     Sky,
+    /// A Style preview: `path` is the source `mode` shows now.
+    Mode { mode: Mode, path: String },
 }
 
 /// One tile of the picker.
@@ -148,7 +159,7 @@ impl Item {
         match &self.kind {
             ItemKind::Pair { light, dark } => vec![light, dark],
             ItemKind::Single { path, .. } => vec![path],
-            ItemKind::Sky => Vec::new(),
+            ItemKind::Sky | ItemKind::Mode { .. } => Vec::new(),
         }
     }
 }

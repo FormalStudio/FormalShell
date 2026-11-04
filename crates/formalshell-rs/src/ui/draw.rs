@@ -711,7 +711,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             cx.done(last);
         }
         Kind::Strip { inset, scroll, tiles, .. } => super::strip::paint(cx, el, inner, *inset, *scroll, tiles, path),
-        Kind::Picture { pic, checked, badge, .. } => {
+        Kind::Picture { pic, checked, ringed, badge, well, .. } => {
             let alpha = cx.alpha;
             let r = irect(inner);
             let check = checked.then(|| icon(cx, "check", Type::Body));
@@ -719,13 +719,25 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             let t = cx.theme;
             let (ring, disc, ink) = (cx.a(t.colors.get("card")), cx.a(t.colors.get("primary")), cx.a(t.colors.get("primaryForeground")));
             let (plate, plate_ink) = (cx.a(t.colors.get("card").with_alpha(0.8)), cx.a(t.colors.get("foreground")));
+            let (outline, gap) = (cx.a(t.colors.get("ring")), cx.a(t.colors.get("card")));
+            let field = cx.a(t.colors.get("muted"));
             let (d, inset, bw) = ((t.space.control_height - 8.0).round() as i32, t.space.sm.round() as i32, (t.border_width * 2.0).round() as i32);
             let mut p = cx.painter(path);
-            if let Some(image) = &pic.0 {
-                centred(&mut p, image, r, alpha);
+            match &pic.0 {
+                Some(image) => centred(&mut p, image, r, alpha),
+                None if *well => p.framed(r, field, t.radii.lg as f32, Rgba::TRANSPARENT, 0.0),
+                None => {}
             }
             let (w, h) = pic.0.as_ref().map_or((r.w, r.h), |i| i.size());
             let (x0, y0) = (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2);
+            if *ringed {
+                // Inside the picture's own edge, so the keyboard's ring round
+                // the tile never lands on it; the card's line between keeps
+                // the ring off a picture its colour was taken from.
+                let radius = t.radii.lg as f32;
+                p.framed(IRect::new(x0, y0, w, h), Rgba::TRANSPARENT, radius, outline, bw as f32);
+                p.framed(IRect::new(x0 + bw, y0 + bw, w - bw * 2, h - bw * 2), Rgba::TRANSPARENT, (radius - bw as f32).max(0.0), gap, bw as f32);
+            }
             if let Some(glyph) = badge {
                 let at = IRect::new(x0 + inset, y0 + inset, d, d);
                 p.rect(at, plate, d as f32 / 2.0);

@@ -436,6 +436,8 @@ pub struct Picker {
     pub token: String,
     /// `picker select` set this up for the open that follows.
     pending: bool,
+    /// The settings page it was summoned from, which leaving it returns to.
+    pub from: Option<&'static str>,
 }
 
 /// One of the picker's sections: its id, heading, and the words at the
@@ -447,6 +449,7 @@ pub struct PickerSection {
     pub far: String,
 }
 
+pub const STYLE: &str = "style";
 pub const YOURS: &str = "yours";
 pub const INCLUDED: &str = "included";
 /// A select request's one flat section.
@@ -903,7 +906,7 @@ impl Model {
     /// under Your wallpapers, then the built-ins and the Sky under Included.
     /// A select request lists the directory's files alone, one flat section.
     pub fn picker_tiles(&self, store: &Store) -> Vec<(&'static str, fs_menu::providers::Item)> {
-        use fs_menu::providers::{Item, ItemKind, image_basename};
+        use fs_menu::providers::{Item, ItemKind, Mode as Filed, image_basename};
         let p = &store.picker;
         let scanned = p.dir == self.picker.dir;
         if self.picker.select {
@@ -915,7 +918,15 @@ impl Model {
         }
         let yours = if scanned { p.items.as_slice() } else { &[] };
         let sky = Item { id: "sky".into(), kind: ItemKind::Sky, title: "Sky".into(), credit: None };
-        yours.iter().map(|i| (YOURS, i.clone())).chain(p.included.iter().chain([&sky]).map(|i| (INCLUDED, i.clone()))).collect()
+        let style = [(Filed::Light, "light", "Light"), (Filed::Dark, "dark", "Dark")].map(|(mode, name, title)| {
+            let path = store.desktop_for(name);
+            (STYLE, Item { id: format!("mode-{name}"), kind: ItemKind::Mode { mode, path }, title: title.into(), credit: None })
+        });
+        style
+            .into_iter()
+            .chain(yours.iter().map(|i| (YOURS, i.clone())))
+            .chain(p.included.iter().chain([&sky]).map(|i| (INCLUDED, i.clone())))
+            .collect()
     }
 
     /// The sections the picker shows, in order.
@@ -935,6 +946,7 @@ impl Model {
             _ => String::new(),
         };
         vec![
+            PickerSection { id: STYLE, title: "Style".into(), far: picker_style_note(store) },
             PickerSection { id: YOURS, title: "Your wallpapers".into(), far: dir },
             PickerSection { id: INCLUDED, title: "Included".into(), far: licence },
         ]
@@ -945,7 +957,7 @@ impl Model {
         let sky = crate::services::wallpaper::sky_source(store.sky_step());
         let tiles = self.picker_tiles(store);
         let mut rows = Vec::new();
-        for section in [FILES, YOURS, INCLUDED] {
+        for section in [FILES, STYLE, YOURS, INCLUDED] {
             let items: Vec<fs_menu::providers::Item> = tiles.iter().filter(|(s, _)| *s == section).map(|(_, i)| i.clone()).collect();
             rows.extend(fs_menu::providers::tile_rows(&items, section, dark, &sky, query));
         }
@@ -966,7 +978,34 @@ impl Model {
             ItemKind::Pair { light, dark } => store.desktop_for("light") == *light && store.desktop_for("dark") == *dark,
             ItemKind::Single { path, .. } => store.desktop() == *path,
             ItemKind::Sky => crate::services::wallpaper::sky(&store.desktop()).is_some(),
+            ItemKind::Mode { .. } => false,
         }
+    }
+
+    /// A Style preview stands for the mode in effect.
+    pub fn picker_mode_on(store: &Store, item: &fs_menu::providers::Item) -> bool {
+        use fs_menu::providers::{ItemKind, Mode as Filed};
+        match item.kind {
+            ItemKind::Mode { mode, .. } => (mode == Filed::Dark) == (store.state.data.mode == "dark"),
+            _ => false,
+        }
+    }
+
+    /// Enter or a click on a Style preview: `theme mode` under its own rules
+    /// (a snooze under `auto`, nothing where settings.json pins the mode,
+    /// which the section's far end says), the card left open on the
+    /// previews.
+    fn picker_style(&mut self, store: &Store, mode: fs_menu::providers::Mode) -> Out {
+        let name = if mode == fs_menu::providers::Mode::Dark { "dark" } else { "light" };
+        let key = crate::services::theme::mode_key(store.config.settings());
+        if let Ok(mode) = crate::services::theme::request_mode(name, &store.state.data.mode, key)
+            && mode != store.state.data.mode
+        {
+            state::set(vec![state::Field::Mode(mode)]);
+        }
+        self.placed = true;
+        self.dirty = true;
+        Out::None
     }
 
     /// A tile's picture size: `pickerTile` wide at the least, as many
@@ -984,7 +1023,7 @@ impl Model {
     pub fn open_image_select(&mut self, store: &Store, dir: &str, token: &str) {
         self.picker_abandon();
         let dir = crate::services::picker::directory(if dir.is_empty() { store.config.str("picker.directory").unwrap_or("") } else { dir });
-        self.picker = Picker { select: true, dir, token: token.into(), pending: true };
+        self.picker = Picker { select: true, dir, token: token.into(), pending: true, from: None };
         self.open(store, Some(PICKER_ROUTE));
     }
 
@@ -1007,6 +1046,7 @@ impl Model {
             self.picker.token.clear();
         } else {
             match &item.kind {
+                ItemKind::Mode { .. } => return false,
                 ItemKind::Sky => state::set_wallpaper(state::Choice::Both(fs_theme::theme::SKY.into()), None),
                 ItemKind::Pair { light, dark } => state::set_wallpaper(state::Choice::Pair(light.clone(), dark.clone()), None),
                 ItemKind::Single { path, filed: None } => state::set_wallpaper(state::Choice::Both(path.clone()), None),
@@ -1056,6 +1096,8 @@ impl Model {
                         ("single", (f != Some("dark")).then_some(path.as_str()), (f != Some("light")).then_some(path.as_str()), f)
                     }
                     ItemKind::Sky => ("sky", None, None, None),
+                    ItemKind::Mode { mode: Filed::Light, path } => ("mode", Some(path.as_str()), None, None),
+                    ItemKind::Mode { mode: Filed::Dark, path } => ("mode", None, Some(path.as_str()), None),
                 };
                 json!({
                     "id": i.id,
@@ -1068,7 +1110,7 @@ impl Model {
                     "light": light,
                     "dark": dark,
                     "filed": filing,
-                    "current": !self.picker.select && Self::picker_current(store, i),
+                    "current": !self.picker.select && (Self::picker_current(store, i) || Self::picker_mode_on(store, i)),
                 })
             })
             .collect();
@@ -1083,7 +1125,7 @@ impl Model {
             "cursorId": self.cursor_id,
             "cachedThumbnails": tiles.iter().filter(|(_, i)| store.picker.warm(i)).count(),
             "current": {"light": store.desktop_for("light"), "dark": store.desktop_for("dark"), "shown": store.desktop()},
-            "sections": sections.iter().map(|s| json!({"id": s.id, "title": s.title, "count": count(s.id)})).collect::<Vec<_>>(),
+            "sections": sections.iter().map(|s| json!({"id": s.id, "title": s.title, "far": s.far, "count": count(s.id)})).collect::<Vec<_>>(),
             "items": items,
         })
     }
@@ -1094,6 +1136,7 @@ impl Model {
             self.picker.select = false;
             self.picker.dir = crate::services::picker::directory(store.config.str("picker.directory").unwrap_or(""));
             self.picker.token.clear();
+            self.picker.from = None;
         }
         self.picker.pending = false;
         crate::services::picker::command(crate::services::picker::Cmd::Scan(self.picker.dir.clone()));
@@ -1355,10 +1398,12 @@ impl Model {
         let ids: Vec<&str> = self.rows.iter().map(|r| r.id.as_str()).collect();
         let mut index = nav::rederive(&self.want, self.cursor as i64, &ids, fresh, self.placed);
         if view == View::Picker && !self.placed && !self.picker.select {
-            // The cursor opens on the tile on the desktop.
+            // The cursor opens on the tile on the desktop, else on the first
+            // past the Style previews.
             let tiles = self.picker_tiles(store);
             let current = tiles.iter().find(|(_, i)| Self::picker_current(store, i)).map(|(_, i)| format!("wallpaper.{}", i.id));
-            index = current.and_then(|id| ids.iter().position(|r| *r == id)).unwrap_or(0);
+            let first = self.sections.iter().position(|s| s != STYLE);
+            index = current.and_then(|id| ids.iter().position(|r| *r == id)).or(first).unwrap_or(0);
         }
         self.key = key;
         self.monitor_strip_h = if view == View::Monitor { ui::measure(&monitor_strip(store, theme, &self.monitor_history), self.content_width(theme), theme, kit).1 } else { 0.0 };
@@ -2085,6 +2130,11 @@ impl Model {
             self.close();
             return Out::Close;
         };
+        if self.on_picker()
+            && let Some(page) = self.picker.from.take()
+        {
+            return Out::Internal(format!("panel.open:{page}"));
+        }
         let parent = store.menu.nodes().get(&level).and_then(|n| n.parent_id.clone());
         self.enter_level(store, parent);
         self.dirty = true;
@@ -2481,6 +2531,11 @@ impl Model {
         if matches!(node.kind, NodeKind::Other(ref k) if k == "option") {
             self.complete_select(&node.label);
             return Out::Close;
+        }
+        if self.view == View::Picker
+            && let Some(fs_menu::providers::ItemKind::Mode { mode, .. }) = self.picker_tile_of(store, &node.id).map(|t| t.kind)
+        {
+            return self.picker_style(store, mode);
         }
         match fs_menu::actions::first_action(&self.subject(store, &node)) {
             Some(action) => self.run(store, &node, &action),
@@ -3777,7 +3832,14 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                     confirming: m.confirming(&n.id),
                     ..Default::default()
                 });
-                if let Some(p) = bar.primary {
+                // A Style preview runs `theme mode`, which a pinned key refuses.
+                let mode_tile = m.view == View::Picker && matches!(&n.kind, NodeKind::Other(k) if k == fs_menu::providers::MODE_KIND);
+                if mode_tile {
+                    let key = crate::services::theme::mode_key(store.config.settings());
+                    if key != "light" && key != "dark" {
+                        hints.push((format!("Set {} mode", n.label.to_lowercase()), vec!["Enter"], "primary"));
+                    }
+                } else if let Some(p) = bar.primary {
                     hints.push((p.label, vec!["Enter"], "primary"));
                 }
                 if !subject.inert() {
@@ -3789,7 +3851,7 @@ fn footer(m: &Model, store: &Store, theme: &Theme) -> El {
                 if m.view == View::Picker && m.picker_sections.len() > 1 {
                     hints.push(("Next section".into(), vec!["Ctrl", "Tab"], "section"));
                 }
-                if m.view != View::Mirror {
+                if m.view != View::Mirror && !mode_tile {
                     hints.push(("Actions".into(), vec!["Tab"], "actions"));
                 }
                 if !subject.inert() && m.view == View::Rows && fs_menu::actions::into_action(&subject).is_some() {
@@ -4432,6 +4494,7 @@ fn picker_tile(m: &Model, store: &Store, theme: &Theme, tiles: &[(&str, fs_menu:
     let key = item.map(|t| crate::services::picker::tile_key(t, &row.path)).unwrap_or_default();
     let image = store.picker.thumbs.get(&key).cloned().flatten();
     let current = !m.picker.select && item.is_some_and(|t| Model::picker_current(store, t));
+    let ringed = item.is_some_and(|t| Model::picker_mode_on(store, t));
     let badge = match item.map(|t| &t.kind) {
         Some(ItemKind::Single { filed: Some(Filed::Dark), .. }) if !m.picker.select => Some("moon"),
         Some(ItemKind::Single { filed: Some(Filed::Light), .. }) if !m.picker.select => Some("sun"),
@@ -4446,7 +4509,7 @@ fn picker_tile(m: &Model, store: &Store, theme: &Theme, tiles: &[(&str, fs_menu:
         words.push(w::text(format!("\u{B7} {by}")).size(Type::Caption).weight(Weight::Medium).ink(Ink::Muted).elide());
     }
     let caption = w::row(s.xs, words).width(Size::Px(w));
-    let content = w::column(s.row_gap, vec![w::tile_picture(image, w, h, current, badge), caption]);
+    let content = w::column(s.row_gap, vec![w::tile_picture(image, w, h, current, ringed, badge), caption]);
     w::cell(content)
         .ghost()
         .interactive()
@@ -4458,6 +4521,25 @@ fn picker_tile(m: &Model, store: &Store, theme: &Theme, tiles: &[(&str, fs_menu:
         .stop(format!("p:{}", row.id))
         .width(Size::Px(slot.w))
         .height(slot.h - slot.band)
+}
+
+/// The Style heading's far end: where settings.json pins the mode, so;
+/// under `auto`, the mode and when the schedule next turns it.
+fn picker_style_note(store: &Store) -> String {
+    use crate::services::theme;
+    let key = theme::mode_key(store.config.settings());
+    match key {
+        "dark" | "light" => "Set in settings.json".into(),
+        "auto" => {
+            let data = &store.state.data;
+            let times = store.theme.schedule.as_ref();
+            let over = theme::parse_override(&data.mode_override);
+            let mode = theme::effective_mode(key, times, over.as_ref(), &data.mode);
+            let until = fs_theme::sun::next_change(&chrono::Local::now(), times);
+            format!("Auto, {mode} until {}", until.format("%H:%M"))
+        }
+        _ => String::new(),
+    }
 }
 
 /// An SPDX licence id as a heading names it: `CC0-1.0` reads `CC0`.
