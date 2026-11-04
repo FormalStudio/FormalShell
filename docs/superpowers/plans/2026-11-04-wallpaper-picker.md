@@ -145,26 +145,35 @@ other agents' work, never rewrite theirs.
 
 ## Task 5: the bundled set
 
-- `dev/tarball.sh`: the gnome-backgrounds 51.0.1 tarball pinned beside the
-  Blue Marble (`:90-96`) with spec §4's URL and sha256; `libjxl-tools` in
-  the container's install list (`:24-30`), checked with `djxl --version`;
-  `packaging/wallpapers.py` run in the art cache step (`:217-226`, its
-  file in `art_key`); the release's `formalshell-depth` run over the staged
-  directory; `share/formalshell/wallpapers/` copied in;
-  `FS_WALLPAPERS` exported in the launcher (`:240-246`).
-- `packaging/wallpapers.py`: per spec §4, the six pairs by file name, the
-  catalog with each `source` URL and the embedded author read off the XMP
-  and asserted against the table, `COPYING` copied. Curation: matugen's
-  rank 0 read on each half (`matugen image --dry-run -d`, the probe
-  `services/theme.rs` runs) and a pair over 60 degrees apart dropped with
-  a line saying so.
+- `packaging/wallpapers.json`: spec §4's nine rows (`id`, `title`,
+  `author`, `license`, `licenseUrl`, `source`, `origin`, `url`, `sha256`),
+  each `url` the Commons original percent-encoded as §4 says.
+- `dev/tarball.sh`: each original fetched into the download cache beside
+  the Blue Marble (`:90-96`) by the same verify-or-fetch step, the `url`
+  and `sha256` pairs read out of `wallpapers.json` with `python3`;
+  `packaging/wallpapers.py` run in the art cache step (`:217-226`), its
+  file, `wallpapers.json` and the nine sums in `art_key`; the release's
+  `formalshell-depth` run over the staged directory;
+  `share/formalshell/wallpapers/` copied in; `FS_WALLPAPERS` exported in
+  the launcher (`:240-246`). No new package in the container's install
+  list (`:24-30`): `python3-pil` is there.
+- `packaging/wallpapers.py`: per spec §4, each original converted to sRGB
+  through its embedded ICC profile (`ImageCms`; none read as sRGB), its
+  long edge capped at 5120 (Lanczos), written as `<id>.jpg` at quality 92
+  with an sRGB profile and no other metadata; `catalog.json` with each
+  `source` and `origin`; `CREDITS` with each title, photographer, source
+  and licence. Fails naming the id when a `title`, `author` or `license`
+  is empty or a file is under 3840 wide.
 - `dev/build.sh:36-75`: `FS_WALLPAPERS` exported; `wallpapers` linked from
   the host package's share when present, not required.
-- Verify: `just tarball`; `tar tf` lists twelve JPEGs, twelve `.depth`
-  maps, `catalog.json` and `COPYING`; each JPEG's ICC is sRGB (`identify
-  -verbose`); `FS_RESULT=<unpacked tarball> PICKER_INCLUDED=real just smoke
-  --picker`, the Included frame read for six pair tiles with captions and
-  credits, dark and light.
+- Verify: `just tarball`; `tar tf` lists nine JPEGs, nine `.depth` maps,
+  `catalog.json` and `CREDITS`; each JPEG's ICC is sRGB and its long edge
+  at most 5120 (`identify -verbose`); `pine-forest.jpg` read against the
+  original rendered through its Adobe RGB profile (mean difference at four
+  points); `FS_RESULT=<unpacked tarball> PICKER_INCLUDED=real just smoke
+  --picker`, the Included frame read for nine single tiles and the Sky
+  with captions and credits, "CC0" at the heading's far end, dark and
+  light.
 
 ## Task 6: docs and the hosts
 

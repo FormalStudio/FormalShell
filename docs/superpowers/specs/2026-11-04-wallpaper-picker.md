@@ -188,49 +188,91 @@ dark slot: in dark mode a non-empty `wallpaperDark` is the picture, else
 
 ### What ships
 
-Six pairs from gnome-backgrounds 51.0.1, all CC BY-SA 3.0, chosen as the
-ones that are pictures rather than flat SVG art, and for range of hue:
+Nine nature photographs, every one CC0 1.0, each a single covering both
+modes:
 
-| id | Title | Author (embedded XMP) | Files |
+| id | Title | Photographer | Pixels | Palette |
+| --- | --- | --- | --- | --- |
+| `lake-matheson` | Lake Matheson | Jingwei Ke | 4811x3207 | violet dawn, mirror lake |
+| `lake-placid` | Lake Placid | Alex Shutin | 4135x2760 | blue ridges in haze |
+| `dunes` | Dunes | Andrzej Kryszpiniuk | 6000x4000 | orange sand, grey sky |
+| `pine-forest` | Pine forest | Andrew Coelho | 7360x4912 | deep green, mist |
+| `hazy-ridges` | Hazy ridges | Fré Sonneveld | 4608x3072 | teal ridges, gold sky |
+| `shoreline` | Shoreline | David Marcu | 4288x2848 | teal sea, pale sand |
+| `lofoten` | Lofoten | Johannes Groll | 5059x3373 | night, green aurora |
+| `aletsch` | Aletsch | Sam Ferrara | 8196x5464 | slate glacier, pink sky |
+| `winter-sunrise` | Winter sunrise | Jeremy Bishop | 5184x3456 | yellow sky, navy cloud sea |
+
+Each is a Wikimedia Commons copy of a photograph Unsplash published before
+5 June 2017, when Unsplash released under CC0, and Commons' licence review
+confirmed it; the Commons original is the pinned file, so the licence is
+CC0 rather than the Unsplash Licence and the URL is Commons' content path,
+which does not change. None is a photograph elementary OS (every tag of
+`elementary/wallpapers`), GNOME or Pond (`pond-2026-11-04`) ships, and
+none is by a photographer elementary OS or Pond credits. The nine
+seed nine different palettes, two of them dark enough for a dark desk
+(`lofoten`, `lake-matheson`).
+
+The pins (licence `CC0 1.0`,
+`https://creativecommons.org/publicdomain/zero/1.0/`, for all nine; source
+pages under `https://commons.wikimedia.org/wiki/File:`, originals under
+`https://upload.wikimedia.org/wikipedia/commons/`):
+
+| id | Commons file (source page and original) | Original page | sha256 of the original |
 | --- | --- | --- | --- |
-| `fold` | Fold | Jakub Steiner | `fold-l.jxl`, `fold-d.jxl` |
-| `tubes` | Tubes | Jakub Steiner | `tubes-l.jxl`, `tubes-d.jxl` |
-| `balls` | Balls | Jakub Steiner | `balls-l.jxl`, `balls-d.jxl` |
-| `tarka` | Tarka | Jakub Steiner | `tarka-l.jxl`, `tarka-d.jxl` |
-| `curvy` | Curvy | Jakub Steiner | `curvy-l.jxl`, `curvy-d.jxl` |
-| `dithered-sun` | Dithered sun | Tobias Bernard | `dithered-sun-l.jxl`, `dithered-sun-d.jxl` |
+| `lake-matheson` | `6/61/Morning_Fog_at_Lake_Matheson_(Unsplash).jpg` | `unsplash.com/photos/E7w_Ti4BSSs` | `e541c879683717b2dde3c47e47efd1b91e5dfea78171fc9a5a1d4b08dcbb1943` |
+| `lake-placid` | `7/77/Lake_Placid,_NY_(Unsplash).jpg` | `unsplash.com/photos/kKvQJ6rK6S4` | `770fe559d26db797ada127c5e50a6197d97b4a488739548e34d2d496badb2df0` |
+| `dunes` | `6/6d/Dry_Desolation_(Unsplash).jpg` | `unsplash.com/photos/D1IS5s5O9xo` | `741d06eb230a1924e33f655734071e10d6bfe13089befd430523b4e0befa2453` |
+| `pine-forest` | `5/5e/Lush_green_pine_forest_(Unsplash).jpg` | `unsplash.com/photos/aL7SA1ASVdQ` | `0bfe3a3ba2f8c06db54fa6e9295ef2fffa3517197f5ab23ef3f61e9b65ba04af` |
+| `hazy-ridges` | `0/0c/Hazy_mountaintops_at_dusk_(Unsplash).jpg` | `unsplash.com/photos/njEtyA05EN4` | `7e47c497dcd2c064662638344a4a888cf3c299c935f3f2977830d940185243d6` |
+| `shoreline` | `f/fb/Ocean_and_beach_shore_(Unsplash).jpg` | `unsplash.com/photos/58Mkqady7lE` | `5f7a125009b9624495ab1068b1ccfe2cc7f3dfcb8daeabaf81604d24e2a566b2` |
+| `lofoten` | `8/86/Lofoten,_Norway_(Unsplash).jpg` | `unsplash.com/photos/upXoQv5GAr8` | `3bccf7c95c7e453f448da8f2d660737adc01eaad8a5f115767321537143136a5` |
+| `aletsch` | `f/f0/Sunrise_Bettmerhorn_snowy_mountains_(Unsplash).jpg` | `unsplash.com/photos/uOi3lg8fGl4` | `8af62d34b654a71abb81853b1f73d330992eb5d8aafb65ac8e52855b550f57a2` |
+| `winter-sunrise` | `c/c0/A_winter's_sunrise_(Unsplash).jpg` | `unsplash.com/photos/6GqDIGk7HlE` | `f3d52565557f58ff9d433598ed1f17c55a0889d4ae9eebcc9a8f97ef5f276939` |
 
-Plus the Sky, drawn by the shell. GNOME's set is the source because it is
-the one set we know of made as light/dark pairs, its licence allows
-redistribution and conversion with credit and share-alike, and its look is
-GNOME's, which is half of ours. Pond's 14 museum pictures carry no licence
-per file (only Pond's BSD-3 `LICENSE`), so none of them ships. A pair whose
-halves seed palettes more than 60 degrees of hue apart (matugen's rank 0
-read on each) is dropped at curation, so a toggle never swings the
-shell's colour family.
+The source page is the Commons file page of the name after the hash
+directories; the original is that path under the originals root,
+percent-encoded (`,` as `%2C`, `'` as `%27`, brackets as `%28` and `%29`).
+All nine hashes were read off a download on 2026-11-04 and match Commons'
+own sha1 for each file.
+
+Plus the Sky, drawn by the shell. No pair ships. A pair needs the same
+frame by the same photographer by day and at night, so the composition
+lines up across the diagonal (§5), and no CC0 or public-domain nature
+photograph was found with such a twin; the nearest, W.carter's CC0 Govik
+harbour jetty by day and in last light, moves the camera between the two.
+Darkening one photograph into a "dark" half is not a pair and is not done.
+Pairs stay what users' own folders and a later catalog entry carry, and a
+catalog pair whose halves seed palettes more than 60 degrees of hue apart
+(matugen's rank 0 read on each) is dropped at curation, so a toggle never
+swings the shell's colour family.
 
 ### How it ships
 
-Per CLAUDE.md's "Everything ships": `dev/tarball.sh` pins
-`https://download.gnome.org/sources/gnome-backgrounds/51/gnome-backgrounds-51.0.1.tar.xz`
-(sha256 `ec50534d7749be0e1503c5504f826c61d1460d2b41cb84518fa6b2f5547d1e1e`,
-from GNOME's published `.sha256sum`) beside the Blue Marble
-(`tarball.sh:90-96`). A new `packaging/wallpapers.py`, run in the same
-art cache as `earth-tiles.py` (`tarball.sh:217-226`), decodes each half
-with `djxl` (Debian bookworm's `libjxl-tools`, jpeg-xl 0.7.0, build-time
-only), converts the Display P3 pixels to sRGB through the file's own ICC
-profile with Pillow's `ImageCms` (`python3-pil` is already installed), and
-writes a 3840x3840 JPEG at quality 92. The shell's `image` crate decodes
-png, jpeg and webp only (`crates/formalshell-rs/Cargo.toml:44`), so the
-conversion is not optional. The release's `formalshell-depth` then writes
-each half's depth map into `.depth/` there, since the share directory is
-read-only at run time. Into `share/formalshell/wallpapers/`:
+Per CLAUDE.md's "Everything ships": `packaging/wallpapers.json` holds the
+nine rows of the two tables above (`id`, `title`, `author`, `license`,
+`licenseUrl`, `source`, `origin`, `url`, `sha256`). `dev/tarball.sh` reads
+each `url` and `sha256` out of it and fetches the originals into its
+download cache beside the Blue Marble (`tarball.sh:90-96`), with the same
+verify-or-fetch step. A new `packaging/wallpapers.py`, run in the same art
+cache as `earth-tiles.py` (`tarball.sh:217-226`), converts each original to
+sRGB through its embedded ICC profile with Pillow's `ImageCms`
+(`python3-pil` is already installed; `pine-forest` carries Adobe RGB
+(1998), the rest sRGB or none, read as sRGB), scales any whose long edge
+passes 5120 down to 5120 (Lanczos), and writes `<id>.jpg` at quality 92
+with no metadata but an sRGB profile. The shell's `image` crate decodes
+png, jpeg and webp only (`crates/formalshell-rs/Cargo.toml:44`), which all
+nine are. The release's `formalshell-depth` then writes each picture's
+depth map into `.depth/` there, since the share directory is read-only at
+run time. Into `share/formalshell/wallpapers/`:
 
-- the twelve JPEGs and their `.depth/` maps;
-- `catalog.json`, one object per pair:
-  `{"id", "title", "author", "license": "CC BY-SA 3.0", "source": "<gitlab url of the .xml.in at 51.0.1>", "light", "dark", "changes": "converted from JPEG XL (Display P3) to sRGB JPEG"}`;
-- `COPYING` from gnome-backgrounds, so the licence text travels with the
-  pictures.
+- the nine JPEGs and their `.depth/` maps;
+- `catalog.json`, one object per picture:
+  `{"id", "title", "author", "license": "CC0-1.0", "licenseUrl", "source": "<commons file page>", "origin": "<unsplash page>", "file"}`;
+  a pair (none ships) has `light` and `dark` in place of `file`;
+- `CREDITS`, one line per picture: title, photographer, source page,
+  licence name and licence URL. CC0 asks for none of it; the photographers
+  get it anyway.
 
 `FS_WALLPAPERS` points the shell at that directory, exported by the
 launcher script (`tarball.sh:240-246`) and by `dev/build.sh` (`:69-75`)
@@ -244,11 +286,11 @@ Included, with no complaint.
 ### How it reads as ours
 
 - Its own section, **Included**, after the user's.
-- Each tile's caption carries the author after the title, muted: "Fold ·
-  Jakub Steiner". The Sky's reads "Sky · Follows the sun".
-- The section heading's far end carries "CC BY-SA 3.0" once (the Sky has no
-  licence to state), and `picker status` carries each item's author,
-  licence and source.
+- Each tile's caption carries the photographer after the title, muted:
+  "Lake Matheson · Jingwei Ke". The Sky's reads "Sky · Follows the sun".
+- The section heading's far end carries "CC0" once (one licence for the
+  whole set, and the Sky has none to state), and `picker status` carries
+  each item's author, licence and source.
 
 ## 5. The picker
 
@@ -286,7 +328,7 @@ Three sections down one scrolling body, each under the launcher's heading
    light|dark` (its own rules: refused with "Set in settings.json" under a
    pinned `theme.mode`, a snooze under `auto`).
 2. **Your wallpapers**, the far end the directory (`~/` shortened).
-3. **Included**, the far end "CC BY-SA 3.0".
+3. **Included**, the far end "CC0".
 
 Tiles, every section alike:
 
@@ -429,5 +471,5 @@ change here.
 - `--wheel`: the grid's scroll over the new tiles.
 - A side-by-side sheet against GNOME 51.1's Appearance page in a VM,
   dark and light, `artifacts/wallpaper-picker-vs-gnome-{dark,light}.png`,
-  with the bundled pairs on both sides; every structural difference fixed
+  each side showing its own built-ins; every structural difference fixed
   or listed here as the table's.
