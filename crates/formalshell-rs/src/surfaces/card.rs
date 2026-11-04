@@ -23,7 +23,7 @@ use fs_chrome::types::Edge;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, EMERGE, SPATIAL_FAST, SPATIAL_FAST_MS};
-use crate::scene::{Cast, Fit, IRect, Joined, NodeId, Outline, Paint, Scene, Snap};
+use crate::scene::{Cast, Fade, Fit, IRect, Joined, NodeId, Outline, Paint, Scene, Snap};
 use crate::surfaces::rim::{Lit, Rim};
 use crate::surfaces::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
@@ -53,6 +53,8 @@ struct Look {
     emerge_ms: f64,
     emerge_curve: Curve,
     drop: f64,
+    /// How far from the line a cast thins out, the gap a card rests off it.
+    ramp: f64,
 }
 
 impl Look {
@@ -81,7 +83,39 @@ impl Look {
             emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
             emerge_curve: Curve::from_table(&motion.emerge_curve),
             drop: theme.space.sm,
+            ramp: theme.space.bar_margin,
         }
+    }
+}
+
+/// Where casts stop at the line, in surface pixels: `beyond` the half-plane
+/// past it, faded out over `fade`'s ramp nearest it. A clip alone leaves a
+/// hard row where the cast meets the band, which reads as a step over a
+/// bright wallpaper.
+#[derive(Clone, Copy, Debug)]
+struct LineCut {
+    beyond: IRect,
+    fade: Fade,
+}
+
+impl LineCut {
+    fn moved(self, dx: i32, dy: i32) -> Self {
+        let mv = |r: IRect| IRect::new(r.x + dx, r.y + dy, r.w, r.h);
+        Self { beyond: mv(self.beyond), fade: Fade { view: mv(self.fade.view), ..self.fade } }
+    }
+
+    /// `casts` over `bounds` kept past the line, and the clip they take.
+    fn casts(self, casts: Paint, bounds: IRect) -> (Paint, Option<IRect>) {
+        let clip = Some(self.beyond).filter(|b| !b.contains(&bounds));
+        let (v, f) = (self.fade.view, self.fade);
+        let ramp = f.low.max(f.high).ceil() as i32;
+        let near = match (f.vertical, f.low > 0.0) {
+            (true, true) => IRect::new(v.x, v.y, v.w, ramp),
+            (true, false) => IRect::new(v.x, v.bottom() - ramp, v.w, ramp),
+            (false, true) => IRect::new(v.x, v.y, ramp, v.h),
+            (false, false) => IRect::new(v.right() - ramp, v.y, ramp, v.h),
+        };
+        if bounds.intersects(&near) { (Paint::Faded { paint: Box::new(casts), fade: self.fade }, clip) } else { (casts, clip) }
     }
 }
 
@@ -450,15 +484,18 @@ impl Card {
         self.rim.painted();
     }
 
-    /// The surface past the line the card drops out of, in device pixels.
-    fn beyond_line(&self) -> IRect {
-        Scene::cover(Rect::new(-FAR, self.line_at, FAR, FAR), self.edge_map(), 0.0)
+    /// Where the card's casts stop at the line it drops out of.
+    fn line_cut(&self) -> LineCut {
+        let beyond = Scene::cover(Rect::new(-FAR, self.line_at, FAR, FAR), self.edge_map(), 0.0);
+        let ramp = self.look.ramp.max(1.0);
+        let (low, high) = if matches!(self.edge, Edge::Top | Edge::Left) { (ramp, 0.0) } else { (0.0, ramp) };
+        LineCut { beyond, fade: Fade { view: beyond, vertical: !self.edge.is_vertical(), low, high } }
     }
 
     /// A popover's casts, fill and border for a card at `card`, `alpha`
-    /// opaque, onto `nodes` of `scene`, the casts kept to `beyond`.
+    /// opaque, onto `nodes` of `scene`, the casts kept past `line`.
     #[allow(clippy::too_many_arguments)]
-    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, beyond: IRect, nub: Option<(f64, f64, f64)>, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
+    fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, line: LineCut, nub: Option<(f64, f64, f64)>, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
         let radius = look.radius;
         let layers: Vec<Cast> = look
             .casts
@@ -470,14 +507,8 @@ impl Card {
         let size = scene.size;
         let fit = Fit { outline: Outline::Box { rect: card, radius, border: look.border_width }, snap: Snap::Edges };
         let spread = Scene::cover(card, Affine::IDENTITY, reach).intersect(&size);
-        scene.update_with(
-            nodes.0,
-            spread,
-            Paint::Casts { rect: card, radius, layers, cutout: fit },
-            shown && !look.casts.is_empty(),
-            Affine::IDENTITY,
-            Some(beyond).filter(|b| !b.contains(&spread)),
-        );
+        let (paint, clip) = line.casts(Paint::Casts { rect: card, radius, layers, cutout: fit }, spread);
+        scene.update_with(nodes.0, spread, paint, shown && !look.casts.is_empty(), Affine::IDENTITY, clip);
         let fill = look.fill.with_alpha(look.fill.a * alpha);
         let half = look.border_width / 2.0;
         let line = match nub {
@@ -532,8 +563,11 @@ impl Card {
     pub fn popover_look(&self, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect) {
         let mut look = self.look.clone();
         look.fill = look.fill.with_alpha(1.0);
-        let beyond = self.beyond_line();
-        Self::paint_popover(&look, scene, nodes, card, beyond, None, 1.0, true, None);
+        // The corners' scenes hold the card at `card` rather than where it
+        // rests on its own surface; the line keeps its distance from it.
+        let rest = self.rest_rect();
+        let line = self.line_cut().moved(card.x0.round() as i32 - rest.x, card.y0.round() as i32 - rest.y);
+        Self::paint_popover(&look, scene, nodes, card, line, None, 1.0, true, None);
     }
 
     /// The room a popover's casts need around the card.
@@ -557,10 +591,10 @@ impl Card {
         // Painted by the compositor instead (`popover_look`): the card's own
         // surface carries nothing of it.
         let here = shown && !self.compositor_look;
-        let beyond = self.beyond_line();
+        let line = self.line_cut();
         let rim = self.rim.current(now).is_some().then_some((&mut self.rim, now, self.rim_node));
         let lit = rim.is_some();
-        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, beyond, self.nub, alpha, here, rim);
+        Self::paint_popover(&self.look, &mut self.scene, (self.casts, self.shape), card, line, self.nub, alpha, here, rim);
         if !lit || !here {
             self.scene.set_visible(self.rim_node, false);
         }
@@ -714,14 +748,10 @@ impl Card {
             .collect();
         let reach_out = layers.iter().map(|c| c.blur + c.spread.max(0.0) + c.y.abs()).fold(0.0, f64::max);
         let card = Rect::new(along - origin, near_inset, along - origin + length, shape_depth);
-        self.scene.update_with(
-            self.casts,
-            Scene::cover(card, item, reach_out * 1.25 + 2.0).intersect(&band),
-            Paint::Casts { rect: card, radius, layers, cutout: fit },
-            visible && cast_alpha > 0.0 && !self.look.casts.is_empty(),
-            item,
-            Some(band),
-        );
+        let spread = Scene::cover(card, item, reach_out * 1.25 + 2.0).intersect(&band);
+        let line = self.line_cut();
+        let (paint, _) = line.casts(Paint::Casts { rect: card, radius, layers, cutout: fit }, spread);
+        self.scene.update_with(self.casts, spread, paint, visible && cast_alpha > 0.0 && !self.look.casts.is_empty(), item, Some(band.intersect(&line.beyond)));
 
         // Content rides the card's slide, unmirrored and undeformed.
         let at = Rect::new(live.x0, frame_y, live.x1, frame_y + extent);
