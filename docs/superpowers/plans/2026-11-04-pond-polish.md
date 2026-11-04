@@ -7,7 +7,7 @@
 
 Pond moved from `pond-2026-10-31` to `pond-2026-11-04` (36 commits, read off
 `artifacts/pond/src`, BSD-3; captures in `artifacts/pond/web`). This plan
-takes its material polish (casts, the fading outline, the toggle track, the
+takes its material polish (casts, the fading outline, the
 tile hover, the picker's current mark) and leaves its palettes behind. Pond's
 numbers land in `crates/fs-theme/formalshell.json` with a `notes` entry naming
 the Pond file they came from; Rust files that port a Pond recipe carry the
@@ -123,30 +123,33 @@ fading out instead of standing.
   bottom 4px of one card and confirm the line is there at the top and gone
   at the bottom.
 
-## Task 3: the toggle track
+## Task 3: our own switch, not Pond's
 
-Pond's track drops its outline for a white wash, `trackAlpha` 0.06 and one
-more 0.06 under the pointer (`shell/Toggle.qml:15-16`), 0.12 in a panel
-on a translucent theme (`drawerToggleAlpha`, `themes/Daylight.qml:14`). The
-slots stay outlines in white 0.3 (`Toggle.qml:27-47`). Its knob swap (bright
-knob, dark bar) is what ours already draws.
+The owner rejected the Pond toggle 1394d64b brought in (outline track,
+dash and upright slots, a knob carrying a bar): FormalShell's switch is
+its own, built on GNOME's behaviour (gnome-shell 51.1
+`data/theme/gnome-shell-sass/widgets/_switches.scss`), in our palette and
+motion. Pond's `Toggle.qml` is not a reference for it any more.
 
-- Table `switch.track` (`formalshell.json:934-951`): `off` fill `foreground`
-  at `{dark: 0.12, light: 0.1}`, `border` null, `ink` `["foreground", 0.3]`
-  for the slots, `hover` wash `foreground` 0.06; `on` drops its `primary`
-  0.5 border and keeps the off fill: the knob carries the state, as Pond's.
-  Our panels are translucent, so the drawer value (0.12) is the base.
-- `ui/draw.rs:1110`: the slot colour reads the track's `ink` instead of its
-  border; drop the `alpha * 0.6` at `:1119` (0.3 is already the final
-  alpha). `:1117` passes a hover fade from `cx.tween` on `Clock::Effects`
-  where it passes 0.0 now, the way `cell` does at `:947`.
-- Docs: panel-language §6 Toggle (`2026-10-30-panel-language.md:125-131`)
-  says the track is a `foreground` wash with no outline in both states.
-  DESIGN.md §2's switch row (`docs/DESIGN.md:596`) is stale (46x26, knob 20,
-  padding 3): it becomes 52x28, knob 24, padding 2, no outline.
+- Shape: a pill track 48 x 28, a round knob 22 with 3 in inset, the knob
+  travelling on `spatialFast` as now. No slots, no bar or glyph on the knob.
+- Off: the track a `foreground` wash, `{dark: 0.15, light: 0.15}`
+  (GNOME's `transparentize(.., .85)`), 0.2 under the pointer, no border.
+  Knob a near-white disc (`mix(white, card, 80%)` in dark, white in light)
+  with GNOME's soft cast `0 2 4` black 0.2.
+- On: the track filled `primary` (the wallpaper colour), lightened a step
+  under the pointer; knob white. The fill tweens with the knob's travel.
+- Disabled: the whole switch at the kit's disabled alpha, as now.
+- Table `switch.track` / `switch.knob` (`crates/fs-theme/formalshell.json`,
+  rg `"switch.track"`) and the draw in `ui/draw.rs` (rg `slot`): delete the
+  slot and knob-bar code 1394d64b added rather than leaving it unused.
+- Docs: panel-language §6 Toggle (`2026-10-30-panel-language.md`, the
+  "Pond's pill" paragraph) and DESIGN.md §2's switch row describe this
+  switch, not Pond's.
 - Verify: `just lint`; `just smoke --gallery`, `--panel network`, `--panel
   bluetooth`, `--toggles`, `--settings-ui`, `--settings-ui --light`,
-  `--panel-keys`. Read the switch at rest, hovered and on, dark and light.
+  `--panel-keys`. Read the switch at rest, hovered, on and disabled, dark
+  and light.
 
 ## Task 4: the tile's hover outline
 
