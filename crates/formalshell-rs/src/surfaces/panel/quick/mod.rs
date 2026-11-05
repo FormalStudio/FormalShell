@@ -887,7 +887,7 @@ impl Panel for QuickSettings {
         let mut row = Vec::new();
         for t in &system {
             if t.id == "battery" {
-                row.push(w::quick_pill(s, t.id, t.glyph, t.subtitle.as_deref().unwrap_or("")));
+                row.push(w::quick_battery(s, t.id, t.glyph, t.subtitle.as_deref().unwrap_or("")));
             } else {
                 if (laptop && row.len() == 1) || (!laptop && t.id == "lock") {
                     row.push(w::spacer());
@@ -895,7 +895,7 @@ impl Panel for QuickSettings {
                 row.push(w::quick_button(s, t.id, t.glyph, &t.title));
             }
         }
-        parts.push((system.iter().map(|t| t.id).collect(), w::row(s.quick_gap, row).fill().height(s.quick_button)));
+        parts.push((system.iter().map(|t| t.id).collect(), w::row(s.panel_gap, row).fill().height(s.panel_row)));
         part_section.push(0);
 
         for t in &sliders {
@@ -917,8 +917,8 @@ impl Panel for QuickSettings {
             })
             .collect();
         cells.extend(extras.iter().map(|x| (x.id.as_str(), w::quick_info(s, &x.id, &x.summary.icon, &x.summary.name, x.summary.value.as_deref()))));
-        let items = vec![grid::Item { span: 1, height: s.quick_toggle }; cells.len()];
-        let placed = grid::place(&items, self.width(v) - s.quick_inset * 2.0, s.quick_gap, None);
+        let items = vec![grid::Item { span: 1, height: s.panel_row }; cells.len()];
+        let placed = grid::place(&items, self.width(v) - s.panel_row_inset * 2.0, s.panel_gap, None);
         let mut rows: Vec<(Vec<&str>, Vec<El>)> = Vec::new();
         for (((id, el), &r), rect) in cells.into_iter().zip(&placed.rows).zip(&placed.rects) {
             if rows.len() <= r {
@@ -928,7 +928,7 @@ impl Panel for QuickSettings {
             rows[r].1.push(el.width(Size::Px(rect.width())));
         }
         part_section.extend(rows.iter().map(|_| 2));
-        parts.extend(rows.into_iter().map(|(ids, r)| (ids, w::row(s.quick_gap, r).fill())));
+        parts.extend(rows.into_iter().map(|(ids, r)| (ids, w::row(s.panel_gap, r).fill())));
         for t in &tail {
             parts.push((vec![t.id], w::quick_background(s, t.id, &t.title)));
             part_section.push(3);
@@ -943,7 +943,7 @@ impl Panel for QuickSettings {
             && let Some(at) = parts.iter().position(|(ids, _)| ids.contains(&id))
         {
             let (ids, el) = parts.remove(at);
-            let grown = w::column(0.0, vec![el, w::space(s.quick_gap * frame.height), menu_el(v, m, frame.content, frame.ready).reveal(frame.height)]).fill();
+            let grown = w::column(0.0, vec![el, w::space(s.panel_gap * frame.height), menu_el(v, m, frame.content, frame.ready).reveal(frame.height)]).fill();
             parts.insert(at, (ids, grown));
             owner = Some(at);
         }
@@ -970,13 +970,7 @@ impl Panel for QuickSettings {
         }
         *self.sections.borrow_mut() = sections;
 
-        // The host keeps its own room round a headerless body (`Frame`);
-        // the body makes up the rest so every side reads `quickInset`.
-        let side = s.quick_inset - s.panel_row_inset;
-        let top = s.quick_inset - s.panel_gap;
-        let body = w::column(s.quick_gap, parts.into_iter().map(|(_, el)| el).collect()).fill().pad(side, top, side, 0.0);
-        let bottom = (s.quick_inset - s.panel_row_inset - w::closing_room(s, &body)).max(0.0);
-        body.pad(side, top, side, bottom)
+        w::column(s.panel_gap, parts.into_iter().map(|(_, el)| el).collect()).fill()
     }
 
     fn start(&mut self, fx: &mut Effect) {

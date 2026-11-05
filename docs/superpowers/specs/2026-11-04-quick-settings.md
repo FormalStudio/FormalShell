@@ -9,9 +9,11 @@ gnome-shell 51.1, the newest tag on gitlab.gnome.org on this date (51.0 and
 
 This spec wins over the panel-language spec and the sidebar spec for this
 card and for what the chevron opens. The theme-boundary spec still decides
-what a theme owns: GNOME's structure, sizes, order, behaviour and copy are
-taken as they are; fills, rings, radii and clocks come from our table
-(`crates/fs-theme/formalshell.json`), so a GNOME colour never lands in code.
+what a theme owns: GNOME's structure, order, behaviour and copy are taken
+as they are; since 2026-11-05 its sizes and material are not, and the card
+draws the panel language's grid and boxes (section 2), every fill, ring,
+radius and clock from our table (`crates/fs-theme/formalshell.json`), so a
+GNOME colour or number never lands in code.
 
 ## 1. GNOME 51.1, read off the source
 
@@ -53,7 +55,7 @@ room, and hands over to another panel through the host's own handoff. It
 has no header and no close button: Escape and a click outside close it, as
 the Settings tiles do.
 
-Top to bottom, every row `quickGap` apart:
+Top to bottom, every row `panelGap` apart:
 
 1. The system row (section 5).
 2. Sliders, each the full width: output volume, input volume while a
@@ -65,40 +67,36 @@ Top to bottom, every row `quickGap` apart:
 
 ### Geometry
 
-New spacing tokens join `SEMANTIC_SPACING_BASE` in
-`crates/fs-theme/src/tokens.rs` and reach the card as `Theme.space.quick_*`:
+2026-11-05 (owner: "its style must be updated to match the rest of the
+shell"): GNOME's function and order stay, its numbers and material go.
+The card is a headerless panel on the panel language's grid
+(`docs/superpowers/specs/2026-10-30-panel-language.md` §2), with no
+tokens of its own:
 
-| Token | px | GNOME |
+| Piece | px | Token |
 | --- | --- | --- |
-| card width | 400 (`panelWidthWide`) | about 400 |
-| `quickInset` | 16, all four sides | 18 (on our 4px grid) |
-| `quickGap` | 12, rows and columns | 12 |
-| `quickToggle` | 48 tall; width (400 - 32 - 12) / 2 = 178 | 48, 176 |
-| `quickArrow` | 36 wide, a 1px separator before it | about 37 |
-| `quickButton` | 36, a circle | about 37 |
-| `quickSlider` | 40 (`panelRowCompact`) | about 40 |
-| `quickBackground` | 40 | 40 |
-
-Inside a toggle: the icon 16 (`panelMark`) 16 from the left edge, the text
-`panelGap` after it, 12 clear of the right edge or of the separator. Title
-in `body` at 600, subtitle under it in `caption` at 400 in the same ink,
-each one line, eliding at the end. The title sits centred when there is no
-subtitle.
+| card width | 400 | `panelWidthWide` |
+| body inset | 8, all four sides, the host's own frame | `panelRowInset` |
+| rows and grid columns | 8 apart | `panelGap` |
+| toggle | 44 tall; (400 - 16 - 8) / 2 = 188 wide | `panelRow` |
+| split toggle | the toggle part and a 44 square arrow tile, 4 apart | `panelRow`, `rowGap` |
+| system button | 44 square | `panelRow` |
+| slider row | 40 tall | `panelRowCompact` |
+| Background | 44 tall, the full width | `panelRow` |
 
 ### Material
 
-Two roles join the table, declared once, owned by the theme:
-
-- `quick.toggle`: `rest` the `panel.chip` rest fill (`foreground` at 0.08
-  dark, 0.06 light), radius `pill`, ink `foreground`; `on` a `primary` fill
-  with `primaryForeground` ink; hover and press take the table's `wash`
-  (`hover` off, `filledHover` on), eased the way the kit eases every wash;
-  `disabled` the kit's 0.5 opacity with no wash. The system row's buttons
-  and the menu header's chip draw this role too, as GNOME draws its
-  `.button` there.
-- `quick.arrow`: the arrow segment over the toggle, `foreground` at 0.06
-  off and `primaryForeground` at 0.15 on, its separator `foreground` at 0.25
-  off and `primaryForeground` at 0.3 on.
+Every control is a Settings tile: an interactive `panel.group` cell (its
+outline steps up to `panel.group.hover` and the kit's wash eases in under
+the pointer), the group's `open` fill while on. A toggle holds a
+`panel.chip` with its glyph (lit `primary` while on) `sm` in from its
+edge, then the title in `body` 500 over the subtitle in `caption`
+`mutedForeground`, each one line, eliding at the end, as `panel_row` lays
+out a row; the title sits centred when there is no subtitle. A toggle
+with no adapter or daemon behind it is the kit's 0.5 fade and takes no
+stop. The chip column holds down the card: the Background row's chip and
+the sliders' buttons sit on it too, and the sliders' arrows on the split
+toggles' arrow tiles.
 
 The dim behind an open menu takes 0.4 of the brightness off every item
 but the menu group (GNOME's brightness -0.4): a filled box gets the `scrim`
@@ -113,10 +111,10 @@ shadows, menu radius, eased hover) reaches it with no change here.
 The in-place menu's height and the rows under it travel on `spatialFast`;
 the menu's content fades in on `effectsFast` from the same instant, and out
 on it while the height shrinks, so a row shows and takes a key as the menu
-opens; the dim rises and falls on `effects`.
-A toggle's fill crosses on `Cx::color`. The card itself arrives as every
-panel does (join or popover, `motion.morph`). GNOME's clock lengths differ
-from ours by design: the clocks are the theme's.
+opens; the dim rises and falls on `effects`. A tile turning on eases its
+fill on `Cx::color`, as every group does. The card itself arrives as
+every panel does (join or popover, `motion.morph`). GNOME's clock lengths
+differ from ours by design: the clocks are the theme's.
 
 ## 3. Toggles and sliders
 
@@ -154,14 +152,14 @@ privacy indicators in GNOME's top bar, not toggles; they stay out.
 - A split toggle's arrow (or Right from its toggle part, then Enter, or the
   menu key) opens its menu. One menu at a time; opening another swaps them.
 - The menu is a `panel.group` box spanning the grid's width, painted on the
-  card fill so the dim never reaches it, `quickGap` under its toggle's row.
+  card fill so the dim never reaches it, `panelGap` under its toggle's row.
   The rows after that row move down by the menu's height. One inset level
   holds: card, group, rows.
-- Its header: a 40 round chip (`quick.toggle`, `on` while the toggle is on)
-  holding the toggle's icon at 24, the title in `title` at 600 and no
+- Its header: the toggle's glyph in a `panel.chip` (lit while the toggle
+  is on) on the rows' chip column, the title in `body` at 600 and no
   subtitle (GNOME's menus pass none; the toggle already carries it),
-  `quickGap` under it. The wired menu is "Wired connections", GNOME's
-  title.
+  `panelRow` tall and `panelGap` over the rows. The wired menu is "Wired
+  connections", GNOME's title.
 - Its rows are the kit's `panel_row`s (44, `lg` radius, the current one with
   its check, never a fill), a hairline, then the settings row last, which
   hands the card over to the full panel.
@@ -171,15 +169,17 @@ privacy indicators in GNOME's top bar, not toggles; they stay out.
 
 ## 5. The system row
 
-Left to right, `quickGap` apart: the battery pill, a spacer, Screenshot
+Left to right, `panelGap` apart: the battery tile, a spacer, Screenshot
 (`camera`, `screenshot region`, the card closing first), Settings
 (`settings`, the launcher's `settings` route), Lock (`lock`, `lock lock`)
 and Power (`power`, an in-place menu). With no battery the spacer moves
 between Settings and Lock, so Screenshot and Settings hold the left edge
-and Lock and Power the right, as GNOME's `_desktopSpacer` does.
+and Lock and Power the right, as GNOME's `_desktopSpacer` does. Each
+button is a `panelRow` square tile holding its glyph, with its name as the
+tooltip.
 
-- Battery: a `quick.toggle` pill as wide as its content, the battery level
-  glyph (`battery`, `battery-low`, `battery-medium`, `battery-full`,
+- Battery: a tile as wide as its content, a `panel.chip` holding the
+  battery level glyph (`battery`, `battery-low`, `battery-medium`, `battery-full`,
   `battery-charging`) and the percent in `mono`; Enter or a click hands
   over to the `power` panel. Absent with no battery (UPower's `IsPresent`
   false, `devices.power.battery` none), which is the bar's own honest
@@ -195,10 +195,10 @@ Activity's running groups, a recording, the clipboard image going to a
 host, AirPlay and pending reminders. Caffeinate, night light and
 overnight are toggles in the grid instead.
 
-- A full-width row `quickBackground` tall with no fill at rest, the count
-  as its title ("1 background task", "n background tasks") and
-  `chevron-right` after it, shown while the count is above 0 or its menu is
-  open.
+- A full-width `panel_row`, `panelRow` tall with no fill at rest, its
+  `activity` chip on the tiles' chip column, the count as its name ("1
+  background task", "n background tasks") and a `chevron-right` mark,
+  shown while the count is above 0 or its menu is open.
 - Its menu, headed "Background", lists each one as a `panel_row` (its own
   icon, an Activity group's ring, its title, its state under it) with a
   trailing ghost icon button where the thing can be stopped: Stop for a
@@ -224,7 +224,7 @@ governs still collapse off it. What they become changes:
 - Every other governed entry (`weather`, `github`, `usage`, `tailscale`,
   `iphone`, `dualsense`, `earbuds`, `monitor`, `systemUpdate`, `bell`,
   `tray`, `keyboardLayout`, `custom:` and `plugin:` entries) becomes an
-  info tile: a `quick.toggle`-shaped tile never `on`, its icon, its name as
+  info tile: a toggle's tile never `on`, its icon, its name as
   the title and the cell's own value as the subtitle ("12 / 15" for GitHub's
   pull requests and issues, "9%" for the usage gauge, the temperature,
   "Connected" for the iPhone). A click hands over to the cell's panel
@@ -320,31 +320,36 @@ and 1.25, dark and light, beside `--quick-settings` and `--light` at the
 same scales: `artifacts/quick-settings-vs-gnome-{dark,light}.png`, each
 row one scale so a logical pixel is one size across it.
 
-The same: the card's width (400), the two columns of 48-tall pill toggles
-12 apart, the order (system row, sliders, the toggle grid), split toggles'
-separator and arrow, the menu opening in place under its own row with the
-rows after it moved down, the dim over the rest, the menu's round header
-chip, its hairline and the settings row last, the Power menu under the
-system row.
+The same: the card's width (400), two columns of toggles, the order
+(system row, sliders, the toggle grid), a split toggle's arrow beside its
+toggle, the menu opening in place under its own row with the rows after it
+moved down, the dim over the rest, the menu's header and its settings row
+last, the Power menu under the system row.
 
 Fixed here: the system row's spacer (Screenshot and Settings at the left
 with no battery, not every button at the right), and the menu header's
 subtitle, which no GNOME menu carries.
 
-Ours by design, the table's material and not a defect:
+Ours by design since 2026-11-05 (section 2), the panel language and not a
+defect:
 
-- Fills, inks and rings: GNOME's accent blue for an on toggle and the
-  slider's fill, its lighter card and button greys; ours `primary` off the
-  wallpaper, `quick.toggle` and `quick.arrow`, the table's ring.
+- Geometry: GNOME's 18 padding, 12 gaps and 48 tall pills; ours the panel
+  grid, `panelRowInset` round the body, `panelGap` between rows and
+  columns, `panelRow` tall tiles.
+- Material: GNOME's filled pills, accent blue when on, its round system
+  buttons and its separator before a split's arrow; ours `panel.group`
+  tiles with a `panel.chip` lit `primary` when on, the arrow its own tile.
 - Radii: GNOME's 36 card and 24 menu box; ours the panel host's card and
   `panel.group`.
-- Type: GNOME's 700 toggle titles and its `%title_3` menu header read
-  larger; ours the table's `body` and `title` at 600, sentence case.
+- Type: GNOME's 700 toggle titles and its `%title_3` menu header; ours
+  `body` 500 over a muted `caption`, the menu title `body` 600, sentence
+  case.
 - Menu rows: GNOME's 9 by 12 rows with a trailing tick; ours the kit's 44
   `panel_row` with its device chip and check mark.
 - The slider: GNOME's round knob over an accent track; ours the kit's
   slider.
-- Clocks: the menu grows on our `spatialFast`, its fade on `effectsFast`, its dim on `effects`.
+- Clocks: the menu grows on our `spatialFast`, its fade on `effectsFast`,
+  its dim on `effects`.
 - Light: under Settings' Default style (`color-scheme` `default`) GNOME
   51.0 keeps its shell dark, so its light captures show a dark card; ours
   follows `theme.mode` like every surface and goes light.
@@ -354,4 +359,3 @@ Ethernet device), Wi-Fi, Bluetooth and Power mode disabled with their
 reasons where GNOME hides a missing device, a Brightness slider for the
 display the rig reports, Caffeinate, Overnight and the extras after the GNOME
 set, and a Power menu holding Log out alone where logind answers nothing.
-

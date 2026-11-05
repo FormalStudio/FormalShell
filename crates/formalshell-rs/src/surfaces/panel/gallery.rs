@@ -294,7 +294,7 @@ impl Panel for Gallery {
 /// own grid with a menu open under the first row.
 fn quick_sample(s: &fs_theme::tokens::Space) -> El {
     use super::quick::grid::{self, Item, Menu};
-    let tile = Item { span: 1, height: s.quick_toggle };
+    let tile = Item { span: 1, height: s.panel_row };
     let tiles = vec![
         (tile, w::quick_split(s, "q:wifi", "wifi", "Wi-Fi", Some("HomeNet-5G"), true, true)),
         (tile, w::quick_split(s, "q:bluetooth", "bluetooth-off", "Bluetooth", None, false, true)),
@@ -304,7 +304,7 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
         (tile, w::quick_toggle(s, "q:night", "lightbulb", "Night light", Some("No gamma control"), false, false)),
         (tile, w::quick_info(s, "q:weather", "cloud-sun", "Weather", Some("14°"))),
         (tile, w::quick_info(s, "q:github", "git-branch", "GitHub", Some("12 / 15"))),
-        (Item { span: grid::COLUMNS, height: s.quick_slider }, w::quick_slider(s, "q:volume", "volume-2", 0.6, true)),
+        (Item { span: grid::COLUMNS, height: s.panel_row_compact }, w::quick_slider(s, "q:volume", "volume-2", 0.6, true)),
     ];
     let menu = w::quick_menu(
         s,
@@ -315,12 +315,12 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
             w::panel_row_checked(s, "wifi", "HomeNet-5G", None, Vec::new(), true),
             w::panel_row(s, "wifi", "Office Wifi", None, vec![w::icon("lock").ink(Ink::Muted)]),
         ],
-        Some(w::quick_menu_settings(s, "All networks", "q:network")),
+        Some(w::panel_row(s, "", "All networks", None, Vec::new()).on("q:network").stop("q:network")),
         1.0,
     );
     let items: Vec<Item> = tiles.iter().map(|(i, _)| *i).collect();
     // Only where the menu goes is read here: the tree measures its height.
-    let placed = grid::place(&items, s.panel_width_wide - s.quick_inset * 2.0, s.quick_gap, Some(Menu { under: 0, height: 1.0 }));
+    let placed = grid::place(&items, s.panel_width_wide - s.panel_row_inset * 2.0, s.panel_gap, Some(Menu { under: 0, height: 1.0 }));
     let mut rows: Vec<Vec<El>> = Vec::new();
     for ((_, el), (&row, rect)) in tiles.into_iter().zip(placed.rows.iter().zip(&placed.rects)) {
         if rows.len() <= row {
@@ -328,16 +328,16 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
         }
         rows[row].push(el.width(Size::Px(rect.width())));
     }
-    let mut out: Vec<El> = rows.into_iter().map(|r| w::row(s.quick_gap, r).fill()).collect();
+    let mut out: Vec<El> = rows.into_iter().map(|r| w::row(s.panel_gap, r).fill()).collect();
     if placed.menu.is_some() {
         out.insert(1, menu);
     }
     let buttons = ["camera", "settings", "lock", "power"].map(|g| w::quick_button(s, &format!("q:{g}"), g, g));
     let mut system = vec![w::spacer()];
     system.extend(buttons);
-    out.insert(0, w::row(s.quick_gap, system).fill());
+    out.insert(0, w::row(s.panel_gap, system).fill());
     out.push(w::quick_background(s, "q:background", "2 background tasks"));
-    w::column(s.quick_gap, out).fill().pad(s.quick_inset, s.quick_inset, s.quick_inset, s.quick_inset)
+    w::column(s.panel_gap, out).fill().pad(s.panel_row_inset, s.panel_row_inset, s.panel_row_inset, s.panel_row_inset)
 }
 
 /// Five networks with one connected, for the Wi-Fi rows' populated look

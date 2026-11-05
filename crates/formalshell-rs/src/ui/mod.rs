@@ -171,10 +171,9 @@ pub struct Ui {
     pub hits: Vec<Hit>,
     /// Every sidebar card's box, as last drawn.
     pub cards: Vec<IRect>,
-    /// Every quick settings piece's box and every keyed group's (an open
-    /// menu) by its key, as last drawn, unavailable ones included (they are
-    /// no stops).
-    pub quick: Vec<(String, IRect)>,
+    /// Every keyed group's box (a quick settings tile, an open menu) by its
+    /// key, as last drawn, unavailable ones included (they are no stops).
+    pub keyed: Vec<(String, IRect)>,
     pub stops: Vec<Stop>,
     /// The hit path under the pointer, and the one a button went down on.
     pub hover: Option<String>,
@@ -221,7 +220,7 @@ impl Ui {
             anchor,
             hits: Vec::new(),
             cards: Vec::new(),
-            quick: Vec::new(),
+            keyed: Vec::new(),
             stops: Vec::new(),
             hover: None,
             pressed: None,
@@ -268,7 +267,7 @@ impl Ui {
         self.measured.clear();
         self.hits.clear();
         self.cards.clear();
-        self.quick.clear();
+        self.keyed.clear();
         self.stops.clear();
         self.float_cards.clear();
         self.float_keys.clear();

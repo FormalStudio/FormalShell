@@ -5,7 +5,9 @@
 # open quicksettings`, read off `quicksettings status`. Its rows in order:
 # the system row's buttons, then the toggles in the spec's order, each
 # kind right. Its geometry off the card's own rect: 400 wide, every toggle
-# 178 by 48, 12 between columns and rows, 16 from every edge. The rig's
+# 188 by 44, a split's arrow tile 44 square and 4 off its toggle, 8
+# between columns and rows, 8 from every edge, and the open frame read by
+# the shared panel-language check as a headerless card. The rig's
 # honest states: its private system bus carries no NetworkManager, BlueZ
 # or power-profiles-daemon, so Wi-Fi, Bluetooth and Power mode are
 # disabled with their reasons, and `quicksettings activate` refuses them
@@ -43,7 +45,7 @@
 # Weather tile hands the card over to the weather panel.
 leg_quick_settings_flag="--quick-settings"
 leg_quick_settings_order=262
-leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback pw-record"
+leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback pw-record python3"
 
 quick_settings_dir="$shot_dir/quick-settings"
 quick_settings_settings="$iso_home/.config/formalshell/settings.json"
@@ -354,11 +356,13 @@ leg_quick_settings_assert() {
     [.rows[].kind] as $k | ($k | all(. == "system" or . == "slider" or . == "toggle" or . == "split" or . == "info"))
       and $k == ($k | sort_by(if . == "system" then 0 elif . == "slider" then 1 elif . == "info" then 3 else 2 end))'
   # Every edge off the card's own rect, the toggles off each other.
-  # A split toggle's rect is its toggle part, its arrow the rest of the pill.
+  # A split toggle's rect is its toggle part, its arrow the tile after it.
   local pill='def pill: if .arrow then {x: .rect.x, y: .rect.y, width: (.arrow.x + .arrow.width - .rect.x), height: .rect.height} else .rect end;'
-  quick_settings_jq "the card is 400 wide, the toggles and info tiles 178 by 48" "$open" "$pill"'
-    .card.width == 400 and ([.rows[] | select(.kind == "toggle" or .kind == "split" or .kind == "info") | pill | .width == 178 and .height == 48] | all)'
-  quick_settings_jq "12 between columns and rows, 16 from every edge" "$open" "$pill"'
+  quick_settings_jq "the card is 400 wide, the toggles and info tiles 188 by 44" "$open" "$pill"'
+    .card.width == 400 and ([.rows[] | select(.kind == "toggle" or .kind == "split" or .kind == "info") | pill | .width == 188 and .height == 44] | all)'
+  quick_settings_jq "a split's arrow a 44 square tile 4 off its toggle" "$open" '
+    [.rows[] | select(.kind == "split") | .arrow.width == 44 and .arrow.height == 44 and .arrow.x - (.rect.x + .rect.width) == 4 and .arrow.y == .rect.y] | length > 0 and all'
+  quick_settings_jq "8 between columns and rows, 8 from every edge" "$open" "$pill"'
     def near($a; $b): ($a - $b) | fabs <= 1;
     .card as $c
     | [.rows[] | select(.kind == "toggle" or .kind == "split" or .kind == "info") | pill] as $t
@@ -366,22 +370,26 @@ leg_quick_settings_assert() {
     | ([.rows[] | select(.kind == "slider")] | length) as $n
     | ($t | map(.x) | min) as $left
     | ($t | map(.x + .width) | max) as $right
-    | near($left - $c.x; 16) and near($c.x + $c.width - $right; 16)
-      and near(($s | map(.y) | min) - $c.y; 16)
-      and near($c.y + $c.height - ($t | map(.y + .height) | max); 16)
+    | near($left - $c.x; 8) and near($c.x + $c.width - $right; 8)
+      and near(($s | map(.y) | min) - $c.y; 8)
+      and near($c.y + $c.height - ($t | map(.y + .height) | max); 8)
       and near(($s | map(.x + .width) | max); $right)
-      and near(($t[0].y) - ($s | map(.y + .height) | max); 12 + $n * 52)
-      and near($t[1].x - ($t[0].x + $t[0].width); 12)
-      and near($t[2].y - ($t[0].y + $t[0].height); 12)'
+      and near(($t[0].y) - ($s | map(.y + .height) | max); 8 + $n * 48)
+      and near($t[1].x - ($t[0].x + $t[0].width); 8)
+      and near($t[2].y - ($t[0].y + $t[0].height); 8)'
   # GNOME's two spacers: on a laptop the battery alone holds the left
   # edge; with no battery Screenshot and Settings do, Lock and Power the right.
   quick_settings_jq "the system row's spacer where GNOME puts it" "$open" '
     def near($a; $b): ($a - $b) | fabs <= 1;
     .card as $c | (.rows | map({key: .id, value: .rect}) | from_entries) as $r
-    | near($c.x + $c.width - ($r.power.x + $r.power.width); 16)
-      and if $r.battery then near($r.battery.x - $c.x; 16) and $r.screenshot.x - ($r.battery.x + $r.battery.width) > 40
-      else near($r.screenshot.x - $c.x; 16) and near($r.settings.x - ($r.screenshot.x + $r.screenshot.width); 12)
-        and near($r.power.x - ($r.lock.x + $r.lock.width); 12) and $r.lock.x - ($r.settings.x + $r.settings.width) > 100 end'
+    | near($c.x + $c.width - ($r.power.x + $r.power.width); 8)
+      and ([$r.screenshot, $r.settings, $r.lock, $r.power] | all(.width == 44 and .height == 44))
+      and if $r.battery then near($r.battery.x - $c.x; 8) and $r.screenshot.x - ($r.battery.x + $r.battery.width) > 40
+      else near($r.screenshot.x - $c.x; 8) and near($r.settings.x - ($r.screenshot.x + $r.screenshot.width); 8)
+        and near($r.power.x - ($r.lock.x + $r.lock.width); 8) and $r.lock.x - ($r.settings.x + $r.settings.width) > 100 end'
+  # A headerless card on the panel grid: its tiles' room even on every side.
+  panel_language_assert quick-settings "$quick_settings_dir/quick-settings-open.png" "$("$jq_bin" -c '.card' "$quick_settings_dir/$open")" no "$quick_settings_dir/dump-open.json" rowInset
+  panel_language_verdict
   quick_settings_jq "Wi-Fi disabled with no NetworkManager" "$open" '.rows[] | select(.id == "wifi") | .available == false and .reason == "No NetworkManager" and .on == false'
   quick_settings_jq "Bluetooth disabled with no adapter" "$open" '.rows[] | select(.id == "bluetooth") | .available == false and .reason == "No adapter"'
   quick_settings_jq "Power mode disabled with no daemon" "$open" '.rows[] | select(.id == "power-mode") | .available == false and .reason == "power-profiles-daemon is not running"'
@@ -520,15 +528,16 @@ quick_settings_menu_assert() {
     and ([.menu.rows[] | select(.id == "m:volume:qs_two")][0].checked == false)
     and (.menu.rows[-1] | .id == "m:settings" and .panel == "audio")
     and .cursor == .menu.rows[0].id'
-  quick_settings_jq "the menu spans the grid 12 under the Volume row" status-shot-menu-open.json '
+  # The Volume row is 40 tall round its 34 buttons.
+  quick_settings_jq "the menu spans the grid 8 under the Volume row" status-shot-menu-open.json '
     def near($a; $b): ($a - $b) | fabs <= 1;
     ([.rows[] | select(.kind == "toggle" or .kind == "split")][0].rect) as $t
     | (.rows[] | select(.id == "volume") | .icon) as $v
     | .menu.rect as $m
-    | near($m.x; $t.x) and near($m.width; 368) and near($m.y; $v.y + $v.height + 2 + 12)'
+    | near($m.x; $t.x) and near($m.width; 384) and near($m.y; $v.y + $v.height + 3 + 8)'
   local menu_h
   menu_h=$("$jq_bin" -r '.menu.rect.height' "$d/status-shot-menu-open.json")
-  awk -v a="$rest" -v b="$open" -v h="$menu_h" 'BEGIN { d = b - a - h - 12; exit !(d >= -1 && d <= 1) }' \
+  awk -v a="$rest" -v b="$open" -v h="$menu_h" 'BEGIN { d = b - a - h - 8; exit !(d >= -1 && d <= 1) }' \
     || fail "quick-settings: the toggles moved $rest -> $open under a menu $menu_h tall, not by its height and a gap"
   echo "SMOKE_QUICK_SETTINGS the rows after the menu moved down by its height and a gap: $rest -> $open, menu $menu_h"
   quick_settings_dim
@@ -552,10 +561,10 @@ quick_settings_menu_assert() {
 # closes on nothing.
 quick_settings_background_assert() {
   quick_settings_jq "nothing in the background, no Background row" status-shot-open.json '[.rows[] | select(.kind == "background")] == []'
-  quick_settings_jq "a recording and a reminder read 2 background tasks, last and the grid's width, 40 tall" status-bg-two.json '
+  quick_settings_jq "a recording and a reminder read 2 background tasks, last and the grid's width, 44 tall" status-bg-two.json '
     def near($a; $b): ($a - $b) | fabs <= 1;
     (.rows[-1] | .id == "background" and .kind == "background" and .title == "2 background tasks")
-    and (.rows[-1].rect | near(.width; 368) and near(.height; 40))'
+    and (.rows[-1].rect | near(.width; 384) and near(.height; 44))'
   quick_settings_walked "arrows reached Background" walk-background.txt background
   quick_settings_jq "its menu lists the recording, the reminder and Activity" status-bg-open.json '
     .menu.id == "background" and .dim == true

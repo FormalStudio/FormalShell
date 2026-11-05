@@ -1377,66 +1377,6 @@
                     "alpha": 0.25
                 }
             }
-        },
-        "quick.toggle": {
-            "rest": {
-                "fill": "foreground",
-                "fillAlpha": {
-                    "light": 0.06,
-                    "dark": 0.08
-                },
-                "radius": "pill",
-                "ink": [
-                    "foreground",
-                    1
-                ]
-            },
-            "on": {
-                "fill": "primary",
-                "fillAlpha": 1,
-                "ink": [
-                    "primaryForeground",
-                    1
-                ]
-            },
-            "disabled": {
-                "fill": "foreground",
-                "fillAlpha": {
-                    "light": 0.06,
-                    "dark": 0.08
-                },
-                "ink": [
-                    "foreground",
-                    1
-                ]
-            }
-        },
-        "quick.arrow": {
-            "rest": {
-                "fill": "foreground",
-                "fillAlpha": 0.06,
-                "radius": "pill",
-                "layers": [
-                    {
-                        "inset": true,
-                        "x": 1,
-                        "color": "foreground",
-                        "alpha": 0.25
-                    }
-                ]
-            },
-            "on": {
-                "fill": "primaryForeground",
-                "fillAlpha": 0.15,
-                "layers": [
-                    {
-                        "inset": true,
-                        "x": 1,
-                        "color": "primaryForeground",
-                        "alpha": 0.3
-                    }
-                ]
-            }
         }
     },
     "wash": {

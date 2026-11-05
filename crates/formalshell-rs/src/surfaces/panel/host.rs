@@ -789,7 +789,7 @@ impl Host {
     /// Every quick settings piece's box by its key, as last drawn, then
     /// every other stop's (a slider's track, a menu's rows).
     pub fn quick_boxes(&self) -> Vec<(String, IRect)> {
-        let mut out = self.body.quick.clone();
+        let mut out = self.body.keyed.clone();
         for st in &self.body.stops {
             if !out.iter().any(|(k, _)| *k == st.key) {
                 out.push((st.key.clone(), st.rect));

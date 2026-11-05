@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use fs_theme::color::Rgba;
 use fs_theme::style::{BoxStyle, Edge};
-use vello_cpu::kurbo::{Affine, Rect, RoundedRect, RoundedRectRadii, Shape};
+use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
 use crate::scene::{Cast, Fit, IRect, LitLine, Outline, Paint, Scene, Snap};
 use crate::surfaces::bar::cell::Painter;
@@ -21,14 +21,12 @@ fn frect(r: IRect) -> Rect {
     Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64)
 }
 
-/// `color` over `r`'s outline, its start and end corners rounded as
-/// [`paint_ends`] rounds them: a shaded box's scrim (`El::shade`).
-pub fn cover(p: &mut Painter, r: IRect, (start, end): (f64, f64), color: Rgba) {
+/// `color` over `r`'s rounded outline: a shaded box's scrim (`El::shade`).
+pub fn cover(p: &mut Painter, r: IRect, radius: f64, color: Rgba) {
     if r.is_empty() || color.a <= 0.0 {
         return;
     }
-    let path = RoundedRect::from_rect(frect(r), RoundedRectRadii::new(start.max(0.0), end.max(0.0), end.max(0.0), start.max(0.0))).to_path(0.1);
-    p.shape(r, Paint::Shape { fill: Some((path, color)), strokes: Vec::new() });
+    p.shape(r, Paint::Shape { fill: Some((rr(frect(r), radius), color)), strokes: Vec::new() });
 }
 
 /// `b`'s fill and border already resolved (and crossfaded) by the caller;
@@ -102,50 +100,5 @@ pub fn paint_rimmed(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, 
     }
     if let Some(w) = b.wash.filter(|_| wash > 0.0) {
         p.rect(r, w.with_alpha(w.a * alpha * wash), radius as f32);
-    }
-}
-
-/// A box rounding its start and its end apart (one part of a split pill),
-/// with `segment`'s fill laid over its own and the segment's inset
-/// hairlines drawn straight along their edge, which is the box's square
-/// side. Casts are not drawn: no box in a split carries one.
-pub fn paint_ends(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, segment: Option<&BoxStyle<Rgba>>, (start, end): (f64, f64), alpha: f32, wash: f32) {
-    if r.is_empty() {
-        return;
-    }
-    let a = |c: Rgba| c.with_alpha(c.a * alpha);
-    let rect = frect(r);
-    // A square side stays square however far the outline grows or shrinks.
-    let ends = |rect: Rect, d: f64| {
-        let grow = |radius: f64| if radius > 0.0 { (radius + d).max(0.0) } else { 0.0 };
-        let (s, e) = (grow(start), grow(end));
-        RoundedRect::from_rect(rect, RoundedRectRadii::new(s, e, e, s)).to_path(0.1)
-    };
-    for ring in &b.rings {
-        let s = ring.spread.ceil() as i32;
-        let halo = ends(rect.inflate(ring.spread, ring.spread), ring.spread);
-        p.shape(IRect::new(r.x - s, r.y - s, r.w + s * 2, r.h + s * 2), Paint::Shape { fill: Some((halo, a(ring.color))), strokes: Vec::new() });
-    }
-    let body = ends(rect, 0.0);
-    p.shape(r, Paint::Shape { fill: Some((body.clone(), a(b.fill))), strokes: Vec::new() });
-    if let Some(seg) = segment {
-        p.shape(r, Paint::Shape { fill: Some((body.clone(), a(seg.fill))), strokes: Vec::new() });
-        for h in seg.hairlines.iter().filter(|h| h.inset) {
-            let t = h.thickness.round().max(1.0) as i32;
-            let line = match h.edge {
-                Edge::Left => IRect::new(r.x, r.y, t, r.h),
-                Edge::Right => IRect::new(r.right() - t, r.y, t, r.h),
-                Edge::Top => IRect::new(r.x, r.y, r.w, t),
-                Edge::Bottom => IRect::new(r.x, r.bottom() - t, r.w, t),
-            };
-            p.rect(line, a(h.color), 0.0);
-        }
-    }
-    if let Some(line) = b.border.as_ref().filter(|l| l.width > 0.0) {
-        let half = line.width / 2.0;
-        p.shape(r, Paint::Shape { fill: None, strokes: vec![(ends(rect.inflate(-half, -half), -half), a(line.color), line.width)] });
-    }
-    if let Some(w) = b.wash.filter(|_| wash > 0.0) {
-        p.shape(r, Paint::Shape { fill: Some((body, w.with_alpha(w.a * alpha * wash))), strokes: Vec::new() });
     }
 }

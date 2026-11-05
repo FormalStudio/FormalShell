@@ -933,19 +933,23 @@ Its rows are multi-line, so a separator runs between them (§1's ladder,
 rung 4) and the two tiers stay labelled sections `sectionGap` apart.
 
 **Quick settings** (`formalshell-rs/src/surfaces/panel/quick/`, the
-quick settings spec). GNOME 51's menu in this table's material: a
-headerless panel `panelWidthWide` across, `quickInset` in from every edge
-and `quickGap` between rows and columns, holding the system row of
-`quickButton` circles (Screenshot and Settings left, Lock and Power right,
-the battery pill alone on the left on a laptop), full-width sliders, a two-column grid of
-`quickToggle` pills and Background last. A toggle is the `quick.toggle`
-role, a `primary` fill with `primaryForeground` ink when on; a split
-toggle's arrow is `quick.arrow` behind a 1px inset rule. A toggle with no
-adapter or daemon behind it stays in place at the kit's disabled opacity,
-the reason as the subtitle. The one in-place menu is a `panel.group` box on the card's fill under its own row, growing on
-`spatialFast` with its rows fading in on `effects` once it lands, and the
-rest of the card dims to 0.6 on `effectsSlow` (`El::shade`) while the
-card's own fill stays as it is.
+quick settings spec). GNOME 51's menu in function and order, the panel
+language in look: a headerless panel `panelWidthWide` across, its body at
+`panelRowInset` and `panelGap` between rows and columns, holding the system
+row (Screenshot and Settings left, Lock and Power right, the battery alone
+on the left on a laptop), full-width sliders, a two-column grid of toggles
+and Background last. Every control is a Settings tile, an interactive
+`panel.group` cell `panelRow` tall: a toggle holds a `panel.chip` with its
+glyph and the title in `body` 500 over a muted `caption`, and on, the chip
+is lit `primary` and the tile takes the group's `open` fill; a split
+toggle's arrow is a square tile of its own `rowGap` after it, and the
+system row's buttons are the same square tiles. A toggle with no adapter
+or daemon behind it stays in place at the kit's disabled opacity, the
+reason as the subtitle. The one in-place menu is a `panel.group` box on
+the card's fill under its own row, growing on `spatialFast` with its rows
+fading in on `effectsFast` from the same instant, and the rest of the card
+dims to 0.6 on `effects` (`El::shade`) while the card's own fill stays as
+it is.
 
 **OSD** (`formalshell-rs/src/surfaces/osd.rs`). A pill bottom-centre,
 budding off the bottom line: icon, track, tabular percentage.

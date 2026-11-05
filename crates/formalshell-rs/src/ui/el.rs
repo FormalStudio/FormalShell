@@ -142,26 +142,8 @@ pub struct CellState {
     pub glyph: bool,
     /// Drawn round whatever its role's radius: Pond's session chips.
     pub round: bool,
-    /// A quick settings control in the `quick.toggle` box, its `on` state
-    /// with `open` and `disabled` with `disabled`.
-    pub quick: bool,
-    /// A split toggle's menu button: the `quick.toggle` box with the
-    /// `quick.arrow` segment and its separator over it.
-    pub arrow: bool,
-    /// Drawn in its box's `disabled` state, taking no pointer.
+    /// Taking no pointer: no hover outline or wash.
     pub disabled: bool,
-    /// Which ends of its box a cell rounds: one part of a split pill.
-    pub half: Half,
-}
-
-/// The ends a cell's box rounds, the other side left square where it meets
-/// its neighbour.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Half {
-    #[default]
-    Whole,
-    Start,
-    End,
 }
 
 #[derive(Clone, Debug, PartialEq)]
