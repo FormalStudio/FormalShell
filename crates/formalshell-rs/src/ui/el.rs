@@ -312,6 +312,9 @@ pub enum Kind {
     /// The spectrum in one style, `columns` wide,
     /// redrawn every frame while `live` and at rest otherwise.
     Spectrum { style: String, columns: usize, live: bool },
+    /// A heart in a `size` square beating at `bpm`, redrawn every frame
+    /// while it beats; none draws it still and dim.
+    Heart { bpm: Option<f64>, size: f64 },
     /// The lyrics pane at `height`.
     Lyrics(super::lyrics::View),
 }

@@ -540,8 +540,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the stub as exactly `noise:<mode>` and the panel holds the mode it
   reports back. With the stub's `heart_rate` available, opening the panel
   reaches it as `heartrate:on`, `earbuds status`'s `heartRate` reads a
-  settled bpm and a history once the stub's warm-up values pass (the frame
-  photographed), and closing it sends `heartrate:off`; the same AirPods
+  settled bpm and a history once the stub's warm-up values pass, the
+  heart rate block photographed reading Measuring, then the settled bpm
+  and its trace, then reopened at a quarter speed (an `off` and `on`
+  between) in a burst through one beat; the
+  panel committing at least 20 frames in 2s while the heart beats and none
+  in 3s once closed, and closing it sends `heartrate:off`; the same AirPods
   with the service unavailable get no heart rate verb and no `heartRate`.
   A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the

@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 
-use fs_devices::earbuds::{self as model, BatteryId, Control, ControlKind, Device, Value};
+use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, Device, HeartRate, HeartSample, Value};
 
 use super::{Effect, Panel, View};
 use crate::services::devices::{self, earbuds};
@@ -298,6 +298,69 @@ fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
     w::grid(tiles.len().max(1), s.panel_gap, tiles)
 }
 
+/// What the heart rate block can honestly show.
+#[derive(Debug, PartialEq)]
+enum Pulse<'a> {
+    /// Samples only come while a bud is in an ear.
+    NoBud,
+    /// Streaming, or about to, with no settled sample yet.
+    Measuring,
+    Live { bpm: Bpm, history: &'a [HeartSample] },
+}
+
+fn pulse(hr: &HeartRate) -> Pulse<'_> {
+    if !hr.in_ear {
+        return Pulse::NoBud;
+    }
+    match hr.latest {
+        Some(s) if hr.settled && hr.streaming => Pulse::Live { bpm: s.bpm, history: &hr.history },
+        _ => Pulse::Measuring,
+    }
+}
+
+/// The trace of the settled samples with the session's low and high under
+/// it, none until there are two to draw a line between.
+fn heart_trace(s: &fs_theme::tokens::Space, history: &[HeartSample]) -> Option<El> {
+    if history.len() < 2 {
+        return None;
+    }
+    let bpms: Vec<f64> = history.iter().map(|h| f64::from(h.bpm.get())).collect();
+    let (low, high) = bpms.iter().fold((f64::MAX, f64::MIN), |(l, h), v| (l.min(*v), h.max(*v)));
+    // Read against the session's own range, so a few beats either way
+    // still move the line.
+    let room = ((high - low) * 0.25).max(2.0);
+    let floor = low - room;
+    let values = bpms.iter().map(|v| v - floor).collect();
+    let line = w::sparkline(values, Vec::new(), high + room - floor, bpms.len()).height(s.control_height);
+    let range = w::row(
+        s.xxs,
+        vec![w::caption("Low"), w::value(num(low)), w::spacer(), w::caption("High"), w::value(num(high))],
+    )
+    .fill();
+    Some(w::column(s.xxs, vec![line, range]).fill().mid())
+}
+
+/// The heart beside the rate and its trace, or why there is no rate.
+fn heart_block(s: &fs_theme::tokens::Space, hr: &HeartRate) -> El {
+    let size = s.control_height * 2.0;
+    let parts = match pulse(hr) {
+        Pulse::Live { bpm, history } => {
+            let readout = w::column(
+                0.0,
+                vec![w::text(bpm.get().to_string()).size(Type::Hero).weight(Weight::Medium).mono(), w::caption("BPM")],
+            )
+            .width(crate::ui::Size::Hug)
+            .mid();
+            let mut parts = vec![w::heart(Some(f64::from(bpm.get())), size), readout];
+            parts.extend(heart_trace(s, history));
+            parts
+        }
+        Pulse::Measuring => vec![w::heart(None, size), w::text("Measuring").ink(Ink::Muted).mid()],
+        Pulse::NoBud => vec![w::heart(None, size), w::text("Put an AirPod in").ink(Ink::Muted).mid()],
+    };
+    w::panel_control(s, w::panel_heading(s, "Heart rate"), w::row(s.section_gap, parts).fill().mid())
+}
+
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
     let hint = (!ctl.hint.is_empty()).then(|| ctl.hint.clone());
@@ -388,6 +451,9 @@ impl Panel for Earbuds {
                 ));
                 out.extend(battery_section(s, dev));
             }
+        }
+        if let Some(hr) = &dev.heart_rate {
+            out.push(heart_block(s, hr));
         }
         for section in model::sections(Some(dev)) {
             // A segmented choice named like its section takes the section's
@@ -492,5 +558,30 @@ impl Panel for Earbuds {
 
     fn steps(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample(bpm: f64, at_ms: u64) -> HeartSample {
+        HeartSample { bpm: Bpm::new(bpm).unwrap(), at_ms }
+    }
+
+    #[test]
+    fn the_heart_says_only_what_the_buds_measured() {
+        let mut hr = HeartRate { available: true, streaming: true, in_ear: true, ..HeartRate::default() };
+        assert_eq!(pulse(&hr), Pulse::Measuring);
+        hr.latest = Some(sample(169.0, 1));
+        assert_eq!(pulse(&hr), Pulse::Measuring, "an unsettled sample is no rate");
+        hr.settled = true;
+        hr.history = vec![sample(72.0, 2), sample(75.0, 3)];
+        hr.latest = Some(sample(75.0, 3));
+        assert!(matches!(pulse(&hr), Pulse::Live { bpm, history } if bpm.get() == 75 && history.len() == 2));
+        hr.streaming = false;
+        assert_eq!(pulse(&hr), Pulse::Measuring, "a stopped stream's last sample is not live");
+        hr.in_ear = false;
+        assert_eq!(pulse(&hr), Pulse::NoBud);
     }
 }

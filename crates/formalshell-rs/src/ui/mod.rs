@@ -25,6 +25,7 @@ pub mod boxes;
 mod draw;
 pub use draw::{ring_strokes, ring_turn};
 pub mod el;
+mod heart;
 pub mod lyrics;
 mod spectrum;
 mod strip;
@@ -154,6 +155,7 @@ const FLOAT_ROWS: f64 = 8.0;
 pub struct Ui {
     groups: HashMap<String, Group>,
     spectra: HashMap<String, spectrum::Live>,
+    beats: HashMap<String, heart::Beat>,
     panes: HashMap<String, lyrics::Pane>,
     tweens: HashMap<String, Tween>,
     births: HashMap<String, Instant>,
@@ -211,6 +213,7 @@ impl Ui {
         Self {
             groups: HashMap::new(),
             spectra: HashMap::new(),
+            beats: HashMap::new(),
             panes: HashMap::new(),
             tweens: HashMap::new(),
             births: HashMap::new(),
@@ -318,6 +321,7 @@ impl Ui {
         }
         self.tweens.retain(|_, t| frame - t.seen < 120);
         self.spectra.retain(|_, l| frame - l.seen < 120);
+        self.beats.retain(|_, b| frame - b.seen < 120);
         self.panes.retain(|_, l| frame - l.seen < 120);
         self.wraps.retain(|_, w| frame - w.seen < 120);
         drawn

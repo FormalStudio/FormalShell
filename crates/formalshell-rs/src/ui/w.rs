@@ -94,6 +94,12 @@ pub fn spectrum(style: impl Into<String>, columns: usize, live: bool) -> El {
     El::new(Kind::Spectrum { style: style.into(), columns, live })
 }
 
+/// A heart in a `size` square beating at `bpm`; none for a rate not
+/// measured yet, drawn still and dim.
+pub fn heart(bpm: Option<f64>, size: f64) -> El {
+    El::new(Kind::Heart { bpm, size })
+}
+
 pub fn icon(name: impl Into<String>) -> El {
     El::new(Kind::Icon { name: name.into(), size: Type::Body, ink: Ink::Fg })
 }
