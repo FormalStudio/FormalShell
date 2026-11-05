@@ -107,3 +107,19 @@ warm-up with a zero quaternion:
 ```
 
 The second decodes to q vector (-0.8318, 0.1815, 0.3003), gravity (665, 611, 467).
+
+## Task 4: shake to dismiss, nod to act
+
+Only while a toast is up and the active AirPods have a bud in and report
+`motion.available`, the service holds a `motion:watch` (the panel's watch
+shares it) and reads the gyro's yaw and pitch rates:
+
+- A shake: at least two sign reversals of the yaw rate, each swing past a
+  rate threshold, inside 1.2 s. Dismisses the front toast.
+- A nod: the same on pitch. Runs the front toast's default action, if it
+  has one; otherwise nothing.
+- Thresholds measured first off a capture of deliberate shakes and nods and
+  of looking around, so ordinary glances never fire. Behind
+  `notifications.headGestures` (default true), and off under DND.
+- The watch drops a second after the last toast goes. Rig: the stub plays a
+  shake and a glance; the glance dismisses nothing, the shake the front toast.
