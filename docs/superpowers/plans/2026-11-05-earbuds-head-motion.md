@@ -50,7 +50,12 @@ branch `formalshell` too.
   control link going) stops it. A shell that dies stops the stream with it.
   `motion:watch` while unavailable answers `error: ...` and closes.
 - Status gains `"motion": {"available", "streaming"}` (additive);
-  `available` once the `devmotion` descriptor was seen on this link.
+  `available` once the `devmotion` descriptor or a first motion frame was
+  seen on this link. A link up before the daemon started lists no services,
+  so `available` reads false there until a watch has run: `motion:watch`
+  starts the stream regardless and answers `error: ...` and closes when no
+  frame comes in 3 s (shipped as f37a300, measured 118 lines in 5 s on such a
+  link).
 - Verified on g815 (podman Tumbleweed build of the tree, the fspec daemon
   stopped meanwhile and restarted after, audio left on the AirPods): ctest,
   then `motion:watch` printing 25 lines a second with a unit quaternion, and
@@ -60,22 +65,24 @@ branch `formalshell` too.
 
 ## Task 2: model, service, rig (FormalShell)
 
-- `fs-devices` earbuds: a `Motion` on `Device` (`Option`, AirPods only, when
-  the daemon reports `motion.available`), carrying the latest orientation as
+- `fs-devices` earbuds: a `Motion` on `Device` (`Option`, AirPods only, once
+  the daemon reports `motion.available` or a watch has delivered a sample), carrying the latest orientation as
   a quaternion type of its own (unit quaternion, named methods for the
   relative rotation against a reference and for yaw, pitch, roll in
   degrees), gravity, and whether it is live. Parser tests for the line
   format and the status key.
 - Service (`services/devices/earbuds.rs`): while the panel is open and the
-  active AirPods report `motion.available`, hold one `motion:watch`
+  active AirPods are connected with a `motion` key in their status (a daemon
+  that knows the verb), hold one `motion:watch`
   connection on the service thread and fold its lines into the device; drop
   it on close. The reference orientation is the first sample of a watch;
   `earbuds recenter` (IPC) takes the current one. Nothing held while closed.
 - `dev/librepods-stub.py`: `motion:watch` streams a scripted head motion
   (still, a yaw turn, a nod) at 25 Hz until the client goes.
-- `--earbuds` leg: AirPods with `motion.available`, the panel open reaching
+- `--earbuds` leg: AirPods with a `motion` key, the panel open reaching
   the stub as `motion:watch`, `earbuds status` reading the orientation the
-  stub is at, closing the panel ending the stub's watch, `available: false`
+  stub is at, closing the panel ending the stub's watch, a stub answering the watch
+  with `error: ...` leaving no motion block, a status with no `motion` key
   sending none. Update the leg's paragraph in CLAUDE.md.
 
 ## Task 3: the visualizer
