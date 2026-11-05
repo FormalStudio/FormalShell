@@ -1074,6 +1074,7 @@ version = "0.2.0"
 dependencies = [
  "async-channel",
  "async-io",
+ "enumflags2",
  "futures-lite",
  "zbus",
 ]

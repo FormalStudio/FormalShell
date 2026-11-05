@@ -404,28 +404,38 @@ fn image_hints() {
 }
 
 #[test]
-fn name_already_owned_is_an_error_and_not_stolen() {
+fn a_second_server_waits_in_line_and_steals_nothing() {
     run(async {
         let rig = Rig::new().await;
         let other = Config { name: "second".into(), ..Config::default() };
-        let err = Server::start_on(rig._bus.builder(), other).await.err().expect("second server must fail");
-        assert!(matches!(err, Error::NameTaken), "{err:?}");
+        let (_second, second_events) = Server::start_on(rig._bus.builder(), other).await.unwrap();
 
         let p = rig.proxy().await;
         assert_eq!(p.get_server_information().await.unwrap().0, "formalshell");
         p.notify("a", 0, "", "s", "", &[], hints(vec![]), 0).await.unwrap();
         notified(&rig.events).await;
+        assert!(quiet(second_events.recv()).await);
     });
 }
 
 #[test]
-fn name_owned_by_a_plain_connection() {
+fn the_name_comes_over_once_its_owner_exits() {
     run(async {
         let bus = Bus::start();
         let squatter = bus.builder().name("org.freedesktop.Notifications").unwrap().build().await.unwrap();
-        let err = Server::start_on(bus.builder(), Config::default()).await.err().expect("must fail");
-        assert!(matches!(err, Error::NameTaken), "{err:?}");
+        let (_server, events) = Server::start_on(bus.builder(), Config::default()).await.unwrap();
         drop(squatter);
+
+        let client = bus.builder().build().await.unwrap();
+        let p = ClientProxy::new(&client).await.unwrap();
+        within(async {
+            while !matches!(p.get_server_information().await, Ok((name, ..)) if name == "formalshell") {
+                async_io::Timer::after(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        p.notify("a", 0, "", "s", "", &[], hints(vec![]), 0).await.unwrap();
+        notified(&events).await;
     });
 }
 

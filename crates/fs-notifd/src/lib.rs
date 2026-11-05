@@ -5,9 +5,10 @@
 //! owner calls [`Server::close`] with [`CloseReason::Expired`]), and a
 //! non-resident notification closes as dismissed after an action is invoked.
 //!
-//! The bus name is requested without replacement and without queueing, so a
-//! running notification daemon is never displaced and the caller gets
-//! [`Error::NameTaken`] to show.
+//! The bus name is requested without replacement but queued: a running
+//! notification daemon is never displaced, and the bus hands the name over
+//! once it exits (a D-Bus-activated daemon that took it while the shell was
+//! down, say).
 
 mod image;
 mod iface;
@@ -17,6 +18,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_channel::{Receiver, Sender};
+use enumflags2::BitFlags;
 use zbus::connection::Builder;
 
 pub use image::{Image, ImageData};
@@ -27,8 +29,6 @@ pub const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
 
 #[derive(Debug)]
 pub enum Error {
-    /// Another process owns `org.freedesktop.Notifications`.
-    NameTaken,
     NoSuchNotification(u32),
     NoSuchAction { id: u32, key: String },
     Bus(zbus::Error),
@@ -37,7 +37,6 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NameTaken => write!(f, "{BUS_NAME} is already owned by another notification daemon"),
             Error::NoSuchNotification(id) => write!(f, "no live notification {id}"),
             Error::NoSuchAction { id, key } => write!(f, "notification {id} has no action {key:?}"),
             Error::Bus(e) => write!(f, "d-bus: {e}"),
@@ -49,10 +48,7 @@ impl std::error::Error for Error {}
 
 impl From<zbus::Error> for Error {
     fn from(e: zbus::Error) -> Self {
-        match e {
-            zbus::Error::NameTaken => Error::NameTaken,
-            e => Error::Bus(e),
-        }
+        Error::Bus(e)
     }
 }
 
@@ -169,13 +165,9 @@ impl Server {
             tx,
             config,
         });
-        let conn = builder
-            .serve_at(OBJECT_PATH, iface::Notifications { shared: shared.clone() })?
-            .name(BUS_NAME)?
-            .allow_name_replacements(false)
-            .replace_existing_names(false)
-            .build()
-            .await?;
+        let conn = builder.serve_at(OBJECT_PATH, iface::Notifications { shared: shared.clone() })?.build().await?;
+        // The builder always passes DoNotQueue, and request_name's defaults replace the owner.
+        conn.request_name_with_flags(BUS_NAME, BitFlags::empty()).await?;
         Ok((Server { conn, shared }, rx))
     }
 
