@@ -16,6 +16,16 @@ read at the start of a session), then SETTLED's in a loop. `available` is
 the fixture's own; an `on` with it false streams nothing, the daemon
 dropping the link instead, and stays logged for the leg to fail on.
 
+`motion:watch` keeps its connection and streams one JSON line per sample,
+`{"q":[w,x,y,z],"g":[x,y,z],"gyro":[x,y,z],"t":<ms>}`, at 25 Hz until the
+client goes (FormalSnake/omarchy-pods branch formalshell). The script runs
+from the watch's own start: still for 1 s, a yaw turn of +40 degrees over
+1 s, a 6 s hold, back over 1 s, 1 s still, a 20 degree nod over 1 s, then
+round again after 12 s. The body starts START_YAW degrees round, so a
+reference taken at the first sample matters. `--motion-error` answers the
+watch with `error: ...` and hangs up instead. Watch starts and ends go to
+--motion-log (default --log) as `motion:watch` and `motion:end`.
+
 --hang plays the daemon e1504g ran on 2026-10-09: its main thread blocked in
 pa_threaded_mainloop_wait, the socket still listening and never accepting.
 
@@ -23,6 +33,7 @@ Every verb received is appended to --log, one per line, exactly as read.
 """
 import argparse
 import json
+import math
 import os
 import socket
 import sys
@@ -32,6 +43,68 @@ NOISE = {"noise:off": 0, "noise:anc": 1, "noise:transparency": 2, "noise:adaptiv
 EAR = {"ear:one": 0, "ear:both": 1, "ear:off": 2}
 WARMUP = [169, 99, 66]
 SETTLED = [72, 74, 73, 76, 75, 73, 71]
+START_YAW = 25.0
+CYCLE = 12.0
+PERIOD = 0.04
+
+
+def ramp(t, start, length):
+    """0 to 1 over [start, start + length], eased."""
+    x = min(max((t - start) / length, 0.0), 1.0)
+    return x * x * (3 - 2 * x)
+
+
+def pose(t):
+    """(yaw, pitch) in degrees, relative to the watch's start."""
+    t %= CYCLE
+    yaw = 40.0 * (ramp(t, 1, 1) - ramp(t, 8, 1))
+    pitch = 20.0 * (ramp(t, 10, 0.5) - ramp(t, 10.5, 0.5))
+    return yaw, pitch
+
+
+def quat(yaw, pitch):
+    """Body to world, z up: about z by yaw, then about y by pitch."""
+    hy, hp = math.radians(yaw) / 2, math.radians(pitch) / 2
+    wz, zz, wy, yy = math.cos(hy), math.sin(hy), math.cos(hp), math.sin(hp)
+    return (wz * wy, -zz * yy, wz * yy, zz * wy)
+
+
+def motion_line(t):
+    yaw, pitch = pose(t)
+    w, x, y, z = quat(START_YAW + yaw, pitch)
+    # Gravity in the body frame: world (0, 0, -1) rotated by the conjugate.
+    g = [-2 * (x * z - w * y), -2 * (y * z + w * x), -(1 - 2 * (x * x + y * y))]
+    ahead = pose(t + PERIOD)
+    rate = (ahead[0] - yaw) / PERIOD
+    return json.dumps({
+        "q": [round(c, 6) for c in (w, x, y, z)],
+        "g": [round(c * 1010) for c in g],
+        "gyro": [0, 0, round(rate * 4)],
+        "t": int(time.time() * 1000),
+    }, separators=(",", ":")) + "\n"
+
+
+class Watcher:
+    def __init__(self, conn):
+        conn.setblocking(False)
+        self.conn = conn
+        self.start = time.monotonic()
+        self.next = self.start
+
+    def tick(self, now):
+        """False once the client has gone."""
+        if now < self.next:
+            return True
+        self.next += PERIOD
+        try:
+            self.conn.send(motion_line(now - self.start).encode())
+        except BlockingIOError:
+            pass
+        except OSError:
+            return False
+        return True
+
+
 IDLE_HEART = {"wanted": False, "available": False, "streaming": False, "bpm": 0, "settled": False, "sampled_at_ms": 0}
 
 
@@ -106,6 +179,8 @@ def main():
     ap.add_argument("--status", required=True, help="status.json to publish, seeded from --fixture")
     ap.add_argument("--fixture", required=True)
     ap.add_argument("--log", required=True)
+    ap.add_argument("--motion-log", help="where motion:watch and motion:end go, default --log")
+    ap.add_argument("--motion-error", action="store_true", help="answer motion:watch with an error line and hang up")
     ap.add_argument("--hang", action="store_true", help="listen and never accept, as a daemon with its event loop stuck")
     args = ap.parse_args()
 
@@ -128,15 +203,31 @@ def main():
         # connections on the listening socket, nothing ever accepts them.
         while True:
             time.sleep(60)
-    server.settimeout(0.1)
+    server.settimeout(PERIOD / 2)
+    watchers = []
+    motion_log = args.motion_log or args.log
+
+    def note(path, text):
+        with open(path, "a") as log:
+            log.write(text + "\n")
+
     while True:
         if heart.tick(status):
             write_status(args.status, status)
+        now = time.monotonic()
+        for w in watchers[:]:
+            if not w.tick(now):
+                watchers.remove(w)
+                w.conn.close()
+                note(motion_log, "motion:end")
+                if not watchers and "motion" in status:
+                    status["motion"]["streaming"] = False
+                    write_status(args.status, status)
         try:
             conn, _ = server.accept()
         except socket.timeout:
             continue
-        with conn:
+        try:
             conn.settimeout(2)
             try:
                 data = conn.recv(4096)
@@ -145,6 +236,17 @@ def main():
             if not data:
                 continue
             verb = data.decode("utf-8", "replace")
+            if verb == "motion:watch":
+                note(motion_log, verb)
+                if args.motion_error:
+                    conn.sendall(b"error: motion unavailable on this link\n")
+                else:
+                    watchers.append(Watcher(conn))
+                    conn = None
+                    if "motion" in status:
+                        status["motion"]["streaming"] = True
+                        write_status(args.status, status)
+                continue
             with open(args.log, "a") as log:
                 log.write(verb + "\n")
             if not apply(status, verb, heart):
@@ -152,6 +254,9 @@ def main():
             elif verb == "status":
                 conn.sendall(json.dumps(status, sort_keys=True, separators=(",", ":")).encode() + b"\n")
             write_status(args.status, status)
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 if __name__ == "__main__":

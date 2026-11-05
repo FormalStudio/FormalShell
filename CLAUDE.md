@@ -555,6 +555,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   shell log; the same AirPods with the service unavailable get no heart
   rate verb and no `heartRate`; with conversation awareness on, a
   pw-record off a pw-loopback source sends `ca:off` and its end `ca:on`.
+  Head motion rides the same stub (`motion` in its status): the panel
+  opening reaches it as `motion:watch` (logged apart in
+  `librepods-motion.txt`, as is each `motion:end` when the panel closes), a
+  25 Hz stream of a scripted head that starts 25 degrees round and turns 40
+  more; `earbuds status` reads it live with yaw 35 to 45 off the watch's
+  first sample, level, with gravity, and `earbuds recenter` brings yaw
+  within 3 degrees of 0. A stub answering the watch with `error: ...`
+  (`--motion-error`) leaves no `motion`, and a status with no `motion` key
+  is never watched.
   A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once

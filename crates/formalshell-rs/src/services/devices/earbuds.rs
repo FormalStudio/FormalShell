@@ -28,8 +28,9 @@ use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use async_process::{ChildStdin, Stdio};
 use fs_devices::bluetooth::Device as BtDevice;
-use fs_devices::earbuds::{self as model, Device, HeartSample, Value, airpods, nothing, samsung, soundcore};
-use futures_lite::io::BufReader;
+use fs_devices::earbuds::motion::{Quat, Sample, parse_sample};
+use fs_devices::earbuds::{self as model, Device, HeartSample, Motion, Value, airpods, nothing, samsung, soundcore};
+use futures_lite::io::{BufReader, Lines};
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt, future};
 
 use crate::runtime::Ctx;
@@ -225,6 +226,7 @@ enum Msg {
     Bluetooth(Vec<BtDevice>),
     Op(Op),
     Mic(bool),
+    Recenter,
 }
 
 static CHANNEL: LazyLock<(Sender<Msg>, Receiver<Msg>)> = LazyLock::new(async_channel::unbounded);
@@ -269,6 +271,12 @@ pub fn mic(capturing: bool) {
     send(Msg::Mic(capturing));
 }
 
+/// Takes the AirPods' current head orientation as the zero of yaw, pitch
+/// and roll.
+pub fn recenter() {
+    send(Msg::Recenter);
+}
+
 fn publish(ctx: &Ctx, name: &'static str, backend: Backend) {
     ctx.publish(store::Diff::Devices(super::Diff::Earbuds(Diff::Backend(name, backend))));
 }
@@ -279,6 +287,7 @@ enum Event {
     Bluetooth(Vec<BtDevice>),
     Op(Op),
     Mic(bool),
+    Recenter,
 }
 
 pub fn start(ctx: &Ctx) {
@@ -327,6 +336,9 @@ pub fn start(ctx: &Ctx) {
                 }
                 Msg::Mic(on) => {
                     let _ = air_tx.try_send(Event::Mic(on));
+                }
+                Msg::Recenter => {
+                    let _ = air_tx.try_send(Event::Recenter);
                 }
                 Msg::Bluetooth(devices) => {
                     let _ = not_tx.try_send(NEvent::Bluetooth(devices.clone()));
@@ -427,25 +439,34 @@ fn check_times() -> (Duration, Duration) {
 async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
     let path = status_path();
     let (every, window) = check_times();
-    let mut watch: Option<Watch> = None;
+    // The file watch settles for 50ms after an event, which a loop woken by
+    // a motion sample every 40ms would restart before it ever finished, so
+    // it runs in a task of its own and the loop hears of it on a channel.
+    let (file_tx, file_rx) = async_channel::unbounded::<()>();
+    let mut watch: Option<Sender<()>> = None;
     let mut held = false;
     let mut air = Airpods::default();
     let mut next_check = Instant::now() + every;
     loop {
         let due = air.check.as_ref().map_or(next_check, |c| c.deadline(window).min(next_check));
         let wake = future::or(
-            async {
-                match rx.recv().await {
-                    Ok(e) => Wake::Event(e),
-                    Err(_) => Wake::Closed,
-                }
-            },
             future::or(
                 async {
-                    match watch.as_mut() {
-                        Some(w) => w.changed().await,
-                        None => future::pending::<()>().await,
+                    match rx.recv().await {
+                        Ok(e) => Wake::Event(e),
+                        Err(_) => Wake::Closed,
                     }
+                },
+                async {
+                    match air.lines.as_mut() {
+                        Some(lines) => Wake::Motion(lines.next().await.and_then(Result::ok)),
+                        None => future::pending::<Wake>().await,
+                    }
+                },
+            ),
+            future::or(
+                async {
+                    let _ = file_rx.recv().await;
                     Wake::File
                 },
                 async {
@@ -468,6 +489,8 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
                 }
             }
             Wake::File => air.load(&ctx, &path).await,
+            Wake::Motion(Some(line)) => air.motion_line(&ctx, &line),
+            Wake::Motion(None) => air.motion_ended(&ctx),
             Wake::Event(Event::Hold(on)) => held = on,
             Wake::Event(Event::Panel(open)) => {
                 air.panel = open;
@@ -480,7 +503,9 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
                 } else {
                     next_check = Instant::now() + every;
                     air.history.clear();
-                    if std::mem::take(&mut air.heart_on) && air.send("heartrate:off".into()).await {
+                    let had_motion = air.stop_motion();
+                    let stopped = std::mem::take(&mut air.heart_on) && air.send("heartrate:off".into()).await;
+                    if stopped || had_motion {
                         air.load(&ctx, &path).await;
                     }
                 }
@@ -509,16 +534,42 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
                     air.load(&ctx, &path).await;
                 }
             }
+            Wake::Event(Event::Recenter) => air.recenter(&ctx),
             Wake::Event(_) => {}
         }
         let want = held || air.check.is_some() || air.mic;
         if want != watch.is_some() {
-            watch = if want { Watch::new(path.clone()).ok() } else { None };
+            watch = if want { Watch::new(path.clone()).ok().map(|w| watch_file(&ctx, w, file_tx.clone())) } else { None };
             if want {
                 air.load(&ctx, &path).await;
             }
         }
     }
+}
+
+/// Reports each change of the status file on `changes` until the returned
+/// sender is dropped.
+fn watch_file(ctx: &Ctx, mut watch: Watch, changes: Sender<()>) -> Sender<()> {
+    let (stop_tx, stop_rx) = async_channel::bounded::<()>(1);
+    ctx.spawn(async move {
+        loop {
+            let stopped = future::or(
+                async {
+                    watch.changed().await;
+                    false
+                },
+                async {
+                    let _ = stop_rx.recv().await;
+                    true
+                },
+            )
+            .await;
+            if stopped || changes.send(()).await.is_err() {
+                return;
+            }
+        }
+    });
+    stop_tx
 }
 
 enum Wake {
@@ -527,6 +578,8 @@ enum Wake {
     /// The status file may read differently.
     File,
     Timer,
+    /// A line off the motion watch, None once it has closed.
+    Motion(Option<String>),
 }
 
 /// One background spot check under way.
@@ -543,6 +596,19 @@ impl Check {
             None => self.started + CHECK_GIVE_UP,
         }
     }
+}
+
+type MotionLines = Lines<BufReader<Async<std::os::unix::net::UnixStream>>>;
+
+/// What the open `motion:watch` has delivered.
+#[derive(Default)]
+struct MotionState {
+    latest: Option<Sample>,
+    /// The first sample of the watch, or where `recenter` last took it.
+    reference: Option<Quat>,
+    /// The daemon answered the watch with an `error:` line, or it could not
+    /// be opened; not tried again until the panel is reopened.
+    failed: bool,
 }
 
 #[derive(Default)]
@@ -568,6 +634,13 @@ struct Airpods {
     ca_restore: bool,
     /// The user set conversation awareness during the recording.
     ca_user: bool,
+    /// One `motion:watch` connection, held while the panel is open on
+    /// connected AirPods whose status carries a `motion` key.
+    lines: Option<MotionLines>,
+    motion: MotionState,
+    /// The status the device was last published from, what a motion sample
+    /// is folded into.
+    last: airpods::Status,
 }
 
 impl Airpods {
@@ -601,6 +674,13 @@ impl Airpods {
             self.heart_on = false;
             self.history.clear();
             self.check = None;
+        }
+        if self.panel && airpods::motion_watchable(&status) {
+            if self.lines.is_none() && !self.motion.failed {
+                self.open_motion().await;
+            }
+        } else {
+            self.stop_motion();
         }
         self.publish(ctx, &status);
         if self.panel && !self.heart_on && let Some(verb) = airpods::heart_command(&status, true) {
@@ -658,7 +738,70 @@ impl Airpods {
         self.load(ctx, path).await;
     }
 
+    async fn open_motion(&mut self) {
+        let Some(socket) = socket_path() else { return };
+        let connect = async {
+            let mut stream = Async::<std::os::unix::net::UnixStream>::connect(&socket).await.ok()?;
+            stream.write_all(b"motion:watch").await.ok()?;
+            stream.flush().await.ok()?;
+            Some(stream)
+        };
+        let stream = future::or(connect, async {
+            Timer::after(AIRPODS_ANSWER).await;
+            None
+        })
+        .await;
+        match stream {
+            Some(stream) => self.lines = Some(BufReader::new(stream).lines()),
+            None => {
+                eprintln!("earbuds: librepods did not take motion:watch within {}s", AIRPODS_ANSWER.as_secs());
+                self.motion.failed = true;
+            }
+        }
+    }
+
+    /// Drops the watch and what it delivered. True when there was any.
+    fn stop_motion(&mut self) -> bool {
+        let had = self.lines.take().is_some() || self.motion.latest.is_some();
+        self.motion = MotionState::default();
+        had
+    }
+
+    fn republish(&mut self, ctx: &Ctx) {
+        let status = self.last.clone();
+        self.publish(ctx, &status);
+    }
+
+    fn motion_line(&mut self, ctx: &Ctx, line: &str) {
+        if line.starts_with("error:") {
+            eprintln!("earbuds: librepods refused motion:watch: {line}");
+            self.lines = None;
+            self.motion = MotionState { failed: true, ..MotionState::default() };
+            self.republish(ctx);
+            return;
+        }
+        let Some(sample) = parse_sample(line) else { return };
+        self.motion.reference.get_or_insert(sample.orientation);
+        self.motion.latest = Some(sample);
+        self.republish(ctx);
+    }
+
+    /// The daemon hung up. The next status read opens a new watch.
+    fn motion_ended(&mut self, ctx: &Ctx) {
+        self.lines = None;
+        self.motion.latest = None;
+        self.motion.reference = None;
+        self.republish(ctx);
+    }
+
+    fn recenter(&mut self, ctx: &Ctx) {
+        let Some(sample) = self.motion.latest else { return };
+        self.motion.reference = Some(sample.orientation);
+        self.republish(ctx);
+    }
+
     fn publish(&mut self, ctx: &Ctx, status: &airpods::Status) {
+        self.last = status.clone();
         let mut backend = Backend::new(status.ok);
         backend.devices = airpods::normalise(status);
         for d in &mut backend.devices {
@@ -677,6 +820,14 @@ impl Airpods {
                 }
                 hr.history = self.history.clone();
                 hr.points = self.points.clone();
+            }
+            if self.motion.failed {
+                d.motion = None;
+            } else if let Some(sample) = self.motion.latest {
+                let m = d.motion.get_or_insert_with(Motion::default);
+                m.live = self.lines.is_some();
+                m.latest = Some(sample);
+                m.reference = self.motion.reference;
             }
         }
         publish(ctx, airpods::BACKEND, backend);
@@ -757,7 +908,7 @@ async fn run_poll(ctx: Ctx, kind: Poller, rx: Receiver<Event>, epoch: Rc<Cell<u6
                 backend.available = code != -1;
                 poll = true;
             }
-            Some(Event::Op(_) | Event::Panel(_) | Event::Mic(_)) => {}
+            Some(Event::Op(_) | Event::Panel(_) | Event::Mic(_) | Event::Recenter) => {}
         }
         let now_key = if held { connected_key(&bt) } else { Vec::new() };
         if now_key != key {

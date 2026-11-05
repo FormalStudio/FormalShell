@@ -1,7 +1,8 @@
 //! `earbuds`: the active device as the panel renders it,
 //! the device list, a pick, and a control change against the active device
 //! (`set noise anc`, `set ca on`, `set adaptive 40`), refused with the
-//! reason rather than dropped.
+//! reason rather than dropped, and `recenter`, which zeroes the AirPods'
+//! head yaw, pitch and roll.
 
 use fs_devices::earbuds as model;
 use serde_json::{Value as Json, json};
@@ -23,6 +24,7 @@ pub fn target() -> Target<App> {
             Function { name: "status", params: &[], ret: Type::String, call: status },
             Function { name: "devices", params: &[], ret: Type::String, call: list },
             Function { name: "select", params: &[("key", Type::String)], ret: Type::String, call: select },
+            Function { name: "recenter", params: &[], ret: Type::String, call: recenter },
             Function {
                 name: "set",
                 params: &[("control", Type::String), ("value", Type::String)],
@@ -68,6 +70,11 @@ fn select(app: &mut App, args: &[Value]) -> Value {
     }
     let diff = earbuds::Diff::Select(key.to_owned());
     app.receive(Msg::Diff(store::Diff::Devices(devices::Diff::Earbuds(diff))));
+    text("ok")
+}
+
+fn recenter(_: &mut App, _: &[Value]) -> Value {
+    earbuds::recenter();
     text("ok")
 }
 

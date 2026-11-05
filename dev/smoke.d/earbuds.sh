@@ -56,6 +56,17 @@
 #     the stub listening without ever accepting, as e1504g's daemon did with
 #     its event loop stuck: the verb is never taken and the device says
 #     "librepods not responding".
+#     Head motion rides the same stub: its status carries `motion`
+#     available, and the panel opening reaches the socket as `motion:watch`
+#     (logged apart from the verbs, in librepods-motion.txt). The stub
+#     starts 25 degrees round and turns 40 more over a 6 s hold; with the
+#     panel still open from the noise loop, `earbuds status` reads the motion
+#     live, yaw 35 to 45 (so measured from the watch's first sample, not
+#     65), pitch near 0 and a gravity triple, `earbuds recenter` brings yaw
+#     within 3 degrees of 0 mid-hold, and closing the panel ends the watch
+#     (`motion:end`; so does each other close). A stub answering the watch
+#     with `error: ...` leaves the device with no `motion`, and a status
+#     with no `motion` key (the noheart one) is never watched.
 #  5. a device nothingctl refuses: its `watch` prints the v0.1.1
 #     `unsupported-model` line and exits 3. Twelve seconds later (past the
 #     5s first backoff every other exit gets) it was started exactly once
@@ -99,6 +110,8 @@ earbuds_replies="$shot_dir/earbuds-set-replies.txt"
 earbuds_airpods_replies="$shot_dir/earbuds-airpods-replies.txt"
 earbuds_librepods_socket="$iso_home/librepods.sock"
 earbuds_librepods_log="$earbuds_dir/librepods-verbs.txt"
+earbuds_librepods_motion="$earbuds_dir/librepods-motion.txt"
+earbuds_motion_replies="$earbuds_dir/motion-replies.txt"
 earbuds_librepods_err="$earbuds_dir/librepods-stub.err"
 
 leg_earbuds_fixture() {
@@ -113,6 +126,9 @@ leg_earbuds_fixture() {
     > "$earbuds_dir/airpods-status.json"
   printf '%s\n' "$airpods" | "$jq_bin" -c '.conversational_awareness = true | .heart_rate = {"wanted":false,"available":false,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
     > "$earbuds_dir/airpods-status-noheart.json"
+  "$jq_bin" -c '.motion = {"available":true,"streaming":false}' "$earbuds_dir/airpods-status.json" > "$earbuds_dir/airpods-status-motion.json"
+  mv "$earbuds_dir/airpods-status-motion.json" "$earbuds_dir/airpods-status.json"
+  "$jq_bin" -c '.motion = {"available":true,"streaming":false}' "$earbuds_dir/airpods-status-noheart.json" > "$earbuds_dir/airpods-status-moterr.json"
   "$jq_bin" -c '.left.in_ear = false | .right.in_ear = false' "$earbuds_dir/airpods-status.json" \
     > "$earbuds_dir/airpods-status-nobud.json"
   for f in "$b175" "$settings" "$values" "$airpods"; do
@@ -179,6 +195,8 @@ EOF
   export FORMALSHELL_SMOKE_LIBREPODS_SOCKET="$earbuds_librepods_socket"
   export FORMALSHELL_SMOKE_HEART_CHECK="10,4"
   : > "$earbuds_librepods_log"
+  : > "$earbuds_librepods_motion"
+  : > "$earbuds_motion_replies"
   export FORMALSHELL_SMOKE_BLUETOOTH='[{"address":"'"$earbuds_scq_address"'","name":"Liberty 4 NC","connected":true}]'
 }
 
@@ -186,7 +204,7 @@ leg_earbuds_timing() {
   # Five phases of sleeps (~100s, a spot check's wait up to 30s more) plus
   # some twenty-five `ipc call` round trips at about a second each on
   # llvmpipe.
-  leg_timing 170 210
+  leg_timing 190 235
 }
 
 leg_earbuds_drive() {
@@ -235,7 +253,8 @@ nothing_list "\$none"
 printf '[]\n' > "$earbuds_scq_paired"
 mkdir -p "$state_dir"
 "$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
-  --fixture "$earbuds_dir/airpods-status.json" --log "$earbuds_librepods_log" 2> "$earbuds_librepods_err" &
+  --fixture "$earbuds_dir/airpods-status.json" --log "$earbuds_librepods_log" --motion-log "$earbuds_librepods_motion" \
+  2> "$earbuds_librepods_err" &
 stub=\$!
 sleep 1
 commits() { grep -c '^commit surface=panel ' "$shell_log_path"; }
@@ -268,6 +287,16 @@ for mode in anc transparency adaptive off; do
   sleep 2
   ipc earbuds status > "$earbuds_dir/airpods-status-\$mode.json" 2>&1
 done
+# The stub's head turns 40 degrees and holds it for 6s; the watch has run
+# since the reopen, so catch the hold wherever the cycle is.
+for _ in \$(seq 40); do
+  ipc earbuds status > "$earbuds_dir/airpods-motion-turn.json" 2>&1
+  [ "\$("$jq_bin" -r '(.device.motion.yaw // 0) > 35' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)" = true ] && break
+  sleep 0.2
+done
+echo "recenter: \$(ipc earbuds recenter 2>&1)" >> "$earbuds_motion_replies"
+sleep 0.5
+ipc earbuds status > "$earbuds_dir/airpods-motion-recentered.json" 2>&1
 ipc panel close > /dev/null 2>&1
 sleep 4
 c2=\$(commits)
@@ -291,6 +320,18 @@ kill \$stub
   --fixture "$earbuds_dir/airpods-status-nobud.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
 stub=\$!
 sleep 13
+kill \$stub
+rm -f "$state_dir/status.json"
+"$python3_bin" "$PWD/dev/librepods-stub.py" --motion-error --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
+  --fixture "$earbuds_dir/airpods-status-moterr.json" --log "$earbuds_librepods_log" --motion-log "$earbuds_librepods_motion" \
+  2>> "$earbuds_librepods_err" &
+stub=\$!
+sleep 1
+ipc panel open earbuds > /dev/null 2>&1
+sleep 3
+ipc earbuds status > "$earbuds_dir/airpods-motion-error.json" 2>&1
+ipc panel close > /dev/null 2>&1
+sleep 1
 kill \$stub
 rm -f "$state_dir/status.json"
 "$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
@@ -416,6 +457,28 @@ heartrate:on
 heartrate:off
 ca:off
 ca:on" ] || fail "earbuds: librepods should get exactly heartrate:on, off and on again across the reopen, the four noise verbs, heartrate:off, the spot check's on and off, on and off around the point's frame (none with no bud in or the service unavailable), and ca:off then ca:on around a recording, got '$(cat "$earbuds_librepods_log")'"
+  echo "head motion:"; cat "$earbuds_librepods_motion"
+  [ "$(cat "$earbuds_librepods_motion")" = "motion:watch
+motion:end
+motion:watch
+motion:end
+motion:watch
+motion:end
+motion:watch" ] || fail "earbuds: librepods should get a motion:watch per panel open on the motion status (each closed one ended), the erroring stub's last, and none with no motion key or no panel, got '$(cat "$earbuds_librepods_motion")'"
+  got=$("$jq_bin" -c '.device.motion' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)
+  echo "turned: $got"
+  got=$("$jq_bin" -r '.device.motion | [.live, (.yaw > 35 and .yaw < 45), (.pitch > -3 and .pitch < 3), (.gravity | length == 3 and any(. != 0)), (.sampledAtMs > 0)] | map(tostring) | join(",")' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)
+  [ "$got" = "true,true,true,true,true" ] \
+    || fail "earbuds: the open panel should read live head motion 35 to 45 degrees round from its first sample, level, with gravity, got '$got' from $(cat "$earbuds_dir/airpods-motion-turn.json")"
+  [ "$(cat "$earbuds_motion_replies")" = "recenter: ok" ] || fail "earbuds: recenter was refused: $(cat "$earbuds_motion_replies")"
+  got=$("$jq_bin" -r '.device.motion | [.live, (.yaw > -3 and .yaw < 3)] | map(tostring) | join(",")' "$earbuds_dir/airpods-motion-recentered.json" 2>/dev/null)
+  [ "$got" = "true,true" ] \
+    || fail "earbuds: recenter should bring yaw within 3 degrees of 0, got '$got' from $(cat "$earbuds_dir/airpods-motion-recentered.json")"
+  got=$("$jq_bin" -r '[(.device != null), (.device.motion == null)] | map(tostring) | join(",")' "$earbuds_dir/airpods-motion-error.json" 2>/dev/null)
+  [ "$got" = "true,true" ] \
+    || fail "earbuds: a watch answered with an error should leave the device with no motion, got '$got' from $(cat "$earbuds_dir/airpods-motion-error.json")"
+  got=$("$jq_bin" -r '.device.motion' "$earbuds_dir/airpods-noheart-status.json" 2>/dev/null)
+  [ "$got" = "null" ] || fail "earbuds: AirPods with no motion key should carry no motion, got '$got'"
   echo "spot check:"; "$jq_bin" -c '.device.heartRate | {streaming, points}' "$earbuds_dir/airpods-status-point.json"
   got=$("$jq_bin" -r '.device.heartRate | [.streaming, (.points | length), (.points[0].bpm >= 70 and .points[0].bpm <= 80), (.points[0].atMs > 0)] | map(tostring) | join(",")' "$earbuds_dir/airpods-status-point.json" 2>/dev/null)
   [ "$got" = "false,1,true,true" ] \

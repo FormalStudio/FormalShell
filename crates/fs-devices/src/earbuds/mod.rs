@@ -12,6 +12,7 @@ use crate::bluetooth;
 use fs_js as js;
 
 pub mod airpods;
+pub mod motion;
 pub mod nothing;
 pub mod samsung;
 pub mod soundcore;
@@ -241,6 +242,32 @@ pub struct Device {
     pub art: String,
     /// Set only for a device that can stream one on this link right now.
     pub heart_rate: Option<HeartRate>,
+    /// Set only for a device that streams head motion on this link.
+    pub motion: Option<Motion>,
+}
+
+/// Head orientation off the buds' motion sensor, see [`motion`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Motion {
+    /// A watch is delivering samples right now.
+    pub live: bool,
+    /// The latest sample, None before the first.
+    pub latest: Option<motion::Sample>,
+    /// The orientation yaw, pitch and roll are measured from: the first
+    /// sample of a watch, or wherever the wearer last recentred.
+    pub reference: Option<motion::Quat>,
+}
+
+impl Motion {
+    /// The latest orientation turned back by the reference.
+    pub fn relative(&self) -> Option<motion::Quat> {
+        let (sample, reference) = self.latest.zip(self.reference)?;
+        Some(sample.orientation.relative_to(reference))
+    }
+
+    pub fn euler_degrees(&self) -> Option<motion::EulerDegrees> {
+        self.relative().map(motion::Quat::euler_degrees)
+    }
 }
 
 /// Beats per minute. Not a percentage and not a fraction: the number itself.
@@ -353,6 +380,7 @@ pub fn device(fields: DeviceFields) -> Device {
         state_line: fields.state_line,
         art: fields.art,
         heart_rate: None,
+        motion: None,
     }
 }
 
@@ -700,6 +728,20 @@ pub fn to_json(dev: &Device) -> Json {
         "controls": controls,
         "stateLine": dev.state_line,
         "heartRate": dev.heart_rate.as_ref().map(heart_json),
+        "motion": dev.motion.as_ref().map(motion_json),
+    })
+}
+
+fn motion_json(m: &Motion) -> Json {
+    let round = |n: f32| (f64::from(n) * 10.0).round() / 10.0;
+    let euler = m.euler_degrees();
+    serde_json::json!({
+        "live": m.live,
+        "yaw": euler.map(|e| round(e.yaw)),
+        "pitch": euler.map(|e| round(e.pitch)),
+        "roll": euler.map(|e| round(e.roll)),
+        "gravity": m.latest.map(|s| [s.gravity.x.get(), s.gravity.y.get(), s.gravity.z.get()]),
+        "sampledAtMs": m.latest.map(|s| s.at_ms),
     })
 }
 
@@ -753,12 +795,28 @@ mod tests {
         d.controls.push(range("adaptive", "Level", "s", 40.0, 0.0, 100.0, 1.0, Unit::Percent));
         assert_eq!(
             to_json(&d).to_string(),
-            r#"{"key":"k","backend":"test","address":"","name":"k","kind":"earbuds","connected":true,"batteries":[{"id":"left","label":"","level":40,"charging":false,"inEar":null}],"controls":[{"key":"adaptive","kind":"range","label":"Level","hint":"","section":"s","value":40,"enabled":true,"options":null,"min":0,"max":100,"step":1,"unit":"percent"}],"stateLine":"","heartRate":null}"#
+            r#"{"key":"k","backend":"test","address":"","name":"k","kind":"earbuds","connected":true,"batteries":[{"id":"left","label":"","level":40,"charging":false,"inEar":null}],"controls":[{"key":"adaptive","kind":"range","label":"Level","hint":"","section":"s","value":40,"enabled":true,"options":null,"min":0,"max":100,"step":1,"unit":"percent"}],"stateLine":"","heartRate":null,"motion":null}"#
         );
     }
 
     fn sample(bpm: f64, at_ms: u64) -> HeartSample {
         HeartSample { bpm: Bpm::new(bpm).unwrap(), at_ms }
+    }
+
+    #[test]
+    fn motion_reads_against_its_reference() {
+        let at = |line: &str| motion::parse_sample(line).unwrap();
+        let first = at(r#"{"q":[1,0,0,0],"g":[0,0,1000],"gyro":[0,0,0],"t":1}"#);
+        let turned = at(r#"{"q":[0.9396926,0,0,0.3420201],"g":[0,0,1000],"gyro":[0,0,0],"t":2}"#);
+        let mut m = Motion { live: true, latest: Some(turned), reference: None };
+        assert_eq!(m.euler_degrees(), None);
+        m.reference = Some(first.orientation);
+        let yaw = m.euler_degrees().unwrap().yaw;
+        assert!((yaw - 40.0).abs() < 0.01, "{yaw}");
+        m.reference = Some(turned.orientation);
+        assert!(m.euler_degrees().unwrap().yaw.abs() < 0.01);
+        assert_eq!(motion_json(&m)["yaw"], 0.0);
+        assert_eq!(motion_json(&Motion::default())["yaw"], Json::Null);
     }
 
     #[test]

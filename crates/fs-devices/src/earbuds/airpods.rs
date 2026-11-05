@@ -15,8 +15,8 @@
 use serde_json::Value as Json;
 
 use super::{
-    Battery, BatteryId, Bpm, ControlOption, Device, DeviceFields, DeviceKind, HeartRate, HeartSample, Value, choice, device, range,
-    toggle, Unit,
+    Battery, BatteryId, Bpm, ControlOption, Device, DeviceFields, DeviceKind, HeartRate, HeartSample, Motion, Value, choice, device,
+    range, toggle, Unit,
 };
 use fs_js as js;
 
@@ -78,6 +78,17 @@ pub struct HeartStatus {
     pub sampled_at_ms: u64,
 }
 
+/// status.json's `motion`, absent from a daemon without the `motion:watch`
+/// verb.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MotionStatus {
+    /// The buds published their motion service on this link. A link up
+    /// before the daemon started lists no services, so this can read false
+    /// on a link that streams once asked.
+    pub available: bool,
+    pub streaming: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Status {
     pub ok: bool,
@@ -97,6 +108,8 @@ pub struct Status {
     pub ear_detection: f64,
     pub lid_state: f64,
     pub heart_rate: HeartStatus,
+    /// None when the key is absent.
+    pub motion: Option<MotionStatus>,
 }
 
 impl Default for Status {
@@ -119,6 +132,7 @@ impl Default for Status {
             ear_detection: 0.0,
             lid_state: 2.0,
             heart_rate: HeartStatus::default(),
+            motion: None,
         }
     }
 }
@@ -172,6 +186,11 @@ fn parse_heart(raw: Option<&Json>) -> HeartStatus {
     }
 }
 
+fn parse_motion(raw: Option<&Json>) -> Option<MotionStatus> {
+    let raw = raw.filter(|r| js::is_object_like(r))?;
+    Some(MotionStatus { available: flag(raw, "available"), streaming: flag(raw, "streaming") })
+}
+
 /// `text`: one line of the daemon's own JSON, or "" / malformed / a foreign
 /// schema_version. Every one of those returns the same complete default shape
 /// (`ok: false`) rather than a partial one: a caller checks `ok` once.
@@ -203,6 +222,7 @@ pub fn parse_status(text_in: &str) -> Status {
     result.ear_detection = number(&raw, "ear_detection_behavior").unwrap_or(0.0);
     result.lid_state = number(&raw, "lid_state").unwrap_or(2.0);
     result.heart_rate = parse_heart(js::field(&raw, "heart_rate"));
+    result.motion = parse_motion(js::field(&raw, "motion"));
     result
 }
 
@@ -224,6 +244,19 @@ pub fn heart_rate(status: &Status) -> Option<HeartRate> {
         history: Vec::new(),
         points: Vec::new(),
     })
+}
+
+/// The device's head motion block, only on a connected link whose daemon
+/// reports the service available or streaming. Samples are the caller's.
+pub fn motion(status: &Status) -> Option<Motion> {
+    let m = status.motion?;
+    (status.connected && (m.available || m.streaming)).then(Motion::default)
+}
+
+/// Whether a `motion:watch` can be opened: a connected link and a daemon
+/// that knows the verb (the key is there), available or not.
+pub fn motion_watchable(status: &Status) -> bool {
+    status.ok && status.connected && status.motion.is_some()
 }
 
 pub fn lid_label(n: f64) -> &'static str {
@@ -373,6 +406,7 @@ pub fn normalise(status: &Status) -> Vec<Device> {
         art: art(status),
     });
     dev.heart_rate = heart_rate(status);
+    dev.motion = motion(status);
     vec![dev]
 }
 
@@ -643,6 +677,35 @@ mod tests {
         let in_case = with_heart(IN_CASE, HEART_IDLE);
         assert!(device_of(&in_case).heart_rate.is_none());
         assert_eq!(heart_command(&parse_status(&in_case), true), None);
+    }
+
+    fn with_motion(base: &str, motion: &str) -> String {
+        base.replace("\"schema_version\":1", &format!("\"motion\":{motion},\"schema_version\":1"))
+    }
+
+    #[test]
+    fn motion_follows_the_status_key() {
+        let on = with_motion(PRO3, r#"{"available":true,"streaming":false}"#);
+        let s = parse_status(&on);
+        assert_eq!(s.motion, Some(MotionStatus { available: true, streaming: false }));
+        assert_eq!(device_of(&on).motion, Some(Motion::default()));
+        assert!(motion_watchable(&s));
+
+        // A link up before the daemon started: nothing listed yet, but the
+        // verb exists and a watch is worth trying.
+        let early = with_motion(PRO3, r#"{"available":false,"streaming":false}"#);
+        assert!(device_of(&early).motion.is_none());
+        assert!(motion_watchable(&parse_status(&early)));
+
+        // No key: a daemon without the verb, never watched.
+        assert_eq!(parse_status(PRO3).motion, None);
+        assert!(device_of(PRO3).motion.is_none());
+        assert!(!motion_watchable(&parse_status(PRO3)));
+
+        // In the case, link down.
+        let case = with_motion(IN_CASE, r#"{"available":true,"streaming":false}"#);
+        assert!(device_of(&case).motion.is_none());
+        assert!(!motion_watchable(&parse_status(&case)));
     }
 
     #[test]
