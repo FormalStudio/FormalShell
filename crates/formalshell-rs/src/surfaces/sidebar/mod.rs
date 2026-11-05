@@ -26,6 +26,7 @@ use vello_cpu::kurbo::Rect;
 
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::compositor::Command;
+use crate::services::motion_art;
 use crate::services::state::{self, Field};
 use crate::store::Store;
 use crate::surfaces::bar::cells::clock::clock_format;
@@ -219,6 +220,17 @@ pub struct Sidebar {
     /// Folded to the rail, as last drawn, and the rail clock's lines.
     collapsed: bool,
     rail_lines: Vec<String>,
+    /// The media card's `motion_art` slot, what it asks for there, and
+    /// whether the column is on screen to show it.
+    motion_slot: u64,
+    motion: Option<motion_art::Want>,
+    seen: bool,
+}
+
+impl Drop for Sidebar {
+    fn drop(&mut self) {
+        motion_art::want(self.motion_slot, None);
+    }
 }
 
 impl Sidebar {
@@ -244,6 +256,17 @@ impl Sidebar {
             clock: ClockCard::default(),
             collapsed: false,
             rail_lines: Vec::new(),
+            motion_slot: motion_art::slot(),
+            motion: None,
+            seen: true,
+        }
+    }
+
+    /// Off screen under a fullscreen window and back.
+    pub fn visible(&mut self, on: bool) {
+        if on != self.seen {
+            self.seen = on;
+            motion_art::want(self.motion_slot, self.motion.clone().filter(|_| self.seen));
         }
     }
 
@@ -295,8 +318,10 @@ impl Sidebar {
         let (_, foot_h) = crate::ui::measure(&foot, width, theme, kit);
         let gap = g.gap;
         let room = (bottom - foot_h - gap - y0).max(0.0);
+        let art = if collapsed { g.rail.art } else { g.art };
+        let (cover, motion) = store.media.active().map(|a| motion_art::chrome_cover(store, &a, art)).unwrap_or_default();
         let build = |map: &minimap::Map, kit: &mut Kit| {
-            if collapsed { rail(theme, store, map, &g) } else { cards(theme, store, map, &g, &self.icons, width, kit, now) }
+            if collapsed { rail(theme, store, map, &g, &cover) } else { cards(theme, store, map, &g, &cover, &self.icons, width, kit, now) }
         };
         // Measured whole first: every row, from the top.
         let want = self.map.first;
@@ -344,6 +369,8 @@ impl Sidebar {
         let kept: Vec<&'static str> = cards.iter().map(|(n, _)| *n).collect();
         let top = w::column(gap, cards.into_iter().map(|(_, c)| c).collect());
         self.cards = kept;
+        self.motion = motion.filter(|_| self.cards.contains(&"media"));
+        motion_art::want(self.motion_slot, self.motion.clone().filter(|_| self.seen));
         let clip = Some(strip);
         self.top.anchor = anchor;
         self.top.cursor = self.map.cursor_key();
@@ -700,7 +727,7 @@ impl ClockCard {
 
 /// Every card that has something to show, top to bottom, by name.
 #[allow(clippy::too_many_arguments)]
-fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, icons: &HashMap<String, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
+fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>, icons: &HashMap<String, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
     let s = &theme.space;
     let inner = |h: f64| (h - s.md * 2.0).max(0.0);
     let battery = if store.devices.power.battery.is_some() { g.battery_h } else { 0.0 };
@@ -709,7 +736,7 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, icons: &Hash
         w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), "panel:calendar").fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
-    if let Some(media) = media(theme, store, g) {
+    if let Some(media) = media(store, g, cover) {
         out.push(("media", w::action_card(media.height(inner(g.media_h)), "panel:media").fill()));
     }
     let row = notifications(theme, store, g, icons, width - g.row_pad * 2.0, kit);
@@ -761,10 +788,8 @@ fn notifications(theme: &Theme, store: &Store, g: &Geo, icons: &HashMap<String, 
 }
 
 /// The art, the title over the artist.
-fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
+fn media(store: &Store, g: &Geo, cover: &Option<Bitmap>) -> Option<El> {
     let a = store.media.active()?;
-    let (px, radius) = w::cover_inner(theme, g.art);
-    let cover = (!a.art_url.is_empty()).then(|| store.media.cover(&a.art_url, px, radius, crate::scene::raster_scale())).flatten();
     let words = w::column(
         0.0,
         vec![
@@ -773,7 +798,7 @@ fn media(theme: &Theme, store: &Store, g: &Geo) -> Option<El> {
         ],
     )
     .fill();
-    Some(w::row(g.spacing, vec![w::cover(cover, g.art), words]))
+    Some(w::row(g.spacing, vec![w::cover(cover.clone(), g.art), words]))
 }
 
 /// The status card: network, the chevron opening quick settings, settings,
@@ -844,16 +869,14 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
 /// The rail's cards, Pond's collapsed column: the time card (painted over
 /// by `rail_clock`), the workspace rows, the art while a player plays, the
 /// bell, and a ring per running group.
-fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo) -> Vec<(&'static str, El)> {
+fn rail(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> Vec<(&'static str, El)> {
     let r = &g.rail;
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
     let mut out = vec![("time", w::action_card(w::space(r.time_h), "panel:calendar").cell_state(bare).fill())];
     out.push(("spaces", w::card(map.rail_view(theme)).cell_state(bare).fill()));
-    if let Some(a) = store.media.active() {
-        let (px, radius) = w::cover_inner(theme, r.art);
-        let cover = (!a.art_url.is_empty()).then(|| store.media.cover(&a.art_url, px, radius, crate::scene::raster_scale())).flatten();
-        out.push(("media", w::action_card(square(w::cover(cover, r.art)), "panel:media").cell_state(bare).fill()));
+    if store.media.active().is_some() {
+        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), "panel:media").cell_state(bare).fill()));
     }
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);

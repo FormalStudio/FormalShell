@@ -53,20 +53,12 @@ impl Cell for NowPlaying {
 
     fn read(&mut self, env: &Env) -> bool {
         let active = env.store.media.active();
-        let config = &env.store.config;
-        let animated = env.store.theme.theme.motion_enabled
-            && config.bool("media.appleMusicArt").unwrap_or(false)
-            && config.bool("media.animatedBarCover").unwrap_or(true);
         let mut motion = None;
         let cover = active.as_ref().filter(|a| !a.art_url.is_empty()).map(|a| {
             let size = slot(env);
-            let (px, radius) = crate::ui::w::cover_inner(&env.store.theme.theme, size);
-            let scale = crate::scene::raster_scale();
-            if animated && !a.artist.is_empty() && !a.album.is_empty() {
-                motion = Some(motion_art::Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));
-            }
-            let frame = motion.as_ref().and_then(|w| env.store.media.motion(&w.key(), px, scale));
-            (size, frame.or_else(|| env.store.media.cover(&a.art_url, px, radius, scale)))
+            let (picture, want) = motion_art::chrome_cover(env.store, a, size);
+            motion = want;
+            (size, picture)
         });
         self.motion = motion;
         self.sync_motion();

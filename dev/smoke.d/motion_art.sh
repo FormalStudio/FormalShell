@@ -22,6 +22,10 @@
 #            the running shell, playing again: no decoder, the bar crop back
 #            on the green static art and the bar not committing; then the
 #            panel open again on its own decoder, the bar still quiet.
+#   sidebar  `layout: sidebar` and the bar cover back on, written the same
+#            way: the column's media card and then the rail's, each read
+#            off its `panel:media` hit in `sidebar status`, carry red in
+#            some frames and blue in others.
 leg_motion_art_flag="--motion-art"
 leg_motion_art_order=36
 leg_motion_art_needs="mpv ffmpeg convert jq"
@@ -35,9 +39,11 @@ motion_art_cover_path="$shot_dir/motion-art-cover.png"
 motion_art_frames=8
 motion_art_results="$shot_dir/motion-art-results.txt"
 motion_art_room="$shot_dir/motion-art-room.json"
+motion_art_sidebar="$shot_dir/motion-art-sidebar.json"
+motion_art_rail="$shot_dir/motion-art-rail.json"
 
 leg_motion_art_timing() {
-  leg_timing 56 95
+  leg_timing 70 110
 }
 
 leg_motion_art_fixture() {
@@ -112,6 +118,16 @@ sleep 4
 decoders off_panel
 commits off_panel 3
 call panel close > /dev/null 2>&1
+"$jq_bin" '.media.animatedBarCover = true | .layout = "sidebar"' "$settings_path" > "$settings_path.tmp"
+cat "$settings_path.tmp" > "$settings_path"
+rm -f "$settings_path.tmp"
+sleep 4
+call sidebar status > "$motion_art_sidebar" 2>&1
+burst sidebar
+call sidebar collapse > /dev/null 2>&1
+sleep 3
+call sidebar status > "$motion_art_rail" 2>&1
+burst rail
 EOF
   hypr_exec_once "bash $play"
   hypr_exec_once "bash $drive"
@@ -136,6 +152,33 @@ motion_art_bar_crop() {
   box=$(scaled_jq -r "$geometry_jq"'[.[0].cells[] | select(.name == "nowPlaying")][0] // empty | {x, y: 0, width: (.width + 64), height: (.height + 64)} | geometry' "$motion_art_room" 2>/dev/null)
   [ -n "$box" ] || return 1
   $convert_bin "$1" -crop "$box" +repage "$2"
+}
+
+# The sidebar's media card off its `panel:media` hit in `sidebar status`.
+motion_art_card_crop() {
+  local box
+  box=$(scaled_jq -r "$geometry_jq"'[.hits[] | select(.on == "panel:media")][0] // empty | {x, y, width: .w, height: .h} | geometry' "$1" 2>/dev/null)
+  [ -n "$box" ] || return 1
+  $convert_bin "$2" -crop "$box" +repage "$3"
+}
+
+# motion_art_card_moves <phase> <status json>: the card's crops over the
+# burst move between red and blue.
+motion_art_card_moves() {
+  local i f r b g reds=0 blues=0 trail=""
+  for i in $(seq 1 $motion_art_frames); do
+    f="$shot_dir/motion-art-$1-$i.png"
+    [ -f "$f" ] || fail "no screenshot produced at $f"
+    motion_art_card_crop "$2" "$f" "$shot_dir/motion-art-$1-crop-$i.png" || fail "sidebar status reported no media card ($(cat "$2"))"
+    read -r r b g <<< "$(motion_art_counts "$shot_dir/motion-art-$1-crop-$i.png")"
+    trail+=" $r/$b/$g"
+    [ $((r - b)) -gt 100 ] && reds=$((reds + 1))
+    [ $((b - r)) -gt 100 ] && blues=$((blues + 1))
+  done
+  echo "SMOKE_MOTION_ART_${1^^}_CROP $shot_dir/motion-art-$1-crop-1.png"
+  echo "SMOKE_MOTION_ART_${1^^} red/blue/green$trail"
+  [ "$reds" -gt 0 ] && [ "$blues" -gt 0 ] \
+    || fail "the $1's media card did not move between red and blue while playing (red/blue/green$trail)"
 }
 
 motion_art_result() {
@@ -207,4 +250,7 @@ leg_motion_art_assert() {
   [ "$(motion_art_result commits_off)" -le 2 ] || fail "the bar committed $(motion_art_result commits_off) times in 3s with animatedBarCover off"
   [ "$(motion_art_result decoders_off_panel)" = 1 ] || fail "the panel's own cover wants one decoder, pgrep counted $(motion_art_result decoders_off_panel)"
   [ "$(motion_art_result commits_off_panel)" -le 2 ] || fail "the bar committed $(motion_art_result commits_off_panel) times in 3s under the panel's animated cover with animatedBarCover off"
+
+  motion_art_card_moves sidebar "$motion_art_sidebar"
+  motion_art_card_moves rail "$motion_art_rail"
 }

@@ -194,6 +194,9 @@ impl Bar {
         for slot in &mut self.slots {
             slot.cell.visible(!hidden);
         }
+        if let Some(sb) = &mut self.sidebar {
+            sb.visible(!hidden);
+        }
     }
 
     /// Folds the sidebar to its rail or opens it; true when its thickness

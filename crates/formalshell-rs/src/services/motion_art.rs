@@ -72,6 +72,27 @@ impl Job {
     }
 }
 
+/// A chrome slot's cover (the bar's now-playing cell, the sidebar's media
+/// cards) in a `size` square: the animated frame behind
+/// `media.appleMusicArt` and `media.animatedBarCover`, else the static art,
+/// and what the slot asks the decode for.
+pub fn chrome_cover(store: &store::Store, a: &media::Active, size: f64) -> (Option<Bitmap>, Option<Want>) {
+    if a.art_url.is_empty() {
+        return (None, None);
+    }
+    let theme = &store.theme.theme;
+    let (px, radius) = crate::ui::w::cover_inner(theme, size);
+    let scale = crate::scene::raster_scale();
+    let animated = theme.motion_enabled
+        && store.config.bool("media.appleMusicArt").unwrap_or(false)
+        && store.config.bool("media.animatedBarCover").unwrap_or(true)
+        && !a.artist.is_empty()
+        && !a.album.is_empty();
+    let want = animated.then(|| Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));
+    let frame = want.as_ref().and_then(|w| store.media.motion(&w.key(), px, scale));
+    (frame.or_else(|| store.media.cover(&a.art_url, px, radius, scale)), want)
+}
+
 /// The media panel's slot id; a bar cell takes one of its own off `slot()`.
 pub const PANEL: u64 = 0;
 
