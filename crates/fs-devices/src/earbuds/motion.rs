@@ -4,10 +4,11 @@
 //!
 //! Frames: `q` takes a vector in the buds' body frame to a world frame whose
 //! z points up (rotating world (0, 0, -1) by its conjugate gives the
-//! measured gravity direction). The body frame is read as x forward, y left,
-//! z up through the head, so yaw is the turn about world z (positive to the
-//! left), pitch about the body's y (positive nodding down) and roll about
-//! its x (positive tilting the right ear down). There is no magnetometer:
+//! measured gravity direction). The body frame follows the bud, not the
+//! head, so [`Quat::relative_to`] measures in a head frame (x forward, y
+//! left, z up): yaw is the turn about the vertical (positive to the left),
+//! pitch about the side axis (positive nodding down) and roll about forward
+//! (positive tilting the right ear down). There is no magnetometer:
 //! yaw only means something against a reference taken from an earlier sample.
 
 use serde_json::Value as Json;
@@ -68,10 +69,37 @@ impl Quat {
         Quat::new(p.w, p.x, p.y, p.z).unwrap_or(Quat::IDENTITY)
     }
 
-    /// How far `self` has turned from `reference`, expressed in the
-    /// reference's own frame: `reference⁻¹ ⊗ self`.
+    /// How far the head has turned from `reference` to `self`, in a head
+    /// frame of x forward, y left, z up. A bud sits in the ear at a tilt of
+    /// its own, so its body axes are not the head's (worn, an A3064 turns
+    /// about its body y with the head and about its body z with a nod).
+    /// The turn is taken in the world frame, `self ⊗ reference⁻¹`, and
+    /// expressed in a head frame built at the reference off gravity: z up,
+    /// y the body's z (out of the ear) laid level, x their cross product.
     pub fn relative_to(self, reference: Quat) -> Quat {
-        reference.conjugate().then(self)
+        let head = head_frame(reference);
+        head.conjugate().then(self.then(reference.conjugate())).then(head)
+    }
+
+    /// The rotation whose columns are `x`, `y` and `z`, an orthonormal
+    /// right-handed basis.
+    fn from_basis(x: [f32; 3], y: [f32; 3], z: [f32; 3]) -> Quat {
+        let (m00, m11, m22) = (x[0], y[1], z[2]);
+        let trace = m00 + m11 + m22;
+        let (w, qx, qy, qz) = if trace > 0.0 {
+            let s = (trace + 1.0).sqrt() * 2.0;
+            (0.25 * s, (y[2] - z[1]) / s, (z[0] - x[2]) / s, (x[1] - y[0]) / s)
+        } else if m00 > m11 && m00 > m22 {
+            let s = (1.0 + m00 - m11 - m22).sqrt() * 2.0;
+            ((y[2] - z[1]) / s, 0.25 * s, (y[0] + x[1]) / s, (z[0] + x[2]) / s)
+        } else if m11 > m22 {
+            let s = (1.0 + m11 - m00 - m22).sqrt() * 2.0;
+            ((z[0] - x[2]) / s, (y[0] + x[1]) / s, 0.25 * s, (z[1] + y[2]) / s)
+        } else {
+            let s = (1.0 + m22 - m00 - m11).sqrt() * 2.0;
+            ((x[1] - y[0]) / s, (z[0] + x[2]) / s, (z[1] + y[2]) / s, 0.25 * s)
+        };
+        Quat::new(w, qx, qy, qz).unwrap_or(Quat::IDENTITY)
     }
 
     /// `v` rotated by this quaternion.
@@ -89,6 +117,27 @@ impl Quat {
         let pitch = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0).asin();
         let roll = (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y));
         EulerDegrees { yaw: yaw.to_degrees(), pitch: pitch.to_degrees(), roll: roll.to_degrees() }
+    }
+}
+
+/// The head frame at `reference`, taking head axes to world ones. The
+/// body's z laid level is the side axis; a bud worn with it near vertical
+/// falls back to its x laid level as forward.
+fn head_frame(reference: Quat) -> Quat {
+    const UP: [f32; 3] = [0.0, 0.0, 1.0];
+    let level = |v: [f32; 3]| {
+        let n = (v[0] * v[0] + v[1] * v[1]).sqrt();
+        (n > 0.3).then(|| [v[0] / n, v[1] / n, 0.0])
+    };
+    let cross = |a: [f32; 3], b: [f32; 3]| {
+        [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    };
+    match level(reference.rotate([0.0, 0.0, 1.0])) {
+        Some(side) => Quat::from_basis(cross(side, UP), side, UP),
+        None => {
+            let forward = level(reference.rotate([1.0, 0.0, 0.0])).unwrap_or([1.0, 0.0, 0.0]);
+            Quat::from_basis(forward, cross(UP, forward), UP)
+        }
     }
 }
 
@@ -176,14 +225,21 @@ mod tests {
 
     const LINE: &str = r#"{"q":[0.51474,-0.445526,0.732483,-0.00421143],"g":[759,481,501],"gyro":[155,26,6],"t":1793898601508}"#;
 
-    fn about_z(degrees: f32) -> Quat {
+    fn about(axis: [f32; 3], degrees: f32) -> Quat {
         let h = degrees.to_radians() / 2.0;
-        Quat::new(h.cos(), 0.0, 0.0, h.sin()).unwrap()
+        Quat::new(h.cos(), axis[0] * h.sin(), axis[1] * h.sin(), axis[2] * h.sin()).unwrap()
+    }
+
+    fn about_x(degrees: f32) -> Quat {
+        about([1.0, 0.0, 0.0], degrees)
     }
 
     fn about_y(degrees: f32) -> Quat {
-        let h = degrees.to_radians() / 2.0;
-        Quat::new(h.cos(), 0.0, h.sin(), 0.0).unwrap()
+        about([0.0, 1.0, 0.0], degrees)
+    }
+
+    fn about_z(degrees: f32) -> Quat {
+        about([0.0, 0.0, 1.0], degrees)
     }
 
     fn near(a: f32, b: f32) {
@@ -259,7 +315,29 @@ mod tests {
         near(e.yaw, 40.0);
         near(e.pitch, 10.0);
         near(e.roll, 0.0);
-        assert_eq!(now.relative_to(now).euler_degrees(), Quat::IDENTITY.euler_degrees());
+        let e = now.relative_to(now).euler_degrees();
+        near(e.yaw, 0.0);
+        near(e.pitch, 0.0);
+        near(e.roll, 0.0);
+    }
+
+    /// Worn as measured: the body's y up and its z out of the ear (world y),
+    /// facing an arbitrary heading. A head turn and a nod are world
+    /// rotations applied over the reference, and read as yaw and pitch.
+    #[test]
+    fn a_tilted_bud_reads_head_turns_and_nods() {
+        let worn = about_z(70.0).then(about_x(90.0));
+        let up = worn.rotate([0.0, 1.0, 0.0]);
+        near(up[2], 1.0);
+        let e = about_z(40.0).then(worn).relative_to(worn).euler_degrees();
+        near(e.yaw, 40.0);
+        near(e.pitch, 0.0);
+        near(e.roll, 0.0);
+        let nod = about(worn.rotate([0.0, 0.0, 1.0]), 15.0);
+        let e = nod.then(worn).relative_to(worn).euler_degrees();
+        near(e.yaw, 0.0);
+        near(e.pitch, 15.0);
+        near(e.roll, 0.0);
     }
 
     #[test]
