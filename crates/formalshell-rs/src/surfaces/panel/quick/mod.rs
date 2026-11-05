@@ -149,8 +149,7 @@ impl Tile {
 /// Power mode's menu, top to bottom, with each profile's glyph.
 const PROFILES: [(Profile, &str); 3] = [(Profile::Performance, "zap"), (Profile::Balanced, "gauge"), (Profile::PowerSaver, "leaf")];
 
-/// The brightness an open menu takes off every other row, GNOME's
-/// `DIM_BRIGHTNESS`.
+/// The share of its opacity an open menu takes off every other row.
 const DIM: f32 = 0.4;
 
 /// The networks Wi-Fi's menu lists at most, as GNOME's does.
@@ -934,7 +933,7 @@ impl Panel for QuickSettings {
             part_section.push(3);
         }
         if frame.dim > 0.0 {
-            parts = parts.into_iter().map(|(ids, el)| (ids, el.shade(DIM * frame.dim))).collect();
+            parts = parts.into_iter().map(|(ids, el)| (ids, el.fade(1.0 - DIM * frame.dim))).collect();
         }
 
         // The menu under its owner's row, the gap before it growing with it.

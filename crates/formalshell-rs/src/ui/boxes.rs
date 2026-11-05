@@ -21,14 +21,6 @@ fn frect(r: IRect) -> Rect {
     Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64)
 }
 
-/// `color` over `r`'s rounded outline: a shaded box's scrim (`El::shade`).
-pub fn cover(p: &mut Painter, r: IRect, radius: f64, color: Rgba) {
-    if r.is_empty() || color.a <= 0.0 {
-        return;
-    }
-    p.shape(r, Paint::Shape { fill: Some((rr(frect(r), radius), color)), strokes: Vec::new() });
-}
-
 /// `b`'s fill and border already resolved (and crossfaded) by the caller;
 /// `wash` is the wash's own fade, 0 to 1.
 pub fn paint(p: &mut Painter, r: IRect, b: &BoxStyle<Rgba>, radius: f64, alpha: f32, wash: f32) {

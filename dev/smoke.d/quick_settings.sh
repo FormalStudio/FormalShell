@@ -27,8 +27,8 @@
 # Power button by a real Down and opened by Return at a tenth speed, its
 # frames and statuses read as the rows under it moving down and the menu's
 # rows already showing while its height is part way, the dim up from the first
-# frame, the last toggle reading 0.6 of its luminance once it settles and
-# the card's fill beside it its own. Down to the second sink inside the
+# frame, the last toggle faded 0.4 of the way to the card's fill once it
+# settles and that fill beside it its own. Down to the second sink inside the
 # stale audit and Return making it the default (`pactl get-default-sink`);
 # Escape closing the menu, then the card. The Power button's menu on this
 # rig's private system bus, where logind answers nothing, is Log out alone:
@@ -435,30 +435,20 @@ leg_quick_settings_assert() {
   done
 }
 
-# The dim behind the open menu off the frames: the last toggle's mean
-# luminance with the menu open over the same toggle's before it opened,
-# GNOME's brightness -0.4 reading 0.6 of it, and the card's own fill in the
-# gap before that toggle unchanged, since only the items dim.
+# The dim behind the open menu off the frames: the last toggle fades 0.4
+# of the way to the card's own fill, read off the column gap beside it,
+# which stays as it is. A last row of one toggle has no gap to read.
 quick_settings_dim() {
-  local d="$quick_settings_dir" id before after ratio gap
+  local d="$quick_settings_dir" id before after card_before card_after ratio gap
   id=$("$jq_bin" -r '[.rows[] | select(.kind == "toggle" or .kind == "split")][-1].id' "$d/status-at-arrow.json")
   luma() {
     "$convert_bin" "$d/$1" -crop "$2" +repage -colorspace Gray -format '%[fx:mean]' info: 2>/dev/null
   }
-  ratio_of() {
-    awk -v a="$1" -v b="$2" 'BEGIN { if (a > 0) printf "%.3f", b / a }'
-  }
   box() {
     scaled_jq -r --arg id "$id" "$geometry_jq"'.rows[] | select(.id == $id) | .rect | geometry' "$d/$1"
   }
-  before=$(luma quick-settings-at-arrow.png "$(box status-at-arrow.json)")
-  after=$(luma quick-settings-menu-open.png "$(box status-shot-menu-open.json)")
-  ratio=$(ratio_of "$before" "$after")
-  awk -v r="$ratio" 'BEGIN { exit !(r != "" && r >= 0.5 && r <= 0.7) }' \
-    || fail "quick-settings: $id under the open menu reads $after against $before before it opened ($ratio), not dimmed to 0.6"
-  echo "SMOKE_QUICK_SETTINGS the dim: $id reads $ratio of its luminance under the open menu"
   # The column gap left of the last toggle, inset 2px off each toggle's
-  # antialiased edge; a last row of one toggle has none.
+  # antialiased edge.
   gap() {
     scaled_jq -r --arg id "$id" "$geometry_jq"'[.rows[] | select(.kind == "toggle" or .kind == "split")] as $t
       | ($t[-1].rect) as $b | [$t[] | select(.rect.y == $b.y and .id != $id)][-1].rect as $a
@@ -466,15 +456,21 @@ quick_settings_dim() {
   }
   gap=$(gap status-at-arrow.json)
   if [ -z "$gap" ]; then
-    echo "SMOKE_QUICK_SETTINGS the card fill: no toggle beside $id, skipped"
+    echo "SMOKE_QUICK_SETTINGS the dim: no toggle beside $id, skipped"
     return
   fi
-  before=$(luma quick-settings-at-arrow.png "$gap")
-  after=$(luma quick-settings-menu-open.png "$(gap status-shot-menu-open.json)")
-  ratio=$(ratio_of "$before" "$after")
+  card_before=$(luma quick-settings-at-arrow.png "$gap")
+  card_after=$(luma quick-settings-menu-open.png "$(gap status-shot-menu-open.json)")
+  ratio=$(awk -v a="$card_before" -v b="$card_after" 'BEGIN { if (a > 0) printf "%.3f", b / a }')
   awk -v r="$ratio" 'BEGIN { exit !(r != "" && r >= 0.97 && r <= 1.03) }' \
-    || fail "quick-settings: the card fill beside $id reads $after under the open menu against $before before ($ratio), dimmed with the items"
+    || fail "quick-settings: the card fill beside $id reads $card_after under the open menu against $card_before before ($ratio), dimmed with the items"
   echo "SMOKE_QUICK_SETTINGS the card fill: $ratio of its luminance beside $id under the open menu"
+  before=$(luma quick-settings-at-arrow.png "$(box status-at-arrow.json)")
+  after=$(luma quick-settings-menu-open.png "$(box status-shot-menu-open.json)")
+  ratio=$(awk -v a="$before" -v b="$after" -v c="$card_before" 'BEGIN { if (a != c) printf "%.3f", (b - c) / (a - c) }')
+  awk -v r="$ratio" 'BEGIN { exit !(r != "" && r >= 0.5 && r <= 0.7) }' \
+    || fail "quick-settings: $id under the open menu reads $after against $before before it opened and the card's $card_before ($ratio), not faded to 0.6"
+  echo "SMOKE_QUICK_SETTINGS the dim: $id keeps $ratio of its difference from the card fill under the open menu"
 }
 
 # The jq over one burst status: the menu's height and content shares.

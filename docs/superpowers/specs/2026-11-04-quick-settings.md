@@ -98,10 +98,9 @@ stop. The chip column holds down the card: the Background row's chip and
 the sliders' buttons sit on it too, and the sliders' arrows on the split
 toggles' arrow tiles.
 
-The dim behind an open menu takes 0.4 of the brightness off every item
-but the menu group (GNOME's brightness -0.4): a filled box gets the `scrim`
-role at 0.4 over its own shape, ink, marks and a slider's fill darken to
-0.6, and the card's own fill between them stays as it is (`El::shade`).
+The dim behind an open menu fades every item but the menu group to 0.6 of
+its opacity (`El::fade`), so each recedes into the card's own fill in
+either mode, and the fill between them stays as it is.
 Focus is the table's one `ring`, drawn by the keyboard only. The card is
 the panel host's card, so the shared-kit polish pass (border opacity,
 shadows, menu radius, eased hover) reaches it with no change here.

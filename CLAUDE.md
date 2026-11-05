@@ -1244,9 +1244,10 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
 - `quick_settings.sh` `--quick-settings`: the quick settings card
   (`docs/superpowers/specs/2026-11-04-quick-settings.md`) over `panel open
   quicksettings`, read off `quicksettings status`: the system row then the
-  toggles in the spec's order; the card 400 wide, every toggle 178 by 48,
-  12 between columns and rows and 16 from every edge, off the card's own
-  rect; Wi-Fi, Bluetooth and Power mode disabled with their reasons on the
+  toggles in the spec's order; the card 400 wide, every toggle 188 by 44,
+  a split's arrow tile 44 square and 4 off it, 8 between columns and rows
+  and 8 from every edge, off the card's own rect, and the open frame read
+  by the panel-language check; Wi-Fi, Bluetooth and Power mode disabled with their reasons on the
   rig's empty system bus and `activate` refusing them; Dark style, Do not
   disturb and Caffeinate walked to on real arrows and flipped by Return
   each way, read off `theme status`, `notifications dndState` and
@@ -1259,9 +1260,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the Volume track moving the sink 0.10 on the cube-root scale (`pactl`); the
   Volume arrow opened by a real Down from Power and Return at a tenth
   speed, its burst reading the rows under it moving down and the menu's
-  rows fading in only once its height lands, the dim up throughout, the
-  last toggle reading 0.6 of its luminance in the settled frame and the
-  card's own fill beside it unchanged; Down to
+  rows already showing while its height is part way, the dim up
+  throughout, the last toggle faded 0.4 of the way to the card's fill in
+  the settled frame and that fill beside it unchanged; Down to
   the second sink under the stale audit and Return making it the default
   (`pactl get-default-sink`); Escape closing the menu, then the card. The
   Power menu on the rig's empty system bus is Log out alone, one Return

@@ -350,11 +350,6 @@ pub struct El {
     pub badge: Option<&'static str>,
     /// The node's whole opacity, for a parent that fades it itself.
     pub fade: Option<f32>,
-    /// The share of brightness taken off everything the node draws, 0 to 1
-    /// (GNOME's brightness effect): a filled box under the scrim over its
-    /// own shape, ink and marks darkened, nothing drawn where it drew
-    /// nothing.
-    pub shade: Option<f32>,
     /// A height set outright, over what the node measures to.
     pub height: Option<f64>,
     /// The share of its measured height the node takes, 0 to 1, its
@@ -375,7 +370,7 @@ impl El {
             Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, shade: None, height: None, reveal: None, float: None }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, reveal: None, float: None }
     }
 
     pub fn float(mut self, list: El) -> Self {
@@ -388,10 +383,6 @@ impl El {
         self
     }
 
-    pub fn shade(mut self, share: f32) -> Self {
-        self.shade = Some(share);
-        self
-    }
 
     pub fn reveal(mut self, share: f64) -> Self {
         self.reveal = Some(share.clamp(0.0, 1.0));

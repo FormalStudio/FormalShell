@@ -504,17 +504,13 @@ fn paint_node(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
 }
 
 fn paint_shown(cx: &mut Cx, el: &El, rect: Rect, path: &str, pulse: bool) {
-    if !pulse && el.swap.is_none() && el.badge.is_none() && el.fade.is_none() && el.shade.is_none() {
+    if !pulse && el.swap.is_none() && el.badge.is_none() && el.fade.is_none() {
         return paint_body(cx, el, rect, path);
     }
     let saved = cx.alpha;
-    let saved_shade = cx.shade;
     let mut rect = rect;
     if let Some(f) = el.fade {
         cx.alpha *= f.clamp(0.0, 1.0);
-    }
-    if let Some(s) = el.shade {
-        cx.shade = 1.0 - (1.0 - cx.shade) * (1.0 - s.clamp(0.0, 1.0));
     }
     if pulse {
         let born = cx.born(path);
@@ -532,7 +528,6 @@ fn paint_shown(cx: &mut Cx, el: &El, rect: Rect, path: &str, pulse: bool) {
         badge(cx, rect, name, path);
     }
     cx.alpha = saved;
-    cx.shade = saved_shade;
 }
 
 /// The source mark riding a slot's corner: a caption-sized disc in the
@@ -1034,15 +1029,8 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
         cx.ui.keyed.push((key.clone(), ri));
     }
     let now = cx.now;
-    let cover = (cx.shade > 0.0 && !cx.covered && b.fill.a > 0.0).then(|| t.box_style("scrim", None).fill.with_alpha(cx.shade * alpha));
     let mut p = cx.painter(path);
-    if cover.is_some() {
-        p.shade = 0.0;
-    }
     boxes::paint_rimmed(&mut p, ri, &b, radius, alpha, wash, rim.as_mut().map(|r| (r, now, vello_cpu::kurbo::Affine::IDENTITY)));
-    if let Some(c) = cover {
-        boxes::cover(&mut p, ri, radius, c);
-    }
     let last = p.last();
     p.finish();
     if let Some(rim) = rim {
@@ -1056,13 +1044,10 @@ fn cell(cx: &mut Cx, el: &El, r: Rect, state: CellState, interactive: bool, chil
     let cw = if child.width == Size::Fill { content_w } else { cw };
     let y = r.y0 + (r.height() - ch) / 2.0;
     let saved = cx.ink;
-    let covered = cx.covered;
     cx.ink = (fg, dim);
-    cx.covered |= cover.is_some();
     let under = cx.hits_len();
     paint(cx, child, Rect::new(r.x0 + pad_x, y, r.x0 + pad_x + cw, y + ch), &format!("{path}/0"));
     cx.ink = saved;
-    cx.covered = covered;
     if interactive || el.on.is_some() || el.tip.is_some() {
         let what = if el.on.is_some() { HitWhat::Click } else { HitWhat::Hover };
         cx.hit_at(under, Hit { rect: ri, path: path.into(), on: el.on.clone(), tip: el.tip.clone(), stop, what });
@@ -1217,16 +1202,8 @@ fn track(cx: &mut Cx, el: &El, r: Rect, value: f64, notch: Option<f64>, interact
     let travel = (ri.w as f64 - inset * 2.0).max(0.0);
     let w = cx.tween(&format!("{path}.fill"), inset + travel * value.clamp(0.0, 1.0), Clock::SpatialFast);
     let alpha = cx.alpha;
-    let cover = (cx.shade > 0.0 && !cx.covered).then(|| (t.box_style("scrim", None).fill.with_alpha(cx.shade * alpha), cx.shade));
     let mut p = cx.painter(path);
-    if cover.is_some() {
-        p.shade = 0.0;
-    }
     boxes::paint(&mut p, ri, &groove, radius, alpha, 0.0);
-    if let Some((c, shade)) = cover {
-        boxes::cover(&mut p, ri, radius, c);
-        p.shade = shade;
-    }
     p.rect(IRect::new(ri.x, ri.y, w.round() as i32, ri.h), fill.fill.with_alpha(fill.fill.a * alpha), fill_radius as f32);
     if let Some(n) = notch {
         let bw = cx_border(t);
