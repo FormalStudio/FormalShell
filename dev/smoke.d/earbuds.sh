@@ -49,7 +49,10 @@
 #     service unavailable, each sits through a check with no verb and the
 #     shell logging the skip. The same
 #     status with the service unavailable gets no heart rate verb at all
-#     (sent then, the real daemon drops the link) and no `heartRate`. Then
+#     (sent then, the real daemon drops the link) and no `heartRate`; with
+#     conversation awareness on, pw-record reading a pw-loopback source
+#     sends `ca:off` and stopping it `ca:on`, the panel's `ca` toggle off
+#     then on again. Then
 #     the stub listening without ever accepting, as e1504g's daemon did with
 #     its event loop stuck: the verb is never taken and the device says
 #     "librepods not responding".
@@ -59,7 +62,8 @@
 #     and no device is listed.
 leg_earbuds_flag="--earbuds"
 leg_earbuds_order=176
-leg_earbuds_needs="jq python3"
+leg_earbuds_needs="jq python3 pw-loopback pw-record"
+need_pw_record() { need_tool pw_record_bin pw-record pipewire-tools; }
 
 earbuds_dir="$shot_dir/earbuds"
 earbuds_shim_dir="$earbuds_dir/shim"
@@ -107,7 +111,7 @@ leg_earbuds_fixture() {
   cp dev/smoke.d/fixtures/soundcore-paired.json "$earbuds_dir/soundcore-paired-fixture.json"
   printf '%s\n' "$airpods" | "$jq_bin" -c '.heart_rate = {"wanted":false,"available":true,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
     > "$earbuds_dir/airpods-status.json"
-  printf '%s\n' "$airpods" | "$jq_bin" -c '.heart_rate = {"wanted":false,"available":false,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
+  printf '%s\n' "$airpods" | "$jq_bin" -c '.conversational_awareness = true | .heart_rate = {"wanted":false,"available":false,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
     > "$earbuds_dir/airpods-status-noheart.json"
   "$jq_bin" -c '.left.in_ear = false | .right.in_ear = false' "$earbuds_dir/airpods-status.json" \
     > "$earbuds_dir/airpods-status-nobud.json"
@@ -296,6 +300,21 @@ sleep 9
 ipc panel open earbuds > /dev/null 2>&1
 sleep 3
 ipc earbuds status > "$earbuds_dir/airpods-noheart-status.json" 2>&1
+# Conversation awareness off while something records, back on after.
+setsid "$pw_loopback_bin" -n ea-mic -i "{ media.class=Audio/Sink node.name=ea_mic_in }" \
+  -o "{ media.class=Audio/Source node.name=ea_mic node.description=EarbudsMic }" > /dev/null 2>&1 < /dev/null &
+loop=\$!
+sleep 1.5
+"$pw_record_bin" --target ea_mic "$earbuds_dir/mic.wav" > /dev/null 2>&1 &
+rec=\$!
+sleep 2.5
+ipc earbuds status > "$earbuds_dir/airpods-ca-recording.json" 2>&1
+kill \$rec 2>/dev/null
+wait \$rec 2>/dev/null
+sleep 2.5
+ipc earbuds status > "$earbuds_dir/airpods-ca-after.json" 2>&1
+kill \$loop 2>/dev/null
+rm -f "$earbuds_dir/mic.wav"
 kill \$stub
 "$python3_bin" "$PWD/dev/librepods-stub.py" --hang --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
   --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
@@ -394,7 +413,9 @@ heartrate:off
 heartrate:on
 heartrate:off
 heartrate:on
-heartrate:off" ] || fail "earbuds: librepods should get exactly heartrate:on, off and on again across the reopen, the four noise verbs, heartrate:off, the spot check's on and off, and on and off around the point's frame (none with no bud in or the service unavailable), got '$(cat "$earbuds_librepods_log")'"
+heartrate:off
+ca:off
+ca:on" ] || fail "earbuds: librepods should get exactly heartrate:on, off and on again across the reopen, the four noise verbs, heartrate:off, the spot check's on and off, on and off around the point's frame (none with no bud in or the service unavailable), and ca:off then ca:on around a recording, got '$(cat "$earbuds_librepods_log")'"
   echo "spot check:"; "$jq_bin" -c '.device.heartRate | {streaming, points}' "$earbuds_dir/airpods-status-point.json"
   got=$("$jq_bin" -r '.device.heartRate | [.streaming, (.points | length), (.points[0].bpm >= 70 and .points[0].bpm <= 80), (.points[0].atMs > 0)] | map(tostring) | join(",")' "$earbuds_dir/airpods-status-point.json" 2>/dev/null)
   [ "$got" = "false,1,true,true" ] \
@@ -413,6 +434,10 @@ heartrate:off" ] || fail "earbuds: librepods should get exactly heartrate:on, of
   [ $((c3 - c2)) -eq 0 ] || fail "earbuds: the closed panel committed $((c3 - c2)) frames in 3s"
   got=$("$jq_bin" -r '.device.heartRate' "$earbuds_dir/airpods-noheart-status.json" 2>/dev/null)
   [ "$got" = "null" ] || fail "earbuds: AirPods without the heart rate service should carry no heartRate, got '$got'"
+  got=$(for f in noheart-status ca-recording ca-after; do "$jq_bin" -r '.device.controls[] | select(.key == "ca") | .value' "$earbuds_dir/airpods-$f.json" 2>/dev/null; done | paste -sd, -)
+  echo "conversation awareness before, while recording, after: $got"
+  [ "$got" = "true,false,true" ] \
+    || fail "earbuds: conversation awareness should read on, off while pw-record reads a source, and on again after, got '$got'"
   local pair mode line got
   for pair in "anc:Noise cancellation" "transparency:Transparency" "adaptive:Adaptive" "off:Off"; do
     mode=${pair%%:*}; line=${pair#*:}

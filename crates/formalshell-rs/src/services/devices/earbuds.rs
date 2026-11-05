@@ -224,6 +224,7 @@ enum Msg {
     Panel(bool),
     Bluetooth(Vec<BtDevice>),
     Op(Op),
+    Mic(bool),
 }
 
 static CHANNEL: LazyLock<(Sender<Msg>, Receiver<Msg>)> = LazyLock::new(async_channel::unbounded);
@@ -262,6 +263,12 @@ pub fn write(op: Op) {
     send(Msg::Op(op));
 }
 
+/// Something started or stopped recording off a source
+/// ([`fs_audio::Graph::capturing`]).
+pub fn mic(capturing: bool) {
+    send(Msg::Mic(capturing));
+}
+
 fn publish(ctx: &Ctx, name: &'static str, backend: Backend) {
     ctx.publish(store::Diff::Devices(super::Diff::Earbuds(Diff::Backend(name, backend))));
 }
@@ -271,6 +278,7 @@ enum Event {
     Panel(bool),
     Bluetooth(Vec<BtDevice>),
     Op(Op),
+    Mic(bool),
 }
 
 pub fn start(ctx: &Ctx) {
@@ -316,6 +324,9 @@ pub fn start(ctx: &Ctx) {
                 Msg::Hold(_) => {}
                 Msg::Panel(open) => {
                     let _ = air_tx.try_send(Event::Panel(open));
+                }
+                Msg::Mic(on) => {
+                    let _ = air_tx.try_send(Event::Mic(on));
                 }
                 Msg::Bluetooth(devices) => {
                     let _ = not_tx.try_send(NEvent::Bluetooth(devices.clone()));
@@ -407,6 +418,12 @@ fn check_times() -> (Duration, Duration) {
 /// [`CHECK_EVERY`] with the panel shut, one read of the file decides on a
 /// spot check, which streams for its window and leaves one point; between
 /// checks it adds no watch and no timer of its own.
+///
+/// While something records, conversation awareness is off, so the buds do
+/// not duck playback each time the user speaks into a call, and it goes back
+/// on once nothing records. The file stays watched for the whole recording,
+/// so buds connecting part way through are turned off too. A `ca:` verb
+/// from the user during it is theirs: nothing is changed or put back after.
 async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
     let path = status_path();
     let (every, window) = check_times();
@@ -468,14 +485,33 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
                     }
                 }
             }
+            Wake::Event(Event::Mic(on)) => {
+                air.mic = on;
+                if on {
+                    air.awareness(&ctx, &path).await;
+                } else {
+                    let restore = std::mem::take(&mut air.ca_restore);
+                    air.ca_user = false;
+                    if restore {
+                        let status = air.read(&ctx, &path).await;
+                        if status.ok && status.connected && !status.conversational_awareness && air.send("ca:on".into()).await {
+                            air.load(&ctx, &path).await;
+                        }
+                    }
+                }
+            }
             Wake::Event(Event::Op(Op::Airpods(verb))) => {
+                if air.mic && verb.starts_with("ca:") {
+                    air.ca_user = true;
+                    air.ca_restore = false;
+                }
                 if air.send(verb).await {
                     air.load(&ctx, &path).await;
                 }
             }
             Wake::Event(_) => {}
         }
-        let want = held || air.check.is_some();
+        let want = held || air.check.is_some() || air.mic;
         if want != watch.is_some() {
             watch = if want { Watch::new(path.clone()).ok() } else { None };
             if want {
@@ -525,6 +561,13 @@ struct Airpods {
     /// The last reason a check was skipped with the buds connected, logged
     /// once per change.
     skipped: Option<&'static str>,
+    /// Something records off a source.
+    mic: bool,
+    /// Conversation awareness was turned off for the recording, to go back
+    /// on when it ends.
+    ca_restore: bool,
+    /// The user set conversation awareness during the recording.
+    ca_user: bool,
 }
 
 impl Airpods {
@@ -534,8 +577,26 @@ impl Airpods {
         airpods::parse_status(text.trim())
     }
 
+    /// Conversation awareness off for a recording, once per recording
+    /// unless the buds turn it back on themselves (a reconnect).
+    async fn awareness(&mut self, ctx: &Ctx, path: &std::path::Path) {
+        let status = self.read(ctx, path).await;
+        if self.ca_off(&status).await {
+            self.publish(ctx, &status);
+        }
+    }
+
+    async fn ca_off(&mut self, status: &airpods::Status) -> bool {
+        if !self.mic || self.ca_user || !status.ok || !status.connected || !status.conversational_awareness {
+            return false;
+        }
+        self.ca_restore = true;
+        self.send("ca:off".into()).await
+    }
+
     async fn load(&mut self, ctx: &Ctx, path: &std::path::Path) {
         let status = self.read(ctx, path).await;
+        self.ca_off(&status).await;
         if !status.ok {
             self.heart_on = false;
             self.history.clear();
@@ -696,7 +757,7 @@ async fn run_poll(ctx: Ctx, kind: Poller, rx: Receiver<Event>, epoch: Rc<Cell<u6
                 backend.available = code != -1;
                 poll = true;
             }
-            Some(Event::Op(_) | Event::Panel(_)) => {}
+            Some(Event::Op(_) | Event::Panel(_) | Event::Mic(_)) => {}
         }
         let now_key = if held { connected_key(&bt) } else { Vec::new() };
         if now_key != key {

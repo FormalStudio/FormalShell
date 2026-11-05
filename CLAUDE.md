@@ -553,7 +553,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   with its age and a still heart. Both buds out, then the service
   unavailable, each sit through a check with no verb and the skip in the
   shell log; the same AirPods with the service unavailable get no heart
-  rate verb and no `heartRate`.
+  rate verb and no `heartRate`; with conversation awareness on, a
+  pw-record off a pw-loopback source sends `ca:off` and its end `ca:on`.
   A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once

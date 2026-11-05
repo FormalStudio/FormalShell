@@ -493,6 +493,27 @@ impl Graph {
             .collect()
     }
 
+    /// Something records: a capture stream (`Stream/Input/Audio`) other
+    /// than one reading a sink's monitor (a visualizer) or a peak meter.
+    /// GNOME's input slider shows on the same condition.
+    pub fn capturing(&self) -> bool {
+        let flag = |n: &Node, k: &str| n.props.get(k).is_some_and(|v| v == "true");
+        self.nodes.values().any(|n| {
+            n.is_stream()
+                && !n.is_sink()
+                && n.node_type.audio
+                && !flag(n, "stream.capture.sink")
+                && !flag(n, "stream.monitor")
+                && !self.links.values().any(|l| {
+                    l.input_node == n.id
+                        && self
+                            .nodes
+                            .get(&l.output_node)
+                            .is_some_and(|o| o.is_sink() && !o.is_stream())
+                })
+        })
+    }
+
     /// The sink a playback stream is linked into, MediaService's output.
     pub fn stream_target(&self, stream: u32) -> Option<&Node> {
         self.links
@@ -522,6 +543,24 @@ mod tests {
             id,
             props(&[("media.class", "Audio/Sink"), ("node.name", name)]),
         )
+    }
+
+    #[test]
+    fn a_recording_counts_as_capturing_and_a_monitor_reader_does_not() {
+        let mut g = Graph::default();
+        g.apply(Event::Node(sink(1, "speakers")));
+        let stream = |id, extra: &[(&str, &str)]| {
+            let mut p = props(&[("media.class", "Stream/Input/Audio"), ("node.name", "rec")]);
+            p.extend(props(extra));
+            Node::from_props(id, p)
+        };
+        g.apply(Event::Node(stream(2, &[("stream.capture.sink", "true")])));
+        assert!(!g.capturing());
+        g.apply(Event::Node(stream(3, &[])));
+        g.apply(Event::Link(Link { id: 40, output_node: 1, output_port: 1, input_node: 3, input_port: 2, state: LinkState::Active }));
+        assert!(!g.capturing(), "a stream linked off a sink reads its monitor");
+        g.apply(Event::Node(stream(4, &[])));
+        assert!(g.capturing());
     }
 
     #[test]
