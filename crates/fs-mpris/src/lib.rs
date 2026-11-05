@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::future::{self, AbortHandle, Abortable, Either};
 use futures_util::stream::{self, BoxStream, SelectAll, StreamExt};
-use zbus::fdo::{DBusProxy, PropertiesProxy};
+use zbus::fdo::{DBusProxy, IntrospectableProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 use zbus::{Connection, Result};
@@ -210,6 +210,7 @@ impl Mpris {
         }
         state.apply_player(&props.get_all(iface(PLAYER_IFACE)).await?);
         apply_position(&mut state, read_position(&self.conn, name).await);
+        state.volume_writable = volume_writable(&self.conn, name).await;
 
         let n1 = name.to_owned();
         let n2 = name.to_owned();
@@ -274,6 +275,25 @@ async fn props_proxy(conn: &Connection, name: &str) -> Result<PropertiesProxy<'s
         .path(OBJECT_PATH)?
         .build()
         .await
+}
+
+/// Whether the Player interface's introspection declares `Volume` with
+/// write access; one that declares nothing (Chromium) is read-only.
+async fn volume_writable(conn: &Connection, name: &str) -> bool {
+    let Ok(proxy) = IntrospectableProxy::builder(conn).destination(name.to_owned()).and_then(|b| b.path(OBJECT_PATH)) else {
+        return false;
+    };
+    let Ok(proxy) = proxy.build().await else { return false };
+    proxy.introspect().await.is_ok_and(|xml| declares_writable_volume(&xml))
+}
+
+fn declares_writable_volume(xml: &str) -> bool {
+    let Some(start) = xml.find(&format!("\"{PLAYER_IFACE}\"")) else { return false };
+    let body = &xml[start..];
+    let body = &body[..body.find("</interface>").unwrap_or(body.len())];
+    body.split("<property").skip(1).map(|p| &p[..p.find('>').unwrap_or(p.len())]).any(|p| {
+        p.contains("name=\"Volume\"") && (p.contains("access=\"readwrite\"") || p.contains("access=\"write\""))
+    })
 }
 
 async fn read_position(conn: &Connection, name: &str) -> Option<i64> {
@@ -376,5 +396,21 @@ impl Controls {
             .set(iface(PLAYER_IFACE), prop, value)
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::declares_writable_volume;
+
+    #[test]
+    fn volume_is_writable_only_where_the_player_interface_says_so() {
+        let mpv = r#"<node><interface name="org.mpris.MediaPlayer2.Player"><property name="Rate" type="d" access="readwrite"/><property type="d" name="Volume" access="readwrite"><annotation/></property></interface></node>"#;
+        assert!(declares_writable_volume(mpv));
+        let read_only = r#"<node><interface name="org.mpris.MediaPlayer2.Player"><property name="Volume" type="d" access="read"/></interface></node>"#;
+        assert!(!declares_writable_volume(read_only));
+        let elsewhere = r#"<node><interface name="org.mpris.MediaPlayer2.Player"></interface><interface name="x"><property name="Volume" type="d" access="readwrite"/></interface></node>"#;
+        assert!(!declares_writable_volume(elsewhere));
+        assert!(!declares_writable_volume("<node/>"));
     }
 }

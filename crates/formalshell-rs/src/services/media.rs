@@ -112,6 +112,7 @@ pub struct Player {
     pub shuffle: Option<bool>,
     pub loop_status: Option<LoopStatus>,
     pub volume: Option<f64>,
+    pub volume_writable: bool,
 }
 
 impl Player {
@@ -136,6 +137,7 @@ impl Player {
             shuffle: state.shuffle,
             loop_status: state.loop_status,
             volume: state.volume,
+            volume_writable: state.volume_writable,
         }
     }
 
@@ -239,6 +241,8 @@ pub struct Active {
     pub shuffle: Option<bool>,
     pub loop_name: Option<&'static str>,
     pub volume: Option<f64>,
+    /// A volume shown that nothing here can set.
+    pub volume_fixed: bool,
 }
 
 #[derive(Default)]
@@ -597,6 +601,7 @@ impl State {
                     shuffle: p.shuffle,
                     loop_name: p.loop_status.map(loop_name),
                     volume: p.volume.map(pick::clamp_volume),
+                    volume_fixed: !p.volume_writable,
                     ..base
                 }
             }
@@ -776,7 +781,7 @@ impl State {
                     ams::command(if v > now { "volup" } else { "voldown" });
                 }
             }
-            "mpris" => mpris_send(Cmd::Volume(a.id, v)),
+            "mpris" if !a.volume_fixed => mpris_send(Cmd::Volume(a.id, v)),
             "stream" => {
                 if let Some(node) = a.id.strip_prefix("stream:").and_then(|n| n.parse().ok()) {
                     audio::write(fs_audio::Command::SetVolume { node, volume: v as f32 });
@@ -904,6 +909,7 @@ mod tests {
             shuffle: Some(true),
             loop_status: Some(LoopStatus::Track),
             volume: Some(0.3),
+            volume_writable: true,
         }
     }
 

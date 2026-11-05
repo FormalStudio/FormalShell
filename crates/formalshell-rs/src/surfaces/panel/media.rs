@@ -381,7 +381,7 @@ impl Panel for Media {
                 "volume-2"
             };
             controls.push(w::icon(glyph).ink(Ink::Muted));
-            controls.push(w::slider(volume).fill().stop("volume").on("volume"));
+            controls.push(if a.volume_fixed { w::track(volume).fill().fade(0.5) } else { w::slider(volume).fill().stop("volume").on("volume") });
             controls.push(w::value(format!("{}%", (volume * 100.0).round())).ink(Ink::Muted).gauge("100%"));
         }
         if !controls.is_empty() {
@@ -414,7 +414,7 @@ impl Panel for Media {
         if !ids.is_empty() {
             sections.push(vec!["transport".to_owned()]);
         }
-        let tracks: Vec<String> = [has_timeline(&a).then_some("progress"), a.volume.map(|_| "volume")].into_iter().flatten().map(str::to_owned).collect();
+        let tracks: Vec<String> = [has_timeline(&a).then_some("progress"), a.volume.filter(|_| !a.volume_fixed).map(|_| "volume")].into_iter().flatten().map(str::to_owned).collect();
         if !tracks.is_empty() {
             sections.push(tracks);
         }

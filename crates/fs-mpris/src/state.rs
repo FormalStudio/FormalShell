@@ -65,6 +65,9 @@ pub struct PlayerState {
     pub shuffle: Option<bool>,
     pub loop_status: Option<LoopStatus>,
     pub volume: Option<f64>,
+    /// The player's introspection declares `Volume` writable. Chromium
+    /// reports a constant 1 it never lets anyone set.
+    pub volume_writable: bool,
     pub can_go_next: bool,
     pub can_go_previous: bool,
     pub can_play: bool,
@@ -90,6 +93,7 @@ impl PlayerState {
             shuffle: None,
             loop_status: None,
             volume: None,
+            volume_writable: false,
             can_go_next: false,
             can_go_previous: false,
             can_play: false,

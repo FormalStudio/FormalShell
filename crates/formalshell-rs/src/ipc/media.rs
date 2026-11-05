@@ -84,6 +84,9 @@ fn volume(app: &mut App, args: &[Value]) -> Value {
     if a.volume.is_none() {
         return text("error: player does not support volume");
     }
+    if a.volume_fixed {
+        return text("error: player does not let its volume be set");
+    }
     let percent = args[0].int();
     if !(0..=100).contains(&percent) {
         return text(format!("error: volume out of range {percent} (0-100)"));
