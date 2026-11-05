@@ -25,8 +25,6 @@ pub struct Audio {
     pub source_muted: bool,
     /// The default source's volume, while it has one.
     pub source_volume: Option<f64>,
-    /// Something records off a source ([`fs_audio::Graph::capturing`]).
-    pub capturing: bool,
     /// The graph the audio panel lists, read only while it is open.
     pub lists: Option<Lists>,
     /// Every device node (the launcher's audio route): its node name, its
@@ -157,7 +155,6 @@ fn snapshot(graph: &Graph) -> Audio {
         source: source.is_some(),
         source_muted: source.is_some_and(|a| a.muted),
         source_volume: source.map(|a| a.volume() as f64),
-        capturing: graph.capturing(),
         lists: PANEL.load(Ordering::Relaxed).then(|| lists(graph)),
         devices: graph
             .nodes

@@ -20,8 +20,8 @@
 # on; ride `--showcase` for the `on` fill in a wallpaper's colour.
 #
 # Then the sliders and the in-place menu, over two null sinks of the leg's
-# own: Volume a slider with its arrow, Microphone only while pw-record
-# reads a virtual source, Brightness only where the host has a backlight
+# own: Volume a slider with its arrow, Microphone a slider whenever a
+# source exists (a pw-loopback one here), Brightness only where the host has a backlight
 # or a DDC display. Right twice on the Volume track, read off pactl's volume as
 # 0.10 on the shell's cube-root scale. The Volume arrow reached from the
 # Power button by a real Down and opened by Return at a tenth speed, its
@@ -45,13 +45,12 @@
 # Weather tile hands the card over to the weather panel.
 leg_quick_settings_flag="--quick-settings"
 leg_quick_settings_order=262
-leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback pw-record python3"
+leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback python3"
 
 quick_settings_dir="$shot_dir/quick-settings"
 quick_settings_settings="$iso_home/.config/formalshell/settings.json"
 
 need_pw_loopback() { need_tool pw_loopback_bin pw-loopback pipewire-tools; }
-need_pw_record() { need_tool pw_record_bin pw-record pipewire-tools; }
 
 quick_settings_module="$shot_dir/quick-settings-module.sh"
 
@@ -195,15 +194,6 @@ for i in \$(seq 1 20); do
   sleep 0.5
 done
 status sliders
-"$pw_record_bin" --target qs_mic "\$d/mic.wav" > /dev/null 2>&1 &
-rec=\$!
-sleep 1.5
-status mic-live
-kill \$rec 2>/dev/null
-wait \$rec 2>/dev/null
-rm -f "\$d/mic.wav"
-sleep 1.5
-status mic-done
 kill "\$(cat "\$d/loopback.pid")" 2>/dev/null
 
 pactl get-sink-volume qs_one > "\$d/volume-before.txt" 2>&1
@@ -484,9 +474,7 @@ quick_settings_menu_assert() {
     .rows[] | select(.id == "volume") | .kind == "slider" and .icon != null and .arrow != null and .rect != null and (.value | type) == "number"'
   quick_settings_jq "Brightness, where this host has a screen to set, a slider with its icon" status-sliders.json '
     [.rows[] | select(.id == "brightness")] | all(.kind == "slider" and .icon != null)'
-  quick_settings_jq "no Microphone while nothing records" status-sliders.json '[.rows[].id] | index("microphone") == null'
-  quick_settings_jq "Microphone shows while pw-record reads a source" status-mic-live.json '.rows[] | select(.id == "microphone") | .kind == "slider" and .icon != null'
-  quick_settings_jq "and goes once it stops" status-mic-done.json '[.rows[].id] | index("microphone") == null'
+  quick_settings_jq "Microphone is a slider with its icon with nothing recording" status-sliders.json '.rows[] | select(.id == "microphone") | .kind == "slider" and .icon != null'
   quick_settings_walked "arrows reached the Volume track" walk-volume.txt volume
   local before after
   # pipewire-pulse reports a channel's volume as the cube root of its linear

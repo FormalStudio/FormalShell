@@ -202,7 +202,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
         let glyph = if a.muted { "volume-x" } else { "volume-2" };
         out.push(Tile::slider("volume", glyph, "Volume", volume, !a.muted, audio_devices(store, true).len() > 1));
     }
-    if a.capturing && a.source {
+    if a.source {
         let glyph = if a.source_muted { "mic-off" } else { "mic" };
         out.push(Tile::slider("microphone", glyph, "Microphone", a.source_volume.unwrap_or(0.0), !a.source_muted, audio_devices(store, false).len() > 1));
     }

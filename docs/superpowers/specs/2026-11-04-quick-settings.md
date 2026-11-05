@@ -37,7 +37,7 @@ GNOME colour or number never lands in code.
 | Slider row | `[icon button | slider | menu button]`, 6 apart; the icon mutes on volume; the arrow shows only with more than one device | `quickSettings.js:240-361`, `_quick-settings.scss:138-148`, `js/ui/status/volume.js:39-73, 173` |
 | System row | battery toggle (percent and level icon, opens Power settings, hidden with no battery), a spacer shown with the battery, screenshot, settings, a spacer shown without it, lock, power menu; 12 apart, round icon buttons | `js/ui/status/system.js:53-105, 262-298` (51.0: `_laptopSpacer` 275-279, `_desktopSpacer` 287-292), `_quick-settings.scss:205-216` |
 | Power menu | Suspend, Restart…, Power Off…, separator, Log Out…, Switch User…, each shown only when allowed | `system.js:177-207` |
-| Order | system row, output volume, input volume (only while something records), brightness, then wired, Wi-Fi, mobile, tether, VPN, Bluetooth, Power Mode, Night Light, Dark Style, Do Not Disturb, Keyboard, Airplane Mode, Auto Rotate; extensions' toggles; Background Apps last, full width | `panel.js:379-437` |
+| Order | system row, output volume, input volume (whenever there is a default source, where GNOME waits for a recording), brightness, then wired, Wi-Fi, mobile, tether, VPN, Bluetooth, Power Mode, Night Light, Dark Style, Do Not Disturb, Keyboard, Airplane Mode, Auto Rotate; extensions' toggles; Background Apps last, full width | `panel.js:379-437` |
 | Background Apps | a flat 40 tall full-width toggle, "%d Background Apps", shown while any exist or its menu is open; its menu lists each app with a close button | `js/ui/status/backgroundApps.js:136-242`, `_quick-settings.scss:244-272` |
 | Unavailable | network toggles hide with no device; Wi-Fi stays shown and goes insensitive on a hardware kill switch; Bluetooth shows off with "Turn on Bluetooth…" in its menu; Power Mode hides with no daemon | `js/ui/status/network.js:1535, 1816-1823`, `js/ui/status/bluetooth.js`, `js/ui/status/powerProfiles.js:111` |
 | Keyboard | St focus groups; the menu key or Shift+F10 opens a toggle's menu; Escape closes the open menu first; `<Super>s` toggles the card | `quickSettings.js:233-236, 386-388`, `js/ui/popupMenu.js:1636-1655`, `data/org.gnome.shell.gschema.xml.in:179-180` |
@@ -58,8 +58,8 @@ the Settings tiles do.
 Top to bottom, every row `panelGap` apart:
 
 1. The system row (section 5).
-2. Sliders, each the full width: output volume, input volume while a
-   capture stream is live, brightness.
+2. Sliders, each the full width: output volume, input volume while
+   there is a default source, brightness.
 3. The toggle grid, two columns, GNOME's order (section 3), then the
    extras (section 7).
 4. Background, full width, while anything runs in the background
@@ -127,7 +127,7 @@ never a hidden one and never a made-up value.
 | GNOME | Ours | Icon (Lucide) | Service and call | Subtitle | Unavailable | Menu |
 | --- | --- | --- | --- | --- | --- | --- |
 | Output volume slider | Volume | `volume-2`, `volume-x` muted | `devices::audio` (`set_volume`, `toggle_mute`, the default sink `Command`) | none | hidden with no default sink | sinks with a check on the default, then "Sound settings" (the `audio` panel); arrow only with two or more sinks |
-| Input volume slider | Microphone | `mic`, `mic-off` | `devices::audio` source volume and `toggle_source_mute` | none | shown only while a capture stream is live (`Audio::capturing`, new) | sources, "Sound settings" |
+| Input volume slider | Microphone | `mic`, `mic-off` | `devices::audio` source volume and `toggle_source_mute` | none | hidden with no default source; shown whether or not anything records, so the default mic can always be picked (owner, 2026-11-05) | sources with a check on the default, then "Sound settings"; arrow only with two or more sources |
 | Brightness slider | Brightness | `sun` | `services::brightness`, `display::set_percent` | none | hidden with no backlight and no DDC display | one slider per display (GNOME 49), "Display settings" (the `display` panel); arrow only with two or more |
 | Wired | Wired | `ethernet-port` | `network::wired_toggle` | the connection's name | shown only with an Ethernet device (GNOME hides it too) | wired connections, "Network settings" (`network`) |
 | Wi-Fi | Wi-Fi | `wifi`, `wifi-off` | `network wifi <bool>` | the SSID | dim, "No Wi-Fi adapter"; dim with NetworkManager absent, "No NetworkManager" | up to eight networks, a check on the connected one, a lock on secured ones, Enter connects (a secured unknown one hands over to the `network` panel's password step), then "All networks" (`network`) |

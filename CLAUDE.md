@@ -1264,8 +1264,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   settings.json"); Escape closing it and settings.json's sha256 unchanged.
   Photographed at rest and with the toggles on, dark and `--light`; ride
   `--showcase` for the `on` fill in a wallpaper's colour. Then two null
-  sinks of the leg's own: Volume a slider with its arrow, Microphone only
-  while pw-record reads a pw-loopback source; Right twice on
+  sinks of the leg's own: Volume a slider with its arrow, Microphone a
+  slider over a pw-loopback source with nothing recording; Right twice on
   the Volume track moving the sink 0.10 on the cube-root scale (`pactl`); the
   Volume arrow opened by a real Down from Power and Return at a tenth
   speed, its burst reading the rows under it moving down and the menu's

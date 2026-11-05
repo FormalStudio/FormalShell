@@ -1914,7 +1914,7 @@ Top to bottom:
   the last three arm on the first Enter ("Confirm restart?") and run on
   the second.
 - **Sliders.** Volume on the default sink, its icon muting it; Microphone
-  only while something records; Brightness, which moves every backlight
+  on the default source; Brightness, which moves every backlight
   and DDC display together. With two or more devices an arrow after the
   slider opens the sinks or sources to pick the default, or one slider per
   display.
