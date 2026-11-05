@@ -101,6 +101,12 @@ pub fn heart(bpm: Option<f64>, beating: bool, size: f64) -> El {
     El::new(Kind::Heart { bpm, beating, size })
 }
 
+/// The wearer's head in a `size` square turned by `orientation` (a
+/// relative unit quaternion, `[w, x, y, z]`); none draws it still and dim.
+pub fn head(orientation: Option<[f32; 4]>, size: f64) -> El {
+    El::new(Kind::Head { orientation, size })
+}
+
 pub fn icon(name: impl Into<String>) -> El {
     El::new(Kind::Icon { name: name.into(), size: Type::Body, ink: Ink::Fg })
 }

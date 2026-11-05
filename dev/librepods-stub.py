@@ -25,6 +25,9 @@ round again after 12 s. The body starts START_YAW degrees round, so a
 reference taken at the first sample matters. `--motion-error` answers the
 watch with `error: ...` and hangs up instead. Watch starts and ends go to
 --motion-log (default --log) as `motion:watch` and `motion:end`.
+`--motion-from <s>` starts each watch that far into the script and
+`--motion-pace <n>` plays it n times slower, so a photograph lands mid-move;
+`--motion-silent` holds the watch open and sends nothing.
 
 --hang plays the daemon e1504g ran on 2026-10-09: its main thread blocked in
 pa_threaded_mainloop_wait, the socket still listening and never accepting.
@@ -85,19 +88,28 @@ def motion_line(t):
 
 
 class Watcher:
-    def __init__(self, conn):
+    def __init__(self, conn, args):
         conn.setblocking(False)
         self.conn = conn
         self.start = time.monotonic()
         self.next = self.start
+        self.args = args
 
     def tick(self, now):
         """False once the client has gone."""
         if now < self.next:
             return True
         self.next += PERIOD
+        if self.args.motion_silent:
+            try:
+                return self.conn.recv(64) != b""
+            except BlockingIOError:
+                return True
+            except OSError:
+                return False
         try:
-            self.conn.send(motion_line(now - self.start).encode())
+            t = self.args.motion_from + (now - self.start) / self.args.motion_pace
+            self.conn.send(motion_line(t).encode())
         except BlockingIOError:
             pass
         except OSError:
@@ -181,6 +193,9 @@ def main():
     ap.add_argument("--log", required=True)
     ap.add_argument("--motion-log", help="where motion:watch and motion:end go, default --log")
     ap.add_argument("--motion-error", action="store_true", help="answer motion:watch with an error line and hang up")
+    ap.add_argument("--motion-from", type=float, default=0.0, help="seconds into the script each watch starts at")
+    ap.add_argument("--motion-pace", type=float, default=1.0, help="play the script this many times slower")
+    ap.add_argument("--motion-silent", action="store_true", help="hold the watch open and send nothing")
     ap.add_argument("--hang", action="store_true", help="listen and never accept, as a daemon with its event loop stuck")
     args = ap.parse_args()
 
@@ -241,7 +256,7 @@ def main():
                 if args.motion_error:
                     conn.sendall(b"error: motion unavailable on this link\n")
                 else:
-                    watchers.append(Watcher(conn))
+                    watchers.append(Watcher(conn, args))
                     conn = None
                     if "motion" in status:
                         status["motion"]["streaming"] = True

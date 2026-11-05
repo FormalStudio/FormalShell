@@ -20,19 +20,22 @@
 
 use std::collections::HashMap;
 
-use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, Device, HeartRate, HeartSample, Value};
+use fs_devices::earbuds::motion::{EulerDegrees, Quat};
+use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, Device, HeartRate, HeartSample, Motion, Value};
 
 use super::{Effect, Panel, View};
 use crate::services::devices::{self, earbuds};
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
-use crate::ui::{El, Event, Ink, Type, Weight, What, w};
+use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
 
 const DEVICE: &str = "__device";
 /// The most entries a choice shows as one segmented row.
 const SEGMENTS: usize = 4;
 /// The stop suffix of a tier's member row.
 const TIER: &str = "#tier";
+/// The head block's button, its stop and its action.
+const RECENTER: &str = "recenter";
 
 #[derive(Default)]
 pub struct Earbuds {
@@ -376,6 +379,57 @@ fn heart_block(s: &fs_theme::tokens::Space, hr: &HeartRate) -> El {
     w::panel_control(s, w::panel_heading(s, "Heart rate"), w::row(s.section_gap, parts).fill().mid())
 }
 
+/// What the head block can honestly show.
+#[derive(Debug, PartialEq)]
+enum Gaze {
+    /// The buds only stream motion while one is in an ear.
+    NoBud,
+    /// Watching, with no sample yet.
+    Waiting,
+    Live { relative: Quat, angles: EulerDegrees },
+}
+
+fn gaze(dev: &Device, m: &Motion) -> Gaze {
+    if !dev.batteries.iter().any(|b| b.in_ear == Some(true)) {
+        return Gaze::NoBud;
+    }
+    match (m.relative(), m.euler_degrees()) {
+        (Some(relative), Some(angles)) => Gaze::Live { relative, angles },
+        _ => Gaze::Waiting,
+    }
+}
+
+/// Whole degrees with their sign, and no sign on zero.
+fn degrees(v: f32) -> String {
+    match v.round() as i32 {
+        0 => "0°".into(),
+        n => format!("{n:+}°"),
+    }
+}
+
+fn angle(value: f32, caption: &str) -> El {
+    w::column(0.0, vec![w::text(degrees(value)).size(Type::Title).weight(Weight::Medium).mono(), w::caption(caption)])
+}
+
+/// The three angles and the Recenter button beside the head turned by the
+/// buds' orientation, or why there is no orientation. The head stands at
+/// the row's far end, so its curves never read as a box edge down the
+/// text column.
+fn head_block(s: &fs_theme::tokens::Space, dev: &Device, m: &Motion) -> El {
+    let size = s.control_height * 3.5;
+    let parts = match gaze(dev, m) {
+        Gaze::Live { relative, angles } => {
+            let angles = w::grid(3, s.panel_gap, vec![angle(angles.yaw, "Yaw"), angle(angles.pitch, "Pitch"), angle(angles.roll, "Roll")]);
+            let recenter = w::icon_text_button("crosshair", "Recenter").variant(Variant::Outline).stop(RECENTER).on(RECENTER);
+            let side = w::column(s.section_gap, vec![angles, w::row(0.0, vec![recenter, w::spacer()]).fill()]).fill().mid();
+            vec![side, w::head(Some(relative.components()), size)]
+        }
+        Gaze::Waiting => vec![w::text("Waiting for motion").ink(Ink::Muted).mid(), w::spacer(), w::head(None, size)],
+        Gaze::NoBud => vec![w::text("Put an AirPod in").ink(Ink::Muted).mid(), w::spacer(), w::head(None, size)],
+    };
+    w::panel_control(s, w::panel_heading(s, "Head"), w::row(s.section_gap, parts).fill().mid())
+}
+
 fn toggle_row(s: &fs_theme::tokens::Space, ctl: &Control) -> El {
     let on = ctl.value == Value::Bool(true);
     let hint = (!ctl.hint.is_empty()).then(|| ctl.hint.clone());
@@ -470,6 +524,9 @@ impl Panel for Earbuds {
         if let Some(hr) = &dev.heart_rate {
             out.push(heart_block(s, hr));
         }
+        if let Some(m) = &dev.motion {
+            out.push(head_block(s, dev, m));
+        }
         for section in model::sections(Some(dev)) {
             // A segmented choice named like its section takes the section's
             // caption for its label row rather than a second one under it.
@@ -492,6 +549,10 @@ impl Panel for Earbuds {
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
+        if ev.on == RECENTER {
+            earbuds::recenter();
+            return;
+        }
         let Some((verb, key)) = ev.on.split_once(':') else { return };
         if verb != "menu" && verb != "opt" {
             self.menu.clear();
@@ -528,6 +589,10 @@ impl Panel for Earbuds {
             let (opts, selected) = devices(e);
             let at = self.ring(DEVICE, opts.len(), selected);
             self.press(fx, at);
+            return;
+        }
+        if stop == RECENTER {
+            earbuds::recenter();
             return;
         }
         if let Some(rest) = stop.strip_prefix("opt:") {
@@ -598,6 +663,23 @@ mod tests {
         assert_eq!(pulse(&hr), Pulse::Measuring, "a stopped stream's last sample is not live");
         hr.in_ear = false;
         assert_eq!(pulse(&hr), Pulse::NoBud);
+    }
+
+    #[test]
+    fn the_head_says_only_what_the_buds_measured() {
+        let mut dev = model::device(model::DeviceFields { batteries: vec![model::Battery::new(BatteryId::Left, "Left", 80.0, false, Some(false))], ..Default::default() });
+        let mut m = Motion::default();
+        assert_eq!(gaze(&dev, &m), Gaze::NoBud);
+        dev.batteries[0].in_ear = Some(true);
+        assert_eq!(gaze(&dev, &m), Gaze::Waiting);
+        let line = r#"{"q":[0.9659,0,0,0.2588],"g":[0,0,-1000],"gyro":[0,0,0],"t":5}"#;
+        let sample = fs_devices::earbuds::motion::parse_sample(line).unwrap();
+        m.latest = Some(sample);
+        m.reference = Some(Quat::IDENTITY);
+        assert!(matches!(gaze(&dev, &m), Gaze::Live { angles, .. } if (angles.yaw - 30.0).abs() < 0.5));
+        assert_eq!(degrees(29.6), "+30°");
+        assert_eq!(degrees(-0.4), "0°");
+        assert_eq!(degrees(-12.2), "-12°");
     }
 
     #[test]

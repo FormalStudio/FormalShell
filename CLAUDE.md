@@ -563,7 +563,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   first sample, level, with gravity, and `earbuds recenter` brings yaw
   within 3 degrees of 0. A stub answering the watch with `error: ...`
   (`--motion-error`) leaves no `motion`, and a status with no `motion` key
-  is never watched.
+  is never watched. The Head block under the heart rate block, off stub
+  runs of their own on a status with motion and no heart rate service: a
+  watch held open with nothing sent photographed reading "Waiting for
+  motion", both buds out "Put an AirPod in", then the script at a quarter
+  speed timed off the watch's start: the wireframe head at rest (read by
+  the panel language check), mid-nod and mid-turn, at least 30 panel
+  commits in 3s through the nod and none in 3s once closed, and `earbuds
+  status` reading the turn live and left.
   A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once

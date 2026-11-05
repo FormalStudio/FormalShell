@@ -25,6 +25,7 @@ pub mod boxes;
 mod draw;
 pub use draw::{ring_strokes, ring_turn};
 pub mod el;
+mod head;
 mod heart;
 pub mod lyrics;
 mod spectrum;
@@ -156,6 +157,7 @@ pub struct Ui {
     groups: HashMap<String, Group>,
     spectra: HashMap<String, spectrum::Live>,
     beats: HashMap<String, heart::Beat>,
+    heads: HashMap<String, head::Pose>,
     panes: HashMap<String, lyrics::Pane>,
     tweens: HashMap<String, Tween>,
     births: HashMap<String, Instant>,
@@ -214,6 +216,7 @@ impl Ui {
             groups: HashMap::new(),
             spectra: HashMap::new(),
             beats: HashMap::new(),
+            heads: HashMap::new(),
             panes: HashMap::new(),
             tweens: HashMap::new(),
             births: HashMap::new(),
@@ -322,6 +325,7 @@ impl Ui {
         self.tweens.retain(|_, t| frame - t.seen < 120);
         self.spectra.retain(|_, l| frame - l.seen < 120);
         self.beats.retain(|_, b| frame - b.seen < 120);
+        self.heads.retain(|_, h| frame - h.seen < 120);
         self.panes.retain(|_, l| frame - l.seen < 120);
         self.wraps.retain(|_, w| frame - w.seen < 120);
         drawn

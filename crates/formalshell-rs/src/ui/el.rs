@@ -315,6 +315,9 @@ pub enum Kind {
     /// A heart in a `size` square beating at `bpm` while `beating`, redrawn
     /// every frame then; none draws it still and dim.
     Heart { bpm: Option<f64>, beating: bool, size: f64 },
+    /// A wireframe head in a `size` square turned by `orientation`, eased
+    /// toward each new one; none draws it still and dim.
+    Head { orientation: Option<[f32; 4]>, size: f64 },
     /// The lyrics pane at `height`.
     Lyrics(super::lyrics::View),
 }

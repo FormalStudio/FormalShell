@@ -284,7 +284,7 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
         Kind::Cover { size, .. } => (*size, *size),
         Kind::Strip { size, .. } => *size,
         Kind::Lyrics(v) => (inner, v.height),
-        Kind::Heart { size, .. } => (*size, *size),
+        Kind::Heart { size, .. } | Kind::Head { size, .. } => (*size, *size),
         Kind::Spectrum { columns, .. } => {
             let n = *columns as f64;
             (n * s.track_thickness + (n - 1.0).max(0.0) * s.xxs, s.control_height)
@@ -797,6 +797,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         Kind::Spectrum { style, columns, live } => super::spectrum::paint(cx, inner, style, *columns, *live, path),
         Kind::Lyrics(v) => super::lyrics::paint(cx, inner, v, path),
         Kind::Heart { bpm, beating, .. } => super::heart::paint(cx, inner, *bpm, *beating, path),
+        Kind::Head { orientation, .. } => super::head::paint(cx, inner, *orientation, path),
         Kind::Icon { name, size, ink } => {
             let t = icon(cx, name, *size);
             let color = cx.a(resolve(cx, *ink));

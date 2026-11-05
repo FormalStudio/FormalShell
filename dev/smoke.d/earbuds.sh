@@ -67,6 +67,16 @@
 #     (`motion:end`; so does each other close). A stub answering the watch
 #     with `error: ...` leaves the device with no `motion`, and a status
 #     with no `motion` key (the noheart one) is never watched.
+#     The head block, on a status with motion and no heart rate service, its
+#     watches logged apart (librepods-motion-head.txt): a watch held open
+#     with nothing sent photographed reading "Waiting for motion"
+#     (earbuds-head-waiting), both buds out reading "Put an AirPod in"
+#     (earbuds-head-nobud), then the script played four times slower from
+#     its still second before the nod: the head at rest (earbuds-head-rest,
+#     read by the panel language check off a dump taken beside it),
+#     mid-nod (earbuds-head-nod) and mid-turn (earbuds-head-turn), the panel
+#     committing at least 30 frames in 3s through the nod and none in 3s
+#     once closed, and `earbuds status` reading the turn live and left.
 #  5. a device nothingctl refuses: its `watch` prints the v0.1.1
 #     `unsupported-model` line and exits 3. Twelve seconds later (past the
 #     5s first backoff every other exit gets) it was started exactly once
@@ -97,6 +107,13 @@ earbuds_heart_measuring_png="$shot_dir/earbuds-heart-measuring.png"
 earbuds_heart_beat_dir="$shot_dir/earbuds-heart-beat"
 earbuds_heart_commits="$shot_dir/earbuds-heart-commits.txt"
 earbuds_heart_point_png="$shot_dir/earbuds-heart-point.png"
+earbuds_head_waiting_png="$shot_dir/earbuds-head-waiting.png"
+earbuds_head_nobud_png="$shot_dir/earbuds-head-nobud.png"
+earbuds_head_rest_png="$shot_dir/earbuds-head-rest.png"
+earbuds_head_nod_png="$shot_dir/earbuds-head-nod.png"
+earbuds_head_turn_png="$shot_dir/earbuds-head-turn.png"
+earbuds_head_commits="$shot_dir/earbuds-head-commits.txt"
+earbuds_head_dump="$earbuds_dir/head-dump.json"
 earbuds_airpods_hung_png="$shot_dir/earbuds-airpods-hung.png"
 earbuds_refused_png="$shot_dir/earbuds-refused.png"
 
@@ -112,6 +129,8 @@ earbuds_librepods_socket="$iso_home/librepods.sock"
 earbuds_librepods_log="$earbuds_dir/librepods-verbs.txt"
 earbuds_librepods_motion="$earbuds_dir/librepods-motion.txt"
 earbuds_motion_replies="$earbuds_dir/motion-replies.txt"
+earbuds_head_motion="$earbuds_dir/librepods-motion-head.txt"
+earbuds_head_verbs="$earbuds_dir/librepods-verbs-head.txt"
 earbuds_librepods_err="$earbuds_dir/librepods-stub.err"
 
 leg_earbuds_fixture() {
@@ -131,6 +150,8 @@ leg_earbuds_fixture() {
   "$jq_bin" -c '.motion = {"available":true,"streaming":false}' "$earbuds_dir/airpods-status-noheart.json" > "$earbuds_dir/airpods-status-moterr.json"
   "$jq_bin" -c '.left.in_ear = false | .right.in_ear = false' "$earbuds_dir/airpods-status.json" \
     > "$earbuds_dir/airpods-status-nobud.json"
+  "$jq_bin" -c '.left.in_ear = false | .right.in_ear = false' "$earbuds_dir/airpods-status-moterr.json" \
+    > "$earbuds_dir/airpods-status-head-nobud.json"
   for f in "$b175" "$settings" "$values" "$airpods"; do
     [ -n "$f" ] || { echo "earbuds: a fixture under dev/smoke.d/fixtures is missing" >&2; exit 1; }
   done
@@ -197,14 +218,15 @@ EOF
   : > "$earbuds_librepods_log"
   : > "$earbuds_librepods_motion"
   : > "$earbuds_motion_replies"
+  : > "$earbuds_head_motion"
+  : > "$earbuds_head_verbs"
   export FORMALSHELL_SMOKE_BLUETOOTH='[{"address":"'"$earbuds_scq_address"'","name":"Liberty 4 NC","connected":true}]'
 }
 
 leg_earbuds_timing() {
-  # Five phases of sleeps (~100s, a spot check's wait up to 30s more) plus
-  # some twenty-five `ipc call` round trips at about a second each on
-  # llvmpipe.
-  leg_timing 190 235
+  # Five phases of sleeps (~135s, a spot check's wait up to 30s more) plus
+  # some thirty `ipc call` round trips at about a second each on llvmpipe.
+  leg_timing 230 280
 }
 
 leg_earbuds_drive() {
@@ -334,6 +356,64 @@ ipc panel close > /dev/null 2>&1
 sleep 1
 kill \$stub
 rm -f "$state_dir/status.json"
+head_stub() {
+  "$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
+    --log "$earbuds_head_verbs" --motion-log "$earbuds_head_motion" "\$@" 2>> "$earbuds_librepods_err" &
+  stub=\$!
+  sleep 1
+}
+head_stop() {
+  kill \$stub
+  rm -f "$state_dir/status.json"
+}
+head_stub --motion-silent --fixture "$earbuds_dir/airpods-status-moterr.json"
+ipc panel open earbuds > /dev/null 2>&1
+sleep 2.5
+"$grim_bin" "$earbuds_head_waiting_png" > /dev/null 2>&1
+ipc panel close > /dev/null 2>&1
+sleep 1
+head_stop
+head_stub --fixture "$earbuds_dir/airpods-status-head-nobud.json"
+ipc panel open earbuds > /dev/null 2>&1
+sleep 2.5
+"$grim_bin" "$earbuds_head_nobud_png" > /dev/null 2>&1
+ipc panel close > /dev/null 2>&1
+sleep 1
+head_stop
+# From 9s in at a quarter speed: still for 4s, the nod over 4s (its deepest
+# at 6s), still for 8s, then the turn over 4s (half way at 18s). Timed off
+# the watch's own log line rather than the open.
+head_stub --motion-from 9 --motion-pace 4 --fixture "$earbuds_dir/airpods-status-moterr.json"
+ipc panel open earbuds > /dev/null 2>&1
+for _ in \$(seq 100); do
+  [ "\$(grep -c '^motion:watch' "$earbuds_head_motion")" -ge 3 ] && break
+  sleep 0.05
+done
+start=\$(date +%s%N)
+# Sleeps until \$1 tenths of a second past the watch's start.
+at() {
+  local left=\$(( start + \$1 * 100000000 - \$(date +%s%N) ))
+  [ \$left -gt 0 ] && sleep "\$(printf '%d.%09d' \$((left / 1000000000)) \$((left % 1000000000)))"
+}
+ipc debug dump > "$earbuds_head_dump" 2>&1
+at 20
+"$grim_bin" "$earbuds_head_rest_png" > /dev/null 2>&1
+at 45
+c4=\$(commits)
+at 60
+"$grim_bin" "$earbuds_head_nod_png" > /dev/null 2>&1
+at 75
+c5=\$(commits)
+at 180
+"$grim_bin" "$earbuds_head_turn_png" > /dev/null 2>&1
+ipc earbuds status > "$earbuds_dir/airpods-head-turn.json" 2>&1
+ipc panel close > /dev/null 2>&1
+sleep 1
+c6=\$(commits)
+sleep 3
+c7=\$(commits)
+echo "\$c4 \$c5 \$c6 \$c7" > "$earbuds_head_commits"
+head_stop
 "$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
   --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
 stub=\$!
@@ -382,7 +462,7 @@ EOF
 
 leg_earbuds_assert() {
   local png count expected
-  for png in "$earbuds_b175_png" "$earbuds_soundcore_png" "$earbuds_both_png" "$earbuds_airpods_png" "$earbuds_airpods_heart_png" "$earbuds_heart_measuring_png" "$earbuds_heart_point_png" "$earbuds_heart_beat_dir-0.png" "$earbuds_airpods_hung_png" "$earbuds_refused_png"; do
+  for png in "$earbuds_b175_png" "$earbuds_soundcore_png" "$earbuds_both_png" "$earbuds_airpods_png" "$earbuds_airpods_heart_png" "$earbuds_heart_measuring_png" "$earbuds_heart_point_png" "$earbuds_heart_beat_dir-0.png" "$earbuds_head_waiting_png" "$earbuds_head_nobud_png" "$earbuds_head_rest_png" "$earbuds_head_nod_png" "$earbuds_head_turn_png" "$earbuds_airpods_hung_png" "$earbuds_refused_png"; do
     [ -s "$png" ] || fail "earbuds: no screenshot at $png"
   done
   echo "SMOKE_EARBUDS_B175 $earbuds_b175_png"
@@ -397,6 +477,11 @@ leg_earbuds_assert() {
     n=${beat##*-}
     echo "SMOKE_EARBUDS_HEART_BEAT_${n%.png} $beat"
   done
+  echo "SMOKE_EARBUDS_HEAD_WAITING $earbuds_head_waiting_png"
+  echo "SMOKE_EARBUDS_HEAD_NOBUD $earbuds_head_nobud_png"
+  echo "SMOKE_EARBUDS_HEAD_REST $earbuds_head_rest_png"
+  echo "SMOKE_EARBUDS_HEAD_NOD $earbuds_head_nod_png"
+  echo "SMOKE_EARBUDS_HEAD_TURN $earbuds_head_turn_png"
   echo "SMOKE_EARBUDS_AIRPODS_HUNG $earbuds_airpods_hung_png"
   echo "SMOKE_EARBUDS_REFUSED $earbuds_refused_png"
   echo "SMOKE_EARBUDS_STATUS $earbuds_status_b175"
@@ -479,6 +564,29 @@ motion:watch" ] || fail "earbuds: librepods should get a motion:watch per panel 
     || fail "earbuds: a watch answered with an error should leave the device with no motion, got '$got' from $(cat "$earbuds_dir/airpods-motion-error.json")"
   got=$("$jq_bin" -r '.device.motion' "$earbuds_dir/airpods-noheart-status.json" 2>/dev/null)
   [ "$got" = "null" ] || fail "earbuds: AirPods with no motion key should carry no motion, got '$got'"
+  echo "head block watches:"; cat "$earbuds_head_motion"
+  [ "$(cat "$earbuds_head_motion")" = "motion:watch
+motion:end
+motion:watch
+motion:end
+motion:watch
+motion:end" ] || fail "earbuds: the head block's three opens should each watch and end, got '$(cat "$earbuds_head_motion")'"
+  [ ! -s "$earbuds_head_verbs" ] || fail "earbuds: the head block's stubs (no heart rate service) should get no verbs, got '$(cat "$earbuds_head_verbs")'"
+  got=$("$jq_bin" -r '.device.motion | [.live, (.yaw > 5 and .yaw < 45)] | map(tostring) | join(",")' "$earbuds_dir/airpods-head-turn.json" 2>/dev/null)
+  [ "$got" = "true,true" ] \
+    || fail "earbuds: mid-turn the head should read live and turned left, got '$got' from $(cat "$earbuds_dir/airpods-head-turn.json")"
+  local rest header=no space=rowInset
+  rest=$("$jq_bin" -c '.panel.rest' "$earbuds_head_dump" 2>/dev/null)
+  if [ "$("$jq_bin" -r '.panel.header' "$earbuds_head_dump" 2>/dev/null)" = true ]; then
+    header=yes space=inset
+  fi
+  panel_language_assert "earbuds head" "$earbuds_head_rest_png" "$rest" "$header" "$earbuds_head_dump" "$space"
+  panel_language_verdict
+  local c4 c5 c6 c7
+  read -r c4 c5 c6 c7 < "$earbuds_head_commits"
+  echo "panel commits: through the nod $((c5 - c4)) in 3s, closed $((c7 - c6)) in 3s"
+  [ $((c5 - c4)) -ge 30 ] || fail "earbuds: the turning head should commit the panel while samples arrive, got $((c5 - c4)) commits in 3s"
+  [ $((c7 - c6)) -eq 0 ] || fail "earbuds: the closed panel committed $((c7 - c6)) frames in 3s after the head block"
   echo "spot check:"; "$jq_bin" -c '.device.heartRate | {streaming, points}' "$earbuds_dir/airpods-status-point.json"
   got=$("$jq_bin" -r '.device.heartRate | [.streaming, (.points | length), (.points[0].bpm >= 70 and .points[0].bpm <= 80), (.points[0].atMs > 0)] | map(tostring) | join(",")' "$earbuds_dir/airpods-status-point.json" 2>/dev/null)
   [ "$got" = "false,1,true,true" ] \
