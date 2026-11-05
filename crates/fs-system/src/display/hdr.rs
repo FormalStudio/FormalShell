@@ -172,7 +172,8 @@ pub fn state_of(saved: &Value) -> Map<String, Value> {
         .unwrap_or_default()
 }
 
-pub fn with_output(saved: &Value, name: &str, prior: &Color) -> Map<String, Value> {
+/// `instance` is the compositor instance the output was put in HDR under.
+pub fn with_output(saved: &Value, name: &str, prior: &Color, instance: &str) -> Map<String, Value> {
     let mut out = state_of(saved);
     out.insert(
         name.to_string(),
@@ -181,9 +182,25 @@ pub fn with_output(saved: &Value, name: &str, prior: &Color) -> Map<String, Valu
             "bitdepth": prior.bitdepth,
             "sdrbrightness": prior.sdrbrightness,
             "sdrsaturation": prior.sdrsaturation,
-        } }),
+        }, "instance": instance }),
     );
     out
+}
+
+/// The same want, now held under `instance`.
+pub fn with_instance(saved: &Value, name: &str, instance: &str) -> Map<String, Value> {
+    let mut out = state_of(saved);
+    if let Some(Value::Object(w)) = out.get_mut(name) {
+        w.insert("instance".into(), json!(instance));
+    }
+    out
+}
+
+/// Whether `name` was put in HDR under the compositor instance still running.
+/// That compositor showing it in SDR at a shell start means it was turned off
+/// outside the shell, so the want is dropped rather than put back.
+pub fn wanted_under(saved: &Value, name: &str, instance: &str) -> bool {
+    !instance.is_empty() && state_of(saved).get(name).and_then(|w| w.get("instance")).and_then(Value::as_str) == Some(instance)
 }
 
 pub fn without_output(saved: &Value, name: &str) -> Map<String, Value> {
@@ -403,8 +420,15 @@ mod tests {
     #[test]
     fn state_helpers_return_fresh_objects() {
         let prior = Color { cm: "srgb".into(), bitdepth: 8, sdrbrightness: 1.0, sdrsaturation: 1.0 };
-        let a = Value::Object(with_output(&Value::Null, "eDP-1", &prior));
+        let a = Value::Object(with_output(&Value::Null, "eDP-1", &prior, "sig-a"));
         assert!(a.get("eDP-1").is_some());
+        assert!(wanted_under(&a, "eDP-1", "sig-a"));
+        assert!(!wanted_under(&a, "eDP-1", "sig-b"));
+        assert!(!wanted_under(&a, "eDP-1", ""));
+        assert!(!wanted_under(&json!({ "eDP-1": { "prior": {} } }), "eDP-1", "sig-a"));
+        let moved = Value::Object(with_instance(&a, "eDP-1", "sig-b"));
+        assert!(wanted_under(&moved, "eDP-1", "sig-b"));
+        assert_eq!(moved["eDP-1"]["prior"], a["eDP-1"]["prior"]);
         let b = without_output(&a, "eDP-1");
         assert!(!b.contains_key("eDP-1"));
         assert!(a.get("eDP-1").is_some());

@@ -531,7 +531,7 @@ pub fn hdr_set(store: &Store, name: &str, on: bool) -> String {
             Some(p) => hdr::off_color(p),
             None => hdr::prior_of(row),
         };
-        state::set(vec![Field::Hdr(Value::Object(hdr::with_output(saved, name, &prior)))]);
+        state::set(vec![Field::Hdr(Value::Object(hdr::with_output(saved, name, &prior, &instance())))]);
         TRIED.with_borrow_mut(|t| t.insert(name.to_owned()));
         apply(name, on_color(store));
     } else {
@@ -633,10 +633,23 @@ thread_local! {
     /// is not retried on every refresh.
     static TRIED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     static RELOADS: RefCell<u64> = const { RefCell::new(0) };
+    /// Since this shell started: Hyprland reloaded its config, and the
+    /// outputs seen and those seen to go. Either resets the monitor rules.
+    static RELOADED: RefCell<bool> = const { RefCell::new(false) };
+    static SEEN: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    static UNPLUGGED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// The running Hyprland, which a monitor rule set over IPC lives as long as.
+fn instance() -> String {
+    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
 }
 
 /// Puts a wanted output back in HDR, run whenever the outputs, the verdicts or
-/// state.json move.
+/// state.json move. A want made under the Hyprland still running, on an
+/// output it shows in SDR with no reload or unplug since this shell started,
+/// was turned off outside the shell (the rule a shell sets outlives the
+/// shell), so it is dropped rather than put back.
 pub fn reconcile(store: &Store) {
     if !store.state.loaded {
         return;
@@ -645,16 +658,34 @@ pub fn reconcile(store: &Store) {
     TRIED.with_borrow_mut(|tried| {
         if RELOADS.with_borrow(|r| *r != reloads) {
             RELOADS.with_borrow_mut(|r| *r = reloads);
+            RELOADED.with_borrow_mut(|r| *r = true);
             tried.clear();
         }
         tried.retain(|n| outputs::find_output(rows(store), n).is_some());
     });
+    SEEN.with_borrow_mut(|seen| {
+        UNPLUGGED.with_borrow_mut(|gone| gone.extend(seen.iter().filter(|n| outputs::find_output(rows(store), n).is_none()).cloned()));
+        seen.extend(rows(store).iter().map(|r| r.name.clone()));
+    });
     let verdicts: HashMap<String, Verdict> = rows(store).iter().map(|r| (r.name.clone(), store.display.verdict(&r.name))).collect();
     let pending = TRIED.with_borrow(|tried| hdr::pending_reapply(&store.state.data.hdr, rows(store), &verdicts, tried));
+    if pending.is_empty() {
+        return;
+    }
+    let now = instance();
+    let reloaded = RELOADED.with_borrow(|r| *r);
+    let mut saved = store.state.data.hdr.clone();
     for name in pending {
         TRIED.with_borrow_mut(|t| t.insert(name.clone()));
+        if !reloaded && !UNPLUGGED.with_borrow(|g| g.contains(&name)) && hdr::wanted_under(&saved, &name, &now) {
+            eprintln!("hdr: {name} is in SDR under the Hyprland that put it in HDR, so it was turned off there; dropping the want");
+            saved = Value::Object(hdr::without_output(&saved, &name));
+            continue;
+        }
+        saved = Value::Object(hdr::with_instance(&saved, &name, &now));
         apply(&name, on_color(store));
     }
+    state::set(vec![Field::Hdr(saved)]);
 }
 
 /// The main output among the lit outputs.
