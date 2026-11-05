@@ -18,7 +18,7 @@ import sys
 from PIL import Image, ImageCms, ImageOps
 
 LONG_EDGE = 5120
-MIN_WIDTH = 3840
+MIN_WIDTH = 3160
 QUALITY = 92
 
 Image.MAX_IMAGE_PIXELS = None

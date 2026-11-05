@@ -97,5 +97,93 @@
     "origin": "https://unsplash.com/photos/6GqDIGk7HlE",
     "url": "https://upload.wikimedia.org/wikipedia/commons/c/c0/A_winter%27s_sunrise_%28Unsplash%29.jpg",
     "sha256": "f3d52565557f58ff9d433598ed1f17c55a0889d4ae9eebcc9a8f97ef5f276939"
+  },
+  {
+    "id": "starbase",
+    "title": "Starbase",
+    "author": "Omarchy",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/1-starbase.webp",
+    "origin": "https://github.com/omacom/omarchy/pull/14705",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/1-starbase.webp",
+    "sha256": "17a9a0abe34fb70262e16a6f000fb503f49a9297602860d92c89f6b5ffc0a1b3"
+  },
+  {
+    "id": "flight-14-dawn",
+    "title": "Flight 14 at dawn",
+    "author": "Omarchy",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/2-flight14-dawn.webp",
+    "origin": "https://github.com/omacom/omarchy/pull/14705",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/2-flight14-dawn.webp",
+    "sha256": "9bc22a2c279c8e0ee2927ff5723732d1d05249b1c5e1e37fdb5fd9ecc4969dbf"
+  },
+  {
+    "id": "engine-cluster",
+    "title": "Engine cluster",
+    "author": "Omarchy",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/3-engine-cluster.webp",
+    "origin": "https://github.com/omacom/omarchy/pull/14705",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/3-engine-cluster.webp",
+    "sha256": "6449ce53472da5026c5dc39fbadeda3aaa32c6ed0655c8f7b019ae27f566fdf0"
+  },
+  {
+    "id": "morning-pad",
+    "title": "Morning pad",
+    "author": "Omarchy",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/4-morning-pad.webp",
+    "origin": "https://github.com/omacom/omarchy/pull/14705",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/starship/backgrounds/4-morning-pad.webp",
+    "sha256": "b6b1b89badc712b6b591b54290fec005bcbc3cd7b39ee539046f5ff7afdf3f35"
+  },
+  {
+    "id": "eyes-wide",
+    "title": "Eyes wide",
+    "author": "HANCORE",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/1-eyes-wide.webp",
+    "origin": "https://github.com/omacom/omarchy/commit/b2fb2384",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/1-eyes-wide.webp",
+    "sha256": "53cc2eea25bd75435d77d2b3cc9339841dfdcd5a52c51a1e02dda14a3e527bd4"
+  },
+  {
+    "id": "blink",
+    "title": "Blink",
+    "author": "HANCORE",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/2-blink.webp",
+    "origin": "https://github.com/omacom/omarchy/commit/b2fb2384",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/2-blink.webp",
+    "sha256": "eaec03ab843739754979987944064bb46d283e47e36aa5d8d8f9d75cd9997155"
+  },
+  {
+    "id": "bokeh",
+    "title": "Bokeh",
+    "author": "HANCORE",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/3-bokeh.webp",
+    "origin": "https://github.com/omacom/omarchy/commit/b2fb2384",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/3-bokeh.webp",
+    "sha256": "f91b253da6bb173d6cccf41a165e683d5d656bbf5d9169493831f96422781c30"
+  },
+  {
+    "id": "new-horizons",
+    "title": "New horizons",
+    "author": "HANCORE",
+    "license": "MIT",
+    "licenseUrl": "https://github.com/omacom/omarchy/blob/quattro/LICENSE",
+    "source": "https://github.com/omacom/omarchy/blob/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/4-new-horizons.jpg",
+    "origin": "https://github.com/omacom/omarchy/commit/b2fb2384",
+    "url": "https://raw.githubusercontent.com/omacom/omarchy/6194f4606c585da8b839b87df9120b7d796afedf/themes/last-horizon/backgrounds/4-new-horizons.jpg",
+    "sha256": "6b13ec842e3617d7c9c113612664f56b8ffec5fb76d0613bb1c84914f12feb5f"
   }
 ]
