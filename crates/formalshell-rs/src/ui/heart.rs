@@ -50,11 +50,11 @@ fn advance(phase: f64, last: Option<Instant>, now: Instant, bpm: f64, scale: f64
 }
 
 /// `bpm` none draws the heart still in `mutedForeground`, for a rate not
-/// measured yet.
-pub fn paint(cx: &mut Cx, r: Rect, bpm: Option<f64>, path: &str) {
+/// measured yet; `beat` false draws a measured one still.
+pub fn paint(cx: &mut Cx, r: Rect, bpm: Option<f64>, beat: bool, path: &str) {
     let t = cx.theme;
     let live = bpm.is_some_and(|b| b > 0.0);
-    let beating = live && t.motion_enabled;
+    let beating = live && beat && t.motion_enabled;
     let (now, frame) = (cx.now, cx.ui.frame);
     let st = cx.ui.beats.entry(path.to_owned()).or_insert(Beat { phase: 0.0, last: None, seen: frame });
     st.seen = frame;

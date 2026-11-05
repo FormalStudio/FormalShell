@@ -306,14 +306,15 @@ enum Pulse<'a> {
     /// Streaming, or about to, with no settled sample yet.
     Measuring,
     Live { bpm: Bpm, history: &'a [HeartSample] },
+    /// No live rate yet: the latest spot check's, with the points before it.
+    Point { point: HeartSample, points: &'a [HeartSample] },
 }
 
 fn pulse(hr: &HeartRate) -> Pulse<'_> {
-    if !hr.in_ear {
-        return Pulse::NoBud;
-    }
-    match hr.latest {
-        Some(s) if hr.settled && hr.streaming => Pulse::Live { bpm: s.bpm, history: &hr.history },
+    match (hr.latest, hr.points.last()) {
+        (Some(s), _) if hr.in_ear && hr.settled && hr.streaming => Pulse::Live { bpm: s.bpm, history: &hr.history },
+        (_, Some(p)) => Pulse::Point { point: *p, points: &hr.points },
+        _ if !hr.in_ear => Pulse::NoBud,
         _ => Pulse::Measuring,
     }
 }
@@ -340,23 +341,37 @@ fn heart_trace(s: &fs_theme::tokens::Space, history: &[HeartSample]) -> Option<E
     Some(w::column(s.xxs, vec![line, range]).fill().mid())
 }
 
+fn readout(bpm: Bpm, caption: String) -> El {
+    w::column(0.0, vec![w::text(bpm.get().to_string()).size(Type::Hero).weight(Weight::Medium).mono(), w::caption(caption)])
+        .width(crate::ui::Size::Hug)
+        .mid()
+}
+
+/// A point's caption: the unit and how long ago the check took it.
+fn point_caption(now_ms: i64, at_ms: u64) -> String {
+    match fs_info::notifications::rel_time(now_ms, at_ms as i64).as_str() {
+        "now" => "BPM, just now".into(),
+        ago => format!("BPM, {ago}"),
+    }
+}
+
 /// The heart beside the rate and its trace, or why there is no rate.
 fn heart_block(s: &fs_theme::tokens::Space, hr: &HeartRate) -> El {
     let size = s.control_height * 2.0;
     let parts = match pulse(hr) {
         Pulse::Live { bpm, history } => {
-            let readout = w::column(
-                0.0,
-                vec![w::text(bpm.get().to_string()).size(Type::Hero).weight(Weight::Medium).mono(), w::caption("BPM")],
-            )
-            .width(crate::ui::Size::Hug)
-            .mid();
-            let mut parts = vec![w::heart(Some(f64::from(bpm.get())), size), readout];
+            let mut parts = vec![w::heart(Some(f64::from(bpm.get())), true, size), readout(bpm, "BPM".into())];
             parts.extend(heart_trace(s, history));
             parts
         }
-        Pulse::Measuring => vec![w::heart(None, size), w::text("Measuring").ink(Ink::Muted).mid()],
-        Pulse::NoBud => vec![w::heart(None, size), w::text("Put an AirPod in").ink(Ink::Muted).mid()],
+        Pulse::Point { point, points } => {
+            let now = crate::services::notifications::now_ms();
+            let mut parts = vec![w::heart(Some(f64::from(point.bpm.get())), false, size), readout(point.bpm, point_caption(now, point.at_ms))];
+            parts.extend(heart_trace(s, points));
+            parts
+        }
+        Pulse::Measuring => vec![w::heart(None, false, size), w::text("Measuring").ink(Ink::Muted).mid()],
+        Pulse::NoBud => vec![w::heart(None, false, size), w::text("Put an AirPod in").ink(Ink::Muted).mid()],
     };
     w::panel_control(s, w::panel_heading(s, "Heart rate"), w::row(s.section_gap, parts).fill().mid())
 }
@@ -583,5 +598,20 @@ mod tests {
         assert_eq!(pulse(&hr), Pulse::Measuring, "a stopped stream's last sample is not live");
         hr.in_ear = false;
         assert_eq!(pulse(&hr), Pulse::NoBud);
+    }
+
+    #[test]
+    fn a_spot_check_point_stands_in_until_the_live_rate_settles() {
+        let mut hr = HeartRate { available: true, streaming: true, in_ear: true, ..HeartRate::default() };
+        hr.points = vec![sample(70.0, 1), sample(64.0, 2)];
+        assert!(matches!(pulse(&hr), Pulse::Point { point, points } if point.bpm.get() == 64 && points.len() == 2));
+        hr.in_ear = false;
+        assert!(matches!(pulse(&hr), Pulse::Point { .. }), "a bud out still reads the last point");
+        hr.in_ear = true;
+        hr.latest = Some(sample(72.0, 3));
+        hr.settled = true;
+        assert!(matches!(pulse(&hr), Pulse::Live { bpm, .. } if bpm.get() == 72));
+        assert_eq!(point_caption(4 * 60 * 1000 + 3, 3), "BPM, 4m ago");
+        assert_eq!(point_caption(10_000, 3), "BPM, just now");
     }
 }

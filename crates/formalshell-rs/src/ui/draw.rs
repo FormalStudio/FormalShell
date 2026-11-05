@@ -796,7 +796,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         }
         Kind::Spectrum { style, columns, live } => super::spectrum::paint(cx, inner, style, *columns, *live, path),
         Kind::Lyrics(v) => super::lyrics::paint(cx, inner, v, path),
-        Kind::Heart { bpm, .. } => super::heart::paint(cx, inner, *bpm, path),
+        Kind::Heart { bpm, beating, .. } => super::heart::paint(cx, inner, *bpm, *beating, path),
         Kind::Icon { name, size, ink } => {
             let t = icon(cx, name, *size);
             let color = cx.a(resolve(cx, *ink));

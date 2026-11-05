@@ -545,8 +545,15 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and its trace, then reopened at a quarter speed (an `off` and `on`
   between) in a burst through one beat; the
   panel committing at least 20 frames in 2s while the heart beats and none
-  in 3s once closed, and closing it sends `heartrate:off`; the same AirPods
-  with the service unavailable get no heart rate verb and no `heartRate`.
+  in 3s once closed, and closing it sends `heartrate:off`. The spot checks
+  shortened to every 10s with a 4s window (`FORMALSHELL_SMOKE_HEART_CHECK`
+  read at start; 10 minutes and 30s otherwise), one runs with the panel
+  shut: `heartrate:on` then `heartrate:off`, `heartRate.points` one median
+  of 70 to 80, and the panel opened after photographed reading that point
+  with its age and a still heart. Both buds out, then the service
+  unavailable, each sit through a check with no verb and the skip in the
+  shell log; the same AirPods with the service unavailable get no heart
+  rate verb and no `heartRate`.
   A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once

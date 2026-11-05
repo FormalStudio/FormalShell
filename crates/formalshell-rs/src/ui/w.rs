@@ -94,10 +94,11 @@ pub fn spectrum(style: impl Into<String>, columns: usize, live: bool) -> El {
     El::new(Kind::Spectrum { style: style.into(), columns, live })
 }
 
-/// A heart in a `size` square beating at `bpm`; none for a rate not
-/// measured yet, drawn still and dim.
-pub fn heart(bpm: Option<f64>, size: f64) -> El {
-    El::new(Kind::Heart { bpm, size })
+/// A heart in a `size` square beating at `bpm` while `beating` (a rate
+/// measured earlier is drawn still); none for a rate not measured yet,
+/// drawn still and dim.
+pub fn heart(bpm: Option<f64>, beating: bool, size: f64) -> El {
+    El::new(Kind::Heart { bpm, beating, size })
 }
 
 pub fn icon(name: impl Into<String>) -> El {

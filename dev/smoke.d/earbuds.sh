@@ -39,7 +39,15 @@
 #     in 2s while the heart beats and none in 3s once closed. Then
 #     `earbuds set noise <mode>` for each of the four modes reaches
 #     the socket as exactly `noise:<mode>`, the panel holds the mode the
-#     stub reports back, and closing it sends `heartrate:off`. The same
+#     stub reports back, and closing it sends `heartrate:off`. With the
+#     spot checks shortened to every 10s with a 4s window
+#     (FORMALSHELL_SMOKE_HEART_CHECK; a panel close restarts the interval),
+#     the panel stays shut until one runs: `heartrate:on` then `off`, and
+#     `earbuds status` carrying one point, its median. The panel opened then
+#     is photographed reading that point (earbuds-heart-point) before its
+#     own stream settles. The same status with both buds out, then with the
+#     service unavailable, each sits through a check with no verb and the
+#     shell logging the skip. The same
 #     status with the service unavailable gets no heart rate verb at all
 #     (sent then, the real daemon drops the link) and no `heartRate`. Then
 #     the stub listening without ever accepting, as e1504g's daemon did with
@@ -73,6 +81,7 @@ earbuds_airpods_heart_png="$shot_dir/earbuds-airpods-heart.png"
 earbuds_heart_measuring_png="$shot_dir/earbuds-heart-measuring.png"
 earbuds_heart_beat_dir="$shot_dir/earbuds-heart-beat"
 earbuds_heart_commits="$shot_dir/earbuds-heart-commits.txt"
+earbuds_heart_point_png="$shot_dir/earbuds-heart-point.png"
 earbuds_airpods_hung_png="$shot_dir/earbuds-airpods-hung.png"
 earbuds_refused_png="$shot_dir/earbuds-refused.png"
 
@@ -100,6 +109,8 @@ leg_earbuds_fixture() {
     > "$earbuds_dir/airpods-status.json"
   printf '%s\n' "$airpods" | "$jq_bin" -c '.heart_rate = {"wanted":false,"available":false,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
     > "$earbuds_dir/airpods-status-noheart.json"
+  "$jq_bin" -c '.left.in_ear = false | .right.in_ear = false' "$earbuds_dir/airpods-status.json" \
+    > "$earbuds_dir/airpods-status-nobud.json"
   for f in "$b175" "$settings" "$values" "$airpods"; do
     [ -n "$f" ] || { echo "earbuds: a fixture under dev/smoke.d/fixtures is missing" >&2; exit 1; }
   done
@@ -162,14 +173,16 @@ EOF
   # Hyprland and everything it spawns inherit this script's environment.
   export PATH="$earbuds_shim_dir:$PATH"
   export FORMALSHELL_SMOKE_LIBREPODS_SOCKET="$earbuds_librepods_socket"
+  export FORMALSHELL_SMOKE_HEART_CHECK="10,4"
   : > "$earbuds_librepods_log"
   export FORMALSHELL_SMOKE_BLUETOOTH='[{"address":"'"$earbuds_scq_address"'","name":"Liberty 4 NC","connected":true}]'
 }
 
 leg_earbuds_timing() {
-  # Five phases of sleeps (~65s) plus some twenty `ipc call` round trips at
-  # about a second each on llvmpipe.
-  leg_timing 120 160
+  # Five phases of sleeps (~100s, a spot check's wait up to 30s more) plus
+  # some twenty-five `ipc call` round trips at about a second each on
+  # llvmpipe.
+  leg_timing 170 210
 }
 
 leg_earbuds_drive() {
@@ -257,12 +270,29 @@ c2=\$(commits)
 sleep 3
 c3=\$(commits)
 echo "\$c0 \$c1 \$c2 \$c3" > "$earbuds_heart_commits"
+# The spot check, due 10s after that close: on, settled samples for 4s, off.
+for _ in \$(seq 60); do
+  [ "\$(wc -l < "$earbuds_librepods_log")" -ge 10 ] && break
+  sleep 0.5
+done
+ipc earbuds status > "$earbuds_dir/airpods-status-point.json" 2>&1
+ipc panel open earbuds > /dev/null 2>&1
+sleep 0.8
+"$grim_bin" "$earbuds_heart_point_png" > /dev/null 2>&1
+sleep 1
+ipc panel close > /dev/null 2>&1
+sleep 1
+kill \$stub
+"$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
+  --fixture "$earbuds_dir/airpods-status-nobud.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
+stub=\$!
+sleep 13
 kill \$stub
 rm -f "$state_dir/status.json"
 "$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
   --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
 stub=\$!
-sleep 1
+sleep 9
 ipc panel open earbuds > /dev/null 2>&1
 sleep 3
 ipc earbuds status > "$earbuds_dir/airpods-noheart-status.json" 2>&1
@@ -292,7 +322,7 @@ EOF
 
 leg_earbuds_assert() {
   local png count expected
-  for png in "$earbuds_b175_png" "$earbuds_soundcore_png" "$earbuds_both_png" "$earbuds_airpods_png" "$earbuds_airpods_heart_png" "$earbuds_heart_measuring_png" "$earbuds_heart_beat_dir-0.png" "$earbuds_airpods_hung_png" "$earbuds_refused_png"; do
+  for png in "$earbuds_b175_png" "$earbuds_soundcore_png" "$earbuds_both_png" "$earbuds_airpods_png" "$earbuds_airpods_heart_png" "$earbuds_heart_measuring_png" "$earbuds_heart_point_png" "$earbuds_heart_beat_dir-0.png" "$earbuds_airpods_hung_png" "$earbuds_refused_png"; do
     [ -s "$png" ] || fail "earbuds: no screenshot at $png"
   done
   echo "SMOKE_EARBUDS_B175 $earbuds_b175_png"
@@ -301,6 +331,7 @@ leg_earbuds_assert() {
   echo "SMOKE_EARBUDS_AIRPODS $earbuds_airpods_png"
   echo "SMOKE_EARBUDS_AIRPODS_HEART $earbuds_airpods_heart_png"
   echo "SMOKE_EARBUDS_HEART_MEASURING $earbuds_heart_measuring_png"
+  echo "SMOKE_EARBUDS_HEART_POINT $earbuds_heart_point_png"
   local beat n
   for beat in "$earbuds_heart_beat_dir"-*.png; do
     n=${beat##*-}
@@ -359,7 +390,18 @@ noise:anc
 noise:transparency
 noise:adaptive
 noise:off
-heartrate:off" ] || fail "earbuds: librepods should get exactly heartrate:on, off and on again across the reopen, the four noise verbs and heartrate:off (none with the service unavailable), got '$(cat "$earbuds_librepods_log")'"
+heartrate:off
+heartrate:on
+heartrate:off
+heartrate:on
+heartrate:off" ] || fail "earbuds: librepods should get exactly heartrate:on, off and on again across the reopen, the four noise verbs, heartrate:off, the spot check's on and off, and on and off around the point's frame (none with no bud in or the service unavailable), got '$(cat "$earbuds_librepods_log")'"
+  echo "spot check:"; "$jq_bin" -c '.device.heartRate | {streaming, points}' "$earbuds_dir/airpods-status-point.json"
+  got=$("$jq_bin" -r '.device.heartRate | [.streaming, (.points | length), (.points[0].bpm >= 70 and .points[0].bpm <= 80), (.points[0].atMs > 0)] | map(tostring) | join(",")' "$earbuds_dir/airpods-status-point.json" 2>/dev/null)
+  [ "$got" = "false,1,true,true" ] \
+    || fail "earbuds: a finished spot check should leave the stream stopped and one point of 70 to 80 bpm, got '$got' from $(cat "$earbuds_dir/airpods-status-point.json")"
+  for line in "heart check skipped, no bud in" "heart check skipped, heart rate unavailable"; do
+    grep -qF "earbuds: $line" "$shell_log_path" || fail "earbuds: no spot check was skipped with '$line' in the shell log"
+  done
   echo "heart rate:"; "$jq_bin" -c '.device.heartRate' "$earbuds_dir/airpods-status-heart.json"
   got=$("$jq_bin" -r '.device.heartRate | [.streaming, .settled, .inEar, (.bpm >= 70 and .bpm <= 80), (.history | length >= 2), (.history | all(. >= 70 and . <= 80))] | map(tostring) | join(",")' "$earbuds_dir/airpods-status-heart.json" 2>/dev/null)
   [ "$got" = "true,true,true,true,true,true" ] \

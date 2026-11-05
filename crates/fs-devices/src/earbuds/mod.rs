@@ -269,6 +269,26 @@ pub struct HeartSample {
 /// How many settled samples the history keeps, one a second.
 pub const HEART_HISTORY: usize = 120;
 
+/// How far back the spot check points reach.
+pub const HEART_POINTS_MS: u64 = 4 * 60 * 60 * 1000;
+
+/// A spot check's point: the median of its settled samples (the lower of
+/// the middle two for an even count), at the last sample's time.
+pub fn spot_point(samples: &[HeartSample]) -> Option<HeartSample> {
+    let last = samples.last()?;
+    let mut bpms: Vec<Bpm> = samples.iter().map(|s| s.bpm).collect();
+    bpms.sort();
+    Some(HeartSample { bpm: bpms[(bpms.len() - 1) / 2], at_ms: last.at_ms })
+}
+
+/// Appends `point` and drops the points more than [`HEART_POINTS_MS`]
+/// older than it.
+pub fn keep_point(points: &mut Vec<HeartSample>, point: HeartSample) {
+    points.push(point);
+    let since = point.at_ms.saturating_sub(HEART_POINTS_MS);
+    points.retain(|p| p.at_ms >= since);
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HeartRate {
     /// The stream can be started on this link without disturbing it.
@@ -283,6 +303,10 @@ pub struct HeartRate {
     /// Settled samples, oldest first, at most [`HEART_HISTORY`]. Kept by the
     /// service across status reloads through [`HeartRate::record`].
     pub history: Vec<HeartSample>,
+    /// One point per background spot check, oldest first, the median of
+    /// its settled samples. Kept by the service for the session through
+    /// [`keep_point`].
+    pub points: Vec<HeartSample>,
 }
 
 impl HeartRate {
@@ -688,6 +712,7 @@ fn heart_json(hr: &HeartRate) -> Json {
         "settled": hr.settled,
         "inEar": hr.in_ear,
         "history": hr.history.iter().map(|s| s.bpm.get()).collect::<Vec<_>>(),
+        "points": hr.points.iter().map(|s| serde_json::json!({"bpm": s.bpm.get(), "atMs": s.at_ms})).collect::<Vec<_>>(),
     })
 }
 
@@ -769,6 +794,26 @@ mod tests {
         hr.latest = Some(sample(90.0, 999_999));
         hr.record(&mut history);
         assert_eq!(history.last().unwrap().at_ms, 3000 + 199 * 1000);
+    }
+
+    #[test]
+    fn a_spot_check_leaves_its_median() {
+        assert_eq!(spot_point(&[]), None);
+        let samples = [sample(72.0, 1), sample(80.0, 2), sample(70.0, 3), sample(74.0, 4)];
+        assert_eq!(spot_point(&samples), Some(sample(72.0, 4)));
+        assert_eq!(spot_point(&samples[..3]), Some(sample(72.0, 3)));
+    }
+
+    #[test]
+    fn points_reach_back_four_hours() {
+        let minute = 60 * 1000;
+        let mut points = Vec::new();
+        for i in 0..30u64 {
+            keep_point(&mut points, sample(60.0 + i as f64, i * 10 * minute));
+        }
+        assert_eq!(points.len(), 25, "every 10 minutes over 4 hours, both ends kept");
+        assert_eq!(points.first().unwrap().at_ms, 5 * 10 * minute);
+        assert_eq!(points.last().unwrap().at_ms, 29 * 10 * minute);
     }
 
     #[test]

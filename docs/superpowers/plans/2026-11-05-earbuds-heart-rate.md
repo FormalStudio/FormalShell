@@ -63,3 +63,32 @@ with a `HeartRate`, following `docs/DESIGN.md` and the panel language check:
 - Honest states: no settled sample yet reads "Measuring", no bud in reads
   "Put an AirPod in", never a made-up number or trace.
 - Photographed dark and `--light`.
+
+## Task 3: spot checks in the background
+
+The panel opening to "Measuring" every time is the cost of streaming only
+while it is open; streaming always costs the buds' battery and a wakeup a
+second. So the service takes a spot check on its own:
+
+- Every 10 minutes, while the active AirPods are connected, report
+  `available`, have a bud in and the panel is closed: `heartrate:on`, keep
+  the status file watched, take the settled samples for 30 s past the first
+  settled one (or give up 20 s in with none), then `heartrate:off`. A check
+  is skipped, not queued, when any condition fails; the panel opening
+  mid-check simply carries on live and its close sends the off.
+- Each check leaves one point: the median of its settled samples and its
+  wall-clock time. Points are kept in the service for the session (no
+  state.json), capped at 4 hours' worth, and survive the panel closing.
+  Live samples while the panel is open stay as today.
+- The panel, before its own first settled sample, shows the latest point as
+  the readout with its age ("62 BPM, 4 min ago", the heart still, not
+  beating) and the trace of points; once live samples settle it switches to
+  the live readout and trace as today. No point and no live sample is still
+  "Measuring".
+- Between checks nothing wakes: no watch held, no timer finer than the
+  10-minute one.
+- Rig: the interval and window come from one place a leg can shorten
+  (an env var read at start, as other legs do); the `--earbuds` leg runs
+  one background check with the panel closed (stub log reads exactly
+  `heartrate:on` then `heartrate:off`, no verb when `available` is false
+  or no bud is in), then opens the panel and photographs the point readout.

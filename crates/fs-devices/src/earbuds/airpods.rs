@@ -222,6 +222,7 @@ pub fn heart_rate(status: &Status) -> Option<HeartRate> {
         settled: hr.settled && latest.is_some(),
         in_ear: status.left.in_ear || status.right.in_ear,
         history: Vec::new(),
+        points: Vec::new(),
     })
 }
 

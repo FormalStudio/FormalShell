@@ -378,6 +378,23 @@ async fn airpods_send(socket: PathBuf, verb: String) -> bool {
     .await
 }
 
+/// How often a spot check runs, how long it takes settled samples past the
+/// first, and when it gives up with none. `FORMALSHELL_SMOKE_HEART_CHECK`
+/// (`<interval>,<window>` in seconds, read at start) shortens the first two
+/// for the rig.
+const CHECK_EVERY: Duration = Duration::from_secs(10 * 60);
+const CHECK_WINDOW: Duration = Duration::from_secs(30);
+const CHECK_GIVE_UP: Duration = Duration::from_secs(20);
+
+fn check_times() -> (Duration, Duration) {
+    let raw = std::env::var("FORMALSHELL_SMOKE_HEART_CHECK").unwrap_or_default();
+    let mut parts = raw.split(',').map(|p| p.trim().parse::<f64>().ok().filter(|n| *n > 0.0).map(Duration::from_secs_f64));
+    match (parts.next().flatten(), parts.next().flatten()) {
+        (Some(every), Some(window)) => (every, window),
+        _ => (CHECK_EVERY, CHECK_WINDOW),
+    }
+}
+
 /// The AirPods backend over the omarchy-pods librepods daemon: its whole
 /// state is one status.json it rewrites atomically on change and removes on
 /// quit, so a missing file is the daemon being down. A daemon whose event
@@ -386,52 +403,108 @@ async fn airpods_send(socket: PathBuf, verb: String) -> bool {
 ///
 /// The heart rate stream runs while the panel is open: `heartrate:on` once
 /// the daemon reports the service available (never before, see
-/// [`airpods::heart_command`]), `heartrate:off` on close.
+/// [`airpods::heart_command`]), `heartrate:off` on close. Every
+/// [`CHECK_EVERY`] with the panel shut, one read of the file decides on a
+/// spot check, which streams for its window and leaves one point; between
+/// checks it adds no watch and no timer of its own.
 async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
     let path = status_path();
+    let (every, window) = check_times();
     let mut watch: Option<Watch> = None;
+    let mut held = false;
     let mut air = Airpods::default();
+    let mut next_check = Instant::now() + every;
     loop {
-        // None: the status file may read differently.
-        let event = match watch.as_mut() {
-            Some(w) => {
-                future::or(async { Some(rx.recv().await) }, async {
-                    w.changed().await;
-                    None
-                })
-                .await
+        let due = air.check.as_ref().map_or(next_check, |c| c.deadline(window).min(next_check));
+        let wake = future::or(
+            async {
+                match rx.recv().await {
+                    Ok(e) => Wake::Event(e),
+                    Err(_) => Wake::Closed,
+                }
+            },
+            future::or(
+                async {
+                    match watch.as_mut() {
+                        Some(w) => w.changed().await,
+                        None => future::pending::<()>().await,
+                    }
+                    Wake::File
+                },
+                async {
+                    Timer::at(due).await;
+                    Wake::Timer
+                },
+            ),
+        )
+        .await;
+        match wake {
+            Wake::Closed => return,
+            Wake::Timer => {
+                let now = Instant::now();
+                if air.check.as_ref().is_some_and(|c| c.deadline(window) <= now) {
+                    air.end_check(&ctx, &path).await;
+                }
+                if next_check <= now {
+                    next_check = now + every;
+                    air.tick(&ctx, &path).await;
+                }
             }
-            None => Some(rx.recv().await),
-        };
-        let event = match event {
-            Some(Ok(e)) => Some(e),
-            Some(Err(_)) => return,
-            None => None,
-        };
-        match event {
-            None => air.load(&ctx, &path).await,
-            Some(Event::Hold(true)) => {
-                watch = Watch::new(path.clone()).ok();
-                air.load(&ctx, &path).await;
-            }
-            Some(Event::Hold(false)) => watch = None,
-            Some(Event::Panel(open)) => {
+            Wake::File => air.load(&ctx, &path).await,
+            Wake::Event(Event::Hold(on)) => held = on,
+            Wake::Event(Event::Panel(open)) => {
                 air.panel = open;
                 if open {
+                    // A check under way carries on as the live stream.
+                    if let Some(c) = air.check.take() {
+                        air.keep(&c);
+                    }
                     air.load(&ctx, &path).await;
                 } else {
+                    next_check = Instant::now() + every;
                     air.history.clear();
                     if std::mem::take(&mut air.heart_on) && air.send("heartrate:off".into()).await {
                         air.load(&ctx, &path).await;
                     }
                 }
             }
-            Some(Event::Op(Op::Airpods(verb))) => {
+            Wake::Event(Event::Op(Op::Airpods(verb))) => {
                 if air.send(verb).await {
                     air.load(&ctx, &path).await;
                 }
             }
-            Some(_) => {}
+            Wake::Event(_) => {}
+        }
+        let want = held || air.check.is_some();
+        if want != watch.is_some() {
+            watch = if want { Watch::new(path.clone()).ok() } else { None };
+            if want {
+                air.load(&ctx, &path).await;
+            }
+        }
+    }
+}
+
+enum Wake {
+    Event(Event),
+    Closed,
+    /// The status file may read differently.
+    File,
+    Timer,
+}
+
+/// One background spot check under way.
+struct Check {
+    started: Instant,
+    first_settled: Option<Instant>,
+    samples: Vec<HeartSample>,
+}
+
+impl Check {
+    fn deadline(&self, window: Duration) -> Instant {
+        match self.first_settled {
+            Some(at) => at + window,
+            None => self.started + CHECK_GIVE_UP,
         }
     }
 }
@@ -446,16 +519,27 @@ struct Airpods {
     /// Settled samples, kept across reloads; each status line carries only
     /// the last one.
     history: Vec<HeartSample>,
+    check: Option<Check>,
+    /// The spot checks' points, kept for the session.
+    points: Vec<HeartSample>,
+    /// The last reason a check was skipped with the buds connected, logged
+    /// once per change.
+    skipped: Option<&'static str>,
 }
 
 impl Airpods {
-    async fn load(&mut self, ctx: &Ctx, path: &std::path::Path) {
+    async fn read(&self, ctx: &Ctx, path: &std::path::Path) -> airpods::Status {
         let path = path.to_path_buf();
         let text = ctx.pool().run(move || std::fs::read_to_string(&path).unwrap_or_default()).await.unwrap_or_default();
-        let status = airpods::parse_status(text.trim());
+        airpods::parse_status(text.trim())
+    }
+
+    async fn load(&mut self, ctx: &Ctx, path: &std::path::Path) {
+        let status = self.read(ctx, path).await;
         if !status.ok {
             self.heart_on = false;
             self.history.clear();
+            self.check = None;
         }
         self.publish(ctx, &status);
         if self.panel && !self.heart_on && let Some(verb) = airpods::heart_command(&status, true) {
@@ -466,6 +550,53 @@ impl Airpods {
         }
     }
 
+    /// The spot check's turn: one read of the file, and a check started
+    /// only on connected AirPods carrying the service with a bud in.
+    async fn tick(&mut self, ctx: &Ctx, path: &std::path::Path) {
+        if self.panel || self.heart_on || self.check.is_some() {
+            return;
+        }
+        let status = self.read(ctx, path).await;
+        if !status.ok || !status.connected {
+            self.skipped = None;
+            return;
+        }
+        let skip = if airpods::heart_command(&status, true).is_none() {
+            Some("heart rate unavailable")
+        } else if !(status.left.in_ear || status.right.in_ear) {
+            Some("no bud in")
+        } else {
+            None
+        };
+        if let Some(why) = skip {
+            if self.skipped.replace(why) != Some(why) {
+                eprintln!("earbuds: heart check skipped, {why}");
+            }
+            return;
+        }
+        self.skipped = None;
+        self.heart_on = true;
+        self.check = Some(Check { started: Instant::now(), first_settled: None, samples: Vec::new() });
+        if self.send("heartrate:on".into()).await {
+            self.publish(ctx, &status);
+        }
+    }
+
+    fn keep(&mut self, check: &Check) {
+        if let Some(point) = model::spot_point(&check.samples) {
+            model::keep_point(&mut self.points, point);
+        }
+    }
+
+    async fn end_check(&mut self, ctx: &Ctx, path: &std::path::Path) {
+        let Some(check) = self.check.take() else { return };
+        self.keep(&check);
+        if std::mem::take(&mut self.heart_on) {
+            self.send("heartrate:off".into()).await;
+        }
+        self.load(ctx, path).await;
+    }
+
     fn publish(&mut self, ctx: &Ctx, status: &airpods::Status) {
         let mut backend = Backend::new(status.ok);
         backend.devices = airpods::normalise(status);
@@ -474,8 +605,17 @@ impl Airpods {
                 d.state_line = AIRPODS_STALLED.into();
             }
             if let Some(hr) = d.heart_rate.as_mut() {
-                hr.record(&mut self.history);
+                match self.check.as_mut() {
+                    Some(check) => {
+                        hr.record(&mut check.samples);
+                        if check.first_settled.is_none() && !check.samples.is_empty() {
+                            check.first_settled = Some(Instant::now());
+                        }
+                    }
+                    None => hr.record(&mut self.history),
+                }
                 hr.history = self.history.clone();
+                hr.points = self.points.clone();
             }
         }
         publish(ctx, airpods::BACKEND, backend);
