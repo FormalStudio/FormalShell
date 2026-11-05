@@ -521,7 +521,9 @@ impl Host {
 
     /// Lays the frame out for this frame and draws everything on it.
     pub fn layout(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
+        let t0 = Instant::now();
         let (tw, th, content_h, follows) = self.target_size(theme, kit, store, now);
+        let sized = t0.elapsed();
         self.content_h = content_h;
         let spatial = Clock::Spatial.ms(theme) * self.scale;
         let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, SPATIAL), Animated::new(th, SPATIAL)));
@@ -564,6 +566,9 @@ impl Host {
             self.card.tick(now);
         }
         self.draw(store, theme, kit, now);
+        if t0.elapsed().as_millis() >= 4 {
+            eprintln!("event loop: slow panel {} size_us={} total_us={}", self.module.id(), sized.as_micros(), t0.elapsed().as_micros());
+        }
     }
 
     /// Input everywhere while open (a click outside closes) but over the

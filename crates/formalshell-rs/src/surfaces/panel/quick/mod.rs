@@ -619,8 +619,8 @@ fn opener(id: &str) -> String {
 }
 
 /// The one in-place menu: what is asked for, what is drawn, and its three
-/// clocks (§2 Motion). Opening grows the box, then fades its rows in;
-/// closing fades them out, then shrinks it; the dim rides beside both.
+/// clocks (§2 Motion). Opening grows the box and fades its rows in together;
+/// closing fades them out and shrinks it together; the dim rides beside both.
 struct MenuState {
     /// The menu asked for, none to close.
     want: Option<String>,
@@ -630,9 +630,9 @@ struct MenuState {
     shown: Option<String>,
     /// The box's share of its height, `spatialFast`.
     height: Animated,
-    /// The rows' opacity, `effects`.
+    /// The rows' opacity, `effectsFast`.
     content: Animated,
-    /// The dim's share, `effectsSlow`.
+    /// The dim's share, `effects`.
     dim: Animated,
     /// The power row a first Enter armed.
     armed: Option<String>,
@@ -649,8 +649,8 @@ impl Default for MenuState {
             aimed: None,
             shown: None,
             height: Animated::new(0.0, Clock::SpatialFast.curve()),
-            content: Animated::new(0.0, Clock::Effects.curve()),
-            dim: Animated::new(0.0, Clock::EffectsSlow.curve()),
+            content: Animated::new(0.0, Clock::EffectsFast.curve()),
+            dim: Animated::new(0.0, Clock::Effects.curve()),
             armed: None,
             entered: false,
             cursor: None,
@@ -663,7 +663,7 @@ struct Frame {
     id: Option<String>,
     height: f64,
     content: f32,
-    /// Its rows take the keyboard: the box has landed open.
+    /// Its rows take the keyboard: the menu is open, however far it has grown.
     ready: bool,
     /// The dim's share over everything but the menu.
     dim: f32,
@@ -679,30 +679,25 @@ impl MenuState {
             match (&self.want, &self.shown) {
                 (Some(want), Some(shown)) if want == shown => {
                     self.height.set(now, 1.0, ms(Clock::SpatialFast) * (1.0 - h));
+                    self.content.set(now, 1.0, ms(Clock::EffectsFast) * (1.0 - c));
                 }
                 (Some(want), _) => {
                     self.shown = Some(want.clone());
                     self.height.jump(0.0);
                     self.content.jump(0.0);
                     self.height.set(now, 1.0, ms(Clock::SpatialFast));
+                    self.content.set(now, 1.0, ms(Clock::EffectsFast));
                 }
                 (None, _) => {
-                    let fade = ms(Clock::Effects) * c;
-                    self.content.set(now, 0.0, fade);
-                    self.height.set_after(now, 0.0, ms(Clock::SpatialFast) * h, fade);
+                    self.content.set(now, 0.0, ms(Clock::EffectsFast) * c);
+                    self.height.set(now, 0.0, ms(Clock::SpatialFast) * h);
                 }
             }
-            self.dim.set(now, if self.want.is_some() { 1.0 } else { 0.0 }, ms(Clock::EffectsSlow));
+            self.dim.set(now, if self.want.is_some() { 1.0 } else { 0.0 }, ms(Clock::Effects));
             self.aimed = self.want.clone();
         }
         if self.want.is_none() && !self.height.running(now) {
             self.shown = None;
-        }
-        // The spatial curve overshoots and comes back under 1 in its tail: the
-        // rows come in once it first lands and stay in through the rest.
-        let landed = self.height.target() == 1.0 && self.height.value(now) >= 0.999;
-        if self.want.is_some() && landed && self.content.target() != 1.0 {
-            self.content.set(now, 1.0, ms(Clock::Effects));
         }
         let ready = self.want.is_some() && self.content.target() == 1.0;
         Frame {

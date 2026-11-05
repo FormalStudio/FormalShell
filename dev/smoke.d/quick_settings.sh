@@ -24,7 +24,7 @@
 # 0.10 on the shell's cube-root scale. The Volume arrow reached from the
 # Power button by a real Down and opened by Return at a tenth speed, its
 # frames and statuses read as the rows under it moving down and the menu's
-# rows fading in only once its height has landed, the dim up from the first
+# rows already showing while its height is part way, the dim up from the first
 # frame, the last toggle reading 0.6 of its luminance once it settles and
 # the card's fill beside it its own. Down to the second sink inside the
 # stale audit and Return making it the default (`pactl get-default-sink`);
@@ -494,7 +494,7 @@ quick_settings_menu_assert() {
   echo "SMOKE_QUICK_SETTINGS Right twice on Volume: qs_one $before -> $after"
   quick_settings_walked "Down from Power lands on the Volume arrow" walk-power.txt power
   quick_settings_jq "the cursor on the Volume arrow" status-at-arrow.json '.cursor == "volume:menu" and .menu == null and .dim == false'
-  local i line h c y dim rest open grew=0 faded=0 early=0 moved=0 seen=""
+  local i line h c y dim rest open grew=0 early=0 blank=0 moved=0 seen=""
   rest=$("$jq_bin" -r '[.rows[] | select(.kind == "toggle" or .kind == "split")][0].rect.y' "$d/status-at-arrow.json")
   open=$("$jq_bin" -r '[.rows[] | select(.kind == "toggle" or .kind == "split")][0].rect.y' "$d/status-shot-menu-open.json")
   for i in $(seq 1 18); do
@@ -504,16 +504,16 @@ quick_settings_menu_assert() {
     seen="$seen $h/$c@$y:$at"
     [ "$dim" = true ] || fail "quick-settings: burst $i: the dim is not up ($line)"
     awk -v h="$h" 'BEGIN { exit !(h > 0 && h < 1) }' && grew=$((grew + 1))
-    awk -v h="$h" -v c="$c" 'BEGIN { exit !(h >= 0.98 && c > 0 && c < 1) }' && faded=$((faded + 1))
-    awk -v h="$h" -v c="$c" 'BEGIN { exit !(h < 0.98 && c > 0) }' && early=$((early + 1))
+    awk -v h="$h" -v c="$c" 'BEGIN { exit !(h > 0 && h < 0.98 && c > 0) }' && early=$((early + 1))
+    awk -v h="$h" -v c="$c" 'BEGIN { exit !(h > 0.5 && c == 0) }' && blank=$((blank + 1))
     awk -v y="$y" -v a="$rest" -v b="$open" 'BEGIN { exit !(y > a + 1 && y < b - 1) }' && moved=$((moved + 1))
   done
   echo "quick-settings burst height/content@first-toggle-y:$seen (rest $rest, open $open)"
   [ "$grew" -ge 1 ] || fail "quick-settings: no frame caught the menu's height part way"
-  [ "$faded" -ge 1 ] || fail "quick-settings: no frame caught the rows fading in after the height landed"
-  [ "$early" -eq 0 ] || fail "quick-settings: $early frames showed rows before the menu's height landed"
+  [ "$early" -ge 1 ] || fail "quick-settings: no frame showed rows while the menu's height was part way"
+  [ "$blank" -eq 0 ] || fail "quick-settings: $blank frames past half height still had no rows"
   [ "$moved" -ge 1 ] || fail "quick-settings: no frame caught the rows under the menu part way down"
-  echo "SMOKE_QUICK_SETTINGS the menu grew in $grew frames, its rows faded in over $faded after, the rows under it moving in $moved"
+  echo "SMOKE_QUICK_SETTINGS the menu grew in $grew frames, its rows showed part way in $early frames, the rows under it moving in $moved"
   quick_settings_jq "the open menu lists the sinks with the default checked, Sound settings last" status-shot-menu-open.json '
     .menu.id == "volume" and .dim == true
     and ([.menu.rows[] | select(.id == "m:volume:qs_one")][0].checked == true)

@@ -27,7 +27,7 @@ taken as they are; fills, rings, radii and clocks come from our table
 | Off and on | off is the plain button fill (fg mixed 9% dark, 12% light into bg); on (`:checked`) is the accent fill with accent-fg ink | `_quick-settings.scss:24`, `scss/_common.scss:101-128` |
 | Split toggle | `[toggle | 1px separator | menu button]`; the button is `go-next-symbolic`, 6 by 10.5 padding, its own fill; clicking the toggle part toggles, the arrow opens the menu; `menuEnabled` hides the arrow and separator | `quickSettings.js:143-238`, `_quick-settings.scss:51-135` |
 | In-place menu | a card in an overlay bound to the grid's width, placed under the toggle's row; the rows after it move down by its height | `quickSettings.js:367-383, 733-735, 784-819` |
-| Menu motion | height grows over 200ms, then the content fades in over 200ms; closing reverses; the rest of the menu dims to brightness -0.4 over 400ms ease-out-quad | `quickSettings.js:16-17, 463-525, 860-875` |
+| Menu motion | height grows over 200ms, then the content fades in over 200ms (ours run together); closing reverses; the rest of the menu dims to brightness -0.4 over 400ms ease-out-quad | `quickSettings.js:16-17, 463-525, 860-875` |
 | Menu box | `%card`, radius 24, padding 12, 12 under its row | `_quick-settings.scss:150-160` |
 | Menu header | icon 24 in a round chip 9 padding (`fg` at 0.2, accent when the toggle is on), title `%title_3`, 12 under it; `setHeader` takes a subtitle (`%caption_heading`) but no menu in 51.0 passes one: "Sound Output", "Sound Input", "Wired Connections", "Wi-Fi", "Bluetooth", "Power Mode", "Power Off" | `quickSettings.js:390-454`, `_quick-settings.scss:167-199` |
 | Menu rows | `popup-menu-item` 9 by 12 padding, radius 12; a separator, then a settings row last ("All Networks", "Bluetooth Settings", "Power Settings", "Sound Settings") | `scss/widgets/_popovers.scss:36-40`, `js/ui/popupMenu.js:710-728` |
@@ -111,8 +111,9 @@ shadows, menu radius, eased hover) reaches it with no change here.
 ### Motion
 
 The in-place menu's height and the rows under it travel on `spatialFast`;
-the menu's content fades in on `effects` (200, GNOME's 200) once the height
-lands and out before it shrinks; the dim rises and falls on `effectsSlow`.
+the menu's content fades in on `effectsFast` from the same instant, and out
+on it while the height shrinks, so a row shows and takes a key as the menu
+opens; the dim rises and falls on `effects`.
 A toggle's fill crosses on `Cx::color`. The card itself arrives as every
 panel does (join or popover, `motion.morph`). GNOME's clock lengths differ
 from ours by design: the clocks are the theme's.
@@ -343,7 +344,7 @@ Ours by design, the table's material and not a defect:
   `panel_row` with its device chip and check mark.
 - The slider: GNOME's round knob over an accent track; ours the kit's
   slider.
-- Clocks: the menu's grow and fade run on our `spatialFast` and `effects`.
+- Clocks: the menu grows on our `spatialFast`, its fade on `effectsFast`, its dim on `effects`.
 - Light: under Settings' Default style (`color-scheme` `default`) GNOME
   51.0 keeps its shell dark, so its light captures show a dark card; ours
   follows `theme.mode` like every surface and goes light.
