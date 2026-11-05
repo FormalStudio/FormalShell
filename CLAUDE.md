@@ -538,7 +538,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and `eq-custom 5 0 -2` and openscq30 as one `--set
   ambientSoundMode=NoiseCanceling`; every AirPods listening mode reaches
   the stub as exactly `noise:<mode>` and the panel holds the mode it
-  reports back, and a stub that never accepts (a daemon whose event loop
+  reports back. With the stub's `heart_rate` available, opening the panel
+  reaches it as `heartrate:on`, `earbuds status`'s `heartRate` reads a
+  settled bpm and a history once the stub's warm-up values pass (the frame
+  photographed), and closing it sends `heartrate:off`; the same AirPods
+  with the service unavailable get no heart rate verb and no `heartRate`.
+  A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once
   and no device is listed. The rig has no Bluetooth controller, so the leg

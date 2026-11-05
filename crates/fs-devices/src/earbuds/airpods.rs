@@ -15,7 +15,8 @@
 use serde_json::Value as Json;
 
 use super::{
-    Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Value, choice, device, range, toggle, Unit,
+    Battery, BatteryId, Bpm, ControlOption, Device, DeviceFields, DeviceKind, HeartRate, HeartSample, Value, choice, device, range,
+    toggle, Unit,
 };
 use fs_js as js;
 
@@ -62,6 +63,21 @@ impl Default for CaseBattery {
     }
 }
 
+/// status.json's `heart_rate`, absent from a daemon that predates it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HeartStatus {
+    pub wanted: bool,
+    /// The buds published their heart rate service on this link. Only then
+    /// is `heartrate:on` safe: sent without it, the daemon drops and
+    /// reconnects the link (about 5 s of silence).
+    pub available: bool,
+    pub streaming: bool,
+    pub bpm: f64,
+    pub settled: bool,
+    /// Wall-clock milliseconds of the last sample, 0 for none.
+    pub sampled_at_ms: u64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Status {
     pub ok: bool,
@@ -80,6 +96,7 @@ pub struct Status {
     pub one_bud_anc: bool,
     pub ear_detection: f64,
     pub lid_state: f64,
+    pub heart_rate: HeartStatus,
 }
 
 impl Default for Status {
@@ -101,6 +118,7 @@ impl Default for Status {
             one_bud_anc: false,
             ear_detection: 0.0,
             lid_state: 2.0,
+            heart_rate: HeartStatus::default(),
         }
     }
 }
@@ -140,6 +158,20 @@ fn parse_case(raw: Option<&Json>) -> CaseBattery {
     }
 }
 
+fn parse_heart(raw: Option<&Json>) -> HeartStatus {
+    match raw.filter(|r| js::is_object_like(r)) {
+        None => HeartStatus::default(),
+        Some(raw) => HeartStatus {
+            wanted: flag(raw, "wanted"),
+            available: flag(raw, "available"),
+            streaming: flag(raw, "streaming"),
+            bpm: number(raw, "bpm").unwrap_or(0.0),
+            settled: flag(raw, "settled"),
+            sampled_at_ms: number(raw, "sampled_at_ms").filter(|n| *n > 0.0).map_or(0, |n| n as u64),
+        },
+    }
+}
+
 /// `text`: one line of the daemon's own JSON, or "" / malformed / a foreign
 /// schema_version. Every one of those returns the same complete default shape
 /// (`ok: false`) rather than a partial one: a caller checks `ok` once.
@@ -170,7 +202,27 @@ pub fn parse_status(text_in: &str) -> Status {
     result.one_bud_anc = flag(&raw, "one_bud_anc_mode");
     result.ear_detection = number(&raw, "ear_detection_behavior").unwrap_or(0.0);
     result.lid_state = number(&raw, "lid_state").unwrap_or(2.0);
+    result.heart_rate = parse_heart(js::field(&raw, "heart_rate"));
     result
+}
+
+/// The device's heart rate, only while the link carries the service or the
+/// daemon is streaming. History is the caller's: a status line knows only
+/// the last sample.
+pub fn heart_rate(status: &Status) -> Option<HeartRate> {
+    let hr = &status.heart_rate;
+    if !status.connected || !(hr.available || hr.streaming) {
+        return None;
+    }
+    let latest = Bpm::new(hr.bpm).filter(|_| hr.sampled_at_ms > 0).map(|bpm| HeartSample { bpm, at_ms: hr.sampled_at_ms });
+    Some(HeartRate {
+        available: hr.available,
+        streaming: hr.streaming,
+        latest,
+        settled: hr.settled && latest.is_some(),
+        in_ear: status.left.in_ear || status.right.in_ear,
+        history: Vec::new(),
+    })
 }
 
 pub fn lid_label(n: f64) -> &'static str {
@@ -307,7 +359,7 @@ pub fn normalise(status: &Status) -> Vec<Device> {
     if !status.connected && batteries.is_empty() {
         return Vec::new();
     }
-    vec![device(DeviceFields {
+    let mut dev = device(DeviceFields {
         key: BACKEND.into(),
         backend: BACKEND.into(),
         address: String::new(),
@@ -318,7 +370,9 @@ pub fn normalise(status: &Status) -> Vec<Device> {
         controls: controls(status),
         state_line: state_line(status),
         art: art(status),
-    })]
+    });
+    dev.heart_rate = heart_rate(status);
+    vec![dev]
 }
 
 /// The daemon socket's own verbs (`daemon/librepods-ctl.cpp`'s usage text,
@@ -336,6 +390,15 @@ pub fn command(control_key: &str, value: &Value) -> Option<String> {
     }
 }
 
+/// The verb starting or stopping the stream. `None` for on unless the
+/// daemon reports the service available on a connected link.
+pub fn heart_command(status: &Status, on: bool) -> Option<&'static str> {
+    if !on {
+        return Some("heartrate:off");
+    }
+    (status.connected && status.heart_rate.available).then_some("heartrate:on")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,6 +413,15 @@ mod tests {
     const FRESH_DAEMON: &str = r#"{"adaptive_noise_level":0,"connected":false,"conversational_awareness":false,"device_name":"","ear_detection_behavior":0,"is_pro_series":false,"lid_state":2,"model_int":0,"model_name":"","model_number":"","noise_mode":-1,"one_bud_anc_mode":false,"schema_version":1,"supports_noise_off":true}"#;
 
     const IN_CASE: &str = r#"{"adaptive_noise_level":0,"case":{"available":true,"charging":true,"level":45},"connected":false,"conversational_awareness":true,"device_name":"Kyan's AirPods Pro","ear_detection_behavior":0,"is_pro_series":true,"left":{"available":true,"charging":true,"in_ear":false,"level":72},"lid_state":1,"model_int":1,"model_name":"AirPods Pro 3","model_number":"A3456","noise_mode":-1,"one_bud_anc_mode":false,"right":{"available":true,"charging":true,"in_ear":false,"level":71},"schema_version":1,"supports_noise_off":false}"#;
+
+    fn with_heart(base: &str, heart: &str) -> String {
+        base.replace("\"schema_version\":1", &format!("\"heart_rate\":{heart},\"schema_version\":1"))
+    }
+
+    const HEART_IDLE: &str = r#"{"available":true,"bpm":0,"sampled_at_ms":0,"settled":false,"streaming":false,"wanted":false}"#;
+    const HEART_WARMING: &str = r#"{"available":true,"bpm":169,"sampled_at_ms":1762300000000,"settled":false,"streaming":true,"wanted":true}"#;
+    const HEART_SETTLED: &str = r#"{"available":true,"bpm":72,"sampled_at_ms":1762300005000,"settled":true,"streaming":true,"wanted":true}"#;
+    const HEART_ABSENT: &str = r#"{"available":false,"bpm":0,"sampled_at_ms":0,"settled":false,"streaming":false,"wanted":false}"#;
 
     fn wrong_schema() -> String {
         PRO3.replace("\"schema_version\":1", "\"schema_version\":2")
@@ -526,6 +598,56 @@ mod tests {
         assert_eq!(via("adaptive", "42").as_deref(), Some("adaptive:42"));
         assert_eq!(via("noise", "transparency").as_deref(), Some("noise:transparency"));
         assert_eq!(coerce(control(Some(&d), "noise"), &"off".into()), None);
+    }
+
+    #[test]
+    fn heart_rate_idle_available_has_no_sample() {
+        let s = parse_status(&with_heart(PRO3, HEART_IDLE));
+        assert!(s.heart_rate.available);
+        let hr = device_of(&with_heart(PRO3, HEART_IDLE)).heart_rate.unwrap();
+        assert!(hr.available);
+        assert!(!hr.streaming);
+        assert_eq!(hr.latest, None);
+        assert!(!hr.settled);
+        assert!(hr.in_ear);
+        assert_eq!(heart_command(&s, true), Some("heartrate:on"));
+    }
+
+    #[test]
+    fn heart_rate_warming_then_settled() {
+        let warm = device_of(&with_heart(PRO3, HEART_WARMING)).heart_rate.unwrap();
+        assert_eq!(warm.latest.map(|s| s.bpm.get()), Some(169));
+        assert!(!warm.settled);
+        let mut history = Vec::new();
+        warm.record(&mut history);
+        assert!(history.is_empty());
+
+        let settled = device_of(&with_heart(PRO3, HEART_SETTLED)).heart_rate.unwrap();
+        assert!(settled.streaming);
+        assert!(settled.settled);
+        assert_eq!(settled.latest.unwrap().at_ms, 1_762_300_005_000);
+        settled.record(&mut history);
+        assert_eq!(history.iter().map(|s| s.bpm.get()).collect::<Vec<_>>(), vec![72]);
+    }
+
+    #[test]
+    fn heart_rate_unavailable_is_absent_and_never_started() {
+        for text in [with_heart(PRO3, HEART_ABSENT), PRO3.to_string()] {
+            let s = parse_status(&text);
+            assert!(device_of(&text).heart_rate.is_none());
+            assert_eq!(heart_command(&s, true), None);
+            assert_eq!(heart_command(&s, false), Some("heartrate:off"));
+        }
+        // In the case with the link down nothing is streamed or started.
+        let in_case = with_heart(IN_CASE, HEART_IDLE);
+        assert!(device_of(&in_case).heart_rate.is_none());
+        assert_eq!(heart_command(&parse_status(&in_case), true), None);
+    }
+
+    #[test]
+    fn heart_rate_with_no_bud_in() {
+        let out = with_heart(PRO3, HEART_SETTLED).replace("\"in_ear\":true", "\"in_ear\":false");
+        assert!(!device_of(&out).heart_rate.unwrap().in_ear);
     }
 
     #[test]

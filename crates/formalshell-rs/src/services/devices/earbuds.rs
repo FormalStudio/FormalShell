@@ -28,7 +28,7 @@ use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use async_process::{ChildStdin, Stdio};
 use fs_devices::bluetooth::Device as BtDevice;
-use fs_devices::earbuds::{self as model, Device, Value, airpods, nothing, samsung, soundcore};
+use fs_devices::earbuds::{self as model, Device, HeartSample, Value, airpods, nothing, samsung, soundcore};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt, future};
 
@@ -221,6 +221,7 @@ fn status_path() -> PathBuf {
 
 enum Msg {
     Hold(bool),
+    Panel(bool),
     Bluetooth(Vec<BtDevice>),
     Op(Op),
 }
@@ -243,10 +244,12 @@ pub fn release() {
 
 static PANEL: AtomicBool = AtomicBool::new(false);
 
-/// The earbuds panel's hold, taken while it is open.
+/// The earbuds panel's hold, taken while it is open. It also runs the
+/// AirPods heart rate stream, which nothing else reads.
 pub fn panel(open: bool) {
     if PANEL.swap(open, Ordering::Relaxed) != open {
         send(Msg::Hold(open));
+        send(Msg::Panel(open));
     }
 }
 
@@ -265,6 +268,7 @@ fn publish(ctx: &Ctx, name: &'static str, backend: Backend) {
 
 enum Event {
     Hold(bool),
+    Panel(bool),
     Bluetooth(Vec<BtDevice>),
     Op(Op),
 }
@@ -310,6 +314,9 @@ pub fn start(ctx: &Ctx) {
             for msg in batch {
                 match msg {
                 Msg::Hold(_) => {}
+                Msg::Panel(open) => {
+                    let _ = air_tx.try_send(Event::Panel(open));
+                }
                 Msg::Bluetooth(devices) => {
                     let _ = not_tx.try_send(NEvent::Bluetooth(devices.clone()));
                     let _ = scq_tx.try_send(Event::Bluetooth(devices.clone()));
@@ -376,25 +383,14 @@ async fn airpods_send(socket: PathBuf, verb: String) -> bool {
 /// quit, so a missing file is the daemon being down. A daemon whose event
 /// loop is stuck leaves the file in place and never takes a verb; a write
 /// it never answers marks the device until one is answered.
+///
+/// The heart rate stream runs while the panel is open: `heartrate:on` once
+/// the daemon reports the service available (never before, see
+/// [`airpods::heart_command`]), `heartrate:off` on close.
 async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
     let path = status_path();
     let mut watch: Option<Watch> = None;
-    let stalled = Rc::new(Cell::new(false));
-    let load = |ctx: &Ctx| {
-        let (ctx, path, stalled) = (ctx.clone(), path.clone(), stalled.clone());
-        async move {
-            let text = ctx.pool().run(move || std::fs::read_to_string(&path).unwrap_or_default()).await.unwrap_or_default();
-            let status = airpods::parse_status(text.trim());
-            let mut backend = Backend::new(status.ok);
-            backend.devices = airpods::normalise(&status);
-            if stalled.get() {
-                for d in &mut backend.devices {
-                    d.state_line = AIRPODS_STALLED.into();
-                }
-            }
-            publish(&ctx, airpods::BACKEND, backend);
-        }
-    };
+    let mut air = Airpods::default();
     loop {
         // None: the status file may read differently.
         let event = match watch.as_mut() {
@@ -413,24 +409,86 @@ async fn run_airpods(ctx: Ctx, rx: Receiver<Event>) {
             None => None,
         };
         match event {
-            None => load(&ctx).await,
+            None => air.load(&ctx, &path).await,
             Some(Event::Hold(true)) => {
                 watch = Watch::new(path.clone()).ok();
-                load(&ctx).await;
+                air.load(&ctx, &path).await;
             }
             Some(Event::Hold(false)) => watch = None,
-            Some(Event::Op(Op::Airpods(verb))) => {
-                let Some(socket) = socket_path() else { continue };
-                let taken = airpods_send(socket, verb.clone()).await;
-                if !taken {
-                    eprintln!("earbuds: librepods did not take {verb} within {}s", AIRPODS_ANSWER.as_secs());
+            Some(Event::Panel(open)) => {
+                air.panel = open;
+                if open {
+                    air.load(&ctx, &path).await;
+                } else {
+                    air.history.clear();
+                    if std::mem::take(&mut air.heart_on) && air.send("heartrate:off".into()).await {
+                        air.load(&ctx, &path).await;
+                    }
                 }
-                if stalled.replace(!taken) != !taken {
-                    load(&ctx).await;
+            }
+            Some(Event::Op(Op::Airpods(verb))) => {
+                if air.send(verb).await {
+                    air.load(&ctx, &path).await;
                 }
             }
             Some(_) => {}
         }
+    }
+}
+
+#[derive(Default)]
+struct Airpods {
+    stalled: bool,
+    panel: bool,
+    /// `heartrate:on` went out and no `off` since. A daemon restart (the
+    /// file gone) forgets it.
+    heart_on: bool,
+    /// Settled samples, kept across reloads; each status line carries only
+    /// the last one.
+    history: Vec<HeartSample>,
+}
+
+impl Airpods {
+    async fn load(&mut self, ctx: &Ctx, path: &std::path::Path) {
+        let path = path.to_path_buf();
+        let text = ctx.pool().run(move || std::fs::read_to_string(&path).unwrap_or_default()).await.unwrap_or_default();
+        let status = airpods::parse_status(text.trim());
+        if !status.ok {
+            self.heart_on = false;
+            self.history.clear();
+        }
+        self.publish(ctx, &status);
+        if self.panel && !self.heart_on && let Some(verb) = airpods::heart_command(&status, true) {
+            self.heart_on = true;
+            if self.send(verb.into()).await {
+                self.publish(ctx, &status);
+            }
+        }
+    }
+
+    fn publish(&mut self, ctx: &Ctx, status: &airpods::Status) {
+        let mut backend = Backend::new(status.ok);
+        backend.devices = airpods::normalise(status);
+        for d in &mut backend.devices {
+            if self.stalled {
+                d.state_line = AIRPODS_STALLED.into();
+            }
+            if let Some(hr) = d.heart_rate.as_mut() {
+                hr.record(&mut self.history);
+                hr.history = self.history.clone();
+            }
+        }
+        publish(ctx, airpods::BACKEND, backend);
+    }
+
+    /// True when the stalled mark changed, so the device needs publishing.
+    async fn send(&mut self, verb: String) -> bool {
+        let Some(socket) = socket_path() else { return false };
+        let taken = airpods_send(socket, verb.clone()).await;
+        if !taken {
+            eprintln!("earbuds: librepods did not take {verb} within {}s", AIRPODS_ANSWER.as_secs());
+        }
+        std::mem::replace(&mut self.stalled, !taken) == taken
     }
 }
 
@@ -498,7 +556,7 @@ async fn run_poll(ctx: Ctx, kind: Poller, rx: Receiver<Event>, epoch: Rc<Cell<u6
                 backend.available = code != -1;
                 poll = true;
             }
-            Some(Event::Op(_)) => {}
+            Some(Event::Op(_) | Event::Panel(_)) => {}
         }
         let now_key = if held { connected_key(&bt) } else { Vec::new() };
         if now_key != key {

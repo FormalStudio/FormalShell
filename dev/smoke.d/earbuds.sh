@@ -29,11 +29,17 @@
 #     openscq30 as one `setting --set ambientSoundMode=NoiseCanceling`.
 #  3. both at once, the device choice heading the panel.
 #  4. the AirPods through dev/librepods-stub.py, the omarchy-pods daemon's
-#     socket and status file: `earbuds set noise <mode>` for each of the four
-#     modes reaches the socket as exactly `noise:<mode>`, and the panel holds
-#     the mode the stub reports back. Then the stub listening without ever
-#     accepting, as e1504g's daemon did with its event loop stuck: the verb
-#     is never taken and the device says "librepods not responding".
+#     socket and status file, its `heart_rate` reporting the service
+#     available: opening the panel reaches the socket as `heartrate:on`, the
+#     stub's samples settle and `earbuds status` reads the bpm and a history
+#     back, `earbuds set noise <mode>` for each of the four modes reaches
+#     the socket as exactly `noise:<mode>`, the panel holds the mode the
+#     stub reports back, and closing it sends `heartrate:off`. The same
+#     status with the service unavailable gets no heart rate verb at all
+#     (sent then, the real daemon drops the link) and no `heartRate`. Then
+#     the stub listening without ever accepting, as e1504g's daemon did with
+#     its event loop stuck: the verb is never taken and the device says
+#     "librepods not responding".
 #  5. a device nothingctl refuses: its `watch` prints the v0.1.1
 #     `unsupported-model` line and exits 3. Twelve seconds later (past the
 #     5s first backoff every other exit gets) it was started exactly once
@@ -58,6 +64,7 @@ earbuds_b175_png="$shot_dir/earbuds-b175.png"
 earbuds_soundcore_png="$shot_dir/earbuds-soundcore.png"
 earbuds_both_png="$shot_dir/earbuds-both.png"
 earbuds_airpods_png="$shot_dir/earbuds-airpods.png"
+earbuds_airpods_heart_png="$shot_dir/earbuds-airpods-heart.png"
 earbuds_airpods_hung_png="$shot_dir/earbuds-airpods-hung.png"
 earbuds_refused_png="$shot_dir/earbuds-refused.png"
 
@@ -81,7 +88,10 @@ leg_earbuds_fixture() {
   values=$(cat dev/smoke.d/fixtures/soundcore-values-edited.json)
   airpods=$(cat dev/smoke.d/fixtures/airpods-pro2.json)
   cp dev/smoke.d/fixtures/soundcore-paired.json "$earbuds_dir/soundcore-paired-fixture.json"
-  printf '%s\n' "$airpods" > "$earbuds_dir/airpods-status.json"
+  printf '%s\n' "$airpods" | "$jq_bin" -c '.heart_rate = {"wanted":false,"available":true,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
+    > "$earbuds_dir/airpods-status.json"
+  printf '%s\n' "$airpods" | "$jq_bin" -c '.heart_rate = {"wanted":false,"available":false,"streaming":false,"bpm":0,"settled":false,"sampled_at_ms":0}' \
+    > "$earbuds_dir/airpods-status-noheart.json"
   for f in "$b175" "$settings" "$values" "$airpods"; do
     [ -n "$f" ] || { echo "earbuds: a fixture under dev/smoke.d/fixtures is missing" >&2; exit 1; }
   done
@@ -149,9 +159,9 @@ EOF
 }
 
 leg_earbuds_timing() {
-  # Five phases of sleeps (~45s) plus some twenty `ipc call` round trips at
+  # Five phases of sleeps (~55s) plus some twenty `ipc call` round trips at
   # about a second each on llvmpipe.
-  leg_timing 80 120
+  leg_timing 95 135
 }
 
 leg_earbuds_drive() {
@@ -207,14 +217,28 @@ ipc panel open earbuds > /dev/null 2>&1
 sleep 3
 ipc earbuds devices > "$earbuds_devices_airpods" 2>&1
 "$grim_bin" "$earbuds_airpods_png" > /dev/null 2>&1
+sleep 5
+ipc earbuds status > "$earbuds_dir/airpods-status-heart.json" 2>&1
+"$grim_bin" "$earbuds_airpods_heart_png" > /dev/null 2>&1
 for mode in anc transparency adaptive off; do
   echo "\$mode: \$(ipc earbuds set noise \$mode 2>&1)" >> "$earbuds_airpods_replies"
   sleep 2
   ipc earbuds status > "$earbuds_dir/airpods-status-\$mode.json" 2>&1
 done
+ipc panel close > /dev/null 2>&1
+sleep 1
+kill \$stub
+rm -f "$state_dir/status.json"
+"$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
+  --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
+stub=\$!
+sleep 1
+ipc panel open earbuds > /dev/null 2>&1
+sleep 3
+ipc earbuds status > "$earbuds_dir/airpods-noheart-status.json" 2>&1
 kill \$stub
 "$python3_bin" "$PWD/dev/librepods-stub.py" --hang --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
-  --fixture "$earbuds_dir/airpods-status.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
+  --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
 stub=\$!
 sleep 1
 echo "hung: \$(ipc earbuds set noise anc 2>&1)" >> "$earbuds_airpods_replies"
@@ -238,13 +262,14 @@ EOF
 
 leg_earbuds_assert() {
   local png count expected
-  for png in "$earbuds_b175_png" "$earbuds_soundcore_png" "$earbuds_both_png" "$earbuds_airpods_png" "$earbuds_airpods_hung_png" "$earbuds_refused_png"; do
+  for png in "$earbuds_b175_png" "$earbuds_soundcore_png" "$earbuds_both_png" "$earbuds_airpods_png" "$earbuds_airpods_heart_png" "$earbuds_airpods_hung_png" "$earbuds_refused_png"; do
     [ -s "$png" ] || fail "earbuds: no screenshot at $png"
   done
   echo "SMOKE_EARBUDS_B175 $earbuds_b175_png"
   echo "SMOKE_EARBUDS_SOUNDCORE $earbuds_soundcore_png"
   echo "SMOKE_EARBUDS_BOTH $earbuds_both_png"
   echo "SMOKE_EARBUDS_AIRPODS $earbuds_airpods_png"
+  echo "SMOKE_EARBUDS_AIRPODS_HEART $earbuds_airpods_heart_png"
   echo "SMOKE_EARBUDS_AIRPODS_HUNG $earbuds_airpods_hung_png"
   echo "SMOKE_EARBUDS_REFUSED $earbuds_refused_png"
   echo "SMOKE_EARBUDS_STATUS $earbuds_status_b175"
@@ -291,10 +316,18 @@ off: ok
 hung: ok" ] || fail "earbuds: an AirPods listening mode set was refused: $(cat "$earbuds_airpods_replies")"
   echo "librepods verbs:"; cat "$earbuds_librepods_log"
   cat "$earbuds_librepods_err"
-  [ "$(cat "$earbuds_librepods_log")" = "noise:anc
+  [ "$(cat "$earbuds_librepods_log")" = "heartrate:on
+noise:anc
 noise:transparency
 noise:adaptive
-noise:off" ] || fail "earbuds: librepods should get exactly noise:anc, noise:transparency, noise:adaptive, noise:off, got '$(cat "$earbuds_librepods_log")'"
+noise:off
+heartrate:off" ] || fail "earbuds: librepods should get exactly heartrate:on, the four noise verbs and heartrate:off (none with the service unavailable), got '$(cat "$earbuds_librepods_log")'"
+  echo "heart rate:"; "$jq_bin" -c '.device.heartRate' "$earbuds_dir/airpods-status-heart.json"
+  got=$("$jq_bin" -r '.device.heartRate | [.streaming, .settled, .inEar, (.bpm >= 70 and .bpm <= 80), (.history | length >= 2), (.history | all(. >= 70 and . <= 80))] | map(tostring) | join(",")' "$earbuds_dir/airpods-status-heart.json" 2>/dev/null)
+  [ "$got" = "true,true,true,true,true,true" ] \
+    || fail "earbuds: a settled heart rate stream should read streaming, settled, in ear, a bpm of 70 to 80 and two or more settled samples, got '$got' from $(cat "$earbuds_dir/airpods-status-heart.json")"
+  got=$("$jq_bin" -r '.device.heartRate' "$earbuds_dir/airpods-noheart-status.json" 2>/dev/null)
+  [ "$got" = "null" ] || fail "earbuds: AirPods without the heart rate service should carry no heartRate, got '$got'"
   local pair mode line got
   for pair in "anc:Noise cancellation" "transparency:Transparency" "adaptive:Adaptive" "off:Off"; do
     mode=${pair%%:*}; line=${pair#*:}

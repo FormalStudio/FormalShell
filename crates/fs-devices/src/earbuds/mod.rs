@@ -239,6 +239,66 @@ pub struct Device {
     /// The product picture set, `<set>_<part>.webp` under `FS_EARBUDS_ART`
     /// (packaging/earbuds-art.py), "" for a device with none.
     pub art: String,
+    /// Set only for a device that can stream one on this link right now.
+    pub heart_rate: Option<HeartRate>,
+}
+
+/// Beats per minute. Not a percentage and not a fraction: the number itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Bpm(u16);
+
+impl Bpm {
+    /// None for 0 or anything off the scale, which the daemon writes for
+    /// no sample.
+    pub fn new(n: f64) -> Option<Bpm> {
+        (1.0..=f64::from(u16::MAX)).contains(&n).then(|| Bpm(n.round() as u16))
+    }
+
+    pub fn get(self) -> u16 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeartSample {
+    pub bpm: Bpm,
+    /// Wall-clock milliseconds the buds took it at.
+    pub at_ms: u64,
+}
+
+/// How many settled samples the history keeps, one a second.
+pub const HEART_HISTORY: usize = 120;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HeartRate {
+    /// The stream can be started on this link without disturbing it.
+    pub available: bool,
+    pub streaming: bool,
+    /// The latest sample, None before the first.
+    pub latest: Option<HeartSample>,
+    /// The first samples of a stream run far off the real rate.
+    pub settled: bool,
+    /// Samples only come while a bud is in an ear.
+    pub in_ear: bool,
+    /// Settled samples, oldest first, at most [`HEART_HISTORY`]. Kept by the
+    /// service across status reloads through [`HeartRate::record`].
+    pub history: Vec<HeartSample>,
+}
+
+impl HeartRate {
+    /// Appends the latest sample to `history` when the stream is running,
+    /// the sample settled and newer than the last one kept. A stopped
+    /// stream's status still carries its last sample.
+    pub fn record(&self, history: &mut Vec<HeartSample>) {
+        let Some(sample) = self.latest.filter(|_| self.settled && self.streaming) else { return };
+        if history.last().is_some_and(|last| last.at_ms >= sample.at_ms) {
+            return;
+        }
+        history.push(sample);
+        if history.len() > HEART_HISTORY {
+            history.drain(..history.len() - HEART_HISTORY);
+        }
+    }
 }
 
 /// The fields a backend fills in; everything else defaults.
@@ -268,6 +328,7 @@ pub fn device(fields: DeviceFields) -> Device {
         controls: fields.controls,
         state_line: fields.state_line,
         art: fields.art,
+        heart_rate: None,
     }
 }
 
@@ -614,6 +675,19 @@ pub fn to_json(dev: &Device) -> Json {
         "batteries": batteries,
         "controls": controls,
         "stateLine": dev.state_line,
+        "heartRate": dev.heart_rate.as_ref().map(heart_json),
+    })
+}
+
+fn heart_json(hr: &HeartRate) -> Json {
+    serde_json::json!({
+        "available": hr.available,
+        "streaming": hr.streaming,
+        "bpm": hr.latest.map(|s| s.bpm.get()),
+        "sampledAtMs": hr.latest.map(|s| s.at_ms),
+        "settled": hr.settled,
+        "inEar": hr.in_ear,
+        "history": hr.history.iter().map(|s| s.bpm.get()).collect::<Vec<_>>(),
     })
 }
 
@@ -654,8 +728,47 @@ mod tests {
         d.controls.push(range("adaptive", "Level", "s", 40.0, 0.0, 100.0, 1.0, Unit::Percent));
         assert_eq!(
             to_json(&d).to_string(),
-            r#"{"key":"k","backend":"test","address":"","name":"k","kind":"earbuds","connected":true,"batteries":[{"id":"left","label":"","level":40,"charging":false,"inEar":null}],"controls":[{"key":"adaptive","kind":"range","label":"Level","hint":"","section":"s","value":40,"enabled":true,"options":null,"min":0,"max":100,"step":1,"unit":"percent"}],"stateLine":""}"#
+            r#"{"key":"k","backend":"test","address":"","name":"k","kind":"earbuds","connected":true,"batteries":[{"id":"left","label":"","level":40,"charging":false,"inEar":null}],"controls":[{"key":"adaptive","kind":"range","label":"Level","hint":"","section":"s","value":40,"enabled":true,"options":null,"min":0,"max":100,"step":1,"unit":"percent"}],"stateLine":"","heartRate":null}"#
         );
+    }
+
+    fn sample(bpm: f64, at_ms: u64) -> HeartSample {
+        HeartSample { bpm: Bpm::new(bpm).unwrap(), at_ms }
+    }
+
+    #[test]
+    fn bpm_refuses_no_sample() {
+        assert_eq!(Bpm::new(0.0), None);
+        assert_eq!(Bpm::new(-3.0), None);
+        assert_eq!(Bpm::new(f64::NAN), None);
+        assert_eq!(Bpm::new(71.6).map(Bpm::get), Some(72));
+    }
+
+    #[test]
+    fn heart_history_keeps_settled_new_samples_capped() {
+        let mut history = Vec::new();
+        let mut hr = HeartRate { streaming: true, latest: Some(sample(169.0, 1000)), settled: false, ..Default::default() };
+        hr.record(&mut history);
+        assert!(history.is_empty());
+        hr.latest = Some(sample(72.0, 2000));
+        hr.settled = true;
+        hr.record(&mut history);
+        hr.record(&mut history);
+        assert_eq!(history, vec![sample(72.0, 2000)]);
+        hr.latest = Some(sample(70.0, 1500));
+        hr.record(&mut history);
+        assert_eq!(history.len(), 1);
+        for i in 0..200u64 {
+            hr.latest = Some(sample(60.0 + (i % 20) as f64, 3000 + i * 1000));
+            hr.record(&mut history);
+        }
+        assert_eq!(history.len(), HEART_HISTORY);
+        assert_eq!(history.last().unwrap().at_ms, 3000 + 199 * 1000);
+        assert!(history.windows(2).all(|w| w[0].at_ms < w[1].at_ms));
+        hr.streaming = false;
+        hr.latest = Some(sample(90.0, 999_999));
+        hr.record(&mut history);
+        assert_eq!(history.last().unwrap().at_ms, 3000 + 199 * 1000);
     }
 
     #[test]
