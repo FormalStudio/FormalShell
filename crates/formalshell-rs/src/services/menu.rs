@@ -192,6 +192,8 @@ pub struct BaseInputs {
     pub buttons: Value,
     /// The keyboard lights' effects, `None` while no keyboard was found.
     pub lights: Option<Vec<providers::LightEffect>>,
+    /// padbridge is on the bus: the iPad route.
+    pub ipad: bool,
     /// The share subtree: LocalSend's state and what it can send.
     pub share: Option<ShareInputs>,
     /// Each launcher plugin's mode, `(route id, name)`.
@@ -375,6 +377,9 @@ fn base(inputs: &BaseInputs) -> Tree {
         for (k, v) in providers::lights_entries(true, effects) {
             merged.insert(k, v);
         }
+    }
+    for (k, v) in providers::ipad_entries(inputs.ipad) {
+        merged.insert(k, v);
     }
     if let Some(sh) = &inputs.share {
         let peers: Vec<providers::Peer> = sh.peers.iter().map(|n| providers::Peer { name: n.clone() }).collect();

@@ -24,6 +24,7 @@ mod debug;
 mod display;
 mod earbuds;
 mod gallery;
+mod ipad;
 mod iphone;
 mod lights;
 mod localsend;
@@ -108,6 +109,7 @@ fn registry() ->&'static Registry<App> {
             menu::target(),
             calendar::target(),
             iphone::target(),
+            ipad::target(),
             console::target(),
             screensaver::target(),
             screenshot::target(),

@@ -496,6 +496,12 @@ impl App {
         if let Some((verb, value)) = name.strip_prefix("lights.").and_then(|r| r.split_once(':')) {
             return self.call_self("lights", verb, &[value]);
         }
+        if let Some(rest) = name.strip_prefix("ipad.") {
+            let mut parts = rest.split(':');
+            let verb = parts.next().unwrap_or_default();
+            let args: Vec<&str> = parts.collect();
+            return self.call_self("ipad", verb, &args);
+        }
         if let Some((i, id)) = name.strip_prefix("localsend.send:").and_then(|r| r.split_once(':')) {
             return self.localsend_entry(i, id);
         }
@@ -1416,6 +1422,7 @@ impl App {
             lights: l.available.then(|| {
                 l.effects.iter().map(|(id, label)| fs_menu::providers::LightEffect { id: id.clone(), label: label.clone() }).collect()
             }),
+            ipad: self.store.ipad.bridge.is_some(),
             share: {
                 let ls = &self.store.localsend;
                 Some(index::ShareInputs {

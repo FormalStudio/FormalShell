@@ -299,3 +299,42 @@ pub fn lights_entries(available: bool, effects: &[LightEffect]) -> Entries {
     }
     out
 }
+
+/// The stretches of an edge the iPad route offers, `(id, label, start,
+/// end)`, each end a fraction of the edge from its top or left end.
+pub const IPAD_STRETCHES: &[(&str, &str, f64, f64)] = &[
+    ("whole", "Whole edge", 0.0, 1.0),
+    ("first", "First half", 0.0, 0.5),
+    ("second", "Second half", 0.5, 1.0),
+    ("middle", "Middle", 0.25, 0.75),
+];
+
+/// The "ipad" route, present only while padbridge is on the bus: switching
+/// input to the iPad, bringing its link back, the edge it sits past and
+/// the stretch of that edge. Every row dispatches in-process and all but
+/// Switch keep the launcher open, the tick moving off `@state:ipad.*`.
+pub fn ipad_entries(available: bool) -> Entries {
+    let mut out = Entries::new();
+    if !available {
+        return out;
+    }
+    let section = |e: Entry, s: &str| Entry { section: Some(s.to_owned()), ..e };
+    out.insert("ipad".into(), Entry::labelled("iPad").with_aliases(&["tablet", "continuity", "padbridge", "second screen"]));
+    out.insert("ipad.switch".into(), Entry::labelled("Switch to iPad").with_action("@ipc:ipad.switch").with_checked("@state:ipad.active"));
+    out.insert("ipad.reconnect".into(), Entry::labelled("Reconnect").with_action("@ipc:ipad.reconnect").keeping_open());
+    for (edge, label) in [("left", "Left"), ("right", "Right"), ("top", "Above"), ("bottom", "Below")] {
+        let row = Entry::labelled(label)
+            .with_action(format!("@ipc:ipad.position:{edge}"))
+            .with_checked(format!("@state:ipad.edge={edge}"))
+            .keeping_open();
+        out.insert(format!("ipad.edge-{edge}"), section(row, "Position"));
+    }
+    for (id, label, start, end) in IPAD_STRETCHES {
+        let row = Entry::labelled(label)
+            .with_action(format!("@ipc:ipad.stretch:{start}:{end}"))
+            .with_checked(format!("@state:ipad.stretch={id}"))
+            .keeping_open();
+        out.insert(format!("ipad.stretch-{id}"), section(row, "Stretch"));
+    }
+    out
+}

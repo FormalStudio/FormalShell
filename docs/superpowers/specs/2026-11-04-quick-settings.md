@@ -140,6 +140,7 @@ never a hidden one and never a made-up value.
 | extensions' toggles | Caffeinate | `coffee` | `caffeinate toggle` | none | never | none |
 | | Overnight | `moon-star` | `overnight toggle` | none | never | none |
 | | HDR | `sun-medium` | `display toggle` | the output | shown only while an output supports it (`hdr_supported`) | none |
+| | iPad | `tablet` | `ipad switch` (padbridge's `Switch` over the session bus, `services::ipad`) | the link's state ("Connected", "On iPad", "Not connected"), the iPad's name as the title | dim, "padbridge is not running" | Left, Right, Above, Below with a check on padbridge's `Edge`, Reconnect while the link is down, then "iPad settings" (the launcher's `ipad` route) |
 
 Not carried over, because the shell has no service for them and inventing
 one is out of this spec: Mobile broadband, Bluetooth tether, VPN, Airplane

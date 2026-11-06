@@ -715,6 +715,20 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   own `formalshell-lock` PAM file.
 - `instance.sh` `--instance`: a second daemon taking the lock, exactly one
   survivor, and the survivor being the new pid.
+- `ipad.sh` `--ipad`: `services/ipad.rs` against `dev/padbridge-stub.py`,
+  padbridge's `studio.formal.Padbridge` on the session's private bus
+  through Gio, every call logged. With no stub `ipad status` reads
+  `available: false` and quick settings' iPad tile is disabled, "padbridge
+  is not running"; the stub appearing makes both live (NameOwnerChanged),
+  the tile titled with the iPad's name and reading Connected. A real
+  Return on the tile reaching the stub as exactly Switch and its
+  PropertiesChanged turning the tile on ("On iPad"), its menu listing the
+  four edges with Right checked, Return on Above reaching it as
+  SetPosition top 0 1 and the check moving, the stub's link going down
+  adding Reconnect; the launcher's iPad route ticking Above and the whole
+  edge, "first" typed and Return reaching it as SetPosition top 0 0.5; the
+  stub SIGKILLed leaving the tile disabled and no route. The tile, the
+  menu and the route photographed, dark and `--light`.
 - `iphone.sh` `--iphone`: `services/info/iphone.rs` and the notification
   filter against
   PATH-shimmed `omarchy-iphone-bridge`/`omarchy-iphone-ams`, both a

@@ -24,6 +24,7 @@ pub mod devices;
 pub mod display;
 pub mod icons;
 pub mod inhibit;
+pub mod ipad;
 pub mod lights;
 pub mod localsend;
 pub mod media;
@@ -95,6 +96,7 @@ pub fn start(ctx: &Ctx) {
     ctx.spawn(menu::run(ctx.clone()));
     ctx.spawn(screensaver::run(ctx.clone()));
     ctx.spawn(inhibit::run(ctx.clone()));
+    ctx.spawn(ipad::run(ctx.clone()));
     ctx.spawn(clipboard::run(ctx.clone()));
     ctx.spawn(clipssh::run(ctx.clone()));
     ctx.spawn(packages::run(ctx.clone()));

@@ -351,6 +351,15 @@
 {"argv":["call","iphone","markRead"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
 {"argv":["call","iphone","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
 {"argv":["show","iphone"],"live":true,"stdout":"","stderr":"The following argument was not expected: iphone\nRun with --help for more information.\n","exit":109}
+{"argv":["call","ipad","status"],"live":true,"stdout":"{}\n","stderr":"","exit":0}
+{"argv":["call","ipad","switch"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
+{"argv":["call","ipad","reconnect"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
+{"argv":["call","ipad","position","top"],"live":true,"stdout":"position top\n","stderr":"","exit":0}
+{"argv":["call","ipad","position"],"live":true,"stdout":"Too few arguments provided (1 required but 0 were provided.)\nFunction definition: function position(edge: string): string\n","stderr":"","exit":0}
+{"argv":["call","ipad","stretch","0","0.5"],"live":true,"stdout":"stretch 0 0.5\n","stderr":"","exit":0}
+{"argv":["call","ipad","stretch","0","x"],"live":true,"stdout":"Unable to parse argument 2 as \"real\". Provided argument: \"x\"\nFunction definition: function stretch(start: real, end: real): string\n","stderr":"","exit":0}
+{"argv":["call","ipad","stretch","0.5"],"live":true,"stdout":"Too few arguments provided (2 required but 1 were provided.)\nFunction definition: function stretch(start: real, end: real): string\n","stderr":"","exit":0}
+{"argv":["call","ipad","nope"],"live":true,"stdout":"Function not found.\n","stderr":"","exit":0}
 {"argv":["call","console","toggle"],"live":true,"stdout":"ok\n","stderr":"","exit":0}
 {"argv":["call","console","show"],"live":true,"stdout":"target console\n  function show(): string\n  function toggle(): string\n  function status(): string\n  function hide(): string\n","stderr":"","exit":0}
 {"argv":["call","console","show"],"live":true,"stdout":"target console\n  function hide(): string\n  function status(): string\n  function show(): string\n  function toggle(): string\n","stderr":"","exit":0}

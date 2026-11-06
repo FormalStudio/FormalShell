@@ -26,6 +26,7 @@ pub const PATHS: &[&str] = &[
     "theme.dark",
     "lights.on",
     "hdr.active",
+    "ipad.active",
 ];
 
 /// Paths whose value is a string rather than a flag, matched as
@@ -41,6 +42,8 @@ pub const ENUM_PATHS: &[&str] = &[
     "audio.sink",
     "audio.source",
     "radio.station",
+    "ipad.edge",
+    "ipad.stretch",
 ];
 
 /// Paths whose value is a list of strings, matched by membership.

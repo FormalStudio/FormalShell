@@ -368,6 +368,10 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshel
 runs = ["--media", "--media-progress", "--lock-media", "--bluez-player"]
 
 [[rule]]
+paths = ["crates/formalshell-rs/src/services/ipad.rs", "crates/formalshell-rs/src/ipc/ipad.rs", "dev/padbridge-stub.py"]
+runs = ["--ipad", "--ipad --light"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-kopuz/**", "crates/formalshell-rs/src/surfaces/panel/media.rs", "crates/formalshell-rs/src/ipc/media.rs", "dev/kopuz-stub.py"]
 runs = ["--kopuz"]
 
@@ -417,7 +421,7 @@ runs = ["--gallery"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/quick/**", "crates/formalshell-rs/src/ipc/quicksettings.rs"]
-runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light", "--chevron"]
+runs = ["--quick-settings", "--quick-settings --light", "--quick-settings-power", "--quick-settings-devices", "--quick-settings-devices --light", "--chevron", "--ipad"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalshell-rs/src/services/info/monitor.rs", "crates/formalshell-rs/src/ipc/monitor.rs", "crates/fs-system/src/monitor/**", "crates/formalshell-rs/src/services/proc.rs", "crates/formalshell-rs/src/services/info/procs.rs"]

@@ -337,7 +337,7 @@ leg_quick_settings_assert() {
   quick_settings_jq "status reads the card open" "$open" '.open == true and .from == "ipc" and .dim == false and .menu == null'
   # GNOME's order, less what this machine has no service for.
   quick_settings_jq "the rows in the spec's order" "$open" '
-    ["battery","screenshot","settings","lock","power","volume","microphone","brightness","wired","wifi","bluetooth","power-mode","night-light","dark-style","dnd","keyboard","caffeinate","overnight","hdr"] as $order
+    ["battery","screenshot","settings","lock","power","volume","microphone","brightness","wired","wifi","bluetooth","power-mode","night-light","dark-style","dnd","keyboard","caffeinate","overnight","hdr","ipad"] as $order
     | [.rows[] | select(.kind != "info") | .id] as $ids
     | ($ids | map(. as $i | $order | index($i))) as $at
     | ($at | all(. != null)) and $at == ($at | sort)

@@ -25,6 +25,7 @@ use crate::services::devices::bluetooth::{ActionKind as BtAction, Ask as BtAsk};
 use crate::services::devices::{self, Op, audio, bluetooth as bt, network as net};
 use crate::services::power::{self, Action};
 use crate::services::notifications::now_ms;
+use crate::services::ipad::Link;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};
 use crate::surfaces::activity;
@@ -152,6 +153,11 @@ const PROFILES: [(Profile, &str); 3] = [(Profile::Performance, "zap"), (Profile:
 /// The share of its opacity an open menu takes off every other row.
 const DIM: f32 = 0.4;
 
+/// iPad's menu: the desktop edge the iPad sits past, with each row's glyph
+/// and words.
+const IPAD_EDGES: [(Edge, &str, &str); 4] =
+    [(Edge::Left, "panel-left", "Left"), (Edge::Right, "panel-right", "Right"), (Edge::Top, "panel-top", "Above"), (Edge::Bottom, "panel-bottom", "Below")];
+
 /// The networks Wi-Fi's menu lists at most, as GNOME's does.
 const NETWORKS: usize = 8;
 
@@ -278,6 +284,17 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     if let Some(output) = store.compositor.outputs.iter().find(|o| display::hdr_supported(store, &o.name)) {
         out.push(Tile::toggle("hdr", "sun-medium", "HDR", display::hdr_active(store)).subtitle(Some(output.name.clone())));
     }
+
+    let ipad = store.ipad.bridge.as_ref();
+    // The tile is too narrow for the name and the state on one line, so
+    // the iPad's name stands in for the title once padbridge knows it.
+    let ipad_title = ipad.map(|i| i.name.as_str()).filter(|n| !n.is_empty()).unwrap_or("iPad");
+    out.push(
+        Tile::toggle("ipad", "tablet", ipad_title, ipad.is_some_and(|i| i.active))
+            .split(ipad.is_some())
+            .subtitle(ipad.map(|i| i.state_label().to_owned()))
+            .unless(ipad.is_none().then_some("padbridge is not running")),
+    );
 
     let n = background(store).len();
     if n > 0 || open == Some(BACKGROUND) {
@@ -586,6 +603,15 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             let lines = l.effects.iter().map(|(effect, label)| row(id, effect, "", label, *effect == l.effect)).collect();
             MenuView { glyph: tile.glyph, title: "Keyboard", on: tile.on, lines, settings: Some(("Keyboard lights", Hand::Route("lights.effect"))) }
         }
+        "ipad" => {
+            let i = store.ipad.bridge.as_ref()?;
+            let mut lines: Vec<Line> = IPAD_EDGES.iter().map(|&(edge, glyph, title)| row(id, edge.as_str(), glyph, title, i.edge == edge)).collect();
+            if i.link == Link::Down {
+                lines.push(Line::Separator);
+                lines.push(row(id, "reconnect", "refresh-cw", "Reconnect", false));
+            }
+            MenuView { glyph: tile.glyph, title: "iPad", on: tile.on, lines, settings: Some(("iPad settings", Hand::Route("ipad"))) }
+        }
         "power" => {
             let can = store.devices.logind;
             let mut lines = Vec::new();
@@ -827,6 +853,7 @@ impl Panel for QuickSettings {
             Topic::Notifications,
             Topic::NightLight,
             Topic::Lights,
+            Topic::Ipad,
             Topic::Caffeinate,
             Topic::Activity,
             Topic::Recording,
@@ -1196,6 +1223,7 @@ impl QuickSettings {
             "caffeinate" => fx.ipc(&["caffeinate", "toggle"]),
             "overnight" => fx.ipc(&["overnight", "toggle"]),
             "hdr" => fx.ipc(&["hdr", "toggle"]),
+            "ipad" => fx.ipc(&["ipad", "switch"]),
             _ => {}
         }
     }
@@ -1241,6 +1269,8 @@ impl QuickSettings {
                 fx.service(move |ctx| devices::run(ctx, Op::Profile(p)));
             }
             "keyboard" => fx.ipc(&["lights", "effect", &what]),
+            "ipad" if what == "reconnect" => fx.ipc(&["ipad", "reconnect"]),
+            "ipad" => fx.ipc(&["ipad", "position", &what]),
             "power" => self.power(&what, fx),
             BACKGROUND => background_row(&what, fx),
             _ => {}

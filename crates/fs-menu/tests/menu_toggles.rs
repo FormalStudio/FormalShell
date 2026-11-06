@@ -119,8 +119,8 @@ fn with_result_returns_a_fresh_map() {
 // Breaks loudly if a path is added without updating the caller and the docs.
 #[test]
 fn allow_list_is_exactly_the_documented_paths() {
-    assert_eq!(PATHS.len(), 7);
-    for path in ["lights.on", "nightlight.active", "overnight.active", "caffeinate.active", "notifications.dnd", "theme.dark", "hdr.active"] {
+    assert_eq!(PATHS.len(), 8);
+    for path in ["lights.on", "nightlight.active", "overnight.active", "caffeinate.active", "notifications.dnd", "theme.dark", "hdr.active", "ipad.active"] {
         assert!(is_known_path(path), "{path}");
     }
     assert!(!is_known_path("bluetooth.powered"));

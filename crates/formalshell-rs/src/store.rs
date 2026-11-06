@@ -4,7 +4,7 @@
 
 use crate::services::{
     activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
-    compositor, info, kopuz, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, recording, screensaver, state, theme, tray,
+    compositor, info, ipad, kopuz, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
 
@@ -45,6 +45,7 @@ pub struct Store {
     pub localsend: localsend::State,
     pub depth: depth::State,
     pub mirror: mirror::State,
+    pub ipad: ipad::State,
     /// Radio Browser answers and the country outlines, waiting for the
     /// atlas to take them.
     pub atlas: Vec<crate::services::radio::Reply>,
@@ -88,6 +89,7 @@ pub enum Diff {
     Localsend(localsend::Diff),
     Depth(depth::Diff),
     Mirror(mirror::Diff),
+    Ipad(ipad::Diff),
     Atlas(crate::services::radio::Reply),
 }
 
@@ -132,6 +134,7 @@ pub enum Topic {
     Localsend,
     Depth,
     Mirror,
+    Ipad,
     Atlas,
 }
 
@@ -206,6 +209,7 @@ impl Store {
             Diff::Localsend(d) => self.localsend.apply(d).then_some(Topic::Localsend),
             Diff::Depth(d) => self.depth.apply(d).then_some(Topic::Depth),
             Diff::Mirror(d) => self.mirror.apply(d).then_some(Topic::Mirror),
+            Diff::Ipad(d) => self.ipad.apply(d).then_some(Topic::Ipad),
             Diff::Atlas(r) => {
                 self.atlas.push(r);
                 Some(Topic::Atlas)

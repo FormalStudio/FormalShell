@@ -162,7 +162,7 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.launcher_clipssh();
             app.refresh_bar(Some(topic));
         }
-        Topic::Lights | Topic::NightLight => {
+        Topic::Lights | Topic::NightLight | Topic::Ipad => {
             app.launcher_inputs();
             app.launcher_store_changed();
             app.refresh_bar(Some(topic));

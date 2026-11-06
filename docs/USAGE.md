@@ -22,6 +22,7 @@ what you can drive over IPC. The product overview is in
 - [Calendar](#calendar)
 - [Now playing](#now-playing)
 - [iPhone](#iphone)
+- [iPad](#ipad)
 - [Keyboard lights](#keyboard-lights)
 - [Lock screen](#lock-screen)
 - [Polkit](#polkit)
@@ -1449,7 +1450,7 @@ Those checkmarks are in-process state, not a polled command. A `checked`
 value prefixed `@state:` is answered from the shell's own state, so it
 repaints the moment the toggle lands. The list of legal paths is closed:
 `nightlight.active`, `overnight.active`, `caffeinate.active`, `hdr.active`,
-`notifications.dnd`, `theme.dark`. Anything else resolves false, so a typo
+`notifications.dnd`, `theme.dark`, `ipad.active`. Anything else resolves false, so a typo
 shows an unchecked box instead of a stale one. `@state:` works on `checked`
 only; a `when` carrying it hides the node.
 
@@ -2997,6 +2998,32 @@ fs iphone dismiss <id>
 fs iphone clear
 fs iphone markRead
 fs iphone pair                        # pair again, or show a pairing code
+```
+
+## iPad
+
+[padbridge](https://github.com/FormalStudio/padbridge) shares this
+machine's pointer and keyboard with an iPad over Bluetooth LE: pushing the
+pointer past one stretch of one edge of the desktop sends input to the iPad.
+The shell reads padbridge off the session bus (`studio.formal.Padbridge`)
+and follows it appearing and leaving; with no padbridge running,
+`ipad status` reports `available: false`, the quick settings tile is
+disabled saying so and the launcher has no iPad route.
+
+Quick settings carries an iPad toggle, titled with the iPad's name and
+reading its state (Connected, On iPad, Not connected), Enter or a click switches input
+to the iPad and back, and its menu picks the edge the iPad sits past (Left,
+Right, Above, Below), with Reconnect while the link is down. The launcher's
+`iPad` route lists the same switch, Reconnect, the four edges and four
+stretches of the edge (Whole edge, First half, Second half, Middle), the
+current ones ticked. padbridge keeps the position itself.
+
+```sh
+fs ipad status               # available, link, active, audio, name, edge, start, end
+fs ipad switch               # input to the iPad, or back
+fs ipad reconnect            # bring the input link up and retry audio
+fs ipad position top         # left | right | top | bottom, keeping the stretch
+fs ipad stretch 0 0.5        # along the edge, 0 <= start < end <= 1
 ```
 
 ## Keyboard lights

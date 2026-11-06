@@ -528,6 +528,7 @@ pub fn snapshot(store: &Store) -> Snapshot {
     let radio = &store.media.radio;
     let connected: Vec<String> = d.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_uppercase()).collect();
     let l = &store.lights;
+    let ipad = store.ipad.bridge.as_ref();
     toggles::snapshot(Some(&json!({
         "nightlight.active": store.nightlight.active,
         "lights.on": l.brightness > 0,
@@ -546,6 +547,11 @@ pub fn snapshot(store: &Store) -> Snapshot {
         "audio.source": d.audio.default_source,
         "bluetooth.connected": connected,
         "radio.station": radio.station.as_ref().filter(|_| radio.running()).map_or("", |s| s.uuid.as_str()),
+        "ipad.active": ipad.is_some_and(|i| i.active),
+        "ipad.edge": ipad.map_or("", |i| i.edge.as_str()),
+        "ipad.stretch": ipad
+            .and_then(|i| fs_menu::providers::IPAD_STRETCHES.iter().find(|(_, _, a, b)| i.stretch.near(*a, *b)))
+            .map_or("", |(id, ..)| *id),
     })))
 }
 

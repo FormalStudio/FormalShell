@@ -321,6 +321,18 @@ fn stub() -> Registry<()> {
                 ],
             },
             Target {
+                name: "ipad",
+                functions: vec![
+                    f("status", &[], Type::String, |_, _| s("{}")),
+                    f("switch", &[], Type::String, |_, _| s("ok")),
+                    f("reconnect", &[], Type::String, |_, _| s("ok")),
+                    f("position", &[("edge", Type::String)], Type::String, |_, a| s(format!("position {}", a[0].str()))),
+                    f("stretch", &[("start", Type::Real), ("end", Type::Real)], Type::String, |_, a| {
+                        s(format!("stretch {} {}", js_number(a[0].real()), js_number(a[1].real())))
+                    }),
+                ],
+            },
+            Target {
                 name: "screenshot",
                 functions: vec![
                     f("full", &[("processing", Type::String)], Type::String, |_, a| s(format!("full {}", a[0].str()))),
@@ -659,6 +671,7 @@ fn signatures_match_golden() {
         super::menu::target(),
         super::calendar::target(),
         super::iphone::target(),
+        super::ipad::target(),
         super::screenshot::target(),
         super::capture::target(),
         super::record::target(),
