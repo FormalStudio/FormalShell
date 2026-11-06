@@ -1,13 +1,8 @@
-//! Zen: the focused window alone on an empty workspace, floating and
-//! centred on its output, with the sidebar folded to its rail. The other
-//! windows stay where they were on their own workspace, so leaving puts
-//! the window back among them: on its workspace, tiled again in the column
-//! place it left under a scrolling layout, or at its old rect if it was
-//! floating already.
-//!
-//! The scrolling tape is not scrolled away instead: Hyprland centres a tape
-//! narrower than the output on every recalculate, so a workspace with one
-//! or two other columns could never be emptied that way.
+//! Zen: the focused window floating and centred on its output, with the
+//! sidebar folded to its rail and, under the scrolling layout, the rest of
+//! the workspace's tape slid off the output. Leaving puts the window back
+//! tiled in the column place it left (or at its old rect if it was
+//! floating already) and lets the tape go.
 
 use serde_json::json;
 
@@ -15,7 +10,16 @@ use super::App;
 use crate::services::compositor::{self, Command, model::Rect};
 use crate::surfaces::sidebar;
 
-pub struct Zen {
+#[derive(Default)]
+pub struct ZenState {
+    on: Option<Zen>,
+    /// A workspace whose tape is still held after its zen window closed
+    /// there; let go once it is focused, the only workspace a layout
+    /// message reaches.
+    release: Option<String>,
+}
+
+struct Zen {
     id: String,
     workspace: String,
     /// Its rect before, for a window that was floating already.
@@ -56,11 +60,11 @@ fn next_column(windows: &[compositor::model::Window], id: &str, workspace: &str)
 
 impl App {
     pub fn zen_toggle(&mut self) -> String {
-        if self.zen.is_some() { self.zen_exit() } else { self.zen_enter() }
+        if self.zen.on.is_some() { self.zen_exit() } else { self.zen_enter() }
     }
 
     pub fn zen_enter(&mut self) -> String {
-        if self.zen.is_some() {
+        if self.zen.on.is_some() {
             return "error: zen is on".into();
         }
         let snap = &self.store.compositor.snapshot;
@@ -83,16 +87,20 @@ impl App {
         if zen.unfold {
             sidebar::set_collapsed(true);
         }
-        self.zen = Some(zen);
+        self.zen.release = None;
+        self.zen.on = Some(zen);
         "ok".into()
     }
 
     pub fn zen_exit(&mut self) -> String {
-        let Some(zen) = self.zen.take() else {
+        let Some(zen) = self.zen.on.take() else {
             return "error: zen is off".into();
         };
         if self.store.compositor.window(&zen.id).is_some() {
-            compositor::send(Command::Unzen { id: zen.id, workspace: zen.workspace, floating: zen.floating, before: zen.before });
+            compositor::send(Command::Unzen { id: zen.id, floating: zen.floating, before: zen.before });
+        } else {
+            self.zen.release = Some(zen.workspace);
+            self.zen_release();
         }
         if zen.unfold {
             sidebar::set_collapsed(false);
@@ -102,13 +110,21 @@ impl App {
 
     /// The zen window closing ends zen, the sidebar opening again.
     pub fn zen_changed(&mut self) {
-        if self.zen.as_ref().is_some_and(|z| self.store.compositor.window(&z.id).is_none()) {
+        if self.zen.on.as_ref().is_some_and(|z| self.store.compositor.window(&z.id).is_none()) {
             self.zen_exit();
+        }
+        self.zen_release();
+    }
+
+    fn zen_release(&mut self) {
+        if self.zen.release.as_deref().is_some_and(|w| w == self.store.compositor.snapshot.focused_workspace_id) {
+            self.zen.release = None;
+            compositor::send(Command::ZenRelease);
         }
     }
 
     pub fn zen_status(&self) -> String {
-        match &self.zen {
+        match &self.zen.on {
             Some(z) => json!({"on": true, "windowId": z.id, "workspace": z.workspace, "before": z.before, "floating": z.floating.is_some()}),
             None => json!({"on": false}),
         }

@@ -661,11 +661,12 @@ its row it trades places with its neighbour, up or down it moves onto that
 workspace, and down past the last row onto a new one. Enter focuses what
 the cursor is on, and Enter or Escape hands the keyboard back.
 
-Zen puts the focused window alone on an empty workspace, floating and
-centred, and folds the sidebar to its rail. Leaving puts it back where it
-was: tiled in its old column place under the scrolling layout, or at its
-old size if it was floating, and opens the sidebar again if zen folded it.
-Closing the window leaves zen too. Hyprland only.
+Zen floats the focused window centred on its output, folds the sidebar to
+its rail and, under the scrolling layout, slides the rest of the
+workspace's windows off the screen. Leaving puts the window back tiled in
+its old column place at its old width (or at its old size if it was
+floating), brings the other windows back and opens the sidebar again if
+zen folded it. Closing the window leaves zen too.
 
 ```sh
 fs zen toggle        # SUPER + Z in the shipped binds

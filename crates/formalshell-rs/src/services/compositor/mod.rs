@@ -197,13 +197,15 @@ pub enum Command {
     PlaceFloatingWindow { id: String, x: f64, y: f64, width: f64, height: f64 },
     ParkWindow(String),
     UnparkWindow(String),
-    /// `id` floated alone onto an empty workspace at `rect` (logical,
-    /// absolute), focus following it.
+    /// `id` floated at `rect` (logical, absolute) and focused, the rest of
+    /// a scrolling workspace's tape slid off the output and held there.
     Zen { id: String, rect: model::Rect },
-    /// Back onto `workspace`: at `floating` where it was floating before,
-    /// tiled otherwise, its column moved before `before`'s under a
-    /// scrolling layout. It keeps focus.
-    Unzen { id: String, workspace: String, floating: Option<model::Rect>, before: Option<String> },
+    /// The tape let go, `id` put back at `floating` where it was floating
+    /// before, tiled otherwise with its column moved before `before`'s. It
+    /// keeps focus.
+    Unzen { id: String, floating: Option<model::Rect>, before: Option<String> },
+    /// The focused workspace's tape let go, its zen window having closed.
+    ZenRelease,
     RefreshWindows,
     /// Input went quiet after a burst of keys or pointer motion
     /// (`wayland/settle.rs`): a backend whose events miss some window moves

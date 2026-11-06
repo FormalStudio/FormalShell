@@ -99,17 +99,37 @@ pub fn move_window(id: &str, x: i64, y: i64) -> String {
     format!("hl.dsp.window.move({{ window = {}, x = {x}, y = {y} }})", string(&selector(id)))
 }
 
-/// `emptynm` is the next empty workspace on the window's monitor. The
-/// window floats before it moves, so it lands floating and the tape it
-/// leaves closes up behind it.
+/// Under the scrolling layout the tape slides off the output's left edge
+/// and is pinned there with `inhibit_scroll` (0.56.2): a tape narrower than
+/// the output is centred again on every recalculate, and the inhibitor is
+/// the one thing that holds its offset. The window's column is widened to
+/// the whole output first, so the tape is never narrower when it moves,
+/// and the width it had is kept in `formalshell_zen` for the way back.
+/// Then the window floats at `rect`, its column closing up off screen.
 pub fn zen(id: &str, rect: Rect) -> String {
     let window = string(&selector(id));
     format!(
-        "hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"set\" }})) \
-         hl.dispatch(hl.dsp.window.move({{ window = {window}, workspace = \"emptynm\", follow = true }})) \
+        "local w = hl.get_window({window}) \
+         if w and w.workspace then \
+         if w.workspace.tiled_layout == \"scrolling\" then \
+         if w.layout and w.layout.column then \
+         formalshell_zen = formalshell_zen or {{}} \
+         formalshell_zen[{window}] = w.layout.column.width \
+         hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
+         hl.dispatch(hl.dsp.layout(\"colresize 1.0\")) \
+         end \
+         local x0, right = w.monitor.x, w.monitor.x \
+         for _, c in ipairs(hl.get_workspace_windows(w.workspace.id)) do \
+         if not c.floating and c.at.x + c.size.x > right then right = c.at.x + c.size.x end end \
+         hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\")) \
+         if right > x0 then hl.dispatch(hl.dsp.layout(\"move -\" .. (right - x0))) end \
+         hl.dispatch(hl.dsp.layout(\"inhibit_scroll 1\")) \
+         end \
+         hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"set\" }})) \
          hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
          hl.dispatch(hl.dsp.window.move({{ window = {window}, x = {}, y = {} }})) \
-         hl.dispatch(hl.dsp.focus({{ window = {window} }}))",
+         hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
+         end",
         rect.width.max(1),
         rect.height.max(1),
         rect.x,
@@ -117,11 +137,12 @@ pub fn zen(id: &str, rect: Rect) -> String {
     )
 }
 
-/// Moved back while still floating, so it does not tile into the zen
-/// workspace first; tiled again there, or put at its old rect.
-pub fn unzen(id: &str, workspace: &str, floating: Option<Rect>) -> String {
+/// The tape let go, and the window tiled again at the column width it had
+/// (it comes back as a column of the default width), or put back at its
+/// old rect if it was floating before.
+pub fn unzen(id: &str, floating: Option<Rect>) -> String {
     let window = string(&selector(id));
-    let back = format!("hl.dispatch(hl.dsp.window.move({{ window = {window}, workspace = {}, follow = true }}))", value(workspace));
+    let back = format!("hl.dispatch(hl.dsp.focus({{ window = {window} }})) hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\"))");
     match floating {
         Some(r) => format!(
             "{back} hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
@@ -131,8 +152,23 @@ pub fn unzen(id: &str, workspace: &str, floating: Option<Rect>) -> String {
             r.x,
             r.y,
         ),
-        None => format!("{back} hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"unset\" }}))"),
+        None => format!(
+            "{back} hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"unset\" }})) \
+             local width = formalshell_zen and formalshell_zen[{window}] \
+             if width then \
+             formalshell_zen[{window}] = nil \
+             hl.dispatch(hl.dsp.focus({{ window = {window} }})) \
+             hl.dispatch(hl.dsp.layout(\"colresize \" .. width)) \
+             end"
+        ),
     }
+}
+
+/// Lets go of the tape on the focused workspace, the zen window having
+/// closed while it held it, and brings the focused column back in view:
+/// the focus the close moved was refused while the tape was held.
+pub fn zen_release() -> String {
+    "hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\")) hl.dispatch(hl.dsp.layout(\"fit_into_view\"))".into()
 }
 
 pub fn park_window(id: &str) -> String {

@@ -1746,11 +1746,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   40px of `overscroll` and settling exactly on `scrollMax`, the last row
   whole in the frame.
 - `zen.sh` `--zen`: `zen enter` under `layout: sidebar` and the scrolling
-  layout over three foot windows a b c on workspace 1, b focused: b
-  floating alone on a workspace of its own, centred on the output within
-  2px, the sidebar on its rail, a and c left on workspace 1; `zen exit`
-  putting b back tiled between a and c (by x), focused, the sidebar open;
-  and b closed under zen ending it with the sidebar open again.
+  layout over three foot windows a b c on workspace 1, columns 0.4 wide and
+  b's 0.6, b focused: b floating on workspace 1 centred on the output
+  within 2px, the sidebar on its rail, and a and c wholly off the output's
+  left edge (a tape narrower than the output, which Hyprland would centre
+  again); `zen exit` putting b back tiled between a and c (by x) at its old
+  width, focused and on the output, the sidebar open; and b closed under
+  zen ending it with the sidebar open and the focused window back on the
+  output.
 - `workspaces.sh` `--workspaces`: the bar's workspace indicator as one pill
   that travels, read off the bar region alone before, 80ms into, and after a
   workspace switch.

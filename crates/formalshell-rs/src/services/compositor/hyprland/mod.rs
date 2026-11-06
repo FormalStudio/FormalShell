@@ -361,14 +361,15 @@ async fn commands(
                 eval(&ctx, &lua::zen(&id, rect)).await;
                 let _ = dirty.try_send(());
             }
-            Command::Unzen { id, workspace, floating, before } => {
-                eval(&ctx, &lua::unzen(&id, &workspace, floating)).await;
+            Command::Unzen { id, floating, before } => {
+                eval(&ctx, &lua::unzen(&id, floating)).await;
                 if let Some(before) = before {
                     eval(&ctx, &lua::move_column(&id, Some(&before))).await;
                 }
                 dispatch(&lua::focus_window(&id)).await;
                 let _ = dirty.try_send(());
             }
+            Command::ZenRelease => eval(&ctx, &lua::zen_release()).await,
             Command::ParkWindow(id) => park(&ctx, &shared, &id, false).await,
             Command::UnparkWindow(id) => park(&ctx, &shared, &id, true).await,
             // Hyprland posts no event for a window moved inside its
