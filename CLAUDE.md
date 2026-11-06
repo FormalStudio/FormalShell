@@ -1745,6 +1745,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   stopping it short of that, and the same flick near the end bouncing under
   40px of `overscroll` and settling exactly on `scrollMax`, the last row
   whole in the frame.
+- `zen.sh` `--zen`: `zen enter` under `layout: sidebar` and the scrolling
+  layout over three foot windows a b c on workspace 1, b focused: b
+  floating alone on a workspace of its own, centred on the output within
+  2px, the sidebar on its rail, a and c left on workspace 1; `zen exit`
+  putting b back tiled between a and c (by x), focused, the sidebar open;
+  and b closed under zen ending it with the sidebar open again.
 - `workspaces.sh` `--workspaces`: the bar's workspace indicator as one pill
   that travels, read off the bar region alone before, 80ms into, and after a
   workspace switch.

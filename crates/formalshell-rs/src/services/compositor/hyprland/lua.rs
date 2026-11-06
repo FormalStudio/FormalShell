@@ -2,6 +2,8 @@
 //! Window ids reach this module as the backend's opaque strings; the
 //! `address:0x...` selector is built here and nowhere else.
 
+use crate::services::compositor::model::Rect;
+
 pub const PARK_WORKSPACE: &str = "special:formalshell-console";
 const PARK_NAME: &str = "formalshell-console";
 
@@ -95,6 +97,42 @@ pub fn resize_window(id: &str, w: i64, h: i64) -> String {
 
 pub fn move_window(id: &str, x: i64, y: i64) -> String {
     format!("hl.dsp.window.move({{ window = {}, x = {x}, y = {y} }})", string(&selector(id)))
+}
+
+/// `emptynm` is the next empty workspace on the window's monitor. The
+/// window floats before it moves, so it lands floating and the tape it
+/// leaves closes up behind it.
+pub fn zen(id: &str, rect: Rect) -> String {
+    let window = string(&selector(id));
+    format!(
+        "hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"set\" }})) \
+         hl.dispatch(hl.dsp.window.move({{ window = {window}, workspace = \"emptynm\", follow = true }})) \
+         hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
+         hl.dispatch(hl.dsp.window.move({{ window = {window}, x = {}, y = {} }})) \
+         hl.dispatch(hl.dsp.focus({{ window = {window} }}))",
+        rect.width.max(1),
+        rect.height.max(1),
+        rect.x,
+        rect.y,
+    )
+}
+
+/// Moved back while still floating, so it does not tile into the zen
+/// workspace first; tiled again there, or put at its old rect.
+pub fn unzen(id: &str, workspace: &str, floating: Option<Rect>) -> String {
+    let window = string(&selector(id));
+    let back = format!("hl.dispatch(hl.dsp.window.move({{ window = {window}, workspace = {}, follow = true }}))", value(workspace));
+    match floating {
+        Some(r) => format!(
+            "{back} hl.dispatch(hl.dsp.window.resize({{ window = {window}, x = {}, y = {} }})) \
+             hl.dispatch(hl.dsp.window.move({{ window = {window}, x = {}, y = {} }}))",
+            r.width.max(1),
+            r.height.max(1),
+            r.x,
+            r.y,
+        ),
+        None => format!("{back} hl.dispatch(hl.dsp.window.float({{ window = {window}, action = \"unset\" }}))"),
+    }
 }
 
 pub fn park_window(id: &str) -> String {

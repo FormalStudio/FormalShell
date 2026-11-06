@@ -41,6 +41,7 @@ pub fn changed(app: &mut App, topic: Topic) {
     app.overview_changed(topic);
     if topic == Topic::Compositor {
         crate::services::launch::windows_changed(&app.store);
+        app.zen_changed();
     }
     app.atlas_changed(topic);
     app.overlay_changed(topic);

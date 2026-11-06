@@ -54,6 +54,7 @@ mod switcher;
 pub mod registry;
 mod screenshot;
 mod sidebar;
+mod zen;
 mod theme;
 mod tray;
 mod visualizer;
@@ -123,6 +124,7 @@ fn registry() ->&'static Registry<App> {
             lights::target(),
             switcher::target(),
             sidebar::target(),
+            zen::target(),
             packages::target(),
             clipboard::target(),
             picker::target(),

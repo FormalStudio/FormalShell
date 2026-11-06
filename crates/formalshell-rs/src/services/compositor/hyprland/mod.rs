@@ -357,6 +357,18 @@ async fn commands(
                 // webcam overlay waits on this rect to start recording.
                 let _ = dirty.try_send(());
             }
+            Command::Zen { id, rect } => {
+                eval(&ctx, &lua::zen(&id, rect)).await;
+                let _ = dirty.try_send(());
+            }
+            Command::Unzen { id, workspace, floating, before } => {
+                eval(&ctx, &lua::unzen(&id, &workspace, floating)).await;
+                if let Some(before) = before {
+                    eval(&ctx, &lua::move_column(&id, Some(&before))).await;
+                }
+                dispatch(&lua::focus_window(&id)).await;
+                let _ = dirty.try_send(());
+            }
             Command::ParkWindow(id) => park(&ctx, &shared, &id, false).await,
             Command::UnparkWindow(id) => park(&ctx, &shared, &id, true).await,
             // Hyprland posts no event for a window moved inside its

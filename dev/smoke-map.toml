@@ -750,6 +750,11 @@ runs = ["--sidebar-join", "--sidebar-join --light"]
 paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "dev/smoke.d/minimap.sh"]
 runs = ["--minimap"]
 
+# Zen: the focused window alone on a workspace of its own, and back.
+[[rule]]
+paths = ["crates/formalshell-rs/src/wayland/zen.rs", "crates/formalshell-rs/src/ipc/zen.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs", "dev/smoke.d/zen.sh"]
+runs = ["--zen"]
+
 # Input settling re-reads the windows Hyprland moved without an event.
 [[rule]]
 paths = ["crates/formalshell-rs/src/wayland/settle.rs", "crates/formalshell-rs/src/services/compositor/hyprland/mod.rs"]

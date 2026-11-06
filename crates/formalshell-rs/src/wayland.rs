@@ -28,6 +28,7 @@ pub mod overview;
 pub mod switcher;
 mod toasts;
 mod veil;
+mod zen;
 
 use std::time::Instant;
 
@@ -160,6 +161,7 @@ pub struct App {
     caffeinate: caffeinate::Caffeinate,
     settle: settle::Settle,
     console: console::Console,
+    zen: Option<zen::Zen>,
     saver: screensaver::Saver,
     pub lock: lock::Lock,
     hot: hotcorners::HotCorners,
@@ -298,6 +300,7 @@ impl App {
             caffeinate: caffeinate::Caffeinate::bind(globals, qh),
             settle: settle::Settle::bind(globals, qh),
             console: console::Console::default(),
+            zen: None,
             saver: screensaver::Saver::default(),
             lock: lock::Lock::bind(globals, qh),
             hot: Default::default(),
