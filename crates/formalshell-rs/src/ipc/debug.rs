@@ -89,7 +89,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         .collect();
     let phone = &app.store.info.iphone;
     let mut dump = json!({
-        "compositor": crate::services::compositor::kind().as_str(),
+        "compositor": "hyprland",
         "available": c.available,
         "workspaces": c.workspaces,
         "windows": c.windows,

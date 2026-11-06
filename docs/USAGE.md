@@ -96,49 +96,6 @@ Hyprland is configured in Lua (`~/.config/hypr/hyprland.lua`) and nothing
 here ships in hyprlang. The shell changes the running compositor through
 `hyprctl eval` and never `hyprctl keyword`.
 
-## mango
-
-Hyprland is the primary compositor. The shell also runs on mango 0.18 (a
-dwl descendant), picked at start by `compositor.backend`: `"auto"` (the
-default) follows the session, Hyprland's `HYPRLAND_INSTANCE_SIGNATURE`
-first, then mango's `MANGO_INSTANCE_SIGNATURE`; `"hyprland"` or `"mango"`
-forces one. A change takes effect at the next start.
-
-```nix
-programs.formalshell.settings.compositor = {
-  backend = "auto";
-  workspaceNames = [ "web" "code" "" "chat" ];
-};
-```
-
-mango's tags are per monitor, so each occupied or viewed tag is one
-workspace chip on its own output, numbered by the tag. mango has no tag
-names; `compositor.workspaceNames` gives tag n the nth string, an empty one
-or a missing one keeps the number.
-
-`docs/examples/mango/formalshell.conf` (home-manager:
-`programs.formalshell.mango.enable`, then `source=./formalshell.conf` in
-`~/.config/mango/config.conf`) carries the binds, the layer rule that takes
-mango's own animation off the shell's surfaces, the console's floating
-window rule, and `source_optional` lines for the two files the theme
-writes: `formalshell-colors.conf` (`focus_color`, `border_color`,
-`urgent_color`, `shadows_color`, the palette's roles resolved) and
-`formalshell-chrome.conf` (`border_radius`, `border_px`, the four gaps at
-twice Hyprland's per-side inner gap, `blur`, `blur_layer` and the shadow
-numbers). The shell runs `reload_config` after each write. Source the
-colours file before your own values only if yours should win.
-
-What differs from Hyprland:
-
-- The quake console parks on the special tag (0), so it shows there when
-  you toggle that tag yourself.
-- The keybinds route reads the `bind*=` lines of `config.conf` and every
-  file it sources; the keyboard cell lists `xkb_rules_layout`.
-- The Display panel only switches outputs on and off: mango has no runtime
-  scale, mirror or colour mode, so those controls stay disabled.
-- The headset card's Escape dismissal needs a runtime bind mango cannot
-  add; the pointer still dismisses it.
-
 ## Keybinds
 
 Every default bind ships as
@@ -888,8 +845,8 @@ start as `settings: <key> is no longer read`: `theme.preset`,
 cells, the panels, the launcher card and the toasts. The shell blurs nothing
 itself: that alpha is what lets a compositor blur read through, so it only
 applies while Hyprland reports `decoration:blur:enabled` (read on start and
-on every config reload, `blur` in `debug dump`). With blur off, or under
-mango, every card draws opaque whatever the key says. The example Hyprland
+on every config reload, `blur` in `debug dump`). With blur off every card
+draws opaque whatever the key says. The example Hyprland
 config turns the blur on and points it at the shell's layer namespaces
 (`formalshell:bar`, `formalshell:panel`, `formalshell:menu`,
 `formalshell:notifications` and the rest). The lock screen and the greeter

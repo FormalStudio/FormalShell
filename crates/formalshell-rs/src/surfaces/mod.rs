@@ -69,11 +69,6 @@ pub fn changed(app: &mut App, topic: Topic) {
                 enabled: c.bool("wallpaper.depthGenerate").unwrap_or(false),
                 dir: c.str("picker.directory").unwrap_or("").to_owned(),
             });
-            let names = match c.get("compositor.workspaceNames") {
-                Some(serde_json::Value::Array(items)) => items.iter().map(|v| v.as_str().unwrap_or_default().to_owned()).collect(),
-                _ => Vec::new(),
-            };
-            crate::services::compositor::send(crate::services::compositor::Command::WorkspaceNames(names));
             let settings = app.store.config.settings().clone();
             if app.store.theme.apply(theme::Diff::Settings(settings)) {
                 changed(app, Topic::Theme);

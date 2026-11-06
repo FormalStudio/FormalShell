@@ -258,12 +258,12 @@ impl Map {
     }
 
     /// Enter on the cursor: its window, its row's workspace, or a new one.
-    pub fn enter(&self, output: &str) -> Action {
+    pub fn enter(&self) -> Action {
         let Some(c) = &self.cursor else { return Action::None };
         match (&c.window, self.rows.get(c.row)) {
             (Some(id), _) => Action::Window(id.clone()),
-            (None, Some(_)) => self.action(&format!("row:{}", c.row), output),
-            (None, None) => self.action("new", output),
+            (None, Some(_)) => self.action(&format!("row:{}", c.row)),
+            (None, None) => self.action("new"),
         }
     }
 
@@ -660,16 +660,16 @@ impl Map {
         }
     }
 
-    pub fn action(&self, on: &str, output: &str) -> Action {
+    pub fn action(&self, on: &str) -> Action {
         let (verb, arg) = on.split_once(':').unwrap_or((on, ""));
         match verb {
             "window" => Action::Window(arg.to_owned()),
             "row" => match arg.parse::<usize>().ok().and_then(|i| self.rows.get(i)) {
-                Some(r) if r.id.is_empty() => Action::WorkspaceAt(r.idx, output.to_owned()),
+                Some(r) if r.id.is_empty() => Action::WorkspaceAt(r.idx),
                 Some(r) => Action::Workspace(r.id.clone()),
                 None => Action::None,
             },
-            "new" => Action::WorkspaceAt(self.next_idx(), output.to_owned()),
+            "new" => Action::WorkspaceAt(self.next_idx()),
             _ => Action::None,
         }
     }

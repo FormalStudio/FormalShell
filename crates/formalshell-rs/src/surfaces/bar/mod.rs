@@ -1014,7 +1014,7 @@ impl Bar {
 
     pub fn click(&mut self, i: usize, button: Button, x: f64, y: f64, store: &Store) -> Action {
         if let Some(sb) = &mut self.sidebar {
-            return if button == Button::Left { sb.clicked(x, y, &self.output) } else { Action::None };
+            return if button == Button::Left { sb.clicked(x, y) } else { Action::None };
         }
         let env = Env { store, edge: self.edge, output: &self.output };
         let s = &mut self.slots[i];

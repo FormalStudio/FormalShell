@@ -1,14 +1,10 @@
-//! The compositor: one backend per session, picked once at start
-//! (`compositor.backend`, else whichever instance signature the session
-//! carries), publishing the shared model in `model.rs` and taking the typed
-//! writes in [`Command`]. Hyprland is the primary backend; mango (a dwl
-//! descendant) maps its per-monitor tags onto workspaces.
+//! The compositor: Hyprland, publishing the shared model in `model.rs` and
+//! taking the typed writes in [`Command`].
 
 pub mod hyprland;
-pub mod mango;
 pub mod model;
 
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 
 use fs_menu::keybinds::Bind;
 use fs_system::compositor::keyboard::{self, Layout};
@@ -18,61 +14,10 @@ use crate::runtime::Ctx;
 pub use model::{Gaps, Snapshot, Window, Workspace};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Hyprland,
-    Mango,
-}
-
-impl Kind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Kind::Hyprland => "hyprland",
-            Kind::Mango => "mango",
-        }
-    }
-}
-
-/// `compositor.backend` ("auto", "hyprland" or "mango") against the
-/// session's own signatures. auto, or a value it does not know, takes
-/// Hyprland's signature first, then mango's, then Hyprland.
-pub fn pick(setting: Option<&str>, hyprland: bool, mango: bool) -> Kind {
-    match setting {
-        Some("hyprland") => Kind::Hyprland,
-        Some("mango") => Kind::Mango,
-        _ if hyprland => Kind::Hyprland,
-        _ if mango => Kind::Mango,
-        _ => Kind::Hyprland,
-    }
-}
-
-/// Read once: a backend cannot change under a running shell, so a new
-/// `compositor.backend` takes effect at the next start.
-pub fn kind() -> Kind {
-    static KIND: LazyLock<Kind> = LazyLock::new(|| {
-        let text = std::fs::read_to_string(crate::services::config::settings_path()).unwrap_or_default();
-        let settings: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-        let setting = settings.get("compositor").and_then(|c| c.get("backend")).and_then(|b| b.as_str());
-        let set = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty());
-        pick(setting, set("HYPRLAND_INSTANCE_SIGNATURE"), set("MANGO_INSTANCE_SIGNATURE"))
-    });
-    *KIND
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputsState {
     Unknown,
     Ok,
     Failed,
-}
-
-impl OutputsState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            OutputsState::Unknown => "unknown",
-            OutputsState::Ok => "ok",
-            OutputsState::Failed => "failed",
-        }
-    }
 }
 
 pub struct State {
@@ -174,9 +119,8 @@ impl State {
 /// thread against the backend's own latest model.
 pub enum Command {
     FocusWorkspace(String),
-    /// A persistent slot the compositor has no workspace for yet, on
-    /// `output`.
-    FocusWorkspaceAt { idx: i64, output: String },
+    /// A persistent slot the compositor has no workspace for yet.
+    FocusWorkspaceAt(i64),
     FocusWindow(String),
     CloseWindow(String),
     Spawn(Vec<String>),
@@ -216,9 +160,6 @@ pub enum Command {
     SetOutputScale(String, f64),
     SetOutputMirror(String, String),
     SetOutputColor(String, Color),
-    /// `compositor.workspaceNames`, for a backend whose workspaces carry
-    /// no names of their own.
-    WorkspaceNames(Vec<String>),
     /// The pointer hidden or shown on every output, the session's arrival
     /// and departure.
     Cursor { hidden: bool },
@@ -244,9 +185,9 @@ pub fn focus_workspace(id: &str) {
     send(Command::FocusWorkspace(id.to_owned()));
 }
 
-pub fn focus_workspace_at(idx: i64, output: &str) {
+pub fn focus_workspace_at(idx: i64) {
     if idx >= 1 {
-        send(Command::FocusWorkspaceAt { idx, output: output.to_owned() });
+        send(Command::FocusWorkspaceAt(idx));
     }
 }
 
@@ -272,41 +213,17 @@ pub fn is_window_parked(state: &State, id: &str) -> bool {
 
 /// The compositor's binds for the launcher's keybinds route.
 pub async fn binds() -> Result<Vec<Bind>, ()> {
-    match kind() {
-        Kind::Hyprland => hyprland::binds().await,
-        Kind::Mango => mango::binds().await,
-    }
+    hyprland::binds().await
 }
 
 /// The pointer in global logical coordinates, `None` when it cannot be
 /// asked.
 pub async fn cursor_pos() -> Option<(f64, f64)> {
-    match kind() {
-        Kind::Hyprland => hyprland::cursor_pos().await,
-        Kind::Mango => mango::cursor_pos().await,
-    }
+    hyprland::cursor_pos().await
 }
 
 pub async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = COMMANDS.set(tx);
-    match kind() {
-        Kind::Hyprland => hyprland::run(ctx, rx).await,
-        Kind::Mango => mango::run(ctx, rx).await,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_backend_follows_the_setting_then_the_session() {
-        assert_eq!(pick(None, true, true), Kind::Hyprland);
-        assert_eq!(pick(Some("auto"), false, true), Kind::Mango);
-        assert_eq!(pick(None, false, false), Kind::Hyprland);
-        assert_eq!(pick(Some("mango"), true, false), Kind::Mango);
-        assert_eq!(pick(Some("hyprland"), false, true), Kind::Hyprland);
-        assert_eq!(pick(Some("sway"), false, true), Kind::Mango);
-    }
+    hyprland::run(ctx, rx).await
 }

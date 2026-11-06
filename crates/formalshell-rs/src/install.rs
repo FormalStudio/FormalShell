@@ -58,7 +58,6 @@ struct Opts {
 struct Layout {
     prefix: PathBuf,
     config: PathBuf,
-    home: PathBuf,
 }
 
 impl Layout {
@@ -73,10 +72,6 @@ impl Layout {
     }
     fn hypr(&self, name: &str) -> PathBuf {
         self.config.join("hypr").join(name)
-    }
-    /// mango reads `~/.config/mango` whatever XDG_CONFIG_HOME says.
-    fn mango(&self, name: &str) -> PathBuf {
-        self.home.join(".config/mango").join(name)
     }
 }
 
@@ -152,7 +147,7 @@ fn layout() -> Result<Layout, String> {
     }
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("HOME is not set")?;
     let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".config"));
-    Ok(Layout { prefix, config, home })
+    Ok(Layout { prefix, config })
 }
 
 fn install(l: &Layout, opts: &Opts) -> Result<(), String> {
@@ -169,7 +164,6 @@ fn install(l: &Layout, opts: &Opts) -> Result<(), String> {
     let example = fs::read_to_string(l.share().join("examples/hyprland/formalshell.lua")).map_err(|e| format!("reading the Hyprland example: {e}"))?;
     write_owned(&l.hypr("formalshell.lua"), &hypr_include(&example, &l.bin("formalshell-ipc")))?;
     hypr_entry(l)?;
-    mango_include(l)?;
 
     if opts.no_system {
         return Ok(());
@@ -240,7 +234,6 @@ fn uninstall(l: &Layout, opts: &Opts) -> Result<(), String> {
     systemctl(&["daemon-reload"]);
 
     remove_owned(&l.hypr("formalshell.lua"))?;
-    remove_owned(&l.mango("formalshell.conf"))?;
     let entry = l.hypr("hyprland.lua");
     if is_owned(&entry) {
         fs::remove_file(&entry).map_err(|e| format!("{}: {e}", entry.display()))?;
@@ -350,20 +343,6 @@ fn hypr_entry(l: &Layout) -> Result<(), String> {
         "{MARKER}\n-- Put your own settings in hypr-user.lua.\nlocal dir = (os.getenv(\"XDG_CONFIG_HOME\") or (os.getenv(\"HOME\") .. \"/.config\")) .. \"/hypr/\"\ndofile(dir .. \"formalshell.lua\")\ndofile(dir .. \"hypr-user.lua\")\n-- hypr-user.lua may set XCURSOR_THEME; the arrival's blank pointer goes back on over it.\nif formalshell_blank_cursor then formalshell_blank_cursor() end\n\n-- A plain Hyprland login never reaches graphical-session.target.\nhl.on(\"hyprland.start\", function() hl.exec_cmd([==[{START}]==]) end)\n"
     );
     write_owned(&entry, &body)
-}
-
-/// The mango include beside the user's own config.conf, which is never
-/// written: it only has to source the include.
-fn mango_include(l: &Layout) -> Result<(), String> {
-    let example = fs::read_to_string(l.share().join("examples/mango/formalshell.conf")).map_err(|e| format!("reading the mango example: {e}"))?;
-    let ipc = format!("{} call ", l.bin("formalshell-ipc").display());
-    write_owned(&l.mango("formalshell.conf"), &format!("{}\n{}", unit_marker(), example.replace("formalshell-ipc call ", &ipc)))?;
-    let config = l.mango("config.conf");
-    let sourced = fs::read_to_string(&config).is_ok_and(|t| t.lines().any(|line| line.trim_start().starts_with("source") && line.contains("formalshell.conf")));
-    if !sourced {
-        println!("note: for mango, add\n  source=./formalshell.conf\nto {}", config.display());
-    }
-    Ok(())
 }
 
 fn is_owned(path: &Path) -> bool {
@@ -680,7 +659,7 @@ mod tests {
     use super::*;
 
     fn layout(root: &Path) -> Layout {
-        Layout { prefix: root.join("prefix"), config: root.join("config"), home: root.join("home") }
+        Layout { prefix: root.join("prefix"), config: root.join("config") }
     }
 
     #[test]
@@ -740,18 +719,6 @@ mod tests {
         fs::write(l.hypr("hypr-user.lua"), "edited\n").unwrap();
         hypr_entry(&l).unwrap();
         assert_eq!(fs::read_to_string(l.hypr("hypr-user.lua")).unwrap(), "edited\n");
-    }
-
-    #[test]
-    fn the_mango_include_calls_ipc_by_path_and_stays_owned() {
-        let dir = tempfile::tempdir().unwrap();
-        let l = layout(dir.path());
-        fs::create_dir_all(l.share().join("examples/mango")).unwrap();
-        fs::write(l.share().join("examples/mango/formalshell.conf"), "bind=SUPER,k,spawn,formalshell-ipc call menu toggle\n").unwrap();
-        mango_include(&l).unwrap();
-        let out = fs::read_to_string(l.mango("formalshell.conf")).unwrap();
-        assert!(is_owned(&l.mango("formalshell.conf")));
-        assert!(out.ends_with(&format!("spawn,{} call menu toggle\n", l.bin("formalshell-ipc").display())));
     }
 
     #[test]

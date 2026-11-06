@@ -43,10 +43,6 @@ pub struct Window {
     pub is_floating: bool,
     pub is_urgent: bool,
     pub rect: Option<Rect>,
-    /// The compositor's ext-foreign-toplevel-list identifier, for a backend
-    /// that reports one; thumbnails find the window's handle by it.
-    #[serde(skip)]
-    pub toplevel: String,
 }
 
 /// The compositor's outer gap on each side of an output, in logical
@@ -91,11 +87,11 @@ pub struct Snapshot {
     pub focused_window_id: String,
     pub focused_workspace_id: String,
     pub focused_output_name: String,
-    /// Windows put away off every workspace (Hyprland's console special
-    /// workspace while it is hidden, a minimized mango client).
+    /// Windows put away off every workspace (the console's special
+    /// workspace while it is hidden).
     pub parked: Vec<String>,
     /// Windows on screen over the focused workspace though they belong to
-    /// another (a shown special workspace, a second viewed mango tag).
+    /// another (a shown special workspace).
     pub overlaid: Vec<String>,
 }
 

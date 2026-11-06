@@ -245,7 +245,7 @@ impl Workspaces {
         if s.current && s.is_focused {
             return Action::None;
         }
-        if s.id.is_empty() { Action::WorkspaceAt(s.idx, self.output.clone()) } else { Action::Workspace(s.id.clone()) }
+        if s.id.is_empty() { Action::WorkspaceAt(s.idx) } else { Action::Workspace(s.id.clone()) }
     }
 
     /// Where each part of a chip starts along it: the label, every icon and
@@ -813,7 +813,7 @@ mod tests {
         let store = Store::default();
         let mut c = cell();
         assert_eq!(c.wheel(false, &env(&store)), Action::Workspace("2".into()));
-        assert_eq!(c.wheel(true, &env(&store)), Action::WorkspaceAt(3, "o".into()));
+        assert_eq!(c.wheel(true, &env(&store)), Action::WorkspaceAt(3));
     }
 
     #[test]
@@ -824,7 +824,7 @@ mod tests {
         assert_eq!(c.click(Button::Left, (65.0, 5.0), &env(&store)), Action::Window("a".into()));
         assert_eq!(c.click(Button::Left, (77.0, 5.0), &env(&store)), Action::Window("b".into()));
         assert_eq!(c.click(Button::Left, (47.0, 5.0), &env(&store)), Action::Workspace("2".into()));
-        assert_eq!(c.click(Button::Left, (90.0, 5.0), &env(&store)), Action::WorkspaceAt(3, "o".into()));
+        assert_eq!(c.click(Button::Left, (90.0, 5.0), &env(&store)), Action::WorkspaceAt(3));
         assert_eq!(c.click(Button::Left, (42.0, 5.0), &env(&store)), Action::None);
         assert_eq!(c.click(Button::Right, (65.0, 5.0), &env(&store)), Action::None);
     }

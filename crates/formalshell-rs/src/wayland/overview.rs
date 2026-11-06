@@ -188,7 +188,7 @@ impl App {
         };
         match m.sel.win.and_then(|j| row.windows.get(j)) {
             Some(w) => compositor::focus_window(&w.id),
-            None if row.workspace_id.is_empty() => compositor::focus_workspace_at(row.idx, &m.output),
+            None if row.workspace_id.is_empty() => compositor::focus_workspace_at(row.idx),
             None => compositor::focus_workspace(&row.workspace_id),
         }
         m.drag = None;

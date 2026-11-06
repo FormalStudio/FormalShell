@@ -1287,7 +1287,7 @@ impl App {
                 self.set_panel_from(quick::ID, open, Some(anchor), from);
             }
             Action::Workspace(id) => compositor::focus_workspace(&id),
-            Action::WorkspaceAt(idx, output) => compositor::focus_workspace_at(idx, &output),
+            Action::WorkspaceAt(idx) => compositor::focus_workspace_at(idx),
             Action::Window(id) => compositor::focus_window(&id),
             Action::Device(op) => {
                 if let Some(rt) = &self.runtime {

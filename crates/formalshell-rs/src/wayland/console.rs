@@ -4,8 +4,7 @@
 //! the compositor, never stored, so a restarted shell adopts the console
 //! already running.
 //!
-//! The special workspace is Hyprland's `special:formalshell-console` and
-//! mango's tag 0, the only special tag it has.
+//! The special workspace is Hyprland's `special:formalshell-console`.
 //!
 //! The two waits poll because nothing signals them: a freshly spawned
 //! window carries no id this shell knows until the compositor reports it

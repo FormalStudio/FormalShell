@@ -83,7 +83,7 @@ fn mirror(app: &mut App, args: &[Value]) -> Value {
 
 fn enable(app: &mut App, args: &[Value]) -> Value {
     let output = args[0].str();
-    if !display::enable_available() {
+    if !display::config_available() {
         return text("no compositor");
     }
     if let Some(no) = unknown(app, output) {

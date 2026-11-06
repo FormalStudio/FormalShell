@@ -465,16 +465,8 @@ pub async fn run(ctx: Ctx) {
 // HDR, answered on the UI thread.
 
 /// Whether output config can be sent: a Hyprland to take monitor rules.
-/// mango has no runtime scale, mirror or colour mode, so its outputs are
-/// read only.
 pub fn config_available() -> bool {
-    compositor::kind() == compositor::Kind::Hyprland && std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
-}
-
-/// Whether an output can be switched on and off: Hyprland's monitor rule,
-/// or mango's `enable_monitor` and `disable_monitor`.
-pub fn enable_available() -> bool {
-    config_available() || (compositor::kind() == compositor::Kind::Mango && std::env::var_os("MANGO_INSTANCE_SIGNATURE").is_some())
+    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
 }
 
 fn rows(store: &Store) -> &[Output] {

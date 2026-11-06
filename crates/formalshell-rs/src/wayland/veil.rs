@@ -87,7 +87,7 @@ pub(super) struct State {
 /// theme publish reloads the config mid-arrival, so it cannot be written
 /// any earlier. A shell that starts with it present is a restart.
 fn arrival_marker() -> PathBuf {
-    let id = ["HYPRLAND_INSTANCE_SIGNATURE", "MANGO_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
+    let id = ["HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
         .into_iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
         .unwrap_or_default();

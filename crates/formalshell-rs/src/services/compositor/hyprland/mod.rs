@@ -313,7 +313,7 @@ async fn commands(
             Command::FocusWorkspace(id) => dispatch(&lua::focus_workspace(&id)).await,
             // Hyprland's `workspace` dispatcher makes the workspace on the
             // focused monitor; it has no per-output slots.
-            Command::FocusWorkspaceAt { idx, .. } => dispatch(&lua::focus_workspace(&idx.to_string())).await,
+            Command::FocusWorkspaceAt(idx) => dispatch(&lua::focus_workspace(&idx.to_string())).await,
             Command::FocusWindow(id) => dispatch(&lua::focus_window(&id)).await,
             Command::CloseWindow(id) => dispatch(&lua::close_window(&id)).await,
             Command::Spawn(argv) => dispatch(&lua::spawn(&argv)).await,
@@ -324,7 +324,6 @@ async fn commands(
                 };
                 eval(&ctx, &lua).await;
             }
-            Command::WorkspaceNames(_) => {}
             Command::Cursor { hidden } => eval(&ctx, &lua::cursor(hidden)).await,
             Command::Exit => dispatch(&lua::exit()).await,
             Command::FloatWindow(id) => {

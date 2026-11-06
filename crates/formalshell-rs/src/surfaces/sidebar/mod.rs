@@ -509,11 +509,11 @@ impl Sidebar {
 
     /// A click let go at `(x, y)`: what the pressed control asks for, when
     /// the pointer is still on that control.
-    pub fn clicked(&mut self, x: f64, y: f64, output: &str) -> Action {
+    pub fn clicked(&mut self, x: f64, y: f64) -> Action {
         let pressed = self.pressed.take();
         let here = self.hit(x, y).and_then(|i| self.hit_at(i)).and_then(|h| h.on.clone());
         match pressed.filter(|on| Some(on) == here.as_ref()) {
-            Some(on) => action(&on, output, &self.map),
+            Some(on) => action(&on, &self.map),
             None => Action::None,
         }
     }
@@ -544,7 +544,7 @@ impl Sidebar {
 }
 
 /// What a click on `on` asks for.
-fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
+fn action(on: &str, map: &minimap::Map) -> Action {
     let (verb, arg) = on.split_once(':').unwrap_or((on, ""));
     match verb {
         "panel" => match arg {
@@ -572,7 +572,7 @@ fn action(on: &str, output: &str, map: &minimap::Map) -> Action {
         "overflow" => Action::Overflow(fs_chrome::types::Region::Right),
         "collapse" => Action::Sidebar(true),
         "expand" => Action::Sidebar(false),
-        _ => map.action(on, output),
+        _ => map.action(on),
     }
 }
 

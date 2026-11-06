@@ -59,7 +59,7 @@ fn set_scale(row: &Output, scale: f64) {
 }
 
 fn toggle_output(rows: &[Output], name: &str) {
-    if !display::enable_available() || !outputs::can_toggle(rows, name) {
+    if !display::config_available() || !outputs::can_toggle(rows, name) {
         return;
     }
     if let Some(row) = outputs::find_output(rows, name) {
@@ -100,7 +100,7 @@ fn output_row(v: &View, rows: &[Output], row: &Output, main: &str) -> El {
         w::icon(if row.enabled { "monitor" } else { "monitor-off" }).size(Type::Heading).ink(if row.name == focused(store) { Ink::Primary } else { Ink::Fg }),
         w::label(&row.name).weight(Weight::Medium).elide().fill(),
     ];
-    let toggles = display::enable_available() && outputs::can_toggle(rows, &row.name);
+    let toggles = display::config_available() && outputs::can_toggle(rows, &row.name);
     head.push(w::switch(row.enabled).enabled(toggles).on(format!("enable:{}", row.name)));
 
     let mut lines = vec![w::row(s.panel_gap, head).fill().height(s.panel_row).mid()];

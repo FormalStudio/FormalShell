@@ -150,7 +150,6 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             rect,
             workspace_id,
             id,
-            toplevel: String::new(),
         });
     }
     floating_on.retain(|o| !fullscreen.contains(o));

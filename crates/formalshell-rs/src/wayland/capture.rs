@@ -2,9 +2,8 @@
 //! ext-image-copy-capture-v1, each one a session on an
 //! ext-image-capture-source-v1 made from the window's
 //! ext-foreign-toplevel-list handle. Hyprland's toplevel-mapping protocol
-//! names the window a handle belongs to; mango reports each client's list
-//! identifier instead, matched against the handle's own. Either way a
-//! thumbnail is asked for by the same opaque id every other surface carries.
+//! names the window a handle belongs to, so a thumbnail is asked for by the
+//! same opaque id every other surface carries.
 //!
 //! Only four owners ever hold one (the switcher and the Spaces preview, the
 //! capture exception in the 2026-10-06 spec, the launcher's preview pane,
@@ -150,13 +149,8 @@ impl Capture {
         }
     }
 
-    /// `toplevel` is the window's list identifier, "" when its backend
-    /// reports none.
-    fn handle_for(&self, id: &str, toplevel: &str) -> Option<&ExtForeignToplevelHandleV1> {
-        let by_identifier = |h: &ExtForeignToplevelHandleV1| {
-            !toplevel.is_empty() && self.toplevels.info(h).is_some_and(|info| info.identifier == toplevel)
-        };
-        self.handles.iter().find(|(h, w)| w.as_deref() == Some(id) || by_identifier(h)).map(|(h, _)| h)
+    fn handle_for(&self, id: &str) -> Option<&ExtForeignToplevelHandleV1> {
+        self.handles.iter().find(|(_, w)| w.as_deref() == Some(id)).map(|(h, _)| h)
     }
 
     fn thumb_mut(&mut self, key: u64) -> Option<&mut Thumb> {
@@ -240,10 +234,9 @@ impl App {
     fn capture_start(&mut self, key: u64) {
         let qh = self.qh.clone();
         let Some(id) = self.thumbnails.thumbs.iter().find(|t| t.key == key).filter(|t| t.session.is_none()).map(|t| t.id.clone()) else { return };
-        let toplevel = self.store.compositor.window(&id).map(|w| w.toplevel.clone()).unwrap_or_default();
         let c = &mut self.thumbnails;
         let (Some(sources), Some(copy)) = (c.sources.clone(), c.copy.clone()) else { return };
-        let Some(handle) = c.handle_for(&id, &toplevel).cloned() else { return };
+        let Some(handle) = c.handle_for(&id).cloned() else { return };
         let source = sources.create_source(&handle, &qh, Ignore);
         let session = copy.create_session(&source, Options::empty(), &qh, ThumbKey(key));
         if let Some(t) = c.thumb_mut(key) {
@@ -443,17 +436,7 @@ impl ForeignToplevelListHandler for App {
         self.thumbnails.handles.push((handle, None));
     }
 
-    /// A handle's identifier lands with its first `done`, which is what a
-    /// thumbnail matched by identifier was waiting for.
-    fn update_toplevel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: ExtForeignToplevelHandleV1) {
-        if self.thumbnails.mapping.is_some() {
-            return;
-        }
-        let waiting: Vec<u64> = self.thumbnails.thumbs.iter().filter(|t| t.session.is_none()).map(|t| t.key).collect();
-        for key in waiting {
-            self.capture_start(key);
-        }
-    }
+    fn update_toplevel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: ExtForeignToplevelHandleV1) {}
 
     fn toplevel_closed(&mut self, _: &Connection, _: &QueueHandle<Self>, handle: ExtForeignToplevelHandleV1) {
         self.thumbnails.handles.retain(|(h, _)| *h != handle);

@@ -67,7 +67,7 @@ impl App {
             Keysym::Up => (0, -1),
             Keysym::Down => (0, 1),
             Keysym::Return | Keysym::KP_Enter | Keysym::space => {
-                let action = sb.map.enter(&self.bar.output);
+                let action = sb.map.enter();
                 self.sidebar_focus(false);
                 let anchor = 0.0;
                 self.act(action, anchor);

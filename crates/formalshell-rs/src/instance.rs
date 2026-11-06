@@ -32,7 +32,7 @@ pub fn socket_path() -> PathBuf {
 /// instance signature where there is one, since socket names like
 /// `wayland-1` come back with the next session.
 pub fn compositor_file(name: &str) -> PathBuf {
-    let id = ["HYPRLAND_INSTANCE_SIGNATURE", "MANGO_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
+    let id = ["HYPRLAND_INSTANCE_SIGNATURE", "WAYLAND_DISPLAY"]
         .into_iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))
         .unwrap_or_default();

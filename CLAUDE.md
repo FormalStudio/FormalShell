@@ -1909,10 +1909,7 @@ a Linux host.
   parse, compare numerically, or assume stability; only the backend that
   minted one takes it apart. Hyprland's window ids are hex addresses and
   reach its dispatchers verbatim, as an `address:0x...` selector built in
-  `services/compositor/hyprland/lua.rs` and nowhere else; mango's are client
-  ids, as a `client,<id>` selector built in
-  `services/compositor/mango/dispatch.rs`, and its workspace ids are
-  `<monitor>:<tag>`.
+  `services/compositor/hyprland/lua.rs` and nowhere else.
 - The shell only ever **reads** `~/.config/formalshell/settings.json`; it
   never writes it. Runtime-mutable state goes to
   `$XDG_STATE_HOME/formalshell/state.json`.
@@ -1960,18 +1957,12 @@ a Linux host.
 - License MIT. Every file substantially ported from DankMaterialShell keeps
   a `// Portions from DankMaterialShell (MIT, Copyright 2025 Avenge Media LLC)`
   header line.
-- Hyprland is the primary compositor; mango (0.18, a dwl descendant) is
-  supported through a second backend (owner, 2026-10-13). Compositor work
-  goes in `crates/formalshell-rs/src/services/compositor/`: the shared model
-  (`model.rs`), the typed `Command`s every caller sends, and one backend per
-  compositor picked once at start by `compositor.backend` (`auto` follows
-  the session's instance signature). `hyprland/` holds the `.socket.sock`
-  and `.socket2.sock` clients and `hyprctl eval` for writes; `mango/` holds
-  the `MANGO_INSTANCE_SIGNATURE` socket client (two `watch` streams,
-  `dispatch` lines for writes) and the config walker its keybinds route and
-  layout list read. Anything mango cannot do (a runtime non-consuming
-  Escape bind, output scale, mirror, HDR) is a logged no-op, never an error.
-  The smoke rig runs Hyprland only.
+- Hyprland is the only compositor (owner, 2026-11-06: mango support was
+  removed). Compositor work goes in
+  `crates/formalshell-rs/src/services/compositor/`: the shared model
+  (`model.rs`), the typed `Command`s every caller sends, and `hyprland/`
+  with the `.socket.sock` and `.socket2.sock` clients and `hyprctl eval`
+  for writes.
 - Lua (`hyprland.lua`) is the only Hyprland config format (owner,
   2026-09-29). Runtime changes go through `hyprctl eval` with the `hl.*` API,
   never `hyprctl keyword`, and nothing the shell or its installer writes is
