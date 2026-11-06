@@ -382,6 +382,7 @@ impl State {
                 auto: None,
                 identity: Some(p.identity.clone()),
                 is_playing: p.playing,
+                empty: p.title.is_empty(),
             })
             .collect();
         let row = |id: &str, kind: &str, identity: &str, playing: bool| PlayerRow {
@@ -390,6 +391,7 @@ impl State {
             auto: None,
             identity: Some(identity.into()),
             is_playing: playing,
+            empty: false,
         };
         if self.radio.running() {
             rows.push(row("radio", "radio", "Radio", !self.radio.paused()));

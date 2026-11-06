@@ -17,6 +17,9 @@ pub struct PlayerRow {
     pub auto: Option<bool>,
     pub identity: Option<String>,
     pub is_playing: bool,
+    /// Registered with no track: a browser keeps its player on the bus after
+    /// the tab that played closes.
+    pub empty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,8 +33,8 @@ pub struct LabelledRow {
 }
 
 /// An explicit pick wins while its source is still there; otherwise the first
-/// playing one, otherwise the first. Rows with `auto == Some(false)` are never
-/// picked automatically.
+/// playing one, then the first carrying a track, then the first. Rows with
+/// `auto == Some(false)` are never picked automatically.
 pub fn pick_player_id(rows: &[PlayerRow], selected_id: &str) -> String {
     if rows.is_empty() {
         return String::new();
@@ -40,6 +43,7 @@ pub fn pick_player_id(rows: &[PlayerRow], selected_id: &str) -> String {
         return selected_id.to_string();
     }
     let mut first = "";
+    let mut first_track = "";
     for r in rows {
         if r.auto == Some(false) {
             continue;
@@ -50,8 +54,11 @@ pub fn pick_player_id(rows: &[PlayerRow], selected_id: &str) -> String {
         if first.is_empty() {
             first = &r.id;
         }
+        if first_track.is_empty() && !r.empty {
+            first_track = &r.id;
+        }
     }
-    first.to_string()
+    if first_track.is_empty() { first } else { first_track }.to_string()
 }
 
 /// The bus name's first word and the identity, lowercased, each at least three
@@ -219,6 +226,14 @@ mod tests {
     #[test]
     fn pick_first_when_nothing_playing() {
         assert_eq!(pick_player_id(&[bare("a"), bare("b")], ""), "a");
+    }
+
+    #[test]
+    fn pick_a_track_over_an_empty_player() {
+        let empty = PlayerRow { empty: true, ..bare("a") };
+        assert_eq!(pick_player_id(&[empty.clone(), bare("b")], ""), "b");
+        assert_eq!(pick_player_id(&[empty.clone()], ""), "a");
+        assert_eq!(pick_player_id(&[empty, bare("b")], "a"), "a");
     }
 
     #[test]
