@@ -589,6 +589,24 @@ impl Scene {
     }
 
     pub fn take_damage(&mut self) -> Vec<IRect> {
+        // A blurred node redrawn through a rect cutting across it has come
+        // out with a hole where the rect was (a lyric line on the GPU), so
+        // a rect reaching one redraws its whole box.
+        if !self.damage.is_empty() {
+            let blurred: Vec<IRect> = self
+                .nodes()
+                .filter(|n| matches!(&n.paint, Paint::Blur { .. }) || matches!(&n.paint, Paint::Faded { paint, .. } if matches!(**paint, Paint::Blur { .. })))
+                .map(|n| n.bounds.intersect(&self.size))
+                .filter(|b| !b.is_empty())
+                .collect();
+            loop {
+                let cut = blurred.iter().find(|b| self.damage.iter().any(|d| d.intersects(b)) && !self.damage.iter().any(|d| d.contains(b)));
+                match cut {
+                    Some(b) => self.mark(*b),
+                    None => break,
+                }
+            }
+        }
         std::mem::take(&mut self.damage)
     }
 }
@@ -641,6 +659,32 @@ mod tests {
 
     fn made(w: u16, scale: f64) -> Bitmap {
         Bitmap::from_rgba(w, w, vec![0; usize::from(w) * usize::from(w) * 4]).at(scale)
+    }
+
+    #[test]
+    fn damage_reaching_a_blurred_node_takes_its_whole_box() {
+        let mut text = crate::text::Text::new();
+        let style = crate::text::TextStyle {
+            family: crate::text::Family::Generic(parley::GenericFamily::SansSerif),
+            size: 16.0,
+            weight: 600.0,
+            tracking: 0.0,
+            wdth: 100.0,
+            wght: None,
+        };
+        let shaped = text.shape("and the crowd go crazy", style);
+        let mut scene = Scene::clear(400, 100);
+        let line = IRect::new(10, 10, 200, 30);
+        let other = IRect::new(10, 60, 200, 30);
+        scene.add(line, Paint::Blur { text: shaped.clone(), color: Rgba::BLACK, blur: 3.0 });
+        scene.add(other, Paint::Text { text: shaped, color: Rgba::BLACK });
+        scene.take_damage();
+        scene.touch(IRect::new(150, 30, 16, 20));
+        let damage = scene.take_damage();
+        assert!(damage.iter().any(|d| d.contains(&line)), "{damage:?}");
+        assert!(!damage.iter().any(|d| d.intersects(&IRect::new(10, 80, 200, 10))), "{damage:?}");
+        scene.touch(IRect::new(300, 70, 10, 10));
+        assert_eq!(scene.take_damage(), vec![IRect::new(300, 70, 10, 10)]);
     }
 
     #[test]
