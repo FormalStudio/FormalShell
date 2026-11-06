@@ -28,7 +28,10 @@
 #
 # A real click on the Weather tile hands the card over to the weather
 # panel (§8: the panel takes the card's place rather than hanging off it),
-# so the chevron reads shut with `weather` open. Then the card around its
+# so the chevron reads shut with `weather` open. The weather panel's header
+# carries a back button: a real click on it (found off `debug dump`'s
+# panel `buttons`) brings the card back from `chevron:right`, and after a
+# second hand-over a real Backspace does the same. Then the card around its
 # tiles: the group carries a `command` module reading a file, which answers
 # nothing at first and so has no tile; given a label under the open card, a
 # tile appears for it, and every tile stays inside the card's rect.
@@ -40,7 +43,7 @@
 # click on the clock shutting it and opening the calendar in its place.
 leg_chevron_flag="--chevron"
 leg_chevron_order=180
-leg_chevron_needs="wlrctl convert jq"
+leg_chevron_needs="wlrctl wtype convert jq"
 
 chevron_status_shut_path="$shot_dir/chevron-status-shut.json"
 chevron_status_open_path="$shot_dir/chevron-status-open.json"
@@ -65,10 +68,19 @@ chevron_tray_path="$shot_dir/chevron-tray.json"
 chevron_clicks_path="$shot_dir/chevron-clicks.txt"
 chevron_outside_path="$shot_dir/chevron-outside.png"
 chevron_handoff_path="$shot_dir/chevron-handoff.png"
+chevron_child_dump_path="$shot_dir/chevron-child-dump.json"
+chevron_back_path="$shot_dir/chevron-back.png"
+chevron_back_state_path="$shot_dir/chevron-back-state.txt"
+chevron_back_quick_path="$shot_dir/chevron-back-quick.json"
+chevron_rehanded_path="$shot_dir/chevron-rehanded.txt"
+chevron_key_back_state_path="$shot_dir/chevron-key-back-state.txt"
+chevron_key_back_quick_path="$shot_dir/chevron-key-back-quick.json"
 
 # The Weather tile's centre in the open card, off `quicksettings status`'s
 # own rects, in the output's logical pixels.
 chevron_weather_centre='.rows[] | select(.id == "weather") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"'
+# The handed-over panel's back button, off `debug dump`.
+chevron_back_centre='.panel.buttons[] | select(.key == "back") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"'
 
 leg_chevron_fixture() {
   : > "$chevron_grow_text_path"
@@ -87,7 +99,7 @@ leg_chevron_timing() {
   # taken past that, so it shows the bar left with the group's card shut.
   # The wallpaper set and the retheme behind it push every step of that ~9s
   # later.
-  leg_timing 62 92
+  leg_timing 76 106
 }
 
 leg_chevron_drive() {
@@ -132,6 +144,25 @@ sleep 3
 $ipc call panel state > "$chevron_panel_state_path" 2>&1
 $ipc call bar chevron status > "$chevron_status_child_path" 2>&1
 "$grim_bin" "$chevron_child_path" > /dev/null 2>&1
+$ipc call debug dump > "$chevron_child_dump_path" 2>&1
+"$wlrctl_bin" pointer move -4000 -4000 >> "$chevron_dispatch_path" 2>&1
+"$wlrctl_bin" pointer move \$("$jq_bin" -r '$chevron_back_centre' "$chevron_child_dump_path") >> "$chevron_dispatch_path" 2>&1
+sleep 1
+"$wlrctl_bin" pointer click left >> "$chevron_dispatch_path" 2>&1
+sleep 3
+$ipc call panel state > "$chevron_back_state_path" 2>&1
+$ipc call quicksettings status > "$chevron_back_quick_path" 2>&1
+"$grim_bin" "$chevron_back_path" > /dev/null 2>&1
+"$wlrctl_bin" pointer move -4000 -4000 >> "$chevron_dispatch_path" 2>&1
+"$wlrctl_bin" pointer move \$("$jq_bin" -r '$chevron_weather_centre' "$chevron_back_quick_path") >> "$chevron_dispatch_path" 2>&1
+sleep 1
+"$wlrctl_bin" pointer click left >> "$chevron_dispatch_path" 2>&1
+sleep 3
+$ipc call panel state > "$chevron_rehanded_path" 2>&1
+"$wtype_bin" -k BackSpace
+sleep 3
+$ipc call panel state > "$chevron_key_back_state_path" 2>&1
+$ipc call quicksettings status > "$chevron_key_back_quick_path" 2>&1
 $ipc call panel close > /dev/null 2>&1
 sleep 2
 $ipc call bar chevron status > "$chevron_status_closed_again_path" 2>&1
@@ -149,6 +180,35 @@ to \$(cell clock); click; sleep 1.5; check handoff
 $ipc call panel close > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
+}
+
+# The weather panel handed over from the card carries a back button, and
+# both a click on it and Backspace bring the card back from the chevron it
+# was opened off, not from IPC.
+_chevron_assert_back() {
+  local buttons
+  buttons=$("$jq_bin" -c '[.panel.buttons[].key]' "$chevron_child_dump_path" 2>/dev/null)
+  echo "chevron back: weather header buttons $buttons"
+  if [ "$buttons" != '["back","refresh","close"]' ]; then
+    fail "the weather panel handed over from quick settings carries $buttons in its header, not back, refresh and close: $(cat "$chevron_child_dump_path" 2>/dev/null)"
+  fi
+  if ! grep -q '^quicksettings$' "$chevron_back_state_path" 2>/dev/null; then
+    fail "clicking the back button did not bring quick settings back. Got: $(cat "$chevron_back_state_path" 2>/dev/null), pointer: $(cat "$chevron_dispatch_path" 2>/dev/null)"
+  fi
+  if [ "$("$jq_bin" -r '.from' "$chevron_back_quick_path" 2>/dev/null)" != "chevron:right" ]; then
+    fail "the card the back button brought back is not the chevron's: $(cat "$chevron_back_quick_path" 2>/dev/null)"
+  fi
+  [ -f "$chevron_back_path" ] || fail "no chevron-back screenshot produced"
+  echo "SMOKE_CHEVRON_BACK $chevron_back_path"
+  if ! grep -q '^weather$' "$chevron_rehanded_path" 2>/dev/null; then
+    fail "the Weather tile in the card brought back did not hand over again. Got: $(cat "$chevron_rehanded_path" 2>/dev/null)"
+  fi
+  if ! grep -q '^quicksettings$' "$chevron_key_back_state_path" 2>/dev/null; then
+    fail "Backspace in the handed-over weather panel did not bring quick settings back. Got: $(cat "$chevron_key_back_state_path" 2>/dev/null)"
+  fi
+  if [ "$("$jq_bin" -r '.from' "$chevron_key_back_quick_path" 2>/dev/null)" != "chevron:right" ]; then
+    fail "the card Backspace brought back is not the chevron's: $(cat "$chevron_key_back_quick_path" 2>/dev/null)"
+  fi
 }
 
 # One statistic of one patch of a frame, 0..255. Read off the red channel
@@ -317,6 +377,7 @@ leg_chevron_assert() {
     fail "no chevron-child screenshot produced"
   fi
   echo "SMOKE_CHEVRON_CHILD $chevron_child_path"
+  _chevron_assert_back
   if [ ! -s "$chevron_status_closed_again_path" ]; then
     fail "no bar chevron status (closed again) produced"
   fi

@@ -457,7 +457,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the band goes to dark ink, and reads a patch inside the Weather tile for
   a dark plate carrying light words: the card keeps its own ink whatever
   the band wears. A real click on that tile handing the card over to the
-  weather panel; a `command` module's tile appearing once its file gives it
+  weather panel, whose header's back button (a real click) and a real
+  Backspace each bring the card back from `chevron:right`; a `command` module's tile appearing once its file gives it
   a label, every tile inside the card's rect; and under a real pointer a
   click on the desktop shutting the card and one on the clock opening the
   calendar in its place.

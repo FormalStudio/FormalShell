@@ -305,6 +305,9 @@ pub struct Host {
     /// The frame's height, the most the output leaves it and whether the
     /// content was cut to that, as of the last layout.
     pub fit: std::cell::Cell<(f64, f64, bool)>,
+    /// Handed over from quick settings: the header carries a back button
+    /// to it, and Backspace goes back too.
+    pub back: bool,
 }
 
 const PRIME_MS: u64 = 75;
@@ -352,6 +355,7 @@ impl Host {
             scale,
             region: None,
             fit: std::cell::Cell::new((0.0, 0.0, false)),
+            back: false,
         }
     }
 
@@ -600,7 +604,10 @@ impl Host {
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
         let mut parts = vec![super::title(self.module.title(v)), w::space(s.panel_gap)];
-        let actions = self.module.actions(v);
+        let mut actions = self.module.actions(v);
+        if self.back {
+            actions.insert(0, w::icon_button("chevron-left").tip("Quick settings").on("back").key("back"));
+        }
         if !actions.is_empty() {
             parts.push(w::row(s.panel_gap, actions));
         }
@@ -786,6 +793,11 @@ impl Host {
         fx.out()
     }
 
+    /// The header's buttons by their action, as last drawn.
+    pub fn head_boxes(&self) -> Vec<(&str, IRect)> {
+        self.head.hits.iter().filter_map(|h| Some((h.on.as_deref()?, h.rect))).collect()
+    }
+
     /// Every quick settings piece's box by its key, as last drawn, then
     /// every other stop's (a slider's track, a menu's rows).
     pub fn quick_boxes(&self) -> Vec<(String, IRect)> {
@@ -812,6 +824,9 @@ impl Host {
     pub fn key(&mut self, name: Key, store: &Store, runtime: Option<&Runtime>) -> Out {
         if !self.open {
             return Out::None;
+        }
+        if self.back && name == Key::Back && !self.module.editing() {
+            return Out::Panel(super::quick::ID, None);
         }
         let mut fx = Self::effect(store, runtime);
         if self.module.editing() {
@@ -936,6 +951,9 @@ impl Host {
         let Some(mut e) = Ui::event(&h, x) else { return Out::None };
         if e.on == "close" {
             return Out::Close;
+        }
+        if e.on == "back" && self.back {
+            return Out::Panel(super::quick::ID, None);
         }
         // Only the tray tells the buttons apart; every other panel takes any
         // button as a click.

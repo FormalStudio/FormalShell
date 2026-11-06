@@ -1993,8 +1993,13 @@ impl App {
                 self.close_panels();
                 self.menu_open(Some(route));
             }
+            Out::Panel(quick::ID, _) => self.set_quick(self.quick_from, true),
             Out::Panel(name, then) => {
+                let from_quick = self.panel_open() == Some(quick::ID);
                 self.set_panel(name, true, None);
+                if let Some(h) = self.panel.as_mut().filter(|h| from_quick && h.is_open() && h.id() == name) {
+                    h.back = true;
+                }
                 if let Some(stop) = then {
                     self.panel_activate(name, &stop);
                 }

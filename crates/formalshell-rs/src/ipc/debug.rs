@@ -157,6 +157,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
                 "id": h.id(),
                 "open": h.is_open(),
                 "header": h.module.header(),
+                "buttons": h.head_boxes().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect::<Vec<_>>(),
                 "rest": rect(&h.card.rest_rect()),
                 "live": rect(&h.card.live_rect()),
                 "viewport": rect(&viewport),
