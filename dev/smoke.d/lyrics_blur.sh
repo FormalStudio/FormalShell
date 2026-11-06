@@ -55,7 +55,7 @@ lyrics_blur_track_artist="FormalShell Lyrics Blur Artist"
 lyrics_blur_track_album="FormalShell Lyrics Blur Album"
 
 leg_lyrics_blur_timing() {
-  leg_timing 30 90 2
+  leg_timing 50 110 2
 }
 
 leg_lyrics_blur_fixture() {
@@ -109,18 +109,18 @@ lyrics_blur_edge_energy() {
 }
 EOF
 
-  # Six lines, 8s apart (2s gap between each, well under the 5s interlude
-  # floor), no words: quality doesn't matter here, only that several of them
-  # sit past the blur ramp's 3-row cap once the first is lit and playback is
-  # frozen there.
+  # Six lines, 6s apart (2s gap between each, well under the 5s interlude
+  # floor), each word 0.8s on so the lit line wipes and glows chunk by chunk
+  # through the audited stretch, and several lines sit past the blur ramp's
+  # 3-row cap once playback is frozen.
   cat > "$shot_dir/lyrics-blur-cache.json" <<'JSON'
-{"source": "lrclib", "lines": [
-{"time": 2.0, "end": 6.0, "text": "Copper wire hums low", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": []},
-{"time": 8.0, "end": 12.0, "text": "Slate roofs hold the frost", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": []},
-{"time": 14.0, "end": 18.0, "text": "Empty platform waits", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": []},
-{"time": 20.0, "end": 24.0, "text": "Signal fades to static", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": []},
-{"time": 26.0, "end": 30.0, "text": "Distant engine turns over", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": []},
-{"time": 32.0, "end": 36.0, "text": "Morning finds the platform empty", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": []}
+{"source": "apple", "lines": [
+{"time": 2.0, "end": 6.0, "text": "Copper wire hums low", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": [{"time": 2.0, "text": "Copper", "joinsNext": false}, {"time": 2.8, "text": "wire", "joinsNext": false}, {"time": 3.6, "text": "hums", "joinsNext": false}, {"time": 4.4, "text": "low", "joinsNext": false}]},
+{"time": 8.0, "end": 12.0, "text": "Slate roofs hold the frost", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": [{"time": 8.0, "text": "Slate", "joinsNext": false}, {"time": 8.8, "text": "roofs", "joinsNext": false}, {"time": 9.6, "text": "hold", "joinsNext": false}, {"time": 10.4, "text": "the", "joinsNext": false}, {"time": 11.2, "text": "frost", "joinsNext": false}]},
+{"time": 14.0, "end": 18.0, "text": "Empty platform waits", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": [{"time": 14.0, "text": "Empty", "joinsNext": false}, {"time": 14.8, "text": "platform", "joinsNext": false}, {"time": 15.6, "text": "waits", "joinsNext": false}]},
+{"time": 20.0, "end": 24.0, "text": "Signal fades to static", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": [{"time": 20.0, "text": "Signal", "joinsNext": false}, {"time": 20.8, "text": "fades", "joinsNext": false}, {"time": 21.6, "text": "to", "joinsNext": false}, {"time": 22.4, "text": "static", "joinsNext": false}]},
+{"time": 26.0, "end": 30.0, "text": "Distant engine turns over", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": [{"time": 26.0, "text": "Distant", "joinsNext": false}, {"time": 26.8, "text": "engine", "joinsNext": false}, {"time": 27.6, "text": "turns", "joinsNext": false}, {"time": 28.4, "text": "over", "joinsNext": false}]},
+{"time": 32.0, "end": 36.0, "text": "Morning finds the platform empty", "parent": null, "background": false, "oppositeTurn": false, "estimated": false, "words": [{"time": 32.0, "text": "Morning", "joinsNext": false}, {"time": 32.8, "text": "finds", "joinsNext": false}, {"time": 33.6, "text": "the", "joinsNext": false}, {"time": 34.4, "text": "platform", "joinsNext": false}, {"time": 35.2, "text": "empty", "joinsNext": false}]}
 ]}
 JSON
 
@@ -173,8 +173,21 @@ while [ "\$SECONDS" -lt 15 ]; do
   sleep 1
 done
 
-# Frozen here (still on the first line, well before the second one at 8s),
-# so every frame below shares one position and one lit set.
+# Played through two line changes (8s and 14s) under the stale audit: the
+# lit line's wipe and glow redraw small boxes reaching the blurred rows
+# beside it every frame, and none of those redraws may leave a pixel a
+# whole redraw does not draw.
+$(stale_audit_start)
+SECONDS=0
+while [ "\$SECONDS" -lt 25 ]; do
+  pos=\$($ipc call media lyrics 2>/dev/null | "$jq_bin" -r '.position // 0')
+  awk -v p="\$pos" 'BEGIN { exit !(p >= 16) }' && break
+  sleep 0.5
+done
+$(stale_audit_stop lyrics-blur)
+
+# Frozen here, on the third line, so every frame below shares one position
+# and one lit set.
 $ipc call media playPause > /dev/null 2>&1
 sleep 1
 $ipc call media lyrics > "$lyrics_blur_status_on_path" 2>&1
@@ -228,6 +241,7 @@ leg_lyrics_blur_assert() {
   if ! grep -qF '"blur":true' "$lyrics_blur_status_on_path"; then
     fail "media.lyricsBlur's own default did not read true over IPC, got: $(cat "$lyrics_blur_status_on_path")"
   fi
+  stale_audit_assert lyrics-blur
   [ -f "$lyrics_blur_on_png_path" ] || fail "no blur-on screenshot produced"
   echo "SMOKE_LYRICS_BLUR_ON $lyrics_blur_on_png_path"
 
