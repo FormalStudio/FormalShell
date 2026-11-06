@@ -82,6 +82,7 @@
 --launcher-install
 --launcher-install --light
 --lights
+--weather-locate
 --localsend
 --lock
 --unlock

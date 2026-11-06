@@ -54,6 +54,7 @@ vello_hybrid = { version = "0.2", default-features = false, features = ["std"] }
 # vello_hybrid's own vello_common: its picture, filter and rect types.
 vello_common_hybrid = { package = "vello_common", version = "0.2" }
 wayland-scanner = "0.31"
+iana-time-zone = "0.1.65"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Vulkan only: the loader is dlopened by ash, so the binary links nothing new.

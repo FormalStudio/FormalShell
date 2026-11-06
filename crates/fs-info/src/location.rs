@@ -7,6 +7,7 @@
 
 use std::sync::LazyLock;
 
+use chrono::{DateTime, Offset, TimeZone, Utc};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
@@ -165,6 +166,102 @@ pub fn parse_geolocate(body: &str) -> Option<Fix> {
     })
 }
 
+impl Fix {
+    pub fn coarse(&self) -> bool {
+        self.source == Source::Ip || self.accuracy >= COARSE_METRES
+    }
+}
+
+/// Past this a fix places the network's exit, not the machine: beaconDB's
+/// IP answer is 25 km, a Wi-Fi one a few hundred metres.
+pub const COARSE_METRES: f64 = 10_000.0;
+
+/// zone.tab rather than zone1970.tab: the latter folds a link like
+/// Europe/Amsterdam into Europe/Brussels, and the system zone is the link.
+pub const ZONE_TAB: &str = "/usr/share/zoneinfo/zone.tab";
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Zone {
+    pub name: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    /// zone.tab's own words for the area ("Canary Islands"), "" for a
+    /// country with one zone.
+    pub comment: String,
+}
+
+/// ISO 6709 as zone.tab writes it: `+DDMM-DDDMM` or `+DDMMSS-DDDMMSS`.
+fn iso6709(text: &str) -> Option<(f64, f64)> {
+    let split = text.get(1..)?.find(['+', '-'])? + 1;
+    let part = |p: &str, deg: usize| -> Option<f64> {
+        let sign = match p.as_bytes().first()? {
+            b'+' => 1.0,
+            b'-' => -1.0,
+            _ => return None,
+        };
+        let digits = &p[1..];
+        if !digits.bytes().all(|b| b.is_ascii_digit()) || (digits.len() != deg + 2 && digits.len() != deg + 4) {
+            return None;
+        }
+        let n = |r: std::ops::Range<usize>| digits.get(r).map_or(0.0, |d| d.parse::<f64>().unwrap_or(0.0));
+        Some(sign * (n(0..deg) + n(deg..deg + 2) / 60.0 + n(deg + 2..deg + 4) / 3600.0))
+    };
+    Some((part(&text[..split], 2)?, part(&text[split..], 3)?))
+}
+
+pub fn parse_zone_tab(text: &str) -> Vec<Zone> {
+    text.lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| {
+            let mut f = l.split('\t');
+            let (_, coords, name) = (f.next()?, f.next()?, f.next()?);
+            let (latitude, longitude) = iso6709(coords)?;
+            Some(Zone { name: name.into(), latitude, longitude, comment: f.next().unwrap_or("").into() })
+        })
+        .collect()
+}
+
+fn distance_km(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (la1, la2) = (a.0.to_radians(), b.0.to_radians());
+    let (dla, dlo) = (la2 - la1, (b.1 - a.1).to_radians());
+    let h = (dla / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dlo / 2.0).sin().powi(2);
+    12_742.0 * h.sqrt().asin()
+}
+
+fn offset_at(zone: &str, now: DateTime<Utc>) -> Option<i32> {
+    let tz: chrono_tz::Tz = zone.parse().ok()?;
+    Some(tz.offset_from_utc_datetime(&now.naive_utc()).fix().local_minus_utc())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Placed {
+    Fix(f64, f64),
+    /// The system zone's own point, standing in for a fix that contradicts it.
+    Zone(Zone),
+}
+
+/// A coarse fix whose nearest zone keeps another clock than the system's
+/// is the ISP's exit, not the machine: Canary Islands lines leave through
+/// Madrid, an hour ahead. The system zone's point is then the honest place.
+/// A fine fix, a zone missing from the table or one chrono-tz cannot read
+/// leaves the fix alone.
+pub fn settle(at: (f64, f64), coarse: bool, system: &str, zones: &[Zone], now: DateTime<Utc>) -> Placed {
+    let keep = Placed::Fix(at.0, at.1);
+    if !coarse {
+        return keep;
+    }
+    let Some(home) = zones.iter().find(|z| z.name == system) else { return keep };
+    let Some(nearest) = zones.iter().min_by(|a, b| {
+        distance_km(at, (a.latitude, a.longitude)).total_cmp(&distance_km(at, (b.latitude, b.longitude)))
+    }) else {
+        return keep;
+    };
+    match (offset_at(system, now), offset_at(&nearest.name, now)) {
+        (Some(ours), Some(theirs)) if ours != theirs => Placed::Zone(home.clone()),
+        _ => keep,
+    }
+}
+
 /// Rounded to about a kilometre, so a fix that drifts a few metres is the
 /// same place and never another lookup.
 pub fn place_key(latitude: f64, longitude: f64) -> String {
@@ -174,14 +271,14 @@ pub fn place_key(latitude: f64, longitude: f64) -> String {
     format!("{},{}", js::to_fixed(latitude, 2), js::to_fixed(longitude, 2))
 }
 
-pub fn reverse_url(key: &str) -> String {
+pub fn reverse_url(key: &str, zoom: u8) -> String {
     let mut parts = key.split(',');
     let lat = parts.next().unwrap_or("");
     // A key without a comma reads its longitude as "undefined", the way the
     // string concatenation always has.
     let lon = parts.next().unwrap_or("undefined");
     format!(
-        "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=en&lat={lat}&lon={lon}"
+        "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom={zoom}&accept-language=en&lat={lat}&lon={lon}"
     )
 }
 

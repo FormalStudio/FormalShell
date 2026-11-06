@@ -1,15 +1,17 @@
 //! The forecast behind the weather cell and the
 //! place it is for: `location.latitude/longitude`
 //! from settings.json when both are numbers, else GeoClue's fix, else (15 s
-//! without one) a beaconDB lookup off the visible Wi-Fi access points. No fix
-//! is its own state, never a guess.
+//! without one) a beaconDB lookup off the visible Wi-Fi access points. A
+//! coarse fix that contradicts the system time zone gives way to the zone's
+//! own point (`location::settle`). No fix is its own state, never a guess.
 
 use std::time::Duration;
 
-use fs_info::location::{self, Fix};
+use fs_info::location::{self, Fix, Placed};
 use fs_info::weather::{self, Error, Weather};
 
-use super::{changed, geoclue, idle, kicked, settings};
+use super::geoclue::{self, GeoFix};
+use super::{changed, idle, kicked, settings};
 use crate::runtime::Ctx;
 use crate::services::proc;
 use crate::services::wants::Source;
@@ -55,11 +57,23 @@ async fn geolocate() -> Option<Fix> {
     location::parse_geolocate(&reply.stdout)
 }
 
-async fn place_name(key: &str) -> String {
+/// Read on every settle, so a zone changed while travelling is picked up.
+fn settle(at: (f64, f64), coarse: bool) -> Placed {
+    // TZ first, as the clocks read it; a path in it is no zone name.
+    let system = std::env::var("TZ")
+        .ok()
+        .map(|tz| tz.trim_start_matches(':').to_string())
+        .filter(|tz| !tz.is_empty() && !tz.starts_with('/'))
+        .unwrap_or_else(|| iana_time_zone::get_timezone().unwrap_or_default());
+    let zones = std::fs::read_to_string(location::ZONE_TAB).map(|t| location::parse_zone_tab(&t)).unwrap_or_default();
+    location::settle(at, coarse, &system, &zones, chrono::Utc::now())
+}
+
+async fn place_name(key: &str, zoom: u8) -> String {
     let reply = proc::capture(
         &proc::argv(&[
             "curl", "-sS", "--fail", "--max-time", "8", "-H", "User-Agent: FormalShell (https://github.com/FormalStudio/FormalShell)",
-            &location::reverse_url(key),
+            &location::reverse_url(key, zoom),
         ]),
         Duration::from_secs(15),
     )
@@ -86,7 +100,7 @@ pub async fn run(ctx: Ctx) {
     let rx = changed();
     let kick = kicked(Source::Weather);
     let mut lookup: Option<Fix> = None;
-    let mut geo: Option<(f64, f64)> = None;
+    let mut geo: Option<GeoFix> = None;
     let (fixes, geo_fixes) = async_channel::unbounded();
     // No point asking GeoClue while settings.json already says where.
     let geoclue_wanted = read().at.is_none();
@@ -97,8 +111,8 @@ pub async fn run(ctx: Ctx) {
     let mut places: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     loop {
         let cfg = read();
-        let at = match cfg.at {
-            Some(at) => Some(at),
+        let placed = match cfg.at {
+            Some(at) => Some(Placed::Fix(at.0, at.1)),
             None => {
                 while let Ok(fix) = geo_fixes.try_recv() {
                     geo = Some(fix);
@@ -115,10 +129,12 @@ pub async fn run(ctx: Ctx) {
                 if geo.is_none() && lookup.is_none() {
                     lookup = geolocate().await;
                 }
-                geo.or(lookup.map(|f| (f.latitude, f.longitude)))
+                geo.map(|(at, accuracy)| (at, accuracy >= location::COARSE_METRES))
+                    .or(lookup.map(|f| ((f.latitude, f.longitude), f.coarse())))
+                    .map(|(at, coarse)| settle(at, coarse))
             }
         };
-        let Some((lat, lon)) = at else {
+        let Some(placed) = placed else {
             publish(&ctx, State::default());
             // A machine that cannot place itself asks again in 15 s.
             futures_lite::future::or(
@@ -130,7 +146,18 @@ pub async fn run(ctx: Ctx) {
             .await;
             continue;
         };
-        let key = location::place_key(lat, lon);
+        // A zone's point is no town, so it is named by zone.tab's words for
+        // the area or, for a country with one zone, the country.
+        let (lat, lon, key, zoom) = match &placed {
+            Placed::Fix(lat, lon) => (*lat, *lon, location::place_key(*lat, *lon), 10),
+            Placed::Zone(zone) => {
+                let key = location::place_key(zone.latitude, zone.longitude);
+                if !zone.comment.is_empty() {
+                    places.insert(key.clone(), zone.comment.clone());
+                }
+                (zone.latitude, zone.longitude, key, 3)
+            }
+        };
         let place = places.get(&key).cloned().unwrap_or_default();
         let mut state = match weather::build_url(lat, lon) {
             None => State { located: true, error: Some(Error::MissingFields), weather: None, place },
@@ -141,7 +168,7 @@ pub async fn run(ctx: Ctx) {
         };
         publish(&ctx, state.clone());
         if !key.is_empty() && !places.contains_key(&key) {
-            let name = place_name(&key).await;
+            let name = place_name(&key, zoom).await;
             if !name.is_empty() {
                 places.insert(key, name.clone());
                 state.place = name;
@@ -160,7 +187,7 @@ pub async fn run(ctx: Ctx) {
 
 /// A later GeoClue fix replaces the one the forecast is for; once GeoClue
 /// has gone quiet for good this never completes.
-async fn next_fix(fixes: &async_channel::Receiver<(f64, f64)>, geo: &mut Option<(f64, f64)>) {
+async fn next_fix(fixes: &async_channel::Receiver<GeoFix>, geo: &mut Option<GeoFix>) {
     match fixes.recv().await {
         Ok(fix) => *geo = Some(fix),
         Err(_) => std::future::pending().await,

@@ -45,19 +45,26 @@ trait Location {
     fn latitude(&self) -> zbus::Result<f64>;
     #[zbus(property)]
     fn longitude(&self) -> zbus::Result<f64>;
+    #[zbus(property)]
+    fn accuracy(&self) -> zbus::Result<f64>;
 }
 
-async fn fix(conn: &zbus::Connection, path: &OwnedObjectPath) -> Option<(f64, f64)> {
+/// Where, and how many metres either way.
+pub type GeoFix = ((f64, f64), f64);
+
+async fn fix(conn: &zbus::Connection, path: &OwnedObjectPath) -> Option<GeoFix> {
     if path.as_str() == "/" {
         return None;
     }
     let location = LocationProxy::builder(conn).path(path.clone()).ok()?.build().await.ok()?;
     let (lat, lon) = (location.latitude().await.ok()?, location.longitude().await.ok()?);
-    (lat.is_finite() && lon.is_finite()).then_some((lat, lon))
+    // A source that never says how close it is counts as coarse.
+    let accuracy = location.accuracy().await.ok().filter(|a| a.is_finite()).unwrap_or(f64::INFINITY);
+    (lat.is_finite() && lon.is_finite()).then_some(((lat, lon), accuracy))
 }
 
 /// Sends each fix GeoClue reports until the bus goes away or the receiver does.
-pub async fn run(fixes: async_channel::Sender<(f64, f64)>) {
+pub async fn run(fixes: async_channel::Sender<GeoFix>) {
     let Ok(conn) = crate::services::bus::system().await else { return };
     let Ok(manager) = ManagerProxy::new(&conn).await else { return };
     let Ok(path) = manager.get_client().await else { return };

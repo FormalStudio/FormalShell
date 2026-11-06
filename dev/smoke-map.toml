@@ -457,7 +457,7 @@ runs = ["--panel calendar"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/weather.rs", "crates/formalshell-rs/src/services/info/weather.rs", "crates/formalshell-rs/src/services/info/geoclue.rs", "crates/fs-info/src/weather.rs", "crates/fs-info/src/location.rs"]
-runs = ["--panel weather"]
+runs = ["--panel weather", "--weather-locate"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/panel/**", "crates/formalshell-rs/src/services/info/**", "crates/formalshell-rs/src/services/devices/**"]
