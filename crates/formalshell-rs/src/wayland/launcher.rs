@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_menu::nav;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};

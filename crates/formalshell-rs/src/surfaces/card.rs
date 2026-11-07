@@ -19,7 +19,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, EMERGE, SPATIAL_FAST, SPATIAL_FAST_MS};

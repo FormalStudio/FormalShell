@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use fs_chrome::bar::workspaces::{PreviewLayout, preview_layout};
-use fs_chrome::types::Rect;
+use fs_types::Rect;
 
 use super::{Effect, Panel, View};
 use crate::scene::Bitmap;

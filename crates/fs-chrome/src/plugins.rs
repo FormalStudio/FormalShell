@@ -38,7 +38,7 @@ use serde::de::{self, Deserialize, Deserializer, IgnoredAny, MapAccess, SeqAcces
 use serde_json::Value;
 
 use fs_js as js;
-use crate::types::Region;
+use fs_types::Region;
 
 pub const API_VERSION: i64 = 1;
 

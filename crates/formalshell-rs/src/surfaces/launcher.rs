@@ -22,7 +22,7 @@ use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir, KeyAction, KeyCtx, KeyMode};
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;

@@ -95,7 +95,7 @@ paths = [
   "crates/fs-info/src/lib.rs",
   "crates/fs-theme/**",
   "crates/fs-chrome/src/lib.rs",
-  "crates/fs-chrome/src/types.rs",
+  "crates/fs-types/**",
   "crates/fs-chrome/src/drawer.rs",
   "crates/fs-js/**",
   "crates/Cargo.toml",

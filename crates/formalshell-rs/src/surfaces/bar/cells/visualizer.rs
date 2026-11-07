@@ -10,7 +10,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_media::visualizer::model::{self, BAR_COUNT, Band, CELL_BAR_COUNT};
 use fs_theme::tokens::WEIGHTS;
 

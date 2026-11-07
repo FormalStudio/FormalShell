@@ -4,7 +4,7 @@
 //! place of an auth prompt sample, which lands with the lock
 //! (R6), so every control a panel builds from is on the sheet.
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 
 use super::{Effect, Panel, View};
 use crate::store::Topic;

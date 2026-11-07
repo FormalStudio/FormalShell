@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use fs_chrome::rim::{Field, Glint, Sky, UNFOCUSED};
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 
 use super::App;
 use crate::services::{compositor, wallpaper};

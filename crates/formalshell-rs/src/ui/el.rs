@@ -288,7 +288,7 @@ pub enum Kind {
     Ring { ring: Ring, indicator: bool },
     Sparkline(Series),
     /// A shape budding off a line on `edge`, for the gallery.
-    Shoulders { edge: fs_chrome::types::Edge, span: f64, depth: f64, run: f64 },
+    Shoulders { edge: fs_types::Edge, span: f64, depth: f64, run: f64 },
     Marquee { text: String, ink: Ink, max: f64 },
     /// Words wrapped at the width they get, cut with an ellipsis past `lines`.
     Para { text: String, font: Font, ink: Ink, lines: usize },

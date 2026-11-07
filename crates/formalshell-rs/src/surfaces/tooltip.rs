@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_theme::theme::Theme;
 
 use crate::motion::{Animated, Kind as Clock};

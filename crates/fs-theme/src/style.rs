@@ -15,6 +15,7 @@ use std::sync::LazyLock;
 use serde_json::{Map, Value};
 
 use crate::tokens::{self, Easing, Motion};
+use fs_types::Edge;
 
 /// Every role a table must carry and its states. An empty list is a role
 /// with one box; otherwise the FIRST state is the base the others merge
@@ -256,25 +257,6 @@ pub fn layer_kind(layer: &Value) -> LayerKind {
         LayerKind::Ring
     } else {
         LayerKind::Hairline
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Edge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-impl Edge {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Edge::Top => "top",
-            Edge::Bottom => "bottom",
-            Edge::Left => "left",
-            Edge::Right => "right",
-        }
     }
 }
 
@@ -562,7 +544,8 @@ pub fn metric(style: &Value, role: &str, key: &str) -> f64 {
 /// What a renderer draws a resolved box as, for a box of
 /// `width` by `height`: the geometry every renderer of a box shares.
 pub mod geometry {
-    use super::{Cast, Edge};
+    use super::Cast;
+    use fs_types::Edge;
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct Rect {

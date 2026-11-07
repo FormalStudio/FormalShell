@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
-use fs_chrome::types::Edge;
+use fs_types::{Edge, IRect, Insets};
 use serde_json::{Value as Json, json};
 
 use super::App;
@@ -24,28 +24,12 @@ use crate::services::compositor::{self, Command};
 const TICK: Duration = Duration::from_millis(100);
 const DEFAULT_APP_ID: &str = "dev.formalshell.console";
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rect {
-    pub x: i64,
-    pub y: i64,
-    pub width: i64,
-    pub height: i64,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Insets {
-    pub top: f64,
-    pub bottom: f64,
-    pub left: f64,
-    pub right: f64,
-}
-
 fn clamp_share(share: f64) -> f64 {
     if share.is_finite() { share.clamp(0.2, 1.0) } else { 0.5 }
 }
 
 /// geometry.js's `consoleGeometry`: `screen` is the output's logical box.
-pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f64) -> Option<Rect> {
+pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f64) -> Option<IRect> {
     let (sx, sy, sw, sh) = screen;
     if sw <= 0.0 || sh <= 0.0 {
         return None;
@@ -53,7 +37,7 @@ pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f
     let gap = margin.round().max(0.0);
     let (top, bottom, left, right) = (bar.top.max(0.0), bar.bottom.max(0.0), bar.left.max(0.0), bar.right.max(0.0));
     let usable = sh - top - bottom - gap;
-    Some(Rect {
+    Some(IRect {
         x: (sx + left + gap).round() as i64,
         y: (sy + top + gap).round() as i64,
         width: (sw - left - right - gap * 2.0).round().max(1.0) as i64,
@@ -63,7 +47,7 @@ pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f
 
 struct Placing {
     id: String,
-    target: Rect,
+    target: IRect,
     placed: bool,
     placed_at: u32,
     was_parked: bool,
@@ -305,13 +289,13 @@ mod tests {
     fn drops_from_under_the_bar_over_its_share() {
         let bar = Insets { top: 40.0, ..Insets::default() };
         let r = geometry((0.0, 0.0, 1920.0, 1080.0), bar, 0.5, 10.0).unwrap();
-        assert_eq!(r, Rect { x: 10, y: 50, width: 1900, height: 505 });
+        assert_eq!(r, IRect { x: 10, y: 50, width: 1900, height: 505 });
     }
 
     #[test]
     fn share_is_clamped_and_a_bad_screen_places_nothing() {
         let r = geometry((100.0, 0.0, 1000.0, 1000.0), Insets::default(), 5.0, 0.0).unwrap();
-        assert_eq!(r, Rect { x: 100, y: 0, width: 1000, height: 1000 });
+        assert_eq!(r, IRect { x: 100, y: 0, width: 1000, height: 1000 });
         let r = geometry((0.0, 0.0, 1000.0, 1000.0), Insets::default(), 0.01, 0.0).unwrap();
         assert_eq!(r.height, 200);
         assert!(geometry((0.0, 0.0, 0.0, 1000.0), Insets::default(), 0.5, 0.0).is_none());

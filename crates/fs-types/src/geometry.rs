@@ -88,3 +88,23 @@ pub struct Insets {
     pub left: f64,
     pub right: f64,
 }
+
+/// A rectangle in whole pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct IRect {
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+}
+
+impl IRect {
+    pub fn new(x: i64, y: i64, width: i64, height: i64) -> IRect {
+        IRect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}

@@ -11,7 +11,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::{Edge, Region};
+use fs_types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 use fs_theme::theme::{Face, Theme};

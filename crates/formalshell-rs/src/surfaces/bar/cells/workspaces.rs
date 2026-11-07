@@ -203,7 +203,7 @@ pub(crate) fn window(w: &Window) -> workspaces::Window {
         is_focused: w.is_focused,
         is_urgent: w.is_urgent,
         is_floating: w.is_floating,
-        rect: w.rect.map(|r| fs_chrome::types::Rect {
+        rect: w.rect.map(|r| fs_types::Rect {
             x: r.x as f64,
             y: r.y as f64,
             width: r.width as f64,
@@ -763,7 +763,7 @@ impl Custom for Workspaces {
 #[cfg(test)]
 mod tests {
     use fs_chrome::bar::workspaces::SlotWindow;
-    use fs_chrome::types::Edge;
+    use fs_types::Edge;
 
     use super::*;
     use crate::store::Store;

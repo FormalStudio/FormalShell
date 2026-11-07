@@ -2,7 +2,7 @@
 //! headlessly, `room` (what the strip shares out and what it hid) and
 //! `paint` (the band's reading of the wallpaper).
 
-use fs_chrome::types::Region;
+use fs_types::Region;
 use serde_json::{Map, json};
 
 use super::registry::{Function, Target, Type, Value};

@@ -17,7 +17,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;

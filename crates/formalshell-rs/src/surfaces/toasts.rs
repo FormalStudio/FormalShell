@@ -30,7 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use fs_chrome::types::Insets;
+use fs_types::Insets;
 use fs_info::notifications::{self as model, Group, PositionSpec, Urgency};
 use fs_info::toast_stack::{self, StackParams};
 use fs_theme::color::Rgba;

@@ -203,7 +203,7 @@ impl App {
         self.sync_join();
     }
 
-    pub(super) fn atlas_joins(&self) -> Vec<(fs_chrome::types::Edge, f64, f64, f64)> {
+    pub(super) fn atlas_joins(&self) -> Vec<(fs_types::Edge, f64, f64, f64)> {
         self.atlas.win.as_ref().map_or_else(Vec::new, |w| w.shown.modal.joins().collect())
     }
 

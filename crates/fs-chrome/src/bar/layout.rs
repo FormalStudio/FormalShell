@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use fs_js as js;
 use crate::plugins::{PLUGIN_PREFIX, Plugin};
-use crate::types::{Edge, Region};
+use fs_types::{Edge, Region};
 
 /// The builtin widgets a user can name in `bar.layout`. All but a handful are
 /// opt-in and absent from [`default_layout`]: a no-config bar carries only

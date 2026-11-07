@@ -6,7 +6,8 @@
 use std::time::Instant;
 
 use fs_theme::color::Rgba;
-use fs_theme::style::{BoxStyle, Edge};
+use fs_theme::style::BoxStyle;
+use fs_types::Edge;
 use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
 use crate::scene::{Cast, Fit, IRect, LitLine, Outline, Paint, Scene, Snap};

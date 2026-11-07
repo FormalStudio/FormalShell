@@ -14,7 +14,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::{Edge, Insets};
+use fs_types::{Edge, Insets};
 use fs_info::notifications::PositionSpec;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;

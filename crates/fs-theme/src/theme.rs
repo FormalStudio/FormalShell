@@ -485,7 +485,8 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::style::{Cast, Edge, geometry};
+    use crate::style::{Cast, geometry};
+    use fs_types::Edge;
     use serde_json::json;
 
     /// tst_box's sentinel palette: distinct values per role, since the zinc

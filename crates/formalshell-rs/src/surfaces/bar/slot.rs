@@ -6,7 +6,7 @@
 use std::time::{Duration, Instant};
 
 use fs_chrome::bar::layout::Entry;
-use fs_chrome::types::{Edge, Region};
+use fs_types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 

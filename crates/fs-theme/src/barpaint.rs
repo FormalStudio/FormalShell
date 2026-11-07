@@ -11,6 +11,8 @@
 //! is wingpanel's compromise and why it goes solid once one covers the
 //! output.
 
+use fs_types::{Edge, Rect};
+
 /// Rec. 601 luma, the weighting gala reads a wallpaper's brightness with,
 /// on 0..255.
 const LUMA_R: f64 = 0.299;
@@ -78,14 +80,6 @@ impl Stats {
         let mean = LUMA_R * f64::from(r) + LUMA_G * f64::from(g) + LUMA_B * f64::from(b);
         Stats { mean, std: 0.0, acutance: 0.0, sampled: true }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
 }
 
 /// JS `Math.round`: halves go up, also for negatives.
@@ -263,7 +257,7 @@ pub fn cell(band: Paint, pin: Pin, span: &Stats) -> Paint {
 /// and thickness against the output's size, scaled and clamped so a band
 /// thinner than one sample row still has a row to read.
 pub fn band_rect(
-    edge: &str,
+    edge: Edge,
     thickness: f64,
     screen_width: f64,
     screen_height: f64,
@@ -273,25 +267,25 @@ pub fn band_rect(
     let across = js_round(thickness / screen_height.max(1.0) * sample_height).max(1.0);
     let down = js_round(thickness / screen_width.max(1.0) * sample_width).max(1.0);
     match edge {
-        "bottom" => Rect {
+        Edge::Bottom => Rect {
             x: 0.0,
             y: (sample_height - across).max(0.0),
             width: sample_width,
             height: across,
         },
-        "left" => Rect {
+        Edge::Left => Rect {
             x: 0.0,
             y: 0.0,
             width: down,
             height: sample_height,
         },
-        "right" => Rect {
+        Edge::Right => Rect {
             x: (sample_width - down).max(0.0),
             y: 0.0,
             width: down,
             height: sample_height,
         },
-        _ => Rect {
+        Edge::Top => Rect {
             x: 0.0,
             y: 0.0,
             width: sample_width,
@@ -438,29 +432,29 @@ mod tests {
 
     #[test]
     fn the_band_rect_follows_the_bar_edge() {
-        let top = band_rect("top", 40.0, 1920.0, 1080.0, 240.0, 135.0);
+        let top = band_rect(Edge::Top, 40.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(top.x, 0.0);
         assert_eq!(top.y, 0.0);
         assert_eq!(top.width, 240.0);
         assert_eq!(top.height, 5.0);
 
-        let bottom = band_rect("bottom", 40.0, 1920.0, 1080.0, 240.0, 135.0);
+        let bottom = band_rect(Edge::Bottom, 40.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(bottom.y, 130.0);
         assert_eq!(bottom.height, 5.0);
 
-        let right = band_rect("right", 40.0, 1920.0, 1080.0, 240.0, 135.0);
+        let right = band_rect(Edge::Right, 40.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(right.width, 5.0);
         assert_eq!(right.height, 135.0);
         assert_eq!(right.x, 235.0);
 
-        let left = band_rect("left", 40.0, 1920.0, 1080.0, 240.0, 135.0);
+        let left = band_rect(Edge::Left, 40.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(left.x, 0.0);
         assert_eq!(left.width, 5.0);
     }
 
     #[test]
     fn the_band_rect_never_collapses() {
-        let band = band_rect("top", 1.0, 1920.0, 1080.0, 240.0, 135.0);
+        let band = band_rect(Edge::Top, 1.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(band.height, 1.0);
     }
 }

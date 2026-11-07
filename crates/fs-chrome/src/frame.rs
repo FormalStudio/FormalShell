@@ -9,7 +9,7 @@
 //! seam where one would hand over to the other. `radius` is capped so the
 //! cut-out is never asked for corners it cannot hold.
 
-use crate::types::{Insets, Rect};
+use fs_types::{Insets, Rect};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameGeometry {

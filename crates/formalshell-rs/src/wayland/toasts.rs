@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Insets;
+use fs_types::Insets;
 use fs_info::notifications::PositionSpec;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 

@@ -1696,8 +1696,8 @@ fn sparkline(cx: &mut Cx, r: Rect, series: &super::el::Series, path: &str) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn shoulders(cx: &mut Cx, r: Rect, edge: fs_chrome::types::Edge, span: f64, depth: f64, run: f64, path: &str) {
-    use fs_chrome::types::Edge;
+fn shoulders(cx: &mut Cx, r: Rect, edge: fs_types::Edge, span: f64, depth: f64, run: f64, path: &str) {
+    use fs_types::Edge;
     let t = cx.theme;
     let card = t.box_style("card", None);
     let radius = t.box_radius(&card, depth);

@@ -181,8 +181,8 @@ pub fn paths_with(width: f64, height: f64, radius: f64, border: f64, attach: f64
 /// An attached card `depth` deep hung at
 /// a published join, so `debug join` has a card in the gap it opens. Drawn
 /// into a full-output scene; `line` is the line's row across from `edge`.
-pub fn preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_chrome::types::Edge, line: f64, join: Option<(f64, f64)>) {
-    use fs_chrome::types::Edge;
+pub fn preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_types::Edge, line: f64, join: Option<(f64, f64)>) {
+    use fs_types::Edge;
     use vello_cpu::kurbo::{Affine, Rect};
     let mut p = crate::surfaces::bar::cell::Painter::new(scene, nodes, None);
     if let Some((x, width)) = join {

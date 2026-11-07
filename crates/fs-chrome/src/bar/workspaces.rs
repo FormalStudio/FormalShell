@@ -21,7 +21,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
-use crate::types::Rect;
+use fs_types::Rect;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Workspace {

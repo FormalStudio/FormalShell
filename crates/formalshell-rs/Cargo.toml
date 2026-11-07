@@ -19,6 +19,7 @@ chrono = "0.4"
 fs-theme = { version = "0.2.0", path = "../fs-theme" }
 futures-lite = "2.6"
 fs-chrome = { path = "../fs-chrome" }
+fs-types = { path = "../fs-types" }
 fs-system = { path = "../fs-system" }
 fs-mpris = { path = "../fs-mpris" }
 fs-media = { path = "../fs-media" }

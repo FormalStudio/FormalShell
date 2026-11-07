@@ -9,7 +9,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_theme::theme::Theme;
 use smithay_client_toolkit::reexports::client::QueueHandle;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;

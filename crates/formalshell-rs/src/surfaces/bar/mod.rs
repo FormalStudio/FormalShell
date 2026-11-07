@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use fs_chrome::bar::layout::{self, Entry, Label, Rails, Resolved};
 use fs_chrome::frame::{self, Gaps};
-use fs_chrome::types::{Edge, Insets, Region};
+use fs_types::{Edge, Insets, Region};
 use fs_theme::barpaint;
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
@@ -887,7 +887,7 @@ impl Bar {
                 }
             }
             let sr = frame::stroke_rect(g.inner, g.radius, ring.1);
-            let line = frame::ring_line(fs_chrome::types::Rect::new(sr.x, sr.y, sr.width, sr.height), sr.radius, gaps);
+            let line = frame::ring_line(fs_types::Rect::new(sr.x, sr.y, sr.width, sr.height), sr.radius, gaps);
             let mut path = BezPath::new();
             let s = &line.sides;
             for seg in [s.top, s.right, s.bottom, s.left].iter().flatten() {

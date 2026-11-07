@@ -2,7 +2,7 @@
 //! the R0 spike's animation switches (`r0*`) until real targets replace
 //! them.
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use serde_json::json;
 
 use super::registry::{Function, Target, Type, Value};

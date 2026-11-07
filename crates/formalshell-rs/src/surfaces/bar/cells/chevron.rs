@@ -3,7 +3,7 @@
 //! card is shut and back at it while it is up.
 
 use fs_chrome::bar::layout::{self, Entry};
-use fs_chrome::types::{Edge, Region};
+use fs_types::{Edge, Region};
 
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, View};

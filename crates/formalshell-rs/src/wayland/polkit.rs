@@ -152,7 +152,7 @@ impl App {
         true
     }
 
-    pub(super) fn polkit_joins(&self) -> Vec<(fs_chrome::types::Edge, f64, f64, f64)> {
+    pub(super) fn polkit_joins(&self) -> Vec<(fs_types::Edge, f64, f64, f64)> {
         self.polkit.as_ref().map_or_else(Vec::new, |d| d.modal.joins().collect())
     }
 

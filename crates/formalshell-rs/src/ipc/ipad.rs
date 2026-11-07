@@ -3,7 +3,7 @@
 //! iPad to another edge keeping its stretch, `stretch` moves it along its
 //! edge; both reach padbridge as one `SetPosition`.
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::ipad::{self, Cmd, Ipad, Stretch};

@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_theme::color::Rgba;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;

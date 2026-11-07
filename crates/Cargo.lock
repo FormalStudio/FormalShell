@@ -901,6 +901,7 @@ dependencies = [
  "fs-system",
  "fs-theme",
  "fs-tray",
+ "fs-types",
  "fs-upower",
  "futures-lite",
  "iana-time-zone",
@@ -980,6 +981,7 @@ name = "fs-chrome"
 version = "0.2.0"
 dependencies = [
  "fs-js",
+ "fs-types",
  "image",
  "regex",
  "serde",
@@ -1111,6 +1113,7 @@ name = "fs-theme"
 version = "0.2.0"
 dependencies = [
  "chrono",
+ "fs-types",
  "regex",
  "serde_json",
 ]
@@ -1124,6 +1127,10 @@ dependencies = [
  "serde",
  "zbus",
 ]
+
+[[package]]
+name = "fs-types"
+version = "0.2.0"
 
 [[package]]
 name = "fs-upower"

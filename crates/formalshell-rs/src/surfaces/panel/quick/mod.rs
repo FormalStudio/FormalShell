@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use fs_audio::Command;
 use fs_chrome::bar::layout::{self, Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::widget_panel;
-use fs_chrome::types::{Edge, Region};
+use fs_types::{Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 use fs_system::power::model::{self, battery_icon, charge_threshold_active};

@@ -2,7 +2,7 @@
 //! plus the two composites every panel leans on (`section`, `hero`).
 //! Tokens come from `Space`; nothing here writes a literal size.
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_menu::field::{Buffer, Field};
 use fs_theme::color::Rgba;
 use fs_theme::tokens::Space;

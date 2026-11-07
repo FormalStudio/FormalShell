@@ -17,7 +17,7 @@ pub mod minimap;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_info::clock::format_qt;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
@@ -569,7 +569,7 @@ fn action(on: &str, map: &minimap::Map) -> Action {
         // The column's chevron: the quick settings card the top bar's
         // chevron opens, the right region's cells it has no card for as
         // info tiles.
-        "overflow" => Action::Overflow(fs_chrome::types::Region::Right),
+        "overflow" => Action::Overflow(fs_types::Region::Right),
         "collapse" => Action::Sidebar(true),
         "expand" => Action::Sidebar(false),
         _ => map.action(on),

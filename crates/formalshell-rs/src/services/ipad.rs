@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use async_channel::{Receiver, Sender};
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use futures_lite::StreamExt;
 use zbus::connection::Builder;
 use zbus::message::Type;

@@ -115,7 +115,7 @@ impl App {
         true
     }
 
-    pub(super) fn overlay_joins(&self) -> Vec<(fs_chrome::types::Edge, f64, f64, f64)> {
+    pub(super) fn overlay_joins(&self) -> Vec<(fs_types::Edge, f64, f64, f64)> {
         self.plugin_overlay.as_ref().map_or_else(Vec::new, |w| w.modal.joins().collect())
     }
 

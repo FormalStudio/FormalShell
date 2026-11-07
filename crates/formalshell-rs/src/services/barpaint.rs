@@ -8,6 +8,7 @@
 use std::sync::{Mutex, OnceLock};
 
 use fs_theme::barpaint::{self, Profile, SAMPLE_WIDTH, Stats};
+use fs_types::Edge;
 
 use crate::runtime::Ctx;
 use crate::store;
@@ -15,7 +16,7 @@ use crate::store;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Request {
     pub wallpaper: String,
-    pub edge: &'static str,
+    pub edge: Edge,
     pub thickness: f64,
     pub screen: (f64, f64),
     pub output: String,
@@ -99,7 +100,7 @@ fn read(request: &Request) -> Option<Profile> {
             data.extend_from_slice(&img.get_pixel(px, py).0);
         }
     }
-    let along_x = !matches!(request.edge, "left" | "right");
+    let along_x = !request.edge.is_vertical();
     Some(Profile::read(&data, bw, bh, along_x))
 }
 

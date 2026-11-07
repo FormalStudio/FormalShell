@@ -35,7 +35,7 @@ use std::time::Instant;
 use calloop::LoopHandle;
 use calloop::timer::{TimeoutAction, Timer};
 use fs_chrome::bar::layout;
-use fs_chrome::types::{Edge, Region as BarRegion};
+use fs_types::{Edge, Region as BarRegion};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -719,7 +719,7 @@ impl App {
         let size = self.output_size();
         barpaint::sample(barpaint::Request {
             wallpaper: self.store.desktop(),
-            edge: self.bar.edge().as_str(),
+            edge: self.bar.edge(),
             thickness: self.bar.thickness() as f64,
             screen: size,
             output: self.bar.output.clone(),

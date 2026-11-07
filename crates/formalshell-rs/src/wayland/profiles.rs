@@ -12,7 +12,7 @@
 
 use std::time::Instant;
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use fs_upower::Profile;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;

@@ -16,7 +16,7 @@
 
 use std::time::{Duration, Instant};
 
-use fs_chrome::types::Edge;
+use fs_types::Edge;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
