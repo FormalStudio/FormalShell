@@ -67,9 +67,6 @@ pub const ROLES: [(&str, &[&str]); 40] = [
 
 const BAND_PAINTS: &[&str] = &["rest", "light", "dark", "translucentLight", "translucentDark", "maximized"];
 
-pub const MOTION_KEYS: [&str; 4] = ["emerge", "arrive", "restack", "switcher"];
-pub const WASH_KEYS: [&str; 4] = ["hover", "press", "filledHover", "filledPress"];
-pub const RADIUS_STEPS: [&str; 5] = ["sm", "md", "lg", "xl", "pill"];
 
 /// The three colours that are not palette roles.
 pub const LITERAL_COLORS: [(&str, &str); 3] = [("black", "#000000"), ("white", "#ffffff"), ("transparent", "transparent")];
@@ -562,134 +559,6 @@ pub fn metric(style: &Value, role: &str, key: &str) -> f64 {
     entry(style, role, None).and_then(|e| num(e.get(key))).filter(|n| n.is_finite()).unwrap_or(0.0)
 }
 
-/// Every box a table declares under [`ROLES`], with its path, in role order.
-fn walk_boxes<'a>(style: &'a Value, mut take: impl FnMut(String, &'a Value)) {
-    let Some(roles) = roles(style) else {
-        return;
-    };
-    for role in role_names() {
-        let Some(declared) = roles.get(role).filter(|d| truthy(Some(d))) else {
-            continue;
-        };
-        let states = states_for(role);
-        if states.is_empty() {
-            take(role.to_owned(), declared);
-            continue;
-        }
-        for state in states {
-            if let Some(b) = declared.get(state).filter(|b| truthy(Some(b))) {
-                take(format!("{role}.{state}"), b);
-            }
-        }
-    }
-}
-
-/// Every ink-shadow layer a table names, for the validation test.
-pub fn ink_shadow_layers(style: &Value) -> Vec<(String, &Value)> {
-    let mut out = Vec::new();
-    walk_boxes(style, |path, b| {
-        for (g, layer) in b.get("inkShadow").and_then(Value::as_array).into_iter().flatten().enumerate() {
-            out.push((format!("{path}.inkShadow[{g}]"), layer));
-        }
-    });
-    out
-}
-
-/// Every colour name a table references, first use first.
-pub fn color_names(style: &Value) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut take = |name: Option<&Value>| {
-        if let Some(Value::String(s)) = name
-            && !out.contains(s)
-        {
-            out.push(s.clone());
-        }
-    };
-    walk_boxes(style, |_, b| {
-        take(b.get("fill"));
-        if truthy(b.get("border")) {
-            take(b["border"].get("color"));
-        }
-        if truthy(b.get("face")) {
-            take(b["face"].get("from").and_then(|f| f.get(0)));
-            take(b["face"].get("to").and_then(|t| t.get(0)));
-        }
-        if truthy(b.get("wash")) {
-            take(b["wash"].get("color"));
-        }
-        if truthy(b.get("edge")) {
-            take(b["edge"].get("color"));
-        }
-        if truthy(b.get("tint")) {
-            take(b["tint"].get(0));
-        }
-        if truthy(b.get("ink")) {
-            take(b["ink"].get(0));
-        }
-        for glow in b.get("inkShadow").and_then(Value::as_array).into_iter().flatten() {
-            take(glow.get("color"));
-        }
-        if truthy(b.get("shadow")) {
-            take(b["shadow"].get("color"));
-        }
-        for layer in b.get("layers").and_then(Value::as_array).into_iter().flatten() {
-            take(layer.get("color"));
-        }
-    });
-    for key in WASH_KEYS {
-        if let Some(w) = style.get("wash").and_then(|w| w.get(key)).filter(|w| truthy(Some(w))) {
-            take(w.get("color"));
-        }
-    }
-    out
-}
-
-/// Every alpha a table names, with its path.
-pub fn alpha_values(style: &Value) -> Vec<(String, &Value)> {
-    let mut out = Vec::new();
-    fn take<'a>(out: &mut Vec<(String, &'a Value)>, path: String, value: Option<&'a Value>) {
-        match value {
-            None | Some(Value::Null) => {}
-            Some(Value::String(s)) if s == "surface" => {}
-            Some(v) => out.push((path, v)),
-        }
-    }
-    walk_boxes(style, |path, b| {
-        take(&mut out, format!("{path}.fillAlpha"), b.get("fillAlpha"));
-        if truthy(b.get("border")) {
-            take(&mut out, format!("{path}.border.alpha"), b["border"].get("alpha"));
-        }
-        if truthy(b.get("face")) {
-            take(&mut out, format!("{path}.face.from"), b["face"].get("from").and_then(|f| f.get(1)));
-            take(&mut out, format!("{path}.face.to"), b["face"].get("to").and_then(|t| t.get(1)));
-        }
-        if truthy(b.get("wash")) {
-            take(&mut out, format!("{path}.wash.alpha"), b["wash"].get("alpha"));
-        }
-        if truthy(b.get("edge")) {
-            take(&mut out, format!("{path}.edge.alpha"), b["edge"].get("alpha"));
-        }
-        if truthy(b.get("tint")) {
-            take(&mut out, format!("{path}.tint"), b["tint"].get(1));
-        }
-        if truthy(b.get("shadow")) {
-            take(&mut out, format!("{path}.shadow.alpha"), b["shadow"].get("alpha"));
-        }
-        for (i, layer) in b.get("layers").and_then(Value::as_array).into_iter().flatten().enumerate() {
-            take(&mut out, format!("{path}.layers[{i}]"), layer.get("alpha"));
-        }
-        for (g, glow) in b.get("inkShadow").and_then(Value::as_array).into_iter().flatten().enumerate() {
-            take(&mut out, format!("{path}.inkShadow[{g}]"), glow.get("alpha"));
-        }
-    });
-    for key in WASH_KEYS {
-        if let Some(w) = style.get("wash").and_then(|w| w.get(key)).filter(|w| truthy(Some(w))) {
-            take(&mut out, format!("wash.{key}"), w.get("alpha"));
-        }
-    }
-    out
-}
-
 /// What a renderer draws a resolved box as, for a box of
 /// `width` by `height`: the geometry every renderer of a box shares.
 pub mod geometry {
@@ -759,6 +628,138 @@ pub(crate) mod tests {
     use super::*;
     use crate::palette;
     use serde_json::json;
+
+    const MOTION_KEYS: [&str; 4] = ["emerge", "arrive", "restack", "switcher"];
+    const WASH_KEYS: [&str; 4] = ["hover", "press", "filledHover", "filledPress"];
+    const RADIUS_STEPS: [&str; 5] = ["sm", "md", "lg", "xl", "pill"];
+
+    /// Every box a table declares under [`ROLES`], with its path, in role order.
+    fn walk_boxes<'a>(style: &'a Value, mut take: impl FnMut(String, &'a Value)) {
+        let Some(roles) = roles(style) else {
+            return;
+        };
+        for role in role_names() {
+            let Some(declared) = roles.get(role).filter(|d| truthy(Some(d))) else {
+                continue;
+            };
+            let states = states_for(role);
+            if states.is_empty() {
+                take(role.to_owned(), declared);
+                continue;
+            }
+            for state in states {
+                if let Some(b) = declared.get(state).filter(|b| truthy(Some(b))) {
+                    take(format!("{role}.{state}"), b);
+                }
+            }
+        }
+    }
+
+    /// Every ink-shadow layer a table names, for the validation test.
+    fn ink_shadow_layers(style: &Value) -> Vec<(String, &Value)> {
+        let mut out = Vec::new();
+        walk_boxes(style, |path, b| {
+            for (g, layer) in b.get("inkShadow").and_then(Value::as_array).into_iter().flatten().enumerate() {
+                out.push((format!("{path}.inkShadow[{g}]"), layer));
+            }
+        });
+        out
+    }
+
+    /// Every colour name a table references, first use first.
+    fn color_names(style: &Value) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut take = |name: Option<&Value>| {
+            if let Some(Value::String(s)) = name
+                && !out.contains(s)
+            {
+                out.push(s.clone());
+            }
+        };
+        walk_boxes(style, |_, b| {
+            take(b.get("fill"));
+            if truthy(b.get("border")) {
+                take(b["border"].get("color"));
+            }
+            if truthy(b.get("face")) {
+                take(b["face"].get("from").and_then(|f| f.get(0)));
+                take(b["face"].get("to").and_then(|t| t.get(0)));
+            }
+            if truthy(b.get("wash")) {
+                take(b["wash"].get("color"));
+            }
+            if truthy(b.get("edge")) {
+                take(b["edge"].get("color"));
+            }
+            if truthy(b.get("tint")) {
+                take(b["tint"].get(0));
+            }
+            if truthy(b.get("ink")) {
+                take(b["ink"].get(0));
+            }
+            for glow in b.get("inkShadow").and_then(Value::as_array).into_iter().flatten() {
+                take(glow.get("color"));
+            }
+            if truthy(b.get("shadow")) {
+                take(b["shadow"].get("color"));
+            }
+            for layer in b.get("layers").and_then(Value::as_array).into_iter().flatten() {
+                take(layer.get("color"));
+            }
+        });
+        for key in WASH_KEYS {
+            if let Some(w) = style.get("wash").and_then(|w| w.get(key)).filter(|w| truthy(Some(w))) {
+                take(w.get("color"));
+            }
+        }
+        out
+    }
+
+    /// Every alpha a table names, with its path.
+    fn alpha_values(style: &Value) -> Vec<(String, &Value)> {
+        let mut out = Vec::new();
+        fn take<'a>(out: &mut Vec<(String, &'a Value)>, path: String, value: Option<&'a Value>) {
+            match value {
+                None | Some(Value::Null) => {}
+                Some(Value::String(s)) if s == "surface" => {}
+                Some(v) => out.push((path, v)),
+            }
+        }
+        walk_boxes(style, |path, b| {
+            take(&mut out, format!("{path}.fillAlpha"), b.get("fillAlpha"));
+            if truthy(b.get("border")) {
+                take(&mut out, format!("{path}.border.alpha"), b["border"].get("alpha"));
+            }
+            if truthy(b.get("face")) {
+                take(&mut out, format!("{path}.face.from"), b["face"].get("from").and_then(|f| f.get(1)));
+                take(&mut out, format!("{path}.face.to"), b["face"].get("to").and_then(|t| t.get(1)));
+            }
+            if truthy(b.get("wash")) {
+                take(&mut out, format!("{path}.wash.alpha"), b["wash"].get("alpha"));
+            }
+            if truthy(b.get("edge")) {
+                take(&mut out, format!("{path}.edge.alpha"), b["edge"].get("alpha"));
+            }
+            if truthy(b.get("tint")) {
+                take(&mut out, format!("{path}.tint"), b["tint"].get(1));
+            }
+            if truthy(b.get("shadow")) {
+                take(&mut out, format!("{path}.shadow.alpha"), b["shadow"].get("alpha"));
+            }
+            for (i, layer) in b.get("layers").and_then(Value::as_array).into_iter().flatten().enumerate() {
+                take(&mut out, format!("{path}.layers[{i}]"), layer.get("alpha"));
+            }
+            for (g, glow) in b.get("inkShadow").and_then(Value::as_array).into_iter().flatten().enumerate() {
+                take(&mut out, format!("{path}.inkShadow[{g}]"), glow.get("alpha"));
+            }
+        });
+        for key in WASH_KEYS {
+            if let Some(w) = style.get("wash").and_then(|w| w.get(key)).filter(|w| truthy(Some(w))) {
+                take(&mut out, format!("wash.{key}"), w.get("alpha"));
+            }
+        }
+        out
+    }
 
     /// A palette whose every role answers with its own name, so a resolved
     /// colour says which role it came from.

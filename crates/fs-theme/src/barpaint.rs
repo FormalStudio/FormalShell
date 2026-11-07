@@ -259,14 +259,6 @@ pub fn cell(band: Paint, pin: Pin, span: &Stats) -> Paint {
     }
 }
 
-/// What one output's band wears, given the reading taken on the main display.
-/// The wallpaper is one picture across the session, so the reading is shared
-/// and the only per-output term left is a window covering that output.
-pub fn decide_for(s: Option<&Stats>, blank: &Stats, fullscreen_outputs: Option<&[&str]>, name: &str, pin: Pin) -> Paint {
-    let covered = fullscreen_outputs.is_some_and(|outputs| outputs.contains(&name));
-    decide(s, blank, covered, pin)
-}
-
 /// The band's rect inside a sample of the whole wallpaper: the bar's own edge
 /// and thickness against the output's size, scaled and clamped so a band
 /// thinner than one sample row still has a row to read.
@@ -305,35 +297,6 @@ pub fn band_rect(
             width: sample_width,
             height: across,
         },
-    }
-}
-
-/// Any other rect of the output inside the same sample, for a reader that is
-/// not a band (the lock clock and the now-playing block under it). Scaled the
-/// way `band_rect` scales, clamped inside the sample, and never thinner than
-/// one sample on either axis.
-#[allow(clippy::too_many_arguments)]
-pub fn region_rect(
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    screen_width: f64,
-    screen_height: f64,
-    sample_width: f64,
-    sample_height: f64,
-) -> Rect {
-    let sx = sample_width / screen_width.max(1.0);
-    let sy = sample_height / screen_height.max(1.0);
-    let left = (x * sx).floor().min(sample_width - 1.0).max(0.0);
-    let top = (y * sy).floor().min(sample_height - 1.0).max(0.0);
-    let right = ((x + width) * sx).ceil().min(sample_width).max(left + 1.0);
-    let bottom = ((y + height) * sy).ceil().min(sample_height).max(top + 1.0);
-    Rect {
-        x: left,
-        y: top,
-        width: right - left,
-        height: bottom - top,
     }
 }
 
@@ -474,26 +437,6 @@ mod tests {
     }
 
     #[test]
-    fn every_output_wears_the_one_reading() {
-        let bright = st(230.0, 0.0, 0.0);
-        assert_eq!(decide_for(Some(&bright), &DARK, Some(&[]), "HDMI-A-1", T), Paint::Dark);
-        assert_eq!(decide_for(Some(&bright), &DARK, Some(&[]), "eDP-1", T), Paint::Dark);
-    }
-
-    #[test]
-    fn a_covered_output_blackens_its_own_band_alone() {
-        let bright = st(230.0, 0.0, 0.0);
-        assert_eq!(decide_for(Some(&bright), &DARK, Some(&["eDP-1"]), "eDP-1", T), Paint::Maximized);
-        assert_eq!(decide_for(Some(&bright), &DARK, Some(&["eDP-1"]), "HDMI-A-1", T), Paint::Dark);
-    }
-
-    #[test]
-    fn no_fullscreen_set_is_no_window() {
-        let bright = st(230.0, 0.0, 0.0);
-        assert_eq!(decide_for(Some(&bright), &DARK, None, "eDP-1", T), Paint::Dark);
-    }
-
-    #[test]
     fn the_band_rect_follows_the_bar_edge() {
         let top = band_rect("top", 40.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(top.x, 0.0);
@@ -519,24 +462,5 @@ mod tests {
     fn the_band_rect_never_collapses() {
         let band = band_rect("top", 1.0, 1920.0, 1080.0, 240.0, 135.0);
         assert_eq!(band.height, 1.0);
-    }
-
-    #[test]
-    fn a_region_rect_scales_into_the_sample() {
-        let r = region_rect(760.0, 440.0, 400.0, 200.0, 1920.0, 1080.0, 240.0, 135.0);
-        assert_eq!(r.x, 95.0);
-        assert_eq!(r.y, 55.0);
-        assert_eq!(r.width, 50.0);
-        assert_eq!(r.height, 25.0);
-    }
-
-    #[test]
-    fn a_region_rect_is_clamped_and_never_empty() {
-        let edge = region_rect(1900.0, 1070.0, 400.0, 400.0, 1920.0, 1080.0, 240.0, 135.0);
-        assert_eq!(edge.x + edge.width, 240.0);
-        assert_eq!(edge.y + edge.height, 135.0);
-        let speck = region_rect(10.0, 10.0, 0.1, 0.1, 1920.0, 1080.0, 240.0, 135.0);
-        assert_eq!(speck.width, 1.0);
-        assert_eq!(speck.height, 1.0);
     }
 }

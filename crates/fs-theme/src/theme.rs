@@ -406,13 +406,9 @@ impl Theme {
         style::metric(self.style, role, key)
     }
 
-    pub fn pill_radius(&self, extent: f64) -> f64 {
-        extent / 2.0
-    }
-
     pub fn box_radius(&self, b: &BoxStyle<Rgba>, extent: f64) -> f64 {
         match b.radius {
-            Radius::Pill => self.pill_radius(extent),
+            Radius::Pill => extent / 2.0,
             Radius::Px(px) => px,
         }
     }
@@ -443,22 +439,6 @@ impl Theme {
 
     pub fn surface(&self, c: Rgba) -> Rgba {
         c.with_alpha(self.surface_opacity as f32)
-    }
-
-    pub fn hover_fill(&self) -> Rgba {
-        style::wash(self.style, "hover", &self.ctx())
-    }
-
-    pub fn press_fill(&self) -> Rgba {
-        style::wash(self.style, "press", &self.ctx())
-    }
-
-    pub fn hover_filled(&self, c: Rgba) -> Rgba {
-        c.tint(style::wash(self.style, "filledHover", &self.ctx()))
-    }
-
-    pub fn press_filled(&self, c: Rgba) -> Rgba {
-        c.tint(style::wash(self.style, "filledPress", &self.ctx()))
     }
 
     /// What formalshell-chrome.lua carries: the window radius (the `card`
@@ -609,7 +589,7 @@ mod tests {
         let t = theme();
         let knob = t.box_style("switch.knob", None);
         assert_eq!(knob.radius, Radius::Pill);
-        assert_eq!(t.box_radius(&knob, 40.0f64.min(100.0)), t.pill_radius(40.0));
+        assert_eq!(t.box_radius(&knob, 40.0f64.min(100.0)), 20.0);
     }
 
     #[test]
@@ -676,7 +656,7 @@ mod tests {
     fn the_pointer_wash_lands_over_the_fill() {
         let t = theme();
         let b = t.box_style("cell", Some("hover"));
-        assert_eq!(b.wash, Some(t.hover_fill()));
+        assert_eq!(b.wash, Some(style::wash(t.style, "hover", &t.ctx())));
         assert_eq!(t.box_radius(&b, 40.0), 9.0);
     }
 
@@ -685,7 +665,7 @@ mod tests {
         let t = theme();
         let b = t.box_style("button.default", Some("hover"));
         assert_eq!(b.wash, None);
-        assert_eq!(b.fill, t.hover_filled(hex("#1133ff")));
+        assert_eq!(b.fill, hex("#1133ff").tint(style::wash(t.style, "filledHover", &t.ctx())));
     }
 
     // --- the theme's own resolution

@@ -75,7 +75,6 @@ pub fn capture_entries(ipc: &str) -> Entries {
 struct PanelName {
     id: &'static str,
     label: &'static str,
-    icon: &'static str,
     aliases: &'static [&'static str],
 }
 
@@ -84,26 +83,26 @@ struct PanelName {
 /// `trayoverflow` (the "tray" route already lists its items).
 /// `every_panel_reaches_the_launcher` fails when a registry name is missing.
 const PANEL_NAMES: &[PanelName] = &[
-    PanelName { id: "activity", label: "Activity", icon: "", aliases: &[] },
-    PanelName { id: "appmenu", label: "App Menu", icon: "\u{F003B}", aliases: &[] },
-    PanelName { id: "audio", label: "Audio", icon: "\u{F057E}", aliases: &[] },
-    PanelName { id: "calendar", label: "Calendar", icon: "\u{F00EE}", aliases: &[] },
-    PanelName { id: "network", label: "Network", icon: "\u{F05A9}", aliases: &[] },
-    PanelName { id: "bluetooth", label: "Bluetooth", icon: "\u{F00AF}", aliases: &[] },
-    PanelName { id: "earbuds", label: "Earbuds", icon: "\u{F184F}", aliases: &[] },
-    PanelName { id: "iphone", label: "iPhone", icon: "\u{F011C}", aliases: &[] },
-    PanelName { id: "dualsense", label: "DualSense", icon: "\u{F0297}", aliases: &[] },
-    PanelName { id: "power", label: "Power", icon: "\u{F0079}", aliases: &[] },
-    PanelName { id: "weather", label: "Weather", icon: "\u{F0599}", aliases: &[] },
-    PanelName { id: "media", label: "Media", icon: "\u{F0387}", aliases: &[] },
-    PanelName { id: "github", label: "GitHub", icon: "\u{F408}", aliases: &[] },
-    PanelName { id: "usage", label: "Usage", icon: "\u{F16A3}", aliases: &[] },
-    PanelName { id: "tailscale", label: "Tailscale", icon: "\u{F0318}", aliases: &[] },
-    PanelName { id: "systemupdate", label: "System Update", icon: "\u{F03D3}", aliases: &[] },
-    PanelName { id: "display", label: "Display", icon: "\u{F0379}", aliases: &["mirror display", "screen mirroring", "screens", "outputs"] },
-    PanelName { id: "monitor", label: "Monitor", icon: "\u{F029A}", aliases: &[] },
-    PanelName { id: "radio", label: "Radio", icon: "\u{F0439}", aliases: &[] },
-    PanelName { id: "quicksettings", label: "Quick Settings", icon: "", aliases: &["control center", "toggles"] },
+    PanelName { id: "activity", label: "Activity", aliases: &[] },
+    PanelName { id: "appmenu", label: "App Menu", aliases: &[] },
+    PanelName { id: "audio", label: "Audio", aliases: &[] },
+    PanelName { id: "calendar", label: "Calendar", aliases: &[] },
+    PanelName { id: "network", label: "Network", aliases: &[] },
+    PanelName { id: "bluetooth", label: "Bluetooth", aliases: &[] },
+    PanelName { id: "earbuds", label: "Earbuds", aliases: &[] },
+    PanelName { id: "iphone", label: "iPhone", aliases: &[] },
+    PanelName { id: "dualsense", label: "DualSense", aliases: &[] },
+    PanelName { id: "power", label: "Power", aliases: &[] },
+    PanelName { id: "weather", label: "Weather", aliases: &[] },
+    PanelName { id: "media", label: "Media", aliases: &[] },
+    PanelName { id: "github", label: "GitHub", aliases: &[] },
+    PanelName { id: "usage", label: "Usage", aliases: &[] },
+    PanelName { id: "tailscale", label: "Tailscale", aliases: &[] },
+    PanelName { id: "systemupdate", label: "System Update", aliases: &[] },
+    PanelName { id: "display", label: "Display", aliases: &["mirror display", "screen mirroring", "screens", "outputs"] },
+    PanelName { id: "monitor", label: "Monitor", aliases: &[] },
+    PanelName { id: "radio", label: "Radio", aliases: &[] },
+    PanelName { id: "quicksettings", label: "Quick Settings", aliases: &["control center", "toggles"] },
 ];
 
 /// The panels the Panels route lists, in its order.
@@ -115,7 +114,6 @@ pub fn panels_provider(ipc: &str) -> Vec<Node> {
     PANEL_NAMES
         .iter()
         .map(|p| Node {
-            icon: p.icon.to_string(),
             aliases: p.aliases.iter().map(|a| a.to_string()).collect(),
             action: Some(format!("{ipc} call panel open {}", p.id)),
             ..Node::new(format!("panels.{}", p.id), p.label, Kind::Action)

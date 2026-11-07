@@ -51,25 +51,6 @@ fn is_hex(value: Option<&Value>) -> bool {
         .is_some_and(|s| HEX_RE.is_match(s))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Validation {
-    pub ok: bool,
-    pub missing: Vec<String>,
-}
-
-/// Every [`COLOR_KEYS`] entry that is absent or not a `#rrggbb` string.
-pub fn validate(theme: Option<&Value>) -> Validation {
-    let missing: Vec<String> = COLOR_KEYS
-        .iter()
-        .filter(|key| !is_hex(theme.and_then(|t| t.get(**key))))
-        .map(|key| (*key).to_string())
-        .collect();
-    Validation {
-        ok: missing.is_empty(),
-        missing,
-    }
-}
-
 /// One static zinc variant per mode (shadcn's own zinc palette, spec's
 /// "Color" table verbatim). An unrecognised mode means the dark variant: the
 /// seeded first-boot theme.json and the absent-file default both depend on
@@ -290,45 +271,7 @@ mod tests {
     }
 
     fn ok(m: &Map<String, Value>) -> bool {
-        validate(Some(&Value::Object(m.clone()))).ok
-    }
-
-    #[test]
-    fn validate_ok() {
-        let r = validate(Some(&valid_dark()));
-        assert!(r.ok);
-        assert_eq!(r.missing.len(), 0);
-    }
-
-    #[test]
-    fn validate_missing_key() {
-        let r = validate(Some(&without(&valid_dark(), &["card"])));
-        assert!(!r.ok);
-        assert!(r.missing.iter().any(|k| k == "card"));
-    }
-
-    #[test]
-    fn validate_bad_hex() {
-        let t = with(&valid_dark(), &[("background", json!("not-a-color"))]);
-        let r = validate(Some(&t));
-        assert!(!r.ok);
-        assert!(r.missing.iter().any(|k| k == "background"));
-    }
-
-    #[test]
-    fn validate_missing_several_keys() {
-        let r = validate(Some(&without(&valid_dark(), &["border", "ring", "chart5"])));
-        assert!(!r.ok);
-        assert!(r.missing.iter().any(|k| k == "border"));
-        assert!(r.missing.iter().any(|k| k == "ring"));
-        assert!(r.missing.iter().any(|k| k == "chart5"));
-    }
-
-    #[test]
-    fn validate_empty_object_reports_every_key() {
-        let r = validate(Some(&json!({})));
-        assert!(!r.ok);
-        assert_eq!(r.missing.len(), COLOR_KEYS.len());
+        COLOR_KEYS.iter().all(|k| is_hex(m.get(*k)))
     }
 
     #[test]
