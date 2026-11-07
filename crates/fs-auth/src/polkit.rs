@@ -18,7 +18,7 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{Connection, interface};
 use zeroize::Zeroizing;
 
-pub const AGENT_PATH: &str = "/org/formalshell/PolkitAgent";
+const AGENT_PATH: &str = "/org/formalshell/PolkitAgent";
 
 const AUTHORITY_NAME: &str = "org.freedesktop.PolicyKit1";
 const AUTHORITY_PATH: &str = "/org/freedesktop/PolicyKit1/Authority";
@@ -140,10 +140,11 @@ pub struct Agent {
 type Subject = (String, HashMap<String, Value<'static>>);
 
 impl Agent {
-    /// Serves the agent at `path` on `connection` (the system bus) and
+    /// Serves the agent at [`AGENT_PATH`] on `connection` (the system bus) and
     /// registers it for the logind session this process belongs to, or the
     /// user's display session when it belongs to none.
-    pub async fn register(connection: &Connection, path: &str) -> zbus::Result<Self> {
+    pub async fn register(connection: &Connection) -> zbus::Result<Self> {
+        let path = AGENT_PATH;
         let (tx, requests) = async_channel::unbounded();
         let iface = AgentIface { requests: tx, pending: Arc::default() };
         connection.object_server().at(path, iface).await?;

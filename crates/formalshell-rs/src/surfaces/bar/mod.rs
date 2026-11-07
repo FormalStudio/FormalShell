@@ -1036,7 +1036,6 @@ impl Bar {
     /// The anchor a tooltip hangs off (the tooltip surface is the
     /// panels'): the hovered cell's text, its rect in the window and the
     /// edge the card opens away from.
-    #[allow(dead_code)]
     pub fn tooltip(&self) -> Option<(String, IRect, Edge)> {
         if let Some(sb) = &self.sidebar {
             return sb.tip(self.hover?).map(|(text, rect)| (text, rect, self.edge));

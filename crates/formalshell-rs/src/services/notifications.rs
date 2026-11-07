@@ -16,7 +16,7 @@ use fs_info::reminders;
 use fs_system::compositor::appicon::{DesktopEntry, Window, by_class};
 use fs_js as js;
 use fs_devices::iphone;
-use fs_notifd::{CloseReason, Config, Event, Image, ImageData, Server};
+use fs_notifd::{CloseReason, Event, Image, ImageData, Server};
 use serde_json::{Value, json};
 
 use super::icons;
@@ -688,14 +688,8 @@ fn arrival(n: &fs_notifd::Notification, replaced: bool) -> Arrival {
     }
 }
 
-/// The server identity senders may key on: the default name and
-/// capabilities, at this package's version.
-fn config() -> Config {
-    Config { version: env!("CARGO_PKG_VERSION").into(), ..Config::default() }
-}
-
 pub async fn run(ctx: Ctx) {
-    let (server, events) = match Server::start(config()).await {
+    let (server, events) = match Server::start(env!("CARGO_PKG_VERSION")).await {
         Ok(s) => s,
         Err(err) => {
             eprintln!("notifications: {err}");

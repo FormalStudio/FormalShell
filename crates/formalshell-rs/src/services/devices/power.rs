@@ -16,7 +16,7 @@ use futures_lite::FutureExt;
 
 use fs_system::dualsense::{self, Supply};
 use fs_system::power::model::DeviceState;
-use fs_upower::{Change, Device, PowerProfiles, Profile, ProfilesState, UPower};
+use fs_upower::{Change, Device, PowerProfiles, Profile, UPower};
 use futures_lite::StreamExt;
 
 use crate::runtime::Ctx;
@@ -235,4 +235,3 @@ pub fn set_profile(ctx: &Ctx, profile: Profile) {
     });
 }
 
-pub type Profiles = Option<ProfilesState>;

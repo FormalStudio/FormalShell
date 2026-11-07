@@ -116,7 +116,6 @@ impl Slot {
             Some(c) if self.view.shown => c.measure(kit, vertical, band),
             _ => {
                 self.measured = kit.measure(&self.view, vertical, self.budget, band);
-                self.cell.laid(&self.measured.extents());
                 if let Some(free) = &self.measured.free {
                     let rest = self.measured.along - free.extent;
                     self.limits = self.cell.limits(&kit.look, along_strip, rest);
@@ -176,18 +175,14 @@ impl Slot {
         self.measured.free.as_ref().map_or(0.0, |f| f.extent)
     }
 
-    fn overflowing(&self, kit: &Kit, visible: bool) -> bool {
-        kit.look.motion && visible && !self.held && self.measured.free.as_ref().is_some_and(|f| f.overflow && f.extent > 0.0)
-    }
-
     pub fn scrolling(&self, kit: &Kit, visible: bool) -> bool {
-        self.overflowing(kit, visible)
+        kit.look.motion && visible && !self.held && self.measured.free.as_ref().is_some_and(|f| f.overflow && f.extent > 0.0)
     }
 
     /// The marquee's scroll this frame off the clock, fractional, or none
     /// while it holds or fits.
     fn scroll(&mut self, kit: &Kit, visible: bool, now: Instant) -> Option<f64> {
-        if !self.overflowing(kit, visible) {
+        if !self.scrolling(kit, visible) {
             self.marquee = None;
             return None;
         }
@@ -209,7 +204,7 @@ impl Slot {
     /// When the marquee next leaves its hold or the cell's own timer,
     /// whichever comes first.
     pub fn wake(&self, kit: &Kit, visible: bool, now: Instant) -> Option<Instant> {
-        let marquee = self.marquee.filter(|_| self.overflowing(kit, visible)).and_then(|start| {
+        let marquee = self.marquee.filter(|_| self.scrolling(kit, visible)).and_then(|start| {
             let free = self.measured.free.as_ref()?;
             let look = &kit.look;
             let cycle = look.marquee_hold + free.loop_width / look.marquee_px * 1000.0;

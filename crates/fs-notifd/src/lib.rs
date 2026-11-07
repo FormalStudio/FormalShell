@@ -52,30 +52,12 @@ impl From<zbus::Error> for Error {
     }
 }
 
-/// What `GetServerInformation` and `GetCapabilities` report.
-///
-/// The default advertises the identity `formalshell`, no markup, and the
-/// `persistence`, `body`, `actions` and `icon-static` capabilities.
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub name: String,
-    pub vendor: String,
-    pub version: String,
-    pub spec_version: String,
-    pub capabilities: Vec<String>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            name: "formalshell".into(),
-            vendor: "FormalShell".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            spec_version: "1.2".into(),
-            capabilities: ["persistence", "body", "actions", "icon-static"].map(String::from).into(),
-        }
-    }
-}
+/// What `GetServerInformation` reports: the identity `formalshell`, spec 1.2.
+pub(crate) const NAME: &str = "formalshell";
+pub(crate) const VENDOR: &str = "FormalShell";
+pub(crate) const SPEC_VERSION: &str = "1.2";
+/// No markup; actions, persistence and static icons are served.
+pub(crate) const CAPABILITIES: [&str; 4] = ["persistence", "body", "actions", "icon-static"];
 
 /// A change the sender made. Closes the owner causes itself ([`Server::close`],
 /// [`Server::invoke_action`]) are not repeated here.
@@ -96,7 +78,7 @@ pub(crate) struct State {
 pub(crate) struct Shared {
     state: Mutex<State>,
     tx: Sender<Event>,
-    pub(crate) config: Config,
+    pub(crate) version: String,
 }
 
 impl Shared {
@@ -151,19 +133,19 @@ pub struct Server {
 }
 
 impl Server {
-    /// Serves on the session bus.
-    pub async fn start(config: Config) -> Result<(Server, Receiver<Event>), Error> {
-        Self::start_on(Builder::session()?, config).await
+    /// Serves on the session bus, reporting `version` as the server version.
+    pub async fn start(version: &str) -> Result<(Server, Receiver<Event>), Error> {
+        Self::start_on(Builder::session()?, version).await
     }
 
     /// Serves on the bus `builder` connects to. The builder must not have a
     /// name or interfaces of its own.
-    pub async fn start_on(builder: Builder<'_>, config: Config) -> Result<(Server, Receiver<Event>), Error> {
+    pub async fn start_on(builder: Builder<'_>, version: &str) -> Result<(Server, Receiver<Event>), Error> {
         let (tx, rx) = async_channel::unbounded();
         let shared = Arc::new(Shared {
             state: Mutex::new(State { next_id: 1, live: BTreeMap::new() }),
             tx,
-            config,
+            version: version.to_owned(),
         });
         let conn = builder.serve_at(OBJECT_PATH, iface::Notifications { shared: shared.clone() })?.build().await?;
         // The builder always passes DoNotQueue, and request_name's defaults replace the owner.

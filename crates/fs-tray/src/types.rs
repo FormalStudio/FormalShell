@@ -73,27 +73,6 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Category {
-    #[default]
-    ApplicationStatus,
-    Communications,
-    SystemServices,
-    Hardware,
-}
-
-impl Category {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "ApplicationStatus" => Some(Self::ApplicationStatus),
-            "Communications" => Some(Self::Communications),
-            "SystemServices" => Some(Self::SystemServices),
-            "Hardware" => Some(Self::Hardware),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Tooltip {
     pub icon_name: String,
@@ -122,7 +101,6 @@ pub struct Item {
     pub id: String,
     pub title: String,
     pub status: Status,
-    pub category: Category,
     pub icon_name: String,
     pub icon_pixmap: Vec<Pixmap>,
     pub icon_theme_path: String,
@@ -159,50 +137,6 @@ impl Item {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ItemField {
-    Id,
-    Title,
-    Status,
-    Category,
-    IconName,
-    IconPixmap,
-    IconThemePath,
-    OverlayIconName,
-    OverlayIconPixmap,
-    AttentionIconName,
-    AttentionIconPixmap,
-    ToolTip,
-    ItemIsMenu,
-    Menu,
-}
-
-pub(crate) fn diff(old: &Item, new: &Item) -> Vec<ItemField> {
-    let mut out = Vec::new();
-    macro_rules! cmp {
-        ($($field:ident => $variant:ident),+ $(,)?) => {
-            $(if old.$field != new.$field { out.push(ItemField::$variant); })+
-        };
-    }
-    cmp!(
-        id => Id,
-        title => Title,
-        status => Status,
-        category => Category,
-        icon_name => IconName,
-        icon_pixmap => IconPixmap,
-        icon_theme_path => IconThemePath,
-        overlay_icon_name => OverlayIconName,
-        overlay_icon_pixmap => OverlayIconPixmap,
-        attention_icon_name => AttentionIconName,
-        attention_icon_pixmap => AttentionIconPixmap,
-        tooltip => ToolTip,
-        item_is_menu => ItemIsMenu,
-        menu_path => Menu,
-    );
-    out
-}
-
 fn take<T: TryFrom<OwnedValue>>(props: &HashMap<String, OwnedValue>, key: &str) -> Option<T> {
     props.get(key)?.try_clone().ok()?.try_into().ok()
 }
@@ -231,9 +165,6 @@ pub(crate) fn apply_properties(item: &mut Item, props: &HashMap<String, OwnedVal
     item.title = take::<String>(props, "Title").unwrap_or_default();
     if let Some(s) = take::<String>(props, "Status").and_then(|s| Status::parse(&s)) {
         item.status = s;
-    }
-    if let Some(c) = take::<String>(props, "Category").and_then(|s| Category::parse(&s)) {
-        item.category = c;
     }
     item.icon_name = take::<String>(props, "IconName").unwrap_or_default();
     item.icon_pixmap = pixmaps(take(props, "IconPixmap"));

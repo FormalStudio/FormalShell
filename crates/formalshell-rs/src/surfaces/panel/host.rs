@@ -403,7 +403,7 @@ impl Host {
         self.module.closed();
         self.cursor.active = false;
         self.handoff = None;
-        self.card.set_bypass(now, false);
+        self.card.set_bypass(false);
         self.card.set_open(now, false);
         self.set_keyboard(KeyboardInteractivity::None);
     }
@@ -419,14 +419,14 @@ impl Host {
     }
 
     /// The incoming half, seeded on `from` (the outgoing card's live rect).
-    pub fn take_over(&mut self, from: Rect, now: Instant) {
+    pub fn take_over(&mut self, from: Rect) {
         self.handoff = Some(Handoff {
             from,
             travel: Animated::new(0.0, SPATIAL),
             alpha: Animated::new(0.0, Clock::Effects.curve()),
             started: false,
         });
-        self.card.set_bypass(now, true);
+        self.card.set_bypass(true);
     }
 
     /// The surface is up: an enter starts, and a handoff starts travelling.
@@ -562,7 +562,7 @@ impl Host {
         };
         if self.handoff.as_ref().is_some_and(|h| h.started && !h.travel.running(now)) {
             self.handoff = None;
-            self.card.set_bypass(now, false);
+            self.card.set_bypass(false);
         }
         let moved = (rest, live) != (self.card.rest(), self.card.live());
         self.card.set_rect(rest, live);
@@ -695,8 +695,8 @@ impl Host {
         }
         // A panel moves the cursor on its own clock too (into a menu once
         // its rows show), not only after a key.
-        self.take_module_cursor();
-        self.sync_cursor();
+        self.cursor.take(self.module.as_mut(), &self.body.stops);
+        self.cursor.sync(&self.body.stops);
 
         // One halo for the whole list (M53 D4), travelling on a key step,
         // with the cursor's fill riding it.
@@ -735,18 +735,9 @@ impl Host {
         }
     }
 
-    /// Keeps the cursor on its row by identity when the rows renumber.
-    fn sync_cursor(&mut self) {
-        self.cursor.sync(&self.body.stops);
-    }
-
     /// Whether the content asks for frames on its own (a marquee, a fade).
     pub fn content_animating(&self, now: Instant) -> bool {
         self.wake.is_some_and(|w| w <= now)
-    }
-
-    fn effect<'a>(store: &'a Store, runtime: Option<&'a Runtime>) -> Effect<'a> {
-        Effect::new(store, runtime)
     }
 
     /// cursor.js `follow`: the smallest scroll that shows the cursor row.
@@ -760,12 +751,11 @@ impl Host {
         let scroll = self.scroll.value(now);
         let top = st.rect.y as f64 - self.viewport.y as f64 + scroll;
         let (h, view) = (st.rect.h as f64, self.viewport.h as f64);
-        let pad = 0.0;
         let mut next = scroll;
-        if top - pad < next {
-            next = top - pad;
-        } else if top + h + pad > next + view {
-            next = top + h + pad - view;
+        if top < next {
+            next = top;
+        } else if top + h > next + view {
+            next = top + h - view;
         }
         let next = next.clamp(0.0, (self.content_h - view).max(0.0));
         if (next - scroll).abs() > 0.5 {
@@ -777,7 +767,7 @@ impl Host {
     /// asked again, since a panel may only know it once it has read the
     /// store.
     pub fn start(&mut self, store: &Store, runtime: Option<&Runtime>) {
-        self.module.start(&mut Self::effect(store, runtime));
+        self.module.start(&mut Effect::new(store, runtime));
         if let Some(key) = self.module.cursor_start() {
             self.cursor.key = Some(key);
         }
@@ -788,7 +778,7 @@ impl Host {
         if !self.open {
             return Out::None;
         }
-        let mut fx = Self::effect(store, runtime);
+        let mut fx = Effect::new(store, runtime);
         self.module.activate(stop, &mut fx);
         fx.out()
     }
@@ -815,7 +805,7 @@ impl Host {
         if !self.open || !self.module.editing() {
             return Out::None;
         }
-        let mut fx = Self::effect(store, runtime);
+        let mut fx = Effect::new(store, runtime);
         self.module.edit(Edit::Paste(text), &mut fx);
         fx.out()
     }
@@ -828,7 +818,7 @@ impl Host {
         if self.back && name == Key::Back && !self.module.editing() {
             return Out::Panel(super::quick::ID, None);
         }
-        let mut fx = Self::effect(store, runtime);
+        let mut fx = Effect::new(store, runtime);
         if self.module.editing() {
             let edit = match name {
                 Key::Escape => Edit::Cancel,
@@ -851,10 +841,6 @@ impl Host {
         fx.out()
     }
 
-    fn take_module_cursor(&mut self) {
-        self.cursor.take(self.module.as_mut(), &self.body.stops);
-    }
-
     fn hit_at(&self, x: f64, y: f64) -> Option<(bool, ui::Hit)> {
         let in_body = self.viewport.intersects(&IRect::new(x.floor() as i32, y.floor() as i32, 1, 1)) || self.body.over_float(x, y);
         if in_body && let Some(h) = self.body.hit(x, y) {
@@ -869,7 +855,7 @@ impl Host {
         if let (Some((path, rect, inset)), Some((x, _))) = (self.dragging.clone(), at) {
             if let Some(on) = self.body.hits.iter().chain(self.head.hits.iter()).find(|h| h.path == path).and_then(|h| h.on.clone()) {
                 let f = ui::track_fraction(rect, inset, x);
-                let mut fx = Self::effect(store, runtime);
+                let mut fx = Effect::new(store, runtime);
                 self.module.event(&Event { on, what: What::Fraction(f) }, &mut fx);
             }
         }
@@ -928,7 +914,7 @@ impl Host {
         {
             self.dragging = Some((h.path.clone(), h.rect, inset));
             if let Some(e) = Ui::event(&h, x) {
-                let mut fx = Self::effect(store, runtime);
+                let mut fx = Effect::new(store, runtime);
                 self.module.event(&e, &mut fx);
             }
         }
@@ -964,9 +950,9 @@ impl Host {
                 Button::Left => What::Click,
             };
         }
-        let mut fx = Self::effect(store, runtime);
+        let mut fx = Effect::new(store, runtime);
         self.module.event(&e, &mut fx);
-        self.take_module_cursor();
+        self.cursor.take(self.module.as_mut(), &self.body.stops);
         let r = h.rect;
         let along = if self.place.edge.is_vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 };
         match fx.out() {
@@ -995,7 +981,7 @@ impl Host {
             && let Some(on) = h.on.clone()
         {
             self.body.scroll(&h.path, -dy * store.theme.theme.space.control_height);
-            let mut fx = Self::effect(store, runtime);
+            let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Scroll(dx, dy) }, &mut fx);
             return;
         }
@@ -1007,7 +993,7 @@ impl Host {
             && matches!(h.what, ui::HitWhat::Track(_))
             && let Some(on) = h.on.clone()
         {
-            let mut fx = Self::effect(store, runtime);
+            let mut fx = Effect::new(store, runtime);
             self.module.event(&Event { on, what: What::Wheel(if up { 1 } else { -1 }) }, &mut fx);
             return;
         }

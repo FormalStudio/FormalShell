@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_io::Timer;
-use fs_mpris::{Event, LoopStatus, Mpris, PlaybackStatus};
+use fs_mpris::{LoopStatus, Mpris, PlaybackStatus};
 use futures_util::future::{Either, select};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
@@ -287,12 +287,9 @@ fn run<F: Future>(f: F) -> F::Output {
     })
 }
 
-async fn wait_for(m: &mut Mpris, pred: impl Fn(&Event) -> bool) -> Event {
-    loop {
-        let e = m.next().await.expect("bus closed");
-        if pred(&e) {
-            return e;
-        }
+async fn wait_for(m: &mut Mpris, pred: impl Fn(&Mpris) -> bool) {
+    while !pred(m) {
+        m.next().await.expect("bus closed");
     }
 }
 
@@ -305,8 +302,8 @@ fn discovers_players_already_on_the_bus() {
     let d = Daemon::start();
     run(async {
         let _fake = Fake::start(&d, "one", "Playing", true).await;
-        let mut m = Mpris::connect(&d.connect().await).await.unwrap();
-        assert_eq!(m.next().await, Some(Event::Added(bus("one"))));
+        let m = Mpris::connect(&d.connect().await).await.unwrap();
+        assert_eq!(m.players().count(), 1);
         let s = m.player(&bus("one")).unwrap();
         assert_eq!(s.identity, "Fake Player");
         assert_eq!(s.desktop_entry.as_deref(), Some("fake"));
@@ -331,10 +328,10 @@ fn player_appears_and_vanishes() {
         let mut m = Mpris::connect(&d.connect().await).await.unwrap();
         assert_eq!(m.players().count(), 0);
         let fake = Fake::start(&d, "late", "Paused", true).await;
-        assert_eq!(wait_for(&mut m, |e| matches!(e, Event::Added(_))).await, Event::Added(bus("late")));
+        wait_for(&mut m, |m| m.player(&bus("late")).is_some()).await;
         assert_eq!(m.players().count(), 1);
         fake.conn.graceful_shutdown().await;
-        assert_eq!(wait_for(&mut m, |e| matches!(e, Event::Removed(_))).await, Event::Removed(bus("late")));
+        wait_for(&mut m, |m| m.player(&bus("late")).is_none()).await;
         assert_eq!(m.players().count(), 0);
     });
 }
@@ -345,7 +342,7 @@ fn property_changes_are_reread() {
     run(async {
         let fake = Fake::start(&d, "props", "Playing", true).await;
         let mut m = Mpris::connect(&d.connect().await).await.unwrap();
-        wait_for(&mut m, |e| matches!(e, Event::Added(_))).await;
+        wait_for(&mut m, |m| m.players().count() == 1).await;
 
         let iface = fake.player().await;
         {
@@ -356,12 +353,7 @@ fn property_changes_are_reread() {
             p.playback_status_changed(iface.signal_emitter()).await.unwrap();
             p.metadata_changed(iface.signal_emitter()).await.unwrap();
         }
-        loop {
-            wait_for(&mut m, |e| matches!(e, Event::Changed(_))).await;
-            if m.player(&bus("props")).unwrap().metadata.title == "Other" {
-                break;
-            }
-        }
+        wait_for(&mut m, |m| m.player(&bus("props")).unwrap().metadata.title == "Other").await;
         let s = m.player(&bus("props")).unwrap();
         assert_eq!(s.status, PlaybackStatus::Paused);
         assert_eq!(s.position(Instant::now() + Duration::from_secs(5)), Duration::from_secs(77));
@@ -374,7 +366,7 @@ fn position_interpolates_without_polling_and_seeked_resets_it() {
     run(async {
         let fake = Fake::start(&d, "pos", "Playing", true).await;
         let mut m = Mpris::connect(&d.connect().await).await.unwrap();
-        wait_for(&mut m, |e| matches!(e, Event::Added(_))).await;
+        wait_for(&mut m, |m| m.players().count() == 1).await;
 
         let s = m.player(&bus("pos")).unwrap();
         let later = s.position(Instant::now() + Duration::from_secs(3));
@@ -382,14 +374,9 @@ fn position_interpolates_without_polling_and_seeked_resets_it() {
 
         let iface = fake.player().await;
         Player::seeked(iface.signal_emitter(), 42_000_000).await.unwrap();
-        assert_eq!(wait_for(&mut m, |e| matches!(e, Event::Seeked(_))).await, Event::Seeked(bus("pos")));
+        wait_for(&mut m, |m| m.player(&bus("pos")).unwrap().position(Instant::now()) >= Duration::from_secs(42)).await;
         let p = m.player(&bus("pos")).unwrap().position(Instant::now());
-        assert!(p >= Duration::from_secs(42) && p < Duration::from_secs(43), "{p:?}");
-
-        iface.get_mut().await.position = 150_000_000;
-        assert!(m.refresh_position(&bus("pos")).await);
-        let p = m.player(&bus("pos")).unwrap().position(Instant::now());
-        assert!(p >= Duration::from_secs(150) && p < Duration::from_secs(151), "{p:?}");
+        assert!(p < Duration::from_secs(43), "{p:?}");
     });
 }
 
@@ -399,7 +386,7 @@ fn method_calls_land_on_the_fake() {
     run(async {
         let fake = Fake::start(&d, "calls", "Playing", true).await;
         let mut m = Mpris::connect(&d.connect().await).await.unwrap();
-        wait_for(&mut m, |e| matches!(e, Event::Added(_))).await;
+        wait_for(&mut m, |m| m.players().count() == 1).await;
         let c = m.controls();
         let n = bus("calls");
 
@@ -407,7 +394,6 @@ fn method_calls_land_on_the_fake() {
         c.next(&n).await.unwrap();
         c.previous(&n).await.unwrap();
         c.seek(&n, -5_000_000).await.unwrap();
-        c.set_position(m.player(&n).unwrap(), Duration::from_secs(30)).await.unwrap();
         c.raise(&n).await.unwrap();
         c.set_shuffle(&n, true).await.unwrap();
         c.set_loop_status(&n, LoopStatus::Playlist).await.unwrap();
@@ -420,42 +406,11 @@ fn method_calls_land_on_the_fake() {
                 "Next",
                 "Previous",
                 "Seek -5000000",
-                &format!("SetPosition {TRACK} 30000000"),
                 "Raise",
                 "Shuffle true",
                 "Loop Playlist",
                 "Volume 0.25",
             ]
         );
-    });
-}
-
-#[test]
-fn set_position_without_a_track_id_seeks_relative() {
-    let d = Daemon::start();
-    run(async {
-        let fake = Fake::start(&d, "notrack", "Paused", false).await;
-        let mut m = Mpris::connect(&d.connect().await).await.unwrap();
-        wait_for(&mut m, |e| matches!(e, Event::Added(_))).await;
-        let n = bus("notrack");
-        assert_eq!(m.player(&n).unwrap().metadata.track_id, None);
-        m.controls().set_position(m.player(&n).unwrap(), Duration::from_secs(30)).await.unwrap();
-        assert_eq!(fake.calls(), ["Seek 20000000"]);
-    });
-}
-
-#[test]
-fn active_prefers_selection_then_playing_then_first() {
-    let d = Daemon::start();
-    run(async {
-        let _a = Fake::start(&d, "a", "Paused", true).await;
-        let _b = Fake::start(&d, "b", "Playing", true).await;
-        let mut m = Mpris::connect(&d.connect().await).await.unwrap();
-        while m.players().count() < 2 {
-            wait_for(&mut m, |e| matches!(e, Event::Added(_))).await;
-        }
-        assert_eq!(m.active(None).unwrap().bus_name, bus("b"));
-        assert_eq!(m.active(Some(&bus("a"))).unwrap().bus_name, bus("a"));
-        assert_eq!(m.active(Some(&bus("gone"))).unwrap().bus_name, bus("b"));
     });
 }

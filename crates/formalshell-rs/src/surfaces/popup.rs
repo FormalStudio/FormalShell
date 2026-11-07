@@ -13,7 +13,7 @@ use crate::scene::{IRect, NodeId};
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::surfaces::card::Card;
-use crate::ui::{self, Drawn, El, Ui};
+use crate::ui::{Drawn, El, Ui};
 
 pub struct Popup {
     pub surface: Surface,
@@ -126,7 +126,4 @@ impl Popup {
     }
 }
 
-/// The element's own height at `width`, which sizes the card around it.
-pub fn content_height(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> f64 {
-    ui::measure(root, width, theme, kit).1
-}
+

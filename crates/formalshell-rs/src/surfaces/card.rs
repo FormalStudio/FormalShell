@@ -390,13 +390,12 @@ impl Card {
         self.live = live;
     }
 
-    pub fn set_bypass(&mut self, now: Instant, bypass: bool) {
+    pub fn set_bypass(&mut self, bypass: bool) {
         self.bypass = bypass;
         if bypass {
             self.progress.jump(if self.open { 1.0 } else { 0.0 });
             self.deform = Deform::new();
         }
-        let _ = now;
     }
 
     pub fn set_joined(&mut self, joined: bool) {

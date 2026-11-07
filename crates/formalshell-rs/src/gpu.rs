@@ -708,7 +708,7 @@ impl Gpu {
     /// it to `at` on `canvas`.
     fn draw(&mut self, canvas: &wgpu::Texture, at: (u32, u32), (w, h): (u32, u32), paint: impl FnOnce(&mut Frame)) {
         self.scene.reset();
-        let mut frame = Frame { gpu: self, paint: Paint::Plain, paint_at: Affine::IDENTITY };
+        let mut frame = Frame { gpu: self, paint: Brush::Plain, paint_at: Affine::IDENTITY };
         paint(&mut frame);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("formalshell tile") });
         let size = vello_hybrid::RenderSize { width: TILE as u32, height: TILE as u32 };
@@ -970,7 +970,7 @@ unsafe fn drm_node(adapter: &wgpu::Adapter) -> Option<(u32, u32)> {
 }
 
 /// What the next fill draws with.
-enum Paint {
+enum Brush {
     Plain,
     /// A picture with a texture of its own: drawn as texture rects under a
     /// clip of the filled shape, faded by an opacity layer.
@@ -980,13 +980,13 @@ enum Paint {
 /// One tile's scene, with pictures resolved to their GPU places.
 pub struct Frame<'a> {
     gpu: &'a mut Gpu,
-    paint: Paint,
+    paint: Brush,
     paint_at: Affine,
 }
 
 impl Frame<'_> {
     fn own(&mut self, shape: Option<&BezPath>, rect: Rect) {
-        let Paint::Own { id, size, alpha, quality } = self.paint else { return };
+        let Brush::Own { id, size, alpha, quality } = self.paint else { return };
         let paint_at = self.paint_at;
         let scene = &mut self.gpu.scene;
         if let Some(path) = shape {
@@ -1012,12 +1012,12 @@ impl Raster for Frame<'_> {
     }
 
     fn set_color(&mut self, c: AlphaColor<Srgb>) {
-        self.paint = Paint::Plain;
+        self.paint = Brush::Plain;
         self.gpu.scene.set_paint(c);
     }
 
     fn set_gradient(&mut self, g: Gradient) {
-        self.paint = Paint::Plain;
+        self.paint = Brush::Plain;
         self.gpu.scene.set_paint(g);
     }
 
@@ -1030,16 +1030,16 @@ impl Raster for Frame<'_> {
                 // same fade.
                 let tint = (sampler.alpha < 1.0).then(|| Tint { color: AlphaColor::new([1.0, 1.0, 1.0, sampler.alpha]), mode: TintMode::Multiply });
                 let image = Image { image: ImageSource::opaque_id(*id), sampler: sampler.with_alpha(1.0) };
-                self.paint = Paint::Plain;
+                self.paint = Brush::Plain;
                 self.gpu.scene.set_tint(tint);
                 self.gpu.scene.set_paint(image);
             }
             Some(Placed::Own(id)) => {
-                self.paint = Paint::Own { id: *id, size, alpha: sampler.alpha, quality: sampler.quality };
+                self.paint = Brush::Own { id: *id, size, alpha: sampler.alpha, quality: sampler.quality };
                 self.gpu.scene.set_tint(None);
             }
             None => {
-                self.paint = Paint::Plain;
+                self.paint = Brush::Plain;
                 self.gpu.scene.set_paint(AlphaColor::<Srgb>::TRANSPARENT);
             }
         }
@@ -1065,15 +1065,15 @@ impl Raster for Frame<'_> {
 
     fn fill_path(&mut self, p: &BezPath) {
         match self.paint {
-            Paint::Plain => self.gpu.scene.fill_path(p),
-            Paint::Own { .. } => self.own(Some(p), p.bounding_box()),
+            Brush::Plain => self.gpu.scene.fill_path(p),
+            Brush::Own { .. } => self.own(Some(p), p.bounding_box()),
         }
     }
 
     fn fill_rect(&mut self, r: &Rect) {
         match self.paint {
-            Paint::Plain => self.gpu.scene.fill_rect(r),
-            Paint::Own { .. } => self.own(None, *r),
+            Brush::Plain => self.gpu.scene.fill_rect(r),
+            Brush::Own { .. } => self.own(None, *r),
         }
     }
 

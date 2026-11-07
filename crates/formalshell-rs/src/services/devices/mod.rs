@@ -26,7 +26,7 @@ pub struct State {
     pub power: Power,
     pub earbuds: earbuds::Earbuds,
     pub lights: power::Lights,
-    pub profiles: power::Profiles,
+    pub profiles: Option<fs_upower::ProfilesState>,
     /// A saved Wi-Fi passphrase on its way to the launcher, which takes it.
     pub revealed: Option<network::Revealed>,
     /// What logind lets this session do, as last asked.
@@ -40,7 +40,7 @@ pub enum Diff {
     Power(Power),
     Earbuds(earbuds::Diff),
     Lights(power::Lights),
-    Profiles(power::Profiles),
+    Profiles(Option<fs_upower::ProfilesState>),
     Revealed(network::Revealed),
     Logind(crate::services::power::Can),
 }

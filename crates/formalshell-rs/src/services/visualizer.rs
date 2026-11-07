@@ -168,7 +168,6 @@ pub fn bar_visible(delta: isize) {
 }
 
 /// The media panel is open with its spectrum band on.
-#[allow(dead_code)]
 pub fn set_panel(open: bool) {
     update(|g| g.panel = open);
 }

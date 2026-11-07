@@ -207,10 +207,6 @@ pub fn escape_bind(name: &'static str, argv: Option<&[String]>) {
     send(Command::EscapeBind { name, argv: argv.map(<[String]>::to_vec) });
 }
 
-pub fn is_window_parked(state: &State, id: &str) -> bool {
-    model::is_parked(&state.snapshot, id)
-}
-
 /// The compositor's binds for the launcher's keybinds route.
 pub async fn binds() -> Result<Vec<Bind>, ()> {
     hyprland::binds().await

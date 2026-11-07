@@ -15,12 +15,11 @@ pub(crate) struct Notifications {
 #[interface(name = "org.freedesktop.Notifications")]
 impl Notifications {
     fn get_capabilities(&self) -> Vec<String> {
-        self.shared.config.capabilities.clone()
+        crate::CAPABILITIES.map(String::from).into()
     }
 
     fn get_server_information(&self) -> (String, String, String, String) {
-        let c = &self.shared.config;
-        (c.name.clone(), c.vendor.clone(), c.version.clone(), c.spec_version.clone())
+        (crate::NAME.into(), crate::VENDOR.into(), self.shared.version.clone(), crate::SPEC_VERSION.into())
     }
 
     #[allow(clippy::too_many_arguments)]

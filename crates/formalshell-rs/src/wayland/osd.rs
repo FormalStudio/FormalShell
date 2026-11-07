@@ -27,7 +27,7 @@ use crate::services::display;
 use crate::surface::Surface;
 use crate::surfaces::card::{Card, Ends};
 use crate::surfaces::osd::{self, Kind, Reading};
-use crate::surfaces::popup::{self, Popup};
+use crate::surfaces::popup::Popup;
 
 const HIDE: Duration = Duration::from_millis(1600);
 /// Harder than a panel: the pill is small, it travels its whole height,
@@ -176,7 +176,7 @@ impl App {
         let width = theme.space.popup_width_narrow;
         let reading = self.osd_reading();
         let el = osd::content(&reading, theme, &mut self.bar.kit, width - pad * 2.0);
-        let height = popup::content_height(&el, width - pad * 2.0, theme, &mut self.bar.kit) + pad * 2.0;
+        let height = crate::ui::measure(&el, width - pad * 2.0, theme, &mut self.bar.kit).1 + pad * 2.0;
         let inset = self.bottom_inset();
         let rest = inset + theme.space.screen_padding;
         let band = out_h.min(rest + height * 2.0);

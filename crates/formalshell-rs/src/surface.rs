@@ -1198,8 +1198,12 @@ impl<R: Role> Surface<R> {
     }
 
     pub fn report(&self) -> String {
-        format!("{}: commits={} frame_callbacks={}", self.name, self.commits, self.callbacks)
+        report_line(&self.name, self.commits, self.callbacks)
     }
+}
+
+fn report_line(name: &str, commits: impl std::fmt::Display, callbacks: impl std::fmt::Display) -> String {
+    format!("{name}: commits={commits} frame_callbacks={callbacks}")
 }
 
 /// A layer surface showing one black pixel (`wp_single_pixel_buffer_v1`)
@@ -1316,7 +1320,7 @@ impl PixelSurface {
     }
 
     pub fn report(&self) -> String {
-        format!("{}: commits={} frame_callbacks={}", self.name, self.commits, self.callbacks)
+        report_line(&self.name, self.commits, self.callbacks)
     }
 
     /// The multiplier last committed, 0 to 1.

@@ -435,13 +435,6 @@ pub fn toggle_power(ctx: &Ctx) {
     });
 }
 
-/// Trusts the device at `address`: BlueZ otherwise asks an agent to
-/// authorize every profile on each reconnect (the iPhone service, once a
-/// pairing lands).
-pub fn trust(ctx: &Ctx, address: &str) {
-    set_trust(ctx, address, true);
-}
-
 /// The device's `Trusted` property written as asked, with no panel row
 /// marked in flight.
 pub fn set_trust(ctx: &Ctx, address: &str, trusted: bool) {

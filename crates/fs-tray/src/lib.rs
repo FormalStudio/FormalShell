@@ -9,6 +9,6 @@ mod watcher;
 
 pub use tray::{Event, MenuEventKind, Tray, TrayEvents};
 pub use types::{
-    Category, CheckState, IconSource, Item, ItemField, MenuItem, Pixmap, Status, Toggle, Tooltip,
+    CheckState, IconSource, Item, MenuItem, Pixmap, Status, Toggle, Tooltip,
     closest_pixmap,
 };

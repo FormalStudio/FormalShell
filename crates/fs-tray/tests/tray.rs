@@ -14,7 +14,7 @@ use std::{
 
 use async_io::{Timer, block_on};
 use fs_tray::{
-    CheckState, Event, IconSource, ItemField, MenuItem, Status, Toggle, Tray, TrayEvents,
+    CheckState, Event, IconSource, Item, MenuItem, Status, Toggle, Tray, TrayEvents,
 };
 use futures_util::future::{Either, select};
 use zbus::{
@@ -106,6 +106,14 @@ async fn next(events: &mut TrayEvents) -> Event {
     within("a tray event", events.next())
         .await
         .expect("event stream ended")
+}
+
+/// The next item event, and the item it names as the tray now holds it.
+async fn changed(tray: &Tray, events: &mut TrayEvents) -> Item {
+    let Event::Changed { key } = next(events).await else {
+        panic!("expected Changed");
+    };
+    tray.item(&key).unwrap_or_else(|| panic!("{key} is not in the tray"))
 }
 
 type Pixmaps = Vec<(i32, i32, Vec<u8>)>;
@@ -482,12 +490,8 @@ fn registers_two_items_and_drops_them_on_name_loss() {
         let by_path = Fake::start(&bus, "bypath", "/org/ayatana/Item", false).await;
         by_path.register("/org/ayatana/Item").await;
 
-        let Event::Added(first) = next(&mut events).await else {
-            panic!("expected Added");
-        };
-        let Event::Added(second) = next(&mut events).await else {
-            panic!("expected Added");
-        };
+        let first = changed(&tray, &mut events).await;
+        let second = changed(&tray, &mut events).await;
         assert_eq!(first.key, format!("{service}/StatusNotifierItem"));
         assert_eq!(first.id, "named");
         assert_eq!(first.title, "named title");
@@ -516,7 +520,7 @@ fn registers_two_items_and_drops_them_on_name_loss() {
         by_path.conn.close().await.unwrap();
         assert_eq!(
             next(&mut events).await,
-            Event::Removed {
+            Event::Changed {
                 key: second.key.clone()
             }
         );
@@ -532,9 +536,7 @@ fn property_signals_report_the_fields_that_moved() {
         let (tray, mut events) = Tray::start(bus.connect().await).await.unwrap();
         let fake = Fake::start(&bus, "p", "/StatusNotifierItem", false).await;
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(item) = next(&mut events).await else {
-            panic!("expected Added");
-        };
+        let item = changed(&tray, &mut events).await;
 
         fake.state.lock().unwrap().props.title = "renamed".into();
         Sni::new_title(fake.sni().await.signal_emitter())
@@ -543,10 +545,10 @@ fn property_signals_report_the_fields_that_moved() {
         assert_eq!(
             next(&mut events).await,
             Event::Changed {
-                key: item.key.clone(),
-                fields: vec![ItemField::Title]
+                key: item.key.clone()
             }
         );
+        assert_eq!(tray.item(&item.key).unwrap().title, "renamed");
 
         fake.state.lock().unwrap().props.icon_name = "mail-read".into();
         Sni::new_icon(fake.sni().await.signal_emitter())
@@ -555,10 +557,10 @@ fn property_signals_report_the_fields_that_moved() {
         assert_eq!(
             next(&mut events).await,
             Event::Changed {
-                key: item.key.clone(),
-                fields: vec![ItemField::IconName]
+                key: item.key.clone()
             }
         );
+        assert_eq!(tray.item(&item.key).unwrap().icon_name, "mail-read");
 
         fake.state.lock().unwrap().props.status = "NeedsAttention".into();
         Sni::new_status(fake.sni().await.signal_emitter(), "NeedsAttention")
@@ -567,10 +569,10 @@ fn property_signals_report_the_fields_that_moved() {
         assert_eq!(
             next(&mut events).await,
             Event::Changed {
-                key: item.key.clone(),
-                fields: vec![ItemField::Status]
+                key: item.key.clone()
             }
         );
+        assert_eq!(tray.item(&item.key).unwrap().status, Status::NeedsAttention);
 
         fake.state.lock().unwrap().props.tooltip.2 = "New tip".into();
         Sni::new_tool_tip(fake.sni().await.signal_emitter())
@@ -579,10 +581,10 @@ fn property_signals_report_the_fields_that_moved() {
         assert_eq!(
             next(&mut events).await,
             Event::Changed {
-                key: item.key.clone(),
-                fields: vec![ItemField::ToolTip]
+                key: item.key.clone()
             }
         );
+        assert_eq!(tray.item(&item.key).unwrap().tooltip.title, "New tip");
 
         // NeedsAttention switches the icon to the attention name.
         let now = tray.item(&item.key).unwrap();
@@ -603,23 +605,15 @@ fn item_calls_land_on_the_fake() {
         let (tray, mut events) = Tray::start(bus.connect().await).await.unwrap();
         let fake = Fake::start(&bus, "calls", "/StatusNotifierItem", false).await;
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(item) = next(&mut events).await else {
-            panic!("expected Added");
-        };
+        let item = changed(&tray, &mut events).await;
 
         tray.activate(&item.key).await.unwrap();
         tray.secondary_activate(&item.key).await.unwrap();
-        tray.context_menu(&item.key, 4, 5).await.unwrap();
-        tray.scroll(&item.key, -120, false).await.unwrap();
-        tray.scroll(&item.key, 15, true).await.unwrap();
         assert_eq!(
             fake.state.lock().unwrap().calls,
             vec![
                 "activate 0 0",
-                "secondary 0 0",
-                "context 4 5",
-                "scroll -120 vertical",
-                "scroll 15 horizontal"
+                "secondary 0 0"
             ]
         );
     });
@@ -636,9 +630,7 @@ fn menu_layout_has_submenu_toggle_separator_and_disabled_rows() {
         let (tray, mut events) = Tray::start(bus.connect().await).await.unwrap();
         let fake = Fake::start(&bus, "menu", "/StatusNotifierItem", false).await;
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(item) = next(&mut events).await else {
-            panic!("expected Added");
-        };
+        let item = changed(&tray, &mut events).await;
         assert!(tray.menu(&item.key).is_none());
 
         let root = tray.open_menu(&item.key).await.unwrap();
@@ -676,9 +668,7 @@ fn menu_click_event_and_updates() {
         let (tray, mut events) = Tray::start(bus.connect().await).await.unwrap();
         let fake = Fake::start(&bus, "click", "/StatusNotifierItem", false).await;
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(item) = next(&mut events).await else {
-            panic!("expected Added");
-        };
+        let item = changed(&tray, &mut events).await;
         tray.open_menu(&item.key).await.unwrap();
 
         tray.menu_click(&item.key, 3).await.unwrap();
@@ -758,12 +748,8 @@ fn joins_an_existing_watcher_and_takes_over_when_it_goes() {
 
         let fake = Fake::start(&bus, "shared", "/StatusNotifierItem", false).await;
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(a) = next(&mut first_events).await else {
-            panic!("expected Added");
-        };
-        let Event::Added(b) = next(&mut second_events).await else {
-            panic!("expected Added");
-        };
+        let a = changed(&first, &mut first_events).await;
+        let b = changed(&second, &mut second_events).await;
         assert_eq!(a.key, b.key);
         assert_eq!(first.items().len(), 1);
         assert_eq!(second.items().len(), 1);
@@ -775,15 +761,13 @@ fn joins_an_existing_watcher_and_takes_over_when_it_goes() {
         first_conn.close().await.unwrap();
         assert_eq!(
             next(&mut second_events).await,
-            Event::Removed { key: b.key.clone() }
+            Event::Changed { key: b.key.clone() }
         );
         assert!(second.items().is_empty());
 
         // The survivor now owns the watcher: an item registering again is picked up.
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(c) = next(&mut second_events).await else {
-            panic!("expected Added");
-        };
+        let c = changed(&second, &mut second_events).await;
         assert_eq!(c.key, b.key);
     });
 }
@@ -796,9 +780,7 @@ fn a_signal_burst_ahead_of_a_reply_does_not_wedge_the_connection() {
         let (tray, mut events) = Tray::start(conn).await.unwrap();
         let fake = Fake::start(&bus, "burst", "/StatusNotifierItem", false).await;
         fake.register("/StatusNotifierItem").await;
-        let Event::Added(item) = next(&mut events).await else {
-            panic!("expected Added");
-        };
+        let item = changed(&tray, &mut events).await;
 
         // Far more than a stream queue holds, all on the wire before the re-read the first
         // one triggers can be answered.
@@ -810,8 +792,7 @@ fn a_signal_burst_ahead_of_a_reply_does_not_wedge_the_connection() {
         assert_eq!(
             next(&mut events).await,
             Event::Changed {
-                key: item.key.clone(),
-                fields: vec![ItemField::Title]
+                key: item.key.clone()
             }
         );
 

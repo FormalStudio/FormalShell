@@ -1,36 +1,24 @@
 //! MPRIS client on zbus. Executor-agnostic: no task is spawned here. The
 //! shell drives [`Mpris::next`] on its own executor and turns the returned
-//! [`Event`]s into store diffs; [`Controls`] is the cloneable command side.
+//! changes into store diffs; [`Controls`] is the cloneable command side.
 
 mod proxy;
 mod state;
 
-use std::collections::VecDeque;
 use std::future::pending;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use futures_util::future::{self, AbortHandle, Abortable, Either};
 use futures_util::stream::{self, BoxStream, SelectAll, StreamExt};
 use zbus::fdo::{DBusProxy, IntrospectableProxy, PropertiesProxy};
 use zbus::names::InterfaceName;
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
+use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, Result};
 
 use proxy::{OBJECT_PATH, PLAYER_IFACE, PlayerProxy, ROOT_IFACE, RootProxy};
 pub use state::{LoopStatus, Metadata, PlaybackStatus, PlayerState};
 
 const BUS_PREFIX: &str = "org.mpris.MediaPlayer2.";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Event {
-    /// A player appeared; its state is readable through [`Mpris::player`].
-    Added(String),
-    Removed(String),
-    /// Properties changed and were re-read, including the position base.
-    Changed(String),
-    /// The player jumped; the position base already reflects it.
-    Seeked(String),
-}
 
 enum Input {
     Props { name: String, root: bool },
@@ -47,13 +35,14 @@ pub struct Mpris {
     owners: zbus::fdo::NameOwnerChangedStream,
     players: Vec<Entry>,
     inputs: SelectAll<BoxStream<'static, Input>>,
-    pending: VecDeque<Event>,
+    /// A player appeared, left or changed since the last [`Mpris::next`].
+    dirty: bool,
 }
 
 impl Mpris {
     /// Subscribes to name changes first, then lists the names already on the
     /// bus, so a player starting in between is never missed. Players found
-    /// at startup are queued as [`Event::Added`].
+    /// at startup are in [`Mpris::players`] on return.
     pub async fn connect(conn: &Connection) -> Result<Self> {
         let dbus = DBusProxy::new(conn).await?;
         let owners = dbus.receive_name_owner_changed().await?;
@@ -62,7 +51,7 @@ impl Mpris {
             owners,
             players: Vec::new(),
             inputs: SelectAll::new(),
-            pending: VecDeque::new(),
+            dirty: false,
         };
         let mut names: Vec<String> = dbus
             .list_names()
@@ -91,36 +80,12 @@ impl Mpris {
         self.players.iter().map(|e| &e.state).find(|s| s.bus_name == bus_name)
     }
 
-    /// The shell's pick (`MediaModel.pickPlayerId`): the selected player while
-    /// it exists, else the first one playing, else the first.
-    pub fn active(&self, selected: Option<&str>) -> Option<&PlayerState> {
-        if let Some(s) = selected.and_then(|n| self.player(n)) {
-            return Some(s);
-        }
-        self.players()
-            .find(|s| s.is_playing())
-            .or_else(|| self.players().next())
-    }
-
-    /// Re-reads `Position` now, for a caller that wants it exact rather than
-    /// interpolated. The player does not signal position, so this is the only
-    /// way to catch a seek that did not emit `Seeked`.
-    pub async fn refresh_position(&mut self, bus_name: &str) -> bool {
-        let Some(i) = self.index(bus_name) else { return false };
-        let pos = read_position(&self.conn, bus_name).await;
-        let state = &mut self.players[i].state;
-        state.position_supported = pos.is_some();
-        if let Some(us) = pos {
-            state.set_base(us, Instant::now());
-        }
-        true
-    }
-
-    /// Waits for the next change. `None` once the bus connection is gone.
-    pub async fn next(&mut self) -> Option<Event> {
+    /// Waits until a player appeared, left or changed (read [`Mpris::players`] for the
+    /// result). `None` once the bus connection is gone.
+    pub async fn next(&mut self) -> Option<()> {
         loop {
-            if let Some(e) = self.pending.pop_front() {
-                return Some(e);
+            if std::mem::take(&mut self.dirty) {
+                return Some(());
             }
             let wake = {
                 let owner = self.owners.next();
@@ -161,7 +126,7 @@ impl Mpris {
                     Input::Seeked { name, position_us } => {
                         if let Some(i) = self.index(&name) {
                             self.players[i].state.set_base(position_us, Instant::now());
-                            self.pending.push_back(Event::Seeked(name));
+                            self.dirty = true;
                         }
                     }
                 },
@@ -176,7 +141,7 @@ impl Mpris {
     fn remove_player(&mut self, name: &str) {
         if let Some(i) = self.index(name) {
             self.players.remove(i).abort.abort();
-            self.pending.push_back(Event::Removed(name.to_owned()));
+            self.dirty = true;
         }
     }
 
@@ -188,7 +153,7 @@ impl Mpris {
         let (abort, reg) = AbortHandle::new_pair();
         self.inputs.push(Abortable::new(streams, reg).boxed());
         self.players.push(Entry { state, abort });
-        self.pending.push_back(Event::Added(name));
+        self.dirty = true;
     }
 
     /// Reads the whole player and opens its change streams. A player whose
@@ -254,7 +219,7 @@ impl Mpris {
         if let Some(pos) = pos {
             apply_position(state, pos);
         }
-        self.pending.push_back(Event::Changed(name.to_owned()));
+        self.dirty = true;
     }
 }
 
@@ -323,18 +288,6 @@ impl Controls {
         self.player(name).await?.play_pause().await
     }
 
-    pub async fn play(&self, name: &str) -> Result<()> {
-        self.player(name).await?.play().await
-    }
-
-    pub async fn pause(&self, name: &str) -> Result<()> {
-        self.player(name).await?.pause().await
-    }
-
-    pub async fn stop(&self, name: &str) -> Result<()> {
-        self.player(name).await?.stop().await
-    }
-
     pub async fn next(&self, name: &str) -> Result<()> {
         self.player(name).await?.next().await
     }
@@ -346,25 +299,6 @@ impl Controls {
     /// Relative seek, microseconds (negative goes back).
     pub async fn seek(&self, name: &str, offset_us: i64) -> Result<()> {
         self.player(name).await?.seek(offset_us).await
-    }
-
-    /// Absolute seek: `SetPosition` against the
-    /// current track id when the player has one, else a relative `Seek` from
-    /// the interpolated position.
-    pub async fn set_position(&self, state: &PlayerState, target: Duration) -> Result<()> {
-        let target_us = i64::try_from(target.as_micros()).unwrap_or(i64::MAX);
-        let player = self.player(&state.bus_name).await?;
-        match &state.metadata.track_id {
-            Some(id) => {
-                let path = ObjectPath::try_from(id.as_str())?;
-                player.set_position(&path, target_us).await
-            }
-            None => {
-                let now_us = i64::try_from(state.position(Instant::now()).as_micros())
-                    .unwrap_or(i64::MAX);
-                player.seek(target_us.saturating_sub(now_us)).await
-            }
-        }
     }
 
     pub async fn set_shuffle(&self, name: &str, on: bool) -> Result<()> {

@@ -5,7 +5,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use async_channel::Receiver;
-use fs_notifd::{CloseReason, Config, Error, Event, Image, Server, Urgency};
+use fs_notifd::{CloseReason, Error, Event, Image, Server, Urgency};
 use futures_lite::StreamExt;
 use zbus::connection::Builder;
 use zbus::zvariant::Value;
@@ -102,7 +102,7 @@ struct Rig {
 impl Rig {
     async fn new() -> Rig {
         let bus = Bus::start();
-        let (server, events) = Server::start_on(bus.builder(), Config::default()).await.unwrap();
+        let (server, events) = Server::start_on(bus.builder(), env!("CARGO_PKG_VERSION")).await.unwrap();
         let client = bus.builder().build().await.unwrap();
         Rig { _bus: bus, server, events, client }
     }
@@ -407,8 +407,7 @@ fn image_hints() {
 fn a_second_server_waits_in_line_and_steals_nothing() {
     run(async {
         let rig = Rig::new().await;
-        let other = Config { name: "second".into(), ..Config::default() };
-        let (_second, second_events) = Server::start_on(rig._bus.builder(), other).await.unwrap();
+        let (_second, second_events) = Server::start_on(rig._bus.builder(), "9.9").await.unwrap();
 
         let p = rig.proxy().await;
         assert_eq!(p.get_server_information().await.unwrap().0, "formalshell");
@@ -423,7 +422,7 @@ fn the_name_comes_over_once_its_owner_exits() {
     run(async {
         let bus = Bus::start();
         let squatter = bus.builder().name("org.freedesktop.Notifications").unwrap().build().await.unwrap();
-        let (_server, events) = Server::start_on(bus.builder(), Config::default()).await.unwrap();
+        let (_server, events) = Server::start_on(bus.builder(), env!("CARGO_PKG_VERSION")).await.unwrap();
         drop(squatter);
 
         let client = bus.builder().build().await.unwrap();

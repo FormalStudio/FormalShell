@@ -7,7 +7,7 @@
 use std::io::BufRead;
 use std::process::Command;
 
-use fs_auth::polkit::{AGENT_PATH, Agent, AuthFlow, AuthRequest, FlowEvent};
+use fs_auth::polkit::{Agent, AuthFlow, AuthRequest, FlowEvent};
 use zeroize::Zeroizing;
 
 fn main() {
@@ -23,7 +23,7 @@ fn main() {
 
     let ok = futures_lite::future::block_on(async {
         let connection = zbus::Connection::system().await.expect("system bus");
-        let agent = Agent::register(&connection, AGENT_PATH).await.expect("register agent");
+        let agent = Agent::register(&connection).await.expect("register agent");
         println!("registered");
 
         let rc = pkexec(&command);

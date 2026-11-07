@@ -517,15 +517,6 @@ impl App {
         (surface, zones)
     }
 
-    /// The bar window's input region off what it last drew; true when it
-    /// changed.
-    fn set_input_region(&mut self) -> bool {
-        match &self.bar_surface {
-            Some(s) => Self::set_input_region_for(&self.compositor, &mut self.bar, s),
-            None => false,
-        }
-    }
-
     fn set_input_region_for(compositor: &CompositorState, bar: &mut Bar, s: &Surface) -> bool {
         let Some(rects) = bar.input_rects() else {
             // A window that took a region and now takes input everywhere.
@@ -553,7 +544,7 @@ impl App {
     /// The live bar's input region off what it last drew, and the open
     /// panel's hole for it following.
     fn sync_bar_input(&mut self) {
-        if self.set_input_region() {
+        if self.bar_surface.as_ref().is_some_and(|s| Self::set_input_region_for(&self.compositor, &mut self.bar, s)) {
             self.panel_dirty = true;
         }
     }
@@ -1001,7 +992,7 @@ impl App {
         host.start(&self.store, self.runtime.as_ref());
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
-                host.take_over(old.card.live(), now);
+                host.take_over(old.card.live());
                 old.hand_over();
                 self.outgoing = Some(old);
             }
@@ -1922,10 +1913,6 @@ impl App {
     }
 
     /// One key on the keyboard, routed to the open panel.
-    fn key_event(&mut self, event: KeyEvent) {
-        self.key_event_from(event, false);
-    }
-
     fn key_event_from(&mut self, event: KeyEvent, repeat: bool) {
         if self.lock_key(&event, repeat) || self.polkit_key(&event) || self.overlay_key(&event) || self.picker_key_event(&event) || self.atlas_key(&event) || self.launcher_key(&event, repeat) || self.switcher_key(event.keysym) || self.overview_key(&event) || self.sidebar_key(&event) {
             return;
@@ -2360,7 +2347,7 @@ impl KeyboardHandler for App {
             self.saver_input(None, screensaver::SaverInput::Key);
             return;
         }
-        self.key_event(event);
+        self.key_event_from(event, false);
     }
 
     fn repeat_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {

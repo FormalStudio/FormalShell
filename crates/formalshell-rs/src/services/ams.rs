@@ -94,7 +94,6 @@ static GATE_TX: std::sync::OnceLock<async_channel::Sender<()>> = std::sync::Once
 static COMMAND_TX: std::sync::OnceLock<async_channel::Sender<String>> = std::sync::OnceLock::new();
 static COMMANDING: AtomicBool = AtomicBool::new(false);
 
-#[allow(dead_code)]
 pub fn set_connected(on: bool) {
     if let Ok(mut c) = CONNECTED.lock()
         && std::mem::replace(&mut *c, on) != on

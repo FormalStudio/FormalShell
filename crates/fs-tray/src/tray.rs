@@ -24,7 +24,7 @@ use zbus::{
 };
 
 use crate::{
-    types::{Item, ItemField, MenuItem, apply_properties, diff},
+    types::{Item, MenuItem, apply_properties},
     watcher::{
         SharedWatcher, WATCHER_IFACE, WATCHER_NAME, WATCHER_PATH, Watcher, WatcherState, qualify,
         register_own_host, service_gone,
@@ -39,26 +39,16 @@ static HOST_SEQ: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// An item finished its first property read and joined the tray.
-    Added(Box<Item>),
-    Removed {
-        key: String,
-    },
-    /// A New* signal or PropertiesChanged re-read the item and these fields moved.
-    Changed {
-        key: String,
-        fields: Vec<ItemField>,
-    },
+    /// An item joined, left or changed; [`Tray::items`] holds the current set and `key` names
+    /// the item that moved.
+    Changed { key: String },
     /// The open menu of this item changed (LayoutUpdated or ItemsPropertiesUpdated).
-    MenuChanged {
-        key: String,
-    },
+    MenuChanged { key: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuEventKind {
     Clicked,
-    Hovered,
     Opened,
     Closed,
 }
@@ -67,7 +57,6 @@ impl MenuEventKind {
     fn wire(self) -> &'static str {
         match self {
             Self::Clicked => "clicked",
-            Self::Hovered => "hovered",
             Self::Opened => "opened",
             Self::Closed => "closed",
         }
@@ -339,15 +328,6 @@ impl Tray {
     pub async fn secondary_activate(&self, key: &str) -> zbus::Result<()> {
         self.item_call(key, "SecondaryActivate", &(0i32, 0i32))
             .await
-    }
-
-    pub async fn context_menu(&self, key: &str, x: i32, y: i32) -> zbus::Result<()> {
-        self.item_call(key, "ContextMenu", &(x, y)).await
-    }
-
-    pub async fn scroll(&self, key: &str, delta: i32, horizontal: bool) -> zbus::Result<()> {
-        let orientation = if horizontal { "horizontal" } else { "vertical" };
-        self.item_call(key, "Scroll", &(delta, orientation)).await
     }
 
     fn menu_target(&self, key: &str) -> zbus::Result<(String, String)> {
@@ -682,12 +662,12 @@ impl Core {
         }
 
         self.shared.entries.lock().unwrap().push(Entry {
-            item: item.clone(),
+            item,
             owner,
             menu: None,
             aborts: vec![abort, abort_menu],
         });
-        self.queue.push_back(Event::Added(Box::new(item)));
+        self.queue.push_back(Event::Changed { key });
     }
 
     fn remove_item(&mut self, key: &str) {
@@ -700,7 +680,7 @@ impl Core {
         };
         if let Some(e) = removed {
             e.aborts.iter().for_each(AbortHandle::abort);
-            self.queue.push_back(Event::Removed {
+            self.queue.push_back(Event::Changed {
                 key: key.to_owned(),
             });
         }
@@ -788,14 +768,12 @@ impl Core {
         };
         let mut next = e.item.clone();
         apply_properties(&mut next, &props);
-        let fields = diff(&e.item, &next);
-        if fields.is_empty() {
+        if e.item == next {
             return;
         }
         e.item = next;
         self.queue.push_back(Event::Changed {
             key: key.to_owned(),
-            fields,
         });
     }
 

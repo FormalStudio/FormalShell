@@ -20,19 +20,19 @@ pub const KEY_CONFIGURED_SOURCE: &str = "default.configured.audio.source";
 pub const DEFAULT_TYPE: &str = "Spa:String:JSON";
 
 /// Linear `channelVolumes` value to the visual scale.
-pub fn visual_from_linear(linear: f32) -> f32 {
+pub(crate) fn visual_from_linear(linear: f32) -> f32 {
     linear.cbrt()
 }
 
 /// Visual scale to the linear value written back to the server.
-pub fn linear_from_visual(visual: f32) -> f32 {
+pub(crate) fn linear_from_visual(visual: f32) -> f32 {
     visual * visual * visual
 }
 
 /// The volume setter: every channel scaled by the
 /// same factor so their balance holds, or all set flat when the average was
 /// zero. Negative results clamp to zero, as `setVolumes` does.
-pub fn scaled_volumes(current: &[f32], average: f32) -> Vec<f32> {
+pub(crate) fn scaled_volumes(current: &[f32], average: f32) -> Vec<f32> {
     let old = average_volume(current);
     let mul = if old == 0.0 { 0.0 } else { average / old };
     current
@@ -42,7 +42,7 @@ pub fn scaled_volumes(current: &[f32], average: f32) -> Vec<f32> {
         .collect()
 }
 
-pub fn average_volume(volumes: &[f32]) -> f32 {
+pub(crate) fn average_volume(volumes: &[f32]) -> f32 {
     if volumes.is_empty() {
         return 0.0;
     }

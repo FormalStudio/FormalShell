@@ -15,8 +15,8 @@ pub use service::Ctx;
 use crate::store::Diff;
 
 /// At most two blocking threads, each gone after this long with no work.
-pub const POOL_THREADS: usize = 2;
-pub const POOL_IDLE: Duration = Duration::from_secs(5);
+const POOL_THREADS: usize = 2;
+const POOL_IDLE: Duration = Duration::from_secs(5);
 
 /// Every thread but the UI's runs at nice 10, and the threads it starts
 /// (zbus, PipeWire, `blocking`) inherit it: on a starved CPU the UI loop's

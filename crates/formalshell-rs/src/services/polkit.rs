@@ -6,7 +6,7 @@
 use std::sync::OnceLock;
 
 use calloop::channel::Sender;
-use fs_auth::polkit::{AGENT_PATH, Agent, AuthFlow, FlowEvent};
+use fs_auth::polkit::{Agent, AuthFlow, FlowEvent};
 use futures_lite::future;
 use zeroize::Zeroizing;
 
@@ -49,7 +49,7 @@ async fn run(tx: Sender<LockMsg>, cmds: async_channel::Receiver<Cmd>) {
         Ok(c) => c,
         Err(err) => return eprintln!("polkit: system bus: {err}"),
     };
-    let agent = match Agent::register(&conn, AGENT_PATH).await {
+    let agent = match Agent::register(&conn).await {
         Ok(a) => a,
         Err(err) => return eprintln!("polkit: registering the agent: {err}"),
     };

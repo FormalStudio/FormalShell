@@ -430,12 +430,6 @@ pub fn set_wallpaper(choice: Choice, mode: Option<&str>) {
     set(fields);
 }
 
-/// Both keys in one write: a half-set pair has no valid life fraction.
-#[allow(dead_code)]
-pub fn set_calendar_life_progress(birth_year: i64, life_expectancy: i64) {
-    set(vec![Field::CalendarBirthYear(birth_year), Field::CalendarLifeExpectancy(life_expectancy)]);
-}
-
 /// What the service task and its watcher share. Both run on the one service
 /// thread, so a `RefCell` is enough.
 struct Shared {

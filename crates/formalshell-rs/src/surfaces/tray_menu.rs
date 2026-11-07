@@ -132,11 +132,6 @@ impl Menu {
         self.look.width
     }
 
-    #[cfg(test)]
-    pub fn rows(&self) -> usize {
-        self.rows.len()
-    }
-
     /// The tree as the item last sent it; the rows rebuild off it.
     pub fn set_tree(&mut self, tree: Option<&MenuNode>) {
         self.tree = tree.cloned();
@@ -459,11 +454,11 @@ mod tests {
     #[test]
     fn a_submenu_expands_in_place_and_folds_again() {
         let mut m = menu();
-        assert_eq!(m.rows(), 5);
+        assert_eq!(m.rows.len(), 5);
         assert_eq!(m.activate(4), Outcome::Toggled(5, true));
-        assert_eq!(m.rows(), 6);
+        assert_eq!(m.rows.len(), 6);
         assert_eq!(m.activate(4), Outcome::Toggled(5, false));
-        assert_eq!(m.rows(), 5);
+        assert_eq!(m.rows.len(), 5);
     }
 
     #[test]

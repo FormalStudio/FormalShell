@@ -85,12 +85,9 @@ pub struct Env<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[allow(dead_code)]
 pub enum Tone {
     #[default]
     Rest,
-    Active,
-    Selected,
     Destructive,
     Warning,
 }
@@ -99,8 +96,6 @@ impl Tone {
     pub fn as_str(self) -> &'static str {
         match self {
             Tone::Rest => "rest",
-            Tone::Active => "active",
-            Tone::Selected => "selected",
             Tone::Destructive => "destructive",
             Tone::Warning => "warning",
         }
@@ -243,9 +238,6 @@ pub trait Cell {
     fn tip_at(&self) -> Option<(String, f64, f64)> {
         None
     }
-    /// The extents the cell's parts measured to along the strip, 0 for one
-    /// that is not drawn, handed over after every measure.
-    fn laid(&mut self, _extents: &[f64]) {}
     /// The next instant the cell has something to change on its own (a
     /// countdown's next second), so it is read again then.
     fn wake(&self) -> Option<Instant> {
@@ -335,7 +327,6 @@ pub struct Look {
     pub foreground: Rgba,
     pub muted: Rgba,
     pub on_active: Rgba,
-    pub on_selected: Rgba,
     pub destructive: Rgba,
     pub warning: Rgba,
     pub primary: Rgba,
@@ -348,7 +339,6 @@ pub struct Look {
     pub radius_sm: f64,
     pub radius: f32,
     pub active_fill: Rgba,
-    pub selected_fill: Rgba,
     pub hover_wash: Option<Rgba>,
     pub ghost_open: Rgba,
     pub destructive_border: Option<(Rgba, f32)>,
@@ -402,8 +392,6 @@ impl Look {
             mono: face(theme.faces.values),
             foreground: theme.colors.get("foreground"),
             muted: theme.colors.get("mutedForeground"),
-            on_active: theme.colors.get("primaryForeground"),
-            on_selected: theme.colors.get("accentForeground"),
             destructive: theme.colors.get("destructive"),
             warning: theme.colors.get("warning"),
             primary: theme.colors.get("primary"),
@@ -413,8 +401,8 @@ impl Look {
             track: s.track_thickness,
             radius_sm: theme.radii.sm,
             radius: theme.box_radius(&theme.box_style("cell", None), s.bar_cell_height) as f32,
+            on_active: theme.colors.get("primaryForeground"),
             active_fill: cell("active").fill,
-            selected_fill: cell("selected").fill,
             hover_wash: cell("hover").wash,
             ghost_open: cell("ghostOpen").fill,
             destructive_border: border("destructive"),
@@ -461,14 +449,11 @@ impl Ink {
     pub fn resolve(look: &Look, tone: Tone, band: Option<(Rgba, &[Glow<Rgba>])>, alpha: f32) -> Self {
         let band_ink = band.filter(|(c, _)| c.a > 0.0);
         let fg = match tone {
-            Tone::Active => look.on_active,
             Tone::Destructive => look.destructive,
             Tone::Warning => look.warning,
-            Tone::Selected => look.on_selected,
             Tone::Rest => band_ink.map_or(look.foreground, |(c, _)| c),
         };
-        let filled = matches!(tone, Tone::Active | Tone::Selected);
-        let dim = if filled || band_ink.is_some() { fg } else { look.muted };
+        let dim = if band_ink.is_some() { fg } else { look.muted };
         let glow = match (tone, band_ink) {
             (Tone::Rest, Some((_, g))) => g.to_vec(),
             _ => Vec::new(),
@@ -667,12 +652,6 @@ pub struct Frame<'a> {
     pub now: Instant,
 }
 
-impl Measured {
-    pub fn extents(&self) -> Vec<f64> {
-        self.boxes.iter().map(|b| b.0).collect()
-    }
-}
-
 impl Kit {
     pub fn new(theme: &Theme) -> Self {
         Self { text: Text::new(), look: Look::new(theme), motion_scale: 1.0, seen: None }
@@ -800,11 +779,7 @@ impl Kit {
         let r = f.rect;
         let alpha = f.alpha;
         let a = |c: Rgba| c.with_alpha(c.a * alpha);
-        let fill = match tone {
-            Tone::Active => look.active_fill,
-            Tone::Selected => look.selected_fill,
-            _ => look.ghost_open.with_alpha(look.ghost_open.a * f.open.1.max(0.0) as f32),
-        };
+        let fill = look.ghost_open.with_alpha(look.ghost_open.a * f.open.1.max(0.0) as f32);
         let border = match tone {
             Tone::Destructive => look.destructive_border,
             Tone::Warning => look.warning_border,

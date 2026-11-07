@@ -102,7 +102,7 @@ impl App {
 
     fn console_showing(&self) -> bool {
         let id = self.console_window_id(&self.console_app_id());
-        !id.is_empty() && !compositor::is_window_parked(&self.store.compositor, &id)
+        !id.is_empty() && !compositor::model::is_parked(&self.store.compositor.snapshot, &id)
     }
 
     pub fn console_status(&self) -> String {
@@ -212,7 +212,7 @@ impl App {
             eprintln!("console: no output to place the console on");
             return;
         };
-        let was_parked = compositor::is_window_parked(&self.store.compositor, &id);
+        let was_parked = compositor::model::is_parked(&self.store.compositor.snapshot, &id);
         compositor::send(Command::FloatWindow(id.clone()));
         self.console.attempts = 0;
         self.console.placing = Some(Placing { id, target, placed: false, placed_at: 0, was_parked });

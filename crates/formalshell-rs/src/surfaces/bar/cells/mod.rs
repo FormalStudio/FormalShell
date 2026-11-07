@@ -2,11 +2,7 @@
 //! becomes cells: one, or a rail of independent ones sharing the entry's
 //! place (Indicators). Adding a cell is a module here implementing
 //! [`Cell`](super::cell::Cell) and one arm in [`build`].
-//!
-//! The builtins not yet ported draw nothing ([`absent::Absent`]): no
-//! stand-in readout, so the strip never shows a value nothing measured.
 
-mod absent;
 mod activity;
 mod active_window;
 mod audio;
@@ -42,11 +38,9 @@ use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 use super::cell::Cell;
 
 pub fn build(entry: &Entry, region_entries: &[Entry]) -> Vec<Box<dyn Cell>> {
-    if matches!(entry.kind, EntryKind::Builtin(Builtin::Indicators)) {
-        return indicators::rail();
-    }
     let cell: Box<dyn Cell> = match &entry.kind {
         EntryKind::Builtin(b) => match b {
+            Builtin::Indicators => return indicators::rail(),
             Builtin::Launcher => Box::new(launcher::Launcher::default()),
             Builtin::Workspaces => Box::new(workspaces::Workspaces::default()),
             Builtin::ActiveWindow => Box::new(active_window::ActiveWindow::default()),
@@ -72,7 +66,6 @@ pub fn build(entry: &Entry, region_entries: &[Entry]) -> Vec<Box<dyn Cell>> {
             Builtin::Iphone => Box::new(iphone::Iphone::default()),
             Builtin::Bell => Box::new(bell::Bell::default()),
             Builtin::Chevron => Box::new(chevron::Chevron::new(entry.region, region_entries)),
-            _ => Box::new(absent::Absent),
         },
         EntryKind::Module { id, .. } => Box::new(command::Command::new(id)),
         EntryKind::Plugin { id, .. } => Box::new(plugin::Plugin::new(id)),

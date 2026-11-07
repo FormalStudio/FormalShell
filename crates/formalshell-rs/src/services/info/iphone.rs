@@ -473,7 +473,7 @@ fn end_pairing(ctx: &Ctx, session: &mut Session) {
         });
     }
     if session.state.advertising && session.state.bonded && !session.state.bond_address.is_empty() {
-        crate::services::devices::bluetooth::trust(ctx, &session.state.bond_address);
+        crate::services::devices::bluetooth::set_trust(ctx, &session.state.bond_address, true);
     }
     session.state.advertising = false;
     session.state.pairing_code.clear();
