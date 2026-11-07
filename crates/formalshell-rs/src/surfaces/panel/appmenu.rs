@@ -8,9 +8,11 @@
 //! The cursor walks the action rows, then the window rows, then the close
 //! row, and Enter does what a click on that row does.
 
+use fs_types::Window;
+
 use super::{Effect, Panel, View};
 use crate::services::appicon::{self, Action, Entry};
-use crate::services::compositor::{self, model::Window};
+use crate::services::compositor;
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, w};
 

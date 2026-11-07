@@ -1055,6 +1055,7 @@ dependencies = [
  "fs-chrome",
  "fs-devices",
  "fs-js",
+ "fs-types",
  "indexmap",
  "percent-encoding",
  "regex",
@@ -1131,6 +1132,9 @@ dependencies = [
 [[package]]
 name = "fs-types"
 version = "0.2.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "fs-upower"

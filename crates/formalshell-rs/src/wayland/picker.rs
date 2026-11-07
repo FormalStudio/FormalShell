@@ -6,6 +6,7 @@
 use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
+use fs_types::Rect;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
@@ -19,7 +20,7 @@ use crate::services::capture::Event;
 use crate::store::Diff;
 use crate::surface::Surface;
 use crate::surfaces::capture::draw::Sheet;
-use crate::surfaces::capture::picker::{R, Screen};
+use crate::surfaces::capture::picker::Screen;
 use crate::surfaces::capture::{self as cap};
 
 const NAMESPACE: &str = "formalshell:capture";
@@ -66,7 +67,7 @@ impl App {
                 let i = self.outputs.info(&o)?;
                 let (x, y) = i.logical_position.unwrap_or((0, 0));
                 let (w, h) = i.logical_size.or_else(|| i.modes.iter().find(|m| m.current).map(|m| m.dimensions))?;
-                Some((o, Screen { name: i.name.clone().unwrap_or_default(), rect: R { x: x as f64, y: y as f64, w: w as f64, h: h as f64 } }))
+                Some((o, Screen { name: i.name.clone().unwrap_or_default(), rect: Rect::new(x as f64, y as f64, w as f64, h as f64) }))
             })
             .collect()
     }
@@ -106,7 +107,7 @@ impl App {
                 ls.set_exclusive_zone(-1);
                 ls.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
                 ls.commit();
-                let (w, h) = (s.rect.w as i32, s.rect.h as i32);
+                let (w, h) = (s.rect.width as i32, s.rect.height as i32);
                 self.pickers.surfaces.push(PickerSurface {
                     output: s.name,
                     origin: (s.rect.x, s.rect.y),
@@ -191,7 +192,7 @@ impl App {
                 }
                 self.pickers.press = Some((gx, gy, hit.clone()));
                 if hit.is_none() && (self.capture.picker.mode == "smart" || self.capture.picker.mode == "region") {
-                    self.capture.picker.drag = Some(R { x: gx, y: gy, w: 0.0, h: 0.0 });
+                    self.capture.picker.drag = Some(Rect::new(gx, gy, 0.0, 0.0));
                 }
                 self.picker_sync();
             }
@@ -205,7 +206,7 @@ impl App {
                 }
                 let drag = self.capture.picker.drag.take();
                 match drag {
-                    Some(d) if d.w * d.h >= 20.0 => cap::finish_rect(self, d),
+                    Some(d) if d.width * d.height >= 20.0 => cap::finish_rect(self, d),
                     _ => {
                         let c = cap::cands(self);
                         self.capture.picker.hover = self.capture.picker.resolve_at(&c, gx, gy);
@@ -230,7 +231,7 @@ impl App {
         if let Some((px, py, None)) = self.pickers.press.clone()
             && self.capture.picker.drag.is_some()
         {
-            self.capture.picker.drag = Some(R { x: px.min(gx), y: py.min(gy), w: (gx - px).abs(), h: (gy - py).abs() });
+            self.capture.picker.drag = Some(Rect::new(px.min(gx), py.min(gy), (gx - px).abs(), (gy - py).abs()));
         } else if hit.is_none() && self.pickers.press.is_none() {
             let c = cap::cands(self);
             self.capture.picker.cursor = -1;

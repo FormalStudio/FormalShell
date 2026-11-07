@@ -11,12 +11,13 @@ pub mod record;
 use std::collections::HashMap;
 
 use fs_system::capture as model;
+use fs_types::Rect;
 use serde_json::json;
 
 use crate::services::capture::{self as svc, Event, Exit, Job, Run};
 use crate::store::Diff;
 use crate::wayland::App;
-use picker::{Cands, Picker, R};
+use picker::{Cands, Picker};
 
 #[derive(Default)]
 pub struct Shot {
@@ -407,22 +408,22 @@ fn shot_exit(app: &mut App, e: Exit) {
 }
 
 /// A whole-output pick with nothing frozen: grim takes the live screen.
-fn on_picked(app: &mut App, r: R) {
+fn on_picked(app: &mut App, r: Rect) {
     app.capture.shot.watch += 1;
-    let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.w.round(), r.h.round());
+    let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.width.round(), r.height.round());
     shot_grab(app, &geometry);
 }
 
 /// The selection cut out of its output's freeze at the freeze's native
 /// pixels, so the file holds exactly what the picker showed. A selection
 /// over two outputs keeps the part on the one it mostly covers.
-fn crop_shot(app: &mut App, r: R, c: &Cands) {
+fn crop_shot(app: &mut App, r: Rect, c: &Cands) {
     app.capture.shot.watch += 1;
     let picked = c
         .outputs
         .iter()
         .filter_map(|o| Some((o.label.clone(), o.rect?, o.rect?.intersect(&r)?)))
-        .max_by(|a, b| (a.2.w * a.2.h).total_cmp(&(b.2.w * b.2.h)));
+        .max_by(|a, b| (a.2.width * a.2.height).total_cmp(&(b.2.width * b.2.height)));
     let frame = picked.as_ref().and_then(|(name, ..)| app.capture.picker.frames.get(name).cloned().flatten());
     let (Some((name, out, sel)), Some(frame)) = (picked, frame) else {
         // No freeze to cut from: take the picker down and photograph the
@@ -438,11 +439,11 @@ fn crop_shot(app: &mut App, r: R, c: &Cands) {
     };
     picker_done(app);
     let (fw, fh) = (frame.pixmap.width() as f64, frame.pixmap.height() as f64);
-    let (sx, sy) = (fw / out.w, fh / out.h);
+    let (sx, sy) = (fw / out.width, fh / out.height);
     let x0 = ((sel.x - out.x) * sx).round().clamp(0.0, fw) as u32;
     let y0 = ((sel.y - out.y) * sy).round().clamp(0.0, fh) as u32;
-    let x1 = ((sel.x + sel.w - out.x) * sx).round().clamp(0.0, fw) as u32;
-    let y1 = ((sel.y + sel.h - out.y) * sy).round().clamp(0.0, fh) as u32;
+    let x1 = ((sel.x + sel.width - out.x) * sx).round().clamp(0.0, fw) as u32;
+    let y1 = ((sel.y + sel.height - out.y) * sy).round().clamp(0.0, fh) as u32;
     let src = format!("{}/formalshell-capture-{name}.png", runtime_dir());
     let dest = if app.capture.shot.processing == "copy" {
         format!("{}/formalshell/shot.png", runtime_dir())
@@ -501,7 +502,7 @@ fn cropped(app: &mut App, generation: u64, result: Result<String, String>) {
     spawn(app, Run::sh(Job::ShotGrab, g, script).env("FS_SHOT_PATH", path));
 }
 
-fn on_picked_record(app: &mut App, r: R, output: String) {
+fn on_picked_record(app: &mut App, r: Rect, output: String) {
     app.capture.shot.watch += 1;
     let s = &mut app.capture.shot;
     s.busy = false;
@@ -509,7 +510,7 @@ fn on_picked_record(app: &mut App, r: R, output: String) {
     s.last_error.clear();
     picker_done(app);
     let audio = app.store.config.str("recording.audio").unwrap_or("none").to_owned();
-    let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.w.round(), r.h.round());
+    let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.width.round(), r.height.round());
     let answer = record::start_at(app, &geometry, &output, "region", &audio, None);
     if !answer.starts_with("error:") {
         return;
@@ -649,7 +650,7 @@ pub fn picker_commit(app: &mut App, whole_output: bool) -> String {
     let Some(sel) = app.capture.picker.current(&c) else { return "error: nothing selected".into() };
     if whole_output {
         let anchor = match sel.rect {
-            Some(r) => c.outputs.iter().find(|o| o.rect.is_some_and(|o| r.x >= o.x && r.x < o.x + o.w && r.y >= o.y && r.y < o.y + o.h)),
+            Some(r) => c.outputs.iter().find(|o| o.rect.is_some_and(|o| o.contains(r.x, r.y))),
             None => c.focused_output_rect(),
         };
         let Some(out) = anchor.or(c.focused_output_rect()).and_then(|o| o.rect) else {
@@ -664,14 +665,14 @@ pub fn picker_commit(app: &mut App, whole_output: bool) -> String {
 }
 
 /// A freeform drag released: taken as it stands.
-pub fn finish_rect(app: &mut App, r: R) {
+pub fn finish_rect(app: &mut App, r: Rect) {
     let c = cands(app);
     finish(app, r, &c);
 }
 
 /// A shot is cut from the freeze; a recording takes the surface down first,
 /// since wf-recorder records live content.
-fn finish(app: &mut App, r: R, c: &Cands) {
+fn finish(app: &mut App, r: Rect, c: &Cands) {
     let g = app.capture.picker.generation;
     if app.capture.picker.recording() {
         app.capture.picker.open = false;

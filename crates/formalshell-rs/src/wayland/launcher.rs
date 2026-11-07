@@ -4,7 +4,7 @@
 
 use std::time::Instant;
 
-use fs_types::Edge;
+use fs_types::{Edge, WindowId};
 use fs_menu::nav;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
@@ -942,7 +942,7 @@ impl App {
                     crate::services::clipboard::command(crate::services::clipboard::Cmd::Preview(path.to_owned(), size));
                 }
             }
-            Some(PanePicture::Window(id)) if height > 0.0 => window = Some(id.to_owned()),
+            Some(PanePicture::Window(id)) if height > 0.0 => window = Some(WindowId::new(id)),
             _ => {}
         }
         match &window {

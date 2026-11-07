@@ -17,14 +17,14 @@ use std::time::Instant;
 use fs_chrome::bar::workspaces::{self, SlotOpts};
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
+use fs_types::{Rect, Window, WindowId, WorkspaceId};
 use vello_cpu::kurbo::{self, Affine};
 use serde_json::{Value, json};
 
 use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
-use crate::services::compositor::model::{Snapshot, Window};
+use crate::services::compositor::model::Snapshot;
 use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::surfaces::bar::cells::workspaces::{window, workspace};
 use crate::text::{Family, TextStyle};
 
 /// niri's default zoom.
@@ -62,8 +62,8 @@ impl Phase {
 /// One window in a row, its rect relative to the output.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Win {
-    pub id: String,
-    pub rect: (f64, f64, f64, f64),
+    pub id: WindowId,
+    pub rect: Rect,
     pub floating: bool,
 }
 
@@ -71,7 +71,7 @@ pub struct Win {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     /// Empty for the slot.
-    pub workspace_id: String,
+    pub workspace_id: WorkspaceId,
     pub idx: i64,
     pub name: String,
     /// In reading order (x, then y): what Left and Right walk.
@@ -82,19 +82,17 @@ pub struct Row {
 /// with its windows in screen order, and the empty slot after them.
 /// `origin` is the output's logical top left.
 pub fn rows(snapshot: &Snapshot, output: &str, origin: (f64, f64)) -> Vec<Row> {
-    let ws: Vec<workspaces::Workspace> = snapshot.workspaces.iter().map(workspace).collect();
-    let wins: Vec<workspaces::Window> = snapshot.windows.iter().map(window).collect();
-    let by_id: HashMap<&str, &Window> = snapshot.windows.iter().map(|w| (w.id.as_str(), w)).collect();
-    let mut rows: Vec<Row> = workspaces::slots(&ws, &wins, output, SlotOpts { persistent: 0, max_icons: usize::MAX })
+    let by_id: HashMap<&WindowId, &Window> = snapshot.windows.iter().map(|w| (&w.id, w)).collect();
+    let mut rows: Vec<Row> = workspaces::slots(&snapshot.workspaces, &snapshot.windows, output, SlotOpts { persistent: 0, max_icons: usize::MAX })
         .into_iter()
-        .filter(|s| !s.placeholder && s.idx >= 1)
-        .map(|s| {
-            let windows = s.windows.iter().filter(|w| !snapshot.parked.contains(&w.id)).filter_map(|w| win_of(by_id.get(w.id.as_str())?, origin)).collect();
-            Row { workspace_id: s.id, idx: s.idx, name: s.name, windows }
+        .filter_map(|s| {
+            let ws = s.workspace.live().filter(|ws| ws.idx >= 1)?;
+            let windows = s.windows.iter().filter(|w| !snapshot.parked.contains(&w.id)).filter_map(|w| win_of(by_id.get(&w.id)?, origin)).collect();
+            Some(Row { workspace_id: ws.id.clone(), idx: ws.idx, name: ws.name.clone(), windows })
         })
         .collect();
     let next = rows.last().map_or(1, |r| r.idx + 1);
-    rows.push(Row { workspace_id: String::new(), idx: next, name: String::new(), windows: Vec::new() });
+    rows.push(Row { workspace_id: WorkspaceId::default(), idx: next, name: String::new(), windows: Vec::new() });
     rows
 }
 
@@ -102,7 +100,7 @@ fn win_of(w: &Window, origin: (f64, f64)) -> Option<Win> {
     let r = w.rect?;
     (r.width > 0 && r.height > 0).then(|| Win {
         id: w.id.clone(),
-        rect: (r.x as f64 - origin.0, r.y as f64 - origin.1, r.width as f64, r.height as f64),
+        rect: Rect::new(r.x as f64 - origin.0, r.y as f64 - origin.1, r.width as f64, r.height as f64),
         floating: w.is_floating,
     })
 }
@@ -116,13 +114,13 @@ pub struct Sel {
 
 impl Sel {
     /// The focused window's row and place, else the focused workspace's.
-    pub fn of(rows: &[Row], workspace: &str, window: &str) -> Sel {
+    pub fn of(rows: &[Row], workspace: &WorkspaceId, window: &WindowId) -> Sel {
         for (i, r) in rows.iter().enumerate() {
-            if let Some(j) = r.windows.iter().position(|w| w.id == window) {
+            if let Some(j) = r.windows.iter().position(|w| w.id == *window) {
                 return Sel { row: i, win: Some(j) };
             }
         }
-        let row = rows.iter().position(|r| !r.workspace_id.is_empty() && r.workspace_id == workspace).unwrap_or(0);
+        let row = rows.iter().position(|r| !r.workspace_id.is_empty() && r.workspace_id == *workspace).unwrap_or(0);
         Sel { row, win: (!rows.get(row).is_none_or(|r| r.windows.is_empty())).then_some(0) }
     }
 
@@ -133,13 +131,13 @@ impl Sel {
         if row == self.row {
             return self;
         }
-        let mid = self.win.and_then(|j| rows.get(self.row)?.windows.get(j)).map(|w| w.rect.0 + w.rect.2 / 2.0);
+        let mid = self.win.and_then(|j| rows.get(self.row)?.windows.get(j)).map(|w| w.rect.x + w.rect.width / 2.0);
         let target = &rows[row].windows;
         let win = match mid {
             Some(m) => target
                 .iter()
                 .enumerate()
-                .min_by(|a, b| (a.1.rect.0 + a.1.rect.2 / 2.0 - m).abs().total_cmp(&(b.1.rect.0 + b.1.rect.2 / 2.0 - m).abs()))
+                .min_by(|a, b| (a.1.rect.x + a.1.rect.width / 2.0 - m).abs().total_cmp(&(b.1.rect.x + b.1.rect.width / 2.0 - m).abs()))
                 .map(|(j, _)| j),
             None => (!target.is_empty()).then_some(0),
         };
@@ -198,8 +196,8 @@ impl Geometry {
     }
 
     /// Row `i`'s card in stack space.
-    pub fn card_at(&self, i: usize) -> (f64, f64, f64, f64) {
-        (self.left, i as f64 * (self.card.1 + self.gap), self.card.0, self.card.1)
+    pub fn card_at(&self, i: usize) -> Rect {
+        Rect::new(self.left, i as f64 * (self.card.1 + self.gap), self.card.0, self.card.1)
     }
 
     /// Stack space to the surface at zoom progress `p` (0 the live desktop,
@@ -214,15 +212,15 @@ impl Geometry {
     }
 
     /// A window's box in stack space, on row `i`.
-    pub fn win_at(&self, i: usize, w: &Win) -> (f64, f64, f64, f64) {
-        let (cx, cy, _, _) = self.card_at(i);
-        (cx + w.rect.0 * ZOOM, cy + w.rect.1 * ZOOM, w.rect.2 * ZOOM, w.rect.3 * ZOOM)
+    pub fn win_at(&self, i: usize, w: &Win) -> Rect {
+        let card = self.card_at(i);
+        Rect::new(card.x + w.rect.x * ZOOM, card.y + w.rect.y * ZOOM, w.rect.width * ZOOM, w.rect.height * ZOOM)
     }
 
     /// How far row `i` slides sideways so window `w` is whole on screen
     /// (inside the card when it fits, else its left edge on the card's).
     pub fn slide_for(&self, i: usize, w: &Win) -> f64 {
-        let (x, _, ww, _) = self.win_at(i, w);
+        let Rect { x, width: ww, .. } = self.win_at(i, w);
         let (lo, hi) = (self.left, self.left + self.card.0);
         if ww >= hi - lo || x < lo {
             lo - x
@@ -237,7 +235,7 @@ impl Geometry {
 /// A window being dragged.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drag {
-    pub id: String,
+    pub id: WindowId,
     pub from_row: usize,
     /// Where the press landed, in the surface.
     pub from: (f64, f64),
@@ -261,7 +259,7 @@ pub struct Overview {
     /// The stack's centre row.
     pub glide: Option<Animated>,
     /// Each row's sideways slide, by workspace id.
-    pub slides: HashMap<String, Animated>,
+    pub slides: HashMap<WorkspaceId, Animated>,
     pub opened_at: Option<Instant>,
     pub drag: Option<Drag>,
     pub opens: u64,
@@ -276,8 +274,8 @@ pub struct Input<'a> {
     /// The wallpaper averaged down, drawn back up as the backdrop.
     pub backdrop: Option<&'a Bitmap>,
     pub flat: Option<Rgba>,
-    pub thumbs: &'a HashMap<String, Bitmap>,
-    pub icons: &'a HashMap<String, Bitmap>,
+    pub thumbs: &'a HashMap<WindowId, Bitmap>,
+    pub icons: &'a HashMap<WindowId, Bitmap>,
     pub now: Instant,
 }
 
@@ -320,19 +318,19 @@ impl Overview {
     }
 
     /// Row `i`'s card on the surface now.
-    fn card_rect(&self, i: usize, now: Instant) -> (f64, f64, f64, f64) {
+    fn card_rect(&self, i: usize, now: Instant) -> Rect {
         let t = self.geo.transform(self.progress(now), self.glide_at(now));
         bbox(t, self.geo.card_at(i))
     }
 
-    fn win_rect(&self, i: usize, w: &Win, now: Instant) -> (f64, f64, f64, f64) {
+    fn win_rect(&self, i: usize, w: &Win, now: Instant) -> Rect {
         let t = self.geo.transform(self.progress(now), self.glide_at(now)) * Affine::translate((self.slide(i, now), 0.0));
         bbox(t, self.geo.win_at(i, w))
     }
 
     /// What is under a point on the surface: a row, and a window in it.
     pub fn hit(&self, at: (f64, f64), now: Instant) -> Option<(usize, Option<usize>)> {
-        let inside = |r: (f64, f64, f64, f64)| at.0 >= r.0 && at.0 < r.0 + r.2 && at.1 >= r.1 && at.1 < r.1 + r.3;
+        let inside = |r: Rect| r.contains(at.0, at.1);
         for (i, row) in self.rows.iter().enumerate() {
             // Floating windows are drawn last, so they are hit first.
             let mut order: Vec<usize> = (0..row.windows.len()).collect();
@@ -349,12 +347,12 @@ impl Overview {
 
     /// Each window's id and the logical size its frame is asked at: the
     /// current workspace's at full size, since the zoom starts there.
-    pub fn thumb_sizes(&self, current: &str) -> Vec<(String, (u32, u32))> {
+    pub fn thumb_sizes(&self, current: &WorkspaceId) -> Vec<(WindowId, (u32, u32))> {
         self.rows
             .iter()
             .flat_map(|r| {
-                let k = if r.workspace_id == current { 1.0 } else { ZOOM };
-                r.windows.iter().map(move |w| (w.id.clone(), ((w.rect.2 * k).round().max(1.0) as u32, (w.rect.3 * k).round().max(1.0) as u32)))
+                let k = if r.workspace_id == *current { 1.0 } else { ZOOM };
+                r.windows.iter().map(move |w| (w.id.clone(), ((w.rect.width * k).round().max(1.0) as u32, (w.rect.height * k).round().max(1.0) as u32)))
             })
             .collect()
     }
@@ -425,7 +423,7 @@ impl Overview {
             let mut order: Vec<&Win> = row.windows.iter().collect();
             order.sort_by_key(|w| w.floating);
             for w in order {
-                if dragged.as_deref() == Some(w.id.as_str()) {
+                if dragged.as_ref() == Some(&w.id) {
                     continue;
                 }
                 let r = irect(self.geo.win_at(i, w));
@@ -441,8 +439,8 @@ impl Overview {
         if let Some(d) = self.drag.as_ref().filter(|d| d.lifted)
             && let Some(w) = self.rows.get(d.from_row).and_then(|r| r.windows.iter().find(|w| w.id == d.id))
         {
-            let (_, _, ww, wh) = self.geo.win_at(d.from_row, w);
-            let r = IRect::new((d.at.0 - d.grab.0).round() as i32, (d.at.1 - d.grab.1).round() as i32, ww.round() as i32, wh.round() as i32);
+            let size = self.geo.win_at(d.from_row, w);
+            let r = IRect::new((d.at.0 - d.grab.0).round() as i32, (d.at.1 - d.grab.1).round() as i32, size.width.round() as i32, size.height.round() as i32);
             painter.transform = Affine::IDENTITY;
             paint_window(&mut painter, t, kit, input, w, r, 1.0, 1.0, true);
         }
@@ -461,8 +459,8 @@ fn paint_window(painter: &mut Painter, t: &Theme, kit: &mut Kit, input: &Input, 
 
 impl Overview {
     /// `debug dump`'s `overview`.
-    pub fn status(&self, now: Instant, captured: &dyn Fn(&str) -> bool) -> Value {
-        let rect = |r: (f64, f64, f64, f64)| json!({"x": r.0.round(), "y": r.1.round(), "width": r.2.round(), "height": r.3.round()});
+    pub fn status(&self, now: Instant, captured: &dyn Fn(&WindowId) -> bool) -> Value {
+        let rect = |r: Rect| json!({"x": r.x.round(), "y": r.y.round(), "width": r.width.round(), "height": r.height.round()});
         let rows: Vec<Value> = self
             .rows
             .iter()
@@ -495,26 +493,26 @@ impl Overview {
     }
 }
 
-fn irect(r: (f64, f64, f64, f64)) -> IRect {
-    IRect::new(r.0.round() as i32, r.1.round() as i32, r.2.round() as i32, r.3.round() as i32)
+fn irect(r: Rect) -> IRect {
+    IRect::new(r.x.round() as i32, r.y.round() as i32, r.width.round() as i32, r.height.round() as i32)
 }
 
-fn bbox(t: Affine, r: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
-    let b = t.transform_rect_bbox(kurbo::Rect::new(r.0, r.1, r.0 + r.2, r.1 + r.3));
-    (b.x0, b.y0, b.width(), b.height())
+fn bbox(t: Affine, r: Rect) -> Rect {
+    let b = t.transform_rect_bbox(kurbo::Rect::new(r.x, r.y, r.x + r.width, r.y + r.height));
+    Rect::new(b.x0, b.y0, b.width(), b.height())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::compositor::model::{Rect, Workspace};
+    use fs_types::{IRect, Workspace};
 
     fn snapshot() -> Snapshot {
         let ws = |id: &str, idx: i64| Workspace { id: id.into(), idx, output: "DP-1".into(), ..Default::default() };
         let win = |id: &str, ws: &str, x: i64| Window {
             id: id.into(),
             workspace_id: ws.into(),
-            rect: Some(Rect { x, y: 10, width: 800, height: 1000 }),
+            rect: Some(IRect::new(x, 10, 800, 1000)),
             ..Default::default()
         };
         Snapshot {
@@ -535,13 +533,13 @@ mod tests {
     #[test]
     fn rects_are_relative_to_the_output() {
         let rows = rows(&snapshot(), "DP-1", (100.0, 0.0));
-        assert_eq!(rows[0].windows[0].rect.0, 0.0);
+        assert_eq!(rows[0].windows[0].rect.x, 0.0);
     }
 
     #[test]
     fn stepping_rows_lands_on_the_nearest_window_and_stops_at_the_ends() {
         let rows = rows(&snapshot(), "DP-1", (0.0, 0.0));
-        let sel = Sel::of(&rows, "1", "b");
+        let sel = Sel::of(&rows, &"1".into(), &"b".into());
         assert_eq!(sel, Sel { row: 0, win: Some(1) });
         assert_eq!(sel.step_row(&rows, 1), Sel { row: 1, win: Some(0) });
         assert_eq!(sel.step_row(&rows, 2), Sel { row: 2, win: None });
@@ -557,18 +555,18 @@ mod tests {
         assert!((live.x + 154.0).abs() < 1e-9 && live.y.abs() < 1e-9);
         let far = g.transform(0.0, 0.0) * kurbo::Point::new(g.left + g.card.0, g.card.1);
         assert!((far.x - (1920.0 - 154.0)).abs() < 1e-9 && (far.y - 1080.0).abs() < 1e-9);
-        let rest = g.transform(1.0, 1.0) * kurbo::Point::new(g.left, g.card_at(1).1);
+        let rest = g.transform(1.0, 1.0) * kurbo::Point::new(g.left, g.card_at(1).y);
         assert!((rest.y - ((1080.0 - 540.0) / 2.0)).abs() < 1e-9);
     }
 
     #[test]
     fn a_row_slides_until_its_window_is_whole() {
         let g = Geometry::new((1920.0, 1080.0), (1920.0, 1080.0), (0.0, 0.0));
-        let off = Win { id: "c".into(), rect: (2200.0, 0.0, 800.0, 1000.0), floating: false };
+        let off = Win { id: "c".into(), rect: Rect::new(2200.0, 0.0, 800.0, 1000.0), floating: false };
         let s = g.slide_for(0, &off);
-        let (x, _, w, _) = g.win_at(0, &off);
-        assert!((x + s + w - (g.left + g.card.0)).abs() < 1e-9);
-        let on = Win { id: "a".into(), rect: (100.0, 0.0, 800.0, 1000.0), floating: false };
+        let r = g.win_at(0, &off);
+        assert!((r.x + s + r.width - (g.left + g.card.0)).abs() < 1e-9);
+        let on = Win { id: "a".into(), rect: Rect::new(100.0, 0.0, 800.0, 1000.0), floating: false };
         assert_eq!(g.slide_for(0, &on), 0.0);
     }
 }

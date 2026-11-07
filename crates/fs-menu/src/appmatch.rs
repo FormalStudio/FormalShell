@@ -12,22 +12,17 @@
 //! failure: a miss falls through to the caller's spawn path, while a fuzzy hit
 //! focuses the wrong app.
 //!
-//! Window ids are opaque strings: `app_id`s are compared, ids are copied into
-//! the result verbatim and never parsed, ordered by, or compared numerically.
+//! Window ids are opaque: `app_id`s are compared, ids are copied into the
+//! result verbatim.
+
+use fs_types::{Window, WindowId};
 
 use crate::node::{DesktopEntry, Node};
-
-/// A running window as the compositor backend reports it.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Window {
-    pub id: String,
-    pub app_id: String,
-}
 
 /// One tier's comparison across every window, in window order. An empty
 /// `app_id` never matches, so a window the compositor has not classified
 /// cannot be claimed by an entry with an empty `startup_class`.
-fn collect(needle: &str, windows: &[Window], fold: bool) -> Vec<String> {
+fn collect(needle: &str, windows: &[Window], fold: bool) -> Vec<WindowId> {
     let want = if fold { needle.to_lowercase() } else { needle.to_string() };
     windows
         .iter()
@@ -42,7 +37,7 @@ fn collect(needle: &str, windows: &[Window], fold: bool) -> Vec<String> {
 /// The first non-empty tier wins outright, never a union: a union would mix a
 /// precise `startup_class` hit with a coincidental id hit and then cycle
 /// between two different apps.
-pub fn match_windows(entry: Option<&DesktopEntry>, windows: &[Window]) -> Vec<String> {
+pub fn match_windows(entry: Option<&DesktopEntry>, windows: &[Window]) -> Vec<WindowId> {
     let Some(entry) = entry else { return Vec::new() };
     let mut tiers: Vec<&str> = Vec::new();
     if !entry.startup_class.is_empty() {
@@ -67,15 +62,10 @@ pub fn match_windows(entry: Option<&DesktopEntry>, windows: &[Window]) -> Vec<St
 /// The window to focus next: the one AFTER `focused_window_id` in `matches`,
 /// wrapping, so repeat-activating an app row cycles its open instances. Focus
 /// outside `matches` (another app, or nothing focused) starts the cycle at
-/// the first instance.
-pub fn next_window(matches: &[String], focused_window_id: &str) -> String {
-    if matches.is_empty() {
-        return String::new();
-    }
-    match matches.iter().position(|m| m == focused_window_id) {
-        None => matches[0].clone(),
-        Some(at) => matches[(at + 1) % matches.len()].clone(),
-    }
+/// the first instance. None when nothing matched.
+pub fn next_window(matches: &[WindowId], focused_window_id: &WindowId) -> Option<WindowId> {
+    let at = matches.iter().position(|m| m == focused_window_id).map_or(0, |at| at + 1);
+    matches.get(at % matches.len().max(1)).cloned()
 }
 
 /// Marks the app rows that would focus rather than launch with the "FOCUS"

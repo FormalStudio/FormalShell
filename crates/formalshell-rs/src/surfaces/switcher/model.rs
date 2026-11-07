@@ -1,16 +1,16 @@
 //! Surfaces/Switcher/switcher.js: the switcher's list, its cursor and its
 //! grid, pure.
 
-use crate::services::compositor::model::{Rect, Window};
+use fs_types::{IRect, Rect, Window, WindowId, WorkspaceId};
 
 /// Gala's order: the most recently focused first, then the compositor's
 /// own order for windows nothing has focused this session. Special
 /// workspaces are dropped, and with `workspace` set, everything off it.
-pub fn entries<'a>(windows: &'a [Window], history: &[String], workspace: &str) -> Vec<&'a Window> {
+pub fn entries<'a>(windows: &'a [Window], history: &[WindowId], workspace: &WorkspaceId) -> Vec<&'a Window> {
     let offered: Vec<&Window> = windows
         .iter()
-        .filter(|w| !w.id.is_empty() && !w.workspace_id.starts_with('-'))
-        .filter(|w| workspace.is_empty() || w.workspace_id == workspace)
+        .filter(|w| !w.id.is_empty() && !w.special)
+        .filter(|w| workspace.is_empty() || w.workspace_id == *workspace)
         .collect();
     let mut out: Vec<&Window> = Vec::with_capacity(offered.len());
     for id in history {
@@ -38,7 +38,7 @@ pub fn advance(index: usize, count: usize, step: i32) -> usize {
 
 /// A thumbnail's width at `height` off its window's aspect (16:9 with no
 /// rect), held between `min` and `max`.
-pub fn thumb_width(rect: Option<&Rect>, height: f64, min: f64, max: f64) -> f64 {
+pub fn thumb_width(rect: Option<&IRect>, height: f64, min: f64, max: f64) -> f64 {
     let ratio = match rect {
         Some(r) if r.width > 0 && r.height > 0 => r.width as f64 / r.height as f64,
         _ => 16.0 / 9.0,
@@ -105,10 +105,7 @@ pub fn layout(widths: &[f64], gap: f64, max: f64) -> Grid {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Place {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
+    pub rect: Rect,
     pub row: usize,
 }
 
@@ -118,7 +115,7 @@ pub fn cells(grid: &Grid, cell_height: f64) -> Vec<Place> {
     for (r, row) in grid.rows.iter().enumerate() {
         let mut x = (grid.width - row.width) / 2.0;
         for w in &row.widths {
-            out.push(Place { x, y: r as f64 * cell_height, width: *w, height: cell_height, row: r });
+            out.push(Place { rect: Rect::new(x, r as f64 * cell_height, *w, cell_height), row: r });
             x += w + grid.gap;
         }
     }
@@ -161,10 +158,11 @@ mod tests {
 
     #[test]
     fn history_first_then_compositor_order_and_no_special() {
-        let ws = [win("a", "1"), win("b", "1"), win("c", "-98"), win("d", "2")];
+        let special = Window { special: true, ..win("c", "-98") };
+        let ws = [win("a", "1"), win("b", "1"), special, win("d", "2")];
         let ids = |v: Vec<&Window>| v.iter().map(|w| w.id.clone()).collect::<Vec<_>>();
-        assert_eq!(ids(entries(&ws, &["b".into(), "x".into()], "")), ["b", "a", "d"]);
-        assert_eq!(ids(entries(&ws, &["d".into()], "1")), ["a", "b"]);
+        assert_eq!(ids(entries(&ws, &["b".into(), "x".into()], &"".into())), ["b", "a", "d"]);
+        assert_eq!(ids(entries(&ws, &["d".into()], &"1".into())), ["a", "b"]);
     }
 
     #[test]
@@ -179,8 +177,8 @@ mod tests {
         let g = layout(&[100.0; 11], 0.0, 600.0);
         assert_eq!(g.rows.iter().map(|r| r.count).collect::<Vec<_>>(), [6, 5]);
         let c = cells(&g, 50.0);
-        assert_eq!(c[6].x, 50.0);
-        assert_eq!(c[6].y, 50.0);
+        assert_eq!(c[6].rect.x, 50.0);
+        assert_eq!(c[6].rect.y, 50.0);
     }
 
     #[test]

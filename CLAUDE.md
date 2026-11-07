@@ -1904,9 +1904,11 @@ a Linux host.
   call: match omarchy exactly, 2026-08-11). `fs-screensaver`'s own
   `effect.rs` is the engine for an install with no ttfx on PATH.
   `screensaver frameInfo` reports which engine is live.
-- Compositor window/workspace ids are **opaque strings** end to end. Never
+- Compositor window/workspace ids are **opaque** end to end:
+  `fs_types::WindowId` and `WorkspaceId`, with no numeric access. Never
   parse, compare numerically, or assume stability; only the backend that
-  minted one takes it apart. Hyprland's window ids are hex addresses and
+  minted one takes it apart, and a special workspace is the backend's
+  `Window::special` flag. Hyprland's window ids are hex addresses and
   reach its dispatchers verbatim, as an `address:0x...` selector built in
   `services/compositor/hyprland/lua.rs` and nowhere else.
 - The shell only ever **reads** `~/.config/formalshell/settings.json`; it
@@ -1958,8 +1960,9 @@ a Linux host.
   header line.
 - Hyprland is the only compositor (owner, 2026-11-06: mango support was
   removed). Compositor work goes in
-  `crates/formalshell-rs/src/services/compositor/`: the shared model
-  (`model.rs`), the typed `Command`s every caller sends, and `hyprland/`
+  `crates/formalshell-rs/src/services/compositor/`: the snapshot
+  (`model.rs`, over `fs_types`' `Window` and `Workspace`), the typed
+  `Command`s every caller sends, and `hyprland/`
   with the `.socket.sock` and `.socket2.sock` clients and `hyprctl eval`
   for writes.
 - Lua (`hyprland.lua`) is the only Hyprland config format (owner,

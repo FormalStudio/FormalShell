@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use calloop::channel::{self, Event as ChannelEvent, Sender};
+use fs_types::WindowId;
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::foreign_toplevel_list::{ForeignToplevelList, ForeignToplevelListHandler};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -76,7 +77,7 @@ pub enum Owner {
 
 struct Thumb {
     owner: Owner,
-    id: String,
+    id: WindowId,
     key: u64,
     /// The device pixels the owner draws it at, on a surface at `scale`.
     size: (u32, u32),
@@ -127,7 +128,7 @@ pub struct Capture {
     sources: Option<ExtForeignToplevelImageCaptureSourceManagerV1>,
     copy: Option<ExtImageCopyCaptureManagerV1>,
     /// Each live handle and the window id the mapping named for it.
-    handles: Vec<(ExtForeignToplevelHandleV1, Option<String>)>,
+    handles: Vec<(ExtForeignToplevelHandleV1, Option<WindowId>)>,
     thumbs: Vec<Thumb>,
     pool: Option<SlotPool>,
     landed: Option<Sender<Landed>>,
@@ -149,8 +150,8 @@ impl Capture {
         }
     }
 
-    fn handle_for(&self, id: &str) -> Option<&ExtForeignToplevelHandleV1> {
-        self.handles.iter().find(|(_, w)| w.as_deref() == Some(id)).map(|(h, _)| h)
+    fn handle_for(&self, id: &WindowId) -> Option<&ExtForeignToplevelHandleV1> {
+        self.handles.iter().find(|(_, w)| w.as_ref() == Some(id)).map(|(h, _)| h)
     }
 
     fn thumb_mut(&mut self, key: u64) -> Option<&mut Thumb> {
@@ -169,7 +170,7 @@ impl App {
     /// a surface at `scale`, every other one it held dropped with its
     /// capture. `live` keeps frames coming; otherwise each takes one frame
     /// and waits for [`App::capture_refresh`].
-    pub fn capture_set(&mut self, owner: Owner, wants: &[(String, (u32, u32))], live: bool, scale: f64) {
+    pub fn capture_set(&mut self, owner: Owner, wants: &[(WindowId, (u32, u32))], live: bool, scale: f64) {
         self.thumbnails.thumbs.retain(|t| t.owner != owner || wants.iter().any(|(id, _)| *id == t.id));
         for (id, size) in wants {
             let size = (crate::scene::pixels_at(f64::from(size.0), scale), crate::scene::pixels_at(f64::from(size.1), scale));
@@ -207,16 +208,16 @@ impl App {
     }
 
     /// One more frame for a thumbnail that is not live.
-    pub fn capture_refresh(&mut self, owner: Owner, id: &str) {
-        let Some(key) = self.thumbnails.thumbs.iter().find(|t| t.owner == owner && t.id == id).map(|t| t.key) else { return };
+    pub fn capture_refresh(&mut self, owner: Owner, id: &WindowId) {
+        let Some(key) = self.thumbnails.thumbs.iter().find(|t| t.owner == owner && t.id == *id).map(|t| t.key) else { return };
         if let Some(t) = self.thumbnails.thumb_mut(key) {
             t.want = true;
         }
         self.capture_frame(key);
     }
 
-    pub fn capture_image(&self, owner: Owner, id: &str) -> Option<&Bitmap> {
-        self.thumbnails.thumbs.iter().find(|t| t.owner == owner && t.id == id).and_then(|t| t.image.as_ref())
+    pub fn capture_image(&self, owner: Owner, id: &WindowId) -> Option<&Bitmap> {
+        self.thumbnails.thumbs.iter().find(|t| t.owner == owner && t.id == *id).and_then(|t| t.image.as_ref())
     }
 
     /// How many of `owner`'s thumbnails hold a capture source.
@@ -225,8 +226,8 @@ impl App {
     }
 
     /// The windows `owner` holds a capture session on.
-    pub fn capture_sessions(&self, owner: Owner) -> Vec<&str> {
-        self.thumbnails.thumbs.iter().filter(|t| t.owner == owner && t.session.is_some()).map(|t| t.id.as_str()).collect()
+    pub fn capture_sessions(&self, owner: Owner) -> Vec<&WindowId> {
+        self.thumbnails.thumbs.iter().filter(|t| t.owner == owner && t.session.is_some()).map(|t| &t.id).collect()
     }
 
     /// A source and a session for a thumbnail whose window has a handle
@@ -409,7 +410,7 @@ impl Dispatch2<HyprlandToplevelWindowMappingHandleV1, App> for MapAsk {
     fn event(&self, app: &mut App, proxy: &HyprlandToplevelWindowMappingHandleV1, event: window_mapping::Event, _: &Connection, _: &QueueHandle<App>) {
         match event {
             window_mapping::Event::WindowAddress { address_hi, address } => {
-                let id = format!("{:x}", ((address_hi as u64) << 32) | address as u64);
+                let id = WindowId::new(format!("{:x}", ((address_hi as u64) << 32) | address as u64));
                 if let Some(slot) = app.thumbnails.handles.iter_mut().find(|(h, _)| *h == self.0) {
                     slot.1 = Some(id.clone());
                 }

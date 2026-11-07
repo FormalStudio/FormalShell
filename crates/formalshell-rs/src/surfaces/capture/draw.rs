@@ -8,7 +8,7 @@ use std::time::Instant;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::Rect;
 
-use super::picker::{Cands, Picker, R, TOOLS};
+use super::picker::{Cands, Picker, TOOLS};
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::surfaces::bar::cell::{Kit, Painter};
@@ -48,11 +48,11 @@ impl Sheet {
         let (sw, sh) = (self.scene.size.w, self.scene.size.h);
         let s = &theme.space;
         let current = picker.current(c);
-        let target = current.as_ref().and_then(|e| e.rect).map(|r| R { x: r.x - origin.0, y: r.y - origin.1, w: r.w, h: r.h });
+        let target = current.as_ref().and_then(|e| e.rect).map(|r| fs_types::Rect::new(r.x - origin.0, r.y - origin.1, r.width, r.height));
         if let Some(t) = target {
             let travel = self.placed && picker.drag.is_none();
             let ms = Clock::Spatial.ms(theme) * scale;
-            for (a, v) in self.sel.iter_mut().zip([t.x, t.y, t.w, t.h]) {
+            for (a, v) in self.sel.iter_mut().zip([t.x, t.y, t.width, t.height]) {
                 if travel {
                     if a.target() != v {
                         a.set(now, v, ms);
@@ -149,9 +149,9 @@ fn chip(child: El) -> El {
     })
 }
 
-fn readout(r: R, label: &str, theme: &Theme) -> El {
+fn readout(r: fs_types::Rect, label: &str, theme: &Theme) -> El {
     let s = &theme.space;
-    let mut parts = vec![w::caption(format!("{}\u{d7}{}", r.w.round(), r.h.round())).mono().ink(Ink::Fg)];
+    let mut parts = vec![w::caption(format!("{}\u{d7}{}", r.width.round(), r.height.round())).mono().ink(Ink::Fg)];
     if !label.is_empty() {
         parts.push(w::section_label(s, label, None, false).ink(Ink::Dim));
     }

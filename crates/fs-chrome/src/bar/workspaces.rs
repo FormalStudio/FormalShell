@@ -13,41 +13,46 @@
 //! stays deterministic.
 //!
 //! A persistent slot the compositor has no workspace for at all, on any
-//! output, is a placeholder: `id` empty, `placeholder` true, its `idx` the
-//! only thing it knows. Going there is a focus by idx, since there is no id
-//! to hand over. One that exists on another output is that output's, and
-//! stays off this bar.
+//! output, is a placeholder, its `idx` the only thing it knows. Going there
+//! is a focus by idx, since there is no id to hand over. One that exists on
+//! another output is that output's, and stays off this bar.
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
-use fs_types::Rect;
+use fs_types::{Rect, Window, WindowId, Workspace, WorkspaceId};
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Workspace {
-    pub id: String,
-    pub idx: i64,
-    pub name: String,
-    pub output: String,
-    pub is_active: bool,
-    pub is_focused: bool,
-    pub is_urgent: bool,
-    pub placeholder: bool,
+/// A workspace this bar draws.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SlotWorkspace {
+    /// One the compositor reports.
+    Live(Workspace),
+    /// A persistent slot the compositor has no workspace for on any output:
+    /// its ordinal and the output it sits on are all it knows.
+    Placeholder { idx: i64, output: String },
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Window {
-    pub id: String,
-    pub workspace_id: String,
-    pub app_id: String,
-    pub initial_class: String,
-    pub initial_title: String,
-    pub pid: i64,
-    pub is_focused: bool,
-    pub is_urgent: bool,
-    pub is_floating: bool,
-    /// The window's box, absent when the backend has none (`rect: null`).
-    pub rect: Option<Rect>,
+impl SlotWorkspace {
+    pub fn idx(&self) -> i64 {
+        match self {
+            SlotWorkspace::Live(ws) => ws.idx,
+            SlotWorkspace::Placeholder { idx, .. } => *idx,
+        }
+    }
+
+    pub fn output(&self) -> &str {
+        match self {
+            SlotWorkspace::Live(ws) => &ws.output,
+            SlotWorkspace::Placeholder { output, .. } => output,
+        }
+    }
+
+    pub fn live(&self) -> Option<&Workspace> {
+        match self {
+            SlotWorkspace::Live(ws) => Some(ws),
+            SlotWorkspace::Placeholder { .. } => None,
+        }
+    }
 }
 
 fn slot_output(pool: &[&Workspace], output_name: &str, matched: bool) -> String {
@@ -68,7 +73,7 @@ pub fn visible_model(
     windows: &[Window],
     output_name: &str,
     persistent: i64,
-) -> Vec<Workspace> {
+) -> Vec<SlotWorkspace> {
     let on_output: Vec<&Workspace> = workspaces
         .iter()
         .filter(|w| w.output == output_name)
@@ -80,19 +85,19 @@ pub fn visible_model(
         workspaces.iter().collect()
     };
 
-    let occupied: HashSet<&str> = windows.iter().map(|w| w.workspace_id.as_str()).collect();
+    let occupied: HashSet<&WorkspaceId> = windows.iter().map(|w| &w.workspace_id).collect();
     let keep = persistent.max(0);
     let known: HashSet<i64> = workspaces.iter().map(|w| w.idx).collect();
 
-    let mut out: Vec<Workspace> = pool
+    let mut out: Vec<SlotWorkspace> = pool
         .iter()
         .filter(|ws| {
-            occupied.contains(ws.id.as_str())
+            occupied.contains(&ws.id)
                 || ws.is_active
                 || ws.is_focused
                 || (ws.idx >= 1 && ws.idx <= keep)
         })
-        .map(|ws| (*ws).clone())
+        .map(|ws| SlotWorkspace::Live((*ws).clone()))
         .collect();
 
     let slot_output = slot_output(&pool, output_name, matched);
@@ -100,15 +105,13 @@ pub fn visible_model(
         if known.contains(&n) {
             continue;
         }
-        out.push(Workspace {
+        out.push(SlotWorkspace::Placeholder {
             idx: n,
             output: slot_output.clone(),
-            placeholder: true,
-            ..Workspace::default()
         });
     }
 
-    out.sort_by(|a, b| a.output.cmp(&b.output).then(a.idx.cmp(&b.idx)));
+    out.sort_by(|a, b| a.output().cmp(b.output()).then(a.idx().cmp(&b.idx())));
     out
 }
 
@@ -117,11 +120,9 @@ pub fn visible_model(
 fn by_position(a: &(&Window, usize), b: &(&Window, usize)) -> Ordering {
     match (&a.0.rect, &b.0.rect) {
         (Some(ra), Some(rb)) => {
-            if ra.x != rb.x {
-                return ra.x.partial_cmp(&rb.x).unwrap_or(Ordering::Equal);
-            }
-            if ra.y != rb.y {
-                return ra.y.partial_cmp(&rb.y).unwrap_or(Ordering::Equal);
+            let at = ra.x.cmp(&rb.x).then(ra.y.cmp(&rb.y));
+            if at != Ordering::Equal {
+                return at;
             }
         }
         (Some(_), None) => return Ordering::Less,
@@ -137,7 +138,7 @@ fn by_position(a: &(&Window, usize), b: &(&Window, usize)) -> Ordering {
 /// strip draws. Tooltips and the preview read those live by id.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SlotWindow {
-    pub id: String,
+    pub id: WindowId,
     pub app_id: String,
     pub initial_class: String,
     pub initial_title: String,
@@ -156,14 +157,11 @@ pub struct SlotWindows {
 /// least 1) with the rest counted in `overflow`. The focused window is never
 /// the one the cap drops: past the cap it takes the last shown place instead,
 /// so the lit icon is always on the bar.
-pub fn slot_windows(windows: &[Window], workspace_id: &str, max_icons: usize) -> SlotWindows {
-    if workspace_id.is_empty() {
-        return SlotWindows::default();
-    }
+pub fn slot_windows(windows: &[Window], workspace_id: &WorkspaceId, max_icons: usize) -> SlotWindows {
     let mut indexed: Vec<(&Window, usize)> = windows
         .iter()
         .enumerate()
-        .filter(|(_, w)| w.workspace_id == workspace_id)
+        .filter(|(_, w)| w.workspace_id == *workspace_id)
         .map(|(at, w)| (w, at))
         .collect();
     indexed.sort_by(by_position);
@@ -194,8 +192,8 @@ pub fn slot_windows(windows: &[Window], workspace_id: &str, max_icons: usize) ->
 /// What a slot is called: its ordinal, always. A Hyprland `default_name` is
 /// config (often a glyph and a word) and the chip already says what is on the
 /// workspace with its icons.
-pub fn label(ws: &Workspace) -> String {
-    ws.idx.to_string()
+pub fn label(ws: &SlotWorkspace) -> String {
+    ws.idx().to_string()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,23 +213,34 @@ impl Default for SlotOpts {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Slot {
-    pub id: String,
-    pub idx: i64,
-    pub name: String,
+    pub workspace: SlotWorkspace,
     pub label: String,
-    pub output: String,
-    pub is_active: bool,
-    pub is_focused: bool,
     /// On screen on this output (focused or merely visible): the slot that
     /// opens wide. `is_focused` is where the pill sits.
     pub current: bool,
+    /// The workspace's own urgency or any of its windows'.
     pub is_urgent: bool,
-    pub placeholder: bool,
     pub windows: Vec<SlotWindow>,
     pub overflow: usize,
 }
 
-/// Every slot this bar draws, windows included.
+impl Slot {
+    pub fn idx(&self) -> i64 {
+        self.workspace.idx()
+    }
+
+    /// The compositor's id, none for a placeholder.
+    pub fn id(&self) -> Option<&WorkspaceId> {
+        self.workspace.live().map(|ws| &ws.id)
+    }
+
+    pub fn is_focused(&self) -> bool {
+        self.workspace.live().is_some_and(|ws| ws.is_focused)
+    }
+}
+
+/// Every slot this bar draws, windows included: the one place the
+/// compositor's snapshot becomes slots.
 pub fn slots(
     workspaces: &[Workspace],
     windows: &[Window],
@@ -241,21 +250,18 @@ pub fn slots(
     visible_model(workspaces, windows, output_name, opts.persistent)
         .into_iter()
         .map(|ws| {
-            let list = slot_windows(windows, &ws.id, opts.max_icons);
-            let urgent = ws.is_urgent || list.windows.iter().any(|w| w.is_urgent);
+            let list = ws
+                .live()
+                .map(|live| slot_windows(windows, &live.id, opts.max_icons))
+                .unwrap_or_default();
+            let live = ws.live();
             Slot {
                 label: label(&ws),
-                current: ws.is_active || ws.is_focused,
-                is_urgent: urgent,
+                current: live.is_some_and(|w| w.is_active || w.is_focused),
+                is_urgent: live.is_some_and(|w| w.is_urgent) || list.windows.iter().any(|w| w.is_urgent),
                 windows: list.windows,
                 overflow: list.overflow,
-                id: ws.id,
-                idx: ws.idx,
-                name: ws.name,
-                output: ws.output,
-                is_active: ws.is_active,
-                is_focused: ws.is_focused,
-                placeholder: ws.placeholder,
+                workspace: ws,
             }
         })
         .collect()
@@ -289,7 +295,7 @@ pub fn step_index(count: usize, focused_index: i64, delta: i64) -> Option<usize>
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Placed {
-    pub id: String,
+    pub id: WindowId,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -347,7 +353,7 @@ pub fn preview_layout(
         let raw: Vec<Placed> = windows
             .iter()
             .map(|w| {
-                let r = w.rect.expect("every rect is present");
+                let r = Rect::from(w.rect.expect("every rect is present"));
                 Placed {
                     id: w.id.clone(),
                     x: (r.x - area.x) * sx,
@@ -404,6 +410,7 @@ pub fn preview_layout(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fs_types::IRect;
 
     #[derive(Default)]
     struct Flags {
@@ -416,7 +423,7 @@ mod tests {
 
     fn ws(id: &str, idx: i64, output: &str, flags: Flags) -> Workspace {
         Workspace {
-            id: id.into(),
+            id: WorkspaceId::new(id),
             idx,
             output: output.into(),
             is_active: flags.active,
@@ -456,29 +463,29 @@ mod tests {
 
     fn win(id: &str, workspace_id: &str) -> Window {
         Window {
-            id: id.into(),
-            workspace_id: workspace_id.into(),
+            id: WindowId::new(id),
+            workspace_id: WorkspaceId::new(workspace_id),
             ..Window::default()
         }
     }
 
-    fn ids(model: &[Workspace]) -> String {
+    fn ids(model: &[SlotWorkspace]) -> String {
         model
             .iter()
-            .map(|w| w.id.as_str())
+            .map(|w| w.live().map_or("", |w| w.id.as_str()))
             .collect::<Vec<_>>()
             .join(",")
     }
 
-    fn rwin(id: &str, workspace_id: &str, at: Option<(f64, f64)>, flags: Flags) -> Window {
+    fn rwin(id: &str, workspace_id: &str, at: Option<(i64, i64)>, flags: Flags) -> Window {
         Window {
-            id: id.into(),
-            workspace_id: workspace_id.into(),
+            id: WindowId::new(id),
+            workspace_id: WorkspaceId::new(workspace_id),
             app_id: flags.app_id.into(),
             is_focused: flags.focused,
             is_urgent: flags.urgent,
             is_floating: flags.floating,
-            rect: at.map(|(x, y)| Rect::new(x, y, 100.0, 100.0)),
+            rect: at.map(|(x, y)| IRect::new(x, y, 100, 100)),
             ..Window::default()
         }
     }
@@ -625,12 +632,10 @@ mod tests {
     #[test]
     fn persistent_fills_missing_slots_as_placeholders() {
         let model = visible_model(&[lit("7", 2, "eDP-1")], &[], "eDP-1", 3);
-        let idxs: Vec<_> = model.iter().map(|w| w.idx.to_string()).collect();
+        let idxs: Vec<_> = model.iter().map(|w| w.idx().to_string()).collect();
         assert_eq!(idxs.join(","), "1,2,3");
-        assert_eq!(model[0].id, "");
-        assert!(model[0].placeholder);
-        assert_eq!(model[1].id, "7");
-        assert!(!model[1].placeholder);
+        assert!(model[0].live().is_none());
+        assert_eq!(model[1].live().map(|w| w.id.as_str()), Some("7"));
     }
 
     #[test]
@@ -669,22 +674,22 @@ mod tests {
         );
         let placeholder = model
             .iter()
-            .find(|w| w.placeholder)
+            .find(|w| w.live().is_none())
             .expect("slot 1 is missing everywhere");
-        assert_eq!((placeholder.idx, placeholder.output.as_str()), (1, "DP-1"));
+        assert_eq!((placeholder.idx(), placeholder.output()), (1, "DP-1"));
     }
 
     #[test]
     fn slot_windows_in_screen_order() {
         let list = slot_windows(
             &[
-                rwin("b", "1", Some((500.0, 0.0)), Flags::default()),
-                rwin("x", "2", Some((0.0, 0.0)), Flags::default()),
-                rwin("c", "1", Some((0.0, 500.0)), Flags::default()),
-                rwin("a", "1", Some((0.0, 0.0)), Flags::default()),
+                rwin("b", "1", Some((500, 0)), Flags::default()),
+                rwin("x", "2", Some((0, 0)), Flags::default()),
+                rwin("c", "1", Some((0, 500)), Flags::default()),
+                rwin("a", "1", Some((0, 0)), Flags::default()),
                 rwin("n", "1", None, Flags::default()),
             ],
-            "1",
+            &WorkspaceId::new("1"),
             8,
         );
         assert_eq!(ids_of(&list), "a,c,b,n");
@@ -695,20 +700,20 @@ mod tests {
     fn slot_windows_cap_keeps_focused() {
         let list = slot_windows(
             &[
-                rwin("a", "1", Some((0.0, 0.0)), Flags::default()),
-                rwin("b", "1", Some((100.0, 0.0)), Flags::default()),
-                rwin("c", "1", Some((200.0, 0.0)), Flags::default()),
+                rwin("a", "1", Some((0, 0)), Flags::default()),
+                rwin("b", "1", Some((100, 0)), Flags::default()),
+                rwin("c", "1", Some((200, 0)), Flags::default()),
                 rwin(
                     "d",
                     "1",
-                    Some((300.0, 0.0)),
+                    Some((300, 0)),
                     Flags {
                         focused: true,
                         ..Flags::default()
                     },
                 ),
             ],
-            "1",
+            &WorkspaceId::new("1"),
             2,
         );
         assert_eq!(ids_of(&list), "a,d");
@@ -722,13 +727,13 @@ mod tests {
             &[rwin(
                 "a",
                 "1",
-                Some((0.0, 0.0)),
+                Some((0, 0)),
                 Flags {
                     app_id: "foot",
                     ..Flags::default()
                 },
             )],
-            "1",
+            &WorkspaceId::new("1"),
             8,
         );
         assert_eq!(list.windows[0].app_id, "foot");
@@ -736,8 +741,18 @@ mod tests {
 
     #[test]
     fn placeholder_slot_has_no_windows() {
-        let list = slot_windows(&[rwin("a", "", Some((0.0, 0.0)), Flags::default())], "", 8);
-        assert_eq!(list.windows.len(), 0);
+        let model = slots(
+            &[],
+            &[rwin("a", "", Some((0, 0)), Flags::default())],
+            "eDP-1",
+            SlotOpts {
+                persistent: 1,
+                max_icons: 8,
+            },
+        );
+        assert_eq!(model.len(), 1);
+        assert!(model[0].id().is_none());
+        assert_eq!(model[0].windows.len(), 0);
     }
 
     #[test]
@@ -749,7 +764,7 @@ mod tests {
             &[rwin(
                 "a",
                 "3",
-                Some((0.0, 0.0)),
+                Some((0, 0)),
                 Flags {
                     urgent: true,
                     ..Flags::default()
@@ -766,7 +781,7 @@ mod tests {
         assert!(model[0].current);
         assert!(!model[0].is_urgent);
         assert_eq!(model[1].label, "3");
-        assert_eq!(model[1].name, "web");
+        assert_eq!(model[1].workspace.live().map(|w| w.name.as_str()), Some("web"));
         assert!(!model[1].current);
         assert!(model[1].is_urgent);
         assert_eq!(model[1].windows.len(), 1);
@@ -790,9 +805,9 @@ mod tests {
         assert_eq!(step_index(0, 0, 1), None);
     }
 
-    fn preview_window(id: &str, rect: Option<Rect>, floating: bool) -> Window {
+    fn preview_window(id: &str, rect: Option<IRect>, floating: bool) -> Window {
         Window {
-            id: id.into(),
+            id: WindowId::new(id),
             rect,
             is_floating: floating,
             ..Window::default()
@@ -804,8 +819,8 @@ mod tests {
         let area = Rect::new(1000.0, 0.0, 1000.0, 500.0);
         let layout = preview_layout(
             &[
-                preview_window("a", Some(Rect::new(1000.0, 0.0, 500.0, 500.0)), false),
-                preview_window("b", Some(Rect::new(2100.0, 100.0, 500.0, 400.0)), false),
+                preview_window("a", Some(IRect::new(1000, 0, 500, 500)), false),
+                preview_window("b", Some(IRect::new(2100, 100, 500, 400)), false),
             ],
             Some(area),
             200.0,
@@ -831,8 +846,8 @@ mod tests {
         let area = Rect::new(0.0, 0.0, 1000.0, 500.0);
         let layout = preview_layout(
             &[
-                preview_window("l", Some(Rect::new(-600.0, -250.0, 500.0, 500.0)), false),
-                preview_window("o", Some(Rect::new(0.0, 0.0, 1000.0, 500.0)), false),
+                preview_window("l", Some(IRect::new(-600, -250, 500, 500)), false),
+                preview_window("o", Some(IRect::new(0, 0, 1000, 500)), false),
             ],
             Some(area),
             200.0,
@@ -853,7 +868,7 @@ mod tests {
         let layout = preview_layout(
             &[preview_window(
                 "a",
-                Some(Rect::new(10.0, 10.0, 400.0, 300.0)),
+                Some(IRect::new(10, 10, 400, 300)),
                 false,
             )],
             Some(Rect::new(0.0, 0.0, 1000.0, 500.0)),
@@ -875,8 +890,8 @@ mod tests {
     fn preview_layout_floating_draws_last() {
         let placed = preview_layout(
             &[
-                preview_window("f", Some(Rect::new(0.0, 0.0, 10.0, 10.0)), true),
-                preview_window("t", Some(Rect::new(0.0, 0.0, 100.0, 100.0)), false),
+                preview_window("f", Some(IRect::new(0, 0, 10, 10)), true),
+                preview_window("t", Some(IRect::new(0, 0, 100, 100)), false),
             ],
             Some(Rect::new(0.0, 0.0, 100.0, 100.0)),
             100.0,

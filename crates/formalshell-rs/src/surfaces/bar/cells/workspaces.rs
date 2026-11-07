@@ -11,6 +11,7 @@ use std::time::Instant;
 use fs_chrome::bar::workspaces::{self, Slot, SlotOpts};
 use fs_theme::color::Rgba;
 use fs_theme::tokens::WEIGHTS;
+use fs_types::{WindowId, WorkspaceId};
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Affine;
 
@@ -18,7 +19,6 @@ use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, EMPHASIZED, PULSE_MS, breat
 use crate::scene::IRect;
 use crate::services::appicon::{self, Icon};
 use crate::services::agents;
-use crate::services::compositor::{Window, Workspace};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, Summary, Tone, View};
 use crate::text::{Family, TextStyle};
@@ -179,39 +179,6 @@ impl Default for Workspaces {
     }
 }
 
-pub(crate) fn workspace(w: &Workspace) -> workspaces::Workspace {
-    workspaces::Workspace {
-        id: w.id.clone(),
-        idx: w.idx,
-        name: w.name.clone(),
-        output: w.output.clone(),
-        is_active: w.is_active,
-        is_focused: w.is_focused,
-        is_urgent: w.is_urgent,
-        placeholder: false,
-    }
-}
-
-pub(crate) fn window(w: &Window) -> workspaces::Window {
-    workspaces::Window {
-        id: w.id.clone(),
-        workspace_id: w.workspace_id.clone(),
-        app_id: w.app_id.clone(),
-        initial_class: w.initial_class.clone(),
-        initial_title: w.initial_title.clone(),
-        pid: w.pid,
-        is_focused: w.is_focused,
-        is_urgent: w.is_urgent,
-        is_floating: w.is_floating,
-        rect: w.rect.map(|r| fs_types::Rect {
-            x: r.x as f64,
-            y: r.y as f64,
-            width: r.width as f64,
-            height: r.height as f64,
-        }),
-    }
-}
-
 /// Rounded, clamped, the default for a non-number.
 fn int(env: &Env, key: &str, low: i64, high: i64, default: i64) -> i64 {
     env.store.config.f64(key).filter(|n| n.is_finite()).map_or(default, |n| (n.round() as i64).clamp(low, high))
@@ -227,25 +194,28 @@ fn caption_style(look: &Look) -> TextStyle {
 
 impl Workspaces {
     fn waiting(&self, slot: &Slot) -> bool {
-        self.agents && !slot.current && slot.windows.iter().any(|w| self.agent_state.get(&w.id).is_some_and(|s| s == "blocked"))
+        self.agents && !slot.current && slot.windows.iter().any(|w| self.agent_state.get(w.id.as_str()).is_some_and(|s| s == "blocked"))
     }
 
-    fn agent(&self, window_id: &str) -> &str {
-        if self.agents && !window_id.is_empty() { self.agent_state.get(window_id).map_or("", String::as_str) } else { "" }
+    fn agent(&self, window_id: &WindowId) -> &str {
+        if self.agents && !window_id.is_empty() { self.agent_state.get(window_id.as_str()).map_or("", String::as_str) } else { "" }
     }
 
     fn focused_index(&self) -> i64 {
-        self.slots.iter().position(|s| s.is_focused).map_or(-1, |i| i as i64)
+        self.slots.iter().position(|s| s.is_focused()).map_or(-1, |i| i as i64)
     }
 
     /// A chip with an id focuses it, a persistent
     /// placeholder focuses by ordinal; the one already focused stays.
     fn go(&self, i: usize) -> Action {
         let s = &self.slots[i];
-        if s.current && s.is_focused {
+        if s.current && s.is_focused() {
             return Action::None;
         }
-        if s.id.is_empty() { Action::WorkspaceAt(s.idx) } else { Action::Workspace(s.id.clone()) }
+        match s.id() {
+            Some(id) => Action::Workspace(id.clone()),
+            None => Action::WorkspaceAt(s.idx()),
+        }
     }
 
     /// Where each part of a chip starts along it: the label, every icon and
@@ -355,9 +325,7 @@ impl Cell for Workspaces {
         let show_apps = env.store.config.str("workspaces.showApps").unwrap_or(SHOW_APPS).to_owned();
         let agents = env.store.config.bool("workspaces.agents") != Some(false);
         let c = &env.store.compositor.snapshot;
-        let rows: Vec<workspaces::Workspace> = c.workspaces.iter().map(workspace).collect();
-        let windows: Vec<workspaces::Window> = c.windows.iter().map(window).collect();
-        let slots = workspaces::slots(&rows, &windows, env.output, SlotOpts { persistent, max_icons });
+        let slots = workspaces::slots(&c.workspaces, &c.windows, env.output, SlotOpts { persistent, max_icons });
 
         let ids: Vec<&str> = slots.iter().flat_map(|s| s.windows.iter().map(|w| w.id.as_str())).collect();
         let scale = crate::scene::raster_scale();
@@ -371,7 +339,7 @@ impl Cell for Workspaces {
             .iter()
             .flat_map(|s| &s.windows)
             .map(|w| appicon::Query {
-                id: w.id.clone(),
+                id: w.id.to_string(),
                 app_id: w.app_id.clone(),
                 initial_class: w.initial_class.clone(),
                 initial_title: w.initial_title.clone(),
@@ -384,7 +352,7 @@ impl Cell for Workspaces {
                     .windows
                     .iter()
                     .filter(|w| fs_info::agents::is_app(&w.app_id, &w.initial_class))
-                    .map(|w| w.id.clone())
+                    .map(|w| w.id.to_string())
                     .collect(),
                 hosts: env.store.config.get("workspaces.agentHosts").and_then(Value::as_array).map_or_else(Vec::new, |hosts| {
                     hosts.iter().filter_map(Value::as_str).map(str::to_owned).collect()
@@ -406,11 +374,11 @@ impl Cell for Workspaces {
         if slots != self.slots {
             let now = Instant::now();
             for s in &slots {
-                if s.is_urgent && !self.was_urgent.get(&s.idx).copied().unwrap_or(false) {
-                    self.urgent.insert(s.idx, now);
+                if s.is_urgent && !self.was_urgent.get(&s.idx()).copied().unwrap_or(false) {
+                    self.urgent.insert(s.idx(), now);
                 }
             }
-            self.was_urgent = slots.iter().map(|s| (s.idx, s.is_urgent)).collect();
+            self.was_urgent = slots.iter().map(|s| (s.idx(), s.is_urgent)).collect();
         }
         self.output = env.output.to_owned();
         self.slots = slots;
@@ -438,7 +406,7 @@ impl Cell for Workspaces {
         } else if working > 0 {
             (agents(working, "working"), Tone::Rest)
         } else {
-            let focused = self.slots.iter().find(|s| s.is_focused)?;
+            let focused = self.slots.iter().find(|s| s.is_focused())?;
             (format!("Workspace {}", focused.label), Tone::Rest)
         };
         Some(Summary::new("layout-grid", "Workspaces", value).tone(tone))
@@ -510,20 +478,20 @@ impl Cell for Workspaces {
                             "id": w.id,
                             "appId": w.app_id,
                             "focused": w.is_focused,
-                            "icon": self.icons.get(&w.id).is_some_and(|i| !i.source.is_empty()),
+                            "icon": self.icons.get(w.id.as_str()).is_some_and(|i| !i.source.is_empty()),
                             "agent": self.agent(&w.id),
                             "rect": rect(r),
                         })
                     })
                     .collect();
                 json!({
-                    "id": s.id,
-                    "idx": s.idx,
+                    "id": s.id().map_or("", WorkspaceId::as_str),
+                    "idx": s.idx(),
                     "label": s.label,
                     "active": s.current,
-                    "focused": s.is_focused,
+                    "focused": s.is_focused(),
                     "urgent": s.is_urgent,
-                    "placeholder": s.placeholder,
+                    "placeholder": s.id().is_none(),
                     "appsShown": chip.shows_apps,
                     "extent": crate::surfaces::bar::number(chip.extent),
                     "rect": rect(self.chip_rect(&chip, self.origin)),
@@ -577,7 +545,7 @@ impl Custom for Workspaces {
             }
             let extent = content + look.pad_x * 2.0;
             self.chips.push(Chip { start: at, extent, label_along, label_drawn, shows_apps: shows, icons, overflow_along });
-            if slot.is_focused {
+            if slot.is_focused() {
                 focused = Some((at, at + extent));
             }
             at += extent + look.sm;
@@ -630,24 +598,24 @@ impl Custom for Workspaces {
             let slot = self.slots[i].clone();
             let cr = self.chip_rect(&chip, rect);
             let hovered = self.hover_chip == Some(i);
-            if let Some(wash) = look.hover_wash.filter(|_| hovered && !slot.is_focused) {
+            if let Some(wash) = look.hover_wash.filter(|_| hovered && !slot.is_focused()) {
                 p.rect(cr, ink.of(wash), look.radius);
             }
             let waiting = self.waiting(&slot);
             let color = if slot.is_urgent || waiting {
                 look.destructive
-            } else if slot.is_focused {
+            } else if slot.is_focused() {
                 look.on_active
-            } else if slot.is_focused || slot.current || hovered {
+            } else if slot.is_focused() || slot.current || hovered {
                 ink.fg
             } else {
                 ink.dim
             };
-            let color = self.label_color(slot.idx, color, now, &look, kit.motion_scale);
+            let color = self.label_color(slot.idx(), color, now, &look, kit.motion_scale);
             let (label_at, icon_at, overflow_at) = self.parts(&chip);
 
             let mut opacity = if waiting { breathe(self.clock, now) } else { 1.0 };
-            if let Some(since) = self.urgent.get(&slot.idx).copied() {
+            if let Some(since) = self.urgent.get(&slot.idx()).copied() {
                 let t = now.saturating_duration_since(since).as_secs_f64() * 1000.0;
                 let (down, up) = (look.effects, look.effects_slow);
                 let o = if !look.motion || t >= down + up {
@@ -668,21 +636,21 @@ impl Custom for Workspaces {
                 } else {
                     (cr.x + label_at.round() as i32, cr.y + (cr.h - lh) / 2)
                 };
-                let glow: &[_] = if slot.is_focused { &[] } else { &ink.glow };
+                let glow: &[_] = if slot.is_focused() { &[] } else { &ink.glow };
                 p.text(&shaped, (x, y), color.with_alpha(color.a * ink.alpha * opacity), glow);
             }
 
             for (n, w) in slot.windows.iter().enumerate().take(chip.icons) {
                 let Some(along) = icon_at.get(n).copied() else { break };
                 let r = self.icon_rect(&chip, along, rect);
-                let focused_here = slot.is_focused && w.is_focused;
+                let focused_here = slot.is_focused() && w.is_focused;
                 let hovered_icon = self.hover_icon == Some((i, n));
                 let scale = kit.motion_scale;
-                let dim = if slot.is_focused && !focused_here && !hovered_icon { 0.5 } else { 1.0 };
-                let fx = self.fx_of(&w.id, dim, now, &look, scale);
+                let dim = if slot.is_focused() && !focused_here && !hovered_icon { 0.5 } else { 1.0 };
+                let fx = self.fx_of(w.id.as_str(), dim, now, &look, scale);
                 if look.motion { fx.dim.set(now, dim, look.effects * scale) } else { fx.dim.jump(dim) }
                 let a = (fx.arrive.value(now) * fx.dim.value(now)) as f32 * ink.alpha;
-                match self.icons.get(&w.id).and_then(|i| i.image.clone()) {
+                match self.icons.get(w.id.as_str()).and_then(|i| i.image.clone()) {
                     Some(image) => p.image(&image, (r.x, r.y), a),
                     None => {
                         let g = fs_theme::icons::glyph("app-window");
@@ -762,25 +730,32 @@ impl Custom for Workspaces {
 
 #[cfg(test)]
 mod tests {
-    use fs_chrome::bar::workspaces::SlotWindow;
-    use fs_types::Edge;
+    use fs_chrome::bar::workspaces::{SlotWindow, SlotWorkspace};
+    use fs_types::{Edge, Workspace};
 
     use super::*;
     use crate::store::Store;
 
     fn slot(idx: i64, id: &str, focused: bool, windows: &[&str]) -> Slot {
+        let workspace = if id.is_empty() {
+            SlotWorkspace::Placeholder { idx, output: "o".into() }
+        } else {
+            SlotWorkspace::Live(Workspace {
+                id: WorkspaceId::new(id),
+                idx,
+                name: idx.to_string(),
+                output: "o".into(),
+                is_active: focused,
+                is_focused: focused,
+                ..Workspace::default()
+            })
+        };
         Slot {
-            id: id.into(),
-            idx,
-            name: idx.to_string(),
+            workspace,
             label: idx.to_string(),
-            output: "o".into(),
-            is_active: focused,
-            is_focused: focused,
             current: focused,
             is_urgent: false,
-            placeholder: id.is_empty(),
-            windows: windows.iter().map(|w| SlotWindow { id: (*w).into(), ..SlotWindow::default() }).collect(),
+            windows: windows.iter().map(|w| SlotWindow { id: WindowId::new(*w), ..SlotWindow::default() }).collect(),
             overflow: 0,
         }
     }

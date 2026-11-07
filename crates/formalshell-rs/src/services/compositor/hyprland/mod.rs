@@ -21,6 +21,7 @@ use fs_menu::keybinds::{self, Bind};
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt, io::BufReader};
 use fs_system::compositor::keyboard::{self, Layout};
 use fs_system::display::outputs::{self, Output, RuleOverrides};
+use fs_types::WindowId;
 
 use super::model::{self as common, Snapshot};
 use super::{Command, Diff, OutputsState};
@@ -63,8 +64,8 @@ pub async fn cursor_pos() -> Option<(f64, f64)> {
 struct Backend {
     snapshot: Snapshot,
     special_shown: String,
-    order: Vec<String>,
-    urgent: HashSet<String>,
+    order: Vec<WindowId>,
+    urgent: HashSet<WindowId>,
     outputs: Vec<Output>,
     keyboard: Option<Layout>,
 }
@@ -186,8 +187,8 @@ async fn refresh_compositor(ctx: &Ctx, shared: &Shared) {
         let mut snapshot = read.snapshot;
         b.special_shown = read.special_shown;
         snapshot.windows = common::keep_order(&mut b.order, snapshot.windows);
-        let live: HashSet<&str> = snapshot.windows.iter().filter(|w| w.is_urgent).map(|w| w.id.as_str()).collect();
-        b.urgent.retain(|id| live.contains(id.as_str()));
+        let live: HashSet<&WindowId> = snapshot.windows.iter().filter(|w| w.is_urgent).map(|w| &w.id).collect();
+        b.urgent.retain(|id| live.contains(id));
         b.snapshot = snapshot.clone();
         snapshot
     };
@@ -313,7 +314,7 @@ async fn commands(
             Command::FocusWorkspace(id) => dispatch(&lua::focus_workspace(&id)).await,
             // Hyprland's `workspace` dispatcher makes the workspace on the
             // focused monitor; it has no per-output slots.
-            Command::FocusWorkspaceAt(idx) => dispatch(&lua::focus_workspace(&idx.to_string())).await,
+            Command::FocusWorkspaceAt(idx) => dispatch(&lua::focus_workspace_at(idx)).await,
             Command::FocusWindow(id) => dispatch(&lua::focus_window(&id)).await,
             Command::CloseWindow(id) => dispatch(&lua::close_window(&id)).await,
             Command::Spawn(argv) => dispatch(&lua::spawn(&argv)).await,
@@ -345,7 +346,7 @@ async fn commands(
                 let _ = dirty.try_send(());
             }
             Command::MoveColumn { id, before } => {
-                eval(&ctx, &lua::move_column(&id, before.as_deref())).await;
+                eval(&ctx, &lua::move_column(&id, before.as_ref())).await;
                 let _ = dirty.try_send(());
             }
             Command::PlaceFloatingWindow { id, x, y, width, height } => {
@@ -412,7 +413,7 @@ async fn commands(
 
 /// The console lives on its special workspace for good; showing it is the
 /// compositor's own toggle of that workspace. `show` false parks it.
-async fn park(ctx: &Ctx, shared: &Shared, id: &str, show: bool) {
+async fn park(ctx: &Ctx, shared: &Shared, id: &WindowId, show: bool) {
     let on_special = {
         let b = shared.borrow();
         b.snapshot.parked.iter().chain(&b.snapshot.overlaid).any(|w| w == id)
@@ -429,12 +430,13 @@ async fn park(ctx: &Ctx, shared: &Shared, id: &str, show: bool) {
 
 #[cfg(test)]
 mod tests {
+    use fs_types::{Workspace, WorkspaceId};
+
     use super::{Snapshot, active_border, slot};
-    use crate::services::compositor::model::Workspace;
 
     #[test]
     fn a_slot_another_monitor_holds_is_a_new_workspace() {
-        let ws = |idx: i64, output: &str| Workspace { id: idx.to_string(), idx, output: output.into(), ..Default::default() };
+        let ws = |idx: i64, output: &str| Workspace { id: WorkspaceId::new(idx.to_string()), idx, output: output.into(), ..Default::default() };
         let snapshot = Snapshot { workspaces: vec![ws(1, "HDMI-A-1"), ws(2, "eDP-1"), ws(3, "HDMI-A-1")], ..Default::default() };
         assert_eq!(slot(&snapshot, 2, "HDMI-A-1"), 4);
         assert_eq!(slot(&snapshot, 2, "eDP-1"), 2);

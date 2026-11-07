@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use fs_types::Edge;
+use fs_types::{Edge, WindowId, WorkspaceId};
 use fs_theme::color::Rgba;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
@@ -77,7 +77,7 @@ impl State {
     }
 }
 
-fn icon_key(id: &str) -> String {
+fn icon_key(id: &WindowId) -> String {
     format!("overview:{id}")
 }
 
@@ -222,7 +222,7 @@ impl App {
         self.log("overview unmapped");
     }
 
-    fn overview_current(&self) -> String {
+    fn overview_current(&self) -> WorkspaceId {
         let m = &self.overview.model;
         m.rows.get(m.current_row()).map(|r| r.workspace_id.clone()).unwrap_or_default()
     }
@@ -239,7 +239,7 @@ impl App {
 
     fn overview_probe(&self) {
         let scale = self.overview.win.as_ref().map_or_else(crate::scene::raster_scale, |(s, _, _)| s.scale());
-        let ids: Vec<&str> = self.overview.model.rows.iter().flat_map(|r| r.windows.iter().map(|w| w.id.as_str())).collect();
+        let ids: Vec<&WindowId> = self.overview.model.rows.iter().flat_map(|r| r.windows.iter().map(|w| &w.id)).collect();
         let queries = ids
             .iter()
             .filter_map(|id| self.store.compositor.window(id))
@@ -267,11 +267,11 @@ impl App {
                 let sel = m.sel.follow(&m.rows, &rows);
                 // A window that moved workspace or changed size (a drop
                 // re-tiles both rows) has a frame of its old shape.
-                let shape = |rows: &[ov::Row]| -> HashMap<String, (String, i64, i64)> {
-                    rows.iter().flat_map(|r| r.windows.iter().map(|w| (w.id.clone(), (r.workspace_id.clone(), w.rect.2.round() as i64, w.rect.3.round() as i64)))).collect()
+                let shape = |rows: &[ov::Row]| -> HashMap<WindowId, (WorkspaceId, i64, i64)> {
+                    rows.iter().flat_map(|r| r.windows.iter().map(|w| (w.id.clone(), (r.workspace_id.clone(), w.rect.width.round() as i64, w.rect.height.round() as i64)))).collect()
                 };
                 let before = shape(&m.rows);
-                let stale: Vec<String> = shape(&rows).into_iter().filter(|(id, now)| before.get(id).is_some_and(|b| b != now)).map(|(id, _)| id).collect();
+                let stale: Vec<WindowId> = shape(&rows).into_iter().filter(|(id, now)| before.get(id).is_some_and(|b| b != now)).map(|(id, _)| id).collect();
                 m.rows = rows;
                 let (ms, curve) = self.overview_curve();
                 self.overview.model.select(sel, Instant::now(), ms, curve);
@@ -292,7 +292,7 @@ impl App {
     }
 
     pub fn overview_status(&self) -> serde_json::Value {
-        let captured = |id: &str| self.capture_image(Owner::Overview, id).is_some();
+        let captured = |id: &WindowId| self.capture_image(Owner::Overview, id).is_some();
         let mut v = self.overview.model.status(Instant::now(), &captured);
         v["capturing"] = self.capture_sourced(Owner::Overview).into();
         v
@@ -513,8 +513,8 @@ impl App {
                     let m = &mut self.overview.model;
                     let w = m.rows[i].windows[j].clone();
                     let t = m.geo.transform(m.progress(now), m.glide_at(now));
-                    let (x, y, _, _) = m.geo.win_at(i, &w);
-                    let origin = t * vello_cpu::kurbo::Point::new(x, y);
+                    let r = m.geo.win_at(i, &w);
+                    let origin = t * vello_cpu::kurbo::Point::new(r.x, r.y);
                     let slide = m.rows.get(i).and_then(|r| m.slides.get(&r.workspace_id)).map_or(0.0, |s| s.value(now));
                     m.drag = Some(Drag { id: w.id, from_row: i, from: at, at, grab: (at.0 - origin.x - slide, at.1 - origin.y), lifted: false, over: None });
                 }

@@ -15,11 +15,11 @@ use std::time::{Duration, Instant};
 use fs_theme::color::Rgba;
 use fs_theme::style::Line;
 use fs_theme::theme::Theme;
+use fs_types::{Window, WindowId, WorkspaceId};
 use serde_json::{Value, json};
 
 use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
-use crate::services::compositor::model::Window;
 use crate::surfaces::bar::cell::{Kit, Painter};
 use crate::text::{Family, TextStyle};
 use crate::ui::boxes;
@@ -51,15 +51,15 @@ pub struct Switcher {
     pub shown: bool,
     pub shows: u64,
     pub index: usize,
-    history: Vec<String>,
-    pub open_history: Vec<String>,
-    pub open_workspace: String,
+    history: Vec<WindowId>,
+    pub open_history: Vec<WindowId>,
+    pub open_workspace: WorkspaceId,
     pub commit_pending: Option<Instant>,
     pub committed_at: Option<Instant>,
     pub show_at: Option<Instant>,
     pub primed: bool,
     pub prime_at: Option<Instant>,
-    pub refocus: Option<(String, Instant)>,
+    pub refocus: Option<(WindowId, Instant)>,
     pub capturing: bool,
     pub capture_at: Option<Instant>,
     pub refresh_at: Option<Instant>,
@@ -114,16 +114,16 @@ fn caption_style(kit: &Kit, selected: bool) -> TextStyle {
 
 impl Switcher {
     /// A window took focus: it goes to the front of the history.
-    pub fn focused(&mut self, id: &str) {
-        if id.is_empty() || self.history.first().is_some_and(|h| h == id) {
+    pub fn focused(&mut self, id: &WindowId) {
+        if id.is_empty() || self.history.first() == Some(id) {
             return;
         }
         self.history.retain(|h| h != id);
-        self.history.insert(0, id.to_owned());
+        self.history.insert(0, id.clone());
         self.history.truncate(32);
     }
 
-    pub fn history(&self) -> &[String] {
+    pub fn history(&self) -> &[WindowId] {
         &self.history
     }
 
@@ -143,7 +143,7 @@ impl Switcher {
     }
 
     /// Each thumbnail's id and device size for this layout.
-    pub fn thumb_sizes(&self, entries: &[&Window]) -> Vec<(String, (u32, u32))> {
+    pub fn thumb_sizes(&self, entries: &[&Window]) -> Vec<(WindowId, (u32, u32))> {
         entries
             .iter()
             .zip(&self.cells)
@@ -179,7 +179,7 @@ impl Switcher {
         let card = IRect::new(((ow - card_w) / 2.0).round() as i32, ((oh - card_h) / 2.0).round() as i32, card_w.round() as i32, card_h.round() as i32);
 
         if let Some(p) = places.get(self.index) {
-            self.scroll = model::follow(p.y, m.cell_h, self.scroll, view_h, grid_h);
+            self.scroll = model::follow(p.rect.y, m.cell_h, self.scroll, view_h, grid_h);
         }
         let origin = (card.x as f64 + (card_w - grid_w) / 2.0, card.y as f64 + (card_h - view_h) / 2.0 - self.scroll);
         let view = IRect::new(origin.0.round() as i32, (origin.1 + self.scroll).round() as i32, grid_w.round() as i32, view_h.round() as i32);
@@ -187,11 +187,11 @@ impl Switcher {
         self.cells = places
             .iter()
             .map(|p| {
-                let (x, y) = ((origin.0 + p.x).round() as i32, (origin.1 + p.y).round() as i32);
+                let (x, y) = ((origin.0 + p.rect.x).round() as i32, (origin.1 + p.rect.y).round() as i32);
                 let pi = pad as i32;
                 CellRects {
-                    cell: IRect::new(x, y, p.width.round() as i32, p.height.round() as i32),
-                    thumb: IRect::new(x + pi, y + pi, (p.width - pad * 2.0).round() as i32, m.thumb_h.round() as i32),
+                    cell: IRect::new(x, y, p.rect.width.round() as i32, p.rect.height.round() as i32),
+                    thumb: IRect::new(x + pi, y + pi, (p.rect.width - pad * 2.0).round() as i32, m.thumb_h.round() as i32),
                     icon: IRect::new(
                         x + pi,
                         (y as f64 + pad + m.thumb_h + s.icon_gap + (m.caption_h - m.caption_icon) / 2.0).round() as i32,

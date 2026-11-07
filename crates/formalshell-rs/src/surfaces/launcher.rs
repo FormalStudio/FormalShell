@@ -22,7 +22,7 @@ use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir, KeyAction, KeyCtx, KeyMode};
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
-use fs_types::Edge;
+use fs_types::{Edge, WindowId};
 use fs_theme::theme::Theme;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Rect;
@@ -2509,7 +2509,7 @@ impl Model {
                 let Some(idx) = target.id.strip_prefix("workspace:").and_then(|i| i.parse::<i64>().ok()) else { return Out::None };
                 let windows = match &node.entry {
                     Some(entry) if node.kind == NodeKind::App => app_windows(store, entry),
-                    _ => vec![node.path.clone()],
+                    _ => vec![WindowId::new(node.path.clone())],
                 };
                 let output = store.compositor.snapshot.focused_output_name.clone();
                 for id in windows.into_iter().filter(|w| !w.is_empty()) {
@@ -2695,25 +2695,25 @@ impl Model {
                         Out::None
                     }
                     "window.focus" => {
-                        compositor::focus_window(arg);
+                        compositor::focus_window(&WindowId::new(arg));
                         Out::None
                     }
                     "window.close" => {
-                        compositor::close_window(arg);
+                        compositor::close_window(&WindowId::new(arg));
                         Out::None
                     }
                     "window.float" => {
-                        compositor::send(compositor::Command::ToggleFloating(arg.to_owned()));
+                        compositor::send(compositor::Command::ToggleFloating(WindowId::new(arg)));
                         Out::None
                     }
                     "window.fullscreen" => {
-                        compositor::send(compositor::Command::ToggleFullscreen(arg.to_owned()));
+                        compositor::send(compositor::Command::ToggleFullscreen(WindowId::new(arg)));
                         Out::None
                     }
                     "app.open" => {
                         let Some(entry) = node.entry.as_ref().filter(|e| e.id == arg) else { return Out::None };
                         let target = fs_menu::appmatch::next_window(&app_windows(store, entry), &store.compositor.snapshot.focused_window_id);
-                        if !target.is_empty() {
+                        if let Some(target) = target {
                             compositor::focus_window(&target);
                         } else if let Some(argv) = index::launch_argv(&store.menu, arg) {
                             crate::services::launch::spawn(store, arg, &argv);
@@ -2985,15 +2985,8 @@ fn outside_subject(store: &Store, id: &str) -> Option<Node> {
 }
 
 /// The compositor's windows an app's entry claims.
-fn app_windows(store: &Store, entry: &fs_menu::node::DesktopEntry) -> Vec<String> {
-    let windows: Vec<fs_menu::appmatch::Window> = store
-        .compositor
-        .snapshot
-        .windows
-        .iter()
-        .map(|w| fs_menu::appmatch::Window { id: w.id.clone(), app_id: w.app_id.clone() })
-        .collect();
-    fs_menu::appmatch::match_windows(Some(entry), &windows)
+fn app_windows(store: &Store, entry: &fs_menu::node::DesktopEntry) -> Vec<WindowId> {
+    fs_menu::appmatch::match_windows(Some(entry), &store.compositor.snapshot.windows)
 }
 
 /// An app subject's windows as rows, each a window subject: its title
@@ -3008,7 +3001,7 @@ fn window_rows(store: &Store, subject: &str, q: &str) -> Vec<Node> {
         .filter_map(|id| store.compositor.window(id))
         .filter(|w| q.is_empty() || w.title.to_lowercase().contains(&q))
         .map(|w| Node {
-            path: w.id.clone(),
+            path: w.id.to_string(),
             icon: app.icon.clone(),
             icon_source: app.icon_source.clone(),
             meta: snap.workspaces.iter().find(|ws| ws.id == w.workspace_id).map(|ws| ws.name.clone()),

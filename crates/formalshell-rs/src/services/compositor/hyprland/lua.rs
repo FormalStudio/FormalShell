@@ -1,8 +1,8 @@
 //! The `hl.*` Lua each write sends.
-//! Window ids reach this module as the backend's opaque strings; the
+//! Window ids reach this module as the backend's opaque ids; the
 //! `address:0x...` selector is built here and nowhere else.
 
-use crate::services::compositor::model::Rect;
+use fs_types::{IRect, WindowId, WorkspaceId};
 
 pub const PARK_WORKSPACE: &str = "special:formalshell-console";
 const PARK_NAME: &str = "formalshell-console";
@@ -18,7 +18,8 @@ pub fn value(value: &str) -> String {
     if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) { value.to_owned() } else { string(value) }
 }
 
-pub fn selector(id: &str) -> String {
+fn selector(id: &WindowId) -> String {
+    let id = id.as_str();
     if id.starts_with("0x") { format!("address:{id}") } else { format!("address:0x{id}") }
 }
 
@@ -27,17 +28,21 @@ fn quote_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
-pub fn focus_workspace(id: &str) -> String {
-    format!("hl.dsp.focus({{ workspace = {} }})", value(id))
+pub fn focus_workspace(id: &WorkspaceId) -> String {
+    format!("hl.dsp.focus({{ workspace = {} }})", value(id.as_str()))
 }
 
-pub fn focus_window(id: &str) -> String {
+pub fn focus_workspace_at(idx: i64) -> String {
+    format!("hl.dsp.focus({{ workspace = {idx} }})")
+}
+
+pub fn focus_window(id: &WindowId) -> String {
     format!("hl.dsp.focus({{ window = {} }})", string(&selector(id)))
 }
 
 /// A bare selector argument is ignored and closes the focused window; only
 /// the `window` field picks the target.
-pub fn close_window(id: &str) -> String {
+pub fn close_window(id: &WindowId) -> String {
     format!("hl.dsp.window.close({{ window = {} }})", string(&selector(id)))
 }
 
@@ -46,23 +51,23 @@ pub fn spawn(argv: &[String]) -> String {
     format!("hl.dsp.exec_cmd({})", string(&cmd.join(" ")))
 }
 
-pub fn float_window(id: &str) -> String {
+pub fn float_window(id: &WindowId) -> String {
     format!("hl.dsp.window.float({{ window = {}, action = \"set\" }})", string(&selector(id)))
 }
 
-pub fn toggle_floating(id: &str) -> String {
+pub fn toggle_floating(id: &WindowId) -> String {
     format!("hl.dsp.window.float({{ window = {}, action = \"toggle\" }})", string(&selector(id)))
 }
 
-pub fn toggle_fullscreen(id: &str) -> String {
+pub fn toggle_fullscreen(id: &WindowId) -> String {
     format!("hl.dsp.window.fullscreen({{ window = {}, mode = \"fullscreen\", action = \"toggle\" }})", string(&selector(id)))
 }
 
-pub fn move_to_workspace(id: &str, idx: i64) -> String {
+pub fn move_to_workspace(id: &WindowId, idx: i64) -> String {
     format!("hl.dsp.window.move({{ window = {}, workspace = {idx}, follow = false }})", string(&selector(id)))
 }
 
-pub fn swap_windows(a: &str, b: &str) -> String {
+pub fn swap_windows(a: &WindowId, b: &WindowId) -> String {
     format!("hl.dsp.window.swap({{ window = {}, target = {} }})", string(&selector(a)), string(&selector(b)))
 }
 
@@ -70,7 +75,7 @@ pub fn swap_windows(a: &str, b: &str) -> String {
 /// `swapcol` trades the focused column with a neighbour, so the column is
 /// focused and walked there one swap at a time. Columns are told apart by
 /// their windows' x on the tape.
-pub fn move_column(id: &str, before: Option<&str>) -> String {
+pub fn move_column(id: &WindowId, before: Option<&WindowId>) -> String {
     let window = string(&selector(id));
     let before = before.map_or_else(|| "nil".to_owned(), |b| format!("hl.get_window({})", string(&selector(b))));
     format!(
@@ -91,11 +96,11 @@ pub fn move_column(id: &str, before: Option<&str>) -> String {
     )
 }
 
-pub fn resize_window(id: &str, w: i64, h: i64) -> String {
+pub fn resize_window(id: &WindowId, w: i64, h: i64) -> String {
     format!("hl.dsp.window.resize({{ window = {}, x = {w}, y = {h} }})", string(&selector(id)))
 }
 
-pub fn move_window(id: &str, x: i64, y: i64) -> String {
+pub fn move_window(id: &WindowId, x: i64, y: i64) -> String {
     format!("hl.dsp.window.move({{ window = {}, x = {x}, y = {y} }})", string(&selector(id)))
 }
 
@@ -106,7 +111,7 @@ pub fn move_window(id: &str, x: i64, y: i64) -> String {
 /// the whole output first, so the tape is never narrower when it moves,
 /// and the width it had is kept in `formalshell_zen` for the way back.
 /// Then the window floats at `rect`, its column closing up off screen.
-pub fn zen(id: &str, rect: Rect) -> String {
+pub fn zen(id: &WindowId, rect: IRect) -> String {
     let window = string(&selector(id));
     format!(
         "local w = hl.get_window({window}) \
@@ -140,7 +145,7 @@ pub fn zen(id: &str, rect: Rect) -> String {
 /// The tape let go, and the window tiled again at the column width it had
 /// (it comes back as a column of the default width), or put back at its
 /// old rect if it was floating before.
-pub fn unzen(id: &str, floating: Option<Rect>) -> String {
+pub fn unzen(id: &WindowId, floating: Option<IRect>) -> String {
     let window = string(&selector(id));
     let back = format!("hl.dispatch(hl.dsp.focus({{ window = {window} }})) hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\"))");
     match floating {
@@ -171,7 +176,7 @@ pub fn zen_release() -> String {
     "hl.dispatch(hl.dsp.layout(\"inhibit_scroll 0\")) hl.dispatch(hl.dsp.layout(\"fit_into_view\"))".into()
 }
 
-pub fn park_window(id: &str) -> String {
+pub fn park_window(id: &WindowId) -> String {
     format!(
         "hl.dsp.window.move({{ window = {}, workspace = {}, follow = false }})",
         string(&selector(id)),
@@ -210,32 +215,37 @@ pub fn unbind(global: &str) -> String {
 mod tests {
     use super::*;
 
+    fn id(s: &str) -> WindowId {
+        WindowId::new(s)
+    }
+
     #[test]
     fn worded_as_the_ipc_contract() {
-        assert_eq!(focus_workspace("2"), "hl.dsp.focus({ workspace = 2 })");
-        assert_eq!(focus_workspace("name"), "hl.dsp.focus({ workspace = \"name\" })");
-        assert_eq!(focus_window("55d0c1b0"), "hl.dsp.focus({ window = \"address:0x55d0c1b0\" })");
-        assert_eq!(close_window("0xab"), "hl.dsp.window.close({ window = \"address:0xab\" })");
+        assert_eq!(focus_workspace(&WorkspaceId::new("2")), "hl.dsp.focus({ workspace = 2 })");
+        assert_eq!(focus_workspace(&WorkspaceId::new("name")), "hl.dsp.focus({ workspace = \"name\" })");
+        assert_eq!(focus_workspace_at(3), "hl.dsp.focus({ workspace = 3 })");
+        assert_eq!(focus_window(&id("55d0c1b0")), "hl.dsp.focus({ window = \"address:0x55d0c1b0\" })");
+        assert_eq!(close_window(&id("0xab")), "hl.dsp.window.close({ window = \"address:0xab\" })");
         assert_eq!(
             spawn(&["foot".into(), "-e".into(), "it's".into()]),
             r#"hl.dsp.exec_cmd("'foot' '-e' 'it'\\''s'")"#
         );
         assert_eq!(
-            park_window("ab"),
+            park_window(&id("ab")),
             "hl.dsp.window.move({ window = \"address:0xab\", workspace = \"special:formalshell-console\", follow = false })"
         );
-        assert_eq!(toggle_floating("ab"), "hl.dsp.window.float({ window = \"address:0xab\", action = \"toggle\" })");
+        assert_eq!(toggle_floating(&id("ab")), "hl.dsp.window.float({ window = \"address:0xab\", action = \"toggle\" })");
         assert_eq!(
-            toggle_fullscreen("ab"),
+            toggle_fullscreen(&id("ab")),
             "hl.dsp.window.fullscreen({ window = \"address:0xab\", mode = \"fullscreen\", action = \"toggle\" })"
         );
-        assert_eq!(swap_windows("ab", "cd"), "hl.dsp.window.swap({ window = \"address:0xab\", target = \"address:0xcd\" })");
-        let col = move_column("ab", Some("cd"));
+        assert_eq!(swap_windows(&id("ab"), &id("cd")), "hl.dsp.window.swap({ window = \"address:0xab\", target = \"address:0xcd\" })");
+        let col = move_column(&id("ab"), Some(&id("cd")));
         assert!(col.starts_with("local w = hl.get_window(\"address:0xab\") if w"));
         assert!(col.contains("local to, b = #rest + 1, hl.get_window(\"address:0xcd\") if b"));
         assert!(col.contains("hl.dsp.layout(to > from and \"swapcol r\" or \"swapcol l\")"));
-        assert!(move_column("ab", None).contains("#rest + 1, nil if b"));
-        assert_eq!(move_to_workspace("ab", 2), "hl.dsp.window.move({ window = \"address:0xab\", workspace = 2, follow = false })");
+        assert!(move_column(&id("ab"), None).contains("#rest + 1, nil if b"));
+        assert_eq!(move_to_workspace(&id("ab"), 2), "hl.dsp.window.move({ window = \"address:0xab\", workspace = 2, follow = false })");
         assert_eq!(toggle_special(), "hl.dsp.workspace.toggle_special(\"formalshell-console\")");
         assert_eq!(
             bind_escape("fs_esc", &["ipc".into(), "x".into()]),

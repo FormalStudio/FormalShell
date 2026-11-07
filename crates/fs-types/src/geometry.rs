@@ -78,6 +78,18 @@ impl Rect {
             height,
         }
     }
+
+    /// Half-open: the right and bottom edges are outside.
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
+    }
+
+    /// The overlap, none when the two only touch or miss.
+    pub fn intersect(&self, o: &Rect) -> Option<Rect> {
+        let (x0, y0) = (self.x.max(o.x), self.y.max(o.y));
+        let (x1, y1) = ((self.x + self.width).min(o.x + o.width), (self.y + self.height).min(o.y + o.height));
+        (x1 > x0 && y1 > y0).then(|| Rect::new(x0, y0, x1 - x0, y1 - y0))
+    }
 }
 
 /// How much of each output edge is spoken for.
@@ -90,7 +102,7 @@ pub struct Insets {
 }
 
 /// A rectangle in whole pixels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize)]
 pub struct IRect {
     pub x: i64,
     pub y: i64,
@@ -106,5 +118,11 @@ impl IRect {
             width,
             height,
         }
+    }
+}
+
+impl From<IRect> for Rect {
+    fn from(r: IRect) -> Rect {
+        Rect::new(r.x as f64, r.y as f64, r.width as f64, r.height as f64)
     }
 }

@@ -10,8 +10,10 @@ use fs_menu::keybinds::Bind;
 use fs_system::compositor::keyboard::{self, Layout};
 use fs_system::display::outputs::{Color, Output};
 
+use fs_types::{IRect, Window, WindowId, WorkspaceId};
+
 use crate::runtime::Ctx;
-pub use model::{Gaps, Snapshot, Window, Workspace};
+pub use model::{Gaps, Snapshot};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputsState {
@@ -23,7 +25,7 @@ pub enum OutputsState {
 pub struct State {
     pub snapshot: Snapshot,
     /// The last window the compositor reported focused, for focus.js's hold.
-    pub remembered_focused_id: String,
+    pub remembered_focused_id: WindowId,
     pub outputs: Vec<Output>,
     pub outputs_state: OutputsState,
     pub keyboard: Layout,
@@ -42,7 +44,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             snapshot: Snapshot::default(),
-            remembered_focused_id: String::new(),
+            remembered_focused_id: WindowId::default(),
             outputs: Vec::new(),
             outputs_state: OutputsState::Unknown,
             keyboard: keyboard::unavailable(),
@@ -105,49 +107,49 @@ impl State {
         true
     }
 
-    pub fn held_focused_window_id(&self) -> String {
+    pub fn held_focused_window_id(&self) -> WindowId {
         let c = &self.snapshot;
         model::held_focus(&c.focused_window_id, &self.remembered_focused_id, &c.windows, &c.focused_workspace_id)
     }
 
-    pub fn window(&self, id: &str) -> Option<&Window> {
-        self.snapshot.windows.iter().find(|w| w.id == id)
+    pub fn window(&self, id: &WindowId) -> Option<&Window> {
+        self.snapshot.windows.iter().find(|w| w.id == *id)
     }
 }
 
 /// The writes, queued from any thread and run in order on the service
 /// thread against the backend's own latest model.
 pub enum Command {
-    FocusWorkspace(String),
+    FocusWorkspace(WorkspaceId),
     /// A persistent slot the compositor has no workspace for yet.
     FocusWorkspaceAt(i64),
-    FocusWindow(String),
-    CloseWindow(String),
+    FocusWindow(WindowId),
+    CloseWindow(WindowId),
     Spawn(Vec<String>),
     /// While `argv` is some, a plain Escape runs it without being taken
     /// from the focused app; none removes the bind. `name` keys the bind.
     EscapeBind { name: &'static str, argv: Option<Vec<String>> },
-    FloatWindow(String),
-    ToggleFloating(String),
-    ToggleFullscreen(String),
+    FloatWindow(WindowId),
+    ToggleFloating(WindowId),
+    ToggleFullscreen(WindowId),
     /// Onto the workspace slot `idx` of `output`, focus staying put.
-    MoveWindowTo { id: String, idx: i64, output: String },
+    MoveWindowTo { id: WindowId, idx: i64, output: String },
     /// Two windows trade places in the layout, focus staying put.
-    SwapWindows { a: String, b: String },
+    SwapWindows { a: WindowId, b: WindowId },
     /// Under a scrolling layout, `id`'s column moves to sit just before
     /// `before`'s, or last with none, the columns between shifting one
     /// along. It focuses `id`.
-    MoveColumn { id: String, before: Option<String> },
-    PlaceFloatingWindow { id: String, x: f64, y: f64, width: f64, height: f64 },
-    ParkWindow(String),
-    UnparkWindow(String),
+    MoveColumn { id: WindowId, before: Option<WindowId> },
+    PlaceFloatingWindow { id: WindowId, x: f64, y: f64, width: f64, height: f64 },
+    ParkWindow(WindowId),
+    UnparkWindow(WindowId),
     /// `id` floated at `rect` (logical, absolute) and focused, the rest of
     /// a scrolling workspace's tape slid off the output and held there.
-    Zen { id: String, rect: model::Rect },
+    Zen { id: WindowId, rect: IRect },
     /// The tape let go, `id` put back at `floating` where it was floating
     /// before, tiled otherwise with its column moved before `before`'s. It
     /// keeps focus.
-    Unzen { id: String, floating: Option<model::Rect>, before: Option<String> },
+    Unzen { id: WindowId, floating: Option<IRect>, before: Option<WindowId> },
     /// The focused workspace's tape let go, its zen window having closed.
     ZenRelease,
     RefreshWindows,
@@ -181,8 +183,8 @@ pub fn send(command: Command) {
     }
 }
 
-pub fn focus_workspace(id: &str) {
-    send(Command::FocusWorkspace(id.to_owned()));
+pub fn focus_workspace(id: &WorkspaceId) {
+    send(Command::FocusWorkspace(id.clone()));
 }
 
 pub fn focus_workspace_at(idx: i64) {
@@ -191,12 +193,12 @@ pub fn focus_workspace_at(idx: i64) {
     }
 }
 
-pub fn focus_window(id: &str) {
-    send(Command::FocusWindow(id.to_owned()));
+pub fn focus_window(id: &WindowId) {
+    send(Command::FocusWindow(id.clone()));
 }
 
-pub fn close_window(id: &str) {
-    send(Command::CloseWindow(id.to_owned()));
+pub fn close_window(id: &WindowId) {
+    send(Command::CloseWindow(id.clone()));
 }
 
 pub fn spawn(argv: &[String]) {

@@ -21,18 +21,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use fs_chrome::bar::workspaces::{PreviewLayout, preview_layout};
-use fs_types::Rect;
+use fs_types::{Rect, Window, WindowId, WorkspaceId};
 
 use super::{Effect, Panel, View};
 use crate::scene::Bitmap;
 use crate::services::compositor;
 use crate::store::Topic;
-use crate::surfaces::bar::cells::workspaces::window;
 use crate::ui::el::{Pic, Tile};
 use crate::ui::{El, Event, Ink, What, w};
 
 /// The appicon slice's key for a window's icon here.
-pub fn icon_key(id: &str) -> String {
+pub fn icon_key(id: &WindowId) -> String {
     format!("preview:{id}")
 }
 
@@ -46,12 +45,12 @@ pub struct Laid {
     pub scale: f64,
     pub inset: f64,
     /// Each tile's id, its box in the content and the window's own rect.
-    pub tiles: Vec<(String, (f64, f64, f64, f64), Option<Rect>)>,
+    pub tiles: Vec<(WindowId, (f64, f64, f64, f64), Option<Rect>)>,
 }
 
 #[derive(Default)]
 pub struct Shared {
-    pub thumbs: HashMap<String, Bitmap>,
+    pub thumbs: HashMap<WindowId, Bitmap>,
     pub laid: Laid,
     /// The miniature's scroll, and whether anything has moved it since it
     /// opened on the output's region.
@@ -60,7 +59,7 @@ pub struct Shared {
 }
 
 pub struct WorkspacePreview {
-    pub workspace_id: String,
+    pub workspace_id: WorkspaceId,
     pub idx: i64,
     label: String,
     pub from_pointer: bool,
@@ -68,18 +67,18 @@ pub struct WorkspacePreview {
 }
 
 impl WorkspacePreview {
-    pub fn new(workspace_id: String, idx: i64, label: String, from_pointer: bool, shared: Rc<RefCell<Shared>>) -> Self {
+    pub fn new(workspace_id: WorkspaceId, idx: i64, label: String, from_pointer: bool, shared: Rc<RefCell<Shared>>) -> Self {
         *shared.borrow_mut() = Shared::default();
         Self { workspace_id, idx, label, from_pointer, shared }
     }
 
-    fn windows<'a>(&self, v: &View<'a>) -> Vec<&'a compositor::Window> {
+    fn windows<'a>(&self, v: &View<'a>) -> Vec<&'a Window> {
         v.store.compositor.snapshot.windows.iter().filter(|w| w.workspace_id == self.workspace_id).collect()
     }
 
     fn focus(&self, id: &str, fx: &mut Effect) {
         if !id.is_empty() {
-            compositor::focus_window(id);
+            compositor::focus_window(&WindowId::new(id));
             fx.close = true;
         }
     }
@@ -120,7 +119,7 @@ impl Panel for WorkspacePreview {
         let inset = s.xs;
         let (vw, vh) = (mini_w - inset * 2.0, mini_h - inset * 2.0);
         let area = (aw > 0.0 && ah > 0.0).then_some(Rect { x: 0.0, y: 0.0, width: aw, height: ah });
-        let model: Vec<_> = windows.iter().map(|w| window(w)).collect();
+        let model: Vec<Window> = windows.iter().map(|w| (*w).clone()).collect();
         let plan = preview_layout(&model, area, vw, vh, s.control_height);
         let content = (vw.max(plan.bounds.width), vh.max(plan.bounds.height));
         let mut shared = self.shared.borrow_mut();
@@ -144,7 +143,7 @@ impl Panel for WorkspacePreview {
             .filter_map(|p| {
                 let win = windows.iter().find(|w| w.id == p.id)?;
                 let rect = (p.x + pad, p.y + pad, (p.width - pad * 2.0).max(0.0), (p.height - pad * 2.0).max(0.0));
-                laid.tiles.push((p.id.clone(), rect, model.iter().find(|m| m.id == p.id).and_then(|m| m.rect)));
+                laid.tiles.push((p.id.clone(), rect, win.rect.map(Rect::from)));
                 let edge = (v.theme.space.xl * 2.0).round() as u32;
                 let icon = v.store.appicon.get(&icon_key(&p.id), edge, crate::scene::raster_scale()).and_then(|i| i.image);
                 Some(Tile {

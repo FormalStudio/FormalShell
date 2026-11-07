@@ -8,8 +8,9 @@
 
 use std::sync::Mutex;
 
-use fs_menu::appmatch::{self, Window};
+use fs_menu::appmatch;
 use fs_menu::node::DesktopEntry;
+use fs_types::WindowId;
 
 use super::activity::{self, Input};
 use super::compositor;
@@ -18,14 +19,10 @@ use crate::store::Store;
 struct Pending {
     entry: DesktopEntry,
     /// The windows the entry already had, which do not end the launch.
-    before: Vec<String>,
+    before: Vec<WindowId>,
 }
 
 static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
-
-fn windows(store: &Store) -> Vec<Window> {
-    store.compositor.snapshot.windows.iter().map(|w| Window { id: w.id.clone(), app_id: w.app_id.clone() }).collect()
-}
 
 /// The desktop entry `id` names in the launcher's tree.
 fn entry(store: &Store, id: &str) -> Option<DesktopEntry> {
@@ -38,7 +35,7 @@ fn entry(store: &Store, id: &str) -> Option<DesktopEntry> {
 pub fn spawn(store: &Store, id: &str, argv: &[String]) {
     compositor::spawn(argv);
     let Some(entry) = entry(store, id) else { return };
-    let before = appmatch::match_windows(Some(&entry), &windows(store));
+    let before = appmatch::match_windows(Some(&entry), &store.compositor.snapshot.windows);
     let title = if entry.name.is_empty() { entry.id.clone() } else { entry.name.clone() };
     if let Ok(mut pending) = PENDING.lock() {
         pending.retain(|p| p.entry.id != entry.id);
@@ -54,9 +51,9 @@ pub fn windows_changed(store: &Store) {
     if pending.is_empty() {
         return;
     }
-    let windows = windows(store);
+    let windows = &store.compositor.snapshot.windows;
     pending.retain(|p| {
-        let mapped = appmatch::match_windows(Some(&p.entry), &windows).iter().any(|id| !p.before.contains(id));
+        let mapped = appmatch::match_windows(Some(&p.entry), windows).iter().any(|id| !p.before.contains(id));
         if mapped {
             activity::send(Input::Launched(p.entry.id.clone()));
         }

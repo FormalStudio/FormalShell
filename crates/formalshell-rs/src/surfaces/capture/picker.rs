@@ -8,30 +8,12 @@ use std::collections::{BTreeMap, HashSet};
 use serde_json::{Value, json};
 
 use crate::scene::Bitmap;
-use crate::services::compositor::model::{Snapshot, Window};
+use fs_types::{Rect, Window, WindowId, WorkspaceId};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct R {
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
+use crate::services::compositor::model::Snapshot;
 
-impl R {
-    pub fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
-    }
-
-    pub fn intersect(&self, o: &R) -> Option<R> {
-        let (x0, y0) = (self.x.max(o.x), self.y.max(o.y));
-        let (x1, y1) = ((self.x + self.w).min(o.x + o.w), (self.y + self.h).min(o.y + o.h));
-        (x1 > x0 && y1 > y0).then(|| R { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
-    }
-
-    pub fn json(&self) -> Value {
-        json!({"x": js(self.x), "y": js(self.y), "width": js(self.w), "height": js(self.h)})
-    }
+fn rect_json(r: &Rect) -> Value {
+    json!({"x": js(r.x), "y": js(r.y), "width": js(r.width), "height": js(r.height)})
 }
 
 /// A whole number serialises as JSON.stringify writes it, without `.0`.
@@ -51,16 +33,16 @@ pub struct Entry {
     pub kind: EntryKind,
     pub label: String,
     pub sublabel: String,
-    pub window_id: String,
+    pub window_id: WindowId,
     pub floating: bool,
-    pub rect: Option<R>,
+    pub rect: Option<Rect>,
 }
 
 /// A screen: logical position and size.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Screen {
     pub name: String,
-    pub rect: R,
+    pub rect: Rect,
 }
 
 pub struct Tool {
@@ -97,7 +79,7 @@ impl Cands {
                 kind: EntryKind::Output,
                 label: s.name.clone(),
                 sublabel: String::new(),
-                window_id: String::new(),
+                window_id: WindowId::default(),
                 floating: false,
                 rect: Some(s.rect),
             })
@@ -105,15 +87,15 @@ impl Cands {
         // Hyprland keeps a box for every window on every workspace, all of
         // them laid over the same monitor, and the scrolling layout parks
         // columns past the monitor's edges. Only what is on screen counts.
-        let active: HashSet<&str> = snap.workspaces.iter().filter(|w| w.is_active).map(|w| w.id.as_str()).collect();
-        let shown = |w: &Window| active.is_empty() || w.workspace_id.is_empty() || active.contains(w.workspace_id.as_str()) || snap.overlaid.contains(&w.id);
-        let on_screen = |r: R| screens.iter().filter_map(|s| s.rect.intersect(&r)).max_by(|a, b| (a.w * a.h).total_cmp(&(b.w * b.h)));
+        let active: HashSet<&WorkspaceId> = snap.workspaces.iter().filter(|w| w.is_active).map(|w| &w.id).collect();
+        let shown = |w: &Window| active.is_empty() || w.workspace_id.is_empty() || active.contains(&w.workspace_id) || snap.overlaid.contains(&w.id);
+        let on_screen = |r: Rect| screens.iter().filter_map(|s| s.rect.intersect(&r)).max_by(|a, b| (a.width * a.height).total_cmp(&(b.width * b.height)));
         let mut seen = HashSet::new();
         let (mut with_rect, mut without_rect) = (Vec::new(), Vec::new());
         for w in snap.windows.iter().filter(|w| shown(w)) {
             let label = [&w.title, &w.app_id].into_iter().find(|s| !s.is_empty()).cloned().unwrap_or_else(|| "(untitled)".into());
             let rect = match w.rect {
-                Some(r) => match on_screen(R { x: r.x as f64, y: r.y as f64, w: r.width as f64, h: r.height as f64 }) {
+                Some(r) => match on_screen(r.into()) {
                     Some(r) => Some(r),
                     None => continue,
                 },
@@ -123,7 +105,7 @@ impl Cands {
             match rect {
                 None => without_rect.push(entry),
                 Some(r) => {
-                    if seen.insert(format!("{},{} {}x{}", r.x, r.y, r.w, r.h)) {
+                    if seen.insert(format!("{},{} {}x{}", r.x, r.y, r.width, r.height)) {
                         with_rect.push(entry);
                     }
                 }
@@ -141,8 +123,8 @@ impl Cands {
         self.outputs.iter().find(|o| o.label == self.focused_output).or(self.outputs.first())
     }
 
-    pub fn output_name_for(&self, r: R) -> String {
-        let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+    pub fn output_name_for(&self, r: Rect) -> String {
+        let (cx, cy) = (r.x + r.width / 2.0, r.y + r.height / 2.0);
         self.outputs.iter().find(|o| o.rect.is_some_and(|o| o.contains(cx, cy))).map(|o| o.label.clone()).unwrap_or_default()
     }
 }
@@ -155,7 +137,7 @@ pub struct Picker {
     pub frames: BTreeMap<String, Option<Bitmap>>,
     pub pending_freezes: usize,
     pub last_freeze_error: String,
-    pub drag: Option<R>,
+    pub drag: Option<Rect>,
     pub hover: Option<Entry>,
     pub cursor: i32,
     /// The run a freeze, a settle or a teardown belongs to.
@@ -217,7 +199,7 @@ impl Picker {
                 kind: EntryKind::Drag,
                 label: String::new(),
                 sublabel: String::new(),
-                window_id: String::new(),
+                window_id: WindowId::default(),
                 floating: false,
                 rect: Some(d),
             });
@@ -238,7 +220,7 @@ impl Picker {
             if !r.contains(x, y) {
                 continue;
             }
-            let area = r.w * r.h;
+            let area = r.width * r.height;
             let better = match &best {
                 None => true,
                 Some((floating, best_area, _)) => (cand.floating && !floating) || (cand.floating == *floating && area < *best_area),
@@ -274,7 +256,7 @@ impl Picker {
             self.move_cursor(c, if direction == "up" || direction == "left" { -1 } else { 1 });
             return;
         };
-        let (ox, oy) = (from_rect.x + from_rect.w / 2.0, from_rect.y + from_rect.h / 2.0);
+        let (ox, oy) = (from_rect.x + from_rect.width / 2.0, from_rect.y + from_rect.height / 2.0);
         let mut best = -1i32;
         let mut best_score = 0.0;
         for (i, entry) in self.selectable(c).iter().enumerate() {
@@ -282,7 +264,7 @@ impl Picker {
             if Some(entry) == from.as_ref() {
                 continue;
             }
-            let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+            let (cx, cy) = (r.x + r.width / 2.0, r.y + r.height / 2.0);
             let (primary, perp) = match direction {
                 "left" => (ox - cx, cy - oy),
                 "right" => (cx - ox, cy - oy),
@@ -337,7 +319,7 @@ impl Picker {
             "drawableWindows": c.with_rect.len(),
             "namedWindows": c.without_rect.len(),
             "cursor": self.cursor,
-            "selection": current.as_ref().and_then(|e| e.rect).map_or(Value::Null, |r| r.json()),
+            "selection": current.as_ref().and_then(|e| e.rect).map_or(Value::Null, |r| rect_json(&r)),
             "selectionLabel": current.map(|e| e.label).unwrap_or_default(),
             "pendingFreezes": self.pending_freezes,
             "frames": self.frames.values().filter(|f| f.is_some()).count(),
@@ -351,7 +333,7 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::compositor::model::{Rect, Workspace};
+    use fs_types::{IRect, Workspace};
 
     fn win(id: &str, title: &str, rect: Option<(i64, i64, i64, i64)>) -> Window {
         Window {
@@ -359,7 +341,7 @@ mod tests {
             title: title.into(),
             app_id: format!("app.{id}"),
             workspace_id: "1".into(),
-            rect: rect.map(|(x, y, width, height)| Rect { x, y, width, height }),
+            rect: rect.map(|(x, y, width, height)| IRect::new(x, y, width, height)),
             ..Default::default()
         }
     }
@@ -370,7 +352,7 @@ mod tests {
     }
 
     fn screens() -> [Screen; 1] {
-        [Screen { name: "DP-1".into(), rect: R { x: 0.0, y: 0.0, w: 1920.0, h: 1080.0 } }]
+        [Screen { name: "DP-1".into(), rect: Rect::new(0.0, 0.0, 1920.0, 1080.0) }]
     }
 
     fn cands() -> Cands {
@@ -391,7 +373,7 @@ mod tests {
         let half = win("s", "Half off", Some((1500, 40, 960, 1040)));
         let c = Cands::new(&screens(), &snap(vec![hidden, parked, half]));
         let rects: Vec<_> = c.with_rect.iter().map(|e| (e.label.as_str(), e.rect.unwrap())).collect();
-        assert_eq!(rects, [("Half off", R { x: 1500.0, y: 40.0, w: 420.0, h: 1040.0 })]);
+        assert_eq!(rects, [("Half off", Rect::new(1500.0, 40.0, 420.0, 1040.0))]);
     }
 
     #[test]

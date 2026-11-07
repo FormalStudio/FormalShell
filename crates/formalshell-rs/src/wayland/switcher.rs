@@ -8,6 +8,7 @@
 
 use std::time::Instant;
 
+use fs_types::{Window, WindowId, WorkspaceId};
 use smithay_client_toolkit::seat::keyboard::Keysym;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
@@ -39,7 +40,7 @@ fn icon_sizes(s: &fs_theme::tokens::Space) -> (u32, u32) {
     ((s.icon_gap * 2.0).round() as u32, (s.xl * 2.0).min(s.switcher_thumb / 2.0).round() as u32)
 }
 
-fn icon_key(id: &str, big: bool) -> String {
+fn icon_key(id: &WindowId, big: bool) -> String {
     format!("switcher{}:{id}", if big { "-big" } else { "" })
 }
 
@@ -48,7 +49,7 @@ impl App {
         self.store.config.bool("switcher.enabled") != Some(false)
     }
 
-    fn switcher_entries(&self) -> Vec<&compositor::Window> {
+    fn switcher_entries(&self) -> Vec<&Window> {
         let m = &self.switcher.model;
         model::entries(&self.store.compositor.snapshot.windows, &m.open_history, &m.open_workspace)
     }
@@ -93,7 +94,7 @@ impl App {
         m.open_workspace = if self.store.config.bool("switcher.currentWorkspace") == Some(true) {
             self.store.compositor.snapshot.focused_workspace_id.clone()
         } else {
-            String::new()
+            WorkspaceId::default()
         };
         let count = self.switcher_entries().len();
         let m = &mut self.switcher.model;
@@ -345,8 +346,8 @@ impl App {
         }
         self.switcher.dirty = false;
 
-        let entries: Vec<compositor::Window> = self.switcher_entries().into_iter().cloned().collect();
-        let refs: Vec<&compositor::Window> = entries.iter().collect();
+        let entries: Vec<Window> = self.switcher_entries().into_iter().cloned().collect();
+        let refs: Vec<&Window> = entries.iter().collect();
         let scale = self.switcher.win.as_ref().map_or(1.0, |(s, _)| s.scale());
         let (small, big) = icon_sizes(&self.store.theme.theme.space);
         let icon = |key: String, size: u32| self.store.appicon.get(&key, size, scale);

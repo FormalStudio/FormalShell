@@ -11,7 +11,7 @@
 
 use std::time::Instant;
 
-use fs_types::{Edge, Region};
+use fs_types::{Edge, Region, WindowId, WorkspaceId};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 use fs_theme::theme::{Face, Theme};
@@ -39,10 +39,10 @@ pub enum Action {
     Panel(&'static str),
     /// Open or close quick settings from its region's chevron.
     Overflow(Region),
-    Workspace(String),
+    Workspace(WorkspaceId),
     /// A persistent placeholder has no id: the workspace by ordinal.
     WorkspaceAt(i64),
-    Window(String),
+    Window(WindowId),
     /// A click on one tray item; `offset` is that item's centre along the
     /// strip from the cell's own centre, for a menu to hang under it.
     Tray { key: String, click: TrayClick, offset: f64 },

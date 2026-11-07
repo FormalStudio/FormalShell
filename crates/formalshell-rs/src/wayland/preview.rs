@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use fs_types::{WindowId, WorkspaceId};
 use serde_json::{Value, json};
 
 use super::App;
@@ -24,7 +25,7 @@ const GRACE: Duration = Duration::from_millis(200);
 pub struct State {
     shared: Rc<RefCell<Shared>>,
     /// The open card's workspace (id, idx) and whether the pointer opened it.
-    open: Option<(String, i64, bool)>,
+    open: Option<(WorkspaceId, i64, bool)>,
     /// A chip waiting out the hover delay.
     hover_at: Option<(Instant, i64)>,
     close_at: Option<Instant>,
@@ -36,7 +37,7 @@ pub struct State {
 /// One chip off `workspaces status`: its id, idx, label, whether it would
 /// preview from the pointer, and its rect in the bar window.
 struct Chip {
-    id: String,
+    id: WorkspaceId,
     idx: i64,
     label: String,
     previews: bool,
@@ -51,7 +52,7 @@ fn chips(status: &Value) -> Vec<Chip> {
             slots
                 .iter()
                 .map(|s| Chip {
-                    id: s["id"].as_str().unwrap_or_default().to_owned(),
+                    id: WorkspaceId::new(s["id"].as_str().unwrap_or_default()),
                     idx: s["idx"].as_i64().unwrap_or(-1),
                     label: s["label"].as_str().unwrap_or_default().to_owned(),
                     previews: s["active"] != true && s["icons"].as_array().is_some_and(|i| !i.is_empty()),
@@ -191,7 +192,7 @@ impl App {
         }
         let shown = self.panel.as_ref().is_some_and(|p| p.id() == "workspaces");
         if shown {
-            let wants: Vec<(String, (u32, u32))> = self
+            let wants: Vec<(WindowId, (u32, u32))> = self
                 .peek
                 .shared
                 .borrow()
@@ -212,7 +213,7 @@ impl App {
 
     /// A capture landed: the card reads it on its next draw.
     pub(super) fn preview_thumbs_changed(&mut self) {
-        let ids: Vec<String> = self.peek.shared.borrow().laid.tiles.iter().map(|t| t.0.clone()).collect();
+        let ids: Vec<WindowId> = self.peek.shared.borrow().laid.tiles.iter().map(|t| t.0.clone()).collect();
         let thumbs = ids.into_iter().filter_map(|id| self.capture_image(Owner::Preview, &id).cloned().map(|b| (id, b))).collect();
         self.peek.shared.borrow_mut().thumbs = thumbs;
         self.panel_dirty = true;

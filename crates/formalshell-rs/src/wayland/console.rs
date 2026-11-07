@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
-use fs_types::{Edge, IRect, Insets};
+use fs_types::{Edge, IRect, Insets, WindowId};
 use serde_json::{Value as Json, json};
 
 use super::App;
@@ -46,7 +46,7 @@ pub fn geometry(screen: (f64, f64, f64, f64), bar: Insets, share: f64, margin: f
 }
 
 struct Placing {
-    id: String,
+    id: WindowId,
     target: IRect,
     placed: bool,
     placed_at: u32,
@@ -75,7 +75,7 @@ impl App {
         }
     }
 
-    fn console_window_id(&self, app_id: &str) -> String {
+    fn console_window_id(&self, app_id: &str) -> WindowId {
         let windows = &self.store.compositor.snapshot.windows;
         windows.iter().find(|w| w.app_id == app_id).map(|w| w.id.clone()).unwrap_or_default()
     }
@@ -189,7 +189,7 @@ impl App {
 
     /// Sized where nobody can see it, then brought in: the other order
     /// shows the terminal at its own default size until the placement lands.
-    fn console_reveal(&mut self, id: String) {
+    fn console_reveal(&mut self, id: WindowId) {
         let share = self.store.config.f64("console.share").unwrap_or(0.5);
         let margin = self.store.theme.theme.space.md;
         let Some(target) = self.console_screen().and_then(|s| geometry(s, self.console_insets(), share, margin)) else {

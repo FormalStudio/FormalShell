@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use fs_system::capture as model;
+use fs_types::WindowId;
 use serde_json::json;
 
 use super::{Act, App, notify, notify_with, now, runtime_dir, slurp_run, spawn, SLURP_REGION};
@@ -49,7 +50,7 @@ pub struct Rec {
     preview: Option<u64>,
     palette: Option<u64>,
     gif: Option<u64>,
-    webcam_window: String,
+    webcam_window: WindowId,
     webcam_target: Option<model::WebcamGeometry>,
     webcam_audio_device: String,
     webcam_placed: bool,
@@ -419,7 +420,7 @@ fn webcam_region(app: &App) -> Option<model::Region> {
     app.capture_screens()
         .into_iter()
         .find(|s| s.name == name)
-        .map(|s| model::Region { x: s.rect.x, y: s.rect.y, width: s.rect.w, height: s.rect.h })
+        .map(|s| model::Region { x: s.rect.x, y: s.rect.y, width: s.rect.width, height: s.rect.height })
 }
 
 fn start_webcam(app: &mut App, device: &str) {
@@ -427,7 +428,7 @@ fn start_webcam(app: &mut App, device: &str) {
     r.webcam_attempts = 0;
     r.webcam_gave_up = false;
     r.webcam_placed = false;
-    r.webcam_window.clear();
+    r.webcam_window = WindowId::default();
     compositor::spawn(&model::webcam_argv(device, WEBCAM_APP_ID));
     let g = app.capture.generation();
     app.capture.rec.webcam_map = Some(g);
@@ -530,7 +531,7 @@ fn cleanup_webcam(app: &mut App) {
         return;
     }
     compositor::close_window(&r.webcam_window);
-    r.webcam_window.clear();
+    r.webcam_window = WindowId::default();
 }
 
 fn release_audio(app: &mut App) {

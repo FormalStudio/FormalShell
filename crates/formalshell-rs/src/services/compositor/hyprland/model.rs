@@ -5,8 +5,10 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
+use fs_types::{IRect, Window, WindowId, Workspace, WorkspaceId};
+
 use super::lua::PARK_WORKSPACE;
-use crate::services::compositor::model::{Rect, Snapshot, Window, Workspace};
+use crate::services::compositor::model::Snapshot;
 
 /// One refresh: the shared snapshot and the focused monitor's
 /// `specialWorkspace.name`, "" when none is shown, which only the park
@@ -35,9 +37,9 @@ fn array(text: &str) -> Vec<Value> {
 /// `HyprlandToplevel.address`: the hex number with no `0x` and no leading
 /// zeros, as `QString::number(address, 16)` prints it. `None` for an
 /// address that is not one.
-pub fn address_id(raw: &str) -> Option<String> {
+pub fn address_id(raw: &str) -> Option<WindowId> {
     let hex = raw.strip_prefix("0x").unwrap_or(raw);
-    u64::from_str_radix(hex, 16).ok().filter(|n| *n != 0).map(|n| format!("{n:x}"))
+    u64::from_str_radix(hex, 16).ok().filter(|n| *n != 0).map(|n| WindowId::new(format!("{n:x}")))
 }
 
 fn pair(v: Option<&Value>) -> Option<(i64, i64)> {
@@ -48,14 +50,14 @@ fn pair(v: Option<&Value>) -> Option<(i64, i64)> {
 /// A monitor's box in the layout's logical pixels, the space a client's
 /// `at` and `size` are in: `width` and `height` are the mode's pixels, so
 /// they swap under a 90 or 270 degree transform and divide by the scale.
-fn logical_rect(m: &Value) -> Option<Rect> {
+fn logical_rect(m: &Value) -> Option<IRect> {
     let (mut w, mut h) = (int(m.get("width"))?, int(m.get("height"))?);
     if int(m.get("transform")).unwrap_or(0) % 2 == 1 {
         (w, h) = (h, w);
     }
     let scale = m.get("scale").and_then(Value::as_f64).filter(|s| s.is_finite() && *s > 0.0).unwrap_or(1.0);
     let (width, height) = ((w as f64 / scale).round() as i64, (h as f64 / scale).round() as i64);
-    (width > 0 && height > 0).then(|| Rect { x: int(m.get("x")).unwrap_or(0), y: int(m.get("y")).unwrap_or(0), width, height })
+    (width > 0 && height > 0).then(|| IRect::new(int(m.get("x")).unwrap_or(0), int(m.get("y")).unwrap_or(0), width, height))
 }
 
 /// `fullscreen` is a mode mask (1 maximized, 2 fullscreen) on current
@@ -69,7 +71,7 @@ fn is_fullscreen(c: &Value) -> bool {
 
 /// Within a pixel either way, since a fractional scale rounds the
 /// monitor's logical size one way and the client's another.
-fn fills(window: &Rect, monitor: &Rect) -> bool {
+fn fills(window: &IRect, monitor: &IRect) -> bool {
     [(window.x, monitor.x), (window.y, monitor.y), (window.width, monitor.width), (window.height, monitor.height)]
         .iter()
         .all(|(a, b)| (a - b).abs() <= 1)
@@ -77,7 +79,7 @@ fn fills(window: &Rect, monitor: &Rect) -> bool {
 
 /// The four `j/` answers one refresh reads. `urgent` holds the window ids an
 /// `urgent` event flagged and nothing has cleared since.
-pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, urgent: &HashSet<String>) -> Read {
+pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, urgent: &HashSet<WindowId>) -> Read {
     let monitors = array(monitors);
     // A populated monitor list is the backend's `available`: the request
     // socket answered with a real session behind it.
@@ -87,7 +89,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
     let mut special_shown = String::new();
     // Each workspace shown on a monitor, the special one included, and the
     // box it is shown in.
-    let mut shown_on: HashMap<i64, (String, Option<Rect>)> = HashMap::new();
+    let mut shown_on: HashMap<i64, (String, Option<IRect>)> = HashMap::new();
     for m in &monitors {
         let name = string(m.get("name"));
         if let Some(ws) = int(m.get("activeWorkspace").and_then(|w| w.get("id"))) {
@@ -115,11 +117,11 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
         let focused = id == focused_window;
         let hidden = c.get("hidden").and_then(Value::as_bool).unwrap_or(false);
         let rect = match (pair(c.get("at")), pair(c.get("size"))) {
-            (Some((x, y)), Some((w, h))) if !hidden && w > 0 && h > 0 => Some(Rect { x, y, width: w, height: h }),
+            (Some((x, y)), Some((w, h))) if !hidden && w > 0 && h > 0 => Some(IRect::new(x, y, w, h)),
             _ => None,
         };
         let workspace = int(c.get("workspace").and_then(|w| w.get("id")));
-        let workspace_id = workspace.map(|n| n.to_string()).unwrap_or_default();
+        let workspace_id = workspace.map(|n| WorkspaceId::new(n.to_string())).unwrap_or_default();
         if string(c.get("workspace").and_then(|w| w.get("name"))) == PARK_WORKSPACE {
             if special_shown == PARK_WORKSPACE { overlaid.push(id.clone()) } else { parked.push(id.clone()) }
         }
@@ -146,9 +148,11 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             is_floating: floating,
             // A window's urgency clears once it is activated or
             // its workspace takes focus.
-            is_urgent: urgent.contains(&id) && !focused && focused_ws.map(|n| n.to_string()) != Some(workspace_id.clone()),
+            is_urgent: urgent.contains(&id) && !focused && focused_ws.is_none_or(|n| workspace != Some(n)),
             rect,
             workspace_id,
+            // Special workspaces carry a negative id.
+            special: workspace.is_some_and(|n| n < 0),
             id,
         });
     }
@@ -170,7 +174,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
             }
             let output = string(w.get("monitor"));
             let is_active = active_on.get(&output) == Some(&idx);
-            let id = idx.to_string();
+            let id = WorkspaceId::new(idx.to_string());
             let is_focused = is_active && output == focused_output;
             let is_urgent = !is_focused && windows.iter().any(|win| win.is_urgent && win.workspace_id == id);
             let columns = string(w.get("tiledLayout")) == "scrolling";
@@ -186,7 +190,7 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
         fullscreen_outputs: fullscreen,
         floating_outputs: floating_on,
         focused_window_id: focused_window,
-        focused_workspace_id: focused_ws.map(|n| n.to_string()).unwrap_or_default(),
+        focused_workspace_id: focused_ws.map(|n| WorkspaceId::new(n.to_string())).unwrap_or_default(),
         focused_output_name: focused_output,
         parked,
         overlaid,
@@ -213,7 +217,7 @@ mod tests {
 
     #[test]
     fn maps_the_contract() {
-        let urgent = HashSet::from(["55d0c1a0".to_string()]);
+        let urgent = HashSet::from([WindowId::new("55d0c1a0")]);
         let s = snapshot(MONITORS, WORKSPACES, CLIENTS, ACTIVE, &urgent).snapshot;
         assert!(s.available);
         assert_eq!(s.focused_output_name, "Virtual-1");
@@ -224,7 +228,7 @@ mod tests {
         assert!(s.workspaces[1].is_focused && s.workspaces[1].is_active);
         assert!(s.workspaces[2].is_active && !s.workspaces[2].is_focused);
         assert!(s.workspaces[0].is_urgent);
-        assert_eq!(s.windows[0].rect, Some(Rect { x: 10, y: 50, width: 800, height: 600 }));
+        assert_eq!(s.windows[0].rect, Some(IRect::new(10, 50, 800, 600)));
         assert_eq!(s.windows[1].rect, None, "a hidden window reports no box");
         assert!(s.windows[1].is_focused && s.windows[1].is_floating);
         assert_eq!(s.fullscreen_outputs, ["Virtual-1"]);
@@ -302,8 +306,8 @@ mod tests {
 
     #[test]
     fn address_prints_as_hyprland_takes_it() {
-        assert_eq!(address_id("0x000055d0c1b0").as_deref(), Some("55d0c1b0"));
-        assert_eq!(address_id("0xABC").as_deref(), Some("abc"));
+        assert_eq!(address_id("0x000055d0c1b0"), Some(WindowId::new("55d0c1b0")));
+        assert_eq!(address_id("0xABC"), Some(WindowId::new("abc")));
         assert_eq!(address_id("0x0"), None);
         assert_eq!(address_id("nope"), None);
     }
@@ -312,7 +316,7 @@ mod tests {
     fn the_console_is_parked_until_its_special_workspace_shows() {
         let console = r#"[{"address":"0xc0","at":[0,0],"size":[10,10],"workspace":{"id":-98,"name":"special:formalshell-console"},"class":"dev.formalshell.console"}]"#;
         let hidden = snapshot(MONITORS, WORKSPACES, console, "{}", &HashSet::new());
-        assert_eq!((hidden.snapshot.parked.as_slice(), hidden.snapshot.overlaid.len()), (["c0".to_string()].as_slice(), 0));
+        assert_eq!((hidden.snapshot.parked.as_slice(), hidden.snapshot.overlaid.len()), ([WindowId::new("c0")].as_slice(), 0));
         let shown_monitors = MONITORS.replacen(r#""specialWorkspace":{"id":0,"name":""}"#, r#""specialWorkspace":{"id":-98,"name":"special:formalshell-console"}"#, 1);
         let shown = snapshot(&shown_monitors, WORKSPACES, console, "{}", &HashSet::new());
         assert_eq!(shown.special_shown, PARK_WORKSPACE);
