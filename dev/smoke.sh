@@ -70,7 +70,6 @@ settings_extra=""
 fixture_cleanup=""
 shell_env=""
 screenshot_delay=8
-session_timeout=40
 tail_gap=1
 
 leg_on() {

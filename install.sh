@@ -1,5 +1,5 @@
 #!/bin/sh
-# FormalShell for Arch, Debian, Ubuntu and Fedora, without Nix:
+# FormalShell for Arch, Debian, Ubuntu and Fedora:
 #
 #   curl -fsSL https://raw.githubusercontent.com/FormalStudio/FormalShell/main/install.sh | sh
 #
@@ -9,7 +9,7 @@ set -eu
 # Not read back from $0: under `curl ... | sh`, $0 is the shell.
 usage() {
   cat <<'USAGE'
-FormalShell for Arch, Debian, Ubuntu and Fedora, without Nix.
+FormalShell for Arch, Debian, Ubuntu and Fedora.
 
   install.sh [--system] [--from <tarball>] [--yes] [--no-deps]
 
@@ -43,7 +43,6 @@ done
 say() { printf '%s\n' "$*"; }
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 
-[ -e /etc/NIXOS ] && die "this is NixOS: use the flake's NixOS and home-manager modules instead (https://github.com/$repo#nixos)"
 [ "$(uname -s)" = Linux ] || die "FormalShell runs on Linux only"
 case $(uname -m) in
   x86_64|aarch64) arch=$(uname -m) ;;
@@ -61,7 +60,7 @@ fi
 if command -v pacman >/dev/null 2>&1; then pm=pacman
 elif command -v apt-get >/dev/null 2>&1; then pm=apt
 elif command -v dnf >/dev/null 2>&1; then pm=dnf
-else die "no pacman, apt or dnf here; FormalShell's installer covers the Arch, Debian and Fedora families (NixOS: use the flake)"
+else die "no pacman, apt or dnf here; FormalShell's installer covers the Arch, Debian and Fedora families"
 fi
 
 # One row per tool: required (r), optional (o) or the compositor (c), then

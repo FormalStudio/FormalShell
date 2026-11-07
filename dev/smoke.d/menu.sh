@@ -338,6 +338,7 @@ leg_menu_assert() {
   menu_cursor_agrees "$menu_status_emoji_path" "emoji grid"
   if [ -s "$selection_path" ] && grep -q '"cancelled":true' "$selection_path"; then
     cat "$selection_path"
+    echo
   else
     [ -f "$selection_path" ] && cat "$selection_path" >&2
     fail "menu close in select mode did not write {cancelled:true}"

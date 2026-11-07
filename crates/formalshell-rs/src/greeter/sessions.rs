@@ -35,7 +35,7 @@ impl Session {
     }
 }
 
-pub const DIRS: [&str; 2] = ["/run/current-system/sw/share/wayland-sessions", "/usr/share/wayland-sessions"];
+pub const DIRS: [&str; 1] = ["/usr/share/wayland-sessions"];
 
 /// Every visible session in `dirs`, by name; the first dir wins a
 /// repeated id.

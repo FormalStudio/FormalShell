@@ -186,7 +186,7 @@ fn session_command(settings: &Value) -> Vec<String> {
     argv.filter(|a| !a.is_empty()).unwrap_or_else(|| vec!["Hyprland".into()])
 }
 
-/// `greeter.sessionDirs`, else the NixOS profile's and the FHS one.
+/// `greeter.sessionDirs`, else the FHS one.
 fn session_dirs(settings: &Value) -> Vec<PathBuf> {
     let dirs: Option<Vec<PathBuf>> = theme::get(settings)("greeter.sessionDirs").and_then(|v| v.as_array().cloned()).map(|items| items.iter().filter_map(|v| v.as_str()).map(PathBuf::from).collect());
     dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| sessions::DIRS.iter().map(PathBuf::from).collect())

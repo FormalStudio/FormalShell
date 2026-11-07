@@ -42,4 +42,5 @@ tarball:
       debian:bookworm /src/dev/tarball.sh /src/artifacts/tarball
 # docs/shots/, the README's and the website's images and clips.
 shots:
-    ./scripts/shots
+    ./dev/remote.sh smoke --showcase --shots
+    ls -l docs/shots

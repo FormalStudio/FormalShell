@@ -23,6 +23,9 @@ def git(*args):
 
 
 def glob_re(pattern):
+    # A pattern ending in `/` is that directory's contents.
+    if pattern.endswith("/"):
+        pattern += "**"
     out, i = "", 0
     while i < len(pattern):
         if pattern.startswith("**/", i):

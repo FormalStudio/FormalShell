@@ -1,7 +1,7 @@
 //! The client against a zbus-served fake `org.bluez` on a private
 //! dbus-daemon. Needs `dbus-daemon` (FS_BLUEZ_DBUS_DAEMON names the binary),
 //! so the tests are ignored in a plain `cargo test` and run by
-//! `checks.<system>.fs-bluez`.
+//! `dev/check.sh`.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -284,7 +284,7 @@ async fn client(daemon: &Daemon, ex: &LocalExecutor<'_>) -> (Bluez, Receiver<Eve
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn no_bluetoothd_is_the_no_adapter_state() {
     run(async |daemon, ex| {
         let (bluez, _rx) = client(daemon, ex).await;
@@ -299,7 +299,7 @@ fn no_bluetoothd_is_the_no_adapter_state() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn enumerates_adapter_devices_battery_and_rssi() {
     run(async |daemon, ex| {
         let _bluez_conn = serve_bluez(daemon).await;
@@ -324,7 +324,7 @@ fn enumerates_adapter_devices_battery_and_rssi() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn adapter_controls_and_discovery() {
     run(async |daemon, ex| {
         let _bluez_conn = serve_bluez(daemon).await;
@@ -343,7 +343,7 @@ fn adapter_controls_and_discovery() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn device_commands_and_their_events() {
     run(async |daemon, ex| {
         let _bluez_conn = serve_bluez(daemon).await;
@@ -385,7 +385,7 @@ fn device_commands_and_their_events() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn a_failed_connect_returns_bluezs_error_and_clears_the_state() {
     run(async |daemon, ex| {
         let bluez_conn = serve_bluez(daemon).await;
@@ -399,7 +399,7 @@ fn a_failed_connect_returns_bluezs_error_and_clears_the_state() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn devices_come_and_go_and_properties_follow() {
     run(async |daemon, ex| {
         let bluez_conn = serve_bluez(daemon).await;
@@ -423,7 +423,7 @@ fn devices_come_and_go_and_properties_follow() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn bluetoothd_leaving_and_returning_empties_and_refills_the_state() {
     run(async |daemon, ex| {
         let bluez_conn = serve_bluez(daemon).await;
@@ -439,7 +439,7 @@ fn bluetoothd_leaving_and_returning_empties_and_refills_the_state() {
 }
 
 #[test]
-#[ignore = "needs dbus-daemon; run by checks.fs-bluez"]
+#[ignore = "needs dbus-daemon; run by dev/check.sh"]
 fn the_agent_registers_answers_and_rejects() {
     run(async |daemon, ex| {
         let bluez_conn = serve_bluez(daemon).await;

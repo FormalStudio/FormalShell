@@ -8,8 +8,9 @@
 # dev/smoke.d/<leg>.sh takes every run carrying that leg's flag without a
 # rule here. `none` runs nothing: docs, tests, the plans.
 
-# Eight runs across the launcher, a panel, toasts, the lock, the bar, the
-# OSD, a real MPRIS player and every component on the gallery sheet.
+# Nine runs across the launcher, a panel, toasts, the lock, the bar, the
+# OSD, a real MPRIS player, every component on the gallery sheet and the
+# switcher.
 core = [
   "--menu",
   "--panel audio",
@@ -108,7 +109,6 @@ paths = [
   "dev/share-result.sh",
   "dev/im-txt.py",
   "dev/scoped-run.sh",
-  "dev/smoke-hyprland.sh",
 ]
 
 # Launcher
@@ -140,15 +140,6 @@ paths = [
   "dev/smoke.d/launcher_install.sh",
 ]
 runs = ["--launcher-install", "--launcher-install --light", "--sidebar-software", "--sidebar-software --light"]
-
-# A real Firefox install through the guest's fspec, on the VM rig.
-[[rule]]
-paths = ["dev/smoke.d/firefox_install.sh"]
-runs = ["--firefox-install"]
-
-[[rule]]
-paths = ["dev/smoke.d/sidebar_software.sh"]
-runs = ["--sidebar-software", "--sidebar-software --light"]
 
 [[rule]]
 paths = [
@@ -192,10 +183,6 @@ runs = ["--device-routes"]
 [[rule]]
 paths = ["crates/fs-menu/src/providers/share.rs", "crates/formalshell-rs/src/services/localsend.rs", "crates/formalshell-rs/src/ipc/localsend.rs", "crates/fs-devices/src/localsend.rs"]
 runs = ["--share", "--localsend", "--launcher-send"]
-
-[[rule]]
-paths = ["dev/smoke.d/launcher_apps.sh"]
-runs = ["--launcher-apps"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/providers/files.rs", "dev/smoke.d/launcher_preview.sh"]
@@ -314,13 +301,13 @@ paths = ["crates/fs-chrome/src/shards.rs", "crates/formalshell-rs/src/shards.rs"
 runs = ["--backdrop"]
 
 [[rule]]
-paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs", "crates/formalshell-rs/src/services/clock.rs"]
+paths = ["crates/formalshell-rs/src/services/clock.rs"]
 runs = ["--desktop-clock", "--lock"]
 
 # The sidebar's clock card draws its digits through the desktop clock's glass.
 [[rule]]
 paths = ["crates/fs-chrome/src/clock_face.rs", "crates/formalshell-rs/src/wayland/desktop_clock.rs"]
-runs = ["--sidebar", "--sidebar --light"]
+runs = ["--desktop-clock", "--lock", "--sidebar", "--sidebar --light"]
 
 [[rule]]
 paths = ["crates/fs-chrome/src/dither.rs"]
@@ -594,7 +581,7 @@ runs = ["--sky", "--theme-auto"]
 
 # Glass: the compositor's blur switch deciding the cards' opacity.
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/compositor/hyprland/mod.rs", "dev/smoke.d/glass.sh"]
+paths = ["crates/formalshell-rs/src/services/compositor/hyprland/mod.rs"]
 runs = ["--glass"]
 
 [[rule]]
@@ -696,7 +683,7 @@ paths = ["crates/fs-menu/src/search.rs", "crates/fs-menu/data/default-menu.jsonc
 runs = ["--menu", "--menu-rows", "--launcher-abbrev", "--launcher-modes", "--logind-lock"]
 
 [[rule]]
-paths = ["crates/fs-menu/src/abbrev.rs", "dev/smoke.d/launcher_abbrev.sh"]
+paths = ["crates/fs-menu/src/abbrev.rs"]
 runs = ["--launcher-abbrev"]
 
 [[rule]]
@@ -745,12 +732,12 @@ runs = ["--sidebar-join", "--sidebar-join --light"]
 
 # The minimap's moves: the keyboard, and the compositor commands they send.
 [[rule]]
-paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "dev/smoke.d/minimap.sh"]
+paths = ["crates/formalshell-rs/src/wayland/sidebar.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs"]
 runs = ["--minimap"]
 
 # Zen: the focused window floated and centred, the tape slid away, and back.
 [[rule]]
-paths = ["crates/formalshell-rs/src/wayland/zen.rs", "crates/formalshell-rs/src/ipc/zen.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs", "dev/smoke.d/zen.sh"]
+paths = ["crates/formalshell-rs/src/wayland/zen.rs", "crates/formalshell-rs/src/ipc/zen.rs", "crates/formalshell-rs/src/services/compositor/hyprland/lua.rs"]
 runs = ["--zen"]
 
 # Input settling re-reads the windows Hyprland moved without an event.
@@ -761,15 +748,10 @@ runs = ["--minimap", "--spaces", "--idle"]
 # The overview: its surface, the minimap's long press and drag out, the
 # IPC verb and the hot corner that open it.
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/overview.rs", "crates/formalshell-rs/src/wayland/overview.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "crates/formalshell-rs/src/ipc/workspaces.rs", "dev/smoke.d/overview.sh"]
+paths = ["crates/formalshell-rs/src/surfaces/overview.rs", "crates/formalshell-rs/src/wayland/overview.rs", "crates/formalshell-rs/src/surfaces/sidebar/minimap.rs", "crates/formalshell-rs/src/ipc/workspaces.rs"]
 runs = ["--overview"]
-
-# A subsurface's scale follows its parent's
-[[rule]]
-paths = ["dev/smoke.d/launcher_density.sh"]
-runs = ["--launcher-density"]
 
 # A box's, a card's and a joined card's rim on whole pixels at a fractional scale
 [[rule]]
-paths = ["crates/formalshell-rs/src/render.rs", "crates/formalshell-rs/src/scene.rs", "crates/formalshell-rs/src/ui/boxes.rs", "crates/formalshell-rs/src/surfaces/rim.rs", "crates/formalshell-rs/src/surfaces/card.rs", "crates/formalshell-rs/src/surfaces/shoulders.rs", "dev/card-corner.py", "dev/smoke.d/card_corner.sh"]
+paths = ["crates/formalshell-rs/src/render.rs", "crates/formalshell-rs/src/scene.rs", "crates/formalshell-rs/src/ui/boxes.rs", "crates/formalshell-rs/src/surfaces/rim.rs", "crates/formalshell-rs/src/surfaces/card.rs", "crates/formalshell-rs/src/surfaces/shoulders.rs", "dev/card-corner.py"]
 runs = ["--card-corner"]

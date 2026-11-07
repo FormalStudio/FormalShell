@@ -70,10 +70,10 @@ mod tests {
     #[test]
     fn lists_people_not_services() {
         let users = parse(
-            "root:x:0:0:System administrator:/root:/run/current-system/sw/bin/fish\n\
-             kyandesutter:x:1000:100:Kyan De Sutter,,,:/home/kyandesutter:/run/current-system/sw/bin/fish\n\
-             greeter:x:999:999::/var/empty:/run/current-system/sw/bin/nologin\n\
-             nobody:x:65534:65534:Unprivileged account:/var/empty:/run/current-system/sw/bin/nologin\n\
+            "root:x:0:0:System administrator:/root:/usr/bin/fish\n\
+             kyandesutter:x:1000:100:Kyan De Sutter,,,:/home/kyandesutter:/usr/bin/fish\n\
+             greeter:x:999:999::/var/empty:/usr/sbin/nologin\n\
+             nobody:x:65534:65534:Unprivileged account:/var/empty:/usr/sbin/nologin\n\
              alice:x:1001:100::/home/alice:/bin/bash\n",
         );
         assert_eq!(

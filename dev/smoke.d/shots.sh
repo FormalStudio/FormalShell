@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154,SC2086  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail(); $convert_bin expands unquoted
 # --shots rides --showcase and writes the README's and the website's images
-# into docs/shots/ (scripts/shots runs it).
+# into docs/shots/ (`just shots` runs it).
 #
 # Demo data only: a pink noise track tagged as a demo, notifications from
 # made-up apps, and USER=kyan in the shell's own environment, which is where

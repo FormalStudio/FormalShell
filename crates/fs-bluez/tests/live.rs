@@ -1,5 +1,5 @@
-//! The client against the system bus's real bluetoothd. Run by
-//! `checks.<system>.fs-bluez` inside its NixOS VM, in two phases: first with
+//! The client against the system bus's real bluetoothd. Run by `dev/check.sh`
+//! in a VM rig guest, in two phases: first with
 //! bluetoothd up and no controller, then after btvirt has created two virtual
 //! ones that find, pair with and forget each other.
 
@@ -42,7 +42,7 @@ fn run<F: AsyncFnOnce(&LocalExecutor<'_>)>(f: F) {
 }
 
 #[test]
-#[ignore = "needs bluetoothd; run by checks.fs-bluez"]
+#[ignore = "needs bluetoothd; run by dev/check.sh"]
 fn bluetoothd_without_a_controller_is_the_no_adapter_state() {
     run(async |ex| {
         let conn = Connection::system().await.unwrap();
@@ -57,7 +57,7 @@ fn bluetoothd_without_a_controller_is_the_no_adapter_state() {
 }
 
 #[test]
-#[ignore = "needs bluetoothd and two btvirt controllers; run by checks.fs-bluez"]
+#[ignore = "needs bluetoothd and two btvirt controllers; run by dev/check.sh"]
 fn two_virtual_controllers_discover_pair_and_forget() {
     run(async |ex| {
         let conn = Connection::system().await.unwrap();

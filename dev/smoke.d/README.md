@@ -27,7 +27,7 @@ frame, teardown) and sources every file here. A leg defines:
   `settings_pin '<jq assignment>'` for one key inside an object other legs
   write whole (`.bar.style = "solid"`), applied over the finished file, so
   a leg that rewrites settings.json mid-run drops it;
-  `leg_<n>_timing` `leg_timing <delay> <timeout> [tail_gap]`, max-merged.
+  `leg_<n>_timing` `leg_timing <delay> <timeout> [tail_gap] [drive_cap]`, max-merged.
 - `leg_<n>_drive` writes the drive scripts, echoes their autostart lines (`hypr_exec_once`),
   may `add_cleanup '<line>'`; `leg_<n>_assert` prints `SMOKE_*`, calls `fail`.
 - `leg_<n>_wayland_debug=1` runs the shell under `WAYLAND_DEBUG`, so
@@ -47,8 +47,7 @@ frame, teardown) and sources every file here. A leg defines:
 
 A leg reaches the shell only through `$ipc call <target> <fn> [args...]`,
 never by hand: `$ipc` is `formalshell-ipc`, shell-quoted to paste into a
-generated script unquoted. `$ipc_wrapper` is the package's own
-`formalshell-ipc` entry point, for the leg that proves it (`--dump`).
+generated script unquoted.
 Arguments follow the CLI11 rules the IPC contract was recorded under: one starting with `[` and ending
 with `]` is split on commas, a `-x` word is refused, and a bare `show`,
 `wait`, `listen` or `prop` switches subcommand. A `--` before the
@@ -59,8 +58,8 @@ A leg that moves a selection (keys, a wheel, a scroll) wraps the moves in
 calls `stale_audit_assert <label>` in its assert: every frame committed in
 between has to equal the same scene drawn whole (`debug staleAudit`).
 
-Exported: `shot_dir`, `iso_home`, `shell_path`, `shell_log_path`, `*_bin`,
-`ipc`, `ipc_wrapper`, `write_script`, `leg_on <n>`,
+Exported: `shot_dir`, `iso_home`, `shell_bin`, `shell_log_path`, `*_bin`,
+`ipc`, `write_script`, `leg_on <n>`,
 `host_notifications_owner_after`. Legs sharing a surface wait
 on the owner's marker (`picker_done_path`); one covering the whole output
 starts at its `<n>_t0`, `cover_t0 <own start>`, past every desktop sampler in

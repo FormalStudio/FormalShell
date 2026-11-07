@@ -33,7 +33,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR)
-host="${FS_G815_HOST:-g815}"
+host="g815"
 
 if [ "${FS_SEAMS_TREE:-}" = 1 ] && [ -z "${FS_VM_RESULT:-}" ]; then
   shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
@@ -53,15 +53,14 @@ fi
 
 [ -n "${FS_VM_SLOT:-}" ] || exec "$repo_root/dev/vm.sh" hold "$0" "$@"
 
-spec="${FS_VM_SPEC:-$HOME/.config/formalspec}"
-fspec="${FSPEC:-fspec}"
+spec="$HOME/.config/formalspec"
 vm="fstestvm$FS_VM_SLOT"
 out="$repo_root/artifacts/seams"
 password=formalshell-test
 result=/var/tmp/formalshell-result
 bins="formalshell formalshell-ipc formalshell-greeter"
 
-f() { "$fspec" vm "$1" "$vm" "${@:2}" --spec "$spec"; }
+f() { fspec vm "$1" "$vm" "${@:2}" --spec "$spec"; }
 guest() { ssh "${ssh_opts[@]}" "$vm" "$@"; }
 say() { echo "seams: $*"; }
 

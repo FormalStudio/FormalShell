@@ -1,7 +1,5 @@
 //! `formalshell install|update|uninstall`: the system side of a tarball
-//! install (install.sh). Everything written here is something the NixOS and
-//! home-manager modules write on a Nix system, so on NixOS these only point
-//! at the modules.
+//! install (install.sh).
 
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -97,10 +95,6 @@ pub fn main(cmd: &str, args: &[String]) -> i32 {
             }
             _ => return usage(),
         }
-    }
-    if Path::new("/etc/NIXOS").exists() {
-        println!("On NixOS the formalshell NixOS and home-manager modules own this; nothing to do.");
-        return 0;
     }
     let layout = match layout() {
         Ok(l) => l,
@@ -407,8 +401,7 @@ fn pam_for(common: bool, system: bool) -> Option<String> {
     Some(format!("#%PAM-1.0\nauth       include      {auth}\naccount    include      {account}\n"))
 }
 
-/// The greeter runs under sway, as nixosModules.formalshell-greeter does,
-/// and only where greetd and sway are both installed. With autologin,
+/// The greeter runs under sway, and only where greetd and sway are both installed. With autologin,
 /// greetd's `initial_session` logs the installing user straight into a
 /// locked Hyprland once per boot (docs/superpowers/specs/2026-10-30-locked-login.md),
 /// and the greeter only shows after a logout.

@@ -42,11 +42,10 @@ usage() {
 }
 [ $# -gt 0 ] || usage
 
-host="${FS_G815_HOST:-g815}"
+host="g815"
 # The count of fstestvm hosts hosts/fstestvm/host.star declares.
 slots="${FS_VM_SLOTS:-4}"
-spec="${FS_VM_SPEC:-$HOME/.config/formalspec}"
-fspec="${FSPEC:-fspec}"
+spec="$HOME/.config/formalspec"
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR)
 
 # The flag of every leg that declares leg_<n>_vm_only.
@@ -83,8 +82,8 @@ case "$verb" in
   *) usage ;;
 esac
 
-if ! "$fspec" vm resume --help >/dev/null 2>&1; then
-  echo "vm: $fspec has no \`vm resume\`; install FormalSpec's main (cargo install --locked --path crates/fspec)" >&2
+if ! fspec vm resume --help >/dev/null 2>&1; then
+  echo "vm: fspec has no \`vm resume\`; install FormalSpec's main (cargo install --locked --path crates/fspec)" >&2
   exit 1
 fi
 
@@ -149,12 +148,12 @@ esac
 vm="fstestvm$FS_VM_SLOT"
 port=$((2222 + FS_VM_SLOT))
 
-stop_vm() { "$fspec" vm stop "$vm" --spec "$spec" >/dev/null 2>&1 || true; }
+stop_vm() { fspec vm stop "$vm" --spec "$spec" >/dev/null 2>&1 || true; }
 # A slot someone left running is stopped first: a resume never joins a run.
 stop_vm
 trap 'stop_vm; exit 143' INT TERM HUP
 trap stop_vm EXIT
-"$fspec" vm resume "$vm" --spec "$spec" | tail -1
+fspec vm resume "$vm" --spec "$spec" | tail -1
 
 guest_ssh() { ssh "${ssh_opts[@]}" "$vm" "$@"; }
 

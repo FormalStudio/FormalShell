@@ -56,7 +56,7 @@ ssh_opts=(-o BatchMode=yes -o ForwardAgent=no -o ConnectTimeout=10 -o LogLevel=E
 # Resolved once, by the command an agent ran; the build and runs it starts
 # inherit it.
 if [ -z "${FS_RIG:-}" ]; then
-  if ssh -o ConnectTimeout=5 "${ssh_opts[@]}" "fstest0@${FS_G815_HOST:-g815}" true 2>/dev/null; then
+  if ssh -o ConnectTimeout=5 "${ssh_opts[@]}" "fstest0@g815" true 2>/dev/null; then
     FS_RIG=g815
   else
     echo "g815 does not answer ssh; using the mac rig" >&2
@@ -66,7 +66,7 @@ fi
 export FS_RIG
 case "$FS_RIG" in
   g815)
-    host="${FS_G815_HOST:-g815}"
+    host="g815"
     # The count of slot users hosts/g815/rig.star declares.
     slots="${FS_G815_SLOTS:-8}"
     ;;
@@ -318,20 +318,18 @@ cmd_sync() {
   # is newer than it. The slot lock holds the whole command, so no other
   # checkout's build runs between this sync and the command after it.
   # A target past 8G (dependency builds piling up across Cargo.lock and
-  # feature changes) goes and is rebuilt cold, checked at most hourly.
-  # ~/formalshell-wt is the copy-per-checkout layout this replaced.
-  # A copy synced before checksum mode can hold a stale build that no later
-  # sync touches, so its sources are touched once to force a rebuild.
-  ssh "${ssh_opts[@]}" "$target" "rm -rf ~/formalshell-wt
+  # feature changes) goes and is rebuilt cold, checked at most hourly. A
+  # failed size check fails the sync.
+  ssh "${ssh_opts[@]}" "$target" "set -e
     mkdir -p ~/$remote_dir && cd ~/$remote_dir
-    if [ ! -e .rig-sync-v2 ]; then
-      find crates -path '*/target' -prune -o -type f -exec touch {} + 2>/dev/null
-      touch .rig-sync-v2
-    fi
     if [ -z \"\$(find .rig-target-checked -mmin -60 2>/dev/null)\" ]; then
       touch .rig-target-checked
-      [ \"\$(du -sm crates/target 2>/dev/null | cut -f1)\" -gt 8192 ] 2>/dev/null && rm -rf crates/target
-    fi; true"
+      if [ -d crates/target ]; then
+        size=\$(du -sm crates/target | cut -f1)
+        [ -n \"\$size\" ] || { echo 'sync: du could not size crates/target' >&2; exit 1; }
+        [ \"\$size\" -le 8192 ] || rm -rf crates/target
+      fi
+    fi"
   # .gitignore's patterns keep crates/target, result and artifacts on their
   # own side. macOS's openrsync reads a `:- .gitignore` dir-merge for the
   # sending side only and lets --delete remove the same paths on the
@@ -345,7 +343,6 @@ cmd_sync() {
     --filter=':- .gitignore' \
     --exclude '/.git' \
     --exclude '/.claude/' \
-    --exclude '/.rig-sync-v2' \
     --exclude '/.rig-target-checked' \
     -e "ssh ${ssh_opts[*]}" \
     "$repo_root/" "$target:$remote_dir/"
@@ -392,9 +389,7 @@ cmd_smoke() {
     exit "$status"
   fi
 
-  # grep -o, not an anchored match: --menu's last line is a JSON cat with no
-  # trailing newline, so the SMOKE_OK marker can land appended to it.
-  remote=$(printf '%s\n' "$out" | grep -oE 'SMOKE_OK [^[:space:]]+' | tail -1 | awk '{print $2}')
+  remote=$(printf '%s\n' "$out" | grep -E '^SMOKE_OK [^[:space:]]+' | tail -1 | awk '{print $2}')
   if [ -z "$remote" ]; then
     echo "$rig: no SMOKE_OK line in smoke output" >&2
     exit 1

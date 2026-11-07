@@ -55,7 +55,7 @@ cast, on a palette that follows the wallpaper.
 
 A widget with nothing behind it says so (`NO ADAPTER`, `NO PLAYER`) instead of
 inventing data. That holds for every screenshot here. The images and clips in
-`docs/shots/` are regenerated with `scripts/shots` (`just shots`).
+`docs/shots/` are regenerated with `just shots`.
 
 | | |
 | :---: | :---: |
