@@ -18,10 +18,6 @@ use crate::state::{ADAPTER_IFACE, Activity, BATTERY_IFACE, DEVICE_IFACE, Device,
 
 const BLUEZ: &str = "org.bluez";
 
-/// FORMALSHELL_SMOKE_BLUETOOTH, the smoke rig's device list (see
-/// `fs_devices::earbuds::bluetooth_devices`).
-pub const SMOKE_ENV: &str = "FORMALSHELL_SMOKE_BLUETOOTH";
-
 #[derive(Debug)]
 pub enum Error {
     NoAdapter,
@@ -150,15 +146,14 @@ impl Bluez {
     }
 
     /// What the earbuds backends cross their CLI lists with: the default
-    /// adapter's devices, or the smoke rig's list when `override_json` holds
-    /// one.
-    pub fn earbuds_devices(&self, override_json: Option<&str>) -> Vec<bluetooth::Device> {
+    /// adapter's devices.
+    pub fn earbuds_devices(&self) -> Vec<bluetooth::Device> {
         let state = lock(&self.state);
         let live: Vec<bluetooth::Device> = match state.default_adapter() {
             Some(a) => state.devices_of(&a.path).into_iter().map(|d| d.info).collect(),
             None => vec![],
         };
-        fs_devices::earbuds::bluetooth_devices(&live, override_json)
+        fs_devices::earbuds::bluetooth_devices(&live)
     }
 
     fn default_adapter(&self) -> Result<String> {

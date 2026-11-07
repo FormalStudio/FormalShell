@@ -294,7 +294,7 @@ fn no_bluetoothd_is_the_no_adapter_state() {
         let err = bluez.connect_device("AA:BB:CC:DD:EE:FF").await.unwrap_err();
         assert!(matches!(err, Error::NoAdapter));
         assert_eq!(err.to_string(), "no bluetooth adapter");
-        assert!(bluez.earbuds_devices(None).is_empty());
+        assert!(bluez.earbuds_devices().is_empty());
     });
 }
 
@@ -317,9 +317,7 @@ fn enumerates_adapter_devices_battery_and_rssi() {
         assert_eq!(buds.info.battery, 0.5);
         let phone = s.device(PHONE).unwrap();
         assert!(!phone.info.battery_available && !phone.info.paired);
-        assert_eq!(bluez.earbuds_devices(None).len(), 2);
-        let seeded = bluez.earbuds_devices(Some(r#"[{"address":"aa:bb","name":"X","connected":true}]"#));
-        assert_eq!((seeded.len(), seeded[0].address.as_str()), (1, "AA:BB"));
+        assert_eq!(bluez.earbuds_devices().len(), 2);
     });
 }
 
@@ -356,7 +354,7 @@ fn device_commands_and_their_events() {
         };
         let (done, ()) = futures_lite::future::zip(connecting, watch).await;
         done.unwrap();
-        assert_eq!(bluez.earbuds_devices(None).iter().filter(|d| d.connected).count(), 1);
+        assert_eq!(bluez.earbuds_devices().iter().filter(|d| d.connected).count(), 1);
 
         bluez.disconnect_device("AA:BB:CC:DD:EE:FF").await.unwrap();
         expect(&rx, "disconnected", |e| matches!(e, Event::DeviceChanged(d) if !d.info.connected && d.info.state == DeviceState::Disconnected)).await;

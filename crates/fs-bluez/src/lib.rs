@@ -7,4 +7,4 @@ mod client;
 mod proxies;
 pub mod state;
 
-pub use client::{Bluez, Error, Monitor, PlayerCommand, Result, SMOKE_ENV};
+pub use client::{Bluez, Error, Monitor, PlayerCommand, Result};

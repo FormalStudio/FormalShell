@@ -599,31 +599,9 @@ pub fn pick_active<'a>(devices: &'a [Device], preferred_key: &str) -> Option<&'a
         .or_else(|| devices.first())
 }
 
-/// `values`: the BlueZ devices, or empty with no adapter. `override_json`:
-/// FORMALSHELL_SMOKE_BLUETOOTH, a JSON array of `{ address, name,
-/// connected }` that replaces them outright. It exists for the smoke rig,
-/// whose VM has no Bluetooth controller, so a backend that crosses its CLI's
-/// list with BlueZ's connected devices can still be driven. Unset or
-/// unparsable, the adapter is the answer. Every address comes back upper case.
-pub fn bluetooth_devices(values: &[bluetooth::Device], override_json: Option<&str>) -> Vec<bluetooth::Device> {
-    if let Some(text) = override_json.filter(|t| !t.is_empty())
-        && let Ok(Json::Array(raw)) = serde_json::from_str::<Json>(text)
-    {
-        return raw
-            .iter()
-            .filter_map(|d| {
-                let address = js::field(d, "address")?.as_str()?;
-                let name = js::field(d, "name").and_then(Json::as_str).unwrap_or("").to_string();
-                Some(bluetooth::Device {
-                    address: address.to_uppercase(),
-                    device_name: name.clone(),
-                    name,
-                    connected: js::field(d, "connected") == Some(&Json::Bool(true)),
-                    ..Default::default()
-                })
-            })
-            .collect();
-    }
+/// The BlueZ devices as the earbuds backends cross them, every address
+/// upper case.
+pub fn bluetooth_devices(values: &[bluetooth::Device]) -> Vec<bluetooth::Device> {
     values
         .iter()
         .map(|v| bluetooth::Device {
@@ -1003,7 +981,7 @@ mod tests {
     }
 
     #[test]
-    fn bluetooth_devices_and_the_smoke_override() {
+    fn bluetooth_devices_upper_case_every_address() {
         let live = [bluetooth::Device {
             address: "aa:bb:cc:dd:ee:ff".into(),
             name: "Buds".into(),
@@ -1011,23 +989,9 @@ mod tests {
             connected: true,
             ..Default::default()
         }];
-        assert_eq!(bluetooth_devices(&live, Some(""))[0].address, "AA:BB:CC:DD:EE:FF");
-        assert_eq!(bluetooth_devices(&[], Some("")).len(), 0);
-        assert_eq!(bluetooth_devices(&live, Some("not json"))[0].name, "Buds");
-        let o = bluetooth_devices(
-            &live,
-            Some(r#"[{"address":"ac:12:2f:11:22:33","name":"Liberty","connected":true},{"name":"no address"}]"#),
-        );
-        assert_eq!(o.len(), 1);
-        assert_eq!(o[0].address, "AC:12:2F:11:22:33");
-        assert_eq!(o[0].device_name, "Liberty");
-        assert!(o[0].connected);
-    }
-
-    #[test]
-    fn a_non_array_override_falls_through_to_the_adapter() {
-        let live = [bluetooth::Device { address: "aa:bb".into(), ..Default::default() }];
-        assert_eq!(bluetooth_devices(&live, Some("{}"))[0].address, "AA:BB");
+        let out = bluetooth_devices(&live);
+        assert_eq!((out[0].address.as_str(), out[0].name.as_str(), out[0].connected), ("AA:BB:CC:DD:EE:FF", "Buds", true));
+        assert!(bluetooth_devices(&[]).is_empty());
     }
 
     #[test]

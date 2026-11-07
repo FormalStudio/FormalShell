@@ -80,7 +80,7 @@ fn main() {
     let handle = event_loop.handle();
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
 
-    let mut app = App::new(&globals, &qh, started);
+    let mut app = App::new(&globals, &qh, started, motion_scale());
     app.warm_bar_faces();
     phase("app");
 
@@ -157,6 +157,13 @@ pub(crate) fn render_backend() -> fs_theme::theme::Backend {
     let text = std::fs::read_to_string(services::config::settings_path()).unwrap_or_default();
     let settings: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
     fs_theme::theme::Backend::parse(settings.pointer("/render/backend"))
+}
+
+/// `FORMALSHELL_SMOKE_MOTION_SCALE`, a percentage of every motion clock, for
+/// a leg that has to photograph the first frames of something the shell
+/// does at start, before `debug motionScale` can reach it.
+fn motion_scale() -> f64 {
+    std::env::var("FORMALSHELL_SMOKE_MOTION_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).map_or(1.0, |p| p / 100.0)
 }
 
 fn tune_malloc() {

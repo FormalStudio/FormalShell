@@ -648,7 +648,7 @@ runs = ["--gpu", "--monitor"]
 # The legs' own helpers
 [[rule]]
 paths = ["dev/bluez-stub.py"]
-runs = ["--idle --bluez-rssi"]
+runs = ["--idle --bluez-rssi", "--earbuds", "--headset-card"]
 
 [[rule]]
 paths = ["dev/bluez-player-stub.py"]

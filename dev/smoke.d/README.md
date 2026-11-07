@@ -38,8 +38,9 @@ frame, teardown) and sources every file here. A leg defines:
   (`--installed`). It still logs to `$shell_log_path` and may write the
   shell's pid to `$shot_dir/shell.pid` for the memory sample.
 - A fixture may set `shell_env` (`NAME=value ...`) for the shell's own
-  environment and nothing else in the session (`--bluez-rssi` points the
-  shell's system bus at a private one, which Hyprland must not follow).
+  environment and nothing else in the session (`--bluez-rssi`, `--earbuds`
+  and `--headset-card` point the shell's system bus at a private one where
+  `dev/bluez-stub.py` plays BlueZ, which Hyprland must not follow).
 - `leg_<n>_takeover` runs the whole thing itself and exits, for a leg that
   cannot share the one session (`--screensaver-gif` needs one per effect).
   It runs with the build done, the binaries resolved and the bus baseline

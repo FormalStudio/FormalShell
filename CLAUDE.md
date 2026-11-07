@@ -575,10 +575,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   A stub that never accepts (a daemon whose event loop
   is stuck) leaves the device reading "librepods not responding"; the refused device's `watch` prints the
   `unsupported-model` line and exits 3, and 12s later it was started once
-  and no device is listed. The rig has no Bluetooth controller, so the leg
-  exports `FORMALSHELL_SMOKE_BLUETOOTH`, a device list that replaces the
-  adapter's (`fs-devices` `earbuds::bluetooth_devices`), with the Soundcore
-  pair connected.
+  and no device is listed. The rig has no Bluetooth controller, so the
+  shell's system bus is a private one where `dev/bluez-stub.py` plays
+  BlueZ with an adapter and the Soundcore pair connected.
 - `emoji.sh` `--emoji`: the launcher's emoji route by search and by order:
   `:e sob` reaching 😭 through CLDR's keywords (its Unicode name has no
   "sob" in it), and one copy through the row's own Enter path putting that
@@ -650,11 +649,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   re-rank it and desktop entry rescans while it is closed and open, read
   off `menu status`'s `cells`: eight ids, none twice, the launched app
   first.
-- `headset_card.sh` `--headset-card`: the headset connect card.
-  `FORMALSHELL_SMOKE_BLUETOOTH`
-  is exported as `@<file>`, a JSON device list the shell reads again on every
-  change (the rig has no controller), so a device connects and disconnects
-  by the leg rewriting that file. A device connected at startup raising no
+- `headset_card.sh` `--headset-card`: the headset connect card. The
+  shell's system bus is a private one where `dev/bluez-stub.py` plays BlueZ
+  off a JSON device list it reads again on every change (the rig has no
+  controller), so a device connects and disconnects, with its Battery1, by
+  the leg rewriting that file. A device connected at startup raising no
   card; a headphone connecting raising one with its BlueZ battery ring, held
   past four seconds by a real pointer parked on it and dismissed by the
   pointer leaving;

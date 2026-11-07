@@ -1,11 +1,12 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --headset-card drives the headset connect card (new in the Rust shell, spec
-# 2026-10-06-rust-rewrite.md under R7) through FORMALSHELL_SMOKE_BLUETOOTH.
-# The VM has no Bluetooth controller, so the leg exports the variable as
-# `@<file>`: a JSON device list the shell reads again whenever the file
-# changes, which is how it connects and disconnects a device on this rig
-# (`address`, `name`, `connected`, and for this seam `icon` and `battery`).
+# 2026-10-06-rust-rewrite.md under R7). The rig has no Bluetooth controller,
+# so the shell's system bus is a private dbus-daemon of the leg's own, where
+# dev/bluez-stub.py plays BlueZ off a JSON device list (`address`, `name`,
+# `connected`, `icon`, `battery`) it reads again whenever the file changes:
+# the leg connects and disconnects a device by rewriting that file, and the
+# shell sees Device1 and Battery1 change as it would on a real adapter.
 #
 # What it proves, off the shell's own `headset card mapped` and `unmapped`
 # log lines and the frames:
@@ -44,10 +45,11 @@
 # tooltip.sh documents: only one sends the surface a pointer enter.
 leg_headset_card_flag="--headset-card"
 leg_headset_card_order=177
-leg_headset_card_needs="wlrctl jq wtype foot"
+leg_headset_card_needs="wlrctl jq wtype foot python3"
 
 headset_dir="$shot_dir/headset-card"
 headset_list="$headset_dir/bluetooth.json"
+headset_bus="$headset_dir/bluez-bus"
 headset_log_marks="$headset_dir/marks.txt"
 headset_bluez_png="$shot_dir/headset-card-bluez.png"
 headset_held_png="$shot_dir/headset-card-held.png"
@@ -78,6 +80,12 @@ leg_headset_card_validate() {
       exit 1
     fi
   done
+  for other in bluez_rssi bluez_player; do
+    if leg_on "$other"; then
+      echo "usage: --headset-card serves its own BlueZ and cannot combine with --${other//_/-}" >&2
+      exit 1
+    fi
+  done
 }
 
 headset_devices() {
@@ -91,7 +99,19 @@ leg_headset_card_fixture() {
   headset_devices true false false > "$headset_list"
   cp dev/smoke.d/fixtures/airpods-pro3.json "$headset_dir/airpods-status.json"
   [ -s "$headset_dir/airpods-status.json" ] || { echo "headset-card: dev/smoke.d/fixtures/airpods-pro3.json is missing" >&2; exit 1; }
-  export FORMALSHELL_SMOKE_BLUETOOTH="@$headset_list"
+  local daemon pid
+  daemon=$(command -v dbus-daemon) || fail "--headset-card: no dbus-daemon"
+  pid=$("$daemon" --session --address="unix:path=$headset_bus" --fork --print-pid --nopidfile)
+  add_cleanup "kill $pid 2>/dev/null"
+  "$python3_bin" dev/bluez-stub.py --address "unix:path=$headset_bus" --devices "$headset_list" \
+    --ready "$headset_dir/bluez-ready" > "$headset_dir/bluez-stub.log" 2>&1 &
+  add_cleanup "kill $! 2>/dev/null"
+  for _ in $(seq 50); do
+    [ -s "$headset_dir/bluez-ready" ] && break
+    sleep 0.1
+  done
+  [ -s "$headset_dir/bluez-ready" ] || fail "--headset-card: the stub never owned org.bluez ($(cat "$headset_dir/bluez-stub.log"))"
+  shell_env="${shell_env:+$shell_env }DBUS_SYSTEM_BUS_ADDRESS=unix:path=$headset_bus"
 }
 
 leg_headset_card_timing() {

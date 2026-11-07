@@ -276,7 +276,7 @@ pub struct App {
 
 impl App {
     /// `started` is the clock every logged `t=` counts from.
-    pub fn new(globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant) -> Self {
+    pub fn new(globals: &GlobalList, qh: &QueueHandle<Self>, started: Instant, motion_scale: f64) -> Self {
         let compositor = CompositorState::bind(globals, qh).expect("wl_compositor is not available");
         let layer_shell = LayerShell::bind(globals, qh).expect("zwlr_layer_shell_v1 is not available");
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
@@ -345,9 +345,7 @@ impl App {
             battery_watch: Default::default(),
             wake: None,
             rims: Default::default(),
-            // A leg that has to photograph the first frames of something
-            // the shell does at start, before `debug motionScale` can reach it.
-            motion_scale: std::env::var("FORMALSHELL_SMOKE_MOTION_SCALE").ok().and_then(|v| v.parse::<f64>().ok()).map_or(1.0, |p| p / 100.0),
+            motion_scale,
             shard_word: None,
             cast: false,
             debug_join: None,

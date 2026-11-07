@@ -21,7 +21,6 @@ use futures_lite::{FutureExt, future};
 use super::headsets::{self, Headset};
 use crate::runtime::Ctx;
 use crate::services::media::{self, Remote};
-use crate::services::watch::Watch;
 use crate::store;
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
@@ -89,8 +88,8 @@ use fs_bluez::state::{known, matters};
 /// Signals that land within one frame of each other make one view.
 const COALESCE: Duration = Duration::from_millis(16);
 
-fn snapshot(state: &fs_bluez::state::State, over: Option<&str>, open: bool) -> Bluetooth {
-    let headsets = Some(headsets::read(Some(state), over));
+fn snapshot(state: &fs_bluez::state::State, open: bool) -> Bluetooth {
+    let headsets = Some(headsets::read(state));
     let Some(adapter) = state.default_adapter() else { return Bluetooth { headsets, ..Bluetooth::default() } };
     let devices: Vec<_> =
         state.devices_of(&adapter.path).into_iter().map(|d| d.info).filter(|d| open || known(d)).collect();
@@ -112,30 +111,10 @@ fn snapshot(state: &fs_bluez::state::State, over: Option<&str>, open: bool) -> B
     }
 }
 
-fn smoke_override() -> Option<String> {
-    headsets::smoke_text()
-}
-
-/// Signals each change of the file an `@path` override names.
-fn smoke_changes(ctx: &Ctx) -> Option<Receiver<()>> {
-    let mut watch = Watch::new(headsets::smoke_file()?).ok()?;
-    let (tx, rx) = async_channel::unbounded();
-    ctx.spawn(async move {
-        loop {
-            watch.changed().await;
-            if tx.send(()).await.is_err() {
-                return;
-            }
-        }
-    });
-    Some(rx)
-}
-
+/// No system bus, or no BlueZ client on it: no adapter and no headsets.
 fn absent(ctx: &Ctx) {
-    let over = smoke_override();
-    let devices = fs_devices::earbuds::bluetooth_devices(&[], over.as_deref());
-    ctx.publish(store::Diff::Devices(super::Diff::Bluetooth(Bluetooth { headsets: Some(headsets::read(None, over.as_deref())), ..Bluetooth::default() })));
-    super::earbuds::bluetooth(devices);
+    ctx.publish(store::Diff::Devices(super::Diff::Bluetooth(Bluetooth { headsets: Some(Vec::new()), ..Bluetooth::default() })));
+    super::earbuds::bluetooth(Vec::new());
 }
 
 /// What the panel asks of the service.
@@ -193,7 +172,6 @@ enum Done {
 
 enum Wake {
     State(fs_bluez::state::Event),
-    Smoke,
     Ask(Ask),
     Done(Done),
     Gone,
@@ -215,7 +193,6 @@ pub async fn run(ctx: Ctx) {
     };
     ctx.spawn(monitor.run());
     BLUEZ.with_borrow_mut(|b| *b = Some(bluez.clone()));
-    let changes = smoke_changes(&ctx);
     let (done_tx, done_rx) = async_channel::unbounded::<Done>();
     let mut open = PANEL.load(Ordering::Relaxed);
     bluez.watch_all(open);
@@ -249,8 +226,7 @@ pub async fn run(ctx: Ctx) {
                     let _ = tx.send(Done::Armed).await;
                 });
             }
-            let over = smoke_override();
-            let mut view = snapshot(&snap, over.as_deref(), open);
+            let mut view = snapshot(&snap, open);
             view.action = action.clone();
             view.failure = failure.clone();
             // Only what a surface would show differently reaches the UI.
@@ -265,7 +241,7 @@ pub async fn run(ctx: Ctx) {
                 ctx.publish(store::Diff::Media(media::Diff::Remotes(next.clone())));
                 last_remotes = next;
             }
-            let buds = bluez.earbuds_devices(over.as_deref());
+            let buds = bluez.earbuds_devices();
             if last_buds.as_ref() != Some(&buds) {
                 super::earbuds::bluetooth(buds.clone());
                 last_buds = Some(buds);
@@ -275,16 +251,9 @@ pub async fn run(ctx: Ctx) {
         let wake = async { events.recv().await.map_or(Wake::Gone, Wake::State) }
             .or(async { ASKS.1.recv().await.map_or(Wake::Gone, Wake::Ask) })
             .or(async { done_rx.recv().await.map_or(Wake::Gone, Wake::Done) })
-            .or(async {
-                match &changes {
-                    Some(rx) => rx.recv().await.map_or(Wake::Gone, |_| Wake::Smoke),
-                    None => future::pending().await,
-                }
-            })
             .await;
         match wake {
             Wake::Gone => return,
-            Wake::Smoke => {}
             Wake::State(first) => {
                 refresh = matters(&first, open, &last_shown);
                 while let Ok(e) = events.try_recv() {

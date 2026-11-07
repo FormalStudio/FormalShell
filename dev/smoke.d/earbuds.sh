@@ -10,13 +10,12 @@
 # line the way nothingctl does (`{"cmd":...,"type":"ack"}`); the openscq30
 # shim logs its argv.
 #
-# BlueZ: the VM has no Bluetooth controller, so the shell has no
-# adapter and no device. The Nothing backend does not need one (discovery
-# is `nothingctl list --json`, re-run on acquire), but the Soundcore
-# backend crosses openscq30's paired list with BlueZ's connected devices.
-# The leg exports FORMALSHELL_SMOKE_BLUETOOTH, a JSON device list that
-# replaces the adapter's in Model.bluetoothDevices (the same env-var seam
-# FORMALSHELL_SMOKE_OPEN_MENU is), with the Soundcore pair connected.
+# BlueZ: the rig has no Bluetooth controller. The Nothing backend does not
+# need one (discovery is `nothingctl list --json`, re-run on acquire), but
+# the Soundcore backend crosses openscq30's paired list with BlueZ's
+# connected devices. The shell's system bus is a private dbus-daemon of the
+# leg's own, where dev/bluez-stub.py plays BlueZ with one adapter and the
+# Soundcore pair paired and connected.
 #
 # Which devices exist in each phase is the shims' own list files, rewritten
 # by the drive script between phases; closing and reopening the panel
@@ -93,6 +92,8 @@ earbuds_nothing_runs="$earbuds_dir/nothing-runs.txt"
 earbuds_nothing_stdin="$earbuds_dir/nothing-stdin.txt"
 earbuds_scq_paired="$earbuds_dir/soundcore-paired.json"
 earbuds_scq_argv="$earbuds_dir/soundcore-argv.txt"
+earbuds_bluez_list="$earbuds_dir/bluetooth.json"
+earbuds_bus="$earbuds_dir/bluez-bus"
 
 earbuds_b175_address="AA:BB:CC:DD:EE:FF"
 earbuds_refused_address="AA:BB:CC:00:00:01"
@@ -132,6 +133,16 @@ earbuds_motion_replies="$earbuds_dir/motion-replies.txt"
 earbuds_head_motion="$earbuds_dir/librepods-motion-head.txt"
 earbuds_head_verbs="$earbuds_dir/librepods-verbs-head.txt"
 earbuds_librepods_err="$earbuds_dir/librepods-stub.err"
+
+leg_earbuds_validate() {
+  local other
+  for other in bluez_rssi bluez_player; do
+    if leg_on "$other"; then
+      echo "usage: --earbuds serves its own BlueZ and cannot combine with --${other//_/-}" >&2
+      exit 1
+    fi
+  done
+}
 
 leg_earbuds_fixture() {
   local b175 settings values airpods
@@ -220,7 +231,20 @@ EOF
   : > "$earbuds_motion_replies"
   : > "$earbuds_head_motion"
   : > "$earbuds_head_verbs"
-  export FORMALSHELL_SMOKE_BLUETOOTH='[{"address":"'"$earbuds_scq_address"'","name":"Liberty 4 NC","connected":true}]'
+  printf '[{"address":"%s","name":"Liberty 4 NC","connected":true}]\n' "$earbuds_scq_address" > "$earbuds_bluez_list"
+  local daemon pid
+  daemon=$(command -v dbus-daemon) || fail "--earbuds: no dbus-daemon"
+  pid=$("$daemon" --session --address="unix:path=$earbuds_bus" --fork --print-pid --nopidfile)
+  add_cleanup "kill $pid 2>/dev/null"
+  "$python3_bin" dev/bluez-stub.py --address "unix:path=$earbuds_bus" --devices "$earbuds_bluez_list" \
+    --ready "$earbuds_dir/bluez-ready" > "$earbuds_dir/bluez-stub.log" 2>&1 &
+  add_cleanup "kill $! 2>/dev/null"
+  for _ in $(seq 50); do
+    [ -s "$earbuds_dir/bluez-ready" ] && break
+    sleep 0.1
+  done
+  [ -s "$earbuds_dir/bluez-ready" ] || fail "--earbuds: the stub never owned org.bluez ($(cat "$earbuds_dir/bluez-stub.log"))"
+  shell_env="${shell_env:+$shell_env }DBUS_SYSTEM_BUS_ADDRESS=unix:path=$earbuds_bus"
 }
 
 leg_earbuds_timing() {
