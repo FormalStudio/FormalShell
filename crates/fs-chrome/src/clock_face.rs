@@ -13,12 +13,6 @@
 const GRID_W: usize = 28;
 const GRID_H: usize = 50;
 
-/// The waist rows every vertical stroke stops short of.
-pub const SEAM: (u32, u32) = (23, 28);
-
-/// The columns a middle bar spans, the only ink the seam rows may carry.
-pub const BAR_SPAN: (u32, u32) = (6, 22);
-
 /// Convex corners round at this many units, concave ones fill at `FILLET`.
 const RADIUS: f64 = 2.2;
 const FILLET: f64 = 1.0;
@@ -460,6 +454,9 @@ fn draw_gooey(mask: &mut Mask, ox: u32, rects: &[Rect], width: Width, merge: boo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SEAM: (u32, u32) = (23, 28);
+    const BAR_SPAN: (u32, u32) = (6, 22);
 
     const H: u32 = 240;
 

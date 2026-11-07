@@ -282,17 +282,6 @@ pub fn hex(r: u8, g: u8, b: u8) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
-/// One `fillStyle` string per palette entry, built once per paint and indexed
-/// per run. Formatting a fresh hex string per cell instead was measured at
-/// 491ms against 198ms for a lookup (1920x1080).
-pub fn hex_palette(pal: &[u8]) -> Vec<String> {
-    pal.as_chunks::<3>()
-        .0
-        .iter()
-        .map(|c| hex(c[0], c[1], c[2]))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,8 +406,6 @@ mod tests {
     fn hex_pads_single_digit_channels() {
         assert_eq!(hex(0, 0, 0), "#000000");
         assert_eq!(hex(1, 15, 255), "#010fff");
-        assert_eq!(hex_palette(&[0, 0, 0, 255, 255, 255]).len(), 2);
-        assert_eq!(hex_palette(&[0, 0, 0, 255, 255, 255])[1], "#ffffff");
     }
 
     #[test]

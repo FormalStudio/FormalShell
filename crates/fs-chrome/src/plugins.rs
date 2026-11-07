@@ -504,14 +504,6 @@ pub fn surface_plugins(plugins: &[Plugin]) -> Vec<Plugin> {
         .collect()
 }
 
-pub fn service_plugins(plugins: &[Plugin]) -> Vec<Plugin> {
-    plugins
-        .iter()
-        .filter(|p| p.kind == Kind::Service)
-        .cloned()
-        .collect()
-}
-
 pub fn launcher_plugins(plugins: &[Plugin]) -> impl Iterator<Item = &Plugin> {
     plugins.iter().filter(|p| p.kind == Kind::Launcher)
 }
@@ -918,17 +910,15 @@ mod tests {
             plain("b", "bar", "B.sh"),
             plain("p", "panel", "P.sh"),
             plain("o", "overlay", "O.sh"),
-            plain("s", "service", "S.sh"),
             plain("l", "launcher", "L.sh"),
         ]);
         let all = run(&text).plugins;
-        assert_eq!(all.len(), 5);
+        assert_eq!(all.len(), 4);
         assert_eq!(bar_plugins(&all).len(), 1);
         assert_eq!(surface_plugins(&all).len(), 2);
-        assert_eq!(service_plugins(&all).len(), 1);
         assert_eq!(launcher_plugins(&all).count(), 1);
         assert_eq!(
-            bar_plugins(&all).len() + surface_plugins(&all).len() + service_plugins(&all).len() + launcher_plugins(&all).count(),
+            bar_plugins(&all).len() + surface_plugins(&all).len() + launcher_plugins(&all).count(),
             all.len()
         );
         assert_eq!(bar_plugins(&[]).len(), 0);

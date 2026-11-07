@@ -21,7 +21,6 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
-use crate::switcher::SwitcherWindow;
 use crate::types::Rect;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -49,16 +48,6 @@ pub struct Window {
     pub is_floating: bool,
     /// The window's box, absent when the backend has none (`rect: null`).
     pub rect: Option<Rect>,
-}
-
-impl SwitcherWindow for Window {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn workspace_id(&self) -> &str {
-        &self.workspace_id
-    }
 }
 
 fn slot_output(pool: &[&Workspace], output_name: &str, matched: bool) -> String {

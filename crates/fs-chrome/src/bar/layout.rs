@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use fs_js as js;
 use crate::plugins::{PLUGIN_PREFIX, Plugin};
-use crate::types::{Edge, Insets, Region};
+use crate::types::{Edge, Region};
 
 /// The builtin widgets a user can name in `bar.layout`. All but a handful are
 /// opt-in and absent from [`default_layout`]: a no-config bar carries only
@@ -109,8 +109,6 @@ impl Builtin {
             .expect("every builtin is listed")
     }
 }
-
-pub const MODULE_TYPES: [&str; 1] = ["command"];
 
 pub const CUSTOM_PREFIX: &str = "custom:";
 
@@ -203,97 +201,6 @@ pub struct Resolved {
 /// so a typo in settings.json leaves the bar where it always was.
 pub fn position(raw: Option<&str>) -> Edge {
     raw.and_then(Edge::parse).unwrap_or(Edge::Top)
-}
-
-pub fn is_vertical(pos: Edge) -> bool {
-    pos.is_vertical()
-}
-
-/// The spacing tokens the strip is built from, already scaled
-/// (`Theme.space`).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Space {
-    pub bar_cell_height: f64,
-    pub bar_cell_width: f64,
-    pub bar_margin: f64,
-    pub md: f64,
-}
-
-/// The strip's own box. The bar is one continuous band along one output edge:
-/// the cell row with a `bar_margin` band either side of it, and that whole
-/// thickness is also its exclusive zone. `thickness` is the strip's extent
-/// across the bar (its height on a top or bottom bar, its width on a left or
-/// right one), and the same for `cell_thickness` and `cell_inset`. The inset
-/// from the two output edges the strip runs between is `md` rather than
-/// `bar_margin`, so a cell sits further from the screen edge than from the
-/// strip's own edges.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct StripGeometry {
-    pub position: Edge,
-    pub vertical: bool,
-    pub thickness: f64,
-    pub cell_thickness: f64,
-    pub cell_inset: f64,
-    pub edge_inset: f64,
-}
-
-pub fn strip_geometry(space: &Space, pos: Option<&str>) -> StripGeometry {
-    let resolved = position(pos);
-    let vertical = is_vertical(resolved);
-    // A vertical strip is wider than a horizontal one is tall, because a cell
-    // stacks its icon over its label there instead of running the two along
-    // the strip.
-    let cell_thickness = if vertical {
-        space.bar_cell_width
-    } else {
-        space.bar_cell_height
-    };
-    StripGeometry {
-        position: resolved,
-        vertical,
-        thickness: cell_thickness + space.bar_margin * 2.0,
-        cell_thickness,
-        cell_inset: space.bar_margin,
-        edge_inset: space.md,
-    }
-}
-
-/// How much of each output edge is spoken for: the bar's `thickness` on its
-/// own edge, and the screen frame's on the other three (0 when off). The bar
-/// covers its own edge whatever the frame is, so the frame never adds to it.
-pub fn insets(pos: Option<&str>, thickness: f64, frame_thickness: Option<f64>) -> Insets {
-    let resolved = position(pos);
-    let frame = frame_thickness.filter(|f| *f > 0.0).unwrap_or(0.0);
-    let on = |edge: Edge| if resolved == edge { thickness } else { frame };
-    Insets {
-        top: on(Edge::Top),
-        bottom: on(Edge::Bottom),
-        left: on(Edge::Left),
-        right: on(Edge::Right),
-    }
-}
-
-/// The unit vector from the output's centre toward the bar's edge: where a
-/// surface that hangs off the bar slides in from.
-pub fn edge_vector(pos: Option<&str>) -> (f64, f64) {
-    match position(pos) {
-        Edge::Bottom => (0.0, 1.0),
-        Edge::Left => (-1.0, 0.0),
-        Edge::Right => (1.0, 0.0),
-        Edge::Top => (0.0, -1.0),
-    }
-}
-
-/// How a free-running line of text turns on a vertical bar, in degrees. Only
-/// text of arbitrary length (the window title, the now-playing track) turns,
-/// a left bar reading bottom to top and a right bar top to bottom so the
-/// baseline faces the desktop on both. Everything else in a cell stays upright.
-pub fn label_rotation(pos: Option<&str>) -> i32 {
-    match position(pos) {
-        Edge::Left => -90,
-        Edge::Right => 90,
-        _ => 0,
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -545,7 +452,7 @@ fn resolve_region(
                     if module
                         .get("type")
                         .and_then(Value::as_str)
-                        .is_some_and(|t| MODULE_TYPES.contains(&t))
+                        .is_some_and(|t| t == "command")
                     {
                         resolved.push(place(EntryKind::Module {
                             id: id.into(),
@@ -1348,67 +1255,6 @@ mod tests {
         assert!(!entries[0].collapsible);
     }
 
-    // The strip's box.
-
-    const SPACE: Space = Space {
-        bar_cell_height: 28.0,
-        bar_cell_width: 44.0,
-        bar_margin: 6.0,
-        md: 12.0,
-    };
-
-    #[test]
-    fn strip_is_the_cell_row_plus_a_margin_band() {
-        let g = strip_geometry(&SPACE, Some("top"));
-        assert_eq!(g.thickness, 40.0);
-        assert_eq!(g.cell_thickness, 28.0);
-        assert_eq!(g.cell_inset, 6.0);
-        assert_eq!(g.position, Edge::Top);
-        assert!(!g.vertical);
-    }
-
-    #[test]
-    fn strip_stands_up_on_a_side_edge() {
-        let left = strip_geometry(&SPACE, Some("left"));
-        assert!(left.vertical);
-        assert_eq!(left.position, Edge::Left);
-        assert!(strip_geometry(&SPACE, Some("right")).vertical);
-        assert!(!strip_geometry(&SPACE, Some("bottom")).vertical);
-    }
-
-    // A cell stacks its icon over its label on a side edge, so the strip is
-    // `bar_cell_width` wide there rather than `bar_cell_height` tall.
-    #[test]
-    fn a_side_strip_takes_the_wider_cell() {
-        assert_eq!(strip_geometry(&SPACE, Some("left")).cell_thickness, 44.0);
-        assert_eq!(strip_geometry(&SPACE, Some("left")).thickness, 56.0);
-        assert_eq!(strip_geometry(&SPACE, Some("right")).thickness, 56.0);
-        assert_eq!(strip_geometry(&SPACE, Some("top")).cell_thickness, 28.0);
-        assert_eq!(strip_geometry(&SPACE, Some("top")).thickness, 40.0);
-    }
-
-    #[test]
-    fn strip_insets_the_regions_by_md_not_by_the_margin_band() {
-        let g = strip_geometry(&SPACE, Some("top"));
-        assert_eq!(g.edge_inset, 12.0);
-        assert!(g.edge_inset > g.cell_inset);
-    }
-
-    #[test]
-    fn strip_follows_the_spacing_scale() {
-        let space = Space {
-            bar_cell_height: 42.0,
-            bar_cell_width: 66.0,
-            bar_margin: 9.0,
-            md: 18.0,
-        };
-        let g = strip_geometry(&space, Some("top"));
-        assert_eq!(g.thickness, 60.0);
-        assert_eq!(g.cell_thickness, 42.0);
-        assert_eq!(g.cell_inset, 9.0);
-        assert_eq!(g.edge_inset, 18.0);
-    }
-
     // bar.position: a typo, an absent key or a stale value all leave the bar
     // where it always was.
     #[test]
@@ -1418,67 +1264,6 @@ mod tests {
         assert_eq!(position(Some("bottom")), Edge::Bottom);
         assert_eq!(position(Some("left")), Edge::Left);
         assert_eq!(position(Some("right")), Edge::Right);
-        let space = Space {
-            bar_cell_height: 28.0,
-            bar_margin: 6.0,
-            md: 12.0,
-            ..Space::default()
-        };
-        assert_eq!(strip_geometry(&space, Some("sideways")).position, Edge::Top);
-        assert!(is_vertical(Edge::Left));
-        assert!(!is_vertical(Edge::Top));
-    }
-
-    fn ins(top: f64, bottom: f64, left: f64, right: f64) -> Insets {
-        Insets {
-            top,
-            bottom,
-            left,
-            right,
-        }
-    }
-
-    #[test]
-    fn insets_put_the_thickness_on_the_bars_own_edge() {
-        assert_eq!(insets(Some("top"), 40.0, None), ins(40.0, 0.0, 0.0, 0.0));
-        assert_eq!(insets(Some("bottom"), 40.0, None), ins(0.0, 40.0, 0.0, 0.0));
-        assert_eq!(insets(Some("left"), 40.0, None), ins(0.0, 0.0, 40.0, 0.0));
-        assert_eq!(insets(Some("right"), 40.0, None), ins(0.0, 0.0, 0.0, 40.0));
-        assert_eq!(
-            insets(Some("nowhere"), 40.0, None),
-            ins(40.0, 0.0, 0.0, 0.0)
-        );
-    }
-
-    // With the screen frame on, its band takes the other three edges; the
-    // bar's own edge is the bar's whatever the band is.
-    #[test]
-    fn insets_carry_the_frame_on_the_other_three_edges() {
-        assert_eq!(
-            insets(Some("left"), 40.0, Some(10.0)),
-            ins(10.0, 10.0, 40.0, 10.0)
-        );
-        assert_eq!(
-            insets(Some("top"), 40.0, Some(0.0)),
-            ins(40.0, 0.0, 0.0, 0.0)
-        );
-        assert_eq!(insets(Some("top"), 40.0, None), ins(40.0, 0.0, 0.0, 0.0));
-    }
-
-    #[test]
-    fn the_edge_vector_points_at_the_bar() {
-        assert_eq!(edge_vector(Some("top")), (0.0, -1.0));
-        assert_eq!(edge_vector(Some("bottom")), (0.0, 1.0));
-        assert_eq!(edge_vector(Some("left")), (-1.0, 0.0));
-        assert_eq!(edge_vector(Some("right")), (1.0, 0.0));
-    }
-
-    #[test]
-    fn only_free_text_turns_and_only_on_a_side_edge() {
-        assert_eq!(label_rotation(Some("left")), -90);
-        assert_eq!(label_rotation(Some("right")), 90);
-        assert_eq!(label_rotation(Some("top")), 0);
-        assert_eq!(label_rotation(Some("bottom")), 0);
     }
 
     // fit_extent: an end region's cap, snapped to a cell boundary rather than
