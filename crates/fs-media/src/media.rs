@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use fs_js::utf16_len;
 
-pub const BUS_PREFIX: &str = "org.mpris.MediaPlayer2.";
+pub(crate) const BUS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 
 /// `None` fields mirror a property the caller left off the row.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -129,7 +129,7 @@ pub fn sink_input_index(text: &str, node_id: impl std::fmt::Display) -> i64 {
 }
 
 /// What is left of a bus name once the well-known prefix is off it.
-pub fn bus_suffix(id: &str) -> &str {
+pub(crate) fn bus_suffix(id: &str) -> &str {
     if let Some(rest) = id.strip_prefix(BUS_PREFIX) {
         return rest;
     }
@@ -140,7 +140,7 @@ pub fn bus_suffix(id: &str) -> &str {
 }
 
 /// The identity a player publishes for itself, else its bus name.
-pub fn player_label(row: &PlayerRow) -> String {
+pub(crate) fn player_label(row: &PlayerRow) -> String {
     match row.identity.as_deref() {
         Some(identity) if !identity.is_empty() => identity.to_string(),
         _ => bus_suffix(&row.id).to_string(),
@@ -171,12 +171,6 @@ pub fn with_labels(rows: &[PlayerRow]) -> Vec<LabelledRow> {
         .collect()
 }
 
-pub const LOOP_NAMES: [&str; 3] = ["none", "track", "playlist"];
-
-pub fn is_loop_name(name: &str) -> bool {
-    LOOP_NAMES.contains(&name)
-}
-
 /// Off, repeat the queue, repeat this track, off.
 pub fn next_loop(name: &str) -> &'static str {
     match name {
@@ -193,11 +187,6 @@ pub fn clamp_volume(v: f64) -> f64 {
         return 0.0;
     }
     v.clamp(0.0, 1.0)
-}
-
-/// Seek fraction of the track, clamped to the track.
-pub fn clamp_fraction(v: f64) -> f64 {
-    clamp_volume(v)
 }
 
 #[cfg(test)]
@@ -324,20 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn loop_names_are_the_three_mpris_states() {
-        assert!(is_loop_name("none"));
-        assert!(is_loop_name("track"));
-        assert!(is_loop_name("playlist"));
-    }
-
-    #[test]
-    fn unknown_loop_name_rejected() {
-        assert!(!is_loop_name("all"));
-        assert!(!is_loop_name(""));
-        assert!(!is_loop_name("None"));
-    }
-
-    #[test]
     fn loop_cycles_off_queue_track_off() {
         assert_eq!(next_loop("none"), "playlist");
         assert_eq!(next_loop("playlist"), "track");
@@ -361,14 +336,6 @@ mod tests {
         // undefined and "loud" are both NaN once through Number().
         assert_eq!(clamp_volume(f64::NAN), 0.0);
         assert_eq!(clamp_volume(f64::INFINITY), 0.0);
-    }
-
-    #[test]
-    fn seek_fraction_clamped_to_the_track() {
-        assert_eq!(clamp_fraction(0.25), 0.25);
-        assert_eq!(clamp_fraction(-0.3), 0.0);
-        assert_eq!(clamp_fraction(2.0), 1.0);
-        assert_eq!(clamp_fraction(f64::NAN), 0.0);
     }
 
     fn stream(id: &str, playing: bool) -> PlayerRow {

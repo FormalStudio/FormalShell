@@ -38,7 +38,7 @@ use regex::Regex;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
-pub const ANCESTOR_DEPTH: usize = 3;
+pub(crate) const ANCESTOR_DEPTH: usize = 3;
 
 /// Interpreters and launchers whose basename says nothing about the app running
 /// under them: an entry whose Exec starts with one of these would otherwise
@@ -146,7 +146,7 @@ fn proc_matches(proc: &ProcInfo, program: &str, depth: usize) -> bool {
 
 /// `procs` is the window's own process first, then its ancestors, nearest
 /// first.
-pub fn by_process<'a>(procs: Option<&[ProcInfo]>, entries: &'a [DesktopEntry]) -> Option<&'a DesktopEntry> {
+pub(crate) fn by_process<'a>(procs: Option<&[ProcInfo]>, entries: &'a [DesktopEntry]) -> Option<&'a DesktopEntry> {
     let chain = procs.unwrap_or(&[]);
     for (depth, proc) in chain.iter().enumerate().take(ANCESTOR_DEPTH + 1) {
         for entry in entries.iter().filter(|e| launches_game(e).is_none()) {
@@ -159,7 +159,7 @@ pub fn by_process<'a>(procs: Option<&[ProcInfo]>, entries: &'a [DesktopEntry]) -
     None
 }
 
-pub fn by_title<'a>(win: Option<&Window>, entries: &'a [DesktopEntry]) -> Option<&'a DesktopEntry> {
+pub(crate) fn by_title<'a>(win: Option<&Window>, entries: &'a [DesktopEntry]) -> Option<&'a DesktopEntry> {
     let title = js::trim(&win?.initial_title).to_lowercase();
     if title.is_empty() {
         return None;
@@ -173,23 +173,6 @@ pub fn entry_for<'a>(
     procs: Option<&[ProcInfo]>,
 ) -> Option<&'a DesktopEntry> {
     by_class(win, entries).or_else(|| by_process(procs, entries)).or_else(|| by_title(win, entries))
-}
-
-/// An entry's `Icon=` as something an image can load: an absolute path as a file
-/// url, an existing url as given, a theme name through `themed` (the icon theme
-/// lookup, "" for a name the theme lacks). A path goes straight to the file
-/// rather than through the icon provider, whose theme lookup would not find it.
-pub fn source(name: &str, themed: Option<&dyn Fn(&str) -> String>) -> String {
-    if name.is_empty() {
-        return String::new();
-    }
-    if name.starts_with("file:") || name.starts_with("image:") {
-        return name.to_string();
-    }
-    if name.starts_with('/') {
-        return format!("file://{name}");
-    }
-    themed.map_or_else(String::new, |f| f(name))
 }
 
 static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]+$").unwrap());
@@ -250,12 +233,6 @@ pub fn proc_command(pids: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const THEME_ICONS: [&str; 4] = ["foot", "firefox", "discord", "org.wezfurlong.wezterm"];
-
-    fn themed(name: &str) -> String {
-        if THEME_ICONS.contains(&name) { format!("image://icon/{name}") } else { String::new() }
-    }
 
     fn entry(id: &str, f: impl FnOnce(&mut DesktopEntry)) -> DesktopEntry {
         let mut e = DesktopEntry {
@@ -489,19 +466,6 @@ mod tests {
     }
 
     // --- the picture ---
-
-    #[test]
-    fn an_absolute_icon_path_is_a_file_url() {
-        assert_eq!(source(&messages().icon, Some(&themed)), "file:///home/kyandesutter/.local/share/icons/messages.svg");
-    }
-
-    #[test]
-    fn a_theme_name_goes_through_the_theme() {
-        assert_eq!(source("foot", Some(&themed)), "image://icon/foot");
-        assert_eq!(source("no-such-icon", Some(&themed)), "");
-        assert_eq!(source("", Some(&themed)), "");
-        assert_eq!(source("file:///x.png", Some(&themed)), "file:///x.png");
-    }
 
     // --- the /proc read ---
 

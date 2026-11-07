@@ -16,8 +16,8 @@ use fs_js as js;
 /// this panel replaces: a straight read of the capacity percentage, no
 /// charge-direction gating, the sysfs `status` string is surfaced separately as
 /// `status_label` for the hero meta line instead.
-pub const WARN_PERCENT: i64 = 20;
-pub const CRITICAL_PERCENT: i64 = 10;
+pub(crate) const WARN_PERCENT: i64 = 20;
+pub(crate) const CRITICAL_PERCENT: i64 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Supply {

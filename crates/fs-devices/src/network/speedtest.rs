@@ -13,7 +13,7 @@ use fs_js::{self as js, SPACE};
 /// same timestamp) and a non-positive delta (a counter reset, e.g. the
 /// interface flapped mid-run, or rx/tx wrapped) both read as 0 rather than an
 /// infinite or negative rate.
-pub fn mbps(bytes_delta: f64, ms_delta: f64) -> f64 {
+pub(crate) fn mbps(bytes_delta: f64, ms_delta: f64) -> f64 {
     if ms_delta.is_nan() || ms_delta <= 0.0 || bytes_delta.is_nan() || bytes_delta <= 0.0 {
         return 0.0;
     }
@@ -44,21 +44,6 @@ pub fn format_mbps(value: f64) -> String {
     js::num_str(js::round(value))
 }
 
-pub const DEFAULT_MAX_MBPS: f64 = 1000.0;
-
-/// Flat ledger fill fraction: current/expected-max, capped at 1 so a link
-/// faster than the nominal scale never overruns the track.
-pub fn fill_fraction(value: f64, max_mbps: Option<f64>) -> f64 {
-    let max = match max_mbps {
-        Some(m) if m > 0.0 => m,
-        _ => DEFAULT_MAX_MBPS,
-    };
-    if value.is_nan() || value <= 0.0 {
-        return 0.0;
-    }
-    (value / max).clamp(0.0, 1.0)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sample {
     pub t: f64,
@@ -77,10 +62,6 @@ pub struct Window {
     pub prev: Option<Sample>,
     pub live_mbps: f64,
     pub avg_mbps: f64,
-}
-
-pub fn init_window() -> Window {
-    Window::default()
 }
 
 /// Folds one `(t, bytes)` reading (a millisecond timestamp paired with a
@@ -203,72 +184,6 @@ mod tests {
         assert_eq!(format_mbps(7.25), "7.3");
         assert_eq!(format_mbps(0.75), "0.8");
         assert_eq!(format_mbps(9.96), "10.0");
-    }
-
-    #[test]
-    fn fill_fraction_zero() {
-        assert_eq!(fill_fraction(0.0, Some(1000.0)), 0.0);
-    }
-
-    #[test]
-    fn fill_fraction_mid_scale() {
-        assert_eq!(fill_fraction(500.0, Some(1000.0)), 0.5);
-    }
-
-    #[test]
-    fn fill_fraction_caps_at_one() {
-        assert_eq!(fill_fraction(5000.0, Some(1000.0)), 1.0);
-    }
-
-    #[test]
-    fn fill_fraction_default_max_when_omitted() {
-        assert_eq!(fill_fraction(500.0, None), 0.5);
-    }
-
-    #[test]
-    fn first_sample_seeds_zero_rates() {
-        let w = add_sample(&init_window(), 1000.0, 5000.0);
-        assert_eq!(w.live_mbps, 0.0);
-        assert_eq!(w.avg_mbps, 0.0);
-    }
-
-    #[test]
-    fn second_sample_computes_live_and_avg() {
-        let mut w = init_window();
-        w = add_sample(&w, 0.0, 0.0);
-        // +1,000,000 bytes over 1000ms = 8 Mbps, live and avg agree on the
-        // second sample (the window so far is just the one interval).
-        w = add_sample(&w, 1000.0, 1000000.0);
-        assert_eq!(w.live_mbps, 8.0);
-        assert_eq!(w.avg_mbps, 8.0);
-    }
-
-    #[test]
-    fn avg_covers_whole_window_not_just_last_tick() {
-        let mut w = init_window();
-        w = add_sample(&w, 0.0, 0.0);
-        w = add_sample(&w, 1000.0, 1000000.0); // fast first second: 8 Mbps
-        w = add_sample(&w, 2000.0, 1125000.0); // slow second second: 1 Mbps
-        assert_eq!(w.live_mbps, 1.0);
-        // whole window: 1,125,000 bytes over 2000ms = 4.5 Mbps.
-        assert_eq!(w.avg_mbps, 4.5);
-    }
-
-    #[test]
-    fn counter_reset_mid_window_reads_live_zero() {
-        let mut w = init_window();
-        w = add_sample(&w, 0.0, 5000000.0);
-        w = add_sample(&w, 1000.0, 4000000.0); // counter went backwards
-        assert_eq!(w.live_mbps, 0.0);
-        assert_eq!(w.avg_mbps, 0.0);
-    }
-
-    #[test]
-    fn zero_duration_between_samples_reads_zero() {
-        let mut w = init_window();
-        w = add_sample(&w, 1000.0, 0.0);
-        w = add_sample(&w, 1000.0, 500000.0); // same timestamp twice
-        assert_eq!(w.live_mbps, 0.0);
     }
 
     #[test]

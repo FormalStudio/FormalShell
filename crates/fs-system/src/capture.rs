@@ -202,7 +202,7 @@ pub fn recorder_argv(opts: &RecorderOpts) -> Vec<String> {
 /// has to know the captured height in advance. Single-quoted per ffmpeg's own
 /// filtergraph escaping, since the comma inside min(...) would otherwise read
 /// as the end of the -F value.
-pub fn scale_cap_filter(max_height: f64) -> String {
+pub(crate) fn scale_cap_filter(max_height: f64) -> String {
     if max_height.is_nan() || max_height <= 0.0 {
         return String::new();
     }

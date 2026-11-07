@@ -25,10 +25,7 @@ pub const BACKEND: &str = "airpods";
 /// `noise_mode` wire values (the daemon's status.json, and the
 /// `noise:<mode>` control verb suffixes).
 pub mod noise_mode {
-    pub const OFF: f64 = 0.0;
-    pub const ANC: f64 = 1.0;
-    pub const TRANSPARENCY: f64 = 2.0;
-    pub const ADAPTIVE: f64 = 3.0;
+    pub(crate) const ADAPTIVE: f64 = 3.0;
 }
 
 const NOISE_MODE_KEY: [&str; 4] = ["off", "anc", "transparency", "adaptive"];
@@ -229,7 +226,7 @@ pub fn parse_status(text_in: &str) -> Status {
 /// The device's heart rate, only while the link carries the service or the
 /// daemon is streaming. History is the caller's: a status line knows only
 /// the last sample.
-pub fn heart_rate(status: &Status) -> Option<HeartRate> {
+pub(crate) fn heart_rate(status: &Status) -> Option<HeartRate> {
     let hr = &status.heart_rate;
     if !status.connected || !(hr.available || hr.streaming) {
         return None;
@@ -248,7 +245,7 @@ pub fn heart_rate(status: &Status) -> Option<HeartRate> {
 
 /// The device's head motion block, only on a connected link whose daemon
 /// reports the service available or streaming. Samples are the caller's.
-pub fn motion(status: &Status) -> Option<Motion> {
+pub(crate) fn motion(status: &Status) -> Option<Motion> {
     let m = status.motion?;
     (status.connected && (m.available || m.streaming)).then(Motion::default)
 }
@@ -259,7 +256,7 @@ pub fn motion_watchable(status: &Status) -> bool {
     status.ok && status.connected && status.motion.is_some()
 }
 
-pub fn lid_label(n: f64) -> &'static str {
+pub(crate) fn lid_label(n: f64) -> &'static str {
     if n == 0.0 {
         "Lid open"
     } else if n == 1.0 {
@@ -269,7 +266,7 @@ pub fn lid_label(n: f64) -> &'static str {
     }
 }
 
-pub fn noise_mode_label(n: f64) -> &'static str {
+pub(crate) fn noise_mode_label(n: f64) -> &'static str {
     match n {
         0.0 => "Off",
         1.0 => "Noise cancellation",

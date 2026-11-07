@@ -17,8 +17,8 @@ use fs_js as js;
 
 /// Caps GROUPS on screen, not raw entries: five repeats of one notification
 /// must not evict four unrelated toasts.
-pub const MAX_POPUPS: usize = 4;
-pub const DEFAULT_TIMEOUT_MS: i64 = 6000;
+pub(crate) const MAX_POPUPS: usize = 4;
+pub(crate) const DEFAULT_TIMEOUT_MS: i64 = 6000;
 pub const PAST_TTL_MS: i64 = 15 * 60 * 1000;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -397,32 +397,6 @@ pub fn dismiss_popup(state: &State, id: &str, now: i64) -> State {
     }
 }
 
-/// `dismiss_popup` for a whole group: archives every listed id from popups to
-/// past in one transition, recomputing `next_expiry` once. Ids not in popups
-/// are skipped.
-pub fn dismiss_popup_many<S: AsRef<str>>(state: &State, ids: &[S], now: i64) -> State {
-    let wanted: HashSet<&str> = ids.iter().map(AsRef::as_ref).collect();
-    let (archived, popups): (Vec<Entry>, Vec<Entry>) = state
-        .popups
-        .iter()
-        .cloned()
-        .partition(|p| wanted.contains(p.id.as_str()));
-    if archived.is_empty() {
-        return state.clone();
-    }
-    let mut past = state.past.clone();
-    past.extend(archived.into_iter().map(|mut e| {
-        e.seen_at = Some(now);
-        e
-    }));
-    State {
-        next_expiry: recompute_next_expiry(&popups),
-        popups,
-        past,
-        ..state.clone()
-    }
-}
-
 pub fn mark_all_seen(state: &State, now: i64) -> State {
     if state.pending.is_empty() {
         return state.clone();
@@ -545,23 +519,6 @@ pub fn sanitize_body(body: &str, app_name: &str, app_icon: &str) -> String {
     }
     let text = LINK_PREFIX.replace(&text, "");
     BARE_URL_PREFIX.replace(&text, "").into_owned()
-}
-
-/// `sanitize_body` plus the two further transforms a styled-text renderer
-/// needs: the server advertises no body-markup capability, so senders are
-/// never told markup is safe to send and any `&`/`<`/`>` in their text is
-/// incidental, not intentional tags. Escape it first or the renderer
-/// silently swallows everything after a bare `<` (an unterminated tag) or
-/// misreads it as real markup. Only then does raw `\n` become `<br/>`, since
-/// the renderer otherwise ignores it; the `<br/>` we insert is deliberately
-/// unescaped, it's the one piece of markup this pipeline means to emit.
-pub fn styled_body(body: &str, app_name: &str, app_icon: &str) -> String {
-    static NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\r\n|\r|\n").unwrap());
-    let escaped = sanitize_body(body, app_name, app_icon)
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;");
-    NEWLINE.replace_all(&escaped, "<br/>").into_owned()
 }
 
 /// now/Nm/Nh/Nd ago, each unit's own upper bound exclusive so an exact hour

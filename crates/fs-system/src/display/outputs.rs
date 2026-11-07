@@ -20,9 +20,9 @@ use std::collections::HashMap;
 
 /// The scale slider's range and quantization. 0.25 is binary-exact, so
 /// `quantize_scale` never accumulates float drift across repeated steps.
-pub const SCALE_MIN: f64 = 1.0;
-pub const SCALE_MAX: f64 = 3.0;
-pub const SCALE_STEP: f64 = 0.25;
+pub(crate) const SCALE_MIN: f64 = 1.0;
+pub(crate) const SCALE_MAX: f64 = 3.0;
+pub(crate) const SCALE_STEP: f64 = 0.25;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Output {
@@ -68,7 +68,7 @@ fn gcd(mut a: i64, mut b: i64) -> i64 {
 
 // ---- Scale -------------------------------------------------------------
 
-pub fn clamp_scale(scale: f64) -> f64 {
+pub(crate) fn clamp_scale(scale: f64) -> f64 {
     if !scale.is_finite() {
         return SCALE_MIN;
     }
@@ -107,7 +107,7 @@ pub fn format_scale(scale: f64) -> String {
 /// counted in 1/120ths, so the acceptable scales are exactly the divisors of
 /// gcd(width*120, height*120), and a requested scale rounds UP to the nearest
 /// one.
-pub fn clean_scale(scale: f64, width: i64, height: i64) -> f64 {
+pub(crate) fn clean_scale(scale: f64, width: i64, height: i64) -> f64 {
     let requested = clamp_scale(scale);
     if width <= 0 || height <= 0 {
         return requested;
@@ -143,7 +143,7 @@ pub fn find_output<'a>(rows: &'a [Output], name: &str) -> Option<&'a Output> {
     rows.iter().find(|r| r.name == name)
 }
 
-pub fn enabled_count(rows: &[Output]) -> usize {
+pub(crate) fn enabled_count(rows: &[Output]) -> usize {
     rows.iter().filter(|r| r.enabled).count()
 }
 
@@ -285,7 +285,7 @@ pub fn parse_hyprland_outputs(text: &str) -> Vec<Output> {
     sort_outputs(&rows)
 }
 
-pub fn is_hdr_preset(cm: &str) -> bool {
+pub(crate) fn is_hdr_preset(cm: &str) -> bool {
     cm == "hdr" || cm == "hdredid"
 }
 

@@ -476,7 +476,6 @@ paths = [
   "crates/formalshell-rs/src/ipc/notifications.rs",
   "crates/fs-notifd/**",
   "crates/fs-info/src/notifications.rs",
-  "crates/fs-info/src/notification_geometry.rs",
   "crates/fs-info/src/notification_icon.rs",
   "crates/fs-info/src/toast_stack.rs",
 ]
@@ -527,7 +526,6 @@ paths = [
   "crates/formalshell-rs/src/ipc/lock.rs",
   "crates/fs-auth/src/lib.rs",
   "crates/fs-auth/src/pam.rs",
-  "crates/fs-system/src/lock.rs",
 ]
 runs = ["--lock", "--unlock", "--lock-restore", "--lock-media", "--lock --depth", "--hotcorner-relock", "--multi-output", "--logind-lock", "--sleep", "--login-lock"]
 

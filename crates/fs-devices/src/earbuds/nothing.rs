@@ -26,7 +26,7 @@ use super::{
 use fs_js as js;
 
 pub const BACKEND: &str = "nothing";
-pub const BINARY: &str = "nothingctl";
+pub(crate) const BINARY: &str = "nothingctl";
 
 /// A device nothingctl refused over its model (README "Exit codes"): `watch`
 /// prints an error line carrying this code, then exits with
@@ -145,7 +145,7 @@ pub enum NothingVerb {
 
 impl NothingVerb {
     /// The verb word at the head of the stdin line.
-    pub fn word(&self) -> &'static str {
+    pub(crate) fn word(&self) -> &'static str {
         match self {
             NothingVerb::Anc(_) => "anc",
             NothingVerb::Eq(_) => "eq",

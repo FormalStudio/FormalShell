@@ -15,8 +15,6 @@
 //! Only for a child that outlives its own call: a one-shot exits long before
 //! a restart can orphan it.
 
-use regex::Regex;
-use std::sync::LazyLock;
 
 pub fn die_with_parent(argv: &[String]) -> Vec<String> {
     let mut out: Vec<String> = ["setpriv", "--pdeathsig", "TERM", "--"].map(String::from).to_vec();
@@ -37,48 +35,12 @@ pub struct Action {
     pub command: Vec<String>,
 }
 
-/// uwsm rejects an id outside this pattern with an error toast, and a file
-/// named "Modrinth App.desktop" has a space in its id.
-static UWSM_ENTRY_ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$").unwrap());
-
-/// argv that launches a desktop entry, or one of its actions, as its own scope
-/// in app-graphical.slice rather than as a child in the shell's cgroup, so
-/// systemd-oomd can kill that one app instead of the shell and everything it
-/// launched. uwsm parses the entry itself, so Exec field codes and
-/// Terminal=true behave as in any launcher. An action goes by its parsed
-/// command: uwsm only resolves actions by id. An id uwsm rejects goes by its
-/// parsed command too, with -T carrying Terminal=true.
-///
-/// `None` outside a uwsm session (the nested smoke rig has no app slice to
-/// land in).
-pub fn app_launch(uwsm_session: bool, entry: Option<&Entry>, action: Option<&Action>) -> Option<Vec<String>> {
-    let entry = entry.filter(|_| uwsm_session)?;
-    if action.is_none() && UWSM_ENTRY_ID.is_match(&entry.id) {
-        return Some(vec!["uwsm".into(), "app".into(), "--".into(), format!("{}.desktop", entry.id)]);
-    }
-    let command = action.map_or(&entry.command, |a| &a.command);
-    if command.is_empty() {
-        return None;
-    }
-    let mut argv: Vec<String> = vec!["uwsm".into(), "app".into()];
-    if action.is_none() && entry.run_in_terminal {
-        argv.push("-T".into());
-    }
-    argv.push("--".into());
-    argv.extend(command.iter().cloned());
-    Some(argv)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
-    }
-
-    fn entry(id: &str, command: &[&str], term: bool) -> Entry {
-        Entry { id: id.into(), command: s(command), run_in_terminal: term }
     }
 
     #[test]
@@ -106,35 +68,4 @@ mod tests {
         assert_eq!(argv, s(&["ttfx", "--effect", "rain"]));
     }
 
-    #[test]
-    fn app_launch_goes_by_desktop_id_under_uwsm() {
-        let e = entry("org.gnome.Nautilus", &[], false);
-        assert_eq!(app_launch(true, Some(&e), None), Some(s(&["uwsm", "app", "--", "org.gnome.Nautilus.desktop"])));
-    }
-
-    #[test]
-    fn an_action_launches_by_its_parsed_command() {
-        let action = Action { command: s(&["firefox", "--private-window"]) };
-        let e = entry("firefox", &[], false);
-        assert_eq!(app_launch(true, Some(&e), Some(&action)), Some(s(&["uwsm", "app", "--", "firefox", "--private-window"])));
-    }
-
-    #[test]
-    fn an_id_uwsm_rejects_launches_by_command() {
-        let e = entry("Modrinth App", &["ModrinthApp"], false);
-        assert_eq!(app_launch(true, Some(&e), None), Some(s(&["uwsm", "app", "--", "ModrinthApp"])));
-    }
-
-    #[test]
-    fn a_terminal_entry_by_command_keeps_its_terminal() {
-        let e = entry("My Tool", &["htop"], true);
-        assert_eq!(app_launch(true, Some(&e), None), Some(s(&["uwsm", "app", "-T", "--", "htop"])));
-    }
-
-    #[test]
-    fn no_uwsm_session_means_no_argv() {
-        let e = entry("firefox", &[], false);
-        assert_eq!(app_launch(false, Some(&e), None), None);
-        assert_eq!(app_launch(true, Some(&e), Some(&Action::default())), None);
-    }
 }

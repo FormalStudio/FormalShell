@@ -16,7 +16,7 @@ use crate::bluetooth;
 use fs_js as js;
 
 pub const BACKEND: &str = "samsung";
-pub const BINARY: &str = "earbuds";
+pub(crate) const BINARY: &str = "earbuds";
 
 fn is_galaxy_buds(name: &str) -> bool {
     name.get(.."galaxy buds".len()).is_some_and(|p| p.eq_ignore_ascii_case("galaxy buds"))

@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::Value;
 
-use fs_js::{encode_uri_component, parse_digits, parse_float};
+use fs_js::{encode_uri_component, parse_digits};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseError {
@@ -55,15 +55,11 @@ pub fn cache_key(artist: &str, album: &str) -> String {
     EDGE_DASHES.replace_all(&dashed, "").into_owned()
 }
 
-pub fn cache_path(cache_dir: &str, artist: &str, album: &str) -> String {
-    format!("{cache_dir}/{}.mp4", cache_key(artist, album))
-}
-
 /// Loosely matches iTunes' own album-title conventions: case, punctuation and
 /// whitespace are folded, and a trailing "- Single"/"- EP" marker or a
 /// trailing "(Deluxe)"/"[Remastered]" tag is stripped, in either order and
 /// repeatedly. Used to compare both sides of a match, never to build a URL.
-pub fn normalize_name(name: &str) -> String {
+pub(crate) fn normalize_name(name: &str) -> String {
     let mut s = name.trim().to_string();
     loop {
         let without_tag = EDITION_TAG.replace(&s, "").trim().to_string();
@@ -281,29 +277,6 @@ pub fn is_stale(mtime_ms: f64, now_ms: f64, max_age_days: f64) -> bool {
     (now_ms - mtime_ms) > max_age_ms
 }
 
-/// `find -printf '%T@ %p\n'` output (epoch-seconds mtime, space, path) to the
-/// paths stale enough to prune. Malformed lines are skipped.
-pub fn parse_prune_listing(listing_text: &str, now_ms: f64, max_age_days: f64) -> Vec<String> {
-    let mut stale = Vec::new();
-    for line in listing_text.split('\n') {
-        if line.is_empty() {
-            continue;
-        }
-        let Some(sep) = line.find(' ') else {
-            continue;
-        };
-        let epoch_seconds = parse_float(&line[..sep]);
-        let path = &line[sep + 1..];
-        if !epoch_seconds.is_finite() || path.is_empty() {
-            continue;
-        }
-        if is_stale(epoch_seconds * 1000.0, now_ms, max_age_days) {
-            stale.push(path.to_string());
-        }
-    }
-    stale
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,14 +297,6 @@ mod tests {
     #[test]
     fn cache_key_strips_punctuation() {
         assert_eq!(cache_key("Sigur Rós", "( )"), "sigur-r-s");
-    }
-
-    #[test]
-    fn cache_path_appends_mp4_under_dir() {
-        assert_eq!(
-            cache_path("/cache/applemusic-art", "Air", "Moon Safari"),
-            "/cache/applemusic-art/air-moon-safari.mp4"
-        );
     }
 
     #[test]
@@ -716,30 +681,4 @@ mod tests {
         assert!(!is_stale(f64::NAN, NOW_2026_07_28_MS, 30.0));
     }
 
-    #[test]
-    fn parse_prune_listing_returns_only_stale_paths() {
-        let now = NOW_2026_07_28_MS / 1000.0;
-        let fresh = now - 60.0;
-        let stale = now - 31.0 * 24.0 * 60.0 * 60.0;
-        let listing = format!(
-            "{fresh} /cache/applemusic-art/fresh-album.mp4\n{stale} /cache/applemusic-art/stale-album.mp4\n"
-        );
-        let result = parse_prune_listing(&listing, now * 1000.0, 30.0);
-        assert_eq!(result, vec!["/cache/applemusic-art/stale-album.mp4"]);
-    }
-
-    #[test]
-    fn parse_prune_listing_skips_malformed_lines() {
-        let result = parse_prune_listing(
-            "not-a-valid-line\n\nabc /bad/epoch.mp4\n",
-            NOW_2026_07_28_MS,
-            30.0,
-        );
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn parse_prune_listing_empty_for_empty_text() {
-        assert!(parse_prune_listing("", NOW_2026_07_28_MS, 30.0).is_empty());
-    }
 }

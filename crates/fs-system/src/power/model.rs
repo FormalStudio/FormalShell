@@ -123,30 +123,6 @@ pub fn parse_rapl_mw(text: &str) -> Option<f64> {
     Some(js::parse_int(t) / 1000.0)
 }
 
-/// The wattage stat, split so the words land in the label and the figures in
-/// the mono value. "Holding" is the charge threshold's own word: the rate is
-/// real but near zero there, and calling it a draw would misread it.
-pub fn rate_row_label(charging: bool, threshold_active: bool) -> &'static str {
-    if threshold_active {
-        "Holding"
-    } else if charging {
-        "Charging"
-    } else {
-        "Draw"
-    }
-}
-
-/// `cpu_package_w` is `None` whenever RAPL is unreadable or hasn't produced a
-/// second sample yet, and the " / CPU" half is simply absent then, never
-/// "/ CPU 0.0W" or a stale figure from before the panel reopened.
-pub fn rate_row_value(change_rate_w: f64, cpu_package_w: Option<f64>) -> String {
-    let head = format_rate(change_rate_w);
-    match cpu_package_w {
-        None => head,
-        Some(cpu) => format!("{head} / CPU {}", format_rate(cpu)),
-    }
-}
-
 /// Charge-threshold detection. A laptop holding at a configured charge limit
 /// reports one of three UPower shapes that all mean "plugged in but not
 /// actually charging toward 100": PendingCharge outright, FullyCharged below
@@ -210,19 +186,6 @@ pub fn battery_icon(pct: f64, on_battery: bool, threshold_active: bool, warn_pct
     }
 }
 
-/// "56.0 WH", or a dash when the device hasn't reported a capacity
-/// (energyCapacity reads 0 rather than being absent).
-pub fn format_wh(wh: f64) -> String {
-    if wh > 0.0 { format!("{} WH", js::to_fixed(wh, 1)) } else { "--".into() }
-}
-
-/// UPower's Capacity property is already "design capacity as a percentage";
-/// `supported` is false when the driver never reported one, the honest case to
-/// show a dash rather than a bogus 0%.
-pub fn format_health_percent(pct: f64, supported: bool) -> String {
-    if supported { format!("{}%", js::num_str(js::round(pct))) } else { "--".into() }
-}
-
 /// `charge_control_end_threshold`'s only line: the percentage the firmware
 /// stops charging at. Linux exposes it per battery under
 /// /sys/class/power_supply/<name>/, and UPower carries the <name> as
@@ -242,18 +205,6 @@ pub fn parse_charge_limit(text: &str) -> Option<i64> {
         return None;
     }
     Some(value as i64)
-}
-
-pub fn time_row_label(charging: bool) -> &'static str {
-    if charging { "Time full" } else { "Time left" }
-}
-
-/// `time_to_full`/`time_to_empty` are 0 whenever the other one applies and can
-/// both briefly read 0 right after a state flip before UPower's next estimate
-/// lands: a dash rather than "0m" either way.
-pub fn time_row_value(charging: bool, time_to_full: f64, time_to_empty: f64) -> String {
-    let seconds = if charging { time_to_full } else { time_to_empty };
-    if seconds > 0.0 { format_duration(seconds) } else { "--".into() }
 }
 
 #[cfg(test)]
@@ -548,75 +499,8 @@ mod tests {
 
     // formatWh / formatHealthPercent
 
-    #[test]
-    fn format_wh_positive() {
-        assert_eq!(format_wh(56.04), "56.0 WH");
-    }
-
-    #[test]
-    fn format_wh_zero_is_dash() {
-        assert_eq!(format_wh(0.0), "--");
-    }
-
-    #[test]
-    fn format_health_percent_supported() {
-        assert_eq!(format_health_percent(91.6, true), "92%");
-    }
-
-    #[test]
-    fn format_health_percent_unsupported_is_dash() {
-        assert_eq!(format_health_percent(0.0, false), "--");
-    }
-
     // timeRowLabel / timeRowValue
-
-    #[test]
-    fn time_row_label_charging() {
-        assert_eq!(time_row_label(true), "Time full");
-    }
-
-    #[test]
-    fn time_row_label_discharging() {
-        assert_eq!(time_row_label(false), "Time left");
-    }
-
-    #[test]
-    fn time_row_value_charging() {
-        assert_eq!(time_row_value(true, 2.0 * 3600.0 + 14.0 * 60.0, 0.0), "2h 14m");
-    }
-
-    #[test]
-    fn time_row_value_discharging() {
-        assert_eq!(time_row_value(false, 0.0, 14.0 * 60.0), "14m");
-    }
-
-    #[test]
-    fn time_row_value_no_reading_is_dash() {
-        assert_eq!(time_row_value(true, 0.0, 0.0), "--");
-    }
 
     // rateRowLabel / rateRowValue
 
-    #[test]
-    fn rate_row_label_names_the_direction() {
-        assert_eq!(rate_row_label(true, false), "Charging");
-        assert_eq!(rate_row_label(false, false), "Draw");
-    }
-
-    #[test]
-    fn rate_row_label_threshold_is_holding() {
-        assert_eq!(rate_row_label(true, true), "Holding");
-        assert_eq!(rate_row_label(false, true), "Holding");
-    }
-
-    #[test]
-    fn rate_row_value_is_the_magnitude() {
-        assert_eq!(rate_row_value(15.5, None), "15.5W");
-        assert_eq!(rate_row_value(-12.3, None), "12.3W");
-    }
-
-    #[test]
-    fn rate_row_value_with_cpu() {
-        assert_eq!(rate_row_value(15.5, Some(8.5)), "15.5W / CPU 8.5W");
-    }
 }

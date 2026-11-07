@@ -14,7 +14,7 @@ use fs_js as js;
 
 /// The desktop app's Wayland app id (its desktop file is
 /// `com.t3tools.T3Code.desktop`).
-pub const APP_ID: &str = "com.t3tools.T3Code";
+pub(crate) const APP_ID: &str = "com.t3tools.T3Code";
 
 /// Whether a window belongs to the T3 Code desktop app.
 pub fn is_app(app_id: &str, initial_class: &str) -> bool {

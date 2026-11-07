@@ -4,11 +4,10 @@
 
 use chrono::{Datelike, Days, NaiveDate};
 
-use crate::clock;
 
 pub const COLUMNS: usize = 7;
 pub const ROWS: usize = 6;
-pub const CELLS: usize = COLUMNS * ROWS;
+pub(crate) const CELLS: usize = COLUMNS * ROWS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cell {
@@ -43,15 +42,6 @@ pub fn month_cells(year: i32, month: u32) -> Vec<Cell> {
                 in_month: d.month() == month && d.year() == year,
             }
         })
-        .collect()
-}
-
-/// One ISO week number per grid row, read off that row's Thursday (index 3 of
-/// its 7 Monday-first cells): the definition of the week a row belongs to
-/// whenever its days span a month or year boundary.
-pub fn week_numbers(cells: &[Cell]) -> Vec<u32> {
-    (0..ROWS)
-        .map(|r| clock::iso_week(cells[r * COLUMNS + 3].date()))
         .collect()
 }
 

@@ -121,17 +121,3 @@ pub fn next_up(events: &[Event], now: DateTime<Local>) -> Option<&Event> {
             _ => Some(e),
         })
 }
-
-/// The longest label the day will print. The panel renders this into a
-/// hidden gauge and sizes every row's time column off it, so the summaries
-/// line up in one column.
-pub fn widest_label(events: &[Event], twelve_hour: bool) -> String {
-    let mut widest = String::new();
-    for event in events {
-        let label = time_label(event, twelve_hour);
-        if label.chars().count() > widest.chars().count() {
-            widest = label;
-        }
-    }
-    widest
-}

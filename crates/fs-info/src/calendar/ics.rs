@@ -59,7 +59,7 @@ fn unescape(value: &str) -> String {
 /// to the instant and the all-day flag. TZID offsets are not resolved: a
 /// zoned or floating time is read as local wall-clock time, reasonable for a
 /// single-timezone khal setup, a documented limitation otherwise.
-pub fn parse_date_value(params: &str, value: &str) -> Option<(DateTime<Local>, bool)> {
+pub(crate) fn parse_date_value(params: &str, value: &str) -> Option<(DateTime<Local>, bool)> {
     static DATE_PARAM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"VALUE=DATE\b").unwrap());
     static VALUE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^([0-9]{4})([0-9]{2})([0-9]{2})(?:T([0-9]{2})([0-9]{2})([0-9]{2})(Z)?)?$")

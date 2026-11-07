@@ -34,11 +34,6 @@ pub fn unavailable() -> Layout {
     Layout { available: false, names: Vec::new(), current_idx: -1, current: String::new() }
 }
 
-/// Empty for an out-of-range index, never names[0] as a guess.
-pub fn current_layout(names: &[String], idx: i64) -> String {
-    usize::try_from(idx).ok().and_then(|i| names.get(i)).cloned().unwrap_or_default()
-}
-
 /// The bar cell's text: the parenthetical region code, uppercased ("English
 /// (US)" -> "US", "English (US, intl.)" -> "US"), falling back to the first two
 /// letters for a name with no parenthetical ("German" -> "GE", and an xkb code
@@ -158,22 +153,6 @@ mod tests {
 
     fn names(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn current_layout_returns_the_indexed_name() {
-        assert_eq!(current_layout(&names(&["English (US)", "German"]), 1), "German");
-    }
-
-    #[test]
-    fn current_layout_out_of_range_index_is_empty_never_the_first_name() {
-        assert_eq!(current_layout(&names(&["English (US)", "German"]), 5), "");
-        assert_eq!(current_layout(&names(&["English (US)", "German"]), -1), "");
-    }
-
-    #[test]
-    fn current_layout_of_empty_names_is_empty() {
-        assert_eq!(current_layout(&[], 0), "");
     }
 
     #[test]

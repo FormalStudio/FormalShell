@@ -12,19 +12,16 @@ pub struct Color {
 }
 
 impl Color {
-    pub const BLACK: Color = Color {
+    pub(crate) const BLACK: Color = Color {
         r: 0,
         g: 0,
         b: 0,
         a: 255,
     };
 
-    pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
-        Color { r, g, b, a: 255 }
-    }
-
     /// `#rrggbb` or `#rrggbbaa`.
-    pub fn from_hex(s: &str) -> Option<Color> {
+    #[cfg(test)]
+    pub(crate) fn from_hex(s: &str) -> Option<Color> {
         let hex = s.strip_prefix('#')?;
         let byte = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
         match hex.len() {
@@ -151,27 +148,27 @@ impl Scene {
         Scene::default()
     }
 
-    pub fn begin_path(&mut self) {
+    pub(crate) fn begin_path(&mut self) {
         self.path.clear();
     }
 
-    pub fn close_path(&mut self) {
+    pub(crate) fn close_path(&mut self) {
         self.path.push(PathEl::Close);
     }
 
-    pub fn move_to(&mut self, x: f64, y: f64) {
+    pub(crate) fn move_to(&mut self, x: f64, y: f64) {
         self.path.push(PathEl::MoveTo(x, y));
     }
 
-    pub fn line_to(&mut self, x: f64, y: f64) {
+    pub(crate) fn line_to(&mut self, x: f64, y: f64) {
         self.path.push(PathEl::LineTo(x, y));
     }
 
-    pub fn quad_to(&mut self, cx: f64, cy: f64, x: f64, y: f64) {
+    pub(crate) fn quad_to(&mut self, cx: f64, cy: f64, x: f64, y: f64) {
         self.path.push(PathEl::QuadTo(cx, cy, x, y));
     }
 
-    pub fn arc(&mut self, cx: f64, cy: f64, r: f64, start: f64, end: f64) {
+    pub(crate) fn arc(&mut self, cx: f64, cy: f64, r: f64, start: f64, end: f64) {
         self.path.push(PathEl::Arc {
             cx,
             cy,
@@ -181,11 +178,11 @@ impl Scene {
         });
     }
 
-    pub fn rounded_rect(&mut self, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    pub(crate) fn rounded_rect(&mut self, x: f64, y: f64, w: f64, h: f64, r: f64) {
         self.path.push(PathEl::RoundedRect { x, y, w, h, r });
     }
 
-    pub fn fill(&mut self) {
+    pub(crate) fn fill(&mut self) {
         self.shapes.push(Shape::Fill {
             path: self.path.clone(),
             color: self.fill_style,
@@ -193,7 +190,7 @@ impl Scene {
         });
     }
 
-    pub fn stroke(&mut self) {
+    pub(crate) fn stroke(&mut self) {
         self.shapes.push(Shape::Stroke {
             path: self.path.clone(),
             color: self.stroke_style,
@@ -202,7 +199,7 @@ impl Scene {
         });
     }
 
-    pub fn fill_rect(&mut self, x: f64, y: f64, w: f64, h: f64) {
+    pub(crate) fn fill_rect(&mut self, x: f64, y: f64, w: f64, h: f64) {
         self.shapes.push(Shape::Rect {
             x,
             y,
@@ -213,12 +210,12 @@ impl Scene {
         });
     }
 
-    pub fn set_font(&mut self, size: f64, family: &str) {
+    pub(crate) fn set_font(&mut self, size: f64, family: &str) {
         self.font_size = size;
         self.font_family = family.to_string();
     }
 
-    pub fn fill_text(&mut self, text: &str, x: f64, y: f64) {
+    pub(crate) fn fill_text(&mut self, text: &str, x: f64, y: f64) {
         self.shapes.push(Shape::Text {
             text: text.to_string(),
             x,

@@ -82,31 +82,6 @@ pub fn parse_edid(hex_text: &str) -> Edid {
     result
 }
 
-/// The EDID reader's output: one `@@<output name>` line per connector, then its
-/// `od` hex. An output with no line was not found under /sys/class/drm at all.
-pub fn parse_dump(text: &str) -> HashMap<String, Edid> {
-    let mut out: HashMap<String, Edid> = HashMap::new();
-    let mut name: Option<String> = None;
-    let mut hex = String::new();
-    let lines: Vec<&str> = text.split('\n').collect();
-    for i in 0..=lines.len() {
-        let line = lines.get(i).copied().unwrap_or("@@");
-        if let Some(rest) = line.strip_prefix("@@") {
-            if let Some(n) = &name
-                && !out.get(n).is_some_and(|e| e.present)
-            {
-                out.insert(n.clone(), parse_edid(&hex));
-            }
-            name = Some(js::trim(rest).to_string());
-            hex.clear();
-        } else {
-            hex.push_str(line);
-            hex.push(' ');
-        }
-    }
-    out
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Verdict {
     pub supported: bool,
@@ -310,17 +285,6 @@ mod tests {
         assert_eq!(verdict(Some(&parse_edid(""))).reason, "No EDID");
         assert_eq!(verdict(Some(&parse_edid("00 ff ff"))).reason, "No EDID");
         assert_eq!(verdict(None).reason, "No EDID");
-    }
-
-    #[test]
-    fn dump_splits_connectors_and_prefers_a_populated_node() {
-        let good = edid(&[&COLORIMETRY, &HDR_STATIC]);
-        let text = format!("@@eDP-1\n{good}\n@@DP-2\n@@eDP-1\n{good}\n");
-        let dump = parse_dump(&text);
-        assert!(!dump["DP-2"].present);
-        assert!(dump["eDP-1"].pq);
-        let twice = parse_dump(&format!("@@eDP-1\n{good}\n@@eDP-1\n\n"));
-        assert!(twice["eDP-1"].pq);
     }
 
     #[test]

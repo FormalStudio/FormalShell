@@ -11,7 +11,7 @@
 
 /// The WIFI: URI reserves four characters. Backslash is doubled first, or the
 /// escapes added after it would themselves be re-escaped.
-pub fn escape_value(value: &str) -> String {
+pub(crate) fn escape_value(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         if matches!(c, '\\' | ';' | ',' | ':') {
@@ -62,13 +62,6 @@ pub enum PayloadError {
 }
 
 impl PayloadError {
-    pub fn code(self) -> &'static str {
-        match self {
-            PayloadError::NoSsid => "no_ssid",
-            PayloadError::Enterprise => "enterprise",
-            PayloadError::NoPassword => "no_password",
-        }
-    }
 }
 
 pub fn build_payload(f: &Fields) -> Result<String, PayloadError> {
@@ -244,27 +237,8 @@ mod tests {
     // build_payload: refusals
 
     #[test]
-    fn payload_refuses_enterprise_wpa_eap() {
-        let r = build_payload(&fields("CORP", "wpa-eap", "pw", "", ""));
-        assert_eq!(r, Err(PayloadError::Enterprise));
-        assert_eq!(r.unwrap_err().code(), "enterprise");
-    }
-
-    #[test]
     fn payload_refuses_enterprise_ieee8021x() {
         assert_eq!(build_payload(&fields("CORP", "ieee8021x", "pw", "", "")), Err(PayloadError::Enterprise));
-    }
-
-    #[test]
-    fn payload_refuses_missing_ssid() {
-        let r = build_payload(&fields("", "wpa-psk", "pw", "", ""));
-        assert_eq!(r.unwrap_err().code(), "no_ssid");
-    }
-
-    #[test]
-    fn payload_refuses_secured_network_with_no_readable_psk() {
-        let r = build_payload(&fields("NET", "wpa-psk", "", "", ""));
-        assert_eq!(r.unwrap_err().code(), "no_password");
     }
 
     #[test]

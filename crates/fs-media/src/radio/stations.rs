@@ -26,7 +26,7 @@ pub const MAX_RESPONSE_CHARS: usize = 4_194_304;
 pub const MAX_RECORDS: usize = 500;
 pub const MAX_FAVORITES: usize = 500;
 pub const MAX_RECENT: usize = 30;
-pub const CACHE_MAX_AGE_MS: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
+pub(crate) const CACHE_MAX_AGE_MS: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
 
 static UUID_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[0-9A-Fa-f-]{20,64}$").unwrap());
@@ -257,7 +257,7 @@ pub fn union(lists: &[Vec<Station>], max: usize) -> Vec<Station> {
 }
 
 /// Fisher-Yates, from the end.
-pub fn shuffle<T: Clone>(list: &[T], rng: &mut impl FnMut() -> f64) -> Vec<T> {
+pub(crate) fn shuffle<T: Clone>(list: &[T], rng: &mut impl FnMut() -> f64) -> Vec<T> {
     let mut out = list.to_vec();
     for i in (1..out.len()).rev() {
         let j = (rng() * (i + 1) as f64).floor() as usize;
@@ -399,7 +399,7 @@ pub fn curl_args(base: &str, request: &Request, user_agent: &str) -> Vec<String>
     args
 }
 
-pub fn mappable(station: &Station) -> bool {
+pub(crate) fn mappable(station: &Station) -> bool {
     (station.latitude.is_some() && station.longitude.is_some())
         || MAPPABLE_CODE.is_match(&station.country_code)
 }

@@ -13,7 +13,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-pub const FIXED_SUPPLY_VOLTS: f64 = 5.0;
+pub(crate) const FIXED_SUPPLY_VOLTS: f64 = 5.0;
 
 const SUPPLY_KEYS: &str = "type scope online status capacity power_now voltage_now current_now charge_control_end_threshold";
 
@@ -191,7 +191,7 @@ pub fn parse_snapshot(text: &str) -> Snapshot {
 
 /// sysfs marks the selected entry of a choice attribute with brackets:
 /// "[source] sink" is a port currently sourcing.
-pub fn parse_bracketed(text: &str) -> String {
+pub(crate) fn parse_bracketed(text: &str) -> String {
     let Some(open) = text.find('[') else { return String::new() };
     let rest = &text[open + 1..];
     match rest.find(']') {
@@ -209,7 +209,7 @@ static HEX32: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9a-fA-F]{1,32}
 /// the power operation mode, bit 19 connected, bit 20 the power direction
 /// (1 = this machine provides), bits 32-63 the request data object of the
 /// negotiated contract.
-pub fn decode_connector_status(hex: &str) -> Option<ConnectorStatus> {
+pub(crate) fn decode_connector_status(hex: &str) -> Option<ConnectorStatus> {
     let digits = hex.strip_prefix("0x").or_else(|| hex.strip_prefix("0X")).unwrap_or(hex);
     if !HEX32.is_match(digits) {
         return None;
@@ -238,7 +238,7 @@ pub fn decode_connector_status(hex: &str) -> Option<ConnectorStatus> {
     })
 }
 
-pub fn watt_text(w: Option<f64>) -> String {
+pub(crate) fn watt_text(w: Option<f64>) -> String {
     let Some(w) = w else { return String::new() };
     let abs = w.abs();
     let figure = if abs >= 10.0 { js::num_str(js::round(abs)) } else { js::to_fixed(abs, 1) };
@@ -280,7 +280,7 @@ fn is_adapter(s: &Supply) -> bool {
 /// A battery sitting at its charge limit reports "Not charging" (or "Full" on
 /// drivers that call the limit full) at a capacity within a percent of
 /// charge_control_end_threshold, with the adapter present.
-pub fn held_at_limit(status: &str, capacity: Option<f64>, limit: Option<f64>, adapter_online: bool) -> bool {
+pub(crate) fn held_at_limit(status: &str, capacity: Option<f64>, limit: Option<f64>, adapter_online: bool) -> bool {
     let (Some(capacity), Some(limit)) = (capacity, limit) else { return false };
     if !adapter_online || limit >= 100.0 {
         return false;

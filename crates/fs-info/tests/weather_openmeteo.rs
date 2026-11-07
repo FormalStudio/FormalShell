@@ -147,60 +147,6 @@ fn parse_response_empty_forecast_arrays_still_ok() {
 // condition_key / condition_label
 
 #[test]
-fn condition_key_clear_sky() {
-    assert_eq!(condition_key(0), "clear");
-}
-
-#[test]
-fn condition_key_partly_cloudy() {
-    assert_eq!(condition_key(2), "partly-cloudy");
-}
-
-#[test]
-fn condition_key_overcast() {
-    assert_eq!(condition_key(3), "overcast");
-}
-
-#[test]
-fn condition_key_fog() {
-    assert_eq!(condition_key(45), "fog");
-    assert_eq!(condition_key(48), "fog");
-}
-
-#[test]
-fn condition_key_rain() {
-    assert_eq!(condition_key(61), "rain");
-    assert_eq!(condition_key(65), "rain");
-}
-
-#[test]
-fn condition_key_freezing_rain() {
-    assert_eq!(condition_key(56), "freezing-rain");
-    assert_eq!(condition_key(67), "freezing-rain");
-}
-
-#[test]
-fn condition_key_snow() {
-    assert_eq!(condition_key(71), "snow");
-    assert_eq!(condition_key(86), "snow");
-}
-
-#[test]
-fn condition_key_showers() {
-    assert_eq!(condition_key(80), "showers");
-}
-
-#[test]
-fn condition_key_thunderstorm() {
-    assert_eq!(condition_key(96), "thunderstorm");
-}
-
-#[test]
-fn condition_key_unknown_code() {
-    assert_eq!(condition_key(999), "unknown");
-}
-
-#[test]
 fn condition_label_matches_key() {
     assert_eq!(condition_label(0), "CLEAR");
     assert_eq!(condition_label(999), "UNAVAILABLE");

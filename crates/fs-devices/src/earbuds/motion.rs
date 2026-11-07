@@ -48,7 +48,7 @@ impl Quat {
         [self.w, self.x, self.y, self.z]
     }
 
-    pub fn conjugate(self) -> Quat {
+    pub(crate) fn conjugate(self) -> Quat {
         Quat { w: self.w, x: -self.x, y: -self.y, z: -self.z }
     }
 
@@ -76,7 +76,7 @@ impl Quat {
     /// The turn is taken in the world frame, `self ⊗ reference⁻¹`, and
     /// expressed in a head frame built at the reference off gravity: z up,
     /// y the body's z (out of the ear) laid level, x their cross product.
-    pub fn relative_to(self, reference: Quat) -> Quat {
+    pub(crate) fn relative_to(self, reference: Quat) -> Quat {
         let head = head_frame(reference);
         head.conjugate().then(self.then(reference.conjugate())).then(head)
     }
@@ -103,7 +103,7 @@ impl Quat {
     }
 
     /// `v` rotated by this quaternion.
-    pub fn rotate(self, v: [f32; 3]) -> [f32; 3] {
+    pub(crate) fn rotate(self, v: [f32; 3]) -> [f32; 3] {
         let p = Quat { w: 0.0, x: v[0], y: v[1], z: v[2] };
         let out = self.product(p).product(self.conjugate());
         [out.x, out.y, out.z]
@@ -111,7 +111,7 @@ impl Quat {
 
     /// Z-Y-X angles: yaw about z, then pitch about the new y, then roll
     /// about the new x. Pitch is clamped to ±90° at the poles.
-    pub fn euler_degrees(self) -> EulerDegrees {
+    pub(crate) fn euler_degrees(self) -> EulerDegrees {
         let Quat { w, x, y, z } = self;
         let yaw = (2.0 * (w * z + x * y)).atan2(1.0 - 2.0 * (y * y + z * z));
         let pitch = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0).asin();
@@ -151,13 +151,15 @@ impl MilliG {
         MilliG(n)
     }
 
-    pub fn get(self) -> i32 {
+    pub(crate) fn get(self) -> i32 {
         self.0
     }
 
-    pub fn as_g(self) -> f32 {
+    #[cfg(test)]
+    pub(crate) fn as_g(self) -> f32 {
         self.0 as f32 / 1000.0
     }
+
 }
 
 /// Gravity in the body frame.

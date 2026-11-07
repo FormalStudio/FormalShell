@@ -25,7 +25,7 @@ pub struct Device {
     pub grey_only: bool,
 }
 
-pub fn is_ir(device: &Device) -> bool {
+pub(crate) fn is_ir(device: &Device) -> bool {
     device.grey_only || IR_WORD.is_match(&device.description)
 }
 
@@ -33,7 +33,7 @@ pub fn is_ir(device: &Device) -> bool {
 /// interface half names the sensor itself (an IR one). The interface half is a
 /// truncated copy of the product name often enough that using it would print
 /// "ASUS FHD webca".
-pub fn name(description: &str) -> String {
+pub(crate) fn name(description: &str) -> String {
     let text = js::trim(description);
     let Some(at) = text.find(": ") else {
         return text.to_string();
@@ -97,7 +97,7 @@ pub fn rows(devices: &[Device]) -> Vec<Row> {
     out
 }
 
-pub fn index_of(list: &[Row], id: &str) -> Option<usize> {
+pub(crate) fn index_of(list: &[Row], id: &str) -> Option<usize> {
     list.iter().position(|r| r.id == id)
 }
 

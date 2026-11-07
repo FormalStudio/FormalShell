@@ -34,16 +34,6 @@ impl Value {
         Value::Str(s.to_string())
     }
 
-    pub fn from_json(v: &Json) -> Value {
-        match v {
-            Json::Null => Value::Null,
-            Json::Bool(b) => Value::Bool(*b),
-            Json::Number(n) => Value::Num(n.as_f64().unwrap_or(f64::NAN)),
-            Json::String(s) => Value::Str(s.clone()),
-            Json::Array(_) | Json::Object(_) => Value::Other,
-        }
-    }
-
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Value::Str(s) => Some(s),
@@ -203,7 +193,7 @@ impl ControlOption {
         ControlOption { value: value.into(), label: label.into(), icon: icon.into(), tier: String::new() }
     }
 
-    pub fn tier(mut self, name: &str) -> ControlOption {
+    pub(crate) fn tier(mut self, name: &str) -> ControlOption {
         self.tier = name.into();
         self
     }
@@ -294,10 +284,10 @@ pub struct HeartSample {
 }
 
 /// How many settled samples the history keeps, one a second.
-pub const HEART_HISTORY: usize = 120;
+pub(crate) const HEART_HISTORY: usize = 120;
 
 /// How far back the spot check points reach.
-pub const HEART_POINTS_MS: u64 = 4 * 60 * 60 * 1000;
+pub(crate) const HEART_POINTS_MS: u64 = 4 * 60 * 60 * 1000;
 
 /// A spot check's point: the median of its settled samples (the lower of
 /// the middle two for an even count), at the last sample's time.
@@ -384,7 +374,7 @@ pub fn device(fields: DeviceFields) -> Device {
     }
 }
 
-pub fn choice(key: &str, label: &str, section: &str, value: Value, options: Vec<ControlOption>) -> Control {
+pub(crate) fn choice(key: &str, label: &str, section: &str, value: Value, options: Vec<ControlOption>) -> Control {
     Control {
         key: key.into(),
         kind: ControlKind::Choice,
@@ -401,7 +391,7 @@ pub fn choice(key: &str, label: &str, section: &str, value: Value, options: Vec<
     }
 }
 
-pub fn toggle(key: &str, label: &str, hint: &str, section: &str, value: bool) -> Control {
+pub(crate) fn toggle(key: &str, label: &str, hint: &str, section: &str, value: bool) -> Control {
     Control {
         key: key.into(),
         kind: ControlKind::Toggle,
@@ -419,7 +409,7 @@ pub fn toggle(key: &str, label: &str, hint: &str, section: &str, value: bool) ->
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn range(key: &str, label: &str, section: &str, value: f64, min: f64, max: f64, step: f64, unit: Unit) -> Control {
+pub(crate) fn range(key: &str, label: &str, section: &str, value: f64, min: f64, max: f64, step: f64, unit: Unit) -> Control {
     Control {
         key: key.into(),
         kind: ControlKind::Range,
@@ -569,7 +559,7 @@ pub fn coerce(ctl: Option<&Control>, raw: &Value) -> Option<Value> {
 
 /// The range's position as a whole percent of its span, what the panel
 /// prints beside the track.
-pub fn range_percent(ctl: Option<&Control>) -> f64 {
+pub(crate) fn range_percent(ctl: Option<&Control>) -> f64 {
     match ctl {
         Some(c) if c.max > c.min => js::round((c.value.js_number() - c.min) / (c.max - c.min) * 100.0),
         _ => 0.0,
@@ -760,7 +750,7 @@ fn heart_json(hr: &HeartRate) -> Json {
 
 /// `^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`, the only shape any adapter lets
 /// reach a child process's argv.
-pub fn valid_address(address: &str) -> bool {
+pub(crate) fn valid_address(address: &str) -> bool {
     let b = address.as_bytes();
     b.len() == 17
         && b.iter().enumerate().all(|(i, c)| if i % 3 == 2 { *c == b':' } else { c.is_ascii_hexdigit() })

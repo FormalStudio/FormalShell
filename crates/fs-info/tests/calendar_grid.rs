@@ -45,24 +45,6 @@ fn in_month_marks_exactly_the_month_asked_for() {
 }
 
 #[test]
-fn week_numbers_are_one_per_row_read_off_the_thursday() {
-    let cells = month_cells(2026, 8);
-    let weeks = week_numbers(&cells);
-    assert_eq!(weeks.len(), ROWS);
-    // The row starting Monday 2026-07-27 has Thursday 2026-07-30 in it, which
-    // is ISO week 31.
-    assert_eq!(weeks[0], 31);
-    assert_eq!(weeks[1], 32);
-}
-
-#[test]
-fn week_numbers_cross_a_year_boundary_on_the_thursday() {
-    // December 2026 runs into ISO week 53 of 2026 and then week 1.
-    let weeks = week_numbers(&month_cells(2026, 12));
-    assert_eq!(weeks[weeks.len() - 1], 1);
-}
-
-#[test]
 fn index_of_date_finds_the_cell_showing_that_day() {
     let cells = month_cells(2026, 8);
     let index = index_of_date(&cells, d(2026, 8, 1));

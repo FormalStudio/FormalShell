@@ -281,24 +281,6 @@ fn dismiss_popup_moves_to_past_marked_seen() {
 }
 
 #[test]
-fn dismiss_popup_many_archives_every_member_seen() {
-    let mut s = State::new();
-    s = add_timeout(&s, summary(notif("a", 1), "Ping"), 1000, 500);
-    s = add_timeout(&s, summary(notif("b", 1), "Ping"), 1001, 5000);
-    s = add_timeout(&s, summary(notif("c", 1), "Other"), 1002, 9000);
-
-    let group = group_entries(&s.popups).into_iter().find(|g| g.summary == "Ping").unwrap();
-    s = dismiss_popup_many(&s, &group.member_ids, 7000);
-    assert_eq!(ids(&s.popups), "c");
-    assert_eq!(ids(&s.past), "a,b");
-    assert_eq!(s.past[0].seen_at, Some(7000));
-    assert_eq!(s.past[1].seen_at, Some(7000));
-    assert_eq!(s.next_expiry, Some(10002)); // only c's own clock is left
-
-    assert_eq!(dismiss_popup_many(&s, &["nope"], 8000), s);
-}
-
-#[test]
 fn mark_all_seen_drains_pending_to_past() {
     let mut s = set_dnd(&State::new(), true);
     s = add_at(&s, notif("a", 1), 1000);
@@ -605,45 +587,10 @@ fn sanitize_body_chromium_sender_still_strips_img() {
     );
 }
 
-#[test]
-fn styled_body_converts_all_newline_forms_to_br() {
-    assert_eq!(styled_body("a\nb\r\nc\rd", "Slack", ""), "a<br/>b<br/>c<br/>d");
-}
-
-#[test]
-fn styled_body_applies_sanitize_before_newline_conversion() {
-    let body = "<a href=\"https://github.com/x\">github.com</a> line one\nline two";
-    assert_eq!(styled_body(body, "Google Chrome", ""), "line one<br/>line two");
-}
-
 // The server never advertises body-markup support, so a bare `<`/`&`/`>` in a
 // sender's plain text is incidental, not markup: styled_body must escape it
 // rather than hand it to a renderer that drops everything after an
 // unterminated tag.
-
-#[test]
-fn styled_body_escapes_bare_angle_brackets_instead_of_dropping_text() {
-    assert_eq!(
-        styled_body("5 < 10 && 3 > 1", "Slack", ""),
-        "5 &lt; 10 &amp;&amp; 3 &gt; 1"
-    );
-}
-
-#[test]
-fn styled_body_escapes_unterminated_tag_without_losing_the_tail() {
-    assert_eq!(
-        styled_body("unterminated <b tag swallows this whole tail", "Slack", ""),
-        "unterminated &lt;b tag swallows this whole tail"
-    );
-}
-
-#[test]
-fn styled_body_escapes_comparison_text_without_losing_the_tail() {
-    assert_eq!(
-        styled_body("disk usage a < b and more text after", "Slack", ""),
-        "disk usage a &lt; b and more text after"
-    );
-}
 
 // rel_time
 

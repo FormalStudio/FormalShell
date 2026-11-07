@@ -115,7 +115,7 @@ pub fn parse_response(status: u16, body: &str) -> Result<Weather, Error> {
 /// conditions the panel draws an icon for. The key is semantic, so both the
 /// label table and the icon table key off one grouping.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Condition {
+pub(crate) enum Condition {
     Clear,
     PartlyCloudy,
     Overcast,
@@ -130,22 +130,6 @@ pub enum Condition {
 }
 
 impl Condition {
-    pub fn key(self) -> &'static str {
-        match self {
-            Condition::Clear => "clear",
-            Condition::PartlyCloudy => "partly-cloudy",
-            Condition::Overcast => "overcast",
-            Condition::Fog => "fog",
-            Condition::Drizzle => "drizzle",
-            Condition::FreezingRain => "freezing-rain",
-            Condition::Rain => "rain",
-            Condition::Snow => "snow",
-            Condition::Showers => "showers",
-            Condition::Thunderstorm => "thunderstorm",
-            Condition::Unknown => "unknown",
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Condition::Clear => "CLEAR",
@@ -163,7 +147,7 @@ impl Condition {
     }
 }
 
-pub fn condition(code: impl Into<f64>) -> Condition {
+pub(crate) fn condition(code: impl Into<f64>) -> Condition {
     let code = code.into();
     if code.fract() != 0.0 {
         return Condition::Unknown;
@@ -181,10 +165,6 @@ pub fn condition(code: impl Into<f64>) -> Condition {
         95 | 96 | 99 => Condition::Thunderstorm,
         _ => Condition::Unknown,
     }
-}
-
-pub fn condition_key(code: impl Into<f64>) -> &'static str {
-    condition(code).key()
 }
 
 pub fn condition_label(code: impl Into<f64>) -> &'static str {

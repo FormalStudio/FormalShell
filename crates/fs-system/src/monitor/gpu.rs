@@ -82,7 +82,7 @@ pub fn parse_cards(drm_text: &str) -> Vec<Card> {
 /// `{ "<card>": { "<key>": <number>, ... } }` from `metric|<card>|<key>|<value>`
 /// rows. A row whose value doesn't parse as a number is dropped rather than
 /// stored as a fabricated 0.
-pub type CardMetrics = HashMap<String, HashMap<String, f64>>;
+pub(crate) type CardMetrics = HashMap<String, HashMap<String, f64>>;
 
 pub fn parse_metrics(drm_text: &str) -> CardMetrics {
     let mut metrics: CardMetrics = HashMap::new();
@@ -296,7 +296,7 @@ pub fn merge_gpu(cards: &[Card], metrics: &CardMetrics, nvidia_rows: &[NvidiaRow
 
 // ---- naming -------------------------------------------------------------
 
-pub fn vendor_name(vendor_id: &str) -> &'static str {
+pub(crate) fn vendor_name(vendor_id: &str) -> &'static str {
     match vendor_id.to_lowercase().as_str() {
         "0x8086" => "Intel",
         "0x1002" | "0x1022" => "AMD",
@@ -331,7 +331,7 @@ pub fn is_discrete(card: &Card) -> bool {
 
 /// The card record driving `connector_name` (compositor output names, e.g.
 /// "eDP-1", "HDMI-A-1", match connector names verbatim).
-pub fn output_card<'a>(connector_name: &str, cards: &'a [Card]) -> Option<&'a Card> {
+pub(crate) fn output_card<'a>(connector_name: &str, cards: &'a [Card]) -> Option<&'a Card> {
     cards.iter().find(|c| c.outputs.iter().any(|o| o.name == connector_name))
 }
 
@@ -340,7 +340,7 @@ pub fn output_card<'a>(connector_name: &str, cards: &'a [Card]) -> Option<&'a Ca
 /// Exec field codes (%f %F %u %U %i %c %k %d %D %n %N %v %m) removed and
 /// whitespace collapsed. `%%` is a literal percent. One pass, so a literal
 /// `%%` can never be re-read as the start of a field code.
-pub fn strip_field_codes(exec_string: &str) -> String {
+pub(crate) fn strip_field_codes(exec_string: &str) -> String {
     let mut out = String::new();
     let mut chars = exec_string.chars().peekable();
     while let Some(c) = chars.next() {

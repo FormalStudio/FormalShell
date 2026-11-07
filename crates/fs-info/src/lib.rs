@@ -10,7 +10,6 @@ pub mod agents;
 pub mod calendar;
 pub mod clock;
 pub mod location;
-pub mod notification_geometry;
 pub mod notification_icon;
 pub mod notifications;
 pub mod reminders;

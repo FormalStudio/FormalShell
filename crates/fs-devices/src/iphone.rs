@@ -14,26 +14,21 @@
 
 use std::sync::LazyLock;
 
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use regex::Regex;
 use serde_json::{Value as Json, json};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::bluetooth;
 use fs_js::{self as js, SPACE};
 
 pub mod category {
-    pub const OTHER: i64 = 0;
-    pub const INCOMING_CALL: i64 = 1;
-    pub const MISSED_CALL: i64 = 2;
-    pub const VOICEMAIL: i64 = 3;
-    pub const SOCIAL: i64 = 4;
+    pub(crate) const INCOMING_CALL: i64 = 1;
+    pub(crate) const MISSED_CALL: i64 = 2;
+    pub(crate) const VOICEMAIL: i64 = 3;
+    pub(crate) const SOCIAL: i64 = 4;
 }
 
 pub const DEFAULT_FOCUS_WINDOW: f64 = 900.0;
-pub const FOCUS_MODES: [&str; 3] = ["respect", "hide", "ignore"];
-
-pub fn category_label(category: i64) -> &'static str {
+pub(crate) fn category_label(category: i64) -> &'static str {
     match category {
         1 => "Incoming call",
         2 => "Missed call",
@@ -200,7 +195,7 @@ static GDBUS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"GDBus\.Error:[A-Za
 /// connected (36)". The two BlueZ states a person can act on get a sentence;
 /// anything else keeps its step and BlueZ's message without the D-Bus
 /// wrapping.
-pub fn explain_error(message: &str) -> String {
+pub(crate) fn explain_error(message: &str) -> String {
     let text = js::trim(message);
     if text.is_empty() {
         return "Unknown error".into();
@@ -482,69 +477,11 @@ pub fn in_focus(arrivals: &[Arrival], now: f64, window_sec: f64) -> bool {
     newest.is_some_and(|n| n.silent)
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DndState {
-    pub owned: bool,
-    pub focus: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DndStep {
-    pub owned: bool,
-    pub focus: bool,
-    /// `Some(on)` to write DND, `None` to leave it.
-    pub set: Option<bool>,
-}
-
-/// `iphone.notifications.syncDnd`, one step. `prev` is the previous step's
-/// state (start from the default). Only edges act, so a DND the owner clears
-/// mid-Focus stays cleared; and only a DND this function turned on is ever
-/// turned off, so one set by hand, before or during Focus, is never touched.
-pub fn sync_dnd_step(prev: DndState, focus: bool, dnd: bool, enabled: bool) -> DndStep {
-    let active = enabled && focus;
-    let mut owned = prev.owned && dnd;
-    let mut set = None;
-    if active && !prev.focus && !dnd {
-        set = Some(true);
-        owned = true;
-    } else if !active && prev.focus && owned {
-        set = Some(false);
-        owned = false;
-    }
-    DndStep { owned, focus: active, set }
-}
-
 // One-time codes. A bare number is not a code: one of the context words has to
 // be present, which keeps prices, order numbers and years off the clipboard.
-static CODE_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i-u)\b(code|otp|passcode|pass ?code|verification|verify|verifica|2fa|two[- ]factor|one[- ]time|security|auth(entication)?|token|pin)\b",
-    )
-    .unwrap()
-});
-static CODE_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?-u)\b([0-9]{3})[- ]([0-9]{3})\b").unwrap());
-static CODE_PLAIN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?-u)\b([0-9]{4,8})\b").unwrap());
-static YEAR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(19|20)[0-9][0-9]$").unwrap());
-
-pub fn extract_code(text: &str) -> String {
-    if !CODE_CONTEXT.is_match(text) {
-        return String::new();
-    }
-    if let Some(m) = CODE_SPLIT.captures(text) {
-        return format!("{}{}", &m[1], &m[2]);
-    }
-    if let Some(m) = CODE_PLAIN.captures(text) {
-        let code = &m[1];
-        if !(code.len() == 4 && YEAR.is_match(code)) {
-            return code.to_string();
-        }
-    }
-    String::new()
-}
-
 /// Bundle id to an icon name from shell/Theme/icons.js. A call's category
 /// outranks the app, since the phone app raises all three kinds.
-pub fn app_icon(bundle_id: &str, category: i64) -> &'static str {
+pub(crate) fn app_icon(bundle_id: &str, category: i64) -> &'static str {
     match category {
         category::INCOMING_CALL => return "phone-incoming",
         category::MISSED_CALL => return "phone-missed",
@@ -699,46 +636,6 @@ pub fn parse_ams_line(line: &str) -> Option<AmsEvent> {
     }
 }
 
-static HANDLE_ADDRESS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?-u)dev_([0-9A-Fa-f]{2}(?:_[0-9A-Fa-f]{2}){5})$").unwrap());
-
-/// A BlueZ device object path ends in dev_AA_BB_CC_DD_EE_FF; that is the
-/// device's address, which is how the phone is found among the Bluetooth
-/// devices when no object path is exposed to match on directly.
-pub fn address_from_handle(handle: &str) -> String {
-    HANDLE_ADDRESS.captures(handle).map_or(String::new(), |m| m[1].replace('_', ":").to_uppercase())
-}
-
-/// The Bluetooth device that is the phone: its object path first (the
-/// bridge's `deviceHandle` is exactly that), then the address encoded in it or
-/// the address of the bond the bridge reports, then the bridge's reported
-/// name. `None` when none match.
-pub fn match_device<'a>(
-    devices: &'a [bluetooth::Device],
-    handle: &str,
-    name: &str,
-    bond_address: &str,
-) -> Option<&'a bluetooth::Device> {
-    let address = match address_from_handle(handle) {
-        a if !a.is_empty() => a,
-        _ => bond_address.to_uppercase(),
-    };
-    if !handle.is_empty()
-        && let Some(d) = devices.iter().find(|d| d.dbus_path == handle)
-    {
-        return Some(d);
-    }
-    if !address.is_empty()
-        && let Some(d) = devices.iter().find(|d| d.address.to_uppercase() == address)
-    {
-        return Some(d);
-    }
-    if !name.is_empty() {
-        return devices.iter().find(|d| d.connected && (d.name == name || d.device_name == name));
-    }
-    None
-}
-
 /// Whether an action on this entry can still reach the phone. ancs4linux picks
 /// a fresh id base per connection, so an id from an earlier session names a
 /// notification the phone never had: the write succeeds and does nothing.
@@ -750,47 +647,6 @@ pub fn is_actionable(entry: Option<&Notification>, current_session: i64) -> bool
 }
 
 // JS `encodeURIComponent` leaves these alone besides ASCII letters and digits.
-const URI_COMPONENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_').remove(b'.').remove(b'!').remove(b'~').remove(b'*').remove(b'\'').remove(b'(').remove(b')');
-
-/// AMS carries no artwork, so the phone's cover is looked up on iTunes' search
-/// by title and artist.
-pub fn artwork_search_url(artist: &str, title: &str) -> String {
-    let query = js::trim(&format!("{title} {artist}")).to_string();
-    format!("https://itunes.apple.com/search?term={}&entity=song&limit=10", utf8_percent_encode(&query, URI_COMPONENT))
-}
-
-static ARTWORK_SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"/[0-9]+x[0-9]+bb\.(jpg|png)$").unwrap());
-
-/// Only a result by the same artist counts (a "Waves" by anyone else is not
-/// this track's cover); one on the same album wins over the first. The 100px
-/// thumbnail URL takes any size in its last path segment, so it is asked for
-/// at 600px. "" for no usable result.
-pub fn pick_artwork(body: &str, artist: &str, album: &str) -> String {
-    let Ok(parsed) = serde_json::from_str::<Json>(body) else { return String::new() };
-    let Some(Json::Array(results)) = js::field(&parsed, "results") else { return String::new() };
-    let want_artist = artist.to_lowercase();
-    let want_album = album.to_lowercase();
-    if want_artist.is_empty() {
-        return String::new();
-    }
-    let mut first = String::new();
-    for r in results {
-        let have = s(r, "artistName").to_lowercase();
-        let url = s(r, "artworkUrl100");
-        if url.is_empty() || have.is_empty() || (!have.contains(&want_artist) && !want_artist.contains(&have)) {
-            continue;
-        }
-        let url = ARTWORK_SIZE.replace(&url, "/600x600bb.$1").into_owned();
-        if !want_album.is_empty() && s(r, "collectionName").to_lowercase() == want_album {
-            return url;
-        }
-        if first.is_empty() {
-            first = url;
-        }
-    }
-    first
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1093,63 +949,6 @@ mod tests {
         assert!(in_focus(&[a(901000.0, false), a(1000.0, true)], now, 900.0));
     }
 
-    fn step(prev: &DndStep, focus: bool, dnd: bool, enabled: bool) -> DndStep {
-        sync_dnd_step(DndState { owned: prev.owned, focus: prev.focus }, focus, dnd, enabled)
-    }
-
-    fn start(focus: bool, dnd: bool, enabled: bool) -> DndStep {
-        sync_dnd_step(DndState::default(), focus, dnd, enabled)
-    }
-
-    #[test]
-    fn sync_dnd_turns_on_and_off_its_own() {
-        let mut r = start(true, false, true);
-        assert_eq!(r.set, Some(true));
-        assert!(r.owned);
-        // The write lands back as a DND change: nothing further.
-        r = step(&r, true, true, true);
-        assert_eq!(r.set, None);
-        assert!(r.owned);
-        r = step(&r, false, true, true);
-        assert_eq!(r.set, Some(false));
-        assert!(!r.owned);
-    }
-
-    #[test]
-    fn sync_dnd_never_clears_a_hand_set_dnd() {
-        // DND already on when Focus starts: not ours.
-        let mut r = start(true, true, true);
-        assert_eq!(r.set, None);
-        assert!(!r.owned);
-        r = step(&r, false, true, true);
-        assert_eq!(r.set, None);
-    }
-
-    #[test]
-    fn sync_dnd_hand_clear_mid_focus_sticks() {
-        let mut r = start(true, false, true);
-        assert_eq!(r.set, Some(true));
-        // Owner turns DND off by hand while Focus still reads on.
-        r = step(&r, true, false, true);
-        assert_eq!(r.set, None);
-        assert!(!r.owned);
-        // ...and back on by hand: that one is theirs, so Focus ending leaves it.
-        r = step(&r, true, true, true);
-        assert!(!r.owned);
-        r = step(&r, false, true, true);
-        assert_eq!(r.set, None);
-    }
-
-    #[test]
-    fn sync_dnd_disabled() {
-        let r = start(true, false, false);
-        assert_eq!(r.set, None);
-        // Turning the key off while it owns DND hands it back.
-        let r = sync_dnd_step(DndState { owned: true, focus: true }, true, true, false);
-        assert_eq!(r.set, Some(false));
-        assert!(!r.owned);
-    }
-
     // --- dedupe ----------------------------------------------------------
 
     #[test]
@@ -1313,40 +1112,6 @@ mod tests {
     }
 
     #[test]
-    fn extract_code_needs_a_context_word() {
-        assert_eq!(extract_code("Your verification code is 482913"), "482913");
-        assert_eq!(extract_code("123-456 is your Apple ID code"), "123456");
-        assert_eq!(extract_code("Order 482913 has shipped"), "");
-        assert_eq!(extract_code("Security alert since 2019"), "");
-        assert_eq!(extract_code(""), "");
-    }
-
-    #[test]
-    fn device_matching() {
-        assert_eq!(address_from_handle("/org/bluez/hci0/dev_a1_B2_C3_D4_E5_F6"), "A1:B2:C3:D4:E5:F6");
-        assert_eq!(address_from_handle(""), "");
-        let by_path = bluetooth::Device {
-            dbus_path: "/org/bluez/hci0/dev_A1_B2_C3_D4_E5_F6".into(),
-            address: "x".into(),
-            name: "a".into(),
-            connected: true,
-            ..Default::default()
-        };
-        let by_addr = bluetooth::Device { address: "a1:b2:c3:d4:e5:f6".into(), name: "b".into(), connected: true, ..Default::default() };
-        let by_name = bluetooth::Device { name: "Kyan's iPhone".into(), connected: true, ..Default::default() };
-        let handle = "/org/bluez/hci0/dev_A1_B2_C3_D4_E5_F6";
-        let found = |devices: &[bluetooth::Device], h: &str, n: &str, b: &str| match_device(devices, h, n, b).cloned();
-        assert_eq!(found(&[by_addr.clone(), by_path.clone()], handle, "", ""), Some(by_path));
-        assert_eq!(found(&[by_name.clone(), by_addr.clone()], "/org/bluez/hci1/dev_A1_B2_C3_D4_E5_F6", "", ""), Some(by_addr));
-        assert_eq!(found(std::slice::from_ref(&by_name), "", "Kyan's iPhone", ""), Some(by_name.clone()));
-        let asleep = bluetooth::Device { name: "Kyan's iPhone".into(), connected: false, ..Default::default() };
-        assert_eq!(found(&[asleep], "", "Kyan's iPhone", ""), None);
-        assert_eq!(found(&[], "", "", ""), None);
-        let bonded = bluetooth::Device { address: "10:7D:C8:A5:3B:42".into(), name: "FormalPhone".into(), ..Default::default() };
-        assert_eq!(found(&[by_name, bonded.clone()], "", "FormalPhone", "10:7d:c8:a5:3b:42"), Some(bonded));
-    }
-
-    #[test]
     fn actionable_only_in_its_session() {
         let e = phone();
         assert!(is_actionable(Some(&e), 0));
@@ -1356,31 +1121,4 @@ mod tests {
         assert!(!is_actionable(None, 77));
     }
 
-    #[test]
-    fn artwork_search_url_puts_title_first() {
-        assert_eq!(
-            artwork_search_url("Daft Punk", "Get Lucky"),
-            "https://itunes.apple.com/search?term=Get%20Lucky%20Daft%20Punk&entity=song&limit=10"
-        );
-    }
-
-    #[test]
-    fn pick_artwork_prefers_the_album_and_upsizes() {
-        let body = json!({ "results": [
-            { "artistName": "Someone Else", "collectionName": "RAM", "artworkUrl100": "https://x/a.jpg/100x100bb.jpg" },
-            { "artistName": "Daft Punk", "collectionName": "Get Lucky (Remix)", "artworkUrl100": "https://x/b.jpg/100x100bb.jpg" },
-            { "artistName": "Daft Punk, Pharrell Williams", "collectionName": "Random Access Memories", "artworkUrl100": "https://x/c.jpg/100x100bb.jpg" }
-        ] })
-        .to_string();
-        assert_eq!(pick_artwork(&body, "Daft Punk", "Random Access Memories"), "https://x/c.jpg/600x600bb.jpg");
-        assert_eq!(pick_artwork(&body, "Daft Punk", "Unknown"), "https://x/b.jpg/600x600bb.jpg");
-    }
-
-    #[test]
-    fn pick_artwork_needs_the_same_artist() {
-        let body = json!({ "results": [{ "artistName": "Other", "artworkUrl100": "https://x/a.jpg/100x100bb.jpg" }] }).to_string();
-        assert_eq!(pick_artwork(&body, "Fixture Band", "Fixture Album"), "");
-        assert_eq!(pick_artwork("nope", "Fixture Band", ""), "");
-        assert_eq!(pick_artwork(&body, "", ""), "");
-    }
 }

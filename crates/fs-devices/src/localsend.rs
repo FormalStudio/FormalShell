@@ -78,7 +78,7 @@ fn unquote(value: &str) -> String {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SlogLine {
+pub(crate) struct SlogLine {
     pub level: String,
     pub msg: String,
     /// Every key=value pair after the message, so a caller after
@@ -94,7 +94,7 @@ impl SlogLine {
 
 /// One send/recv stderr line, or `None` for a line that is not a slog record
 /// at all (a stray warning from a dependency, a blank line).
-pub fn parse_slog_line(line: &str) -> Option<SlogLine> {
+pub(crate) fn parse_slog_line(line: &str) -> Option<SlogLine> {
     let m = SLOG.captures(line)?;
     let rest = &m[2];
     let kv_start = KV_START.find(rest).map(|f| f.start());

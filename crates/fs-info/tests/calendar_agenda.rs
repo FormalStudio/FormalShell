@@ -182,17 +182,3 @@ fn next_up_ignores_all_day_events() {
     let events = [event("ALLDAY", at(2026, 8, 20, 0, 0), None, true)];
     assert!(next_up(&events, at(2026, 8, 20, 8, 0)).is_none());
 }
-
-#[test]
-fn widest_label_is_the_longest_the_day_prints() {
-    let events = [
-        timed("A", at(2026, 8, 20, 9, 0)),
-        range("B", at(2026, 8, 20, 14, 0), at(2026, 8, 20, 15, 30)),
-    ];
-    assert_eq!(widest_label(&events, false), "14:00-15:30");
-}
-
-#[test]
-fn widest_label_of_an_empty_day_is_empty() {
-    assert_eq!(widest_label(&[], false), "");
-}

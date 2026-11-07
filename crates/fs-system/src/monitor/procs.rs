@@ -32,7 +32,7 @@ const SCRIPT_LINES: [&str; 6] = [
     r##"echo "@end""##,
 ];
 
-pub fn collector_script() -> String {
+pub(crate) fn collector_script() -> String {
     SCRIPT_LINES.join("\n")
 }
 
@@ -233,54 +233,7 @@ pub fn filter_rows(rows: &[ProcRow], query: &str) -> Vec<ProcRow> {
         .collect()
 }
 
-pub const SORTS: [&str; 4] = ["cpu", "mem", "pid", "name"];
-
-/// What the state letter in /proc/PID/stat is called in a task manager.
-pub fn state_label(code: &str) -> &'static str {
-    match code {
-        "R" => "Running",
-        "S" => "Sleeping",
-        "D" => "Disk wait",
-        "Z" => "Zombie",
-        "T" => "Stopped",
-        "t" => "Traced",
-        "I" => "Idle",
-        "X" => "Dead",
-        _ => "--",
-    }
-}
-
-/// Names worth trying against the desktop entries, best first: the binary the
-/// argv runs (comm is cut at 15 bytes and often names the wrapper), then comm
-/// itself.
-pub fn launcher_names(name: &str, cmd: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let first = cmd.split(' ').next().unwrap_or("");
-    let base = first.rsplit('/').next().unwrap_or("");
-    if !base.is_empty() {
-        out.push(base.to_string());
-    }
-    if !name.is_empty() && !out.iter().any(|n| n == name) {
-        out.push(name.to_string());
-    }
-    out
-}
-
-/// What the sort control and the column headers call each mode.
-pub fn sort_label(mode: &str) -> Option<&'static str> {
-    match mode {
-        "cpu" => Some("CPU"),
-        "mem" => Some("Memory"),
-        "pid" => Some("PID"),
-        "name" => Some("Name"),
-        _ => None,
-    }
-}
-
-/// The costs run largest first, the identifiers in reading order.
-pub fn sort_descending(mode: &str) -> bool {
-    mode == "cpu" || mode == "mem"
-}
+pub(crate) const SORTS: [&str; 4] = ["cpu", "mem", "pid", "name"];
 
 /// Every mode breaks its own ties on pid, so the order two idle processes sit
 /// in cannot flip between polls: a list that reshuffled under the cursor
@@ -311,11 +264,6 @@ pub fn sort_rows(rows: &[ProcRow], mode: &str) -> Vec<ProcRow> {
     out
 }
 
-pub fn next_sort(mode: &str) -> &'static str {
-    let i = SORTS.iter().position(|s| *s == mode);
-    SORTS[i.map_or(0, |i| i + 1) % SORTS.len()]
-}
-
 // ---- actions ------------------------------------------------------------
 
 /// The signals a process row can send. TERM asks, KILL takes, HUP is what a
@@ -329,10 +277,6 @@ pub const SIGNALS: [&str; 4] = ["TERM", "KILL", "HUP", "INT"];
 pub fn parse_pid(pid: &str) -> Option<u64> {
     let n = js::parse_number(pid);
     (n.is_finite() && n > 0.0 && n.floor() == n && n < u64::MAX as f64).then_some(n as u64)
-}
-
-pub fn is_valid_pid(pid: &str) -> bool {
-    parse_pid(pid).is_some()
 }
 
 /// `None` is a refused signal. No name at all means TERM.
@@ -671,28 +615,6 @@ mod tests {
         assert_eq!(sort_rows(&rows(), "nonsense")[0].pid, BUSY_PID);
     }
 
-    #[test]
-    fn next_sort_cycles_the_four_modes() {
-        assert_eq!(next_sort("cpu"), "mem");
-        assert_eq!(next_sort("mem"), "pid");
-        assert_eq!(next_sort("pid"), "name");
-        assert_eq!(next_sort("name"), "cpu");
-        assert_eq!(next_sort("nonsense"), "cpu");
-    }
-
-    #[test]
-    fn every_mode_has_a_label_and_a_direction() {
-        for s in SORTS {
-            assert!(sort_label(s).is_some(), "{s}");
-        }
-        assert!(sort_descending("cpu"));
-        assert!(sort_descending("mem"));
-        assert!(!sort_descending("pid"));
-        assert!(!sort_descending("name"));
-        let by_pid = sort_rows(&rows(), "pid");
-        assert!(by_pid[0].pid < by_pid[by_pid.len() - 1].pid);
-    }
-
     // ---- actions ----
 
     #[test]
@@ -703,16 +625,6 @@ mod tests {
         assert_eq!(normalize_signal(None), Some("TERM"));
         assert_eq!(normalize_signal(Some("STOP")), None);
         assert_eq!(normalize_signal(Some("9")), None);
-    }
-
-    #[test]
-    fn a_pid_must_be_a_positive_whole_number() {
-        assert!(is_valid_pid("1"));
-        assert!(is_valid_pid("36642"));
-        assert!(!is_valid_pid("0"));
-        assert!(!is_valid_pid("-1"));
-        assert!(!is_valid_pid("1.5"));
-        assert!(!is_valid_pid("1; rm -rf /"));
     }
 
     #[test]
@@ -740,22 +652,4 @@ mod tests {
         assert_eq!(respawn_command(&["mpv".to_string()], ""), ["sh", "-c", "exec 'mpv'"]);
     }
 
-    #[test]
-    fn state_letters_read_as_words() {
-        assert_eq!(state_label("R"), "Running");
-        assert_eq!(state_label("S"), "Sleeping");
-        assert_eq!(state_label("Z"), "Zombie");
-        assert_eq!(state_label("?"), "--");
-        assert_eq!(state_label("constructor"), "--");
-    }
-
-    #[test]
-    fn launcher_names_lead_with_the_binary_the_argv_runs() {
-        assert_eq!(
-            launcher_names(".firefox-wrappe", "/nix/store/x-firefox/bin/firefox --new-window"),
-            ["firefox", ".firefox-wrappe"]
-        );
-        assert_eq!(launcher_names("kthreadd", ""), ["kthreadd"]);
-        assert_eq!(launcher_names("bash", "bash -l"), ["bash"]);
-    }
 }

@@ -46,46 +46,46 @@ use fs_js::{
     encode_uri_component, is_space, round, parse_number, to_str, trim, utf16_len,
 };
 
-pub const INTERLUDE_MIN_SECONDS: f64 = 5.0;
+pub(crate) const INTERLUDE_MIN_SECONDS: f64 = 5.0;
 pub const MISS_TTL_DAYS: f64 = 7.0;
-pub const LINE_ASSUMED_SECONDS: f64 = 7.0;
-pub const WORD_FALLBACK_SECONDS: f64 = 0.35;
+pub(crate) const LINE_ASSUMED_SECONDS: f64 = 7.0;
+pub(crate) const WORD_FALLBACK_SECONDS: f64 = 0.35;
 /// A chunk runs until the next one starts, which over a pause or a line's own
 /// tail can be far longer than the syllable itself. The wipe caps there so it
 /// lands on the beat and holds instead of creeping through the silence.
-pub const WIPE_MAX_SECONDS: f64 = 1.2;
+pub(crate) const WIPE_MAX_SECONDS: f64 = 1.2;
 /// How long the glow on a chunk takes to fade once the chunk's own span is
 /// over, and the step it is reported in, so a decaying glow rewrites the
 /// effect's properties twenty times rather than once a frame.
-pub const GLOW_DECAY_SECONDS: f64 = 0.6;
-pub const GLOW_QUANTUM: f64 = 0.05;
+pub(crate) const GLOW_DECAY_SECONDS: f64 = 0.6;
+pub(crate) const GLOW_QUANTUM: f64 = 0.05;
 /// How far ahead of the player's own clock every lyrics reader works. An MPRIS
 /// position is a single sample stamped when the player's D-Bus reply arrived
 /// and extrapolated from there, and the frame drawn off it reaches the display
 /// a refresh or two later.
-pub const POSITION_LEAD_SECONDS: f64 = 0.1;
+pub(crate) const POSITION_LEAD_SECONDS: f64 = 0.1;
 
 /// A main line ending and the next one starting within this long reads as one
 /// continuous phrase rather than a gap; the earlier line (or its background)
 /// stays lit across it.
-pub const SEAMLESS_GAP_SECONDS: f64 = 3.0;
+pub(crate) const SEAMLESS_GAP_SECONDS: f64 = 3.0;
 
 /// The rightbar ramp from kopuz: per-line-of-distance blur step and cap, in px,
 /// sized for the panel's own (smaller) type.
-pub const BLUR_STEP_PX: f64 = 1.1;
-pub const BLUR_MAX_PX: f64 = 6.0;
+pub(crate) const BLUR_STEP_PX: f64 = 1.1;
+pub(crate) const BLUR_MAX_PX: f64 = 6.0;
 pub const BLUR_QUANTUM_PX: f64 = 0.5;
 /// The lit line rests this far down the viewport rather than at its centre.
-pub const COMFORT_OFFSET_FRACTION: f64 = 0.42;
+pub(crate) const COMFORT_OFFSET_FRACTION: f64 = 0.42;
 
 /// `lyrics_match_score`'s floor and the duration window: a candidate under the
 /// floor is dropped outright, one further than this many seconds from the
 /// track's own length loses regardless of how well its text matches.
-pub const MATCH_SCORE_FLOOR: f64 = 55.0;
-pub const DURATION_WINDOW_SECONDS: f64 = 12.0;
+pub(crate) const MATCH_SCORE_FLOOR: f64 = 55.0;
+pub(crate) const DURATION_WINDOW_SECONDS: f64 = 12.0;
 
 /// A latency past this is a misreport rather than a sink.
-pub const OUTPUT_LATENCY_MAX_MS: f64 = 2000.0;
+pub(crate) const OUTPUT_LATENCY_MAX_MS: f64 = 2000.0;
 
 const DEPTH_OPACITY: [f64; 4] = [1.0, 0.7, 0.45, 0.25];
 
@@ -552,7 +552,7 @@ fn paxsenix_has_timing(rows: &[Value]) -> bool {
 /// right after its parent with `parent` pointing back at it, starting at its
 /// first timed part (or the row's own stamp with none). None when nothing in
 /// `rows` carries real timing.
-pub fn paxsenix_apple_to_lines(rows: &[Value]) -> Option<Vec<Line>> {
+pub(crate) fn paxsenix_apple_to_lines(rows: &[Value]) -> Option<Vec<Line>> {
     if !paxsenix_has_timing(rows) {
         return None;
     }
@@ -647,7 +647,7 @@ fn match_tokens(value: &str) -> Vec<String> {
 
 /// Twice the shared token count over the combined token count, as a
 /// percentage: 0 when either side tokenises to nothing.
-pub fn match_score(candidate: &str, query: &str) -> f64 {
+pub(crate) fn match_score(candidate: &str, query: &str) -> f64 {
     let candidate_tokens = match_tokens(candidate);
     let query_tokens = match_tokens(query);
     if candidate_tokens.is_empty() || query_tokens.is_empty() {
@@ -722,7 +722,7 @@ pub fn best_itunes_song<'a>(
 
 /// "m:ss" or "h:mm:ss" to whole seconds (parse_colon_duration); None for
 /// anything that isn't a run of colon-separated non-negative integers.
-pub fn parse_colon_duration(duration: &str) -> Option<f64> {
+pub(crate) fn parse_colon_duration(duration: &str) -> Option<f64> {
     if duration.is_empty() {
         return None;
     }
@@ -833,7 +833,7 @@ pub fn chunk_words(words: &[Word]) -> Vec<&[Word]> {
 /// has no next, so it runs to the line's end, and a line with no end of its
 /// own (the last display entry) falls back to a chunk-sized fudge past its own
 /// stamp (kopuz's chunk_end_time).
-pub fn chunk_end(words: &[Word], index: usize, line_end: Option<f64>) -> f64 {
+pub(crate) fn chunk_end(words: &[Word], index: usize, line_end: Option<f64>) -> f64 {
     if let Some(next) = words.get(index + 1) {
         return next.time;
     }
@@ -1246,7 +1246,7 @@ pub fn main_line_indices(lines: &[Line]) -> Vec<usize> {
 
 /// The start time of the main line right after `line_index` in
 /// `main_indices`, or None past the last one.
-pub fn next_main_line_start(
+pub(crate) fn next_main_line_start(
     lines: &[Line],
     main_indices: &[usize],
     line_index: usize,
@@ -1260,7 +1260,7 @@ pub fn next_main_line_start(
 /// runs until the next main line starts (or forever, with none); within its
 /// own end is active; past its end it stays lit only through the seamless gap
 /// into a main line that starts soon enough after it.
-pub fn line_active_at(line: &Line, t: f64, next_main_start: Option<f64>) -> bool {
+pub(crate) fn line_active_at(line: &Line, t: f64, next_main_start: Option<f64>) -> bool {
     if t < line.time {
         return false;
     }
@@ -1308,7 +1308,7 @@ pub fn active_main_line_index(lines: &[Line], main_indices: &[usize], t: f64) ->
 /// the backing vocal is still going). Judged on that timing alone: with no end
 /// time of its own it runs until the next main line starts after it, None when
 /// there is none.
-pub fn background_line_bound(lines: &[Line], main_indices: &[usize], line: &Line) -> Option<f64> {
+pub(crate) fn background_line_bound(lines: &[Line], main_indices: &[usize], line: &Line) -> Option<f64> {
     if finite(line.end).is_some() {
         return None;
     }
@@ -1354,7 +1354,7 @@ pub fn active_secondary_lines(
 /// very estimate, so reading them back would report a line as ending wherever
 /// its own fabricated last word happened to land and close a real instrumental
 /// gap to nothing.
-pub fn line_end_estimate(line: &Line) -> f64 {
+pub(crate) fn line_end_estimate(line: &Line) -> f64 {
     if let Some(end) = finite(line.end) {
         return end;
     }

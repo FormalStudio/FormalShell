@@ -78,7 +78,7 @@ fn dmi(text: Option<&String>) -> Option<String> {
 /// the `(R)`, `(TM)` and `CPU @ ...` noise Intel writes goes. ARM
 /// cpuinfo carries no `model name`, and its `Model` names the board, so
 /// it reads as none.
-pub fn cpu_label(cpuinfo: &str) -> Option<String> {
+pub(crate) fn cpu_label(cpuinfo: &str) -> Option<String> {
     let field = |l: &str, key: &str| l.split_once(':').filter(|(k, _)| k.trim() == key).map(|(_, v)| v.trim().to_owned());
     let model = cpuinfo.lines().find_map(|l| field(l, "model name"))?;
     let threads = cpuinfo.lines().filter(|l| l.split_once(':').is_some_and(|(k, _)| k.trim() == "processor")).count();

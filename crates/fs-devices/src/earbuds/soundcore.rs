@@ -23,7 +23,7 @@ use crate::bluetooth;
 use fs_js as js;
 
 pub const BACKEND: &str = "soundcore";
-pub const BINARY: &str = "openscq30";
+pub(crate) const BINARY: &str = "openscq30";
 
 /// ambientSoundMode's option ids, in the order the panel draws them. An id the
 /// model's select does not list is left out; AirplaneMode and any future one
@@ -196,7 +196,7 @@ pub fn get_args(caps: &Caps) -> Vec<String> {
 }
 
 /// `{ settingId: value }` out of a `setting --get ... --json` read.
-pub type Values = BTreeMap<String, Json>;
+pub(crate) type Values = BTreeMap<String, Json>;
 
 /// `setting --get ... --json`: `[{ settingId, value: { type, value } }]`.
 /// Empty on anything else.

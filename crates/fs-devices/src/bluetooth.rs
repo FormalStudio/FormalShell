@@ -42,18 +42,18 @@ static UUID_SHAPED: LazyLock<Regex> = LazyLock::new(|| {
 });
 static HEX32: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i-u)^[0-9a-f]{32}$").unwrap());
 
-pub fn is_mac_shaped(name: &str) -> bool {
+pub(crate) fn is_mac_shaped(name: &str) -> bool {
     MAC_SHAPED.is_match(name)
 }
 
-pub fn is_uuid_shaped(name: &str) -> bool {
+pub(crate) fn is_uuid_shaped(name: &str) -> bool {
     UUID_SHAPED.is_match(name) || HEX32.is_match(name)
 }
 
 /// Rejects the empty string and the two label shapes BlueZ falls back to
 /// when a device has not advertised a real name yet, a raw address or a
 /// service UUID.
-pub fn has_human_name(name: &str) -> bool {
+pub(crate) fn has_human_name(name: &str) -> bool {
     let label = js::trim(name);
     !(label.is_empty() || is_mac_shaped(label) || is_uuid_shaped(label))
 }
@@ -114,19 +114,6 @@ pub fn battery_text(device: Option<&Device>) -> String {
         Some(d) if d.connected && d.battery_available => format!("{}%", js::num_str(js::round(d.battery * 100.0))),
         _ => String::new(),
     }
-}
-
-/// BlueZ hands addresses out uppercase; callers may paste one back in any case.
-pub fn find_by_address<'a>(devices: &'a [Device], address: &str) -> Option<&'a Device> {
-    let wanted = address.to_uppercase();
-    devices.iter().find(|d| d.address.to_uppercase() == wanted)
-}
-
-/// Uppercased addresses of the connected devices, sorted.
-pub fn connected_addresses(devices: &[Device]) -> Vec<String> {
-    let mut out: Vec<String> = devices.iter().filter(|d| d.connected).map(|d| d.address.to_uppercase()).collect();
-    out.sort();
-    out
 }
 
 #[cfg(test)]
@@ -252,22 +239,4 @@ mod tests {
         assert_eq!(battery_text(None), "");
     }
 
-    fn addressed(address: &str, name: &str, connected: bool) -> Device {
-        Device { address: address.into(), connected, ..dev(name) }
-    }
-
-    #[test]
-    fn find_by_address_is_case_insensitive() {
-        let devices = [addressed("AA:BB:CC:DD:EE:01", "one", false), addressed("AA:BB:CC:DD:EE:02", "two", false)];
-        assert_eq!(find_by_address(&devices, "aa:bb:cc:dd:ee:02").unwrap().name, "two");
-        assert!(find_by_address(&devices, "AA:BB:CC:DD:EE:09").is_none());
-        assert!(find_by_address(&[], "AA").is_none());
-    }
-
-    #[test]
-    fn connected_addresses_uppercases_and_sorts() {
-        let devices = [addressed("cc:00", "", true), addressed("AA:00", "", false), addressed("bb:00", "", true)];
-        assert_eq!(connected_addresses(&devices), ["BB:00", "CC:00"]);
-        assert!(connected_addresses(&[]).is_empty());
-    }
 }

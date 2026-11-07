@@ -25,7 +25,7 @@ pub const CELL_BAR_COUNT: usize = 6;
 
 /// Below this level a bar reads as silence and snaps flat. 5/1000 at cava's
 /// sensitivity 200 is the same acoustic level as 2/100 at 800%.
-pub const NOISE_FLOOR: f64 = 5.0;
+pub(crate) const NOISE_FLOOR: f64 = 5.0;
 
 // The gain stage. cava runs at a fixed, low sensitivity so a loud master
 // never clips at its ceiling, and the height comes from here instead: every
@@ -35,20 +35,20 @@ pub const NOISE_FLOOR: f64 = 5.0;
 // those 4s whatever the size of the drop. AGC_FLOOR caps the gain at
 // AGC_TARGET / AGC_FLOOR: 0.04 sits under the quiet pink-noise passage's own
 // peak at sensitivity 200 and eight times over NOISE_FLOOR.
-pub const AGC_ATTACK_SECONDS: f64 = 0.12;
-pub const AGC_RELEASE_SECONDS: f64 = 4.0;
-pub const AGC_FLOOR: f64 = 0.04;
+pub(crate) const AGC_ATTACK_SECONDS: f64 = 0.12;
+pub(crate) const AGC_RELEASE_SECONDS: f64 = 4.0;
+pub(crate) const AGC_FLOOR: f64 = 0.04;
 
 /// Where the running peak draws, before the knee.
-pub const AGC_TARGET: f64 = 0.8;
+pub(crate) const AGC_TARGET: f64 = 0.8;
 
 /// Above this the height bends toward 1 and never reaches it (unit slope at
 /// the knee, so no visible kink).
-pub const AGC_KNEE: f64 = 0.6;
+pub(crate) const AGC_KNEE: f64 = 0.6;
 
 /// A power under 1 on the peak-relative level lifts the mid-levels, kept
 /// milder than sqrt so neighbouring bands stay apart.
-pub const RESPONSE_POWER: f64 = 0.7;
+pub(crate) const RESPONSE_POWER: f64 = 0.7;
 
 /// The next `ref`. A `ref` of 0 or less is the reset state: it snaps to the
 /// first frame's own peak. A non-finite or non-positive `dt_seconds` moves
@@ -147,8 +147,8 @@ pub fn downsample(levels: &[f64], count: usize) -> Vec<f64> {
 // a fast one converge at the same real-time rate. Quick on the way up so a
 // transient reads as a hit, slower on the way down so a bar does not blink
 // off between two loud frames.
-pub const RISE_SECONDS: f64 = 0.03;
-pub const FALL_SECONDS: f64 = 0.09;
+pub(crate) const RISE_SECONDS: f64 = 0.03;
+pub(crate) const FALL_SECONDS: f64 = 0.09;
 
 /// A new array, `target.len()` long. A `shown` shorter than `target` reads its
 /// missing entries as 0; a longer one has its extras dropped. A non-finite or
@@ -177,7 +177,7 @@ pub fn smooth_levels(shown: &[f64], target: &[f64], dt_seconds: f64) -> Vec<f64>
 
 /// One cava frame (`;`-separated) to `bar_count` integer levels; anything
 /// unparsable or negative is 0.
-pub fn parse_frame(line: Option<&str>, bar_count: usize) -> Vec<f64> {
+pub(crate) fn parse_frame(line: Option<&str>, bar_count: usize) -> Vec<f64> {
     let mut levels = vec![0.0; bar_count];
     let Some(line) = line.filter(|l| !l.is_empty()) else {
         return levels;
@@ -191,18 +191,11 @@ pub fn parse_frame(line: Option<&str>, bar_count: usize) -> Vec<f64> {
 
 /// level 0..max to a raw 0..1 fraction, linear, clamped. The height a bar
 /// draws is `normalize` of this, never this directly.
-pub fn level_to_fraction(level: f64, max_level: f64) -> f64 {
+pub(crate) fn level_to_fraction(level: f64, max_level: f64) -> f64 {
     if max_level <= 0.0 || level < NOISE_FLOOR {
         return 0.0;
     }
     (level / max_level).clamp(0.0, 1.0)
-}
-
-pub fn frame_to_levels(line: Option<&str>, bar_count: usize, max_level: f64) -> Vec<f64> {
-    parse_frame(line, bar_count)
-        .into_iter()
-        .map(|l| level_to_fraction(l, max_level))
-        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -243,8 +236,8 @@ pub fn stereo_frame_to_levels(
 // per-index rainbow. Both cuts are relative to the running peak: 0.4 is a band
 // ~37% of the peak (-8.6dB); a steady loud passage's loudest band draws 0.757,
 // so 0.85 is only crossed by a band 36% over it.
-pub const LEVEL_DIM_BELOW: f64 = 0.4;
-pub const LEVEL_ACCENT_FROM: f64 = 0.85;
+pub(crate) const LEVEL_DIM_BELOW: f64 = 0.4;
+pub(crate) const LEVEL_ACCENT_FROM: f64 = 0.85;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Band {
@@ -277,7 +270,7 @@ pub fn level_color_band(level: f64) -> Band {
 /// iPhone over AMS) has nothing for cava to hear, so a frame is drawn off the
 /// track's tempo instead. Deezer's free API carries a `bpm` per track, 0 when
 /// it has none; this covers that and a miss.
-pub const FALLBACK_BPM: f64 = 120.0;
+pub(crate) const FALLBACK_BPM: f64 = 120.0;
 
 pub fn deezer_search_url(artist: &str, title: &str) -> String {
     format!(
@@ -469,28 +462,6 @@ mod tests {
         assert_eq!(level_to_fraction(5.0, 0.0), 0.0);
     }
 
-    #[test]
-    fn frame_to_levels_renders_bar_count_fractions() {
-        let levels = frame_to_levels(Some("0;12;25;37;50;62;75;87;99;100"), 10, 100.0);
-        assert_eq!(levels.len(), 10);
-        assert_eq!(levels[0], 0.0);
-        assert_eq!(levels[9], 1.0);
-    }
-
-    #[test]
-    fn frame_to_levels_of_empty_line_equals_baseline() {
-        assert_eq!(
-            frame_to_levels(Some(""), BAR_COUNT, MAX_LEVEL),
-            baseline_levels()
-        );
-    }
-
-    #[test]
-    fn frame_to_levels_tolerates_malformed_line() {
-        let levels = frame_to_levels(Some("garbage;;;not-numbers"), BAR_COUNT, MAX_LEVEL);
-        assert_eq!(levels, baseline_levels());
-    }
-
     // cava writes the left channel high to low, then the right low to high,
     // with a trailing delimiter before the newline.
     #[test]
@@ -511,15 +482,6 @@ mod tests {
         assert_eq!(s.left, [0.0, 0.0]);
         assert_eq!(s.right, [0.0, (n + 1.0) / MAX_LEVEL]);
         assert_eq!(s.mono, [0.0, 0.0]);
-    }
-
-    #[test]
-    fn stereo_frame_of_a_centred_source_matches_its_mono_frame() {
-        let mono = "10;200;500;900";
-        let s = stereo_frame_to_levels(Some("900;500;200;10;10;200;500;900"), 4, MAX_LEVEL);
-        assert_eq!(s.mono, frame_to_levels(Some(mono), 4, MAX_LEVEL));
-        assert_eq!(s.left, s.mono);
-        assert_eq!(s.right, s.mono);
     }
 
     #[test]
@@ -717,17 +679,6 @@ mod tests {
         assert!(frame_peak(&level_frame(&quiet, halfway)) < steady - 0.1);
         r = run(r, &quiet, AGC_RELEASE_SECONDS + 0.1);
         assert!((frame_peak(&level_frame(&quiet, r)) - steady).abs() < 0.01);
-    }
-
-    #[test]
-    fn agc_silence_under_the_noise_floor_stays_flat() {
-        let line = [1, 2, 3, 4]
-            .map(|_| (NOISE_FLOOR - 1.0).to_string())
-            .join(";");
-        let frame = frame_to_levels(Some(&line), 4, MAX_LEVEL);
-        let r = run(0.0, &frame, 5.0);
-        assert_eq!(r, AGC_FLOOR);
-        assert_eq!(level_frame(&frame, r), [0.0; 4]);
     }
 
     #[test]

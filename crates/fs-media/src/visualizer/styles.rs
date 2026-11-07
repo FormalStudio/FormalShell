@@ -27,171 +27,139 @@ use super::model::{BAR_COUNT, Band, LEVEL_ACCENT_FROM, LEVEL_DIM_BELOW, level_co
 use super::scene::{Color, Scene, TextAlign, TextBaseline};
 use fs_js::round;
 
-pub struct StyleInfo {
+pub(crate) struct StyleInfo {
     pub id: &'static str,
     pub label: &'static str,
-    pub description: &'static str,
 }
 
-pub const STYLES: [StyleInfo; 31] = [
+pub(crate) const STYLES: [StyleInfo; 31] = [
     StyleInfo {
         id: "bars",
         label: "Bars",
-        description: "Twelve columns filled from the floor, the default.",
     },
     StyleInfo {
         id: "peaks",
         label: "Peaks",
-        description: "Thin columns under falling peak caps, Winamp's classic analyser.",
     },
     StyleInfo {
         id: "led",
         label: "LED",
-        description: "Segmented LED columns with a lit peak segment, Winamp 2's matrix.",
     },
     StyleInfo {
         id: "mirror",
         label: "Mirror",
-        description: "Columns grown both ways from the horizontal centre.",
     },
     StyleInfo {
         id: "butterfly",
         label: "Butterfly",
-        description: "Bass in the middle, mirrored out to both edges.",
     },
     StyleInfo {
         id: "outline",
         label: "Outline",
-        description: "The column tops alone, joined into one stepped line.",
     },
     StyleInfo {
         id: "wave",
         label: "Wave",
-        description: "A filled curve through every band.",
     },
     StyleInfo {
         id: "dots",
         label: "Dots",
-        description: "A stippled dot grid, one column per band, lit to its level.",
     },
     StyleInfo {
         id: "ascii",
         label: "ASCII",
-        description: "Shade glyphs stacked in the mono font.",
     },
     StyleInfo {
         id: "matrix",
         label: "Matrix",
-        description: "Mono glyphs falling down each column as fast as it is loud.",
     },
     StyleInfo {
         id: "rain",
         label: "Rain",
-        description: "Droplets falling from each column's top, as many as it is loud.",
     },
     StyleInfo {
         id: "flame",
         label: "Flame",
-        description: "Flickering tips and embers rising off the columns.",
     },
     StyleInfo {
         id: "bubbles",
         label: "Bubbles",
-        description: "Rings rising off the loudest bands, faster with more energy.",
     },
     StyleInfo {
         id: "scope",
         label: "Scope",
-        description: "An oscilloscope trace, synthesised by summing one sine per band.",
     },
     StyleInfo {
         id: "pulse",
         label: "Pulse",
-        description: "A disc breathing on the bass, a ring on the mids, flares on the highs.",
     },
     StyleInfo {
         id: "heartbeat",
         label: "Heartbeat",
-        description: "An ECG trace that beats on every bass onset.",
     },
     StyleInfo {
         id: "terrain",
         label: "Terrain",
-        description: "A scrolling ridge of recent loudness over the bass.",
     },
     StyleInfo {
         id: "bricks",
         label: "Bricks",
-        description: "Columns stacked from separate bricks, nothing drawn above the stack.",
     },
     StyleInfo {
         id: "columns",
         label: "Columns",
-        description: "Dense one-pixel columns, the bands interpolated between them.",
     },
     StyleInfo {
         id: "scatter",
         label: "Scatter",
-        description: "Sparkling dots, denser low down and on the loud bands.",
     },
     StyleInfo {
         id: "retro",
         label: "Retro",
-        description: "A synthwave sun over a perspective grid, the spectrum on the horizon.",
     },
     StyleInfo {
         id: "binary",
         label: "Binary",
-        description: "Streams of 0s and 1s, faster and busier on the loud bands.",
     },
     StyleInfo {
         id: "sakura",
         label: "Sakura",
-        description: "Petals drifting down, more of them and faster with more energy.",
     },
     StyleInfo {
         id: "firework",
         label: "Firework",
-        description: "Rockets bursting into falling sparks, one on every bass hit.",
     },
     StyleInfo {
         id: "firefly",
         label: "Firefly",
-        description: "Fireflies over a strip of grass, blinking on the highs.",
     },
     StyleInfo {
         id: "mosaic",
         label: "Mosaic",
-        description: "A fixed grid of tiles, each lit by its own band past its own threshold.",
     },
     StyleInfo {
         id: "sand",
         label: "Sand",
-        description: "Grains poured by each band, piling up until a bass hit drains the bed.",
     },
     StyleInfo {
         id: "geyser",
         label: "Geyser",
-        description: "A fountain fed by the bass, a burst shot up on every hit.",
     },
     StyleInfo {
         id: "stereo",
         label: "Stereo",
-        description: "Left and right LED meters with a falling peak segment.",
     },
     StyleInfo {
         id: "redsector",
         label: "Red Sector",
-        description: "A tumbling wireframe equalizer over a starfield, after the 1989 Amiga demo.",
     },
     StyleInfo {
         id: "stipple",
         label: "Stipple",
-        description: "Fine dot columns, shaded by height rather than by level.",
     },
 ];
 
-pub fn index_of(id: &str) -> Option<usize> {
+pub(crate) fn index_of(id: &str) -> Option<usize> {
     STYLES.iter().position(|s| s.id == id)
 }
 
@@ -331,7 +299,8 @@ impl State {
     }
 
     /// A state whose random draws replay.
-    pub fn with_seed(seed: u64) -> State {
+    #[cfg(test)]
+    pub(crate) fn with_seed(seed: u64) -> State {
         State::with_rng(fastrand::Rng::with_seed(seed))
     }
 
@@ -2385,7 +2354,6 @@ mod tests {
         for (i, id) in ids.iter().enumerate() {
             assert!(seen.insert(*id), "duplicate id {id}");
             assert!(!STYLES[i].label.is_empty());
-            assert!(!STYLES[i].description.is_empty());
         }
     }
 

@@ -50,7 +50,7 @@ pub fn resolve_main_output(names: &[String], priority: &[String], focused: &str,
 /// is also how a list of nothing but typos and unplugged monitors answers, so
 /// the caller can say so once rather than silently falling back somewhere
 /// else.
-pub fn match_priority(names: &[String], priority: &[String]) -> String {
+pub(crate) fn match_priority(names: &[String], priority: &[String]) -> String {
     priority
         .iter()
         .map(|entry| match_entry(names, entry))
@@ -62,7 +62,7 @@ pub fn match_priority(names: &[String], priority: &[String]) -> String {
 ///
 /// Exact before prefix: an "HDMI-A-1" in the list is answered by that
 /// connector even on a machine where "HDMI-A-2" sorts first.
-pub fn match_entry(names: &[String], entry: &str) -> String {
+pub(crate) fn match_entry(names: &[String], entry: &str) -> String {
     let wanted = entry.to_lowercase();
     if wanted.is_empty() {
         return String::new();
@@ -79,7 +79,7 @@ pub fn match_entry(names: &[String], entry: &str) -> String {
     names.iter().find(|n| n.to_lowercase().starts_with(&wanted)).cloned().unwrap_or_default()
 }
 
-pub fn is_internal(name: &str) -> bool {
+pub(crate) fn is_internal(name: &str) -> bool {
     let lower = name.to_lowercase();
     INTERNAL_PREFIXES.iter().any(|p| lower.starts_with(p))
 }
@@ -110,17 +110,6 @@ pub fn priority_list(value: &Value) -> Vec<String> {
 
 fn contains(names: &[String], name: &str) -> bool {
     !name.is_empty() && names.iter().any(|n| n == name)
-}
-
-/// A screen as the shell sees it, reduced to what this module reads.
-#[derive(Debug, Clone)]
-pub struct Screen {
-    pub name: String,
-}
-
-/// Screens to plain names, so everything above stays a function of strings.
-pub fn screen_names(screens: &[Screen]) -> Vec<String> {
-    screens.iter().map(|s| s.name.clone()).collect()
 }
 
 #[cfg(test)]
@@ -232,10 +221,4 @@ mod tests {
         assert_eq!(resolve_main_output(&v(&["eDP-1"]), &[], "eDP-1", "HDMI-A-1"), "eDP-1");
     }
 
-    #[test]
-    fn screen_names_reads_the_name_off_each_screen() {
-        let screens = [Screen { name: "eDP-1".into() }, Screen { name: "HDMI-A-1".into() }];
-        assert_eq!(screen_names(&screens), v(&["eDP-1", "HDMI-A-1"]));
-        assert!(screen_names(&[]).is_empty());
-    }
 }

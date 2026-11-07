@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-pub const COVER_PLACEHOLDER_BYTES: u64 = 95;
+pub(crate) const COVER_PLACEHOLDER_BYTES: u64 = 95;
 
 // JS `.` does not match \r,   or   as well as \n.
 static METADATA_LINE: LazyLock<Regex> =

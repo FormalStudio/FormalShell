@@ -15,7 +15,7 @@ use super::stations::Station;
 const RADIANS: f64 = std::f64::consts::PI / 180.0;
 const DEGREES: f64 = 180.0 / std::f64::consts::PI;
 
-pub fn clamp(value: f64, minimum: f64, maximum: f64) -> f64 {
+pub(crate) fn clamp(value: f64, minimum: f64, maximum: f64) -> f64 {
     maximum.min(value).max(minimum)
 }
 
@@ -28,13 +28,13 @@ pub fn wrap_longitude(value: f64) -> f64 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LimitedVelocity {
+pub(crate) struct LimitedVelocity {
     pub x: f64,
     pub y: f64,
     pub speed: f64,
 }
 
-pub fn limit_kinetic_velocity(x: f64, y: f64, maximum_speed: f64) -> LimitedVelocity {
+pub(crate) fn limit_kinetic_velocity(x: f64, y: f64, maximum_speed: f64) -> LimitedVelocity {
     let zero = LimitedVelocity {
         x: 0.0,
         y: 0.0,
@@ -194,13 +194,13 @@ pub fn advance_kinetic_rotation(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point3 {
+pub(crate) struct Point3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
 }
 
-pub fn project(
+pub(crate) fn project(
     latitude: f64,
     longitude: f64,
     centre_latitude: f64,
@@ -224,9 +224,9 @@ pub fn project(
 // point is on the near side when z (the cosine of its angular distance from
 // the view centre) is at least 1 / distance, and lands on screen at
 // (x, y) * perspective_scale(z, distance), in units of the view radius.
-pub const START_DISTANCE: f64 = 3.2;
-pub const MINIMUM_DISTANCE: f64 = 1.05;
-pub const VIEW_FILL: f64 = 0.44;
+pub(crate) const START_DISTANCE: f64 = 3.2;
+pub(crate) const MINIMUM_DISTANCE: f64 = 1.05;
+pub(crate) const VIEW_FILL: f64 = 0.44;
 
 pub fn view_distance(scale: f64) -> f64 {
     let zoom = if !scale.is_finite() || scale <= 0.0 {
@@ -252,11 +252,11 @@ pub fn horizon_radius(width: f64, height: f64, scale: f64) -> f64 {
     view_radius(width, height, scale) * horizon_ratio(view_distance(scale))
 }
 
-pub fn visible_depth(depth: f64, distance: f64) -> bool {
+pub(crate) fn visible_depth(depth: f64, distance: f64) -> bool {
     depth >= 1.0 / distance
 }
 
-pub fn perspective_scale(depth: f64, distance: f64) -> f64 {
+pub(crate) fn perspective_scale(depth: f64, distance: f64) -> f64 {
     (distance - 1.0) / (distance - depth)
 }
 
@@ -267,14 +267,14 @@ pub fn horizon_depth(depth: f64, distance: f64) -> f64 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PerspectivePoint {
+pub(crate) struct PerspectivePoint {
     pub x: f64,
     pub y: f64,
     pub z: f64,
     pub visible: bool,
 }
 
-pub fn project_perspective(
+pub(crate) fn project_perspective(
     latitude: f64,
     longitude: f64,
     centre_latitude: f64,
@@ -332,11 +332,11 @@ pub fn unproject(
 
 /// A ring is `[longitude, latitude]` pairs; a coordinate JS read as NaN stays
 /// NaN.
-pub type Ring = Vec<[f64; 2]>;
+pub(crate) type Ring = Vec<[f64; 2]>;
 /// An outer ring followed by holes.
-pub type Polygon = Vec<Ring>;
+pub(crate) type Polygon = Vec<Ring>;
 
-pub fn point_in_ring(longitude: f64, latitude: f64, ring: &[[f64; 2]]) -> bool {
+pub(crate) fn point_in_ring(longitude: f64, latitude: f64, ring: &[[f64; 2]]) -> bool {
     if ring.len() < 3 {
         return false;
     }
@@ -357,7 +357,7 @@ pub fn point_in_ring(longitude: f64, latitude: f64, ring: &[[f64; 2]]) -> bool {
     inside
 }
 
-pub fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[Ring]) -> bool {
+pub(crate) fn point_in_polygon(longitude: f64, latitude: f64, polygon: &[Ring]) -> bool {
     let Some(outer) = polygon.first() else {
         return false;
     };
@@ -410,7 +410,7 @@ fn parse_polygon(v: &Value) -> Polygon {
 }
 
 impl Feature {
-    pub fn from_value(v: &Value) -> Option<Feature> {
+    pub(crate) fn from_value(v: &Value) -> Option<Feature> {
         if !v.is_object() {
             return None;
         }
@@ -577,7 +577,7 @@ pub struct EstimateCache(HashMap<String, LatLon>);
 /// from `key` (FNV-1a over its UTF-16 units, then the Numerical Recipes LCG),
 /// so a station lands on the same spot every run. Falls back to the centroid
 /// after 96 misses.
-pub fn estimated_country_location(
+pub(crate) fn estimated_country_location(
     cache: &mut EstimateCache,
     features: &[Feature],
     code: &str,
@@ -760,36 +760,6 @@ pub fn nearest_visible_station<'a>(
     preferred.or(nearest)
 }
 
-/// The station whose dot is within `hit_radius` pixels of (x, y), the closest
-/// one winning, later rows on a tie. 0 or NaN `hit_radius` reads as 12.
-pub fn station_at(
-    stations: &[Station],
-    x: f64,
-    y: f64,
-    view: View,
-    hit_radius: f64,
-) -> Option<&Station> {
-    let mut nearest = None;
-    let mut nearest_distance = if hit_radius == 0.0 || hit_radius.is_nan() {
-        12.0
-    } else {
-        hit_radius
-    };
-    for station in stations {
-        let Some(position) = station_position(station, view) else {
-            continue;
-        };
-        let (dx, dy) = (position.x - x, position.y - y);
-        let distance = (dx * dx + dy * dy).sqrt();
-        if distance > nearest_distance {
-            continue;
-        }
-        nearest = Some(station);
-        nearest_distance = distance;
-    }
-    nearest
-}
-
 pub fn merge_geo_stations(
     cache: &mut EstimateCache,
     primary: &[Station],
@@ -822,7 +792,7 @@ pub fn merge_geo_stations(
 }
 
 /// 0 `maximum` reads as 500, the default.
-pub fn combine_stations(
+pub(crate) fn combine_stations(
     groups: &[&[Station]],
     maximum: usize,
     replace_duplicates: bool,
@@ -927,23 +897,6 @@ pub fn station_window(stations: &[Station], uuid: &str, maximum: usize) -> Vec<S
         .collect()
 }
 
-/// The first `maximum` distinct tags joined by a middle dot. 0 `maximum`
-/// reads as 2.
-pub fn compact_tags(tags: &str, maximum: usize) -> String {
-    let limit = (if maximum == 0 { 2 } else { maximum }).max(1);
-    let mut output: Vec<&str> = Vec::new();
-    for part in tags.split(',') {
-        if output.len() >= limit {
-            break;
-        }
-        let part = part.trim();
-        if !part.is_empty() && !output.contains(&part) {
-            output.push(part);
-        }
-    }
-    output.join(" \u{b7} ")
-}
-
 pub fn station_meta(station: Option<&Station>) -> String {
     let Some(station) = station else {
         return String::new();
@@ -1028,88 +981,11 @@ mod tests {
         assert!(((p.x * p.x + p.y * p.y).sqrt() - horizon_ratio(d)).abs() < 1e-9);
     }
 
-    fn at(uuid: &str, latitude: f64, longitude: f64) -> Station {
-        Station {
-            uuid: uuid.into(),
-            latitude: Some(latitude),
-            longitude: Some(longitude),
-            ..Station::default()
-        }
-    }
-
-    #[test]
-    fn stations_past_horizon_not_picked() {
-        let stations = [at("far", 0.0, 100.0), at("near", 0.0, 5.0)];
-        let picked = nearest_visible_station(&stations, 0.0, 0.0, "near", 800.0, 600.0, 1.0);
-        assert_eq!(picked.unwrap().uuid, "near");
-        let view = View {
-            width: 800.0,
-            height: 600.0,
-            scale: 1.0,
-            centre_latitude: 0.0,
-            centre_longitude: 0.0,
-        };
-        assert_eq!(station_position(&stations[0], view), None);
-        let p = station_position(&stations[1], view).unwrap();
-        assert_eq!(
-            station_at(&stations, p.x, p.y, view, 0.0).unwrap().uuid,
-            "near"
-        );
-        assert!(station_at(&stations, 0.0, 0.0, view, 0.0).is_none());
-    }
-
     #[test]
     fn zoom_clamp() {
         assert_eq!(view_distance(1.0), 3.2);
         assert!(view_distance(1000.0) >= 1.05);
         assert!(view_distance(24.0) < view_distance(1.0));
-    }
-
-    #[test]
-    fn station_helpers() {
-        let a = Station {
-            name: "Jazz FM".into(),
-            country_code: "ES".into(),
-            tags: "jazz, blues,jazz".into(),
-            ..at("a", 0.0, 0.0)
-        };
-        let b = at("b", 1.0, 1.0);
-        assert_eq!(compact_tags(&a.tags, 0), "jazz \u{b7} blues");
-        assert_eq!(
-            search_stations(&[a.clone(), b.clone()], " JAZZ ", 0).len(),
-            1
-        );
-        assert_eq!(
-            stations_for_country(&[a.clone(), b.clone()], "es", 0).len(),
-            1
-        );
-        let list = [a.clone(), b.clone(), at("c", 2.0, 2.0)];
-        let w = station_window(&list, "a", 3);
-        assert_eq!(
-            w.iter().map(|s| s.uuid.as_str()).collect::<Vec<_>>(),
-            ["c", "a", "b"]
-        );
-        let merged = merge_stations(
-            std::slice::from_ref(&a),
-            &[
-                Station {
-                    name: "new".into(),
-                    ..a.clone()
-                },
-                b,
-            ],
-            0,
-        );
-        assert_eq!(merged.len(), 2);
-        assert_eq!(merged[0].name, "new");
-        assert_eq!(
-            station_meta(Some(&Station {
-                bitrate: 128.0,
-                codec: "MP3".into(),
-                ..a
-            })),
-            "ES \u{b7} MP3 \u{b7} 128 kbps"
-        );
     }
 
     #[test]

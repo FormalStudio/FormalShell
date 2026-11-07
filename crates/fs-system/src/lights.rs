@@ -23,7 +23,7 @@ const fn fx(id: &'static str, label: &'static str, mode: i64, colours: u8, speed
     Effect { id, label, mode, colours, speed }
 }
 
-pub const EFFECTS: [Effect; 12] = [
+pub(crate) const EFFECTS: [Effect; 12] = [
     fx("static", "Static", 0, 1, false),
     fx("breathe", "Breathe", 1, 2, true),
     fx("rainbow-cycle", "Rainbow Cycle", 2, 0, true),

@@ -31,7 +31,7 @@ const LINES: [&str; 12] = [
     r##"echo "@end""##,
 ];
 
-pub fn collector_script() -> String {
+pub(crate) fn collector_script() -> String {
     LINES.join("\n")
 }
 
