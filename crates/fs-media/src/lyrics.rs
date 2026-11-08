@@ -43,7 +43,7 @@ use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
 
 use fs_js::{
-    encode_uri_component, is_space, round, parse_number, to_str, trim, utf16_len,
+    encode_uri_component, is_space, round, to_number, to_str, trim, truthy, utf16_len,
 };
 
 pub(crate) const INTERLUDE_MIN_SECONDS: f64 = 5.0;
@@ -1011,30 +1011,9 @@ pub struct LatencyGraph {
     pub default_sink: String,
 }
 
-fn js_number(v: Option<&Value>) -> f64 {
-    match v {
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
-        Some(Value::String(s)) => parse_number(s),
-        Some(Value::Null) => 0.0,
-        Some(Value::Bool(b)) => f64::from(u8::from(*b)),
-        _ => f64::NAN,
-    }
-}
-
-/// JS truthiness of a parsed JSON value.
-fn is_truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
-}
-
 /// `Number(x) || 0`.
 fn number_or_zero(v: Option<&Value>) -> f64 {
-    let n = js_number(v);
+    let n = to_number(v);
     if n.is_nan() { 0.0 } else { n }
 }
 
@@ -1073,7 +1052,7 @@ pub fn latency_graph(text: &str) -> Option<LatencyGraph> {
         for entry in entries {
             let key = entry.get("key").and_then(Value::as_str).unwrap_or("");
             if meta_name == "settings" {
-                let n = js_number(entry.get("value"));
+                let n = to_number(entry.get("value"));
                 if n > 0.0 {
                     match key {
                         "clock.rate" => rate = n,
@@ -1085,11 +1064,11 @@ pub fn latency_graph(text: &str) -> Option<LatencyGraph> {
                 }
             } else if meta_name == "default"
                 && key == "default.audio.sink"
-                && let Some(value) = entry.get("value").filter(|v| is_truthy(v))
+                && let Some(value) = entry.get("value").filter(|v| truthy(Some(v)))
             {
                 default_sink = value
                     .get("name")
-                    .filter(|n| is_truthy(n))
+                    .filter(|n| truthy(Some(n)))
                     .map(to_str)
                     .unwrap_or_default();
             }
@@ -1109,7 +1088,7 @@ pub fn latency_graph(text: &str) -> Option<LatencyGraph> {
         default_sink,
     };
     for o in &objects {
-        let Some(info) = o.get("info").filter(|i| is_truthy(i)) else {
+        let Some(info) = o.get("info").filter(|i| truthy(Some(i))) else {
             continue;
         };
         let props = info.get("props");

@@ -614,23 +614,11 @@ pub fn bluetooth_devices(values: &[bluetooth::Device]) -> Vec<bluetooth::Device>
         .collect()
 }
 
-/// A number as `JSON.stringify` prints it: whole values without a fraction,
-/// NaN and the infinities as null.
-fn js_number(n: f64) -> Json {
-    if !n.is_finite() {
-        Json::Null
-    } else if n == n.trunc() && n.abs() < 9_007_199_254_740_992.0 {
-        Json::from(n as i64)
-    } else {
-        Json::from(n)
-    }
-}
-
 fn value_json(v: &Value) -> Json {
     match v {
         Value::Null | Value::Other => Json::Null,
         Value::Bool(b) => Json::Bool(*b),
-        Value::Num(n) => js_number(*n),
+        Value::Num(n) => js::json_number(*n),
         Value::Str(s) => Json::String(s.clone()),
     }
 }
@@ -654,7 +642,7 @@ pub fn to_json(dev: &Device) -> Json {
             serde_json::json!({
                 "id": b.id.as_str(),
                 "label": b.label,
-                "level": js_number(b.level),
+                "level": js::json_number(b.level),
                 "charging": b.charging,
                 "inEar": b.in_ear,
             })
@@ -678,9 +666,9 @@ pub fn to_json(dev: &Device) -> Json {
                 "value": value_json(&c.value),
                 "enabled": c.enabled,
                 "options": options,
-                "min": js_number(c.min),
-                "max": js_number(c.max),
-                "step": js_number(c.step),
+                "min": js::json_number(c.min),
+                "max": js::json_number(c.max),
+                "step": js::json_number(c.step),
                 "unit": c.unit.as_str(),
             })
         })

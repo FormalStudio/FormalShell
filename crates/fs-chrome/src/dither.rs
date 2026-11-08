@@ -278,13 +278,13 @@ pub fn quantize(cells: &[u8], cell_count: usize, grid_width: usize, pal: &[u8]) 
     out
 }
 
-pub fn hex(r: u8, g: u8, b: u8) -> String {
-    format!("#{r:02x}{g:02x}{b:02x}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hex(r: u8, g: u8, b: u8) -> String {
+        format!("#{r:02x}{g:02x}{b:02x}")
+    }
 
     fn cells(colors: &[[u8; 3]]) -> Vec<u8> {
         colors.iter().flatten().copied().collect()

@@ -79,6 +79,32 @@ impl Rgba {
         Self { r: ch(self.r, to.r), g: ch(self.g, to.g), b: ch(self.b, to.b), a }
     }
 
+    /// sRGB to linear light for one channel in 0..1.
+    pub fn linear(v: f64) -> f64 {
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    }
+
+    /// WCAG's relative luminance.
+    pub fn luminance(self) -> f64 {
+        0.2126 * Self::linear(f64::from(self.r)) + 0.7152 * Self::linear(f64::from(self.g)) + 0.0722 * Self::linear(f64::from(self.b))
+    }
+
+    /// WCAG's contrast ratio between two relative luminances.
+    pub fn contrast(a: f64, b: f64) -> f64 {
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    /// Rec. 601 luma of the colour, scaled to 0..255.
+    pub fn luma601(self) -> f64 {
+        255.0 * (0.299 * f64::from(self.r) + 0.587 * f64::from(self.g) + 0.114 * f64::from(self.b))
+    }
+
+    /// `#rrggbb`, alpha dropped.
+    pub fn to_hex(self) -> String {
+        let [r, g, b, _] = self.to_u8();
+        format!("#{r:02x}{g:02x}{b:02x}")
+    }
+
     /// Channels as bytes, rounded the way Qt rounds a float channel.
     pub fn to_u8(self) -> [u8; 4] {
         let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;

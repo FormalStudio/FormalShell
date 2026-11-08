@@ -54,8 +54,7 @@ pub fn next_change<Tz: TimeZone>(now: &DateTime<Tz>, location: Option<(f64, f64)
 }
 
 fn linear(c: u8) -> f64 {
-    let c = c as f64 / 255.0;
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    crate::color::Rgba::linear(c as f64 / 255.0)
 }
 
 fn encode(c: f64) -> f64 {

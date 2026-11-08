@@ -258,7 +258,7 @@ impl Bar {
     /// `frame` in `debug dump`.
     pub fn frame_state(&self) -> Value {
         let (enabled, thickness, _) = self.style.frame;
-        json!({"enabled": enabled, "thickness": number(thickness)})
+        json!({"enabled": enabled, "thickness": fs_js::json_number(thickness)})
     }
 
     pub fn frame_thickness(&self) -> f64 {
@@ -1078,11 +1078,11 @@ impl Bar {
             };
             let limits = s.limits.unwrap_or(cell::Limits { cap: 0.0, min: 0.0 });
             json!({
-                "budget": if s.budget.is_finite() { number(s.budget) } else { json!(-1) },
-                "cap": number(limits.cap),
-                "min": number(limits.min),
-                "natural": number(s.free_natural()),
-                "extent": number(s.free_extent()),
+                "budget": if s.budget.is_finite() { fs_js::json_number(s.budget) } else { json!(-1) },
+                "cap": fs_js::json_number(limits.cap),
+                "min": fs_js::json_number(limits.min),
+                "natural": fs_js::json_number(s.free_natural()),
+                "extent": fs_js::json_number(s.free_extent()),
                 "scrolling": s.scrolling(&self.kit, !self.hidden),
             })
         };
@@ -1109,9 +1109,9 @@ impl Bar {
             "screen": self.output,
             "edge": self.edge.as_str(),
             "along": self.length(),
-            "edgeInset": number(self.style.inset),
-            "gap": number(self.style.gap),
-            "slack": number(room.slack),
+            "edgeInset": fs_js::json_number(self.style.inset),
+            "gap": fs_js::json_number(self.style.gap),
+            "slack": fs_js::json_number(room.slack),
             "regions": {
                 "left": {"cells": room.cells[0], "hidden": room.hidden[0]},
                 "center": {"cells": room.cells[1], "hidden": 0},
@@ -1122,11 +1122,6 @@ impl Bar {
             "cells": cells,
         })
     }
-}
-
-/// A number as JSON.stringify prints it: no `.0` on a whole one.
-pub fn number(n: f64) -> Value {
-    if n.fract() == 0.0 && n.abs() < 1e15 { json!(n as i64) } else { json!(n) }
 }
 
 /// `corners`' two fillets, concave quarter circles of radius `r` hanging

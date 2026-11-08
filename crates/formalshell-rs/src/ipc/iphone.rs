@@ -27,11 +27,6 @@ pub fn target() -> Target<App> {
     }
 }
 
-/// JS prints a whole number without its fraction.
-fn num(v: f64) -> Json {
-    if v.fract() == 0.0 && v.abs() < 1e15 { json!(v as i64) } else { json!(v) }
-}
-
 fn entry(n: &fs_devices::iphone::Notification) -> Json {
     json!({
         "id": n.id,
@@ -50,7 +45,7 @@ fn entry(n: &fs_devices::iphone::Notification) -> Json {
         "important": n.important,
         "preexisting": n.preexisting,
         "session": n.session,
-        "ts": num(n.ts),
+        "ts": fs_js::json_number(n.ts),
     })
 }
 
@@ -71,7 +66,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
             "bondAddress": s.bond_address,
             "deviceName": s.device_name,
             "batteryAvailable": battery.is_some(),
-            "battery": battery.map_or(json!(0), num),
+            "battery": battery.map_or(json!(0), fs_js::json_number),
             "unread": s.unread,
             "inFocus": s.in_focus,
             "pairingCode": s.pairing_code,

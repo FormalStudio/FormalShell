@@ -82,12 +82,6 @@ impl Stats {
     }
 }
 
-/// JS `Math.round`: halves go up, also for negatives.
-fn js_round(x: f64) -> f64 {
-    let floor = x.floor();
-    if x - floor >= 0.5 { floor + 1.0 } else { floor }
-}
-
 /// The sums the three numbers are read off, for one stretch of the band.
 /// Two of them add, so a span of the band pools its columns exactly.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -264,8 +258,8 @@ pub fn band_rect(
     sample_width: f64,
     sample_height: f64,
 ) -> Rect {
-    let across = js_round(thickness / screen_height.max(1.0) * sample_height).max(1.0);
-    let down = js_round(thickness / screen_width.max(1.0) * sample_width).max(1.0);
+    let across = fs_js::round(thickness / screen_height.max(1.0) * sample_height).max(1.0);
+    let down = fs_js::round(thickness / screen_width.max(1.0) * sample_width).max(1.0);
     match edge {
         Edge::Bottom => Rect {
             x: 0.0,

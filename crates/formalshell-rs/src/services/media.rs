@@ -280,11 +280,6 @@ pub enum Diff {
     Select(String),
 }
 
-/// JS prints a whole number without its fraction.
-fn num(v: f64) -> Value {
-    if v.fract() == 0.0 && v.abs() < 1e15 { json!(v as i64) } else { json!(v) }
-}
-
 fn loop_name(l: LoopStatus) -> &'static str {
     match l {
         LoopStatus::None => "none",
@@ -644,8 +639,8 @@ impl State {
             "album": a.album,
             "artUrl": a.art_url,
             "isPlaying": a.playing,
-            "position": num(a.position),
-            "length": num(a.length),
+            "position": fs_js::json_number(a.position),
+            "length": fs_js::json_number(a.length),
             "canSeek": a.can_seek,
             "canRaise": a.can_raise,
             "shuffleSupported": a.shuffle.is_some(),
@@ -653,7 +648,7 @@ impl State {
             "loopSupported": a.loop_name.is_some(),
             "loop": a.loop_name.unwrap_or("none"),
             "volumeSupported": a.volume.is_some(),
-            "volume": num(a.volume.unwrap_or(0.0)),
+            "volume": fs_js::json_number(a.volume.unwrap_or(0.0)),
             "kopuz": {
                 "connected": kopuz.is_some(),
                 "key": kopuz.map_or("", |k| k.key.as_str()),

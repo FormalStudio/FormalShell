@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 fs-js = { path = "../fs-js" }
-percent-encoding = "2"
 regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 unicode-normalization = "0.1"

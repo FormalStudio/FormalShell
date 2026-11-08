@@ -493,7 +493,7 @@ impl Cell for Workspaces {
                     "urgent": s.is_urgent,
                     "placeholder": s.id().is_none(),
                     "appsShown": chip.shows_apps,
-                    "extent": crate::surfaces::bar::number(chip.extent),
+                    "extent": fs_js::json_number(chip.extent),
                     "rect": rect(self.chip_rect(&chip, self.origin)),
                     "overflow": s.overflow,
                     "icons": icons,

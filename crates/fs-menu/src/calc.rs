@@ -196,36 +196,6 @@ fn to_precision_12(n: f64) -> (bool, Vec<u8>, i32) {
     (n.is_sign_negative(), digits, exponent)
 }
 
-/// ECMAScript `Number::toString` for a finite value.
-fn js_number_string(x: f64) -> String {
-    if x == 0.0 {
-        return "0".to_string();
-    }
-    let sign = if x < 0.0 { "-" } else { "" };
-    // `{:e}` prints the shortest digits that round-trip, as ECMAScript wants.
-    let sci = format!("{:e}", x.abs());
-    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
-    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
-    let k = digits.len() as i32;
-    let n = exp.parse::<i32>().unwrap_or(0) + 1;
-    let body = if k <= n && n <= 21 {
-        format!("{digits}{}", "0".repeat((n - k) as usize))
-    } else if 0 < n && n <= 21 {
-        format!("{}.{}", &digits[..n as usize], &digits[n as usize..])
-    } else if -6 < n && n <= 0 {
-        format!("0.{}{digits}", "0".repeat((-n) as usize))
-    } else {
-        let e = n - 1;
-        let e_str = format!("{}{}", if e < 0 { '-' } else { '+' }, e.abs());
-        if k == 1 {
-            format!("{digits}e{e_str}")
-        } else {
-            format!("{}.{}e{e_str}", &digits[..1], &digits[1..])
-        }
-    };
-    format!("{sign}{body}")
-}
-
 /// 12 significant digits then re-parse: collapses float noise (0.1+0.2 ->
 /// "0.3") without freezing integers into exponent notation.
 pub fn format(n: f64) -> String {
@@ -240,7 +210,7 @@ pub fn format(n: f64) -> String {
     let rounded: f64 = std::format!("{}0.{digit_string}e{exponent}", if negative { "-" } else { "" })
         .parse()
         .unwrap_or(n);
-    js_number_string(rounded)
+    fs_js::num_str(rounded)
 }
 
 /// The ready-made row the launcher prepends to ranked results (and shows

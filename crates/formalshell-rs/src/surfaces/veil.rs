@@ -146,7 +146,7 @@ impl Veil {
         } else if (self.scene.size.w, self.scene.size.h) != (w, h) || self.nodes.is_empty() {
             self.scene.resize(w, h);
             let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
-            p.rect(IRect::new(0, 0, w, h), Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+            p.rect(IRect::new(0, 0, w, h), Rgba::BLACK, 0.0);
             p.finish();
             self.scene.touch(self.scene.size);
         }

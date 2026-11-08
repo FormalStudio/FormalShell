@@ -40,27 +40,14 @@ impl Colors {
     pub fn accented(&self, role: &str) -> Self {
         let mut out = self.clone();
         let accent = self.get(role);
-        let (hi, lo) = {
-            let (a, b) = (luminance(accent), luminance(self.get("background")));
-            (a.max(b), a.min(b))
-        };
         if let Some(p) = COLOR_KEYS.iter().position(|k| *k == "primary")
             && COLOR_KEYS.contains(&role)
-            && (hi + 0.05) / (lo + 0.05) >= 3.0
+            && Rgba::contrast(accent.luminance(), self.get("background").luminance()) >= 3.0
         {
             out.values[p] = accent;
         }
         out
     }
-}
-
-/// WCAG's relative luminance of an sRGB colour.
-fn luminance(c: Rgba) -> f64 {
-    let lin = |v: f32| {
-        let v = f64::from(v);
-        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
-    };
-    0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
 }
 
 impl Default for Colors {
@@ -338,8 +325,8 @@ impl Theme {
         let spacing_scale = font_scale;
 
         let frame_thickness =
-            tokens::js_round(tokens::clamp(get("frame.thickness").as_ref(), 0.0, f64::INFINITY, 0.0));
-        let frame_radius = tokens::js_round(tokens::clamp(get("frame.radius").as_ref(), 0.0, f64::INFINITY, 15.0));
+            fs_js::round(tokens::clamp(get("frame.thickness").as_ref(), 0.0, f64::INFINITY, 0.0));
+        let frame_radius = fs_js::round(tokens::clamp(get("frame.radius").as_ref(), 0.0, f64::INFINITY, 15.0));
 
         Self {
             style,

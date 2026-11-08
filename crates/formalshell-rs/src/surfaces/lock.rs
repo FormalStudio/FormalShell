@@ -254,7 +254,7 @@ impl View {
         let full = IRect::new(0, 0, w, h);
         if s.blanked && s.wake <= 0.0 {
             let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
-            p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+            p.rect(full, Rgba::BLACK, 0.0);
             p.finish();
             self.ui.hide(&mut self.scene);
             return false;
@@ -289,7 +289,7 @@ impl View {
         // Black under everything, the screen faded in over it: a light
         // theme's `background` under a part-faded backdrop is a white flash
         // in a dark room on every blank and wake.
-        let black = Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
+        let black = Rgba::BLACK;
         p.rect(full, black, 0.0);
         paint_backdrop(&mut p, s, theme, (w, h));
         login::paint(&mut p, card_rect, theme, fade);
@@ -314,7 +314,7 @@ impl View {
         let card_json = json!({"x": rest.x, "y": rest.y, "width": rest.w, "height": rest.h});
         self.report = json!({
             "clockInk": ink_name,
-            "clockLuma": js(luma),
+            "clockLuma": fs_js::json_number(luma),
             "clockSampled": sampled,
             "clockRect": card_json,
             "depth": front.is_some(),
@@ -331,7 +331,7 @@ impl View {
     pub fn draw_splash(&mut self, splash: Option<&Bitmap>) {
         let (w, h) = (self.scene.size.w, self.scene.size.h);
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
-        p.rect(IRect::new(0, 0, w, h), Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+        p.rect(IRect::new(0, 0, w, h), Rgba::BLACK, 0.0);
         if let Some(b) = splash {
             p.image(b, splash_at(b, (w, h)), 1.0);
         }
@@ -346,7 +346,7 @@ pub fn backdrop_scene(s: &Shared, theme: &Theme, (w, h): (i32, i32)) -> Scene {
     let mut scene = Scene::new(w, h);
     let mut nodes = Vec::new();
     let mut p = Painter::new(&mut scene, &mut nodes, None);
-    p.rect(IRect::new(0, 0, w, h), Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+    p.rect(IRect::new(0, 0, w, h), Rgba::BLACK, 0.0);
     paint_backdrop(&mut p, s, theme, (w, h));
     p.finish();
     scene
@@ -423,35 +423,16 @@ fn now_playing(m: &NowPlaying, theme: &Theme) -> El {
     w::column(s.sm, rows)
 }
 
-/// How `JSON.stringify` prints a number: whole values without a fraction.
-fn js(v: f64) -> Value {
-    if v.fract() == 0.0 && v.abs() < 1e15 { json!(v as i64) } else { json!(v) }
-}
-
-/// Lock/model.js's `lumaOf`, on 0..1 channels.
-fn luma_of(c: Rgba) -> f64 {
-    255.0 * (0.299 * c.r as f64 + 0.587 * c.g as f64 + 0.114 * c.b as f64)
-}
-
-fn linear(v: f64) -> f64 {
-    let c = v.clamp(0.0, 255.0) / 255.0;
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-}
-
-fn contrast(a: f64, b: f64) -> f64 {
-    (a.max(b) + 0.05) / (a.min(b) + 0.05)
-}
-
 /// Lock/model.js's `ink` on an already composited backdrop luma.
 fn ink_of(backdrop: f64) -> &'static str {
-    let l = linear(backdrop);
-    if contrast(1.0, l) >= contrast(0.0, l) { "light" } else { "dark" }
+    let l = Rgba::linear(backdrop.clamp(0.0, 255.0) / 255.0);
+    if Rgba::contrast(1.0, l) >= Rgba::contrast(0.0, l) { "light" } else { "dark" }
 }
 
 /// The ink over `rect`, the backdrop luma it was chosen against, and
 /// whether that luma was read off the wallpaper (BarPaint's `sampled`).
 fn ink(s: &Shared, theme: &Theme, rect: IRect, size: (i32, i32)) -> (&'static str, f64, bool) {
-    let fallback = if s.has_wallpaper { 0.0 } else { luma_of(theme.colors.get("background")) };
+    let fallback = if s.has_wallpaper { 0.0 } else { theme.colors.get("background").luma601() };
     let mean = s.picture.and_then(|p| {
         let (pw, ph) = (p.width as i32, p.height as i32);
         if (pw, ph) == size {
@@ -761,7 +742,7 @@ mod tests {
     fn wake_never_passes_a_light_background() {
         use crate::render::Renderer;
         let theme = Theme::resolve(|_| None, &fs_theme::palette::fallback("light"));
-        assert!(luma_of(theme.colors.get("background")) > 200.0);
+        assert!(theme.colors.get("background").luma601() > 200.0);
         let mut kit = Kit::new(&theme);
         // Big enough that the corner is clear of the column.
         let (w, h) = (900, 700);
@@ -837,7 +818,7 @@ mod tests {
 
     #[test]
     fn whole_numbers_print_like_js() {
-        assert_eq!(js(0.0).to_string(), "0");
-        assert_eq!(js(12.5).to_string(), "12.5");
+        assert_eq!(fs_js::json_number(0.0).to_string(), "0");
+        assert_eq!(fs_js::json_number(12.5).to_string(), "12.5");
     }
 }

@@ -31,7 +31,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::Value;
 
 use fs_js as js;
@@ -184,22 +183,6 @@ pub struct Probe {
     pub argv: Vec<String>,
 }
 
-/// What JS `encodeURIComponent` leaves alone.
-const URI_COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'!')
-    .remove(b'~')
-    .remove(b'*')
-    .remove(b'\'')
-    .remove(b'(')
-    .remove(b')');
-
-fn encode(s: &str) -> String {
-    utf8_percent_encode(s, URI_COMPONENT).to_string()
-}
-
 fn strings(parts: &[&str]) -> Vec<String> {
     parts.iter().map(|s| (*s).to_owned()).collect()
 }
@@ -245,8 +228,8 @@ pub fn probe_command(input: &FlakeInput) -> Probe {
             }
             let url = format!(
                 "https://gitlab.com/api/v4/projects/{}/repository/commits/{}",
-                encode(&format!("{}/{}", input.owner, input.repo)),
-                encode(reference)
+                js::encode_uri_component(&format!("{}/{}", input.owner, input.repo)),
+                js::encode_uri_component(reference)
             );
             let mut argv = strings(&["curl", "-sS", "-f", "-m", "15"]);
             argv.push(url);

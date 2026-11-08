@@ -180,13 +180,11 @@ pub fn now() -> chrono::NaiveDateTime {
 }
 
 fn hex(app: &App, role: &str, alpha: &str) -> String {
-    let [r, g, b, _] = app.store.theme.theme.colors.get(role).to_u8();
-    format!("#{r:02x}{g:02x}{b:02x}{alpha}")
+    format!("{}{alpha}", app.store.theme.theme.colors.get(role).to_hex())
 }
 
 fn border_weight(app: &App) -> String {
-    let w = app.store.theme.theme.border_width;
-    if w.fract() == 0.0 { format!("{}", w as i64) } else { format!("{w}") }
+    fs_js::num_str(app.store.theme.theme.border_width)
 }
 
 /// slurp's chrome, resolved at call time so it follows matugen.

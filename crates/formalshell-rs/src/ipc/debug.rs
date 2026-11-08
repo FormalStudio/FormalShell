@@ -7,7 +7,6 @@ use serde_json::json;
 
 use super::registry::{Function, Target, Type, Value};
 use crate::scene::IRect;
-use crate::surfaces::bar::number;
 use crate::wayland::App;
 
 fn text(s: impl Into<String>) -> Value {
@@ -58,7 +57,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     let framed = app.bar.framed();
     let inset = |e: Edge| if e == edge { thickness } else if framed { frame } else { 0 };
     let theme = &app.store.theme.theme;
-    let reach = number(theme.card_radius());
+    let reach = fs_js::json_number(theme.card_radius());
     let screen = app.bar_output_name();
     let join = match app.debug_join() {
         Some((x, width)) => json!({"edge": edge.as_str(), "x": x, "width": width, "reach": reach, "screen": screen}),
@@ -129,14 +128,14 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         "depth": app.store.depth.status(),
         "render": render(),
         "theme": {
-            "radii": {"sm": number(theme.radii.sm), "md": number(theme.radii.md), "lg": number(theme.radii.lg), "xl": number(theme.radii.xl)},
+            "radii": {"sm": fs_js::json_number(theme.radii.sm), "md": fs_js::json_number(theme.radii.md), "lg": fs_js::json_number(theme.radii.lg), "xl": fs_js::json_number(theme.radii.xl)},
             "radiusXl": reach,
-            "borderWidth": number(theme.border_width),
+            "borderWidth": fs_js::json_number(theme.border_width),
             "barPosition": edge.as_str(),
             "layout": theme.layout.as_str(),
             "barStyle": theme.bar_style.as_str(),
             "blur": app.store.theme.blur,
-            "surfaceOpacity": number(theme.surface_opacity),
+            "surfaceOpacity": fs_js::json_number(theme.surface_opacity),
             "morph": theme.morph,
             "grid": {"wallpaper": theme.wallpaper_grid, "lock": theme.lock_grid},
             "animate": theme.wallpaper_animate,

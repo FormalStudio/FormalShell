@@ -85,16 +85,11 @@ fn option_value(ctl: &Control, i: usize) -> Option<String> {
     ctl.options.as_deref().unwrap_or_default().get(i).map(|o| value_text(&o.value))
 }
 
-/// A number as JavaScript prints it: whole values carry no fraction.
-fn num(n: f64) -> String {
-    if n.is_finite() && n.fract() == 0.0 { format!("{}", n as i64) } else { format!("{n}") }
-}
-
 /// The raw string `Earbuds::plan` coerces back into the control's type.
 fn value_text(v: &Value) -> String {
     match v {
         Value::Bool(b) => b.to_string(),
-        Value::Num(n) => num(*n),
+        Value::Num(n) => fs_js::num_str(*n),
         Value::Str(s) => s.clone(),
         Value::Null => "null".into(),
         Value::Other => String::new(),
@@ -226,7 +221,7 @@ impl Earbuds {
 
     fn step_range(fx: &Effect, ctl: &Control, direction: f64) {
         if let Value::Num(n) = ctl.value {
-            set(fx, &ctl.key, num(n + direction * ctl.step));
+            set(fx, &ctl.key, fs_js::num_str(n + direction * ctl.step));
         }
     }
 }
@@ -245,7 +240,7 @@ fn art(dev: &Device, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
 }
 
 fn percent(level: f64) -> String {
-    format!("{}%", num(level))
+    format!("{}%", fs_js::num_str(level))
 }
 
 /// The product picture beside the name and what it is doing; a headphone's
@@ -338,7 +333,7 @@ fn heart_trace(s: &fs_theme::tokens::Space, history: &[HeartSample]) -> Option<E
     let line = w::sparkline(values, Vec::new(), high + room - floor, bpms.len()).height(s.control_height);
     let range = w::row(
         s.xxs,
-        vec![w::caption("Low"), w::value(num(low)), w::spacer(), w::caption("High"), w::value(num(high))],
+        vec![w::caption("Low"), w::value(fs_js::num_str(low)), w::spacer(), w::caption("High"), w::value(fs_js::num_str(high))],
     )
     .fill();
     Some(w::column(s.xxs, vec![line, range]).fill().mid())
@@ -571,7 +566,7 @@ impl Panel for Earbuds {
             }
             ("range", What::Fraction(f)) => {
                 if let Some(ctl) = model::control(dev, key) {
-                    set(fx, key, num(ctl.min + f * (ctl.max - ctl.min)));
+                    set(fx, key, fs_js::num_str(ctl.min + f * (ctl.max - ctl.min)));
                 }
             }
             ("range", What::Wheel(d)) => {

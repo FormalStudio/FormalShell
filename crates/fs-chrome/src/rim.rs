@@ -104,7 +104,8 @@ pub struct Light {
     pub lift: f32,
 }
 
-pub fn luminance(c: [f32; 3]) -> f32 {
+/// Rec. 709 weights over the channels as given, no linearising.
+pub fn luma709(c: [f32; 3]) -> f32 {
     0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
 }
 
@@ -173,7 +174,7 @@ pub fn lights(field: &Field, card: (f64, f64, f64, f64)) -> [Light; STOPS] {
             let b = sky.at(p.0 - n.0 * SKY_IN, p.1 - n.1 * SKY_IN);
             out[i].tint = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
             out[i].tinted = 1.0;
-            sky_lum[i] = luminance(out[i].tint);
+            sky_lum[i] = luma709(out[i].tint);
         }
     }
     let mean = sky_lum.iter().sum::<f32>() / STOPS as f32;

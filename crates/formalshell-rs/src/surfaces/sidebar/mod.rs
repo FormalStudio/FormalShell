@@ -689,7 +689,7 @@ impl ClockCard {
         let top = (f64::from(card.y) + (f64::from(card.h) - digit_h) / 2.0).round();
         let x = f64::from(card.x) + g.time_x;
         // `auto` reads what is behind the digits, which here is the card.
-        let ink = face.ink(store).unwrap_or_else(|| glass::auto_ink(glass::luma(theme.box_style("card", None).fill)));
+        let ink = face.ink(store).unwrap_or_else(|| glass::auto_ink(theme.box_style("card", None).fill.luma601()));
         self.rect = self.glass.paint(p, digits, &face, (x, top), digit_h, scale, ink, self.under.as_ref(), card);
         if let Some(t) = shaped {
             let baseline = (top + digit_h) as i32;
@@ -711,7 +711,7 @@ impl ClockCard {
         json!({
             "face": self.face.map_or("", |f| f.as_str()),
             "rect": [r.x, r.y, r.w, r.h],
-            "ink": glass::hex(self.ink),
+            "ink": self.ink.to_hex(),
             "frosted": self.glass.frosted(),
             "depth": self.under.as_ref().is_some_and(|u| u.subject.is_some()),
             "cut": self.glass.cut(),

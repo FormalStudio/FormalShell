@@ -5,36 +5,6 @@
 
 use serde_json::Value;
 
-/// `Math.round`: halves go up, toward positive infinity, where Rust's
-/// `round` takes them away from zero.
-pub fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
-}
-
-/// JavaScript's `Number(value)` for a JSON value: a numeric string reads as
-/// its number, `null` and `""` as 0, a bool as 0 or 1, anything else NaN.
-pub fn js_number(value: Option<&Value>) -> f64 {
-    match value {
-        None => f64::NAN,
-        Some(Value::Null) => 0.0,
-        Some(Value::Bool(b)) => f64::from(u8::from(*b)),
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
-        Some(Value::String(s)) => {
-            let t = s.trim();
-            if t.is_empty() {
-                return 0.0;
-            }
-            match t {
-                "Infinity" | "+Infinity" => f64::INFINITY,
-                "-Infinity" => f64::NEG_INFINITY,
-                _ if t.chars().any(|c| c.is_ascii_alphabetic() && c != 'e' && c != 'E') => f64::NAN,
-                _ => t.parse().unwrap_or(f64::NAN),
-            }
-        }
-        Some(Value::Array(_) | Value::Object(_)) => f64::NAN,
-    }
-}
-
 /// libadwaita's ramp as ratios of the body size (`widgets/_labels.scss`):
 /// `.caption`, a row subtitle's `smaller`, `.body`, `.heading`, `.title-4`,
 /// `.title-3` and `.title-1`. `displayLarge` has no class; the clocks size
@@ -70,7 +40,7 @@ pub struct FontTokens {
 pub fn font_tokens(base_size: f64) -> FontTokens {
     let at = |name: &str| {
         let (_, m) = FONT_MULTIPLIERS.iter().find(|(k, _)| *k == name).expect("every FontTokens field has a ratio");
-        js_round(base_size * m)
+        fs_js::round(base_size * m)
     };
     FontTokens {
         base_size,
@@ -262,7 +232,7 @@ pub fn spacing_tokens(scale: f64) -> Space {
             .chain(SEMANTIC_SPACING_BASE.iter())
             .find(|(k, _)| *k == name)
             .expect("every Space field has a base");
-        js_round(v * scale)
+        fs_js::round(v * scale)
     };
     Space {
         xxs: s("xxs"),
@@ -362,7 +332,7 @@ pub struct LetterSpacing {
 }
 
 pub fn letter_spacing_tokens(scale: f64) -> LetterSpacing {
-    LetterSpacing { meta: js_round(scale), wide: js_round(2.0 * scale), display: js_round(6.0 * scale) }
+    LetterSpacing { meta: fs_js::round(scale), wide: fs_js::round(2.0 * scale), display: fs_js::round(6.0 * scale) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -383,7 +353,7 @@ pub fn clamp(value: Option<&Value>, min: f64, max: f64, fallback: f64) -> f64 {
     match value {
         None | Some(Value::Null) => fallback,
         Some(v) => {
-            let n = js_number(Some(v));
+            let n = fs_js::to_number(Some(v));
             if n.is_finite() { n.min(max).max(min) } else { fallback }
         }
     }
@@ -420,7 +390,7 @@ pub fn cover_radius(sm: f64, extent: f64) -> f64 {
         return 0.0;
     }
     let e = if extent.is_finite() { extent } else { 0.0 };
-    sm.min(js_round(e / 4.0)).max(2.0)
+    sm.min(fs_js::round(e / 4.0)).max(2.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -553,8 +523,8 @@ mod tests {
         let f = font_tokens(16.0);
         assert_eq!(f.base_size, 16.0);
         assert_eq!(f.body, 16.0);
-        assert_eq!(f.caption, js_round(16.0 * 0.82));
-        assert_eq!(f.display, js_round(16.0 * 1.81));
+        assert_eq!(f.caption, fs_js::round(16.0 * 0.82));
+        assert_eq!(f.display, fs_js::round(16.0 * 1.81));
     }
 
     #[test]
@@ -774,16 +744,5 @@ mod tests {
         assert_eq!(DEFORM.stiffness, 200.0);
         assert_eq!(DEFORM.damping, 16.0);
         assert_eq!(DEFORM.epsilon, 0.002);
-    }
-
-    #[test]
-    fn js_number_reads_like_javascript() {
-        assert_eq!(js_number(Some(&json!(""))), 0.0);
-        assert_eq!(js_number(Some(&json!(true))), 1.0);
-        assert!(js_number(Some(&json!("down"))).is_nan());
-        assert!(js_number(None).is_nan());
-        assert_eq!(js_number(Some(&json!(" 2.5 "))), 2.5);
-        assert_eq!(js_round(10.5), 11.0);
-        assert_eq!(js_round(-2.5), -2.0);
     }
 }

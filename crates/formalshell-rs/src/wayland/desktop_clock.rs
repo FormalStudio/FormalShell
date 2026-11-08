@@ -513,7 +513,7 @@ impl App {
                     "enabled": c.is_some(),
                     "face": c.map_or("", |c| c.face.as_str()),
                     "rect": [r.x, r.y, r.w, r.h],
-                    "ink": hex(ink),
+                    "ink": ink.to_hex(),
                     "depth": c.is_some_and(|c| c.slot.mask(settings.as_ref().and_then(|s| s.look.cut)).is_some()),
                     "commits": c.map_or(0, |c| c.surface.commits()),
                     "minuteUs": c.map_or(0, |c| c.minute_us),
@@ -531,12 +531,6 @@ impl App {
         v["commits"] = serde_json::json!(self.bar_surface.as_ref().map_or(0, |s| s.commits()));
         v
     }
-}
-
-/// `#rrggbb` for `debug dump`.
-pub(crate) fn hex(c: Rgba) -> String {
-    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("#{:02x}{:02x}{:02x}", b(c.r), b(c.g), b(c.b))
 }
 
 /// The digits laid out: their logical size, and what draws them.
@@ -624,7 +618,7 @@ fn draw(clock: &mut Clock, kit: &mut Kit, store: &Store, s: &Settings, picture: 
             if from.is_none() || from != clock.ink_from {
                 let luma = match &under {
                     Some(u) => u.luma(rect),
-                    None => luma(store.theme.theme.colors.get("background")),
+                    None => store.theme.theme.colors.get("background").luma601(),
                 };
                 clock.ink_from = from;
                 clock.ink = auto_ink(luma);
@@ -650,10 +644,6 @@ const COLON_RAISE: f64 = 0.16;
 const UNDER: f64 = 0.2;
 /// Where a clock with no subject to sit behind is centred, of the height.
 const AUTO_Y: f64 = 0.3;
-
-pub(crate) fn luma(c: Rgba) -> f64 {
-    255.0 * (0.299 * f64::from(c.r) + 0.587 * f64::from(c.g) + 0.114 * f64::from(c.b))
-}
 
 /// The mean Rec. 601 luma of `p` over `r`, every other pixel each way.
 fn mean_luma(p: &Picture, r: IRect) -> f64 {

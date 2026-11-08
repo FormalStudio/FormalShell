@@ -136,6 +136,12 @@ pub fn num_str(n: f64) -> String {
     format!("{n}")
 }
 
+/// A number as `JSON.stringify` prints it: a whole value below 9e15 carries
+/// no fraction, NaN and the infinities read as null.
+pub fn json_number(n: f64) -> Value {
+    if n.fract() == 0.0 && n.abs() < 9e15 { Value::from(n as i64) } else { Value::from(n) }
+}
+
 /// `Number.prototype.toFixed`: an exact tie rounds up in magnitude, where
 /// Rust's formatter rounds it to even. The sign follows `x < 0`, so a small
 /// negative reads `-0.00` and negative zero reads `0.00`.
@@ -530,6 +536,14 @@ mod tests {
         assert_eq!(str_or_empty(Some(&json!([0, "a"]))), ",a");
         assert_eq!(text(Some(&json!(3))), "");
         assert_eq!(text(Some(&json!("x"))), "x");
+    }
+
+    #[test]
+    fn json_number_drops_the_fraction_below_9e15() {
+        assert_eq!(json_number(3.0).to_string(), "3");
+        assert_eq!(json_number(1.5).to_string(), "1.5");
+        assert_eq!(json_number(f64::NAN), Value::Null);
+        assert_eq!(json_number(5e15).to_string(), "5000000000000000");
     }
 
     #[test]

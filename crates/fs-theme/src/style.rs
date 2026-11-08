@@ -15,6 +15,7 @@ use std::sync::LazyLock;
 use serde_json::{Map, Value};
 
 use crate::tokens::{self, Easing, Motion};
+use fs_js::truthy;
 use fs_types::Edge;
 
 /// Every role a table must carry and its states. An empty list is a role
@@ -74,18 +75,6 @@ pub const LITERAL_COLORS: [(&str, &str); 3] = [("black", "#000000"), ("white", "
 
 pub fn literal(name: &str) -> Option<&'static str> {
     LITERAL_COLORS.iter().find(|(k, _)| *k == name).map(|(_, v)| *v)
-}
-
-/// JavaScript truthiness, which is what every `if (raw.x)` in style.js
-/// tests.
-pub fn truthy(value: Option<&Value>) -> bool {
-    match value {
-        None | Some(Value::Null) => false,
-        Some(Value::Bool(b)) => *b,
-        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan()),
-        Some(Value::String(s)) => !s.is_empty(),
-        Some(Value::Array(_) | Value::Object(_)) => true,
-    }
 }
 
 fn num(value: Option<&Value>) -> Option<f64> {

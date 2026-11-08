@@ -13,12 +13,7 @@ use fs_types::{Rect, Window, WindowId, WorkspaceId};
 use crate::services::compositor::model::Snapshot;
 
 fn rect_json(r: &Rect) -> Value {
-    json!({"x": js(r.x), "y": js(r.y), "width": js(r.width), "height": js(r.height)})
-}
-
-/// A whole number serialises as JSON.stringify writes it, without `.0`.
-fn js(v: f64) -> Value {
-    if v.fract() == 0.0 && v.abs() < 9.0e15 { json!(v as i64) } else { json!(v) }
+    json!({"x": fs_js::json_number(r.x), "y": fs_js::json_number(r.y), "width": fs_js::json_number(r.width), "height": fs_js::json_number(r.height)})
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

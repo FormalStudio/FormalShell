@@ -25,11 +25,6 @@ impl Gallery {
     }
 }
 
-fn hex(c: fs_theme::color::Rgba) -> String {
-    let [r, g, b, _] = c.to_u8();
-    format!("#{r:02x}{g:02x}{b:02x}")
-}
-
 impl Panel for Gallery {
     fn id(&self) -> &'static str {
         "gallery"
@@ -212,7 +207,7 @@ impl Panel for Gallery {
             let c = t.colors.get(key);
             let row = w::row(
                 s.sm,
-                vec![w::swatch(c, s.xl + s.md, f.caption + s.sm, t.radii.sm), w::section_label(s, &format!("{key} {}", hex(c)), None, false)],
+                vec![w::swatch(c, s.xl + s.md, f.caption + s.sm, t.radii.sm), w::section_label(s, &format!("{key} {}", c.to_hex()), None, false)],
             );
             swatches.push(w::cell(row).ghost());
         }

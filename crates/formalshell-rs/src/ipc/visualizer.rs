@@ -52,11 +52,6 @@ fn list(_: &mut App, _: &[Value]) -> Value {
     text(styles::ids().join("\n"))
 }
 
-/// JS prints a whole number without its fraction.
-fn level(v: f64) -> Json {
-    if v.fract() == 0.0 { json!(v as i64) } else { json!(v) }
-}
-
 fn status(app: &mut App, _: &[Value]) -> Value {
     let v = &app.store.visualizer;
     let configured = configured(app);
@@ -70,7 +65,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
         },
         None => visualizer::frame(),
     };
-    let levels = |l: &[f64]| Json::Array(l.iter().map(|x| level(*x)).collect());
+    let levels = |l: &[f64]| Json::Array(l.iter().map(|x| fs_js::json_number(*x)).collect());
     text(
         json!({
             "style": current(app),

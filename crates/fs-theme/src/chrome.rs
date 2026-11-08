@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use serde_json::{Map, Value};
 
 use crate::style;
-use crate::tokens::{self, js_number, js_round};
+use crate::tokens;
 
 /// What ThemeEngine hands the renderer: the two settings scalars as written
 /// and the `window` role's two states straight off the live table.
@@ -42,7 +42,7 @@ impl Chrome {
 
 /// Hyprland's `rounding` is a non-negative int. NaN falls through to 0.
 fn rounding(value: Option<&Value>) -> i64 {
-    let n = js_round(js_number(value));
+    let n = fs_js::round(fs_js::to_number(value));
     if n > 0.0 { n as i64 } else { 0 }
 }
 
@@ -53,7 +53,7 @@ fn blur(value: Option<&Value>) -> bool {
 }
 
 fn int(value: Option<&Value>, min: i64, max: i64, fallback: i64) -> i64 {
-    let n = js_round(js_number(value));
+    let n = fs_js::round(fs_js::to_number(value));
     if !n.is_finite() {
         return fallback;
     }
@@ -61,11 +61,11 @@ fn int(value: Option<&Value>, min: i64, max: i64, fallback: i64) -> i64 {
 }
 
 fn byte(alpha: Option<&Value>) -> String {
-    let a = js_number(alpha);
+    let a = fs_js::to_number(alpha);
     if !a.is_finite() {
         return "ff".to_owned();
     }
-    format!("{:02x}", js_round(a.clamp(0.0, 1.0) * 255.0) as u8)
+    format!("{:02x}", fs_js::round(a.clamp(0.0, 1.0) * 255.0) as u8)
 }
 
 /// A literal renders as Hyprland's `rgba(RRGGBBAA)`; anything else is a

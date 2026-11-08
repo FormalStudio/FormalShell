@@ -20,17 +20,6 @@ fn s(v: impl Into<String>) -> Value {
     Value::Str(v.into())
 }
 
-/// How a JS string concatenation prints a number.
-fn js_number(v: f64) -> String {
-    if v.is_nan() {
-        "NaN".into()
-    } else if v.is_infinite() {
-        if v > 0.0 { "Infinity".into() } else { "-Infinity".into() }
-    } else {
-        v.to_string()
-    }
-}
-
 const fn f(name: &'static str, params: &'static [(&'static str, Type)], ret: Type, call: fn(&mut (), &[Value]) -> Value) -> Function<()> {
     Function { name, params, ret, call }
 }
@@ -328,7 +317,7 @@ fn stub() -> Registry<()> {
                     f("reconnect", &[], Type::String, |_, _| s("ok")),
                     f("position", &[("edge", Type::String)], Type::String, |_, a| s(format!("position {}", a[0].str()))),
                     f("stretch", &[("start", Type::Real), ("end", Type::Real)], Type::String, |_, a| {
-                        s(format!("stretch {} {}", js_number(a[0].real()), js_number(a[1].real())))
+                        s(format!("stretch {} {}", fs_js::num_str(a[0].real()), fs_js::num_str(a[1].real())))
                     }),
                 ],
             },
@@ -351,7 +340,7 @@ fn stub() -> Registry<()> {
                 name: "display",
                 functions: vec![
                     f("scale", &[("output", Type::String), ("scale", Type::Real)], Type::String, |_, a| {
-                        s(format!("scale {} {}", a[0].str(), js_number(a[1].real())))
+                        s(format!("scale {} {}", a[0].str(), fs_js::num_str(a[1].real())))
                     }),
                     f("mirror", &[("output", Type::String), ("source", Type::String)], Type::String, |_, a| {
                         s(format!("mirror {} {}", a[0].str(), a[1].str()))
@@ -555,7 +544,7 @@ fn stub() -> Registry<()> {
                     }),
                     f("i", &[("a", Type::Int)], Type::String, |_, a| s(a[0].int().to_string())),
                     f("b", &[("a", Type::Bool)], Type::String, |_, a| s(a[0].bool().to_string())),
-                    f("r", &[("a", Type::Real)], Type::String, |_, a| s(js_number(if let Value::Real(r) = a[0] { r } else { 0.0 }))),
+                    f("r", &[("a", Type::Real)], Type::String, |_, a| s(fs_js::num_str(if let Value::Real(r) = a[0] { r } else { 0.0 }))),
                     f("ri", &[("a", Type::Real)], Type::Real, |_, a| a[0].clone()),
                     f("ii", &[("a", Type::Int)], Type::Int, |_, a| a[0].clone()),
                     f("bb", &[("a", Type::Bool)], Type::Bool, |_, a| a[0].clone()),

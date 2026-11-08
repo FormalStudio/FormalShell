@@ -255,7 +255,7 @@ impl View {
         let body = c.body(&clock, theme);
         let (card, inner) = place(&body, (w, h), 0.0, theme, kit);
         let mut p = Painter::new(&mut self.scene, &mut self.nodes, None);
-        p.rect(full, Rgba { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, 0.0);
+        p.rect(full, Rgba::BLACK, 0.0);
         match backdrop {
             Some(b) if (b.pixmap.width() as i32, b.pixmap.height() as i32) == (w, h) => p.image(b, (0, 0), 1.0),
             // Made at the output's own scale, or at its last one while the

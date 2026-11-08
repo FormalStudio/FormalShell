@@ -70,12 +70,6 @@ fn rad2deg(radians: f64) -> f64 {
     radians * 180.0 / std::f64::consts::PI
 }
 
-/// JS `Math.round`: halves go up, also for negatives.
-fn js_round(x: f64) -> f64 {
-    let floor = x.floor();
-    if x - floor >= 0.5 { floor + 1.0 } else { floor }
-}
-
 /// The spreadsheet's serial date: whole days from 1900-01-01 to the date's
 /// own UTC day, plus the two days its 1900 leap-year quirk carries. Read off
 /// the UTC day rather than the local one, as the reference does; a zone far
@@ -252,7 +246,7 @@ fn at_minutes<Tz: TimeZone>(now: &DateTime<Tz>, minutes: f64) -> DateTime<Tz> {
         &now.timezone(),
         now.date_naive().and_hms_opt(0, 0, 0).unwrap(),
     );
-    midnight + Duration::milliseconds(js_round(minutes * 60000.0) as i64)
+    midnight + Duration::milliseconds(fs_js::round(minutes * 60000.0) as i64)
 }
 
 fn next_local_midnight<Tz: TimeZone>(now: &DateTime<Tz>) -> DateTime<Tz> {
@@ -341,7 +335,7 @@ pub fn hhmm(minutes: Option<f64>) -> String {
     let Some(minutes) = minutes.filter(|m| m.is_finite()) else {
         return String::new();
     };
-    let mut total = js_round(minutes) % MINUTES_PER_DAY;
+    let mut total = fs_js::round(minutes) % MINUTES_PER_DAY;
     if total < 0.0 {
         total += MINUTES_PER_DAY;
     }

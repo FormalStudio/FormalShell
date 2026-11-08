@@ -517,12 +517,8 @@ impl State {
     }
 }
 
-fn number(n: f64) -> Value {
-    if n.fract() == 0.0 && n.abs() < 9e15 { json!(n as i64) } else { json!(n) }
-}
-
 fn reminder_json(e: &reminders::Entry) -> Value {
-    json!({ "id": e.id, "message": e.message, "setAt": number(e.set_at), "dueAt": number(e.due_at) })
+    json!({ "id": e.id, "message": e.message, "setAt": fs_js::json_number(e.set_at), "dueAt": fs_js::json_number(e.due_at) })
 }
 
 /// The instant `at` (epoch ms) falls on, on the monotonic clock.

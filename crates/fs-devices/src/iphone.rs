@@ -646,7 +646,6 @@ pub fn is_actionable(entry: Option<&Notification>, current_session: i64) -> bool
     }
 }
 
-// JS `encodeURIComponent` leaves these alone besides ASCII letters and digits.
 #[cfg(test)]
 mod tests {
     use super::*;
