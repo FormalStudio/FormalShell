@@ -13,6 +13,7 @@
 
 use fs_devices::network::speedtest;
 use fs_menu::field;
+use fs_types::Fraction;
 
 use super::{Edit, Effect, Panel, View};
 use crate::services::clipboard;
@@ -250,9 +251,9 @@ impl Network {
     }
 }
 
-/// Bars for a 0..1 signal, Pond's three steps plus none.
-pub(super) fn signal_glyph(signal: f64) -> &'static str {
-    match signal {
+/// Bars for a signal, Pond's three steps plus none.
+pub(super) fn signal_glyph(signal: Fraction) -> &'static str {
+    match signal.as_fraction() {
         x if x >= 0.67 => "wifi",
         x if x >= 0.34 => "wifi-high",
         x if x > 0.0 => "wifi-low",

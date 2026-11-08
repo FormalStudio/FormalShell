@@ -68,8 +68,13 @@ impl Drop for Media {
     }
 }
 
-fn format_time(seconds: f64) -> String {
-    let total = seconds.max(0.0).floor() as u64;
+/// A lyric line's time or a slider's fraction of the track, as a position.
+fn seconds(s: f64) -> Duration {
+    Duration::try_from_secs_f64(s).unwrap_or_default()
+}
+
+fn format_time(time: Duration) -> String {
+    let total = time.as_secs();
     let (h, m, s) = (total / 3600, (total / 60) % 60, total % 60);
     if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m:02}:{s:02}") }
 }
@@ -86,7 +91,7 @@ fn source_icon(kind: &str) -> &'static str {
 }
 
 fn has_timeline(a: &Active) -> bool {
-    a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && a.length > 0.0)
+    a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && !a.length.is_zero())
 }
 
 /// The transport, in the order the buttons draw: Kopuz's actions, by their
@@ -220,7 +225,7 @@ impl Media {
 
     fn seek_by(&self, fx: &Effect, by: f64) {
         if let Some(a) = fx.store.media.active() {
-            fx.store.media.seek_to(a.position + by);
+            fx.store.media.seek_to(seconds(a.position.as_secs_f64() + by));
         }
     }
 }
@@ -346,7 +351,7 @@ impl Panel for Media {
         col.push(w::row(s.lg, info).fill());
 
         if has_timeline(&a) {
-            let fraction = if a.length > 0.0 { a.position / a.length } else { 0.0 };
+            let fraction = if a.length.is_zero() { 0.0 } else { a.position.as_secs_f64() / a.length.as_secs_f64() };
             let track = if a.can_seek { w::slider(fraction) } else { w::track(fraction) };
             col.push(
                 w::row(
@@ -394,7 +399,7 @@ impl Panel for Media {
             let on_line = cursor.is_some_and(|c| c < ly.lines.len());
             let pane = El::new(crate::ui::el::Kind::Lyrics(crate::ui::lyrics::View {
                 lines: ly.lines.clone(),
-                t: fs_media::lyrics::led_position(a.position, settings.hold(ly.latency)),
+                t: fs_media::lyrics::led_position(a.position.as_secs_f64(), settings.hold(ly.latency)),
                 follow: ly.follow || on_line,
                 cursor,
                 blur: settings.blur,
@@ -443,7 +448,7 @@ impl Panel for Media {
         if v.store.lyrics.synced() {
             return Some(Instant::now());
         }
-        let into = a.position.fract();
+        let into = a.position.as_secs_f64().fract();
         Some(Instant::now() + Duration::from_secs_f64((1.0 - into).max(0.01)))
     }
 
@@ -454,7 +459,7 @@ impl Panel for Media {
         }
         if let Some(i) = ev.on.strip_prefix("lyric:").and_then(|i| i.parse::<usize>().ok()) {
             if let Some(line) = fx.store.lyrics.lines.get(i) {
-                fx.store.media.seek_to(line.time);
+                fx.store.media.seek_to(seconds(line.time));
             }
             return;
         }
@@ -476,7 +481,7 @@ impl Panel for Media {
             }
             ("progress", What::Fraction(f)) => {
                 if let Some(a) = &a {
-                    fx.store.media.seek_to(f * a.length);
+                    fx.store.media.seek_to(seconds(f * a.length.as_secs_f64()));
                 }
             }
             ("progress", What::Wheel(d)) => self.seek_by(fx, *d as f64 * SEEK_STEP),
@@ -498,7 +503,7 @@ impl Panel for Media {
         }
         if let Some(i) = stop.strip_prefix("lyric:").and_then(|i| i.parse::<usize>().ok()) {
             if let Some(line) = fx.store.lyrics.lines.get(i) {
-                fx.store.media.seek_to(line.time);
+                fx.store.media.seek_to(seconds(line.time));
             }
             return;
         }
@@ -575,10 +580,9 @@ mod tests {
 
     #[test]
     fn times_read_the_way_the_panel_writes_them() {
-        assert_eq!(format_time(0.0), "00:00");
-        assert_eq!(format_time(65.9), "01:05");
-        assert_eq!(format_time(3725.0), "1:02:05");
-        assert_eq!(format_time(-3.0), "00:00");
+        assert_eq!(format_time(seconds(0.0)), "00:00");
+        assert_eq!(format_time(seconds(65.9)), "01:05");
+        assert_eq!(format_time(seconds(3725.0)), "1:02:05");
     }
 
     #[test]
@@ -608,7 +612,7 @@ mod tests {
     #[test]
     fn the_phone_has_a_timeline_only_with_a_length() {
         assert!(!has_timeline(&Active { kind: "iphone", ..Active::default() }));
-        assert!(has_timeline(&Active { kind: "iphone", length: 200.0, ..Active::default() }));
+        assert!(has_timeline(&Active { kind: "iphone", length: Duration::from_secs(200), ..Active::default() }));
         assert!(!has_timeline(&Active { kind: "radio", ..Active::default() }));
     }
 }

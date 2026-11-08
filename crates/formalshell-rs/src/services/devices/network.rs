@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use async_io::Timer;
 use fs_devices::network::speedtest;
 use fs_network::{ConnectError, DeviceKind, NetworkManager, Snapshot};
+use fs_types::{Fraction, Percent};
 use futures_lite::{FutureExt, StreamExt};
 
 use crate::runtime::Ctx;
@@ -48,7 +49,7 @@ pub struct Row {
     /// An access point broadcasts it; false only for a saved network.
     pub in_range: bool,
     /// 0 to 1.
-    pub signal: f64,
+    pub signal: Fraction,
     /// `Security::label`'s name for its class.
     pub security: String,
     /// The device's addresses on it, `address/prefix`, while connected.
@@ -188,7 +189,7 @@ pub struct Network {
     pub wifi: bool,
     pub wifi_enabled: bool,
     /// The connected network's SSID and signal, in percent.
-    pub ssid: Option<(String, u8)>,
+    pub ssid: Option<(String, Percent)>,
     /// The first Wi-Fi device's interface and hardware address.
     pub wifi_device: Option<(String, String)>,
     pub wired_rows: Vec<Wired>,
@@ -251,7 +252,7 @@ fn view(i: &Inner) -> Network {
     n.wired = up(DeviceKind::Wired);
     n.wifi = up(DeviceKind::Wifi);
     n.wifi_enabled = s.wifi_enabled;
-    n.ssid = s.networks.iter().find(|n| n.connected()).map(|n| (n.ssid.clone(), n.signal.as_percent()));
+    n.ssid = s.networks.iter().find(|n| n.connected()).map(|n| (n.ssid.clone(), n.signal.to_percent()));
     // The interface, not the device: an address read here keeps one sysfs
     // read per snapshot, never one per draw.
     let reuse = i.published.as_ref().and_then(|p| p.wifi_device.clone());
@@ -276,7 +277,7 @@ fn view(i: &Inner) -> Network {
             secured: w.security.is_secured(),
             enterprise: w.security.is_enterprise(),
             in_range: w.visible || w.connected(),
-            signal: w.signal.as_fraction(),
+            signal: w.signal.to_fraction(),
             security: w.security.label().to_owned(),
             addresses: w.addresses.clone(),
         })

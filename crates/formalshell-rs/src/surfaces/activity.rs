@@ -20,7 +20,7 @@ use crate::ui::{El, Ink, Type, Weight, w};
 
 pub fn ring(item: &Item) -> Ring {
     match item.state {
-        State::Running => item.progress.fraction().map_or(Ring::Unknown, |f| Ring::Progress(f.as_unit())),
+        State::Running => item.progress.fraction().map_or(Ring::Unknown, |f| Ring::Progress(f.as_fraction())),
         State::Failed => Ring::Failed,
         State::Succeeded | State::Done => Ring::Done,
     }

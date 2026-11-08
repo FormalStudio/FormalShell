@@ -137,7 +137,7 @@ impl Op {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::progress::Fraction;
+    use crate::progress::fraction_of;
 
     const RUNNING: &str = r#"{"v":1,"type":"update","op":{"id":"1a1886361f4-71100","kind":"apply","source":"fspec:apply:g815","title":"Applying g815","host":"g815","pid":71100,"started":1793289576948,"updated":1793289577014,"state":"running","phase":"committing","scope":"system","progress":{"done":3,"total":12,"unit":"resources"},"item":"zypper: firefox and git","keys":["pkg:firefox","pkg:git"],"result":null,"error":null,"later":"ignored"}}"#;
 
@@ -148,7 +148,7 @@ mod tests {
         assert_eq!(item.source, "fspec:apply:g815");
         assert_eq!(item.state, State::Running);
         assert_eq!(item.detail, "zypper: firefox and git");
-        assert_eq!(item.progress.fraction(), Fraction::of(3, 12));
+        assert_eq!(item.progress.fraction(), fraction_of(3, 12));
         assert_eq!(item.keys, ["pkg:firefox", "pkg:git"]);
         assert!(!item.urgent);
     }
@@ -186,12 +186,12 @@ mod tests {
     fn a_step_stands_in_for_a_long_resource() {
         let line = |step: &str| format!(r#"{{"v":1,"type":"update","op":{{"id":"d","kind":"apply","state":"running","phase":"preparing","progress":{{"done":0,"total":3,"unit":"resources"}},"item":"store: formalshell","step":{step}}}}}"#);
         let item = parse(&line(r#"{"name":"compiling","progress":{"done":120,"total":450,"unit":"units"},"stalled":false}"#)).unwrap().item();
-        assert_eq!(item.progress.fraction(), Fraction::of(120, 450));
+        assert_eq!(item.progress.fraction(), fraction_of(120, 450));
         assert_eq!(item.detail, "store: formalshell, compiling");
         let item = parse(&line(r#"{"name":"fetching dependencies","progress":null,"stalled":true}"#)).unwrap().item();
         assert_eq!(item.progress, Progress::Indeterminate);
         assert_eq!(item.detail, "store: formalshell, fetching dependencies, no output for a minute");
         let item = parse(&line("null")).unwrap().item();
-        assert_eq!(item.progress.fraction(), Fraction::of(0, 3));
+        assert_eq!(item.progress.fraction(), fraction_of(0, 3));
     }
 }

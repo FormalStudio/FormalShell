@@ -154,13 +154,13 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
     let enabled = config.bool("media.lyrics").unwrap_or(true);
     let a = media.active();
     let ask = match &a {
-        Some(a) if enabled && (a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && a.length > 0.0)) && !a.title.is_empty() && !a.artist.is_empty() => Ask {
+        Some(a) if enabled && (a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && !a.length.is_zero())) && !a.title.is_empty() && !a.artist.is_empty() => Ask {
             enabled,
-            key: model::cache_key(&a.artist, &a.title, &a.album, a.length),
+            key: model::cache_key(&a.artist, &a.title, &a.album, a.length.as_secs_f64()),
             artist: a.artist.clone(),
             title: a.title.clone(),
             album: a.album.clone(),
-            length: a.length,
+            length: a.length.as_secs_f64(),
             url: media.url_of(&a.id),
             kopuz: media.kopuz().map(|k| k.key.clone()).unwrap_or_default(),
         },

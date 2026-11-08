@@ -17,7 +17,8 @@ use std::collections::{BTreeMap, VecDeque};
 use serde_json::{Value, json};
 
 use launcher::Entry;
-use progress::{Fraction, Progress};
+use fs_types::Fraction;
+use progress::Progress;
 
 /// How long a finished item stays before it folds into the history.
 pub const FOLD_MS: i64 = 4000;
@@ -577,7 +578,7 @@ mod tests {
     }
 
     fn notice(id: u32, value: Option<u8>) -> Notice {
-        Notice { id, app: "firefox".into(), title: "Downloading".into(), body: "a.iso".into(), value: value.map(Fraction::from_percent), urgent: false }
+        Notice { id, app: "firefox".into(), title: "Downloading".into(), body: "a.iso".into(), value: value.map(|v| fs_types::Percent::whole(v).to_fraction()), urgent: false }
     }
 
     #[test]
@@ -631,7 +632,7 @@ mod tests {
         assert!(!a.upsert(op("1", "fspec:apply:g815", "running", 1, 10), 150), "the same line twice changed something");
         assert!(a.upsert(op("1", "fspec:apply:g815", "running", 3, 10), 200));
         assert_eq!(a.live().len(), 1);
-        assert_eq!(a.get("fspec:1").unwrap().progress.fraction().unwrap().as_unit(), 0.75);
+        assert_eq!(a.get("fspec:1").unwrap().progress.fraction().unwrap().as_fraction(), 0.75);
     }
 
     #[test]
@@ -702,7 +703,7 @@ mod tests {
         assert!(a.launcher("firefox", "Firefox", &e, 100));
         assert!(!a.launcher("firefox", "Firefox", &e, 200), "an unchanged entry changed something");
         let item = a.get("launcher:firefox").unwrap();
-        assert_eq!((item.source.as_str(), item.progress.fraction().unwrap().as_percent(), item.started_ms), ("app:firefox", 25, 100));
+        assert_eq!((item.source.as_str(), item.progress.fraction().unwrap().to_percent().rounded(), item.started_ms), ("app:firefox", 25, 100));
         assert_eq!(a.badges()["firefox"], Badge { count: Some(3), urgent: false });
         e.apply(launcher::Prop::Urgent(true));
         assert!(a.launcher("firefox", "Firefox", &e, 250));
@@ -726,7 +727,7 @@ mod tests {
         assert!(a.notification(notice(7, Some(10)), 100));
         assert!(a.notification(notice(7, Some(60)), 200));
         let item = a.get("notification:7").unwrap();
-        assert_eq!((item.progress.fraction().unwrap().as_percent(), item.started_ms, item.app.as_deref()), (60, 100, Some("firefox")));
+        assert_eq!((item.progress.fraction().unwrap().to_percent().rounded(), item.started_ms, item.app.as_deref()), (60, 100, Some("firefox")));
         assert!(a.notification(Notice { title: "Downloaded".into(), ..notice(7, None) }, 300));
         let item = a.get("notification:7").unwrap();
         assert_eq!((item.state, item.title.as_str(), item.ended_ms), (State::Done, "Downloaded", Some(300)));

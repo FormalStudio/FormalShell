@@ -28,6 +28,10 @@ impl Percent {
         self.0 / 100.0
     }
 
+    pub fn to_fraction(self) -> Fraction {
+        Fraction(self.as_fraction())
+    }
+
     /// The whole number a cell or panel shows.
     pub fn rounded(self) -> u8 {
         self.0.round() as u8

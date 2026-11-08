@@ -88,7 +88,7 @@ impl Cell for Visualizer {
         let active = env.store.media.active();
         let media_available = active.is_some();
         let tempo = active.as_ref().is_some_and(|a| a.kind == "iphone");
-        let position = active.as_ref().map_or((0.0, Instant::now(), false), |a| (a.position, Instant::now(), a.playing));
+        let position = active.as_ref().map_or((0.0, Instant::now(), false), |a| (a.position.as_secs_f64(), Instant::now(), a.playing));
         let changed = self.avail != v.avail
             || self.media_available != media_available
             || self.tempo != tempo

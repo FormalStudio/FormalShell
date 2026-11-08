@@ -960,7 +960,7 @@ mod tests {
         assert!(reading.apply(&changed(ap1, ACCESS_POINT_INTERFACE, &[("Strength", Value::U8(90)), ("LastSeen", Value::I32(7))])));
         assert!(reading.apply(&changed("/org/freedesktop/NetworkManager/Devices/3", WIRELESS_INTERFACE, &[("LastScan", Value::I64(9))])));
         let snap = reading.snapshot();
-        assert_eq!((snap.networks[0].ssid.as_str(), snap.networks[0].signal.as_percent()), ("home", 90));
+        assert_eq!((snap.networks[0].ssid.as_str(), snap.networks[0].signal.to_percent().rounded()), ("home", 90));
         assert!(!reading.apply(&changed(ap1, ACCESS_POINT_INTERFACE, &[("Ssid", Value::from(vec![b'x']))])));
         assert!(!reading.apply(&changed("/org/freedesktop/NetworkManager/AccessPoint/9", ACCESS_POINT_INTERFACE, &[("Strength", Value::U8(10))])));
         assert!(!reading.apply(&changed("/org/freedesktop/NetworkManager/Devices/3", DEVICE_INTERFACE, &[("State", Value::U32(100))])));
@@ -977,7 +977,7 @@ mod tests {
         };
         let rows = wifi_networks(&wifi, &[]);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].signal.as_percent(), 77);
+        assert_eq!(rows[0].signal.to_percent().rounded(), 77);
     }
 
     #[test]
@@ -991,7 +991,7 @@ mod tests {
             addresses: Vec::new(),
         };
         let rows = wifi_networks(&wifi, &[]);
-        assert_eq!(rows[0].signal.as_percent(), 40);
+        assert_eq!(rows[0].signal.to_percent().rounded(), 40);
     }
 
     #[test]
@@ -1007,7 +1007,7 @@ mod tests {
         let rows = wifi_networks(&wifi, &[(saved, profile("home"))]);
         let home = rows.iter().find(|r| r.ssid == "home").unwrap();
         assert!(home.known && !home.visible);
-        assert_eq!(home.signal.as_percent(), 0);
+        assert_eq!(home.signal.to_percent().rounded(), 0);
         assert!(home.state.is_changing());
         let cafe = rows.iter().find(|r| r.ssid == "cafe").unwrap();
         assert!(!cafe.known && cafe.visible);

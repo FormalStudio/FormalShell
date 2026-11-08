@@ -2,7 +2,7 @@
 //! properties)` signal carries only the properties that changed, so each
 //! app's entry is merged property by property.
 
-use crate::progress::Fraction;
+use fs_types::Fraction;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Entry {
@@ -29,7 +29,7 @@ impl Entry {
         match prop {
             Prop::Count(n) => self.count = n,
             Prop::CountVisible(v) => self.count_visible = v,
-            Prop::Progress(p) => self.progress = Fraction::from_unit(p),
+            Prop::Progress(p) => self.progress = (!p.is_nan()).then(|| Fraction::from_fraction(p)),
             Prop::ProgressVisible(v) => self.progress_visible = v,
             Prop::Urgent(v) => self.urgent = v,
         }
@@ -60,7 +60,7 @@ mod tests {
         e.apply(Prop::ProgressVisible(true));
         e.apply(Prop::Urgent(true));
         e.apply(Prop::Progress(0.75));
-        assert_eq!(e.progress.unwrap().as_percent(), 75);
+        assert_eq!(e.progress.unwrap().to_percent().rounded(), 75);
         assert!(e.progress_visible && e.urgent && !e.count_visible);
     }
 }

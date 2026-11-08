@@ -591,7 +591,7 @@ fn wifi_network(r: &crate::services::devices::network::Row) -> fs_menu::provider
         secured: r.secured,
         enterprise: r.enterprise,
         in_range: r.in_range,
-        signal: r.signal,
+        signal: r.signal.as_fraction(),
         signal_strength: None,
         security: r.security.clone(),
         addresses: r.addresses.clone(),

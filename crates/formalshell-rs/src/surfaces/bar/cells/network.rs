@@ -34,7 +34,7 @@ impl Cell for Network {
         let head = if s.wired {
             "NETWORK / WIRED".to_owned()
         } else if let Some((ssid, strength)) = &s.ssid {
-            format!("WI-FI / {ssid} {strength}%")
+            format!("WI-FI / {ssid} {}%", strength.rounded())
         } else if s.wifi {
             "WI-FI / CONNECTED".to_owned()
         } else {

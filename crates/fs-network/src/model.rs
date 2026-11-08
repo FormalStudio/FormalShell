@@ -1,9 +1,10 @@
+use fs_types::{Fraction, Percent};
 use zbus::zvariant::OwnedObjectPath;
 
 /// Wi-Fi signal in percent, 0..=100.
 ///
 /// NetworkManager's `AccessPoint.Strength` is percent and this keeps it that
-/// way, so a 0..1 fraction never enters implicitly; the conversion is [`SignalStrength::as_fraction`], never implicit.
+/// way, so a 0..1 fraction never enters implicitly; the conversions are [`SignalStrength::to_percent`] and [`SignalStrength::to_fraction`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct SignalStrength(u8);
 
@@ -13,12 +14,12 @@ impl SignalStrength {
         Self(value.min(100))
     }
 
-    pub fn as_percent(self) -> u8 {
-        self.0
+    pub fn to_percent(self) -> Percent {
+        Percent::whole(self.0)
     }
 
-    pub fn as_fraction(self) -> f64 {
-        f64::from(self.0) / 100.0
+    pub fn to_fraction(self) -> Fraction {
+        self.to_percent().to_fraction()
     }
 }
 
@@ -239,9 +240,9 @@ mod tests {
     #[test]
     fn signal_keeps_the_wire_scale() {
         let s = SignalStrength::from_percent(72);
-        assert_eq!(s.as_percent(), 72);
-        assert!((s.as_fraction() - 0.72).abs() < 1e-12);
-        assert_eq!(SignalStrength::from_percent(250).as_percent(), 100);
+        assert_eq!(s.to_percent().rounded(), 72);
+        assert!((s.to_fraction().as_fraction() - 0.72).abs() < 1e-12);
+        assert_eq!(SignalStrength::from_percent(250).to_percent().rounded(), 100);
     }
 
     #[test]

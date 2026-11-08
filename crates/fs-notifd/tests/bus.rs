@@ -208,7 +208,7 @@ fn notify_send_shaped_call() {
         assert_eq!(n.actions.len(), 2);
         assert_eq!((n.actions[1].key.as_str(), n.actions[1].label.as_str()), ("mute", "Mute"));
         assert!(n.hints.contains_key("x-custom"));
-        assert_eq!(n.value.map(|v| v.get()), Some(100));
+        assert_eq!(n.value.map(|v| v.rounded()), Some(100));
 
         let id2 = p.notify("a", 0, "", "s", "", &[], hints(vec![]), 0).await.unwrap();
         assert_eq!(id2, 2);
@@ -465,7 +465,7 @@ fn real_notify_send() {
         assert!(n.transient);
         assert_eq!(n.expire_timeout, 4000);
         assert_eq!(n.synchronous.as_deref(), Some("vol"));
-        assert_eq!(n.value.map(|v| v.get()), Some(40));
+        assert_eq!(n.value.map(|v| v.rounded()), Some(40));
     });
 }
 

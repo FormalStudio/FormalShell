@@ -12,7 +12,7 @@
 //! state is published whole by its service.
 
 use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use fs_media::media::{self as pick, LabelledRow, PlayerRow};
 use fs_mpris::{LoopStatus, Mpris, PlayerState};
@@ -102,10 +102,10 @@ pub struct Player {
     /// `xesam:url`, for a sibling `.lrc`.
     pub url: String,
     pub playing: bool,
-    /// Seconds at `at`; `position_now` carries it forward while playing.
-    pub position: f64,
+    /// At `at`; `position_now` carries it forward while playing.
+    pub position: Duration,
     pub at: Instant,
-    pub length: f64,
+    pub length: Duration,
     pub can_seek: bool,
     pub can_raise: bool,
     pub can_toggle: bool,
@@ -128,9 +128,9 @@ impl Player {
             art_url: state.metadata.art_url.clone(),
             url: state.metadata.url.clone(),
             playing: state.is_playing(),
-            position: state.position(now).as_secs_f64(),
+            position: state.position(now),
             at: now,
-            length: state.length(now).as_secs_f64(),
+            length: state.length(now),
             can_seek: state.can_seek_now() && state.position_supported,
             can_raise: state.can_raise,
             can_toggle: state.can_toggle_playing(),
@@ -143,19 +143,15 @@ impl Player {
         }
     }
 
-    pub fn position_now(&self, now: Instant) -> f64 {
-        if !self.playing {
-            return self.position;
-        }
-        let at = self.position + now.saturating_duration_since(self.at).as_secs_f64();
-        if self.length > 0.0 { at.min(self.length) } else { at }
+    pub fn position_now(&self, now: Instant) -> Duration {
+        carried(self.position, self.length, self.at, self.playing, now)
     }
 
     /// A position read off the player's own clock is no change; one past
     /// `SEEK_SLACK` from where that clock puts it is a seek, and a paused
     /// pane has nothing else to redraw it.
     fn same(&self, other: &Self) -> bool {
-        (self.position_now(other.at) - other.position).abs() < SEEK_SLACK
+        self.position_now(other.at).abs_diff(other.position) < SEEK_SLACK
             && Self { at: other.at, position: other.position, ..self.clone() } == *other
     }
 }
@@ -177,11 +173,11 @@ pub struct Remote {
     pub artist: String,
     pub album: String,
     pub playing: bool,
-    /// Seconds at `at`; `position_now` carries it forward while playing.
-    pub position: f64,
+    /// At `at`; `position_now` carries it forward while playing.
+    pub position: Duration,
     pub at: Instant,
-    /// 0 when the remote sends no duration.
-    pub length: f64,
+    /// Zero when the remote sends no duration.
+    pub length: Duration,
 }
 
 impl Remote {
@@ -198,18 +194,14 @@ impl Remote {
             artist: p.artist.clone(),
             album: p.album.clone(),
             playing: p.playing(),
-            position: p.position.as_secs_f64(),
+            position: p.position,
             at,
-            length: p.duration.map_or(0.0, |d| d.as_secs_f64()),
+            length: p.duration.unwrap_or_default(),
         }
     }
 
-    pub fn position_now(&self, now: Instant) -> f64 {
-        if !self.playing {
-            return self.position;
-        }
-        let at = self.position + now.saturating_duration_since(self.at).as_secs_f64();
-        if self.length > 0.0 { at.min(self.length) } else { at }
+    pub fn position_now(&self, now: Instant) -> Duration {
+        carried(self.position, self.length, self.at, self.playing, now)
     }
 
     /// Whether `node` (a PipeWire node.name) is the stream this device
@@ -222,9 +214,19 @@ impl Remote {
     }
 }
 
-/// Seconds a polled position may sit off the player's own clock and still
+/// Where a position read at `at` has got to by `now`: carried forward while
+/// playing, stopping at the end when the length is known.
+fn carried(position: Duration, length: Duration, at: Instant, playing: bool, now: Instant) -> Duration {
+    if !playing {
+        return position;
+    }
+    let moved = position + now.saturating_duration_since(at);
+    if length.is_zero() { moved } else { moved.min(length) }
+}
+
+/// How far a polled position may sit off the player's own clock and still
 /// be the same playback.
-const SEEK_SLACK: f64 = 0.25;
+const SEEK_SLACK: Duration = Duration::from_millis(250);
 
 /// What every bar and IPC read of "the active source" resolves to.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -237,8 +239,8 @@ pub struct Active {
     pub album: String,
     pub art_url: String,
     pub playing: bool,
-    pub position: f64,
-    pub length: f64,
+    pub position: Duration,
+    pub length: Duration,
     pub can_seek: bool,
     pub can_raise: bool,
     pub can_next: bool,
@@ -541,8 +543,8 @@ impl State {
                     playing: a.playing(),
                     can_next: true,
                     can_previous: true,
-                    position: a.position(now),
-                    length: a.duration,
+                    position: Duration::try_from_secs_f64(a.position(now)).unwrap_or_default(),
+                    length: Duration::try_from_secs_f64(a.duration).unwrap_or_default(),
                     volume: (a.volume >= 0.0).then(|| pick::clamp_volume(a.volume)),
                     ..base
                 }
@@ -645,8 +647,8 @@ impl State {
             "album": a.album,
             "artUrl": a.art_url,
             "isPlaying": a.playing,
-            "position": fs_js::json_number(a.position),
-            "length": fs_js::json_number(a.length),
+            "position": fs_js::json_number(a.position.as_secs_f64()),
+            "length": fs_js::json_number(a.length.as_secs_f64()),
             "canSeek": a.can_seek,
             "canRaise": a.can_raise,
             "shuffleSupported": a.shuffle.is_some(),
@@ -801,13 +803,13 @@ impl State {
 
     /// An absolute position in seconds, through MPRIS's relative Seek from
     /// where the player is now.
-    pub fn seek_to(&self, seconds: f64) {
+    pub fn seek_to(&self, target: Duration) {
         let Some(a) = self.active() else { return };
-        if a.kind != "mpris" || !a.can_seek || a.length <= 0.0 {
+        if a.kind != "mpris" || !a.can_seek || a.length.is_zero() {
             return;
         }
-        let target = seconds.clamp(0.0, a.length);
-        mpris_send(Cmd::Seek(a.id, ((target - a.position) * 1_000_000.0).round() as i64));
+        let target = target.min(a.length);
+        mpris_send(Cmd::Seek(a.id, target.as_micros() as i64 - a.position.as_micros() as i64));
     }
 
     pub fn raise(&self) {
@@ -901,9 +903,9 @@ mod tests {
             art_url: String::new(),
             url: String::new(),
             playing,
-            position: 5.0,
+            position: Duration::from_secs(5),
             at: Instant::now(),
-            length: 100.0,
+            length: Duration::from_secs(100),
             can_seek: true,
             can_raise: false,
             can_toggle: true,
@@ -926,11 +928,11 @@ mod tests {
     #[test]
     fn a_paused_seek_is_a_change_and_a_playing_clock_is_not() {
         let paused = mpris("p", false);
-        let sought = Player { position: 30.6, ..paused.clone() };
+        let sought = Player { position: Duration::from_secs_f64(30.6), ..paused.clone() };
         assert!(!paused.same(&sought));
-        assert!(paused.same(&Player { at: paused.at + std::time::Duration::from_secs(2), ..paused.clone() }));
+        assert!(paused.same(&Player { at: paused.at + Duration::from_secs(2), ..paused.clone() }));
         let playing = mpris("p", true);
-        let later = Player { at: playing.at + std::time::Duration::from_secs(2), position: 7.0, ..playing.clone() };
+        let later = Player { at: playing.at + Duration::from_secs(2), position: Duration::from_secs(7), ..playing.clone() };
         assert!(playing.same(&later));
     }
 
@@ -1049,9 +1051,9 @@ mod tests {
             artist: "Marques Brownlee".into(),
             album: String::new(),
             playing,
-            position: 359.686,
+            position: Duration::from_secs_f64(359.686),
             at: Instant::now(),
-            length: 779.141,
+            length: Duration::from_secs_f64(779.141),
         }
     }
 
@@ -1075,7 +1077,7 @@ mod tests {
         assert_eq!(s.active_id(), "bluez:C8:89:F3:45:A7:AA");
         let a = s.active().unwrap();
         assert_eq!((a.kind, a.title.as_str(), a.artist.as_str(), a.playing, a.volume), ("bluetooth", "OLED iPad Mini", "Marques Brownlee", true, Some(Visual::new(0.8).track())));
-        assert!(a.position >= 359.686 && a.length == 779.141 && !a.can_seek && a.can_next);
+        assert!(a.position >= Duration::from_secs_f64(359.686) && a.length == Duration::from_secs_f64(779.141) && !a.can_seek && a.can_next);
         assert_eq!((s.output_id().as_str(), s.can_route()), ("sink-b", true));
         s.remotes = vec![remote(false)];
         assert_eq!(s.active_id(), "org.mpris.MediaPlayer2.mpv");

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use zbus::zvariant::{OwnedValue, Value};
 
+use fs_types::Percent;
+
 use crate::image::{self, Image};
 
 /// Reasons from the spec's `NotificationClosed` signal.
@@ -18,16 +20,6 @@ pub enum Urgency {
     #[default]
     Normal,
     Critical,
-}
-
-/// The `value` hint: how far along a progress notification is, 0..=100.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Percent(u8);
-
-impl Percent {
-    pub fn get(self) -> u8 {
-        self.0
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +52,7 @@ pub struct Notification {
     /// `x-canonical-private-synchronous`: a later notification with the same
     /// tag takes over this one's id.
     pub synchronous: Option<String>,
+    /// The `value` hint: how far along a progress notification is.
     pub value: Option<Percent>,
     pub sound_file: Option<String>,
     pub sound_name: Option<String>,
@@ -107,7 +100,7 @@ fn as_bool(v: &OwnedValue) -> bool {
 /// past 100 is still saying it is done.
 fn percent_of(v: &OwnedValue) -> Option<Percent> {
     let v: &Value = v;
-    as_int(v).map(|n| Percent(n.clamp(0, 100) as u8))
+    as_int(v).map(|n| Percent::from_percent(n.clamp(0, 100) as f64))
 }
 
 fn urgency_of(v: &OwnedValue) -> Urgency {

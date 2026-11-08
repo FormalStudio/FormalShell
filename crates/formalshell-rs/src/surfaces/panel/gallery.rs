@@ -4,7 +4,7 @@
 //! place of an auth prompt sample, which lands with the lock
 //! (R6), so every control a panel builds from is on the sheet.
 
-use fs_types::Edge;
+use fs_types::{Edge, Percent};
 
 use super::{Effect, Panel, View};
 use crate::store::Topic;
@@ -338,7 +338,7 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
 /// Five networks with one connected, for the Wi-Fi rows' populated look
 /// on a rig with no radio.
 fn wifi_sample(s: &fs_theme::tokens::Space) -> El {
-    let nets = [("HomeNet-5G", 0.9, true, true), ("Office Wifi", 0.7, true, false), ("Cafe Net", 0.5, true, false), ("Library Wifi", 0.4, true, false), ("GuestNet-5G", 0.2, false, false)];
+    let nets = [("HomeNet-5G", 90, true, true), ("Office Wifi", 70, true, false), ("Cafe Net", 50, true, false), ("Library Wifi", 40, true, false), ("GuestNet-5G", 20, false, false)];
     let rows = nets
         .iter()
         .map(|&(ssid, signal, secured, connected)| {
@@ -349,7 +349,7 @@ fn wifi_sample(s: &fs_theme::tokens::Space) -> El {
             } else {
                 Vec::new()
             };
-            w::panel_row_with(s, Some(w::panel_chip(s, super::network::signal_glyph(signal), connected)), w::label(ssid), None, trailing)
+            w::panel_row_with(s, Some(w::panel_chip(s, super::network::signal_glyph(Percent::whole(signal).to_fraction()), connected)), w::label(ssid), None, trailing)
         })
         .collect();
     w::panel_group(s, rows)

@@ -18,7 +18,6 @@ use std::time::Duration;
 use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use fs_activity::launcher::{self, Entry, Prop};
-use fs_activity::progress::Fraction;
 use fs_activity::{Activity, Notice, State as ItemState, fspec};
 use futures_lite::{AsyncReadExt, StreamExt};
 use serde_json::json;
@@ -140,7 +139,7 @@ pub fn notification(n: &fs_notifd::Notification) {
         app,
         title: n.summary.clone(),
         body: n.body.clone(),
-        value: n.value.map(|v| Fraction::from_percent(v.get())),
+        value: n.value.map(|v| v.to_fraction()),
         urgent: n.urgency == fs_notifd::Urgency::Critical,
     }));
 }
@@ -516,7 +515,7 @@ mod tests {
         let mut out = Vec::new();
         while let Ok(input) = rx.try_recv() {
             out.push(match input {
-                Input::Op(item) => format!("{} {}", item.state.as_str(), item.progress.fraction().unwrap().as_percent()),
+                Input::Op(item) => format!("{} {}", item.state.as_str(), item.progress.fraction().unwrap().to_percent().rounded()),
                 Input::Died(id) => format!("died {id}"),
                 _ => "other".into(),
             });

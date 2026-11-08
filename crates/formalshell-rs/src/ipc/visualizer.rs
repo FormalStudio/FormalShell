@@ -59,9 +59,9 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     // tempo, the way the bar cell draws it.
     let frame = match app.store.media.active().filter(|a| a.kind == "iphone" && v.running) {
         Some(a) => visualizer::Frame {
-            mono: model::beat_frame(a.position, v.bpm, BAR_COUNT, 0),
-            left: model::beat_frame(a.position, v.bpm, BAR_COUNT, -1),
-            right: model::beat_frame(a.position, v.bpm, BAR_COUNT, 1),
+            mono: model::beat_frame(a.position.as_secs_f64(), v.bpm, BAR_COUNT, 0),
+            left: model::beat_frame(a.position.as_secs_f64(), v.bpm, BAR_COUNT, -1),
+            right: model::beat_frame(a.position.as_secs_f64(), v.bpm, BAR_COUNT, 1),
         },
         None => visualizer::frame(),
     };

@@ -55,7 +55,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
                 r.connected,
                 r.changing,
                 r.secured,
-                js::num_str(r.signal),
+                js::num_str(r.signal.as_fraction()),
                 r.in_range
             )
         })

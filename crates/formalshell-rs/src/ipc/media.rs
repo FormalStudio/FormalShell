@@ -155,7 +155,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
 /// the moment of the call, the follow state, the output latency and the hold.
 fn lyrics(app: &mut App, _: &[Value]) -> Value {
     use crate::services::lyrics;
-    let position = app.store.media.active().map_or(0.0, |a| a.position);
+    let position = app.store.media.active().map_or(0.0, |a| a.position.as_secs_f64());
     let settings = lyrics::Settings::read(&app.store.config);
     text(lyrics::status(&app.store.lyrics, position, &settings).to_string())
 }

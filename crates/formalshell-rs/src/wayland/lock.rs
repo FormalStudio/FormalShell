@@ -648,7 +648,7 @@ impl App {
             handle.remove(t);
         }
         let now = Local::now();
-        let playing = self.store.media.active().is_some_and(|a| a.playing && a.length > 0.0);
+        let playing = self.store.media.active().is_some_and(|a| a.playing && !a.length.is_zero());
         let left = if playing { 1 } else { 60 - now.second() as u64 };
         let at = Instant::now() + Duration::from_secs(left) - Duration::from_nanos(now.nanosecond() as u64 % 1_000_000_000);
         self.lock.clock = handle
@@ -1291,7 +1291,7 @@ impl App {
                 can_previous: mpris.is_none_or(|p| p.can_previous),
                 can_toggle: mpris.is_none_or(|p| p.can_toggle),
                 can_next: mpris.is_none_or(|p| p.can_next),
-                progress: (a.length > 0.0).then(|| a.position / a.length),
+                progress: (!a.length.is_zero()).then(|| a.position.as_secs_f64() / a.length.as_secs_f64()),
                 art: None,
                 cursor: if self.lock.transport < media { self.lock.transport } else { -1 },
             }),

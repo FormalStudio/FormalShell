@@ -931,6 +931,7 @@ dependencies = [
 name = "fs-activity"
 version = "0.2.0"
 dependencies = [
+ "fs-types",
  "serde",
  "serde_json",
 ]
@@ -1081,6 +1082,7 @@ name = "fs-network"
 version = "0.2.0"
 dependencies = [
  "async-io",
+ "fs-types",
  "futures-lite",
  "zbus",
 ]
@@ -1092,6 +1094,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "enumflags2",
+ "fs-types",
  "futures-lite",
  "zbus",
 ]

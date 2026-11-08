@@ -121,8 +121,8 @@ fn wifi_round_trip_against_real_networkmanager() {
         eprintln!("{psk:?}");
         assert!(psk.visible && !psk.known && !psk.connected());
         assert!(matches!(psk.security, Security::Wpa2Psk | Security::Sae));
-        assert!((1..=100).contains(&psk.signal.as_percent()));
-        assert!(psk.signal.as_fraction() <= 1.0);
+        assert!((1..=100).contains(&psk.signal.to_percent().rounded()));
+        assert!(psk.signal.to_fraction().as_fraction() <= 1.0);
         let eap = network(&scanned, EAP_SSID).unwrap();
         assert!(eap.security.is_enterprise(), "{:?}", eap.security);
 

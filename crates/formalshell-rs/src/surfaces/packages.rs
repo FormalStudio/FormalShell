@@ -89,7 +89,7 @@ fn phase_words(verb: Verb, item: &Item) -> String {
         _ => "Installing",
     };
     match item.progress.fraction() {
-        Some(f) => format!("{phase} {}%", f.as_percent()),
+        Some(f) => format!("{phase} {}%", f.to_percent().rounded()),
         None => phase.to_owned(),
     }
 }
