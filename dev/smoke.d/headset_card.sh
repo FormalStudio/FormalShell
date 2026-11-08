@@ -80,12 +80,7 @@ leg_headset_card_validate() {
       exit 1
     fi
   done
-  for other in bluez_rssi bluez_player; do
-    if leg_on "$other"; then
-      echo "usage: --headset-card serves its own BlueZ and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
+  refuse_beside_stub_bus headset_card
 }
 
 headset_devices() {

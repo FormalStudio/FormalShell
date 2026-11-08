@@ -77,6 +77,22 @@ leg_on() {
   [ "${!v:-false}" = true ]
 }
 
+# A leg that hands the shell a stub system bus (dev/bluez-stub.py) cannot
+# share a run with another stub bus or with a leg needing the real one.
+refuse_beside_stub_bus() {
+  local owner=$1 other var
+  for other in ${active_legs[@]+"${active_legs[@]}"}; do
+    [ "$other" = "$owner" ] && continue
+    var="leg_${other}_vm_only"
+    case $other in
+      bluez_rssi | bluez_player | earbuds | headset_card) ;;
+      *) [ -n "${!var:-}" ] || continue ;;
+    esac
+    echo "usage: --${owner//_/-} serves its own system bus and cannot combine with --${other//_/-}" >&2
+    exit 1
+  done
+}
+
 # A leg photographing the bare desktop declares leg_<n>_desktop_until, the
 # second its last such frame is taken. A leg covering the whole output
 # starts at cover_t0 <its own start> [<seconds past the samplers>]: past

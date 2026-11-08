@@ -135,13 +135,7 @@ earbuds_head_verbs="$earbuds_dir/librepods-verbs-head.txt"
 earbuds_librepods_err="$earbuds_dir/librepods-stub.err"
 
 leg_earbuds_validate() {
-  local other
-  for other in bluez_rssi bluez_player; do
-    if leg_on "$other"; then
-      echo "usage: --earbuds serves its own BlueZ and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
+  refuse_beside_stub_bus earbuds
 }
 
 leg_earbuds_fixture() {
