@@ -21,6 +21,7 @@ use super::{
 };
 use crate::bluetooth;
 use fs_js as js;
+use fs_types::Percent;
 
 pub const BACKEND: &str = "soundcore";
 pub(crate) const BINARY: &str = "openscq30";
@@ -236,7 +237,7 @@ fn batteries(values: &Values) -> Vec<Battery> {
             return;
         }
         let charging = values.get(charging_id).and_then(Json::as_str) == Some("Yes");
-        out.push(Battery::new(id, label, lvl, charging, None));
+        out.push(Battery::new(id, label, Percent::from_percent(lvl), charging, None));
     };
     add(BatteryId::Left, "Left", "batteryLevelLeft", "isChargingLeft");
     add(BatteryId::Right, "Right", "batteryLevelRight", "isChargingRight");
@@ -444,7 +445,7 @@ mod tests {
         assert_eq!(d.state_line, "Noise cancellation");
         let rows = battery_rows(Some(&d));
         assert_eq!(keys(&rows, |r| r.key.as_str().into()), "single");
-        assert_eq!(rows[0].level, 0.0);
+        assert_eq!(rows[0].level, Percent::whole(0));
         assert_eq!(keys(&d.controls, |c| c.key.clone()), "mode,eq");
         assert_eq!(keys(&sections(Some(&d)), |s| s.section.clone()), "Listening mode,Equalizer");
         let mode = control(Some(&d), "mode").unwrap();
@@ -463,11 +464,11 @@ mod tests {
         assert_eq!(d.state_line, "Transparency");
         let rows = battery_rows(Some(&d));
         assert_eq!(keys(&rows, |r| r.key.as_str().into()), "left,right,case");
-        assert_eq!(rows[0].level, 80.0);
-        assert_eq!(rows[1].level, 60.0);
+        assert_eq!(rows[0].level, Percent::whole(80));
+        assert_eq!(rows[1].level, Percent::whole(60));
         assert_eq!(rows[1].hint, "Charging");
-        assert_eq!(rows[2].level, 100.0);
-        assert_eq!(worst_level(Some(&d)), 60.0);
+        assert_eq!(rows[2].level, Percent::whole(100));
+        assert_eq!(worst_level(Some(&d)), Some(Percent::whole(60)));
         assert_eq!(control(Some(&d), "mode").unwrap().value, "Transparency".into());
         // Jazz is a real preset the row has no button for: nothing lit.
         assert_eq!(control(Some(&d), "eq").unwrap().value, Value::Null);

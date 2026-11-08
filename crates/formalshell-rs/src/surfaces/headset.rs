@@ -11,8 +11,10 @@
 //! is up, so a backend reporting later never moves it; a longer name elides.
 
 use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
+use fs_system::power::model::Thresholds;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
+use fs_types::Percent;
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::scene::{IRect, Paint, Scene};
@@ -23,14 +25,12 @@ use crate::text::TextStyle;
 use crate::ui::el::{Ring, Size};
 use crate::ui::{self, El, Ink, Type, w};
 
-/// At or under this a ring takes the destructive ink (`battery.warnPercent`'s default).
-const LOW: f64 = fs_system::power::model::DEFAULT_WARN_PCT;
-
+/// One battery the earbuds backend reports, or BlueZ's rounded to a whole
+/// percent.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Part {
-    pub label: &'static str,
-    /// 0 to 100.
-    pub percent: f64,
+    pub side: BatteryId,
+    pub level: Percent,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -81,22 +81,16 @@ pub fn face(store: &Store, address: &str) -> Face {
         .to_owned();
     let mut parts: Vec<Part> = Vec::new();
     if let Some(d) = claimed {
-        for id in [BatteryId::Left, BatteryId::Right, BatteryId::Case, BatteryId::Single] {
-            if let Some(b) = d.batteries.iter().find(|b| b.id == id).filter(|b| b.level >= 0.0) {
-                let label = match id {
-                    BatteryId::Left => "Left",
-                    BatteryId::Right => "Right",
-                    BatteryId::Case => "Case",
-                    BatteryId::Single => "",
-                };
-                parts.push(Part { label, percent: b.level.clamp(0.0, 100.0) });
+        for side in [BatteryId::Left, BatteryId::Right, BatteryId::Case, BatteryId::Single] {
+            if let Some(b) = d.batteries.iter().find(|b| b.id == side) {
+                parts.push(Part { side, level: b.level });
             }
         }
     }
     if parts.is_empty()
         && let Some(level) = seen.and_then(|h| h.battery)
     {
-        parts.push(Part { label: "", percent: (level * 100.0).round() });
+        parts.push(Part { side: BatteryId::Single, level: level.to_percent().round() });
     }
     // nothingctl takes up to ~40s to name a headphone it has just seen
     // connect, far past the card's hold, so the set it named last time
@@ -153,13 +147,14 @@ fn pad(theme: &Theme) -> f64 {
 
 /// The one level the ring shows: a headphone's, the buds' lower one, or
 /// the case's when that is all the backend has.
-fn level(f: &Face) -> Option<f64> {
-    let of = |label: &str| f.parts.iter().find(|p| p.label == label).map(|p| p.percent);
-    of("").or_else(|| match (of("Left"), of("Right")) {
-        (Some(l), Some(r)) => Some(l.min(r)),
-        (l, r) => l.or(r),
-    })
-    .or_else(|| of("Case"))
+fn level(f: &Face) -> Option<Percent> {
+    let of = |side: BatteryId| f.parts.iter().find(|p| p.side == side).map(|p| p.level);
+    of(BatteryId::Single)
+        .or_else(|| match (of(BatteryId::Left), of(BatteryId::Right)) {
+            (Some(l), Some(r)) => Some(if r < l { r } else { l }),
+            (l, r) => l.or(r),
+        })
+        .or_else(|| of(BatteryId::Case))
 }
 
 /// The capsule's (width, height): the picture's and the ring's slots, the
@@ -206,17 +201,18 @@ fn with_alpha(c: Rgba, a: f32) -> Rgba {
 /// The ring in the capsule's far slot: a groove under an arc from twelve
 /// o'clock, its level inside; nothing before any level is known.
 pub fn paint_ring(p: &mut Painter, alpha: f32, f: &Face, frame: IRect, theme: &Theme, kit: &mut Kit) {
-    let Some(percent) = level(f) else { return };
+    let Some(level) = level(f) else { return };
     let d = slot(theme);
     let (cx, cy) = ((frame.x + frame.w) as f64 - pad(theme) - d / 2.0, frame.y as f64 + frame.h as f64 / 2.0);
     let groove = theme.box_style("track.groove", None).fill;
-    let fill = if percent <= LOW { theme.colors.get("destructive") } else { theme.box_style("track.fill", None).fill };
-    let ring = Ring::Progress((percent / 100.0).clamp(0.0, 1.0));
+    let low = Thresholds::HEADSET.low(level).is_some();
+    let fill = if low { theme.colors.get("destructive") } else { theme.box_style("track.fill", None).fill };
+    let ring = Ring::Progress(level.as_fraction());
     let strokes = ui::ring_strokes((cx, cy), d, theme.space.xs, ring, 0.0, with_alpha(groove, alpha), with_alpha(fill, alpha));
     let bounds = Scene::cover(Rect::new(cx - d / 2.0, cy - d / 2.0, cx + d / 2.0, cy + d / 2.0), Affine::IDENTITY, 2.0);
     p.shape(bounds, Paint::Shape { fill: None, strokes });
     let style = TextStyle { family: kit.look.mono, size: theme.font_size.body_small as f32, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
-    let text = kit.shape(&format!("{}", percent.round() as i64), style);
+    let text = kit.shape(&level.rounded().to_string(), style);
     let at = ((cx - text.width as f64 / 2.0).round() as i32, (cy - text.line_height() as f64 / 2.0).round() as i32);
     p.text(&text, at, with_alpha(theme.colors.get("mutedForeground"), alpha), &[]);
 }

@@ -484,7 +484,7 @@ impl App {
         if self.store.devices.profiles.as_ref().is_some_and(|p| p.active == fs_upower::Profile::PowerSaver) {
             return Err("powerSaver");
         }
-        if power.on_battery && power.battery.as_ref().is_some_and(|b| b.percent < SHARD_BATTERY_FLOOR) {
+        if power.on_battery && power.battery.as_ref().is_some_and(|b| b.level < SHARD_BATTERY_FLOOR) {
             return Err("lowBattery");
         }
         if self.shard_cover(i) > SHARD_COVER_LIMIT {
@@ -674,7 +674,7 @@ impl App {
 }
 
 /// Below this battery share, discharging, the sculpture holds still.
-const SHARD_BATTERY_FLOOR: f64 = 20.0;
+const SHARD_BATTERY_FLOOR: fs_types::Percent = fs_types::Percent::whole(20);
 /// Past this share of the output under tiled windows it holds still.
 const SHARD_COVER_LIMIT: f64 = 0.85;
 

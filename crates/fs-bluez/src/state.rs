@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use fs_devices::bluetooth::{self, DeviceState};
+use fs_types::Fraction;
 use zbus::zvariant::{OwnedValue, Value};
 
 pub type Props = HashMap<String, OwnedValue>;
@@ -255,12 +256,10 @@ fn apply_player(p: &mut Player, props: &Props) {
 /// `Battery1.Percentage` is 0..100; the shell's models hold a 0..1 fraction.
 fn apply_battery(d: &mut Device, props: &Props, invalidated: &[String]) {
     if let Some(p) = get::<u8>(props, "Percentage") {
-        d.info.battery = f64::from(p.min(100)) / 100.0;
-        d.info.battery_available = true;
+        d.info.battery = Some(Fraction::from_fraction(f64::from(p) / 100.0));
     }
     if invalidated.iter().any(|k| k == "Percentage") {
-        d.info.battery = 0.0;
-        d.info.battery_available = false;
+        d.info.battery = None;
     }
 }
 
@@ -668,12 +667,10 @@ mod tests {
     fn battery_is_a_fraction_and_goes_with_its_interface() {
         let mut s = seeded();
         let ev = s.interface_added(DEV, BATTERY_IFACE, &props(vec![("Percentage", 87u8.into())]));
-        assert!(matches!(&ev[..], [Event::DeviceChanged(d)] if d.info.battery_available));
-        assert_eq!(s.device(DEV).unwrap().info.battery, 0.87);
+        assert!(matches!(&ev[..], [Event::DeviceChanged(d)] if d.info.battery.is_some()));
+        assert_eq!(s.device(DEV).unwrap().info.battery.map(Fraction::as_fraction), Some(0.87));
         s.interfaces_removed(DEV, &[BATTERY_IFACE.to_string()]);
-        let d = s.device(DEV).unwrap();
-        assert!(!d.info.battery_available);
-        assert_eq!(d.info.battery, 0.0);
+        assert_eq!(s.device(DEV).unwrap().info.battery, None);
     }
 
     #[test]
@@ -685,8 +682,7 @@ mod tests {
         ]);
         s.interfaces_added(DEV, &ifaces);
         let d = s.device(DEV).unwrap();
-        assert!(d.info.battery_available);
-        assert_eq!(d.info.battery, 0.4);
+        assert_eq!(d.info.battery.map(Fraction::as_fraction), Some(0.4));
     }
 
     #[test]

@@ -8,6 +8,7 @@ use fs_menu::providers::{
     AudioDevice, BluetoothState, RadioState, RadioStation, WifiNetwork, WifiState, audio_rows,
     bluetooth_rows, id_part, radio_result_rows, radio_rows, wifi_details, wifi_rows,
 };
+use fs_types::Fraction;
 
 #[test]
 fn id_part_round_trips_and_has_no_dot() {
@@ -222,8 +223,8 @@ fn bluetooth_unnamed_devices_are_dropped() {
 fn bluetooth_desc_prefers_activity_then_battery() {
     let connected = |address: &str, name: &str| BluetoothDevice { connected: true, ..dev(address, name) };
     let rows = bt(vec![
-        BluetoothDevice { state: DeviceState::Connecting, battery: 0.8, battery_available: true, ..connected("AA:01", "A") },
-        BluetoothDevice { battery: 0.5, battery_available: true, ..connected("AA:02", "B") },
+        BluetoothDevice { state: DeviceState::Connecting, battery: Some(Fraction::from_fraction(0.8)), ..connected("AA:01", "A") },
+        BluetoothDevice { battery: Some(Fraction::from_fraction(0.5)), ..connected("AA:02", "B") },
         connected("AA:03", "C"),
     ]);
     assert_eq!(desc_of(&rows, "A"), "Connecting\u{2026}");

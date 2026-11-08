@@ -24,6 +24,7 @@ use super::{
     valid_address,
 };
 use fs_js as js;
+use fs_types::Percent;
 
 pub const BACKEND: &str = "nothing";
 pub(crate) const BINARY: &str = "nothingctl";
@@ -472,7 +473,7 @@ pub fn normalise(state: &State, failure: &str) -> Device {
         batteries: state
             .battery
             .iter()
-            .map(|b| Battery::new(b.id, battery_label(b.id), b.level, b.charging, None))
+            .map(|b| Battery::new(b.id, battery_label(b.id), Percent::from_percent(b.level), b.charging, None))
             .collect(),
         controls,
         state_line: if !failure.is_empty() {
@@ -665,8 +666,8 @@ mod tests {
         assert_eq!(dev.name, "CMF Headphone Pro");
         assert_eq!(dev.batteries.len(), 1);
         assert_eq!(dev.batteries[0].id, BatteryId::Single);
-        assert_eq!(dev.batteries[0].level, 80.0);
-        assert_eq!(crate::earbuds::worst_level(Some(&dev)), 80.0);
+        assert_eq!(dev.batteries[0].level, Percent::whole(80));
+        assert_eq!(crate::earbuds::worst_level(Some(&dev)), Some(Percent::whole(80)));
         assert_eq!(keys(&dev.controls, |c| c.key.clone()), "anc,eq,spatial,low-latency");
         let anc = control(Some(&dev), "anc").unwrap();
         assert_eq!(option_keys(anc, |o| o.value.as_str().unwrap().into()), "off,transparency,high,mid,low,adaptive");

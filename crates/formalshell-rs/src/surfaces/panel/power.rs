@@ -12,9 +12,10 @@
 use std::cell::Cell;
 
 use fs_system::power::flow::{self, Extras, Link};
-use fs_system::power::model::{self, DeviceState, charge_threshold_active, format_duration, format_rate};
+use fs_system::power::model::{self, charge_threshold_active, format_duration, format_rate};
 use fs_theme::tokens::Space;
-use fs_upower::Profile;
+use fs_types::Percent;
+use fs_upower::{DeviceState, Profile};
 
 use super::{Effect, Panel, View};
 use crate::services::devices;
@@ -74,7 +75,7 @@ pub fn flow_view(f: &flow::Flow, animate: bool) -> Flow {
 /// What the battery card shows, read off UPower by the panel or made up
 /// by the gallery's sample.
 pub struct Card {
-    pub percent: f64,
+    pub level: Percent,
     /// The words at the card's far end, and whether they are the lit ink.
     pub state: Option<(&'static str, bool)>,
     pub rate: Option<String>,
@@ -95,9 +96,9 @@ pub fn battery_card(s: &Space, c: &Card) -> El {
     if let Some(t) = &c.time {
         side.push(w::text(t.clone()).size(Type::Title).weight(Weight::Normal).ink(Ink::Dim));
     }
-    let percent = w::text(format!("{}%", c.percent.round())).size(Type::Hero).weight(Weight::Medium).fill();
+    let percent = w::text(format!("{}%", c.level.rounded())).size(Type::Hero).weight(Weight::Medium).fill();
     let readout = w::row(s.md, vec![percent, w::column(s.xxs, side)]);
-    let mut parts = vec![w::row(0.0, head).fill(), readout.fill(), w::track(c.percent / 100.0).height(s.panel_icon)];
+    let mut parts = vec![w::row(0.0, head).fill(), readout.fill(), w::track(c.level.as_fraction()).height(s.panel_icon)];
     if !c.details.is_empty() {
         parts.push(w::caption(c.details.join(" \u{00b7} ")));
     }
@@ -139,18 +140,18 @@ fn active(v: &View) -> usize {
 fn card(v: &View, b: &devices::power::Battery) -> Card {
     let power = &v.store.devices.power;
     let charging = b.state == DeviceState::Charging;
-    let held = charge_threshold_active(b.percent, b.state, b.rate, b.time_to_full, power.on_battery);
+    let held = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, power.on_battery);
     let state = if held {
         Some(("Holding at limit", false))
     } else if power.on_battery {
         None
-    } else if b.state == DeviceState::FullyCharged || b.percent >= 100.0 {
+    } else if b.state == DeviceState::FullyCharged || b.level.as_percent() >= 100.0 {
         Some(("Charged", true))
     } else {
         Some(("Charging", true))
     };
-    let seconds = if charging { b.time_to_full } else { b.time_to_empty };
-    let time = (seconds > 0.0 && !held).then(|| format!("{} {}", format_duration(seconds), if charging { "to full" } else { "left" }));
+    let left = if charging { b.time_to_full } else { b.time_to_empty };
+    let time = left.filter(|_| !held).map(|t| format!("{} {}", format_duration(t), if charging { "to full" } else { "left" }));
     let limit = v
         .store
         .info
@@ -163,7 +164,7 @@ fn card(v: &View, b: &devices::power::Battery) -> Card {
         .and_then(|l| model::parse_charge_limit(&l.to_string()));
     let mut details = Vec::new();
     if let Some(h) = b.health {
-        details.push(format!("Health {}%", h.round()));
+        details.push(format!("Health {}%", h.rounded()));
     }
     if b.size_wh > 0.0 {
         details.push(format!("{:.1} Wh", b.size_wh));
@@ -171,7 +172,7 @@ fn card(v: &View, b: &devices::power::Battery) -> Card {
     if let Some(l) = limit {
         details.push(format!("Limit {l}%"));
     }
-    Card { percent: b.percent, state, rate: (b.rate > 0.0).then(|| format_rate(b.rate)), time, details }
+    Card { level: b.level, state, rate: (b.rate > 0.0).then(|| format_rate(b.rate)), time, details }
 }
 
 impl Panel for Power {

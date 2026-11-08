@@ -14,6 +14,7 @@ use serde_json::Value as Json;
 use super::{Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Value, choice, device, toggle, valid_address};
 use crate::bluetooth;
 use fs_js as js;
+use fs_types::Percent;
 
 pub const BACKEND: &str = "samsung";
 pub(crate) const BINARY: &str = "earbuds";
@@ -173,7 +174,7 @@ pub fn parse_status(text: &str) -> Status {
 
 fn bud(id: BatteryId, label: &str, level: f64, placement: f64) -> Battery {
     // 3 and 4 are the case placements, where the buds charge.
-    Battery::new(id, label, level, in_case(placement), Some(placement == IN_EAR))
+    Battery::new(id, label, Percent::from_percent(level), in_case(placement), Some(placement == IN_EAR))
 }
 
 fn batteries(s: &Status) -> Vec<Battery> {
@@ -188,7 +189,7 @@ fn batteries(s: &Status) -> Vec<Battery> {
     // The CLI itself shows the case only while a bud is in it: with both buds
     // out its level is not reported.
     if known(s.batt_case) && (in_case(s.placement_left) || in_case(s.placement_right)) {
-        out.push(Battery::new(BatteryId::Case, "Case", s.batt_case, false, None));
+        out.push(Battery::new(BatteryId::Case, "Case", Percent::from_percent(s.batt_case), false, None));
     }
     out
 }
@@ -402,8 +403,8 @@ mod tests {
         assert_eq!(keys(&rows, |r| r.key.as_str().into()), "left,right,case");
         assert_eq!(rows[0].hint, "Charging");
         assert_eq!(rows[1].hint, "In ear");
-        assert_eq!(rows[2].level, 60.0);
-        assert_eq!(worst_level(Some(&mixed)), 77.0);
+        assert_eq!(rows[2].level, Percent::whole(60));
+        assert_eq!(worst_level(Some(&mixed)), Some(Percent::whole(77)));
     }
 
     #[test]

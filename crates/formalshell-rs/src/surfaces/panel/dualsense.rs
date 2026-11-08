@@ -44,9 +44,9 @@ impl Panel for Dualsense {
                 glyph: "gamepad-2".into(),
                 title: "DualSense".into(),
                 meta: state_line(Some(supply)),
-                readout: format!("{}%", supply.percent),
+                readout: format!("{}%", supply.level.rounded()),
                 trailing: None,
-                rail: Some(supply.percent as f64 / 100.0),
+                rail: Some(supply.level.as_fraction()),
                 rail_on: None,
             },
         )

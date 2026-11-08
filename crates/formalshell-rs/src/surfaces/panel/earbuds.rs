@@ -22,6 +22,7 @@ use std::collections::HashMap;
 
 use fs_devices::earbuds::motion::{EulerDegrees, Quat};
 use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, Device, HeartRate, HeartSample, Motion, Value};
+use fs_types::Percent;
 
 use super::{Effect, Panel, View};
 use crate::services::devices::{self, earbuds};
@@ -239,8 +240,8 @@ fn art(dev: &Device, part: &str, size: f64) -> Option<crate::scene::Bitmap> {
     earbuds::picture(&dev.art, part, size)
 }
 
-fn percent(level: f64) -> String {
-    format!("{}%", fs_js::num_str(level))
+fn percent(level: Percent) -> String {
+    format!("{}%", fs_js::num_str(level.as_percent()))
 }
 
 /// The product picture beside the name and what it is doing; a headphone's
@@ -260,7 +261,7 @@ fn hero(s: &fs_theme::tokens::Space, dev: &Device, picture: crate::scene::Bitmap
         }
         words.push(w::space(s.row_gap));
         words.push(w::row(s.xxs, level));
-        words.push(w::track(b.level / 100.0));
+        words.push(w::track(b.level.as_fraction()));
     }
     w::row(s.section_gap, vec![w::picture(Some(picture), size), w::column(s.xxs, words).fill().mid()]).fill()
 }
@@ -287,7 +288,7 @@ fn battery_tiles(s: &fs_theme::tokens::Space, dev: &Device) -> El {
             let parts = vec![
                 w::picture(art(dev, part, size), size).centred(),
                 w::row(s.xxs, level).centred(),
-                w::track(b.level / 100.0),
+                w::track(b.level.as_fraction()),
                 w::caption(word).centred(),
             ];
             w::cell(w::column(s.xxs, parts).fill())
@@ -450,7 +451,7 @@ fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
                 values.push(w::caption(b.hint.clone()));
             }
             values.push(w::panel_value(percent(b.level)));
-            w::panel_meter(s, None, &b.label, values, Some(w::track(b.level / 100.0)))
+            w::panel_meter(s, None, &b.label, values, Some(w::track(b.level.as_fraction())))
         })
         .collect();
     Some(w::panel_section(s, "Battery", rows, ""))
@@ -662,7 +663,7 @@ mod tests {
 
     #[test]
     fn the_head_says_only_what_the_buds_measured() {
-        let mut dev = model::device(model::DeviceFields { batteries: vec![model::Battery::new(BatteryId::Left, "Left", 80.0, false, Some(false))], ..Default::default() });
+        let mut dev = model::device(model::DeviceFields { batteries: vec![model::Battery::new(BatteryId::Left, "Left", Percent::whole(80), false, Some(false))], ..Default::default() });
         let mut m = Motion::default();
         assert_eq!(gaze(&dev, &m), Gaze::NoBud);
         dev.batteries[0].in_ear = Some(true);

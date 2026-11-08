@@ -2,7 +2,8 @@
 //! the strip without one. Critical and low while discharging put their
 //! colour on the border and the ink; right click flips the percentage.
 
-use fs_system::power::model::{self, DeviceState, battery_icon, charge_state_label, charge_threshold_active, format_duration};
+use fs_system::power::model::{Low, Thresholds, battery_icon, charge_state_label, charge_threshold_active, format_duration};
+use fs_upower::DeviceState;
 
 use crate::services::devices::{Op, power};
 use crate::store::Topic;
@@ -10,10 +11,9 @@ use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, Vi
 
 #[derive(Default, PartialEq)]
 struct Read {
-    battery: Option<power::Battery>,
+    /// The battery and where it reads low.
+    battery: Option<(power::Battery, Thresholds)>,
     on_battery: bool,
-    warn: f64,
-    critical: f64,
     show_label: bool,
 }
 
@@ -39,10 +39,8 @@ impl Cell for Battery {
             .as_bool()
             .unwrap_or_else(|| c.bool("bar.widgets.battery.showLabel").unwrap_or(true));
         let r = Read {
-            battery: p.battery.clone(),
+            battery: p.battery.clone().map(|b| (b, power::thresholds(c))),
             on_battery: p.on_battery,
-            warn: c.f64("battery.warnPercent").unwrap_or(model::DEFAULT_WARN_PCT),
-            critical: c.f64("battery.criticalPercent").unwrap_or(model::DEFAULT_CRITICAL_PCT),
             show_label,
         };
         let changed = r != self.r;
@@ -52,35 +50,29 @@ impl Cell for Battery {
 
     fn view(&self, look: &Look) -> View {
         let r = &self.r;
-        let Some(b) = &r.battery else { return View::hidden() };
-        let pct = b.percent;
+        let Some((b, lines)) = &r.battery else { return View::hidden() };
+        let pct = b.level.rounded();
         let discharging = b.state == DeviceState::Discharging;
         let charging = b.state == DeviceState::Charging;
-        let critical = discharging && pct <= r.critical;
-        let low = discharging && !critical && pct <= r.warn;
-        let threshold = charge_threshold_active(pct, b.state, b.rate, b.time_to_full, r.on_battery);
-        let icon = battery_icon(pct, r.on_battery, threshold, Some(r.warn));
+        let low = if discharging { lines.low(b.level) } else { None };
+        let threshold = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, r.on_battery);
+        let icon = battery_icon(b.level, r.on_battery, threshold, *lines);
         let head = format!("BATTERY {pct}%");
-        let body = if threshold {
-            format!("{head} / THRESHOLD")
-        } else if charging && b.time_to_full > 0.0 {
-            format!("{head} / FULL IN {}", format_duration(b.time_to_full))
-        } else if discharging && b.time_to_empty > 0.0 {
-            format!("{head} / {} LEFT", format_duration(b.time_to_empty))
-        } else {
-            format!("{head} / {}", charge_state_label(pct, b.state, r.on_battery, threshold))
+        let body = match (b.time_to_full, b.time_to_empty) {
+            _ if threshold => format!("{head} / THRESHOLD"),
+            (Some(t), _) if charging => format!("{head} / FULL IN {}", format_duration(t)),
+            (_, Some(t)) if discharging => format!("{head} / {} LEFT", format_duration(t)),
+            _ => format!("{head} / {}", charge_state_label(b.level, b.state, r.on_battery, threshold)),
         };
         let tooltip = format!("{body} / RIGHT {}", if r.show_label { "HIDE %" } else { "SHOW %" });
         let mut parts = vec![Part::Icon { name: icon.into(), dim: false, dot: false }];
         if r.show_label {
             parts.push(Part::Label { text: format!("{pct}%"), weight: None });
         }
-        let tone = if critical {
-            Tone::Destructive
-        } else if low {
-            Tone::Warning
-        } else {
-            Tone::Rest
+        let tone = match low {
+            Some(Low::Critical) => Tone::Destructive,
+            Some(Low::Warn) => Tone::Warning,
+            None => Tone::Rest,
         };
         View::new(parts, look.xs).panel("power").tooltip(tooltip).tone(tone)
     }

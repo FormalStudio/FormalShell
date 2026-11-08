@@ -1,37 +1,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use fs_types::Percent;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
-
-/// A charge or health level in percent, 0..=100.
-///
-/// UPower sends percent on the wire and this keeps it that way, so a 0..1
-/// fraction never meets it without a named conversion.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
-pub struct Percent(f64);
-
-impl Percent {
-    /// Clamps to 0..=100; a NaN reads as 0.
-    pub fn from_percent(value: f64) -> Self {
-        if value.is_nan() {
-            return Self(0.0);
-        }
-        Self(value.clamp(0.0, 100.0))
-    }
-
-    pub fn as_percent(self) -> f64 {
-        self.0
-    }
-
-    pub fn as_fraction(self) -> f64 {
-        self.0 / 100.0
-    }
-
-    /// The whole number the bar cell and panel show.
-    pub fn rounded(self) -> u8 {
-        self.0.round() as u8
-    }
-}
 
 /// `org.freedesktop.UPower.Device.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,21 +163,6 @@ mod tests {
 
     fn path() -> OwnedObjectPath {
         OwnedObjectPath::try_from("/org/freedesktop/UPower/devices/battery_BAT0").unwrap()
-    }
-
-    #[test]
-    fn percent_keeps_the_wire_scale() {
-        let p = Percent::from_percent(73.4);
-        assert_eq!(p.as_percent(), 73.4);
-        assert!((p.as_fraction() - 0.734).abs() < 1e-12);
-        assert_eq!(p.rounded(), 73);
-    }
-
-    #[test]
-    fn percent_clamps_and_survives_nan() {
-        assert_eq!(Percent::from_percent(140.0).as_percent(), 100.0);
-        assert_eq!(Percent::from_percent(-3.0).as_percent(), 0.0);
-        assert_eq!(Percent::from_percent(f64::NAN).as_percent(), 0.0);
     }
 
     #[test]

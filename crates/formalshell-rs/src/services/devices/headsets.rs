@@ -1,6 +1,8 @@
 //! The Bluetooth audio devices the headset connect card watches: BlueZ's
 //! devices whose icon says audio.
 
+use fs_types::Fraction;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Headset {
     /// Upper case, as BlueZ hands it out.
@@ -9,8 +11,8 @@ pub struct Headset {
     /// BlueZ's `Icon`: `audio-headset`, `audio-headphones`, `audio-speakers`.
     pub icon: String,
     pub connected: bool,
-    /// BlueZ's Battery1, as a 0..1 fraction; none when nothing reports one.
-    pub battery: Option<f64>,
+    /// BlueZ's Battery1; none when nothing reports one.
+    pub battery: Option<Fraction>,
 }
 
 pub fn read(state: &fs_bluez::state::State) -> Vec<Headset> {
@@ -24,7 +26,7 @@ pub fn read(state: &fs_bluez::state::State) -> Vec<Headset> {
             name: if d.info.name.is_empty() { d.info.device_name.clone() } else { d.info.name.clone() },
             icon: d.icon.clone(),
             connected: d.info.connected,
-            battery: d.info.battery_available.then_some(d.info.battery),
+            battery: d.info.battery,
         })
         .collect()
 }

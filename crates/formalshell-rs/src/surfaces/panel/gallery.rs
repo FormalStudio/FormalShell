@@ -359,7 +359,7 @@ fn wifi_sample(s: &fs_theme::tokens::Space) -> El {
 /// populated look on a rig with no battery.
 fn battery_sample() -> super::power::Card {
     super::power::Card {
-        percent: 49.0,
+        level: fs_types::Percent::whole(49),
         state: None,
         rate: Some("8.0W".into()),
         time: Some("2h 30m left".into()),

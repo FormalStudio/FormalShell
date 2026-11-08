@@ -4,6 +4,7 @@
 //! is what keeps every backend idle on a strip without it.
 
 use fs_devices::earbuds::{battery_summary, worst_level};
+use fs_types::Percent;
 
 use crate::services::devices::earbuds;
 use crate::store::Topic;
@@ -11,7 +12,7 @@ use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary,
 
 #[derive(Default, PartialEq)]
 struct Read {
-    worst: f64,
+    worst: Option<Percent>,
     tooltip: String,
     show_label: bool,
 }
@@ -23,7 +24,7 @@ pub struct Earbuds {
 impl Earbuds {
     pub fn new() -> Self {
         earbuds::acquire();
-        Self { r: Read { worst: -1.0, ..Read::default() } }
+        Self { r: Read::default() }
     }
 }
 
@@ -52,18 +53,16 @@ impl Cell for Earbuds {
 
     fn view(&self, look: &Look) -> View {
         let r = &self.r;
-        if r.worst < 0.0 {
-            return View::hidden();
-        }
+        let Some(worst) = r.worst else { return View::hidden() };
         let mut parts = vec![Part::Icon { name: "headphones".into(), dim: false, dot: false }];
         if r.show_label {
-            parts.push(Part::Label { text: format!("{}%", r.worst), weight: None });
+            parts.push(Part::Label { text: format!("{}%", worst.as_percent()), weight: None });
         }
         View::new(parts, look.xs).panel("earbuds").tooltip(r.tooltip.clone())
     }
 
     fn summary(&self) -> Option<Summary> {
-        (self.r.worst >= 0.0).then(|| Summary::new("headphones", "Earbuds", format!("{}%", self.r.worst)))
+        self.r.worst.map(|w| Summary::new("headphones", "Earbuds", format!("{}%", w.as_percent())))
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {

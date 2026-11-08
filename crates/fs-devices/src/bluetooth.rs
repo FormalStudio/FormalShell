@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use fs_js as js;
+use fs_types::Fraction;
 
 /// BlueZ's connection state for a device.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -19,7 +20,6 @@ pub enum DeviceState {
 }
 
 /// One BlueZ device as the panel and the other device models see it.
-/// `battery` is a 0..1 fraction, never a percentage.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Device {
     pub address: String,
@@ -32,8 +32,8 @@ pub struct Device {
     pub trusted: bool,
     pub pairing: bool,
     pub state: DeviceState,
-    pub battery: f64,
-    pub battery_available: bool,
+    /// Battery1's level; none while the device reports no battery.
+    pub battery: Option<Fraction>,
 }
 
 static MAC_SHAPED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i-u)^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$").unwrap());
@@ -111,7 +111,7 @@ pub fn activity_text(device: Option<&Device>) -> &'static str {
 /// has one.
 pub fn battery_text(device: Option<&Device>) -> String {
     match device {
-        Some(d) if d.connected && d.battery_available => format!("{}%", js::num_str(js::round(d.battery * 100.0))),
+        Some(Device { connected: true, battery: Some(b), .. }) => format!("{}%", js::num_str(js::round(b.as_percent()))),
         _ => String::new(),
     }
 }
@@ -222,19 +222,19 @@ mod tests {
 
     #[test]
     fn battery_text_percent_when_connected() {
-        let d = Device { connected: true, battery_available: true, battery: 0.42, ..dev("A") };
+        let d = Device { connected: true, battery: Some(Fraction::from_fraction(0.42)), ..dev("A") };
         assert_eq!(battery_text(Some(&d)), "42%");
     }
 
     #[test]
     fn battery_text_blank_when_connected_without_battery() {
-        let d = Device { connected: true, battery_available: false, ..dev("A") };
+        let d = Device { connected: true, battery: None, ..dev("A") };
         assert_eq!(battery_text(Some(&d)), "");
     }
 
     #[test]
     fn battery_text_blank_for_a_disconnected_device() {
-        let d = Device { connected: false, battery_available: true, battery: 0.9, ..dev("A") };
+        let d = Device { connected: false, battery: Some(Fraction::from_fraction(0.9)), ..dev("A") };
         assert_eq!(battery_text(Some(&d)), "");
         assert_eq!(battery_text(None), "");
     }

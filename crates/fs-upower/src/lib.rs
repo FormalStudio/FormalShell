@@ -7,6 +7,6 @@ mod device;
 mod profiles;
 mod upower;
 
-pub use device::{Device, DeviceKind, DeviceState, Percent};
+pub use device::{Device, DeviceKind, DeviceState};
 pub use profiles::{PowerProfiles, Profile, ProfilesState};
 pub use upower::{Change, Snapshot, UPower};

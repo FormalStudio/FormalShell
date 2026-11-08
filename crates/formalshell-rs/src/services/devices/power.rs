@@ -15,8 +15,9 @@ use async_io::Timer;
 use futures_lite::FutureExt;
 
 use fs_system::dualsense::{self, Supply};
-use fs_system::power::model::DeviceState;
-use fs_upower::{Change, Device, PowerProfiles, Profile, UPower};
+use fs_system::power::model::Thresholds;
+use fs_types::Percent;
+use fs_upower::{Change, Device, DeviceState, PowerProfiles, Profile, UPower};
 use futures_lite::StreamExt;
 
 use crate::runtime::Ctx;
@@ -25,16 +26,16 @@ use crate::store;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Battery {
     /// Whole percent, as the cell shows it.
-    pub percent: f64,
+    pub level: Percent,
     pub state: DeviceState,
     /// Watts, a magnitude (`changeRate`).
     pub rate: f64,
-    /// Seconds, 0 when UPower has no estimate.
-    pub time_to_full: f64,
-    pub time_to_empty: f64,
+    /// None when UPower has no estimate.
+    pub time_to_full: Option<Duration>,
+    pub time_to_empty: Option<Duration>,
     /// The pack's capacity against its design, off the physical battery:
     /// the display device is an aggregate and publishes none.
-    pub health: Option<f64>,
+    pub health: Option<Percent>,
     /// Watt-hours, 0 when UPower has no reading.
     pub size_wh: f64,
 }
@@ -48,50 +49,40 @@ pub struct Power {
     pub dualsense: Option<Supply>,
 }
 
-fn state(s: fs_upower::DeviceState) -> DeviceState {
-    use fs_upower::DeviceState as U;
-    match s {
-        U::Unknown => DeviceState::Unknown,
-        U::Charging => DeviceState::Charging,
-        U::Discharging => DeviceState::Discharging,
-        U::Empty => DeviceState::Empty,
-        U::FullyCharged => DeviceState::FullyCharged,
-        U::PendingCharge => DeviceState::PendingCharge,
-        U::PendingDischarge => DeviceState::PendingDischarge,
-    }
+/// The laptop's low lines, `battery.warnPercent` and
+/// `battery.criticalPercent` over the defaults.
+pub fn thresholds(config: &crate::services::config::State) -> Thresholds {
+    Thresholds::LAPTOP.with(config.f64("battery.warnPercent"), config.f64("battery.criticalPercent"))
 }
 
 fn battery(d: &Device, physical: Option<&Device>) -> Option<Battery> {
-    let secs = |t: Option<std::time::Duration>| t.map_or(0.0, |t| t.as_secs_f64());
     d.is_laptop_battery().then(|| Battery {
-        percent: d.percentage.rounded() as f64,
-        state: state(d.state),
+        level: d.percentage.round(),
+        state: d.state,
         rate: d.energy_rate,
-        time_to_full: secs(d.time_to_full),
-        time_to_empty: secs(d.time_to_empty),
-        health: physical.and_then(|p| p.capacity).map(|c| c.as_percent()),
+        time_to_full: d.time_to_full,
+        time_to_empty: d.time_to_empty,
+        health: physical.and_then(|p| p.capacity),
         size_wh: d.energy_full,
     })
 }
 
 /// The supply's `status` word UPower read its state from, which is what
 /// the cell's tooltip names.
-fn status_word(s: fs_upower::DeviceState) -> &'static str {
-    use fs_upower::DeviceState as U;
+fn status_word(s: DeviceState) -> &'static str {
     match s {
-        U::Charging => "Charging",
-        U::Discharging | U::Empty => "Discharging",
-        U::FullyCharged => "Full",
-        U::PendingCharge | U::PendingDischarge => "Not charging",
-        U::Unknown => "Unknown",
+        DeviceState::Charging => "Charging",
+        DeviceState::Discharging | DeviceState::Empty => "Discharging",
+        DeviceState::FullyCharged => "Full",
+        DeviceState::PendingCharge | DeviceState::PendingDischarge => "Not charging",
+        DeviceState::Unknown => "Unknown",
     }
 }
 
 /// First match wins.
 fn dualsense(devices: &BTreeMap<String, Device>) -> Option<Supply> {
     let d = devices.values().find(|d| d.native_path.starts_with("ps-controller-battery-") && d.is_present)?;
-    let supply = dualsense::parse_supply(Some(&d.percentage.rounded().to_string()), Some(status_word(d.state)));
-    (supply.percent >= 0).then_some(supply)
+    Some(Supply::new(d.percentage.round(), status_word(d.state)))
 }
 
 struct Seen {

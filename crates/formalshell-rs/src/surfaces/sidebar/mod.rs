@@ -636,10 +636,10 @@ const FIGURE: f64 = 0.7;
 /// fill in the foreground, `primary` while charging and `destructive` low
 /// on battery, centred in `band`.
 fn battery_line(p: &mut Painter, theme: &Theme, g: &Geo, b: &crate::services::devices::power::Battery, band: IRect) {
-    use fs_system::power::model::DeviceState;
+    use fs_upower::DeviceState;
     let fg = theme.colors.get("foreground");
     let charging = matches!(b.state, DeviceState::Charging | DeviceState::FullyCharged | DeviceState::PendingCharge);
-    let low = !charging && b.percent <= fs_system::power::model::DEFAULT_WARN_PCT;
+    let low = !charging && fs_system::power::model::Thresholds::LAPTOP.low(b.level).is_some();
     let fill = if charging {
         theme.colors.get("primary")
     } else if low {
@@ -652,7 +652,7 @@ fn battery_line(p: &mut Painter, theme: &Theme, g: &Geo, b: &crate::services::de
     let y = band.y + (band.h - h) / 2;
     let r = h as f32 / 2.0;
     p.rect(IRect::new(x, y, w, h), fg.with_alpha(fg.a * 0.2), r);
-    let filled = (w as f64 * (b.percent / 100.0).clamp(0.0, 1.0)).round() as i32;
+    let filled = (w as f64 * b.level.as_fraction()).round() as i32;
     if filled > 0 {
         p.rect(IRect::new(x, y, filled, h), fill, r);
     }
@@ -720,7 +720,7 @@ impl ClockCard {
             "format": format,
             "formatted": format_qt(store.clock.now, &format),
             "minuteUs": self.minute_us,
-            "battery": store.devices.power.battery.as_ref().map(|b| b.percent),
+            "battery": store.devices.power.battery.as_ref().map(|b| b.level.as_percent()),
         })
     }
 }

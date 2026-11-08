@@ -35,12 +35,13 @@ const LEVEL_ALPHA: f32 = 0.12;
 /// The charge's tint: `primary`, `warning` under a fifth on battery and
 /// `destructive` past the low warning.
 fn level_colour(b: &crate::services::devices::power::Battery) -> &'static str {
-    use fs_system::power::model::{DEFAULT_WARN_PCT, DeviceState};
+    use fs_system::power::model::Thresholds;
+    use fs_upower::DeviceState;
     let charging = matches!(b.state, DeviceState::Charging | DeviceState::FullyCharged | DeviceState::PendingCharge);
-    match b.percent {
+    match b.level {
         _ if charging => "primary",
-        p if p <= DEFAULT_WARN_PCT => "destructive",
-        p if p < 20.0 => "warning",
+        l if Thresholds::LAPTOP.low(l).is_some() => "destructive",
+        l if l.as_percent() < 20.0 => "warning",
         _ => "primary",
     }
 }
@@ -186,7 +187,7 @@ impl App {
             "rect": rect(p.popup.card.rest_rect()),
             "chips": chips,
             "active": self.store.devices.profiles.as_ref().map(|p| p.active.to_wire()),
-            "battery": self.store.devices.power.battery.as_ref().map(|b| b.percent),
+            "battery": self.store.devices.power.battery.as_ref().map(|b| b.level.as_percent()),
         })
     }
 
@@ -213,11 +214,11 @@ impl App {
             let (frame, alpha) = p.popup.card.popover_frame;
             let (radius, bw, nub) = (p.popup.card.radius(), p.popup.card.border_width(), p.popup.card.nub.unwrap_or_default());
             let (mut painter, _) = p.popup.painter();
-            let charge = self.store.devices.power.battery.as_ref().map(|b| (b.percent, level_colour(b)));
-            if let Some((percent, colour)) = charge {
+            let charge = self.store.devices.power.battery.as_ref().map(|b| (b.level, level_colour(b)));
+            if let Some((level, colour)) = charge {
                 // The charge, the outline's own inside tinted from the foot
                 // up: the nub only when full.
-                let level = (percent / 100.0).clamp(0.0, 1.0);
+                let level = level.as_fraction();
                 let nub_h = nub.1.ceil() as i32;
                 let top = if level >= 1.0 {
                     frame.y - nub_h

@@ -10,6 +10,7 @@ use serde_json::Value as Json;
 
 use crate::bluetooth;
 use fs_js as js;
+use fs_types::Percent;
 
 pub mod airpods;
 pub mod motion;
@@ -138,13 +139,13 @@ impl BatteryId {
 pub struct Battery {
     pub id: BatteryId,
     pub label: String,
-    pub level: f64,
+    pub level: Percent,
     pub charging: bool,
     pub in_ear: Option<bool>,
 }
 
 impl Battery {
-    pub fn new(id: BatteryId, label: &str, level: f64, charging: bool, in_ear: Option<bool>) -> Battery {
+    pub fn new(id: BatteryId, label: &str, level: Percent, charging: bool, in_ear: Option<bool>) -> Battery {
         Battery { id, label: label.into(), level, charging, in_ear }
     }
 }
@@ -442,7 +443,7 @@ fn hint(battery: &Battery) -> String {
 pub struct BatteryRow {
     pub key: BatteryId,
     pub label: String,
-    pub level: f64,
+    pub level: Percent,
     pub hint: String,
 }
 
@@ -456,16 +457,12 @@ pub fn battery_rows(dev: Option<&Device>) -> Vec<BatteryRow> {
 
 /// The bar cell's headline: the worst bud (or the one battery a headphone
 /// has). The case is left out, a full case beside a near-dead bud would read
-/// backwards. -1 when no bud has a level.
-pub fn worst_level(dev: Option<&Device>) -> f64 {
-    let Some(dev) = dev else { return -1.0 };
-    let mut worst = -1.0;
-    for b in &dev.batteries {
-        if b.id == BatteryId::Case {
-            continue;
-        }
-        if worst < 0.0 || b.level < worst {
-            worst = b.level;
+/// backwards. None when no bud has a level.
+pub fn worst_level(dev: Option<&Device>) -> Option<Percent> {
+    let mut worst: Option<Percent> = None;
+    for b in dev.into_iter().flat_map(|d| &d.batteries) {
+        if b.id != BatteryId::Case && worst.is_none_or(|w| b.level < w) {
+            worst = Some(b.level);
         }
     }
     worst
@@ -482,7 +479,7 @@ pub fn battery_summary(dev: Option<&Device>) -> String {
                 BatteryId::Case => "CASE",
                 BatteryId::Single => "",
             };
-            let level = js::num_str(b.level);
+            let level = js::num_str(b.level.as_percent());
             if tag.is_empty() { level } else { format!("{tag} {level}") }
         })
         .collect::<Vec<_>>()
@@ -642,7 +639,7 @@ pub fn to_json(dev: &Device) -> Json {
             serde_json::json!({
                 "id": b.id.as_str(),
                 "label": b.label,
-                "level": js::json_number(b.level),
+                "level": js::json_number(b.level.as_percent()),
                 "charging": b.charging,
                 "inEar": b.in_ear,
             })
@@ -738,7 +735,7 @@ mod tests {
     }
 
     fn bat(id: BatteryId, level: f64) -> Battery {
-        Battery::new(id, "", level, false, None)
+        Battery::new(id, "", Percent::from_percent(level), false, None)
     }
 
     fn opt(value: &str) -> ControlOption {
@@ -848,8 +845,8 @@ mod tests {
             "a",
             true,
             vec![
-                Battery::new(BatteryId::Left, "Left", 50.0, true, Some(true)),
-                Battery::new(BatteryId::Case, "Case", 90.0, false, None),
+                Battery::new(BatteryId::Left, "Left", Percent::from_percent(50.0), true, Some(true)),
+                Battery::new(BatteryId::Case, "Case", Percent::from_percent(90.0), false, None),
             ],
         );
         let rows = battery_rows(Some(&d));
@@ -861,10 +858,10 @@ mod tests {
     #[test]
     fn worst_level_leaves_the_case_out() {
         let d = buds("a", true, vec![bat(BatteryId::Left, 70.0), bat(BatteryId::Right, 30.0), bat(BatteryId::Case, 5.0)]);
-        assert_eq!(worst_level(Some(&d)), 30.0);
-        assert_eq!(worst_level(Some(&buds("a", true, vec![bat(BatteryId::Single, 64.0)]))), 64.0);
-        assert_eq!(worst_level(Some(&buds("a", true, vec![bat(BatteryId::Case, 5.0)]))), -1.0);
-        assert_eq!(worst_level(None), -1.0);
+        assert_eq!(worst_level(Some(&d)), Some(Percent::whole(30)));
+        assert_eq!(worst_level(Some(&buds("a", true, vec![bat(BatteryId::Single, 64.0)]))), Some(Percent::whole(64)));
+        assert_eq!(worst_level(Some(&buds("a", true, vec![bat(BatteryId::Case, 5.0)]))), None);
+        assert_eq!(worst_level(None), None);
     }
 
     #[test]

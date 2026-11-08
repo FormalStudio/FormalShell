@@ -3,13 +3,16 @@
 //! is a local one, so critical earns the DND bypass.
 
 use fs_info::notifications::Urgency;
-use fs_system::power::model::{DeviceState, Fired, WarnEvent, warn_event};
+use fs_system::power::model::{Fired, Low, warn_event};
+use fs_types::Percent;
+use fs_upower::DeviceState;
 
+use crate::services::devices::power;
 use crate::store::Store;
 
 #[derive(Default)]
 pub struct Watch {
-    last: Option<f64>,
+    last: Option<Percent>,
     fired: Fired,
 }
 
@@ -23,15 +26,13 @@ impl Watch {
             return false;
         }
         let draining = matches!(b.state, DeviceState::Discharging | DeviceState::PendingDischarge | DeviceState::Empty);
-        let warn = store.config.f64("battery.warnPercent");
-        let critical = store.config.f64("battery.criticalPercent");
-        let result = warn_event(self.last, b.percent, !draining, Some(self.fired), warn, critical);
-        self.last = Some(b.percent);
+        let result = warn_event(self.last, b.level, !draining, self.fired, power::thresholds(&store.config));
+        self.last = Some(b.level);
         self.fired = result.fired;
-        let body = format!("{}% REMAINING", b.percent);
+        let body = format!("{}% REMAINING", b.level.rounded());
         match result.event {
-            Some(WarnEvent::Warn) => store.notifications.notify("LOW BATTERY", &body, Urgency::Normal),
-            Some(WarnEvent::Critical) => store.notifications.notify("CRITICAL BATTERY", &body, Urgency::Critical),
+            Some(Low::Warn) => store.notifications.notify("LOW BATTERY", &body, Urgency::Normal),
+            Some(Low::Critical) => store.notifications.notify("CRITICAL BATTERY", &body, Urgency::Critical),
             None => return false,
         }
         true
@@ -45,8 +46,8 @@ mod tests {
 
     fn store(percent: f64, state: DeviceState) -> Store {
         let mut s = Store::default();
-        s.devices.power.battery =
-            Some(Battery { percent, state, rate: 0.0, time_to_full: 0.0, time_to_empty: 0.0, health: None, size_wh: 0.0 });
+        let level = Percent::from_percent(percent);
+        s.devices.power.battery = Some(Battery { level, state, rate: 0.0, time_to_full: None, time_to_empty: None, health: None, size_wh: 0.0 });
         s
     }
 

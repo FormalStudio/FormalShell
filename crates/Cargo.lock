@@ -972,6 +972,7 @@ dependencies = [
  "async-executor",
  "async-io",
  "fs-devices",
+ "fs-types",
  "futures-lite",
  "zbus",
 ]
@@ -994,6 +995,7 @@ version = "0.2.0"
 dependencies = [
  "fs-info",
  "fs-js",
+ "fs-types",
  "regex",
  "serde_json",
  "unicode-normalization",
@@ -1102,6 +1104,8 @@ version = "0.2.0"
 dependencies = [
  "chrono",
  "fs-js",
+ "fs-types",
+ "fs-upower",
  "regex",
  "serde",
  "serde_json",
@@ -1140,6 +1144,7 @@ name = "fs-upower"
 version = "0.2.0"
 dependencies = [
  "async-io",
+ "fs-types",
  "futures-lite",
  "zbus",
 ]

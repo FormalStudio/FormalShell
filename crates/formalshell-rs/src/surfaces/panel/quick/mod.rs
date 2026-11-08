@@ -14,7 +14,7 @@ use fs_chrome::bar::panels::widget_panel;
 use fs_types::{Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
-use fs_system::power::model::{self, battery_icon, charge_threshold_active};
+use fs_system::power::model::{battery_icon, charge_threshold_active};
 use fs_theme::theme::Layout;
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
@@ -174,9 +174,9 @@ fn profile_name(p: Profile) -> &'static str {
 fn battery(store: &Store) -> Option<(&'static str, String)> {
     let p = &store.devices.power;
     let b = p.battery.as_ref()?;
-    let warn = store.config.f64("battery.warnPercent").unwrap_or(model::DEFAULT_WARN_PCT);
-    let threshold = charge_threshold_active(b.percent, b.state, b.rate, b.time_to_full, p.on_battery);
-    Some((battery_icon(b.percent, p.on_battery, threshold, Some(warn)), format!("{}%", b.percent)))
+    let threshold = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, p.on_battery);
+    let icon = battery_icon(b.level, p.on_battery, threshold, crate::services::devices::power::thresholds(&store.config));
+    Some((icon, format!("{}%", b.level.rounded())))
 }
 
 /// Every audio device of one direction: node name and label.

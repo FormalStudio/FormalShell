@@ -19,6 +19,7 @@ use super::{
     range, toggle, Unit,
 };
 use fs_js as js;
+use fs_types::Percent;
 
 pub const BACKEND: &str = "airpods";
 
@@ -290,13 +291,13 @@ pub fn state_line(status: &Status) -> String {
 fn batteries(status: &Status) -> Vec<Battery> {
     let mut out = Vec::new();
     if status.left.available && status.left.level >= 0.0 {
-        out.push(Battery::new(BatteryId::Left, "Left", status.left.level, status.left.charging, Some(status.left.in_ear)));
+        out.push(Battery::new(BatteryId::Left, "Left", Percent::from_percent(status.left.level), status.left.charging, Some(status.left.in_ear)));
     }
     if status.right.available && status.right.level >= 0.0 {
-        out.push(Battery::new(BatteryId::Right, "Right", status.right.level, status.right.charging, Some(status.right.in_ear)));
+        out.push(Battery::new(BatteryId::Right, "Right", Percent::from_percent(status.right.level), status.right.charging, Some(status.right.in_ear)));
     }
     if status.case_battery.available && status.case_battery.level >= 0.0 {
-        out.push(Battery::new(BatteryId::Case, "Case", status.case_battery.level, status.case_battery.charging, None));
+        out.push(Battery::new(BatteryId::Case, "Case", Percent::from_percent(status.case_battery.level), status.case_battery.charging, None));
     }
     out
 }
@@ -494,10 +495,10 @@ mod tests {
 
         let rows = battery_rows(Some(&d));
         assert_eq!(keys(&rows, |r| r.key.as_str().into()), "left,right,case");
-        assert_eq!(rows[0].level, 85.0);
+        assert_eq!(rows[0].level, Percent::whole(85));
         assert_eq!(rows[0].hint, "In ear");
         assert_eq!(rows[2].hint, "");
-        assert_eq!(worst_level(Some(&d)), 85.0);
+        assert_eq!(worst_level(Some(&d)), Some(Percent::whole(85)));
 
         assert_eq!(keys(&d.controls, |c| c.key.clone()), "noise,adaptive,ca,onebud,ear");
         assert_eq!(keys(&sections(Some(&d)), |s| s.section.clone()), "Listening mode,Options,Ear detection");

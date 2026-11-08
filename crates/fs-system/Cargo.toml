@@ -6,6 +6,8 @@ publish = false
 
 [dependencies]
 fs-js = { path = "../fs-js" }
+fs-types = { path = "../fs-types" }
+fs-upower = { path = "../fs-upower" }
 chrono = { version = "0.4", default-features = false }
 regex = "1"
 serde = { version = "1", features = ["derive"] }

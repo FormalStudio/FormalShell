@@ -313,10 +313,9 @@ fn enumerates_adapter_devices_battery_and_rssi() {
         assert!(buds.info.paired && buds.info.bonded && !buds.info.connected);
         assert_eq!(buds.icon, "audio-headset");
         assert_eq!(buds.rssi, Some(-58));
-        assert!(buds.info.battery_available);
-        assert_eq!(buds.info.battery, 0.5);
+        assert_eq!(buds.info.battery.map(|b| b.as_fraction()), Some(0.5));
         let phone = s.device(PHONE).unwrap();
-        assert!(!phone.info.battery_available && !phone.info.paired);
+        assert!(phone.info.battery.is_none() && !phone.info.paired);
         assert_eq!(bluez.earbuds_devices().len(), 2);
     });
 }
@@ -406,14 +405,14 @@ fn devices_come_and_go_and_properties_follow() {
         bluez_conn.object_server().at(path, device("CA:FE:00:00:00:02", "Speaker", false)).await.unwrap();
         expect(&rx, "added", |e| matches!(e, Event::DeviceAdded(d) if d.info.name == "Speaker")).await;
         bluez_conn.object_server().at(path, FakeBattery(80)).await.unwrap();
-        expect(&rx, "battery", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery_available)).await;
+        expect(&rx, "battery", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery.is_some())).await;
         let iface = bluez_conn.object_server().interface::<_, FakeBattery>(path).await.unwrap();
         iface.get_mut().await.0 = 20;
         let em = iface.signal_emitter();
         iface.get().await.percentage_changed(em).await.unwrap();
-        expect(&rx, "battery change", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery == 0.2)).await;
+        expect(&rx, "battery change", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery.is_some_and(|b| b.as_fraction() == 0.2))).await;
         bluez_conn.object_server().remove::<FakeBattery, _>(path).await.unwrap();
-        expect(&rx, "battery gone", |e| matches!(e, Event::DeviceChanged(d) if !d.info.battery_available)).await;
+        expect(&rx, "battery gone", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery.is_none())).await;
         bluez_conn.object_server().remove::<FakeDevice, _>(path).await.unwrap();
         expect(&rx, "removed", |e| matches!(e, Event::DeviceRemoved { .. })).await;
         assert!(bluez.state().device(path).is_none());

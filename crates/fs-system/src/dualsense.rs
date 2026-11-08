@@ -1,60 +1,38 @@
-//! Model for the DualSense panel. Testable head-on against fixture strings
-//! shaped exactly like hid-playstation's sysfs attributes. Every function takes
-//! the raw text a `cat` on the matching sysfs file would produce, or an
-//! absent/unparsable one, and returns a complete default shape rather than
-//! leaving a caller to guard against `None`.
+//! Model for the DualSense panel. The battery is UPower's reading of
+//! hid-playstation's power_supply node; the light parsers take the raw text a
+//! `cat` on the matching sysfs file would produce, or an absent/unparsable
+//! one, and return a complete default shape rather than leaving a caller to
+//! guard against `None`.
 //!
-//! There is no daemon here: the service reads sysfs directly (a power_supply
-//! node keyed by Bluetooth MAC, a `leds` node keyed by input index, both
-//! first-match-wins globs), and the shell never writes any of it. The owner's
+//! The service reads the `leds` node directly (keyed by input index,
+//! first-match-wins), and the shell never writes any of it. The owner's
 //! host units own the lightbar/player-LED writes; this model only ever
 //! describes what was read.
 
 use fs_js as js;
+use fs_types::Percent;
 
-/// warn/critical thresholds mirror the retired `dualsense-bar` command module
-/// this panel replaces: a straight read of the capacity percentage, no
-/// charge-direction gating, the sysfs `status` string is surfaced separately as
-/// `status_label` for the hero meta line instead.
-pub(crate) const WARN_PERCENT: i64 = 20;
-pub(crate) const CRITICAL_PERCENT: i64 = 10;
+use crate::power::model::{Low, Thresholds};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Supply {
-    /// -1 is the panel's "no controller" cue.
-    pub percent: i64,
+    pub level: Percent,
     pub status_label: String,
-    pub warn: bool,
-    pub critical: bool,
+    /// Off a straight read of the level, with no charge-direction gating.
+    pub low: Option<Low>,
+}
+
+impl Supply {
+    /// `status`: the supply's POWER_SUPPLY_STATUS word ("Charging",
+    /// "Discharging", "Full", "Not charging", "Unknown"), surfaced as the
+    /// hero meta line.
+    pub fn new(level: Percent, status: &str) -> Supply {
+        Supply { level, status_label: status.to_owned(), low: Thresholds::DUALSENSE.low(level) }
+    }
 }
 
 fn all_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// `capacity_text`: the `capacity` sysfs file's own text (0-100, in 10% buckets
-/// on real hardware, but this parses whatever integer it holds rather than
-/// assuming the bucket size). `status_text`: the `status` sysfs file's own text
-/// (POWER_SUPPLY_STATUS values, "Charging", "Discharging", "Full", "Not
-/// charging", "Unknown"). Either missing/unparsable leaves `percent` at -1.
-pub fn parse_supply(capacity_text: Option<&str>, status_text: Option<&str>) -> Supply {
-    let mut percent = -1;
-    if let Some(text) = capacity_text {
-        let trimmed = js::trim(text);
-        if all_digits(trimmed) {
-            let n = js::parse_int(trimmed);
-            if (0.0..=100.0).contains(&n) {
-                percent = n as i64;
-            }
-        }
-    }
-    let critical = (0..=CRITICAL_PERCENT).contains(&percent);
-    Supply {
-        percent,
-        status_label: status_text.map_or_else(String::new, |s| js::trim(s).to_string()),
-        critical,
-        warn: percent >= 0 && !critical && percent <= WARN_PERCENT,
-    }
 }
 
 /// `text`: the `multi_intensity` sysfs file's own text, "R G B" (each 0-255).
@@ -92,65 +70,40 @@ pub fn parse_player_leds(brightnesses: Option<&[Option<&str>]>) -> usize {
 /// "Discharging" / "Full" / "Not charging". Sysfs carries no time-to-empty for
 /// this device, so nothing is estimated or invented here.
 pub fn state_line(supply: Option<&Supply>) -> String {
-    match supply {
-        Some(s) if s.percent >= 0 && !s.status_label.is_empty() => s.status_label.clone(),
-        _ => String::new(),
-    }
+    supply.map_or_else(String::new, |s| s.status_label.clone())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn supply(cap: &str, status: &str) -> Supply {
-        parse_supply(Some(cap), Some(status))
+    fn supply(level: u8, status: &str) -> Supply {
+        Supply::new(Percent::whole(level), status)
     }
 
     #[test]
-    fn parse_supply_ok_reading() {
-        let s = supply("80\n", "Discharging\n");
-        assert_eq!(s.percent, 80);
+    fn supply_ok_reading() {
+        let s = supply(80, "Discharging");
+        assert_eq!(s.level.rounded(), 80);
         assert_eq!(s.status_label, "Discharging");
-        assert!(!s.warn);
-        assert!(!s.critical);
+        assert_eq!(s.low, None);
     }
 
     #[test]
-    fn parse_supply_warn_band() {
-        let s = supply("20\n", "Discharging\n");
-        assert!(s.warn);
-        assert!(!s.critical);
+    fn supply_warn_band() {
+        assert_eq!(supply(20, "Discharging").low, Some(Low::Warn));
     }
 
     #[test]
-    fn parse_supply_critical_band_wins_over_warn() {
-        let s = supply("10\n", "Discharging\n");
-        assert!(s.critical);
-        assert!(!s.warn);
+    fn supply_critical_band_wins_over_warn() {
+        assert_eq!(supply(10, "Discharging").low, Some(Low::Critical));
     }
 
     #[test]
-    fn parse_supply_charging_status() {
-        let s = supply("95\n", "Charging\n");
-        assert_eq!(s.percent, 95);
+    fn supply_ignores_charging() {
+        let s = supply(5, "Charging");
         assert_eq!(s.status_label, "Charging");
-    }
-
-    #[test]
-    fn parse_supply_missing_files() {
-        let s = supply("", "");
-        assert_eq!(s.percent, -1);
-        assert_eq!(s.status_label, "");
-        assert!(!s.warn);
-        assert!(!s.critical);
-    }
-
-    #[test]
-    fn parse_supply_malformed_capacity() {
-        let s = supply("not a number\n", "Discharging\n");
-        assert_eq!(s.percent, -1);
-        assert!(!s.critical);
-        assert!(!s.warn);
+        assert_eq!(s.low, Some(Low::Critical));
     }
 
     #[test]
@@ -198,16 +151,16 @@ mod tests {
 
     #[test]
     fn state_line_discharging() {
-        assert_eq!(state_line(Some(&supply("80\n", "Discharging\n"))), "Discharging");
+        assert_eq!(state_line(Some(&supply(80, "Discharging"))), "Discharging");
     }
 
     #[test]
     fn state_line_full() {
-        assert_eq!(state_line(Some(&supply("100\n", "Full\n"))), "Full");
+        assert_eq!(state_line(Some(&supply(100, "Full"))), "Full");
     }
 
     #[test]
     fn state_line_no_controller() {
-        assert_eq!(state_line(Some(&supply("", ""))), "");
+        assert_eq!(state_line(None), "");
     }
 }

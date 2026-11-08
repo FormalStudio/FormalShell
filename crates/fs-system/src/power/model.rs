@@ -2,21 +2,56 @@
 //! `warn_event`, which hands back the `fired` state for the next call, and the
 //! static BATTERY meta rows use the formatters below.
 
+use std::time::Duration;
+
 use fs_js as js;
+use fs_types::Percent;
+use fs_upower::DeviceState;
 
-pub const DEFAULT_WARN_PCT: f64 = 10.0;
-pub const DEFAULT_CRITICAL_PCT: f64 = 5.0;
-
-/// UPower's `UPowerDeviceState` values, by their wire numbers.
+/// How low a battery reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeviceState {
-    Unknown = 0,
-    Charging = 1,
-    Discharging = 2,
-    Empty = 3,
-    FullyCharged = 4,
-    PendingCharge = 5,
-    PendingDischarge = 6,
+pub enum Low {
+    Warn,
+    Critical,
+}
+
+/// Where a battery starts reading low: one rule for every device, each
+/// device's lines here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Thresholds {
+    pub warn: Percent,
+    pub critical: Percent,
+}
+
+impl Thresholds {
+    /// The laptop's defaults under `battery.warnPercent` and
+    /// `battery.criticalPercent`.
+    pub const LAPTOP: Self = Self { warn: Percent::whole(10), critical: Percent::whole(5) };
+    /// The retired `dualsense-bar` command module's.
+    pub const DUALSENSE: Self = Self { warn: Percent::whole(20), critical: Percent::whole(10) };
+    /// The headset card's ring, at the laptop's defaults; it draws one ink
+    /// for both.
+    pub const HEADSET: Self = Self { warn: Percent::whole(10), critical: Percent::whole(5) };
+
+    /// These lines with any configured over them.
+    pub fn with(self, warn: Option<f64>, critical: Option<f64>) -> Self {
+        Self {
+            warn: warn.map_or(self.warn, Percent::from_percent),
+            critical: critical.map_or(self.critical, Percent::from_percent),
+        }
+    }
+
+    /// `level` against the lines, at or under each; the caller passes the
+    /// level it shows.
+    pub fn low(self, level: Percent) -> Option<Low> {
+        if level <= self.critical {
+            Some(Low::Critical)
+        } else if level <= self.warn {
+            Some(Low::Warn)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,73 +61,43 @@ pub struct Fired {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WarnEvent {
-    Warn,
-    Critical,
-}
-
-impl WarnEvent {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WarnEvent::Warn => "warn",
-            WarnEvent::Critical => "critical",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WarnResult {
     pub fired: Fired,
-    pub event: Option<WarnEvent>,
+    pub event: Option<Low>,
 }
 
-/// `prev_pct`/`pct` are whole-number percentages (0..100); UPower's own 0..1
-/// fraction is converted exactly once, at the call site, never in here.
-/// `fired` is whatever this function returned last call (`Fired::default()` on
-/// the very first one).
+/// `fired` is whatever this function returned last call (`Fired::default()`
+/// on the very first one).
 ///
 /// Charging re-arms both thresholds immediately, regardless of percentage: a
 /// plugged-in battery is never "discharging" mid-crossing, so a later unplug
 /// while still low fires again. While discharging, a threshold fires once when
 /// the reading is at/below it and hasn't already fired since the last re-arm;
 /// a boot (or resume) that starts already below a threshold fires
-/// immediately, since `prev_pct` is `None` on the very first call and staying
+/// immediately, since `prev` is `None` on the very first call and staying
 /// silent about a real critical/low state would be dishonest. `not_rising`
 /// guards the fire against a single noisy uptick (UPower's rate estimate can
 /// blip for one reading while genuinely still discharging) without weakening
 /// the re-arm rule: once fired, a threshold only clears via charging, never by
 /// drifting back above the line on its own.
-pub fn warn_event(
-    prev_pct: Option<f64>,
-    pct: f64,
-    charging: bool,
-    fired: Option<Fired>,
-    warn_pct: Option<f64>,
-    critical_pct: Option<f64>,
-) -> WarnResult {
-    let warn_pct = warn_pct.unwrap_or(DEFAULT_WARN_PCT);
-    let critical_pct = critical_pct.unwrap_or(DEFAULT_CRITICAL_PCT);
-    let prev_fired = fired.unwrap_or_default();
-
+pub fn warn_event(prev: Option<Percent>, level: Percent, charging: bool, fired: Fired, lines: Thresholds) -> WarnResult {
     if charging {
         return WarnResult { fired: Fired::default(), event: None };
     }
-
-    let not_rising = prev_pct.is_none_or(|p| pct <= p);
-
-    if not_rising && pct <= critical_pct && !prev_fired.critical {
-        return WarnResult { fired: Fired { warn: true, critical: true }, event: Some(WarnEvent::Critical) };
+    let not_rising = prev.is_none_or(|p| level <= p);
+    match lines.low(level) {
+        Some(Low::Critical) if not_rising && !fired.critical => {
+            WarnResult { fired: Fired { warn: true, critical: true }, event: Some(Low::Critical) }
+        }
+        Some(_) if not_rising && !fired.warn => WarnResult { fired: Fired { warn: true, critical: fired.critical }, event: Some(Low::Warn) },
+        _ => WarnResult { fired, event: None },
     }
-    if not_rising && pct <= warn_pct && !prev_fired.warn {
-        return WarnResult { fired: Fired { warn: true, critical: prev_fired.critical }, event: Some(WarnEvent::Warn) };
-    }
-    WarnResult { fired: prev_fired, event: None }
 }
 
 /// "2h 14m" / "14m" / "1d 3h", lowercase units per the notification
 /// relative-time strings.
-pub fn format_duration(total_seconds: f64) -> String {
-    let total_mins = (total_seconds / 60.0).floor();
+pub fn format_duration(d: Duration) -> String {
+    let total_mins = (d.as_secs_f64() / 60.0).floor();
     let hours = (total_mins / 60.0).floor();
     let mins = total_mins % 60.0;
     if hours >= 24.0 {
@@ -128,15 +133,16 @@ pub fn parse_rapl_mw(text: &str) -> Option<f64> {
 /// actually charging toward 100": PendingCharge outright, FullyCharged below
 /// 99% (the limit sits under what UPower calls full), or Charging with a
 /// near-zero rate or a time-to-full of 8 hours or more. `on_battery` is
-/// UPower's own aggregate property, not a per-device state parse. `pct` is a
-/// whole-number percentage (0..100).
+/// UPower's own aggregate property, not a per-device state parse. `level` is
+/// the whole percent the cell shows.
 pub fn charge_threshold_active(
-    pct: f64,
+    level: Percent,
     state: DeviceState,
     change_rate: f64,
-    time_to_full: f64,
+    time_to_full: Option<Duration>,
     on_battery: bool,
 ) -> bool {
+    let pct = level.as_percent();
     if on_battery {
         return false;
     }
@@ -150,17 +156,16 @@ pub fn charge_threshold_active(
         return false;
     }
     let rate = if change_rate.is_nan() { 0.0 } else { change_rate };
-    let ttf = if time_to_full.is_nan() { 0.0 } else { time_to_full };
-    rate.abs() <= 0.2 || ttf >= 8.0 * 60.0 * 60.0
+    rate.abs() <= 0.2 || time_to_full.is_some_and(|t| t >= Duration::from_secs(8 * 60 * 60))
 }
 
 /// The bar tooltip and the hero meta line's four-way state word.
-pub fn charge_state_label(pct: f64, state: DeviceState, on_battery: bool, threshold_active: bool) -> &'static str {
+pub fn charge_state_label(level: Percent, state: DeviceState, on_battery: bool, threshold_active: bool) -> &'static str {
     if threshold_active {
         "THRESHOLD"
     } else if on_battery {
         "ON BATTERY"
-    } else if state == DeviceState::FullyCharged || pct >= 100.0 {
+    } else if state == DeviceState::FullyCharged || level.as_percent() >= 100.0 {
         "FULLY CHARGED"
     } else {
         "CHARGING"
@@ -168,14 +173,14 @@ pub fn charge_state_label(pct: f64, state: DeviceState, on_battery: bool, thresh
 }
 
 /// Icon name for the battery's state: a named set draws state, not a decile
-/// ramp, so the level detail lives in the percentage beside it. `warn_pct`
-/// defaults to the same 10% `warn_event` uses, so the alert icon and the
-/// low-battery notification agree on where low starts.
-pub fn battery_icon(pct: f64, on_battery: bool, threshold_active: bool, warn_pct: Option<f64>) -> &'static str {
-    let warn_pct = warn_pct.unwrap_or(DEFAULT_WARN_PCT);
+/// ramp, so the level detail lives in the percentage beside it. The alert
+/// icon takes the same `lines` as `warn_event`, so it and the low-battery
+/// notification agree on where low starts.
+pub fn battery_icon(level: Percent, on_battery: bool, threshold_active: bool, lines: Thresholds) -> &'static str {
+    let pct = level.as_percent();
     if !on_battery && !threshold_active {
         "battery-charging"
-    } else if pct <= warn_pct {
+    } else if lines.low(level).is_some() {
         "battery-warning"
     } else if pct >= 66.0 {
         "battery-full"
@@ -211,28 +216,28 @@ pub fn parse_charge_limit(text: &str) -> Option<i64> {
 mod tests {
     use super::*;
 
-    fn fresh() -> Option<Fired> {
-        Some(Fired::default())
+    fn p(value: f64) -> Percent {
+        Percent::from_percent(value)
     }
 
     fn warn(prev: Option<f64>, pct: f64, charging: bool, fired: Fired) -> WarnResult {
-        warn_event(prev, pct, charging, Some(fired), None, None)
+        warn_event(prev.map(p), p(pct), charging, fired, Thresholds::LAPTOP)
     }
 
     // warnEvent
 
     #[test]
     fn boot_below_warn_fires_immediately() {
-        let r = warn_event(None, 8.0, false, fresh(), None, None);
-        assert_eq!(r.event, Some(WarnEvent::Warn));
+        let r = warn(None, 8.0, false, Fired::default());
+        assert_eq!(r.event, Some(Low::Warn));
         assert!(r.fired.warn);
         assert!(!r.fired.critical);
     }
 
     #[test]
     fn boot_below_critical_fires_critical_only() {
-        let r = warn_event(None, 3.0, false, fresh(), None, None);
-        assert_eq!(r.event, Some(WarnEvent::Critical));
+        let r = warn(None, 3.0, false, Fired::default());
+        assert_eq!(r.event, Some(Low::Critical));
         assert!(r.fired.warn);
         assert!(r.fired.critical);
     }
@@ -240,7 +245,7 @@ mod tests {
     #[test]
     fn crossing_fires_warn_once() {
         let r1 = warn(Some(15.0), 9.0, false, Fired::default());
-        assert_eq!(r1.event, Some(WarnEvent::Warn));
+        assert_eq!(r1.event, Some(Low::Warn));
         let r2 = warn(Some(9.0), 9.0, false, r1.fired);
         assert_eq!(r2.event, None);
         assert!(r2.fired.warn);
@@ -250,7 +255,7 @@ mod tests {
     fn crossing_fires_critical_after_warn() {
         let r1 = warn(Some(15.0), 9.0, false, Fired::default());
         let r2 = warn(Some(9.0), 4.0, false, r1.fired);
-        assert_eq!(r2.event, Some(WarnEvent::Critical));
+        assert_eq!(r2.event, Some(Low::Critical));
         assert!(r2.fired.warn);
         assert!(r2.fired.critical);
     }
@@ -258,7 +263,7 @@ mod tests {
     #[test]
     fn single_tick_below_both_fires_critical_not_warn() {
         let r = warn(Some(50.0), 2.0, false, Fired::default());
-        assert_eq!(r.event, Some(WarnEvent::Critical));
+        assert_eq!(r.event, Some(Low::Critical));
         assert!(r.fired.warn);
         assert!(r.fired.critical);
     }
@@ -277,7 +282,7 @@ mod tests {
         let r2 = warn(Some(9.0), 9.0, true, r1.fired);
         assert!(!r2.fired.warn);
         let r3 = warn(Some(9.0), 9.0, false, r2.fired);
-        assert_eq!(r3.event, Some(WarnEvent::Warn));
+        assert_eq!(r3.event, Some(Low::Warn));
     }
 
     #[test]
@@ -299,8 +304,8 @@ mod tests {
 
     #[test]
     fn custom_thresholds_respected() {
-        let r = warn_event(None, 25.0, false, fresh(), Some(30.0), Some(15.0));
-        assert_eq!(r.event, Some(WarnEvent::Warn));
+        let r = warn_event(None, p(25.0), false, Fired::default(), Thresholds::LAPTOP.with(Some(30.0), Some(15.0)));
+        assert_eq!(r.event, Some(Low::Warn));
     }
 
     #[test]
@@ -311,26 +316,45 @@ mod tests {
         assert!(!r.fired.critical);
     }
 
+    #[test]
+    fn each_device_keeps_its_lines() {
+        let lines = |t: Thresholds| (t.warn.as_percent(), t.critical.as_percent());
+        assert_eq!(lines(Thresholds::LAPTOP), (10.0, 5.0));
+        assert_eq!(lines(Thresholds::DUALSENSE), (20.0, 10.0));
+        assert_eq!(lines(Thresholds::HEADSET), (10.0, 5.0));
+        assert_eq!(lines(Thresholds::LAPTOP.with(Some(30.0), None)), (30.0, 5.0));
+    }
+
+    #[test]
+    fn low_is_at_or_under_each_line() {
+        let t = Thresholds::DUALSENSE;
+        assert_eq!(t.low(p(21.0)), None);
+        assert_eq!(t.low(p(20.0)), Some(Low::Warn));
+        assert_eq!(t.low(p(11.0)), Some(Low::Warn));
+        assert_eq!(t.low(p(10.0)), Some(Low::Critical));
+        assert_eq!(t.low(p(0.0)), Some(Low::Critical));
+    }
+
     // formatDuration
 
     #[test]
     fn format_duration_minutes_only() {
-        assert_eq!(format_duration(14.0 * 60.0), "14m");
+        assert_eq!(format_duration(Duration::from_secs(14 * 60)), "14m");
     }
 
     #[test]
     fn format_duration_hours_and_minutes() {
-        assert_eq!(format_duration(2.0 * 3600.0 + 14.0 * 60.0), "2h 14m");
+        assert_eq!(format_duration(Duration::from_secs(2 * 3600 + 14 * 60)), "2h 14m");
     }
 
     #[test]
     fn format_duration_days_and_hours() {
-        assert_eq!(format_duration(27.0 * 3600.0), "1d 3h");
+        assert_eq!(format_duration(Duration::from_secs(27 * 3600)), "1d 3h");
     }
 
     #[test]
     fn format_duration_zero() {
-        assert_eq!(format_duration(0.0), "0m");
+        assert_eq!(format_duration(Duration::ZERO), "0m");
     }
 
     // formatRate
@@ -395,106 +419,106 @@ mod tests {
 
     #[test]
     fn threshold_false_on_battery() {
-        assert!(!charge_threshold_active(50.0, Charging, 10.0, 0.0, true));
+        assert!(!charge_threshold_active(p(50.0), Charging, 10.0, None, true));
     }
 
     #[test]
     fn threshold_true_pending_charge() {
-        assert!(charge_threshold_active(80.0, PendingCharge, 0.0, 0.0, false));
+        assert!(charge_threshold_active(p(80.0), PendingCharge, 0.0, None, false));
     }
 
     #[test]
     fn threshold_true_fully_charged_below_99() {
-        assert!(charge_threshold_active(95.0, FullyCharged, 0.0, 0.0, false));
+        assert!(charge_threshold_active(p(95.0), FullyCharged, 0.0, None, false));
     }
 
     #[test]
     fn threshold_false_fully_charged_at_99() {
-        assert!(!charge_threshold_active(99.0, FullyCharged, 0.0, 0.0, false));
+        assert!(!charge_threshold_active(p(99.0), FullyCharged, 0.0, None, false));
     }
 
     #[test]
     fn threshold_true_charging_near_zero_rate() {
-        assert!(charge_threshold_active(50.0, Charging, 0.1, 3600.0, false));
+        assert!(charge_threshold_active(p(50.0), Charging, 0.1, Some(Duration::from_secs(3600)), false));
     }
 
     #[test]
     fn threshold_true_charging_long_time_to_full() {
-        assert!(charge_threshold_active(50.0, Charging, 15.0, 9.0 * 3600.0, false));
+        assert!(charge_threshold_active(p(50.0), Charging, 15.0, Some(Duration::from_secs(9 * 3600)), false));
     }
 
     #[test]
     fn threshold_false_charging_normally() {
-        assert!(!charge_threshold_active(50.0, Charging, 15.0, 3600.0, false));
+        assert!(!charge_threshold_active(p(50.0), Charging, 15.0, Some(Duration::from_secs(3600)), false));
     }
 
     #[test]
     fn threshold_false_charging_above_99() {
-        assert!(!charge_threshold_active(99.0, Charging, 0.1, 9.0 * 3600.0, false));
+        assert!(!charge_threshold_active(p(99.0), Charging, 0.1, Some(Duration::from_secs(9 * 3600)), false));
     }
 
     #[test]
     fn threshold_false_discharging_state() {
-        assert!(!charge_threshold_active(50.0, Discharging, 0.0, 0.0, false));
+        assert!(!charge_threshold_active(p(50.0), Discharging, 0.0, None, false));
     }
 
     // chargeStateLabel
 
     #[test]
     fn label_threshold_wins() {
-        assert_eq!(charge_state_label(80.0, Charging, false, true), "THRESHOLD");
+        assert_eq!(charge_state_label(p(80.0), Charging, false, true), "THRESHOLD");
     }
 
     #[test]
     fn label_on_battery() {
-        assert_eq!(charge_state_label(50.0, Discharging, true, false), "ON BATTERY");
+        assert_eq!(charge_state_label(p(50.0), Discharging, true, false), "ON BATTERY");
     }
 
     #[test]
     fn label_fully_charged_by_state() {
-        assert_eq!(charge_state_label(99.0, FullyCharged, false, false), "FULLY CHARGED");
+        assert_eq!(charge_state_label(p(99.0), FullyCharged, false, false), "FULLY CHARGED");
     }
 
     #[test]
     fn label_fully_charged_by_percent() {
-        assert_eq!(charge_state_label(100.0, Charging, false, false), "FULLY CHARGED");
+        assert_eq!(charge_state_label(p(100.0), Charging, false, false), "FULLY CHARGED");
     }
 
     #[test]
     fn label_charging() {
-        assert_eq!(charge_state_label(50.0, Charging, false, false), "CHARGING");
+        assert_eq!(charge_state_label(p(50.0), Charging, false, false), "CHARGING");
     }
 
     // batteryIcon
 
     #[test]
     fn icon_charging_beats_every_level() {
-        assert_eq!(battery_icon(5.0, false, false, None), "battery-charging");
-        assert_eq!(battery_icon(90.0, false, false, None), "battery-charging");
+        assert_eq!(battery_icon(p(5.0), false, false, Thresholds::LAPTOP), "battery-charging");
+        assert_eq!(battery_icon(p(90.0), false, false, Thresholds::LAPTOP), "battery-charging");
     }
 
     #[test]
     fn icon_low_reading_warns() {
-        assert_eq!(battery_icon(10.0, true, false, None), "battery-warning");
-        assert_eq!(battery_icon(3.0, true, false, None), "battery-warning");
+        assert_eq!(battery_icon(p(10.0), true, false, Thresholds::LAPTOP), "battery-warning");
+        assert_eq!(battery_icon(p(3.0), true, false, Thresholds::LAPTOP), "battery-warning");
     }
 
     #[test]
     fn icon_level_ramp() {
-        assert_eq!(battery_icon(80.0, true, false, None), "battery-full");
-        assert_eq!(battery_icon(40.0, true, false, None), "battery-medium");
-        assert_eq!(battery_icon(20.0, true, false, None), "battery-low");
+        assert_eq!(battery_icon(p(80.0), true, false, Thresholds::LAPTOP), "battery-full");
+        assert_eq!(battery_icon(p(40.0), true, false, Thresholds::LAPTOP), "battery-medium");
+        assert_eq!(battery_icon(p(20.0), true, false, Thresholds::LAPTOP), "battery-low");
     }
 
     #[test]
     fn icon_threshold_reads_as_a_level_not_a_charge() {
-        assert_eq!(battery_icon(50.0, false, true, None), battery_icon(50.0, true, false, None));
+        assert_eq!(battery_icon(p(50.0), false, true, Thresholds::LAPTOP), battery_icon(p(50.0), true, false, Thresholds::LAPTOP));
     }
 
     #[test]
     fn icon_warn_percent_is_the_callers_to_set() {
-        assert_eq!(battery_icon(18.0, true, false, Some(20.0)), "battery-warning");
-        assert_eq!(battery_icon(18.0, true, false, None), "battery-low");
+        assert_eq!(battery_icon(p(18.0), true, false, Thresholds::LAPTOP.with(Some(20.0), None)), "battery-warning");
+        assert_eq!(battery_icon(p(18.0), true, false, Thresholds::LAPTOP), "battery-low");
     }
 
     // formatWh / formatHealthPercent
