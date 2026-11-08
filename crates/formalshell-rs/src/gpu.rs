@@ -1190,10 +1190,6 @@ impl Buffer {
         with(|g| g.export(w, h)).and_then(|r| r.map_err(|e| fail(format!("exporting a {w}x{h} dmabuf: {e}"))).ok())
     }
 
-    pub fn free(&self) -> bool {
-        self.released.get()
-    }
-
     pub fn wl_buffer(&self) -> &WlBuffer {
         &self.wl_buffer
     }
@@ -1359,8 +1355,15 @@ impl Drop for Buffer {
     }
 }
 
+/// The first of `buffers` the compositor has given back, learnt afresh:
+/// the one a present draws into.
+pub fn released(buffers: &[Buffer]) -> Option<usize> {
+    dispatch();
+    buffers.iter().position(|b| b.released.get())
+}
+
 /// Learns which buffers the compositor gave back since the last present.
-pub fn dispatch() {
+fn dispatch() {
     with(|g| {
         if let Err(e) = g.wl_queue.dispatch_pending(&mut g.wl) {
             eprintln!("formalshell: render: linux-dmabuf: {e}");

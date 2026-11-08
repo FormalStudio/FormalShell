@@ -745,7 +745,7 @@ impl Toasts {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        !self.surface.mapped || self.slots.values().any(|s| s.animating(now))
+        !self.surface.mapped() || self.slots.values().any(|s| s.animating(now))
     }
 }
 

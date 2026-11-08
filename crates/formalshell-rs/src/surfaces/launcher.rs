@@ -3413,7 +3413,7 @@ impl Shown {
         let resized = self.sized_for.as_ref().is_some_and(|(k, _)| *k != key);
         let morphing = self.morph.0.running(now) || self.morph.1.running(now);
         self.sized_for = Some((key, query));
-        if self.modal.surface.mapped && self.modal.open && !typed && (resized || morphing) {
+        if self.modal.surface.mapped() && self.modal.open && !typed && (resized || morphing) {
             let ms = Clock::Spatial.ms(theme) * self.scale;
             self.morph.0.set(now, tw, ms);
             self.morph.1.set(now, th, ms);

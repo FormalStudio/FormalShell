@@ -11,18 +11,13 @@
 use std::time::{Duration, Instant};
 
 use fs_theme::color::Rgba;
-use smithay_client_toolkit::compositor::FrameCallbackData;
-use smithay_client_toolkit::reexports::client::protocol::wl_callback::WlCallback;
-use smithay_client_toolkit::reexports::client::{Dispatch, QueueHandle};
-use smithay_client_toolkit::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
-use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
+use smithay_client_toolkit::reexports::client::QueueHandle;
 use smithay_client_toolkit::shell::wlr_layer::LayerSurface;
 
 use crate::scene::{IRect, NodeId, Scene};
 use crate::surfaces::dissolve::Dissolve;
-use crate::surface::{Inert, PixelSurface, Preferred, Surface};
+use crate::surface::{Dispatcher, PixelSurface, Surface};
 use crate::paint::Painter;
-use crate::wayland::App;
 
 /// One fade: where it started, from and to which opacity, over how long.
 #[derive(Clone, Copy)]
@@ -94,14 +89,13 @@ impl Veil<PixelSurface> {
 
     /// The surface's frame callback.
     pub fn landed(&mut self) {
-        let s = &mut self.surface;
-        (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+        self.surface.landed();
         self.shown_end |= self.committed_end;
     }
 
     /// Commits this moment's opacity; true until the fade's end has been
     /// shown.
-    pub fn present(&mut self, now: Instant, qh: &QueueHandle<App>) -> bool {
+    pub fn present<D: Dispatcher>(&mut self, now: Instant, qh: &QueueHandle<D>) -> bool {
         if self.surface.size().is_none() {
             return true;
         }
@@ -114,7 +108,7 @@ impl Veil<PixelSurface> {
             self.shown_end = true;
             return false;
         }
-        let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending);
+        let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending());
         self.surface.present(f64::from(self.opacity(now)), !self.shown_end, qh);
         if self.surface.commits() > before || (!waiting && self.surface.commits() > 0) {
             self.committed_end = done;
@@ -156,16 +150,12 @@ impl Veil {
     /// The surface's frame callback.
     pub fn landed(&mut self, now: Instant) {
         self.surface.landed(now);
-        self.surface.mapped = true;
         self.shown_end |= self.committed_end;
     }
 
     /// Draws the veil at this moment's opacity; true until the fade's end
     /// has been shown.
-    pub fn present<D>(&mut self, now: Instant, qh: &QueueHandle<D>) -> bool
-    where
-        D: Dispatch<WlCallback, FrameCallbackData> + Dispatch<WpFractionalScaleV1, Preferred> + Dispatch<WpViewport, Inert> + 'static,
-    {
+    pub fn present<D: Dispatcher>(&mut self, now: Instant, qh: &QueueHandle<D>) -> bool {
         if !self.surface.configured {
             return true;
         }
@@ -189,7 +179,7 @@ impl Veil {
             return true;
         }
         self.surface.set_opacity(self.opacity(now));
-        let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending);
+        let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending());
         self.surface.present(&mut self.scene, !self.shown_end, qh);
         // The opacity is a 1/256 step, so the fade's last stretch can round
         // to the step already on screen: nothing is drawn, and the end is

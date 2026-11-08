@@ -13,7 +13,7 @@ use crate::motion::Kind;
 use crate::scroll::Travel;
 use crate::services::notifications::now_ms;
 use crate::store::Topic;
-use crate::surface::Surface;
+use crate::surface::{Backend, Surface};
 use crate::surfaces;
 use crate::surfaces::panel::center;
 use crate::surfaces::toasts::{Act, Toasts};
@@ -128,7 +128,7 @@ impl App {
             }
             let side = if right { Anchor::RIGHT } else { Anchor::LEFT };
             let ls = self.overlay("formalshell:notifications", layer, Anchor::TOP | Anchor::BOTTOM | side, (column.1, 0), -1);
-            let mut surface = Surface::new("toasts", ls, &self.shm, self.started);
+            let mut surface = Surface::new("toasts", Backend::Gpu, ls, &self.shm, self.started);
             surface.wait_map = true;
             self.toasts = Some(Toasts::new(surface, (column.1 as i32, out_h as i32), column, layer, self.bar_wl.clone()));
             self.toasts_dirty = true;
@@ -154,7 +154,7 @@ impl App {
         // One draw past the last running frame, so what rests on screen is
         // every clock's end value rather than its last sample.
         let animating = t.animating(now);
-        if (self.toasts_dirty || animating || t.was_animating) && t.surface.mapped {
+        if (self.toasts_dirty || animating || t.was_animating) && t.surface.mapped() {
             let _raster = crate::scene::raster_at(t.surface.scale());
             t.draw(&self.store, theme, &mut self.kit, &insets, spec, self.motion_scale, now);
             self.toasts_dirty = false;

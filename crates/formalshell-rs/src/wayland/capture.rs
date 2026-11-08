@@ -20,7 +20,7 @@ use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::foreign_toplevel_list::{ForeignToplevelList, ForeignToplevelListHandler};
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
 use smithay_client_toolkit::reexports::client::protocol::wl_shm;
-use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle, WEnum};
+use smithay_client_toolkit::reexports::client::{Connection, QueueHandle, WEnum};
 use smithay_client_toolkit::reexports::protocols::ext::foreign_toplevel_list::v1::client::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1;
 use smithay_client_toolkit::reexports::protocols::ext::image_capture_source::v1::client::ext_foreign_toplevel_image_capture_source_manager_v1::ExtForeignToplevelImageCaptureSourceManagerV1;
 use smithay_client_toolkit::reexports::protocols::ext::image_capture_source::v1::client::ext_image_capture_source_v1::ExtImageCaptureSourceV1;
@@ -443,15 +443,7 @@ impl ForeignToplevelListHandler for App {
     }
 }
 
-macro_rules! ignore {
-    ($($iface:ty),*) => {$(
-        impl Dispatch2<$iface, App> for Ignore {
-            fn event(&self, _: &mut App, _: &$iface, _: <$iface as Proxy>::Event, _: &Connection, _: &QueueHandle<App>) {}
-        }
-    )*};
-}
-
-ignore!(
+crate::surface::ignore_events!(
     HyprlandToplevelMappingManagerV1,
     ExtForeignToplevelImageCaptureSourceManagerV1,
     ExtImageCaptureSourceV1,

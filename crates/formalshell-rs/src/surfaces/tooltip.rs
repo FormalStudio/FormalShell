@@ -188,7 +188,7 @@ impl Card {
 
     pub fn set_open(&mut self, theme: &Theme, open: bool, now: Instant) {
         self.open = open;
-        let target = if open && self.surface.mapped { 1.0 } else { 0.0 };
+        let target = if open && self.surface.mapped() { 1.0 } else { 0.0 };
         self.pose.set(now, target, Clock::Effects.ms(theme) * self.scale);
         self.zoom.set(now, target, Clock::SpatialFast.ms(theme) * self.scale);
     }
@@ -198,7 +198,7 @@ impl Card {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        [&self.pose, &self.zoom, &self.x, &self.y, &self.w, &self.cross].iter().any(|a| a.running(now)) || !self.surface.mapped
+        [&self.pose, &self.zoom, &self.x, &self.y, &self.w, &self.cross].iter().any(|a| a.running(now)) || !self.surface.mapped()
     }
 
     fn style(theme: &Theme, kit: &Kit) -> TextStyle {

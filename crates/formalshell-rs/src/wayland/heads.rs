@@ -570,31 +570,28 @@ impl App {
             }
             Part::Shards(0) => {
                 if let Some(s) = head.backdrop.as_mut().and_then(|b| b.shards.as_mut()) {
-                    s.frame_done();
+                    s.landed();
                 }
             }
             Part::Shards(_) => {}
             Part::Bar => {
                 let Some(s) = &mut head.spare else { return };
                 let Some(surface) = &mut s.surface else { return };
-                surface.landed(now);
-                if !surface.mapped {
-                    surface.mapped = true;
+                if surface.landed(now) {
                     s.dirty = true;
                 }
             }
             Part::Zone(z) => {
                 let Some((_, z)) = head.spare.as_mut().and_then(|s| s.zones.get_mut(z)) else { return };
-                (z.frame_pending, z.mapped, z.callbacks) = (false, true, z.callbacks + 1);
+                z.landed();
             }
             Part::Catcher => {
                 let Some(c) = &mut head.catcher else { return };
-                (c.frame_pending, c.mapped, c.callbacks) = (false, true, c.callbacks + 1);
+                c.landed();
             }
             Part::Clock => {
                 let Some(c) = &mut head.clock else { return };
                 c.surface.landed(now);
-                c.surface.mapped = true;
             }
         }
     }

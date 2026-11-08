@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::json;
 use vello_cpu::Pixmap;
 
+use super::Format;
 use crate::render::Renderer;
 use crate::scene::{IRect, Scene};
 
@@ -69,12 +70,12 @@ pub fn reference(scene: &Scene, scale: f64) -> Pixmap {
 
 /// The buffer a surface is about to commit (`bytes`, in its shm `format`
 /// and faded by `opacity` out of 256) against `reference`.
-pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8], bgra: bool, opacity: u16) {
+pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8], format: Format, opacity: u16) {
     let w = reference.width() as usize;
     let fade = |c: u8| if opacity < 256 { ((u16::from(c) * opacity + 128) >> 8) as u8 } else { c };
     let (mut count, mut x0, mut y0, mut x1, mut y1) = (0u64, usize::MAX, usize::MAX, 0, 0);
     for (i, (px, got)) in reference.data().iter().zip(bytes.chunks_exact(4)).enumerate() {
-        let want = if bgra { [px.b, px.g, px.r, px.a] } else { [px.r, px.g, px.b, px.a] }.map(fade);
+        let want = format.pixel([px.r, px.g, px.b, px.a]).map(fade);
         if want.iter().zip(got).any(|(a, b)| a.abs_diff(*b) > TOLERANCE) {
             let (x, y) = (i % w, i / w);
             count += 1;
@@ -92,7 +93,7 @@ pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8]
     s.worst = s.worst.max(count);
     s.last = Some((commit, r));
     if s.first.is_none() {
-        let png = save(name, commit, reference, bytes, bgra, r).unwrap_or_default();
+        let png = save(name, commit, reference, bytes, format, r).unwrap_or_default();
         eprintln!("stale surface={name} commit={commit} px={count} box=[{},{},{}x{}] png={png}", r.x, r.y, r.w, r.h);
         s.first = Some((commit, r, png));
     }
@@ -100,7 +101,7 @@ pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8]
 
 /// The stale box and a margin round it, the buffer on top and the full
 /// draw under it, for reading by eye.
-fn save(name: &str, commit: u64, reference: &Pixmap, bytes: &[u8], bgra: bool, r: IRect) -> Option<String> {
+fn save(name: &str, commit: u64, reference: &Pixmap, bytes: &[u8], format: Format, r: IRect) -> Option<String> {
     let dir = match std::env::var_os("FS_STALE_DIR") {
         Some(dir) => std::path::PathBuf::from(dir),
         None => crate::paths::session_runtime()?.join("formalshell-stale"),
@@ -113,7 +114,7 @@ fn save(name: &str, commit: u64, reference: &Pixmap, bytes: &[u8], bgra: bool, r
         for x in 0..crop.w {
             let i = ((crop.y + y) * w + crop.x + x) as usize;
             let g = &bytes[i * 4..i * 4 + 4];
-            let got = if bgra { [g[2], g[1], g[0], g[3]] } else { [g[0], g[1], g[2], g[3]] };
+            let got = format.pixel([g[0], g[1], g[2], g[3]]);
             let px = reference.data()[i];
             out.put_pixel(x as u32, y as u32, image::Rgba(got));
             out.put_pixel(x as u32, (y + crop.h) as u32, image::Rgba([px.r, px.g, px.b, px.a]));

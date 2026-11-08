@@ -5,31 +5,20 @@
 //! publishes nothing (`compositor::State::apply`).
 
 use smithay_client_toolkit::dispatch2::Dispatch2;
-use smithay_client_toolkit::reexports::client::globals::GlobalList;
-use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
+use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{
     self, ExtIdleNotificationV1,
 };
-use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 
 use super::App;
 use crate::services::compositor;
-use crate::surface::Ignore;
 
 /// Past a bind's key release, short of a typing pause.
 const SETTLE_MS: u32 = 250;
 
+#[derive(Default)]
 pub struct Settle {
-    /// Version 2, whose input idle ignores inhibitors: a playing video
-    /// would otherwise hold it off.
-    notifier: Option<ExtIdleNotifierV1>,
     watch: Option<ExtIdleNotificationV1>,
-}
-
-impl Settle {
-    pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Self {
-        Self { notifier: globals.bind(qh, 2..=2, Ignore).ok(), watch: None }
-    }
 }
 
 pub struct Settled;
@@ -50,7 +39,10 @@ impl App {
         if self.settle.watch.is_some() {
             return;
         }
-        let (Some(notifier), Some(seat)) = (self.settle.notifier.clone(), self.seats.seats().next()) else { return };
+        // Version 2's input idle ignores inhibitors: a playing video would
+        // otherwise hold it off.
+        let notifier = self.idle_notifier.clone().filter(|n| n.version() >= 2);
+        let (Some(notifier), Some(seat)) = (notifier, self.seats.seats().next()) else { return };
         self.settle.watch = Some(notifier.get_input_idle_notification(SETTLE_MS, &seat, &self.qh, Settled));
     }
 }

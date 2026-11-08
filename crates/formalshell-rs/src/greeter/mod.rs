@@ -63,7 +63,7 @@ use crate::render::Renderer;
 use crate::scene::{Bitmap, IRect};
 use crate::services::theme;
 use crate::services::wallpaper;
-use crate::surface::Surface;
+use crate::surface::{Backend, Surface};
 use crate::paint::Kit;
 use crate::surfaces::lock;
 use crate::surfaces::veil::Veil;
@@ -602,7 +602,7 @@ impl Greeter {
             ls.set_exclusive_zone(-1);
             ls.set_keyboard_interactivity(if first { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None });
             ls.commit();
-            let surface = Surface::on("greeter", ls, &self.shm, self.started, &output);
+            let surface = Surface::on("greeter", Backend::Gpu, ls, &self.shm, self.started, &output);
             self.outs.push(Out { output, surface, view: View::new(1, 1), backdrop: None, asked: (0, 0) });
         }
     }
@@ -624,7 +624,7 @@ impl Greeter {
                 ls.set_input_region(Some(region.wl_region()));
             }
             ls.commit();
-            let mut veil = Veil::new(Surface::on("greeter-veil", ls, &self.shm, self.started, &o.output), 0.0, now);
+            let mut veil = Veil::new(Surface::on("greeter-veil", Backend::Gpu, ls, &self.shm, self.started, &o.output), 0.0, now);
             veil.fade(1.0, LEAVE_MS, now);
             self.veils.push(veil);
         }
@@ -835,7 +835,6 @@ impl CompositorHandler for Greeter {
         }
         if let Some(o) = self.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface) {
             o.surface.landed(Instant::now());
-            o.surface.mapped = true;
             self.dirty = true;
         }
     }

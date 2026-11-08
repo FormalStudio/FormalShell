@@ -27,7 +27,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 use super::App;
 use crate::scene::Scene;
 use crate::services::compositor::{self, Command};
-use crate::surface::{PixelSurface, Surface};
+use crate::surface::{Backend, PixelSurface, Surface};
 use crate::surfaces::dissolve;
 use crate::surfaces::veil::Veil;
 
@@ -231,7 +231,7 @@ impl App {
                 ls.set_input_region(Some(region.wl_region()));
             }
             ls.commit();
-            let surface = Surface::on("unlock", ls, &self.shm, self.started, &output);
+            let surface = Surface::on("unlock", Backend::Gpu, ls, &self.shm, self.started, &output);
             self.veil.handover.push((output, Veil::picture(surface, scene, now)));
         }
         if self.veil.handover.is_empty() {
@@ -359,7 +359,7 @@ impl App {
             compositor::send(Command::Cursor { hidden: true });
         }
         if phase == Phase::Arriving && !self.veil.lifting {
-            let bar = self.bar_surface.as_ref().map_or(self.bar.hidden(), |s| s.mapped);
+            let bar = self.bar_surface.as_ref().map_or(self.bar.hidden(), |s| s.mapped());
             // With no picture to decode, the plain colour is the wallpaper.
             let plain = self.store.desktop().is_empty();
             let walls = self.heads.iter().all(|h| h.backdrop.as_ref().is_none_or(|b| b.landed.1 || (plain && b.landed.0)));

@@ -43,7 +43,6 @@ use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::{Connection, Proxy, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{self, ExtIdleNotificationV1};
-use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::session_lock::{
@@ -56,10 +55,9 @@ use super::App;
 use super::screensaver::SaverInput;
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::Bitmap;
-use crate::surface::Ignore;
 use crate::services::wallpaper::DepthCut;
 use crate::services::{clipboard, compositor, power};
-use crate::surface::Surface;
+use crate::surface::{Backend, Surface};
 use crate::store::Topic;
 use crate::surfaces::dissolve::{self, Dissolve};
 use crate::surfaces::lock::{self as view, Button, Buttons, NowPlaying, Shared, TKey, View};
@@ -160,7 +158,6 @@ pub struct Lock {
     rise: Animated,
     wake: Animated,
     entered: bool,
-    notifier: Option<ExtIdleNotifierV1>,
     idle_watch: Option<ExtIdleNotificationV1>,
     idle: bool,
     /// Set by a resume from suspend, cleared by any input on the lock.
@@ -214,7 +211,6 @@ impl Lock {
             rise: Animated::new(0.0, Clock::Spatial.curve()),
             wake: Animated::new(1.0, Clock::EffectsSlow.curve()),
             entered: false,
-            notifier: globals.bind(qh, 2..=2, Ignore).ok(),
             idle_watch: None,
             idle: false,
             resume_guard: false,
@@ -507,7 +503,9 @@ impl App {
 
     /// `lock.blankAfterSeconds` of no input anywhere blanks the lock.
     fn watch_lock_idle(&mut self) {
-        let (Some(notifier), Some(seat)) = (self.lock.notifier.clone(), self.seats.seats().next()) else { return };
+        // Version 2's input idle ignores inhibitors.
+        let notifier = self.idle_notifier.clone().filter(|n| n.version() >= 2);
+        let (Some(notifier), Some(seat)) = (notifier, self.seats.seats().next()) else { return };
         let seconds = self.store.config.f64("lock.blankAfterSeconds").filter(|s| *s > 0.0).unwrap_or(30.0);
         self.lock.idle_watch = Some(notifier.get_input_idle_notification((seconds * 1000.0) as u32, &seat, &self.qh, LockIdle));
     }
@@ -594,7 +592,7 @@ impl App {
             let name = self.outputs.info(&output).and_then(|i| i.name).unwrap_or_default();
             let wl = self.compositor.create_surface(&self.qh);
             let ls = session.create_lock_surface(wl, &output, &self.qh);
-            let surface = Surface::on("lock", ls, &self.shm, self.started, &output);
+            let surface = Surface::on("lock", Backend::Gpu, ls, &self.shm, self.started, &output);
             if self.lock.login && self.lock.outs.is_empty() {
                 crate::phase("login lock surface");
             }
@@ -867,7 +865,7 @@ impl App {
             .lock
             .outs
             .iter_mut()
-            .filter(|o| o.surface.mapped && !o.saver)
+            .filter(|o| o.surface.mapped() && !o.saver)
             .map(|o| (o.output.clone(), std::mem::replace(&mut o.view.scene, crate::scene::Scene::new(1, 1))))
             .collect();
         self.lock.unlocking = true;
@@ -1111,8 +1109,7 @@ impl App {
 
     pub(super) fn lock_frame(&mut self, surface: &WlSurface) {
         if let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface) {
-            let s = &mut o.surface;
-            (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+            o.surface.landed(Instant::now());
             // No commit goes out while a callback is pending, so this one
             // is the black frame's own.
             if o.dark.is_some() {
@@ -1169,7 +1166,7 @@ impl App {
             // ahead of it never wait on it. With no picture coming the first
             // black frame is the splash.
             let coming = if self.lock.splash_taken { !self.lock.splash.is_empty() } else { splash_pending() };
-            let zoomed = o.surface.callbacks < ZOOMED_FRAMES && coming;
+            let zoomed = o.surface.callbacks() < ZOOMED_FRAMES && coming;
             if !zoomed && !std::mem::replace(&mut self.lock.splash_taken, true) {
                 self.lock.splash = take_splash().into_iter().collect();
             }

@@ -41,7 +41,7 @@ impl Popup {
 
     /// Gone from the screen: closed and landed.
     pub fn finished(&self, now: Instant) -> bool {
-        self.surface.mapped && self.card.finished(now)
+        self.surface.mapped() && self.card.finished(now)
     }
 
     pub fn animating(&self, now: Instant) -> bool {
@@ -50,13 +50,10 @@ impl Popup {
 
     /// The frame callback: the first one maps the card, the rest tick it.
     pub fn frame(&mut self, now: Instant) {
-        let s = &mut self.surface;
-        (s.frame_pending, s.callbacks) = (false, s.callbacks + 1);
-        if s.mapped {
-            self.card.tick(now);
-        } else {
-            s.mapped = true;
+        if self.surface.landed(now) {
             self.card.mapped(now);
+        } else {
+            self.card.tick(now);
         }
     }
 

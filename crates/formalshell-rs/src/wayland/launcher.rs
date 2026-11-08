@@ -13,7 +13,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 
 use super::{App, Owner};
 use crate::services::menu::{self as index, Ask};
-use crate::surface::{PixelSurface, Surface};
+use crate::surface::{Backend, PixelSurface, Surface};
 use crate::surfaces::card::Ends;
 use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
@@ -101,8 +101,8 @@ impl App {
         card.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         card.commit();
         let mut surface = match &self.bar_wl {
-            Some(output) => Surface::on(names[0], card, &self.shm, self.started, output),
-            None => Surface::new(names[0], card, &self.shm, self.started),
+            Some(output) => Surface::on(names[0], Backend::Gpu, card, &self.shm, self.started, output),
+            None => Surface::new(names[0], Backend::Gpu, card, &self.shm, self.started),
         };
         surface.wait_map = true;
         Modal::new(theme, surface, band, dim, namespace, output, edge, inset, ends, self.motion_scale, self.cast, deform_amount)
@@ -131,7 +131,7 @@ impl App {
                     surface.set_input_region(Some(region.wl_region()));
                 }
                 let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-                let mut s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
+                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
                 s.raster_budget = Some(LAUNCHER_SLICE);
                 s
             })
@@ -197,7 +197,7 @@ impl App {
             surface.set_input_region(Some(region.wl_region()));
         }
         let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-        let s = Surface::new(name, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
+        let s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started).with_viewport(viewport).under(card);
         crate::surfaces::modal::Layer::new(s)
     }
 
@@ -1143,7 +1143,7 @@ impl App {
         let t1 = Instant::now();
         // A frame still being drawn in slices keeps the scene it started on.
         let rastering = w.shown.modal.surface.rastering() || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering());
-        let wants = (self.launcher.dirty || moving || !w.shown.modal.surface.mapped) && !w.shown.hold_layout(&self.launcher, now);
+        let wants = (self.launcher.dirty || moving || !w.shown.modal.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
         // A layout held back by a sliced frame runs once it is out, even
         // when whatever moved has stopped by then.
         if rastering && wants {

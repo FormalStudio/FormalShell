@@ -18,7 +18,7 @@ use super::App;
 use crate::scene::Bitmap;
 use crate::services::capture::Event;
 use crate::store::Diff;
-use crate::surface::Surface;
+use crate::surface::{Backend, Surface};
 use crate::surfaces::capture::draw::Sheet;
 use crate::surfaces::capture::picker::Screen;
 use crate::surfaces::capture::{self as cap};
@@ -111,7 +111,7 @@ impl App {
                 self.pickers.surfaces.push(PickerSurface {
                     output: s.name,
                     origin: (s.rect.x, s.rect.y),
-                    surface: Surface::on("capture", ls, &self.shm, self.started, &o),
+                    surface: Surface::on("capture", Backend::Gpu, ls, &self.shm, self.started, &o),
                     sheet: Sheet::new(w, h),
                     dirty: true,
                 });
@@ -139,8 +139,7 @@ impl App {
 
     pub(super) fn picker_frame(&mut self, i: usize) {
         let Some(p) = self.pickers.surfaces.get_mut(i) else { return };
-        let s = &mut p.surface;
-        (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+        p.surface.landed(Instant::now());
         p.dirty = true;
     }
 

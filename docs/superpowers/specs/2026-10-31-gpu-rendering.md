@@ -11,8 +11,9 @@ Every surface the shell draws itself goes through one `Renderer`
 into a canvas texture copied into linear dmabufs (`gpu.rs`). The bar, the
 sidebar, the desktop clock, the launcher, panels, tooltips, toasts, the
 OSD, the switcher, capture, the screensaver, the modal cards, the lock, the
-unlock picture and the greeter all take the GPU when it is up
-(`surface.rs` `on_gpu`). Three draw outside that path:
+unlock picture and the greeter all take the GPU when it is up (each made
+with `surface::Backend::Gpu`; the overview with `Backend::Cpu`). Three
+draw outside that path:
 
 - the pixel dissolve (`surfaces/dissolve.rs`) writes its frames into the
   CPU canvas; on the GPU it draws the same frame as a scene, each

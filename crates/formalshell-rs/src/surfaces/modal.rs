@@ -114,7 +114,7 @@ impl Modal {
     }
 
     pub fn finished(&self, now: Instant) -> bool {
-        self.surface.mapped && self.card.finished(now)
+        self.surface.mapped() && self.card.finished(now)
     }
 
     pub fn animating(&self, now: Instant) -> bool {
@@ -159,14 +159,14 @@ impl Modal {
         // A popover's look goes first, under the content: the content shows
         // only once the card is up and its look is there to sit on.
         let looked = self.quads.as_mut().is_some_and(|q| q.present(&self.card, qh));
-        let card_ready = self.surface.frame_pending || self.surface.prepare(&mut self.card.scene);
+        let card_ready = self.surface.frame_pending() || self.surface.prepare(&mut self.card.scene);
         let card_due = self.card.scene.has_damage() || self.surface.rastering() || self.surface.drawn_ahead();
-        let card_turn = card_ready && !(card_due && self.surface.frame_pending);
+        let card_turn = card_ready && !(card_due && self.surface.frame_pending());
         // A look the compositor carries has just moved whatever the card's
         // own buffer does, so the content moves with it: held back a turn,
         // it pokes past a card that shrank under it.
         let layered = if card_turn || self.quads.is_some() {
-            let up = self.surface.mapped && self.quads.as_ref().is_none_or(|q| q.ready(1, 1));
+            let up = self.surface.mapped() && self.quads.as_ref().is_none_or(|q| q.ready(1, 1));
             let bound = self.quads.as_ref().map(|q| q.covered);
             self.layer.as_mut().is_some_and(|l| l.present(&self.card, !self.card.animating(now), up, bound, qh))
         } else {
@@ -207,20 +207,17 @@ impl Modal {
     pub fn frame(&mut self, part: Part, now: Instant) -> bool {
         match part {
             Part::Card => {
-                let s = &mut self.surface;
-                s.landed(now);
-                if s.mapped {
-                    self.card.tick(now);
-                } else {
-                    s.mapped = true;
+                if self.surface.landed(now) {
                     self.card.mapped(now);
+                } else {
+                    self.card.tick(now);
                 }
                 true
             }
             Part::Band | Part::Dim => {
                 let s = if part == Part::Band { self.band.as_mut() } else { Some(&mut self.dim) };
                 if let Some(s) = s {
-                    (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+                    s.landed();
                 }
                 false
             }

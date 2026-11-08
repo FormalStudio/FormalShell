@@ -38,15 +38,7 @@ const INHIBIT_AFTER: Duration = Duration::from_secs(1);
 /// `screensaver.timeoutSeconds`' default.
 const IDLE_SECONDS: f64 = 300.0;
 
-macro_rules! ignore {
-    ($($iface:ty),*) => {$(
-        impl Dispatch2<$iface, App> for Ignore {
-            fn event(&self, _: &mut App, _: &$iface, _: <$iface as smithay_client_toolkit::reexports::client::Proxy>::Event, _: &Connection, _: &QueueHandle<App>) {}
-        }
-    )*};
-}
-
-ignore!(ZwpIdleInhibitManagerV1, ZwpIdleInhibitorV1, ExtIdleNotifierV1);
+crate::surface::ignore_events!(ZwpIdleInhibitManagerV1, ZwpIdleInhibitorV1, ExtIdleNotifierV1);
 
 /// The idle notification's user data: the two events flip the slice.
 pub struct IdleEvents;
@@ -82,7 +74,6 @@ impl Drop for Held {
 
 pub struct Caffeinate {
     inhibit: Option<ZwpIdleInhibitManagerV1>,
-    notifier: Option<ExtIdleNotifierV1>,
     held: Option<Held>,
     idle: Option<ExtIdleNotificationV1>,
     armed: bool,
@@ -97,7 +88,6 @@ impl Caffeinate {
         }
         Self {
             inhibit,
-            notifier: globals.bind(qh, 1..=2, Ignore).ok(),
             held: None,
             idle: None,
             armed: false,
@@ -132,7 +122,7 @@ impl App {
         if !c.armed || c.idle.is_some() {
             return;
         }
-        let (Some(notifier), Some(seat)) = (c.notifier.clone(), self.seats.seats().next()) else { return };
+        let (Some(notifier), Some(seat)) = (self.idle_notifier.clone(), self.seats.seats().next()) else { return };
         let seconds = self.store.config.f64("screensaver.timeoutSeconds").filter(|s| *s > 0.0).unwrap_or(IDLE_SECONDS);
         let notification = notifier.get_idle_notification((seconds * 1000.0) as u32, &seat, &self.qh, IdleEvents);
         self.caffeinate.idle = Some(notification);

@@ -44,7 +44,7 @@ use crate::motion::{Animated, Kind};
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::services::screensaver as service;
 use crate::services::visualizer::Avail;
-use crate::surface::{Ignore, Surface};
+use crate::surface::{Backend, Ignore, Surface};
 use crate::text::{Family, ShapedText, TextStyle};
 
 const NAMESPACE: &str = "formalshell:screensaver";
@@ -421,7 +421,7 @@ impl App {
             layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
             layer.commit();
             let fade = self.pixels.alpha.get_surface(layer.wl_surface(), &self.qh, Ignore);
-            let mut surface = Surface::on("screensaver", layer, &self.shm, self.started, &output);
+            let mut surface = Surface::on("screensaver", Backend::Gpu, layer, &self.shm, self.started, &output);
             surface.wait_map = true;
             Host { surface, fade }
         });
@@ -540,8 +540,7 @@ impl App {
     pub(super) fn saver_frame_callback(&mut self, surface: &WlSurface) {
         let Some(i) = self.saver_index(surface) else { return };
         let Some(h) = &mut self.saver.overlays[i].host else { return };
-        let s = &mut h.surface;
-        (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+        h.surface.landed(Instant::now());
     }
 
     fn saver_stop_run(&self, run: u64) {
@@ -838,7 +837,7 @@ impl App {
         let qh = self.qh.clone();
         for o in &mut self.saver.overlays {
             let Some(h) = &mut o.host else { continue };
-            if o.multiplier != Some(multiplier) && !h.surface.frame_pending {
+            if o.multiplier != Some(multiplier) && !h.surface.frame_pending() {
                 h.fade.set_multiplier(multiplier);
                 o.multiplier = Some(multiplier);
             }

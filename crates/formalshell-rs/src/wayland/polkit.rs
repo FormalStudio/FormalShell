@@ -204,7 +204,7 @@ impl App {
         let Some(d) = &mut self.polkit else { return };
         // The card's own motion moves and cuts the content layer, which
         // needs no new layout for it.
-        if (d.dirty || !d.modal.surface.mapped) && d.modal.surface.configured {
+        if (d.dirty || !d.modal.surface.mapped()) && d.modal.surface.configured {
             d.dirty = false;
             d.modal.sync_region(&self.compositor);
             let _raster = crate::scene::raster_at(d.modal.surface.scale());

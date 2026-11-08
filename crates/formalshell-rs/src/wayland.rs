@@ -42,6 +42,7 @@ use smithay_client_toolkit::reexports::client::globals::GlobalList;
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface};
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
+use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::{Shape, WpCursorShapeDeviceV1};
 use smithay_client_toolkit::seat::pointer::cursor_shape::CursorShapeManager;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers};
@@ -60,7 +61,7 @@ use crate::runtime::{Msg, Runtime};
 use crate::scene::{IRect, NodeId};
 use crate::services::{barpaint, commands, devices, compositor, info, media, nightlight, overnight, theme, tray};
 use crate::store::{Store, Topic};
-use crate::surface::{PixelSurface, Pixels, Surface};
+use crate::surface::{Backend, PixelSurface, Pixels, Surface};
 use crate::surfaces;
 use crate::surfaces::bar::Bar;
 use crate::surfaces::bar::cell::{Action, Button, TrayClick};
@@ -89,7 +90,7 @@ pub struct Popout {
 
 impl Popout {
     fn finished(&self, now: Instant) -> bool {
-        self.surface.mapped && self.card.finished(now)
+        self.surface.mapped() && self.card.finished(now)
     }
 
     /// Lays its content out at the card's content rect this frame.
@@ -149,6 +150,10 @@ pub struct App {
     layer_shell: LayerShell,
     shm: Shm,
     pixels: Pixels,
+    /// Bound once at version 2 where the compositor has it: its input idle
+    /// (the lock's blank, settle) ignores inhibitors, which a playing video
+    /// holds; caffeinate's idle takes either version.
+    idle_notifier: Option<ExtIdleNotifierV1>,
     qh: QueueHandle<Self>,
     handle: Option<LoopHandle<'static, App>>,
     pub runtime: Option<Runtime>,
@@ -279,7 +284,6 @@ impl App {
         let shm = Shm::bind(globals, qh).expect("wl_shm is not available");
         let pixels = Pixels::bind(globals, qh)
             .expect("wp_viewporter, wp_single_pixel_buffer_manager_v1 and wp_alpha_modifier_v1 are required");
-        crate::surface::bind_scaling(globals, qh);
         let store = Store::default();
         let bar = Bar::new(Edge::Top, &store.theme.theme);
         let kit = Kit::new(&store.theme.theme);
@@ -291,13 +295,14 @@ impl App {
             layer_shell,
             shm,
             pixels,
+            idle_notifier: globals.bind(qh, 1..=2, crate::surface::Ignore).ok(),
             qh: qh.clone(),
             handle: None,
             runtime: None,
             store,
             kit,
             caffeinate: caffeinate::Caffeinate::bind(globals, qh),
-            settle: settle::Settle::bind(globals, qh),
+            settle: settle::Settle::default(),
             console: console::Console::default(),
             zen: zen::ZenState::default(),
             saver: screensaver::Saver::default(),
@@ -498,7 +503,7 @@ impl App {
             layer.set_exclusive_zone(bar.zone());
         }
         layer.commit();
-        let mut surface = Surface::on("bar", layer, &self.shm, self.started, output);
+        let mut surface = Surface::on("bar", Backend::Gpu, layer, &self.shm, self.started, output);
         surface.presize(bar.scene.size.w, bar.scene.size.h);
         let mut zones = Vec::new();
         if framed {
@@ -814,7 +819,7 @@ impl App {
         if self.preview.is_none() {
             let (w, h) = self.output_size();
             let layer = self.overlay("formalshell:debug-join", Layer::Overlay, Anchor::all(), (0, 0), -1);
-            let surface = Surface::new("debug-join", layer, &self.shm, self.started);
+            let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.started);
             self.preview = Some((surface, crate::scene::Scene::clear(w as i32, h as i32), Vec::new()));
         }
         let edge = self.bar.edge();
@@ -868,7 +873,7 @@ impl App {
             layer.set_input_region(Some(region.wl_region()));
             layer.commit();
         }
-        let mut surface = Surface::new("panel", layer, &self.shm, self.started);
+        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started);
         surface.wait_map = true;
         surface
     }
@@ -984,7 +989,7 @@ impl App {
         let keyboard = if module.takes_keyboard() { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
         layer.set_keyboard_interactivity(keyboard);
         layer.commit();
-        let mut surface = Surface::new("panel", layer, &self.shm, self.started);
+        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started);
         surface.wait_map = true;
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
         host.start(&self.store, self.runtime.as_ref());
@@ -1085,7 +1090,7 @@ impl App {
         let length = self.bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
         if let Some(p) = &mut self.menu {
-            let mapped = p.card.is_open() && p.surface.mapped;
+            let mapped = p.card.is_open() && p.surface.mapped();
             if let Some(m) = &mut p.menu {
                 let (w, h) = (m.width(), m.height().min(m.cap));
                 // The first size lands at once; every later one morphs.
@@ -1351,7 +1356,7 @@ impl App {
             self.menu = None;
             self.log("tray menu unmapped");
         }
-        if self.scrim.as_ref().is_some_and(|(p, s)| s.mapped && p.finished(now)) {
+        if self.scrim.as_ref().is_some_and(|(p, s)| s.mapped() && p.finished(now)) {
             self.scrim = None;
             self.log("scrim unmapped");
         }
@@ -1380,7 +1385,7 @@ impl App {
         if let Some(s) = &mut self.bar_surface {
             s.present(&mut self.bar.scene, animating, &qh);
         }
-        if !self.faces_warmed && self.bar_surface.as_ref().is_some_and(|s| s.mapped) {
+        if !self.faces_warmed && self.bar_surface.as_ref().is_some_and(|s| s.mapped()) {
             self.faces_warmed = true;
             crate::phase("bar mapped");
             crate::thread_ticks();
@@ -1467,7 +1472,7 @@ impl App {
                 if self.tip_card.is_none() {
                     let size = self.output_size();
                     let layer = self.overlay("formalshell:tooltip", Layer::Overlay, Anchor::all(), (0, 0), -1);
-                    let mut surface = Surface::new("tooltip", layer, &self.shm, self.started);
+                    let mut surface = Surface::new("tooltip", Backend::Gpu, layer, &self.shm, self.started);
                     surface.wait_map = true;
                     self.tip_card = Some(tooltip::Card::new(surface, (size.0 as i32, size.1 as i32), self.motion_scale));
                 }
@@ -1482,7 +1487,7 @@ impl App {
                 }
             }
         }
-        if self.tip_card.as_ref().is_some_and(|c| c.surface.mapped && c.finished(now)) {
+        if self.tip_card.as_ref().is_some_and(|c| c.surface.mapped() && c.finished(now)) {
             self.tip_card = None;
         }
         let qh = self.qh.clone();
@@ -2050,24 +2055,19 @@ impl CompositorHandler for App {
         match self.owner(surface) {
             Some(Owner::Bar) => {
                 let Some(s) = &mut self.bar_surface else { return };
-                s.landed(now);
                 // A callback only lets the next frame go; what that frame
                 // draws is the present's to decide (a spinner needs no new
                 // layout of the strip).
-                if !s.mapped {
-                    s.mapped = true;
+                if s.landed(now) {
                     self.bar_dirty = true;
                 }
             }
             Some(Owner::Menu) => {
                 let Some(p) = &mut self.menu else { return };
-                let s = &mut p.surface;
-                s.landed(now);
-                if s.mapped {
-                    p.card.tick(now);
-                } else {
-                    s.mapped = true;
+                if p.surface.landed(now) {
                     p.card.mapped(now);
+                } else {
+                    p.card.tick(now);
                 }
                 self.sync_join();
             }
@@ -2075,14 +2075,11 @@ impl CompositorHandler for App {
                 let theme = &self.store.theme.theme;
                 let h = if o == Owner::Panel { &mut self.panel } else { &mut self.outgoing };
                 let Some(h) = h else { return };
-                let s = &mut h.surface;
-                (s.frame_pending, s.callbacks) = (false, s.callbacks + 1);
                 let mut cut = false;
-                if s.mapped {
-                    h.card.tick(now);
-                } else {
-                    s.mapped = true;
+                if h.surface.landed(now) {
                     cut = h.mapped(theme, now);
+                } else {
+                    h.card.tick(now);
                 }
                 // The card that took this one's place is moving: the
                 // outgoing window goes on this tick, while the two still
@@ -2096,25 +2093,19 @@ impl CompositorHandler for App {
             Some(Owner::Tooltip) => {
                 let theme = &self.store.theme.theme;
                 let Some(c) = &mut self.tip_card else { return };
-                let s = &mut c.surface;
-                (s.frame_pending, s.callbacks) = (false, s.callbacks + 1);
-                if !s.mapped {
-                    s.mapped = true;
+                if c.surface.landed(now) {
                     c.mapped(theme, now);
                 }
             }
             Some(Owner::Toasts) => {
                 let Some(t) = &mut self.toasts else { return };
-                let s = &mut t.surface;
-                (s.frame_pending, s.callbacks) = (false, s.callbacks + 1);
-                if !s.mapped {
-                    s.mapped = true;
+                if t.surface.landed(now) {
                     self.toasts_dirty = true;
                 }
             }
             Some(Owner::Scrim) => {
                 let Some((scrim, s)) = &mut self.scrim else { return };
-                (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+                s.landed();
                 scrim.mapped(now);
             }
             Some(Owner::Osd) => self.osd_frame(now),
@@ -2122,11 +2113,10 @@ impl CompositorHandler for App {
             Some(Owner::Profiles) => self.profiles_frame(now),
             Some(Owner::Preview) => {
                 let Some((s, _, _)) = &mut self.preview else { return };
-                (s.frame_pending, s.mapped, s.callbacks) = (false, true, s.callbacks + 1);
+                s.landed(now);
             }
             Some(Owner::Zone(i)) => {
-                let z = &mut self.zones[i].1;
-                (z.frame_pending, z.mapped, z.callbacks) = (false, true, z.callbacks + 1);
+                self.zones[i].1.landed();
             }
             Some(Owner::Switcher) => self.switcher_frame(),
             Some(Owner::Overview) => self.overview_frame(),

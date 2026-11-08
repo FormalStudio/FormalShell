@@ -5,8 +5,7 @@
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use parley::fontique::Blob;
 use parley::setting::{FontFeature, Tag};
@@ -252,8 +251,10 @@ struct Shared {
     /// fontconfig and the font collection, loaded on a thread of their own
     /// while the compositor answers the bar's first configure.
     loading: Mutex<Option<std::thread::JoinHandle<Inner>>>,
-    /// Draws waiting on the lock; warming stands aside while there are any.
-    urgent: AtomicUsize,
+    /// Draws waiting on the lock; warming stands aside while there are any,
+    /// woken by `clear` once the last has it.
+    urgent: Mutex<usize>,
+    clear: Condvar,
 }
 
 /// A style as a cache key, built without allocating: a frame's lookups of
@@ -300,12 +301,12 @@ pub fn preload() {
 impl Text {
     pub fn new() -> Self {
         let loading = PRELOAD.lock().unwrap_or_else(|e| e.into_inner()).take().unwrap_or_else(load);
-        Self(Arc::new(Shared { inner: Mutex::new(None), loading: Mutex::new(Some(loading)), urgent: AtomicUsize::new(0) }))
+        Self(Arc::new(Shared { inner: Mutex::new(None), loading: Mutex::new(Some(loading)), urgent: Mutex::new(0), clear: Condvar::new() }))
     }
 
     /// A shape a draw is waiting on, ahead of any warming.
     pub fn shape(&mut self, source: &str, style: TextStyle) -> ShapedText {
-        self.0.urgent.fetch_add(1, Ordering::SeqCst);
+        *self.0.urgent.lock().unwrap_or_else(|e| e.into_inner()) += 1;
         self.shape_now(source, style, true)
     }
 
@@ -315,9 +316,8 @@ impl Text {
     /// otherwise starve the UI thread for its whole list.
     pub fn warm(&self, jobs: &[(String, TextStyle)]) {
         for (source, style) in jobs {
-            while self.0.urgent.load(Ordering::SeqCst) > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
+            let waiting = self.0.urgent.lock().unwrap_or_else(|e| e.into_inner());
+            drop(self.0.clear.wait_while(waiting, |n| *n > 0).unwrap_or_else(|e| e.into_inner()));
             self.shape_now(source, *style, false);
         }
     }
@@ -326,7 +326,11 @@ impl Text {
         let asked = std::time::Instant::now();
         let mut guard = self.0.inner.lock().unwrap_or_else(|e| e.into_inner());
         if urgent {
-            self.0.urgent.fetch_sub(1, Ordering::SeqCst);
+            let mut waiting = self.0.urgent.lock().unwrap_or_else(|e| e.into_inner());
+            *waiting -= 1;
+            if *waiting == 0 {
+                self.0.clear.notify_all();
+            }
         }
         if guard.is_none() {
             let loading = self.0.loading.lock().unwrap_or_else(|e| e.into_inner()).take();

@@ -36,7 +36,6 @@ use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 
 use crate::render::{Renderer, scaled};
 use crate::scene::{IRect, Scene};
-use crate::wayland::App;
 
 pub mod audit;
 
@@ -48,37 +47,65 @@ struct ShmBuffer {
     stale: Vec<IRect>,
 }
 
-/// The surfaces drawn on the GPU when `render.backend` resolves to it.
-fn on_gpu(name: &str) -> bool {
-    matches!(
-        name,
-        "menu"
-            | "menu-content"
-            | "bar"
-            | "desktop-clock"
-            | "panel"
-            | "tooltip"
-            | "toasts"
-            | "osd"
-            | "switcher"
-            | "capture"
-            | "debug-join"
-            | "screensaver"
-            | "polkit"
-            | "polkit-content"
-            | "radio"
-            | "plugin-overlay"
-            | "lock"
-            | "unlock"
-            | "greeter"
-            | "greeter-veil"
-    )
+/// Where a surface draws: `Gpu` on the GPU while `render.backend` resolves
+/// to it and the device is up, on the CPU otherwise; `Cpu` always on the
+/// CPU.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Backend {
+    Gpu,
+    Cpu,
 }
 
-/// A renderer for `name`: the GPU's where the backend is, else the CPU's.
-fn renderer_for(name: &str) -> Renderer {
-    let gpu = (on_gpu(name) && crate::gpu::active()).then(|| Renderer::gpu(1, 1)).flatten();
-    gpu.unwrap_or_else(|| Renderer::new(1, 1))
+impl Backend {
+    /// The GPU is the one to draw on now.
+    fn on_gpu(self) -> bool {
+        self == Self::Gpu && crate::gpu::active()
+    }
+
+    fn renderer(self) -> Renderer {
+        let gpu = self.on_gpu().then(|| Renderer::gpu(1, 1)).flatten();
+        gpu.unwrap_or_else(|| Renderer::new(1, 1))
+    }
+}
+
+/// The byte order a CPU canvas goes into a wl_shm buffer in: the canvas's
+/// own RGBA (ABGR8888) where the compositor takes it, else BGRA (ARGB8888,
+/// premultiplied BGRA in memory on little endian).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Format {
+    Rgba,
+    Bgra,
+}
+
+impl Format {
+    /// RGBA where `shm` offers it.
+    pub fn of(shm: &Shm) -> Self {
+        if shm.formats().contains(&wl_shm::Format::Abgr8888) { Self::Rgba } else { Self::Bgra }
+    }
+
+    pub fn wl(self) -> wl_shm::Format {
+        match self {
+            Self::Rgba => wl_shm::Format::Abgr8888,
+            Self::Bgra => wl_shm::Format::Argb8888,
+        }
+    }
+
+    /// An RGBA pixel in this byte order, or one in this order back to RGBA.
+    pub fn pixel(self, [r, g, b, a]: [u8; 4]) -> [u8; 4] {
+        match self {
+            Self::Rgba => [r, g, b, a],
+            Self::Bgra => [b, g, r, a],
+        }
+    }
+
+    /// RGBA bytes put in this byte order in place.
+    pub fn swizzle(self, bytes: &mut [u8]) {
+        if self == Self::Bgra {
+            for px in bytes.as_chunks_mut::<4>().0 {
+                px.swap(0, 2);
+            }
+        }
+    }
 }
 
 /// A buffer's stale list after `damage` went into another one: past
@@ -216,11 +243,9 @@ pub fn output_scale(output: &WlOutput) -> Option<f64> {
     table.iter().find(|(o, _)| *o == id).map(|(_, s)| f64::from(*s) / 120.0)
 }
 
-pub fn bind_scaling<D>(globals: &GlobalList, qh: &QueueHandle<D>)
-where
-    D: Dispatch<WpFractionalScaleManagerV1, Inert> + Dispatch<WpViewporter, Inert> + 'static,
-{
-    let _ = SCALING.set(Scaling { fractional: globals.bind(qh, 1..=1, Inert).ok(), viewporter: globals.bind(qh, 1..=1, Inert).ok() });
+/// Binds the scaling globals, once per process; later calls find them bound.
+pub fn bind_scaling<D: Dispatcher>(globals: &GlobalList, qh: &QueueHandle<D>) {
+    SCALING.get_or_init(|| Scaling { fractional: globals.bind(qh, 1..=1, Ignore).ok(), viewporter: globals.bind(qh, 1..=1, Ignore).ok() });
 }
 
 /// The bar's output's scale, else the first output's.
@@ -249,20 +274,70 @@ impl<D: ScaleHandler> Dispatch2<WpFractionalScaleV1, D> for Preferred {
     }
 }
 
-/// User data for the scaling objects no event of which matters, for any
-/// state type (the shell's and the greeter's).
-pub struct Inert;
+/// User data for objects whose events carry nothing this shell acts on (a
+/// buffer that is never redrawn has no use for its release), for any state
+/// type: the shell's and the greeter's.
+pub struct Ignore;
 
-impl<D> Dispatch2<WpFractionalScaleManagerV1, D> for Inert {
-    fn event(&self, _: &mut D, _: &WpFractionalScaleManagerV1, _: <WpFractionalScaleManagerV1 as Proxy>::Event, _: &Connection, _: &QueueHandle<D>) {}
+/// [`Ignore`] for each interface named.
+macro_rules! ignore_events {
+    ($($iface:ty),* $(,)?) => {$(
+        impl<D> smithay_client_toolkit::dispatch2::Dispatch2<$iface, D> for $crate::surface::Ignore {
+            fn event(
+                &self,
+                _: &mut D,
+                _: &$iface,
+                _: <$iface as smithay_client_toolkit::reexports::client::Proxy>::Event,
+                _: &smithay_client_toolkit::reexports::client::Connection,
+                _: &smithay_client_toolkit::reexports::client::QueueHandle<D>,
+            ) {
+            }
+        }
+    )*};
+}
+pub(crate) use ignore_events;
+
+ignore_events!(
+    WpFractionalScaleManagerV1,
+    WlSubcompositor,
+    WlSubsurface,
+    WpViewporter,
+    WpViewport,
+    WpSinglePixelBufferManagerV1,
+    WpAlphaModifierV1,
+    WpAlphaModifierSurfaceV1,
+    WlBuffer
+);
+
+/// The state a surface's objects dispatch to: the shell's or the greeter's.
+pub trait Dispatcher:
+    Dispatch<WlCallback, FrameCallbackData>
+    + Dispatch<WpFractionalScaleV1, Preferred>
+    + Dispatch<WpFractionalScaleManagerV1, Ignore>
+    + Dispatch<WpViewporter, Ignore>
+    + Dispatch<WpViewport, Ignore>
+    + Dispatch<WlSubcompositor, Ignore>
+    + Dispatch<WpSinglePixelBufferManagerV1, Ignore>
+    + Dispatch<WpAlphaModifierV1, Ignore>
+    + Dispatch<WpAlphaModifierSurfaceV1, Ignore>
+    + Dispatch<WlBuffer, Ignore>
+    + 'static
+{
 }
 
-impl<D> Dispatch2<WpViewporter, D> for Inert {
-    fn event(&self, _: &mut D, _: &WpViewporter, _: <WpViewporter as Proxy>::Event, _: &Connection, _: &QueueHandle<D>) {}
-}
-
-impl<D> Dispatch2<WpViewport, D> for Inert {
-    fn event(&self, _: &mut D, _: &WpViewport, _: <WpViewport as Proxy>::Event, _: &Connection, _: &QueueHandle<D>) {}
+impl<D> Dispatcher for D where
+    D: Dispatch<WlCallback, FrameCallbackData>
+        + Dispatch<WpFractionalScaleV1, Preferred>
+        + Dispatch<WpFractionalScaleManagerV1, Ignore>
+        + Dispatch<WpViewporter, Ignore>
+        + Dispatch<WpViewport, Ignore>
+        + Dispatch<WlSubcompositor, Ignore>
+        + Dispatch<WpSinglePixelBufferManagerV1, Ignore>
+        + Dispatch<WpAlphaModifierV1, Ignore>
+        + Dispatch<WpAlphaModifierSurfaceV1, Ignore>
+        + Dispatch<WlBuffer, Ignore>
+        + 'static
+{
 }
 
 /// What a viewport is sent: a source in buffer pixels, and a destination.
@@ -301,10 +376,7 @@ impl Scaler {
     }
 
     /// Asks for the surface's preferred scale, once.
-    fn follow<D>(&mut self, surface: &WlSurface, qh: &QueueHandle<D>)
-    where
-        D: Dispatch<WpFractionalScaleV1, Preferred> + 'static,
-    {
+    fn follow<D: Dispatcher>(&mut self, surface: &WlSurface, qh: &QueueHandle<D>) {
         if self.fractional.is_some() || self.inherited {
             return;
         }
@@ -313,13 +385,10 @@ impl Scaler {
         }
     }
 
-    /// The viewport for a buffer drawn at `scale` for a surface `size`
-    /// big, sent when it changed; with no `qh` only a viewport already made
-    /// is used.
-    fn sync<D>(&mut self, surface: &WlSurface, scale: f64, size: (i32, i32), qh: Option<&QueueHandle<D>>)
-    where
-        D: Dispatch<WpViewport, Inert> + 'static,
-    {
+    /// What the viewport is to be sent for a buffer drawn at `scale` for a
+    /// surface `size` big; none when that is already sent or no viewport
+    /// is needed.
+    fn want(&self, scale: f64, size: (i32, i32)) -> Option<View> {
         let want: View = match self.crop {
             Some(c) if scale == 1.0 => (Some([f64::from(c.x), f64::from(c.y), f64::from(c.w), f64::from(c.h)]), (c.w, c.h)),
             Some(c) => {
@@ -332,17 +401,13 @@ impl Scaler {
                 (Some([x, y, w, h]), (c.w, c.h))
             }
             None if scale != 1.0 || self.sent.is_some() => (None, size),
-            None => return,
+            None => return None,
         };
-        if self.sent == Some(want) {
-            return;
-        }
-        if self.viewport.is_none() {
-            let viewporter = SCALING.get().and_then(|s| s.viewporter.as_ref());
-            if let (Some(viewporter), Some(qh)) = (viewporter, qh) {
-                self.viewport = Some(viewporter.get_viewport(surface, qh, Inert));
-            }
-        }
+        (self.sent != Some(want)).then_some(want)
+    }
+
+    /// `want` sent on the viewport already made, if there is one.
+    fn send(&mut self, want: View) {
         let Some(viewport) = &self.viewport else { return };
         if let Some([x, y, w, h]) = want.0 {
             viewport.set_source(x, y, w, h);
@@ -350,17 +415,28 @@ impl Scaler {
         viewport.set_destination(want.1.0, want.1.1);
         self.sent = Some(want);
     }
-}
 
-impl Scaler {
+    /// The surface's viewport, made the first time one is needed.
+    fn make_viewport<D: Dispatcher>(&mut self, surface: &WlSurface, qh: &QueueHandle<D>) {
+        if self.viewport.is_none()
+            && let Some(viewporter) = SCALING.get().and_then(|s| s.viewporter.as_ref())
+        {
+            self.viewport = Some(viewporter.get_viewport(surface, qh, Ignore));
+        }
+    }
+
+    /// The viewport for a buffer drawn at `scale` for a surface `size`
+    /// big, sent when it changed.
+    fn sync<D: Dispatcher>(&mut self, surface: &WlSurface, scale: f64, size: (i32, i32), qh: &QueueHandle<D>) {
+        let Some(want) = self.want(scale, size) else { return };
+        self.make_viewport(surface, qh);
+        self.send(want);
+    }
+
     /// The viewport for a one-pixel buffer over the whole surface: no
     /// source, `size` as the destination.
-    fn stretch(&mut self, surface: &WlSurface, size: (i32, i32), qh: &QueueHandle<App>) {
-        if self.viewport.is_none() {
-            if let Some(viewporter) = SCALING.get().and_then(|s| s.viewporter.as_ref()) {
-                self.viewport = Some(viewporter.get_viewport(surface, qh, Inert));
-            }
-        }
+    fn stretch<D: Dispatcher>(&mut self, surface: &WlSurface, size: (i32, i32), qh: &QueueHandle<D>) {
+        self.make_viewport(surface, qh);
         let Some(viewport) = &self.viewport else { return };
         viewport.set_source(-1.0, -1.0, -1.0, -1.0);
         viewport.set_destination(size.0.max(1), size.1.max(1));
@@ -381,13 +457,13 @@ impl Drop for Scaler {
 }
 
 pub struct Surface<R: Role = LayerSurface> {
+    /// The surface's id in the `commit surface=` lines.
     pub name: &'static str,
+    backend: Backend,
     /// Ahead of `layer`, so its objects go before the surface they are on.
     scaler: Scaler,
     pub layer: R,
-    /// ABGR8888 where the compositor takes it: the canvas's own byte order,
-    /// copied without a swizzle.
-    format: wl_shm::Format,
+    format: Format,
     pool: SlotPool,
     buffers: Vec<ShmBuffer>,
     /// The GPU renderer's buffers, which its canvas is copied into.
@@ -395,15 +471,15 @@ pub struct Surface<R: Role = LayerSurface> {
     renderer: Renderer,
     pub configured: bool,
     /// A frame callback is outstanding: nothing is drawn until it lands.
-    pub frame_pending: bool,
+    frame_pending: bool,
     /// The first callback after the first commit, which is when the
     /// surface is on screen.
-    pub mapped: bool,
+    mapped: bool,
     /// Whether the owner waits on `mapped` before it animates.
     pub wait_map: bool,
     started: Instant,
     commits: u64,
-    pub callbacks: u64,
+    callbacks: u64,
     /// When the outstanding frame callback was asked for, and how long the
     /// last one took to land: a slow compositor reads here, a slow shell
     /// in `event loop:` lines.
@@ -539,24 +615,25 @@ impl<R: Role> Surface<R> {
         self.front = None;
     }
 
-    pub fn new(name: &'static str, layer: R, shm: &Shm, started: Instant) -> Self {
-        Self::at(name, layer, shm, started, primary_scale())
+    pub fn new(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant) -> Self {
+        Self::at(name, backend, layer, shm, started, primary_scale())
     }
 
     /// A surface made for `output`, drawing its first frame at that
     /// output's scale.
-    pub fn on(name: &'static str, layer: R, shm: &Shm, started: Instant, output: &WlOutput) -> Self {
-        Self::at(name, layer, shm, started, scale_on(output))
+    pub fn on(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant, output: &WlOutput) -> Self {
+        Self::at(name, backend, layer, shm, started, scale_on(output))
     }
 
-    fn at(name: &'static str, layer: R, shm: &Shm, started: Instant, scale: f64) -> Self {
-        let mut renderer = renderer_for(name);
+    fn at(name: &'static str, backend: Backend, layer: R, shm: &Shm, started: Instant, scale: f64) -> Self {
+        let mut renderer = backend.renderer();
         renderer.set_scale(scale);
         Self {
             name,
+            backend,
             scaler: Scaler::new(scale),
             layer,
-            format: if shm.formats().contains(&wl_shm::Format::Abgr8888) { wl_shm::Format::Abgr8888 } else { wl_shm::Format::Argb8888 },
+            format: Format::of(shm),
             pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
             buffers: Vec::new(),
             dmabufs: Vec::new(),
@@ -680,8 +757,8 @@ impl<R: Role> Surface<R> {
     /// under the buffer bit), so a viewport changed on a bare commit draws
     /// the new crop squeezed into the old size.
     pub fn recommit(&mut self) {
-        if let Some((scale, size)) = self.front_view {
-            self.scaler.sync::<App>(self.layer.role_surface(), scale, size, None);
+        if let Some(want) = self.front_view.and_then(|(scale, size)| self.scaler.want(scale, size)) {
+            self.scaler.send(want);
         }
         if self.renderer.is_gpu() {
             let buffer = self.front.and_then(|at| self.dmabufs.get(at)).or(self.retired_dmabuf.as_ref());
@@ -708,7 +785,7 @@ impl<R: Role> Surface<R> {
     /// column, output tall) holds none of their memory. Once clear, it
     /// commits again only when `commit` asks, for state set beside the
     /// buffer (its layer, its input region).
-    pub fn present_clear(&mut self, size: (i32, i32), commit: bool, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<App>) {
+    pub fn present_clear<D: Dispatcher>(&mut self, size: (i32, i32), commit: bool, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<D>) {
         self.scaler.follow(self.layer.role_surface(), qh);
         if self.frame_pending || !self.configured {
             return;
@@ -765,7 +842,7 @@ impl<R: Role> Surface<R> {
     /// One single-pixel buffer stretched over the surface's `size` with a
     /// callback asked for: a frame that costs no drawing and no copy. The
     /// next [`Surface::present`] draws the whole scene again.
-    pub fn present_pixel(&mut self, size: (i32, i32), pixel: &WlBuffer, qh: &QueueHandle<App>) {
+    pub fn present_pixel<D: Dispatcher>(&mut self, size: (i32, i32), pixel: &WlBuffer, qh: &QueueHandle<D>) {
         self.scaler.follow(self.layer.role_surface(), qh);
         if self.frame_pending || !self.configured {
             return;
@@ -863,14 +940,30 @@ impl<R: Role> Surface<R> {
         !self.left.is_empty()
     }
 
-    /// A frame callback landed.
-    pub fn landed(&mut self, now: Instant) {
+    /// A frame callback landed, the only way one is recorded. True for the
+    /// first, which is when the surface is on screen.
+    pub fn landed(&mut self, now: Instant) -> bool {
         self.frame_pending = false;
         self.callbacks += 1;
         if let Some(asked) = self.asked.take() {
             self.waited_us = now.duration_since(asked).as_micros();
         }
         self.landed_at = Some(now);
+        !std::mem::replace(&mut self.mapped, true)
+    }
+
+    /// The first frame callback has landed.
+    pub fn mapped(&self) -> bool {
+        self.mapped
+    }
+
+    /// A frame callback is outstanding.
+    pub fn frame_pending(&self) -> bool {
+        self.frame_pending
+    }
+
+    pub fn callbacks(&self) -> u64 {
+        self.callbacks
     }
 
     /// The compositor's size, which the owner has resized its scene to.
@@ -886,17 +979,14 @@ impl<R: Role> Surface<R> {
         }
     }
 
-    pub fn present<D>(&mut self, scene: &mut Scene, animating: bool, qh: &QueueHandle<D>)
-    where
-        D: Dispatch<WlCallback, FrameCallbackData> + Dispatch<WpFractionalScaleV1, Preferred> + Dispatch<WpViewport, Inert> + 'static,
-    {
+    pub fn present<D: Dispatcher>(&mut self, scene: &mut Scene, animating: bool, qh: &QueueHandle<D>) {
         self.scaler.follow(self.layer.role_surface(), qh);
         if self.frame_pending {
             return;
         }
         if self.renderer.is_gpu() && !crate::gpu::active() {
             self.leave_gpu(scene);
-        } else if !self.renderer.is_gpu() && on_gpu(self.name) && crate::gpu::active() {
+        } else if !self.renderer.is_gpu() && self.backend.on_gpu() {
             self.enter_gpu(scene);
         }
         if std::mem::take(&mut self.cleared) {
@@ -965,10 +1055,7 @@ impl<R: Role> Surface<R> {
     /// is outstanding; false when `fill` refused the canvas. The scene
     /// drawn next has to be touched whole, since the canvas no longer
     /// holds what it last drew.
-    pub fn present_pixels<D>(&mut self, size: IRect, fill: impl FnOnce(&mut [u8], (i32, i32)) -> bool, qh: &QueueHandle<D>) -> bool
-    where
-        D: Dispatch<WlCallback, FrameCallbackData> + Dispatch<WpFractionalScaleV1, Preferred> + Dispatch<WpViewport, Inert> + 'static,
-    {
+    pub fn present_pixels<D: Dispatcher>(&mut self, size: IRect, fill: impl FnOnce(&mut [u8], (i32, i32)) -> bool, qh: &QueueHandle<D>) -> bool {
         self.scaler.follow(self.layer.role_surface(), qh);
         if self.frame_pending || !self.configured || self.renderer.is_gpu() {
             return true;
@@ -989,10 +1076,7 @@ impl<R: Role> Surface<R> {
     }
 
     /// The canvas's `damage` copied into a buffer and committed.
-    fn commit_frame<D>(&mut self, mut damage: Vec<IRect>, size: IRect, request: bool, qh: &QueueHandle<D>)
-    where
-        D: Dispatch<WlCallback, FrameCallbackData> + Dispatch<WpFractionalScaleV1, Preferred> + Dispatch<WpViewport, Inert> + 'static,
-    {
+    fn commit_frame<D: Dispatcher>(&mut self, mut damage: Vec<IRect>, size: IRect, request: bool, qh: &QueueHandle<D>) {
         let (react_us, render_us) = (self.react_us, self.render_us);
         if std::mem::take(&mut self.refade) {
             damage.extend(self.drawn);
@@ -1015,7 +1099,7 @@ impl<R: Role> Surface<R> {
             let rect = self.renderer.device(*rect);
             surface.damage_buffer(rect.x, rect.y, rect.w, rect.h);
         }
-        self.scaler.sync(surface, scale, (size.w, size.h), Some(qh));
+        self.scaler.sync(surface, scale, (size.w, size.h), qh);
         // Until the first callback the surface may not be on screen yet,
         // and an enter waits for it.
         if request {
@@ -1070,7 +1154,7 @@ impl<R: Role> Surface<R> {
             None => {
                 let (buffer, _) = self
                     .pool
-                    .create_buffer(pw, ph, pw * 4, self.format)
+                    .create_buffer(pw, ph, pw * 4, self.format.wl())
                     .expect("wl_shm buffer");
                 let stale = if self.pool_clean { self.drawn.into_iter().collect() } else { vec![size] };
                 self.buffers.push(ShmBuffer { buffer, stale });
@@ -1090,45 +1174,24 @@ impl<R: Role> Surface<R> {
         let k = self.opacity;
         // Premultiplied, so all four channels scale alike.
         let fade = |c: u8| ((u16::from(c) * k + 128) >> 8) as u8;
-        if k < 256 {
-            let src = self.renderer.canvas().data_as_u8_slice();
-            let bgra = self.format != wl_shm::Format::Abgr8888;
-            for rect in &copy {
-                for row in rect.y..rect.bottom() {
-                    let start = (row as usize * stride + rect.x as usize) * 4;
-                    let end = start + rect.w as usize * 4;
-                    for (px, dst) in src[start..end].chunks_exact(4).zip(canvas[start..end].chunks_exact_mut(4)) {
-                        let (r, g, b, a) = (fade(px[0]), fade(px[1]), fade(px[2]), fade(px[3]));
-                        dst.copy_from_slice(&if bgra { [b, g, r, a] } else { [r, g, b, a] });
-                    }
+        let format = self.format;
+        let src = self.renderer.canvas().data_as_u8_slice();
+        for rect in &copy {
+            for row in rect.y..rect.bottom() {
+                let start = (row as usize * stride + rect.x as usize) * 4;
+                let end = start + rect.w as usize * 4;
+                let (from, to) = (&src[start..end], &mut canvas[start..end]);
+                if k == 256 && format == Format::Rgba {
+                    to.copy_from_slice(from);
+                    continue;
                 }
-            }
-        } else if self.format == wl_shm::Format::Abgr8888 {
-            // ABGR8888 is the canvas's own RGBA byte order: rows copy whole.
-            let src = self.renderer.canvas().data_as_u8_slice();
-            for rect in &copy {
-                for row in rect.y..rect.bottom() {
-                    let start = (row as usize * stride + rect.x as usize) * 4;
-                    let end = start + rect.w as usize * 4;
-                    canvas[start..end].copy_from_slice(&src[start..end]);
-                }
-            }
-        } else {
-            let src = self.renderer.canvas().data();
-            for rect in &copy {
-                for row in rect.y..rect.bottom() {
-                    let start = row as usize * stride + rect.x as usize;
-                    let pixels = &src[start..start + rect.w as usize];
-                    let out = &mut canvas[start * 4..(start + rect.w as usize) * 4];
-                    // wl_shm ARGB8888 is premultiplied BGRA in memory on little endian.
-                    for (px, dst) in pixels.iter().zip(out.chunks_exact_mut(4)) {
-                        dst.copy_from_slice(&[px.b, px.g, px.r, px.a]);
-                    }
+                for (px, dst) in from.as_chunks::<4>().0.iter().zip(to.as_chunks_mut::<4>().0) {
+                    *dst = format.pixel(if k < 256 { px.map(fade) } else { *px });
                 }
             }
         }
         if let Some(reference) = self.audit.take() {
-            audit::compare(self.name, self.commits + 1, &reference, canvas, self.format != wl_shm::Format::Abgr8888, k);
+            audit::compare(self.name, self.commits + 1, &reference, canvas, format, k);
         }
         at
     }
@@ -1136,9 +1199,8 @@ impl<R: Role> Surface<R> {
     /// The GPU canvas copied into a dmabuf the compositor has given back,
     /// made if none is; None when the device can no longer make one.
     fn fill_dmabuf(&mut self, damage: &[IRect], size: IRect) -> Option<usize> {
-        crate::gpu::dispatch();
         let (pw, ph) = self.renderer.pixels();
-        let at = match self.dmabufs.iter().position(|b| b.free()) {
+        let at = match crate::gpu::released(&self.dmabufs) {
             Some(at) => at,
             None => {
                 let mut b = crate::gpu::Buffer::new(pw as u32, ph as u32)?;
@@ -1227,15 +1289,15 @@ pub struct PixelSurface {
     /// A size the next commit has to carry.
     resized: bool,
     multiplier: Option<u32>,
-    pub frame_pending: bool,
-    pub mapped: bool,
+    frame_pending: bool,
+    mapped: bool,
     started: Instant,
     commits: u64,
-    pub callbacks: u64,
+    callbacks: u64,
 }
 
 impl PixelSurface {
-    pub fn new(name: &'static str, layer: LayerSurface, alpha: f64, pixels: &Pixels, qh: &QueueHandle<App>, started: Instant) -> Self {
+    pub fn new<D: Dispatcher>(name: &'static str, layer: LayerSurface, alpha: f64, pixels: &Pixels, qh: &QueueHandle<D>, started: Instant) -> Self {
         let surface = layer.wl_surface();
         let viewport = pixels.viewporter.get_viewport(surface, qh, Ignore);
         let fade = pixels.alpha.get_surface(surface, qh, Ignore);
@@ -1272,8 +1334,26 @@ impl PixelSurface {
         self.size
     }
 
+    /// A frame callback landed, the only way one is recorded. True for the
+    /// first, which is when the surface is on screen.
+    pub fn landed(&mut self) -> bool {
+        self.frame_pending = false;
+        self.callbacks += 1;
+        !std::mem::replace(&mut self.mapped, true)
+    }
+
+    /// The first frame callback has landed.
+    pub fn mapped(&self) -> bool {
+        self.mapped
+    }
+
+    /// A frame callback is outstanding.
+    pub fn frame_pending(&self) -> bool {
+        self.frame_pending
+    }
+
     /// `fade` multiplies the pixel's own alpha, 0 to 1.
-    pub fn present(&mut self, fade: f64, animating: bool, qh: &QueueHandle<App>) {
+    pub fn present<D: Dispatcher>(&mut self, fade: f64, animating: bool, qh: &QueueHandle<D>) {
         let Some((width, height)) = self.size else { return };
         if self.frame_pending {
             return;
@@ -1341,7 +1421,7 @@ impl Drop for PixelSurface {
     }
 }
 
-/// The three globals a [`PixelSurface`] is made of.
+/// The globals a [`PixelSurface`] and a subsurface are made of.
 pub struct Pixels {
     pub subcompositor: WlSubcompositor,
     pub viewporter: WpViewporter,
@@ -1354,27 +1434,16 @@ pub struct Pixels {
 }
 
 impl Pixels {
-    pub fn bind(globals: &GlobalList, qh: &QueueHandle<App>) -> Result<Self, BindError> {
+    /// The viewporter is the scaling one ([`bind_scaling`]), bound once.
+    pub fn bind<D: Dispatcher>(globals: &GlobalList, qh: &QueueHandle<D>) -> Result<Self, BindError> {
+        bind_scaling(globals, qh);
+        let viewporter = SCALING.get().and_then(|s| s.viewporter.clone()).ok_or(BindError::NotPresent)?;
         let single_pixel: WpSinglePixelBufferManagerV1 = globals.bind(qh, 1..=1, Ignore)?;
         let clear = single_pixel.create_u32_rgba_buffer(0, 0, 0, 0, qh, Ignore);
         let black = single_pixel.create_u32_rgba_buffer(0, 0, 0, u32::MAX, qh, Ignore);
-        Ok(Self { subcompositor: globals.bind(qh, 1..=1, Ignore)?, viewporter: globals.bind(qh, 1..=1, Ignore)?, single_pixel, alpha: globals.bind(qh, 1..=1, Ignore)?, clear, black })
+        Ok(Self { subcompositor: globals.bind(qh, 1..=1, Ignore)?, viewporter, single_pixel, alpha: globals.bind(qh, 1..=1, Ignore)?, clear, black })
     }
 }
-
-/// User data for objects whose events carry nothing this shell acts on: a
-/// buffer that is never redrawn has no use for its release.
-pub struct Ignore;
-
-macro_rules! ignore_events {
-    ($($iface:ty),*) => {$(
-        impl Dispatch2<$iface, App> for Ignore {
-            fn event(&self, _: &mut App, _: &$iface, _: <$iface as Proxy>::Event, _: &Connection, _: &QueueHandle<App>) {}
-        }
-    )*};
-}
-
-ignore_events!(WlSubcompositor, WlSubsurface, WpViewporter, WpViewport, WpSinglePixelBufferManagerV1, WpAlphaModifierV1, WpAlphaModifierSurfaceV1, WlBuffer);
 
 /// The desktop's own layer: the theme's background colour under the grid
 /// when `wallpaper.grid` asks for one, or the wallpaper's ready pixels over
@@ -1442,7 +1511,7 @@ impl Backdrop {
     }
 
     /// The backdrop's frame callback.
-    pub fn landed(&mut self, now: Instant, qh: &QueueHandle<App>) {
+    pub fn landed<D: Dispatcher>(&mut self, now: Instant, qh: &QueueHandle<D>) {
         self.landed = self.committed;
         self.step(now, qh);
     }
@@ -1461,7 +1530,7 @@ impl Backdrop {
     /// The sculpture as `look` and `grid` draw it, running or held: a
     /// change of look or size draws the held frame again at once. True
     /// while it runs.
-    pub fn sync_shards(&mut self, look: crate::shards::Look, grid: Option<Grid>, run: Result<(), &'static str>, now: Instant, qh: &QueueHandle<App>) -> bool {
+    pub fn sync_shards<D: Dispatcher>(&mut self, look: crate::shards::Look, grid: Option<Grid>, run: Result<(), &'static str>, now: Instant, qh: &QueueHandle<D>) -> bool {
         let (Some(logical), Some(device)) = (self.size, self.pixels()) else { return false };
         let Some(s) = &mut self.shards else { return false };
         if !s.configured.iter().all(|c| *c) {
@@ -1493,7 +1562,7 @@ impl Backdrop {
 
     /// One beat of the sculpture's clock: a frame, unless the last one is
     /// still waiting on the compositor. False once it has stopped.
-    pub fn shard_tick(&mut self, now: Instant, motion_scale: f64, qh: &QueueHandle<App>) -> bool {
+    pub fn shard_tick<D: Dispatcher>(&mut self, now: Instant, motion_scale: f64, qh: &QueueHandle<D>) -> bool {
         let (Some(logical), Some(device)) = (self.size, self.pixels()) else { return false };
         let Some(s) = &mut self.shards else { return false };
         if !s.running || !s.configured.iter().all(|c| *c) {
@@ -1520,7 +1589,7 @@ impl Backdrop {
     }
 
     /// Paints what is up again, on the GPU once it has come up.
-    pub fn repaint(&mut self, qh: &QueueHandle<App>) {
+    pub fn repaint<D: Dispatcher>(&mut self, qh: &QueueHandle<D>) {
         let Some((_, _, _, _, color, grid)) = self.drawn.clone() else { return };
         if self.fade.is_some() {
             return;
@@ -1537,19 +1606,20 @@ impl Backdrop {
 
     /// `picture` when it was made for this size, else the plain colour; a
     /// change after the first paint fades over `reveal_ms`.
-    pub fn draw(
+    pub fn draw<D: Dispatcher>(
         &mut self,
         picture: Option<std::sync::Arc<crate::services::wallpaper::Picture>>,
         background: fs_theme::color::Rgba,
         grid: Option<Grid>,
         reveal_ms: f64,
-        qh: &QueueHandle<App>,
+        qh: &QueueHandle<D>,
     ) {
         self.scaler.follow(self.layer.wl_surface(), qh);
         let Some((w, h)) = self.pixels() else { return };
         let picture = picture.filter(|p| (p.width as i32, p.height as i32) == (w, h));
         let [r, g, b, _] = background.to_u8();
-        let color = [b, g, r, 255];
+        // The pictures are BGRA, so the whole layer is.
+        let color = Format::Bgra.pixel([r, g, b, 255]);
         let key = (picture.as_ref().map(|p| p.path.clone()).unwrap_or_default(), picture.as_ref().and_then(|p| p.dither), w, h, color, grid);
         if self.drawn.as_ref() == Some(&key) {
             return;
@@ -1583,7 +1653,7 @@ impl Backdrop {
     }
 
     /// One frame of a running fade; the frame callback lands back here.
-    pub fn step(&mut self, now: Instant, qh: &QueueHandle<App>) {
+    pub fn step<D: Dispatcher>(&mut self, now: Instant, qh: &QueueHandle<D>) {
         let Some(f) = &self.fade else { return };
         let t = crate::motion::progress(f.start, f.ms, now);
         let a = crate::motion::Kind::EffectsSlow.curve().ease(t);
@@ -1600,14 +1670,14 @@ impl Backdrop {
 
     /// `to` over `from` at `a`; `from` none is no blend at all, `Some(None)`
     /// the plain colour under `grid`.
-    fn paint(
+    fn paint<D: Dispatcher>(
         &mut self,
         from: Option<Option<&crate::services::wallpaper::Picture>>,
         to: Option<&crate::services::wallpaper::Picture>,
         color: [u8; 4],
         grid: Option<Grid>,
         a: f32,
-        qh: &QueueHandle<App>,
+        qh: &QueueHandle<D>,
     ) {
         let Some(size) = self.size else { return };
         let scale = self.scaler.wanted(self.layer.wl_surface());
@@ -1625,8 +1695,7 @@ impl Backdrop {
                 px.copy_from_slice(&color);
             }
             if let Some(g) = grid {
-                let [r, gr, b, a] = g.color;
-                Grid { color: [b, gr, r, a], ..g }.paint(canvas, w as usize, h as usize);
+                Grid { color: Format::Bgra.pixel(g.color), ..g }.paint(canvas, w as usize, h as usize);
             }
         };
         let surface = self.layer.wl_surface().clone();
@@ -1638,14 +1707,14 @@ impl Backdrop {
         } else {
             self.textures.clear();
             self.dmabufs.clear();
-            let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888) else { return };
+            let Ok((buffer, canvas)) = self.pool.create_buffer(w, h, w * 4, Format::Bgra.wl()) else { return };
             Self::blend_on_cpu(canvas, from, to, a, &plain);
             if buffer.attach_to(&surface).is_err() {
                 return;
             }
             self.buffer = Some(buffer);
         }
-        self.scaler.sync(&surface, scale, size, Some(qh));
+        self.scaler.sync(&surface, scale, size, qh);
         surface.damage_buffer(0, 0, w, h);
         let committed = (true, self.committed.1 || (from.is_none() && to.is_some()));
         if committed != self.committed && from.is_none() {
@@ -1671,7 +1740,6 @@ impl Backdrop {
         (w, h): (i32, i32),
         plain: &dyn Fn(&mut [u8]),
     ) -> Option<usize> {
-        crate::gpu::dispatch();
         let key = |p: Option<&crate::services::wallpaper::Picture>| -> PictureKey {
             p.map_or_else(|| (String::new(), None, None, color, grid), |p| (p.path.clone(), p.dither, p.grid, [0; 4], None))
         };
@@ -1696,7 +1764,7 @@ impl Backdrop {
             };
             self.textures.push((k.clone(), picture));
         }
-        let at = match self.dmabufs.iter().position(crate::gpu::Buffer::free) {
+        let at = match crate::gpu::released(&self.dmabufs) {
             Some(at) => at,
             None => {
                 self.dmabufs.push(crate::gpu::Buffer::new(w as u32, h as u32)?);
@@ -1763,7 +1831,7 @@ pub struct Shards {
     grid_pool: SlotPool,
     grid_buffer: Option<Buffer>,
     grid_drawn: Option<((i32, i32), Option<Grid>)>,
-    format: wl_shm::Format,
+    format: Format,
     raster: crate::shards::Raster,
     look: Option<crate::shards::Look>,
     /// The sculpture's own clock, ms: it moves only while it runs.
@@ -1788,7 +1856,7 @@ pub struct Shards {
 impl Shards {
     /// `layer` and `grid` are made in that order on the Background level
     /// after the picture's own, which stacks them over it.
-    pub fn new(layer: LayerSurface, grid: LayerSurface, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<App>, started: Instant) -> Self {
+    pub fn new<D: Dispatcher>(layer: LayerSurface, grid: LayerSurface, pixels: &Pixels, shm: &Shm, qh: &QueueHandle<D>, started: Instant) -> Self {
         let viewport = pixels.viewporter.get_viewport(layer.wl_surface(), qh, Ignore);
         let grid_viewport = pixels.viewporter.get_viewport(grid.wl_surface(), qh, Ignore);
         Self {
@@ -1802,7 +1870,7 @@ impl Shards {
             grid_pool: SlotPool::new(4096, shm).expect("wl_shm pool"),
             grid_buffer: None,
             grid_drawn: None,
-            format: if shm.formats().contains(&wl_shm::Format::Abgr8888) { wl_shm::Format::Abgr8888 } else { wl_shm::Format::Argb8888 },
+            format: Format::of(shm),
             raster: crate::shards::Raster::new(),
             look: None,
             t: 0.0,
@@ -1831,7 +1899,8 @@ impl Shards {
         }
     }
 
-    pub fn frame_done(&mut self) {
+    /// The shards' frame callback.
+    pub fn landed(&mut self) {
         self.pending = false;
         self.callbacks += 1;
     }
@@ -1848,7 +1917,7 @@ impl Shards {
         let Some(g) = grid else {
             // A clear pixel keeps the layer mapped: a null buffer unmaps it,
             // and a remapped layer surface needs a fresh configure.
-            let Ok((buffer, canvas)) = self.grid_pool.create_buffer(1, 1, 4, self.format) else { return };
+            let Ok((buffer, canvas)) = self.grid_pool.create_buffer(1, 1, 4, self.format.wl()) else { return };
             canvas.fill(0);
             if buffer.attach_to(surface).is_ok() {
                 self.grid_viewport.set_destination(logical.0, logical.1);
@@ -1859,11 +1928,9 @@ impl Shards {
             return;
         };
         let (w, h) = device;
-        let Ok((buffer, canvas)) = self.grid_pool.create_buffer(w, h, w * 4, self.format) else { return };
+        let Ok((buffer, canvas)) = self.grid_pool.create_buffer(w, h, w * 4, self.format.wl()) else { return };
         canvas.fill(0);
-        let [r, gr, b, a] = g.color;
-        let ink = if self.format == wl_shm::Format::Abgr8888 { [r, gr, b, a] } else { [b, gr, r, a] };
-        Grid { color: ink, ..g }.coat(canvas, w as usize, h as usize);
+        Grid { color: self.format.pixel(g.color), ..g }.coat(canvas, w as usize, h as usize);
         if buffer.attach_to(surface).is_err() {
             return;
         }
@@ -1874,7 +1941,7 @@ impl Shards {
     }
 
     /// The frame at the clock's `t`, committed with a callback asked for.
-    fn draw(&mut self, device: (i32, i32), logical: (i32, i32), now: Instant, qh: &QueueHandle<App>) {
+    fn draw<D: Dispatcher>(&mut self, device: (i32, i32), logical: (i32, i32), now: Instant, qh: &QueueHandle<D>) {
         let Some(look) = &self.look else { return };
         let (w, h) = device;
         let (Ok(bw), Ok(bh)) = (u16::try_from(w), u16::try_from(h)) else { return };
@@ -1886,7 +1953,7 @@ impl Shards {
             Some(i) => i,
             None if self.buffers.len() >= 3 => return,
             None => {
-                let Ok((buffer, _)) = self.pool.create_buffer(w, h, w * 4, self.format) else { return };
+                let Ok((buffer, _)) = self.pool.create_buffer(w, h, w * 4, self.format.wl()) else { return };
                 self.buffers.push((buffer, None));
                 self.buffers.len() - 1
             }
@@ -1895,15 +1962,11 @@ impl Shards {
         let (buffer, prior) = &mut self.buffers[at];
         let Some(canvas) = self.pool.canvas(buffer) else { return };
         // A buffer swapped to BGRA whole can only be painted whole.
-        let keep = if self.format == wl_shm::Format::Abgr8888 { *prior } else { None };
+        let keep = if self.format == Format::Rgba { *prior } else { None };
         let painted = self.raster.draw(canvas, bw, bh, self.t, look, keep);
         *prior = Some(painted);
         let damage = painted.shards;
-        if self.format != wl_shm::Format::Abgr8888 {
-            for px in canvas.chunks_exact_mut(4) {
-                px.swap(0, 2);
-            }
-        }
+        self.format.swizzle(canvas);
         let render_us = t0.elapsed().as_micros();
         let surface = self.layer.wl_surface();
         if self.buffers[at].0.attach_to(surface).is_err() {

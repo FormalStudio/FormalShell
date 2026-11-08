@@ -208,7 +208,7 @@ impl App {
         let qh = self.qh.clone();
         let Some(w) = &mut self.plugin_overlay else { return };
         let animating = w.modal.animating(now);
-        if (w.dirty || animating || !w.modal.surface.mapped) && w.modal.surface.configured {
+        if (w.dirty || animating || !w.modal.surface.mapped()) && w.modal.surface.configured {
             w.dirty = false;
             w.modal.sync_region(&self.compositor);
             let _raster = crate::scene::raster_at(w.modal.surface.scale());

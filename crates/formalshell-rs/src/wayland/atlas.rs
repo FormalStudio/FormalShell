@@ -161,7 +161,7 @@ impl App {
         let theme = &self.store.theme.theme;
         let moving = m.globe.animating();
         let animating = w.shown.animating(now) || moving;
-        if m.dirty || animating || !w.shown.modal.surface.mapped {
+        if m.dirty || animating || !w.shown.modal.surface.mapped() {
             w.shown.modal.sync_region(&self.compositor);
             let _raster = crate::scene::raster_at(w.shown.modal.surface.scale());
             w.shown.layout(m, &r, theme, &mut self.kit, now);

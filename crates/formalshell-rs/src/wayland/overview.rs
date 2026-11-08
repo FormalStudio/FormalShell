@@ -27,7 +27,7 @@ use super::capture::{self, Owner};
 use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, Scene};
 use crate::services::{appicon, compositor, wallpaper};
-use crate::surface::Surface;
+use crate::surface::{Backend, Surface};
 use crate::surfaces::overview::{self as ov, Drag, Geometry, Overview, Phase, Sel};
 
 /// The longest the zoom waits for the current workspace's frames.
@@ -160,7 +160,7 @@ impl App {
         layer.set_exclusive_zone(0);
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         layer.commit();
-        let mut surface = Surface::on("overview", layer, &self.shm, self.started, &output);
+        let mut surface = Surface::on("overview", Backend::Cpu, layer, &self.shm, self.started, &output);
         surface.wait_map = true;
         self.overview.win = Some((surface, Scene::clear(size.0 as i32, size.1 as i32), output));
         compositor::send(compositor::Command::RefreshWindows);
@@ -310,9 +310,7 @@ impl App {
 
     pub fn overview_frame(&mut self) {
         let Some((s, _, _)) = &mut self.overview.win else { return };
-        (s.frame_pending, s.callbacks) = (false, s.callbacks + 1);
-        if !s.mapped {
-            s.mapped = true;
+        if s.landed(Instant::now()) {
             self.log("overview mapped");
         }
         self.overview.dirty = true;
@@ -381,7 +379,7 @@ impl App {
         }
         let now = Instant::now();
         let (ms, _) = self.overview_curve();
-        let ready = self.overview.win.as_ref().is_some_and(|(s, _, _)| s.configured && s.mapped);
+        let ready = self.overview.win.as_ref().is_some_and(|(s, _, _)| s.configured && s.mapped());
         let m = &mut self.overview.model;
         if m.phase == Phase::Opening && ready {
             let current = m.rows.get(m.current_row()).map(|r| r.windows.iter().map(|w| w.id.clone()).collect::<Vec<_>>()).unwrap_or_default();
@@ -406,7 +404,7 @@ impl App {
             return;
         }
         let animating = self.overview.model.animating(now);
-        let drawable = self.overview.win.as_ref().is_some_and(|(s, _, _)| s.configured && !s.frame_pending);
+        let drawable = self.overview.win.as_ref().is_some_and(|(s, _, _)| s.configured && !s.frame_pending());
         if !drawable || !(self.overview.dirty || animating) {
             return;
         }

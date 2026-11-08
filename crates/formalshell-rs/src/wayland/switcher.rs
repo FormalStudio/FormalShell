@@ -17,7 +17,7 @@ use super::App;
 use super::capture::Owner;
 use crate::scene::{Bitmap, Scene};
 use crate::services::{appicon, compositor};
-use crate::surface::Surface;
+use crate::surface::{Backend, Surface};
 use crate::surfaces::switcher::{self, Input, Switcher, model};
 
 pub const OFF: &str = "error: switcher is off (switcher.enabled)";
@@ -173,7 +173,7 @@ impl App {
             layer.set_exclusive_zone(-1);
             layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
             layer.commit();
-            let mut surface = Surface::new("switcher", layer, &self.shm, self.started);
+            let mut surface = Surface::new("switcher", Backend::Gpu, layer, &self.shm, self.started);
             surface.wait_map = true;
             let (w, h) = self.output_size();
             self.switcher.win = Some((surface, Scene::clear(w as i32, h as i32)));
@@ -263,9 +263,7 @@ impl App {
     pub fn switcher_frame(&mut self) {
         let now = Instant::now();
         let Some((s, _)) = &mut self.switcher.win else { return };
-        (s.frame_pending, s.callbacks) = (false, s.callbacks + 1);
-        if !s.mapped {
-            s.mapped = true;
+        if s.landed(now) {
             let m = &mut self.switcher.model;
             m.prime_at = Some(now + switcher::PRIME);
             m.capture_at = Some(now + switcher::CAPTURE_AFTER);
@@ -331,7 +329,7 @@ impl App {
         }
 
         let (alpha, fading) = self.switcher.model.alpha(now);
-        if self.switcher.win.as_ref().is_some_and(|(s, _)| s.mapped) && !self.switcher.model.shown && !fading {
+        if self.switcher.win.as_ref().is_some_and(|(s, _)| s.mapped()) && !self.switcher.model.shown && !fading {
             self.switcher.win = None;
             self.switcher.model.capturing = false;
             self.switcher.model.cells.clear();
@@ -340,7 +338,7 @@ impl App {
             self.log("switcher unmapped");
             return;
         }
-        let ready = self.switcher.win.as_ref().is_some_and(|(s, _)| s.configured && !s.frame_pending);
+        let ready = self.switcher.win.as_ref().is_some_and(|(s, _)| s.configured && !s.frame_pending());
         if !ready || !(self.switcher.dirty || fading) {
             return;
         }

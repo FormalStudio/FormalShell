@@ -393,7 +393,7 @@ impl Host {
 
     /// Gone from the screen: closed and landed, or cut by a handoff.
     pub fn finished(&self, now: Instant) -> bool {
-        self.handed || (self.surface.mapped && self.card.finished(now))
+        self.handed || (self.surface.mapped() && self.card.finished(now))
     }
 
     pub fn close(&mut self, now: Instant) {
@@ -533,7 +533,7 @@ impl Host {
         let spatial = Clock::Spatial.ms(theme) * self.scale;
         let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, Clock::Spatial.curve()), Animated::new(th, Clock::Spatial.curve())));
         if self.open {
-            let armed = self.surface.mapped && self.handoff.is_none() && self.morph_armed;
+            let armed = self.surface.mapped() && self.handoff.is_none() && self.morph_armed;
             for (a, t, morphs) in [(&mut morph.0, tw, true), (&mut morph.1, th, !follows)] {
                 if armed && morphs { a.set(now, t, spatial) } else { a.jump(t) }
             }
@@ -567,7 +567,7 @@ impl Host {
         }
         let moved = (rest, live) != (self.card.rest(), self.card.live());
         self.card.set_rect(rest, live);
-        if moved && !self.card.animating(now) || !self.surface.mapped {
+        if moved && !self.card.animating(now) || !self.surface.mapped() {
             self.card.tick(now);
         }
         self.draw(store, theme, kit, now);
