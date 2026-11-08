@@ -2,6 +2,8 @@
 //! percentage opt-in (`bar.widgets.audio.showLabel`). Right click mutes,
 //! the wheel steps it by 5%.
 
+use fs_audio::Visual;
+
 use crate::services::devices::{self, Op};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
@@ -27,7 +29,7 @@ impl Cell for Audio {
 
     fn view(&self, look: &Look) -> View {
         let s = &self.state;
-        let percent = (s.volume.unwrap_or(0.0) * 100.0).round();
+        let percent = (s.volume.map_or(0.0, Visual::as_f64) * 100.0).round();
         let head = if s.muted { "OUTPUT MUTED" } else { "OUTPUT VOLUME" };
         let mut parts = vec![Part::Icon { name: if s.muted { "volume-x" } else { "volume-2" }.into(), dim: false, dot: false }];
         if self.show_label {
@@ -45,6 +47,6 @@ impl Cell for Audio {
 
     fn wheel(&mut self, up: bool, _: &Env) -> Action {
         let Some(v) = self.state.volume else { return Action::None };
-        Action::Device(Op::Volume(v + if up { 0.05 } else { -0.05 }))
+        Action::Device(Op::Volume(Visual::from_f64(v.as_f64() + if up { 0.05 } else { -0.05 })))
     }
 }

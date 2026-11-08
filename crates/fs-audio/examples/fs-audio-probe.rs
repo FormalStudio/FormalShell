@@ -9,7 +9,7 @@
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use fs_audio::{Command, Event, Graph, Node};
+use fs_audio::{Command, Event, Graph, Node, Visual};
 use serde_json::{Value, json};
 
 fn pump(
@@ -45,8 +45,8 @@ fn node_json(graph: &Graph, n: &Node) -> Value {
         "app": n.app().name,
         "binary": n.app().binary,
         "ready": n.ready,
-        "volume": n.audio.as_ref().map(|a| a.volume()),
-        "volumes": audio.volumes,
+        "volume": n.audio.as_ref().map(|a| a.volume().get()),
+        "volumes": audio.volumes.iter().map(|v| v.get()).collect::<Vec<_>>(),
         "channels": audio.channels,
         "muted": audio.muted,
         "target": graph.stream_target(n.id).map(|t| t.name.clone()),
@@ -99,7 +99,7 @@ fn main() -> ExitCode {
             };
             audio.send(Command::SetVolume {
                 node,
-                volume: v.parse().expect("a number"),
+                volume: Visual::new(v.parse().expect("a number")),
             });
             settle(&mut graph);
         }

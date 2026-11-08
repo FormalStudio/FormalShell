@@ -16,7 +16,7 @@ use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, Result};
 
 use proxy::{OBJECT_PATH, PLAYER_IFACE, PlayerProxy, ROOT_IFACE, RootProxy};
-pub use state::{LoopStatus, Metadata, PlaybackStatus, PlayerState};
+pub use state::{LoopStatus, Metadata, PlaybackStatus, PlayerState, Volume};
 
 const BUS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 
@@ -309,9 +309,8 @@ impl Controls {
         self.set_prop(name, "LoopStatus", Value::from(status.as_str())).await
     }
 
-    /// `volume` is the player's own 0..1 scale.
-    pub async fn set_volume(&self, name: &str, volume: f64) -> Result<()> {
-        self.set_prop(name, "Volume", Value::from(volume)).await
+    pub async fn set_volume(&self, name: &str, volume: Volume) -> Result<()> {
+        self.set_prop(name, "Volume", Value::from(volume.get())).await
     }
 
     pub async fn raise(&self, name: &str) -> Result<()> {

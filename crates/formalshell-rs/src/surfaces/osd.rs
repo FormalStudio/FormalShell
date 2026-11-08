@@ -4,6 +4,8 @@
 //! rather than the live value, so volume ticking 3% to 97% or a long media
 //! title swapping in never reflows it.
 
+use fs_audio::Visual;
+use fs_theme::icons;
 use fs_theme::theme::Theme;
 
 use crate::surfaces::bar::cell::Kit;
@@ -26,59 +28,47 @@ impl Kind {
     }
 }
 
-/// Which icon the pill draws (Osd/icon.js). A muted sink keeps its pre-mute
-/// percentage on the readout but draws `volume-x`: the icon answers "will I
-/// hear this" and the number answers "where is the slider".
-pub fn icon_name(kind: Kind, volume: f64, muted: bool) -> &'static str {
-    match kind {
-        Kind::Brightness => "sun",
-        Kind::Media => "music",
-        Kind::Volume if muted || !(volume > 0.0) => "volume-x",
-        Kind::Volume if volume < 0.5 => "volume-1",
-        Kind::Volume => "volume-2",
-    }
-}
-
-/// What the pill reads off the store.
+/// What the pill reads off the store, in its own kind's scale.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Reading {
-    pub kind: Kind,
-    pub media: String,
-    /// Volume 0 to 1, muted, and the backlight's percent.
-    pub volume: f64,
-    pub muted: bool,
-    pub brightness: f64,
+pub enum Reading {
+    /// The default sink.
+    Volume { level: Visual, muted: bool },
+    /// The backlight's percent.
+    Brightness { percent: f64 },
+    Media(String),
 }
 
 impl Reading {
-    /// Muted keeps showing the pre-mute number but drops the fill to 0: the
-    /// track is the "how much will I actually hear" signal.
-    fn fraction(&self) -> f64 {
-        match self.kind {
-            Kind::Brightness => (self.brightness / 100.0).clamp(0.0, 1.0),
-            _ if self.muted => 0.0,
-            _ => self.volume.clamp(0.0, 1.0),
-        }
-    }
-
-    fn percent(&self) -> i64 {
-        match self.kind {
-            Kind::Brightness => self.brightness.round() as i64,
-            _ => (self.volume * 100.0).round() as i64,
+    /// Which icon the pill draws (Osd/icon.js). A muted sink keeps its
+    /// pre-mute percentage on the readout but draws `volume-x`: the icon
+    /// answers "will I hear this" and the number answers "where is the
+    /// slider".
+    fn icon(&self) -> &'static str {
+        match self {
+            Reading::Brightness { .. } => "sun",
+            Reading::Media(_) => "music",
+            Reading::Volume { muted: true, .. } => "volume-x",
+            Reading::Volume { level, .. } => icons::volume(level.track()),
         }
     }
 }
 
 pub fn content(r: &Reading, theme: &Theme, kit: &mut Kit, inner_width: f64) -> El {
     let s = &theme.space;
-    let icon = w::icon(icon_name(r.kind, r.volume, r.muted)).size(Type::Title).ink(Ink::Fg);
-    if r.kind == Kind::Media {
-        return w::row(s.icon_gap, vec![icon, w::label(r.media.clone()).size(Type::Body).elide()]).fill();
-    }
-    let text = format!("{}%", r.percent());
+    let icon = w::icon(r.icon()).size(Type::Title).ink(Ink::Fg);
+    // Muted keeps showing the pre-mute number but drops the fill to 0: the
+    // track is the "how much will I actually hear" signal.
+    let (fraction, percent) = match r {
+        Reading::Media(text) => return w::row(s.icon_gap, vec![icon, w::label(text.clone()).size(Type::Body).elide()]).fill(),
+        Reading::Volume { level, muted } => {
+            (if *muted { 0.0 } else { level.track().as_fraction() }, (level.as_f64() * 100.0).round() as i64)
+        }
+        Reading::Brightness { percent } => ((percent / 100.0).clamp(0.0, 1.0), percent.round() as i64),
+    };
+    let text = format!("{percent}%");
     let column = |t: &str| w::value(t.to_owned()).ink(Ink::Fg).mono();
     let widest = ui::measure(&column("100%"), inner_width, theme, kit).0;
     let own = ui::measure(&column(&text), inner_width, theme, kit).0;
     let readout = column(&text).pad_start((widest - own).max(0.0));
-    w::row(s.icon_gap, vec![icon, w::track(r.fraction()).fill(), readout]).fill()
+    w::row(s.icon_gap, vec![icon, w::track(fraction).fill(), readout]).fill()
 }

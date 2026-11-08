@@ -4,6 +4,8 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use fs_types::Fraction;
+
 const LUCIDE: &str = include_str!("../icons/lucide.js");
 const DISTRO: &str = include_str!("../icons/distro.js");
 
@@ -61,6 +63,15 @@ pub fn glyph(name: &str) -> Glyph {
     Glyph { text, family: table.family }
 }
 
+/// The speaker for a volume's share of its track: none, under half, or more.
+pub fn volume(level: Fraction) -> &'static str {
+    match level.as_fraction() {
+        l if l <= 0.0 => "volume-x",
+        l if l < 0.5 => "volume-1",
+        _ => "volume-2",
+    }
+}
+
 /// The real logo for an os-release `ID`, or none.
 pub fn distro_logo(id: &str) -> Option<&'static str> {
     distro().get(id.trim().to_lowercase().as_str()).copied()
@@ -77,5 +88,11 @@ mod tests {
         assert_eq!(glyph("no-such-icon"), glyph("circle-help"));
         assert_eq!(distro_logo("NixOS"), Some("\u{F313}"));
         assert_eq!(distro_logo("plan9"), None);
+    }
+
+    #[test]
+    fn volume_steps_at_half() {
+        let at = |f| volume(Fraction::from_fraction(f));
+        assert_eq!([at(0.0), at(0.49), at(0.5), at(1.0)], ["volume-x", "volume-1", "volume-2", "volume-2"]);
     }
 }

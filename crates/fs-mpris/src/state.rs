@@ -7,6 +7,20 @@ use zbus::zvariant::{OwnedValue, Value};
 /// on every player, so it counts as no track id.
 const NO_TRACK: &str = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
 
+/// The player's own `Volume`: 0..1, with anything above legal on the wire.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Volume(f64);
+
+impl Volume {
+    pub const fn new(volume: f64) -> Self {
+        Self(volume)
+    }
+
+    pub fn get(self) -> f64 {
+        self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PlaybackStatus {
     Playing,
@@ -64,7 +78,7 @@ pub struct PlayerState {
     /// `None` when the player does not expose the property.
     pub shuffle: Option<bool>,
     pub loop_status: Option<LoopStatus>,
-    pub volume: Option<f64>,
+    pub volume: Option<Volume>,
     /// The player's introspection declares `Volume` writable. Chromium
     /// reports a constant 1 it never lets anyone set.
     pub volume_writable: bool,
@@ -174,7 +188,7 @@ impl PlayerState {
             "Playlist" => LoopStatus::Playlist,
             _ => LoopStatus::None,
         });
-        self.volume = get_f64(props, "Volume");
+        self.volume = get_f64(props, "Volume").map(Volume);
         self.can_go_next = get_bool(props, "CanGoNext").unwrap_or(false);
         self.can_go_previous = get_bool(props, "CanGoPrevious").unwrap_or(false);
         self.can_play = get_bool(props, "CanPlay").unwrap_or(false);

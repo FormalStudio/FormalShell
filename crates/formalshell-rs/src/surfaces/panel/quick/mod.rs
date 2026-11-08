@@ -8,7 +8,7 @@ pub mod grid;
 
 use std::cell::RefCell;
 
-use fs_audio::Command;
+use fs_audio::{Command, Visual};
 use fs_chrome::bar::layout::{self, Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::widget_panel;
 use fs_types::{Edge, Region};
@@ -206,11 +206,11 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     let a = &store.devices.audio;
     if let Some(volume) = a.volume {
         let glyph = if a.muted { "volume-x" } else { "volume-2" };
-        out.push(Tile::slider("volume", glyph, "Volume", volume, !a.muted, audio_devices(store, true).len() > 1));
+        out.push(Tile::slider("volume", glyph, "Volume", volume.as_f64(), !a.muted, audio_devices(store, true).len() > 1));
     }
     if a.source {
         let glyph = if a.source_muted { "mic-off" } else { "mic" };
-        out.push(Tile::slider("microphone", glyph, "Microphone", a.source_volume.unwrap_or(0.0), !a.source_muted, audio_devices(store, false).len() > 1));
+        out.push(Tile::slider("microphone", glyph, "Microphone", a.source_volume.map_or(0.0, Visual::as_f64), !a.source_muted, audio_devices(store, false).len() > 1));
     }
     let screens = store.display.devices();
     if let Some(first) = screens.first() {
@@ -1307,11 +1307,11 @@ impl QuickSettings {
         let a = &store.devices.audio;
         match key {
             "volume" => {
-                let v = at(a.volume.unwrap_or(0.0));
+                let v = Visual::from_f64(at(a.volume.map_or(0.0, Visual::as_f64)));
                 fx.service(move |ctx| devices::run(ctx, Op::Volume(v)));
             }
             "microphone" => {
-                let v = at(a.source_volume.unwrap_or(0.0));
+                let v = Visual::from_f64(at(a.source_volume.map_or(0.0, Visual::as_f64)));
                 fx.service(move |ctx| devices::run(ctx, Op::SourceVolume(v)));
             }
             "brightness" => {

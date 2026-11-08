@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use fs_media::radio::model as rm;
+use fs_theme::icons;
 use fs_theme::theme::Theme;
 use vello_cpu::kurbo::{Affine, Rect};
 
@@ -495,16 +496,16 @@ fn player_el(a: &Atlas, r: &radio::State, s: &fs_theme::tokens::Space) -> El {
         ],
     )
     .fill();
-    let glyph = if r.volume > 0 { if r.volume < 50 { "volume-1" } else { "volume-2" } } else { "volume-x" };
+    let glyph = icons::volume(r.volume.track());
     let volume = w::row(
         0.0,
         vec![
             strut(s.control_height),
             w::icon(glyph).ink(Ink::Muted).pad_start(s.control_padding_x),
             w::space(s.icon_gap),
-            w::slider(r.volume as f64 / 100.0).fill().on("volume"),
+            w::slider(r.volume.track().as_fraction()).fill().on("volume"),
             w::space(s.icon_gap),
-            w::value(format!("{}%", r.volume)).ink(Ink::Muted),
+            w::value(format!("{}%", r.volume.percent())).ink(Ink::Muted),
         ],
     )
     .fill();

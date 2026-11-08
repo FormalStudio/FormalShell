@@ -771,8 +771,8 @@ impl Atlas {
             Key::Enter => self.play_selected(r),
             Key::Space => self.play_pause(r),
             Key::Text(t) if t.eq_ignore_ascii_case("r") => self.tune_random(r),
-            Key::Text(t) if t == "+" || t == "=" => radio::send(Cmd::SetVolume((r.volume + 5) as f64)),
-            Key::Text(t) if t == "-" => radio::send(Cmd::SetVolume((r.volume - 5) as f64)),
+            Key::Text(t) if t == "+" || t == "=" => radio::send(Cmd::SetVolume(r.volume.step(5))),
+            Key::Text(t) if t == "-" => radio::send(Cmd::SetVolume(r.volume.step(-5))),
             Key::Text(t) if t.eq_ignore_ascii_case("m") => radio::send(Cmd::ToggleMute),
             Key::Text(t) if t.eq_ignore_ascii_case("f") && self.selected.is_some() => {
                 radio::send(Cmd::ToggleFavorite(self.selected.clone().expect("selected")));

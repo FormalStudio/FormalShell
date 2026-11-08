@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_channel::{Receiver, Sender};
-use fs_audio::{Command, Graph, Node};
+use fs_audio::{Command, Graph, Node, Visual};
 use futures_lite::FutureExt;
 
 use crate::runtime::Ctx;
@@ -16,7 +16,7 @@ use crate::store;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Audio {
     /// None while there is no default sink with an audio interface.
-    pub volume: Option<f64>,
+    pub volume: Option<Visual>,
     pub muted: bool,
     /// The default sink's description, or its node name.
     pub name: String,
@@ -24,7 +24,7 @@ pub struct Audio {
     pub source: bool,
     pub source_muted: bool,
     /// The default source's volume, while it has one.
-    pub source_volume: Option<f64>,
+    pub source_volume: Option<Visual>,
     /// Something records off a source ([`fs_audio::Graph::capturing`]).
     pub capturing: bool,
     /// The graph the audio panel lists, read only while it is open.
@@ -44,7 +44,7 @@ pub struct Row {
     pub id: u32,
     pub name: String,
     pub label: String,
-    pub volume: f64,
+    pub volume: Visual,
     pub muted: bool,
 }
 
@@ -79,7 +79,7 @@ pub struct StreamInfo {
     pub label: String,
     /// media.name.
     pub title: String,
-    pub volume: Option<f64>,
+    pub volume: Option<Visual>,
     /// The sink it is linked into.
     pub target: String,
 }
@@ -105,7 +105,7 @@ fn routing(graph: &Graph, streams: bool) -> Routing {
                 keys: [key(n, "application.name"), key(n, "application.process.binary"), key(n, "application.id"), Some(n.name.clone())],
                 label: n.label().to_owned(),
                 title: n.props.get("media.name").cloned().unwrap_or_default(),
-                volume: n.audio.as_ref().map(|a| a.volume() as f64),
+                volume: n.audio.as_ref().map(|a| a.volume()),
                 target: graph.stream_target(n.id).map(|t| t.name.clone()).unwrap_or_default(),
             })
             .collect(),
@@ -124,7 +124,7 @@ thread_local! {
 
 fn row(n: &Node, label: &str) -> Option<Row> {
     let a = n.audio.as_ref()?;
-    Some(Row { id: n.id, name: n.name.clone(), label: label.to_owned(), volume: a.volume() as f64, muted: a.muted })
+    Some(Row { id: n.id, name: n.name.clone(), label: label.to_owned(), volume: a.volume(), muted: a.muted })
 }
 
 fn device_label(n: &Node) -> &str {
@@ -148,7 +148,7 @@ fn snapshot(graph: &Graph) -> Audio {
     let sink = node.and_then(|n| n.audio.as_ref());
     let source = graph.default_source().and_then(|n| n.audio.as_ref());
     Audio {
-        volume: sink.map(|a| a.volume() as f64),
+        volume: sink.map(|a| a.volume()),
         muted: sink.is_some_and(|a| a.muted),
         name: node
             .filter(|_| sink.is_some())
@@ -156,7 +156,7 @@ fn snapshot(graph: &Graph) -> Audio {
             .unwrap_or_default(),
         source: source.is_some(),
         source_muted: source.is_some_and(|a| a.muted),
-        source_volume: source.map(|a| a.volume() as f64),
+        source_volume: source.map(|a| a.volume()),
         capturing: graph.capturing(),
         lists: PANEL.load(Ordering::Relaxed).then(|| lists(graph)),
         devices: graph
@@ -265,12 +265,17 @@ fn with_node(source: bool, f: impl FnOnce(&fs_audio::Audio, u32, &fs_audio::Audi
     });
 }
 
-pub fn set_volume(_: &Ctx, volume: f64) {
-    with_node(false, |h, node, _| h.send(Command::SetVolume { node, volume: volume.clamp(0.0, 1.0) as f32 }));
+/// Held to 0..1: overdrive is the audio panel's, per stream.
+fn full_at_most(volume: Visual) -> Visual {
+    Visual::new(volume.get().clamp(0.0, 1.0))
 }
 
-pub fn set_source_volume(_: &Ctx, volume: f64) {
-    with_node(true, |h, node, _| h.send(Command::SetVolume { node, volume: volume.clamp(0.0, 1.0) as f32 }));
+pub fn set_volume(_: &Ctx, volume: Visual) {
+    with_node(false, |h, node, _| h.send(Command::SetVolume { node, volume: full_at_most(volume) }));
+}
+
+pub fn set_source_volume(_: &Ctx, volume: Visual) {
+    with_node(true, |h, node, _| h.send(Command::SetVolume { node, volume: full_at_most(volume) }));
 }
 
 pub fn toggle_mute(_: &Ctx) {

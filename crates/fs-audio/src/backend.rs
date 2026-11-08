@@ -35,8 +35,7 @@ use spa::utils::result::AsyncSeq;
 
 use crate::{
     AudioState, Command, DEFAULT_TYPE, Defaults, Event, Graph, KEY_CONFIGURED_SINK,
-    KEY_CONFIGURED_SOURCE, Link, LinkState, Node, default_value, linear_from_visual,
-    scaled_volumes, visual_from_linear,
+    KEY_CONFIGURED_SOURCE, Linear, Link, LinkState, Node, Visual, default_value, scaled_volumes,
 };
 
 const RETRY: Duration = Duration::from_secs(2);
@@ -232,7 +231,7 @@ enum Sync {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 struct VolumeProps {
-    volumes: Vec<f32>,
+    volumes: Vec<Visual>,
     channels: Vec<u32>,
     mute: bool,
     step: Option<f32>,
@@ -244,7 +243,7 @@ struct Hw {
     route_device: Option<i32>,
     pro_audio: bool,
     /// The last volumes the server reported, for the device path's step check.
-    server: Vec<f32>,
+    server: Vec<Visual>,
     step: Option<f32>,
 }
 
@@ -256,8 +255,8 @@ struct DeviceEntry {
     /// A route write is in flight; the next Route param acknowledges it.
     waiting: bool,
     /// Node id to the volumes held back while `waiting`.
-    pending: HashMap<u32, Vec<f32>>,
-    written: HashMap<u32, Vec<f32>>,
+    pending: HashMap<u32, Vec<Visual>>,
+    written: HashMap<u32, Vec<Visual>>,
 }
 
 struct State {
@@ -615,11 +614,11 @@ impl State {
         }
     }
 
-    fn set_volumes(&mut self, id: u32, volumes: Vec<f32>) {
+    fn set_volumes(&mut self, id: u32, volumes: Vec<Visual>) {
         let Some(audio) = self.graph.nodes.get(&id).and_then(|n| n.audio.as_ref()) else {
             return;
         };
-        let volumes: Vec<f32> = volumes.into_iter().map(|v| v.max(0.0)).collect();
+        let volumes: Vec<Visual> = volumes.into_iter().map(|v| Visual::new(v.get().max(0.0))).collect();
         if volumes == audio.volumes || volumes.len() != audio.volumes.len() {
             return;
         }
@@ -640,7 +639,7 @@ impl State {
                     || volumes
                         .iter()
                         .zip(&hw.server)
-                        .any(|(t, s)| *t == 0.0 || (t - s).abs() >= hw.step.unwrap_or(0.0));
+                        .any(|(t, s)| t.get() == 0.0 || (t.get() - s.get()).abs() >= hw.step.unwrap_or(0.0));
                 if !significant {
                     return;
                 }
@@ -707,7 +706,7 @@ impl State {
         device: u32,
         route_device: i32,
         props: Vec<Property>,
-        volumes: Option<(u32, Vec<f32>)>,
+        volumes: Option<(u32, Vec<Visual>)>,
     ) {
         let Some(entry) = self.devices.get_mut(&device) else {
             return;
@@ -794,11 +793,11 @@ fn apply_volume_props(audio: &mut AudioState, props: &VolumeProps) {
     audio.muted = props.mute;
 }
 
-fn channel_volumes(volumes: &[f32]) -> Vec<Property> {
+fn channel_volumes(volumes: &[Visual]) -> Vec<Property> {
     vec![Property::new(
         ss::SPA_PROP_channelVolumes,
         Value::ValueArray(ValueArray::Float(
-            volumes.iter().map(|v| linear_from_visual(*v)).collect(),
+            volumes.iter().map(|v| v.to_linear().get()).collect(),
         )),
     )]
 }
@@ -837,7 +836,7 @@ fn volume_props(value: &Value) -> Option<VolumeProps> {
     for prop in &object.properties {
         match (prop.key, &prop.value) {
             (ss::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(v))) => {
-                out.volumes = v.iter().map(|l| visual_from_linear(*l)).collect();
+                out.volumes = v.iter().map(|l| Visual::from_linear(Linear::new(*l))).collect();
             }
             (ss::SPA_PROP_channelMap, Value::ValueArray(ValueArray::Id(ids))) => {
                 out.channels = ids.iter().map(|id| id.0).collect();
@@ -908,8 +907,8 @@ mod tests {
             Property::new(ss::SPA_PROP_volumeStep, Value::Float(0.01)),
         ]);
         let props = volume_props(&roundtrip(&value)).unwrap();
-        assert!((props.volumes[0] - 0.5).abs() < 1e-6);
-        assert_eq!(props.volumes[1], 1.0);
+        assert!((props.volumes[0].get() - 0.5).abs() < 1e-6);
+        assert_eq!(props.volumes[1].get(), 1.0);
         assert!(props.mute);
         assert_eq!(props.step, Some(0.01));
         assert_eq!(
@@ -928,7 +927,7 @@ mod tests {
                 Property::new(ss::SPA_PARAM_ROUTE_index, Value::Int(7)),
                 Property::new(
                     ss::SPA_PARAM_ROUTE_props,
-                    props_value(channel_volumes(&[0.5])),
+                    props_value(channel_volumes(&[Visual::new(0.5)])),
                 ),
                 Property::new(ss::SPA_PARAM_ROUTE_save, Value::Bool(true)),
             ],
@@ -936,7 +935,7 @@ mod tests {
         let (device, index, props) =
             parse_route(Pod::from_bytes(&serialize(&route).unwrap()).unwrap()).unwrap();
         assert_eq!((device, index), (3, 7));
-        assert!((props.volumes[0] - 0.5).abs() < 1e-6);
+        assert!((props.volumes[0].get() - 0.5).abs() < 1e-6);
         assert_eq!(props.channels, vec![ss::SPA_AUDIO_CHANNEL_MONO]);
     }
 

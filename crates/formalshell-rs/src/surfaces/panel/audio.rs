@@ -10,7 +10,7 @@
 //! to 0..1.5 with a notch at 1.0. The lists come from fs-audio's graph,
 //! published only while the panel is open.
 
-use fs_audio::Command;
+use fs_audio::{Command, Visual};
 use fs_system::audio::{clamp_device, clamp_stream};
 
 use super::{Effect, Panel, View};
@@ -29,7 +29,7 @@ fn send(fx: &Effect, c: Command) {
 }
 
 fn set_volume(fx: &Effect, node: u32, v: f64) {
-    send(fx, Command::SetVolume { node, volume: v as f32 });
+    send(fx, Command::SetVolume { node, volume: Visual::from_f64(v) });
 }
 
 fn set_muted(fx: &Effect, node: u32, muted: bool) {
@@ -118,7 +118,7 @@ impl Panel for Audio {
         let l = a.lists.as_ref().unwrap_or(&empty);
         let mut out = Vec::new();
         if let Some(volume) = a.volume {
-            let volume = clamp_device(volume);
+            let volume = clamp_device(volume.as_f64());
             let hero = w::hero(
                 s,
                 w::Hero {
@@ -144,7 +144,7 @@ impl Panel for Audio {
             out.push(w::panel_section_n(s, "Output", l.outputs.len(), rows, ""));
         }
         if !l.inputs.is_empty() {
-            let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume), r.muted));
+            let (volume, muted) = l.source.as_ref().map_or((0.0, false), |r| (clamp_device(r.volume.as_f64()), r.muted));
             let track = w::slider(volume).on("volume:input-slider");
             let master = mixer_row(s, Some(if muted { "mic-off" } else { "mic" }), "Level", volume, muted, "input-slider", track);
             let source = l.source.as_ref().map(|r| r.id);
@@ -160,9 +160,10 @@ impl Panel for Audio {
                 .iter()
                 .map(|r| {
                     let key = format!("stream:{}", r.id);
-                    let track = w::slider(r.volume / 1.5).notch(1.0 / 1.5).on(format!("volume:{key}"));
+                    let volume = r.volume.as_f64();
+                    let track = w::slider(volume / 1.5).notch(1.0 / 1.5).on(format!("volume:{key}"));
                     let label = if r.label.is_empty() { "Stream" } else { &r.label };
-                    mixer_row(s, None, label, r.volume, r.muted, &key, track).stop(key)
+                    mixer_row(s, None, label, volume, r.muted, &key, track).stop(key)
                 })
                 .collect();
             out.push(w::panel_section_n(s, "Apps", l.streams.len(), rows, ""));
@@ -178,14 +179,14 @@ impl Panel for Audio {
         match (verb, &ev.what) {
             ("mute", What::Toggle(_)) => Self::mute(fx, key),
             ("volume", What::Fraction(_) | What::Wheel(_)) => {
-                let step = |cur: f64| match ev.what {
-                    What::Wheel(d) => cur + d as f64 * STEP,
-                    _ => cur,
+                let step = |cur: Visual| match ev.what {
+                    What::Wheel(d) => cur.as_f64() + d as f64 * STEP,
+                    _ => cur.as_f64(),
                 };
                 match key {
                     "output-slider" => {
                         if let Some(id) = l.sink {
-                            let to = if let What::Fraction(f) = ev.what { f } else { step(a.volume.unwrap_or(0.0)) };
+                            let to = if let What::Fraction(f) = ev.what { f } else { step(a.volume.unwrap_or_default()) };
                             set_volume(fx, id, clamp_device(to));
                         }
                     }
@@ -228,17 +229,17 @@ impl Panel for Audio {
         match stop {
             "output-slider" => {
                 if let (Some(id), Some(v)) = (l.sink, fx.store.devices.audio.volume) {
-                    set_volume(fx, id, clamp_device(v + d));
+                    set_volume(fx, id, clamp_device(v.as_f64() + d));
                 }
             }
             "input-slider" => {
                 if let Some(r) = &l.source {
-                    set_volume(fx, r.id, clamp_device(r.volume + d));
+                    set_volume(fx, r.id, clamp_device(r.volume.as_f64() + d));
                 }
             }
             _ => {
                 if let Some(("stream", r)) = by_key(&l, stop) {
-                    set_volume(fx, r.id, clamp_stream(r.volume + d));
+                    set_volume(fx, r.id, clamp_stream(r.volume.as_f64() + d));
                 }
             }
         }

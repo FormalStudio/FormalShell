@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 use async_io::{Async, Timer};
 use fs_media::radio::stations::{self, Station};
+use fs_types::Fraction;
 use futures_lite::io::{AsyncWriteExt, BufReader, ReadHalf, WriteHalf, split};
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 use serde_json::{Value, json};
@@ -31,11 +32,40 @@ const STOP_GRACE: Duration = Duration::from_millis(1500);
 const CONNECT_EVERY: Duration = Duration::from_millis(100);
 const CONNECT_TRIES: u32 = 60;
 
+/// mpv's `volume`: a whole percent, capped by `--volume-max=100`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Volume(i64);
+
+impl Volume {
+    /// Rounded to a whole percent in 0..=100, as mpv is asked for it.
+    pub fn from_percent(percent: f64) -> Self {
+        Self(percent.round().clamp(0.0, 100.0) as i64)
+    }
+
+    pub fn percent(self) -> i64 {
+        self.0
+    }
+
+    /// `by` whole percent from here.
+    pub fn step(self, by: i64) -> Self {
+        Self::from_percent((self.0 + by) as f64)
+    }
+
+    /// The share of a 0..1 track it fills.
+    pub fn track(self) -> Fraction {
+        Fraction::from_fraction(self.0 as f64 / 100.0)
+    }
+
+    pub fn from_track(track: Fraction) -> Self {
+        Self::from_percent(track.as_fraction() * 100.0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
     pub favorites: Vec<Station>,
     pub recent: Vec<Station>,
-    pub volume: i64,
+    pub volume: Volume,
     pub output: String,
     pub station: Option<Station>,
     pub queue: Vec<Station>,
@@ -62,7 +92,7 @@ impl Default for State {
         Self {
             favorites: Vec::new(),
             recent: Vec::new(),
-            volume: 70,
+            volume: Volume(70),
             output: String::new(),
             station: None,
             queue: Vec::new(),
@@ -132,7 +162,7 @@ impl State {
             "station": self.station.as_ref().map_or("", |s| s.name.as_str()),
             "title": self.title,
             "label": self.label(),
-            "volume": self.volume,
+            "volume": self.volume.percent(),
             "muted": self.muted,
             "output": self.output,
             "error": self.error,
@@ -188,7 +218,7 @@ pub enum Cmd {
     Previous,
     Stop,
     Random,
-    SetVolume(f64),
+    SetVolume(Volume),
     /// A sink name, or "" for the default one.
     SetOutput(String),
     RandomRows(Option<Vec<Station>>),
@@ -392,7 +422,7 @@ impl Radio {
         let doc = json!({
             "favorites": self.st.favorites,
             "recent": self.st.recent,
-            "volume": self.st.volume,
+            "volume": self.st.volume.percent(),
             "output": self.st.output,
         });
         let path = state_path();
@@ -416,7 +446,7 @@ impl Radio {
                 Some(saved) => {
                     self.st.favorites = saved.favorites;
                     self.st.recent = saved.recent;
-                    self.st.volume = saved.volume;
+                    self.st.volume = Volume::from_percent(saved.volume as f64);
                     self.st.output = saved.output;
                     self.writable = true;
                 }
@@ -435,7 +465,7 @@ impl Radio {
         ]
         .map(String::from)
         .to_vec();
-        args.push(format!("--volume={}", self.st.volume));
+        args.push(format!("--volume={}", self.st.volume.percent()));
         args.extend(
             [
                 "--volume-max=100",
@@ -601,7 +631,7 @@ impl Radio {
                     }
                     Some("volume") => {
                         if let Some(v) = data.and_then(Value::as_f64) {
-                            let v = v.round().clamp(0.0, 100.0) as i64;
+                            let v = Volume::from_percent(v);
                             if v != self.st.volume {
                                 self.st.volume = v;
                                 self.save_at = Some(Instant::now() + SAVE_DELAY);
@@ -1001,13 +1031,12 @@ impl Radio {
                 self.save_at = Some(Instant::now() + SAVE_DELAY);
             }
             Cmd::SetVolume(v) => {
-                let v = v.round().clamp(0.0, 100.0) as i64;
                 if v == self.st.volume {
                     return;
                 }
                 self.st.volume = v;
                 if self.ready() {
-                    self.write(json!(["set_property", "volume", v])).await;
+                    self.write(json!(["set_property", "volume", v.percent()])).await;
                 }
                 self.save_at = Some(Instant::now() + SAVE_DELAY);
             }

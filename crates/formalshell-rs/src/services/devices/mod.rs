@@ -83,8 +83,8 @@ pub fn start(ctx: &Ctx) {
 /// What a device cell's click or wheel asks for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Op {
-    Volume(f64),
-    SourceVolume(f64),
+    Volume(fs_audio::Visual),
+    SourceVolume(fs_audio::Visual),
     ToggleMute,
     ToggleSourceMute,
     ToggleWifi,

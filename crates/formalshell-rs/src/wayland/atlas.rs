@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use fs_types::Fraction;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
@@ -287,7 +288,7 @@ impl App {
                 {
                     let f = ((x - h.rect.x as f64) / h.rect.w.max(1) as f64).clamp(0.0, 1.0);
                     if h.on.as_deref() == Some("volume") {
-                        radio::send(Cmd::SetVolume(f * 100.0));
+                        radio::send(Cmd::SetVolume(radio::Volume::from_track(Fraction::from_fraction(f))));
                     }
                 }
                 let hit = w.shown.hit(x, y);
@@ -328,7 +329,7 @@ impl App {
                     if let Some(h) = hit.filter(|h| h.on.as_deref() == Some("volume")) {
                         w.sliding = true;
                         let f = ((x - h.rect.x as f64) / h.rect.w.max(1) as f64).clamp(0.0, 1.0);
-                        radio::send(Cmd::SetVolume(f * 100.0));
+                        radio::send(Cmd::SetVolume(radio::Volume::from_track(Fraction::from_fraction(f))));
                     }
                 }
             }

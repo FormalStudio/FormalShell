@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_io::Timer;
-use fs_mpris::{LoopStatus, Mpris, PlaybackStatus};
+use fs_mpris::{LoopStatus, Mpris, PlaybackStatus, Volume};
 use futures_util::future::{Either, select};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
@@ -315,7 +315,7 @@ fn discovers_players_already_on_the_bus() {
         assert_eq!(s.metadata.length_us, Some(200_000_000));
         assert_eq!(s.shuffle, Some(false));
         assert_eq!(s.loop_status, Some(LoopStatus::None));
-        assert_eq!(s.volume, Some(0.5));
+        assert_eq!(s.volume, Some(Volume::new(0.5)));
         assert!(s.can_go_next && !s.can_go_previous && s.can_seek_now() && s.can_raise);
         assert!(s.position_supported);
     });
@@ -397,7 +397,7 @@ fn method_calls_land_on_the_fake() {
         c.raise(&n).await.unwrap();
         c.set_shuffle(&n, true).await.unwrap();
         c.set_loop_status(&n, LoopStatus::Playlist).await.unwrap();
-        c.set_volume(&n, 0.25).await.unwrap();
+        c.set_volume(&n, Volume::new(0.25)).await.unwrap();
 
         assert_eq!(
             fake.calls(),

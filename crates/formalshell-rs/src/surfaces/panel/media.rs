@@ -21,6 +21,8 @@ use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use fs_media::visualizer::styles;
+use fs_theme::icons;
+use fs_types::Fraction;
 
 use super::{Effect, Panel, View};
 use crate::services::devices::audio;
@@ -212,7 +214,7 @@ impl Media {
 
     fn step_volume(&self, fx: &Effect, by: f64) {
         if let Some(v) = fx.store.media.active().and_then(|a| a.volume) {
-            fx.store.media.set_volume(v + by);
+            fx.store.media.set_volume(Fraction::from_fraction(v.as_fraction() + by));
         }
     }
 
@@ -373,14 +375,8 @@ impl Panel for Media {
             if !controls.is_empty() {
                 controls.push(w::space(s.section_gap - s.icon_gap));
             }
-            let glyph = if volume <= 0.0 {
-                "volume-x"
-            } else if volume < 0.5 {
-                "volume-1"
-            } else {
-                "volume-2"
-            };
-            controls.push(w::icon(glyph).ink(Ink::Muted));
+            controls.push(w::icon(icons::volume(volume)).ink(Ink::Muted));
+            let volume = volume.as_fraction();
             controls.push(if a.volume_fixed { w::track(volume).fill().fade(0.5) } else { w::slider(volume).fill().stop("volume").on("volume") });
             controls.push(w::value(format!("{}%", (volume * 100.0).round())).ink(Ink::Muted).gauge("100%"));
         }
@@ -484,7 +480,7 @@ impl Panel for Media {
                 }
             }
             ("progress", What::Wheel(d)) => self.seek_by(fx, *d as f64 * SEEK_STEP),
-            ("volume", What::Fraction(f)) => fx.store.media.set_volume(*f),
+            ("volume", What::Fraction(f)) => fx.store.media.set_volume(Fraction::from_fraction(*f)),
             ("volume", What::Wheel(d)) => self.step_volume(fx, *d as f64 * VOLUME_STEP),
             ("spectrum", What::Click) => {
                 let configured = fx.store.config.str("media.visualizerStyle").unwrap_or("bars").to_owned();

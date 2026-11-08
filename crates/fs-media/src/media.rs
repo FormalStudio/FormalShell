@@ -5,6 +5,7 @@
 use serde_json::Value;
 
 use fs_js::utf16_len;
+use fs_types::Fraction;
 
 pub(crate) const BUS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 
@@ -180,13 +181,14 @@ pub fn next_loop(name: &str) -> &'static str {
     }
 }
 
-/// MPRIS Volume above 1.0 is legal on the wire but the flat track never draws
-/// past full. Non-finite is 0.
-pub fn clamp_volume(v: f64) -> f64 {
+/// The share of the flat track a source's 0..1 volume fills: MPRIS Volume
+/// above 1.0 is legal on the wire but the track never draws past full.
+/// Non-finite is 0.
+pub fn clamp_volume(v: f64) -> Fraction {
     if !v.is_finite() {
-        return 0.0;
+        return Fraction::from_fraction(0.0);
     }
-    v.clamp(0.0, 1.0)
+    Fraction::from_fraction(v)
 }
 
 #[cfg(test)]
@@ -326,16 +328,16 @@ mod tests {
 
     #[test]
     fn volume_clamped_to_the_flat_track() {
-        assert_eq!(clamp_volume(0.5), 0.5);
-        assert_eq!(clamp_volume(-1.0), 0.0);
-        assert_eq!(clamp_volume(1.4), 1.0);
+        assert_eq!(clamp_volume(0.5).as_fraction(), 0.5);
+        assert_eq!(clamp_volume(-1.0).as_fraction(), 0.0);
+        assert_eq!(clamp_volume(1.4).as_fraction(), 1.0);
     }
 
     #[test]
     fn volume_of_nothing_is_zero() {
         // undefined and "loud" are both NaN once through Number().
-        assert_eq!(clamp_volume(f64::NAN), 0.0);
-        assert_eq!(clamp_volume(f64::INFINITY), 0.0);
+        assert_eq!(clamp_volume(f64::NAN).as_fraction(), 0.0);
+        assert_eq!(clamp_volume(f64::INFINITY).as_fraction(), 0.0);
     }
 
     fn stream(id: &str, playing: bool) -> PlayerRow {

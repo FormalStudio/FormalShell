@@ -16,6 +16,7 @@
 
 use std::time::{Duration, Instant};
 
+use fs_audio::Visual;
 use fs_types::Edge;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -45,7 +46,7 @@ pub struct Osd {
     media: String,
     hide_at: Option<Instant>,
     /// The sink's last reading, for the change that fires the pill.
-    audio_seen: Option<(f64, bool)>,
+    audio_seen: Option<(Visual, bool)>,
     /// The last brightness step: the device, the percent it asked for and
     /// when. The pill shows it until `osd brightness` asks for the backlight.
     step: Option<(String, i64, Instant)>,
@@ -144,12 +145,10 @@ impl App {
 
     fn osd_reading(&self) -> Reading {
         let audio = &self.store.devices.audio;
-        Reading {
-            kind: self.osd.kind.unwrap_or(Kind::Volume),
-            media: self.osd.media.clone(),
-            volume: audio.volume.unwrap_or(0.0),
-            muted: audio.muted,
-            brightness: self.osd_brightness(),
+        match self.osd.kind.unwrap_or(Kind::Volume) {
+            Kind::Volume => Reading::Volume { level: audio.volume.unwrap_or_default(), muted: audio.muted },
+            Kind::Brightness => Reading::Brightness { percent: self.osd_brightness() },
+            Kind::Media => Reading::Media(self.osd.media.clone()),
         }
     }
 

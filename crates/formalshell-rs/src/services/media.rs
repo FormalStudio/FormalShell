@@ -16,8 +16,10 @@ use std::time::Instant;
 
 use fs_media::media::{self as pick, LabelledRow, PlayerRow};
 use fs_mpris::{LoopStatus, Mpris, PlayerState};
+use fs_types::Fraction;
 use serde_json::{Value, json};
 
+use fs_audio::Visual;
 use fs_bluez::PlayerCommand;
 
 use super::devices::audio::{self, Routing, StreamInfo};
@@ -111,7 +113,7 @@ pub struct Player {
     pub can_previous: bool,
     pub shuffle: Option<bool>,
     pub loop_status: Option<LoopStatus>,
-    pub volume: Option<f64>,
+    pub volume: Option<fs_mpris::Volume>,
     pub volume_writable: bool,
 }
 
@@ -240,7 +242,8 @@ pub struct Active {
     pub can_previous: bool,
     pub shuffle: Option<bool>,
     pub loop_name: Option<&'static str>,
-    pub volume: Option<f64>,
+    /// The share of the flat track the source's own volume fills.
+    pub volume: Option<Fraction>,
     /// A volume shown that nothing here can set.
     pub volume_fixed: bool,
 }
@@ -520,7 +523,7 @@ impl State {
                     playing: !r.paused(),
                     can_next: r.queue.len() > 1,
                     can_previous: r.queue.len() > 1,
-                    volume: Some(r.volume as f64 / 100.0),
+                    volume: Some(r.volume.track()),
                     ..base
                 }
             }
@@ -565,7 +568,7 @@ impl State {
                     length: r.length,
                     can_next: true,
                     can_previous: true,
-                    volume: self.routed_streams().first().and_then(|s| s.volume).map(pick::clamp_volume),
+                    volume: self.routed_streams().first().and_then(|s| s.volume).map(|v| pick::clamp_volume(v.as_f64())),
                     ..base
                 }
             }
@@ -575,7 +578,7 @@ impl State {
                     kind: "stream",
                     identity: label,
                     title: if s.title.is_empty() { s.label.clone() } else { s.title.clone() },
-                    volume: s.volume.map(pick::clamp_volume),
+                    volume: s.volume.map(|v| pick::clamp_volume(v.as_f64())),
                     ..base
                 }
             }
@@ -597,7 +600,7 @@ impl State {
                     can_previous: p.can_previous,
                     shuffle: p.shuffle,
                     loop_name: p.loop_status.map(loop_name),
-                    volume: p.volume.map(pick::clamp_volume),
+                    volume: p.volume.map(|v| pick::clamp_volume(v.get())),
                     volume_fixed: !p.volume_writable,
                     ..base
                 }
@@ -648,7 +651,7 @@ impl State {
             "loopSupported": a.loop_name.is_some(),
             "loop": a.loop_name.unwrap_or("none"),
             "volumeSupported": a.volume.is_some(),
-            "volume": fs_js::json_number(a.volume.unwrap_or(0.0)),
+            "volume": fs_js::json_number(a.volume.map_or(0.0, Fraction::as_fraction)),
             "kopuz": {
                 "connected": kopuz.is_some(),
                 "key": kopuz.map_or("", |k| k.key.as_str()),
@@ -764,13 +767,13 @@ impl State {
         }
     }
 
-    /// 0..1, the player's own scale; the radio's mpv takes 0..100 and the
-    /// phone a step in whichever direction the request moves.
-    pub fn set_volume(&self, v: f64) {
-        let v = pick::clamp_volume(v);
+    /// A position on the flat track, written back in the source's own
+    /// scale; the phone takes a step in whichever direction the request
+    /// moves.
+    pub fn set_volume(&self, v: Fraction) {
         let Some(a) = self.active() else { return };
         match a.kind {
-            "radio" => radio::send(radio::Cmd::SetVolume(v * 100.0)),
+            "radio" => radio::send(radio::Cmd::SetVolume(radio::Volume::from_track(v))),
             "iphone" => {
                 if let Some(now) = a.volume
                     && v != now
@@ -778,15 +781,15 @@ impl State {
                     ams::command(if v > now { "volup" } else { "voldown" });
                 }
             }
-            "mpris" if !a.volume_fixed => mpris_send(Cmd::Volume(a.id, v)),
+            "mpris" if !a.volume_fixed => mpris_send(Cmd::Volume(a.id, fs_mpris::Volume::new(v.as_fraction()))),
             "stream" => {
                 if let Some(node) = a.id.strip_prefix("stream:").and_then(|n| n.parse().ok()) {
-                    audio::write(fs_audio::Command::SetVolume { node, volume: v as f32 });
+                    audio::write(fs_audio::Command::SetVolume { node, volume: Visual::from_f64(v.as_fraction()) });
                 }
             }
             "bluetooth" => {
                 for s in self.routed_streams() {
-                    audio::write(fs_audio::Command::SetVolume { node: s.id, volume: v as f32 });
+                    audio::write(fs_audio::Command::SetVolume { node: s.id, volume: Visual::from_f64(v.as_fraction()) });
                 }
             }
             _ => {}
@@ -830,7 +833,7 @@ enum Cmd {
     Previous(String),
     Shuffle(String, bool),
     Loop(String, LoopStatus),
-    Volume(String, f64),
+    Volume(String, fs_mpris::Volume),
     Raise(String),
     Seek(String, i64),
 }
@@ -905,7 +908,7 @@ mod tests {
             can_previous: true,
             shuffle: Some(true),
             loop_status: Some(LoopStatus::Track),
-            volume: Some(0.3),
+            volume: Some(fs_mpris::Volume::new(0.3)),
             volume_writable: true,
         }
     }
@@ -984,7 +987,7 @@ mod tests {
             keys: [Some(app.into()), None, None, Some("node".into())],
             label: app.into(),
             title: String::new(),
-            volume: Some(0.5),
+            volume: Some(Visual::new(0.5)),
             target: target.into(),
         }
     }
@@ -1009,7 +1012,7 @@ mod tests {
         assert_eq!(s.active_id(), "org.mpris.MediaPlayer2.mpv");
         s.selected = "stream:41".into();
         let a = s.active().unwrap();
-        assert_eq!((a.kind, a.identity.as_str(), a.volume), ("stream", "Discord", Some(0.5)));
+        assert_eq!((a.kind, a.identity.as_str(), a.volume), ("stream", "Discord", Some(Fraction::from_fraction(0.5))));
         assert_eq!(s.status()["canRoute"], true);
         assert_eq!(s.status()["output"], "sink-a");
     }
@@ -1058,7 +1061,7 @@ mod tests {
             keys: [None, None, None, Some("bluez_input.C8_89_F3_45_A7_AA.2".into())],
             label: "FormalPad".into(),
             title: String::new(),
-            volume: Some(0.8),
+            volume: Some(Visual::new(0.8)),
             target: "sink-b".into(),
         });
         assert!(s.players().iter().any(|r| r.id == "stream:42"));
@@ -1068,7 +1071,7 @@ mod tests {
         assert_eq!((rows[1].kind.as_str(), rows[1].label.as_str(), rows[1].auto), ("bluetooth", "FormalPad", true));
         assert_eq!(s.active_id(), "bluez:C8:89:F3:45:A7:AA");
         let a = s.active().unwrap();
-        assert_eq!((a.kind, a.title.as_str(), a.artist.as_str(), a.playing, a.volume), ("bluetooth", "OLED iPad Mini", "Marques Brownlee", true, Some(0.8)));
+        assert_eq!((a.kind, a.title.as_str(), a.artist.as_str(), a.playing, a.volume), ("bluetooth", "OLED iPad Mini", "Marques Brownlee", true, Some(Visual::new(0.8).track())));
         assert!(a.position >= 359.686 && a.length == 779.141 && !a.can_seek && a.can_next);
         assert_eq!((s.output_id().as_str(), s.can_route()), ("sink-b", true));
         s.remotes = vec![remote(false)];

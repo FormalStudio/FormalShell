@@ -3,10 +3,12 @@
 //! object's four default names. The model here is pure; the `pipewire`
 //! feature adds the client thread that feeds it ([`spawn`]).
 //!
-//! Volumes are the visual scale: the cube root of the linear `channelVolumes` the server
-//! holds, the same scale `wpctl get-volume` prints.
+//! Volumes are [`Visual`]: the cube root of the [`Linear`] `channelVolumes`
+//! the server holds, the same scale `wpctl get-volume` prints.
 
 use std::collections::BTreeMap;
+
+use fs_types::Fraction;
 
 #[cfg(feature = "pipewire")]
 mod backend;
@@ -19,34 +21,77 @@ pub const KEY_CONFIGURED_SINK: &str = "default.configured.audio.sink";
 pub const KEY_CONFIGURED_SOURCE: &str = "default.configured.audio.source";
 pub const DEFAULT_TYPE: &str = "Spa:String:JSON";
 
-/// Linear `channelVolumes` value to the visual scale.
-pub(crate) fn visual_from_linear(linear: f32) -> f32 {
-    linear.cbrt()
+/// A volume on the visual scale: the cube root of the server's linear
+/// channel volume, where 1.0 is full and above it is overdrive. What every
+/// slider and readout shows.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+pub struct Visual(f32);
+
+impl Visual {
+    pub const fn new(volume: f32) -> Self {
+        Self(volume)
+    }
+
+    /// A level a slider or a step worked out in f64, at the server's f32.
+    pub fn from_f64(volume: f64) -> Self {
+        Self(volume as f32)
+    }
+
+    pub fn get(self) -> f32 {
+        self.0
+    }
+
+    pub fn as_f64(self) -> f64 {
+        f64::from(self.0)
+    }
+
+    pub fn from_linear(linear: Linear) -> Self {
+        Self(linear.0.cbrt())
+    }
+
+    /// The value written back to the server.
+    pub fn to_linear(self) -> Linear {
+        Linear(self.0 * self.0 * self.0)
+    }
+
+    /// The share of a flat 0..1 track it fills; overdrive fills it whole.
+    pub fn track(self) -> Fraction {
+        Fraction::from_fraction(self.as_f64())
+    }
 }
 
-/// Visual scale to the linear value written back to the server.
-pub(crate) fn linear_from_visual(visual: f32) -> f32 {
-    visual * visual * visual
+/// A `channelVolumes` value as the server holds it.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+pub struct Linear(f32);
+
+impl Linear {
+    pub const fn new(volume: f32) -> Self {
+        Self(volume)
+    }
+
+    pub fn get(self) -> f32 {
+        self.0
+    }
 }
 
 /// The volume setter: every channel scaled by the
 /// same factor so their balance holds, or all set flat when the average was
 /// zero. Negative results clamp to zero, as `setVolumes` does.
-pub(crate) fn scaled_volumes(current: &[f32], average: f32) -> Vec<f32> {
-    let old = average_volume(current);
+pub(crate) fn scaled_volumes(current: &[Visual], average: Visual) -> Vec<Visual> {
+    let (old, average) = (average_volume(current).0, average.0);
     let mul = if old == 0.0 { 0.0 } else { average / old };
     current
         .iter()
-        .map(|v| if mul == 0.0 { average } else { v * mul })
-        .map(|v| v.max(0.0))
+        .map(|v| if mul == 0.0 { average } else { v.0 * mul })
+        .map(|v| Visual(v.max(0.0)))
         .collect()
 }
 
-pub(crate) fn average_volume(volumes: &[f32]) -> f32 {
+pub(crate) fn average_volume(volumes: &[Visual]) -> Visual {
     if volumes.is_empty() {
-        return 0.0;
+        return Visual(0.0);
     }
-    volumes.iter().sum::<f32>() / volumes.len() as f32
+    Visual(volumes.iter().map(|v| v.0).sum::<f32>() / volumes.len() as f32)
 }
 
 /// `PwNodeType`'s flags, read off `media.class`.
@@ -100,14 +145,14 @@ impl NodeType {
 pub struct AudioState {
     /// `spa_audio_channel` positions, one per entry of `volumes`.
     pub channels: Vec<u32>,
-    /// Visual scale, per channel.
-    pub volumes: Vec<f32>,
+    /// One per channel.
+    pub volumes: Vec<Visual>,
     pub muted: bool,
 }
 
 impl AudioState {
     /// The averaged `volume`.
-    pub fn volume(&self) -> f32 {
+    pub fn volume(&self) -> Visual {
         average_volume(&self.volumes)
     }
 }
@@ -361,11 +406,11 @@ pub enum Command {
     /// The averaged volume, channel balance kept ([`scaled_volumes`]).
     SetVolume {
         node: u32,
-        volume: f32,
+        volume: Visual,
     },
     SetVolumes {
         node: u32,
-        volumes: Vec<f32>,
+        volumes: Vec<Visual>,
     },
     SetMuted {
         node: u32,
@@ -563,32 +608,43 @@ mod tests {
         assert!(g.capturing());
     }
 
+    fn visuals(v: &[f32]) -> Vec<Visual> {
+        v.iter().copied().map(Visual::new).collect()
+    }
+
     #[test]
     fn volume_curve_is_cubic() {
-        assert!((visual_from_linear(0.125) - 0.5).abs() < 1e-6);
-        assert!((linear_from_visual(0.5) - 0.125).abs() < 1e-6);
-        assert_eq!(visual_from_linear(1.0), 1.0);
+        assert!((Visual::from_linear(Linear::new(0.125)).get() - 0.5).abs() < 1e-6);
+        assert!((Visual::new(0.5).to_linear().get() - 0.125).abs() < 1e-6);
+        assert_eq!(Visual::from_linear(Linear::new(1.0)).get(), 1.0);
         let v = 0.73_f32;
-        assert!((visual_from_linear(linear_from_visual(v)) - v).abs() < 1e-6);
+        assert!((Visual::from_linear(Visual::new(v).to_linear()).get() - v).abs() < 1e-6);
+    }
+
+    #[test]
+    fn track_fills_whole_on_overdrive() {
+        assert_eq!(Visual::new(0.25).track().as_fraction(), 0.25);
+        assert_eq!(Visual::new(1.4).track().as_fraction(), 1.0);
+        assert_eq!(Visual::new(-0.1).track().as_fraction(), 0.0);
     }
 
     #[test]
     fn scaled_volumes_keeps_balance() {
-        let out = scaled_volumes(&[0.2, 0.4], 0.6);
-        assert!((out[0] - 0.4).abs() < 1e-6 && (out[1] - 0.8).abs() < 1e-6);
+        let out = scaled_volumes(&visuals(&[0.2, 0.4]), Visual::new(0.6));
+        assert!((out[0].get() - 0.4).abs() < 1e-6 && (out[1].get() - 0.8).abs() < 1e-6);
     }
 
     #[test]
     fn scaled_volumes_from_silence_sets_flat() {
-        assert_eq!(scaled_volumes(&[0.0, 0.0], 0.5), vec![0.5, 0.5]);
-        assert_eq!(scaled_volumes(&[0.3, 0.3], 0.0), vec![0.0, 0.0]);
-        assert_eq!(scaled_volumes(&[0.3], -1.0), vec![0.0]);
+        assert_eq!(scaled_volumes(&visuals(&[0.0, 0.0]), Visual::new(0.5)), visuals(&[0.5, 0.5]));
+        assert_eq!(scaled_volumes(&visuals(&[0.3, 0.3]), Visual::new(0.0)), visuals(&[0.0, 0.0]));
+        assert_eq!(scaled_volumes(&visuals(&[0.3]), Visual::new(-1.0)), visuals(&[0.0]));
     }
 
     #[test]
     fn average_of_nothing_is_zero() {
-        assert_eq!(average_volume(&[]), 0.0);
-        assert_eq!(AudioState::default().volume(), 0.0);
+        assert_eq!(average_volume(&[]), Visual::new(0.0));
+        assert_eq!(AudioState::default().volume(), Visual::new(0.0));
     }
 
     #[test]
@@ -735,7 +791,7 @@ mod tests {
         assert_eq!(g.apply(Event::Node(n.clone())), Change::Nothing);
         n.audio = Some(AudioState {
             channels: vec![3, 4],
-            volumes: vec![0.5, 0.5],
+            volumes: vec![Visual::new(0.5), Visual::new(0.5)],
             muted: false,
         });
         assert_eq!(

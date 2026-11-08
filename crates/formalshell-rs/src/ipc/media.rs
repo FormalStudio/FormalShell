@@ -3,6 +3,8 @@
 //! implement that part of MPRIS) answers with an error string naming which,
 //! rather than "ok" over a call that went nowhere.
 
+use fs_types::Fraction;
+
 use super::registry::{Function, Target, Type, Value};
 use crate::services::kopuz;
 use crate::store::Topic;
@@ -91,7 +93,7 @@ fn volume(app: &mut App, args: &[Value]) -> Value {
     if !(0..=100).contains(&percent) {
         return text(format!("error: volume out of range {percent} (0-100)"));
     }
-    app.store.media.set_volume(f64::from(percent) / 100.0);
+    app.store.media.set_volume(Fraction::from_fraction(f64::from(percent) / 100.0));
     text(OK)
 }
 
