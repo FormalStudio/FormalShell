@@ -287,11 +287,7 @@ pub fn overrides(value: Value) {
 }
 
 pub fn settings_path() -> PathBuf {
-    let dir = match std::env::var("XDG_CONFIG_HOME") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config"),
-    };
-    dir.join("formalshell").join("settings.json")
+    crate::paths::config().join("formalshell").join("settings.json")
 }
 
 fn describe(diff: &Diff, what: &str) -> String {

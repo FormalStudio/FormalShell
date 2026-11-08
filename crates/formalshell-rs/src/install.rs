@@ -6,10 +6,14 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::paths::{LOGIN_LOCK_MARKER, SHELL_DIR};
+
 const REPO: &str = "FormalStudio/FormalShell";
 /// First line of every Hyprland file the installer owns.
 const MARKER: &str = "-- Written by `formalshell install`; `formalshell update` rewrites it.";
-const PAM_PATH: &str = "/etc/pam.d/formalshell-lock";
+fn pam_path() -> String {
+    format!("/etc/pam.d/{}", fs_auth::pam::LOCK_SERVICE)
+}
 const GREETD_CONFIG: &str = "/etc/greetd/config.toml";
 const GREETD_BACKUP: &str = "/etc/greetd/config.toml.pre-formalshell";
 const GREETD_SESSION: &str = "/etc/greetd/formalshell-session.sh";
@@ -139,9 +143,8 @@ fn layout() -> Result<Layout, String> {
             prefix.display()
         ));
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("HOME is not set")?;
-    let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".config"));
-    Ok(Layout { prefix, config })
+    std::env::var_os("HOME").ok_or("HOME is not set")?;
+    Ok(Layout { prefix, config: crate::paths::config() })
 }
 
 fn install(l: &Layout, opts: &Opts) -> Result<(), String> {
@@ -163,7 +166,7 @@ fn install(l: &Layout, opts: &Opts) -> Result<(), String> {
         return Ok(());
     }
     match pam_file() {
-        Some(pam) => system_file(PAM_PATH, &pam, "the formalshell-lock PAM file the lock screen authenticates against", opts)?,
+        Some(pam) => system_file(&pam_path(), &pam, "the formalshell-lock PAM file the lock screen authenticates against", opts)?,
         None => println!("note: no /etc/pam.d/common-auth or system-auth to include; the lock screen will say \"PAM error\""),
     }
     greetd(l, opts)?;
@@ -238,8 +241,9 @@ fn uninstall(l: &Layout, opts: &Opts) -> Result<(), String> {
         }
     }
 
-    if Path::new(PAM_PATH).exists() && ask(&format!("Remove {PAM_PATH}?"), opts) {
-        remove_files(&[PathBuf::from(PAM_PATH)], !am_root())?;
+    let pam_path = pam_path();
+    if Path::new(&pam_path).exists() && ask(&format!("Remove {pam_path}?"), opts) {
+        remove_files(&[PathBuf::from(pam_path)], !am_root())?;
     }
     if Path::new(GREETD_SESSION).exists() && ask("Remove the FormalShell greetd config and restore the previous one?", opts) {
         let sudo = !am_root();
@@ -530,8 +534,8 @@ fn login_script() -> String {
     format!(
         "#!/bin/sh
 # Written by `formalshell install`; `formalshell update` rewrites it.
-mkdir -p \"$XDG_RUNTIME_DIR/formalshell\"
-: > \"$XDG_RUNTIME_DIR/formalshell/login-lock\"
+mkdir -p \"$XDG_RUNTIME_DIR/{SHELL_DIR}\"
+: > \"$XDG_RUNTIME_DIR/{SHELL_DIR}/{LOGIN_LOCK_MARKER}\"
 exec uwsm start -g -1 -e -D Hyprland -- hyprland.desktop -- --locked-cmd '{START}'
 "
     )

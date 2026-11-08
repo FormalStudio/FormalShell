@@ -134,7 +134,7 @@ pub fn directory(configured: &str) -> String {
         return configured.to_owned();
     }
     let home = super::menu::home();
-    let dirs = std::fs::read_to_string(super::menu::xdg_dir("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs")).unwrap_or_default();
+    let dirs = std::fs::read_to_string(crate::paths::config().join("user-dirs.dirs")).unwrap_or_default();
     let line = dirs.lines().find(|l| l.trim_start().starts_with("XDG_PICTURES_DIR=")).unwrap_or("");
     let pictures = providers::user_dirs(line, &home).into_iter().next().unwrap_or_else(|| format!("{}/Pictures", home.trim_end_matches('/')));
     format!("{pictures}/Wallpapers")

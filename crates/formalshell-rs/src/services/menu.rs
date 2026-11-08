@@ -435,13 +435,8 @@ pub(crate) fn home() -> String {
     std::env::var("HOME").unwrap_or_default()
 }
 
-/// `$XDG_<var>`, else `$HOME/<fallback>`.
-pub(crate) fn xdg_dir(var: &str, fallback: &str) -> PathBuf {
-    std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(home()).join(fallback))
-}
-
 fn user_menu_path() -> PathBuf {
-    xdg_dir("XDG_CONFIG_HOME", ".config").join("formalshell").join("menu.jsonc")
+    crate::paths::config().join("formalshell").join("menu.jsonc")
 }
 
 /// The Files route's rows: the user directories that exist, then the
@@ -450,9 +445,9 @@ fn files() -> Vec<Node> {
     use fs_menu::providers::{Found, RECENT_FILES, recent_paths, user_dirs};
     let home = home();
     let found = |path: String| std::fs::metadata(&path).ok().map(|m| Found { path, dir: m.is_dir() });
-    let dirs = std::fs::read_to_string(xdg_dir("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs")).unwrap_or_default();
+    let dirs = std::fs::read_to_string(crate::paths::config().join("user-dirs.dirs")).unwrap_or_default();
     let places: Vec<Found> = user_dirs(&dirs, &home).into_iter().filter_map(found).filter(|f| f.dir).collect();
-    let xbel = std::fs::read_to_string(xdg_dir("XDG_DATA_HOME", ".local/share").join("recently-used.xbel")).unwrap_or_default();
+    let xbel = std::fs::read_to_string(crate::paths::data().join("recently-used.xbel")).unwrap_or_default();
     let recent: Vec<Found> = recent_paths(&xbel).into_iter().filter_map(found).take(RECENT_FILES).collect();
     providers::files_rows(&places, &recent, &home)
 }

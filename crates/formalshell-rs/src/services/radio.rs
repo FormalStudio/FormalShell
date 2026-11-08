@@ -239,15 +239,11 @@ pub fn send(cmd: Cmd) {
 }
 
 fn runtime_dir() -> Option<PathBuf> {
-    std::env::var("XDG_RUNTIME_DIR").ok().filter(|d| !d.is_empty()).map(PathBuf::from)
+    crate::paths::session_runtime()
 }
 
 fn cache_dir() -> PathBuf {
-    let base = match std::env::var("XDG_CACHE_HOME") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"),
-    };
-    base.join("formalshell").join("radio-atlas")
+    crate::paths::cache().join("formalshell").join("radio-atlas")
 }
 
 fn cache_path(country: Option<&str>) -> PathBuf {
@@ -284,11 +280,7 @@ fn stale_doc(doc: &Value) -> bool {
 }
 
 fn state_path() -> PathBuf {
-    let base = match std::env::var("XDG_STATE_HOME") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state"),
-    };
-    base.join("formalshell").join("radio-atlas.json")
+    crate::paths::state().join("formalshell").join("radio-atlas.json")
 }
 
 async fn curl(args: &[String]) -> Option<String> {

@@ -3,6 +3,11 @@
 //! `crates/formalshell-rs/tests/ipc-golden.jsonl` fixes them and exiting as
 //! it exits.
 
+// Only the runtime-dir half of the module is used here.
+#[allow(dead_code)]
+#[path = "../paths.rs"]
+mod paths;
+
 #[path = "../ipc"]
 mod ipc {
     pub mod cli;

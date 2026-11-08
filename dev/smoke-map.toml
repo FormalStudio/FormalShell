@@ -72,6 +72,7 @@ paths = [
   "crates/formalshell-rs/src/surface.rs",
   "crates/formalshell-rs/src/wayland.rs",
   "crates/formalshell-rs/src/main.rs",
+  "crates/formalshell-rs/src/paths.rs",
   "crates/formalshell-rs/src/runtime/**",
   "crates/formalshell-rs/src/store.rs",
   "crates/formalshell-rs/src/surfaces/mod.rs",
@@ -626,6 +627,12 @@ runs = ["--mirror"]
 [[rule]]
 paths = ["crates/formalshell-rs/src/instance.rs", "crates/formalshell-rs/src/cmdline.rs"]
 runs = ["--instance", "--lock-restore", "--dump"]
+
+# Every runtime-dir file: the instance socket, the IPC socket, the lock's
+# markers.
+[[rule]]
+paths = ["crates/formalshell-rs/src/paths.rs"]
+runs = ["--instance", "--lock-restore", "--login-lock", "--lock"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/ipc/debug.rs"]

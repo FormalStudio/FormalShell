@@ -187,11 +187,7 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
 }
 
 fn cache_dir() -> PathBuf {
-    let base = match std::env::var("XDG_CACHE_HOME") {
-        Ok(d) if !d.is_empty() => PathBuf::from(d),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"),
-    };
-    base.join("formalshell").join("lyrics")
+    crate::paths::cache().join("formalshell").join("lyrics")
 }
 
 enum Outcome {

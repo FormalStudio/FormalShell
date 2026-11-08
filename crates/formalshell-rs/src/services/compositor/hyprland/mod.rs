@@ -34,11 +34,11 @@ const RETRY_FIRST: Duration = Duration::from_millis(250);
 const RETRY_MAX: Duration = Duration::from_secs(5);
 
 fn socket_dir() -> io::Result<PathBuf> {
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+    let runtime = crate::paths::session_runtime()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "XDG_RUNTIME_DIR is not set"))?;
     let sig = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HYPRLAND_INSTANCE_SIGNATURE is not set"))?;
-    Ok(PathBuf::from(runtime).join("hypr").join(sig))
+    Ok(runtime.join("hypr").join(sig))
 }
 
 async fn request(command: &str) -> io::Result<String> {

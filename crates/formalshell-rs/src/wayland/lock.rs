@@ -268,7 +268,7 @@ fn command(app: &App) -> Vec<String> {
 /// Present while this session's built-in lock is held, whichever shell
 /// holds it.
 fn held_marker() -> std::path::PathBuf {
-    crate::instance::compositor_file("locked")
+    crate::paths::compositor_file("locked")
 }
 
 fn mark_held(held: bool) {
@@ -284,7 +284,7 @@ fn mark_held(held: bool) {
 }
 
 fn login_marker() -> PathBuf {
-    std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("formalshell").join("login-lock")
+    crate::paths::shell_runtime().join(crate::paths::LOGIN_LOCK_MARKER)
 }
 
 /// pam_unix's own failure delay is 2s; a stack still busy past this is

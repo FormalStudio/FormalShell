@@ -290,10 +290,7 @@ fn spawn_info(ctx: &Ctx, id: String) {
 /// Flathub reuses one last segment (`image-1_752x423@1.png`) across apps.
 fn shot_path(url: &str) -> PathBuf {
     use std::hash::{Hash, Hasher};
-    let base = match std::env::var("XDG_CACHE_HOME") {
-        Ok(v) if !v.is_empty() => PathBuf::from(v),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"),
-    };
+    let base = crate::paths::cache();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     url.hash(&mut h);
     // `image::open` reads the format off the extension.

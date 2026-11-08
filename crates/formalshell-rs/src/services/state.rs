@@ -345,11 +345,7 @@ impl State {
 }
 
 pub fn state_path() -> PathBuf {
-    let dir = match std::env::var("XDG_STATE_HOME") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state"),
-    };
-    dir.join("formalshell").join("state.json")
+    crate::paths::state().join("formalshell").join("state.json")
 }
 
 /// Temp file beside the target, then a rename over it, so a reader (or a

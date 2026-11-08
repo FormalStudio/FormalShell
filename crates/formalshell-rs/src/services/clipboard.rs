@@ -121,11 +121,7 @@ pub fn images_dir() -> PathBuf {
 }
 
 pub fn thumb_dir() -> String {
-    let base = match std::env::var("XDG_CACHE_HOME") {
-        Ok(d) if !d.is_empty() => PathBuf::from(d),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache"),
-    };
-    base.join("formalshell/thumbnails").to_string_lossy().into_owned()
+    crate::paths::cache().join("formalshell/thumbnails").to_string_lossy().into_owned()
 }
 
 /// The store's half of a capture, with the bytes already in `$tmp` under

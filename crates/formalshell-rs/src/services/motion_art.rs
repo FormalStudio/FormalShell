@@ -139,8 +139,7 @@ pub fn want(id: u64, w: Option<Want>) {
 }
 
 fn cache_dir() -> String {
-    let base = std::env::var("XDG_CACHE_HOME").ok().filter(|d| !d.is_empty()).unwrap_or_else(|| format!("{}/.cache", std::env::var("HOME").unwrap_or_default()));
-    format!("{base}/formalshell/applemusic-art")
+    crate::paths::cache().join("formalshell/applemusic-art").to_string_lossy().into_owned()
 }
 
 /// The decode running for one slot: the child's pid, the flag that holds

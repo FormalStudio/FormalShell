@@ -103,7 +103,7 @@ pub fn compare(name: &'static str, commit: u64, reference: &Pixmap, bytes: &[u8]
 fn save(name: &str, commit: u64, reference: &Pixmap, bytes: &[u8], bgra: bool, r: IRect) -> Option<String> {
     let dir = match std::env::var_os("FS_STALE_DIR") {
         Some(dir) => std::path::PathBuf::from(dir),
-        None => std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join("formalshell-stale"),
+        None => crate::paths::session_runtime()?.join("formalshell-stale"),
     };
     std::fs::create_dir_all(&dir).ok()?;
     let (w, h) = (reference.width() as i32, reference.height() as i32);

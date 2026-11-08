@@ -215,8 +215,8 @@ async fn model(ctx: Ctx, rx: Receiver<Input>) {
 
 /// `$XDG_RUNTIME_DIR/fspec/activity`, or fspec's own fallback without one.
 fn fspec_dir() -> PathBuf {
-    match std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
-        Some(d) => PathBuf::from(d).join("fspec/activity"),
+    match crate::paths::session_runtime() {
+        Some(d) => d.join("fspec/activity"),
         None => std::env::temp_dir().join(format!("fspec-{}", unsafe { libc::getuid() })).join("activity"),
     }
 }

@@ -172,7 +172,7 @@ fn home() -> String {
 }
 
 pub fn runtime_dir() -> String {
-    std::env::var("XDG_RUNTIME_DIR").ok().filter(|d| !d.is_empty()).unwrap_or_else(|| "/tmp".into())
+    crate::paths::runtime().to_string_lossy().into_owned()
 }
 
 pub fn now() -> chrono::NaiveDateTime {

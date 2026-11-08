@@ -228,9 +228,9 @@ impl Env {
     /// package wrapper points at.
     pub fn from_process() -> Self {
         let var = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty());
-        let home = PathBuf::from(var("HOME").unwrap_or_default());
-        let state = var("XDG_STATE_HOME").map_or_else(|| home.join(".local/state"), PathBuf::from);
-        let config = var("XDG_CONFIG_HOME").map_or_else(|| home.join(".config"), PathBuf::from);
+        let home = crate::paths::home();
+        let state = crate::paths::state();
+        let config = crate::paths::config();
         Self {
             template_dir: var("FS_TEMPLATE_DIR").map_or_else(|| PathBuf::from("crates/fs-theme/templates"), PathBuf::from),
             state_dir: state.join("formalshell"),

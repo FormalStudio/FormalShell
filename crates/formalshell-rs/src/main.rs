@@ -8,6 +8,7 @@ mod instance;
 mod keyboard;
 mod ipc;
 mod motion;
+mod paths;
 mod paint;
 mod render;
 mod runtime;

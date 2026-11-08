@@ -14,7 +14,6 @@
 //! rarely: whether cava exists, whether anything runs, the bpm.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::{Mutex, OnceLock};
@@ -172,11 +171,6 @@ pub fn set_panel(open: bool) {
     update(|g| g.panel = open);
 }
 
-fn runtime_dir() -> PathBuf {
-    let base = std::env::var("XDG_RUNTIME_DIR").ok().filter(|d| !d.is_empty()).unwrap_or_else(|| "/tmp".into());
-    PathBuf::from(base).join("formalshell")
-}
-
 /// Every key is in cava 0.10.7's own example config. Fixed gain rather than
 /// autosens (model's gain stage supplies the height), 12 kHz upper cutoff to
 /// pull hats into the top band, light smoothing so six bars track transients,
@@ -295,7 +289,7 @@ pub async fn run(ctx: Ctx) {
     if GATE_TX.set(tx).is_err() {
         return;
     }
-    let dir = runtime_dir();
+    let dir = crate::paths::shell_runtime();
     let conf = dir.join("cava.conf");
     let probe = async {
         std::fs::create_dir_all(&dir).ok()?;

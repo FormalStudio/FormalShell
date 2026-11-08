@@ -367,11 +367,7 @@ pub fn launcher(open: bool) {
 }
 
 pub fn directory() -> PathBuf {
-    let base = match std::env::var("XDG_CONFIG_HOME") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config"),
-    };
-    base.join("formalshell").join("plugins")
+    crate::paths::config().join("formalshell").join("plugins")
 }
 
 fn disabled() -> Vec<String> {

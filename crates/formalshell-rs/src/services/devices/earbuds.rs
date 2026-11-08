@@ -213,15 +213,11 @@ fn socket_path() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("FORMALSHELL_SMOKE_LIBREPODS_SOCKET").filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(path));
     }
-    std::env::var("XDG_RUNTIME_DIR").ok().filter(|d| !d.is_empty()).map(|d| PathBuf::from(d).join("librepods.sock"))
+    crate::paths::session_runtime().map(|d| d.join("librepods.sock"))
 }
 
 fn status_path() -> PathBuf {
-    let dir = match std::env::var("XDG_STATE_HOME") {
-        Ok(dir) if !dir.is_empty() => PathBuf::from(dir),
-        _ => PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state"),
-    };
-    dir.join("librepods").join("status.json")
+    crate::paths::state().join("librepods").join("status.json")
 }
 
 enum Msg {

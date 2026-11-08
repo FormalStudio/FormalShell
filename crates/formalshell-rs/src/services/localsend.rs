@@ -221,7 +221,7 @@ pub async fn run(ctx: Ctx) {
                 let path = match payload {
                     Payload::Path(p) => p,
                     Payload::Text(text) => {
-                        let dir = std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into())).join("formalshell");
+                        let dir = crate::paths::shell_runtime();
                         let file = dir.join(format!("localsend-text-{}.txt", now_ms() as u64));
                         let staged = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&file, text));
                         if staged.is_err() {

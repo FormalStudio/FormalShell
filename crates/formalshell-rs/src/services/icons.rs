@@ -124,20 +124,13 @@ fn decode(path: &Path, longest: Option<u32>) -> Option<RgbaImage> {
 }
 
 pub fn data_dirs() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let mut dirs = Vec::new();
-    match std::env::var_os("XDG_DATA_HOME") {
-        Some(d) if !d.is_empty() => dirs.push(PathBuf::from(d)),
-        _ => dirs.extend(home.iter().map(|h| h.join(".local/share"))),
-    }
+    let mut dirs: Vec<PathBuf> = Some(crate::paths::data()).filter(|d| d.is_absolute()).into_iter().collect();
     let system = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
     if system.is_empty() {
         dirs.extend(["/usr/local/share", "/usr/share"].map(PathBuf::from));
     } else {
         dirs.extend(system.split(':').filter(|d| !d.is_empty()).map(PathBuf::from));
     }
-    dirs.extend(home.iter().map(|h| h.join(".nix-profile/share")));
-    dirs.push(PathBuf::from("/run/current-system/sw/share"));
     let mut seen = std::collections::HashSet::new();
     dirs.retain(|d| seen.insert(d.clone()));
     dirs
@@ -380,7 +373,7 @@ fn icon_bases() -> Vec<PathBuf> {
 
 /// The theme the GTK settings name, hicolor when none does.
 fn configured_theme() -> String {
-    let config = std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()).map_or_else(|| home().join(".config"), PathBuf::from);
+    let config = crate::paths::config();
     let settings = std::fs::read_to_string(config.join("gtk-3.0/settings.ini")).unwrap_or_default();
     settings
         .lines()

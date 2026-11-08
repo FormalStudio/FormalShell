@@ -19,7 +19,7 @@ pub enum Request {
 /// session's shell shares `XDG_RUNTIME_DIR` with the session it runs in,
 /// and a socket keyed on that alone hands its calls to the outer shell.
 pub fn socket_path() -> PathBuf {
-    socket_dir().join(format!("ipc-{}.sock", display_key()))
+    crate::paths::shell_runtime().join(format!("ipc-{}.sock", crate::paths::display_key()))
 }
 
 /// The socket a client should reach. With no `WAYLAND_DISPLAY` (an ssh
@@ -28,7 +28,7 @@ pub fn client_socket_path() -> PathBuf {
     if std::env::var_os("WAYLAND_DISPLAY").is_some() {
         return socket_path();
     }
-    let newest = std::fs::read_dir(socket_dir()).ok().and_then(|dir| {
+    let newest = std::fs::read_dir(crate::paths::shell_runtime()).ok().and_then(|dir| {
         dir.flatten()
             .filter(|e| e.file_name().to_string_lossy().starts_with("ipc-"))
             .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
@@ -38,11 +38,3 @@ pub fn client_socket_path() -> PathBuf {
     newest.unwrap_or_else(socket_path)
 }
 
-fn socket_dir() -> PathBuf {
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    runtime.join("formalshell")
-}
-
-fn display_key() -> String {
-    std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "default".into()).replace('/', "_")
-}
