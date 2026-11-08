@@ -161,7 +161,7 @@ async fn stream(ctx: &Ctx, run: u64, opts: ttfx::Opts, pinned: Option<usize>) ->
     let mut chunks = 0usize;
     let mut buf = vec![0u8; 1 << 16];
     // The first segment is ttfx's canvas prep, not a frame.
-    let mut take = |frame: Frame, chunks: &mut usize| -> Option<End> {
+    let take = |frame: Frame, chunks: &mut usize| -> Option<End> {
         let index = *chunks;
         *chunks += 1;
         if index == 0 {

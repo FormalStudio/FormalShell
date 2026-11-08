@@ -126,7 +126,7 @@ impl Grid {
                 continue;
             }
             let ink = [0, 1, 2].map(|i| (u32::from(self.color[i]) * a + 127) / 255);
-            for (x, px) in row.chunks_exact_mut(4).enumerate() {
+            for (x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 if rows[y] || cols[x] {
                     for i in 0..3 {
                         px[i] = (ink[i] + (u32::from(px[i]) * (255 - a) + 127) / 255) as u8;
@@ -147,7 +147,7 @@ impl Grid {
             if a == 0 {
                 continue;
             }
-            for (x, px) in row.chunks_exact_mut(4).enumerate() {
+            for (x, px) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 if rows[y] || cols[x] {
                     for i in 0..3 {
                         px[i] = f(px[i], self.color[i], a);
@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(px(&layer, w, 10, 10), [0, 0, 0, 0], "clear between lines");
         // Premultiplied over the same background lands where paint did.
         let over: Vec<u8> = layer
-            .chunks_exact(4)
+            .as_chunks::<4>().0.iter()
             .zip(flat(w, h, bg).chunks_exact(4))
             .flat_map(|(s, d)| [0, 1, 2, 3].map(|i| (u32::from(s[i]) + u32::from(d[i]) * (255 - u32::from(s[3])) / 255) as u8))
             .collect();

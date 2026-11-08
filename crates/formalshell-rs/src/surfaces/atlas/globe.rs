@@ -17,7 +17,7 @@ use vello_cpu::Pixmap;
 use vello_cpu::kurbo::{self, BezPath, Circle, Shape as _};
 
 use super::earth::{ATMOSPHERE, Earth, Stats};
-use crate::scene::{Bitmap, Brush, VOp};
+use crate::scene::{Brush, VOp};
 
 const COUNTRIES: &str = include_str!("../../../data/countries.json");
 
@@ -226,8 +226,8 @@ fn lighter(c: Rgba, factor: f64) -> Rgba {
 /// Camera-space light, x right, y up, z toward the viewer: upper left and a
 /// little in front, so the lit side faces the reader.
 pub(super) fn light() -> [f64; 3] {
-    let (x, y, z) = (-0.55, 0.6, 0.58);
-    let l = ((x * x + y * y + z * z) as f64).sqrt();
+    let (x, y, z): (f64, f64, f64) = (-0.55, 0.6, 0.58);
+    let l = (x * x + y * y + z * z).sqrt();
     [x / l, y / l, z / l]
 }
 
@@ -1083,7 +1083,7 @@ mod tests {
         Earth::single(width, height, rgb)
     }
 
-    fn picture(g: &mut Globe) -> (Bitmap, (f64, f64)) {
+    fn picture(g: &mut Globe) -> (crate::scene::Bitmap, (f64, f64)) {
         let ops = g.paint(&ink(), 1.0);
         ops.iter().find_map(|op| if let VOp::Image(i, at, _) = op { Some((i.clone(), *at)) } else { None }).expect("an image op")
     }

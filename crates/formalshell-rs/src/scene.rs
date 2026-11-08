@@ -157,11 +157,6 @@ pub fn pixels_at(logical: f64, scale: f64) -> u32 {
     (logical * scale).round().max(1.0) as u32
 }
 
-/// [`pixels_at`] the current [`raster_scale`].
-pub fn pixels(logical: f64) -> u32 {
-    pixels_at(logical, raster_scale())
-}
-
 /// Sets [`raster_scale`] until dropped.
 pub struct RasterScope(Option<f64>);
 
@@ -742,7 +737,7 @@ mod tests {
         {
             let _inner = raster_at(1.25);
             assert_eq!(raster_scale(), 1.25);
-            assert_eq!(pixels(32.0), 40);
+            assert_eq!(pixels_at(32.0, raster_scale()), 40);
         }
         assert_eq!(raster_scale(), 1.0);
     }

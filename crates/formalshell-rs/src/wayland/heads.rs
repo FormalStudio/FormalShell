@@ -478,7 +478,7 @@ impl App {
         if self.modal_up {
             return Err("modal");
         }
-        if snapshot.fullscreen_outputs.iter().any(|o| *o == name) {
+        if snapshot.fullscreen_outputs.contains(&name) {
             return Err("fullscreen");
         }
         if self.store.devices.profiles.as_ref().is_some_and(|p| p.active == fs_upower::Profile::PowerSaver) {

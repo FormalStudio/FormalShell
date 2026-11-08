@@ -78,7 +78,7 @@ impl Lookup {
 pub fn key(query: &str) -> Option<String> {
     let q = query.trim().to_lowercase();
     let n = q.chars().count();
-    (n >= 1 && n <= MAX_LEN && !q.starts_with(':')).then_some(q)
+    ((1..=MAX_LEN).contains(&n) && !q.starts_with(':')).then_some(q)
 }
 
 /// A subject id as abbreviations name it: `app:<desktop id>` takes its

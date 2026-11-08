@@ -233,7 +233,7 @@ fn qt_number(value: f64) -> String {
     let trim = |s: &str| -> String {
         if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s.to_owned() }
     };
-    if exp < -4 || exp >= 6 {
+    if !(-4..6).contains(&exp) {
         let sign = if exp < 0 { '-' } else { '+' };
         format!("{}e{sign}{:02}", trim(mantissa), exp.abs())
     } else {

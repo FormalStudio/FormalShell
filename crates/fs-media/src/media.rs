@@ -223,7 +223,7 @@ mod tests {
     fn pick_a_track_over_an_empty_player() {
         let empty = PlayerRow { empty: true, ..bare("a") };
         assert_eq!(pick_player_id(&[empty.clone(), bare("b")], ""), "b");
-        assert_eq!(pick_player_id(&[empty.clone()], ""), "a");
+        assert_eq!(pick_player_id(std::slice::from_ref(&empty), ""), "a");
         assert_eq!(pick_player_id(&[empty, bare("b")], "a"), "a");
     }
 

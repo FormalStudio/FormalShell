@@ -334,7 +334,7 @@ impl Renderer {
         let mut origin = Affine::translate((-device.x as f64, -device.y as f64));
         let mut rect = if s == 1.0 { device } else { rect };
         if s != 1.0 {
-            origin = origin * Affine::scale(s);
+            origin *= Affine::scale(s);
             // Every node reaching a canvas pixel the rect only partly covers
             // is drawn into it, or that pixel loses whatever it misses: the
             // nodes whose own pixels touch it, and at a fractional scale the

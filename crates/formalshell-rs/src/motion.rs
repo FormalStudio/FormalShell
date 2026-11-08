@@ -56,7 +56,6 @@ fn interned(stops: &[(f64, f64)]) -> &'static [(f64, f64)] {
 pub enum Kind {
     SpatialFast,
     Spatial,
-    SpatialSlow,
     EffectsFast,
     Effects,
     EffectsSlow,
@@ -69,7 +68,6 @@ impl Kind {
         let name = match self {
             Kind::SpatialFast => "spatialFast",
             Kind::Spatial => "spatial",
-            Kind::SpatialSlow => "spatialSlow",
             Kind::EffectsFast => "effectsFast",
             Kind::Effects => "effects",
             Kind::EffectsSlow => "effectsSlow",
@@ -87,7 +85,6 @@ impl Kind {
         match self {
             Kind::SpatialFast => m.spatial_fast,
             Kind::Spatial => m.spatial,
-            Kind::SpatialSlow => m.spatial_slow,
             Kind::EffectsFast => m.effects_fast,
             Kind::Effects => m.effects,
             Kind::EffectsSlow => m.effects_slow,
@@ -245,15 +242,7 @@ pub struct Deform {
     v01: f64,
     v11: f64,
     pub at_rest: bool,
-    sampled: Option<(f64, f64, f64, f64)>,
-}
-
-/// The side the frame is anchored to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DeformEdge {
-    Top,
-    Left,
-    Right,
+    sampled: Option<(f64, f64, f64)>,
 }
 
 impl Deform {
@@ -267,32 +256,22 @@ impl Deform {
     }
 
     /// One frame of a top-edge drawer: `x`, `y` the frame's scene
-    /// position, `h` its height.
+    /// position, `h` its height. A height change reads as travel away from
+    /// the top edge.
     pub fn step(&mut self, dt: f64, x: f64, y: f64, h: f64, amount: f64) {
-        self.step_at(dt, (x, y, 0.0, h), amount, DeformEdge::Top);
-    }
-
-    /// One frame of a frame at `(x, y, w, h)` anchored to `edge`: a size
-    /// change reads as travel away from that edge.
-    pub fn step_at(&mut self, dt: f64, (x, y, w, h): (f64, f64, f64, f64), amount: f64, edge: DeformEdge) {
         // A second step on one frame (a card moved after its tick) keeps
         // the frame's sample, so the next frame still reads the move.
         if dt < 0.001 && self.sampled.is_some() {
             return;
         }
-        let Some((px, py, pw, ph)) = self.sampled.filter(|_| (0.001..=0.1).contains(&dt)) else {
-            self.sampled = Some((x, y, w, h));
+        let Some((px, py, ph)) = self.sampled.filter(|_| (0.001..=0.1).contains(&dt)) else {
+            self.sampled = Some((x, y, h));
             self.settle(0.0);
             return;
         };
-        let (dw, dh) = ((w - pw) / dt, (h - ph) / dt);
-        let (mut vx, mut vy) = ((x - px) / dt, (y - py) / dt);
-        match edge {
-            DeformEdge::Top => vy += dh,
-            DeformEdge::Left => vx += dw,
-            DeformEdge::Right => vx -= dw,
-        }
-        self.sampled = Some((x, y, w, h));
+        let vx = (x - px) / dt;
+        let vy = (y - py) / dt + (h - ph) / dt;
+        self.sampled = Some((x, y, h));
 
         let speed = (vx * vx + vy * vy).sqrt();
         if self.at_rest && speed < DEFORM.dead_band {
@@ -338,12 +317,6 @@ impl Deform {
             *self = Self { sampled: self.sampled, ..Self::new() };
         }
     }
-
-    /// The spring's matrix about `pivot`, in the coordinates the pivot is in.
-    pub fn about(&self, pivot: (f64, f64)) -> vello_cpu::kurbo::Affine {
-        use vello_cpu::kurbo::Affine;
-        Affine::translate(pivot) * Affine::new([self.m00, self.m01, self.m01, self.m11, 0.0, 0.0]) * Affine::translate((-pivot.0, -pivot.1))
-    }
 }
 
 #[cfg(test)]
@@ -380,7 +353,7 @@ mod tests {
         let (mut deform, mut peak, mut rested_at) = (Deform::new(), 0.0_f64, None);
         for frame in 0..240 {
             let now = start + Duration::from_millis(frame * 16);
-            deform.step_at(0.016, (1500.0 + slide.value(now), 900.0, 380.0, 90.0), 0.15, DeformEdge::Right);
+            deform.step(0.016, 1500.0 + slide.value(now), 900.0, 90.0, 0.15);
             peak = peak.max((deform.m00 - 1.0).abs());
             if deform.at_rest && !slide.running(now) && rested_at.is_none() {
                 rested_at = Some(frame);
@@ -420,7 +393,6 @@ mod tests {
         let curves = [
             (Kind::SpatialFast, vec![0.42, 1.67, 0.21, 0.9, 1.0, 1.0], 350.0),
             (Kind::Spatial, vec![0.38, 1.21, 0.22, 1.0, 1.0, 1.0], 500.0),
-            (Kind::SpatialSlow, vec![0.39, 1.29, 0.35, 0.98, 1.0, 1.0], 650.0),
             (Kind::EffectsFast, vec![0.31, 0.94, 0.34, 1.0, 1.0, 1.0], 150.0),
             (Kind::Effects, vec![0.34, 0.8, 0.34, 1.0, 1.0, 1.0], 200.0),
             (Kind::EffectsSlow, vec![0.34, 0.88, 0.34, 1.0, 1.0, 1.0], 300.0),

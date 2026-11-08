@@ -256,14 +256,6 @@ mod tests {
         v
     }
 
-    fn without(base: &Value, keys: &[&str]) -> Value {
-        let mut v = base.clone();
-        for k in keys {
-            v.as_object_mut().unwrap().shift_remove(*k);
-        }
-        v
-    }
-
     fn s<'a>(m: &'a Map<String, Value>, k: &str) -> &'a str {
         m.get(k)
             .and_then(Value::as_str)

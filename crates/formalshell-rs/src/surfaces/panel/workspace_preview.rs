@@ -39,7 +39,6 @@ pub fn icon_key(id: &WindowId) -> String {
 #[derive(Clone, Debug, Default)]
 pub struct Laid {
     pub plan: Option<PreviewLayout>,
-    pub area: (f64, f64),
     pub view: (f64, f64),
     pub content: (f64, f64),
     pub scale: f64,
@@ -60,16 +59,15 @@ pub struct Shared {
 
 pub struct WorkspacePreview {
     pub workspace_id: WorkspaceId,
-    pub idx: i64,
     label: String,
     pub from_pointer: bool,
     pub shared: Rc<RefCell<Shared>>,
 }
 
 impl WorkspacePreview {
-    pub fn new(workspace_id: WorkspaceId, idx: i64, label: String, from_pointer: bool, shared: Rc<RefCell<Shared>>) -> Self {
+    pub fn new(workspace_id: WorkspaceId, label: String, from_pointer: bool, shared: Rc<RefCell<Shared>>) -> Self {
         *shared.borrow_mut() = Shared::default();
-        Self { workspace_id, idx, label, from_pointer, shared }
+        Self { workspace_id, label, from_pointer, shared }
     }
 
     fn windows<'a>(&self, v: &View<'a>) -> Vec<&'a Window> {
@@ -130,7 +128,6 @@ impl Panel for WorkspacePreview {
         let pad = s.xxs;
         let mut laid = Laid {
             plan: Some(plan.clone()),
-            area: (aw, ah),
             view: (vw, vh),
             content,
             scale: if aw > 0.0 { vw / aw } else { 0.0 },

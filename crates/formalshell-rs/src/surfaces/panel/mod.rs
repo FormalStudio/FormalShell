@@ -249,7 +249,7 @@ pub trait Panel {
     }
 }
 
-pub use fs_chrome::bar::panels::{PANELS, known, launcher_route};
+pub use fs_chrome::bar::panels::{known, launcher_route};
 
 /// The card's width wherever it is drawn. A card that fits its content is
 /// the body's natural width plus the rows' inset on either side, the same
@@ -319,7 +319,7 @@ pub fn build(name: &str) -> Option<Box<dyn Panel>> {
     Some(match id {
         "activity" => Box::new(activity::Activity::default()),
         "appmenu" => Box::new(appmenu::AppMenu),
-        "audio" => Box::new(audio::Audio::default()),
+        "audio" => Box::new(audio::Audio),
         "calendar" => Box::new(calendar::Calendar::new(true)),
         "iphone" => Box::new(iphone::Iphone::default()),
         "media" => Box::new(media::Media::default()),

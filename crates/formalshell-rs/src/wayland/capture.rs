@@ -13,7 +13,6 @@
 //! while it shows that window. A frame lands in a wl_shm buffer, is copied out and fitted to the
 //! size the owner draws on the blocking pool, and comes back as a `Bitmap`.
 
-use std::collections::HashMap;
 
 use calloop::channel::{self, Event as ChannelEvent, Sender};
 use fs_types::WindowId;

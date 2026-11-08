@@ -559,7 +559,7 @@ impl App {
     pub(super) fn lock_pointer(&mut self, events: &[PointerEvent]) {
         for e in events {
             let Some(o) = self.lock.outs.iter_mut().find(|o| *o.surface.layer.wl_surface() == e.surface) else { continue };
-            let last = std::mem::replace(&mut o.pointer, Some(e.position));
+            let last = o.pointer.replace(e.position);
             let moved = match e.kind {
                 PointerEventKind::Enter { .. } => continue,
                 PointerEventKind::Leave { .. } => {
@@ -1099,9 +1099,8 @@ impl App {
             // come back from it.
             sym if !self.lock.checking => {
                 let out = self.lock.password.key(super::field_key(sym), self.mods, event.utf8.as_deref());
-                match out {
-                    fs_menu::field::Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
-                    _ => {}
+                if out == fs_menu::field::Outcome::Paste {
+                    clipboard::command(clipboard::Cmd::Paste);
                 }
             }
             _ => {}

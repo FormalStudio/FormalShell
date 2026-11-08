@@ -321,7 +321,6 @@ pub struct Look {
     /// `letterSpacing.meta`, the tracking of a meta label.
     pub meta_tracking: f32,
     pub narrow: f64,
-    pub panel_padding: f64,
     pub sans: Family,
     pub mono: Family,
     pub foreground: Rgba,
@@ -387,7 +386,6 @@ impl Look {
             caption: theme.font_size.caption as f32,
             meta_tracking: theme.letter_spacing.meta as f32,
             narrow: s.popup_width_narrow,
-            panel_padding: s.panel_padding,
             sans: face(theme.faces.words),
             mono: face(theme.faces.values),
             foreground: theme.colors.get("foreground"),
@@ -576,13 +574,8 @@ impl<'a> Painter<'a> {
     }
 
     /// A line under a Gaussian blur, its bounds grown by the blur's reach and
-    /// cut to `clip`.
-    pub fn blurred(&mut self, shaped: &ShapedText, at: (i32, i32), color: Rgba, blur: f32, clip: Option<IRect>) {
-        self.blurred_with(shaped, at, color, blur, clip, Affine::IDENTITY);
-    }
-
-    /// [`blurred`](Self::blurred) under a transform about the surface's
-    /// origin; it must not carry the box past its grown bounds.
+    /// cut to `clip`, under a transform about the surface's origin; it must
+    /// not carry the box past its grown bounds.
     pub fn blurred_with(&mut self, shaped: &ShapedText, at: (i32, i32), color: Rgba, blur: f32, clip: Option<IRect>, about: Affine) {
         if color.a <= 0.0 || shaped.glyphs.is_empty() {
             return;

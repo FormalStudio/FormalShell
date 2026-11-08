@@ -122,11 +122,6 @@ pub fn section_label(s: &Space, text: &str, count: Option<usize>, inset: bool) -
     if inset { el.pad_start(s.control_padding_x) } else { el }
 }
 
-/// A section label heading a group or naming a field.
-pub fn heading(s: &Space, text: &str, count: Option<usize>, inset: bool) -> El {
-    section_label(s, text, count, inset)
-}
-
 /// A `Cell` around one child.
 pub fn cell(child: El) -> El {
     El::new(Kind::Cell { state: CellState::default(), interactive: false, child: Box::new(child) })

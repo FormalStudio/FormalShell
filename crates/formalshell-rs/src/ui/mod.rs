@@ -706,7 +706,7 @@ impl Cx<'_> {
         // The next group follows this one's last node whatever it draws.
         self.last = g.nodes.last().copied().or(self.last);
         let anchor = if g.nodes.is_empty() { self.last } else { None };
-        let mut p = crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor);
+        let p = crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor);
         (p, self.kit)
     }
 

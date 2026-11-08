@@ -135,11 +135,10 @@ pub fn entry<'a>(style: &'a Value, role: &str, state: Option<&str>) -> Option<Co
     };
     // Surfaces resolve boxes every frame, so the shipped table's merges are
     // made once rather than cloned per call.
-    if std::ptr::eq(style, crate::table()) {
-        if let Some(m) = merged().get(role).and_then(|m| m.get(s)) {
+    if std::ptr::eq(style, crate::table())
+        && let Some(m) = merged().get(role).and_then(|m| m.get(s)) {
             return Some(Cow::Borrowed(m));
         }
-    }
     Some(Cow::Owned(merge(base, over)))
 }
 

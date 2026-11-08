@@ -7,18 +7,15 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use fs_types::Fraction;
-use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
-use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
+use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::App;
 use crate::services::radio::{self, Cmd, Reply};
 use crate::store::Diff;
-use crate::surface::{PixelSurface, Surface};
 use crate::surfaces::atlas::earth;
 use crate::surfaces::atlas::globe::{self, Out};
 use crate::surfaces::atlas::view::Shown;

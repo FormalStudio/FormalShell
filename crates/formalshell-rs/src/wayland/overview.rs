@@ -519,7 +519,7 @@ impl App {
                     m.drag = Some(Drag { id: w.id, from_row: i, from: at, at, grab: (at.0 - origin.x - slide, at.1 - origin.y), lifted: false, over: None });
                 }
             }
-            PointerEventKind::Release { button, .. } if button == 0x110 => {
+            PointerEventKind::Release { button: 0x110, .. } => {
                 let pressed = self.overview.pressed.take();
                 let drag = self.overview.model.drag.take();
                 if !live {

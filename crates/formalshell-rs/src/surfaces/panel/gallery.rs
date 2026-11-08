@@ -127,7 +127,7 @@ impl Panel for Gallery {
             ("Warning", |s| s.warning = true),
         ];
         let mut cells = vec![w::panel_heading(s, "Cell")];
-        cells.extend(states.iter().map(|(name, f)| w::cell(w::label(*name)).cell_state(|s| f(s))));
+        cells.extend(states.iter().map(|(name, f)| w::cell(w::label(*name)).cell_state(f)));
         let mut rows = vec![w::panel_heading(s, "Launcher row / token")];
         rows.extend([("Rest", false, false), ("Hovered", true, false), ("Selected", false, true)].into_iter().map(|(name, hovered, selected)| {
             let weight = if selected { Weight::Semibold } else { Weight::Normal };

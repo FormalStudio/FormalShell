@@ -18,7 +18,7 @@ use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
 use crate::scene::{IRect, NodeId, Paint, Scene};
-use crate::surface::{PixelSurface, Role, Sub, Surface};
+use crate::surface::{PixelSurface, Sub, Surface};
 use crate::surfaces::card::{Card, Ends};
 use crate::wayland::App;
 
@@ -104,7 +104,7 @@ impl Modal {
     /// Moves the card's resting rect, given on the output, drawn on this
     /// frame: content laid out in the new rect never shows over the card's
     /// last one. A second tick on one frame leaves the deform to the next
-    /// (`Deform::step_at`).
+    /// (`Deform::step`).
     pub fn place(&mut self, rest: Rect, now: Instant) {
         let rest = self.card.edge_map().inverse().transform_rect_bbox(rest);
         if rest != self.card.rest() {
