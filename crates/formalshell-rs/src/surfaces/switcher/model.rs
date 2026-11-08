@@ -137,17 +137,6 @@ pub fn ordinals(keys: &[String]) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// cursor.js `follow`: the smallest scroll that shows `[at, at + size)`.
-pub fn follow(at: f64, size: f64, scroll: f64, view: f64, content: f64) -> f64 {
-    let mut next = scroll;
-    if at < next {
-        next = at;
-    } else if at + size > next + view {
-        next = at + size - view;
-    }
-    next.clamp(0.0, (content - view).max(0.0))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

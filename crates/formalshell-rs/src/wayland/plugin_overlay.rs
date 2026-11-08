@@ -175,8 +175,8 @@ impl App {
                     w.dirty = true;
                 }
             }
-            PointerEventKind::Press { button: 0x110, .. } => w.pressed = hit(w),
-            PointerEventKind::Release { button: 0x110, .. } => {
+            PointerEventKind::Press { button: crate::input::BTN_LEFT, .. } => w.pressed = hit(w),
+            PointerEventKind::Release { button: crate::input::BTN_LEFT, .. } => {
                 let pressed = w.pressed.take();
                 let on = hit(w);
                 if pressed.is_none() || pressed != on {

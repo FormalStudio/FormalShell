@@ -17,9 +17,8 @@
 use std::time::Instant;
 
 use fs_menu::actions::{Action, Run, TargetKind};
-use fs_menu::field;
 use fs_menu::model::{self, Mode, SectionCtx};
-use fs_menu::nav::{self, Dir, KeyAction, KeyCtx, KeyMode};
+use fs_menu::nav::{self, Dir};
 use fs_menu::node::{ActionEntry, Kind as NodeKind, Node};
 use fs_menu::toggles::{self, Snapshot};
 use fs_types::{Edge, WindowId};
@@ -35,7 +34,11 @@ use crate::services::{clipboard, compositor, plugins, state};
 use crate::store::Store;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::modal::Modal;
+use crate::ui::field;
 use crate::ui::{self, El, Ink, Size, Type, Ui, Weight, w};
+
+pub mod keys;
+use keys::{KeyAction, KeyCtx, KeyMode};
 
 /// Which view draws the level (`menu status`'s `view`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -333,14 +336,8 @@ impl Column {
 
     /// The smallest scroll that shows the cursor's row.
     fn follow(&mut self) {
-        let top = self.cursor as f64 * self.row_h;
-        let mut next = self.scroll;
-        if top < next {
-            next = top;
-        } else if top + self.row_h > next + self.view_h {
-            next = top + self.row_h - self.view_h;
-        }
-        self.scroll = next.clamp(0.0, self.max_scroll());
+        let next = crate::scroll::follow(self.cursor as f64 * self.row_h, self.row_h, self.scroll, self.view_h, self.shown.len() as f64 * self.row_h);
+        self.scroll = next;
         self.travels = true;
         self.wheeled = false;
         self.touch.settle();
@@ -2777,15 +2774,15 @@ impl Model {
         }
     }
 
-    /// One key, through `nav::key_action`, or into the field as `edit`.
-    pub fn key(&mut self, store: &Store, key: nav::Key, edit: field::Key, mods: nav::Modifiers, repeat: bool, text: Option<&str>) -> Out {
-        if self.on_mirror() && matches!(key, nav::Key::Tab | nav::Key::Return | nav::Key::Enter) {
+    /// One key, through `keys::key_action`, or into the field as `edit`.
+    pub fn key(&mut self, store: &Store, key: keys::Key, edit: field::Key, mods: field::Modifiers, repeat: bool, text: Option<&str>) -> Out {
+        if self.on_mirror() && matches!(key, keys::Key::Tab | keys::Key::Return | keys::Key::Enter) {
             self.mirror_cycle(store, 1);
             return Out::None;
         }
         let column = self.column.is_some();
         let caret_end = self.query.caret() == self.query.text().len() && self.query.selection().is_none();
-        let into = key == nav::Key::Right
+        let into = key == keys::Key::Right
             && !column
             && caret_end
             && self.view == View::Rows
@@ -2801,7 +2798,7 @@ impl Model {
             column,
             into,
         };
-        let action = nav::key_action(key, mods, repeat, &ctx);
+        let action = keys::key_action(key, mods, repeat, &ctx);
         if column {
             match action {
                 KeyAction::Up => self.column_move(Dir::Up),
@@ -2859,7 +2856,7 @@ impl Model {
     }
 
     /// A key the field takes.
-    fn edit(&mut self, store: &Store, edit: field::Key, mods: nav::Modifiers, text: Option<&str>) -> Out {
+    fn edit(&mut self, store: &Store, edit: field::Key, mods: field::Modifiers, text: Option<&str>) -> Out {
         match self.query.key(edit, mods, text) {
             field::Outcome::Pass => return Out::None,
             field::Outcome::Held => {}

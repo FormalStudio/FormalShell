@@ -5,9 +5,8 @@
 use std::time::Instant;
 
 use fs_types::{Edge, WindowId};
-use fs_menu::nav;
 use smithay_client_toolkit::compositor::Region;
-use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::seat::keyboard::KeyEvent;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
@@ -16,9 +15,10 @@ use super::{App, Owner};
 use crate::services::menu::{self as index, Ask};
 use crate::surface::{PixelSurface, Surface};
 use crate::surfaces::card::Ends;
-use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown};
+use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
+use crate::ui::field::{self, Modifiers};
 
 /// How long one loop turn draws the launcher before handing the loop back.
 const LAUNCHER_SLICE: std::time::Duration = std::time::Duration::from_millis(3);
@@ -29,8 +29,6 @@ const WIFI_SHOWN: &str = "wifi-shown";
 const WIFI_IDENTITY: &str = "wifi-identity";
 const REMINDER_SET: &str = "reminder-set";
 const LIGHTS_COLOR: &str = "lights-color";
-const BTN_LEFT: u32 = 0x110;
-const BTN_RIGHT: u32 = 0x111;
 
 pub struct Window {
     pub shown: Shown,
@@ -346,23 +344,7 @@ impl App {
     /// One key into the held panel, through the panel host's cursor model.
     fn launcher_panel_key(&mut self, event: &KeyEvent, repeat: bool) {
         use crate::surfaces::panel::host::{Driven, Key, drive};
-        let key = match event.keysym {
-            Keysym::BackSpace => Key::Back,
-            Keysym::Escape => Key::Escape,
-            Keysym::Tab if self.mods.shift => Key::Tab(-1),
-            Keysym::Tab => Key::Tab(1),
-            Keysym::ISO_Left_Tab => Key::Tab(-1),
-            Keysym::Down => Key::Move(0, 1),
-            Keysym::Up => Key::Move(0, -1),
-            Keysym::Right => Key::Move(1, 0),
-            Keysym::Left => Key::Move(-1, 0),
-            Keysym::Return | Keysym::KP_Enter | Keysym::space if repeat => return,
-            Keysym::Return | Keysym::KP_Enter | Keysym::space => Key::Activate,
-            _ => match event.utf8.clone() {
-                Some(t) if t.chars().count() == 1 && t.chars().all(|c| c as u32 >= 0x20) => Key::Text(t),
-                _ => return,
-            },
-        };
+        let Some(key) = crate::input::panel_key(event.keysym, event.utf8.clone(), repeat, self.mods.shift) else { return };
         let back = key == Key::Back;
         let Some(w) = &self.launch else { return };
         let Some(p) = self.launcher.panel.as_mut() else { return };
@@ -1245,31 +1227,14 @@ impl App {
         if !self.launcher.open || self.launch.as_ref().is_none_or(|w| !w.shown.modal.open) {
             return false;
         }
-        let key = match event.keysym {
-            Keysym::Up => nav::Key::Up,
-            Keysym::Down => nav::Key::Down,
-            Keysym::Left => nav::Key::Left,
-            Keysym::Right => nav::Key::Right,
-            Keysym::Page_Up => nav::Key::PageUp,
-            Keysym::Page_Down => nav::Key::PageDown,
-            Keysym::Home => nav::Key::Home,
-            Keysym::End => nav::Key::End,
-            Keysym::Return => nav::Key::Return,
-            Keysym::KP_Enter => nav::Key::Enter,
-            Keysym::Escape => nav::Key::Escape,
-            Keysym::BackSpace => nav::Key::Backspace,
-            Keysym::Tab if self.mods.shift => nav::Key::Backtab,
-            Keysym::Tab => nav::Key::Tab,
-            Keysym::ISO_Left_Tab => nav::Key::Backtab,
-            _ => nav::Key::Other,
-        };
+        let key = crate::input::launcher_key(event.keysym, self.mods.shift);
         if self.launcher.on_panel() {
             self.launcher_panel_key(event, repeat);
             return true;
         }
-        let text = event.utf8.as_deref().filter(|t| t.chars().all(|c| c as u32 >= 0x20 && c != '\u{7f}') && !t.is_empty());
+        let text = crate::input::printable(event.utf8.as_deref());
         self.resolve_launcher();
-        let out = self.launcher.key(&self.store, key, super::field_key(event.keysym), self.mods, repeat, text);
+        let out = self.launcher.key(&self.store, key, crate::input::field_key(event.keysym), self.mods, repeat, text);
         if self.launcher.on_mirror() {
             self.launcher_mirror();
         }
@@ -1332,7 +1297,7 @@ impl App {
                     }
                     return true;
                 }
-                if button == BTN_RIGHT {
+                if button == crate::input::BTN_RIGHT {
                     if let Some(i) = on.strip_prefix("row:").and_then(|i| i.parse::<usize>().ok()) {
                         self.resolve_launcher();
                         self.launcher.open_actions(&self.store, i);
@@ -1342,7 +1307,7 @@ impl App {
                     }
                     return true;
                 }
-                if button == BTN_LEFT {
+                if button == crate::input::BTN_LEFT {
                     self.launcher_click(&on);
                 }
             }
@@ -1361,19 +1326,19 @@ impl App {
 
     /// A press and release on one thing: the foot's buttons are their keys.
     fn launcher_click(&mut self, on: &str) {
-        let key = |key, shift| Some((key, nav::Modifiers { shift, ..Default::default() }));
+        let key = |key, shift| Some((key, Modifiers { shift, ..Default::default() }));
         let hint = match on {
-            "actions" => key(nav::Key::Tab, false),
-            "into" => key(nav::Key::Right, false),
-            "primary" | "column-run" => key(nav::Key::Return, false),
-            "alternate" => key(nav::Key::Return, true),
-            "column-back" | "column-token" => key(nav::Key::Backtab, false),
-            "section" => Some((nav::Key::Tab, nav::Modifiers { ctrl: true, ..Default::default() })),
+            "actions" => key(keys::Key::Tab, false),
+            "into" => key(keys::Key::Right, false),
+            "primary" | "column-run" => key(keys::Key::Return, false),
+            "alternate" => key(keys::Key::Return, true),
+            "column-back" | "column-token" => key(keys::Key::Backtab, false),
+            "section" => Some((keys::Key::Tab, Modifiers { ctrl: true, ..Default::default() })),
             _ => None,
         };
         if let Some((key, mods)) = hint {
             self.resolve_launcher();
-            let out = self.launcher.key(&self.store, key, fs_menu::field::Key::Other, mods, false, None);
+            let out = self.launcher.key(&self.store, key, field::Key::Other, mods, false, None);
             if self.launcher.on_mirror() {
                 self.launcher_mirror();
             }

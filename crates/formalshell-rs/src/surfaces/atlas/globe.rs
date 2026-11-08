@@ -18,6 +18,7 @@ use vello_cpu::kurbo::{self, BezPath, Circle, Shape as _};
 
 use super::earth::{ATMOSPHERE, Earth, Stats};
 use crate::scene::{Brush, VOp};
+use crate::scroll::Velocity;
 
 const COUNTRIES: &str = include_str!("../../../data/countries.json");
 
@@ -28,15 +29,6 @@ const LAUNCH_SPEED: f64 = 120.0;
 const MAXIMUM_SPEED: f64 = 2400.0;
 const DECELERATION: f64 = 1800.0;
 const MAXIMUM_FRAME_TIME: f64 = 0.1;
-/// The motion a release carries, in Wayland event milliseconds: the
-/// samples this far back from the release.
-const VELOCITY_WINDOW_MS: u32 = 80;
-/// A pointer that sent no motion for this long before its release had
-/// stopped, and launches nothing.
-const STOPPED_MS: u32 = 40;
-/// The shortest span a velocity is measured over, so two events a
-/// millisecond apart cannot read as a flick.
-const MINIMUM_SPAN_MS: u32 = 16;
 /// QStyleHints::startDragDistance, past which a press is a drag.
 const DRAG_THRESHOLD: f64 = 10.0;
 
@@ -249,34 +241,7 @@ struct Drag {
     press: Option<(f64, f64)>,
     active: bool,
     last: (f64, f64),
-    /// Recent positions by the Wayland event's own time, never the loop's:
-    /// motion the compositor coalesced lands in one loop turn.
-    samples: std::collections::VecDeque<(u32, f64, f64)>,
-}
-
-impl Drag {
-    fn sample(&mut self, time: u32, x: f64, y: f64) {
-        self.samples.push_back((time, x, y));
-        while self.samples.front().is_some_and(|&(t, ..)| time.wrapping_sub(t) > VELOCITY_WINDOW_MS * 2) {
-            self.samples.pop_front();
-        }
-    }
-
-    /// The velocity a release at `time` carries, in pixels a second: the
-    /// travel over the window before it, spread over the time up to the
-    /// release so a pointer slowing into it carries less. Nothing once it
-    /// had stopped.
-    fn release_velocity(&self, time: u32) -> (f64, f64) {
-        let Some(&(last_t, lx, ly)) = self.samples.back() else { return (0.0, 0.0) };
-        if time.wrapping_sub(last_t) > STOPPED_MS {
-            return (0.0, 0.0);
-        }
-        let Some(&(first_t, fx, fy)) = self.samples.iter().find(|&&(t, ..)| time.wrapping_sub(t) <= VELOCITY_WINDOW_MS) else {
-            return (0.0, 0.0);
-        };
-        let span = f64::from(time.wrapping_sub(first_t).max(MINIMUM_SPAN_MS)) / 1000.0;
-        ((lx - fx) / span, (ly - fy) / span)
-    }
+    velocity: Velocity,
 }
 
 /// What a pointer gesture on the globe asked of the atlas.
@@ -616,10 +581,10 @@ impl Globe {
                 self.suppress_tap = false;
                 self.hovered = None;
                 self.drag.last = (px, py);
-                self.drag.samples.clear();
+                self.drag.velocity.clear();
             }
             if let Some(time) = time {
-                self.drag.sample(time, lx, ly);
+                self.drag.velocity.track(time, lx, ly);
             }
             let (dx, dy) = (lx - self.drag.last.0, ly - self.drag.last.1);
             self.drag.last = (lx, ly);
@@ -653,7 +618,7 @@ impl Globe {
             return Out::None;
         }
         if drag.active {
-            let (vx, vy) = drag.release_velocity(time);
+            let (vx, vy) = drag.velocity.at_lift_2d(time);
             self.start(vx, vy, now);
             return Out::None;
         }

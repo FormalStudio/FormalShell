@@ -752,13 +752,7 @@ impl Host {
         let scroll = self.scroll.value(now);
         let top = st.rect.y as f64 - self.viewport.y as f64 + scroll;
         let (h, view) = (st.rect.h as f64, self.viewport.h as f64);
-        let mut next = scroll;
-        if top < next {
-            next = top;
-        } else if top + h > next + view {
-            next = top + h - view;
-        }
-        let next = next.clamp(0.0, (self.content_h - view).max(0.0));
+        let next = crate::scroll::follow(top, h, scroll, view, self.content_h);
         if (next - scroll).abs() > 0.5 {
             self.scroll.set(now, next, Clock::SpatialFast.ms(theme) * self.scale);
         }
@@ -1015,9 +1009,8 @@ impl Host {
             return;
         }
         self.touch.settle();
-        let step = 32.0;
         let base = self.scroll.target();
-        let next = (base + if up { -step } else { step }).clamp(0.0, max);
+        let next = (base + if up { -crate::scroll::BODY_NOTCH } else { crate::scroll::BODY_NOTCH }).clamp(0.0, max);
         self.scroll.set(now, next, Clock::SpatialFast.ms(&store.theme.theme) * self.scale);
     }
 }
@@ -1150,7 +1143,7 @@ pub enum Key {
     Back,
     Text(String),
     /// A key into the field that holds the keyboard, with what it types.
-    Edit(fs_menu::field::Key, fs_menu::nav::Modifiers, Option<String>),
+    Edit(crate::ui::field::Key, crate::ui::field::Modifiers, Option<String>),
 }
 
 

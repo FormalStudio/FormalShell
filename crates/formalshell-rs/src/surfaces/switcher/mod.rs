@@ -180,7 +180,7 @@ impl Switcher {
         let card = IRect::new(((ow - card_w) / 2.0).round() as i32, ((oh - card_h) / 2.0).round() as i32, card_w.round() as i32, card_h.round() as i32);
 
         if let Some(p) = places.get(self.index) {
-            self.scroll = model::follow(p.rect.y, m.cell_h, self.scroll, view_h, grid_h);
+            self.scroll = crate::scroll::follow(p.rect.y, m.cell_h, self.scroll, view_h, grid_h);
         }
         let origin = (card.x as f64 + (card_w - grid_w) / 2.0, card.y as f64 + (card_h - view_h) / 2.0 - self.scroll);
         let view = IRect::new(origin.0.round() as i32, (origin.1 + self.scroll).round() as i32, grid_w.round() as i32, view_h.round() as i32);

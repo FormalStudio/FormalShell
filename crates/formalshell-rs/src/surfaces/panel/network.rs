@@ -12,7 +12,7 @@
 //! speed test (`network::Hold`).
 
 use fs_devices::network::speedtest;
-use fs_menu::field;
+use crate::ui::field;
 use fs_types::Fraction;
 
 use super::{Edit, Effect, Panel, View};

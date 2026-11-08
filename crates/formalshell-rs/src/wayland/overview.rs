@@ -506,7 +506,7 @@ impl App {
                     }
                 }
             }
-            PointerEventKind::Press { button, .. } if button == 0x110 && live => {
+            PointerEventKind::Press { button, .. } if button == crate::input::BTN_LEFT && live => {
                 let hit = self.overview.model.hit(at, now);
                 self.overview.pressed = hit;
                 if let Some((i, Some(j))) = hit {
@@ -519,7 +519,7 @@ impl App {
                     m.drag = Some(Drag { id: w.id, from_row: i, from: at, at, grab: (at.0 - origin.x - slide, at.1 - origin.y), lifted: false, over: None });
                 }
             }
-            PointerEventKind::Release { button: 0x110, .. } => {
+            PointerEventKind::Release { button: crate::input::BTN_LEFT, .. } => {
                 let pressed = self.overview.pressed.take();
                 let drag = self.overview.model.drag.take();
                 if !live {

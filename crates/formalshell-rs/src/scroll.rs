@@ -22,7 +22,7 @@ const PULL: f64 = 0.55;
 /// The stretch's asymptote, a share of the viewport capped in pixels: it
 /// can never get past this however far the fingers travel.
 const REACH: f64 = 0.1;
-const REACH_MAX: f64 = 40.0;
+pub const REACH_MAX: f64 = 40.0;
 
 /// The coast's decay time constant, in seconds. UIScrollView's normal
 /// rate (0.998 a millisecond) is 500ms; 300 keeps the macOS feel and stops
@@ -60,6 +60,37 @@ pub enum Travel {
     Lift(u32),
     None,
 }
+
+/// One axis of a scroll in wheel notches: the steps a wheel reports, or a
+/// continuous axis at 15 units to the notch, the libinput/Qt ratio a
+/// touchpad's swipe is read at, whatever its source.
+pub fn notches(axis: &AxisScroll) -> f64 {
+    if axis.value120 != 0 {
+        f64::from(axis.value120) / 120.0
+    } else if axis.discrete != 0 {
+        f64::from(axis.discrete)
+    } else {
+        axis.absolute / 15.0
+    }
+}
+
+/// The smallest scroll that shows `[at, at + size)` in a `view` over
+/// `content`.
+pub fn follow(at: f64, size: f64, scroll: f64, view: f64, content: f64) -> f64 {
+    let mut next = scroll;
+    if at < next {
+        next = at;
+    } else if at + size > next + view {
+        next = at + size - view;
+    }
+    next.clamp(0.0, (content - view).max(0.0))
+}
+
+/// What a wheel notch moves the panel body. A scroll region inside a panel
+/// moves a theme control height a notch instead (QtQuick's WheelHandler
+/// reading angleDelta over 120 against a row), which the body does not
+/// share: its rows have no common height.
+pub const BODY_NOTCH: f64 = 32.0;
 
 /// A wheel carries a continuous value too, so only one of them is ever read.
 pub fn travel(axis: &AxisScroll, source: Option<AxisSource>, time: u32) -> Travel {
@@ -175,20 +206,26 @@ struct Bounce {
 }
 
 /// The fingers' speed by event time, never the loop's: motion the
-/// compositor coalesced lands in one loop turn.
+/// compositor coalesced lands in one loop turn. One axis through `push`, or
+/// a position in the plane through `track` (the globe's drag).
 #[derive(Default)]
 pub struct Velocity {
-    samples: VecDeque<(u32, f64)>,
+    samples: VecDeque<(u32, f64, f64)>,
     travelled: f64,
 }
 
 impl Velocity {
     pub fn push(&mut self, time: u32, px: f64) {
-        while self.samples.front().is_some_and(|&(t, _)| time.wrapping_sub(t) > WINDOW_MS * 2) {
+        self.travelled += px;
+        self.track(time, self.travelled, 0.0);
+    }
+
+    /// The pointer at `(x, y)` at event `time`.
+    pub fn track(&mut self, time: u32, x: f64, y: f64) {
+        while self.samples.front().is_some_and(|&(t, ..)| time.wrapping_sub(t) > WINDOW_MS * 2) {
             self.samples.pop_front();
         }
-        self.travelled += px;
-        self.samples.push_back((time, self.travelled));
+        self.samples.push_back((time, x, y));
     }
 
     /// The speed a lift at `time` carries, in pixels a second: the travel
@@ -196,15 +233,20 @@ impl Velocity {
     /// fingers slowing into it carry less, and nothing once they had
     /// stopped.
     pub fn at_lift(&self, time: u32) -> f64 {
-        let Some(&(last_t, last)) = self.samples.back() else { return 0.0 };
+        self.at_lift_2d(time).0
+    }
+
+    /// [`Velocity::at_lift`] along both axes.
+    pub fn at_lift_2d(&self, time: u32) -> (f64, f64) {
+        let Some(&(last_t, lx, ly)) = self.samples.back() else { return (0.0, 0.0) };
         if time.wrapping_sub(last_t) > STOPPED_MS {
-            return 0.0;
+            return (0.0, 0.0);
         }
-        let Some(&(first_t, first)) = self.samples.iter().find(|&&(t, _)| time.wrapping_sub(t) <= WINDOW_MS) else {
-            return 0.0;
+        let Some(&(first_t, fx, fy)) = self.samples.iter().find(|&&(t, ..)| time.wrapping_sub(t) <= WINDOW_MS) else {
+            return (0.0, 0.0);
         };
         let span = f64::from(time.wrapping_sub(first_t).max(MIN_SPAN_MS)) / 1000.0;
-        (last - first) / span
+        ((lx - fx) / span, (ly - fy) / span)
     }
 
     pub fn clear(&mut self) {

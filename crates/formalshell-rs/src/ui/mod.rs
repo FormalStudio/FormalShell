@@ -28,6 +28,7 @@ pub mod boxes;
 mod draw;
 pub use draw::{elided, icon, paint, resolve, ring_strokes, ring_turn, shape};
 pub mod el;
+pub mod field;
 pub mod thumb;
 pub mod w;
 mod widget;

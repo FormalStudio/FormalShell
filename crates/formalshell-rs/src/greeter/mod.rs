@@ -56,7 +56,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 };
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
-use fs_menu::field::Field;
+use crate::ui::field::{self, Field};
 use zeroize::Zeroizing;
 
 use crate::render::Renderer;
@@ -114,7 +114,7 @@ struct Greeter {
     pointer: Option<wl_pointer::WlPointer>,
     cursor_shapes: Option<CursorShapeManager>,
     cursor_device: Option<WpCursorShapeDeviceV1>,
-    mods: fs_menu::nav::Modifiers,
+    mods: field::Modifiers,
     outs: Vec<Out>,
     theme: Theme,
     kit: Kit,
@@ -331,7 +331,7 @@ pub fn main(args: &[String]) {
         pointer: None,
         cursor_shapes: CursorShapeManager::bind(&globals, &qh).ok(),
         cursor_device: None,
-        mods: fs_menu::nav::Modifiers::default(),
+        mods: field::Modifiers::default(),
         outs: Vec::new(),
         kit: Kit::new(&theme),
         theme,
@@ -522,7 +522,7 @@ impl Greeter {
             Keysym::Escape if self.menu != Menu::Closed => self.menu = Menu::Closed,
             Keysym::Escape => self.field = field(),
             sym if enabled => {
-                if self.field.key(crate::wayland::field_key(sym), self.mods, event.utf8.as_deref()) == fs_menu::field::Outcome::Pass {
+                if self.field.key(crate::input::field_key(sym), self.mods, event.utf8.as_deref()) == field::Outcome::Pass {
                     return;
                 }
             }
@@ -915,7 +915,7 @@ impl KeyboardHandler for Greeter {
     fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: KeyEvent) {}
 
     fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, m: Modifiers, _: RawModifiers, _: u32) {
-        self.mods = fs_menu::nav::Modifiers { ctrl: m.ctrl, shift: m.shift, alt: m.alt };
+        self.mods = crate::input::modifiers(m);
     }
 }
 
@@ -946,8 +946,8 @@ impl PointerHandler for Greeter {
                     ui.hover = path;
                 }
                 PointerEventKind::Leave { .. } => ui.hover = None,
-                PointerEventKind::Press { button: 0x110, .. } => ui.pressed = path,
-                PointerEventKind::Release { button: 0x110, .. } => {
+                PointerEventKind::Press { button: crate::input::BTN_LEFT, .. } => ui.pressed = path,
+                PointerEventKind::Release { button: crate::input::BTN_LEFT, .. } => {
                     let pressed = ui.pressed.take();
                     let event = ui.hit(x, y).filter(|_| pressed.is_some() && pressed == path).and_then(|h| Ui::event(h, x));
                     if let Some(e) = event {

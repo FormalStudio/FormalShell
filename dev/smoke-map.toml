@@ -150,8 +150,12 @@ paths = [
 runs = ["--glass-behind", "--glass-behind --no-morph"]
 
 [[rule]]
-paths = ["crates/fs-menu/src/field.rs"]
+paths = ["crates/formalshell-rs/src/ui/field.rs"]
 runs = ["--menu", "--polkit"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/input.rs", "crates/formalshell-rs/src/surfaces/launcher/keys.rs"]
+runs = ["--menu", "--launcher-modes", "--panel-keys", "--polkit", "--lock", "--radio-atlas", "--overview", "--tray", "--wheel"]
 
 [[rule]]
 paths = ["crates/fs-menu/src/appgrid.rs"]

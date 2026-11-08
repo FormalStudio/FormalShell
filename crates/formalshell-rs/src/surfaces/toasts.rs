@@ -288,10 +288,10 @@ pub fn column_cast(theme: &Theme) -> f64 {
 
 /// How far the stack's layer reaches in from its own edge: the edge's
 /// inset, `screenPadding`, the card, and room past it for the swipe's
-/// rubber band (`scroll::rubber`, 40px at most) and the card's cast.
+/// rubber band (`scroll::rubber`, `scroll::REACH_MAX` at most) and the card's cast.
 pub fn column_width(theme: &Theme, cast: f64, insets: &Insets, right: bool) -> u32 {
     let inset = if right { insets.right } else { insets.left };
-    (inset + theme.space.screen_padding * 2.0 + card_width(theme) + 40.0 + cast).ceil() as u32
+    (inset + theme.space.screen_padding * 2.0 + card_width(theme) + scroll::REACH_MAX + cast).ceil() as u32
 }
 
 impl Toasts {

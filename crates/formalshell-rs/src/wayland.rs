@@ -70,19 +70,6 @@ use crate::surfaces::panel::{self, host::{Host, Key, Out, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
 
-/// One axis of a scroll in wheel notches: the steps a wheel reports, or a
-/// continuous axis at 15 units to the notch, the libinput/Qt ratio a
-/// touchpad's swipe is read at.
-fn notches(axis: &smithay_client_toolkit::seat::pointer::AxisScroll) -> f64 {
-    if axis.value120 != 0 {
-        axis.value120 as f64 / 120.0
-    } else if axis.discrete != 0 {
-        axis.discrete as f64
-    } else {
-        axis.absolute / 15.0
-    }
-}
-
 fn edge_anchor(edge: Edge) -> Anchor {
     match edge {
         Edge::Top => Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
@@ -114,13 +101,20 @@ impl Popout {
         }
     }
 
-    /// The menu's close button as `usize::MAX`, a row by its index.
-    fn menu_hit(&self, x: f64, y: f64) -> Option<usize> {
-        match self.menu.as_ref()?.hit(x.floor() as i32, y.floor() as i32)? {
-            Hit::Close => Some(usize::MAX),
-            Hit::Row(i) => Some(i),
-        }
+    fn menu_hit(&self, x: f64, y: f64) -> Option<Hit> {
+        self.menu.as_ref()?.hit(x.floor() as i32, y.floor() as i32)
     }
+}
+
+/// What a button went down on, kept until it comes up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Press {
+    /// A bar slot by index.
+    Slot(usize),
+    /// A tray item's menu: its close button or a row.
+    Menu(Hit),
+    /// A surface that takes the whole gesture itself.
+    Whole,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -214,7 +208,7 @@ pub struct App {
     cursor_device: Option<WpCursorShapeDeviceV1>,
     cursor: Option<(u32, Shape)>,
     pointer_on: Option<Owner>,
-    pressed: Option<(Owner, usize)>,
+    pressed: Option<(Owner, Press)>,
     /// Panel surfaces dropped since the pointer last entered one.
     dropped: Vec<wl_surface::WlSurface>,
     bar_dirty: bool,
@@ -262,7 +256,7 @@ pub struct App {
     /// was asked in; `wifi_reveals` numbers the requests.
     wifi_reveal: Option<(u64, u64)>,
     wifi_reveals: u64,
-    mods: fs_menu::nav::Modifiers,
+    mods: crate::ui::field::Modifiers,
     menu_buttons: Option<crate::services::menu::BaseInputs>,
     /// The split pane's last picture request, so a frame asks once.
     preview_asked: Option<(String, ((u32, u32), f64))>,
@@ -1618,7 +1612,6 @@ impl App {
         }
         if let Some(menu) = self.menu.as_mut() {
             let hit = (owner == Some(Owner::Menu)).then(|| menu.menu_hit(at.0, at.1)).flatten();
-            let hit = hit.map(|i| if i == usize::MAX { Hit::Close } else { Hit::Row(i) });
             if let Some(m) = &mut menu.menu {
                 m.hover(hit);
             }
@@ -1764,20 +1757,20 @@ impl App {
                         if let Some(t) = &mut self.toasts {
                             t.press(x, y);
                         }
-                        self.pressed = Some((Owner::Toasts, 0));
+                        self.pressed = Some((Owner::Toasts, Press::Whole));
                         continue;
                     }
                     if owner == Some(Owner::Panel) {
                         if let Some(h) = &mut self.panel {
                             h.press(x, y, &self.store, self.runtime.as_ref());
                         }
-                        self.pressed = Some((Owner::Panel, 0));
+                        self.pressed = Some((Owner::Panel, Press::Whole));
                         self.panel_dirty = true;
                         continue;
                     }
                     let hit = match owner {
-                        Some(Owner::Bar) => self.bar.hit(x, y),
-                        Some(Owner::Menu) => self.menu.as_ref().and_then(|p| p.menu_hit(x, y)),
+                        Some(Owner::Bar) => self.bar.hit(x, y).map(Press::Slot),
+                        Some(Owner::Menu) => self.menu.as_ref().and_then(|p| p.menu_hit(x, y)).map(Press::Menu),
                         _ => None,
                     };
                     if owner == Some(Owner::Menu) && hit.is_none() {
@@ -1791,19 +1784,15 @@ impl App {
                         }
                     }
                     self.pressed = owner.zip(hit);
-                    if let Some((Owner::Bar, i)) = self.pressed
+                    if let Some((Owner::Bar, Press::Slot(i))) = self.pressed
                         && self.bar.sidebar_press(i, (x, y))
                     {
                         self.bar_dirty = true;
                     }
                 }
                 PointerEventKind::Release { button, .. } => {
-                    let Some((o, i)) = self.pressed.take() else { continue };
-                    let button = match button {
-                        0x111 => Button::Right,
-                        0x112 => Button::Middle,
-                        _ => Button::Left,
-                    };
+                    let Some((o, press)) = self.pressed.take() else { continue };
+                    let button = crate::input::button(button);
                     if o == Owner::Toasts {
                         self.release_toasts(x, y);
                         continue;
@@ -1820,11 +1809,11 @@ impl App {
                         self.minimap_drop(commands);
                         continue;
                     }
-                    self.click(o, i, button, (x, y));
+                    self.click(o, press, button, (x, y));
                 }
                 PointerEventKind::Axis { time, vertical, horizontal, source } => {
                     if owner == Some(Owner::Panel) {
-                        let (dx, dy) = (notches(&horizontal), notches(&vertical));
+                        let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
                         let travel = crate::scroll::travel(&vertical, source, time);
                         if let Some(h) = self.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
                             h.scroll(x, y, dx, dy, travel, &self.store, self.runtime.as_ref());
@@ -1838,7 +1827,7 @@ impl App {
                         self.swipe_toasts(x, y, crate::scroll::travel(&horizontal, source, time), lift);
                         continue;
                     }
-                    let (v, h) = (notches(&vertical), notches(&horizontal));
+                    let (v, h) = (crate::scroll::notches(&vertical), crate::scroll::notches(&horizontal));
                     if v == 0.0 && h == 0.0 {
                         continue;
                     }
@@ -1894,21 +1883,21 @@ impl App {
         }
     }
 
-    fn click(&mut self, owner: Owner, i: usize, button: Button, at: (f64, f64)) {
-        match owner {
-            Owner::Bar if self.bar.clickable(i) => {
+    fn click(&mut self, owner: Owner, press: Press, button: Button, at: (f64, f64)) {
+        match (owner, press) {
+            (Owner::Bar, Press::Slot(i)) if self.bar.clickable(i) => {
                 let a = self.bar.click(i, button, at.0, at.1, &self.store);
                 let anchor = self.bar.slot_anchor(i);
                 self.act(a, anchor);
             }
-            Owner::Menu => {
+            (Owner::Menu, Press::Menu(hit)) => {
                 if button != Button::Left {
                     return;
                 }
-                let outcome = match self.menu.as_mut().and_then(|p| p.menu.as_mut()) {
-                    Some(_) if i == usize::MAX => return self.close_tray_menu(),
-                    Some(m) => m.activate(i),
-                    None => return,
+                let outcome = match (self.menu.as_mut().and_then(|p| p.menu.as_mut()), hit) {
+                    (Some(_), Hit::Close) => return self.close_tray_menu(),
+                    (Some(m), Hit::Row(i)) => m.activate(i),
+                    (None, _) => return,
                 };
                 self.menu_outcome(outcome);
             }
@@ -1925,26 +1914,14 @@ impl App {
         let key = match event.keysym {
             Keysym::Escape | Keysym::Tab | Keysym::ISO_Left_Tab | Keysym::Return | Keysym::KP_Enter if editing => match event.keysym {
                 Keysym::Escape => Key::Escape,
-                Keysym::Tab => Key::Tab(1),
-                Keysym::ISO_Left_Tab => Key::Tab(-1),
+                Keysym::Tab if !self.mods.shift => Key::Tab(1),
+                Keysym::Tab | Keysym::ISO_Left_Tab => Key::Tab(-1),
                 _ => Key::Activate,
             },
-            sym if editing => Key::Edit(field_key(sym), self.mods, event.utf8),
-            Keysym::BackSpace => Key::Back,
-            Keysym::Escape => Key::Escape,
-            Keysym::Tab => Key::Tab(1),
-            Keysym::ISO_Left_Tab => Key::Tab(-1),
-            Keysym::Down => Key::Move(0, 1),
-            Keysym::Up => Key::Move(0, -1),
-            Keysym::Right => Key::Move(1, 0),
-            Keysym::Left => Key::Move(-1, 0),
-            // A held key activates once: a confirm that arms on the first
-            // press must not fire on the repeat.
-            Keysym::Return | Keysym::KP_Enter | Keysym::space if repeat => return,
-            Keysym::Return | Keysym::KP_Enter | Keysym::space => Key::Activate,
-            _ => match event.utf8 {
-                Some(t) if t.chars().count() == 1 && t.chars().all(|c| c as u32 >= 0x20) => Key::Text(t),
-                _ => return,
+            sym if editing => Key::Edit(crate::input::field_key(sym), self.mods, event.utf8),
+            _ => match crate::input::panel_key(event.keysym, event.utf8, repeat, self.mods.shift) {
+                Some(key) => key,
+                None => return,
             },
         };
         // A tray item's menu over its panel takes the keys while it is up.
@@ -2361,7 +2338,7 @@ impl KeyboardHandler for App {
     fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: KeyEvent) {}
 
     fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, m: Modifiers, _: RawModifiers, _: u32) {
-        self.mods = fs_menu::nav::Modifiers { ctrl: m.ctrl, shift: m.shift, alt: m.alt };
+        self.mods = crate::input::modifiers(m);
     }
 }
 
@@ -2448,20 +2425,6 @@ pub fn theme_inputs(app: &App) {
         location,
         sky_at: app.store.theme.sky_at,
     });
-}
-
-/// A key as a text field reads it.
-pub(crate) fn field_key(sym: Keysym) -> fs_menu::field::Key {
-    use fs_menu::field::Key as F;
-    match sym {
-        Keysym::Left | Keysym::KP_Left => F::Left,
-        Keysym::Right | Keysym::KP_Right => F::Right,
-        Keysym::Home | Keysym::KP_Home => F::Home,
-        Keysym::End | Keysym::KP_End => F::End,
-        Keysym::BackSpace => F::Backspace,
-        Keysym::Delete | Keysym::KP_Delete => F::Delete,
-        sym => sym.key_char().filter(char::is_ascii_alphabetic).map_or(F::Other, |c| F::Letter(c.to_ascii_lowercase())),
-    }
 }
 
 /// A bar's exclusive zone told to its layer again when its paint moved it

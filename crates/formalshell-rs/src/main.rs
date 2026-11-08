@@ -2,6 +2,7 @@ mod cmdline;
 mod fontconfig;
 mod gpu;
 mod greeter;
+mod input;
 mod install;
 mod instance;
 mod keyboard;

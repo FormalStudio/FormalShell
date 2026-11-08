@@ -14,8 +14,7 @@ use std::time::{Duration, Instant};
 
 use fs_media::radio::model::{self as rm, EstimateCache};
 use fs_media::radio::stations::Station;
-use fs_menu::field::{self, Outcome};
-use fs_menu::nav::Modifiers;
+use crate::ui::field::{self, Modifiers, Outcome};
 
 use crate::services::clipboard;
 use crate::services::radio::{self, Ask, Cmd, Reply};

@@ -49,7 +49,7 @@ use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::session_lock::{
     SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface, SessionLockSurfaceConfigure,
 };
-use fs_menu::field::Field;
+use crate::ui::field::{self, Field};
 use zeroize::Zeroizing;
 
 use super::App;
@@ -1098,8 +1098,8 @@ impl App {
             // A secret field hands nothing out, so a paste is all that can
             // come back from it.
             sym if !self.lock.checking => {
-                let out = self.lock.password.key(super::field_key(sym), self.mods, event.utf8.as_deref());
-                if out == fs_menu::field::Outcome::Paste {
+                let out = self.lock.password.key(crate::input::field_key(sym), self.mods, event.utf8.as_deref());
+                if out == field::Outcome::Paste {
                     clipboard::command(clipboard::Cmd::Paste);
                 }
             }

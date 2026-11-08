@@ -186,7 +186,7 @@ impl App {
             }
             PointerEventKind::Motion { .. } => self.picker_motion(i, lx, ly, gx, gy, hit),
             PointerEventKind::Press { button, .. } => {
-                if button == 0x111 {
+                if button == crate::input::BTN_RIGHT {
                     cap::picker_close(self, "cancelled by right-click");
                     return;
                 }

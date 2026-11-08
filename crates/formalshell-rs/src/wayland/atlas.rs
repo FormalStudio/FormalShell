@@ -212,7 +212,7 @@ impl App {
         }
         if self.atlas.model.editing && !matches!(event.keysym, Keysym::Escape | Keysym::Up | Keysym::Down | Keysym::Return | Keysym::KP_Enter) {
             let r = self.store.media.radio.clone();
-            self.atlas.model.edit(&r, super::field_key(event.keysym), self.mods, event.utf8.as_deref(), Instant::now());
+            self.atlas.model.edit(&r, crate::input::field_key(event.keysym), self.mods, event.utf8.as_deref(), Instant::now());
             return true;
         }
         let key = match event.keysym {
@@ -222,7 +222,7 @@ impl App {
             Keysym::Return | Keysym::KP_Enter => Key::Enter,
             Keysym::space => Key::Space,
             Keysym::BackSpace => Key::Backspace,
-            _ => match event.utf8.as_deref().filter(|t| !t.is_empty() && t.chars().all(|c| c as u32 >= 0x20 && c != '\u{7f}')) {
+            _ => match crate::input::printable(event.utf8.as_deref()) {
                 Some(t) => Key::Text(t.to_owned()),
                 None => return true,
             },
@@ -311,7 +311,7 @@ impl App {
                 w.shown.set_hover(None);
             }
             PointerEventKind::Press { button, .. } => {
-                if button != 0x110 {
+                if button != crate::input::BTN_LEFT {
                     return true;
                 }
                 if on_globe {
@@ -331,7 +331,7 @@ impl App {
                 }
             }
             PointerEventKind::Release { button, time, .. } => {
-                if button != 0x110 {
+                if button != crate::input::BTN_LEFT {
                     return true;
                 }
                 w.sliding = false;
@@ -353,7 +353,7 @@ impl App {
                 self.atlas_action(on.as_deref().unwrap_or(""), what);
             }
             PointerEventKind::Axis { vertical, .. } => {
-                let notches = if vertical.discrete != 0 { vertical.discrete as f64 } else { vertical.absolute / 15.0 };
+                let notches = crate::scroll::notches(&vertical);
                 if notches == 0.0 {
                     return true;
                 }

@@ -11,7 +11,7 @@ use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
 use vello_cpu::kurbo::Rect;
-use fs_menu::field::{Field, Outcome};
+use crate::ui::field::{Field, Outcome};
 use zeroize::Zeroizing;
 
 use super::App;
@@ -182,7 +182,7 @@ impl App {
             }
             sym if enabled => {
                 d.text.secret = !d.echo;
-                match d.text.key(super::field_key(sym), self.mods, event.utf8.as_deref()) {
+                match d.text.key(crate::input::field_key(sym), self.mods, event.utf8.as_deref()) {
                     Outcome::Copy(t) | Outcome::Cut(t) => clipboard::command(clipboard::Cmd::SetText(t)),
                     Outcome::Paste => clipboard::command(clipboard::Cmd::Paste),
                     _ => {}
