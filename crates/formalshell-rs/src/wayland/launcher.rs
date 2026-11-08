@@ -467,7 +467,7 @@ impl App {
         if self.launcher_resolve {
             self.launcher_resolve = false;
             self.launcher.motion_scale = self.motion_scale;
-            self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.bar.kit);
+            self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
         }
     }
 
@@ -913,7 +913,7 @@ impl App {
         }
         let theme = &self.store.theme.theme;
         let (_, width, height) = self.launcher.pane_extent(theme);
-        let size = (crate::surfaces::launcher::preview_box(theme, &mut self.bar.kit, width, height), self.launcher_scale());
+        let size = (crate::surfaces::launcher::preview_box(theme, &mut self.kit, width, height), self.launcher_scale());
         if let Some(n) = row.as_ref().filter(|n| matches!(pane_kind(n), Some(PaneKind::File | PaneKind::Folder)))
             && self.peek_asked.as_deref() != Some(n.path.as_str())
         {
@@ -1083,7 +1083,7 @@ impl App {
     /// finds them in the shared cache instead of shaping on this thread.
     fn warm_launcher_text(&mut self) {
         let Some(runtime) = &self.runtime else { return };
-        let styles = if self.launcher_styles.is_empty() { warm_styles(&self.bar.kit.look, &self.store.theme.theme.font_size) } else { self.launcher_styles.clone() };
+        let styles = if self.launcher_styles.is_empty() { warm_styles(&self.kit.look, &self.store.theme.theme.font_size) } else { self.launcher_styles.clone() };
         let words: Vec<String> = self
             .launcher
             .rows
@@ -1096,7 +1096,7 @@ impl App {
             .filter(|st| !matches!(st.family, Family::Named(_)))
             .flat_map(|st| words.iter().map(move |w| (w.clone(), *st)))
             .collect();
-        let text = self.bar.kit.text.clone();
+        let text = self.kit.text.clone();
         runtime.pool().submit(move || text.warm(&jobs));
     }
 
@@ -1107,10 +1107,10 @@ impl App {
     pub(super) fn warm_faces(&mut self) {
         let Some(runtime) = &self.runtime else { return };
         let sample = "aABCDEFGHIJKLMNOPQRSTUVWXYZbcdefghijklmnopqrstuvwxyz0123456789.,:;-_/()'";
-        let styles = warm_styles(&self.bar.kit.look, &self.store.theme.theme.font_size);
+        let styles = warm_styles(&self.kit.look, &self.store.theme.theme.font_size);
         let jobs: Vec<(String, TextStyle)> =
             sample.chars().flat_map(|c| styles.iter().map(move |st| (c.to_string(), *st))).collect();
-        let text = self.bar.kit.text.clone();
+        let text = self.kit.text.clone();
         runtime.pool().submit(move || text.warm(&jobs));
     }
 
@@ -1141,7 +1141,7 @@ impl App {
         if self.launch.is_none() {
             if self.launcher_warm && !self.launcher.open {
                 self.launcher_warm = false;
-                self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.bar.kit);
+                self.launcher.resolve(&self.store, &self.store.theme.theme, &mut self.kit);
                 self.warm_launcher_text();
                 if !self.fresh_asked && !self.store.menu.nodes().is_empty() {
                     self.fresh_asked = true;
@@ -1170,9 +1170,9 @@ impl App {
         if !rastering && wants {
             let _raster = crate::scene::raster_at(w.shown.modal.surface.scale());
             w.shown.modal.sync_region(&self.compositor);
-            self.bar.kit.seen = Some(std::mem::take(&mut self.launcher_styles));
-            w.shown.layout(&mut self.launcher, &self.store, theme, &mut self.bar.kit, now);
-            self.launcher_styles = self.bar.kit.seen.take().unwrap_or_default();
+            self.kit.seen = Some(std::mem::take(&mut self.launcher_styles));
+            w.shown.layout(&mut self.launcher, &self.store, theme, &mut self.kit, now);
+            self.launcher_styles = self.kit.seen.take().unwrap_or_default();
             self.launcher.dirty = false;
         } else if !rastering {
             // Every turn, not only while the morph runs: its last step lands
@@ -1457,7 +1457,7 @@ impl App {
 
 /// The type roles a launcher row, its header and its trailing slot use, in
 /// the weights they come in.
-fn warm_styles(look: &crate::surfaces::bar::cell::Look, f: &fs_theme::tokens::FontTokens) -> Vec<TextStyle> {
+fn warm_styles(look: &crate::paint::Look, f: &fs_theme::tokens::FontTokens) -> Vec<TextStyle> {
     use fs_theme::tokens::WEIGHTS;
     let mut out = Vec::new();
     for size in [f.caption, f.body_small, f.body, f.subtitle] {

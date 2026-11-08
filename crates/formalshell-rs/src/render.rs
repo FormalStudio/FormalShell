@@ -13,7 +13,7 @@ use vello_cpu::peniko::{BlendMode, Compose, Fill, Gradient, ImageSampler, Mix};
 use vello_cpu::{Pixmap, RenderContext, Resources};
 
 use crate::scene::{Bitmap, Brush, Drawn, Fade, Fit, IRect, LitLine, Outline, Paint, Scene, Snap, VOp};
-use crate::surfaces::shoulders::{self, Walls};
+use crate::paint::shoulders::{self, Walls};
 use crate::text::{ColorGlyph, Coverage, ShapedText};
 use fs_theme::color::Rgba;
 
@@ -1308,7 +1308,7 @@ mod tests {
     #[test]
     fn an_attached_join_leaves_the_lines_row_to_the_bar() {
         use crate::scene::{Fit, Joined, Outline, Snap};
-        use crate::surfaces::shoulders::Walls;
+        use crate::paint::shoulders::Walls;
         let fill = Rgba::hex(0x18181b);
         let draw = |attach: f64, near_inset: f64, stretch: f64, damage: IRect| {
             let mut scene = Scene::new(100, 100);

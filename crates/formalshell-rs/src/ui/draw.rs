@@ -926,7 +926,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
 }
 
 /// A picture centred in `r`.
-fn centred(p: &mut crate::surfaces::bar::cell::Painter, image: &crate::scene::Bitmap, r: IRect, alpha: f32) {
+fn centred(p: &mut crate::paint::Painter, image: &crate::scene::Bitmap, r: IRect, alpha: f32) {
     let (w, h) = image.size();
     p.image(image, (r.x + (r.w - w) / 2, r.y + (r.h - h) / 2), alpha);
 }
@@ -1462,7 +1462,7 @@ fn line_parts(cx: &mut Cx, text: &str, placeholder: &str, caret: Option<(usize, 
 /// covers, that text in `primaryForeground`, and the caret, which holds
 /// still rather than blinking (a blink is a clock) and steps aside while
 /// anything is selected.
-fn paint_line(p: &mut crate::surfaces::bar::cell::Painter, t: &fs_theme::theme::Theme, line: &LineParts, at: (i32, i32), room: IRect, alpha: f32, caret: (i32, &str)) {
+fn paint_line(p: &mut crate::paint::Painter, t: &fs_theme::theme::Theme, line: &LineParts, at: (i32, i32), room: IRect, alpha: f32, caret: (i32, &str)) {
     let (caret_w, caret_ink) = caret;
     let h = line.shown.line_height();
     let x0 = at.0 - line.scroll;
@@ -1705,7 +1705,7 @@ fn shoulders(cx: &mut Cx, r: Rect, edge: fs_types::Edge, span: f64, depth: f64, 
     let bw = t.border_width;
     let sep = t.box_style("separator", None).fill;
     let (fill, line, sep) = (cx.a(card.fill), cx.a(border.0), cx.a(sep));
-    let paths = crate::surfaces::shoulders::paths(span + radius * 2.0, depth, radius, border.1, 1.0, 0.0);
+    let paths = crate::paint::shoulders::paths(span + radius * 2.0, depth, radius, border.1, 1.0, 0.0);
     // Built for a top line, then turned onto the gallery's edge.
     let local = match edge {
         Edge::Top => Affine::translate((run - radius, 0.0)),

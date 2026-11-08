@@ -42,7 +42,7 @@ use vello_cpu::kurbo::Rect;
 
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{IRect, NodeId, Scene};
-use crate::surfaces::bar::cell::Kit;
+use crate::paint::Kit;
 
 pub use el::{El, Ink, Size, Type, Variant, Weight};
 
@@ -196,8 +196,8 @@ pub struct Ui {
     pub motion_scale: f64,
     /// The field a card's rim reads, and the surface's top left on the
     /// output; `None` draws every card's border flat.
-    pub lit: Option<(crate::surfaces::rim::Lit, (f64, f64))>,
-    rims: HashMap<String, crate::surfaces::rim::Rim>,
+    pub lit: Option<(crate::paint::rim::Lit, (f64, f64))>,
+    rims: HashMap<String, crate::paint::rim::Rim>,
     /// Where a floating list may go, over everything this surface drew;
     /// `None` keeps one inside the tree's own box.
     pub float_room: Option<IRect>,
@@ -676,37 +676,37 @@ impl Cx<'_> {
 
     /// The rim of the card at `path`, aimed at the field for its box `r`
     /// over a border `base`; handed back with [`Cx::put_rim`].
-    pub fn take_rim(&mut self, path: &str, r: IRect, base: Rgba) -> Option<crate::surfaces::rim::Rim> {
+    pub fn take_rim(&mut self, path: &str, r: IRect, base: Rgba) -> Option<crate::paint::rim::Rim> {
         let Some((lit, origin)) = self.ui.lit.clone() else {
             self.ui.rims.remove(path);
             return None;
         };
         let mut rim = self.ui.rims.remove(path).unwrap_or_default();
         let card = Rect::new(r.x as f64 + origin.0, r.y as f64 + origin.1, r.right() as f64 + origin.0, r.bottom() as f64 + origin.1);
-        rim.aim(self.now, Some(&lit), card, base, crate::surfaces::rim::blend_ms(self.theme, self.motion_scale));
+        rim.aim(self.now, Some(&lit), card, base, crate::paint::rim::blend_ms(self.theme, self.motion_scale));
         Some(rim)
     }
 
-    pub fn put_rim(&mut self, path: &str, mut rim: crate::surfaces::rim::Rim) {
+    pub fn put_rim(&mut self, path: &str, mut rim: crate::paint::rim::Rim) {
         self.drawn.animating |= rim.running(self.now);
         rim.painted();
         self.ui.rims.insert(path.to_owned(), rim);
     }
 
-    pub fn painter(&mut self, path: &str) -> crate::surfaces::bar::cell::Painter<'_> {
+    pub fn painter(&mut self, path: &str) -> crate::paint::Painter<'_> {
         self.painter_kit(path).0
     }
 
     /// [`painter`](Self::painter) and the kit beside it, for drawing that
     /// shapes text as it goes.
-    pub fn painter_kit(&mut self, path: &str) -> (crate::surfaces::bar::cell::Painter<'_>, &mut Kit) {
+    pub fn painter_kit(&mut self, path: &str) -> (crate::paint::Painter<'_>, &mut Kit) {
         let frame = self.ui.frame;
         let g = self.ui.groups.entry(path.to_owned()).or_default();
         g.seen = frame;
         // The next group follows this one's last node whatever it draws.
         self.last = g.nodes.last().copied().or(self.last);
         let anchor = if g.nodes.is_empty() { self.last } else { None };
-        let p = crate::surfaces::bar::cell::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor);
+        let p = crate::paint::Painter::new(self.scene, &mut g.nodes, self.clip).after(anchor);
         (p, self.kit)
     }
 

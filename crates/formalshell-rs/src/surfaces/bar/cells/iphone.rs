@@ -5,7 +5,8 @@
 use crate::services::info::iphone::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 pub struct Iphone {
     _want: Want,
@@ -38,7 +39,7 @@ impl Cell for Iphone {
             return View::hidden();
         }
         let percent = s.battery.map(|b| (b * 100.0 + 0.5).floor());
-        let mut parts = vec![Part::Icon { name: "smartphone".into(), dim: false, dot: s.unread > 0 }];
+        let mut parts = vec![Part::icon("smartphone").dot(s.unread > 0)];
         if let (true, Some(p)) = (self.label, percent) {
             parts.push(Part::Label { text: format!("{p}%"), weight: None });
         }

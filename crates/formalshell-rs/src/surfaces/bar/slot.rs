@@ -12,7 +12,8 @@ use fs_theme::style::Glow;
 
 use crate::motion::{Animated, Kind};
 use crate::scene::{IRect, NodeId, Scene};
-use crate::surfaces::bar::cell::{Cell, Env, Frame, Ink, Kit, Limits, Measured, Painter, Part, View};
+use crate::surfaces::bar::cell::{Cell, Env, Frame, Limits, Measured, Part, View};
+use crate::paint::{Ink, Kit, Painter};
 use crate::surfaces::bar::cells;
 
 pub struct Slot {

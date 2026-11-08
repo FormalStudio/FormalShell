@@ -5,7 +5,8 @@
 
 use crate::services::appicon;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Part, Summary, View};
+use crate::paint::Look;
 use crate::ui::el::Pic;
 
 #[derive(Default)]

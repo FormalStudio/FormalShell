@@ -18,7 +18,7 @@ use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::wallpaper::{DepthCut, Picture};
 use crate::store::{Store, Topic};
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::paint::{Kit, Painter};
 use crate::text::{Family, ShapedText, TextStyle};
 
 /// The App's share: the pool's channel back, a count that moves when a
@@ -414,7 +414,7 @@ impl App {
             }
             let picture = self.desktop_clock_picture(i);
             let Some(clock) = self.heads[i].clock.as_mut() else { continue };
-            draw(clock, &mut self.bar.kit, &self.store, settings, picture.as_ref());
+            draw(clock, &mut self.kit, &self.store, settings, picture.as_ref());
             if let (Some(cut), Some(picture)) = (settings.look.cut, picture) {
                 let key = Key { picture, cut, generation: self.desktop_clock.generation };
                 if clock.slot.want(&key) {

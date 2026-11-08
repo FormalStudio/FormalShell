@@ -3,7 +3,8 @@
 
 use crate::store::Topic;
 use crate::surfaces::panel::center;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct Bell {
@@ -13,6 +14,9 @@ pub struct Bell {
     /// is this cell's only content past the glyph.
     label: bool,
 }
+
+/// The icon the strip warms ahead of the first frame.
+pub const ICONS: &[&str] = &["bell"];
 
 impl Cell for Bell {
     fn reads(&self) -> &'static [Topic] {
@@ -36,7 +40,7 @@ impl Cell for Bell {
         } else {
             "NOTIFICATIONS / NONE PENDING".to_owned()
         };
-        let mut parts = vec![Part::Icon { name: if self.dnd { "bell-off" } else { "bell" }.into(), dim: false, dot: self.pending > 0 }];
+        let mut parts = vec![Part::icon(if self.dnd { "bell-off" } else { "bell" }).dot(self.pending > 0)];
         if self.label && self.pending > 0 {
             parts.push(Part::Label { text: self.pending.to_string(), weight: None });
         }

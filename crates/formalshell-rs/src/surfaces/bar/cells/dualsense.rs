@@ -6,7 +6,8 @@ use fs_system::dualsense::{Supply, state_line};
 use fs_system::power::model::Low;
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::{Look, Tone};
 
 fn tone(s: &Supply) -> Tone {
     match s.low {
@@ -40,7 +41,7 @@ impl Cell for Dualsense {
         let head = format!("DUALSENSE {}%", s.level.rounded());
         let line = state_line(Some(s));
         let tooltip = if line.is_empty() { head } else { format!("{head} / {line}") };
-        let mut parts = vec![Part::Icon { name: "gamepad-2".into(), dim: false, dot: false }];
+        let mut parts = vec![Part::icon("gamepad-2")];
         if self.show_label {
             parts.push(Part::Label { text: format!("{}%", s.level.rounded()), weight: None });
         }

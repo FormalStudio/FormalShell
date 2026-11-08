@@ -255,7 +255,7 @@ pub use fs_chrome::bar::panels::{known, launcher_route};
 /// the body's natural width plus the rows' inset on either side, the same
 /// inset its body sits at, so the room after the last chip is the room
 /// before the first.
-pub fn card_width(module: &dyn Panel, v: &View, kit: &mut crate::surfaces::bar::cell::Kit) -> f64 {
+pub fn card_width(module: &dyn Panel, v: &View, kit: &mut crate::paint::Kit) -> f64 {
     if !module.fits(v) {
         return module.width(v);
     }

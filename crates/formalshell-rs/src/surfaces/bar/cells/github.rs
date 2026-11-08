@@ -5,7 +5,8 @@
 use crate::services::info::github::Poll;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 pub struct Github {
     want: Want,
@@ -43,7 +44,7 @@ impl Cell for Github {
             return View::hidden();
         }
         let ok = self.poll == Poll::Ok;
-        let mut parts = vec![Part::Icon { name: "git-branch".into(), dim: !ok, dot: false }];
+        let mut parts = vec![Part::icon("git-branch").dim(!ok)];
         if self.label {
             parts.push(if ok {
                 Part::Label { text: format!("{}/{}", self.counts.0, self.counts.1), weight: None }

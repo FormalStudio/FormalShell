@@ -15,7 +15,7 @@ use super::globe::Ink as GlobeInk;
 use super::{Atlas, PREFERRED};
 use crate::scene::{IRect, NodeId, Paint};
 use crate::services::radio;
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::paint::{Kit, Painter};
 use crate::surfaces::modal::Modal;
 use crate::ui::el::Opt;
 use crate::ui::{self, El, Ink, Size, Type, Ui, Variant, Weight, w};

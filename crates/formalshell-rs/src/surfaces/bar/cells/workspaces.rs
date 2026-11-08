@@ -20,7 +20,8 @@ use crate::scene::IRect;
 use crate::services::appicon::{self, Icon};
 use crate::services::agents;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, Summary, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Summary, View};
+use crate::paint::{Ink, Kit, Look, Painter, Tone};
 use crate::text::{Family, TextStyle};
 
 /// `workspaces.persistent`'s default: slots 1..n show even when empty.

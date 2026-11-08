@@ -13,7 +13,7 @@ use fs_types::Edge;
 
 use super::App;
 use crate::services::{compositor, wallpaper};
-use crate::surfaces::rim::{self, Lit};
+use crate::paint::rim::{self, Lit};
 
 /// Hyprland raises no event for a window moved by pixels; this is how often
 /// the model is asked again while a card is open.

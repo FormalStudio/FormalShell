@@ -10,7 +10,8 @@ use std::time::Instant;
 use crate::scene::{Bitmap, IRect, Paint};
 use crate::services::tray::Item;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Ink, Kit, Look, Painter, Summary, TrayClick, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Custom, Env, Summary, TrayClick, View};
+use crate::paint::{Ink, Kit, Look, Painter};
 
 /// How many icons the strip kept, for `tray status`.
 static INLINE: AtomicUsize = AtomicUsize::new(0);

@@ -5,7 +5,8 @@
 
 use crate::services::plugins::{self, Display, Run};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::{Look, Tone};
 
 pub struct Plugin {
     id: String,
@@ -39,7 +40,7 @@ impl Cell for Plugin {
             Some(Run::Live(Display { text, icon, tooltip, class, .. })) => {
                 let mut parts = Vec::new();
                 if !icon.is_empty() {
-                    parts.push(Part::Icon { name: icon.clone(), dim: false, dot: false });
+                    parts.push(Part::icon(icon.clone()));
                 }
                 if !text.is_empty() {
                     parts.push(Part::Label { text: text.clone(), weight: None });

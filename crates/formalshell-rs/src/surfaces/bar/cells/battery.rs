@@ -7,7 +7,8 @@ use fs_upower::DeviceState;
 
 use crate::services::devices::{Op, power};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
+use crate::paint::{Look, Tone};
 
 #[derive(Default, PartialEq)]
 struct Read {
@@ -21,6 +22,9 @@ struct Read {
 pub struct Battery {
     r: Read,
 }
+
+/// The icon the strip warms ahead of the first frame.
+pub const ICONS: &[&str] = &["battery"];
 
 impl Cell for Battery {
     fn reads(&self) -> &'static [Topic] {
@@ -65,7 +69,7 @@ impl Cell for Battery {
             _ => format!("{head} / {}", charge_state_label(b.level, b.state, r.on_battery, threshold)),
         };
         let tooltip = format!("{body} / RIGHT {}", if r.show_label { "HIDE %" } else { "SHOW %" });
-        let mut parts = vec![Part::Icon { name: icon.into(), dim: false, dot: false }];
+        let mut parts = vec![Part::icon(icon)];
         if r.show_label {
             parts.push(Part::Label { text: format!("{pct}%"), weight: None });
         }

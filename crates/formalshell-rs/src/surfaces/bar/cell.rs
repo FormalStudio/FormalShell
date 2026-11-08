@@ -14,14 +14,13 @@ use std::time::Instant;
 use fs_types::{Edge, Region, WindowId, WorkspaceId};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
-use fs_theme::theme::{Face, Theme};
 use fs_theme::tokens::WEIGHTS;
-use parley::GenericFamily;
 use vello_cpu::kurbo::Affine;
 
-use crate::scene::{Bitmap, Fade, IRect, NodeId, Paint, Scene};
+use crate::paint::{Ink, Kit, Look, Painter, Tone};
+use crate::scene::{Fade, IRect, Scene};
 use crate::store::{Store, Topic};
-use crate::text::{self, Family, ShapedText, Text, TextStyle};
+use crate::text::{self, Family, ShapedText, TextStyle};
 use crate::ui::el::Ring;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,23 +83,6 @@ pub struct Env<'a> {
     pub output: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum Tone {
-    #[default]
-    Rest,
-    Destructive,
-    Warning,
-}
-
-impl Tone {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Tone::Rest => "rest",
-            Tone::Destructive => "destructive",
-            Tone::Warning => "warning",
-        }
-    }
-}
 
 /// Nerd Font distro logos sit small in their em box next to Lucide icons of the same size.
 const GLYPH_SCALE: f32 = 1.4;
@@ -139,6 +121,28 @@ pub enum Part {
     Ring(Ring),
 }
 
+impl Part {
+    pub fn icon(name: impl Into<String>) -> Self {
+        Part::Icon { name: name.into(), dim: false, dot: false }
+    }
+
+    /// An icon in the meta ink when `on`.
+    pub fn dim(mut self, on: bool) -> Self {
+        if let Part::Icon { dim, .. } = &mut self {
+            *dim = on;
+        }
+        self
+    }
+
+    /// An icon with the pending mark on its corner when `on`.
+    pub fn dot(mut self, on: bool) -> Self {
+        if let Part::Icon { dot, .. } = &mut self {
+            *dot = on;
+        }
+        self
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct View {
     /// False drops the cell off the strip (a Battery with no battery).
@@ -165,7 +169,7 @@ impl View {
     }
 
     pub fn icon(name: &str, look: &Look) -> Self {
-        Self::new(vec![Part::Icon { name: name.into(), dim: false, dot: false }], look.xxs)
+        Self::new(vec![Part::icon(name)], look.xxs)
     }
 
     pub fn tooltip(mut self, text: impl Into<String>) -> Self {
@@ -302,309 +306,6 @@ pub trait Custom {
     }
 }
 
-/// What the theme hands every cell: tokens, inks and the `cell` role's
-/// states, read once per theme.
-#[derive(Clone)]
-pub struct Look {
-    pub pad_x: f64,
-    pub pad_y: f64,
-    pub cell_width: f64,
-    pub xxs: f64,
-    pub huge: f64,
-    /// How far a cut marquee label fades in from each cut end (`xxl`).
-    pub fade: f64,
-    pub xs: f64,
-    pub sm: f64,
-    pub md: f64,
-    pub body: f32,
-    pub caption: f32,
-    /// `letterSpacing.meta`, the tracking of a meta label.
-    pub meta_tracking: f32,
-    pub narrow: f64,
-    pub sans: Family,
-    pub mono: Family,
-    pub foreground: Rgba,
-    pub muted: Rgba,
-    pub on_active: Rgba,
-    pub destructive: Rgba,
-    pub warning: Rgba,
-    pub primary: Rgba,
-    pub background: Rgba,
-    /// The flat tracks' trough, its thickness and its corner (`muted`,
-    /// `trackThickness`, `radiusSm`).
-    pub muted_fill: Rgba,
-    pub border: Rgba,
-    pub track: f64,
-    pub radius_sm: f64,
-    pub radius: f32,
-    pub active_fill: Rgba,
-    pub hover_wash: Option<Rgba>,
-    pub ghost_open: Rgba,
-    pub destructive_border: Option<(Rgba, f32)>,
-    pub warning_border: Option<(Rgba, f32)>,
-    pub border_width: f64,
-    pub effects: f64,
-    pub effects_slow: f64,
-    pub spatial: f64,
-    pub spatial_fast: f64,
-    pub emphasized: f64,
-    pub motion: bool,
-    pub marquee_px: f64,
-    pub marquee_hold: f64,
-    /// The box under every cell (`bar.cell`), none where it draws nothing.
-    pub chip: Option<fs_theme::style::BoxStyle<Rgba>>,
-}
-
-/// A theme text role's family: the table's face over its alias, or the
-/// alias alone.
-pub fn face(face: Face) -> Family {
-    let generic = match face.generic {
-        "monospace" => GenericFamily::Monospace,
-        "serif" => GenericFamily::Serif,
-        _ => GenericFamily::SansSerif,
-    };
-    face.name.map_or(Family::Generic(generic), |name| Family::Face(name, generic))
-}
-
-impl Look {
-    pub fn new(theme: &Theme) -> Self {
-        let s = &theme.space;
-        let cell = |state| theme.box_style("cell", Some(state));
-        let border = |state| cell(state).border.map(|l| (l.color, l.width as f32));
-        let motion = theme.motion().families;
-        Self {
-            pad_x: s.control_padding_x,
-            pad_y: s.control_padding_y,
-            cell_width: s.bar_cell_width,
-            xxs: s.xxs,
-            huge: s.xl,
-            fade: s.lg,
-            xs: s.xs,
-            sm: s.sm,
-            md: s.sm,
-            body: theme.font_size.body as f32,
-            caption: theme.font_size.caption as f32,
-            meta_tracking: theme.letter_spacing.meta as f32,
-            narrow: s.popup_width_narrow,
-            sans: face(theme.faces.words),
-            mono: face(theme.faces.values),
-            foreground: theme.colors.get("foreground"),
-            muted: theme.colors.get("mutedForeground"),
-            destructive: theme.colors.get("destructive"),
-            warning: theme.colors.get("warning"),
-            primary: theme.colors.get("primary"),
-            background: theme.colors.get("background"),
-            muted_fill: theme.colors.get("muted"),
-            border: theme.colors.get("border"),
-            track: s.track_thickness,
-            radius_sm: theme.radii.sm,
-            radius: theme.box_radius(&theme.box_style("cell", None), s.bar_cell_height) as f32,
-            on_active: theme.colors.get("primaryForeground"),
-            active_fill: cell("active").fill,
-            hover_wash: cell("hover").wash,
-            ghost_open: cell("ghostOpen").fill,
-            destructive_border: border("destructive"),
-            warning_border: border("warning"),
-            border_width: theme.border_width,
-            effects: motion.effects,
-            effects_slow: motion.effects_slow,
-            spatial: motion.spatial,
-            spatial_fast: motion.spatial_fast,
-            emphasized: motion.emphasized,
-            motion: theme.motion_enabled,
-            marquee_px: motion.marquee_px_per_sec,
-            marquee_hold: motion.marquee_hold_ms,
-            chip: Some(theme.box_style("bar.cell", None)).filter(|b| b.fill.a > 0.0 || b.border.as_ref().is_some_and(|l| l.width > 0.0)),
-        }
-    }
-
-    /// The strip's room across a vertical cell's content.
-    pub fn content_across(&self) -> f64 {
-        (self.cell_width - self.pad_y * 2.0).max(0.0)
-    }
-
-    pub fn label(&self, weight: f32) -> TextStyle {
-        TextStyle { family: self.mono, size: self.body, weight, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
-    }
-
-    pub fn sans(&self, weight: f32) -> TextStyle {
-        TextStyle { family: self.sans, size: self.body, weight, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
-    }
-}
-
-/// The ink a cell's content resolves to, and the band's glow under it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Ink {
-    pub fg: Rgba,
-    pub dim: Rgba,
-    pub glow: Vec<Glow<Rgba>>,
-    /// On a band: labels go semibold.
-    pub band: bool,
-    pub alpha: f32,
-}
-
-impl Ink {
-    pub fn resolve(look: &Look, tone: Tone, band: Option<(Rgba, &[Glow<Rgba>])>, alpha: f32) -> Self {
-        let band_ink = band.filter(|(c, _)| c.a > 0.0);
-        let fg = match tone {
-            Tone::Destructive => look.destructive,
-            Tone::Warning => look.warning,
-            Tone::Rest => band_ink.map_or(look.foreground, |(c, _)| c),
-        };
-        let dim = if band_ink.is_some() { fg } else { look.muted };
-        let glow = match (tone, band_ink) {
-            (Tone::Rest, Some((_, g))) => g.to_vec(),
-            _ => Vec::new(),
-        };
-        Self { fg, dim, glow, band: band_ink.is_some(), alpha }
-    }
-
-    pub fn of(&self, c: Rgba) -> Rgba {
-        c.with_alpha(c.a * self.alpha)
-    }
-}
-
-/// Writes one owner's nodes in call order, reusing what it wrote last time,
-/// so an unchanged frame damages nothing. `finish` hides whatever was not
-/// written this time.
-pub struct Painter<'a> {
-    scene: &'a mut Scene,
-    nodes: &'a mut Vec<NodeId>,
-    used: usize,
-    pub clip: Option<IRect>,
-    /// Where a node this painter has not drawn before goes in paint order:
-    /// after its own last one, or after this.
-    anchor: Option<NodeId>,
-    /// While set, every node drawn fades out toward its view's ends.
-    pub fade: Option<Fade>,
-    /// Applied over every node's own transform (a zoom over a whole
-    /// layout).
-    pub transform: Affine,
-}
-
-impl<'a> Painter<'a> {
-    pub fn new(scene: &'a mut Scene, nodes: &'a mut Vec<NodeId>, clip: Option<IRect>) -> Self {
-        Self { scene, nodes, used: 0, clip, anchor: None, fade: None, transform: Affine::IDENTITY }
-    }
-
-    /// New nodes start right after `anchor` rather than on top of the scene.
-    pub fn after(mut self, anchor: Option<NodeId>) -> Self {
-        self.anchor = anchor;
-        self
-    }
-
-    /// The last node this painter drew, for the next group to follow.
-    pub fn last(&self) -> Option<NodeId> {
-        self.nodes.last().copied().or(self.anchor)
-    }
-
-    pub fn scene(&mut self) -> &mut Scene {
-        self.scene
-    }
-
-    fn put(&mut self, bounds: IRect, paint: Paint, transform: Affine, clip: Option<IRect>) {
-        if self.used == self.nodes.len() {
-            let prev = self.nodes.last().copied().or(self.anchor);
-            let id = self.scene.add_after(prev, IRect::default(), Paint::Rect { fill: Rgba::TRANSPARENT, radius: 0.0 });
-            self.scene.set_visible(id, false);
-            self.nodes.push(id);
-        }
-        let id = self.nodes[self.used];
-        self.used += 1;
-        let paint = match self.fade {
-            Some(fade) => Paint::Faded { paint: Box::new(paint), fade },
-            None => paint,
-        };
-        self.scene.update_with(id, bounds, paint, true, self.transform * transform, clip);
-    }
-
-    pub fn rect(&mut self, r: IRect, fill: Rgba, radius: f32) {
-        if fill.a > 0.0 && !r.is_empty() {
-            self.put(r, Paint::Rect { fill, radius }, Affine::IDENTITY, self.clip);
-        }
-    }
-
-    pub fn framed(&mut self, r: IRect, fill: Rgba, radius: f32, border: Rgba, width: f32) {
-        if (fill.a > 0.0 || (border.a > 0.0 && width > 0.0)) && !r.is_empty() {
-            self.put(r, Paint::Framed { fill, radius, border, width }, Affine::IDENTITY, self.clip);
-        }
-    }
-
-    /// Pixels drawn with their top-left on `at`.
-    pub fn image(&mut self, image: &Bitmap, at: (i32, i32), alpha: f32) {
-        if alpha > 0.0 {
-            let (w, h) = image.size();
-            let bounds = IRect::new(at.0, at.1, w, h);
-            self.put(bounds, Paint::Image { image: image.clone(), alpha }, Affine::IDENTITY, self.clip);
-        }
-    }
-
-    pub fn shape(&mut self, bounds: IRect, paint: Paint) {
-        self.put(bounds, paint, Affine::IDENTITY, self.clip);
-    }
-
-    /// A node under its own clip, inside the painter's.
-    pub fn shape_in(&mut self, bounds: IRect, paint: Paint, clip: IRect) {
-        let clip = self.clip.map_or(clip, |c| c.intersect(&clip));
-        self.put(bounds, paint, Affine::IDENTITY, Some(clip));
-    }
-
-    /// A line whose line box's top-left lands on `at`.
-    pub fn text(&mut self, shaped: &ShapedText, at: (i32, i32), color: Rgba, glow: &[Glow<Rgba>]) {
-        let (w, h) = shaped.box_size();
-        let bounds = IRect::new(at.0 - text::PAD, at.1 - text::PAD, w, h);
-        self.text_in(shaped, bounds, Affine::IDENTITY, self.clip, color, glow);
-    }
-
-    /// A line drawn through `transform` (rotated, scrolled), covering
-    /// `bounds` in device pixels.
-    pub fn text_in(&mut self, shaped: &ShapedText, bounds: IRect, transform: Affine, clip: Option<IRect>, color: Rgba, glow: &[Glow<Rgba>]) {
-        if color.a <= 0.0 || shaped.glyphs.is_empty() {
-            return;
-        }
-        for g in glow.iter().rev() {
-            let reach = (g.blur + g.x.abs().max(g.y.abs())).ceil() as i32 + 1;
-            let wide = IRect::new(bounds.x - reach, bounds.y - reach, bounds.w + reach * 2, bounds.h + reach * 2);
-            let shift = Affine::translate((reach as f64, reach as f64));
-            let ink = g.color.with_alpha(g.color.a * color.a);
-            let paint = Paint::Glow { text: shaped.clone(), color: ink, x: g.x as f32, y: g.y as f32, blur: g.blur as f32 };
-            self.put(wide, paint, transform * shift, clip);
-        }
-        self.put(bounds, Paint::Text { text: shaped.clone(), color }, transform, clip);
-    }
-
-    /// A line under a Gaussian blur, its bounds grown by the blur's reach and
-    /// cut to `clip`, under a transform about the surface's origin; it must
-    /// not carry the box past its grown bounds.
-    pub fn blurred_with(&mut self, shaped: &ShapedText, at: (i32, i32), color: Rgba, blur: f32, clip: Option<IRect>, about: Affine) {
-        if color.a <= 0.0 || shaped.glyphs.is_empty() {
-            return;
-        }
-        let (w, h) = shaped.box_size();
-        let reach = (blur * 3.0).ceil() as i32 + 1;
-        let bounds = IRect::new(at.0 - text::PAD - reach, at.1 - text::PAD - reach, w + reach * 2, h + reach * 2);
-        let shift = Affine::translate((reach as f64, reach as f64));
-        self.put(bounds, Paint::Blur { text: shaped.clone(), color, blur }, about * shift, clip);
-    }
-
-    pub fn finish(self) {
-        for id in &self.nodes[self.used..] {
-            self.scene.set_visible(*id, false);
-        }
-    }
-}
-
-/// Shaping, cached by text and style, with the look it shapes for.
-pub struct Kit {
-    pub text: Text,
-    pub look: Look,
-    /// `debug motionScale`, on top of the theme's own clocks.
-    pub motion_scale: f64,
-    /// While set, every style shaped in, so a surface's styles can be
-    /// warmed ahead of its next open.
-    pub seen: Option<Vec<TextStyle>>,
-}
-
 /// One measured view: its extent along the strip, and where its free label
 /// landed.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -646,45 +347,6 @@ pub struct Frame<'a> {
 }
 
 impl Kit {
-    pub fn new(theme: &Theme) -> Self {
-        Self { text: Text::new(), look: Look::new(theme), motion_scale: 1.0, seen: None }
-    }
-
-    pub fn set_theme(&mut self, theme: &Theme) {
-        self.look = Look::new(theme);
-    }
-
-    pub fn shape(&mut self, source: &str, style: TextStyle) -> ShapedText {
-        if let Some(seen) = &mut self.seen
-            && !seen.contains(&style)
-        {
-            seen.push(style);
-        }
-        self.text.shape(source, style)
-    }
-
-    /// `source` cut to `max` with an ellipsis, or whole.
-    pub fn elided(&mut self, source: &str, style: TextStyle, max: f64) -> ShapedText {
-        let whole = self.shape(source, style);
-        if whole.width as f64 <= max + 0.5 || source.is_empty() {
-            return whole;
-        }
-        let chars: Vec<char> = source.chars().collect();
-        let cut = |n: usize| chars[..n].iter().collect::<String>().trim_end().to_owned() + "\u{2026}";
-        let (mut lo, mut hi) = (0usize, chars.len());
-        while lo < hi {
-            let mid = (lo + hi).div_ceil(2);
-            if self.shape(&cut(mid), style).width as f64 <= max { lo = mid } else { hi = mid - 1 }
-        }
-        self.shape(&cut(lo), style)
-    }
-
-    pub fn icon(&mut self, name: &str) -> ShapedText {
-        let g = fs_theme::icons::glyph(name);
-        let style = TextStyle { family: Family::Named(g.family), size: self.look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
-        self.shape(g.text, style)
-    }
-
     fn part_shape(&mut self, part: &Part, band: bool) -> ShapedText {
         let look = self.look.clone();
         match part {

@@ -31,7 +31,8 @@ use crate::services::state::{self, Field};
 use crate::store::Store;
 use crate::surfaces::bar::cells::clock::clock_format;
 use crate::surfaces::activity;
-use crate::surfaces::bar::cell::{Action, Kit, Painter};
+use crate::surfaces::bar::cell::Action;
+use crate::paint::{Kit, Painter};
 use crate::surfaces::panel::{center, tray};
 use crate::text::TextStyle;
 use crate::ui::{El, Ink, Type, Ui, Weight, w};
@@ -236,7 +237,7 @@ impl Drop for Sidebar {
 impl Sidebar {
     /// The field the cards' rims read and the bar window's top left on
     /// the output.
-    pub fn set_lit(&mut self, lit: Option<(crate::surfaces::rim::Lit, (f64, f64))>) {
+    pub fn set_lit(&mut self, lit: Option<(crate::paint::rim::Lit, (f64, f64))>) {
         self.top.lit = lit.clone();
         self.foot.lit = lit;
     }

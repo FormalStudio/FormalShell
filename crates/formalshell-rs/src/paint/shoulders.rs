@@ -178,38 +178,6 @@ pub fn paths_with(width: f64, height: f64, radius: f64, border: f64, attach: f64
     Paths { fill, outer, near }
 }
 
-/// An attached card `depth` deep hung at
-/// a published join, so `debug join` has a card in the gap it opens. Drawn
-/// into a full-output scene; `line` is the line's row across from `edge`.
-pub fn preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_types::Edge, line: f64, join: Option<(f64, f64)>) {
-    use fs_types::Edge;
-    use vello_cpu::kurbo::{Affine, Rect};
-    let mut p = crate::surfaces::bar::cell::Painter::new(scene, nodes, None);
-    if let Some((x, width)) = join {
-        const DEPTH: f64 = 140.0;
-        let card = theme.box_style("card", None);
-        let radius = theme.card_radius();
-        let (color, bw) = card.border.map_or((fs_theme::color::Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
-        let paths = paths(width + radius * 2.0, DEPTH, radius, bw, 1.0, 0.0);
-        let (sw, sh) = (p.scene().size.w as f64, p.scene().size.h as f64);
-        let top = line - theme.border_width;
-        // The top-line outline turned onto the join's edge.
-        let at = match edge {
-            Edge::Top => Affine::translate((x - radius, top)),
-            Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, x - radius, sh - top]),
-            Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, top, x - radius]),
-            Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, sw - top, x - radius]),
-        };
-        let bounds = crate::scene::Scene::cover(Rect::new(0.0, 0.0, width + radius * 2.0, DEPTH), at, 2.0);
-        let mut fill = paths.fill;
-        fill.apply_affine(at);
-        let mut outer = paths.outer;
-        outer.apply_affine(at);
-        p.shape(bounds, crate::scene::Paint::Shape { fill: Some((fill, card.fill)), strokes: vec![(outer, color, bw)] });
-    }
-    p.finish();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

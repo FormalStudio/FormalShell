@@ -8,8 +8,8 @@ use fs_theme::tokens::WEIGHTS;
 
 use super::boxes;
 use crate::scene::{Bitmap, IRect, Paint};
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::{Family, TextStyle};
+use crate::paint::{Kit, Painter};
+use crate::text::TextStyle;
 
 pub struct Thumb<'a> {
     pub picture: Option<&'a Bitmap>,
@@ -64,10 +64,7 @@ pub fn paint(p: &mut Painter, kit: &mut Kit, t: &Theme, th: &Thumb, r: IRect, li
             match th.icon {
                 Some(icon) => p.shape(at, Paint::Picture { image: icon.clone(), alpha, radius: 0.0 }),
                 None => {
-                    let glyph = fs_theme::icons::glyph("app-window");
-                    let st = TextStyle { family: Family::Named(glyph.family), size: (size as f32 * 0.75).max(1.0), weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
-                    let mark = kit.shape(glyph.text, st);
-                    p.text(&mark, (at.x + (at.w - mark.width) / 2, at.y + (at.h - mark.line_height()) / 2), a(dim, 1.0), &[]);
+                    kit.glyph(p, "app-window", (size as f32 * 0.75).max(1.0), at, a(dim, 1.0));
                 }
             }
             if let Some(l) = &title {

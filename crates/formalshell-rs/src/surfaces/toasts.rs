@@ -47,8 +47,8 @@ use crate::services::notifications::now_ms;
 use crate::store::Store;
 use crate::surface::Surface;
 use crate::surfaces::activity::{self, Verb};
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::surfaces::rim::{self, Lit, Rim};
+use crate::paint::{Kit, Painter};
+use crate::paint::rim::{self, Lit, Rim};
 use crate::ui::{self, El, Ink, Type, Ui, Variant, Weight, w};
 
 const MAX_PEEK_LEVELS: usize = 2;

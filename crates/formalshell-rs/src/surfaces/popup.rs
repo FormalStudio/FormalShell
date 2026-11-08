@@ -11,7 +11,7 @@ use vello_cpu::kurbo::Rect;
 
 use crate::scene::{IRect, NodeId};
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::paint::{Kit, Painter};
 use crate::surfaces::card::Card;
 use crate::ui::{Drawn, El, Ui};
 

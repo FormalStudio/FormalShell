@@ -3,12 +3,16 @@
 
 use crate::services::devices::{self, Op};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct Network {
     state: devices::Network,
 }
+
+/// The icon the strip warms ahead of the first frame.
+pub const ICONS: &[&str] = &["wifi"];
 
 impl Cell for Network {
     fn reads(&self) -> &'static [Topic] {

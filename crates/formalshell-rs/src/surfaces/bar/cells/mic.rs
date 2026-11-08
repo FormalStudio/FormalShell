@@ -7,7 +7,8 @@ use fs_system::audio::{SourceState, source_state};
 
 use crate::services::devices::Op;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
+use crate::paint::Look;
 
 pub struct Mic {
     state: SourceState,
@@ -35,8 +36,8 @@ impl Cell for Mic {
     fn view(&self, look: &Look) -> View {
         let (part, head) = match self.state {
             SourceState::Unavailable => (Part::Meta { text: "NO MIC".into() }, "NO INPUT DEVICE"),
-            SourceState::Muted => (Part::Icon { name: "mic-off".into(), dim: false, dot: false }, "MIC MUTED"),
-            SourceState::Live => (Part::Icon { name: "mic".into(), dim: false, dot: false }, "MIC LIVE"),
+            SourceState::Muted => (Part::icon("mic-off"), "MIC MUTED"),
+            SourceState::Live => (Part::icon("mic"), "MIC LIVE"),
         };
         View::new(vec![part], look.xxs).tooltip(format!("{head} / MIDDLE AUDIO PANEL"))
     }

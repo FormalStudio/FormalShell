@@ -3,7 +3,8 @@
 //! to summarise; `bar.widgets.display.showLabel` opts a name in.
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct Display {
@@ -23,7 +24,7 @@ impl Cell for Display {
     }
 
     fn view(&self, look: &Look) -> View {
-        let mut parts = vec![Part::Icon { name: "monitor".into(), dim: false, dot: false }];
+        let mut parts = vec![Part::icon("monitor")];
         if self.show_label {
             parts.push(Part::Name { text: "Display".into(), max: f64::INFINITY, dim: false });
         }

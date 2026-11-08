@@ -8,7 +8,7 @@ use fs_audio::Visual;
 use fs_theme::icons;
 use fs_theme::theme::Theme;
 
-use crate::surfaces::bar::cell::Kit;
+use crate::paint::Kit;
 use crate::ui::{self, El, Ink, Type, w};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

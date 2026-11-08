@@ -18,7 +18,7 @@ use vello_cpu::kurbo::Rect;
 use super::App;
 use crate::services::plugins;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::Kit;
+use crate::paint::Kit;
 use crate::surfaces::modal::{Modal, Part};
 use crate::surfaces::panel::plugin;
 use crate::ui::{self, Size, Ui, w};
@@ -214,7 +214,7 @@ impl App {
             let _raster = crate::scene::raster_at(w.modal.surface.scale());
             let run = self.store.plugins.runs.get(&w.id);
             let plugin = plugin::find(&self.store, w.key);
-            let drawn = Self::lay_overlay(w, plugin, run, &self.store.theme.theme, &mut self.bar.kit, now);
+            let drawn = Self::lay_overlay(w, plugin, run, &self.store.theme.theme, &mut self.kit, now);
             w.dirty = drawn;
         }
         let animating = w.modal.animating(now);

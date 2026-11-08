@@ -17,7 +17,8 @@ use fs_theme::tokens::WEIGHTS;
 use crate::scene::IRect;
 use crate::services::visualizer::{self, Avail};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Cell, Custom, Env, Ink, Kit, Look, Painter, View};
+use crate::surfaces::bar::cell::{Cell, Custom, Env, View};
+use crate::paint::{Ink, Kit, Look, Painter};
 
 const NO_CAVA: &str = "NO CAVA";
 

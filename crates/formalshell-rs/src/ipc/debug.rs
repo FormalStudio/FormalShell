@@ -204,7 +204,7 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Value {
         return text("error: percent must be 1..5000");
     }
     app.motion_scale = percent as f64 / 100.0;
-    app.bar.kit.motion_scale = app.motion_scale;
+    app.kit.motion_scale = app.motion_scale;
     ok()
 }
 

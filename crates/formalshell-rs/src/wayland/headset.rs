@@ -206,7 +206,7 @@ impl App {
         let length = self.output_size().0;
         let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
         let line_at = if self.bar.edge() == Edge::Top { self.bar.thickness() as f64 } else { ft };
-        let size = headset::size(&headset::face(&self.store, address), &theme, &mut self.bar.kit);
+        let size = headset::size(&headset::face(&self.store, address), &theme, &mut self.kit);
         let mut card = Card::new(&theme, Edge::Top, length as i32, line_at, length / 2.0, size, self.motion_scale, self.cast);
         card.capsule();
         let surface = self.popout_surface(&card, Layer::Top);
@@ -308,12 +308,12 @@ impl App {
         let open = c.popup.is_open();
         c.popup.sync_region(&self.compositor, open);
         let theme = &self.store.theme.theme;
-        let (el, rect) = headset::layout(&face, c.popup.card.content.0, theme, &mut self.bar.kit);
-        let drawn = c.popup.draw_in(&el, rect, theme, &mut self.bar.kit, now);
+        let (el, rect) = headset::layout(&face, c.popup.card.content.0, theme, &mut self.kit);
+        let drawn = c.popup.draw_in(&el, rect, theme, &mut self.kit, now);
         {
             let frame = c.popup.card.content.0;
             let (mut painter, alpha) = c.popup.painter();
-            headset::paint_ring(&mut painter, alpha, &face, frame, theme, &mut self.bar.kit);
+            headset::paint_ring(&mut painter, alpha, &face, frame, theme, &mut self.kit);
             painter.finish();
         }
         let animating = c.popup.animating(now) || drawn.animating;

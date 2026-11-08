@@ -64,7 +64,7 @@ use crate::scene::{Bitmap, IRect};
 use crate::services::theme;
 use crate::services::wallpaper;
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::Kit;
+use crate::paint::Kit;
 use crate::surfaces::lock;
 use crate::surfaces::veil::Veil;
 use crate::ui::{Ui, What};

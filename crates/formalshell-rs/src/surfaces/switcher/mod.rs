@@ -15,13 +15,14 @@ use std::time::{Duration, Instant};
 use fs_theme::color::Rgba;
 use fs_theme::style::Line;
 use fs_theme::theme::Theme;
+use fs_theme::tokens::WEIGHTS;
 use fs_types::{Window, WindowId, WorkspaceId};
 use serde_json::{Value, json};
 
 use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::{Family, TextStyle};
+use crate::paint::{Kit, Painter};
+use crate::text::TextStyle;
 use crate::ui::boxes;
 
 /// How long the card waits before it maps (macOS's Cmd+Tab).
@@ -108,7 +109,7 @@ impl Metrics {
 }
 
 fn caption_style(kit: &Kit, selected: bool) -> TextStyle {
-    TextStyle { family: kit.look.sans, size: kit.look.caption, weight: if selected { 500.0 } else { 400.0 }, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
+    kit.weight(kit.look.sans, kit.look.caption, if selected { WEIGHTS.medium } else { WEIGHTS.normal })
 }
 
 
@@ -216,7 +217,7 @@ impl Switcher {
             let r = IRect::new(card.x + pad as i32, card.y + pad as i32, content_w.round() as i32, m.cell_h.round() as i32);
             let b = t.box_style("switcher.cell", Some("rest"));
             boxes::paint(&mut p, r, &b, t.box_radius(&b, r.h as f64), alpha, 0.0);
-            let style = TextStyle { family: kit.look.sans, size: kit.look.caption, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+            let style = kit.weight(kit.look.sans, kit.look.caption, WEIGHTS.medium);
             let label = kit.shape("No windows", style);
             p.text(&label, (r.x + (r.w - label.width) / 2, r.y + (r.h - label.line_height()) / 2), a(muted), &[]);
             p.finish();
@@ -244,7 +245,7 @@ impl Switcher {
 
             let (n, of) = ordinals.get(i).copied().unwrap_or((1, 1));
             if of > 1 {
-                let st = TextStyle { family: kit.look.mono, size: kit.look.body, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+                let st = kit.weight(kit.look.mono, kit.look.body, WEIGHTS.medium);
                 let label = kit.shape(&n.to_string(), st);
                 let h = label.line_height() + (s.control_padding_y * 2.0) as i32;
                 let w = label.width + (s.control_padding_x * 2.0) as i32;
@@ -258,10 +259,7 @@ impl Switcher {
             match icon.and_then(|i| i.1.clone()) {
                 Some(small) => p.shape(ir, Paint::Picture { image: small, alpha, radius: 0.0 }),
                 None => {
-                    let glyph = fs_theme::icons::glyph("app-window");
-                    let st = TextStyle { family: Family::Named(glyph.family), size: m.caption_icon as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
-                    let g = kit.shape(glyph.text, st);
-                    p.text(&g, (ir.x + (ir.w - g.width) / 2, ir.y + (ir.h - g.line_height()) / 2), a(muted), &[]);
+                    kit.glyph(&mut p, "app-window", m.caption_icon as f32, ir, a(muted));
                 }
             }
             let title_x = ir.right() + s.icon_gap as i32;

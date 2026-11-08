@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::wallpaper::{self, DepthCut, Picture};
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::paint::{Kit, Painter};
 use crate::surfaces::login;
 use crate::ui::el::{Opt, Variant};
 use crate::ui::{El, Ink, Type, Ui, w};

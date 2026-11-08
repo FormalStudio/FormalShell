@@ -33,7 +33,7 @@ use crate::scroll::{Touchpad, Travel};
 use crate::services::menu::{self as index, Ask};
 use crate::services::{clipboard, compositor, plugins, state};
 use crate::store::Store;
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::paint::{Kit, Painter};
 use crate::surfaces::modal::Modal;
 use crate::ui::{self, El, Ink, Size, Type, Ui, Weight, w};
 

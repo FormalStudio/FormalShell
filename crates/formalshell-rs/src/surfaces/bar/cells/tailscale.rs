@@ -5,7 +5,8 @@
 use crate::services::info::tailscale::{Poll, State};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 pub struct Tailscale {
     want: Want,
@@ -46,7 +47,7 @@ impl Cell for Tailscale {
             Poll::Ok => "TAILSCALE / STOPPED",
             _ => "TAILSCALE",
         };
-        View::new(vec![Part::Icon { name: "network".into(), dim: !running, dot: false }], look.xxs)
+        View::new(vec![Part::icon("network").dim(!running)], look.xxs)
             .panel("tailscale")
             .tooltip(tooltip)
     }

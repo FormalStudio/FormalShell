@@ -17,6 +17,7 @@ use std::time::Instant;
 use fs_chrome::bar::workspaces::{self, SlotOpts};
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
+use fs_theme::tokens::WEIGHTS;
 use fs_types::{Rect, Window, WindowId, WorkspaceId};
 use vello_cpu::kurbo::{self, Affine};
 use serde_json::{Value, json};
@@ -24,8 +25,7 @@ use serde_json::{Value, json};
 use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::compositor::model::Snapshot;
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::{Family, TextStyle};
+use crate::paint::{Kit, Painter};
 
 /// niri's default zoom.
 pub const ZOOM: f64 = 0.5;
@@ -392,7 +392,7 @@ impl Overview {
 
         let over = self.drag.as_ref().filter(|d| d.lifted).and_then(|d| d.over);
         let dragged = self.drag.as_ref().filter(|d| d.lifted).map(|d| d.id.clone());
-        let caption = TextStyle { family: kit.look.sans, size: kit.look.caption, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+        let caption = kit.weight(kit.look.sans, kit.look.caption, WEIGHTS.medium);
         for (i, row) in self.rows.iter().enumerate() {
             // The row the zoom anchors on is the desktop itself at p 0, so
             // it is whole from the first frame; every other one fades in.
@@ -408,10 +408,7 @@ impl Overview {
                 let b = t.box_style("cell", Some("rest"));
                 let fill = b.fill;
                 painter.framed(card, fade(fill, alpha), radius, fade(edge, alpha * p), bw);
-                let glyph = fs_theme::icons::glyph("plus");
-                let st = TextStyle { family: Family::Named(glyph.family), size: 24.0, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
-                let g = kit.shape(glyph.text, st);
-                painter.text(&g, (card.x + (card.w - g.width) / 2, card.y + (card.h - g.line_height()) / 2), fade(muted, alpha), &[]);
+                kit.glyph(&mut painter, "plus", 24.0, card, fade(muted, alpha));
                 continue;
             }
             match (input.wallpaper, input.flat) {

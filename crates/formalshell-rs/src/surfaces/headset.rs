@@ -14,14 +14,14 @@ use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
 use fs_system::power::model::Thresholds;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
+use fs_theme::tokens::WEIGHTS;
 use fs_types::{BtAddress, Percent};
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::scene::{IRect, Paint, Scene};
 use crate::services::devices::headsets::Headset;
 use crate::store::Store;
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::TextStyle;
+use crate::paint::{Kit, Painter};
 use crate::ui::el::{Ring, Size};
 use crate::ui::{self, El, Ink, Type, w};
 
@@ -209,7 +209,7 @@ pub fn paint_ring(p: &mut Painter, alpha: f32, f: &Face, frame: IRect, theme: &T
     let strokes = ui::ring_strokes((cx, cy), d, theme.space.xs, ring, 0.0, with_alpha(groove, alpha), with_alpha(fill, alpha));
     let bounds = Scene::cover(Rect::new(cx - d / 2.0, cy - d / 2.0, cx + d / 2.0, cy + d / 2.0), Affine::IDENTITY, 2.0);
     p.shape(bounds, Paint::Shape { fill: None, strokes });
-    let style = TextStyle { family: kit.look.mono, size: theme.font_size.body_small as f32, weight: 500.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+    let style = kit.weight(kit.look.mono, theme.font_size.body_small as f32, WEIGHTS.medium);
     let text = kit.shape(&level.rounded().to_string(), style);
     let at = ((cx - text.width as f64 / 2.0).round() as i32, (cy - text.line_height() as f64 / 2.0).round() as i32);
     p.text(&text, at, with_alpha(theme.colors.get("mutedForeground"), alpha), &[]);

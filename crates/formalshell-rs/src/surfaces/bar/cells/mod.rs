@@ -37,6 +37,11 @@ use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
 
 use super::cell::Cell;
 
+/// The icons the cells that warm one declare.
+pub fn warm_icons() -> impl Iterator<Item = &'static str> {
+    [audio::ICONS, battery::ICONS, bell::ICONS, bluetooth::ICONS, network::ICONS, monitor::ICONS].into_iter().flatten().copied()
+}
+
 pub fn build(entry: &Entry, region_entries: &[Entry]) -> Vec<Box<dyn Cell>> {
     let cell: Box<dyn Cell> = match &entry.kind {
         EntryKind::Builtin(b) => match b {

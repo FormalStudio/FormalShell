@@ -14,8 +14,7 @@ use fs_theme::tokens::WEIGHTS;
 use crate::motion::{Animated, Kind};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::tray::MenuNode;
-use crate::surfaces::bar::cell::{Kit, Painter};
-use crate::text::{ShapedText, TextStyle};
+use crate::paint::{Kit, Painter};
 
 /// What a menu takes off the theme beyond the cell kit's look.
 struct Look {
@@ -281,25 +280,6 @@ impl Menu {
         changed
     }
 
-    fn elide(kit: &mut Kit, text: &str, style: TextStyle, max: f64) -> ShapedText {
-        let full = kit.shape(text, style);
-        if full.width as f64 <= max {
-            return full;
-        }
-        let chars: Vec<char> = text.chars().collect();
-        let (mut lo, mut hi) = (0, chars.len());
-        while lo < hi {
-            let mid = (lo + hi).div_ceil(2);
-            let cut: String = chars[..mid].iter().collect::<String>() + "…";
-            if kit.shape(&cut, style).width as f64 <= max {
-                lo = mid;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        kit.shape(&(chars[..lo].iter().collect::<String>() + "…"), style)
-    }
-
     /// Draws the header and the rows into the card's content rect.
     pub fn layout(&mut self, kit: &mut Kit, scene: &mut Scene, rect: IRect, alpha: f32, clip: IRect) {
         let look = &self.look;
@@ -319,9 +299,9 @@ impl Menu {
         }
         let x_icon = kit.icon("x");
         p.text(&x_icon, (self.close.x + (ch - x_icon.width) / 2, top + (ch - x_icon.line_height()) / 2), a(k.foreground), &[]);
-        let title_style = TextStyle { family: k.sans, size: look.subtitle, weight: WEIGHTS.bold as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+        let title_style = kit.weight(k.sans, look.subtitle, WEIGHTS.bold);
         let title_room = (self.close.x - rect.x - pad) as f64 - look.icon_gap;
-        let title = Self::elide(kit, &self.title, title_style, title_room);
+        let title = kit.elided(&self.title, title_style, title_room);
         p.text(&title, (rect.x + pad, top + (ch - title.line_height()) / 2), a(k.foreground), &[]);
         let rule_y = top + ch + pad;
         p.rect(IRect::new(rect.x + bw, rule_y, rect.w - bw * 2, bw), a(look.border), 0.0);
@@ -335,7 +315,7 @@ impl Menu {
         let mut y = body_top - self.scroll.round() as i32;
         self.rects.clear();
         if self.rows.is_empty() {
-            let style = TextStyle { family: k.sans, size: k.caption, weight: WEIGHTS.medium as f32, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None };
+            let style = kit.weight(k.sans, k.caption, WEIGHTS.medium);
             let label = kit.shape("Empty menu", style);
             p.text(&label, (left, y + (ch - label.line_height()) / 2), a(k.muted), &[]);
         }
@@ -387,7 +367,7 @@ impl Menu {
                     x += size as i32 + look.icon_gap as i32;
                 }
             }
-            let label = Self::elide(kit, &row.node.label, k.sans(WEIGHTS.medium as f32), (right - x).max(0) as f64);
+            let label = kit.elided(&row.node.label, k.sans(WEIGHTS.medium as f32), (right - x).max(0) as f64);
             p.text(&label, (x, r.y + (r.h - label.line_height()) / 2), a(fg), &[]);
         }
         p.finish();

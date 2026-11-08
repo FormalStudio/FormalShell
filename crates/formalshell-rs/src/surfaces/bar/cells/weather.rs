@@ -8,7 +8,8 @@ use fs_info::weather as openmeteo;
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 pub struct Weather {
     want: Want,
@@ -50,7 +51,7 @@ impl Cell for Weather {
 
     fn view(&self, look: &Look) -> View {
         let code = self.reading.as_ref().map_or(-1.0, |w| w.current.code);
-        let mut parts = vec![Part::Icon { name: openmeteo::icon_for_code(code, Some(self.day)).into(), dim: self.reading.is_none(), dot: false }];
+        let mut parts = vec![Part::icon(openmeteo::icon_for_code(code, Some(self.day))).dim(self.reading.is_none())];
         let head = match &self.reading {
             Some(w) => {
                 let temp = round(w.current.temperature);

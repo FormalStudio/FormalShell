@@ -6,7 +6,8 @@ use fs_chrome::bar::layout::{self, Entry};
 use fs_types::{Edge, Region};
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, View};
+use crate::paint::Look;
 
 pub struct Chevron {
     region: Region,

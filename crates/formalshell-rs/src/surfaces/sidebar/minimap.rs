@@ -32,7 +32,8 @@ use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::compositor::Command;
 use crate::services::appicon;
 use crate::store::Store;
-use crate::surfaces::bar::cell::{Action, Kit, Painter};
+use crate::surfaces::bar::cell::Action;
+use crate::paint::{Kit, Painter};
 use crate::text::TextStyle;
 use crate::ui::{El, w};
 

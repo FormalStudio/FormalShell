@@ -3,7 +3,8 @@
 //! runs themselves are the commands service's.
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Cell, Env, Look, Part, Summary, Tone, View};
+use crate::surfaces::bar::cell::{Cell, Env, Part, Summary, View};
+use crate::paint::{Look, Tone};
 
 pub struct Command {
     id: String,

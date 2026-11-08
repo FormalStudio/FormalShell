@@ -174,8 +174,8 @@ impl App {
         let pad = theme.space.panel_padding;
         let width = theme.space.popup_width_narrow;
         let reading = self.osd_reading();
-        let el = osd::content(&reading, theme, &mut self.bar.kit, width - pad * 2.0);
-        let height = crate::ui::measure(&el, width - pad * 2.0, theme, &mut self.bar.kit).1 + pad * 2.0;
+        let el = osd::content(&reading, theme, &mut self.kit, width - pad * 2.0);
+        let height = crate::ui::measure(&el, width - pad * 2.0, theme, &mut self.kit).1 + pad * 2.0;
         let inset = self.bottom_inset();
         let rest = inset + theme.space.screen_padding;
         let band = out_h.min(rest + height * 2.0);
@@ -242,8 +242,8 @@ impl App {
         let qh = self.qh.clone();
         let Some(p) = &mut self.osd.pill else { return };
         let width = p.card.rest().width() - theme.space.panel_padding * 2.0;
-        let el = osd::content(&reading, theme, &mut self.bar.kit, width);
-        let drawn = p.draw(&el, theme, &mut self.bar.kit, now);
+        let el = osd::content(&reading, theme, &mut self.kit, width);
+        let drawn = p.draw(&el, theme, &mut self.kit, now);
         let animating = p.animating(now) || drawn.animating;
         p.present(animating, &qh);
     }

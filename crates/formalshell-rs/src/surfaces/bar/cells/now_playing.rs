@@ -7,7 +7,8 @@
 use crate::scene::Bitmap;
 use crate::services::motion_art;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Part, Summary, View};
+use crate::paint::Look;
 
 /// The cell's own ceiling on a strip long enough to afford it.
 const CAP: f64 = 220.0;
@@ -78,7 +79,7 @@ impl Cell for NowPlaying {
         let available = self.track.is_some();
         let mut parts = vec![match &self.cover {
             Some((size, image)) => Part::Cover { image: crate::ui::el::Pic(image.clone()), size: *size },
-            None => Part::Icon { name: "music".into(), dim: !available, dot: false },
+            None => Part::icon("music").dim(!available),
         }];
         if let Some((title, _)) = &self.track {
             parts.push(Part::Free { text: title.clone(), dim: false, lead: 0.0, ceiling: CAP, cross: true });

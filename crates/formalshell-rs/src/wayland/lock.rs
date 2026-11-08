@@ -1368,7 +1368,7 @@ impl App {
             }
             let _raster = crate::scene::raster_at(k);
             o.view.ui.motion_scale = self.motion_scale;
-            let moving = o.view.draw(&shared, theme, &mut self.bar.kit, now) || entering;
+            let moving = o.view.draw(&shared, theme, &mut self.kit, now) || entering;
             if std::mem::replace(&mut o.saver, false) {
                 o.view.scene.touch(size);
             }

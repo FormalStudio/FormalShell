@@ -157,7 +157,7 @@ impl App {
         let c = cap::cands(self);
         let qh = self.qh.clone();
         let theme = &self.store.theme.theme;
-        let kit = &mut self.bar.kit;
+        let kit = &mut self.kit;
         for p in &mut self.pickers.surfaces {
             if !p.dirty {
                 continue;

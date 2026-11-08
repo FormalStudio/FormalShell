@@ -98,7 +98,7 @@ fn chevron_at(app: &mut App, args: &[Value]) -> Value {
 
 /// One entry per mapped bar, as `debug dump`'s bars fan out.
 fn room(app: &mut App, _: &[Value]) -> Value {
-    text(json!([app.bar.room()]).to_string())
+    text(json!([app.bar.room(&app.kit)]).to_string())
 }
 
 fn paint(app: &mut App, _: &[Value]) -> Value {

@@ -430,11 +430,11 @@ impl App {
         let Some((surface, scene, _)) = &mut self.overview.win else { return };
         let _raster = crate::scene::raster_at(scale);
         if clear {
-            let mut p = crate::surfaces::bar::cell::Painter::new(scene, &mut self.overview.model.nodes, None);
+            let mut p = crate::paint::Painter::new(scene, &mut self.overview.model.nodes, None);
             p.rect(crate::scene::IRect::new(0, 0, 0, 0), Rgba::TRANSPARENT, 0.0);
             p.finish();
         } else {
-            self.overview.model.draw(&input, &mut self.bar.kit, scene);
+            self.overview.model.draw(&input, &mut self.kit, scene);
         }
         let qh = self.qh.clone();
         surface.present(scene, animating, &qh);

@@ -8,7 +8,8 @@
 
 use crate::store::Topic;
 use crate::surfaces::activity;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Part, View};
+use crate::paint::{Look, Tone};
 use crate::ui::el::Ring;
 
 #[derive(Clone, Debug, Default, PartialEq)]

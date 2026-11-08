@@ -24,8 +24,8 @@ use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::motion::{Animated, Curve, Deform, Kind};
 use crate::scene::{Cast, Fade, Fit, IRect, Joined, LitLine, NodeId, Outline, Paint, Scene, Snap};
-use crate::surfaces::rim::{Lit, Rim};
-use crate::surfaces::shoulders::{self, Walls};
+use crate::paint::rim::{Lit, Rim};
+use crate::paint::shoulders::{self, Walls};
 use fs_theme::color::Rgba;
 use fs_theme::style::Radius;
 use fs_theme::theme::Theme;

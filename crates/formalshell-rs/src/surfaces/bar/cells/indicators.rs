@@ -10,7 +10,8 @@ use fs_system::capture::elapsed_label;
 
 use crate::services::notifications::now_ms;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
+use crate::paint::{Look, Tone};
 
 #[derive(Clone, Debug, PartialEq)]
 struct Item {
@@ -111,7 +112,7 @@ impl Cell for Indicator {
 
     fn view(&self, look: &Look) -> View {
         let Some(item) = &self.shown else { return View::hidden() };
-        let mut parts = vec![Part::Icon { name: item.icon.into(), dim: item.dim, dot: false }];
+        let mut parts = vec![Part::icon(item.icon).dim(item.dim)];
         if let Some(label) = &item.label {
             parts.push(Part::DimLabel { text: label.clone() });
         }

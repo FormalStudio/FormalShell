@@ -141,7 +141,7 @@ impl App {
             t.insets = insets;
             self.toasts_dirty = true;
         }
-        let generation = |l: &Option<crate::surfaces::rim::Lit>| l.as_ref().map(|l| l.generation);
+        let generation = |l: &Option<crate::paint::rim::Lit>| l.as_ref().map(|l| l.generation);
         if generation(&t.lit) != generation(&self.rims.lit) {
             t.lit = self.rims.lit.clone();
             self.toasts_dirty = true;
@@ -156,7 +156,7 @@ impl App {
         let animating = t.animating(now);
         if (self.toasts_dirty || animating || t.was_animating) && t.surface.mapped {
             let _raster = crate::scene::raster_at(t.surface.scale());
-            t.draw(&self.store, theme, &mut self.bar.kit, &insets, spec, self.motion_scale, now);
+            t.draw(&self.store, theme, &mut self.kit, &insets, spec, self.motion_scale, now);
             self.toasts_dirty = false;
             t.was_animating = animating;
         }

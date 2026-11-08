@@ -365,7 +365,7 @@ impl App {
         let input = Input { theme: &self.store.theme.theme, output, entries: &refs, icons: &icons, thumbs: &thumbs, alpha };
         let Some((surface, scene)) = &mut self.switcher.win else { return };
         let _raster = crate::scene::raster_at(scale);
-        self.switcher.model.draw(&input, &mut self.bar.kit, scene);
+        self.switcher.model.draw(&input, &mut self.kit, scene);
         let qh = self.qh.clone();
         surface.present(scene, fading, &qh);
         if self.switcher.model.capturing && self.switcher.model.shown {

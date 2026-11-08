@@ -7,7 +7,8 @@ use crate::services::info::usage::{Claude, State};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::{Look, Tone};
 
 pub struct Usage {
     want: Want,
@@ -44,7 +45,7 @@ impl Cell for Usage {
         }
         let worst = self.state.worst();
         let status = self.state.status_label();
-        let mut parts = vec![Part::Icon { name: "gauge".into(), dim: worst < 0.0, dot: false }];
+        let mut parts = vec![Part::icon("gauge").dim(worst < 0.0)];
         if self.label {
             if worst >= 0.0 {
                 parts.push(Part::Label { text: format!("{}%", (worst * 100.0 + 0.5).floor()), weight: None });

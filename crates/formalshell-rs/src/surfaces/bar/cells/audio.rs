@@ -6,13 +6,17 @@ use fs_audio::Visual;
 
 use crate::services::devices::{self, Op};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct Audio {
     state: devices::Audio,
     show_label: bool,
 }
+
+/// The icon the strip warms ahead of the first frame.
+pub const ICONS: &[&str] = &["volume-2"];
 
 impl Cell for Audio {
     fn reads(&self) -> &'static [Topic] {
@@ -31,7 +35,7 @@ impl Cell for Audio {
         let s = &self.state;
         let percent = (s.volume.map_or(0.0, Visual::as_f64) * 100.0).round();
         let head = if s.muted { "OUTPUT MUTED" } else { "OUTPUT VOLUME" };
-        let mut parts = vec![Part::Icon { name: if s.muted { "volume-x" } else { "volume-2" }.into(), dim: false, dot: false }];
+        let mut parts = vec![Part::icon(if s.muted { "volume-x" } else { "volume-2" })];
         if self.show_label {
             parts.push(Part::Label { text: format!("{percent}%"), weight: None });
         }

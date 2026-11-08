@@ -8,7 +8,8 @@ use fs_types::Percent;
 
 use crate::services::devices::earbuds;
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 #[derive(Default, PartialEq)]
 struct Read {
@@ -54,7 +55,7 @@ impl Cell for Earbuds {
     fn view(&self, look: &Look) -> View {
         let r = &self.r;
         let Some(worst) = r.worst else { return View::hidden() };
-        let mut parts = vec![Part::Icon { name: "headphones".into(), dim: false, dot: false }];
+        let mut parts = vec![Part::icon("headphones")];
         if r.show_label {
             parts.push(Part::Label { text: format!("{}%", worst.as_percent()), weight: None });
         }

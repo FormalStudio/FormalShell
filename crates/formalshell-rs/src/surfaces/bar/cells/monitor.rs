@@ -5,7 +5,8 @@
 
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 pub struct Monitor {
     want: Want,
@@ -24,6 +25,9 @@ impl Default for Monitor {
 fn pct(fraction: Option<f64>) -> String {
     fraction.filter(|f| f.is_finite()).map_or_else(|| "--".to_owned(), |f| format!("{}%", (f * 100.0 + 0.5).floor()))
 }
+
+/// The icon the strip warms ahead of the first frame.
+pub const ICONS: &[&str] = &["activity"];
 
 impl Cell for Monitor {
     fn visible(&mut self, on: bool) {

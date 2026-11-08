@@ -6,7 +6,8 @@ use fs_info::clock::{CLOCK_FORMATS, format_qt, next_format, stacked_lines, subst
 
 use crate::services::state::{self, Field};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct Clock {

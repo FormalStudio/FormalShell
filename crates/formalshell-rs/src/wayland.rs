@@ -55,6 +55,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 
 use crate::ipc;
+use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::{IRect, NodeId};
 use crate::services::{barpaint, commands, devices, compositor, info, media, nightlight, overnight, theme, tray};
@@ -105,11 +106,11 @@ impl Popout {
     }
 
     /// Lays its content out at the card's content rect this frame.
-    fn layout(&mut self, bar: &mut Bar) {
+    fn layout(&mut self, kit: &mut Kit) {
         let (rect, alpha) = self.card.content;
         let clip = self.card.content_clip();
         if let Some(menu) = &mut self.menu {
-            menu.layout(&mut bar.kit, &mut self.card.scene, rect, alpha, clip);
+            menu.layout(kit, &mut self.card.scene, rect, alpha, clip);
         }
     }
 
@@ -177,6 +178,8 @@ pub struct App {
     pub atlas: atlas::State,
     peek: preview::State,
     pub bar: Bar,
+    /// Shapes and draws for every surface; rebuilt with the theme.
+    pub kit: Kit,
     bar_surface: Option<Surface>,
     /// The bar layer that holds the keyboard for the minimap, if one does.
     sidebar_keys: Option<wl_surface::WlSurface>,
@@ -285,6 +288,7 @@ impl App {
         crate::surface::bind_scaling(globals, qh);
         let store = Store::default();
         let bar = Bar::new(Edge::Top, &store.theme.theme);
+        let kit = Kit::new(&store.theme.theme);
         let mut app = Self {
             registry: RegistryState::new(globals),
             outputs: OutputState::new(globals, qh),
@@ -297,6 +301,7 @@ impl App {
             handle: None,
             runtime: None,
             store,
+            kit,
             caffeinate: caffeinate::Caffeinate::bind(globals, qh),
             settle: settle::Settle::bind(globals, qh),
             console: console::Console::default(),
@@ -414,18 +419,18 @@ impl App {
     pub fn warm_bar_faces(&self) {
         use crate::text::{Family, TextStyle};
         use fs_theme::tokens::WEIGHTS;
-        let look = &self.bar.kit.look;
+        let look = &self.kit.look;
         let mut jobs: Vec<(String, TextStyle)> = Vec::new();
         for w in [WEIGHTS.normal, WEIGHTS.medium, WEIGHTS.semibold] {
             jobs.push(("0".into(), look.label(w as f32)));
             jobs.push(("a".into(), look.sans(w as f32)));
             jobs.push(("0".into(), TextStyle { family: look.sans, size: look.caption, weight: w as f32, tracking: look.meta_tracking, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
-        for name in ["circle", "wifi", "volume-2", "battery", "bell", "bluetooth", "cpu"] {
+        for name in std::iter::once("circle").chain(crate::surfaces::bar::cells::warm_icons()) {
             let g = fs_theme::icons::glyph(name);
             jobs.push((g.text.to_owned(), TextStyle { family: Family::Named(g.family), size: look.body, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }));
         }
-        let text = self.bar.kit.text.clone();
+        let text = self.kit.text.clone();
         let _ = std::thread::Builder::new().name("fs-warm".into()).spawn(move || text.warm(&jobs));
     }
 
@@ -616,6 +621,7 @@ impl App {
         let before = (self.bar.across(), self.bar.framed(), self.bar.frame_thickness(), self.bar.edge());
         let edge = self.chrome_edge();
         let collapsed = self.store.state.data.sidebar_collapsed;
+        self.kit.set_theme(&self.store.theme.theme);
         self.bar.set_theme(&self.store.theme.theme);
         self.bar.set_edge(edge);
         self.bar.set_collapsed(collapsed);
@@ -692,10 +698,10 @@ impl App {
             }
             self.sync_hot_corners();
         }
-        self.bar.update_paint(&self.store);
+        self.bar.update_paint(&mut self.kit, &self.store);
         sync_zone(&mut self.bar, self.bar_surface.as_mut());
         self.request_paint();
-        self.bar.read(&self.store, topic, now);
+        self.bar.read(&mut self.kit, &self.store, topic, now);
         if self.panel.as_ref().is_some_and(|p| topic.is_none_or(|t| p.module.reads().contains(&t) || t == Topic::Theme)) {
             self.panel_dirty = true;
         }
@@ -778,7 +784,7 @@ impl App {
     fn sync_open(&mut self, now: Instant) {
         let panel = self.panel_open().map(str::to_owned);
         let overflow = self.overflow_open();
-        self.bar.set_open(panel.as_deref(), overflow, now);
+        self.bar.set_open(&self.kit, panel.as_deref(), overflow, now);
         devices::earbuds::panel(panel.as_deref() == Some("earbuds"));
         devices::bluetooth::panel(panel.as_deref() == Some("bluetooth"));
         devices::audio::panel(panel.as_deref() == Some("audio"));
@@ -821,7 +827,7 @@ impl App {
         let line = self.bar.thickness() as f64;
         if let Some((_, scene, nodes)) = &mut self.preview {
             let join = join.map(|(x, w)| (x as f64, w as f64));
-            crate::surfaces::shoulders::preview(scene, nodes, &self.store.theme.theme, edge, line, join);
+            join_preview(scene, nodes, &self.store.theme.theme, edge, line, join);
         }
     }
 
@@ -1369,10 +1375,10 @@ impl App {
             s.bar.set_idle(idle);
         }
         self.present_heads(self.bar_dirty, now);
-        let animating = self.bar.animating(now);
-        let stepping = animating || self.bar.marquee_due(now);
-        if self.bar_dirty || (stepping && !self.bar.step_in_place(now)) {
-            self.bar.layout(&self.store, now);
+        let animating = self.bar.animating(&self.kit, now);
+        let stepping = animating || self.bar.marquee_due(&self.kit, now);
+        if self.bar_dirty || (stepping && !self.bar.step_in_place(&mut self.kit, now)) {
+            self.bar.layout(&mut self.kit, &self.store, now);
             self.bar_dirty = false;
             self.sync_sidebar_keys();
             self.sync_bar_input();
@@ -1392,7 +1398,7 @@ impl App {
         self.step_menu(now);
         if let Some(p) = &mut self.menu {
             let _raster = crate::scene::raster_at(p.surface.scale());
-            p.layout(&mut self.bar);
+            p.layout(&mut self.kit);
             let morphing = p.menu.as_ref().is_some_and(|m| m.morph.running(now));
             let animating = p.card.animating(now) || morphing;
             p.surface.present(&mut p.card.scene, animating, &qh);
@@ -1407,7 +1413,7 @@ impl App {
             let _raster = crate::scene::raster_at(h.surface.scale());
             if self.panel_dirty || animating {
                 h.sync_region(&self.compositor, &strip);
-                h.layout(&self.store, theme, &mut self.bar.kit, now);
+                h.layout(&self.store, theme, &mut self.kit, now);
             }
             let animating = h.animating(now) || h.content_animating(now);
             h.surface.present(&mut h.card.scene, animating, &qh);
@@ -1445,13 +1451,13 @@ impl App {
     fn sync_rasters(&mut self, now: Instant) {
         if let Some(scale) = self.bar_surface.as_ref().map(|s| s.scale()).filter(|k| *k != self.bar.raster) {
             self.bar.raster = scale;
-            self.bar.read(&self.store, None, now);
+            self.bar.read(&mut self.kit, &self.store, None, now);
             self.bar_dirty = true;
         }
         for spare in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
             let Some(scale) = spare.surface.as_ref().map(|s| s.scale()).filter(|k| *k != spare.bar.raster) else { continue };
             spare.bar.raster = scale;
-            spare.bar.read(&self.store, None, now);
+            spare.bar.read(&mut self.kit, &self.store, None, now);
             spare.dirty = true;
         }
     }
@@ -1473,7 +1479,7 @@ impl App {
                 }
                 let travel = self.tips.travel;
                 let card = self.tip_card.as_mut().expect("tooltip card");
-                card.take(theme, &mut self.bar.kit, &ask, travel, now);
+                card.take(theme, &mut self.kit, &ask, travel, now);
                 card.set_open(theme, true, now);
             }
             None => {
@@ -1487,7 +1493,7 @@ impl App {
         }
         let qh = self.qh.clone();
         if let Some(c) = &mut self.tip_card {
-            c.draw(theme, &mut self.bar.kit, now);
+            c.draw(theme, &mut self.kit, now);
             let animating = c.animating(now);
             c.surface.present(&mut c.scene, animating, &qh);
         }
@@ -1499,7 +1505,7 @@ impl App {
     fn arm_wake(&mut self, now: Instant) {
         let hosts = [&self.panel, &self.outgoing];
         let notifications = self.store.notifications.wake().map(|at| crate::services::notifications::instant_at(at, now));
-        let at = [self.bar.wake(now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.overview_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY), self.veil_deadline(now)]
+        let at = [self.bar.wake(&self.kit, now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.overview_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY), self.veil_deadline(now)]
             .into_iter()
             .chain(hosts.iter().filter_map(|h| h.as_ref()).flat_map(|h| [h.prime_until, h.wake.filter(|w| *w > now)]))
             .flatten()
@@ -1512,7 +1518,7 @@ impl App {
         self.wake = Some(at);
         let _ = handle.insert_source(Timer::from_deadline(at), |_, _, app: &mut App| {
             app.wake = None;
-            app.bar.tick(&app.store, Instant::now());
+            app.bar.tick(&mut app.kit, &app.store, Instant::now());
             app.tick_spares(Instant::now());
             app.bar_dirty = true;
             app.panel_dirty = true;
@@ -1607,7 +1613,7 @@ impl App {
             }
             self.bar_dirty = true;
         }
-        if self.bar.pointer(bar_hover, at, &self.store, Instant::now()) {
+        if self.bar.pointer(&mut self.kit, bar_hover, at, &self.store, Instant::now()) {
             self.bar_dirty = true;
         }
         if let Some(menu) = self.menu.as_mut() {
@@ -2470,4 +2476,35 @@ pub(crate) fn sync_zone(bar: &mut Bar, surface: Option<&mut Surface>) {
         s.layer.set_exclusive_zone(zone);
         s.layer.commit();
     }
+}
+
+/// An attached card hung at a published join, so `debug join` has a card in
+/// the gap it opens. Drawn into a full-output scene; `line` is the line's row across from `edge`.
+fn join_preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_types::Edge, line: f64, join: Option<(f64, f64)>) {
+    use fs_types::Edge;
+    use vello_cpu::kurbo::{Affine, Rect};
+    let mut p = crate::paint::Painter::new(scene, nodes, None);
+    if let Some((x, width)) = join {
+        const DEPTH: f64 = 140.0;
+        let card = theme.box_style("card", None);
+        let radius = theme.card_radius();
+        let (color, bw) = card.border.map_or((fs_theme::color::Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
+        let paths = crate::paint::shoulders::paths(width + radius * 2.0, DEPTH, radius, bw, 1.0, 0.0);
+        let (sw, sh) = (p.scene().size.w as f64, p.scene().size.h as f64);
+        let top = line - theme.border_width;
+        // The top-line outline turned onto the join's edge.
+        let at = match edge {
+            Edge::Top => Affine::translate((x - radius, top)),
+            Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, x - radius, sh - top]),
+            Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, top, x - radius]),
+            Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, sw - top, x - radius]),
+        };
+        let bounds = crate::scene::Scene::cover(Rect::new(0.0, 0.0, width + radius * 2.0, DEPTH), at, 2.0);
+        let mut fill = paths.fill;
+        fill.apply_affine(at);
+        let mut outer = paths.outer;
+        outer.apply_affine(at);
+        p.shape(bounds, crate::scene::Paint::Shape { fill: Some((fill, card.fill)), strokes: vec![(outer, color, bw)] });
+    }
+    p.finish();
 }

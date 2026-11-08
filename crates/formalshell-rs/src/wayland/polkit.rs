@@ -19,7 +19,7 @@ use super::lock::{LockMsg, buffer, field};
 use crate::scene::{Bitmap, IRect, NodeId};
 use crate::services::clipboard;
 use crate::services::polkit::{self, Cmd, Event};
-use crate::surfaces::bar::cell::Painter;
+use crate::paint::Painter;
 use crate::surfaces::modal::{Modal, Part};
 use crate::ui::{self, El, Size, Ui, Variant, w};
 
@@ -54,7 +54,7 @@ impl Dialog {
 }
 
 /// Word wrap for body text: greedy lines no wider than `width`.
-fn wrap(text: &str, width: f64, theme: &fs_theme::theme::Theme, kit: &mut crate::surfaces::bar::cell::Kit) -> Vec<String> {
+fn wrap(text: &str, width: f64, theme: &fs_theme::theme::Theme, kit: &mut crate::paint::Kit) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
@@ -209,7 +209,7 @@ impl App {
             d.modal.sync_region(&self.compositor);
             let _raster = crate::scene::raster_at(d.modal.surface.scale());
             d.ui.motion_scale = self.motion_scale;
-            Self::lay_polkit(d, &self.store.theme.theme, &mut self.bar.kit, now);
+            Self::lay_polkit(d, &self.store.theme.theme, &mut self.kit, now);
         }
         // A content effect still running (an error label's shake) lays out
         // again on the next frame.
@@ -220,7 +220,7 @@ impl App {
         }
     }
 
-    fn lay_polkit(d: &mut Dialog, theme: &fs_theme::theme::Theme, kit: &mut crate::surfaces::bar::cell::Kit, now: Instant) {
+    fn lay_polkit(d: &mut Dialog, theme: &fs_theme::theme::Theme, kit: &mut crate::paint::Kit, now: Instant) {
         let s = &theme.space;
         let (w, h) = (d.modal.card.scene.size.w, d.modal.card.scene.size.h);
         let inner = s.popup_width_narrow;

@@ -164,7 +164,7 @@ impl App {
         if m.dirty || animating || !w.shown.modal.surface.mapped {
             w.shown.modal.sync_region(&self.compositor);
             let _raster = crate::scene::raster_at(w.shown.modal.surface.scale());
-            w.shown.layout(m, &r, theme, &mut self.bar.kit, now);
+            w.shown.layout(m, &r, theme, &mut self.kit, now);
             m.dirty = false;
         }
         let animating = w.shown.animating(now) || m.globe.animating();

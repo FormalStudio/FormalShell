@@ -17,8 +17,6 @@ pub mod osd;
 pub mod packages;
 pub mod panel;
 pub mod popup;
-pub mod rim;
-pub mod shoulders;
 pub mod sidebar;
 pub mod overview;
 pub mod switcher;

@@ -234,7 +234,7 @@ impl App {
             painter.finish();
         }
         let el = body(&self.store, side, gap);
-        let drawn = p.popup.draw_in(&el, inner, theme, &mut self.bar.kit, now);
+        let drawn = p.popup.draw_in(&el, inner, theme, &mut self.kit, now);
         let animating = p.popup.animating(now) || drawn.animating;
         let qh = self.qh.clone();
         p.popup.present(animating, &qh);

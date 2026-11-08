@@ -8,11 +8,12 @@ use std::time::{Duration, Instant};
 
 use fs_types::Edge;
 use fs_theme::theme::Theme;
+use fs_theme::tokens::WEIGHTS;
 
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::{IRect, NodeId, Scene};
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::{Kit, Painter};
+use crate::paint::{Kit, Painter};
 use crate::text::{ShapedText, TextStyle};
 
 /// omarchy's own delay, and the group's grace after a hide.
@@ -201,27 +202,12 @@ impl Card {
     }
 
     fn style(theme: &Theme, kit: &Kit) -> TextStyle {
-        TextStyle { family: kit.look.sans, size: theme.font_size.caption as f32, weight: 400.0, tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
+        kit.weight(kit.look.sans, theme.font_size.caption as f32, WEIGHTS.normal)
     }
 
     fn shape(theme: &Theme, kit: &mut Kit, text: &str) -> ShapedText {
         let style = Self::style(theme, kit);
-        let max = MAX_TEXT * theme.font_scale;
-        let whole = kit.shape(text, style);
-        if whole.width as f64 <= max {
-            return whole;
-        }
-        let chars: Vec<char> = text.chars().collect();
-        let mut n = chars.len();
-        while n > 0 {
-            let t: String = chars[..n].iter().collect::<String>() + "\u{2026}";
-            let s = kit.shape(&t, style);
-            if s.width as f64 <= max {
-                return s;
-            }
-            n -= 1;
-        }
-        whole
+        kit.elided(text, style, MAX_TEXT * theme.font_scale)
     }
 
     /// Takes the group's committed ask: a new line crossfades in, a new

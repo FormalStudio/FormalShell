@@ -5,7 +5,8 @@
 use crate::services::info::update::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, Tone, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::{Look, Tone};
 
 pub struct SystemUpdate {
     want: Want,
@@ -39,7 +40,7 @@ impl Cell for SystemUpdate {
     fn view(&self, look: &Look) -> View {
         let behind = self.state.counts().behind;
         let summary = self.state.summary();
-        let mut parts = vec![Part::Icon { name: if behind > 0 { "package-plus" } else { "package" }.into(), dim: false, dot: false }];
+        let mut parts = vec![Part::icon(if behind > 0 { "package-plus" } else { "package" })];
         if self.label {
             parts.push(Part::Meta { text: summary.to_uppercase() });
         }

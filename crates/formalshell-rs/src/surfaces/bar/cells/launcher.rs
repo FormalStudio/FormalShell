@@ -3,7 +3,8 @@
 //! closes the launcher.
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct Launcher {
@@ -45,12 +46,12 @@ impl Cell for Launcher {
                 let logo = fs_theme::icons::distro_logo(id).unwrap_or(fs_theme::icons::TUX);
                 Part::Glyph { text: logo.into(), family: fs_theme::icons::SYMBOLS_FAMILY }
             }
-            "formalshell" => Part::Icon { name: "command".into(), dim: false, dot: false },
+            "formalshell" => Part::icon("command"),
             // An image path waits for the icon loader; its name stands in.
             v if v.starts_with('/') || v.starts_with("~/") || v.starts_with("file://") => {
-                Part::Icon { name: "command".into(), dim: false, dot: false }
+                Part::icon("command")
             }
-            v => Part::Icon { name: v.into(), dim: false, dot: false },
+            v => Part::icon(v),
         };
         View::new(vec![part], look.xxs).tooltip("LAUNCHER")
     }

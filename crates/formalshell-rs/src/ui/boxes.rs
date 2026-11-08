@@ -11,8 +11,8 @@ use fs_types::Edge;
 use vello_cpu::kurbo::{Affine, Rect, RoundedRect, Shape};
 
 use crate::scene::{Cast, Fit, IRect, LitLine, Outline, Paint, Scene, Snap};
-use crate::surfaces::bar::cell::Painter;
-use crate::surfaces::rim::Rim;
+use crate::paint::Painter;
+use crate::paint::rim::Rim;
 
 fn rr(r: Rect, radius: f64) -> vello_cpu::kurbo::BezPath {
     RoundedRect::from_rect(r, radius.max(0.0)).to_path(0.1)

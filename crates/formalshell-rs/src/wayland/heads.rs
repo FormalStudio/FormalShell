@@ -93,18 +93,18 @@ impl App {
                 && s.bar.output != name
             {
                 s.bar.output = name;
-                s.bar.read(&self.store, None, Instant::now());
+                s.bar.read(&mut self.kit, &self.store, None, Instant::now());
                 s.dirty = true;
             }
         }
     }
 
     /// A bar built the way the live one is: its edge, its layout and theme.
-    fn spare_bar(&self) -> Bar {
+    fn spare_bar(&mut self) -> Bar {
         let mut bar = Bar::new(self.bar.edge(), &self.store.theme.theme);
         bar.set_layout(self.bar.resolved.clone());
         bar.set_collapsed(self.store.state.data.sidebar_collapsed);
-        bar.update_paint(&self.store);
+        bar.update_paint(&mut self.kit, &self.store);
         bar
     }
 
@@ -328,22 +328,22 @@ impl App {
                 self.place_spare(i);
             }
             let Some(s) = &mut self.heads[i].spare else { continue };
-            s.bar.update_paint(&self.store);
+            s.bar.update_paint(&mut self.kit, &self.store);
             super::sync_zone(&mut s.bar, s.surface.as_mut());
-            s.bar.read(&self.store, topic, now);
+            s.bar.read(&mut self.kit, &self.store, topic, now);
             s.dirty = true;
         }
     }
 
     pub(super) fn tick_spares(&mut self, now: Instant) {
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            s.bar.tick(&self.store, now);
+            s.bar.tick(&mut self.kit, &self.store, now);
             s.dirty = true;
         }
     }
 
     pub(super) fn spares_wake(&self, now: Instant) -> Option<Instant> {
-        self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.wake(now)).min()
+        self.heads.iter().filter_map(|h| h.spare.as_ref()).filter_map(|s| s.bar.wake(&self.kit, now)).min()
     }
 
     pub(super) fn present_heads(&mut self, all: bool, now: Instant) {
@@ -355,10 +355,10 @@ impl App {
         let mut moved = Vec::new();
         for (i, s) in self.heads.iter_mut().enumerate().filter_map(|(i, h)| Some((i, h.spare.as_mut()?))) {
             let Some(surface) = &mut s.surface else { continue };
-            let animating = s.bar.animating(now);
-            let stepping = animating || s.bar.marquee_due(now);
-            if all || s.dirty || (stepping && !s.bar.step_in_place(now)) {
-                s.bar.layout(&self.store, now);
+            let animating = s.bar.animating(&self.kit, now);
+            let stepping = animating || s.bar.marquee_due(&self.kit, now);
+            if all || s.dirty || (stepping && !s.bar.step_in_place(&mut self.kit, now)) {
+                s.bar.layout(&mut self.kit, &self.store, now);
                 s.dirty = false;
                 if Self::set_input_region_for(&self.compositor, &mut s.bar, surface) {
                     moved.push(i);
@@ -539,7 +539,7 @@ impl App {
     pub(super) fn shard_word(&mut self) -> std::sync::Arc<Vec<(std::sync::Arc<vello_cpu::kurbo::BezPath>, f64, f64)>> {
         let theme = &self.store.theme.theme;
         let style = crate::text::TextStyle {
-            family: crate::surfaces::bar::cell::face(theme.faces.display),
+            family: crate::paint::face(theme.faces.display),
             size: crate::shards::WORD_SIZE,
             weight: 900.0,
             tracking: 0.0,
@@ -551,7 +551,7 @@ impl App {
         {
             return word.clone();
         }
-        let shaped = self.bar.kit.shape(crate::shards::WORD, style);
+        let shaped = self.kit.shape(crate::shards::WORD, style);
         let (cx, cy) = (f64::from(shaped.width) / 2.0, f64::from(shaped.line_height()) / 2.0);
         let pad = f64::from(crate::text::PAD);
         let word: Vec<_> = shaped.glyphs.iter().map(|g| (g.path.clone(), f64::from(g.x) - pad - cx, f64::from(g.y) - pad - cy)).collect();
@@ -624,7 +624,7 @@ impl App {
                 if let Some(surface) = &mut s.surface {
                     surface.configure(size.w, size.h);
                 }
-                s.bar.read(&self.store, None, Instant::now());
+                s.bar.read(&mut self.kit, &self.store, None, Instant::now());
                 s.dirty = true;
                 if let Some(s) = &mut self.heads[i].spare
                     && let Some(surface) = &s.surface

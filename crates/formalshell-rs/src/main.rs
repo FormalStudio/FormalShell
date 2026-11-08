@@ -7,6 +7,7 @@ mod instance;
 mod keyboard;
 mod ipc;
 mod motion;
+mod paint;
 mod render;
 mod runtime;
 mod scene;

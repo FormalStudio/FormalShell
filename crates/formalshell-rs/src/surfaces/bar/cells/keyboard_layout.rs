@@ -5,7 +5,8 @@
 use fs_system::compositor::keyboard::{self, Layout};
 
 use crate::store::Topic;
-use crate::surfaces::bar::cell::{Cell, Env, Look, Part, Summary, View};
+use crate::surfaces::bar::cell::{Cell, Env, Part, Summary, View};
+use crate::paint::Look;
 
 #[derive(Default)]
 pub struct KeyboardLayout {
@@ -37,7 +38,7 @@ impl Cell for KeyboardLayout {
         let Some(layout) = self.layout.as_ref().filter(|l| !l.available || keyboard::has_choice(l)) else {
             return View::hidden();
         };
-        let mut parts = vec![Part::Icon { name: "keyboard".into(), dim: !layout.available, dot: false }];
+        let mut parts = vec![Part::icon("keyboard").dim(!layout.available)];
         if self.label {
             parts.push(if layout.available {
                 Part::DimLabel { text: keyboard::short_label(&layout.current) }

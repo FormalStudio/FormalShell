@@ -62,6 +62,8 @@ paths = [
 [shared]
 paths = [
   "crates/formalshell-rs/src/ui/**",
+  "crates/formalshell-rs/src/paint/mod.rs",
+  "crates/formalshell-rs/src/paint/kit.rs",
   "crates/formalshell-rs/src/motion.rs",
   "crates/formalshell-rs/src/render.rs",
   "crates/formalshell-rs/src/scene.rs",
@@ -275,7 +277,7 @@ runs = ["--bar-layout"]
 [[rule]]
 paths = [
   "crates/fs-chrome/src/rim.rs",
-  "crates/formalshell-rs/src/surfaces/rim.rs",
+  "crates/formalshell-rs/src/paint/rim.rs",
   "crates/formalshell-rs/src/wayland/rims.rs",
 ]
 runs = ["--reactive-rims", "--panel audio", "--notify", "--osd", "--sidebar"]
@@ -285,7 +287,7 @@ paths = ["crates/formalshell-rs/src/services/barpaint.rs"]
 runs = ["--bar-adaptive", "--bar-ink"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/shoulders.rs"]
+paths = ["crates/formalshell-rs/src/paint/shoulders.rs"]
 runs = ["--bar-style solid --shoulders", "--join", "--menu-emerge", "--panel-emerge", "--no-morph --panel-emerge"]
 
 [[rule]]
@@ -757,5 +759,5 @@ runs = ["--overview"]
 
 # A box's, a card's and a joined card's rim on whole pixels at a fractional scale
 [[rule]]
-paths = ["crates/formalshell-rs/src/render.rs", "crates/formalshell-rs/src/scene.rs", "crates/formalshell-rs/src/ui/boxes.rs", "crates/formalshell-rs/src/surfaces/rim.rs", "crates/formalshell-rs/src/surfaces/card.rs", "crates/formalshell-rs/src/surfaces/shoulders.rs", "dev/card-corner.py"]
+paths = ["crates/formalshell-rs/src/render.rs", "crates/formalshell-rs/src/scene.rs", "crates/formalshell-rs/src/ui/boxes.rs", "crates/formalshell-rs/src/paint/rim.rs", "crates/formalshell-rs/src/surfaces/card.rs", "crates/formalshell-rs/src/paint/shoulders.rs", "dev/card-corner.py"]
 runs = ["--card-corner"]

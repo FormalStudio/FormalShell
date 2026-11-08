@@ -295,7 +295,7 @@ pub struct Joined {
     pub border: f64,
     pub attach: f64,
     pub near_inset: f64,
-    pub walls: crate::surfaces::shoulders::Walls,
+    pub walls: crate::paint::shoulders::Walls,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

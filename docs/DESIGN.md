@@ -342,7 +342,7 @@ card's own rect plus the fillets' reach at either end (`radiusXl` while
 attached), a plain function of the card's live rect with no clock of its
 own, since the card's own clocks already carry that rect and a second one
 left the line lagging the shoulders it has to meet. The shoulders
-(`formalshell-rs/src/surfaces/shoulders.rs`) draw the card with that edge
+(`formalshell-rs/src/paint/shoulders.rs`) draw the card with that edge
 left open and a concave quarter fillet outside each of its two corners,
 running out to where the line resumes, so the card grows out of the bar
 rather than parking against it. Attached, the fill starts a border's width
@@ -588,7 +588,7 @@ only when two surfaces need the same new thing.
 | button (`w::button`) | the `button.<variant>` role, `Variant` one of `Default`, `Outline`, `Ghost`, `Selected`, `Destructive` | rest, hover, press, cursor, disabled (opacity 0.5, off the table) |
 | icon button (`w::icon_button`) | a ghost button that is `controlHeight` square, one icon | as button |
 | card (`surfaces::card::Card`) | the `card` role at `panelPadding`, opaque on a surface the compositor does not blur; the surface's own frame, never nested | rest, opaque |
-| shoulders (`formalshell-rs/src/surfaces/shoulders.rs`) | the `card` role with the anchored edge left open and a concave fillet outside each of its two corners, running out to the line it came out of (§1 Motion), and, at `attach` 0, a plain card again: what every surface coming out of a line draws | attached, letting go, free |
+| shoulders (`formalshell-rs/src/paint/shoulders.rs`) | the `card` role with the anchored edge left open and a concave fillet outside each of its two corners, running out to the line it came out of (§1 Motion), and, at `attach` 0, a plain card again: what every surface coming out of a line draws | attached, letting go, free |
 | drawer (`Card`, over `fs-chrome/src/drawer.rs`) | the edge-anchored card, two recipes picked by `motion.morph` (§1 Motion, M57 D4, M60 T2): `join` (the metamorphosis) derives the line, the depth, the walls and the deform's two pivots, and runs the pose, the let-go (`Card::attach`), the deform and the shoulders; `popover` (elementary's) drops the card straight out of the cell that opened it, with no line, no gap and no deform. Panel, the notification centre, the launcher, polkit, the radio atlas and the OSD all sit on it | attached, letting go, free, bypass (the pose lands at once, for a handoff) |
 | picture (`w::picture`) | content imagery, bare: no frame and no rounding | none |
 | cover (`w::cover`) | a picture in a `muted` well with a 1px `border`, clipped to `Theme::cover_radius`: album art, a notification's app icon | none |
@@ -728,7 +728,7 @@ outright (`fs-theme/src/barpaint.rs`, sampled by
 and elementary's own text shadow under it, both layers of it: the table's
 `inkShadow` is a CSS layer list (`{ x, y, blur, color, alpha }`, first on
 top) and the bar cell's painter (`Painter::text_in` in
-`formalshell-rs/src/surfaces/bar/cell.rs`) draws one blurred copy of the
+`formalshell-rs/src/paint/mod.rs`) draws one blurred copy of the
 text per layer under it, so the blurred half is rendered rather than
 approximated. Black at 0.3 and 0.6 under white words on a bare band, 0.15
 and 0.3 once the band has a fill of its own, and none at all under dark

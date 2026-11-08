@@ -28,7 +28,8 @@ use vello_cpu::kurbo::{Affine, Arc, BezPath, Point, Rect, RoundedRect, Shape, Sv
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
 use crate::surfaces::sidebar::Sidebar;
-use cell::{Action, Button, Env, Kit, Painter};
+use crate::paint::{Kit, Painter};
+use cell::{Action, Button, Env};
 use slot::Slot;
 
 /// The two cells whose text runs free, in the order they keep their room.
@@ -46,6 +47,8 @@ struct Style {
     /// window reaches this far past the band into the desktop.
     corners: f64,
     thickness: f64,
+    /// The cells' room across a vertical strip (`Look::cell_width`).
+    cell_width: f64,
     margin: f64,
     inset: f64,
     gap: f64,
@@ -62,6 +65,7 @@ impl Style {
             bar_style: theme.bar_style,
             corners: if theme.bar_style == BarStyle::Corners && !theme.frame_enabled() { theme.frame_radius } else { 0.0 },
             thickness: s.bar_cell_height,
+            cell_width: s.bar_cell_width,
             margin: s.bar_margin,
             inset: s.sm,
             gap: s.sm,
@@ -81,7 +85,6 @@ pub struct PaintState {
 
 pub struct Bar {
     pub scene: Scene,
-    pub kit: Kit,
     style: Style,
     edge: Edge,
     /// The wingpanel band's ink and glow for its cells, and its fill.
@@ -144,7 +147,6 @@ impl Bar {
         let style = Style::new(theme);
         let mut bar = Self {
             scene: Scene::new(1, 1),
-            kit: Kit::new(theme),
             style,
             edge,
             band_box: None,
@@ -270,7 +272,7 @@ impl Bar {
         if let Some((open, rail)) = self.style.sidebar {
             return (if self.collapsed { rail } else { open }) as i32;
         }
-        let across = if self.edge.is_vertical() { self.kit.look.cell_width } else { self.style.thickness };
+        let across = if self.edge.is_vertical() { self.style.cell_width } else { self.style.thickness };
         (across + self.style.margin * 2.0) as i32
     }
 
@@ -392,7 +394,6 @@ impl Bar {
     /// framing changed with it, which re-places the window.
     pub fn set_theme(&mut self, theme: &Theme) -> bool {
         let framed = self.framed();
-        self.kit.set_theme(theme);
         self.style = Style::new(theme);
         let (w, h) = self.placed_size(false);
         self.scene = Scene::new(w, h);
@@ -468,7 +469,7 @@ impl Bar {
     }
 
     /// Re-reads the cells that read `topic` (all of them with `None`).
-    pub fn read(&mut self, store: &Store, topic: Option<Topic>, now: Instant) {
+    pub fn read(&mut self, kit: &mut Kit, store: &Store, topic: Option<Topic>, now: Instant) {
         let _raster = crate::scene::raster_at(self.raster);
         let env = Env { store, edge: self.edge, output: &self.output };
         let band = self.band().is_some();
@@ -476,7 +477,7 @@ impl Bar {
         let along = self.length() as f64;
         for slot in &mut self.slots {
             if topic.is_none_or(|t| slot.cell.reads().contains(&t)) {
-                slot.refresh(&mut self.kit, &env, band, animate, along, now);
+                slot.refresh(kit, &env, band, animate, along, now);
             }
         }
         if topic.is_none() {
@@ -485,7 +486,7 @@ impl Bar {
     }
 
     /// Reads the cells whose own timer ran out.
-    pub fn tick(&mut self, store: &Store, now: Instant) {
+    pub fn tick(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
         let _raster = crate::scene::raster_at(self.raster);
         let env = Env { store, edge: self.edge, output: &self.output };
         let band = self.band().is_some();
@@ -493,14 +494,14 @@ impl Bar {
         let along = self.length() as f64;
         for slot in &mut self.slots {
             if slot.cell.wake().is_some_and(|t| t <= now) {
-                slot.refresh(&mut self.kit, &env, band, animate, along, now);
+                slot.refresh(kit, &env, band, animate, along, now);
             }
         }
     }
 
     /// The pointer over the strip, handed to each cell that washes its own
     /// parts in the cell's own coordinates; true when the strip needs a pass.
-    pub fn pointer(&mut self, over: Option<usize>, at: (f64, f64), store: &Store, now: Instant) -> bool {
+    pub fn pointer(&mut self, kit: &mut Kit, over: Option<usize>, at: (f64, f64), store: &Store, now: Instant) -> bool {
         if let Some(sb) = &mut self.sidebar {
             return sb.hover(over);
         }
@@ -514,7 +515,7 @@ impl Bar {
             }
         }
         if relayout {
-            self.read(store, Some(Topic::Compositor), now);
+            self.read(kit, store, Some(Topic::Compositor), now);
         }
         redraw
     }
@@ -526,13 +527,13 @@ impl Bar {
 
     /// Which panel each cell has open; a chevron reads as open while the
     /// quick settings card it opened is up.
-    pub fn set_open(&mut self, panel: Option<&str>, overflow: Option<Region>, now: Instant) {
+    pub fn set_open(&mut self, kit: &Kit, panel: Option<&str>, overflow: Option<Region>, now: Instant) {
         for slot in &mut self.slots {
             let open = match &slot.view.panel {
                 Some(p) => panel == Some(*p),
                 None => slot.name == "chevron" && overflow == Some(slot.region),
             };
-            slot.set_open(open, &self.kit, now);
+            slot.set_open(open, kit, now);
         }
     }
 
@@ -544,7 +545,7 @@ impl Bar {
     /// The band's paint off `bar.style`, the shared wallpaper reading and
     /// the output's fullscreen state; true when it moved. The ring wears the
     /// same paint.
-    pub fn update_paint(&mut self, store: &Store) -> bool {
+    pub fn update_paint(&mut self, kit: &mut Kit, store: &Store) -> bool {
         let g = store.compositor.gaps_out;
         self.gap_out = match self.edge {
             Edge::Top => g.top,
@@ -590,7 +591,7 @@ impl Bar {
             self.strip_key = None;
             if ink_changed {
                 // Labels go semibold on a band.
-                self.read(store, None, Instant::now());
+                self.read(kit, store, None, Instant::now());
             }
         }
         changed
@@ -650,20 +651,20 @@ impl Bar {
 
     /// One pass: budgets, positions and paint. Cheap enough per frame;
     /// unchanged nodes damage nothing.
-    pub fn layout(&mut self, store: &Store, now: Instant) {
+    pub fn layout(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
         let _raster = crate::scene::raster_at(self.raster);
         if self.sidebar.is_some() {
             self.paint_strip();
             let anchor = self.strip_nodes.last().copied();
             let (strip, edge, collapsed) = (self.strip(), self.edge, self.collapsed);
             if let Some(sb) = &mut self.sidebar {
-                sb.draw(store, &self.output, collapsed, edge, strip, &mut self.kit, &mut self.scene, anchor, now);
+                sb.draw(store, &self.output, collapsed, edge, strip, kit, &mut self.scene, anchor, now);
             }
             return;
         }
-        self.refit(store, now);
+        self.refit(kit, store, now);
         self.place(now);
-        if self.fit_rooms(store, now) {
+        if self.fit_rooms(kit, store, now) {
             self.place(now);
         }
         self.ink_cells(store);
@@ -677,7 +678,7 @@ impl Bar {
                 continue;
             }
             let ink = slot_ink(band, bare, slot.ink);
-            slot.paint(&mut self.kit, &mut self.scene, edge, self.hover == Some(i), ink, 1.0, visible, now);
+            slot.paint(kit, &mut self.scene, edge, self.hover == Some(i), ink, 1.0, visible, now);
         }
     }
 
@@ -713,7 +714,7 @@ impl Bar {
     /// Tells each self-drawn cell the room it has (its own extent plus the
     /// strip's slack, which the cell's own change cannot move); true when
     /// one measured again.
-    fn fit_rooms(&mut self, store: &Store, now: Instant) -> bool {
+    fn fit_rooms(&mut self, kit: &mut Kit, store: &Store, now: Instant) -> bool {
         if self.length() <= 1 {
             return false;
         }
@@ -726,7 +727,7 @@ impl Bar {
         for slot in &mut self.slots {
             let own = slot.extent(now);
             if slot.cell.custom().is_some_and(|c| c.room(own + slack)) {
-                slot.refresh(&mut self.kit, &env, band, animate, along, now);
+                slot.refresh(kit, &env, band, animate, along, now);
                 moved = true;
             }
         }
@@ -735,7 +736,7 @@ impl Bar {
 
     /// The two free labels share the room the cells leave
     /// (layout.js's labelBudgets); a moved budget measures its cell again.
-    fn refit(&mut self, store: &Store, now: Instant) {
+    fn refit(&mut self, kit: &mut Kit, store: &Store, now: Instant) {
         let along = self.length() as f64;
         let rail = |slots: &[Slot], r: Region, gap: f64| {
             let exts: Vec<f64> = slots.iter().filter(|s| s.region == r && s.present()).map(|s| s.natural).collect();
@@ -769,7 +770,7 @@ impl Bar {
         for (i, budget) in at.into_iter().zip(budgets) {
             if (self.slots[i].budget - budget).abs() > 0.25 {
                 self.slots[i].budget = budget;
-                self.slots[i].refresh(&mut self.kit, &env, band, animate, along, now);
+                self.slots[i].refresh(kit, &env, band, animate, along, now);
             }
         }
     }
@@ -813,7 +814,7 @@ impl Bar {
         };
 
         let strip = self.strip();
-        let across = if self.vertical() { self.kit.look.cell_width } else { self.style.thickness };
+        let across = if self.vertical() { self.style.cell_width } else { self.style.thickness };
         let margin = self.style.margin;
         let vertical = self.vertical();
         let rect = |from: f64, extent: f64| -> IRect {
@@ -941,7 +942,7 @@ impl Bar {
     /// A frame in which only cells' own drawing moves (a badge's spinner):
     /// those slots repainted where they are, with no layout of the strip.
     /// False when anything along it changes, for a whole layout instead.
-    pub fn step_in_place(&mut self, now: Instant) -> bool {
+    pub fn step_in_place(&mut self, kit: &mut Kit, now: Instant) -> bool {
         if self.sidebar.is_some() {
             return false;
         }
@@ -949,46 +950,44 @@ impl Bar {
         let visible = !self.hidden;
         let vertical = self.edge.is_vertical();
         let band = self.band_box.is_some();
-        if !self.slots.iter_mut().all(|s| s.moves_in_place(&mut self.kit, vertical, band, now)) {
+        if !self.slots.iter_mut().all(|s| s.moves_in_place(kit, vertical, band, now)) {
             return false;
         }
         let edge = self.edge;
         let (band, bare) = (&self.band_box, &self.bare_inks);
         for (i, slot) in self.slots.iter_mut().enumerate() {
-            if slot.rect.is_empty() || !(slot.drawing(&self.kit, now) || slot.marquee_due(&self.kit, visible, now)) {
+            if slot.rect.is_empty() || !(slot.drawing(kit, now) || slot.marquee_due(kit, visible, now)) {
                 continue;
             }
             let ink = slot_ink(band, bare, slot.ink);
-            slot.paint(&mut self.kit, &mut self.scene, edge, self.hover == Some(i), ink, 1.0, visible, now);
+            slot.paint(kit, &mut self.scene, edge, self.hover == Some(i), ink, 1.0, visible, now);
         }
         true
     }
 
     /// A clock wanting a frame every vsync.
-    pub fn animating(&mut self, now: Instant) -> bool {
+    pub fn animating(&mut self, kit: &Kit, now: Instant) -> bool {
         let visible = !self.hidden;
         if let Some(sb) = &self.sidebar {
             return visible && sb.animating;
         }
-        let kit = &self.kit;
         self.slots.iter_mut().any(|s| s.animating(kit, visible, now))
     }
 
     /// A marquee has moved since it was painted.
-    pub fn marquee_due(&mut self, now: Instant) -> bool {
+    pub fn marquee_due(&mut self, kit: &Kit, now: Instant) -> bool {
         let visible = !self.hidden;
-        let kit = &self.kit;
         self.slots.iter_mut().any(|s| s.marquee_due(kit, visible, now))
     }
 
     /// The next time something holding still starts to move again (a
     /// marquee ending its hold).
-    pub fn wake(&self, now: Instant) -> Option<Instant> {
+    pub fn wake(&self, kit: &Kit, now: Instant) -> Option<Instant> {
         let visible = !self.hidden;
         if let Some(sb) = &self.sidebar {
             return sb.wake.filter(|_| visible);
         }
-        self.slots.iter().filter_map(|s| s.wake(&self.kit, visible, now)).min()
+        self.slots.iter().filter_map(|s| s.wake(kit, visible, now)).min()
     }
 
     /// The output went idle (screensaver or lock) or came back: an idle
@@ -1070,7 +1069,7 @@ impl Bar {
     }
 
     /// `bar room`'s answer for this bar.
-    pub fn room(&self) -> Value {
+    pub fn room(&self, kit: &Kit) -> Value {
         let strip = self.strip();
         let label = |name: &str| {
             let Some(s) = self.slots.iter().find(|s| s.name == name && s.present()) else {
@@ -1083,7 +1082,7 @@ impl Bar {
                 "min": fs_js::json_number(limits.min),
                 "natural": fs_js::json_number(s.free_natural()),
                 "extent": fs_js::json_number(s.free_extent()),
-                "scrolling": s.scrolling(&self.kit, !self.hidden),
+                "scrolling": s.scrolling(kit, !self.hidden),
             })
         };
         let cells: Vec<Value> = self

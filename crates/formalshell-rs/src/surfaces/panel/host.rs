@@ -29,7 +29,8 @@ use crate::scene::{IRect, NodeId, Paint};
 use crate::scroll::{Touchpad, Travel};
 use crate::store::Store;
 use crate::surface::Surface;
-use crate::surfaces::bar::cell::{Button, Kit, Painter};
+use crate::surfaces::bar::cell::Button;
+use crate::paint::{Kit, Painter};
 use crate::surfaces::card::{Card, Ends};
 use crate::ui::{self, El, Event, Ui, What, w};
 

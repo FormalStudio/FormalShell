@@ -21,7 +21,7 @@ use smithay_client_toolkit::shell::wlr_layer::LayerSurface;
 use crate::scene::{IRect, NodeId, Scene};
 use crate::surfaces::dissolve::Dissolve;
 use crate::surface::{Inert, PixelSurface, Preferred, Surface};
-use crate::surfaces::bar::cell::Painter;
+use crate::paint::Painter;
 use crate::wayland::App;
 
 /// One fade: where it started, from and to which opacity, over how long.
