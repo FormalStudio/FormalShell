@@ -1,4 +1,4 @@
-//! The heart element: a Lucide heart on a soft disc that beats at a
+//! The earbuds panel's heart: a Lucide heart on a soft disc that beats at a
 //! measured rate, a ring going out from the disc on every beat. The beat's
 //! phase is kept per element and advanced by the clock, so a new rate
 //! changes the tempo from where the beat is rather than jumping.
@@ -7,16 +7,37 @@ use std::time::Instant;
 
 use vello_cpu::kurbo::{Affine, BezPath, Circle, Rect, Shape};
 
-use super::Cx;
 use crate::scene::{Paint, Scene};
 use crate::text::{Family, TextStyle};
+use crate::ui::{Cx, State, Widget};
 
-pub struct Beat {
+/// A heart in a `size` square beating at `bpm` while `beating` (a rate
+/// measured earlier is drawn still); none for a rate not measured yet,
+/// drawn still and dim.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Heart {
+    pub bpm: Option<f64>,
+    pub beating: bool,
+    pub size: f64,
+}
+
+impl Widget for Heart {
+    fn measure(&self, _cx: &mut Cx, _avail: f64) -> (f64, f64) {
+        (self.size, self.size)
+    }
+
+    fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
+        paint(cx, inner, self.bpm, self.beating, path);
+    }
+}
+
+struct Beat {
     /// Beats since the element first beat; the fraction is where in one.
     phase: f64,
     last: Option<Instant>,
-    pub seen: u64,
 }
+
+impl State for Beat {}
 
 /// The first beat's swell and the smaller one after it, as a share of the
 /// heart's size.
@@ -51,20 +72,21 @@ fn advance(phase: f64, last: Option<Instant>, now: Instant, bpm: f64, scale: f64
 
 /// `bpm` none draws the heart still in `mutedForeground`, for a rate not
 /// measured yet; `beat` false draws a measured one still.
-pub fn paint(cx: &mut Cx, r: Rect, bpm: Option<f64>, beat: bool, path: &str) {
+fn paint(cx: &mut Cx, r: Rect, bpm: Option<f64>, beat: bool, path: &str) {
     let t = cx.theme;
     let live = bpm.is_some_and(|b| b > 0.0);
     let beating = live && beat && t.motion_enabled;
-    let (now, frame) = (cx.now, cx.ui.frame);
-    let st = cx.ui.beats.entry(path.to_owned()).or_insert(Beat { phase: 0.0, last: None, seen: frame });
-    st.seen = frame;
+    let (now, scale) = (cx.now, cx.motion_scale);
+    let mut held = cx.take(path, || Beat { phase: 0.0, last: None });
+    let st = &mut *held;
     if beating {
-        st.phase = advance(st.phase, st.last, now, bpm.unwrap_or_default(), cx.motion_scale);
+        st.phase = advance(st.phase, st.last, now, bpm.unwrap_or_default(), scale);
         st.last = Some(now);
     } else {
         st.last = None;
     }
     let through = if beating { st.phase.fract() } else { 0.5 };
+    cx.keep(held);
     if beating {
         cx.animate();
     }

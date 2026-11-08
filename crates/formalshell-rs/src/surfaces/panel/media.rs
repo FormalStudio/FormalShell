@@ -17,6 +17,9 @@
 //! which keeps the readout and the fill on the position `media status`
 //! reports; nothing ticks while paused.
 
+mod lyrics;
+mod spectrum;
+
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 
@@ -26,7 +29,7 @@ use fs_types::Fraction;
 
 use super::{Effect, Panel, View};
 use crate::services::devices::audio;
-use crate::services::{kopuz, lyrics, motion_art};
+use crate::services::{kopuz, motion_art};
 use crate::services::media::Active;
 use crate::services::visualizer::{self, Avail};
 use crate::store::{self, Topic};
@@ -172,7 +175,7 @@ fn press(fx: &Effect, id: &str) {
 
 fn set_follow(fx: &Effect, on: bool) {
     if fx.store.lyrics.follow != on {
-        fx.service(move |ctx| ctx.publish(store::Diff::Lyrics(lyrics::Diff::Follow(on))));
+        fx.service(move |ctx| ctx.publish(store::Diff::Lyrics(crate::services::lyrics::Diff::Follow(on))));
     }
 }
 
@@ -346,7 +349,7 @@ impl Panel for Media {
         if enabled && (vis.avail == Avail::Available || a.kind == "iphone") {
             let style = vis.style(v.store.config.str("media.visualizerStyle").unwrap_or("bars"));
             let tip = styles::label(&style);
-            info.push(w::spectrum(style, SPECTRUM_COLUMNS, vis.running).on("spectrum").tip(tip).key("spectrum"));
+            info.push(El::custom(spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
         }
         col.push(w::row(s.lg, info).fill());
 
@@ -390,14 +393,14 @@ impl Panel for Media {
         }
         let column = w::column(s.section_gap, col);
         let body = if v.store.lyrics.synced() {
-            let settings = lyrics::Settings::read(&v.store.config);
+            let settings = crate::services::lyrics::Settings::read(&v.store.config);
             let ly = &v.store.lyrics;
             let cursor = v.cursor.and_then(|k| match k {
                 "lyric-resync" => Some(ly.lines.len()),
                 _ => k.strip_prefix("lyric:").and_then(|i| i.parse::<usize>().ok()),
             });
             let on_line = cursor.is_some_and(|c| c < ly.lines.len());
-            let pane = El::new(crate::ui::el::Kind::Lyrics(crate::ui::lyrics::View {
+            let pane = El::custom(lyrics::Pane {
                 lines: ly.lines.clone(),
                 t: fs_media::lyrics::led_position(a.position.as_secs_f64(), settings.hold(ly.latency)),
                 follow: ly.follow || on_line,
@@ -405,7 +408,9 @@ impl Panel for Media {
                 blur: settings.blur,
                 strength: settings.strength,
                 height: s.control_height * 6.0,
-            }))
+            })
+            .fill()
+            .stretch()
             .key("lyrics");
             w::row(s.sm, vec![column.width(crate::ui::Size::Fill), pane]).top()
         } else {

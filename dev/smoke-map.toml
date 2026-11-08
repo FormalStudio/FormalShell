@@ -263,7 +263,7 @@ paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formals
 runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/ui/spectrum.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/bar/cells/visualizer.rs", "crates/formalshell-rs/src/services/visualizer.rs", "crates/formalshell-rs/src/ipc/visualizer.rs", "crates/fs-media/src/visualizer/**", "crates/formalshell-rs/src/surfaces/panel/media/spectrum.rs"]
 runs = ["--visualizer", "--visualizer-styles", "--spectrum"]
 
 [[rule]]
@@ -328,7 +328,7 @@ paths = ["crates/fs-chrome/src/switcher.rs", "crates/formalshell-rs/src/surfaces
 runs = ["--switcher", "--switcher-keys", "--switcher-off"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/wayland/capture.rs", "crates/formalshell-rs/src/wayland/preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview.rs"]
+paths = ["crates/formalshell-rs/src/wayland/capture.rs", "crates/formalshell-rs/src/wayland/preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview.rs", "crates/formalshell-rs/src/surfaces/panel/workspace_preview/strip.rs"]
 runs = ["--switcher", "--switcher-keys", "--spaces", "--launcher-preview"]
 
 # Panels
@@ -353,7 +353,7 @@ paths = ["crates/formalshell-rs/src/surfaces/headset.rs", "crates/formalshell-rs
 runs = ["--headset-card"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/earbuds.rs", "crates/formalshell-rs/src/services/devices/earbuds.rs", "crates/formalshell-rs/src/ipc/earbuds.rs", "crates/fs-devices/src/earbuds/**", "crates/formalshell-rs/src/surfaces/bar/cells/earbuds.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/earbuds.rs", "crates/formalshell-rs/src/surfaces/panel/earbuds/**", "crates/formalshell-rs/src/services/devices/earbuds.rs", "crates/formalshell-rs/src/ipc/earbuds.rs", "crates/fs-devices/src/earbuds/**", "crates/formalshell-rs/src/surfaces/bar/cells/earbuds.rs"]
 runs = ["--earbuds", "--headset-card"]
 
 [[rule]]
@@ -369,7 +369,7 @@ paths = ["crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-kopuz/**", "c
 runs = ["--kopuz"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/lyrics.rs", "crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-media/src/lyrics.rs", "crates/formalshell-rs/src/ui/lyrics.rs"]
+paths = ["crates/formalshell-rs/src/services/lyrics.rs", "crates/formalshell-rs/src/services/kopuz.rs", "crates/fs-media/src/lyrics.rs", "crates/formalshell-rs/src/surfaces/panel/media/lyrics.rs"]
 runs = ["--lyrics", "--lyrics-blur"]
 
 [[rule]]
@@ -409,7 +409,7 @@ paths = ["crates/formalshell-rs/src/services/overnight.rs", "crates/formalshell-
 runs = ["--overnight", "--brightness"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/ui/draw/flow.rs", "crates/formalshell-rs/src/surfaces/panel/quick/grid.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/gallery.rs", "crates/formalshell-rs/src/ipc/gallery.rs", "crates/formalshell-rs/src/surfaces/panel/power/diagram.rs", "crates/formalshell-rs/src/surfaces/panel/quick/grid.rs", "crates/formalshell-rs/src/surfaces/panel/quick/piece.rs"]
 runs = ["--gallery"]
 
 [[rule]]
@@ -421,7 +421,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/monitor.rs", "crates/formalsh
 runs = ["--monitor", "--processes", "--gpu"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/power.rs", "crates/formalshell-rs/src/surfaces/battery.rs", "crates/formalshell-rs/src/services/devices/power.rs", "crates/formalshell-rs/src/services/info/powerflow.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/power.rs", "crates/formalshell-rs/src/surfaces/panel/power/diagram.rs", "crates/formalshell-rs/src/surfaces/battery.rs", "crates/formalshell-rs/src/services/devices/power.rs", "crates/formalshell-rs/src/services/info/powerflow.rs"]
 runs = ["--gallery", "--panel power"]
 
 [[rule]]

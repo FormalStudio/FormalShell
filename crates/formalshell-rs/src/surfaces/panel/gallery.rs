@@ -4,12 +4,75 @@
 //! place of an auth prompt sample, which lands with the lock
 //! (R6), so every control a panel builds from is on the sheet.
 
+use fs_theme::color::Rgba;
 use fs_types::{Edge, Percent};
+use vello_cpu::kurbo::{Affine, Rect};
 
 use super::{Effect, Panel, View};
+use crate::scene::{IRect, Paint, Scene};
 use crate::store::Topic;
 use crate::ui::el::{CellState, Opt, Ring};
-use crate::ui::{El, Event, Ink, Size, Type, Variant, Weight, What, w};
+use crate::ui::{Cx, El, Event, Ink, Size, Type, Variant, Weight, What, Widget, irect, w};
+
+/// A card budding off a line on `edge`, `span` along it past its fillets,
+/// `depth` out of it, the line running `run` either side.
+#[derive(Clone, Debug, PartialEq)]
+struct Shoulders {
+    edge: Edge,
+    span: f64,
+    depth: f64,
+    run: f64,
+}
+
+impl Widget for Shoulders {
+    fn measure(&self, _cx: &mut Cx, _avail: f64) -> (f64, f64) {
+        let along = self.span + self.run * 2.0;
+        if self.edge.is_vertical() { (self.depth, along) } else { (along, self.depth) }
+    }
+
+    fn paint(&self, cx: &mut Cx, r: Rect, path: &str) {
+        let Shoulders { edge, span, depth, run } = *self;
+        let t = cx.theme;
+        let card = t.box_style("card", None);
+        let radius = t.box_radius(&card, depth);
+        let border = card.border.clone().map_or((Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
+        let bw = t.border_width;
+        let sep = t.box_style("separator", None).fill;
+        let (fill, line, sep) = (cx.a(card.fill), cx.a(border.0), cx.a(sep));
+        let paths = crate::paint::shoulders::paths(span + radius * 2.0, depth, radius, border.1, 1.0, 0.0);
+        // Built for a top line, then turned onto the gallery's edge.
+        let local = match edge {
+            Edge::Top => Affine::translate((run - radius, 0.0)),
+            Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, run - radius, depth]),
+            Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, 0.0, run - radius]),
+            Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, depth, run - radius]),
+        };
+        let at = Affine::translate((r.x0, r.y0)) * local;
+        let mut fill_path = paths.fill.clone();
+        fill_path.apply_affine(at);
+        let mut outer = paths.outer.clone();
+        outer.apply_affine(at);
+        let vertical = edge.is_vertical();
+        let ri = irect(r);
+        let b = bw.round() as i32;
+        let (a0, a1) = (run.round() as i32, (run + span).round() as i32);
+        let segs: Vec<IRect> = if vertical {
+            let x = if edge == Edge::Right { ri.right() - b } else { ri.x };
+            vec![IRect::new(x, ri.y, b, a0), IRect::new(x, ri.y + a1, b, ri.h - a1)]
+        } else {
+            let y = if edge == Edge::Bottom { ri.bottom() - b } else { ri.y };
+            vec![IRect::new(ri.x, y, a0, b), IRect::new(ri.x + a1, y, ri.w - a1, b)]
+        };
+        let mut p = cx.painter(path);
+        p.shape(Scene::cover(r, Affine::IDENTITY, 2.0), Paint::Shape { fill: Some((fill_path, fill)), strokes: vec![(outer, line, border.1)] });
+        for s in segs {
+            p.rect(s, sep, 0.0);
+        }
+        let last = p.last();
+        p.finish();
+        cx.done(last);
+    }
+}
 
 #[derive(Default)]
 pub struct Gallery {
@@ -145,7 +208,7 @@ impl Panel for Gallery {
         let depth = s.xl * 3.0;
         let run = s.xl * 2.0;
         // A Flow in the sheet: the two along a line, then the two down one.
-        let pair = |a: Edge, b: Edge| w::row(s.section_gap, vec![w::shoulders(a, span, depth, run), w::shoulders(b, span, depth, run)]).top();
+        let pair = |a: Edge, b: Edge| w::row(s.section_gap, vec![El::custom(Shoulders { edge: a, span, depth, run }), El::custom(Shoulders { edge: b, span, depth, run })]).top();
         let joins = w::column(s.section_gap, vec![pair(Edge::Top, Edge::Bottom), pair(Edge::Left, Edge::Right)]);
         let cell_column = w::column(
             s.section_gap,
@@ -181,7 +244,7 @@ impl Panel for Gallery {
             s.row_gap,
             vec![
                 w::panel_heading(s, "PowerFlow / sample snapshot, not live"),
-                w::flow(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)),
+                El::custom(super::power::flow_view(&fs_system::power::flow::sample_flow(), true)).fill(),
                 w::panel_heading(s, "Battery / sample, not live"),
                 w::column(0.0, vec![w::panel_text(s, super::power::battery_card(s, &battery_sample())), super::power::profiles(s, 0, 0, true)]),
                 w::panel_heading(s, "Wi-Fi / sample, not live"),
@@ -289,19 +352,20 @@ impl Panel for Gallery {
 /// own grid with a menu open under the first row.
 fn quick_sample(s: &fs_theme::tokens::Space) -> El {
     use super::quick::grid::{self, Item, Menu};
+    use super::quick::piece;
     let tile = Item { span: 1, height: s.panel_row };
     let tiles = vec![
-        (tile, w::quick_split(s, "q:wifi", "wifi", "Wi-Fi", Some("HomeNet-5G"), true, true)),
-        (tile, w::quick_split(s, "q:bluetooth", "bluetooth-off", "Bluetooth", None, false, true)),
-        (tile, w::quick_toggle(s, "q:dark", "moon", "Dark style", None, true, true)),
-        (tile, w::quick_toggle(s, "q:dnd", "bell-off", "Do not disturb", None, false, true)),
-        (tile, w::quick_split(s, "q:power", "gauge", "Power mode", Some("power-profiles-daemon is not running"), false, false)),
-        (tile, w::quick_toggle(s, "q:night", "lightbulb", "Night light", Some("No gamma control"), false, false)),
-        (tile, w::quick_info(s, "q:weather", "cloud-sun", "Weather", Some("14°"))),
-        (tile, w::quick_info(s, "q:github", "git-branch", "GitHub", Some("12 / 15"))),
-        (Item { span: grid::COLUMNS, height: s.panel_row_compact }, w::quick_slider(s, "q:volume", "volume-2", 0.6, true)),
+        (tile, piece::split(s, "q:wifi", "wifi", "Wi-Fi", Some("HomeNet-5G"), true, true)),
+        (tile, piece::split(s, "q:bluetooth", "bluetooth-off", "Bluetooth", None, false, true)),
+        (tile, piece::toggle(s, "q:dark", "moon", "Dark style", None, true, true)),
+        (tile, piece::toggle(s, "q:dnd", "bell-off", "Do not disturb", None, false, true)),
+        (tile, piece::split(s, "q:power", "gauge", "Power mode", Some("power-profiles-daemon is not running"), false, false)),
+        (tile, piece::toggle(s, "q:night", "lightbulb", "Night light", Some("No gamma control"), false, false)),
+        (tile, piece::info(s, "q:weather", "cloud-sun", "Weather", Some("14°"))),
+        (tile, piece::info(s, "q:github", "git-branch", "GitHub", Some("12 / 15"))),
+        (Item { span: grid::COLUMNS, height: s.panel_row_compact }, piece::slider_row(s, "q:volume", "volume-2", 0.6, true)),
     ];
-    let menu = w::quick_menu(
+    let menu = piece::menu(
         s,
         "wifi",
         "Wi-Fi",
@@ -327,11 +391,11 @@ fn quick_sample(s: &fs_theme::tokens::Space) -> El {
     if placed.menu.is_some() {
         out.insert(1, menu);
     }
-    let buttons = ["camera", "settings", "lock", "power"].map(|g| w::quick_button(s, &format!("q:{g}"), g, g));
+    let buttons = ["camera", "settings", "lock", "power"].map(|g| piece::button(s, &format!("q:{g}"), g, g));
     let mut system = vec![w::spacer()];
     system.extend(buttons);
     out.insert(0, w::row(s.panel_gap, system).fill());
-    out.push(w::quick_background(s, "q:background", "2 background tasks"));
+    out.push(piece::background(s, "q:background", "2 background tasks"));
     w::column(s.panel_gap, out).fill().pad(s.panel_row_inset, s.panel_row_inset, s.panel_row_inset, s.panel_row_inset)
 }
 

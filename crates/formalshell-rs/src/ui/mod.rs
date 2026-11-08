@@ -20,18 +20,18 @@
 //!   rect ([`Hit`]) and each keyboard stop ([`Stop`]) in order; the host
 //!   resolves the pointer and keys against those and hands the surface an
 //!   [`Event`] naming the element's `on` action.
+//! - A feature's own drawing is a [`Widget`] in `El::custom`, kept beside
+//!   the panel it belongs to; what it keeps between draws is its [`State`],
+//!   held here by its path.
 
 pub mod boxes;
 mod draw;
-pub use draw::{ring_strokes, ring_turn};
+pub use draw::{elided, icon, paint, resolve, ring_strokes, ring_turn, shape};
 pub mod el;
-mod head;
-mod heart;
-pub mod lyrics;
-mod spectrum;
-mod strip;
 pub mod thumb;
 pub mod w;
+mod widget;
+pub use widget::{State, Widget};
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -149,16 +149,19 @@ struct Wrapped {
     seen: u64,
 }
 
+struct Kept {
+    state: Box<dyn State>,
+    seen: u64,
+}
+
 /// The most control heights a floating list shows before it scrolls.
 const FLOAT_ROWS: f64 = 8.0;
 
 /// Everything that persists for one surface between draws.
 pub struct Ui {
     groups: HashMap<String, Group>,
-    spectra: HashMap<String, spectrum::Live>,
-    beats: HashMap<String, heart::Beat>,
-    heads: HashMap<String, head::Pose>,
-    panes: HashMap<String, lyrics::Pane>,
+    /// Each custom widget's state by its path.
+    custom: HashMap<String, Kept>,
     tweens: HashMap<String, Tween>,
     births: HashMap<String, Instant>,
     /// Each paragraph's lines by text, style, width and line cap. Wrapping
@@ -214,10 +217,7 @@ impl Ui {
     pub fn new(anchor: Option<NodeId>) -> Self {
         Self {
             groups: HashMap::new(),
-            spectra: HashMap::new(),
-            beats: HashMap::new(),
-            heads: HashMap::new(),
-            panes: HashMap::new(),
+            custom: HashMap::new(),
             tweens: HashMap::new(),
             births: HashMap::new(),
             wraps: HashMap::new(),
@@ -323,10 +323,7 @@ impl Ui {
             }
         }
         self.tweens.retain(|_, t| frame - t.seen < 120);
-        self.spectra.retain(|_, l| frame - l.seen < 120);
-        self.beats.retain(|_, b| frame - b.seen < 120);
-        self.heads.retain(|_, h| frame - h.seen < 120);
-        self.panes.retain(|_, l| frame - l.seen < 120);
+        self.custom.retain(|_, k| frame - k.seen < 120);
         self.wraps.retain(|_, w| frame - w.seen < 120);
         drawn
     }
@@ -378,8 +375,8 @@ impl Ui {
 
     /// Moves a scroll region's content by `delta` px.
     pub fn scroll(&mut self, path: &str, delta: f64) {
-        if let Some(p) = self.panes.get_mut(path) {
-            p.scroll(delta);
+        if let Some(k) = self.custom.get_mut(path) {
+            k.state.scroll(delta);
         }
         // Clamped to the list as it next draws.
         if let Some((s, _)) = self.float_scroll.get_mut(path) {
@@ -453,6 +450,26 @@ pub fn measure(root: &El, width: f64, theme: &Theme, kit: &mut Kit) -> (f64, f64
         floats: Vec::new(),
     };
     draw::measure(&mut cx, root, width)
+}
+
+/// A custom widget's state while it paints (`Cx::take`).
+pub struct Held<T> {
+    path: String,
+    kept: Box<T>,
+}
+
+impl<T> std::ops::Deref for Held<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.kept
+    }
+}
+
+impl<T> std::ops::DerefMut for Held<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.kept
+    }
 }
 
 /// One draw in progress.
@@ -762,6 +779,30 @@ impl Cx<'_> {
 
     pub fn ui_ring(&self) -> bool {
         self.ui.ring
+    }
+
+    /// The state the custom widget at `path` keeps, `new` the first time
+    /// (or after a widget of another kind held the path), out of `Ui`
+    /// while the widget paints; [`Cx::keep`] hands it back.
+    pub fn take<T: State>(&mut self, path: &str, new: impl FnOnce() -> T) -> Held<T> {
+        match self.ui.custom.remove_entry(path) {
+            Some((path, k)) => match (k.state as Box<dyn std::any::Any>).downcast::<T>() {
+                Ok(kept) => Held { path, kept },
+                Err(_) => Held { path, kept: Box::new(new()) },
+            },
+            None => Held { path: path.to_owned(), kept: Box::new(new()) },
+        }
+    }
+
+    pub fn keep<T: State>(&mut self, held: Held<T>) {
+        let seen = self.ui.frame;
+        self.ui.custom.insert(held.path, Kept { state: held.kept, seen });
+    }
+
+    /// Marks `r` damaged whether its nodes changed or not (a group moving
+    /// under a transform that leaves its own boxes).
+    pub fn touch(&mut self, r: IRect) {
+        self.scene.touch(r);
     }
 
     /// When an element was first drawn, for a loop that runs off its own start.

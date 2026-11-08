@@ -1,4 +1,4 @@
-//! The power flow diagram as one element. The nodes
+//! The power flow diagram as one custom widget. The nodes
 //! sit in thirds of the width with a link between each pair, and under the
 //! laptop a trunk drops one branch per USB-C port. A link carries a train
 //! of chevrons only while power really crosses it, on the charging pulse's
@@ -6,18 +6,51 @@
 
 use vello_cpu::kurbo::{Affine, Rect};
 
-use super::super::el::{Flow, FlowNode, Font, Type, Weight};
-use super::super::{Cx, Ink, irect, w};
-use super::{elided, icon, paint as paint_el, resolve, shape};
 use crate::scene::IRect;
 use crate::text;
+use crate::ui::el::Font;
+use crate::ui::{Cx, Ink, Type, Weight, Widget, elided, icon, irect, paint as paint_el, resolve, shape, w};
 
 const CAPTION: Font = Font { size: Type::Caption, weight: Weight::Normal, mono: false };
 const BODY: Font = Font { size: Type::Body, weight: Weight::Normal, mono: false };
 const MONO: Font = Font { size: Type::Body, weight: Weight::Normal, mono: true };
 
-pub struct Metrics {
-    pub total: f64,
+/// One node of the power diagram: an icon over a caption, a mono value and
+/// a dim detail line. An empty `value` or `detail` drops its line.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlowNode {
+    pub icon: String,
+    pub caption: String,
+    pub value: String,
+    pub detail: String,
+    pub dim: bool,
+}
+
+/// One USB-C branch under the laptop.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlowPort {
+    pub name: String,
+    pub label: String,
+    pub detail: String,
+    /// +1 power flows toward the port's text, -1 away from it, 0 none.
+    pub direction: i8,
+}
+
+/// Power flow: adapter, laptop and battery in a row with a link between
+/// each, a trunk under the laptop with one branch per port.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Flow {
+    pub nodes: [FlowNode; 3],
+    /// The adapter-to-laptop and laptop-to-battery links: +1 toward the
+    /// trailing end, -1 toward the leading one, 0 a plain rule.
+    pub links: [i8; 2],
+    pub ports: Vec<FlowPort>,
+    /// A closed panel passes false, so no chevron runs.
+    pub animate: bool,
+}
+
+struct Metrics {
+    total: f64,
     node_h: f64,
     rows: Vec<f64>,
 }
@@ -35,7 +68,7 @@ fn node_height(cx: &mut Cx, n: &FlowNode) -> f64 {
     h
 }
 
-pub fn metrics(cx: &mut Cx, f: &Flow, _width: f64) -> Metrics {
+fn metrics(cx: &mut Cx, f: &Flow) -> Metrics {
     let row_gap = cx.theme.space.row_gap;
     let node_h = f.nodes.iter().map(|n| node_height(cx, n)).fold(0.0, f64::max);
     let body = shape(cx, "A", &BODY).line_height() as f64;
@@ -120,9 +153,19 @@ fn node(cx: &mut Cx, n: &FlowNode, x: f64, y: f64, col: f64, path: &str) -> (f64
     (glyph.width as f64, glyph_h)
 }
 
-pub fn paint(cx: &mut Cx, r: Rect, f: &Flow, path: &str) {
+impl Widget for Flow {
+    fn measure(&self, cx: &mut Cx, avail: f64) -> (f64, f64) {
+        (avail, metrics(cx, self).total)
+    }
+
+    fn paint(&self, cx: &mut Cx, r: Rect, path: &str) {
+        paint(cx, r, self, path);
+    }
+}
+
+fn paint(cx: &mut Cx, r: Rect, f: &Flow, path: &str) {
     let s = cx.theme.space.clone();
-    let m = metrics(cx, f, r.width());
+    let m = metrics(cx, f);
     let col = r.width() / 3.0;
     let gap = s.icon_gap;
     let caption = cx.theme.font_size.caption;

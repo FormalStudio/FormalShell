@@ -18,6 +18,9 @@
 //! `Earbuds::plan`, the same allow-list the `earbuds set` IPC uses (M77).
 //! The panel holds the service while it is open (`wayland.rs`'s sync_open).
 
+mod head;
+mod heart;
+
 use std::collections::HashMap;
 
 use fs_devices::earbuds::motion::{EulerDegrees, Quat};
@@ -25,6 +28,8 @@ use fs_devices::earbuds::{self as model, BatteryId, Bpm, Control, ControlKind, D
 use fs_types::Percent;
 
 use super::{Effect, Panel, View};
+use head::Head;
+use heart::Heart;
 use crate::services::devices::{self, earbuds};
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
@@ -359,18 +364,18 @@ fn heart_block(s: &fs_theme::tokens::Space, hr: &HeartRate) -> El {
     let size = s.control_height * 2.0;
     let parts = match pulse(hr) {
         Pulse::Live { bpm, history } => {
-            let mut parts = vec![w::heart(Some(f64::from(bpm.get())), true, size), readout(bpm, "BPM".into())];
+            let mut parts = vec![El::custom(Heart { bpm: Some(f64::from(bpm.get())), beating: true, size }), readout(bpm, "BPM".into())];
             parts.extend(heart_trace(s, history));
             parts
         }
         Pulse::Point { point, points } => {
             let now = crate::services::notifications::now_ms();
-            let mut parts = vec![w::heart(Some(f64::from(point.bpm.get())), false, size), readout(point.bpm, point_caption(now, point.at_ms))];
+            let mut parts = vec![El::custom(Heart { bpm: Some(f64::from(point.bpm.get())), beating: false, size }), readout(point.bpm, point_caption(now, point.at_ms))];
             parts.extend(heart_trace(s, points));
             parts
         }
-        Pulse::Measuring => vec![w::heart(None, false, size), w::text("Measuring").ink(Ink::Muted).mid()],
-        Pulse::NoBud => vec![w::heart(None, false, size), w::text("Put an AirPod in").ink(Ink::Muted).mid()],
+        Pulse::Measuring => vec![El::custom(Heart { bpm: None, beating: false, size }), w::text("Measuring").ink(Ink::Muted).mid()],
+        Pulse::NoBud => vec![El::custom(Heart { bpm: None, beating: false, size }), w::text("Put an AirPod in").ink(Ink::Muted).mid()],
     };
     w::panel_control(s, w::panel_heading(s, "Heart rate"), w::row(s.section_gap, parts).fill().mid())
 }
@@ -418,10 +423,10 @@ fn head_block(s: &fs_theme::tokens::Space, dev: &Device, m: &Motion) -> El {
             let angles = w::grid(3, s.panel_gap, vec![angle(angles.yaw, "Yaw"), angle(angles.pitch, "Pitch"), angle(angles.roll, "Roll")]);
             let recenter = w::icon_text_button("crosshair", "Recenter").variant(Variant::Outline).stop(RECENTER).on(RECENTER);
             let side = w::column(s.section_gap, vec![angles, w::row(0.0, vec![recenter, w::spacer()]).fill()]).fill().mid();
-            vec![side, w::head(Some(relative.components()), size)]
+            vec![side, El::custom(Head { orientation: Some(relative.components()), size })]
         }
-        Gaze::Waiting => vec![w::text("Waiting for motion").ink(Ink::Muted).mid(), w::spacer(), w::head(None, size)],
-        Gaze::NoBud => vec![w::text("Put an AirPod in").ink(Ink::Muted).mid(), w::spacer(), w::head(None, size)],
+        Gaze::Waiting => vec![w::text("Waiting for motion").ink(Ink::Muted).mid(), w::spacer(), El::custom(Head { orientation: None, size })],
+        Gaze::NoBud => vec![w::text("Put an AirPod in").ink(Ink::Muted).mid(), w::spacer(), El::custom(Head { orientation: None, size })],
     };
     w::panel_control(s, w::panel_heading(s, "Head"), w::row(s.section_gap, parts).fill().mid())
 }

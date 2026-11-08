@@ -18,13 +18,14 @@ use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 use vello_cpu::kurbo::{Affine, Rect};
 
-use super::{Cx, Hit, HitWhat, Stop, irect};
 use crate::motion::Kind as Clock;
 use crate::scene::IRect;
 use crate::text::{self, ShapedText, TextStyle};
+use crate::ui::{Cx, Hit, HitWhat, State, Stop, Widget, boxes, irect, w};
 
+/// The lyrics pane, `height` tall, as tall as its row beside a column.
 #[derive(Clone, Debug, PartialEq)]
-pub struct View {
+pub struct Pane {
     pub lines: Arc<Vec<Line>>,
     /// The held position the lit set is judged at.
     pub t: f64,
@@ -52,7 +53,7 @@ struct Row {
     bands: HashMap<usize, Vec<RowBand>>,
 }
 
-pub struct Pane {
+struct Column {
     laid: Option<(usize, u64)>,
     rows: Vec<Row>,
     /// The column's y while a wheel holds it, and as last drawn.
@@ -64,17 +65,18 @@ pub struct Pane {
     lit: Vec<bool>,
     /// Rows whose scale was still travelling last frame.
     moving: std::collections::HashSet<usize>,
-    pub seen: u64,
 }
 
-impl Pane {
-    fn new(seen: u64) -> Self {
-        Self { laid: None, rows: Vec::new(), wheel_y: 0.0, last_y: 0.0, following: true, last_anchor: 0, lit: Vec::new(), moving: Default::default(), seen }
+impl Column {
+    fn new() -> Self {
+        Self { laid: None, rows: Vec::new(), wheel_y: 0.0, last_y: 0.0, following: true, last_anchor: 0, lit: Vec::new(), moving: Default::default() }
     }
+}
 
+impl State for Column {
     /// A wheel's `delta` px over the pane: the first one takes the column
     /// from wherever it is.
-    pub fn scroll(&mut self, delta: f64) {
+    fn scroll(&mut self, delta: f64) {
         if self.following {
             self.wheel_y = self.last_y;
             self.following = false;
@@ -190,8 +192,18 @@ fn layout_row(cx: &mut Cx, line: &Line, width: f64) -> (f64, Vec<Piece>, HashMap
     (y + lh, pieces, bands)
 }
 
+impl Widget for Pane {
+    fn measure(&self, _cx: &mut Cx, avail: f64) -> (f64, f64) {
+        (avail, self.height)
+    }
+
+    fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
+        paint(cx, inner, self, path);
+    }
+}
+
 #[allow(clippy::too_many_lines)]
-pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
+fn paint(cx: &mut Cx, r: Rect, v: &Pane, path: &str) {
     let t = cx.theme;
     let s = t.space.clone();
     let card = t.box_style("card", None);
@@ -199,7 +211,7 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
     let alpha = cx.alpha;
     {
         let mut p = cx.painter(&format!("{path}/frame"));
-        super::boxes::paint(&mut p, irect(r), &card, radius, alpha, 0.0);
+        boxes::paint(&mut p, irect(r), &card, radius, alpha, 0.0);
         let last = p.last();
         p.finish();
         cx.done(last);
@@ -225,9 +237,8 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
     let opposite = lines.iter().any(|l| l.opposite_turn);
     let box_w = vp.width() * if opposite { 0.9 } else { 1.0 };
     let key = (Arc::as_ptr(lines) as usize, box_w.to_bits());
-    let frame = cx.ui.frame;
-    let laid = cx.ui.panes.get(path).and_then(|p| p.laid) == Some(key);
-    if !laid {
+    let mut pane = cx.take(path, Column::new);
+    if pane.laid != Some(key) {
         let mut rows = Vec::new();
         let mut y = 0.0;
         for line in lines.iter() {
@@ -237,7 +248,6 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
             rows.push(Row { y, h, pieces, bands });
             y += h;
         }
-        let pane = cx.ui.panes.entry(path.to_owned()).or_insert_with(|| Pane::new(frame));
         pane.rows = rows;
         pane.laid = Some(key);
         pane.lit.clear();
@@ -246,8 +256,6 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
     let main = model::main_line_indices(lines);
     let active = model::active_main_line_index(lines, &main, v.t);
     let secondary = model::active_secondary_lines(lines, &main, v.t, active);
-    let pane = cx.ui.panes.get_mut(path).expect("pane");
-    pane.seen = frame;
     let lit_anchor = active.or_else(|| secondary.iter().max().copied()).unwrap_or(pane.last_anchor);
     pane.last_anchor = lit_anchor;
     // The keyboard cursor takes the anchor over while it sits on a line.
@@ -282,11 +290,10 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         cx.jump(&format!("{path}.y"), wheel_y, Clock::Spatial);
         wheel_y
     };
-    let pane = cx.ui.panes.get_mut(path).expect("pane");
     pane.last_y = col_y;
 
     let ramp = s.control_height.max(cx.kit.shape(" ", style(cx, false)).line_height() as f64 + s.control_padding_y * 2.0);
-    let rows: Vec<(f64, f64)> = cx.ui.panes[path].rows.iter().map(|r| (r.y, r.h)).collect();
+    let rows: Vec<(f64, f64)> = pane.rows.iter().map(|r| (r.y, r.h)).collect();
     for (i, line) in lines.iter().enumerate() {
         let (ry, rh) = rows[i];
         let top = col_y + ry;
@@ -315,7 +322,7 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         }
         let arrival = cx.tween(&arrival_key, 1.0, Clock::EffectsSlow);
         let row_alpha = cx.tween(&format!("{rpath}.a"), depth * if line.background { 0.7 } else { 1.0 }, Clock::Effects) * edge * arrival;
-        let hovered = cx.ui.hover.as_deref() == Some(rpath.as_str());
+        let hovered = cx.hover(&rpath);
         let blur_target = if !v.blur || lit || hovered || cursor_row { 0.0 } else { model::blur_for(distance, v.strength, Some(span)) };
         let blur = cx.tween(&format!("{rpath}.blur"), blur_target, Clock::Effects);
         let blur = (blur / model::BLUR_QUANTUM_PX).round() * model::BLUR_QUANTUM_PX;
@@ -336,7 +343,6 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         if chunked || (line.interlude && lit) {
             cx.animate();
         }
-        let pane = &cx.ui.panes[path];
         let row = &pane.rows[i];
         let mut draws: Vec<(ShapedText, (i32, i32), Rgba, Option<IRect>, Vec<Glow<Rgba>>, f32)> = Vec::new();
         for piece in &row.pieces {
@@ -391,7 +397,6 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         // A wrapped row's lines shrink toward the row's middle, which can
         // leave their own boxes: the whole row is damaged while it moves.
         let moving = (scale - scale_target).abs() > 1e-3;
-        let pane = cx.ui.panes.get_mut(path).expect("pane");
         let damaged = moving || pane.moving.contains(&i);
         if moving {
             pane.moving.insert(i);
@@ -400,7 +405,7 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         }
         let shown = row_rect.intersect(&vpi);
         if damaged && !shown.is_empty() {
-            cx.scene.touch(shown);
+            cx.touch(shown);
         }
         let mut p = cx.painter(&rpath);
         for (shaped, at, color, c, glows, b) in draws {
@@ -424,6 +429,7 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
         }
         cx.hit(Hit { rect: row_rect.intersect(&clip), path: rpath, on: Some(format!("lyric:{i}")), tip: None, stop: None, what: HitWhat::Click });
     }
+    cx.keep(pane);
 
     // The resync control (spec P9): present once a wheel has taken the
     // column over, and the last entry in the keyboard's order while it is.
@@ -431,10 +437,10 @@ pub fn paint(cx: &mut Cx, r: Rect, v: &View, path: &str) {
     let fade = cx.tween(&format!("{path}.resync"), if shown { 1.0 } else { 0.0 }, Clock::Effects);
     if fade > 0.0 {
         let size = s.control_height;
-        let button = super::w::icon_button("refresh-cw").tip("Follow the song").stop("lyric-resync").on("lyrics-follow");
+        let button = w::icon_button("refresh-cw").tip("Follow the song").stop("lyric-resync").on("lyrics-follow");
         let before = cx.alpha;
         cx.alpha = before * fade as f32;
-        super::draw::paint(cx, &button, Rect::new(r.x1 - size, r.y1 - size, r.x1, r.y1), &format!("{path}/resync"));
+        crate::ui::paint(cx, &button, Rect::new(r.x1 - size, r.y1 - size, r.x1, r.y1), &format!("{path}/resync"));
         cx.alpha = before;
     }
 }

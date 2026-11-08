@@ -201,61 +201,6 @@ pub struct Series {
     pub capacity: usize,
 }
 
-/// One node of the power diagram: an icon over a caption, a mono value and
-/// a dim detail line. An empty `value` or `detail` drops its line.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FlowNode {
-    pub icon: String,
-    pub caption: String,
-    pub value: String,
-    pub detail: String,
-    pub dim: bool,
-}
-
-/// One USB-C branch under the laptop.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FlowPort {
-    pub name: String,
-    pub label: String,
-    pub detail: String,
-    /// +1 power flows toward the port's text, -1 away from it, 0 none.
-    pub direction: i8,
-}
-
-/// Power flow: adapter, laptop and battery in a row with a link between
-/// each, a trunk under the laptop with one branch per port.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Flow {
-    pub nodes: [FlowNode; 3],
-    /// The adapter-to-laptop and laptop-to-battery links: +1 toward the
-    /// trailing end, -1 toward the leading one, 0 a plain rule.
-    pub links: [i8; 2],
-    pub ports: Vec<FlowPort>,
-    /// A closed panel passes false, so no chevron runs.
-    pub animate: bool,
-}
-
-/// One tile of a `Strip`, placed freely in the strip's content: a picture
-/// once one has landed, a schematic box with its icon and title until then.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Tile {
-    /// Its cursor stop and its identity across draws.
-    pub key: String,
-    /// What a click on it fires.
-    pub on: String,
-    /// Its box in the content, before the scroll.
-    pub rect: (f64, f64, f64, f64),
-    pub picture: Pic,
-    pub icon: Pic,
-    pub title: String,
-    /// The schematic's selected state (the window that has focus).
-    pub selected: bool,
-    /// The icon in the picture's corner, for a tile too small to name itself.
-    pub badge: bool,
-    /// Drawn above tiles that do not raise (a floating window).
-    pub raised: bool,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     Column { gap: f64, children: Vec<El> },
@@ -287,8 +232,6 @@ pub enum Kind {
     /// A `controlHeight` progress ring, or with `indicator` Pond's 16px one.
     Ring { ring: Ring, indicator: bool },
     Sparkline(Series),
-    /// A shape budding off a line on `edge`, for the gallery.
-    Shoulders { edge: fs_types::Edge, span: f64, depth: f64, run: f64 },
     Marquee { text: String, ink: Ink, max: f64 },
     /// Words wrapped at the width they get, cut with an ellipsis past `lines`.
     Para { text: String, font: Font, ink: Ink, lines: usize },
@@ -301,25 +244,11 @@ pub enum Kind {
     /// A square of modules, one string of `1`s and `0`s per row (a QR
     /// code), centred at the largest whole module that fits.
     Matrix { rows: Vec<String> },
-    Flow(Box<Flow>),
-    /// A framed viewport `size` big over `content`, scrolled to `scroll`,
-    /// holding tiles at their own places (a workspace's miniature). The
-    /// wheel over it fires its `on` with `What::Scroll`.
-    Strip { size: (f64, f64), inset: f64, content: (f64, f64), scroll: (f64, f64), tiles: Vec<Tile> },
     /// A `muted` well under a border, the picture filling it
     /// inside the border; the well alone until the picture lands.
     Cover { pic: Pic, size: f64 },
-    /// The spectrum in one style, `columns` wide,
-    /// redrawn every frame while `live` and at rest otherwise.
-    Spectrum { style: String, columns: usize, live: bool },
-    /// A heart in a `size` square beating at `bpm` while `beating`, redrawn
-    /// every frame then; none draws it still and dim.
-    Heart { bpm: Option<f64>, beating: bool, size: f64 },
-    /// A wireframe head in a `size` square turned by `orientation`, eased
-    /// toward each new one; none draws it still and dim.
-    Head { orientation: Option<[f32; 4]>, size: f64 },
-    /// The lyrics pane at `height`.
-    Lyrics(super::lyrics::View),
+    /// A feature's own drawing, beside the panel it belongs to.
+    Custom(Box<dyn super::Widget>),
 }
 
 /// One element: what it is, how wide it sits, and how it is addressed.
@@ -365,6 +294,8 @@ pub struct El {
     /// options): it takes no room in the layout, and its stops follow this
     /// node's.
     pub float: Option<Box<El>>,
+    /// In a row, as tall as the row whatever it measures to.
+    pub stretch: bool,
 }
 
 impl El {
@@ -372,11 +303,19 @@ impl El {
         let width = match &kind {
             Kind::Column { .. } | Kind::Separator { vertical: false, .. } | Kind::Track { .. } | Kind::Group { .. } => Size::Fill,
             Kind::Cell { state, .. } if !state.chip => Size::Fill,
-            Kind::Strip { size, .. } => Size::Px(size.0),
-            Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } | Kind::Lyrics(_) => Size::Fill,
+            Kind::Input { .. } | Kind::Edit { .. } | Kind::Para { .. } | Kind::Matrix { .. } => Size::Fill,
             _ => Size::Hug,
         };
-        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, reveal: None, float: None }
+        Self { kind, width, pad: [0.0; 4], key: None, stop: false, on: None, tip: None, centred: false, top: false, mid: false, end: false, gauge: None, pulse: false, swap: None, badge: None, fade: None, height: None, reveal: None, float: None, stretch: false }
+    }
+
+    pub fn custom(widget: impl super::Widget) -> Self {
+        Self::new(Kind::Custom(Box::new(widget)))
+    }
+
+    pub fn stretch(mut self) -> Self {
+        self.stretch = true;
+        self
     }
 
     pub fn float(mut self, list: El) -> Self {

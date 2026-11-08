@@ -1,4 +1,4 @@
-//! The head element: a wireframe head (a globe of latitude and longitude
+//! The earbuds panel's head: a wireframe head (a globe of latitude and longitude
 //! lines, two eyes, two ears, a nose) turned by the buds' orientation relative to
 //! where the wearer last recentred. The drawn pose follows each 25 Hz
 //! sample by the clock, so the head moves at the output's refresh rate
@@ -12,20 +12,40 @@ use std::time::Instant;
 
 use vello_cpu::kurbo::{BezPath, Circle, Point, Rect, Shape};
 
-use super::Cx;
 use crate::scene::{Paint, Scene};
+use crate::ui::{Cx, State, Widget};
 
 type Quat = [f64; 4];
 type Vec3 = [f64; 3];
 
 const IDENTITY: Quat = [1.0, 0.0, 0.0, 0.0];
 
+/// The wearer's head in a `size` square turned by `orientation` (a
+/// relative unit quaternion, `[w, x, y, z]`), eased toward each new one;
+/// none draws it still and dim.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Head {
+    pub orientation: Option<[f32; 4]>,
+    pub size: f64,
+}
+
+impl Widget for Head {
+    fn measure(&self, _cx: &mut Cx, _avail: f64) -> (f64, f64) {
+        (self.size, self.size)
+    }
+
+    fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
+        paint(cx, inner, self.orientation, path);
+    }
+}
+
 /// The pose drawn last and when, per element.
-pub struct Pose {
+struct Pose {
     shown: Quat,
     last: Option<Instant>,
-    pub seen: u64,
 }
+
+impl State for Pose {}
 
 /// The buds' body frame to the screen's, the one place it is decided:
 /// body x forward, y left, z up (`fs_devices::earbuds::motion`) to screen
@@ -242,12 +262,12 @@ fn hull(points: &[Point]) -> Vec<Point> {
 
 /// `orientation` none draws the head facing the viewer in
 /// `mutedForeground`, for no sample yet.
-pub fn paint(cx: &mut Cx, r: Rect, orientation: Option<[f32; 4]>, path: &str) {
+fn paint(cx: &mut Cx, r: Rect, orientation: Option<[f32; 4]>, path: &str) {
     let t = cx.theme;
     let target = orientation.map_or(IDENTITY, |q| normalised(q.map(f64::from)));
-    let (now, frame, scale) = (cx.now, cx.ui.frame, cx.motion_scale);
-    let st = cx.ui.heads.entry(path.to_owned()).or_insert(Pose { shown: target, last: None, seen: frame });
-    st.seen = frame;
+    let (now, scale) = (cx.now, cx.motion_scale);
+    let mut held = cx.take(path, || Pose { shown: target, last: None });
+    let st = &mut *held;
     if orientation.is_some() && t.motion_enabled {
         st.shown = follow(st.shown, st.last, now, target, scale);
         st.last = Some(now);
@@ -256,6 +276,7 @@ pub fn paint(cx: &mut Cx, r: Rect, orientation: Option<[f32; 4]>, path: &str) {
         st.last = None;
     }
     let shown = st.shown;
+    cx.keep(held);
     if shown != target {
         cx.animate();
     }

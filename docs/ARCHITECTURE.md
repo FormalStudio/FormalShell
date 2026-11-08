@@ -122,9 +122,13 @@ header is the guide for building a new surface):
 - Input comes back as data: a draw records each interactive element's rect
   (`Hit`) and each keyboard stop (`Stop`); the host maps pointer and keys
   onto them.
-- Specialised elements: `ui/strip.rs` (the Spaces miniature),
-  `ui/spectrum.rs` (visualizer styles), `ui/lyrics.rs`, `ui/draw/flow.rs`
-  (the power flow diagram).
+- A panel's own drawing is a custom widget (`ui/widget.rs`) in a file
+  beside that panel: the Spaces miniature
+  (`surfaces/panel/workspace_preview/strip.rs`), the spectrum and the
+  lyrics pane (`surfaces/panel/media/`), the heart and the head
+  (`surfaces/panel/earbuds/`), the power flow diagram
+  (`surfaces/panel/power/diagram.rs`). Quick settings' tiles are built in
+  `surfaces/panel/quick/piece.rs`.
 
 ## Wayland side
 

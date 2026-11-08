@@ -9,6 +9,8 @@
 //! the machine reports a supply; a machine with neither battery nor supply
 //! says "No power sources".
 
+mod diagram;
+
 use std::cell::Cell;
 
 use fs_system::power::flow::{self, Extras, Link};
@@ -18,10 +20,11 @@ use fs_types::Percent;
 use fs_upower::{DeviceState, Profile};
 
 use super::{Effect, Panel, View};
+use diagram::{Flow, FlowNode, FlowPort};
 use crate::services::devices;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
-use crate::ui::el::{Flow, FlowNode, FlowPort, Opt};
+use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, Weight, What, w};
 
 const PROFILES: [Profile; 3] = [Profile::PowerSaver, Profile::Balanced, Profile::Performance];
@@ -227,7 +230,7 @@ impl Panel for Power {
         let performance = v.store.devices.profiles.as_ref().is_none_or(|p| p.has_performance());
         parts.push(profiles(s, active(v), at, performance));
         if model.available {
-            parts.push(w::panel_control(s, w::panel_heading(s, "Power flow"), w::flow(flow_view(&model, true))));
+            parts.push(w::panel_control(s, w::panel_heading(s, "Power flow"), El::custom(flow_view(&model, true)).fill()));
         }
         w::column(0.0, parts)
     }

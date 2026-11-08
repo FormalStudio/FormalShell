@@ -5,6 +5,7 @@
 //! opening under the row that owns it (§4).
 
 pub mod grid;
+pub mod piece;
 
 use std::cell::RefCell;
 
@@ -823,7 +824,7 @@ fn menu_el(v: &View, m: &MenuView, content: f32, ready: bool) -> El {
         let row = w::panel_row(s, "", label, None, Vec::new());
         stop(row, "m:settings")
     });
-    w::quick_menu(s, m.glyph, m.title, m.on, rows, settings, content)
+    piece::menu(s, m.glyph, m.title, m.on, rows, settings, content)
 }
 
 impl Panel for QuickSettings {
@@ -913,19 +914,19 @@ impl Panel for QuickSettings {
         let mut row = Vec::new();
         for t in &system {
             if t.id == "battery" {
-                row.push(w::quick_battery(s, t.id, t.glyph, t.subtitle.as_deref().unwrap_or("")));
+                row.push(piece::battery(s, t.id, t.glyph, t.subtitle.as_deref().unwrap_or("")));
             } else {
                 if (laptop && row.len() == 1) || (!laptop && t.id == "lock") {
                     row.push(w::spacer());
                 }
-                row.push(w::quick_button(s, t.id, t.glyph, &t.title));
+                row.push(piece::button(s, t.id, t.glyph, &t.title));
             }
         }
         parts.push((system.iter().map(|t| t.id).collect(), w::row(s.panel_gap, row).fill().height(s.panel_row)));
         part_section.push(0);
 
         for t in &sliders {
-            parts.push((vec![t.id], w::quick_slider(s, t.id, t.glyph, t.value.unwrap_or(0.0), t.menu)));
+            parts.push((vec![t.id], piece::slider_row(s, t.id, t.glyph, t.value.unwrap_or(0.0), t.menu)));
             part_section.push(1);
         }
 
@@ -935,14 +936,14 @@ impl Panel for QuickSettings {
             .map(|t| {
                 let subtitle = t.reason.as_deref().or(t.subtitle.as_deref());
                 let el = if t.kind == Kind::Split {
-                    w::quick_split(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
+                    piece::split(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
                 } else {
-                    w::quick_toggle(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
+                    piece::toggle(s, t.id, t.glyph, &t.title, subtitle, t.on, t.available())
                 };
                 (t.id, el)
             })
             .collect();
-        cells.extend(extras.iter().map(|x| (x.id.as_str(), w::quick_info(s, &x.id, &x.summary.icon, &x.summary.name, x.summary.value.as_deref()))));
+        cells.extend(extras.iter().map(|x| (x.id.as_str(), piece::info(s, &x.id, &x.summary.icon, &x.summary.name, x.summary.value.as_deref()))));
         let items = vec![grid::Item { span: 1, height: s.panel_row }; cells.len()];
         let placed = grid::place(&items, self.width(v) - s.panel_row_inset * 2.0, s.panel_gap, None);
         let mut rows: Vec<(Vec<&str>, Vec<El>)> = Vec::new();
@@ -956,7 +957,7 @@ impl Panel for QuickSettings {
         part_section.extend(rows.iter().map(|_| 2));
         parts.extend(rows.into_iter().map(|(ids, r)| (ids, w::row(s.panel_gap, r).fill())));
         for t in &tail {
-            parts.push((vec![t.id], w::quick_background(s, t.id, &t.title)));
+            parts.push((vec![t.id], piece::background(s, t.id, &t.title)));
             part_section.push(3);
         }
         if frame.dim > 0.0 {

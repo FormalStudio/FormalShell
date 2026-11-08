@@ -16,8 +16,6 @@ use crate::motion::{Kind as Clock, PULSE_MS};
 use crate::scene::{IRect, Paint, Scene};
 use crate::text::{self, Family, ShapedText, TextStyle};
 
-mod flow;
-
 fn px(cx: &Cx, t: Type) -> f32 {
     let f = &cx.theme.font_size;
     (match t {
@@ -50,14 +48,14 @@ pub fn style(cx: &Cx, font: &Font) -> TextStyle {
     TextStyle { family, size: px(cx, font.size), weight: weight(font.weight), tracking: 0.0, wdth: TextStyle::NORMAL_WIDTH, wght: None }
 }
 
-fn shape(cx: &mut Cx, s: &str, font: &Font) -> ShapedText {
+pub fn shape(cx: &mut Cx, s: &str, font: &Font) -> ShapedText {
     let st = style(cx, font);
     cx.kit.shape(s, st)
 }
 
 /// A Lucide glyph by name, or `distro:<os-release ID>` for that distro's
 /// logo (Tux for one the table lacks).
-fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
+pub fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
     let g = match name.strip_prefix("distro:") {
         Some(id) => fs_theme::icons::Glyph {
             text: fs_theme::icons::distro_logo(id).unwrap_or(fs_theme::icons::TUX),
@@ -70,7 +68,7 @@ fn icon(cx: &mut Cx, name: &str, size: Type) -> ShapedText {
 }
 
 /// The text cut to `max` with an ellipsis, or whole.
-pub(super) fn elided(cx: &mut Cx, s: &str, font: &Font, max: f64) -> ShapedText {
+pub fn elided(cx: &mut Cx, s: &str, font: &Font, max: f64) -> ShapedText {
     let st = style(cx, font);
     cx.kit.elided(s, st, max)
 }
@@ -119,7 +117,7 @@ fn wrap_now(cx: &mut Cx, text: &str, font: &Font, max: f64, lines: usize) -> Vec
         .collect()
 }
 
-fn resolve(cx: &Cx, ink: Ink) -> Rgba {
+pub fn resolve(cx: &Cx, ink: Ink) -> Rgba {
     match ink {
         Ink::Fg => cx.ink.0,
         Ink::Dim => cx.ink.1,
@@ -282,13 +280,6 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
         }
         Kind::Picture { size, .. } => *size,
         Kind::Cover { size, .. } => (*size, *size),
-        Kind::Strip { size, .. } => *size,
-        Kind::Lyrics(v) => (inner, v.height),
-        Kind::Heart { size, .. } | Kind::Head { size, .. } => (*size, *size),
-        Kind::Spectrum { columns, .. } => {
-            let n = *columns as f64;
-            (n * s.track_thickness + (n - 1.0).max(0.0) * s.xxs, s.control_height)
-        }
         Kind::Icon { name, size, .. } => {
             let t = icon(cx, name, *size);
             (px(cx, *size) as f64, t.line_height() as f64)
@@ -356,13 +347,10 @@ fn measure_now(cx: &mut Cx, el: &El, avail: f64) -> (f64, f64) {
             let side = matrix_module(inner, rows.len()) * rows.len() as f64;
             (inner, side)
         }
-        Kind::Flow(f) => (inner, flow::metrics(cx, f, inner).total),
-        Kind::Shoulders { edge, span, depth, run } => {
-            if edge.is_vertical() { (*depth, span + run * 2.0) } else { (span + run * 2.0, *depth) }
-        }
+        Kind::Custom(w) => w.measure(cx, inner),
     };
     let w = match el.kind {
-        Kind::Grid { .. } | Kind::Track { .. } | Kind::Input { .. } | Kind::Edit { .. } | Kind::Sparkline(_) | Kind::Matrix { .. } | Kind::Flow(_) | Kind::Lyrics(_) => avail,
+        Kind::Grid { .. } | Kind::Track { .. } | Kind::Input { .. } | Kind::Edit { .. } | Kind::Sparkline(_) | Kind::Matrix { .. } => avail,
         _ => width_of(el, avail, nw + ps + pe),
     };
     (w, el.height.unwrap_or(nh) + pt + pb)
@@ -675,8 +663,7 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
                 }
                 let (cw, ch) = measure(cx, c, w);
                 let cw = if c.width == Size::Fill { w } else { cw };
-                // The lyrics pane stands as tall as the column beside it.
-                let ch = if matches!(c.kind, Kind::Lyrics(_)) { ch.max(inner.height()) } else { ch };
+                let ch = if c.stretch { ch.max(inner.height()) } else { ch };
                 let y = if el.top { inner.y0 } else { inner.y0 + (inner.height() - ch) / 2.0 };
                 paint(cx, c, Rect::new(x, y, x + cw, y + ch), &child_path(path, c, i));
                 x += w + gap;
@@ -732,7 +719,6 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             p.finish();
             cx.done(last);
         }
-        Kind::Strip { inset, scroll, tiles, .. } => super::strip::paint(cx, el, inner, *inset, *scroll, tiles, path),
         Kind::Picture { pic, checked, ringed, badge, well, .. } => {
             let alpha = cx.alpha;
             let r = irect(inner);
@@ -794,10 +780,6 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
             p.finish();
             cx.done(last);
         }
-        Kind::Spectrum { style, columns, live } => super::spectrum::paint(cx, inner, style, *columns, *live, path),
-        Kind::Lyrics(v) => super::lyrics::paint(cx, inner, v, path),
-        Kind::Heart { bpm, beating, .. } => super::heart::paint(cx, inner, *bpm, *beating, path),
-        Kind::Head { orientation, .. } => super::head::paint(cx, inner, *orientation, path),
         Kind::Icon { name, size, ink } => {
             let t = icon(cx, name, *size);
             let color = cx.a(resolve(cx, *ink));
@@ -913,11 +895,10 @@ fn paint_body(cx: &mut Cx, el: &El, rect: Rect, path: &str) {
         Kind::Ring { ring: r, indicator: true } => indicator(cx, inner, *r, path),
         Kind::Sparkline(series) => sparkline(cx, inner, series, path),
         Kind::Matrix { rows } => matrix(cx, inner, rows, path),
-        Kind::Flow(f) => flow::paint(cx, inner, f, path),
-        Kind::Shoulders { edge, span, depth, run } => shoulders(cx, inner, *edge, *span, *depth, *run, path),
+        Kind::Custom(w) => w.paint(cx, inner, path),
     }
     if let Some(on) = &el.on
-        && !matches!(el.kind, Kind::Cell { .. } | Kind::Button { .. } | Kind::Switch { .. } | Kind::Track { .. } | Kind::Group { .. } | Kind::Segmented { .. } | Kind::Strip { .. })
+        && !matches!(el.kind, Kind::Cell { .. } | Kind::Button { .. } | Kind::Switch { .. } | Kind::Track { .. } | Kind::Group { .. } | Kind::Segmented { .. })
     {
         cx.hit(Hit { rect: irect(inner), path: path.into(), on: Some(on.clone()), tip: el.tip.clone(), stop: None, what: HitWhat::Click });
     } else if el.on.is_none() && el.tip.is_some() && !matches!(el.kind, Kind::Cell { .. } | Kind::Button { .. }) {
@@ -1690,50 +1671,6 @@ fn sparkline(cx: &mut Cx, r: Rect, series: &super::el::Series, path: &str) {
     let mut p = cx.painter(path);
     p.rect(IRect::new(ri.x, ri.bottom() - bw, ri.w, bw), line, 0.0);
     p.shape(Scene::cover(r, Affine::IDENTITY, stroke + 1.0), Paint::Shape { fill, strokes });
-    let last = p.last();
-    p.finish();
-    cx.done(last);
-}
-
-#[allow(clippy::too_many_arguments)]
-fn shoulders(cx: &mut Cx, r: Rect, edge: fs_types::Edge, span: f64, depth: f64, run: f64, path: &str) {
-    use fs_types::Edge;
-    let t = cx.theme;
-    let card = t.box_style("card", None);
-    let radius = t.box_radius(&card, depth);
-    let border = card.border.clone().map_or((Rgba::TRANSPARENT, 0.0), |l| (l.color, l.width));
-    let bw = t.border_width;
-    let sep = t.box_style("separator", None).fill;
-    let (fill, line, sep) = (cx.a(card.fill), cx.a(border.0), cx.a(sep));
-    let paths = crate::paint::shoulders::paths(span + radius * 2.0, depth, radius, border.1, 1.0, 0.0);
-    // Built for a top line, then turned onto the gallery's edge.
-    let local = match edge {
-        Edge::Top => Affine::translate((run - radius, 0.0)),
-        Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, run - radius, depth]),
-        Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, 0.0, run - radius]),
-        Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, depth, run - radius]),
-    };
-    let at = Affine::translate((r.x0, r.y0)) * local;
-    let mut fill_path = paths.fill.clone();
-    fill_path.apply_affine(at);
-    let mut outer = paths.outer.clone();
-    outer.apply_affine(at);
-    let vertical = edge.is_vertical();
-    let ri = irect(r);
-    let b = bw.round() as i32;
-    let (a0, a1) = (run.round() as i32, (run + span).round() as i32);
-    let segs: Vec<IRect> = if vertical {
-        let x = if edge == Edge::Right { ri.right() - b } else { ri.x };
-        vec![IRect::new(x, ri.y, b, a0), IRect::new(x, ri.y + a1, b, ri.h - a1)]
-    } else {
-        let y = if edge == Edge::Bottom { ri.bottom() - b } else { ri.y };
-        vec![IRect::new(ri.x, y, a0, b), IRect::new(ri.x + a1, y, ri.w - a1, b)]
-    };
-    let mut p = cx.painter(path);
-    p.shape(Scene::cover(r, Affine::IDENTITY, 2.0), Paint::Shape { fill: Some((fill_path, fill)), strokes: vec![(outer, line, border.1)] });
-    for s in segs {
-        p.rect(s, sep, 0.0);
-    }
     let last = p.last();
     p.finish();
     cx.done(last);

@@ -2,12 +2,11 @@
 //! plus the two composites every panel leans on (`section`, `hero`).
 //! Tokens come from `Space`; nothing here writes a literal size.
 
-use fs_types::Edge;
 use fs_menu::field::{Buffer, Field};
 use fs_theme::color::Rgba;
 use fs_theme::tokens::Space;
 
-use super::el::{CellState, El, Flow, Font, Ink, Kind, Opt, Pic, Series, Type, Variant, Weight};
+use super::el::{CellState, El, Font, Ink, Kind, Opt, Pic, Series, Type, Variant, Weight};
 
 pub fn column(gap: f64, children: Vec<El>) -> El {
     El::new(Kind::Column { gap, children })
@@ -72,12 +71,6 @@ pub fn tile_picture(image: Option<crate::scene::Bitmap>, width: f64, height: f64
     El::new(Kind::Picture { pic: Pic(image), size: (width, height), checked, ringed, badge, well: true }).width(super::Size::Px(width))
 }
 
-/// Tiles placed freely over `content` in a framed viewport `size` big,
-/// `inset` inside its frame, scrolled to `scroll`.
-pub fn strip(size: (f64, f64), inset: f64, content: (f64, f64), scroll: (f64, f64), tiles: Vec<super::el::Tile>) -> El {
-    El::new(Kind::Strip { size, inset, content, scroll, tiles })
-}
-
 /// Album art in a `size` square.
 pub fn cover(image: Option<crate::scene::Bitmap>, size: f64) -> El {
     El::new(Kind::Cover { pic: Pic(image), size })
@@ -88,23 +81,6 @@ pub fn cover(image: Option<crate::scene::Bitmap>, size: f64) -> El {
 pub fn cover_inner(theme: &fs_theme::theme::Theme, size: f64) -> (u32, f64) {
     let bw = theme.border_width;
     (((size - bw * 2.0).round().max(1.0)) as u32, (theme.cover_radius(size) - bw).max(0.0))
-}
-
-pub fn spectrum(style: impl Into<String>, columns: usize, live: bool) -> El {
-    El::new(Kind::Spectrum { style: style.into(), columns, live })
-}
-
-/// A heart in a `size` square beating at `bpm` while `beating` (a rate
-/// measured earlier is drawn still); none for a rate not measured yet,
-/// drawn still and dim.
-pub fn heart(bpm: Option<f64>, beating: bool, size: f64) -> El {
-    El::new(Kind::Heart { bpm, beating, size })
-}
-
-/// The wearer's head in a `size` square turned by `orientation` (a
-/// relative unit quaternion, `[w, x, y, z]`); none draws it still and dim.
-pub fn head(orientation: Option<[f32; 4]>, size: f64) -> El {
-    El::new(Kind::Head { orientation, size })
 }
 
 pub fn icon(name: impl Into<String>) -> El {
@@ -293,14 +269,6 @@ pub fn indicator(ring: super::el::Ring) -> El {
 
 pub fn sparkline(values: Vec<f64>, secondary: Vec<f64>, ceiling: f64, capacity: usize) -> El {
     El::new(Kind::Sparkline(Series { values, secondary, ceiling, capacity })).fill()
-}
-
-pub fn shoulders(edge: Edge, span: f64, depth: f64, run: f64) -> El {
-    El::new(Kind::Shoulders { edge, span, depth, run })
-}
-
-pub fn flow(flow: Flow) -> El {
-    El::new(Kind::Flow(Box::new(flow))).fill()
 }
 
 pub fn marquee(text: impl Into<String>, max: f64) -> El {
@@ -678,109 +646,4 @@ pub fn menu_item(s: &Space, glyph: &str, text: impl Into<String>, current: bool,
 pub fn panel_footer(s: &Space, glyph: &str, text: &str) -> El {
     let parts = vec![icon(glyph).size(Type::Heading).ink(Ink::Muted), text_el(text, Type::Body, Weight::Medium, false, Ink::Muted).elide().fill()];
     panel_cell(s, row(s.panel_gap, parts).fill()).height(s.panel_row)
-}
-
-// Quick settings' pieces (specs/2026-11-04-quick-settings.md §2-§6), each
-// a Settings tile: an interactive `panel.group` cell, its `open` fill while
-// on. `id` is a piece's click and its cursor stop; an unavailable piece
-// takes neither and fades the way a disabled button does.
-
-fn quick_tile(content: El, id: &str, on: bool, available: bool) -> El {
-    let c = cell(content).cell_state(|c| {
-        c.group = true;
-        c.open = on;
-        c.disabled = !available;
-        c.inset = Some((0.0, 0.0));
-    });
-    if available { c.interactive().on(id).stop(id) } else { c.key(id).fade(0.5) }
-}
-
-/// A tile's line: the chip `sm` in, so the chip column is the same in
-/// every tile and row of the card, the words after it.
-fn quick_line(s: &Space, glyph: &str, title: &str, subtitle: Option<&str>, on: bool) -> El {
-    let detail = subtitle.filter(|t| !t.is_empty()).map(caption);
-    panel_line(s, Some(panel_chip(s, glyph, on)), label(title), detail, Vec::new()).pad(s.sm, 0.0, s.lg, 0.0)
-}
-
-/// A glyph centred in a `panelRow` square tile: a split's arrow, a system
-/// button.
-fn quick_square(s: &Space, id: &str, glyph: &str, on: bool, available: bool) -> El {
-    let mark = row(0.0, vec![spacer(), icon(glyph).size(Type::Heading), spacer()]).fill().height(s.panel_row);
-    quick_tile(mark, id, on, available).width(super::Size::Px(s.panel_row)).height(s.panel_row)
-}
-
-/// A plain toggle, `panelRow` tall, as wide as its grid column.
-pub fn quick_toggle(s: &Space, id: &str, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
-    quick_tile(quick_line(s, glyph, title, subtitle, on), id, on, available).height(s.panel_row)
-}
-
-/// A toggle with a menu: the toggle (`id`) and its arrow tile
-/// (`<id>:menu`) `rowGap` apart, both lit while on.
-pub fn quick_split(s: &Space, id: &str, glyph: &str, title: &str, subtitle: Option<&str>, on: bool, available: bool) -> El {
-    let part = quick_toggle(s, id, glyph, title, subtitle, on, available);
-    let arrow = quick_square(s, &format!("{id}:menu"), "chevron-right", on, available);
-    row(s.row_gap, vec![part, arrow]).fill().height(s.panel_row)
-}
-
-/// An extra's tile (§7): a toggle that is never on, the cell's value as
-/// its subtitle, a click handing over to the cell's panel.
-pub fn quick_info(s: &Space, id: &str, glyph: &str, title: &str, value: Option<&str>) -> El {
-    quick_toggle(s, id, glyph, title, value, false, true)
-}
-
-/// Background (§6): a full-width row, its chip on the tiles' chip column
-/// and its chevron on their arrow column, the count as its name, opening
-/// its menu.
-pub fn quick_background(s: &Space, id: &str, title: &str) -> El {
-    let mark = row(0.0, vec![spacer(), icon("chevron-right").ink(Ink::Muted), spacer()]).width(super::Size::Px(s.panel_mark * 2.0));
-    panel_row(s, "activity", title, None, vec![mark]).cell_state(|c| c.inset = Some((s.sm, 0.0))).on(id).stop(id)
-}
-
-/// The system row's button: a square tile, its name the tooltip.
-pub fn quick_button(s: &Space, id: &str, glyph: &str, tip: &str) -> El {
-    quick_square(s, id, glyph, false, true).tip(tip)
-}
-
-/// The system row's battery: a tile as wide as its chip and its value in
-/// `mono`.
-pub fn quick_battery(s: &Space, id: &str, glyph: &str, value: &str) -> El {
-    let line = row(s.panel_gap, vec![panel_chip(s, glyph, false), panel_value(value)]).height(s.panel_row).pad(s.sm, 0.0, s.lg, 0.0);
-    quick_tile(line, id, false, true).width(super::Size::Hug).height(s.panel_row)
-}
-
-/// A slider row, `panelRowCompact` tall: its glyph a button (`<id>:icon`,
-/// a mute), the kit's slider (`id`), and with `menu` the arrow
-/// (`<id>:menu`) opening its devices. The glyphs centre on the tiles' chip
-/// column and arrow column.
-pub fn quick_slider(s: &Space, id: &str, glyph: &str, value: f64, menu: bool) -> El {
-    let button = |key: String, glyph: &str| icon_button(glyph).on(key.clone()).stop(key);
-    let mut parts = vec![button(format!("{id}:icon"), glyph), slider(value).fill().on(id).stop(id)];
-    if menu {
-        parts.push(button(format!("{id}:menu"), "chevron-right"));
-    }
-    let x = s.sm + s.panel_mark - s.control_height / 2.0;
-    row(s.panel_gap, parts).fill().height(s.panel_row_compact).pad(x, 0.0, x, 0.0)
-}
-
-/// An open menu (§4), keyed `menu`: a `panel.group` box holding a header
-/// (the toggle's glyph in its chip, lit while the toggle is on, and its
-/// title; GNOME's menus set no subtitle), the menu's rows, and with
-/// `settings` a hairline and that row last. `shown` fades what it holds.
-pub fn quick_menu(s: &Space, glyph: &str, title: &str, on: bool, rows: Vec<El>, settings: Option<El>, shown: f32) -> El {
-    let words = text_el(title, Type::Body, Weight::Semibold, false, Ink::Fg);
-    let header = panel_line(s, Some(panel_chip(s, glyph, on)), words, None, Vec::new()).pad(text_inset(s), 0.0, text_inset(s), 0.0);
-    let mut parts = vec![header, space(s.panel_gap)];
-    parts.extend(rows);
-    if let Some(settings) = settings {
-        parts.push(separator());
-        parts.push(settings);
-    }
-    let content = column(0.0, parts).fill();
-    let content = if shown < 1.0 { content.fade(shown) } else { content };
-    cell(content)
-        .cell_state(|c| {
-            c.group = true;
-            c.inset = Some((s.lg, s.lg));
-        })
-        .key("menu")
 }

@@ -1,4 +1,4 @@
-//! The spectrum element: fs-media's style draws its shape list for the
+//! The media panel's spectrum: fs-media's style draws its shape list for the
 //! frame, and each shape becomes one node. A style keeps its own state (its
 //! caps, particles and traces) per element, thrown away when the style
 //! changes or the live state flips, so each style's resting frame is drawn
@@ -12,18 +12,40 @@ use fs_media::visualizer::styles;
 use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{self, Affine, BezPath, Rect, Shape as _};
 
-use super::Cx;
 use crate::scene::{IRect, Paint, Scene};
 use crate::services::visualizer;
 use crate::text::TextStyle;
+use crate::ui::{Cx, State, Widget, irect};
 
-pub struct Live {
+/// The spectrum in one style, `columns` wide, redrawn every frame while
+/// `live` and at rest otherwise.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spectrum {
+    pub style: String,
+    pub columns: usize,
+    pub live: bool,
+}
+
+struct Live {
     style: String,
     live: bool,
     state: styles::State,
     shown: Vec<f64>,
     last: Option<Instant>,
-    pub seen: u64,
+}
+
+impl State for Live {}
+
+impl Widget for Spectrum {
+    fn measure(&self, cx: &mut Cx, _avail: f64) -> (f64, f64) {
+        let s = &cx.theme.space;
+        let n = self.columns as f64;
+        (n * s.track_thickness + (n - 1.0).max(0.0) * s.xxs, s.control_height)
+    }
+
+    fn paint(&self, cx: &mut Cx, inner: Rect, path: &str) {
+        paint(cx, inner, &self.style, self.columns, self.live, path);
+    }
 }
 
 fn to_vis(c: Rgba) -> vis::Color {
@@ -56,7 +78,7 @@ fn path(els: &[PathEl], at: Affine) -> BezPath {
     p
 }
 
-pub fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &str) {
+fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key: &str) {
     let t = cx.theme;
     let ink = styles::Ink {
         groove: to_vis(t.colors.get("muted")),
@@ -69,16 +91,15 @@ pub fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key:
         radius: t.radii.sm,
     };
     let frame = if live { visualizer::frame() } else { visualizer::Frame::baseline() };
-    let (now, seen) = (cx.now, cx.ui.frame);
-    let st = cx.ui.spectra.entry(key.to_owned()).or_insert_with(|| Live {
+    let now = cx.now;
+    let mut held = cx.take(key, || Live {
         style: String::new(),
         live: false,
         state: styles::State::default(),
         shown: model::baseline_levels(),
         last: None,
-        seen,
     });
-    st.seen = seen;
+    let st = &mut *held;
     if st.style != style || st.live != live {
         st.style = style.to_owned();
         st.live = live;
@@ -96,6 +117,7 @@ pub fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key:
     }
     let mut scene = vis::Scene::new();
     styles::draw(style, &mut scene, r.width(), r.height(), &st.shown, &mut st.state, &ink, dt, Some(&frame.left), Some(&frame.right));
+    cx.keep(held);
     if live {
         cx.animate();
     }
@@ -103,7 +125,7 @@ pub fn paint(cx: &mut Cx, r: Rect, style: &str, columns: usize, live: bool, key:
     let outer = cx.alpha;
     let at = Affine::translate((r.x0, r.y0));
     let mono = cx.kit.look.mono;
-    let clip = super::irect(r);
+    let clip = irect(r);
     let mut shaped = Vec::new();
     for s in &scene.shapes {
         if let Shape::Text { text, size, .. } = s {

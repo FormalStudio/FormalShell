@@ -16,6 +16,8 @@
 //! they reach the card through [`Shared`], and the card leaves what it laid
 //! out there for the captures and for `workspaces status`.
 
+mod strip;
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -24,11 +26,12 @@ use fs_chrome::bar::workspaces::{PreviewLayout, preview_layout};
 use fs_types::{Rect, Window, WindowId, WorkspaceId};
 
 use super::{Effect, Panel, View};
+use strip::{Strip, Tile};
 use crate::scene::Bitmap;
 use crate::services::compositor;
 use crate::store::Topic;
-use crate::ui::el::{Pic, Tile};
-use crate::ui::{El, Event, Ink, What, w};
+use crate::ui::el::Pic;
+use crate::ui::{El, Event, Ink, Size, What, w};
 
 /// The appicon slice's key for a window's icon here.
 pub fn icon_key(id: &WindowId) -> String {
@@ -168,7 +171,7 @@ impl Panel for WorkspacePreview {
         let mini = if tiles.is_empty() {
             w::panel_empty(s, "No windows")
         } else {
-            w::strip((mini_w, mini_h), inset, content, scroll, tiles).on("mini")
+            El::custom(Strip { size: (mini_w, mini_h), inset, scroll, tiles, on: "mini".into() }).width(Size::Px(mini_w))
         };
         w::column(s.sm, vec![mini, footer.elide().mid()])
     }

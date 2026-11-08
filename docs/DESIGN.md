@@ -579,7 +579,10 @@ families and `Theme::pill_radius`.
 A surface describes its content as an `El` tree (`formalshell-rs/src/ui/el.rs`) built with the
 constructors in `formalshell-rs/src/ui/w.rs`, and `Ui` (`formalshell-rs/src/ui/mod.rs`) keeps each element's
 nodes and running tweens between draws. Build with these; add a primitive
-only when two surfaces need the same new thing.
+only when two surfaces need the same new thing. A drawing one panel owns
+(its diagram, its spectrum) is a `ui::Widget` in `El::custom`, in a file
+beside that panel, with whatever it keeps between draws held by `Ui` under
+its path (`Cx::state`).
 
 | primitive | is | states |
 | --- | --- | --- |
@@ -599,7 +602,7 @@ only when two surfaces need the same new thing.
 | segmented (`w::segmented`) | a `trough` role, `radiusMd`, its `segmented.chip` fill travelling to the active segment on `spatial` | hover on an unchosen segment (the wash, ink lifted off `mutedForeground`), cursor (ring) |
 | track (`w::track`, `w::slider`) | a `trackThickness` progress or slider: `track.groove`, `track.fill`, `track.notch` for the one mark it can carry, and on a slider a `track.knob` handle | cursor (ring), for a surface that addresses the track as a row |
 | separator (`w::separator`) | a 1px `border` rule, full-bleed, inset or vertical | none |
-| power flow (`w::flow`, `formalshell-rs/src/ui/draw/flow.rs`) | the Power panel's diagram (each node an icon, caption, mono value and detail, flat; each link a separator rule): adapter, laptop and battery in a row and a trunk with one branch per USB-C port. A link carries a chevron only while power crosses it; the chevron travels on the charging pulse's clock (the continuous-motion carve-out) and rests mid-line under `motion.enabled: false`. Figures come from `formalshell-rs/src/services/info/powerflow.rs` and a reading the kernel does not give is left out | none |
+| power flow (`formalshell-rs/src/surfaces/panel/power/diagram.rs`, a custom widget) | the Power panel's diagram (each node an icon, caption, mono value and detail, flat; each link a separator rule): adapter, laptop and battery in a row and a trunk with one branch per USB-C port. A link carries a chevron only while power crosses it; the chevron travels on the charging pulse's clock (the continuous-motion carve-out) and rests mid-line under `motion.enabled: false`. Figures come from `formalshell-rs/src/services/info/powerflow.rs` and a reading the kernel does not give is left out | none |
 | tooltip (`formalshell-rs/src/surfaces/tooltip.rs`) | the `popover` role at `radiusMd`, 6 by 10 inside, `caption`, 6px off the anchor; one surface per output | delayed (400ms), travelling (within 500ms of the last hide) |
 | keys (`Host::key`, `fs-chrome/src/cursor.rs`) | key dispatch for keyboard-driven surfaces (Escape, Tab, arrows and hjkl, Enter, Space, x, printable) | blocked while an inline editor has focus (`cursor::catcher_blocked`) |
 | tween (`Cx::tween`, `motion::Animated`) | the one number animation in the shell: `motion::Kind` resolves a duration and a curve out of the motion tokens (§1 Motion), `spatial` by default | none |
@@ -666,7 +669,7 @@ card takes no keyboard when the pointer opened it, follows the pointer
 between cells and closes once the pointer is on neither. `workspaces peek
 <n>` opens the same card over IPC, as an ordinary panel. The miniature is
 `formalshell-rs/src/surfaces/panel/workspace_preview.rs` over the strip
-widget in `formalshell-rs/src/ui/strip.rs`, its window and captures `formalshell-rs/src/wayland/preview.rs`.
+widget in `formalshell-rs/src/surfaces/panel/workspace_preview/strip.rs`, its window and captures `formalshell-rs/src/wayland/preview.rs`.
 
 Window capture has three owners and no others: this preview, the Alt+Tab
 switcher (`formalshell-rs/src/surfaces/switcher/`, `formalshell-rs/src/wayland/switcher.rs`)
@@ -831,7 +834,7 @@ caption, an optional `display` readout beside them, an optional track
 under them. Footer: `outline` button left, `display` number right. Width
 `Default`; `Wide` for media, monitor, calendar. Nothing in a panel scrolls
 except a row list longer than the screen. The media panel spends its one
-card (§1's ladder, rung 5) on a lyrics pane (`formalshell-rs/src/ui/lyrics.rs`)
+card (§1's ladder, rung 5) on a lyrics pane (`formalshell-rs/src/surfaces/panel/media/lyrics.rs`)
 trailing the now-playing column on the same gutter and split M55 set
 (M56 P13), `radiusMd` and a `card` fill with nothing else drawn inside it:
 the pane's viewport rests its anchor line 42% down rather than at centre
@@ -854,7 +857,7 @@ right, a new track, or the keyboard cursor hands it back (M56 P9). The
 now-playing column itself runs horizontal (M55 A2): the elapsed time, the
 track and the total sit on one line, and the transport and the player's
 own volume share another, transport leading. Its spectrum
-(`formalshell-rs/src/ui/spectrum.rs`) sits inline at the trailing end of
+(`formalshell-rs/src/surfaces/panel/media/spectrum.rs`) sits inline at the trailing end of
 the identity row, beside the title rather than under it: twelve columns of
 the same `muted` trough and bottom-up fill the bar cell draws, coloured by
 the same three energy bands off the one shared cava process, carried toward
