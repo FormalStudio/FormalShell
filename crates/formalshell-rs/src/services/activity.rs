@@ -26,7 +26,7 @@ use zbus::message::Type;
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::{MatchRule, MessageStream};
 
-use super::notifications::now_ms;
+use crate::runtime::now_ms;
 use crate::runtime::Ctx;
 use crate::services::appicon::{applications_dirs, scan_launchable};
 use crate::store;

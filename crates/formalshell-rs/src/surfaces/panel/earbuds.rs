@@ -369,7 +369,7 @@ fn heart_block(s: &fs_theme::tokens::Space, hr: &HeartRate) -> El {
             parts
         }
         Pulse::Point { point, points } => {
-            let now = crate::services::notifications::now_ms();
+            let now = crate::runtime::now_ms();
             let mut parts = vec![El::custom(Heart { bpm: Some(f64::from(point.bpm.get())), beating: false, size }), readout(point.bpm, point_caption(now, point.at_ms))];
             parts.extend(heart_trace(s, points));
             parts

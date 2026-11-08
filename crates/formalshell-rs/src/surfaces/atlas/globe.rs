@@ -891,10 +891,10 @@ impl Globe {
         let inner = disc - 1.0;
         ops.push(VOp::Stroke(circle(inner + (glow + 1.0) / 2.0), Brush::Radial { centre: (cx, cy), r0: inner, r1: disc + glow, stops }, glow + 1.0));
         ops.push(VOp::Pop);
-        if crate::tracing() {
+        if crate::trace::enabled() {
             let (sample_us, px) = sampled.unwrap_or((0, 0));
             let s = self.earth_stats;
-            crate::trace(format!(
+            crate::trace::line(format_args!(
                 "atlas globe build_us={} sample_us={sample_us} px={px} imagery={} coarse={} level={} tiles={} missing={} cached={} cached_kb={}",
                 started.elapsed().as_micros(),
                 earth.is_some(),

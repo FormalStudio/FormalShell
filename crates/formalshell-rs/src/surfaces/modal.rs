@@ -20,6 +20,7 @@ use vello_cpu::kurbo::Rect;
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::surface::{PixelSurface, Sub, Surface};
 use crate::surfaces::card::{Card, Ends};
+use crate::trace;
 use crate::wayland::App;
 
 /// Which of a modal's three surfaces an event is for.
@@ -365,11 +366,11 @@ impl Layer {
         if moved && !faded {
             self.surface.recommit();
         }
-        if moved && crate::tracing() {
-            crate::trace(format!(
-                "commit surface={}-cut rect={}x{}+{}+{} fits={} alpha={:.3}",
-                self.surface.name, shown.w, shown.h, shown.x, shown.y, fits as u8, alpha
-            ));
+        if moved && trace::enabled() {
+            trace::commit_bare(
+                format_args!("{}-cut", self.surface.name),
+                format_args!("rect={}x{}+{}+{} fits={} alpha={:.3}", shown.w, shown.h, shown.x, shown.y, fits as u8, alpha),
+            );
         }
         drew || moved || faded
     }
@@ -562,19 +563,14 @@ impl Quads {
         self.covered = IRect::new(frame.x, frame.y, covered.0 - bw, covered.1 - bw);
         // The card's motion lands here rather than in a buffer of its own,
         // so the commit log the budget legs read carries one line per step.
-        if moved && crate::tracing() {
+        if moved && trace::enabled() {
             self.steps += 1;
-            crate::trace(format!(
-                "commit surface={}-look n={} t={}ms rect={}x{}+{}+{} alpha={:.3}",
-                self.name,
+            trace::commit(
+                format_args!("{}-look", self.name),
                 self.steps,
-                self.started.elapsed().as_millis(),
-                frame.w,
-                frame.h,
-                frame.x,
-                frame.y,
-                alpha
-            ));
+                trace::since(self.started),
+                format_args!("rect={}x{}+{}+{} alpha={:.3}", frame.w, frame.h, frame.x, frame.y, alpha),
+            );
         }
         any
     }

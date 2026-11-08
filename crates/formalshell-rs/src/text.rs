@@ -380,9 +380,9 @@ impl Inner {
     fn new() -> Self {
         let rendering = fontconfig::rendering();
         eprintln!("text: fontconfig {rendering:?}");
-        crate::phase("fontconfig");
+        crate::trace::phase("fontconfig");
         let mut fcx = FontContext::new();
-        crate::phase("font collection");
+        crate::trace::phase("font collection");
         // The package wraps the binary with the lucide font's path, the way
         // nix/package.nix puts it on XDG_DATA_DIRS for Qt.
         match std::env::var("FS_RS_ICON_FONT").map(map_font) {
@@ -412,7 +412,7 @@ impl Inner {
                 }
             }
         }
-        crate::phase("font files");
+        crate::trace::phase("font files");
         Self {
             fcx,
             lcx: LayoutContext::new(),

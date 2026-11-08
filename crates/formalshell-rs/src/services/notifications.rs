@@ -9,7 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use fs_info::notifications::{self as model, Action, AddOpts, Notif, Patch, Urgency};
 use fs_info::reminders;
@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use super::icons;
 use super::state::{self, Field};
-use crate::runtime::Ctx;
+use crate::runtime::{Ctx, now_ms};
 use crate::services::appicon::{applications_dirs, scan_launchable};
 use crate::store;
 
@@ -36,10 +36,6 @@ const HOVER_HOLD_MS: i64 = 1000;
 /// The size a themed icon is picked for, near the card's heading type it is
 /// drawn at.
 const ICON_PICK: u32 = 32;
-
-pub fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
-}
 
 fn timeout_for(urgency: Urgency, expire_timeout: i32) -> i64 {
     let floor = if urgency == Urgency::Low { LOW_MS } else { NORMAL_MS };

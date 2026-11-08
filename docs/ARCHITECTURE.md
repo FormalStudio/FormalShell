@@ -20,7 +20,7 @@ The package installs three entry points, all from the one crate:
   `main.rs` before anything else starts. `formalshell install|update|uninstall`
   are dispatched the same way (`src/install.rs`).
 
-`main.rs` brings the shell up in this order, logging a `phase t=` line per
+`main.rs` brings the shell up in this order, logging (`trace.rs`) a `phase t=` line per
 step:
 
 1. `instance::acquire()`: the single-instance lock, a Unix socket at
@@ -138,7 +138,7 @@ among them, and a tray menu), the tooltip, the scrim, the pointer and keyboard,
 and which owner a configure, frame callback or input event belongs to.
 `App::present` runs after every dispatch: due notification timers, panels
 and menus whose exit has finished, then a commit for each surface with
-damage. `main.rs` logs any dispatch or present that holds the loop past
+damage. `trace.rs` logs any dispatch or present that holds the loop past
 8 ms.
 
 The other windows are one module each under `src/wayland/`:

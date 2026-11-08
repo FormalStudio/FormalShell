@@ -14,7 +14,8 @@ use fs_info::notifications::{self as model, Group, Urgency};
 
 use super::{Effect, Panel, View};
 use crate::services::activity::{self as activity_service, Input};
-use crate::services::notifications::{Diff, Op, now_ms};
+use crate::runtime::now_ms;
+use crate::services::notifications::{Diff, Op};
 use crate::surfaces::activity;
 use crate::store::{self, Topic};
 use crate::ui::el::Kind;

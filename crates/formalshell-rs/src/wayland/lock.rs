@@ -453,7 +453,7 @@ impl App {
         self.lock.login = true;
         self.lock.locked = true;
         self.lock.dirty = true;
-        crate::phase("login lock asked");
+        crate::trace::phase("login lock asked");
     }
 
     fn raise_lock(&mut self) -> String {
@@ -594,7 +594,7 @@ impl App {
             let ls = session.create_lock_surface(wl, &output, &self.qh);
             let surface = Surface::on("lock", Backend::Gpu, ls, &self.shm, self.started, &output);
             if self.lock.login && self.lock.outs.is_empty() {
-                crate::phase("login lock surface");
+                crate::trace::phase("login lock surface");
             }
             self.lock.outs.push(Out { output, name, surface, view: View::new(1, 1), saver: false, pointer: None, splashed: false, splash_scale: 0.0, dissolve: None, dissolved: false, dark: None, dark_landed: false });
         }
@@ -1187,10 +1187,10 @@ impl App {
             first |= commits == 0 && o.surface.commits() == 1;
         }
         if first {
-            crate::phase("login lock first commit");
+            crate::trace::phase("login lock first commit");
         }
         if self.lock.splashed_at.is_none() && self.lock.outs.iter().any(|o| o.splashed) {
-            crate::phase("login lock splash");
+            crate::trace::phase("login lock splash");
             self.lock.splashed_at = Some(Instant::now());
             if let Some(handle) = &self.handle {
                 let _ = handle.insert_source(Timer::from_duration(BOOT_WAIT), |_, _, app: &mut App| {
@@ -1546,7 +1546,7 @@ impl SessionLockHandler for App {
         let (w, h) = (configure.new_size.0 as i32, configure.new_size.1 as i32);
         let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface.wl_surface()) else { return };
         if self.lock.login && !o.surface.configured {
-            crate::phase("login lock configured");
+            crate::trace::phase("login lock configured");
         }
         // A boot lock's output taking its mode after the first frame (a
         // nested output does) shows the splash again at the new size, and

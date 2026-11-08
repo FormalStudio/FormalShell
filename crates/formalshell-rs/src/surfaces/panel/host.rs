@@ -571,9 +571,7 @@ impl Host {
             self.card.tick(now);
         }
         self.draw(store, theme, kit, now);
-        if t0.elapsed().as_millis() >= 4 {
-            eprintln!("event loop: slow panel {} size_us={} total_us={}", self.module.id(), sized.as_micros(), t0.elapsed().as_micros());
-        }
+        crate::trace::slow("panel", t0.elapsed(), format_args!("{} size_us={} total_us={}", self.module.id(), sized.as_micros(), t0.elapsed().as_micros()));
     }
 
     /// Input everywhere while open (a click outside closes) but over the

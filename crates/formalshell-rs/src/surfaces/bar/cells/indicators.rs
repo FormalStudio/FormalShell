@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 
-use crate::services::notifications::now_ms;
+use crate::runtime::now_ms;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
 use crate::paint::{Look, Tone};

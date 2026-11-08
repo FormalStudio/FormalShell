@@ -36,6 +36,7 @@ use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 
 use crate::render::{Renderer, scaled};
 use crate::scene::{IRect, Scene};
+use crate::trace;
 
 pub mod audit;
 
@@ -827,16 +828,12 @@ impl<R: Role> Surface<R> {
         self.raster.clear();
         self.left.clear();
         self.renderer.resize(1, 1);
-        if crate::tracing() {
-            crate::trace(format!(
-                "commit surface={} n={} t={}ms render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=clear frame_callbacks={} request={}",
-                self.name,
-                self.commits,
-                self.started.elapsed().as_millis(),
-                self.callbacks,
-                request as u8,
-            ));
-        }
+        trace::commit(
+            self.name,
+            self.commits,
+            trace::since(self.started),
+            format_args!("render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=clear frame_callbacks={} request={}", self.callbacks, request as u8),
+        );
     }
 
     /// One single-pixel buffer stretched over the surface's `size` with a
@@ -859,15 +856,12 @@ impl<R: Role> Surface<R> {
         self.commits += 1;
         self.front = None;
         self.front_view = None;
-        if crate::tracing() {
-            crate::trace(format!(
-                "commit surface={} n={} t={}ms render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel frame_callbacks={} request=1",
-                self.name,
-                self.commits,
-                self.started.elapsed().as_millis(),
-                self.callbacks,
-            ));
-        }
+        trace::commit(
+            self.name,
+            self.commits,
+            trace::since(self.started),
+            format_args!("render_us=0 copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel frame_callbacks={} request=1", self.callbacks),
+        );
     }
 
     /// Sizes the canvas ahead of the compositor's first configure, so the
@@ -1121,28 +1115,31 @@ impl<R: Role> Surface<R> {
         self.front_view = Some((scale, (size.w, size.h)));
 
         self.commits += 1;
-        if !crate::tracing() {
+        if !trace::enabled() {
             return;
         }
         let area: i64 = damage.iter().map(IRect::area).sum();
         let rects: Vec<String> = damage.iter().map(|r| format!("{},{},{}x{}", r.x, r.y, r.w, r.h)).collect();
-        crate::trace(format!(
-            "commit surface={} n={} t={}ms render_us={} copy_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}",
+        let scaled = if scale == 1.0 { String::new() } else { format!(" scale={scale} buffer_px={pw}x{ph}") };
+        trace::commit(
             self.name,
             self.commits,
-            self.started.elapsed().as_millis(),
-            render_us,
-            copy_us,
-            damage.len(),
-            area,
-            rects.join(" "),
-            at,
-            self.callbacks,
-            request as u8,
-            self.waited_us,
-            react_us,
-            self.slices,
-        ) + &if scale == 1.0 { String::new() } else { format!(" scale={scale} buffer_px={pw}x{ph}") });
+            trace::since(self.started),
+            format_args!(
+                "render_us={} copy_us={} rects={} px={} damage=[{}] buffer={} frame_callbacks={} request={} last_wait_us={} react_us={} slices={}{scaled}",
+                render_us,
+                copy_us,
+                damage.len(),
+                area,
+                rects.join(" "),
+                at,
+                self.callbacks,
+                request as u8,
+                self.waited_us,
+                react_us,
+                self.slices,
+            ),
+        );
     }
 
     /// The canvas copied into a released shm buffer, made if none is: the
@@ -1384,19 +1381,18 @@ impl PixelSurface {
         self.layer.commit();
         self.multiplier = Some(multiplier);
         self.commits += 1;
-        if !crate::tracing() {
-            return;
-        }
-        crate::trace(format!(
-            "commit surface={} n={} t={}ms render_us={} copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel alpha={:.3} frame_callbacks={} request={}",
+        trace::commit(
             self.name,
             self.commits,
-            self.started.elapsed().as_millis(),
-            t0.elapsed().as_micros(),
-            self.alpha * fade,
-            self.callbacks,
-            request as u8,
-        ));
+            trace::since(self.started),
+            format_args!(
+                "render_us={} copy_us=0 rects=1 px=0 damage=[0,0,1x1] buffer=pixel alpha={:.3} frame_callbacks={} request={}",
+                t0.elapsed().as_micros(),
+                self.alpha * fade,
+                self.callbacks,
+                request as u8,
+            ),
+        );
     }
 
     pub fn report(&self) -> String {
@@ -1724,7 +1720,7 @@ impl Backdrop {
         self.layer.commit();
         self.painted = Some(size);
         if from.is_none() {
-            eprintln!("commit surface=wallpaper {}x{} picture={} gpu={}", w, h, to.is_some(), on_gpu.is_some());
+            trace::commit_bare("wallpaper", format_args!("{}x{} picture={} gpu={}", w, h, to.is_some(), on_gpu.is_some()));
         }
     }
 
@@ -1987,22 +1983,15 @@ impl Shards {
         self.drawn = Some((self.t, (w, h)));
         self.commits += 1;
         self.render_us = render_us;
-        if crate::tracing() {
-            crate::trace(format!(
-                "commit surface=shards n={} t={}ms render_us={} damage=[{},{},{}x{}] buffer={}x{} clock={:.0} running={}",
-                self.commits,
-                now.duration_since(self.started).as_millis(),
-                render_us,
-                rect.x,
-                rect.y,
-                rect.w,
-                rect.h,
-                w,
-                h,
-                self.t,
-                self.running as u8,
-            ));
-        }
+        trace::commit(
+            "shards",
+            self.commits,
+            now.duration_since(self.started).as_millis(),
+            format_args!(
+                "render_us={} damage=[{},{},{}x{}] buffer={}x{} clock={:.0} running={}",
+                render_us, rect.x, rect.y, rect.w, rect.h, w, h, self.t, self.running as u8,
+            ),
+        );
     }
 }
 

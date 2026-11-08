@@ -25,7 +25,7 @@ use crate::motion::{Animated, Kind as Clock};
 use crate::services::devices::bluetooth::{ActionKind as BtAction, Ask as BtAsk};
 use crate::services::devices::{self, Op, audio, bluetooth as bt, network as net};
 use crate::services::power::{self, Action};
-use crate::services::notifications::now_ms;
+use crate::runtime::now_ms;
 use crate::services::ipad::Link;
 use crate::services::{display, theme};
 use crate::store::{Store, Topic};

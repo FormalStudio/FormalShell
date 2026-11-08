@@ -167,7 +167,7 @@ impl App {
                 app.launch_kept = None;
                 app.layer_kept = None;
                 if let Some(runtime) = &app.runtime {
-                    runtime.pool().submit(crate::trim_heap);
+                    runtime.pool().submit(crate::trace::trim_heap);
                 }
             }
             TimeoutAction::Drop
@@ -1177,15 +1177,11 @@ impl App {
         {
             handle.insert_idle(|_| {});
         }
-        if t0.elapsed().as_millis() >= 8 {
-            eprintln!(
-                "event loop: slow launcher t={}ms resolve_us={} layout_us={} total_us={}",
-                self.started.elapsed().as_millis(),
-                resolved.as_micros(),
-                laid.as_micros(),
-                t0.elapsed().as_micros()
-            );
-        }
+        crate::trace::slow(
+            "launcher",
+            t0.elapsed(),
+            format_args!("resolve_us={} layout_us={} total_us={}", resolved.as_micros(), laid.as_micros(), t0.elapsed().as_micros()),
+        );
         if animating {
             self.sync_join();
         }

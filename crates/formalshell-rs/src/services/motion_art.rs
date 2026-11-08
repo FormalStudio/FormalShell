@@ -392,7 +392,7 @@ async fn lookup(w: &Job, dir: &str, key: &str, token: &mut String) -> Result<Opt
 /// Drops cached artwork older than a month.
 async fn prune(dir: &str) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
-    let now = crate::services::notifications::now_ms() as f64;
+    let now = crate::runtime::now_ms() as f64;
     for e in entries.flatten() {
         let Ok(meta) = e.metadata() else { continue };
         let Some(mtime) = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()) else { continue };

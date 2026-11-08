@@ -72,6 +72,7 @@ paths = [
   "crates/formalshell-rs/src/surface.rs",
   "crates/formalshell-rs/src/wayland.rs",
   "crates/formalshell-rs/src/main.rs",
+  "crates/formalshell-rs/src/trace.rs",
   "crates/formalshell-rs/src/paths.rs",
   "crates/formalshell-rs/src/runtime/**",
   "crates/formalshell-rs/src/store.rs",

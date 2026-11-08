@@ -185,7 +185,7 @@ impl Dissolve {
         }
         let t0 = Instant::now();
         frame(self.from.data_as_u8_slice(), self.to.as_ref().map(Pixmap::data_as_u8_slice), (w, h), &self.order, self.progress(now), out);
-        eprintln!("dissolve frame {:.2}", t0.elapsed().as_secs_f64() * 1000.0);
+        crate::trace::dissolve_frame(t0.elapsed().as_secs_f64() * 1000.0);
         true
     }
 

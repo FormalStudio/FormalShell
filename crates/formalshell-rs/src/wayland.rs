@@ -434,7 +434,7 @@ impl App {
     }
 
     fn log(&self, what: &str) {
-        eprintln!("ipc t={}ms {what}", self.started.elapsed().as_millis());
+        crate::trace::ipc(self.started, what);
     }
 
     /// While a focused fullscreen window covers the bar's output the bar,
@@ -1250,9 +1250,7 @@ impl App {
         if let Some(topic) = topic {
             surfaces::changed(self, topic);
         }
-        if t0.elapsed().as_millis() >= 8 {
-            eprintln!("event loop: slow receive t={}ms diff {topic:?} us={}", self.started.elapsed().as_millis(), t0.elapsed().as_micros());
-        }
+        crate::trace::slow("receive", t0.elapsed(), format_args!("diff {topic:?} us={}", t0.elapsed().as_micros()));
     }
 
     /// One IPC call, answered here on the UI loop.
@@ -1260,9 +1258,7 @@ impl App {
         let t0 = Instant::now();
         self.log(&format!("{request:?}"));
         let reply = ipc::dispatch(self, request);
-        if t0.elapsed().as_millis() >= 8 {
-            eprintln!("event loop: slow call t={}ms {request:?} us={}", self.started.elapsed().as_millis(), t0.elapsed().as_micros());
-        }
+        crate::trace::slow("call", t0.elapsed(), format_args!("{request:?} us={}", t0.elapsed().as_micros()));
         reply
     }
 
@@ -1387,8 +1383,8 @@ impl App {
         }
         if !self.faces_warmed && self.bar_surface.as_ref().is_some_and(|s| s.mapped()) {
             self.faces_warmed = true;
-            crate::phase("bar mapped");
-            crate::thread_ticks();
+            crate::trace::phase("bar mapped");
+            crate::trace::thread_ticks();
             self.warm_faces();
             self.prefault_launcher();
             self.launcher_warm = true;
@@ -2188,7 +2184,7 @@ impl LayerShellHandler for App {
                 if let Some(s) = &mut self.bar_surface {
                     let first = !s.configured;
                     if first {
-                        crate::phase("bar configured");
+                        crate::trace::phase("bar configured");
                     }
                     s.configure(size.w, size.h);
                     // The frame drawn while this configure was on its way

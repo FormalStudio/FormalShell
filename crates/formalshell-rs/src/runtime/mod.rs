@@ -29,6 +29,11 @@ pub fn lower_priority() {
     }
 }
 
+/// Wall-clock milliseconds since the Unix epoch.
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
+}
+
 /// What reaches the UI thread.
 pub enum Msg {
     Diff(Diff),

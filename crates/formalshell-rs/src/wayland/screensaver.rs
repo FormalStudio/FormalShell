@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
@@ -41,6 +41,7 @@ use vello_cpu::kurbo::Rect;
 
 use super::App;
 use crate::motion::{Animated, Kind};
+use crate::runtime::now_ms;
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::services::screensaver as service;
 use crate::services::visualizer::Avail;
@@ -147,10 +148,6 @@ impl Default for Saver {
             chain: None,
         }
     }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
 }
 
 fn row_hash(row: &Row) -> u64 {
@@ -823,7 +820,7 @@ impl App {
             }
             self.log("screensaver unmapped");
             if let Some(runtime) = &self.runtime {
-                runtime.pool().submit(crate::trim_heap);
+                runtime.pool().submit(crate::trace::trim_heap);
             }
             // Dismissed inside the lock, the corner is still covered: the
             // unlock reports the end.

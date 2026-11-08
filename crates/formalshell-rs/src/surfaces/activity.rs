@@ -12,7 +12,8 @@ use fs_theme::theme::Theme;
 
 use crate::runtime::Runtime;
 use crate::services::activity::{self as service, Input};
-use crate::services::notifications::{self as notifications, Op, now_ms};
+use crate::runtime::now_ms;
+use crate::services::notifications::{self as notifications, Op};
 use crate::services::{compositor, menu};
 use crate::store::{self, Store};
 use crate::ui::el::Ring;

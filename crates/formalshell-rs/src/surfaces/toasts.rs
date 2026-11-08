@@ -43,7 +43,7 @@ use vello_cpu::kurbo::{Affine, Rect};
 use crate::motion::{Animated, Curve, Kind};
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::scroll::{self, Travel, Velocity};
-use crate::services::notifications::now_ms;
+use crate::runtime::now_ms;
 use crate::store::Store;
 use crate::surface::Surface;
 use crate::surfaces::activity::{self, Verb};

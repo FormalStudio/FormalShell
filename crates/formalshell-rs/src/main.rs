@@ -20,11 +20,11 @@ mod store;
 mod surface;
 mod surfaces;
 mod text;
+mod trace;
 mod ui;
 mod wayland;
 
-use std::sync::OnceLock;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use calloop::EventLoop;
 use calloop::channel::{self, Event};
@@ -34,14 +34,6 @@ use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
 
 use runtime::{Msg, Publisher, Runtime};
 use wayland::App;
-
-static STARTED: OnceLock<Instant> = OnceLock::new();
-
-/// One step of the cold start, on the same zero as every `t=` in the log.
-pub fn phase(name: &str) {
-    let t = STARTED.get().map_or(0, |s| s.elapsed().as_micros());
-    eprintln!("phase t={}.{:03}ms {name}", t / 1000, t % 1000);
-}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -62,22 +54,22 @@ fn main() {
     tune_malloc();
     // Every `t=` in the log counts from here; this line puts that zero on the
     // wall clock, so a cold start reads against the launcher's own stamp.
-    let started = *STARTED.get_or_init(Instant::now);
+    let started = trace::start();
     let epoch = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
     eprintln!("start epoch_us={}", epoch.as_micros());
     instance::acquire();
     own_process_group();
-    phase("instance");
+    trace::phase("instance");
     text::preload();
     wayland::lock::preload_login();
 
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
-    phase("wayland connect");
+    trace::phase("wayland connect");
     let (globals, queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
     let qh = queue.handle();
-    phase("wayland");
+    trace::phase("wayland");
     gpu::resolve(render_backend(), &conn, &globals);
-    phase("render");
+    trace::phase("render");
 
     let mut event_loop: EventLoop<'static, App> = EventLoop::try_new().expect("event loop");
     let handle = event_loop.handle();
@@ -85,7 +77,7 @@ fn main() {
 
     let mut app = App::new(&globals, &qh, started, motion_scale());
     app.warm_bar_faces();
-    phase("app");
+    trace::phase("app");
 
     let (sender, inbox) = channel::channel::<Msg>();
     handle
@@ -100,7 +92,7 @@ fn main() {
         ipc::start(ctx);
     });
     app.runtime = Some(runtime);
-    phase("runtime");
+    trace::phase("runtime");
     app.set_handle(handle.clone());
     gpu::watch(&handle, App::gpu_up);
     ipc::listen(&handle);
@@ -111,15 +103,12 @@ fn main() {
         // A dispatch that ran the thread past half a frame is one line, read
         // off the thread's own CPU clock so the wait for events is not counted.
         let cpu = thread_cpu_us();
-        if cpu - cpu_mark >= 8000 {
-            eprintln!("event loop: slow dispatch t={}ms cpu_us={}", started.elapsed().as_millis(), cpu - cpu_mark);
-        }
+        let ran = Duration::from_micros((cpu - cpu_mark).max(0) as u64);
+        trace::slow("dispatch", ran, format_args!("cpu_us={}", ran.as_micros()));
         // A present that holds the thread past half a frame is one line.
         let t0 = Instant::now();
         app.present();
-        if t0.elapsed().as_millis() >= 8 {
-            eprintln!("event loop: slow present t={}ms present_us={}", started.elapsed().as_millis(), t0.elapsed().as_micros());
-        }
+        trace::slow("present", t0.elapsed(), format_args!("present_us={}", t0.elapsed().as_micros()));
         if app.exit {
             signal.stop();
         }
@@ -130,23 +119,6 @@ fn main() {
     if let Err(err) = ended {
         eprintln!("event loop: {err}");
     }
-}
-
-/// Every thread's CPU time so far, in clock ticks, for reading what ran
-/// during the cold start.
-pub fn thread_ticks() {
-    let Ok(tasks) = std::fs::read_dir("/proc/self/task") else { return };
-    let mut out = Vec::new();
-    for task in tasks.flatten() {
-        let comm = std::fs::read_to_string(task.path().join("comm")).unwrap_or_default();
-        let stat = std::fs::read_to_string(task.path().join("stat")).unwrap_or_default();
-        // utime and stime, the 14th and 15th fields: 12th and 13th past the
-        // comm's closing paren.
-        let fields: Vec<&str> = stat.rsplit_once(") ").map(|(_, rest)| rest.split(' ').collect()).unwrap_or_default();
-        let tick = |i: usize| fields.get(i).and_then(|f| f.parse::<u64>().ok()).unwrap_or(0);
-        out.push(format!("{}={}", comm.trim(), tick(11) + tick(12)));
-    }
-    eprintln!("phase threads {}", out.join(" "));
 }
 
 /// glibc's mmap threshold climbs to 32 MiB once a large block is freed, and
@@ -176,30 +148,6 @@ fn tune_malloc() {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 256 * 1024);
         libc::mallopt(libc::M_ARENA_MAX, 2);
     }
-}
-
-/// Hands freed heap pages back to the kernel, after a large surface goes.
-pub fn trim_heap() {
-    #[cfg(target_env = "gnu")]
-    // SAFETY: malloc_trim is thread-safe.
-    unsafe {
-        libc::malloc_trim(0);
-    }
-}
-
-/// `FS_TRACE` set: every commit is a line on stderr, which the smoke rig's
-/// budget legs read. Unset, a shell left running writes nothing per frame.
-pub fn tracing() -> bool {
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("FS_TRACE").is_some())
-}
-
-/// One trace line in one write: unbuffered stderr would take a syscall
-/// per formatted piece.
-pub fn trace(mut line: String) {
-    use std::io::Write;
-    line.push('\n');
-    let _ = std::io::stderr().write_all(line.as_bytes());
 }
 
 /// CPU time the calling thread has run, in microseconds.

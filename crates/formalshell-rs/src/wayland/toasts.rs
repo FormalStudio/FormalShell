@@ -11,7 +11,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 use super::App;
 use crate::motion::Kind;
 use crate::scroll::Travel;
-use crate::services::notifications::now_ms;
+use crate::runtime::now_ms;
 use crate::store::Topic;
 use crate::surface::{Backend, Surface};
 use crate::surfaces;

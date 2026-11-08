@@ -29,7 +29,7 @@ use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, future};
 
 use super::proc;
-use crate::runtime::Ctx;
+use crate::runtime::{Ctx, now_ms};
 use crate::scene::Bitmap;
 use crate::store;
 
@@ -139,10 +139,6 @@ enum Event {
     Imported(u64, String, fs_screensaver::urilist::ImageFile),
     Cmd(Cmd),
     Settled,
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
 }
 
 pub async fn run(ctx: Ctx) {
