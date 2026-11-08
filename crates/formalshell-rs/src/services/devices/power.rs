@@ -12,12 +12,13 @@ use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
 use async_io::Timer;
+use async_lock::OnceCell;
 use futures_lite::FutureExt;
 
 use fs_system::dualsense::{self, Supply};
 use fs_system::power::model::Thresholds;
 use fs_types::Percent;
-use fs_upower::{Change, Device, DeviceState, PowerProfiles, Profile, UPower};
+use fs_upower::{Device, DeviceState, PowerProfiles, Profile, Snapshot, UPower};
 use futures_lite::StreamExt;
 
 use crate::runtime::Ctx;
@@ -85,54 +86,30 @@ fn dualsense(devices: &BTreeMap<String, Device>) -> Option<Supply> {
     Some(Supply::new(d.percentage.round(), status_word(d.state)))
 }
 
-struct Seen {
-    devices: BTreeMap<String, Device>,
-    display: Option<Device>,
-    on_battery: bool,
-}
-
-impl Seen {
-    fn power(&self) -> Power {
-        Power {
-            battery: self.display.as_ref().and_then(|d| battery(d, self.devices.values().find(|d| d.is_laptop_battery()))),
-            on_battery: self.on_battery,
-            dualsense: dualsense(&self.devices),
-        }
+fn power(snapshot: Snapshot) -> Power {
+    let devices: BTreeMap<String, Device> = snapshot.devices.into_iter().map(|d| (d.path.to_string(), d)).collect();
+    Power {
+        battery: battery(&snapshot.display, devices.values().find(|d| d.is_laptop_battery())),
+        on_battery: snapshot.on_battery,
+        dualsense: dualsense(&devices),
     }
 }
 
 pub async fn run(ctx: Ctx) {
     let publish = |p| ctx.publish(store::Diff::Devices(super::Diff::Power(p)));
-    let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish(Power::default()) };
-    let Ok(upower) = UPower::connect(&conn).await else { return publish(Power::default()) };
-    // Subscribed before the snapshot, so nothing falls between the two.
-    let changes = upower.changes().await;
-    let Ok(snap) = upower.snapshot().await else { return publish(Power::default()) };
-    let mut seen = Seen {
-        devices: snap.devices.into_iter().map(|d| (d.path.to_string(), d)).collect(),
-        display: Some(snap.display),
-        on_battery: snap.on_battery,
+    let upower = match crate::services::bus::system().await {
+        Ok(conn) => UPower::connect(&conn).await,
+        Err(err) => Err(err),
     };
-    let mut shown = seen.power();
-    publish(shown.clone());
-    let Ok(changes) = changes else { return };
-    let mut changes = std::pin::pin!(changes);
-    while let Some(change) = changes.next().await {
-        match change {
-            Change::DeviceAdded(d) | Change::Device(d) => {
-                seen.devices.insert(d.path.to_string(), d);
-            }
-            Change::DeviceRemoved(path) => {
-                seen.devices.remove(path.as_str());
-            }
-            Change::Display(d) => seen.display = Some(d),
-            Change::OnBattery(on) => seen.on_battery = on,
-        }
+    let Ok(upower) = upower else { return publish(Power::default()) };
+    let mut shown = None;
+    let mut changes = std::pin::pin!(upower.changes());
+    while let Some(snapshot) = changes.next().await {
         // A signal for a property the view leaves out reaches no one.
-        let power = seen.power();
-        if power != shown {
-            shown = power;
-            publish(shown.clone());
+        let now = snapshot.map_or_else(Power::default, power);
+        if shown.as_ref() != Some(&now) {
+            shown = Some(now.clone());
+            publish(now);
         }
     }
 }
@@ -198,16 +175,25 @@ pub async fn lights(ctx: Ctx) {
     }
 }
 
+static PROFILES: OnceCell<PowerProfiles> = OnceCell::new();
+
+/// The one power-profiles-daemon client the shell keeps, for the watch, the
+/// profile group and overnight alike.
+pub async fn profiles() -> zbus::Result<PowerProfiles> {
+    PROFILES
+        .get_or_try_init(|| async { PowerProfiles::connect(&crate::services::bus::system().await?).await })
+        .await
+        .cloned()
+}
+
 /// power-profiles-daemon's active profile and the ones it offers, none
 /// while the daemon is not on the bus.
 pub async fn run_profiles(ctx: Ctx) {
     let publish = |p| ctx.publish(store::Diff::Devices(super::Diff::Profiles(p)));
-    let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish(None) };
-    let Ok(profiles) = PowerProfiles::connect(&conn).await else { return publish(None) };
-    let Ok(changes) = profiles.changes().await else { return publish(None) };
-    let mut changes = std::pin::pin!(changes);
+    let Ok(profiles) = profiles().await else { return publish(None) };
+    let mut changes = std::pin::pin!(profiles.changes());
     while let Some(state) = changes.next().await {
-        publish(Some(state));
+        publish(state);
     }
 }
 
@@ -215,8 +201,7 @@ pub async fn run_profiles(ctx: Ctx) {
 /// property, and with it the group, where it was.
 pub fn set_profile(ctx: &Ctx, profile: Profile) {
     ctx.spawn(async move {
-        let Ok(conn) = crate::services::bus::system().await else { return };
-        let set = match PowerProfiles::connect(&conn).await {
+        let set = match profiles().await {
             Ok(profiles) => profiles.set_active(profile).await,
             Err(err) => Err(err),
         };

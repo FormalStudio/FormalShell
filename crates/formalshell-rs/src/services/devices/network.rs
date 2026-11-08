@@ -17,7 +17,7 @@ use async_io::Timer;
 use fs_devices::network::speedtest;
 use fs_network::{ConnectError, DeviceKind, NetworkManager, Snapshot};
 use fs_types::{Fraction, Percent};
-use futures_lite::{FutureExt, StreamExt};
+use futures_lite::{FutureExt, StreamExt, future};
 
 use crate::runtime::Ctx;
 use crate::services::info;
@@ -302,6 +302,8 @@ pub async fn run(ctx: Ctx) {
     INNER.with_borrow_mut(|i| i.ctx = Some(ctx.clone()));
     ctx.spawn(holds(ctx.clone()));
     let publish_none = || ctx.publish(store::Diff::Devices(super::Diff::Network(Network::default())));
+    // A connect awaits NetworkManager's replies while its StateChanged
+    // stream waits, so NetworkManager gets a connection of its own.
     let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish_none() };
     let nm = match NetworkManager::connect(&conn, fs_auth::pam::current_user()).await {
         Ok(nm) => nm,
@@ -310,41 +312,44 @@ pub async fn run(ctx: Ctx) {
             return publish_none();
         }
     };
-    let mut changes = match nm.changes().await {
-        Ok(changes) => Box::pin(changes),
-        Err(err) => {
-            eprintln!("network: {err}");
-            return publish_none();
-        }
-    };
-    INNER.with_borrow_mut(|i| i.nm = Some(nm));
+    let mut changes = std::pin::pin!(nm.changes());
     let mut online = false;
-    let mut settling: Option<std::rc::Rc<std::cell::Cell<bool>>> = None;
-    while let Some(snapshot) = changes.next().await {
-        let up = snapshot.devices.iter().any(|d| d.connected());
+    // DHCP and DNS on a fresh association are not up yet, so the polls that
+    // went stale offline go again once this fires; dropped when the link
+    // goes down first.
+    let mut settling: Option<Timer> = None;
+    loop {
+        let next = match settling.as_mut() {
+            Some(timer) => {
+                future::or(async { Some(changes.next().await) }, async {
+                    timer.await;
+                    None
+                })
+                .await
+            }
+            None => Some(changes.next().await),
+        };
+        let snapshot = match next {
+            Some(Some(snapshot)) => snapshot,
+            Some(None) => return,
+            None => {
+                settling = None;
+                for source in [Source::Weather, Source::Github, Source::Tailscale, Source::SystemUpdate] {
+                    info::kick(source);
+                }
+                continue;
+            }
+        };
+        let up = snapshot.as_ref().is_some_and(|s| s.devices.iter().any(|d| d.connected()));
         if up != online {
             online = up;
-            if let Some(stale) = settling.take() {
-                stale.set(true);
-            }
-            if up {
-                // DHCP and DNS on a fresh association are not up yet, so the
-                // polls that went stale offline go again after a settle.
-                let cancelled = std::rc::Rc::new(std::cell::Cell::new(false));
-                settling = Some(cancelled.clone());
-                ctx.spawn(async move {
-                    Timer::after(RECONNECT_SETTLE).await;
-                    if !cancelled.get() {
-                        for source in [Source::Weather, Source::Github, Source::Tailscale, Source::SystemUpdate] {
-                            info::kick(source);
-                        }
-                    }
-                });
-            }
+            settling = up.then(|| Timer::after(RECONNECT_SETTLE));
         }
         INNER.with_borrow_mut(|i| {
             let was = connected_ssid(i);
-            i.snapshot = Some(snapshot);
+            // Actions are refused while NetworkManager is off the bus.
+            i.nm = snapshot.is_some().then(|| nm.clone());
+            i.snapshot = snapshot;
             if connected_ssid(i) != was {
                 i.reveal = Reveal::Idle;
             }
@@ -394,10 +399,10 @@ fn begin(ctx: &Ctx, kind: ActionKind, ssid: &str) -> bool {
     ctx.spawn(async move {
         Timer::after(ACTION_TIMEOUT).await;
         let timed_out = INNER.with_borrow_mut(|i| {
-            if i.generation != generation || i.action.is_none() {
+            if i.generation != generation {
                 return false;
             }
-            let (_, ssid) = i.action.take().unwrap_or((kind, String::new()));
+            let Some((_, ssid)) = i.action.take() else { return false };
             i.failure = Some(Failure { ssid, text: "Timed out".into(), secret: false });
             true
         });

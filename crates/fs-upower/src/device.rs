@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
+use fs_dbus::{Props, prop};
 use fs_types::Percent;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::zvariant::OwnedObjectPath;
 
 /// `org.freedesktop.UPower.Device.Type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,31 +110,28 @@ impl Device {
         self.kind == DeviceKind::Battery && self.power_supply
     }
 
-    pub(crate) fn from_properties(
-        path: OwnedObjectPath,
-        props: &HashMap<String, OwnedValue>,
-    ) -> Self {
+    pub(crate) fn from_properties(path: OwnedObjectPath, props: &Props) -> Self {
         let seconds = |name| {
-            let wire: i64 = get(props, name).unwrap_or(0);
+            let wire: i64 = prop(props, name).unwrap_or(0);
             u64::try_from(wire)
                 .ok()
                 .filter(|s| *s > 0)
                 .map(Duration::from_secs)
         };
-        let capacity: f64 = get(props, "Capacity").unwrap_or(0.0);
+        let capacity: f64 = prop(props, "Capacity").unwrap_or(0.0);
         Self {
             path,
-            kind: DeviceKind::from_wire(get(props, "Type").unwrap_or(0)),
-            state: DeviceState::from_wire(get(props, "State").unwrap_or(0)),
-            percentage: Percent::from_percent(get(props, "Percentage").unwrap_or(0.0)),
-            is_present: get(props, "IsPresent").unwrap_or(false),
-            power_supply: get(props, "PowerSupply").unwrap_or(false),
-            model: get(props, "Model").unwrap_or_default(),
-            icon_name: get(props, "IconName").unwrap_or_default(),
-            native_path: get(props, "NativePath").unwrap_or_default(),
-            energy: get(props, "Energy").unwrap_or(0.0),
-            energy_full: get(props, "EnergyFull").unwrap_or(0.0),
-            energy_rate: get(props, "EnergyRate").unwrap_or(0.0),
+            kind: DeviceKind::from_wire(prop(props, "Type").unwrap_or(0)),
+            state: DeviceState::from_wire(prop(props, "State").unwrap_or(0)),
+            percentage: Percent::from_percent(prop(props, "Percentage").unwrap_or(0.0)),
+            is_present: prop(props, "IsPresent").unwrap_or(false),
+            power_supply: prop(props, "PowerSupply").unwrap_or(false),
+            model: prop(props, "Model").unwrap_or_default(),
+            icon_name: prop(props, "IconName").unwrap_or_default(),
+            native_path: prop(props, "NativePath").unwrap_or_default(),
+            energy: prop(props, "Energy").unwrap_or(0.0),
+            energy_full: prop(props, "EnergyFull").unwrap_or(0.0),
+            energy_rate: prop(props, "EnergyRate").unwrap_or(0.0),
             time_to_empty: seconds("TimeToEmpty"),
             time_to_full: seconds("TimeToFull"),
             capacity: (capacity > 0.0).then(|| Percent::from_percent(capacity)),
@@ -142,19 +139,12 @@ impl Device {
     }
 }
 
-pub(crate) fn get<T>(props: &HashMap<String, OwnedValue>, name: &str) -> Option<T>
-where
-    T: TryFrom<OwnedValue>,
-{
-    props.get(name)?.try_clone().ok()?.try_into().ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use zbus::zvariant::Value;
 
-    fn props(entries: &[(&str, Value<'_>)]) -> HashMap<String, OwnedValue> {
+    fn props(entries: &[(&str, Value<'_>)]) -> Props {
         entries
             .iter()
             .map(|(k, v)| ((*k).to_owned(), v.try_to_owned().unwrap()))
@@ -193,7 +183,7 @@ mod tests {
 
     #[test]
     fn missing_properties_read_as_the_empty_device() {
-        let d = Device::from_properties(path(), &HashMap::new());
+        let d = Device::from_properties(path(), &Props::new());
         assert_eq!(d.kind, DeviceKind::Unknown);
         assert_eq!(d.state, DeviceState::Unknown);
         assert!(!d.is_laptop_battery());

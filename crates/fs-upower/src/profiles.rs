@@ -1,9 +1,8 @@
-use futures_lite::{Stream, StreamExt, stream};
+use fs_dbus::{Props, Watched, prop};
+use futures_lite::Stream;
 use zbus::message::Type;
-use zbus::zvariant::OwnedValue;
-use zbus::{Connection, MatchRule, MessageStream, proxy};
-
-use crate::device::get;
+use zbus::proxy::CacheProperties;
+use zbus::{Connection, MatchRule, proxy};
 
 const SERVICE: &str = "org.freedesktop.UPower.PowerProfiles";
 
@@ -19,7 +18,7 @@ trait Daemon {
     #[zbus(property)]
     fn set_active_profile(&self, profile: &str) -> zbus::Result<()>;
     #[zbus(property)]
-    fn profiles(&self) -> zbus::Result<Vec<std::collections::HashMap<String, OwnedValue>>>;
+    fn profiles(&self) -> zbus::Result<Vec<Props>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,11 +68,10 @@ pub struct PowerProfiles {
 }
 
 impl PowerProfiles {
-    /// Bus-activates power-profiles-daemon when it is not running yet.
     pub async fn connect(conn: &Connection) -> zbus::Result<Self> {
         Ok(Self {
             conn: conn.clone(),
-            daemon: DaemonProxy::new(conn).await?,
+            daemon: DaemonProxy::builder(conn).cache_properties(CacheProperties::No).build().await?,
         })
     }
 
@@ -93,31 +91,35 @@ impl PowerProfiles {
     }
 
     /// The current state, then the new one after every change of
-    /// `ActiveProfile` or `Profiles`. The match rule is installed before the
-    /// first read, so no change slips between the two.
-    pub async fn changes(&self) -> zbus::Result<impl Stream<Item = ProfilesState> + use<>> {
-        let rule = MatchRule::builder()
+    /// `ActiveProfile` or `Profiles`. None while power-profiles-daemon is not
+    /// on the bus, and a whole read again when it returns.
+    pub fn changes(&self) -> impl Stream<Item = Option<ProfilesState>> + use<> {
+        fs_dbus::watch(self.conn.clone(), Watch(self.clone()))
+    }
+}
+
+struct Watch(PowerProfiles);
+
+impl Watched for Watch {
+    type State = ProfilesState;
+    type View = ProfilesState;
+    const SERVICE: &'static str = SERVICE;
+
+    fn rule(&self) -> zbus::Result<MatchRule<'static>> {
+        Ok(MatchRule::builder()
             .msg_type(Type::Signal)
             .sender(SERVICE)?
             .interface("org.freedesktop.DBus.Properties")?
             .member("PropertiesChanged")?
-            .build();
-        let messages = MessageStream::for_match_rule(rule, &self.conn, None).await?;
-        let first = read_state(&self.daemon).await?;
-        let state = (self.daemon.clone(), messages, first.clone());
-        let later = stream::unfold(state, |(daemon, mut messages, mut last)| async move {
-            loop {
-                messages.next().await?.ok()?;
-                let Ok(now) = read_state(&daemon).await else {
-                    continue;
-                };
-                if now != last {
-                    last = now.clone();
-                    return Some((now, (daemon, messages, last)));
-                }
-            }
-        });
-        Ok(stream::once(first).chain(later))
+            .build())
+    }
+
+    async fn read(&self) -> zbus::Result<ProfilesState> {
+        self.0.state().await
+    }
+
+    fn view(&self, state: &ProfilesState) -> ProfilesState {
+        state.clone()
     }
 }
 
@@ -129,7 +131,7 @@ async fn read_state(daemon: &DaemonProxy<'_>) -> zbus::Result<ProfilesState> {
         .profiles()
         .await?
         .iter()
-        .filter_map(|entry| get::<String>(entry, "Profile"))
+        .filter_map(|entry| prop::<String>(entry, "Profile"))
         .filter_map(|name| Profile::from_wire(&name))
         .collect();
     Ok(ProfilesState { active, available })

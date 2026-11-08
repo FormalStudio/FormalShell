@@ -2,11 +2,11 @@
 # One service crate's tests against its real daemon, on a Linux host
 # (dev/remote.sh check <name> runs it on g815, or on the VM rig).
 #
-#   dev/check.sh fs-tray|fs-notifd|fs-mpris
+#   dev/check.sh fs-tray|fs-notifd|fs-mpris|fs-dbus
 #   dev/check.sh build <crate> <dir>     on the rig: a VM check's binaries into <dir>
 #   FS_CHECK_BIN=<dir> dev/check.sh fs-auth|fs-audio|fs-bluez|fs-network|fs-upower
 #
-# The first three start their own dbus-daemon (and fs-notifd the real
+# The first four start their own dbus-daemon (and fs-notifd the real
 # notify-send) on a private session bus; dbus-run-session keeps anything
 # they miss off the host's. fs-auth, fs-audio, fs-bluez, fs-network and
 # fs-upower drive real system daemons (PAM and polkit, PipeWire, BlueZ,
@@ -63,7 +63,7 @@ run_tests() {
 }
 
 case "$1" in
-  fs-tray|fs-notifd|fs-mpris)
+  fs-tray|fs-notifd|fs-mpris|fs-dbus)
     for tool in dbus-daemon dbus-run-session; do
       command -v "$tool" >/dev/null 2>&1 || fail "$1: $tool is not on PATH; install the openSUSE package dbus-1-daemon"
     done
@@ -78,7 +78,7 @@ case "$1" in
     skip=()
     ;;
   *)
-    fail "$1: no such check (fs-tray, fs-notifd, fs-mpris; on the VM rig: $vm_checks)"
+    fail "$1: no such check (fs-tray, fs-notifd, fs-mpris, fs-dbus; on the VM rig: $vm_checks)"
     ;;
 esac
 

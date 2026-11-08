@@ -888,6 +888,7 @@ dependencies = [
  "fs-auth",
  "fs-bluez",
  "fs-chrome",
+ "fs-dbus",
  "fs-devices",
  "fs-info",
  "fs-js",
@@ -992,6 +993,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-dbus"
+version = "0.2.0"
+dependencies = [
+ "async-io",
+ "futures-lite",
+ "zbus",
+]
+
+[[package]]
 name = "fs-devices"
 version = "0.2.0"
 dependencies = [
@@ -1082,6 +1092,7 @@ name = "fs-network"
 version = "0.2.0"
 dependencies = [
  "async-io",
+ "fs-dbus",
  "fs-types",
  "futures-lite",
  "zbus",
@@ -1132,6 +1143,7 @@ name = "fs-tray"
 version = "0.2.0"
 dependencies = [
  "async-io",
+ "fs-dbus",
  "futures-util",
  "serde",
  "zbus",
@@ -1149,6 +1161,7 @@ name = "fs-upower"
 version = "0.2.0"
 dependencies = [
  "async-io",
+ "fs-dbus",
  "fs-types",
  "futures-lite",
  "zbus",

@@ -1,18 +1,17 @@
-use std::collections::HashMap;
-
-use futures_lite::{Stream, StreamExt, stream};
+use fs_dbus::{Props, Watched, prop};
+use futures_lite::Stream;
 use zbus::fdo::PropertiesProxy;
 use zbus::message::Type;
 use zbus::names::InterfaceName;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
-use zbus::{Connection, MatchRule, MessageStream, proxy};
+use zbus::proxy::CacheProperties;
+use zbus::zvariant::OwnedObjectPath;
+use zbus::{Connection, MatchRule, Message, proxy};
 
 use crate::device::Device;
 
 const SERVICE: &str = "org.freedesktop.UPower";
 const ROOT_PATH: &str = "/org/freedesktop/UPower";
 const DEVICE_INTERFACE: &str = "org.freedesktop.UPower.Device";
-const DISPLAY_DEVICE_PATH: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
 
 #[proxy(
     interface = "org.freedesktop.UPower",
@@ -39,17 +38,6 @@ pub struct Snapshot {
     pub on_battery: bool,
 }
 
-/// One change out of [`UPower::changes`]. Each carries the value after the
-/// change, so the consumer replaces rather than patches.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Change {
-    DeviceAdded(Device),
-    DeviceRemoved(OwnedObjectPath),
-    Device(Device),
-    Display(Device),
-    OnBattery(bool),
-}
-
 #[derive(Clone)]
 pub struct UPower {
     conn: Connection,
@@ -57,122 +45,124 @@ pub struct UPower {
 }
 
 impl UPower {
-    /// Bus-activates upowerd when it is not running yet.
     pub async fn connect(conn: &Connection) -> zbus::Result<Self> {
-        let root = RootProxy::new(conn).await?;
-        Ok(Self {
-            conn: conn.clone(),
-            root,
-        })
-    }
-
-    pub async fn devices(&self) -> zbus::Result<Vec<Device>> {
-        let mut out = Vec::new();
-        for path in self.root.enumerate_devices().await? {
-            // A device can vanish between the enumerate and the read.
-            if let Ok(device) = read_device(&self.conn, &mut Props::new(), path).await {
-                out.push(device);
-            }
-        }
-        Ok(out)
-    }
-
-    pub async fn display_device(&self) -> zbus::Result<Device> {
-        read_device(&self.conn, &mut Props::new(), self.root.get_display_device().await?).await
-    }
-
-    pub async fn on_battery(&self) -> zbus::Result<bool> {
-        self.root.on_battery().await
+        let root = RootProxy::builder(conn).cache_properties(CacheProperties::No).build().await?;
+        Ok(Self { conn: conn.clone(), root })
     }
 
     pub async fn snapshot(&self) -> zbus::Result<Snapshot> {
-        Ok(Snapshot {
-            devices: self.devices().await?,
-            display: self.display_device().await?,
-            on_battery: self.on_battery().await?,
-        })
+        Ok(self.read().await?.snapshot())
     }
 
-    /// Device added and removed, `OnBattery`, and every property change of any
-    /// device, until the connection closes. The match rule is installed
-    /// before this resolves, so nothing between the call and the first poll
-    /// is lost. A device's properties are read whole once; after that each
-    /// `PropertiesChanged` is applied from its own payload, with no call back.
-    pub async fn changes(&self) -> zbus::Result<impl Stream<Item = Change> + use<>> {
-        let rule = MatchRule::builder()
-            .msg_type(Type::Signal)
-            .sender(SERVICE)?
-            .build();
-        let messages = MessageStream::for_match_rule(rule, &self.conn, None).await?;
-        let conn = self.conn.clone();
-        Ok(stream::unfold((conn, messages, Props::new()), |(conn, mut messages, mut known)| async move {
-            loop {
-                let message = messages.next().await?.ok()?;
-                if let Some(change) = classify(&conn, &mut known, &message).await {
-                    return Some((change, (conn, messages, known)));
-                }
+    /// The snapshot, then a new one after every change to it: devices added
+    /// and removed, `OnBattery`, and any device's properties, which are
+    /// applied from the signal's own payload with no call back. None while
+    /// upowerd is not on the bus, and a whole read again when it returns.
+    pub fn changes(&self) -> impl Stream<Item = Option<Snapshot>> + use<> {
+        fs_dbus::watch(self.conn.clone(), Watch(self.clone()))
+    }
+
+    async fn read(&self) -> zbus::Result<Reading> {
+        let mut devices = Vec::new();
+        for path in self.root.enumerate_devices().await? {
+            // A device can vanish between the enumerate and the read.
+            if let Ok(props) = self.props(&path).await {
+                devices.push((path, props));
             }
-        }))
+        }
+        let display = self.root.get_display_device().await?;
+        let display = (display.clone(), self.props(&display).await?);
+        Ok(Reading { devices, display, on_battery: self.root.on_battery().await? })
+    }
+
+    async fn props(&self, path: &OwnedObjectPath) -> zbus::Result<Props> {
+        let props = PropertiesProxy::builder(&self.conn).destination(SERVICE)?.path(path.clone())?.build().await?;
+        Ok(props.get_all(InterfaceName::from_static_str_unchecked(DEVICE_INTERFACE)).await?)
     }
 }
 
-/// Every device's properties as last read or changed, by path.
-type Props = HashMap<String, HashMap<String, OwnedValue>>;
+/// Every device's properties as last read or changed.
+struct Reading {
+    devices: Vec<(OwnedObjectPath, Props)>,
+    display: (OwnedObjectPath, Props),
+    on_battery: bool,
+}
 
-async fn classify(conn: &Connection, known: &mut Props, message: &zbus::Message) -> Option<Change> {
-    let header = message.header();
-    let member = header.member()?.as_str();
-    let path = header.path()?.clone();
-    match (header.interface()?.as_str(), member) {
-        ("org.freedesktop.UPower", "DeviceAdded") => {
-            let added: OwnedObjectPath = message.body().deserialize().ok()?;
-            read_device(conn, known, added).await.ok().map(Change::DeviceAdded)
+impl Reading {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            devices: self.devices.iter().map(|(path, props)| Device::from_properties(path.clone(), props)).collect(),
+            display: Device::from_properties(self.display.0.clone(), &self.display.1),
+            on_battery: self.on_battery,
         }
-        ("org.freedesktop.UPower", "DeviceRemoved") => {
-            let removed: OwnedObjectPath = message.body().deserialize().ok()?;
-            known.remove(removed.as_str());
-            Some(Change::DeviceRemoved(removed))
-        }
-        ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
-            let (_, changed, invalidated): (String, HashMap<String, OwnedValue>, Vec<String>) =
-                message.body().deserialize().ok()?;
-            if path.as_str() == ROOT_PATH {
-                return match crate::device::get::<bool>(&changed, "OnBattery") {
-                    Some(on) => Some(Change::OnBattery(on)),
-                    None if invalidated.iter().any(|k| k == "OnBattery") => {
-                        RootProxy::new(conn).await.ok()?.on_battery().await.ok().map(Change::OnBattery)
-                    }
-                    None => None,
+    }
+
+    /// One signal applied in place; false when UPower has to be read again
+    /// (a device added, or a property invalidated rather than sent).
+    fn apply(&mut self, message: &Message) -> bool {
+        let header = message.header();
+        let (Some(interface), Some(member), Some(path)) = (header.interface(), header.member(), header.path()) else {
+            return true;
+        };
+        match (interface.as_str(), member.as_str()) {
+            ("org.freedesktop.UPower", "DeviceAdded") => false,
+            ("org.freedesktop.UPower", "DeviceRemoved") => match message.body().deserialize::<OwnedObjectPath>() {
+                Ok(removed) => {
+                    self.devices.retain(|(path, _)| *path != removed);
+                    true
+                }
+                Err(_) => false,
+            },
+            ("org.freedesktop.DBus.Properties", "PropertiesChanged") => {
+                let Ok((sent_on, changed, invalidated)) = message.body().deserialize::<(String, Props, Vec<String>)>() else {
+                    return false;
                 };
-            }
-            let device = match known.get_mut(path.as_str()) {
-                Some(props) if invalidated.is_empty() => {
-                    props.extend(changed);
-                    Device::from_properties(path.clone().into(), props)
+                if !invalidated.is_empty() {
+                    return false;
                 }
-                _ => read_device(conn, known, path.clone().into()).await.ok()?,
-            };
-            Some(if path.as_str() == DISPLAY_DEVICE_PATH {
-                Change::Display(device)
-            } else {
-                Change::Device(device)
-            })
+                if path.as_str() == ROOT_PATH {
+                    if let Some(on) = prop::<bool>(&changed, "OnBattery") {
+                        self.on_battery = on;
+                    }
+                    return true;
+                }
+                if sent_on != DEVICE_INTERFACE {
+                    return true;
+                }
+                let device = std::iter::once(&mut self.display).chain(self.devices.iter_mut()).find(|(p, _)| p.as_str() == path.as_str());
+                match device {
+                    Some((_, props)) => {
+                        props.extend(changed);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            _ => true,
         }
-        _ => None,
     }
 }
 
-async fn read_device(conn: &Connection, known: &mut Props, path: OwnedObjectPath) -> zbus::Result<Device> {
-    let props = PropertiesProxy::builder(conn)
-        .destination(SERVICE)?
-        .path(path.clone())?
-        .build()
-        .await?;
-    let all = props
-        .get_all(InterfaceName::from_static_str_unchecked(DEVICE_INTERFACE))
-        .await?;
-    let device = Device::from_properties(path.clone(), &all);
-    known.insert(path.to_string(), all);
-    Ok(device)
-}
+struct Watch(UPower);
 
+impl Watched for Watch {
+    type State = Reading;
+    type View = Snapshot;
+    const SERVICE: &'static str = SERVICE;
+
+    fn rule(&self) -> zbus::Result<MatchRule<'static>> {
+        Ok(MatchRule::builder().msg_type(Type::Signal).sender(SERVICE)?.build())
+    }
+
+    async fn read(&self) -> zbus::Result<Reading> {
+        self.0.read().await
+    }
+
+    fn apply(&self, state: &mut Reading, signal: &Message) -> bool {
+        state.apply(signal)
+    }
+
+    fn view(&self, state: &Reading) -> Snapshot {
+        state.snapshot()
+    }
+}

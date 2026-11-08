@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use async_io::{Timer, block_on};
 use futures_lite::{Stream, StreamExt, future};
-use fs_upower::{Change, DeviceKind, DeviceState, PowerProfiles, Profile, UPower};
+use fs_upower::{DeviceKind, DeviceState, PowerProfiles, Profile, Snapshot, UPower};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 use zbus::{Connection, connection, interface};
@@ -58,8 +58,8 @@ fn real_power_profiles_switch_and_stream() {
         assert!(start.available.contains(&Profile::Balanced));
         assert!(start.available.contains(&Profile::PowerSaver));
 
-        let mut changes = Box::pin(profiles.changes().await.unwrap());
-        assert_eq!(next("the initial state", &mut changes).await, start);
+        let mut changes = Box::pin(profiles.changes());
+        assert_eq!(next("the initial state", &mut changes).await, Some(start.clone()));
 
         let other = if start.active == Profile::PowerSaver {
             Profile::Balanced
@@ -67,14 +67,14 @@ fn real_power_profiles_switch_and_stream() {
             Profile::PowerSaver
         };
         profiles.set_active(other).await.unwrap();
-        let changed = next("the profile change", &mut changes).await;
+        let changed = next("the profile change", &mut changes).await.unwrap();
         assert_eq!(changed.active, other);
         assert_eq!(profiles.state().await.unwrap().active, other);
 
         profiles.set_active(start.active).await.unwrap();
         assert_eq!(
-            next("the change back", &mut changes).await.active,
-            start.active
+            next("the change back", &mut changes).await.map(|s| s.active),
+            Some(start.active)
         );
 
         if !start.has_performance() {
@@ -91,12 +91,19 @@ const DISPLAY: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
 
 struct FakeRoot {
     on_battery: bool,
+    devices: Vec<OwnedObjectPath>,
+}
+
+impl FakeRoot {
+    fn new(on_battery: bool) -> Self {
+        Self { on_battery, devices: vec![BATTERY.try_into().unwrap()] }
+    }
 }
 
 #[interface(name = "org.freedesktop.UPower")]
 impl FakeRoot {
     fn enumerate_devices(&self) -> Vec<OwnedObjectPath> {
-        vec![BATTERY.try_into().unwrap()]
+        self.devices.clone()
     }
 
     fn get_display_device(&self) -> OwnedObjectPath {
@@ -183,28 +190,37 @@ fn battery(percentage: f64) -> FakeDevice {
     }
 }
 
+async fn fake_upower(on_battery: bool, percentage: f64) -> Connection {
+    connection::Builder::session()
+        .unwrap()
+        .name("org.freedesktop.UPower")
+        .unwrap()
+        .serve_at(ROOT, FakeRoot::new(on_battery))
+        .unwrap()
+        .serve_at(BATTERY, battery(percentage))
+        .unwrap()
+        .serve_at(DISPLAY, battery(percentage))
+        .unwrap()
+        .build()
+        .await
+        .unwrap()
+}
+
+async fn changed(what: &str, changes: &mut (impl Stream<Item = Option<Snapshot>> + Unpin)) -> Snapshot {
+    next(what, changes).await.unwrap_or_else(|| panic!("upowerd gone waiting for {what}"))
+}
+
 #[test]
 #[ignore = "needs a session bus"]
 fn fake_upower_percentage_is_percent_and_changes_stream() {
     block_on(async {
-        let server = connection::Builder::session()
-            .unwrap()
-            .name("org.freedesktop.UPower")
-            .unwrap()
-            .serve_at(ROOT, FakeRoot { on_battery: true })
-            .unwrap()
-            .serve_at(BATTERY, battery(41.0))
-            .unwrap()
-            .serve_at(DISPLAY, battery(41.0))
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
+        let server = fake_upower(true, 41.0).await;
         let client = Connection::session().await.unwrap();
         let upower = UPower::connect(&client).await.unwrap();
 
-        let mut changes = Box::pin(upower.changes().await.unwrap());
-        let snapshot = upower.snapshot().await.unwrap();
+        let mut changes = Box::pin(upower.changes());
+        let snapshot = changed("the first snapshot", &mut changes).await;
+        assert_eq!(snapshot, upower.snapshot().await.unwrap());
         assert!(snapshot.on_battery);
         let pack = &snapshot.devices[0];
         assert!(pack.is_laptop_battery());
@@ -230,13 +246,9 @@ fn fake_upower_percentage_is_percent_and_changes_stream() {
             .percentage_changed(device.signal_emitter())
             .await
             .unwrap();
-        match next("the battery change", &mut changes).await {
-            Change::Device(d) => {
-                assert_eq!(d.path.as_str(), BATTERY);
-                assert_eq!(d.percentage.as_percent(), 40.0);
-            }
-            other => panic!("expected a device change, got {other:?}"),
-        }
+        let snapshot = changed("the battery change", &mut changes).await;
+        assert_eq!(snapshot.devices[0].path.as_str(), BATTERY);
+        assert_eq!(snapshot.devices[0].percentage.as_percent(), 40.0);
 
         let display = object_server
             .interface::<_, FakeDevice>(DISPLAY)
@@ -249,10 +261,7 @@ fn fake_upower_percentage_is_percent_and_changes_stream() {
             .percentage_changed(display.signal_emitter())
             .await
             .unwrap();
-        match next("the display change", &mut changes).await {
-            Change::Display(d) => assert_eq!(d.percentage.rounded(), 39),
-            other => panic!("expected a display change, got {other:?}"),
-        }
+        assert_eq!(changed("the display change", &mut changes).await.display.percentage.rounded(), 39);
 
         let root = object_server.interface::<_, FakeRoot>(ROOT).await.unwrap();
         root.get_mut().await.on_battery = false;
@@ -261,10 +270,7 @@ fn fake_upower_percentage_is_percent_and_changes_stream() {
             .on_battery_changed(root.signal_emitter())
             .await
             .unwrap();
-        assert_eq!(
-            next("OnBattery", &mut changes).await,
-            Change::OnBattery(false)
-        );
+        assert!(!changed("OnBattery", &mut changes).await.on_battery);
 
         object_server
             .at(
@@ -279,24 +285,42 @@ fn fake_upower_percentage_is_percent_and_changes_stream() {
             )
             .await
             .unwrap();
+        root.get_mut().await.devices.push(MOUSE.try_into().unwrap());
         FakeRoot::device_added(root.signal_emitter(), MOUSE.try_into().unwrap())
             .await
             .unwrap();
-        match next("DeviceAdded", &mut changes).await {
-            Change::DeviceAdded(d) => {
-                assert_eq!(d.kind, DeviceKind::Mouse);
-                assert!(!d.is_laptop_battery());
-                assert_eq!(d.percentage.rounded(), 88);
-            }
-            other => panic!("expected an added device, got {other:?}"),
-        }
+        let snapshot = changed("DeviceAdded", &mut changes).await;
+        let mouse = snapshot.devices.iter().find(|d| d.path.as_str() == MOUSE).expect("the mouse");
+        assert_eq!(mouse.kind, DeviceKind::Mouse);
+        assert!(!mouse.is_laptop_battery());
+        assert_eq!(mouse.percentage.rounded(), 88);
 
+        root.get_mut().await.devices.retain(|d| d.as_str() != MOUSE);
         FakeRoot::device_removed(root.signal_emitter(), MOUSE.try_into().unwrap())
             .await
             .unwrap();
-        match next("DeviceRemoved", &mut changes).await {
-            Change::DeviceRemoved(path) => assert_eq!(path.as_str(), MOUSE),
-            other => panic!("expected a removed device, got {other:?}"),
-        }
+        let snapshot = changed("DeviceRemoved", &mut changes).await;
+        assert!(snapshot.devices.iter().all(|d| d.path.as_str() != MOUSE));
+    });
+}
+
+#[test]
+#[ignore = "needs a session bus"]
+fn fake_upower_restarting_is_read_whole_again() {
+    block_on(async {
+        let server = fake_upower(true, 41.0).await;
+        let client = Connection::session().await.unwrap();
+        let upower = UPower::connect(&client).await.unwrap();
+        let mut changes = Box::pin(upower.changes());
+        assert_eq!(changed("the first snapshot", &mut changes).await.devices[0].percentage.rounded(), 41);
+
+        server.close().await.unwrap();
+        assert_eq!(next("upowerd leaving", &mut changes).await, None);
+
+        let _server = fake_upower(false, 77.0).await;
+        let snapshot = changed("upowerd back", &mut changes).await;
+        assert!(!snapshot.on_battery);
+        assert_eq!(snapshot.devices[0].percentage.rounded(), 77);
+        assert_eq!(snapshot.display.percentage.rounded(), 77);
     });
 }

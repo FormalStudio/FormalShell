@@ -26,6 +26,7 @@ fs-media = { path = "../fs-media" }
 fs-kopuz = { path = "../fs-kopuz" }
 fastrand = "2.5.0"
 fs-bluez = { path = "../fs-bluez" }
+fs-dbus = { path = "../fs-dbus" }
 fs-tray = { path = "../fs-tray" }
 fs-audio = { path = "../fs-audio", features = ["pipewire"] }
 fs-devices = { path = "../fs-devices" }

@@ -19,17 +19,11 @@ pub async fn session() -> zbus::Result<Connection> {
     SESSION.get_or_try_init(Connection::session).await.cloned()
 }
 
-/// A connection of the service's own, for one that awaits replies while its
-/// signal streams sit undrained: past zbus's queue (64) the socket reader
-/// blocks, which on a shared connection stalls every other service. Driven
-/// on the service thread rather than a zbus thread of its own.
+/// A connection of the service's own (`fs_dbus::private`, which says when
+/// one is needed), driven on the service thread rather than a zbus thread
+/// of its own.
 pub async fn private(ctx: &Ctx, builder: zbus::Result<Builder<'static>>) -> zbus::Result<Connection> {
-    let conn = builder?.internal_executor(false).build().await?;
-    let executor = conn.executor().clone();
-    ctx.spawn(async move {
-        loop {
-            executor.tick().await;
-        }
-    });
+    let (conn, tick) = fs_dbus::private(builder?).await?;
+    ctx.spawn(tick);
     Ok(conn)
 }

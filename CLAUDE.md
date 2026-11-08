@@ -143,9 +143,9 @@ pipewire, PAM or Wayland to link.
   fs-chrome, fs-info, fs-activity, fs-system, fs-devices, fs-media, fs-menu,
   fs-screensaver, fs-theme, fs-audio, fs-kopuz). ci.yml runs the same script on a
   GitHub runner.
-- `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd` and
-  `fs-mpris` run their tests under `dbus-run-session` against their own
-  dbus-daemon. `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
+- `just check <name>`: `dev/check.sh` on the rig. `fs-tray`, `fs-notifd`,
+  `fs-mpris` and `fs-dbus` run their tests under `dbus-run-session` against
+  their own dbus-daemon. `fs-auth`, `fs-audio`, `fs-bluez`, `fs-network` and
   `fs-upower` drive real system daemons and run on the VM rig: `dev/check.sh
   build` compiles their test binaries (ignored tests included) and probes
   on a rig slot, and the guest runs them against its own PAM and polkit

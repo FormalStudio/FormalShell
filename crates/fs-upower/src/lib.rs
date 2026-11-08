@@ -9,4 +9,4 @@ mod upower;
 
 pub use device::{Device, DeviceKind, DeviceState};
 pub use profiles::{PowerProfiles, Profile, ProfilesState};
-pub use upower::{Change, Snapshot, UPower};
+pub use upower::{Snapshot, UPower};

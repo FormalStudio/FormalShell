@@ -253,6 +253,10 @@ paths = ["crates/formalshell-rs/src/surfaces/bar/cells/system_update.rs", "crate
 runs = ["--systemupdate"]
 
 [[rule]]
+paths = ["crates/fs-dbus/**"]
+runs = ["--tray", "--tray-overflow", "--panel power", "--panel network", "--power", "--profiles-pill", "--wifi", "--quick-settings-devices"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/surfaces/bar/cells/tray.rs", "crates/formalshell-rs/src/surfaces/panel/tray.rs", "crates/formalshell-rs/src/surfaces/tray_menu.rs", "crates/formalshell-rs/src/services/tray.rs", "crates/formalshell-rs/src/ipc/tray.rs", "crates/fs-tray/**"]
 runs = ["--tray", "--tray-overflow", "--tray --sidebar", "--tray-overflow --sidebar"]
 

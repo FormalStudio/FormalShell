@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
-use zbus::zvariant::{OwnedValue, Structure, Value};
+use fs_dbus::{Props, prop};
+use zbus::zvariant::{OwnedObjectPath, Structure};
 
 /// One `a(iiay)` entry, already converted from the wire's ARGB32 to RGBA8.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,10 +136,6 @@ impl Item {
     }
 }
 
-fn take<T: TryFrom<OwnedValue>>(props: &HashMap<String, OwnedValue>, key: &str) -> Option<T> {
-    props.get(key)?.try_clone().ok()?.try_into().ok()
-}
-
 fn pixmaps(value: Option<Vec<(i32, i32, Vec<u8>)>>) -> Vec<Pixmap> {
     value
         .unwrap_or_default()
@@ -150,33 +145,26 @@ fn pixmaps(value: Option<Vec<(i32, i32, Vec<u8>)>>) -> Vec<Pixmap> {
 }
 
 /// A property that some items send as `o` and others as `s`.
-fn take_path(props: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
-    let v = props.get(key)?;
-    if let Ok(p) = v.downcast_ref::<zbus::zvariant::ObjectPath<'_>>() {
-        return Some(p.as_str().to_owned());
-    }
-    v.downcast_ref::<&str>().ok().map(str::to_owned)
+fn take_path(props: &Props, key: &str) -> Option<String> {
+    prop::<OwnedObjectPath>(props, key).map(|p| p.to_string()).or_else(|| prop::<String>(props, key))
 }
 
 /// Fold a `GetAll` result into `item`. Missing properties keep their defaults, as every item
 /// implements a different subset of the interface.
-pub(crate) fn apply_properties(item: &mut Item, props: &HashMap<String, OwnedValue>) {
-    item.id = take::<String>(props, "Id").unwrap_or_default();
-    item.title = take::<String>(props, "Title").unwrap_or_default();
-    if let Some(s) = take::<String>(props, "Status").and_then(|s| Status::parse(&s)) {
+pub(crate) fn apply_properties(item: &mut Item, props: &Props) {
+    item.id = prop::<String>(props, "Id").unwrap_or_default();
+    item.title = prop::<String>(props, "Title").unwrap_or_default();
+    if let Some(s) = prop::<String>(props, "Status").and_then(|s| Status::parse(&s)) {
         item.status = s;
     }
-    item.icon_name = take::<String>(props, "IconName").unwrap_or_default();
-    item.icon_pixmap = pixmaps(take(props, "IconPixmap"));
-    item.icon_theme_path = take::<String>(props, "IconThemePath").unwrap_or_default();
-    item.overlay_icon_name = take::<String>(props, "OverlayIconName").unwrap_or_default();
-    item.overlay_icon_pixmap = pixmaps(take(props, "OverlayIconPixmap"));
-    item.attention_icon_name = take::<String>(props, "AttentionIconName").unwrap_or_default();
-    item.attention_icon_pixmap = pixmaps(take(props, "AttentionIconPixmap"));
-    item.tooltip = props
-        .get("ToolTip")
-        .and_then(|v| v.try_clone().ok())
-        .and_then(|v| Structure::try_from(Value::from(v)).ok())
+    item.icon_name = prop::<String>(props, "IconName").unwrap_or_default();
+    item.icon_pixmap = pixmaps(prop(props, "IconPixmap"));
+    item.icon_theme_path = prop::<String>(props, "IconThemePath").unwrap_or_default();
+    item.overlay_icon_name = prop::<String>(props, "OverlayIconName").unwrap_or_default();
+    item.overlay_icon_pixmap = pixmaps(prop(props, "OverlayIconPixmap"));
+    item.attention_icon_name = prop::<String>(props, "AttentionIconName").unwrap_or_default();
+    item.attention_icon_pixmap = pixmaps(prop(props, "AttentionIconPixmap"));
+    item.tooltip = prop::<Structure<'static>>(props, "ToolTip")
         .and_then(|s| {
             let (icon, pix, title, description) =
                 <(String, Vec<(i32, i32, Vec<u8>)>, String, String)>::try_from(s).ok()?;
@@ -188,7 +176,7 @@ pub(crate) fn apply_properties(item: &mut Item, props: &HashMap<String, OwnedVal
             })
         })
         .unwrap_or_default();
-    item.item_is_menu = take::<bool>(props, "ItemIsMenu").unwrap_or(false);
+    item.item_is_menu = prop::<bool>(props, "ItemIsMenu").unwrap_or(false);
     // Qt apps advertise "/NO_DBUSMENU" for an item with no menu.
     item.menu_path = take_path(props, "Menu").filter(|p| !p.is_empty() && p != "/NO_DBUSMENU");
 }
@@ -265,7 +253,7 @@ impl MenuItem {
     }
 
     /// A `GetLayout` node replaces the whole property set: absent keys are defaults.
-    pub(crate) fn set_properties(&mut self, props: &HashMap<String, OwnedValue>) {
+    pub(crate) fn set_properties(&mut self, props: &Props) {
         let mut fresh = MenuItem::new(self.id);
         fresh.apply(props);
         fresh.children = std::mem::take(&mut self.children);
@@ -275,7 +263,7 @@ impl MenuItem {
     /// An `ItemsPropertiesUpdated` entry: only the named keys move.
     pub(crate) fn update_properties(
         &mut self,
-        updated: &HashMap<String, OwnedValue>,
+        updated: &Props,
         removed: &[String],
     ) {
         if updated.is_empty() && removed.is_empty() {
@@ -303,34 +291,34 @@ impl MenuItem {
         }
     }
 
-    fn apply(&mut self, props: &HashMap<String, OwnedValue>) {
-        if let Some(label) = take::<String>(props, "label") {
+    fn apply(&mut self, props: &Props) {
+        if let Some(label) = prop::<String>(props, "label") {
             self.label = clean_label(&label);
         }
-        if let Some(v) = take::<bool>(props, "enabled") {
+        if let Some(v) = prop::<bool>(props, "enabled") {
             self.enabled = v;
         }
-        if let Some(v) = take::<bool>(props, "visible") {
+        if let Some(v) = prop::<bool>(props, "visible") {
             self.visible = v;
         }
-        if let Some(v) = take::<String>(props, "icon-name") {
+        if let Some(v) = prop::<String>(props, "icon-name") {
             self.icon_name = v;
         }
-        if let Some(v) = take::<Vec<u8>>(props, "icon-data") {
+        if let Some(v) = prop::<Vec<u8>>(props, "icon-data") {
             self.icon_png = v;
         }
-        if let Some(v) = take::<String>(props, "type") {
+        if let Some(v) = prop::<String>(props, "type") {
             self.separator = v == "separator";
         }
-        if let Some(v) = take::<String>(props, "toggle-type") {
+        if let Some(v) = prop::<String>(props, "toggle-type") {
             self.toggle = match v.as_str() {
                 "checkmark" => Toggle::Checkmark,
                 "radio" => Toggle::Radio,
                 _ => Toggle::None,
             };
         }
-        let state = take::<i32>(props, "toggle-state")
-            .or_else(|| take::<bool>(props, "toggle-state").map(i32::from));
+        let state = prop::<i32>(props, "toggle-state")
+            .or_else(|| prop::<bool>(props, "toggle-state").map(i32::from));
         if let Some(v) = state {
             self.check = match v {
                 0 => CheckState::Unchecked,
@@ -338,7 +326,7 @@ impl MenuItem {
                 _ => CheckState::Partial,
             };
         }
-        if let Some(v) = take::<String>(props, "children-display") {
+        if let Some(v) = prop::<String>(props, "children-display") {
             self.has_children = v == "submenu";
         }
     }

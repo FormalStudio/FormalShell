@@ -1,0 +1,10 @@
+[package]
+name = "fs-dbus"
+version = "0.2.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+async-io = "2.6"
+futures-lite = "2.6"
+zbus = "5"

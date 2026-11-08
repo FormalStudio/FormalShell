@@ -3,13 +3,14 @@ use std::fmt;
 use std::time::Duration;
 
 use async_io::Timer;
-use futures_lite::{Stream, StreamExt, future, stream};
+use fs_dbus::{Props, Watched, plain, prop};
+use futures_lite::{Stream, StreamExt, future};
 use zbus::fdo::PropertiesProxy;
 use zbus::message::Type;
 use zbus::names::InterfaceName;
 use zbus::proxy::CacheProperties;
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
-use zbus::{Connection, MatchRule, MessageStream, proxy};
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
+use zbus::{Connection, MatchRule, Message, MessageStream, proxy};
 
 use crate::model::{
     ConnectionState, Device, DeviceKind, FailReason, Security, SignalStrength, Snapshot,
@@ -197,12 +198,12 @@ impl Reading {
         // NetworkManager's own older signal of the same name is sent on it.
         let sent_on = header.interface().map(|i| i.as_str().to_owned()).unwrap_or_default();
         let (interface, changed) = if sent_on == "org.freedesktop.DBus.Properties" {
-            match msg.body().deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>() {
+            match msg.body().deserialize::<(String, Props, Vec<String>)>() {
                 Ok((interface, changed, invalidated)) if invalidated.is_empty() => (interface, changed),
                 _ => return false,
             }
         } else {
-            match msg.body().deserialize::<HashMap<String, OwnedValue>>() {
+            match msg.body().deserialize::<Props>() {
                 Ok(changed) => (sent_on, changed),
                 Err(_) => return false,
             }
@@ -213,7 +214,7 @@ impl Reading {
                 _ => return false,
             }
         }
-        let Some(strength) = get::<u8>(&changed, "Strength") else { return true };
+        let Some(strength) = prop::<u8>(&changed, "Strength") else { return true };
         let path = path.as_str();
         let ap = self.devices.iter_mut().find_map(|d| match d {
             ReadDevice::Wifi(w) => w.access_points.iter_mut().find(|ap| ap.path.as_str() == path),
@@ -258,8 +259,6 @@ impl NetworkManager {
             .cache_properties(CacheProperties::No)
             .build()
             .await?;
-        // Fail here, not on the first call, when NetworkManager is absent.
-        manager.wireless_enabled().await?;
         Ok(Self {
             conn: conn.clone(),
             manager,
@@ -290,55 +289,13 @@ impl NetworkManager {
     }
 
     /// The current snapshot, then a new one after every settled burst of
-    /// NetworkManager signals that changed it. The match rule is installed
-    /// before the first read, so no change slips between the two. A burst
-    /// that only moves access points' strength (every scan sends one per
-    /// access point) is applied from the signals themselves; anything else
-    /// reads NetworkManager again, once per burst.
-    ///
-    /// Poll it for as long as it lives: zbus stops dispatching on the
-    /// connection once the stream's queue fills, which stalls every call.
-    pub async fn changes(&self) -> zbus::Result<impl Stream<Item = Snapshot> + use<>> {
-        let rule = MatchRule::builder()
-            .msg_type(Type::Signal)
-            .sender(SERVICE)?
-            .build();
-        let messages = MessageStream::for_match_rule(rule, &self.conn, None).await?;
-        let reading = self.read().await?;
-        let first = reading.snapshot();
-        let state = (self.clone(), messages, reading, first.clone());
-        let later = stream::unfold(state, |(nm, mut messages, mut reading, mut last)| async move {
-            loop {
-                let mut reread = !reading.apply(&messages.next().await?.ok()?);
-                loop {
-                    let burst = future::or(async { Some(messages.next().await) }, async {
-                        Timer::after(QUIET).await;
-                        None
-                    })
-                    .await;
-                    match burst {
-                        Some(Some(Ok(msg))) => reread |= !reading.apply(&msg),
-                        Some(Some(Err(_))) => reread = true,
-                        Some(None) => return None,
-                        None => break,
-                    }
-                }
-                // A read can race a device or access point disappearing; the
-                // signal that follows brings the next attempt.
-                if reread {
-                    let Ok(now) = nm.read().await else {
-                        continue;
-                    };
-                    reading = now;
-                }
-                let now = reading.snapshot();
-                if now != last {
-                    last = now.clone();
-                    return Some((now, (nm, messages, reading, last)));
-                }
-            }
-        });
-        Ok(stream::once(first).chain(later))
+    /// NetworkManager signals that changed it: None while NetworkManager is
+    /// not on the bus, and a whole read again when it returns. A burst that
+    /// only moves access points' strength (every scan sends one per access
+    /// point) is applied from the signals themselves; anything else reads
+    /// NetworkManager again, once per burst.
+    pub fn changes(&self) -> impl Stream<Item = Option<Snapshot>> + use<> {
+        fs_dbus::watch(self.conn.clone(), Watch(self.clone()))
     }
 
     pub async fn set_wifi_enabled(&self, enabled: bool) -> zbus::Result<()> {
@@ -414,14 +371,14 @@ impl NetworkManager {
                 continue;
             }
             let props = self.props(&path, DEVICE_INTERFACE).await?;
-            let Some(active) = get::<OwnedObjectPath>(&props, "ActiveConnection") else {
+            let Some(active) = prop::<OwnedObjectPath>(&props, "ActiveConnection") else {
                 continue;
             };
             if active.as_str() == "/" {
                 continue;
             }
             let active_props = self.props(&active, ACTIVE_INTERFACE).await?;
-            let saved = get::<OwnedObjectPath>(&active_props, "Connection");
+            let saved = prop::<OwnedObjectPath>(&active_props, "Connection");
             let runs_ssid = profiles
                 .iter()
                 .any(|(p, profile)| Some(p) == saved.as_ref() && profile.ssid == ssid);
@@ -468,7 +425,7 @@ impl NetworkManager {
                 continue;
             }
             let props = self.props(&path, DEVICE_INTERFACE).await?;
-            if let Some(active) = get::<OwnedObjectPath>(&props, "ActiveConnection").filter(|a| a.as_str() != "/") {
+            if let Some(active) = prop::<OwnedObjectPath>(&props, "ActiveConnection").filter(|a| a.as_str() != "/") {
                 self.manager.deactivate_connection(&active).await?;
             }
             return Ok(());
@@ -657,7 +614,7 @@ impl NetworkManager {
         &self,
         path: &OwnedObjectPath,
         interface: &'static str,
-    ) -> zbus::Result<HashMap<String, OwnedValue>> {
+    ) -> zbus::Result<Props> {
         PropertiesProxy::builder(&self.conn)
             .destination(SERVICE)?
             .path(path.clone())?
@@ -673,22 +630,22 @@ impl NetworkManager {
         let Ok(props) = self.props(&path, DEVICE_INTERFACE).await else {
             return Ok(None);
         };
-        let kind = match get::<u32>(&props, "DeviceType") {
+        let kind = match prop::<u32>(&props, "DeviceType") {
             Some(1) => DeviceKind::Wired,
             Some(2) => DeviceKind::Wifi,
             _ => return Ok(None),
         };
-        let nm_state = get(&props, "State").unwrap_or(0);
+        let nm_state = prop(&props, "State").unwrap_or(0);
         let mut connection = None;
-        if let Some(active) = get::<OwnedObjectPath>(&props, "ActiveConnection")
+        if let Some(active) = prop::<OwnedObjectPath>(&props, "ActiveConnection")
             && active.as_str() != "/"
             && let Ok(active) = self.props(&active, ACTIVE_INTERFACE).await
         {
-            connection = get::<String>(&active, "Id").filter(|id| !id.is_empty());
+            connection = prop::<String>(&active, "Id").filter(|id| !id.is_empty());
         }
         Ok(Some(Device {
             path,
-            interface: get(&props, "Interface").unwrap_or_default(),
+            interface: prop(&props, "Interface").unwrap_or_default(),
             kind,
             state: ConnectionState::from_device_state(nm_state),
             nm_state,
@@ -707,34 +664,34 @@ impl NetworkManager {
             let Ok(props) = self.props(&path, ACCESS_POINT_INTERFACE).await else {
                 continue;
             };
-            let ssid = get::<Vec<u8>>(&props, "Ssid").unwrap_or_default();
+            let ssid = prop::<Vec<u8>>(&props, "Ssid").unwrap_or_default();
             if ssid.is_empty() {
                 continue;
             }
             access_points.push(AccessPoint {
                 path,
                 ssid: String::from_utf8_lossy(&ssid).into_owned(),
-                signal: SignalStrength::from_percent(get(&props, "Strength").unwrap_or(0)),
+                signal: SignalStrength::from_percent(prop(&props, "Strength").unwrap_or(0)),
                 security: Security::from_ap_flags(
-                    get(&props, "Flags").unwrap_or(0),
-                    get(&props, "WpaFlags").unwrap_or(0),
-                    get(&props, "RsnFlags").unwrap_or(0),
+                    prop(&props, "Flags").unwrap_or(0),
+                    prop(&props, "WpaFlags").unwrap_or(0),
+                    prop(&props, "RsnFlags").unwrap_or(0),
                 ),
             });
         }
         let wireless_props = self.props(&device.path, WIRELESS_INTERFACE).await?;
         let device_props = self.props(&device.path, DEVICE_INTERFACE).await?;
         let mut active = None;
-        if let Some(path) = get::<OwnedObjectPath>(&device_props, "ActiveConnection")
+        if let Some(path) = prop::<OwnedObjectPath>(&device_props, "ActiveConnection")
             && path.as_str() != "/"
             && let Ok(props) = self.props(&path, ACTIVE_INTERFACE).await
-            && let Some(saved) = get::<OwnedObjectPath>(&props, "Connection")
+            && let Some(saved) = prop::<OwnedObjectPath>(&props, "Connection")
         {
-            let state = ConnectionState::from_active_state(get(&props, "State").unwrap_or(0));
+            let state = ConnectionState::from_active_state(prop(&props, "State").unwrap_or(0));
             active = Some((saved, state));
         }
         let mut addresses = Vec::new();
-        if let Some(path) = get::<OwnedObjectPath>(&device_props, "Ip4Config")
+        if let Some(path) = prop::<OwnedObjectPath>(&device_props, "Ip4Config")
             && path.as_str() != "/"
             && let Ok(props) = self.props(&path, IP4_INTERFACE).await
         {
@@ -743,10 +700,35 @@ impl NetworkManager {
         Ok(WifiDevice {
             device,
             access_points,
-            active_ap: get(&wireless_props, "ActiveAccessPoint").filter(|p: &OwnedObjectPath| p.as_str() != "/"),
+            active_ap: prop(&wireless_props, "ActiveAccessPoint").filter(|p: &OwnedObjectPath| p.as_str() != "/"),
             active,
             addresses,
         })
+    }
+}
+
+struct Watch(NetworkManager);
+
+impl Watched for Watch {
+    type State = Reading;
+    type View = Snapshot;
+    const SERVICE: &'static str = SERVICE;
+    const QUIET: Duration = QUIET;
+
+    fn rule(&self) -> zbus::Result<MatchRule<'static>> {
+        Ok(MatchRule::builder().msg_type(Type::Signal).sender(SERVICE)?.build())
+    }
+
+    async fn read(&self) -> zbus::Result<Reading> {
+        self.0.read().await
+    }
+
+    fn apply(&self, state: &mut Reading, signal: &Message) -> bool {
+        state.apply(signal)
+    }
+
+    fn view(&self, state: &Reading) -> Snapshot {
+        state.snapshot()
     }
 }
 
@@ -820,13 +802,7 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
 
 /// An IP4Config's `AddressData` (`aa{sv}`) as `address/prefix`, in its
 /// order.
-fn address_data(props: &HashMap<String, OwnedValue>) -> Vec<String> {
-    fn plain<'a, 'b>(v: &'a Value<'b>) -> &'a Value<'b> {
-        match v {
-            Value::Value(inner) => plain(inner),
-            v => v,
-        }
-    }
+fn address_data(props: &Props) -> Vec<String> {
     let Some(Value::Array(items)) = props.get("AddressData").map(|v| plain(v)) else {
         return Vec::new();
     };
@@ -896,16 +872,10 @@ fn failure(reason: u32, secret_supplied: bool) -> ConnectError {
     }
 }
 
-fn get<T>(props: &HashMap<String, OwnedValue>, name: &str) -> Option<T>
-where
-    T: TryFrom<OwnedValue>,
-{
-    props.get(name)?.try_clone().ok()?.try_into().ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zbus::zvariant::OwnedValue;
 
     fn path(s: &str) -> OwnedObjectPath {
         OwnedObjectPath::try_from(s).unwrap()
@@ -1056,7 +1026,7 @@ mod tests {
             m
         };
         let data = Value::from(vec![entry("192.168.4.20", 24), entry("10.1.2.3", 8)]);
-        let props: HashMap<String, OwnedValue> = [("AddressData".to_owned(), OwnedValue::try_from(data).unwrap())].into();
+        let props: Props = [("AddressData".to_owned(), OwnedValue::try_from(data).unwrap())].into();
         assert_eq!(address_data(&props), ["192.168.4.20/24", "10.1.2.3/8"]);
         assert!(address_data(&HashMap::new()).is_empty());
     }

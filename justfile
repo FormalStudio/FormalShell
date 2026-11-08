@@ -22,7 +22,7 @@ smoke-all *LIST:
     ./dev/remote.sh smoke-all {{LIST}}
 cargo *ARGS:
     ./dev/remote.sh cargo {{ARGS}}
-# fs-tray, fs-notifd, fs-mpris on a private bus (dev/check.sh); fs-auth,
+# fs-tray, fs-notifd, fs-mpris, fs-dbus on a private bus (dev/check.sh); fs-auth,
 # fs-audio, fs-bluez, fs-network and fs-upower on the VM rig (dev/vm.sh).
 check NAME:
     ./dev/remote.sh check {{NAME}}

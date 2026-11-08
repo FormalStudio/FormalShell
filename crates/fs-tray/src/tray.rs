@@ -1,12 +1,11 @@
 use std::{
     collections::{HashMap, VecDeque},
     future::{Future, poll_fn},
-    pin::{Pin, pin},
+    pin::Pin,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
     },
-    task::Poll,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -112,26 +111,18 @@ struct Core {
     queue: VecDeque<Event>,
 }
 
-/// zbus's socket reader waits for room when any `MessageStream` queue is full (64 messages),
-/// and method replies come through that same reader. So the streams are drained into the
-/// backlog for as long as `fut` waits on a reply; otherwise a burst of signals arriving ahead
-/// of the reply wedges the whole connection, object server included.
+/// [`fs_dbus::drain_while`] over the pump's inputs, into the backlog: the pump awaits replies
+/// on a connection its streams share.
 async fn drain_while<T>(
     inputs: &Inputs,
     backlog: &mut VecDeque<Input>,
     fut: impl Future<Output = T>,
 ) -> T {
-    let mut fut = pin!(fut);
-    poll_fn(|cx| {
-        if let Poll::Ready(out) = fut.as_mut().poll(cx) {
-            return Poll::Ready(out);
-        }
-        let mut inputs = inputs.lock().unwrap();
-        while let Poll::Ready(Some(input)) = inputs.poll_next_unpin(cx) {
-            push_input(backlog, input);
-        }
-        Poll::Pending
-    })
+    fs_dbus::drain_while(
+        |cx| inputs.lock().unwrap().poll_next_unpin(cx),
+        |input| push_input(backlog, input),
+        fut,
+    )
     .await
 }
 

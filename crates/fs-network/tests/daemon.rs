@@ -61,11 +61,12 @@ async fn until(
 struct Seen(std::sync::mpsc::Receiver<Snapshot>);
 
 impl Seen {
-    fn spawn(mut changes: impl Stream<Item = Snapshot> + Unpin + Send + 'static) -> Self {
+    fn spawn(mut changes: impl Stream<Item = Option<Snapshot>> + Unpin + Send + 'static) -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             block_on(async {
                 while let Some(snapshot) = changes.next().await {
+                    let Some(snapshot) = snapshot else { continue };
                     if tx.send(snapshot).is_err() {
                         break;
                     }
@@ -94,9 +95,9 @@ fn wifi_round_trip_against_real_networkmanager() {
     block_on(async {
         let conn = Connection::system().await.unwrap();
         let nm = NetworkManager::connect(&conn, std::env::var("USER").ok()).await.unwrap();
-        let mut changes = Box::pin(nm.changes().await.unwrap());
+        let mut changes = Box::pin(nm.changes());
 
-        let first = changes.next().await.expect("the initial snapshot");
+        let first = changes.next().await.flatten().expect("the initial snapshot");
         let seen = Seen::spawn(changes);
         assert!(first.wifi_enabled);
         let station = first

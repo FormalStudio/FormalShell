@@ -18,10 +18,11 @@
 use std::cell::{Cell, RefCell};
 
 use fs_system::overnight::{self, AURA_ZONES, SCREEN_PERCENT};
-use fs_upower::{PowerProfiles, Profile};
+use fs_upower::Profile;
 use serde_json::{Map, Value, json};
 
 use crate::runtime::Ctx;
+use crate::services::devices::power;
 use crate::services::display;
 use crate::services::state::{self, Field};
 
@@ -86,11 +87,6 @@ async fn output(argv: &[&str]) -> Option<(i32, String)> {
     Some((out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stdout).into_owned()))
 }
 
-async fn profiles() -> Option<PowerProfiles> {
-    let conn = crate::services::bus::system().await.ok()?;
-    PowerProfiles::connect(&conn).await.ok()
-}
-
 const LED_LIST: &str = "for d in /sys/class/leds/*; do printf '%s\\t%s\\t%s\\n' \"${d##*/}\" \"$(cat \"$d/trigger\" 2>/dev/null)\" \"$(cat \"$d/brightness\" 2>/dev/null)\"; done";
 const LED_OFF: &str = "for n; do brightnessctl -q -d \"$n\" set 0; done";
 const LED_RESTORE: &str = "while [ $# -ge 2 ]; do brightnessctl -q -d \"$1\" set \"$2\"; shift 2; done";
@@ -123,7 +119,7 @@ pub fn enable(ctx: &Ctx) {
     write(Some(Map::new()));
     let ctx = ctx.clone();
     ctx.clone().spawn(async move {
-        let profiles = profiles().await;
+        let profiles = power::profiles().await.ok();
         let active = match &profiles {
             Some(p) => p.state().await.ok().map(|s| s.active),
             None => None,
@@ -201,7 +197,7 @@ pub fn disable(ctx: &Ctx, snap: Value) {
             }
         }
         if let Some(want) = snap.get("profile").and_then(Value::as_i64).and_then(profile_of)
-            && let Some(p) = profiles().await
+            && let Ok(p) = power::profiles().await
             && p.state().await.is_ok_and(|s| s.active != want)
         {
             let _ = p.set_active(want).await;
