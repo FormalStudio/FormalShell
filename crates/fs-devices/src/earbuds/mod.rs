@@ -10,7 +10,7 @@ use serde_json::Value as Json;
 
 use crate::bluetooth;
 use fs_js as js;
-use fs_types::Percent;
+use fs_types::{BtAddress, Percent};
 
 pub mod airpods;
 pub mod motion;
@@ -221,7 +221,8 @@ pub struct Control {
 pub struct Device {
     pub key: String,
     pub backend: String,
-    pub address: String,
+    /// None for a device whose daemon reports no address (AirPods).
+    pub address: Option<BtAddress>,
     pub name: String,
     pub kind: DeviceKind,
     pub connected: bool,
@@ -348,7 +349,7 @@ impl HeartRate {
 pub struct DeviceFields {
     pub key: String,
     pub backend: String,
-    pub address: String,
+    pub address: Option<BtAddress>,
     pub name: String,
     pub kind: DeviceKind,
     pub connected: bool,
@@ -596,13 +597,13 @@ pub fn pick_active<'a>(devices: &'a [Device], preferred_key: &str) -> Option<&'a
         .or_else(|| devices.first())
 }
 
-/// The BlueZ devices as the earbuds backends cross them, every address
-/// upper case.
+/// The BlueZ devices as the earbuds backends cross them: address, names and
+/// connection only.
 pub fn bluetooth_devices(values: &[bluetooth::Device]) -> Vec<bluetooth::Device> {
     values
         .iter()
         .map(|v| bluetooth::Device {
-            address: v.address.to_uppercase(),
+            address: v.address,
             name: v.name.clone(),
             device_name: v.device_name.clone(),
             connected: v.connected,
@@ -673,7 +674,7 @@ pub fn to_json(dev: &Device) -> Json {
     serde_json::json!({
         "key": dev.key,
         "backend": dev.backend,
-        "address": dev.address,
+        "address": dev.address.map(|a| a.to_string()).unwrap_or_default(),
         "name": dev.name,
         "kind": dev.kind.as_str(),
         "connected": dev.connected,
@@ -709,14 +710,6 @@ fn heart_json(hr: &HeartRate) -> Json {
         "history": hr.history.iter().map(|s| s.bpm.get()).collect::<Vec<_>>(),
         "points": hr.points.iter().map(|s| serde_json::json!({"bpm": s.bpm.get(), "atMs": s.at_ms})).collect::<Vec<_>>(),
     })
-}
-
-/// `^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`, the only shape any adapter lets
-/// reach a child process's argv.
-pub(crate) fn valid_address(address: &str) -> bool {
-    let b = address.as_bytes();
-    b.len() == 17
-        && b.iter().enumerate().all(|(i, c)| if i % 3 == 2 { *c == b':' } else { c.is_ascii_hexdigit() })
 }
 
 #[cfg(test)]
@@ -963,30 +956,5 @@ mod tests {
         assert_eq!(range_text(Some(&band)), "+1.3\u{a0}dB");
         band.value = Value::Num(-1.24);
         assert_eq!(range_text(Some(&band)), "-1.2\u{a0}dB");
-    }
-
-    #[test]
-    fn bluetooth_devices_upper_case_every_address() {
-        let live = [bluetooth::Device {
-            address: "aa:bb:cc:dd:ee:ff".into(),
-            name: "Buds".into(),
-            device_name: "Buds".into(),
-            connected: true,
-            ..Default::default()
-        }];
-        let out = bluetooth_devices(&live);
-        assert_eq!((out[0].address.as_str(), out[0].name.as_str(), out[0].connected), ("AA:BB:CC:DD:EE:FF", "Buds", true));
-        assert!(bluetooth_devices(&[]).is_empty());
-    }
-
-    #[test]
-    fn valid_address_is_a_mac_and_nothing_else() {
-        assert!(valid_address("AA:BB:CC:DD:EE:FF"));
-        assert!(valid_address("aa:bb:cc:dd:ee:ff"));
-        assert!(!valid_address("AA:BB:CC:DD:EE:FF\n"));
-        assert!(!valid_address("AA:BB --dry-run"));
-        assert!(!valid_address("--help"));
-        assert!(!valid_address(""));
-        assert!(!valid_address("AA-BB-CC-DD-EE-FF"));
     }
 }

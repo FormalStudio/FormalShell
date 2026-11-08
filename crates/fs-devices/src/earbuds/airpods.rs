@@ -394,7 +394,7 @@ pub fn normalise(status: &Status) -> Vec<Device> {
     let mut dev = device(DeviceFields {
         key: BACKEND.into(),
         backend: BACKEND.into(),
-        address: String::new(),
+        address: None,
         name: if status.device_name.is_empty() { "AirPods".into() } else { status.device_name.clone() },
         kind: DeviceKind::Earbuds,
         connected: status.connected,

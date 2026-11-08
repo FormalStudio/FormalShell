@@ -63,7 +63,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
             "available": s.observer,
             "connected": s.connected,
             "bonded": s.bonded,
-            "bondAddress": s.bond_address,
+            "bondAddress": s.bond_address.map(|a| a.to_string()).unwrap_or_default(),
             "deviceName": s.device_name,
             "batteryAvailable": battery.is_some(),
             "battery": battery.map_or(json!(0), fs_js::json_number),

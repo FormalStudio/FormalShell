@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use fs_devices::bluetooth::{self, DeviceState};
-use fs_types::Fraction;
+use fs_types::{BtAddress, Fraction};
 use zbus::zvariant::{OwnedValue, Value};
 
 pub type Props = HashMap<String, OwnedValue>;
@@ -30,7 +30,7 @@ pub enum AdapterState {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Adapter {
     pub path: String,
-    pub address: String,
+    pub address: BtAddress,
     /// BlueZ `Name`, the kernel's hostname-derived label.
     pub name: String,
     pub alias: String,
@@ -87,7 +87,7 @@ pub enum Event {
     AdapterRemoved { path: String },
     DeviceAdded(Device),
     DeviceChanged(Device),
-    DeviceRemoved { path: String, address: String },
+    DeviceRemoved { path: String, address: BtAddress },
     PlayerChanged(Player),
     PlayerRemoved { path: String },
 }
@@ -156,7 +156,7 @@ fn get_path(props: &Props, key: &str) -> Option<String> {
 }
 
 fn apply_adapter(a: &mut Adapter, props: &Props) {
-    if let Some(v) = get_string(props, "Address") {
+    if let Some(v) = get_string(props, "Address").and_then(|v| BtAddress::parse(&v)) {
         a.address = v;
     }
     if let Some(v) = get_string(props, "Name") {
@@ -191,7 +191,7 @@ fn apply_adapter(a: &mut Adapter, props: &Props) {
 }
 
 fn apply_device(d: &mut Device, props: &Props, invalidated: &[String]) {
-    if let Some(v) = get_string(props, "Address") {
+    if let Some(v) = get_string(props, "Address").and_then(|v| BtAddress::parse(&v)) {
         d.info.address = v;
     }
     if let Some(v) = get_string(props, "Name") {
@@ -273,7 +273,7 @@ pub fn known(d: &bluetooth::Device) -> bool {
 /// Whether an event can move what a surface shows: any adapter change, and a
 /// device change for a known device, one already on show (`shown`, by
 /// address), or any device while a panel is `open`.
-pub fn matters(e: &Event, open: bool, shown: &[String]) -> bool {
+pub fn matters(e: &Event, open: bool, shown: &[BtAddress]) -> bool {
     match e {
         Event::DeviceAdded(d) | Event::DeviceChanged(d) => open || known(&d.info) || shown.contains(&d.info.address),
         Event::DeviceRemoved { address, .. } => open || shown.contains(address),
@@ -323,20 +323,16 @@ impl State {
         self.devices.iter().filter(|(_, e)| known(&e.device.info)).map(|(p, _)| p.clone()).collect()
     }
 
-    /// Case-insensitive, like `bluetooth::find_by_address`, scoped to one adapter.
-    pub fn find_device(&self, adapter: &str, address: &str) -> Option<Device> {
-        let wanted = address.to_uppercase();
-        self.devices
-            .values()
-            .find(|e| e.device.adapter == adapter && e.device.info.address.to_uppercase() == wanted)
-            .map(Entry::view)
+    /// Scoped to one adapter.
+    pub fn find_device(&self, adapter: &str, address: BtAddress) -> Option<Device> {
+        self.devices.values().find(|e| e.device.adapter == adapter && e.device.info.address == address).map(Entry::view)
     }
 
     pub fn clear(&mut self) -> Vec<Event> {
         let mut out: Vec<Event> = self
             .devices
             .values()
-            .map(|e| Event::DeviceRemoved { path: e.device.info.dbus_path.clone(), address: e.device.info.address.clone() })
+            .map(|e| Event::DeviceRemoved { path: e.device.info.dbus_path.clone(), address: e.device.info.address })
             .collect();
         out.extend(self.adapters.keys().map(|p| Event::AdapterRemoved { path: p.clone() }));
         out.extend(self.players.keys().map(|p| Event::PlayerRemoved { path: p.clone() }));
@@ -464,7 +460,7 @@ impl State {
             out.push(Event::AdapterRemoved { path: path.clone() });
         }
         for (path, e) in self.devices.iter().filter(|(p, _)| !fresh.devices.contains_key(*p)) {
-            out.push(Event::DeviceRemoved { path: path.clone(), address: e.device.info.address.clone() });
+            out.push(Event::DeviceRemoved { path: path.clone(), address: e.device.info.address });
         }
         for (path, e) in &mut fresh.devices {
             if let Some(old) = self.devices.get(path) {
@@ -594,7 +590,7 @@ mod tests {
             events.extend(s.properties_changed(path, DEVICE_IFACE, &props(vec![("RSSI", Value::I16(-40 - (i % 30) as i16))]), &[]));
         }
         events.extend(s.interfaces_removed(stranger, &[DEVICE_IFACE.to_string()]));
-        let shown = vec!["AA:BB:CC:DD:EE:FF".to_string()];
+        let shown = vec![BtAddress::parse("AA:BB:CC:DD:EE:FF").unwrap()];
         assert_eq!(events.iter().filter(|e| matters(e, false, &shown)).count(), 0);
         assert_eq!(events.iter().filter(|e| matters(e, true, &shown)).count(), 2);
     }
@@ -709,15 +705,15 @@ mod tests {
     #[test]
     fn find_device_is_case_insensitive_and_adapter_scoped() {
         let s = seeded();
-        assert!(s.find_device(HCI0, "aa:bb:cc:dd:ee:ff").is_some());
-        assert!(s.find_device("/org/bluez/hci1", "AA:BB:CC:DD:EE:FF").is_none());
+        assert!(s.find_device(HCI0, "aa:bb:cc:dd:ee:ff".parse().unwrap()).is_some());
+        assert!(s.find_device("/org/bluez/hci1", "AA:BB:CC:DD:EE:FF".parse().unwrap()).is_none());
     }
 
     #[test]
     fn removal_reports_the_address() {
         let mut s = seeded();
         let ev = s.interfaces_removed(DEV, &[DEVICE_IFACE.to_string()]);
-        assert_eq!(ev, vec![Event::DeviceRemoved { path: DEV.into(), address: "AA:BB:CC:DD:EE:FF".into() }]);
+        assert_eq!(ev, vec![Event::DeviceRemoved { path: DEV.into(), address: "AA:BB:CC:DD:EE:FF".parse().unwrap() }]);
         assert!(s.devices().is_empty());
     }
 

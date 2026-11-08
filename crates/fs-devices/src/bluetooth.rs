@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use fs_js as js;
-use fs_types::Fraction;
+use fs_types::{BtAddress, Fraction};
 
 /// BlueZ's connection state for a device.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -22,7 +22,7 @@ pub enum DeviceState {
 /// One BlueZ device as the panel and the other device models see it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Device {
-    pub address: String,
+    pub address: BtAddress,
     pub dbus_path: String,
     pub name: String,
     pub device_name: String,
@@ -36,15 +36,10 @@ pub struct Device {
     pub battery: Option<Fraction>,
 }
 
-static MAC_SHAPED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i-u)^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$").unwrap());
 static UUID_SHAPED: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i-u)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").unwrap()
 });
 static HEX32: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i-u)^[0-9a-f]{32}$").unwrap());
-
-pub(crate) fn is_mac_shaped(name: &str) -> bool {
-    MAC_SHAPED.is_match(name)
-}
 
 pub(crate) fn is_uuid_shaped(name: &str) -> bool {
     UUID_SHAPED.is_match(name) || HEX32.is_match(name)
@@ -55,7 +50,7 @@ pub(crate) fn is_uuid_shaped(name: &str) -> bool {
 /// service UUID.
 pub(crate) fn has_human_name(name: &str) -> bool {
     let label = js::trim(name);
-    !(label.is_empty() || is_mac_shaped(label) || is_uuid_shaped(label))
+    !(label.is_empty() || BtAddress::is_label(label) || is_uuid_shaped(label))
 }
 
 fn label(device: &Device) -> &str {

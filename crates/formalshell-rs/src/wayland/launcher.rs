@@ -686,11 +686,16 @@ impl App {
                 }
             }
             ("bluetooth", "power") if value == "on" => bluetooth::ask(bluetooth::Ask::Power(true)),
-            ("bluetooth", "forget") => bluetooth::ask(bluetooth::Ask::Run(value, bluetooth::ActionKind::Forget)),
+            ("bluetooth", "forget") => {
+                if let Some(address) = fs_types::BtAddress::parse(&value) {
+                    bluetooth::ask(bluetooth::Ask::Run(address, bluetooth::ActionKind::Forget));
+                }
+            }
             ("bluetooth", "toggle") => {
-                let Some(d) = self.store.devices.bluetooth.devices.iter().find(|d| d.address.eq_ignore_ascii_case(&value)) else { return };
+                let Some(address) = fs_types::BtAddress::parse(&value) else { return };
+                let Some(d) = self.store.devices.bluetooth.devices.iter().find(|d| d.address == address) else { return };
                 let kind = if d.connected { bluetooth::ActionKind::Disconnect } else { bluetooth::ActionKind::Connect };
-                bluetooth::ask(bluetooth::Ask::Run(d.address.clone(), kind));
+                bluetooth::ask(bluetooth::Ask::Run(address, kind));
             }
             ("audio", "sink" | "source") => {
                 let c = if verb == "sink" {

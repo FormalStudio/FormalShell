@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use fs_audio::{Command, Visual};
 use fs_chrome::bar::layout::{self, Builtin, Entry, EntryKind};
 use fs_chrome::bar::panels::widget_panel;
-use fs_types::{Edge, Region};
+use fs_types::{BtAddress, Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 use fs_system::power::model::{battery_icon, charge_threshold_active};
@@ -579,7 +579,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                     let failed = b.failure.as_ref().filter(|(a, _)| *a == d.address).map(|(_, why)| (*why).to_owned());
                     let word = if d.connected { "Disconnect" } else { "Connect" };
                     let glyph = if d.connected { "bluetooth-connected" } else { "bluetooth" };
-                    lines.push(row(id, &d.address, glyph, name, d.connected).detail(doing.or(failed).or_else(|| Some(word.to_owned()))));
+                    lines.push(row(id, &d.address.to_string(), glyph, name, d.connected).detail(doing.or(failed).or_else(|| Some(word.to_owned()))));
                 }
                 if lines.is_empty() {
                     lines.push(Line::Note("No paired devices".into()));
@@ -1256,9 +1256,10 @@ impl QuickSettings {
             "bluetooth" => {
                 let b = &fx.store.devices.bluetooth;
                 if b.action.is_none()
-                    && let Some(d) = b.devices.iter().find(|d| d.address == what && d.paired)
+                    && let Some(address) = BtAddress::parse(&what)
+                    && let Some(d) = b.devices.iter().find(|d| d.address == address && d.paired)
                 {
-                    bt::ask(BtAsk::Run(what, if d.connected { BtAction::Disconnect } else { BtAction::Connect }));
+                    bt::ask(BtAsk::Run(address, if d.connected { BtAction::Disconnect } else { BtAction::Connect }));
                 }
             }
             "power-mode" => {

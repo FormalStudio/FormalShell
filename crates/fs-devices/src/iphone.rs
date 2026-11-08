@@ -19,6 +19,7 @@ use serde_json::{Value as Json, json};
 use unicode_normalization::UnicodeNormalization;
 
 use fs_js::{self as js, SPACE};
+use fs_types::BtAddress;
 
 pub mod category {
     pub(crate) const INCOMING_CALL: i64 = 1;
@@ -87,7 +88,8 @@ pub struct Status {
     /// Any link at all: an audio link with GATT down still counts.
     pub linked: bool,
     pub paired: bool,
-    pub address: String,
+    /// The bonded phone, none while the bridge reports no bond.
+    pub address: Option<BtAddress>,
     pub device_name: String,
     /// 0..100, -1 when unknown.
     pub battery: f64,
@@ -101,7 +103,7 @@ pub enum Event {
     Status(Status),
     PairingCode { code: String },
     Advertising { hci: String, name: String },
-    Forgot { address: String },
+    Forgot { address: Option<BtAddress> },
     Error { message: String },
 }
 
@@ -171,14 +173,14 @@ pub fn parse_event(line: &str) -> Option<Event> {
                 connected: is_true(&raw, "connected"),
                 linked: is_true(&raw, "linked"),
                 paired: is_true(&raw, "paired"),
-                address: s(&raw, "address").to_uppercase(),
+                address: BtAddress::parse(&s(&raw, "address")),
                 device_name: s(&raw, "deviceName"),
                 battery: if battery.is_finite() && battery >= 0.0 { battery.min(100.0) } else { -1.0 },
             }))
         }
         "pairingCode" => Some(Event::PairingCode { code: s(&raw, "code") }),
         "advertising" => Some(Event::Advertising { hci: s(&raw, "hci"), name: s(&raw, "name") }),
-        "forgot" => Some(Event::Forgot { address: s(&raw, "address").to_uppercase() }),
+        "forgot" => Some(Event::Forgot { address: BtAddress::parse(&s(&raw, "address")) }),
         "error" => Some(Event::Error { message: explain_error(&s(&raw, "message")) }),
         _ => None,
     }
@@ -214,7 +216,7 @@ pub(crate) fn explain_error(message: &str) -> String {
 /// laptop looks like from here. A phone still linked over any bearer is
 /// using that bond, so it keeps it.
 pub fn forget_before_pair(status: Option<&Status>) -> bool {
-    status.is_some_and(|s| s.paired && !s.connected && !s.linked && !s.address.is_empty())
+    status.is_some_and(|s| s.paired && !s.connected && !s.linked && s.address.is_some())
 }
 
 /// Newest first, one row per id, capped. ANCS resends an id when the phone
@@ -767,23 +769,23 @@ mod tests {
         assert!(!e.connected);
         assert!(e.linked);
         assert!(e.paired);
-        assert_eq!(e.address, "10:7D:C8:A5:3B:42");
+        assert_eq!(e.address.map(|a| a.to_string()).as_deref(), Some("10:7D:C8:A5:3B:42"));
         let old = status(r#"{"type":"status","observer":true,"connected":true}"#);
         assert!(!old.paired);
         assert!(!old.linked);
-        assert_eq!(old.address, "");
+        assert_eq!(old.address, None);
         assert_eq!(
             parse_event(r#"{"type":"forgot","address":"10:7d:c8:a5:3b:42"}"#),
-            Some(Event::Forgot { address: "10:7D:C8:A5:3B:42".into() })
+            Some(Event::Forgot { address: "10:7D:C8:A5:3B:42".parse().ok() })
         );
     }
 
     #[test]
     fn forget_before_pair_only_for_a_disconnected_bond() {
-        let st = |paired, connected, address: &str| Status { paired, connected, address: address.into(), ..Default::default() };
+        let st = |paired, connected, address: &str| Status { paired, connected, address: address.parse().ok(), ..Default::default() };
         assert!(forget_before_pair(Some(&st(true, false, "10:7D:C8:A5:3B:42"))));
         assert!(!forget_before_pair(Some(&st(true, true, "10:7D:C8:A5:3B:42"))));
-        let linked = Status { paired: true, linked: true, address: "10:7D:C8:A5:3B:42".into(), ..Default::default() };
+        let linked = Status { paired: true, linked: true, address: "10:7D:C8:A5:3B:42".parse().ok(), ..Default::default() };
         assert!(!forget_before_pair(Some(&linked)));
         assert!(!forget_before_pair(Some(&st(false, false, ""))));
         assert!(!forget_before_pair(Some(&st(true, false, ""))));

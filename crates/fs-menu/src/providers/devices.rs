@@ -207,13 +207,13 @@ pub fn bluetooth_rows(st: &BluetoothState) -> Vec<Node> {
             }),
             verb: Some(if d.connected { "Disconnect" } else { "Connect" }.to_string()),
             action: Some(format!("@ipc:bluetooth.toggle:{}", d.address)),
-            checked: Some(format!("@state:bluetooth.connected={}", d.address.to_uppercase())),
+            checked: Some(format!("@state:bluetooth.connected={}", d.address)),
             keep_open: Some(true),
             actions: vec![
                 ActionEntry { keep_open: Some(true), ..ActionEntry::new("forget", "Forget", format!("@ipc:bluetooth.forget:{}", d.address)).destructive() },
                 ActionEntry::new("panel", "Open Bluetooth panel", "@ipc:panel.open:bluetooth"),
             ],
-            ..Node::new(format!("bluetooth.dev.{}", id_part(&d.address)), device_label(d), Kind::Action)
+            ..Node::new(format!("bluetooth.dev.{}", id_part(&d.address.to_string())), device_label(d), Kind::Action)
         })
         .collect()
 }

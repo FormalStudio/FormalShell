@@ -14,7 +14,7 @@ use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
 use fs_system::power::model::Thresholds;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
-use fs_types::Percent;
+use fs_types::{BtAddress, Percent};
 use vello_cpu::kurbo::{Affine, Rect};
 
 use crate::scene::{IRect, Paint, Scene};
@@ -55,18 +55,18 @@ fn icon_of(bluez: &str, kind: Option<DeviceKind>) -> &'static str {
 /// What the card shows for the device at `address`, off the store: the
 /// earbuds backend's parts when one claims it, BlueZ's Battery1 otherwise,
 /// and no ring at all when nothing reports a level.
-pub fn face(store: &Store, address: &str) -> Face {
+pub fn face(store: &Store, address: BtAddress) -> Face {
     let seen: Option<&Headset> = store
         .devices
         .bluetooth
         .headsets
         .as_ref()
-        .and_then(|list| list.iter().find(|h| h.address.eq_ignore_ascii_case(address)));
+        .and_then(|list| list.iter().find(|h| h.address == address));
     // The AirPods daemon's status file carries no address, so a connected
     // device of its own with no address is matched by name.
     let claimed: Option<&Device> = store.devices.earbuds.devices().iter().find(|d| {
-        d.address.eq_ignore_ascii_case(address)
-            || (d.address.is_empty() && d.connected && seen.is_some_and(|h| !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name)))
+        d.address == Some(address)
+            || (d.address.is_none() && d.connected && seen.is_some_and(|h| !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name)))
     });
     let icon = icon_of(seen.map_or("", |h| h.icon.as_str()), claimed.map(|d| d.kind));
     // BlueZ holds the name the device advertises, which some cut short
@@ -77,8 +77,7 @@ pub fn face(store: &Store, address: &str) -> Face {
         .filter(|n| !n.is_empty())
         .or_else(|| remembered(store, address, "name"))
         .or_else(|| seen.map(|h| h.name.as_str()).filter(|n| !n.is_empty()))
-        .unwrap_or(address)
-        .to_owned();
+        .map_or_else(|| address.to_string(), str::to_owned);
     let mut parts: Vec<Part> = Vec::new();
     if let Some(d) = claimed {
         for side in [BatteryId::Left, BatteryId::Right, BatteryId::Case, BatteryId::Single] {
@@ -105,8 +104,8 @@ pub fn face(store: &Store, address: &str) -> Face {
 
 /// What the earbuds backend last called `address` (`key` "name") or the
 /// picture set it named (`key` "art").
-fn remembered<'a>(store: &'a Store, address: &str, key: &str) -> Option<&'a str> {
-    store.state.data.earbuds_faces.get(address.to_ascii_uppercase())?.get(key)?.as_str().filter(|s| !s.is_empty())
+fn remembered<'a>(store: &'a Store, address: BtAddress, key: &str) -> Option<&'a str> {
+    store.state.data.earbuds_faces.get(&address.to_string())?.get(key)?.as_str().filter(|s| !s.is_empty())
 }
 
 /// The `address -> {art, name}` entries the earbuds backend reports now
@@ -122,15 +121,14 @@ pub fn learned(store: &Store) -> Vec<(String, serde_json::Value)> {
         .iter()
         .filter(|d| !d.art.is_empty() || !d.name.is_empty())
         .filter_map(|d| {
-            let address = if d.address.is_empty() {
-                headsets.iter().find(|h| h.connected && !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name))?.address.clone()
-            } else {
-                d.address.clone()
+            let address = match d.address {
+                Some(address) => address,
+                None => headsets.iter().find(|h| h.connected && !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name))?.address,
             };
-            let address = address.to_ascii_uppercase();
-            let art = if d.art.is_empty() { remembered(store, &address, "art").unwrap_or_default() } else { d.art.as_str() };
+            let art = if d.art.is_empty() { remembered(store, address, "art").unwrap_or_default() } else { d.art.as_str() };
             let entry = serde_json::json!({"art": art, "name": d.name});
-            (store.state.data.earbuds_faces.get(&address) != Some(&entry)).then_some((address, entry))
+            let key = address.to_string();
+            (store.state.data.earbuds_faces.get(&key) != Some(&entry)).then_some((key, entry))
         })
         .collect()
 }

@@ -16,7 +16,7 @@ use std::time::Instant;
 
 use fs_media::media::{self as pick, LabelledRow, PlayerRow};
 use fs_mpris::{LoopStatus, Mpris, PlayerState};
-use fs_types::Fraction;
+use fs_types::{BtAddress, Fraction};
 use serde_json::{Value, json};
 
 use fs_audio::Visual;
@@ -169,8 +169,9 @@ pub struct Remote {
     /// The `MediaPlayer1` object, which the transport goes to.
     pub path: String,
     /// The device's identity address, the one its PipeWire node carries
-    /// (the object path can carry a random resolvable one instead).
-    pub address: String,
+    /// (the object path can carry a random resolvable one instead). None
+    /// for a player whose device is not known.
+    pub address: Option<BtAddress>,
     pub label: String,
     pub title: String,
     pub artist: String,
@@ -185,10 +186,11 @@ pub struct Remote {
 
 impl Remote {
     pub fn from(p: &fs_bluez::state::Player, device: Option<&fs_bluez::state::Device>, at: Instant) -> Self {
-        let address = device.map(|d| d.info.address.clone()).unwrap_or_default();
-        let label = device.map(|d| if d.info.name.is_empty() { d.info.device_name.clone() } else { d.info.name.clone() }).filter(|l| !l.is_empty()).unwrap_or_else(|| address.clone());
+        let address = device.map(|d| d.info.address);
+        let shown = address.map(|a| a.to_string()).unwrap_or_default();
+        let label = device.map(|d| if d.info.name.is_empty() { d.info.device_name.clone() } else { d.info.name.clone() }).filter(|l| !l.is_empty()).unwrap_or_else(|| shown.clone());
         Self {
-            id: format!("bluez:{address}"),
+            id: format!("bluez:{shown}"),
             path: p.path.clone(),
             address,
             label,
@@ -214,8 +216,9 @@ impl Remote {
     /// plays into: BlueZ's PipeWire plugin names it
     /// `bluez_input.<address, colons as underscores>.<profile>`.
     fn plays_into(&self, node: &str) -> bool {
-        let want = format!("bluez_input.{}", self.address.replace(':', "_"));
-        !self.address.is_empty() && node.get(..want.len()).is_some_and(|n| n.eq_ignore_ascii_case(&want))
+        let Some(address) = self.address else { return false };
+        let want = format!("bluez_input.{}", address.path_segment());
+        node.get(..want.len()).is_some_and(|n| n.eq_ignore_ascii_case(&want))
     }
 }
 
@@ -1040,7 +1043,7 @@ mod tests {
         Remote {
             id: "bluez:C8:89:F3:45:A7:AA".into(),
             path: "/org/bluez/hci0/dev_4A_DC_C3_A2_75_EC/avrcp/player0".into(),
-            address: "C8:89:F3:45:A7:AA".into(),
+            address: "C8:89:F3:45:A7:AA".parse().ok(),
             label: "FormalPad".into(),
             title: "OLED iPad Mini".into(),
             artist: "Marques Brownlee".into(),

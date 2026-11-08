@@ -6,6 +6,7 @@ use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
 use fs_devices::bluetooth;
+use fs_types::BtAddress;
 use futures_lite::{StreamExt, future};
 use zbus::fdo::{DBusProxy, ObjectManagerProxy};
 use zbus::message::Type as MessageType;
@@ -21,7 +22,7 @@ const BLUEZ: &str = "org.bluez";
 #[derive(Debug)]
 pub enum Error {
     NoAdapter,
-    UnknownDevice(String),
+    UnknownDevice(BtAddress),
     Bus(zbus::Error),
 }
 
@@ -163,9 +164,9 @@ impl Bluez {
     /// The device a command acts on, its changes subscribed before the
     /// command goes out: under the narrow subscription a stranger being
     /// paired would otherwise answer into nothing.
-    async fn resolve(&self, address: &str) -> Result<Device> {
+    async fn resolve(&self, address: BtAddress) -> Result<Device> {
         let adapter = self.default_adapter()?;
-        let d = lock(&self.state).find_device(&adapter, address).ok_or_else(|| Error::UnknownDevice(address.to_string()))?;
+        let d = lock(&self.state).find_device(&adapter, address).ok_or_else(|| Error::UnknownDevice(address))?;
         let (ack, acked) = async_channel::bounded(1);
         if self.watch.try_send(Watch::Path(d.info.dbus_path.clone(), ack)).is_ok() {
             let _ = acked.recv().await;
@@ -210,7 +211,7 @@ impl Bluez {
         Ok(self.adapter(adapter).await?.stop_discovery().await?)
     }
 
-    pub async fn connect_device(&self, address: &str) -> Result<()> {
+    pub async fn connect_device(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
         let path = d.info.dbus_path.clone();
         let proxy = self.device_proxy(&path).await?;
@@ -220,7 +221,7 @@ impl Bluez {
         Ok(out?)
     }
 
-    pub async fn disconnect_device(&self, address: &str) -> Result<()> {
+    pub async fn disconnect_device(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
         let path = d.info.dbus_path.clone();
         let proxy = self.device_proxy(&path).await?;
@@ -232,7 +233,7 @@ impl Bluez {
 
     /// Leaves trusting and connecting to the caller, which decides when
     /// pairing counts as done.
-    pub async fn pair(&self, address: &str) -> Result<()> {
+    pub async fn pair(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
         let path = d.info.dbus_path.clone();
         let proxy = self.device_proxy(&path).await?;
@@ -242,18 +243,18 @@ impl Bluez {
         Ok(out?)
     }
 
-    pub async fn cancel_pairing(&self, address: &str) -> Result<()> {
+    pub async fn cancel_pairing(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
         Ok(self.device_proxy(&d.info.dbus_path).await?.cancel_pairing().await?)
     }
 
-    pub async fn set_trusted(&self, address: &str, trusted: bool) -> Result<()> {
+    pub async fn set_trusted(&self, address: BtAddress, trusted: bool) -> Result<()> {
         let d = self.resolve(address).await?;
         Ok(self.device_proxy(&d.info.dbus_path).await?.set_trusted(trusted).await?)
     }
 
     /// `Adapter1.RemoveDevice`: unpairs and forgets.
-    pub async fn remove(&self, address: &str) -> Result<()> {
+    pub async fn remove(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
         let path = ObjectPath::try_from(d.info.dbus_path.as_str()).map_err(zbus::Error::from)?;
         Ok(self.adapter(&d.adapter).await?.remove_device(&path).await?)

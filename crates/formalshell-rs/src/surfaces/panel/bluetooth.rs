@@ -9,6 +9,7 @@
 //! VM has no adapter, so the rig sees the honest "No adapter" row.
 
 use fs_devices::bluetooth::{self as model, Device};
+use fs_types::BtAddress;
 
 use super::{Effect, Panel, View};
 use crate::services::devices::bluetooth::{ActionKind, Ask, Bluetooth as Bt, ask};
@@ -37,7 +38,7 @@ fn rows(bt: &Bt) -> Vec<(Bucket, &Device)> {
     out
 }
 
-fn find<'a>(bt: &'a Bt, address: &str) -> Option<(Bucket, &'a Device)> {
+fn find(bt: &Bt, address: BtAddress) -> Option<(Bucket, &Device)> {
     rows(bt).into_iter().find(|(_, d)| d.address == address)
 }
 
@@ -88,11 +89,12 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     }
 }
 
-fn run(address: &str, kind: ActionKind) {
-    ask(Ask::Run(address.to_owned(), kind));
+fn run(address: BtAddress, kind: ActionKind) {
+    ask(Ask::Run(address, kind));
 }
 
 fn activate(bt: &Bt, address: &str) {
+    let Some(address) = BtAddress::parse(address) else { return };
     if bt.action.is_some() {
         return;
     }
@@ -108,6 +110,7 @@ fn activate(bt: &Bt, address: &str) {
 }
 
 fn forget(bt: &Bt, address: &str) {
+    let Some(address) = BtAddress::parse(address) else { return };
     if bt.action.is_none() && find(bt, address).is_some_and(|(b, _)| b == Bucket::Paired) {
         run(address, ActionKind::Forget);
     }
@@ -115,6 +118,7 @@ fn forget(bt: &Bt, address: &str) {
 
 /// Only a device BlueZ reports `paired` has anything to trust.
 fn trust(bt: &Bt, address: &str) {
+    let Some(address) = BtAddress::parse(address) else { return };
     if bt.action.is_some() {
         return;
     }

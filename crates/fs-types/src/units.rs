@@ -66,6 +66,74 @@ impl Fraction {
     }
 }
 
+/// A Bluetooth device address, six octets. Parsed once from BlueZ's or a
+/// helper's text; it prints as BlueZ does, upper-case with colons.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BtAddress([u8; 6]);
+
+impl BtAddress {
+    /// `AA:BB:CC:DD:EE:FF` in either case, and nothing else.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::parse_with(text, |c| c == b':')
+    }
+
+    /// Whether `text` is the shape BlueZ falls back to for an unnamed
+    /// device's label: six octets joined by colons or dashes.
+    pub fn is_label(text: &str) -> bool {
+        Self::parse_with(text, |c| c == b':' || c == b'-').is_some()
+    }
+
+    fn parse_with(text: &str, sep: impl Fn(u8) -> bool) -> Option<Self> {
+        let b = text.as_bytes();
+        if b.len() != 17 {
+            return None;
+        }
+        let mut octets = [0u8; 6];
+        for (i, octet) in octets.iter_mut().enumerate() {
+            let at = i * 3;
+            if i > 0 && !sep(b[at - 1]) {
+                return None;
+            }
+            let hex = |c: u8| (c as char).to_digit(16);
+            *octet = (hex(b[at])? * 16 + hex(b[at + 1])?) as u8;
+        }
+        Some(Self(octets))
+    }
+
+    /// The `AA_BB_CC_DD_EE_FF` form BlueZ puts in a device's object path.
+    pub fn path_segment(self) -> String {
+        self.to_string().replace(':', "_")
+    }
+}
+
+impl Default for BtAddress {
+    /// BDADDR_ANY, the address of a device that has not reported one.
+    fn default() -> Self {
+        Self([0; 6])
+    }
+}
+
+impl std::fmt::Display for BtAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let [a, b, c, d, e, g] = self.0;
+        write!(f, "{a:02X}:{b:02X}:{c:02X}:{d:02X}:{e:02X}:{g:02X}")
+    }
+}
+
+impl std::fmt::Debug for BtAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BtAddress({self})")
+    }
+}
+
+impl std::str::FromStr for BtAddress {
+    type Err = ();
+
+    fn from_str(text: &str) -> Result<Self, ()> {
+        Self::parse(text).ok_or(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +162,18 @@ mod tests {
         assert_eq!(f.to_percent().rounded(), 42);
         assert_eq!(Fraction::from_fraction(1.5).as_fraction(), 1.0);
         assert_eq!(Fraction::from_fraction(f64::NAN).as_fraction(), 0.0);
+    }
+
+    #[test]
+    fn bt_address_parses_either_case_and_prints_upper() {
+        let a = BtAddress::parse("aa:bb:cc:dd:ee:0f").unwrap();
+        assert_eq!(a.to_string(), "AA:BB:CC:DD:EE:0F");
+        assert_eq!(a.path_segment(), "AA_BB_CC_DD_EE_0F");
+        assert_eq!(Some(a), BtAddress::parse("AA:BB:CC:DD:EE:0F"));
+        for bad in ["", "AA:BB:CC:DD:EE:FF\n", "AA:BB --dry-run", "--help", "AA-BB-CC-DD-EE-FF", "AA:BB:CC:DD:EE", "AA:BB:CC:DD:EE:GG", "AA:BB:CC:DD:EE:FF:00"] {
+            assert_eq!(BtAddress::parse(bad), None, "{bad:?}");
+        }
+        assert!(BtAddress::is_label("aa-bb-cc-dd-ee-ff"));
+        assert!(!BtAddress::is_label("Sony WH-1000XM4"));
     }
 }

@@ -18,6 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_io::Timer;
 use fs_devices::iphone::{self, Arrival, Event, Notification, Verdict};
+use fs_types::BtAddress;
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
 
@@ -49,7 +50,7 @@ pub struct State {
     /// BlueZ holds a bond for the phone at `bond_address` whether or not it
     /// is connected.
     pub bonded: bool,
-    pub bond_address: String,
+    pub bond_address: Option<BtAddress>,
     /// Linked over any bearer, LE or not.
     pub linked: bool,
     /// Newest first, the bridge's own record per notification, including
@@ -197,7 +198,7 @@ impl Session {
             Event::Forgot { address } => {
                 if self.state.bond_address == address {
                     self.state.bonded = false;
-                    self.state.bond_address.clear();
+                    self.state.bond_address = None;
                 }
             }
             Event::Error { message } => {
@@ -438,11 +439,13 @@ fn handle(ctx: &Ctx, session: &mut Session, cmd: Cmd, inbox: &(async_channel::Se
                 paired: session.state.bonded,
                 connected: session.state.connected,
                 linked: session.state.linked,
-                address: session.state.bond_address.clone(),
+                address: session.state.bond_address,
                 ..iphone::Status::default()
             };
-            if iphone::forget_before_pair(Some(&status)) {
-                argv.extend(["--forget".to_owned(), session.state.bond_address.clone()]);
+            if iphone::forget_before_pair(Some(&status))
+                && let Some(address) = status.address
+            {
+                argv.extend(["--forget".to_owned(), address.to_string()]);
             }
             ctx.spawn(run_child(argv, inbox.0.clone(), false));
             // Advertising from the press on, not from the bridge's line: a
@@ -472,8 +475,11 @@ fn end_pairing(ctx: &Ctx, session: &mut Session) {
                 .await;
         });
     }
-    if session.state.advertising && session.state.bonded && !session.state.bond_address.is_empty() {
-        crate::services::devices::bluetooth::set_trust(ctx, &session.state.bond_address, true);
+    if session.state.advertising
+        && session.state.bonded
+        && let Some(address) = session.state.bond_address
+    {
+        crate::services::devices::bluetooth::set_trust(ctx, address, true);
     }
     session.state.advertising = false;
     session.state.pairing_code.clear();
@@ -552,12 +558,12 @@ mod tests {
     #[test]
     fn pairing_ends_when_a_bond_appears_after_the_phone_was_seen_unpaired() {
         let mut s = Session::default();
-        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"AA"}"#).unwrap());
+        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"AA:BB:CC:DD:EE:01"}"#).unwrap());
         s.event(iphone::parse_event(r#"{"type":"advertising","hci":"hci0","name":"x"}"#).unwrap());
-        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"AA"}"#).unwrap());
+        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"AA:BB:CC:DD:EE:01"}"#).unwrap());
         assert!(!s.finish_pairing, "a bond that was already there is not the phone accepting");
         s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":false,"address":""}"#).unwrap());
-        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"AA"}"#).unwrap());
+        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"AA:BB:CC:DD:EE:01"}"#).unwrap());
         assert!(s.finish_pairing);
     }
 
@@ -583,8 +589,8 @@ mod tests {
     #[test]
     fn a_forgotten_bond_clears() {
         let mut s = Session::default();
-        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"aa"}"#).unwrap());
-        s.event(iphone::parse_event(r#"{"type":"forgot","address":"aa"}"#).unwrap());
-        assert!(!s.state.bonded && s.state.bond_address.is_empty());
+        s.event(iphone::parse_event(r#"{"type":"status","observer":true,"paired":true,"address":"aa:bb:cc:dd:ee:01"}"#).unwrap());
+        s.event(iphone::parse_event(r#"{"type":"forgot","address":"aa:bb:cc:dd:ee:01"}"#).unwrap());
+        assert!(!s.state.bonded && s.state.bond_address.is_none());
     }
 }

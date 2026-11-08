@@ -526,7 +526,7 @@ pub enum Out {
 pub fn snapshot(store: &Store) -> Snapshot {
     let d = &store.devices;
     let radio = &store.media.radio;
-    let connected: Vec<String> = d.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_uppercase()).collect();
+    let connected: Vec<String> = d.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_string()).collect();
     let l = &store.lights;
     let ipad = store.ipad.bridge.as_ref();
     toggles::snapshot(Some(&json!({

@@ -28,6 +28,7 @@ use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use async_process::{ChildStdin, Stdio};
 use fs_devices::bluetooth::Device as BtDevice;
+use fs_types::BtAddress;
 use fs_devices::earbuds::motion::{Quat, Sample, parse_sample};
 use fs_devices::earbuds::{self as model, Device, HeartSample, Motion, Value, airpods, nothing, samsung, soundcore};
 use futures_lite::io::{BufReader, Lines};
@@ -56,9 +57,9 @@ pub struct Backend {
     pub devices: Vec<Device>,
     /// nothing: each listed device's last state line, what its commands are
     /// built from. A device is here only while its `watch` child runs.
-    pub nothing: BTreeMap<String, nothing::State>,
+    pub nothing: BTreeMap<BtAddress, nothing::State>,
     /// soundcore: each connected device's capabilities.
-    pub caps: BTreeMap<String, soundcore::Caps>,
+    pub caps: BTreeMap<BtAddress, soundcore::Caps>,
 }
 
 impl Backend {
@@ -101,7 +102,7 @@ pub enum Op {
     /// One verb on the librepods control socket.
     Airpods(String),
     /// One `nothingctl watch` stdin line, without its newline.
-    Nothing { address: String, line: String },
+    Nothing { address: BtAddress, line: String },
     /// One CLI call on a poll backend, followed by a poll.
     Run { backend: &'static str, argv: Vec<String> },
 }
@@ -173,7 +174,8 @@ impl Earbuds {
                 Ok(Some(Op::Airpods(verb)))
             }
             nothing::BACKEND => {
-                let state = backend.nothing.get(&dev.address).ok_or_else(refused)?;
+                let address = dev.address.ok_or_else(refused)?;
+                let state = backend.nothing.get(&address).ok_or_else(refused)?;
                 let verb = nothing::command(control, &value, Some(state)).ok_or_else(refused)?;
                 // A range drag lands on the same whole value many times
                 // over; the device already holds it, so nothing is written.
@@ -184,16 +186,17 @@ impl Earbuds {
                 if held == value {
                     return Ok(None);
                 }
-                Ok(Some(Op::Nothing { address: dev.address.clone(), line: verb.to_string() }))
+                Ok(Some(Op::Nothing { address, line: verb.to_string() }))
             }
             soundcore::BACKEND => {
-                let tail = soundcore::command(control, &value, backend.caps.get(&dev.address)).ok_or_else(refused)?;
-                let argv = soundcore::setting_argv(&dev.address, &tail).ok_or_else(refused)?;
+                let address = dev.address.ok_or_else(refused)?;
+                let tail = soundcore::command(control, &value, backend.caps.get(&address)).ok_or_else(refused)?;
+                let argv = soundcore::setting_argv(address, &tail);
                 Ok(Some(Op::Run { backend: soundcore::BACKEND, argv }))
             }
             samsung::BACKEND => {
                 let tail = samsung::command(control, &value).ok_or_else(refused)?;
-                let argv = samsung::argv(&dev.address, &tail).ok_or_else(refused)?;
+                let argv = samsung::argv(dev.address.ok_or_else(refused)?, &tail);
                 Ok(Some(Op::Run { backend: samsung::BACKEND, argv }))
             }
             _ => Err(refused()),
@@ -860,8 +863,8 @@ impl Poller {
 }
 
 /// The connected addresses, sorted: what a poll is keyed on.
-fn connected_key(bt: &[BtDevice]) -> Vec<String> {
-    let mut out: Vec<String> = bt.iter().filter(|d| d.connected).map(|d| d.address.clone()).collect();
+fn connected_key(bt: &[BtDevice]) -> Vec<BtAddress> {
+    let mut out: Vec<BtAddress> = bt.iter().filter(|d| d.connected).map(|d| d.address).collect();
     out.sort();
     out
 }
@@ -871,7 +874,7 @@ fn connected_key(bt: &[BtDevice]) -> Vec<String> {
 async fn run_poll(ctx: Ctx, kind: Poller, rx: Receiver<Event>, epoch: Rc<Cell<u64>>) {
     let mut held = false;
     let mut bt: Vec<BtDevice> = Vec::new();
-    let mut key: Vec<String> = Vec::new();
+    let mut key: Vec<BtAddress> = Vec::new();
     let mut next = Instant::now();
     let mut backend = Backend::new(true);
     loop {
@@ -939,17 +942,17 @@ async fn poll_soundcore(bt: &[BtDevice], backend: &mut Backend) -> Vec<Device> {
     let (code, text) = run_cli(Some(soundcore::paired_argv())).await;
     backend.available = code != -1;
     let targets = if code == 0 { soundcore::connected_paired(&soundcore::parse_paired(&text), bt) } else { Vec::new() };
-    backend.caps.retain(|address, _| targets.iter().any(|t| &t.address == address));
+    backend.caps.retain(|address, _| targets.iter().any(|t| t.address == *address));
     let mut found = Vec::new();
     for info in targets {
         if !backend.caps.contains_key(&info.address) {
-            let (code, text) = run_cli(soundcore::settings_argv(&info.address)).await;
+            let (code, text) = run_cli(Some(soundcore::settings_argv(info.address))).await;
             backend.available = code != -1;
             let Some(caps) = (code == 0).then(|| soundcore::parse_capabilities(&text)).flatten() else { continue };
-            backend.caps.insert(info.address.clone(), caps);
+            backend.caps.insert(info.address, caps);
         }
         let caps = backend.caps[&info.address].clone();
-        let argv = (!caps.ids.is_empty()).then(|| soundcore::setting_argv(&info.address, &soundcore::get_args(&caps))).flatten();
+        let argv = (!caps.ids.is_empty()).then(|| soundcore::setting_argv(info.address, &soundcore::get_args(&caps)));
         let (code, text) = run_cli(argv).await;
         if code != -2 {
             backend.available = code != -1;
@@ -963,7 +966,7 @@ async fn poll_soundcore(bt: &[BtDevice], backend: &mut Backend) -> Vec<Device> {
 async fn poll_samsung(bt: &[BtDevice], backend: &mut Backend) -> Vec<Device> {
     let mut found = Vec::new();
     for buds in samsung::connected_buds(bt) {
-        let (code, text) = run_cli(samsung::status_argv(&buds.address)).await;
+        let (code, text) = run_cli(Some(samsung::status_argv(buds.address))).await;
         if code != -2 {
             backend.available = code != -1;
         }
@@ -979,8 +982,8 @@ enum NEvent {
     Bluetooth(Vec<BtDevice>),
     Op(Op),
     List(i32, String),
-    Line(String, u64, String),
-    Exit(String, u64, i32),
+    Line(BtAddress, u64, String),
+    Exit(BtAddress, u64, i32),
 }
 
 struct Watcher {
@@ -996,16 +999,16 @@ struct Nothing {
     listing: bool,
     list_again: bool,
     next_id: u64,
-    watchers: BTreeMap<String, Watcher>,
-    states: BTreeMap<String, nothing::State>,
-    failures: BTreeMap<String, &'static str>,
+    watchers: BTreeMap<BtAddress, Watcher>,
+    states: BTreeMap<BtAddress, nothing::State>,
+    failures: BTreeMap<BtAddress, &'static str>,
     /// address -> (when, the delay that got it there).
-    retry: BTreeMap<String, (Instant, Duration)>,
+    retry: BTreeMap<BtAddress, (Instant, Duration)>,
     /// Kept across release, so closing and reopening the panel is not a way
     /// round a refusal.
-    unsupported: BTreeMap<String, nothing::Mark>,
-    connected: Vec<String>,
-    connected_at: BTreeMap<String, Instant>,
+    unsupported: BTreeMap<BtAddress, nothing::Mark>,
+    connected: Vec<BtAddress>,
+    connected_at: BTreeMap<BtAddress, Instant>,
 }
 
 /// The Nothing backend over `nothingctl`. Discovery is `list --json`, run on
@@ -1061,8 +1064,8 @@ async fn run_nothing(ctx: Ctx, rx: Receiver<NEvent>, tx: Sender<NEvent>) {
                     let now = Instant::now();
                     s.connected_at.retain(|a, _| connected.contains(a));
                     for a in connected.iter().filter(|a| !s.connected.contains(a)) {
-                        s.connected_at.insert(a.clone(), now);
-                        s.retry.insert(a.clone(), (now + SETTLE, SETTLE));
+                        s.connected_at.insert(*a, now);
+                        s.retry.insert(*a, (now + SETTLE, SETTLE));
                     }
                     s.connected = connected;
                     s.discover(&ctx, &tx);
@@ -1076,8 +1079,8 @@ async fn run_nothing(ctx: Ctx, rx: Receiver<NEvent>, tx: Sender<NEvent>) {
             }
             NEvent::Op(_) => {}
             NEvent::List(code, text) => s.on_list(&ctx, &tx, code, &text),
-            NEvent::Line(address, id, line) => s.on_line(&ctx, &address, id, &line),
-            NEvent::Exit(address, id, code) => s.on_exit(&ctx, &address, id, code),
+            NEvent::Line(address, id, line) => s.on_line(&ctx, address, id, &line),
+            NEvent::Exit(address, id, code) => s.on_exit(&ctx, address, id, code),
         }
     }
 }
@@ -1123,7 +1126,7 @@ impl Nothing {
                 if !d.connected || self.watchers.contains_key(&d.address) || self.unsupported.contains_key(&d.address) || waiting {
                     continue;
                 }
-                self.start_watch(ctx, tx, &d.address);
+                self.start_watch(ctx, tx, d.address);
             }
         }
         if self.list_again {
@@ -1132,8 +1135,8 @@ impl Nothing {
         }
     }
 
-    fn start_watch(&mut self, ctx: &Ctx, tx: &Sender<NEvent>, address: &str) {
-        let Some(argv) = nothing::watch_argv(address) else { return };
+    fn start_watch(&mut self, ctx: &Ctx, tx: &Sender<NEvent>, address: BtAddress) {
+        let argv = nothing::watch_argv(address);
         self.next_id += 1;
         let id = self.next_id;
         let child = crate::services::proc::command(&argv[0])
@@ -1146,14 +1149,14 @@ impl Nothing {
         let mut child = match child {
             Ok(child) => child,
             Err(_) => {
-                let _ = tx.try_send(NEvent::Exit(address.to_owned(), id, -1));
+                let _ = tx.try_send(NEvent::Exit(address, id, -1));
                 return;
             }
         };
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else { return };
         let (stop, stopped) = async_channel::bounded::<()>(1);
-        self.watchers.insert(address.to_owned(), Watcher { id, stdin, stop });
-        let (tx, address) = (tx.clone(), address.to_owned());
+        self.watchers.insert(address, Watcher { id, stdin, stop });
+        let tx = tx.clone();
         ctx.spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             loop {
@@ -1164,7 +1167,7 @@ impl Nothing {
                 .await;
                 match next {
                     Some(line) => {
-                        let _ = tx.send(NEvent::Line(address.clone(), id, line)).await;
+                        let _ = tx.send(NEvent::Line(address, id, line)).await;
                     }
                     None => break,
                 }
@@ -1175,51 +1178,51 @@ impl Nothing {
         });
     }
 
-    fn live(&self, address: &str, id: u64) -> bool {
-        self.watchers.get(address).is_some_and(|w| w.id == id)
+    fn live(&self, address: BtAddress, id: u64) -> bool {
+        self.watchers.get(&address).is_some_and(|w| w.id == id)
     }
 
-    fn on_line(&mut self, ctx: &Ctx, address: &str, id: u64, line: &str) {
+    fn on_line(&mut self, ctx: &Ctx, address: BtAddress, id: u64, line: &str) {
         if !self.held || !self.live(address, id) {
             return;
         }
         match nothing::parse_line(line) {
             Some(nothing::Line::State(state)) if state.address == address => {
-                self.states.insert(address.to_owned(), *state);
-                self.failures.remove(address);
-                self.retry.remove(address);
+                self.states.insert(address, *state);
+                self.failures.remove(&address);
+                self.retry.remove(&address);
             }
             Some(nothing::Line::Ack { .. }) => {
-                self.failures.remove(address);
+                self.failures.remove(&address);
             }
             Some(nothing::Line::Error { code, message, .. }) if code == nothing::UNSUPPORTED => {
                 return self.mark_unsupported(address, &message);
             }
             Some(nothing::Line::Error { message, .. }) => {
                 eprintln!("nothingctl {address}: {message}");
-                self.failures.insert(address.to_owned(), nothing::FAILED);
+                self.failures.insert(address, nothing::FAILED);
             }
             Some(nothing::Line::Disconnected) => {
-                self.states.remove(address);
-                self.failures.remove(address);
+                self.states.remove(&address);
+                self.failures.remove(&address);
             }
             _ => return,
         }
         self.publish(ctx);
     }
 
-    fn mark_unsupported(&mut self, address: &str, message: &str) {
-        if self.unsupported.contains_key(address) {
+    fn mark_unsupported(&mut self, address: BtAddress, message: &str) {
+        if self.unsupported.contains_key(&address) {
             return;
         }
         let why = if message.is_empty() { "unsupported model" } else { message };
         eprintln!("nothingctl {address}: {why}; not retried until it reconnects");
-        self.unsupported.insert(address.to_owned(), nothing::Mark { seen_down: false });
+        self.unsupported.insert(address, nothing::Mark { seen_down: false });
     }
 
-    fn on_exit(&mut self, ctx: &Ctx, address: &str, id: u64, code: i32) {
+    fn on_exit(&mut self, ctx: &Ctx, address: BtAddress, id: u64, code: i32) {
         if self.live(address, id) {
-            self.watchers.remove(address);
+            self.watchers.remove(&address);
         }
         if code == nothing::UNSUPPORTED_EXIT {
             self.mark_unsupported(address, "");
@@ -1227,19 +1230,19 @@ impl Nothing {
         if !self.held {
             return;
         }
-        self.states.remove(address);
-        self.failures.remove(address);
+        self.states.remove(&address);
+        self.failures.remove(&address);
         self.publish(ctx);
-        if self.unsupported.contains_key(address) {
+        if self.unsupported.contains_key(&address) {
             return;
         }
-        let fresh = self.connected_at.get(address).is_some_and(|at| at.elapsed() < QUICK_WINDOW);
-        let delay = match self.retry.get(address) {
+        let fresh = self.connected_at.get(&address).is_some_and(|at| at.elapsed() < QUICK_WINDOW);
+        let delay = match self.retry.get(&address) {
             _ if fresh => QUICK,
             Some((_, d)) => (*d * 2).clamp(BACKOFF_MIN, BACKOFF_MAX),
             None => BACKOFF_MIN,
         };
-        self.retry.insert(address.to_owned(), (Instant::now() + delay, delay));
+        self.retry.insert(address, (Instant::now() + delay, delay));
     }
 }
 

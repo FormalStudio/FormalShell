@@ -52,7 +52,7 @@ fn bluetoothd_without_a_controller_is_the_no_adapter_state() {
         assert!(s.default_adapter().is_none());
         assert!(s.devices().is_empty());
         assert!(matches!(bluez.start_discovery("/org/bluez/hci0").await, Err(Error::Bus(_))));
-        assert!(matches!(bluez.pair("AA:BB:CC:DD:EE:FF").await, Err(Error::NoAdapter)));
+        assert!(matches!(bluez.pair("AA:BB:CC:DD:EE:FF".parse().unwrap()).await, Err(Error::NoAdapter)));
     });
 }
 
@@ -121,26 +121,26 @@ fn two_virtual_controllers_discover_pair_and_forget() {
         bluez.stop_discovery(&local.path).await.unwrap();
         expect(&rx, "scan stopped", |e| matches!(e, Event::AdapterChanged(a) if a.path == local.path && !a.discovering)).await;
 
-        let paired = bluez.pair(&remote.address.to_lowercase()).await;
+        let paired = bluez.pair(remote.address).await;
         println!("pair: {paired:?}");
         paired.unwrap();
         within("paired in state", async {
-            while !bluez.state().find_device(&local.path, &remote.address).is_some_and(|d| d.info.paired) {
+            while !bluez.state().find_device(&local.path, remote.address).is_some_and(|d| d.info.paired) {
                 Timer::after(Duration::from_millis(200)).await;
             }
         })
         .await;
-        assert!(!bluez.state().find_device(&local.path, &remote.address).unwrap().info.pairing);
+        assert!(!bluez.state().find_device(&local.path, remote.address).unwrap().info.pairing);
 
-        bluez.set_trusted(&remote.address, true).await.unwrap();
+        bluez.set_trusted(remote.address, true).await.unwrap();
         within("trusted in state", async {
-            while !bluez.state().find_device(&local.path, &remote.address).is_some_and(|d| d.info.trusted) {
+            while !bluez.state().find_device(&local.path, remote.address).is_some_and(|d| d.info.trusted) {
                 Timer::after(Duration::from_millis(200)).await;
             }
         })
         .await;
 
-        bluez.remove(&remote.address).await.unwrap();
+        bluez.remove(remote.address).await.unwrap();
         expect(&rx, "forgotten", |e| matches!(e, Event::DeviceRemoved { address, .. } if *address == remote.address)).await;
         bluez.unregister_agent().await.unwrap();
     });

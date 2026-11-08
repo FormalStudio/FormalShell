@@ -291,7 +291,7 @@ fn no_bluetoothd_is_the_no_adapter_state() {
         let s = bluez.state();
         assert!(s.default_adapter().is_none());
         assert!(s.devices().is_empty());
-        let err = bluez.connect_device("AA:BB:CC:DD:EE:FF").await.unwrap_err();
+        let err = bluez.connect_device("AA:BB:CC:DD:EE:FF".parse().unwrap()).await.unwrap_err();
         assert!(matches!(err, Error::NoAdapter));
         assert_eq!(err.to_string(), "no bluetooth adapter");
         assert!(bluez.earbuds_devices().is_empty());
@@ -308,7 +308,7 @@ fn enumerates_adapter_devices_battery_and_rssi() {
         let a = s.default_adapter().unwrap();
         assert_eq!(a.path, HCI0);
         assert_eq!((a.powered, a.pairable, a.discovering, a.state), (true, true, false, AdapterState::Enabled));
-        let buds = s.find_device(HCI0, "aa:bb:cc:dd:ee:ff").unwrap();
+        let buds = s.find_device(HCI0, "aa:bb:cc:dd:ee:ff".parse().unwrap()).unwrap();
         assert_eq!(buds.info.name, "Buds");
         assert!(buds.info.paired && buds.info.bonded && !buds.info.connected);
         assert_eq!(buds.icon, "audio-headset");
@@ -346,7 +346,7 @@ fn device_commands_and_their_events() {
         let _bluez_conn = serve_bluez(daemon).await;
         let (bluez, rx) = client(daemon, ex).await;
 
-        let connecting = bluez.connect_device("aa:bb:cc:dd:ee:ff");
+        let connecting = bluez.connect_device("aa:bb:cc:dd:ee:ff".parse().unwrap());
         let watch = async {
             expect(&rx, "connecting", |e| matches!(e, Event::DeviceChanged(d) if d.info.state == DeviceState::Connecting)).await;
             expect(&rx, "connected", |e| matches!(e, Event::DeviceChanged(d) if d.info.connected && d.info.state == DeviceState::Connected)).await;
@@ -355,10 +355,10 @@ fn device_commands_and_their_events() {
         done.unwrap();
         assert_eq!(bluez.earbuds_devices().iter().filter(|d| d.connected).count(), 1);
 
-        bluez.disconnect_device("AA:BB:CC:DD:EE:FF").await.unwrap();
+        bluez.disconnect_device("AA:BB:CC:DD:EE:FF".parse().unwrap()).await.unwrap();
         expect(&rx, "disconnected", |e| matches!(e, Event::DeviceChanged(d) if !d.info.connected && d.info.state == DeviceState::Disconnected)).await;
 
-        let pairing = bluez.pair("11:22:33:44:55:66");
+        let pairing = bluez.pair("11:22:33:44:55:66".parse().unwrap());
         let watch = async {
             expect(&rx, "pairing flag", |e| matches!(e, Event::DeviceChanged(d) if d.info.pairing)).await;
             // Pair()'s reply and the Paired/Bonded signals race, so the flag
@@ -371,13 +371,13 @@ fn device_commands_and_their_events() {
         let (done, ()) = futures_lite::future::zip(pairing, watch).await;
         done.unwrap();
 
-        bluez.set_trusted("11:22:33:44:55:66", true).await.unwrap();
+        bluez.set_trusted("11:22:33:44:55:66".parse().unwrap(), true).await.unwrap();
         expect(&rx, "trusted", |e| matches!(e, Event::DeviceChanged(d) if d.info.trusted)).await;
 
-        bluez.remove("11:22:33:44:55:66").await.unwrap();
+        bluez.remove("11:22:33:44:55:66".parse().unwrap()).await.unwrap();
         let gone = expect(&rx, "removed", |e| matches!(e, Event::DeviceRemoved { .. })).await;
-        assert_eq!(gone, Event::DeviceRemoved { path: PHONE.into(), address: "11:22:33:44:55:66".into() });
-        assert!(matches!(bluez.connect_device("11:22:33:44:55:66").await, Err(Error::UnknownDevice(_))));
+        assert_eq!(gone, Event::DeviceRemoved { path: PHONE.into(), address: "11:22:33:44:55:66".parse().unwrap() });
+        assert!(matches!(bluez.connect_device("11:22:33:44:55:66".parse().unwrap()).await, Err(Error::UnknownDevice(_))));
     });
 }
 
@@ -388,7 +388,7 @@ fn a_failed_connect_returns_bluezs_error_and_clears_the_state() {
         let bluez_conn = serve_bluez(daemon).await;
         bluez_conn.object_server().at("/org/bluez/hci0/dev_DE_AD_00_00_00_01", FakeDevice { fail_connect: true, ..device("DE:AD:00:00:00:01", "Flaky", true) }).await.unwrap();
         let (bluez, _rx) = client(daemon, ex).await;
-        let err = bluez.connect_device("DE:AD:00:00:00:01").await.unwrap_err();
+        let err = bluez.connect_device("DE:AD:00:00:00:01".parse().unwrap()).await.unwrap_err();
         assert_eq!(err.bluez_name(), Some("org.freedesktop.DBus.Error.Failed"));
         let d = bluez.state().device("/org/bluez/hci0/dev_DE_AD_00_00_00_01").unwrap();
         assert_eq!(d.info.state, DeviceState::Disconnected);

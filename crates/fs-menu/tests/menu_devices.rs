@@ -176,7 +176,7 @@ fn bt(devices: Vec<BluetoothDevice>) -> Vec<Node> {
 }
 
 fn dev(address: &str, name: &str) -> BluetoothDevice {
-    BluetoothDevice { address: address.into(), name: name.into(), paired: true, ..BluetoothDevice::default() }
+    BluetoothDevice { address: address.parse().unwrap(), name: name.into(), paired: true, ..BluetoothDevice::default() }
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn bluetooth_off_offers_to_turn_on() {
 
 #[test]
 fn bluetooth_no_paired_devices_is_one_note() {
-    let rows = bt(vec![BluetoothDevice { paired: false, ..dev("AA:01", "Seen") }]);
+    let rows = bt(vec![BluetoothDevice { paired: false, ..dev("AA:BB:CC:DD:EE:01", "Seen") }]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "bluetooth.empty");
     assert_eq!(rows[0].kind, Kind::Note);
@@ -205,16 +205,16 @@ fn bluetooth_no_paired_devices_is_one_note() {
 #[test]
 fn bluetooth_order_connected_then_paired() {
     let rows = bt(vec![
-        dev("AA:01", "Alpha"),
-        BluetoothDevice { connected: true, ..dev("AA:02", "Zed") },
-        dev("AA:03", "Beta"),
+        dev("AA:BB:CC:DD:EE:01", "Alpha"),
+        BluetoothDevice { connected: true, ..dev("AA:BB:CC:DD:EE:02", "Zed") },
+        dev("AA:BB:CC:DD:EE:03", "Beta"),
     ]);
     assert_eq!(labels(&rows), ["Zed", "Alpha", "Beta"]);
 }
 
 #[test]
 fn bluetooth_unnamed_devices_are_dropped() {
-    let rows = bt(vec![dev("AA:01", ""), dev("AA:02", "AA:BB:CC:DD:EE:FF"), dev("AA:03", "Real")]);
+    let rows = bt(vec![dev("AA:BB:CC:DD:EE:01", ""), dev("AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:FF"), dev("AA:BB:CC:DD:EE:03", "Real")]);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].label, "Real");
 }
@@ -223,9 +223,9 @@ fn bluetooth_unnamed_devices_are_dropped() {
 fn bluetooth_desc_prefers_activity_then_battery() {
     let connected = |address: &str, name: &str| BluetoothDevice { connected: true, ..dev(address, name) };
     let rows = bt(vec![
-        BluetoothDevice { state: DeviceState::Connecting, battery: Some(Fraction::from_fraction(0.8)), ..connected("AA:01", "A") },
-        BluetoothDevice { battery: Some(Fraction::from_fraction(0.5)), ..connected("AA:02", "B") },
-        connected("AA:03", "C"),
+        BluetoothDevice { state: DeviceState::Connecting, battery: Some(Fraction::from_fraction(0.8)), ..connected("AA:BB:CC:DD:EE:01", "A") },
+        BluetoothDevice { battery: Some(Fraction::from_fraction(0.5)), ..connected("AA:BB:CC:DD:EE:02", "B") },
+        connected("AA:BB:CC:DD:EE:03", "C"),
     ]);
     assert_eq!(desc_of(&rows, "A"), "Connecting\u{2026}");
     assert_eq!(desc_of(&rows, "B"), "50%");
@@ -234,10 +234,10 @@ fn bluetooth_desc_prefers_activity_then_battery() {
 
 #[test]
 fn bluetooth_row_ids_action_and_tick() {
-    let rows = bt(vec![dev("aa:bb", "Buds")]);
-    assert_eq!(rows[0].id, "bluetooth.dev.aa%3Abb");
-    assert_eq!(rows[0].action.as_deref(), Some("@ipc:bluetooth.toggle:aa:bb"));
-    assert_eq!(rows[0].checked.as_deref(), Some("@state:bluetooth.connected=AA:BB"));
+    let rows = bt(vec![dev("aa:bb:cc:dd:ee:01", "Buds")]);
+    assert_eq!(rows[0].id, "bluetooth.dev.AA%3ABB%3ACC%3ADD%3AEE%3A01");
+    assert_eq!(rows[0].action.as_deref(), Some("@ipc:bluetooth.toggle:AA:BB:CC:DD:EE:01"));
+    assert_eq!(rows[0].checked.as_deref(), Some("@state:bluetooth.connected=AA:BB:CC:DD:EE:01"));
     assert_eq!(rows[0].keep_open, Some(true));
 }
 
@@ -250,7 +250,7 @@ fn device_rows_carry_their_own_verb() {
     ]);
     assert_eq!(w[0].verb.as_deref(), Some("Disconnect"));
     assert_eq!(w[1].verb.as_deref(), Some("Connect"));
-    let b = bt(vec![BluetoothDevice { connected: true, ..dev("aa:bb", "Buds") }, dev("cc:dd", "Pad")]);
+    let b = bt(vec![BluetoothDevice { connected: true, ..dev("aa:bb:cc:dd:ee:01", "Buds") }, dev("cc:dd:ee:ff:00:02", "Pad")]);
     assert_eq!(b[0].verb.as_deref(), Some("Disconnect"));
     assert_eq!(b[1].verb.as_deref(), Some("Connect"));
     let audio = audio_rows(&[AudioDevice { name: "sink".into(), label: "Speakers".into(), is_sink: true }]);

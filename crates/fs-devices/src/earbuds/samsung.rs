@@ -11,10 +11,10 @@
 
 use serde_json::Value as Json;
 
-use super::{Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Value, choice, device, toggle, valid_address};
+use super::{Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Value, choice, device, toggle};
 use crate::bluetooth;
 use fs_js as js;
-use fs_types::Percent;
+use fs_types::{BtAddress, Percent};
 
 pub const BACKEND: &str = "samsung";
 pub(crate) const BINARY: &str = "earbuds";
@@ -26,7 +26,7 @@ fn is_galaxy_buds(name: &str) -> bool {
 /// A connected device whose name says Galaxy Buds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Buds {
-    pub address: String,
+    pub address: BtAddress,
     pub name: String,
 }
 
@@ -35,25 +35,23 @@ pub struct Buds {
 pub fn connected_buds(bluetooth: &[bluetooth::Device]) -> Vec<Buds> {
     bluetooth
         .iter()
-        .filter(|bt| bt.connected && valid_address(&bt.address))
+        .filter(|bt| bt.connected)
         .filter(|bt| is_galaxy_buds(&bt.device_name) || is_galaxy_buds(&bt.name))
         .map(|bt| Buds {
-            address: bt.address.to_uppercase(),
+            address: bt.address,
             name: if !bt.name.is_empty() { bt.name.clone() } else { bt.device_name.clone() },
         })
         .collect()
 }
 
 /// `-q` keeps "Daemon started successfully" off stdout, `-s` picks the device.
-pub fn argv(address: &str, tail: &[String]) -> Option<Vec<String>> {
-    valid_address(address).then(|| {
-        let mut out: Vec<String> = [BINARY, "-q", "-s", address].map(String::from).to_vec();
-        out.extend(tail.iter().cloned());
-        out
-    })
+pub fn argv(address: BtAddress, tail: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = [BINARY, "-q", "-s", &address.to_string()].map(String::from).to_vec();
+    out.extend(tail.iter().cloned());
+    out
 }
 
-pub fn status_argv(address: &str) -> Option<Vec<String>> {
+pub fn status_argv(address: BtAddress) -> Vec<String> {
     argv(address, &["status".into(), "-o".into(), "json".into()])
 }
 
@@ -100,7 +98,7 @@ fn in_case(placement: f64) -> bool {
 pub struct Status {
     pub ok: bool,
     pub message: String,
-    pub address: String,
+    pub address: Option<BtAddress>,
     pub ready: bool,
     pub model: String,
     pub batt_left: f64,
@@ -156,7 +154,7 @@ pub fn parse_status(text: &str) -> Status {
     Status {
         ok: true,
         message: String::new(),
-        address: js::field(p, "address").and_then(Json::as_str).unwrap_or("").to_string(),
+        address: js::field(p, "address").and_then(Json::as_str).and_then(BtAddress::parse),
         ready: flag(p, "ready"),
         model: js::field(p, "model").and_then(Json::as_str).unwrap_or("").to_string(),
         batt_left: num(p, "batt_left", -1.0),
@@ -204,9 +202,9 @@ fn ambient_level(s: &Status, top: i32) -> f64 {
 /// `name` is what BlueZ shows for the device. A status the daemon has not
 /// finished the handshake for (`ready` false) has no levels to show.
 pub fn normalise(status: &Status, name: &str) -> Vec<Device> {
-    if !status.ok || !status.ready || !valid_address(&status.address) {
+    let Some(address) = status.address.filter(|_| status.ok && status.ready) else {
         return Vec::new();
-    }
+    };
     let model = model(&status.model);
     let mut controls = Vec::new();
     if model.anc {
@@ -242,11 +240,10 @@ pub fn normalise(status: &Status, name: &str) -> Vec<Device> {
     } else {
         ""
     };
-    let address = status.address.to_uppercase();
     vec![device(DeviceFields {
         key: format!("{BACKEND}:{address}"),
         backend: BACKEND.into(),
-        address,
+        address: Some(address),
         name: if name.is_empty() { model.name.into() } else { name.into() },
         kind: DeviceKind::Earbuds,
         connected: true,
@@ -334,7 +331,7 @@ mod tests {
     }
 
     fn bt(address: &str, name: &str, device_name: &str, connected: bool) -> bluetooth::Device {
-        bluetooth::Device { address: address.into(), name: name.into(), device_name: device_name.into(), connected, ..Default::default() }
+        bluetooth::Device { address: address.parse().unwrap(), name: name.into(), device_name: device_name.into(), connected, ..Default::default() }
     }
 
     fn option_values(ctl: &crate::earbuds::Control) -> String {
@@ -440,7 +437,7 @@ mod tests {
             bt("AA:BB:CC:77:88:99", "WH-1000XM5", "WH-1000XM5", true),
             bt("AA:BB:CC:00:00:01", "Galaxy Buds+ (9F2A)", "", true),
         ]);
-        assert_eq!(keys(&found, |b| b.address.clone()), "AA:BB:CC:11:22:33,AA:BB:CC:00:00:01");
+        assert_eq!(keys(&found, |b| b.address.to_string()), "AA:BB:CC:11:22:33,AA:BB:CC:00:00:01");
         assert_eq!(found[0].name, "My buds");
         assert_eq!(connected_buds(&[]).len(), 0);
     }
@@ -463,9 +460,9 @@ mod tests {
 
     #[test]
     fn argv_builders() {
-        assert_eq!(status_argv("AA:BB:CC:11:22:33").unwrap().join(" "), "earbuds -q -s AA:BB:CC:11:22:33 status -o json");
+        let address: BtAddress = "aa:bb:cc:11:22:33".parse().unwrap();
+        assert_eq!(status_argv(address).join(" "), "earbuds -q -s AA:BB:CC:11:22:33 status -o json");
         let tail = ["set".to_string(), "equalizer".to_string(), "soft".to_string()];
-        assert_eq!(argv("AA:BB:CC:11:22:33", &tail).unwrap().join(" "), "earbuds -q -s AA:BB:CC:11:22:33 set equalizer soft");
-        assert_eq!(argv("--daemon", &["status".into()]), None);
+        assert_eq!(argv(address, &tail).join(" "), "earbuds -q -s AA:BB:CC:11:22:33 set equalizer soft");
     }
 }

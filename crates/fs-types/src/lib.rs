@@ -7,4 +7,4 @@ mod units;
 
 pub use compositor::{Window, WindowId, Workspace, WorkspaceId};
 pub use geometry::{Edge, IRect, Insets, Rect, Region};
-pub use units::{Fraction, Percent};
+pub use units::{BtAddress, Fraction, Percent};

@@ -182,11 +182,11 @@ fn wifi_network() {
 
 #[test]
 fn bluetooth_device() {
-    let device = fs_devices::bluetooth::Device { address: "AA:BB".into(), name: "Buds".into(), paired: true, ..Default::default() };
+    let device = fs_devices::bluetooth::Device { address: "AA:BB:CC:DD:EE:01".parse().unwrap(), name: "Buds".into(), paired: true, ..Default::default() };
     let rows = bluetooth_rows(&BluetoothState { available: true, enabled: true, devices: vec![device] });
     let all = of(rows.iter().find(|r| r.id.starts_with("bluetooth.dev.")).unwrap());
     assert_eq!(ids(&all), ["run", "forget", "panel"]);
-    assert_eq!(all[1].run, Run::Ipc("bluetooth.forget:AA:BB".into()));
+    assert_eq!(all[1].run, Run::Ipc("bluetooth.forget:AA:BB:CC:DD:EE:01".into()));
     assert!(all[1].destructive);
 }
 

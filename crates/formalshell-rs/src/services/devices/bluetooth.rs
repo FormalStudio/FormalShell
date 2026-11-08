@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
 use fs_bluez::state::AdapterState;
+use fs_types::BtAddress;
 use futures_lite::{FutureExt, future};
 
 use super::headsets::{self, Headset};
@@ -61,9 +62,9 @@ pub struct Bluetooth {
     /// Every device of the default adapter.
     pub devices: Vec<fs_devices::bluetooth::Device>,
     /// The action in flight: its device's address and what it does.
-    pub action: Option<(String, ActionKind)>,
+    pub action: Option<(BtAddress, ActionKind)>,
     /// The last action that failed: its device's address and why.
-    pub failure: Option<(String, &'static str)>,
+    pub failure: Option<(BtAddress, &'static str)>,
     /// The Bluetooth audio devices, connected or not; none until BlueZ (or
     /// its absence) has answered once.
     pub headsets: Option<Vec<Headset>>,
@@ -121,7 +122,7 @@ fn absent(ctx: &Ctx) {
 #[derive(Clone, Debug)]
 pub enum Ask {
     Open(bool),
-    Run(String, ActionKind),
+    Run(BtAddress, ActionKind),
     Rescan,
     Power(bool),
     /// A media source's transport, to its `MediaPlayer1`.
@@ -196,12 +197,12 @@ pub async fn run(ctx: Ctx) {
     let (done_tx, done_rx) = async_channel::unbounded::<Done>();
     let mut open = PANEL.load(Ordering::Relaxed);
     bluez.watch_all(open);
-    let mut action: Option<(String, ActionKind)> = None;
-    let mut failure: Option<(String, &'static str)> = None;
+    let mut action: Option<(BtAddress, ActionKind)> = None;
+    let mut failure: Option<(BtAddress, &'static str)> = None;
     let mut arming = false;
     let mut refresh = true;
     let mut last: Option<Bluetooth> = None;
-    let mut last_shown: Vec<String> = Vec::new();
+    let mut last_shown: Vec<BtAddress> = Vec::new();
     let mut last_buds: Option<Vec<fs_devices::bluetooth::Device>> = None;
     let mut last_remotes: Vec<Remote> = Vec::new();
     loop {
@@ -231,7 +232,7 @@ pub async fn run(ctx: Ctx) {
             view.failure = failure.clone();
             // Only what a surface would show differently reaches the UI.
             if last.as_ref() != Some(&view) {
-                let shown: Vec<String> = view.devices.iter().map(|d| d.address.clone()).collect();
+                let shown: Vec<BtAddress> = view.devices.iter().map(|d| d.address).collect();
                 ctx.publish(store::Diff::Devices(super::Diff::Bluetooth(view.clone())));
                 last = Some(view);
                 last_shown = shown;
@@ -302,11 +303,11 @@ pub async fn run(ctx: Ctx) {
                 if action.is_some() {
                     continue;
                 }
-                action = Some((address.clone(), kind));
+                action = Some((address, kind));
                 failure = None;
                 let (b, tx) = (bluez.clone(), done_tx.clone());
                 ctx.spawn(async move {
-                    let result = run_action(&b, &address, kind)
+                    let result = run_action(&b, address, kind)
                         .or(async {
                             async_io::Timer::after(ACTION_TIMEOUT).await;
                             Some("TIMED OUT")
@@ -322,7 +323,7 @@ pub async fn run(ctx: Ctx) {
 /// One action against BlueZ: `None` once BlueZ has done it, else the row's
 /// failure text. Pairing goes on to trust and connect once
 /// `paired` reports true.
-async fn run_action(b: &fs_bluez::Bluez, address: &str, kind: ActionKind) -> Option<&'static str> {
+async fn run_action(b: &fs_bluez::Bluez, address: BtAddress, kind: ActionKind) -> Option<&'static str> {
     let out = match kind {
         ActionKind::Connect => b.connect_device(address).await,
         ActionKind::Disconnect => b.disconnect_device(address).await,
@@ -349,7 +350,7 @@ async fn run_action(b: &fs_bluez::Bluez, address: &str, kind: ActionKind) -> Opt
 /// registered, so one answers for the length of the pairing. The panel has
 /// no passkey prompt and the user picked this device, so its requests are
 /// accepted; any other device's are refused.
-async fn pair(b: &fs_bluez::Bluez, address: &str) -> fs_bluez::Result<()> {
+async fn pair(b: &fs_bluez::Bluez, address: BtAddress) -> fs_bluez::Result<()> {
     use fs_bluez::agent::{AgentRequest, Capability};
     // A pairing cut off by ACTION_TIMEOUT never got to unregister.
     let _ = b.unregister_agent().await;
@@ -360,7 +361,7 @@ async fn pair(b: &fs_bluez::Bluez, address: &str) -> fs_bluez::Result<()> {
             None
         }
     };
-    let ours = format!("/dev_{}", address.replace(':', "_"));
+    let ours = format!("/dev_{}", address.path_segment());
     let answer = async {
         let mine = |device: &str| device.ends_with(&ours);
         while let Some(Ok(request)) = match &requests {
@@ -406,11 +407,10 @@ pub fn toggle_power(ctx: &Ctx) {
 
 /// The device's `Trusted` property written as asked, with no panel row
 /// marked in flight.
-pub fn set_trust(ctx: &Ctx, address: &str, trusted: bool) {
+pub fn set_trust(ctx: &Ctx, address: BtAddress, trusted: bool) {
     let Some(bluez) = BLUEZ.with_borrow(|b| b.clone()) else { return };
-    let address = address.to_owned();
     ctx.spawn(async move {
-        if let Err(err) = bluez.set_trusted(&address, trusted).await {
+        if let Err(err) = bluez.set_trusted(address, trusted).await {
             eprintln!("bluetooth: {err}");
         }
     });

@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use fs_types::Edge;
+use fs_types::{BtAddress, Edge};
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -51,7 +51,7 @@ struct Known {
 
 pub(super) struct Shown {
     popup: Popup,
-    address: String,
+    address: BtAddress,
     /// The hold's end; none while the pointer is on the card.
     hold_until: Option<Instant>,
     entered: bool,
@@ -65,14 +65,14 @@ pub(super) struct Shown {
 /// is not known yet, let go once the backend names it, the device leaves,
 /// or `LEARN` runs out.
 struct Learning {
-    address: String,
+    address: BtAddress,
     until: Instant,
 }
 
 impl Learning {
-    fn new(address: &str, until: Instant) -> Self {
+    fn new(address: BtAddress, until: Instant) -> Self {
         earbuds::acquire();
-        Self { address: address.to_owned(), until }
+        Self { address, until }
     }
 }
 
@@ -90,7 +90,7 @@ fn dismiss_argv() -> Vec<String> {
 #[derive(Default)]
 pub struct Headset {
     pub(super) card: Option<Shown>,
-    known: HashMap<String, Known>,
+    known: HashMap<BtAddress, Known>,
     /// The first Bluetooth reading has been seen: what it holds connected
     /// was connected at startup.
     primed: bool,
@@ -148,10 +148,10 @@ impl App {
         let mut show = None;
         let mut seen = HashSet::new();
         for h in &list {
-            seen.insert(h.address.clone());
-            let k = self.headset.known.entry(h.address.clone()).or_insert(Known { connected: false, lost_at: None });
+            seen.insert(h.address);
+            let k = self.headset.known.entry(h.address).or_insert(Known { connected: false, lost_at: None });
             if h.connected && !k.connected && !first && !k.lost_at.is_some_and(|t| now.duration_since(t) < RECONNECT) {
-                show = Some(h.address.clone());
+                show = Some(h.address);
             }
             if !h.connected && k.connected {
                 k.lost_at = Some(now);
@@ -169,13 +169,13 @@ impl App {
             self.headset_dismiss(now);
         }
         let done = self.headset.learning.as_ref().is_some_and(|l| {
-            !headset::face(&self.store, &l.address).art.is_empty() || self.headset.known.get(&l.address).is_none_or(|k| !k.connected)
+            !headset::face(&self.store, l.address).art.is_empty() || self.headset.known.get(&l.address).is_none_or(|k| !k.connected)
         });
         if done {
             self.headset.learning = None;
         }
         if let Some(address) = show {
-            self.headset_show(&address, now);
+            self.headset_show(address, now);
         }
     }
 
@@ -183,7 +183,7 @@ impl App {
         self.store.state.data.dnd || self.chrome_hidden()
     }
 
-    fn headset_show(&mut self, address: &str, now: Instant) {
+    fn headset_show(&mut self, address: BtAddress, now: Instant) {
         let unknown = headset::face(&self.store, address).art.is_empty();
         if unknown && self.headset.learning.as_ref().is_none_or(|l| l.address != address) {
             self.headset.learning = Some(Learning::new(address, now + LEARN));
@@ -192,7 +192,7 @@ impl App {
             return;
         }
         if let Some(c) = &mut self.headset.card {
-            c.address = address.to_owned();
+            c.address = address;
             c.hold_until = (!c.entered).then_some(now + HOLD);
             if !c.popup.is_open() {
                 c.popup.set_open(now, true);
@@ -214,7 +214,7 @@ impl App {
         popup.set_open(now, true);
         let mut shown = Shown {
             popup,
-            address: address.to_owned(),
+            address,
             hold_until: Some(now + HOLD),
             entered: false,
             pressed: false,
@@ -270,7 +270,7 @@ impl App {
             PointerEventKind::Press { .. } => c.pressed = true,
             PointerEventKind::Release { .. } => {
                 if std::mem::take(&mut c.pressed) && c.popup.is_open() {
-                    let panel = headset::face(&self.store, &c.address).panel;
+                    let panel = headset::face(&self.store, c.address).panel;
                     let anchor = self.bar.length() as f64 / 2.0;
                     self.headset_dismiss(now);
                     self.set_panel(panel, true, Some(anchor));
@@ -296,8 +296,8 @@ impl App {
         if c.popup.is_open() && (down || c.hold_until.is_some_and(|t| t <= now)) {
             self.headset_dismiss(now);
         }
-        let Some(address) = self.headset.card.as_ref().map(|c| c.address.clone()) else { return };
-        let face = headset::face(&self.store, &address);
+        let Some(address) = self.headset.card.as_ref().map(|c| c.address) else { return };
+        let face = headset::face(&self.store, address);
         let Some(c) = &mut self.headset.card else { return };
         if c.popup.finished(now) {
             self.headset.card = None;
@@ -331,12 +331,12 @@ impl App {
     /// resting rect and corner radius, and the device whose picture set
     /// the earbuds service is still held to learn.
     pub fn headset_status(&self) -> serde_json::Value {
-        let learning = self.headset.learning.as_ref().map(|l| l.address.clone());
+        let learning = self.headset.learning.as_ref().map(|l| l.address.to_string());
         match &self.headset.card {
             Some(c) => {
                 // The surface hangs from the output's top left, so its pixels are the output's.
                 let r = c.popup.card.rest_rect();
-                let face = headset::face(&self.store, &c.address);
+                let face = headset::face(&self.store, c.address);
                 serde_json::json!({"open": c.popup.is_open(), "art": face.art, "name": face.name, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.card.radius(), "learning": learning})
             }
             None => serde_json::json!({"learning": learning}),

@@ -21,10 +21,9 @@ use serde_json::Value as Json;
 
 use super::{
     Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Unit, Value, choice, device, range, toggle,
-    valid_address,
 };
 use fs_js as js;
-use fs_types::Percent;
+use fs_types::{BtAddress, Percent};
 
 pub const BACKEND: &str = "nothing";
 pub(crate) const BINARY: &str = "nothingctl";
@@ -176,15 +175,15 @@ pub fn list_argv() -> Vec<String> {
     vec![BINARY.into(), "list".into(), "--json".into()]
 }
 
-pub fn watch_argv(address: &str) -> Option<Vec<String>> {
-    valid_address(address).then(|| vec![BINARY.into(), "watch".into(), "-d".into(), address.into()])
+pub fn watch_argv(address: BtAddress) -> Vec<String> {
+    vec![BINARY.into(), "watch".into(), "-d".into(), address.to_string()]
 }
 
 /// One row of `list --json`: every paired device that exposes the Nothing
 /// control service, connected or not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListEntry {
-    pub address: String,
+    pub address: BtAddress,
     pub name: String,
     pub connected: bool,
 }
@@ -193,9 +192,9 @@ pub fn parse_list(text: &str) -> Vec<ListEntry> {
     let Some(Json::Array(raw)) = json(text) else { return Vec::new() };
     raw.iter()
         .filter_map(|d| {
-            let address = js::field(d, "address")?.as_str().filter(|a| valid_address(a))?;
+            let address = BtAddress::parse(js::field(d, "address")?.as_str()?)?;
             Some(ListEntry {
-                address: address.to_uppercase(),
+                address,
                 name: js::field(d, "name").and_then(Json::as_str).unwrap_or("").to_string(),
                 connected: js::field(d, "connected") == Some(&Json::Bool(true)),
             })
@@ -237,7 +236,7 @@ pub struct StateBattery {
 /// A device's snapshot, from a `state` line of `watch`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct State {
-    pub address: String,
+    pub address: BtAddress,
     pub name: String,
     pub model: Model,
     pub battery: Vec<StateBattery>,
@@ -272,7 +271,7 @@ fn parse_mode(raw: Option<&Json>) -> Option<Mode> {
 }
 
 fn parse_state(raw: &Json) -> Option<State> {
-    let address = js::field(raw, "address")?.as_str().filter(|a| valid_address(a))?;
+    let address = BtAddress::parse(js::field(raw, "address")?.as_str()?)?;
     let model = js::field(raw, "model")?;
     let base = js::field(model, "base")?.as_str()?;
     let empty = Json::Null;
@@ -299,7 +298,7 @@ fn parse_state(raw: &Json) -> Option<State> {
         _ => Vec::new(),
     };
     Some(State {
-        address: address.to_uppercase(),
+        address,
         name: js::field(raw, "name").and_then(Json::as_str).unwrap_or("").to_string(),
         model: Model {
             base: base.to_string(),
@@ -397,14 +396,14 @@ pub struct Mark {
 /// armed once its device is seen disconnected and dropped when it is seen
 /// connected after that, so a refused device is tried again only after a real
 /// reconnect. Returns a new map.
-pub fn rearm(marks: &BTreeMap<String, Mark>, connected: &[String]) -> BTreeMap<String, Mark> {
+pub fn rearm(marks: &BTreeMap<BtAddress, Mark>, connected: &[BtAddress]) -> BTreeMap<BtAddress, Mark> {
     let mut out = BTreeMap::new();
     for (address, mark) in marks {
         let up = connected.contains(address);
         if up && mark.seen_down {
             continue;
         }
-        out.insert(address.clone(), Mark { seen_down: mark.seen_down || !up });
+        out.insert(*address, Mark { seen_down: mark.seen_down || !up });
     }
     out
 }
@@ -466,7 +465,7 @@ pub fn normalise(state: &State, failure: &str) -> Device {
     device(DeviceFields {
         key: format!("{BACKEND}:{}", state.address),
         backend: BACKEND.into(),
-        address: state.address.clone(),
+        address: Some(state.address),
         name: shown_name(&state.name, &state.model.name),
         kind: state.model.kind,
         connected: true,
@@ -576,7 +575,7 @@ mod tests {
     #[test]
     fn parse_line_types() {
         let s = state(B175);
-        assert_eq!(s.address, "AA:BB:CC:DD:EE:FF");
+        assert_eq!(s.address.to_string(), "AA:BB:CC:DD:EE:FF");
         assert_eq!(s.model.base, "B175");
         assert_eq!(parse_line(r#"{"cmd":"anc high","type":"ack"}"#), Some(Line::Ack { cmd: "anc high".into() }));
         match parse_line(r#"{"message":"write failed: broken pipe","type":"error"}"#) {
@@ -610,8 +609,8 @@ mod tests {
 
     #[test]
     fn rearm_needs_a_disconnect_then_a_connect() {
-        let a = "AA:BB:CC:DD:EE:FF".to_string();
-        let mut marks = BTreeMap::from([(a.clone(), Mark { seen_down: false })]);
+        let a: BtAddress = "AA:BB:CC:DD:EE:FF".parse().unwrap();
+        let mut marks = BTreeMap::from([(a, Mark { seen_down: false })]);
         marks = rearm(&marks, std::slice::from_ref(&a));
         assert!(!marks[&a].seen_down);
         marks = rearm(&marks, &[]);
@@ -652,8 +651,7 @@ mod tests {
         assert!(l[0].connected);
         assert!(!l[1].connected);
         assert_eq!(parse_list("error: cannot reach BlueZ").len(), 0);
-        assert_eq!(watch_argv("AA:BB:CC:DD:EE:FF").unwrap().join(" "), "nothingctl watch -d AA:BB:CC:DD:EE:FF");
-        assert_eq!(watch_argv("AA:BB --dry-run"), None);
+        assert_eq!(watch_argv("aa:bb:cc:dd:ee:ff".parse().unwrap()).join(" "), "nothingctl watch -d AA:BB:CC:DD:EE:FF");
         assert_eq!(list_argv().join(" "), "nothingctl list --json");
     }
 
@@ -682,7 +680,7 @@ mod tests {
     #[test]
     fn normalise_custom_eq_bands() {
         let dev = normalise(&state(B175_CUSTOM), "");
-        assert_eq!(dev.address, "AA:BB:CC:DD:EE:FF");
+        assert_eq!(dev.address.map(|a| a.to_string()).as_deref(), Some("AA:BB:CC:DD:EE:FF"));
         assert_eq!(dev.name, "CMF Headphone Pro");
         assert_eq!(keys(&dev.controls, |c| c.key.clone()), "anc,eq,eq-bass,eq-mid,eq-treble,spatial,low-latency");
         let bass = control(Some(&dev), "eq-bass").unwrap();

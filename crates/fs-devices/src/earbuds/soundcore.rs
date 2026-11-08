@@ -17,11 +17,11 @@ use regex::Regex;
 use serde_json::Value as Json;
 
 use super::{
-    Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Value, choice, device, valid_address,
+    Battery, BatteryId, ControlOption, Device, DeviceFields, DeviceKind, Value, choice, device,
 };
 use crate::bluetooth;
 use fs_js as js;
-use fs_types::Percent;
+use fs_types::{BtAddress, Percent};
 
 pub const BACKEND: &str = "soundcore";
 pub(crate) const BINARY: &str = "openscq30";
@@ -59,7 +59,7 @@ fn json(text: &str) -> Option<Json> {
 /// One row of `paired-devices list --json`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Paired {
-    pub address: String,
+    pub address: BtAddress,
     pub model: String,
     pub demo: bool,
 }
@@ -68,9 +68,9 @@ pub fn parse_paired(text: &str) -> Vec<Paired> {
     let Some(Json::Array(raw)) = json(text) else { return Vec::new() };
     raw.iter()
         .filter_map(|p| {
-            let address = js::field(p, "macAddress")?.as_str().filter(|a| valid_address(a))?;
+            let address = BtAddress::parse(js::field(p, "macAddress")?.as_str()?)?;
             Some(Paired {
-                address: address.to_uppercase(),
+                address,
                 model: js::field(p, "model").and_then(Json::as_str).unwrap_or("").to_string(),
                 demo: js::field(p, "isDemo") == Some(&Json::Bool(true)),
             })
@@ -81,7 +81,7 @@ pub fn parse_paired(text: &str) -> Vec<Paired> {
 /// A paired, connected, non-demo device with the name BlueZ shows for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Info {
-    pub address: String,
+    pub address: BtAddress,
     pub model: String,
     pub name: String,
 }
@@ -91,10 +91,10 @@ pub struct Info {
 pub fn connected_paired(paired: &[Paired], bluetooth: &[bluetooth::Device]) -> Vec<Info> {
     let mut out = Vec::new();
     for bt in bluetooth {
-        if !bt.connected || !valid_address(&bt.address) {
+        if !bt.connected {
             continue;
         }
-        let address = bt.address.to_uppercase();
+        let address = bt.address;
         if let Some(p) = paired.iter().find(|p| p.address == address && !p.demo) {
             let name = if !bt.name.is_empty() { &bt.name } else { &bt.device_name };
             out.push(Info { address, model: p.model.clone(), name: name.clone() });
@@ -175,21 +175,17 @@ pub fn paired_argv() -> Vec<String> {
     [BINARY, "paired-devices", "list", "--json"].map(String::from).to_vec()
 }
 
-pub fn settings_argv(address: &str) -> Option<Vec<String>> {
-    valid_address(address).then(|| {
-        [BINARY, "device", "-a", address, "list-settings", "--no-categories", "--json"].map(String::from).to_vec()
-    })
+pub fn settings_argv(address: BtAddress) -> Vec<String> {
+    [BINARY, "device", "-a", &address.to_string(), "list-settings", "--no-categories", "--json"].map(String::from).to_vec()
 }
 
 /// `setting ... --json`: the gets, in order, then the sets. A failing one
 /// exits 1 after printing whatever was collected before it.
-pub fn setting_argv(address: &str, tail: &[String]) -> Option<Vec<String>> {
-    valid_address(address).then(|| {
-        let mut argv: Vec<String> = [BINARY, "device", "-a", address, "setting"].map(String::from).to_vec();
-        argv.extend(tail.iter().cloned());
-        argv.push("--json".into());
-        argv
-    })
+pub fn setting_argv(address: BtAddress, tail: &[String]) -> Vec<String> {
+    let mut argv: Vec<String> = [BINARY, "device", "-a", &address.to_string(), "setting"].map(String::from).to_vec();
+    argv.extend(tail.iter().cloned());
+    argv.push("--json".into());
+    argv
 }
 
 pub fn get_args(caps: &Caps) -> Vec<String> {
@@ -280,7 +276,7 @@ pub fn normalise(info: &Info, caps: &Caps, values: &Values) -> Device {
     device(DeviceFields {
         key: format!("{BACKEND}:{}", info.address),
         backend: BACKEND.into(),
-        address: info.address.clone(),
+        address: Some(info.address),
         name: if info.name.is_empty() { "Soundcore".into() } else { info.name.clone() },
         kind: if caps.single && !caps.dual { DeviceKind::Headphone } else { DeviceKind::Earbuds },
         connected: true,
@@ -346,11 +342,11 @@ mod tests {
     }
 
     fn bt(address: &str, name: &str, connected: bool) -> bluetooth::Device {
-        bluetooth::Device { address: address.into(), name: name.into(), device_name: name.into(), connected, ..Default::default() }
+        bluetooth::Device { address: address.parse().unwrap(), name: name.into(), device_name: name.into(), connected, ..Default::default() }
     }
 
     fn info(address: &str, model: &str, name: &str) -> Info {
-        Info { address: address.into(), model: model.into(), name: name.into() }
+        Info { address: address.parse().unwrap(), model: model.into(), name: name.into() }
     }
 
     fn option_values(options: &[ControlOption]) -> String {
@@ -362,7 +358,7 @@ mod tests {
         let p = parse_paired(PAIRED);
         assert_eq!(p.len(), 3);
         assert!(p[0].demo);
-        assert_eq!(p[1].address, "AC:12:2F:11:22:33");
+        assert_eq!(p[1].address.to_string(), "AC:12:2F:11:22:33");
         assert_eq!(p[1].model, "SoundcoreA3947");
         assert_eq!(parse_paired("").len(), 0);
         assert_eq!(parse_paired("Error: no session").len(), 0);
@@ -383,7 +379,7 @@ mod tests {
             ],
         );
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].address, "AC:12:2F:11:22:33");
+        assert_eq!(found[0].address.to_string(), "AC:12:2F:11:22:33");
         assert_eq!(found[0].model, "SoundcoreA3947");
         assert_eq!(found[0].name, "Liberty 4 NC");
         assert_eq!(connected_paired(&p, &[]).len(), 0);
@@ -512,18 +508,16 @@ mod tests {
     }
 
     #[test]
-    fn argv_builders_refuse_a_bad_address() {
+    fn argv_builders() {
         assert_eq!(paired_argv().join(" "), "openscq30 paired-devices list --json");
         assert_eq!(
-            settings_argv("AC:12:2F:11:22:33").unwrap().join(" "),
+            settings_argv("AC:12:2F:11:22:33".parse().unwrap()).join(" "),
             "openscq30 device -a AC:12:2F:11:22:33 list-settings --no-categories --json"
         );
         let tail = ["--set".to_string(), "ambientSoundMode=Normal".to_string()];
         assert_eq!(
-            setting_argv("AC:12:2F:11:22:33", &tail).unwrap().join(" "),
+            setting_argv("AC:12:2F:11:22:33".parse().unwrap(), &tail).join(" "),
             "openscq30 device -a AC:12:2F:11:22:33 setting --set ambientSoundMode=Normal --json"
         );
-        assert_eq!(setting_argv("--help", &["--get".into(), "x".into()]), None);
-        assert_eq!(settings_argv(""), None);
     }
 }
