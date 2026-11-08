@@ -11,10 +11,11 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use fs_dbus::{Owner, OwnerWatch};
 use futures_lite::StreamExt;
 use zbus::connection::Builder;
 use zbus::message::Header;
-use zbus::{fdo, interface};
+use zbus::interface;
 
 use super::caffeinate::{Diff, Holder};
 use crate::runtime::{Ctx, Publisher};
@@ -124,18 +125,13 @@ pub async fn run(ctx: Ctx) {
             return;
         }
     };
-    let mut owners = match fdo::DBusProxy::new(&conn).await {
-        Ok(dbus) => match dbus.receive_name_owner_changed().await {
-            Ok(s) => s,
-            Err(err) => return eprintln!("inhibit: NameOwnerChanged: {err}"),
-        },
-        Err(err) => return eprintln!("inhibit: {err}"),
+    let mut owners = match OwnerWatch::any(&conn).await {
+        Ok(owners) => owners,
+        Err(err) => return eprintln!("inhibit: NameOwnerChanged: {err}"),
     };
-    while let Some(signal) = owners.next().await {
-        let Ok(args) = signal.args() else { continue };
-        if args.new_owner().is_none() && args.name().starts_with(':') {
-            let gone = args.name().to_string();
-            shared.change(|c| c.release_sender(&gone));
+    while let Some(change) = owners.next().await {
+        if change.owner == Owner::Gone && change.name.starts_with(':') {
+            shared.change(|c| c.release_sender(&change.name));
         }
     }
 }

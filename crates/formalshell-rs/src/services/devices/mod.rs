@@ -4,6 +4,7 @@
 //! earbuds. Each answers its own honest unavailable state when the daemon
 //! behind it is not there.
 
+mod action;
 pub mod audio;
 pub mod bluetooth;
 pub mod earbuds;

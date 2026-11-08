@@ -19,11 +19,12 @@ use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use fs_activity::launcher::{self, Entry, Prop};
 use fs_activity::{Activity, Notice, State as ItemState, fspec};
+use fs_dbus::{Owner, OwnerWatch};
 use futures_lite::{AsyncReadExt, StreamExt};
 use serde_json::json;
 use zbus::message::Type;
 use zbus::zvariant::{OwnedValue, Value};
-use zbus::{MatchRule, MessageStream, fdo};
+use zbus::{MatchRule, MessageStream};
 
 use super::notifications::now_ms;
 use crate::runtime::Ctx;
@@ -449,10 +450,7 @@ async fn listen_launcher(ctx: &Ctx, tx: &Sender<Input>) -> zbus::Result<()> {
     let conn = crate::services::bus::session().await?;
     let rule = MatchRule::builder().msg_type(Type::Signal).interface(LAUNCHER_ENTRY)?.member("Update")?.build();
     let updates = MessageStream::for_match_rule(rule, &conn, None).await?.filter_map(|m| m.ok().map(Bus::Update));
-    let owners = fdo::DBusProxy::new(&conn).await?.receive_name_owner_changed().await?.filter_map(|s| {
-        let args = s.args().ok()?;
-        args.new_owner().is_none().then(|| Bus::Gone(args.name().to_string()))
-    });
+    let owners = OwnerWatch::any(&conn).await?.filter_map(|change| (change.owner == Owner::Gone).then(|| Bus::Gone(change.name)));
     let mut events = updates.or(owners);
     let mut entries: HashMap<String, (String, Entry)> = HashMap::new();
     let mut names: HashMap<String, String> = HashMap::new();

@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
 use async_process::{ChildStdin, Stdio};
+use fs_dbus::Backoff;
 use fs_devices::bluetooth::Device as BtDevice;
 use fs_types::BtAddress;
 use fs_devices::earbuds::motion::{Quat, Sample, parse_sample};
@@ -1002,8 +1003,8 @@ struct Nothing {
     watchers: BTreeMap<BtAddress, Watcher>,
     states: BTreeMap<BtAddress, nothing::State>,
     failures: BTreeMap<BtAddress, &'static str>,
-    /// address -> (when, the delay that got it there).
-    retry: BTreeMap<BtAddress, (Instant, Duration)>,
+    /// address -> when it is retried, and the backoff that set it.
+    retry: BTreeMap<BtAddress, (Instant, Backoff)>,
     /// Kept across release, so closing and reopening the panel is not a way
     /// round a refusal.
     unsupported: BTreeMap<BtAddress, nothing::Mark>,
@@ -1065,7 +1066,7 @@ async fn run_nothing(ctx: Ctx, rx: Receiver<NEvent>, tx: Sender<NEvent>) {
                     s.connected_at.retain(|a, _| connected.contains(a));
                     for a in connected.iter().filter(|a| !s.connected.contains(a)) {
                         s.connected_at.insert(*a, now);
-                        s.retry.insert(*a, (now + SETTLE, SETTLE));
+                        s.retry.insert(*a, (now + SETTLE, Backoff::new(BACKOFF_MIN, BACKOFF_MAX)));
                     }
                     s.connected = connected;
                     s.discover(&ctx, &tx);
@@ -1237,12 +1238,14 @@ impl Nothing {
             return;
         }
         let fresh = self.connected_at.get(&address).is_some_and(|at| at.elapsed() < QUICK_WINDOW);
-        let delay = match self.retry.get(&address) {
-            _ if fresh => QUICK,
-            Some((_, d)) => (*d * 2).clamp(BACKOFF_MIN, BACKOFF_MAX),
-            None => BACKOFF_MIN,
+        let mut backoff = self.retry.remove(&address).map_or_else(|| Backoff::new(BACKOFF_MIN, BACKOFF_MAX), |(_, b)| b);
+        let delay = if fresh {
+            backoff.reset();
+            QUICK
+        } else {
+            backoff.delay()
         };
-        self.retry.insert(address, (Instant::now() + delay, delay));
+        self.retry.insert(address, (Instant::now() + delay, backoff));
     }
 }
 

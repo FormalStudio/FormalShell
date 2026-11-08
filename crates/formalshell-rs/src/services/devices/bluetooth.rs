@@ -19,6 +19,7 @@ use fs_bluez::state::AdapterState;
 use fs_types::BtAddress;
 use futures_lite::{FutureExt, future};
 
+use super::action::ActionInFlight;
 use super::headsets::{self, Headset};
 use crate::runtime::Ctx;
 use crate::services::media::{self, Remote};
@@ -168,7 +169,7 @@ fn remotes(state: &fs_bluez::state::State, last: &[Remote]) -> Vec<Remote> {
 enum Done {
     /// A discovery attempt finished, armed or refused.
     Armed,
-    Action(Option<&'static str>),
+    Action(u64, Option<&'static str>),
 }
 
 enum Wake {
@@ -197,8 +198,7 @@ pub async fn run(ctx: Ctx) {
     let (done_tx, done_rx) = async_channel::unbounded::<Done>();
     let mut open = PANEL.load(Ordering::Relaxed);
     bluez.watch_all(open);
-    let mut action: Option<(BtAddress, ActionKind)> = None;
-    let mut failure: Option<(BtAddress, &'static str)> = None;
+    let mut flight = ActionInFlight::<(BtAddress, ActionKind), (BtAddress, &'static str)>::default();
     let mut arming = false;
     let mut refresh = true;
     let mut last: Option<Bluetooth> = None;
@@ -228,8 +228,8 @@ pub async fn run(ctx: Ctx) {
                 });
             }
             let mut view = snapshot(&snap, open);
-            view.action = action.clone();
-            view.failure = failure.clone();
+            view.action = flight.action;
+            view.failure = flight.failure;
             // Only what a surface would show differently reaches the UI.
             if last.as_ref() != Some(&view) {
                 let shown: Vec<BtAddress> = view.devices.iter().map(|d| d.address).collect();
@@ -267,10 +267,8 @@ pub async fn run(ctx: Ctx) {
                 }
             }
             Wake::Done(Done::Armed) => arming = false,
-            Wake::Done(Done::Action(result)) => {
-                if let (Some((address, _)), Some(text)) = (action.take(), result) {
-                    failure = Some((address, text));
-                }
+            Wake::Done(Done::Action(generation, result)) => {
+                flight.end(generation, |(address, _)| result.map(|text| (address, text)));
             }
             Wake::Ask(Ask::Open(on)) => {
                 open = on;
@@ -300,11 +298,7 @@ pub async fn run(ctx: Ctx) {
                 });
             }
             Wake::Ask(Ask::Run(address, kind)) => {
-                if action.is_some() {
-                    continue;
-                }
-                action = Some((address, kind));
-                failure = None;
+                let Some(generation) = flight.begin((address, kind)) else { continue };
                 let (b, tx) = (bluez.clone(), done_tx.clone());
                 ctx.spawn(async move {
                     let result = run_action(&b, address, kind)
@@ -313,7 +307,7 @@ pub async fn run(ctx: Ctx) {
                             Some("TIMED OUT")
                         })
                         .await;
-                    let _ = tx.send(Done::Action(result)).await;
+                    let _ = tx.send(Done::Action(generation, result)).await;
                 });
             }
         }

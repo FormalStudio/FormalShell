@@ -19,6 +19,7 @@ use fs_network::{ConnectError, DeviceKind, NetworkManager, Snapshot};
 use fs_types::{Fraction, Percent};
 use futures_lite::{FutureExt, StreamExt, future};
 
+use super::action::ActionInFlight;
 use crate::runtime::Ctx;
 use crate::services::info;
 use crate::services::wants::Source;
@@ -214,10 +215,7 @@ struct Inner {
     ctx: Option<Ctx>,
     nm: Option<NetworkManager>,
     snapshot: Option<Snapshot>,
-    action: Option<(ActionKind, String)>,
-    /// Which action the running timeout belongs to.
-    generation: u64,
-    failure: Option<Failure>,
+    flight: ActionInFlight<(ActionKind, String), Failure>,
     speed: Speed,
     /// Dropping it stops the running speed test.
     speed_stop: Option<async_channel::Sender<()>>,
@@ -239,8 +237,8 @@ fn address(iface: &str) -> String {
 
 fn view(i: &Inner) -> Network {
     let mut n = Network {
-        action: i.action.clone(),
-        failure: i.failure.clone(),
+        action: i.flight.action.clone(),
+        failure: i.flight.failure.clone(),
         speed: i.speed.clone(),
         reveal: i.reveal.clone(),
         qr: i.qr.clone(),
@@ -370,7 +368,7 @@ fn nm() -> Option<NetworkManager> {
 /// The completion check for the two actions that
 /// settle on what NetworkManager shows rather than on a call's result.
 fn settle(i: &mut Inner) {
-    let Some((kind, ssid)) = i.action.clone() else { return };
+    let Some((kind, ssid)) = i.flight.action.clone() else { return };
     let Some(s) = &i.snapshot else { return };
     let net = s.networks.iter().find(|n| n.ssid == ssid);
     let done = match kind {
@@ -379,32 +377,19 @@ fn settle(i: &mut Inner) {
         ActionKind::Forget => net.is_none_or(|n| !n.known && !n.state.is_changing()),
     };
     if done {
-        i.action = None;
+        i.flight.action = None;
     }
 }
 
 /// `runAction`: false while another action runs.
 fn begin(ctx: &Ctx, kind: ActionKind, ssid: &str) -> bool {
-    let generation = INNER.with_borrow_mut(|i| {
-        if i.action.is_some() {
-            return None;
-        }
-        i.action = Some((kind, ssid.to_owned()));
-        i.failure = None;
-        i.generation += 1;
-        Some(i.generation)
-    });
+    let generation = INNER.with_borrow_mut(|i| i.flight.begin((kind, ssid.to_owned())));
     let Some(generation) = generation else { return false };
     publish();
     ctx.spawn(async move {
         Timer::after(ACTION_TIMEOUT).await;
         let timed_out = INNER.with_borrow_mut(|i| {
-            if i.generation != generation {
-                return false;
-            }
-            let Some((_, ssid)) = i.action.take() else { return false };
-            i.failure = Some(Failure { ssid, text: "Timed out".into(), secret: false });
-            true
+            i.flight.end(generation, |(_, ssid)| Some(Failure { ssid, text: "Timed out".into(), secret: false }))
         });
         if timed_out {
             publish();
@@ -416,21 +401,22 @@ fn begin(ctx: &Ctx, kind: ActionKind, ssid: &str) -> bool {
 /// The connect started by `generation` came back.
 fn finish_connect(generation: u64, ssid: &str, result: Result<(), ConnectError>) {
     INNER.with_borrow_mut(|i| {
-        if i.generation != generation || i.action.as_ref().is_none_or(|(k, s)| *k != ActionKind::Connect || s != ssid) {
+        if i.flight.action.as_ref().is_none_or(|(k, s)| *k != ActionKind::Connect || s != ssid) {
             return;
         }
-        i.action = None;
-        let (text, secret) = match result {
-            Ok(()) => return,
-            Err(ConnectError::WrongPassword) => ("Wrong password", true),
-            Err(ConnectError::SecretsRequired) => ("Passphrase required", true),
-            Err(ConnectError::Timeout) => ("Timed out", false),
-            Err(err) => {
-                eprintln!("network: {ssid}: {err}");
-                ("Connection failed", false)
-            }
-        };
-        i.failure = Some(Failure { ssid: ssid.to_owned(), text: text.into(), secret });
+        i.flight.end(generation, |_| {
+            let (text, secret) = match result {
+                Ok(()) => return None,
+                Err(ConnectError::WrongPassword) => ("Wrong password", true),
+                Err(ConnectError::SecretsRequired) => ("Passphrase required", true),
+                Err(ConnectError::Timeout) => ("Timed out", false),
+                Err(err) => {
+                    eprintln!("network: {ssid}: {err}");
+                    ("Connection failed", false)
+                }
+            };
+            Some(Failure { ssid: ssid.to_owned(), text: text.into(), secret })
+        });
     });
     publish();
 }
@@ -450,7 +436,7 @@ pub fn connect(ctx: &Ctx, ssid: String, secret: Secret) {
     if !begin(ctx, ActionKind::Connect, &ssid) {
         return;
     }
-    let generation = INNER.with_borrow(|i| i.generation);
+    let generation = INNER.with_borrow(|i| i.flight.generation());
     ctx.spawn(async move {
         let result = match secret {
             Secret::Saved => nm.connect_saved(&ssid).await,
@@ -536,9 +522,7 @@ pub fn wired_toggle(ctx: &Ctx, interface: String, connected: bool) {
 
 fn clear(kind: ActionKind, ssid: &str) {
     INNER.with_borrow_mut(|i| {
-        if i.action.as_ref().is_some_and(|(k, s)| *k == kind && s == ssid) {
-            i.action = None;
-        }
+        i.flight.clear_if(|(k, s)| *k == kind && s == ssid);
     });
     publish();
 }

@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+fs-dbus = { path = "../fs-dbus" }
 futures-util = "0.3"
 zbus = "5"
 

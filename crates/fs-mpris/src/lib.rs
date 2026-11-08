@@ -8,6 +8,7 @@ mod state;
 use std::future::pending;
 use std::time::Instant;
 
+use fs_dbus::{NameOwner, Owner, OwnerWatch};
 use futures_util::future::{self, AbortHandle, Abortable, Either};
 use futures_util::stream::{self, BoxStream, SelectAll, StreamExt};
 use zbus::fdo::{DBusProxy, IntrospectableProxy, PropertiesProxy};
@@ -32,7 +33,7 @@ struct Entry {
 
 pub struct Mpris {
     conn: Connection,
-    owners: zbus::fdo::NameOwnerChangedStream,
+    owners: OwnerWatch,
     players: Vec<Entry>,
     inputs: SelectAll<BoxStream<'static, Input>>,
     /// A player appeared, left or changed since the last [`Mpris::next`].
@@ -45,7 +46,7 @@ impl Mpris {
     /// at startup are in [`Mpris::players`] on return.
     pub async fn connect(conn: &Connection) -> Result<Self> {
         let dbus = DBusProxy::new(conn).await?;
-        let owners = dbus.receive_name_owner_changed().await?;
+        let owners = OwnerWatch::any(conn).await?;
         let mut me = Mpris {
             conn: conn.clone(),
             owners,
@@ -105,20 +106,14 @@ impl Mpris {
             };
             match wake {
                 Either::Left(None) => return None,
-                Either::Left(Some(sig)) => {
-                    let Ok(args) = sig.args() else { continue };
-                    let name = args.name().to_string();
+                Either::Left(Some(NameOwner { name, owner })) => {
                     if !name.starts_with(BUS_PREFIX) {
                         continue;
                     }
-                    if args.new_owner().is_some() && self.index(&name).is_some() {
-                        // Name moved to a new process: the old state is stale.
-                        self.remove_player(&name);
-                    }
-                    if args.new_owner().is_some() {
+                    // A name moved to a new process: the old state is stale.
+                    self.remove_player(&name);
+                    if owner == Owner::Back {
                         self.add_player(name).await;
-                    } else {
-                        self.remove_player(&name);
                     }
                 }
                 Either::Right(input) => match input {

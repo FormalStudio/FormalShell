@@ -5,10 +5,11 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
+use fs_dbus::{Owner, OwnerWatch};
 use fs_devices::bluetooth;
 use fs_types::BtAddress;
 use futures_lite::{StreamExt, future};
-use zbus::fdo::{DBusProxy, ObjectManagerProxy};
+use zbus::fdo::ObjectManagerProxy;
 use zbus::message::Type as MessageType;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 use zbus::{Connection, MatchRule, Message, MessageStream};
@@ -96,7 +97,7 @@ pub struct Monitor {
     state: Shared,
     events: Sender<Event>,
     signals: MessageStream,
-    owner: zbus::fdo::NameOwnerChangedStream,
+    owner: OwnerWatch,
     watch: Receiver<Watch>,
 }
 
@@ -121,7 +122,7 @@ impl Bluez {
     pub async fn connect(conn: &Connection) -> Result<(Bluez, Receiver<Event>, Monitor)> {
         let rule = MatchRule::builder().msg_type(MessageType::Signal).sender(BLUEZ)?.build();
         let signals = MessageStream::for_match_rule(rule, conn, None).await?;
-        let owner = DBusProxy::new(conn).await?.receive_name_owner_changed_with_args(&[(0, BLUEZ)]).await?;
+        let owner = OwnerWatch::new(conn, BLUEZ).await?;
         let fresh = enumerate(conn).await?;
         let state: Shared = Arc::new(Mutex::new(State::default()));
         let (events, rx) = async_channel::unbounded();
@@ -299,7 +300,7 @@ impl Bluez {
 
 enum Item {
     Signal(Message),
-    Owner(bool),
+    Owner(Owner),
     Watch(Watch),
     Gone,
 }
@@ -398,7 +399,7 @@ impl Monitor {
         loop {
             let item = future::poll_fn(|cx| {
                 if let Poll::Ready(o) = owner.as_mut().poll_next(cx) {
-                    return Poll::Ready(o.map_or(Item::Gone, |s| Item::Owner(s.args().is_ok_and(|a| a.new_owner.is_some()))));
+                    return Poll::Ready(o.map_or(Item::Gone, |change| Item::Owner(change.owner)));
                 }
                 if let Poll::Ready(w) = watch.as_mut().poll_next(cx) {
                     return Poll::Ready(w.map_or(Item::Gone, Item::Watch));
@@ -422,11 +423,11 @@ impl Monitor {
                     handle_signal(&state, &events, &msg);
                     false
                 }
-                Item::Owner(false) => {
+                Item::Owner(Owner::Gone) => {
                     publish(&state, &events, State::clear);
                     false
                 }
-                Item::Owner(true) => true,
+                Item::Owner(Owner::Back) => true,
                 Item::Watch(Watch::All(on)) if on == wide => false,
                 Item::Watch(Watch::All(on)) => {
                     wide = on;

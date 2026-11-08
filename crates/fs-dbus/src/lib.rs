@@ -17,6 +17,6 @@ mod watch;
 
 pub use backoff::Backoff;
 pub use drain::{drain_while, private};
-pub use owner::{Owner, OwnerWatch};
+pub use owner::{NameOwner, Owner, OwnerWatch};
 pub use prop::{Props, plain, prop};
 pub use watch::{Watched, watch};

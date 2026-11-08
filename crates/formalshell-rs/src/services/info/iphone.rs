@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_io::Timer;
+use fs_dbus::Backoff;
 use fs_devices::iphone::{self, Arrival, Event, Notification, Verdict};
 use fs_types::BtAddress;
 use futures_lite::io::BufReader;
@@ -503,7 +504,7 @@ pub async fn run(ctx: Ctx) {
         }
     });
     let mut session = Session::default();
-    let mut backoff = BASE_BACKOFF;
+    let mut backoff = Backoff::new(BASE_BACKOFF, MAX_BACKOFF);
     session.state.installed = on_path(BRIDGE);
     publish(&ctx, &session.state);
     loop {
@@ -519,8 +520,7 @@ pub async fn run(ctx: Ctx) {
             ..State::default()
         };
         publish(&ctx, &session.state);
-        Timer::after(backoff).await;
-        backoff = (backoff * 2).min(MAX_BACKOFF);
+        backoff.wait().await;
     }
 }
 

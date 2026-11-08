@@ -9,12 +9,13 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use async_channel::{Receiver, Sender};
+use fs_dbus::{Owner, OwnerWatch};
 use fs_types::Edge;
 use futures_lite::StreamExt;
 use zbus::connection::Builder;
 use zbus::message::Type;
 use zbus::zvariant::OwnedValue;
-use zbus::{Connection, MatchRule, MessageStream, fdo};
+use zbus::{Connection, MatchRule, MessageStream};
 
 use crate::runtime::Ctx;
 use crate::store;
@@ -205,7 +206,7 @@ async fn commands(conn: Connection) {
 }
 
 enum Input {
-    Owner(bool),
+    Owner(Owner),
     Changed(HashMap<String, OwnedValue>, bool),
 }
 
@@ -215,12 +216,9 @@ pub async fn run(ctx: Ctx) {
         Ok(conn) => conn,
         Err(err) => return eprintln!("ipad: {err}"),
     };
-    let owners = match fdo::DBusProxy::new(&conn).await {
-        Ok(dbus) => match dbus.receive_name_owner_changed_with_args(&[(0, NAME)]).await {
-            Ok(s) => s,
-            Err(err) => return eprintln!("ipad: NameOwnerChanged: {err}"),
-        },
-        Err(err) => return eprintln!("ipad: {err}"),
+    let owners = match OwnerWatch::new(&conn, NAME).await {
+        Ok(s) => s,
+        Err(err) => return eprintln!("ipad: NameOwnerChanged: {err}"),
     };
     let rule = MatchRule::builder()
         .msg_type(Type::Signal)
@@ -242,7 +240,7 @@ pub async fn run(ctx: Ctx) {
     // Subscribed before the first read, so nothing falls between the two.
     let mut shown = read(&conn).await;
     publish(shown.clone());
-    let owners = owners.filter_map(|s| s.args().ok().map(|a| Input::Owner(a.new_owner().is_some())));
+    let owners = owners.map(|change| Input::Owner(change.owner));
     let changes = changes.filter_map(|m| {
         let (_, changed, invalidated): (String, HashMap<String, OwnedValue>, Vec<String>) = m.ok()?.body().deserialize().ok()?;
         Some(Input::Changed(changed, !invalidated.is_empty()))
@@ -250,8 +248,8 @@ pub async fn run(ctx: Ctx) {
     let mut inputs = std::pin::pin!(owners.or(changes));
     while let Some(input) = inputs.next().await {
         let next = match input {
-            Input::Owner(false) => None,
-            Input::Owner(true) => read(&conn).await,
+            Input::Owner(Owner::Gone) => None,
+            Input::Owner(Owner::Back) => read(&conn).await,
             Input::Changed(changed, false) if shown.is_some() => shown.clone().map(|mut i| {
                 i.merge(&changed);
                 i

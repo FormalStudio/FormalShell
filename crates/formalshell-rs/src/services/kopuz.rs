@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_io::Timer;
+use fs_dbus::Backoff;
 use fs_kopuz::{Client, Event, Table, TrackInfo};
 use futures_lite::future;
 
@@ -198,16 +199,15 @@ async fn session(ctx: &Ctx, client: &Client) -> bool {
 
 /// Connected while it can be, retrying on a doubling backoff otherwise.
 async fn follow(ctx: &Ctx) {
-    let mut backoff = BASE_BACKOFF;
+    let mut backoff = Backoff::new(BASE_BACKOFF, MAX_BACKOFF);
     loop {
         if let Some(client) = client()
             && session(ctx, &client).await
         {
-            backoff = BASE_BACKOFF;
+            backoff.reset();
         }
         publish(ctx, &State::default());
-        Timer::after(backoff).await;
-        backoff = (backoff * 2).min(MAX_BACKOFF);
+        backoff.wait().await;
     }
 }
 

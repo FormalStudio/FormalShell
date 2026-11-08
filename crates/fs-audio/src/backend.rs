@@ -9,10 +9,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
 use std::rc::{Rc, Weak};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError, TryRecvError};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use pipewire as pw;
 use pw::context::ContextRc;
@@ -49,7 +48,7 @@ enum Msg {
 /// client thread.
 pub struct Audio {
     tx: pw::channel::Sender<Msg>,
-    stop: Arc<AtomicBool>,
+    stop: mpsc::Sender<()>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -61,7 +60,7 @@ impl Audio {
 
 impl Drop for Audio {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        let _ = self.stop.send(());
         let _ = self.tx.send(Msg::Quit);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -75,13 +74,10 @@ impl Drop for Audio {
 pub fn spawn() -> std::io::Result<(Audio, async_channel::Receiver<Event>)> {
     let (events_tx, events_rx) = async_channel::unbounded();
     let (tx, rx) = pw::channel::channel::<Msg>();
-    let stop = Arc::new(AtomicBool::new(false));
+    let (stop, stopped) = mpsc::channel();
     let thread = std::thread::Builder::new()
         .name("fs-pipewire".into())
-        .spawn({
-            let stop = stop.clone();
-            move || run(rx, &events_tx, &stop)
-        })?;
+        .spawn(move || run(rx, &events_tx, &stopped))?;
     Ok((
         Audio {
             tx,
@@ -102,9 +98,9 @@ enum End {
 fn run(
     mut rx: pw::channel::Receiver<Msg>,
     events: &async_channel::Sender<Event>,
-    stop: &AtomicBool,
+    stopped: &mpsc::Receiver<()>,
 ) {
-    while !stop.load(Ordering::Relaxed) {
+    while stopped.try_recv() == Err(TryRecvError::Empty) {
         let (back, end) = session(rx, events);
         rx = back;
         match end {
@@ -114,9 +110,8 @@ fn run(
             }
             End::Failed => {}
         }
-        let until = Instant::now() + RETRY;
-        while Instant::now() < until && !stop.load(Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_millis(100));
+        if stopped.recv_timeout(RETRY) != Err(RecvTimeoutError::Timeout) {
+            return;
         }
     }
 }

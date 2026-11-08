@@ -90,7 +90,7 @@ impl Inputs {
 
     fn poll(&mut self, cx: &mut Context<'_>) -> Poll<Option<Input>> {
         match Pin::new(&mut self.owner).poll_next(cx) {
-            Poll::Ready(Some(owner)) => return Poll::Ready(Some(Input::Owner(owner))),
+            Poll::Ready(Some(owner)) => return Poll::Ready(Some(Input::Owner(owner.owner))),
             Poll::Ready(None) => return Poll::Ready(None),
             Poll::Pending => {}
         }

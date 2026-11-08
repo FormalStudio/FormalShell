@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use fs_dbus::{Props, plain};
 use zbus::zvariant::{OwnedValue, Value};
 
 /// Spec value meaning "no current track"; SetPosition against it is a no-op
@@ -168,13 +168,13 @@ impl PlayerState {
         self.base_at = now;
     }
 
-    pub(crate) fn apply_root(&mut self, props: &HashMap<String, OwnedValue>) {
+    pub(crate) fn apply_root(&mut self, props: &Props) {
         self.identity = get_string(props, "Identity").unwrap_or_default();
         self.desktop_entry = get_string(props, "DesktopEntry").filter(|s| !s.is_empty());
         self.can_raise = get_bool(props, "CanRaise").unwrap_or(false);
     }
 
-    pub(crate) fn apply_player(&mut self, props: &HashMap<String, OwnedValue>) {
+    pub(crate) fn apply_player(&mut self, props: &Props) {
         self.status = match get_string(props, "PlaybackStatus").as_deref() {
             Some("Playing") => PlaybackStatus::Playing,
             Some("Paused") => PlaybackStatus::Paused,
@@ -202,15 +202,8 @@ fn micros(us: i64) -> Duration {
     Duration::from_micros(us.max(0) as u64)
 }
 
-fn unwrap_value<'a, 'b>(mut v: &'b Value<'a>) -> &'b Value<'a> {
-    while let Value::Value(inner) = v {
-        v = inner;
-    }
-    v
-}
-
 fn as_string(v: &Value<'_>) -> Option<String> {
-    match unwrap_value(v) {
+    match plain(v) {
         Value::Str(s) => Some(s.to_string()),
         Value::ObjectPath(p) => Some(p.to_string()),
         _ => None,
@@ -220,7 +213,7 @@ fn as_string(v: &Value<'_>) -> Option<String> {
 /// Integers arrive as whichever width the player picked (Qt-based ones send
 /// `x`, others `t` or `i`).
 fn as_i64(v: &Value<'_>) -> Option<i64> {
-    match unwrap_value(v) {
+    match plain(v) {
         Value::I64(n) => Some(*n),
         Value::U64(n) => i64::try_from(*n).ok(),
         Value::I32(n) => Some(i64::from(*n)),
@@ -233,24 +226,24 @@ fn as_i64(v: &Value<'_>) -> Option<i64> {
 }
 
 pub(crate) fn as_f64(v: &Value<'_>) -> Option<f64> {
-    match unwrap_value(v) {
+    match plain(v) {
         Value::F64(n) => Some(*n),
         other => as_i64(other).map(|n| n as f64),
     }
 }
 
-fn get_string(props: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+fn get_string(props: &Props, key: &str) -> Option<String> {
     props.get(key).and_then(|v| as_string(v))
 }
 
-fn get_bool(props: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
-    match props.get(key).map(|v| unwrap_value(v)) {
+fn get_bool(props: &Props, key: &str) -> Option<bool> {
+    match props.get(key).map(|v| plain(v)) {
         Some(Value::Bool(b)) => Some(*b),
         _ => None,
     }
 }
 
-fn get_f64(props: &HashMap<String, OwnedValue>, key: &str) -> Option<f64> {
+fn get_f64(props: &Props, key: &str) -> Option<f64> {
     props.get(key).and_then(|v| as_f64(v))
 }
 
@@ -259,13 +252,13 @@ pub(crate) fn position_from(v: &Value<'_>) -> Option<i64> {
 }
 
 fn parse_metadata(v: &OwnedValue) -> Metadata {
-    let Value::Dict(dict) = unwrap_value(v) else {
+    let Value::Dict(dict) = plain(v) else {
         return Metadata::default();
     };
     let mut m = Metadata::default();
     for (k, val) in dict.iter() {
         let Some(key) = as_string(k) else { continue };
-        let val = unwrap_value(val);
+        let val = plain(val);
         match key.as_str() {
             "mpris:trackid" => {
                 m.track_id = as_string(val).filter(|s| !s.is_empty() && s != NO_TRACK);

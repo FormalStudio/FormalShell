@@ -5,11 +5,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
+use fs_dbus::prop;
+pub use fs_dbus::Props;
 use fs_devices::bluetooth::{self, DeviceState};
 use fs_types::{BtAddress, Fraction};
-use zbus::zvariant::{OwnedValue, Value};
-
-pub type Props = HashMap<String, OwnedValue>;
+use zbus::zvariant::OwnedObjectPath;
 
 pub const ADAPTER_IFACE: &str = "org.bluez.Adapter1";
 pub const DEVICE_IFACE: &str = "org.bluez.Device1";
@@ -128,56 +128,33 @@ pub struct State {
     players: BTreeMap<String, Player>,
 }
 
-/// A value out of an `a{sv}` nested in a property (`Track`'s) is still
-/// wrapped in its variant.
-fn unwrapped<'a>(v: &'a Value<'a>) -> &'a Value<'a> {
-    match v {
-        Value::Value(inner) => unwrapped(inner),
-        v => v,
-    }
-}
-
-fn get<'a, T>(props: &'a Props, key: &str) -> Option<T>
-where
-    T: TryFrom<&'a Value<'a>>,
-{
-    props.get(key).and_then(|v| T::try_from(unwrapped(v)).ok())
-}
-
-fn get_string(props: &Props, key: &str) -> Option<String> {
-    get::<&str>(props, key).map(str::to_string)
-}
-
 fn get_path(props: &Props, key: &str) -> Option<String> {
-    match unwrapped(props.get(key)?) {
-        Value::ObjectPath(p) => Some(p.to_string()),
-        _ => None,
-    }
+    prop::<OwnedObjectPath>(props, key).map(|p| p.to_string())
 }
 
 fn apply_adapter(a: &mut Adapter, props: &Props) {
-    if let Some(v) = get_string(props, "Address").and_then(|v| BtAddress::parse(&v)) {
+    if let Some(v) = prop::<String>(props, "Address").and_then(|v| BtAddress::parse(&v)) {
         a.address = v;
     }
-    if let Some(v) = get_string(props, "Name") {
+    if let Some(v) = prop::<String>(props, "Name") {
         a.name = v;
     }
-    if let Some(v) = get_string(props, "Alias") {
+    if let Some(v) = prop::<String>(props, "Alias") {
         a.alias = v;
     }
-    if let Some(v) = get::<bool>(props, "Powered") {
+    if let Some(v) = prop::<bool>(props, "Powered") {
         a.powered = v;
     }
-    if let Some(v) = get::<bool>(props, "Discovering") {
+    if let Some(v) = prop::<bool>(props, "Discovering") {
         a.discovering = v;
     }
-    if let Some(v) = get::<bool>(props, "Discoverable") {
+    if let Some(v) = prop::<bool>(props, "Discoverable") {
         a.discoverable = v;
     }
-    if let Some(v) = get::<bool>(props, "Pairable") {
+    if let Some(v) = prop::<bool>(props, "Pairable") {
         a.pairable = v;
     }
-    let power_state = get_string(props, "PowerState");
+    let power_state = prop::<String>(props, "PowerState");
     a.state = match power_state.as_deref() {
         Some("on") => AdapterState::Enabled,
         Some("off") => AdapterState::Disabled,
@@ -191,31 +168,31 @@ fn apply_adapter(a: &mut Adapter, props: &Props) {
 }
 
 fn apply_device(d: &mut Device, props: &Props, invalidated: &[String]) {
-    if let Some(v) = get_string(props, "Address").and_then(|v| BtAddress::parse(&v)) {
+    if let Some(v) = prop::<String>(props, "Address").and_then(|v| BtAddress::parse(&v)) {
         d.info.address = v;
     }
-    if let Some(v) = get_string(props, "Name") {
+    if let Some(v) = prop::<String>(props, "Name") {
         d.info.device_name = v;
     }
-    if let Some(v) = get_string(props, "Alias") {
+    if let Some(v) = prop::<String>(props, "Alias") {
         d.info.name = v;
     }
-    if let Some(v) = get_string(props, "Icon") {
+    if let Some(v) = prop::<String>(props, "Icon") {
         d.icon = v;
     }
-    if let Some(v) = get::<bool>(props, "Paired") {
+    if let Some(v) = prop::<bool>(props, "Paired") {
         d.info.paired = v;
     }
-    if let Some(v) = get::<bool>(props, "Bonded") {
+    if let Some(v) = prop::<bool>(props, "Bonded") {
         d.info.bonded = v;
     }
-    if let Some(v) = get::<bool>(props, "Trusted") {
+    if let Some(v) = prop::<bool>(props, "Trusted") {
         d.info.trusted = v;
     }
-    if let Some(v) = get::<bool>(props, "Connected") {
+    if let Some(v) = prop::<bool>(props, "Connected") {
         d.info.connected = v;
     }
-    if let Some(v) = get::<i16>(props, "RSSI") {
+    if let Some(v) = prop::<i16>(props, "RSSI") {
         d.rssi = Some(v);
     }
     if let Some(v) = get_path(props, "Adapter") {
@@ -236,26 +213,26 @@ fn apply_player(p: &mut Player, props: &Props) {
     if let Some(v) = get_path(props, "Device") {
         p.device = v;
     }
-    if let Some(v) = get_string(props, "Name") {
+    if let Some(v) = prop::<String>(props, "Name") {
         p.name = v;
     }
-    if let Some(v) = get_string(props, "Status") {
+    if let Some(v) = prop::<String>(props, "Status") {
         p.status = v;
     }
-    if let Some(v) = get::<u32>(props, "Position") {
+    if let Some(v) = prop::<u32>(props, "Position") {
         p.position = Duration::from_millis(v.into());
     }
-    if let Some(track) = props.get("Track").and_then(|v| v.try_clone().ok()).and_then(|v| Props::try_from(v).ok()) {
-        p.title = get_string(&track, "Title").unwrap_or_default();
-        p.artist = get_string(&track, "Artist").unwrap_or_default();
-        p.album = get_string(&track, "Album").unwrap_or_default();
-        p.duration = get::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
+    if let Some(track) = prop::<Props>(props, "Track") {
+        p.title = prop::<String>(&track, "Title").unwrap_or_default();
+        p.artist = prop::<String>(&track, "Artist").unwrap_or_default();
+        p.album = prop::<String>(&track, "Album").unwrap_or_default();
+        p.duration = prop::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
     }
 }
 
 /// `Battery1.Percentage` is 0..100; the shell's models hold a 0..1 fraction.
 fn apply_battery(d: &mut Device, props: &Props, invalidated: &[String]) {
-    if let Some(p) = get::<u8>(props, "Percentage") {
+    if let Some(p) = prop::<u8>(props, "Percentage") {
         d.info.battery = Some(Fraction::from_fraction(f64::from(p) / 100.0));
     }
     if invalidated.iter().any(|k| k == "Percentage") {
@@ -512,7 +489,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zbus::zvariant::ObjectPath;
+    use zbus::zvariant::{ObjectPath, Value};
 
     fn props(items: Vec<(&str, Value<'_>)>) -> Props {
         items.into_iter().map(|(k, v)| (k.to_string(), v.try_to_owned().unwrap())).collect()

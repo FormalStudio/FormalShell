@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use async_io::Timer;
+use fs_dbus::Backoff;
 use fs_info::agents::{self, Badge};
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
@@ -130,7 +130,8 @@ impl Service {
 /// ends by itself when the link dies or the host has no `t3-agents`.
 async fn poll(host: String, argv: Vec<String>, tx: async_channel::Sender<Event>, stopped: async_channel::Receiver<()>) {
     let run = async {
-        let mut backoff = BASE_BACKOFF;
+        // A dead stream waits twice the base before its first retry.
+        let mut backoff = Backoff::new(BASE_BACKOFF * 2, MAX_BACKOFF);
         loop {
             let child = crate::services::proc::command(&argv[0])
                 .args(&argv[1..])
@@ -144,7 +145,7 @@ async fn poll(host: String, argv: Vec<String>, tx: async_channel::Sender<Event>,
                 if let Some(out) = child.stdout.take() {
                     let mut lines = BufReader::new(out).lines();
                     while let Some(Ok(line)) = lines.next().await {
-                        backoff = BASE_BACKOFF;
+                        backoff.reset();
                         if tx.send(Event::Line(host.clone(), line)).await.is_err() {
                             return;
                         }
@@ -157,8 +158,7 @@ async fn poll(host: String, argv: Vec<String>, tx: async_channel::Sender<Event>,
             if tx.send(Event::Line(host.clone(), String::new())).await.is_err() {
                 return;
             }
-            backoff = (backoff * 2).min(MAX_BACKOFF);
-            Timer::after(backoff).await;
+            backoff.wait().await;
         }
     };
     let stop = async {

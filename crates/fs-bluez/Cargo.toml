@@ -8,6 +8,7 @@ publish = false
 # returns is a tokio one, while the shell's service thread is a single-threaded
 # async-executor. zbus on async-io runs there.
 [dependencies]
+fs-dbus = { path = "../fs-dbus" }
 fs-devices = { path = "../fs-devices" }
 fs-types = { path = "../fs-types" }
 async-channel = "2.5"

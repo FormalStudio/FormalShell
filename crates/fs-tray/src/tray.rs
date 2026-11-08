@@ -9,6 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use fs_dbus::{Owner, OwnerWatch};
 use futures_util::{
     Stream, StreamExt,
     future::{AbortHandle, AbortRegistration},
@@ -84,7 +85,7 @@ pub struct Tray {
 
 enum Input {
     WatcherItem { key: String, registered: bool },
-    NameOwner { name: String, new_owner: String },
+    NameOwner { name: String, owner: Owner },
     ItemSignal { key: String },
     LayoutUpdated { key: String, parent: i32 },
     PropertiesUpdated { key: String, body: Message },
@@ -200,7 +201,6 @@ impl Tray {
             HOST_SEQ.fetch_add(1, Ordering::Relaxed)
         );
         conn.request_name(host_name.as_str()).await?;
-        let dbus = DBusProxy::new(&conn).await?;
 
         let mut core = Core {
             shared: shared.clone(),
@@ -213,21 +213,10 @@ impl Tray {
         let inputs = core.inputs.clone();
         let mut backlog = VecDeque::new();
 
-        let owner_changes = dbus.receive_name_owner_changed().await?;
-        inputs
-            .lock()
-            .unwrap()
-            .push(Box::pin(owner_changes.filter_map(|sig| async move {
-                let args = sig.args().ok()?;
-                Some(Input::NameOwner {
-                    name: args.name().to_string(),
-                    new_owner: args
-                        .new_owner()
-                        .as_ref()
-                        .map(|n| n.to_string())
-                        .unwrap_or_default(),
-                })
-            })));
+        let owner_changes = OwnerWatch::any(&conn).await?;
+        inputs.lock().unwrap().push(Box::pin(
+            owner_changes.map(|change| Input::NameOwner { name: change.name, owner: change.owner }),
+        ));
 
         let watcher_rule = MatchRule::builder()
             .msg_type(Type::Signal)
@@ -700,16 +689,16 @@ impl Core {
                     self.remove_item(&qualify(&key, None));
                 }
             }
-            Input::NameOwner { name, new_owner } => self.name_owner(&name, &new_owner).await,
+            Input::NameOwner { name, owner } => self.name_owner(&name, owner).await,
             Input::ItemSignal { key } => self.refresh_item(&key).await,
             Input::LayoutUpdated { key, parent } => self.layout_updated(&key, parent).await,
             Input::PropertiesUpdated { key, body } => self.properties_updated(&key, &body),
         }
     }
 
-    async fn name_owner(&mut self, name: &str, new_owner: &str) {
+    async fn name_owner(&mut self, name: &str, owner: Owner) {
         if name == WATCHER_NAME {
-            if new_owner.is_empty() {
+            if owner == Owner::Gone {
                 self.owns_watcher = false;
                 self.clear_items();
                 if self.try_own_watcher().await {
@@ -720,7 +709,7 @@ impl Core {
             }
             return;
         }
-        if !new_owner.is_empty() {
+        if owner == Owner::Back {
             return;
         }
         service_gone(&self.shared.conn, &self.watcher, name).await;
