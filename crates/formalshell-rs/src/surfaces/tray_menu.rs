@@ -11,7 +11,7 @@ use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
 use fs_theme::tokens::WEIGHTS;
 
-use crate::motion::{Animated, SPATIAL};
+use crate::motion::{Animated, Kind};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
 use crate::services::tray::MenuNode;
 use crate::surfaces::bar::cell::{Kit, Painter};
@@ -115,7 +115,7 @@ impl Menu {
             cursor_active: false,
             cap: f64::INFINITY,
             anchor: 0.0,
-            morph: Animated::new(0.0, SPATIAL),
+            morph: Animated::new(0.0, Kind::Spatial.curve()),
             scroll: 0.0,
             close_hover: false,
             body: IRect::default(),

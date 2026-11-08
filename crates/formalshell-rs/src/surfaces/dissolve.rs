@@ -169,10 +169,7 @@ impl Dissolve {
     }
 
     pub fn progress(&self, now: Instant) -> f64 {
-        if self.ms <= 0.0 {
-            return 1.0;
-        }
-        (now.saturating_duration_since(self.at).as_secs_f64() * 1000.0 / self.ms).min(1.0)
+        crate::motion::progress(self.at, self.ms, now)
     }
 
     pub fn done(&self, now: Instant) -> bool {

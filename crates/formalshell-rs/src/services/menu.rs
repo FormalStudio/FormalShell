@@ -30,8 +30,10 @@ use crate::store;
 const DEFAULT_MENU: &str = include_str!("../../../fs-menu/data/default-menu.jsonc");
 const EMOJI: &str = include_str!("../../../fs-menu/data/emoji.json");
 /// How long after an ask the condition checks start: past the launcher's
-/// entrance, whose springs settle in about a second.
-const CONDS_AFTER: Duration = Duration::from_millis(1000);
+/// entrance, whose springs settle in twice the spatial family's length.
+fn conds_after() -> Duration {
+    Duration::from_secs_f64(2.0 * fs_theme::tokens::motion_tokens(true).spatial / 1000.0)
+}
 
 /// What fs-menu's self-targeted fragments call the shell by, which
 /// [`ipc_command`] turns into the client installed beside this binary at the
@@ -297,7 +299,7 @@ pub async fn run(ctx: Ctx) {
                 // is still coming in.
                 let c = ctx.clone();
                 ctx.spawn(async move {
-                    async_io::Timer::after(CONDS_AFTER).await;
+                    async_io::Timer::after(conds_after()).await;
                     for (id, command, when) in list {
                         let c2 = c.clone();
                         c.spawn(async move {

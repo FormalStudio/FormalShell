@@ -651,8 +651,8 @@ impl Greeter {
             self.shown = Some(now);
         }
         self.shown.map_or(0.0, |at| {
-            let t = (now.saturating_duration_since(at).as_secs_f64() * 1000.0 / SHOW_MS).min(1.0);
-            crate::motion::EFFECTS.ease(t) as f32
+            let t = crate::motion::progress(at, SHOW_MS, now);
+            crate::motion::Kind::Effects.curve().ease(t) as f32
         })
     }
 

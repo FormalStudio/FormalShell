@@ -54,7 +54,7 @@ use zeroize::Zeroizing;
 
 use super::App;
 use super::screensaver::SaverInput;
-use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, Kind as Clock, SPATIAL};
+use crate::motion::{Animated, Kind as Clock};
 use crate::scene::Bitmap;
 use crate::surface::Ignore;
 use crate::services::wallpaper::DepthCut;
@@ -210,9 +210,9 @@ impl Lock {
             dirty: false,
             transport: -1,
             art: None,
-            fade: Animated::new(1.0, EFFECTS),
-            rise: Animated::new(0.0, SPATIAL),
-            wake: Animated::new(1.0, EFFECTS_SLOW),
+            fade: Animated::new(1.0, Clock::Effects.curve()),
+            rise: Animated::new(0.0, Clock::Spatial.curve()),
+            wake: Animated::new(1.0, Clock::EffectsSlow.curve()),
             entered: false,
             notifier: globals.bind(qh, 2..=2, Ignore).ok(),
             idle_watch: None,
@@ -228,7 +228,7 @@ impl Lock {
             splash_taken: false,
             splashed_at: None,
             armed: None,
-            depart: Animated::new(1.0, EFFECTS),
+            depart: Animated::new(1.0, Clock::Effects.curve()),
             departing: false,
         }
     }

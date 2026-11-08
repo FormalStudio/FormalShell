@@ -40,7 +40,7 @@ use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 use vello_cpu::kurbo::{Affine, Rect};
 
-use crate::motion::{Animated, Curve, EFFECTS, Kind};
+use crate::motion::{Animated, Curve, Kind};
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::scroll::{self, Travel, Velocity};
 use crate::services::notifications::now_ms;
@@ -450,8 +450,8 @@ impl Toasts {
                     width: Animated::new(g.width, restack.1),
                     height: Animated::new(h, restack.1),
                     presence,
-                    visible: Animated::new(1.0, EFFECTS),
-                    content: Animated::new(content, EFFECTS),
+                    visible: Animated::new(1.0, Kind::Effects.curve()),
+                    content: Animated::new(content, Kind::Effects.curve()),
                     reveal,
                     departing: false,
                     ui_animating: false,

@@ -40,7 +40,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 use vello_cpu::kurbo::Rect;
 
 use super::App;
-use crate::motion::{Animated, EFFECTS_SLOW};
+use crate::motion::{Animated, Kind};
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::services::screensaver as service;
 use crate::services::visualizer::Avail;
@@ -141,7 +141,7 @@ impl Default for Saver {
             logged_unknown: false,
             auto_frame: 0,
             overlays: Vec::new(),
-            opacity: Animated::new(0.0, EFFECTS_SLOW),
+            opacity: Animated::new(0.0, Kind::EffectsSlow.curve()),
             hold: None,
             tick: None,
             chain: None,

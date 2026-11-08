@@ -23,7 +23,7 @@ use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
 use super::{Edit, Effect, Panel, View};
-use crate::motion::{Animated, Kind as Clock, SPATIAL};
+use crate::motion::{Animated, Kind as Clock};
 use crate::runtime::Runtime;
 use crate::scene::{IRect, NodeId, Paint};
 use crate::scroll::{Touchpad, Travel};
@@ -341,7 +341,7 @@ impl Host {
             morph: None,
             morph_armed: false,
             cursor: Cursor::starting(start),
-            halo: std::array::from_fn(|_| Animated::new(0.0, SPATIAL)),
+            halo: std::array::from_fn(|_| Animated::new(0.0, Clock::Spatial.curve())),
             halo_shown: false,
             scroll: Animated::new(0.0, Clock::SpatialFast.curve()),
             touch: Touchpad::new(),
@@ -422,7 +422,7 @@ impl Host {
     pub fn take_over(&mut self, from: Rect) {
         self.handoff = Some(Handoff {
             from,
-            travel: Animated::new(0.0, SPATIAL),
+            travel: Animated::new(0.0, Clock::Spatial.curve()),
             alpha: Animated::new(0.0, Clock::Effects.curve()),
             started: false,
         });
@@ -530,7 +530,7 @@ impl Host {
         let sized = t0.elapsed();
         self.content_h = content_h;
         let spatial = Clock::Spatial.ms(theme) * self.scale;
-        let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, SPATIAL), Animated::new(th, SPATIAL)));
+        let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, Clock::Spatial.curve()), Animated::new(th, Clock::Spatial.curve())));
         if self.open {
             let armed = self.surface.mapped && self.handoff.is_none() && self.morph_armed;
             for (a, t, morphs) in [(&mut morph.0, tw, true), (&mut morph.1, th, !follows)] {
@@ -741,7 +741,7 @@ impl Host {
     }
 
     /// cursor.js `follow`: the smallest scroll that shows the cursor row.
-    fn follow(&mut self) {
+    fn follow(&mut self, theme: &Theme) {
         let Some(st) = self.body.stops.get(self.cursor.index) else { return };
         // A floating list keeps its own rows in view.
         if self.body.in_float(&st.key) {
@@ -759,7 +759,7 @@ impl Host {
         }
         let next = next.clamp(0.0, (self.content_h - view).max(0.0));
         if (next - scroll).abs() > 0.5 {
-            self.scroll.set(now, next, crate::motion::SPATIAL_FAST_MS * self.scale);
+            self.scroll.set(now, next, Clock::SpatialFast.ms(theme) * self.scale);
         }
     }
 
@@ -834,7 +834,7 @@ impl Host {
             Driven::Escape => return Out::Close,
             Driven::Walked => {
                 self.touch.settle();
-                self.follow();
+                self.follow(&store.theme.theme);
             }
             Driven::Done => {}
         }
@@ -1017,7 +1017,7 @@ impl Host {
         let step = 32.0;
         let base = self.scroll.target();
         let next = (base + if up { -step } else { step }).clamp(0.0, max);
-        self.scroll.set(now, next, crate::motion::SPATIAL_FAST_MS * self.scale);
+        self.scroll.set(now, next, Clock::SpatialFast.ms(&store.theme.theme) * self.scale);
     }
 }
 

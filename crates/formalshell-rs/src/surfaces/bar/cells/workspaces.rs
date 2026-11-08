@@ -15,7 +15,7 @@ use fs_types::{WindowId, WorkspaceId};
 use serde_json::{Value, json};
 use vello_cpu::kurbo::Affine;
 
-use crate::motion::{Animated, EFFECTS, EFFECTS_SLOW, EMPHASIZED, PULSE_MS, breathe};
+use crate::motion::{Animated, Kind, PULSE_MS, breathe};
 use crate::scene::IRect;
 use crate::services::appicon::{self, Icon};
 use crate::services::agents;
@@ -58,8 +58,8 @@ struct Pill {
 
 impl Pill {
     fn new() -> Self {
-        let at = |v| Animated::new(v, EMPHASIZED);
-        Self { lead: (at(0.0), at(0.0)), trail: (at(0.0), at(0.0)), fade: Animated::new(0.0, EFFECTS), placed: false }
+        let at = |v| Animated::new(v, Kind::Emphasized.curve());
+        Self { lead: (at(0.0), at(0.0)), trail: (at(0.0), at(0.0)), fade: Animated::new(0.0, Kind::Effects.curve()), placed: false }
     }
 
     fn span(&self, now: Instant) -> (f64, f64) {
@@ -267,7 +267,7 @@ impl Workspaces {
     /// The chip label's colour this frame, gliding to `target` whenever the
     /// chip's state changes it.
     fn label_color(&mut self, idx: i64, target: Rgba, now: Instant, look: &Look, scale: f64) -> Rgba {
-        let fx = self.label_ink.entry(idx).or_insert_with(|| LabelInk { from: target, to: target, t: Animated::new(1.0, EFFECTS_SLOW) });
+        let fx = self.label_ink.entry(idx).or_insert_with(|| LabelInk { from: target, to: target, t: Animated::new(1.0, Kind::EffectsSlow.curve()) });
         if fx.to != target {
             fx.from = fx.from.mix(fx.to, fx.t.value(now) as f32);
             fx.to = target;
@@ -280,9 +280,9 @@ impl Workspaces {
     /// An icon's clocks, born at its resting dim and fading in from nothing.
     fn fx_of(&mut self, id: &str, dim: f64, now: Instant, look: &Look, scale: f64) -> &mut IconFx {
         self.fx.entry(id.to_owned()).or_insert_with(|| {
-            let mut arrive = Animated::new(0.0, EFFECTS);
+            let mut arrive = Animated::new(0.0, Kind::Effects.curve());
             if look.motion { arrive.set(now, 1.0, look.effects * scale) } else { arrive.jump(1.0) }
-            IconFx { dim: Animated::new(dim, EFFECTS), arrive }
+            IconFx { dim: Animated::new(dim, Kind::Effects.curve()), arrive }
         })
     }
 
@@ -621,9 +621,9 @@ impl Custom for Workspaces {
                 let o = if !look.motion || t >= down + up {
                     1.0
                 } else if t < down {
-                    1.0 - 0.7 * EFFECTS.ease(t / down)
+                    1.0 - 0.7 * Kind::Effects.curve().ease(t / down)
                 } else {
-                    0.3 + 0.7 * EFFECTS.ease((t - down) / up)
+                    0.3 + 0.7 * Kind::Effects.curve().ease((t - down) / up)
                 };
                 opacity *= o as f32;
             }

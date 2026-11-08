@@ -22,7 +22,7 @@ use std::time::Instant;
 use fs_types::Edge;
 use vello_cpu::kurbo::{Affine, Rect};
 
-use crate::motion::{Animated, Curve, Deform, EMERGE, SPATIAL_FAST, SPATIAL_FAST_MS};
+use crate::motion::{Animated, Curve, Deform, Kind};
 use crate::scene::{Cast, Fade, Fit, IRect, Joined, LitLine, NodeId, Outline, Paint, Scene, Snap};
 use crate::surfaces::rim::{Lit, Rim};
 use crate::surfaces::shoulders::{self, Walls};
@@ -53,6 +53,8 @@ struct Look {
     /// Off the line, on the popover path.
     popover: bool,
     emerge_ms: f64,
+    /// The line-join attach, on the spatial-fast family.
+    attach_ms: f64,
     emerge_curve: Curve,
     drop: f64,
     /// How far from the line a cast thins out, the gap a card rests off it.
@@ -84,6 +86,7 @@ impl Look {
             lit: card.inset_rings.first().map(LitLine::of),
             popover,
             emerge_ms: if theme.motion_enabled { motion.emerge } else { 0.0 },
+            attach_ms: Kind::SpatialFast.ms(theme),
             emerge_curve: Curve::from_table(&motion.emerge_curve),
             drop: theme.space.sm,
             ramp: theme.space.bar_margin,
@@ -255,7 +258,7 @@ impl Card {
             bypass: false,
             joined: true,
             progress: Animated::new(0.0, curve),
-            attach: Animated::new(1.0, SPATIAL_FAST),
+            attach: Animated::new(1.0, Kind::SpatialFast.curve()),
             deform: Deform::new(),
             deform_running: false,
             last_tick: None,
@@ -622,7 +625,7 @@ impl Card {
 
         let attach_target = if joinable && !(self.open && pose >= release_at) { 1.0 } else { 0.0 };
         if shown && !self.bypass {
-            self.attach.set(now, attach_target, SPATIAL_FAST_MS * self.scale);
+            self.attach.set(now, attach_target, self.look.attach_ms * self.scale);
         } else {
             self.attach.jump(attach_target);
         }
@@ -852,6 +855,7 @@ pub struct Scrim {
     open: bool,
     mapped: bool,
     pose: Animated,
+    ms: f64,
     scale: f64,
     /// The `scrim` role's fill alpha over its plain black.
     alpha: f64,
@@ -860,7 +864,7 @@ pub struct Scrim {
 impl Scrim {
     pub fn new(theme: &Theme, scale: f64) -> Self {
         let alpha = f64::from(theme.box_style("scrim", None).fill.a);
-        Self { open: true, mapped: false, pose: Animated::new(0.0, crate::motion::SPATIAL), scale, alpha }
+        Self { open: true, mapped: false, pose: Animated::new(0.0, Kind::Spatial.curve()), ms: Kind::Spatial.ms(theme), scale, alpha }
     }
 
     pub fn mapped(&mut self, now: Instant) {
@@ -873,7 +877,7 @@ impl Scrim {
     pub fn set_open(&mut self, now: Instant, open: bool) {
         self.open = open;
         let target = if open && self.mapped { 1.0 } else { 0.0 };
-        self.pose.set(now, target, EMERGE.0 * self.scale);
+        self.pose.set(now, target, self.ms * self.scale);
     }
 
     pub fn animating(&self, now: Instant) -> bool {

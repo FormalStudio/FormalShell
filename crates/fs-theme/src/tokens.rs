@@ -444,6 +444,9 @@ pub fn motion_tokens(enabled: bool) -> Motion {
     }
 }
 
+/// The breathing pulse's length (`pulseDuration`): one leg, 1 to 0.4.
+pub const PULSE_MS: f64 = 900.0;
+
 /// One cubic bezier per kind as Qt's `easing.bezierCurve` takes it: control
 /// points, then the (1, 1) end point. `emphasized` is two segments.
 pub const MOTION_CURVES: [(&str, &[f64]); 8] = [

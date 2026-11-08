@@ -11,7 +11,7 @@ use fs_chrome::rim::{self, Field, Light, STOPS};
 use fs_theme::color::Rgba;
 use vello_cpu::kurbo::{BezPath, Rect, Shape};
 
-use crate::motion::{Animated, SPATIAL_FAST, SPATIAL_FAST_MS};
+use crate::motion::{Animated, Kind};
 use crate::scene::{Bitmap, Paint, RimLine, RimMask};
 
 /// How far the border goes toward the colour around it.
@@ -107,7 +107,7 @@ pub struct Rim {
 
 impl Default for Rim {
     fn default() -> Self {
-        Self { from: None, to: None, blend: Animated::new(1.0, SPATIAL_FAST), key: None, fresh: false, lights: None, mask: None, flat: None }
+        Self { from: None, to: None, blend: Animated::new(1.0, Kind::SpatialFast.curve()), key: None, fresh: false, lights: None, mask: None, flat: None }
     }
 }
 
@@ -270,7 +270,7 @@ fn stop_normal(card: Rect, i: usize) -> (f64, f64) {
 
 /// The blend's length off the theme.
 pub fn blend_ms(theme: &fs_theme::theme::Theme, scale: f64) -> f64 {
-    if theme.motion_enabled { SPATIAL_FAST_MS * scale } else { 0.0 }
+    Kind::SpatialFast.ms(theme) * scale
 }
 
 #[cfg(test)]

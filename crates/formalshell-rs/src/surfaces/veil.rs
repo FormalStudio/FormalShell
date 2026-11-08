@@ -72,8 +72,8 @@ impl<S> Veil<S> {
 
     pub fn opacity(&self, now: Instant) -> f32 {
         let f = self.fade;
-        let t = if f.ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(f.at).as_secs_f64() * 1000.0 / f.ms).min(1.0) };
-        f.from + (f.to - f.from) * crate::motion::EFFECTS.ease(t) as f32
+        let t = crate::motion::progress(f.at, f.ms, now);
+        f.from + (f.to - f.from) * crate::motion::Kind::Effects.curve().ease(t) as f32
     }
 
     /// The fade has reached its end and the compositor has shown it.

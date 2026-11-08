@@ -1585,9 +1585,8 @@ impl Backdrop {
     /// One frame of a running fade; the frame callback lands back here.
     pub fn step(&mut self, now: Instant, qh: &QueueHandle<App>) {
         let Some(f) = &self.fade else { return };
-        let t = (now.duration_since(f.start).as_secs_f64() * 1000.0 / f.ms).clamp(0.0, 1.0);
-        // effectsSlow's ease-out, close enough at a crossfade's length.
-        let a = 1.0 - (1.0 - t).powi(3);
+        let t = crate::motion::progress(f.start, f.ms, now);
+        let a = crate::motion::Kind::EffectsSlow.curve().ease(t);
         let (from, to, color, grid) = (f.from.clone(), f.to.clone(), f.color, f.grid);
         if t >= 1.0 {
             self.fade = None;

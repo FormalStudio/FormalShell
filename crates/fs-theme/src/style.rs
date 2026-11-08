@@ -479,7 +479,10 @@ pub fn motion(style: &Value, key: &str, m: &Motion) -> Clock {
         Some(Value::Array(points)) if points.first().is_some_and(Value::is_array) => {
             stops(points).map_or_else(spatial, Easing::Stops)
         }
-        Some(Value::Array(points)) => Easing::Bezier(points.iter().map(|p| p.as_f64().unwrap_or(f64::NAN)).collect()),
+        // A bezier needs one whole segment (two control points and the end).
+        Some(Value::Array(points)) if points.len() >= 6 => {
+            Easing::Bezier(points.iter().map(|p| p.as_f64().unwrap_or(f64::NAN)).collect())
+        }
         Some(Value::String(s)) => tokens::curve(s).map_or_else(spatial, |c| Easing::Bezier(c.to_vec())),
         _ => spatial(),
     };
@@ -1382,5 +1385,15 @@ pub(crate) mod tests {
             assert_eq!(motion(&table, "emerge", &families).curve, spatial, "{curve}");
         }
         assert!(stops(&[json!([0, 0]), json!([0.5, 0.5]), json!([0.5, 0.8]), json!([1, 1])]).is_some());
+    }
+
+    #[test]
+    fn a_bezier_without_a_whole_segment_falls_back_to_spatial() {
+        let families = tokens::motion_tokens(true);
+        let spatial = Easing::Bezier(tokens::curve("spatial").unwrap().to_vec());
+        for curve in [json!([]), json!([0.1]), json!([0.1, 0.2, 0.3, 0.4, 1.0])] {
+            let table = json!({ "motion": { "emerge": { "curve": curve } } });
+            assert_eq!(motion(&table, "emerge", &families).curve, spatial, "{curve}");
+        }
     }
 }

@@ -71,7 +71,6 @@ pub struct ThemeMotion {
     pub arrive_curve: Easing,
     pub restack_curve: Easing,
     pub switcher_curve: Easing,
-    pub pulse_duration: f64,
 }
 
 /// One text role's family: a face's name, and the fontconfig alias that
@@ -464,7 +463,6 @@ impl Theme {
             arrive_curve: arrive.curve,
             restack_curve: restack.curve,
             switcher_curve: switcher.curve,
-            pulse_duration: 900.0,
         }
     }
 }

@@ -3632,7 +3632,7 @@ impl Shown {
             // card widens, as the actions column's does.
             let since = *self.pane_since.get_or_insert(now);
             let ms = Clock::Effects.ms(theme) * self.scale;
-            let t = if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(since).as_secs_f64() * 1000.0 / ms).min(1.0) };
+            let t = crate::motion::progress(since, ms, now);
             let el = if t < 1.0 { el.fade(Clock::Effects.curve().ease(t) as f32) } else { el };
             let d = self.preview.draw(&el, r, Some(view_clip), alpha, theme, kit, scene, now);
             if d.animating || t < 1.0 {
@@ -3898,7 +3898,7 @@ fn column_el(m: &Model, theme: &Theme, scroll: f64, now: Instant, scale: f64) ->
     let last = (first + fits).min(c.shown.len());
     let more = c.more(scroll);
     let ms = Clock::Effects.ms(theme) * scale;
-    let progress = |since: Instant| if ms <= 0.0 { 1.0 } else { (now.saturating_duration_since(since).as_secs_f64() * 1000.0 / ms).min(1.0) };
+    let progress = |since: Instant| crate::motion::progress(since, ms, now);
     let joined = c.joined.map(|(from, at)| (from, progress(at)));
     let mut rows = vec![w::space(first.min(last) as f64 * row_h)];
     let mut drawn_to = last;

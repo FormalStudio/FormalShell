@@ -5,7 +5,8 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use fs_theme::tokens::Easing;
+pub use fs_theme::tokens::PULSE_MS;
+use fs_theme::tokens::{self, DEFORM, Easing};
 
 /// Qt's `BezierSpline` as `easing.bezierCurve` takes it: per segment the
 /// two control points and the end point, starting from (0,0) and ending on
@@ -27,12 +28,10 @@ impl Curve {
         Self::Bezier { points: out, len: i }
     }
 
-    /// A table's own curve (`motion.emerge` and friends), spatial if it
-    /// carries no whole segment.
+    /// A table's own curve (`motion.emerge` and friends), as `fs_theme::style::motion` resolved it.
     pub fn from_table(easing: &Easing) -> Self {
         match easing {
-            Easing::Bezier(points) if points.len() >= 6 => Self::new(points),
-            Easing::Bezier(_) => SPATIAL,
+            Easing::Bezier(points) => Self::new(points),
             Easing::Stops(stops) => Self::Stops(interned(stops)),
         }
     }
@@ -52,17 +51,6 @@ fn interned(stops: &[(f64, f64)]) -> &'static [(f64, f64)] {
     leaked
 }
 
-pub const SPATIAL_FAST: Curve = Curve::new(&[0.42, 1.67, 0.21, 0.9, 1.0, 1.0]);
-pub const SPATIAL: Curve = Curve::new(&[0.38, 1.21, 0.22, 1.0, 1.0, 1.0]);
-pub const EFFECTS: Curve = Curve::new(&[0.34, 0.8, 0.34, 1.0, 1.0, 1.0]);
-/// M3's two-segment curve, the workspace pill's alone.
-pub const EMPHASIZED: Curve =
-    Curve::new(&[0.05, 0.0, 2.0 / 15.0, 0.06, 1.0 / 6.0, 0.4, 5.0 / 24.0, 0.82, 0.25, 1.0, 1.0, 1.0]);
-
-pub const SPATIAL_SLOW: Curve = Curve::new(&[0.39, 1.29, 0.35, 0.98, 1.0, 1.0]);
-pub const EFFECTS_FAST: Curve = Curve::new(&[0.31, 0.94, 0.34, 1.0, 1.0, 1.0]);
-pub const EFFECTS_SLOW: Curve = Curve::new(&[0.34, 0.88, 0.34, 1.0, 1.0, 1.0]);
-
 /// `Anim`'s `kind`: which family's clock and curve a property rides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -72,18 +60,22 @@ pub enum Kind {
     EffectsFast,
     Effects,
     EffectsSlow,
+    /// M3's two-segment curve, the workspace pill's alone.
+    Emphasized,
 }
 
 impl Kind {
     pub fn curve(self) -> Curve {
-        match self {
-            Kind::SpatialFast => SPATIAL_FAST,
-            Kind::Spatial => SPATIAL,
-            Kind::SpatialSlow => SPATIAL_SLOW,
-            Kind::EffectsFast => EFFECTS_FAST,
-            Kind::Effects => EFFECTS,
-            Kind::EffectsSlow => EFFECTS_SLOW,
-        }
+        let name = match self {
+            Kind::SpatialFast => "spatialFast",
+            Kind::Spatial => "spatial",
+            Kind::SpatialSlow => "spatialSlow",
+            Kind::EffectsFast => "effectsFast",
+            Kind::Effects => "effects",
+            Kind::EffectsSlow => "effectsSlow",
+            Kind::Emphasized => "emphasized",
+        };
+        Curve::new(tokens::motion_curve(name))
     }
 
     /// The live table's duration for this kind, 0 with motion off.
@@ -99,13 +91,10 @@ impl Kind {
             Kind::EffectsFast => m.effects_fast,
             Kind::Effects => m.effects,
             Kind::EffectsSlow => m.effects_slow,
+            Kind::Emphasized => m.emphasized,
         }
     }
 }
-
-pub const SPATIAL_FAST_MS: f64 = 350.0;
-pub const SPATIAL_MS: f64 = 500.0;
-pub const PULSE_MS: f64 = 900.0;
 
 /// The breathing pulse (`pulseDuration`, InOutQuad): 1 to 0.4 and back, a
 /// pulse each way.
@@ -117,8 +106,14 @@ pub fn breathe(since: Instant, now: Instant) -> f32 {
     (1.0 - 0.6 * eased) as f32
 }
 
-/// An emerge on the `spatial` family's duration and curve.
-pub const EMERGE: (f64, Curve) = (SPATIAL_MS, SPATIAL);
+/// How far into a run of `ms` it is at `now`, 0 to 1; a run of no length
+/// is done.
+pub fn progress(start: Instant, ms: f64, now: Instant) -> f64 {
+    if ms <= 0.0 {
+        return 1.0;
+    }
+    (now.saturating_duration_since(start).as_secs_f64() * 1000.0 / ms).min(1.0)
+}
 
 impl Curve {
     /// y at a given x. Each segment's x(t) is monotonic for control x
@@ -240,13 +235,6 @@ impl Animated {
     }
 }
 
-/// tokens.js `DEFORM`.
-const MAX_STRETCH: f64 = 0.35;
-const DEAD_BAND: f64 = 5.0;
-const STIFFNESS: f64 = 200.0;
-const DAMPING: f64 = 16.0;
-const EPSILON: f64 = 0.002;
-
 /// The deform for a top-edge drawer: the symmetric 2x2 the three springs
 /// carry, sampled off the frame's live position and height.
 pub struct Deform {
@@ -307,14 +295,14 @@ impl Deform {
         self.sampled = Some((x, y, w, h));
 
         let speed = (vx * vx + vy * vy).sqrt();
-        if self.at_rest && speed < DEAD_BAND {
+        if self.at_rest && speed < DEFORM.dead_band {
             return;
         }
         self.at_rest = false;
 
         let (mut t00, mut t01, mut t11) = (1.0, 0.0, 1.0);
-        if speed > DEAD_BAND {
-            let stretch = 1.0 + (speed * amount / 10000.0).min(MAX_STRETCH);
+        if speed > DEFORM.dead_band {
+            let stretch = 1.0 + (speed * amount / 10000.0).min(DEFORM.max_stretch);
             let compress = 1.0 / stretch;
             let (cos, sin) = (vx / speed, vy / speed);
             t00 = stretch * cos * cos + compress * sin * sin;
@@ -323,11 +311,11 @@ impl Deform {
         }
 
         // Damping integrated implicitly: an explicit term flips sign once
-        // DAMPING * dt passes 1.
-        let inv = 1.0 / (1.0 + DAMPING * dt);
-        self.v00 = (self.v00 - STIFFNESS * (self.m00 - t00) * dt) * inv;
-        self.v01 = (self.v01 - STIFFNESS * (self.m01 - t01) * dt) * inv;
-        self.v11 = (self.v11 - STIFFNESS * (self.m11 - t11) * dt) * inv;
+        // DEFORM.damping * dt passes 1.
+        let inv = 1.0 / (1.0 + DEFORM.damping * dt);
+        self.v00 = (self.v00 - DEFORM.stiffness * (self.m00 - t00) * dt) * inv;
+        self.v01 = (self.v01 - DEFORM.stiffness * (self.m01 - t01) * dt) * inv;
+        self.v11 = (self.v11 - DEFORM.stiffness * (self.m11 - t11) * dt) * inv;
         self.m00 += self.v00 * dt;
         self.m01 += self.v01 * dt;
         self.m11 += self.v11 * dt;
@@ -338,14 +326,14 @@ impl Deform {
         if self.at_rest {
             return;
         }
-        let e = EPSILON;
+        let e = DEFORM.epsilon;
         let settled = (self.m00 - 1.0).abs() < e
             && self.m01.abs() < e
             && (self.m11 - 1.0).abs() < e
             && self.v00.abs() < e
             && self.v01.abs() < e
             && self.v11.abs() < e
-            && speed < DEAD_BAND;
+            && speed < DEFORM.dead_band;
         if settled {
             *self = Self { sampled: self.sampled, ..Self::new() };
         }
@@ -364,10 +352,10 @@ mod tests {
 
     #[test]
     fn spatial_overshoots_and_lands() {
-        let peak = (1..100).map(|i| SPATIAL.ease(i as f64 / 100.0)).fold(0.0, f64::max);
+        let peak = (1..100).map(|i| Kind::Spatial.curve().ease(i as f64 / 100.0)).fold(0.0, f64::max);
         assert!(peak > 1.0 && peak < 1.1, "{peak}");
-        assert_eq!(SPATIAL.ease(1.0), 1.0);
-        assert_eq!(SPATIAL.ease(0.0), 0.0);
+        assert_eq!(Kind::Spatial.curve().ease(1.0), 1.0);
+        assert_eq!(Kind::Spatial.curve().ease(0.0), 0.0);
     }
 
     #[test]
@@ -382,14 +370,13 @@ mod tests {
         assert_eq!(spring.ease(1.0), 1.0);
         let peak = (1..100).map(|i| spring.ease(i as f64 / 100.0)).fold(0.0, f64::max);
         assert!(peak > 1.4, "{peak}");
-        assert_eq!(Curve::from_table(&Easing::Bezier(vec![0.1])), SPATIAL);
     }
 
     #[test]
     fn a_toast_sliding_in_squashes_and_comes_to_rest() {
         let start = Instant::now();
-        let mut slide = Animated::new(400.0, SPATIAL);
-        slide.set(start, 0.0, SPATIAL_MS);
+        let mut slide = Animated::new(400.0, Kind::Spatial.curve());
+        slide.set(start, 0.0, 500.0);
         let (mut deform, mut peak, mut rested_at) = (Deform::new(), 0.0_f64, None);
         for frame in 0..240 {
             let now = start + Duration::from_millis(frame * 16);
@@ -407,7 +394,7 @@ mod tests {
     #[test]
     fn a_delayed_set_holds_then_travels() {
         let now = Instant::now();
-        let mut y = Animated::new(10.0, SPATIAL);
+        let mut y = Animated::new(10.0, Kind::Spatial.curve());
         y.set_after(now, 20.0, 100.0, 50.0);
         assert_eq!(y.value(now + Duration::from_millis(40)), 10.0);
         assert!(y.running(now + Duration::from_millis(40)));
@@ -417,14 +404,50 @@ mod tests {
 
     #[test]
     fn emphasized_runs_through_its_knee() {
-        assert!((EMPHASIZED.ease(1.0 / 6.0) - 0.4).abs() < 1e-9);
-        assert!(EMPHASIZED.ease(0.05) < 0.05);
-        assert!((EMPHASIZED.ease(1.0 / 3.0) - 0.86).abs() < 0.03);
+        assert!((Kind::Emphasized.curve().ease(1.0 / 6.0) - 0.4).abs() < 1e-9);
+        assert!(Kind::Emphasized.curve().ease(0.05) < 0.05);
+        assert!((Kind::Emphasized.curve().ease(1.0 / 3.0) - 0.86).abs() < 0.03);
         let mut last = 0.0;
         for i in 1..=100 {
-            let y = EMPHASIZED.ease(i as f64 / 100.0);
+            let y = Kind::Emphasized.curve().ease(i as f64 / 100.0);
             assert!(y >= last, "not monotonic at {i}");
             last = y;
         }
+    }
+
+    #[test]
+    fn the_clocks_read_the_tables_curves_and_durations() {
+        let curves = [
+            (Kind::SpatialFast, vec![0.42, 1.67, 0.21, 0.9, 1.0, 1.0], 350.0),
+            (Kind::Spatial, vec![0.38, 1.21, 0.22, 1.0, 1.0, 1.0], 500.0),
+            (Kind::SpatialSlow, vec![0.39, 1.29, 0.35, 0.98, 1.0, 1.0], 650.0),
+            (Kind::EffectsFast, vec![0.31, 0.94, 0.34, 1.0, 1.0, 1.0], 150.0),
+            (Kind::Effects, vec![0.34, 0.8, 0.34, 1.0, 1.0, 1.0], 200.0),
+            (Kind::EffectsSlow, vec![0.34, 0.88, 0.34, 1.0, 1.0, 1.0], 300.0),
+            (
+                Kind::Emphasized,
+                vec![0.05, 0.0, 2.0 / 15.0, 0.06, 1.0 / 6.0, 0.4, 5.0 / 24.0, 0.82, 0.25, 1.0, 1.0, 1.0],
+                400.0,
+            ),
+        ];
+        let theme = fs_theme::theme::Theme::resolve(|_| None, &fs_theme::palette::fallback("dark"));
+        for (kind, points, ms) in curves {
+            assert_eq!(kind.curve(), Curve::new(&points), "{kind:?}");
+            assert_eq!(kind.ms(&theme), ms, "{kind:?}");
+        }
+        assert_eq!(PULSE_MS, 900.0);
+        assert_eq!(
+            (DEFORM.max_stretch, DEFORM.dead_band, DEFORM.stiffness, DEFORM.damping, DEFORM.epsilon),
+            (0.35, 5.0, 200.0, 16.0, 0.002)
+        );
+    }
+
+    #[test]
+    fn progress_runs_from_zero_to_one_and_an_empty_run_is_done() {
+        let t = Instant::now();
+        assert_eq!(progress(t, 0.0, t), 1.0);
+        assert_eq!(progress(t, 100.0, t), 0.0);
+        assert!((progress(t, 100.0, t + Duration::from_millis(25)) - 0.25).abs() < 1e-9);
+        assert_eq!(progress(t, 100.0, t + Duration::from_millis(500)), 1.0);
     }
 }

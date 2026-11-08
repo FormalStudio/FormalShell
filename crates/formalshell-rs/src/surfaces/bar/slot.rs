@@ -10,7 +10,7 @@ use fs_types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 
-use crate::motion::{Animated, EFFECTS, SPATIAL, SPATIAL_FAST};
+use crate::motion::{Animated, Kind};
 use crate::scene::{IRect, NodeId, Scene};
 use crate::surfaces::bar::cell::{Cell, Env, Frame, Ink, Kit, Limits, Measured, Painter, Part, View};
 use crate::surfaces::bar::cells;
@@ -77,15 +77,15 @@ impl Slot {
             view: View::hidden(),
             measured: Measured::default(),
             natural: 0.0,
-            along: Animated::new(0.0, SPATIAL),
-            fade: Animated::new(0.0, EFFECTS),
+            along: Animated::new(0.0, Kind::Spatial.curve()),
+            fade: Animated::new(0.0, Kind::Effects.curve()),
             budget: f64::INFINITY,
             limits: None,
             open: false,
-            mark: Animated::new(0.0, SPATIAL_FAST),
-            mark_fade: Animated::new(0.0, EFFECTS),
+            mark: Animated::new(0.0, Kind::SpatialFast.curve()),
+            mark_fade: Animated::new(0.0, Kind::Effects.curve()),
             ghost: None,
-            cross: Animated::new(1.0, EFFECTS),
+            cross: Animated::new(1.0, Kind::Effects.curve()),
             marquee: None,
             painted_scroll: None,
             held: false,
