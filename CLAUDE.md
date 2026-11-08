@@ -176,8 +176,8 @@ pipewire, PAM or Wayland to link.
 - `just local-smoke <flags>`: `dev/smoke.sh` in this machine's own session,
   on a Linux host.
 - `just shots`: regenerates `docs/shots/` (the README's and the website's
-  images and clips) through `--showcase --shots`, once per theme, on the rig;
-  `just local-smoke --showcase --shots` nests it on a Linux host.
+  images and clips) through `--showcase --shots`, once per theme, on the rig
+  from a mac and nested on Linux.
 - `just greeter` (`dev/vm.sh greeter`): `dev/smoke-greeter.sh` in a VM rig
   guest, with this tree's build linked over the guest's installed shell for
   the run. greetd's `default_session` is a standing system service, so it
