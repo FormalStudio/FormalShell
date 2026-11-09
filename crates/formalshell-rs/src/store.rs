@@ -1,13 +1,14 @@
 //! The state surfaces read. Services own their slice's shape and how a
 //! diff applies to it; the UI thread is the only writer, through
-//! [`Store::apply`].
+//! `App::apply`, which runs [`Store::apply`] and then what the change asks of
+//! services and surfaces.
 
 use crate::services::devices::{self, earbuds, network};
 use crate::services::info::{calendar, github, iphone, monitor, powerflow, procs, tailscale, update, usage, weather};
 use crate::services::{
     activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
-    compositor, ipad, kopuz, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme, tray,
-    visualizer, wallpaper,
+    compositor, ipad, launch, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme,
+    tray, visualizer, wallpaper,
 };
 
 /// Declares every slice once: its `Store` field, its `Diff` variant, its
@@ -104,8 +105,9 @@ slices! {
     }) },
         /// What a plugin shows changed.
         PluginOutput;
-    #[allow(dead_code)]
     recording: recording::State => Recording(recording::Diff);
+    /// Desktop entries spawned and not yet seen with a new window.
+    launches: launch::State => Launch(launch::Diff);
     capture: capture::Inbox => Capture(capture::Event);
     notifications: notifications::State => Notifications(notifications::Diff);
     activity: activity::State => Activity(activity::Diff);
@@ -136,6 +138,23 @@ fn set<T: PartialEq>(slot: &mut T, v: T) -> bool {
     changed
 }
 
+/// A slice that reads another: a change to the first is applied to the
+/// second as this diff.
+fn implied(store: &Store, topic: Topic) -> Option<Diff> {
+    match topic {
+        // The theme resolves its settings out of settings.json.
+        Topic::Config => Some(Diff::Theme(theme::Diff::Settings(store.config.settings().clone()))),
+        _ => None,
+    }
+}
+
+/// What one diff moved: its own slice, and the slice its change implies.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Moved {
+    pub topic: Option<Topic>,
+    pub implied: Option<Topic>,
+}
+
 fn route<S, D>(slot: &mut S, diff: D, apply: impl FnOnce(&mut S, D) -> Option<Topic>) -> Option<Topic> {
     apply(slot, diff)
 }
@@ -159,15 +178,11 @@ impl Store {
         self.theme.sky.unwrap_or_else(read).step
     }
 
-    /// `None` when the diff left the slice as it was, so nothing redraws.
-    pub fn apply(&mut self, diff: Diff) -> Option<Topic> {
-        let topic = self.apply_slice(diff);
-        if topic == Some(Topic::Media) {
-            kopuz::sync(&self.media);
-        }
-        if matches!(topic, Some(Topic::Media | Topic::Config | Topic::Lyrics)) {
-            lyrics::sync(&self.media, &self.config, &self.lyrics);
-        }
-        topic
+    /// Applies `diff` and the diff its change implies. A topic is `None`
+    /// when its slice was left as it was, so nothing redraws for it.
+    pub fn apply(&mut self, diff: Diff) -> Moved {
+        let Some(topic) = self.apply_slice(diff) else { return Moved::default() };
+        let implied = implied(self, topic).and_then(|d| self.apply_slice(d));
+        Moved { topic: Some(topic), implied }
     }
 }

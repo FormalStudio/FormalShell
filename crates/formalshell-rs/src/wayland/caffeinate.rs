@@ -28,7 +28,6 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerSurface};
 
 use super::App;
-use crate::runtime::Msg;
 use crate::services::caffeinate::Diff;
 use crate::store;
 use crate::surface::Ignore;
@@ -98,7 +97,7 @@ impl Caffeinate {
 
 impl App {
     fn caffeinate_diff(&mut self, diff: Diff) {
-        self.receive(Msg::Diff(store::Diff::Caffeinate(diff)));
+        self.apply(store::Diff::Caffeinate(diff));
     }
 
     /// Once settings.json has loaded: the idle listener with the screensaver

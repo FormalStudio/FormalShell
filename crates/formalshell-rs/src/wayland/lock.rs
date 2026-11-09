@@ -56,6 +56,8 @@ use super::screensaver::SaverInput;
 use crate::motion::{Animated, Kind as Clock};
 use crate::scene::Bitmap;
 use crate::services::wallpaper::DepthCut;
+use crate::runtime::Msg;
+use crate::services::session::Event as Logind;
 use crate::services::{clipboard, compositor, power};
 use crate::surface::{Backend, Surface};
 use crate::store::Topic;
@@ -72,21 +74,9 @@ pub enum LockMsg {
     Backdrop(Option<DepthCut>, Bitmap, Option<Bitmap>),
     /// The track's cover, for the art URL it was decoded from.
     Art(String, Option<Bitmap>),
-    /// logind's PrepareForSleep.
-    Sleep(bool),
-    /// Whether the sleep delay inhibitor is held.
-    Inhibiting(bool),
-    Monitoring(bool),
-    /// The logind session whose Lock signal is watched, once found.
-    Session(Option<String>),
-    /// logind's Lock (true) or Unlock (false) for that session.
-    Logind(bool),
     /// An action's covering surface unmapped at `at`, with the cursor
     /// where the compositor put it then.
     ActionEnded { action: String, at: i64, cursor: Option<(f64, f64)> },
-    Polkit(crate::services::polkit::Event),
-    /// logind refused one of the lock's buttons: said under the field.
-    Refused(String),
 }
 
 struct Out {
@@ -353,7 +343,7 @@ fn on_path(name: &str) -> bool {
 }
 
 impl App {
-    /// The lock's own channel, and logind's sleep signal on the service thread.
+    /// The lock's own channel.
     pub(super) fn start_lock(&mut self) {
         let Some(handle) = &self.handle else { return };
         let (tx, rx) = channel::channel::<LockMsg>();
@@ -365,7 +355,7 @@ impl App {
         if inserted.is_err() {
             return;
         }
-        self.lock.tx = Some(tx.clone());
+        self.lock.tx = Some(tx);
         if self.lock.login && self.lock.session.is_some() {
             self.dress_lock();
             self.sync_agents();
@@ -376,14 +366,6 @@ impl App {
             if result != "ok" {
                 eprintln!("lock: {result}");
             }
-        }
-        if let Some(rt) = &self.runtime {
-            let polkit = tx.clone();
-            rt.service(move |ctx| {
-                crate::services::session::start(ctx, tx.clone());
-                crate::services::sleep::start(ctx, tx);
-                crate::services::polkit::start(ctx, polkit);
-            });
         }
     }
 
@@ -691,7 +673,13 @@ impl App {
                 self.lock.backdrop.push((b, front));
                 self.lock.dirty = true;
             }
-            LockMsg::Sleep(sleeping) => {
+            LockMsg::ActionEnded { action, at, cursor } => self.hot_corner_ended(&action, at, cursor),
+        }
+    }
+
+    pub(super) fn logind_event(&mut self, event: Logind) {
+        match event {
+            Logind::Sleep(sleeping) => {
                 // Waking from a real suspend with the lock up blanks it until
                 // the next input: CLOCK_BOOTTIME
                 // runs through a suspend and CLOCK_MONOTONIC does not. The
@@ -715,9 +703,9 @@ impl App {
                     self.prepare_for_sleep(false);
                 }
             }
-            LockMsg::Inhibiting(on) => self.lock.sleep.inhibiting = on,
-            LockMsg::Monitoring(on) => self.lock.sleep.monitoring = on,
-            LockMsg::Session(id) => {
+            Logind::Inhibiting(on) => self.lock.sleep.inhibiting = on,
+            Logind::Monitoring(on) => self.lock.sleep.monitoring = on,
+            Logind::Session(id) => {
                 // A lock that went secure before the session was found, and a
                 // hint left set by a shell that died locked.
                 if id.is_some() {
@@ -725,7 +713,7 @@ impl App {
                 }
                 self.lock.logind = id;
             }
-            LockMsg::Logind(true) => {
+            Logind::Lock(true) => {
                 eprintln!("lock: logind asked for the lock");
                 if via_logind(self) {
                     self.raise_lock();
@@ -735,7 +723,7 @@ impl App {
             }
             // ext-session-lock takes an unlock only once the compositor has
             // said the session is locked.
-            LockMsg::Logind(false) if self.lock.session.is_some() && self.lock.secure => {
+            Logind::Lock(false) if self.lock.session.is_some() && self.lock.secure => {
                 eprintln!("lock: logind asked for the unlock");
                 // A password check still running belongs to this lock: its
                 // answer must not lift the next one.
@@ -743,10 +731,8 @@ impl App {
                 self.lock.checking = false;
                 self.begin_unlock();
             }
-            LockMsg::Logind(false) => eprintln!("lock: logind's Unlock with no secure lock of this shell's to lift"),
-            LockMsg::ActionEnded { action, at, cursor } => self.hot_corner_ended(&action, at, cursor),
-            LockMsg::Polkit(event) => self.polkit_event(event),
-            LockMsg::Refused(why) => {
+            Logind::Lock(false) => eprintln!("lock: logind's Unlock with no secure lock of this shell's to lift"),
+            Logind::Refused(why) => {
                 if self.lock.session.is_some() {
                     self.lock.error = why;
                     self.lock.dirty = true;
@@ -981,26 +967,27 @@ impl App {
     /// authorization: no polkit agent can show over the lock.
     fn lock_button(&mut self, b: Button) {
         self.lock.error.clear();
-        let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
+        let Some(rt) = &self.runtime else { return };
         eprintln!("lock: {} confirmed", b.id());
         match b {
             Button::PowerOff | Button::Reboot => {
                 let action = if b == Button::PowerOff { power::Action::PowerOff } else { power::Action::Reboot };
                 rt.service(move |ctx| {
+                    let ui = ctx.publisher().clone();
                     ctx.spawn(async move {
                         let method = action.method();
                         match power::call_quiet(method).await {
                             Ok(()) => eprintln!("lock: {method} accepted"),
                             Err(err) => {
                                 eprintln!("lock: {method}: {err}");
-                                let _ = tx.send(LockMsg::Refused(format!("{} refused", b.label())));
+                                ui.send(Msg::Lock(Logind::Refused(format!("{} refused", b.label()))));
                             }
                         }
                     });
                 });
             }
             Button::OtherUser => match self.lock.logind.clone() {
-                Some(id) => rt.service(move |ctx| crate::services::session::terminate(ctx, id, tx)),
+                Some(id) => rt.service(move |ctx| crate::services::session::terminate(ctx, id)),
                 None => self.lock.error = "Could not end the session".into(),
             },
         }

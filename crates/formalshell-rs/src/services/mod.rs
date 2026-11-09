@@ -3,7 +3,8 @@
 //! `slices!`; services publish diffs into it from tasks on the service
 //! thread and never read it. A service running for the whole session comes
 //! up through its `start(&Ctx)`, listed in [`SERVICES`]; the info sources
-//! and display's polls run only while something wants them ([`wants`]).
+//! and display's polls run only while something wants them ([`wants`]). A
+//! service that follows a slice it does not own reacts to it in [`react`].
 
 pub mod activity;
 pub mod agents;
@@ -64,6 +65,7 @@ pub mod wallpaper;
 pub mod wants;
 
 use crate::runtime::Ctx;
+use crate::store::{Diff, Store, Topic};
 
 /// The whole-session services, in the order they come up.
 const SERVICES: &[fn(&Ctx)] = &[
@@ -112,10 +114,33 @@ const SERVICES: &[fn(&Ctx)] = &[
     localsend::start,
     depth::start,
     mirror::start,
+    launch::start,
+    session::start,
+    sleep::start,
+    polkit::start,
 ];
 
 pub fn start(ctx: &Ctx) {
     for start in SERVICES {
         start(ctx);
+    }
+}
+
+/// What a change to one slice asks of the services that follow it, run on
+/// the UI thread once the slice has applied and before any surface redraws.
+/// A reaction that moves a slice of its own hands back that diff.
+pub fn react(store: &Store, topic: Topic) -> Option<Diff> {
+    match topic {
+        Topic::Media => {
+            kopuz::sync(&store.media);
+            lyrics::sync(&store.media, &store.config, &store.lyrics);
+            None
+        }
+        Topic::Config | Topic::Lyrics => {
+            lyrics::sync(&store.media, &store.config, &store.lyrics);
+            None
+        }
+        Topic::Compositor => launch::windows_changed(store),
+        _ => None,
     }
 }

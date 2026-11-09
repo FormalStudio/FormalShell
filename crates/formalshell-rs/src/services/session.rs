@@ -14,13 +14,11 @@
 
 use std::cell::RefCell;
 
-use calloop::channel::Sender;
 use futures_lite::StreamExt;
 use zbus::Proxy;
 use zbus::zvariant::OwnedObjectPath;
 
-use crate::runtime::Ctx;
-use crate::wayland::lock::LockMsg;
+use crate::runtime::{Ctx, Msg, Publisher};
 
 const LOGIN1: &str = "org.freedesktop.login1";
 const SESSION: &str = "org.freedesktop.login1.Session";
@@ -30,8 +28,23 @@ thread_local! {
     static HINT: RefCell<Option<bool>> = const { RefCell::new(None) };
 }
 
-pub fn start(ctx: &Ctx, tx: Sender<LockMsg>) {
-    ctx.spawn(run(tx));
+/// What logind tells the lock.
+pub enum Event {
+    /// PrepareForSleep.
+    Sleep(bool),
+    /// Whether the sleep delay inhibitor is held.
+    Inhibiting(bool),
+    Monitoring(bool),
+    /// The logind session whose Lock signal is watched, once found.
+    Session(Option<String>),
+    /// logind's Lock (true) or Unlock (false) for that session.
+    Lock(bool),
+    /// logind refused one of the lock's buttons: said under the field.
+    Refused(String),
+}
+
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.publisher().clone()));
 }
 
 /// Asks logind to lock the session, which comes back as its Lock signal.
@@ -47,8 +60,9 @@ pub fn request(ctx: &Ctx) -> bool {
 }
 
 /// logind's TerminateSession on `id`, the lock's "Other user". The answer
-/// comes back as [`LockMsg::Refused`] when logind says no.
-pub fn terminate(ctx: &Ctx, id: String, tx: Sender<LockMsg>) {
+/// comes back as [`Event::Refused`] when logind says no.
+pub fn terminate(ctx: &Ctx, id: String) {
+    let ui = ctx.publisher().clone();
     ctx.spawn(async move {
         let result = async {
             let conn = crate::services::bus::system().await?;
@@ -58,7 +72,7 @@ pub fn terminate(ctx: &Ctx, id: String, tx: Sender<LockMsg>) {
         .await;
         if let Err(err) = result {
             eprintln!("session: TerminateSession {id}: {err}");
-            let _ = tx.send(LockMsg::Refused("Could not end the session".into()));
+            ui.send(Msg::Lock(Event::Refused("Could not end the session".into())));
         }
     });
 }
@@ -76,7 +90,7 @@ pub fn locked_hint(ctx: &Ctx, locked: bool) {
     });
 }
 
-async fn run(tx: Sender<LockMsg>) {
+async fn run(ui: Publisher) {
     let Ok(conn) = crate::services::bus::system().await else { return };
     let manager = match Proxy::new(&conn, LOGIN1, "/org/freedesktop/login1", "org.freedesktop.login1.Manager").await {
         Ok(p) => p,
@@ -97,11 +111,11 @@ async fn run(tx: Sender<LockMsg>) {
     let name = proxy.get_property::<String>("Id").await.unwrap_or(id);
     eprintln!("session: watching logind session {name}");
     PROXY.with(|p| *p.borrow_mut() = Some(proxy));
-    let _ = tx.send(LockMsg::Session(Some(name)));
+    ui.send(Msg::Lock(Event::Session(Some(name))));
     let mut signals = locks.map(|_| true).or(unlocks.map(|_| false));
     while let Some(lock) = signals.next().await {
-        let _ = tx.send(LockMsg::Logind(lock));
+        ui.send(Msg::Lock(Event::Lock(lock)));
     }
     PROXY.with(|p| *p.borrow_mut() = None);
-    let _ = tx.send(LockMsg::Session(None));
+    ui.send(Msg::Lock(Event::Session(None)));
 }

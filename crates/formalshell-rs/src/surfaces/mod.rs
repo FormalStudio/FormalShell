@@ -26,7 +26,7 @@ pub mod toasts;
 pub mod tooltip;
 pub mod veil;
 
-use crate::services::{lights, theme};
+use crate::services::lights;
 use crate::store::Topic;
 use crate::wayland::{App, theme_inputs};
 
@@ -34,12 +34,11 @@ pub fn changed(app: &mut App, topic: Topic) {
     app.lock_changed(topic);
     app.desktop_clock_changed(topic);
     if matches!(topic, Topic::Compositor | Topic::State | Topic::Display | Topic::Config) {
-        crate::services::display::reconcile(&app.store);
+        app.hdr.reconcile(&app.store);
     }
     app.switcher_changed(topic);
     app.overview_changed(topic);
     if topic == Topic::Compositor {
-        crate::services::launch::windows_changed(&app.store);
         app.zen_changed();
     }
     app.atlas_changed(topic);
@@ -68,10 +67,6 @@ pub fn changed(app: &mut App, topic: Topic) {
                 enabled: c.bool("wallpaper.depthGenerate").unwrap_or(false),
                 dir: c.str("picker.directory").unwrap_or("").to_owned(),
             });
-            let settings = app.store.config.settings().clone();
-            if app.store.theme.apply(theme::Diff::Settings(settings)) {
-                changed(app, Topic::Theme);
-            }
             app.apply_config();
             theme_inputs(app);
             lights_palette(app);
@@ -126,6 +121,7 @@ pub fn changed(app: &mut App, topic: Topic) {
             app.refresh_bar(Some(topic));
         }
         Topic::Capture => capture::events(app),
+        Topic::Launch => {}
         Topic::Tray => {
             app.launcher_tray();
             app.tray_changed();

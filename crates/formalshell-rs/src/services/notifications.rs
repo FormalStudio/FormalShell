@@ -85,6 +85,8 @@ pub enum Op {
     Notify(String, String, Urgency),
     /// The same with actions, each a command run when it is picked.
     NotifyRunning(String, String, Urgency, Vec<LocalAction>),
+    /// The pending reminders as one toast, the bar's reminder indicator.
+    ShowReminders,
 }
 
 #[derive(Default)]
@@ -192,6 +194,7 @@ impl State {
                         let id = self.notify_with(&summary, &body, urgency, shown, String::new());
                         self.local_commands.insert(id, actions);
                     }
+                    Op::ShowReminders => self.show_reminders(),
                 }
                 true
             }

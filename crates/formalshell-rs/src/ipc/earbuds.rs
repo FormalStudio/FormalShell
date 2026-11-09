@@ -8,7 +8,6 @@ use fs_devices::earbuds as model;
 use serde_json::{Value as Json, json};
 
 use super::registry::{Function, Target, Type, Value};
-use crate::runtime::Msg;
 use crate::services::devices::earbuds;
 use crate::store;
 use crate::wayland::App;
@@ -69,7 +68,7 @@ fn select(app: &mut App, args: &[Value]) -> Value {
         return text(format!("error: no device '{key}'"));
     }
     let diff = earbuds::Diff::Select(key.to_owned());
-    app.receive(Msg::Diff(store::Diff::Earbuds(diff)));
+    app.apply(store::Diff::Earbuds(diff));
     text("ok")
 }
 

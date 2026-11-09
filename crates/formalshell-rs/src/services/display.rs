@@ -505,68 +505,12 @@ fn apply(name: &str, color: outputs::Color) {
     compositor::send(Command::SetOutputColor(name.to_owned(), color));
 }
 
-/// Sets HDR on an output: "ok" or why nothing was done.
-pub fn hdr_set(store: &Store, name: &str, on: bool) -> String {
-    if !config_available() {
-        return "no compositor".into();
-    }
-    let Some(row) = outputs::find_output(rows(store), name) else {
-        return format!("unknown output: {name}");
-    };
-    if !row.enabled {
-        return format!("{name} is disabled");
-    }
-    if on && !hdr_supported(store, name) {
-        return format!("HDR unavailable on {name}: {}", hdr_reason(store, name));
-    }
-    let saved = &store.state.data.hdr;
-    let wanted = hdr::state_of(saved);
-    let prior_value = wanted.get(name).and_then(|w| w.get("prior")).cloned().filter(|p| p.is_object());
-    if on {
-        let prior = match &prior_value {
-            Some(p) => hdr::off_color(p),
-            None => hdr::prior_of(row),
-        };
-        state::set(vec![Field::Hdr(Value::Object(hdr::with_output(saved, name, &prior, &instance())))]);
-        TRIED.with_borrow_mut(|t| t.insert(name.to_owned()));
-        apply(name, on_color(store));
-    } else {
-        state::set(vec![Field::Hdr(Value::Object(hdr::without_output(saved, name)))]);
-        if hdr::is_on(Some(row)) {
-            let prior = prior_value.unwrap_or_else(|| prior_json(&hdr::prior_of(row)));
-            apply(name, hdr::off_color(&prior));
-        }
-    }
-    "ok".into()
-}
-
 fn prior_json(c: &outputs::Color) -> Value {
     serde_json::json!({ "cm": c.cm, "bitdepth": c.bitdepth, "sdrbrightness": c.sdrbrightness, "sdrsaturation": c.sdrsaturation })
 }
 
 fn supported_names(store: &Store) -> Vec<String> {
     rows(store).iter().filter(|r| r.enabled && hdr_supported(store, &r.name)).map(|r| r.name.clone()).collect()
-}
-
-/// Every output that can do HDR together; an error when none can.
-pub fn hdr_set_all(store: &Store, on: bool) -> String {
-    let names = supported_names(store);
-    if names.is_empty() {
-        return if on { "no output supports HDR".into() } else { "ok".into() };
-    }
-    for name in &names {
-        hdr_set(store, name, on);
-    }
-    "ok".into()
-}
-
-pub fn hdr_toggle(store: &Store) -> String {
-    let names = supported_names(store);
-    if names.is_empty() {
-        return "no output supports HDR".into();
-    }
-    let any_on = names.iter().any(|n| hdr_on(store, n));
-    hdr_set_all(store, !any_on)
 }
 
 fn js(s: &str) -> String {
@@ -624,64 +568,119 @@ pub fn hdr_rule(store: &Store, name: &str) -> String {
     format!("{{\"rule\":{rule},\"lua\":{}}}", js(&outputs::hyprland_rule_lua(&r)))
 }
 
-thread_local! {
-    /// Outputs re-applied since the last reset, so an apply Hyprland ignores
-    /// is not retried on every refresh.
-    static TRIED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    static RELOADS: RefCell<u64> = const { RefCell::new(0) };
-    /// Since this shell started: Hyprland reloaded its config, and the
-    /// outputs seen and those seen to go. Either resets the monitor rules.
-    static RELOADED: RefCell<bool> = const { RefCell::new(false) };
-    static SEEN: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    static UNPLUGGED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-}
-
 /// The running Hyprland, which a monitor rule set over IPC lives as long as.
 fn instance() -> String {
     std::env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
 }
 
-/// Puts a wanted output back in HDR, run whenever the outputs, the verdicts or
-/// state.json move. A want made under the Hyprland still running, on an
-/// output it shows in SDR with no reload or unplug since this shell started,
-/// was turned off outside the shell (the rule a shell sets outlives the
-/// shell), so it is dropped rather than put back.
-pub fn reconcile(store: &Store) {
-    if !store.state.loaded {
-        return;
-    }
-    let reloads = store.compositor.config_reloads;
-    TRIED.with_borrow_mut(|tried| {
-        if RELOADS.with_borrow(|r| *r != reloads) {
-            RELOADS.with_borrow_mut(|r| *r = reloads);
-            RELOADED.with_borrow_mut(|r| *r = true);
-            tried.clear();
+/// HDR's bookkeeping on the UI thread, between one change and the next.
+#[derive(Default)]
+pub struct Hdr {
+    /// Outputs re-applied since the last reset, so an apply Hyprland ignores
+    /// is not retried on every refresh.
+    tried: HashSet<String>,
+    reloads: u64,
+    /// Since this shell started: Hyprland reloaded its config, and the
+    /// outputs seen and those seen to go. Either resets the monitor rules.
+    reloaded: bool,
+    seen: HashSet<String>,
+    unplugged: HashSet<String>,
+}
+
+impl Hdr {
+    /// Sets HDR on an output: "ok" or why nothing was done.
+    pub fn set(&mut self, store: &Store, name: &str, on: bool) -> String {
+        if !config_available() {
+            return "no compositor".into();
         }
-        tried.retain(|n| outputs::find_output(rows(store), n).is_some());
-    });
-    SEEN.with_borrow_mut(|seen| {
-        UNPLUGGED.with_borrow_mut(|gone| gone.extend(seen.iter().filter(|n| outputs::find_output(rows(store), n).is_none()).cloned()));
-        seen.extend(rows(store).iter().map(|r| r.name.clone()));
-    });
-    let verdicts: HashMap<String, Verdict> = rows(store).iter().map(|r| (r.name.clone(), store.display.verdict(&r.name))).collect();
-    let pending = TRIED.with_borrow(|tried| hdr::pending_reapply(&store.state.data.hdr, rows(store), &verdicts, tried));
-    if pending.is_empty() {
-        return;
-    }
-    let now = instance();
-    let reloaded = RELOADED.with_borrow(|r| *r);
-    let mut saved = store.state.data.hdr.clone();
-    for name in pending {
-        TRIED.with_borrow_mut(|t| t.insert(name.clone()));
-        if !reloaded && !UNPLUGGED.with_borrow(|g| g.contains(&name)) && hdr::wanted_under(&saved, &name, &now) {
-            eprintln!("hdr: {name} is in SDR under the Hyprland that put it in HDR, so it was turned off there; dropping the want");
-            saved = Value::Object(hdr::without_output(&saved, &name));
-            continue;
+        let Some(row) = outputs::find_output(rows(store), name) else {
+            return format!("unknown output: {name}");
+        };
+        if !row.enabled {
+            return format!("{name} is disabled");
         }
-        saved = Value::Object(hdr::with_instance(&saved, &name, &now));
-        apply(&name, on_color(store));
+        if on && !hdr_supported(store, name) {
+            return format!("HDR unavailable on {name}: {}", hdr_reason(store, name));
+        }
+        let saved = &store.state.data.hdr;
+        let wanted = hdr::state_of(saved);
+        let prior_value = wanted.get(name).and_then(|w| w.get("prior")).cloned().filter(|p| p.is_object());
+        if on {
+            let prior = match &prior_value {
+                Some(p) => hdr::off_color(p),
+                None => hdr::prior_of(row),
+            };
+            state::set(vec![Field::Hdr(Value::Object(hdr::with_output(saved, name, &prior, &instance())))]);
+            self.tried.insert(name.to_owned());
+            apply(name, on_color(store));
+        } else {
+            state::set(vec![Field::Hdr(Value::Object(hdr::without_output(saved, name)))]);
+            if hdr::is_on(Some(row)) {
+                let prior = prior_value.unwrap_or_else(|| prior_json(&hdr::prior_of(row)));
+                apply(name, hdr::off_color(&prior));
+            }
+        }
+        "ok".into()
     }
-    state::set(vec![Field::Hdr(saved)]);
+
+    /// Every output that can do HDR together; an error when none can.
+    pub fn set_all(&mut self, store: &Store, on: bool) -> String {
+        let names = supported_names(store);
+        if names.is_empty() {
+            return if on { "no output supports HDR".into() } else { "ok".into() };
+        }
+        for name in &names {
+            self.set(store, name, on);
+        }
+        "ok".into()
+    }
+
+    pub fn toggle(&mut self, store: &Store) -> String {
+        let names = supported_names(store);
+        if names.is_empty() {
+            return "no output supports HDR".into();
+        }
+        let any_on = names.iter().any(|n| hdr_on(store, n));
+        self.set_all(store, !any_on)
+    }
+
+    /// Puts a wanted output back in HDR, run whenever the outputs, the verdicts or
+    /// state.json move. A want made under the Hyprland still running, on an
+    /// output it shows in SDR with no reload or unplug since this shell started,
+    /// was turned off outside the shell (the rule a shell sets outlives the
+    /// shell), so it is dropped rather than put back.
+    pub fn reconcile(&mut self, store: &Store) {
+        if !store.state.loaded {
+            return;
+        }
+        let reloads = store.compositor.config_reloads;
+        if self.reloads != reloads {
+            self.reloads = reloads;
+            self.reloaded = true;
+            self.tried.clear();
+        }
+        self.tried.retain(|n| outputs::find_output(rows(store), n).is_some());
+        self.unplugged.extend(self.seen.iter().filter(|n| outputs::find_output(rows(store), n).is_none()).cloned());
+        self.seen.extend(rows(store).iter().map(|r| r.name.clone()));
+        let verdicts: HashMap<String, Verdict> = rows(store).iter().map(|r| (r.name.clone(), store.display.verdict(&r.name))).collect();
+        let pending = hdr::pending_reapply(&store.state.data.hdr, rows(store), &verdicts, &self.tried);
+        if pending.is_empty() {
+            return;
+        }
+        let now = instance();
+        let mut saved = store.state.data.hdr.clone();
+        for name in pending {
+            self.tried.insert(name.clone());
+            if !self.reloaded && !self.unplugged.contains(&name) && hdr::wanted_under(&saved, &name, &now) {
+                eprintln!("hdr: {name} is in SDR under the Hyprland that put it in HDR, so it was turned off there; dropping the want");
+                saved = Value::Object(hdr::without_output(&saved, &name));
+                continue;
+            }
+            saved = Value::Object(hdr::with_instance(&saved, &name, &now));
+            apply(&name, on_color(store));
+        }
+        state::set(vec![Field::Hdr(saved)]);
+    }
 }
 
 /// The main output among the lit outputs.

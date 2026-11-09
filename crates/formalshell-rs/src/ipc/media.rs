@@ -7,7 +7,6 @@ use fs_types::Fraction;
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::kopuz;
-use crate::store::Topic;
 use crate::wayland::App;
 
 fn text(s: impl Into<String>) -> Value {
@@ -114,10 +113,7 @@ fn select(app: &mut App, args: &[Value]) -> Value {
     if !id.is_empty() && !app.store.media.players().iter().any(|r| r.id == id) {
         return text(format!("error: no player {id}"));
     }
-    app.store.media.select(id);
-    crate::services::kopuz::sync(&app.store.media);
-    crate::services::lyrics::sync(&app.store.media, &app.store.config, &app.store.lyrics);
-    crate::surfaces::changed(app, Topic::Media);
+    app.apply(crate::store::Diff::Media(crate::services::media::Diff::Select(id.to_owned())));
     text(OK)
 }
 

@@ -227,9 +227,7 @@ impl Panel for Display {
                     set_brightness(fx, d, d.percent as f64 + (*n).signum() as f64 * STEP);
                 }
             }
-            ("hdr", What::Toggle(on)) => {
-                display::hdr_set(store, arg, *on);
-            }
+            ("hdr", What::Toggle(on)) => fx.ipc(&["hdr", "setOutput", arg, if *on { "true" } else { "false" }]),
             ("mirror", What::Toggle(on)) => set_mirror(store, &rows, *on),
             _ => {}
         }
@@ -241,9 +239,7 @@ impl Panel for Display {
         let (what, arg) = stop.split_once(':').unwrap_or((stop, ""));
         match what {
             "output" => toggle_output(&rows, arg),
-            "hdr" => {
-                display::hdr_set(store, arg, !display::hdr_on(store, arg));
-            }
+            "hdr" => fx.ipc(&["hdr", "setOutput", arg, if display::hdr_on(store, arg) { "false" } else { "true" }]),
             "mirror" => set_mirror(store, &rows, outputs::mirrored_names(&rows).is_empty()),
             _ => {}
         }

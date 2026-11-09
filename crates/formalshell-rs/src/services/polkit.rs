@@ -5,13 +5,11 @@
 
 use std::sync::OnceLock;
 
-use calloop::channel::Sender;
 use fs_auth::polkit::{Agent, AuthFlow, FlowEvent};
 use futures_lite::future;
 use zeroize::Zeroizing;
 
-use crate::runtime::Ctx;
-use crate::wayland::lock::LockMsg;
+use crate::runtime::{Ctx, Msg, Publisher};
 
 /// What the dialog shows, as the flow moves.
 #[derive(Debug)]
@@ -36,15 +34,15 @@ pub fn send(cmd: Cmd) {
     }
 }
 
-pub fn start(ctx: &Ctx, tx: Sender<LockMsg>) {
+pub fn start(ctx: &Ctx) {
     let (cmd_tx, cmds) = async_channel::unbounded();
     if COMMANDS.set(cmd_tx).is_err() {
         return;
     }
-    ctx.spawn(run(tx, cmds));
+    ctx.spawn(run(ctx.publisher().clone(), cmds));
 }
 
-async fn run(tx: Sender<LockMsg>, cmds: async_channel::Receiver<Cmd>) {
+async fn run(publisher: Publisher, cmds: async_channel::Receiver<Cmd>) {
     let conn = match crate::services::bus::system().await {
         Ok(c) => c,
         Err(err) => return eprintln!("polkit: system bus: {err}"),
@@ -54,9 +52,7 @@ async fn run(tx: Sender<LockMsg>, cmds: async_channel::Receiver<Cmd>) {
         Err(err) => return eprintln!("polkit: registering the agent: {err}"),
     };
     eprintln!("polkit: agent registered");
-    let ui = |e: Event| {
-        let _ = tx.send(LockMsg::Polkit(e));
-    };
+    let ui = |e: Event| publisher.send(Msg::Polkit(e));
     while let Ok(request) = agent.requests.recv().await {
         // Answers typed for an earlier request are not this one's.
         while cmds.try_recv().is_ok() {}

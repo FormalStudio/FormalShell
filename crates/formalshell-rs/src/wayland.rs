@@ -61,8 +61,8 @@ use crate::ipc;
 use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::{IRect, NodeId};
-use crate::services::{barpaint, commands, devices, compositor, info, media, nightlight, overnight, theme, tray};
-use crate::store::{Store, Topic};
+use crate::services::{barpaint, commands, devices, compositor, info, media, nightlight, notifications, overnight, theme, tray};
+use crate::store::{Diff, Moved, Store, Topic};
 use crate::surface::{Backend, PixelSurface, Pixels, Surface};
 use crate::surfaces;
 use crate::surfaces::bar::Bar;
@@ -252,6 +252,7 @@ pub struct App {
     dropped: Vec<wl_surface::WlSurface>,
     bar_dirty: bool,
     pub battery_watch: surfaces::battery::Watch,
+    pub hdr: crate::services::display::Hdr,
     wake: Option<Instant>,
     rims: rims::Rims,
     /// `debug motionScale`: every duration multiplied by this.
@@ -410,6 +411,7 @@ impl App {
             info_asked: None,
             menu_launches: None,
             capture: Default::default(),
+            hdr: Default::default(),
             pickers: Default::default(),
             desktop_clock: Default::default(),
             veil: Default::default(),
@@ -1327,13 +1329,35 @@ impl App {
     }
 
     pub fn receive(&mut self, msg: Msg) {
-        let t0 = Instant::now();
-        let Msg::Diff(diff) = msg;
-        let topic = self.store.apply(diff);
-        if let Some(topic) = topic {
+        match msg {
+            Msg::Diff(diff) => {
+                let t0 = Instant::now();
+                let topic = self.apply(diff);
+                crate::trace::slow("receive", t0.elapsed(), format_args!("diff {topic:?} us={}", t0.elapsed().as_micros()));
+            }
+            Msg::Lock(event) => self.logind_event(event),
+            Msg::Polkit(event) => self.polkit_event(event),
+        }
+    }
+
+    /// The one write into the store: the diff, the slice it implies, then
+    /// what the change asks of services and surfaces. Answers the diff's own
+    /// topic, `None` when it changed nothing.
+    pub fn apply(&mut self, diff: Diff) -> Option<Topic> {
+        let moved = self.store.apply(diff);
+        self.moved(moved);
+        moved.topic
+    }
+
+    /// The reactions to a store change. The implied slice goes first, so
+    /// the cause's surfaces find it already redrawn.
+    fn moved(&mut self, moved: Moved) {
+        for topic in [moved.implied, moved.topic].into_iter().flatten() {
+            if let Some(diff) = crate::services::react(&self.store, topic) {
+                self.apply(diff);
+            }
             surfaces::changed(self, topic);
         }
-        crate::trace::slow("receive", t0.elapsed(), format_args!("diff {topic:?} us={}", t0.elapsed().as_micros()));
     }
 
     /// One IPC call, answered here on the UI loop.
@@ -1401,8 +1425,7 @@ impl App {
                 surfaces::capture::record::stop(self);
             }
             Action::ReminderSummary => {
-                self.store.notifications.show_reminders();
-                surfaces::changed(self, Topic::Notifications);
+                self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::ShowReminders)));
             }
             Action::MediaNext => self.store.media.next(),
             Action::MediaPrevious => self.store.media.previous(),
@@ -1411,8 +1434,7 @@ impl App {
                 self.set_center(open, Some(anchor));
             }
             Action::Dnd(on) => {
-                self.store.notifications.set_dnd(on);
-                surfaces::changed(self, Topic::Notifications);
+                self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::SetDnd(on))));
             }
             Action::Launcher => self.menu_toggle(),
             Action::Sidebar(collapsed) => surfaces::sidebar::set_collapsed(collapsed),
@@ -2404,9 +2426,10 @@ impl OutputHandler for App {
 
 impl App {
     fn on_outputs(&mut self) {
-        // Applied before the surfaces below are made, which open at it.
+        // Written before the surfaces below are made, which open at it; what
+        // reads it reacts once they are.
         let scales = self.store.display.scales.read(&self.outputs, self.bar_wl.as_ref());
-        let topic = self.store.apply(crate::store::Diff::Display(crate::services::display::Diff::Scales(scales)));
+        let moved = self.store.apply(Diff::Display(crate::services::display::Diff::Scales(scales)));
         self.lock_outputs();
         self.sync_hot_corners();
         self.sync_heads();
@@ -2421,9 +2444,7 @@ impl App {
         } else {
             self.request_paint();
         }
-        if let Some(topic) = topic {
-            surfaces::changed(self, topic);
-        }
+        self.moved(moved);
     }
 }
 

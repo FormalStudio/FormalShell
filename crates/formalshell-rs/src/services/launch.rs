@@ -6,7 +6,7 @@
 //! is watched until its window maps or its entry is launched again, so the
 //! list holds one launch per entry at most.
 
-use std::sync::Mutex;
+use std::sync::OnceLock;
 
 use fs_menu::appmatch;
 use fs_menu::node::DesktopEntry;
@@ -14,15 +14,50 @@ use fs_types::WindowId;
 
 use super::activity::{self, Input};
 use super::compositor;
-use crate::store::Store;
+use crate::runtime::{Ctx, Publisher};
+use crate::store::{self, Store};
 
-struct Pending {
+pub struct Pending {
     entry: DesktopEntry,
     /// The windows the entry already had, which do not end the launch.
     before: Vec<WindowId>,
 }
 
-static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
+/// The launches being watched, one per entry.
+#[derive(Default)]
+pub struct State {
+    pending: Vec<Pending>,
+}
+
+pub enum Diff {
+    Spawned(Pending),
+    /// These entries' launches mapped a window.
+    Landed(Vec<String>),
+}
+
+impl State {
+    pub fn apply(&mut self, diff: Diff) -> bool {
+        match diff {
+            Diff::Spawned(p) => {
+                self.pending.retain(|q| q.entry.id != p.entry.id);
+                self.pending.push(p);
+                true
+            }
+            Diff::Landed(ids) => {
+                self.pending.retain(|p| !ids.contains(&p.entry.id));
+                !ids.is_empty()
+            }
+        }
+    }
+}
+
+/// Spawns run on the UI thread from surfaces holding the store read-only,
+/// so a launch reaches its slice through the channel every service uses.
+static PUBLISHER: OnceLock<Publisher> = OnceLock::new();
+
+pub fn start(ctx: &Ctx) {
+    let _ = PUBLISHER.set(ctx.publisher().clone());
+}
 
 /// The desktop entry `id` names in the launcher's tree.
 fn entry(store: &Store, id: &str) -> Option<DesktopEntry> {
@@ -37,26 +72,26 @@ pub fn spawn(store: &Store, id: &str, argv: &[String]) {
     let Some(entry) = entry(store, id) else { return };
     let before = appmatch::match_windows(Some(&entry), &store.compositor.snapshot.windows);
     let title = if entry.name.is_empty() { entry.id.clone() } else { entry.name.clone() };
-    if let Ok(mut pending) = PENDING.lock() {
-        pending.retain(|p| p.entry.id != entry.id);
-        pending.push(Pending { entry: entry.clone(), before });
+    let app = entry.id.clone();
+    if let Some(p) = PUBLISHER.get() {
+        p.publish(store::Diff::Launch(Diff::Spawned(Pending { entry, before })));
     }
-    activity::send(Input::Launch { app: entry.id, title });
+    activity::send(Input::Launch { app, title });
 }
 
 /// The compositor's windows changed: a launch whose entry has a window it
 /// did not have at the spawn is over.
-pub fn windows_changed(store: &Store) {
-    let Ok(mut pending) = PENDING.lock() else { return };
-    if pending.is_empty() {
-        return;
-    }
+pub fn windows_changed(store: &Store) -> Option<store::Diff> {
     let windows = &store.compositor.snapshot.windows;
-    pending.retain(|p| {
-        let mapped = appmatch::match_windows(Some(&p.entry), windows).iter().any(|id| !p.before.contains(id));
-        if mapped {
-            activity::send(Input::Launched(p.entry.id.clone()));
-        }
-        !mapped
-    });
+    let landed: Vec<String> = store
+        .launches
+        .pending
+        .iter()
+        .filter(|p| appmatch::match_windows(Some(&p.entry), windows).iter().any(|id| !p.before.contains(id)))
+        .map(|p| p.entry.id.clone())
+        .collect();
+    for id in &landed {
+        activity::send(Input::Launched(id.clone()));
+    }
+    (!landed.is_empty()).then_some(store::Diff::Launch(Diff::Landed(landed)))
 }

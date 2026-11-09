@@ -104,19 +104,19 @@ fn brightness_step(app: &mut App, args: &[Value]) -> Value {
 }
 
 fn hdr_toggle(app: &mut App, _: &[Value]) -> Value {
-    text(display::hdr_toggle(&app.store))
+    text(app.hdr.toggle(&app.store))
 }
 
 fn hdr_enable(app: &mut App, _: &[Value]) -> Value {
-    text(display::hdr_set_all(&app.store, true))
+    text(app.hdr.set_all(&app.store, true))
 }
 
 fn hdr_disable(app: &mut App, _: &[Value]) -> Value {
-    text(display::hdr_set_all(&app.store, false))
+    text(app.hdr.set_all(&app.store, false))
 }
 
 fn hdr_set_output(app: &mut App, args: &[Value]) -> Value {
-    text(display::hdr_set(&app.store, args[0].str(), args[1].bool()))
+    text(app.hdr.set(&app.store, args[0].str(), args[1].bool()))
 }
 
 fn hdr_rule(app: &mut App, args: &[Value]) -> Value {

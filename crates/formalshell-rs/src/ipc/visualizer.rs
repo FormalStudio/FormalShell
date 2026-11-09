@@ -8,6 +8,7 @@ use serde_json::{Value as Json, json};
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::visualizer::{self, Diff};
+use crate::store;
 use crate::wayland::App;
 
 fn text(s: impl Into<String>) -> Value {
@@ -44,7 +45,7 @@ fn style(app: &mut App, args: &[Value]) -> Value {
         id if styles::is_known(id) => id.to_owned(),
         id => return text(format!("error: unknown style {id} ({})", styles::ids().join("|"))),
     };
-    app.store.visualizer.apply(Diff::Style(next));
+    app.apply(store::Diff::Visualizer(Diff::Style(next)));
     text(current(app))
 }
 

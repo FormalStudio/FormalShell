@@ -34,9 +34,15 @@ pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
 }
 
-/// What reaches the UI thread.
+/// What reaches the UI thread. Nearly every message is a diff, so boxing
+/// it to shrink the rare others would cost an allocation per message.
+#[allow(clippy::large_enum_variant)]
 pub enum Msg {
     Diff(Diff),
+    /// logind's word for the lock, which holds no slice.
+    Lock(crate::services::session::Event),
+    /// The polkit agent's requests, for its dialog.
+    Polkit(crate::services::polkit::Event),
 }
 
 /// The sending half of the UI thread's channel. Cheap to clone and `Send`,

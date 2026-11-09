@@ -14,7 +14,7 @@ use super::{Act, App, notify, notify_with, now, runtime_dir, slurp_run, spawn, S
 use crate::services::capture::{Exit, Job, Run};
 use crate::services::compositor::{self, Command};
 use crate::services::recording;
-use crate::store::Topic;
+use crate::store::Diff;
 
 const WEBCAM_APP_ID: &str = "formalshell-webcam";
 
@@ -114,9 +114,7 @@ fn config_max_height(app: &App) -> f64 {
 fn sync_bar(app: &mut App) {
     let r = &app.capture.rec;
     let diff = recording::Diff::Active { active: r.active(), elapsed_ms: r.elapsed_ms(), stopping: r.active() && r.stopping };
-    if app.store.recording.apply(diff) {
-        crate::surfaces::changed(app, Topic::Recording);
-    }
+    app.apply(Diff::Recording(diff));
 }
 
 fn tick(app: &mut App) {

@@ -13,6 +13,8 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Owner};
 use crate::services::menu::{self as index, Ask};
+use crate::services::notifications;
+use crate::store::Diff;
 use crate::surface::{Backend, Surface};
 use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
@@ -499,8 +501,7 @@ impl App {
         }
         if self.call_self_reply("lights", "color", &[&value]).starts_with("error") {
             let body = format!("\"{value}\" is not a hex colour like ff8800");
-            self.store.notifications.notify("Keyboard Lights", &body, fs_info::notifications::Urgency::Normal);
-            crate::surfaces::changed(self, crate::store::Topic::Notifications);
+            self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::Notify("Keyboard Lights".into(), body, fs_info::notifications::Urgency::Normal))));
         }
     }
 
@@ -712,10 +713,8 @@ impl App {
         let paste = self.store.config.bool("clipboard.paste").unwrap_or(true);
         let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste);
         let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste);
-        let moved = self.store.menu.apply(index::Diff::Source("clipboard".into(), rows));
-        if self.store.menu.apply(index::Diff::Source("shareHistory".into(), shared)) || moved {
-            self.launcher_store_changed();
-        }
+        self.apply(Diff::Menu(index::Diff::Source("clipboard".into(), rows)));
+        self.apply(Diff::Menu(index::Diff::Source("shareHistory".into(), shared)));
     }
 
     /// The picker grid's pictures, asked for once the listing's thumbnails
@@ -915,9 +914,7 @@ impl App {
     /// The clipssh route's rows off the saved aliases.
     pub fn launcher_clipssh(&mut self) {
         let rows = fs_menu::providers::clipssh_rows(&self.store.clipssh.aliases);
-        if self.store.menu.apply(index::Diff::Source("clipssh".into(), rows)) {
-            self.launcher_store_changed();
-        }
+        self.apply(Diff::Menu(index::Diff::Source("clipssh".into(), rows)));
     }
 
     /// The device routes' rows, again from the store.
@@ -925,11 +922,10 @@ impl App {
         if let Some(r) = self.store.revealed.take() {
             self.wifi_revealed(r);
         }
-        let mut moved = false;
         for (name, rows) in crate::surfaces::launcher::device_sources(&self.store) {
-            moved |= self.store.menu.apply(index::Diff::Source(name.into(), rows));
+            self.apply(Diff::Menu(index::Diff::Source(name.into(), rows)));
         }
-        if moved || self.launcher.open {
+        if self.launcher.open {
             self.launcher_store_changed();
         }
     }
@@ -937,12 +933,10 @@ impl App {
     /// The plugin modes' rows off what their plugins print, and any
     /// `actions` answers into the open column.
     pub fn launcher_plugins(&mut self) {
-        let mut moved = false;
         for (route, rows) in crate::surfaces::launcher::plugin_sources(&self.store) {
-            moved |= self.store.menu.apply(index::Diff::Source(route, rows));
+            self.apply(Diff::Menu(index::Diff::Source(route, rows)));
         }
-        moved |= self.launcher.plugin_answers(&self.store);
-        if moved {
+        if self.launcher.plugin_answers(&self.store) {
             self.launcher_store_changed();
         }
     }
@@ -1273,9 +1267,7 @@ impl App {
             .map(|i| fs_menu::providers::TrayItem { id: i.id.clone(), title: i.title.clone(), tooltip_title: i.tooltip.clone() })
             .collect();
         let rows = fs_menu::providers::tray_provider(&items, index::SELF);
-        if self.store.menu.apply(index::Diff::Source("tray".into(), rows)) {
-            self.launcher_store_changed();
-        }
+        self.apply(Diff::Menu(index::Diff::Source("tray".into(), rows)));
     }
 
     /// What every store change the launcher's index reads asks of it.
