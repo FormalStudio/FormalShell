@@ -233,7 +233,6 @@ pub fn pending_reapply(saved: &Wants, rows: &[Output], verdicts: &HashMap<String
 mod tests {
     use super::*;
     use serde_json::json;
-    use crate::display::outputs::{RuleOverrides, hyprland_color_rule, hyprland_monitor_rule, hyprland_rule_lua, parse_hyprland_outputs};
 
     fn row(f: impl FnOnce(&mut Output)) -> Output {
         let mut r = Output {
@@ -313,78 +312,6 @@ mod tests {
         assert_eq!(verdict(Some(&parse_edid(""))).reason, "No EDID");
         assert_eq!(verdict(Some(&parse_edid("00 ff ff"))).reason, "No EDID");
         assert_eq!(verdict(None).reason, "No EDID");
-    }
-
-    #[test]
-    fn color_rule_keeps_mode_position_scale_transform_and_leaves_vrr() {
-        let r = row(|r| {
-            r.x = 1920;
-            r.y = 240;
-            r.transform = 1;
-            r.vrr = true;
-            r.scale = 1.67;
-        });
-        let rule = hyprland_color_rule(&r, &on_color(1.2, 1.0));
-        assert_eq!(rule.output, "eDP-1");
-        assert_eq!(rule.mode, "2560x1600@165");
-        assert_eq!(rule.position, "1920x240");
-        assert_eq!(rule.scale, "1.66667");
-        assert_eq!(rule.transform, 1);
-        assert_eq!(rule.bitdepth, 10);
-        assert_eq!(rule.cm, "hdr");
-        assert_eq!(rule.sdrbrightness, "1.2");
-        assert_eq!(rule.mirror, "");
-        assert!(!hyprland_rule_lua(&rule).contains("vrr"));
-    }
-
-    #[test]
-    fn color_rule_does_not_clamp_a_live_scale_below_one() {
-        let rule = hyprland_color_rule(&row(|r| r.scale = 0.8), &on_color(1.0, 1.0));
-        assert_eq!(rule.scale, "0.8");
-    }
-
-    #[test]
-    fn color_rule_carries_a_mirror() {
-        let rule = hyprland_color_rule(&row(|r| r.mirror_of = "DP-1".into()), &on_color(1.0, 1.0));
-        assert_eq!(rule.mirror, "DP-1");
-        assert!(hyprland_rule_lua(&rule).contains("mirror = \"DP-1\""));
-    }
-
-    #[test]
-    fn rule_lua_is_an_hl_monitor_call() {
-        let rule = hyprland_color_rule(&row(|r| r.scale = 1.0), &on_color(1.2, 1.0));
-        assert_eq!(
-            hyprland_rule_lua(&rule),
-            "hl.monitor({ output = \"eDP-1\", mode = \"2560x1600@165\", position = \"0x0\", scale = 1, transform = 0, bitdepth = 10, cm = \"hdr\", sdrbrightness = 1.2, sdrsaturation = 1, mirror = \"\" })"
-        );
-    }
-
-    #[test]
-    fn scale_change_keeps_an_active_hdr_preset() {
-        let r = row(|r| {
-            r.cm = "hdr".into();
-            r.ten_bit = true;
-            r.sdr_brightness = 1.2;
-        });
-        let lua = hyprland_rule_lua(&hyprland_monitor_rule(&r, &RuleOverrides { scale: Some(2.0), mirror_of: None }));
-        assert!(lua.contains("bitdepth = 10, cm = \"hdr\", sdrbrightness = 1.2, sdrsaturation = 1"));
-    }
-
-    #[test]
-    fn parse_reads_the_colour_fields() {
-        let rows = parse_hyprland_outputs(
-            &json!([{
-                "name": "eDP-1", "x": 0, "y": 0, "width": 2560, "height": 1600, "refreshRate": 165, "scale": 1.6,
-                "transform": 3, "vrr": true, "currentFormat": "XRGB2101010", "colorManagementPreset": "hdr",
-                "sdrBrightness": 1.2, "sdrSaturation": 0.98, "mirrorOf": "none"
-            }])
-            .to_string(),
-        );
-        assert_eq!(rows[0].transform, 3);
-        assert!(rows[0].vrr);
-        assert!(rows[0].ten_bit);
-        assert_eq!(rows[0].cm, "hdr");
-        assert_eq!(rows[0].sdr_brightness, 1.2);
     }
 
     #[test]

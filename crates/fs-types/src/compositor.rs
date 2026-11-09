@@ -99,3 +99,17 @@ pub struct Window {
     pub is_urgent: bool,
     pub rect: Option<IRect>,
 }
+
+/// One of the compositor's key binds, its sourced files and submaps already
+/// expanded. `chord` is `mods` and `key` joined with `+`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Bind {
+    pub chord: String,
+    pub mods: Vec<&'static str>,
+    pub key: String,
+    pub action: String,
+    pub args: Vec<String>,
+    pub title: String,
+    pub submap: String,
+    pub catchall: bool,
+}

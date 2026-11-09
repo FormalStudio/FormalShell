@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
-use fs_system::compositor::appicon::{self, DesktopEntry, ProcInfo};
+use fs_system::appicon::{self, DesktopEntry, ProcInfo};
 
 use super::icons;
 use crate::runtime::Ctx;

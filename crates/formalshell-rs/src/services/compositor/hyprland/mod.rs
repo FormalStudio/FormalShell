@@ -1,12 +1,16 @@
 //! The Hyprland backend on its two raw sockets: `.socket.sock` answers one request per connection,
 //! `.socket2.sock` streams `EVENT>>DATA` lines. Every write is an `hl.*`
-//! Lua call, a dispatcher sent as `dispatch` and a monitor rule as `eval`.
+//! Lua call, a dispatcher sent as `dispatch` and a monitor rule as `eval`,
+//! bar the config reload, which is `hyprctl reload`.
 //!
 //! An event only marks the model dirty; one refresh re-reads it, so a burst
 //! of events in one turn costs one round of requests.
 
+mod binds;
+mod keyboard;
 mod lua;
-pub mod model;
+mod model;
+pub mod outputs;
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -17,14 +21,13 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use async_io::{Async, Timer};
-use fs_menu::keybinds::{self, Bind};
 use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, StreamExt, io::BufReader};
-use fs_system::compositor::keyboard::{self, Layout};
-use fs_system::display::outputs::{self, Output, RuleOverrides};
-use fs_types::WindowId;
+use fs_system::display::outputs::{find_output, Output};
+use fs_system::keyboard::{self as layouts, Layout};
+use fs_types::{Bind, WindowId};
 
-use super::model::{self as common, Snapshot};
-use super::{Command, Diff, OutputsState};
+use self::outputs::RuleOverrides;
+use super::{Command, Diff, OutputsState, Snapshot};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -33,11 +36,14 @@ use crate::store;
 const RETRY_FIRST: Duration = Duration::from_millis(250);
 const RETRY_MAX: Duration = Duration::from_secs(5);
 
+pub fn instance() -> Option<String> {
+    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()
+}
+
 fn socket_dir() -> io::Result<PathBuf> {
     let runtime = crate::paths::session_runtime()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "XDG_RUNTIME_DIR is not set"))?;
-    let sig = std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HYPRLAND_INSTANCE_SIGNATURE is not set"))?;
+    let sig = instance().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HYPRLAND_INSTANCE_SIGNATURE is not set"))?;
     Ok(runtime.join("hypr").join(sig))
 }
 
@@ -50,7 +56,7 @@ async fn request(command: &str) -> io::Result<String> {
 }
 
 pub async fn binds() -> Result<Vec<Bind>, ()> {
-    request("binds").await.map(|text| keybinds::parse_hyprland_binds(&text)).map_err(|_| ())
+    request("binds").await.map(|text| binds::parse(&text)).map_err(|_| ())
 }
 
 pub async fn cursor_pos() -> Option<(f64, f64)> {
@@ -68,6 +74,7 @@ struct Backend {
     urgent: HashSet<WindowId>,
     outputs: Vec<Output>,
     keyboard: Option<Layout>,
+    reloading: bool,
 }
 
 type Shared = Rc<RefCell<Backend>>;
@@ -186,7 +193,7 @@ async fn refresh_compositor(ctx: &Ctx, shared: &Shared) {
         let read = model::snapshot(&monitors, &workspaces, &clients, &active, &b.urgent);
         let mut snapshot = read.snapshot;
         b.special_shown = read.special_shown;
-        snapshot.windows = common::keep_order(&mut b.order, snapshot.windows);
+        snapshot.windows = model::keep_order(&mut b.order, snapshot.windows);
         let live: HashSet<&WindowId> = snapshot.windows.iter().filter(|w| w.is_urgent).map(|w| &w.id).collect();
         b.urgent.retain(|id| live.contains(id));
         b.snapshot = snapshot.clone();
@@ -199,7 +206,7 @@ async fn refresh_compositor(ctx: &Ctx, shared: &Shared) {
 /// is the one the display panel needs to switch back on.
 async fn refresh_outputs(ctx: &Ctx, shared: &Shared) {
     let (rows, state) = match request("j/monitors all").await {
-        Ok(text) => (outputs::parse_hyprland_outputs(&text), OutputsState::Ok),
+        Ok(text) => (outputs::parse(&text), OutputsState::Ok),
         Err(err) => {
             eprintln!("hyprland: outputs: {err}");
             (Vec::new(), OutputsState::Failed)
@@ -212,8 +219,8 @@ async fn refresh_outputs(ctx: &Ctx, shared: &Shared) {
 
 async fn refresh_keyboard(ctx: &Ctx, shared: &Shared) {
     let layout = match request("j/devices").await {
-        Ok(text) => keyboard::parse_hyprland_layouts(&text),
-        Err(_) => keyboard::unavailable(),
+        Ok(text) => keyboard::parse(&text),
+        Err(_) => layouts::unavailable(),
     };
     shared.borrow_mut().keyboard = Some(layout.clone());
     ctx.publish(store::Diff::Compositor(Diff::Keyboard(layout)));
@@ -229,7 +236,7 @@ async fn refresh_blur(ctx: &Ctx) {
 /// `general.gaps_out`, which a side bar's zone leaves to the compositor.
 /// An answer it cannot read counts as no gap.
 async fn refresh_gaps(ctx: &Ctx) {
-    let gaps = request("j/getoption general:gaps_out").await.ok().and_then(|text| common::Gaps::parse(&text)).unwrap_or_default();
+    let gaps = request("j/getoption general:gaps_out").await.ok().and_then(|text| model::gaps(&text)).unwrap_or_default();
     ctx.publish(store::Diff::Compositor(Diff::GapsOut(gaps)));
 }
 
@@ -287,6 +294,28 @@ async fn eval(ctx: &Ctx, lua: &str) {
     report("eval", answer);
 }
 
+/// `hyprctl reload` on a task of its own, so the writes queued behind it do
+/// not wait on it; one at a time.
+fn reload(ctx: &Ctx, shared: &Shared) {
+    if std::mem::replace(&mut shared.borrow_mut().reloading, true) {
+        return;
+    }
+    let shared = shared.clone();
+    ctx.spawn(async move {
+        let status = crate::services::proc::command("hyprctl")
+            .arg("reload")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await;
+        if !status.is_ok_and(|s| s.success()) {
+            eprintln!("hyprland: hyprctl reload failed");
+        }
+        shared.borrow_mut().reloading = false;
+    });
+}
+
 fn report(what: &str, answer: io::Result<String>) {
     match answer {
         Ok(text) if text.trim() == "ok" => {}
@@ -326,6 +355,7 @@ async fn commands(
                 eval(&ctx, &lua).await;
             }
             Command::Cursor { hidden } => eval(&ctx, &lua::cursor(hidden)).await,
+            Command::Reload => reload(&ctx, &shared),
             Command::Exit => dispatch(&lua::exit()).await,
             Command::FloatWindow(id) => {
                 let floating = shared.borrow().snapshot.windows.iter().any(|w| w.id == id && w.is_floating);
@@ -381,29 +411,29 @@ async fn commands(
             }
             Command::RefreshOutputs => refresh_outputs(&ctx, &shared).await,
             Command::SetOutputEnabled(name, enabled) => {
-                eval(&ctx, &outputs::hyprland_enabled_lua(&name, enabled)).await;
+                eval(&ctx, &outputs::enabled_lua(&name, enabled)).await;
                 refresh_outputs(&ctx, &shared).await;
             }
             Command::SetOutputScale(name, scale) => {
-                let row = outputs::find_output(&shared.borrow().outputs, &name).cloned();
+                let row = find_output(&shared.borrow().outputs, &name).cloned();
                 if let Some(row) = row {
                     let overrides = RuleOverrides { scale: Some(scale), mirror_of: None };
-                    eval(&ctx, &outputs::hyprland_rule_lua(&outputs::hyprland_monitor_rule(&row, &overrides))).await;
+                    eval(&ctx, &outputs::rule_lua(&outputs::monitor_rule(&row, &overrides))).await;
                     refresh_outputs(&ctx, &shared).await;
                 }
             }
             Command::SetOutputMirror(name, source) => {
-                let row = outputs::find_output(&shared.borrow().outputs, &name).cloned();
+                let row = find_output(&shared.borrow().outputs, &name).cloned();
                 if let Some(row) = row {
                     let overrides = RuleOverrides { scale: None, mirror_of: Some(source) };
-                    eval(&ctx, &outputs::hyprland_rule_lua(&outputs::hyprland_monitor_rule(&row, &overrides))).await;
+                    eval(&ctx, &outputs::rule_lua(&outputs::monitor_rule(&row, &overrides))).await;
                     refresh_outputs(&ctx, &shared).await;
                 }
             }
             Command::SetOutputColor(name, color) => {
-                let row = outputs::find_output(&shared.borrow().outputs, &name).cloned();
+                let row = find_output(&shared.borrow().outputs, &name).cloned();
                 if let Some(row) = row.filter(|r| r.enabled) {
-                    eval(&ctx, &outputs::hyprland_rule_lua(&outputs::hyprland_color_rule(&row, &color))).await;
+                    eval(&ctx, &outputs::rule_lua(&outputs::color_rule(&row, &color))).await;
                     refresh_outputs(&ctx, &shared).await;
                 }
             }

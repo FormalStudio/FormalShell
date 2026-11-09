@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::scene::Bitmap;
 use fs_types::{Rect, Window, WindowId, WorkspaceId};
 
-use crate::services::compositor::model::Snapshot;
+use crate::services::compositor::Snapshot;
 
 fn rect_json(r: &Rect) -> Value {
     json!({"x": fs_js::json_number(r.x), "y": fs_js::json_number(r.y), "width": fs_js::json_number(r.width), "height": fs_js::json_number(r.height)})

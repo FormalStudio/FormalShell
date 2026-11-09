@@ -8,13 +8,14 @@ use common::{entries, real_tree};
 use fs_menu::abbrev::Source;
 use fs_menu::actions::{Action, Run, Subject, TargetKind, WINDOW_KIND, actions_for, filter, first_action, into_action, second_action};
 use fs_menu::clipboard::history::Entry;
-use fs_menu::keybinds::{Bind, rows as bind_rows};
+use fs_menu::keybinds::rows as bind_rows;
 use fs_menu::model::build_tree;
 use fs_menu::node::{DesktopEntry, Entries, Kind, Node};
 use fs_menu::providers::{
     AudioDevice, BluetoothState, ClipMode, EmojiEntry, EmojiIndex, RadioState, RadioStation, WifiNetwork, WifiState, apps_provider,
     attach_children, audio_rows, bluetooth_rows, clipboard_provider, image_rows, radio_rows, wifi_rows,
 };
+use fs_types::Bind;
 use serde_json::json;
 
 fn ids(actions: &[Action]) -> Vec<&str> {

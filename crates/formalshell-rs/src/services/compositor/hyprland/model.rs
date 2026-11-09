@@ -8,7 +8,7 @@ use serde_json::Value;
 use fs_types::{IRect, Window, WindowId, Workspace, WorkspaceId};
 
 use super::lua::PARK_WORKSPACE;
-use crate::services::compositor::model::Snapshot;
+use crate::services::compositor::{Gaps, Snapshot};
 
 /// One refresh: the shared snapshot and the focused monitor's
 /// `specialWorkspace.name`, "" when none is shown, which only the park
@@ -198,6 +198,37 @@ pub fn snapshot(monitors: &str, workspaces: &str, clients: &str, active: &str, u
     Read { snapshot, special_shown }
 }
 
+/// A toplevel is appended when it is first heard of and never
+/// reorders, so a window keeps its place across refreshes. `order` is the
+/// ids seen so far, oldest first.
+pub fn keep_order(order: &mut Vec<WindowId>, windows: Vec<Window>) -> Vec<Window> {
+    let live: HashSet<&WindowId> = windows.iter().map(|w| &w.id).collect();
+    order.retain(|id| live.contains(id));
+    for w in &windows {
+        if !order.contains(&w.id) {
+            order.push(w.id.clone());
+        }
+    }
+    let mut by_id: HashMap<WindowId, Window> = windows.into_iter().map(|w| (w.id.clone(), w)).collect();
+    order.iter().filter_map(|id| by_id.remove(id)).collect()
+}
+
+/// `general:gaps_out` off getoption: a css-style `"top right bottom left"`
+/// (one to four numbers, as CSS fills them in) or a plain `int`.
+pub fn gaps(text: &str) -> Option<Gaps> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    let nums: Vec<i32> = match (v.get("css").and_then(Value::as_str), v.get("int").and_then(Value::as_i64)) {
+        (Some(css), _) => css.split_whitespace().map(str::parse).collect::<Result<_, _>>().ok()?,
+        (None, Some(i)) => vec![i32::try_from(i).ok()?],
+        _ => return None,
+    };
+    let at = |i: usize| nums.get(i).copied();
+    let top = at(0)?;
+    let right = at(1).unwrap_or(top);
+    let bottom = at(2).unwrap_or(top);
+    Some(Gaps { top, right, bottom, left: at(3).unwrap_or(right) })
+}
+
 /// The events after which nothing the backend reports can have changed.
 pub fn ignores(event: &str) -> bool {
     matches!(event, "activelayout" | "submap" | "screencast" | "bell" | "minimized" | "ignoregrouplock" | "lockgroups")
@@ -214,6 +245,27 @@ mod tests {
     const CLIENTS: &str = r#"[{"address":"0x55d0c1a0","mapped":true,"hidden":false,"at":[10,50],"size":[800,600],"workspace":{"id":1,"name":"1"},"floating":false,"monitor":0,"class":"foot","title":"one","initialClass":"foot","initialTitle":"foot","pid":42,"fullscreen":0},
         {"address":"0x000055d0c1b0","mapped":true,"hidden":true,"at":[10,50],"size":[800,600],"workspace":{"id":2,"name":"2"},"floating":true,"monitor":0,"class":"mpv","title":"two","initialClass":"mpv","initialTitle":"mpv","pid":43,"fullscreen":2}]"#;
     const ACTIVE: &str = r#"{"address":"0x55d0c1b0"}"#;
+
+    #[test]
+    fn gaps_read_as_css_fills_them_in() {
+        assert_eq!(gaps(r#"{"option":"general:gaps_out","css":"6 6 6 6","set":true}"#), Some(Gaps { top: 6, right: 6, bottom: 6, left: 6 }));
+        assert_eq!(gaps(r#"{"css":"1 2 3 4"}"#), Some(Gaps { top: 1, right: 2, bottom: 3, left: 4 }));
+        assert_eq!(gaps(r#"{"css":"5 9"}"#), Some(Gaps { top: 5, right: 9, bottom: 5, left: 9 }));
+        assert_eq!(gaps(r#"{"int":20}"#), Some(Gaps { top: 20, right: 20, bottom: 20, left: 20 }));
+        assert_eq!(gaps("no"), None);
+    }
+
+    #[test]
+    fn order_holds_across_refreshes() {
+        let w = |id: &str| Window { id: WindowId::new(id), ..Window::default() };
+        let mut order = Vec::new();
+        keep_order(&mut order, vec![w("b"), w("a")]);
+        let next = keep_order(&mut order, vec![w("c"), w("a"), w("b")]);
+        let ids: Vec<&str> = next.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(ids, ["b", "a", "c"]);
+        let next = keep_order(&mut order, vec![w("c"), w("a")]);
+        assert_eq!(next.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(), ["a", "c"]);
+    }
 
     #[test]
     fn maps_the_contract() {

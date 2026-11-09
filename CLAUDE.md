@@ -1961,10 +1961,13 @@ a Linux host.
 - Hyprland is the only compositor (owner, 2026-11-06: mango support was
   removed). Compositor work goes in
   `crates/formalshell-rs/src/services/compositor/`: the snapshot
-  (`model.rs`, over `fs_types`' `Window` and `Workspace`), the typed
+  (`mod.rs`, over `fs_types`' `Window` and `Workspace`), the typed
   `Command`s every caller sends, and `hyprland/`
-  with the `.socket.sock` and `.socket2.sock` clients and `hyprctl eval`
-  for writes.
+  with the `.socket.sock` and `.socket2.sock` clients, `hyprctl eval`
+  for writes and `hyprctl reload`, and every Hyprland codec (the `j/`
+  answers, monitor rules, keyboard devices, the binds table). Nothing
+  outside it reads `HYPRLAND_INSTANCE_SIGNATURE` or spawns `hyprctl`
+  but `paths.rs`'s per-instance directory.
 - Lua (`hyprland.lua`) is the only Hyprland config format (owner,
   2026-09-29). Runtime changes go through `hyprctl eval` with the `hl.*` API,
   never `hyprctl keyword`, and nothing the shell or its installer writes is

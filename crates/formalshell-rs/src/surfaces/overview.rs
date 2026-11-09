@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 
 use crate::motion::{Animated, Curve};
 use crate::scene::{Bitmap, IRect, NodeId, Paint, Scene};
-use crate::services::compositor::model::Snapshot;
+use crate::services::compositor::Snapshot;
 use crate::paint::{Kit, Painter};
 
 /// niri's default zoom.

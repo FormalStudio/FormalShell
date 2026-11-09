@@ -27,7 +27,7 @@ use fs_system::monitor::gpu;
 use serde_json::{Value, json};
 
 use crate::runtime::Ctx;
-use crate::services::compositor::{self, Command};
+use crate::services::compositor::{self, Command, hyprland};
 use crate::services::state::{self, Field};
 use crate::store::{self, Store};
 
@@ -470,7 +470,7 @@ pub async fn run(ctx: Ctx) {
 
 /// Whether output config can be sent: a Hyprland to take monitor rules.
 pub fn config_available() -> bool {
-    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+    compositor::instance().is_some()
 }
 
 fn rows(store: &Store) -> &[Output] {
@@ -542,7 +542,7 @@ pub fn hdr_rule(store: &Store, name: &str) -> Result<Value, String> {
     let Some(row) = outputs::find_output(rows(store), name) else {
         return Err(format!("unknown output: {name}"));
     };
-    let r = outputs::hyprland_color_rule(row, &on_color(store));
+    let r = hyprland::outputs::color_rule(row, &on_color(store));
     let number = |s: &str| s.parse::<f64>().map_or_else(|_| Value::String(s.to_owned()), fs_js::json_number);
     let rule = json!({
         "output": r.output,
@@ -556,12 +556,7 @@ pub fn hdr_rule(store: &Store, name: &str) -> Result<Value, String> {
         "sdrsaturation": number(&r.sdrsaturation),
         "mirror": r.mirror,
     });
-    Ok(json!({"rule": rule, "lua": outputs::hyprland_rule_lua(&r)}))
-}
-
-/// The running Hyprland, which a monitor rule set over IPC lives as long as.
-fn instance() -> String {
-    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").unwrap_or_default()
+    Ok(json!({"rule": rule, "lua": hyprland::outputs::rule_lua(&r)}))
 }
 
 /// HDR's bookkeeping on the UI thread, between one change and the next.
@@ -597,7 +592,7 @@ impl Hdr {
         let prior = saved.get(name).and_then(|w| w.prior.as_ref()).map(hdr::off_color);
         if on {
             let prior = prior.unwrap_or_else(|| hdr::prior_of(row));
-            state::set(vec![Field::Hdr(Some(hdr::with_output(&saved, name, &prior, &instance())))]);
+            state::set(vec![Field::Hdr(Some(hdr::with_output(&saved, name, &prior, &compositor::instance().unwrap_or_default())))]);
             self.tried.insert(name.to_owned());
             apply(name, on_color(store));
         } else {
@@ -654,7 +649,7 @@ impl Hdr {
         if pending.is_empty() {
             return;
         }
-        let now = instance();
+        let now = compositor::instance().unwrap_or_default();
         for name in pending {
             self.tried.insert(name.clone());
             if !self.reloaded && !self.unplugged.contains(&name) && hdr::wanted_under(&saved, &name, &now) {

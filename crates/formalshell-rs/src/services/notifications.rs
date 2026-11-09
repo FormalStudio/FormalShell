@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use fs_info::notifications::{self as model, Action, AddOpts, Notif, Patch, Urgency};
 use fs_info::reminders;
-use fs_system::compositor::appicon::{DesktopEntry, Window, by_class};
+use fs_system::appicon::{DesktopEntry, Window, by_class};
 use fs_js as js;
 use fs_devices::iphone;
 use fs_notifd::{CloseReason, Event, Image, ImageData, Server};

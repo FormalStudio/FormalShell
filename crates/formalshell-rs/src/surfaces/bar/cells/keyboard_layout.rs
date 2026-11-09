@@ -2,7 +2,7 @@
 //! code. Hidden until the compositor has answered, and for a session with a
 //! single layout; NO LAYOUT when it cannot be asked at all.
 
-use fs_system::compositor::keyboard::{self, Layout};
+use fs_system::keyboard::{self, Layout};
 
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Cell, Env, Part, Summary, View};

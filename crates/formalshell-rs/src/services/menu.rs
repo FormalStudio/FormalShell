@@ -16,7 +16,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::{Duration, SystemTime};
 
 use fs_menu::frecency::Record;
-use fs_menu::keybinds::Bind;
+use fs_types::Bind;
 use fs_menu::model::{build_tree, entries_from_value, parse_jsonc};
 use fs_menu::node::{DesktopEntry, Entries, Entry, Kind, Node, Tree};
 use fs_menu::providers::{self, CustomPowerButton, Listed, Peeked};

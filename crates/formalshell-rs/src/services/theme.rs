@@ -66,6 +66,7 @@ use serde_json::{Map, Value};
 
 use crate::runtime::Ctx;
 use crate::store;
+use super::compositor::{self, Command};
 use super::state;
 
 /// What surfaces read: the resolved theme, the palette under it and the
@@ -199,10 +200,7 @@ pub struct Env {
     pub state_dir: PathBuf,
     pub config_dir: PathBuf,
     pub template_dir: PathBuf,
-    /// A Hyprland session to ask to reload after a write.
-    pub hyprland: bool,
     pub matugen: OsString,
-    pub hyprctl: OsString,
     pub dconf: OsString,
 }
 
@@ -218,9 +216,7 @@ impl Env {
             template_dir: var("FS_TEMPLATE_DIR").map_or_else(|| PathBuf::from("crates/fs-theme/templates"), PathBuf::from),
             state_dir: state.join("formalshell"),
             config_dir: config,
-            hyprland: var("HYPRLAND_INSTANCE_SIGNATURE").is_some(),
             matugen: "matugen".into(),
-            hyprctl: "hyprctl".into(),
             dconf: "dconf".into(),
             home,
         }
@@ -384,7 +380,6 @@ struct Engine {
     times: RefCell<Option<SunTimes>>,
     sky: Cell<Option<Sky>>,
     retheme: async_channel::Sender<()>,
-    reloading: Rc<Cell<bool>>,
 }
 
 static RETHEME: OnceLock<async_channel::Sender<()>> = OnceLock::new();
@@ -446,7 +441,6 @@ pub async fn run(ctx: Ctx, env: Env, inputs: async_channel::Receiver<Inputs>, re
         times: RefCell::new(None),
         sky: Cell::new(None),
         retheme,
-        reloading: Rc::new(Cell::new(false)),
     });
     let worker = engine.clone();
     ctx.spawn(async move {
@@ -620,24 +614,6 @@ impl Engine {
         }
     }
 
-    /// Neither compositor watches the files its config pulls the colours
-    /// and chrome from, so every publish asks for the re-read. One at a
-    /// time.
-    fn reload_compositor(&self) {
-        if !self.env.hyprland || self.reloading.get() {
-            return;
-        }
-        self.reloading.set(true);
-        let reloading = self.reloading.clone();
-        let hyprctl = self.env.hyprctl.clone();
-        self.ctx.spawn(async move {
-            if !run_status(&hyprctl, &["reload"]).await {
-                warn("hyprctl reload failed");
-            }
-            reloading.set(false);
-        });
-    }
-
     /// The chrome a hyprland.lua reads back, outside the matugen queue:
     /// every value comes from settings.json or the table, none from the
     /// wallpaper. Skips the write when the file already says the same.
@@ -657,7 +633,7 @@ impl Engine {
         if let Err(err) = result {
             warn(format!("failed to write formalshell-chrome.lua: {err}"));
         }
-        self.reload_compositor();
+        compositor::send(Command::Reload);
     }
 
     /// Ordinary apps learn light and dark and the GTK theme name from
@@ -712,7 +688,7 @@ impl Engine {
         if let Err(err) = blocking(&self.ctx, move || publish_file(&hypr, &colors)).await {
             warn(format!("failed to write fallback formalshell-colors.lua: {err}"));
         }
-        self.reload_compositor();
+        compositor::send(Command::Reload);
     }
 
     /// The sky as a picture matugen can open, at a size its quantizer
@@ -840,7 +816,7 @@ impl Engine {
             self.ctx.publish(store::Diff::Theme(Diff::Palette(palette)));
         }
         self.ctx.publish(store::Diff::Theme(Diff::JsonPresent(true)));
-        self.reload_compositor();
+        compositor::send(Command::Reload);
         Ok(())
     }
 
@@ -983,7 +959,7 @@ mod tests {
         path.into_os_string()
     }
 
-    /// A home, a state dir and three shims that log their argv, with
+    /// A home, a state dir and two shims that log their argv, with
     /// matugen printing a ranking on the probe and writing both outputs on
     /// a real run.
     fn rig(name: &str) -> (Env, PathBuf) {
@@ -1013,9 +989,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
             state_dir: state,
             config_dir: root.join("home/.config"),
             template_dir: Path::new(env!("CARGO_MANIFEST_DIR")).join("../fs-theme/templates"),
-            hyprland: true,
             matugen: shim(&bin, "matugen", &matugen),
-            hyprctl: shim(&bin, "hyprctl", &logger("hyprctl")),
             dconf: shim(&bin, "dconf", &logger("dconf")),
         };
         (env, log)
@@ -1141,16 +1115,16 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
 
     /// No wallpaper: no matugen at all, the zinc variant for the mode
     /// written as theme.json, the Hyprland colours beside it, the chrome
-    /// file, the system scheme asserted, one reload per publish.
+    /// file and the system scheme asserted.
     #[test]
     fn no_wallpaper_publishes_the_fallback_for_the_mode() {
         let (env, log) = rig("static");
         let theme_json = env.theme_json();
         // The palette is published before the Hyprland colours are written,
         // and the chrome writes on its own task, so the files are waited on
-        // too. The dconf pair and the reload are children that outlive the
-        // publish, and dropping the runtime drops them, so the run is held
-        // until they have logged.
+        // too. The two dconf writes are children that outlive the publish, and
+        // dropping the runtime drops them, so the run is held until they
+        // have logged.
         let (hypr_colors, hypr_chrome) = (env.hypr_colors(), env.hypr_chrome());
         let (seen, _) = drive(env.clone(), vec![(Duration::ZERO, inputs(json!({}), "", "light"))], |s, _| {
             s.present.contains(&true)
@@ -1158,7 +1132,6 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
                 && hypr_colors.exists()
                 && hypr_chrome.exists()
                 && log_lines(&log, "dconf").len() >= 2
-                && !log_lines(&log, "hyprctl reload").is_empty()
         });
         let light = palette::fallback("light");
         assert_eq!(std::fs::read_to_string(&theme_json).unwrap(), serde_json::to_string_pretty(&light).unwrap());
@@ -1170,7 +1143,6 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         let dconf = log_lines(&log, "dconf");
         assert!(dconf.contains(&"dconf write /org/gnome/desktop/interface/color-scheme 'prefer-light'".to_owned()));
         assert!(dconf.contains(&"dconf write /org/gnome/desktop/interface/gtk-theme 'adw-gtk3'".to_owned()));
-        assert!(!log_lines(&log, "hyprctl reload").is_empty());
     }
 
     /// A theme.json left from the last login skips the retheme, but the
