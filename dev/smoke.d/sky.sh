@@ -68,11 +68,6 @@ EOS
   hypr_exec_once "bash $script"
 }
 
-# One pixel of a frame as "r g b".
-_sky_px() {
-  $convert_bin "$1" -crop "1x1+$2+$3" +repage -format '%[fx:int(r*255+0.5)] %[fx:int(g*255+0.5)] %[fx:int(b*255+0.5)]' info: 2>/dev/null
-}
-
 _sky_primary() {
   "$jq_bin" -r '.primary // empty' "$1" 2>/dev/null
 }
@@ -100,7 +95,7 @@ leg_sky_assert() {
     "$jq_bin" -e --argjson s "$want" '.sky.step == $s and .sky.pinned and .sky.located and .sky.source == "sky:\($s)" and .sky.nextMs == null' "$dump" > /dev/null \
       || fail "--sky $phase: want step $want, the dump says $("$jq_bin" -c .sky "$dump")"
     # Below the bar and above the foot, in the middle of the output.
-    top=$(_sky_px "$png" 960 120) foot=$(_sky_px "$png" 960 1070)
+    top=$(pixel "$png" 960 120) foot=$(pixel "$png" 960 1070)
     read -r tr tg tb <<< "$top"
     read -r fr fg fb <<< "$foot"
     echo "--sky $phase: elevation $("$jq_bin" .sky.elevation "$dump") top $top foot $foot primary $(_sky_primary "$shot_dir/sky-theme-$phase.json")"

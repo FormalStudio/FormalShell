@@ -147,14 +147,13 @@ at() {
   "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" \
     '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' <<< "\$status" | head -1
 }
-click() {
+click_on() {
   local x y
   read -r x y <<< "\$(at "\$1")"
   [ -n "\$x" ] || { echo "no \$1 control" >> "$ss_dir/drive.log"; return; }
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-  "$wlrctl_bin" pointer move "\$x" "\$y" > /dev/null 2>&1
+  park "\$x" "\$y"
   sleep 0.4
-  "$wlrctl_bin" pointer click left > /dev/null 2>&1
+  click
   "$wlrctl_bin" pointer move 600 0 > /dev/null 2>&1
 }
 for _ in \$(seq 1 40); do
@@ -165,11 +164,11 @@ until_pkgs behind '.software.behind == 7' 15
 sleep 0.5
 $ipc call sidebar status > "$ss_dir/sidebar.json" 2>&1
 "$grim_bin" "$ss_dir/behind.png" > /dev/null 2>&1
-click software:apply
+click_on software:apply
 until_pkgs applyfailed '.software.applying == false and .software.failed != null' 15
 sleep 0.5
 "$grim_bin" "$ss_dir/retry.png" > /dev/null 2>&1
-click software:apply
+click_on software:apply
 until_pkgs applied '.software.applying == false and .software.behind == 0 and .software.failed == null' 15
 sleep 0.5
 "$grim_bin" "$ss_dir/current.png" > /dev/null 2>&1
@@ -178,7 +177,7 @@ $ipc call packages check > /dev/null 2>&1
 until_pkgs installed '.software.last.verb == "install"' 15
 sleep 0.5
 "$grim_bin" "$ss_dir/installed.png" > /dev/null 2>&1
-click software:undo
+click_on software:undo
 until_pkgs undone '.software.last.verb == "uninstall"' 15
 sleep 0.5
 "$grim_bin" "$ss_dir/undone.png" > /dev/null 2>&1

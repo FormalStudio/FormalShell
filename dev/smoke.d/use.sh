@@ -95,9 +95,6 @@ burst() {
 }
 key() { "$wtype_bin" "\$@"; }
 super() { "$wtype_bin" -M logo -k "\$1" -m logo; }
-home() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; }
-to() { home; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
 cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "\$d/room.json" | head -n 1; }
 # One checkpoint: what the launcher and the panels hold, one line each.
 check() {
@@ -107,9 +104,8 @@ check() {
 }
 # Off every surface: the bottom-left corner, which no card hanging off the
 # top bar reaches (the calendar's runs down to y 730 under the clock).
-bare() { to 120 1000; }
+bare() { park 120 1000; }
 desktop() { bare; click; }
-patch_mean() { $convert_bin "\$1" -crop "\$2" +repage -colorspace gray -format '%[fx:int(mean*255)]' info: 2>/dev/null; }
 # A mode flip under an open card: frames until the card's fill has moved,
 # up to 12s, and how long that took. The palette comes off matugen, a child
 # of the shell, so under FS_CPU_QUOTA it is slow by design.
@@ -120,7 +116,7 @@ flip() {
   while [ \$(( \$(now) - t0 )) -lt 12000 ]; do
     "$grim_bin" "\$d/\$name-after.png"
     mean=\$(patch_mean "\$d/\$name-after.png" "\$patch")
-    if [ -n "\$before" ] && [ -n "\$mean" ] && [ \$(( mean > before ? mean - before : before - mean )) -gt 60 ]; then break; fi
+    if [ -n "\$before" ] && [ -n "\$mean" ] && [ \$(( mean > before ? mean - before : before - mean )) -gt 235 ]; then break; fi
     sleep 0.2
   done
   echo "\$name \$(( \$(now) - t0 ))" >> "\$d/flip-ms.txt"
@@ -135,7 +131,7 @@ launcher=\$(cell launcher)
 log launcher-click
 burst launcher-click 3
 "$grim_bin" "\$d/launcher-click-desktop.png"
-to \$launcher; click; sleep 1.2; check launcher-click-fresh
+park \$launcher; click; sleep 1.2; check launcher-click-fresh
 "$grim_bin" "\$d/launcher-click-fresh.png"
 key -k Escape; sleep 1.2; bare
 
@@ -168,11 +164,11 @@ key -k Escape; sleep 1.2
 
 log launcher-click-again
 burst launcher-click-again 6
-to \$launcher; click; sleep 1.2; check launcher-click-escaped
+park \$launcher; click; sleep 1.2; check launcher-click-escaped
 "$grim_bin" "\$d/launcher-click-escaped.png"
 key -k Escape; sleep 1.2
-to \$(cell clock); click; sleep 0.8
-to \$launcher; click; sleep 1.2; check launcher-click-panel
+park \$(cell clock); click; sleep 0.8
+park \$launcher; click; sleep 1.2; check launcher-click-panel
 "$grim_bin" "\$d/launcher-click-panel.png"
 key -k Escape; sleep 1; desktop; sleep 1.2
 
@@ -183,7 +179,7 @@ for name in clock nowPlaying clock nowPlaying; do
   n=\$((n + 1))
   xy=\$(cell "\$name"); [ -n "\$xy" ] || continue
   log "click \$name \$xy"
-  to \$xy; click; sleep 0.35
+  park \$xy; click; sleep 0.35
   check "click-\$n"
 done
 sleep 1; key -k Escape; sleep 1.2; check cells-closed
@@ -195,20 +191,20 @@ burst cell-triple 10
 # one round in five lost it while the panel's surface still covered the
 # strip.
 for r in 1 2 3; do
-  to \$clock; click; sleep 0.1; click; sleep 0.1; click
+  park \$clock; click; sleep 0.1; click; sleep 0.1; click
   sleep 1.5; check "triple-\$r"
   key -k Escape; sleep 1.2
 done
 
 log hover-sweep
 burst hover-sweep 5
-home; "$wlrctl_bin" pointer move 0 18 > /dev/null 2>&1
+park 0 18
 for i in \$(seq 1 64); do "$wlrctl_bin" pointer move 30 0 > /dev/null 2>&1; sleep 0.04; done
 sleep 1.5
 
 log wheel-workspaces
 burst wheel-workspaces 4
-to \$(cell workspaces)
+park \$(cell workspaces)
 for i in 1 2; do "$wlrctl_bin" pointer scroll 15 0 > /dev/null 2>&1; sleep 0.15; done
 sleep 0.8
 for i in 1 2; do "$wlrctl_bin" pointer scroll -15 0 > /dev/null 2>&1; sleep 0.15; done
@@ -217,7 +213,7 @@ $ipc call workspaces status > "\$d/workspaces.json" 2>&1
 
 log toasts-over-panel
 burst toasts-over-panel 6
-to \$clock; click; sleep 0.6
+park \$clock; click; sleep 0.6
 "$notify_send_bin" 'First' 'one'; sleep 0.3
 "$notify_send_bin" 'Second' 'two'; sleep 0.3
 "$notify_send_bin" -u critical 'Third' 'three'
@@ -226,7 +222,7 @@ desktop; sleep 1.5; check toasts-dismissed
 
 log panel-then-launcher
 burst panel-then-launcher 4
-to \$clock; click; sleep 0.1; super space
+park \$clock; click; sleep 0.1; super space
 sleep 1.2; check panel-then-launcher
 key -k Escape; sleep 1.2; check panel-then-launcher-escape
 desktop; sleep 1.2
@@ -244,7 +240,7 @@ key -k Escape; sleep 1.2
 
 log wallpaper-under-panel
 burst wallpaper-under-panel 8
-to \$clock; click; sleep 0.8
+park \$clock; click; sleep 0.8
 super a; sleep 5
 check wallpaper-panel
 "$grim_bin" "\$d/panel-before.png"
@@ -257,11 +253,11 @@ desktop; sleep 1.2
 log chevron
 chev=\$(cell chevron)
 burst chevron 7
-to \$chev; click; sleep 0.15; click; sleep 0.15; click
+park \$chev; click; sleep 0.15; click; sleep 0.15; click
 sleep 1.5
 $ipc call bar chevron status > "\$d/chevron.json" 2>&1
 "$hyprctl_bin" -j layers > "\$d/chevron-layers.json" 2>&1
-to \$chev; click; sleep 1.2
+park \$chev; click; sleep 1.2
 $ipc call bar chevron status > "\$d/chevron-closed.json" 2>&1
 log end
 EOF
@@ -309,12 +305,12 @@ use_panel_patch="200x14+830+68"
 # reads as words vanishing into it.
 use_flip() {
   local name="$1" patch="$2" what="$3" before after
-  before=$($convert_bin "$use_dir/$name-before.png" -crop "$patch" +repage -colorspace gray -format '%[fx:int(mean*255)]' info: 2>/dev/null)
-  after=$($convert_bin "$use_dir/$name-after.png" -crop "$patch" +repage -colorspace gray -format '%[fx:int(mean*255)]' info: 2>/dev/null)
+  before=$(patch_mean "$use_dir/$name-before.png" "$patch")
+  after=$(patch_mean "$use_dir/$name-after.png" "$patch")
   echo "$what fill across the mode flip: $before -> $after, settled in $(awk -v n="$name" '$1 == n { print $2 }' "$use_dir/flip-ms.txt" 2>/dev/null)ms"
   [ -n "$before" ] && [ -n "$after" ] || fail "could not read $what off $name-before/after.png"
   local delta=$((after - before))
-  [ "${delta#-}" -gt 60 ] || fail "$what kept its fill across a theme mode flip ($before -> $after)"
+  [ "${delta#-}" -gt 235 ] || fail "$what kept its fill across a theme mode flip ($before -> $after)"
   echo "SMOKE_USE $what took the new mode's fill"
 }
 

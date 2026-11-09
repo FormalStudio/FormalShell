@@ -134,7 +134,7 @@ sleep 1
 $ipc call lock lock > /dev/null 2>&1
 sleep 4
 shot lock
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 sleep 4
 

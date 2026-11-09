@@ -52,20 +52,19 @@ EOF
 
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-ipc() { $ipc call "\$@"; }
 # Every /dev/video node the shell itself holds open.
 held() { ls -l /proc/\$(cat "$shot_dir/shell.pid")/fd 2>/dev/null | grep -o '/dev/video[0-9]*' | sort -u | tr '\n' ' '; }
 snap() {
-  ipc mirror status > "$mirror_dir/status-\$1.json" 2>&1
+  call mirror status > "$mirror_dir/status-\$1.json" 2>&1
   held > "$mirror_dir/held-\$1.txt"
   "$grim_bin" "$mirror_dir/\$1.png" > /dev/null 2>&1
 }
 sleep 6
 ls /dev/video* > "$mirror_dir/nodes-before.txt" 2>&1
-ipc menu summon mirror > /dev/null 2>&1
+call menu summon mirror > /dev/null 2>&1
 sleep 3
 snap nocamera
-ipc menu close > /dev/null 2>&1
+call menu close > /dev/null 2>&1
 sleep 1
 
 sudo -n modprobe v4l2loopback
@@ -84,7 +83,7 @@ sudo -n rm -f /dev/mirror-rescan
 sleep 1
 held > "$mirror_dir/held-idle.txt"
 
-ipc menu summon mirror > /dev/null 2>&1
+call menu summon mirror > /dev/null 2>&1
 sleep 4
 snap first
 "$wtype_bin" -k Tab
@@ -94,19 +93,19 @@ for i in \$(seq 1 10); do
   "$grim_bin" "$mirror_dir/burst-\$i.png" > /dev/null 2>&1
   sleep 0.13
 done
-ipc mirror previous > /dev/null 2>&1
+call mirror previous > /dev/null 2>&1
 sleep 2
 snap back
-ipc mirror next > /dev/null 2>&1
+call mirror next > /dev/null 2>&1
 sleep 2
 snap again
-ipc mirror toggle > /dev/null 2>&1
+call mirror toggle > /dev/null 2>&1
 sleep 2
 snap closed
-ipc mirror toggle > /dev/null 2>&1
+call mirror toggle > /dev/null 2>&1
 sleep 3
 snap reopened
-ipc mirror close > /dev/null 2>&1
+call mirror close > /dev/null 2>&1
 sleep 2
 snap closedagain
 touch "$mirror_dir/done"

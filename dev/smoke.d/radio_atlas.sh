@@ -157,11 +157,11 @@ gb=\$(( oy + ch - 16 - 8 ))
 gx=\$(( (gl + gr) / 2 ))
 gy=\$(( (gt + gb) / 2 ))
 echo "\$gl \$gt \$gr \$gb \$gx \$gy" > "$radio_atlas_globe_path"
-"$wlrctl_bin" pointer move -4000 -4000
+park
 sleep 0.3
 "$wlrctl_bin" pointer move \$gx \$gy
 sleep 1
-"$wlrctl_bin" pointer click left
+click
 SECONDS=0
 while [ "\$SECONDS" -lt 12 ]; do
   $ipc call radio status > "$radio_atlas_picked_path" 2>&1
@@ -185,7 +185,7 @@ $ipc call radio status > "$radio_atlas_fling_released_path" 2>&1
 sleep 2.5
 $ipc call radio status > "$radio_atlas_fling_settled_path" 2>&1
 "$hyprctl_bin" -j layers > "$radio_atlas_tip_before_path" 2>&1
-"$wlrctl_bin" pointer move -4000 -4000
+park
 sleep 0.5
 "$wlrctl_bin" pointer move \$(( ox + cw - 16 )) \$(( oy + 16 ))
 sleep 2
@@ -203,7 +203,7 @@ $ipc call panel open radio > /dev/null 2>&1
 sleep 3
 "$wtype_bin" -k Return
 sleep 5
-"$wlrctl_bin" pointer move -4000 -4000
+park
 sleep 0.3
 "$wlrctl_bin" pointer move \$gx \$gy
 sleep 0.5

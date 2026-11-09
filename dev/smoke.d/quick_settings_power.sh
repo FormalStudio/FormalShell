@@ -24,7 +24,6 @@ leg_quick_settings_power_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 p="$quick_settings_power_p"
-status() { $ipc call quicksettings status > "\$p-\$1.json" 2>&1; }
 sleep 3
 for m in CanSuspend CanReboot CanPowerOff; do
   busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager "\$m" > "\$p-\$m.txt" 2>&1
@@ -36,7 +35,7 @@ for i in \$(seq 1 20); do
   $ipc call quicksettings status 2>/dev/null | "$jq_bin" -e '.menu.content == 1' > /dev/null 2>&1 && break
   sleep 0.25
 done
-status open
+status quicksettings "\$p-open.json"
 "$grim_bin" "\$p-open.png" > /dev/null 2>&1
 n=0
 while [ \$n -lt 6 ]; do
@@ -45,17 +44,17 @@ while [ \$n -lt 6 ]; do
   sleep 0.4
   n=\$((n + 1))
 done
-status at-poweroff
+status quicksettings "\$p-at-poweroff.json"
 if [ "\$("$jq_bin" -r '.cursor // ""' "\$p-at-poweroff.json")" = "m:power:poweroff" ]; then
   "$wtype_bin" -k Return
   sleep 1
 fi
-status armed
+status quicksettings "\$p-armed.json"
 "$grim_bin" "\$p-armed.png" > /dev/null 2>&1
 $ipc call panel state > "\$p-panel-armed.txt" 2>&1
 "$wtype_bin" -k Escape
 sleep 1.2
-status closed
+status quicksettings "\$p-closed.json"
 "$wtype_bin" -k Escape
 sleep 1
 $ipc call panel state > "\$p-panel-closed.txt" 2>&1

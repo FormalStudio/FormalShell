@@ -88,25 +88,22 @@ leg_tray_overflow_drive() {
   local script="$shot_dir/tray-overflow-drive.sh"
   local kill_script="$shot_dir/tray-overflow-kill.sh"
   local stub="$PWD/dev/sni-stub.py"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   local tail_steps
   if leg_on sidebar; then
     tail_steps=$(cat <<STEPS
 sidebar_at() { $ipc call sidebar status 2>/dev/null | "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' | head -n 1; }
 origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
 read -r ox oy <<< "\$origin"
-to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
 check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
-to \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check clicked-open
-to 900 700; click; sleep 1.5; check outside
+park \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check clicked-open
+park 900 700; click; sleep 1.5; check outside
 "$grim_bin" "$tray_overflow_outside_path" > /dev/null 2>&1
-to \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check reopened
-to \$(sidebar_at panel:calendar); click; sleep 1.5; check handoff
+park \$(sidebar_at panel:trayoverflow); click; sleep 1.5; check reopened
+park \$(sidebar_at panel:calendar); click; sleep 1.5; check handoff
 "$grim_bin" "$tray_overflow_handoff_path" > /dev/null 2>&1
-to \$(sidebar_at panel:trayoverflow); click; sleep 1.5
+park \$(sidebar_at panel:trayoverflow); click; sleep 1.5
 "$notify_send_bin" -u critical 'Applying g815' 'system scope apply failed'
-to 900 400
+park 900 400
 sleep 3
 $ipc call debug dump > "$tray_overflow_toast_dump_path" 2>&1
 "$grim_bin" "$tray_overflow_toast_path" > /dev/null 2>&1
@@ -115,14 +112,12 @@ STEPS
 )
   else
     tail_steps=$(cat <<STEPS
-to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
 "$grim_bin" "$tray_overflow_collapsed_path" > /dev/null 2>&1
 $ipc call bar chevron expand > /dev/null 2>&1
 sleep 2
 $ipc call quicksettings status > "$tray_overflow_quick_path" 2>&1
 "$grim_bin" "$tray_overflow_expanded_path" > /dev/null 2>&1
-to \$("$jq_bin" -r '.rows[] | select(.id == "tray") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"' "$tray_overflow_quick_path" | head -n 1)
+park \$("$jq_bin" -r '.rows[] | select(.id == "tray") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"' "$tray_overflow_quick_path" | head -n 1)
 click
 sleep 2
 $ipc call panel state > "$tray_overflow_tile_panel_path" 2>&1
@@ -134,11 +129,11 @@ sleep 3
 $ipc call bar room > "$tray_overflow_room_path" 2>&1
 cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$tray_overflow_room_path" | head -n 1; }
 check() { echo "\$1 open=\$($ipc call tray status 2>/dev/null | "$jq_bin" -c '.overflow.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$tray_overflow_clicks_path"; }
-to \$(cell tray); click; sleep 1.5; check clicked-open
-to 900 700; click; sleep 1.5; check outside
+park \$(cell tray); click; sleep 1.5; check clicked-open
+park 900 700; click; sleep 1.5; check outside
 "$grim_bin" "$tray_overflow_outside_path" > /dev/null 2>&1
-to \$(cell tray); click; sleep 1.5; check reopened
-to \$(cell clock); click; sleep 1.5; check handoff
+park \$(cell tray); click; sleep 1.5; check reopened
+park \$(cell clock); click; sleep 1.5; check handoff
 "$grim_bin" "$tray_overflow_handoff_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
 STEPS

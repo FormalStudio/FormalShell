@@ -101,7 +101,7 @@ sleep 1
 "$wtype_bin" -k BackSpace
 log junk-selected-and-deleted
 sleep 1
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 log real-password-typed
 sleep 3

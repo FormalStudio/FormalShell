@@ -48,28 +48,15 @@ leg_quick_settings_devices_drive() {
 #!/usr/bin/env bash
 d="$quick_settings_devices_dir"
 mkdir -p "\$d"
-ipc() { $ipc call "\$@"; }
-status() { ipc quicksettings status > "\$d/status-\$1.json" 2>&1; }
 shot() {
   "$grim_bin" "\$d/quick-settings-devices-\$1.png" > /dev/null 2>&1
-  status "shot-\$1"
-}
-# Polls \$1 (a command) until its output passes the jq filter \$2, the last
-# answer left in \$d/\$3.
-until_jq() {
-  local i
-  for i in \$(seq 1 "\${4:-60}"); do
-    eval "\$1" > "\$d/\$3" 2>&1
-    "$jq_bin" -e "\$2" "\$d/\$3" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-  return 1
+  status quicksettings "\$d/status-shot-\$1.json"
 }
 # Real Downs inside the open menu until the cursor is on \$1.
 down_to() {
   local n=0
   while [ \$n -lt 12 ]; do
-    [ "\$(ipc quicksettings status 2>/dev/null | "$jq_bin" -r '.cursor // ""')" = "\$1" ] && return 0
+    [ "\$(call quicksettings status 2>/dev/null | "$jq_bin" -r '.cursor // ""')" = "\$1" ] && return 0
     "$wtype_bin" -k Down
     sleep 0.4
     n=\$((n + 1))
@@ -83,81 +70,81 @@ sleep 3
 nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device > "\$d/nmcli-devices.txt" 2>&1
 
 # Both SSIDs in a scan, then FORMALTEST saved and down.
-until_jq "ipc network status" '[.networks[] | select(.inRange) | .name] | index("FORMALTEST") != null and index("FORMALTEST-EAP") != null' scan.json 90
+until_jq 45 "\$d/scan.json" '[.networks[] | select(.inRange) | .name] | index("FORMALTEST") != null and index("FORMALTEST-EAP") != null' call network status
 if ! "$jq_bin" -e '.networks[] | select(.name == "FORMALTEST") | .known' "\$d/scan.json" > /dev/null 2>&1; then
-  ipc network connect FORMALTEST formaltest-psk > "\$d/save.txt" 2>&1
-  until_jq "ipc network status" '.networks[] | select(.name == "FORMALTEST") | .connected and (.stateChanging | not)' connected-once.json 60
+  call network connect FORMALTEST formaltest-psk > "\$d/save.txt" 2>&1
+  until_jq 30 "\$d/connected-once.json" '.networks[] | select(.name == "FORMALTEST") | .connected and (.stateChanging | not)' call network status
 fi
-ipc network status > "\$d/saved.json" 2>&1
+call network status > "\$d/saved.json" 2>&1
 if "$jq_bin" -e '.networks[] | select(.name == "FORMALTEST") | .connected' "\$d/saved.json" > /dev/null 2>&1; then
-  ipc network connect FORMALTEST "" > "\$d/down.txt" 2>&1
+  call network connect FORMALTEST "" > "\$d/down.txt" 2>&1
 fi
-until_jq "ipc network status" '.networks[] | select(.name == "FORMALTEST") | .known and (.connected | not) and (.stateChanging | not)' ready.json 60
+until_jq 30 "\$d/ready.json" '.networks[] | select(.name == "FORMALTEST") | .known and (.connected | not) and (.stateChanging | not)' call network status
 
-ipc panel open quicksettings > /dev/null 2>&1
+call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
-status open
-ipc quicksettings menu bluetooth > "\$d/menu-bluetooth.txt" 2>&1
-ipc quicksettings menu wifi > "\$d/menu-wifi.txt" 2>&1
-until_jq "ipc quicksettings status" '.menu.content == 1 and ([.menu.rows[].id] | index("m:wifi:FORMALTEST") != null and index("m:wifi:FORMALTEST-EAP") != null)' status-wifi-menu.json 40
+status quicksettings "\$d/status-open.json"
+call quicksettings menu bluetooth > "\$d/menu-bluetooth.txt" 2>&1
+call quicksettings menu wifi > "\$d/menu-wifi.txt" 2>&1
+until_jq 20 "\$d/status-wifi-menu.json" '.menu.content == 1 and ([.menu.rows[].id] | index("m:wifi:FORMALTEST") != null and index("m:wifi:FORMALTEST-EAP") != null)' call quicksettings status
 down_to m:wifi:FORMALTEST
-status at-formaltest
+status quicksettings "\$d/status-at-formaltest.json"
 "$wtype_bin" -k Return
-until_jq "ipc quicksettings status" '.rows[] | select(.id == "wifi") | .subtitle == "FORMALTEST"' status-wifi-connected.json 60
-ipc network status > "\$d/network-connected.json" 2>&1
+until_jq 30 "\$d/status-wifi-connected.json" '.rows[] | select(.id == "wifi") | .subtitle == "FORMALTEST"' call quicksettings status
+call network status > "\$d/network-connected.json" 2>&1
 sleep 1
 shot wifi-menu
 down_to m:wifi:FORMALTEST-EAP
-status at-eap
+status quicksettings "\$d/status-at-eap.json"
 "$wtype_bin" -k Return
 sleep 1.5
-ipc panel state > "\$d/panel-handed.txt" 2>&1
-ipc network status > "\$d/network-prompt.json" 2>&1
+call panel state > "\$d/panel-handed.txt" 2>&1
+call network status > "\$d/network-prompt.json" 2>&1
 "$grim_bin" "\$d/quick-settings-devices-prompt.png" > /dev/null 2>&1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 1.2
 
-ipc panel open quicksettings > /dev/null 2>&1
+call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
-status reopen
+status quicksettings "\$d/status-reopen.json"
 nmcli radio wifi > "\$d/radio-before.txt" 2>&1
-ipc quicksettings activate wifi > "\$d/activate-off.txt" 2>&1
+call quicksettings activate wifi > "\$d/activate-off.txt" 2>&1
 for i in \$(seq 1 20); do
   [ "\$(nmcli radio wifi 2>/dev/null)" = disabled ] && break
   sleep 0.5
 done
 nmcli radio wifi > "\$d/radio-off.txt" 2>&1
-until_jq "ipc quicksettings status" '.rows[] | select(.id == "wifi") | .on == false' status-wifi-off.json 20
-ipc quicksettings activate wifi > "\$d/activate-on.txt" 2>&1
+until_jq 10 "\$d/status-wifi-off.json" '.rows[] | select(.id == "wifi") | .on == false' call quicksettings status
+call quicksettings activate wifi > "\$d/activate-on.txt" 2>&1
 for i in \$(seq 1 20); do
   [ "\$(nmcli radio wifi 2>/dev/null)" = enabled ] && break
   sleep 0.5
 done
 nmcli radio wifi > "\$d/radio-on.txt" 2>&1
-until_jq "ipc quicksettings status" '.rows[] | select(.id == "wifi") | .on == true' status-wifi-on.json 20
+until_jq 10 "\$d/status-wifi-on.json" '.rows[] | select(.id == "wifi") | .on == true' call quicksettings status
 
 active_profile > "\$d/profile-before.txt"
-ipc quicksettings menu power-mode > "\$d/menu-power-mode.txt" 2>&1
-until_jq "ipc quicksettings status" '.menu.id == "power-mode" and .menu.content == 1' status-power-menu.json 20
+call quicksettings menu power-mode > "\$d/menu-power-mode.txt" 2>&1
+until_jq 10 "\$d/status-power-menu.json" '.menu.id == "power-mode" and .menu.content == 1' call quicksettings status
 down_to m:power-mode:power-saver
-status at-saver
+status quicksettings "\$d/status-at-saver.json"
 "$wtype_bin" -k Return
 for i in \$(seq 1 20); do
   [ "\$(active_profile)" = power-saver ] && break
   sleep 0.5
 done
 active_profile > "\$d/profile-saver.txt"
-until_jq "ipc quicksettings status" '.rows[] | select(.id == "power-mode") | .on == true' status-saver.json 20
-ipc quicksettings back > /dev/null 2>&1
+until_jq 10 "\$d/status-saver.json" '.rows[] | select(.id == "power-mode") | .on == true' call quicksettings status
+call quicksettings back > /dev/null 2>&1
 sleep 1
-ipc quicksettings activate power-mode > "\$d/activate-power-mode.txt" 2>&1
+call quicksettings activate power-mode > "\$d/activate-power-mode.txt" 2>&1
 for i in \$(seq 1 20); do
   [ "\$(active_profile)" = balanced ] && break
   sleep 0.5
 done
 active_profile > "\$d/profile-flipped.txt"
-until_jq "ipc quicksettings status" '.rows[] | select(.id == "power-mode") | .on == false' status-balanced.json 20
-ipc panel close > /dev/null 2>&1
+until_jq 10 "\$d/status-balanced.json" '.rows[] | select(.id == "power-mode") | .on == false' call quicksettings status
+call panel close > /dev/null 2>&1
 sleep 1
 EOF
   hypr_exec_once "bash $script"

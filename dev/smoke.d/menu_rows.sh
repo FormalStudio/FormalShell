@@ -51,12 +51,10 @@ leg_menu_rows_drive() {
   local script="$shot_dir/menu-rows-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 d="$shot_dir/menu-rows"
 mkdir -p "\$d"
 sleep 4
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move 120 1000 > /dev/null 2>&1
+park 120 1000
 call menu summon "" > /dev/null 2>&1
 sleep 2
 "$grim_bin" "\$d/settled-0.png" > /dev/null 2>&1

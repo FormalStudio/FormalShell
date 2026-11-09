@@ -76,7 +76,7 @@ sleep 3
 $ipc call debug dump > "$toast_swipe_dump_path" 2>&1
 read -r x y w h < <("$jq_bin" -r '.toastCards[0].rect | "\(.x) \(.y) \(.width) \(.height)"' "$toast_swipe_dump_path" 2>/dev/null)
 [ -n "\$w" ] && [ -n "\$h" ] && [ -n "\$x" ] && [ -n "\$y" ] || exit 0
-"$wlrctl_bin" pointer move -4000 -4000 >> "$toast_swipe_dispatch_path" 2>&1
+park >> "$toast_swipe_dispatch_path" 2>&1
 sleep 0.5
 "$wlrctl_bin" pointer move \$((x + w / 2)) \$((y + h / 2)) >> "$toast_swipe_dispatch_path" 2>&1
 sleep 1

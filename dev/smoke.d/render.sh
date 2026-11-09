@@ -86,7 +86,7 @@ turn() {
   $ipc call lock status > "$shot_dir/render-\$name-lock.json" 2>&1
   "$grim_bin" "$shot_dir/render-\$name-lock.png" > /dev/null 2>&1
   date +%H%M > "$shot_dir/render-\$name-lock.minute"
-  "$wtype_bin" -s 300 "formalshell-test"
+  "$wtype_bin" -s 300 "$rig_password"
   "$wtype_bin" -s 300 -k Return
   for _ in \$(seq 1 80); do
     [ "\$($ipc call lock isLocked 2>/dev/null)" = false ] && break

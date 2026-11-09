@@ -89,8 +89,7 @@ goto() {
   "$wlrctl_bin" pointer move "\$(( \$1 - cx ))" "\$(( \$2 - cy ))" > /dev/null 2>&1
 }
 log "ids a=\$(id_of formalshell-ov-a) b=\$(id_of formalshell-ov-b) c=\$(id_of formalshell-ov-c)"
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1
+park 900 500
 sleep 0.5
 "$grim_bin" "$overview_desktop_png" > /dev/null 2>&1
 step rest
@@ -166,14 +165,14 @@ step drag-closed
 # The corner: parked opens it and it stays; a leave and a return close it.
 "$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1
 sleep 0.6
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 sleep 1.2
 step corner-open
 sleep 2
 step corner-parked
 "$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1
 sleep 0.8
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 sleep 1.5
 step corner-closed
 "$wlrctl_bin" pointer move 900 500 > /dev/null 2>&1

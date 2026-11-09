@@ -145,7 +145,6 @@ leg_menu_emerge_drive() {
   local script="$shot_dir/menu-emerge-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 sleep 4
 call debug motionScale $menu_emerge_scale > "$menu_emerge_scale_path" 2>&1
 call debug dump > "$menu_emerge_dump_path" 2>&1
@@ -198,9 +197,7 @@ menu_emerge_covered() {
 # One pixel of a frame as six hex digits, --join's own read-out.
 menu_emerge_pixel() {
   local rgb
-  rgb=$($convert_bin "$1" -format \
-    "%[fx:int(255*p{$2,$3}.r+0.5)] %[fx:int(255*p{$2,$3}.g+0.5)] %[fx:int(255*p{$2,$3}.b+0.5)]" \
-    info: 2>/dev/null)
+  rgb=$(pixel "$1" "$2" "$3")
   [ -n "$rgb" ] || fail "could not read the pixel at ($2,$3) out of $1"
   # shellcheck disable=SC2086  # three fields, one per channel
   printf '%02X%02X%02X' $rgb

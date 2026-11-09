@@ -44,15 +44,8 @@ leg_menu_hover_drive() {
   local script="$shot_dir/menu-hover-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-burst() {
-  for i in \$(seq 1 $menu_hover_frames); do
-    "$grim_bin" -g "\$box" "$shot_dir/menu-hover-\$1-\$i.png" > /dev/null 2>&1
-    sleep 0.08
-  done
-}
 sleep 4
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 call debug motionScale 1000 > /dev/null 2>&1
 call menu summon emoji > /dev/null 2>&1
 sleep 8
@@ -68,16 +61,16 @@ echo "\$x \$y \$cw \$ch" > "$shot_dir/menu-hover-cell.txt"
 "$grim_bin" -g "\$((bx + left)),\$((by + top)) \${cw}x\${ch}" "$shot_dir/menu-hover-selected.png" > /dev/null 2>&1
 "$wlrctl_bin" pointer move \$((x + cw / 2)) \$((y + ch / 2)) > /dev/null 2>&1
 "$wlrctl_bin" pointer move 1 0 > /dev/null 2>&1
-burst in
+burst "$shot_dir/menu-hover-in" $menu_hover_frames 0.08 -g "\$box"
 sleep 8
 "$grim_bin" -g "\$box" "$shot_dir/menu-hover-hover.png" > /dev/null 2>&1
 call menu status > "$shot_dir/menu-hover-hovered.json" 2>&1
 "$wlrctl_bin" pointer move \$cw 0 > /dev/null 2>&1
-burst out
+burst "$shot_dir/menu-hover-out" $menu_hover_frames 0.08 -g "\$box"
 sleep 8
 "$grim_bin" -g "\$box" "$shot_dir/menu-hover-left.png" > /dev/null 2>&1
 call menu status > "$shot_dir/menu-hover-moved.json" 2>&1
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 sleep 8
 pair="\$((bx + left)),\$((by + top)) \$((cw * 2))x\${ch}"
 "$grim_bin" -g "\$pair" "$shot_dir/menu-hover-keys-from.png" > /dev/null 2>&1

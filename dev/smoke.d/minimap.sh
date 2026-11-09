@@ -120,8 +120,7 @@ centre() {
 # Hold the button from one point to another in steps, then hold \$5 ms
 # there before letting go.
 drag() {
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-  "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1
+  park "\$1" "\$2"
   sleep 0.3
   local dx=\$(( (\$3 - \$1) / 8 )) dy=\$(( (\$4 - \$2) / 8 )) steps=()
   for _ in 1 2 3 4 5 6 7 8; do steps+=(move "\$dx" "\$dy" wait 30); done
@@ -214,8 +213,7 @@ inner dwindle -M logo -P Super_L -k Right -p Super_L -m logo
 # left it, then drawn whole again by a collapse and expand, the pointer
 # parked off the column for both so no hover differs. It comes after
 # Shift+Left, since parking the pointer focuses the window under it.
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move 600 300 > /dev/null 2>&1
+park 600 300
 sleep 1
 $ipc call sidebar status > "$minimap_trail_status" 2>&1
 "$grim_bin" "$minimap_trail_png" > /dev/null 2>&1
@@ -241,8 +239,7 @@ sleep 3
 $ipc call sidebar status > "$shot_dir/minimap-crowded.json" 2>&1
 "$grim_bin" "$shot_dir/minimap-crowded.png" > /dev/null 2>&1
 read -r rx ry <<< "\$(centre row:0)"
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move "\$rx" "\$ry" > /dev/null 2>&1
+park "\$rx" "\$ry"
 sleep 0.3
 "$wlrctl_bin" pointer scroll 15 0 > /dev/null 2>&1
 sleep 0.8

@@ -52,7 +52,6 @@ leg_notify_close_drive() {
   local script="$shot_dir/notify-close-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 sleep 4
 "$notify_send_bin" -u critical 'Command failed' 'exit status 1'
 sleep 3
@@ -61,14 +60,14 @@ call debug dump > "$notify_close_dump_path" 2>&1
 "$jq_bin" -r '.toastCards[0].rect | "\(.width)x\(.height)+\(.x)+\(.y)", "button \(.x + .width - $notify_close_button_inset) \(.y + $notify_close_button_inset)"' "$notify_close_dump_path" > "$notify_close_rect_path" 2>&1
 read -r _ bx by < <(grep '^button ' "$notify_close_rect_path")
 [ -n "\$bx" ] && [ -n "\$by" ] || exit 0
-"$wlrctl_bin" pointer move -4000 -4000 > "$notify_close_dispatch_path" 2>&1
+park > "$notify_close_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer move \$bx \$by >> "$notify_close_dispatch_path" 2>&1
 sleep 2
 "$hyprctl_bin" cursorpos >> "$notify_close_dispatch_path" 2>&1
 "$grim_bin" -c "$notify_close_parked_path" > /dev/null 2>&1
 call notifications status > "$notify_close_status_parked_path" 2>&1
-"$wlrctl_bin" pointer click left >> "$notify_close_dispatch_path" 2>&1
+click >> "$notify_close_dispatch_path" 2>&1
 sleep 2
 call notifications status > "$notify_close_status_after_path" 2>&1
 "$grim_bin" -c "$notify_close_after_path" > /dev/null 2>&1

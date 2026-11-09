@@ -52,16 +52,9 @@ leg_wallpaper_pair_timing() {
 }
 
 leg_wallpaper_pair_drive() {
-  local script="$shot_dir/wallpaper-pair-drive.sh" settings_path="$iso_home/.config/formalshell/settings.json"
+  local script="$shot_dir/wallpaper-pair-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-burst() {
-  for i in \$(seq 1 $wallpaper_pair_frames); do
-    "$grim_bin" "$shot_dir/pair-\$1-\$i.png" > /dev/null 2>&1
-    sleep $wallpaper_pair_gap
-  done
-}
 sleep 4
 call wallpaper pair "$wallpaper_pair_light" "$wallpaper_pair_dark" > "$shot_dir/pair-call.txt" 2>&1
 sleep 5
@@ -72,7 +65,7 @@ cp "$wallpaper_pair_state_json" "$shot_dir/pair-state.json" 2>/dev/null
 "$grim_bin" "$shot_dir/pair-desk-dark.png" > /dev/null 2>&1
 call debug motionScale 1000 > "$shot_dir/pair-scale.txt" 2>&1
 call theme mode toggle > /dev/null 2>&1
-burst tolight
+burst "$shot_dir/pair-tolight" $wallpaper_pair_frames $wallpaper_pair_gap
 sleep 2
 call debug motionScale 100 > /dev/null 2>&1
 sleep 4
@@ -82,7 +75,7 @@ cp "$wallpaper_pair_theme_json" "$shot_dir/pair-theme-light.json" 2>/dev/null
 "$grim_bin" "$shot_dir/pair-desk-light.png" > /dev/null 2>&1
 call debug motionScale 1000 > /dev/null 2>&1
 call theme mode toggle > /dev/null 2>&1
-burst todark
+burst "$shot_dir/pair-todark" $wallpaper_pair_frames $wallpaper_pair_gap
 sleep 2
 call debug motionScale 100 > /dev/null 2>&1
 sleep 4
@@ -90,7 +83,7 @@ call theme status > "$shot_dir/pair-status-dark-2.json" 2>&1
 call lock lock > /dev/null 2>&1
 sleep 3
 "$grim_bin" "$shot_dir/pair-lock-dark.png" > /dev/null 2>&1
-"$wtype_bin" -s 300 "formalshell-test"
+"$wtype_bin" -s 300 "$rig_password"
 "$wtype_bin" -s 300 -k Return
 sleep 3
 call lock isLocked > "$shot_dir/pair-islocked.txt" 2>&1
@@ -106,7 +99,7 @@ EOF
 
 # A frame's mean grey over the desktop patch, 0 to 1000.
 wallpaper_pair_mean() {
-  $convert_bin "$1" -crop "$wallpaper_pair_crop" +repage -colorspace Gray -format '%[fx:int(mean*1000)]' info: 2>/dev/null
+  patch_mean "$1" "$wallpaper_pair_crop"
 }
 
 # A theme.json's primary as "r g b".

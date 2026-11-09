@@ -168,21 +168,19 @@ at() {
   "$jq_bin" -r --arg on "\$1" --argjson ox "\$ox" --argjson oy "\$oy" \
     '.hits[] | select(.on == \$on) | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' "\$3" | head -1
 }
-click() {
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-  "$wlrctl_bin" pointer move \$1 \$2 > /dev/null 2>&1
+click_at() {
+  park "\$1" "\$2"
   sleep 0.4
-  "$wlrctl_bin" pointer click left > /dev/null 2>&1
+  click
 }
 read -r nx ny <<< "\$(at panel:network "$sidebar_layers_open" "$sidebar_status_open")"
-click "\$nx" "\$ny"
+click_at "\$nx" "\$ny"
 sleep 2
 $ipc call panel state > "$sidebar_panel_state" 2>&1
 "$grim_bin" "$sidebar_panel_png" > /dev/null 2>&1
 # A press with the button held and let go, off the vpointer at a point.
 vclick() {
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-  "$wlrctl_bin" pointer move \$1 \$2 > /dev/null 2>&1
+  park "\$1" "\$2"
   sleep 0.4
   "$python3_bin" "$sidebar_vpointer" down wait 60 up > /dev/null 2>&1
 }
@@ -201,13 +199,13 @@ sleep 1
 # The chevron in the foot, where audio was: quick settings budding off the
 # column beside it, and a click on its Weather tile handing over.
 read -r vx vy <<< "\$(at overflow "$sidebar_layers_open" "$sidebar_status_open")"
-click "\$vx" "\$vy"
+click_at "\$vx" "\$vy"
 sleep 3
 $ipc call quicksettings status > "$sidebar_more_status" 2>&1
 $ipc call bar chevron status > "$sidebar_more_chevron" 2>&1
 "$grim_bin" "$sidebar_more_png" > /dev/null 2>&1
 read -r ax ay <<< "\$("$jq_bin" -r '.rows[] | select(.id == "weather") | .rect | "\(.x + (.width / 2 | floor)) \(.y + (.height / 2 | floor))"' "$sidebar_more_status" | head -1)"
-click "\$ax" "\$ay"
+click_at "\$ax" "\$ay"
 sleep 2
 $ipc call panel state > "$sidebar_more_panel" 2>&1
 "$grim_bin" "$sidebar_more_handoff_png" > /dev/null 2>&1
@@ -249,7 +247,7 @@ cardclicks() {
   while read -r -u 3 on x y w h; do
     for where in centre corner; do
       if [ "\$where" = centre ]; then px=\$((ox + x + w / 2)) py=\$((oy + y + h / 2)); else px=\$((ox + x + 4)) py=\$((oy + y + 4)); fi
-      click "\$px" "\$py"
+      click_at "\$px" "\$py"
       sleep 1.5
       echo "\$1 \$on \$where panel=\$($ipc call panel state 2>&1 | tr -d '\n') center=\$($ipc call notifications status 2>/dev/null | "$jq_bin" .centerOpen)" >> "$sidebar_card_clicks"
       $ipc call panel close > /dev/null 2>&1
@@ -276,7 +274,7 @@ livecards() {
 livecards "$sidebar_status_cards"
 cardclicks open "$sidebar_status_cards" "$sidebar_layers_open"
 read -r cx cy <<< "\$(at collapse "$sidebar_layers_open" "$sidebar_status_open")"
-click "\$cx" "\$cy"
+click_at "\$cx" "\$cy"
 "$wlrctl_bin" pointer move 600 0 > /dev/null 2>&1
 sleep 2
 LC_ALL=C date +'%I %H %M' > "$sidebar_rail_clock"
@@ -393,7 +391,7 @@ sidebar_clock_assert() {
   q=$((w / 4))
   left=$(awk -v r="$(_sidebar_clock_mean "${q}x${h}+${x}+${y}" r)" -v g="$(_sidebar_clock_mean "${q}x${h}+${x}+${y}" g)" 'BEGIN { printf "%.4f", r - g }')
   right=$(awk -v r="$(_sidebar_clock_mean "${q}x${h}+$((x + w - q))+${y}" r)" -v g="$(_sidebar_clock_mean "${q}x${h}+$((x + w - q))+${y}" g)" 'BEGIN { printf "%.4f", r - g }')
-  mid=$($convert_bin "$sidebar_open_png" -format '%[fx:int(255*p{41,'"$((y + h / 2))"'}.r)] %[fx:int(255*p{41,'"$((y + h / 2))"'}.g)] %[fx:int(255*p{41,'"$((y + h / 2))"'}.b)]' info:)
+  mid=$(pixel "$sidebar_open_png" 41 "$((y + h / 2))")
   echo "SMOKE_SIDEBAR_CLOCK_FROST rect=${x},${y},${w},${h} left_r-g=$left right_r-g=$right band=$mid"
   awk -v l="$left" -v r="$right" 'BEGIN { exit !(l - r > 0.03) }' \
     || fail "sidebar: the digits' ends read r-g $left and $right: one flat tint, not the wallpaper under them"

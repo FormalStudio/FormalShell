@@ -22,60 +22,47 @@ leg_menu_actions_drive() {
   local script="$shot_dir/menu-actions-drive.sh" p="$shot_dir/menu-actions"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-ipc() { $ipc call "\$@"; }
-# menu status into \$1, then the index of row id \$2 in its ids.
-row_index() {
-  local i=0 idx=""
-  while [ "\$i" -lt 20 ]; do
-    ipc menu status > "\$1" 2>&1
-    idx=\$("$jq_bin" -r --arg id "\$2" '.ids | index(\$id) // empty' "\$1" 2>/dev/null)
-    [ -n "\$idx" ] && break
-    sleep 0.5
-    i=\$((i + 1))
-  done
-  echo "\$idx"
-}
 sleep 4
-ipc notifications dndState > "$p-dnd-before.txt" 2>&1
-ipc caffeinate status > "$p-caffeinate-before.json" 2>&1
-ipc overnight status > "$p-overnight-before.json" 2>&1
-ipc menu summon toggles > /dev/null 2>&1
+call notifications dndState > "$p-dnd-before.txt" 2>&1
+call caffeinate status > "$p-caffeinate-before.json" 2>&1
+call overnight status > "$p-overnight-before.json" 2>&1
+call menu summon toggles > /dev/null 2>&1
 sleep 1.5
 for id in toggles.dnd toggles.caffeinate toggles.overnight; do
   idx=\$(row_index "$p-hub.json" "\$id")
-  ipc menu activate "\$idx" > /dev/null 2>&1
+  call menu activate "\$idx" > /dev/null 2>&1
   sleep 1
 done
 sleep 1
-ipc menu status > "$p-hub-after.json" 2>&1
+call menu status > "$p-hub-after.json" 2>&1
 "$grim_bin" "$p-hub.png" > /dev/null 2>&1
-ipc notifications dndState > "$p-dnd-after.txt" 2>&1
-ipc caffeinate status > "$p-caffeinate-after.json" 2>&1
-ipc overnight status > "$p-overnight-after.json" 2>&1
-ipc menu close > /dev/null 2>&1
+call notifications dndState > "$p-dnd-after.txt" 2>&1
+call caffeinate status > "$p-caffeinate-after.json" 2>&1
+call overnight status > "$p-overnight-after.json" 2>&1
+call menu close > /dev/null 2>&1
 sleep 1
 
-ipc menu summon reminder > /dev/null 2>&1
+call menu summon reminder > /dev/null 2>&1
 sleep 1.5
 idx=\$(row_index "$p-reminder.json" reminder.set)
-ipc menu activate "\$idx" > /dev/null 2>&1
+call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5
-ipc menu status > "$p-reminder-input.json" 2>&1
+call menu status > "$p-reminder-input.json" 2>&1
 "$wtype_bin" "10m launcher check"
 sleep 0.5
 "$wtype_bin" -k Return
 sleep 1.5
-ipc reminder status > "$p-reminder-set.json" 2>&1
-ipc menu summon reminder > /dev/null 2>&1
+call reminder status > "$p-reminder-set.json" 2>&1
+call menu summon reminder > /dev/null 2>&1
 sleep 1.5
 idx=\$(row_index "$p-reminder2.json" reminder.clear)
-ipc menu activate "\$idx" > /dev/null 2>&1
+call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5
-ipc reminder status > "$p-reminder-cleared.json" 2>&1
-ipc menu close > /dev/null 2>&1
+call reminder status > "$p-reminder-cleared.json" 2>&1
+call menu close > /dev/null 2>&1
 # Leave the session as it was found.
-ipc caffeinate disable > /dev/null 2>&1
-ipc overnight disable > /dev/null 2>&1
+call caffeinate disable > /dev/null 2>&1
+call overnight disable > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
 }

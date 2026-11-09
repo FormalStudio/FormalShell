@@ -186,14 +186,8 @@ leg_spaces_drive() {
   local script="$shot_dir/spaces-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 centre() { "$jq_bin" -r ".slots[\$1].rect | \"\\(.x + (.width / 2) | floor) \\(.y + (.height / 2) | floor)\"" "\$2"; }
 card_centre() { "$jq_bin" -r ".preview.rect | \"\\(.x + (.width / 2) | floor) \\(.y + (.height / 2) | floor)\"" "\$1"; }
-park() {
-  "$wlrctl_bin" pointer move -4000 -4000 >> "$spaces_dispatch_path" 2>&1
-  sleep 0.5
-  "$wlrctl_bin" pointer move "\$1" "\$2" >> "$spaces_dispatch_path" 2>&1
-}
 sleep 4
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --server=$spaces_foot_socket]==])" > "$spaces_dispatch_path" 2>&1
 sleep 1

@@ -122,13 +122,6 @@ shoulders_px() {
   awk -v s="${out_scale:-1}" -v n="$1" 'BEGIN { printf "%d", int(n * s) }'
 }
 
-# One pixel's r,g,b out of a frame.
-shoulders_pixel() {
-  $convert_bin "$1" -format \
-    "%[fx:int(255*p{$2,$3}.r+0.5)] %[fx:int(255*p{$2,$3}.g+0.5)] %[fx:int(255*p{$2,$3}.b+0.5)]" \
-    info: 2>/dev/null
-}
-
 # The channel distance between two sampled pixels.
 shoulders_distance() {
   local a b i delta total=0
@@ -165,7 +158,7 @@ shoulders_ink() {
 # One probe, named, asserted to be the ink it should be.
 shoulders_probe() {
   local frame="$1" x="$2" y="$3" want="$4" name="$5" probe got
-  probe=$(shoulders_pixel "$frame" "$x" "$y")
+  probe=$(pixel "$frame" "$x" "$y")
   got=$(shoulders_ink "$probe")
   echo "SMOKE_SHOULDERS_PROBE $name ($x,$y) $probe $got"
   if [ "$got" != "$want" ]; then
@@ -264,9 +257,9 @@ leg_shoulders_assert() {
   # restated from a palette: the border off the line a long way from the
   # join, the card fill out of the middle of the card, and the desktop out of
   # the same place with nothing joined.
-  shoulders_border_ink=$(shoulders_pixel "$shoulders_open_path" "$(shoulders_px 200)" "$row")
-  shoulders_card_ink=$(shoulders_pixel "$shoulders_open_path" "$mid_x" "$card_row")
-  shoulders_desktop_ink=$(shoulders_pixel "$shoulders_closed_path" "$mid_x" "$card_row")
+  shoulders_border_ink=$(pixel "$shoulders_open_path" "$(shoulders_px 200)" "$row")
+  shoulders_card_ink=$(pixel "$shoulders_open_path" "$mid_x" "$card_row")
+  shoulders_desktop_ink=$(pixel "$shoulders_closed_path" "$mid_x" "$card_row")
   echo "SMOKE_SHOULDERS_INK border=$shoulders_border_ink card=$shoulders_card_ink desktop=$shoulders_desktop_ink"
   local pair
   for pair in "$shoulders_border_ink:$shoulders_card_ink" \

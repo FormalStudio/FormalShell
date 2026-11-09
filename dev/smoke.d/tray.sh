@@ -75,9 +75,9 @@ $ipc call sidebar status > "$tray_sidebar_status_path" 2>&1
 origin=\$("$hyprctl_bin" -j layers | "$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y)"')
 read -r ox oy <<< "\$origin"
 read -r tx ty <<< "\$("$jq_bin" -r --argjson ox "\$ox" --argjson oy "\$oy" '.hits[] | select(.on == "panel:trayoverflow") | "\(\$ox + .x + (.w / 2 | floor)) \(\$oy + .y + (.h / 2 | floor))"' "$tray_sidebar_status_path" | head -1)"
-to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; sleep 0.4; }
+to() { park "\$1" "\$2"; sleep 0.4; }
 to "\$tx" "\$ty"
-"$wlrctl_bin" pointer click left > /dev/null 2>&1
+click
 sleep 2
 $ipc call tray status > "$tray_sidebar_open_path" 2>&1
 "$grim_bin" "$tray_sidebar_png" > /dev/null 2>&1
@@ -93,15 +93,15 @@ hit = [(x, y) for y in range(0, im.height, 2) for x in range(0, im.width, 2) if 
 print(round(sum(p[0] for p in hit) / len(hit) / s), round(sum(p[1] for p in hit) / len(hit) / s)) if hit else print("0 0")' "\$@" "$FS_SMOKE_SCALE"; }
 read -r ax ay <<< "\$(square "$tray_sidebar_png" c0392b)"
 to "\$ax" "\$ay"
-"$wlrctl_bin" pointer click left > /dev/null 2>&1
+click
 sleep 2
 to "\$tx" "\$ty"
-"$wlrctl_bin" pointer click left > /dev/null 2>&1
+click
 sleep 2
 "$grim_bin" "$tray_sidebar_png.again.png" > /dev/null 2>&1
 read -r mx my <<< "\$(square "$tray_sidebar_png.again.png" 27ae60)"
 to "\$mx" "\$my"
-"$wlrctl_bin" pointer click right > /dev/null 2>&1
+click right
 sleep 2
 "$grim_bin" "$tray_sidebar_menu_png" > /dev/null 2>&1
 $ipc call tray menucursor 1 > "$tray_sidebar_menu_reply_path" 2>&1

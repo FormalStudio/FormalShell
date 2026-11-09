@@ -71,7 +71,6 @@ leg_osd_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 start=\$SECONDS
-call() { $ipc call "\$@" > /dev/null 2>&1; }
 sleep 4
 $ipc call debug dump > "$osd_dump_path" 2>&1
 call debug motionScale 1000

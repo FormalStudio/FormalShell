@@ -77,13 +77,6 @@ leg_menu_resize_drive() {
   local script="$shot_dir/menu-resize-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-burst() {
-  for i in \$(seq 1 $menu_resize_frames); do
-    "$grim_bin" "$shot_dir/menu-resize-\$1-\$i.png" > /dev/null 2>&1
-    sleep $menu_resize_gap
-  done
-}
 sleep 4
 call debug motionScale 500 > /dev/null 2>&1
 call menu toggle > /dev/null 2>&1
@@ -93,19 +86,19 @@ call debug dump > "$shot_dir/menu-resize-dump-root0.json" 2>&1
 "$wtype_bin" sysmon
 sleep 3
 "$wtype_bin" -k Return
-burst into
+burst "$shot_dir/menu-resize-into" $menu_resize_frames $menu_resize_gap
 sleep 6
 call menu status > "$shot_dir/menu-resize-monitor-status.json" 2>&1
 "$grim_bin" "$shot_dir/menu-resize-monitor.png" > /dev/null 2>&1
 call debug dump > "$shot_dir/menu-resize-dump-monitor.json" 2>&1
 "$wtype_bin" -k Escape
-burst back
+burst "$shot_dir/menu-resize-back" $menu_resize_frames $menu_resize_gap
 sleep 6
 call menu status > "$shot_dir/menu-resize-root-status.json" 2>&1
 "$grim_bin" "$shot_dir/menu-resize-root.png" > /dev/null 2>&1
 call debug dump > "$shot_dir/menu-resize-dump-root.json" 2>&1
 call menu summon monitor > "$shot_dir/menu-resize-summon2.txt" 2>&1
-burst forth
+burst "$shot_dir/menu-resize-forth" $menu_resize_frames $menu_resize_gap
 sleep 6
 "$grim_bin" "$shot_dir/menu-resize-monitor2.png" > /dev/null 2>&1
 call debug dump > "$shot_dir/menu-resize-dump-monitor2.json" 2>&1
@@ -156,22 +149,23 @@ menu_resize_runs() {
     END { if (open) printf "%d-%d", s, last; print "" }'
 }
 
-# The mean gray of a patch "x,y,w,h".
+# The mean grey of a patch "x,y,w,h", in thousandths.
 menu_resize_patch() {
   local x y w h
   IFS=, read -r x y w h <<< "$2"
-  $convert_bin "$1" -crop "${w}x${h}+${x}+${y}" +repage -colorspace Gray -format '%[fx:round(mean*255)]' info: 2>/dev/null
+  patch_mean "$1" "${w}x${h}+${x}+${y}"
 }
 
 # The scrim's brightest level across the patches, plus a margin: the
-# brightness past which a pixel is card or content.
+# brightness past which a pixel is card or content, as the 0 to 255 byte the
+# line reads compare against.
 menu_resize_threshold() {
   local png=$1 p v max=0
   for p in $menu_resize_patches; do
     v=$(menu_resize_patch "$png" "$p")
     [ "${v:-0}" -gt "$max" ] && max=$v
   done
-  echo $((max + 5))
+  echo $(((max * 255 + 500) / 1000 + 5))
 }
 
 # Checks one frame against the scrim reference; prints its probe runs and
@@ -181,7 +175,7 @@ menu_resize_frame() {
   for p in $menu_resize_patches; do
     v=$(menu_resize_patch "$png" "$p")
     ref=$(menu_resize_patch "$shot_dir/menu-resize-monitor.png" "$p")
-    if [ -z "$v" ] || [ "$(( v - ref ))" -gt 3 ] || [ "$(( ref - v ))" -gt 3 ]; then
+    if [ -z "$v" ] || [ "$(( v - ref ))" -gt 12 ] || [ "$(( ref - v ))" -gt 12 ]; then
       echo "BAD $label: the scrim patch $p reads ${v:-nothing}, the settled frame $ref: the scrim did not hold"
     fi
   done

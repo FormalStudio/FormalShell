@@ -94,41 +94,40 @@ sleep 4
 "$grim_bin" -o "$multi_output_second" "$multi_output_second_png" > /dev/null 2>&1
 sleep 6
 call() { $ipc call "\$@"; }
-park() {
-  "$wlrctl_bin" pointer move -8000 -8000 >> "$multi_output_click" 2>&1
-  "$wlrctl_bin" pointer move "\$1" "\$2" >> "$multi_output_click" 2>&1
+park_at() {
+  park "\$1" "\$2" >> "$multi_output_click" 2>&1
   sleep 1
   echo "park \$1 \$2: \$("$hyprctl_bin" cursorpos)" >> "$multi_output_click"
 }
-park \$((lw / 2)) \$((lh / 2))
+park_at \$((lw / 2)) \$((lh / 2))
 echo "open: \$(call panel open network)" >> "$multi_output_click"
 sleep 2
 echo "state open: \$(call panel state)" >> "$multi_output_click"
 "$hyprctl_bin" -j layers > "$multi_output_layers_open" 2>&1
 "$grim_bin" "$multi_output_open_png" > /dev/null 2>&1
-park \$((lw + 640)) 500
-"$wlrctl_bin" pointer click left >> "$multi_output_click" 2>&1
+park_at \$((lw + 640)) 500
+click >> "$multi_output_click" 2>&1
 sleep 2
 echo "state clicked: \$(call panel state)" >> "$multi_output_click"
 "$hyprctl_bin" -j layers > "$multi_output_layers_closed" 2>&1
 "$grim_bin" "$multi_output_closed_png" > /dev/null 2>&1
-park \$((lw + 640)) 2
+park_at \$((lw + 640)) 2
 call bar room > "$multi_output_room" 2>&1
-park \$((lw / 2)) \$((lh / 2))
+park_at \$((lw / 2)) \$((lh / 2))
 echo "reopen: \$(call panel open network)" >> "$multi_output_click"
 sleep 2
 echo "state reopen: \$(call panel state)" >> "$multi_output_click"
 "$hyprctl_bin" -j layers > "$multi_output_layers_reopen" 2>&1
 cell=\$("$jq_bin" -r '[.[0].cells[] | select(.name == "audio" and .whole)] | first | "\\(.x + .width / 2 | floor) \\(.y + .height / 2 | floor)"' "$multi_output_room" 2>/dev/null)
 echo "audio cell \$cell" >> "$multi_output_click"
-park \$((lw + \${cell%% *})) \${cell##* }
-"$wlrctl_bin" pointer click left >> "$multi_output_click" 2>&1
+park_at \$((lw + \${cell%% *})) \${cell##* }
+click >> "$multi_output_click" 2>&1
 sleep 2
 echo "state cell: \$(call panel state)" >> "$multi_output_click"
 call bar room > "$multi_output_room_after" 2>&1
 "$grim_bin" "$multi_output_cell_png" > /dev/null 2>&1
 call panel close > /dev/null 2>&1
-park \$((lw + 640)) 500
+park_at \$((lw + 640)) 500
 sleep 2
 "$grim_bin" -o "$multi_output_second" "$multi_output_bare_png" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-multi-full sh -c 'sleep 60']==])" > /dev/null 2>&1
@@ -169,7 +168,7 @@ sleep 3
 "$grim_bin" -o "\$first" "$multi_output_lock_first_png" > /dev/null 2>&1
 "$grim_bin" -o "$multi_output_second" "$multi_output_lock_second_png" > /dev/null 2>&1
 echo "locked: \$(call lock isLocked)" >> "$multi_output_saver"
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 for i in \$(seq 1 40); do
   [ "\$(call lock isLocked)" = false ] && break

@@ -34,29 +34,17 @@ leg_power_drive() {
   local script="$shot_dir/power-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-ipc() { $ipc call "\$@"; }
-row_index() {
-  local i=0 idx=""
-  while [ "\$i" -lt 20 ]; do
-    ipc menu status > "\$1" 2>&1
-    idx=\$("$jq_bin" -r --arg id "\$2" '.ids | index(\$id) // empty' "\$1" 2>/dev/null)
-    [ -n "\$idx" ] && break
-    sleep 0.5
-    i=\$((i + 1))
-  done
-  echo "\$idx"
-}
 # Armed, then confirmed: the row's two Enters.
 confirm_row() {
-  ipc menu summon system > /dev/null 2>&1
+  call menu summon system > /dev/null 2>&1
   sleep 1.5
   local idx
   idx=\$(row_index "$power_p-menu.json" "\$1")
-  ipc menu activate "\$idx" > "$power_p-arm-\$1.txt" 2>&1
+  call menu activate "\$idx" > "$power_p-arm-\$1.txt" 2>&1
   sleep 1.5
   "$hyprctl_bin" layers -j > "$power_p-layers-armed-\$1.json" 2>&1
   "$grim_bin" "$power_p-armed-\$1.png" > /dev/null 2>&1
-  ipc menu activate "\$idx" > /dev/null 2>&1
+  call menu activate "\$idx" > /dev/null 2>&1
   sleep 4
   "$hyprctl_bin" layers -j > "$power_p-layers-prompt-\$1.json" 2>&1
 }
@@ -71,14 +59,14 @@ busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login
 # where logind wants a password: with "yes" it would turn the VM off.
 grep -q '"challenge"' "$power_p-can.txt" || exit 0
 
-ipc menu summon "" > /dev/null 2>&1
+call menu summon "" > /dev/null 2>&1
 sleep 1.5
 "$wtype_bin" "shutdown"
 sleep 1.5
-ipc menu status > "$power_p-typed.json" 2>&1
+call menu status > "$power_p-typed.json" 2>&1
 "$wtype_bin" -k Return
 sleep 1.5
-ipc menu status > "$power_p-armed.json" 2>&1
+call menu status > "$power_p-armed.json" 2>&1
 "$hyprctl_bin" layers -j > "$power_p-layers-armed-system.shutdown.json" 2>&1
 "$grim_bin" "$power_p-armed-system.shutdown.png" > /dev/null 2>&1
 "$wtype_bin" -k Return
@@ -91,14 +79,14 @@ sleep 10
 "$grim_bin" "$power_p-wrong.png" > /dev/null 2>&1
 "$wtype_bin" -k Escape
 sleep 4
-ipc debug dump > "$power_p-dump-shutdown.json" 2>&1
+call debug dump > "$power_p-dump-shutdown.json" 2>&1
 "$grim_bin" "$power_p-cancelled.png" > /dev/null 2>&1
-ipc notifications dismissAll > /dev/null 2>&1
+call notifications dismissAll > /dev/null 2>&1
 
 confirm_row system.reboot
 "$wtype_bin" -k Escape
 sleep 4
-ipc debug dump > "$power_p-dump-reboot.json" 2>&1
+call debug dump > "$power_p-dump-reboot.json" 2>&1
 sudo -n journalctl -u polkit --since "@\$(cat "$power_p-t0.txt")" --no-pager -o cat > "$power_p-polkit.txt" 2>&1
 EOF
   add_cleanup "sudo -n systemctl stop $power_unit > /dev/null 2>&1 || true"

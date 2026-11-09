@@ -62,7 +62,6 @@ leg_menu_morph_drive() {
   local script="$shot_dir/menu-morph-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 sleep 4
 "$wl_copy_bin" "menu morph preview text"
 sleep 1

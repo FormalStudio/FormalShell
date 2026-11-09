@@ -234,11 +234,11 @@ $ipc call plugins list > "$plugins_list_path" 2>&1
 $ipc call bar room > "$plugins_room_path" 2>&1
 rect=\$(jq -r '.[].cells[] | select(.name == "plugin:smoke-bar") | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$plugins_room_path")
 if [ -n "\$rect" ]; then
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+  park
   sleep 1
   "$wlrctl_bin" pointer move \${rect% *} \${rect#* } > /dev/null 2>&1
   sleep 1
-  "$wlrctl_bin" pointer click left > /dev/null 2>&1
+  click
   sleep 1
   "$wlrctl_bin" pointer scroll -10 0 > /dev/null 2>&1
   sleep 1
@@ -246,7 +246,7 @@ fi
 $ipc call plugins status > "$plugins_status_path" 2>&1
 "$grim_bin" "$plugins_bar_png" > /dev/null 2>&1
 # Off the card's rows, whose hover would put the keyboard cursor on one.
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 procs() { pgrep -fc '$plugins_root/smoke-panel/entry.sh' || true; }
 echo "before: \$(procs)" > "$plugins_panel_procs_path"
 $ipc call panel open plugin:nope > "$plugins_unknown_path" 2>&1

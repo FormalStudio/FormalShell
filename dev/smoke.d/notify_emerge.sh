@@ -78,7 +78,6 @@ leg_notify_emerge_drive() {
   local script="$shot_dir/notify-emerge-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 sleep 4
 call debug motionScale $notify_emerge_scale > "$notify_emerge_scale_path" 2>&1
 sleep 1

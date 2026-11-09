@@ -49,7 +49,6 @@ leg_unlock_drive() {
   local script="$shot_dir/unlock-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 sleep 5
 call wallpaper set "$unlock_wallpaper" > /dev/null 2>&1
 sleep 8
@@ -58,7 +57,7 @@ sleep 4
 "$grim_bin" "$unlock_locked_path" > /dev/null 2>&1
 call debug motionScale $unlock_scale > "$unlock_scale_path" 2>&1
 # The password first, Return on its own wtype so the frames start with it.
-"$wtype_bin" -s 300 "formalshell-test"
+"$wtype_bin" -s 300 "$rig_password"
 sleep 1
 "$wtype_bin" -s 300 -k Return
 for i in \$(seq 1 $unlock_frames); do
@@ -85,11 +84,6 @@ unlock_mixed() {
   [ "${cells:-0}" -gt 0 ] && [ "$((uniform * 10))" -ge "$((cells * 9))" ] && [ "${from:-0}" -ge 20 ] && [ "${to:-0}" -ge 20 ]
 }
 
-# A frame's mean grey, 0 to 1000.
-unlock_mean() {
-  $convert_bin "$1" -colorspace Gray -format '%[fx:int(mean*1000)]' info: 2>/dev/null
-}
-
 leg_unlock_assert() {
   local f i
   grep -q '^ok$' "$unlock_scale_path" 2>/dev/null \
@@ -103,8 +97,8 @@ leg_unlock_assert() {
     || fail "lock isLocked is not false after the real password, got: $(cat "$unlock_islocked_path" 2>/dev/null)"
 
   local locked unlocked lo hi tol
-  locked=$(unlock_mean "$unlock_locked_path")
-  unlocked=$(unlock_mean "$unlock_unlocked_path")
+  locked=$(patch_mean "$unlock_locked_path")
+  unlocked=$(patch_mean "$unlock_unlocked_path")
   echo "unlock: locked mean $locked, unlocked mean $unlocked (of 1000)"
   [ -n "$locked" ] && [ -n "$unlocked" ] || fail "could not read the end frames' means"
   if [ $((unlocked - locked)) -lt 100 ] && [ $((locked - unlocked)) -lt 100 ]; then
@@ -120,7 +114,7 @@ leg_unlock_assert() {
     f="$shot_dir/unlock-$i.png"
     [ -f "$f" ] || fail "no screenshot produced at $f"
     echo "SMOKE_UNLOCK_$i $f"
-    m=$(unlock_mean "$f")
+    m=$(patch_mean "$f")
     means+=("$m")
     if [ "$m" -lt $((lo - tol)) ] || [ "$m" -gt $((hi + tol)) ]; then
       outside=$((outside + 1))

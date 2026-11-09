@@ -88,7 +88,7 @@ sleep 7
 touch "$sleep_burst_dir/stop"
 wait
 $ipc call debug motionScale 100 > /dev/null 2>&1
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 sleep 3
 $ipc call lock isLocked > "$sleep_unlocked_path" 2>&1
@@ -98,11 +98,6 @@ EOF
 
 sleep_inhibitor_held() {
   grep -E "^FormalShell +[0-9]+ +$(id -un) .* sleep +Lock the session before sleep +delay" "$1" > /dev/null
-}
-
-# Mean luminance, 0..1, in thousandths.
-sleep_luma() {
-  $convert_bin "$1" -colorspace gray -format '%[fx:int(mean*1000)]' info: 2>/dev/null
 }
 
 leg_sleep_assert() {
@@ -136,15 +131,15 @@ leg_sleep_assert() {
   jq -e '.beforeSleep.inhibiting == true' "$sleep_status_after_path" > /dev/null \
     || fail "sleep: lock status reports no inhibitor after wake"
 
-  asleep=$(sleep_luma "$sleep_asleep_path")
-  ref=$(sleep_luma "$sleep_ref_path")
+  asleep=$(patch_mean "$sleep_asleep_path")
+  ref=$(patch_mean "$sleep_ref_path")
   [[ "$ref" =~ ^[0-9]+$ ]] || fail "sleep: no settled lock frame at $sleep_ref_path"
   echo "sleep: settled lock luma=$ref/1000, asleep luma=$asleep/1000"
   [ "${asleep:-1000}" -le 20 ] || fail "sleep: the frame while asleep was not black (luma $asleep/1000)"
   for f in "$sleep_burst_dir"/*.ppm; do
     [ -f "$f" ] || continue
     frames=$((frames + 1))
-    luma=$(sleep_luma "$f")
+    luma=$(patch_mean "$f")
     [[ "$luma" =~ ^[0-9]+$ ]] || continue
     if [ -z "$covering" ]; then
       [ "$luma" -le 20 ] || continue

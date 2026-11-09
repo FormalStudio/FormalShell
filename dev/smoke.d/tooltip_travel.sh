@@ -60,7 +60,7 @@ leg_tooltip_travel_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 9
-"$wlrctl_bin" pointer move -4000 -4000 > "$tooltip_travel_dispatch_path" 2>&1
+park > "$tooltip_travel_dispatch_path" 2>&1
 sleep 1
 "$wlrctl_bin" pointer move $((logical_w - 34)) 74 >> "$tooltip_travel_dispatch_path" 2>&1
 sleep 2

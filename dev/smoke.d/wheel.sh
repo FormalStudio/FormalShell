@@ -135,7 +135,7 @@ leg_wheel_drive() {
 sleep $t0
 $ipc call picker summon > /dev/null 2>&1
 sleep 2
-"$wlrctl_bin" pointer move -4000 -4000 > "$wheel_dispatch_path" 2>&1
+park > "$wheel_dispatch_path" 2>&1
 sleep 1
 read -r gx gy <<< "\$($ipc call menu status 2>/dev/null | "$jq_bin" -r '.rowBoxes | (map(.y) | unique | .[1]) as \$y | (map(.x) | unique | .[1]) as \$x | map(select(.x == \$x and .y == \$y))[0] | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"')"
 echo "grid cell at \$gx \$gy" >> "$wheel_dispatch_path"
@@ -207,7 +207,7 @@ sample "$wheel_bounce_path" 1800
 $ipc call menu close > /dev/null 2>&1
 sleep 1
 "$wpctl_bin" get-volume @DEFAULT_AUDIO_SINK@ 2>&1 | grep '^Volume:' > "$wheel_volume_before_path"
-"$wlrctl_bin" pointer move -4000 -4000 >> "$wheel_dispatch_path" 2>&1
+park >> "$wheel_dispatch_path" 2>&1
 sleep 1
 read -r ax ay <<< "\$($ipc call bar room 2>/dev/null | "$jq_bin" -r '.[0].cells[] | select(.name == "audio") | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' | head -1)"
 echo "audio cell at \$ax \$ay" >> "$wheel_dispatch_path"

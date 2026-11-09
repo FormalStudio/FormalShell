@@ -71,41 +71,28 @@ leg_quick_settings_drive() {
 #!/usr/bin/env bash
 d="$quick_settings_dir"
 mkdir -p "\$d"
-status() {
-  $ipc call quicksettings status > "\$d/status-\$1.json" 2>&1
-}
 shot() {
   "$grim_bin" "\$d/quick-settings-\$1.png" > /dev/null 2>&1
-  status "shot-\$1"
+  status quicksettings "\$d/status-shot-\$1.json"
 }
 # Arrows toward the stop \$1 off the boxes \`status\` reports (a row, its
 # icon and arrow, a menu row), the cursor on each step written to \$2. A
 # hidden cursor takes a first key to show. Left and Right only along one
 # row, so a slider's track is never stepped on the way.
-walk_to() {
-  local n=0 at key
-  : > "\$d/\$2"
-  if [ "\$($ipc call quicksettings status 2>/dev/null | "$jq_bin" -r '.cursor // ""')" = "" ]; then
+qs_key='
+  ([.rows[] | {key: .id, value: .rect}, {key: (.id + ":icon"), value: .icon}, {key: (.id + ":menu"), value: .arrow}]
+    + [(.menu.rows // [])[] | {key: .id, value: .rect}] | map(select(.value != null)) | from_entries) as \$box
+  | \$box[\$at] as \$a | \$box[\$to] as \$b
+  | if \$a == null or \$b == null then "Down"
+    elif \$b.y >= \$a.y + \$a.height then "Down"
+    elif \$b.y + \$b.height <= \$a.y then "Up"
+    elif \$b.x > \$a.x then "Right" else "Left" end'
+walk() {
+  if [ "\$(call quicksettings status 2>/dev/null | "$jq_bin" -r '.cursor // ""')" = "" ]; then
     "$wtype_bin" -k Down
     sleep 0.3
   fi
-  while [ \$n -lt 14 ]; do
-    $ipc call quicksettings status > "\$d/walk.json" 2>/dev/null
-    at=\$("$jq_bin" -r '.cursor // ""' "\$d/walk.json")
-    echo "\$at" >> "\$d/\$2"
-    [ "\$at" = "\$1" ] && return 0
-    key=\$("$jq_bin" -r --arg at "\$at" --arg to "\$1" '
-      ([.rows[] | {key: .id, value: .rect}, {key: (.id + ":icon"), value: .icon}, {key: (.id + ":menu"), value: .arrow}]
-        + [(.menu.rows // [])[] | {key: .id, value: .rect}] | map(select(.value != null)) | from_entries) as \$box
-      | \$box[\$at] as \$a | \$box[\$to] as \$b
-      | if \$a == null or \$b == null then "Down"
-        elif \$b.y >= \$a.y + \$a.height then "Down"
-        elif \$b.y + \$b.height <= \$a.y then "Up"
-        elif \$b.x > \$a.x then "Right" else "Left" end' "\$d/walk.json")
-    "$wtype_bin" -k "\${key:-Down}"
-    sleep 0.3
-    n=\$((n + 1))
-  done
+  walk_to quicksettings '.cursor' "\$1" "\$d/\$2" "\$qs_key"
 }
 press() {
   "$wtype_bin" -k Return
@@ -122,33 +109,33 @@ $ipc call quicksettings activate wifi > "\$d/activate-wifi.txt" 2>&1
 $ipc call quicksettings activate nothing > "\$d/activate-unknown.txt" 2>&1
 $ipc call theme status > "\$d/theme-before.json" 2>&1
 if "$jq_bin" -e '.rows[] | select(.id == "dark-style") | .available' "\$d/status-shot-open.json" > /dev/null 2>&1; then
-  walk_to dark-style walk-dark.txt
+  walk dark-style walk-dark.txt
   press 2
   $ipc call theme status > "\$d/theme-flipped.json" 2>&1
-  status dark-flipped
+  status quicksettings "\$d/status-dark-flipped.json"
   shot dark-flipped
   press 2
   $ipc call theme status > "\$d/theme-back.json" 2>&1
 fi
 $ipc call notifications dndState > "\$d/dnd-before.txt" 2>&1
-walk_to dnd walk-dnd.txt
+walk dnd walk-dnd.txt
 press
 $ipc call notifications dndState > "\$d/dnd-flipped.txt" 2>&1
 $ipc call caffeinate status > "\$d/caffeinate-before.json" 2>&1
-walk_to caffeinate walk-caffeinate.txt
+walk caffeinate walk-caffeinate.txt
 press
 $ipc call caffeinate status > "\$d/caffeinate-flipped.json" 2>&1
-status on
+status quicksettings "\$d/status-on.json"
 shot on
 press
 $ipc call caffeinate status > "\$d/caffeinate-back.json" 2>&1
-walk_to dnd walk-dnd-back.txt
+walk dnd walk-dnd-back.txt
 press
 $ipc call notifications dndState > "\$d/dnd-back.txt" 2>&1
 "$wtype_bin" -k Escape
 sleep 1
 $ipc call panel state > "\$d/panel-closed.txt" 2>&1
-status closed
+status quicksettings "\$d/status-closed.json"
 
 # The extras: their cells start as the card opens, so the weather reading
 # gets a few seconds to land.
@@ -160,16 +147,15 @@ sleep 4
 shot extras
 centre=\$("$jq_bin" -r '.rows[] | select(.id == "weather") | .rect | "\\(.x + (.width / 2 | floor)) \\(.y + (.height / 2 | floor))"' "\$d/status-shot-extras.json")
 echo "\$centre" > "\$d/weather-centre.txt"
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
 # shellcheck disable=SC2086
-"$wlrctl_bin" pointer move \$centre > /dev/null 2>&1
+park \$centre
 sleep 0.4
-"$wlrctl_bin" pointer click left > /dev/null 2>&1
+click
 sleep 1.5
 $ipc call panel state > "\$d/panel-weather.txt" 2>&1
 "$grim_bin" "\$d/quick-settings-weather.png" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 sleep 1
 
 pactl() { "$pactl_bin" "\$@"; }
@@ -191,17 +177,17 @@ for i in \$(seq 1 20); do
   $ipc call quicksettings status 2>/dev/null | "$jq_bin" -e '.rows[] | select(.id == "volume") | .arrow != null' > /dev/null 2>&1 && break
   sleep 0.5
 done
-status sliders
+status quicksettings "\$d/status-sliders.json"
 kill "\$(cat "\$d/loopback.pid")" 2>/dev/null
 
 pactl get-sink-volume qs_one > "\$d/volume-before.txt" 2>&1
-walk_to volume walk-volume.txt
+walk volume walk-volume.txt
 "$wtype_bin" -k Right
 sleep 0.5
 "$wtype_bin" -k Right
 sleep 1.2
 pactl get-sink-volume qs_one > "\$d/volume-after.txt" 2>&1
-status volume-stepped
+status quicksettings "\$d/status-volume-stepped.json"
 
 # A card takes the motion scale it opens under, so the menu's tenth speed
 # needs the card opened again.
@@ -210,14 +196,14 @@ sleep 1.2
 $ipc call debug motionScale 1000 > /dev/null 2>&1
 $ipc call panel open quicksettings > /dev/null 2>&1
 sleep 5
-walk_to power walk-power.txt
+walk power walk-power.txt
 "$wtype_bin" -k Down
 sleep 0.8
-status at-arrow
+status quicksettings "\$d/status-at-arrow.json"
 "$grim_bin" "\$d/quick-settings-at-arrow.png" > /dev/null 2>&1
 "$wtype_bin" -k Return
 for i in \$(seq 1 18); do
-  status "burst-\$i"
+  status quicksettings "\$d/status-burst-\$i.json"
   "$grim_bin" "\$d/quick-settings-burst-\$i.png" > /dev/null 2>&1
   sleep 0.1
 done
@@ -233,13 +219,13 @@ while [ \$n -lt 8 ]; do
 done
 sleep 0.6
 $(stale_audit_stop quick-settings-menu)
-status menu-at-two
+status quicksettings "\$d/status-menu-at-two.json"
 press 1.2
 pactl get-default-sink > "\$d/default-sink-after.txt" 2>&1
-status menu-picked
+status quicksettings "\$d/status-menu-picked.json"
 "$wtype_bin" -k Escape
 sleep 6
-status menu-closed
+status quicksettings "\$d/status-menu-closed.json"
 "$wtype_bin" -k Escape
 sleep 5
 $ipc call panel state > "\$d/panel-closed-menu.txt" 2>&1
@@ -247,16 +233,16 @@ $ipc call debug motionScale 100 > /dev/null 2>&1
 
 $ipc call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
-walk_to power walk-power-menu.txt
+walk power walk-power-menu.txt
 press 1.5
-status power-open
+status quicksettings "\$d/status-power-open.json"
 press 1
-status power-armed
+status quicksettings "\$d/status-power-armed.json"
 shot power-armed
 $ipc call panel state > "\$d/panel-armed.txt" 2>&1
 "$wtype_bin" -k Escape
 sleep 1.2
-status power-closed
+status quicksettings "\$d/status-power-closed.json"
 "$wtype_bin" -k Escape
 sleep 1
 
@@ -270,12 +256,12 @@ $ipc call reminder set 10m "Quick settings reminder" > "\$d/reminder-set.txt" 2>
 sleep 1
 $ipc call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
-status bg-two
-walk_to background walk-background.txt
+status quicksettings "\$d/status-bg-two.json"
+walk background walk-background.txt
 press 1.5
-status bg-open
+status quicksettings "\$d/status-bg-open.json"
 shot background-open
-walk_to m:background:recording walk-bg-recording.txt
+walk m:background:recording walk-bg-recording.txt
 press 1.5
 for i in \$(seq 1 30); do
   $ipc call record status 2>/dev/null | grep -qF '"active":false' && break
@@ -283,15 +269,15 @@ for i in \$(seq 1 30); do
 done
 $ipc call record status > "\$d/record-after.json" 2>&1
 sleep 0.5
-status bg-stopped
-walk_to m:background:reminders walk-bg-reminders.txt
+status quicksettings "\$d/status-bg-stopped.json"
+walk m:background:reminders walk-bg-reminders.txt
 press 1.2
 $ipc call reminder status > "\$d/reminder-after.json" 2>&1
-status bg-cleared
+status quicksettings "\$d/status-bg-cleared.json"
 shot background-cleared
 "$wtype_bin" -k Escape
 sleep 1.5
-status bg-closed
+status quicksettings "\$d/status-bg-closed.json"
 "$wtype_bin" -k Escape
 sleep 1
 

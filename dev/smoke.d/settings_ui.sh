@@ -61,20 +61,6 @@ read_back() {
   $ipc call panel state > "\$d/panel-\$1.txt" 2>&1
   $ipc call menu status > "\$d/menu-\$1.json" 2>&1
 }
-# Downs (or \$3, Up) until the panel cursor is on stop \$1, each stop
-# passed written to \$2 (at most 16 keys).
-walk_to() {
-  local n=0 at
-  : > "\$d/\$2"
-  while [ \$n -lt 16 ]; do
-    at=\$($ipc call menu status 2>/dev/null | "$jq_bin" -r '.panelCursor // ""')
-    echo "\$at" >> "\$d/\$2"
-    [ "\$at" = "\$1" ] && return 0
-    "$wtype_bin" -k "\${3:-Down}"
-    sleep 0.3
-    n=\$((n + 1))
-  done
-}
 shot() {
   "$grim_bin" "\$d/settings-ui-\$1.png" > /dev/null 2>&1
   $ipc call menu status > "\$d/box-\$1.json" 2>&1
@@ -100,7 +86,7 @@ shot appearance-pinned
 key Up Up Up x
 read_back reset
 $ipc call settings get theme.reactiveRims > "\$d/get-reset.json" 2>&1
-walk_to page:settings:bar walk-appearance.txt
+walk_to menu .panelCursor page:settings:bar "\$d/walk-appearance.txt"
 key Return
 read_back bar
 key Down Down Down Right
@@ -112,7 +98,7 @@ sleep 1
 read_back style-reset
 key BackSpace
 read_back back-sub
-walk_to route:wallpaper walk-wallpaper.txt
+walk_to menu .panelCursor route:wallpaper "\$d/walk-wallpaper.txt"
 key Return
 sleep 1
 read_back wallpaper
@@ -121,7 +107,7 @@ key BackSpace
 read_back wallpaper-back
 key BackSpace
 read_back back
-walk_to session:lock walk-tiles.txt
+walk_to menu .panelCursor session:lock "\$d/walk-tiles.txt"
 for page in desktop system; do
   $ipc call panel open "settings:\$page" > /dev/null 2>&1
   sleep 1.5
@@ -133,13 +119,12 @@ for page in desktop system; do
     # A real click on the token climbs one page, as Backspace does.
     $ipc call menu status > "\$d/menu-token-before.json" 2>&1
     read -r tx ty tw th < <("$jq_bin" -r '[.tokenBox.x, .tokenBox.y, .tokenBox.width, .tokenBox.height] | @tsv' "\$d/menu-token-before.json")
-    "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-    "$wlrctl_bin" pointer move \$((tx + tw / 2)) \$((ty + th / 2)) > /dev/null 2>&1
+    park \$((tx + tw / 2)) \$((ty + th / 2))
     sleep 0.3
-    "$wlrctl_bin" pointer click left > /dev/null 2>&1
+    click
     sleep 0.8
     read_back token
-    "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+    park
   fi
 done
 key Escape
@@ -161,15 +146,15 @@ sleep 0.5
 sha256sum "$settings_ui_settings" | cut -d' ' -f1 > "\$d/sha-after"
 $ipc call panel open settings > /dev/null 2>&1
 sleep 1.5
-walk_to session:reboot walk-reboot.txt
+walk_to menu .panelCursor session:reboot "\$d/walk-reboot.txt"
 key Return
 read_back armed
-walk_to session:lock walk-lock.txt Up
+walk_to menu .panelCursor session:lock "\$d/walk-lock.txt" '"Up"'
 read_back on-lock
 key Return
 sleep 2
 $ipc call lock status > "\$d/lock-locked.json" 2>&1
-"$wtype_bin" -s 300 "formalshell-test"
+"$wtype_bin" -s 300 "$rig_password"
 sleep 0.5
 "$wtype_bin" -s 300 -k Return
 sleep 4

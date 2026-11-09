@@ -61,7 +61,6 @@ leg_motion_art_fixture() {
 
 leg_motion_art_drive() {
   local play="$shot_dir/motion-art-play.sh" drive="$shot_dir/motion-art-drive.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$play" <<EOF
 #!/usr/bin/env bash
 sleep 2
@@ -69,7 +68,6 @@ exec "$mpv_bin" --no-video --really-quiet --loop-file=inf "$motion_art_track_pat
 EOF
   write_script "$drive" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 note() { echo "\$1 \$2" >> "$motion_art_results"; }
 decoders() { note "decoders_\$1" "\$(pgrep -fc 'applemusic-art')"; }
 # commits <name> <seconds>: the bar's commits over that window.
@@ -80,21 +78,15 @@ commits() {
   c1=\$(grep -c '^commit surface=bar ' "$shell_log_path")
   note "commits_\$1" "\$((c1 - c0))"
 }
-burst() {
-  for i in \$(seq 1 $motion_art_frames); do
-    "$grim_bin" "$shot_dir/motion-art-\$1-\$i.png" > /dev/null 2>&1
-    sleep 0.15
-  done
-}
 : > "$motion_art_results"
 sleep 6
 call bar room > "$motion_art_room" 2>&1
-burst bar
+burst "$shot_dir/motion-art-bar" $motion_art_frames 0.15
 decoders bar
 commits bar 3
 call panel open media > /dev/null 2>&1
 sleep 4
-burst play
+burst "$shot_dir/motion-art-play" $motion_art_frames 0.15
 decoders open
 call media playPause > /dev/null 2>&1
 sleep 1.5
@@ -123,11 +115,11 @@ cat "$settings_path.tmp" > "$settings_path"
 rm -f "$settings_path.tmp"
 sleep 4
 call sidebar status > "$motion_art_sidebar" 2>&1
-burst sidebar
+burst "$shot_dir/motion-art-sidebar" $motion_art_frames 0.15
 call sidebar collapse > /dev/null 2>&1
 sleep 3
 call sidebar status > "$motion_art_rail" 2>&1
-burst rail
+burst "$shot_dir/motion-art-rail" $motion_art_frames 0.15
 EOF
   hypr_exec_once "bash $play"
   hypr_exec_once "bash $drive"
