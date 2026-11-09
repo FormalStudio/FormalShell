@@ -343,7 +343,7 @@ impl App {
             return Err("menu not open".into());
         }
         self.resolve_launcher();
-        let out = self.launcher.step_into(&self.store, index).ok_or_else(|| format!("error: row {index} has nothing to step into"))?;
+        let out = self.launcher.step_into(&self.store, index).ok_or_else(|| format!("row {index} has nothing to step into"))?;
         self.launcher_out(out);
         Ok(())
     }

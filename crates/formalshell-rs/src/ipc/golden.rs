@@ -9,7 +9,7 @@
 use serde::Deserialize;
 
 use super::cli;
-use super::registry::{Function, Json, Registry, Reply, Target, Type, Value, ok, text};
+use super::registry::{Function, Json, Registry, Reply, Target, Type, Value, ok, real, text};
 use super::wire::Request;
 
 #[derive(Deserialize)]
@@ -69,7 +69,7 @@ fn probe() -> Target<Replay> {
             f("i", &[("a", Type::Int)], Type::String, |_, a| text(a[0].int().to_string())),
             f("b", &[("a", Type::Bool)], Type::String, |_, a| text(a[0].bool().to_string())),
             f("r", &[("a", Type::Real)], Type::String, |_, a| text(fs_js::num_str(if let Value::Real(r) = a[0] { r } else { 0.0 }))),
-            f("ri", &[("a", Type::Real)], Type::Real, |_, a| Ok(Json::from(a[0].real()))),
+            f("ri", &[("a", Type::Real)], Type::Real, |_, a| real(a[0].real())),
             f("ii", &[("a", Type::Int)], Type::Int, |_, a| Ok(Json::from(a[0].int()))),
             f("bb", &[("a", Type::Bool)], Type::Bool, |_, a| Ok(Json::from(a[0].bool()))),
             f("is", &[("a", Type::Int), ("b", Type::String)], Type::String, |_, a| text(format!("[{}][{}]", a[0].int(), a[1].str()))),

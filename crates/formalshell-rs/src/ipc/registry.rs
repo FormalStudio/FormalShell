@@ -20,6 +20,13 @@ pub fn text(s: impl Into<String>) -> Reply {
     Ok(Json::String(s.into()))
 }
 
+/// A real, printed the way Qt prints one. JSON has no NaN or infinity, so
+/// those travel as the words Qt prints for them.
+#[cfg_attr(not(test), expect(dead_code))]
+pub fn real(v: f64) -> Reply {
+    if v.is_finite() { Ok(Json::from(v)) } else { text(qt_number(v)) }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Type {
     Void,
@@ -179,10 +186,11 @@ impl<C> Registry<C> {
                 }
             }
         }
+        let reply = (function.call)(ctx, &values);
         if function.ret == Type::Void {
             return String::new();
         }
-        match (function.call)(ctx, &values) {
+        match reply {
             Ok(json) => format!("{}\n", print(function.ret, &json)),
             Err(reason) => format!("error: {reason}\n"),
         }

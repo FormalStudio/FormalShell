@@ -19,7 +19,8 @@
 # action with `confirm: true`, arms on its first Enter in the column and
 # runs (touches its file) on the second.
 # `menu runAction` runs the menu.jsonc entry, and the three new verbs answer
-# `error: menu not open` with the launcher shut. A route's column (Clipboard,
+# `error: menu not open` with the launcher shut; open, `menu into` on a row
+# past the list answers `error: row 99 has nothing to step into`. A route's column (Clipboard,
 # searched by name) is Open then Pin to Recent; a real Down and Enter pins
 # it, state.json's `recentPinned` holds it, and the root at rest heads
 # `Recent` with it; Unpin from Recent off the root's own row lets it go.
@@ -76,6 +77,7 @@ spawn_foot formalshell-actions-probe
 sleep 2
 
 probe
+call menu into 99 > "$shot_dir/launcher-actions-into-none.txt" 2>&1
 status menu "$shot_dir/launcher-actions-list.json"
 key -k Tab
 sleep 0.6
@@ -226,6 +228,8 @@ leg_launcher_actions_assert() {
   closed=$(grep -c '^error: menu not open$' "$shot_dir/launcher-actions-closed.txt" 2>/dev/null)
   [ "$closed" = 3 ] || fail "launcher-actions: actions, runAction and into did not all answer 'error: menu not open' shut: $(cat "$shot_dir/launcher-actions-closed.txt")"
   echo "SMOKE_LAUNCHER_ACTIONS the three verbs answer shut"
+  [ "$(cat "$shot_dir/launcher-actions-into-none.txt")" = "error: row 99 has nothing to step into" ] || fail "launcher-actions: into on a row with nothing under it did not answer 'error: row 99 has nothing to step into': $(cat "$shot_dir/launcher-actions-into-none.txt")"
+  echo "SMOKE_LAUNCHER_ACTIONS into answers a row with nothing under it"
 
   launcher_actions_expect list ".ids[0] == \"$launcher_actions_app\"" "the probe does not lead its own name"
   launcher_actions_expect tab '.actionsOpen and ([.actions[] | select(. != "discrete-gpu")] == ["open", "new-window", "desktop:quiet", "windows", "move-to-workspace", "probe-note", "probe-confirm"])' "Tab did not list the app's actions in order, with copy-path hidden and probe-note and probe-confirm added"

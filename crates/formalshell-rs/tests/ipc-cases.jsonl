@@ -50,3 +50,5 @@
 {"argv":["call","probe","sirb","a","1","x","true"],"live":true,"stdout":"Unable to parse argument 3 as \"real\". Provided argument: \"x\"\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
 {"argv":["call","probe","sirb","a","1","2","maybe"],"live":true,"stdout":"Unable to parse argument 4 as \"bool\". Provided argument: \"maybe\"\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
 {"argv":["call","probe","sirb","a","1","2"],"live":true,"stdout":"Too few arguments provided (4 required but 3 were provided.)\nFunction definition: function sirb(a: string, b: int, c: real, d: bool): string\n","stderr":"","exit":0}
+{"argv":["call","probe","ri","nan"],"live":true,"stdout":"nan\n","stderr":"","exit":0}
+{"argv":["call","probe","ri","inf"],"live":true,"stdout":"inf\n","stderr":"","exit":0}
