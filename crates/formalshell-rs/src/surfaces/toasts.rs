@@ -752,9 +752,7 @@ impl Toasts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::theme::getter;
     use crate::ui::el::Kind;
-    use serde_json::json;
 
     fn group(source: &str, body: &str) -> Group {
         let entry = model::Entry {
@@ -775,7 +773,7 @@ mod tests {
     }
 
     fn theme() -> Theme {
-        Theme::resolve(getter(json!({})), &fs_theme::palette::fallback("dark"))
+        Theme::default()
     }
 
     #[test]

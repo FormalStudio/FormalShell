@@ -102,7 +102,7 @@ impl App {
 
     /// A bar built the way the live one is: its edge, its layout and theme.
     fn spare_bar(&mut self) -> Bar {
-        let mut bar = Bar::new(self.bar.edge(), &self.store.theme.theme);
+        let mut bar = Bar::new(self.bar.edge(), &self.store.theme.theme, crate::settings::layout(&self.store.config));
         bar.set_layout(self.bar.resolved.clone());
         bar.set_collapsed(self.store.state.data.sidebar_collapsed);
         bar.update_paint(&mut self.kit, &self.store);
@@ -385,7 +385,7 @@ impl App {
         let background = theme.colors.get("background");
         let wanted = &self.store.desktop();
         let reveal = theme.motion().families.reveal * self.motion_scale;
-        let animate = theme.wallpaper_animate;
+        let animate = crate::settings::WALLPAPER_ANIMATE.get(&self.store.config);
         for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             let Some((w, h)) = b.pixels() else { continue };
             let grid = theme.wallpaper_grid.then(|| crate::services::wallpaper::grid(theme, b.scale()));
@@ -413,7 +413,7 @@ impl App {
         // Not before the bar's first frame: the mark's word waits on the
         // fonts, and the cold start budget is the bar's. Nor under the boot,
         // which hands the desktop over once it is gone.
-        let animate = self.store.theme.theme.wallpaper_animate && self.faces_warmed;
+        let animate = crate::settings::WALLPAPER_ANIMATE.get(&self.store.config) && self.faces_warmed;
         let word = if animate { Some(self.shard_word()) } else { None };
         let now = Instant::now();
         for i in 0..self.heads.len() {

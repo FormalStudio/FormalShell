@@ -253,6 +253,12 @@ pub const MODES_SECTION: &str = "Modes";
 /// Fewer resolving picks than this and the root lists its modes.
 pub const RECENT_MIN: usize = 3;
 
+/// The most rows `Recent` lists at rest.
+pub const RECENT_MAX: usize = 8;
+
+/// The emoji grid's columns.
+pub const EMOJI_COLUMNS: usize = 8;
+
 /// The node a pick, an abbreviation or `Recent` names, while it is still in
 /// the tree: `app:<desktop id>` is the app under `apps`.
 pub fn subject_node<'a>(nodes: &'a IndexMap<String, Node>, id: &str) -> Option<&'a Node> {

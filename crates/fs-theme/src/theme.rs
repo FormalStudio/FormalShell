@@ -12,17 +12,39 @@ use crate::palette::{self, COLOR_KEYS};
 use crate::style::{self, BoxStyle, Clock, Radius, Ring};
 use crate::tokens::{self, Easing, FontTokens, LetterSpacing, Radii, Space};
 
+/// The palette's light or dark side.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Mode {
+    /// Anything but `light` is dark.
+    pub fn parse(name: &str) -> Self {
+        if name == "light" { Self::Light } else { Self::Dark }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+}
+
 /// theme.json's colour roles, parsed. Built from a palette that already
 /// went through `palette::merge_with_fallback`, so every key is valid hex.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Colors {
-    pub mode: String,
+    pub mode: Mode,
     values: [Rgba; 26],
 }
 
 impl Colors {
     pub fn from_palette(palette: &Map<String, Value>) -> Self {
-        let mode = palette.get("mode").and_then(Value::as_str).unwrap_or("dark").to_owned();
+        let mode = Mode::parse(palette.get("mode").and_then(Value::as_str).unwrap_or("dark"));
         let values = COLOR_KEYS.map(|key| {
             palette.get(key).and_then(Value::as_str).and_then(Rgba::parse).unwrap_or(Rgba::TRANSPARENT)
         });
@@ -100,31 +122,6 @@ impl Faces {
     };
 }
 
-/// `layout`: where the shell's chrome sits, a strip or the sidebar's card
-/// column on a side edge.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Layout {
-    Bar,
-    Sidebar,
-}
-
-impl Layout {
-    /// An unknown value reads as the default.
-    pub fn parse(value: Option<&Value>) -> Self {
-        match value.and_then(Value::as_str) {
-            Some("sidebar") => Self::Sidebar,
-            _ => Self::Bar,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Bar => "bar",
-            Self::Sidebar => "sidebar",
-        }
-    }
-}
-
 /// `bar.style`: the band's paint. `corners` is `solid` with a fillet at
 /// each end of the band's inner edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,34 +155,6 @@ impl BarStyle {
             Self::Transparent => "transparent",
             Self::Solid => "solid",
             Self::Corners => "corners",
-        }
-    }
-}
-
-/// `render.backend` as asked. Read once at start: the shell resolves it
-/// to the backend drawing (`formalshell-rs`'s `gpu.rs`) before any surface.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Backend {
-    Auto,
-    Gpu,
-    Cpu,
-}
-
-impl Backend {
-    /// An unknown value reads as the default.
-    pub fn parse(value: Option<&Value>) -> Self {
-        match value.and_then(Value::as_str) {
-            Some("gpu") => Self::Gpu,
-            Some("cpu") => Self::Cpu,
-            _ => Self::Auto,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Gpu => "gpu",
-            Self::Cpu => "cpu",
         }
     }
 }
@@ -262,8 +231,6 @@ pub struct Theme {
     pub lock_dither: bool,
     pub wallpaper_grid: bool,
     pub lock_grid: bool,
-    pub wallpaper_animate: bool,
-    pub wallpaper_color: Option<String>,
     pub font_base_size: f64,
     pub font_scale: f64,
     pub font_size: FontTokens,
@@ -272,7 +239,6 @@ pub struct Theme {
     pub letter_spacing: LetterSpacing,
     pub motion_enabled: bool,
     pub motion_scale: f64,
-    pub layout: Layout,
     pub bar_style: BarStyle,
     /// `motion.morph`: a card buds off the bar's inner edge and morphs
     /// between sizes, or drops from its cell as a popover.
@@ -280,7 +246,6 @@ pub struct Theme {
     /// `theme.reactiveRims`: a card's border takes light off the wallpaper
     /// and the windows around it (`docs/superpowers/specs/2026-10-30-reactive-rims.md`).
     pub reactive_rims: bool,
-    pub render_backend: Backend,
     pub frame_thickness: f64,
     pub frame_radius: f64,
 }
@@ -291,8 +256,8 @@ struct PaletteCtx<'a> {
 
 impl style::Ctx for PaletteCtx<'_> {
     type Color = Rgba;
-    fn mode(&self) -> &str {
-        &self.theme.colors.mode
+    fn mode(&self) -> Mode {
+        self.theme.colors.mode
     }
     fn surface_opacity(&self) -> f64 {
         self.theme.surface_opacity
@@ -311,6 +276,13 @@ impl style::Ctx for PaletteCtx<'_> {
     }
     fn tint(&self, c: &Rgba, over: &Rgba) -> Rgba {
         c.tint(*over)
+    }
+}
+
+impl Default for Theme {
+    /// Every key unset, on the fallback dark palette.
+    fn default() -> Self {
+        Self::resolve(|_| None, &palette::fallback("dark"))
     }
 }
 
@@ -339,21 +311,17 @@ impl Theme {
             lock_dither: boolean(get("lock.dither"), false),
             wallpaper_grid: boolean(get("wallpaper.grid"), false),
             lock_grid: boolean(get("lock.grid"), false),
-            wallpaper_animate: boolean(get("wallpaper.animate"), false),
-            wallpaper_color: get("wallpaper.color").as_ref().and_then(wallpaper_color).flatten(),
             font_base_size,
             font_scale,
             font_size: tokens::font_tokens(font_base_size),
             spacing_scale,
             space: tokens::spacing_tokens(spacing_scale),
             letter_spacing: tokens::letter_spacing_tokens(font_scale),
-            motion_enabled: get("motion.enabled").unwrap_or(Value::Bool(true)) == Value::Bool(true),
+            motion_enabled: boolean(get("motion.enabled"), true),
             motion_scale: 1.0,
-            layout: Layout::parse(get("layout").as_ref()),
             bar_style: BarStyle::parse(get("bar.style").as_ref()),
             morph: boolean(get("motion.morph"), true),
             reactive_rims: boolean(get("theme.reactiveRims"), true),
-            render_backend: Backend::parse(get("render.backend").as_ref()),
             frame_thickness,
             frame_radius,
         }
@@ -663,9 +631,8 @@ mod tests {
         assert!(t.blur_behind);
         assert_eq!(t.faces, Faces::ALIASES);
         assert_eq!(t.faces.words, Face { name: None, generic: "sans-serif" });
-        assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid && !t.wallpaper_animate);
-        assert_eq!(t.wallpaper_color, None);
-        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, BarStyle::Transparent, true, Backend::Auto));
+        assert!(!t.wallpaper_dither && !t.lock_dither && !t.wallpaper_grid && !t.lock_grid);
+        assert_eq!((t.bar_style, t.morph), (BarStyle::Transparent, true));
         assert_eq!((t.frame_thickness, t.frame_radius), (0.0, 15.0));
         assert!(!t.frame_enabled());
     }
@@ -683,15 +650,15 @@ mod tests {
 
     #[test]
     fn the_image_keys_are_read_on_their_own() {
-        let t = Theme::resolve(make_get(json!({ "wallpaper": { "dither": true, "grid": true, "animate": true }, "lock": { "grid": true } })), &sentinel());
-        assert!(t.wallpaper_dither && !t.lock_dither && t.wallpaper_grid && t.lock_grid && t.wallpaper_animate);
-        let t = Theme::resolve(make_get(json!({ "wallpaper": { "dither": "true", "animate": 1 } })), &sentinel());
-        assert!(!t.wallpaper_dither && !t.wallpaper_animate);
+        let t = Theme::resolve(make_get(json!({ "wallpaper": { "dither": true, "grid": true }, "lock": { "grid": true } })), &sentinel());
+        assert!(t.wallpaper_dither && !t.lock_dither && t.wallpaper_grid && t.lock_grid);
+        let t = Theme::resolve(make_get(json!({ "wallpaper": { "dither": "true" } })), &sentinel());
+        assert!(!t.wallpaper_dither);
     }
 
     #[test]
     fn wallpaper_color_takes_a_hex_or_a_name_and_false_gives_the_picture_back() {
-        let color = |v: Value| Theme::resolve(make_get(json!({ "wallpaper": { "color": v } })), &sentinel()).wallpaper_color;
+        let color = |v: Value| wallpaper_color(&v).flatten();
         assert_eq!(color(json!("#FF8000")).as_deref(), Some("#ff8000"));
         assert_eq!(color(json!("sage")).as_deref(), Some("#a1c8bc"));
         assert_eq!(color(json!(" Sky ")).as_deref(), Some("sky"));
@@ -736,21 +703,17 @@ mod tests {
     #[test]
     fn a_written_key_wins_and_an_unknown_or_malformed_one_reads_as_the_default() {
         let written = json!({
-            "layout": "sidebar",
             "bar": { "style": "corners" },
             "motion": { "morph": false },
-            "render": { "backend": "gpu" },
         });
         let t = Theme::resolve(make_get(written), &sentinel());
-        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Sidebar, BarStyle::Corners, false, Backend::Gpu));
+        assert_eq!((t.bar_style, t.morph), (BarStyle::Corners, false));
         let get = make_get(json!({
-            "layout": "dock",
             "bar": { "style": "auto" },
             "motion": { "morph": "false" },
-            "render": { "backend": "vulkan" },
         }));
         let t = Theme::resolve(get, &sentinel());
-        assert_eq!((t.layout, t.bar_style, t.morph, t.render_backend), (Layout::Bar, BarStyle::Transparent, true, Backend::Auto));
+        assert_eq!((t.bar_style, t.morph), (BarStyle::Transparent, true));
         assert_eq!(BarStyle::Transparent.pin(), Pin::Transparent);
         assert_eq!(BarStyle::Corners.pin(), Pin::Paint(Paint::Maximized));
     }
@@ -767,6 +730,8 @@ mod tests {
         assert_eq!(t.motion().emerge, 1500.0);
         assert_eq!(t.motion().families.spatial, 5000.0);
         let off = Theme::resolve(make_get(json!({ "motion": { "enabled": "yes" } })), &sentinel());
+        assert!(off.motion_enabled);
+        let off = Theme::resolve(make_get(json!({ "motion": { "enabled": false } })), &sentinel());
         assert!(!off.motion_enabled);
         assert_eq!(off.motion().emerge, 0.0);
         assert_eq!(off.motion().families.marquee_px_per_sec, 30.0);

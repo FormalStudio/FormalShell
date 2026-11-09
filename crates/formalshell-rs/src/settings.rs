@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 use fs_chrome::hot_corners::corners::{self, Corner};
 use fs_system::power::model::Thresholds;
-use fs_theme::theme::Backend;
 use fs_types::Edge;
 use serde_json::Value;
 
@@ -112,6 +111,64 @@ pub const HIDE_CHROME: Flag = Flag::new("fullscreen.hideChrome", true);
 pub const GTK_THEME: Word = Word::new("gtk.theme", "");
 pub const GTK_THEME_DARK: Word = Word::new("gtk.themeDark", "");
 pub const RENDER_BACKEND: Word = Word::new("render.backend", "auto");
+
+/// `layout`: where the shell's chrome sits, a strip or the sidebar's card
+/// column on a side edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layout {
+    Bar,
+    Sidebar,
+}
+
+impl Layout {
+    /// An unknown value reads as the default.
+    pub fn parse(value: Option<&Value>) -> Self {
+        match value.and_then(Value::as_str) {
+            Some("sidebar") => Self::Sidebar,
+            _ => Self::Bar,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bar => "bar",
+            Self::Sidebar => "sidebar",
+        }
+    }
+}
+
+/// `render.backend` as asked. Read once at start: the shell resolves it
+/// to the backend drawing (`formalshell-rs`'s `gpu.rs`) before any surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backend {
+    Auto,
+    Gpu,
+    Cpu,
+}
+
+impl Backend {
+    /// An unknown value reads as the default.
+    pub fn parse(value: Option<&Value>) -> Self {
+        match value.and_then(Value::as_str) {
+            Some("gpu") => Self::Gpu,
+            Some("cpu") => Self::Cpu,
+            _ => Self::Auto,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Gpu => "gpu",
+            Self::Cpu => "cpu",
+        }
+    }
+}
+
+/// `layout`: an unknown value reads as the default.
+pub fn layout(doc: &(impl Doc + ?Sized)) -> Layout {
+    Layout::parse(lookup(doc.doc(), LAYOUT.key))
+}
 
 /// `bar.position`: anything but one of the four edges reads as the
 /// default, so a typo leaves the bar where it always was.
@@ -325,8 +382,7 @@ pub fn greeter_wallpaper(doc: &(impl Doc + ?Sized)) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use fs_theme::theme::{BarStyle, Layout, Theme};
-    use serde_json::json;
+        use serde_json::json;
 
     use super::*;
 
@@ -353,17 +409,13 @@ mod tests {
     }
 
     #[test]
-    fn the_theme_reads_the_same_defaults() {
-        let theme = Theme::resolve(|_| None, &fs_theme::palette::fallback("dark"));
-        assert_eq!(theme.reactive_rims, REACTIVE_RIMS.default);
-        assert_eq!(theme.motion_enabled, MOTION.default);
-        assert_eq!(theme.morph, MORPH.default);
-        assert_eq!(theme.wallpaper_animate, WALLPAPER_ANIMATE.default);
-        assert_eq!(theme.layout, Layout::Bar);
+    fn layout_and_backend_defaults_are_their_first_variants() {
         assert_eq!(LAYOUT.default, Layout::Bar.as_str());
-        assert_eq!(theme.bar_style, BarStyle::Transparent);
-        assert_eq!(BAR_STYLE.default, BarStyle::Transparent.as_str());
-        assert_eq!(theme.render_backend.as_str(), RENDER_BACKEND.default);
+        assert_eq!(RENDER_BACKEND.default, Backend::Auto.as_str());
+        assert_eq!(layout(&json!({"layout": "sidebar"})), Layout::Sidebar);
+        assert_eq!(layout(&json!({"layout": "dock"})), Layout::Bar);
+        assert_eq!(render_backend(&json!({"render": {"backend": "gpu"}})), Backend::Gpu);
+        assert_eq!(render_backend(&json!({"render": {"backend": "vulkan"}})), Backend::Auto);
     }
 
     #[test]

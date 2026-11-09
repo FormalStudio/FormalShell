@@ -384,8 +384,6 @@ impl Menu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::theme::getter;
-    use serde_json::json;
 
     fn node(id: i32, label: &str) -> MenuNode {
         MenuNode { id, label: label.into(), enabled: true, separator: false, icon: None, checked: false, has_children: false, children: Vec::new() }
@@ -409,7 +407,7 @@ mod tests {
     }
 
     fn menu() -> Menu {
-        let theme = Theme::resolve(getter(json!({})), &fs_theme::palette::fallback("dark"));
+        let theme = Theme::default();
         let mut m = Menu::new(&theme, "key".into(), "Item".into());
         m.set_tree(Some(&tree()));
         m

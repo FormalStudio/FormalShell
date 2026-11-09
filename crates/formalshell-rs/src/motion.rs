@@ -402,7 +402,7 @@ mod tests {
                 400.0,
             ),
         ];
-        let theme = fs_theme::theme::Theme::resolve(|_| None, &fs_theme::palette::fallback("dark"));
+        let theme = fs_theme::theme::Theme::default();
         for (kind, points, ms) in curves {
             assert_eq!(kind.curve(), Curve::new(&points), "{kind:?}");
             assert_eq!(kind.ms(&theme), ms, "{kind:?}");

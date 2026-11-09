@@ -1280,7 +1280,7 @@ impl Model {
             Mode::Menu if plugin => model::visible_children(nodes, level, cond).into_iter().cloned().collect(),
             Mode::Menu if q.is_empty() && level.is_none() => {
                 let outside = |id: &str| outside_subject(store, id);
-                let rest = model::root_rest(nodes, &recent_pinned(store), &picks(store), now_ms(), fs_theme::tokens::LAUNCHER.recent as usize, cond, outside);
+                let rest = model::root_rest(nodes, &recent_pinned(store), &picks(store), now_ms(), model::RECENT_MAX, cond, outside);
                 let recent = rest.first().is_some_and(|r| r.section.as_deref() == Some(model::RECENT_SECTION));
                 if view == View::AppGrid && recent {
                     rest.into_iter().filter(|r| r.kind != NodeKind::App).collect()
@@ -1317,7 +1317,7 @@ impl Model {
             let apps: Vec<Node> = model::visible_children(nodes, Some("apps"), cond)
                 .into_iter()
                 .filter(|r| r.kind == NodeKind::App)
-                .take(fs_theme::tokens::LAUNCHER.recent as usize)
+                .take(model::RECENT_MAX)
                 .cloned()
                 .collect();
             rows = apps.into_iter().chain(rows).collect();
@@ -1499,7 +1499,7 @@ impl Model {
                 let grid_x = if self.view == View::AppGrid { gutter } else { 0.0 };
                 let width = width - grid_x * 2.0;
                 let columns = if self.view == View::Emoji {
-                    fs_theme::tokens::LAUNCHER.emoji_columns as usize
+                    model::EMOJI_COLUMNS
                 } else {
                     fs_menu::appgrid::columns_for(width, min_cell)
                 };

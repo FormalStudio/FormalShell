@@ -90,7 +90,7 @@ fn num_or_zero(value: Option<&Value>) -> f64 {
 /// surface alpha, the radius ladder and Qt's colour arithmetic.
 pub trait Ctx {
     type Color: Clone + std::fmt::Debug + PartialEq;
-    fn mode(&self) -> &str;
+    fn mode(&self) -> crate::theme::Mode;
     fn surface_opacity(&self) -> f64;
     fn radius(&self, step: &str) -> Option<f64>;
     /// A palette role by name.
@@ -186,7 +186,7 @@ pub fn alpha_for(value: Option<&Value>, ctx: &impl Ctx) -> f64 {
         }
         Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
         Some(Value::Object(pair)) => {
-            let side = if ctx.mode() == "light" { "light" } else { "dark" };
+            let side = ctx.mode().as_str();
             num(pair.get(side)).unwrap_or(f64::NAN)
         }
         Some(_) => 1.0,
@@ -747,8 +747,8 @@ pub(crate) mod tests {
 
     impl Ctx for Names {
         type Color = String;
-        fn mode(&self) -> &str {
-            self.mode
+        fn mode(&self) -> crate::theme::Mode {
+            crate::theme::Mode::parse(self.mode)
         }
         fn surface_opacity(&self) -> f64 {
             0.85

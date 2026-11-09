@@ -21,7 +21,9 @@ use fs_types::{Edge, Insets, Region};
 use fs_theme::barpaint;
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
-use fs_theme::theme::{BarStyle, Layout, Theme};
+use fs_theme::theme::{BarStyle, Theme};
+
+use crate::settings::Layout;
 use serde_json::{Value, json};
 use vello_cpu::kurbo::{Arc, BezPath, Point, Rect, RoundedRect, Shape, SvgArc, Vec2};
 
@@ -60,7 +62,7 @@ struct Style {
 }
 
 impl Style {
-    fn new(theme: &Theme) -> Self {
+    fn new(theme: &Theme, layout: Layout) -> Self {
         let s = &theme.space;
         Self {
             bar_style: theme.bar_style,
@@ -70,8 +72,8 @@ impl Style {
             margin: s.bar_margin,
             inset: s.sm,
             gap: s.sm,
-            frame: (theme.frame_enabled() && theme.layout != Layout::Sidebar, theme.frame_thickness, theme.frame_radius),
-            sidebar: (theme.layout == Layout::Sidebar).then_some((s.sidebar_width, s.sidebar_rail)),
+            frame: (theme.frame_enabled() && layout != Layout::Sidebar, theme.frame_thickness, theme.frame_radius),
+            sidebar: (layout == Layout::Sidebar).then_some((s.sidebar_width, s.sidebar_rail)),
         }
     }
 }
@@ -144,8 +146,8 @@ struct Room {
 }
 
 impl Bar {
-    pub fn new(edge: Edge, theme: &Theme) -> Self {
-        let style = Style::new(theme);
+    pub fn new(edge: Edge, theme: &Theme, layout: Layout) -> Self {
+        let style = Style::new(theme, layout);
         let mut bar = Self {
             scene: Scene::new(1, 1),
             style,
@@ -252,6 +254,11 @@ impl Bar {
             return true;
         }
         self.slots.get(i).is_some_and(|s| s.view.interactive)
+    }
+
+    /// The layout the strip was last styled for.
+    pub fn chrome_layout(&self) -> Layout {
+        if self.style.sidebar.is_some() { Layout::Sidebar } else { Layout::Bar }
     }
 
     pub fn framed(&self) -> bool {
@@ -393,9 +400,9 @@ impl Bar {
 
     /// A new theme: every metric and ink. True when the strip's
     /// framing changed with it, which re-places the window.
-    pub fn set_theme(&mut self, theme: &Theme) -> bool {
+    pub fn set_theme(&mut self, theme: &Theme, layout: Layout) -> bool {
         let framed = self.framed();
-        self.style = Style::new(theme);
+        self.style = Style::new(theme, layout);
         let (w, h) = self.placed_size(false);
         self.scene = Scene::new(w, h);
         self.rebuild();

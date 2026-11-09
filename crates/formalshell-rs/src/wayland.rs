@@ -338,7 +338,7 @@ impl App {
         let pixels = Pixels::bind(globals, qh)
             .expect("wp_viewporter, wp_single_pixel_buffer_manager_v1 and wp_alpha_modifier_v1 are required");
         let store = Store::default();
-        let bar = Bar::new(Edge::Top, &store.theme.theme);
+        let bar = Bar::new(Edge::Top, &store.theme.theme, settings::layout(&store.config));
         let kit = Kit::new(&store.theme.theme);
         let mut app = Self {
             registry: RegistryState::new(globals),
@@ -627,6 +627,11 @@ impl App {
     /// The settings the bar is built from: its edge and its layout.
     /// Anything structural re-creates the window.
     pub fn apply_config(&mut self) {
+        // A layout change leaves the theme as it was, so nothing else
+        // restyles the strip for it.
+        if self.bar.chrome_layout() != settings::layout(&self.store.config) {
+            self.set_bar_theme();
+        }
         self.sync_hot_corners();
         let bar_cfg = self.store.config.get("bar").cloned();
         let resolved = layout::resolve(bar_cfg.as_ref(), &self.store.plugins.bar_plugins());
@@ -656,8 +661,8 @@ impl App {
     /// bottom put the sidebar on the left.
     fn chrome_edge(&self) -> Edge {
         let edge = settings::bar_position(&self.store.config);
-        match (self.store.theme.theme.layout, edge) {
-            (fs_theme::theme::Layout::Sidebar, Edge::Top | Edge::Bottom) => Edge::Left,
+        match (settings::layout(&self.store.config), edge) {
+            (settings::Layout::Sidebar, Edge::Top | Edge::Bottom) => Edge::Left,
             _ => edge,
         }
     }
@@ -669,11 +674,12 @@ impl App {
         let edge = self.chrome_edge();
         let collapsed = self.store.state.data.sidebar_collapsed;
         self.kit.set_theme(&self.store.theme.theme);
-        self.bar.set_theme(&self.store.theme.theme);
+        let layout = settings::layout(&self.store.config);
+        self.bar.set_theme(&self.store.theme.theme, layout);
         self.bar.set_edge(edge);
         self.bar.set_collapsed(collapsed);
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
-            s.bar.set_theme(&self.store.theme.theme);
+            s.bar.set_theme(&self.store.theme.theme, layout);
             s.bar.set_edge(edge);
             s.bar.set_collapsed(collapsed);
         }

@@ -192,12 +192,6 @@ pub fn get(settings: &Value) -> impl Fn(&str) -> Option<Value> + '_ {
     move |path| super::config::lookup(settings, path).cloned()
 }
 
-/// [`get`] over a settings object it owns.
-#[cfg(test)]
-pub fn getter(settings: Value) -> impl Fn(&str) -> Option<Value> {
-    move |path| get(&settings)(path)
-}
-
 /// Where the engine reads and writes, and the binaries it runs.
 #[derive(Clone, Debug)]
 pub struct Env {
@@ -1127,7 +1121,7 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
         assert!(!state.theme.morph);
         assert!(!state.apply(Diff::Settings(json!({ "motion": { "morph": false } }))));
         assert!(state.apply(Diff::Palette(palette::fallback("light"))));
-        assert_eq!(state.theme.colors.mode, "light");
+        assert_eq!(state.theme.colors.mode, fs_theme::theme::Mode::Light);
     }
 
     #[test]

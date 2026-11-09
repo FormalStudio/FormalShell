@@ -1109,7 +1109,7 @@ impl App {
     /// The still each output's lock draws of the sculpture, at the clock
     /// the desktop's stopped on, made once per lock and size.
     fn lock_shards(&mut self) {
-        if !self.store.theme.theme.wallpaper_animate {
+        if !crate::settings::WALLPAPER_ANIMATE.get(&self.store.config) {
             self.lock.shards.clear();
             return;
         }

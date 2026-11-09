@@ -16,7 +16,7 @@ use fs_types::{BtAddress, Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
 use fs_system::power::model::{battery_icon, charge_threshold_active};
-use fs_theme::theme::Layout;
+use crate::settings::Layout;
 use fs_upower::Profile;
 use serde_json::{Value as Json, json};
 
@@ -315,7 +315,7 @@ pub const BACKGROUND: &str = "background";
 /// region's entries the column has no card for.
 pub fn extra_entries(store: &Store, region: Region) -> Vec<Entry> {
     let resolved = layout::resolve(store.config.get("bar"), &store.plugins.bar_plugins());
-    if store.theme.theme.layout == Layout::Sidebar {
+    if crate::settings::layout(&store.config) == Layout::Sidebar {
         layout::sidebar_quick_extras(&resolved.regions.right)
     } else {
         layout::quick_extras(resolved.regions.get(region))

@@ -168,7 +168,7 @@ impl Store {
     /// What the desktop shows in `mode`.
     pub fn desktop_for(&self, mode: &str) -> String {
         let data = &self.state.data;
-        wallpaper::source(self.theme.theme.wallpaper_color.as_deref(), &data.wallpaper_color, &data.wallpaper, &data.wallpaper_dark, mode, self.sky_step())
+        wallpaper::source(crate::settings::wallpaper_color(&self.config).as_deref(), &data.wallpaper_color, &data.wallpaper, &data.wallpaper_dark, mode, self.sky_step())
     }
 
     /// The step a sky desktop shows: the engine's last reading, else the

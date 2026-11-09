@@ -928,11 +928,9 @@ impl Scrim {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::theme::getter;
-    use serde_json::json;
 
     fn theme() -> Theme {
-        Theme::resolve(getter(json!({})), &fs_theme::palette::fallback("dark"))
+        Theme::default()
     }
 
     /// The same card on every edge rests a `barMargin` off the line, centred
