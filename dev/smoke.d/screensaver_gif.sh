@@ -78,9 +78,13 @@ sleep 1
 # honest frame total is the one a completed pinned run actually produced, and
 # frameInfo answers 0 until then rather than guessing.
 $ipc call screensaver frame 0 > /dev/null 2>&1
-sleep 2
-$ipc call screensaver frameInfo > "$info_path" 2>&1
-convergence=\$(grep -o '"convergenceFrame":[0-9]*' "$info_path" | cut -d: -f2)
+convergence=0
+for _ in \$(seq 40); do
+  $ipc call screensaver frameInfo > "$info_path" 2>&1
+  convergence=\$(grep -o '"convergenceFrame":[0-9]*' "$info_path" | cut -d: -f2)
+  [ "\${convergence:-0}" -gt 0 ] && break
+  sleep 0.5
+done
 stride=\$(( (convergence + $budget - 1) / $budget ))
 [ "\$stride" -lt 1 ] && stride=1
 idx=0

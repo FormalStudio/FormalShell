@@ -74,7 +74,7 @@ EOF
 leg_r0_measure_timing() {
   local rss_at
   rss_at=$(leg_arg r0_measure)
-  leg_timing $((rss_at + 20)) $((rss_at + 90))
+  leg_timing $((rss_at + 90))
 }
 
 leg_r0_measure_drive() {

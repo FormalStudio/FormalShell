@@ -1112,20 +1112,73 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
 done
 recording_drives=""
 
+turn_seconds="$shot_dir/turn-seconds.tsv"
+: > "$turn_seconds"
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   grep -q "^$leg_name"$'\t' "$drives_list" || continue
   leg_seconds=$leg_default_seconds
   if declare -F "leg_${leg_name}_timing" >/dev/null; then "leg_${leg_name}_timing"; fi
-  session_timeout=$((session_timeout + (leg_seconds > leg_default_seconds ? leg_seconds : leg_default_seconds)))
+  leg_seconds=$((leg_seconds > leg_default_seconds ? leg_seconds : leg_default_seconds))
+  printf '%s\t%s\n' "$leg_name" "$leg_seconds" >> "$turn_seconds"
+  session_timeout=$((session_timeout + leg_seconds))
 done
 
 # One leg's turn at a time, in leg order: the desktop arrived, then the
 # leg's drive scripts started together, and the turn over once none of them
 # is still running as itself. A script that execs a long-lived child (a
-# player, a fixture window) has handed its process over and counts as done.
+# player, a fixture window) has handed its process over and counts as done;
+# one that exited has its status read, and a non-zero one is logged as a
+# failed drive. A turn past its leg's seconds has its scripts killed and is
+# logged as timed out, so the next leg still gets its turn.
 # Then the run's own frame and the teardown.
 drives_log="$shot_dir/drives.log"
 shot_script="$shot_dir/drives.sh"
+turns_lib="$shot_dir/turns.sh"
+# The turn's scripts are polled together. A pid still showing the
+# conductor's own command line has not exec'd its script yet.
+cat > "$turns_lib" <<'EOF'
+running=()
+turn_end() {
+  [ ${#running[@]} -gt 0 ] || return 0
+  local secs deadline entry pid script cmdline state status left
+  local -A settled=()
+  secs=$(awk -F '\t' -v l="$turn" '$1 == l { print $2 }' "$turn_seconds")
+  deadline=$((turn_t + ${secs:-45}))
+  while :; do
+    left=0
+    for entry in "${running[@]}"; do
+      pid=${entry%%:*}; script=${entry#*:}
+      [ -z "${settled[$pid]:-}" ] || continue
+      state=$(ps -o stat= -p "$pid" 2>/dev/null)
+      if [ -n "$state" ] && [ "${state#Z}" = "$state" ]; then
+        cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+        case "$cmdline" in
+          *"$script"*|*"$shot_script"*|"") left=1 ;;
+          *) settled[$pid]=handed ;;
+        esac
+        continue
+      fi
+      wait "$pid"; status=$?
+      settled[$pid]=exited
+      [ "$status" = 0 ] || echo "drive $turn fail $script exit $status" >> "$drives_log"
+    done
+    [ "$left" = 1 ] || break
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      for entry in "${running[@]}"; do
+        pid=${entry%%:*}; script=${entry#*:}
+        [ -z "${settled[$pid]:-}" ] || continue
+        echo "drive $turn timeout $script after ${secs:-45}s" >> "$drives_log"
+        pkill -KILL -P "$pid" 2>/dev/null
+        kill -KILL "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+      done
+      break
+    fi
+    sleep 0.2
+  done
+  running=()
+}
+EOF
 write_script "$shot_script" <<EOF
 #!/usr/bin/env bash
 . "$drive_lib"
@@ -1135,15 +1188,8 @@ if $fixture_window_mode; then
   spawn_foot formalshell-smoke-iconic "" "formalshell smoke session"
   until_window formalshell-smoke-iconic
 fi
-running=()
-turn_end() {
-  local entry pid script
-  for entry in \${running[@]+"\${running[@]}"}; do
-    pid=\${entry%%:*}; script=\${entry#*:}
-    while tr '\\0' ' ' < "/proc/\$pid/cmdline" 2>/dev/null | grep -qF -- "\$script"; do sleep 0.2; done
-  done
-  running=()
-}
+drives_log="$drives_log" turn_seconds="$turn_seconds" shot_script="$shot_script"
+. "$turns_lib"
 turn=""
 while IFS=\$'\\t' read -r leg cmd; do
   if [ "\$leg" != "\$turn" ]; then
@@ -1151,12 +1197,12 @@ while IFS=\$'\\t' read -r leg cmd; do
     [ -z "\$turn" ] || echo "drive \$turn end \$SECONDS" >> "$drives_log"
     bash "$arrived_script"
     echo "drive \$leg start \$SECONDS" >> "$drives_log"
-    turn=\$leg
+    turn=\$leg turn_t=\$SECONDS
   fi
   BASH_ENV="$drive_lib" \$cmd &
   running+=("\$!:\$(grep -oE '[^ ]+\\.(sh|py)' <<< "\$cmd" | tail -1)")
 done < "$drives_list"
-turn_end
+[ -z "\$turn" ] || turn_end
 [ -z "\$turn" ] || echo "drive \$turn end \$SECONDS" >> "$drives_log"
 "$grim_bin" "$shot_path" > "$shot_dir/grim.log" 2>&1
 # The host user manager's environment while the session is still up, for
@@ -1374,6 +1420,8 @@ if [ -f "$shot_dir/mem.txt" ]; then
   cat "$shot_dir/mem.txt"
 fi
 [ -s "$drives_log" ] && cat "$drives_log"
+drive_faults=$(grep -E '^drive [^ ]+ (fail|timeout) ' "$drives_log" 2>/dev/null || true)
+[ -z "$drive_faults" ] || fail "a drive failed or ran past its leg's seconds: $(tr '\n' ';' <<< "$drive_faults")"
 
 # out_w and out_h are the output's size in the pixels grim captures,
 # out_scale its scale; every crop and probe a leg takes is cut from them.
