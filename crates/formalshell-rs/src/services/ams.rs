@@ -39,18 +39,19 @@ pub struct State {
     pub volume: f64,
     pub elapsed: f64,
     pub at: Instant,
-    /// The track changed with no playback reading of its own, so `elapsed`
-    /// still belongs to the last one.
+    /// The track changed and no playback reading has come since, so
+    /// `elapsed` still belongs to the last one.
     pub position_stale: bool,
-    /// When the last playback reading came.
-    read_at: Option<Instant>,
+    /// When the track changed, while no playback reading has come since.
+    changed_at: Option<Instant>,
     pub error: String,
 }
 
-/// How long a playback reading waits to be claimed by a track arriving after
-/// it: the phone sends a track's attributes and its playback info as separate
-/// updates, in either order.
-const READING_CLAIM: Duration = Duration::from_secs(1);
+/// How long a new track waits for a playback reading before it is taken to
+/// start at 0 at the change. The phone sends PlaybackInfo only when playback
+/// changes, so a track it moves to without one may send none at all; a new
+/// track starting at 0 is honest, and lyrics never stay dark.
+const READING_WAIT: Duration = Duration::from_secs(1);
 
 impl Default for State {
     fn default() -> Self {
@@ -66,7 +67,7 @@ impl Default for State {
             elapsed: 0.0,
             at: Instant::now(),
             position_stale: false,
-            read_at: None,
+            changed_at: None,
             error: String::new(),
         }
     }
@@ -107,7 +108,24 @@ impl State {
         self.available && !self.title.is_empty()
     }
 
+    /// When a stale position runs out of [`READING_WAIT`].
+    fn reading_wait(&self) -> Option<Instant> {
+        self.changed_at.map(|at| at + READING_WAIT)
+    }
+
+    /// A track that waited [`READING_WAIT`] for a reading and got none
+    /// starts at 0 at its change, and runs on from there while playing.
+    fn expire_reading(&mut self, now: Instant) {
+        if let Some(at) = self.changed_at.filter(|&at| now >= at + READING_WAIT) {
+            (self.elapsed, self.at) = (0.0, at);
+            self.position_stale = false;
+            self.changed_at = None;
+        }
+    }
+
     fn clear_track(&mut self) {
+        self.position_stale = false;
+        self.changed_at = None;
         self.title.clear();
         self.artist.clear();
         self.album.clear();
@@ -157,6 +175,7 @@ enum Ev {
     Retry,
     Command(Option<String>),
     Reply(Option<String>),
+    ReadingWait,
 }
 
 fn apply(state: &mut State, event: AmsEvent) {
@@ -164,8 +183,10 @@ fn apply(state: &mut State, event: AmsEvent) {
 }
 
 /// The bridge writes one line per attribute the phone updates, each carrying
-/// the whole state, so a line's own update is told by what it moved: the
-/// track's names, or the playback info (state and elapsed).
+/// the whole state. New names make a new track, its position stale until the
+/// first PlaybackInfo line after them, whatever elapsed that line repeats; a
+/// duration alone is the same track refined. Only a PlaybackInfo line moves
+/// the extrapolation base.
 fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
     match event {
         AmsEvent::Status { available } => {
@@ -176,13 +197,15 @@ fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
                 state.clear_track();
             }
         }
-        AmsEvent::NowPlaying { title, artist, album, duration, elapsed, playback, volume } => {
+        AmsEvent::NowPlaying { title, artist, album, duration, elapsed, playback, volume, reading } => {
             if (&title, &artist, &album) != (&state.title, &state.artist, &state.album) {
-                state.position_stale = !state.read_at.is_some_and(|at| now.saturating_duration_since(at) <= READING_CLAIM);
+                state.position_stale = true;
+                state.changed_at = Some(now);
             }
-            if (elapsed, &playback) != (state.elapsed, &state.playback) {
+            if reading {
+                (state.elapsed, state.at) = (elapsed, now);
                 state.position_stale = false;
-                state.read_at = Some(now);
+                state.changed_at = None;
             }
             state.title = title;
             state.artist = artist;
@@ -192,8 +215,6 @@ fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
             if volume >= 0.0 {
                 state.volume = volume;
             }
-            state.elapsed = elapsed;
-            state.at = now;
         }
         AmsEvent::Error { message } => state.error = message,
     }
@@ -269,6 +290,16 @@ async fn run(ctx: Ctx) {
                 None => std::future::pending().await,
             }
         };
+        let reading_wait = state.reading_wait();
+        let reading = async {
+            match reading_wait {
+                Some(at) => {
+                    Timer::at(at).await;
+                    Ev::ReadingWait
+                }
+                None => std::future::pending().await,
+            }
+        };
         let event = {
             let sets = async { Ev::Settings(config::moved(&settings_rx, &IPHONE_ENABLE.get(&settings), |s| IPHONE_ENABLE.get(s)).await) };
             let gate = async {
@@ -277,7 +308,7 @@ async fn run(ctx: Ctx) {
             };
             let cmd = async { Ev::Command(cmd_rx.recv().await.ok()) };
             let reply = async { Ev::Reply(reply_rx.recv().await.ok()) };
-            let base = sets.or(gate).or(timer).or(cmd).or(reply);
+            let base = sets.or(gate).or(timer).or(reading).or(cmd).or(reply);
             match child.as_mut() {
                 Some((c, lines)) => {
                     let line = async { Ev::Line(lines.next().await.and_then(Result::ok)) };
@@ -346,6 +377,7 @@ async fn run(ctx: Ctx) {
                 }
             }
             Ev::Reply(None) => return,
+            Ev::ReadingWait => state.expire_reading(Instant::now()),
         }
     }
 }
@@ -364,15 +396,18 @@ mod tests {
         assert_eq!(s.position(at + Duration::from_secs(30)), 10.0);
     }
 
-    fn now_playing(title: &str, elapsed: f64, playback: &str) -> AmsEvent {
+    /// A line the bridge writes for a track attribute (`reading` false) or
+    /// for the phone's PlaybackInfo (`reading` true).
+    fn line(title: &str, duration: f64, elapsed: f64, playback: &str, reading: bool) -> AmsEvent {
         AmsEvent::NowPlaying {
             title: title.into(),
             artist: "A".into(),
             album: String::new(),
-            duration: 200.0,
+            duration,
             elapsed,
             playback: playback.into(),
             volume: -1.0,
+            reading,
         }
     }
 
@@ -380,27 +415,70 @@ mod tests {
     fn a_title_holds_the_position_stale_until_the_phone_reads_elapsed_for_it() {
         let t0 = Instant::now();
         let mut s = State::default();
-        apply_at(&mut s, now_playing("One", 0.0, "playing"), t0);
-        apply_at(&mut s, now_playing("One", 150.0, "playing"), t0 + Duration::from_secs(150));
+        apply_at(&mut s, line("One", 200.0, 0.0, "playing", true), t0);
+        apply_at(&mut s, line("One", 200.0, 150.0, "playing", true), t0 + Duration::from_secs(150));
         assert!(!s.position_stale);
 
-        // The new title repeats the old elapsed.
+        // The new title's line repeats the old elapsed.
         let later = t0 + Duration::from_secs(200);
-        apply_at(&mut s, now_playing("Two", 150.0, "playing"), later);
+        apply_at(&mut s, line("Two", 200.0, 150.0, "playing", false), later);
         assert!(s.position_stale && s.elapsed == 150.0);
-        apply_at(&mut s, now_playing("Two", 0.4, "playing"), later + Duration::from_millis(80));
+        assert_eq!(s.at, t0 + Duration::from_secs(150), "a track line is no reading");
+        apply_at(&mut s, line("Two", 200.0, 0.4, "playing", true), later + Duration::from_millis(80));
         assert!(!s.position_stale && s.elapsed == 0.4);
     }
 
     #[test]
-    fn a_title_claims_the_reading_just_before_it() {
+    fn a_reading_before_the_title_is_the_last_tracks() {
         let t0 = Instant::now();
         let mut s = State::default();
-        apply_at(&mut s, now_playing("One", 150.0, "paused"), t0);
-        let later = t0 + Duration::from_secs(60);
-        apply_at(&mut s, now_playing("One", 0.0, "paused"), later);
-        apply_at(&mut s, now_playing("Two", 0.0, "paused"), later + Duration::from_millis(80));
-        assert!(!s.position_stale && s.elapsed == 0.0);
+        apply_at(&mut s, line("One", 200.0, 150.0, "paused", true), t0);
+        apply_at(&mut s, line("One", 200.0, 0.0, "paused", true), t0 + Duration::from_secs(60));
+        apply_at(&mut s, line("Two", 200.0, 0.0, "paused", false), t0 + Duration::from_secs(60));
+        assert!(s.position_stale);
+    }
+
+    #[test]
+    fn a_repeated_elapsed_after_a_change_is_still_a_reading() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, line("One", 200.0, 0.0, "paused", true), t0);
+        apply_at(&mut s, line("Two", 200.0, 0.0, "paused", false), t0 + Duration::from_secs(5));
+        assert!(s.position_stale);
+        apply_at(&mut s, line("Two", 200.0, 0.0, "paused", true), t0 + Duration::from_secs(5));
+        assert!(!s.position_stale && s.reading_wait().is_none());
+    }
+
+    #[test]
+    fn a_duration_refinement_keeps_the_claimed_reading() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, line("One", 200.0, 0.0, "playing", true), t0);
+        apply_at(&mut s, line("Two", 200.0, 0.0, "playing", false), t0 + Duration::from_secs(9));
+        apply_at(&mut s, line("Two", 200.0, 3.0, "playing", true), t0 + Duration::from_secs(10));
+        apply_at(&mut s, line("Two", 181.0, 3.0, "playing", false), t0 + Duration::from_secs(11));
+        assert!(!s.position_stale && s.duration == 181.0);
+        assert_eq!(s.position(t0 + Duration::from_secs(12)), 5.0);
+    }
+
+    #[test]
+    fn a_track_that_never_gets_a_reading_starts_at_zero_once_the_wait_runs_out() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, line("One", 200.0, 150.0, "playing", true), t0);
+        let change = t0 + Duration::from_secs(30);
+        apply_at(&mut s, line("Two", 200.0, 150.0, "playing", false), change);
+        let at = s.reading_wait().unwrap();
+        s.expire_reading(at - Duration::from_millis(1));
+        assert!(s.position_stale);
+        s.expire_reading(at);
+        assert!(!s.position_stale && s.reading_wait().is_none());
+        assert_eq!(s.position(change + Duration::from_secs(4)), 4.0, "run on from the change");
+
+        apply_at(&mut s, line("Three", 200.0, 4.0, "paused", true), change + Duration::from_secs(4));
+        apply_at(&mut s, line("Four", 200.0, 4.0, "paused", false), change + Duration::from_secs(9));
+        s.expire_reading(change + Duration::from_secs(60));
+        assert!(!s.position_stale && s.position(change + Duration::from_secs(90)) == 0.0, "paused at 0");
     }
 
     #[test]
@@ -410,7 +488,7 @@ mod tests {
         assert!(!s.listed());
         apply(
             &mut s,
-            AmsEvent::NowPlaying { title: "T".into(), artist: "A".into(), album: String::new(), duration: 0.0, elapsed: 0.0, playback: "playing".into(), volume: -1.0 },
+            AmsEvent::NowPlaying { title: "T".into(), artist: "A".into(), album: String::new(), duration: 0.0, elapsed: 0.0, playback: "playing".into(), volume: -1.0, reading: true },
         );
         assert!(s.listed());
         assert_eq!(s.volume, -1.0);

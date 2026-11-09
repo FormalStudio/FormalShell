@@ -1,0 +1,31 @@
+--- a/bin/omarchy-iphone-ams
++++ b/bin/omarchy-iphone-ams
+@@ -119,8 +119,8 @@
+     state = {"title": "", "artist": "", "album": "", "duration": 0.0,
+              "player": "", "playback": "", "elapsed": 0.0, "volume": -1.0}
+ 
+-    def push():
+-        out = {"type": "nowplaying"}
++    def push(update):
++        out = {"type": "nowplaying", "update": update}
+         out.update(state)
+         emit(out)
+ 
+@@ -143,7 +143,7 @@
+                     state["duration"] = 0.0
+             elif key:
+                 state[key] = text
+-            push()
++            push("track")
+         elif entity == ENTITY_PLAYER:
+             if attribute == PLAYER_NAME:
+                 state["player"] = text
+@@ -162,7 +162,7 @@
+                         state["elapsed"] = float(parts[2])
+                     except ValueError:
+                         pass
+-            push()
++            push("playback" if attribute == PLAYER_PLAYBACK_INFO else "player")
+ 
+     def on_props(_c, _sender, path, _iface, _signal, params, _data):
+         if path != update_path:

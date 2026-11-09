@@ -4,13 +4,16 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::Poll;
+use std::time::Instant;
 
 use async_channel::{Receiver, Sender};
+use async_io::Timer;
 use fs_dbus::{Owner, OwnerWatch};
 use fs_types::BtAddress;
 use futures_lite::{StreamExt, future};
 use zbus::fdo::ObjectManagerProxy;
 use zbus::message::Type as MessageType;
+use zbus::proxy::CacheProperties;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
 use zbus::{Connection, MatchRule, Message, MessageStream};
 
@@ -254,7 +257,7 @@ impl Bluez {
     }
 
     pub async fn player_command(&self, path: &str, command: PlayerCommand) -> Result<()> {
-        let p = MediaPlayer1Proxy::builder(&self.conn).path(path.to_string())?.build().await?;
+        let p = player_proxy(&self.conn, path).await?;
         Ok(match command {
             PlayerCommand::Play => p.play().await,
             PlayerCommand::Pause => p.pause().await,
@@ -282,6 +285,25 @@ impl Bluez {
 }
 
 static AGENTS: AtomicU32 = AtomicU32::new(0);
+
+async fn player_proxy(conn: &Connection, path: &str) -> zbus::Result<MediaPlayer1Proxy<'static>> {
+    MediaPlayer1Proxy::builder(conn).path(path.to_string())?.cache_properties(CacheProperties::No).build().await
+}
+
+/// A `Position` read after a track change: the player, the change it
+/// answers for, and BlueZ's answer.
+type PositionRead = Pin<Box<dyn Future<Output = (String, u64, Option<u32>)>>>;
+
+fn read_position(conn: &Connection, path: String, change: u64) -> PositionRead {
+    let conn = conn.clone();
+    Box::pin(async move {
+        let ms = match player_proxy(&conn, &path).await {
+            Ok(p) => p.position().await.ok(),
+            Err(_) => None,
+        };
+        (path, change, ms)
+    })
+}
 
 /// A registered agent. Dropping it unregisters the agent and removes its
 /// object, so a pairing cut short by a timeout cleans up like one that ended.
@@ -321,6 +343,8 @@ enum Item {
     Signal(Message),
     Owner(Owner),
     Watch(Watch),
+    Position(String, u64, Option<u32>),
+    PositionWait,
     Gone,
 }
 
@@ -415,8 +439,24 @@ impl Monitor {
         resubscribe(&conn, &state, &events, &mut streams, false, &paths).await;
         let mut owner = Box::pin(owner);
         let mut watch = Box::pin(watch);
+        let mut reads: Vec<PositionRead> = Vec::new();
         loop {
+            for (path, change) in lock(&state).take_position_reads() {
+                reads.push(read_position(&conn, path, change));
+            }
+            let mut wait = lock(&state).next_position_wait().map(Timer::at);
             let item = future::poll_fn(|cx| {
+                for i in 0..reads.len() {
+                    if let Poll::Ready((path, change, ms)) = reads[i].as_mut().poll(cx) {
+                        drop(reads.swap_remove(i));
+                        return Poll::Ready(Item::Position(path, change, ms));
+                    }
+                }
+                if let Some(t) = wait.as_mut()
+                    && Pin::new(t).poll(cx).is_ready()
+                {
+                    return Poll::Ready(Item::PositionWait);
+                }
                 if let Poll::Ready(o) = owner.as_mut().poll_next(cx) {
                     return Poll::Ready(o.map_or(Item::Gone, |change| Item::Owner(change.owner)));
                 }
@@ -440,6 +480,15 @@ impl Monitor {
                 Item::Gone => return,
                 Item::Signal(msg) => {
                     handle_signal(&state, &events, &msg);
+                    false
+                }
+                Item::Position(path, change, Some(ms)) => {
+                    publish(&state, &events, |s| s.position_read(&path, change, ms));
+                    false
+                }
+                Item::Position(_, _, None) => false,
+                Item::PositionWait => {
+                    publish(&state, &events, |s| s.expire_positions(Instant::now()));
                     false
                 }
                 Item::Owner(Owner::Gone) => {

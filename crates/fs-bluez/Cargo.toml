@@ -11,9 +11,9 @@ publish = false
 fs-dbus = { path = "../fs-dbus" }
 fs-types = { path = "../fs-types" }
 async-channel = "2.5"
+async-io = "2.6"
 futures-lite = "2.6"
 zbus = { version = "5", default-features = false, features = ["async-io"] }
 
 [dev-dependencies]
 async-executor = "1.14"
-async-io = "2.6"

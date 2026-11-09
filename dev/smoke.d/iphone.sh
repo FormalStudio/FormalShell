@@ -122,7 +122,7 @@ leg_iphone_fixture() {
 
   printf '%s\n' \
     '{"type":"status","available":true}' \
-    '{"type":"nowplaying","title":"Waves","artist":"Fixture Band","album":"Fixture Album","duration":210,"elapsed":12,"playback":"playing","volume":0.6}' \
+    '{"type":"nowplaying","update":"playback","title":"Waves","artist":"Fixture Band","album":"Fixture Album","duration":210,"elapsed":12,"playback":"playing","volume":0.6}' \
     > "$iphone_ams_events_path"
   : > "$iphone_ams_calls_path"
   : > "$iphone_ams_runs_path"

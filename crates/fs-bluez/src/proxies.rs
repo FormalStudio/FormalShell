@@ -44,4 +44,7 @@ pub trait MediaPlayer1 {
     fn pause(&self) -> zbus::Result<()>;
     fn next(&self) -> zbus::Result<()>;
     fn previous(&self) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn position(&self) -> zbus::Result<u32>;
 }

@@ -163,6 +163,7 @@ rm -f "$tp/tensaku/rust-toolchain.toml"
   && CGO_ENABLED=0 GOTOOLCHAIN=local GOPATH=$work/gopath GOFLAGS=-modcacherw \
     go build -trimpath -buildvcs=false -o localsend-cli .)
 (cd "$tp/omarchy-iphone" && patch -Np1 -i "$repo/packaging/iphone-ams-subscribe.patch" \
+  && patch -Np1 -i "$repo/packaging/iphone-ams-update.patch" \
   && patch -Np1 -i "$repo/packaging/iphone-bridge-bond.patch")
 
 # formalshell-depth's interpreter, built here rather than taken from

@@ -510,11 +510,14 @@ pub fn to_notification(entry: &Notification) -> Notif {
 /// phone's entity-update characteristic was found at all (false right after a
 /// listen that then exits non-zero), and every `NowPlaying` line carries the
 /// player's *whole* known state, not a diff, so a title-only change still
-/// repeats the last `elapsed`/`playback` the caller already had.
+/// repeats the last `elapsed`/`playback` the caller already had. `reading`
+/// is set on the line the phone's PlaybackInfo update wrote
+/// (`packaging/iphone-ams-update.patch` names each line's update), the one
+/// whose `elapsed` is a fresh reading.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AmsEvent {
     Status { available: bool },
-    NowPlaying { title: String, artist: String, album: String, duration: f64, elapsed: f64, playback: String, volume: f64 },
+    NowPlaying { title: String, artist: String, album: String, duration: f64, elapsed: f64, playback: String, volume: f64, reading: bool },
     Error { message: String },
 }
 
@@ -543,6 +546,7 @@ pub fn parse_ams_line(line: &str) -> Option<AmsEvent> {
                 elapsed: if elapsed.is_finite() && elapsed >= 0.0 { elapsed } else { 0.0 },
                 playback: s(&raw, "playback"),
                 volume: if volume.is_finite() && volume >= 0.0 { volume } else { -1.0 },
+                reading: s(&raw, "update") == "playback",
             })
         }
         "error" => Some(AmsEvent::Error { message: explain_error(&s(&raw, "message")) }),
@@ -758,7 +762,7 @@ mod tests {
 
     #[test]
     fn parse_ams_nowplaying() {
-        let e = parse_ams_line(r#"{"type": "nowplaying", "title": "Talk", "artist": "Kraftwerk", "album": "The Man-Machine", "duration": 220.5, "player": "Music", "playback": "playing", "elapsed": 41.2, "volume": 0.6}"#);
+        let e = parse_ams_line(r#"{"type": "nowplaying", "update": "playback", "title": "Talk", "artist": "Kraftwerk", "album": "The Man-Machine", "duration": 220.5, "player": "Music", "playback": "playing", "elapsed": 41.2, "volume": 0.6}"#);
         assert_eq!(
             e,
             Some(AmsEvent::NowPlaying {
@@ -769,6 +773,7 @@ mod tests {
                 elapsed: 41.2,
                 playback: "playing".into(),
                 volume: 0.6,
+                reading: true,
             })
         );
     }
@@ -777,7 +782,8 @@ mod tests {
     fn parse_ams_nowplaying_defaults() {
         let e = parse_ams_line(r#"{"type": "nowplaying", "title": "", "artist": "", "album": "", "duration": 0.0, "player": "", "playback": "", "elapsed": 0.0, "volume": -1.0}"#);
         match e {
-            Some(AmsEvent::NowPlaying { title, duration, playback, volume, .. }) => {
+            Some(AmsEvent::NowPlaying { title, duration, playback, volume, reading, .. }) => {
+                assert!(!reading, "a line naming no update is no reading");
                 assert_eq!(title, "");
                 assert_eq!(duration, 0.0);
                 assert_eq!(playback, "");

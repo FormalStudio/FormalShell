@@ -101,7 +101,7 @@ pub struct Player {
     /// As of BlueZ's last `Position`; the remote's clock runs on from it
     /// while playing.
     pub position: Duration,
-    /// A new track arrived with no `Position` of its own, so `position`
+    /// A new track arrived and no `Position` has come since, so `position`
     /// still belongs to the last one.
     pub position_stale: bool,
 }
@@ -151,18 +151,26 @@ impl Entry {
     }
 }
 
-/// A player and when BlueZ last sent its `Position`.
+/// A player and the track change its position waits on.
 #[derive(Clone, Debug, Default)]
 struct PlayerEntry {
     player: Player,
-    position_at: Option<Instant>,
+    /// `Track.TrackNumber`, which tells two tracks of the same names apart.
+    number: Option<u32>,
+    /// Counts track changes, so a `Position` read answers for the one it was
+    /// asked after.
+    change: u64,
+    /// When the track changed, while no `Position` has come since.
+    changed_at: Option<Instant>,
+    /// The monitor has asked BlueZ for this change's `Position`.
+    read_asked: bool,
 }
 
-/// How long a `Position` waits to be claimed by a `Track` arriving after it.
-/// On a track change the target sends the new position and the new track
-/// separately, and BlueZ fetches the track's attributes in a round trip
-/// first, so the position usually lands before the track it belongs to.
-const POSITION_CLAIM: Duration = Duration::from_secs(1);
+/// How long a new track waits for a `Position` before it is taken to start
+/// at 0 at the change. Some targets send none until the next track or a
+/// seek, and BlueZ answers a read with whatever it last cached; a new track
+/// starting at 0 is honest, and lyrics never stay dark.
+pub const POSITION_WAIT: Duration = Duration::from_secs(1);
 
 /// Every adapter and device BlueZ currently exports. Empty means no
 /// bluetoothd or no controller, never a stand-in.
@@ -253,8 +261,9 @@ fn apply_device(d: &mut Device, props: &Props, invalidated: &[String]) {
 }
 
 /// `Position` and `Track.Duration` are milliseconds on the wire. A new
-/// `Track` replaces the whole of the last one, and takes a `Position` from
-/// the same change or one at most `POSITION_CLAIM` before it as its own.
+/// `Track` replaces the whole of the last one and holds the position stale
+/// until a `Position` arrives after it, from the same change or later. A
+/// `Track` that only moves the duration is the same track refined.
 fn apply_player(e: &mut PlayerEntry, props: &Props, now: Instant) {
     let p = &mut e.player;
     if let Some(v) = get_path(props, "Device") {
@@ -271,15 +280,23 @@ fn apply_player(e: &mut PlayerEntry, props: &Props, now: Instant) {
         let artist = prop::<String>(&track, "Artist").unwrap_or_default();
         let album = prop::<String>(&track, "Album").unwrap_or_default();
         let duration = prop::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
-        if (&title, &artist, &album, duration) != (&p.title, &p.artist, &p.album, p.duration) {
-            p.position_stale = !e.position_at.is_some_and(|at| now.saturating_duration_since(at) <= POSITION_CLAIM);
+        let number = prop::<u32>(&track, "TrackNumber").filter(|&n| n > 0);
+        let renumbered = matches!((number, e.number), (Some(a), Some(b)) if a != b);
+        if (&title, &artist, &album) != (&p.title, &p.artist, &p.album) || renumbered {
+            p.position_stale = true;
+            e.number = number;
+            e.change += 1;
+            e.changed_at = Some(now);
+            e.read_asked = false;
+        } else {
+            e.number = number.or(e.number);
         }
         (p.title, p.artist, p.album, p.duration) = (title, artist, album, duration);
     }
     if let Some(v) = prop::<u32>(props, "Position") {
         p.position = Duration::from_millis(v.into());
         p.position_stale = false;
-        e.position_at = Some(now);
+        e.changed_at = None;
     }
 }
 
@@ -326,6 +343,52 @@ impl State {
 
     pub fn players(&self) -> Vec<Player> {
         self.players.values().map(|e| e.player.clone()).collect()
+    }
+
+    /// Players whose track changed with no `Position` since and whose
+    /// `Position` nobody has read yet, each with the change it answers for.
+    /// Marks them asked.
+    pub fn take_position_reads(&mut self) -> Vec<(String, u64)> {
+        self.players
+            .iter_mut()
+            .filter(|(_, e)| e.player.position_stale && !e.read_asked)
+            .map(|(path, e)| {
+                e.read_asked = true;
+                (path.clone(), e.change)
+            })
+            .collect()
+    }
+
+    /// A `Position` read for `change`. One answering for an earlier change,
+    /// or arriving after a `Position` signal already did, is dropped.
+    pub fn position_read(&mut self, path: &str, change: u64, ms: u32) -> Vec<Event> {
+        let Some(e) = self.players.get_mut(path) else { return vec![] };
+        if e.change != change || !e.player.position_stale {
+            return vec![];
+        }
+        e.player.position = Duration::from_millis(ms.into());
+        e.player.position_stale = false;
+        e.changed_at = None;
+        vec![Event::PlayerChanged(e.player.clone())]
+    }
+
+    /// When the earliest stale position runs out of [`POSITION_WAIT`].
+    pub fn next_position_wait(&self) -> Option<Instant> {
+        self.players.values().filter_map(|e| e.changed_at).min().map(|at| at + POSITION_WAIT)
+    }
+
+    /// Every track that waited [`POSITION_WAIT`] for a `Position` and got
+    /// none starts at 0 at its change, run on to `now` while playing.
+    pub fn expire_positions(&mut self, now: Instant) -> Vec<Event> {
+        let mut out = vec![];
+        for e in self.players.values_mut() {
+            let Some(at) = e.changed_at.filter(|&at| now >= at + POSITION_WAIT) else { continue };
+            e.player.position = if e.player.playing() { now.saturating_duration_since(at) } else { Duration::ZERO };
+            e.player.position_stale = false;
+            e.changed_at = None;
+            out.push(Event::PlayerChanged(e.player.clone()));
+        }
+        out
     }
 
     pub fn device(&self, path: &str) -> Option<Device> {
@@ -394,7 +457,7 @@ impl State {
 
     fn player(&mut self, path: &str, props: &Props) -> Vec<Event> {
         let known = self.players.contains_key(path);
-        let e = self.players.entry(path.to_string()).or_insert_with(|| PlayerEntry { player: Player { path: path.to_string(), ..Default::default() }, position_at: None });
+        let e = self.players.entry(path.to_string()).or_insert_with(|| PlayerEntry { player: Player { path: path.to_string(), ..Default::default() }, ..Default::default() });
         let before = e.player.clone();
         apply_player(e, props, Instant::now());
         if known && e.player == before { vec![] } else { vec![Event::PlayerChanged(e.player.clone())] }
@@ -778,59 +841,89 @@ mod tests {
         s
     }
 
-    /// The last `Position` as if it came well before whatever comes next.
-    fn age_position(s: &mut State) {
-        let e = s.players.get_mut(PLAYER).unwrap();
-        e.position_at = e.position_at.map(|at| at.checked_sub(POSITION_CLAIM * 30).unwrap());
-    }
-
     fn change(s: &mut State, items: Vec<(&str, Value<'_>)>) {
         s.properties_changed(PLAYER, PLAYER_IFACE, &props(items), &[]);
     }
 
     #[test]
-    fn a_track_after_its_position_holds_the_position_stale_until_bluez_reports_one() {
+    fn a_track_holds_the_position_stale_until_a_position_arrives_after_it() {
         let mut s = playing_one();
-        age_position(&mut s);
+        change(&mut s, vec![("Position", 0u32.into())]);
         change(&mut s, vec![("Track", track("Two", 180_000))]);
         let p = &s.players()[0];
-        assert!(p.position_stale && p.position == Duration::from_millis(200_000));
+        assert!(p.position_stale && p.position == Duration::ZERO, "a position before the track is the last track's");
         change(&mut s, vec![("Position", 1_000u32.into())]);
         let p = &s.players()[0];
         assert!(!p.position_stale && p.position == Duration::from_millis(1_000));
     }
 
     #[test]
-    fn a_track_claims_the_position_just_before_it() {
-        let mut s = playing_one();
-        age_position(&mut s);
-        change(&mut s, vec![("Position", 0u32.into())]);
-        change(&mut s, vec![("Track", track("Two", 180_000))]);
-        let p = &s.players()[0];
-        assert!(!p.position_stale && p.position == Duration::ZERO);
-    }
-
-    #[test]
     fn a_track_in_the_same_change_as_its_position_is_never_stale() {
         let mut s = playing_one();
-        age_position(&mut s);
         change(&mut s, vec![("Track", track("Two", 90_000)), ("Position", 0u32.into())]);
         assert!(!s.players()[0].position_stale);
-        age_position(&mut s);
         change(&mut s, vec![("Track", track("Two", 90_000))]);
         assert!(!s.players()[0].position_stale, "the same track again");
     }
 
     #[test]
-    fn a_paused_track_change_with_no_later_position_lights_off_the_one_before_it() {
+    fn a_fast_skip_takes_only_the_read_asked_after_the_last_track() {
         let mut s = playing_one();
-        change(&mut s, vec![("Status", "paused".into()), ("Position", 250_000u32.into())]);
-        age_position(&mut s);
-        change(&mut s, vec![("Position", 0u32.into())]);
+        assert!(s.take_position_reads().is_empty());
         change(&mut s, vec![("Track", track("Two", 180_000))]);
+        let [(_, two)] = s.take_position_reads()[..] else { panic!() };
+        change(&mut s, vec![("Track", track("Three", 180_000))]);
+        let [(_, three)] = s.take_position_reads()[..] else { panic!() };
+        assert!(s.position_read(PLAYER, two, 150_000).is_empty(), "Two's read lands after Three");
+        assert!(s.players()[0].position_stale);
+        change(&mut s, vec![("Track", track("Four", 180_000))]);
+        let [(_, four)] = s.take_position_reads()[..] else { panic!() };
+        assert!(s.position_read(PLAYER, three, 2_000).is_empty());
+        assert!(s.take_position_reads().is_empty(), "asked once per change");
+        let p = &s.players()[0];
+        assert!(p.position_stale && p.position == Duration::from_millis(200_000));
+        assert_eq!(s.position_read(PLAYER, four, 500).len(), 1);
+        let p = &s.players()[0];
+        assert!(!p.position_stale && p.position == Duration::from_millis(500) && p.title == "Four");
+        change(&mut s, vec![("Position", 700u32.into())]);
+        assert!(s.position_read(PLAYER, four, 100).is_empty(), "a read after a signal is older than it");
+        assert_eq!(s.players()[0].position, Duration::from_millis(700));
+    }
+
+    #[test]
+    fn a_paused_track_with_no_position_starts_at_zero_once_the_wait_runs_out() {
+        let mut s = playing_one();
+        change(&mut s, vec![("Status", "paused".into())]);
+        change(&mut s, vec![("Track", track("Two", 180_000))]);
+        let at = s.next_position_wait().unwrap();
+        assert!(s.expire_positions(at - Duration::from_millis(1)).is_empty());
+        assert!(s.players()[0].position_stale);
+        assert_eq!(s.expire_positions(at + Duration::from_secs(5)).len(), 1);
+        let p = &s.players()[0];
+        assert!(!p.position_stale && p.position == Duration::ZERO);
+        assert!(s.next_position_wait().is_none());
+    }
+
+    #[test]
+    fn a_playing_track_with_no_position_runs_on_from_its_change() {
+        let mut s = playing_one();
+        change(&mut s, vec![("Track", track("Two", 180_000))]);
+        let at = s.next_position_wait().unwrap();
+        s.expire_positions(at + Duration::from_secs(2));
+        let p = &s.players()[0];
+        assert!(!p.position_stale && p.position == POSITION_WAIT + Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_duration_refinement_keeps_the_claimed_position() {
+        let mut s = playing_one();
+        change(&mut s, vec![("Track", track("Two", 180_000))]);
+        change(&mut s, vec![("Position", 1_000u32.into())]);
         change(&mut s, vec![("Track", track("Two", 181_000))]);
         let p = &s.players()[0];
-        assert!(!p.playing() && !p.position_stale && p.position == Duration::ZERO);
+        assert!(!p.position_stale && p.position == Duration::from_millis(1_000));
+        assert_eq!(p.duration, Some(Duration::from_millis(181_000)));
+        assert!(s.take_position_reads().is_empty() && s.next_position_wait().is_none());
     }
 
     #[test]
