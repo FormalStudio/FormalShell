@@ -1133,7 +1133,7 @@ impl App {
         let wanted = self.store.desktop();
         let base = self.store.wallpaper.latest().filter(|p| p.path == wanted).and_then(|p| crate::shards::mean(&p.bgra)).unwrap_or(theme.colors.get(ColorRole::Background));
         let look = crate::shards::Look::new(theme, base, word, (1.0 - view::SCRIM) as f32);
-        let t = self.heads.iter().find_map(|h| h.backdrop.as_ref()?.shards.as_ref().map(|s| s.t)).unwrap_or(0.0);
+        let t = self.bars.heads.iter().find_map(|h| h.backdrop.as_ref()?.shards.as_ref().map(|s| s.t)).unwrap_or(0.0);
         let mut raster = crate::shards::Raster::new();
         for (w, h) in devices {
             let (Ok(bw), Ok(bh)) = (u16::try_from(w), u16::try_from(h)) else { continue };

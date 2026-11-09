@@ -73,7 +73,7 @@ impl App {
             return Some(Arc::new(Sky::flat(rgb.map(|c| f32::from(c) / 255.0), logical)));
         }
         let bar = self.bar_wl()?;
-        let (pw, ph) = self.heads.iter().find(|h| &h.output == bar)?.backdrop.as_ref()?.pixels()?;
+        let (pw, ph) = self.bars.heads.iter().find(|h| &h.output == bar)?.backdrop.as_ref()?.pixels()?;
         let picture = self.store.wallpaper.sized(pw as u32, ph as u32).filter(|p| p.path == wanted)?.clone();
         let at = Arc::as_ptr(&picture) as usize;
         if let Some((seen, sky)) = &self.rims.sky

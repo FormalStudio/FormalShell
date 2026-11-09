@@ -375,7 +375,7 @@ impl App {
 
     fn desktop_clock_subject(&mut self, msg: Msg) {
         let mut landed = self.desktop_clock.sidebar.land(&msg);
-        for c in self.heads.iter_mut().filter_map(|h| h.clock.as_mut()) {
+        for c in self.bars.heads.iter_mut().filter_map(|h| h.clock.as_mut()) {
             landed |= c.slot.land(&msg);
         }
         if landed {
@@ -393,27 +393,27 @@ impl App {
     pub(super) fn sync_desktop_clocks(&mut self) {
         let settings = Settings::read(&self.store.config);
         let mut asks = Vec::new();
-        for i in 0..self.heads.len() {
-            let output = self.heads[i].output.clone();
+        for i in 0..self.bars.heads.len() {
+            let output = self.bars.heads[i].output.clone();
             let name = self.output_name(&output);
-            let shards = self.heads[i].backdrop.as_ref().is_some_and(|b| b.shards.is_some());
-            let want = settings.is_some() && self.heads[i].backdrop.is_some() && !self.chrome().covered(&name);
-            let stale = self.heads[i].clock.as_ref().is_some_and(|c| shards && !c.over_shards);
-            if (!want || stale) && self.heads[i].clock.take().is_some() {
+            let shards = self.bars.heads[i].backdrop.as_ref().is_some_and(|b| b.shards.is_some());
+            let want = settings.is_some() && self.bars.heads[i].backdrop.is_some() && !self.chrome().covered(&name);
+            let stale = self.bars.heads[i].clock.as_ref().is_some_and(|c| shards && !c.over_shards);
+            if (!want || stale) && self.bars.heads[i].clock.take().is_some() {
                 self.log(&format!("desktop clock off {name}"));
             }
             let Some(settings) = &settings else { continue };
             if !want {
                 continue;
             }
-            if self.heads[i].clock.is_none() {
+            if self.bars.heads[i].clock.is_none() {
                 let layer = self.overlay_on("formalshell:desktop-clock", Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
                 let surface = Surface::new("desktop-clock", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.on(&output));
-                self.heads[i].clock = Some(Clock::new(surface, shards));
+                self.bars.heads[i].clock = Some(Clock::new(surface, shards));
                 self.log(&format!("desktop clock on {name}"));
             }
             let picture = self.desktop_clock_picture(i);
-            let Some(clock) = self.heads[i].clock.as_mut() else { continue };
+            let Some(clock) = self.bars.heads[i].clock.as_mut() else { continue };
             draw(clock, &mut self.kit, &self.store, settings, picture.as_ref());
             if let (Some(cut), Some(picture)) = (settings.look.cut, picture) {
                 let key = Key { picture, cut, generation: self.desktop_clock.generation };
@@ -448,7 +448,7 @@ impl App {
             return None;
         }
         let face = FaceSettings::read(&self.store.config);
-        let head = self.heads.iter().position(|h| Some(&h.output) == self.bar_wl());
+        let head = self.bars.heads.iter().position(|h| Some(&h.output) == self.bar_wl());
         let picture = head.and_then(|i| self.desktop_clock_picture(i));
         let (out_w, _) = self.output_size();
         let origin = self.bar_origin();
@@ -474,7 +474,7 @@ impl App {
     }
 
     fn desktop_clock_picture(&self, i: usize) -> Option<Arc<Picture>> {
-        let (w, h) = self.heads[i].backdrop.as_ref().and_then(|b| b.pixels())?;
+        let (w, h) = self.bars.heads[i].backdrop.as_ref().and_then(|b| b.pixels())?;
         let wanted = self.store.desktop();
         self.store.wallpaper.sized(w as u32, h as u32).filter(|p| p.path == wanted).cloned()
     }
@@ -482,17 +482,17 @@ impl App {
     /// Head `i`'s clock holds its frame: its output fullscreen, the session
     /// locked or under the screensaver.
     pub(super) fn desktop_clock_held(&self, i: usize) -> bool {
-        let name = self.output_name(&self.heads[i].output);
+        let name = self.output_name(&self.bars.heads[i].output);
         self.lock.locked || self.saver.active || self.fullscreen_on(&name)
     }
 
     pub(super) fn present_desktop_clocks(&mut self) {
         let qh = self.qh.clone();
-        for i in 0..self.heads.len() {
+        for i in 0..self.bars.heads.len() {
             if self.desktop_clock_held(i) {
                 continue;
             }
-            if let Some(c) = self.heads[i].clock.as_mut() {
+            if let Some(c) = self.bars.heads[i].clock.as_mut() {
                 c.surface.present(&mut c.scene, false, &qh);
             }
         }
@@ -502,6 +502,7 @@ impl App {
     pub(crate) fn desktop_clock_state(&self) -> serde_json::Value {
         let settings = Settings::read(&self.store.config);
         let heads: Vec<serde_json::Value> = self
+            .bars
             .heads
             .iter()
             .map(|h| {

@@ -349,7 +349,7 @@ impl App {
             return (None, Some(Rgba::hex(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))));
         }
         let Some((_, _, output)) = &self.overview.win else { return (None, None) };
-        let Some((pw, ph)) = self.heads.iter().find(|h| &h.output == output).and_then(|h| h.backdrop.as_ref()?.pixels()) else {
+        let Some((pw, ph)) = self.bars.heads.iter().find(|h| &h.output == output).and_then(|h| h.backdrop.as_ref()?.pixels()) else {
             return (None, None);
         };
         let Some(picture) = self.store.wallpaper.sized(pw as u32, ph as u32).filter(|p| p.path == wanted).cloned() else {

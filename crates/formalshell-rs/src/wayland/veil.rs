@@ -256,7 +256,7 @@ impl App {
         // Hyprland draws no overlay over a session lock, so the lock fades
         // itself and no veil is made.
         let locked = self.lock_depart(true, DEPART_MS * self.motion_scale);
-        let outputs: Vec<WlOutput> = if locked { Vec::new() } else { self.heads.iter().map(|h| h.output.clone()).collect() };
+        let outputs: Vec<WlOutput> = if locked { Vec::new() } else { self.bars.heads.iter().map(|h| h.output.clone()).collect() };
         for output in outputs {
             if !self.veil.veils.iter().any(|(o, _)| *o == output) {
                 let veil = self.new_veil(&output, 0.0);
@@ -341,8 +341,8 @@ impl App {
             let bar = live!(self).surface.as_ref().map_or(live!(self).bar.hidden(), |s| s.mapped());
             // With no picture to decode, the plain colour is the wallpaper.
             let plain = self.store.desktop().is_empty();
-            let walls = self.heads.iter().all(|h| h.backdrop.as_ref().is_none_or(|b| b.landed.1 || (plain && b.landed.0)));
-            if (bar && walls && self.veil.hidden && !self.heads.is_empty()) || now >= self.started + ARRIVE_WAIT {
+            let walls = self.bars.heads.iter().all(|h| h.backdrop.as_ref().is_none_or(|b| b.landed.1 || (plain && b.landed.0)));
+            if (bar && walls && self.veil.hidden && !self.bars.heads.is_empty()) || now >= self.started + ARRIVE_WAIT {
                 self.lift();
             }
         }

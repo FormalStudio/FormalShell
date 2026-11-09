@@ -7,10 +7,11 @@
 /// The live bar's window, whichever head it is on.
 macro_rules! live {
     ($s:expr) => {
-        $s.bars.wins[$s.bars.live]
+        $s.bars[$crate::wayland::Live]
     };
 }
 pub(crate) use live;
+pub(crate) use heads::Live;
 
 mod atlas;
 pub mod backdrop;
@@ -244,7 +245,6 @@ pub struct App {
     pub kit: Kit,
     /// The bar layer that holds the keyboard for the minimap, if one does.
     sidebar_keys: Option<wl_surface::WlSurface>,
-    heads: Vec<heads::Head>,
     /// What opened the quick settings card last, which its chevron reads
     /// as open while that card is up.
     quick_from: quick::Origin,
@@ -379,7 +379,6 @@ impl App {
             peek: preview::State::default(),
             bars: heads::Bars::new(bar),
             sidebar_keys: None,
-            heads: Vec::new(),
             quick_from: quick::Origin::Ipc,
             panel: None,
             tray_menu: None,
@@ -685,7 +684,7 @@ impl App {
     /// The GPU is up: every surface drawn so far draws once more, moving
     /// across to it on that present.
     pub fn gpu_up(&mut self) {
-        for b in self.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
+        for b in self.bars.heads.iter_mut().filter_map(|h| h.backdrop.as_mut()) {
             b.repaint(&self.qh);
         }
         live!(self).dirty = true;
@@ -782,7 +781,7 @@ impl App {
 
     /// The output the live bar is on.
     fn bar_wl(&self) -> Option<&wl_output::WlOutput> {
-        self.heads.get(self.bars.live).map(|h| &h.output)
+        self.bars.heads.get(self.bars.live).map(|h| &h.output)
     }
 
     /// The output the live bar's cells answer for.
@@ -1464,7 +1463,7 @@ impl App {
     /// Every bar's cells made at its own surface's scale: a bar whose
     /// surface moved to another scale reads them all again.
     fn sync_rasters(&mut self, now: Instant) {
-        for win in &mut self.bars.wins {
+        for win in self.bars.wins_mut() {
             let Some(scale) = win.surface.as_ref().map(|s| s.scale()).filter(|k| *k != win.bar.raster) else { continue };
             win.bar.raster = scale;
             win.bar.read(&mut self.kit, &self.store, None, now);
