@@ -3,7 +3,7 @@
 //! `InterfacesAdded/Removed` and `PropertiesChanged`, and gets events back.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use fs_dbus::prop;
 pub use fs_dbus::Props;
@@ -101,9 +101,8 @@ pub struct Player {
     /// As of BlueZ's last `Position`; the remote's clock runs on from it
     /// while playing.
     pub position: Duration,
-    /// A new track arrived and BlueZ has not sent a `Position` since, so
-    /// `position` still belongs to the last one. BlueZ publishes `Track`
-    /// and `Position` as separate property changes, in either order.
+    /// A new track arrived with no `Position` of its own, so `position`
+    /// still belongs to the last one.
     pub position_stale: bool,
 }
 
@@ -152,13 +151,26 @@ impl Entry {
     }
 }
 
+/// A player and when BlueZ last sent its `Position`.
+#[derive(Clone, Debug, Default)]
+struct PlayerEntry {
+    player: Player,
+    position_at: Option<Instant>,
+}
+
+/// How long a `Position` waits to be claimed by a `Track` arriving after it.
+/// On a track change the target sends the new position and the new track
+/// separately, and BlueZ fetches the track's attributes in a round trip
+/// first, so the position usually lands before the track it belongs to.
+const POSITION_CLAIM: Duration = Duration::from_secs(1);
+
 /// Every adapter and device BlueZ currently exports. Empty means no
 /// bluetoothd or no controller, never a stand-in.
 #[derive(Clone, Debug, Default)]
 pub struct State {
     adapters: BTreeMap<String, Adapter>,
     devices: BTreeMap<String, Entry>,
-    players: BTreeMap<String, Player>,
+    players: BTreeMap<String, PlayerEntry>,
 }
 
 fn get_path(props: &Props, key: &str) -> Option<String> {
@@ -241,8 +253,10 @@ fn apply_device(d: &mut Device, props: &Props, invalidated: &[String]) {
 }
 
 /// `Position` and `Track.Duration` are milliseconds on the wire. A new
-/// `Track` replaces the whole of the last one.
-fn apply_player(p: &mut Player, props: &Props) {
+/// `Track` replaces the whole of the last one, and takes a `Position` from
+/// the same change or one at most `POSITION_CLAIM` before it as its own.
+fn apply_player(e: &mut PlayerEntry, props: &Props, now: Instant) {
+    let p = &mut e.player;
     if let Some(v) = get_path(props, "Device") {
         p.device = v;
     }
@@ -258,13 +272,14 @@ fn apply_player(p: &mut Player, props: &Props) {
         let album = prop::<String>(&track, "Album").unwrap_or_default();
         let duration = prop::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
         if (&title, &artist, &album, duration) != (&p.title, &p.artist, &p.album, p.duration) {
-            p.position_stale = true;
+            p.position_stale = !e.position_at.is_some_and(|at| now.saturating_duration_since(at) <= POSITION_CLAIM);
         }
         (p.title, p.artist, p.album, p.duration) = (title, artist, album, duration);
     }
     if let Some(v) = prop::<u32>(props, "Position") {
         p.position = Duration::from_millis(v.into());
         p.position_stale = false;
+        e.position_at = Some(now);
     }
 }
 
@@ -310,7 +325,7 @@ impl State {
     }
 
     pub fn players(&self) -> Vec<Player> {
-        self.players.values().cloned().collect()
+        self.players.values().map(|e| e.player.clone()).collect()
     }
 
     pub fn device(&self, path: &str) -> Option<Device> {
@@ -379,10 +394,10 @@ impl State {
 
     fn player(&mut self, path: &str, props: &Props) -> Vec<Event> {
         let known = self.players.contains_key(path);
-        let p = self.players.entry(path.to_string()).or_insert_with(|| Player { path: path.to_string(), ..Default::default() });
-        let before = p.clone();
-        apply_player(p, props);
-        if known && *p == before { vec![] } else { vec![Event::PlayerChanged(p.clone())] }
+        let e = self.players.entry(path.to_string()).or_insert_with(|| PlayerEntry { player: Player { path: path.to_string(), ..Default::default() }, position_at: None });
+        let before = e.player.clone();
+        apply_player(e, props, Instant::now());
+        if known && e.player == before { vec![] } else { vec![Event::PlayerChanged(e.player.clone())] }
     }
 
     /// One object's whole interface map, as `InterfacesAdded` and
@@ -489,9 +504,9 @@ impl State {
         for path in self.players.keys().filter(|p| !fresh.players.contains_key(*p)) {
             out.push(Event::PlayerRemoved { path: path.clone() });
         }
-        for (path, p) in &fresh.players {
-            if self.players.get(path) != Some(p) {
-                out.push(Event::PlayerChanged(p.clone()));
+        for (path, e) in &fresh.players {
+            if self.players.get(path).map(|old| &old.player) != Some(&e.player) {
+                out.push(Event::PlayerChanged(e.player.clone()));
             }
         }
         *self = fresh;
@@ -750,8 +765,7 @@ mod tests {
         assert!(s.properties_changed(PLAYER, PLAYER_IFACE, &paused, &[]).is_empty());
     }
 
-    #[test]
-    fn a_track_holds_the_position_stale_until_bluez_reports_one() {
+    fn playing_one() -> State {
         let mut s = seeded();
         let added = props(vec![
             ("Device", Value::ObjectPath(ObjectPath::try_from(DEV).unwrap())),
@@ -761,20 +775,62 @@ mod tests {
         ]);
         s.interface_added(PLAYER, PLAYER_IFACE, &added);
         assert!(!s.players()[0].position_stale);
+        s
+    }
 
-        // Track first, Position after: the old clock must not pass for the new track.
-        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Two", 180_000))]), &[]);
+    /// The last `Position` as if it came well before whatever comes next.
+    fn age_position(s: &mut State) {
+        let e = s.players.get_mut(PLAYER).unwrap();
+        e.position_at = e.position_at.map(|at| at.checked_sub(POSITION_CLAIM * 30).unwrap());
+    }
+
+    fn change(s: &mut State, items: Vec<(&str, Value<'_>)>) {
+        s.properties_changed(PLAYER, PLAYER_IFACE, &props(items), &[]);
+    }
+
+    #[test]
+    fn a_track_after_its_position_holds_the_position_stale_until_bluez_reports_one() {
+        let mut s = playing_one();
+        age_position(&mut s);
+        change(&mut s, vec![("Track", track("Two", 180_000))]);
         let p = &s.players()[0];
         assert!(p.position_stale && p.position == Duration::from_millis(200_000));
-        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Position", 1_000u32.into())]), &[]);
+        change(&mut s, vec![("Position", 1_000u32.into())]);
         let p = &s.players()[0];
         assert!(!p.position_stale && p.position == Duration::from_millis(1_000));
+    }
 
-        // Same batch, and a repeat of the same track, are never stale.
-        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Three", 90_000)), ("Position", 0u32.into())]), &[]);
+    #[test]
+    fn a_track_claims_the_position_just_before_it() {
+        let mut s = playing_one();
+        age_position(&mut s);
+        change(&mut s, vec![("Position", 0u32.into())]);
+        change(&mut s, vec![("Track", track("Two", 180_000))]);
+        let p = &s.players()[0];
+        assert!(!p.position_stale && p.position == Duration::ZERO);
+    }
+
+    #[test]
+    fn a_track_in_the_same_change_as_its_position_is_never_stale() {
+        let mut s = playing_one();
+        age_position(&mut s);
+        change(&mut s, vec![("Track", track("Two", 90_000)), ("Position", 0u32.into())]);
         assert!(!s.players()[0].position_stale);
-        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Three", 90_000))]), &[]);
-        assert!(!s.players()[0].position_stale);
+        age_position(&mut s);
+        change(&mut s, vec![("Track", track("Two", 90_000))]);
+        assert!(!s.players()[0].position_stale, "the same track again");
+    }
+
+    #[test]
+    fn a_paused_track_change_with_no_later_position_lights_off_the_one_before_it() {
+        let mut s = playing_one();
+        change(&mut s, vec![("Status", "paused".into()), ("Position", 250_000u32.into())]);
+        age_position(&mut s);
+        change(&mut s, vec![("Position", 0u32.into())]);
+        change(&mut s, vec![("Track", track("Two", 180_000))]);
+        change(&mut s, vec![("Track", track("Two", 181_000))]);
+        let p = &s.players()[0];
+        assert!(!p.playing() && !p.position_stale && p.position == Duration::ZERO);
     }
 
     #[test]

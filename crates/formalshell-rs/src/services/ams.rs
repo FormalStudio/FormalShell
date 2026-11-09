@@ -39,8 +39,18 @@ pub struct State {
     pub volume: f64,
     pub elapsed: f64,
     pub at: Instant,
+    /// The track changed with no playback reading of its own, so `elapsed`
+    /// still belongs to the last one.
+    pub position_stale: bool,
+    /// When the last playback reading came.
+    read_at: Option<Instant>,
     pub error: String,
 }
+
+/// How long a playback reading waits to be claimed by a track arriving after
+/// it: the phone sends a track's attributes and its playback info as separate
+/// updates, in either order.
+const READING_CLAIM: Duration = Duration::from_secs(1);
 
 impl Default for State {
     fn default() -> Self {
@@ -55,6 +65,8 @@ impl Default for State {
             volume: -1.0,
             elapsed: 0.0,
             at: Instant::now(),
+            position_stale: false,
+            read_at: None,
             error: String::new(),
         }
     }
@@ -63,6 +75,22 @@ impl Default for State {
 impl State {
     pub fn playing(&self) -> bool {
         self.playback == "playing"
+    }
+
+    /// Everything but the extrapolation base compares; a new reading moves
+    /// `at` and `elapsed` together.
+    pub fn same(&self, other: &State) -> bool {
+        self.installed == other.installed
+            && self.available == other.available
+            && self.title == other.title
+            && self.artist == other.artist
+            && self.album == other.album
+            && self.duration == other.duration
+            && self.playback == other.playback
+            && self.volume == other.volume
+            && self.elapsed == other.elapsed
+            && self.position_stale == other.position_stale
+            && self.error == other.error
     }
 
     pub fn position(&self, now: Instant) -> f64 {
@@ -132,6 +160,13 @@ enum Ev {
 }
 
 fn apply(state: &mut State, event: AmsEvent) {
+    apply_at(state, event, Instant::now());
+}
+
+/// The bridge writes one line per attribute the phone updates, each carrying
+/// the whole state, so a line's own update is told by what it moved: the
+/// track's names, or the playback info (state and elapsed).
+fn apply_at(state: &mut State, event: AmsEvent, now: Instant) {
     match event {
         AmsEvent::Status { available } => {
             state.available = available;
@@ -142,6 +177,13 @@ fn apply(state: &mut State, event: AmsEvent) {
             }
         }
         AmsEvent::NowPlaying { title, artist, album, duration, elapsed, playback, volume } => {
+            if (&title, &artist, &album) != (&state.title, &state.artist, &state.album) {
+                state.position_stale = !state.read_at.is_some_and(|at| now.saturating_duration_since(at) <= READING_CLAIM);
+            }
+            if (elapsed, &playback) != (state.elapsed, &state.playback) {
+                state.position_stale = false;
+                state.read_at = Some(now);
+            }
             state.title = title;
             state.artist = artist;
             state.album = album;
@@ -151,7 +193,7 @@ fn apply(state: &mut State, event: AmsEvent) {
                 state.volume = volume;
             }
             state.elapsed = elapsed;
-            state.at = Instant::now();
+            state.at = now;
         }
         AmsEvent::Error { message } => state.error = message,
     }
@@ -213,19 +255,7 @@ async fn run(ctx: Ctx) {
                 state.clear_track();
             }
         }
-        // Everything but the extrapolation base compares; a new reading
-        // moves `at` and `elapsed` together.
-        if state.available != last.available
-            || state.installed != last.installed
-            || state.title != last.title
-            || state.artist != last.artist
-            || state.album != last.album
-            || state.duration != last.duration
-            || state.playback != last.playback
-            || state.volume != last.volume
-            || state.elapsed != last.elapsed
-            || state.error != last.error
-        {
+        if !state.same(&last) {
             last = state.clone();
             ctx.publish(store::Diff::Media(super::media::Diff::Ams(state.clone())));
         }
@@ -332,6 +362,45 @@ mod tests {
         assert_eq!(s.position(at + Duration::from_secs(30)), 12.0);
         s.playback = "paused".into();
         assert_eq!(s.position(at + Duration::from_secs(30)), 10.0);
+    }
+
+    fn now_playing(title: &str, elapsed: f64, playback: &str) -> AmsEvent {
+        AmsEvent::NowPlaying {
+            title: title.into(),
+            artist: "A".into(),
+            album: String::new(),
+            duration: 200.0,
+            elapsed,
+            playback: playback.into(),
+            volume: -1.0,
+        }
+    }
+
+    #[test]
+    fn a_title_holds_the_position_stale_until_the_phone_reads_elapsed_for_it() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, now_playing("One", 0.0, "playing"), t0);
+        apply_at(&mut s, now_playing("One", 150.0, "playing"), t0 + Duration::from_secs(150));
+        assert!(!s.position_stale);
+
+        // The new title repeats the old elapsed.
+        let later = t0 + Duration::from_secs(200);
+        apply_at(&mut s, now_playing("Two", 150.0, "playing"), later);
+        assert!(s.position_stale && s.elapsed == 150.0);
+        apply_at(&mut s, now_playing("Two", 0.4, "playing"), later + Duration::from_millis(80));
+        assert!(!s.position_stale && s.elapsed == 0.4);
+    }
+
+    #[test]
+    fn a_title_claims_the_reading_just_before_it() {
+        let t0 = Instant::now();
+        let mut s = State::default();
+        apply_at(&mut s, now_playing("One", 150.0, "paused"), t0);
+        let later = t0 + Duration::from_secs(60);
+        apply_at(&mut s, now_playing("One", 0.0, "paused"), later);
+        apply_at(&mut s, now_playing("Two", 0.0, "paused"), later + Duration::from_millis(80));
+        assert!(!s.position_stale && s.elapsed == 0.0);
     }
 
     #[test]

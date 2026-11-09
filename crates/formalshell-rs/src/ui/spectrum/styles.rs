@@ -295,10 +295,6 @@ impl Default for State {
 }
 
 impl State {
-    pub fn new() -> State {
-        State::default()
-    }
-
     /// A state whose random draws replay.
     #[cfg(test)]
     pub(crate) fn with_seed(seed: u64) -> State {

@@ -333,7 +333,7 @@ impl State {
             Diff::Remotes(next) => std::mem::replace(&mut self.remotes, next) != self.remotes,
             Diff::Airplay(next) => std::mem::replace(&mut self.airplay, next) != self.airplay,
             Diff::Ams(next) => {
-                let same = ams_same(&self.ams, &next);
+                let same = self.ams.same(&next);
                 self.ams = next;
                 !same
             }
@@ -533,6 +533,7 @@ impl State {
                     can_next: true,
                     can_previous: true,
                     position: Duration::try_from_secs_f64(a.position(now)).unwrap_or_default(),
+                    position_stale: a.position_stale,
                     length: Duration::try_from_secs_f64(a.duration).unwrap_or_default(),
                     volume: (a.volume >= 0.0).then(|| pick::clamp_volume(a.volume)),
                     ..base
@@ -820,19 +821,6 @@ impl State {
     }
 }
 
-fn ams_same(a: &ams::State, b: &ams::State) -> bool {
-    a.installed == b.installed
-        && a.available == b.available
-        && a.title == b.title
-        && a.artist == b.artist
-        && a.album == b.album
-        && a.duration == b.duration
-        && a.playback == b.playback
-        && a.volume == b.volume
-        && a.elapsed == b.elapsed
-        && a.error == b.error
-}
-
 /// A call on the MPRIS command side, run on the service thread.
 type Call = Box<dyn FnOnce(fs_mpris::Controls) -> Pin<Box<dyn Future<Output = zbus::Result<()>>>> + Send>;
 
@@ -968,6 +956,21 @@ mod tests {
         let rows = s.players();
         assert_eq!((rows[0].id.as_str(), rows[0].label.as_str(), rows[0].is_playing), ("airplay", "AirPlay", false));
         assert_eq!(s.status()["kind"], "airplay");
+    }
+
+    #[test]
+    fn the_iphone_carries_its_position_freshness() {
+        let mut ams = ams::State::default();
+        (ams.available, ams.title, ams.elapsed, ams.playback) = (true, "Two".into(), 150.0, "paused".into());
+        ams.position_stale = true;
+        let mut s = State::default();
+        assert!(s.apply(Diff::Ams(ams.clone())));
+        let a = s.active().unwrap();
+        assert_eq!(a.kind, SourceKind::Iphone);
+        assert!(a.position_stale);
+        ams.position_stale = false;
+        assert!(s.apply(Diff::Ams(ams)), "freshness alone is a change");
+        assert!(!s.active().unwrap().position_stale);
     }
 
     #[test]
