@@ -8,6 +8,7 @@
 leg_light_flag="--light"
 leg_light_order=8
 leg_light_fixture_window=keep
+leg_light_claims="theme.mode=light"
 
 light_status_path="$shot_dir/light-status.json"
 

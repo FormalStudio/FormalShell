@@ -21,12 +21,12 @@
 # read off the compositor: the fixture starts it on the right, the retarget
 # asks for left, and the assert holds the layer box before and after. A shell
 # that never re-read the file leaves the strip on the right and this fails.
-# This leg owns the `bar` key, so it does not combine with --bar-position,
-# --chevron or --bar-layout, which write the same key.
+# This leg owns `bar.position`, so it does not combine with --bar-position,
+# which writes the same key.
 leg_config_reload_flag="--config-reload"
 leg_config_reload_order=186
 leg_config_reload_needs="jq"
-leg_config_reload_claims="bar screen=shared"
+leg_config_reload_claims="bar.position screen=shared"
 
 config_reload_before_path="$shot_dir/config-reload-before.txt"
 config_reload_monitors_path="$shot_dir/config-reload-monitors.json"

@@ -96,7 +96,7 @@ sleep 6
 snap photo
 retarget '.desktopClock.enabled = false'
 snap bare
-retarget 'del(.desktopClock.face)'
+retarget '.desktopClock.enabled = true | del(.desktopClock.face)'
 
 # Past the next minute, so the redraw read is the minute's own.
 sleep \$((62 - 10#\$(date +%S)))

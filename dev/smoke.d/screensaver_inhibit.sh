@@ -31,6 +31,8 @@ si_cycle_on_path="$shot_dir/si-cycle-on.json"
 si_cycle_off_path="$shot_dir/si-cycle-off.json"
 si_cycle_alive_path="$shot_dir/si-cycle-alive.txt"
 
+leg_screensaver_inhibit_claims="screensaver.timeoutSeconds=5"
+
 leg_screensaver_inhibit_fixture() {
   settings_pin '.screensaver.timeoutSeconds = 5'
 }
