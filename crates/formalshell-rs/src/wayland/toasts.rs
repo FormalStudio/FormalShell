@@ -191,7 +191,7 @@ impl App {
     /// an entrance.
     fn clear_of_cards(&self, insets: &mut Insets, spec: PositionSpec) {
         let out = self.output_size();
-        if let Some(r) = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.card.rest_on(out)).filter(|r| !r.is_empty()) {
+        if let Some(r) = self.panel.as_ref().filter(|h| h.is_open()).map(|h| h.win.card.rest_on(out)).filter(|r| !r.is_empty()) {
             self.clear_of(r, insets, spec);
         }
     }

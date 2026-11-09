@@ -19,14 +19,13 @@ use std::time::{Duration, Instant};
 use fs_audio::Visual;
 use fs_types::Edge;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
-use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 use vello_cpu::kurbo::Rect;
 
 use super::App;
 use crate::services::display;
 use crate::surface::{Backend, Surface};
-use crate::surfaces::card::{Card, CardSpec, Join, Sizing};
+use crate::surfaces::card::{Card, CardSpec, Sizing};
 use crate::surfaces::osd::{self, Kind, Reading};
 use crate::surfaces::popup::Popup;
 
@@ -185,23 +184,18 @@ impl App {
 
     pub(super) fn osd_frame(&mut self, now: Instant) {
         if let Some(p) = &mut self.osd.pill {
-            p.frame(now);
+            p.win.frame(now);
         }
         self.sync_join();
     }
 
     pub(super) fn osd_owns(&self, surface: &wl_surface::WlSurface) -> bool {
-        self.osd.pill.as_ref().is_some_and(|p| p.surface.layer.wl_surface() == surface)
-    }
-
-    /// The gaps the pill and the headset card open in the lines.
-    pub(super) fn popup_joins(&self) -> impl Iterator<Item = &Join> {
-        self.headset.joins().iter().chain(self.osd.pill.iter().flat_map(|p| &p.card.joins))
+        self.osd.pill.as_ref().is_some_and(|p| p.win.owns(surface))
     }
 
     pub(super) fn osd_configure(&mut self) {
         if let Some(p) = &mut self.osd.pill {
-            p.configure();
+            p.win.configure();
         }
     }
 
@@ -213,7 +207,7 @@ impl App {
         if self.osd.hide_at.is_some_and(|t| t <= now) {
             self.osd_close();
         }
-        if self.osd.pill.as_ref().is_some_and(|p| p.finished(now)) {
+        if self.osd.pill.as_ref().is_some_and(|p| p.win.finished(now)) {
             self.osd.pill = None;
             self.sync_join();
             self.log("osd unmapped");
@@ -226,10 +220,10 @@ impl App {
         let theme = &self.store.theme.theme;
         let qh = self.qh.clone();
         let Some(p) = &mut self.osd.pill else { return };
-        let width = p.card.rest().width() - theme.space.panel_padding * 2.0;
+        let width = p.win.card.rest().width() - theme.space.panel_padding * 2.0;
         let el = osd::content(&reading, theme, &mut self.kit, width);
         let drawn = p.draw(&el, theme, &mut self.kit, now);
-        let animating = p.animating(now) || drawn.animating;
-        p.present(animating, &qh);
+        let animating = p.win.animating(now) || drawn.animating;
+        p.win.present(animating, &qh);
     }
 }

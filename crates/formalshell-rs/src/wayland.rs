@@ -69,6 +69,8 @@ use crate::surfaces::bar::Bar;
 use crate::surfaces::bar::cell::{Action, Button, TrayClick};
 use crate::surfaces::bar::cells::tray as tray_cell;
 use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
+use crate::surfaces::card_window::CardWindow;
+use crate::surfaces::modal::Modal;
 use crate::surfaces::panel::{self, host::{Host, Key, Out, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
@@ -84,23 +86,19 @@ pub(crate) fn edge_anchor(edge: Edge) -> Anchor {
 
 /// A tray item's menu, hung off the strip or off the tray's own panel.
 pub struct Popout {
-    pub card: Card,
-    surface: Surface,
+    pub win: CardWindow,
     /// The item's dbusmenu (`traymenu`).
     menu: Option<Menu>,
 }
 
 impl Popout {
-    fn finished(&self, now: Instant) -> bool {
-        self.surface.mapped() && self.card.finished(now)
-    }
-
     /// Lays its content out at the card's content rect this frame.
     fn layout(&mut self, kit: &mut Kit) {
-        let (rect, alpha) = self.card.content;
-        let clip = self.card.content_clip();
+        let card = &mut self.win.card;
+        let (rect, alpha) = card.content;
+        let clip = card.content_clip();
         if let Some(menu) = &mut self.menu {
-            menu.layout(kit, &mut self.card.scene, rect, alpha, clip, self.surface.scale());
+            menu.layout(kit, &mut card.scene, rect, alpha, clip, self.win.surface.scale());
         }
     }
 
@@ -118,6 +116,40 @@ enum Press {
     Menu(Hit),
     /// A surface that takes the whole gesture itself.
     Whole,
+}
+
+/// What holds a card on screen. `ALL`'s order is the bar's: the first card
+/// joined to an edge opens that edge's gap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Panel,
+    /// A handoff's outgoing panel.
+    Outgoing,
+    Launcher,
+    Atlas,
+    Polkit,
+    Overlay,
+    Headset,
+    Osd,
+    Menu,
+}
+
+impl Role {
+    pub const ALL: [Role; 9] =
+        [Role::Panel, Role::Outgoing, Role::Launcher, Role::Atlas, Role::Polkit, Role::Overlay, Role::Headset, Role::Osd, Role::Menu];
+
+    /// The card's rim reads the reactive rims' field. The headset card
+    /// keeps its flat border.
+    pub fn lit(self) -> bool {
+        self != Role::Headset
+    }
+
+    /// The bar opens a gap in its line where the card joins it. A tray menu
+    /// hung off the tray's panel buds off that card's edge, not the bar's
+    /// line.
+    pub fn opens_gap(self) -> bool {
+        self != Role::Menu
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -657,25 +689,33 @@ impl App {
         self.launcher.dirty = true;
     }
 
-    /// Every card open across a theme change takes the new look: the
-    /// launcher's, the open panel's and a tray menu's.
+    /// Every card on screen across a theme change takes the new look, and
+    /// what it holds is laid out again in the new colours.
     pub fn restyle_cards(&mut self) {
         let now = Instant::now();
         self.toast_cast = None;
-        let theme = &self.store.theme.theme;
-        if let Some(w) = &mut self.launch {
-            w.shown.modal.restyle(theme, self.cast, now);
-            self.launcher.dirty = true;
+        let theme = self.store.theme.theme.clone();
+        let popover = crate::surfaces::card::popover_theme(&theme);
+        let cast = self.cast;
+        for role in Role::ALL {
+            let theme = if role == Role::Headset { &popover } else { &theme };
+            if let Some(w) = self.card_mut(role) {
+                w.restyle(theme, cast, now);
+            }
         }
-        if let Some(h) = &mut self.panel {
-            h.restyle(theme, self.cast);
-            h.card.tick(now);
-            self.panel_dirty = true;
+        if let Some(m) = self.menu.as_mut().and_then(|p| p.menu.as_mut()) {
+            m.restyle(&theme);
         }
-        if let Some(p) = &mut self.menu {
-            p.card.restyle(theme, self.cast);
-            p.card.tick(now);
+        self.resize_menu();
+        if let Some(d) = &mut self.polkit {
+            d.dirty = true;
         }
+        if let Some(w) = &mut self.plugin_overlay {
+            w.dirty = true;
+        }
+        self.atlas.model.dirty |= self.atlas.win.is_some();
+        self.launcher.dirty |= self.launch.is_some();
+        self.panel_dirty |= self.panel.is_some();
         self.bar_dirty = true;
     }
 
@@ -799,19 +839,64 @@ impl App {
         devices::power::panel(panel.as_deref() == Some("dualsense"));
     }
 
-    /// Every modal card on screen: the launcher, the radio atlas, the
-    /// polkit dialog and a plugin's overlay.
-    pub fn modals(&self) -> Vec<&crate::surfaces::modal::Modal> {
-        let launch = self.launch.as_ref().map(|w| &w.shown.modal);
-        let atlas = self.atlas.win.as_ref().map(|w| &w.shown.modal);
-        let polkit = self.polkit.as_ref().map(|d| &d.modal);
-        let overlay = self.plugin_overlay.as_ref().map(|w| &w.modal);
-        [launch, atlas, polkit, overlay].into_iter().flatten().collect()
+    /// The modal card `role` names, while it is on screen.
+    fn modal(&self, role: Role) -> Option<&Modal> {
+        match role {
+            Role::Launcher => self.launch.as_ref().map(|w| &w.shown.modal),
+            Role::Atlas => self.atlas.win.as_ref().map(|w| &w.shown.modal),
+            Role::Polkit => self.polkit.as_ref().map(|d| &d.modal),
+            Role::Overlay => self.plugin_overlay.as_ref().map(|w| &w.modal),
+            _ => None,
+        }
+    }
+
+    fn modal_mut(&mut self, role: Role) -> Option<&mut Modal> {
+        match role {
+            Role::Launcher => self.launch.as_mut().map(|w| &mut w.shown.modal),
+            Role::Atlas => self.atlas.win.as_mut().map(|w| &mut w.shown.modal),
+            Role::Polkit => self.polkit.as_mut().map(|d| &mut d.modal),
+            Role::Overlay => self.plugin_overlay.as_mut().map(|w| &mut w.modal),
+            _ => None,
+        }
+    }
+
+    /// The card `role` names, while it is on screen: opening, open or
+    /// closing.
+    pub fn card(&self, role: Role) -> Option<&CardWindow> {
+        match role {
+            Role::Panel => self.panel.as_ref().map(|h| &h.win),
+            Role::Outgoing => self.outgoing.as_ref().map(|h| &h.win),
+            Role::Headset => self.headset.card.as_ref().map(|c| &c.popup.win),
+            Role::Osd => self.osd.pill.as_ref().map(|p| &p.win),
+            Role::Menu => self.menu.as_ref().map(|p| &p.win),
+            Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal(role).map(|m| &m.win),
+        }
+    }
+
+    fn card_mut(&mut self, role: Role) -> Option<&mut CardWindow> {
+        match role {
+            Role::Panel => self.panel.as_mut().map(|h| &mut h.win),
+            Role::Outgoing => self.outgoing.as_mut().map(|h| &mut h.win),
+            Role::Headset => self.headset.card.as_mut().map(|c| &mut c.popup.win),
+            Role::Osd => self.osd.pill.as_mut().map(|p| &mut p.win),
+            Role::Menu => self.menu.as_mut().map(|p| &mut p.win),
+            Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal_mut(role).map(|m| &mut m.win),
+        }
+    }
+
+    /// Every card on screen, in `Role::ALL`'s order.
+    pub fn cards(&self) -> impl Iterator<Item = (Role, &CardWindow)> {
+        Role::ALL.into_iter().filter_map(|r| self.card(r).map(|w| (r, w)))
+    }
+
+    /// Every modal card on screen.
+    pub fn modals(&self) -> impl Iterator<Item = &Modal> {
+        Role::ALL.into_iter().filter_map(|r| self.modal(r))
     }
 
     /// Any modal card on screen, opening, open or closing.
     pub fn modal_shown(&self) -> bool {
-        self.launch.is_some() || self.atlas.win.is_some() || self.polkit.is_some() || self.plugin_overlay.is_some()
+        self.modals().next().is_some()
     }
 
     pub fn debug_join(&self) -> Option<(i32, i32)> {
@@ -857,16 +942,7 @@ impl App {
 
     /// Every card joined to the live bar's lines.
     fn joins(&self) -> Vec<Join> {
-        let mut joins: Vec<Join> = Vec::new();
-        for h in [&self.panel, &self.outgoing].into_iter().flatten() {
-            joins.extend(&h.card.joins);
-        }
-        joins.extend(self.launcher_joins());
-        joins.extend(self.atlas_joins());
-        joins.extend(self.polkit_joins());
-        joins.extend(self.overlay_joins());
-        joins.extend(self.popup_joins());
-        joins
+        self.cards().filter(|(r, _)| r.opens_gap()).flat_map(|(_, w)| w.card.joins.iter().copied()).collect()
     }
 
     /// What a modal card takes to make its surfaces on the live bar's output.
@@ -1000,20 +1076,19 @@ impl App {
         let keyboard = if module.takes_keyboard() { KeyboardInteractivity::Exclusive } else { KeyboardInteractivity::None };
         layer.set_keyboard_interactivity(keyboard);
         layer.commit();
-        let mut surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
-        surface.wait_map = true;
+        let surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
         host.start(&self.store, self.runtime.as_ref());
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
-                host.take_over(old.card.live());
+                host.take_over(old.win.card.live());
                 old.hand_over();
                 self.outgoing = Some(old);
             }
             Some(old) => self.outgoing = Some(old),
             None => {}
         }
-        host.card.set_open(now, true);
+        host.win.card.set_open(now, true);
         self.panel = Some(host);
         self.panel_dirty = true;
         self.tips.hide(None, now);
@@ -1022,14 +1097,12 @@ impl App {
     }
 
     /// The input region over a popout's resting rect.
-    fn set_popout_input(&self, p: &Popout) {
-        if let Ok(region) = Region::new(&self.compositor) {
-            // A menu takes input everywhere on its surface: a click off the
-            // card dismisses it.
-            let r = if p.menu.is_some() { IRect::new(0, 0, p.card.scene.size.w, p.card.scene.size.h) } else { p.card.rest_rect() };
-            region.add(r.x, r.y, r.w, r.h);
-            p.surface.layer.set_input_region(Some(region.wl_region()));
-        }
+    fn set_popout_input(compositor: &CompositorState, p: &mut Popout) {
+        // A menu takes input everywhere on its surface: a click off the
+        // card dismisses it.
+        let size = p.win.card.scene.size;
+        let r = if p.menu.is_some() { IRect::new(0, 0, size.w, size.h) } else { p.win.card.rest_rect() };
+        p.win.sync_region(compositor, r, &[]);
     }
 
     /// A tray item's menu, hung off `anchor` along the line (its icon's
@@ -1043,7 +1116,7 @@ impl App {
         let now = Instant::now();
         self.drop_tray_menu();
         self.tips.hide(None, now);
-        let owner_edge = self.panel.as_ref().filter(|h| over_panel && h.is_open()).map(|h| h.card.rest().y1);
+        let owner_edge = self.panel.as_ref().filter(|h| over_panel && h.is_open()).map(|h| h.win.card.rest().y1);
         if owner_edge.is_none() {
             self.close_panels();
         }
@@ -1066,10 +1139,9 @@ impl App {
         card.resize(now, anchor, self.bar.length(), pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
-        self.menu = Some(Popout { card, surface, menu: Some(menu) });
-        if let Some(p) = &self.menu {
-            self.set_popout_input(p);
-        }
+        let mut popout = Popout { win: CardWindow::new(card, surface), menu: Some(menu) };
+        Self::set_popout_input(&self.compositor, &mut popout);
+        self.menu = Some(popout);
         let (key, largest) = (item.key, self.store.display.scales.largest());
         if let Some(rt) = &self.runtime {
             rt.service(move |ctx| tray::open_menu(ctx, key, largest));
@@ -1081,8 +1153,8 @@ impl App {
     /// Closes the menu through its exit, telling the item.
     pub fn close_tray_menu(&mut self) {
         let now = Instant::now();
-        let Some(p) = self.menu.as_mut().filter(|p| p.card.is_open()) else { return };
-        p.card.set_open(now, false);
+        let Some(p) = self.menu.as_mut().filter(|p| p.win.card.is_open()) else { return };
+        p.win.card.set_open(now, false);
         let key = p.menu.as_ref().map(|m| m.key.clone());
         if let (Some(key), Some(rt)) = (key, &self.runtime) {
             rt.service(move |ctx| tray::close_menu(ctx, key));
@@ -1102,7 +1174,7 @@ impl App {
         let length = self.bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
         if let Some(p) = &mut self.menu {
-            let mapped = p.card.is_open() && p.surface.mapped();
+            let mapped = p.win.card.is_open() && p.win.surface.mapped();
             if let Some(m) = &mut p.menu {
                 let (w, h) = (m.width(), m.height().min(m.cap));
                 // The first size lands at once; every later one morphs.
@@ -1114,11 +1186,9 @@ impl App {
                 }
                 let hv = m.morph.value(now);
                 let anchor = m.anchor;
-                p.card.resize(now, anchor, length, pad, if vertical { (hv, w) } else { (w, hv) });
+                p.win.card.resize(now, anchor, length, pad, if vertical { (hv, w) } else { (w, hv) });
             }
-        }
-        if let Some(p) = &self.menu {
-            self.set_popout_input(p);
+            Self::set_popout_input(&self.compositor, p);
         }
     }
 
@@ -1133,7 +1203,7 @@ impl App {
             return;
         }
         let (w, h) = (m.width(), m.morph.value(now));
-        p.card.resize(now, m.anchor, length, pad, if vertical { (h, w) } else { (w, h) });
+        p.win.card.resize(now, m.anchor, length, pad, if vertical { (h, w) } else { (w, h) });
     }
 
     /// The tray changed: a menu waiting on its tree gets it, one whose item
@@ -1172,7 +1242,7 @@ impl App {
     }
 
     fn open_menu_mut(&mut self) -> Option<&mut Menu> {
-        self.menu.as_mut().filter(|p| p.card.is_open()).and_then(|p| p.menu.as_mut())
+        self.menu.as_mut().filter(|p| p.win.card.is_open()).and_then(|p| p.menu.as_mut())
     }
 
     /// `tray activate`: the item's own Activate, as its cell's click does.
@@ -1352,16 +1422,16 @@ impl App {
         let now = Instant::now();
         self.tick_notifications();
         if let Some(p) = self.panel.take_if(|p| p.finished(now)) {
-            self.dropped.push(p.surface.layer.wl_surface().clone());
+            self.dropped.push(p.win.surface.layer.wl_surface().clone());
             self.sync_join();
             self.sync_open(now);
             self.log("panel unmapped");
         }
         if let Some(p) = self.outgoing.take_if(|p| p.finished(now)) {
-            self.dropped.push(p.surface.layer.wl_surface().clone());
+            self.dropped.push(p.win.surface.layer.wl_surface().clone());
             self.sync_join();
         }
-        if self.menu.as_ref().is_some_and(|p| p.finished(now)) {
+        if self.menu.as_ref().is_some_and(|p| p.win.finished(now)) {
             self.menu = None;
             self.log("tray menu unmapped");
         }
@@ -1407,8 +1477,8 @@ impl App {
         if let Some(p) = &mut self.menu {
             p.layout(&mut self.kit);
             let morphing = p.menu.as_ref().is_some_and(|m| m.morph.running(now));
-            let animating = p.card.animating(now) || morphing;
-            p.surface.present(&mut p.card.scene, animating, &qh);
+            let animating = p.win.animating(now) || morphing;
+            p.win.present(animating, &qh);
         }
         let strip = self.bar_input();
         let theme = &self.store.theme.theme;
@@ -1422,7 +1492,7 @@ impl App {
                 h.layout(&self.store, theme, &mut self.kit, now);
             }
             let animating = h.animating(now) || h.content_animating(now);
-            h.surface.present(&mut h.card.scene, animating, &qh);
+            h.win.present(animating, &qh);
         }
         self.panel_dirty = false;
         self.present_launcher(now);
@@ -1542,13 +1612,13 @@ impl App {
         if self.bar_surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface) {
             return Some(Owner::Bar);
         }
-        if self.panel.as_ref().is_some_and(|p| p.surface.layer.wl_surface() == surface) {
+        if self.panel.as_ref().is_some_and(|p| p.win.owns(surface)) {
             return Some(Owner::Panel);
         }
-        if self.menu.as_ref().is_some_and(|p| p.surface.layer.wl_surface() == surface) {
+        if self.menu.as_ref().is_some_and(|p| p.win.owns(surface)) {
             return Some(Owner::Menu);
         }
-        if self.outgoing.as_ref().is_some_and(|p| p.surface.layer.wl_surface() == surface) {
+        if self.outgoing.as_ref().is_some_and(|p| p.win.owns(surface)) {
             return Some(Owner::Outgoing);
         }
         if self.tip_card.as_ref().is_some_and(|c| c.surface.layer.wl_surface() == surface) {
@@ -1589,12 +1659,12 @@ impl App {
 
     pub fn report_exit(&self) {
         let mut parts: Vec<String> = self.bar_surface.iter().map(|s| s.report()).collect();
-        parts.extend(self.panel.as_ref().map(|p| p.surface.report()));
-        parts.extend(self.outgoing.as_ref().map(|p| p.surface.report()));
-        parts.extend(self.menu.as_ref().map(|p| p.surface.report()));
+        parts.extend(self.panel.as_ref().map(|p| p.win.surface.report()));
+        parts.extend(self.outgoing.as_ref().map(|p| p.win.surface.report()));
+        parts.extend(self.menu.as_ref().map(|p| p.win.surface.report()));
         parts.extend(self.tip_card.as_ref().map(|c| c.surface.report()));
         parts.extend(self.scrim.as_ref().map(|(_, s)| s.report()));
-        parts.extend(self.launch.as_ref().map(|w| w.shown.modal.surface.report()));
+        parts.extend(self.launch.as_ref().map(|w| w.shown.modal.win.surface.report()));
         eprintln!("exit t={}ms {}", self.started.elapsed().as_millis(), parts.join(" "));
     }
 
@@ -1775,10 +1845,7 @@ impl App {
                         _ => None,
                     };
                     if owner == Some(Owner::Menu) && hit.is_none() {
-                        let outside = self.menu.as_ref().is_some_and(|p| {
-                            let r = p.card.live_rect();
-                            !(x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64)
-                        });
+                        let outside = self.menu.as_ref().is_some_and(|p| !p.win.on_card(x, y));
                         if outside {
                             self.close_tray_menu();
                             continue;
@@ -1912,7 +1979,7 @@ impl App {
             },
         };
         // A tray item's menu over its panel takes the keys while it is up.
-        if self.menu.as_ref().is_some_and(|p| p.card.is_open()) {
+        if self.menu.as_ref().is_some_and(|p| p.win.card.is_open()) {
             match key {
                 Key::Escape => self.close_tray_menu(),
                 Key::Move(0, dy) => drop(self.tray_menu_cursor(dy)),
@@ -2046,23 +2113,14 @@ impl CompositorHandler for App {
             }
             Some(Owner::Menu) => {
                 let Some(p) = &mut self.menu else { return };
-                if p.surface.landed(now) {
-                    p.card.mapped(now);
-                } else {
-                    p.card.tick(now);
-                }
+                p.win.frame(now);
                 self.sync_join();
             }
             Some(o @ (Owner::Panel | Owner::Outgoing)) => {
                 let theme = &self.store.theme.theme;
                 let h = if o == Owner::Panel { &mut self.panel } else { &mut self.outgoing };
                 let Some(h) = h else { return };
-                let mut cut = false;
-                if h.surface.landed(now) {
-                    cut = h.mapped(theme, now);
-                } else {
-                    h.card.tick(now);
-                }
+                let cut = h.win.frame(now) && h.mapped(theme, now);
                 // The card that took this one's place is moving: the
                 // outgoing window goes on this tick, while the two still
                 // stand exactly on top of each other.
@@ -2191,14 +2249,12 @@ impl LayerShellHandler for App {
             }
             Some(Owner::Menu) => {
                 let Some(p) = &mut self.menu else { return };
-                let size = p.card.scene.size;
-                p.surface.configure(size.w, size.h);
+                p.win.configure();
             }
             Some(o @ (Owner::Panel | Owner::Outgoing)) => {
                 let h = if o == Owner::Panel { &mut self.panel } else { &mut self.outgoing };
                 let Some(h) = h else { return };
-                let size = h.card.scene.size;
-                h.surface.configure(size.w, size.h);
+                h.win.configure();
                 self.panel_dirty = true;
             }
             Some(Owner::Tooltip) => {

@@ -99,7 +99,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     let out = json!({
         "open": host.is_some(),
         "from": host.and(parsed["from"].as_str()),
-        "card": host.map_or(Json::Null, |h| rect(&h.card.rest_rect())),
+        "card": host.map_or(Json::Null, |h| rect(&h.win.card.rest_rect())),
         "cursor": host.and_then(|h| h.viewport().3.map(|(k, _)| k.to_owned())),
         "rows": rows,
         "menu": menu,

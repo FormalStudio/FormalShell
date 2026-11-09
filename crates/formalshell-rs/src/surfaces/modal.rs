@@ -23,7 +23,8 @@ use vello_cpu::kurbo::Rect;
 use crate::chrome::Chrome;
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::surface::{Backend, Ignore, PixelSurface, Pixels, Sub, Surface};
-use crate::surfaces::card::{Card, CardSpec, Join, Sizing};
+use crate::surfaces::card::{Card, CardSpec, Sizing};
+use crate::surfaces::card_window::{CardWindow, Crop, Quads};
 use crate::trace;
 use crate::wayland::App;
 
@@ -92,20 +93,16 @@ pub enum Part {
 }
 
 pub struct Modal {
-    pub card: Card,
-    pub surface: Surface,
+    pub win: CardWindow,
     band: Option<PixelSurface>,
     dim: PixelSurface,
     /// The layer namespace all three surfaces share, which the
     /// compositor's blur rule matches on.
     pub namespace: &'static str,
     pub open: bool,
-    region: Option<IRect>,
     /// The owner's content, when it draws on a layer of its own rather
     /// than in the card's scene.
     pub layer: Option<Layer>,
-    /// A popover's look, carried by the compositor.
-    quads: Option<Quads>,
 }
 
 impl Modal {
@@ -143,8 +140,7 @@ impl Modal {
         let ls = make.layer(namespace, layer, Anchor::all(), (0, 0));
         ls.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         ls.commit();
-        let mut surface = Surface::new(names[0], Backend::Gpu, ls, make.shm, make.started, make.scale);
-        surface.wait_map = true;
+        let surface = Surface::new(names[0], Backend::Gpu, ls, make.shm, make.started, make.scale);
         let rest = Rect::new(0.0, inset, 0.0, inset);
         let size = if edge.is_vertical() { (output.1, output.0) } else { output };
         let spec = CardSpec {
@@ -155,31 +151,23 @@ impl Modal {
             ..CardSpec::new(edge, inset, Sizing::Surface { size: (size.0 as i32, size.1 as i32), rest })
         };
         let card = Card::new(theme, spec, make.motion_scale, make.cast);
-        let quads = spec.compositor_look.then(|| make.look_quads(surface.name, &surface, card.popover_margin()));
-        Self { card, surface, band, dim, namespace, open: true, region: None, layer: None, quads }
-    }
-
-    /// The card's look off a new theme, the compositor's corners drawn
-    /// again at the next present.
-    pub fn restyle(&mut self, theme: &Theme, cast: bool, now: Instant) {
-        self.card.restyle(theme, cast);
-        self.card.tick(now);
-        if let Some(q) = &mut self.quads {
-            q.size = (0, 0);
-        }
+        let look = spec.compositor_look.then(|| make.look_quads(surface.name, &surface, card.popover_margin()));
+        let mut win = CardWindow::new(card, surface);
+        win.look = look;
+        Self { win, band, dim, namespace, open: true, layer: None }
     }
 
     /// The largest card size the owner is headed for, so a popover's look
     /// is drawn once at it.
     pub fn look_hint(&mut self, w: i32, h: i32) {
-        if let Some(q) = &mut self.quads {
+        if let Some(q) = &mut self.win.look {
             q.hint = (q.hint.0.max(w), q.hint.1.max(h));
         }
     }
 
     /// The popover's look still being drawn in slices.
     pub fn look_rastering(&self) -> bool {
-        self.quads.as_ref().is_some_and(Quads::rastering)
+        self.win.look.as_ref().is_some_and(Quads::rastering)
     }
 
     /// Moves the card's resting rect, given on the output, drawn on this
@@ -187,19 +175,12 @@ impl Modal {
     /// last one. A second tick on one frame leaves the deform to the next
     /// (`Deform::step`).
     pub fn place(&mut self, rest: Rect, now: Instant) {
-        let rest = self.card.edge_map().inverse().transform_rect_bbox(rest);
-        if rest != self.card.rest() {
-            self.card.set_rect(rest, rest);
-            self.card.tick(now);
+        let card = &mut self.win.card;
+        let rest = card.edge_map().inverse().transform_rect_bbox(rest);
+        if rest != card.rest() {
+            card.set_rect(rest, rest);
+            card.tick(now);
         }
-    }
-
-    pub fn finished(&self, now: Instant) -> bool {
-        self.surface.mapped() && self.card.finished(now)
-    }
-
-    pub fn animating(&self, now: Instant) -> bool {
-        self.card.animating(now)
     }
 
     /// Closes on the card's own clock and lets the keyboard go.
@@ -208,24 +189,14 @@ impl Modal {
             return;
         }
         self.open = false;
-        self.card.set_open(now, false);
-        self.surface.layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-        self.surface.layer.commit();
+        self.win.card.set_open(now, false);
+        self.win.set_keyboard(KeyboardInteractivity::None);
     }
 
     /// Input everywhere while open, nowhere once closing.
-    pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState) {
-        let want = if self.open { self.card.scene.size } else { IRect::default() };
-        if self.region == Some(want) {
-            return;
-        }
-        self.region = Some(want);
-        if let Ok(region) = smithay_client_toolkit::compositor::Region::new(compositor) {
-            if !want.is_empty() {
-                region.add(want.x, want.y, want.w, want.h);
-            }
-            self.surface.layer.set_input_region(Some(region.wl_region()));
-        }
+    pub fn sync_region(&mut self, compositor: &CompositorState) {
+        let want = if self.open { self.win.card.scene.size } else { IRect::default() };
+        self.win.sync_region(compositor, want, &[]);
     }
 
     /// The card's frame, then the scrim on the card's own pose. The scrim
@@ -239,33 +210,34 @@ impl Modal {
         // just ahead of the card, whose commit carries it.
         // A popover's look goes first, under the content: the content shows
         // only once the card is up and its look is there to sit on.
-        let looked = self.quads.as_mut().is_some_and(|q| q.present(&self.card, qh));
-        let card_ready = self.surface.frame_pending() || self.surface.prepare(&mut self.card.scene);
-        let card_due = self.card.scene.has_damage() || self.surface.rastering() || self.surface.drawn_ahead();
-        let card_turn = card_ready && !(card_due && self.surface.frame_pending());
+        let w = &mut self.win;
+        let looked = w.look.as_mut().is_some_and(|q| q.present(&w.card, qh));
+        let card_ready = w.surface.frame_pending() || w.surface.prepare(&mut w.card.scene);
+        let card_due = w.card.scene.has_damage() || w.surface.rastering() || w.surface.drawn_ahead();
+        let card_turn = card_ready && !(card_due && w.surface.frame_pending());
         // A look the compositor carries has just moved whatever the card's
         // own buffer does, so the content moves with it: held back a turn,
         // it pokes past a card that shrank under it.
-        let layered = if card_turn || self.quads.is_some() {
-            let up = self.surface.mapped() && self.quads.as_ref().is_none_or(|q| q.ready(1, 1));
-            let bound = self.quads.as_ref().map(|q| q.covered);
-            self.layer.as_mut().is_some_and(|l| l.present(&self.card, !self.card.animating(now), up, bound, qh))
+        let layered = if card_turn || w.look.is_some() {
+            let up = w.surface.mapped() && w.look.as_ref().is_none_or(|q| q.ready(1, 1));
+            let bound = w.look.as_ref().map(|q| q.covered);
+            self.layer.as_mut().is_some_and(|l| l.present(&w.card, !w.card.animating(now), up, bound, qh))
         } else {
             if let Some(l) = &mut self.layer {
                 l.surface.prepare(&mut l.scene);
             }
             false
         };
-        let before = self.surface.commits();
+        let before = w.surface.commits();
         if card_turn {
-            self.surface.present(&mut self.card.scene, animating, qh);
+            w.present(animating, qh);
         }
-        if (layered || looked) && self.surface.commits() == before {
-            self.surface.layer.commit();
+        if (layered || looked) && w.surface.commits() == before {
+            w.surface.layer.commit();
         }
-        let pose = self.card.pose(now);
-        let attach = self.card.attach(now);
-        let moving = self.card.animating(now);
+        let pose = w.card.pose(now);
+        let attach = w.card.attach(now);
+        let moving = w.card.animating(now);
         if let Some(b) = &mut self.band {
             b.present(pose * (1.0 - attach), moving, qh);
         }
@@ -273,7 +245,7 @@ impl Modal {
     }
 
     pub fn part(&self, surface: &WlSurface) -> Option<Part> {
-        if self.surface.layer.wl_surface() == surface {
+        if self.win.owns(surface) {
             Some(Part::Card)
         } else if self.dim.layer.wl_surface() == surface {
             Some(Part::Dim)
@@ -288,11 +260,7 @@ impl Modal {
     pub fn frame(&mut self, part: Part, now: Instant) -> bool {
         match part {
             Part::Card => {
-                if self.surface.landed(now) {
-                    self.card.mapped(now);
-                } else {
-                    self.card.tick(now);
-                }
+                self.win.frame(now);
                 true
             }
             Part::Band | Part::Dim => {
@@ -307,10 +275,7 @@ impl Modal {
 
     pub fn configure(&mut self, part: Part, width: i32, height: i32) {
         match part {
-            Part::Card => {
-                let size = self.card.scene.size;
-                self.surface.configure(size.w, size.h);
-            }
+            Part::Card => self.win.configure(),
             Part::Band => {
                 if let Some(b) = &mut self.band {
                     b.configure(width, height);
@@ -323,15 +288,6 @@ impl Modal {
     /// The scrim's surfaces as (name, pixel alpha, fade), for `debug dump`.
     pub fn scrims(&self) -> impl Iterator<Item = (&'static str, f64, f64)> + '_ {
         self.band.iter().chain(std::iter::once(&self.dim)).map(|s| (s.name, s.alpha, s.fade()))
-    }
-
-    pub fn on_card(&self, x: f64, y: f64) -> bool {
-        let r = self.card.live_rect();
-        x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64
-    }
-
-    pub fn joins(&self) -> &[Join] {
-        &self.card.joins
     }
 }
 
@@ -352,8 +308,8 @@ pub struct Layer {
     /// size it was drawn at.
     buffer: (i32, i32),
     drawn: (i32, i32),
-    /// What the compositor last got: the shown part and where it sits.
-    shown: Option<(IRect, IRect)>,
+    /// What the compositor last got.
+    crop: Crop,
 }
 
 impl Layer {
@@ -362,7 +318,7 @@ impl Layer {
         let mut scene = Scene::clear(1, 1);
         let top = scene.add(IRect::default(), Paint::Shape { fill: None, strokes: Vec::new() });
         scene.set_visible(top, false);
-        let mut layer = Self { scene, surface, top, laid: (0, 0), buffer: (0, 0), drawn: (0, 0), shown: None };
+        let mut layer = Self { scene, surface, top, laid: (0, 0), buffer: (0, 0), drawn: (0, 0), crop: Crop::default() };
         layer.surface.configure(1, 1);
         layer
     }
@@ -414,7 +370,7 @@ impl Layer {
         // The opacity goes in ahead of the draw, so a frame that both draws
         // and fades copies once; only a frame whose draw changes the cut
         // copies again.
-        self.surface.set_opacity(self.cut(card, settled, card_up, bound).3);
+        self.surface.set_opacity(self.cut(card, settled, card_up, bound).2);
         let before = self.surface.commits();
         self.surface.present(&mut self.scene, false, qh);
         let drew = self.surface.commits() != before;
@@ -422,30 +378,14 @@ impl Layer {
             self.buffer = (self.scene.size.w, self.scene.size.h);
             self.drawn = self.laid;
         }
-        let (shown, at, fits, alpha) = self.cut(card, settled, card_up, bound);
-        let (shown, at) = match self.shown {
-            Some((last, last_at)) if !fits => (last, last_at),
-            _ => (shown, at),
-        };
-        let moved = self.shown != Some((shown, at));
-        if moved {
-            self.shown = Some((shown, at));
-            if fits {
-                self.surface.layer.sub.set_position(shown.x, shown.y);
-                self.surface.set_crop(IRect::new(0, 0, shown.w, shown.h));
-            }
-        }
+        // A cut the buffer cannot show leaves the last one standing.
+        let (shown, fits, alpha) = self.cut(card, settled, card_up, bound);
+        let moved = fits && self.crop.place(&mut self.surface, (shown.w, shown.h), (shown.x, shown.y));
         self.surface.set_opacity(alpha);
-        let before = self.surface.commits();
         // A layout still drawing in slices goes on with the next turn's
         // draw above, never on a commit placed for the last one.
-        if !self.surface.rastering() {
-            self.surface.present(&mut self.scene, false, qh);
-        }
-        let faded = self.surface.commits() != before;
-        if moved && !faded {
-            self.surface.recommit();
-        }
+        let draw = !self.surface.rastering();
+        let faded = Crop::commit(&mut self.surface, &mut self.scene, draw, moved, qh);
         if moved && trace::enabled() {
             trace::commit_bare(
                 format_args!("{}-cut", self.surface.name),
@@ -455,208 +395,24 @@ impl Layer {
         drew || moved || faded
     }
 
-    /// This frame's cut of the content: the part shown, where it sits,
-    /// whether the compositor's buffer can show it, and its opacity.
-    fn cut(&self, card: &Card, settled: bool, card_up: bool, bound: Option<IRect>) -> (IRect, IRect, bool, f32) {
+    /// This frame's cut of the content: the part shown, whether the
+    /// compositor's buffer can show it, and its opacity.
+    fn cut(&self, card: &Card, settled: bool, card_up: bool, bound: Option<IRect>) -> (IRect, bool, f32) {
         let at = self.place(card, settled);
         let shown = bound.map_or(self.visible(card, settled), |b| self.visible(card, settled).intersect(&b));
         // A viewport source has to be a non-empty part of the buffer the
-        // compositor holds, and it starts at the buffer's origin: on
-        // Hyprland 0.56 a source with an offset drew its pixels stretched
-        // off the place given. Until such a cut fits, or while the content
-        // is cut at its top or left (crossing the line), the last cut stays
-        // and the layer is faded out to hide it.
+        // compositor holds, starting at its origin (`Crop::place`). Until
+        // such a cut fits, or while the content is cut at its top or left
+        // (crossing the line), the last cut stays and the layer is faded
+        // out to hide it.
         let fits = !shown.is_empty() && shown.x == at.x && shown.y == at.y
             && shown.right() - at.x <= self.buffer.0 && shown.bottom() - at.y <= self.buffer.1;
         let alpha = if fits && card_up { card.content.1.clamp(0.0, 1.0) } else { 0.0 };
-        (shown, at, fits, alpha)
+        (shown, fits, alpha)
     }
 
     /// The layer gone, its pool, buffers and canvas kept for the next one.
     pub fn keep(self) -> crate::surface::Kept {
         self.surface.keep()
-    }
-}
-
-/// A popover card's look (casts, fill, border) drawn once and carried by
-/// the compositor: four subsurfaces of the card, each holding one corner
-/// of the look drawn at the largest size the card has taken, cropped by
-/// its `wp_viewport` to the card's size this frame and faded by copying
-/// its buffer again at the card's opacity. The edges between the corners are straight runs of
-/// one fill, so any size up to the drawn one is the four crops side by
-/// side, and the card's open, close and size morph cost no raster at all.
-pub struct Quads {
-    parts: Vec<Quad>,
-    /// The card size the corners were last asked to be drawn at, and the
-    /// room around it for the casts.
-    size: (i32, i32),
-    margin: i32,
-    /// The largest size the owner says the card is headed for: drawn at
-    /// once rather than grown into a frame at a time.
-    pub hint: (i32, i32),
-    /// The part of the card inside the border the corners draw this
-    /// frame: short of the card while they are drawn again at a larger
-    /// size, or while it overshoots the size they hold. The content is cut
-    /// to it.
-    pub covered: IRect,
-    name: &'static str,
-    started: std::time::Instant,
-    steps: u64,
-}
-
-struct Quad {
-    scene: Scene,
-    nodes: (NodeId, NodeId),
-    surface: Surface<Sub>,
-    /// The card size the buffer the compositor holds was drawn at, and the
-    /// one being drawn.
-    drawn: Option<(i32, i32)>,
-    pending: (i32, i32),
-    /// What the compositor last got: the crop and the place.
-    shown: Option<(IRect, (i32, i32))>,
-}
-
-/// One corner's share of a card `w` by `h`: the left (top) part is the
-/// floor of half, the right (bottom) part the rest.
-fn halves(n: i32) -> (i32, i32) {
-    (n / 2, n - n / 2)
-}
-
-impl Quads {
-    pub fn new(name: &'static str, parts: Vec<Surface<Sub>>, margin: i32, started: std::time::Instant) -> Self {
-        let parts = parts
-            .into_iter()
-            .map(|surface| {
-                let mut scene = Scene::clear(1, 1);
-                let empty = || Paint::Shape { fill: None, strokes: Vec::new() };
-                let casts = scene.add(IRect::default(), empty());
-                let shape = scene.add(IRect::default(), empty());
-                Quad { scene, nodes: (casts, shape), surface, drawn: None, pending: (0, 0), shown: None }
-            })
-            .collect();
-        Self { parts, size: (0, 0), margin, hint: (0, 0), covered: IRect::default(), name, started, steps: 0 }
-    }
-
-    /// Every corner holds a look the card's current size fits in.
-    pub fn ready(&self, w: i32, h: i32) -> bool {
-        self.parts.iter().all(|q| q.drawn.is_some_and(|(dw, dh)| dw >= w && dh >= h))
-    }
-
-    /// The four corners drawn at `w` by `h`: the top-left, top-right,
-    /// bottom-left and bottom-right of the look, each with the margin on
-    /// its outer sides.
-    fn draw_at(&mut self, card: &Card, w: i32, h: i32) {
-        self.size = (w, h);
-        let m = self.margin;
-        let (lw, rw) = halves(w);
-        let (th, bh) = halves(h);
-        let regions = [(0, 0, m + lw, m + th), (m + lw, 0, rw + m, m + th), (0, m + th, m + lw, bh + m), (m + lw, m + th, rw + m, bh + m)];
-        for (q, (rx, ry, qw, qh)) in self.parts.iter_mut().zip(regions) {
-            q.scene.resize(qw, qh);
-            q.surface.configure(qw, qh);
-            q.pending = (w, h);
-            let at = Rect::new(f64::from(m - rx), f64::from(m - ry), f64::from(m - rx + w), f64::from(m - ry + h));
-            card.popover_look(&mut q.scene, q.nodes, at);
-        }
-    }
-
-    /// The corners placed, cut and faded for the card's frame this turn,
-    /// drawn again first if the card has outgrown them. True when anything
-    /// reached a corner.
-    fn present(&mut self, card: &Card, qh: &QueueHandle<App>) -> bool {
-        let (frame, alpha) = card.popover_frame;
-        let rest = card.rest_rect();
-        // An owner's hint is the size its morph settles on: a few pixels of
-        // overshoot past it are clipped rather than drawn again.
-        let (want_w, want_h) = if self.hint.0 > 0 { self.hint } else { (frame.w.max(rest.w), frame.h.max(rest.h)) };
-        if want_w > self.size.0 || want_h > self.size.1 {
-            self.draw_at(card, want_w.max(self.size.0), want_h.max(self.size.1));
-        }
-        let m = self.margin;
-        let mut any = false;
-        let mut moved = false;
-        let mut covered = (frame.w, frame.h);
-        // A look drawn again reaches the compositor only once all four
-        // corners hold it: corners of two sizes side by side leave holes.
-        let mut drawn = true;
-        for q in &mut self.parts {
-            // Ahead of the draw, so a corner drawn and faded on one frame
-            // is copied once.
-            q.surface.set_opacity(alpha);
-            drawn &= q.surface.prepare(&mut q.scene);
-        }
-        for (i, q) in self.parts.iter_mut().enumerate() {
-            let before = q.surface.commits();
-            if drawn {
-                q.surface.present(&mut q.scene, false, qh);
-            }
-            if q.surface.commits() != before {
-                q.drawn = Some(q.pending);
-                any = true;
-            }
-            let Some((dw, dh)) = q.drawn else {
-                covered = (0, 0);
-                continue;
-            };
-            // The card this frame, between the far corners' own size and
-            // the size the corners hold. The far corners show whole, flush
-            // with the card's far edges, and the near ones are cut from
-            // their own origin to meet them. Every crop starts at 0,0: on
-            // Hyprland 0.56 a viewport source with an offset drew the far
-            // corners 51px short of where it put them.
-            let (_, drw) = halves(dw);
-            let (_, dbh) = halves(dh);
-            let (w, h) = (frame.w.clamp(drw, dw), frame.h.clamp(dbh, dh));
-            covered = (covered.0.min(w), covered.1.min(h));
-            let (sx, sy) = (w - drw, h - dbh);
-            let (crop, place) = match i {
-                0 => (IRect::new(0, 0, m + sx, m + sy), (frame.x - m, frame.y - m)),
-                1 => (IRect::new(0, 0, drw + m, m + sy), (frame.x + sx, frame.y - m)),
-                2 => (IRect::new(0, 0, m + sx, dbh + m), (frame.x - m, frame.y + sy)),
-                _ => (IRect::new(0, 0, drw + m, dbh + m), (frame.x + sx, frame.y + sy)),
-            };
-            let placed = q.shown != Some((crop, place));
-            if placed {
-                q.shown = Some((crop, place));
-                if !crop.is_empty() {
-                    q.surface.layer.sub.set_position(place.0, place.1);
-                    q.surface.set_crop(crop);
-                }
-            }
-            // Corners still drawing take their new opacity with the commit
-            // that finishes them.
-            q.surface.set_opacity(if crop.is_empty() { 0.0 } else { alpha });
-            let before = q.surface.commits();
-            if drawn {
-                q.surface.present(&mut q.scene, false, qh);
-            }
-            let faded = q.surface.commits() != before;
-            if placed && !faded {
-                q.surface.recommit();
-            }
-            any |= placed || faded;
-            moved |= placed || faded;
-        }
-        // Inside the border along the far edges, which content laid out for
-        // a wider card would cover while the card is still narrower.
-        let bw = card.border_width().ceil() as i32;
-        self.covered = IRect::new(frame.x, frame.y, covered.0 - bw, covered.1 - bw);
-        // The card's motion lands here rather than in a buffer of its own,
-        // so the commit log the budget legs read carries one line per step.
-        if moved && trace::enabled() {
-            self.steps += 1;
-            trace::commit(
-                format_args!("{}-look", self.name),
-                self.steps,
-                trace::since(self.started),
-                format_args!("rect={}x{}+{}+{} alpha={:.3}", frame.w, frame.h, frame.x, frame.y, alpha),
-            );
-        }
-        any
-    }
-
-    /// Any corner still drawing in slices.
-    pub fn rastering(&self) -> bool {
-        self.parts.iter().any(|q| q.surface.rastering())
     }
 }

@@ -126,6 +126,11 @@ impl Menu {
         }
     }
 
+    /// What the menu takes off the theme, again off a new one.
+    pub fn restyle(&mut self, theme: &Theme) {
+        self.look = Look::new(theme);
+    }
+
     /// The card's width, which is the panel default.
     pub fn width(&self) -> f64 {
         self.look.width

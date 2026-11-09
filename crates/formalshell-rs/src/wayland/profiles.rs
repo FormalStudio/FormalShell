@@ -16,7 +16,6 @@ use fs_types::Edge;
 use fs_upower::Profile;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
-use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Owner};
@@ -120,18 +119,18 @@ impl App {
 
     pub(super) fn profiles_frame(&mut self, now: Instant) {
         if let Some(p) = &mut self.profiles {
-            p.popup.frame(now);
+            p.popup.win.frame(now);
         }
     }
 
     pub(super) fn profiles_configure(&mut self) {
         if let Some(p) = &mut self.profiles {
-            p.popup.configure();
+            p.popup.win.configure();
         }
     }
 
     pub(super) fn profiles_owns(&self, surface: &wl_surface::WlSurface) -> bool {
-        self.profiles.as_ref().is_some_and(|p| p.popup.surface.layer.wl_surface() == surface)
+        self.profiles.as_ref().is_some_and(|p| p.popup.win.owns(surface))
     }
 
     /// An output point over the pill, in its surface's pixels. The
@@ -140,8 +139,8 @@ impl App {
     /// compositor hands presses over the pill to.
     pub(super) fn profiles_under(&self, at: (f64, f64)) -> Option<(f64, f64)> {
         let p = self.profiles.as_ref().filter(|p| p.popup.is_open())?;
-        let local = (at.0 - (self.output_size().0 - p.popup.card.scene.size.w as f64), at.1);
-        let r = p.popup.card.rest_rect();
+        let local = (at.0 - (self.output_size().0 - p.popup.win.card.scene.size.w as f64), at.1);
+        let r = p.popup.win.card.rest_rect();
         (local.0 >= r.x as f64 && local.0 < r.right() as f64 && local.1 >= r.y as f64 && local.1 < r.bottom() as f64).then_some(local)
     }
 
@@ -180,11 +179,11 @@ impl App {
     pub fn profiles_status(&self) -> serde_json::Value {
         let Some(p) = self.profiles.as_ref().filter(|p| p.popup.is_open()) else { return serde_json::Value::Null };
         // The card's own surface hangs off the right edge, its scene's width wide.
-        let ox = self.output_size().0 - p.popup.card.scene.size.w as f64;
+        let ox = self.output_size().0 - p.popup.win.card.scene.size.w as f64;
         let rect = |r: IRect| serde_json::json!({"x": ox + r.x as f64, "y": r.y, "w": r.w, "h": r.h});
         let chips: Vec<_> = p.popup.controls().into_iter().map(|(on, r)| serde_json::json!({"on": on, "rect": rect(r)})).collect();
         serde_json::json!({
-            "rect": rect(p.popup.card.rest_rect()),
+            "rect": rect(p.popup.win.card.rest_rect()),
             "chips": chips,
             "active": self.store.devices.profiles.as_ref().map(|p| p.active.to_wire()),
             "battery": self.store.devices.power.battery.as_ref().map(|b| b.level.as_percent()),
@@ -201,7 +200,7 @@ impl App {
         }
         let (side, gap, ..) = self.profiles_size();
         let Some(p) = &mut self.profiles else { return };
-        if p.popup.finished(now) {
+        if p.popup.win.finished(now) {
             self.profiles = None;
             self.log("profiles pill unmapped");
             return;
@@ -211,8 +210,8 @@ impl App {
         let theme = &self.store.theme.theme;
         let inner = p.popup.inner(theme);
         {
-            let (frame, alpha) = p.popup.card.popover_frame;
-            let (radius, bw, nub) = (p.popup.card.radius(), p.popup.card.border_width(), p.popup.card.nub().unwrap_or_default());
+            let (frame, alpha) = p.popup.win.card.popover_frame;
+            let (radius, bw, nub) = (p.popup.win.card.radius(), p.popup.win.card.border_width(), p.popup.win.card.nub().unwrap_or_default());
             let (mut painter, _) = p.popup.painter();
             let charge = self.store.devices.power.battery.as_ref().map(|b| (b.level, level_colour(b)));
             if let Some((level, colour)) = charge {
@@ -235,8 +234,8 @@ impl App {
         }
         let el = body(&self.store, side, gap);
         let drawn = p.popup.draw_in(&el, inner, theme, &mut self.kit, now);
-        let animating = p.popup.animating(now) || drawn.animating;
+        let animating = p.popup.win.animating(now) || drawn.animating;
         let qh = self.qh.clone();
-        p.popup.present(animating, &qh);
+        p.popup.win.present(animating, &qh);
     }
 }

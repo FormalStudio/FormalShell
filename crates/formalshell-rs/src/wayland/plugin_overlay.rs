@@ -37,7 +37,7 @@ pub struct Window {
     /// The keyboard put the cursor there, so its ring draws.
     ring: bool,
     pressed: Option<String>,
-    dirty: bool,
+    pub(super) dirty: bool,
 }
 
 impl App {
@@ -68,7 +68,7 @@ impl App {
         let id = key.strip_prefix(plugin::PREFIX).unwrap_or(key).to_owned();
         let names = ["plugin-overlay", "plugin-overlay-scrim-band", "plugin-overlay-scrim"];
         let modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Top, None, DEFORM_AMOUNT, false);
-        let mut ui = Ui::new(Some(modal.card.top_node()));
+        let mut ui = Ui::new(Some(modal.win.card.top_node()));
         ui.halo_owned = false;
         plugins::shown(&id, true);
         self.plugin_overlay = Some(Window { modal, ui, key, id, cursor: None, ring: false, pressed: None, dirty: true });
@@ -116,10 +116,6 @@ impl App {
         true
     }
 
-    pub(super) fn overlay_joins(&self) -> &[crate::surfaces::card::Join] {
-        self.plugin_overlay.as_ref().map_or(&[], |w| w.modal.joins())
-    }
-
     fn overlay_activate(&mut self, stop: &str) {
         let Some(w) = &self.plugin_overlay else { return };
         plugin::activate(&self.store, &w.id, stop);
@@ -162,7 +158,7 @@ impl App {
         }
         let Some(w) = &mut self.plugin_overlay else { return true };
         let (x, y) = e.position;
-        let hit = |w: &Window| w.ui.hit(x, y).and_then(|h| h.on.clone()).or_else(|| (!w.modal.on_card(x, y)).then(|| "outside".to_owned()));
+        let hit = |w: &Window| w.ui.hit(x, y).and_then(|h| h.on.clone()).or_else(|| (!w.modal.win.on_card(x, y)).then(|| "outside".to_owned()));
         match e.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                 let path = w.ui.hit(x, y).map(|h| h.path.clone());
@@ -200,7 +196,7 @@ impl App {
     }
 
     pub(super) fn present_overlay(&mut self, now: Instant) {
-        if self.plugin_overlay.as_ref().is_some_and(|w| w.modal.finished(now)) {
+        if self.plugin_overlay.as_ref().is_some_and(|w| w.modal.win.finished(now)) {
             self.plugin_overlay = None;
             self.sync_join();
             self.log("panel plugin overlay unmapped");
@@ -208,8 +204,8 @@ impl App {
         }
         let qh = self.qh.clone();
         let Some(w) = &mut self.plugin_overlay else { return };
-        let animating = w.modal.animating(now);
-        if (w.dirty || animating || !w.modal.surface.mapped()) && w.modal.surface.configured {
+        let animating = w.modal.win.animating(now);
+        if (w.dirty || animating || !w.modal.win.surface.mapped()) && w.modal.win.surface.configured {
             w.dirty = false;
             w.modal.sync_region(&self.compositor);
             let run = self.store.plugins.runs.get(&w.id);
@@ -217,7 +213,7 @@ impl App {
             let drawn = Self::lay_overlay(w, plugin, run, &self.store.theme.theme, &mut self.kit, now);
             w.dirty = drawn;
         }
-        let animating = w.modal.animating(now);
+        let animating = w.modal.win.animating(now);
         w.modal.present(animating, now, &qh);
         if animating {
             self.sync_join();
@@ -234,7 +230,7 @@ impl App {
         now: Instant,
     ) -> bool {
         let s = &theme.space;
-        let (out_w, out_h) = (w.modal.card.scene.size.w, w.modal.card.scene.size.h);
+        let (out_w, out_h) = (w.modal.win.card.scene.size.w, w.modal.win.card.scene.size.h);
         let inner = plugin::width(s, plugin);
         let name = plugin.map_or_else(|| w.id.clone(), |p| p.name.clone());
         let body = w::column(s.section_gap, vec![w::section_label(s, &name, None, false), plugin::body(s, run)]).width(Size::Px(inner));
@@ -245,10 +241,10 @@ impl App {
         let y0 = ((out_h as f64 - card_h) / 2.0).round();
         w.modal.place(Rect::new(x0, y0, x0 + card_w, y0 + card_h), now);
         // The content rides the card's own travel and fades in on its pose.
-        let (frame, alpha) = w.modal.card.content;
-        let clip = w.modal.card.content_clip();
-        let top = w.modal.card.top_node();
-        let scene = &mut w.modal.card.scene;
+        let (frame, alpha) = w.modal.win.card.content;
+        let clip = w.modal.win.card.content_clip();
+        let top = w.modal.win.card.top_node();
+        let scene = &mut w.modal.win.card.scene;
         let (x, y) = (frame.x as f64 + s.panel_padding, frame.y as f64 + s.panel_padding);
         w.ui.anchor = Some(top);
         (w.ui.cursor, w.ui.ring) = (w.cursor.clone(), w.ring);

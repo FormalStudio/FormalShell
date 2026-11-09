@@ -201,7 +201,7 @@ impl App {
                 .iter()
                 .map(|(id, r, _)| (id.clone(), (r.2.round().max(1.0) as u32, r.3.round().max(1.0) as u32)))
                 .collect();
-            let scale = self.panel.as_ref().map_or(1.0, |p| p.surface.scale());
+            let scale = self.panel.as_ref().map_or(1.0, |p| p.win.surface.scale());
             self.capture_set(Owner::Preview, &wants, true, scale);
             self.peek.capturing = true;
         } else if self.peek.capturing {
@@ -251,7 +251,7 @@ impl App {
             })
             .collect();
         let home = laid.plan.as_ref().map_or((0.0, 0.0), |p| (p.home.x, p.home.y));
-        let frame = self.panel.as_ref().map(|p| p.card.rest_rect()).unwrap_or_default();
+        let frame = self.panel.as_ref().map(|p| p.win.card.rest_rect()).unwrap_or_default();
         json!({
             "open": true,
             "idx": idx,

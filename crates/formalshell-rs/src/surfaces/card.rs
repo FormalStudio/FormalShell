@@ -395,15 +395,20 @@ impl Card {
         Scene::cover(self.rest, self.edge_map(), 0.0)
     }
 
-    /// The card's resting rect in output pixels, on an output `size` big: a
-    /// surface on the bottom or right edge starts its scene's size in from
-    /// the far side.
+    /// The card's resting rect in output pixels, on an output `size` big.
     pub fn rest_on(&self, size: (f64, f64)) -> IRect {
-        let (r, scene) = (self.rest_rect(), self.scene.size);
+        let (r, (x, y)) = (self.rest_rect(), self.origin(size));
+        IRect::new(r.x + x, r.y + y, r.w, r.h)
+    }
+
+    /// The surface's top left on an output `size` big: a surface on the
+    /// bottom or right edge starts its scene's size in from the far side.
+    pub fn origin(&self, size: (f64, f64)) -> (i32, i32) {
+        let scene = self.scene.size;
         match self.edge {
-            Edge::Right => IRect::new(r.x + size.0 as i32 - scene.w, r.y, r.w, r.h),
-            Edge::Bottom => IRect::new(r.x, r.y + size.1 as i32 - scene.h, r.w, r.h),
-            _ => r,
+            Edge::Right => (size.0 as i32 - scene.w, 0),
+            Edge::Bottom => (0, size.1 as i32 - scene.h),
+            _ => (0, 0),
         }
     }
 

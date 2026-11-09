@@ -18,7 +18,6 @@ use fs_types::{Edge, Insets};
 use fs_info::notifications::PositionSpec;
 use fs_theme::color::Rgba;
 use fs_theme::theme::Theme;
-use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
@@ -32,6 +31,7 @@ use crate::surface::Surface;
 use crate::surfaces::bar::cell::Button;
 use crate::paint::{Kit, Painter};
 use crate::surfaces::card::{Card, CardSpec, Ends, Sizing};
+use crate::surfaces::card_window::CardWindow;
 use crate::ui::{self, El, Event, Ui, What, w};
 
 /// Where a card hangs: the line it comes out of, its ends, and the cell
@@ -273,8 +273,7 @@ impl Effect<'_> {
 
 pub struct Host {
     pub module: Box<dyn Panel>,
-    pub card: Card,
-    pub surface: Surface,
+    pub win: CardWindow,
     head: Ui,
     body: Ui,
     halo_nodes: Vec<NodeId>,
@@ -301,8 +300,6 @@ pub struct Host {
     dragging: Option<(String, IRect, f64)>,
     pub wake: Option<Instant>,
     scale: f64,
-    /// The input region last set, so it is sent only on a change.
-    region: Option<(IRect, Vec<IRect>)>,
     /// The frame's height, the most the output leaves it and whether the
     /// content was cut to that, as of the last layout.
     pub fit: std::cell::Cell<(f64, f64, bool)>,
@@ -330,8 +327,7 @@ impl Host {
         let keyboard = module.takes_keyboard();
         Self {
             module,
-            card,
-            surface,
+            win: CardWindow::new(card, surface),
             head: Ui::new(Some(rule)),
             body: Ui::new(Some(rule)),
             halo_nodes: vec![halo],
@@ -354,15 +350,9 @@ impl Host {
             dragging: None,
             wake: None,
             scale,
-            region: None,
             fit: std::cell::Cell::new((0.0, 0.0, false)),
             back: false,
         }
-    }
-
-    /// The card's look off a new theme.
-    pub fn restyle(&mut self, theme: &Theme, cast: bool) {
-        self.card.restyle(theme, cast);
     }
 
     pub fn id(&self) -> &'static str {
@@ -393,7 +383,7 @@ impl Host {
 
     /// Gone from the screen: closed and landed, or cut by a handoff.
     pub fn finished(&self, now: Instant) -> bool {
-        self.handed || (self.surface.mapped() && self.card.finished(now))
+        self.handed || self.win.finished(now)
     }
 
     pub fn close(&mut self, now: Instant) {
@@ -404,9 +394,9 @@ impl Host {
         self.module.closed();
         self.cursor.active = false;
         self.handoff = None;
-        self.card.set_bypass(false);
-        self.card.set_open(now, false);
-        self.set_keyboard(KeyboardInteractivity::None);
+        self.win.card.set_bypass(false);
+        self.win.card.set_open(now, false);
+        self.win.set_keyboard(KeyboardInteractivity::None);
     }
 
     /// The outgoing half of a handoff: closed for input, held open on
@@ -415,8 +405,8 @@ impl Host {
         self.open = false;
         self.module.closed();
         self.cursor.active = false;
-        self.card.set_joined(false);
-        self.set_keyboard(KeyboardInteractivity::None);
+        self.win.card.set_joined(false);
+        self.win.set_keyboard(KeyboardInteractivity::None);
     }
 
     /// The incoming half, seeded on `from` (the outgoing card's live rect).
@@ -427,13 +417,12 @@ impl Host {
             alpha: Animated::new(0.0, Clock::Effects.curve()),
             started: false,
         });
-        self.card.set_bypass(true);
+        self.win.card.set_bypass(true);
     }
 
-    /// The surface is up: an enter starts, and a handoff starts travelling.
-    /// True when the outgoing card has to go now.
+    /// The surface is up and the card entering: a handoff starts
+    /// travelling. True when the outgoing card has to go now.
     pub fn mapped(&mut self, theme: &Theme, now: Instant) -> bool {
-        self.card.mapped(now);
         let Some(h) = &mut self.handoff else { return false };
         if h.started {
             return false;
@@ -444,22 +433,17 @@ impl Host {
         true
     }
 
-    fn set_keyboard(&mut self, k: KeyboardInteractivity) {
-        self.surface.layer.set_keyboard_interactivity(k);
-        self.surface.layer.commit();
-    }
-
     /// The prime's end: the keyboard stays, the pointer is the
     /// compositor's to route again.
     pub fn primed(&mut self) {
         self.prime_until = None;
         if self.open {
-            self.set_keyboard(KeyboardInteractivity::OnDemand);
+            self.win.set_keyboard(KeyboardInteractivity::OnDemand);
         }
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.card.animating(now)
+        self.win.card.animating(now)
             || self.morph.as_ref().is_some_and(|(w, h)| w.running(now) || h.running(now))
             || self.handoff.as_ref().is_some_and(|h| !h.started || h.travel.running(now) || h.alpha.running(now))
             || self.halo.iter().any(|a| a.running(now))
@@ -476,7 +460,7 @@ impl Host {
             hovered: self.hovered_stop(),
             now,
             motion_scale: self.scale,
-            raster: self.surface.scale(),
+            raster: self.win.surface.scale(),
         }
     }
 
@@ -534,7 +518,7 @@ impl Host {
         let spatial = Clock::Spatial.ms(theme) * self.scale;
         let morph = self.morph.get_or_insert_with(|| (Animated::new(tw, Clock::Spatial.curve()), Animated::new(th, Clock::Spatial.curve())));
         if self.open {
-            let armed = self.surface.mapped() && self.handoff.is_none() && self.morph_armed;
+            let armed = self.win.surface.mapped() && self.handoff.is_none() && self.morph_armed;
             for (a, t, morphs) in [(&mut morph.0, tw, true), (&mut morph.1, th, !follows)] {
                 if armed && morphs { a.set(now, t, spatial) } else { a.jump(t) }
             }
@@ -560,12 +544,12 @@ impl Host {
         };
         if self.handoff.as_ref().is_some_and(|h| h.started && !h.travel.running(now)) {
             self.handoff = None;
-            self.card.set_bypass(false);
+            self.win.card.set_bypass(false);
         }
-        let moved = (rest, live) != (self.card.rest(), self.card.live());
-        self.card.set_rect(rest, live);
-        if moved && !self.card.animating(now) || !self.surface.mapped() {
-            self.card.tick(now);
+        let moved = (rest, live) != (self.win.card.rest(), self.win.card.live());
+        self.win.card.set_rect(rest, live);
+        if moved && !self.win.card.animating(now) || !self.win.surface.mapped() {
+            self.win.card.tick(now);
         }
         self.draw(store, theme, kit, now);
         crate::trace::slow("panel", t0.elapsed(), format_args!("{} size_us={} total_us={}", self.module.id(), sized.as_micros(), t0.elapsed().as_micros()));
@@ -579,23 +563,11 @@ impl Host {
     /// landing as this surface goes away is not lost with it.
     pub fn sync_region(&mut self, compositor: &smithay_client_toolkit::compositor::CompositorState, holes: &[IRect]) {
         let (want, holes) = match (self.open, self.module.takes_keyboard()) {
-            (false, _) => (IRect::default(), Vec::new()),
-            (true, true) => (self.card.scene.size, holes.to_vec()),
-            (true, false) => (self.card.rest_rect(), Vec::new()),
+            (false, _) => (IRect::default(), &[][..]),
+            (true, true) => (self.win.card.scene.size, holes),
+            (true, false) => (self.win.card.rest_rect(), &[][..]),
         };
-        if self.region.as_ref().is_some_and(|(w, h)| *w == want && *h == holes) {
-            return;
-        }
-        if let Ok(region) = smithay_client_toolkit::compositor::Region::new(compositor) {
-            if !want.is_empty() {
-                region.add(want.x, want.y, want.w, want.h);
-            }
-            for hole in &holes {
-                region.subtract(hole.x, hole.y, hole.w, hole.h);
-            }
-            self.surface.layer.set_input_region(Some(region.wl_region()));
-        }
-        self.region = Some((want, holes));
+        self.win.sync_region(compositor, want, holes);
     }
 
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
@@ -617,9 +589,9 @@ impl Host {
     }
 
     fn draw(&mut self, store: &Store, theme: &Theme, kit: &mut Kit, now: Instant) {
-        let (frame, card_alpha) = self.card.content;
+        let (frame, card_alpha) = self.win.card.content;
         let alpha = card_alpha * self.handoff.as_ref().map_or(1.0, |h| h.alpha.value(now).clamp(0.0, 1.0) as f32);
-        let clip = self.card.content_clip();
+        let clip = self.win.card.content_clip();
         let s = theme.space.clone();
         // The body's rows start `panelRowInset` in, their text at
         // `panelInset`; the header's title sits on that text column and its
@@ -634,11 +606,11 @@ impl Host {
         let head_end = s.panel_inset - (s.control_height - s.panel_mark) / 2.0;
         let ring = theme.ring_width();
 
-        self.body.float_room = Some(self.card.past_line().intersect(&IRect::new(
+        self.body.float_room = Some(self.win.card.past_line().intersect(&IRect::new(
             s.screen_padding.round() as i32,
             s.screen_padding.round() as i32,
-            (self.card.scene.size.w as f64 - s.screen_padding * 2.0).round() as i32,
-            (self.card.scene.size.h as f64 - s.screen_padding * 2.0).round() as i32,
+            (self.win.card.scene.size.w as f64 - s.screen_padding * 2.0).round() as i32,
+            (self.win.card.scene.size.h as f64 - s.screen_padding * 2.0).round() as i32,
         )));
         self.wake = None;
         let v = self.view(store, theme, now);
@@ -647,7 +619,7 @@ impl Host {
         let foot = f.closing(theme, &body).foot;
         let module_wake = self.module.wake(&v);
 
-        let scene = &mut self.card.scene;
+        let scene = &mut self.win.card.scene;
         if let Some(head) = head {
             self.head.halo_owned = false;
             let r = Rect::new(fx + s.panel_inset, fy + vpad, fx + fw - head_end, fy + vpad + head_h);
@@ -686,9 +658,7 @@ impl Host {
         self.body.ring = self.cursor.keyed;
         let origin = (fx + pad, top - scroll);
         let d = self.body.draw(&body, Rect::new(origin.0, origin.1, origin.0 + inner_w, origin.1 + self.content_h), Some(body_clip), alpha, theme, kit, scene, now);
-        if let Some(w) = d.wake {
-            self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
-        }
+        self.wake_by(d.wake);
         // A panel moves the cursor on its own clock too (into a menu once
         // its rows show), not only after a key.
         self.cursor.take(self.module.as_mut(), &self.body.stops);
@@ -711,24 +681,27 @@ impl Host {
                 let row = Rect::new(origin.0 + x, origin.1 + y, origin.0 + x + w, origin.1 + y + h);
                 let rect = row.inflate(sp, sp);
                 let fill = theme.box_style("cursor", None).fill;
-                let mut p = Painter::new(&mut self.card.scene, &mut self.halo_nodes, Some(body_clip));
+                let mut p = Painter::new(&mut self.win.card.scene, &mut self.halo_nodes, Some(body_clip));
                 p.rect(ui::irect(rect), cr.color.with_alpha(cr.color.a * alpha), (st.radius + sp) as f32);
                 p.rect(ui::irect(row), fill.with_alpha(fill.a * alpha), st.radius as f32);
                 p.finish();
             }
             None => {
                 self.halo_shown = false;
-                let p = Painter::new(&mut self.card.scene, &mut self.halo_nodes, None);
+                let p = Painter::new(&mut self.win.card.scene, &mut self.halo_nodes, None);
                 p.finish();
             }
         }
         self.cursor.travels = false;
-        if let Some(w) = module_wake {
-            self.wake = Some(self.wake.map_or(w, |x: Instant| x.min(w)));
-        }
+        self.wake_by(module_wake);
         if d.animating {
             self.wake = Some(now);
         }
+    }
+
+    /// The content wakes at `at` too, if that comes first.
+    fn wake_by(&mut self, at: Option<Instant>) {
+        self.wake = self.wake.into_iter().chain(at).min();
     }
 
     /// Whether the content asks for frames on its own (a marquee, a fade).
@@ -872,10 +845,7 @@ impl Host {
             self.cursor.active = true;
             self.cursor.keyed = false;
         }
-        let on_card = at.is_some_and(|(x, y)| {
-            let r = self.card.live_rect();
-            x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64
-        });
+        let on_card = at.is_some_and(|(x, y)| self.win.on_card(x, y));
         if !on_card && self.cursor.active && !self.cursor.keyed {
             self.cursor.active = false;
         }
@@ -918,8 +888,7 @@ impl Host {
             return Out::None;
         }
         let hit = self.hit_at(x, y);
-        let r = self.card.live_rect();
-        let on_card = x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64;
+        let on_card = self.win.on_card(x, y);
         if !on_card && pressed.is_none() {
             return Out::Close;
         }

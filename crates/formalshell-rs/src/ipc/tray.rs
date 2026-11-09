@@ -61,7 +61,7 @@ fn parse_int(s: &str) -> Option<i32> {
 }
 
 fn menucursor(app: &mut App, args: &[Value]) -> Value {
-    if app.menu.as_ref().is_none_or(|p| !p.card.is_open()) {
+    if app.menu.as_ref().is_none_or(|p| !p.win.card.is_open()) {
         return text("error: no tray menu open");
     }
     match parse_int(args[0].str()) {

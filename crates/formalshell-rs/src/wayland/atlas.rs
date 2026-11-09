@@ -145,7 +145,7 @@ impl App {
     }
 
     pub(super) fn present_atlas(&mut self, now: Instant) {
-        if self.atlas.win.as_ref().is_some_and(|w| w.shown.modal.finished(now)) {
+        if self.atlas.win.as_ref().is_some_and(|w| w.shown.modal.win.finished(now)) {
             self.atlas.win = None;
             self.atlas.model.globe.drop_earth();
             self.sync_join();
@@ -162,14 +162,14 @@ impl App {
         let theme = &self.store.theme.theme;
         let moving = m.globe.animating();
         let animating = w.shown.animating(now) || moving;
-        if m.dirty || animating || !w.shown.modal.surface.mapped() {
+        if m.dirty || animating || !w.shown.modal.win.surface.mapped() {
             w.shown.modal.sync_region(&self.compositor);
             w.shown.layout(m, &r, theme, &mut self.kit, now);
             m.dirty = false;
         }
         let animating = w.shown.animating(now) || m.globe.animating();
         w.shown.modal.present(animating, now, &qh);
-        if w.shown.modal.animating(now) {
+        if w.shown.modal.win.animating(now) {
             self.sync_join();
         }
     }
@@ -199,10 +199,6 @@ impl App {
         self.atlas.model.closed();
         self.atlas.model.globe.drop_earth();
         self.sync_join();
-    }
-
-    pub(super) fn atlas_joins(&self) -> &[crate::surfaces::card::Join] {
-        self.atlas.win.as_ref().map_or(&[], |w| w.shown.modal.joins())
     }
 
     /// One key while the atlas holds the keyboard.
@@ -322,7 +318,7 @@ impl App {
                     shape = Some(Shape::Grabbing);
                 } else {
                     let hit = w.shown.hit(x, y);
-                    w.pressed = hit.as_ref().and_then(|h| h.on.clone()).or_else(|| (!w.shown.modal.on_card(x, y)).then(|| "outside".into()));
+                    w.pressed = hit.as_ref().and_then(|h| h.on.clone()).or_else(|| (!w.shown.modal.win.on_card(x, y)).then(|| "outside".into()));
                     if let Some(h) = hit.filter(|h| h.on.as_deref() == Some("volume")) {
                         w.sliding = true;
                         let f = ((x - h.rect.x as f64) / h.rect.w.max(1) as f64).clamp(0.0, 1.0);
@@ -345,7 +341,7 @@ impl App {
                     return true;
                 }
                 let hit = w.shown.hit(x, y);
-                let on = hit.as_ref().and_then(|h| h.on.clone()).or_else(|| (!w.shown.modal.on_card(x, y)).then(|| "outside".into()));
+                let on = hit.as_ref().and_then(|h| h.on.clone()).or_else(|| (!w.shown.modal.win.on_card(x, y)).then(|| "outside".into()));
                 if pressed.is_none() || pressed != on {
                     return true;
                 }

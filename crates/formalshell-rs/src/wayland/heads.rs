@@ -184,7 +184,7 @@ impl App {
     /// Something on the live bar's output that a click outside closes.
     pub(super) fn catches(&self) -> bool {
         self.panel.as_ref().is_some_and(|h| h.is_open() && h.module.takes_keyboard())
-            || self.menu.as_ref().is_some_and(|p| p.card.is_open())
+            || self.menu.as_ref().is_some_and(|p| p.win.card.is_open())
             || self.launcher.open
             || self.atlas_open()
             || self.overlay_open().is_some()

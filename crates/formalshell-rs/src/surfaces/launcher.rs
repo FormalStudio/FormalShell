@@ -3190,10 +3190,10 @@ impl Shown {
     pub const DEFORM_AMOUNT: f64 = 0.1;
 
     pub fn new(theme: &Theme, mut modal: Modal, output: (f64, f64), scale: f64) -> Self {
-        let top = modal.layer.as_ref().map_or(modal.card.top_node(), |l| l.top);
+        let top = modal.layer.as_ref().map_or(modal.win.card.top_node(), |l| l.top);
         let scene = match &mut modal.layer {
             Some(l) => &mut l.scene,
-            None => &mut modal.card.scene,
+            None => &mut modal.win.card.scene,
         };
         let mut marker = |prev: NodeId| {
             let id = scene.add_after(Some(prev), IRect::default(), crate::scene::Paint::Rect { fill: fs_theme::color::Rgba::TRANSPARENT, radius: 0.0 });
@@ -3235,11 +3235,11 @@ impl Shown {
     }
 
     pub fn finished(&self, now: Instant) -> bool {
-        self.modal.finished(now)
+        self.modal.win.finished(now)
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.modal.animating(now)
+        self.modal.win.animating(now)
             || self.scroll.running(now)
             || self.column_scroll.running(now)
             || self.morph.0.running(now)
@@ -3252,7 +3252,7 @@ impl Shown {
     /// layer, the card's own motion and its size morph need no new layout,
     /// the compositor moves and cuts the layer.
     pub fn content_animating(&self, now: Instant) -> bool {
-        let card = self.modal.layer.is_none() && (self.modal.animating(now) || self.morph.0.running(now) || self.morph.1.running(now));
+        let card = self.modal.layer.is_none() && (self.modal.win.animating(now) || self.morph.0.running(now) || self.morph.1.running(now));
         card || self.scroll.running(now) || self.column_scroll.running(now) || self.wake.is_some_and(|w| w <= now)
     }
 
@@ -3332,7 +3332,7 @@ impl Shown {
             hovered: self.hovered_stop(),
             now: Instant::now(),
             motion_scale: self.scale,
-            raster: self.modal.surface.scale(),
+            raster: self.modal.win.surface.scale(),
         };
         Some(p.module.body(&v))
     }
@@ -3347,7 +3347,7 @@ impl Shown {
             hovered: None,
             now: Instant::now(),
             motion_scale: self.scale,
-            raster: self.modal.surface.scale(),
+            raster: self.modal.win.surface.scale(),
         };
         p.width = crate::surfaces::panel::card_width(p.module.as_ref(), &v, kit);
         let Some(el) = self.panel_el(m, store, theme) else { return };
@@ -3393,8 +3393,8 @@ impl Shown {
             if max < pad { pad } else { (extent * 0.3).clamp(pad, max) }.round()
         };
         let centred = |extent: f64, size: f64| ((extent - size) / 2.0).max(pad).round();
-        let line = self.modal.card.line_at();
-        let (x, y) = match self.modal.card.edge {
+        let line = self.modal.win.card.line_at();
+        let (x, y) = match self.modal.win.card.edge {
             Edge::Left => (line + centred(self.output.0 - line, w_), centred(self.output.1, h_)),
             Edge::Right => (centred(self.output.0 - line, w_), centred(self.output.1, h_)),
             _ if self.centred => (((self.output.0 - w_) / 2.0).round(), centred(self.output.1, h_)),
@@ -3431,7 +3431,7 @@ impl Shown {
         let resized = self.sized_for.as_ref().is_some_and(|(k, _)| *k != key);
         let morphing = self.morph.0.running(now) || self.morph.1.running(now);
         self.sized_for = Some((key, query));
-        if self.modal.surface.mapped() && self.modal.open && !typed && (resized || morphing) {
+        if self.modal.win.surface.mapped() && self.modal.open && !typed && (resized || morphing) {
             let ms = Clock::Spatial.ms(theme) * self.scale;
             self.morph.0.set(now, tw, ms);
             self.morph.1.set(now, th, ms);
@@ -3492,7 +3492,7 @@ impl Shown {
                 let size = IRect::new(0, 0, target.0.round() as i32, target.1.round() as i32);
                 (size, 1.0, size)
             }
-            None => (self.modal.card.content.0, self.modal.card.content.1, self.modal.card.content_clip()),
+            None => (self.modal.win.card.content.0, self.modal.win.card.content.1, self.modal.win.card.content_clip()),
         };
         let s = theme.space.clone();
         let pad = s.panel_padding;
@@ -3506,12 +3506,12 @@ impl Shown {
             l.fit(frame.w, frame.h);
         }
         let on_output = match &self.modal.layer {
-            Some(l) => { let r = l.place(&self.modal.card, true); (r.x, r.y) }
+            Some(l) => { let r = l.place(&self.modal.win.card, true); (r.x, r.y) }
             None => (0, 0),
         };
         let scene = match &mut self.modal.layer {
             Some(l) => &mut l.scene,
-            None => &mut self.modal.card.scene,
+            None => &mut self.modal.win.card.scene,
         };
         self.head.motion_scale = self.scale;
         self.body.motion_scale = self.scale;
@@ -3532,7 +3532,7 @@ impl Shown {
         let head_rect = Rect::new(fx + field_x, row_top, fx + fw - field_x, row_top + row_h);
         // The row stands the band's height whatever it holds, so a token
         // with no query beside it centres in the band too.
-        let head = header(m, store, theme, self.modal.surface.scale()).height(row_h);
+        let head = header(m, store, theme, self.modal.win.surface.scale()).height(row_h);
         self.field_rect = Some(Rect::new(fx, fy, fx + fw, fy + band));
         let d = self.head.draw(&head, head_rect, Some(clip), alpha, theme, kit, scene, now);
         if d.animating {
@@ -3704,7 +3704,7 @@ impl Shown {
     fn local(&self, x: f64, y: f64) -> (f64, f64) {
         match &self.modal.layer {
             Some(l) => {
-                let at = l.place(&self.modal.card, !self.modal.animating(Instant::now()));
+                let at = l.place(&self.modal.win.card, !self.modal.win.animating(Instant::now()));
                 (x - f64::from(at.x), y - f64::from(at.y))
             }
             None => (x, y),
@@ -3714,7 +3714,7 @@ impl Shown {
     /// A box on the surface, settled, as a box on the output.
     fn on_output(&self, r: IRect) -> IRect {
         let at = self.modal.layer.as_ref().map_or((0, 0), |l| {
-            let p = l.place(&self.modal.card, true);
+            let p = l.place(&self.modal.win.card, true);
             (p.x, p.y)
         });
         IRect::new(r.x + at.0, r.y + at.1, r.w, r.h)
@@ -3751,8 +3751,8 @@ impl Shown {
     /// The card's settled box on the output.
     pub fn card_box(&self) -> IRect {
         match &self.modal.layer {
-            Some(l) => l.place(&self.modal.card, true),
-            None => self.modal.card.live_rect(),
+            Some(l) => l.place(&self.modal.win.card, true),
+            None => self.modal.win.card.live_rect(),
         }
     }
 

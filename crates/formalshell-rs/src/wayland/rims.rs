@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use calloop::timer::{TimeoutAction, Timer};
 use fs_chrome::rim::{Field, Glint, Sky, UNFOCUSED};
 
-use super::App;
+use super::{App, Role};
 use crate::services::{compositor, wallpaper};
 use crate::paint::rim::{self, Lit};
 
@@ -119,31 +119,13 @@ impl App {
     /// turn decides what animates.
     pub(super) fn light_cards(&mut self, now: Instant) {
         let lit = self.rims.lit.clone();
-        let lit = lit.as_ref();
         let ms = rim::blend_ms(&self.store.theme.theme, self.motion_scale);
-        let chrome = self.chrome();
-        for h in [&mut self.outgoing, &mut self.panel].into_iter().flatten() {
-            h.card.light(now, lit, (0.0, 0.0), ms);
-        }
-        if let Some(p) = &mut self.menu {
-            let (x, y) = chrome.origin(p.card.depth());
-            p.card.light(now, lit, (f64::from(x), f64::from(y)), ms);
-        }
-        if let Some(w) = &mut self.launch {
-            w.shown.modal.card.light(now, lit, (0.0, 0.0), ms);
-        }
-        if let Some(w) = &mut self.atlas.win {
-            w.shown.modal.card.light(now, lit, (0.0, 0.0), ms);
-        }
-        if let Some(d) = &mut self.polkit {
-            d.modal.card.light(now, lit, (0.0, 0.0), ms);
-        }
-        if let Some(w) = &mut self.plugin_overlay {
-            w.modal.card.light(now, lit, (0.0, 0.0), ms);
-        }
-        if let Some(p) = &mut self.osd.pill {
-            let d = p.card.depth() as f64;
-            p.card.light(now, lit, (0.0, chrome.output.1 - d), ms);
+        let output = self.output_size();
+        for role in Role::ALL.into_iter().filter(|r| r.lit()) {
+            if let Some(w) = self.card_mut(role) {
+                let (x, y) = w.card.origin(output);
+                w.card.light(now, lit.as_ref(), (f64::from(x), f64::from(y)), ms);
+            }
         }
         self.arm_rim_poll();
     }
@@ -152,7 +134,7 @@ impl App {
     /// cards never close, so they take the model's own events alone.
     fn rim_card_open(&self) -> bool {
         let toasts = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
-        self.rims.lit.is_some() && (self.panel.is_some() || self.menu.is_some() || self.modal_shown() || self.osd.pill.is_some() || toasts)
+        self.rims.lit.is_some() && (self.cards().any(|(r, _)| r.lit()) || toasts)
     }
 
     fn arm_rim_poll(&mut self) {
@@ -173,19 +155,19 @@ impl App {
 
     /// The open cards' rims, for `debug dump`.
     pub fn rims_report(&self) -> serde_json::Value {
-        let report = |card: &crate::surfaces::card::Card, origin: (f64, f64)| {
-            let r = card.rest_rect();
-            let rect = vello_cpu::kurbo::Rect::new(r.x as f64 + origin.0, r.y as f64 + origin.1, r.right() as f64 + origin.0, r.bottom() as f64 + origin.1);
-            card.rim.report(rect)
+        let output = self.output_size();
+        let report = |role: Role| {
+            let card = &self.card(role)?.card;
+            let r = card.rest_on(output);
+            card.rim.report(vello_cpu::kurbo::Rect::new(r.x as f64, r.y as f64, r.right() as f64, r.bottom() as f64))
         };
-        let (_, out_h) = self.output_size();
         serde_json::json!({
             "enabled": self.rims.lit.is_some(),
             "generation": self.rims.lit.as_ref().map_or(0, |l| l.generation),
             "windows": self.rims.lit.as_ref().map_or(0, |l| l.field.glints.len()),
-            "panel": self.panel.as_ref().and_then(|h| report(&h.card, (0.0, 0.0))),
-            "launcher": self.launch.as_ref().and_then(|w| report(&w.shown.modal.card, (0.0, 0.0))),
-            "osd": self.osd.pill.as_ref().and_then(|p| report(&p.card, (0.0, out_h - p.card.depth() as f64))),
+            "panel": report(Role::Panel),
+            "launcher": report(Role::Launcher),
+            "osd": report(Role::Osd),
         })
     }
 }

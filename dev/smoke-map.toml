@@ -79,6 +79,7 @@ paths = [
   "crates/formalshell-rs/src/store.rs",
   "crates/formalshell-rs/src/surfaces/mod.rs",
   "crates/formalshell-rs/src/surfaces/card.rs",
+  "crates/formalshell-rs/src/surfaces/card_window.rs",
   "crates/formalshell-rs/src/surfaces/modal.rs",
   "crates/formalshell-rs/src/surfaces/popup.rs",
   "crates/formalshell-rs/src/services/mod.rs",

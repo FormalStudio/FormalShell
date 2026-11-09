@@ -24,13 +24,12 @@ use std::time::{Duration, Instant};
 use fs_types::{BtAddress, Edge};
 use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
-use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Owner};
 use crate::services::devices::earbuds;
 use crate::services::compositor;
-use crate::surfaces::card::{Card, CardSpec, Join, Sizing, popover_theme};
+use crate::surfaces::card::{Card, CardSpec, Sizing, popover_theme};
 use crate::surfaces::headset;
 use crate::surfaces::popup::Popup;
 
@@ -50,7 +49,7 @@ struct Known {
 }
 
 pub(super) struct Shown {
-    popup: Popup,
+    pub(super) popup: Popup,
     address: BtAddress,
     /// The hold's end; none while the pointer is on the card.
     hold_until: Option<Instant>,
@@ -100,11 +99,6 @@ pub struct Headset {
 impl Headset {
     pub fn wake(&self) -> Option<Instant> {
         [self.card.as_ref().and_then(|c| c.hold_until), self.learning.as_ref().map(|l| l.until)].into_iter().flatten().min()
-    }
-
-    /// The gaps this card opens in the lines, for the bar to take.
-    pub fn joins(&self) -> &[Join] {
-        self.card.as_ref().map_or(&[], |c| &c.popup.card.joins)
     }
 }
 
@@ -236,14 +230,14 @@ impl App {
 
     pub(super) fn headset_frame(&mut self, now: Instant) {
         if let Some(c) = &mut self.headset.card {
-            c.popup.frame(now);
+            c.popup.win.frame(now);
         }
         self.sync_join();
     }
 
     pub(super) fn headset_configure(&mut self) {
         if let Some(c) = &mut self.headset.card {
-            c.popup.configure();
+            c.popup.win.configure();
         }
     }
 
@@ -298,7 +292,7 @@ impl App {
         let Some(address) = self.headset.card.as_ref().map(|c| c.address) else { return };
         let face = headset::face(&self.store, address);
         let Some(c) = &mut self.headset.card else { return };
-        if c.popup.finished(now) {
+        if c.popup.win.finished(now) {
             self.headset.card = None;
             self.sync_join();
             self.log("headset card unmapped");
@@ -307,21 +301,21 @@ impl App {
         let open = c.popup.is_open();
         c.popup.sync_region(&self.compositor, open);
         let theme = &self.store.theme.theme;
-        let (el, rect) = headset::layout(&face, c.popup.card.content.0, c.popup.surface.scale(), theme, &mut self.kit);
+        let (el, rect) = headset::layout(&face, c.popup.win.card.content.0, c.popup.win.surface.scale(), theme, &mut self.kit);
         let drawn = c.popup.draw_in(&el, rect, theme, &mut self.kit, now);
         {
-            let frame = c.popup.card.content.0;
+            let frame = c.popup.win.card.content.0;
             let (mut painter, alpha) = c.popup.painter();
             headset::paint_ring(&mut painter, alpha, &face, frame, theme, &mut self.kit);
             painter.finish();
         }
-        let animating = c.popup.animating(now) || drawn.animating;
+        let animating = c.popup.win.animating(now) || drawn.animating;
         let qh = self.qh.clone();
-        c.popup.present(animating, &qh);
+        c.popup.win.present(animating, &qh);
     }
 
     pub(super) fn headset_owns(&self, surface: &wl_surface::WlSurface) -> bool {
-        self.headset.card.as_ref().is_some_and(|c| c.popup.surface.layer.wl_surface() == surface)
+        self.headset.card.as_ref().is_some_and(|c| c.popup.win.owns(surface))
     }
 }
 
@@ -334,9 +328,9 @@ impl App {
         match &self.headset.card {
             Some(c) => {
                 // The surface hangs from the output's top left, so its pixels are the output's.
-                let r = c.popup.card.rest_rect();
+                let r = c.popup.win.card.rest_rect();
                 let face = headset::face(&self.store, c.address);
-                serde_json::json!({"open": c.popup.is_open(), "art": face.art, "name": face.name, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.card.radius(), "learning": learning})
+                serde_json::json!({"open": c.popup.is_open(), "art": face.art, "name": face.name, "rest": {"x": r.x, "y": r.y, "w": r.w, "h": r.h}, "radius": c.popup.win.card.radius(), "learning": learning})
             }
             None => serde_json::json!({"learning": learning}),
         }

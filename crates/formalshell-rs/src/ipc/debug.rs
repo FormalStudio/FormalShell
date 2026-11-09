@@ -66,12 +66,11 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     let line: Vec<serde_json::Value> = app.bar.line_rects().iter().map(rect).collect();
     let modals: Vec<serde_json::Value> = app
         .modals()
-        .iter()
         .map(|m| {
             let scrims: Vec<serde_json::Value> =
                 m.scrims().map(|(name, alpha, fade)| json!({"name": name, "alpha": alpha, "fade": fade})).collect();
-            let content = m.layer.as_ref().map(|l| rect(&l.place(&m.card, true)));
-            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": rect(&m.card.live_rect()), "content": content, "popover": m.card.popover()})
+            let content = m.layer.as_ref().map(|l| rect(&l.place(&m.win.card, true)));
+            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": rect(&m.win.card.live_rect()), "content": content, "popover": m.win.card.popover()})
         })
         .collect();
     // Every toast the model holds, tier by tier, for a leg reading what one
@@ -157,8 +156,8 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
                 "open": h.is_open(),
                 "header": h.module.header(),
                 "buttons": h.head_boxes().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect::<Vec<_>>(),
-                "rest": rect(&h.card.rest_rect()),
-                "live": rect(&h.card.live_rect()),
+                "rest": rect(&h.win.card.rest_rect()),
+                "live": rect(&h.win.card.live_rect()),
                 "viewport": rect(&viewport),
                 "contentH": content_h.round(),
                 "scroll": scroll.round(),

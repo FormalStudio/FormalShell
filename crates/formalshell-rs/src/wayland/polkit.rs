@@ -43,7 +43,7 @@ pub struct Dialog {
     submitted: bool,
     error: bool,
     text: Field<Zeroizing<String>>,
-    dirty: bool,
+    pub(super) dirty: bool,
 }
 
 impl Dialog {
@@ -78,7 +78,7 @@ impl App {
                 let own = !identity.is_empty() && std::env::var("USER").is_ok_and(|u| u == identity);
                 let names = ["polkit", "polkit-scrim-band", "polkit-scrim"];
                 let mut modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Overlay, Some("dialog"), DEFORM_AMOUNT, true);
-                let content = self.content_layer("polkit-content", &modal.surface);
+                let content = self.content_layer("polkit-content", &modal.win.surface);
                 let top = content.top;
                 modal.layer = Some(content);
                 self.polkit = Some(Dialog {
@@ -99,7 +99,7 @@ impl App {
                 if own && let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) {
                     let home = std::env::var("HOME").unwrap_or_default();
                     let path = self.store.config.avatar_path(&home);
-                    let scale = self.polkit.as_ref().map_or_else(|| self.store.display.scales.primary(), |d| d.modal.surface.scale());
+                    let scale = self.polkit.as_ref().map_or_else(|| self.store.display.scales.primary(), |d| d.modal.win.surface.scale());
                     let px = crate::scene::pixels_at((self.store.theme.theme.space.lg * 2.0).round(), scale);
                     rt.pool().submit(move || {
                         let _ = tx.send(LockMsg::PolkitAvatar(crate::surfaces::lock::avatar(&path, px).map(|b| b.at(scale))));
@@ -151,10 +151,6 @@ impl App {
         true
     }
 
-    pub(super) fn polkit_joins(&self) -> &[crate::surfaces::card::Join] {
-        self.polkit.as_ref().map_or(&[], |d| d.modal.joins())
-    }
-
     /// The clipboard's text into the dialog's field, while it holds the
     /// keyboard.
     pub(super) fn polkit_paste(&mut self, text: &str) -> bool {
@@ -194,7 +190,7 @@ impl App {
     }
 
     pub(super) fn present_polkit(&mut self, now: Instant) {
-        if self.polkit.as_ref().is_some_and(|d| d.modal.finished(now)) {
+        if self.polkit.as_ref().is_some_and(|d| d.modal.win.finished(now)) {
             self.polkit = None;
             self.sync_join();
             return;
@@ -203,7 +199,7 @@ impl App {
         let Some(d) = &mut self.polkit else { return };
         // The card's own motion moves and cuts the content layer, which
         // needs no new layout for it.
-        if (d.dirty || !d.modal.surface.mapped()) && d.modal.surface.configured {
+        if (d.dirty || !d.modal.win.surface.mapped()) && d.modal.win.surface.configured {
             d.dirty = false;
             d.modal.sync_region(&self.compositor);
             d.ui.motion_scale = self.motion_scale;
@@ -211,7 +207,7 @@ impl App {
         }
         // A content effect still running (an error label's shake) lays out
         // again on the next frame.
-        let animating = d.modal.animating(now) || d.dirty;
+        let animating = d.modal.win.animating(now) || d.dirty;
         d.modal.present(animating, now, &qh);
         if animating {
             self.sync_join();
@@ -220,7 +216,7 @@ impl App {
 
     fn lay_polkit(d: &mut Dialog, theme: &fs_theme::theme::Theme, kit: &mut crate::paint::Kit, now: Instant) {
         let s = &theme.space;
-        let (w, h) = (d.modal.card.scene.size.w, d.modal.card.scene.size.h);
+        let (w, h) = (d.modal.win.card.scene.size.w, d.modal.win.card.scene.size.h);
         let inner = s.popup_width_narrow;
         let enabled = d.asked && !d.submitted;
         let shown = if d.echo { d.text.text().to_owned() } else { "\u{2022}".repeat(d.text.text().chars().count()) };
@@ -267,7 +263,7 @@ impl App {
         d.modal.place(Rect::new(x0, y0, x0 + card_w, y0 + card_h), now);
         // Laid out in the content layer's own pixels, which the card's
         // travel, cut and fade move.
-        let rest = d.modal.card.live_rect();
+        let rest = d.modal.win.card.live_rect();
         let frame = IRect::new(0, 0, rest.w, rest.h);
         let alpha = 1.0;
         let clip = frame;

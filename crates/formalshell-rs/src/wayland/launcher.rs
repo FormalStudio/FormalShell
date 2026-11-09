@@ -14,7 +14,6 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use super::{App, Owner};
 use crate::services::menu::{self as index, Ask};
 use crate::surface::{Backend, Surface};
-use crate::surfaces::card::Join;
 use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
@@ -53,7 +52,7 @@ impl App {
             if let Some(layer) = modal.layer {
                 self.layer_kept = Some(layer.keep());
             }
-            self.launch_kept = Some(modal.surface.keep());
+            self.launch_kept = Some(modal.win.surface.keep());
             self.release_kept_later();
         }
     }
@@ -115,10 +114,10 @@ impl App {
         let names = ["menu", "menu-scrim-band", "menu-scrim"];
         let mut modal = Modal::open(&self.modal_make(), names, "formalshell:menu", Layer::Overlay, None, Shown::DEFORM_AMOUNT, true);
         if let Some(kept) = self.launch_kept.take() {
-            modal.surface.adopt(kept);
+            modal.win.surface.adopt(kept);
         }
-        modal.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
-        let mut content = self.content_layer("menu-content", &modal.surface);
+        modal.win.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
+        let mut content = self.content_layer("menu-content", &modal.win.surface);
         if let Some(kept) = self.layer_kept.take() {
             content.surface.adopt(kept);
         }
@@ -1004,7 +1003,7 @@ impl App {
     /// The scale the launcher's pictures are made at: its card's, else the
     /// bar's output's, where it opens.
     fn launcher_scale(&self) -> f64 {
-        self.launch.as_ref().map_or_else(|| self.store.display.scales.primary(), |w| w.shown.modal.surface.scale())
+        self.launch.as_ref().map_or_else(|| self.store.display.scales.primary(), |w| w.shown.modal.win.surface.scale())
     }
 
     pub(super) fn present_launcher(&mut self, now: Instant) {
@@ -1046,8 +1045,8 @@ impl App {
         let moving = w.shown.content_animating(now) || self.launcher.rows_moving(now);
         let t1 = Instant::now();
         // A frame still being drawn in slices keeps the scene it started on.
-        let rastering = w.shown.modal.surface.rastering() || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering());
-        let wants = (self.launcher.dirty || moving || !w.shown.modal.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
+        let rastering = w.shown.modal.win.surface.rastering() || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering());
+        let wants = (self.launcher.dirty || moving || !w.shown.modal.win.surface.mapped()) && !w.shown.hold_layout(&self.launcher, now);
         // A layout held back by a sliced frame runs once it is out, even
         // when whatever moved has stopped by then.
         if rastering && wants {
@@ -1073,7 +1072,7 @@ impl App {
         w.shown.modal.present(animating, now, &qh);
         // The rest of a sliced frame on the next turn, after whatever the
         // loop has waiting (the bar's callback first).
-        if (w.shown.modal.surface.rastering()
+        if (w.shown.modal.win.surface.rastering()
             || w.shown.modal.layer.as_ref().is_some_and(|l| l.surface.rastering())
             || w.shown.modal.look_rastering())
             && let Some(handle) = &self.handle
@@ -1104,7 +1103,7 @@ impl App {
 
     pub(super) fn launcher_configure(&mut self, part: Part, width: i32, height: i32) {
         let Some(w) = &mut self.launch else { return };
-        let first = part == Part::Card && !w.shown.modal.surface.configured;
+        let first = part == Part::Card && !w.shown.modal.win.surface.configured;
         w.shown.modal.configure(part, width, height);
         if part == Part::Card {
             self.launcher.dirty = true;
@@ -1162,7 +1161,7 @@ impl App {
         }
         let Some(w) = &mut self.launch else { return true };
         let (x, y) = e.position;
-        let on = |w: &Window| w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.on_card(x, y)).then(|| "outside".into()));
+        let on = |w: &Window| w.shown.hit(x, y).and_then(|h| h.on).or_else(|| (!w.shown.modal.win.on_card(x, y)).then(|| "outside".into()));
         match e.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                 if w.shown.set_hover(w.shown.hit(x, y).map(|h| h.path)) {
@@ -1262,10 +1261,6 @@ impl App {
                 self.launcher_resolve = true;
             }
         }
-    }
-
-    pub(super) fn launcher_joins(&self) -> &[Join] {
-        self.launch.as_ref().map_or(&[], |w| w.shown.modal.joins())
     }
 
     /// The tray route's rows, off the tray the bar already holds.

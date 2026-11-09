@@ -67,7 +67,7 @@ impl Shown {
     pub const DEFORM_AMOUNT: f64 = 0.1;
 
     pub fn new(mut modal: Modal, output: (f64, f64), scale: f64) -> Self {
-        let card = &mut modal.card;
+        let card = &mut modal.win.card;
         let top = card.top_node();
         let globe_node = card.scene.add_after(Some(top), IRect::default(), Paint::Rect { fill: fs_theme::color::Rgba::TRANSPARENT, radius: 0.0 });
         let tip_box = card.scene.add_after(Some(globe_node), IRect::default(), Paint::Rect { fill: fs_theme::color::Rgba::TRANSPARENT, radius: 0.0 });
@@ -93,7 +93,7 @@ impl Shown {
     }
 
     pub fn animating(&self, now: Instant) -> bool {
-        self.modal.animating(now) || self.animating_content
+        self.modal.win.animating(now) || self.animating_content
     }
 
     pub fn hit(&self, x: f64, y: f64) -> Option<ui::Hit> {
@@ -121,8 +121,8 @@ impl Shown {
 
     #[allow(clippy::too_many_lines)]
     fn draw(&mut self, a: &mut Atlas, r: &radio::State, theme: &Theme, kit: &mut Kit, now: Instant, (cw, chh): (f64, f64)) {
-        let (frame, alpha) = self.modal.card.content;
-        let clip = self.modal.card.content_clip();
+        let (frame, alpha) = self.modal.win.card.content;
+        let clip = self.modal.win.card.content_clip();
         let s = theme.space.clone();
         let p = s.panel_padding;
         let bw = theme.border_width;
@@ -132,7 +132,7 @@ impl Shown {
         for u in [&mut self.head, &mut self.foot, &mut self.side, &mut self.list, &mut self.player, &mut self.help, &mut self.tip] {
             u.motion_scale = self.scale;
         }
-        let scene = &mut self.modal.card.scene;
+        let scene = &mut self.modal.win.card.scene;
         let mut wake = false;
 
         // The header.
@@ -245,7 +245,7 @@ impl Shown {
         a.globe.active_country = a.active_code.clone();
         let c = |n: &str| theme.colors.get(n);
         let ink = GlobeInk { sphere: c("background"), land: c("muted"), grid: c("border"), outline: c("mutedForeground"), signal: c("primary"), accent: c("primary"), radius: theme.radii.lg };
-        let ops = a.globe.paint(&ink, alpha, self.modal.surface.scale());
+        let ops = a.globe.paint(&ink, alpha, self.modal.win.surface.scale());
         let (gx, gy, gw, gh) = a.globe.rect;
         let bounds = IRect::new(gx.floor() as i32, gy.floor() as i32, gw.ceil() as i32 + 1, gh.ceil() as i32 + 1);
         scene.update_with(self.globe_node, bounds, Paint::Vector(ops), true, Affine::IDENTITY, Some(bounds.intersect(&clip)));
