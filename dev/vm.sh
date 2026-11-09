@@ -48,19 +48,14 @@ slots="${FS_VM_SLOTS:-4}"
 spec="$HOME/.config/formalspec"
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR)
 
-# The flag of every leg that declares leg_<n>_vm_only.
-vm_flags() {
-  local f leg
-  for f in dev/smoke.d/*.sh; do
-    leg=$(basename "$f" .sh)
-    grep -q "^leg_${leg}_vm_only=" "$f" || continue
-    sed -n "s/^leg_${leg}_flag=\"\(--[a-z0-9-]*\).*/\1/p" "$f"
-  done
-}
+# Every leg's declarations (dev/smoke.sh --manifest); dev/remote.sh hands
+# them over in FS_MANIFEST.
+[ -n "${FS_MANIFEST:-}" ] || FS_MANIFEST=$("$repo_root/dev/smoke.sh" --manifest | jq -c .)
+export FS_MANIFEST
 
 if [ "$1" = wants ]; then
   shift
-  flags=" $(vm_flags | tr '\n' ' ')"
+  flags=" $(printf '%s' "$FS_MANIFEST" | jq -r '.legs[] | select(.vm_only) | .flag | split(" ")[0]' | tr '\n' ' ')"
   for flag in "$@"; do
     case "$flags" in *" $flag "*) exit 0 ;; esac
   done
@@ -217,7 +212,7 @@ case "$verb" in
     ;;
   smoke)
     forward=""
-    for name in SMOKE_WALLPAPER_DITHER FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_DEPTH_PICTURE FS_DEPTH_GENERATE FS_SMOKE_SCALE; do
+    for name in FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE $(printf '%s' "$FS_MANIFEST" | jq -r '[.legs[].env[]] | unique[]'); do
       [ -z "${!name:-}" ] || forward+="$name=$(printf '%q' "${!name}") "
     done
     status=0

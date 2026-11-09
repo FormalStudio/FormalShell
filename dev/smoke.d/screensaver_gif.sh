@@ -20,6 +20,7 @@
 # wall-clock time, so the same frame index means something different on the
 # next machine.
 leg_screensaver_gif_flag="--screensaver-gif"
+leg_screensaver_gif_commits="docs/media screensaver-*.gif"
 leg_screensaver_gif_order=240
 leg_screensaver_gif_needs="convert"
 

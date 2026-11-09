@@ -172,6 +172,31 @@ while read -r _ leg_name; do
 done < <(leg_order_list)
 legs=("${ordered[@]}")
 
+# The manifest every other tool reads (dev/remote.sh, dev/vm.sh,
+# dev/smoke-affected.py): each leg's flag and what it declares, in flag
+# order. A leg's helpers are the dev/*.py scripts its code (comments
+# aside) names.
+if [ "${1:-}" = --manifest ]; then
+  sep=$'\037'
+  for leg_name in "${legs[@]}"; do
+    for field in flag order needs env commits vm_only budget scale1; do
+      eval "m_$field=\${leg_${leg_name}_$field:-}"
+    done
+    helpers=$(grep -v '^[[:space:]]*#' "$script_dir/smoke.d/$leg_name.sh" | grep -oE 'dev/[A-Za-z0-9_-]+\.py' | sort -u | paste -sd ' ' - || true)
+    printf '%s\n' "$leg_name$sep$m_flag$sep${m_order:-500}$sep$m_needs$sep$m_env$sep$helpers$sep$m_commits$sep$m_vm_only$sep$m_budget$sep$m_scale1"
+  done | jq -R '
+    split("\u001f") as $f
+    | ($f[3] | split(" ") | map(select(. != ""))) as $needs
+    | ($f[6] | split(" ") | map(select(. != ""))) as $c
+    | {leg: $f[0], flag: $f[1], order: ($f[2] | tonumber), vm_only: ($f[7] != ""), budget: ($f[8] != ""),
+       scale1: ($f[9] != ""), needs: $needs,
+       env: ($f[4] | split(" ") | map(select(. != ""))),
+       helpers: ($f[5] | split(" ") | map(select(. != ""))),
+       commits: (if ($c | length) == 2 then [{dir: $c[0], glob: $c[1]}] else [] end)}' | jq -s '{legs: .}'
+  rm -rf "$shot_dir" "$iso_home"
+  exit 0
+fi
+
 usage() {
   local n v line=""
   for n in "${legs[@]}"; do
@@ -205,6 +230,11 @@ done
 for leg_name in "${legs[@]}"; do
   if leg_on "$leg_name"; then active_legs+=("$leg_name"); fi
 done
+# A bare run is the base leg.
+if [ ${#active_legs[@]} -eq 0 ]; then
+  leg_base_on=true
+  active_legs=(base)
+fi
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   scale1_var="leg_${leg_name}_scale1"
@@ -229,7 +259,6 @@ logical_h=$(awk -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d", 1080 / s + 0.5 }')
 # up to this 52s every leg's shot sat at before (shot.sh).
 drive_cap=52
 session_timeout=75
-if [ ${#active_legs[@]} -eq 0 ]; then screenshot_delay=$drive_cap; fi
 
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
@@ -1083,48 +1112,6 @@ for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_timing" >/dev/null; then "leg_${leg_name}_timing"; fi
 done
 
-# The rust shell over IPC: `debug`'s replies to a fixed set of calls into
-# rs-ipc.txt for the assertions below, then the spinner on and off, a panel
-# and a scrim at full speed for the frame log, and the same at a tenth of
-# the speed for frames read mid-flight and at rest.
-rs_ipc_path="$shot_dir/rs-ipc.txt"
-if [ ${#active_legs[@]} -eq 0 ]; then
-  rs_drive="$shot_dir/rs-drive.sh"
-  write_script "$rs_drive" <<EOF
-#!/usr/bin/env bash
-call() { $ipc call "\$@" >> "$shot_dir/rs-calls.log" 2>&1; }
-reply() { echo "> \$*"; $ipc call "\$@" 2>&1; echo "exit \$?"; }
-shot() { "$grim_bin" "$shot_dir/rs-\$1.png" >> "$shot_dir/grim.log" 2>&1; }
-sleep 5
-{
-  reply debug dump
-  reply debug join top 100 200
-  reply debug dump
-  reply debug joinClear
-  reply debug join top 10
-  reply debug motionScale 0
-  reply debug query x
-  reply debug nope
-  reply nope dump
-} > "$rs_ipc_path"
-call debug r0Spinner true; sleep 3
-call debug r0Spinner false; sleep 3
-call debug r0Panel open; sleep 2
-call debug r0Panel close; sleep 2
-call debug r0Scrim true; sleep 2
-call debug r0Scrim false; sleep 2
-call debug motionScale 1000; call debug r0Cast true
-call debug r0Panel open; sleep 0.8; shot open-early
-sleep 0.8; shot open-mid
-call debug r0Spinner true; sleep 7.4; shot rest
-call debug r0Spinner false
-call debug r0Scrim true; sleep 1.2; shot scrim-mid
-call debug r0Scrim false; call debug r0Panel close; sleep 7
-call debug motionScale 100
-EOF
-  hypr_exec_once "bash $rs_drive" >> "$cfg"
-fi
-
 shot_script="$shot_dir/shot.sh"
 write_script "$shot_script" <<EOF
 #!/usr/bin/env bash
@@ -1386,67 +1373,6 @@ done <<< "$token_files"
 # The shell logs every commit it makes, which is the evidence that a
 # strip at rest commits nothing.
 grep -E '^(start|commit|exit|ipc|text:|hyprland:|event loop:) ' "$shell_log_path" 2>/dev/null || true
-if [ ${#active_legs[@]} -eq 0 ]; then
-  # `debug dump` and `debug query` grow with the shell, so they are read
-  # as data: every dump key must be one of the contract's and the numbers
-  # this rig pins must read back, and a query answers with the launcher's
-  # rows. Every other reply is matched byte for byte.
-  [ -s "$rs_ipc_path" ] || fail "the rust drive wrote no debug replies"
-  need_bin jq
-  dump_keys='["compositor","available","workspaces","windows","focusedWindowId","heldFocusedWindowId","focusedWorkspaceId","fullscreenOutputs","configLoaded","audio","brightness","location","lyrics","agents","iphone","localsend","airplay","bar","join","modals","toasts","frame","render","theme"]'
-  dumps=$(awk 'prev=="> debug dump"{print} {prev=$0}' "$rs_ipc_path")
-  [ "$(printf '%s\n' "$dumps" | wc -l)" -eq 2 ] || fail "expected two debug dump replies in $rs_ipc_path"
-  check_dump() {
-    printf '%s' "$1" | "$jq_bin" -e --argjson allowed "$dump_keys" --argjson join "$2" '
-      (keys - $allowed) == []
-      and (["compositor","configLoaded","join","bar","frame","theme"] - keys) == []
-      and .compositor == "hyprland"
-      and (.bar | length) == 1
-      and (.frame | keys) == ["enabled","thickness"]
-      and (.theme | del(.edgeInset)) == {"radius":10,"radiusXl":14,"borderWidth":1,"barPosition":"top"}
-      and (.theme.edgeInset | keys) == ["bottom","left","right","top"]
-      and (if $join == null then .join == null
-           else (.join | del(.screen)) == $join and (.join.screen | type) == "string" end)' >/dev/null
-  }
-  first_dump=$(printf '%s\n' "$dumps" | sed -n 1p)
-  second_dump=$(printf '%s\n' "$dumps" | sed -n 2p)
-  check_dump "$first_dump" null || fail "debug dump (no join) carries a key outside the contract or a wrong value: $first_dump"
-  check_dump "$second_dump" '{"edge":"top","x":100,"width":200,"reach":14}' || fail "debug dump (joined) carries a key outside the contract or a wrong value: $second_dump"
-  query_reply=$(awk 'prev=="> debug query x"{print} {prev=$0}' "$rs_ipc_path")
-  printf '%s' "$query_reply" | "$jq_bin" -e 'type == "array" and all(.[]; (.id | type) == "string" and (.label | type) == "string" and (.kind | type) == "string")' >/dev/null \
-    || fail "debug query x is not a list of launcher rows: $query_reply"
-  diff -u - <(awk 'prev=="> debug dump" || prev=="> debug query x"{print "<checked>"; prev=$0; next} {print; prev=$0}' "$rs_ipc_path") <<EOF || fail "debug's replies over formalshell-ipc differ (diff above)"
-> debug dump
-<checked>
-exit 0
-> debug join top 100 200
-ok
-exit 0
-> debug dump
-<checked>
-exit 0
-> debug joinClear
-ok
-exit 0
-> debug join top 10
-Too few arguments provided (3 required but 2 were provided.)
-Function definition: function join(edge: string, x: int, width: int): string
-exit 0
-> debug motionScale 0
-error: percent must be 1..5000
-exit 0
-> debug query x
-<checked>
-exit 0
-> debug nope
-Function not found.
-exit 0
-> nope dump
-Target not found.
-exit 0
-EOF
-  echo "SMOKE_RS_IPC $rs_ipc_path"
-fi
 for frame in "$shot_dir"/rs-*.png; do
   [ -f "$frame" ] || continue
   name=$(basename "$frame" .png | tr 'a-z-' 'A-Z_')

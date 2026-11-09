@@ -7,7 +7,7 @@
 # answer ssh in five seconds sends the command to mac, booting the guest
 # when it is stopped. The mac rig has four slot users of the same shape;
 # each Hyprland there runs on a vkms card of its own rather than nesting,
-# since the guest has no GPU. Budgets (--idle, --menu-budget, --r0-measure,
+# since the guest has no GPU. Budgets (the legs declaring leg_<n>_budget, and
 # dev/perf-gate.py) hold on g815 alone and are refused there. Release
 # tarballs and the hosts' packages still build on g815 only.
 #
@@ -94,6 +94,13 @@ remote_dir=formalshell
 times="${XDG_STATE_HOME:-$HOME/.local/state}/formalshell-rig/leg-times.tsv"
 [ "$rig" = g815 ] || times="${times%.tsv}-$rig.tsv"
 
+# Every leg's declarations (dev/smoke.sh --manifest), read once and handed to
+# dev/vm.sh and the runs through FS_MANIFEST.
+load_manifest() {
+  [ -n "${FS_MANIFEST:-}" ] || FS_MANIFEST=$("$repo_root/dev/smoke.sh" --manifest | jq -c .)
+  export FS_MANIFEST
+}
+
 # Runs a list of runs over the free slots off one build. The list goes
 # longest recorded first; a run with no record goes first of all.
 run_list() {
@@ -103,28 +110,21 @@ run_list() {
   shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
   mkdir -p "$out" "$(dirname "$times")"
   touch "$times"
+  load_manifest
+  printf '%s\n' "$FS_MANIFEST" > "$out/manifest.json"
   FS_SMOKE_SCALE="${FS_SMOKE_SCALE:-}" python3 -c '
-import collections, glob, os, re, statistics, sys
+import collections, json, os, statistics, sys
 runs = [l.strip() for l in open(sys.argv[1]) if l.strip() and not l.lstrip().startswith("#")]
 # Every line at 1.25 (the g815 panel) and again at 1 (its HDMI output, e1504g),
 # but a line carrying a leg that declares leg_<n>_scale1 at 1 alone, and
 # a run that asks for a scale (FS_SMOKE_SCALE) at that one.
-scale1 = set()
-for path in glob.glob(os.path.join(sys.argv[4], "*.sh")):
-    leg, text = os.path.basename(path)[:-3], open(path).read()
-    flag = re.search(r"^leg_%s_flag=\"(--[a-z0-9-]+)" % leg, text, re.M)
-    if flag and re.search(r"^leg_%s_scale1=" % leg, text, re.M):
-        scale1.add(flag.group(1))
+legs = json.load(open(sys.argv[4]))["legs"]
+scale1 = {l["flag"].split()[0] for l in legs if l["scale1"]}
 asked = os.environ["FS_SMOKE_SCALE"]
 # A leg declaring leg_<n>_budget measures numbers that hold on g815 alone,
 # and the VM rig the vm_only legs go to is on g815 too.
 if sys.argv[3] != "g815":
-    g815 = set()
-    for path in glob.glob(os.path.join(sys.argv[4], "*.sh")):
-        leg, text = os.path.basename(path)[:-3], open(path).read()
-        flag = re.search(r"^leg_%s_flag=\"(--[a-z0-9-]+)" % leg, text, re.M)
-        if flag and re.search(r"^leg_%s_(budget|vm_only)=" % leg, text, re.M):
-            g815.add(flag.group(1))
+    g815 = {l["flag"].split()[0] for l in legs if l["budget"] or l["vm_only"]}
     held = [r for r in runs if g815 & set(r.split())]
     if held:
         print("needs g815 (a budget, or the VM rig), not run on %s: %s" % (sys.argv[3], ", ".join(held)), file=sys.stderr)
@@ -145,7 +145,7 @@ est = {k: statistics.median(seen[k][-3:]) if seen[k] else float("inf") for k in 
 for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
     e = est[key(scale, r)]
     print("%s\t%s\t%s" % ("?" if e == float("inf") else int(e), scale, r))
-' "$list" "$times" "$rig" "$repo_root/dev/smoke.d" > "$out/order"
+' "$list" "$times" "$rig" "$out/manifest.json" > "$out/order"
   started=$SECONDS
   echo "$label: building once on $rig, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
   if ! env -u FS_RIG_SLOT "$self" run "dev/build.sh && dev/share-result.sh $shared" > "$out/build.log" 2>&1; then
@@ -187,7 +187,7 @@ for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
 # The VM rig's runs, on g815's fstestvm guests: dev/vm.sh takes a guest slot
 # of its own.
 case "${1:-}" in
-  smoke) if [ "$rig" = g815 ] && "$repo_root/dev/vm.sh" wants "${@:2}"; then exec "$repo_root/dev/vm.sh" "$@"; fi ;;
+  smoke) load_manifest; if [ "$rig" = g815 ] && "$repo_root/dev/vm.sh" wants "${@:2}"; then exec "$repo_root/dev/vm.sh" "$@"; fi ;;
   check) case "$rig:${2:-}" in g815:fs-auth|g815:fs-audio|g815:fs-bluez|g815:fs-network|g815:fs-upower) exec "$repo_root/dev/vm.sh" "$@" ;; esac ;;
 esac
 
@@ -373,7 +373,7 @@ pull_one() {
 cmd_smoke() {
   cmd_sync
   local out status=0 forward="" name
-  for name in FS_RESULT PICKER_INCLUDED SMOKE_WALLPAPER_DITHER FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_DEPTH_PICTURE FS_DEPTH_GENERATE FS_SMOKE_SCALE FS_CARGO_PROFILE; do
+  for name in FS_RESULT FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE FS_CARGO_PROFILE $(printf '%s' "$FS_MANIFEST" | jq -r '[.legs[].env[]] | unique[]'); do
     [ -z "${!name:-}" ] || forward+="$name=$(printf '%q' "${!name}") "
   done
   out=$(remote_run "${forward}./dev/smoke.sh $*" 2>&1) || status=$?
@@ -411,16 +411,17 @@ cmd_smoke() {
   done <<< "$(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+' | grep -v '^SMOKE_OK ')"
 
   # Legs whose output is committed write it into the checkout's docs/.
-  local glob dir
-  case " $* " in
-    *" --screensaver-gif "*) dir=docs/media glob='screensaver-*.gif' ;;
-    *" --shots "*) dir=docs/shots glob='*' ;;
-    *) return 0 ;;
-  esac
-  mkdir -p "$repo_root/$dir"
-  rsync -az -e "ssh ${ssh_opts[*]}" --include "$glob" --exclude '*' \
-    "$target:$remote_dir/$dir/" "$repo_root/$dir/"
-  echo "pulled: $repo_root/$dir/$glob"
+  local dir glob flag
+  for flag in "$@"; do
+    case "$flag" in --*) ;; *) continue ;; esac
+    while IFS=$'\t' read -r dir glob; do
+      [ -n "$dir" ] || continue
+      mkdir -p "$repo_root/$dir"
+      rsync -az -e "ssh ${ssh_opts[*]}" --include "$glob" --exclude '*' \
+        "$target:$remote_dir/$dir/" "$repo_root/$dir/"
+      echo "pulled: $repo_root/$dir/$glob"
+    done < <(printf '%s' "$FS_MANIFEST" | jq -r --arg flag "$flag" '.legs[] | select(.flag | split(" ")[0] == $flag) | .commits[] | [.dir, .glob] | @tsv')
+  done
 }
 
 verb=$1

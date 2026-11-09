@@ -25,6 +25,12 @@ frame, teardown) and sources every file here. A leg defines:
   `menu status`, `bar room` or `debug dump` is logical, and a frame grim
   takes is in the output's pixels, so a crop goes through
   `scaled_jq -r "$geometry_jq"'<box> | geometry'` (`dev/smoke.sh`).
+- `leg_<n>_env` `"NAME ..."`: the environment variables the leg reads, which
+  `dev/remote.sh` and `dev/vm.sh` forward to the run. `leg_<n>_commits`
+  `"<dir> <glob>"`: output the run commits, pulled back into the checkout's
+  `<dir>`. Both, and `vm_only`, `budget` and `scale1`, reach the other tools
+  through `dev/smoke.sh --manifest`, which also lists the `dev/*.py` helpers
+  a leg's code names (a change to one runs that leg).
 - `leg_<n>_fixture_window` `keep` to leave the base run's fixture window in
   the frame; `leg_<n>_validate` checks a leg's own arguments and the legs it
   needs beside it, run before the build, and may set its claims.

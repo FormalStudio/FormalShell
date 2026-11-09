@@ -12,6 +12,7 @@
 # film in real time. A camera, not a test: it fails only when a file is
 # missing.
 leg_shots_flag="--shots"
+leg_shots_commits="docs/shots *"
 leg_shots_order=235
 leg_shots_needs="wtype convert mpv ffmpeg notify-send"
 leg_shots_fixture_window=none

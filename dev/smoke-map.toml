@@ -1,6 +1,7 @@
 # dev/smoke-affected.py: which smoke runs a change needs. Paths are globs
 # from the repo root (`**` crosses directories); runs are lines of
-# dev/smoke-all.list, and the selector refuses one that is not there.
+# dev/smoke-all.list or a combination of flags, and the selector refuses one
+# naming a flag no leg declares (`dev/smoke.sh --manifest`).
 #
 # A changed file takes the runs of every rule it matches, even under a
 # `none` glob. One matching no rule takes the core set, as does anything
@@ -672,31 +673,9 @@ runs = ["--gallery"]
 paths = ["crates/fs-system/src/**"]
 runs = ["--gpu", "--monitor"]
 
-# The legs' own helpers
-[[rule]]
-paths = ["dev/bluez-stub.py"]
-runs = ["--idle --bluez-rssi", "--earbuds", "--headset-card"]
-
-[[rule]]
-paths = ["dev/bluez-player-stub.py"]
-runs = ["--bluez-player"]
-
-[[rule]]
-paths = ["dev/vpointer.py"]
-runs = ["--wheel", "--toast-swipe", "--radio-atlas", "--launcher-mouse"]
-
-[[rule]]
-paths = ["dev/lockpointer.py"]
-runs = ["--fullscreen"]
-
-[[rule]]
-paths = ["dev/sni-stub.py"]
-runs = ["--tray", "--tray-overflow"]
-
-[[rule]]
-paths = ["dev/librepods-stub.py"]
-runs = ["--earbuds", "--headset-card"]
-
+# The legs' own helpers: a dev/*.py script takes the runs of the legs that
+# name it (`dev/smoke.sh --manifest`), so only a helper with more to it than
+# that has a rule.
 [[rule]]
 paths = ["dev/gen-emoji.sh"]
 runs = ["--emoji"]

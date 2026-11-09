@@ -9,6 +9,7 @@ line, to --out for dev/remote.sh.
   dev/smoke-affected.py [base] [--out <file>]
 """
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -45,22 +46,11 @@ def matches(path, patterns):
     return any(glob_re(p).match(path) for p in patterns)
 
 
-def legs():
-    """Each leg's flag, whether it needs the VM rig and whether it measures a
-    budget, off dev/smoke.d."""
-    out = {}
-    d = os.path.join(root, "dev", "smoke.d")
-    for name in sorted(os.listdir(d)):
-        if not name.endswith(".sh"):
-            continue
-        leg = name[:-3]
-        text = open(os.path.join(d, name)).read()
-        flag = re.search(r'^leg_%s_flag="(--[a-z0-9-]+)' % leg, text, re.M)
-        if flag:
-            vm = re.search(r"^leg_%s_vm_only=" % leg, text, re.M) is not None
-            budget = re.search(r"^leg_%s_budget=" % leg, text, re.M) is not None
-            out[leg] = (flag.group(1), vm, budget)
-    return out
+def manifest():
+    """Every leg's declarations, off `dev/smoke.sh --manifest` (or FS_MANIFEST,
+    which dev/remote.sh has already read)."""
+    out = os.environ.get("FS_MANIFEST") or subprocess.run(["bash", os.path.join(root, "dev", "smoke.sh"), "--manifest"], check=True, capture_output=True, text=True).stdout
+    return json.loads(out)["legs"]
 
 
 def main():
@@ -70,8 +60,14 @@ def main():
     args = ap.parse_args()
 
     smoke_map = tomllib.load(open(os.path.join(root, "dev", "smoke-map.toml"), "rb"))
-    by_leg = legs()
+    declared = manifest()
+    by_leg = {l["leg"]: (l["flag"].split()[0], l["vm_only"], l["budget"]) for l in declared}
     flags = {flag: (leg, vm, budget) for leg, (flag, vm, budget) in by_leg.items()}
+    # A dev helper script takes the runs of every leg whose code names it.
+    by_helper = {}
+    for l in declared:
+        for h in l["helpers"]:
+            by_helper.setdefault(h, []).append(l["flag"].split()[0])
     # dev/remote.sh exports the rig it resolved; budgets hold on g815 alone.
     rig = os.environ.get("FS_RIG", "g815")
     listed = [l.strip() for l in open(os.path.join(root, "dev", "smoke-all.list")) if l.strip() and not l.startswith("#")]
@@ -114,6 +110,11 @@ def main():
             continue
         if runs:
             why.append("mapped")
+        for flag in by_helper.get(path, []):
+            own = [r for r in listed if flag in r.split()]
+            if own:
+                runs += own
+                why.append("names %s" % flag)
         leg_file = re.fullmatch(r"dev/smoke\.d/([a-z0-9_]+)\.sh", path)
         if leg_file and leg_file.group(1) in by_leg:
             flag = by_leg[leg_file.group(1)][0]

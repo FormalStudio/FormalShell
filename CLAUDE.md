@@ -90,7 +90,7 @@ pipewire, PAM or Wayland to link.
   over the free slots off one build. Docs, tests, the plans and the
   packaging run nothing; shared code (the ui kit, fs-theme, the wayland
   core, motion, the scaffold) and any path the map does not name run the
-  nine-run `core` set; a leg's own file runs that leg; vm_only legs run on
+  `core` set (the `core` list in `dev/smoke-map.toml`); a leg's own file runs that leg; vm_only legs run on
   the VM rig beside the rig's runs (on the mac rig they are named and
   skipped). Expected: one surface file ~1m45s warm (a ~25s build,
   then its legs side by side), ~2m15s from a cold worktree, the core set
@@ -101,11 +101,9 @@ pipewire, PAM or Wayland to link.
   checkout the uncommitted files include other agents' edits, so it can
   pick more than your change alone needs.
 - `just smoke-all [list]`: every run in `dev/smoke-all.list` (one line of
-  flags each, every leg the nested rig can run, then the nine vm_only legs
-  spread over the VM rig's four guests, ~5m30s for those alone), **for
-  milestones only** (a
-  phase shipping, a release) or when the owner asks: ~15 min (884s for 127
-  runs, against 768s of run time over eight slots). One runs at a time per
+  flags each, every leg the nested rig can run, then the vm_only legs
+  spread over the VM rig's four guests), **for milestones only** (a
+  phase shipping, a release) or when the owner asks: ~15 min. One runs at a time per
   mac (`/tmp/formalshell-smoke-all.lock`); a second queues and says behind
   whom.
 - Both run longest first off the run times recorded in
@@ -261,7 +259,10 @@ How a run works:
   the same way if you run matugen by hand while debugging.
 
 Every leg is one file, `dev/smoke.d/<name>.sh`, whose header carries the
-detail; `dev/smoke.d/README.md` is the file contract. What each proves:
+detail; `dev/smoke.d/README.md` is the file contract. `dev/smoke.sh
+--manifest` prints every leg's flag, order, tools, env, helpers and
+committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
+`dev/smoke-affected.py` read. What each proves:
 
 - `activity.sh` `--activity`: `services/activity.rs` over its three
   sources, read off `activity status` at known steps and once off `debug
@@ -315,6 +316,14 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `viewCursor` after a re-rank and a Backspace, a query no app matches
   keeping the grid with no rows in it, Escape clearing the query and
   leaving the launcher open, and a held Backspace climbing one level.
+- `app_install.sh` `--app-install`: an app installed and removed under
+  the running shell the way fspec installs one, reaching the launcher's
+  rows on its own: the shell's `XDG_DATA_DIRS` names a data directory that
+  does not exist at start, the run makes it and links in a desktop entry
+  and a hicolor icon from a store path (no `index.theme`, as fspec leaves
+  it), and `menu status` lists the row with its picture a second after the
+  links land and not a second after the entry's link goes, open and on the
+  next summon. Runs on its own: it drives the launcher on its own clock.
 - `appmenu.sh` `--appmenu`: the app menu over the real `panel` route with
   the base run's fixture window focused (its desktop entry names it "Iconic
   Test App" with a themed icon): the hero carrying the entry's name and
@@ -526,6 +535,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   back off `hyprctl monitors all -j`: the rig's output at scale 1.5, then a
   headless second output created for the purpose mirroring it, unmirrored,
   disabled and enabled again, removed before the panel frame is taken.
+- `base.sh` `--base`: the run a bare `dev/smoke.sh` is. `debug`'s replies
+  to a fixed set of calls over `formalshell-ipc` (every `debug dump` key one
+  `ipc/debug.rs` builds, `debug query` a list of launcher rows, every other
+  reply byte for byte), then the spinner, a panel and a scrim at full speed
+  and at a tenth, photographed. Claims the whole session.
 - `dump.sh` `--dump`: the `debug` target's whole state dump, saved as the
   run's JSON sidecar and read by other legs for what the shell resolved.
 - `earbuds.sh` `--earbuds`: the earbuds panel against PATH-shimmed
@@ -682,6 +696,13 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   share), then 60 s undriven, CPU ticks and voluntary switches (wakeups)
   per thread and the commits made, then 20 s of `strace -f` naming each
   waker.
+- `host_binds.sh` `--host-binds`: the command lines the owner's
+  hyprland.nix binds run (`formalshell ipc --any-display call ...` and
+  `formalshell theme mode toggle`) through the package's own `formalshell`
+  entry point against the running shell: each exits 0 and answers something
+  other than a missing target or function, `theme mode toggle` reads back
+  off `theme status`, and an unknown first word exits non-zero without
+  starting a second shell. The lock bind goes last.
 - `hotcorner.sh` `--hotcorner`: the screensaver's, the lock's and the
   top-left overview corner surfaces mapped on the right layer, then a
   headless second output beside the first, level with its top: no surface
@@ -1727,6 +1748,12 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the lock in dark mode carrying the dark half's band and the real
   password unlocking, and settings.json retargeted to `theme.mode: "auto"`
   showing the half `effective` names.
+- `weather_locate.sh` `--weather-locate`: the weather service placing a
+  machine whose network geolocates somewhere its clock says it is not. A
+  PATH-shimmed `curl` answers beaconDB with Madrid while the shell runs
+  under `TZ=Atlantic/Canary`: the forecast is asked for zone.tab's Canary
+  Islands point and never Madrid's, and the weather panel's title reads
+  "Canary Islands" (tesseract).
 - `wifi.sh` `--wifi`: the network panel against two real hostapd radios:
   scan, wrong password, connect, forget, and the enterprise round trip.
   First a saved profile for an SSID neither radio broadcasts: `inRange`
