@@ -76,9 +76,8 @@ impl App {
         match event {
             Event::Begin { message, identity } => {
                 let own = !identity.is_empty() && std::env::var("USER").is_ok_and(|u| u == identity);
-                let mut modal = self.new_modal(["polkit", "polkit-scrim-band", "polkit-scrim"], NAMESPACE, Layer::Overlay, DEFORM_AMOUNT);
-                modal.card.dialog(&self.store.theme.theme, self.cast);
-                self.carry_popover_look(&mut modal);
+                let names = ["polkit", "polkit-scrim-band", "polkit-scrim"];
+                let mut modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Overlay, Some("dialog"), DEFORM_AMOUNT, true);
                 let content = self.content_layer("polkit-content", &modal.surface);
                 let top = content.top;
                 modal.layer = Some(content);
@@ -152,8 +151,8 @@ impl App {
         true
     }
 
-    pub(super) fn polkit_joins(&self) -> Vec<(fs_types::Edge, f64, f64, f64)> {
-        self.polkit.as_ref().map_or_else(Vec::new, |d| d.modal.joins().collect())
+    pub(super) fn polkit_joins(&self) -> &[crate::surfaces::card::Join] {
+        self.polkit.as_ref().map_or(&[], |d| d.modal.joins())
     }
 
     /// The clipboard's text into the dialog's field, while it holds the
@@ -268,7 +267,7 @@ impl App {
         d.modal.place(Rect::new(x0, y0, x0 + card_w, y0 + card_h), now);
         // Laid out in the content layer's own pixels, which the card's
         // travel, cut and fade move.
-        let rest = d.modal.card.content_rest();
+        let rest = d.modal.card.live_rect();
         let frame = IRect::new(0, 0, rest.w, rest.h);
         let alpha = 1.0;
         let clip = frame;

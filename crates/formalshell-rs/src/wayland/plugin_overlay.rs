@@ -66,7 +66,8 @@ impl App {
             self.menu_close();
         }
         let id = key.strip_prefix(plugin::PREFIX).unwrap_or(key).to_owned();
-        let modal = self.new_modal(["plugin-overlay", "plugin-overlay-scrim-band", "plugin-overlay-scrim"], NAMESPACE, Layer::Top, DEFORM_AMOUNT);
+        let names = ["plugin-overlay", "plugin-overlay-scrim-band", "plugin-overlay-scrim"];
+        let modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Top, None, DEFORM_AMOUNT, false);
         let mut ui = Ui::new(Some(modal.card.top_node()));
         ui.halo_owned = false;
         plugins::shown(&id, true);
@@ -115,8 +116,8 @@ impl App {
         true
     }
 
-    pub(super) fn overlay_joins(&self) -> Vec<(fs_types::Edge, f64, f64, f64)> {
-        self.plugin_overlay.as_ref().map_or_else(Vec::new, |w| w.modal.joins().collect())
+    pub(super) fn overlay_joins(&self) -> &[crate::surfaces::card::Join] {
+        self.plugin_overlay.as_ref().map_or(&[], |w| w.modal.joins())
     }
 
     fn overlay_activate(&mut self, stop: &str) {

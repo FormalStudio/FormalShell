@@ -11,10 +11,29 @@ pub use kit::{Kit, Look, face};
 
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
+use fs_types::Edge;
 use vello_cpu::kurbo::Affine;
 
 use crate::scene::{Bitmap, Fade, IRect, NodeId, Paint, Scene};
 use crate::text::{self, ShapedText};
+
+/// From a top line's coordinates (`u` along it, `v` away from the output's
+/// edge) to a surface `depth` deep on `edge`: what is worked out once for a
+/// top edge lands on every edge, mirrored with it.
+pub fn edge_map(edge: Edge, depth: f64) -> Affine {
+    match edge {
+        Edge::Top => Affine::IDENTITY,
+        Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, depth]),
+        Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, 0.0, 0.0]),
+        Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, depth, 0.0]),
+    }
+}
+
+/// Where a span `size` long starts along a line when centred on `anchor`,
+/// kept between `start` and `end` while it fits, on a whole pixel.
+pub fn place_along(anchor: f64, size: f64, start: f64, end: f64) -> f64 {
+    (anchor - size / 2.0).clamp(start, (end - size).max(start)).round()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Tone {

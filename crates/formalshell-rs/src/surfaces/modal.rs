@@ -3,25 +3,103 @@
 //! the keyboard while open, and the two single-pixel scrim surfaces riding
 //! its pose: the band over the line's own inset, which fades in only as
 //! the card lets go of the line (`1 - attach`), and the rest of the
-//! output. The launcher, the polkit dialog and the radio atlas are each one
-//! of these; the owner lays its content out in `card.content` under
-//! `card.content_clip()`.
+//! output. The launcher, the polkit dialog, the radio atlas and a plugin's
+//! overlay are each one of these; the owner lays its content out in
+//! `card.content` under `card.content_clip()`.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use fs_types::Edge;
 use fs_theme::theme::Theme;
+use smithay_client_toolkit::compositor::{CompositorState, Region};
 use smithay_client_toolkit::reexports::client::QueueHandle;
+use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
+use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer as Level, LayerShell, LayerSurface};
+use smithay_client_toolkit::shm::Shm;
 use vello_cpu::kurbo::Rect;
 
 use crate::scene::{IRect, NodeId, Paint, Scene};
-use crate::surface::{PixelSurface, Sub, Surface};
-use crate::surfaces::card::{Card, Ends};
+use crate::surface::{Backend, Ignore, PixelSurface, Pixels, Sub, Surface};
+use crate::surfaces::bar::Bar;
+use crate::surfaces::card::{Card, CardSpec, Ends, Join, Sizing};
 use crate::trace;
 use crate::wayland::App;
+
+/// How long one loop turn draws a modal's surfaces before handing the loop
+/// back.
+pub const SLICE: Duration = Duration::from_millis(3);
+
+/// What a modal takes from the shell to make its surfaces on the live
+/// bar's output and bud off that bar's line.
+pub struct Make<'a> {
+    pub compositor: &'a CompositorState,
+    pub layer_shell: &'a LayerShell,
+    pub pixels: &'a Pixels,
+    pub shm: &'a Shm,
+    pub qh: &'a QueueHandle<App>,
+    pub output: Option<&'a WlOutput>,
+    /// The output's size and scale.
+    pub size: (f64, f64),
+    pub scale: f64,
+    pub started: Instant,
+    pub theme: &'a Theme,
+    pub bar: &'a Bar,
+    pub motion_scale: f64,
+    pub cast: bool,
+}
+
+impl Make<'_> {
+    /// A layer surface on the output taking no input and reserving nothing.
+    fn layer(&self, namespace: &'static str, layer: Level, anchor: Anchor, size: (u32, u32)) -> LayerSurface {
+        let ls = self.layer_shell.create_layer_surface(self.qh, self.compositor.create_surface(self.qh), layer, Some(namespace), self.output);
+        ls.set_anchor(anchor);
+        ls.set_size(size.0, size.1);
+        ls.set_exclusive_zone(-1);
+        ls.set_keyboard_interactivity(KeyboardInteractivity::None);
+        if let Ok(region) = Region::new(self.compositor) {
+            ls.set_input_region(Some(region.wl_region()));
+        }
+        ls
+    }
+
+    /// The line a modal card buds off and how far in it lies: a side bar's
+    /// inner edge, else Theme.edgeInset's top (the bar's thickness on a top
+    /// bar, the frame ring's on a framed one, nothing on a bare edge).
+    fn line(&self) -> (Edge, f64) {
+        let bar = self.bar;
+        let edge = bar.edge();
+        if bar.hidden() {
+            (Edge::Top, 0.0)
+        } else if edge == Edge::Top || (edge.is_vertical() && !bar.framed()) {
+            (edge, bar.thickness() as f64)
+        } else if bar.framed() {
+            (Edge::Top, bar.frame_thickness())
+        } else {
+            (Edge::Top, 0.0)
+        }
+    }
+
+    /// A popover card's look as four subsurfaces of `card`, under anything
+    /// added to it later, taking no input.
+    fn look_quads(&self, name: &'static str, card: &Surface, margin: i32) -> Quads {
+        let parts = (0..4)
+            .map(|_| {
+                let surface = self.compositor.create_surface(self.qh);
+                let sub = self.pixels.subcompositor.get_subsurface(&surface, card.layer.wl_surface(), self.qh, Ignore);
+                if let Ok(region) = Region::new(self.compositor) {
+                    surface.set_input_region(Some(region.wl_region()));
+                }
+                let viewport = self.pixels.viewporter.get_viewport(&surface, self.qh, Ignore);
+                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, self.shm, self.started, self.scale).with_viewport(viewport).under(card);
+                s.raster_budget = Some(SLICE);
+                s
+            })
+            .collect();
+        Quads::new(name, parts, margin, self.started)
+    }
+}
 
 /// Which of a modal's three surfaces an event is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,34 +127,58 @@ pub struct Modal {
 }
 
 impl Modal {
-    /// The card rests on the line until its owner places it.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        theme: &Theme,
-        surface: Surface,
-        band: Option<PixelSurface>,
-        dim: PixelSurface,
-        namespace: &'static str,
-        output: (f64, f64),
-        edge: Edge,
-        line_at: f64,
-        ends: Ends,
-        scale: f64,
-        cast: bool,
-        deform_amount: f64,
-    ) -> Self {
-        let rest = Rect::new(0.0, line_at, 0.0, line_at);
+    /// A modal card's three surfaces on `layer` under `namespace`, named
+    /// `names`: the card's own full-output one holding the keyboard, the
+    /// band over the line's inset (none on a bare edge) and the dim under
+    /// the rest. The card, `card`'s `state`, rests on the line until its
+    /// owner places it. With `carry` a popover's look goes to the
+    /// compositor, for an owner whose content draws on a layer of its own:
+    /// content drawn in the card's own scene would sit under the look's
+    /// subsurfaces, so those owners keep the look in that scene.
+    pub fn open(make: &Make, names: [&'static str; 3], namespace: &'static str, layer: Level, state: Option<&'static str>, deform: f64, carry: bool) -> Self {
+        let theme = make.theme;
+        let output = make.size;
+        let (edge, inset) = make.line();
+        let framed = make.bar.framed() && edge == Edge::Top;
+        let ft = if framed { make.bar.frame_thickness() } else { 0.0 };
+        let along = if edge.is_vertical() { output.1 } else { output.0 };
+        let ends = Ends { along, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
+        // The scrim's alpha rides in its pixel, under the modal namespaces'
+        // `ignore_alpha`, so it only darkens and the card alone is blurred.
+        let tone = f64::from(theme.box_style("scrim", None).fill.a);
+        let band = (inset > 0.0).then(|| {
+            let size = if edge.is_vertical() { (inset as u32, 0) } else { (0, inset as u32) };
+            let ls = make.layer(namespace, layer, crate::wayland::edge_anchor(edge), size);
+            ls.commit();
+            PixelSurface::new(names[1], ls, tone, make.pixels, make.qh, make.started)
+        });
+        let ls = make.layer(namespace, layer, Anchor::all(), (0, 0));
+        let i = inset as i32;
+        match edge {
+            Edge::Top => ls.set_margin(i, 0, 0, 0),
+            Edge::Right => ls.set_margin(0, i, 0, 0),
+            Edge::Bottom => ls.set_margin(0, 0, i, 0),
+            Edge::Left => ls.set_margin(0, 0, 0, i),
+        }
+        ls.commit();
+        let dim = PixelSurface::new(names[2], ls, tone, make.pixels, make.qh, make.started);
+        let ls = make.layer(namespace, layer, Anchor::all(), (0, 0));
+        ls.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
+        ls.commit();
+        let mut surface = Surface::new(names[0], Backend::Gpu, ls, make.shm, make.started, make.scale);
+        surface.wait_map = true;
+        let rest = Rect::new(0.0, inset, 0.0, inset);
         let size = if edge.is_vertical() { (output.1, output.0) } else { output };
-        let mut card = Card::build(theme, "card", edge, (size.0 as i32, size.1 as i32), line_at, rest, scale, cast, true);
-        card.ends = ends;
-        card.deform_amount = deform_amount;
-        Self { card, surface, band, dim, namespace, open: true, region: None, layer: None, quads: None }
-    }
-
-    /// The popover's look on `quads` rather than in the card's own scene.
-    pub fn carry_look(&mut self, quads: Quads) {
-        self.card.compositor_look = true;
-        self.quads = Some(quads);
+        let spec = CardSpec {
+            state,
+            ends,
+            deform,
+            compositor_look: carry && !theme.morph,
+            ..CardSpec::new(edge, inset, Sizing::Surface { size: (size.0 as i32, size.1 as i32), rest })
+        };
+        let card = Card::new(theme, spec, make.motion_scale, make.cast);
+        let quads = spec.compositor_look.then(|| make.look_quads(surface.name, &surface, card.popover_margin()));
+        Self { card, surface, band, dim, namespace, open: true, region: None, layer: None, quads }
     }
 
     /// The card's look off a new theme, the compositor's corners drawn
@@ -250,8 +352,8 @@ impl Modal {
         x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64
     }
 
-    pub fn joins(&self) -> impl Iterator<Item = (Edge, f64, f64, f64)> + '_ {
-        self.card.joins.iter().map(|j| (j.edge, j.x, j.width, j.reach))
+    pub fn joins(&self) -> &[Join] {
+        &self.card.joins
     }
 }
 
@@ -303,7 +405,7 @@ impl Layer {
     /// top, moved by the card's pose. Once the card has settled it is the resting box, which
     /// may have moved on before the card next steps.
     pub fn place(&self, card: &Card, settled: bool) -> IRect {
-        let (now, rest) = (card.content.0, card.content_rest());
+        let (now, rest) = (card.content.0, card.live_rect());
         let (x, y) = if settled { (rest.x, rest.y) } else { (now.x, now.y) };
         // Content wider than the card hangs off its left edge, so the cut
         // starts at the content's own origin (see `present`).
@@ -315,7 +417,7 @@ impl Layer {
     /// surface: inside the card's current box and its clip.
     fn visible(&self, card: &Card, settled: bool) -> IRect {
         let at = self.place(card, settled);
-        let (now, rest) = (card.content.0, card.content_rest());
+        let (now, rest) = (card.content.0, card.live_rect());
         let (x, y) = if settled { (rest.x, rest.y) } else { (now.x, now.y) };
         let shown = at.intersect(&IRect::new(x, y, rest.w, rest.h)).intersect(&card.clip);
         // A cut has to start at the content's own origin (see `cut`), so

@@ -23,10 +23,11 @@ use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
 use fs_theme::theme::{BarStyle, Layout, Theme};
 use serde_json::{Value, json};
-use vello_cpu::kurbo::{Affine, Arc, BezPath, Point, Rect, RoundedRect, Shape, SvgArc, Vec2};
+use vello_cpu::kurbo::{Arc, BezPath, Point, Rect, RoundedRect, Shape, SvgArc, Vec2};
 
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::store::{Store, Topic};
+use crate::surfaces::card::Join;
 use crate::surfaces::sidebar::Sidebar;
 use crate::paint::{Kit, Painter};
 use cell::{Action, Button, Env};
@@ -633,9 +634,9 @@ impl Bar {
     /// The joins cards publish (`join`): each one's edge, its
     /// start and width along that line and the fillets' reach.
     /// Every gap open this frame, one per edge at most.
-    pub fn set_joins(&mut self, joins: &[(Edge, f64, f64, f64)]) {
+    pub fn set_joins(&mut self, joins: &[Join]) {
         let gaps: Vec<(Edge, (i32, i32))> =
-            joins.iter().map(|(e, x, width, reach)| (*e, ((x - reach).round() as i32, (x + width + reach).round() as i32))).collect();
+            joins.iter().map(|j| (j.edge, ((j.x - j.reach).round() as i32, (j.x + j.width + j.reach).round() as i32))).collect();
         if gaps != self.gaps {
             self.gaps = gaps;
             self.strip_key = None;
@@ -1133,13 +1134,8 @@ fn fillets(edge: Edge, size: IRect, t: f64, len: f64, r: f64) -> BezPath {
         path.extend(arc.append_iter(0.05));
         path.close_path();
     }
-    let turn = match edge {
-        Edge::Top => Affine::IDENTITY,
-        Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, size.h as f64]),
-        Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, 0.0, 0.0]),
-        Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, size.w as f64, 0.0]),
-    };
-    turn * path
+    let depth = if edge.is_vertical() { size.w } else { size.h };
+    crate::paint::edge_map(edge, depth as f64) * path
 }
 
 /// The band ink one slot draws with: the `light` or `dark` paint's when its

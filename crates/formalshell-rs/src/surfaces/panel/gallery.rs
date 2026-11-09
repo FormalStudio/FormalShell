@@ -41,13 +41,7 @@ impl Widget for Shoulders {
         let (fill, line, sep) = (cx.a(card.fill), cx.a(border.0), cx.a(sep));
         let paths = crate::paint::shoulders::paths(span + radius * 2.0, depth, radius, border.1, 1.0, 0.0);
         // Built for a top line, then turned onto the gallery's edge.
-        let local = match edge {
-            Edge::Top => Affine::translate((run - radius, 0.0)),
-            Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, run - radius, depth]),
-            Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, 0.0, run - radius]),
-            Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, depth, run - radius]),
-        };
-        let at = Affine::translate((r.x0, r.y0)) * local;
+        let at = Affine::translate((r.x0, r.y0)) * crate::paint::edge_map(edge, depth) * Affine::translate((run - radius, 0.0));
         let mut fill_path = paths.fill.clone();
         fill_path.apply_affine(at);
         let mut outer = paths.outer.clone();

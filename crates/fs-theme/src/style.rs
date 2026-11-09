@@ -27,7 +27,7 @@ use fs_types::Edge;
 pub const ROLES: [(&str, &[&str]); 40] = [
     ("bar", BAND_PAINTS),
     ("frame", BAND_PAINTS),
-    ("card", &["rest", "opaque", "raised", "dialog"]),
+    ("card", &["rest", "opaque", "raised", "dialog", "popover"]),
     ("notification", &["rest", "critical", "flat", "flatCritical"]),
     ("popover", &[]),
     ("menu", &[]),
@@ -1006,6 +1006,7 @@ pub(crate) mod tests {
         assert_eq!(raised.casts[4].color, "#000000@0.19");
         assert_eq!(r(p, "card", Some("raised"), "light").casts[4].color, "#000000@0.095");
         assert_eq!(raised.casts, r(p, "notification", None, "dark").casts);
+        assert_eq!(raised.casts, r(p, "card", Some("popover"), "dark").casts);
     }
 
     #[test]

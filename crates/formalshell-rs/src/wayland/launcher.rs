@@ -1,27 +1,25 @@
 //! The launcher's window on the App: a modal card on the overlay layer
 //! (`surfaces::modal`), the keyboard and pointer routed to it, and the
-//! `menu` verbs. `new_modal` builds any modal card's three surfaces.
+//! `menu` verbs.
 
 use std::time::Instant;
 
-use fs_types::{Edge, WindowId};
+use fs_types::WindowId;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::seat::keyboard::KeyEvent;
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
+use smithay_client_toolkit::shell::wlr_layer::Layer;
 
 use super::{App, Owner};
 use crate::services::menu::{self as index, Ask};
-use crate::surface::{Backend, PixelSurface, Surface};
-use crate::surfaces::card::Ends;
+use crate::surface::{Backend, Surface};
+use crate::surfaces::card::Join;
 use crate::surfaces::launcher::{ABBREV_EDIT, Out, Shown, keys};
 use crate::surfaces::modal::{Modal, Part};
 use crate::text::{Family, TextStyle};
 use crate::ui::field::{self, Modifiers};
 
-/// How long one loop turn draws the launcher before handing the loop back.
-const LAUNCHER_SLICE: std::time::Duration = std::time::Duration::from_millis(3);
 /// How long the launcher's buffers outlive its last close.
 const KEPT_FOR: std::time::Duration = std::time::Duration::from_secs(300);
 const WIFI_PASSWORD: &str = "wifi-password";
@@ -45,100 +43,6 @@ impl Window {
 }
 
 impl App {
-    /// The line a modal card buds off and how far in it lies: a side bar's
-    /// inner edge, else Theme.edgeInset's top (the bar's thickness on a top
-    /// bar, the frame ring's on a framed one, nothing on a bare edge).
-    pub(super) fn modal_line(&self) -> (Edge, f64) {
-        let edge = self.bar.edge();
-        if self.bar.hidden() {
-            (Edge::Top, 0.0)
-        } else if edge == Edge::Top || (edge.is_vertical() && !self.bar.framed()) {
-            (edge, self.bar.thickness() as f64)
-        } else if self.bar.framed() {
-            (Edge::Top, self.bar.frame_thickness())
-        } else {
-            (Edge::Top, 0.0)
-        }
-    }
-
-    /// A modal card's three surfaces on `layer` under `namespace`: the
-    /// card's own full-output one holding the keyboard, the band over the
-    /// line's inset (none on a bare edge) and the dim under the rest.
-    pub(super) fn new_modal(&self, names: [&'static str; 3], namespace: &'static str, layer: Layer, deform_amount: f64) -> Modal {
-        let theme = &self.store.theme.theme;
-        let output = self.output_size();
-        let (edge, inset) = self.modal_line();
-        let framed = self.bar.framed() && edge == Edge::Top;
-        let ft = if framed { self.bar.frame_thickness() } else { 0.0 };
-        let along = if edge.is_vertical() { output.1 } else { output.0 };
-        let ends = Ends { along, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
-        // The scrim's alpha rides in its pixel, under the modal namespaces'
-        // `ignore_alpha`, so it only darkens and the card alone is blurred.
-        let tone = f64::from(theme.box_style("scrim", None).fill.a);
-        let band = (inset > 0.0).then(|| {
-            let size = if edge.is_vertical() { (inset as u32, 0) } else { (0, inset as u32) };
-            let ls = self.overlay(namespace, layer, super::edge_anchor(edge), size, -1);
-            PixelSurface::new(names[1], ls, tone, &self.pixels, &self.qh, self.started)
-        });
-        let ls = self.layer_shell.create_layer_surface(&self.qh, self.compositor.create_surface(&self.qh), layer, Some(namespace), self.bar_wl.as_ref());
-        ls.set_anchor(Anchor::all());
-        ls.set_size(0, 0);
-        let i = inset as i32;
-        match edge {
-            Edge::Top => ls.set_margin(i, 0, 0, 0),
-            Edge::Right => ls.set_margin(0, i, 0, 0),
-            Edge::Bottom => ls.set_margin(0, 0, i, 0),
-            Edge::Left => ls.set_margin(0, 0, 0, i),
-        }
-        ls.set_exclusive_zone(-1);
-        ls.set_keyboard_interactivity(KeyboardInteractivity::None);
-        if let Ok(region) = Region::new(&self.compositor) {
-            ls.set_input_region(Some(region.wl_region()));
-        }
-        ls.commit();
-        let dim = PixelSurface::new(names[2], ls, tone, &self.pixels, &self.qh, self.started);
-        let card = self.overlay(namespace, layer, Anchor::all(), (0, 0), -1);
-        card.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
-        card.commit();
-        let mut surface = match &self.bar_wl {
-            Some(output) => Surface::new(names[0], Backend::Gpu, card, &self.shm, self.started, self.store.display.scales.on(output)),
-            None => Surface::new(names[0], Backend::Gpu, card, &self.shm, self.started, self.store.display.scales.primary()),
-        };
-        surface.wait_map = true;
-        Modal::new(theme, surface, band, dim, namespace, output, edge, inset, ends, self.motion_scale, self.cast, deform_amount)
-    }
-
-    /// A popover card's look handed to the compositor, for an owner whose
-    /// content draws on a layer of its own. Content drawn in the card's own
-    /// scene would sit under the look's subsurfaces, so those owners keep
-    /// the look in that scene.
-    pub(super) fn carry_popover_look(&self, modal: &mut Modal) {
-        if modal.card.popover() {
-            let quads = self.look_quads(modal.surface.name, &modal.surface, modal.card.popover_margin());
-            modal.carry_look(quads);
-        }
-    }
-
-    /// A popover card's look as four subsurfaces of `card`, under anything
-    /// added to it later, taking no input.
-    fn look_quads(&self, name: &'static str, card: &Surface, margin: i32) -> crate::surfaces::modal::Quads {
-        use crate::surface::{Ignore, Sub};
-        let parts = (0..4)
-            .map(|_| {
-                let surface = self.compositor.create_surface(&self.qh);
-                let sub = self.pixels.subcompositor.get_subsurface(&surface, card.layer.wl_surface(), &self.qh, Ignore);
-                if let Ok(region) = Region::new(&self.compositor) {
-                    surface.set_input_region(Some(region.wl_region()));
-                }
-                let viewport = self.pixels.viewporter.get_viewport(&surface, &self.qh, Ignore);
-                let mut s = Surface::new(name, Backend::Gpu, Sub { surface, sub }, &self.shm, self.started, self.store.display.scales.primary()).with_viewport(viewport).under(card);
-                s.raster_budget = Some(LAUNCHER_SLICE);
-                s
-            })
-            .collect();
-        crate::surfaces::modal::Quads::new(name, parts, margin, self.started)
-    }
-
     /// The launcher's window gone, its card's pool, buffers and canvas kept
     /// for the next open.
     fn drop_launch(&mut self) {
@@ -208,17 +112,17 @@ impl App {
             return;
         }
         self.drop_launch();
-        let mut modal = self.new_modal(["menu", "menu-scrim-band", "menu-scrim"], "formalshell:menu", Layer::Overlay, Shown::DEFORM_AMOUNT);
-        self.carry_popover_look(&mut modal);
+        let names = ["menu", "menu-scrim-band", "menu-scrim"];
+        let mut modal = Modal::open(&self.modal_make(), names, "formalshell:menu", Layer::Overlay, None, Shown::DEFORM_AMOUNT, true);
         if let Some(kept) = self.launch_kept.take() {
             modal.surface.adopt(kept);
         }
-        modal.surface.raster_budget = Some(LAUNCHER_SLICE);
+        modal.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
         let mut content = self.content_layer("menu-content", &modal.surface);
         if let Some(kept) = self.layer_kept.take() {
             content.surface.adopt(kept);
         }
-        content.surface.raster_budget = Some(LAUNCHER_SLICE);
+        content.surface.raster_budget = Some(crate::surfaces::modal::SLICE);
         modal.layer = Some(content);
         let shown = Shown::new(&self.store.theme.theme, modal, self.output_size(), self.motion_scale);
         self.launch = Some(Window { shown, scan: None, pressed: None });
@@ -1360,8 +1264,8 @@ impl App {
         }
     }
 
-    pub(super) fn launcher_joins(&self) -> Vec<(Edge, f64, f64, f64)> {
-        self.launch.as_ref().map_or_else(Vec::new, |w| w.shown.modal.joins().collect())
+    pub(super) fn launcher_joins(&self) -> &[Join] {
+        self.launch.as_ref().map_or(&[], |w| w.shown.modal.joins())
     }
 
     /// The tray route's rows, off the tray the bar already holds.

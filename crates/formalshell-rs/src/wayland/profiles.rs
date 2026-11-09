@@ -22,7 +22,7 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use super::{App, Owner};
 use crate::scene::IRect;
 use crate::services::devices;
-use crate::surfaces::card::Card;
+use crate::surfaces::card::{Card, CardSpec, Sizing};
 use crate::surfaces::popup::Popup;
 use crate::ui::{El, Ink, Size, Type, w};
 
@@ -108,9 +108,9 @@ impl App {
         // A popover always: the right edge carries no line to bud off.
         let theme = crate::surfaces::card::popover_theme(&self.store.theme.theme);
         let (_, oh) = self.output_size();
-        let mut card = Card::new(&theme, Edge::Right, oh as i32, 0.0, oh / 2.0, (height, width), self.motion_scale, self.cast);
         let s = &theme.space;
-        card.nub = Some((s.xl, s.sm, s.xxs));
+        let spec = CardSpec { nub: Some((s.xl, s.sm, s.xxs)), ..CardSpec::new(Edge::Right, 0.0, Sizing::Card { size: (height, width), anchor: oh / 2.0, length: oh as i32 }) };
+        let card = Card::new(&theme, spec, self.motion_scale, self.cast);
         let surface = self.popout_surface(&card, Layer::Overlay);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);
@@ -212,7 +212,7 @@ impl App {
         let inner = p.popup.inner(theme);
         {
             let (frame, alpha) = p.popup.card.popover_frame;
-            let (radius, bw, nub) = (p.popup.card.radius(), p.popup.card.border_width(), p.popup.card.nub.unwrap_or_default());
+            let (radius, bw, nub) = (p.popup.card.radius(), p.popup.card.border_width(), p.popup.card.nub().unwrap_or_default());
             let (mut painter, _) = p.popup.painter();
             let charge = self.store.devices.power.battery.as_ref().map(|b| (b.level, level_colour(b)));
             if let Some((level, colour)) = charge {

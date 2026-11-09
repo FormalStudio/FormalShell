@@ -62,13 +62,15 @@ struct Look {
 }
 
 impl Look {
+    /// A popover casts its role's `popover` state's layers; a joined card
+    /// casts the raised card's while `cast` asks for pantheon's cast.
     fn new(theme: &Theme, role: &str, state: Option<&str>, cast: bool) -> Self {
         let card = theme.box_style(role, state);
         let border = card.border.clone().unwrap_or(fs_theme::style::Line { color: Rgba::TRANSPARENT, width: 0.0 });
         let popover = !theme.morph;
-        let casts = if popover && role != "card" {
-            card.casts.clone()
-        } else if popover || cast {
+        let casts = if popover {
+            theme.box_style(role, Some("popover")).casts
+        } else if cast {
             theme.box_style("card", Some("raised")).casts
         } else {
             Vec::new()
@@ -91,6 +93,17 @@ impl Look {
             drop: theme.space.sm,
             ramp: theme.space.bar_margin,
         }
+    }
+
+    /// How far past the card its casts reach, whichever way each falls.
+    fn reach(&self) -> f64 {
+        let reach = self.casts.iter().map(|c| c.blur + c.spread.max(0.0) + c.x.abs().max(c.y.abs())).fold(0.0, f64::max);
+        reach * 1.25 + 2.0
+    }
+
+    /// The casts at `alpha` of their own opacity.
+    fn casts_at(&self, alpha: f32) -> Vec<Cast> {
+        self.casts.iter().map(|c| Cast { x: c.x, y: c.y, blur: c.blur, spread: c.spread, color: c.color.with_alpha(c.color.a * alpha) }).collect()
     }
 }
 
@@ -146,12 +159,70 @@ pub struct Join {
     pub reach: f64,
 }
 
+/// Where a card's surface comes from.
+#[derive(Clone, Copy, Debug)]
+pub enum Sizing {
+    /// A surface (along, across) its owner places the card on, its
+    /// buffers starting out transparent; the card rests at `rest` until
+    /// then.
+    Surface { size: (i32, i32), rest: Rect },
+    /// A card (along, depth) centred on `anchor` along a line `length`
+    /// long, a `screenPadding` in from either end and a `barMargin` off
+    /// the line, on a surface sized to it.
+    Card { size: (f64, f64), anchor: f64, length: i32 },
+}
+
+/// Everything a card is built from; nothing of it changes afterwards.
+#[derive(Clone, Copy, Debug)]
+pub struct CardSpec {
+    /// The box style the look resolves from.
+    pub role: &'static str,
+    pub state: Option<&'static str>,
+    pub edge: Edge,
+    pub size: Sizing,
+    /// How far in from its edge the line the card buds off lies.
+    pub line_at: f64,
+    pub ends: Ends,
+    /// The deform amount: the pill is small and travels its whole
+    /// height, so it asks for more than a popout does.
+    pub deform: f64,
+    /// A popover's battery nub, (width, height, radius), standing centred
+    /// on its top edge in the card's fill and border: one outline with the
+    /// body ([`battery`]), Pond's power profile pill.
+    pub nub: Option<(f64, f64, f64)>,
+    /// Ends rounded right through, macOS's capsule: the radius half the
+    /// card's depth.
+    pub capsule: bool,
+    /// The compositor draws a popover's look off `popover_frame`; the
+    /// card's own surface paints none of it.
+    pub compositor_look: bool,
+}
+
+impl CardSpec {
+    /// A plain `card` on `edge`, budding off the line at `line_at`.
+    pub fn new(edge: Edge, line_at: f64, size: Sizing) -> Self {
+        Self {
+            role: "card",
+            state: None,
+            edge,
+            size,
+            line_at,
+            ends: Ends::default(),
+            deform: DEFORM_AMOUNT,
+            nub: None,
+            capsule: false,
+            compositor_look: false,
+        }
+    }
+}
+
 pub struct Card {
     pub scene: Scene,
     look: Look,
     /// The box style `look` was resolved from, for a theme change.
     role: &'static str,
     state: Option<&'static str>,
+    capsule: bool,
     pub edge: Edge,
     rest: Rect,
     live: Rect,
@@ -172,12 +243,8 @@ pub struct Card {
     deform_running: bool,
     last_tick: Option<Instant>,
     scale: f64,
-    pub ends: Ends,
-    /// The frame's whole opacity: 0 cuts a handed-over card outright.
-    pub frame_alpha: f32,
-    /// The deform amount: the pill is small and travels its whole
-    /// height, so it asks for more than a popout does.
-    pub deform_amount: f64,
+    ends: Ends,
+    deform_amount: f64,
     casts: NodeId,
     shape: NodeId,
     rim_node: NodeId,
@@ -189,19 +256,14 @@ pub struct Card {
     pub content: (IRect, f32),
     /// A popover's frame this frame, in surface pixels, and how opaque.
     pub popover_frame: (IRect, f32),
-    /// The compositor draws a popover's look off `popover_frame`; the
-    /// card's own surface paints none of it.
-    pub compositor_look: bool,
+    compositor_look: bool,
     /// The band content may draw in, held to the bud while it is clamped.
     pub clip: IRect,
     /// The deformed shape's inner rect, rounded inward. Content drawn in the
     /// card's own scene takes it through `content_clip`; a modal layer takes
     /// its far sides alone (`modal.rs` `visible`).
     pub shape_clip: Option<IRect>,
-    /// A popover's battery nub, (width, height, radius), standing centred
-    /// on its top edge in the card's fill and border: one outline with the
-    /// body ([`battery`]), Pond's power profile pill.
-    pub nub: Option<(f64, f64, f64)>,
+    nub: Option<(f64, f64, f64)>,
 }
 
 /// `theme` with `motion.morph` off, for a card with no line to bud off.
@@ -212,26 +274,23 @@ pub fn popover_theme(theme: &Theme) -> Theme {
 }
 
 impl Card {
-    /// A card `size` (along, depth) centred along the line on `anchor`,
-    /// clamped a `screenPadding` in from either end, a `barMargin` off the
-    /// line at `line_at`, on a surface sized to it; `length` is the
-    /// output's length along the edge.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(theme: &Theme, edge: Edge, length: i32, line_at: f64, anchor: f64, size: (f64, f64), scale: f64, cast: bool) -> Self {
-        let (w, h) = size;
-        let pad = theme.space.screen_padding;
-        let u = (anchor - w / 2.0).clamp(pad, (length as f64 - w - pad).max(pad)).round();
-        let v = line_at + theme.space.bar_margin;
-        let rest = Rect::new(u, v, u + w, v + h);
-        let slack = SLACK.max(Self::cast_reach(&Look::new(theme, "card", None, cast)).ceil() as i32);
-        Self::build(theme, "card", edge, (length, rest.y1 as i32 + slack), line_at, rest, scale, cast, false)
-    }
-
-    /// A card on a surface `size` (along, across) at `rest`, all in the
-    /// card's own coordinates.
-    #[allow(clippy::too_many_arguments)]
-    pub fn build(theme: &Theme, role: &'static str, edge: Edge, size: (i32, i32), line_at: f64, rest: Rect, scale: f64, cast: bool, clear: bool) -> Self {
-        let look = Look::new(theme, role, None, cast);
+    pub fn new(theme: &Theme, spec: CardSpec, scale: f64, cast: bool) -> Self {
+        let CardSpec { role, state, edge, size, line_at, ends, deform, nub, capsule, compositor_look } = spec;
+        let mut look = Look::new(theme, role, state, cast);
+        let (size, rest, clear) = match size {
+            Sizing::Surface { size, rest } => (size, rest, true),
+            Sizing::Card { size: (w, h), anchor, length } => {
+                let pad = theme.space.screen_padding;
+                let u = crate::paint::place_along(anchor, w, pad, length as f64 - pad);
+                let v = line_at + theme.space.bar_margin;
+                let rest = Rect::new(u, v, u + w, v + h);
+                let slack = SLACK.max(look.reach().ceil() as i32);
+                ((length, rest.y1 as i32 + slack), rest, false)
+            }
+        };
+        if capsule {
+            look.radius = rest.height() / 2.0;
+        }
         let (sw, sh) = if edge.is_vertical() { (size.1, size.0) } else { size };
         let mut scene = if clear { Scene::clear(sw, sh) } else { Scene::new(sw, sh) };
         let empty = || Paint::Shape { fill: None, strokes: Vec::new() };
@@ -246,7 +305,8 @@ impl Card {
             scene,
             look,
             role,
-            state: None,
+            state,
+            capsule,
             edge,
             rest,
             live: rest,
@@ -263,9 +323,8 @@ impl Card {
             deform_running: false,
             last_tick: None,
             scale,
-            ends: Ends::default(),
-            frame_alpha: 1.0,
-            deform_amount: DEFORM_AMOUNT,
+            ends,
+            deform_amount: deform,
             casts,
             shape,
             rim_node,
@@ -273,24 +332,11 @@ impl Card {
             joins: Vec::new(),
             content: (IRect::default(), 0.0),
             popover_frame: (IRect::default(), 0.0),
-            compositor_look: false,
+            compositor_look,
             clip: IRect::default(),
             shape_clip: None,
-            nub: None,
+            nub,
         }
-    }
-
-    /// The card as a menu: the `menu` role's fill, border and radius.
-    pub fn menu(&mut self, theme: &Theme, cast: bool) {
-        self.role = "menu";
-        self.look = Look::new(theme, "menu", None, cast);
-    }
-
-    /// The card as a dialog: `card`'s `dialog` state, libadwaita's
-    /// `$dialog_radius`.
-    pub fn dialog(&mut self, theme: &Theme, cast: bool) {
-        self.state = Some("dialog");
-        self.look = Look::new(theme, self.role, self.state, cast);
     }
 
     /// The look resolved again off a new theme, the clocks left running: a
@@ -298,6 +344,9 @@ impl Card {
     /// under the new ink.
     pub fn restyle(&mut self, theme: &Theme, cast: bool) {
         self.look = Look::new(theme, self.role, self.state, cast);
+        if self.capsule {
+            self.look.radius = self.rest.height() / 2.0;
+        }
     }
 
     /// The same card at `size`, centred on `anchor` along a line `length`
@@ -305,7 +354,7 @@ impl Card {
     /// must already be deep enough.
     pub fn resize(&mut self, now: Instant, anchor: f64, length: i32, pad: f64, size: (f64, f64)) {
         let (w, h) = size;
-        let u = (anchor - w / 2.0).clamp(pad, (length as f64 - w - pad).max(pad)).round();
+        let u = crate::paint::place_along(anchor, w, pad, length as f64 - pad);
         let rest = Rect::new(u, self.rest.y0, u + w, self.rest.y0 + h);
         self.set_rect(rest, rest);
         self.tick(now);
@@ -378,13 +427,7 @@ impl Card {
 
     /// From the card's own (u, v) to surface pixels.
     pub fn edge_map(&self) -> Affine {
-        let d = self.depth() as f64;
-        match self.edge {
-            Edge::Top => Affine::IDENTITY,
-            Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, d]),
-            Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, 0.0, 0.0]),
-            Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, d, 0.0]),
-        }
+        crate::paint::edge_map(self.edge, self.depth() as f64)
     }
 
     /// Moves where the card settles and where it is drawn now.
@@ -435,7 +478,12 @@ impl Card {
 
     /// Presence's pose, held to 0..1 the way an opacity riding it must be.
     pub fn pose(&self, now: Instant) -> f64 {
-        if self.bypass { if self.open { 1.0 } else { 0.0 } } else { self.progress.value(now).clamp(0.0, 1.0) }
+        self.travel(now).clamp(0.0, 1.0)
+    }
+
+    /// The pose with its overshoot, landed at once under `bypass`.
+    fn travel(&self, now: Instant) -> f64 {
+        if self.bypass { if self.open { 1.0 } else { 0.0 } } else { self.progress.value(now) }
     }
 
     /// Joint's `attach`: 1 while the card still hangs off its line.
@@ -488,12 +536,8 @@ impl Card {
     #[allow(clippy::too_many_arguments)]
     fn paint_popover(look: &Look, scene: &mut Scene, nodes: (NodeId, NodeId), card: Rect, line: LineCut, nub: Option<(f64, f64, f64)>, alpha: f32, shown: bool, rim: Option<(&mut Rim, Instant, NodeId)>) {
         let radius = look.radius;
-        let layers: Vec<Cast> = look
-            .casts
-            .iter()
-            .map(|c| Cast { x: c.x, y: c.y, blur: c.blur, spread: c.spread, color: c.color.with_alpha(c.color.a * alpha) })
-            .collect();
-        let reach = Self::cast_reach(look);
+        let layers = look.casts_at(alpha);
+        let reach = look.reach();
         let rr = |r: Rect, radius: f64| vello_cpu::kurbo::Shape::to_path(&vello_cpu::kurbo::RoundedRect::from_rect(r, radius.max(0.0)), 0.1);
         let size = scene.size;
         let fit = Fit { outline: Outline::Box { rect: card, radius, border: look.border_width }, snap: Snap::Edges };
@@ -532,12 +576,6 @@ impl Card {
         }
     }
 
-    /// How far past the card a popover's casts reach.
-    fn cast_reach(look: &Look) -> f64 {
-        let reach = look.casts.iter().map(|c| c.blur + c.spread.max(0.0) + c.x.abs().max(c.y.abs())).fold(0.0, f64::max);
-        reach * 1.25 + 2.0
-    }
-
     /// Whether the card buds as a popover, whose look the compositor can
     /// carry (`popover_look`).
     pub fn popover(&self) -> bool {
@@ -563,15 +601,15 @@ impl Card {
 
     /// The room a popover's casts need around the card.
     pub fn popover_margin(&self) -> i32 {
-        Self::cast_reach(&self.look).ceil() as i32
+        self.look.reach().ceil() as i32
     }
 
     fn tick_popover(&mut self, now: Instant) {
         // A popover never hangs off its line. `attach` starts at 1 for the
         // joined shape, and the scrim's band over the bar fades by 1 - attach.
         self.attach.jump(0.0);
-        let pose = if self.bypass { if self.open { 1.0 } else { 0.0 } } else { self.progress.value(now) };
-        let alpha = pose.clamp(0.0, 1.0) as f32 * self.frame_alpha;
+        let pose = self.travel(now);
+        let alpha = pose.clamp(0.0, 1.0) as f32;
         let shown = self.shown(now) && alpha > 0.0;
         let map = self.edge_map();
         // Toward the line it dropped out of.
@@ -590,7 +628,7 @@ impl Card {
             self.scene.set_visible(self.rim_node, false);
         }
         self.popover_frame = (device, if shown { alpha } else { 0.0 });
-        self.content = (device, if shown { self.content_alpha(pose) * self.frame_alpha } else { 0.0 });
+        self.content = (device, if shown { self.content_alpha(pose) } else { 0.0 });
         self.clip = self.scene.size;
         self.shape_clip = None;
         self.joins.clear();
@@ -611,7 +649,7 @@ impl Card {
         let release_at = 0.85 - 0.35 * (depth / rest_extent.max(1.0)).clamp(0.0, 1.0);
         let amount = self.deform_amount * rest_extent / (rest_extent + depth).max(1.0);
 
-        let pose = if self.bypass { if self.open { 1.0 } else { 0.0 } } else { self.progress.value(now) };
+        let pose = self.travel(now);
         let shown = self.shown(now);
         let slide = (1.0 - pose) * travel;
         let shape_depth = (extent + depth - slide).max(0.0);
@@ -692,9 +730,8 @@ impl Card {
         let item_rect = Rect::new(0.0, 0.0, item_w, item_h);
         let visible = shown && shape_depth > 0.0;
         let paths = shoulders::paths_with(item_w, item_h, radius, border, a, near_inset, walls);
-        let fa = self.frame_alpha;
-        let fill = self.look.fill.with_alpha(self.look.fill.a * fa);
-        let line = self.look.border.with_alpha(self.look.border.a * fa);
+        let fill = self.look.fill;
+        let line = self.look.border;
         let near = line.with_alpha(line.a * (1.0 - a) as f32);
         let bounds = Scene::cover(item_rect, item, 2.0).intersect(&band);
         let join = Joined { size: (item_w, item_h), radius, border, attach: a, near_inset, walls };
@@ -703,41 +740,35 @@ impl Card {
         let frame_box = Scene::cover(Rect::new(live.x0, frame_y, live.x1, frame_y + extent), map, 0.0);
         let centre = Rect::new(frame_box.x as f64, frame_box.y as f64, frame_box.right() as f64, frame_box.bottom() as f64);
         let mute = (a > 0.0).then(|| self.line_normal());
-        let lit = self.rim.paint(now, paths.outer, border, paths.fill, centre, fa, mute, self.look.lit.and_then(|l| l.fade)).map(|lit| lit.fit(fit));
+        let lit = self.rim.paint(now, paths.outer, border, paths.fill, centre, 1.0, mute, self.look.lit.and_then(|l| l.fade)).map(|lit| lit.fit(fit));
         let outer_line = if lit.is_some() { Rgba::TRANSPARENT } else { line };
         // Its top would run across the opening while the card hangs off the
         // line, so it comes in as the card lets go, with the casts.
-        let inner = self.look.lit.map(|l| l.with_alpha((1.0 - a) as f32 * fa));
+        let inner = self.look.lit.map(|l| l.with_alpha((1.0 - a) as f32));
         self.scene.update_with(
             self.shape,
             bounds,
             Paint::Outlined { fit, fill, border: outer_line, near, lit: inner },
-            visible && fa > 0.0,
+            visible,
             item,
             Some(band),
         );
         match lit {
-            Some(paint) => self.scene.update_with(self.rim_node, bounds, paint, visible && fa > 0.0, item, Some(band)),
+            Some(paint) => self.scene.update_with(self.rim_node, bounds, paint, visible, item, Some(band)),
             None => self.scene.set_visible(self.rim_node, false),
         }
 
-        let cast_alpha = (1.0 - a) as f32 * fa;
-        let layers: Vec<Cast> = self
-            .look
-            .casts
-            .iter()
-            .map(|c| Cast { x: c.x, y: c.y, blur: c.blur, spread: c.spread, color: c.color.with_alpha(c.color.a * cast_alpha) })
-            .collect();
-        let reach_out = layers.iter().map(|c| c.blur + c.spread.max(0.0) + c.y.abs()).fold(0.0, f64::max);
+        let cast_alpha = (1.0 - a) as f32;
+        let layers = self.look.casts_at(cast_alpha);
         let card = Rect::new(along - origin, near_inset, along - origin + length, shape_depth);
-        let spread = Scene::cover(card, item, reach_out * 1.25 + 2.0).intersect(&band);
+        let spread = Scene::cover(card, item, self.look.reach()).intersect(&band);
         let line = self.line_cut();
         let (paint, _) = line.casts(Paint::Casts { rect: card, radius, layers, cutout: fit }, spread);
         self.scene.update_with(self.casts, spread, paint, visible && cast_alpha > 0.0 && !self.look.casts.is_empty(), item, Some(band.intersect(&line.beyond)));
 
         // Content rides the card's slide, unmirrored and undeformed.
         let at = Rect::new(live.x0, frame_y, live.x1, frame_y + extent);
-        self.content = (Scene::cover(at, map, 0.0), if visible { self.content_alpha(pose) * fa } else { 0.0 });
+        self.content = (Scene::cover(at, map, 0.0), if visible { self.content_alpha(pose) } else { 0.0 });
         let content_cut = Rect::new(-FAR, self.line_at + border, FAR, FAR);
         let mut clip = Scene::cover(content_cut, map, 0.0).intersect(&self.scene.size).intersect(&band);
         if let Some((s, l)) = bud_clip {
@@ -773,25 +804,16 @@ impl Card {
         }
     }
 
-    /// Where content goes once the card has settled on its live rect: an
-    /// owner drawing on a [`crate::surfaces::modal::Layer`] lays out here,
-    /// and the layer is moved by the difference.
-    pub fn content_rest(&self) -> IRect {
-        Scene::cover(self.live, self.edge_map(), 0.0)
-    }
-
-    /// The band past the line, where content may draw.
     /// Everything past the line, whatever the card's own shape: where a
     /// list floating over the card may go.
-    pub fn room(&self) -> IRect {
+    pub fn past_line(&self) -> IRect {
         let cut = self.line_at + self.look.border_width;
         Scene::cover(Rect::new(-FAR, cut, FAR, FAR), self.edge_map(), 0.0).intersect(&self.scene.size)
     }
 
     pub fn content_clip(&self) -> IRect {
         if self.clip.is_empty() {
-            let cut = self.line_at + self.look.border_width;
-            return Scene::cover(Rect::new(-FAR, cut, FAR, FAR), self.edge_map(), 0.0).intersect(&self.scene.size);
+            return self.past_line();
         }
         self.shape_clip.map_or(self.clip, |s| self.clip.intersect(&s))
     }
@@ -800,14 +822,12 @@ impl Card {
         self.look.radius
     }
 
-    /// Ends rounded right through, macOS's capsule: the radius half the
-    /// card's depth. A restyle puts the theme's back.
-    pub fn capsule(&mut self) {
-        self.look.radius = self.rest.height() / 2.0;
-    }
-
     pub fn border_width(&self) -> f64 {
         self.look.border_width
+    }
+
+    pub fn nub(&self) -> Option<(f64, f64, f64)> {
+        self.nub
     }
 }
 
@@ -917,7 +937,7 @@ mod tests {
         let t = theme();
         let margin = t.space.bar_margin as i32;
         for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
-            let card = Card::new(&t, edge, 1080, 40.0, 500.0, (200.0, 60.0), 1.0, false);
+            let card = Card::new(&t, CardSpec::new(edge, 40.0, Sizing::Card { size: (200.0, 60.0), anchor: 500.0, length: 1080 }), 1.0, false);
             let r = card.rest_rect();
             let depth = card.depth();
             let (along, off) = match edge {

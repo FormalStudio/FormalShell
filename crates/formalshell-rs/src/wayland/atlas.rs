@@ -20,7 +20,7 @@ use crate::surfaces::atlas::earth;
 use crate::surfaces::atlas::globe::{self, Out};
 use crate::surfaces::atlas::view::Shown;
 use crate::surfaces::atlas::{Atlas, Key};
-use crate::surfaces::modal::Part;
+use crate::surfaces::modal::{Modal, Part};
 use crate::surfaces::tooltip;
 use crate::ui::What;
 
@@ -91,7 +91,8 @@ impl App {
             });
         }
         self.atlas.win = None;
-        let modal = self.new_modal(["radio", "radio-scrim-band", "radio-scrim"], NAMESPACE, Layer::Top, Shown::DEFORM_AMOUNT);
+        let names = ["radio", "radio-scrim-band", "radio-scrim"];
+        let modal = Modal::open(&self.modal_make(), names, NAMESPACE, Layer::Top, None, Shown::DEFORM_AMOUNT, false);
         let shown = Shown::new(modal, self.output_size(), self.motion_scale);
         self.atlas.win = Some(Window { shown, pressed: None, sliding: false });
         let r = self.store.media.radio.clone();
@@ -200,8 +201,8 @@ impl App {
         self.sync_join();
     }
 
-    pub(super) fn atlas_joins(&self) -> Vec<(fs_types::Edge, f64, f64, f64)> {
-        self.atlas.win.as_ref().map_or_else(Vec::new, |w| w.shown.modal.joins().collect())
+    pub(super) fn atlas_joins(&self) -> &[crate::surfaces::card::Join] {
+        self.atlas.win.as_ref().map_or(&[], |w| w.shown.modal.joins())
     }
 
     /// One key while the atlas holds the keyboard.

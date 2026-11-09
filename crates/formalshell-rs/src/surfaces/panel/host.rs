@@ -31,7 +31,7 @@ use crate::store::Store;
 use crate::surface::Surface;
 use crate::surfaces::bar::cell::Button;
 use crate::paint::{Kit, Painter};
-use crate::surfaces::card::{Card, Ends};
+use crate::surfaces::card::{Card, CardSpec, Ends, Sizing};
 use crate::ui::{self, El, Event, Ui, What, w};
 
 /// Where a card hangs: the line it comes out of, its ends, and the cell
@@ -317,8 +317,8 @@ impl Host {
     pub fn new(module: Box<dyn Panel>, place: Place, theme: &Theme, surface: Surface, scale: f64, cast: bool) -> Self {
         let size = (place.along_len() as i32, place.across_len() as i32);
         let rest = Rect::new(0.0, place.line_at, 0.0, place.line_at);
-        let mut card = Card::build(theme, "card", place.edge, size, place.line_at, rest, scale, cast, true);
-        card.ends = place.ends;
+        let spec = CardSpec { ends: place.ends, ..CardSpec::new(place.edge, place.line_at, Sizing::Surface { size, rest }) };
+        let mut card = Card::new(theme, spec, scale, cast);
         let top = card.top_node();
         let halo = card.scene.add_after(Some(top), IRect::default(), Paint::Rect { fill: Rgba::TRANSPARENT, radius: 0.0 });
         card.scene.set_visible(halo, false);
@@ -545,13 +545,9 @@ impl Host {
         let p = &self.place;
         let vertical = p.edge.is_vertical();
         let (along_size, across_size) = if vertical { (fh, fw) } else { (fw, fh) };
-        let near = p.ends.inset_start + s.screen_padding;
-        let far = p.along_len() - p.ends.inset_end - along_size - s.screen_padding;
-        let u = match p.anchor {
-            Some(a) => a - along_size / 2.0,
-            None => far,
-        };
-        let u = u.min(far.max(near)).max(near).round();
+        let (start, end) = (p.ends.inset_start + s.screen_padding, p.along_len() - p.ends.inset_end - s.screen_padding);
+        // With no anchor the card sits at the line's far end.
+        let u = crate::paint::place_along(p.anchor.unwrap_or(end), along_size, start, end);
         let v = p.line_at + s.bar_margin;
         let rest = Rect::new(u, v, u + along_size, v + across_size);
         let live = match &self.handoff {
@@ -638,7 +634,7 @@ impl Host {
         let head_end = s.panel_inset - (s.control_height - s.panel_mark) / 2.0;
         let ring = theme.ring_width();
 
-        self.body.float_room = Some(self.card.room().intersect(&IRect::new(
+        self.body.float_room = Some(self.card.past_line().intersect(&IRect::new(
             s.screen_padding.round() as i32,
             s.screen_padding.round() as i32,
             (self.card.scene.size.w as f64 - s.screen_padding * 2.0).round() as i32,

@@ -67,12 +67,12 @@ use crate::surfaces;
 use crate::surfaces::bar::Bar;
 use crate::surfaces::bar::cell::{Action, Button, TrayClick};
 use crate::surfaces::bar::cells::tray as tray_cell;
-use crate::surfaces::card::{Card, Ends, Scrim};
+use crate::surfaces::card::{Card, CardSpec, Ends, Join, Scrim, Sizing};
 use crate::surfaces::panel::{self, host::{Host, Key, Out, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
 
-fn edge_anchor(edge: Edge) -> Anchor {
+pub(crate) fn edge_anchor(edge: Edge) -> Anchor {
     match edge {
         Edge::Top => Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
         Edge::Bottom => Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
@@ -835,23 +835,23 @@ impl App {
     fn sync_join(&mut self) {
         let mut joins = self.joins();
         let edge = self.bar.edge();
-        if !joins.iter().any(|j| j.0 == edge)
+        if !joins.iter().any(|j| j.edge == edge)
             && let Some((x, width)) = self.debug_join
         {
-            joins.push((edge, x as f64, width as f64, self.store.theme.theme.card_radius()));
+            joins.push(Join { edge, x: x as f64, width: width as f64, reach: self.store.theme.theme.card_radius() });
         }
         // One gap per edge: the strip's own goes to the first card on it.
         let mut seen = Vec::new();
-        joins.retain(|j| if seen.contains(&j.0) { false } else { seen.push(j.0); true });
+        joins.retain(|j| if seen.contains(&j.edge) { false } else { seen.push(j.edge); true });
         self.bar.set_joins(&joins);
         self.bar_dirty = true;
     }
 
     /// Every card joined to the live bar's lines.
-    fn joins(&self) -> Vec<(Edge, f64, f64, f64)> {
-        let mut joins: Vec<(Edge, f64, f64, f64)> = Vec::new();
+    fn joins(&self) -> Vec<Join> {
+        let mut joins: Vec<Join> = Vec::new();
         for h in [&self.panel, &self.outgoing].into_iter().flatten() {
-            joins.extend(h.card.joins.iter().map(|j| (j.edge, j.x, j.width, j.reach)));
+            joins.extend(&h.card.joins);
         }
         joins.extend(self.launcher_joins());
         joins.extend(self.atlas_joins());
@@ -859,6 +859,26 @@ impl App {
         joins.extend(self.overlay_joins());
         joins.extend(self.popup_joins());
         joins
+    }
+
+    /// What a modal card takes to make its surfaces on the live bar's output.
+    fn modal_make(&self) -> crate::surfaces::modal::Make<'_> {
+        let scales = &self.store.display.scales;
+        crate::surfaces::modal::Make {
+            compositor: &self.compositor,
+            layer_shell: &self.layer_shell,
+            pixels: &self.pixels,
+            shm: &self.shm,
+            qh: &self.qh,
+            output: self.bar_wl.as_ref(),
+            size: self.output_size(),
+            scale: self.bar_wl.as_ref().map_or_else(|| scales.primary(), |o| scales.on(o)),
+            started: self.started,
+            theme: &self.store.theme.theme,
+            bar: &self.bar,
+            motion_scale: self.motion_scale,
+            cast: self.cast,
+        }
     }
 
     /// A card's layer surface on the bar's edge, taking input over its
@@ -1050,8 +1070,8 @@ impl App {
         let oriented = |h: f64| if vertical { (h, width) } else { (width, h) };
         let anchor = anchor.unwrap_or(self.bar.length() as f64);
         menu.anchor = anchor;
-        let mut card = Card::new(theme, edge, self.bar.length(), line_at, anchor, oriented(menu.cap), self.motion_scale, self.cast);
-        card.menu(theme, self.cast);
+        let size = Sizing::Card { size: oriented(menu.cap), anchor, length: self.bar.length() };
+        let mut card = Card::new(theme, CardSpec { role: "menu", ..CardSpec::new(edge, line_at, size) }, self.motion_scale, self.cast);
         card.resize(now, anchor, self.bar.length(), pad, oriented(menu.height().min(menu.cap)));
         menu.morph.jump(menu.height().min(menu.cap));
         let surface = self.popout_surface(&card, Layer::Overlay);
@@ -2431,7 +2451,6 @@ pub(crate) fn sync_zone(bar: &mut Bar, surface: Option<&mut Surface>) {
 /// An attached card hung at a published join, so `debug join` has a card in
 /// the gap it opens. Drawn into a full-output scene; `line` is the line's row across from `edge`.
 fn join_preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_types::Edge, line: f64, join: Option<(f64, f64)>) {
-    use fs_types::Edge;
     use vello_cpu::kurbo::{Affine, Rect};
     let mut p = crate::paint::Painter::new(scene, nodes, None);
     if let Some((x, width)) = join {
@@ -2443,12 +2462,7 @@ fn join_preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::N
         let (sw, sh) = (p.scene().size.w as f64, p.scene().size.h as f64);
         let top = line - theme.border_width;
         // The top-line outline turned onto the join's edge.
-        let at = match edge {
-            Edge::Top => Affine::translate((x - radius, top)),
-            Edge::Bottom => Affine::new([1.0, 0.0, 0.0, -1.0, x - radius, sh - top]),
-            Edge::Left => Affine::new([0.0, 1.0, 1.0, 0.0, top, x - radius]),
-            Edge::Right => Affine::new([0.0, 1.0, -1.0, 0.0, sw - top, x - radius]),
-        };
+        let at = crate::paint::edge_map(edge, if edge.is_vertical() { sw } else { sh }) * Affine::translate((x - radius, top));
         let bounds = crate::scene::Scene::cover(Rect::new(0.0, 0.0, width + radius * 2.0, DEPTH), at, 2.0);
         let mut fill = paths.fill;
         fill.apply_affine(at);

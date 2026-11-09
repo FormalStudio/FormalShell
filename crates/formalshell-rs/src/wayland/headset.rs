@@ -30,7 +30,7 @@ use smithay_client_toolkit::shell::wlr_layer::Layer;
 use super::{App, Owner};
 use crate::services::devices::earbuds;
 use crate::services::compositor;
-use crate::surfaces::card::{Card, popover_theme};
+use crate::surfaces::card::{Card, CardSpec, Join, Sizing, popover_theme};
 use crate::surfaces::headset;
 use crate::surfaces::popup::Popup;
 
@@ -103,8 +103,8 @@ impl Headset {
     }
 
     /// The gaps this card opens in the lines, for the bar to take.
-    pub fn joins(&self) -> Vec<(Edge, f64, f64, f64)> {
-        self.card.iter().flat_map(|c| c.popup.card.joins.iter().map(|j| (j.edge, j.x, j.width, j.reach))).collect()
+    pub fn joins(&self) -> &[Join] {
+        self.card.as_ref().map_or(&[], |c| &c.popup.card.joins)
     }
 }
 
@@ -207,8 +207,8 @@ impl App {
         let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
         let line_at = if self.bar.edge() == Edge::Top { self.bar.thickness() as f64 } else { ft };
         let size = headset::size(&headset::face(&self.store, address), &theme, &mut self.kit);
-        let mut card = Card::new(&theme, Edge::Top, length as i32, line_at, length / 2.0, size, self.motion_scale, self.cast);
-        card.capsule();
+        let spec = CardSpec { capsule: true, ..CardSpec::new(Edge::Top, line_at, Sizing::Card { size, anchor: length / 2.0, length: length as i32 }) };
+        let card = Card::new(&theme, spec, self.motion_scale, self.cast);
         let surface = self.popout_surface(&card, Layer::Top);
         let mut popup = Popup::new(surface, card);
         popup.set_open(now, true);

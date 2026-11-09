@@ -26,7 +26,7 @@ use vello_cpu::kurbo::Rect;
 use super::App;
 use crate::services::display;
 use crate::surface::{Backend, Surface};
-use crate::surfaces::card::{Card, Ends};
+use crate::surfaces::card::{Card, CardSpec, Ends, Join, Sizing};
 use crate::surfaces::osd::{self, Kind, Reading};
 use crate::surfaces::popup::Popup;
 
@@ -181,11 +181,13 @@ impl App {
         let band = out_h.min(rest + height * 2.0);
         let u = ((out_w - width) / 2.0).round();
         let rest_rect = Rect::new(u, rest, u + width, rest + height);
-        let mut card =
-            Card::build(theme, "card", Edge::Bottom, (out_w as i32, band as i32), inset, rest_rect, self.motion_scale, self.cast, true);
         let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
-        card.ends = Ends { along: out_w, inset_start: ft, inset_end: ft, radius: if self.bar.framed() { theme.frame_radius } else { 0.0 } };
-        card.deform_amount = DEFORM;
+        let spec = CardSpec {
+            ends: Ends { along: out_w, inset_start: ft, inset_end: ft, radius: if self.bar.framed() { theme.frame_radius } else { 0.0 } },
+            deform: DEFORM,
+            ..CardSpec::new(Edge::Bottom, inset, Sizing::Surface { size: (out_w as i32, band as i32), rest: rest_rect })
+        };
+        let card = Card::new(theme, spec, self.motion_scale, self.cast);
         let layer = self.overlay("formalshell:osd", Layer::Overlay, Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT, (0, band as u32), -1);
         let surface = Surface::new("osd", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
         let mut popup = Popup::new(surface, card);
@@ -206,12 +208,8 @@ impl App {
     }
 
     /// The gaps the pill and the headset card open in the lines.
-    pub(super) fn popup_joins(&self) -> Vec<(Edge, f64, f64, f64)> {
-        let mut joins = self.headset.joins();
-        if let Some(p) = &self.osd.pill {
-            joins.extend(p.card.joins.iter().map(|j| (j.edge, j.x, j.width, j.reach)));
-        }
-        joins
+    pub(super) fn popup_joins(&self) -> impl Iterator<Item = &Join> {
+        self.headset.joins().iter().chain(self.osd.pill.iter().flat_map(|p| &p.card.joins))
     }
 
     pub(super) fn osd_configure(&mut self) {

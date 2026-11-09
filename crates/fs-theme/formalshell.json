@@ -243,6 +243,65 @@
             "dialog": {
                 "fillAlpha": 1,
                 "radius": "xl"
+            },
+            "popover": {
+                "layers": [
+                    {
+                        "inset": true,
+                        "spread": 1,
+                        "color": "white",
+                        "alpha": {
+                            "light": 0.3,
+                            "dark": 0.12
+                        },
+                        "fade": 0
+                    },
+                    {
+                        "y": -21,
+                        "blur": 33.5,
+                        "color": "black",
+                        "alpha": {
+                            "light": 0.03,
+                            "dark": 0.06
+                        }
+                    },
+                    {
+                        "y": 23,
+                        "blur": 27.5,
+                        "color": "black",
+                        "alpha": {
+                            "light": 0.04,
+                            "dark": 0.08
+                        }
+                    },
+                    {
+                        "y": -6,
+                        "blur": 24.5,
+                        "color": "black",
+                        "alpha": {
+                            "light": 0.06,
+                            "dark": 0.12
+                        }
+                    },
+                    {
+                        "y": -2,
+                        "blur": 23,
+                        "color": "black",
+                        "alpha": {
+                            "light": 0.08,
+                            "dark": 0.16
+                        }
+                    },
+                    {
+                        "y": 6,
+                        "blur": 10,
+                        "color": "black",
+                        "alpha": {
+                            "light": 0.095,
+                            "dark": 0.19
+                        }
+                    }
+                ]
             }
         },
         "notification": {
@@ -1505,7 +1564,7 @@
         ],
         "roles.card": [
             "The card (`widgets/card.scss`): the view fill, the lit rim, a 1px black line round it and shadow(2) under it. elementary hangs that line outside as `0 0 0 1px`, and it is a border here instead: a card is drawn by three different things (a Box, a `Shoulders` shape joined to the bar, a Drawer's own frame) and only the first of them draws a ring layer, so the line would go missing on the two that matter most. Its alpha is the toplevel `borders` rather than elementary's 0.1, which is a line over a #fafafa desktop and nothing at all over ours. `opaque` is the same card on a namespace the compositor does not blur (the capture picker, over a frozen screenshot), the rule DESIGN.md §1 states for every theme. `rest` keeps shadow(2) because the sidebar's cards sit in a column and must not cast past it.",
-            "`raised` is a card floating over the desktop (a panel, the centre, the launcher, the headset card): the same lit rim over Pond's five-layer cast (`shell/PanelStyle.qml` `frontShadows`, drawn by `shell/Shadow.qml`, pond-2026-11-04), which Pond hangs under its battery card, calendar, notification centre and toasts. Pond is dark only, so the dark column is its alphas and the light one is half of each, our call. `surfaces/card.rs` reads its casts on the popover path and under a joined card that casts.",
+            "`raised` is a card floating over the desktop (a panel, the centre, the launcher, the headset card): the same lit rim over Pond's five-layer cast (`shell/PanelStyle.qml` `frontShadows`, drawn by `shell/Shadow.qml`, pond-2026-11-04), which Pond hangs under its battery card, calendar, notification centre and toasts. Pond is dark only, so the dark column is its alphas and the light one is half of each, our call. `surfaces/card.rs` casts it under a joined card that casts. `popover` is the same cast on the popover path (`motion.morph` false), where a card floats with no line under it; a role with no states, `menu`, is its own popover.",
             "Its lit rim is Pond's fading outline (`shell/PanelBorder.qml`, pond-2026-11-04): one 1px white line inside the border, its alpha falling to nothing down the sides (`fade` 0, the bottom's share of the top), in place of HIGHLIGHT's four lips. Dark 0.12 sits between Pond's Daylight line (about 0.03 over its fill) and its Hazel and North ones (0.16 to 0.24, `panelBorder` at 0.4) and still reads on zinc; light keeps elementary's 0.3 top. A reactive rim's specular line takes the same fade."
         ],
         "roles.notification": [
