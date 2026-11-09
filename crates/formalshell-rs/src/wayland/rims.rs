@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use fs_chrome::rim::{Field, Glint, Sky, UNFOCUSED};
-use fs_types::Edge;
 
 use super::App;
 use crate::services::{compositor, wallpaper};
@@ -57,11 +56,10 @@ impl App {
         }
     }
 
-    /// The bar window's top left on its output: the whole output under a
-    /// frame, else its edge's strip.
+    /// The bar window's top left on its output.
     pub(super) fn bar_origin(&self) -> (f64, f64) {
-        let (out_w, _) = self.output_size();
-        if self.bar.framed() || self.bar.edge() != Edge::Right { (0.0, 0.0) } else { (out_w - f64::from(self.bar.scene.size.w), 0.0) }
+        let (x, y) = self.chrome().window();
+        (f64::from(x), f64::from(y))
     }
 
     fn rim_field(&mut self) -> Field {
@@ -95,7 +93,7 @@ impl App {
         let output = self.bar_output_name();
         let Some(origin) = c.outputs.iter().find(|o| o.name == output).map(|o| (o.x as f64, o.y as f64)) else { return Vec::new() };
         let snap = &c.snapshot;
-        if snap.fullscreen_outputs.contains(&output) {
+        if self.fullscreen_on(&output) {
             return Vec::new();
         }
         let shown: Vec<&str> = snap.workspaces.iter().filter(|w| w.output == output && w.is_active).map(|w| w.id.as_str()).collect();
@@ -123,18 +121,13 @@ impl App {
         let lit = self.rims.lit.clone();
         let lit = lit.as_ref();
         let ms = rim::blend_ms(&self.store.theme.theme, self.motion_scale);
-        let (out_w, out_h) = self.output_size();
+        let chrome = self.chrome();
         for h in [&mut self.outgoing, &mut self.panel].into_iter().flatten() {
             h.card.light(now, lit, (0.0, 0.0), ms);
         }
         if let Some(p) = &mut self.menu {
-            let d = p.card.depth() as f64;
-            let origin = match p.card.edge {
-                Edge::Top | Edge::Left => (0.0, 0.0),
-                Edge::Bottom => (0.0, out_h - d),
-                Edge::Right => (out_w - d, 0.0),
-            };
-            p.card.light(now, lit, origin, ms);
+            let (x, y) = chrome.origin(p.card.depth());
+            p.card.light(now, lit, (f64::from(x), f64::from(y)), ms);
         }
         if let Some(w) = &mut self.launch {
             w.shown.modal.card.light(now, lit, (0.0, 0.0), ms);
@@ -150,7 +143,7 @@ impl App {
         }
         if let Some(p) = &mut self.osd.pill {
             let d = p.card.depth() as f64;
-            p.card.light(now, lit, (0.0, out_h - d), ms);
+            p.card.light(now, lit, (0.0, chrome.output.1 - d), ms);
         }
         self.arm_rim_poll();
     }

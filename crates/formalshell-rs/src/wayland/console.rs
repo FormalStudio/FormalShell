@@ -180,11 +180,8 @@ impl App {
     }
 
     fn console_insets(&self) -> Insets {
-        let edge = self.bar.edge();
-        let thickness = self.bar.thickness() as f64;
-        let frame = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
-        let inset = |e: Edge| if e == edge { thickness } else { frame };
-        Insets { top: inset(Edge::Top), bottom: inset(Edge::Bottom), left: inset(Edge::Left), right: inset(Edge::Right) }
+        let c = self.chrome();
+        Insets { top: c.inset(Edge::Top), bottom: c.inset(Edge::Bottom), left: c.inset(Edge::Left), right: c.inset(Edge::Right) }
     }
 
     /// Sized where nobody can see it, then brought in: the other order

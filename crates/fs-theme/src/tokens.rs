@@ -225,15 +225,14 @@ impl Space {
     }
 }
 
+/// A spacing token's value at scale 1.
+pub fn spacing_base(name: &str) -> f64 {
+    let (_, v) = SPACING_BASE.iter().chain(SEMANTIC_SPACING_BASE.iter()).find(|(k, _)| *k == name).expect("every Space field has a base");
+    *v
+}
+
 pub fn spacing_tokens(scale: f64) -> Space {
-    let s = |name: &str| {
-        let (_, v) = SPACING_BASE
-            .iter()
-            .chain(SEMANTIC_SPACING_BASE.iter())
-            .find(|(k, _)| *k == name)
-            .expect("every Space field has a base");
-        fs_js::round(v * scale)
-    };
+    let s = |name: &str| fs_js::round(spacing_base(name) * scale);
     Space {
         xxs: s("xxs"),
         xs: s("xs"),

@@ -20,10 +20,10 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 use smithay_client_toolkit::shm::Shm;
 use vello_cpu::kurbo::Rect;
 
+use crate::chrome::Chrome;
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::surface::{Backend, Ignore, PixelSurface, Pixels, Sub, Surface};
-use crate::surfaces::bar::Bar;
-use crate::surfaces::card::{Card, CardSpec, Ends, Join, Sizing};
+use crate::surfaces::card::{Card, CardSpec, Join, Sizing};
 use crate::trace;
 use crate::wayland::App;
 
@@ -40,12 +40,11 @@ pub struct Make<'a> {
     pub shm: &'a Shm,
     pub qh: &'a QueueHandle<App>,
     pub output: Option<&'a WlOutput>,
-    /// The output's size and scale.
-    pub size: (f64, f64),
+    /// The output's scale.
     pub scale: f64,
     pub started: Instant,
     pub theme: &'a Theme,
-    pub bar: &'a Bar,
+    pub chrome: Chrome,
     pub motion_scale: f64,
     pub cast: bool,
 }
@@ -62,23 +61,6 @@ impl Make<'_> {
             ls.set_input_region(Some(region.wl_region()));
         }
         ls
-    }
-
-    /// The line a modal card buds off and how far in it lies: a side bar's
-    /// inner edge, else Theme.edgeInset's top (the bar's thickness on a top
-    /// bar, the frame ring's on a framed one, nothing on a bare edge).
-    fn line(&self) -> (Edge, f64) {
-        let bar = self.bar;
-        let edge = bar.edge();
-        if bar.hidden() {
-            (Edge::Top, 0.0)
-        } else if edge == Edge::Top || (edge.is_vertical() && !bar.framed()) {
-            (edge, bar.thickness() as f64)
-        } else if bar.framed() {
-            (Edge::Top, bar.frame_thickness())
-        } else {
-            (Edge::Top, 0.0)
-        }
     }
 
     /// A popover card's look as four subsurfaces of `card`, under anything
@@ -137,12 +119,8 @@ impl Modal {
     /// subsurfaces, so those owners keep the look in that scene.
     pub fn open(make: &Make, names: [&'static str; 3], namespace: &'static str, layer: Level, state: Option<&'static str>, deform: f64, carry: bool) -> Self {
         let theme = make.theme;
-        let output = make.size;
-        let (edge, inset) = make.line();
-        let framed = make.bar.framed() && edge == Edge::Top;
-        let ft = if framed { make.bar.frame_thickness() } else { 0.0 };
-        let along = if edge.is_vertical() { output.1 } else { output.0 };
-        let ends = Ends { along, inset_start: ft, inset_end: ft, radius: if framed { theme.frame_radius } else { 0.0 } };
+        let output = make.chrome.output;
+        let (edge, inset, ends) = make.chrome.modal_ends();
         // The scrim's alpha rides in its pixel, under the modal namespaces'
         // `ignore_alpha`, so it only darkens and the card alone is blurred.
         let tone = f64::from(theme.box_style("scrim", None).fill.a);

@@ -130,7 +130,7 @@ pub struct Rail {
 
 impl Geo {
     pub fn of(theme: &Theme) -> Self {
-        let k = theme.space.sidebar_width / 154.0;
+        let k = theme.space.sidebar_width / fs_theme::tokens::spacing_base("sidebarWidth");
         let p = |v: f64| (v * k).round();
         Self {
             margin: p(9.0),

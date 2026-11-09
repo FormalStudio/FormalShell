@@ -26,7 +26,7 @@ use vello_cpu::kurbo::Rect;
 use super::App;
 use crate::services::display;
 use crate::surface::{Backend, Surface};
-use crate::surfaces::card::{Card, CardSpec, Ends, Join, Sizing};
+use crate::surfaces::card::{Card, CardSpec, Join, Sizing};
 use crate::surfaces::osd::{self, Kind, Reading};
 use crate::surfaces::popup::Popup;
 
@@ -60,7 +60,7 @@ impl App {
             self.osd.media = text.to_owned();
         }
         self.osd.hide_at = Some(now + HIDE);
-        let covered = self.chrome_hidden();
+        let covered = self.chrome().bar_covered();
         match &mut self.osd.pill {
             Some(p) => {
                 if !p.is_open() {
@@ -152,19 +152,6 @@ impl App {
         }
     }
 
-    /// What the bottom edge carries: the bar's strip on a bottom bar, the
-    /// frame ring's band with a frame, nothing on a bare edge.
-    fn bottom_inset(&self) -> f64 {
-        let bar = &self.bar;
-        if bar.edge() == Edge::Bottom {
-            bar.thickness() as f64
-        } else if bar.framed() {
-            bar.frame_thickness()
-        } else {
-            0.0
-        }
-    }
-
     fn osd_create(&mut self) {
         let (out_w, out_h) = self.output_size();
         if out_w <= 0.0 || out_h <= 0.0 {
@@ -176,14 +163,14 @@ impl App {
         let reading = self.osd_reading();
         let el = osd::content(&reading, theme, &mut self.kit, width - pad * 2.0);
         let height = crate::ui::measure(&el, width - pad * 2.0, theme, &mut self.kit).1 + pad * 2.0;
-        let inset = self.bottom_inset();
+        let chrome = self.chrome();
+        let inset = chrome.inset(Edge::Bottom);
         let rest = inset + theme.space.screen_padding;
         let band = out_h.min(rest + height * 2.0);
         let u = ((out_w - width) / 2.0).round();
         let rest_rect = Rect::new(u, rest, u + width, rest + height);
-        let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
         let spec = CardSpec {
-            ends: Ends { along: out_w, inset_start: ft, inset_end: ft, radius: if self.bar.framed() { theme.frame_radius } else { 0.0 } },
+            ends: chrome.ends(Edge::Bottom),
             deform: DEFORM,
             ..CardSpec::new(Edge::Bottom, inset, Sizing::Surface { size: (out_w as i32, band as i32), rest: rest_rect })
         };

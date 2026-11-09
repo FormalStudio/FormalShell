@@ -1,3 +1,4 @@
+mod chrome;
 mod cmdline;
 mod fontconfig;
 mod gpu;

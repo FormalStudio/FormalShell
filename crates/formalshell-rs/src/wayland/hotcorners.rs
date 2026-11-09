@@ -107,15 +107,14 @@ impl App {
         let names: Vec<String> = outputs.iter().map(|(_, n, _)| n.clone()).collect();
         // Down while a fullscreen window covers the output, so its scanout
         // is free and a corner cannot fire mid-game.
-        let hide = self.store.config.bool("fullscreen.hideChrome").unwrap_or(true);
-        let covered = &self.store.compositor.snapshot.fullscreen_outputs;
+        let chrome = self.chrome();
         let all = corners::windows(&config, &names);
         let outer = |w: &corners::CornerWindow| {
             let Some(screen) = outputs.iter().find(|(_, n, _)| *n == w.screen).and_then(|o| o.2) else { return true };
             let others: Vec<_> = outputs.iter().filter(|(_, n, _)| *n != w.screen).filter_map(|o| o.2).collect();
             corners::outer(w.corner, screen, &others)
         };
-        let windows: Vec<_> = all.into_iter().filter(|w| !(hide && covered.contains(&w.screen)) && outer(w)).collect();
+        let windows: Vec<_> = all.into_iter().filter(|w| !chrome.covered(&w.screen) && outer(w)).collect();
         let key: Vec<(String, Corner, String, i64)> =
             windows.iter().map(|w| (w.screen.clone(), w.corner, w.action.as_str().to_owned(), config.size)).collect();
         self.hot.config = Some(config.clone());

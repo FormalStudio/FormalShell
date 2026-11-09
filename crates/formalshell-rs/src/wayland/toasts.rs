@@ -89,7 +89,8 @@ impl App {
     /// (`CMonitor::isSolitaryBlocked`); a layer change sends no motion to a
     /// surface the pointer is not on, and that recalc keeps the lock.
     pub(crate) fn present_toasts(&mut self, now: Instant) {
-        let covered = self.chrome_hidden();
+        let chrome = self.chrome();
+        let covered = chrome.bar_covered();
         let floating = self.store.compositor.snapshot.floating_outputs.contains(&self.bar.output);
         let n = &self.store.notifications;
         let fading = self.toasts.as_ref().is_some_and(|t| t.holds_cards());
@@ -98,7 +99,7 @@ impl App {
         let layer = if covered && !floating && !up { Layer::Top } else { Layer::Overlay };
         // Placed off the same line as every panel: its insets, and beside a
         // side line, that line's side.
-        let place = self.panel_place(None);
+        let place = chrome.place(None);
         let mut insets = place.insets();
         let spec = place.corner(fs_info::notifications::position_spec(self.store.config.str("notifications.position")));
         let right = spec.right;

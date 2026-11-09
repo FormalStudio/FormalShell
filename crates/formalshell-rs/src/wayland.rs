@@ -56,6 +56,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_dispatch2, delegate_registry, registry_handlers};
 
+use crate::chrome::Chrome;
 use crate::ipc;
 use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
@@ -67,7 +68,7 @@ use crate::surfaces;
 use crate::surfaces::bar::Bar;
 use crate::surfaces::bar::cell::{Action, Button, TrayClick};
 use crate::surfaces::bar::cells::tray as tray_cell;
-use crate::surfaces::card::{Card, CardSpec, Ends, Join, Scrim, Sizing};
+use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
 use crate::surfaces::panel::{self, host::{Host, Key, Out, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
@@ -444,20 +445,26 @@ impl App {
         crate::services::agents::shown(!self.bar.hidden() && !self.saver.active && !self.lock.locked);
     }
 
-    fn chrome_hidden(&self) -> bool {
-        self.hidden_on(&self.bar.output)
+    /// The live bar's chrome on its output. `fullscreen.hideChrome` false
+    /// leaves no output covered.
+    pub(crate) fn chrome(&self) -> Chrome {
+        let hide = self.store.config.bool("fullscreen.hideChrome").unwrap_or(true);
+        let covered = if hide { self.store.compositor.snapshot.fullscreen_outputs.clone() } else { Vec::new() };
+        Chrome::new(&self.bar, self.output_size(), self.store.theme.theme.frame_radius, covered)
     }
 
-    fn hidden_on(&self, output: &str) -> bool {
-        let hide = self.store.config.bool("fullscreen.hideChrome").unwrap_or(true);
-        hide && self.store.compositor.snapshot.fullscreen_outputs.iter().any(|o| o == output)
+    /// A fullscreen window holds `output`, so what lies under it (the
+    /// backdrop, the desktop clock, the windows a rim reflects) is out of
+    /// sight whatever `fullscreen.hideChrome` keeps over it.
+    pub(crate) fn fullscreen_on(&self, output: &str) -> bool {
+        self.store.compositor.snapshot.fullscreen_outputs.iter().any(|o| o == output)
     }
 
     /// The bar's window and the frame's zones as the config and the
     /// fullscreen state want them: re-created rather than re-anchored, so a
     /// framed window and a strip never share a configure.
     fn place_chrome(&mut self) {
-        let hidden = self.chrome_hidden();
+        let hidden = self.chrome().bar_covered();
         self.bar.set_hidden(hidden);
         self.sync_agents();
         if hidden {
@@ -557,10 +564,11 @@ impl App {
     fn bar_input(&self) -> Vec<IRect> {
         match self.bar.input_rects().filter(|_| self.bar.sidebar.is_some()) {
             Some(rects) => {
-                let (ox, oy) = self.edge_origin(self.bar.thickness());
+                let chrome = self.chrome();
+                let (ox, oy) = chrome.origin(self.bar.thickness());
                 rects.into_iter().map(|r| IRect::new(r.x + ox, r.y + oy, r.w, r.h)).collect()
             }
-            None => vec![self.bar_strip()],
+            None => vec![self.chrome().strip()],
         }
     }
 
@@ -693,7 +701,7 @@ impl App {
             self.sync_collapsed();
         }
         if matches!(topic, None | Some(Topic::Compositor) | Some(Topic::Config)) {
-            if self.chrome_hidden() != self.bar.hidden() {
+            if self.chrome().bar_covered() != self.bar.hidden() {
                 self.place_chrome();
             }
             self.sync_hot_corners();
@@ -823,8 +831,8 @@ impl App {
             let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
             self.preview = Some((surface, crate::scene::Scene::clear(w as i32, h as i32), Vec::new()));
         }
-        let edge = self.bar.edge();
-        let line = self.bar.thickness() as f64;
+        let chrome = self.chrome();
+        let (edge, line) = (chrome.edge, chrome.line());
         if let Some((_, scene, nodes)) = &mut self.preview {
             let join = join.map(|(x, w)| (x as f64, w as f64));
             join_preview(scene, nodes, &self.store.theme.theme, edge, line, join);
@@ -871,11 +879,10 @@ impl App {
             shm: &self.shm,
             qh: &self.qh,
             output: self.bar_wl.as_ref(),
-            size: self.output_size(),
             scale: self.bar_wl.as_ref().map_or_else(|| scales.primary(), |o| scales.on(o)),
             started: self.started,
             theme: &self.store.theme.theme,
-            bar: &self.bar,
+            chrome: self.chrome(),
             motion_scale: self.motion_scale,
             cast: self.cast,
         }
@@ -899,23 +906,6 @@ impl App {
         surface
     }
 
-
-    /// Where a panel hangs: off the bar's line, centred on `anchor` or at
-    /// the line's end.
-    fn panel_place(&self, anchor: Option<f64>) -> Place {
-        let edge = self.bar.edge();
-        let output = self.output_size();
-        let vertical = edge.is_vertical();
-        let framed = self.bar.framed();
-        let ft = if framed { self.bar.frame_thickness() } else { 0.0 };
-        let ends = Ends {
-            along: if vertical { output.1 } else { output.0 },
-            inset_start: ft,
-            inset_end: ft,
-            radius: if framed { self.store.theme.theme.frame_radius } else { 0.0 },
-        };
-        Place { edge, output, line_at: self.bar.thickness() as f64, ends, far_inset: ft, anchor }
-    }
 
     /// A panel by name, hung at `anchor` along the line (its own cell's
     /// centre) or at the line's end. A panel opened over another hands the
@@ -997,7 +987,7 @@ impl App {
     }
 
     fn open_host(&mut self, module: Box<dyn panel::Panel>, anchor: Option<f64>, now: Instant) {
-        let place = self.panel_place(anchor);
+        let place = self.chrome().place(anchor);
         self.open_host_at(module, place, now);
     }
 
@@ -1057,10 +1047,11 @@ impl App {
         if owner_edge.is_none() {
             self.close_panels();
         }
+        let chrome = self.chrome();
         let theme = &self.store.theme.theme;
-        let edge = self.bar.edge();
+        let edge = chrome.edge;
         let vertical = edge.is_vertical();
-        let line_at = owner_edge.unwrap_or(self.bar.thickness() as f64);
+        let line_at = owner_edge.unwrap_or(chrome.line());
         let (_, output_height) = self.output_size();
         let pad = theme.space.screen_padding;
         let cap = if vertical { output_height - pad * 2.0 } else { output_height - line_at - theme.space.bar_margin - pad };
@@ -1607,17 +1598,6 @@ impl App {
         eprintln!("exit t={}ms {}", self.started.elapsed().as_millis(), parts.join(" "));
     }
 
-    /// Where a surface hugging the bar's edge `depth` deep sits on the
-    /// output, for a rect on it in the output's coordinates.
-    fn edge_origin(&self, depth: i32) -> (i32, i32) {
-        let (w, h) = self.output_size();
-        match self.bar.edge() {
-            Edge::Bottom => (0, h as i32 - depth),
-            Edge::Right => (w as i32 - depth, 0),
-            _ => (0, 0),
-        }
-    }
-
     fn hover(&mut self, owner: Option<Owner>, at: (f64, f64)) {
         let now = Instant::now();
         let bar_hover = (owner == Some(Owner::Bar)).then(|| self.bar.hit(at.0, at.1)).flatten();
@@ -1652,7 +1632,7 @@ impl App {
         let ask = match owner {
             Some(Owner::Bar) if opened => None,
             Some(Owner::Bar) => self.bar.tooltip().map(|(text, r, edge)| {
-                let (ox, oy) = if self.bar.framed() { (0, 0) } else { self.edge_origin(self.bar.across()) };
+                let (ox, oy) = self.chrome().window();
                 let rect = IRect::new(r.x + ox, r.y + oy, r.w, r.h);
                 tooltip::Ask { owner: format!("bar:{}:{}", rect.x, rect.y), text, rect, bar: Some(edge) }
             }),
@@ -1744,7 +1724,7 @@ impl App {
             if matches!(owner, Some(Owner::Panel | Owner::Outgoing)) && on_bar {
                 owner = Some(Owner::Bar);
                 if !self.bar.framed() {
-                    let (ox, oy) = self.edge_origin(self.bar.thickness());
+                    let (ox, oy) = self.chrome().origin(self.bar.thickness());
                     (x, y) = (x - ox as f64, y - oy as f64);
                 }
             }
@@ -1869,20 +1849,6 @@ impl App {
                     }
                 }
             }
-        }
-    }
-
-    /// The bar's strip in output coordinates, which an open panel's
-    /// full-output surface leaves to the bar.
-    fn bar_strip(&self) -> IRect {
-        let (ow, oh) = self.output_size();
-        let (ow, oh) = (ow as i32, oh as i32);
-        let t = self.bar.thickness();
-        match self.bar.edge() {
-            Edge::Bottom => IRect::new(0, oh - t, ow, t),
-            Edge::Left => IRect::new(0, 0, t, oh),
-            Edge::Right => IRect::new(ow - t, 0, t, oh),
-            _ => IRect::new(0, 0, ow, t),
         }
     }
 

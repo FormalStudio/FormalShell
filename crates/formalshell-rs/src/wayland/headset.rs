@@ -180,7 +180,7 @@ impl App {
     }
 
     fn headset_down(&self) -> bool {
-        self.store.state.data.dnd || self.chrome_hidden()
+        self.store.state.data.dnd || self.chrome().bar_covered()
     }
 
     fn headset_show(&mut self, address: BtAddress, now: Instant) {
@@ -203,9 +203,8 @@ impl App {
         // A popover under the top edge's middle whatever the layout: under
         // a top bar's line, else the frame ring's band or the bare edge.
         let theme = popover_theme(&self.store.theme.theme);
-        let length = self.output_size().0;
-        let ft = if self.bar.framed() { self.bar.frame_thickness() } else { 0.0 };
-        let line_at = if self.bar.edge() == Edge::Top { self.bar.thickness() as f64 } else { ft };
+        let chrome = self.chrome();
+        let (length, line_at) = (chrome.output.0, chrome.inset(Edge::Top));
         let size = headset::size(&headset::face(&self.store, address), &theme, &mut self.kit);
         let spec = CardSpec { capsule: true, ..CardSpec::new(Edge::Top, line_at, Sizing::Card { size, anchor: length / 2.0, length: length as i32 }) };
         let card = Card::new(&theme, spec, self.motion_scale, self.cast);

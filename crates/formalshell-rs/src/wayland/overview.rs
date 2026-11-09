@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use fs_types::{Edge, WindowId, WorkspaceId};
+use fs_types::{WindowId, WorkspaceId};
 use fs_theme::color::Rgba;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
@@ -324,7 +324,7 @@ impl App {
         s.configure(scene.size.w, scene.size.h);
         let area = (f64::from(scene.size.w), f64::from(scene.size.h));
         let output = self.overview_output().map_or(area, |o| o.3);
-        let offset = band_offset(self.bar.edge(), output, area);
+        let offset = self.chrome().offset(output, area);
         self.overview.model.geo = Geometry::new(area, output, offset);
         let (ms, curve) = self.overview_curve();
         let sel = self.overview.model.sel;
@@ -560,35 +560,5 @@ impl App {
             _ => {}
         }
         true
-    }
-}
-
-/// Where a surface of `area` sits on an output of `output` with the bar's
-/// band on `edge` taken out: the band's whole extent on its own side, any
-/// other inset split evenly.
-fn band_offset(edge: Edge, output: (f64, f64), area: (f64, f64)) -> (f64, f64) {
-    let (dx, dy) = ((output.0 - area.0).max(0.0), (output.1 - area.1).max(0.0));
-    let x = match edge {
-        Edge::Left => dx,
-        Edge::Right => 0.0,
-        _ => dx / 2.0,
-    };
-    let y = match edge {
-        Edge::Top => dy,
-        Edge::Bottom => 0.0,
-        _ => dy / 2.0,
-    };
-    (x, y)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_band_offset_follows_the_bars_edge() {
-        assert_eq!(band_offset(Edge::Left, (1920.0, 1080.0), (1766.0, 1080.0)), (154.0, 0.0));
-        assert_eq!(band_offset(Edge::Top, (1920.0, 1080.0), (1920.0, 1040.0)), (0.0, 40.0));
-        assert_eq!(band_offset(Edge::Bottom, (1920.0, 1080.0), (1920.0, 1040.0)), (0.0, 0.0));
     }
 }

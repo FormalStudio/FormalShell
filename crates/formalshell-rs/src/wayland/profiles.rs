@@ -86,7 +86,7 @@ fn body(store: &crate::store::Store, side: f64, gap: f64) -> El {
 
 impl App {
     fn profiles_wanted(&self) -> bool {
-        self.bar.sidebar.is_some() && self.launcher_panel() == Some("settings") && !self.chrome_hidden()
+        self.bar.sidebar.is_some() && self.launcher_panel() == Some("settings") && !self.chrome().bar_covered()
     }
 
     /// The pill's size: a chip's side plus the padding, three chips tall.

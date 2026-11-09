@@ -71,6 +71,7 @@ paths = [
   "crates/formalshell-rs/src/fontconfig.rs",
   "crates/formalshell-rs/src/surface.rs",
   "crates/formalshell-rs/src/wayland.rs",
+  "crates/formalshell-rs/src/chrome.rs",
   "crates/formalshell-rs/src/main.rs",
   "crates/formalshell-rs/src/trace.rs",
   "crates/formalshell-rs/src/paths.rs",

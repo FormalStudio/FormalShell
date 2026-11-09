@@ -302,7 +302,7 @@ impl App {
     pub(super) fn place_spare(&mut self, i: usize) {
         let Some(mut spare) = self.heads.get_mut(i).and_then(|h| h.spare.take()) else { return };
         let output = self.heads[i].output.clone();
-        spare.bar.set_hidden(self.hidden_on(&spare.bar.output));
+        spare.bar.set_hidden(self.chrome().covered(&spare.bar.output));
         (spare.surface, spare.zones) = if spare.bar.hidden() {
             (None, Vec::new())
         } else {
@@ -325,7 +325,7 @@ impl App {
     pub(super) fn refresh_spares(&mut self, topic: Option<Topic>, now: Instant) {
         for i in 0..self.heads.len() {
             let Some(s) = &self.heads[i].spare else { continue };
-            if self.hidden_on(&s.bar.output) != s.bar.hidden() {
+            if self.chrome().covered(&s.bar.output) != s.bar.hidden() {
                 self.place_spare(i);
             }
             let Some(s) = &mut self.heads[i].spare else { continue };
@@ -463,7 +463,6 @@ impl App {
     fn shard_run(&self, i: usize) -> Result<(), &'static str> {
         let theme = &self.store.theme.theme;
         let name = self.output_name(&self.heads[i].output);
-        let snapshot = &self.store.compositor.snapshot;
         let power = &self.store.devices.power;
         if !theme.motion_enabled {
             return Err("reducedMotion");
@@ -479,7 +478,7 @@ impl App {
         if self.modal_up {
             return Err("modal");
         }
-        if snapshot.fullscreen_outputs.contains(&name) {
+        if self.fullscreen_on(&name) {
             return Err("fullscreen");
         }
         if self.store.devices.profiles.as_ref().is_some_and(|p| p.active == fs_upower::Profile::PowerSaver) {

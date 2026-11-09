@@ -397,7 +397,7 @@ impl App {
             let output = self.heads[i].output.clone();
             let name = self.output_name(&output);
             let shards = self.heads[i].backdrop.as_ref().is_some_and(|b| b.shards.is_some());
-            let want = settings.is_some() && self.heads[i].backdrop.is_some() && !self.hidden_on(&name);
+            let want = settings.is_some() && self.heads[i].backdrop.is_some() && !self.chrome().covered(&name);
             let stale = self.heads[i].clock.as_ref().is_some_and(|c| shards && !c.over_shards);
             if (!want || stale) && self.heads[i].clock.take().is_some() {
                 self.log(&format!("desktop clock off {name}"));
@@ -483,7 +483,7 @@ impl App {
     /// locked or under the screensaver.
     pub(super) fn desktop_clock_held(&self, i: usize) -> bool {
         let name = self.output_name(&self.heads[i].output);
-        self.lock.locked || self.saver.active || self.store.compositor.snapshot.fullscreen_outputs.contains(&name)
+        self.lock.locked || self.saver.active || self.fullscreen_on(&name)
     }
 
     pub(super) fn present_desktop_clocks(&mut self) {
