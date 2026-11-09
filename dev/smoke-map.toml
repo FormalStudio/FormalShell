@@ -459,7 +459,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/fo
 runs = ["--settings-ui", "--settings-ui --light", "--wallpaper-pair"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/iphone.rs", "crates/formalshell-rs/src/services/info/iphone.rs", "crates/formalshell-rs/src/ipc/iphone.rs", "crates/formalshell-rs/src/services/ams.rs", "crates/fs-devices/src/iphone.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/iphone.rs", "crates/formalshell-rs/src/services/iphone.rs", "crates/formalshell-rs/src/ipc/iphone.rs", "crates/formalshell-rs/src/services/ams.rs", "crates/fs-devices/src/iphone.rs"]
 runs = ["--iphone"]
 
 [[rule]]

@@ -12,7 +12,6 @@ pub mod about;
 pub mod calendar;
 pub mod geoclue;
 pub mod github;
-pub mod iphone;
 pub mod monitor;
 pub mod powerflow;
 pub mod procs;

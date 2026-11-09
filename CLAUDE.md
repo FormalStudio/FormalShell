@@ -750,7 +750,7 @@ committed outputs as JSON, which `dev/remote.sh`, `dev/vm.sh` and
   edge, "first" typed and Return reaching it as SetPosition top 0 0.5; the
   stub SIGKILLed leaving the tile disabled and no route. The tile, the
   menu and the route photographed, dark and `--light`.
-- `iphone.sh` `--iphone`: `services/info/iphone.rs` and the notification
+- `iphone.sh` `--iphone`: `services/iphone.rs` and the notification
   filter against
   PATH-shimmed `omarchy-iphone-bridge`/`omarchy-iphone-ams`, both a
   `tail -F` over a JSONL fixture the drive script paces in real time.

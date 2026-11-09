@@ -11,7 +11,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use fs_js as js;
 pub use fs_types::Urgency;
@@ -47,7 +46,23 @@ pub struct Notif {
     /// "iphone" for a notification mirrored off the phone, "" otherwise.
     pub source: String,
     /// The phone bridge's own record, for a mirrored notification.
-    pub phone: Option<Value>,
+    pub phone: Option<Phone>,
+}
+
+/// What a card mirrored off the iPhone keeps of the bridge's record: the
+/// fields dedupe compares, and the handle, id and session an action on the
+/// card is sent back with.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Phone {
+    pub id: i64,
+    pub session: i64,
+    pub bundle_id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub body: String,
+    pub device_handle: String,
+    pub negative_action: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -67,7 +82,7 @@ pub struct Entry {
     pub image: String,
     pub local: bool,
     pub source: String,
-    pub phone: Option<Value>,
+    pub phone: Option<Phone>,
     pub arrived_at: i64,
     pub seen_at: Option<i64>,
     /// `None` is "never scheduled" (an entry filed straight into pending),
@@ -121,7 +136,7 @@ pub struct Patch {
     pub urgency: Option<Urgency>,
     pub actions: Option<Vec<Action>>,
     pub image: Option<String>,
-    pub phone: Option<Value>,
+    pub phone: Option<Phone>,
 }
 
 impl State {

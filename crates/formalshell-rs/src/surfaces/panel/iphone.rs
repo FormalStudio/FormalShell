@@ -14,7 +14,7 @@ use std::cell::Cell;
 
 use super::{Effect, Panel, View};
 use crate::services::ams;
-use crate::services::info::iphone::{self as service, Cmd};
+use crate::services::iphone::{self as service, Cmd};
 use crate::services::wants::{Source, Want};
 use crate::store::{Store, Topic};
 use crate::ui::{El, Event, Ink, Type, Variant, What, w};

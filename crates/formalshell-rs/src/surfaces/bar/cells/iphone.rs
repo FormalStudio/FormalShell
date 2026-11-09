@@ -4,7 +4,7 @@
 
 use fs_chrome::bar::panels::PanelId;
 
-use crate::services::info::iphone::State;
+use crate::services::iphone::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};

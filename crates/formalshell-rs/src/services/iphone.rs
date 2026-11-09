@@ -2,15 +2,16 @@
 
 //! The iPhone's bridge half: one long-lived
 //! `omarchy-iphone-bridge listen` child turning ancs4linux's signals into
-//! JSONL, restarted on a doubling backoff, and the verbs the panel drives it
-//! with: invoke, dismiss, clear, pair. No bridge on PATH is
-//! `installed: false` and the cell never appears; a bridge whose daemon does
-//! not own its bus name is not `observer`. Neither fakes a phone. Each
-//! arrival the routing lets through is mirrored into the notification
-//! service; the Apple Media Service half is [`ams`](crate::services::ams).
+//! JSONL, restarted on a doubling backoff, and the verbs the panel and the
+//! centre's cards drive it with: invoke, dismiss, clear, pair. No bridge on
+//! PATH is `installed: false` and the cell never appears; a bridge whose
+//! daemon does not own its bus name is not `observer`. Neither fakes a
+//! phone. The Apple Media Service half is [`ams`](crate::services::ams).
 //!
 //! The service owns the phone's own history (`recent`), newest first, and
-//! publishes the whole state as one snapshot.
+//! publishes the whole state as one snapshot. Each arrival the routing lets
+//! through goes to the notification centre, where [`Mirror`] files it
+//! against the local clients' copies on the UI thread.
 
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -18,10 +19,13 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_io::Timer;
 use fs_dbus::Backoff;
-use fs_devices::iphone::{self, Arrival, Event, Notification, Verdict};
+use fs_devices::iphone::{self, Arrival, Event, Verdict};
+pub use fs_devices::iphone::{Notification, phone_of};
+use fs_info::notifications::{self as model, AddOpts, Patch, Phone};
 use fs_types::BtAddress;
 use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, FutureExt, StreamExt};
+use serde_json::Value;
 
 use crate::runtime::Ctx;
 use crate::services::config;
@@ -85,6 +89,109 @@ fn commands() -> &'static (async_channel::Sender<Cmd>, async_channel::Receiver<C
 /// holds the iPhone source.
 pub fn command(cmd: Cmd) {
     let _ = commands().0.try_send(cmd);
+}
+
+/// One bridge action. They run one at a time: re-running a child still
+/// running would send the first and drop the rest.
+enum Action {
+    /// The panel's or IPC's: what it prints is read as bridge lines and a
+    /// non-zero exit reaches `last_error`.
+    Panel(Vec<String>),
+    /// A centre card's, whose outcome nothing reads.
+    Card(Vec<String>),
+}
+
+static ACTIONS: OnceLock<(async_channel::Sender<Action>, async_channel::Receiver<Action>)> = OnceLock::new();
+
+fn actions() -> &'static (async_channel::Sender<Action>, async_channel::Receiver<Action>) {
+    ACTIONS.get_or_init(async_channel::unbounded)
+}
+
+fn queue(action: Action) {
+    let _ = actions().0.try_send(action);
+}
+
+fn invoke_argv(handle: &str, id: i64, positive: bool) -> Vec<String> {
+    [BRIDGE, "invoke", "--handle", handle, "--id", &id.to_string(), "--kind", if positive { "positive" } else { "negative" }].map(str::to_owned).to_vec()
+}
+
+/// An action picked on a card mirrored off the phone, sent with the card's
+/// own record: the card outlives the panel's `recent` (Clear empties it).
+pub fn card_invoke(phone: &Phone, positive: bool) {
+    if !phone.device_handle.is_empty() {
+        queue(Action::Card(invoke_argv(&phone.device_handle, phone.id, positive)));
+    }
+}
+
+/// The owner closed `entry`: a card mirrored off the phone is cleared there
+/// too, through its own negative action when it offers one.
+pub fn card_closed(entry: &model::Entry) {
+    if let Some(phone) = iphone::phone_of(entry)
+        && !phone.negative_action.is_empty()
+    {
+        card_invoke(phone, false);
+    }
+}
+
+fn entries(m: &model::State) -> impl Iterator<Item = &model::Entry> {
+    m.popups.iter().chain(&m.pending).chain(&m.past)
+}
+
+/// The centre's side of the mirror, held by the notification state on the
+/// UI thread: `iphone.notifications.dedupe`, and what a phone or local
+/// arrival does to the cards already there.
+#[derive(Default)]
+pub struct Mirror {
+    rules: Vec<iphone::DedupeRule>,
+    /// The key as last read, absent included.
+    seen: Option<Option<Value>>,
+}
+
+impl Mirror {
+    /// Reads `iphone.notifications.dedupe` whenever settings.json moved.
+    pub fn sync_config(&mut self, raw: Option<&Value>) {
+        if self.seen.as_ref().is_some_and(|seen| seen.as_ref() == raw) {
+            return;
+        }
+        self.seen = Some(raw.cloned());
+        let raw = raw.cloned().unwrap_or_else(iphone::default_dedupe);
+        self.rules = iphone::dedupe_rules(&raw);
+    }
+
+    /// A phone arrival; `quiet` is Focus's "history, no toast". ANCS resends
+    /// an id when the phone modifies a notification, which updates its card
+    /// in place, and one a local client already raised is dropped.
+    pub fn phone_arrived(&self, m: &mut model::State, record: &Notification, quiet: bool, now: i64) {
+        let notif = iphone::to_notification(record);
+        if entries(m).any(|e| e.id == notif.id) {
+            let patch = Patch { summary: Some(notif.summary), body: Some(notif.body), phone: notif.phone, ..Patch::default() };
+            *m = model::update(m, &notif.id, &patch, now);
+            return;
+        }
+        if !self.rules.is_empty() && iphone::dedupe(&self.rules, record, entries(m), now as f64).is_some() {
+            return;
+        }
+        *m = model::add(m, &notif, now, &AddOpts { quiet, timeout_ms: None });
+    }
+
+    /// A local arrival, `id`, just added: the local client wins, so a phone
+    /// card already up for the same message goes, and the phone keeps its
+    /// own copy.
+    pub fn local_arrived(&self, m: &mut model::State, id: &str, now: i64) {
+        let Some(entry) = entries(m).find(|e| e.id == id) else { return };
+        let stale = iphone::superseded(&self.rules, entry, entries(m), now as f64);
+        if !stale.is_empty() {
+            *m = model::dismiss_many(m, &stale);
+        }
+    }
+}
+
+/// The phone withdrew notification `id`: its cards go without telling it
+/// back. True when there was one.
+pub fn withdraw(m: &mut model::State, id: i64) -> bool {
+    let ids: Vec<String> = entries(m).filter(|e| iphone::phone_of(e).is_some_and(|p| p.id == id)).map(|e| e.id.clone()).collect();
+    *m = model::dismiss_many(m, &ids);
+    !ids.is_empty()
 }
 
 /// Whether `invoke` on `id` would be queued: the entry is known, the bridge
@@ -232,7 +339,7 @@ fn block_list() -> Vec<String> {
 }
 
 fn on_path(name: &str) -> bool {
-    super::monitor::on_path(name)
+    super::info::monitor::on_path(name)
 }
 
 fn hostname() -> String {
@@ -284,7 +391,18 @@ async fn run_child(args: Vec<String>, inbox: async_channel::Sender<Msg>, report_
     }
 }
 
-async fn listen(ctx: &Ctx, session: &mut Session, inbox: &(async_channel::Sender<Msg>, async_channel::Receiver<Msg>), actions: &async_channel::Sender<Vec<String>>) -> i32 {
+/// One bridge run to its exit with nothing read back.
+async fn run_quiet(args: Vec<String>) {
+    let _ = crate::services::proc::command(BRIDGE)
+        .args(&args[1..])
+        .stdin(async_process::Stdio::null())
+        .stdout(async_process::Stdio::null())
+        .stderr(async_process::Stdio::null())
+        .status()
+        .await;
+}
+
+async fn listen(ctx: &Ctx, session: &mut Session, inbox: &(async_channel::Sender<Msg>, async_channel::Receiver<Msg>)) -> i32 {
     let child = crate::services::proc::command(BRIDGE)
         .args(["listen", "--limit", &HISTORY_LIMIT.to_string()])
         .stdin(async_process::Stdio::null())
@@ -349,7 +467,7 @@ async fn listen(ctx: &Ctx, session: &mut Session, inbox: &(async_channel::Sender
                     session.finish_pairing = true;
                 }
             }
-            Ev::Cmd(cmd) => changed |= handle(ctx, session, cmd, inbox, actions),
+            Ev::Cmd(cmd) => changed |= handle(ctx, session, cmd, inbox),
             Ev::Tick => {}
         }
         if session.restart_timer {
@@ -386,7 +504,7 @@ fn line_in(session: &mut Session, line: &str) -> bool {
 }
 
 /// One panel or IPC verb. True when the state moved.
-fn handle(ctx: &Ctx, session: &mut Session, cmd: Cmd, inbox: &(async_channel::Sender<Msg>, async_channel::Receiver<Msg>), actions: &async_channel::Sender<Vec<String>>) -> bool {
+fn handle(ctx: &Ctx, session: &mut Session, cmd: Cmd, inbox: &(async_channel::Sender<Msg>, async_channel::Receiver<Msg>)) -> bool {
     let invoke = |session: &mut Session, entry: &Notification, positive: bool| {
         if !session.state.installed {
             return false;
@@ -395,8 +513,7 @@ fn handle(ctx: &Ctx, session: &mut Session, cmd: Cmd, inbox: &(async_channel::Se
             session.state.last_error = "The phone reconnected since this arrived, so it can no longer be acted on".into();
             return true;
         }
-        let argv = [BRIDGE, "invoke", "--handle", &entry.device_handle, "--id", &entry.id.to_string(), "--kind", if positive { "positive" } else { "negative" }];
-        let _ = actions.try_send(argv.iter().map(|s| (*s).to_owned()).collect());
+        queue(Action::Panel(invoke_argv(&entry.device_handle, entry.id, positive)));
         false
     };
     match cmd {
@@ -494,13 +611,13 @@ fn publish(ctx: &Ctx, state: &State) {
 
 pub async fn run(ctx: Ctx) {
     let inbox = async_channel::unbounded::<Msg>();
-    let (action_tx, action_rx) = async_channel::unbounded::<Vec<String>>();
-    // Bridge actions go one at a time: re-running a child still running
-    // would send the first and drop the rest.
     let worker_inbox = inbox.0.clone();
     ctx.spawn(async move {
-        while let Ok(argv) = action_rx.recv().await {
-            run_child(argv, worker_inbox.clone(), true).await;
+        while let Ok(action) = actions().1.recv().await {
+            match action {
+                Action::Panel(argv) => run_child(argv, worker_inbox.clone(), true).await,
+                Action::Card(argv) => run_quiet(argv).await,
+            }
         }
     });
     let mut session = Session::default();
@@ -512,7 +629,7 @@ pub async fn run(ctx: Ctx) {
             Timer::after(MAX_BACKOFF).await;
             continue;
         }
-        let code = listen(&ctx, &mut session, &inbox, &action_tx).await;
+        let code = listen(&ctx, &mut session, &inbox).await;
         session.state = State {
             installed: code != MISSING,
             unread: session.state.unread,

@@ -29,6 +29,7 @@ pub mod display;
 pub mod icons;
 pub mod inhibit;
 pub mod ipad;
+pub mod iphone;
 pub mod lights;
 pub mod localsend;
 pub mod media;

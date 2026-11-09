@@ -4,10 +4,10 @@
 //! services and surfaces.
 
 use crate::services::devices::{self, earbuds, network};
-use crate::services::info::{calendar, github, iphone, monitor, powerflow, procs, tailscale, update, usage, weather};
+use crate::services::info::{calendar, github, monitor, powerflow, procs, tailscale, update, usage, weather};
 use crate::services::{
     activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
-    compositor, ipad, launch, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme,
+    compositor, ipad, iphone, launch, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme,
     tray, visualizer, wallpaper,
 };
 

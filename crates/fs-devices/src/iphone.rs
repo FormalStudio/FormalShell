@@ -18,15 +18,15 @@ use regex::Regex;
 use serde_json::{Value as Json, json};
 use unicode_normalization::UnicodeNormalization;
 
+use fs_info::notifications::{Action, Entry, Notif, Phone, Urgency};
 use fs_js::{self as js, SPACE};
 use fs_types::BtAddress;
 
-pub mod category {
-    pub(crate) const INCOMING_CALL: i64 = 1;
-    pub(crate) const MISSED_CALL: i64 = 2;
-    pub(crate) const VOICEMAIL: i64 = 3;
-    pub(crate) const SOCIAL: i64 = 4;
-}
+/// ANCS's CategoryIDIncomingCall.
+const INCOMING_CALL: i64 = 1;
+
+/// A mirrored card's `source`.
+pub const SOURCE: &str = "iphone";
 
 pub const DEFAULT_FOCUS_WINDOW: f64 = 900.0;
 pub(crate) fn category_label(category: i64) -> &'static str {
@@ -380,32 +380,10 @@ fn rule_for<'a>(rules: &'a [DedupeRule], bundle_id: &str) -> Option<&'a DedupeRu
     rules.iter().find(|r| r.phone == id)
 }
 
-/// The phone fields a centre entry carries under `phone`.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct PhoneFields {
-    pub bundle_id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub body: String,
-}
-
-/// One entry of the notification centre, as far as dedupe reads it. A phone
-/// entry has `source == "iphone"` and its bridge fields under `phone`.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct CentreEntry {
-    pub id: String,
-    pub app_name: String,
-    pub desktop_entry: String,
-    pub summary: String,
-    pub body: String,
-    pub source: String,
-    pub local: bool,
-    pub phone: Option<PhoneFields>,
-    pub arrived_at: f64,
-}
-
-fn is_local_for(rule: &DedupeRule, entry: &CentreEntry) -> bool {
-    if entry.source == "iphone" || entry.local {
+/// A centre entry from a local client the rule names. Shell-authored and
+/// phone entries never are.
+fn is_local_for(rule: &DedupeRule, entry: &Entry) -> bool {
+    if entry.source == SOURCE || entry.local {
         return false;
     }
     let name = entry.app_name.to_lowercase();
@@ -413,8 +391,13 @@ fn is_local_for(rule: &DedupeRule, entry: &CentreEntry) -> bool {
     rule.local.iter().any(|l| *l == name || (!desktop.is_empty() && *l == desktop))
 }
 
-fn within(rule: &DedupeRule, entry: &CentreEntry, now: f64) -> bool {
-    (now - entry.arrived_at).abs() <= rule.window_ms
+fn within(rule: &DedupeRule, entry: &Entry, now: f64) -> bool {
+    (now - entry.arrived_at as f64).abs() <= rule.window_ms
+}
+
+/// The bridge's record a centre entry mirrored off the phone carries.
+pub fn phone_of(entry: &Entry) -> Option<&Phone> {
+    (entry.source == SOURCE).then_some(entry.phone.as_ref()).flatten()
 }
 
 /// A phone arrival against the notification centre's entries: the local entry
@@ -423,12 +406,12 @@ fn within(rule: &DedupeRule, entry: &CentreEntry, now: f64) -> bool {
 pub fn dedupe<'a>(
     rules: &[DedupeRule],
     phone_entry: &Notification,
-    local_entries: &'a [CentreEntry],
+    entries: impl IntoIterator<Item = &'a Entry>,
     now: f64,
-) -> Option<&'a CentreEntry> {
+) -> Option<&'a Entry> {
     let rule = rule_for(rules, &phone_entry.bundle_id)?;
     let phone_keys = readings(&phone_entry.title, &phone_entry.subtitle, &phone_entry.body);
-    local_entries.iter().find(|local| {
+    entries.into_iter().find(|local| {
         is_local_for(rule, local)
             && within(rule, local, now)
             && overlap(&phone_keys, &readings(&local.summary, "", &local.body))
@@ -438,13 +421,12 @@ pub fn dedupe<'a>(
 /// The other direction: a local arrival against the centre's phone entries.
 /// Answers the ids of the phone entries it supersedes, which the caller
 /// removes.
-pub fn superseded(rules: &[DedupeRule], local_entry: &CentreEntry, entries: &[CentreEntry], now: f64) -> Vec<String> {
+pub fn superseded<'a>(rules: &[DedupeRule], local_entry: &Entry, entries: impl IntoIterator<Item = &'a Entry>, now: f64) -> Vec<String> {
     let local_keys = readings(&local_entry.summary, "", &local_entry.body);
     entries
-        .iter()
-        .filter(|entry| entry.source == "iphone")
+        .into_iter()
         .filter_map(|entry| {
-            let phone = entry.phone.as_ref()?;
+            let phone = phone_of(entry)?;
             let rule = rule_for(rules, &phone.bundle_id)?;
             (is_local_for(rule, local_entry)
                 && within(rule, entry, now)
@@ -479,91 +461,24 @@ pub fn in_focus(arrivals: &[Arrival], now: f64, window_sec: f64) -> bool {
     newest.is_some_and(|n| n.silent)
 }
 
-// One-time codes. A bare number is not a code: one of the context words has to
-// be present, which keeps prices, order numbers and years off the clipboard.
-/// Bundle id to an icon name from shell/Theme/icons.js. A call's category
-/// outranks the app, since the phone app raises all three kinds.
-pub(crate) fn app_icon(bundle_id: &str, category: i64) -> &'static str {
-    match category {
-        category::INCOMING_CALL => return "phone-incoming",
-        category::MISSED_CALL => return "phone-missed",
-        category::VOICEMAIL => return "voicemail",
-        _ => {}
-    }
-    match bundle_id.to_lowercase().as_str() {
-        "com.apple.mobilesms" => "message-circle",
-        "com.apple.mobilephone" => "phone",
-        "com.apple.facetime" => "video",
-        "com.apple.mobilemail" => "mail",
-        "com.apple.mobilecal" => "calendar",
-        "com.apple.reminders" => "list-todo",
-        "com.apple.music" => "music",
-        "com.apple.health" => "heart-pulse",
-        "com.apple.maps" => "map",
-        "com.apple.news" => "newspaper",
-        "com.apple.passbook" => "wallet",
-        "net.whatsapp.whatsapp" => "message-circle",
-        "org.whispersystems.signal" => "message-circle",
-        "ph.telegra.telegraph" => "send",
-        "com.hammerandchisel.discord" => "message-square",
-        "com.tinyspeck.chatlyio" => "hash",
-        "com.google.gmail" => "mail",
-        "com.microsoft.office.outlook" => "mail",
-        "com.spotify.client" => "music",
-        _ => "smartphone",
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Action {
-    pub key: &'static str,
-    pub label: String,
-}
-
-/// The bridge's own record, which dedupe and the dismiss sync read.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PhoneInfo {
-    pub id: i64,
-    pub bundle_id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub body: String,
-    pub icon: &'static str,
-    pub category: i64,
-    pub session: i64,
-    pub device_handle: String,
-    pub positive_action: String,
-    pub negative_action: String,
-    pub silent: bool,
-}
-
-/// The fields `NotificationService.notifyPhone()` hands the notification
-/// model's `add()`.
-#[derive(Clone, Debug, PartialEq)]
-pub struct NotificationOut {
-    pub app_name: String,
-    pub summary: String,
-    pub body: String,
-    pub urgency: u8,
-    pub actions: Vec<Action>,
-    pub category: &'static str,
-    pub phone: PhoneInfo,
-}
-
-/// `summary`/`body` are only what a card shows. A ringing call is critical so
-/// it stays up until the phone says it ended; nothing here claims `local`, so
-/// a critical phone entry still waits behind DND like any other app's.
-pub fn to_notification(entry: &Notification) -> NotificationOut {
+/// The centre's card for a phone arrival. `summary`/`body` are only what a
+/// card shows. A ringing call is critical so it stays up until the phone says
+/// it ended; nothing here claims `local`, so a critical phone entry still
+/// waits behind DND like any other app's. ANCS resends an id when the phone
+/// modifies a notification, so the card id is the connection's and the
+/// phone's together.
+pub fn to_notification(entry: &Notification) -> Notif {
     let label = category_label(entry.category);
     let body = if entry.subtitle.is_empty() { entry.body.clone() } else { format!("{}\n{}", entry.subtitle, entry.body) };
     let mut actions = Vec::new();
     if !entry.positive_action.is_empty() {
-        actions.push(Action { key: "positive", label: entry.positive_action.clone() });
+        actions.push(Action { key: "positive".into(), label: entry.positive_action.clone() });
     }
     if !entry.negative_action.is_empty() {
-        actions.push(Action { key: "negative", label: entry.negative_action.clone() });
+        actions.push(Action { key: "negative".into(), label: entry.negative_action.clone() });
     }
-    NotificationOut {
+    Notif {
+        id: format!("iphone-{}-{}", entry.session, entry.id),
         app_name: entry.app_name.clone(),
         summary: if !entry.title.is_empty() {
             entry.title.clone()
@@ -573,23 +488,20 @@ pub fn to_notification(entry: &Notification) -> NotificationOut {
             entry.app_name.clone()
         },
         body,
-        urgency: if entry.category == category::INCOMING_CALL || entry.important { 2 } else { 1 },
+        urgency: if entry.category == INCOMING_CALL || entry.important { Urgency::Critical } else { Urgency::Normal },
         actions,
-        category: if entry.category == category::SOCIAL { "im.received" } else { "" },
-        phone: PhoneInfo {
+        source: SOURCE.into(),
+        phone: Some(Phone {
             id: entry.id,
+            session: entry.session,
             bundle_id: entry.bundle_id.clone(),
             title: entry.title.clone(),
             subtitle: entry.subtitle.clone(),
             body: entry.body.clone(),
-            icon: app_icon(&entry.bundle_id, entry.category),
-            category: entry.category,
-            session: entry.session,
             device_handle: entry.device_handle.clone(),
-            positive_action: entry.positive_action.clone(),
             negative_action: entry.negative_action.clone(),
-            silent: entry.silent,
-        },
+        }),
+        ..Notif::default()
     }
 }
 
@@ -672,33 +584,28 @@ mod tests {
         parse_notification(LINE_SMS)
     }
 
-    fn local(id: &str, summary: &str, body: &str, arrived_at: f64) -> CentreEntry {
-        CentreEntry {
+    fn local(id: &str, summary: &str, body: &str, arrived_at: f64) -> Entry {
+        Entry {
             id: id.into(),
             app_name: "Messages".into(),
             summary: summary.into(),
             body: body.into(),
-            arrived_at,
+            arrived_at: arrived_at as i64,
             ..Default::default()
         }
     }
 
-    // A notification-centre entry for a phone arrival, as notifyPhone adds it.
-    fn phone_entry(record: &Notification, arrived_at: f64) -> CentreEntry {
+    // A notification-centre entry for a phone arrival, as the service adds it.
+    fn phone_entry(record: &Notification, arrived_at: f64) -> Entry {
         let m = to_notification(record);
-        CentreEntry {
-            id: format!("iphone-{}-{}", record.session, record.id),
+        Entry {
+            id: m.id,
             app_name: m.app_name,
             summary: m.summary,
             body: m.body,
-            source: "iphone".into(),
-            phone: Some(PhoneFields {
-                bundle_id: m.phone.bundle_id,
-                title: m.phone.title,
-                subtitle: m.phone.subtitle,
-                body: m.phone.body,
-            }),
-            arrived_at,
+            source: m.source,
+            phone: m.phone,
+            arrived_at: arrived_at as i64,
             ..Default::default()
         }
     }
@@ -982,7 +889,7 @@ mod tests {
     fn phone_arrival_kept_outside_window_or_mismatch() {
         let now = 100000.0;
         let r = rules();
-        let d = |p: &Notification, e: CentreEntry, r: &[DedupeRule]| dedupe(r, p, &[e], now).is_none();
+        let d = |p: &Notification, e: Entry, r: &[DedupeRule]| dedupe(r, p, &[e], now).is_none();
         assert!(d(&phone(), local("9", "Alex", "Still on for Friday?", now - 31000.0), &r));
         assert!(d(&phone(), local("9", "Alex", "Something else", now), &r));
         assert!(d(&phone(), local("9", "Sam", "Still on for Friday?", now), &r));
@@ -998,12 +905,12 @@ mod tests {
     fn dedupe_matches_desktop_entry_and_skips_other_sources() {
         let now = 100000.0;
         let r = rules();
-        let with = |f: fn(&mut CentreEntry)| {
+        let with = |f: fn(&mut Entry)| {
             let mut e = local("9", "Alex", "Still on for Friday?", now);
             f(&mut e);
             e
         };
-        let hit = |e: CentreEntry| dedupe(&r, &phone(), &[e], now).is_some();
+        let hit = |e: Entry| dedupe(&r, &phone(), &[e], now).is_some();
         assert!(hit(with(|e| {
             e.app_name = "whatever".into();
             e.desktop_entry = "es.canarycoders.messages".into();
@@ -1061,7 +968,7 @@ mod tests {
             local("8", "Alex", "Still on for Friday?", now),
         ];
         assert_eq!(superseded(&rules(), &local("9", "Alex", "Still on for Friday?", now), &entries, now).len(), 0);
-        let slack = CentreEntry { app_name: "Slack".into(), ..local("9", "Alex", "Still on for Friday?", now) };
+        let slack = Entry { app_name: "Slack".into(), ..local("9", "Alex", "Still on for Friday?", now) };
         assert_eq!(superseded(&rules(), &slack, &[phone_entry(&phone(), now)], now).len(), 0);
     }
 
@@ -1083,33 +990,25 @@ mod tests {
     #[test]
     fn to_notification_maps_a_message_and_a_call() {
         let m = to_notification(&Notification { subtitle: "Weekend".into(), ..phone() });
+        assert_eq!(m.id, "iphone-77-4012");
+        assert_eq!(m.source, "iphone");
         assert_eq!(m.summary, "Alex");
         assert_eq!(m.body, "Weekend\nStill on for Friday?");
-        assert_eq!(m.urgency, 1);
-        assert_eq!(m.category, "im.received");
+        assert_eq!(m.urgency, Urgency::Normal);
         assert_eq!(m.actions.len(), 1);
         assert_eq!(m.actions[0].key, "negative");
         assert_eq!(m.actions[0].label, "Clear");
-        assert_eq!(m.phone.body, "Still on for Friday?");
-        assert_eq!(m.phone.icon, "message-circle");
-        assert_eq!(m.phone.negative_action, "Clear");
+        let p = m.phone.unwrap();
+        assert_eq!(p.body, "Still on for Friday?");
+        assert_eq!(p.negative_action, "Clear");
+        assert_eq!((p.id, p.session), (4012, 77));
 
         let call = to_notification(&parse_notification(LINE_CALL));
-        assert_eq!(call.urgency, 2);
-        assert_eq!(call.actions.iter().map(|a| a.key).collect::<Vec<_>>().join(","), "positive,negative");
-        assert_eq!(call.phone.icon, "phone-incoming");
+        assert_eq!(call.urgency, Urgency::Critical);
+        assert_eq!(call.actions.iter().map(|a| a.key.as_str()).collect::<Vec<_>>().join(","), "positive,negative");
 
         assert_eq!(to_notification(&Notification { title: "".into(), category: 2, ..phone() }).summary, "Missed call");
         assert_eq!(to_notification(&Notification { title: "".into(), category: 0, ..phone() }).summary, "Messages");
-    }
-
-    #[test]
-    fn app_icon_by_bundle_and_category() {
-        assert_eq!(app_icon("com.apple.MobileSMS", 0), "message-circle");
-        assert_eq!(app_icon("com.apple.mobilephone", 2), "phone-missed");
-        assert_eq!(app_icon("com.apple.mobilephone", 3), "voicemail");
-        assert_eq!(app_icon("com.example.unknown", 0), "smartphone");
-        assert_eq!(app_icon("", 0), "smartphone");
     }
 
     #[test]

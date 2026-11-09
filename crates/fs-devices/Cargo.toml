@@ -5,11 +5,10 @@ edition = "2024"
 publish = false
 
 [dependencies]
+fs-info = { path = "../fs-info" }
 fs-js = { path = "../fs-js" }
 fs-types = { path = "../fs-types" }
 regex = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 unicode-normalization = "0.1"
 
-[dev-dependencies]
-fs-info = { path = "../fs-info" }

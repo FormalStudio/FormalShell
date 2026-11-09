@@ -15,11 +15,11 @@ use fs_info::notifications::{self as model, Action, AddOpts, Notif, Patch, Urgen
 use fs_info::reminders;
 use fs_system::appicon::{DesktopEntry, Window, by_class};
 use fs_js as js;
-use fs_devices::iphone;
 use fs_notifd::{CloseReason, Event, Image, ImageData, Server};
 use serde_json::{Value, json};
 
 use super::icons;
+use super::iphone;
 use super::state::{self, Field};
 use crate::runtime::{Ctx, now_ms};
 use crate::services::appicon::{applications_dirs, scan_launchable};
@@ -113,10 +113,7 @@ pub struct State {
     pub reminders: Vec<reminders::Entry>,
     reminders_seen: Option<Value>,
     reminder_serial: u64,
-    /// `iphone.notifications.dedupe`, as last read.
-    rules: Vec<iphone::DedupeRule>,
-    /// The key as last read, absent included.
-    rules_seen: Option<Option<Value>>,
+    phone: iphone::Mirror,
 }
 
 impl State {
@@ -146,15 +143,7 @@ impl State {
                 } else {
                     let opts = AddOpts { quiet: false, timeout_ms: Some(timeout_ms) };
                     self.model = model::add(&self.model, &notif, now, &opts);
-                    // The local client wins: a phone card already up for the
-                    // same message goes, and the phone keeps its own copy.
-                    if let Some(entry) = self.find(&notif.id).map(centre_entry) {
-                        let all: Vec<iphone::CentreEntry> = self.all().map(centre_entry).collect();
-                        let stale = iphone::superseded(&self.rules, &entry, &all, now as f64);
-                        if !stale.is_empty() {
-                            self.model = model::dismiss_many(&self.model, &stale);
-                        }
-                    }
+                    self.phone.local_arrived(&mut self.model, &notif.id, now);
                 }
                 self.after_change();
                 true
@@ -169,14 +158,13 @@ impl State {
                 true
             }
             Diff::Phone { record, quiet } => {
-                self.notify_phone(&record, quiet);
+                self.phone.phone_arrived(&mut self.model, &record, quiet, now);
                 true
             }
             Diff::DropPhone(id) => {
-                let ids: Vec<String> = self.all().filter(|e| phone_id(e) == Some(id)).map(|e| e.id.clone()).collect();
-                self.model = model::dismiss_many(&self.model, &ids);
+                let dropped = iphone::withdraw(&mut self.model, id);
                 self.after_change();
-                !ids.is_empty()
+                dropped
             }
             Diff::Op(op) => {
                 match op {
@@ -210,51 +198,9 @@ impl State {
         m.popups.iter().chain(&m.pending).chain(&m.past)
     }
 
-    /// NotificationService.notifyPhone(). ANCS resends an id when the phone
-    /// modifies a notification, which updates its card in place.
-    fn notify_phone(&mut self, record: &iphone::Notification, quiet: bool) {
-        let now = now_ms();
-        let m = iphone::to_notification(record);
-        let id = format!("iphone-{}-{}", record.session, record.id);
-        let phone = json!({
-            "id": record.id,
-            "bundleId": record.bundle_id,
-            "title": record.title,
-            "subtitle": record.subtitle,
-            "body": record.body,
-            "session": record.session,
-            "deviceHandle": record.device_handle,
-            "negativeAction": record.negative_action,
-        });
-        if self.find(&id).is_some() {
-            let patch = Patch { summary: Some(m.summary), body: Some(m.body), phone: Some(phone), ..Patch::default() };
-            self.model = model::update(&self.model, &id, &patch, now);
-            return;
-        }
-        let all: Vec<iphone::CentreEntry> = self.all().map(centre_entry).collect();
-        if !self.rules.is_empty() && iphone::dedupe(&self.rules, record, &all, now as f64).is_some() {
-            return;
-        }
-        let notif = Notif {
-            id,
-            app_name: m.app_name,
-            summary: m.summary,
-            body: m.body,
-            urgency: Urgency::try_from(m.urgency).unwrap_or_default(),
-            actions: m.actions.iter().map(|a| Action { key: a.key.into(), label: a.label.clone() }).collect(),
-            source: "iphone".into(),
-            phone: Some(phone),
-            ..Default::default()
-        };
-        self.model = model::add(&self.model, &notif, now, &AddOpts { quiet, timeout_ms: None });
-    }
-
-    /// The owner closed a card mirrored off the phone, so the phone clears
-    /// it too, through its own negative action when it offers one.
     fn phone_dismissed(&self, id: &str) {
-        let Some(phone) = self.find(id).filter(|e| e.source == "iphone").and_then(|e| e.phone.as_ref()) else { return };
-        if phone["negativeAction"].as_str().is_some_and(|a| !a.is_empty()) {
-            phone_invoke(phone, false);
+        if let Some(e) = self.find(id) {
+            iphone::card_closed(e);
         }
     }
 
@@ -270,14 +216,8 @@ impl State {
         self.icons.retain(|k, _| live.contains(k.as_str()));
     }
 
-    /// Reads `iphone.notifications.dedupe` whenever settings.json moved.
     pub fn sync_config(&mut self, raw: Option<&Value>) {
-        if self.rules_seen.as_ref().is_some_and(|seen| seen.as_ref() == raw) {
-            return;
-        }
-        self.rules_seen = Some(raw.cloned());
-        let raw = raw.cloned().unwrap_or_else(iphone::default_dedupe);
-        self.rules = iphone::dedupe_rules(&raw);
+        self.phone.sync_config(raw);
     }
 
     /// Mirrors state.json's dnd and reminders whenever the file moved.
@@ -383,8 +323,8 @@ impl State {
             self.local_invoked.push((id.to_owned(), key.to_owned()));
             return;
         }
-        match self.find(id).filter(|e| e.source == "iphone").and_then(|e| e.phone.as_ref()) {
-            Some(phone) => phone_invoke(phone, key == "positive"),
+        match self.find(id).and_then(iphone::phone_of) {
+            Some(phone) => iphone::card_invoke(phone, key == "positive"),
             None => invoke(id, key),
         }
     }
@@ -528,52 +468,6 @@ fn instant_at(at: i64, now: Instant) -> Instant {
 enum Cmd {
     Close(u32, CloseReason),
     Invoke(u32, String),
-    /// `omarchy-iphone-bridge invoke`, one at a time.
-    Phone(Vec<String>),
-}
-
-fn phone_id(e: &model::Entry) -> Option<i64> {
-    (e.source == "iphone").then(|| e.phone.as_ref()?["id"].as_i64()).flatten()
-}
-
-/// The centre entry dedupe reads.
-fn centre_entry(e: &model::Entry) -> iphone::CentreEntry {
-    let field = |k: &str| e.phone.as_ref().and_then(|p| p[k].as_str()).unwrap_or("").to_owned();
-    iphone::CentreEntry {
-        id: e.id.clone(),
-        app_name: e.app_name.clone(),
-        desktop_entry: e.desktop_entry.clone(),
-        summary: e.summary.clone(),
-        body: e.body.clone(),
-        source: e.source.clone(),
-        local: e.local,
-        phone: e.phone.as_ref().map(|_| iphone::PhoneFields {
-            bundle_id: field("bundleId"),
-            title: field("title"),
-            subtitle: field("subtitle"),
-            body: field("body"),
-        }),
-        arrived_at: e.arrived_at as f64,
-    }
-}
-
-fn phone_invoke(phone: &Value, positive: bool) {
-    let handle = phone["deviceHandle"].as_str().unwrap_or("");
-    if handle.is_empty() {
-        return;
-    }
-    let args = vec![
-        "invoke".into(),
-        "--handle".into(),
-        handle.to_owned(),
-        "--id".into(),
-        phone["id"].as_i64().unwrap_or(0).to_string(),
-        "--kind".into(),
-        if positive { "positive" } else { "negative" }.into(),
-    ];
-    if let Some(tx) = CMD.get() {
-        let _ = tx.try_send(Cmd::Phone(args));
-    }
 }
 
 static CMD: OnceLock<async_channel::Sender<Cmd>> = OnceLock::new();
@@ -719,15 +613,6 @@ async fn run(ctx: Ctx) {
                         super::activity::notification_closed(id);
                         c.publish(store::Diff::Notifications(Diff::Closed(id.to_string())));
                     }
-                }
-                Cmd::Phone(args) => {
-                    let _ = crate::services::proc::command("omarchy-iphone-bridge")
-                        .args(&args)
-                        .stdin(async_process::Stdio::null())
-                        .stdout(async_process::Stdio::null())
-                        .stderr(async_process::Stdio::null())
-                        .status()
-                        .await;
                 }
             }
         }
