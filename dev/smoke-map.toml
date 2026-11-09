@@ -180,6 +180,7 @@ paths = [
   "crates/fs-menu/src/clipboard/**",
   "crates/fs-menu/src/providers/clipboard.rs",
   "crates/formalshell-rs/src/services/clipboard.rs",
+  "crates/formalshell-rs/src/services/clipboard/**",
   "crates/formalshell-rs/src/ipc/clipboard.rs",
 ]
 runs = ["--clipboard", "--clipssh-image", "--launcher-preview", "--launcher-send"]
@@ -355,7 +356,7 @@ paths = ["crates/formalshell-rs/src/surfaces/panel/audio.rs", "crates/formalshel
 runs = ["--panel audio", "--panel-keys", "--osd", "--quick-settings"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/network.rs", "crates/formalshell-rs/src/services/devices/network.rs", "crates/formalshell-rs/src/services/devices/network/**", "crates/formalshell-rs/src/ipc/network.rs", "crates/fs-devices/src/network/**"]
 runs = ["--panel network", "--speedtest", "--panel network --tooltip", "--panel network --tooltip-travel", "--device-routes", "--quick-settings-devices"]
 
 [[rule]]

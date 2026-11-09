@@ -87,6 +87,8 @@ pub(crate) fn eap_profile(ssid: &str, owner: Option<&str>, identity: &str, passw
 pub(crate) struct Profile {
     pub ssid: String,
     pub key_mgmt: Option<String>,
+    /// `802-11-wireless.hidden`.
+    pub hidden: bool,
 }
 
 impl Profile {
@@ -109,9 +111,16 @@ impl Profile {
             .and_then(|s| s.get("key-mgmt"))
             .and_then(|v| v.try_clone().ok())
             .and_then(|v| String::try_from(v).ok());
+        let hidden = settings
+            .get("802-11-wireless")
+            .and_then(|s| s.get("hidden"))
+            .and_then(|v| v.try_clone().ok())
+            .and_then(|v| bool::try_from(v).ok())
+            .unwrap_or(false);
         Some(Self {
             ssid: String::from_utf8_lossy(&bytes).into_owned(),
             key_mgmt,
+            hidden,
         })
     }
 

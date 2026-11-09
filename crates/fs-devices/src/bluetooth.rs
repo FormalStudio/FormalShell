@@ -9,29 +9,20 @@ use regex::Regex;
 use fs_js as js;
 use fs_types::{BtAddress, Fraction};
 
-/// BlueZ's connection state for a device.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DeviceState {
-    #[default]
-    Disconnected,
-    Connected,
-    Disconnecting,
-    Connecting,
-}
-
 /// One BlueZ device as the panel and the other device models see it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Device {
     pub address: BtAddress,
-    pub dbus_path: String,
+    /// What the user sees: BlueZ's alias, else the name the device reports.
     pub name: String,
+    /// The name the device reports, whatever its alias.
     pub device_name: String,
     pub connected: bool,
     pub paired: bool,
     pub bonded: bool,
     pub trusted: bool,
     pub pairing: bool,
-    pub state: DeviceState,
+    pub connecting: bool,
     /// Battery1's level; none while the device reports no battery.
     pub battery: Option<Fraction>,
 }
@@ -53,12 +44,8 @@ pub(crate) fn has_human_name(name: &str) -> bool {
     !(label.is_empty() || BtAddress::is_label(label) || is_uuid_shaped(label))
 }
 
-fn label(device: &Device) -> &str {
-    if !device.name.is_empty() { &device.name } else { &device.device_name }
-}
-
 fn sort_by_label(devices: &mut [&Device]) {
-    devices.sort_by(|a, b| js::locale_compare(label(a), label(b)));
+    devices.sort_by(|a, b| js::locale_compare(&a.name, &b.name));
 }
 
 #[derive(Debug, Default)]
@@ -75,7 +62,7 @@ pub struct Buckets<'a> {
 pub fn buckets(devices: &[Device], discovering: bool) -> Buckets<'_> {
     let mut out = Buckets::default();
     for d in devices {
-        if !has_human_name(label(d)) {
+        if !has_human_name(&d.name) {
             continue;
         }
         if d.connected {
@@ -97,7 +84,7 @@ pub fn activity_text(device: Option<&Device>) -> &'static str {
     match device {
         None => "",
         Some(d) if d.pairing => "Pairing\u{2026}",
-        Some(d) if d.state == DeviceState::Connecting => "Connecting\u{2026}",
+        Some(d) if d.connecting => "Connecting\u{2026}",
         Some(_) => "",
     }
 }
@@ -191,20 +178,14 @@ mod tests {
     }
 
     #[test]
-    fn a_device_label_falls_back_to_its_reported_name() {
-        let devices = [Device { paired: true, device_name: "Reported".into(), ..Default::default() }];
-        assert_eq!(buckets(&devices, false).known.len(), 1);
-    }
-
-    #[test]
     fn activity_text_pairing_beats_a_connecting_state() {
-        let d = Device { pairing: true, state: DeviceState::Connecting, ..dev("A") };
+        let d = Device { pairing: true, connecting: true, ..dev("A") };
         assert_eq!(activity_text(Some(&d)), "Pairing\u{2026}");
     }
 
     #[test]
     fn activity_text_connecting_state() {
-        let d = Device { state: DeviceState::Connecting, ..dev("A") };
+        let d = Device { connecting: true, ..dev("A") };
         assert_eq!(activity_text(Some(&d)), "Connecting\u{2026}");
     }
 

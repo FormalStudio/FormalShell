@@ -85,7 +85,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
             format!(
                 r#"{{"address":{},"name":{},"paired":{},"trusted":{},"connected":{}}}"#,
                 quote(&d.address.to_string()),
-                quote(if d.name.is_empty() { &d.device_name } else { &d.name }),
+                quote(&d.name),
                 d.paired,
                 d.trusted,
                 d.connected

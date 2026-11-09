@@ -96,8 +96,7 @@ pub fn connected_paired(paired: &[Paired], bluetooth: &[bluetooth::Device]) -> V
         }
         let address = bt.address;
         if let Some(p) = paired.iter().find(|p| p.address == address && !p.demo) {
-            let name = if !bt.name.is_empty() { &bt.name } else { &bt.device_name };
-            out.push(Info { address, model: p.model.clone(), name: name.clone() });
+            out.push(Info { address, model: p.model.clone(), name: bt.name.clone() });
         }
     }
     out

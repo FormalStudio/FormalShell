@@ -7,7 +7,8 @@
 //! answer: a method that errors fails its row, one that never answers fails
 //! it after [`ACTION_TIMEOUT`].
 //! Discovery runs only while the panel is open on a powered adapter, and is
-//! re-armed whenever BlueZ lets it lapse.
+//! re-armed whenever BlueZ lets it lapse; a refused start waits for the
+//! adapter to change (it powering up) rather than retrying on a timer.
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -15,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
-use fs_bluez::state::AdapterState;
+use fs_bluez::state::{AdapterState, Device as BluezDevice, DeviceState, Event, known};
 use fs_types::BtAddress;
 use futures_lite::{FutureExt, future};
 
@@ -85,7 +86,33 @@ fn state_word(s: AdapterState) -> &'static str {
     }
 }
 
-use fs_bluez::state::{known, matters};
+/// The panel's view of a BlueZ device: its name is the label the user sees.
+fn panel_device(d: BluezDevice) -> fs_devices::bluetooth::Device {
+    fs_devices::bluetooth::Device {
+        address: d.address,
+        name: d.label().to_owned(),
+        device_name: d.name,
+        connected: d.connected,
+        paired: d.paired,
+        bonded: d.bonded,
+        trusted: d.trusted,
+        pairing: d.pairing,
+        connecting: d.state == DeviceState::Connecting,
+        battery: d.battery,
+    }
+}
+
+/// Whether an event can move what a surface shows: any adapter change, and
+/// a device change for a known device, one already on show (`shown`, by
+/// address), or any device while a panel is `open`.
+fn matters(e: &Event, open: bool, shown: &[BtAddress]) -> bool {
+    match e {
+        Event::DeviceAdded(d) | Event::DeviceChanged(d) => open || known(d) || shown.contains(&d.address),
+        Event::DeviceRemoved { address, .. } => open || shown.contains(address),
+        Event::AdapterAdded(_) | Event::AdapterChanged(_) | Event::AdapterRemoved { .. } => true,
+        Event::PlayerChanged(_) | Event::PlayerRemoved { .. } => true,
+    }
+}
 
 /// Signals that land within one frame of each other make one view.
 const COALESCE: Duration = Duration::from_millis(16);
@@ -94,12 +121,8 @@ fn snapshot(state: &fs_bluez::state::State, open: bool) -> Bluetooth {
     let headsets = Some(headsets::read(state));
     let Some(adapter) = state.default_adapter() else { return Bluetooth { headsets, ..Bluetooth::default() } };
     let devices: Vec<_> =
-        state.devices_of(&adapter.path).into_iter().map(|d| d.info).filter(|d| open || known(d)).collect();
-    let connected = devices
-        .iter()
-        .filter(|d| d.connected)
-        .map(|d| if d.name.is_empty() { d.device_name.clone() } else { d.name.clone() })
-        .collect();
+        state.devices_of(&adapter.path).into_iter().filter(|d| open || known(d)).map(panel_device).collect();
+    let connected = devices.iter().filter(|d| d.connected).map(|d| d.name.clone()).collect();
     Bluetooth {
         powered: Some(adapter.powered),
         connected,
@@ -111,6 +134,14 @@ fn snapshot(state: &fs_bluez::state::State, open: bool) -> Bluetooth {
         failure: None,
         headsets,
     }
+}
+
+/// What the earbuds backends cross their CLI lists with: the default
+/// adapter's devices.
+fn earbuds_devices(state: &fs_bluez::state::State) -> Vec<fs_devices::bluetooth::Device> {
+    let Some(adapter) = state.default_adapter() else { return Vec::new() };
+    let live: Vec<_> = state.devices_of(&adapter.path).into_iter().map(panel_device).collect();
+    fs_devices::earbuds::bluetooth_devices(&live)
 }
 
 /// No system bus, or no BlueZ client on it: no adapter and no headsets.
@@ -167,8 +198,8 @@ fn remotes(state: &fs_bluez::state::State, last: &[Remote]) -> Vec<Remote> {
 }
 
 enum Done {
-    /// A discovery attempt finished, armed or refused.
-    Armed,
+    /// A discovery attempt finished; true when BlueZ refused it.
+    Armed(bool),
     Action(u64, Option<&'static str>),
 }
 
@@ -204,6 +235,7 @@ async fn run(ctx: Ctx) {
     bluez.watch_all(open);
     let mut flight = ActionInFlight::<(BtAddress, ActionKind), (BtAddress, &'static str)>::default();
     let mut arming = false;
+    let mut refused = false;
     let mut refresh = true;
     let mut last: Option<Bluetooth> = None;
     let mut last_shown: Vec<BtAddress> = Vec::new();
@@ -216,19 +248,22 @@ async fn run(ctx: Ctx) {
             let snap = bluez.state();
             if let Some(a) = snap.default_adapter()
                 && open
-                && a.powered
+                && a.state == AdapterState::Enabled
                 && !a.discovering
                 && !arming
+                && !refused
             {
                 arming = true;
                 let (b, path, tx) = (bluez.clone(), a.path.clone(), done_tx.clone());
                 ctx.spawn(async move {
-                    // BlueZ refuses StartDiscovery while the adapter powers up.
-                    if let Err(err) = b.start_discovery(&path).await {
-                        eprintln!("bluetooth: discovery: {err}");
-                        async_io::Timer::after(Duration::from_secs(1)).await;
-                    }
-                    let _ = tx.send(Done::Armed).await;
+                    let refused = match b.start_discovery(&path).await {
+                        Err(err) if !err.is_in_progress() => {
+                            eprintln!("bluetooth: discovery: {err}");
+                            true
+                        }
+                        _ => false,
+                    };
+                    let _ = tx.send(Done::Armed(refused)).await;
                 });
             }
             let mut view = snapshot(&snap, open);
@@ -246,7 +281,7 @@ async fn run(ctx: Ctx) {
                 ctx.publish(store::Diff::Media(media::Diff::Remotes(next.clone())));
                 last_remotes = next;
             }
-            let buds = bluez.earbuds_devices();
+            let buds = earbuds_devices(&snap);
             if last_buds.as_ref() != Some(&buds) {
                 super::earbuds::bluetooth(buds.clone());
                 last_buds = Some(buds);
@@ -260,9 +295,13 @@ async fn run(ctx: Ctx) {
         match wake {
             Wake::Gone => return,
             Wake::State(first) => {
-                refresh = matters(&first, open, &last_shown);
+                let mut seen = |e: &Event| {
+                    refused &= !matches!(e, Event::AdapterAdded(_) | Event::AdapterChanged(_));
+                    matters(e, open, &last_shown)
+                };
+                refresh = seen(&first);
                 while let Ok(e) = events.try_recv() {
-                    refresh |= matters(&e, open, &last_shown);
+                    refresh |= seen(&e);
                 }
                 if refresh {
                     // A burst lands as one view, a frame's worth later.
@@ -270,7 +309,10 @@ async fn run(ctx: Ctx) {
                     while events.try_recv().is_ok() {}
                 }
             }
-            Wake::Done(Done::Armed) => arming = false,
+            Wake::Done(Done::Armed(turned_down)) => {
+                arming = false;
+                refused = turned_down;
+            }
             Wake::Done(Done::Action(generation, result)) => {
                 flight.end(generation, |(address, _)| result.map(|text| (address, text)));
             }
@@ -350,22 +392,17 @@ async fn run_action(b: &fs_bluez::Bluez, address: BtAddress, kind: ActionKind) -
 /// accepted; any other device's are refused.
 async fn pair(b: &fs_bluez::Bluez, address: BtAddress) -> fs_bluez::Result<()> {
     use fs_bluez::agent::{AgentRequest, Capability};
-    // A pairing cut off by ACTION_TIMEOUT never got to unregister.
-    let _ = b.unregister_agent().await;
-    let requests = match b.register_agent(Capability::DisplayYesNo).await {
-        Ok(rx) => Some(rx),
+    let session = match b.register_agent(Capability::DisplayYesNo).await {
+        Ok(session) => Some(session),
         Err(e) => {
             eprintln!("bluetooth: agent: {e}");
             None
         }
     };
-    let ours = format!("/dev_{}", address.path_segment());
     let answer = async {
-        let mine = |device: &str| device.ends_with(&ours);
-        while let Some(Ok(request)) = match &requests {
-            Some(rx) => Some(rx.recv().await),
-            None => None,
-        } {
+        let Some(session) = &session else { return future::pending().await };
+        let mine = |device: &str| fs_bluez::is_device_path(device, address);
+        while let Ok(request) = session.requests().recv().await {
             match request {
                 AgentRequest::Confirm { device, reply, .. }
                 | AgentRequest::Authorize { device, reply }
@@ -383,13 +420,7 @@ async fn pair(b: &fs_bluez::Bluez, address: BtAddress) -> fs_bluez::Result<()> {
         }
         future::pending().await
     };
-    let out = b.pair(address).or(answer).await;
-    if requests.is_some()
-        && let Err(e) = b.unregister_agent().await
-    {
-        eprintln!("bluetooth: agent: {e}");
-    }
-    out
+    b.pair(address).or(answer).await
 }
 
 /// The bluetooth cell's right click: the default adapter's radio flipped.
@@ -412,4 +443,34 @@ pub fn set_trust(ctx: &Ctx, address: BtAddress, trusted: bool) {
             eprintln!("bluetooth: {err}");
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(address: &str, paired: bool) -> BluezDevice {
+        BluezDevice { address: address.parse().unwrap(), paired, ..BluezDevice::default() }
+    }
+
+    /// A discovery nobody asked for, with the panel shut: its strangers and
+    /// their RSSI reach no surface.
+    #[test]
+    fn a_stranger_matters_only_while_the_panel_is_open() {
+        let shown = ["AA:BB:CC:DD:EE:FF".parse().unwrap()];
+        let stranger = device("11:22:33:44:55:66", false);
+        let added = Event::DeviceAdded(stranger.clone());
+        let removed = Event::DeviceRemoved { path: String::new(), address: stranger.address };
+        assert!(!matters(&added, false, &shown) && !matters(&removed, false, &shown));
+        assert!(matters(&added, true, &shown) && matters(&removed, true, &shown));
+    }
+
+    #[test]
+    fn a_paired_or_shown_device_matters_shut() {
+        let paired = device("AA:BB:CC:DD:EE:01", true);
+        assert!(matters(&Event::DeviceChanged(paired), false, &[]));
+        let shown = device("AA:BB:CC:DD:EE:02", false);
+        assert!(matters(&Event::DeviceChanged(shown.clone()), false, &[shown.address]));
+        assert!(matters(&Event::AdapterRemoved { path: String::new() }, false, &[]));
+    }
 }

@@ -30,8 +30,8 @@ pub struct Buds {
     pub name: String,
 }
 
-/// `device_name` is the name the buds report, `name` the alias the user may
-/// have changed.
+/// `device_name` is the name the buds report, `name` the label the user sees
+/// (the alias they may have changed).
 pub fn connected_buds(bluetooth: &[bluetooth::Device]) -> Vec<Buds> {
     bluetooth
         .iter()
@@ -39,7 +39,7 @@ pub fn connected_buds(bluetooth: &[bluetooth::Device]) -> Vec<Buds> {
         .filter(|bt| is_galaxy_buds(&bt.device_name) || is_galaxy_buds(&bt.name))
         .map(|bt| Buds {
             address: bt.address,
-            name: if !bt.name.is_empty() { bt.name.clone() } else { bt.device_name.clone() },
+            name: bt.name.clone(),
         })
         .collect()
 }

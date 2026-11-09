@@ -6,6 +6,7 @@
 use async_channel::{Receiver, Sender, bounded};
 use zbus::zvariant::ObjectPath;
 
+/// The object path agents are served under, one child per registration.
 pub const AGENT_PATH: &str = "/org/formalshell/bluez/agent";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,7 +30,7 @@ impl Capability {
     }
 }
 
-/// `device` is the device's object path, which is `Device::info.dbus_path`.
+/// `device` is the device's object path, which is `Device::path`.
 #[derive(Debug)]
 pub enum AgentRequest {
     Confirm { device: String, passkey: u32, reply: Sender<bool> },

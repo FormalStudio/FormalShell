@@ -324,8 +324,8 @@ pub fn kopuz_lines(lyrics: &fs_kopuz::Lyrics) -> Vec<Line> {
 }
 
 async fn kopuz(key: &str) -> Option<Vec<Line>> {
-    let client = super::kopuz::client()?;
-    let lyrics = super::kopuz::timed(client.lyrics(key)).await?.ok()?;
+    let client = fs_kopuz::client()?;
+    let lyrics = fs_kopuz::timed(client.lyrics(key)).await?.ok()?;
     let lines = kopuz_lines(&lyrics);
     model::has_usable_timing(&lines).then_some(lines)
 }

@@ -5,7 +5,6 @@
 use std::collections::HashSet;
 
 use fs_devices::bluetooth::{Device, activity_text, battery_text, buckets};
-use fs_devices::network::model::{WifiRowLike, sort_wifi_rows};
 
 use crate::node::{ActionEntry, Kind, Node};
 
@@ -33,9 +32,8 @@ pub struct WifiNetwork {
     pub enterprise: bool,
     /// An access point broadcasts it; false only for a saved network.
     pub in_range: bool,
+    /// 0..1.
     pub signal: f64,
-    /// Overrides `signal` when the source carries its own 0..1 fraction.
-    pub signal_strength: Option<f64>,
     /// Its security class as NetworkManager reads it (`WPA2 Personal`).
     pub security: String,
     /// The device's addresses on it, `address/prefix`, while connected.
@@ -55,22 +53,10 @@ pub struct WifiState {
     pub failure_text: String,
 }
 
-impl WifiRowLike for WifiNetwork {
-    fn connected(&self) -> bool {
-        self.connected
-    }
-
-    fn known(&self) -> bool {
-        self.known
-    }
-
-    fn signal_strength(&self) -> f64 {
-        self.signal_strength.unwrap_or(self.signal)
-    }
-}
-
-/// Wi-Fi route. The level lists networks in range; saved ones out of range
-/// sit one level down under "Known networks". Saved networks are reachable
+/// Wi-Fi route. The level lists networks in range in the order the source
+/// gives them (the panel's: connected, visible, known, strongest first);
+/// saved ones out of range sit one level down under "Known networks". Saved
+/// networks are reachable
 /// from a root query; nearby ones are `local_only`, so a stranger's SSID
 /// never turns up in a search typed outside the level. Enter on a secured
 /// unknown network asks for a password, Shift+Enter on a saved one forgets it,
@@ -86,7 +72,7 @@ pub fn wifi_rows(st: &WifiState) -> Vec<Node> {
     let named: Vec<WifiNetwork> =
         st.networks.iter().filter(|n| !n.name.is_empty() && seen.insert(n.name.as_str())).cloned().collect();
     let (near, mut away): (Vec<WifiNetwork>, Vec<WifiNetwork>) = named.into_iter().partition(|n| n.in_range || n.connected);
-    let mut rows: Vec<Node> = sort_wifi_rows(&near).into_iter().map(|n| wifi_row(st, n)).collect();
+    let mut rows: Vec<Node> = near.into_iter().map(|n| wifi_row(st, n)).collect();
     if rows.is_empty() {
         rows.push(Node::note("wifi.empty", "No networks found"));
     }
@@ -164,7 +150,7 @@ pub fn is_wifi_network(node: &Node) -> bool {
 /// connected. Each a line with its value trailing, nothing to run.
 pub fn wifi_details(n: &WifiNetwork) -> Vec<Node> {
     let line = |key: &str, label: &str, value: String| Node { meta: Some(value), ..Node::new(format!("wifi.details.{key}"), label, Kind::Note) };
-    let signal = if n.in_range { format!("{}%", (n.signal_strength() * 100.0).round()) } else { "Not in range".to_owned() };
+    let signal = if n.in_range { format!("{}%", (n.signal * 100.0).round()) } else { "Not in range".to_owned() };
     let mut rows = vec![line("security", "Security", n.security.clone()), line("signal", "Signal", signal)];
     if n.connected {
         rows.extend(n.addresses.iter().enumerate().map(|(i, a)| line(&format!("address.{i}"), "IP address", a.clone())));
@@ -178,10 +164,6 @@ pub struct BluetoothState {
     pub available: bool,
     pub enabled: bool,
     pub devices: Vec<Device>,
-}
-
-fn device_label(d: &Device) -> &str {
-    if !d.name.is_empty() { &d.name } else { &d.device_name }
 }
 
 /// Bluetooth route. Paired devices only: pairing is watching a scan fill in,
@@ -213,7 +195,7 @@ pub fn bluetooth_rows(st: &BluetoothState) -> Vec<Node> {
                 ActionEntry { keep_open: Some(true), ..ActionEntry::new("forget", "Forget", format!("@ipc:bluetooth.forget:{}", d.address)).destructive() },
                 ActionEntry::new("panel", "Open Bluetooth panel", "@ipc:panel.open:bluetooth"),
             ],
-            ..Node::new(format!("bluetooth.dev.{}", id_part(&d.address.to_string())), device_label(d), Kind::Action)
+            ..Node::new(format!("bluetooth.dev.{}", id_part(&d.address.to_string())), d.name.clone(), Kind::Action)
         })
         .collect()
 }

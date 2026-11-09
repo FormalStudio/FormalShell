@@ -245,7 +245,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     let bt_sub = match connected.as_slice() {
         _ if !bt_on => None,
         [] => None,
-        [one] => Some(if one.name.is_empty() { one.device_name.clone() } else { one.name.clone() }),
+        [one] => Some(one.name.clone()),
         many => Some(format!("{} connected", many.len())),
     };
     out.push(
@@ -573,7 +573,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             let mut lines: Vec<Line> = Vec::new();
             if b.powered == Some(true) {
                 for d in b.devices.iter().filter(|d| d.paired) {
-                    let name = if d.name.is_empty() { &d.device_name } else { &d.name };
+                    let name = &d.name;
                     let doing = b.action.as_ref().filter(|(a, _)| *a == d.address).map(|(_, k)| k.text().to_owned());
                     let failed = b.failure.as_ref().filter(|(a, _)| *a == d.address).map(|(_, why)| (*why).to_owned());
                     let word = if d.connected { "Disconnect" } else { "Connect" };

@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use fs_dbus::prop;
 pub use fs_dbus::Props;
-use fs_devices::bluetooth::{self, DeviceState};
 use fs_types::{BtAddress, Fraction};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -41,15 +40,45 @@ pub struct Adapter {
     pub pairable: bool,
 }
 
-/// `info.name` is BlueZ's `Alias` (what the user sees),
-/// `info.device_name` is BlueZ's own `Name`.
+/// BlueZ's connection state for a device.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeviceState {
+    #[default]
+    Disconnected,
+    Connected,
+    Disconnecting,
+    Connecting,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Device {
-    pub info: bluetooth::Device,
+    pub address: BtAddress,
+    /// Object path of the `Device1`.
+    pub path: String,
     /// Object path of the owning `Adapter1`.
     pub adapter: String,
+    /// BlueZ's `Alias`, what the user sees.
+    pub alias: String,
+    /// BlueZ's own `Name`, the one the device reports.
+    pub name: String,
     pub icon: String,
     pub rssi: Option<i16>,
+    pub paired: bool,
+    pub bonded: bool,
+    pub trusted: bool,
+    pub connected: bool,
+    /// `Pair()` is running.
+    pub pairing: bool,
+    pub state: DeviceState,
+    /// Battery1's level; none while the device reports no battery.
+    pub battery: Option<Fraction>,
+}
+
+impl Device {
+    /// The alias, else the name the device reports.
+    pub fn label(&self) -> &str {
+        if self.alias.is_empty() { &self.name } else { &self.alias }
+    }
 }
 
 /// A remote's AVRCP target (`MediaPlayer1`, a phone or tablet streaming
@@ -109,7 +138,7 @@ struct Entry {
 impl Entry {
     fn view(&self) -> Device {
         let mut d = self.device.clone();
-        d.info.state = match (d.info.connected, self.connecting, self.disconnecting) {
+        d.state = match (d.connected, self.connecting, self.disconnecting) {
             (false, true, _) => DeviceState::Connecting,
             (true, _, true) => DeviceState::Disconnecting,
             (true, _, _) => DeviceState::Connected,
@@ -169,28 +198,28 @@ fn apply_adapter(a: &mut Adapter, props: &Props) {
 
 fn apply_device(d: &mut Device, props: &Props, invalidated: &[String]) {
     if let Some(v) = prop::<String>(props, "Address").and_then(|v| BtAddress::parse(&v)) {
-        d.info.address = v;
+        d.address = v;
     }
     if let Some(v) = prop::<String>(props, "Name") {
-        d.info.device_name = v;
+        d.name = v;
     }
     if let Some(v) = prop::<String>(props, "Alias") {
-        d.info.name = v;
+        d.alias = v;
     }
     if let Some(v) = prop::<String>(props, "Icon") {
         d.icon = v;
     }
     if let Some(v) = prop::<bool>(props, "Paired") {
-        d.info.paired = v;
+        d.paired = v;
     }
     if let Some(v) = prop::<bool>(props, "Bonded") {
-        d.info.bonded = v;
+        d.bonded = v;
     }
     if let Some(v) = prop::<bool>(props, "Trusted") {
-        d.info.trusted = v;
+        d.trusted = v;
     }
     if let Some(v) = prop::<bool>(props, "Connected") {
-        d.info.connected = v;
+        d.connected = v;
     }
     if let Some(v) = prop::<i16>(props, "RSSI") {
         d.rssi = Some(v);
@@ -233,30 +262,18 @@ fn apply_player(p: &mut Player, props: &Props) {
 /// `Battery1.Percentage` is 0..100; the shell's models hold a 0..1 fraction.
 fn apply_battery(d: &mut Device, props: &Props, invalidated: &[String]) {
     if let Some(p) = prop::<u8>(props, "Percentage") {
-        d.info.battery = Some(Fraction::from_fraction(f64::from(p) / 100.0));
+        d.battery = Some(Fraction::from_fraction(f64::from(p) / 100.0));
     }
     if invalidated.iter().any(|k| k == "Percentage") {
-        d.info.battery = None;
+        d.battery = None;
     }
 }
 
-/// A device anything shows while no Bluetooth panel or scan is open: one the
-/// user has a bond with or a link to. Strangers a discovery turns up wait for
-/// the panel.
-pub fn known(d: &bluetooth::Device) -> bool {
+/// A device worth following while no Bluetooth panel or scan is open: one
+/// the user has a bond with or a link to. Strangers a discovery turns up
+/// wait for a wider subscription.
+pub fn known(d: &Device) -> bool {
     d.paired || d.bonded || d.trusted || d.connected
-}
-
-/// Whether an event can move what a surface shows: any adapter change, and a
-/// device change for a known device, one already on show (`shown`, by
-/// address), or any device while a panel is `open`.
-pub fn matters(e: &Event, open: bool, shown: &[BtAddress]) -> bool {
-    match e {
-        Event::DeviceAdded(d) | Event::DeviceChanged(d) => open || known(&d.info) || shown.contains(&d.info.address),
-        Event::DeviceRemoved { address, .. } => open || shown.contains(address),
-        Event::AdapterAdded(_) | Event::AdapterChanged(_) | Event::AdapterRemoved { .. } => true,
-        Event::PlayerChanged(_) | Event::PlayerRemoved { .. } => true,
-    }
 }
 
 /// The `Device1` properties a device's event carries: an RSSI move alone is
@@ -297,19 +314,19 @@ impl State {
 
     /// The object paths of every [`known`] device.
     pub fn known_paths(&self) -> BTreeSet<String> {
-        self.devices.iter().filter(|(_, e)| known(&e.device.info)).map(|(p, _)| p.clone()).collect()
+        self.devices.iter().filter(|(_, e)| known(&e.device)).map(|(p, _)| p.clone()).collect()
     }
 
     /// Scoped to one adapter.
     pub fn find_device(&self, adapter: &str, address: BtAddress) -> Option<Device> {
-        self.devices.values().find(|e| e.device.adapter == adapter && e.device.info.address == address).map(Entry::view)
+        self.devices.values().find(|e| e.device.adapter == adapter && e.device.address == address).map(Entry::view)
     }
 
     pub fn clear(&mut self) -> Vec<Event> {
         let mut out: Vec<Event> = self
             .devices
             .values()
-            .map(|e| Event::DeviceRemoved { path: e.device.info.dbus_path.clone(), address: e.device.info.address })
+            .map(|e| Event::DeviceRemoved { path: e.device.path.clone(), address: e.device.address })
             .collect();
         out.extend(self.adapters.keys().map(|p| Event::AdapterRemoved { path: p.clone() }));
         out.extend(self.players.keys().map(|p| Event::PlayerRemoved { path: p.clone() }));
@@ -338,7 +355,7 @@ impl State {
                 let known = self.devices.contains_key(path);
                 let e = self.devices.entry(path.to_string()).or_insert_with(|| {
                     let mut e = Entry::default();
-                    e.device.info.dbus_path = path.to_string();
+                    e.device.path = path.to_string();
                     e
                 });
                 let before = e.view();
@@ -417,7 +434,7 @@ impl State {
                 }
                 DEVICE_IFACE => {
                     if let Some(e) = self.devices.remove(path) {
-                        out.push(Event::DeviceRemoved { path: path.to_string(), address: e.device.info.address });
+                        out.push(Event::DeviceRemoved { path: path.to_string(), address: e.device.address });
                     }
                 }
                 BATTERY_IFACE => out.extend(self.battery(path, &Props::new(), &["Percentage".to_string()])),
@@ -437,13 +454,13 @@ impl State {
             out.push(Event::AdapterRemoved { path: path.clone() });
         }
         for (path, e) in self.devices.iter().filter(|(p, _)| !fresh.devices.contains_key(*p)) {
-            out.push(Event::DeviceRemoved { path: path.clone(), address: e.device.info.address });
+            out.push(Event::DeviceRemoved { path: path.clone(), address: e.device.address });
         }
         for (path, e) in &mut fresh.devices {
             if let Some(old) = self.devices.get(path) {
                 e.connecting = old.connecting;
                 e.disconnecting = old.disconnecting;
-                e.device.info.pairing = old.device.info.pairing;
+                e.device.pairing = old.device.pairing;
             }
         }
         for (path, a) in &fresh.adapters {
@@ -478,7 +495,7 @@ impl State {
         let Some(e) = self.devices.get_mut(path) else { return vec![] };
         let before = e.view();
         match activity {
-            Activity::Pairing => e.device.info.pairing = on,
+            Activity::Pairing => e.device.pairing = on,
             Activity::Connecting => e.connecting = on,
             Activity::Disconnecting => e.disconnecting = on,
         }
@@ -547,31 +564,6 @@ mod tests {
         assert_eq!(s.properties_changed(DEV, DEVICE_IFACE, &connected, &[]).len(), 1);
     }
 
-    /// A discovery the shell did not start, with the panel shut: 700 RSSI
-    /// updates and the strangers it turns up reach no surface.
-    #[test]
-    fn a_discovery_with_the_panel_shut_reaches_no_surface() {
-        let mut s = seeded();
-        let stranger = "/org/bluez/hci0/dev_11_22_33_44_55_66";
-        let mut events = s.interface_added(
-            stranger,
-            DEVICE_IFACE,
-            &props(vec![
-                ("Address", "11:22:33:44:55:66".into()),
-                ("Paired", false.into()),
-                ("Adapter", Value::ObjectPath(ObjectPath::try_from(HCI0).unwrap())),
-            ]),
-        );
-        for i in 0..700 {
-            let path = if i % 2 == 0 { DEV } else { stranger };
-            events.extend(s.properties_changed(path, DEVICE_IFACE, &props(vec![("RSSI", Value::I16(-40 - (i % 30) as i16))]), &[]));
-        }
-        events.extend(s.interfaces_removed(stranger, &[DEVICE_IFACE.to_string()]));
-        let shown = vec![BtAddress::parse("AA:BB:CC:DD:EE:FF").unwrap()];
-        assert_eq!(events.iter().filter(|e| matters(e, false, &shown)).count(), 0);
-        assert_eq!(events.iter().filter(|e| matters(e, true, &shown)).count(), 2);
-    }
-
     #[test]
     fn empty_state_is_the_no_adapter_state() {
         let s = State::default();
@@ -585,10 +577,10 @@ mod tests {
         let a = s.default_adapter().unwrap();
         assert_eq!((a.powered, a.pairable, a.state), (true, true, AdapterState::Enabled));
         let d = s.device(DEV).unwrap();
-        assert_eq!(d.info.name, "Headphones");
-        assert_eq!(d.info.device_name, "WH-1000XM5");
+        assert_eq!(d.alias, "Headphones");
+        assert_eq!(d.name, "WH-1000XM5");
         assert_eq!(d.icon, "audio-headset");
-        assert!(d.info.paired && d.info.bonded && !d.info.trusted);
+        assert!(d.paired && d.bonded && !d.trusted);
         assert_eq!(d.adapter, HCI0);
         assert_eq!(d.rssi, None);
     }
@@ -640,10 +632,10 @@ mod tests {
     fn battery_is_a_fraction_and_goes_with_its_interface() {
         let mut s = seeded();
         let ev = s.interface_added(DEV, BATTERY_IFACE, &props(vec![("Percentage", 87u8.into())]));
-        assert!(matches!(&ev[..], [Event::DeviceChanged(d)] if d.info.battery.is_some()));
-        assert_eq!(s.device(DEV).unwrap().info.battery.map(Fraction::as_fraction), Some(0.87));
+        assert!(matches!(&ev[..], [Event::DeviceChanged(d)] if d.battery.is_some()));
+        assert_eq!(s.device(DEV).unwrap().battery.map(Fraction::as_fraction), Some(0.87));
         s.interfaces_removed(DEV, &[BATTERY_IFACE.to_string()]);
-        assert_eq!(s.device(DEV).unwrap().info.battery, None);
+        assert_eq!(s.device(DEV).unwrap().battery, None);
     }
 
     #[test]
@@ -655,7 +647,7 @@ mod tests {
         ]);
         s.interfaces_added(DEV, &ifaces);
         let d = s.device(DEV).unwrap();
-        assert_eq!(d.info.battery.map(Fraction::as_fraction), Some(0.4));
+        assert_eq!(d.battery.map(Fraction::as_fraction), Some(0.4));
     }
 
     #[test]
@@ -668,15 +660,15 @@ mod tests {
     fn activity_drives_pairing_and_connection_state() {
         let mut s = seeded();
         s.set_activity(DEV, Activity::Pairing, true);
-        assert!(s.device(DEV).unwrap().info.pairing);
+        assert!(s.device(DEV).unwrap().pairing);
         s.set_activity(DEV, Activity::Pairing, false);
         s.set_activity(DEV, Activity::Connecting, true);
-        assert_eq!(s.device(DEV).unwrap().info.state, DeviceState::Connecting);
+        assert_eq!(s.device(DEV).unwrap().state, DeviceState::Connecting);
         s.properties_changed(DEV, DEVICE_IFACE, &props(vec![("Connected", true.into())]), &[]);
-        assert_eq!(s.device(DEV).unwrap().info.state, DeviceState::Connected);
+        assert_eq!(s.device(DEV).unwrap().state, DeviceState::Connected);
         s.set_activity(DEV, Activity::Connecting, false);
         s.set_activity(DEV, Activity::Disconnecting, true);
-        assert_eq!(s.device(DEV).unwrap().info.state, DeviceState::Disconnecting);
+        assert_eq!(s.device(DEV).unwrap().state, DeviceState::Disconnecting);
     }
 
     #[test]
@@ -703,8 +695,8 @@ mod tests {
         fresh.interfaces_removed(HCI0, &[ADAPTER_IFACE.to_string()]);
         let ev = s.resync(fresh);
         assert!(ev.iter().any(|e| matches!(e, Event::AdapterRemoved { .. })));
-        assert!(ev.iter().any(|e| matches!(e, Event::DeviceChanged(d) if d.info.trusted)));
-        assert_eq!(s.device(DEV).unwrap().info.state, DeviceState::Connecting);
+        assert!(ev.iter().any(|e| matches!(e, Event::DeviceChanged(d) if d.trusted)));
+        assert_eq!(s.device(DEV).unwrap().state, DeviceState::Connecting);
     }
 
     const PLAYER: &str = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF/avrcp/player0";

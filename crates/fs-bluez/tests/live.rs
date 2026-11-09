@@ -76,7 +76,8 @@ fn two_virtual_controllers_discover_pair_and_forget() {
         assert_ne!(local.address, remote.address);
         assert_eq!(bluez.state().default_adapter().unwrap().path, local.path);
 
-        let requests = bluez.register_agent(Capability::DisplayYesNo).await.unwrap();
+        let session = bluez.register_agent(Capability::DisplayYesNo).await.unwrap();
+        let requests = session.requests().clone();
         ex.spawn(async move {
             while let Ok(request) = requests.recv().await {
                 println!("agent: {request:?}");
@@ -112,11 +113,11 @@ fn two_virtual_controllers_discover_pair_and_forget() {
         bluez.set_pairable(&remote.path, true).await.unwrap();
         bluez.set_discoverable(&remote.path, true).await.unwrap();
         bluez.start_discovery(&local.path).await.unwrap();
-        bluez.start_discovery(&local.path).await.unwrap();
+        assert!(bluez.start_discovery(&local.path).await.unwrap_err().is_in_progress());
         expect(&rx, "local adapter discovering", |e| matches!(e, Event::AdapterChanged(a) if a.path == local.path && a.discovering)).await;
-        let found = expect(&rx, "remote controller found", |e| matches!(e, Event::DeviceAdded(d) if d.info.address == remote.address && d.adapter == local.path)).await;
+        let found = expect(&rx, "remote controller found", |e| matches!(e, Event::DeviceAdded(d) if d.address == remote.address && d.adapter == local.path)).await;
         let Event::DeviceAdded(found) = found else { unreachable!() };
-        assert!(!found.info.paired);
+        assert!(!found.paired);
 
         bluez.stop_discovery(&local.path).await.unwrap();
         expect(&rx, "scan stopped", |e| matches!(e, Event::AdapterChanged(a) if a.path == local.path && !a.discovering)).await;
@@ -125,16 +126,16 @@ fn two_virtual_controllers_discover_pair_and_forget() {
         println!("pair: {paired:?}");
         paired.unwrap();
         within("paired in state", async {
-            while !bluez.state().find_device(&local.path, remote.address).is_some_and(|d| d.info.paired) {
+            while !bluez.state().find_device(&local.path, remote.address).is_some_and(|d| d.paired) {
                 Timer::after(Duration::from_millis(200)).await;
             }
         })
         .await;
-        assert!(!bluez.state().find_device(&local.path, remote.address).unwrap().info.pairing);
+        assert!(!bluez.state().find_device(&local.path, remote.address).unwrap().pairing);
 
         bluez.set_trusted(remote.address, true).await.unwrap();
         within("trusted in state", async {
-            while !bluez.state().find_device(&local.path, remote.address).is_some_and(|d| d.info.trusted) {
+            while !bluez.state().find_device(&local.path, remote.address).is_some_and(|d| d.trusted) {
                 Timer::after(Duration::from_millis(200)).await;
             }
         })
@@ -142,6 +143,6 @@ fn two_virtual_controllers_discover_pair_and_forget() {
 
         bluez.remove(remote.address).await.unwrap();
         expect(&rx, "forgotten", |e| matches!(e, Event::DeviceRemoved { address, .. } if *address == remote.address)).await;
-        bluez.unregister_agent().await.unwrap();
+        drop(session);
     });
 }

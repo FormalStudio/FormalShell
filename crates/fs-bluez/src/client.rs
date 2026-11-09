@@ -1,12 +1,12 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::Poll;
 
 use async_channel::{Receiver, Sender};
 use fs_dbus::{Owner, OwnerWatch};
-use fs_devices::bluetooth;
 use fs_types::BtAddress;
 use futures_lite::{StreamExt, future};
 use zbus::fdo::ObjectManagerProxy;
@@ -52,6 +52,12 @@ impl Error {
             Error::Bus(zbus::Error::MethodError(name, _, _)) => Some(name.as_str()),
             _ => None,
         }
+    }
+
+    /// BlueZ is already doing what was asked, e.g. discovering for this
+    /// client.
+    pub fn is_in_progress(&self) -> bool {
+        self.bluez_name() == Some("org.bluez.Error.InProgress")
     }
 }
 
@@ -147,17 +153,6 @@ impl Bluez {
         lock(&self.state).clone()
     }
 
-    /// What the earbuds backends cross their CLI lists with: the default
-    /// adapter's devices.
-    pub fn earbuds_devices(&self) -> Vec<bluetooth::Device> {
-        let state = lock(&self.state);
-        let live: Vec<bluetooth::Device> = match state.default_adapter() {
-            Some(a) => state.devices_of(&a.path).into_iter().map(|d| d.info).collect(),
-            None => vec![],
-        };
-        fs_devices::earbuds::bluetooth_devices(&live)
-    }
-
     fn default_adapter(&self) -> Result<String> {
         lock(&self.state).default_adapter().map(|a| a.path.clone()).ok_or(Error::NoAdapter)
     }
@@ -169,7 +164,7 @@ impl Bluez {
         let adapter = self.default_adapter()?;
         let d = lock(&self.state).find_device(&adapter, address).ok_or_else(|| Error::UnknownDevice(address))?;
         let (ack, acked) = async_channel::bounded(1);
-        if self.watch.try_send(Watch::Path(d.info.dbus_path.clone(), ack)).is_ok() {
+        if self.watch.try_send(Watch::Path(d.path.clone(), ack)).is_ok() {
             let _ = acked.recv().await;
         }
         Ok(d)
@@ -199,13 +194,10 @@ impl Bluez {
         Ok(self.adapter(adapter).await?.set_pairable(on).await?)
     }
 
-    /// Already discovering for this client is success: the panel re-arms it
-    /// on a timer.
+    /// BlueZ refuses it while the adapter powers up, and with
+    /// [`Error::is_in_progress`] while this client is already discovering.
     pub async fn start_discovery(&self, adapter: &str) -> Result<()> {
-        match self.adapter(adapter).await?.start_discovery().await {
-            Err(zbus::Error::MethodError(name, _, _)) if name.as_str() == "org.bluez.Error.InProgress" => Ok(()),
-            other => Ok(other?),
-        }
+        Ok(self.adapter(adapter).await?.start_discovery().await?)
     }
 
     pub async fn stop_discovery(&self, adapter: &str) -> Result<()> {
@@ -214,7 +206,7 @@ impl Bluez {
 
     pub async fn connect_device(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
-        let path = d.info.dbus_path.clone();
+        let path = d.path.clone();
         let proxy = self.device_proxy(&path).await?;
         self.activity(&path, Activity::Connecting, true);
         let out = proxy.connect().await;
@@ -224,7 +216,7 @@ impl Bluez {
 
     pub async fn disconnect_device(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
-        let path = d.info.dbus_path.clone();
+        let path = d.path.clone();
         let proxy = self.device_proxy(&path).await?;
         self.activity(&path, Activity::Disconnecting, true);
         let out = proxy.disconnect().await;
@@ -236,7 +228,7 @@ impl Bluez {
     /// pairing counts as done.
     pub async fn pair(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
-        let path = d.info.dbus_path.clone();
+        let path = d.path.clone();
         let proxy = self.device_proxy(&path).await?;
         self.activity(&path, Activity::Pairing, true);
         let out = proxy.pair().await;
@@ -246,18 +238,18 @@ impl Bluez {
 
     pub async fn cancel_pairing(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
-        Ok(self.device_proxy(&d.info.dbus_path).await?.cancel_pairing().await?)
+        Ok(self.device_proxy(&d.path).await?.cancel_pairing().await?)
     }
 
     pub async fn set_trusted(&self, address: BtAddress, trusted: bool) -> Result<()> {
         let d = self.resolve(address).await?;
-        Ok(self.device_proxy(&d.info.dbus_path).await?.set_trusted(trusted).await?)
+        Ok(self.device_proxy(&d.path).await?.set_trusted(trusted).await?)
     }
 
     /// `Adapter1.RemoveDevice`: unpairs and forgets.
     pub async fn remove(&self, address: BtAddress) -> Result<()> {
         let d = self.resolve(address).await?;
-        let path = ObjectPath::try_from(d.info.dbus_path.as_str()).map_err(zbus::Error::from)?;
+        let path = ObjectPath::try_from(d.path.as_str()).map_err(zbus::Error::from)?;
         Ok(self.adapter(&d.adapter).await?.remove_device(&path).await?)
     }
 
@@ -271,30 +263,57 @@ impl Bluez {
         }?)
     }
 
-    /// Serves an `Agent1` and makes it BlueZ's default. Requests arrive on
-    /// the returned receiver until `unregister_agent`.
-    pub async fn register_agent(&self, capability: Capability) -> Result<Receiver<AgentRequest>> {
-        let (agent, rx) = Agent::channel();
-        self.conn.object_server().at(AGENT_PATH, agent).await?;
-        let path = ObjectPath::from_static_str_unchecked(AGENT_PATH);
+    /// Serves an `Agent1` and makes it BlueZ's default, until the returned
+    /// session is dropped.
+    pub async fn register_agent(&self, capability: Capability) -> Result<AgentSession> {
+        let (agent, requests) = Agent::channel();
+        // A path per registration: the last session's unregister runs after
+        // it is dropped, and must not take this one's agent with it.
+        let path = format!("{AGENT_PATH}/{}", AGENTS.fetch_add(1, Ordering::Relaxed));
+        self.conn.object_server().at(path.as_str(), agent).await?;
+        let session = AgentSession { requests, conn: self.conn.clone(), path };
+        let object = ObjectPath::try_from(session.path.as_str()).map_err(zbus::Error::from)?;
         let manager = AgentManager1Proxy::new(&self.conn).await?;
-        let registered = async {
-            manager.register_agent(&path, capability.as_str()).await?;
-            manager.request_default_agent(&path).await
-        }
-        .await;
-        if let Err(e) = registered {
-            self.conn.object_server().remove::<Agent, _>(AGENT_PATH).await?;
-            return Err(e.into());
-        }
-        Ok(rx)
+        // A failure here drops the session, which removes the object.
+        manager.register_agent(&object, capability.as_str()).await?;
+        manager.request_default_agent(&object).await?;
+        Ok(session)
+    }
+}
+
+static AGENTS: AtomicU32 = AtomicU32::new(0);
+
+/// A registered agent. Dropping it unregisters the agent and removes its
+/// object, so a pairing cut short by a timeout cleans up like one that ended.
+pub struct AgentSession {
+    requests: Receiver<AgentRequest>,
+    conn: Connection,
+    path: String,
+}
+
+impl AgentSession {
+    pub fn requests(&self) -> &Receiver<AgentRequest> {
+        &self.requests
     }
 
-    pub async fn unregister_agent(&self) -> Result<()> {
-        let path = ObjectPath::from_static_str_unchecked(AGENT_PATH);
-        let out = AgentManager1Proxy::new(&self.conn).await?.unregister_agent(&path).await;
-        self.conn.object_server().remove::<Agent, _>(AGENT_PATH).await?;
-        Ok(out?)
+    /// The agent's object path, where BlueZ calls it.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+impl Drop for AgentSession {
+    fn drop(&mut self) {
+        let (conn, path) = (self.conn.clone(), std::mem::take(&mut self.path));
+        let unregister = async move {
+            if let Ok(object) = ObjectPath::try_from(path.as_str())
+                && let Ok(manager) = AgentManager1Proxy::new(&conn).await
+            {
+                let _ = manager.unregister_agent(&object).await;
+            }
+            let _ = conn.object_server().remove::<Agent, _>(path.as_str()).await;
+        };
+        self.conn.executor().spawn(unregister, "bluez agent unregister").detach();
     }
 }
 

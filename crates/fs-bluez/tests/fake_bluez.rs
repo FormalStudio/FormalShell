@@ -11,10 +11,9 @@ use std::time::Duration;
 use async_channel::Receiver;
 use async_executor::LocalExecutor;
 use async_io::Timer;
-use fs_bluez::agent::{AGENT_PATH, AgentRequest, Capability};
-use fs_bluez::state::{AdapterState, Event};
+use fs_bluez::agent::{AgentRequest, Capability};
+use fs_bluez::state::{AdapterState, DeviceState, Event};
 use fs_bluez::{Bluez, Error};
-use fs_devices::bluetooth::DeviceState;
 use futures_lite::future::{block_on, or};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
@@ -294,7 +293,6 @@ fn no_bluetoothd_is_the_no_adapter_state() {
         let err = bluez.connect_device("AA:BB:CC:DD:EE:FF".parse().unwrap()).await.unwrap_err();
         assert!(matches!(err, Error::NoAdapter));
         assert_eq!(err.to_string(), "no bluetooth adapter");
-        assert!(bluez.earbuds_devices().is_empty());
     });
 }
 
@@ -309,14 +307,14 @@ fn enumerates_adapter_devices_battery_and_rssi() {
         assert_eq!(a.path, HCI0);
         assert_eq!((a.powered, a.pairable, a.discovering, a.state), (true, true, false, AdapterState::Enabled));
         let buds = s.find_device(HCI0, "aa:bb:cc:dd:ee:ff".parse().unwrap()).unwrap();
-        assert_eq!(buds.info.name, "Buds");
-        assert!(buds.info.paired && buds.info.bonded && !buds.info.connected);
+        assert_eq!(buds.alias, "Buds");
+        assert!(buds.paired && buds.bonded && !buds.connected);
         assert_eq!(buds.icon, "audio-headset");
         assert_eq!(buds.rssi, Some(-58));
-        assert_eq!(buds.info.battery.map(|b| b.as_fraction()), Some(0.5));
+        assert_eq!(buds.battery.map(|b| b.as_fraction()), Some(0.5));
         let phone = s.device(PHONE).unwrap();
-        assert!(phone.info.battery.is_none() && !phone.info.paired);
-        assert_eq!(bluez.earbuds_devices().len(), 2);
+        assert!(phone.battery.is_none() && !phone.paired);
+        assert_eq!(s.devices_of(HCI0).len(), 2);
     });
 }
 
@@ -348,23 +346,23 @@ fn device_commands_and_their_events() {
 
         let connecting = bluez.connect_device("aa:bb:cc:dd:ee:ff".parse().unwrap());
         let watch = async {
-            expect(&rx, "connecting", |e| matches!(e, Event::DeviceChanged(d) if d.info.state == DeviceState::Connecting)).await;
-            expect(&rx, "connected", |e| matches!(e, Event::DeviceChanged(d) if d.info.connected && d.info.state == DeviceState::Connected)).await;
+            expect(&rx, "connecting", |e| matches!(e, Event::DeviceChanged(d) if d.state == DeviceState::Connecting)).await;
+            expect(&rx, "connected", |e| matches!(e, Event::DeviceChanged(d) if d.connected && d.state == DeviceState::Connected)).await;
         };
         let (done, ()) = futures_lite::future::zip(connecting, watch).await;
         done.unwrap();
-        assert_eq!(bluez.earbuds_devices().iter().filter(|d| d.connected).count(), 1);
+        assert_eq!(bluez.state().devices_of(HCI0).iter().filter(|d| d.connected).count(), 1);
 
         bluez.disconnect_device("AA:BB:CC:DD:EE:FF".parse().unwrap()).await.unwrap();
-        expect(&rx, "disconnected", |e| matches!(e, Event::DeviceChanged(d) if !d.info.connected && d.info.state == DeviceState::Disconnected)).await;
+        expect(&rx, "disconnected", |e| matches!(e, Event::DeviceChanged(d) if !d.connected && d.state == DeviceState::Disconnected)).await;
 
         let pairing = bluez.pair("11:22:33:44:55:66".parse().unwrap());
         let watch = async {
-            expect(&rx, "pairing flag", |e| matches!(e, Event::DeviceChanged(d) if d.info.pairing)).await;
+            expect(&rx, "pairing flag", |e| matches!(e, Event::DeviceChanged(d) if d.pairing)).await;
             // Pair()'s reply and the Paired/Bonded signals race, so the flag
             // clears before or after them; the last event carries all three.
             expect(&rx, "paired, pairing flag cleared", |e| {
-                matches!(e, Event::DeviceChanged(d) if d.info.paired && d.info.bonded && !d.info.pairing)
+                matches!(e, Event::DeviceChanged(d) if d.paired && d.bonded && !d.pairing)
             })
             .await;
         };
@@ -372,7 +370,7 @@ fn device_commands_and_their_events() {
         done.unwrap();
 
         bluez.set_trusted("11:22:33:44:55:66".parse().unwrap(), true).await.unwrap();
-        expect(&rx, "trusted", |e| matches!(e, Event::DeviceChanged(d) if d.info.trusted)).await;
+        expect(&rx, "trusted", |e| matches!(e, Event::DeviceChanged(d) if d.trusted)).await;
 
         bluez.remove("11:22:33:44:55:66".parse().unwrap()).await.unwrap();
         let gone = expect(&rx, "removed", |e| matches!(e, Event::DeviceRemoved { .. })).await;
@@ -391,7 +389,7 @@ fn a_failed_connect_returns_bluezs_error_and_clears_the_state() {
         let err = bluez.connect_device("DE:AD:00:00:00:01".parse().unwrap()).await.unwrap_err();
         assert_eq!(err.bluez_name(), Some("org.freedesktop.DBus.Error.Failed"));
         let d = bluez.state().device("/org/bluez/hci0/dev_DE_AD_00_00_00_01").unwrap();
-        assert_eq!(d.info.state, DeviceState::Disconnected);
+        assert_eq!(d.state, DeviceState::Disconnected);
     });
 }
 
@@ -403,16 +401,16 @@ fn devices_come_and_go_and_properties_follow() {
         let (bluez, rx) = client(daemon, ex).await;
         let path = "/org/bluez/hci0/dev_CA_FE_00_00_00_02";
         bluez_conn.object_server().at(path, device("CA:FE:00:00:00:02", "Speaker", false)).await.unwrap();
-        expect(&rx, "added", |e| matches!(e, Event::DeviceAdded(d) if d.info.name == "Speaker")).await;
+        expect(&rx, "added", |e| matches!(e, Event::DeviceAdded(d) if d.alias == "Speaker")).await;
         bluez_conn.object_server().at(path, FakeBattery(80)).await.unwrap();
-        expect(&rx, "battery", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery.is_some())).await;
+        expect(&rx, "battery", |e| matches!(e, Event::DeviceChanged(d) if d.battery.is_some())).await;
         let iface = bluez_conn.object_server().interface::<_, FakeBattery>(path).await.unwrap();
         iface.get_mut().await.0 = 20;
         let em = iface.signal_emitter();
         iface.get().await.percentage_changed(em).await.unwrap();
-        expect(&rx, "battery change", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery.is_some_and(|b| b.as_fraction() == 0.2))).await;
+        expect(&rx, "battery change", |e| matches!(e, Event::DeviceChanged(d) if d.battery.is_some_and(|b| b.as_fraction() == 0.2))).await;
         bluez_conn.object_server().remove::<FakeBattery, _>(path).await.unwrap();
-        expect(&rx, "battery gone", |e| matches!(e, Event::DeviceChanged(d) if d.info.battery.is_none())).await;
+        expect(&rx, "battery gone", |e| matches!(e, Event::DeviceChanged(d) if d.battery.is_none())).await;
         bluez_conn.object_server().remove::<FakeDevice, _>(path).await.unwrap();
         expect(&rx, "removed", |e| matches!(e, Event::DeviceRemoved { .. })).await;
         assert!(bluez.state().device(path).is_none());
@@ -447,8 +445,10 @@ fn the_agent_registers_answers_and_rejects() {
         let conn = daemon.conn().await;
         let (bluez, _rx, monitor) = Bluez::connect(&conn).await.unwrap();
         ex.spawn(monitor.run()).detach();
-        let requests = bluez.register_agent(Capability::DisplayYesNo).await.unwrap();
-        assert_eq!(*registered.lock().unwrap(), vec![(AGENT_PATH.to_string(), "DisplayYesNo".to_string())]);
+        let session = bluez.register_agent(Capability::DisplayYesNo).await.unwrap();
+        let requests = session.requests().clone();
+        let agent_path = session.path().to_owned();
+        assert_eq!(*registered.lock().unwrap(), vec![(agent_path.clone(), "DisplayYesNo".to_string())]);
         assert!(*default_requested.lock().unwrap());
 
         let caller = bluez_conn.clone();
@@ -456,7 +456,8 @@ fn the_agent_registers_answers_and_rejects() {
         let call = |member: &'static str, body: (ObjectPath<'static>, u32)| {
             let caller = caller.clone();
             let target = target.clone();
-            async move { caller.call_method(Some(target), AGENT_PATH, Some("org.bluez.Agent1"), member, &body).await }
+            let agent_path = agent_path.clone();
+            async move { caller.call_method(Some(target), agent_path, Some("org.bluez.Agent1"), member, &body).await }
         };
 
         let asked = call("RequestConfirmation", (ObjectPath::try_from(PHONE).unwrap(), 123456));
@@ -483,7 +484,12 @@ fn the_agent_registers_answers_and_rejects() {
         let err = out.unwrap_err();
         assert!(matches!(&err, zbus::Error::MethodError(n, _, _) if n.as_str() == "org.bluez.Error.Rejected"), "{err:?}");
 
-        bluez.unregister_agent().await.unwrap();
-        assert!(registered.lock().unwrap().is_empty());
+        drop(session);
+        within("unregistered", async {
+            while !registered.lock().unwrap().is_empty() {
+                Timer::after(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
     });
 }

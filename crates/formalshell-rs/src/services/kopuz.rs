@@ -20,9 +20,8 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use async_io::Timer;
 use fs_dbus::Backoff;
-use fs_kopuz::{Client, Event, Table, TrackInfo};
+use fs_kopuz::{Client, Event, Table, TrackInfo, client, timed};
 use futures_lite::future;
 
 use crate::runtime::Ctx;
@@ -30,9 +29,6 @@ use crate::store;
 
 const BASE_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
-/// A unary call to a local socket answers in milliseconds; past this the
-/// daemon is wedged and the call is abandoned.
-pub const CALL_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct State {
@@ -91,36 +87,13 @@ impl State {
     }
 }
 
-/// An MPRIS bus name Kopuz registers.
-pub fn is_kopuz(bus: &str) -> bool {
-    match bus.strip_prefix("org.mpris.MediaPlayer2.kopuz") {
-        Some("") => true,
-        Some(rest) => rest.strip_prefix(".instance").is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit())),
-        None => false,
-    }
-}
-
-/// A client for kopuzd's socket, when it is there.
-pub fn client() -> Option<Client> {
-    fs_kopuz::socket_path().filter(|p| p.exists()).map(Client::new)
-}
-
-/// `fut`, or None past `CALL_TIMEOUT`.
-pub async fn timed<T>(fut: impl Future<Output = T>) -> Option<T> {
-    future::or(async { Some(fut.await) }, async {
-        Timer::after(CALL_TIMEOUT).await;
-        None
-    })
-    .await
-}
-
 static WANT: OnceLock<async_channel::Sender<bool>> = OnceLock::new();
 static WANTED: AtomicBool = AtomicBool::new(false);
 
 /// The UI thread's side, after every media change: whether the active
 /// player is Kopuz.
 pub fn sync(media: &super::media::State) {
-    let want = is_kopuz(&media.active_id());
+    let want = fs_kopuz::is_player_bus(&media.active_id());
     if WANTED.swap(want, Ordering::Relaxed) != want
         && let Some(tx) = WANT.get()
     {
@@ -250,15 +223,6 @@ async fn run(ctx: Ctx) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn kopuz_bus_names() {
-        assert!(is_kopuz("org.mpris.MediaPlayer2.kopuz"));
-        assert!(is_kopuz("org.mpris.MediaPlayer2.kopuz.instance4242"));
-        assert!(!is_kopuz("org.mpris.MediaPlayer2.kopuzz"));
-        assert!(!is_kopuz("org.mpris.MediaPlayer2.kopuz.instance"));
-        assert!(!is_kopuz("org.mpris.MediaPlayer2.mpv"));
-    }
 
     #[test]
     fn a_row_matches_on_title_and_artist_alone() {

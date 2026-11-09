@@ -646,6 +646,7 @@ impl NetworkManager {
         Ok(Some(Device {
             path,
             interface: prop(&props, "Interface").unwrap_or_default(),
+            hw_address: prop(&props, "HwAddress").unwrap_or_default(),
             kind,
             state: ConnectionState::from_device_state(nm_state),
             nm_state,
@@ -763,6 +764,7 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
                 signal: ap.signal,
                 security: ap.security,
                 known: false,
+                hidden: false,
                 visible: true,
                 state: ConnectionState::Disconnected,
                 addresses: Vec::new(),
@@ -778,6 +780,7 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
         match rows.iter_mut().find(|r| r.ssid == profile.ssid) {
             Some(row) => {
                 row.known = true;
+                row.hidden = profile.hidden;
                 if let Some(state) = running {
                     row.state = state;
                 }
@@ -788,6 +791,7 @@ fn wifi_networks(wifi: &WifiDevice, profiles: &[(OwnedObjectPath, Profile)]) -> 
                 signal: SignalStrength::default(),
                 security: profile.security(),
                 known: true,
+                hidden: profile.hidden,
                 visible: false,
                 state: running.unwrap_or(ConnectionState::Disconnected),
                 addresses: Vec::new(),
@@ -885,6 +889,7 @@ mod tests {
         Device {
             path: path("/org/freedesktop/NetworkManager/Devices/3"),
             interface: "wlan0".into(),
+            hw_address: String::new(),
             kind: DeviceKind::Wifi,
             state: ConnectionState::Disconnected,
             nm_state: 30,
@@ -905,6 +910,7 @@ mod tests {
         Profile {
             ssid: ssid.into(),
             key_mgmt: Some("wpa-psk".into()),
+            hidden: false,
         }
     }
 

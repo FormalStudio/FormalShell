@@ -119,9 +119,9 @@ pub struct Remote {
 
 impl Remote {
     pub fn from(p: &fs_bluez::state::Player, device: Option<&fs_bluez::state::Device>, at: Instant) -> Self {
-        let address = device.map(|d| d.info.address);
+        let address = device.map(|d| d.address);
         let shown = address.map(|a| a.to_string()).unwrap_or_default();
-        let label = device.map(|d| if d.info.name.is_empty() { d.info.device_name.clone() } else { d.info.name.clone() }).filter(|l| !l.is_empty()).unwrap_or_else(|| shown.clone());
+        let label = device.map(|d| d.label().to_owned()).filter(|l| !l.is_empty()).unwrap_or_else(|| shown.clone());
         Self {
             id: format!("bluez:{shown}"),
             path: p.path.clone(),
@@ -142,12 +142,9 @@ impl Remote {
     }
 
     /// Whether `node` (a PipeWire node.name) is the stream this device
-    /// plays into: BlueZ's PipeWire plugin names it
-    /// `bluez_input.<address, colons as underscores>.<profile>`.
+    /// plays into.
     fn plays_into(&self, node: &str) -> bool {
-        let Some(address) = self.address else { return false };
-        let want = format!("bluez_input.{}", address.path_segment());
-        node.get(..want.len()).is_some_and(|n| n.eq_ignore_ascii_case(&want))
+        self.address.is_some_and(|address| fs_bluez::is_input_node(node, address))
     }
 }
 
@@ -554,7 +551,7 @@ impl State {
     /// track it reports.
     pub fn kopuz(&self) -> Option<&kopuz::State> {
         let a = self.active()?;
-        (a.kind == "mpris" && kopuz::is_kopuz(&a.id) && self.kopuz.matches(&a.title, &a.artist)).then_some(&self.kopuz)
+        (a.kind == "mpris" && fs_kopuz::is_player_bus(&a.id) && self.kopuz.matches(&a.title, &a.artist)).then_some(&self.kopuz)
     }
 
     /// Feeds the visualizer's run gate, which the UI thread owns the inputs of.

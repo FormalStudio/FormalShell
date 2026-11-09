@@ -33,6 +33,8 @@ use crate::runtime::{Ctx, now_ms};
 use crate::scene::Bitmap;
 use crate::store;
 
+mod urilist;
+
 const SETTLE: Duration = Duration::from_millis(300);
 const ECHO_MS: i64 = 5000;
 const RESTART: Duration = Duration::from_secs(3);
@@ -136,7 +138,7 @@ enum Event {
     Text(String),
     Image(String),
     Uri(String),
-    Imported(u64, String, fs_screensaver::urilist::ImageFile),
+    Imported(u64, String, urilist::ImageFile),
     Cmd(Cmd),
     Settled,
 }
@@ -204,7 +206,7 @@ async fn run(ctx: Ctx) {
                 ctx.publish(store::Diff::Clipboard(Diff::Captured));
             }
             Event::Uri(data) => {
-                if let Some(file) = fs_screensaver::urilist::image_file(Some(&data)) {
+                if let Some(file) = urilist::image_file(Some(&data)) {
                     import_gen += 1;
                     let (g, tx, dir) = (import_gen, tx.clone(), dir.clone());
                     ctx.spawn(async move {

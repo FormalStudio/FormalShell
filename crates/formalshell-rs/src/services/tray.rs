@@ -227,6 +227,11 @@ async fn run(ctx: Ctx) {
     }
 }
 
+/// A failed tray call, which no surface has a place for.
+fn logged<T>(action: &str, key: &str, result: zbus::Result<T>) -> Option<T> {
+    result.map_err(|err| eprintln!("tray: {action} {key}: {err}")).ok()
+}
+
 fn spawn_on(ctx: &Ctx, f: impl AsyncFnOnce(&fs_tray::Tray) + 'static) {
     ctx.spawn(async move {
         if let Some(tray) = TRAY.get() {
@@ -237,13 +242,13 @@ fn spawn_on(ctx: &Ctx, f: impl AsyncFnOnce(&fs_tray::Tray) + 'static) {
 
 pub fn activate(ctx: &Ctx, key: String) {
     spawn_on(ctx, async move |tray| {
-        let _ = tray.activate(&key).await;
+        logged("activate", &key, tray.activate(&key).await);
     });
 }
 
 pub fn secondary_activate(ctx: &Ctx, key: String) {
     spawn_on(ctx, async move |tray| {
-        let _ = tray.secondary_activate(&key).await;
+        logged("secondary activate", &key, tray.secondary_activate(&key).await);
     });
 }
 
@@ -253,10 +258,10 @@ pub fn open_menu(ctx: &Ctx, key: String, largest: f64) {
     let ctx = ctx.clone();
     let publisher = ctx.clone();
     spawn_on(&publisher, async move |tray| {
-        if tray.open_menu(&key).await.is_err() {
+        if logged("open menu", &key, tray.open_menu(&key).await).is_none() {
             return;
         }
-        let _ = tray.menu_event(&key, 0, MenuEventKind::Opened).await;
+        logged("menu opened", &key, tray.menu_event(&key, 0, MenuEventKind::Opened).await);
         publish_menu(&ctx, tray, &key, largest).await;
     });
 }
@@ -264,7 +269,7 @@ pub fn open_menu(ctx: &Ctx, key: String, largest: f64) {
 pub fn close_menu(ctx: &Ctx, key: String) {
     let ctx2 = ctx.clone();
     spawn_on(ctx, async move |tray| {
-        let _ = tray.menu_event(&key, 0, MenuEventKind::Closed).await;
+        logged("menu closed", &key, tray.menu_event(&key, 0, MenuEventKind::Closed).await);
         tray.close_menu(&key);
         ctx2.publish(store::Diff::Tray(Diff::Menu(None)));
     });
@@ -272,7 +277,7 @@ pub fn close_menu(ctx: &Ctx, key: String) {
 
 pub fn menu_click(ctx: &Ctx, key: String, id: i32) {
     spawn_on(ctx, async move |tray| {
-        let _ = tray.menu_click(&key, id).await;
+        logged("menu click", &key, tray.menu_click(&key, id).await);
     });
 }
 
@@ -281,7 +286,7 @@ pub fn menu_about_to_show(ctx: &Ctx, key: String, id: i32, largest: f64) {
     let ctx = ctx.clone();
     let publisher = ctx.clone();
     spawn_on(&publisher, async move |tray| {
-        if tray.menu_about_to_show(&key, id).await.is_ok() {
+        if logged("menu about to show", &key, tray.menu_about_to_show(&key, id).await).is_some() {
             publish_menu(&ctx, tray, &key, largest).await;
         }
     });

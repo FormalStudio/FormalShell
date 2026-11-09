@@ -21,11 +21,11 @@ pub fn read(state: &fs_bluez::state::State) -> Vec<Headset> {
         .into_iter()
         .filter(|d| d.icon.starts_with("audio-"))
         .map(|d| Headset {
-            address: d.info.address,
-            name: if d.info.name.is_empty() { d.info.device_name.clone() } else { d.info.name.clone() },
+            address: d.address,
+            name: d.label().to_owned(),
             icon: d.icon.clone(),
-            connected: d.info.connected,
-            battery: d.info.battery,
+            connected: d.connected,
+            battery: d.battery,
         })
         .collect()
 }

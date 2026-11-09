@@ -17,13 +17,12 @@ use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
 use async_io::{Async, Timer};
-use fs_activity::launcher::{self, Entry, Prop};
+use fs_activity::launcher::{self, Entry};
 use fs_activity::{Activity, Notice, State as ItemState, fspec};
 use fs_dbus::{Owner, OwnerWatch};
 use futures_lite::{AsyncReadExt, StreamExt};
 use serde_json::json;
 use zbus::message::Type;
-use zbus::zvariant::{OwnedValue, Value};
 use zbus::{MatchRule, MessageStream};
 
 use crate::runtime::now_ms;
@@ -425,20 +424,6 @@ async fn read_operation(path: &Path, tx: &Sender<Input>) {
 
 // ---- com.canonical.Unity.LauncherEntry ---------------------------------------
 
-fn prop(name: &str, v: &OwnedValue) -> Option<Prop> {
-    let v: &Value = v;
-    Some(match (name, v) {
-        ("count", Value::I64(n)) => Prop::Count(*n),
-        ("count", Value::I32(n)) => Prop::Count(i64::from(*n)),
-        ("count", Value::U32(n)) => Prop::Count(i64::from(*n)),
-        ("count-visible", Value::Bool(b)) => Prop::CountVisible(*b),
-        ("progress", Value::F64(p)) => Prop::Progress(*p),
-        ("progress-visible", Value::Bool(b)) => Prop::ProgressVisible(*b),
-        ("urgent", Value::Bool(b)) => Prop::Urgent(*b),
-        _ => return None,
-    })
-}
-
 enum Bus {
     Update(zbus::Message),
     Gone(String),
@@ -462,7 +447,7 @@ async fn listen_launcher(ctx: &Ctx, tx: &Sender<Input>) -> zbus::Result<()> {
         match event {
             Bus::Update(message) => {
                 let sender = message.header().sender().map(|s| s.to_string()).unwrap_or_default();
-                let Ok((uri, props)) = message.body().deserialize::<(String, HashMap<String, OwnedValue>)>() else { continue };
+                let Ok((uri, props)) = message.body().deserialize::<(String, fs_dbus::Props)>() else { continue };
                 let app = launcher::desktop_id(&uri).to_owned();
                 if app.is_empty() {
                     continue;
@@ -478,11 +463,7 @@ async fn listen_launcher(ctx: &Ctx, tx: &Sender<Input>) -> zbus::Result<()> {
                 }
                 let (owner, entry) = entries.entry(app.clone()).or_default();
                 *owner = sender;
-                for (name, value) in &props {
-                    if let Some(p) = prop(name, value) {
-                        entry.apply(p);
-                    }
-                }
+                entry.apply_update(&props);
                 let title = names[&app].clone();
                 let _ = tx.send(Input::Launcher { app, title, entry: entry.clone() }).await;
             }
@@ -666,16 +647,6 @@ mod tests {
         let (tx, rx) = async_channel::unbounded();
         block_on(read_operation(&path, &tx));
         assert!(drain(&rx).is_empty());
-    }
-
-    #[test]
-    fn launcher_props_take_the_wire_types() {
-        let v = |x: Value<'static>| OwnedValue::try_from(x).unwrap();
-        assert!(matches!(prop("count", &v(Value::I64(4))), Some(Prop::Count(4))));
-        assert!(matches!(prop("progress", &v(Value::F64(0.5))), Some(Prop::Progress(p)) if p == 0.5));
-        assert!(matches!(prop("urgent", &v(Value::Bool(true))), Some(Prop::Urgent(true))));
-        assert!(prop("progress", &v(Value::Bool(true))).is_none());
-        assert!(prop("quicklist", &v(Value::from("/x"))).is_none());
     }
 
     #[test]

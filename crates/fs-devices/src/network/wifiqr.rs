@@ -31,7 +31,9 @@ pub fn is_enterprise_key_mgmt(key_mgmt: &str) -> bool {
     k.contains("eap") || k.contains("ieee8021x")
 }
 
-/// The five `nmcli --get-values` lines.
+/// What the payload is built from. `key_mgmt` is NetworkManager's word for
+/// the profile (`wpa-psk`, `none`, empty for open) and `hidden` is `yes` for
+/// a network that does not broadcast its name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fields {
     pub ssid: String,
@@ -39,17 +41,6 @@ pub struct Fields {
     pub password: String,
     pub hidden: String,
     pub wep_key: String,
-}
-
-/// The five `nmcli --get-values` lines, in the order the panel requests them:
-/// ssid, key-mgmt, psk, hidden, wep-key0. nmcli prints one line per requested
-/// field, an empty line when the property is unset, so a short read means the
-/// command answered for fewer fields than were asked for, and the missing ones
-/// stay empty rather than shifting position.
-pub fn parse_fields(text: &str) -> Fields {
-    let mut lines = text.split('\n').map(String::from);
-    let mut next = || lines.next().unwrap_or_default();
-    Fields { ssid: next(), key_mgmt: next(), password: next(), hidden: next(), wep_key: next() }
 }
 
 /// Why no payload was built. Codes, not display strings: the panel owns the
@@ -244,37 +235,6 @@ mod tests {
     #[test]
     fn payload_refuses_empty_fields() {
         assert_eq!(build_payload(&Fields::default()), Err(PayloadError::NoSsid));
-    }
-
-    // parse_fields
-
-    #[test]
-    fn parse_fields_maps_the_five_nmcli_lines_in_order() {
-        let f = parse_fields("FORMALTEST\nwpa-psk\nformaltest-psk\nno\n\n");
-        assert_eq!(f.ssid, "FORMALTEST");
-        assert_eq!(f.key_mgmt, "wpa-psk");
-        assert_eq!(f.password, "formaltest-psk");
-        assert_eq!(f.hidden, "no");
-        assert_eq!(f.wep_key, "");
-    }
-
-    // A short read must leave the missing fields empty, never shift the
-    // remaining values up into the wrong slots.
-    #[test]
-    fn parse_fields_short_read_leaves_later_fields_empty() {
-        let f = parse_fields("GUEST\nnone");
-        assert_eq!(f.ssid, "GUEST");
-        assert_eq!(f.key_mgmt, "none");
-        assert_eq!(f.password, "");
-        assert_eq!(f.hidden, "");
-        assert_eq!(f.wep_key, "");
-    }
-
-    #[test]
-    fn parse_fields_empty_output() {
-        let f = parse_fields("");
-        assert_eq!(f.ssid, "");
-        assert_eq!(f.wep_key, "");
     }
 
     // parse_matrix

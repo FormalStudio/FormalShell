@@ -26,10 +26,6 @@ enum Bucket {
     Available,
 }
 
-fn label(d: &Device) -> &str {
-    if d.name.is_empty() { &d.device_name } else { &d.name }
-}
-
 fn rows(bt: &Bt) -> Vec<(Bucket, &Device)> {
     let b = model::buckets(&bt.devices, bt.discovering);
     let mut out: Vec<(Bucket, &Device)> = b.connected.into_iter().map(|d| (Bucket::Connected, d)).collect();
@@ -81,7 +77,7 @@ fn row(v: &View, bt: &Bt, bucket: Bucket, d: &Device) -> El {
     let connected = bucket == Bucket::Connected;
     let glyph = if connected { "bluetooth-connected" } else { "bluetooth" };
     let detail = (failed.is_none() && !status.is_empty()).then(|| status.clone());
-    let row = w::panel_row_checked(s, glyph, label(d), detail, trailing, connected).stop(key);
+    let row = w::panel_row_checked(s, glyph, &d.name, detail, trailing, connected).stop(key);
     let row = if idle { row.on(format!("row:{}", d.address)) } else { row };
     match failed {
         Some(_) => w::column(0.0, vec![row, w::panel_error(s, status)]),

@@ -72,6 +72,8 @@ impl ConnectionState {
 pub struct Device {
     pub path: OwnedObjectPath,
     pub interface: String,
+    /// The hardware (MAC) address, empty when NetworkManager reports none.
+    pub hw_address: String,
     pub kind: DeviceKind,
     pub state: ConnectionState,
     /// The raw `NMDeviceState` behind `state`; 10 is unmanaged.
@@ -183,6 +185,8 @@ pub struct WifiNetwork {
     pub signal: SignalStrength,
     pub security: Security,
     pub known: bool,
+    /// A saved profile for it connects without broadcasting.
+    pub hidden: bool,
     pub visible: bool,
     pub state: ConnectionState,
     /// The device's IPv4 addresses as `address/prefix`, on the network it

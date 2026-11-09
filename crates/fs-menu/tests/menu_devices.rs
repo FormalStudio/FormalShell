@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use fs_devices::bluetooth::{Device as BluetoothDevice, DeviceState};
+use fs_devices::bluetooth::Device as BluetoothDevice;
 use fs_menu::node::{Kind, Node};
 use fs_menu::providers::{
     AudioDevice, BluetoothState, RadioState, RadioStation, WifiNetwork, WifiState, audio_rows,
@@ -65,11 +65,11 @@ fn wifi_no_networks_is_one_note() {
 }
 
 #[test]
-fn wifi_order_connected_saved_nearby() {
+fn wifi_rows_keep_the_sources_order() {
     let rows = wifi(vec![
-        WifiNetwork { signal: 0.9, ..net("Near") },
-        WifiNetwork { known: true, signal: 0.2, ..net("Saved") },
         WifiNetwork { known: true, connected: true, signal: 0.1, ..net("Live") },
+        WifiNetwork { known: true, signal: 0.2, ..net("Saved") },
+        WifiNetwork { signal: 0.9, ..net("Near") },
     ]);
     assert_eq!(labels(&rows), ["Live", "Saved", "Near"]);
     let sections: Vec<_> = rows.iter().map(|r| r.section.as_deref()).collect();
@@ -223,7 +223,7 @@ fn bluetooth_unnamed_devices_are_dropped() {
 fn bluetooth_desc_prefers_activity_then_battery() {
     let connected = |address: &str, name: &str| BluetoothDevice { connected: true, ..dev(address, name) };
     let rows = bt(vec![
-        BluetoothDevice { state: DeviceState::Connecting, battery: Some(Fraction::from_fraction(0.8)), ..connected("AA:BB:CC:DD:EE:01", "A") },
+        BluetoothDevice { connecting: true, battery: Some(Fraction::from_fraction(0.8)), ..connected("AA:BB:CC:DD:EE:01", "A") },
         BluetoothDevice { battery: Some(Fraction::from_fraction(0.5)), ..connected("AA:BB:CC:DD:EE:02", "B") },
         connected("AA:BB:CC:DD:EE:03", "C"),
     ]);

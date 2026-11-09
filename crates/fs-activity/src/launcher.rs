@@ -2,6 +2,7 @@
 //! properties)` signal carries only the properties that changed, so each
 //! app's entry is merged property by property.
 
+use fs_dbus::{Props, prop};
 use fs_types::Fraction;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -24,7 +25,33 @@ pub enum Prop {
     Urgent(bool),
 }
 
+impl Prop {
+    /// The property `name` of an `Update` signal's `a{sv}`, none for one
+    /// this does not use or of another type.
+    pub fn read(props: &Props, name: &str) -> Option<Prop> {
+        Some(match name {
+            "count" => Prop::Count(
+                prop::<i64>(props, name)
+                    .or_else(|| prop::<i32>(props, name).map(i64::from))
+                    .or_else(|| prop::<u32>(props, name).map(i64::from))?,
+            ),
+            "count-visible" => Prop::CountVisible(prop(props, name)?),
+            "progress" => Prop::Progress(prop(props, name)?),
+            "progress-visible" => Prop::ProgressVisible(prop(props, name)?),
+            "urgent" => Prop::Urgent(prop(props, name)?),
+            _ => return None,
+        })
+    }
+}
+
 impl Entry {
+    /// Merges the properties an `Update` signal carries.
+    pub fn apply_update(&mut self, props: &Props) {
+        for prop in props.keys().filter_map(|name| Prop::read(props, name)) {
+            self.apply(prop);
+        }
+    }
+
     pub fn apply(&mut self, prop: Prop) {
         match prop {
             Prop::Count(n) => self.count = n,
@@ -51,6 +78,22 @@ mod tests {
         assert_eq!(desktop_id("application://org.mozilla.firefox.desktop"), "org.mozilla.firefox");
         assert_eq!(desktop_id("firefox.desktop"), "firefox");
         assert_eq!(desktop_id("firefox"), "firefox");
+    }
+
+    #[test]
+    fn reads_the_signal_s_typed_properties() {
+        use zbus::zvariant::Value;
+        let props = |items: Vec<(&str, Value<'_>)>| -> Props {
+            items.into_iter().map(|(k, v)| (k.to_owned(), v.try_to_owned().unwrap())).collect()
+        };
+        let mut e = Entry::default();
+        e.apply_update(&props(vec![("count", Value::I32(4)), ("count-visible", Value::Bool(true)), ("progress", Value::F64(0.5)), ("quicklist", Value::from("/x"))]));
+        assert_eq!((e.count, e.count_visible), (4, true));
+        assert_eq!(e.progress.unwrap().to_percent().rounded(), 50);
+        e.apply_update(&props(vec![("progress", Value::Bool(true)), ("urgent", Value::Bool(true))]));
+        assert!(e.urgent);
+        assert_eq!(e.progress.unwrap().to_percent().rounded(), 50);
+        assert!(Prop::read(&props(vec![("count", Value::from("x"))]), "count").is_none());
     }
 
     #[test]

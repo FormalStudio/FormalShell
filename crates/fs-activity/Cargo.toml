@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 
 [dependencies]
+fs-dbus = { path = "../fs-dbus" }
 fs-types = { path = "../fs-types" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[dev-dependencies]
+zbus = "5"

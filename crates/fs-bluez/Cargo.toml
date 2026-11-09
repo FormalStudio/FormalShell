@@ -9,7 +9,6 @@ publish = false
 # async-executor. zbus on async-io runs there.
 [dependencies]
 fs-dbus = { path = "../fs-dbus" }
-fs-devices = { path = "../fs-devices" }
 fs-types = { path = "../fs-types" }
 async-channel = "2.5"
 futures-lite = "2.6"
