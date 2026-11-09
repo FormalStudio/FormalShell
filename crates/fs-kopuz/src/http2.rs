@@ -155,7 +155,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Call<S> {
             write_frame(&mut wbuf, DATA, flags, STREAM, chunk);
         }
         let mut call = Self { io, rbuf: Vec::new(), wbuf, body: Vec::new(), ended: false };
-        call.flush().await?;
+        call.send().await?;
         Ok(call)
     }
 
@@ -170,7 +170,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Call<S> {
     /// The next whole gRPC message, `None` once the stream has ended.
     pub async fn message(&mut self) -> Result<Option<Vec<u8>>, Error> {
         loop {
-            self.flush().await?;
+            self.send().await?;
             if let Some(m) = self.take_message()? {
                 return Ok(Some(m));
             }
@@ -199,6 +199,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Call<S> {
         let m = self.body[5..5 + len].to_vec();
         self.body.drain(..5 + len);
         Ok(Some(m))
+    }
+
+    /// Flushes `wbuf`. A peer that sent GOAWAY and closed fails the write
+    /// before its GOAWAY is read, so a failed write reads what already
+    /// arrived and reports the GOAWAY in place of the broken pipe.
+    async fn send(&mut self) -> Result<(), Error> {
+        let Err(err) = self.flush().await else { return Ok(()) };
+        loop {
+            match self.read_frame().await {
+                Ok(frame) if frame.kind == GOAWAY => return Err(Error::GoAway(code(&frame.payload, 4))),
+                Ok(_) => {}
+                Err(_) => return Err(err),
+            }
+        }
     }
 
     async fn flush(&mut self) -> Result<(), Error> {
