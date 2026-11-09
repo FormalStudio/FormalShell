@@ -149,6 +149,12 @@ impl App {
         true
     }
 
+    /// The overlay has no field: a paste while it holds the keyboard is its
+    /// and goes nowhere.
+    pub(super) fn overlay_paste(&mut self, _: &str) -> bool {
+        self.plugin_overlay.as_ref().is_some_and(|w| w.modal.open)
+    }
+
     /// The pointer over the overlay's window. True when it took the event.
     pub(super) fn overlay_pointer(&mut self, e: &PointerEvent) -> bool {
         let Some(part) = self.overlay_part(&e.surface) else { return false };

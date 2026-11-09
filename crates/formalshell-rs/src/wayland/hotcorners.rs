@@ -168,36 +168,30 @@ impl App {
         w.buffer = Some(buffer);
     }
 
-    /// Takes the events on a corner and hands back the rest.
-    pub(super) fn hot_corner_pointer(&mut self, events: &[PointerEvent]) -> Vec<PointerEvent> {
-        let mut rest = Vec::new();
-        for e in events {
-            let Some(i) = self.corner_of(&e.surface) else {
-                rest.push(e.clone());
-                continue;
-            };
-            let now = self.corner_ms();
-            match e.kind {
-                PointerEventKind::Enter { .. } => {
-                    let w = &self.hot.wins[i];
-                    let armed = arm::is_armed(w.arm, now);
-                    let active = self.action_active(&w.action);
-                    self.hot.wins[i].arm = arm::on_enter(w.arm, now);
-                    self.log(&format!("hot corner {} entered armed={armed} active={active}", self.hot.wins[i].action.as_str()));
-                    if armed && !active {
-                        self.start_dwell(i);
-                    }
+    /// An event on a corner. False for any other surface's.
+    pub(super) fn hot_corner_pointer(&mut self, e: &PointerEvent) -> bool {
+        let Some(i) = self.corner_of(&e.surface) else { return false };
+        let now = self.corner_ms();
+        match e.kind {
+            PointerEventKind::Enter { .. } => {
+                let w = &self.hot.wins[i];
+                let armed = arm::is_armed(w.arm, now);
+                let active = self.action_active(&w.action);
+                self.hot.wins[i].arm = arm::on_enter(w.arm, now);
+                self.log(&format!("hot corner {} entered armed={armed} active={active}", self.hot.wins[i].action.as_str()));
+                if armed && !active {
+                    self.start_dwell(i);
                 }
-                PointerEventKind::Leave { .. } => {
-                    self.stop_dwell(i);
-                    let w = &mut self.hot.wins[i];
-                    w.arm = arm::on_exit(w.arm);
-                }
-                PointerEventKind::Release { .. } => self.fire_corner(i),
-                _ => {}
             }
+            PointerEventKind::Leave { .. } => {
+                self.stop_dwell(i);
+                let w = &mut self.hot.wins[i];
+                w.arm = arm::on_exit(w.arm);
+            }
+            PointerEventKind::Release { .. } => self.fire_corner(i),
+            _ => {}
         }
-        rest
+        true
     }
 
     fn corner_of(&self, surface: &WlSurface) -> Option<usize> {

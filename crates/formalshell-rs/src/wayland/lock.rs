@@ -537,27 +537,25 @@ impl App {
     /// and a move or a press dismisses the screensaver. Enter and leave are
     /// the compositor mapping a surface under a still pointer, not activity,
     /// and neither is a motion to where the pointer already was.
-    pub(super) fn lock_pointer(&mut self, events: &[PointerEvent]) {
-        for e in events {
-            let Some(o) = self.lock.outs.iter_mut().find(|o| *o.surface.layer.wl_surface() == e.surface) else { continue };
-            let last = o.pointer.replace(e.position);
-            let moved = match e.kind {
-                PointerEventKind::Enter { .. } => continue,
-                PointerEventKind::Leave { .. } => {
-                    o.pointer = None;
-                    continue;
-                }
-                PointerEventKind::Motion { .. } => last != Some(e.position),
-                PointerEventKind::Press { .. } => true,
-                _ => false,
-            };
-            if self.lock.resume_guard {
-                self.lock.resume_guard = false;
-                self.lock.dirty = true;
+    pub(super) fn lock_pointer(&mut self, e: &PointerEvent) {
+        let Some(o) = self.lock.outs.iter_mut().find(|o| *o.surface.layer.wl_surface() == e.surface) else { return };
+        let last = o.pointer.replace(e.position);
+        let moved = match e.kind {
+            PointerEventKind::Enter { .. } => return,
+            PointerEventKind::Leave { .. } => {
+                o.pointer = None;
+                return;
             }
-            if moved && self.saver.active {
-                self.saver_input(None, SaverInput::Press);
-            }
+            PointerEventKind::Motion { .. } => last != Some(e.position),
+            PointerEventKind::Press { .. } => true,
+            _ => false,
+        };
+        if self.lock.resume_guard {
+            self.lock.resume_guard = false;
+            self.lock.dirty = true;
+        }
+        if moved && self.saver.active {
+            self.saver_input(None, SaverInput::Press);
         }
     }
 

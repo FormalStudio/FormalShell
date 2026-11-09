@@ -73,7 +73,7 @@ use crate::surfaces::bar::cells::tray as tray_cell;
 use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
 use crate::surfaces::card_window::CardWindow;
 use crate::surfaces::modal::Modal;
-use crate::surfaces::panel::{self, host::{Host, Key, Out, Place}, quick};
+use crate::surfaces::panel::{self, host::{Host, Out, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
 
@@ -1612,7 +1612,13 @@ impl App {
         if let Some(i) = self.picker_owner(surface) {
             return Some(Target::Picker(i));
         }
-        self.zones.iter().position(|(_, z)| z.layer.wl_surface() == surface).map(Target::Zone)
+        if let Some(i) = self.zones.iter().position(|(_, z)| z.layer.wl_surface() == surface) {
+            return Some(Target::Zone(i));
+        }
+        // The compositor sends a press to the panel surface it still has
+        // under the pointer after the shell has dropped it; it is the
+        // outgoing card's, and one on the strip the bar's all the same.
+        self.dropped.contains(surface).then_some(Target::Outgoing)
     }
 
     /// Every window owner's blocks of `debug dump`.
@@ -1683,198 +1689,149 @@ impl App {
         self.preview_pointer(owner == Some(Target::Bar), owner == Some(Target::Panel), at);
     }
 
+    /// Each event down `owner::INPUT`, on to the strip's handling when no
+    /// owner took it.
     fn pointer_events(&mut self, events: &[PointerEvent]) {
-        for e in events {
-            if let Some(i) = self.saver_index(&e.surface) {
-                let input = match e.kind {
-                    PointerEventKind::Enter { serial } => match self.pointer.clone() {
-                        Some(p) => screensaver::SaverInput::Enter(p, serial, e.position),
-                        None => continue,
-                    },
-                    PointerEventKind::Motion { .. } => screensaver::SaverInput::Motion(e.position),
-                    PointerEventKind::Press { .. } => screensaver::SaverInput::Press,
-                    _ => continue,
-                };
-                self.saver_input(Some(i), input);
-                continue;
-            }
-            let mut owner = self.target(&e.surface);
-            // The compositor sends a press to the panel surface it still
-            // has under the pointer after the shell has dropped it; one on
-            // the strip is the bar's all the same.
-            if owner.is_none() && self.dropped.contains(&e.surface) {
-                owner = Some(Target::Outgoing);
-            }
+        'events: for e in events {
+            let mut target = self.target(&e.surface);
+            // A pointer entering any surface has left every dropped one.
             if matches!(e.kind, PointerEventKind::Enter { .. }) {
                 self.dropped.clear();
             }
-            if let Some(Target::Head(_, heads::Part::Catcher)) = owner {
-                if matches!(e.kind, PointerEventKind::Press { .. }) {
-                    self.dismiss();
-                }
-                continue;
-            }
-            if let Some(Target::Head(i, heads::Part::Bar)) = owner
-                && match e.kind {
-                    PointerEventKind::Press { .. } => self.press_spare(i),
-                    PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => self.promote(i),
-                    _ => false,
-                }
-            {
-                owner = self.target(&e.surface);
-            }
-            if let Some(Target::Picker(i)) = owner {
-                self.picker_pointer(i, e);
-                continue;
-            }
-            if self.atlas_pointer(e) {
-                continue;
-            }
-            if self.overview_pointer(e) {
-                continue;
-            }
-            if self.overlay_pointer(e) {
-                continue;
-            }
-            if owner == Some(Target::Launcher(crate::surfaces::modal::Part::Card))
-                && let Some(at) = self.profiles_under(e.position)
-            {
-                self.profiles_pointer(Some(Target::Profiles), &e.kind, at);
-                continue;
-            }
-            if owner != Some(Target::Profiles) {
-                self.profiles_release_elsewhere(&e.kind);
-            }
-            if self.launcher_pointer(e, owner) {
-                continue;
-            }
-            let (mut x, mut y) = e.position;
-            // A pointer left still over the strip once a panel maps gets its
-            // presses on the panel's surface, though that surface's input
-            // region leaves the strip out; they are the bar's.
-            let on_bar = self.bar_input().iter().any(|r| x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64);
-            if matches!(owner, Some(Target::Panel | Target::Outgoing)) && on_bar {
-                owner = Some(Target::Bar);
-                if !self.bar.framed() {
-                    let (ox, oy) = self.chrome().origin(self.bar.thickness());
-                    (x, y) = (x - ox as f64, y - oy as f64);
+            for o in owner::INPUT {
+                match o.pointer(self, e, target) {
+                    owner::Pointer::Pass => {}
+                    owner::Pointer::Taken => continue 'events,
+                    owner::Pointer::Rerouted => target = self.target(&e.surface),
                 }
             }
-            self.headset_pointer(owner, &e.kind);
-            self.profiles_pointer(owner, &e.kind, (x, y));
-            match e.kind {
-                PointerEventKind::Enter { serial } => {
-                    self.cursor = Some((serial, Shape::Default));
-                    self.pointer_on = owner;
-                    self.hover(owner, (x, y));
-                    self.set_cursor(true);
+            self.pointer_rest(e, target);
+        }
+    }
+
+    /// An event no owner took: the strip, its cards and the toasts, and the
+    /// hover and cursor every surface shares.
+    fn pointer_rest(&mut self, e: &PointerEvent, mut owner: Option<Target>) {
+        let (mut x, mut y) = e.position;
+        // A pointer left still over the strip once a panel maps gets its
+        // presses on the panel's surface, though that surface's input
+        // region leaves the strip out; they are the bar's.
+        let on_bar = self.bar_input().iter().any(|r| x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64);
+        if matches!(owner, Some(Target::Panel | Target::Outgoing)) && on_bar {
+            owner = Some(Target::Bar);
+            if !self.bar.framed() {
+                let (ox, oy) = self.chrome().origin(self.bar.thickness());
+                (x, y) = (x - ox as f64, y - oy as f64);
+            }
+        }
+        match e.kind {
+            PointerEventKind::Enter { serial } => {
+                self.cursor = Some((serial, Shape::Default));
+                self.pointer_on = owner;
+                self.hover(owner, (x, y));
+                self.set_cursor(true);
+            }
+            PointerEventKind::Motion { .. } => {
+                if matches!(self.pressed, Some((Target::Bar, _))) && self.bar.sidebar_motion((x, y)) {
+                    self.bar_dirty = true;
                 }
-                PointerEventKind::Motion { .. } => {
-                    if matches!(self.pressed, Some((Target::Bar, _))) && self.bar.sidebar_motion((x, y)) {
+                self.pointer_on = owner;
+                self.hover(owner, (x, y));
+                self.set_cursor(false);
+            }
+            PointerEventKind::Leave { .. } => {
+                self.pointer_on = None;
+                self.hover(None, (x, y));
+            }
+            PointerEventKind::Press { .. } => {
+                if owner == Some(Target::Toasts) {
+                    if let Some(t) = &mut self.toasts {
+                        t.press(x, y);
+                    }
+                    self.pressed = Some((Target::Toasts, Press::Whole));
+                    return;
+                }
+                if owner == Some(Target::Panel) {
+                    if let Some(h) = &mut self.panel {
+                        h.press(x, y, &self.store, self.runtime.as_ref());
+                    }
+                    self.pressed = Some((Target::Panel, Press::Whole));
+                    self.panel_dirty = true;
+                    return;
+                }
+                let hit = match owner {
+                    Some(Target::Bar) => self.bar.hit(x, y).map(Press::Slot),
+                    Some(Target::Menu) => self.tray_menu.as_ref().and_then(|p| p.menu_hit(x, y)).map(Press::Menu),
+                    _ => None,
+                };
+                if owner == Some(Target::Menu) && hit.is_none() {
+                    let outside = self.tray_menu.as_ref().is_some_and(|p| !p.win.on_card(x, y));
+                    if outside {
+                        self.close_tray_menu();
+                        return;
+                    }
+                }
+                self.pressed = owner.zip(hit);
+                if let Some((Target::Bar, Press::Slot(i))) = self.pressed
+                    && self.bar.sidebar_press(i, (x, y))
+                {
+                    self.bar_dirty = true;
+                }
+            }
+            PointerEventKind::Release { button, .. } => {
+                let Some((o, press)) = self.pressed.take() else { return };
+                let button = crate::input::button(button);
+                if o == Target::Toasts {
+                    self.release_toasts(x, y);
+                    return;
+                }
+                if o == Target::Panel {
+                    let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, button, &self.store, self.runtime.as_ref()));
+                    self.panel_out(out);
+                    self.panel_dirty = true;
+                    return;
+                }
+                if o == Target::Bar
+                    && let Some(commands) = self.bar.sidebar_release((x, y))
+                {
+                    self.minimap_drop(commands);
+                    return;
+                }
+                self.click(o, press, button, (x, y));
+            }
+            PointerEventKind::Axis { time, vertical, horizontal, source } => {
+                if owner == Some(Target::Panel) {
+                    let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
+                    let travel = crate::scroll::travel(&vertical, source, time);
+                    if let Some(h) = self.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
+                        h.scroll(x, y, dx, dy, travel, &self.store, self.runtime.as_ref());
+                    }
+                    self.panel_dirty = true;
+                    return;
+                }
+                if owner == Some(Target::Toasts) {
+                    let finger = source == Some(wl_pointer::AxisSource::Finger);
+                    let lift = ((horizontal.stop || vertical.stop) && finger).then_some(time);
+                    self.swipe_toasts(x, y, crate::scroll::travel(&horizontal, source, time), lift);
+                    return;
+                }
+                let (v, h) = (crate::scroll::notches(&vertical), crate::scroll::notches(&horizontal));
+                if v == 0.0 && h == 0.0 {
+                    return;
+                }
+                if owner == Some(Target::Menu) {
+                    if let Some(m) = self.open_menu_mut() {
+                        m.scroll_notches(v);
+                    }
+                    return;
+                }
+                if let Some(i) = self.bar.hit(x, y).filter(|_| owner == Some(Target::Bar)) {
+                    let action = self.bar.wheel(i, v, h, &self.store);
+                    let anchor = self.bar.slot_anchor(i);
+                    self.act(action, anchor);
+                    if self.bar.sidebar.is_some() {
                         self.bar_dirty = true;
-                    }
-                    self.pointer_on = owner;
-                    self.hover(owner, (x, y));
-                    self.set_cursor(false);
-                }
-                PointerEventKind::Leave { .. } => {
-                    self.pointer_on = None;
-                    self.hover(None, (x, y));
-                }
-                PointerEventKind::Press { .. } => {
-                    if owner == Some(Target::Switcher) {
-                        self.switcher_close();
-                        continue;
-                    }
-                    if owner == Some(Target::Toasts) {
-                        if let Some(t) = &mut self.toasts {
-                            t.press(x, y);
-                        }
-                        self.pressed = Some((Target::Toasts, Press::Whole));
-                        continue;
-                    }
-                    if owner == Some(Target::Panel) {
-                        if let Some(h) = &mut self.panel {
-                            h.press(x, y, &self.store, self.runtime.as_ref());
-                        }
-                        self.pressed = Some((Target::Panel, Press::Whole));
-                        self.panel_dirty = true;
-                        continue;
-                    }
-                    let hit = match owner {
-                        Some(Target::Bar) => self.bar.hit(x, y).map(Press::Slot),
-                        Some(Target::Menu) => self.tray_menu.as_ref().and_then(|p| p.menu_hit(x, y)).map(Press::Menu),
-                        _ => None,
-                    };
-                    if owner == Some(Target::Menu) && hit.is_none() {
-                        let outside = self.tray_menu.as_ref().is_some_and(|p| !p.win.on_card(x, y));
-                        if outside {
-                            self.close_tray_menu();
-                            continue;
-                        }
-                    }
-                    self.pressed = owner.zip(hit);
-                    if let Some((Target::Bar, Press::Slot(i))) = self.pressed
-                        && self.bar.sidebar_press(i, (x, y))
-                    {
-                        self.bar_dirty = true;
-                    }
-                }
-                PointerEventKind::Release { button, .. } => {
-                    let Some((o, press)) = self.pressed.take() else { continue };
-                    let button = crate::input::button(button);
-                    if o == Target::Toasts {
-                        self.release_toasts(x, y);
-                        continue;
-                    }
-                    if o == Target::Panel {
-                        let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, button, &self.store, self.runtime.as_ref()));
-                        self.panel_out(out);
-                        self.panel_dirty = true;
-                        continue;
-                    }
-                    if o == Target::Bar
-                        && let Some(commands) = self.bar.sidebar_release((x, y))
-                    {
-                        self.minimap_drop(commands);
-                        continue;
-                    }
-                    self.click(o, press, button, (x, y));
-                }
-                PointerEventKind::Axis { time, vertical, horizontal, source } => {
-                    if owner == Some(Target::Panel) {
-                        let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
-                        let travel = crate::scroll::travel(&vertical, source, time);
-                        if let Some(h) = self.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
-                            h.scroll(x, y, dx, dy, travel, &self.store, self.runtime.as_ref());
-                        }
-                        self.panel_dirty = true;
-                        continue;
-                    }
-                    if owner == Some(Target::Toasts) {
-                        let finger = source == Some(wl_pointer::AxisSource::Finger);
-                        let lift = ((horizontal.stop || vertical.stop) && finger).then_some(time);
-                        self.swipe_toasts(x, y, crate::scroll::travel(&horizontal, source, time), lift);
-                        continue;
-                    }
-                    let (v, h) = (crate::scroll::notches(&vertical), crate::scroll::notches(&horizontal));
-                    if v == 0.0 && h == 0.0 {
-                        continue;
-                    }
-                    if owner == Some(Target::Menu) {
-                        if let Some(m) = self.open_menu_mut() {
-                            m.scroll_notches(v);
-                        }
-                        continue;
-                    }
-                    if let Some(i) = self.bar.hit(x, y).filter(|_| owner == Some(Target::Bar)) {
-                        let action = self.bar.wheel(i, v, h, &self.store);
-                        let anchor = self.bar.slot_anchor(i);
-                        self.act(action, anchor);
-                        if self.bar.sidebar.is_some() {
-                            self.bar_dirty = true;
-                            self.request_paint();
-                        }
+                        self.request_paint();
                     }
                 }
             }
@@ -1921,52 +1878,24 @@ impl App {
         }
     }
 
-    /// One key on the keyboard, routed to the open panel.
+    /// One key on the keyboard, down `owner::INPUT` to the first owner
+    /// holding the keyboard.
     fn key_event_from(&mut self, event: KeyEvent, repeat: bool) {
-        if self.lock_key(&event, repeat) || self.polkit_key(&event) || self.overlay_key(&event) || self.picker_key_event(&event) || self.atlas_key(&event) || self.launcher_key(&event, repeat) || self.switcher_key(event.keysym) || self.overview_key(&event) || self.sidebar_key(&event) {
-            return;
-        }
-        let editing = self.panel.as_ref().is_some_and(|h| h.editing());
-        let key = match event.keysym {
-            Keysym::Escape | Keysym::Tab | Keysym::ISO_Left_Tab | Keysym::Return | Keysym::KP_Enter if editing => match event.keysym {
-                Keysym::Escape => Key::Escape,
-                Keysym::Tab if !self.mods.shift => Key::Tab(1),
-                Keysym::Tab | Keysym::ISO_Left_Tab => Key::Tab(-1),
-                _ => Key::Activate,
-            },
-            sym if editing => Key::Edit(crate::input::field_key(sym), self.mods, event.utf8),
-            _ => match crate::input::panel_key(event.keysym, event.utf8, repeat, self.mods.shift) {
-                Some(key) => key,
-                None => return,
-            },
-        };
-        // A tray item's menu over its panel takes the keys while it is up.
-        if self.tray_menu.as_ref().is_some_and(|p| p.win.card.is_open()) {
-            match key {
-                Key::Escape => self.close_tray_menu(),
-                Key::Move(0, dy) => drop(self.tray_menu_cursor(dy)),
-                Key::Activate => drop(self.tray_menu_activate()),
-                _ => {}
+        for o in owner::INPUT {
+            if o.key(self, &event, repeat) {
+                return;
             }
-            return;
         }
-        let Some(h) = &mut self.panel else { return };
-        let out = h.key(key, &self.store, self.runtime.as_ref());
-        self.panel_dirty = true;
-        self.panel_out(out);
     }
 
-    /// The clipboard's text read for a Ctrl+V, into whichever field holds
+    /// The clipboard's text read for a Ctrl+V, into whichever owner holds
     /// the keyboard now, in the order keys reach them.
     pub(crate) fn field_paste(&mut self) {
         let Some(text) = self.store.clipboard.pasted.take() else { return };
-        if self.lock_paste(&text) || self.polkit_paste(&text) || self.atlas_paste(&text) || self.launcher_paste(&text) {
-            return;
-        }
-        if let Some(h) = self.panel.as_mut().filter(|h| h.editing()) {
-            let out = h.paste(text, &self.store, self.runtime.as_ref());
-            self.panel_dirty = true;
-            self.panel_out(out);
+        for o in owner::INPUT {
+            if o.paste(self, &text) {
+                return;
+            }
         }
     }
 
@@ -2122,11 +2051,7 @@ impl SeatHandler for App {
 
 impl PointerHandler for App {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
-        self.lock_pointer(events);
-        let rest = self.hot_corner_pointer(events);
-        if !rest.is_empty() {
-            self.pointer_events(&rest);
-        }
+        self.pointer_events(events);
     }
 }
 
@@ -2136,10 +2061,6 @@ impl KeyboardHandler for App {
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {}
 
     fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
-        if self.saver.active && !self.lock.locked {
-            self.saver_input(None, screensaver::SaverInput::Key);
-            return;
-        }
         self.key_event_from(event, false);
     }
 

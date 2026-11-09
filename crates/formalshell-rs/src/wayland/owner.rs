@@ -1,17 +1,21 @@
-//! The window owners' lifecycle: which owner a configure, a frame callback
-//! or a close belongs to, and the one order they come off screen, present,
-//! wake, rescale and report in. Keys, pastes and the pointer go by an
-//! order of their own.
+//! The window owners: which owner a configure, a frame callback or a close
+//! belongs to, the one order they come off screen, present, wake, rescale
+//! and report in, and the other order keys, pastes and the pointer reach
+//! them in.
 
 use std::time::Instant;
 
 use serde_json::{Map, Value, json};
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
+use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 
-use super::App;
+use super::{App, Target, heads, screensaver::SaverInput};
 use crate::surfaces;
+use crate::surfaces::modal::Part;
+use crate::surfaces::panel::host::Key;
 
 /// One window owner's part in the lifecycle. Its state lives on `App`
 /// beside what it draws with, so every hook takes the whole of it.
@@ -38,6 +42,29 @@ pub(super) trait Owner: Sync {
     fn report(&self, _: &App, _: &mut Map<String, Value>) {}
     /// Its surfaces' commit and callback counts, for the exit line.
     fn counts(&self, _: &App, _: &mut Vec<String>) {}
+    /// A key while it holds the keyboard. True when it took the key.
+    fn key(&self, _: &mut App, _: &KeyEvent, _repeat: bool) -> bool {
+        false
+    }
+    /// The clipboard's text a field asked for, while it holds the keyboard.
+    /// True when it took the text.
+    fn paste(&self, _: &mut App, _: &str) -> bool {
+        false
+    }
+    /// A pointer event, on `target` as far as the walk has resolved it.
+    fn pointer(&self, _: &mut App, _: &PointerEvent, _: Option<Target>) -> Pointer {
+        Pointer::Pass
+    }
+}
+
+/// What an owner did with a pointer event.
+pub(super) enum Pointer {
+    /// On to the next owner, and to the strip's own handling past the last.
+    Pass,
+    Taken,
+    /// It moved the surface under the event to another owner (a spare bar
+    /// promoted), so the walk goes on with the target resolved again.
+    Rerouted,
 }
 
 /// The present order: every output's head, the live bar, the cards hanging
@@ -70,6 +97,32 @@ pub(super) static LIFECYCLE: &[&dyn Owner] = &[
     &HotCorners,
 ];
 
+/// The order keys, pastes and the pointer reach the owners in, which is not
+/// the present order: the screensaver's dismissing key, then the lock, the
+/// polkit dialog, the modals with the atlas ahead of the launcher, the
+/// switcher, the overview, the sidebar's keys, and the bar's cards last. An
+/// owner without a hook passes. For the pointer the order decides only
+/// between owners that act on another's surface: the profile pill under the
+/// launcher's card and a spare bar promoted under the pointer. What every
+/// owner passes goes to `App::pointer_rest`.
+pub(super) static INPUT: &[&dyn Owner] = &[
+    &Saver,
+    &Lock,
+    &HotCorners,
+    &Heads,
+    &Polkit,
+    &Overlay,
+    &Region,
+    &Atlas,
+    &Profiles,
+    &Launcher,
+    &Switcher,
+    &Overview,
+    &Bar,
+    &Headset,
+    &Cards,
+];
+
 /// The owner of `surface`. A surface has one owner, so the walk's order
 /// decides nothing here.
 pub(super) fn of(app: &App, surface: &WlSurface) -> Option<&'static dyn Owner> {
@@ -81,6 +134,30 @@ struct Heads;
 impl Owner for Heads {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.head_part(surface).is_some()
+    }
+
+    /// A press on another output's catcher closes what a click outside
+    /// closes; a spare bar under the pointer becomes the live one, and the
+    /// event goes on to it.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        match target {
+            Some(Target::Head(_, heads::Part::Catcher)) => {
+                if matches!(e.kind, PointerEventKind::Press { .. }) {
+                    app.dismiss();
+                }
+                Pointer::Taken
+            }
+            Some(Target::Head(i, heads::Part::Bar))
+                if match e.kind {
+                    PointerEventKind::Press { .. } => app.press_spare(i),
+                    PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => app.promote(i),
+                    _ => false,
+                } =>
+            {
+                Pointer::Rerouted
+            }
+            _ => Pointer::Pass,
+        }
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
@@ -129,6 +206,11 @@ struct Bar;
 impl Owner for Bar {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.bar_surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface)
+    }
+
+    /// The sidebar's map while it holds the keyboard.
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.sidebar_key(event)
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, (width, height): (i32, i32)) {
@@ -222,6 +304,48 @@ impl Owner for Cards {
         app.panel.as_ref().is_some_and(|p| p.win.owns(surface))
             || app.tray_menu.as_ref().is_some_and(|p| p.win.owns(surface))
             || app.outgoing.as_ref().is_some_and(|p| p.win.owns(surface))
+    }
+
+    /// Every key nothing ahead took: a tray item's menu over its panel
+    /// while it is up, else the open panel.
+    fn key(&self, app: &mut App, event: &KeyEvent, repeat: bool) -> bool {
+        let editing = app.panel.as_ref().is_some_and(|h| h.editing());
+        let key = match event.keysym {
+            Keysym::Escape | Keysym::Tab | Keysym::ISO_Left_Tab | Keysym::Return | Keysym::KP_Enter if editing => match event.keysym {
+                Keysym::Escape => Key::Escape,
+                Keysym::Tab if !app.mods.shift => Key::Tab(1),
+                Keysym::Tab | Keysym::ISO_Left_Tab => Key::Tab(-1),
+                _ => Key::Activate,
+            },
+            sym if editing => Key::Edit(crate::input::field_key(sym), app.mods, event.utf8.clone()),
+            _ => match crate::input::panel_key(event.keysym, event.utf8.clone(), repeat, app.mods.shift) {
+                Some(key) => key,
+                None => return true,
+            },
+        };
+        if app.tray_menu.as_ref().is_some_and(|p| p.win.card.is_open()) {
+            match key {
+                Key::Escape => app.close_tray_menu(),
+                Key::Move(0, dy) => drop(app.tray_menu_cursor(dy)),
+                Key::Activate => drop(app.tray_menu_activate()),
+                _ => {}
+            }
+            return true;
+        }
+        let Some(h) = &mut app.panel else { return true };
+        let out = h.key(key, &app.store, app.runtime.as_ref());
+        app.panel_dirty = true;
+        app.panel_out(out);
+        true
+    }
+
+    /// Into the open panel's field, while one is being edited.
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        let Some(h) = app.panel.as_mut().filter(|h| h.editing()) else { return false };
+        let out = h.paste(text.to_owned(), &app.store, app.runtime.as_ref());
+        app.panel_dirty = true;
+        app.panel_out(out);
+        true
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, _: (i32, i32)) {
@@ -343,6 +467,19 @@ impl Owner for Launcher {
         app.launcher_part(surface).is_some()
     }
 
+    fn key(&self, app: &mut App, event: &KeyEvent, repeat: bool) -> bool {
+        app.launcher_key(event, repeat)
+    }
+
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        app.launcher_paste(text)
+    }
+
+    /// Its card's events. A scrim's go on to the strip's handling.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        if app.launcher_pointer(e, target) { Pointer::Taken } else { Pointer::Pass }
+    }
+
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
         if let Some(part) = app.launcher_part(surface) {
             app.launcher_configure(part, width, height);
@@ -382,6 +519,18 @@ impl Owner for Atlas {
         app.atlas_part(surface).is_some()
     }
 
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.atlas_key(event)
+    }
+
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        app.atlas_paste(text)
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        if app.atlas_pointer(e) { Pointer::Taken } else { Pointer::Pass }
+    }
+
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
         if let Some(part) = app.atlas_part(surface) {
             app.atlas_configure(part, width, height);
@@ -418,6 +567,20 @@ impl Owner for Switcher {
         app.switcher.owns(surface)
     }
 
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.switcher_key(event.keysym)
+    }
+
+    /// A press on the card closes it; its other events go on to the strip's
+    /// handling.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        if target != Some(Target::Switcher) || !matches!(e.kind, PointerEventKind::Press { .. }) {
+            return Pointer::Pass;
+        }
+        app.switcher_close();
+        Pointer::Taken
+    }
+
     fn configure(&self, app: &mut App, _: &WlSurface, (width, height): (i32, i32)) {
         app.switcher_configure(width, height);
     }
@@ -452,6 +615,14 @@ struct Overview;
 impl Owner for Overview {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.overview.owns(surface)
+    }
+
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.overview_key(event)
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        if app.overview_pointer(e) { Pointer::Taken } else { Pointer::Pass }
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, (width, height): (i32, i32)) {
@@ -493,6 +664,32 @@ struct Saver;
 impl Owner for Saver {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.saver_index(surface).is_some()
+    }
+
+    /// A key pressed while it runs over an unlocked session dismisses it and
+    /// goes no further; a repeat is not a press. Under the lock the lock's
+    /// own key does it.
+    fn key(&self, app: &mut App, _: &KeyEvent, repeat: bool) -> bool {
+        if repeat || !app.saver.active || app.lock.locked {
+            return false;
+        }
+        app.saver_input(None, SaverInput::Key);
+        true
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        let Some(i) = app.saver_index(&e.surface) else { return Pointer::Pass };
+        let input = match e.kind {
+            PointerEventKind::Enter { serial } => match app.pointer.clone() {
+                Some(p) => SaverInput::Enter(p, serial, e.position),
+                None => return Pointer::Taken,
+            },
+            PointerEventKind::Motion { .. } => SaverInput::Motion(e.position),
+            PointerEventKind::Press { .. } => SaverInput::Press,
+            _ => return Pointer::Taken,
+        };
+        app.saver_input(Some(i), input);
+        Pointer::Taken
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
@@ -642,6 +839,13 @@ impl Owner for Headset {
         app.headset_owns(surface)
     }
 
+    /// Its card's events, which go on to the strip's handling for the hover
+    /// and the hand.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        app.headset_pointer(target, &e.kind);
+        Pointer::Pass
+    }
+
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
         app.headset_configure();
     }
@@ -678,6 +882,24 @@ struct Profiles;
 impl Owner for Profiles {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.profiles_owns(surface)
+    }
+
+    /// The launcher's card covers the pill, so the pill takes the card's
+    /// events over itself. Its own surface's go on to the strip's handling
+    /// for the hover and the hand.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        if target == Some(Target::Launcher(Part::Card))
+            && let Some(at) = app.profiles_under(e.position)
+        {
+            app.profiles_pointer(Some(Target::Profiles), &e.kind, at);
+            return Pointer::Taken;
+        }
+        if target == Some(Target::Profiles) {
+            app.profiles_pointer(target, &e.kind, e.position);
+        } else {
+            app.profiles_release_elsewhere(&e.kind);
+        }
+        Pointer::Pass
     }
 
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
@@ -820,6 +1042,20 @@ impl Owner for Region {
         app.picker_owner(surface).is_some()
     }
 
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.picker_key_event(event)
+    }
+
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        app.picker_paste(text)
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, target: Option<Target>) -> Pointer {
+        let Some(Target::Picker(i)) = target else { return Pointer::Pass };
+        app.picker_pointer(i, e);
+        Pointer::Taken
+    }
+
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
         if let Some(i) = app.picker_owner(surface) {
             app.picker_configure(i, width, height);
@@ -861,6 +1097,14 @@ impl Owner for Polkit {
         app.polkit_owns(surface)
     }
 
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.polkit_key(event)
+    }
+
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        app.polkit_paste(text)
+    }
+
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
         app.polkit_configure(surface, width, height);
     }
@@ -884,6 +1128,18 @@ struct Overlay;
 impl Owner for Overlay {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.overlay_owns(surface)
+    }
+
+    fn key(&self, app: &mut App, event: &KeyEvent, _: bool) -> bool {
+        app.overlay_key(event)
+    }
+
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        app.overlay_paste(text)
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        if app.overlay_pointer(e) { Pointer::Taken } else { Pointer::Pass }
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, (width, height): (i32, i32)) {
@@ -910,6 +1166,20 @@ struct Lock;
 impl Owner for Lock {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.lock_owns(surface)
+    }
+
+    fn key(&self, app: &mut App, event: &KeyEvent, repeat: bool) -> bool {
+        app.lock_key(event, repeat)
+    }
+
+    fn paste(&self, app: &mut App, text: &str) -> bool {
+        app.lock_paste(text)
+    }
+
+    /// It watches its surfaces' events and passes them all on.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        app.lock_pointer(e);
+        Pointer::Pass
     }
 
     fn frame(&self, app: &mut App, surface: &WlSurface, _: Instant) {
@@ -984,6 +1254,10 @@ struct HotCorners;
 impl Owner for HotCorners {
     fn owns(&self, app: &App, surface: &WlSurface) -> bool {
         app.hot_corner_owns(surface)
+    }
+
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        if app.hot_corner_pointer(e) { Pointer::Taken } else { Pointer::Pass }
     }
 
     fn configure(&self, app: &mut App, surface: &WlSurface, _: (i32, i32)) {

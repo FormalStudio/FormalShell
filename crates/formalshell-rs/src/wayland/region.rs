@@ -248,6 +248,12 @@ impl App {
         self.picker_sync();
     }
 
+    /// The picker has no field: a paste while it holds the keyboard is its
+    /// and goes nowhere.
+    pub(super) fn picker_paste(&mut self, _: &str) -> bool {
+        self.capture.picker.open
+    }
+
     /// True when the picker took the key.
     pub(super) fn picker_key_event(&mut self, event: &KeyEvent) -> bool {
         if !self.capture.picker.open {
