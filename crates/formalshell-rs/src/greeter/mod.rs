@@ -38,7 +38,7 @@ use calloop::{EventLoop, LoopHandle};
 use chrono::{Local, Timelike};
 use fs_theme::theme::Theme;
 use serde_json::Value;
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
@@ -66,7 +66,7 @@ use crate::services::wallpaper;
 use crate::surface::{Backend, Surface};
 use crate::paint::Kit;
 use crate::surfaces::lock;
-use crate::surfaces::veil::Veil;
+use crate::surfaces::veil::{Layers, Veil};
 use crate::ui::{Ui, What};
 use greetd::{Conversation, Phase, Request, Response, Step};
 use sessions::Session;
@@ -617,16 +617,8 @@ impl Greeter {
         }
         let now = Instant::now();
         for o in &self.outs {
-            let wl = self.compositor.create_surface(&self.qh);
-            let ls = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:greeter-veil"), Some(&o.output));
-            ls.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
-            ls.set_exclusive_zone(-1);
-            ls.set_keyboard_interactivity(KeyboardInteractivity::None);
-            if let Ok(region) = Region::new(&self.compositor) {
-                ls.set_input_region(Some(region.wl_region()));
-            }
-            ls.commit();
-            let mut veil = Veil::new(Surface::new("greeter-veil", Backend::Gpu, ls, &self.shm, self.started, self.scales.on(&o.output)), 0.0, now);
+            let layers = Layers { compositor: &self.compositor, shell: &self.layer_shell, qh: &self.qh };
+            let mut veil = Veil::new(&layers, &self.shm, &o.output, ("formalshell:greeter-veil", "greeter-veil"), self.scales.on(&o.output), 0.0, self.started);
             veil.fade(1.0, LEAVE_MS, now);
             self.veils.push(veil);
         }

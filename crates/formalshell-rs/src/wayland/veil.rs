@@ -18,18 +18,16 @@ use std::time::{Duration, Instant};
 
 use calloop::channel;
 use calloop::timer::{TimeoutAction, Timer};
-use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 
 use super::App;
 use crate::scene::Scene;
 use crate::services::compositor::{self, Command};
-use crate::surface::{Backend, PixelSurface, Surface};
+use crate::surface::PixelSurface;
 use crate::surfaces::dissolve;
-use crate::surfaces::veil::Veil;
+use crate::surfaces::veil::{Layers, Veil};
 
 /// The lift once the desktop is in, and how long it waits for the bar and
 /// the wallpapers before lifting without them.
@@ -148,16 +146,8 @@ impl App {
     }
 
     fn new_veil(&self, output: &WlOutput, opacity: f32) -> Veil<PixelSurface> {
-        let wl = self.compositor.create_surface(&self.qh);
-        let ls = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:veil"), Some(output));
-        ls.set_anchor(Anchor::all());
-        ls.set_exclusive_zone(-1);
-        ls.set_keyboard_interactivity(KeyboardInteractivity::None);
-        if let Ok(region) = Region::new(&self.compositor) {
-            ls.set_input_region(Some(region.wl_region()));
-        }
-        ls.commit();
-        Veil::new(PixelSurface::new("veil", ls, 1.0, &self.pixels, &self.qh, self.started), opacity, Instant::now())
+        let layers = Layers { compositor: &self.compositor, shell: &self.layer_shell, qh: &self.qh };
+        Veil::pixel(&layers, &self.pixels, output, opacity, self.started)
     }
 
     fn veil_index(&self, surface: &WlSurface) -> Option<usize> {
@@ -218,20 +208,11 @@ impl App {
     /// of its own. The lock lifts once every one has been committed, or
     /// after [`HANDOVER_WAIT`]; false when there is nothing to hand over.
     pub(super) fn hand_over(&mut self, pictures: Vec<(WlOutput, Scene)>) -> bool {
-        let now = Instant::now();
         self.veil.handover.clear();
         for (output, scene) in pictures {
-            let wl = self.compositor.create_surface(&self.qh);
-            let ls = self.layer_shell.create_layer_surface(&self.qh, wl, Layer::Overlay, Some("formalshell:veil"), Some(&output));
-            ls.set_anchor(Anchor::all());
-            ls.set_exclusive_zone(-1);
-            ls.set_keyboard_interactivity(KeyboardInteractivity::None);
-            if let Ok(region) = Region::new(&self.compositor) {
-                ls.set_input_region(Some(region.wl_region()));
-            }
-            ls.commit();
-            let surface = Surface::new("unlock", Backend::Gpu, ls, &self.shm, self.started, self.store.display.scales.on(&output));
-            self.veil.handover.push((output, Veil::picture(surface, scene, now)));
+            let layers = Layers { compositor: &self.compositor, shell: &self.layer_shell, qh: &self.qh };
+            let veil = Veil::new(&layers, &self.shm, &output, ("formalshell:veil", "unlock"), self.store.display.scales.on(&output), 1.0, self.started).holding(scene);
+            self.veil.handover.push((output, veil));
         }
         if self.veil.handover.is_empty() {
             return false;

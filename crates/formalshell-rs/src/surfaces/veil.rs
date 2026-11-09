@@ -2,22 +2,53 @@
 //! the greeter's way out to the session, and the shell's arrival from black
 //! and departure into it (docs/superpowers/specs/2026-10-30-seams.md). On
 //! unlock it carries the lock's last picture instead of black, and leaves
-//! by the pixel dissolve rather than a fade (`surfaces/dissolve.rs`). The
-//! caller makes the layer surface (Overlay, every edge anchored, an empty
-//! input region) and routes its configure and frame callbacks here. The
-//! shell's is a [`PixelSurface`], so a fade step is one multiplier; the
+//! by the pixel dissolve rather than a fade (`surfaces/dissolve.rs`). A veil
+//! makes its own layer surface (Overlay, every edge anchored, an empty
+//! input region); the caller routes its configure and frame callbacks here.
+//! The shell's is a [`PixelSurface`], so a fade step is one multiplier; the
 //! greeter, which binds no single-pixel buffers, draws its own black.
 
 use std::time::{Duration, Instant};
 
 use fs_theme::color::Rgba;
-use smithay_client_toolkit::reexports::client::QueueHandle;
-use smithay_client_toolkit::shell::wlr_layer::LayerSurface;
+use smithay_client_toolkit::compositor::{CompositorState, Region, SurfaceData};
+use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
+use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
+use smithay_client_toolkit::reexports::client::{Dispatch, QueueHandle};
+use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
+use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerSurface, LayerSurfaceData};
+use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shm::Shm;
 
 use crate::scene::{IRect, NodeId, Scene};
 use crate::surfaces::dissolve::Dissolve;
-use crate::surface::{Dispatcher, PixelSurface, Surface};
+use crate::surface::{Backend, Dispatcher, Pixels, PixelSurface, Surface};
 use crate::paint::Painter;
+
+/// What a veil needs from its owner to make a layer surface.
+pub struct Layers<'a, D> {
+    pub compositor: &'a CompositorState,
+    pub shell: &'a LayerShell,
+    pub qh: &'a QueueHandle<D>,
+}
+
+impl<D> Layers<'_, D>
+where
+    D: Dispatch<WlSurface, SurfaceData<()>> + Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData> + 'static,
+{
+    fn make(&self, output: &WlOutput, namespace: &'static str) -> LayerSurface {
+        let wl = self.compositor.create_surface(self.qh);
+        let layer = self.shell.create_layer_surface(self.qh, wl, Layer::Overlay, Some(namespace), Some(output));
+        layer.set_anchor(Anchor::all());
+        layer.set_exclusive_zone(-1);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+        if let Ok(region) = Region::new(self.compositor) {
+            layer.set_input_region(Some(region.wl_region()));
+        }
+        layer.commit();
+        layer
+    }
+}
 
 /// One fade: where it started, from and to which opacity, over how long.
 #[derive(Clone, Copy)]
@@ -45,13 +76,34 @@ pub struct Veil<S = Surface<LayerSurface>> {
 
 impl<S> Veil<S> {
     /// A veil standing at `opacity` until the first `fade`.
-    pub fn new(surface: S, opacity: f32, now: Instant) -> Self {
+    fn with(surface: S, opacity: f32) -> Self {
+        let now = Instant::now();
         Self { surface, scene: Scene::new(1, 1), nodes: Vec::new(), fade: Fade { at: now, from: opacity, to: opacity, ms: 0.0 }, committed_end: false, shown_end: false, held: false, dissolve: None }
     }
 
     /// An opaque veil drawing `scene` rather than black.
-    pub fn picture(surface: S, scene: Scene, now: Instant) -> Self {
-        Self { scene, held: true, ..Self::new(surface, 1.0, now) }
+    pub fn holding(self, scene: Scene) -> Self {
+        Self { scene, held: true, ..self }
+    }
+
+    /// A fade out ends in the layer's destruction, so its end needs no
+    /// commit or callback: near alpha 0 Hyprland stops drawing the layer and
+    /// calling it back, until something else repaints the output, which an
+    /// idle desktop may not do for a minute. `deadline` wakes the loop for it.
+    fn ends_unseen(&mut self, now: Instant) -> bool {
+        let ended = self.fade.to == 0.0 && self.done(now);
+        if ended {
+            self.shown_end = true;
+        }
+        ended
+    }
+
+    /// After a draw: the commit carried the fade's end, so the next frame
+    /// callback shows it.
+    fn drew(&mut self, done: bool, before: u64, waiting: bool, commits: u64) {
+        if commits > before || (!waiting && commits > 0) {
+            self.committed_end = done;
+        }
     }
 
     /// From wherever the veil stands now to `to`, over `ms`.
@@ -83,6 +135,18 @@ impl<S> Veil<S> {
 }
 
 impl Veil<PixelSurface> {
+    /// A veil over `output` on a single-pixel surface.
+    pub fn pixel<D: Dispatcher + Dispatch<WlSurface, SurfaceData<()>> + Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData>>(
+        layers: &Layers<D>,
+        pixels: &Pixels,
+        output: &WlOutput,
+        opacity: f32,
+        started: Instant,
+    ) -> Self {
+        let layer = layers.make(output, "formalshell:veil");
+        Self::with(PixelSurface::new("veil", layer, 1.0, pixels, layers.qh, started), opacity)
+    }
+
     pub fn configure(&mut self, width: i32, height: i32) {
         self.surface.configure(width, height);
     }
@@ -99,25 +163,32 @@ impl Veil<PixelSurface> {
         if self.surface.size().is_none() {
             return true;
         }
-        // A fade out ends in the layer's destruction, so its end needs no
-        // commit or callback: near alpha 0 Hyprland stops drawing the layer
-        // and calling it back, until something else repaints the output,
-        // which an idle desktop may not do for a minute. `deadline` wakes
-        // the loop for it.
-        if self.fade.to == 0.0 && self.done(now) {
-            self.shown_end = true;
+        if self.ends_unseen(now) {
             return false;
         }
         let (done, before, waiting) = (self.done(now), self.surface.commits(), self.surface.frame_pending());
         self.surface.present(f64::from(self.opacity(now)), !self.shown_end, qh);
-        if self.surface.commits() > before || (!waiting && self.surface.commits() > 0) {
-            self.committed_end = done;
-        }
+        self.drew(done, before, waiting, self.surface.commits());
         !self.shown_end
     }
 }
 
 impl Veil {
+    /// A veil over `output` in `namespace`, drawing its own black at
+    /// `opacity` (the greeter's, which binds no single-pixel buffers).
+    pub fn new<D: Dispatcher + Dispatch<WlSurface, SurfaceData<()>> + Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData>>(
+        layers: &Layers<D>,
+        shm: &Shm,
+        output: &WlOutput,
+        (namespace, name): (&'static str, &'static str),
+        scale: f64,
+        opacity: f32,
+        started: Instant,
+    ) -> Self {
+        let layer = layers.make(output, namespace);
+        Self::with(Surface::new(name, Backend::Gpu, layer, shm, started, scale), opacity)
+    }
+
     /// A committed picture whose output has since changed size: drawn on,
     /// it would be stretched over a desktop it no longer matches.
     pub fn outgrown(&self, width: i32, height: i32) -> bool {
@@ -159,10 +230,7 @@ impl Veil {
         if !self.surface.configured {
             return true;
         }
-        // As the shell's own veils: a fade out ends in the layer's
-        // destruction, with no callback to wait on near alpha 0.
-        if self.fade.to == 0.0 && self.done(now) {
-            self.shown_end = true;
+        if self.ends_unseen(now) {
             return false;
         }
         if let Some(d) = &mut self.dissolve {
@@ -184,9 +252,7 @@ impl Veil {
         // The opacity is a 1/256 step, so the fade's last stretch can round
         // to the step already on screen: nothing is drawn, and the end is
         // already what the last commit carried.
-        if self.surface.commits() > before || (!waiting && self.surface.commits() > 0) {
-            self.committed_end = done;
-        }
+        self.drew(done, before, waiting, self.surface.commits());
         !self.shown_end
     }
 }
