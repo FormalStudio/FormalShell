@@ -25,9 +25,10 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 
 use super::App;
+use super::backdrop::{Backdrop, Shards};
 use crate::store::Topic;
 use crate::scene::IRect;
-use crate::surface::{Backdrop, PixelSurface, Surface};
+use crate::surface::{PixelSurface, Surface};
 use crate::surfaces::bar::Bar;
 
 pub(super) struct Head {
@@ -424,7 +425,7 @@ impl App {
             let made = (animate && has == Some(false)).then(|| {
                 let layer = |ns| self.overlay_on(ns, Layer::Background, Anchor::all(), (0, 0), -1, Some(&output));
                 let (shards, grid) = (layer("formalshell:backdrop-shards"), layer("formalshell:backdrop-grid"));
-                crate::surface::Shards::new(shards, grid, &self.pixels, &self.shm, &self.qh, self.started)
+                Shards::new(shards, grid, &self.pixels, &self.shm, &self.qh, self.started)
             });
             let qh = &self.qh;
             let Some(b) = self.heads[i].backdrop.as_mut() else { continue };
@@ -536,7 +537,7 @@ impl App {
     }
 
     /// The mark's word in the table's display face, shaped once per face.
-    pub(super) fn shard_word(&mut self) -> std::sync::Arc<Vec<(std::sync::Arc<vello_cpu::kurbo::BezPath>, f64, f64)>> {
+    pub(super) fn shard_word(&mut self) -> crate::shards::Words {
         let theme = &self.store.theme.theme;
         let style = crate::text::TextStyle {
             family: crate::paint::face(theme.faces.display),
@@ -675,11 +676,14 @@ const SHARD_BATTERY_FLOOR: fs_types::Percent = fs_types::Percent::whole(20);
 /// Past this share of the output under tiled windows it holds still.
 const SHARD_COVER_LIMIT: f64 = 0.85;
 
-/// The beat that draws `output`'s sculpture at [`crate::surface::SHARD_FPS`]
+/// Frames a second the sculpture is drawn at, at most.
+const SHARD_FPS: f64 = 24.0;
+
+/// The beat that draws `output`'s sculpture at [`SHARD_FPS`]
 /// while it runs; it drops itself once the sculpture stops or goes.
 fn shard_beat(handle: &calloop::LoopHandle<'static, App>, output: WlOutput) -> Option<calloop::RegistrationToken> {
     use calloop::timer::{TimeoutAction, Timer};
-    let period = std::time::Duration::from_secs_f64(1.0 / crate::surface::SHARD_FPS);
+    let period = std::time::Duration::from_secs_f64(1.0 / SHARD_FPS);
     handle
         .insert_source(Timer::from_duration(period), move |deadline, _, app| {
             let now = Instant::now();

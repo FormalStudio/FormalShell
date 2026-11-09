@@ -313,6 +313,10 @@ paths = ["crates/fs-chrome/src/shards.rs", "crates/formalshell-rs/src/shards.rs"
 runs = ["--backdrop"]
 
 [[rule]]
+paths = ["crates/formalshell-rs/src/wayland/backdrop.rs"]
+runs = ["--backdrop", "--wallpaper", "--wallpaper-pair", "--sky", "--desktop-clock", "--lock"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/services/clock.rs"]
 runs = ["--desktop-clock", "--lock"]
 

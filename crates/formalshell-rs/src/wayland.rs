@@ -5,6 +5,7 @@
 //! callback or an input event belongs to.
 
 mod atlas;
+pub mod backdrop;
 mod caffeinate;
 pub mod capture;
 mod console;
@@ -223,7 +224,7 @@ pub struct App {
     /// `debug motionScale`: every duration multiplied by this.
     pub motion_scale: f64,
     /// The backdrop mark's word, by the style it was shaped in.
-    shard_word: Option<(crate::text::TextStyle, std::sync::Arc<Vec<(std::sync::Arc<vello_cpu::kurbo::BezPath>, f64, f64)>>)>,
+    shard_word: Option<(crate::text::TextStyle, crate::shards::Words)>,
     /// pantheon's cast under a joined card.
     pub cast: bool,
     /// `debug join`'s x and width on the bar's line, held under any card's.

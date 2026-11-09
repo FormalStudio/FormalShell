@@ -25,7 +25,7 @@ pub struct Look {
     pub edge_width: f64,
     pub mark: Rgba,
     /// The word's glyph outlines at [`WORD_SIZE`], placed about its centre.
-    pub word: Arc<Vec<(Arc<BezPath>, f64, f64)>>,
+    pub word: Words,
 }
 
 impl PartialEq for Look {
@@ -34,6 +34,9 @@ impl PartialEq for Look {
             && Arc::ptr_eq(&self.word, &o.word)
     }
 }
+
+/// The mark's word as glyph outlines, each placed about the word's centre.
+pub type Words = Arc<Vec<(Arc<BezPath>, f64, f64)>>;
 
 /// The size the mark's word is shaped at; the raster scales it to the
 /// mark's own.
@@ -46,7 +49,7 @@ impl Look {
     /// The table's `backdrop.shards` and `backdrop.mark` over `base`, the
     /// wallpaper's own mean colour (the theme's background without one),
     /// every colour times `dim` (the lock's scrim).
-    pub fn new(theme: &Theme, base: Rgba, word: Arc<Vec<(Arc<BezPath>, f64, f64)>>, dim: f32) -> Self {
+    pub fn new(theme: &Theme, base: Rgba, word: Words, dim: f32) -> Self {
         let s = theme.box_style("backdrop.shards", None);
         let m = theme.box_style("backdrop.mark", None);
         let darken = |c: Rgba| Rgba { r: c.r * dim, g: c.g * dim, b: c.b * dim, a: c.a };
