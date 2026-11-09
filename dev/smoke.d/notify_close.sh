@@ -21,6 +21,7 @@
 leg_notify_close_flag="--notify-close"
 leg_notify_close_order=32
 leg_notify_close_needs="notify-send wlrctl jq"
+leg_notify_close_claims="toasts pointer screen"
 
 notify_close_settled_path="$shot_dir/notify-close-settled.png"
 notify_close_parked_path="$shot_dir/notify-close-parked.png"
@@ -33,16 +34,6 @@ notify_close_status_after_path="$shot_dir/notify-close-status-after.txt"
 
 # panelPadding plus half a controlHeight (shell/Theme/tokens.js).
 notify_close_button_inset=28
-
-leg_notify_close_validate() {
-  local other
-  for other in notify notify_emerge center reminder capture_edit deform polkit screensaver; do
-    if leg_on "$other"; then
-      echo "usage: --notify-close clicks one notification's own button and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_notify_close_timing() {
   leg_timing 16 40

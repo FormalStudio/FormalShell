@@ -52,6 +52,7 @@ leg_hotcorner_relock_needs="wlrctl wtype jq"
 # The frames here are the ordinary desktop and the lock plate over it, so
 # the base run's fixture window stays where it is.
 leg_hotcorner_relock_fixture_window=keep
+leg_hotcorner_relock_claims="pointer"
 
 # The bottom-right corner surface is `hotCorners.size` (4) square against the
 # far edge of the rig's pinned 1920x1080 output, so 1917x1077 is inside it
@@ -85,7 +86,6 @@ hotcorner_relock_saver_final_lock_path="$shot_dir/hotcorner-relock-12-saver-fina
 hotcorner_relock_saver_shot_path="$shot_dir/hotcorner-relock-saver.png"
 hotcorner_relock_saver_card_shot_path="$shot_dir/hotcorner-relock-saver-card.png"
 hotcorner_relock_saver_parked_shot_path="$shot_dir/hotcorner-relock-saver-parked.png"
-hotcorner_relock_settings_path="$iso_home/.config/formalshell/settings.json"
 hotcorner_relock_overview_path="$shot_dir/hotcorner-relock-13-overview-layers.json"
 
 leg_hotcorner_relock_timing() {
@@ -102,13 +102,8 @@ corner() {
   sleep 1
   "$wlrctl_bin" pointer move $hotcorner_relock_x $hotcorner_relock_y >> "$hotcorner_relock_moves_path" 2>&1
 }
-# Merged into whatever settings fixture the run already wrote rather than
-# overwriting it, and written back through the same inode so the shell's own
-# FileView watch survives the change.
 corners() {
-  "$jq_bin" ". + {hotCorners: {enabled: \$1, size: 4, delayMs: 400, topLeft: \"\${2:-none}\", topRight: \"none\", bottomLeft: \"screensaver\", bottomRight: \"lock\"}}" \\
-    "$hotcorner_relock_settings_path" > "$shot_dir/hotcorner-relock-settings.json" 2>&1
-  cat "$shot_dir/hotcorner-relock-settings.json" > "$hotcorner_relock_settings_path"
+  settings_retarget ".hotCorners = {enabled: \$1, size: 4, delayMs: 400, topLeft: \"\${2:-none}\", topRight: \"none\", bottomLeft: \"screensaver\", bottomRight: \"lock\"}"
 }
 saver() { $ipc call screensaver status > "\$1" 2>&1; }
 # The bottom-left corner, a pixel in from both edges.

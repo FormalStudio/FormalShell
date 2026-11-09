@@ -17,6 +17,7 @@
 leg_flexoki_flag="--flexoki"
 leg_flexoki_order=105
 leg_flexoki_needs="convert"
+leg_flexoki_claims="wallpaper theme.mode"
 
 flexoki_wall_dir="$shot_dir/flexoki"
 flexoki_wall_path="$flexoki_wall_dir/wall.png"
@@ -30,13 +31,6 @@ flexoki_gtk_path="$iso_home/.config/gtk-3.0/formalshell-colors.css"
 flexoki_qt_path="$iso_home/.config/qt6ct/colors/matugen.conf"
 flexoki_theme_json_path="$iso_home/.local/state/formalshell/theme.json"
 flexoki_merged_path="$iso_home/.local/state/formalshell/matugen-merged.toml"
-
-leg_flexoki_validate() {
-  if leg_on wallpaper || leg_on theme_toggle; then
-    echo "usage: --flexoki owns the wallpaper and the mode for its whole run, so it cannot combine with --wallpaper or --theme-toggle" >&2
-    exit 1
-  fi
-}
 
 leg_flexoki_fixture() {
   mkdir -p "$flexoki_wall_dir" "$flexoki_matugen_dir/templates"

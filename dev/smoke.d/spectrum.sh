@@ -14,6 +14,7 @@
 leg_spectrum_flag="--spectrum"
 leg_spectrum_order=225
 leg_spectrum_needs="mpv ffmpeg convert"
+leg_spectrum_claims="media.player=shared bar.layout.center"
 
 spectrum_track_path="$shot_dir/spectrum-tone.flac"
 spectrum_art_path="$shot_dir/spectrum-art.png"
@@ -37,7 +38,7 @@ leg_spectrum_fixture() {
   # No `visualizer` anywhere in bar.layout (D6): the bar cell's own
   # `_visibleBars` gate stays 0 all run, so a cava child appearing at all is
   # `panelWants` alone doing it.
-  settings_fragment ', "bar": {"layout": {"center": ["clock", "nowPlaying"]}}'
+  settings_pin '.bar.layout.center = ["clock", "nowPlaying"]'
 }
 
 leg_spectrum_timing() {

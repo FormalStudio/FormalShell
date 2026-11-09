@@ -40,6 +40,7 @@
 leg_emoji_flag="--emoji"
 leg_emoji_order=25
 leg_emoji_needs="wl-paste jq wtype convert"
+leg_emoji_claims="launcher=shared"
 emoji_stops="open Down Page_Down End"
 
 # This leg's own clock: the launcher covers the whole output, so under

@@ -36,6 +36,7 @@
 leg_center_flag="--center"
 leg_center_order=40
 leg_center_needs="notify-send jq wlrctl convert"
+leg_center_claims="screen=shared toasts=shared"
 
 # The band the entrance is read in: the output's trailing 560 columns, whole
 # height, so a `popupWidthWide` (480) card a `screenPadding` in from the edge

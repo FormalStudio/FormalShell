@@ -19,6 +19,7 @@
 leg_unlock_flag="--unlock"
 leg_unlock_order=111
 leg_unlock_needs="wtype convert python3"
+leg_unlock_claims="lock"
 
 unlock_wallpaper="$shot_dir/unlock-grey.png"
 unlock_locked_path="$shot_dir/unlock-locked.png"
@@ -29,13 +30,6 @@ unlock_stamp_path="$shot_dir/unlock-stamps.txt"
 unlock_frames=60
 unlock_frame_gap=0.05
 unlock_scale=1000
-
-leg_unlock_validate() {
-  if leg_on lock; then
-    echo "usage: --unlock types the password itself and cannot combine with --lock" >&2
-    exit 1
-  fi
-}
 
 leg_unlock_fixture() {
   $convert_bin -size 1920x1080 xc:'#8c8c8c' "png:$unlock_wallpaper"

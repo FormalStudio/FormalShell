@@ -29,6 +29,7 @@
 leg_motion_art_flag="--motion-art"
 leg_motion_art_order=36
 leg_motion_art_needs="mpv ffmpeg convert jq"
+leg_motion_art_claims="layout"
 
 motion_art_artist="FormalShell Motion Artist"
 motion_art_album="Motion Album"
@@ -47,7 +48,7 @@ leg_motion_art_timing() {
 }
 
 leg_motion_art_fixture() {
-  settings_fragment ', "media": {"appleMusicArt": true}'
+  settings_pin '.media.appleMusicArt = true'
   mkdir -p "$motion_art_dir"
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "nullsrc=s=128x128:r=25:d=2" \
     -vf "geq=r='if(lt(mod(T,1),0.5),255,0)':g=0:b='if(lt(mod(T,1),0.5),0,255)',format=yuv420p" \
@@ -98,9 +99,7 @@ call panel close > /dev/null 2>&1
 sleep 1.5
 decoders closed
 call media playPause > /dev/null 2>&1
-"$jq_bin" '.media.animatedBarCover = false' "$settings_path" > "$settings_path.tmp"
-cat "$settings_path.tmp" > "$settings_path"
-rm -f "$settings_path.tmp"
+settings_retarget '.media.animatedBarCover = false'
 sleep 2.5
 decoders off
 "$grim_bin" "$shot_dir/motion-art-off.png" > /dev/null 2>&1
@@ -110,9 +109,7 @@ sleep 4
 decoders off_panel
 commits off_panel 3
 call panel close > /dev/null 2>&1
-"$jq_bin" '.media.animatedBarCover = true | .layout = "sidebar"' "$settings_path" > "$settings_path.tmp"
-cat "$settings_path.tmp" > "$settings_path"
-rm -f "$settings_path.tmp"
+settings_retarget '.media.animatedBarCover = true | .layout = "sidebar"'
 sleep 4
 call sidebar status > "$motion_art_sidebar" 2>&1
 burst "$shot_dir/motion-art-sidebar" $motion_art_frames 0.15

@@ -24,16 +24,10 @@ launcher_density_log="$shot_dir/launcher-density.log"
 launcher_density_status="$shot_dir/launcher-density-status.json"
 
 leg_launcher_density_scale1="its own output at 1.25 beside the session's at 1, the bar's"
-
-leg_launcher_density_validate() {
-  if leg_on multi_output || leg_on display || leg_on brightness; then
-    echo "usage: --launcher-density makes its own second output and cannot combine with legs that add or remove outputs" >&2
-    exit 1
-  fi
-}
+leg_launcher_density_claims="outputs"
 
 leg_launcher_density_fixture() {
-  settings_fragment ', "menu": {"appGrid": true}, "motion": {"morph": false}'
+  settings_pin '.menu.appGrid = true | .motion.morph = false'
   mkdir -p "$launcher_density_dir" "$launcher_density_icons/128x128/apps"
   $convert_bin -size 64x128 "xc:$launcher_density_colour" -size 64x128 "xc:$launcher_density_other" +append \
     "$launcher_density_icons/128x128/apps/formalshell-density.png"

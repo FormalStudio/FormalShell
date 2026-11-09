@@ -14,19 +14,17 @@
 # from that chevron and lying wholly off the strip on its inner side, its
 # governed cells as info tiles. Then `panel open audio` hangs a panel
 # off the bar's inner edge for the run's own frame, with `panel state`
-# agreeing it is the open one. This leg owns the `bar` key, so it does not
-# combine with --chevron or --bar-layout, which write the same key.
+# agreeing it is the open one. It claims the right region, so it does not
+# combine with another leg writing it (--chevron, --bar-layout).
 #
 # It also RIDES a leg that photographs its own frames on the moved strip
-# (--join, --bar-title, --menu-emerge, --panel-morph), which is the only way those legs
-# reach an edge other than the top without a copy of each of them per
-# position. Riding, this leg pins the edge and nothing else: the layout is
+# (--join, --bar-title, --menu-emerge, --panel-morph, --osd), which is the
+# only way those legs reach an edge other than the top without a copy of
+# each of them per position. Riding, this leg pins the edge and nothing else: the layout is
 # the rider's own or the default, the chevron and the panel open (which would
 # land in the middle of somebody else's sampling) are left undriven, and the
 # one claim left is the one the frames cannot make, the strip's own box on
-# the edge it was asked for. A rider carrying its own `bar` key takes the
-# position into it, since two top-level `bar` keys leave only the later one
-# standing.
+# the edge it was asked for.
 leg_bar_position_flag="--bar-position <edge>"
 leg_bar_position_order=185
 leg_bar_position_needs="jq"
@@ -43,14 +41,8 @@ bar_position_panel_open_path="$shot_dir/bar-position-panel-open.txt"
 bar_position_panel_state_path="$shot_dir/bar-position-panel-state.txt"
 bar_position_dump_path="$shot_dir/bar-position-dump.json"
 
-# A rider owning the `bar` key writes the position itself; every other rider
-# takes it from here and the default layout with it.
-bar_position_layout_owner() {
-  leg_on join || leg_on bar_title
-}
-
 bar_position_rider() {
-  bar_position_layout_owner || leg_on menu_emerge || leg_on panel_morph
+  leg_on join || leg_on bar_title || leg_on menu_emerge || leg_on panel_morph || leg_on osd
 }
 
 leg_bar_position_validate() {
@@ -61,21 +53,14 @@ leg_bar_position_validate() {
       exit 1
       ;;
   esac
-  if leg_on chevron || leg_on bar_layout; then
-    echo "usage: --bar-position carries its own bar.layout and cannot combine with --chevron or --bar-layout" >&2
-    exit 1
-  fi
+  leg_bar_position_claims="bar.position=$(leg_arg bar_position) layout=bar"
+  bar_position_rider || leg_bar_position_claims+=" bar.layout.right"
 }
 
 leg_bar_position_fixture() {
-  if bar_position_layout_owner; then
-    return 0
-  fi
-  if bar_position_rider; then
-    settings_fragment ', "bar": {"position": "'"$(leg_arg bar_position)"'"}'
-    return 0
-  fi
-  settings_fragment ', "bar": {"position": "'"$(leg_arg bar_position)"'", "layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "monitor", "keyboardLayout", "display", "github", "usage", "tailscale", "systemUpdate", "clock", "chevron", "battery", "audio", "network"]}}'
+  settings_pin ".bar.position = \"$(leg_arg bar_position)\""
+  bar_position_rider && return 0
+  settings_pin '.bar.layout.right = ["bluetooth", "weather", "tray", "bell", "indicators", "monitor", "keyboardLayout", "display", "github", "usage", "tailscale", "systemUpdate", "clock", "chevron", "battery", "audio", "network"]'
 }
 
 leg_bar_position_timing() {

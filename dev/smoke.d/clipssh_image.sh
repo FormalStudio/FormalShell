@@ -26,6 +26,7 @@
 leg_clipssh_image_flag="--clipssh-image"
 leg_clipssh_image_order=136
 leg_clipssh_image_needs="wl-copy wl-paste convert jq"
+leg_clipssh_image_claims="launcher=shared"
 
 clipssh_image_shim_dir="$shot_dir/clipssh-image-shim"
 clipssh_image_calls_path="$shot_dir/clipssh-image-calls.txt"
@@ -49,7 +50,7 @@ leg_clipssh_image_fixture() {
   # `--clipssh`'s own timeline.
   mkdir -p "$iso_home/.clipssh"
   printf '%s\n' 'box=test@10.255.255.7' > "$iso_home/.clipssh/aliases"
-  settings_fragment ', "clipssh": {"alias": "box", "autoSendImages": true}'
+  settings_pin '.clipssh.alias = "box" | .clipssh.autoSendImages = true'
 
   # A solid colour at a size nothing else in the run produces, so its digest
   # cannot collide with a screenshot or a thumbnail that happened to reach

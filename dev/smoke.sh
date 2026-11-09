@@ -74,7 +74,6 @@ export PATH="$proc_shim_dir:$PATH"
 
 legs=()
 active_legs=()
-settings_extra=""
 fixture_cleanup=""
 shell_env=""
 screenshot_delay=8
@@ -83,22 +82,6 @@ tail_gap=1
 leg_on() {
   local v="leg_${1}_on"
   [ "${!v:-false}" = true ]
-}
-
-# A leg that hands the shell a stub system bus (dev/bluez-stub.py) cannot
-# share a run with another stub bus or with a leg needing the real one.
-refuse_beside_stub_bus() {
-  local owner=$1 other var
-  for other in ${active_legs[@]+"${active_legs[@]}"}; do
-    [ "$other" = "$owner" ] && continue
-    var="leg_${other}_vm_only"
-    case $other in
-      bluez_rssi | bluez_player | earbuds | headset_card) ;;
-      *) [ -n "${!var:-}" ] || continue ;;
-    esac
-    echo "usage: --${owner//_/-} serves its own system bus and cannot combine with --${other//_/-}" >&2
-    exit 1
-  done
 }
 
 # A leg photographing the bare desktop declares leg_<n>_desktop_until, the
@@ -130,13 +113,10 @@ leg_timing() {
   if [ "${4:-0}" -gt "$drive_cap" ]; then drive_cap="$4"; fi
 }
 
-settings_fragment() {
-  settings_extra="$settings_extra$1"
-}
-
-# One key set inside an object other legs write whole (`bar`, `motion`), as
-# a jq assignment run over the finished fixture: a second top-level `bar`
-# fragment would leave only one of the two objects standing.
+# Every settings fixture is a jq assignment over the base file, applied in
+# leg order (`.bar.layout.right = [...]`, `del(.location)`), so two legs
+# writing keys of one object both land; two writing the same key are a
+# claim conflict.
 settings_pins=()
 settings_pin() {
   settings_pins+=("$1")
@@ -251,17 +231,53 @@ drive_cap=52
 session_timeout=75
 if [ ${#active_legs[@]} -eq 0 ]; then screenshot_delay=$drive_cap; fi
 
-# A VM rig guest autologins and its own login leaves the boot's marker in
-# this runtime dir; the run's shell would take it and start locked. Only
-# --login-lock's validate writes one for a run. A real host keeps its
-# runtime dir, so the marker there is the live session's: only a rig, which
-# loads vkms, clears it.
-if [ -d /sys/module/vkms ]; then
-  rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/formalshell/login-lock"
-fi
-
 for leg_name in ${active_legs[@]+"${active_legs[@]}"}; do
   if declare -F "leg_${leg_name}_validate" >/dev/null; then "leg_${leg_name}_validate"; fi
+done
+
+# What a leg owns in the session, declared as leg_<n>_claims (a validate may
+# add to it): `name` alone owns it, `name=value` shares it with every claim
+# of the same name and value. Names are dotted (a settings key, a surface:
+# `launcher`, `screen`, `pointer`), and a name covers every name under it,
+# so `bar.layout=default` and `bar.layout.right` meet. A `session` claim
+# owns the whole run, beside only a leg_<n>_rider that pins a setting and
+# drives nothing. A leg_<n>_vm_only leg needs the real system bus.
+leg_claims() {
+  local v="leg_${1}_claims" vm="leg_${1}_vm_only"
+  printf '%s' "${!v:-}"
+  [ -z "${!vm:-}" ] || printf ' bus.system=real'
+}
+claims_meet() {
+  local a=$1 b=$2 an=${1%%=*} bn=${2%%=*}
+  case "$an." in "$bn".*) ;; *) case "$bn." in "$an".*) ;; *) return 1 ;; esac ;; esac
+  [ "$an" = "$bn" ] && [ "$a" != "$an" ] && [ "$a" = "$b" ] && return 1
+  return 0
+}
+claims_refuse() {
+  echo "usage: --${1//_/-} and --${2//_/-} both claim $3, run them separately" >&2
+  exit 1
+}
+leg_has_claim() {
+  case " $(leg_claims "$1") " in *" $2 "*) return 0 ;; esac
+  return 1
+}
+leg_is_rider() {
+  local v="leg_${1}_rider"
+  [ -n "${!v:-}" ]
+}
+for ((i = 0; i < ${#active_legs[@]}; i++)); do
+  a=${active_legs[i]}
+  for ((j = i + 1; j < ${#active_legs[@]}; j++)); do
+    b=${active_legs[j]}
+    if { leg_has_claim "$a" session && ! leg_is_rider "$b"; } || { leg_has_claim "$b" session && ! leg_is_rider "$a"; }; then
+      claims_refuse "$a" "$b" session
+    fi
+    for x in $(leg_claims "$a"); do
+      for y in $(leg_claims "$b"); do
+        if claims_meet "$x" "$y"; then claims_refuse "$a" "$b" "$x and $y"; fi
+      done
+    done
+  done
 done
 
 # Only the base run gets the focused fixture window: every other leg's own
@@ -508,7 +524,11 @@ pw_unload_modules() {
 system_bus_pid=""
 quiet_sink_module=""
 on_exit() {
+  local leg
   restore_host_env
+  for leg in ${active_legs[@]+"${active_legs[@]}"}; do
+    if declare -F "leg_${leg}_cleanup" > /dev/null; then "leg_${leg}_cleanup" || true; fi
+  done
   if [ -n "$system_bus_pid" ]; then kill "$system_bus_pid" 2>/dev/null || true; fi
   if [ -n "$quiet_sink_module" ]; then "$pactl_bin" unload-module "$quiet_sink_module" 2>/dev/null || true; fi
   pw_unload_modules
@@ -728,9 +748,9 @@ done
 
 # The top-left corner opens the overview by default, and most legs park the
 # pointer there to start their relative moves from a known place: it is off
-# unless a leg writes `hotCorners` (a later key wins) or deletes this one.
+# unless a leg pins `hotCorners` or deletes this one.
 cat > "$settings_path" <<EOF
-{"calendar": {"icsDir": "$iso_home/.local/share/formalshell/calendar"}, "location": {"latitude": 52.52, "longitude": 13.41}, "nightlight": {"schedule": "off"}, "hotCorners": {"topLeft": "none"}$settings_extra}
+{"calendar": {"icsDir": "$iso_home/.local/share/formalshell/calendar"}, "location": {"latitude": 52.52, "longitude": 13.41}, "nightlight": {"schedule": "off"}, "hotCorners": {"topLeft": "none"}}
 EOF
 if [ ${#settings_pins[@]} -gt 0 ]; then
   need_bin jq

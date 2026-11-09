@@ -13,6 +13,7 @@
 # bar.layout asked for it.
 leg_mic_flag="--mic"
 leg_mic_order=180
+leg_mic_claims="bar.layout.right"
 
 mic_bar_png="$shot_dir/mic-bar.png"
 # The same file --dump's own leg writes, deliberately: this leg reads the
@@ -22,7 +23,7 @@ mic_dump_path="$shot_dir/dump.json"
 leg_mic_fixture() {
   # Leading the right region rather than appended, so the cell cannot be
   # clipped off the end of a full row.
-  settings_fragment ', "bar": {"layout": {"right": ["microphone", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]}}'
+  settings_pin '.bar.layout.right = ["microphone", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]'
 }
 
 leg_mic_timing() {

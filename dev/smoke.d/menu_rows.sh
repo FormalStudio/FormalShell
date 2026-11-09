@@ -19,20 +19,11 @@
 leg_menu_rows_flag="--menu-rows"
 leg_menu_rows_order=127
 leg_menu_rows_needs="convert wtype wlrctl jq python3"
+leg_menu_rows_claims="launcher"
 
 menu_rows_word="notebook"
 menu_rows_after_ms=50
 menu_rows_dir="$iso_home/.local/share/applications"
-
-leg_menu_rows_validate() {
-  local other
-  for other in clipboard menu menu_emerge menu_morph picker emoji monitor mirror toggles; do
-    if leg_on "$other"; then
-      echo "usage: --menu-rows measures the launcher's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_menu_rows_fixture() {
   local name i=0

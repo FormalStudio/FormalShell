@@ -45,23 +45,14 @@ leg_use_flag="--use"
 leg_use_order=400
 leg_use_needs="wlrctl wtype jq notify-send convert"
 leg_use_fixture_window=keep
+leg_use_claims="bar.layout.right"
 
 use_dir="$shot_dir/use"
 use_wp_a="$shot_dir/use-wp-a.png"
 use_wp_b="$shot_dir/use-wp-b.png"
 
-leg_use_validate() {
-  local other
-  for other in chevron bar_layout bar_room bar_title; do
-    if leg_on "$other"; then
-      echo "usage: --use pins its own bar.layout and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_use_fixture() {
-  settings_fragment ', "bar": {"layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]}}'
+  settings_pin '.bar.layout.right = ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]'
   $convert_bin -size 1920x1080 gradient:'#20304a-#6a3a5a' "$use_wp_a"
   $convert_bin -size 1920x1080 gradient:'#d8c890-#3a6a40' "$use_wp_b"
 }

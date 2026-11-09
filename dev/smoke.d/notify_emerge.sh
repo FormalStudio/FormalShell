@@ -34,6 +34,7 @@
 leg_notify_emerge_flag="--notify-emerge"
 leg_notify_emerge_order=31
 leg_notify_emerge_needs="notify-send convert"
+leg_notify_emerge_claims="toasts screen panel"
 
 notify_emerge_scale_path="$shot_dir/notify-emerge-scale.txt"
 notify_emerge_status_path="$shot_dir/notify-emerge-status.txt"
@@ -58,17 +59,6 @@ notify_emerge_frame_gap=0.09
 # Where the card can be: the output below the bar, so the bell cell's own mark
 # is outside the box the card's rect is measured in.
 notify_emerge_body_top=60
-
-leg_notify_emerge_validate() {
-  local other
-  for other in notify center reminder capture_edit menu_emerge panel_emerge \
-    panel_handoff panel_morph join deform chevron_quiet osd polkit screensaver; do
-    if leg_on "$other"; then
-      echo "usage: --notify-emerge measures one notification's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_notify_emerge_timing() {
   leg_timing 28 76

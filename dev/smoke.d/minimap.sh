@@ -40,6 +40,7 @@
 leg_minimap_flag="--minimap"
 leg_minimap_order=238
 leg_minimap_needs="jq foot wtype wlrctl python3"
+leg_minimap_claims="layout=sidebar frame=none sidebar.minimap"
 minimap_vpointer="$PWD/dev/vpointer.py"
 
 minimap_clients=("$shot_dir"/minimap-clients-{0,2,3,4,6,7,8,9,10,11,12}.json)
@@ -55,15 +56,8 @@ minimap_redrawn_png="$shot_dir/minimap-redrawn.png"
 minimap_trail_status="$shot_dir/minimap-trail.json"
 minimap_inner=(scrolling dwindle)
 
-leg_minimap_validate() {
-  if leg_on bar_position || leg_on frame; then
-    echo "usage: --minimap runs under layout sidebar and cannot combine with --bar-position or --frame" >&2
-    exit 1
-  fi
-}
-
 leg_minimap_fixture() {
-  leg_on sidebar || settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
 }
 
 leg_minimap_timing() {

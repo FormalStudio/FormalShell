@@ -15,6 +15,7 @@
 leg_bar_layout_flag="--bar-layout"
 leg_bar_layout_order=190
 leg_bar_layout_needs="jq"
+leg_bar_layout_claims="bar.layout bar.modules bar.launcherIcon"
 
 bar_layout_path="$shot_dir/bar-layout.png"
 bar_cmd_fixture_path="$shot_dir/bar-cmd-fixture.sh"
@@ -80,7 +81,7 @@ EOF
   # assertion honest if that default ever changes: the rig's isolated session
   # sees no distributor-logo icon theme, which is exactly the path that has to
   # reach the bundled font-logos table for a real logo.
-  settings_fragment ', "bar": {"launcherIcon": "distro", "layout": {"left": ["launcher", "github", "custom:cmdfixture", "custom:cmdfail", "custom:cmdbadjson", "custom:cmdtimeout", "custom:cmdmissing", "custom:cmdempty", "activeWindow", "workspaces"]}, "modules": [{"id": "cmdfixture", "type": "command", "command": ["bash", "'"$bar_cmd_fixture_path"'"], "interval": 2000}, {"id": "cmdfail", "type": "command", "command": ["bash", "'"$bar_cmd_fail_path"'"], "interval": 20000}, {"id": "cmdbadjson", "type": "command", "command": ["bash", "'"$bar_cmd_badjson_path"'"], "interval": 20000}, {"id": "cmdtimeout", "type": "command", "command": ["bash", "'"$bar_cmd_timeout_path"'"], "interval": 20000, "timeout": 1000}, {"id": "cmdmissing", "type": "command", "command": ["'"$shot_dir"'/no-such-formalshell-smoke-binary"], "interval": 20000}, {"id": "cmdempty", "type": "command", "command": ["bash", "'"$bar_cmd_empty_path"'"], "interval": 20000}]}'
+  settings_pin '. * {"bar": {"launcherIcon": "distro", "layout": {"left": ["launcher", "github", "custom:cmdfixture", "custom:cmdfail", "custom:cmdbadjson", "custom:cmdtimeout", "custom:cmdmissing", "custom:cmdempty", "activeWindow", "workspaces"]}, "modules": [{"id": "cmdfixture", "type": "command", "command": ["bash", "'"$bar_cmd_fixture_path"'"], "interval": 2000}, {"id": "cmdfail", "type": "command", "command": ["bash", "'"$bar_cmd_fail_path"'"], "interval": 20000}, {"id": "cmdbadjson", "type": "command", "command": ["bash", "'"$bar_cmd_badjson_path"'"], "interval": 20000}, {"id": "cmdtimeout", "type": "command", "command": ["bash", "'"$bar_cmd_timeout_path"'"], "interval": 20000, "timeout": 1000}, {"id": "cmdmissing", "type": "command", "command": ["'"$shot_dir"'/no-such-formalshell-smoke-binary"], "interval": 20000}, {"id": "cmdempty", "type": "command", "command": ["bash", "'"$bar_cmd_empty_path"'"], "interval": 20000}]}}'
 }
 
 leg_bar_layout_timing() {

@@ -49,6 +49,7 @@
 leg_radio_atlas_flag="--radio-atlas"
 leg_radio_atlas_order=176
 leg_radio_atlas_needs="ffmpeg wtype wlrctl convert jq python3"
+leg_radio_atlas_claims="radio.cache=staged"
 
 radio_atlas_track_path="$shot_dir/radio-atlas-station.mp3"
 radio_atlas_open_png="$shot_dir/radio-atlas-open.png"

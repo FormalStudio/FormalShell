@@ -26,6 +26,7 @@
 # for that reason, and this leg dumps the same table beside the route's rows.
 leg_keybinds_flag="--keybinds"
 leg_keybinds_order=240
+leg_keybinds_claims="launcher=shared"
 
 # Hyprland's own bind table, dumped beside the shell's rows: it separates a
 # compositor that never registered the fixture from a route that failed to

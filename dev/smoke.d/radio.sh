@@ -18,6 +18,7 @@
 leg_radio_flag="--radio"
 leg_radio_order=175
 leg_radio_needs="ffmpeg wtype pactl mpv"
+leg_radio_claims="radio.favourites"
 
 radio_track_path="$shot_dir/radio-station.mp3"
 radio_play_path="$shot_dir/radio-play.txt"

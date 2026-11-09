@@ -54,6 +54,7 @@
 leg_wheel_flag="--wheel"
 leg_wheel_order=125
 leg_wheel_needs="wlrctl convert wpctl python3 jq"
+leg_wheel_claims="picker.directory pointer launcher=shared"
 
 wheel_before_png="$shot_dir/wheel-before.png"
 wheel_after_png="$shot_dir/wheel-after.png"
@@ -83,15 +84,6 @@ wheel_volume_before_path="$shot_dir/wheel-volume-before.txt"
 wheel_volume_after_path="$shot_dir/wheel-volume-after.txt"
 wheel_dir="$iso_home/.local/share/formalshell/wheel-pictures"
 
-# Both legs own picker.directory, and the picker leg asserts its own fixture
-# count down to the number, so the two cannot share one settings file.
-leg_wheel_validate() {
-  if leg_on picker; then
-    echo "usage: $0 --wheel and --picker both set picker.directory, run them separately" >&2
-    exit 1
-  fi
-}
-
 leg_wheel_fixture() {
   local i
   mkdir -p "$wheel_dir"
@@ -100,7 +92,7 @@ leg_wheel_fixture() {
   for i in $(seq 0 119); do
     $convert_bin -size 320x180 "xc:hsl($((i * 9)),70%,45%)" "$wheel_dir/img-$(printf '%02d' "$i").png"
   done
-  settings_fragment ', "picker": {"directory": "'"$wheel_dir"'"}'
+  settings_pin ".picker.directory = \"$wheel_dir\""
   # Included the Sky alone, whatever set the result bundles, so the count
   # below holds on a package with the nine pictures and on one without.
   shell_env="${shell_env:+$shell_env }FS_WALLPAPERS=$wheel_dir-none"

@@ -40,7 +40,7 @@ airplay_panel_png="$shot_dir/airplay-panel.png"
 airplay_gone_png="$shot_dir/airplay-gone.png"
 
 leg_airplay_fixture() {
-  settings_fragment ', "airplay": {"enable": true, "name": "FormalShell Fixture"}'
+  settings_pin '.airplay.enable = true | .airplay.name = "FormalShell Fixture"'
 
   mkdir -p "$airplay_shim_dir"
   # Well past UxPlay's 95-byte reset placeholder (isPlaceholderCover), so

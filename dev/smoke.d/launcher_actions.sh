@@ -29,6 +29,7 @@
 leg_launcher_actions_flag="--launcher-actions"
 leg_launcher_actions_order=30
 leg_launcher_actions_needs="jq wtype foot"
+leg_launcher_actions_claims="launcher=shared"
 
 launcher_actions_app="apps.formalshell-actions-probe"
 launcher_actions_note="$shot_dir/launcher-actions-note"

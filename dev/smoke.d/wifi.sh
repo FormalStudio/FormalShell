@@ -28,6 +28,7 @@ leg_wifi_flag="--wifi"
 leg_wifi_order=190
 leg_wifi_needs="wtype jq"
 leg_wifi_vm_only="it drives NetworkManager against the hostapd radios and restarts wpa_supplicant with sudo"
+leg_wifi_claims="wifi.radios"
 
 wifi_reset_status_path="$shot_dir/wifi-reset-status.json"
 wifi_scan_status_path="$shot_dir/wifi-scan-status.json"

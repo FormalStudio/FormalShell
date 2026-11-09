@@ -24,7 +24,7 @@ nightlight_status0_path="$shot_dir/nightlight-status-0.json"
 leg_nightlight_fixture() {
   local longitude
   longitude=$(( ( -15 * 10#$(date -u +%H) + 540 ) % 360 - 180 ))
-  settings_fragment ', "nightlight": {"schedule": "sun"}, "location": {"latitude": 0, "longitude": '"$longitude"'}'
+  settings_pin ".nightlight.schedule = \"sun\" | .location = {\"latitude\": 0, \"longitude\": $longitude}"
 }
 
 # This leg's own clock. A gamma shift repaints every pixel on the output, so

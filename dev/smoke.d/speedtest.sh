@@ -11,6 +11,7 @@
 # poll ceiling reached with neither fails the run.
 leg_speedtest_flag="--speedtest"
 leg_speedtest_order=200
+leg_speedtest_claims="panel=shared"
 
 speedtest_panel_path="$shot_dir/speedtest-panel.png"
 speedtest_status_path="$shot_dir/speedtest-status.json"

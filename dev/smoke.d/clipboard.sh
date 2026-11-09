@@ -50,6 +50,7 @@
 leg_clipboard_flag="--clipboard"
 leg_clipboard_order=130
 leg_clipboard_needs="wl-copy wl-paste convert"
+leg_clipboard_claims="launcher=shared"
 
 clip_list1_path="$shot_dir/clipboard-list1.json"
 clip_list2_path="$shot_dir/clipboard-list2.json"

@@ -359,8 +359,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   (`quicksettings status` open from `chevron:right`, carrying info tiles,
   wholly off the strip), and a panel hanging off that edge.
   Ridden by a leg that photographs its own frames (`--join`,
-  `--menu-emerge`, `--panel-morph`) it pins the edge alone: the layout, the
-  chevron and the panel are then the rider's business.
+  `--bar-title`, `--menu-emerge`, `--panel-morph`, `--osd`) it pins the
+  edge alone: the layout, the chevron and the panel are then the rider's
+  business.
 - `bar_room.sh` `--bar-room`: a strip crowded past its own length, `bar
   room` reporting a hidden cell in the right region and a now-playing
   budget under 220, the frame read for a whole cell at the region's own
@@ -370,11 +371,11 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   `bar.style` (a `settings_pin`, inside any `bar` object the ridden legs
   write) and rides any leg, the bar then wingpanel's band under every
   table: `debug dump`'s `barStyle` and `bar paint`'s `style` agreeing, solid
-  and corners on the `maximized` paint and the band's own rows black on a
-  top bar. Alone it sets a flat grey wallpaper and reads corners' fillets:
-  one `formalshell:bar` layer a fillet's radius taller than the band, the
-  output's reserved top still the band's, black at each fillet's corner
-  and grey at its arc's centre.
+  and corners on the `maximized` paint and the band's own rows black on
+  whichever edge it sits (`theme.edgeInset`). Alone it sets a flat grey
+  wallpaper and reads corners' fillets: one `formalshell:bar` layer a
+  fillet's radius taller than the band, the output's reserved top still
+  the band's, black at each fillet's corner and grey at its arc's centre.
 - `bar_title.sh` `--bar-title`: a window title far longer than the strip
   in a crowded bar, read off `bar room`: the title drawn at exactly the
   budget its region has with the marquee running, no cell hidden, and no
@@ -758,8 +759,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   the walled run-out to the screen's edge, and quick settings open from
   `chevron:right` at rest. It
   rides `--bar-position <edge>` and `--frame`, which put the same three cases
-  on a vertical hairline or against a ring's line; every probe is cut for the
-  top bar, so those runs print each claim as skipped and are read by eye.
+  on another edge's line or against a ring's: the frames are turned so the
+  bar's edge is on top, and the line's row, the ring's band and the card come
+  off `debug dump`.
 - `keybinds.sh` `--keybinds`: the launcher's binds route rendering rows off
   Hyprland's own expanded bind table.
 - `kopuz.sh` `--kopuz`: `services/kopuz.rs` against `dev/kopuz-stub.py`:
@@ -1051,7 +1053,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   still attached, a plain bordered card over a dimmed band at rest, and the
   open-to-rest time printed before any of it is asserted. Which row that
   line is on comes out of a `debug dump`, so the same probes hold on a frame
-  ring's top band; a top edge carrying neither prints them as skipped.
+  ring's top band, on a side bar's own line (frames turned to put it on
+  top) and on a bare top edge, where the lit band is not read.
   Then the close photographed the same way, and on every theme the card's
   and the scrim's share of their rest level rising through the open and
   falling through the close with a frame between 0.15 and 0.85 each way,
@@ -1181,7 +1184,8 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   and state.json's record gone after disable. The screens' dim and restore
   are `--brightness`'s, against its shims.
 - `osd.sh` `--osd`: the pill's own entrance off the bottom line sampled frame
-  by frame under `debug motionScale`, ink on the output's very last row early
+  by frame under `debug motionScale`, ink on that line's last row early (the
+  output's own, or a bottom bar's or frame's off `theme.edgeInset.bottom`)
   and a plain pill a `screenPadding` clear of it at rest, then at full speed a
   manual call, a real `wpctl` change, and a machine with no backlight.
 - `overview.sh` `--overview`: the shell's own overview
@@ -1231,9 +1235,9 @@ detail; `dev/smoke.d/README.md` is the file contract. What each proves:
   travels to the new one, read off its far edge against the two rests: the
   Wi-Fi list collapsing under a settled card, the same collapse landing two
   seconds into a five-second emerge, and the now-playing card growing from
-  NO PLAYER to a real track. The band is cut for a top bar with no frame, so
-  a run on another edge drives the same three cases, prints each claim as
-  skipped and is read by eye.
+  NO PLAYER to a real track. On another edge the frames are turned so the
+  end the card rests against is on top (a side bar's card grows along its
+  line), and the band's place comes off `debug dump`.
 - `picker.sh` `--picker`: the wallpaper picker
   (`docs/superpowers/specs/2026-11-04-wallpaper-picker.md`) over a fixture
   directory carrying every pairing case (a same-name pair across `Dark/`

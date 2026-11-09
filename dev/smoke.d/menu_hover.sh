@@ -22,19 +22,10 @@
 leg_menu_hover_flag="--menu-hover"
 leg_menu_hover_order=128
 leg_menu_hover_needs="wlrctl wtype convert jq"
+leg_menu_hover_claims="launcher pointer"
 
 menu_hover_frames=24
 menu_hover_target=20
-
-leg_menu_hover_validate() {
-  local other
-  for other in clipboard menu menu_emerge menu_morph menu_rows picker emoji monitor mirror toggles wheel; do
-    if leg_on "$other"; then
-      echo "usage: --menu-hover measures the launcher's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_menu_hover_timing() {
   leg_timing 40 90

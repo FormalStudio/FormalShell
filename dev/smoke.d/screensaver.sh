@@ -17,6 +17,7 @@
 leg_screensaver_flag="--screensaver"
 leg_screensaver_order=230
 leg_screensaver_needs="mpv ffmpeg jq convert wtype"
+leg_screensaver_claims="screen=shared"
 
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the screensaver
 # covers the whole output, so under --wallpaper it starts after that leg's last
@@ -68,7 +69,7 @@ leg_screensaver_fixture() {
     -c:a flac -y "$ss_track_path"
   # holdSeconds is shortened the same way timeoutSeconds is: the cycle proof
   # waits out a real convergence and hold, just on an affordable schedule.
-  settings_fragment ', "screensaver": {"timeoutSeconds": 3, "guardMediaPlayback": true, "holdSeconds": 2'"$effect_json$ascii_json"'}'
+  settings_pin '. * {"screensaver": {"timeoutSeconds": 3, "guardMediaPlayback": true, "holdSeconds": 2'"$effect_json$ascii_json"'}}'
 }
 
 leg_screensaver_timing() {
@@ -105,11 +106,6 @@ EOF
   # rides the manual activation because its start time is deterministic.
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-# Merged into the run's settings and written back through the same inode,
-# so the shell's own file watch sees it.
-settings_set() {
-  "$jq_bin" "\$1" "$settings_path" > "$shot_dir/ss-settings.json" && cat "$shot_dir/ss-settings.json" > "$settings_path"
-}
 sleep $((t0 + 4))
 $ipc call screensaver status > "$ss_guard_status_path" 2>&1
 if [ -f "$ss_pid_path" ]; then
@@ -141,7 +137,7 @@ done
 # one that never finishes inside ttfx's 600-frame pin cap (thunderstorm,
 # binarypath), and that run's last counted frame is no banner at all.
 if [ -z "${SCREENSAVER_EFFECT:-}" ]; then
-  settings_set '.screensaver.effect = "wipe"'
+  settings_retarget '.screensaver.effect = "wipe"'
   sleep 1
 fi
 $ipc call screensaver frame 0 > /dev/null 2>&1
@@ -159,7 +155,7 @@ sleep 1
 $ipc call screensaver status > "$ss_final_status_path" 2>&1
 # screensaver.lockAfterSeconds: two seconds of the screensaver showing chain
 # into the lock, which the real password then lifts.
-settings_set '.screensaver.lockAfterSeconds = 2'
+settings_retarget '.screensaver.lockAfterSeconds = 2'
 sleep 1
 $ipc call screensaver start > /dev/null 2>&1
 sleep 4

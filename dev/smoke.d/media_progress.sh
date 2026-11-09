@@ -52,7 +52,7 @@ media_progress_cache_key() {
 }
 
 leg_media_progress_fixture() {
-  settings_fragment ', "media": {"visualizer": false}'
+  settings_pin '.media.visualizer = false'
   local t
   for t in a b c; do
     local path title

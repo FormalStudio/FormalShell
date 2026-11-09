@@ -29,6 +29,7 @@
 leg_clipssh_flag="--clipssh"
 leg_clipssh_order=135
 leg_clipssh_needs="jq wl-copy wl-paste"
+leg_clipssh_claims="launcher=shared"
 
 clipssh_shim_dir="$shot_dir/clipssh-shim"
 clipssh_calls_path="$shot_dir/clipssh-calls.txt"

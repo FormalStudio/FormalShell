@@ -23,10 +23,11 @@
 # the entrance, so its own spacing is what it always was however long the
 # sampling took.
 #
-# The entrance probes are pinned to the bare rig's own numbers, so
-# `--bar-position bottom --osd` and `--frame --osd` photograph the two cases
-# with a real line under the pill and leave them out; those combinations are
-# read by eye.
+# The band ends on the bottom line, read off `debug dump`'s
+# `theme.edgeInset.bottom`: the output's last row on a bare edge, else the
+# row above a bottom bar (`--bar-position bottom --osd`) or a frame ring's
+# band (`--frame --osd`), which the pill buds off the same way without
+# painting the line itself.
 #
 # Ridden by --no-morph the claim turns over (M60 T2): a popover has no line to
 # come out of, so the pill fades in a few pixels under its rest and the
@@ -38,6 +39,7 @@ leg_osd_order=50
 # The brightness frame, the last of the desktop with the pill on it.
 leg_osd_desktop_until=37
 leg_osd_needs="wpctl convert jq"
+leg_osd_claims="screen=shared"
 
 osd_manual_path="$shot_dir/osd-manual.png"
 osd_brightness_path="$shot_dir/osd-brightness.png"
@@ -45,9 +47,9 @@ osd_desktop_path="$shot_dir/osd-desktop.png"
 osd_rest_path="$shot_dir/osd-rest.png"
 osd_dump_path="$shot_dir/osd-dump.json"
 
-# The band the entrance is read in: 400 logical pixels of the output's own
-# bottom 90 rows, centred, so the 320-wide pill sits inside it with the
-# output's last row at the crop's own last. grim takes the band in logical
+# The band the entrance is read in: 400 logical pixels of the 90 rows ending
+# on the bottom line, centred, so the 320-wide pill sits inside it with the
+# line at the crop's own last row. grim takes the band in logical
 # pixels and writes it at the output's scale, so the centre column and the
 # last row are read off the frame itself.
 osd_frames=12
@@ -64,28 +66,28 @@ leg_osd_drive() {
   # inside the pill's 1.6s auto-hide window, with enough gap between them that
   # the previous card is long gone before the next fires. The 29s set is not
   # photographed: it exists so the 31s one is always a real change.
-  local script="$shot_dir/osd-drive.sh" w h
-  w=$logical_w
-  h=$logical_h
-  local osd_region="$((w / 2 - 200)),$((h - 90)) 400x90"
+  local script="$shot_dir/osd-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 start=\$SECONDS
 sleep 4
 $ipc call debug dump > "$osd_dump_path" 2>&1
+inset=\$("$jq_bin" -r '.theme.edgeInset.bottom // 0' "$osd_dump_path" 2>/dev/null)
+line=\$(($logical_h - \${inset:-0} - 1))
+osd_region="$((logical_w / 2 - 200)),\$((line - 89)) 400x90"
 call debug motionScale 1000
-"$grim_bin" -g "$osd_region" "$osd_desktop_path" > /dev/null 2>&1
+"$grim_bin" -g "\$osd_region" "$osd_desktop_path" > /dev/null 2>&1
 call osd volume
 for i in \$(seq 1 $osd_frames); do
   sleep 0.3
-  "$grim_bin" -g "$osd_region" "$shot_dir/osd-emerge-\$i.png" > /dev/null 2>&1
+  "$grim_bin" -g "\$osd_region" "$shot_dir/osd-emerge-\$i.png" > /dev/null 2>&1
   call osd volume
 done
 call osd volume
 sleep 1.2
 call osd volume
 sleep 0.6
-"$grim_bin" -g "$osd_region" "$osd_rest_path" > /dev/null 2>&1
+"$grim_bin" -g "\$osd_region" "$osd_rest_path" > /dev/null 2>&1
 call debug motionScale 100
 call osd close
 while [ \$((SECONDS - start)) -lt 26 ]; do sleep 0.2; done
@@ -147,14 +149,10 @@ leg_osd_assert() {
     echo "SMOKE_OSD_EMERGE_$i $path"
   done
 
-  if leg_on bar_position || leg_on frame; then
-    echo "SMOKE_OSD_LINE read by eye: the probes below are pinned to the bare rig's own numbers"
-    return 0
-  fi
-
   [ -s "$osd_dump_path" ] || fail "no debug dump produced for the osd check"
   local emerge osd_column_probe osd_last_row
   read -r osd_column_probe osd_last_row < <($convert_bin "$osd_desktop_path" -format '%[fx:int(w/2)] %[fx:h-1]\n' info:)
+  echo "SMOKE_OSD_LINE bottom inset $("$jq_bin" -r '.theme.edgeInset.bottom' "$osd_dump_path"), the band's last row above it"
   emerge=$("$jq_bin" -r 'if .theme.morph == false then "popover" else "join" end' "$osd_dump_path" 2>/dev/null)
   echo "SMOKE_OSD_MORPH emerge=$emerge"
 
@@ -175,16 +173,16 @@ leg_osd_assert() {
   done
   if [ "$emerge" != "join" ]; then
     [ -z "$hit" ] || fail \
-      "$hit has ink on row $osd_last_row at column $osd_column_probe: a $emerge card comes out of nothing, it does not come off the output's bottom edge"
+      "$hit has ink on row $osd_last_row at column $osd_column_probe: a $emerge card comes out of nothing, it does not come off the bottom line"
     echo "SMOKE_OSD_EMERGE ok row $osd_last_row stayed bare at column $osd_column_probe through osd-emerge-1..$osd_frames"
   else
     [ -n "$hit" ] || fail \
-      "no entrance frame among osd-emerge-1..$osd_frames reaches row $osd_last_row at column $osd_column_probe: the pill never touches the output's bottom edge on its way out"
+      "no entrance frame among osd-emerge-1..$osd_frames reaches row $osd_last_row at column $osd_column_probe: the pill never touches the bottom line on its way out"
     echo "SMOKE_OSD_EMERGE ok row $osd_last_row at column $osd_column_probe $hit"
   fi
 
   # And at rest it is the plain pill at its resting rect, one screenPadding
-  # of bare desktop between its own bottom and the output's edge. The pill's
+  # of bare desktop between its own bottom and the line. The pill's
   # cast lands nearer the edge by the few rows it reaches past the rect,
   # which is the card's own ink and not the pill sitting lower.
   local rest gap floor ceiling
@@ -195,7 +193,7 @@ leg_osd_assert() {
     "column $osd_column_probe of $osd_rest_path is bare desktop from top to bottom: the pill never settled"
   gap=$((osd_last_row - rest))
   if [ "$gap" -lt "$floor" ] || [ "$gap" -gt "$ceiling" ]; then
-    fail "the pill's own bottom sits ${gap}px off the output's last row in $osd_rest_path against the screenPadding (12, $(logical_px 12) at scale $FS_SMOKE_SCALE) it rests at: it has not let go of the line"
+    fail "the pill's own bottom sits ${gap}px off the bottom line in $osd_rest_path against the screenPadding (12, $(logical_px 12) at scale $FS_SMOKE_SCALE) it rests at: it has not let go of the line"
   fi
   echo "SMOKE_OSD_RESTING ok ${gap}px of desktop under the pill at column $osd_column_probe"
 }

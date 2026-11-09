@@ -19,20 +19,14 @@ leg_firefox_install_flag="--firefox-install"
 leg_firefox_install_order=239
 leg_firefox_install_vm_only="a real zypper install through the guest's fspec, its sudo and its network"
 leg_firefox_install_needs="jq wtype git"
+leg_firefox_install_claims="layout=sidebar frame=none"
 
 fi_dir="$shot_dir/firefox-install"
 fi_pkg="zypper:MozillaFirefox"
 fi_row="install.pkg.zypper%3AMozillaFirefox"
 
-leg_firefox_install_validate() {
-  if leg_on bar_position || leg_on frame; then
-    echo "usage: --firefox-install places the sidebar itself and cannot combine with --bar-position or --frame" >&2
-    exit 1
-  fi
-}
-
 leg_firefox_install_fixture() {
-  leg_on sidebar || settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
   mkdir -p "$fi_dir"
   rm -rf "$fi_dir/upstream.git" "$fi_dir/spec"
   git clone -q --bare https://github.com/FormalSnake/dotfiles "$fi_dir/upstream.git" \

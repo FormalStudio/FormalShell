@@ -34,6 +34,7 @@
 leg_multi_output_flag="--multi-output"
 leg_multi_output_order=217
 leg_multi_output_needs="jq wlrctl convert wtype foot"
+leg_multi_output_claims="outputs=shared frame=6/20"
 
 multi_output_second="FS-MULTI"
 multi_output_create="$shot_dir/multi-output-create.txt"
@@ -67,7 +68,7 @@ multi_output_unhidden_png="$shot_dir/multi-output-unhidden.png"
 multi_output_hidden="$shot_dir/multi-output-hidden.txt"
 
 leg_multi_output_fixture() {
-  settings_fragment ', "frame": {"thickness": 6, "radius": 20}'
+  settings_pin '.frame.thickness = 6 | .frame.radius = 20'
 }
 
 leg_multi_output_timing() {

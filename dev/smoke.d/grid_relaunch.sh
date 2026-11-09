@@ -42,7 +42,7 @@ grid_relaunch_entry() {
 }
 
 leg_grid_relaunch_fixture() {
-  settings_fragment ', "menu": {"appGrid": true}'
+  settings_pin '.menu.appGrid = true'
   mkdir -p "$grid_relaunch_dir"
   local letter
   for letter in alpha bravo charlie delta echo foxtrot golf hotel india juliet; do

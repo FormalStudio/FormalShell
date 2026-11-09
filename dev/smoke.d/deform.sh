@@ -31,6 +31,7 @@
 leg_deform_flag="--deform"
 leg_deform_order=77
 leg_deform_needs="convert"
+leg_deform_claims="screen panel launcher bar.layout=default bar.position=top frame=none"
 
 deform_open_path="$shot_dir/deform-open.txt"
 deform_close_path="$shot_dir/deform-close.txt"
@@ -67,18 +68,6 @@ done
 # One row under the bar's line (the strip is 40 tall and the line is its last
 # row), so nothing the bar draws is in the measurement.
 deform_band_top=41
-
-leg_deform_validate() {
-  local other
-  for other in bar_layout bar_position center chevron chevron_quiet config_reload frame \
-    fullscreen gallery lock menu notify panel panel_anchor panel_at panel_emerge \
-    panel_handoff panel_keys screensaver toggles tray_overflow wallpaper; do
-    if leg_on "$other"; then
-      echo "usage: --deform measures one panel's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_deform_timing() {
   leg_timing 14 46

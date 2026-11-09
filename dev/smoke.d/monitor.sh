@@ -18,6 +18,7 @@
 leg_monitor_flag="--monitor"
 leg_monitor_order=140
 leg_monitor_needs="jq"
+leg_monitor_claims="launcher=shared bar.layout.right"
 
 monitor_done_path="$shot_dir/monitor-drive.done"
 monitor_status_path="$shot_dir/monitor-status.json"
@@ -39,7 +40,7 @@ leg_monitor_fixture() {
   # it here is the whole install of the bar cell. Leading the right region
   # rather than appended, so a wide CPU/MEM/GPU cell cannot be clipped off
   # the end.
-  settings_fragment ', "bar": {"layout": {"right": ["monitor", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]}}'
+  settings_pin '.bar.layout.right = ["monitor", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]'
 }
 
 leg_monitor_timing() {

@@ -16,6 +16,7 @@
 leg_toggles_flag="--toggles"
 leg_toggles_order=230
 leg_toggles_needs="jq"
+leg_toggles_claims="launcher=shared"
 
 toggles_menu_status1_path="$shot_dir/toggles-menu-status-1.json"
 toggles_menu_status2_path="$shot_dir/toggles-menu-status-2.json"

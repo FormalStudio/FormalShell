@@ -47,6 +47,7 @@
 leg_panel_emerge_flag="--panel-emerge"
 leg_panel_emerge_order=79
 leg_panel_emerge_needs="convert"
+leg_panel_emerge_claims="screen panel launcher bar.layout=default bar.position=top frame=none"
 
 panel_emerge_open_path="$shot_dir/panel-emerge-open.txt"
 panel_emerge_close_path="$shot_dir/panel-emerge-close.txt"
@@ -105,18 +106,6 @@ panel_emerge_body_top=60
 # clocks, 380 in from the output's trailing edge. Nothing may ever paint here:
 # the whole claim of the clip. Cut in the assert, off the output's width.
 panel_emerge_bar_inset=380
-
-leg_panel_emerge_validate() {
-  local other
-  for other in bar_layout bar_position center chevron config_reload frame fullscreen \
-    gallery lock menu notify panel panel_anchor panel_at panel_handoff panel_keys \
-    screensaver toggles tray_overflow wallpaper; do
-    if leg_on "$other"; then
-      echo "usage: --panel-emerge measures one panel's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_panel_emerge_timing() {
   leg_timing 14 46

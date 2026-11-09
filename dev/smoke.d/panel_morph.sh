@@ -36,15 +36,19 @@
 # passes a rest by a few pixels. What it may not do is land on a size nobody
 # is travelling to, which is tens of pixels away in every case here.
 #
-# That band is the top bar's own: on another edge the card's size runs across
-# a column rather than down a row, and against a frame ring both ends of it
-# move. A run carrying `--bar-position <edge>` or `--frame` keeps every frame
-# and the two rests, prints each claim as skipped and is read by eye; the
-# cases themselves are driven identically.
+# The band is read as a top bar's, the card's height down the rows from the
+# edge it rests against. A bottom bar's frames are flipped. On a side bar the
+# card hangs off the line at the line's far end, the output's bottom, and its
+# height runs along the line: the frames are turned to put that end on top
+# and the line on the right (flipped for a right bar, turned half round for a
+# left one), and the band is the 512 columns inside the line. Where the band
+# starts and ends come off `debug dump` taken with the network card at rest
+# (`theme.edgeInset`, the panel's `rest` rect).
 leg_panel_morph_flag="--panel-morph"
 leg_panel_morph_order=76
 leg_panel_morph_vm_only="it turns the Wi-Fi radio off and on through NetworkManager, with sudo nmcli in its fixture"
 leg_panel_morph_needs="convert mpv ffmpeg"
+leg_panel_morph_claims="screen panel launcher wifi.radios media.player bar.layout=default"
 
 panel_morph_bare_path="$shot_dir/panel-morph-bare.png"
 panel_morph_rest_full_path="$shot_dir/panel-morph-rest-full.png"
@@ -56,14 +60,17 @@ panel_morph_replies_path="$shot_dir/panel-morph-replies.txt"
 panel_morph_scan_path="$shot_dir/panel-morph-scan.json"
 panel_morph_track_path="$shot_dir/panel-morph-track.flac"
 panel_morph_pid_path="$shot_dir/panel-morph-mpv.pid"
+panel_morph_dump_path="$shot_dir/panel-morph-dump.json"
+# Where the probes read the frames: the grabs themselves on a top bar, else
+# each one turned (panel_morph_turn).
+panel_morph_read="$shot_dir"
 
 # The band the cards are read in: an IPC open with no cell rests one
-# screenPadding (12) off the output's trailing edge, and the widest card
-# here is the media panel's `popupWidthWide` (480), so the band starts a
-# little ahead of its leading side and runs to the output's end. One row
-# under the bar's own 40. Its x and height are cut in the assert, off the
-# output's own size.
-panel_morph_band_y=41
+# screenPadding (12) off the line's far end, and the widest card here is the
+# media panel's `popupWidthWide` (480), so the band starts a little ahead of
+# its leading side and runs a screenPadding past the network card's end. Its
+# first row is the one under the bar's line. The rest is cut in the assert,
+# off the dump and the turned frame's size.
 panel_morph_band_w=512
 # A row a card covers. The narrowest here is the network panel's
 # `popupWidthDefault` (380), which is 189 of the band's 255, and the attached
@@ -99,19 +106,6 @@ panel_morph_settled_sleeps=(0.4 0.8 1.1 1.4 1.9 2.4 3.0 3.8 4.6)
 panel_morph_emerging_sleeps=(0.5 1.2 1.8 2.3 2.6 2.9 3.2 3.5 4.0 4.8 6.2)
 panel_morph_emerging_change=3
 panel_morph_media_sleeps=(0.3 0.6 0.9 1.2 1.6 2.0 2.5 3.0 3.8 4.8 6.0)
-
-leg_panel_morph_validate() {
-  local other
-  for other in bar_layout center chevron config_reload fullscreen \
-    gallery join lock lyrics media menu notify panel panel_anchor panel_at panel_emerge \
-    panel_handoff panel_keys screensaver speedtest spectrum toggles tray_overflow \
-    visualizer wallpaper wifi; do
-    if leg_on "$other"; then
-      echo "usage: --panel-morph owns the network panel, the radio and the bus's only player and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_panel_morph_timing() {
   # Both scan waits below break within a few seconds of the radio being on,
@@ -195,6 +189,7 @@ scanned 20
 call panel open network
 sleep 12
 "$grim_bin" "$panel_morph_rest_full_path" > /dev/null 2>&1
+$ipc call debug dump > "$panel_morph_dump_path" 2>&1
 
 $(panel_morph_arm settled "${panel_morph_settled_sleeps[@]}")
 call network wifi false
@@ -242,7 +237,7 @@ EOF
 # white, then averaged to a single column, so each row's value is the share of
 # the band's own width that frame paints there.
 panel_morph_rows() {
-  $convert_bin "$1" "$panel_morph_bare_path" -compose difference -composite \
+  $convert_bin "$panel_morph_read/${1##*/}" "$panel_morph_read/${panel_morph_bare_path##*/}" -compose difference -composite \
     -colorspace Gray \
     -crop "${panel_morph_band_w}x${panel_morph_band_h}+${panel_morph_band_x}+${panel_morph_band_y}" +repage \
     -threshold "$panel_morph_lift" -scale "1x${panel_morph_band_h}!" -depth 8 txt:- 2>/dev/null \
@@ -304,10 +299,24 @@ panel_morph_claim() {
   echo "SMOKE_PANEL_MORPH_$(echo "$name" | tr 'a-z' 'A-Z') ok$travelled between rows $low and $high (all:$seen)"
 }
 
+# Every frame of the leg turned for the bar's edge $1 (see the header), into
+# a directory of its own.
+panel_morph_turn() {
+  local turn src
+  case $1 in
+    bottom | right) turn="-flip" ;;
+    left) turn="-rotate 180" ;;
+  esac
+  panel_morph_read="$shot_dir/panel-morph-read"
+  mkdir -p "$panel_morph_read"
+  for src in "$shot_dir"/panel-morph-*.png; do
+    # shellcheck disable=SC2086  # the turn is one or two words
+    $convert_bin "$src" $turn +repage "$panel_morph_read/${src##*/}" || fail "could not turn $src for the $1 edge"
+  done
+}
+
 leg_panel_morph_assert() {
-  local path rest_full rest_off rest_end rest_quiet rest_playing
-  panel_morph_band_x=$((out_w - panel_morph_band_w))
-  panel_morph_band_h=$((out_h - panel_morph_band_y))
+  local path rest_full rest_off rest_end rest_quiet rest_playing edge inset end far w h
 
   for path in "$panel_morph_bare_path" "$panel_morph_rest_full_path" \
     "$panel_morph_rest_off_path" "$panel_morph_rest_end_path" \
@@ -321,20 +330,28 @@ leg_panel_morph_assert() {
   echo "SMOKE_PANEL_MORPH_REST_QUIET $panel_morph_rest_quiet_path"
   echo "SMOKE_PANEL_MORPH_REST_PLAYING $panel_morph_rest_playing_path"
 
-  if leg_on bar_position || leg_on frame; then
-    local name count i
-    for name in "settled ${#panel_morph_settled_sleeps[@]}" \
-      "emerging ${#panel_morph_emerging_sleeps[@]}" "media ${#panel_morph_media_sleeps[@]}"; do
-      read -r name count <<< "$name"
-      for ((i = 1; i <= count; i++)); do
-        path="$shot_dir/panel-morph-$name-$i.png"
-        [ -f "$path" ] || fail "no $name sample at $path"
-        echo "SMOKE_PANEL_MORPH_$(echo "$name" | tr 'a-z' 'A-Z')_$i $path"
-      done
-      echo "SMOKE_PANEL_MORPH_$(echo "$name" | tr 'a-z' 'A-Z') skipped (layout): the band is cut for a top bar with no frame; the frames above carry this case"
-    done
-    return 0
-  fi
+  edge=$("$jq_bin" -r '.theme.barPosition' "$panel_morph_dump_path" 2>/dev/null)
+  inset=$("$jq_bin" -r --arg e "$edge" '.theme.edgeInset[$e]' "$panel_morph_dump_path" 2>/dev/null)
+  end=$("$jq_bin" -r --arg e "$edge" \
+    '.panel.rest | if $e == "left" or $e == "right" then .y + .height else .x + .width end' "$panel_morph_dump_path" 2>/dev/null)
+  [[ "$inset" =~ ^[0-9.]+$ && "$end" =~ ^[0-9.]+$ ]] || fail \
+    "no edge inset or resting network card in $panel_morph_dump_path: $(head -c 400 "$panel_morph_dump_path" 2>/dev/null)"
+  [ "$edge" = top ] || panel_morph_turn "$edge"
+  read -r w h < <($convert_bin "$panel_morph_read/${panel_morph_bare_path##*/}" -format '%w %h\n' info: 2>/dev/null)
+  case $edge in
+    left | right)
+      far=$((w - $(logical_px "${inset%.*}")))
+      panel_morph_band_y=$(logical_px "$("$jq_bin" -r '.theme.edgeInset.bottom | floor' "$panel_morph_dump_path")")
+      ;;
+    *)
+      far=$(logical_px "$(awk -v e="$end" 'BEGIN { printf "%d", e + 12 }')")
+      [ "$far" -le "$w" ] || far=$w
+      panel_morph_band_y=$(( $(logical_px "${inset%.*}") + 1 ))
+      ;;
+  esac
+  panel_morph_band_x=$((far - panel_morph_band_w))
+  panel_morph_band_h=$((h - panel_morph_band_y))
+  echo "SMOKE_PANEL_MORPH_BAND edge $edge columns $panel_morph_band_x-$((far - 1)) from row $panel_morph_band_y of ${w}x$h"
 
   rest_full=$(panel_morph_far_edge "$panel_morph_rest_full_path")
   [ -n "$rest_full" ] || fail \

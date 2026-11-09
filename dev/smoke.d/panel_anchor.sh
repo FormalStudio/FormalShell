@@ -19,6 +19,7 @@
 # being in it exactly once.
 leg_panel_anchor_flag="--panel-anchor"
 leg_panel_anchor_order=75
+leg_panel_anchor_claims="bar.layout.left bar.position=top panel=shared"
 
 panel_anchor_toggle_reply_path="$shot_dir/panel-anchor-toggle.txt"
 panel_anchor_toggle_state_path="$shot_dir/panel-anchor-toggle-state.txt"
@@ -36,18 +37,8 @@ panel_anchor_anchorless_crop_path="$shot_dir/panel-anchor-anchorless-crop.png"
 # card at the far end of the bar.
 panel_anchor_crop_geometry="100,60 200x100"
 
-leg_panel_anchor_validate() {
-  local other
-  for other in bar_layout bar_position chevron config_reload mic monitor systemupdate tray_overflow visualizer; do
-    if leg_on "$other"; then
-      echo "usage: --panel-anchor carries its own bar.layout and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_panel_anchor_fixture() {
-  settings_fragment ', "bar": {"layout": {"left": ["launcher", "workspaces", "audio"]}}'
+  settings_pin '.bar.layout.left = ["launcher", "workspaces", "audio"]'
 }
 
 leg_panel_anchor_timing() {

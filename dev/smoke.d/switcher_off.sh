@@ -11,13 +11,14 @@
 leg_switcher_off_flag="--switcher-off"
 leg_switcher_off_order=103
 leg_switcher_off_needs="jq"
+leg_switcher_off_claims="switcher.enabled=false"
 
 switcher_off_dir="$shot_dir/switcher-off"
 switcher_off_png="$shot_dir/switcher-off.png"
 switcher_off_layers="$shot_dir/switcher-off-layers.json"
 
 leg_switcher_off_fixture() {
-  settings_fragment ', "switcher": {"enabled": false}'
+  settings_pin '.switcher.enabled = false'
 }
 
 leg_switcher_off_timing() {

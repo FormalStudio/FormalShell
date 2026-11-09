@@ -91,14 +91,12 @@ sidebar_clock_case() {
 }
 
 leg_sidebar_validate() {
-  if leg_on bar_position || leg_on frame; then
-    echo "usage: --sidebar places the column itself and cannot combine with --bar-position or --frame" >&2
-    exit 1
-  fi
+  leg_sidebar_claims="layout=sidebar frame=none"
+  sidebar_rider || leg_sidebar_claims+=" bar.layout.right bar.position panel=shared"
 }
 
 leg_sidebar_fixture() {
-  settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
   # The owner's right region (spec modules/linux/home/.config/formalshell),
   # so quick settings carries the info tiles it carries on his laptops.
   sidebar_rider || settings_pin '.bar.layout.right = ["display", "dualsense", "tailscale", "github", "usage", "chevron", "tray", "weather", "battery", "earbuds", "iphone", "audio", "network", "bluetooth", "bell", "indicators"]'
@@ -122,7 +120,6 @@ leg_sidebar_timing() {
 leg_sidebar_drive() {
   sidebar_rider && return 0
   local script="$shot_dir/sidebar-drive.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   local state_path="$iso_home/.local/state/formalshell/state.json"
   # The runs down the column's middle no input rect covers, between the
   # first rect's top and the last one's bottom, as "top bottom" lines.
@@ -289,7 +286,7 @@ kill "\$sidebar_mpv" 2>/dev/null
 $ipc call sidebar expand > /dev/null 2>&1
 sleep 2
 $ipc call sidebar status > "$sidebar_status_expanded" 2>&1
-"$jq_bin" -c '.bar = ((.bar // {}) + {"position": "right"})' "$settings_path" > "$settings_path.new" && mv "$settings_path.new" "$settings_path"
+settings_retarget '.bar.position = "right"'
 for _ in \$(seq 1 20); do
   $ipc call sidebar status 2>/dev/null | grep -q '"edge":"right"' && break
   sleep 0.5

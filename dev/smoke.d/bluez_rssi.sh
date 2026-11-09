@@ -15,6 +15,7 @@
 leg_bluez_rssi_flag="--bluez-rssi"
 leg_bluez_rssi_order=902
 leg_bluez_rssi_needs=""
+leg_bluez_rssi_claims="bus.system"
 
 bluez_rssi_bus="$shot_dir/bluez-bus"
 bluez_rssi_count_path="$shot_dir/bluez-rssi-count.txt"

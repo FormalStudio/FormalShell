@@ -9,6 +9,7 @@
 # smoke.png is timestamped by the time dev/remote.sh has pulled it.
 leg_panel_at_flag="--panel-at <n>"
 leg_panel_at_order=70
+leg_panel_at_claims="panel=shared"
 
 panel_at_toggle_path="$shot_dir/panel-at-toggle.txt"
 panel_at_state_path="$shot_dir/panel-at-state.txt"

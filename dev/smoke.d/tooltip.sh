@@ -13,6 +13,7 @@ leg_tooltip_order=80
 leg_tooltip_needs="wlrctl"
 # The panel it rides on has already dropped the base fixture window.
 leg_tooltip_fixture_window=keep
+leg_tooltip_claims="pointer"
 
 tooltip_dispatch_path="$shot_dir/tooltip-dispatch.txt"
 tooltip_layers_before_path="$shot_dir/tooltip-layers-before.json"

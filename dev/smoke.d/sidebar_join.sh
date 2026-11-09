@@ -19,21 +19,15 @@
 leg_sidebar_join_flag="--sidebar-join"
 leg_sidebar_join_order=238
 leg_sidebar_join_needs="jq convert python3"
+leg_sidebar_join_claims="layout=sidebar frame=none launcher panel"
 
 sidebar_join_flat="$shot_dir/sidebar-join-flat.png"
 sidebar_join_status="$shot_dir/sidebar-join-status.json"
 sidebar_join_frames=12
 
-leg_sidebar_join_validate() {
-  if leg_on bar_position || leg_on frame || leg_on sidebar; then
-    echo "usage: --sidebar-join sets the sidebar itself and cannot combine with --bar-position, --frame or --sidebar" >&2
-    exit 1
-  fi
-}
-
 leg_sidebar_join_fixture() {
   $convert_bin -size 1920x1080 xc:'#808080' "$sidebar_join_flat"
-  settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
 }
 
 leg_sidebar_join_timing() {

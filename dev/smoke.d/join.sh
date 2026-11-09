@@ -37,12 +37,17 @@
 #                       stays bare desktop throughout. At rest it is bare
 #                       desktop again either way.
 #
-# Every probe is pinned to the top bar's own numbers, so a run on another
-# edge or with the frame on photographs the same cases over the whole output
-# and prints each claim as skipped instead; those layouts are read by eye.
+# Every probe reads a top bar's frames: on another edge or with the frame on
+# the cases are photographed over the whole output, and each frame is turned
+# so the bar's edge is on top and the line's far end on the right (flipped
+# for a bottom bar, transposed for a left one, turned a quarter back for a
+# right one) and cut to the same crop. The line's row, the frame ring's band
+# at the far end and case a's card come off `debug dump` (`theme.edgeInset`,
+# `frame.thickness`, the panel's `rest` rect taken at rest).
 leg_join_flag="--join"
 leg_join_order=182
 leg_join_needs="wlrctl convert jq"
+leg_join_claims="bar.layout.left bar.layout.right panel=shared"
 
 # The crop the cases are photographed through, cut against the output's
 # right end in logical pixels (grim -g's space) by the drive; every probe
@@ -56,14 +61,10 @@ join_quick_path="$shot_dir/join-quick.json"
 join_desktop_path="$shot_dir/join-desktop.png"
 join_dump_path="$shot_dir/join-dump.json"
 
-# Case a's card in the crop's own logical coordinates: `panel open network`
-# with no cell is `Theme.space.n` (380) wide and rests one screenPadding (12)
-# off the output's right edge, and the crop is 540 wide against that edge, so
-# it ends on the output's own last column. The bar is 40 rows, so its inward
-# line is the last of them. The assert scales all three to the frame's pixels.
-join_card_x=148
-join_card_width=380
-join_line_row=39
+join_rest_dump_path="$shot_dir/join-a-rest-dump.json"
+# Where the probes read the frames: the crops themselves on a top bar with no
+# frame, else each frame turned and cut (join_read_frames).
+join_read="$shot_dir"
 
 # Whether the cases are read off the whole output rather than through the
 # crop above: any layout but the pinned one, where the probes mean nothing and
@@ -72,25 +73,11 @@ join_whole_output() {
   leg_on bar_position || leg_on frame
 }
 
-leg_join_validate() {
-  local other
-  for other in bar_layout chevron chevron_quiet panel_handoff tray_overflow; do
-    if leg_on "$other"; then
-      echo "usage: --join carries its own bar.layout and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_join_fixture() {
-  local position=""
-  if leg_on bar_position; then
-    position='"position": "'"$(leg_arg bar_position)"'", '
-  fi
   # One cell in the left region, which on any edge is the START of the line:
   # case d hangs off it and rests against that end the way case a rests
   # against the far one.
-  settings_fragment ', "bar": {'"$position"'"layout": {"left": ["usage"], "right": ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]}}'
+  settings_pin '.bar.layout.left = ["usage"] | .bar.layout.right = ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]'
 }
 
 leg_join_timing() {
@@ -110,8 +97,7 @@ leg_join_drive() {
   fi
   if join_whole_output; then
     # A crop cut for the top bar's right end holds nothing at all on a left
-    # bar, and with the probes skipped anyway the whole output is what there
-    # is to read.
+    # bar: the whole output is taken, and turned and cut in the assert.
     join_region="0,0 ${logical_w}x$logical_h"
   else
     join_region="$((logical_w - join_crop_width)),0 ${join_crop_width}x600"
@@ -137,6 +123,7 @@ call panel open network
 sample a
 sleep 3
 "$grim_bin" -g "$join_region" "$shot_dir/join-a-rest.png" > /dev/null 2>&1
+$ipc call debug dump > "$join_rest_dump_path" 2>&1
 call panel close
 sample a-close
 sleep 3
@@ -188,7 +175,7 @@ join_shape_depth() {
   local i last=$join_line_row
   local -a shot desk
   mapfile -t shot < <(join_column "$1" "$2")
-  mapfile -t desk < <(join_column "$join_desktop_path" "$2")
+  mapfile -t desk < <(join_column "$join_read/join-desktop.png" "$2")
   for ((i = join_line_row + 1; i < ${#shot[@]} && i < ${#desk[@]}; i++)); do
     [ "${shot[i]}" = "${desk[i]}" ] && break
     last=$i
@@ -218,10 +205,10 @@ join_bbox() {
 # not reached the deep probe yet.
 join_attached_frame() {
   local col=$1 i path deep near below deep_desk near_desk
-  deep_desk=$(join_pixel "$join_desktop_path" "$col" $((join_line_row + 5)))
-  near_desk=$(join_pixel "$join_desktop_path" "$col" $((join_line_row + 1)))
+  deep_desk=$(join_pixel "$join_read/join-desktop.png" "$col" $((join_line_row + 5)))
+  near_desk=$(join_pixel "$join_read/join-desktop.png" "$col" $((join_line_row + 1)))
   for i in $(seq 1 $join_frames); do
-    path="$shot_dir/join-a-$i.png"
+    path="$join_read/join-a-$i.png"
     [ -f "$path" ] || continue
     deep=$(join_pixel "$path" "$col" $((join_line_row + 5)))
     near=$(join_pixel "$path" "$col" $((join_line_row + 1)))
@@ -232,6 +219,27 @@ join_attached_frame() {
     fi
   done
   return 1
+}
+
+# Every frame the probes read, turned so the bar's edge $1 is on top and the
+# line's far end on the right, and cut to the top bar's own crop.
+join_read_frames() {
+  local turn src name w
+  case $1 in
+    top) turn="" ;;
+    bottom) turn="-flip" ;;
+    left) turn="-transpose" ;;
+    right) turn="-rotate -90" ;;
+  esac
+  join_read="$shot_dir/join-read"
+  mkdir -p "$join_read"
+  w=$(logical_px 540)
+  for src in "$shot_dir"/join-desktop.png "$shot_dir"/join-a-*.png "$shot_dir"/join-b-rest.png; do
+    name=$(basename "$src")
+    # shellcheck disable=SC2086  # the turn is one or two words, or none
+    $convert_bin "$src" $turn +repage -gravity NorthEast -crop "${w}x$(logical_px 600)+0+0" +repage "$join_read/$name" \
+      || fail "could not turn $src for the $1 edge"
+  done
 }
 
 leg_join_assert() {
@@ -262,18 +270,30 @@ leg_join_assert() {
     "the shell reports a bar on another edge than the $want this run asked for: $(head -c 400 "$join_dump_path" 2>/dev/null)"
   echo "SMOKE_JOIN_EDGE ok $want"
 
+  # The line, the ring's band and case a's card off the shell's own numbers,
+  # in logical pixels along and across the line, with the far end at the
+  # crop's last column.
+  local inset frame along length far_l
+  inset=$("$jq_bin" -r --arg e "$want" '.theme.edgeInset[$e]' "$join_dump_path")
+  frame=$("$jq_bin" -r 'if .frame.enabled then .frame.thickness else 0 end' "$join_dump_path")
+  read -r along length < <("$jq_bin" -r --arg e "$want" \
+    '.panel.rest | if $e == "left" or $e == "right" then "\(.y) \(.height)" else "\(.x) \(.width)" end' "$join_rest_dump_path" 2>/dev/null)
+  [ -n "$inset" ] && [ -n "$length" ] && [ "$length" != null ] || fail \
+    "no edge inset or resting panel rect in the dumps: $(head -c 300 "$join_dump_path" 2>/dev/null) / $(head -c 300 "$join_rest_dump_path" 2>/dev/null)"
+  far_l=$logical_w
+  case $want in left | right) far_l=$logical_h ;; esac
   if join_whole_output; then
-    for name in SEAM WALL B; do
-      echo "SMOKE_JOIN_$name skipped (layout): the probes are pinned to the top bar's own crop; the frames above carry this case"
-    done
-    return 0
+    join_read_frames "$want"
   fi
+  echo "SMOKE_JOIN_LINE edge $want inset $inset frame $frame card along $along length $length"
 
   # The crop and the card in the frame's own pixels.
-  join_crop_width=$($convert_bin "$join_desktop_path" -format %w info: 2>/dev/null)
-  join_card_x=$(logical_px "$join_card_x")
-  join_card_width=$(logical_px "$join_card_width")
-  join_line_row=$(( $(logical_px $((join_line_row + 1))) - 1 ))
+  join_crop_width=$($convert_bin "$join_read/join-desktop.png" -format %w info: 2>/dev/null)
+  join_card_x=$(logical_px $((along - (far_l - 540))))
+  join_card_width=$(logical_px "$length")
+  join_line_row=$(( $(logical_px "$inset") - 1 ))
+  local ring
+  ring=$(logical_px "$frame")
   local col attached seam bar
   col=$((join_card_x + join_card_width / 2))
   attached=$(join_attached_frame "$col") || fail \
@@ -286,7 +306,7 @@ leg_join_assert() {
   echo "SMOKE_JOIN_SEAM ok $seam $attached"
 
   local edge ink far top bottom row
-  edge=$((join_crop_width - 1))
+  edge=$((join_crop_width - 1 - ring))
   ink=$(join_pixel "$attached" "$col" $((join_line_row + 5)))
   far=$(join_shape_depth "$attached" "$col")
   top=$((join_line_row + 2))
@@ -295,12 +315,14 @@ leg_join_assert() {
     "the shape reaches only row $far at column $col of $attached: too shallow to read the wall against"
   local -a wall rest desk
   mapfile -t wall < <(join_column "$attached" "$edge")
-  mapfile -t rest < <(join_column "$shot_dir/join-a-rest.png" "$edge")
-  mapfile -t desk < <(join_column "$join_desktop_path" "$edge")
+  mapfile -t rest < <(join_column "$join_read/join-a-rest.png" "$edge")
+  mapfile -t desk < <(join_column "$join_read/join-desktop.png" "$edge")
+  # Whether the fillet fits is the shell's call in logical pixels: the same
+  # sum in frame pixels rounds the ring and the card's start apart at 1.25.
   local reach room
-  reach=$(scaled_jq -r '.theme.radiusXl * $s | round' "$join_dump_path" 2>/dev/null)
-  room=$((join_crop_width - join_card_x - join_card_width))
-  if [ -n "$reach" ] && [ "$reach" -le "$room" ]; then
+  reach=$("$jq_bin" -r '.theme.radiusXl' "$join_dump_path" 2>/dev/null)
+  room=$(awk -v f="$far_l" -v r="$frame" -v a="$along" -v l="$length" 'BEGIN { print f - r - a - l }')
+  if [ -n "$reach" ] && awk -v r="$reach" -v m="$room" 'BEGIN { exit !(r <= m) }'; then
     for ((row = top; row <= bottom; row++)); do
       [ "${wall[row]}" = "${desk[row]}" ] || fail \
         "the output's last column reads ${wall[row]} at row $row of $attached against the bare desktop's ${desk[row]}: a ${reach}px fillet fits the ${room}px room, so nothing should wall"
@@ -322,7 +344,7 @@ leg_join_assert() {
     local depth col_i bad
     for depth in $((join_line_row + 8)) $((join_line_row + (bottom - join_line_row) * 2 / 3)); do
       mapfile -t scan < <(join_row "$attached" "$col" "$depth")
-      mapfile -t bare < <(join_row "$join_desktop_path" "$col" "$depth")
+      mapfile -t bare < <(join_row "$join_read/join-desktop.png" "$col" "$depth")
       bad=""
       for ((col_i = 0; col_i < ${#scan[@]}; col_i++)); do
         [ "${scan[col_i]}" = "${bare[col_i]}" ] && bad="$bad $((col + col_i))"
@@ -335,7 +357,7 @@ leg_join_assert() {
   fi
 
   # Case b's card at rest under the line, off its own pixels.
-  join_bbox "$shot_dir/join-b-rest.png" "$join_desktop_path" $((join_line_row + 1)) > /dev/null || fail \
+  join_bbox "$join_read/join-b-rest.png" "$join_read/join-desktop.png" $((join_line_row + 1)) > /dev/null || fail \
     "nothing under the bar differs from the bare desktop in join-b-rest.png: the chevron's card never opened"
   echo "SMOKE_JOIN_B ok quick settings at rest under the line"
 }

@@ -28,15 +28,7 @@
 leg_lyrics_blur_flag="--lyrics-blur"
 leg_lyrics_blur_order=176
 leg_lyrics_blur_needs="mpv ffmpeg convert jq"
-
-# `--config-reload` mv's the same settings.json path this leg retargets;
-# running both in one session would race two writers over one file.
-leg_lyrics_blur_validate() {
-  if leg_on config_reload; then
-    echo "usage: $0 --lyrics-blur and --config-reload both retarget settings.json, run them separately" >&2
-    exit 1
-  fi
-}
+leg_lyrics_blur_claims="media.player=shared"
 
 lyrics_blur_track_path="$shot_dir/lyrics-blur-track.flac"
 lyrics_blur_pid_path="$shot_dir/lyrics-blur-mpv.pid"
@@ -46,8 +38,6 @@ lyrics_blur_on_png_path="$shot_dir/lyrics-blur-on.png"
 lyrics_blur_off_png_path="$shot_dir/lyrics-blur-off.png"
 lyrics_blur_status_on_path="$shot_dir/lyrics-blur-status-on.json"
 lyrics_blur_status_off_path="$shot_dir/lyrics-blur-status-off.json"
-lyrics_blur_gen1_path="$shot_dir/lyrics-blur-settings-gen1.json"
-lyrics_blur_gen2_path="$shot_dir/lyrics-blur-settings-gen2.json"
 lyrics_blur_lib_path="$shot_dir/lyrics-blur-lib.sh"
 
 lyrics_blur_track_title="FormalShell Lyrics Blur Track"
@@ -140,7 +130,6 @@ JSON
 
 leg_lyrics_blur_drive() {
   local script="$shot_dir/lyrics-blur-drive.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   local kill_script="$shot_dir/lyrics-blur-kill.sh"
 
   write_script "$script" <<EOF
@@ -193,15 +182,7 @@ sleep 1
 $ipc call media lyrics > "$lyrics_blur_status_on_path" 2>&1
 "$grim_bin" "$lyrics_blur_on_png_path" > /dev/null 2>&1
 
-# home-manager's own activation shape: the real file off to one side, a
-# symlink where the shell looks, retargeted only after the shell is reading
-# through it (config_reload.sh's own reasoning for why a plain rewrite would
-# not test this).
-mv "$settings_path" "$lyrics_blur_gen1_path"
-ln -sfn "$lyrics_blur_gen1_path" "$settings_path"
-sleep 2
-"$jq_bin" '.media.lyricsBlur = false' "$lyrics_blur_gen1_path" > "$lyrics_blur_gen2_path"
-ln -sfn "$lyrics_blur_gen2_path" "$settings_path"
+settings_retarget '.media.lyricsBlur = false'
 
 SECONDS=0
 while [ "\$SECONDS" -lt 15 ]; do

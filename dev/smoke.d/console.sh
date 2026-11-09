@@ -23,7 +23,7 @@ leg_console_fixture() {
   # so the fixture is foot on a known blue background announcing the app id
   # ConsoleService matches on. Absolute path: this argv is spawned by the
   # shell through the compositor, against the session's PATH.
-  settings_fragment ', "console": {"command": ["'"$foot_bin"'", "--app-id=formalshell-console", "--override=colors.background=1f6feb", "--override=colors.foreground=f4f4f4", "sh", "-c", "echo FORMALSHELL QUAKE CONSOLE; sleep 600"], "appId": "formalshell-console", "share": 0.5}'
+  settings_pin '. * {"console": {"command": ["'"$foot_bin"'", "--app-id=formalshell-console", "--override=colors.background=1f6feb", "--override=colors.foreground=f4f4f4", "sh", "-c", "echo FORMALSHELL QUAKE CONSOLE; sleep 600"], "appId": "formalshell-console", "share": 0.5}}'
 }
 
 leg_console_timing() {

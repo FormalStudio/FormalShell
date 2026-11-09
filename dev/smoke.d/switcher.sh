@@ -41,6 +41,7 @@ leg_switcher_needs="foot jq convert"
 # The base run's fixture window is the third of the three, and the one the
 # commit lands on.
 leg_switcher_fixture_window=keep
+leg_switcher_claims="switcher.enabled=true workspaces=shared"
 
 switcher_second_json="$shot_dir/switcher-second.json"
 switcher_first_json="$shot_dir/switcher-first.json"
@@ -55,14 +56,7 @@ switcher_clients_json="$shot_dir/switcher-clients.json"
 leg_switcher_fixture() {
   # The fourth window on workspace 2 is only held out of the card under
   # Gala's list, which is opt-in.
-  settings_fragment ', "switcher": {"currentWorkspace": true}'
-}
-
-leg_switcher_validate() {
-  if leg_on switcher_off; then
-    echo "usage: --switcher-off turns the switcher off in settings.json, so it cannot share a session with --switcher" >&2
-    exit 1
-  fi
+  settings_pin '.switcher.currentWorkspace = true'
 }
 
 leg_switcher_timing() {

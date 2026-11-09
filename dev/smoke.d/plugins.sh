@@ -39,6 +39,7 @@
 leg_plugins_flag="--plugins"
 leg_plugins_order=200
 leg_plugins_needs="jq wlrctl wtype"
+leg_plugins_claims="launcher=shared"
 
 plugins_list_path="$shot_dir/plugins-list.json"
 plugins_status_path="$shot_dir/plugins-status.json"

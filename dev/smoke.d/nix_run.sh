@@ -21,7 +21,7 @@ nix_run_procs_path="$shot_dir/nix-run-procs.txt"
 nix_run_png="$shot_dir/nix-run.png"
 
 leg_nix_run_fixture() {
-  settings_fragment ', "console": {"command": ["'"$foot_bin"'", "--app-id=formalshell-console", "--override=colors.background=1f6feb"], "appId": "formalshell-console", "share": 0.5}'
+  settings_pin '. * {"console": {"command": ["'"$foot_bin"'", "--app-id=formalshell-console", "--override=colors.background=1f6feb"], "appId": "formalshell-console", "share": 0.5}}'
   mkdir -p "$iso_home/.config/formalshell"
   cat > "$iso_home/.config/formalshell/menu.jsonc" <<EOF
 {

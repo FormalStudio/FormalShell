@@ -20,6 +20,7 @@
 leg_processes_flag="--processes"
 leg_processes_order=150
 leg_processes_needs="jq"
+leg_processes_claims="launcher=shared"
 
 processes_victim_pid_path="$shot_dir/processes-victim.pid"
 processes_restart_pid_path="$shot_dir/processes-restart.pid"

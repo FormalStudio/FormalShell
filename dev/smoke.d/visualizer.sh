@@ -13,6 +13,7 @@
 leg_visualizer_flag="--visualizer"
 leg_visualizer_order=220
 leg_visualizer_needs="mpv ffmpeg convert"
+leg_visualizer_claims="media.player=shared bar.layout.center"
 
 visualizer_pid_path="$shot_dir/visualizer-mpv.pid"
 visualizer_playing_path="$shot_dir/visualizer-playing.png"
@@ -31,7 +32,7 @@ leg_visualizer_fixture() {
     -map 0:a -map 1:0 -ac 2 -t 20 \
     -metadata "title=FormalShell Visualizer Smoke Tone" -metadata "artist=FormalShell Test Artist" \
     -c:a flac -c:v png -disposition:v attached_pic -y "$visualizer_track_path"
-  settings_fragment ', "bar": {"layout": {"center": ["clock", "nowPlaying", "visualizer"]}}'
+  settings_pin '.bar.layout.center = ["clock", "nowPlaying", "visualizer"]'
 }
 
 leg_visualizer_timing() {

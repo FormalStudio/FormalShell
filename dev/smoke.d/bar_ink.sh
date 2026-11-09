@@ -18,18 +18,12 @@
 leg_bar_ink_flag="--bar-ink"
 leg_bar_ink_order=102
 leg_bar_ink_needs="convert jq"
+leg_bar_ink_claims="bar.style=transparent"
 
 bar_ink_wp="$shot_dir/bar-ink.png"
 bar_ink_png="$shot_dir/bar-ink-band.png"
 bar_ink_json="$shot_dir/bar-ink.json"
 bar_ink_room_json="$shot_dir/bar-ink-room.json"
-
-leg_bar_ink_validate() {
-  if leg_on bar_style && [ "$(leg_arg bar_style)" != transparent ]; then
-    echo "usage: --bar-ink reads each cell's own stretch, which only --bar-style transparent does" >&2
-    exit 1
-  fi
-}
 
 leg_bar_ink_fixture() {
   $convert_bin -size 1920x1080 xc:black -fill white \

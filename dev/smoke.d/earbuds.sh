@@ -83,6 +83,7 @@
 leg_earbuds_flag="--earbuds"
 leg_earbuds_order=176
 leg_earbuds_needs="jq python3 pw-loopback pw-record"
+leg_earbuds_claims="bus.system"
 
 earbuds_dir="$shot_dir/earbuds"
 earbuds_shim_dir="$earbuds_dir/shim"
@@ -132,10 +133,6 @@ earbuds_motion_replies="$earbuds_dir/motion-replies.txt"
 earbuds_head_motion="$earbuds_dir/librepods-motion-head.txt"
 earbuds_head_verbs="$earbuds_dir/librepods-verbs-head.txt"
 earbuds_librepods_err="$earbuds_dir/librepods-stub.err"
-
-leg_earbuds_validate() {
-  refuse_beside_stub_bus earbuds
-}
 
 leg_earbuds_fixture() {
   local b175 settings values airpods

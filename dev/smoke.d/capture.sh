@@ -42,7 +42,7 @@ leg_capture_fixture() {
   # --record leg writes the same key (plus its own webcam probe), so this
   # fills it in only when that leg is off.
   if ! leg_on record; then
-    settings_fragment ', "recording": {"noDmabuf": true}'
+    settings_pin '.recording.noDmabuf = true'
   fi
 }
 

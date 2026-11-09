@@ -15,6 +15,7 @@
 leg_panel_flag="--panel <name>"
 leg_panel_needs="jq grim pil"
 leg_panel_order=60
+leg_panel_claims="panel=shared"
 
 panel_open_path="$shot_dir/panel-open.txt"
 panel_state_path="$shot_dir/panel-state.txt"
@@ -37,7 +38,7 @@ leg_panel_fixture() {
   # with none lands on NO NETWORK, which is an honest state and still shows
   # the rows.
   if [ "$(leg_arg panel)" = "systemupdate" ]; then
-    settings_fragment ', "systemUpdate": {"flakeDir": "'"$PWD/dev/smoke.d/fixtures/flake"'"}'
+    settings_pin ".systemUpdate.flakeDir = \"$PWD/dev/smoke.d/fixtures/flake\""
   fi
 }
 

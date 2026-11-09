@@ -21,6 +21,7 @@
 leg_wallpaper_pair_flag="--wallpaper-pair"
 leg_wallpaper_pair_order=102
 leg_wallpaper_pair_needs="convert jq wtype"
+leg_wallpaper_pair_claims="wallpaper theme.mode lock"
 
 wallpaper_pair_light="$shot_dir/pair-light.png"
 wallpaper_pair_dark="$shot_dir/pair-dark.png"
@@ -31,16 +32,6 @@ wallpaper_pair_gap=0.05
 wallpaper_pair_crop="1920x700+0+300"
 wallpaper_pair_theme_json="$iso_home/.local/state/formalshell/theme.json"
 wallpaper_pair_state_json="$iso_home/.local/state/formalshell/state.json"
-
-leg_wallpaper_pair_validate() {
-  local other
-  for other in wallpaper theme_toggle theme_auto lock unlock depth showcase sky config_reload; do
-    if leg_on "$other"; then
-      echo "usage: --wallpaper-pair sets its own pair, toggles the mode, locks and retargets settings.json; run it without --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_wallpaper_pair_fixture() {
   $convert_bin -size 960x540 xc:'#efe3d0' -fill '#e0601a' -draw 'rectangle 80,0 239,539' "png:$wallpaper_pair_light"
@@ -87,9 +78,7 @@ sleep 3
 "$wtype_bin" -s 300 -k Return
 sleep 3
 call lock isLocked > "$shot_dir/pair-islocked.txt" 2>&1
-cp "\$(readlink -f "$settings_path")" "$shot_dir/pair-settings-1.json"
-"$jq_bin" '.theme.mode = "auto"' "$shot_dir/pair-settings-1.json" > "$shot_dir/pair-settings-2.json"
-ln -sfn "$shot_dir/pair-settings-2.json" "$settings_path"
+settings_retarget '.theme.mode = "auto"'
 sleep 5
 call theme status > "$shot_dir/pair-status-auto.json" 2>&1
 "$grim_bin" "$shot_dir/pair-desk-auto.png" > /dev/null 2>&1

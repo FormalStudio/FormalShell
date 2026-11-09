@@ -22,6 +22,7 @@
 leg_launcher_abbrev_flag="--launcher-abbrev"
 leg_launcher_abbrev_order=28
 leg_launcher_abbrev_needs="jq wtype"
+leg_launcher_abbrev_claims="launcher=shared"
 
 launcher_abbrev_dir="$iso_home/.local/share/applications"
 launcher_abbrev_settings="$iso_home/.config/formalshell/settings.json"
@@ -32,7 +33,7 @@ launcher_abbrev_entry() {
 }
 
 leg_launcher_abbrev_fixture() {
-  settings_fragment ', "menu": {"abbreviations": {"qq": "app:formalshell-abbrev-config.desktop"}}'
+  settings_pin '.menu.abbreviations.qq = "app:formalshell-abbrev-config.desktop"'
   mkdir -p "$launcher_abbrev_dir"
   launcher_abbrev_entry foxtrot "Foxtrot"
   launcher_abbrev_entry fx "fx"

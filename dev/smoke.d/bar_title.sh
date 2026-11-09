@@ -18,18 +18,19 @@
 # track is short of its want, both budgets are non-zero, and the centre
 # region's middle sits within 2px of the strip's whenever the minimums
 # leave the centre centrable (the leg prints why when they do not). Last,
-# settings.json is rewritten in place to a layout carrying the title cell
+# settings.json is retargeted to a layout carrying the title cell
 # alone, and the title stops at its own ceiling with the marquee still
 # running on a strip with room to spare.
 #
-# Rides `--bar-position <edge>`, which pins the edge in this leg's own `bar`
-# key: a left or right bar turns the title and runs every region down the
-# strip, which is where cells used to land on top of each other. Two frames
+# Rides `--bar-position <edge>`, which pins the edge: a left or right bar
+# turns the title and runs every region down the strip, which is where
+# cells used to land on top of each other. Two frames
 # a second apart, `bar-title.png` and `bar-title-later.png`, are the marquee
 # moving, read by eye.
 leg_bar_title_flag="--bar-title"
 leg_bar_title_order=196
 leg_bar_title_needs="foot jq mpv ffmpeg"
+leg_bar_title_claims="bar.layout bar.modules media.player"
 
 bar_title_json_path="$shot_dir/bar-title.json"
 bar_title_poll_path="$shot_dir/bar-title-poll.json"
@@ -45,21 +46,8 @@ bar_title_pid_path="$shot_dir/bar-title-mpv.pid"
 bar_title_track="FormalShell Bar Title Now Playing Track Long Enough To Scroll On Any Strip"
 bar_title_text="FormalShell bar title verification with a window title far longer than any strip it could ever sit on so the only thing that decides how much of it shows is the room the bar hands the cell"
 
-leg_bar_title_validate() {
-  local other
-  for other in bar_layout bar_room chevron join config_reload lyrics_blur; do
-    if leg_on "$other"; then
-      echo "usage: --bar-title carries and rewrites its own bar.layout and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_bar_title_fixture() {
-  local i position="" modules="" layout_right='"battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"'
-  if leg_on bar_position; then
-    position='"position": "'"$(leg_arg bar_position)"'", '
-  fi
+  local i modules="" layout_right='"battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"'
   mkdir -p "$bar_title_cmd_dir"
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "anullsrc=r=48000:cl=stereo" -t 10 \
     -metadata "title=$bar_title_track" -metadata "artist=FormalShell Test Artist" \
@@ -73,7 +61,7 @@ EOF
     layout_right="$layout_right, \"custom:bartitle$i\""
   done
   modules="${modules%,}"
-  settings_fragment ', "bar": {'"$position"'"layout": {"left": ["launcher", "workspaces", "activeWindow"], "center": ["clock", "nowPlaying"], "right": ['"$layout_right"']}, "modules": ['"$modules"']}'
+  settings_pin '. * {"bar": {"layout": {"left": ["launcher", "workspaces", "activeWindow"], "center": ["clock", "nowPlaying"], "right": ['"$layout_right"']}, "modules": ['"$modules"']}}'
 }
 
 leg_bar_title_timing() {
@@ -83,7 +71,6 @@ leg_bar_title_timing() {
 leg_bar_title_drive() {
   local script="$shot_dir/bar-title-drive.sh"
   local kill_script="$shot_dir/bar-title-kill.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep 2
@@ -131,10 +118,9 @@ focused formalshell-bar-title
 for i in \$(seq 1 12); do
   $ipc call bar room > "$bar_title_samples_dir/to-long-\$i.json" 2>&1
 done
-# The title cell alone on the strip, the file rewritten in place.
+# The title cell alone on the strip.
 sleep 2
-"$jq_bin" '.bar.layout = {"left": ["activeWindow"], "center": [], "right": []}' "$settings_path" > "$settings_path.tmp"
-cat "$settings_path.tmp" > "$settings_path"
+settings_retarget '.bar.layout = {"left": ["activeWindow"], "center": [], "right": []}'
 for _ in \$(seq 1 20); do
   $ipc call bar room > "$bar_title_alone_path" 2>&1
   "$jq_bin" -e '.[0].cells | length == 1' "$bar_title_alone_path" > /dev/null 2>&1 && break

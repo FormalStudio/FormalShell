@@ -47,6 +47,7 @@
 leg_app_grid_flag="--app-grid"
 leg_app_grid_order=26
 leg_app_grid_needs="convert wtype jq"
+leg_app_grid_claims="launcher=shared"
 
 # This leg's own clock: the launcher covers the whole output, so under
 # --wallpaper it starts after that leg's last frame, the rule menu_t0 draws.
@@ -57,9 +58,6 @@ app_grid_t0() {
 app_grid_dir="$iso_home/.local/share/applications"
 app_grid_icon_dir="$iso_home/.local/share/icons/hicolor"
 app_grid_marker="$shot_dir/app-grid-launched.txt"
-app_grid_settings="$iso_home/.config/formalshell/settings.json"
-app_grid_settings_on="$shot_dir/app-grid-settings-on.json"
-app_grid_settings_off="$shot_dir/app-grid-settings-off.json"
 
 app_grid_png="$shot_dir/app-grid.png"
 app_grid_mixed_png="$shot_dir/app-grid-mixed.png"
@@ -104,7 +102,7 @@ app_grid_entry() {
 }
 
 leg_app_grid_fixture() {
-  settings_fragment ', "menu": {"appGrid": true}'
+  settings_pin '.menu.appGrid = true'
 
   mkdir -p "$app_grid_icon_dir/48x48/apps" "$app_grid_icon_dir/128x128/apps"
   local size
@@ -176,7 +174,6 @@ leg_app_grid_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 sleep $t0
-cp "$app_grid_settings" "$app_grid_settings_on"
 $ipc call menu summon apps > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$app_grid_png" > /dev/null 2>&1
@@ -229,18 +226,15 @@ sleep 1
 sleep 1
 $ipc call menu status > "$app_grid_hold_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
-# The key deleted underneath the running shell. Written back through the same
-# inode rather than moved over, so the config watch sees a write and not a
-# file it is no longer holding.
-"$jq_bin" 'del(.menu.appGrid)' "$app_grid_settings" > "$app_grid_settings_off" 2>&1
-cat "$app_grid_settings_off" > "$app_grid_settings"
+# The key deleted underneath the running shell.
+settings_retarget 'del(.menu.appGrid)'
 sleep 2
 $ipc call menu summon apps > /dev/null 2>&1
 sleep 2
 "$grim_bin" "$app_grid_rows_png" > /dev/null 2>&1
 $ipc call menu status > "$app_grid_off_path" 2>&1
 $ipc call menu close > /dev/null 2>&1
-cat "$app_grid_settings_on" > "$app_grid_settings"
+settings_retarget '.menu.appGrid = true'
 sleep 2
 $ipc call menu summon apps > /dev/null 2>&1
 EOF

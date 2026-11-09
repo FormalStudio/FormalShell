@@ -58,6 +58,7 @@
 leg_chevron_quiet_flag="--chevron-quiet"
 leg_chevron_quiet_order=181
 leg_chevron_quiet_needs="convert jq"
+leg_chevron_quiet_claims="bar.layout.right bar.position=top panel=shared"
 
 # The band the card hangs in: the bar is `barCellHeight` 28 plus a
 # `barMargin` 6 either side, so the strip ends at y=40 and the card's own top
@@ -104,18 +105,8 @@ chevron_quiet_tail_paths=(
   "$shot_dir/chevron-quiet-tail-3.png"
 )
 
-leg_chevron_quiet_validate() {
-  local other
-  for other in bar_layout bar_position chevron panel_handoff tray_overflow; do
-    if leg_on "$other"; then
-      echo "usage: --chevron-quiet carries its own bar.layout and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_chevron_quiet_fixture() {
-  settings_fragment ', "bar": {"layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]}}'
+  settings_pin '.bar.layout.right = ["bluetooth", "weather", "tray", "bell", "indicators", "chevron", "battery", "audio", "network"]'
 }
 
 leg_chevron_quiet_timing() {

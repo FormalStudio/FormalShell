@@ -23,13 +23,7 @@
 leg_desktop_clock_flag="--desktop-clock"
 leg_desktop_clock_order=112
 leg_desktop_clock_needs="convert jq foot"
-
-leg_desktop_clock_validate() {
-  if leg_on showcase || leg_on wallpaper || leg_on depth || leg_on config_reload; then
-    echo "usage: $0 --desktop-clock seeds its own wallpaper and retargets settings.json; run it without --showcase, --wallpaper, --depth or --config-reload" >&2
-    exit 1
-  fi
-}
+leg_desktop_clock_claims="wallpaper"
 
 desktop_clock_dir="$shot_dir/desktop-clock-wallpapers"
 desktop_clock_picture="$desktop_clock_dir/band.png"
@@ -37,7 +31,7 @@ desktop_clock_photo="$desktop_clock_dir/mountains.jpg"
 desktop_clock_results="$shot_dir/desktop-clock-results.txt"
 
 leg_desktop_clock_fixture() {
-  settings_fragment ', "desktopClock": {"enabled": true}'
+  settings_pin '.desktopClock.enabled = true'
   mkdir -p "$desktop_clock_dir/.depth"
   $convert_bin -size 1920x1080 xc:'#101418' -fill '#ff7a1a' -draw 'rectangle 940,0 979,1079' "$desktop_clock_picture"
   $convert_bin -size 1920x1080 xc:black -fill white -draw 'rectangle 940,0 979,1079' -draw 'rectangle 0,900 1919,1079' "$desktop_clock_dir/.depth/band.png.png"
@@ -54,7 +48,7 @@ leg_desktop_clock_timing() {
 }
 
 leg_desktop_clock_drive() {
-  local script="$shot_dir/desktop-clock-drive.sh" settings_path="$iso_home/.config/formalshell/settings.json"
+  local script="$shot_dir/desktop-clock-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 out="$desktop_clock_results"
@@ -72,15 +66,12 @@ quiet() {
   [ "\$s" -lt 50 ] || sleep \$((61 - s))
   c0=\$(commits); sleep "\$2"; c1=\$(commits); echo "\$1 commits=\$((c1 - c0))" >> "\$out"
 }
-# settings.json retargeted to the first generation with \$2 applied.
 retarget() {
-  "$jq_bin" "\$2" "$shot_dir/desktop-clock-settings-gen1.json" > "$shot_dir/desktop-clock-settings-\$1.json"
-  ln -sfn "$shot_dir/desktop-clock-settings-\$1.json" "$settings_path"
+  settings_retarget "\$1"
   sleep 2
 }
 sleep 5
 snap on
-cp "\$(readlink -f "$settings_path")" "$shot_dir/desktop-clock-settings-gen1.json"
 quiet rest 3
 
 spawn_foot formalshell-desktop-clock "" "formalshell desktop clock"
@@ -92,20 +83,20 @@ quiet fullscreen 5
 pkill -f -- '--app-id=formalshell-desktop-clock'
 sleep 2
 
-retarget off '.desktopClock.depth = false'
+retarget '.desktopClock.depth = false'
 snap off
-retarget gooey '.desktopClock.face = "gooey"'
+retarget 'del(.desktopClock.depth) | .desktopClock.face = "gooey"'
 snap gooey
-retarget serif '.desktopClock.face = "serif"'
+retarget '.desktopClock.face = "serif"'
 snap serif
-retarget pixel '.'
+retarget 'del(.desktopClock.face)'
 
 $ipc call wallpaper set "$desktop_clock_photo" > /dev/null 2>&1
 sleep 6
 snap photo
-retarget bare '.desktopClock.enabled = false'
+retarget '.desktopClock.enabled = false'
 snap bare
-retarget pixel '.'
+retarget 'del(.desktopClock.face)'
 
 # Past the next minute, so the redraw read is the minute's own.
 sleep \$((62 - 10#\$(date +%S)))

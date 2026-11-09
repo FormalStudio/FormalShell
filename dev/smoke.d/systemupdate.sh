@@ -14,6 +14,7 @@
 leg_systemupdate_flag="--systemupdate"
 leg_systemupdate_order=270
 leg_systemupdate_needs="jq"
+leg_systemupdate_claims="bar.layout.right"
 
 systemupdate_open_reply_path="$shot_dir/systemupdate-open-reply.txt"
 systemupdate_state_path="$shot_dir/systemupdate-panel-state.txt"
@@ -28,9 +29,9 @@ leg_systemupdate_fixture() {
   # ever emits it: a settings.json carrying it twice is last-wins JSON that
   # would silently disagree with whichever half is being read.
   if ! leg_on panel || [ "$(leg_arg panel)" != "systemupdate" ]; then
-    settings_fragment ', "systemUpdate": {"flakeDir": "'"$systemupdate_flake_dir"'"}'
+    settings_pin ".systemUpdate.flakeDir = \"$systemupdate_flake_dir\""
   fi
-  settings_fragment ', "bar": {"layout": {"right": ["systemUpdate", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]}}'
+  settings_pin '.bar.layout.right = ["systemUpdate", "battery", "audio", "network", "bluetooth", "weather", "tray", "bell", "indicators"]'
 }
 
 leg_systemupdate_timing() {

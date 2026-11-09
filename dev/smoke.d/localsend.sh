@@ -49,7 +49,7 @@ localsend_received_sha_path="$shot_dir/localsend-received.sha256"
 localsend_received_png="$shot_dir/localsend-received.png"
 
 leg_localsend_fixture() {
-  settings_fragment ', "localsend": {"receive": true, "alias": "FormalShell Fixture", "dir": "'"$localsend_receive_dir"'"}'
+  settings_pin '. * {"localsend": {"receive": true, "alias": "FormalShell Fixture", "dir": "'"$localsend_receive_dir"'"}}'
   mkdir -p "$localsend_receive_dir"
   printf 'M75 localsend loopback fixture, run at %s\n' "$(date -u +%s)" > "$localsend_payload_path"
 }

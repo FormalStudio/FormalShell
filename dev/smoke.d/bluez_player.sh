@@ -27,6 +27,7 @@
 leg_bluez_player_flag="--bluez-player"
 leg_bluez_player_order=179
 leg_bluez_player_needs="python3 jq grim wtype wlrctl pactl pw_cat hyprctl"
+leg_bluez_player_claims="bus.system"
 
 bluez_player_dir="$shot_dir/bluez-player"
 bluez_player_bus="$bluez_player_dir/bus"

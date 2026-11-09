@@ -11,6 +11,7 @@
 leg_lock_restore_flag="--lock-restore"
 leg_lock_restore_order=112
 leg_lock_restore_needs="wtype convert"
+leg_lock_restore_claims="session"
 
 lock_restore_dead_path="$shot_dir/lock-restore-dead.png"
 lock_restore_back_path="$shot_dir/lock-restore-back.png"
@@ -18,17 +19,6 @@ lock_restore_status_path="$shot_dir/lock-restore-status.json"
 lock_restore_after_path="$shot_dir/lock-restore-after.json"
 lock_restore_log_path="$shot_dir/lock-restore-second.log"
 lock_restore_pids_path="$shot_dir/lock-restore-pids.txt"
-
-leg_lock_restore_validate() {
-  # The shell it kills is every other leg's shell too.
-  local v
-  for v in $(compgen -v | grep -E '^leg_[a-z0-9_]+_on$'); do
-    if [ "$v" != leg_lock_restore_on ] && [ "$v" != leg_backend_on ] && [ "${!v}" = true ]; then
-      echo "usage: --lock-restore kills the session's shell and cannot combine with --$(echo "${v#leg_}" | sed 's/_on$//; s/_/-/g')" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_lock_restore_fixture() {
   $convert_bin -size 256x256 xc:'#1FB86A' "png:$iso_home/.face"

@@ -17,6 +17,7 @@
 leg_media_flag="--media"
 leg_media_order=170
 leg_media_needs="mpv ffmpeg convert"
+leg_media_claims="media.player=shared"
 
 media_status_path="$shot_dir/media-status.json"
 media_status_long_path="$shot_dir/media-status-long.json"

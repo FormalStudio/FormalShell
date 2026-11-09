@@ -48,6 +48,7 @@
 leg_brightness_flag="--brightness"
 leg_brightness_order=217
 leg_brightness_needs="wtype jq"
+leg_brightness_claims="outputs=shared"
 
 brightness_shim_dir="$shot_dir/brightness-shim"
 brightness_dev_dir="$shot_dir/brightness-dev"

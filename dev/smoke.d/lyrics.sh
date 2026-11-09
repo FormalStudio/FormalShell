@@ -111,6 +111,7 @@
 leg_lyrics_flag="--lyrics"
 leg_lyrics_order=175
 leg_lyrics_needs="mpv ffmpeg convert jq wlrctl pipewire"
+leg_lyrics_claims="media.player=shared"
 
 lyrics_track1_path="$shot_dir/lyrics-track1.flac"
 lyrics_track2_path="$shot_dir/lyrics-track2.flac"

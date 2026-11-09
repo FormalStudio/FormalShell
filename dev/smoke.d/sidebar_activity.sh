@@ -17,18 +17,12 @@
 leg_sidebar_activity_flag="--sidebar-activity"
 leg_sidebar_activity_order=238
 leg_sidebar_activity_needs="jq python3 convert tesseract"
+leg_sidebar_activity_claims="layout=sidebar frame=none"
 
 sa_marks="$shot_dir/sidebar-activity"
 
-leg_sidebar_activity_validate() {
-  if leg_on bar_position || leg_on frame; then
-    echo "usage: --sidebar-activity places the column itself and cannot combine with --bar-position or --frame" >&2
-    exit 1
-  fi
-}
-
 leg_sidebar_activity_fixture() {
-  leg_on sidebar || settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
 }
 
 leg_sidebar_activity_timing() {

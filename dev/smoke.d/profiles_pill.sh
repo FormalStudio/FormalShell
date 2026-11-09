@@ -12,11 +12,12 @@ leg_profiles_pill_flag="--profiles-pill"
 leg_profiles_pill_order=282
 leg_profiles_pill_vm_only="it switches the guest's real power-profiles-daemon"
 leg_profiles_pill_needs="jq python3"
+leg_profiles_pill_claims="layout=sidebar"
 
 profiles_pill_dir="$shot_dir/profiles-pill"
 
 leg_profiles_pill_fixture() {
-  settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
 }
 
 leg_profiles_pill_timing() {

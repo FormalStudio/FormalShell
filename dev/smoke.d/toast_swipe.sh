@@ -27,6 +27,7 @@
 leg_toast_swipe_flag="--toast-swipe"
 leg_toast_swipe_order=32
 leg_toast_swipe_needs="notify-send convert wlrctl python3 jq"
+leg_toast_swipe_claims="toasts pointer screen"
 
 toast_swipe_vpointer="$PWD/dev/vpointer.py"
 toast_swipe_body_top=60
@@ -41,16 +42,6 @@ toast_swipe_wheel_after_path="$shot_dir/toast-swipe-wheel-after.png"
 toast_swipe_status_path="$shot_dir/toast-swipe-status.txt"
 toast_swipe_dispatch_path="$shot_dir/toast-swipe-dispatch.txt"
 toast_swipe_dump_path="$shot_dir/toast-swipe-dump.json"
-
-leg_toast_swipe_validate() {
-  local other
-  for other in notify notify_emerge notify_close center reminder capture_edit deform polkit screensaver; do
-    if leg_on "$other"; then
-      echo "usage: --toast-swipe swipes one notification away and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_toast_swipe_timing() {
   leg_timing 30 70

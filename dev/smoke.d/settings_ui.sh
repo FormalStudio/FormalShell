@@ -34,7 +34,7 @@ settings_ui_settings="$iso_home/.config/formalshell/settings.json"
 settings_ui_state="$iso_home/.local/state/formalshell/state.json"
 
 leg_settings_ui_fixture() {
-  settings_fragment ', "motion": {"morph": false}'
+  settings_pin '.motion.morph = false'
 }
 
 leg_settings_ui_timing() {

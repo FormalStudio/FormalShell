@@ -47,6 +47,7 @@
 leg_tray_overflow_flag="--tray-overflow"
 leg_tray_overflow_order=172
 leg_tray_overflow_needs="python3 jq wlrctl notify-send"
+leg_tray_overflow_claims="bar.layout panel=shared"
 
 tray_overflow_pids_path="$shot_dir/tray-overflow-pids.txt"
 tray_overflow_status_path="$shot_dir/tray-overflow-status.json"
@@ -74,7 +75,7 @@ leg_tray_overflow_fixture() {
   # The chevron governs what precedes it in a right region, so the tray is the
   # whole of its governed side and `clock`, outboard of it, is what keeps the
   # two frames from differing by anything else.
-  settings_fragment ', "bar": {"layout": {"left": [], "center": [], "right": ["tray", "chevron", "clock"]}}'
+  settings_pin '. * {"bar": {"layout": {"left": [], "center": [], "right": ["tray", "chevron", "clock"]}}}'
 }
 
 leg_tray_overflow_timing() {
@@ -123,8 +124,7 @@ sleep 2
 $ipc call panel state > "$tray_overflow_tile_panel_path" 2>&1
 "$grim_bin" "$tray_overflow_tile_path" > /dev/null 2>&1
 $ipc call panel close > /dev/null 2>&1
-"$jq_bin" '.bar.layout.right = ["tray", "clock"]' "$settings_path" > "$settings_path.tmp"
-cat "$settings_path.tmp" > "$settings_path"
+settings_retarget '.bar.layout.right = ["tray", "clock"]'
 sleep 3
 $ipc call bar room > "$tray_overflow_room_path" 2>&1
 cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$tray_overflow_room_path" | head -n 1; }

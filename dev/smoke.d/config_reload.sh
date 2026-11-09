@@ -26,26 +26,18 @@
 leg_config_reload_flag="--config-reload"
 leg_config_reload_order=186
 leg_config_reload_needs="jq"
+leg_config_reload_claims="bar screen=shared"
 
 config_reload_before_path="$shot_dir/config-reload-before.txt"
 config_reload_monitors_path="$shot_dir/config-reload-monitors.json"
 # The two "generations", named the way home-manager's own store paths differ
 # from each other: the symlink points at one, then the other.
-config_reload_gen1_path="$shot_dir/config-reload-settings-gen1.json"
-config_reload_gen2_path="$shot_dir/config-reload-settings-gen2.json"
 config_reload_after_path="$shot_dir/config-reload-after.txt"
 config_reload_elapsed_path="$shot_dir/config-reload-elapsed.txt"
 config_reload_shot_path="$shot_dir/config-reload.png"
 
-leg_config_reload_validate() {
-  if leg_on bar_position || leg_on chevron || leg_on bar_layout; then
-    echo "usage: --config-reload rewrites bar.position and cannot combine with --bar-position, --chevron or --bar-layout" >&2
-    exit 1
-  fi
-}
-
 leg_config_reload_fixture() {
-  settings_fragment ', "bar": {"position": "right"}'
+  settings_pin '.bar.position = "right"'
 }
 
 leg_config_reload_timing() {
@@ -57,7 +49,6 @@ leg_config_reload_timing() {
 
 leg_config_reload_drive() {
   local script="$shot_dir/config-reload-drive.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
 # One box for the formalshell:bar layer, or empty while it has not mapped.
@@ -85,22 +76,21 @@ wait_for_edge() {
   return 1
 }
 
-# The shape home-manager leaves behind: the real file off to one side and a
-# symlink where the shell looks. Replacing the regular file with a symlink
+# The shape home-manager leaves behind: a symlink where the shell looks, onto
+# a generation off to one side. Replacing the regular file with a symlink
 # unlinks the inode the first watch was on, which inotify does report, so the
-# shell re-reads and lands on the generation file below with its watch
-# resolved onto THAT inode. Only then is the retarget a fair test.
-mv "$settings_path" "$config_reload_gen1_path"
-ln -sfn "$config_reload_gen1_path" "$settings_path"
+# shell re-reads and lands on that generation with its watch resolved onto
+# THAT inode. Only then is the retarget a fair test.
+settings_retarget .
 
 wait_for_edge right 40
 bar_box > "$config_reload_before_path"
 "$hyprctl_bin" -j monitors > "$config_reload_monitors_path" 2>&1
 
-# The retarget, the write nothing announces: gen1 is left exactly as it is,
-# so the watch on it stays quiet forever and only a re-open finds gen2.
-"$jq_bin" '.bar.position = "left"' "$config_reload_gen1_path" > "$config_reload_gen2_path"
-ln -sfn "$config_reload_gen2_path" "$settings_path"
+# The retarget, the write nothing announces: the first generation is left
+# exactly as it is, so the watch on it stays quiet forever and only a re-open
+# finds the second.
+settings_retarget '.bar.position = "left"'
 
 # Up to 15s to notice, recorded so a regression that merely slows the pickup
 # down is visible rather than silent.

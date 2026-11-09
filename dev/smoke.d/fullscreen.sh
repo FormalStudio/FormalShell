@@ -66,6 +66,7 @@ leg_fullscreen_flag="--fullscreen"
 leg_fullscreen_order=200
 leg_fullscreen_needs="convert jq notify-send wlrctl python3 mpv ffmpeg strace"
 leg_fullscreen_fixture_window=keep
+leg_fullscreen_claims="screen=shared bar.layout.center frame=10/20"
 
 fullscreen_before_layers="$shot_dir/fullscreen-before-layers.json"
 fullscreen_on_layers="$shot_dir/fullscreen-on-layers.json"
@@ -90,8 +91,8 @@ fullscreen_work_path="$shot_dir/fullscreen-work.txt"
 leg_fullscreen_fixture() {
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi -i "sine=frequency=440:sample_rate=48000:duration=20" -ac 2 \
     -metadata "title=FormalShell Fullscreen Tone" -metadata "artist=FormalShell Test Artist" -c:a flac -y "$fullscreen_track_path"
-  settings_fragment ', "frame": {"thickness": 10, "radius": 20}'
-  settings_fragment ', "bar": {"layout": {"center": ["clock", "monitor", "visualizer"]}}'
+  settings_pin '.frame.thickness = 10 | .frame.radius = 20'
+  settings_pin '.bar.layout.center = ["clock", "monitor", "visualizer"]'
 }
 
 leg_fullscreen_timing() {

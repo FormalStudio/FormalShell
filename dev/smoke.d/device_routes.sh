@@ -26,6 +26,7 @@ leg_device_routes_flag="--device-routes"
 leg_device_routes_order=217
 leg_device_routes_vm_only="it connects and forgets networks through NetworkManager against the hostapd radios"
 leg_device_routes_needs="jq wtype pactl ffmpeg mpv convert tesseract"
+leg_device_routes_claims="wifi.radios radio.favourites"
 
 device_routes_track_path="$shot_dir/device-routes-station.mp3"
 device_routes_default_before_path="$shot_dir/device-routes-default-before.txt"
@@ -35,16 +36,6 @@ device_routes_sink="formalshell-routes"
 device_routes_station_id="routes-radio-1"
 device_routes_station_name="FormalShell Routes Radio"
 device_routes_port=18100
-
-leg_device_routes_validate() {
-  local other
-  for other in wifi radio; do
-    if leg_on "$other"; then
-      echo "usage: --device-routes drives the same radios, radio-atlas.json and default sink as --${other} and cannot combine with it" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_device_routes_fixture() {
   local state_dir="$iso_home/.local/state/formalshell"

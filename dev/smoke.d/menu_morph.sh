@@ -24,6 +24,7 @@
 leg_menu_morph_flag="--menu-morph"
 leg_menu_morph_order=126
 leg_menu_morph_needs="convert wtype wl-copy"
+leg_menu_morph_claims="launcher"
 
 menu_morph_frames=24
 menu_morph_gap=0.12
@@ -32,16 +33,6 @@ menu_morph_gap=0.12
 # (the card keeps its x and top through every level).
 menu_morph_row=0
 menu_morph_left_edge=0
-
-leg_menu_morph_validate() {
-  local other
-  for other in clipboard menu menu_emerge picker emoji monitor mirror; do
-    if leg_on "$other"; then
-      echo "usage: --menu-morph measures the launcher's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 # A short root: the Modes list at rest runs about the split height, which
 # leaves no travel to read.

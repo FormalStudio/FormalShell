@@ -40,7 +40,7 @@ record_finalize_status_path="$shot_dir/record-finalize-status.json"
 record_ffprobe_path="$shot_dir/record-ffprobe.txt"
 
 leg_record_fixture() {
-  settings_fragment ', "recording": {"noDmabuf": true, "webcam": true}'
+  settings_pin '.recording.noDmabuf = true | .recording.webcam = true'
 }
 
 leg_record_timing() {

@@ -26,14 +26,26 @@ frame, teardown) and sources every file here. A leg defines:
   takes is in the output's pixels, so a crop goes through
   `scaled_jq -r "$geometry_jq"'<box> | geometry'` (`dev/smoke.sh`).
 - `leg_<n>_fixture_window` `keep` to leave the base run's fixture window in
-  the frame; `leg_<n>_validate` usage checks, run before the build.
-- `leg_<n>_fixture` `settings_fragment '<json>'` and staged files;
-  `settings_pin '<jq assignment>'` for one key inside an object other legs
-  write whole (`.bar.style = "solid"`), applied over the finished file, so
-  a leg that rewrites settings.json mid-run drops it;
+  the frame; `leg_<n>_validate` checks a leg's own arguments and the legs it
+  needs beside it, run before the build, and may set its claims.
+- `leg_<n>_claims` `"name name=value ..."`: what of the session a leg owns
+  (dotted names, a name covering every name under it) or shares (`=value`,
+  shared with a leg claiming the same value). Two legs meeting on a claim
+  are refused once, before the build, naming both and the claim. `session`
+  owns the whole run, except beside a leg declaring `leg_<n>_rider`
+  `"<why>"` (one that pins a key and drives nothing another leg sees). A
+  `vm_only` leg claims `bus.system=real`.
+- `leg_<n>_fixture` `settings_pin '<jq>'` (an assignment or a `. * {...}`
+  merge) over the base settings.json, in leg order, and staged files;
   `leg_<n>_timing` `leg_timing <delay> <timeout> [tail_gap] [drive_cap]`, max-merged.
 - `leg_<n>_drive` writes the drive scripts, echoes their autostart lines (`hypr_exec_once`),
   may `add_cleanup '<line>'`; `leg_<n>_assert` prints `SMOKE_*`, calls `fail`.
+  A mid-run settings change is `settings_retarget <jq>` from a drive: the
+  current file with the jq applied, written beside it and the symlink moved
+  onto it, so two legs' changes compose.
+- `leg_<n>_cleanup` runs at the scaffold's exit for a leg in the run, for
+  state its fixture made outside the run's own directory (`--login-lock`'s
+  marker).
 - `leg_<n>_wayland_debug=1` runs the shell under `WAYLAND_DEBUG`, so
   `$shell_log_path` carries its wire traffic for an assert that has to read
   what the shell sent rather than what the screen shows (`--frame`).

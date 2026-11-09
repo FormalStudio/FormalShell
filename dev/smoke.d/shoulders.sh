@@ -40,6 +40,7 @@
 leg_shoulders_flag="--shoulders"
 leg_shoulders_order=74
 leg_shoulders_needs="convert jq"
+leg_shoulders_claims="screen bar.layout=default bar.position=top frame=none"
 
 # Centred under the bar (the drive centres it on the output's logical
 # width), and wide enough that both fillets are far from anything else on
@@ -67,7 +68,6 @@ shoulders_crop_width=480
 shoulders_crop_height=110
 
 leg_shoulders_validate() {
-  local other
   case "$(leg_arg bar_style 2>/dev/null)" in
     solid|corners) ;;
     *)
@@ -75,13 +75,6 @@ leg_shoulders_validate() {
       exit 1
       ;;
   esac
-  for other in bar_layout bar_position config_reload frame fullscreen gallery lock \
-    panel_emerge panel_handoff screensaver wallpaper; do
-    if leg_on "$other"; then
-      echo "usage: --shoulders measures the bar's own line and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
 }
 
 leg_shoulders_timing() {

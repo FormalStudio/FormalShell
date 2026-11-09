@@ -44,6 +44,7 @@
 leg_panel_handoff_flag="--panel-handoff"
 leg_panel_handoff_order=78
 leg_panel_handoff_needs="convert"
+leg_panel_handoff_claims="bar.layout.left bar.layout.right bar.position=top panel=shared"
 
 panel_handoff_audio_open_path="$shot_dir/panel-handoff-audio-open.txt"
 panel_handoff_audio_close_path="$shot_dir/panel-handoff-audio-close.txt"
@@ -88,18 +89,8 @@ panel_handoff_boxes() {
   panel_handoff_band_box=$(logical_box "$logical_w" 100 0 60)
 }
 
-leg_panel_handoff_validate() {
-  local other
-  for other in bar_layout bar_position chevron config_reload mic monitor panel_anchor systemupdate tray_overflow visualizer; do
-    if leg_on "$other"; then
-      echo "usage: --panel-handoff carries its own bar.layout and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_panel_handoff_fixture() {
-  settings_fragment ', "bar": {"layout": {"left": ["audio"], "right": ["network"]}}'
+  settings_pin '.bar.layout.left = ["audio"] | .bar.layout.right = ["network"]'
 }
 
 leg_panel_handoff_timing() {

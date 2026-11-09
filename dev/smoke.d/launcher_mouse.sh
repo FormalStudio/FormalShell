@@ -29,19 +29,10 @@
 leg_launcher_mouse_flag="--launcher-mouse"
 leg_launcher_mouse_order=31
 leg_launcher_mouse_needs="jq wtype wlrctl python3"
+leg_launcher_mouse_claims="launcher pointer caffeinate overnight"
 
 launcher_mouse_app="apps.formalshell-mouse-probe"
 launcher_mouse_vpointer="$PWD/dev/vpointer.py"
-
-leg_launcher_mouse_validate() {
-  local other
-  for other in launcher_actions launcher_modes launcher_abbrev menu_actions menu_hover wheel overnight caffeinate; do
-    if leg_on "$other"; then
-      echo "usage: --launcher-mouse drives the launcher with a pointer of its own and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_launcher_mouse_fixture() {
   local apps="$iso_home/.local/share/applications" i actions=""

@@ -23,18 +23,9 @@ leg_quick_settings_devices_flag="--quick-settings-devices"
 leg_quick_settings_devices_order=283
 leg_quick_settings_devices_vm_only="it drives the guest's NetworkManager, hostapd radios, BlueZ and power-profiles-daemon"
 leg_quick_settings_devices_needs="jq wtype grim"
+leg_quick_settings_devices_claims="wifi.radios"
 
 quick_settings_devices_dir="$shot_dir/quick-settings-devices"
-
-leg_quick_settings_devices_validate() {
-  local other
-  for other in wifi device_routes; do
-    if leg_on "$other"; then
-      echo "usage: --quick-settings-devices connects the same radios as --${other//_/-} and cannot combine with it" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_quick_settings_devices_timing() {
   # Every wait below is a poll that breaks once its state settles; the sum

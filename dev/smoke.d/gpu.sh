@@ -38,6 +38,7 @@
 leg_gpu_flag="--gpu"
 leg_gpu_order=145
 leg_gpu_needs="jq"
+leg_gpu_claims="launcher=shared"
 
 gpu_shim_dir="$shot_dir/gpu-shim"
 gpu_drm_rows_path="$shot_dir/gpu-drm-rows.txt"

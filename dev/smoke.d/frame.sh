@@ -25,6 +25,7 @@
 leg_frame_flag="--frame"
 leg_frame_order=190
 leg_frame_needs="jq convert"
+leg_frame_claims="frame=10/20"
 leg_frame_wayland_debug=1
 
 frame_layers_path="$shot_dir/frame-layers.json"
@@ -33,7 +34,7 @@ frame_dump_path="$shot_dir/frame-dump.json"
 frame_shot_path="$shot_dir/frame.png"
 
 leg_frame_fixture() {
-  settings_fragment ', "frame": {"thickness": 10, "radius": 20}'
+  settings_pin '.frame.thickness = 10 | .frame.radius = 20'
 }
 
 leg_frame_timing() {

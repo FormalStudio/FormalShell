@@ -33,7 +33,6 @@ leg_hypr_motion_timing() {
 
 leg_hypr_motion_drive() {
   local published="$iso_home/.config/hypr/formalshell-chrome.lua"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   # The published table, as the shipped file's `published` helper reads it.
   echo "local chrome = (function() local ok, t = pcall(dofile, \"$published\"); if ok and type(t) == \"table\" then return t end; return {} end)()"
   awk '/^local motion = chrome.motion/ { on = 1 } on { print } on && /^hl.animation\({ leaf = "monitorAdded"/ { on = 0 }' docs/examples/hyprland/formalshell.lua
@@ -50,8 +49,7 @@ for i in \$(seq 0 79); do
 done
 sleep 2
 "$grim_bin" "$hypr_motion_settled" > /dev/null 2>&1
-"$jq_bin" '.motion.enabled = false' "$settings_path" > "$settings_path.tmp"
-cat "$settings_path.tmp" > "$settings_path"
+settings_retarget '.motion.enabled = false'
 sleep 5
 "$hyprctl_bin" -j getoption animations:enabled > "$hypr_motion_enabled_off" 2>&1
 EOS

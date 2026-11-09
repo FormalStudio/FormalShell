@@ -54,15 +54,18 @@
 # what the tokens and the launcher's top fraction say, so a token change has to
 # be a deliberate edit here too.
 #
-# Which row the line itself is on is the one number that is neither pinned nor
-# measured: it comes out of a `debug dump`, so the same probes read a top
-# bar's last row, a frame ring's top band on a run carrying `--frame` or
-# `--bar-position <edge>`, and, on a top edge with neither, nothing at all. A
-# card with no line to bud off has no claim to make here, so that last case
-# prints as skipped and keeps its frames.
+# Which line the card buds off is the one thing neither pinned nor measured:
+# it comes out of a `debug dump`. A side bar with no frame ring has the card
+# bud off its own line, and the line's claims are then read on frames turned
+# so that line is on top (transposed for a left bar, turned a quarter back for
+# a right one), with the card's resting rect off the dump turned the same way.
+# Every other layout buds off the top edge: a top bar's last row, a frame
+# ring's top band, or on a bottom bar with no frame the output's own top edge,
+# where there is no band to stay lit and that half of the claim is not read.
 leg_menu_emerge_flag="--menu-emerge"
 leg_menu_emerge_order=21
 leg_menu_emerge_needs="convert jq"
+leg_menu_emerge_claims="screen launcher"
 
 menu_emerge_scale_path="$shot_dir/menu-emerge-scale.txt"
 menu_emerge_summon_path="$shot_dir/menu-emerge-summon.txt"
@@ -124,18 +127,6 @@ menu_emerge_black_band() {
 }
 # And a desktop one, well below the card, for the other half of the same
 # claim: 40 rows off the output's bottom, cut in the assert.
-
-leg_menu_emerge_validate() {
-  local other
-  for other in center clipboard clipssh clipssh_image emoji fullscreen \
-    gallery gpu keybinds lock menu monitor notify picker plugins polkit processes \
-    screensaver share toggles tray wallpaper; do
-    if leg_on "$other"; then
-      echo "usage: --menu-emerge measures the launcher's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_menu_emerge_timing() {
   leg_timing 48 100
@@ -214,6 +205,36 @@ menu_emerge_diff() {
 
 menu_emerge_same() {
   awk -v v="$(menu_emerge_diff "$1" "$2" "$3")" 'BEGIN { exit !(v == 0) }'
+}
+
+# The line's claims on a side bar: the closed, rest and open frames turned so
+# the bar's edge $1 is on top and the line's start on the left, into
+# $shot_dir (the caller's own read directory), and every probe the claims
+# read moved with them: the line's row, the card's resting rect off the jq
+# path $2 into the rest dump, the bar box near the line's start and the
+# desktop box at the far corner.
+menu_emerge_turn() {
+  local turn src w h ow
+  case $1 in
+    left) turn="-transpose" ;;
+    right) turn="-rotate -90" ;;
+  esac
+  mkdir -p "$shot_dir"
+  for src in "${shot_dir%/*}"/menu-emerge-closed.png "${shot_dir%/*}"/menu-emerge-rest.png "${shot_dir%/*}"/menu-emerge-[0-9]*.png; do
+    # shellcheck disable=SC2086  # the turn is one or two words
+    $convert_bin "$src" $turn +repage "$shot_dir/${src##*/}" || fail "could not turn $src for the $1 edge"
+  done
+  menu_emerge_closed_path="$shot_dir/menu-emerge-closed.png"
+  menu_emerge_rest_path="$shot_dir/menu-emerge-rest.png"
+  read -r w h < <($convert_bin "$menu_emerge_closed_path" -format '%w %h\n' info: 2>/dev/null)
+  menu_emerge_line_row=$(( $(logical_px "$("$jq_bin" -r --arg e "$1" '.theme.edgeInset[$e] | floor' "$menu_emerge_dump_path")") - 1 ))
+  ow=$("$jq_bin" -r '.[0] | .width / .scale' "$output_json_path" 2>/dev/null)
+  read -r menu_emerge_card_y rest_bottom column_x < <(scaled_jq -r --arg e "$1" --argjson ow "$ow" "$2"' |
+    (if $e == "left" then .x else $ow - .x - .width end) as $near
+    | "\($near * $s | ceil) \(($near + .width) * $s | floor) \((.y + .height / 2) * $s | floor - 2)"' "$menu_emerge_rest_dump_path")
+  [ -n "$column_x" ] || fail "no launcher card rect to turn for the $1 edge in $menu_emerge_rest_dump_path"
+  menu_emerge_bar_box="8x4+2+2"
+  menu_emerge_desk_box="8x8+$((w - 40))+$((h - 40))"
 }
 
 leg_menu_emerge_assert() {
@@ -442,17 +463,17 @@ leg_menu_emerge_assert() {
     "the rest frame's card reaches only row $rest_bottom down its own centre column: it is not the card the tokens describe"
   echo "SMOKE_MENU_EMERGE_RESTING card ${menu_emerge_card_w}x$((rest_bottom - menu_emerge_card_y))+${menu_emerge_card_x}+${menu_emerge_card_y}"
 
-  # Where the line the card buds off actually is: the last row of whatever
-  # band the top edge carries, a bar's or a frame ring's, off the shell's own
-  # numbers. Nothing there is nothing to bud off, and the claims below have
-  # no subject.
-  echo "SMOKE_MENU_EMERGE_LINE row $menu_emerge_line_row (top inset $inset)"
-  if [ "$menu_emerge_line_row" -lt 0 ]; then
-    for f in BUD LIT_BAR PLAIN; do
-      echo "SMOKE_MENU_EMERGE_$f skipped (layout): this output's top edge carries no bar and no frame ring, so there is no line to bud off"
-    done
-    return 0
+  # Where the line the card buds off actually is, off the shell's own
+  # numbers: the last row of the top edge's band (none on a bare top edge,
+  # row -1), or a side bar's own line on frames turned to put it on top.
+  local bud_edge
+  bud_edge=$("$jq_bin" -r 'if (.theme.barPosition == "left" or .theme.barPosition == "right") and (.frame.enabled | not)
+    then .theme.barPosition else "top" end' "$menu_emerge_dump_path")
+  if [ "$bud_edge" != top ]; then
+    local shot_dir="$shot_dir/menu-emerge-read" menu_emerge_closed_path menu_emerge_rest_path
+    menu_emerge_turn "$bud_edge" "$card"
   fi
+  echo "SMOKE_MENU_EMERGE_LINE $bud_edge row $menu_emerge_line_row card y $menu_emerge_card_y bottom $rest_bottom column $column_x"
   # A popover theme's card drops in under the line rather than budding off
   # it, so the line has no bud, no lit band and no let-go to read; the dim
   # above already read the band at rest.
@@ -505,15 +526,19 @@ leg_menu_emerge_assert() {
   # dimmed" says nothing. By the last attached frame the pose is well along
   # and the two halves of the claim are both worth making.
   local bar_open bar_closed desk_open desk_closed
-  bar_open=$(menu_emerge_level "$last_attached" "$menu_emerge_bar_box")
-  bar_closed=$(menu_emerge_level "$menu_emerge_closed_path" "$menu_emerge_bar_box")
   desk_open=$(menu_emerge_level "$last_attached" "$menu_emerge_desk_box")
   desk_closed=$(menu_emerge_level "$menu_emerge_closed_path" "$menu_emerge_desk_box")
-  menu_emerge_same "$last_attached" "$menu_emerge_closed_path" "$menu_emerge_bar_box" || fail \
-    "the bar's own band at $menu_emerge_bar_box reads $bar_open in $last_attached against $bar_closed closed: the scrim dims the line the card is still budding off"
   awk -v o="$desk_open" -v c="$desk_closed" 'BEGIN { exit !(o < c * 0.9) }' || fail \
     "the desktop at $menu_emerge_desk_box reads $desk_open in $last_attached against $desk_closed closed: the scrim is not on the output at all while the card is attached"
+  if [ "$menu_emerge_line_row" -lt 0 ]; then
+    echo "SMOKE_MENU_EMERGE_LIT_BAR ok desktop $desk_open under $desk_closed in $last_attached, no band on this edge to read"
+  else
+  bar_open=$(menu_emerge_level "$last_attached" "$menu_emerge_bar_box")
+  bar_closed=$(menu_emerge_level "$menu_emerge_closed_path" "$menu_emerge_bar_box")
+  menu_emerge_same "$last_attached" "$menu_emerge_closed_path" "$menu_emerge_bar_box" || fail \
+    "the bar's own band at $menu_emerge_bar_box reads $bar_open in $last_attached against $bar_closed closed: the scrim dims the line the card is still budding off"
   echo "SMOKE_MENU_EMERGE_LIT_BAR ok bar $bar_open = $bar_closed, desktop $desk_open under $desk_closed in $last_attached"
+  fi
 
   # --- The plain card ---------------------------------------------------
   #
@@ -530,10 +555,11 @@ leg_menu_emerge_assert() {
   if [ "$border" = "$above" ] || [ "$border" = "$fill" ]; then
     fail "the rest frame reads $above above, $border on and $fill under row $menu_emerge_card_y at column $column_x: the card has no top border of its own"
   fi
-  menu_emerge_black_band || ! menu_emerge_same "$menu_emerge_rest_path" "$menu_emerge_closed_path" "$menu_emerge_bar_box" || fail \
+  menu_emerge_black_band || [ "$menu_emerge_line_row" -lt 0 ] \
+    || ! menu_emerge_same "$menu_emerge_rest_path" "$menu_emerge_closed_path" "$menu_emerge_bar_box" || fail \
     "the bar's own band at $menu_emerge_bar_box is unchanged in the rest frame: the scrim never reached it after the card let go"
-  if menu_emerge_black_band; then
-    echo "SMOKE_MENU_EMERGE_PLAIN ok border $border between $above and $fill, black band not read"
+  if menu_emerge_black_band || [ "$menu_emerge_line_row" -lt 0 ]; then
+    echo "SMOKE_MENU_EMERGE_PLAIN ok border $border between $above and $fill, no lit band to read"
   else
     echo "SMOKE_MENU_EMERGE_PLAIN ok border $border between $above and $fill, bar band dimmed"
   fi

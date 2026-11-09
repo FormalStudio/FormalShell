@@ -9,6 +9,7 @@
 leg_caffeinate_flag="--caffeinate"
 leg_caffeinate_order=232
 leg_caffeinate_needs="jq"
+leg_caffeinate_claims="caffeinate"
 
 caffeinate_on_path="$shot_dir/caffeinate-status-on.json"
 caffeinate_on_layers="$shot_dir/caffeinate-layers-on.json"
@@ -18,7 +19,7 @@ caffeinate_off_layers="$shot_dir/caffeinate-layers-off.json"
 caffeinate_idle_path="$shot_dir/caffeinate-screensaver-idle.json"
 
 leg_caffeinate_fixture() {
-  settings_fragment ', "caffeinate": {"onStartup": true}, "screensaver": {"timeoutSeconds": 3}'
+  settings_pin '.caffeinate.onStartup = true | .screensaver.timeoutSeconds = 3'
 }
 
 leg_caffeinate_timing() {

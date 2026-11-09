@@ -38,6 +38,7 @@
 leg_menu_resize_flag="--menu-resize"
 leg_menu_resize_order=127
 leg_menu_resize_needs="convert wtype jq"
+leg_menu_resize_claims="launcher"
 
 menu_resize_frames=24
 menu_resize_gap=0.04
@@ -56,16 +57,6 @@ menu_resize_root_run=""
 menu_resize_monitor_run=""
 # Desktop patches clear of both cards, in frame pixels: x y w h.
 menu_resize_patches="80,150,100,100 1740,700,100,100"
-
-leg_menu_resize_validate() {
-  local other
-  for other in clipboard menu menu_emerge menu_morph picker emoji monitor mirror processes app_grid; do
-    if leg_on "$other"; then
-      echo "usage: --menu-resize measures the launcher's own frames and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_menu_resize_timing() {
   # 72 grims at a 1080p frame each: on the mac rig's vkms the drive runs

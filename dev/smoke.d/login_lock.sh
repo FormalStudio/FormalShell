@@ -47,25 +47,22 @@ login_lock_frames=50
 login_lock_rescale=1.25
 [ "${FS_SMOKE_SCALE:-1}" = 1.25 ] && login_lock_rescale=1
 
-leg_login_lock_validate() {
-  # The lock covers the session from its first frame: no other leg's drive
-  # could reach anything under it.
-  local v
-  for v in $(compgen -v | grep -E '^leg_[a-z0-9_]+_on$'); do
-    if [ "$v" != leg_login_lock_on ] && [ "$v" != leg_backend_on ] && [ "${!v}" = true ]; then
-      echo "usage: --login-lock locks the session from its start and cannot combine with --$(echo "${v#leg_}" | sed 's/_on$//; s/_/-/g')" >&2
-      exit 1
-    fi
-  done
-}
+# The lock covers the session from its first frame: no other leg's drive
+# could reach anything under it.
+leg_login_lock_claims="session"
 
 leg_login_lock_fixture() {
   $convert_bin -size 640x360 xc:"$login_lock_colour" "png:$login_lock_picture"
   mkdir -p "$(dirname "$login_lock_marker")"
   printf '%s\n' "$login_lock_picture" > "$login_lock_marker"
-  add_cleanup "rm -f '$login_lock_marker'"
   $convert_bin -size 256x256 xc:"$login_lock_avatar" "png:$iso_home/.face"
   shell_env="${shell_env:+$shell_env }FORMALSHELL_SMOKE_MOTION_SCALE=1000"
+}
+
+# The marker sits in the runtime dir every later run's shell reads at its
+# start, so it goes however this run ends.
+leg_login_lock_cleanup() {
+  rm -f "$login_lock_marker"
 }
 
 leg_login_lock_timing() {

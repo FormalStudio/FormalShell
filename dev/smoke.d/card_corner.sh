@@ -20,6 +20,7 @@
 leg_card_corner_flag="--card-corner"
 leg_card_corner_order=177
 leg_card_corner_needs="jq convert python3"
+leg_card_corner_claims="outputs layout=sidebar"
 
 card_corner_second="HEADLESS-CORNER"
 card_corner_flat="$shot_dir/card-corner-flat.png"
@@ -31,16 +32,9 @@ card_corner_menu="$shot_dir/card-corner-menu.png"
 card_corner_log="$shot_dir/card-corner.log"
 card_corner_monitors="$shot_dir/card-corner-monitors.json"
 
-leg_card_corner_validate() {
-  if leg_on multi_output || leg_on display || leg_on brightness || leg_on launcher_density; then
-    echo "usage: --card-corner makes its own second output and cannot combine with legs that add or remove outputs" >&2
-    exit 1
-  fi
-}
-
 leg_card_corner_fixture() {
   $convert_bin -size 1920x1080 xc:'#e0e0e0' "$card_corner_flat"
-  settings_fragment ', "layout": "sidebar", "theme": {"reactiveRims": false}'
+  settings_pin '.layout = "sidebar" | .theme.reactiveRims = false'
 }
 
 leg_card_corner_timing() {

@@ -25,6 +25,7 @@
 leg_reactive_rims_flag="--reactive-rims"
 leg_reactive_rims_order=79
 leg_reactive_rims_needs="convert jq foot"
+leg_reactive_rims_claims="bar.layout.left bar.layout.right bar.position=top"
 
 reactive_rims_wp="$shot_dir/reactive-rims-wallpaper.png"
 reactive_rims_left_png="$shot_dir/reactive-rims-left.png"
@@ -37,23 +38,11 @@ reactive_rims_lit_json="$shot_dir/reactive-rims-window.json"
 reactive_rims_off_json="$shot_dir/reactive-rims-off.json"
 reactive_rims_rest_path="$shot_dir/reactive-rims-rest.txt"
 reactive_rims_dispatch_path="$shot_dir/reactive-rims-dispatch.txt"
-reactive_rims_gen1_path="$shot_dir/reactive-rims-settings-1.json"
-reactive_rims_gen2_path="$shot_dir/reactive-rims-settings-2.json"
-
-leg_reactive_rims_validate() {
-  local other
-  for other in bar_layout bar_position chevron config_reload lyrics_blur mic monitor panel_anchor panel_handoff systemupdate tray_overflow visualizer; do
-    if leg_on "$other"; then
-      echo "usage: --reactive-rims carries its own bar.layout and settings.json and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_reactive_rims_fixture() {
   $convert_bin -size 1920x1080 xc:'#ff0000' -fill '#0000ff' \
     -draw "rectangle 960,0 1919,1079" "$reactive_rims_wp"
-  settings_fragment ', "bar": {"layout": {"left": ["audio"], "right": ["network"]}}'
+  settings_pin '.bar.layout.left = ["audio"] | .bar.layout.right = ["network"]'
 }
 
 leg_reactive_rims_timing() {
@@ -62,7 +51,6 @@ leg_reactive_rims_timing() {
 
 leg_reactive_rims_drive() {
   local script="$shot_dir/reactive-rims-drive.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   local win="class:^(formalshell-rims)\$"
   write_script "$script" <<EOS
 #!/usr/bin/env bash
@@ -96,10 +84,7 @@ sleep 1.5
 "$hyprctl_bin" -j getoption general:col.active_border >> "$reactive_rims_dispatch_path" 2>&1
 $ipc call debug dump > "$reactive_rims_lit_json" 2>&1
 "$grim_bin" "$reactive_rims_lit_png" > /dev/null 2>&1
-mv "$settings_path" "$reactive_rims_gen1_path"
-ln -sfn "$reactive_rims_gen1_path" "$settings_path"
-"$jq_bin" '.theme.reactiveRims = false' "$reactive_rims_gen1_path" > "$reactive_rims_gen2_path"
-ln -sfn "$reactive_rims_gen2_path" "$settings_path"
+settings_retarget '.theme.reactiveRims = false'
 sleep 2
 $ipc call debug dump > "$reactive_rims_off_json" 2>&1
 "$grim_bin" "$reactive_rims_off_png" > /dev/null 2>&1

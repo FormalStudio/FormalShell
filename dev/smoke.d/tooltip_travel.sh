@@ -25,6 +25,7 @@ leg_tooltip_travel_order=81
 leg_tooltip_travel_needs="wlrctl jq"
 # The panel it rides on has already dropped the base fixture window.
 leg_tooltip_travel_fixture_window=keep
+leg_tooltip_travel_claims="pointer"
 
 tooltip_travel_dispatch_path="$shot_dir/tooltip-travel-dispatch.txt"
 tooltip_travel_layers_first_path="$shot_dir/tooltip-travel-layers-first.json"
@@ -35,10 +36,6 @@ tooltip_travel_second_path="$shot_dir/panel-tooltip-travelled.png"
 leg_tooltip_travel_validate() {
   if ! leg_on panel; then
     echo "usage: $0 --panel <name> --tooltip-travel" >&2
-    exit 1
-  fi
-  if leg_on tooltip; then
-    echo "usage: --tooltip and --tooltip-travel drive the same pointer, run them separately" >&2
     exit 1
   fi
 }

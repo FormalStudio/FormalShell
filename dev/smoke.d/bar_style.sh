@@ -9,7 +9,8 @@
 # Its own claims, read once the shell has taken the key (`debug dump`'s
 # `theme.barStyle`): `bar paint` reports the style, and solid and corners
 # report the `maximized` paint, which they hold whatever the wallpaper says.
-# On a top bar the band's own rows above every cell are then opaque black.
+# The band's own outer rows, on whichever edge `debug dump` puts it and under
+# a frame ring too, are then opaque black.
 #
 # Alone it also sets a flat grey wallpaper first, since the rig's bare
 # desktop is near black and a black band on it says nothing, and reads what
@@ -44,6 +45,7 @@ leg_bar_style_validate() {
       exit 1
       ;;
   esac
+  leg_bar_style_claims="bar.style=$(leg_arg bar_style)"
 }
 
 leg_bar_style_fixture() {
@@ -106,15 +108,21 @@ leg_bar_style_assert() {
   "$jq_bin" -e '.[0].paint.paint == "maximized"' "$bar_style_paint_path" > /dev/null 2>&1 \
     || fail "a $style band should wear the maximized paint: $paint"
 
-  if leg_on bar_position || leg_on frame; then
-    echo "SMOKE_BAR_STYLE_PIXELS skipped: the probes are cut for an unframed top bar"
-    return 0
-  fi
-  t=$("$jq_bin" -r '.theme.edgeInset.top' "$bar_style_dump_path")
-  # The band's own rows, above every cell (cells sit barMargin in).
-  px=$(patch_mean "$bar_style_frame_path" 40x4+900+1)
-  echo "band rows 1-4 at x 900: $px thousandths (thickness $t)"
-  [ -n "$px" ] && [ "$px" -le 47 ] || fail "a $style band should be opaque black over its own rows, read ${px:-nothing}"
+  local edge band
+  edge=$("$jq_bin" -r '.theme.barPosition' "$bar_style_dump_path")
+  t=$("$jq_bin" -r --arg e "$edge" '.theme.edgeInset[$e]' "$bar_style_dump_path")
+  # The band's own outer rows, outside every cell (cells sit barMargin in),
+  # halfway along its edge.
+  case $edge in
+    top) band="40x4+$((out_w / 2 - 60))+1" ;;
+    bottom) band="40x4+$((out_w / 2 - 60))+$((out_h - 5))" ;;
+    left) band="4x40+1+$((out_h / 2 - 20))" ;;
+    right) band="4x40+$((out_w - 5))+$((out_h / 2 - 20))" ;;
+    *) fail "debug dump puts the bar on no edge: $edge" ;;
+  esac
+  px=$(patch_mean "$bar_style_frame_path" "$band")
+  echo "band's outer rows on the $edge edge at $band: $px thousandths (thickness $t)"
+  [ -n "$px" ] && [ "$px" -le 47 ] || fail "a $style band should be opaque black over its own outer rows on the $edge edge, read ${px:-nothing} at $band"
 
   [ "$style" = corners ] && bar_style_alone || return 0
   box=$("$jq_bin" -r "$layers_jq"'layer("formalshell:bar") | "\(length) \(first.h)"' "$bar_style_layers_path")

@@ -26,6 +26,7 @@
 leg_notify_flag="--notify"
 leg_notify_order=30
 leg_notify_needs="notify-send convert jq"
+leg_notify_claims="screen=shared toasts=shared"
 
 toasts_expanded_path="$shot_dir/toasts-expanded.png"
 toasts_expand_status_path="$shot_dir/toasts-expand-status.txt"

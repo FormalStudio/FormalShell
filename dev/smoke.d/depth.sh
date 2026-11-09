@@ -30,6 +30,7 @@
 leg_depth_flag="--depth"
 leg_depth_order=111
 leg_depth_needs="convert jq"
+leg_depth_claims="wallpaper"
 
 leg_depth_validate() {
   if ! leg_on lock; then
@@ -38,10 +39,6 @@ leg_depth_validate() {
   fi
   if [ -n "${FS_DEPTH_GENERATE:-}" ] && [ -n "${FS_DEPTH_PICTURE:-}" ]; then
     echo "usage: $0 --depth takes FS_DEPTH_GENERATE or FS_DEPTH_PICTURE, not both" >&2
-    exit 1
-  fi
-  if leg_on showcase || leg_on wallpaper || leg_on config_reload || leg_on lyrics_blur; then
-    echo "usage: $0 --depth seeds its own wallpaper and retargets settings.json; run it without --showcase, --wallpaper, --config-reload or --lyrics-blur" >&2
     exit 1
   fi
 }
@@ -61,8 +58,6 @@ depth_on_path="$shot_dir/depth-on.png"
 depth_off_path="$shot_dir/depth-off.png"
 depth_status_on_path="$shot_dir/depth-status-on.json"
 depth_status_off_path="$shot_dir/depth-status-off.json"
-depth_gen1_path="$shot_dir/depth-settings-gen1.json"
-depth_gen2_path="$shot_dir/depth-settings-gen2.json"
 
 # A column at scale 1 as the same place on the card at the run's scale.
 depth_x() { awk -v x="$1" -v s="$FS_SMOKE_SCALE" 'BEGIN { printf "%d\n", int(960 + (x - 960) * s + 0.5) }'; }
@@ -106,7 +101,7 @@ leg_depth_fixture() {
 
 # Inside --lock's own window: locked at t0+1, typing from t0+6.
 leg_depth_drive() {
-  local t0 script="$shot_dir/depth-drive.sh" settings_path="$iso_home/.config/formalshell/settings.json"
+  local t0 script="$shot_dir/depth-drive.sh"
   t0=$(lock_t0)
   write_script "$script" <<EOF
 #!/usr/bin/env bash
@@ -114,9 +109,7 @@ sleep $t0
 sleep 2
 $ipc call lock status > "$depth_status_on_path" 2>&1
 "$grim_bin" "$depth_on_path" > /dev/null 2>&1
-cp "\$(readlink -f "$settings_path")" "$depth_gen1_path"
-"$jq_bin" '.lock.depth = false' "$depth_gen1_path" > "$depth_gen2_path"
-ln -sfn "$depth_gen2_path" "$settings_path"
+settings_retarget '.lock.depth = false'
 sleep 1.5
 $ipc call lock status > "$depth_status_off_path" 2>&1
 "$grim_bin" "$depth_off_path" > /dev/null 2>&1

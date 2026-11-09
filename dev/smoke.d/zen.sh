@@ -13,6 +13,7 @@
 leg_zen_flag="--zen"
 leg_zen_order=239
 leg_zen_needs="jq foot"
+leg_zen_claims="layout=sidebar frame=none"
 
 zen_status=("$shot_dir"/zen-status-{before,on,off,closed}.json)
 zen_clients=("$shot_dir"/zen-clients-{before,on,off,closed}.json)
@@ -21,15 +22,8 @@ zen_monitors="$shot_dir/zen-monitors.json"
 zen_on_png="$shot_dir/zen-on.png"
 zen_off_png="$shot_dir/zen-off.png"
 
-leg_zen_validate() {
-  if leg_on bar_position || leg_on frame; then
-    echo "usage: --zen runs under layout sidebar and cannot combine with --bar-position or --frame" >&2
-    exit 1
-  fi
-}
-
 leg_zen_fixture() {
-  leg_on sidebar || settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
 }
 
 leg_zen_timing() {

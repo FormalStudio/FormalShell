@@ -32,6 +32,7 @@ leg_workspaces_flag="--workspaces"
 leg_workspaces_order=195
 leg_workspaces_needs="foot convert"
 leg_workspaces_fixture_window=keep
+leg_workspaces_claims="workspaces=shared"
 
 workspaces_two_path="$shot_dir/workspaces-two.png"
 workspaces_settled_path="$shot_dir/workspaces-settled.png"

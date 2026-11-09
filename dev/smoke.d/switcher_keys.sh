@@ -51,6 +51,7 @@ leg_switcher_keys_needs="foot jq wtype"
 # The base run's fixture window is the third of the three and the one the
 # commit lands on, exactly as in --switcher.
 leg_switcher_keys_fixture_window=keep
+leg_switcher_keys_claims="switcher workspaces=shared"
 #
 # Three fast taps after that (M64 addendum, owner 2026-09-18): "alt+tab
 # doesn't work when i hit it fast, it just glitches, i have to wait for the
@@ -110,17 +111,7 @@ switcher_keys_scroll_png="$shot_dir/switcher-keys-scroll.png"
 leg_switcher_keys_fixture() {
   # The fourth window on workspace 2 is only held out of the card under
   # Gala's list, which is opt-in.
-  settings_fragment ', "switcher": {"currentWorkspace": true}'
-}
-
-leg_switcher_keys_validate() {
-  local other
-  for other in switcher switcher_off; do
-    if leg_on "$other"; then
-      echo "usage: --switcher-keys spawns and drives its own windows on the same card, so it cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
+  settings_pin '.switcher.currentWorkspace = true'
 }
 
 leg_switcher_keys_timing() {

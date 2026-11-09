@@ -28,6 +28,7 @@ leg_r0_measure_flag="--r0-measure <seconds>"
 leg_r0_measure_order=900
 leg_r0_measure_budget="R0's CPU, frame and RSS numbers are g815's"
 leg_r0_measure_needs="foot"
+leg_r0_measure_claims="session"
 
 r0_shim_dir="$shot_dir/r0-shim"
 r0_marks_path="$shot_dir/r0-marks.txt"
@@ -36,18 +37,10 @@ r0_done_path="$shot_dir/r0-done"
 r0_start_path="$shot_dir/shell-start.ns"
 
 leg_r0_measure_validate() {
-  local other
   case "$(leg_arg r0_measure)" in
     ''|*[!0-9]*) echo "usage: --r0-measure <seconds>, the RSS sample's time after launch" >&2; exit 1 ;;
   esac
   [ "$(leg_arg r0_measure)" -ge 300 ] || { echo "usage: --r0-measure needs at least 300s for its timeline" >&2; exit 1; }
-  for other in "${legs[@]}"; do
-    # --backend only pins a setting, so the numbers are read on either path.
-    if [ "$other" != r0_measure ] && [ "$other" != backend ] && leg_on "$other"; then
-      echo "usage: --r0-measure times the shell alone and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
 }
 
 leg_r0_measure_fixture() {
@@ -61,7 +54,7 @@ done
 EOF
   chmod +x "$r0_shim_dir/ssh"
   export PATH="$r0_shim_dir:$PATH"
-  settings_fragment ', "bar": {"layout": {"left": ["workspaces"], "center": ["clock"], "right": []}}, "workspaces": {"agentHosts": ["fakehost"]}'
+  settings_pin '. * {"bar": {"layout": {"left": ["workspaces"], "center": ["clock"], "right": []}}, "workspaces": {"agentHosts": ["fakehost"]}}'
 }
 
 leg_r0_measure_shell() {

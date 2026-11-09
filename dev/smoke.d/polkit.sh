@@ -23,6 +23,7 @@ leg_polkit_flag="--polkit"
 leg_polkit_order=280
 leg_polkit_vm_only="it registers the shell as the polkit agent and authenticates a real pkexec"
 leg_polkit_needs="pkexec wtype convert"
+leg_polkit_claims="screen=shared"
 
 polkit_active_path="$shot_dir/polkit-active.png"
 polkit_error_path="$shot_dir/polkit-error.png"

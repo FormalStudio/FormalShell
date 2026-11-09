@@ -14,6 +14,7 @@ leg_display_flag="--display"
 leg_display_scale1="sets the output's scale itself"
 leg_display_order=216
 leg_display_needs="jq"
+leg_display_claims="outputs=shared"
 
 display_scale_path="$shot_dir/display-scale.txt"
 display_create_path="$shot_dir/display-create.txt"

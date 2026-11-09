@@ -23,6 +23,7 @@
 leg_launcher_modes_flag="--launcher-modes"
 leg_launcher_modes_order=29
 leg_launcher_modes_needs="jq wtype wlrctl"
+leg_launcher_modes_claims="launcher=shared"
 
 launcher_modes_app="apps.formalshell-modes-probe"
 

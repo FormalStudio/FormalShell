@@ -13,17 +13,11 @@
 leg_radio_atlas_cold_flag="--radio-atlas-cold"
 leg_radio_atlas_cold_order=176
 leg_radio_atlas_cold_needs="convert jq"
+leg_radio_atlas_cold_claims="radio.cache=none"
 
 radio_atlas_cold_early_png="$shot_dir/radio-atlas-cold-early.png"
 radio_atlas_cold_png="$shot_dir/radio-atlas-cold.png"
 radio_atlas_cold_status_path="$shot_dir/radio-atlas-cold.json"
-
-leg_radio_atlas_cold_validate() {
-  if leg_on radio_atlas; then
-    echo "usage: --radio-atlas-cold needs no world cache and --radio-atlas stages one; run them apart" >&2
-    exit 1
-  fi
-}
 
 leg_radio_atlas_cold_timing() {
   leg_timing 35 60

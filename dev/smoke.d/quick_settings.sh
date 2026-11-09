@@ -46,6 +46,7 @@
 leg_quick_settings_flag="--quick-settings"
 leg_quick_settings_order=262
 leg_quick_settings_needs="jq wtype wlrctl grim convert pactl pw-loopback python3"
+leg_quick_settings_claims="bar.layout.right bar.modules"
 
 quick_settings_dir="$shot_dir/quick-settings"
 quick_settings_settings="$iso_home/.config/formalshell/settings.json"

@@ -60,6 +60,7 @@ leg_spaces_flag="--spaces"
 leg_spaces_order=196
 leg_spaces_needs="foot jq convert wlrctl"
 leg_spaces_fixture_window=keep
+leg_spaces_claims="pointer workspaces"
 
 spaces_shim_dir="$shot_dir/spaces-shim"
 spaces_ssh_calls_path="$shot_dir/spaces-ssh-calls.txt"
@@ -92,21 +93,11 @@ spaces_hover_png="$shot_dir/spaces-hover.png"
 spaces_left_png="$shot_dir/spaces-left.png"
 spaces_crop_dir="$shot_dir/spaces-crops"
 
-leg_spaces_validate() {
-  local other
-  for other in workspaces wheel switcher switcher_keys tooltip tooltip_travel notify_close hotcorner_relock; do
-    if leg_on "$other"; then
-      echo "usage: --spaces drives the pointer and the focused workspace and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-}
-
 leg_spaces_fixture() {
   local name colour
   mkdir -p "$spaces_shim_dir"
   echo blocked > "$spaces_remote_state_path"
-  settings_fragment ', "workspaces": {"agentHosts": ["fakehost", "deadhost"]}'
+  settings_pin '.workspaces.agentHosts = ["fakehost", "deadhost"]'
   cat > "$spaces_shim_dir/ssh" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$spaces_ssh_calls_path"

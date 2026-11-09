@@ -44,6 +44,7 @@
 leg_chevron_flag="--chevron"
 leg_chevron_order=180
 leg_chevron_needs="wlrctl wtype convert jq"
+leg_chevron_claims="bar.layout.right bar.modules panel=shared"
 
 chevron_status_shut_path="$shot_dir/chevron-status-shut.json"
 chevron_status_open_path="$shot_dir/chevron-status-open.json"
@@ -88,7 +89,7 @@ leg_chevron_fixture() {
 #!/usr/bin/env bash
 printf '{"text": "%s"}' "\$(cat "$chevron_grow_text_path")"
 EOF
-  settings_fragment ', "bar": {"layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "custom:chevgrow", "chevron", "battery", "audio", "network"]}, "modules": [{"id": "chevgrow", "type": "command", "command": ["bash", "'"$chevron_grow_cmd_path"'"], "interval": 500}]}'
+  settings_pin '. * {"bar": {"layout": {"right": ["bluetooth", "weather", "tray", "bell", "indicators", "custom:chevgrow", "chevron", "battery", "audio", "network"]}, "modules": [{"id": "chevgrow", "type": "command", "command": ["bash", "'"$chevron_grow_cmd_path"'"], "interval": 500}]}}'
   # The wallpaper the band's dark ink comes from, the flat bright field
   # --bar-adaptive reads `dark` off: mean 230, no spread, nothing busy.
   $convert_bin -size 1920x1080 xc:'#e6e6e6' "$chevron_bright_wp"

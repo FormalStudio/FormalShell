@@ -46,6 +46,7 @@
 leg_headset_card_flag="--headset-card"
 leg_headset_card_order=177
 leg_headset_card_needs="wlrctl jq wtype foot python3"
+leg_headset_card_claims="bus.system pointer layout bar.position=top frame=none"
 
 headset_dir="$shot_dir/headset-card"
 headset_list="$headset_dir/bluetooth.json"
@@ -71,17 +72,6 @@ headset_pods_address="AA:BB:CC:DD:EE:01"
 # logical pixels grim -g and the pointer take: the output's centre is x 768
 # at 1.25.
 headset_park_y=85
-
-leg_headset_card_validate() {
-  local other
-  for other in bar_position frame fullscreen earbuds; do
-    if leg_on "$other"; then
-      echo "usage: --headset-card parks a pointer at the top bar's card and cannot combine with --${other//_/-}" >&2
-      exit 1
-    fi
-  done
-  refuse_beside_stub_bus headset_card
-}
 
 headset_devices() {
   # $1 buds connected, $2 cans connected, $3 pods connected (true or false)
@@ -120,7 +110,6 @@ leg_headset_card_drive() {
   local headset_park_x headset_region
   headset_park_x=$((logical_w / 2))
   headset_region="$((headset_park_x - 300)),30 600x150"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 list() { local pods="Kyan's AirPods Pro"; [ -z "\${4:-}" ] || pods=\$4; printf '[{"address":"$headset_buds_address","name":"Liberty 4 NC","connected":%s,"battery":80},{"address":"$headset_cans_address","name":"Studio Cans","connected":%s,"icon":"audio-headphones","battery":55},{"address":"$headset_pods_address","name":"%s","connected":%s}]\n' "\$1" "\$2" "\$pods" "\$3" > "$headset_list"; }
@@ -209,7 +198,7 @@ rm -f "$state_dir/status.json"
 "$jq_bin" '.dnd = false' "$fs_state" > "$fs_state.tmp" && mv "$fs_state.tmp" "$fs_state"
 list true false false
 "$jq_bin" -c '.earbudsFaces' "$fs_state" > "$headset_dir/earbuds-art.json"
-"$jq_bin" -c '.layout = "sidebar"' "$settings_path" > "$settings_path.new" && mv "$settings_path.new" "$settings_path"
+settings_retarget '.layout = "sidebar"'
 for _ in \$(seq 1 20); do
   $ipc call sidebar status 2>/dev/null | grep -q '"cards"' && break
   sleep 0.5

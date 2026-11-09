@@ -20,6 +20,7 @@
 leg_theme_auto_flag="--theme-auto"
 leg_theme_auto_order=221
 leg_theme_auto_needs="jq"
+leg_theme_auto_claims="theme.mode=shared"
 
 theme_auto_before_png="$shot_dir/theme-auto-before.png"
 theme_auto_after_png="$shot_dir/theme-auto-after.png"
@@ -31,7 +32,7 @@ theme_auto_state_path="$shot_dir/theme-auto-state.json"
 theme_auto_state_json="$iso_home/.local/state/formalshell/state.json"
 
 leg_theme_auto_fixture() {
-  settings_fragment ', "theme": {"mode": "auto"}'
+  settings_pin '.theme.mode = "auto"'
 }
 
 leg_theme_auto_timing() {

@@ -20,6 +20,7 @@
 leg_tray_flag="--tray"
 leg_tray_order=170
 leg_tray_needs="python3"
+leg_tray_claims="screen=shared"
 
 tray_status_path="$shot_dir/tray-status.json"
 tray_strip_path="$shot_dir/tray-strip.png"
@@ -39,7 +40,7 @@ tray_sidebar_menu_reply_path="$shot_dir/tray-sidebar-menu-reply.txt"
 tray_activate_before_path="$shot_dir/tray-activate-before-sidebar.txt"
 
 leg_tray_fixture() {
-  settings_fragment ', "tray": {"maxVisible": -1}'
+  settings_pin '.tray.maxVisible = -1'
 }
 
 leg_tray_timing() {

@@ -20,6 +20,7 @@
 leg_sky_flag="--sky"
 leg_sky_order=236
 leg_sky_needs="convert jq"
+leg_sky_claims="wallpaper"
 
 sky_picture="$shot_dir/sky-picture.png"
 sky_state_json="$iso_home/.local/state/formalshell/state.json"

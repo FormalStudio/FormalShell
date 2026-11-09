@@ -32,6 +32,7 @@ leg_bar_adaptive_needs="convert jq"
 # The base run's own focused window is what goes fullscreen for the fourth
 # case, the same way --fullscreen takes it over.
 leg_bar_adaptive_fixture_window=keep
+leg_bar_adaptive_claims="bar.style=transparent"
 
 bar_adaptive_bright_wp="$shot_dir/bar-adaptive-bright.png"
 bar_adaptive_dark_wp="$shot_dir/bar-adaptive-dark.png"
@@ -55,18 +56,11 @@ bar_adaptive_max_clients="$shot_dir/bar-adaptive-maximized-clients.json"
 # of the busy wallpaper, so a fill drawn there would show.
 bar_adaptive_patch="40x4+1200+1"
 
-leg_bar_adaptive_validate() {
-  if leg_on bar_style && [ "$(leg_arg bar_style)" != transparent ]; then
-    echo "usage: --bar-adaptive reads the wallpaper, which only --bar-style transparent does" >&2
-    exit 1
-  fi
-}
-
 leg_bar_adaptive_fixture() {
   if ! leg_on bar_style; then
     settings_pin '.bar.style = "transparent"'
   fi
-  settings_fragment ', "fullscreen": {"hideChrome": false}'
+  settings_pin '.fullscreen.hideChrome = false'
   $convert_bin -size 1920x1080 xc:'#e6e6e6' "$bar_adaptive_bright_wp"
   $convert_bin -size 1920x1080 xc:'#1e1e1e' "$bar_adaptive_dark_wp"
   $convert_bin -size 1920x1080 xc:black -fill white \

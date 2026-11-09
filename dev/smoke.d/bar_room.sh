@@ -16,6 +16,7 @@
 leg_bar_room_flag="--bar-room"
 leg_bar_room_order=195
 leg_bar_room_needs="mpv ffmpeg jq"
+leg_bar_room_claims="bar.layout.right bar.modules"
 
 bar_room_json_path="$shot_dir/bar-room.json"
 bar_room_png_path="$shot_dir/bar-room.png"
@@ -56,7 +57,7 @@ EOF
     layout_right="$layout_right, \"custom:barroom$i\""
   done
   modules="${modules%,}"
-  settings_fragment ', "bar": {"layout": {"right": ['"$layout_right"']}, "modules": ['"$modules"']}'
+  settings_pin '. * {"bar": {"layout": {"right": ['"$layout_right"']}, "modules": ['"$modules"']}}'
 }
 
 leg_bar_room_timing() {

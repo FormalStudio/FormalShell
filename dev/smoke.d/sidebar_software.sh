@@ -28,17 +28,11 @@
 leg_sidebar_software_flag="--sidebar-software"
 leg_sidebar_software_order=242
 leg_sidebar_software_needs="jq wlrctl git"
+leg_sidebar_software_claims="layout=sidebar frame=none"
 
 ss_dir="$shot_dir/sidebar-software"
 ss_shim_dir="$ss_dir/shim"
 ss_spec="$ss_dir/spec"
-
-leg_sidebar_software_validate() {
-  if leg_on bar_position || leg_on frame; then
-    echo "usage: --sidebar-software places the column itself and cannot combine with --bar-position or --frame" >&2
-    exit 1
-  fi
-}
 
 # ss_commit <bare repo> <message> <apps.star> [first]: one commit on its
 # main through fast-import, which carries the committer itself, dated
@@ -56,7 +50,7 @@ ss_commit() {
 }
 
 leg_sidebar_software_fixture() {
-  settings_fragment ', "layout": "sidebar"'
+  settings_pin '.layout = "sidebar"'
   mkdir -p "$ss_shim_dir" "$iso_home/.local/share/applications"
   local host origin="$ss_dir/origin.git"
   host=$(cat /proc/sys/kernel/hostname)

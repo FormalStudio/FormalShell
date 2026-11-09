@@ -107,7 +107,7 @@ iphone_visualizer_a_path="$shot_dir/iphone-visualizer-a.json"
 iphone_visualizer_b_path="$shot_dir/iphone-visualizer-b.json"
 
 leg_iphone_fixture() {
-  settings_fragment ', "iphone": {"notifications": {"focus": "respect"}}'
+  settings_pin '.iphone.notifications.focus = "respect"'
 
   mkdir -p "$iphone_shim_dir"
 
@@ -198,7 +198,6 @@ leg_iphone_timing() {
 
 leg_iphone_drive() {
   local script="$shot_dir/iphone-drive.sh"
-  local settings_path="$iso_home/.config/formalshell/settings.json"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 append() { printf '%s\n' "\$1" >> "$iphone_bridge_events_path"; }

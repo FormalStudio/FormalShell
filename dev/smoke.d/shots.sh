@@ -31,7 +31,7 @@ leg_shots_validate() {
 
 leg_shots_fixture() {
   shell_env="${shell_env:+$shell_env }USER=kyan"
-  settings_fragment ', "screensaver": {"effect": "decrypt"}'
+  settings_pin '.screensaver.effect = "decrypt"'
   # Pink noise, as --visualizer-styles plays it: every band moves.
   "$ffmpeg_bin" -nostdin -loglevel error -f lavfi \
     -i "anoisesrc=color=pink:amplitude=0.5:sample_rate=48000:duration=400" \

@@ -26,6 +26,7 @@
 leg_capture_edit_flag="--capture-edit"
 leg_capture_edit_order=225
 leg_capture_edit_needs="foot file"
+leg_capture_edit_claims="toasts=shared"
 
 capture_edit_reply_path="$shot_dir/capture-edit-reply.txt"
 capture_edit_status_path="$shot_dir/capture-edit-status.json"
@@ -42,7 +43,7 @@ leg_capture_edit_fixture() {
 printf '%s\n' "\$@" > "$capture_edit_argv_path"
 EOF
   chmod +x "$capture_edit_shim_dir/tensaku-edit"
-  settings_fragment ', "screenshot": {"editor": "'"$capture_edit_shim_dir/tensaku-edit"'"}'
+  settings_pin ".screenshot.editor = \"$capture_edit_shim_dir/tensaku-edit\""
 }
 
 leg_capture_edit_timing() {

@@ -41,6 +41,7 @@
 leg_picker_flag="--picker"
 leg_picker_order=120
 leg_picker_needs="convert jq wtype python3"
+leg_picker_claims="launcher=shared picker.directory"
 
 # This leg's own clock, the same rule menu_t0 and lock_t0 draw: the grid
 # covers the whole output, so under --wallpaper it starts after that leg's
@@ -120,7 +121,7 @@ Dark/night.png 7f8c8d
 Light/noon.png 95a5a6
 EOF
   cp "$picker_dir/Dark/twin.png" "$picker_dir/Light/twin.png"
-  settings_fragment ', "picker": {"directory": "'"$picker_dir"'"}'
+  settings_pin ".picker.directory = \"$picker_dir\""
   [ "${PICKER_INCLUDED:-}" = real ] && return
   mkdir -p "$picker_included_dir"
   while read -r f c; do

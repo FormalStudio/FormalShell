@@ -24,6 +24,7 @@
 leg_overview_flag="--overview"
 leg_overview_order=239
 leg_overview_needs="jq foot wtype wlrctl python3 grim"
+leg_overview_claims="layout=sidebar frame=none sidebar.minimap"
 overview_vpointer="$PWD/dev/vpointer.py"
 overview_log="$shot_dir/overview-steps.log"
 overview_notes="$shot_dir/overview-notes.log"
@@ -33,16 +34,9 @@ overview_zoom_png="$shot_dir/overview-zoom.png"
 overview_glide_png="$shot_dir/overview-glide.png"
 overview_drop_png="$shot_dir/overview-drop.png"
 
-leg_overview_validate() {
-  if leg_on bar_position || leg_on frame || leg_on minimap; then
-    echo "usage: --overview runs under layout sidebar and cannot combine with --bar-position, --frame or --minimap" >&2
-    exit 1
-  fi
-}
-
 leg_overview_fixture() {
-  leg_on sidebar || settings_fragment ', "layout": "sidebar"'
-  settings_fragment ', "hotCorners": {"topLeft": "overview", "bottomLeft": "none", "bottomRight": "none"}'
+  settings_pin '.layout = "sidebar"'
+  settings_pin '. * {"hotCorners": {"topLeft": "overview", "bottomLeft": "none", "bottomRight": "none"}}'
 }
 
 leg_overview_timing() {

@@ -9,6 +9,7 @@
 # rather than those values.
 leg_overnight_flag="--overnight"
 leg_overnight_order=215
+leg_overnight_claims="overnight"
 
 overnight_active_path="$shot_dir/overnight-active.png"
 overnight_status1_path="$shot_dir/overnight-status-1.json"

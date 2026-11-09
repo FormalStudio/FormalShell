@@ -20,6 +20,7 @@ leg_wallpaper_flag="--wallpaper"
 leg_wallpaper_order=100
 leg_wallpaper_desktop_until=16
 leg_wallpaper_needs="convert"
+leg_wallpaper_claims="screen=shared wallpaper=shared"
 
 theme_status_path="$shot_dir/theme-status.json"
 wallpaper_get_path="$shot_dir/wallpaper-get.txt"
@@ -41,7 +42,7 @@ hypr_sentinel="ff00ff"
 leg_wallpaper_fixture() {
   if [ "${SMOKE_WALLPAPER_DITHER:-0}" = "1" ]; then
     wallpaper_dither=true
-    settings_fragment ', "wallpaper": {"dither": true}'
+    settings_pin '.wallpaper.dither = true'
   fi
   # Seeded before Hyprland starts, because the config below dofiles it and
   # the shell does not write its own copy until a second or two into the

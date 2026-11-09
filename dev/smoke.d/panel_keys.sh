@@ -20,6 +20,7 @@
 leg_panel_keys_flag="--panel-keys"
 leg_panel_keys_order=250
 leg_panel_keys_needs="wtype wpctl"
+leg_panel_keys_claims="panel=shared"
 
 panel_keys_baseline_path="$shot_dir/panel-keys-baseline.png"
 panel_keys_path="$shot_dir/panel-keys.png"

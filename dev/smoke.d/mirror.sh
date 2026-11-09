@@ -26,6 +26,7 @@ leg_mirror_flag="--mirror"
 leg_mirror_order=145
 leg_mirror_vm_only="it loads and unloads the v4l2loopback module with sudo"
 leg_mirror_needs="convert ffmpeg jq wtype"
+leg_mirror_claims="launcher=shared"
 
 mirror_dir="$shot_dir/mirror"
 

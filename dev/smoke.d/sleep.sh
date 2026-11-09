@@ -39,7 +39,7 @@ sleep_wallpaper="$shot_dir/sleep-dark.png"
 sleep_unlocked_path="$shot_dir/sleep-unlocked.txt"
 
 leg_sleep_fixture() {
-  settings_fragment ', "lock": {"blankAfterSeconds": 12}'
+  settings_pin '.lock.blankAfterSeconds = 12'
   $convert_bin -size 1920x1080 xc:'#1e1e1e' "$sleep_wallpaper"
 }
 

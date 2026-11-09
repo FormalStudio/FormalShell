@@ -16,21 +16,11 @@
 leg_render_flag="--render"
 leg_render_order=113
 leg_render_needs="jq convert notify-send wtype"
+leg_render_claims="session render.backend"
 
 render_dump() { echo "$shot_dir/render-$1.json"; }
 render_frame() { echo "$shot_dir/render-$1.png"; }
 render_status() { echo "$shot_dir/render-$1-menu.json"; }
-
-leg_render_validate() {
-  # It replaces the session's shell twice, every other leg's shell too.
-  local v
-  for v in $(compgen -v | grep -E '^leg_[a-z0-9_]+_on$'); do
-    if [ "$v" != leg_render_on ] && [ "${!v}" = true ]; then
-      echo "usage: --render replaces the session's shell and cannot combine with --$(echo "${v#leg_}" | sed 's/_on$//; s/_/-/g')" >&2
-      exit 1
-    fi
-  done
-}
 
 leg_render_fixture() {
   settings_pin '.render.backend = "gpu"'
@@ -45,7 +35,7 @@ leg_render_timing() {
 }
 
 leg_render_drive() {
-  local script="$shot_dir/render-drive.sh" settings="$iso_home/.config/formalshell/settings.json" launch="$PWD/result/bin/formalshell"
+  local script="$shot_dir/render-drive.sh" launch="$PWD/result/bin/formalshell"
   "$convert_bin" -size 1080x1920 gradient:'#3fb07a-#0b2d20' -rotate 90 "$shot_dir/render-wallpaper.png"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
@@ -95,10 +85,10 @@ turn() {
 }
 sleep 4
 turn gpu gpu
-"$jq_bin" '.render.backend = "cpu"' "$settings" > "$shot_dir/render-settings.json" && cat "$shot_dir/render-settings.json" > "$settings"
+settings_retarget '.render.backend = "cpu"'
 "$launch" > "$shot_dir/render-cpu.log" 2>&1 &
 turn cpu cpu
-"$jq_bin" '.render.backend = "gpu"' "$settings" > "$shot_dir/render-settings.json" && cat "$shot_dir/render-settings.json" > "$settings"
+settings_retarget '.render.backend = "gpu"'
 echo '{"file_format_version": "1.0.0"}' > "$shot_dir/render-no-icd.json"
 VK_DRIVER_FILES="$shot_dir/render-no-icd.json" "$launch" > "$shot_dir/render-nodriver.log" 2>&1 &
 turn nodriver gpu
