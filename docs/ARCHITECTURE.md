@@ -466,7 +466,7 @@ built-in effects when it is not. The overlay fades through
 
 `surfaces/capture/` makes every decision for screenshot, capture and record
 on the UI thread, next to the region picker it drives
-(`wayland/picker.rs`). The children (slurp, grim, tesseract, wf-recorder,
+(`wayland/region.rs`). The children (slurp, grim, tesseract, wf-recorder,
 ffmpeg, the editor) run in `services::capture` and report their pid on
 start and their answer on exit. `services::recording` is the slice the bar's
 recording indicator reads.

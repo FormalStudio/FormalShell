@@ -11,8 +11,7 @@ use std::time::Instant;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
-use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
+use smithay_client_toolkit::shell::wlr_layer::Layer;
 use vello_cpu::kurbo::Rect;
 
 use super::App;
@@ -95,12 +94,12 @@ impl App {
         self.plugin_overlay.as_ref()?.modal.part(surface)
     }
 
-    pub(super) fn overlay_owns(&self, layer: &LayerSurface) -> bool {
-        self.overlay_part(layer.wl_surface()).is_some()
+    pub(super) fn overlay_owns(&self, surface: &WlSurface) -> bool {
+        self.overlay_part(surface).is_some()
     }
 
-    pub(super) fn overlay_configure(&mut self, layer: &LayerSurface, width: i32, height: i32) {
-        let Some(part) = self.overlay_part(layer.wl_surface()) else { return };
+    pub(super) fn overlay_configure(&mut self, surface: &WlSurface, width: i32, height: i32) {
+        let Some(part) = self.overlay_part(surface) else { return };
         let Some(w) = &mut self.plugin_overlay else { return };
         w.modal.configure(part, width, height);
         w.dirty = true;

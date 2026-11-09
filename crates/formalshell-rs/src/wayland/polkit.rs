@@ -8,8 +8,7 @@ use std::time::Instant;
 
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
-use smithay_client_toolkit::shell::WaylandSurface;
-use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
+use smithay_client_toolkit::shell::wlr_layer::Layer;
 use vello_cpu::kurbo::Rect;
 use crate::ui::field::{Field, Outcome};
 use zeroize::Zeroizing;
@@ -130,12 +129,12 @@ impl App {
         self.polkit.as_ref()?.modal.part(surface)
     }
 
-    pub(super) fn polkit_owns(&self, layer: &LayerSurface) -> bool {
-        self.polkit_part(layer.wl_surface()).is_some()
+    pub(super) fn polkit_owns(&self, surface: &WlSurface) -> bool {
+        self.polkit_part(surface).is_some()
     }
 
-    pub(super) fn polkit_configure(&mut self, layer: &LayerSurface, width: i32, height: i32) {
-        let Some(part) = self.polkit_part(layer.wl_surface()) else { return };
+    pub(super) fn polkit_configure(&mut self, surface: &WlSurface, width: i32, height: i32) {
+        let Some(part) = self.polkit_part(surface) else { return };
         let Some(d) = &mut self.polkit else { return };
         d.modal.configure(part, width, height);
         d.dirty = true;

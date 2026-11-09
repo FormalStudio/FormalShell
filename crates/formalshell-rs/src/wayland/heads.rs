@@ -185,7 +185,7 @@ impl App {
     /// Something on the live bar's output that a click outside closes.
     pub(super) fn catches(&self) -> bool {
         self.panel.as_ref().is_some_and(|h| h.is_open() && h.module.takes_keyboard())
-            || self.menu.as_ref().is_some_and(|p| p.win.card.is_open())
+            || self.tray_menu.as_ref().is_some_and(|p| p.win.card.is_open())
             || self.launcher.open
             || self.atlas_open()
             || self.overlay_open().is_some()
@@ -212,7 +212,7 @@ impl App {
         if self.catches() {
             self.dismiss();
         }
-        if self.panel.is_some() || self.outgoing.is_some() || self.menu.is_some() {
+        if self.panel.is_some() || self.outgoing.is_some() || self.tray_menu.is_some() {
             self.close_bar_cards();
             self.panel_dirty = true;
             self.sync_join();
@@ -273,7 +273,7 @@ impl App {
 
     /// A card or a join hangs off the live bar.
     fn bar_busy(&self) -> bool {
-        self.panel.is_some() || self.outgoing.is_some() || self.menu.is_some() || !self.joins().is_empty()
+        self.panel.is_some() || self.outgoing.is_some() || self.tray_menu.is_some() || !self.joins().is_empty()
     }
 
     pub(super) fn head_part(&self, surface: &WlSurface) -> Option<(usize, Part)> {

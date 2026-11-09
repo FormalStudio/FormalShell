@@ -19,13 +19,14 @@ pub mod lock;
 mod osd;
 mod plugin_overlay;
 mod polkit;
-mod picker;
+mod region;
 mod preview;
 mod rims;
 mod screensaver;
 mod settle;
 mod sidebar;
 pub mod overview;
+mod owner;
 pub mod switcher;
 mod toasts;
 mod veil;
@@ -170,8 +171,9 @@ impl Role {
     }
 }
 
+/// Whose surface an input event landed on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Owner {
+enum Target {
     Bar,
     Panel,
     Menu,
@@ -254,9 +256,9 @@ pub struct App {
     /// `column_cast` for the theme in force, dropped on a theme change.
     toast_cast: Option<f64>,
     /// `debug join`'s card, hung in the gap it opens.
-    preview: Option<(Surface, crate::scene::Scene, Vec<NodeId>)>,
+    join_preview: Option<(Surface, crate::scene::Scene, Vec<NodeId>)>,
     /// The tray item menu, over whatever popout it hangs off.
-    pub menu: Option<Popout>,
+    pub tray_menu: Option<Popout>,
     scrim: Option<(Scrim, PixelSurface)>,
     pointer: Option<wl_pointer::WlPointer>,
     /// The pointing hand over a cell that answers a click,
@@ -264,8 +266,8 @@ pub struct App {
     cursor_shapes: Option<CursorShapeManager>,
     cursor_device: Option<WpCursorShapeDeviceV1>,
     cursor: Option<(u32, Shape)>,
-    pointer_on: Option<Owner>,
-    pressed: Option<(Owner, Press)>,
+    pointer_on: Option<Target>,
+    pressed: Option<(Target, Press)>,
     /// Panel surfaces dropped since the pointer last entered one.
     dropped: Vec<wl_surface::WlSurface>,
     bar_dirty: bool,
@@ -324,7 +326,7 @@ pub struct App {
     info_asked: Option<String>,
     menu_launches: Option<Vec<fs_menu::frecency::Record>>,
     pub capture: crate::surfaces::capture::Capture,
-    pickers: picker::Pickers,
+    pickers: region::Pickers,
     desktop_clock: desktop_clock::State,
     veil: veil::State,
 }
@@ -379,7 +381,7 @@ impl App {
             zones: Vec::new(),
             quick_from: quick::Origin::Ipc,
             panel: None,
-            menu: None,
+            tray_menu: None,
             outgoing: None,
             panel_dirty: false,
             keyboard: None,
@@ -389,7 +391,7 @@ impl App {
             toasts: None,
             toasts_dirty: false,
             toast_cast: None,
-            preview: None,
+            join_preview: None,
             scrim: None,
             pointer: None,
             cursor_shapes: CursorShapeManager::bind(globals, qh).ok(),
@@ -716,7 +718,7 @@ impl App {
                 w.restyle(theme, cast, now);
             }
         }
-        if let Some(m) = self.menu.as_mut().and_then(|p| p.menu.as_mut()) {
+        if let Some(m) = self.tray_menu.as_mut().and_then(|p| p.menu.as_mut()) {
             m.restyle(&theme);
         }
         self.resize_menu();
@@ -881,7 +883,7 @@ impl App {
             Role::Outgoing => self.outgoing.as_ref().map(|h| &h.win),
             Role::Headset => self.headset.card.as_ref().map(|c| &c.popup.win),
             Role::Osd => self.osd.pill.as_ref().map(|p| &p.win),
-            Role::Menu => self.menu.as_ref().map(|p| &p.win),
+            Role::Menu => self.tray_menu.as_ref().map(|p| &p.win),
             Role::Profiles => self.profiles.as_ref().map(|p| &p.popup.win),
             Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal(role).map(|m| &m.win),
         }
@@ -893,7 +895,7 @@ impl App {
             Role::Outgoing => self.outgoing.as_mut().map(|h| &mut h.win),
             Role::Headset => self.headset.card.as_mut().map(|c| &mut c.popup.win),
             Role::Osd => self.osd.pill.as_mut().map(|p| &mut p.win),
-            Role::Menu => self.menu.as_mut().map(|p| &mut p.win),
+            Role::Menu => self.tray_menu.as_mut().map(|p| &mut p.win),
             Role::Profiles => self.profiles.as_mut().map(|p| &mut p.popup.win),
             Role::Launcher | Role::Atlas | Role::Polkit | Role::Overlay => self.modal_mut(role).map(|m| &mut m.win),
         }
@@ -922,20 +924,20 @@ impl App {
         self.debug_join = join;
         self.sync_join();
         if join.is_none() {
-            self.preview = None;
+            self.join_preview = None;
             return;
         }
-        if self.preview.is_none() {
+        if self.join_preview.is_none() {
             let (w, h) = self.output_size();
             let layer = self.overlay("formalshell:debug-join", Layer::Overlay, Anchor::all(), (0, 0), -1);
             let surface = Surface::new("debug-join", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
-            self.preview = Some((surface, crate::scene::Scene::clear(w as i32, h as i32), Vec::new()));
+            self.join_preview = Some((surface, crate::scene::Scene::clear(w as i32, h as i32), Vec::new()));
         }
         let chrome = self.chrome();
         let (edge, line) = (chrome.edge, chrome.line());
-        if let Some((_, scene, nodes)) = &mut self.preview {
+        if let Some((_, scene, nodes)) = &mut self.join_preview {
             let join = join.map(|(x, w)| (x as f64, w as f64));
-            join_preview(scene, nodes, &self.store.theme.theme, edge, line, join);
+            draw_join_preview(scene, nodes, &self.store.theme.theme, edge, line, join);
         }
     }
 
@@ -1156,7 +1158,7 @@ impl App {
         let surface = self.popout_surface(&card, Layer::Overlay);
         let mut popout = Popout { win: CardWindow::new(card, surface), menu: Some(menu) };
         Self::set_popout_input(&self.compositor, &mut popout);
-        self.menu = Some(popout);
+        self.tray_menu = Some(popout);
         let (key, largest) = (item.key, self.store.display.scales.largest());
         if let Some(rt) = &self.runtime {
             rt.service(move |ctx| tray::open_menu(ctx, key, largest));
@@ -1168,7 +1170,7 @@ impl App {
     /// Closes the menu through its exit, telling the item.
     pub fn close_tray_menu(&mut self) {
         let now = Instant::now();
-        let Some(p) = self.menu.as_mut().filter(|p| p.win.card.is_open()) else { return };
+        let Some(p) = self.tray_menu.as_mut().filter(|p| p.win.card.is_open()) else { return };
         p.win.card.set_open(now, false);
         let key = p.menu.as_ref().map(|m| m.key.clone());
         if let (Some(key), Some(rt)) = (key, &self.runtime) {
@@ -1179,7 +1181,7 @@ impl App {
     /// Takes the menu off screen at once, telling the item if it was up.
     fn drop_tray_menu(&mut self) {
         self.close_tray_menu();
-        self.menu = None;
+        self.tray_menu = None;
     }
 
     /// The menu's card at the height its rows ask for, capped to the room.
@@ -1188,7 +1190,7 @@ impl App {
         let vertical = self.bar.edge().is_vertical();
         let length = self.bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
-        if let Some(p) = &mut self.menu {
+        if let Some(p) = &mut self.tray_menu {
             let mapped = p.win.card.is_open() && p.win.surface.mapped();
             if let Some(m) = &mut p.menu {
                 let (w, h) = (m.width(), m.height().min(m.cap));
@@ -1212,7 +1214,7 @@ impl App {
         let vertical = self.bar.edge().is_vertical();
         let length = self.bar.length();
         let pad = self.store.theme.theme.space.screen_padding;
-        let Some(p) = &mut self.menu else { return };
+        let Some(p) = &mut self.tray_menu else { return };
         let Some(m) = &p.menu else { return };
         if !m.morph.running(now) {
             return;
@@ -1224,7 +1226,7 @@ impl App {
     /// The tray changed: a menu waiting on its tree gets it, one whose item
     /// went away shuts.
     pub fn tray_changed(&mut self) {
-        let Some(p) = &mut self.menu else { return };
+        let Some(p) = &mut self.tray_menu else { return };
         let Some(menu) = &mut p.menu else { return };
         if self.store.tray.by_key(&menu.key).is_none() {
             self.close_tray_menu();
@@ -1237,7 +1239,7 @@ impl App {
     }
 
     fn menu_outcome(&mut self, outcome: Outcome) {
-        let Some(key) = self.menu.as_ref().and_then(|p| p.menu.as_ref()).map(|m| m.key.clone()) else { return };
+        let Some(key) = self.tray_menu.as_ref().and_then(|p| p.menu.as_ref()).map(|m| m.key.clone()) else { return };
         match outcome {
             Outcome::None => {}
             Outcome::Click(id) => {
@@ -1257,7 +1259,7 @@ impl App {
     }
 
     fn open_menu_mut(&mut self) -> Option<&mut Menu> {
-        self.menu.as_mut().filter(|p| p.win.card.is_open()).and_then(|p| p.menu.as_mut())
+        self.tray_menu.as_mut().filter(|p| p.win.card.is_open()).and_then(|p| p.menu.as_mut())
     }
 
     /// `tray activate`: the item's own Activate, as its cell's click does.
@@ -1462,23 +1464,8 @@ impl App {
         crate::surfaces::capture::flush(self);
         let now = Instant::now();
         self.tick_notifications();
-        if let Some(p) = self.panel.take_if(|p| p.finished(now)) {
-            self.dropped.push(p.win.surface.layer.wl_surface().clone());
-            self.sync_join();
-            self.sync_open(now);
-            self.log("panel unmapped");
-        }
-        if let Some(p) = self.outgoing.take_if(|p| p.finished(now)) {
-            self.dropped.push(p.win.surface.layer.wl_surface().clone());
-            self.sync_join();
-        }
-        if self.menu.as_ref().is_some_and(|p| p.win.finished(now)) {
-            self.menu = None;
-            self.log("tray menu unmapped");
-        }
-        if self.scrim.as_ref().is_some_and(|(p, s)| s.mapped() && p.finished(now)) {
-            self.scrim = None;
-            self.log("scrim unmapped");
+        for o in owner::LIFECYCLE {
+            o.finished(self, now);
         }
         if self.modal_up != self.modal_shown() {
             self.modal_up = !self.modal_up;
@@ -1487,79 +1474,14 @@ impl App {
         self.follow_focus();
         self.light_cards(now);
         self.sync_rasters(now);
-        let qh = self.qh.clone();
         let idle = self.saver.active || self.lock.locked;
         self.bar.set_idle(idle);
         for s in self.heads.iter_mut().filter_map(|h| h.spare.as_mut()) {
             s.bar.set_idle(idle);
         }
-        self.present_heads(self.bar_dirty, now);
-        let animating = self.bar.animating(&self.kit, now);
-        let stepping = animating || self.bar.marquee_due(&self.kit, now);
-        if self.bar_dirty || (stepping && !self.bar.step_in_place(&mut self.kit, now)) {
-            self.bar.layout(&mut self.kit, &self.store, now);
-            self.bar_dirty = false;
-            self.sync_sidebar_keys();
-            self.sync_bar_input();
+        for o in owner::LIFECYCLE {
+            o.present(self, now);
         }
-        if let Some(s) = &mut self.bar_surface {
-            s.present(&mut self.bar.scene, animating, &qh);
-        }
-        if !self.faces_warmed && self.bar_surface.as_ref().is_some_and(|s| s.mapped()) {
-            self.faces_warmed = true;
-            crate::trace::phase("bar mapped");
-            crate::trace::thread_ticks();
-            self.warm_faces();
-            self.prefault_launcher();
-            self.launcher_warm = true;
-            self.sync_shards();
-        }
-        self.step_menu(now);
-        if let Some(p) = &mut self.menu {
-            p.layout(&mut self.kit);
-            let morphing = p.menu.as_ref().is_some_and(|m| m.morph.running(now));
-            let animating = p.win.animating(now) || morphing;
-            p.win.present(animating, &qh);
-        }
-        let strip = self.bar_input();
-        let theme = &self.store.theme.theme;
-        for h in [&mut self.outgoing, &mut self.panel].into_iter().flatten() {
-            if h.prime_until.is_some_and(|t| t <= now) {
-                h.primed();
-            }
-            let animating = h.animating(now) || h.content_animating(now);
-            if self.panel_dirty || animating {
-                h.sync_region(&self.compositor, &strip);
-                h.layout(&self.store, theme, &mut self.kit, now);
-            }
-            let animating = h.animating(now) || h.content_animating(now);
-            h.win.present(animating, &qh);
-        }
-        self.panel_dirty = false;
-        self.present_launcher(now);
-        self.present_atlas(now);
-        self.switcher_present();
-        self.overview_present();
-        self.present_saver(now);
-        self.present_tooltip(now);
-        self.present_toasts(now);
-        self.osd_present(now);
-        self.headset_present(now);
-        self.profiles_present(now);
-        if let Some((surface, scene, _)) = &mut self.preview {
-            surface.present(scene, false, &qh);
-        }
-        for (_, z) in &mut self.zones {
-            z.present(0.0, false, &qh);
-        }
-        if let Some((scrim, surface)) = &mut self.scrim {
-            surface.present(scrim.fade(now), scrim.animating(now), &qh);
-        }
-        self.present_picker(now);
-        self.present_polkit(now);
-        self.present_overlay(now);
-        self.present_lock();
-        self.present_veils(now);
         self.arm_wake(now);
     }
 
@@ -1620,13 +1542,7 @@ impl App {
     /// leaving its hold, a tooltip's delay, a panel's keyboard prime), so
     /// nothing asks for frames while it waits.
     fn arm_wake(&mut self, now: Instant) {
-        let hosts = [&self.panel, &self.outgoing];
-        let notifications = self.store.notifications.wake().map(|at| crate::services::notifications::instant_at(at, now));
-        let at = [self.bar.wake(&self.kit, now), self.spares_wake(now), self.tips.wake(), notifications, self.osd_wake(), self.headset.wake(), self.switcher_deadline(), self.overview_deadline(), self.atlas_deadline(), self.preview_deadline(), self.toasts.as_ref().map(|t| t.rel_at + surfaces::toasts::REL_EVERY), self.veil_deadline(now)]
-            .into_iter()
-            .chain(hosts.iter().filter_map(|h| h.as_ref()).flat_map(|h| [h.prime_until, h.wake.filter(|w| *w > now)]))
-            .flatten()
-            .min();
+        let at = owner::LIFECYCLE.iter().filter_map(|o| o.wake(self, now)).min();
         let Some(at) = at else { return };
         if self.wake.is_some_and(|w| w <= at && w > now) {
             return;
@@ -1643,75 +1559,80 @@ impl App {
         });
     }
 
-    fn owner(&self, surface: &wl_surface::WlSurface) -> Option<Owner> {
+    /// Whose surface a pointer event landed on.
+    fn target(&self, surface: &wl_surface::WlSurface) -> Option<Target> {
         if let Some(p) = self.atlas_part(surface) {
-            return Some(Owner::Atlas(p));
+            return Some(Target::Atlas(p));
         }
-        if let Some(o) = self.launcher_owner(surface) {
-            return Some(o);
+        if let Some(p) = self.launcher_part(surface) {
+            return Some(Target::Launcher(p));
         }
         if self.bar_surface.as_ref().is_some_and(|s| s.layer.wl_surface() == surface) {
-            return Some(Owner::Bar);
+            return Some(Target::Bar);
         }
         if self.panel.as_ref().is_some_and(|p| p.win.owns(surface)) {
-            return Some(Owner::Panel);
+            return Some(Target::Panel);
         }
-        if self.menu.as_ref().is_some_and(|p| p.win.owns(surface)) {
-            return Some(Owner::Menu);
+        if self.tray_menu.as_ref().is_some_and(|p| p.win.owns(surface)) {
+            return Some(Target::Menu);
         }
         if self.outgoing.as_ref().is_some_and(|p| p.win.owns(surface)) {
-            return Some(Owner::Outgoing);
+            return Some(Target::Outgoing);
         }
         if self.tip_card.as_ref().is_some_and(|c| c.surface.layer.wl_surface() == surface) {
-            return Some(Owner::Tooltip);
+            return Some(Target::Tooltip);
         }
         if self.toasts.as_ref().is_some_and(|t| t.surface.layer.wl_surface() == surface) {
-            return Some(Owner::Toasts);
+            return Some(Target::Toasts);
         }
-        if self.preview.as_ref().is_some_and(|(s, _, _)| s.layer.wl_surface() == surface) {
-            return Some(Owner::Preview);
+        if self.join_preview.as_ref().is_some_and(|(s, _, _)| s.layer.wl_surface() == surface) {
+            return Some(Target::Preview);
         }
         if self.scrim.as_ref().is_some_and(|(_, s)| s.layer.wl_surface() == surface) {
-            return Some(Owner::Scrim);
+            return Some(Target::Scrim);
         }
         if self.osd_owns(surface) {
-            return Some(Owner::Osd);
+            return Some(Target::Osd);
         }
         if self.headset_owns(surface) {
-            return Some(Owner::Headset);
+            return Some(Target::Headset);
         }
         if self.profiles_owns(surface) {
-            return Some(Owner::Profiles);
+            return Some(Target::Profiles);
         }
         if let Some((i, part)) = self.head_part(surface) {
-            return Some(Owner::Head(i, part));
+            return Some(Target::Head(i, part));
         }
         if self.switcher.owns(surface) {
-            return Some(Owner::Switcher);
+            return Some(Target::Switcher);
         }
         if self.overview.owns(surface) {
-            return Some(Owner::Overview);
+            return Some(Target::Overview);
         }
         if let Some(i) = self.picker_owner(surface) {
-            return Some(Owner::Picker(i));
+            return Some(Target::Picker(i));
         }
-        self.zones.iter().position(|(_, z)| z.layer.wl_surface() == surface).map(Owner::Zone)
+        self.zones.iter().position(|(_, z)| z.layer.wl_surface() == surface).map(Target::Zone)
+    }
+
+    /// Every window owner's blocks of `debug dump`.
+    pub fn report(&self, dump: &mut serde_json::Map<String, serde_json::Value>) {
+        for o in owner::LIFECYCLE {
+            o.report(self, dump);
+        }
     }
 
     pub fn report_exit(&self) {
-        let mut parts: Vec<String> = self.bar_surface.iter().map(|s| s.report()).collect();
-        parts.extend(self.panel.as_ref().map(|p| p.win.surface.report()));
-        parts.extend(self.outgoing.as_ref().map(|p| p.win.surface.report()));
-        parts.extend(self.menu.as_ref().map(|p| p.win.surface.report()));
-        parts.extend(self.tip_card.as_ref().map(|c| c.surface.report()));
-        parts.extend(self.scrim.as_ref().map(|(_, s)| s.report()));
-        parts.extend(self.launch.as_ref().map(|w| w.shown.modal.win.surface.report()));
+        let mut parts = Vec::new();
+        for o in owner::LIFECYCLE {
+            o.counts(self, &mut parts);
+        }
         eprintln!("exit t={}ms {}", self.started.elapsed().as_millis(), parts.join(" "));
     }
 
-    fn hover(&mut self, owner: Option<Owner>, at: (f64, f64)) {
+    fn hover(&mut self, owner: Option<Target>, at: (f64, f64)) {
         let now = Instant::now();
-        let bar_hover = (owner == Some(Owner::Bar)).then(|| self.bar.hit(at.0, at.1)).flatten();
+        let bar_hover = (owner == Some(Target::Bar)).then(|| self.bar.hit(at.0, at.1)).flatten();
         if bar_hover != self.bar.hover {
             self.bar.hover = bar_hover;
             for s in &mut self.bar.slots {
@@ -1722,15 +1643,15 @@ impl App {
         if self.bar.pointer(&mut self.kit, bar_hover, at, &self.store, Instant::now()) {
             self.bar_dirty = true;
         }
-        if let Some(menu) = self.menu.as_mut() {
-            let hit = (owner == Some(Owner::Menu)).then(|| menu.menu_hit(at.0, at.1)).flatten();
+        if let Some(menu) = self.tray_menu.as_mut() {
+            let hit = (owner == Some(Target::Menu)).then(|| menu.menu_hit(at.0, at.1)).flatten();
             if let Some(m) = &mut menu.menu {
                 m.hover(hit);
             }
         }
-        self.hover_toasts((owner == Some(Owner::Toasts)).then_some(at));
+        self.hover_toasts((owner == Some(Target::Toasts)).then_some(at));
         if let Some(h) = &mut self.panel {
-            let point = (owner == Some(Owner::Panel)).then_some(at);
+            let point = (owner == Some(Target::Panel)).then_some(at);
             if h.pointer(point, &self.store, self.runtime.as_ref()) {
                 self.panel_dirty = true;
             }
@@ -1741,13 +1662,13 @@ impl App {
         // The tooltip the item under the pointer carries, in the output's
         // coordinates.
         let ask = match owner {
-            Some(Owner::Bar) if opened => None,
-            Some(Owner::Bar) => self.bar.tooltip().map(|(text, r, edge)| {
+            Some(Target::Bar) if opened => None,
+            Some(Target::Bar) => self.bar.tooltip().map(|(text, r, edge)| {
                 let (ox, oy) = self.chrome().window();
                 let rect = IRect::new(r.x + ox, r.y + oy, r.w, r.h);
                 tooltip::Ask { owner: format!("bar:{}:{}", rect.x, rect.y), text, rect, bar: Some(edge) }
             }),
-            Some(Owner::Panel) => self.panel.as_ref().and_then(|h| h.tooltip()).map(|(text, rect)| tooltip::Ask {
+            Some(Target::Panel) => self.panel.as_ref().and_then(|h| h.tooltip()).map(|(text, rect)| tooltip::Ask {
                 owner: format!("panel:{}:{}", rect.x, rect.y),
                 text,
                 rect,
@@ -1759,7 +1680,7 @@ impl App {
             Some(ask) => self.tips.show(ask, now),
             None => self.tips.hide(None, now),
         }
-        self.preview_pointer(owner == Some(Owner::Bar), owner == Some(Owner::Panel), at);
+        self.preview_pointer(owner == Some(Target::Bar), owner == Some(Target::Panel), at);
     }
 
     fn pointer_events(&mut self, events: &[PointerEvent]) {
@@ -1777,32 +1698,32 @@ impl App {
                 self.saver_input(Some(i), input);
                 continue;
             }
-            let mut owner = self.owner(&e.surface);
+            let mut owner = self.target(&e.surface);
             // The compositor sends a press to the panel surface it still
             // has under the pointer after the shell has dropped it; one on
             // the strip is the bar's all the same.
             if owner.is_none() && self.dropped.contains(&e.surface) {
-                owner = Some(Owner::Outgoing);
+                owner = Some(Target::Outgoing);
             }
             if matches!(e.kind, PointerEventKind::Enter { .. }) {
                 self.dropped.clear();
             }
-            if let Some(Owner::Head(_, heads::Part::Catcher)) = owner {
+            if let Some(Target::Head(_, heads::Part::Catcher)) = owner {
                 if matches!(e.kind, PointerEventKind::Press { .. }) {
                     self.dismiss();
                 }
                 continue;
             }
-            if let Some(Owner::Head(i, heads::Part::Bar)) = owner
+            if let Some(Target::Head(i, heads::Part::Bar)) = owner
                 && match e.kind {
                     PointerEventKind::Press { .. } => self.press_spare(i),
                     PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => self.promote(i),
                     _ => false,
                 }
             {
-                owner = self.owner(&e.surface);
+                owner = self.target(&e.surface);
             }
-            if let Some(Owner::Picker(i)) = owner {
+            if let Some(Target::Picker(i)) = owner {
                 self.picker_pointer(i, e);
                 continue;
             }
@@ -1815,13 +1736,13 @@ impl App {
             if self.overlay_pointer(e) {
                 continue;
             }
-            if owner == Some(Owner::Launcher(crate::surfaces::modal::Part::Card))
+            if owner == Some(Target::Launcher(crate::surfaces::modal::Part::Card))
                 && let Some(at) = self.profiles_under(e.position)
             {
-                self.profiles_pointer(Some(Owner::Profiles), &e.kind, at);
+                self.profiles_pointer(Some(Target::Profiles), &e.kind, at);
                 continue;
             }
-            if owner != Some(Owner::Profiles) {
+            if owner != Some(Target::Profiles) {
                 self.profiles_release_elsewhere(&e.kind);
             }
             if self.launcher_pointer(e, owner) {
@@ -1832,8 +1753,8 @@ impl App {
             // presses on the panel's surface, though that surface's input
             // region leaves the strip out; they are the bar's.
             let on_bar = self.bar_input().iter().any(|r| x >= r.x as f64 && x < r.right() as f64 && y >= r.y as f64 && y < r.bottom() as f64);
-            if matches!(owner, Some(Owner::Panel | Owner::Outgoing)) && on_bar {
-                owner = Some(Owner::Bar);
+            if matches!(owner, Some(Target::Panel | Target::Outgoing)) && on_bar {
+                owner = Some(Target::Bar);
                 if !self.bar.framed() {
                     let (ox, oy) = self.chrome().origin(self.bar.thickness());
                     (x, y) = (x - ox as f64, y - oy as f64);
@@ -1849,7 +1770,7 @@ impl App {
                     self.set_cursor(true);
                 }
                 PointerEventKind::Motion { .. } => {
-                    if matches!(self.pressed, Some((Owner::Bar, _))) && self.bar.sidebar_motion((x, y)) {
+                    if matches!(self.pressed, Some((Target::Bar, _))) && self.bar.sidebar_motion((x, y)) {
                         self.bar_dirty = true;
                     }
                     self.pointer_on = owner;
@@ -1861,39 +1782,39 @@ impl App {
                     self.hover(None, (x, y));
                 }
                 PointerEventKind::Press { .. } => {
-                    if owner == Some(Owner::Switcher) {
+                    if owner == Some(Target::Switcher) {
                         self.switcher_close();
                         continue;
                     }
-                    if owner == Some(Owner::Toasts) {
+                    if owner == Some(Target::Toasts) {
                         if let Some(t) = &mut self.toasts {
                             t.press(x, y);
                         }
-                        self.pressed = Some((Owner::Toasts, Press::Whole));
+                        self.pressed = Some((Target::Toasts, Press::Whole));
                         continue;
                     }
-                    if owner == Some(Owner::Panel) {
+                    if owner == Some(Target::Panel) {
                         if let Some(h) = &mut self.panel {
                             h.press(x, y, &self.store, self.runtime.as_ref());
                         }
-                        self.pressed = Some((Owner::Panel, Press::Whole));
+                        self.pressed = Some((Target::Panel, Press::Whole));
                         self.panel_dirty = true;
                         continue;
                     }
                     let hit = match owner {
-                        Some(Owner::Bar) => self.bar.hit(x, y).map(Press::Slot),
-                        Some(Owner::Menu) => self.menu.as_ref().and_then(|p| p.menu_hit(x, y)).map(Press::Menu),
+                        Some(Target::Bar) => self.bar.hit(x, y).map(Press::Slot),
+                        Some(Target::Menu) => self.tray_menu.as_ref().and_then(|p| p.menu_hit(x, y)).map(Press::Menu),
                         _ => None,
                     };
-                    if owner == Some(Owner::Menu) && hit.is_none() {
-                        let outside = self.menu.as_ref().is_some_and(|p| !p.win.on_card(x, y));
+                    if owner == Some(Target::Menu) && hit.is_none() {
+                        let outside = self.tray_menu.as_ref().is_some_and(|p| !p.win.on_card(x, y));
                         if outside {
                             self.close_tray_menu();
                             continue;
                         }
                     }
                     self.pressed = owner.zip(hit);
-                    if let Some((Owner::Bar, Press::Slot(i))) = self.pressed
+                    if let Some((Target::Bar, Press::Slot(i))) = self.pressed
                         && self.bar.sidebar_press(i, (x, y))
                     {
                         self.bar_dirty = true;
@@ -1902,17 +1823,17 @@ impl App {
                 PointerEventKind::Release { button, .. } => {
                     let Some((o, press)) = self.pressed.take() else { continue };
                     let button = crate::input::button(button);
-                    if o == Owner::Toasts {
+                    if o == Target::Toasts {
                         self.release_toasts(x, y);
                         continue;
                     }
-                    if o == Owner::Panel {
+                    if o == Target::Panel {
                         let out = self.panel.as_mut().map_or(Out::None, |h| h.release(x, y, button, &self.store, self.runtime.as_ref()));
                         self.panel_out(out);
                         self.panel_dirty = true;
                         continue;
                     }
-                    if o == Owner::Bar
+                    if o == Target::Bar
                         && let Some(commands) = self.bar.sidebar_release((x, y))
                     {
                         self.minimap_drop(commands);
@@ -1921,7 +1842,7 @@ impl App {
                     self.click(o, press, button, (x, y));
                 }
                 PointerEventKind::Axis { time, vertical, horizontal, source } => {
-                    if owner == Some(Owner::Panel) {
+                    if owner == Some(Target::Panel) {
                         let (dx, dy) = (crate::scroll::notches(&horizontal), crate::scroll::notches(&vertical));
                         let travel = crate::scroll::travel(&vertical, source, time);
                         if let Some(h) = self.panel.as_mut().filter(|_| dx != 0.0 || dy != 0.0 || travel != crate::scroll::Travel::None) {
@@ -1930,7 +1851,7 @@ impl App {
                         self.panel_dirty = true;
                         continue;
                     }
-                    if owner == Some(Owner::Toasts) {
+                    if owner == Some(Target::Toasts) {
                         let finger = source == Some(wl_pointer::AxisSource::Finger);
                         let lift = ((horizontal.stop || vertical.stop) && finger).then_some(time);
                         self.swipe_toasts(x, y, crate::scroll::travel(&horizontal, source, time), lift);
@@ -1940,13 +1861,13 @@ impl App {
                     if v == 0.0 && h == 0.0 {
                         continue;
                     }
-                    if owner == Some(Owner::Menu) {
+                    if owner == Some(Target::Menu) {
                         if let Some(m) = self.open_menu_mut() {
                             m.scroll_notches(v);
                         }
                         continue;
                     }
-                    if let Some(i) = self.bar.hit(x, y).filter(|_| owner == Some(Owner::Bar)) {
+                    if let Some(i) = self.bar.hit(x, y).filter(|_| owner == Some(Target::Bar)) {
                         let action = self.bar.wheel(i, v, h, &self.store);
                         let anchor = self.bar.slot_anchor(i);
                         self.act(action, anchor);
@@ -1965,10 +1886,10 @@ impl App {
     fn set_cursor(&mut self, entered: bool) {
         let (Some(device), Some((serial, current))) = (&self.cursor_device, self.cursor) else { return };
         let hand = match self.pointer_on {
-            Some(Owner::Bar) => self.bar.hover.is_some_and(|i| self.bar.clickable(i)),
-            Some(Owner::Panel) => self.panel.as_ref().is_some_and(|h| h.hand()),
-            Some(Owner::Headset) => true,
-            Some(Owner::Profiles) => true,
+            Some(Target::Bar) => self.bar.hover.is_some_and(|i| self.bar.clickable(i)),
+            Some(Target::Panel) => self.panel.as_ref().is_some_and(|h| h.hand()),
+            Some(Target::Headset) => true,
+            Some(Target::Profiles) => true,
             _ => false,
         };
         let shape = if hand { Shape::Pointer } else { Shape::Default };
@@ -1978,18 +1899,18 @@ impl App {
         }
     }
 
-    fn click(&mut self, owner: Owner, press: Press, button: Button, at: (f64, f64)) {
+    fn click(&mut self, owner: Target, press: Press, button: Button, at: (f64, f64)) {
         match (owner, press) {
-            (Owner::Bar, Press::Slot(i)) if self.bar.clickable(i) => {
+            (Target::Bar, Press::Slot(i)) if self.bar.clickable(i) => {
                 let a = self.bar.click(i, button, at.0, at.1, &self.store);
                 let anchor = self.bar.slot_anchor(i);
                 self.act(a, anchor);
             }
-            (Owner::Menu, Press::Menu(hit)) => {
+            (Target::Menu, Press::Menu(hit)) => {
                 if button != Button::Left {
                     return;
                 }
-                let outcome = match (self.menu.as_mut().and_then(|p| p.menu.as_mut()), hit) {
+                let outcome = match (self.tray_menu.as_mut().and_then(|p| p.menu.as_mut()), hit) {
                     (Some(_), Hit::Close) => return self.close_tray_menu(),
                     (Some(m), Hit::Row(i)) => m.activate(i),
                     (None, _) => return,
@@ -2020,7 +1941,7 @@ impl App {
             },
         };
         // A tray item's menu over its panel takes the keys while it is up.
-        if self.menu.as_ref().is_some_and(|p| p.win.card.is_open()) {
+        if self.tray_menu.as_ref().is_some_and(|p| p.win.card.is_open()) {
             match key {
                 Key::Escape => self.close_tray_menu(),
                 Key::Move(0, dy) => drop(self.tray_menu_cursor(dy)),
@@ -2118,16 +2039,9 @@ impl crate::surface::ScaleHandler for App {
     /// Every surface draws again at its new scale on its own next present;
     /// only the owners that present when something changed need telling.
     fn rescaled(&mut self) {
-        self.panel_dirty = true;
-        self.launcher.dirty = true;
-        self.toasts_dirty = true;
-        self.lock.dirty = true;
-        self.switcher.dirty = true;
-        self.overview.dirty = true;
-        for p in &mut self.pickers.surfaces {
-            p.dirty = true;
+        for o in owner::LIFECYCLE {
+            o.rescaled(self);
         }
-        self.update_backdrops();
     }
 }
 
@@ -2141,76 +2055,8 @@ impl CompositorHandler for App {
     /// Every callback ticks its owner once more, so the frame that lands an
     /// animation on its rest is drawn, and that commit asks for no other.
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, _: u32) {
-        let now = Instant::now();
-        match self.owner(surface) {
-            Some(Owner::Bar) => {
-                let Some(s) = &mut self.bar_surface else { return };
-                // A callback only lets the next frame go; what that frame
-                // draws is the present's to decide (a spinner needs no new
-                // layout of the strip).
-                if s.landed(now) {
-                    self.bar_dirty = true;
-                }
-            }
-            Some(Owner::Menu) => {
-                let Some(p) = &mut self.menu else { return };
-                p.win.frame(now);
-                self.sync_join();
-            }
-            Some(o @ (Owner::Panel | Owner::Outgoing)) => {
-                let theme = &self.store.theme.theme;
-                let h = if o == Owner::Panel { &mut self.panel } else { &mut self.outgoing };
-                let Some(h) = h else { return };
-                let cut = h.win.frame(now) && h.mapped(theme, now);
-                // The card that took this one's place is moving: the
-                // outgoing window goes on this tick, while the two still
-                // stand exactly on top of each other.
-                if cut && let Some(old) = &mut self.outgoing {
-                    old.handed = true;
-                }
-                self.panel_dirty = true;
-                self.sync_join();
-            }
-            Some(Owner::Tooltip) => {
-                let theme = &self.store.theme.theme;
-                let Some(c) = &mut self.tip_card else { return };
-                if c.surface.landed(now) {
-                    c.mapped(theme, now);
-                }
-            }
-            Some(Owner::Toasts) => {
-                let Some(t) = &mut self.toasts else { return };
-                if t.surface.landed(now) {
-                    self.toasts_dirty = true;
-                }
-            }
-            Some(Owner::Scrim) => {
-                let Some((scrim, s)) = &mut self.scrim else { return };
-                s.landed();
-                scrim.mapped(now);
-            }
-            Some(Owner::Osd) => self.osd_frame(now),
-            Some(Owner::Headset) => self.headset_frame(now),
-            Some(Owner::Profiles) => self.profiles_frame(now),
-            Some(Owner::Preview) => {
-                let Some((s, _, _)) = &mut self.preview else { return };
-                s.landed(now);
-            }
-            Some(Owner::Zone(i)) => {
-                self.zones[i].1.landed();
-            }
-            Some(Owner::Switcher) => self.switcher_frame(),
-            Some(Owner::Overview) => self.overview_frame(),
-            Some(Owner::Atlas(p)) => self.atlas_frame(p, now),
-            Some(Owner::Launcher(part)) => self.launcher_frame(part, now),
-            Some(Owner::Picker(i)) => self.picker_frame(i),
-            Some(Owner::Head(i, part)) => self.head_frame(i, part, now),
-            None if self.saver_index(surface).is_some() => self.saver_frame_callback(surface),
-            None => {
-                if !self.veil_frame(surface) && !self.polkit_frame(surface) && !self.overlay_frame(surface) {
-                    self.lock_frame(surface);
-                }
-            }
+        if let Some(o) = owner::of(self, surface) {
+            o.frame(self, surface, Instant::now());
         }
     }
 
@@ -2221,118 +2067,15 @@ impl CompositorHandler for App {
 
 impl LayerShellHandler for App {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
-        match self.owner(layer.wl_surface()) {
-            Some(Owner::Bar) => {
-                self.bar_surface = None;
-                self.zones.clear();
-            }
-            Some(Owner::Panel) => {
-                self.panel = None;
-                self.sync_join();
-            }
-            Some(Owner::Outgoing) => {
-                self.outgoing = None;
-                self.sync_join();
-            }
-            Some(Owner::Tooltip) => self.tip_card = None,
-            Some(Owner::Toasts) => self.toasts = None,
-            Some(Owner::Preview) => self.preview = None,
-            Some(Owner::Menu) => self.menu = None,
-            Some(Owner::Scrim) => self.scrim = None,
-            Some(Owner::Osd) => self.osd.pill = None,
-            Some(Owner::Headset) => {
-                self.headset.card = None;
-                self.sync_join();
-            }
-            Some(Owner::Profiles) => self.profiles = None,
-            Some(Owner::Head(i, part)) => self.head_closed(i, part),
-            Some(Owner::Launcher(crate::surfaces::modal::Part::Card)) => self.launcher_closed(),
-            Some(Owner::Switcher) => self.switcher_close(),
-            Some(Owner::Overview) => self.overview_closed(),
-            Some(Owner::Atlas(_)) => self.atlas_closed(),
-            Some(Owner::Picker(i)) => self.picker_closed(i),
-            None if self.saver_index(layer.wl_surface()).is_some() => self.saver_closed(layer.wl_surface()),
-            None if self.veil_owns(layer.wl_surface()) => self.veil_closed(layer.wl_surface()),
-            Some(Owner::Zone(_) | Owner::Launcher(_)) | None => {}
+        if let Some(o) = owner::of(self, layer.wl_surface()) {
+            o.closed(self, layer.wl_surface());
         }
     }
 
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, configure: LayerSurfaceConfigure, _: u32) {
-        let (width, height) = (configure.new_size.0 as i32, configure.new_size.1 as i32);
-        match self.owner(layer.wl_surface()) {
-            Some(Owner::Bar) => {
-                let current = self.bar.scene.size;
-                let w = if width > 0 { width } else { current.w };
-                let h = if height > 0 { height } else { current.h };
-                self.bar.resize(w, h);
-                let size = self.bar.scene.size;
-                if let Some(s) = &mut self.bar_surface {
-                    let first = !s.configured;
-                    if first {
-                        crate::trace::phase("bar configured");
-                    }
-                    s.configure(size.w, size.h);
-                    // The frame drawn while this configure was on its way
-                    // goes out now, ahead of anything else this turn holds.
-                    if first && s.drawn_ahead() && size == current {
-                        s.present(&mut self.bar.scene, false, &self.qh);
-                    }
-                }
-                self.sync_bar_input();
-                // The size the bar was laid out and drawn at ahead of this
-                // configure needs nothing more; only a new one is re-read.
-                if size != current {
-                    self.refresh_bar(None);
-                    // The sidebar clock frosts the picture under the window's
-                    // new place.
-                    self.sync_desktop_clocks();
-                }
-            }
-            Some(Owner::Menu) => {
-                let Some(p) = &mut self.menu else { return };
-                p.win.configure();
-            }
-            Some(o @ (Owner::Panel | Owner::Outgoing)) => {
-                let h = if o == Owner::Panel { &mut self.panel } else { &mut self.outgoing };
-                let Some(h) = h else { return };
-                h.win.configure();
-                self.panel_dirty = true;
-            }
-            Some(Owner::Tooltip) => {
-                let Some(c) = &mut self.tip_card else { return };
-                let size = c.scene.size;
-                c.surface.configure(size.w, size.h);
-            }
-            Some(Owner::Toasts) => {
-                let Some(t) = &mut self.toasts else { return };
-                let size = t.scene.size;
-                t.surface.configure(size.w, size.h);
-            }
-            Some(Owner::Preview) => {
-                let Some((s, scene, _)) = &mut self.preview else { return };
-                s.configure(scene.size.w, scene.size.h);
-            }
-            Some(Owner::Scrim) => {
-                let Some((_, s)) = &mut self.scrim else { return };
-                s.configure(width, height);
-            }
-            Some(Owner::Osd) => self.osd_configure(),
-            Some(Owner::Headset) => self.headset_configure(),
-            Some(Owner::Profiles) => self.profiles_configure(),
-            Some(Owner::Zone(i)) => self.zones[i].1.configure(width.max(1), height.max(1)),
-            Some(Owner::Head(i, part)) => self.head_configure(i, part, width, height),
-            Some(Owner::Launcher(part)) => self.launcher_configure(part, width, height),
-            Some(Owner::Switcher) => self.switcher_configure(width, height),
-            Some(Owner::Overview) => self.overview_configure(width, height),
-            Some(Owner::Atlas(p)) => self.atlas_configure(p, width, height),
-            Some(Owner::Picker(i)) => self.picker_configure(i, width, height),
-            None if self.veil_owns(layer.wl_surface()) => self.veil_configure(layer.wl_surface(), width, height),
-            None if self.caffeinate_owns(layer) => self.caffeinate_configure(),
-            None if self.saver_index(layer.wl_surface()).is_some() => self.saver_configure(layer.wl_surface(), width, height),
-            None if self.hot_corner_owns(layer) => self.hot_corner_configure(layer),
-            None if self.polkit_owns(layer) => self.polkit_configure(layer, width, height),
-            None if self.overlay_owns(layer) => self.overlay_configure(layer, width, height),
-            None => {}
+        let size = (configure.new_size.0 as i32, configure.new_size.1 as i32);
+        if let Some(o) = owner::of(self, layer.wl_surface()) {
+            o.configure(self, layer.wl_surface(), size);
         }
     }
 }
@@ -2427,10 +2170,9 @@ impl OutputHandler for App {
     /// sctk calls this while the output is still in its list, so nothing
     /// here may rebuild heads from that list.
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
-        self.drop_head(&output);
-        self.saver_output_gone(&output);
-        self.lock_output_gone(&output);
-        self.veil_output_gone(&output);
+        for o in owner::LIFECYCLE {
+            o.output_gone(self, &output);
+        }
     }
 }
 
@@ -2509,7 +2251,7 @@ pub(crate) fn sync_zone(bar: &mut Bar, surface: Option<&mut Surface>) {
 
 /// An attached card hung at a published join, so `debug join` has a card in
 /// the gap it opens. Drawn into a full-output scene; `line` is the line's row across from `edge`.
-fn join_preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_types::Edge, line: f64, join: Option<(f64, f64)>) {
+fn draw_join_preview(scene: &mut crate::scene::Scene, nodes: &mut Vec<crate::scene::NodeId>, theme: &fs_theme::theme::Theme, edge: fs_types::Edge, line: f64, join: Option<(f64, f64)>) {
     use vello_cpu::kurbo::{Affine, Rect};
     let mut p = crate::paint::Painter::new(scene, nodes, None);
     if let Some((x, width)) = join {

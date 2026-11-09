@@ -11,7 +11,7 @@ use smithay_client_toolkit::seat::pointer::{PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
-use super::{App, Owner};
+use super::{App, Target};
 use crate::services::menu::{self as index, Ask};
 use crate::services::notifications;
 use crate::store::Diff;
@@ -1083,8 +1083,8 @@ impl App {
         }
     }
 
-    pub(super) fn launcher_owner(&self, surface: &smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface) -> Option<Owner> {
-        self.launch.as_ref()?.shown.modal.part(surface).map(Owner::Launcher)
+    pub(super) fn launcher_part(&self, surface: &smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface) -> Option<Part> {
+        self.launch.as_ref()?.shown.modal.part(surface)
     }
 
     pub(super) fn launcher_frame(&mut self, part: Part, now: Instant) {
@@ -1149,8 +1149,8 @@ impl App {
     /// The pointer over the launcher's window. True when it took the event.
     /// It tints what it hovers and never moves the selection (launcher
     /// spec §6).
-    pub(super) fn launcher_pointer(&mut self, e: &PointerEvent, owner: Option<Owner>) -> bool {
-        if owner != Some(Owner::Launcher(Part::Card)) {
+    pub(super) fn launcher_pointer(&mut self, e: &PointerEvent, owner: Option<Target>) -> bool {
+        if owner != Some(Target::Launcher(Part::Card)) {
             return false;
         }
         let Some(w) = &mut self.launch else { return true };

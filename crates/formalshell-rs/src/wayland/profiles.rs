@@ -19,7 +19,7 @@ use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
-use super::{App, Owner};
+use super::{App, Target};
 use crate::scene::IRect;
 use crate::services::devices;
 use crate::surfaces::card::{Card, CardSpec, Sizing};
@@ -153,8 +153,8 @@ impl App {
     }
 
     /// A press and release on one profile's chip sets it.
-    pub(super) fn profiles_pointer(&mut self, owner: Option<Owner>, kind: &PointerEventKind, at: (f64, f64)) {
-        if owner != Some(Owner::Profiles) {
+    pub(super) fn profiles_pointer(&mut self, owner: Option<Target>, kind: &PointerEventKind, at: (f64, f64)) {
+        if owner != Some(Target::Profiles) {
             return;
         }
         let Some(p) = &mut self.profiles else { return };

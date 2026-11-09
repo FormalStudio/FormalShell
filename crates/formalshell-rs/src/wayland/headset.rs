@@ -26,7 +26,7 @@ use smithay_client_toolkit::reexports::client::protocol::wl_surface;
 use smithay_client_toolkit::seat::pointer::PointerEventKind;
 use smithay_client_toolkit::shell::wlr_layer::Layer;
 
-use super::{App, Owner};
+use super::{App, Target};
 use crate::services::devices::earbuds;
 use crate::services::compositor;
 use crate::surfaces::card::{Card, CardSpec, Sizing, popover_theme};
@@ -241,8 +241,8 @@ impl App {
 
     /// The pointer on the card: entering holds it, leaving lets it go, a
     /// press and release on it opens the device's panel.
-    pub(super) fn headset_pointer(&mut self, owner: Option<Owner>, kind: &PointerEventKind) {
-        if owner != Some(Owner::Headset) {
+    pub(super) fn headset_pointer(&mut self, owner: Option<Target>, kind: &PointerEventKind) {
+        if owner != Some(Target::Headset) {
             return;
         }
         let now = Instant::now();

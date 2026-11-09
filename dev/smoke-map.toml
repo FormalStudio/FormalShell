@@ -71,6 +71,7 @@ paths = [
   "crates/formalshell-rs/src/fontconfig.rs",
   "crates/formalshell-rs/src/surface.rs",
   "crates/formalshell-rs/src/wayland.rs",
+  "crates/formalshell-rs/src/wayland/owner.rs",
   "crates/formalshell-rs/src/chrome.rs",
   "crates/formalshell-rs/src/main.rs",
   "crates/formalshell-rs/src/trace.rs",
@@ -604,7 +605,7 @@ paths = ["crates/formalshell-rs/src/services/compositor/hyprland/mod.rs"]
 runs = ["--glass"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/services/picker.rs", "crates/formalshell-rs/src/wayland/picker.rs", "crates/formalshell-rs/src/ipc/picker.rs"]
+paths = ["crates/formalshell-rs/src/services/picker.rs", "crates/formalshell-rs/src/ipc/picker.rs"]
 runs = ["--picker", "--picker --light", "--wheel"]
 
 [[rule]]
@@ -617,7 +618,7 @@ runs = ["--lights"]
 
 # Capture, recording, console
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/capture/**", "crates/formalshell-rs/src/services/capture.rs", "crates/formalshell-rs/src/ipc/capture.rs", "crates/formalshell-rs/src/ipc/screenshot.rs", "crates/fs-system/src/capture.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/capture/**", "crates/formalshell-rs/src/wayland/region.rs", "crates/formalshell-rs/src/services/capture.rs", "crates/formalshell-rs/src/ipc/capture.rs", "crates/formalshell-rs/src/ipc/screenshot.rs", "crates/fs-system/src/capture.rs"]
 runs = ["--capture", "--capture-edit", "--screenshot", "--ocr"]
 
 [[rule]]

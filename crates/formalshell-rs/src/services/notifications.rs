@@ -414,10 +414,10 @@ impl State {
 
     /// The next instant something here starts on its own: a toast timing
     /// out, a seen entry aging out of the past tier, a reminder coming due.
-    pub fn wake(&self) -> Option<i64> {
+    pub fn wake(&self, now: Instant) -> Option<Instant> {
         let past = self.model.past.iter().map(|p| p.seen_at.unwrap_or(p.arrived_at) + model::PAST_TTL_MS).min();
         let due = self.reminders.first().map(|r| r.due_at.ceil() as i64);
-        [self.model.next_expiry, past, due].into_iter().flatten().min()
+        [self.model.next_expiry, past, due].into_iter().flatten().min().map(|at| instant_at(at, now))
     }
 
     /// Runs whatever came due by `now`. True when anything moved.
@@ -521,7 +521,7 @@ fn reminder_json(e: &reminders::Entry) -> Value {
 }
 
 /// The instant `at` (epoch ms) falls on, on the monotonic clock.
-pub fn instant_at(at: i64, now: Instant) -> Instant {
+fn instant_at(at: i64, now: Instant) -> Instant {
     let delta = at - now_ms();
     if delta <= 0 { now } else { now + Duration::from_millis(delta as u64) }
 }

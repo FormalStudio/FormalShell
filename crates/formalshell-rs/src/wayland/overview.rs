@@ -58,7 +58,7 @@ pub fn ask(action: Action) {
 #[derive(Default)]
 pub struct State {
     pub model: Overview,
-    win: Option<(Surface, Scene, WlOutput)>,
+    pub(super) win: Option<(Surface, Scene, WlOutput)>,
     pub dirty: bool,
     /// The wallpaper picture's address and the bitmap made of it.
     wallpaper: Option<(usize, Bitmap, Bitmap)>,

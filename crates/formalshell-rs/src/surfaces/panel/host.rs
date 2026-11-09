@@ -377,6 +377,27 @@ impl Host {
         (self.viewport, self.content_h, self.scroll.target(), row)
     }
 
+    /// `debug dump`'s `panel` block.
+    pub fn report(&self) -> serde_json::Value {
+        use serde_json::json;
+        let rect = |r: &IRect| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+        let (viewport, content_h, scroll, row) = self.viewport();
+        let cursor = row.map(|(key, r)| json!({"key": key, "rect": rect(&r)}));
+        json!({
+            "id": self.id(),
+            "open": self.is_open(),
+            "header": self.module.header(),
+            "buttons": self.head_boxes().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect::<Vec<_>>(),
+            "rest": rect(&self.win.card.rest_rect()),
+            "live": rect(&self.win.card.live_rect()),
+            "viewport": rect(&viewport),
+            "contentH": content_h.round(),
+            "scroll": scroll.round(),
+            "cursor": cursor,
+            "floats": self.floats().iter().map(|(r, scroll)| json!({"rect": rect(r), "scroll": scroll.round()})).collect::<Vec<_>>(),
+        })
+    }
+
     /// A text field in the body holds the keyboard.
     pub fn editing(&self) -> bool {
         self.open && self.module.editing()

@@ -147,15 +147,15 @@ impl App {
         }
     }
 
-    pub(super) fn hot_corner_owns(&self, layer: &LayerSurface) -> bool {
-        self.hot.wins.iter().any(|w| w.layer.wl_surface() == layer.wl_surface())
+    pub(super) fn hot_corner_owns(&self, surface: &WlSurface) -> bool {
+        self.hot.wins.iter().any(|w| w.layer.wl_surface() == surface)
     }
 
     /// Mapped with one transparent pixel stretched over the square; its
     /// default input region is the whole square.
-    pub(super) fn hot_corner_configure(&mut self, layer: &LayerSurface) {
+    pub(super) fn hot_corner_configure(&mut self, surface: &WlSurface) {
         let size = self.hot.config.as_ref().map_or(corners::DEFAULT_SIZE, |c| c.size) as i32;
-        let Some(w) = self.hot.wins.iter_mut().find(|w| w.layer.wl_surface() == layer.wl_surface()) else { return };
+        let Some(w) = self.hot.wins.iter_mut().find(|w| w.layer.wl_surface() == surface) else { return };
         if w.buffer.is_some() {
             return;
         }

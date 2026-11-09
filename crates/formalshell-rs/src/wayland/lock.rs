@@ -1095,6 +1095,10 @@ impl App {
         true
     }
 
+    pub(super) fn lock_owns(&self, surface: &WlSurface) -> bool {
+        self.lock.outs.iter().any(|o| o.surface.layer.wl_surface() == surface)
+    }
+
     pub(super) fn lock_frame(&mut self, surface: &WlSurface) {
         if let Some(o) = self.lock.outs.iter_mut().find(|o| o.surface.layer.wl_surface() == surface) {
             o.surface.landed(Instant::now());

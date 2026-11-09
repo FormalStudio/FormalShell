@@ -45,9 +45,10 @@ pub fn rect(r: &IRect) -> serde_json::Value {
     json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h})
 }
 
-/// Only what this shell holds, keyed and ordered as the full dump:
-/// the compositor block, the settings, the bar, its join, the frame and the
-/// chrome numbers. Every other key waits for the service behind it.
+/// Only what this shell holds, keyed as the full dump: the compositor
+/// block, the settings, the bar, its join, the frame and the chrome
+/// numbers, then each window owner's own blocks. Every other key waits for
+/// the service behind it.
 fn dump(app: &mut App, _: &[Value]) -> Value {
     let h = &app.store.compositor;
     let c = &h.snapshot;
@@ -121,9 +122,6 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             "launcher": app.capture_sessions(crate::wayland::capture::Owner::Launcher),
             "overview": app.capture_sessions(crate::wayland::capture::Owner::Overview),
         },
-        "backdrop": app.backdrop_state(),
-        "desktopClock": app.desktop_clock_state(),
-        "veil": app.veil_phase(),
         "depth": app.store.depth.status(),
         "render": render(),
         "theme": {
@@ -146,36 +144,13 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             },
         },
     });
-    // Past json!'s recursion limit inside the literal.
-    dump["panel"] = match app.panel.as_ref() {
-        Some(h) => {
-            let (viewport, content_h, scroll, row) = h.viewport();
-            let cursor = row.map(|(key, r)| json!({"key": key, "rect": rect(&r)}));
-            json!({
-                "id": h.id(),
-                "open": h.is_open(),
-                "header": h.module.header(),
-                "buttons": h.head_boxes().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect::<Vec<_>>(),
-                "rest": rect(&h.win.card.rest_rect()),
-                "live": rect(&h.win.card.live_rect()),
-                "viewport": rect(&viewport),
-                "contentH": content_h.round(),
-                "scroll": scroll.round(),
-                "cursor": cursor,
-                "floats": h.floats().iter().map(|(r, scroll)| json!({"rect": rect(r), "scroll": scroll.round()})).collect::<Vec<_>>(),
-            })
-        }
-        None => serde_json::Value::Null,
-    };
     // dev/panel-language.py reads the card's column off these.
     dump["panelSpace"] = json!({"inset": theme.space.panel_inset, "rowInset": theme.space.panel_row_inset, "row": theme.space.panel_row});
-    dump["toastCards"] = app.toast_cards().into_iter().map(|(key, r)| json!({"key": key, "rect": rect(&r)})).collect();
     dump["sky"] = sky(app);
     dump["rims"] = app.rims_report();
-    dump["profilesPill"] = app.profiles_status();
-    dump["headset"] = app.headset_status();
-    dump["overview"] = app.overview_status();
-    dump["sidebarClock"] = app.sidebar_clock_state();
+    if let Some(map) = dump.as_object_mut() {
+        app.report(map);
+    }
     text(dump.to_string())
 }
 

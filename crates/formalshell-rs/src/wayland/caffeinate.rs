@@ -17,6 +17,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
 use smithay_client_toolkit::reexports::client::protocol::wl_buffer::WlBuffer;
+use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{
     self, ExtIdleNotificationV1,
@@ -162,8 +163,8 @@ impl App {
         self.caffeinate.held = Some(Held { layer, buffer: None, inhibitor: None, generation: self.caffeinate.generation });
     }
 
-    pub(super) fn caffeinate_owns(&self, layer: &LayerSurface) -> bool {
-        self.caffeinate.held.as_ref().is_some_and(|h| h.layer.wl_surface() == layer.wl_surface())
+    pub(super) fn caffeinate_owns(&self, surface: &WlSurface) -> bool {
+        self.caffeinate.held.as_ref().is_some_and(|h| h.layer.wl_surface() == surface)
     }
 
     /// The first configure maps the surface with one transparent pixel; the
