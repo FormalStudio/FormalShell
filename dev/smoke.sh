@@ -150,6 +150,48 @@ write_script() {
 smoke_scale_asked=${FS_SMOKE_SCALE:-}
 export FS_SMOKE_SCALE=${FS_SMOKE_SCALE:-1.25}
 
+# The manifest every other tool reads (dev/remote.sh, dev/vm.sh,
+# dev/smoke-affected.py): each leg's flag and what it declares, in order. A
+# leg's helpers are the dev/*.py scripts its code (comments aside) names.
+# Each leg is read in a subshell of its own: one that does not source is
+# listed with its flag (read off the file) and an `error`, and costs only
+# its own runs.
+if [ "${1:-}" = --manifest ]; then
+  sep=$'\037'
+  manifest_record() {
+    local leg_file=$1 leg_name=$2 field
+    # shellcheck source=/dev/null
+    . "$leg_file" || return 1
+    for field in flag order needs env commits vm_only budget scale1; do
+      eval "m_$field=\${leg_${leg_name}_$field:-}"
+    done
+    printf '%s\n' "$leg_name$sep$m_flag$sep${m_order:-500}$sep$m_needs$sep$m_env$sep$(manifest_helpers "$leg_file")$sep$m_commits$sep$m_vm_only$sep$m_budget$sep$m_scale1$sep"
+  }
+  manifest_helpers() {
+    grep -v '^[[:space:]]*#' "$1" | grep -oE 'dev/[A-Za-z0-9_-]+\.py' | sort -u | paste -sd ' ' - || true
+  }
+  for leg_file in "$script_dir"/smoke.d/*.sh; do
+    leg_name=$(basename "$leg_file" .sh)
+    if ! record=$( (manifest_record "$leg_file" "$leg_name") 2>/dev/null ); then
+      flag=$(sed -n "s/^leg_${leg_name}_flag=[\"']\(.*\)[\"']\$/\1/p" "$leg_file" | head -1 || true)
+      err=$(bash -n "$leg_file" 2>&1 | head -1 || true)
+      record="$leg_name$sep$flag${sep}500$sep$sep$sep$(manifest_helpers "$leg_file")$sep$sep$sep$sep${sep}${err:-does not source}"
+    fi
+    printf '%s\n' "$record"
+  done | jq -R '
+    split("\u001f") as $f
+    | ($f[3] | split(" ") | map(select(. != ""))) as $needs
+    | ($f[6] | split(" ") | map(select(. != ""))) as $c
+    | {leg: $f[0], flag: $f[1], order: ($f[2] | tonumber), vm_only: ($f[7] != ""), budget: ($f[8] != ""),
+       scale1: ($f[9] != ""), needs: $needs,
+       env: ($f[4] | split(" ") | map(select(. != ""))),
+       helpers: ($f[5] | split(" ") | map(select(. != ""))),
+       commits: (if ($c | length) == 2 then [{dir: $c[0], glob: $c[1]}] else [] end),
+       error: $f[10]}' | jq -s '{legs: (sort_by([.order, .leg]) | map(if .error == "" then del(.error) else . end))}'
+  rm -rf "$shot_dir" "$iso_home"
+  exit 0
+fi
+
 for leg_file in "$script_dir"/smoke.d/*.sh; do
   leg_name=$(basename "$leg_file" .sh)
   # shellcheck source=/dev/null
@@ -172,30 +214,6 @@ while read -r _ leg_name; do
 done < <(leg_order_list)
 legs=("${ordered[@]}")
 
-# The manifest every other tool reads (dev/remote.sh, dev/vm.sh,
-# dev/smoke-affected.py): each leg's flag and what it declares, in flag
-# order. A leg's helpers are the dev/*.py scripts its code (comments
-# aside) names.
-if [ "${1:-}" = --manifest ]; then
-  sep=$'\037'
-  for leg_name in "${legs[@]}"; do
-    for field in flag order needs env commits vm_only budget scale1; do
-      eval "m_$field=\${leg_${leg_name}_$field:-}"
-    done
-    helpers=$(grep -v '^[[:space:]]*#' "$script_dir/smoke.d/$leg_name.sh" | grep -oE 'dev/[A-Za-z0-9_-]+\.py' | sort -u | paste -sd ' ' - || true)
-    printf '%s\n' "$leg_name$sep$m_flag$sep${m_order:-500}$sep$m_needs$sep$m_env$sep$helpers$sep$m_commits$sep$m_vm_only$sep$m_budget$sep$m_scale1"
-  done | jq -R '
-    split("\u001f") as $f
-    | ($f[3] | split(" ") | map(select(. != ""))) as $needs
-    | ($f[6] | split(" ") | map(select(. != ""))) as $c
-    | {leg: $f[0], flag: $f[1], order: ($f[2] | tonumber), vm_only: ($f[7] != ""), budget: ($f[8] != ""),
-       scale1: ($f[9] != ""), needs: $needs,
-       env: ($f[4] | split(" ") | map(select(. != ""))),
-       helpers: ($f[5] | split(" ") | map(select(. != ""))),
-       commits: (if ($c | length) == 2 then [{dir: $c[0], glob: $c[1]}] else [] end)}' | jq -s '{legs: .}'
-  rm -rf "$shot_dir" "$iso_home"
-  exit 0
-fi
 
 usage() {
   local n v line=""

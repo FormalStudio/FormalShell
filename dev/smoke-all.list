@@ -13,6 +13,7 @@
 --launcher-apps
 --appmenu
 --backdrop
+--base
 --bar-adaptive
 --bar-ink
 --bar-layout

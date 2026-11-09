@@ -647,7 +647,7 @@ runs = ["--instance", "--lock-restore", "--login-lock", "--lock"]
 
 [[rule]]
 paths = ["crates/formalshell-rs/src/ipc/debug.rs"]
-runs = ["--dump", "--render"]
+runs = ["--base", "--dump", "--render"]
 
 [[rule]]
 paths = ["dev/panel-language.py"]
