@@ -811,7 +811,7 @@ impl App {
 
     /// An IPC verb for the open panel `name`; `None` when it is not up or
     /// answers none.
-    pub fn panel_call(&mut self, name: &str, verb: &str, arg: &str) -> Option<String> {
+    pub fn panel_call(&mut self, name: &str, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
         let reply = self.panel.as_mut().filter(|p| p.is_open() && p.id() == name)?.module.call(verb, arg);
         self.panel_dirty = true;
         reply
@@ -1128,7 +1128,7 @@ impl App {
     fn open_tray_menu(&mut self, key: &str, anchor: Option<f64>, over_panel: bool) -> Result<(), String> {
         let Some(item) = self.store.tray.by_key(key).cloned() else { return Ok(()) };
         if !item.has_menu {
-            return Err(format!("error: tray item '{}' has no menu", item.id));
+            return Err(format!("tray item '{}' has no menu", item.id));
         }
         let now = Instant::now();
         self.drop_tray_menu();
@@ -1263,43 +1263,36 @@ impl App {
     }
 
     /// `tray activate`: the item's own Activate, as its cell's click does.
-    pub fn tray_activate(&self, id: &str) -> String {
-        let Some(item) = self.store.tray.by_id(id) else { return format!("error: no tray item with id '{id}'") };
+    pub fn tray_activate(&self, id: &str) -> Result<(), String> {
+        let Some(item) = self.store.tray.by_id(id) else { return Err(format!("no tray item with id '{id}'")) };
         let key = item.key.clone();
         if let Some(rt) = &self.runtime {
             rt.service(move |ctx| tray::activate(ctx, key));
         }
-        "ok".into()
+        Ok(())
     }
 
     /// `tray menu`: opens over the second bar while that is up, as a right
     /// click on its cell does.
-    pub fn tray_menu(&mut self, id: &str) -> String {
+    pub fn tray_menu(&mut self, id: &str) -> Result<(), String> {
         let Some(key) = self.store.tray.by_id(id).map(|i| i.key.clone()) else {
-            return format!("error: no tray item with id '{id}'");
+            return Err(format!("no tray item with id '{id}'"));
         };
         let over = self.panel_open() == Some(panel::tray::ID);
-        match self.open_tray_menu(&key, None, over) {
-            Ok(()) => "ok".into(),
-            Err(e) => e,
-        }
+        self.open_tray_menu(&key, None, over)
     }
 
-    pub fn tray_menu_cursor(&mut self, delta: i32) -> String {
-        match self.open_menu_mut() {
-            Some(m) => {
-                m.move_cursor(delta);
-                "ok".into()
-            }
-            None => "error: no tray menu open".into(),
-        }
+    pub fn tray_menu_cursor(&mut self, delta: i32) -> Result<(), String> {
+        let m = self.open_menu_mut().ok_or("no tray menu open")?;
+        m.move_cursor(delta);
+        Ok(())
     }
 
-    pub fn tray_menu_activate(&mut self) -> String {
-        let Some(m) = self.open_menu_mut() else { return "error: no tray menu open".into() };
+    pub fn tray_menu_activate(&mut self) -> Result<(), String> {
+        let m = self.open_menu_mut().ok_or("no tray menu open")?;
         let outcome = m.activate_cursor();
         self.menu_outcome(outcome);
-        "ok".into()
+        Ok(())
     }
 
     /// `tray status`'s `overflow` block: whether the second bar is up and how
@@ -1434,7 +1427,7 @@ impl App {
                 }
             }
             Action::RecordStop => {
-                surfaces::capture::record::stop(self);
+                let _ = surfaces::capture::record::stop(self);
             }
             Action::ReminderSummary => {
                 self.apply(Diff::Notifications(notifications::Diff::Op(notifications::Op::ShowReminders)));

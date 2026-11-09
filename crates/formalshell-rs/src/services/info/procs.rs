@@ -174,12 +174,12 @@ static RESTARTING: AtomicU64 = AtomicU64::new(0);
 /// Checks a signal request and claims the one slot; the IPC reply is built
 /// from what this answers, and [`run_signal`] then sends it.
 pub fn begin_signal(pid: &str, name: &str) -> Result<(u64, &'static str), String> {
-    let Some(n) = procs::parse_pid(pid) else { return Err(format!("error: '{pid}' is not a pid")) };
+    let Some(n) = procs::parse_pid(pid) else { return Err(format!("'{pid}' is not a pid")) };
     let Some(sig) = procs::normalize_signal(Some(name)) else {
-        return Err(format!("error: signal must be one of {}", procs::SIGNALS.join(", ")));
+        return Err(format!("signal must be one of {}", procs::SIGNALS.join(", ")));
     };
     if SIGNAL_BUSY.swap(true, Ordering::SeqCst) {
-        return Err("error: a signal is already in flight".into());
+        return Err("a signal is already in flight".into());
     }
     Ok((n, sig))
 }
@@ -202,13 +202,13 @@ const RESTART_POLL: Duration = Duration::from_millis(200);
 
 /// `kernel` is whether the table says the pid is a kernel thread.
 pub fn begin_restart(pid: &str, kernel: bool) -> Result<u64, String> {
-    let Some(n) = procs::parse_pid(pid) else { return Err(format!("error: '{pid}' is not a pid")) };
+    let Some(n) = procs::parse_pid(pid) else { return Err(format!("'{pid}' is not a pid")) };
     let busy = RESTARTING.load(Ordering::SeqCst);
     if busy != 0 {
-        return Err(format!("error: a restart is already in flight for {busy}"));
+        return Err(format!("a restart is already in flight for {busy}"));
     }
     if kernel {
-        return Err(format!("error: {n} is a kernel thread, it has no command line to re-run"));
+        return Err(format!("{n} is a kernel thread, it has no command line to re-run"));
     }
     RESTARTING.store(n, Ordering::SeqCst);
     Ok(n)

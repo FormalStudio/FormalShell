@@ -5,11 +5,11 @@
 
 use serde_json::json;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::packages::{self, Change, Cmd};
 use crate::wayland::App;
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     let p = &app.store.packages;
     let search = p.search.as_ref().map(|(q, found)| match found {
         Ok(v) => json!({"query": q, "ids": v.iter().map(|f| f.id.as_str()).collect::<Vec<_>>()}),
@@ -46,23 +46,23 @@ fn status(app: &mut App, _: &[Value]) -> Value {
             (id.clone(), v)
         })
         .collect();
-    Value::Str(json!({"fspec": app.store.activity.fspec.installed, "search": search, "started": started, "owners": owners, "software": software, "info": info, "shots": p.shots}).to_string())
+    Ok(json!({"fspec": app.store.activity.fspec.installed, "search": search, "started": started, "owners": owners, "software": software, "info": info, "shots": p.shots}))
 }
 
-fn send(cmd: Cmd) -> Value {
+fn send(cmd: Cmd) -> Reply {
     packages::send(cmd);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn check(_: &mut App, _: &[Value]) -> Value {
+fn check(_: &mut App, _: &[Value]) -> Reply {
     send(Cmd::Check)
 }
 
-fn apply(_: &mut App, _: &[Value]) -> Value {
+fn apply(_: &mut App, _: &[Value]) -> Reply {
     send(Cmd::Change(Change::Apply))
 }
 
-fn undo(_: &mut App, _: &[Value]) -> Value {
+fn undo(_: &mut App, _: &[Value]) -> Reply {
     send(Cmd::Change(Change::Undo))
 }
 

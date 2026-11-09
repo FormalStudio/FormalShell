@@ -3,7 +3,7 @@
 
 use serde_json::json;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::overnight;
 use crate::wayland::App;
 
@@ -37,22 +37,22 @@ fn on(app: &mut App, want: bool) {
     }
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     let want = !active(app);
     on(app, want);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn enable(app: &mut App, _: &[Value]) -> Value {
+fn enable(app: &mut App, _: &[Value]) -> Reply {
     on(app, true);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn disable(app: &mut App, _: &[Value]) -> Value {
+fn disable(app: &mut App, _: &[Value]) -> Reply {
     on(app, false);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(json!({"active": active(app), "restore": app.store.state.data.overnight}).to_string())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(json!({"active": active(app), "restore": app.store.state.data.overnight}))
 }

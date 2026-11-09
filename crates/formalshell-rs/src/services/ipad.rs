@@ -155,8 +155,8 @@ impl State {
     }
 
     /// The IPC `status` reply.
-    pub fn status(&self) -> String {
-        let Some(i) = &self.bridge else { return serde_json::json!({ "available": false }).to_string() };
+    pub fn status(&self) -> serde_json::Value {
+        let Some(i) = &self.bridge else { return serde_json::json!({ "available": false }) };
         serde_json::json!({
             "available": true,
             "link": i.link.as_str(),
@@ -167,7 +167,6 @@ impl State {
             "start": i.stretch.start,
             "end": i.stretch.end,
         })
-        .to_string()
     }
 }
 
@@ -315,9 +314,9 @@ mod tests {
     #[test]
     fn status_reads_absent_and_present() {
         let mut s = State::default();
-        assert_eq!(s.status(), r#"{"available":false}"#);
+        assert_eq!(s.status().to_string(), r#"{"available":false}"#);
         s.apply(Diff(Some(Ipad { name: "FormalPad".into(), link: Link::Down, ..Ipad::default() })));
-        let v: serde_json::Value = serde_json::from_str(&s.status()).unwrap();
+        let v = s.status();
         assert_eq!(v["link"], "down");
         assert_eq!(v["edge"], "right");
         assert_eq!(v["end"], 1.0);

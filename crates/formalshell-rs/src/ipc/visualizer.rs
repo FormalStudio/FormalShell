@@ -4,16 +4,11 @@
 
 use fs_media::visualizer::model::{self, BAR_COUNT};
 use fs_media::visualizer::styles;
-use serde_json::{Value as Json, json};
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, text};
 use crate::services::visualizer::{self, Diff};
 use crate::store;
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -36,24 +31,24 @@ fn current(app: &App) -> String {
 
 /// An id, `next`, `prev`, or `config` to follow settings.json again. Answers
 /// the style now drawn, or the error line.
-fn style(app: &mut App, args: &[Value]) -> Value {
+fn style(app: &mut App, args: &[Value]) -> Reply {
     let name = args[0].str();
     let next = match name {
         "config" => String::new(),
         "next" => styles::step(&current(app), 1).to_owned(),
         "prev" => styles::step(&current(app), -1).to_owned(),
         id if styles::is_known(id) => id.to_owned(),
-        id => return text(format!("error: unknown style {id} ({})", styles::ids().join("|"))),
+        id => return Err(format!("unknown style {id} ({})", styles::ids().join("|"))),
     };
     app.apply(store::Diff::Visualizer(Diff::Style(next)));
     text(current(app))
 }
 
-fn list(_: &mut App, _: &[Value]) -> Value {
+fn list(_: &mut App, _: &[Value]) -> Reply {
     text(styles::ids().join("\n"))
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     let v = &app.store.visualizer;
     let configured = configured(app);
     // cava hears nothing of the phone, so its frame is drawn off the track's
@@ -66,19 +61,5 @@ fn status(app: &mut App, _: &[Value]) -> Value {
         },
         None => visualizer::frame(),
     };
-    let levels = |l: &[f64]| Json::Array(l.iter().map(|x| fs_js::json_number(*x)).collect());
-    text(
-        json!({
-            "style": current(app),
-            "override": v.style_override,
-            "configured": configured,
-            "configuredKnown": styles::is_known(&configured),
-            "running": v.running,
-            "state": v.avail.as_str(),
-            "levels": levels(&frame.mono),
-            "levelsLeft": levels(&frame.left),
-            "levelsRight": levels(&frame.right),
-        })
-        .to_string(),
-    )
+    Ok(v.status(&current(app), &configured, &frame))
 }

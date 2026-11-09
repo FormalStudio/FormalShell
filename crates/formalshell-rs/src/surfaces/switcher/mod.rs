@@ -276,7 +276,7 @@ impl Switcher {
 
     /// `switcher state`'s `cells`, in output pixels.
     pub fn cells_json(&self) -> Value {
-        let r = |r: &IRect| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+        let r = |r: &IRect| r.to_json();
         Value::Array(self.cells.iter().map(|c| json!({"cell": r(&c.cell), "thumb": r(&c.thumb), "icon": r(&c.icon)})).collect())
     }
 }

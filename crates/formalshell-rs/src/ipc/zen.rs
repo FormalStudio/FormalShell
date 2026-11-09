@@ -3,23 +3,26 @@
 //! (`exit`), `toggle`, and `status`: `on`, and while on the window, the
 //! workspace it goes back to and the window whose column it goes before.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
-fn enter(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.zen_enter())
+fn enter(app: &mut App, _: &[Value]) -> Reply {
+    app.zen_enter()?;
+    ok()
 }
 
-fn exit(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.zen_exit())
+fn exit(app: &mut App, _: &[Value]) -> Reply {
+    app.zen_exit()?;
+    ok()
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.zen_toggle())
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
+    app.zen_toggle()?;
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.zen_status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.zen_status())
 }
 
 pub fn target() -> Target<App> {

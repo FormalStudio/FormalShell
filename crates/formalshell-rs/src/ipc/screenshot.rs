@@ -1,43 +1,46 @@
 //! `screenshot`: full, region and the picker's pick,
 //! its headless keys and status, the editor, and cancel.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
 use crate::surfaces::capture as cap;
 use crate::wayland::App;
 
 const PROCESSING: (&str, Type) = ("processing", Type::String);
 
-fn full(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(cap::shot_start(app, false, a[0].str()))
+fn full(app: &mut App, a: &[Value]) -> Reply {
+    cap::shot_start(app, false, a[0].str()).map(Json::String)
 }
 
-fn region(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(cap::shot_start(app, true, a[0].str()))
+fn region(app: &mut App, a: &[Value]) -> Reply {
+    cap::shot_start(app, true, a[0].str()).map(Json::String)
 }
 
-fn cancel(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(cap::shot_cancel(app, "cancelled on demand"))
+fn cancel(app: &mut App, _: &[Value]) -> Reply {
+    cap::shot_cancel(app, "cancelled on demand")?;
+    ok()
 }
 
-fn pick(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(cap::shot_pick(app, a[0].str(), a[1].str()))
+fn pick(app: &mut App, a: &[Value]) -> Reply {
+    cap::shot_pick(app, a[0].str(), a[1].str()).map(Json::String)
 }
 
-fn key(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(cap::picker_key(app, a[0].str()))
+fn key(app: &mut App, a: &[Value]) -> Reply {
+    cap::picker_key(app, a[0].str())?;
+    ok()
 }
 
-fn picker_status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(cap::picker_status(app))
+fn picker_status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(cap::picker_status(app))
 }
 
-fn edit(app: &mut App, a: &[Value]) -> Value {
+fn edit(app: &mut App, a: &[Value]) -> Reply {
     let path = if a[0].str().is_empty() { app.capture.shot.last_path.clone() } else { a[0].str().to_owned() };
-    Value::Str(cap::shot_edit(app, &path))
+    cap::shot_edit(app, &path)?;
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(cap::shot_status(app))
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(cap::shot_status(app))
 }
 
 pub fn target() -> Target<App> {

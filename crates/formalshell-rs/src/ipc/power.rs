@@ -1,13 +1,13 @@
 //! `power`: leaving the session. Suspend, reboot and shutdown are the
 //! launcher's rows, asked of logind (`services/power.rs`).
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
 /// The departure veil, then the compositor's exit.
-fn logout(app: &mut App, _: &[Value]) -> Value {
+fn logout(app: &mut App, _: &[Value]) -> Reply {
     app.logout();
-    Value::Str("ok".into())
+    ok()
 }
 
 pub fn target() -> Target<App> {

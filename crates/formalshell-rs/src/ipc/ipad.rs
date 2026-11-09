@@ -5,19 +5,15 @@
 
 use fs_types::Edge;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::ipad::{self, Cmd, Ipad, Stretch};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
         name: "ipad",
         functions: vec![
-            Function { name: "status", params: &[], ret: Type::String, call: |app, _| text(app.store.ipad.status()) },
+            Function { name: "status", params: &[], ret: Type::String, call: |app, _| Ok(app.store.ipad.status()) },
             Function { name: "switch", params: &[], ret: Type::String, call: |app, _| send(app, |_| Ok(Cmd::Switch)) },
             Function { name: "reconnect", params: &[], ret: Type::String, call: |app, _| send(app, |_| Ok(Cmd::Reconnect)) },
             Function { name: "position", params: &[("edge", Type::String)], ret: Type::String, call: position },
@@ -26,23 +22,18 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn send(app: &App, cmd: impl FnOnce(&Ipad) -> Result<Cmd, String>) -> Value {
-    let Some(i) = &app.store.ipad.bridge else { return text("error: padbridge is not running") };
-    match cmd(i) {
-        Ok(cmd) => {
-            ipad::command(cmd);
-            text("ok")
-        }
-        Err(err) => text(format!("error: {err}")),
-    }
+fn send(app: &App, cmd: impl FnOnce(&Ipad) -> Result<Cmd, String>) -> Reply {
+    let Some(i) = &app.store.ipad.bridge else { return Err("padbridge is not running".into()) };
+    ipad::command(cmd(i)?);
+    ok()
 }
 
-fn position(app: &mut App, args: &[Value]) -> Value {
+fn position(app: &mut App, args: &[Value]) -> Reply {
     let edge = args[0].str();
     send(app, |i| Edge::parse(edge).map(|e| Cmd::Position(e, i.stretch)).ok_or_else(|| format!("edge must be left, right, top or bottom, not '{edge}'")))
 }
 
-fn stretch(app: &mut App, args: &[Value]) -> Value {
+fn stretch(app: &mut App, args: &[Value]) -> Reply {
     let (start, end) = (args[0].real(), args[1].real());
     send(app, |i| Stretch::new(start, end).map(|s| Cmd::Position(i.edge, s)).ok_or_else(|| "stretch must be 0 <= start < end <= 1".to_owned()))
 }

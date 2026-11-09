@@ -119,6 +119,38 @@ impl Network {
     pub fn row(&self, ssid: &str) -> Option<&Row> {
         self.rows.iter().find(|r| r.ssid == ssid)
     }
+
+    /// The IPC `status` reply. `known_open` and `prompt` are the panel's own
+    /// state, null while it is shut.
+    pub fn status(&self, known_open: serde_json::Value, prompt: serde_json::Value) -> serde_json::Value {
+        let rows: Vec<serde_json::Value> = self
+            .rows
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "name": r.ssid,
+                    "known": r.known,
+                    "connected": r.connected,
+                    "stateChanging": r.changing,
+                    "secured": r.secured,
+                    "signal": fs_js::json_number(r.signal.as_fraction()),
+                    "inRange": r.in_range,
+                })
+            })
+            .collect();
+        serde_json::json!({"wifiEnabled": self.wifi_enabled, "knownOpen": known_open, "prompt": prompt, "networks": rows})
+    }
+
+    pub fn speed_status(&self) -> serde_json::Value {
+        let s = &self.speed;
+        serde_json::json!({
+            "running": s.running(),
+            "phase": s.phase.as_str(),
+            "downMbps": fs_js::json_number(s.down_mbps()),
+            "upMbps": fs_js::json_number(s.up_mbps()),
+            "error": s.error,
+        })
+    }
 }
 
 #[derive(Default)]

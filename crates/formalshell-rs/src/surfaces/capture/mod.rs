@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use fs_system::capture as model;
 use fs_theme::palette::ColorRole;
 use fs_types::Rect;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::services::capture::{self as svc, Event, Exit, Job, Run};
 use crate::settings;
@@ -129,13 +129,13 @@ pub fn flush(app: &mut App) {
         };
         match act {
             Act::Edit(path) => {
-                shot_edit(app, &path);
+                let _ = shot_edit(app, &path);
             }
             Act::Play(path) => {
-                record::play(app, &path);
+                let _ = record::play(app, &path);
             }
             Act::Gif(path) => {
-                record::gif(app, &path);
+                let _ = record::gif(app, &path);
             }
         }
     }
@@ -213,14 +213,14 @@ fn shot_watchdog(app: &mut App) {
     let token = app.capture.shot.watch;
     app.capture_after((secs * 1000.0) as u64, move |app| {
         if app.capture.shot.watch == token {
-            shot_cancel(app, &format!("no selection after {}s", secs.round()));
+            let _ = shot_cancel(app, &format!("no selection after {}s", secs.round()));
         }
     });
 }
 
-pub fn shot_start(app: &mut App, region: bool, processing: &str) -> String {
+pub fn shot_start(app: &mut App, region: bool, processing: &str) -> Result<String, String> {
     if app.capture.shot.busy {
-        return "error: capture already in flight".into();
+        return Err("capture already in flight".into());
     }
     let path = shot_path(app);
     let s = &mut app.capture.shot;
@@ -236,12 +236,12 @@ pub fn shot_start(app: &mut App, region: bool, processing: &str) -> String {
     } else {
         shot_grab(app, "");
     }
-    path
+    Ok(path)
 }
 
-pub fn shot_pick(app: &mut App, mode: &str, processing: &str) -> String {
+pub fn shot_pick(app: &mut App, mode: &str, processing: &str) -> Result<String, String> {
     if app.capture.shot.busy {
-        return "error: capture already in flight".into();
+        return Err("capture already in flight".into());
     }
     let path = shot_path(app);
     let s = &mut app.capture.shot;
@@ -249,17 +249,16 @@ pub fn shot_pick(app: &mut App, mode: &str, processing: &str) -> String {
     s.processing = if processing.is_empty() { "default".into() } else { processing.into() };
     s.pending_path = path;
     s.last_cancelled = false;
-    let answer = picker_open(app, if mode.is_empty() { "smart" } else { mode });
-    if answer != "ok" {
+    if let Err(e) = picker_open(app, if mode.is_empty() { "smart" } else { mode }) {
         app.capture.shot.busy = false;
-        return answer;
+        return Err(e);
     }
     // A fullscreen pick has already committed inside open(); its grab owns
     // the capture from here and needs no watchdog.
     if app.capture.shot.busy && app.capture.shot.grab.is_none() {
         shot_watchdog(app);
     }
-    app.capture.shot.pending_path.clone()
+    Ok(app.capture.shot.pending_path.clone())
 }
 
 fn shot_grab(app: &mut App, geometry: &str) {
@@ -278,19 +277,19 @@ fn shot_grab(app: &mut App, geometry: &str) {
     spawn(app, run);
 }
 
-pub fn shot_edit(app: &mut App, path: &str) -> String {
+pub fn shot_edit(app: &mut App, path: &str) -> Result<(), String> {
     if path.is_empty() {
-        return "error: no path".into();
+        return Err("no path".into());
     }
     let editor = settings::SCREENSHOT_EDITOR.get(&app.store.config).to_owned();
     let g = app.capture.generation();
     spawn(app, Run::sh(Job::Editor, g, r#"exec "$FS_EDITOR" "$FS_EDIT_PATH""#).env("FS_EDITOR", editor).env("FS_EDIT_PATH", path));
-    "ok".into()
+    Ok(())
 }
 
-pub fn shot_cancel(app: &mut App, reason: &str) -> String {
+pub fn shot_cancel(app: &mut App, reason: &str) -> Result<(), String> {
     if !app.capture.shot.busy {
-        return "error: no capture in flight".into();
+        return Err("no capture in flight".into());
     }
     app.capture.shot.watch += 1;
     let (slurp, grab) = (app.capture.shot.slurp.take(), app.capture.shot.grab.take());
@@ -305,12 +304,12 @@ pub fn shot_cancel(app: &mut App, reason: &str) -> String {
     s.last_error.clear();
     s.last_cancelled = true;
     notify("SCREENSHOT CANCELLED", reason);
-    "ok".into()
+    Ok(())
 }
 
-pub fn shot_status(app: &App) -> String {
+pub fn shot_status(app: &App) -> Value {
     let s = &app.capture.shot;
-    json!({"capturing": s.busy, "lastPath": s.last_path, "lastError": s.last_error, "lastCancelled": s.last_cancelled}).to_string()
+    json!({"capturing": s.busy, "lastPath": s.last_path, "lastError": s.last_error, "lastCancelled": s.last_cancelled})
 }
 
 fn shot_exit(app: &mut App, e: Exit) {
@@ -496,10 +495,8 @@ fn on_picked_record(app: &mut App, r: Rect, output: String) {
     picker_done(app);
     let audio = settings::RECORDING_AUDIO.get(&app.store.config).to_owned();
     let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.width.round(), r.height.round());
-    let answer = record::start_at(app, &geometry, &output, "region", &audio, None);
-    if !answer.starts_with("error:") {
-        return;
-    }
+    let Err(why) = record::start_at(app, &geometry, &output, "region", &audio, None) else { return };
+    let answer = format!("error: {why}");
     eprintln!("ScreenshotIpc: {answer}");
     app.capture.shot.last_error = answer.clone();
     notify("RECORDING FAILED", &answer);
@@ -519,9 +516,9 @@ fn on_cancelled(app: &mut App) {
 
 // ---- picker lifecycle ----------------------------------------------------
 
-pub fn picker_open(app: &mut App, mode: &str) -> String {
+pub fn picker_open(app: &mut App, mode: &str) -> Result<(), String> {
     if app.capture.picker.open {
-        return "error: picker already open".into();
+        return Err("picker already open".into());
     }
     let p = &mut app.capture.picker;
     p.mode = mode.into();
@@ -533,12 +530,12 @@ pub fn picker_open(app: &mut App, mode: &str) -> String {
     crate::services::compositor::send(crate::services::compositor::Command::RefreshWindows);
     if mode == "fullscreen" {
         let c = cands(app);
-        let Some(r) = c.focused_output_rect().and_then(|o| o.rect) else { return "error: no focused output".into() };
+        let Some(r) = c.focused_output_rect().and_then(|o| o.rect) else { return Err("no focused output".into()) };
         on_picked(app, r);
-        return "ok".into();
+        return Ok(());
     }
     freeze(app);
-    "ok".into()
+    Ok(())
 }
 
 fn freeze(app: &mut App) {
@@ -603,10 +600,10 @@ fn picker_cancelled(app: &mut App, _reason: &str) {
     on_cancelled(app);
 }
 
-pub fn picker_close(app: &mut App, reason: &str) -> String {
+pub fn picker_close(app: &mut App, reason: &str) -> Result<(), String> {
     let p = &mut app.capture.picker;
     if !p.open && p.pending_freezes == 0 {
-        return "error: picker not open".into();
+        return Err("picker not open".into());
     }
     p.open = false;
     p.pending_freezes = 0;
@@ -614,7 +611,7 @@ pub fn picker_close(app: &mut App, reason: &str) -> String {
     app.capture.picker.generation = app.capture.generation();
     app.picker_sync();
     picker_cancelled(app, reason);
-    "ok".into()
+    Ok(())
 }
 
 /// Tears the surface down after a pick completed: no `cancelled`.
@@ -627,26 +624,26 @@ pub fn picker_done(app: &mut App) {
     app.picker_sync();
 }
 
-pub fn picker_commit(app: &mut App, whole_output: bool) -> String {
+pub fn picker_commit(app: &mut App, whole_output: bool) -> Result<(), String> {
     if !app.capture.picker.open {
-        return "error: picker not open".into();
+        return Err("picker not open".into());
     }
     let c = cands(app);
-    let Some(sel) = app.capture.picker.current(&c) else { return "error: nothing selected".into() };
+    let Some(sel) = app.capture.picker.current(&c) else { return Err("nothing selected".into()) };
     if whole_output {
         let anchor = match sel.rect {
             Some(r) => c.outputs.iter().find(|o| o.rect.is_some_and(|o| o.contains(r.x, r.y))),
             None => c.focused_output_rect(),
         };
         let Some(out) = anchor.or(c.focused_output_rect()).and_then(|o| o.rect) else {
-            return "error: no output under the selection".into();
+            return Err("no output under the selection".into());
         };
         finish(app, out, &c);
-        return "ok".into();
+        return Ok(());
     }
-    let Some(r) = sel.rect else { return format!("error: no geometry for \"{}\"", sel.label) };
+    let Some(r) = sel.rect else { return Err(format!("no geometry for \"{}\"", sel.label)) };
     finish(app, r, &c);
-    "ok".into()
+    Ok(())
 }
 
 /// A freeform drag released: taken as it stands.
@@ -673,9 +670,9 @@ fn finish(app: &mut App, r: Rect, c: &Cands) {
     crop_shot(app, r, c);
 }
 
-pub fn picker_key(app: &mut App, name: &str) -> String {
+pub fn picker_key(app: &mut App, name: &str) -> Result<(), String> {
     if !app.capture.picker.open {
-        return "error: picker not open".into();
+        return Err("picker not open".into());
     }
     let c = cands(app);
     let answer = match name {
@@ -683,28 +680,28 @@ pub fn picker_key(app: &mut App, name: &str) -> String {
         "ctrl-return" => return picker_commit(app, true),
         "tab" => {
             app.capture.picker.move_cursor(&c, 1);
-            "ok".into()
+            Ok(())
         }
         "shift-tab" => {
             app.capture.picker.move_cursor(&c, -1);
-            "ok".into()
+            Ok(())
         }
         "left" | "right" | "up" | "down" => {
             app.capture.picker.move_spatial(&c, name);
-            "ok".into()
+            Ok(())
         }
         "escape" => return picker_close(app, "cancelled from the picker"),
         "1" | "2" | "3" | "4" | "5" | "6" => app.capture.picker.set_tool(&c, name.parse::<i32>().unwrap_or(0) - 1),
-        _ => format!("error: unknown key {name}"),
+        _ => Err(format!("unknown key {name}")),
     };
     app.picker_sync();
     answer
 }
 
-pub fn picker_status(app: &App) -> String {
+pub fn picker_status(app: &App) -> Value {
     let c = cands(app);
     let screens = app.capture_screens().len();
-    app.capture.picker.status(&c, &runtime_dir(), screens).to_string()
+    app.capture.picker.status(&c, &runtime_dir(), screens)
 }
 
 // ---- capture (text and colour) --------------------------------------------
@@ -715,14 +712,14 @@ fn grab_watchdog(app: &mut App) {
     let token = app.capture.grab.watch;
     app.capture_after((secs * 1000.0) as u64, move |app| {
         if app.capture.grab.watch == token {
-            grab_cancel(app, &format!("no selection after {}s", secs.round()));
+            let _ = grab_cancel(app, &format!("no selection after {}s", secs.round()));
         }
     });
 }
 
-pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> String {
+pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> Result<(), String> {
     if app.capture.grab.busy {
-        return "error: capture already in flight".into();
+        return Err("capture already in flight".into());
     }
     let g = &mut app.capture.grab;
     g.busy = true;
@@ -731,7 +728,7 @@ pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> String {
     g.last_error.clear();
     if !geometry.is_empty() {
         if mode == "color" { run_pick(app, geometry) } else { run_ocr(app, geometry) }
-        return "ok".into();
+        return Ok(());
     }
     let script = if mode == "color" {
         r#"exec slurp -p -w "$FS_SLURP_WEIGHT" -b "$FS_SLURP_BG" -c "$FS_SLURP_BORDER""#
@@ -742,7 +739,7 @@ pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> String {
     app.capture.grab.slurp = Some(g_);
     spawn(app, slurp_run(app, Job::GrabSlurp, g_, ColorRole::Primary, script));
     grab_watchdog(app);
-    "ok".into()
+    Ok(())
 }
 
 fn run_ocr(app: &mut App, geometry: &str) {
@@ -789,9 +786,9 @@ fn run_pick(app: &mut App, geometry: &str) {
     spawn(app, run);
 }
 
-pub fn grab_cancel(app: &mut App, reason: &str) -> String {
+pub fn grab_cancel(app: &mut App, reason: &str) -> Result<(), String> {
     if !app.capture.grab.busy {
-        return "error: no capture in flight".into();
+        return Err("no capture in flight".into());
     }
     app.capture.grab.watch += 1;
     let g = &mut app.capture.grab;
@@ -805,7 +802,7 @@ pub fn grab_cancel(app: &mut App, reason: &str) -> String {
     g.last_error.clear();
     g.last_cancelled = true;
     notify("CAPTURE CANCELLED", reason);
-    "ok".into()
+    Ok(())
 }
 
 fn grab_fail(app: &mut App, why: String) {
@@ -817,7 +814,7 @@ fn grab_fail(app: &mut App, why: String) {
     g.last_error = why;
 }
 
-pub fn grab_status(app: &App) -> String {
+pub fn grab_status(app: &App) -> Value {
     let g = &app.capture.grab;
     json!({
         "capturing": g.busy,
@@ -827,7 +824,6 @@ pub fn grab_status(app: &App) -> String {
         "lastError": g.last_error,
         "lastCancelled": g.last_cancelled,
     })
-    .to_string()
 }
 
 fn or_code(text: &str, fallback: String) -> String {

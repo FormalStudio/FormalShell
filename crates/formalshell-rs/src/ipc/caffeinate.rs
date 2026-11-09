@@ -2,27 +2,27 @@
 //! inhibitor, and `status` (`inhibiting` is the surface's own word that the
 //! Wayland inhibitor is up, not a restatement of `active`).
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     let on = !app.store.caffeinate.active;
     app.set_caffeinated(on);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn enable(app: &mut App, _: &[Value]) -> Value {
+fn enable(app: &mut App, _: &[Value]) -> Reply {
     app.set_caffeinated(true);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn disable(app: &mut App, _: &[Value]) -> Value {
+fn disable(app: &mut App, _: &[Value]) -> Reply {
     app.set_caffeinated(false);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.store.caffeinate.status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.caffeinate.status())
 }
 
 pub fn target() -> Target<App> {

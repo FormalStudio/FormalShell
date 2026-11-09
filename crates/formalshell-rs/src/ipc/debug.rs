@@ -5,17 +5,8 @@
 use fs_types::Edge;
 use serde_json::json;
 
-use super::registry::{Function, Target, Type, Value};
-use crate::scene::IRect;
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-fn ok() -> Value {
-    text("ok")
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -41,15 +32,11 @@ pub fn target() -> Target<App> {
     }
 }
 
-pub fn rect(r: &IRect) -> serde_json::Value {
-    json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h})
-}
-
 /// Only what this shell holds, keyed as the full dump: the compositor
 /// block, the settings, the bar, its join, the frame and the chrome
 /// numbers, then each window owner's own blocks. Every other key waits for
 /// the service behind it.
-fn dump(app: &mut App, _: &[Value]) -> Value {
+fn dump(app: &mut App, _: &[Value]) -> Reply {
     let h = &app.store.compositor;
     let c = &h.snapshot;
     let edge = app.bar.edge();
@@ -64,14 +51,14 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
         Some((x, width)) => json!({"edge": edge.as_str(), "x": x, "width": width, "reach": reach, "screen": screen}),
         None => serde_json::Value::Null,
     };
-    let line: Vec<serde_json::Value> = app.bar.line_rects().iter().map(rect).collect();
+    let line: Vec<serde_json::Value> = app.bar.line_rects().iter().map(|r| r.to_json()).collect();
     let modals: Vec<serde_json::Value> = app
         .modals()
         .map(|m| {
             let scrims: Vec<serde_json::Value> =
                 m.scrims().map(|(name, alpha, fade)| json!({"name": name, "alpha": alpha, "fade": fade})).collect();
-            let content = m.layer.as_ref().map(|l| rect(&l.place(&m.win.card, true)));
-            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": rect(&m.win.card.live_rect()), "content": content, "popover": m.win.card.popover()})
+            let content = m.layer.as_ref().map(|l| l.place(&m.win.card, true).to_json());
+            json!({"namespace": m.namespace, "open": m.open, "scrims": scrims, "card": m.win.card.live_rect().to_json(), "content": content, "popover": m.win.card.popover()})
         })
         .collect();
     // Every toast the model holds, tier by tier, for a leg reading what one
@@ -151,31 +138,31 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
     if let Some(map) = dump.as_object_mut() {
         app.report(map);
     }
-    text(dump.to_string())
+    Ok(dump)
 }
 
-fn join(app: &mut App, args: &[Value]) -> Value {
+fn join(app: &mut App, args: &[Value]) -> Reply {
     let (edge, x, width) = (args[0].str(), args[1].int(), args[2].int());
     if !["top", "bottom", "left", "right"].contains(&edge) {
-        return text(format!("error: unknown edge '{edge}' (top|bottom|left|right)"));
+        return Err(format!("unknown edge '{edge}' (top|bottom|left|right)"));
     }
     if width <= 0 {
-        return text("error: width must be positive");
+        return Err("width must be positive".into());
     }
     // A join on an edge the strip is not on has no line to open.
     app.set_debug_join((edge == app.bar.edge().as_str()).then_some((x, width)));
     ok()
 }
 
-fn join_clear(app: &mut App, _: &[Value]) -> Value {
+fn join_clear(app: &mut App, _: &[Value]) -> Reply {
     app.set_debug_join(None);
     ok()
 }
 
-fn motion_scale(app: &mut App, args: &[Value]) -> Value {
+fn motion_scale(app: &mut App, args: &[Value]) -> Reply {
     let percent = args[0].int();
     if !(1..=5000).contains(&percent) {
-        return text("error: percent must be 1..5000");
+        return Err("percent must be 1..5000".into());
     }
     app.motion_scale = percent as f64 / 100.0;
     app.kit.motion_scale = app.motion_scale;
@@ -187,19 +174,19 @@ fn motion_scale(app: &mut App, args: &[Value]) -> Value {
 /// `start` checks every commit from here on against a full draw of the
 /// same scene, `read` reports what it found per surface, `stop` reports
 /// and ends it.
-fn stale_audit(_: &mut App, args: &[Value]) -> Value {
+fn stale_audit(_: &mut App, args: &[Value]) -> Reply {
     use crate::surface::audit;
     match args[0].str() {
         "start" => {
             audit::start();
             ok()
         }
-        "read" => text(audit::report().to_string()),
+        "read" => Ok(audit::report()),
         "stop" => {
             audit::stop();
-            text(audit::report().to_string())
+            Ok(audit::report())
         }
-        other => text(format!("error: unknown action {other}, expected start, read or stop")),
+        other => Err(format!("unknown action {other}, expected start, read or stop")),
     }
 }
 
@@ -218,14 +205,14 @@ fn sky(app: &App) -> serde_json::Value {
 
 /// Reads the sky at an RFC 3339 instant instead of now; an empty one goes
 /// back to the clock.
-fn sky_at(app: &mut App, args: &[Value]) -> Value {
+fn sky_at(app: &mut App, args: &[Value]) -> Reply {
     let arg = args[0].str();
     let pin = if arg.is_empty() {
         None
     } else {
         match chrono::DateTime::parse_from_rfc3339(arg) {
             Ok(at) => Some(at.timestamp_millis()),
-            Err(e) => return text(format!("error: {e}")),
+            Err(e) => return Err(e.to_string()),
         }
     };
     app.store.theme.sky_at = pin;
@@ -233,32 +220,32 @@ fn sky_at(app: &mut App, args: &[Value]) -> Value {
     ok()
 }
 
-fn query(app: &mut App, args: &[Value]) -> Value {
-    text(app.launcher.query(&app.store, args[0].str()).to_string())
+fn query(app: &mut App, args: &[Value]) -> Reply {
+    Ok(app.launcher.query(&app.store, args[0].str()))
 }
 
-fn r0_spinner(app: &mut App, args: &[Value]) -> Value {
+fn r0_spinner(app: &mut App, args: &[Value]) -> Reply {
     app.set_spinner(args[0].bool());
     ok()
 }
 
-fn r0_panel(app: &mut App, args: &[Value]) -> Value {
+fn r0_panel(app: &mut App, args: &[Value]) -> Reply {
     let open = match args[0].str() {
         "open" => true,
         "close" => false,
         "toggle" => app.panel_open() != Some("calendar"),
-        other => return text(format!("error: unknown action '{other}' (open|close|toggle)")),
+        other => return Err(format!("unknown action '{other}' (open|close|toggle)")),
     };
     app.set_panel("calendar", open, None);
     ok()
 }
 
-fn r0_scrim(app: &mut App, args: &[Value]) -> Value {
+fn r0_scrim(app: &mut App, args: &[Value]) -> Reply {
     app.set_scrim(std::time::Instant::now(), args[0].bool());
     ok()
 }
 
-fn r0_cast(app: &mut App, args: &[Value]) -> Value {
+fn r0_cast(app: &mut App, args: &[Value]) -> Reply {
     app.cast = args[0].bool();
     ok()
 }

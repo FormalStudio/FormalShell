@@ -313,14 +313,14 @@ impl View {
         };
         self.ui.ring = self.ui.cursor.is_some();
         let drawn = self.ui.draw(&body, inner, None, fade, theme, kit, &mut self.scene, now);
-        let card_json = json!({"x": rest.x, "y": rest.y, "width": rest.w, "height": rest.h});
+        let card_json = rest.to_json();
         self.report = json!({
             "clockInk": ink_name,
             "clockLuma": fs_js::json_number(luma),
             "clockSampled": sampled,
             "clockRect": card_json,
             "depth": front.is_some(),
-            "depthRect": front.as_ref().map(|(r, _, _)| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h})),
+            "depthRect": front.as_ref().map(|(r, _, _)| r.to_json()),
             "mediaCard": s.media.is_some().then(|| card_json.clone()),
             "nowPlaying": s.media.is_some(),
             "transportCursor": cursor,

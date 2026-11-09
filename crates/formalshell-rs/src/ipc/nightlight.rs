@@ -1,27 +1,27 @@
 //! `nightlight`: toggle, enable and disable the
 //! wlsunset-backed night light, and `status`.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::nightlight;
 use crate::wayland::App;
 
-fn toggle(_: &mut App, _: &[Value]) -> Value {
+fn toggle(_: &mut App, _: &[Value]) -> Reply {
     nightlight::toggle();
-    Value::Str("ok".into())
+    ok()
 }
 
-fn enable(_: &mut App, _: &[Value]) -> Value {
+fn enable(_: &mut App, _: &[Value]) -> Reply {
     nightlight::enable();
-    Value::Str("ok".into())
+    ok()
 }
 
-fn disable(_: &mut App, _: &[Value]) -> Value {
+fn disable(_: &mut App, _: &[Value]) -> Reply {
     nightlight::disable();
-    Value::Str("ok".into())
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.store.nightlight.status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.nightlight.status())
 }
 
 pub fn target() -> Target<App> {

@@ -2,51 +2,47 @@
 //! selector opened on a directory, `choose` doing what Enter on a tile
 //! does and `chooseFor` what its "Use in … mode only" does.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-fn summon(app: &mut App, _: &[Value]) -> Value {
+fn summon(app: &mut App, _: &[Value]) -> Reply {
     app.picker_summon();
-    text("ok")
+    ok()
 }
 
-fn select(app: &mut App, a: &[Value]) -> Value {
+fn select(app: &mut App, a: &[Value]) -> Reply {
     app.picker_select(a[0].str(), a[1].str());
-    text("ok")
+    ok()
 }
 
-fn choose(app: &mut App, a: &[Value]) -> Value {
+fn choose(app: &mut App, a: &[Value]) -> Reply {
     app.resolve_launcher();
     if app.picker_choose(a[0].str()) {
-        text("ok")
+        ok()
     } else {
-        text("error: not on the picker route, or path not in the current listing")
+        Err("not on the picker route, or path not in the current listing".into())
     }
 }
 
-fn choose_for(app: &mut App, a: &[Value]) -> Value {
+fn choose_for(app: &mut App, a: &[Value]) -> Reply {
     let Some(half) = crate::services::state::Half::parse(a[1].str()) else {
-        return text("error: mode must be light or dark");
+        return Err("mode must be light or dark".into());
     };
     app.resolve_launcher();
     if app.picker_choose_for(a[0].str(), half) {
-        text("ok")
+        ok()
     } else {
-        text("error: not on the picker route, or path not a single in the current listing")
+        Err("not on the picker route, or path not a single in the current listing".into())
     }
 }
 
-fn close(app: &mut App, _: &[Value]) -> Value {
+fn close(app: &mut App, _: &[Value]) -> Reply {
     app.menu_close();
-    text("ok")
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    text(app.launcher.picker_status(&app.store).to_string())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.launcher.picker_status(&app.store))
 }
 
 pub fn target() -> Target<App> {

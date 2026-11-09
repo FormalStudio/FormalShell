@@ -495,24 +495,23 @@ impl State {
     }
 
     /// The IPC reminder `status` reply.
-    pub fn reminder_status(&self) -> String {
+    pub fn reminder_status(&self) -> Value {
         let now = now_ms() as f64;
-        let items: Vec<String> = self
+        let items: Vec<Value> = self
             .reminders
             .iter()
             .map(|e| {
                 let secs = reminders::remaining_seconds(e, now);
-                format!(
-                    r#"{{"id":{},"message":{},"dueAt":{},"remainingSeconds":{},"remaining":{}}}"#,
-                    js::stringify(&json!(e.id)),
-                    js::stringify(&json!(e.message)),
-                    js::num_str(e.due_at),
-                    js::num_str(secs),
-                    js::stringify(&json!(reminders::countdown_label(secs))),
-                )
+                json!({
+                    "id": e.id,
+                    "message": e.message,
+                    "dueAt": js::json_number(e.due_at),
+                    "remainingSeconds": js::json_number(secs),
+                    "remaining": reminders::countdown_label(secs),
+                })
             })
             .collect();
-        format!(r#"{{"count":{},"reminders":[{}]}}"#, self.reminders.len(), items.join(","))
+        json!({"count": self.reminders.len(), "reminders": items})
     }
 }
 
@@ -758,17 +757,16 @@ async fn run(ctx: Ctx) {
 
 /// The IPC `status` reply, the centre's numbers handed in by the
 /// surface that owns them.
-pub fn status(s: &State, center: (f64, f64, bool)) -> String {
-    format!(
-        r#"{{"dnd":{},"pending":{},"popups":{},"centerOpen":{},"centerHeight":{},"centerMaxHeight":{},"centerCapped":{}}}"#,
-        s.model.dnd,
-        s.model.pending.len(),
-        s.model.popups.len(),
-        s.center_open,
-        js::num_str(js::round(center.0)),
-        js::num_str(js::round(center.1)),
-        center.2,
-    )
+pub fn status(s: &State, center: (f64, f64, bool)) -> Value {
+    json!({
+        "dnd": s.model.dnd,
+        "pending": s.model.pending.len(),
+        "popups": s.model.popups.len(),
+        "centerOpen": s.center_open,
+        "centerHeight": js::json_number(js::round(center.0)),
+        "centerMaxHeight": js::json_number(js::round(center.1)),
+        "centerCapped": center.2,
+    })
 }
 
 #[cfg(test)]
@@ -787,7 +785,7 @@ mod tests {
     fn status_reads_like_the_golden_reply() {
         let s = State::default();
         assert_eq!(
-            status(&s, (0.0, 0.0, false)),
+            status(&s, (0.0, 0.0, false)).to_string(),
             r#"{"dnd":false,"pending":0,"popups":0,"centerOpen":false,"centerHeight":0,"centerMaxHeight":0,"centerCapped":false}"#
         );
     }

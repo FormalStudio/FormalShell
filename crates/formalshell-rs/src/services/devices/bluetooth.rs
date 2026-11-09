@@ -73,6 +73,22 @@ pub struct Bluetooth {
     pub headsets: Option<Vec<Headset>>,
 }
 
+impl Bluetooth {
+    /// The IPC `status` reply, the keys in the order the golden replies carry them.
+    pub fn status(&self) -> serde_json::Value {
+        let Some(powered) = self.powered else {
+            return serde_json::json!({"available": false, "enabled": false, "connected": 0, "devices": []});
+        };
+        let rows: Vec<serde_json::Value> = self
+            .devices
+            .iter()
+            .map(|d| serde_json::json!({"address": d.address.to_string(), "name": d.name, "paired": d.paired, "trusted": d.trusted, "connected": d.connected}))
+            .collect();
+        let connected = self.devices.iter().filter(|d| d.connected).count();
+        serde_json::json!({"available": true, "enabled": powered, "connected": connected, "devices": rows})
+    }
+}
+
 thread_local! {
     static BLUEZ: RefCell<Option<fs_bluez::Bluez>> = const { RefCell::new(None) };
 }

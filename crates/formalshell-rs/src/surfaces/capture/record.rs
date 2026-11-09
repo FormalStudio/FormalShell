@@ -117,10 +117,10 @@ fn tick(app: &mut App) {
 
 fn busy_answer(r: &Rec) -> Option<String> {
     if r.active() {
-        return Some("error: already recording".into());
+        return Some("already recording".into());
     }
     if r.in_flight() {
-        return Some("error: a recording start is already in flight".into());
+        return Some("a recording start is already in flight".into());
     }
     None
 }
@@ -129,21 +129,21 @@ fn audio_ok(audio: &str) -> bool {
     ["none", "desktop", "desktopmic"].contains(&audio)
 }
 
-pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) -> String {
+pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) -> Result<String, String> {
     if let Some(e) = busy_answer(&app.capture.rec) {
-        return e;
+        return Err(e);
     }
     let scope = if scope.is_empty() { "screen" } else { scope };
     if scope != "screen" && scope != "region" {
-        return format!("error: unknown scope \"{scope}\" (screen|region)");
+        return Err(format!("unknown scope \"{scope}\" (screen|region)"));
     }
     let audio = if audio.is_empty() { "none" } else { audio };
     if !audio_ok(audio) {
-        return format!("error: unknown audio mode \"{audio}\" (none|desktop|desktopmic)");
+        return Err(format!("unknown audio mode \"{audio}\" (none|desktop|desktopmic)"));
     }
     let max = model::resolve_max_height(max_height, settings::RECORDING_MAX_HEIGHT.get(&app.store.config));
     if max.is_nan() {
-        return format!("error: not a number: \"{}\" (maxHeight)", max_height.unwrap_or(""));
+        return Err(format!("not a number: \"{}\" (maxHeight)", max_height.unwrap_or("")));
     }
     let path = model::output_path(&settings::recording_dir(&app.store.config), "screenrecording", "mp4", &now());
     let r = &mut app.capture.rec;
@@ -170,31 +170,31 @@ pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) 
             app.capture.rec.pending_path.clear();
             notify("RECORDING CANCELLED", &format!("no region after {}s", secs.round()));
         });
-        return path;
+        return Ok(path);
     }
     prepare_directory(app);
-    path
+    Ok(path)
 }
 
-pub fn start_at(app: &mut App, geometry: &str, output: &str, scope: &str, audio: &str, max_height: Option<&str>) -> String {
+pub fn start_at(app: &mut App, geometry: &str, output: &str, scope: &str, audio: &str, max_height: Option<&str>) -> Result<String, String> {
     if let Some(e) = busy_answer(&app.capture.rec) {
-        return e;
+        return Err(e);
     }
     let parsed = model::parse_geometry(geometry);
     if parsed.is_empty() {
-        return format!("error: not a geometry: \"{geometry}\" (expected \"X,Y WxH\")");
+        return Err(format!("not a geometry: \"{geometry}\" (expected \"X,Y WxH\")"));
     }
     let scope = if scope.is_empty() { "region" } else { scope };
     if !["screen", "region", "window"].contains(&scope) {
-        return format!("error: unknown scope \"{scope}\" (screen|region|window)");
+        return Err(format!("unknown scope \"{scope}\" (screen|region|window)"));
     }
     let audio = if audio.is_empty() { "none" } else { audio };
     if !audio_ok(audio) {
-        return format!("error: unknown audio mode \"{audio}\" (none|desktop|desktopmic)");
+        return Err(format!("unknown audio mode \"{audio}\" (none|desktop|desktopmic)"));
     }
     let max = model::resolve_max_height(max_height, settings::RECORDING_MAX_HEIGHT.get(&app.store.config));
     if max.is_nan() {
-        return format!("error: not a number: \"{}\" (maxHeight)", max_height.unwrap_or(""));
+        return Err(format!("not a number: \"{}\" (maxHeight)", max_height.unwrap_or("")));
     }
     let path = model::output_path(&settings::recording_dir(&app.store.config), "screenrecording", "mp4", &now());
     let r = &mut app.capture.rec;
@@ -206,19 +206,19 @@ pub fn start_at(app: &mut App, geometry: &str, output: &str, scope: &str, audio:
     r.pending_output = output.into();
     r.pending_path = path.clone();
     prepare_directory(app);
-    path
+    Ok(path)
 }
 
-pub fn stop(app: &mut App) -> String {
+pub fn stop(app: &mut App) -> Result<(), String> {
     if app.capture.rec.slurp.is_some() {
         app.capture.rec.region_watch += 1;
         let slurp = app.capture.rec.slurp.take();
         app.capture.stop(slurp);
         app.capture.rec.pending_path.clear();
-        return "ok".into();
+        return Ok(());
     }
     if !app.capture.rec.active() {
-        return "error: not recording".into();
+        return Err("not recording".into());
     }
     app.capture.rec.stopping = true;
     // wf-recorder only reads its exit flag when a new frame arrives, and a
@@ -227,7 +227,7 @@ pub fn stop(app: &mut App) -> String {
     sync_bar(app);
     let Some(pid) = app.capture.pid(app.capture.rec.recorder) else {
         // Not spawned yet: the Spawned event lands on a stopping run.
-        return "ok".into();
+        return Ok(());
     };
     crate::services::capture::terminate(pid);
     let g = app.capture.rec.recorder;
@@ -240,23 +240,23 @@ pub fn stop(app: &mut App) -> String {
             crate::services::capture::kill(pid);
         }
     });
-    "ok".into()
+    Ok(())
 }
 
-pub fn toggle(app: &mut App, scope: &str, audio: &str) -> String {
+pub fn toggle(app: &mut App, scope: &str, audio: &str) -> Result<Option<String>, String> {
     if app.capture.rec.active() || app.capture.rec.slurp.is_some() {
-        return stop(app);
+        return stop(app).map(|()| None);
     }
-    start(app, scope, audio, None)
+    start(app, scope, audio, None).map(Some)
 }
 
-pub fn gif(app: &mut App, path: &str) -> String {
+pub fn gif(app: &mut App, path: &str) -> Result<String, String> {
     if app.capture.rec.transcoding() {
-        return "error: a transcode is already running".into();
+        return Err("a transcode is already running".into());
     }
     let source = if path.is_empty() { app.capture.rec.last_path.clone() } else { path.to_owned() };
     if source.is_empty() {
-        return "error: no recording to convert".into();
+        return Err("no recording to convert".into());
     }
     let out = model::gif_output_path(&source);
     let palette = format!("{}/formalshell/gif-palette.png", runtime_dir());
@@ -274,22 +274,22 @@ pub fn gif(app: &mut App, path: &str) -> String {
     let mut pass1 = vec!["sh".into(), "-c".into(), r#"mkdir -p "$(dirname "$1")" && shift && exec "$@""#.into(), "sh".into(), palette];
     pass1.extend(argv.pass1);
     spawn(app, Run::new(Job::Palette, g, pass1));
-    out
+    Ok(out)
 }
 
 /// RECORDING SAVED's PLAY action: recording.player, the same env and sh
 /// handoff the screenshot editor takes.
-pub fn play(app: &mut App, path: &str) -> String {
+pub fn play(app: &mut App, path: &str) -> Result<(), String> {
     if path.is_empty() {
-        return "error: no path".into();
+        return Err("no path".into());
     }
     let player = settings::RECORDING_PLAYER.get(&app.store.config).to_owned();
     let g = app.capture.generation();
     spawn(app, Run::sh(Job::Player, g, r#"exec "$FS_PLAYER" "$FS_PLAY_PATH""#).env("FS_PLAYER", player).env("FS_PLAY_PATH", path));
-    "ok".into()
+    Ok(())
 }
 
-pub fn status(app: &App) -> String {
+pub fn status(app: &App) -> serde_json::Value {
     let r = &app.capture.rec;
     json!({
         "active": r.active(),
@@ -302,7 +302,6 @@ pub fn status(app: &App) -> String {
         "lastGifPath": r.last_gif_path,
         "lastError": r.last_error,
     })
-    .to_string()
 }
 
 fn prepare_directory(app: &mut App) {

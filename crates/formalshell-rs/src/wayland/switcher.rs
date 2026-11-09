@@ -20,7 +20,7 @@ use crate::services::{appicon, compositor};
 use crate::surface::{Backend, Surface};
 use crate::surfaces::switcher::{self, Input, Switcher, model};
 
-pub const OFF: &str = "error: switcher is off (switcher.enabled)";
+pub const OFF: &str = "switcher is off (switcher.enabled)";
 
 #[derive(Default)]
 pub struct State {
@@ -204,7 +204,7 @@ impl App {
         true
     }
 
-    pub fn switcher_state(&self) -> String {
+    pub fn switcher_state(&self) -> serde_json::Value {
         let m = &self.switcher.model;
         let entries = self.switcher_entries();
         let selected = entries.get(m.index);
@@ -226,7 +226,6 @@ impl App {
             "capturing": self.capture_sourced(Owner::Switcher),
             "cells": if m.shown { m.cells_json() } else { serde_json::json!([]) },
         })
-        .to_string()
     }
 
     /// The compositor or an icon moved under the card.

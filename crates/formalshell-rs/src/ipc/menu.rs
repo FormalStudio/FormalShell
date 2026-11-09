@@ -2,12 +2,8 @@
 //! Enter and typing, and the select/input modes, whose answers land in
 //! `menu-selection.txt` as `{token, value}` or `{token, cancelled: true}`.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -37,64 +33,65 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     app.menu_toggle();
-    text("ok")
+    ok()
 }
 
-fn summon(app: &mut App, args: &[Value]) -> Value {
+fn summon(app: &mut App, args: &[Value]) -> Reply {
     app.menu_open(Some(args[0].str()));
-    text("ok")
+    ok()
 }
 
-fn activate(app: &mut App, args: &[Value]) -> Value {
+fn activate(app: &mut App, args: &[Value]) -> Reply {
     let i = usize::try_from(args[0].int()).unwrap_or(usize::MAX);
-    text(if app.menu_activate(i, false) { "ok" } else { "error: menu not open" })
+    if app.menu_activate(i, false) { ok() } else { Err("menu not open".into()) }
 }
 
-fn activate_alternate(app: &mut App, args: &[Value]) -> Value {
+fn activate_alternate(app: &mut App, args: &[Value]) -> Reply {
     let i = usize::try_from(args[0].int()).unwrap_or(usize::MAX);
-    text(if app.menu_activate(i, true) { "ok" } else { "error: menu not open" })
+    if app.menu_activate(i, true) { ok() } else { Err("menu not open".into()) }
 }
 
 fn index(args: &[Value]) -> usize {
     usize::try_from(args[0].int()).unwrap_or(usize::MAX)
 }
 
-fn answer(r: Result<(), String>) -> Value {
-    text(r.map_or_else(|e| e, |()| "ok".into()))
+fn answer(r: Result<(), String>) -> Reply {
+    r?;
+    ok()
 }
 
-fn actions(app: &mut App, args: &[Value]) -> Value {
+fn actions(app: &mut App, args: &[Value]) -> Reply {
     answer(app.menu_actions(index(args)))
 }
 
-fn run_action(app: &mut App, args: &[Value]) -> Value {
+fn run_action(app: &mut App, args: &[Value]) -> Reply {
     answer(app.menu_run_action(index(args), args[1].str()))
 }
 
-fn into(app: &mut App, args: &[Value]) -> Value {
+fn into(app: &mut App, args: &[Value]) -> Reply {
     answer(app.menu_into(index(args)))
 }
 
-fn filter(app: &mut App, args: &[Value]) -> Value {
-    text(if app.menu_filter(args[0].str()) { "ok" } else { "error: menu not open" })
+fn filter(app: &mut App, args: &[Value]) -> Reply {
+    if app.menu_filter(args[0].str()) { ok() } else { Err("menu not open".into()) }
 }
 
-fn close(app: &mut App, _: &[Value]) -> Value {
+fn close(app: &mut App, _: &[Value]) -> Reply {
     app.menu_close();
-    text("ok")
+    ok()
 }
 
-fn refresh(app: &mut App, _: &[Value]) -> Value {
+fn refresh(app: &mut App, _: &[Value]) -> Reply {
     app.menu_refresh();
-    text("ok")
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     app.resolve_launcher();
     let mut v = app.launcher.status(&app.store);
-    let rect = |r: crate::scene::IRect| serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+    let rect = |r: crate::scene::IRect| r.to_json();
     let shown = app.launcher_shown();
     if let Some(r) = shown.and_then(|w| w.body_rect) {
         v["body"] = rect(r);
@@ -123,16 +120,16 @@ fn status(app: &mut App, _: &[Value]) -> Value {
         .into_iter()
         .map(|(on, r)| serde_json::json!({"on": on, "x": r.x, "y": r.y, "width": r.w, "height": r.h}))
         .collect();
-    text(v.to_string())
+    Ok(v)
 }
 
-fn abbreviations(app: &mut App, _: &[Value]) -> Value {
+fn abbreviations(app: &mut App, _: &[Value]) -> Reply {
     use crate::surfaces::launcher as l;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_millis() as f64);
-    text(fs_menu::abbrev::report(&l::configured_abbreviations(&app.store), &crate::services::menu::abbreviation_book(&app.store), now).to_string())
+    Ok(fs_menu::abbrev::report(&l::configured_abbreviations(&app.store), &crate::services::menu::abbreviation_book(&app.store), now))
 }
 
-fn select(app: &mut App, args: &[Value]) -> Value {
+fn select(app: &mut App, args: &[Value]) -> Reply {
     let options = match serde_json::from_str::<serde_json::Value>(args[1].str()) {
         Ok(serde_json::Value::Array(items)) => items
             .iter()
@@ -141,13 +138,13 @@ fn select(app: &mut App, args: &[Value]) -> Value {
                 other => other.to_string(),
             })
             .collect(),
-        _ => return text("error: optionsJson must be a JSON array"),
+        _ => return Err("optionsJson must be a JSON array".into()),
     };
     app.menu_select(args[0].str(), options, args[2].str());
-    text("ok")
+    ok()
 }
 
-fn input(app: &mut App, args: &[Value]) -> Value {
+fn input(app: &mut App, args: &[Value]) -> Reply {
     app.menu_input(args[0].str(), args[1].str());
-    text("ok")
+    ok()
 }

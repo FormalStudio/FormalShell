@@ -1051,14 +1051,14 @@ impl Panel for QuickSettings {
         self.menu.get_mut().close()
     }
 
-    fn call(&mut self, verb: &str, arg: &str) -> Option<String> {
+    fn call(&mut self, verb: &str, arg: &str) -> Option<Result<Json, String>> {
         let m = self.menu.get_mut();
         match verb {
             "menu" => {
                 m.open(arg);
-                Some("ok".into())
+                Some(Ok(Json::Null))
             }
-            "back" => Some(if m.close() { "ok".into() } else { "error: no menu is open".into() }),
+            "back" => Some(if m.close() { Ok(Json::Null) } else { Err("no menu is open".into()) }),
             "state" => {
                 let now = std::time::Instant::now();
                 let share = |a: &Animated| (a.value(now).clamp(0.0, 1.0) * 1000.0).round() / 1000.0;
@@ -1069,7 +1069,7 @@ impl Panel for QuickSettings {
                     .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel }))
                     .collect();
                 let state = json!({ "from": self.origin.label(), "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
-                Some(state.to_string())
+                Some(Ok(state))
             }
             _ => None,
         }
@@ -1402,8 +1402,7 @@ fn mute(id: &str, fx: &mut Effect) {
 
 /// The open menu for `quicksettings status`: its id, its lines and the
 /// armed row, off the module's own answer to `state`.
-pub fn status_menu(store: &Store, state: &str) -> (Json, bool) {
-    let state: Json = serde_json::from_str(state).unwrap_or(Json::Null);
+pub fn status_menu(store: &Store, state: &Json) -> (Json, bool) {
     let id = state["menu"].as_str();
     let armed = state["armed"].as_str();
     let open = id.and_then(|id| menu(store, id, armed));

@@ -89,17 +89,15 @@ impl State {
     }
 
     /// The IPC `status` reply.
-    pub fn status(&self) -> String {
-        let dark = self.schedule_dark.map_or("null".to_owned(), |d| d.to_string());
-        format!(
-            r#"{{"active":{},"temp":{},"schedule":"{}","scheduleDark":{},"source":"{}","lastError":{}}}"#,
-            self.active,
-            self.temp,
-            if self.scheduled { "sun" } else { "off" },
-            dark,
-            if self.located { "location" } else { "fallback" },
-            Value::String(self.last_error.clone()),
-        )
+    pub fn status(&self) -> Value {
+        serde_json::json!({
+            "active": self.active,
+            "temp": self.temp,
+            "schedule": if self.scheduled { "sun" } else { "off" },
+            "scheduleDark": self.schedule_dark,
+            "source": if self.located { "location" } else { "fallback" },
+            "lastError": self.last_error,
+        })
     }
 }
 
@@ -436,11 +434,11 @@ mod tests {
     #[test]
     fn status_reads_like_the_golden_reply() {
         let mut s = State::default();
-        assert_eq!(s.status(), r#"{"active":false,"temp":4000,"schedule":"off","scheduleDark":null,"source":"fallback","lastError":""}"#);
+        assert_eq!(s.status().to_string(), r#"{"active":false,"temp":4000,"schedule":"off","scheduleDark":null,"source":"fallback","lastError":""}"#);
         s.scheduled = true;
         s.schedule_dark = Some(true);
         s.located = true;
         s.last_error = "x \"y\"".into();
-        assert_eq!(s.status(), r#"{"active":false,"temp":4000,"schedule":"sun","scheduleDark":true,"source":"location","lastError":"x \"y\""}"#);
+        assert_eq!(s.status().to_string(), r#"{"active":false,"temp":4000,"schedule":"sun","scheduleDark":true,"source":"location","lastError":"x \"y\""}"#);
     }
 }

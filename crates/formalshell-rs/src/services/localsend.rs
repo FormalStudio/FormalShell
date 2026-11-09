@@ -48,7 +48,7 @@ impl State {
         changed
     }
 
-    pub fn status(&self) -> String {
+    pub fn status(&self) -> Value {
         json!({
             "installed": self.installed,
             "receiving": self.receiving,
@@ -61,17 +61,15 @@ impl State {
             "sendTarget": self.send_target,
             "lastError": self.last_error,
         })
-        .to_string()
     }
 
-    pub fn peers_json(&self) -> String {
+    pub fn peers_json(&self) -> Value {
         Value::Array(
             self.peers
                 .iter()
                 .map(|p| json!({"name": p.name, "version": p.version, "ip": p.ip, "port": p.port, "protocol": p.protocol}))
                 .collect(),
         )
-        .to_string()
     }
 }
 

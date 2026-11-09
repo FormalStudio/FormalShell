@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 
 use fs_menu::appmatch;
 use fs_menu::node::DesktopEntry;
+use fs_system::monitor::gpu::{self, OffloadTools};
 use fs_types::WindowId;
 
 use super::activity::{self, Input};
@@ -94,4 +95,73 @@ pub fn windows_changed(store: &Store) -> Option<store::Diff> {
         activity::send(Input::Launched(id.clone()));
     }
     (!landed.is_empty()).then_some(store::Diff::Launch(Diff::Landed(landed)))
+}
+
+/// What [`on_gpu`] started.
+pub struct OnGpu {
+    pub card: String,
+    pub name: String,
+    pub argv: Vec<String>,
+    /// The entry asked for a terminal and `console.command` names none.
+    pub bare_terminal: bool,
+}
+
+struct DesktopFile {
+    exec: String,
+    path: String,
+    terminal: bool,
+}
+
+/// `DesktopEntries.byId`: the first `<id>.desktop` on the data dirs. The
+/// raw `Exec` is kept, since the offload wrapper runs it through `sh -c`.
+fn desktop_file(id: &str) -> Option<DesktopFile> {
+    let text = crate::paths::data_dirs().iter().find_map(|d| std::fs::read_to_string(d.join("applications").join(format!("{id}.desktop"))).ok())?;
+    let mut in_entry = false;
+    let (mut exec, mut path, mut terminal) = (None, None, false);
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_entry = line == "[Desktop Entry]";
+        } else if in_entry && let Some((k, v)) = line.split_once('=') {
+            match k.trim() {
+                "Exec" if exec.is_none() => exec = Some(v.trim().to_owned()),
+                "Path" if path.is_none() => path = Some(v.trim().to_owned()),
+                "Terminal" => terminal = v.trim() == "true",
+                _ => {}
+            }
+        }
+    }
+    Some(DesktopFile { exec: exec.unwrap_or_default(), path: path.unwrap_or_default(), terminal })
+}
+
+fn shq(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Spawns entry `id` on GPU `card`, or the first discrete one when `card` is
+/// empty, with the offload argv built by hand since a desktop entry's own
+/// launch carries no environment.
+pub fn on_gpu(store: &Store, id: &str, card: &str) -> Result<OnGpu, String> {
+    let Some(file) = desktop_file(id) else { return Err(format!("no desktop entry '{id}'")) };
+    let m = &store.monitor;
+    let target = if card.is_empty() {
+        m.cards.iter().find(|c| c.discrete).ok_or("no discrete GPU on this machine")?
+    } else {
+        m.cards.iter().find(|c| c.record.card.card == card).ok_or_else(|| format!("no GPU card '{card}'"))?
+    };
+    let mut exec = file.exec;
+    if !file.path.is_empty() {
+        exec = format!("cd {} && {exec}", shq(&file.path));
+    }
+    let tools = OffloadTools { nvidia_offload: m.tools.0, prime_run: m.tools.1 };
+    let mut argv = gpu::offload_argv(&exec, Some(&target.record.card), tools);
+    let mut bare = true;
+    if file.terminal {
+        let term = crate::settings::console_command_set(&store.config).unwrap_or_default();
+        if !term.is_empty() {
+            argv = term.into_iter().chain(argv).collect();
+            bare = false;
+        }
+    }
+    spawn(store, id, &argv);
+    Ok(OnGpu { card: target.record.card.card.clone(), name: target.name.clone(), argv, bare_terminal: file.terminal && bare })
 }

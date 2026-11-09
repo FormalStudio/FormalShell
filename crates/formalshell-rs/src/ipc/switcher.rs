@@ -2,41 +2,40 @@
 //! switcher. `switcher.enabled: false` answers every verb with the error
 //! string rather than accepting a call that would do nothing.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 use crate::wayland::switcher::OFF;
 
-fn guard(app: &App) -> Option<Value> {
-    (!app.switcher_enabled()).then(|| Value::Str(OFF.into()))
+fn guard(app: &App) -> Result<(), String> {
+    if app.switcher_enabled() { Ok(()) } else { Err(OFF.into()) }
 }
 
-fn next(app: &mut App, _: &[Value]) -> Value {
-    guard(app).unwrap_or_else(|| {
-        app.switcher_step(1);
-        Value::Str("ok".into())
-    })
+fn next(app: &mut App, _: &[Value]) -> Reply {
+    guard(app)?;
+    app.switcher_step(1);
+    ok()
 }
 
-fn prev(app: &mut App, _: &[Value]) -> Value {
-    guard(app).unwrap_or_else(|| {
-        app.switcher_step(-1);
-        Value::Str("ok".into())
-    })
+fn prev(app: &mut App, _: &[Value]) -> Reply {
+    guard(app)?;
+    app.switcher_step(-1);
+    ok()
 }
 
-fn commit(app: &mut App, _: &[Value]) -> Value {
-    guard(app).unwrap_or_else(|| Value::Str(if app.switcher_commit() { "ok" } else { "error: nothing to commit" }.into()))
+fn commit(app: &mut App, _: &[Value]) -> Reply {
+    guard(app)?;
+    if app.switcher_commit() { ok() } else { Err("nothing to commit".into()) }
 }
 
-fn cancel(app: &mut App, _: &[Value]) -> Value {
-    guard(app).unwrap_or_else(|| {
-        app.switcher_close();
-        Value::Str("ok".into())
-    })
+fn cancel(app: &mut App, _: &[Value]) -> Reply {
+    guard(app)?;
+    app.switcher_close();
+    ok()
 }
 
-fn state(app: &mut App, _: &[Value]) -> Value {
-    guard(app).unwrap_or_else(|| Value::Str(app.switcher_state()))
+fn state(app: &mut App, _: &[Value]) -> Reply {
+    guard(app)?;
+    Ok(app.switcher_state())
 }
 
 pub fn target() -> Target<App> {

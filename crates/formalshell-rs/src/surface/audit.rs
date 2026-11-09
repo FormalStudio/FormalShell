@@ -47,7 +47,7 @@ pub fn stop() {
 
 pub fn report() -> serde_json::Value {
     let seen = SEEN.lock().unwrap();
-    let rect = |r: &IRect| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+    let rect = |r: &IRect| r.to_json();
     let surfaces: serde_json::Map<String, serde_json::Value> = seen
         .iter()
         .map(|(name, s)| {

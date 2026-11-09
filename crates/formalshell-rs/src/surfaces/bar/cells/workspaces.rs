@@ -464,7 +464,7 @@ impl Cell for Workspaces {
     /// state and every chip's settled length, in the bar window's own
     /// coordinates.
     fn status(&self) -> Option<Value> {
-        let rect = |r: IRect| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+        let rect = |r: IRect| r.to_json();
         let slots: Vec<Value> = self
             .slots
             .iter()

@@ -363,21 +363,20 @@ impl App {
             self.sync_shards();
         } else if held_marker().exists() {
             eprintln!("lock: the session was left locked, taking the lock back");
-            let result = self.raise_lock();
-            if result != "ok" {
-                eprintln!("lock: {result}");
+            if let Err(err) = self.raise_lock() {
+                eprintln!("lock: error: {err}");
             }
         }
     }
 
     /// `lock lock`. An external locker named by `lock.command` runs in
     /// place of the surface, unless it is not on PATH.
-    pub fn lock(&mut self) -> String {
+    pub fn lock(&mut self) -> Result<(), String> {
         let argv = command(self);
         if let Some(bin) = argv.first() {
             if on_path(bin) {
                 compositor::spawn(&argv);
-                return "ok".into();
+                return Ok(());
             }
             eprintln!("LockService: lock.command {bin} is not on PATH, the built-in lock is used instead");
         }
@@ -387,13 +386,13 @@ impl App {
     /// `lock session`: the lock asked of logind, so it comes back through
     /// the same Lock signal every other locker sends. With no logind
     /// session found, the lock itself.
-    pub fn lock_session(&mut self) -> String {
+    pub fn lock_session(&mut self) -> Result<(), String> {
         match (&self.runtime, self.lock.logind.is_some()) {
             (Some(rt), true) => {
                 rt.service(|ctx| {
                     crate::services::session::request(ctx);
                 });
-                "ok".into()
+                Ok(())
             }
             _ => self.lock(),
         }
@@ -439,25 +438,23 @@ impl App {
         crate::trace::phase("login lock asked");
     }
 
-    fn raise_lock(&mut self) -> String {
+    fn raise_lock(&mut self) -> Result<(), String> {
         self.lock.error.clear();
         if self.lock.session.is_none() {
-            if let Err(err) = self.acquire_lock() {
-                return err;
-            }
+            self.acquire_lock()?;
             self.dress_lock();
         }
         self.lock.locked = true;
         self.sync_agents();
         self.sync_shards();
         self.lock.dirty = true;
-        "ok".into()
+        Ok(())
     }
 
     fn acquire_lock(&mut self) -> Result<(), String> {
         match self.lock.manager.lock(&self.qh) {
             Ok(session) => self.lock.session = Some(session),
-            Err(_) => return Err("error: lock failed to acquire session lock".into()),
+            Err(_) => return Err("lock failed to acquire session lock".into()),
         }
         self.lock.secure = false;
         self.lock.outs.clear();
@@ -715,9 +712,9 @@ impl App {
             Logind::Lock(true) => {
                 eprintln!("lock: logind asked for the lock");
                 if via_logind(self) {
-                    self.raise_lock();
+                    let _ = self.raise_lock();
                 } else if !self.lock.locked || self.lock_external() {
-                    self.lock();
+                    let _ = self.lock();
                 }
             }
             // ext-session-lock takes an unlock only once the compositor has
@@ -1371,7 +1368,7 @@ impl App {
     }
 
     /// `lock status`'s object (Lock/lock.js's `status` plus `beforeSleep`).
-    pub fn lock_status(&self) -> String {
+    pub fn lock_status(&self) -> Value {
         let external = self.lock_external();
         let mut state = if external {
             json!({"external": true, "locked": null, "secure": null, "authError": null, "blanked": null, "outputs": null})
@@ -1398,7 +1395,7 @@ impl App {
             "inhibiting": s.inhibiting,
             "last": s.last.clone().map_or(Value::Null, Value::Object),
         });
-        state.to_string()
+        state
     }
 
     pub fn lock_before_sleep(&self) -> bool {
@@ -1422,7 +1419,11 @@ impl App {
             return;
         }
         self.lock.sleep.preparing = true;
-        let result = if self.lock.locked && !self.lock_external() { "already".to_owned() } else { self.lock() };
+        let result = if self.lock.locked && !self.lock_external() {
+            "already".to_owned()
+        } else {
+            self.lock().map_or_else(|err| format!("error: {err}"), |()| "ok".into())
+        };
         let at = epoch_ms();
         let mut last = Map::new();
         last.insert("result".into(), json!(result));

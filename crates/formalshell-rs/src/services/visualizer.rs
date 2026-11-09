@@ -45,6 +45,23 @@ pub enum Diff {
 }
 
 impl State {
+    /// The IPC `status` reply: the style now drawn, the one settings.json
+    /// asks for, and the frame the bar would draw.
+    pub fn status(&self, current: &str, configured: &str, frame: &Frame) -> serde_json::Value {
+        let levels = |l: &[f64]| serde_json::Value::Array(l.iter().map(|x| fs_js::json_number(*x)).collect());
+        serde_json::json!({
+            "style": current,
+            "override": self.style_override,
+            "configured": configured,
+            "configuredKnown": fs_media::visualizer::styles::is_known(configured),
+            "running": self.running,
+            "state": self.avail.as_str(),
+            "levels": levels(&frame.mono),
+            "levelsLeft": levels(&frame.left),
+            "levelsRight": levels(&frame.right),
+        })
+    }
+
     pub fn apply(&mut self, diff: Diff) -> bool {
         match diff {
             Diff::Avail(v) => std::mem::replace(&mut self.avail, v) != v,

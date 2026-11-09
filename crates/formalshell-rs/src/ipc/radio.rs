@@ -3,13 +3,9 @@
 //! or a recent one), so a key can be bound to one station. Opening the atlas
 //! is `panel toggle radio`.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::radio::{self, Cmd};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -24,38 +20,38 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     let mut status = app.store.media.radio.status();
     status["atlas"] = app.atlas.model.status(&app.store.media.radio);
-    text(status.to_string())
+    Ok(status)
 }
 
-fn play(app: &mut App, args: &[Value]) -> Value {
+fn play(app: &mut App, args: &[Value]) -> Reply {
     let id = args[0].str();
     let radio = &app.store.media.radio;
     for list in [&radio.favorites, &radio.recent] {
         if let Some(station) = list.iter().find(|s| s.uuid == id) {
             radio::send(Cmd::PlayFromSaved(station.clone(), list.clone()));
-            return text("ok");
+            return ok();
         }
     }
-    text(format!("error: no saved station {id}"))
+    Err(format!("no saved station {id}"))
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     if !app.store.media.radio.running() {
-        return text("error: nothing tuned");
+        return Err("nothing tuned".into());
     }
     radio::send(Cmd::Toggle);
-    text("ok")
+    ok()
 }
 
-fn random(_: &mut App, _: &[Value]) -> Value {
+fn random(_: &mut App, _: &[Value]) -> Reply {
     radio::send(Cmd::Random);
-    text("ok")
+    ok()
 }
 
-fn stop(_: &mut App, _: &[Value]) -> Value {
+fn stop(_: &mut App, _: &[Value]) -> Reply {
     radio::send(Cmd::Stop);
-    text("ok")
+    ok()
 }

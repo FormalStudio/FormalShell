@@ -85,7 +85,7 @@ impl App {
         !id.is_empty() && !compositor::model::is_parked(&self.store.compositor.snapshot, &id)
     }
 
-    pub fn console_status(&self) -> String {
+    pub fn console_status(&self) -> serde_json::Value {
         let app_id = self.console_app_id();
         json!({
             "available": self.console_available(),
@@ -94,7 +94,6 @@ impl App {
             "visible": self.console_showing(),
             "spawning": self.console.spawning,
         })
-        .to_string()
     }
 
     pub fn console_toggle(&mut self) {

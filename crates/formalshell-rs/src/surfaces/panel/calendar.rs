@@ -78,9 +78,9 @@ impl Calendar {
         self.cursor = Some(key(grid::index_of_date(&self.cells(), self.selected)));
     }
 
-    fn status(&self) -> String {
+    fn status(&self) -> serde_json::Value {
         let view = NaiveDate::from_ymd_opt(self.year, self.month, 1).map(|d| d.format("%B %Y").to_string()).unwrap_or_default();
-        json!({ "open": self.open, "selected": grid::iso_date(&self.selected), "today": grid::iso_date(&today()), "view": view }).to_string()
+        json!({ "open": self.open, "selected": grid::iso_date(&self.selected), "today": grid::iso_date(&today()), "view": view })
     }
 
     /// settings.json over state.json, then the fraction both give.
@@ -249,16 +249,16 @@ impl Panel for Calendar {
         }
     }
 
-    fn call(&mut self, verb: &str, arg: &str) -> Option<String> {
+    fn call(&mut self, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
         match verb {
             "select" => Some(match grid::parse_iso_date(arg) {
                 Some(d) => {
                     self.select(d);
-                    "ok".into()
+                    Ok(serde_json::Value::Null)
                 }
-                None => format!("error: not a valid YYYY-MM-DD date: {arg}"),
+                None => Err(format!("not a valid YYYY-MM-DD date: {arg}")),
             }),
-            "status" => Some(self.status()),
+            "status" => Some(Ok(self.status())),
             _ => None,
         }
     }
@@ -271,9 +271,9 @@ mod tests {
     #[test]
     fn select_aligns_the_view_and_moves_the_cursor() {
         let mut c = Calendar::new(false);
-        assert_eq!(c.call("select", "2026-02-31").as_deref(), Some("error: not a valid YYYY-MM-DD date: 2026-02-31"));
-        assert_eq!(c.call("select", "2026-10-06").as_deref(), Some("ok"));
-        let status: serde_json::Value = serde_json::from_str(&c.call("status", "").unwrap()).unwrap();
+        assert_eq!(c.call("select", "2026-02-31"), Some(Err("not a valid YYYY-MM-DD date: 2026-02-31".into())));
+        assert_eq!(c.call("select", "2026-10-06"), Some(Ok(serde_json::Value::Null)));
+        let status = c.call("status", "").unwrap().unwrap();
         assert_eq!(status["selected"], "2026-10-06");
         assert_eq!(status["view"], "October 2026");
         assert_eq!(status["open"], false);

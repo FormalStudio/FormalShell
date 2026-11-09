@@ -4,6 +4,22 @@
 
 use super::wire::Request;
 
+pub use serde_json::Value as Json;
+
+/// What a function answers: a value to print, or the reason it refused.
+/// `ok()` is the bare acknowledgement, `text(..)` a string printed as it is,
+/// and any other JSON prints compact; the registry alone words `ok`,
+/// `error: ...` and numbers.
+pub type Reply = Result<Json, String>;
+
+pub fn ok() -> Reply {
+    Ok(Json::Null)
+}
+
+pub fn text(s: impl Into<String>) -> Reply {
+    Ok(Json::String(s.into()))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Type {
     Void,
@@ -43,8 +59,6 @@ impl Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    #[cfg_attr(not(test), expect(dead_code))]
-    Void,
     Str(String),
     Int(i32),
     Bool(bool),
@@ -76,25 +90,13 @@ impl Value {
             _ => 0.0,
         }
     }
-
-    /// `IpcValueSlot::toString`; `None` for a void function, which prints
-    /// nothing at all.
-    fn text(&self) -> Option<String> {
-        match self {
-            Value::Void => None,
-            Value::Str(s) => Some(s.clone()),
-            Value::Int(n) => Some(n.to_string()),
-            Value::Bool(b) => Some(b.to_string()),
-            Value::Real(r) => Some(qt_number(*r)),
-        }
-    }
 }
 
 pub struct Function<C> {
     pub name: &'static str,
     pub params: &'static [(&'static str, Type)],
     pub ret: Type,
-    pub call: fn(&mut C, &[Value]) -> Value,
+    pub call: fn(&mut C, &[Value]) -> Reply,
 }
 
 impl<C> Function<C> {
@@ -177,9 +179,12 @@ impl<C> Registry<C> {
                 }
             }
         }
-        match (function.call)(ctx, &values).text() {
-            Some(text) if function.ret != Type::Void => format!("{text}\n"),
-            _ => String::new(),
+        if function.ret == Type::Void {
+            return String::new();
+        }
+        match (function.call)(ctx, &values) {
+            Ok(json) => format!("{}\n", print(function.ret, &json)),
+            Err(reason) => format!("error: {reason}\n"),
         }
     }
 
@@ -195,6 +200,17 @@ impl<C> Registry<C> {
             Some(function) => function.definition() + "\n",
             None => "Function not found.\n".into(),
         }
+    }
+}
+
+/// `IpcValueSlot::toString`: a string as it is, `null` as `ok`, a real the
+/// way Qt prints one, and any other JSON compact.
+fn print(ret: Type, json: &Json) -> String {
+    match json {
+        Json::Null => "ok".into(),
+        Json::String(s) => s.clone(),
+        Json::Number(n) if ret == Type::Real => qt_number(n.as_f64().unwrap_or(0.0)),
+        other => other.to_string(),
     }
 }
 

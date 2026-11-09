@@ -4,52 +4,48 @@
 
 use fs_system::lights as model;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::lights::{self, Cmd};
 use crate::wayland::App;
 
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
 /// The command goes out only when it was
 /// accepted.
-fn answer(app: &App, accepted: bool, what: &str, cmd: impl FnOnce() -> Cmd) -> Value {
+fn answer(app: &App, accepted: bool, what: &str, cmd: impl FnOnce() -> Cmd) -> Reply {
     if !app.store.lights.available {
-        return text("error: no keyboard lights (asusctl/asusd not found)");
+        return Err("no keyboard lights (asusctl/asusd not found)".into());
     }
     if !accepted {
-        return text(format!("error: refused '{what}'"));
+        return Err(format!("refused '{what}'"));
     }
     lights::command(cmd());
-    text("ok")
+    ok()
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     answer(app, true, "", || Cmd::Toggle)
 }
 
-fn effect(app: &mut App, a: &[Value]) -> Value {
+fn effect(app: &mut App, a: &[Value]) -> Reply {
     let id = a[0].str();
     answer(app, app.store.lights.has_effect(id), id, || Cmd::Effect(id.to_owned()))
 }
 
-fn color(app: &mut App, a: &[Value]) -> Value {
+fn color(app: &mut App, a: &[Value]) -> Reply {
     let hex = model::normalize_hex(Some(a[0].str()));
     answer(app, !hex.is_empty(), a[0].str(), || Cmd::Colour(hex.clone()))
 }
 
-fn source(app: &mut App, a: &[Value]) -> Value {
+fn source(app: &mut App, a: &[Value]) -> Reply {
     let v = a[0].str();
     answer(app, model::SOURCES.contains(&v), v, || Cmd::Source(v.to_owned()))
 }
 
-fn speed(app: &mut App, a: &[Value]) -> Value {
+fn speed(app: &mut App, a: &[Value]) -> Reply {
     let v = a[0].str();
     answer(app, model::SPEEDS.contains(&v), v, || Cmd::Speed(v.to_owned()))
 }
 
-fn brightness(app: &mut App, a: &[Value]) -> Value {
+fn brightness(app: &mut App, a: &[Value]) -> Reply {
     let v = a[0].str();
     let level = match v.as_bytes() {
         [d @ b'0'..=b'3'] => Some(i64::from(d - b'0')),
@@ -58,13 +54,13 @@ fn brightness(app: &mut App, a: &[Value]) -> Value {
     answer(app, level.is_some(), v, || Cmd::Brightness(level.unwrap_or(0)))
 }
 
-fn refresh(_: &mut App, _: &[Value]) -> Value {
+fn refresh(_: &mut App, _: &[Value]) -> Reply {
     lights::command(Cmd::Refresh);
-    text("ok")
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    text(app.store.lights.status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.lights.status())
 }
 
 pub fn target() -> Target<App> {

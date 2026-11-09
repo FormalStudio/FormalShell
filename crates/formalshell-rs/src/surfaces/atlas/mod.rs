@@ -36,6 +36,19 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// The name `radio status` reports.
+    fn name(self) -> &'static str {
+        match self {
+            Mode::World => "world",
+            Mode::Cliamp => "cliamp",
+            Mode::Favorites => "favorites",
+            Mode::Recent => "recent",
+            Mode::Search => "search",
+            Mode::Country => "country",
+            Mode::Random => "random",
+        }
+    }
+
     fn tab(self) -> Option<usize> {
         match self {
             Mode::World => Some(0),
@@ -167,7 +180,7 @@ impl Atlas {
     pub fn status(&self, r: &radio::State) -> serde_json::Value {
         serde_json::json!({
             "open": self.open,
-            "mode": format!("{:?}", self.mode).to_lowercase(),
+            "mode": self.mode.name(),
             "stations": self.display(r).len(),
             "world": self.world.len(),
             "fetching": self.fetching,

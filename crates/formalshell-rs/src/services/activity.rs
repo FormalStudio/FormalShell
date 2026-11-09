@@ -96,10 +96,6 @@ impl State {
         v
     }
 
-    /// The IPC `status` reply.
-    pub fn status(&self) -> String {
-        self.to_json().to_string()
-    }
 }
 
 pub enum Input {
@@ -652,7 +648,7 @@ mod tests {
     #[test]
     fn status_carries_fspec_and_the_groups() {
         let s = State { fspec: Fspec { installed: false, dir: Some("/run/x".into()), watching: true, error: None }, ..State::default() };
-        let v: serde_json::Value = serde_json::from_str(&s.status()).unwrap();
+        let v: serde_json::Value = s.to_json();
         assert_eq!(v["fspec"], json!({"installed": false, "watching": true, "dir": "/run/x", "error": null}));
         assert_eq!(v["groups"], json!([]));
         assert_eq!(v["history"], json!([]));

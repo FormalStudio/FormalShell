@@ -132,18 +132,18 @@ pub fn override_of<'a>(store: &'a Store, key: &str) -> Option<&'a Value> {
 }
 
 fn pinned_error(key: &str) -> String {
-    format!("error: {key} is set in settings.json")
+    format!("{key} is set in settings.json")
 }
 
 fn check(key: &Key, value: &Value) -> Result<(), String> {
     match key.control {
         Control::Switch(_) if value.is_boolean() => Ok(()),
-        Control::Switch(_) => Err(format!("error: {} takes true or false", key.key)),
+        Control::Switch(_) => Err(format!("{} takes true or false", key.key)),
         Control::Choice(values, _) => match value.as_str() {
             Some(v) if values.iter().any(|(x, _)| *x == v) => Ok(()),
             _ => {
                 let names: Vec<&str> = values.iter().map(|(x, _)| *x).collect();
-                Err(format!("error: {} takes one of {}", key.key, names.join(", ")))
+                Err(format!("{} takes one of {}", key.key, names.join(", ")))
             }
         },
     }
@@ -151,7 +151,7 @@ fn check(key: &Key, value: &Value) -> Result<(), String> {
 
 /// Writes `value` as `key`'s override, or says why not.
 pub fn set(store: &Store, key: &str, value: Value) -> Result<(), String> {
-    let Some(entry) = find(key) else { return Err(format!("error: unknown setting '{key}'")) };
+    let Some(entry) = find(key) else { return Err(format!("unknown setting '{key}'")) };
     if store.config.pinned(key) {
         return Err(pinned_error(key));
     }
@@ -172,7 +172,7 @@ pub fn set(store: &Store, key: &str, value: Value) -> Result<(), String> {
 /// Drops `key`'s override.
 pub fn reset(store: &Store, key: &str) -> Result<(), String> {
     if find(key).is_none() {
-        return Err(format!("error: unknown setting '{key}'"));
+        return Err(format!("unknown setting '{key}'"));
     }
     if store.config.pinned(key) {
         return Err(pinned_error(key));
@@ -213,7 +213,7 @@ mod tests {
     fn values_are_checked_against_the_control() {
         let style = find("bar.style").unwrap();
         assert!(check(style, &json!("solid")).is_ok());
-        assert_eq!(check(style, &json!("glass")), Err("error: bar.style takes one of transparent, solid, corners".into()));
+        assert_eq!(check(style, &json!("glass")), Err("bar.style takes one of transparent, solid, corners".into()));
         assert_eq!(check(find("hotCorners.topLeft").unwrap(), &json!("none")), Ok(()));
         let morph = find("motion.morph").unwrap();
         assert!(check(morph, &json!(false)).is_ok());

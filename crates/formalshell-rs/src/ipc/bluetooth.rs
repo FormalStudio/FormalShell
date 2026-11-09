@@ -8,92 +8,64 @@
 
 use fs_types::BtAddress;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::devices::bluetooth;
 use crate::wayland::App;
 
-const NO_ADAPTER: &str = "error: no bluetooth adapter";
+const NO_ADAPTER: &str = "no bluetooth adapter";
 
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     if app.store.bluetooth.powered.is_none() {
-        return text(NO_ADAPTER);
+        return Err(NO_ADAPTER.into());
     }
     if let Some(rt) = &app.runtime {
         rt.service(bluetooth::toggle_power);
     }
-    text("ok")
+    ok()
 }
 
-fn power(app: &mut App, a: &[Value]) -> Value {
+fn power(app: &mut App, a: &[Value]) -> Reply {
     let on = match a[0].str() {
         "on" => true,
         "off" => false,
-        _ => return text("error: power state must be 'on' or 'off'"),
+        _ => return Err("power state must be 'on' or 'off'".into()),
     };
     if app.store.bluetooth.powered.is_none() {
-        return text(NO_ADAPTER);
+        return Err(NO_ADAPTER.into());
     }
     bluetooth::ask(bluetooth::Ask::Power(on));
-    text("ok")
+    ok()
 }
 
 /// A keybind or script can paste an address back in whatever case it has.
-fn write_trust(app: &mut App, address: &str, want: bool) -> Value {
+fn write_trust(app: &mut App, address: &str, want: bool) -> Reply {
     let bt = &app.store.bluetooth;
     if bt.powered.is_none() {
-        return text(NO_ADAPTER);
+        return Err(NO_ADAPTER.into());
     }
     let Some(device) = BtAddress::parse(address).and_then(|a| bt.devices.iter().find(|d| d.address == a)) else {
-        return text(format!("error: unknown device '{address}'"));
+        return Err(format!("unknown device '{address}'"));
     };
     if !device.paired {
-        return text(format!("error: device '{address}' is not paired"));
+        return Err(format!("device '{address}' is not paired"));
     }
     let found = device.address;
     if let Some(rt) = &app.runtime {
         rt.service(move |ctx| bluetooth::set_trust(ctx, found, want));
     }
-    text("ok")
+    ok()
 }
 
-fn trust(app: &mut App, a: &[Value]) -> Value {
+fn trust(app: &mut App, a: &[Value]) -> Reply {
     write_trust(app, a[0].str(), true)
 }
 
-fn untrust(app: &mut App, a: &[Value]) -> Value {
+fn untrust(app: &mut App, a: &[Value]) -> Reply {
     write_trust(app, a[0].str(), false)
 }
 
-fn quote(s: &str) -> String {
-    serde_json::to_string(s).unwrap_or_default()
-}
-
-/// The keys in the order the golden replies carry them.
-fn status(app: &mut App, _: &[Value]) -> Value {
-    let bt = &app.store.bluetooth;
-    let Some(powered) = bt.powered else {
-        return text(r#"{"available":false,"enabled":false,"connected":0,"devices":[]}"#);
-    };
-    let rows: Vec<String> = bt
-        .devices
-        .iter()
-        .map(|d| {
-            format!(
-                r#"{{"address":{},"name":{},"paired":{},"trusted":{},"connected":{}}}"#,
-                quote(&d.address.to_string()),
-                quote(&d.name),
-                d.paired,
-                d.trusted,
-                d.connected
-            )
-        })
-        .collect();
-    let connected = bt.devices.iter().filter(|d| d.connected).count();
-    text(format!(r#"{{"available":true,"enabled":{powered},"connected":{connected},"devices":[{}]}}"#, rows.join(",")))
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.bluetooth.status())
 }
 
 pub fn target() -> Target<App> {

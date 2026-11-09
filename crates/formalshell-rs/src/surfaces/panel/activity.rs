@@ -35,10 +35,10 @@ impl Panel for Activity {
         &[Topic::Activity]
     }
 
-    fn call(&mut self, verb: &str, arg: &str) -> Option<String> {
+    fn call(&mut self, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
         (verb == "select").then(|| {
             self.cursor = Some(arg.to_owned());
-            "ok".into()
+            Ok(serde_json::Value::Null)
         })
     }
 

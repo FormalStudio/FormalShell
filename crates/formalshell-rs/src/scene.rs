@@ -27,6 +27,10 @@ impl IRect {
         self.w <= 0 || self.h <= 0
     }
 
+    pub fn to_json(self) -> serde_json::Value {
+        serde_json::json!({"x": self.x, "y": self.y, "width": self.w, "height": self.h})
+    }
+
     pub fn right(&self) -> i32 {
         self.x + self.w
     }

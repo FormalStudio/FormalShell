@@ -2444,13 +2444,13 @@ impl Model {
     pub fn run_action(&mut self, store: &Store, index: usize, id: &str) -> Result<Out, String> {
         let on_row = self.column.as_ref().is_some_and(|c| self.rows.get(index).is_some_and(|r| r.id == c.node.id));
         if !on_row && !self.open_actions(store, index) {
-            return Err(format!("error: row {index} has no actions"));
+            return Err(format!("row {index} has no actions"));
         }
         let Some((node, action)) = self.column.as_ref().and_then(|c| Some((c.node.clone(), c.actions.iter().find(|a| a.id == id)?.clone()))) else {
             if !on_row {
                 self.close_actions();
             }
-            return Err(format!("error: no action {id}"));
+            return Err(format!("no action {id}"));
         };
         self.query.clear();
         if let Some(c) = &mut self.column {

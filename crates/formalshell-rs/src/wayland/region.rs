@@ -185,7 +185,7 @@ impl App {
             PointerEventKind::Motion { .. } => self.picker_motion(i, lx, ly, gx, gy, hit),
             PointerEventKind::Press { button, .. } => {
                 if button == crate::input::BTN_RIGHT {
-                    cap::picker_close(self, "cancelled by right-click");
+                    let _ = cap::picker_close(self, "cancelled by right-click");
                     return;
                 }
                 self.pickers.press = Some((gx, gy, hit.clone()));
@@ -209,7 +209,7 @@ impl App {
                         let c = cap::cands(self);
                         self.capture.picker.hover = self.capture.picker.resolve_at(&c, gx, gy);
                         if self.capture.picker.hover.is_some() {
-                            cap::picker_commit(self, false);
+                            let _ = cap::picker_commit(self, false);
                         }
                     }
                 }
@@ -240,10 +240,10 @@ impl App {
 
     fn picker_action(&mut self, on: &str) {
         if on == "commit" {
-            cap::picker_commit(self, false);
+            let _ = cap::picker_commit(self, false);
         } else if let Some(i) = on.strip_prefix("tool:").and_then(|i| i.parse::<i32>().ok()) {
             let c = cap::cands(self);
-            self.capture.picker.set_tool(&c, i);
+            let _ = self.capture.picker.set_tool(&c, i);
         }
         self.picker_sync();
     }
@@ -282,7 +282,7 @@ impl App {
             Keysym::_6 => "6",
             _ => return true,
         };
-        cap::picker_key(self, name);
+        let _ = cap::picker_key(self, name);
         true
     }
 }

@@ -218,7 +218,7 @@ fn spawn(retry: Retry) {
 pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -> Result<Done, String> {
     let activity = &store.activity.activity;
     let groups = activity.groups();
-    let Some(g) = groups.iter().find(|g| g.source == source) else { return Err(format!("error: no activity from '{source}'")) };
+    let Some(g) = groups.iter().find(|g| g.source == source) else { return Err(format!("no activity from '{source}'")) };
     match verb {
         Verb::Open => {
             let lead = g.lead();
@@ -237,12 +237,12 @@ pub fn act(store: &Store, runtime: Option<&Runtime>, verb: Verb, source: &str) -
             service::send(Input::Dismiss(source.to_owned()));
         }
         Verb::OpenApp => {
-            let Some(app) = crate::surfaces::packages::landed_app(store, source) else { return Err(format!("error: '{source}' brought no app")) };
+            let Some(app) = crate::surfaces::packages::landed_app(store, source) else { return Err(format!("'{source}' brought no app")) };
             focus_app(store, app);
             service::send(Input::Dismiss(source.to_owned()));
         }
         Verb::Retry => {
-            let Some(retry) = activity.retry(source) else { return Err(format!("error: '{source}' cannot be retried")) };
+            let Some(retry) = activity.retry(source) else { return Err(format!("'{source}' cannot be retried")) };
             // The packages service follows its own installs' operations.
             if let Some(id) = source.strip_prefix("fspec:install:") {
                 crate::surfaces::packages::install(store, id);

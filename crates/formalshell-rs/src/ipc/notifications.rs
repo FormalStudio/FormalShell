@@ -2,17 +2,13 @@
 
 use serde_json::json;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::services::notifications;
 use crate::store::Topic;
 use crate::surfaces;
 use crate::wayland::App;
 
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-fn on_off(on: bool) -> Value {
+fn on_off(on: bool) -> Reply {
     text(if on { "on" } else { "off" })
 }
 
@@ -40,77 +36,78 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     let center = app.center_numbers();
-    text(notifications::status(&app.store.notifications, center))
+    Ok(notifications::status(&app.store.notifications, center))
 }
 
-fn dnd_state(app: &mut App, _: &[Value]) -> Value {
+fn dnd_state(app: &mut App, _: &[Value]) -> Reply {
     on_off(app.store.notifications.model.dnd)
 }
 
-fn toggle_dnd(app: &mut App, _: &[Value]) -> Value {
+fn toggle_dnd(app: &mut App, _: &[Value]) -> Reply {
     let on = !app.store.notifications.model.dnd;
     app.store.notifications.set_dnd(on);
     moved(app);
     on_off(app.store.notifications.model.dnd)
 }
 
-fn set_dnd(app: &mut App, args: &[Value]) -> Value {
+fn set_dnd(app: &mut App, args: &[Value]) -> Reply {
     app.store.notifications.set_dnd(args[0].bool());
     moved(app);
     on_off(app.store.notifications.model.dnd)
 }
 
-fn show_history(app: &mut App, _: &[Value]) -> Value {
+fn show_history(app: &mut App, _: &[Value]) -> Reply {
     let open = !app.store.notifications.center_open;
-    text(app.set_center(open, None))
+    app.set_center(open, None);
+    ok()
 }
 
-fn clear(app: &mut App, _: &[Value]) -> Value {
+fn clear(app: &mut App, _: &[Value]) -> Reply {
     app.store.notifications.dismiss_all();
     app.store.notifications.clear_pending();
     moved(app);
-    text("ok")
+    ok()
 }
 
-fn clear_pending(app: &mut App, _: &[Value]) -> Value {
+fn clear_pending(app: &mut App, _: &[Value]) -> Reply {
     app.store.notifications.clear_pending();
     moved(app);
-    text("ok")
+    ok()
 }
 
-fn mark_all_seen(app: &mut App, _: &[Value]) -> Value {
+fn mark_all_seen(app: &mut App, _: &[Value]) -> Reply {
     app.store.notifications.mark_all_seen();
     moved(app);
-    text("ok")
+    ok()
 }
 
-fn dismiss_all(app: &mut App, _: &[Value]) -> Value {
+fn dismiss_all(app: &mut App, _: &[Value]) -> Reply {
     app.store.notifications.dismiss_all();
     moved(app);
-    text("ok")
+    ok()
 }
 
 /// The front toast's whole group, which is what its close button closes.
 /// `none` at an empty screen: a keybind fired there is not a failure.
-fn dismiss_one(app: &mut App, _: &[Value]) -> Value {
+fn dismiss_one(app: &mut App, _: &[Value]) -> Reply {
     let Some(ids) = app.store.notifications.front_group() else { return text("none") };
     app.store.notifications.dismiss_popup_group(&ids);
     moved(app);
-    text("ok")
+    ok()
 }
 
-fn invoke_last(app: &mut App, _: &[Value]) -> Value {
+fn invoke_last(app: &mut App, _: &[Value]) -> Reply {
     app.store.notifications.invoke_last();
     moved(app);
-    text("ok")
+    ok()
 }
 
-fn expand(app: &mut App, args: &[Value]) -> Value {
+fn expand(app: &mut App, args: &[Value]) -> Reply {
     let state = args[0].str();
     if state != "on" && state != "off" {
-        return text(format!("error: unknown expand state '{state}' (on|off)"));
+        return Err(format!("unknown expand state '{state}' (on|off)"));
     }
     app.store.notifications.stack_expanded = state == "on";
     moved(app);
@@ -134,34 +131,33 @@ pub fn reminder() -> Target<App> {
     }
 }
 
-fn reminder_set(app: &mut App, args: &[Value]) -> Value {
+fn reminder_set(app: &mut App, args: &[Value]) -> Reply {
     let duration = args[0].str().to_owned();
     let fallback = crate::settings::REMINDER_MESSAGE.get(&app.store.config).to_owned();
     let Some(e) = app.store.notifications.set_reminder(&duration, args[1].str(), &fallback) else {
-        return text(format!("error: could not read \"{duration}\" as a duration"));
+        return Err(format!("could not read \"{duration}\" as a duration"));
     };
     moved(app);
-    text(format!(
-        r#"{{"id":{},"message":{},"dueAt":{},"dueClock":{}}}"#,
-        fs_js::stringify(&json!(e.id)),
-        fs_js::stringify(&json!(e.message)),
-        fs_js::num_str(e.due_at),
-        fs_js::stringify(&json!(fs_info::reminders::due_clock(e.due_at))),
-    ))
+    Ok(json!({
+        "id": e.id,
+        "message": e.message,
+        "dueAt": fs_js::json_number(e.due_at),
+        "dueClock": fs_info::reminders::due_clock(e.due_at),
+    }))
 }
 
-fn reminder_show(app: &mut App, _: &[Value]) -> Value {
+fn reminder_show(app: &mut App, _: &[Value]) -> Reply {
     app.store.notifications.show_reminders();
     moved(app);
-    text("ok")
+    ok()
 }
 
-fn reminder_clear(app: &mut App, _: &[Value]) -> Value {
+fn reminder_clear(app: &mut App, _: &[Value]) -> Reply {
     let n = app.store.notifications.clear_reminders();
     moved(app);
     text(format!("ok: cleared {n}"))
 }
 
-fn reminder_status(app: &mut App, _: &[Value]) -> Value {
-    text(app.store.notifications.reminder_status())
+fn reminder_status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.notifications.reminder_status())
 }

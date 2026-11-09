@@ -55,7 +55,7 @@ impl App {
 
     /// The centre is a panel: it hangs off the line at `anchor` (the cell
     /// or card that opened it), else at its own cell, else at the line's end.
-    pub fn set_center(&mut self, open: bool, anchor: Option<f64>) -> &'static str {
+    pub fn set_center(&mut self, open: bool, anchor: Option<f64>) {
         let now = Instant::now();
         if !open {
             if self.center_open() {
@@ -66,7 +66,6 @@ impl App {
             self.open_host(Box::new(center::Center::default()), anchor, now);
         }
         self.tick_notifications();
-        "ok"
     }
 
     pub(crate) fn toasts_changed(&mut self) {

@@ -24,7 +24,7 @@ use fs_system::display::hdr::{self, Edid, Verdict};
 use fs_system::display::outputs::{self, Output};
 use fs_system::display::priority;
 use fs_system::monitor::gpu;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::runtime::Ctx;
 use crate::services::compositor::{self, Command};
@@ -509,10 +509,6 @@ fn supported_names(store: &Store) -> Vec<String> {
     rows(store).iter().filter(|r| r.enabled && hdr_supported(store, &r.name)).map(|r| r.name.clone()).collect()
 }
 
-fn js(s: &str) -> String {
-    serde_json::to_string(s).unwrap_or_default()
-}
-
 /// Any output showing HDR now (HdrService.active).
 pub fn hdr_active(store: &Store) -> bool {
     rows(store).iter().any(|r| hdr::is_on(Some(r)))
@@ -520,48 +516,47 @@ pub fn hdr_active(store: &Store) -> bool {
 
 /// `{ active, outputs: [{ name, supported, reason, on, wanted, cm }] }`, in
 /// this key order.
-pub fn hdr_status(store: &Store) -> String {
+pub fn hdr_status(store: &Store) -> Value {
     let wanted = store.state.data.hdr.clone().unwrap_or_default();
     let active = rows(store).iter().any(|r| hdr::is_on(Some(r)));
-    let outputs: Vec<String> = rows(store)
+    let outputs: Vec<Value> = rows(store)
         .iter()
         .map(|r| {
             let v = store.display.verdict(&r.name);
-            format!(
-                "{{\"name\":{},\"supported\":{},\"reason\":{},\"on\":{},\"wanted\":{},\"cm\":{}}}",
-                js(&r.name),
-                v.supported,
-                js(v.reason),
-                hdr::is_on(Some(r)),
-                wanted.contains_key(&r.name),
-                js(&r.cm)
-            )
+            json!({
+                "name": r.name,
+                "supported": v.supported,
+                "reason": v.reason,
+                "on": hdr::is_on(Some(r)),
+                "wanted": wanted.contains_key(&r.name),
+                "cm": r.cm,
+            })
         })
         .collect();
-    format!("{{\"active\":{active},\"outputs\":[{}]}}", outputs.join(","))
+    json!({"active": active, "outputs": outputs})
 }
 
 /// The rule `hdr_set` would send for `name`, unsent: `{ rule, lua }`, the
 /// rule's numbers as numbers the way outputs.js builds it.
-pub fn hdr_rule(store: &Store, name: &str) -> String {
+pub fn hdr_rule(store: &Store, name: &str) -> Result<Value, String> {
     let Some(row) = outputs::find_output(rows(store), name) else {
-        return format!("unknown output: {name}");
+        return Err(format!("unknown output: {name}"));
     };
     let r = outputs::hyprland_color_rule(row, &on_color(store));
-    let rule = format!(
-        "{{\"output\":{},\"mode\":{},\"position\":{},\"scale\":{},\"transform\":{},\"bitdepth\":{},\"cm\":{},\"sdrbrightness\":{},\"sdrsaturation\":{},\"mirror\":{}}}",
-        js(&r.output),
-        js(&r.mode),
-        js(&r.position),
-        r.scale,
-        r.transform,
-        r.bitdepth,
-        js(&r.cm),
-        r.sdrbrightness,
-        r.sdrsaturation,
-        js(&r.mirror)
-    );
-    format!("{{\"rule\":{rule},\"lua\":{}}}", js(&outputs::hyprland_rule_lua(&r)))
+    let number = |s: &str| s.parse::<f64>().map_or_else(|_| Value::String(s.to_owned()), fs_js::json_number);
+    let rule = json!({
+        "output": r.output,
+        "mode": r.mode,
+        "position": r.position,
+        "scale": number(&r.scale),
+        "transform": r.transform,
+        "bitdepth": r.bitdepth,
+        "cm": r.cm,
+        "sdrbrightness": number(&r.sdrbrightness),
+        "sdrsaturation": number(&r.sdrsaturation),
+        "mirror": r.mirror,
+    });
+    Ok(json!({"rule": rule, "lua": outputs::hyprland_rule_lua(&r)}))
 }
 
 /// The running Hyprland, which a monitor rule set over IPC lives as long as.
@@ -584,19 +579,19 @@ pub struct Hdr {
 }
 
 impl Hdr {
-    /// Sets HDR on an output: "ok" or why nothing was done.
-    pub fn set(&mut self, store: &Store, name: &str, on: bool) -> String {
+    /// Sets HDR on an output, or says why nothing was done.
+    pub fn set(&mut self, store: &Store, name: &str, on: bool) -> Result<(), String> {
         if !config_available() {
-            return "no compositor".into();
+            return Err("no compositor".into());
         }
         let Some(row) = outputs::find_output(rows(store), name) else {
-            return format!("unknown output: {name}");
+            return Err(format!("unknown output: {name}"));
         };
         if !row.enabled {
-            return format!("{name} is disabled");
+            return Err(format!("{name} is disabled"));
         }
         if on && !hdr_supported(store, name) {
-            return format!("HDR unavailable on {name}: {}", hdr_reason(store, name));
+            return Err(format!("HDR unavailable on {name}: {}", hdr_reason(store, name)));
         }
         let saved = store.state.data.hdr.clone().unwrap_or_default();
         let prior = saved.get(name).and_then(|w| w.prior.as_ref()).map(hdr::off_color);
@@ -611,25 +606,25 @@ impl Hdr {
                 apply(name, prior.unwrap_or_else(|| hdr::prior_of(row)));
             }
         }
-        "ok".into()
+        Ok(())
     }
 
     /// Every output that can do HDR together; an error when none can.
-    pub fn set_all(&mut self, store: &Store, on: bool) -> String {
+    pub fn set_all(&mut self, store: &Store, on: bool) -> Result<(), String> {
         let names = supported_names(store);
         if names.is_empty() {
-            return if on { "no output supports HDR".into() } else { "ok".into() };
+            return if on { Err("no output supports HDR".into()) } else { Ok(()) };
         }
         for name in &names {
-            self.set(store, name, on);
+            let _ = self.set(store, name, on);
         }
-        "ok".into()
+        Ok(())
     }
 
-    pub fn toggle(&mut self, store: &Store) -> String {
+    pub fn toggle(&mut self, store: &Store) -> Result<(), String> {
         let names = supported_names(store);
         if names.is_empty() {
-            return "no output supports HDR".into();
+            return Err("no output supports HDR".into());
         }
         let any_on = names.iter().any(|n| hdr_on(store, n));
         self.set_all(store, !any_on)

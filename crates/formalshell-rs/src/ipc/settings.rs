@@ -4,13 +4,9 @@
 
 use serde_json::Value as Json;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::overrides;
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -24,28 +20,24 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn get(app: &mut App, args: &[Value]) -> Value {
+fn get(app: &mut App, args: &[Value]) -> Reply {
     match overrides::find(args[0].str()) {
-        Some(key) => text(overrides::describe(&app.store, key).to_string()),
-        None => text(format!("error: unknown setting '{}'", args[0].str())),
+        Some(key) => Ok(overrides::describe(&app.store, key)),
+        None => Err(format!("unknown setting '{}'", args[0].str())),
     }
 }
 
-fn set(app: &mut App, args: &[Value]) -> Value {
-    match overrides::set(&app.store, args[0].str(), overrides::parse_value(args[1].str())) {
-        Ok(()) => text("ok"),
-        Err(e) => text(e),
-    }
+fn set(app: &mut App, args: &[Value]) -> Reply {
+    overrides::set(&app.store, args[0].str(), overrides::parse_value(args[1].str()))?;
+    ok()
 }
 
-fn reset(app: &mut App, args: &[Value]) -> Value {
-    match overrides::reset(&app.store, args[0].str()) {
-        Ok(()) => text("ok"),
-        Err(e) => text(e),
-    }
+fn reset(app: &mut App, args: &[Value]) -> Reply {
+    overrides::reset(&app.store, args[0].str())?;
+    ok()
 }
 
-fn list(app: &mut App, _: &[Value]) -> Value {
+fn list(app: &mut App, _: &[Value]) -> Reply {
     let all: Vec<Json> = overrides::KEYS.iter().map(|k| overrides::describe(&app.store, k)).collect();
-    text(Json::Array(all).to_string())
+    Ok(Json::Array(all))
 }

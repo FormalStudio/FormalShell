@@ -2,27 +2,29 @@
 //! `status`. No unlock verb: the
 //! password typed into the surface is the only way out.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::wayland::App;
 
-fn lock(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.lock())
+fn lock(app: &mut App, _: &[Value]) -> Reply {
+    app.lock()?;
+    ok()
 }
 
 /// "unknown" while an external locker owns the session: it never reports back.
-fn is_locked(app: &mut App, _: &[Value]) -> Value {
+fn is_locked(app: &mut App, _: &[Value]) -> Reply {
     if app.lock_external() {
-        return Value::Str("unknown".into());
+        return text("unknown");
     }
-    Value::Str(app.lock.locked.to_string())
+    text(app.lock.locked.to_string())
 }
 
-fn session(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.lock_session())
+fn session(app: &mut App, _: &[Value]) -> Reply {
+    app.lock_session()?;
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.lock_status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.lock_status())
 }
 
 pub fn target() -> Target<App> {

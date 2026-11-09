@@ -1,9 +1,7 @@
 //! `network`: the Wi-Fi list and its actions for the hwsim
 //! rig and for binds, and the speed test the panel runs.
 
-use fs_js as js;
-
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
 use crate::runtime::Ctx;
 use crate::services::devices::network::{self as net, Network, Secret};
 use crate::wayland::App;
@@ -38,72 +36,50 @@ fn run(app: &App, f: impl FnOnce(&Ctx) + Send + 'static) {
     }
 }
 
-fn quote(s: &str) -> String {
-    serde_json::to_string(s).unwrap_or_default()
-}
-
-fn status(app: &mut App, _: &[Value]) -> Value {
-    let n = state(app);
-    let rows: Vec<String> = n
-        .rows
-        .iter()
-        .map(|r| {
-            format!(
-                "{{\"name\":{},\"known\":{},\"connected\":{},\"stateChanging\":{},\"secured\":{},\"signal\":{},\"inRange\":{}}}",
-                quote(&r.ssid),
-                r.known,
-                r.connected,
-                r.changing,
-                r.secured,
-                js::num_str(r.signal.as_fraction()),
-                r.in_range
-            )
-        })
-        .collect();
-    let enabled = n.wifi_enabled;
+fn status(app: &mut App, _: &[Value]) -> Reply {
     // The panel's "Known networks" disclosure, null while the panel is closed.
-    let known_open = app.panel_call("network", "knownOpen", "").unwrap_or_else(|| "null".into());
+    let known_open = app.panel_call("network", "knownOpen", "").and_then(Result::ok).unwrap_or(Json::Null);
     // The SSID whose passphrase step is open, null with none or the panel shut.
-    let prompt = app.panel_call("network", "prompt", "").unwrap_or_else(|| "null".into());
-    Value::Str(format!("{{\"wifiEnabled\":{enabled},\"knownOpen\":{known_open},\"prompt\":{prompt},\"networks\":[{}]}}", rows.join(",")))
+    let prompt = app.panel_call("network", "prompt", "").and_then(Result::ok).unwrap_or(Json::Null);
+    Ok(state(app).status(known_open, prompt))
 }
 
 /// A network action already in flight is refused rather than queued.
-fn busy(n: &Network) -> Option<Value> {
-    n.action.as_ref().map(|(kind, ssid)| Value::Str(format!("error: network action already in progress ({} {ssid})", kind.as_str())))
+fn busy(n: &Network) -> Option<String> {
+    n.action.as_ref().map(|(kind, ssid)| format!("network action already in progress ({} {ssid})", kind.as_str()))
 }
 
-fn unknown(ssid: &str) -> Value {
-    Value::Str(format!("error: unknown ssid '{ssid}'"))
+fn unknown(ssid: &str) -> Reply {
+    Err(format!("unknown ssid '{ssid}'"))
 }
 
-fn connect(app: &mut App, a: &[Value]) -> Value {
+fn connect(app: &mut App, a: &[Value]) -> Reply {
     let n = state(app);
     if let Some(e) = busy(n) {
-        return e;
+        return Err(e);
     }
     let (ssid, psk) = (a[0].str().to_owned(), a[1].str().to_owned());
     let Some(row) = n.row(&ssid) else { return unknown(&ssid) };
     if psk.is_empty() {
         if row.connected {
             run(app, move |ctx| net::disconnect(ctx, ssid));
-            return Value::Str("ok".into());
+            return ok();
         }
         let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
         if retype || (row.secured && !row.known) {
-            return Value::Str(format!("error: '{ssid}' needs a password"));
+            return Err(format!("'{ssid}' needs a password"));
         }
         run(app, move |ctx| net::connect(ctx, ssid, Secret::Saved));
     } else {
         run(app, move |ctx| net::connect(ctx, ssid, Secret::Psk(psk)));
     }
-    Value::Str("ok".into())
+    ok()
 }
 
-fn connect_eap(app: &mut App, a: &[Value]) -> Value {
+fn connect_eap(app: &mut App, a: &[Value]) -> Reply {
     let n = state(app);
     if let Some(e) = busy(n) {
-        return e;
+        return Err(e);
     }
     let ssid = a[0].str().to_owned();
     if n.row(&ssid).is_none() {
@@ -111,46 +87,38 @@ fn connect_eap(app: &mut App, a: &[Value]) -> Value {
     }
     let secret = Secret::Eap { identity: a[1].str().to_owned(), password: a[2].str().to_owned() };
     run(app, move |ctx| net::connect(ctx, ssid, secret));
-    Value::Str("ok".into())
+    ok()
 }
 
-fn forget(app: &mut App, a: &[Value]) -> Value {
+fn forget(app: &mut App, a: &[Value]) -> Reply {
     let n = state(app);
     if let Some(e) = busy(n) {
-        return e;
+        return Err(e);
     }
     let ssid = a[0].str().to_owned();
     if n.row(&ssid).is_none() {
         return unknown(&ssid);
     }
     run(app, move |ctx| net::forget(ctx, ssid));
-    Value::Str("ok".into())
+    ok()
 }
 
-fn wifi(app: &mut App, a: &[Value]) -> Value {
+fn wifi(app: &mut App, a: &[Value]) -> Reply {
     let on = a[0].bool();
     run(app, move |ctx| net::set_wifi(ctx, on));
-    Value::Str("ok".into())
+    ok()
 }
 
-fn speedtest(app: &mut App, _: &[Value]) -> Value {
+fn speedtest(app: &mut App, _: &[Value]) -> Reply {
     if state(app).speed.running() {
-        return Value::Str("error: speed test already running".into());
+        return Err("speed test already running".into());
     }
     run(app, |ctx| {
         net::speed_start(ctx);
     });
-    Value::Str("ok".into())
+    ok()
 }
 
-fn speedstatus(app: &mut App, _: &[Value]) -> Value {
-    let s = &state(app).speed;
-    Value::Str(format!(
-        "{{\"running\":{},\"phase\":\"{}\",\"downMbps\":{},\"upMbps\":{},\"error\":{}}}",
-        s.running(),
-        s.phase.as_str(),
-        js::num_str(s.down_mbps()),
-        js::num_str(s.up_mbps()),
-        quote(&s.error)
-    ))
+fn speedstatus(app: &mut App, _: &[Value]) -> Reply {
+    Ok(state(app).speed_status())
 }

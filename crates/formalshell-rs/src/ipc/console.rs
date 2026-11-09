@@ -1,30 +1,26 @@
 //! `console`: the quake console's toggle, show and hide,
 //! and `status`, whose `windowId` is "" when no console window exists.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
-fn ok() -> Value {
-    Value::Str("ok".into())
-}
-
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     app.console_toggle();
     ok()
 }
 
-fn show(app: &mut App, _: &[Value]) -> Value {
+fn show(app: &mut App, _: &[Value]) -> Reply {
     app.console_show();
     ok()
 }
 
-fn hide(app: &mut App, _: &[Value]) -> Value {
+fn hide(app: &mut App, _: &[Value]) -> Reply {
     app.console_hide();
     ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.console_status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.console_status())
 }
 
 pub fn target() -> Target<App> {

@@ -123,6 +123,34 @@ pub enum Op {
 }
 
 impl Earbuds {
+    /// The IPC `status` reply: the active device as the panel renders it.
+    pub fn status(&self) -> serde_json::Value {
+        if !self.available() {
+            return serde_json::json!({"available": false});
+        }
+        let device = self.active().map_or(serde_json::Value::Null, model::to_json);
+        serde_json::json!({"available": true, "device": device})
+    }
+
+    /// The IPC `devices` reply.
+    pub fn list(&self) -> serde_json::Value {
+        let active = self.active().map(|d| d.key.clone());
+        serde_json::Value::Array(
+            self.devices()
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "key": d.key,
+                        "backend": d.backend,
+                        "name": d.name,
+                        "connected": d.connected,
+                        "active": active.as_deref() == Some(d.key.as_str()),
+                    })
+                })
+                .collect(),
+        )
+    }
+
     pub fn apply(&mut self, diff: Diff) -> bool {
         match diff {
             Diff::Backend(name, backend) => {

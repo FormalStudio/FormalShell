@@ -6,11 +6,10 @@
 //! own exit status lands in the next `processes` reply's `lastAction`.
 //! `mode` joins with the launcher's monitor view.
 
-use fs_system::monitor::gpu::{self, OffloadTools};
-
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, text};
 use crate::services::info::monitor::now_ms;
 use crate::services::info::procs;
+use crate::services::launch;
 use crate::services::wants::{self, Source};
 use crate::wayland::App;
 
@@ -20,116 +19,48 @@ pub fn warm() {
     wants::pulse(Source::Monitor);
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     wants::pulse(Source::Monitor);
-    Value::Str(app.store.monitor.status(now_ms()).to_string())
+    Ok(app.store.monitor.status(now_ms()))
 }
 
-fn gpu(app: &mut App, _: &[Value]) -> Value {
+fn gpu(app: &mut App, _: &[Value]) -> Reply {
     wants::pulse(Source::Monitor);
-    Value::Str(app.store.monitor.gpu(now_ms()).to_string())
+    Ok(app.store.monitor.gpu(now_ms()))
 }
 
-fn processes(app: &mut App, args: &[Value]) -> Value {
+fn processes(app: &mut App, args: &[Value]) -> Reply {
     wants::pulse(Source::Processes);
-    Value::Str(app.store.procs.report(args[0].str(), now_ms()).to_string())
+    Ok(app.store.procs.report(args[0].str(), now_ms()))
 }
 
-fn signal(app: &mut App, args: &[Value]) -> Value {
-    Value::Str(match procs::begin_signal(args[0].str(), args[1].str()) {
-        Ok((n, sig)) => {
-            if let Some(rt) = &app.runtime {
-                rt.service(move |ctx| procs::run_signal(ctx, n, sig));
-            }
-            format!("ok: {sig} sent to {n}")
-        }
-        Err(e) => e,
-    })
+fn signal(app: &mut App, args: &[Value]) -> Reply {
+    let (n, sig) = procs::begin_signal(args[0].str(), args[1].str())?;
+    if let Some(rt) = &app.runtime {
+        rt.service(move |ctx| procs::run_signal(ctx, n, sig));
+    }
+    text(format!("ok: {sig} sent to {n}"))
 }
 
-fn restart(app: &mut App, args: &[Value]) -> Value {
+fn restart(app: &mut App, args: &[Value]) -> Reply {
     let pid = args[0].str();
     let kernel = fs_system::monitor::procs::parse_pid(pid).and_then(|n| app.store.procs.row(n)).is_some_and(|r| r.kernel);
-    Value::Str(match procs::begin_restart(pid, kernel) {
-        Ok(n) => {
-            if let Some(rt) = &app.runtime {
-                rt.service(move |ctx| procs::run_restart(ctx, n));
-            }
-            format!("ok: restarting {n}")
-        }
-        Err(e) => e,
-    })
-}
-
-struct Entry {
-    exec: String,
-    path: String,
-    terminal: bool,
-}
-
-/// `DesktopEntries.byId`: the first `<id>.desktop` on the data dirs. The
-/// raw `Exec` is kept, since the offload wrapper runs it through `sh -c`.
-fn entry(id: &str) -> Option<Entry> {
-    let text = crate::paths::data_dirs().iter().find_map(|d| std::fs::read_to_string(d.join("applications").join(format!("{id}.desktop"))).ok())?;
-    let mut in_entry = false;
-    let (mut exec, mut path, mut terminal) = (None, None, false);
-    for line in text.lines().map(str::trim) {
-        if line.starts_with('[') {
-            in_entry = line == "[Desktop Entry]";
-        } else if in_entry && let Some((k, v)) = line.split_once('=') {
-            match k.trim() {
-                "Exec" if exec.is_none() => exec = Some(v.trim().to_owned()),
-                "Path" if path.is_none() => path = Some(v.trim().to_owned()),
-                "Terminal" => terminal = v.trim() == "true",
-                _ => {}
-            }
-        }
+    let n = procs::begin_restart(pid, kernel)?;
+    if let Some(rt) = &app.runtime {
+        rt.service(move |ctx| procs::run_restart(ctx, n));
     }
-    Some(Entry { exec: exec.unwrap_or_default(), path: path.unwrap_or_default(), terminal })
+    text(format!("ok: restarting {n}"))
 }
 
-fn shq(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
-/// `card` is a card id, or "" for the first discrete one. Spawned with the
-/// offload argv built by hand, since a desktop entry's own launch carries
-/// no environment.
-fn launch(app: &mut App, args: &[Value]) -> Value {
+/// `card` is a card id, or "" for the first discrete one.
+fn launch(app: &mut App, args: &[Value]) -> Reply {
     let (id, card) = (args[0].str(), args[1].str());
-    let Some(entry) = entry(id) else { return Value::Str(format!("error: no desktop entry '{id}'")) };
-    let m = &app.store.monitor;
-    let target = if card.is_empty() {
-        match m.cards.iter().find(|c| c.discrete) {
-            Some(c) => c,
-            None => return Value::Str("error: no discrete GPU on this machine".into()),
-        }
-    } else {
-        match m.cards.iter().find(|c| c.record.card.card == card) {
-            Some(c) => c,
-            None => return Value::Str(format!("error: no GPU card '{card}'")),
-        }
-    };
-    let mut exec = entry.exec;
-    if !entry.path.is_empty() {
-        exec = format!("cd {} && {exec}", shq(&entry.path));
-    }
-    let tools = OffloadTools { nvidia_offload: m.tools.0, prime_run: m.tools.1 };
-    let mut argv = gpu::offload_argv(&exec, Some(&target.record.card), tools);
-    let mut bare = true;
-    if entry.terminal {
-        let term = crate::settings::console_command_set(&app.store.config).unwrap_or_default();
-        if !term.is_empty() {
-            argv = term.into_iter().chain(argv).collect();
-            bare = false;
-        }
-    }
-    crate::services::launch::spawn(&app.store, id, &argv);
-    let mut reply = format!("ok: launched '{id}' on {} ({}): {}", target.record.card.card, target.name, argv.join(" "));
-    if entry.terminal && bare {
+    let l = launch::on_gpu(&app.store, id, card)?;
+    let mut reply = format!("ok: launched '{id}' on {} ({}): {}", l.card, l.name, l.argv.join(" "));
+    if l.bare_terminal {
         reply.push_str(" [runInTerminal, but console.command is not set: spawned bare]");
     }
-    Value::Str(reply)
+    text(reply)
 }
 
 pub fn target() -> Target<App> {

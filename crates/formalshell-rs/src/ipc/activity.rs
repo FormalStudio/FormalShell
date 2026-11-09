@@ -4,57 +4,57 @@
 //! spawned with its launch shown (`services/launch.rs`), for a keybind, and
 //! `openApp`, the app an install brought, off its row's source.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::activity::{self, Input};
 use crate::surfaces::activity::{self as row, Done, Verb};
 use crate::wayland::App;
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.store.activity.status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.activity.to_json())
 }
 
-fn seen(_: &mut App, _: &[Value]) -> Value {
+fn seen(_: &mut App, _: &[Value]) -> Reply {
     activity::send(Input::Seen);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn verb(app: &mut App, verb: Verb, source: &str) -> Value {
+fn verb(app: &mut App, verb: Verb, source: &str) -> Reply {
     match row::act(&app.store, app.runtime.as_ref(), verb, source) {
         Ok(Done::Panel) => {
             if app.panel_open() != Some("activity") {
                 app.set_panel("activity", true, None);
             }
-            app.panel_call("activity", "select", source);
-            Value::Str("ok".into())
+            let _ = app.panel_call("activity", "select", source);
+            ok()
         }
-        Ok(Done::Nothing) => Value::Str("ok".into()),
-        Err(e) => Value::Str(e),
+        Ok(Done::Nothing) => ok(),
+        Err(e) => Err(e),
     }
 }
 
-fn open(app: &mut App, args: &[Value]) -> Value {
+fn open(app: &mut App, args: &[Value]) -> Reply {
     verb(app, Verb::Open, args[0].str())
 }
 
-fn dismiss(app: &mut App, args: &[Value]) -> Value {
+fn dismiss(app: &mut App, args: &[Value]) -> Reply {
     verb(app, Verb::Dismiss, args[0].str())
 }
 
-fn retry(app: &mut App, args: &[Value]) -> Value {
+fn retry(app: &mut App, args: &[Value]) -> Reply {
     verb(app, Verb::Retry, args[0].str())
 }
 
-fn open_app(app: &mut App, args: &[Value]) -> Value {
+fn open_app(app: &mut App, args: &[Value]) -> Reply {
     verb(app, Verb::OpenApp, args[0].str())
 }
 
-fn launch(app: &mut App, args: &[Value]) -> Value {
+fn launch(app: &mut App, args: &[Value]) -> Reply {
     let id = args[0].str();
     let Some(argv) = crate::services::menu::launch_argv(&app.store.menu, id) else {
-        return Value::Str(format!("error: no desktop entry '{id}'"));
+        return Err(format!("no desktop entry '{id}'"));
     };
     crate::services::launch::spawn(&app.store, id, &argv);
-    Value::Str("ok".into())
+    ok()
 }
 
 pub fn target() -> Target<App> {

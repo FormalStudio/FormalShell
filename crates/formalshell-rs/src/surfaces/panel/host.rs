@@ -380,7 +380,7 @@ impl Host {
     /// `debug dump`'s `panel` block.
     pub fn report(&self) -> serde_json::Value {
         use serde_json::json;
-        let rect = |r: &IRect| json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+        let rect = |r: &IRect| r.to_json();
         let (viewport, content_h, scroll, row) = self.viewport();
         let cursor = row.map(|(key, r)| json!({"key": key, "rect": rect(&r)}));
         json!({

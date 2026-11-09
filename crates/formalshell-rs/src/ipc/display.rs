@@ -4,14 +4,10 @@
 
 use fs_system::display::outputs;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::services::display;
 use crate::services::compositor::{self, Command};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -44,85 +40,94 @@ pub fn hdr() -> Target<App> {
     }
 }
 
-/// None when the change may go out; otherwise the answer.
-fn refuse(app: &App, output: &str) -> Option<Value> {
-    if !display::config_available() {
-        return Some(text("no compositor"));
-    }
-    unknown(app, output)
-}
-
-fn unknown(app: &App, output: &str) -> Option<Value> {
-    if outputs::find_output(&app.store.compositor.outputs, output).is_none() {
-        return Some(text(format!("unknown output: {output}")));
-    }
-    None
-}
-
-fn scale(app: &mut App, args: &[Value]) -> Value {
-    let output = args[0].str();
-    if let Some(no) = refuse(app, output) {
-        return no;
-    }
-    compositor::send(Command::SetOutputScale(output.to_owned(), args[1].real()));
-    text("ok")
-}
-
-/// An empty `source` clears the mirror.
-fn mirror(app: &mut App, args: &[Value]) -> Value {
-    let output = args[0].str();
-    if !display::config_available() {
-        return text("mirroring unsupported");
-    }
-    if let Some(no) = refuse(app, output) {
-        return no;
-    }
-    compositor::send(Command::SetOutputMirror(output.to_owned(), args[1].str().to_owned()));
-    text("ok")
-}
-
-fn enable(app: &mut App, args: &[Value]) -> Value {
-    let output = args[0].str();
-    if !display::config_available() {
-        return text("no compositor");
-    }
-    if let Some(no) = unknown(app, output) {
-        return no;
-    }
-    compositor::send(Command::SetOutputEnabled(output.to_owned(), args[1].bool()));
-    text("ok")
-}
-
-/// `delta` percent on the focused output: its backlight on a laptop's own
-/// panel, DDC on a monitor.
-fn brightness_step(app: &mut App, args: &[Value]) -> Value {
-    let output = app.store.compositor.snapshot.focused_output_name.clone();
-    match app.brightness_step(&output, args[0].int().into()) {
-        Ok(()) => text("ok"),
+/// A change nothing was sent for answers its reason as it is, without the
+/// `error:` prefix the recorded replies never had.
+fn refusal(r: Result<(), String>) -> Reply {
+    match r {
+        Ok(()) => ok(),
         Err(why) => text(why),
     }
 }
 
-fn hdr_toggle(app: &mut App, _: &[Value]) -> Value {
-    text(app.hdr.toggle(&app.store))
+/// Why the change may not go out, if it may not.
+fn refuse(app: &App, output: &str) -> Result<(), String> {
+    if !display::config_available() {
+        return Err("no compositor".into());
+    }
+    unknown(app, output)
 }
 
-fn hdr_enable(app: &mut App, _: &[Value]) -> Value {
-    text(app.hdr.set_all(&app.store, true))
+fn unknown(app: &App, output: &str) -> Result<(), String> {
+    if outputs::find_output(&app.store.compositor.outputs, output).is_none() {
+        return Err(format!("unknown output: {output}"));
+    }
+    Ok(())
 }
 
-fn hdr_disable(app: &mut App, _: &[Value]) -> Value {
-    text(app.hdr.set_all(&app.store, false))
+fn scale(app: &mut App, args: &[Value]) -> Reply {
+    let output = args[0].str();
+    if let Err(why) = refuse(app, output) {
+        return text(why);
+    }
+    compositor::send(Command::SetOutputScale(output.to_owned(), args[1].real()));
+    ok()
 }
 
-fn hdr_set_output(app: &mut App, args: &[Value]) -> Value {
-    text(app.hdr.set(&app.store, args[0].str(), args[1].bool()))
+/// An empty `source` clears the mirror.
+fn mirror(app: &mut App, args: &[Value]) -> Reply {
+    let output = args[0].str();
+    if !display::config_available() {
+        return text("mirroring unsupported");
+    }
+    if let Err(why) = refuse(app, output) {
+        return text(why);
+    }
+    compositor::send(Command::SetOutputMirror(output.to_owned(), args[1].str().to_owned()));
+    ok()
 }
 
-fn hdr_rule(app: &mut App, args: &[Value]) -> Value {
-    text(display::hdr_rule(&app.store, args[0].str()))
+fn enable(app: &mut App, args: &[Value]) -> Reply {
+    let output = args[0].str();
+    if !display::config_available() {
+        return text("no compositor");
+    }
+    if let Err(why) = unknown(app, output) {
+        return text(why);
+    }
+    compositor::send(Command::SetOutputEnabled(output.to_owned(), args[1].bool()));
+    ok()
 }
 
-fn hdr_status(app: &mut App, _: &[Value]) -> Value {
-    text(display::hdr_status(&app.store))
+/// `delta` percent on the focused output: its backlight on a laptop's own
+/// panel, DDC on a monitor.
+fn brightness_step(app: &mut App, args: &[Value]) -> Reply {
+    let output = app.store.compositor.snapshot.focused_output_name.clone();
+    refusal(app.brightness_step(&output, args[0].int().into()))
+}
+
+fn hdr_toggle(app: &mut App, _: &[Value]) -> Reply {
+    refusal(app.hdr.toggle(&app.store))
+}
+
+fn hdr_enable(app: &mut App, _: &[Value]) -> Reply {
+    refusal(app.hdr.set_all(&app.store, true))
+}
+
+fn hdr_disable(app: &mut App, _: &[Value]) -> Reply {
+    refusal(app.hdr.set_all(&app.store, false))
+}
+
+fn hdr_set_output(app: &mut App, args: &[Value]) -> Reply {
+    refusal(app.hdr.set(&app.store, args[0].str(), args[1].bool()))
+}
+
+fn hdr_rule(app: &mut App, args: &[Value]) -> Reply {
+    match display::hdr_rule(&app.store, args[0].str()) {
+        Ok(rule) => Ok(rule),
+        Err(why) => text(why),
+    }
+}
+
+fn hdr_status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(display::hdr_status(&app.store))
 }

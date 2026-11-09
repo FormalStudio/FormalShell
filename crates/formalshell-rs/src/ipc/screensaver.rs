@@ -2,41 +2,37 @@
 //! recorder steps through, and `frameInfo`, whose `cycles` is its last key
 //! on purpose (the rig greps `"cycles":0}`).
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-fn start(app: &mut App, _: &[Value]) -> Value {
+fn start(app: &mut App, _: &[Value]) -> Reply {
     app.saver_start();
-    text("ok")
+    ok()
 }
 
-fn stop(app: &mut App, _: &[Value]) -> Value {
+fn stop(app: &mut App, _: &[Value]) -> Reply {
     app.saver_stop();
-    text("ok")
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    text(app.saver_status())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.saver_status())
 }
 
-fn frame(app: &mut App, args: &[Value]) -> Value {
+fn frame(app: &mut App, args: &[Value]) -> Reply {
     if !app.saver_active() {
-        return text("error: screensaver not active");
+        return Err("screensaver not active".into());
     }
     let n = args[0].int();
     if n < 0 {
-        return text("error: frame must be >= 0");
+        return Err("frame must be >= 0".into());
     }
     app.saver_pin(i64::from(n));
-    text("ok")
+    ok()
 }
 
-fn frame_info(app: &mut App, _: &[Value]) -> Value {
-    text(app.saver_frame_info())
+fn frame_info(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.saver_frame_info())
 }
 
 pub fn target() -> Target<App> {

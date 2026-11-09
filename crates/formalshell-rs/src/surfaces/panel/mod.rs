@@ -195,7 +195,7 @@ pub trait Panel {
     }
     /// An IPC verb aimed at this panel (`calendar select`); `None` when the
     /// panel answers none.
-    fn call(&mut self, _verb: &str, _arg: &str) -> Option<String> {
+    fn call(&mut self, _verb: &str, _arg: &str) -> Option<Result<serde_json::Value, String>> {
         None
     }
     /// A text field holds the keyboard: every key goes to [`Panel::edit`].

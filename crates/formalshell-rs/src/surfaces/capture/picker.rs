@@ -281,12 +281,12 @@ impl Picker {
     }
 
     /// Selects a toolbar cell; the caller has checked the picker is open.
-    pub fn set_tool(&mut self, c: &Cands, index: i32) -> String {
+    pub fn set_tool(&mut self, c: &Cands, index: i32) -> Result<(), String> {
         if !self.open {
-            return "error: picker not open".into();
+            return Err("picker not open".into());
         }
         if index < 0 || index as usize >= TOOLS.len() {
-            return format!("error: unknown tool {index}");
+            return Err(format!("unknown tool {index}"));
         }
         let tool = &TOOLS[index as usize];
         self.action = tool.action.into();
@@ -301,7 +301,7 @@ impl Picker {
         } else if tool.mode == "windows" && !self.selectable(c).is_empty() {
             self.cursor = 0;
         }
-        "ok".into()
+        Ok(())
     }
 
     pub fn status(&self, c: &Cands, runtime_dir: &str, screens: usize) -> Value {
@@ -413,9 +413,9 @@ mod tests {
     fn screen_tool_preselects_the_focused_output() {
         let c = cands();
         let mut p = Picker { open: true, ..Default::default() };
-        assert_eq!(p.set_tool(&c, 3), "ok");
+        assert_eq!(p.set_tool(&c, 3), Ok(()));
         assert_eq!((p.action.as_str(), p.mode.as_str(), p.tool_index(), p.cursor), ("record", "fullscreen", 3, 0));
-        assert_eq!(p.set_tool(&c, 7), "error: unknown tool 7");
+        assert_eq!(p.set_tool(&c, 7), Err("unknown tool 7".to_owned()));
     }
 
     #[test]

@@ -5,14 +5,9 @@
 
 use serde_json::{Value as Json, json};
 
-use super::debug::rect;
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::surfaces::panel::quick::{self, ID};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -30,12 +25,12 @@ fn open(app: &App) -> bool {
     app.panel.as_ref().is_some_and(|h| h.is_open() && h.id() == ID)
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    let state = app.panel_call(ID, "state", "");
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    let state: Option<Json> = app.panel_call(ID, "state", "").and_then(Result::ok);
     let host = app.panel.as_ref().filter(|h| h.is_open() && h.id() == ID);
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
-    let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| rect(r));
-    let parsed: Json = state.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(Json::Null);
+    let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| r.to_json());
+    let parsed = state.clone().unwrap_or(Json::Null);
     let shown = parsed["shown"].as_str();
     let mut rows: Vec<Json> = quick::tiles_with(&app.store, shown)
         .into_iter()
@@ -99,57 +94,57 @@ fn status(app: &mut App, _: &[Value]) -> Value {
     let out = json!({
         "open": host.is_some(),
         "from": host.and(parsed["from"].as_str()),
-        "card": host.map_or(Json::Null, |h| rect(&h.win.card.rest_rect())),
+        "card": host.map_or(Json::Null, |h| h.win.card.rest_rect().to_json()),
         "cursor": host.and_then(|h| h.viewport().3.map(|(k, _)| k.to_owned())),
         "rows": rows,
         "menu": menu,
         "dim": dim,
     });
-    text(out.to_string())
+    Ok(out)
 }
 
-fn activate(app: &mut App, args: &[Value]) -> Value {
+fn activate(app: &mut App, args: &[Value]) -> Reply {
     let id = args[0].str();
     if !open(app) {
-        return text("error: quick settings is not open");
+        return Err("quick settings is not open".into());
     }
     match quick::tiles(&app.store).into_iter().find(|t| t.id == id) {
         None if extra(app, id) => {
             app.panel_activate(ID, id);
-            text("ok")
+            ok()
         }
-        None => text(format!("error: unknown control '{id}'")),
-        Some(t) if !t.available() => text(format!("error: {id} is unavailable: {}", t.reason.unwrap_or_default())),
+        None => Err(format!("unknown control '{id}'")),
+        Some(t) if !t.available() => Err(format!("{id} is unavailable: {}", t.reason.unwrap_or_default())),
         Some(_) => {
             app.panel_activate(ID, id);
-            text("ok")
+            ok()
         }
     }
 }
 
 /// Whether `id` is an info tile the open card drew last.
 fn extra(app: &mut App, id: &str) -> bool {
-    let state: Json = app.panel_call(ID, "state", "").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Json::Null);
+    let state: Json = app.panel_call(ID, "state", "").and_then(Result::ok).unwrap_or(Json::Null);
     state["extras"].as_array().is_some_and(|x| x.iter().any(|x| x["id"] == id))
 }
 
-fn menu(app: &mut App, args: &[Value]) -> Value {
+fn menu(app: &mut App, args: &[Value]) -> Reply {
     let id = args[0].str();
     if !open(app) {
-        return text("error: quick settings is not open");
+        return Err("quick settings is not open".into());
     }
     if !quick::tiles(&app.store).iter().any(|t| t.id == id) {
-        return text(format!("error: unknown control '{id}'"));
+        return Err(format!("unknown control '{id}'"));
     }
     if quick::menu(&app.store, id, None).is_none() {
-        return text(format!("error: {id} has no menu"));
+        return Err(format!("{id} has no menu"));
     }
-    text(app.panel_call(ID, "menu", id).unwrap_or_default())
+    app.panel_call(ID, "menu", id).unwrap_or_else(|| text(""))
 }
 
-fn back(app: &mut App, _: &[Value]) -> Value {
+fn back(app: &mut App, _: &[Value]) -> Reply {
     if !open(app) {
-        return text("error: quick settings is not open");
+        return Err("quick settings is not open".into());
     }
-    text(app.panel_call(ID, "back", "").unwrap_or_default())
+    app.panel_call(ID, "back", "").unwrap_or_else(|| text(""))
 }

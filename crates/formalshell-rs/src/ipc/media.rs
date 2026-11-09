@@ -5,15 +5,9 @@
 
 use fs_types::Fraction;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::kopuz;
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-const OK: &str = "ok";
 
 pub fn target() -> Target<App> {
     Target {
@@ -38,145 +32,141 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn play_pause(app: &mut App, _: &[Value]) -> Value {
+fn play_pause(app: &mut App, _: &[Value]) -> Reply {
     app.store.media.play_pause();
-    text(OK)
+    ok()
 }
 
-fn next(app: &mut App, _: &[Value]) -> Value {
+fn next(app: &mut App, _: &[Value]) -> Reply {
     app.store.media.next();
-    text(OK)
+    ok()
 }
 
-fn previous(app: &mut App, _: &[Value]) -> Value {
+fn previous(app: &mut App, _: &[Value]) -> Reply {
     app.store.media.previous();
-    text(OK)
+    ok()
 }
 
-fn shuffle(app: &mut App, args: &[Value]) -> Value {
-    let Some(a) = app.store.media.active() else { return text("error: no player") };
-    let Some(on) = a.shuffle else { return text("error: player does not support shuffle") };
+fn shuffle(app: &mut App, args: &[Value]) -> Reply {
+    let Some(a) = app.store.media.active() else { return Err("no player".into()) };
+    let Some(on) = a.shuffle else { return Err("player does not support shuffle".into()) };
     let mode = args[0].str();
     match mode {
         "on" => app.store.media.set_shuffle(true),
         "off" => app.store.media.set_shuffle(false),
         "toggle" => app.store.media.set_shuffle(!on),
-        _ => return text(format!("error: unknown mode {mode} (on|off|toggle)")),
+        _ => return Err(format!("unknown mode {mode} (on|off|toggle)")),
     }
-    text(OK)
+    ok()
 }
 
-fn loop_mode(app: &mut App, args: &[Value]) -> Value {
-    let Some(a) = app.store.media.active() else { return text("error: no player") };
-    let Some(current) = a.loop_name else { return text("error: player does not support loop") };
+fn loop_mode(app: &mut App, args: &[Value]) -> Reply {
+    let Some(a) = app.store.media.active() else { return Err("no player".into()) };
+    let Some(current) = a.loop_name else { return Err("player does not support loop".into()) };
     let mode = args[0].str();
     match mode {
         "cycle" => app.store.media.set_loop(fs_media::media::next_loop(current)),
         "none" | "track" | "playlist" => app.store.media.set_loop(mode),
-        _ => return text(format!("error: unknown mode {mode} (none|track|playlist|cycle)")),
+        _ => return Err(format!("unknown mode {mode} (none|track|playlist|cycle)")),
     }
-    text(OK)
+    ok()
 }
 
 /// Percent on the wire, the player's own 0..1 underneath: a CLI argument reads
 /// better as 30 than 0.3.
-fn volume(app: &mut App, args: &[Value]) -> Value {
-    let Some(a) = app.store.media.active() else { return text("error: no player") };
+fn volume(app: &mut App, args: &[Value]) -> Reply {
+    let Some(a) = app.store.media.active() else { return Err("no player".into()) };
     if a.volume.is_none() {
-        return text("error: player does not support volume");
+        return Err("player does not support volume".into());
     }
     if a.volume_fixed {
-        return text("error: player does not let its volume be set");
+        return Err("player does not let its volume be set".into());
     }
     let percent = args[0].int();
     if !(0..=100).contains(&percent) {
-        return text(format!("error: volume out of range {percent} (0-100)"));
+        return Err(format!("volume out of range {percent} (0-100)"));
     }
     app.store.media.set_volume(Fraction::from_fraction(f64::from(percent) / 100.0));
-    text(OK)
+    ok()
 }
 
-fn raise(app: &mut App, _: &[Value]) -> Value {
-    let Some(a) = app.store.media.active() else { return text("error: no player") };
+fn raise(app: &mut App, _: &[Value]) -> Reply {
+    let Some(a) = app.store.media.active() else { return Err("no player".into()) };
     if !a.can_raise {
-        return text("error: player does not support raise");
+        return Err("player does not support raise".into());
     }
     app.store.media.raise();
-    text(OK)
+    ok()
 }
 
 /// A bus name, "radio", "iphone", "airplay" or a `bluez:` id, exactly as `status` and
 /// `players` report it; "" puts the pick back on auto. An unknown one is an
 /// error rather than a selection nothing can satisfy.
-fn select(app: &mut App, args: &[Value]) -> Value {
+fn select(app: &mut App, args: &[Value]) -> Reply {
     let id = args[0].str();
     if !id.is_empty() && !app.store.media.players().iter().any(|r| r.id == id) {
-        return text(format!("error: no player {id}"));
+        return Err(format!("no player {id}"));
     }
     app.apply(crate::store::Diff::Media(crate::services::media::Diff::Select(id.to_owned())));
-    text(OK)
+    ok()
 }
 
 /// The source's output, by sink name as `outputs` lists it. Only listed while
 /// the media panel is open or a stream is the picked source.
-fn output(app: &mut App, args: &[Value]) -> Value {
+fn output(app: &mut App, args: &[Value]) -> Reply {
     let name = args[0].str();
     if app.store.media.active().is_none() {
-        return text("error: no player");
+        return Err("no player".into());
     }
     if !app.store.media.can_route() {
-        return text("error: source has no stream to move");
+        return Err("source has no stream to move".into());
     }
     if !app.store.media.outputs().iter().any(|(id, _)| id == name) {
-        return text(format!("error: no output {name}"));
+        return Err(format!("no output {name}"));
     }
     app.store.media.set_output(name);
-    text(OK)
+    ok()
 }
 
-fn outputs(app: &mut App, _: &[Value]) -> Value {
-    text(app.store.media.outputs_json().to_string())
+fn outputs(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.media.outputs_json())
 }
 
-fn players(app: &mut App, _: &[Value]) -> Value {
-    text(app.store.media.players_json().to_string())
+fn players(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.media.players_json())
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    text(app.store.media.status().to_string())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.media.status())
 }
 
 /// LyricsService's own read for headless checks: the display set, the lit
 /// main line and the secondary ones worked out against the held position at
 /// the moment of the call, the follow state, the output latency and the hold.
-fn lyrics(app: &mut App, _: &[Value]) -> Value {
+fn lyrics(app: &mut App, _: &[Value]) -> Reply {
     use crate::services::lyrics;
     let position = app.store.media.active().map_or(0.0, |a| a.position.as_secs_f64());
     let settings = lyrics::Settings::read(&app.store.config);
-    text(lyrics::status(&app.store.lyrics, position, &settings).to_string())
+    Ok(lyrics::status(&app.store.lyrics, position, &settings))
 }
 
 /// kopuzd's heart and "don't recommend" for the playing Kopuz track, the
 /// two actions Kopuz's own player bar offers (`media status`'s
 /// `kopuz.actions`).
-fn kopuz_act(app: &mut App, pick: impl FnOnce(&kopuz::State) -> Result<kopuz::Action, String>) -> Value {
-    let Some(k) = app.store.media.kopuz() else { return text("error: no kopuz track") };
-    match pick(k) {
-        Ok(action) => {
-            if let Some(rt) = &app.runtime {
-                rt.service(move |ctx| kopuz::act(ctx, action));
-            }
-            text(OK)
-        }
-        Err(e) => text(e),
+fn kopuz_act(app: &mut App, pick: impl FnOnce(&kopuz::State) -> Result<kopuz::Action, String>) -> Reply {
+    let Some(k) = app.store.media.kopuz() else { return Err("no kopuz track".into()) };
+    let action = pick(k)?;
+    if let Some(rt) = &app.runtime {
+        rt.service(move |ctx| kopuz::act(ctx, action));
     }
+    ok()
 }
 
-fn like(app: &mut App, args: &[Value]) -> Value {
+fn like(app: &mut App, args: &[Value]) -> Reply {
     let mode = args[0].str().to_owned();
     kopuz_act(app, |k| k.like(&mode))
 }
 
-fn dont_recommend(app: &mut App, _: &[Value]) -> Value {
+fn dont_recommend(app: &mut App, _: &[Value]) -> Reply {
     kopuz_act(app, kopuz::State::dont_recommend_action)
 }

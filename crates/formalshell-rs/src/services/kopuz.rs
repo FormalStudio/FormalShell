@@ -64,17 +64,17 @@ impl State {
             "on" => true,
             "off" => false,
             "toggle" => !self.favorite,
-            _ => return Err(format!("error: unknown mode {mode} (on|off|toggle)")),
+            _ => return Err(format!("unknown mode {mode} (on|off|toggle)")),
         };
         Ok(Action::Favorite(self.key.clone(), on))
     }
 
     pub fn dont_recommend_action(&self) -> Result<Action, String> {
         if !self.dont_recommend {
-            return Err("error: source does not take dontRecommend".into());
+            return Err("source does not take dontRecommend".into());
         }
         if self.favorite {
-            return Err("error: track is a favorite".into());
+            return Err("track is a favorite".into());
         }
         Ok(Action::DontRecommend(self.key.clone()))
     }

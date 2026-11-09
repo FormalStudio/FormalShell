@@ -5,12 +5,8 @@
 
 use serde_json::json;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -27,26 +23,27 @@ pub fn target() -> Target<App> {
 
 /// `inline` is what the strip settled on: the whole tray (`hidden` empty)
 /// or none of it, the whole tray in the second bar.
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     let items = &app.store.tray.items;
     let inline = app.tray_inline();
     let listed: Vec<_> = items.iter().map(|i| json!({"id": i.id, "title": i.title, "hasMenu": i.has_menu})).collect();
     let hidden: Vec<&str> = items.iter().skip(inline).map(|i| i.id.as_str()).collect();
-    text(
+    Ok(
         json!({
             "items": listed,
             "overflow": {"open": app.panel_open() == Some(crate::surfaces::panel::tray::ID), "inline": inline, "hidden": hidden},
-        })
-        .to_string(),
+        }),
     )
 }
 
-fn activate(app: &mut App, args: &[Value]) -> Value {
-    text(app.tray_activate(args[0].str()))
+fn activate(app: &mut App, args: &[Value]) -> Reply {
+    app.tray_activate(args[0].str())?;
+    ok()
 }
 
-fn menu(app: &mut App, args: &[Value]) -> Value {
-    text(app.tray_menu(args[0].str()))
+fn menu(app: &mut App, args: &[Value]) -> Reply {
+    app.tray_menu(args[0].str())?;
+    ok()
 }
 
 /// JavaScript's `parseInt(s, 10)`: a leading integer, whatever follows it.
@@ -60,18 +57,22 @@ fn parse_int(s: &str) -> Option<i32> {
     digits[..end].parse::<i64>().ok().map(|n| (n * sign).clamp(i32::MIN as i64, i32::MAX as i64) as i32)
 }
 
-fn menucursor(app: &mut App, args: &[Value]) -> Value {
+fn menucursor(app: &mut App, args: &[Value]) -> Reply {
     if app.tray_menu.as_ref().is_none_or(|p| !p.win.card.is_open()) {
-        return text("error: no tray menu open");
+        return Err("no tray menu open".into());
     }
     match parse_int(args[0].str()) {
-        Some(step) => text(app.tray_menu_cursor(step)),
-        None => text("error: delta must be an integer"),
+        Some(step) => {
+            app.tray_menu_cursor(step)?;
+            ok()
+        }
+        None => Err("delta must be an integer".into()),
     }
 }
 
-fn menuactivate(app: &mut App, _: &[Value]) -> Value {
-    text(app.tray_menu_activate())
+fn menuactivate(app: &mut App, _: &[Value]) -> Reply {
+    app.tray_menu_activate()?;
+    ok()
 }
 
 #[cfg(test)]

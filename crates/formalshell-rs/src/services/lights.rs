@@ -19,7 +19,7 @@ use fs_system::lights as model;
 use futures_lite::FutureExt;
 use fs_js::lenient;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Number, Value, json};
 
 use crate::runtime::Ctx;
 use crate::services::proc::{self, argv};
@@ -89,23 +89,21 @@ impl State {
     }
 
     /// The IPC `status` reply.
-    pub fn status(&self) -> String {
+    pub fn status(&self) -> Value {
         let effects: Vec<&str> = self.effects.iter().map(|(id, _)| id.as_str()).collect();
-        let text = |s: &str| Value::String(s.to_owned());
-        format!(
-            r#"{{"available":{},"on":{},"brightness":{},"effect":{},"color":{},"speed":{},"source":{},"customColor":{},"paletteColor":{},"effects":{},"lastError":{}}}"#,
-            self.available,
-            self.on(),
-            self.brightness,
-            text(&self.effect),
-            text(&self.colour),
-            text(&self.speed),
-            text(&self.source),
-            text(&self.custom_colour),
-            text(&self.palette_colour),
-            serde_json::to_string(&effects).unwrap_or_else(|_| "[]".into()),
-            text(&self.last_error),
-        )
+        json!({
+            "available": self.available,
+            "on": self.on(),
+            "brightness": self.brightness,
+            "effect": self.effect,
+            "color": self.colour,
+            "speed": self.speed,
+            "source": self.source,
+            "customColor": self.custom_colour,
+            "paletteColor": self.palette_colour,
+            "effects": effects,
+            "lastError": self.last_error,
+        })
     }
 }
 
@@ -434,14 +432,14 @@ mod tests {
     fn status_reads_like_the_golden_reply() {
         let mut s = State::default();
         assert_eq!(
-            s.status(),
+            s.status().to_string(),
             r#"{"available":false,"on":false,"brightness":-1,"effect":"","color":"","speed":"med","source":"wallpaper","customColor":"ffffff","paletteColor":"","effects":[],"lastError":""}"#
         );
         s.available = true;
         s.brightness = 3;
         s.effects = vec![("static".into(), "Static".into()), ("breathe".into(), "Breathe".into())];
         assert!(s.on());
-        assert!(s.status().contains(r#""effects":["static","breathe"]"#));
+        assert!(s.status().to_string().contains(r#""effects":["static","breathe"]"#));
         assert!(s.has_effect("breathe") && !s.has_effect("disco"));
     }
 }

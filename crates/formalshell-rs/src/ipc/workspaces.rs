@@ -6,7 +6,7 @@
 
 use serde_json::json;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::overview::Action;
 use crate::wayland::App;
 
@@ -22,29 +22,30 @@ pub fn target() -> Target<App> {
     }
 }
 
-fn peek(app: &mut App, args: &[Value]) -> Value {
-    Value::Str(app.preview_peek(args[0].int() as i64))
+fn peek(app: &mut App, args: &[Value]) -> Reply {
+    app.preview_peek(args[0].int() as i64)?;
+    ok()
 }
 
-fn close(app: &mut App, _: &[Value]) -> Value {
+fn close(app: &mut App, _: &[Value]) -> Reply {
     app.preview_close();
-    Value::Str("ok".into())
+    ok()
 }
 
-fn overview(app: &mut App, args: &[Value]) -> Value {
+fn overview(app: &mut App, args: &[Value]) -> Reply {
     let action = match args[0].str() {
         "open" => Action::Open,
         "close" => Action::Close,
         "toggle" => Action::Toggle,
-        other => return Value::Str(format!("error: overview takes open, close or toggle, not {other:?}")),
+        other => return Err(format!("overview takes open, close or toggle, not {other:?}")),
     };
     app.overview_action(action);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
+fn status(app: &mut App, _: &[Value]) -> Reply {
     let Some(cell) = app.bar.workspaces_status() else {
-        return Value::Str("error: no workspaces cell on any bar".into());
+        return Err("no workspaces cell on any bar".into());
     };
-    Value::Str(json!({"output": cell["output"], "slots": cell["slots"], "preview": app.preview_status()}).to_string())
+    Ok(json!({"output": cell["output"], "slots": cell["slots"], "preview": app.preview_status()}))
 }

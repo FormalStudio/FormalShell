@@ -120,14 +120,13 @@ impl App {
     }
 
     /// The OSD's `state` over IPC.
-    pub fn osd_state(&self) -> String {
-        let visible = self.osd.pill.is_some();
-        let kind = self.osd.kind.map_or("", Kind::name);
-        format!(
-            r#"{{"visible":{visible},"kind":"{kind}","mediaText":{},"brightness":{}}}"#,
-            serde_json::Value::String(self.osd.media.clone()),
-            self.osd_brightness()
-        )
+    pub fn osd_state(&self) -> serde_json::Value {
+        serde_json::json!({
+            "visible": self.osd.pill.is_some(),
+            "kind": self.osd.kind.map_or("", Kind::name),
+            "mediaText": self.osd.media,
+            "brightness": fs_js::json_number(self.osd_brightness()),
+        })
     }
 
     /// The default sink moved: ours, or something else's.

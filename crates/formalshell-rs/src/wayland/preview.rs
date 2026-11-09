@@ -104,17 +104,17 @@ impl App {
     }
 
     /// `workspaces peek <n>`.
-    pub fn preview_peek(&mut self, n: i64) -> String {
-        let Some(status) = self.bar.workspaces_status() else { return "error: no workspaces cell on any bar".into() };
+    pub fn preview_peek(&mut self, n: i64) -> Result<(), String> {
+        let Some(status) = self.bar.workspaces_status() else { return Err("no workspaces cell on any bar".into()) };
         if !self.preview_enabled() {
-            return "error: preview is off (workspaces.preview)".into();
+            return Err("preview is off (workspaces.preview)".into());
         }
         match chips(&status).into_iter().find(|c| c.idx == n) {
             Some(chip) => {
                 self.preview_show(&chip, false);
-                "ok".into()
+                Ok(())
             }
-            None => format!("error: no workspace {n} on {}", status["output"].as_str().unwrap_or_default()),
+            None => Err(format!("no workspace {n} on {}", status["output"].as_str().unwrap_or_default())),
         }
     }
 
@@ -267,7 +267,7 @@ impl App {
                 "home": {"x": r(home.0), "y": r(home.1)},
                 "thumbs": thumbs,
             },
-            "rect": {"x": frame.x, "y": frame.y, "width": frame.w, "height": frame.h},
+            "rect": frame.to_json(),
         })
     }
 }

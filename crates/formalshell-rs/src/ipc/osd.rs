@@ -3,41 +3,37 @@
 //! by something else (it catches the cached backlight percent up and shows
 //! it), media text, close and state.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::brightness;
 use crate::surfaces::osd::Kind;
 use crate::wayland::App;
 
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
-
-fn volume(app: &mut App, _: &[Value]) -> Value {
+fn volume(app: &mut App, _: &[Value]) -> Reply {
     app.osd_show(Kind::Volume, "");
-    text("ok")
+    ok()
 }
 
-fn show_brightness(app: &mut App, _: &[Value]) -> Value {
+fn show_brightness(app: &mut App, _: &[Value]) -> Reply {
     if let Some(rt) = &app.runtime {
         rt.service(brightness::refresh);
     }
     app.osd_brightness_read();
     app.osd_show(Kind::Brightness, "");
-    text("ok")
+    ok()
 }
 
-fn media(app: &mut App, a: &[Value]) -> Value {
+fn media(app: &mut App, a: &[Value]) -> Reply {
     app.osd_show(Kind::Media, a[0].str());
-    text("ok")
+    ok()
 }
 
-fn close(app: &mut App, _: &[Value]) -> Value {
+fn close(app: &mut App, _: &[Value]) -> Reply {
     app.osd_close();
-    text("ok")
+    ok()
 }
 
-fn state(app: &mut App, _: &[Value]) -> Value {
-    text(app.osd_state())
+fn state(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.osd_state())
 }
 
 pub fn target() -> Target<App> {

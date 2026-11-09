@@ -5,13 +5,9 @@
 use fs_chrome::bar::{layout, panels};
 use fs_chrome::plugins::Kind;
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok, text};
 use crate::surfaces::panel;
 use crate::wayland::App;
-
-fn text(s: impl Into<String>) -> Value {
-    Value::Str(s.into())
-}
 
 pub fn target() -> Target<App> {
     Target {
@@ -34,49 +30,49 @@ fn is_overlay(app: &App, name: &str) -> bool {
     panel::plugin::find(&app.store, name).is_some_and(|p| p.kind == Kind::Overlay)
 }
 
-fn open(app: &mut App, args: &[Value]) -> Value {
-    let Some(name) = known(app, args[0].str()) else { return text(format!("error: unknown panel '{}'", args[0].str())) };
+fn open(app: &mut App, args: &[Value]) -> Reply {
+    let Some(name) = known(app, args[0].str()) else { return Err(format!("unknown panel '{}'", args[0].str())) };
     if name == "radio" {
         app.atlas_show();
-        return text("ok");
+        return ok();
     }
     if is_overlay(app, name) {
         app.overlay_show(name);
-        return text("ok");
+        return ok();
     }
     app.set_panel(name, true, None);
-    text("ok")
+    ok()
 }
 
-fn close(app: &mut App, _: &[Value]) -> Value {
+fn close(app: &mut App, _: &[Value]) -> Reply {
     app.atlas_close();
     app.overlay_close();
     app.close_panels();
     if app.launcher_panel().is_some() {
         app.menu_close();
     }
-    text("ok")
+    ok()
 }
 
-fn toggle(app: &mut App, args: &[Value]) -> Value {
-    let Some(name) = known(app, args[0].str()) else { return text(format!("error: unknown panel '{}'", args[0].str())) };
+fn toggle(app: &mut App, args: &[Value]) -> Reply {
+    let Some(name) = known(app, args[0].str()) else { return Err(format!("unknown panel '{}'", args[0].str())) };
     if name == "radio" {
         app.atlas_toggle();
-        return text("ok");
+        return ok();
     }
     if is_overlay(app, name) {
         app.overlay_toggle(name);
-        return text("ok");
+        return ok();
     }
     let open = app.panel_open() != Some(name);
     // A toggle hangs the card under the cell that owns it; `open` is the
     // anchorless route, at the line's end.
     let anchor = app.bar.panel_anchor(name);
     app.set_panel(name, open, anchor);
-    text("ok")
+    ok()
 }
 
-fn toggle_at(app: &mut App, args: &[Value]) -> Value {
+fn toggle_at(app: &mut App, args: &[Value]) -> Reply {
     let n = args[0].int();
     let bar = app.store.config.get("bar").cloned();
     let resolved = layout::resolve(bar.as_ref(), &[]);
@@ -86,7 +82,7 @@ fn toggle_at(app: &mut App, args: &[Value]) -> Value {
     }
 }
 
-fn state(app: &mut App, _: &[Value]) -> Value {
+fn state(app: &mut App, _: &[Value]) -> Reply {
     if app.atlas_open() {
         return text("radio");
     }

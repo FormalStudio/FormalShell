@@ -211,7 +211,7 @@ impl App {
         }
     }
 
-    pub fn saver_status(&self) -> String {
+    pub fn saver_status(&self) -> serde_json::Value {
         let c = &self.store.caffeinate;
         json!({
             "active": self.saver.active,
@@ -220,17 +220,15 @@ impl App {
             "mediaPlaying": self.media_playing(),
             "caffeinated": c.active,
         })
-        .to_string()
     }
 
-    pub fn saver_frame_info(&self) -> String {
+    pub fn saver_frame_info(&self) -> serde_json::Value {
         json!({
             "engine": self.saver_engine(),
             "effect": self.saver_effect(),
             "convergenceFrame": self.saver_convergence(),
             "cycles": self.saver.cycles,
         })
-        .to_string()
     }
 
     pub fn saver_active(&self) -> bool {

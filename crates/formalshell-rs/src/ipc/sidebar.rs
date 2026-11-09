@@ -3,42 +3,42 @@
 //! minimap row's workspace and windows; `focus` hands the minimap the
 //! keyboard, refused on the rail. An error under the bar layout.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::surfaces::sidebar;
 use crate::wayland::App;
 
-const NO_SIDEBAR: &str = "error: layout is not sidebar";
+const NO_SIDEBAR: &str = "layout is not sidebar";
 
-fn set(app: &mut App, collapsed: bool) -> Value {
+fn set(app: &mut App, collapsed: bool) -> Reply {
     if app.bar.sidebar.is_none() {
-        return Value::Str(NO_SIDEBAR.into());
+        return Err(NO_SIDEBAR.into());
     }
     sidebar::set_collapsed(collapsed);
-    Value::Str("ok".into())
+    ok()
 }
 
-fn collapse(app: &mut App, _: &[Value]) -> Value {
+fn collapse(app: &mut App, _: &[Value]) -> Reply {
     set(app, true)
 }
 
-fn expand(app: &mut App, _: &[Value]) -> Value {
+fn expand(app: &mut App, _: &[Value]) -> Reply {
     set(app, false)
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     let collapsed = !app.store.state.data.sidebar_collapsed;
     set(app, collapsed)
 }
 
-fn focus(app: &mut App, _: &[Value]) -> Value {
+fn focus(app: &mut App, _: &[Value]) -> Reply {
     if app.bar.sidebar.is_some() && app.store.state.data.sidebar_collapsed {
-        return Value::Str("error: sidebar is collapsed".into());
+        return Err("sidebar is collapsed".into());
     }
-    Value::Str(if app.sidebar_focus(true) { "ok".into() } else { NO_SIDEBAR.into() })
+    if app.sidebar_focus(true) { ok() } else { Err(NO_SIDEBAR.into()) }
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.bar.sidebar_status().map_or_else(|| NO_SIDEBAR.into(), |v| v.to_string()))
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    app.bar.sidebar_status().ok_or_else(|| NO_SIDEBAR.into())
 }
 
 pub fn target() -> Target<App> {

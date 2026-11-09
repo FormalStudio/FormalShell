@@ -59,16 +59,10 @@ impl State {
     }
 
     /// The IPC `status` reply.
-    pub fn status(&self) -> String {
+    pub fn status(&self) -> serde_json::Value {
         let holders: Vec<_> =
             self.holders.iter().map(|h| json!({"app": h.app, "reason": h.reason, "sender": h.sender})).collect();
-        format!(
-            r#"{{"active":{},"inhibiting":{},"isIdle":{},"holders":{}}}"#,
-            self.active,
-            self.inhibiting,
-            self.idle,
-            serde_json::Value::Array(holders)
-        )
+        json!({"active": self.active, "inhibiting": self.inhibiting, "isIdle": self.idle, "holders": holders})
     }
 }
 
@@ -79,10 +73,10 @@ mod tests {
     #[test]
     fn status_reads_like_the_golden_reply() {
         let mut s = State::default();
-        assert_eq!(s.status(), r#"{"active":false,"inhibiting":false,"isIdle":false,"holders":[]}"#);
+        assert_eq!(s.status().to_string(), r#"{"active":false,"inhibiting":false,"isIdle":false,"holders":[]}"#);
         assert!(s.apply(Diff::Active(true)));
         assert!(!s.apply(Diff::Active(true)));
-        assert_eq!(s.status(), r#"{"active":true,"inhibiting":false,"isIdle":false,"holders":[]}"#);
+        assert_eq!(s.status().to_string(), r#"{"active":true,"inhibiting":false,"isIdle":false,"holders":[]}"#);
     }
 
     #[test]
@@ -93,7 +87,7 @@ mod tests {
         assert!(!s.apply(Diff::Holders(vec![h])));
         assert!(s.held() && !s.active);
         assert_eq!(
-            s.status(),
+            s.status().to_string(),
             r#"{"active":false,"inhibiting":false,"isIdle":false,"holders":[{"app":"Steam","reason":"game","sender":":1.5"}]}"#
         );
         assert!(s.apply(Diff::Holders(vec![])));

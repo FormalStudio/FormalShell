@@ -88,8 +88,8 @@ impl State {
     }
 
     /// The IPC `list` reply.
-    pub fn list(&self) -> String {
-        serde_json::to_string(&self.items).unwrap_or_else(|_| "[]".into())
+    pub fn list(&self) -> serde_json::Value {
+        serde_json::to_value(&self.items).unwrap_or_else(|_| serde_json::Value::Array(Vec::new()))
     }
 }
 

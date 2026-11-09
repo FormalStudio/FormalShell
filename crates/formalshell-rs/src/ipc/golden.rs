@@ -9,7 +9,7 @@
 use serde::Deserialize;
 
 use super::cli;
-use super::registry::{Function, Registry, Target, Type, Value};
+use super::registry::{Function, Json, Registry, Reply, Target, Type, Value, ok, text};
 use super::wire::Request;
 
 #[derive(Deserialize)]
@@ -21,11 +21,7 @@ struct Case {
     exit: i32,
 }
 
-fn s(v: impl Into<String>) -> Value {
-    Value::Str(v.into())
-}
-
-const fn f(name: &'static str, params: &'static [(&'static str, Type)], ret: Type, call: fn(&mut Replay, &[Value]) -> Value) -> Function<Replay> {
+const fn f(name: &'static str, params: &'static [(&'static str, Type)], ret: Type, call: fn(&mut Replay, &[Value]) -> Reply) -> Function<Replay> {
     Function { name, params, ret, call }
 }
 
@@ -36,8 +32,8 @@ struct Replay {
     reply: String,
 }
 
-fn replay(ctx: &mut Replay, _: &[Value]) -> Value {
-    Value::Str(ctx.reply.clone())
+fn replay(ctx: &mut Replay, _: &[Value]) -> Reply {
+    text(ctx.reply.clone())
 }
 
 /// Every shell target, each handler replaying the recorded reply.
@@ -63,31 +59,31 @@ fn probe() -> Target<Replay> {
     Target {
         name: "probe",
         functions: vec![
-            f("s", &[STR], Type::String, |_, a| s(format!("[{}]", a[0].str()))),
+            f("s", &[STR], Type::String, |_, a| text(format!("[{}]", a[0].str()))),
             f("ss", &[STR, ("b", Type::String)], Type::String, |_, a| {
-                s(format!("[{}][{}]", a[0].str(), a[1].str()))
+                text(format!("[{}][{}]", a[0].str(), a[1].str()))
             }),
             f("sss", &[STR, ("b", Type::String), ("c", Type::String)], Type::String, |_, a| {
-                s(format!("[{}][{}][{}]", a[0].str(), a[1].str(), a[2].str()))
+                text(format!("[{}][{}][{}]", a[0].str(), a[1].str(), a[2].str()))
             }),
-            f("i", &[("a", Type::Int)], Type::String, |_, a| s(a[0].int().to_string())),
-            f("b", &[("a", Type::Bool)], Type::String, |_, a| s(a[0].bool().to_string())),
-            f("r", &[("a", Type::Real)], Type::String, |_, a| s(fs_js::num_str(if let Value::Real(r) = a[0] { r } else { 0.0 }))),
-            f("ri", &[("a", Type::Real)], Type::Real, |_, a| a[0].clone()),
-            f("ii", &[("a", Type::Int)], Type::Int, |_, a| a[0].clone()),
-            f("bb", &[("a", Type::Bool)], Type::Bool, |_, a| a[0].clone()),
-            f("is", &[("a", Type::Int), ("b", Type::String)], Type::String, |_, a| s(format!("[{}][{}]", a[0].int(), a[1].str()))),
+            f("i", &[("a", Type::Int)], Type::String, |_, a| text(a[0].int().to_string())),
+            f("b", &[("a", Type::Bool)], Type::String, |_, a| text(a[0].bool().to_string())),
+            f("r", &[("a", Type::Real)], Type::String, |_, a| text(fs_js::num_str(if let Value::Real(r) = a[0] { r } else { 0.0 }))),
+            f("ri", &[("a", Type::Real)], Type::Real, |_, a| Ok(Json::from(a[0].real()))),
+            f("ii", &[("a", Type::Int)], Type::Int, |_, a| Ok(Json::from(a[0].int()))),
+            f("bb", &[("a", Type::Bool)], Type::Bool, |_, a| Ok(Json::from(a[0].bool()))),
+            f("is", &[("a", Type::Int), ("b", Type::String)], Type::String, |_, a| text(format!("[{}][{}]", a[0].int(), a[1].str()))),
             f(
                 "sirb",
                 &[STR, ("b", Type::Int), ("c", Type::Real), ("d", Type::Bool)],
                 Type::String,
-                |_, a| s(format!("[{}][{}][{}][{}]", a[0].str(), a[1].int(), fs_js::num_str(a[2].real()), a[3].bool())),
+                |_, a| text(format!("[{}][{}][{}][{}]", a[0].str(), a[1].int(), fs_js::num_str(a[2].real()), a[3].bool())),
             ),
-            f("v", &[], Type::Void, |_, _| Value::Void),
-            f("empty", &[], Type::String, |_, _| s("")),
-            f("nl", &[], Type::String, |_, _| s("a\nb\n")),
-            f("show", &[], Type::String, |_, _| s("probe-show")),
-            f("call", &[], Type::String, |_, _| s("probe-call")),
+            f("v", &[], Type::Void, |_, _| ok()),
+            f("empty", &[], Type::String, |_, _| text("")),
+            f("nl", &[], Type::String, |_, _| text("a\nb\n")),
+            f("show", &[], Type::String, |_, _| text("probe-show")),
+            f("call", &[], Type::String, |_, _| text("probe-call")),
         ],
     }
 }

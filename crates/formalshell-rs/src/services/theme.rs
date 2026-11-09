@@ -295,10 +295,10 @@ pub fn mode_key(settings: &Value) -> &'static str {
 pub fn request_mode(m: &str, current: &str, key: &str) -> Result<String, String> {
     let target = if m == "toggle" { if current == "dark" { "light" } else { "dark" } } else { m };
     if target != "dark" && target != "light" {
-        return Err("error: mode must be dark, light, or toggle".into());
+        return Err("mode must be dark, light, or toggle".into());
     }
     if key == "dark" || key == "light" {
-        return Err(format!("error: theme.mode pins the mode to {key}"));
+        return Err(format!("theme.mode pins the mode to {key}"));
     }
     Ok(target.to_owned())
 }
@@ -1098,8 +1098,8 @@ printf '%s' 'return {{}}' > '{state}/formalshell-colors.lua.tmp'"##,
     fn request_mode_answers_the_ipc_strings() {
         assert_eq!(request_mode("toggle", "dark", ""), Ok("light".into()));
         assert_eq!(request_mode("toggle", "light", "auto"), Ok("dark".into()));
-        assert_eq!(request_mode("dusk", "dark", ""), Err("error: mode must be dark, light, or toggle".into()));
-        assert_eq!(request_mode("light", "dark", "dark"), Err("error: theme.mode pins the mode to dark".into()));
+        assert_eq!(request_mode("dusk", "dark", ""), Err("mode must be dark, light, or toggle".into()));
+        assert_eq!(request_mode("light", "dark", "dark"), Err("theme.mode pins the mode to dark".into()));
     }
 
     #[test]

@@ -1,39 +1,40 @@
 //! `record`: thin over `surfaces::capture::record`, so a
 //! keybind, a menu row and the smoke rig all drive one implementation.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
 use crate::surfaces::capture::record as rec;
 use crate::wayland::App;
 
 const SCOPE: (&str, Type) = ("scope", Type::String);
 const AUDIO: (&str, Type) = ("audio", Type::String);
 
-fn start(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(rec::start(app, a[0].str(), a[1].str(), None))
+fn start(app: &mut App, a: &[Value]) -> Reply {
+    rec::start(app, a[0].str(), a[1].str(), None).map(Json::String)
 }
 
-fn start_capped(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(rec::start(app, a[0].str(), a[1].str(), Some(a[2].str())))
+fn start_capped(app: &mut App, a: &[Value]) -> Reply {
+    rec::start(app, a[0].str(), a[1].str(), Some(a[2].str())).map(Json::String)
 }
 
-fn start_at(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(rec::start_at(app, a[0].str(), "", "region", a[1].str(), None))
+fn start_at(app: &mut App, a: &[Value]) -> Reply {
+    rec::start_at(app, a[0].str(), "", "region", a[1].str(), None).map(Json::String)
 }
 
-fn stop(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(rec::stop(app))
+fn stop(app: &mut App, _: &[Value]) -> Reply {
+    rec::stop(app)?;
+    ok()
 }
 
-fn toggle(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(rec::toggle(app, a[0].str(), a[1].str()))
+fn toggle(app: &mut App, a: &[Value]) -> Reply {
+    Ok(rec::toggle(app, a[0].str(), a[1].str())?.map_or(Json::Null, Json::String))
 }
 
-fn gif(app: &mut App, a: &[Value]) -> Value {
-    Value::Str(rec::gif(app, a[0].str()))
+fn gif(app: &mut App, a: &[Value]) -> Reply {
+    rec::gif(app, a[0].str()).map(Json::String)
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(rec::status(app))
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(rec::status(app))
 }
 
 pub fn target() -> Target<App> {

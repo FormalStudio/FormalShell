@@ -2,27 +2,27 @@
 //! the launcher's rows use too. Each answers "ok" whether or not the id
 //! named an entry.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::clipboard::{self, Cmd};
 use crate::wayland::App;
 
-fn list(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(app.store.clipboard.list())
+fn list(app: &mut App, _: &[Value]) -> Reply {
+    Ok(app.store.clipboard.list())
 }
 
-fn copy(_: &mut App, a: &[Value]) -> Value {
+fn copy(_: &mut App, a: &[Value]) -> Reply {
     clipboard::command(Cmd::Copy(a[0].str().to_owned()));
-    Value::Str("ok".into())
+    ok()
 }
 
-fn remove(_: &mut App, a: &[Value]) -> Value {
+fn remove(_: &mut App, a: &[Value]) -> Reply {
     clipboard::command(Cmd::Remove(a[0].str().to_owned()));
-    Value::Str("ok".into())
+    ok()
 }
 
-fn clear(_: &mut App, _: &[Value]) -> Value {
+fn clear(_: &mut App, _: &[Value]) -> Reply {
     clipboard::command(Cmd::Clear);
-    Value::Str("ok".into())
+    ok()
 }
 
 pub fn target() -> Target<App> {

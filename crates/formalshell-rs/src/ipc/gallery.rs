@@ -1,30 +1,26 @@
 //! `gallery`: the verbs over the dev sheet.
 
-use super::registry::{Function, Target, Type, Value};
+use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::wayland::App;
 
-fn ok() -> Value {
-    Value::Str("ok".into())
-}
-
-fn open(app: &mut App, _: &[Value]) -> Value {
+fn open(app: &mut App, _: &[Value]) -> Reply {
     app.set_gallery(true);
     ok()
 }
 
-fn close(app: &mut App, _: &[Value]) -> Value {
+fn close(app: &mut App, _: &[Value]) -> Reply {
     app.set_gallery(false);
     ok()
 }
 
-fn toggle(app: &mut App, _: &[Value]) -> Value {
+fn toggle(app: &mut App, _: &[Value]) -> Reply {
     let open = !app.gallery_open();
     app.set_gallery(open);
     ok()
 }
 
-fn status(app: &mut App, _: &[Value]) -> Value {
-    Value::Str(serde_json::json!({ "isOpen": app.gallery_open() }).to_string())
+fn status(app: &mut App, _: &[Value]) -> Reply {
+    Ok(serde_json::json!({ "isOpen": app.gallery_open() }))
 }
 
 pub fn target() -> Target<App> {

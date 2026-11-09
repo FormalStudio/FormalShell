@@ -319,17 +319,17 @@ impl App {
     /// `menu actions`: row `index`'s actions beside the list, as Tab.
     pub fn menu_actions(&mut self, index: usize) -> Result<(), String> {
         if !self.launcher.open {
-            return Err("error: menu not open".into());
+            return Err("menu not open".into());
         }
         self.resolve_launcher();
         self.launcher_resolve = true;
-        if self.launcher.open_actions(&self.store, index) { Ok(()) } else { Err(format!("error: row {index} has no actions")) }
+        if self.launcher.open_actions(&self.store, index) { Ok(()) } else { Err(format!("row {index} has no actions")) }
     }
 
     /// `menu runAction`: the action `id` on row `index`.
     pub fn menu_run_action(&mut self, index: usize, id: &str) -> Result<(), String> {
         if !self.launcher.open {
-            return Err("error: menu not open".into());
+            return Err("menu not open".into());
         }
         self.resolve_launcher();
         let out = self.launcher.run_action(&self.store, index, id)?;
@@ -340,7 +340,7 @@ impl App {
     /// `menu into`: →, on row `index`.
     pub fn menu_into(&mut self, index: usize) -> Result<(), String> {
         if !self.launcher.open {
-            return Err("error: menu not open".into());
+            return Err("menu not open".into());
         }
         self.resolve_launcher();
         let out = self.launcher.step_into(&self.store, index).ok_or_else(|| format!("error: row {index} has nothing to step into"))?;
@@ -889,12 +889,12 @@ impl App {
     }
 
     /// `mirror status`.
-    pub fn mirror_status(&self) -> String {
+    pub fn mirror_status(&self) -> serde_json::Value {
         let mi = &self.store.mirror;
         let showing = self.mirror_showing();
         let current = if showing { self.launcher.mirror_current.as_str() } else { "" };
         let streaming = showing && mi.streaming.as_deref() == Some(current) && !current.is_empty();
-        let rect = |r: crate::scene::IRect| serde_json::json!({"x": r.x, "y": r.y, "width": r.w, "height": r.h});
+        let rect = |r: crate::scene::IRect| r.to_json();
         let feed = self.launch.as_ref().filter(|_| showing).and_then(|w| w.shown.feed);
         serde_json::json!({
             "showing": showing,
@@ -908,7 +908,6 @@ impl App {
             "picture": feed.and_then(|(_, p)| p).filter(|_| streaming && mi.has_frame(current)).map(rect),
             "cameras": if showing { mi.cameras.iter().map(|c| serde_json::json!({"id": c.id, "ir": c.ir, "label": c.label})).collect::<Vec<_>>() } else { Vec::new() },
         })
-        .to_string()
     }
 
     /// The clipssh route's rows off the saved aliases.

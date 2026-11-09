@@ -60,20 +60,20 @@ fn next_column(windows: &[Window], id: &WindowId, workspace: &WorkspaceId) -> Op
 }
 
 impl App {
-    pub fn zen_toggle(&mut self) -> String {
+    pub fn zen_toggle(&mut self) -> Result<(), String> {
         if self.zen.on.is_some() { self.zen_exit() } else { self.zen_enter() }
     }
 
-    pub fn zen_enter(&mut self) -> String {
+    pub fn zen_enter(&mut self) -> Result<(), String> {
         if self.zen.on.is_some() {
-            return "error: zen is on".into();
+            return Err("zen is on".into());
         }
         let snap = &self.store.compositor.snapshot;
         let Some(win) = snap.windows.iter().find(|w| w.id == snap.focused_window_id) else {
-            return "error: no focused window".into();
+            return Err("no focused window".into());
         };
         let Some((ox, oy, ow, oh)) = self.zen_output() else {
-            return "error: no output".into();
+            return Err("no output".into());
         };
         let columns = snap.workspaces.iter().any(|w| w.id == win.workspace_id && w.columns);
         let zen = Zen {
@@ -90,12 +90,12 @@ impl App {
         }
         self.zen.release = None;
         self.zen.on = Some(zen);
-        "ok".into()
+        Ok(())
     }
 
-    pub fn zen_exit(&mut self) -> String {
+    pub fn zen_exit(&mut self) -> Result<(), String> {
         let Some(zen) = self.zen.on.take() else {
-            return "error: zen is off".into();
+            return Err("zen is off".into());
         };
         if self.store.compositor.window(&zen.id).is_some() {
             compositor::send(Command::Unzen { id: zen.id, floating: zen.floating, before: zen.before });
@@ -106,13 +106,13 @@ impl App {
         if zen.unfold {
             sidebar::set_collapsed(false);
         }
-        "ok".into()
+        Ok(())
     }
 
     /// The zen window closing ends zen, the sidebar opening again.
     pub fn zen_changed(&mut self) {
         if self.zen.on.as_ref().is_some_and(|z| self.store.compositor.window(&z.id).is_none()) {
-            self.zen_exit();
+            let _ = self.zen_exit();
         }
         self.zen_release();
     }
@@ -124,12 +124,11 @@ impl App {
         }
     }
 
-    pub fn zen_status(&self) -> String {
+    pub fn zen_status(&self) -> serde_json::Value {
         match &self.zen.on {
             Some(z) => json!({"on": true, "windowId": z.id, "workspace": z.workspace, "before": z.before, "floating": z.floating.is_some()}),
             None => json!({"on": false}),
         }
-        .to_string()
     }
 
     /// The focused output's logical box, or the first one's.
