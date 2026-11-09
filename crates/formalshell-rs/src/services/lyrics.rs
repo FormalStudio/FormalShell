@@ -1,5 +1,5 @@
-//! Synced lyrics for the active track, looked up a second
-//! after the track changes whether or not the media panel is open, so the
+//! Synced lyrics for the active track, looked up
+//! when the track changes whether or not the media panel is open, so the
 //! panel opens on its final width.
 //!
 //! The chain: a sibling `.lrc` beside the player's `xesam:url` (never
@@ -51,10 +51,71 @@ pub struct Ask {
     pub kopuz: String,
 }
 
+/// Where a lookup stands, as `media lyrics` names it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Phase {
+    #[default]
+    Off,
+    Idle,
+    Loading,
+    Synced,
+    None,
+    Error,
+}
+
+impl Phase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Phase::Off => "off",
+            Phase::Idle => "idle",
+            Phase::Loading => "loading",
+            Phase::Synced => "synced",
+            Phase::None => "none",
+            Phase::Error => "error",
+        }
+    }
+}
+
+/// Which link of the chain answered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Source {
+    #[default]
+    Unknown,
+    Local,
+    Kopuz,
+    Cache,
+    Apple,
+    Youtube,
+    Lrclib,
+}
+
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Unknown => "",
+            Source::Local => "local",
+            Source::Kopuz => "kopuz",
+            Source::Cache => "cache",
+            Source::Apple => "apple",
+            Source::Youtube => "youtube",
+            Source::Lrclib => "lrclib",
+        }
+    }
+
+    fn provider(name: &str) -> Self {
+        match name {
+            "apple" => Source::Apple,
+            "youtube" => Source::Youtube,
+            "lrclib" => Source::Lrclib,
+            _ => Source::Unknown,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct State {
-    pub state: &'static str,
-    pub source: String,
+    pub state: Phase,
+    pub source: Source,
     pub key: String,
     /// What the panel draws: interludes spliced in, chunks synthesised.
     pub lines: Arc<Vec<Line>>,
@@ -68,8 +129,8 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
-            state: "off",
-            source: String::new(),
+            state: Phase::Off,
+            source: Source::Unknown,
             key: String::new(),
             lines: Arc::new(Vec::new()),
             quality: 0,
@@ -81,7 +142,7 @@ impl Default for State {
 }
 
 pub enum Diff {
-    Resolved { key: String, state: &'static str, source: String, raw: Vec<Line> },
+    Resolved { key: String, state: Phase, source: Source, raw: Vec<Line> },
     Follow(bool),
     Latency(OutputLatency),
 }
@@ -99,7 +160,7 @@ impl State {
                 self.quality = model::quality(&raw);
                 self.has_words = raw.iter().any(|l| !l.words.is_empty());
                 self.lines = Arc::new(model::synthesise_words(&model::display_lines(&raw)));
-                if state != "synced" {
+                if state != Phase::Synced {
                     self.latency = OutputLatency { ms: 0, via: LatencyVia::None };
                 }
                 true
@@ -110,7 +171,7 @@ impl State {
     }
 
     pub fn synced(&self) -> bool {
-        self.state == "synced"
+        self.state == Phase::Synced
     }
 }
 
@@ -153,7 +214,7 @@ pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: 
     let enabled = crate::settings::LYRICS.get(config);
     let a = media.active();
     let ask = match &a {
-        Some(a) if enabled && (a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && !a.length.is_zero())) && !a.title.is_empty() && !a.artist.is_empty() => Ask {
+        Some(a) if enabled && a.kind.has_timeline(!a.length.is_zero()) && !a.title.is_empty() && !a.artist.is_empty() => Ask {
             enabled,
             key: model::cache_key(&a.artist, &a.title, &a.album, a.length.as_secs_f64()),
             artist: a.artist.clone(),
@@ -341,39 +402,38 @@ fn write_atomic(path: PathBuf, body: &[u8]) {
     }
 }
 
-type Session = HashMap<String, (&'static str, String, Vec<Line>)>;
+type Session = HashMap<String, (Phase, Source, Vec<Line>)>;
 
-fn publish(ctx: &Ctx, key: &str, state: &'static str, source: &str, raw: Vec<Line>) {
-    ctx.publish(store::Diff::Lyrics(Diff::Resolved { key: key.to_owned(), state, source: source.to_owned(), raw }));
+fn publish(ctx: &Ctx, key: &str, state: Phase, source: Source, raw: Vec<Line>) {
+    ctx.publish(store::Diff::Lyrics(Diff::Resolved { key: key.to_owned(), state, source, raw }));
 }
 
-fn remember(ctx: &Ctx, session: &mut Session, key: &str, state: &'static str, source: &str, raw: Vec<Line>) {
-    session.insert(key.to_owned(), (state, source.to_owned(), raw.clone()));
+fn remember(ctx: &Ctx, session: &mut Session, key: &str, state: Phase, source: Source, raw: Vec<Line>) {
+    session.insert(key.to_owned(), (state, source, raw.clone()));
     publish(ctx, key, state, source, raw);
 }
 
 async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
     if !ask.enabled {
-        return publish(ctx, "", "off", "", Vec::new());
+        return publish(ctx, "", Phase::Off, Source::Unknown, Vec::new());
     }
     if ask.key.is_empty() {
-        return publish(ctx, "", "idle", "", Vec::new());
+        return publish(ctx, "", Phase::Idle, Source::Unknown, Vec::new());
     }
     // A track resolved before kopuzd's key arrived asks kopuzd once more,
     // keeping what it shows meanwhile.
     let known = session.get(&ask.key).cloned();
     if let Some((state, source, lines)) = &known
-        && (ask.kopuz.is_empty() || source == "kopuz" || source == "local")
+        && (ask.kopuz.is_empty() || *source == Source::Kopuz || *source == Source::Local)
     {
-        return publish(ctx, &ask.key, state, source, lines.clone());
+        return publish(ctx, &ask.key, *state, *source, lines.clone());
     }
     let dir = cache_dir();
     if known.is_none() {
-        publish(ctx, &ask.key, "loading", "", Vec::new());
-        async_io::Timer::after(Duration::from_secs(1)).await;
+        publish(ctx, &ask.key, Phase::Loading, Source::Unknown, Vec::new());
         let url = ask.url.clone();
         if let Some(Some(lines)) = ctx.pool().run(move || local(&url)).await {
-            return remember(ctx, session, &ask.key, "synced", "local", lines);
+            return remember(ctx, session, &ask.key, Phase::Synced, Source::Local, lines);
         }
     }
     if !ask.kopuz.is_empty()
@@ -382,16 +442,16 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
         let path = dir.join(format!("{}.json", ask.key));
         let body = json!({ "source": "kopuz", "lines": lines }).to_string();
         ctx.pool().run(move || write_atomic(path, body.as_bytes())).await;
-        return remember(ctx, session, &ask.key, "synced", "kopuz", lines);
+        return remember(ctx, session, &ask.key, Phase::Synced, Source::Kopuz, lines);
     }
     if let Some((state, source, lines)) = known {
-        return publish(ctx, &ask.key, state, &source, lines);
+        return publish(ctx, &ask.key, state, source, lines);
     }
 
     let key = ask.key.clone();
     match ctx.pool().run(move || cached(&key)).await {
-        Some(Some(Ok(lines))) => return remember(ctx, session, &ask.key, "synced", "cache", lines),
-        Some(Some(Err(()))) => return remember(ctx, session, &ask.key, "none", "", Vec::new()),
+        Some(Some(Ok(lines))) => return remember(ctx, session, &ask.key, Phase::Synced, Source::Cache, lines),
+        Some(Some(Err(()))) => return remember(ctx, session, &ask.key, Phase::None, Source::Unknown, Vec::new()),
         _ => {}
     }
 
@@ -415,7 +475,7 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
             && model::is_definitive(lines)
         {
             decided = Some(Candidate { source: name.to_owned(), lines: lines.clone() });
-            publish(ctx, &ask.key, "synced", name, lines.clone());
+            publish(ctx, &ask.key, Phase::Synced, Source::provider(name), lines.clone());
         }
         outcomes.insert(name, outcome);
     }
@@ -432,18 +492,18 @@ async fn resolve(ctx: &Ctx, ask: &Ask, session: &mut Session) {
         .collect();
     let winner = decided.or_else(|| model::pick_best(&candidates).cloned());
     match winner {
-        None if erred => publish(ctx, &ask.key, "error", "", Vec::new()),
+        None if erred => publish(ctx, &ask.key, Phase::Error, Source::Unknown, Vec::new()),
         None => {
             let path = dir.join(format!("{}.miss", ask.key));
             ctx.pool().run(move || write_atomic(path, b"")).await;
-            remember(ctx, session, &ask.key, "none", "", Vec::new());
+            remember(ctx, session, &ask.key, Phase::None, Source::Unknown, Vec::new());
         }
-        Some(w) if erred => remember(ctx, session, &ask.key, "synced", &w.source, w.lines),
+        Some(w) if erred => remember(ctx, session, &ask.key, Phase::Synced, Source::provider(&w.source), w.lines),
         Some(w) => {
             let path = dir.join(format!("{}.json", ask.key));
             let body = json!({ "source": w.source, "lines": w.lines }).to_string();
             ctx.pool().run(move || write_atomic(path, body.as_bytes())).await;
-            remember(ctx, session, &ask.key, "synced", &w.source, w.lines);
+            remember(ctx, session, &ask.key, Phase::Synced, Source::provider(&w.source), w.lines);
         }
     }
 }
@@ -538,8 +598,8 @@ pub fn status(lyrics: &State, position: f64, settings: &Settings) -> Value {
     let active = model::active_main_line_index(lines, &main, t);
     let secondary = model::active_secondary_lines(lines, &main, t, active);
     json!({
-        "state": lyrics.state,
-        "source": lyrics.source,
+        "state": lyrics.state.as_str(),
+        "source": lyrics.source.as_str(),
         "quality": lyrics.quality,
         "words": lyrics.has_words,
         "blur": settings.blur,

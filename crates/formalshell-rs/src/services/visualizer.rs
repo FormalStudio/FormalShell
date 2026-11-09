@@ -108,6 +108,20 @@ pub fn frame() -> Frame {
     FRAME.lock().ok().and_then(|f| f.clone()).unwrap_or_else(Frame::baseline)
 }
 
+/// The frame to draw. A tempo-driven source passes seconds into the track
+/// and gets the beat frame at the looked-up bpm; every other source gets
+/// cava's.
+pub fn frame_for(tempo_at: Option<f64>, bpm: f64) -> Frame {
+    match tempo_at {
+        Some(t) => Frame {
+            mono: model::beat_frame(t, bpm, BAR_COUNT, 0),
+            left: model::beat_frame(t, bpm, BAR_COUNT, -1),
+            right: model::beat_frame(t, bpm, BAR_COUNT, 1),
+        },
+        None => frame(),
+    }
+}
+
 fn set_frame(frame: Frame) {
     if let Ok(mut slot) = FRAME.lock() {
         *slot = Some(frame);

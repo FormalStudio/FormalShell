@@ -903,7 +903,7 @@ impl App {
 
     /// What the now-playing block shows, if it shows.
     fn lock_media(&self) -> Option<crate::services::media::Active> {
-        self.store.media.active().filter(|a| a.kind != "stream")
+        self.store.media.active().filter(|a| a.kind != crate::services::media::SourceKind::Stream)
     }
 
     /// Shutdown and Reboot, and Other user on the boot's lock.

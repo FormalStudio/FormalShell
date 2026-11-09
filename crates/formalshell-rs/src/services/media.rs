@@ -11,6 +11,8 @@
 //! `selected` is the one piece of state the UI owns; every source's own
 //! state is published whole by its service.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -162,11 +164,73 @@ fn carried(position: Duration, length: Duration, at: Instant, playing: bool, now
 /// be the same playback.
 const SEEK_SLACK: Duration = Duration::from_millis(250);
 
+/// What a source is, which decides what it can do and how it is drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SourceKind {
+    #[default]
+    Mpris,
+    Stream,
+    Radio,
+    Iphone,
+    Airplay,
+    Bluetooth,
+}
+
+impl SourceKind {
+    /// The `kind` string `media status` and `media players` carry.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SourceKind::Mpris => "mpris",
+            SourceKind::Stream => "stream",
+            SourceKind::Radio => "radio",
+            SourceKind::Iphone => "iphone",
+            SourceKind::Airplay => "airplay",
+            SourceKind::Bluetooth => "bluetooth",
+        }
+    }
+
+    pub fn parse(kind: &str) -> Option<Self> {
+        [Self::Mpris, Self::Stream, Self::Radio, Self::Iphone, Self::Airplay, Self::Bluetooth].into_iter().find(|k| k.as_str() == kind)
+    }
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            SourceKind::Mpris => "music",
+            SourceKind::Stream => "audio-lines",
+            SourceKind::Radio => "radio",
+            SourceKind::Iphone => "smartphone",
+            SourceKind::Airplay => "airplay",
+            SourceKind::Bluetooth => "bluetooth",
+        }
+    }
+
+    /// The phone plays on the phone, so cava hears nothing of it and its
+    /// visualizer frame is drawn off the track's tempo.
+    pub fn tempo_driven(self) -> bool {
+        self == SourceKind::Iphone
+    }
+
+    /// A position worth drawing and looking lyrics up for: a player always,
+    /// a phone or a Bluetooth remote once it reports a length.
+    pub fn has_timeline(self, length_known: bool) -> bool {
+        match self {
+            SourceKind::Mpris => true,
+            SourceKind::Iphone | SourceKind::Bluetooth => length_known,
+            SourceKind::Stream | SourceKind::Radio | SourceKind::Airplay => false,
+        }
+    }
+
+    /// Whether the panel draws previous, play and next at all.
+    pub fn has_transport(self) -> bool {
+        !matches!(self, SourceKind::Stream | SourceKind::Airplay)
+    }
+}
+
 /// What every bar and IPC read of "the active source" resolves to.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Active {
     pub id: String,
-    pub kind: &'static str,
+    pub kind: SourceKind,
     pub identity: String,
     pub title: String,
     pub artist: String,
@@ -315,37 +379,37 @@ impl State {
             .iter()
             .map(|p| PlayerRow {
                 id: p.id.clone(),
-                kind: Some("mpris".into()),
+                kind: Some(SourceKind::Mpris.as_str().into()),
                 auto: None,
                 identity: Some(p.identity.clone()),
                 is_playing: p.playing,
                 empty: p.title.is_empty(),
             })
             .collect();
-        let row = |id: &str, kind: &str, identity: &str, playing: bool| PlayerRow {
+        let row = |id: &str, kind: SourceKind, identity: &str, playing: bool| PlayerRow {
             id: id.into(),
-            kind: Some(kind.into()),
+            kind: Some(kind.as_str().into()),
             auto: None,
             identity: Some(identity.into()),
             is_playing: playing,
             empty: false,
         };
         if self.radio.running() {
-            rows.push(row("radio", "radio", "Radio", !self.radio.paused()));
+            rows.push(row("radio", SourceKind::Radio, "Radio", !self.radio.paused()));
         }
         if self.ams.listed() {
-            rows.push(row("iphone", "iphone", "iPhone", self.ams.playing()));
+            rows.push(row("iphone", SourceKind::Iphone, "iPhone", self.ams.playing()));
         }
         for r in &self.remotes {
-            rows.push(row(&r.id, "bluetooth", &r.label, r.playing));
+            rows.push(row(&r.id, SourceKind::Bluetooth, &r.label, r.playing));
         }
         // isPlaying stays false: UxPlay reports no pause state at all.
         if self.airplay.active && !self.airplay.title.is_empty() {
-            rows.push(row("airplay", "airplay", "AirPlay", false));
+            rows.push(row("airplay", SourceKind::Airplay, "AirPlay", false));
         }
-        let mpris: Vec<PlayerRow> = rows.iter().filter(|r| r.kind.as_deref() == Some("mpris")).cloned().collect();
+        let mpris: Vec<PlayerRow> = rows.iter().filter(|r| r.kind.as_deref() == Some(SourceKind::Mpris.as_str())).cloned().collect();
         for s in self.routing.streams.iter().filter(|s| self.stream_owner(s, &mpris).is_empty()) {
-            let mut r = row(&format!("stream:{}", s.id), "stream", &s.label, false);
+            let mut r = row(&format!("stream:{}", s.id), SourceKind::Stream, &s.label, false);
             r.auto = Some(false);
             rows.push(r);
         }
@@ -366,7 +430,7 @@ impl State {
     }
 
     fn mpris_rows(&self) -> Vec<PlayerRow> {
-        self.rows().into_iter().filter(|r| r.kind.as_deref() == Some("mpris")).collect()
+        self.rows().into_iter().filter(|r| r.kind.as_deref() == Some(SourceKind::Mpris.as_str())).collect()
     }
 
     /// The streams the active source is playing through right now.
@@ -440,7 +504,7 @@ impl State {
                 let track = r.track_title();
                 let name = r.station.as_ref().map(|s| s.name.clone()).unwrap_or_default();
                 Active {
-                    kind: "radio",
+                    kind: SourceKind::Radio,
                     identity: label,
                     title: if track.is_empty() { name.clone() } else { track.clone() },
                     artist: if track.is_empty() { String::new() } else { name },
@@ -454,7 +518,7 @@ impl State {
             "iphone" => {
                 let a = &self.ams;
                 Active {
-                    kind: "iphone",
+                    kind: SourceKind::Iphone,
                     identity: label,
                     title: a.title.clone(),
                     artist: a.artist.clone(),
@@ -477,12 +541,12 @@ impl State {
                 } else {
                     String::new()
                 };
-                Active { kind: "airplay", identity: label, title: a.title.clone(), artist: a.artist.clone(), album: a.album.clone(), art_url, ..base }
+                Active { kind: SourceKind::Airplay, identity: label, title: a.title.clone(), artist: a.artist.clone(), album: a.album.clone(), art_url, ..base }
             }
             remote if remote.starts_with("bluez:") => {
                 let r = self.remotes.iter().find(|r| r.id == remote)?;
                 Active {
-                    kind: "bluetooth",
+                    kind: SourceKind::Bluetooth,
                     identity: label,
                     title: r.title.clone(),
                     artist: r.artist.clone(),
@@ -499,7 +563,7 @@ impl State {
             stream if stream.starts_with("stream:") => {
                 let s = self.routing.streams.iter().find(|s| format!("stream:{}", s.id) == stream)?;
                 Active {
-                    kind: "stream",
+                    kind: SourceKind::Stream,
                     identity: label,
                     title: if s.title.is_empty() { s.label.clone() } else { s.title.clone() },
                     volume: s.volume.map(|v| pick::clamp_volume(v.as_f64())),
@@ -509,7 +573,7 @@ impl State {
             _ => {
                 let p = self.mpris.iter().find(|p| p.id == id)?;
                 Active {
-                    kind: "mpris",
+                    kind: SourceKind::Mpris,
                     identity: p.identity.clone(),
                     title: p.title.clone(),
                     artist: p.artist.clone(),
@@ -536,13 +600,13 @@ impl State {
     /// track it reports.
     pub fn kopuz(&self) -> Option<&kopuz::State> {
         let a = self.active()?;
-        (a.kind == "mpris" && fs_kopuz::is_player_bus(&a.id) && self.kopuz.matches(&a.title, &a.artist)).then_some(&self.kopuz)
+        (a.kind == SourceKind::Mpris && fs_kopuz::is_player_bus(&a.id) && self.kopuz.matches(&a.title, &a.artist)).then_some(&self.kopuz)
     }
 
     /// Feeds the visualizer's run gate, which the UI thread owns the inputs of.
     fn sync_gate(&self) {
         let a = self.active();
-        let (playing, tempo) = a.as_ref().map_or((false, false), |a| (a.playing, a.kind == "iphone"));
+        let (playing, tempo) = a.as_ref().map_or((false, false), |a| (a.playing, a.kind.tempo_driven()));
         let (artist, title) = a.map_or_else(Default::default, |a| (a.artist, a.title));
         visualizer::set_media(playing, tempo, &artist, &title);
     }
@@ -551,11 +615,12 @@ impl State {
     pub fn status(&self) -> Value {
         let a = self.active().unwrap_or_default();
         let available = !a.id.is_empty();
+        let kind = if available { a.kind.as_str() } else { "" };
         let kopuz = self.kopuz();
         json!({
             "available": available,
             "id": a.id,
-            "kind": a.kind,
+            "kind": kind,
             "selectedId": self.selected,
             "output": self.output_id(),
             "canRoute": self.can_route(),
@@ -634,7 +699,8 @@ impl State {
             }
             _ => {
                 if let Some(p) = self.mpris_active().filter(|p| p.can_toggle) {
-                    mpris_send(Cmd::PlayPause(p.id.clone()));
+                    let id = p.id.clone();
+                    mpris_send(move |c| async move { c.play_pause(&id).await });
                 }
             }
         }
@@ -651,7 +717,8 @@ impl State {
             }
             _ => {
                 if let Some(p) = self.mpris_active().filter(|p| p.can_next) {
-                    mpris_send(Cmd::Next(p.id.clone()));
+                    let id = p.id.clone();
+                    mpris_send(move |c| async move { c.next(&id).await });
                 }
             }
         }
@@ -668,7 +735,8 @@ impl State {
             }
             _ => {
                 if let Some(p) = self.mpris_active().filter(|p| p.can_previous) {
-                    mpris_send(Cmd::Previous(p.id.clone()));
+                    let id = p.id.clone();
+                    mpris_send(move |c| async move { c.previous(&id).await });
                 }
             }
         }
@@ -676,7 +744,8 @@ impl State {
 
     pub fn set_shuffle(&self, on: bool) {
         if let Some(p) = self.mpris_active().filter(|p| p.shuffle.is_some()) {
-            mpris_send(Cmd::Shuffle(p.id.clone(), on));
+            let id = p.id.clone();
+            mpris_send(move |c| async move { c.set_shuffle(&id, on).await });
         }
     }
 
@@ -687,7 +756,8 @@ impl State {
             _ => LoopStatus::None,
         };
         if let Some(p) = self.mpris_active().filter(|p| p.loop_status.is_some()) {
-            mpris_send(Cmd::Loop(p.id.clone(), status));
+            let id = p.id.clone();
+            mpris_send(move |c| async move { c.set_loop_status(&id, status).await });
         }
     }
 
@@ -697,26 +767,29 @@ impl State {
     pub fn set_volume(&self, v: Fraction) {
         let Some(a) = self.active() else { return };
         match a.kind {
-            "radio" => radio::send(radio::Cmd::SetVolume(radio::Volume::from_track(v))),
-            "iphone" => {
+            SourceKind::Radio => radio::send(radio::Cmd::SetVolume(radio::Volume::from_track(v))),
+            SourceKind::Iphone => {
                 if let Some(now) = a.volume
                     && v != now
                 {
                     ams::command(if v > now { "volup" } else { "voldown" });
                 }
             }
-            "mpris" if !a.volume_fixed => mpris_send(Cmd::Volume(a.id, fs_mpris::Volume::new(v.as_fraction()))),
-            "stream" => {
+            SourceKind::Mpris if !a.volume_fixed => {
+                let volume = fs_mpris::Volume::new(v.as_fraction());
+                mpris_send(move |c| async move { c.set_volume(&a.id, volume).await })
+            },
+            SourceKind::Stream => {
                 if let Some(node) = a.id.strip_prefix("stream:").and_then(|n| n.parse().ok()) {
                     audio::write(fs_audio::Command::SetVolume { node, volume: Visual::from_f64(v.as_fraction()) });
                 }
             }
-            "bluetooth" => {
+            SourceKind::Bluetooth => {
                 for s in self.routed_streams() {
                     audio::write(fs_audio::Command::SetVolume { node: s.id, volume: Visual::from_f64(v.as_fraction()) });
                 }
             }
-            _ => {}
+            SourceKind::Mpris | SourceKind::Airplay => {}
         }
     }
 
@@ -724,16 +797,18 @@ impl State {
     /// where the player is now.
     pub fn seek_to(&self, target: Duration) {
         let Some(a) = self.active() else { return };
-        if a.kind != "mpris" || !a.can_seek || a.length.is_zero() {
+        if a.kind != SourceKind::Mpris || !a.can_seek || a.length.is_zero() {
             return;
         }
         let target = target.min(a.length);
-        mpris_send(Cmd::Seek(a.id, target.as_micros() as i64 - a.position.as_micros() as i64));
+        let offset = target.as_micros() as i64 - a.position.as_micros() as i64;
+        mpris_send(move |c| async move { c.seek(&a.id, offset).await });
     }
 
     pub fn raise(&self) {
         if let Some(p) = self.mpris_active().filter(|p| p.can_raise) {
-            mpris_send(Cmd::Raise(p.id.clone()));
+            let id = p.id.clone();
+            mpris_send(move |c| async move { c.raise(&id).await });
         }
     }
 }
@@ -751,22 +826,18 @@ fn ams_same(a: &ams::State, b: &ams::State) -> bool {
         && a.error == b.error
 }
 
-enum Cmd {
-    PlayPause(String),
-    Next(String),
-    Previous(String),
-    Shuffle(String, bool),
-    Loop(String, LoopStatus),
-    Volume(String, fs_mpris::Volume),
-    Raise(String),
-    Seek(String, i64),
-}
+/// A call on the MPRIS command side, run on the service thread.
+type Call = Box<dyn FnOnce(fs_mpris::Controls) -> Pin<Box<dyn Future<Output = zbus::Result<()>>>> + Send>;
 
-static CMD: OnceLock<async_channel::Sender<Cmd>> = OnceLock::new();
+static CMD: OnceLock<async_channel::Sender<Call>> = OnceLock::new();
 
-fn mpris_send(cmd: Cmd) {
+fn mpris_send<F, Fut>(call: F)
+where
+    F: FnOnce(fs_mpris::Controls) -> Fut + Send + 'static,
+    Fut: Future<Output = zbus::Result<()>> + 'static,
+{
     if let Some(tx) = CMD.get() {
-        let _ = tx.try_send(cmd);
+        let _ = tx.try_send(Box::new(move |controls| Box::pin(call(controls))));
     }
 }
 
@@ -793,17 +864,8 @@ async fn run(ctx: Ctx) {
     let _ = CMD.set(tx);
     let controls = mpris.controls();
     ctx.spawn(async move {
-        while let Ok(cmd) = rx.recv().await {
-            let _ = match cmd {
-                Cmd::PlayPause(id) => controls.play_pause(&id).await,
-                Cmd::Next(id) => controls.next(&id).await,
-                Cmd::Previous(id) => controls.previous(&id).await,
-                Cmd::Shuffle(id, on) => controls.set_shuffle(&id, on).await,
-                Cmd::Loop(id, status) => controls.set_loop_status(&id, status).await,
-                Cmd::Volume(id, v) => controls.set_volume(&id, v).await,
-                Cmd::Raise(id) => controls.raise(&id).await,
-                Cmd::Seek(id, us) => controls.seek(&id, us).await,
-            };
+        while let Ok(call) = rx.recv().await {
+            let _ = call(controls.clone()).await;
         }
     });
     publish(&ctx, &mpris);
@@ -884,7 +946,7 @@ mod tests {
         let mut s = State { mpris: vec![mpris("org.mpris.MediaPlayer2.mpv", false)], radio: radio_on(), ..State::default() };
         assert_eq!(s.active_id(), "radio");
         let a = s.active().unwrap();
-        assert_eq!((a.kind, a.identity.as_str(), a.title.as_str()), ("radio", "Radio", "Smoke Radio"));
+        assert_eq!((a.kind, a.identity.as_str(), a.title.as_str()), (SourceKind::Radio, "Radio", "Smoke Radio"));
         s.selected = "org.mpris.MediaPlayer2.mpv".into();
         assert_eq!(s.active_id(), "org.mpris.MediaPlayer2.mpv");
         s.selected = "gone".into();
@@ -941,7 +1003,7 @@ mod tests {
         assert_eq!(s.active_id(), "org.mpris.MediaPlayer2.mpv");
         s.selected = "stream:41".into();
         let a = s.active().unwrap();
-        assert_eq!((a.kind, a.identity.as_str(), a.volume), ("stream", "Discord", Some(Fraction::from_fraction(0.5))));
+        assert_eq!((a.kind, a.identity.as_str(), a.volume), (SourceKind::Stream, "Discord", Some(Fraction::from_fraction(0.5))));
         assert_eq!(s.status()["canRoute"], true);
         assert_eq!(s.status()["output"], "sink-a");
     }
@@ -1000,7 +1062,7 @@ mod tests {
         assert_eq!((rows[1].kind.as_str(), rows[1].label.as_str(), rows[1].auto), ("bluetooth", "FormalPad", true));
         assert_eq!(s.active_id(), "bluez:C8:89:F3:45:A7:AA");
         let a = s.active().unwrap();
-        assert_eq!((a.kind, a.title.as_str(), a.artist.as_str(), a.playing, a.volume), ("bluetooth", "OLED iPad Mini", "Marques Brownlee", true, Some(Visual::new(0.8).track())));
+        assert_eq!((a.kind, a.title.as_str(), a.artist.as_str(), a.playing, a.volume), (SourceKind::Bluetooth, "OLED iPad Mini", "Marques Brownlee", true, Some(Visual::new(0.8).track())));
         assert!(a.position >= Duration::from_secs_f64(359.686) && a.length == Duration::from_secs_f64(779.141) && !a.can_seek && a.can_next);
         assert_eq!((s.output_id().as_str(), s.can_route()), ("sink-b", true));
         s.remotes = vec![remote(false)];

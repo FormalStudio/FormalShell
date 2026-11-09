@@ -2,7 +2,6 @@
 //! for exploring the styles without an edit to settings.json. The override is
 //! in memory only, `style config` drops it.
 
-use fs_media::visualizer::model::{self, BAR_COUNT};
 use fs_media::visualizer::styles;
 
 use super::registry::{Function, Reply, Target, Type, Value, text};
@@ -51,15 +50,7 @@ fn list(_: &mut App, _: &[Value]) -> Reply {
 fn status(app: &mut App, _: &[Value]) -> Reply {
     let v = &app.store.visualizer;
     let configured = configured(app);
-    // cava hears nothing of the phone, so its frame is drawn off the track's
-    // tempo, the way the bar cell draws it.
-    let frame = match app.store.media.active().filter(|a| a.kind == "iphone" && v.running) {
-        Some(a) => visualizer::Frame {
-            mono: model::beat_frame(a.position.as_secs_f64(), v.bpm, BAR_COUNT, 0),
-            left: model::beat_frame(a.position.as_secs_f64(), v.bpm, BAR_COUNT, -1),
-            right: model::beat_frame(a.position.as_secs_f64(), v.bpm, BAR_COUNT, 1),
-        },
-        None => visualizer::frame(),
-    };
+    let tempo_at = app.store.media.active().filter(|a| a.kind.tempo_driven() && v.running).map(|a| a.position.as_secs_f64());
+    let frame = visualizer::frame_for(tempo_at, v.bpm);
     Ok(v.status(&current(app), &configured, &frame))
 }

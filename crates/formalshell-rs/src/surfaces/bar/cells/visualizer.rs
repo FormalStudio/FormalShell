@@ -11,7 +11,7 @@
 use std::time::Instant;
 
 use fs_types::Edge;
-use fs_media::visualizer::model::{self, BAR_COUNT, Band, CELL_BAR_COUNT};
+use fs_media::visualizer::model::{self, Band, CELL_BAR_COUNT};
 use fs_theme::tokens::WEIGHTS;
 
 use crate::scene::IRect;
@@ -89,7 +89,7 @@ impl Cell for Visualizer {
         let v = &env.store.visualizer;
         let active = env.store.media.active();
         let media_available = active.is_some();
-        let tempo = active.as_ref().is_some_and(|a| a.kind == "iphone");
+        let tempo = active.as_ref().is_some_and(|a| a.kind.tempo_driven());
         let position = active.as_ref().map_or((0.0, Instant::now(), false), |a| (a.position.as_secs_f64(), Instant::now(), a.playing));
         let changed = self.avail != v.avail
             || self.media_available != media_available
@@ -162,12 +162,12 @@ impl Custom for Visualizer {
         self.last = Some(now);
         let target = if !self.running {
             model::baseline_levels()
-        } else if self.tempo {
-            let (base, at, playing) = self.position;
-            let t = if playing { base + now.saturating_duration_since(at).as_secs_f64() } else { base };
-            model::beat_frame(t, self.bpm, BAR_COUNT, 0)
         } else {
-            visualizer::frame().mono
+            let tempo_at = self.tempo.then(|| {
+                let (base, at, playing) = self.position;
+                if playing { base + now.saturating_duration_since(at).as_secs_f64() } else { base }
+            });
+            visualizer::frame_for(tempo_at, self.bpm).mono
         };
         self.shown_levels = if self.running { model::smooth_levels(&self.shown_levels, &target, dt) } else { target };
         let levels = model::downsample(&self.shown_levels, CELL_BAR_COUNT);

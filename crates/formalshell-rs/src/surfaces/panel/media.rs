@@ -30,7 +30,7 @@ use fs_types::Fraction;
 use super::{Effect, Panel, View};
 use crate::services::devices::audio;
 use crate::services::{kopuz, motion_art};
-use crate::services::media::Active;
+use crate::services::media::{Active, SourceKind};
 use crate::services::proc::Avail;
 use crate::services::visualizer;
 use crate::settings::{APPLE_MUSIC_ART, VISUALIZER, VISUALIZER_STYLE};
@@ -85,24 +85,17 @@ fn format_time(time: Duration) -> String {
 }
 
 fn source_icon(kind: &str) -> &'static str {
-    match kind {
-        "radio" => "radio",
-        "iphone" => "smartphone",
-        "airplay" => "airplay",
-        "bluetooth" => "bluetooth",
-        "stream" => "audio-lines",
-        _ => "music",
-    }
+    SourceKind::parse(kind).unwrap_or_default().icon()
 }
 
 fn has_timeline(a: &Active) -> bool {
-    a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && !a.length.is_zero())
+    a.kind.has_timeline(!a.length.is_zero())
 }
 
 /// The transport, in the order the buttons draw: Kopuz's actions, by their
 /// IPC verbs, after the player's own.
 fn transport(a: &Active, k: Option<&kopuz::State>) -> Vec<&'static str> {
-    if a.kind == "stream" || a.kind == "airplay" {
+    if !a.kind.has_transport() {
         return Vec::new();
     }
     let mut out = vec!["previous", "playpause", "next"];
@@ -301,7 +294,7 @@ impl Panel for Media {
 
         let label = m.players().into_iter().find(|r| r.id == a.id).map(|r| r.label).unwrap_or_default();
         let label = if m.selected.is_empty() { format!("Auto · {label}") } else { label };
-        let mut source = w::trigger(s, source_icon(a.kind), &label, self.menu == "source").stop("source").on("source");
+        let mut source = w::trigger(s, a.kind.icon(), &label, self.menu == "source").stop("source").on("source");
         if self.menu == "source" {
             source = source.float(w::column(0.0, self.menu_rows(v)));
         }
@@ -344,7 +337,7 @@ impl Panel for Media {
         }
         info.push(w::column(s.xxs, words).fill());
         let vis = &v.store.visualizer;
-        if enabled && (vis.avail == Avail::Available || a.kind == "iphone") {
+        if enabled && (vis.avail == Avail::Available || a.kind.tempo_driven()) {
             let style = vis.style(VISUALIZER_STYLE.get(&v.store.config));
             let tip = styles::label(&style);
             info.push(El::custom(spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
@@ -589,9 +582,9 @@ mod tests {
 
     #[test]
     fn airplay_has_no_transport_and_a_player_its_own_toggles() {
-        let airplay = Active { kind: "airplay", ..Active::default() };
+        let airplay = Active { kind: SourceKind::Airplay, ..Active::default() };
         assert!(transport(&airplay, None).is_empty());
-        let mpv = Active { kind: "mpris", shuffle: Some(true), loop_name: Some("track"), ..Active::default() };
+        let mpv = Active { kind: SourceKind::Mpris, shuffle: Some(true), loop_name: Some("track"), ..Active::default() };
         assert_eq!(transport(&mpv, None), ["previous", "playpause", "next", "shuffle", "loop"]);
         assert_eq!(transport_opt(&mpv, None, "loop").icon, "repeat-1");
         assert!(transport_opt(&mpv, None, "shuffle").active);
@@ -600,7 +593,7 @@ mod tests {
 
     #[test]
     fn kopuz_ends_the_transport_on_its_heart() {
-        let a = Active { kind: "mpris", ..Active::default() };
+        let a = Active { kind: SourceKind::Mpris, ..Active::default() };
         let k = kopuz::State { favorite: true, dont_recommend: true, ..kopuz::State::default() };
         assert_eq!(transport(&a, Some(&k)), ["previous", "playpause", "next", "like", "dontRecommend"]);
         let heart = transport_opt(&a, Some(&k), "like");
@@ -613,8 +606,8 @@ mod tests {
 
     #[test]
     fn the_phone_has_a_timeline_only_with_a_length() {
-        assert!(!has_timeline(&Active { kind: "iphone", ..Active::default() }));
-        assert!(has_timeline(&Active { kind: "iphone", length: Duration::from_secs(200), ..Active::default() }));
-        assert!(!has_timeline(&Active { kind: "radio", ..Active::default() }));
+        assert!(!has_timeline(&Active { kind: SourceKind::Iphone, ..Active::default() }));
+        assert!(has_timeline(&Active { kind: SourceKind::Iphone, length: Duration::from_secs(200), ..Active::default() }));
+        assert!(!has_timeline(&Active { kind: SourceKind::Radio, ..Active::default() }));
     }
 }
