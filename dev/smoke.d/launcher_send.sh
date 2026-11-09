@@ -103,8 +103,10 @@ done
 sleep 1
 sha256sum "$launcher_send_peer_dir/send-probe.txt" > "$shot_dir/launcher-send-file.sha256" 2>/dev/null
 sudo ip netns pids fs-send-peer | xargs -r sudo kill
-sudo ip netns del fs-send-peer
+# The host end first: deleting it takes the pair down at once, where the
+# namespace's deletion takes it down later, sometimes before the next line.
 sudo ip link del fs-send-host
+sudo ip netns del fs-send-peer
 EOF
   hypr_exec_once "bash $script"
 }

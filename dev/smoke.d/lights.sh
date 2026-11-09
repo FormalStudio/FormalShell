@@ -85,8 +85,9 @@ leg_lights_drive() {
 #!/usr/bin/env bash
 ipc() { $ipc call lights "\$@"; }
 st() { ipc status > "$shot_dir/lights-status-\$1.json" 2>&1; }
-# Past the probe and the palette's own settle timer.
-st 1
+# Past the probe and the palette's own settle timer: the colour leaves
+# the fallback palette's Flexoki blue for the wallpaper's.
+until_jq 15 "$shot_dir/lights-status-1.json" '.available and .color == .paletteColor and .color != "4385be"' call lights status
 ipc effect breathe > /dev/null 2>&1
 ipc speed high > /dev/null 2>&1
 sleep 1.5

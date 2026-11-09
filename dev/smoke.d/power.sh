@@ -52,9 +52,18 @@ date +%s > "$power_p-t0.txt"
 id "$power_user" > /dev/null 2>&1 || sudo -n useradd -m "$power_user"
 sudo -n systemd-run --unit="$power_unit" -p PAMName=login -p User="$power_user" \\
   -p TTYPath=/dev/tty5 -p StandardInput=tty-force -p StandardOutput=journal sleep 300 > /dev/null 2>&1
-sleep 4
-loginctl list-sessions --no-pager > "$power_p-sessions.txt" 2>&1
-busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanPowerOff > "$power_p-can.txt" 2>&1
+# logind answers challenge only once the second session is up on seat0;
+# the assert names whichever of the two never came.
+for _ in \$(seq 40); do
+  loginctl list-sessions --no-pager > "$power_p-sessions.txt" 2>&1
+  grep -Eq " $power_user +seat0 .* user " "$power_p-sessions.txt" && break
+  sleep 0.5
+done
+for _ in \$(seq 20); do
+  busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager CanPowerOff > "$power_p-can.txt" 2>&1
+  grep -q '"challenge"' "$power_p-can.txt" && break
+  sleep 0.5
+done
 # Everything past here asks logind to power off for real, so it runs only
 # where logind wants a password: with "yes" it would turn the VM off.
 grep -q '"challenge"' "$power_p-can.txt" || exit 0
@@ -109,10 +118,10 @@ leg_power_assert() {
   for f in sessions can; do
     [ -s "$power_p-$f.txt" ] || fail "power: $power_p-$f.txt missing or empty"
   done
-  grep -q '"challenge"' "$power_p-can.txt" || fail "power: CanPowerOff did not answer challenge: $(cat "$power_p-can.txt")"
   cat "$power_p-sessions.txt"
   grep -Eq " $power_user +seat0 .* user " "$power_p-sessions.txt" \
-    || fail "power: no user session of $power_user on seat0"
+    || fail "power: no user session of $power_user on seat0 within 20s"
+  grep -q '"challenge"' "$power_p-can.txt" || fail "power: CanPowerOff did not answer challenge within 10s: $(cat "$power_p-can.txt")"
   "$jq_bin" -e '.cursorId == "system.shutdown"' "$power_p-typed.json" > /dev/null \
     || fail "power: typing shutdown did not put the cursor on system.shutdown: $(cat "$power_p-typed.json")"
   "$jq_bin" -e '.isOpen == true and .cursorId == "system.shutdown"' "$power_p-armed.json" > /dev/null 2>&1 \
