@@ -207,7 +207,7 @@ fn remotes(state: &fs_bluez::state::State, last: &[Remote]) -> Vec<Remote> {
         .map(|p| {
             let r = Remote::from(p, state.device(&p.device).as_ref(), now);
             match last.iter().find(|l| l.path == r.path) {
-                Some(l) if l.position == r.position && l.playing == r.playing => Remote { at: l.at, ..r },
+                Some(l) if l.position == r.position && l.playing == r.playing && l.position_stale == r.position_stale => Remote { at: l.at, ..r },
                 _ => r,
             }
         })

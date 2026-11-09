@@ -117,6 +117,8 @@ pub struct Remote {
     pub at: Instant,
     /// Zero when the remote sends no duration.
     pub length: Duration,
+    /// The track changed and the remote has not reported a position for it.
+    pub position_stale: bool,
 }
 
 impl Remote {
@@ -136,6 +138,7 @@ impl Remote {
             position: p.position,
             at,
             length: p.duration.unwrap_or_default(),
+            position_stale: p.position_stale,
         }
     }
 
@@ -238,6 +241,9 @@ pub struct Active {
     pub art_url: String,
     pub playing: bool,
     pub position: Duration,
+    /// `position` still belongs to the previous track: lyrics light no line
+    /// against it.
+    pub position_stale: bool,
     pub length: Duration,
     pub can_seek: bool,
     pub can_raise: bool,
@@ -553,6 +559,7 @@ impl State {
                     album: r.album.clone(),
                     playing: r.playing,
                     position: r.position_now(now),
+                    position_stale: r.position_stale,
                     length: r.length,
                     can_next: true,
                     can_previous: true,
@@ -1040,6 +1047,7 @@ mod tests {
             position: Duration::from_secs_f64(359.686),
             at: Instant::now(),
             length: Duration::from_secs_f64(779.141),
+            position_stale: false,
         }
     }
 

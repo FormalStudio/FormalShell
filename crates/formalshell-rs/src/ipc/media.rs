@@ -145,9 +145,11 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
 /// the moment of the call, the follow state, the output latency and the hold.
 fn lyrics(app: &mut App, _: &[Value]) -> Reply {
     use crate::services::lyrics;
-    let position = app.store.media.active().map_or(0.0, |a| a.position.as_secs_f64());
+    let active = app.store.media.active();
+    let position = active.as_ref().map_or(0.0, |a| a.position.as_secs_f64());
+    let stale = active.as_ref().is_some_and(|a| a.position_stale);
     let settings = lyrics::Settings::read(&app.store.config);
-    Ok(lyrics::status(&app.store.lyrics, position, &settings))
+    Ok(lyrics::status(&app.store.lyrics, position, stale, &settings))
 }
 
 /// kopuzd's heart and "don't recommend" for the playing Kopuz track, the

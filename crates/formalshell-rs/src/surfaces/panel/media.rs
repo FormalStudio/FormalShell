@@ -393,7 +393,7 @@ impl Panel for Media {
             let on_line = cursor.is_some_and(|c| c < ly.lines.len());
             let pane = El::custom(lyrics::Pane {
                 lines: ly.lines.clone(),
-                t: fs_media::lyrics::led_position(a.position.as_secs_f64(), settings.hold(ly.latency)),
+                t: crate::services::lyrics::clock(&a, settings.hold(ly.latency)),
                 follow: ly.follow || on_line,
                 cursor,
                 blur: settings.blur,

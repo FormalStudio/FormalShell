@@ -101,6 +101,10 @@ pub struct Player {
     /// As of BlueZ's last `Position`; the remote's clock runs on from it
     /// while playing.
     pub position: Duration,
+    /// A new track arrived and BlueZ has not sent a `Position` since, so
+    /// `position` still belongs to the last one. BlueZ publishes `Track`
+    /// and `Position` as separate property changes, in either order.
+    pub position_stale: bool,
 }
 
 impl Player {
@@ -248,14 +252,19 @@ fn apply_player(p: &mut Player, props: &Props) {
     if let Some(v) = prop::<String>(props, "Status") {
         p.status = v;
     }
+    if let Some(track) = prop::<Props>(props, "Track") {
+        let title = prop::<String>(&track, "Title").unwrap_or_default();
+        let artist = prop::<String>(&track, "Artist").unwrap_or_default();
+        let album = prop::<String>(&track, "Album").unwrap_or_default();
+        let duration = prop::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
+        if (&title, &artist, &album, duration) != (&p.title, &p.artist, &p.album, p.duration) {
+            p.position_stale = true;
+        }
+        (p.title, p.artist, p.album, p.duration) = (title, artist, album, duration);
+    }
     if let Some(v) = prop::<u32>(props, "Position") {
         p.position = Duration::from_millis(v.into());
-    }
-    if let Some(track) = prop::<Props>(props, "Track") {
-        p.title = prop::<String>(&track, "Title").unwrap_or_default();
-        p.artist = prop::<String>(&track, "Artist").unwrap_or_default();
-        p.album = prop::<String>(&track, "Album").unwrap_or_default();
-        p.duration = prop::<u32>(&track, "Duration").filter(|&ms| ms > 0).map(|ms| Duration::from_millis(ms.into()));
+        p.position_stale = false;
     }
 }
 
@@ -739,6 +748,33 @@ mod tests {
         assert_eq!(ev, vec![Event::PlayerRemoved { path: PLAYER.into() }]);
         assert!(s.players().is_empty());
         assert!(s.properties_changed(PLAYER, PLAYER_IFACE, &paused, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_track_holds_the_position_stale_until_bluez_reports_one() {
+        let mut s = seeded();
+        let added = props(vec![
+            ("Device", Value::ObjectPath(ObjectPath::try_from(DEV).unwrap())),
+            ("Status", "playing".into()),
+            ("Position", 200_000u32.into()),
+            ("Track", track("One", 300_000)),
+        ]);
+        s.interface_added(PLAYER, PLAYER_IFACE, &added);
+        assert!(!s.players()[0].position_stale);
+
+        // Track first, Position after: the old clock must not pass for the new track.
+        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Two", 180_000))]), &[]);
+        let p = &s.players()[0];
+        assert!(p.position_stale && p.position == Duration::from_millis(200_000));
+        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Position", 1_000u32.into())]), &[]);
+        let p = &s.players()[0];
+        assert!(!p.position_stale && p.position == Duration::from_millis(1_000));
+
+        // Same batch, and a repeat of the same track, are never stale.
+        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Three", 90_000)), ("Position", 0u32.into())]), &[]);
+        assert!(!s.players()[0].position_stale);
+        s.properties_changed(PLAYER, PLAYER_IFACE, &props(vec![("Track", track("Three", 90_000))]), &[]);
+        assert!(!s.players()[0].position_stale);
     }
 
     #[test]

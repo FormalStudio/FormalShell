@@ -589,12 +589,23 @@ async fn run(ctx: Ctx) {
     }
 }
 
+/// What the lit set is judged at. Before the source has reported a position
+/// for a new track the clock sits far before the first line, so none lights.
+pub fn clock(active: &crate::services::media::Active, hold: f64) -> f64 {
+    if active.position_stale {
+        return UNSET_CLOCK;
+    }
+    model::led_position(active.position.as_secs_f64(), hold)
+}
+
+const UNSET_CLOCK: f64 = -1.0e6;
+
 /// `media lyrics`.
-pub fn status(lyrics: &State, position: f64, settings: &Settings) -> Value {
+pub fn status(lyrics: &State, position: f64, stale: bool, settings: &Settings) -> Value {
     let lines = &lyrics.lines;
     let main = model::main_line_indices(lines);
     let hold = settings.hold(lyrics.latency);
-    let t = model::led_position(position, hold);
+    let t = if stale { UNSET_CLOCK } else { model::led_position(position, hold) };
     let active = model::active_main_line_index(lines, &main, t);
     let secondary = model::active_secondary_lines(lines, &main, t, active);
     json!({
