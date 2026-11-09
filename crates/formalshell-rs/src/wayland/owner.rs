@@ -109,6 +109,7 @@ pub(super) static INPUT: &[&dyn Owner] = &[
     &Saver,
     &Lock,
     &HotCorners,
+    &Outgoing,
     &Heads,
     &Polkit,
     &Overlay,
@@ -896,7 +897,9 @@ impl Owner for Profiles {
         }
         if target == Some(Target::Profiles) {
             app.profiles_pointer(target, &e.kind, e.position);
-        } else {
+        } else if !app.overview.owns(&e.surface) {
+            // The overview comes later in this order for its keys, but its
+            // own surface's events never reach the pill's.
             app.profiles_release_elsewhere(&e.kind);
         }
         Pointer::Pass
@@ -1246,6 +1249,26 @@ impl Owner for Caffeinate {
 
     fn configure(&self, app: &mut App, _: &WlSurface, _: (i32, i32)) {
         app.caffeinate_configure();
+    }
+}
+
+/// The panel surfaces the shell has dropped while the compositor still
+/// routes the pointer to one (`Target::Outgoing`); not a window of the
+/// lifecycle's, since nothing is left to present.
+struct Outgoing;
+
+impl Owner for Outgoing {
+    fn owns(&self, app: &App, surface: &WlSurface) -> bool {
+        app.dropped.contains(surface)
+    }
+
+    /// A pointer entering a surface the saver and the corners passed on has
+    /// left every dropped one.
+    fn pointer(&self, app: &mut App, e: &PointerEvent, _: Option<Target>) -> Pointer {
+        if matches!(e.kind, PointerEventKind::Enter { .. }) {
+            app.dropped.clear();
+        }
+        Pointer::Pass
     }
 }
 

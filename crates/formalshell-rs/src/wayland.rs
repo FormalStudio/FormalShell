@@ -1687,10 +1687,6 @@ impl App {
     fn pointer_events(&mut self, events: &[PointerEvent]) {
         'events: for e in events {
             let mut target = self.target(&e.surface);
-            // A pointer entering any surface has left every dropped one.
-            if matches!(e.kind, PointerEventKind::Enter { .. }) {
-                self.dropped.clear();
-            }
             for o in owner::INPUT {
                 match o.pointer(self, e, target) {
                     owner::Pointer::Pass => {}
