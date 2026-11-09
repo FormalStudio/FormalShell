@@ -73,16 +73,25 @@ rig_sync_tree() {
 
 # Removes what a finished run left in a slot user's /tmp: its mktemp
 # directories, and a shared result nobody removed. The slot is held by one run
-# at a time (dev/rig_lock.py), so no run of this user is still using them; a
-# result younger than three hours may be a list's live build, which its own
-# command removes (rig_drop_shared).
+# at a time (dev/rig_lock.py), so no run of this user is still using its
+# tmp.*. A shared result outlives its builder's slot: the command that built
+# it holds `<result>.live` (rig_build_shared) for as long as any run may read
+# it, so one whose lock is free and that is three hours old is a killed
+# list's, and one younger may be a build whose holder has not started yet.
 # rig_slot_clean <ssh-dest>
 rig_slot_clean() {
   # find cannot stat other users' FUSE mounts in /tmp, so its status says
-  # nothing; the check is what is left.
-  ssh "${rig_ssh_opts[@]}" "$1" 'pat() { find /tmp -maxdepth 1 -user "$(id -u)" \( -name "tmp.*" -o \( -name "formalshell-rig-result-*" -mmin +180 \) \) "$@" 2>/dev/null; }
-    pat -exec rm -rf {} +
-    [ -z "$(pat -print -quit)" ]' \
+  # nothing; the checks are what is left.
+  ssh "${rig_ssh_opts[@]}" "$1" 'mine() { find /tmp -maxdepth 1 -user "$(id -u)" "$@" 2>/dev/null; }
+    left=0
+    mine -name "tmp.*" -exec rm -rf {} +
+    for d in $(mine -type d -name "formalshell-rig-result-*" -mmin +180); do
+      if flock -n -x "$d.live" true 2>/dev/null; then rm -rf "$d" "$d.live" || left=1; fi
+    done
+    for l in $(mine -type f -name "formalshell-rig-result-*.live"); do
+      [ -e "${l%.live}" ] || rm -f "$l"
+    done
+    [ -z "$(mine -name "tmp.*" -print -quit)" ] && [ "$left" = 0 ]' \
     || echo "rig: could not clean /tmp on $1" >&2
 }
 
@@ -111,12 +120,19 @@ rig_build_shared() {
   fi
   read -r rig_builder _ < "$slot_file"
   rm -f "$slot_file" "$log"
+  # A shared lock on <result>.live for as long as this process holds the
+  # pipe open: rig_drop_shared closes it, and so does this process dying.
+  exec {rig_shared_hold}> >(exec ssh "${rig_ssh_opts[@]}" "fstest$rig_builder@$(rig_host "$rig")" "exec flock -s $rig_shared.live cat > /dev/null")
   echo "built in $((SECONDS - t0))s on $rig slot $rig_builder"
 }
 
 rig_drop_shared() {
+  if [ -n "${rig_shared_hold:-}" ]; then
+    exec {rig_shared_hold}>&-
+    rig_shared_hold=
+  fi
   [ -n "${rig_shared:-}" ] && [ -n "${rig_builder:-}" ] || return 0
-  ssh "${rig_ssh_opts[@]}" "fstest$rig_builder@$(rig_host "$rig_shared_rig")" "rm -rf $rig_shared" \
+  ssh "${rig_ssh_opts[@]}" "fstest$rig_builder@$(rig_host "$rig_shared_rig")" "rm -rf $rig_shared $rig_shared.live" \
     || echo "rig: could not remove $rig_shared on slot $rig_builder" >&2
   rig_shared=
 }
@@ -166,22 +182,29 @@ rig_guest_link_result() {
 }
 
 # A remote file or directory a run listed, into <artifacts> under its own
-# basename; a .tar is a directory of frames.
+# basename; a .tar is a directory of frames. Returns non-zero, saying so, when
+# the transfer failed.
 # rig_pull_one <ssh-dest> <remote-path> <artifacts>
 rig_pull_one() {
   local dest=$1 remote=$2 artifacts=$3 local_path
-  mkdir -p "$artifacts"
+  mkdir -p "$artifacts" || return 1
   case "$remote" in
     *.tar)
       local_path="$artifacts/$(basename "$remote" .tar)"
-      mkdir -p "$local_path"
-      ssh "${rig_ssh_opts[@]}" "$dest" "cat $(printf '%q' "$remote")" | tar -xf - -C "$local_path" \
-        && echo "pulled frames: $local_path"
+      mkdir -p "$local_path" || return 1
+      if ! ssh "${rig_ssh_opts[@]}" "$dest" "cat $(printf '%q' "$remote")" | tar -xf - -C "$local_path"; then
+        echo "rig: could not pull $remote from $dest" >&2
+        return 1
+      fi
+      echo "pulled frames: $local_path"
       ;;
     *)
       local_path="$artifacts/$(basename "$remote")"
-      rsync -a -e "ssh ${rig_ssh_opts[*]}" "$dest:$remote" "$local_path" \
-        && echo "pulled: $local_path"
+      if ! rsync -a -e "ssh ${rig_ssh_opts[*]}" "$dest:$remote" "$local_path"; then
+        echo "rig: could not pull $remote from $dest" >&2
+        return 1
+      fi
+      echo "pulled: $local_path"
       ;;
   esac
 }
@@ -189,14 +212,16 @@ rig_pull_one() {
 # What a smoke run's output (a file) names, pulled into <artifacts>: the
 # SMOKE_OK screenshot, the rest of its output as a JSON sidecar, every
 # SMOKE_<NAME> artifact, and the committed output of the legs in the flags.
-# Returns the run's own status, or 1 when a passing run printed no SMOKE_OK.
+# Returns the run's own status, or 1 when a passing run printed no SMOKE_OK
+# or any of its pulls failed. Every transfer's status is checked here: a
+# caller runs this under `||`, where errexit does not reach.
 # rig_pull_smoke <ssh-dest> <label> <artifacts> <status> <output-file> [flags...]
 rig_pull_smoke() {
-  local dest=$1 label=$2 artifacts=$3 status=$4 out_file=$5 ts remote rest line dir glob flag
+  local dest=$1 label=$2 artifacts=$3 status=$4 out_file=$5 ts remote rest line dir glob flag pulled=0
   shift 5
   if [ "$status" -ne 0 ]; then
     for remote in $(grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+\.(png|log|tar)' "$out_file" | awk '{print $2}'); do
-      rig_pull_one "$dest" "$remote" "$artifacts"
+      rig_pull_one "$dest" "$remote" "$artifacts" || true
     done
     echo "$label: smoke run failed (exit $status)" >&2
     return "$status"
@@ -207,29 +232,38 @@ rig_pull_smoke() {
     return 1
   fi
   ts=$(date +%Y%m%d-%H%M%S)
-  mkdir -p "$artifacts"
-  rsync -a -e "ssh ${rig_ssh_opts[*]}" "$dest:$remote" "$artifacts/smoke-$ts.png"
+  mkdir -p "$artifacts" || return 1
+  if ! rsync -a -e "ssh ${rig_ssh_opts[*]}" "$dest:$remote" "$artifacts/smoke-$ts.png"; then
+    echo "$label: could not pull the screenshot $remote" >&2
+    return 1
+  fi
   echo "pulled screenshot: $artifacts/smoke-$ts.png"
   rest=$(sed -E 's/SMOKE_OK [^[:space:]]+//' "$out_file" | sed '/^[[:space:]]*$/d')
   if [ -n "$(printf '%s' "$rest" | tr -d '[:space:]')" ]; then
-    printf '%s\n' "$rest" > "$artifacts/smoke-$ts.json"
+    printf '%s\n' "$rest" > "$artifacts/smoke-$ts.json" || return 1
     echo "pulled dump/status output: $artifacts/smoke-$ts.json"
   fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     remote=$(printf '%s\n' "$line" | awk '{print $2}')
-    case "$remote" in *.png|*.log|*.tar) rig_pull_one "$dest" "$remote" "$artifacts" ;; esac
+    case "$remote" in *.png|*.log|*.tar) rig_pull_one "$dest" "$remote" "$artifacts" || pulled=1 ;; esac
   done <<< "$(grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+' "$out_file" | grep -v '^SMOKE_OK ')"
   for flag in "$@"; do
     case "$flag" in --*) ;; *) continue ;; esac
     while IFS=$'\t' read -r dir glob; do
       [ -n "$dir" ] || continue
-      mkdir -p "$rig_root/$dir"
-      rsync -az -e "ssh ${rig_ssh_opts[*]}" --include "$glob" --exclude '*' \
-        "$dest:$rig_remote_dir/$dir/" "$rig_root/$dir/"
-      echo "pulled: $rig_root/$dir/$glob"
+      mkdir -p "$rig_root/$dir" || return 1
+      if rsync -az -e "ssh ${rig_ssh_opts[*]}" --include "$glob" --exclude '*' \
+        "$dest:$rig_remote_dir/$dir/" "$rig_root/$dir/"; then
+        echo "pulled: $rig_root/$dir/$glob"
+      else
+        echo "$label: could not pull $dir/$glob" >&2
+        pulled=1
+      fi
     done < <(printf '%s' "$FS_MANIFEST" | jq -r --arg flag "$flag" '.legs[] | select(.flag | split(" ")[0] == $flag) | .commits[] | [.dir, .glob] | @tsv')
   done
+  [ "$pulled" -eq 0 ] || echo "$label: some artifacts did not come back" >&2
+  return "$pulled"
 }
 
 # Environment a leg declares (leg_<n>_env) and the run knobs, as a

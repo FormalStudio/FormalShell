@@ -18,7 +18,7 @@
 # their centre and some the desktop's.
 leg_unlock_flag="--unlock"
 leg_unlock_order=111
-leg_unlock_needs="wtype convert python3"
+leg_unlock_needs="wtype convert python3 pil"
 leg_unlock_claims="lock"
 
 unlock_wallpaper="$shot_dir/unlock-grey.png"

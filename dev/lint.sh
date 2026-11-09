@@ -18,9 +18,11 @@ cargo() {
 }
 
 # Every crate but the service crates, whose tests are dev/check.sh's.
+# fs-audio stays: its unit tests need no daemon, and PipeWire is reached
+# only by dev/check.sh's probe.
 exclude=()
 for crate in $rig_session_checks $rig_vm_checks; do
-  exclude+=(--exclude "$crate")
+  [ "$crate" = fs-audio ] || exclude+=(--exclude "$crate")
 done
 
 cargo clippy --locked --release --workspace --all-targets

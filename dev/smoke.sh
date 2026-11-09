@@ -192,8 +192,18 @@ if [ "${1:-}" = --manifest ]; then
   exit 0
 fi
 
+# A leg that does not parse is left unsourced, so it fails only a run that
+# asks for its flag (read off the file), never a run of the other legs.
+broken_flags=()
+broken_errors=()
 for leg_file in "$script_dir"/smoke.d/*.sh; do
   leg_name=$(basename "$leg_file" .sh)
+  if ! err=$(bash -n "$leg_file" 2>&1); then
+    flag=$(sed -n "s/^leg_${leg_name}_flag=[\"']\(.*\)[\"']\$/\1/p" "$leg_file" | head -1 || true)
+    broken_flags+=("${flag%% *}")
+    broken_errors+=("$leg_name ($leg_file): $(printf '%s' "$err" | head -1)")
+    continue
+  fi
   # shellcheck source=/dev/null
   . "$leg_file"
   legs+=("$leg_name")
@@ -242,7 +252,15 @@ while [ $# -gt 0 ]; do
     fi
     break
   done
-  $matched || usage
+  if ! $matched; then
+    for i in ${broken_flags[@]+"${!broken_flags[@]}"}; do
+      if [ "$1" = "${broken_flags[$i]}" ]; then
+        echo "SMOKE_FAIL: $1 is a leg that does not parse: ${broken_errors[$i]}" >&2
+        exit 1
+      fi
+    done
+    usage
+  fi
 done
 
 for leg_name in "${legs[@]}"; do

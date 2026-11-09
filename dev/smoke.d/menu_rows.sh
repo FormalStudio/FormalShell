@@ -18,7 +18,7 @@
 # panel scale the owner saw rows clip each other at.
 leg_menu_rows_flag="--menu-rows"
 leg_menu_rows_order=127
-leg_menu_rows_needs="convert wtype wlrctl jq python3"
+leg_menu_rows_needs="convert wtype wlrctl jq python3 pil"
 leg_menu_rows_claims="launcher"
 
 menu_rows_word="notebook"

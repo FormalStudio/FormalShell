@@ -145,11 +145,12 @@ case "$verb" in
     cat "$out_file"
     artifacts="$artifacts/greeter"
     for remote in $(grep -oE '^SMOKE_GREETER_[A-Z]+ [^[:space:]]+' "$out_file" | awk '{print $2}'); do
-      rig_pull_one "$vm" "formalshell/$remote" "$artifacts"
+      rig_pull_one "$vm" "formalshell/$remote" "$artifacts" || status=1
     done
     rm -f "$out_file"
     for remote in greeter-session.log greetd-journal.txt; do
-      guest_ssh "test -e formalshell/artifacts/greeter/$remote" && rig_pull_one "$vm" "formalshell/artifacts/greeter/$remote" "$artifacts"
+      guest_ssh "test -e formalshell/artifacts/greeter/$remote" || continue
+      rig_pull_one "$vm" "formalshell/artifacts/greeter/$remote" "$artifacts" || status=1
     done
     exit "$status"
     ;;
