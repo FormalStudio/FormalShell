@@ -33,15 +33,6 @@ fn nmcli_unescapes_and_converts_signal() {
 }
 
 #[test]
-fn scan_head_picks_the_parser() {
-    assert_eq!(
-        access_points_from_scan("nm\n2C\\:96\\:82\\:FD\\:9F\\:57:Home:70:5260 MHz").len(),
-        1
-    );
-    assert_eq!(access_points_from_scan("none\n"), vec![]);
-}
-
-#[test]
 fn parse_geolocate_tells_wifi_from_ip() {
     assert_eq!(
         parse_geolocate(r#"{"location":{"lat":29.1,"lng":-13.5},"accuracy":30}"#),

@@ -29,7 +29,7 @@
 //! polling, only a read parked on its stdout.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -39,7 +39,7 @@ use futures_lite::io::BufReader;
 use futures_lite::{AsyncBufReadExt, AsyncWriteExt, FutureExt, StreamExt};
 use serde_json::{Value, json};
 
-use super::{config, proc};
+use super::config;
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -573,10 +573,37 @@ fn show(ctx: &Ctx, hosts: &mut Hosts, draining: &mut Draining, open: &mut HashSe
     }
 }
 
+/// Each `<dir>/*/manifest.json`, in directory-name order, hidden names left
+/// out as a shell glob leaves them. The text carries the trailing newline
+/// the manifest's old reader printed, so a parse error reads the same.
+fn read_records(dir: &Path) -> Vec<plugins::Record> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| !n.starts_with('.'))
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter_map(|id| {
+            let plugin_dir = dir.join(&id);
+            let manifest = plugin_dir.join("manifest.json");
+            manifest.is_file().then(|| {
+                let text = std::fs::read_to_string(&manifest).unwrap_or_default();
+                plugins::Record { dir: plugin_dir.to_string_lossy().into_owned(), id, text: format!("{text}\n") }
+            })
+        })
+        .collect()
+}
+
 async fn rescan(ctx: &Ctx, hosts: &mut Hosts, open: &HashSet<String>) -> Resolved {
     let dir = directory();
-    let done = proc::capture(&plugins::scan_command(&dir.to_string_lossy()), Duration::from_secs(10)).await;
-    let resolved = plugins::resolve(Some(&done.stdout), &disabled());
+    let scan = dir.clone();
+    let scanned = scan.clone();
+    let records = ctx.pool().run(move || read_records(&scanned)).await.unwrap_or_default();
+    let resolved = plugins::resolve(records, &disabled());
     for warning in &resolved.warnings {
         eprintln!("plugins: {warning}");
     }

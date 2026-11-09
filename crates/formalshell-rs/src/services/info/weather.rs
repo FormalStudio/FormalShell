@@ -14,6 +14,7 @@ use super::geoclue::{self, GeoFix};
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::services::http;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
@@ -38,23 +39,26 @@ fn read() -> Cfg {
     Cfg { at: crate::settings::location(&s), interval: s.interval("weather.intervalMs", 900_000) }
 }
 
-const SCAN: &str = "if busctl --system status net.connman.iwd >/dev/null 2>&1; then echo iwd; \
-    busctl --system --json=short call net.connman.iwd / org.freedesktop.DBus.ObjectManager GetManagedObjects; \
-    elif command -v nmcli >/dev/null 2>&1; then echo nm; nmcli -t -f BSSID,SSID,SIGNAL,FREQ dev wifi list; \
-    else echo none; fi";
+/// The access points in range, off iwd when it owns the radio and
+/// NetworkManager's scan list otherwise; none when neither is installed.
+async fn access_points() -> Vec<location::AccessPoint> {
+    let iwd = proc::capture(&proc::argv(&["busctl", "--system", "status", "net.connman.iwd"]), Duration::from_secs(15)).await;
+    if iwd.code == 0 {
+        let call = proc::capture(
+            &proc::argv(&["busctl", "--system", "--json=short", "call", "net.connman.iwd", "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"]),
+            Duration::from_secs(15),
+        )
+        .await;
+        return location::access_points_from_iwd(&call.stdout);
+    }
+    let list = proc::capture(&proc::argv(&["nmcli", "-t", "-f", "BSSID,SSID,SIGNAL,FREQ", "dev", "wifi", "list"]), Duration::from_secs(15)).await;
+    if list.code == proc::MISSING { Vec::new() } else { location::access_points_from_nmcli(&list.stdout) }
+}
 
 async fn geolocate() -> Option<Fix> {
-    let scan = proc::capture(&proc::argv(&["sh", "-c", SCAN]), Duration::from_secs(15)).await;
-    let body = location::geolocate_body(&location::access_points_from_scan(&scan.stdout));
-    let reply = proc::capture(
-        &proc::argv(&["curl", "-sS", "--fail", "--max-time", "8", "-H", "Content-Type: application/json", "-d", &body, location::GEOLOCATE_URL]),
-        Duration::from_secs(15),
-    )
-    .await;
-    if reply.code != 0 {
-        return None;
-    }
-    location::parse_geolocate(&reply.stdout)
+    let body = location::geolocate_body(&access_points().await);
+    let req = http::Request::get(location::GEOLOCATE_URL, 8).header("Content-Type: application/json").body(body);
+    location::parse_geolocate(&http::get(&req).await?.text())
 }
 
 /// Read on every settle, so a zone changed while travelling is picked up.
@@ -70,26 +74,19 @@ fn settle(at: (f64, f64), coarse: bool) -> Placed {
 }
 
 async fn place_name(key: &str, zoom: u8) -> String {
-    let reply = proc::capture(
-        &proc::argv(&[
-            "curl", "-sS", "--fail", "--max-time", "8", "-H", "User-Agent: FormalShell (https://github.com/FormalStudio/FormalShell)",
-            &location::reverse_url(key, zoom),
-        ]),
-        Duration::from_secs(15),
-    )
-    .await;
-    if reply.code != 0 { String::new() } else { location::parse_place(&reply.stdout) }
+    let req = http::Request::get(location::reverse_url(key, zoom), 8).user_agent("FormalShell (https://github.com/FormalStudio/FormalShell)");
+    match http::get(&req).await {
+        Some(reply) => location::parse_place(&reply.text()),
+        None => String::new(),
+    }
 }
 
-/// open-meteo through curl: the status trails the body on its own line, and
-/// a curl that never reached the server is status 0.
+/// A request that never reached the server is status 0.
 async fn fetch(url: &str) -> Result<Weather, Error> {
-    let done = proc::capture(&proc::argv(&["curl", "-sS", "-m", "15", "-w", "\n%{http_code}", url]), Duration::from_secs(20)).await;
-    if done.code != 0 {
-        return weather::parse_response(0, "");
+    match http::send(&http::Request::get(url, 15)).await {
+        Ok(reply) => weather::parse_response(reply.status, &reply.text()),
+        Err(_) => weather::parse_response(0, ""),
     }
-    let (body, status) = done.stdout.rsplit_once('\n').unwrap_or(("", "0"));
-    weather::parse_response(status.trim().parse().unwrap_or(0), body)
 }
 
 fn publish(ctx: &Ctx, state: State) {

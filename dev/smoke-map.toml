@@ -613,6 +613,14 @@ paths = ["crates/formalshell-rs/src/services/picker.rs", "crates/formalshell-rs/
 runs = ["--picker", "--picker --light", "--wheel"]
 
 [[rule]]
+paths = ["crates/formalshell-rs/src/services/thumbnails.rs"]
+runs = ["--clipboard", "--picker"]
+
+[[rule]]
+paths = ["crates/formalshell-rs/src/services/http.rs"]
+runs = ["--lyrics", "--motion-art", "--radio-atlas-cold", "--weather-locate", "--panel weather"]
+
+[[rule]]
 paths = ["crates/formalshell-rs/src/services/nightlight.rs", "crates/formalshell-rs/src/ipc/nightlight.rs"]
 runs = ["--nightlight"]
 

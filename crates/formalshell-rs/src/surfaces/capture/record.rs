@@ -317,25 +317,9 @@ fn setup_audio(app: &mut App) {
         setup_webcam(app, String::new());
         return;
     }
-    let desktop = concat!(
-        "sink=$(pactl get-default-sink) || exit 4\n",
-        "[ -n \"$sink\" ] || exit 4\n",
-        "printf '\\n%s.monitor\\n' \"$sink\"\n",
-    );
-    let desktop_mic = concat!(
-        "sink=$(pactl get-default-sink) || exit 4\n",
-        "src=$(pactl get-default-source) || exit 4\n",
-        "[ -n \"$sink\" ] && [ -n \"$src\" ] || exit 4\n",
-        "case \"$src\" in *.monitor) exit 5 ;; esac\n",
-        "m1=$(pactl load-module module-null-sink sink_name=\"$FS_MIX\" sink_properties=device.description=\"$FS_MIX\") || exit 4\n",
-        "m2=$(pactl load-module module-loopback source=\"$sink\".monitor sink=\"$FS_MIX\" latency_msec=50) || { pactl unload-module \"$m1\"; exit 4; }\n",
-        "m3=$(pactl load-module module-loopback source=\"$src\" sink=\"$FS_MIX\" latency_msec=50) || { pactl unload-module \"$m2\"; pactl unload-module \"$m1\"; exit 4; }\n",
-        "printf '%s %s %s\\n%s.monitor\\n' \"$m1\" \"$m2\" \"$m3\" \"$FS_MIX\"\n",
-    );
-    let script = if app.capture.rec.audio_mode == "desktopmic" { desktop_mic } else { desktop };
     let g = app.capture.generation();
     app.capture.rec.audio = Some(g);
-    spawn(app, Run::sh(Job::Audio, g, script).env("FS_MIX", model::MIX_SINK));
+    spawn(app, Run::audio(g, app.capture.rec.audio_mode == "desktopmic"));
 }
 
 fn launch(app: &mut App, device: String) {
@@ -359,7 +343,7 @@ fn launch(app: &mut App, device: String) {
         audio_device: device,
         audio_backend: settings::RECORDING_AUDIO_BACKEND.get(&app.store.config).to_owned(),
     };
-    let argv = fs_system::proc::die_with_parent(&model::recorder_argv(&opts));
+    let argv = model::recorder_argv(&opts);
     let g = app.capture.generation();
     let r = &mut app.capture.rec;
     r.started = Some(Instant::now());
@@ -617,7 +601,7 @@ pub fn exit(app: &mut App, e: Exit) {
                 fail(app, "no microphone: the default source is a monitor".into());
                 return;
             }
-            let setup = model::parse_audio_setup(&e.stdout);
+            let setup = crate::services::capture::parse_audio_setup(&e.stdout);
             if !e.started || e.code != 0 || setup.device.is_empty() {
                 fail(app, or_code(&e.stderr, format!("audio setup exited {}", e.code)));
                 return;

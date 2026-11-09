@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use async_io::Timer;
+#[cfg(test)]
 use fs_system::monitor::collect::split_sections;
 use fs_system::monitor::procs::{self, DeltaOptions, ProcRecord, ProcRow};
 use futures_lite::FutureExt;
@@ -102,14 +103,46 @@ struct Prev {
     total: f64,
 }
 
+/// The process table as the parsers read it, on a pool thread. A process
+/// that exits between the listing and its read is skipped.
 fn collect() -> std::collections::HashMap<String, String> {
-    let argv = procs::collect_command();
-    crate::services::proc::std_command(&argv[0])
-        .args(&argv[1..])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map_or_else(|_| Default::default(), |o| split_sections(&String::from_utf8_lossy(&o.stdout)))
+    let lines_of = |path: &str, keep: &dyn Fn(&str) -> bool| {
+        std::fs::read_to_string(path).unwrap_or_default().lines().filter(|l| keep(l)).collect::<Vec<_>>().join("\n")
+    };
+    let mut pids: Vec<String> = std::fs::read_dir("/proc")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.starts_with(|c: char| c.is_ascii_digit()))
+        .collect();
+    pids.sort();
+    let (mut procs, mut cmdline) = (String::new(), String::new());
+    for pid in &pids {
+        if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            procs.push_str(&stat);
+        }
+        if let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline"))
+            && !raw.is_empty()
+        {
+            let text = String::from_utf8_lossy(&raw).replace('\0', " ");
+            for line in text.split('\n') {
+                cmdline.push_str(&format!("/proc/{pid}/cmdline:{line}\n"));
+            }
+        }
+    }
+    // SAFETY: sysconf has no preconditions.
+    let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    [
+        ("stat", lines_of("/proc/stat", &|l| l.starts_with("cpu "))),
+        ("mem", lines_of("/proc/meminfo", &|l| l.starts_with("MemTotal:"))),
+        ("meta", page.to_string()),
+        ("procs", procs),
+        ("cmdline", cmdline),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect()
 }
 
 fn sample(prev: &mut Prev, sections: &std::collections::HashMap<String, String>) -> (Vec<ProcRow>, bool) {

@@ -1,17 +1,16 @@
 //! Process-table parsers for the launcher's process route, the same
 //! pure-function split `sysinfo` draws for the fixed /proc files.
 //!
-//! The collector is its own `sh -c` script rather than a section bolted onto
-//! `collect`: a 400-process machine pays for two extra passes over /proc per
-//! tick, and the bar cell and the compact panel have no process list to
-//! draw. It runs only while something is subscribed, which in practice means
-//! only while the process route is open.
+//! The service reads the process table on its own tick rather than as a
+//! section of `collect`: a 400-process machine pays for two extra passes
+//! over /proc per tick, and the bar cell and the compact panel have no
+//! process list to draw. It runs only while something is subscribed, which
+//! in practice means only while the process route is open.
 //!
-//! Two passes, two forks, no per-process fork: `cat /proc/[0-9]*/stat` reads
-//! every process's stat file in ONE exec, and `grep -a -H ''` does the same
-//! for the cmdlines, printing each with its own path so the pid survives.
-//! The `tr` after it turns cmdline's NUL separators into spaces, because a
-//! NUL inside a string is a byte nothing downstream treats as a separator.
+//! Each section is the files' text as the kernel prints it. The cmdlines
+//! come as `/proc/<pid>/cmdline:<text>` rows, NUL separators turned into
+//! spaces, because a NUL inside a string is a byte nothing downstream
+//! treats as a separator.
 //!
 //! Every fraction below is 0..1, and CPU is measured against the WHOLE
 //! machine, not one core: a process pinning one core of six reads 0.167
@@ -22,23 +21,6 @@ use fs_js as js;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-
-const SCRIPT_LINES: [&str; 6] = [
-    r##"echo "@stat"; grep -E '^cpu ' /proc/stat"##,
-    r##"echo "@mem"; grep -E '^MemTotal:' /proc/meminfo"##,
-    r##"echo "@meta"; getconf PAGESIZE"##,
-    r##"echo "@procs"; cat /proc/[0-9]*/stat 2>/dev/null"##,
-    r##"echo "@cmdline"; grep -a -H "" /proc/[0-9]*/cmdline 2>/dev/null | tr "\0" " ""##,
-    r##"echo "@end""##,
-];
-
-pub(crate) fn collector_script() -> String {
-    SCRIPT_LINES.join("\n")
-}
-
-pub fn collect_command() -> Vec<String> {
-    vec!["sh".into(), "-c".into(), collector_script()]
-}
 
 fn lines(text: &str) -> impl Iterator<Item = &str> {
     text.split('\n').filter(|l| !l.is_empty())
@@ -72,7 +54,7 @@ pub fn mem_total_bytes(text: &str) -> Option<f64> {
     MEM_TOTAL.captures(text).map(|m| js::parse_number(&m[1]) * 1024.0)
 }
 
-/// getconf PAGESIZE, because RSS in /proc/PID/stat is counted in pages and
+/// The page size, because RSS in /proc/PID/stat is counted in pages and
 /// aarch64 kernels are free to use 16K ones. A missing or absurd answer
 /// falls back to 4096 rather than reporting every process at 0 bytes.
 pub fn page_size(text: &str) -> f64 {
@@ -132,7 +114,7 @@ pub fn parse_procs(text: &str) -> Vec<ProcRecord> {
 
 static CMDLINE_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/proc/(\d+)/cmdline:(.*)$").unwrap());
 
-/// `grep -a -H '' /proc/[0-9]*/cmdline` rows, one per process that has one.
+/// `/proc/<pid>/cmdline:<text>` rows, one per process that has one.
 /// A kernel thread's cmdline is genuinely empty, so it produces no row at all
 /// and the pid is simply absent from the map.
 pub fn parse_cmdlines(text: &str) -> HashMap<String, String> {
@@ -372,14 +354,6 @@ mod tests {
     }
 
     // ---- sections ----
-
-    #[test]
-    fn the_collector_never_takes_an_argument() {
-        let cmd = collect_command();
-        assert_eq!(cmd.len(), 3);
-        assert_eq!(cmd[0], "sh");
-        assert_eq!(cmd[1], "-c");
-    }
 
     #[test]
     fn split_sections_finds_every_process_marker() {

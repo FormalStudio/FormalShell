@@ -103,33 +103,6 @@ pub fn hex_from_ppm_bytes(text: &str) -> String {
     out
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AudioSetup {
-    pub modules: Vec<f64>,
-    pub device: String,
-}
-
-/// The audio-setup script's two-line answer: the pactl module ids it loaded
-/// (blank when it loaded none) on the first line, the device wf-recorder should
-/// record on the second. Anything else is a failed setup, reported as an empty
-/// device so the caller never starts a recording that silently captures
-/// nothing.
-pub fn parse_audio_setup(text: &str) -> AudioSetup {
-    let lines: Vec<&str> = text.split('\n').collect();
-    let mut ids = Vec::new();
-    let raw = js::trim(lines.first().copied().unwrap_or(""));
-    if !raw.is_empty() {
-        for part in js::split_ws(raw) {
-            if !all_digits(part) {
-                return AudioSetup { modules: Vec::new(), device: String::new() };
-            }
-            ids.push(js::parse_number(part));
-        }
-    }
-    let device = js::trim(lines.get(1).copied().unwrap_or("")).to_string();
-    AudioSetup { modules: ids, device }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct RecorderOpts {
     pub path: String,
@@ -606,29 +579,6 @@ mod tests {
         assert_eq!(hex_from_ppm_bytes("67 133 190 255"), "");
         assert_eq!(hex_from_ppm_bytes("67 133 999"), "");
         assert_eq!(hex_from_ppm_bytes("grim: failed to capture"), "");
-    }
-
-    #[test]
-    fn parse_audio_setup_reads_modules_then_device() {
-        let mic = parse_audio_setup("41 42 43\nformalshell-mix.monitor\n");
-        assert_eq!(mic.modules.len(), 3);
-        assert_eq!(mic.modules[0], 41.0);
-        assert_eq!(mic.modules[2], 43.0);
-        assert_eq!(mic.device, "formalshell-mix.monitor");
-
-        let desktop = parse_audio_setup("\nalsa_output.pci-0000_00_1f.3.analog-stereo.monitor\n");
-        assert_eq!(desktop.modules.len(), 0);
-        assert_eq!(desktop.device, "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor");
-    }
-
-    #[test]
-    fn parse_audio_setup_reports_no_device_on_a_failed_setup() {
-        assert_eq!(parse_audio_setup("").device, "");
-        assert_eq!(parse_audio_setup("\n").device, "");
-        assert_eq!(parse_audio_setup("41 42 43\n").device, "");
-        let broken = parse_audio_setup("41 oops\nformalshell-mix.monitor\n");
-        assert_eq!(broken.modules.len(), 0);
-        assert_eq!(broken.device, "");
     }
 
     fn opts(f: impl FnOnce(&mut RecorderOpts)) -> RecorderOpts {

@@ -359,38 +359,11 @@ pub fn resolve_request(uuids: &[String]) -> Request {
     }
 }
 
-/// curl's argv for one request against one mirror, the flags radio-fetch
-/// passes. `--max-filesize` aborts a transfer past the cap even when the
-/// server sends no length.
-pub fn curl_args(base: &str, request: &Request, user_agent: &str) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "curl",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--connect-timeout",
-        "4",
-        "--max-time",
-        if request.max >= 500 { "45" } else { "12" },
-        "--retry",
-        "1",
-        "--retry-delay",
-        "0",
-        "--max-filesize",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    args.push(MAX_RESPONSE_CHARS.to_string());
-    args.extend(["--proto", "=https", "--user-agent"].map(String::from));
-    args.push(user_agent.to_string());
-    args.push("--get".into());
-    args.push(format!("{base}{}", request.path));
-    for (k, v) in &request.params {
-        args.push("--data-urlencode".into());
-        args.push(format!("{k}={v}"));
+impl Request {
+    /// Seconds one attempt may take: a full-catalogue pull gets longer.
+    pub fn max_time(&self) -> u32 {
+        if self.max >= 500 { 45 } else { 12 }
     }
-    args
 }
 
 pub(crate) fn mappable(station: &Station) -> bool {

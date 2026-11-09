@@ -19,6 +19,7 @@ use serde_json::json;
 use super::{idle, kicked};
 use crate::runtime::Ctx;
 use crate::services::config;
+use crate::services::http;
 use crate::services::proc;
 use crate::services::wants::Source;
 use crate::store;
@@ -177,16 +178,14 @@ impl Poll {
 
     async fn usage(&self, token: &str) -> (i32, String) {
         let auth = format!("Authorization: Bearer {token}");
-        let argv = proc::argv(&[
-            "curl", "-sS", "-m", "20", "-w", "\n%{http_code}", "-H", &auth, "-H", "anthropic-beta: oauth-2025-04-20",
-            "-H", "Accept: application/json", "https://api.anthropic.com/api/oauth/usage",
-        ]);
-        let done = proc::capture(&argv, Duration::from_secs(30)).await;
-        if done.code != 0 {
-            return (0, String::new());
+        let req = http::Request::get("https://api.anthropic.com/api/oauth/usage", 20)
+            .header(auth)
+            .header("anthropic-beta: oauth-2025-04-20")
+            .header("Accept: application/json");
+        match http::send(&req).await {
+            Ok(reply) => (i32::from(reply.status), reply.text()),
+            Err(_) => (0, String::new()),
         }
-        let (body, status) = done.stdout.rsplit_once('\n').unwrap_or(("", "0"));
-        (status.trim().parse().unwrap_or(0), body.to_owned())
     }
 
     async fn claude(&mut self, force_refresh: bool) {

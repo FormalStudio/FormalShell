@@ -321,8 +321,7 @@ fn load(path: &std::path::Path) -> Vec<Entry> {
 /// data-control protocol, or no wl-paste at all).
 async fn watch(args: Vec<String>, tx: Sender<Event>, wrap: fn(String) -> Event) {
     loop {
-        let child = crate::services::proc::command("setpriv")
-            .args(["--pdeathsig", "TERM", "--", "wl-paste"])
+        let child = crate::services::proc::command("wl-paste")
             .args(&args)
             .stdin(async_process::Stdio::null())
             .stdout(async_process::Stdio::piped())
@@ -360,14 +359,10 @@ fn warm(ctx: &Ctx, paths: Vec<String>) {
         return;
     }
     let dir = thumb_dir();
-    let size = THUMB_SIZE.to_string();
-    let mut argv = proc::argv(&["sh", "-c", &thumbnails::warm_script(4), "sh", &dir, &size, Mode::Fit.as_str()]);
-    for p in &paths {
-        argv.push(p.clone());
-        argv.push(thumbnails::cache_path(&dir, p, THUMB_SIZE, Mode::Fit));
-    }
+    let pairs: Vec<(String, String)> = paths.into_iter().map(|p| { let dst = thumbnails::cache_path(&dir, &p, THUMB_SIZE, Mode::Fit); (p, dst) }).collect();
+    let pool = ctx.pool().clone();
     ctx.spawn(async move {
-        proc::capture(&argv, Duration::from_secs(60)).await;
+        pool.run(move || super::thumbnails::warm(&dir, THUMB_SIZE, Mode::Fit, &pairs, 4, Duration::from_secs(60))).await;
     });
 }
 

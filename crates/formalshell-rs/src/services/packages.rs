@@ -24,7 +24,7 @@ use async_io::Timer;
 use fs_menu::providers::{self as p, Info, Owner, Package};
 use futures_lite::{FutureExt, future};
 
-use super::proc;
+use super::{http, proc};
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -305,13 +305,8 @@ async fn fetch_shot(url: &str, path: &Path) -> bool {
         return false;
     }
     let part = path.with_extension("part");
-    let part_s = part.to_string_lossy().into_owned();
-    let done = proc::capture_err(
-        &proc::argv(&["curl", "--fail", "--silent", "--location", "--connect-timeout", "4", "--max-time", "20", "--max-filesize", "8388608", "--output", &part_s, url]),
-        Duration::from_secs(25),
-    )
-    .await;
-    if done.code != 0 {
+    let req = http::Request::get(url, 20).follow(50).connect_timeout(4).max_filesize(8_388_608).output(&part);
+    if http::get(&req).await.is_none() {
         let _ = std::fs::remove_file(&part);
         return false;
     }

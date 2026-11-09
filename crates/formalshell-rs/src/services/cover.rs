@@ -10,6 +10,8 @@ use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
 use base64::Engine;
+
+use super::http;
 use image::RgbaImage;
 use image::imageops::{self, FilterType};
 
@@ -19,7 +21,7 @@ use crate::scene::Bitmap;
 use crate::store;
 
 /// http art bigger than this is not album art.
-const MAX_BYTES: &str = "8388608";
+const MAX_BYTES: u64 = 8_388_608;
 
 struct Ask {
     url: String,
@@ -88,15 +90,8 @@ async fn fetch(ctx: &Ctx, url: &str) -> Option<Vec<u8>> {
         };
     }
     if url.starts_with("http://") || url.starts_with("https://") {
-        let out = crate::services::proc::command("curl")
-            .args(["--fail", "--silent", "--location", "--connect-timeout", "4", "--max-time", "10", "--max-filesize", MAX_BYTES, url])
-            .stdin(async_process::Stdio::null())
-            .stderr(async_process::Stdio::null())
-            .kill_on_drop(true)
-            .output()
-            .await
-            .ok()?;
-        return (out.status.success() && !out.stdout.is_empty()).then_some(out.stdout);
+        let req = http::Request::get(url, 10).follow(50).connect_timeout(4).max_filesize(MAX_BYTES);
+        return http::get(&req).await.map(|r| r.body).filter(|b| !b.is_empty());
     }
     let file = url.strip_prefix("file://").unwrap_or(url);
     let path = percent_decode(file.split_once('?').map_or(file, |(p, _)| p));

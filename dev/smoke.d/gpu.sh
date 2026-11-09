@@ -1,35 +1,28 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154  # dev/smoke.sh reads leg_* and supplies shot_dir, the *_bin paths and fail()
 # --gpu: the monitor surfaces against a hybrid Intel + NVIDIA laptop this rig
-# is not. Two PATH shims draw it, the same hermetic-producer line the clipssh
-# shim draws, and neither invents a /sys entry:
+# is not. A PATH shim and a rows file draw it, the same hermetic-producer line
+# the clipssh shim draws, and neither invents a /sys entry:
 #
-#   nvidia-smi  the collector already resolves it off PATH, so a shim
+#   nvidia-smi  the monitor service already resolves it off PATH, so a shim
 #               printing the owner's real g815 row makes the whole
 #               collector -> parseNvidia -> mergeGpu -> render path real.
 #               `[N/A]` is a value nvidia-smi genuinely emits for fan speed
 #               on a laptop GPU and has to come out unavailable, never 0.
-#   sh          the @drm half has no such seam: the collector reads
-#               /sys/class/drm itself. So the shim goes one level up, onto
-#               the collector's own view. It recognises exactly the one
-#               `sh -c` carrying that glob, runs it through the REAL shell so
-#               every other section stays this machine's own honest /proc,
-#               and hands back the @drm rows of
-#               crates/fs-system/tests/fixtures/gpu-hybrid.txt in place of
-#               that section's own. Every other `sh -c` execs
-#               straight through, GpuService's own nvidia-offload/prime-run
-#               probe included, which must keep answering "neither" since the
-#               env-var offload path is what this leg proves.
+#   drm rows    the monitor service reads /sys/class/drm itself. With
+#               FORMALSHELL_SMOKE_DRM_ROWS set it reads the @drm rows of
+#               crates/fs-system/tests/fixtures/gpu-hybrid.txt instead, so
+#               every other section stays this machine's own honest /proc.
+#               GpuService's own nvidia-offload/prime-run probe still answers
+#               "neither", since the env-var offload path is what this leg
+#               proves.
 #
-# The @drm section is replaced rather than appended to, which the old rig
-# never had to decide: its VM held no cards at all, while this session
-# renders on a real vkms card that enumerates as card0, the same id the
-# fixture's dGPU carries. Two cards under one id is a machine that cannot
+# The rows replace the machine's own cards rather than join them: this
+# session renders on a real vkms card that enumerates as card0, the same id
+# the fixture's dGPU carries. Two cards under one id is a machine that cannot
 # exist, and it renders like one: the launcher's route keys its rows on the
-# card id, so the run that appended drew the vkms card twice and the NVIDIA
-# card not at all. So for the one command that reads /sys/class/drm, this
-# machine's own cards are out of view and the fixture pair is the whole card
-# list, asserted as exactly two.
+# card id. So the fixture pair is the whole card list, asserted as exactly
+# two.
 #
 # Then the claim no screenshot can make: `monitor launch` against a fixture
 # .desktop whose Exec is a probe writing its own argv and environment to a
@@ -52,7 +45,6 @@ gpu_route_png="$shot_dir/gpu-route.png"
 gpu_monitor_png="$shot_dir/gpu-monitor.png"
 
 leg_gpu_fixture() {
-  local real_sh
   mkdir -p "$gpu_shim_dir"
 
   cat > "$gpu_shim_dir/nvidia-smi" <<'EOF'
@@ -78,30 +70,7 @@ EOF
     exit 1
   fi
 
-  # Resolved here rather than inside the shim, and before the shim dir goes
-  # on PATH: a bare `sh` there would find the shim itself and recurse.
-  real_sh=$(command -v sh)
-  case "$real_sh" in
-    /*) ;;
-    *) real_sh=/bin/sh ;;
-  esac
-  cat > "$gpu_shim_dir/sh" <<EOF
-#!/usr/bin/env bash
-real_sh="$real_sh"
-rows_file="$gpu_drm_rows_path"
-if [ "\${1:-}" = "-c" ] && [[ "\${2:-}" == *"/sys/class/drm/card"* ]]; then
-  # The marker line and the next section's marker are kept, everything
-  # between them is the fixture's.
-  "\$real_sh" "\$@" | awk -v rows="\$rows_file" '
-    /^@drm\$/ { print; while ((getline line < rows) > 0) print line; close(rows); in_drm = 1; next }
-    /^@/ { in_drm = 0 }
-    !in_drm { print }
-  '
-  exit \$?
-fi
-exec "\$real_sh" "\$@"
-EOF
-  chmod +x "$gpu_shim_dir/sh"
+  shell_env="${shell_env:+$shell_env }FORMALSHELL_SMOKE_DRM_ROWS=$gpu_drm_rows_path"
 
   # The entry `monitor launch` offloads. Its Exec is a probe that writes its
   # own argv and environment and exits, the only way an env var reaching a
@@ -123,12 +92,9 @@ EOF
 EOF
   chmod +x "$gpu_probe_script"
 
-  # The scaffold owns the shell's launch line, so the shims reach the shell
-  # by riding the rig's own environment into the session (PATH is not in
-  # session_env). This dir carries an `sh`, which matters more here than
-  # anywhere else: every *_bin the scaffold resolved is already an absolute
-  # path, and the shim passes every command it does not recognise straight
-  # through to the real shell, so nothing else in the run changes behaviour.
+  # The scaffold owns the shell's launch line, so the nvidia-smi shim
+  # reaches the shell by riding the rig's own environment into the session
+  # (PATH is not in session_env).
   export PATH="$gpu_shim_dir:$PATH"
 }
 

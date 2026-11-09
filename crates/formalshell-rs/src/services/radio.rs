@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use std::os::unix::net::UnixStream;
 
 use super::devices::audio;
+use super::http;
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -282,16 +283,13 @@ fn state_path() -> PathBuf {
     crate::paths::state().join("formalshell").join("radio-atlas.json")
 }
 
-async fn curl(args: &[String]) -> Option<String> {
-    let out = crate::services::proc::command(args.first()?)
-        .args(&args[1..])
-        .stdin(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await
-        .ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+async fn fetch(req: &http::Request) -> Option<String> {
+    http::get(req).await.map(|r| r.text())
+}
+
+/// A small JSON document off a fixed URL, capped at 64 KiB.
+fn document(url: &str) -> http::Request {
+    http::Request::get(url, 8).connect_timeout(4).max_filesize(65536).https_only().user_agent(USER_AGENT)
 }
 
 type Bases = Rc<RefCell<Vec<String>>>;
@@ -300,13 +298,7 @@ async fn discover(cache: &Bases) -> Vec<String> {
     if !cache.borrow().is_empty() {
         return cache.borrow().clone();
     }
-    let args: Vec<String> = [
-        "curl", "--fail", "--silent", "--connect-timeout", "4", "--max-time", "8", "--max-filesize", "65536",
-        "--proto", "=https", "--user-agent", USER_AGENT, stations::SERVERS_URL,
-    ]
-    .map(String::from)
-    .to_vec();
-    let found = match curl(&args).await {
+    let found = match fetch(&document(stations::SERVERS_URL)).await {
         Some(text) => stations::parse_servers(&text, &mut fastrand::f64),
         None => Vec::new(),
     };
@@ -326,8 +318,16 @@ async fn request(cache: &Bases, request: &stations::Request) -> Option<Vec<Stati
 /// has failed.
 async fn request_on(bases: &[String], request: &stations::Request) -> Option<Vec<Station>> {
     for base in bases {
-        let args = stations::curl_args(base, request, USER_AGENT);
-        if let Some(rows) = curl(&args).await.and_then(|t| stations::parse_response(&t, request.max)) {
+        let mut req = http::Request::get(format!("{base}{}", request.path), request.max_time())
+            .connect_timeout(4)
+            .retry_once()
+            .max_filesize(stations::MAX_RESPONSE_CHARS as u64)
+            .https_only()
+            .user_agent(USER_AGENT);
+        for (k, v) in &request.params {
+            req = req.query(k, v);
+        }
+        if let Some(rows) = fetch(&req).await.and_then(|t| stations::parse_response(&t, request.max)) {
             return Some(rows);
         }
     }
@@ -717,13 +717,7 @@ impl Radio {
         let (bases, uuid) = (self.bases.clone(), uuid.to_owned());
         self.ctx.spawn(async move {
             let url = format!("{}/json/url/{uuid}", discover(&bases).await[0]);
-            let args: Vec<String> = [
-                "curl", "--fail", "--silent", "--max-time", "4", "--proto", "=https", "--user-agent", USER_AGENT,
-                "--output", "/dev/null", &url,
-            ]
-            .map(String::from)
-            .to_vec();
-            let _ = curl(&args).await;
+            let _ = http::get(&http::Request::get(url, 4).https_only().user_agent(USER_AGENT).output("/dev/null")).await;
         });
     }
 
@@ -893,13 +887,7 @@ impl Radio {
                     return self.answer(Reply::Rows(token, Some(self.cliamp.clone())));
                 }
                 self.ctx.spawn(async move {
-                    let args: Vec<String> = [
-                        "curl", "--fail", "--silent", "--connect-timeout", "4", "--max-time", "8", "--max-filesize", "65536",
-                        "--proto", "=https", "--user-agent", USER_AGENT, stations::CLIAMP_URL,
-                    ]
-                    .map(String::from)
-                    .to_vec();
-                    let rows = curl(&args).await.and_then(|t| stations::parse_cliamp(&t)).filter(|r| !r.is_empty());
+                    let rows = fetch(&document(stations::CLIAMP_URL)).await.and_then(|t| stations::parse_cliamp(&t)).filter(|r| !r.is_empty());
                     let _ = follow.try_send(Cmd::CliampRead(rows.clone()));
                     let _ = follow.try_send(Cmd::Answered(Reply::Rows(token, rows)));
                 });

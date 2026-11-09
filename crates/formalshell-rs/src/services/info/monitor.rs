@@ -2,13 +2,15 @@
 //! /proc and /sys reads of one tick happen on the blocking pool, the
 //! fs-system parsers turn them into numbers, and CPU and network figures
 //! are deltas against the tick before, so the first tick after a start
-//! answers `null` rather than a made-up zero. The collector is the one
-//! script fs-system ships, so the sections the parsers read are its own.
+//! answers `null` rather than a made-up zero. `collect` files each read
+//! under the section name its fs-system parser takes.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use fs_system::monitor::collect::{collect_command, split_sections};
+#[cfg(test)]
+use fs_system::monitor::collect::split_sections;
 use fs_system::monitor::gpu::{self, GfxMode, GpuRecord};
 use fs_system::monitor::sysinfo::{self, CoreLoad, CpuRecord, Disk, Fan, Load, Mem, NetRate, NetRow, Temp, Uptime};
 use serde_json::{Value, json};
@@ -223,15 +225,154 @@ fn sample(prev: &mut Prev, sections: &HashMap<String, String>, at: Instant) -> S
     }
 }
 
-/// One collector run, on a pool thread: it walks /proc, /sys and `df`.
-fn collect() -> HashMap<String, String> {
-    let argv = collect_command();
-    let out = crate::services::proc::std_command(&argv[0])
-        .args(&argv[1..])
+/// A sysfs attribute's text, trailing newlines off; none when it cannot be
+/// read.
+fn cat(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok().map(|t| t.trim_end_matches('\n').to_owned())
+}
+
+fn lines_of(path: &str, keep: impl Fn(&str) -> bool) -> String {
+    std::fs::read_to_string(path).unwrap_or_default().lines().filter(|l| keep(l)).collect::<Vec<_>>().join("\n")
+}
+
+/// Directory entries whose name starts with `prefix`, in name order.
+fn entries(dir: &str, prefix: &str) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(prefix))
+        .map(|e| e.path())
+        .collect();
+    out.sort();
+    out
+}
+
+fn name_of(path: &Path) -> String {
+    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// `chip|file|label|value` for each `<kind>*_input` under every hwmon chip.
+fn hwmon_rows(kind: &str) -> String {
+    let mut rows = Vec::new();
+    for hwmon in entries("/sys/class/hwmon", "hwmon").iter().filter(|h| h.is_dir()) {
+        let chip = cat(&hwmon.join("name")).unwrap_or_default();
+        for input in entries(&hwmon.to_string_lossy(), "").iter().filter(|p| {
+            let n = name_of(p);
+            n.starts_with(kind) && n.ends_with("_input") && std::fs::File::open(p).is_ok()
+        }) {
+            let id = name_of(input);
+            let label = cat(&hwmon.join(format!("{}_label", id.trim_end_matches("_input")))).unwrap_or_default();
+            rows.push(format!("{chip}|{id}|{label}|{}", cat(input).unwrap_or_default()));
+        }
+    }
+    rows.join("\n")
+}
+
+/// `readlink -f`'s last component: a missing leaf still names itself when
+/// its parent exists.
+fn resolved_name(path: &Path) -> String {
+    match std::fs::canonicalize(path) {
+        Ok(real) => name_of(&real),
+        Err(_) if path.parent().is_some_and(Path::exists) => name_of(path),
+        Err(_) => String::new(),
+    }
+}
+
+/// The `card`, `metric` and `conn` rows `gpu` parses, one set per card.
+fn drm_rows() -> String {
+    // The smoke rig has no hybrid card to read; `--gpu` points this at the
+    // rows of a captured one, in place of /sys/class/drm.
+    if let Some(rows) = std::env::var_os("FORMALSHELL_SMOKE_DRM_ROWS").and_then(|p| cat(Path::new(&p))) {
+        return rows;
+    }
+    let mut rows = Vec::new();
+    for card in entries("/sys/class/drm", "card") {
+        let base = name_of(&card);
+        let digits = &base[4..];
+        if !(1..=2).contains(&digits.len()) || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let dev = card.join("device");
+        let attr = |name: &str| cat(&dev.join(name)).unwrap_or_default();
+        rows.push(format!(
+            "card|{base}|{}|{}|{}|{}|{}|{}",
+            resolved_name(&dev.join("driver")),
+            attr("vendor"),
+            attr("device"),
+            attr("boot_vga"),
+            resolved_name(&dev),
+            attr("label"),
+        ));
+        for f in ["gpu_busy_percent", "mem_info_vram_used", "mem_info_vram_total", "mem_busy_percent"] {
+            if let Some(v) = cat(&dev.join(f)) {
+                rows.push(format!("metric|{base}|{f}|{v}"));
+            }
+        }
+        for f in ["gt_act_freq_mhz", "gt_max_freq_mhz"] {
+            if let Some(v) = cat(&card.join(f)) {
+                rows.push(format!("metric|{base}|{f}|{v}"));
+            }
+        }
+        for hw in entries(&dev.join("hwmon").to_string_lossy(), "hwmon").iter().filter(|h| h.is_dir()) {
+            for f in ["temp1_input", "power1_average", "fan1_input"] {
+                if let Some(v) = cat(&hw.join(f)) {
+                    rows.push(format!("metric|{base}|{f}|{v}"));
+                }
+            }
+        }
+        for conn in entries("/sys/class/drm", &format!("{base}-")).iter().filter(|k| k.is_dir()) {
+            let output = name_of(conn);
+            let output = output.trim_start_matches("card").trim_start_matches(|c: char| c.is_ascii_digit());
+            let output = output.strip_prefix('-').unwrap_or(output);
+            rows.push(format!("conn|{base}|{output}|{}", cat(&conn.join("status")).unwrap_or_default()));
+        }
+    }
+    rows.join("\n")
+}
+
+/// A program's stdout when it is installed, empty otherwise.
+fn output_of(program: &str, args: &[&str]) -> String {
+    if !on_path(program) {
+        return String::new();
+    }
+    crate::services::proc::std_command(program)
+        .args(args)
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .output();
-    out.map_or_else(|_| HashMap::new(), |o| split_sections(&String::from_utf8_lossy(&o.stdout)))
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim_end_matches('\n').to_owned())
+        .unwrap_or_default()
+}
+
+/// One tick's reads, on a pool thread.
+fn collect() -> HashMap<String, String> {
+    let net = std::fs::read_to_string("/proc/net/dev").unwrap_or_default().lines().skip(2).collect::<Vec<_>>().join("\n");
+    let disk = crate::services::proc::std_command("df")
+        .args(["-B1", "-x", "tmpfs", "-x", "devtmpfs", "-x", "efivarfs", "--output=source,target,size,used"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().skip(1).collect::<Vec<_>>().join("\n"))
+        .unwrap_or_default();
+    let meminfo = ["MemTotal:", "MemAvailable:", "MemFree:", "SwapTotal:", "SwapFree:"];
+    let nvidia_query = "--query-gpu=index,name,utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw,fan.speed";
+    [
+        ("stat", lines_of("/proc/stat", |l| l.starts_with("cpu"))),
+        ("mem", lines_of("/proc/meminfo", |l| meminfo.iter().any(|k| l.starts_with(k)))),
+        ("load", cat(Path::new("/proc/loadavg")).unwrap_or_default()),
+        ("uptime", cat(Path::new("/proc/uptime")).unwrap_or_default()),
+        ("net", net),
+        ("temp", hwmon_rows("temp")),
+        ("fan", hwmon_rows("fan")),
+        ("disk", disk),
+        ("drm", drm_rows()),
+        ("nvidia", output_of("nvidia-smi", &[nvidia_query, "--format=csv,noheader,nounits"])),
+        ("gfx", if on_path("supergfxctl") { output_of("timeout", &["1", "supergfxctl", "-g"]) } else { String::new() }),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect()
 }
 
 fn read() -> std::time::Duration {

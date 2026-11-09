@@ -106,16 +106,6 @@ pub fn access_points_from_nmcli(text: &str) -> Vec<AccessPoint> {
     result
 }
 
-/// The scan script prints which backend answered on its first line.
-pub fn access_points_from_scan(text: &str) -> Vec<AccessPoint> {
-    let (head, rest) = text.split_once('\n').unwrap_or((text, ""));
-    match head {
-        "iwd" => access_points_from_iwd(rest),
-        "nm" => access_points_from_nmcli(rest),
-        _ => Vec::new(),
-    }
-}
-
 pub fn geolocate_body(access_points: &[AccessPoint]) -> String {
     serde_json::json!({ "considerIp": true, "wifiAccessPoints": access_points }).to_string()
 }

@@ -4,7 +4,8 @@
 # geolocates somewhere its clock says it is not. The owner's Lanzarote line
 # leaves through Madrid, so beaconDB (and every IP database) answers Madrid
 # with its `ipf` fallback while the zone is Atlantic/Canary, an hour behind.
-# A PATH-shimmed `curl` gives that beaconDB answer, names a Madrid lookup
+# A PATH-shimmed `curl` gives that beaconDB answer (body, then the
+# status line `-w` asks for), names a Madrid lookup
 # Madrid and a country lookup Spain, logs every call and hands anything else
 # (open-meteo) to the real curl; the shell runs under TZ=Atlantic/Canary.
 # The nested run's system bus is empty, so GeoClue is absent and the
@@ -31,9 +32,9 @@ leg_weather_locate_fixture() {
 #!/usr/bin/env bash
 echo "\$*" >> "$weather_locate_calls"
 case " \$* " in
-  *api.beacondb.net*) echo '{"accuracy":25000,"fallback":"ipf","location":{"lat":40.4168,"lng":-3.70379}}' ;;
-  *nominatim.openstreetmap.org*zoom=10*) echo '{"name":"Madrid","address":{"city":"Madrid","state":"Community of Madrid"}}' ;;
-  *nominatim.openstreetmap.org*) echo '{"name":"Spain","address":{"country":"Spain"}}' ;;
+  *api.beacondb.net*) printf '%s\\n200' '{"accuracy":25000,"fallback":"ipf","location":{"lat":40.4168,"lng":-3.70379}}' ;;
+  *nominatim.openstreetmap.org*zoom=10*) printf '%s\\n200' '{"name":"Madrid","address":{"city":"Madrid","state":"Community of Madrid"}}' ;;
+  *nominatim.openstreetmap.org*) printf '%s\\n200' '{"name":"Spain","address":{"country":"Spain"}}' ;;
   *) exec "$real_curl" "\$@" ;;
 esac
 EOF

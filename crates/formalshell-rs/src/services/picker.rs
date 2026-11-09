@@ -185,7 +185,7 @@ async fn run(ctx: Ctx) {
                 ctx.publish(store::Diff::Picker(Diff::Scanned(scan)));
                 let c = ctx.clone();
                 ctx.spawn(async move {
-                    let ready = warm(&files).await;
+                    let ready = warm(&c, &files).await;
                     c.publish(store::Diff::Picker(Diff::Cached(ready)));
                 });
             }
@@ -233,19 +233,13 @@ fn identical(a: &str, b: &str) -> bool {
 
 /// ThumbnailService.warm in `wide` mode: the sources whose thumbnail is
 /// now in the cache, a hit or freshly drawn.
-async fn warm(paths: &[String]) -> Vec<String> {
+async fn warm(ctx: &Ctx, paths: &[String]) -> Vec<String> {
     if paths.is_empty() {
         return Vec::new();
     }
     let dir = thumb_dir();
-    let size = WIDE.to_string();
-    let mut argv = proc::argv(&["sh", "-c", &thumbnails::warm_script(4), "sh", &dir, &size, Mode::Wide.as_str()]);
-    for p in paths {
-        argv.push(p.clone());
-        argv.push(thumbnails::cache_path(&dir, p, WIDE, Mode::Wide));
-    }
-    let done = proc::capture(&argv, Duration::from_secs(300)).await;
-    done.stdout.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()
+    let pairs: Vec<(String, String)> = paths.iter().map(|p| (p.clone(), thumbnails::cache_path(&dir, p, WIDE, Mode::Wide))).collect();
+    ctx.pool().run(move || super::thumbnails::warm(&dir, WIDE, Mode::Wide, &pairs, 4, Duration::from_secs(300))).await.unwrap_or_default()
 }
 
 /// Each tile as a cover crop at `px`, from its files' cached thumbnails

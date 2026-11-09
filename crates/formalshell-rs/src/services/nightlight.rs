@@ -213,8 +213,8 @@ impl Machine {
         let temp = self.settings.temp.to_string();
         let tx = CHANNEL.0.clone();
         self.ctx.spawn(async move {
-            let child = crate::services::proc::command("setpriv")
-                .args(["--pdeathsig", "TERM", "--", "wlsunset", "-t", &temp, "-S", "06:00", "-s", "18:00"])
+            let child = crate::services::proc::command("wlsunset")
+                .args(["-t", &temp, "-S", "06:00", "-s", "18:00"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::piped())

@@ -45,14 +45,6 @@ pub const API_VERSION: i64 = 1;
 /// Must stay byte-identical to the `plugin:` prefix `bar::layout` writes.
 pub const PLUGIN_PREFIX: &str = "plugin:";
 
-pub const RECORD_BOUNDARY: &str = "#--formalshell-plugin-boundary--";
-
-/// One `sh` process enumerates the directory and reads every manifest, the
-/// same drop-in-directory read the matugen.d scan performs. Per-plugin
-/// structure is recovered from [`RECORD_BOUNDARY`]. A plugins directory that
-/// does not exist leaves the glob unmatched, `[ -f ]` fails, nothing prints.
-pub const SCAN_SCRIPT: &str = r#"for m in "$1"/*/manifest.json; do [ -f "$m" ] && echo "$2" && echo "${m%/manifest.json}" && cat "$m" && echo; done"#;
-
 static ID_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]*$").expect("static pattern"));
 
@@ -136,7 +128,7 @@ pub struct Plugin {
 }
 
 /// One plugin as it arrives off the scan: its directory, the id derived from
-/// it and the manifest bytes.
+/// it (the directory's name) and the manifest text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Record {
     pub dir: String,
@@ -155,35 +147,6 @@ impl Resolved {
     pub fn by_id(&self, id: &str) -> Option<&Plugin> {
         self.plugins.iter().find(|p| p.id == id)
     }
-}
-
-/// argv for the scan process. The directory only ever arrives as `$1`, never
-/// interpolated into the script text.
-pub fn scan_command(plugins_dir: &str) -> Vec<String> {
-    ["sh", "-c", SCAN_SCRIPT, "sh", plugins_dir, RECORD_BOUNDARY]
-        .map(String::from)
-        .into()
-}
-
-/// Splits one collected payload into per-plugin records. Each record on the
-/// wire is boundary, newline, dir, newline, manifest bytes.
-pub fn split_scan(text: &str) -> Vec<Record> {
-    let mut records = Vec::new();
-    for chunk in text.split(RECORD_BOUNDARY).skip(1) {
-        let chunk = chunk.trim_start_matches('\n');
-        let Some(nl) = chunk.find('\n') else { continue };
-        let dir = &chunk[..nl];
-        if dir.is_empty() {
-            continue;
-        }
-        let id = dir.rsplit_once('/').map_or(dir, |(_, last)| last);
-        records.push(Record {
-            dir: dir.into(),
-            id: id.into(),
-            text: chunk[nl + 1..].into(),
-        });
-    }
-    records
 }
 
 /// The one place a plugin URL is built.
@@ -473,10 +436,10 @@ pub fn validate_record(record: &Record) -> (Option<Plugin>, Vec<String>) {
 }
 
 /// The one function the plugin service calls.
-pub fn resolve(text: Option<&str>, disabled: &[String]) -> Resolved {
+pub fn resolve(records: Vec<Record>, disabled: &[String]) -> Resolved {
     let mut plugins = Vec::new();
     let mut warnings = Vec::new();
-    for record in split_scan(text.unwrap_or("")) {
+    for record in records {
         if disabled.contains(&record.id) {
             continue;
         }
@@ -516,13 +479,31 @@ mod tests {
 
     const DIR: &str = "/home/u/.config/formalshell/plugins";
 
-    /// Rebuilds exactly what SCAN_SCRIPT prints: boundary, plugin dir, then
-    /// the manifest bytes, once per plugin.
+    const RECORD_BOUNDARY: &str = "#--formalshell-plugin-boundary--";
+
+    /// Records written as boundary, plugin dir, then the manifest text, once
+    /// per plugin.
     fn scan(records: &[(&str, String)]) -> String {
         records
             .iter()
             .map(|(id, text)| format!("{RECORD_BOUNDARY}\n{DIR}/{id}\n{text}\n"))
             .collect()
+    }
+
+    /// Splits `scan`'s text back into records.
+    fn split_scan(text: &str) -> Vec<Record> {
+        let mut records = Vec::new();
+        for chunk in text.split(RECORD_BOUNDARY).skip(1) {
+            let chunk = chunk.trim_start_matches('\n');
+            let Some(nl) = chunk.find('\n') else { continue };
+            let dir = &chunk[..nl];
+            if dir.is_empty() {
+                continue;
+            }
+            let id = dir.rsplit_once('/').map_or(dir, |(_, last)| last);
+            records.push(Record { dir: dir.into(), id: id.into(), text: chunk[nl + 1..].into() });
+        }
+        records
     }
 
     fn one(id: &str, manifest: Value) -> String {
@@ -534,7 +515,7 @@ mod tests {
     }
 
     fn run(text: &str) -> Resolved {
-        resolve(Some(text), &[])
+        resolve(split_scan(text), &[])
     }
 
     fn only_warning(r: &Resolved, needle: &str) {
@@ -549,25 +530,8 @@ mod tests {
 
     #[test]
     fn empty_scan_output_is_zero_plugins_zero_warnings() {
-        let r = resolve(Some(""), &[]);
+        let r = resolve(Vec::new(), &[]);
         assert_eq!((r.plugins.len(), r.warnings.len()), (0, 0));
-        let u = resolve(None, &[]);
-        assert_eq!((u.plugins.len(), u.warnings.len()), (0, 0));
-    }
-
-    #[test]
-    fn scan_command_argv_shape() {
-        let argv = scan_command(DIR);
-        assert_eq!(argv.len(), 6);
-        assert_eq!(argv[0], "sh");
-        assert_eq!(argv[1], "-c");
-        assert_eq!(argv[2], SCAN_SCRIPT);
-        assert_eq!(argv[3], "sh");
-        assert_eq!(argv[4], DIR);
-        assert_eq!(argv[5], RECORD_BOUNDARY);
-        // The directory only ever arrives as $1: nothing caller-supplied is
-        // interpolated into the script text.
-        assert!(!SCAN_SCRIPT.contains(DIR));
     }
 
     #[test]
@@ -864,7 +828,7 @@ mod tests {
             plain("alpha", "bar", "A.sh"),
             plain("beta", "bar", "B.sh"),
         ]);
-        let r = resolve(Some(&text), &["beta".into()]);
+        let r = resolve(split_scan(&text), &["beta".into()]);
         assert_eq!(r.plugins.len(), 1);
         assert_eq!(r.plugins[0].id, "alpha");
         assert!(r.by_id("beta").is_none());
@@ -874,7 +838,7 @@ mod tests {
     #[test]
     fn disabled_id_with_a_broken_manifest_never_warns() {
         let r = resolve(
-            Some(&scan(&[("broken", "{ not json".into())])),
+            split_scan(&scan(&[("broken", "{ not json".into())])),
             &["broken".into()],
         );
         assert_eq!((r.plugins.len(), r.warnings.len()), (0, 0));

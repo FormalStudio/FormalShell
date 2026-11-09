@@ -259,8 +259,8 @@ fn spawn(
     cover: &std::path::Path,
     dacp: &std::path::Path,
 ) -> Option<(async_process::Child, futures_lite::io::Lines<BufReader<async_process::ChildStdout>>)> {
-    let mut child = crate::services::proc::command("setpriv")
-        .args(["--pdeathsig", "TERM", "--", "uxplay", "-p", "-n", name, "-nh", "-md"])
+    let mut child = crate::services::proc::command("uxplay")
+        .args(["-p", "-n", name, "-nh", "-md"])
         .arg(meta)
         .arg("-ca")
         .arg(cover)

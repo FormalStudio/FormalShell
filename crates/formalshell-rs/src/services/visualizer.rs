@@ -23,6 +23,7 @@ use futures_lite::io::{AsyncBufReadExt, BufReader};
 use futures_lite::{FutureExt, StreamExt};
 use fs_media::visualizer::model::{self, BAR_COUNT, MAX_LEVEL};
 
+use super::http;
 use crate::runtime::Ctx;
 use crate::services::proc::Avail;
 use crate::store;
@@ -177,11 +178,9 @@ fn conf_text() -> String {
     model::cava_config(&source)
 }
 
-/// `setpriv` hands the child a parent-death signal, the shell's own
-/// guarantee that a crash never leaves cava behind.
 fn cava_command(conf: &std::path::Path) -> async_process::Command {
-    let mut cmd = crate::services::proc::command("setpriv");
-    cmd.args(["--pdeathsig", "TERM", "--", "sh", "-c", "command -v cava >/dev/null 2>&1 || exit 127; exec cava -p \"$1\"", "sh"])
+    let mut cmd = crate::services::proc::command("cava");
+    cmd.arg("-p")
         .arg(conf)
         .stdin(async_process::Stdio::null())
         .stdout(async_process::Stdio::piped())
@@ -229,17 +228,7 @@ enum Event {
 }
 
 async fn curl(url: &str) -> String {
-    let out = crate::services::proc::command("curl")
-        .args(["-sS", "--fail", "--max-time", "5", url])
-        .stdin(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await;
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
-        _ => String::new(),
-    }
+    http::get(&http::Request::get(url, 5)).await.map(|r| r.text()).unwrap_or_default()
 }
 
 /// Deezer's bpm for a track, looked up once per track per session.

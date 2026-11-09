@@ -1,10 +1,8 @@
 //! The Information panel's static facts, read once per open: the OS off
 //! os-release, the host name, the board off DMI and the CPU off cpuinfo.
-//! The collector prints each file under a `@<name>` line; a file the
-//! machine lacks (a VM's DMI board, an ARM cpuinfo with no `model name`)
-//! leaves its field `None` rather than a guess.
-
-use std::collections::HashMap;
+//! The service reads each file; one the machine lacks (a VM's DMI board,
+//! an ARM cpuinfo with no `model name`) is empty text and leaves its field
+//! `None` rather than a guess.
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct About {
@@ -18,30 +16,32 @@ pub struct About {
     pub cpu: Option<String>,
 }
 
-/// The shell script the service runs: one `@section` per file, a missing
-/// file printing nothing under its header.
-pub fn collect_command() -> Vec<String> {
-    let script = "for f in os:/etc/os-release host:/proc/sys/kernel/hostname \
-        board:/sys/class/dmi/id/board_name \
-        product:/sys/class/dmi/id/product_name cpu:/proc/cpuinfo; do \
-        echo \"@${f%%:*}\"; cat \"${f#*:}\" 2>/dev/null; done";
-    vec!["sh".into(), "-c".into(), script.into()]
+/// The text of each file `parse` reads, empty for one the machine lacks.
+#[derive(Clone, Debug, Default)]
+pub struct Files {
+    /// /etc/os-release
+    pub os: String,
+    /// /proc/sys/kernel/hostname
+    pub host: String,
+    /// /sys/class/dmi/id/board_name
+    pub board: String,
+    /// /sys/class/dmi/id/product_name
+    pub product: String,
+    /// /proc/cpuinfo
+    pub cpu: String,
 }
 
-fn sections(text: &str) -> HashMap<&str, String> {
-    let mut out: HashMap<&str, String> = HashMap::new();
-    let mut at = None;
-    for line in text.lines() {
-        if let Some(name) = line.strip_prefix('@') {
-            at = Some(name);
-            out.entry(name).or_default();
-        } else if let Some(name) = at {
-            let s = out.entry(name).or_default();
-            s.push_str(line);
-            s.push('\n');
+impl Files {
+    pub fn read() -> Self {
+        let cat = |path: &str| std::fs::read_to_string(path).unwrap_or_default();
+        Self {
+            os: cat("/etc/os-release"),
+            host: cat("/proc/sys/kernel/hostname"),
+            board: cat("/sys/class/dmi/id/board_name"),
+            product: cat("/sys/class/dmi/id/product_name"),
+            cpu: cat("/proc/cpuinfo"),
         }
     }
-    out
 }
 
 /// One `KEY=value` from os-release, unquoted the way its shell-style
@@ -73,8 +73,8 @@ pub fn os_id() -> Option<String> {
 }
 
 /// DMI fills unset strings with OEM placeholders.
-fn dmi(text: Option<&String>) -> Option<String> {
-    let v = text?.trim();
+fn dmi(text: &str) -> Option<String> {
+    let v = text.trim();
     let placeholder = ["", "default string", "to be filled by o.e.m.", "not applicable", "none", "not specified", "system product name", "system version"];
     (!placeholder.contains(&v.to_lowercase().as_str())).then(|| v.to_owned())
 }
@@ -102,17 +102,16 @@ pub(crate) fn cpu_label(cpuinfo: &str) -> Option<String> {
     })
 }
 
-pub fn parse(text: &str) -> About {
-    let s = sections(text);
-    let os = s.get("os").map(String::as_str).unwrap_or("");
-    let board = dmi(s.get("board")).or_else(|| dmi(s.get("product")));
+pub fn parse(files: &Files) -> About {
+    let os = files.os.as_str();
+    let board = dmi(&files.board).or_else(|| dmi(&files.product));
     About {
         os: os_release(os, "PRETTY_NAME").or_else(|| os_release(os, "NAME")),
         os_id: os_release(os, "ID"),
         os_name: os_release(os, "NAME"),
-        host: s.get("host").map(|h| h.trim().to_owned()).filter(|h| !h.is_empty()),
+        host: Some(files.host.trim().to_owned()).filter(|h| !h.is_empty()),
         board,
-        cpu: s.get("cpu").and_then(|c| cpu_label(c)),
+        cpu: cpu_label(&files.cpu),
     }
 }
 
@@ -126,6 +125,28 @@ pub fn used_of(used_bytes: f64, total_bytes: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A fixture written as `@name` headers over each file's text.
+    fn parse(text: &str) -> About {
+        let mut files = Files::default();
+        let mut at = "";
+        for line in text.lines() {
+            if let Some(name) = line.strip_prefix('@') {
+                at = name;
+                continue;
+            }
+            let dest = match at {
+                "os" => &mut files.os,
+                "host" => &mut files.host,
+                "board" => &mut files.board,
+                "product" => &mut files.product,
+                _ => &mut files.cpu,
+            };
+            dest.push_str(line);
+            dest.push('\n');
+        }
+        super::parse(&files)
+    }
 
     const SAMPLE: &str = "@os\nNAME=\"openSUSE Tumbleweed\"\nID=\"opensuse-tumbleweed\"\nPRETTY_NAME=\"openSUSE Tumbleweed\"\n@host\ng815\n@board\nG815LP\n@product\nROG Strix G16\n@cpu\nprocessor\t: 0\nmodel name\t: Intel(R) Core(TM) Ultra 9 275HX\nprocessor\t: 1\nmodel name\t: Intel(R) Core(TM) Ultra 9 275HX\n";
 

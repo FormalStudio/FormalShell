@@ -29,6 +29,7 @@ use futures_lite::future;
 use serde_json::{Value, json};
 
 use super::devices::audio;
+use super::http;
 use crate::runtime::Ctx;
 use crate::store;
 
@@ -194,21 +195,6 @@ enum Outcome {
     Error,
 }
 
-/// curl's exit code and stdout; 22 is the server's own miss (`--fail`).
-async fn curl(url: &str, max_time: u32) -> (i32, String) {
-    let out = crate::services::proc::command("curl")
-        .args(["-sS", "--fail", "--max-time", &max_time.to_string(), "-H", USER_AGENT, url])
-        .stdin(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await;
-    match out {
-        Ok(o) => (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned()),
-        Err(_) => (-1, String::new()),
-    }
-}
-
 enum Step {
     Ok(String),
     Miss,
@@ -216,10 +202,10 @@ enum Step {
 }
 
 async fn step(url: &str, max_time: u32) -> Step {
-    match curl(url, max_time).await {
-        (0, body) => Step::Ok(body),
-        (22, _) => Step::Miss,
-        _ => Step::Error,
+    match http::send(&http::Request::get(url, max_time).header(USER_AGENT)).await {
+        Ok(r) if r.ok() => Step::Ok(r.text()),
+        Ok(_) => Step::Miss,
+        Err(_) => Step::Error,
     }
 }
 

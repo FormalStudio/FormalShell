@@ -20,7 +20,7 @@ use async_io::Timer;
 use fs_media::applemusic as am;
 use futures_lite::AsyncReadExt;
 
-use super::media;
+use super::{http, media};
 use crate::runtime::Ctx;
 use crate::scene::Bitmap;
 use crate::store;
@@ -31,8 +31,6 @@ const FPS: &str = "25/3";
 const DEBOUNCE: Duration = Duration::from_millis(1500);
 /// Cached artwork older than this is pruned (`_prune`).
 const MAX_AGE_DAYS: f64 = 30.0;
-const CURL: [&str; 10] = ["-sS", "--fail", "-L", "--max-redirs", "5", "--connect-timeout", "5", "--max-time", "20", "--compressed"];
-
 /// What a cover slot asks for while it is on screen.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Want {
@@ -313,18 +311,16 @@ fn frames_for(raw: Vec<u8>, size: u32, slots: &[(u32, f64)]) -> Option<Vec<Bitma
         .collect()
 }
 
-async fn curl(args: &[&str]) -> (i32, String) {
-    let out = crate::services::proc::command("curl")
-        .args(CURL)
-        .args(args)
-        .stdin(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await;
-    match out {
-        Ok(o) => (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).into_owned()),
-        Err(_) => (-1, String::new()),
+/// Apple's pages and APIs, in the exit-code-and-text shape `fs_media`'s
+/// parsers read: 0 for a reply below 400, 1 otherwise.
+async fn curl(url: &str, headers: &[&str]) -> (i32, String) {
+    let mut req = http::Request::get(url, 20).follow(5).connect_timeout(5).compressed();
+    for h in headers {
+        req = req.header(*h);
+    }
+    match http::get(&req).await {
+        Some(r) => (0, r.text()),
+        None => (1, String::new()),
     }
 }
 
@@ -332,24 +328,24 @@ async fn curl(args: &[&str]) -> (i32, String) {
 /// no motion art (cached as such), `Err` for a failure worth retrying.
 async fn lookup(w: &Job, dir: &str, key: &str, token: &mut String) -> Result<Option<String>, &'static str> {
     let Some(url) = am::artist_search_url(&w.artist) else { return Ok(None) };
-    let (code, out) = curl(&[&url]).await;
+    let (code, out) = curl(&url, &[]).await;
     let Some(artist) = am::parse_artist_search_result(code, &out, &w.artist).map_err(|_| "itunes artist search failed")? else { return Ok(None) };
-    let (code, out) = curl(&[&am::artist_albums_url(artist)]).await;
+    let (code, out) = curl(&am::artist_albums_url(artist), &[]).await;
     let Some(collection) = am::parse_artist_albums_result(code, &out, &w.album).map_err(|_| "itunes album lookup failed")? else { return Ok(None) };
     if token.is_empty() {
-        let (code, html) = curl(&[&am::album_page_url(collection)]).await;
+        let (code, html) = curl(&am::album_page_url(collection), &[]).await;
         if code != 0 {
             return Err("web-player page fetch failed");
         }
         let asset = am::extract_asset_path(&html).ok_or("no asset bundle referenced by album page")?;
-        let (code, bundle) = curl(&[&format!("https://music.apple.com{asset}")]).await;
+        let (code, bundle) = curl(&format!("https://music.apple.com{asset}"), &[]).await;
         if code != 0 {
             return Err("asset bundle fetch failed");
         }
         *token = am::extract_token(&bundle).ok_or("no web-player token found in asset bundle")?;
     }
     let auth = format!("Authorization: Bearer {token}");
-    let (code, out) = curl(&["-H", &auth, "-H", "Origin: https://music.apple.com", &am::amp_api_url(collection)]).await;
+    let (code, out) = curl(&am::amp_api_url(collection), &[&auth, "Origin: https://music.apple.com"]).await;
     let video = match am::parse_editorial_video(code, &out) {
         Ok(v) => v,
         Err(e) => {
@@ -362,13 +358,13 @@ async fn lookup(w: &Job, dir: &str, key: &str, token: &mut String) -> Result<Opt
     if video.is_empty() {
         return Ok(None);
     }
-    let (code, master) = curl(&[&video]).await;
+    let (code, master) = curl(&video, &[]).await;
     if code != 0 {
         return Err("master playlist fetch failed");
     }
     let Some(variant) = am::pick_variant(&master) else { return Ok(None) };
     let variant = am::resolve_url(&variant, &video);
-    let (code, rendition) = curl(&[&variant]).await;
+    let (code, rendition) = curl(&variant, &[]).await;
     if code != 0 {
         return Err("rendition playlist fetch failed");
     }
@@ -376,14 +372,7 @@ async fn lookup(w: &Job, dir: &str, key: &str, token: &mut String) -> Result<Opt
     std::fs::create_dir_all(dir).map_err(|_| "could not create cache dir")?;
     let path = format!("{dir}/{key}.mp4");
     let part = format!("{path}.{}.part", std::process::id());
-    let ok = crate::services::proc::command("curl")
-        .args(["-sSf", "-L", "--max-redirs", "5", "--connect-timeout", "5", "--max-time", "60", "-o", &part, "--", &mp4])
-        .stdin(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .kill_on_drop(true)
-        .status()
-        .await
-        .is_ok_and(|s| s.success());
+    let ok = http::get(&http::Request::get(mp4, 60).follow(5).connect_timeout(5).output(&part)).await.is_some();
     if !ok {
         let _ = std::fs::remove_file(&part);
         return Err("artwork download failed");

@@ -158,8 +158,8 @@ fn apply(state: &mut State, event: AmsEvent) {
 }
 
 fn listen() -> Option<(async_process::Child, futures_lite::io::Lines<BufReader<async_process::ChildStdout>>)> {
-    let mut child = crate::services::proc::command("setpriv")
-        .args(["--pdeathsig", "TERM", "--", "sh", "-c", "command -v \"$0\" >/dev/null 2>&1 || exit 127; exec \"$0\" listen", AMS])
+    let mut child = crate::services::proc::command(AMS)
+        .arg("listen")
         .stdin(async_process::Stdio::null())
         .stdout(async_process::Stdio::piped())
         .stderr(async_process::Stdio::null())
@@ -194,6 +194,14 @@ async fn run(ctx: Ctx) {
         if wanted && child.is_none() && retry_at.is_none() {
             backoff = BASE_BACKOFF;
             child = listen();
+            if child.is_none() {
+                // The bridge is not installed (or would not start): the
+                // same answer a run that exited 127 gave.
+                state.installed = false;
+                state.available = false;
+                retry_at = Some(Instant::now() + backoff);
+                backoff = (backoff * 2).min(MAX_BACKOFF);
+            }
         } else if !wanted {
             retry_at = None;
             if let Some((mut c, _)) = child.take() {
@@ -286,8 +294,8 @@ async fn run(ctx: Ctx) {
             Ev::Command(Some(name)) => {
                 let reply_tx = reply_tx.clone();
                 ctx.spawn(async move {
-                    let out = crate::services::proc::command("setpriv")
-                        .args(["--pdeathsig", "TERM", "--", AMS, "command", &name])
+                    let out = crate::services::proc::command(AMS)
+                        .args(["command", &name])
                         .stdin(async_process::Stdio::null())
                         .stderr(async_process::Stdio::null())
                         .kill_on_drop(true)

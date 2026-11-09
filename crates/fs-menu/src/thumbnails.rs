@@ -22,6 +22,18 @@ impl Mode {
         }
     }
 
+    /// ffmpeg's `-vf` for a thumbnail `size` wide.
+    pub fn filter(self, size: u32) -> String {
+        match self {
+            Mode::Fit => format!("scale=w='min(iw,{size})':h='min(ih,{size})':force_original_aspect_ratio=decrease:flags=lanczos"),
+            Mode::Wide => {
+                let h = size * 9 / 16;
+                format!("scale={size}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={size}:{h}")
+            }
+            Mode::Cover => format!("scale={size}:{size}:force_original_aspect_ratio=increase:flags=lanczos,crop={size}:{size}"),
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Mode::Cover => "cover",
@@ -81,35 +93,6 @@ pub fn cache_path(dir: &str, path: &str, size: u32, mode: Mode) -> String {
     format!("{}/{}", dir.trim_end_matches('/'), cache_file_name(path, size, mode))
 }
 
-/// The generator: `$1` the cache directory, `$2` the edge, `$3` the mode,
-/// then src/dst pairs. Prints each source as its thumbnail lands. A source
-/// not newer than its thumbnail is a hit and `touch`es it, so the 30-day
-/// sweep is an LRU. A failed ffmpeg prints nothing.
-pub fn warm_script(concurrency: u32) -> String {
-    [
-        "dir=$1; size=$2; mode=$3; shift 3",
-        "mkdir -p \"$dir\" || exit 0",
-        "find \"$dir\" -maxdepth 1 -type f \\( -name \"*.part.jpg\" -o -mtime +30 \\) -delete 2>/dev/null",
-        "if [ \"$mode\" = fit ]; then",
-        "  vf=\"scale=w='min(iw,$size)':h='min(ih,$size)':force_original_aspect_ratio=decrease:flags=lanczos\"",
-        "elif [ \"$mode\" = wide ]; then",
-        "  h=$((size * 9 / 16))",
-        "  vf=\"scale=$size:$h:force_original_aspect_ratio=increase:flags=lanczos,crop=$size:$h\"",
-        "else",
-        "  vf=\"scale=$size:$size:force_original_aspect_ratio=increase:flags=lanczos,crop=$size:$size\"",
-        "fi",
-        &format!("printf '%s\\0' \"$@\" | xargs -0 -r -n 2 -P {} sh -c '", concurrency.max(1)),
-        "  src=$1; dst=$2",
-        "  if [ -f \"$dst\" ] && [ ! \"$src\" -nt \"$dst\" ]; then touch \"$dst\"; printf \"%s\\n\" \"$src\"; exit 0; fi",
-        "  tmp=\"$dst.part.jpg\"",
-        "  ffmpeg -v error -nostdin -y -i \"$src\" -frames:v 1 -q:v 3 -vf \"$0\" \\",
-        "    \"$tmp\" >/dev/null 2>&1 || { rm -f \"$tmp\"; exit 0; }",
-        "  mv -f \"$tmp\" \"$dst\" && printf \"%s\\n\" \"$src\"",
-        "' \"$vf\"",
-    ]
-    .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +111,7 @@ mod tests {
         assert!(wide.starts_with("a-") && wide.ends_with("-wide640.jpg"));
         assert_ne!(wide, cache_file_name("/pics/a.jpg", 640, Mode::Cover));
         assert_eq!(Mode::parse(Mode::Wide.as_str()), Mode::Wide);
+        assert!(Mode::Wide.filter(640).contains("scale=640:360:") && Mode::Wide.filter(640).ends_with("crop=640:360"));
+        assert!(Mode::Fit.filter(512).contains("min(iw,512)"));
     }
 }

@@ -261,10 +261,10 @@ async fn run(ctx: Ctx) {
     }
 }
 
-/// `localsend-cli recv`, dying with the shell, its stderr read line by line.
+/// `localsend-cli recv`, its stderr read line by line.
 fn spawn_recv(ctx: &Ctx, s: &State, generation: u64, tx: Sender<Wake>) -> Option<async_process::Child> {
-    let mut child = crate::services::proc::command("setpriv")
-        .args(["--pdeathsig", "TERM", "--", "localsend-cli", "recv", "-n", &s.alias, "-d", &s.dir])
+    let mut child = crate::services::proc::command("localsend-cli")
+        .args(["recv", "-n", &s.alias, "-d", &s.dir])
         .stdin(async_process::Stdio::null())
         .stdout(async_process::Stdio::null())
         .stderr(async_process::Stdio::piped())

@@ -103,6 +103,30 @@ impl Run {
         self
     }
 
+    /// The default sink's monitor as the recording device, or with
+    /// `with_mic` a null sink fed by that monitor and the default microphone
+    /// through two loopbacks. Prints the loaded pactl module ids on the first
+    /// line and the device on the second ([`parse_audio_setup`]); exits 4 when
+    /// pactl cannot say, 5 when the default source is a monitor.
+    pub fn audio(generation: u64, with_mic: bool) -> Self {
+        let desktop = concat!(
+            "sink=$(pactl get-default-sink) || exit 4\n",
+            "[ -n \"$sink\" ] || exit 4\n",
+            "printf '\\n%s.monitor\\n' \"$sink\"\n",
+        );
+        let desktop_mic = concat!(
+            "sink=$(pactl get-default-sink) || exit 4\n",
+            "src=$(pactl get-default-source) || exit 4\n",
+            "[ -n \"$sink\" ] && [ -n \"$src\" ] || exit 4\n",
+            "case \"$src\" in *.monitor) exit 5 ;; esac\n",
+            "m1=$(pactl load-module module-null-sink sink_name=\"$FS_MIX\" sink_properties=device.description=\"$FS_MIX\") || exit 4\n",
+            "m2=$(pactl load-module module-loopback source=\"$sink\".monitor sink=\"$FS_MIX\" latency_msec=50) || { pactl unload-module \"$m1\"; exit 4; }\n",
+            "m3=$(pactl load-module module-loopback source=\"$src\" sink=\"$FS_MIX\" latency_msec=50) || { pactl unload-module \"$m2\"; pactl unload-module \"$m1\"; exit 4; }\n",
+            "printf '%s %s %s\\n%s.monitor\\n' \"$m1\" \"$m2\" \"$m3\" \"$FS_MIX\"\n",
+        );
+        Self::sh(Job::Audio, generation, if with_mic { desktop_mic } else { desktop }).env("FS_MIX", fs_system::capture::MIX_SINK)
+    }
+
     /// `sh -c <script>`: values ride the
     /// environment, never the script text.
     pub fn sh(job: Job, generation: u64, script: &str) -> Self {
@@ -190,5 +214,56 @@ pub fn terminate(pid: u32) {
 pub fn kill(pid: u32) {
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGKILL);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioSetup {
+    pub modules: Vec<f64>,
+    pub device: String,
+}
+
+/// [`Run::audio`]'s two-line answer: the pactl module ids it loaded (blank
+/// when it loaded none) on the first line, the device wf-recorder should
+/// record on the second. Anything else is a failed setup, reported as an empty
+/// device so the caller never starts a recording that silently captures
+/// nothing.
+pub fn parse_audio_setup(text: &str) -> AudioSetup {
+    let mut lines = text.split('\n');
+    let mut modules = Vec::new();
+    for part in lines.next().unwrap_or("").split_whitespace() {
+        match part.parse::<u64>() {
+            Ok(id) if part.bytes().all(|b| b.is_ascii_digit()) => modules.push(id as f64),
+            _ => return AudioSetup { modules: Vec::new(), device: String::new() },
+        }
+    }
+    AudioSetup { modules, device: lines.next().unwrap_or("").trim().to_owned() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_audio_setup_reads_modules_then_device() {
+        let mic = parse_audio_setup("41 42 43\nformalshell-mix.monitor\n");
+        assert_eq!(mic.modules.len(), 3);
+        assert_eq!(mic.modules[0], 41.0);
+        assert_eq!(mic.modules[2], 43.0);
+        assert_eq!(mic.device, "formalshell-mix.monitor");
+
+        let desktop = parse_audio_setup("\nalsa_output.pci-0000_00_1f.3.analog-stereo.monitor\n");
+        assert_eq!(desktop.modules.len(), 0);
+        assert_eq!(desktop.device, "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor");
+    }
+
+    #[test]
+    fn parse_audio_setup_reports_no_device_on_a_failed_setup() {
+        assert_eq!(parse_audio_setup("").device, "");
+        assert_eq!(parse_audio_setup("\n").device, "");
+        assert_eq!(parse_audio_setup("41 42 43\n").device, "");
+        let broken = parse_audio_setup("41 oops\nformalshell-mix.monitor\n");
+        assert_eq!(broken.modules.len(), 0);
+        assert_eq!(broken.device, "");
     }
 }
