@@ -38,6 +38,10 @@ processes_confirm_png="$shot_dir/processes-confirm.png"
 processes_killed_png="$shot_dir/processes-killed.png"
 processes_actions_png="$shot_dir/processes-actions.png"
 processes_actions_status_path="$shot_dir/processes-actions.json"
+# Every slot user reads the same machine-wide process table, so the fixture's
+# name carries a per-run suffix (inside comm's 15 bytes) or two slots running
+# this leg at once see and filter each other's fixture.
+processes_victim_name="smokevictim$(printf %04d $((RANDOM % 10000)))"
 
 leg_processes_timing() {
   leg_timing 73
@@ -45,7 +49,7 @@ leg_processes_timing() {
 
 leg_processes_drive() {
   local script="$shot_dir/processes-drive.sh"
-  local processes_victim_bin="$shot_dir/smokevictim"
+  local processes_victim_bin="$shot_dir/$processes_victim_name"
   local processes_restart_bin="$shot_dir/smokerestart"
   cp "$(readlink -f "$(command -v bash)")" "$processes_victim_bin"
   cp "$(readlink -f "$(command -v bash)")" "$processes_restart_bin"
@@ -63,10 +67,10 @@ $ipc call menu summon monitor > "$processes_menu_reply_path" 2>&1
 # difference, so a measured CPU column needs the second.
 sleep 6
 "$grim_bin" "$processes_full_png" > /dev/null 2>&1
-$ipc call menu filter smokevictim > "$processes_filter_reply_path" 2>&1
+$ipc call menu filter $processes_victim_name > "$processes_filter_reply_path" 2>&1
 sleep 3
 "$grim_bin" "$processes_view_png" > /dev/null 2>&1
-$ipc call monitor processes smokevictim > "$processes_filtered_path" 2>&1
+$ipc call monitor processes $processes_victim_name > "$processes_filtered_path" 2>&1
 $ipc call menu actions 0 > /dev/null 2>&1
 sleep 1.5
 $ipc call menu status > "$processes_actions_status_path" 2>&1
@@ -78,11 +82,11 @@ kill -0 \$(cat "$processes_victim_pid_path") 2>/dev/null; echo \$? > "$processes
 $ipc call menu activate 0 > /dev/null 2>&1
 sleep 3
 kill -0 \$(cat "$processes_victim_pid_path") 2>/dev/null; echo \$? > "$processes_alive_fire_path"
-$ipc call monitor processes smokevictim > "$processes_after_path" 2>&1
+$ipc call monitor processes $processes_victim_name > "$processes_after_path" 2>&1
 "$grim_bin" "$processes_killed_png" > /dev/null 2>&1
 $ipc call monitor restart \$(cat "$processes_restart_pid_path") > "$processes_restart_reply_path" 2>&1
 sleep 6
-pgrep -f smokerestart > "$processes_restart_pids_path"
+pgrep -f "$processes_restart_bin" > "$processes_restart_pids_path"
 EOF
   hypr_exec_once "bash $script"
 }
@@ -102,7 +106,7 @@ leg_processes_assert() {
   cat "$processes_filtered_path"; echo
   # The filter's own claim: one row out of the whole table, and it is the
   # fixture, matched on a name the kernel's comm holds whole.
-  if [ "$(grep -oF '"name":"smokevictim"' "$processes_filtered_path" | wc -l | tr -d ' ')" != "1" ] \
+  if [ "$(grep -oF "\"name\":\"$processes_victim_name\"" "$processes_filtered_path" | wc -l | tr -d ' ')" != "1" ] \
     || ! grep -qF "\"pid\":$victim_pid," "$processes_filtered_path"; then
     fail "the filter did not narrow to the fixture process (pid $victim_pid): $(cat "$processes_filtered_path")"
   fi
@@ -119,7 +123,7 @@ leg_processes_assert() {
   if [ "$(cat "$processes_alive_fire_path" 2>/dev/null)" = "0" ]; then
     fail "pid $victim_pid survived the confirming press"
   fi
-  if grep -qF '"name":"smokevictim"' "$processes_after_path" 2>/dev/null; then
+  if grep -qF "\"name\":\"$processes_victim_name\"" "$processes_after_path" 2>/dev/null; then
     fail "the killed fixture is still in the table: $(cat "$processes_after_path" 2>/dev/null)"
   fi
   # The kill's own exit status, which the synchronous IPC reply could not
