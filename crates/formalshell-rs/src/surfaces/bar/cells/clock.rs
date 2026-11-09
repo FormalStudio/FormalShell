@@ -2,6 +2,7 @@
 //! (right click walks the ring), stacked one field per line on a vertical
 //! bar, opening the calendar.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_info::clock::{CLOCK_FORMATS, format_qt, next_format, stacked_lines, substitute_iso_week};
 
 use crate::services::state::{self, Field};
@@ -69,7 +70,7 @@ impl Cell for Clock {
             vec![Part::Label { text: self.text.clone(), weight: None }]
         };
         View::new(parts, if self.vertical { 0.0 } else { look.xs })
-            .panel("calendar")
+            .panel(PanelId::Calendar)
             .tooltip("RIGHT CYCLE FORMAT / MIDDLE CALENDAR")
     }
 
@@ -83,7 +84,7 @@ impl Cell for Clock {
                 state::set(vec![Field::ClockFormat(next_format(&self.format).to_owned())]);
                 Action::None
             }
-            _ => Action::Panel("calendar"),
+            _ => Action::Panel(PanelId::Calendar),
         }
     }
 }

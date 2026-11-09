@@ -8,6 +8,8 @@
 //! button closes the card and asks the shell or logind, restart and shut
 //! down only on a second press, as the launcher's rows do.
 
+use fs_chrome::bar::panels::PanelId;
+
 use super::{Effect, Panel, View};
 use crate::services::power;
 use crate::store::Topic;
@@ -19,21 +21,17 @@ pub struct Settings {
     armed: Option<&'static str>,
 }
 
-const TILES: [(&str, &str, &str, &str); 4] = [
-    ("appearance", "paint-bucket", "Appearance", "settings:appearance"),
-    ("bluetooth", "bluetooth", "Bluetooth", "bluetooth"),
-    ("system", "hexagon", "System", "settings:system"),
-    ("info", "info", "Information", "info"),
+const TILES: [(&str, &str, &str, PanelId); 4] = [
+    ("appearance", "paint-bucket", "Appearance", PanelId::SettingsAppearance),
+    ("bluetooth", "bluetooth", "Bluetooth", PanelId::Bluetooth),
+    ("system", "hexagon", "System", PanelId::SettingsSystem),
+    ("info", "info", "Information", PanelId::Info),
 ];
 
 const SESSION: [(&str, &str, &str); 4] =
     [("lock", "lock", "Lock"), ("suspend", "moon", "Suspend"), ("reboot", "rotate-cw", "Restart"), ("poweroff", "power", "Shut down")];
 
 impl Panel for Settings {
-    fn id(&self) -> &'static str {
-        "settings"
-    }
-
     fn title(&self, _: &View) -> String {
         "Settings".into()
     }
@@ -46,17 +44,13 @@ impl Panel for Settings {
         &[]
     }
 
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_menu
-    }
-
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let gap = s.sm;
         let column = s.huge * 2.5;
         // Square tiles, as Pond's are: half of what the card leaves beside
         // the session column.
-        let tile_h = ((self.width(v) - w::text_inset(s) * 2.0 - column - gap * 2.0) / 2.0).floor();
+        let tile_h = ((super::width_of(PanelId::Settings.desc().width, s) - w::text_inset(s) * 2.0 - column - gap * 2.0) / 2.0).floor();
         let rows = TILES.len().div_ceil(2) as f64;
         let tiles = TILES
             .iter()

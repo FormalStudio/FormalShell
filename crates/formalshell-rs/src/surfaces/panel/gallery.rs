@@ -85,10 +85,6 @@ impl Gallery {
 }
 
 impl Panel for Gallery {
-    fn id(&self) -> &'static str {
-        "gallery"
-    }
-
     fn title(&self, _: &View) -> String {
         "DEV GALLERY".into()
     }
@@ -97,8 +93,8 @@ impl Panel for Gallery {
         &[Topic::Theme]
     }
 
-    fn width(&self, v: &View) -> f64 {
-        (v.output.0 - v.theme.space.panel_padding * 2.0).round()
+    fn width(&self, v: &View) -> Option<f64> {
+        Some((v.output.0 - v.theme.space.panel_padding * 2.0).round())
     }
 
     fn body(&self, v: &View) -> El {

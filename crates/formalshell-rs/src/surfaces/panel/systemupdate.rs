@@ -33,10 +33,6 @@ fn check() {
 }
 
 impl Panel for SystemUpdate {
-    fn id(&self) -> &'static str {
-        "systemupdate"
-    }
-
     fn title(&self, _: &View) -> String {
         "System update".into()
     }

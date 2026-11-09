@@ -2,6 +2,7 @@
 //! from the strip with no controller. Warn and critical colour the border
 //! and the ink, as the laptop battery's cell does.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_system::dualsense::{Supply, state_line};
 use fs_system::power::model::Low;
 
@@ -45,7 +46,7 @@ impl Cell for Dualsense {
         if self.show_label {
             parts.push(Part::Label { text: format!("{}%", s.level.rounded()), weight: None });
         }
-        View::new(parts, look.xs).panel("dualsense").tooltip(tooltip).tone(tone(s))
+        View::new(parts, look.xs).panel(PanelId::Dualsense).tooltip(tooltip).tone(tone(s))
     }
 
     fn summary(&self) -> Option<Summary> {
@@ -54,6 +55,6 @@ impl Cell for Dualsense {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("dualsense")
+        Action::Panel(PanelId::Dualsense)
     }
 }

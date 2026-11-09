@@ -2,6 +2,7 @@
 //! the strip without one. Critical and low while discharging put their
 //! colour on the border and the ink; right click flips the percentage.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_system::power::model::{Low, Thresholds, battery_icon, charge_state_label, charge_threshold_active, format_duration};
 use fs_upower::DeviceState;
 
@@ -78,13 +79,13 @@ impl Cell for Battery {
             Some(Low::Warn) => Tone::Warning,
             None => Tone::Rest,
         };
-        View::new(parts, look.xs).panel("power").tooltip(tooltip).tone(tone)
+        View::new(parts, look.xs).panel(PanelId::Power).tooltip(tooltip).tone(tone)
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
             Button::Right => Action::BatteryPercent(!self.r.show_label),
-            _ => Action::Panel("power"),
+            _ => Action::Panel(PanelId::Power),
         }
     }
 }

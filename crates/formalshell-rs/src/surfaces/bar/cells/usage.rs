@@ -3,6 +3,8 @@
 //! answered; the honest states (NO AUTH, STALE, NO CODEX) are words. A
 //! click on a stale cell asks for the token refresh before the panel opens.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::info::usage::{Claude, State};
 use crate::services::info::kick;
 use crate::services::wants::{Source, Want};
@@ -62,7 +64,7 @@ impl Cell for Usage {
         };
         View::new(parts, look.xs)
             .tone(if worst >= 0.9 { Tone::Destructive } else { Tone::Rest })
-            .panel("usage")
+            .panel(PanelId::Usage)
             .tooltip(format!("USAGE / {reading}"))
     }
 
@@ -86,6 +88,6 @@ impl Cell for Usage {
         if self.state.claude == Claude::Stale {
             kick(Source::Usage);
         }
-        Action::Panel("usage")
+        Action::Panel(PanelId::Usage)
     }
 }

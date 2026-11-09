@@ -3,6 +3,7 @@
 //! the wheel steps it by 5%.
 
 use fs_audio::Visual;
+use fs_chrome::bar::panels::PanelId;
 
 use crate::services::devices;
 use crate::store::Topic;
@@ -39,13 +40,13 @@ impl Cell for Audio {
         if self.show_label {
             parts.push(Part::Label { text: format!("{percent}%"), weight: None });
         }
-        View::new(parts, look.xs).panel("audio").tooltip(format!("{head} / {percent}% / RIGHT MUTE"))
+        View::new(parts, look.xs).panel(PanelId::Audio).tooltip(format!("{head} / {percent}% / RIGHT MUTE"))
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
             Button::Right => Action::ToggleMute,
-            _ => Action::Panel("audio"),
+            _ => Action::Panel(PanelId::Audio),
         }
     }
 

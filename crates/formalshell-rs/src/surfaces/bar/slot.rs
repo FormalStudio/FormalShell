@@ -6,6 +6,7 @@ use std::any::Any;
 use std::time::{Duration, Instant};
 
 use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
+use fs_chrome::bar::panels::PanelId;
 use fs_types::{Edge, Region};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
@@ -197,7 +198,7 @@ impl Slot {
 
     /// The open mark: on while the panel this cell opens is up, and on a
     /// chevron while the quick settings card it opened is.
-    pub fn set_open(&mut self, panel: Option<&str>, overflow: Option<Region>, kit: &Kit, now: Instant) {
+    pub fn set_open(&mut self, panel: Option<PanelId>, overflow: Option<Region>, kit: &Kit, now: Instant) {
         let mut open = self.view.panel.is_some_and(|p| panel == Some(p));
         if let Some(chevron) = self.builtin_mut::<Chevron>(Builtin::Chevron) {
             let turned = chevron.set_open(overflow);

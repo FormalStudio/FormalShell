@@ -2,7 +2,6 @@
 //! shuts the notification centre, a right click flips DND.
 
 use crate::store::Topic;
-use crate::surfaces::panel::center;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
 use crate::paint::Look;
 
@@ -44,7 +43,7 @@ impl Cell for Bell {
         if self.label && self.pending > 0 {
             parts.push(Part::Label { text: self.pending.to_string(), weight: None });
         }
-        View::new(parts, look.xxs).panel(center::ID).tooltip(tooltip)
+        View::new(parts, look.xxs).tooltip(tooltip)
     }
 
     fn summary(&self) -> Option<Summary> {

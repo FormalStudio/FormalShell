@@ -47,10 +47,6 @@ fn self_ip(store: &crate::store::Store) -> Option<String> {
 }
 
 impl Panel for Tailscale {
-    fn id(&self) -> &'static str {
-        "tailscale"
-    }
-
     fn title(&self, _: &View) -> String {
         "Tailscale".into()
     }

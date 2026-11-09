@@ -4,6 +4,8 @@
 //! own path, which static jsonc cannot express; routing through real IPC
 //! means a menu row and a compositor keybind exercise one implementation.
 
+use fs_chrome::bar::panels::{Home, PanelId};
+
 use super::clipboard::shq;
 use crate::node::{Entries, Entry, Kind, Node};
 
@@ -72,51 +74,22 @@ pub fn capture_entries(ipc: &str) -> Entries {
     e
 }
 
-struct PanelName {
-    id: &'static str,
-    label: &'static str,
-    aliases: &'static [&'static str],
-}
-
-/// One row per name in the shell's panel registry (fs-chrome's `PANELS`),
-/// but for the pages the launcher holds as routes of their own and
-/// `trayoverflow` (the "tray" route already lists its items).
-/// `every_panel_reaches_the_launcher` fails when a registry name is missing.
-const PANEL_NAMES: &[PanelName] = &[
-    PanelName { id: "activity", label: "Activity", aliases: &[] },
-    PanelName { id: "appmenu", label: "App Menu", aliases: &[] },
-    PanelName { id: "audio", label: "Audio", aliases: &[] },
-    PanelName { id: "calendar", label: "Calendar", aliases: &[] },
-    PanelName { id: "network", label: "Network", aliases: &[] },
-    PanelName { id: "bluetooth", label: "Bluetooth", aliases: &[] },
-    PanelName { id: "earbuds", label: "Earbuds", aliases: &[] },
-    PanelName { id: "iphone", label: "iPhone", aliases: &[] },
-    PanelName { id: "dualsense", label: "DualSense", aliases: &[] },
-    PanelName { id: "power", label: "Power", aliases: &[] },
-    PanelName { id: "weather", label: "Weather", aliases: &[] },
-    PanelName { id: "media", label: "Media", aliases: &[] },
-    PanelName { id: "github", label: "GitHub", aliases: &[] },
-    PanelName { id: "usage", label: "Usage", aliases: &[] },
-    PanelName { id: "tailscale", label: "Tailscale", aliases: &[] },
-    PanelName { id: "systemupdate", label: "System Update", aliases: &[] },
-    PanelName { id: "display", label: "Display", aliases: &["mirror display", "screen mirroring", "screens", "outputs"] },
-    PanelName { id: "monitor", label: "Monitor", aliases: &[] },
-    PanelName { id: "radio", label: "Radio", aliases: &[] },
-    PanelName { id: "quicksettings", label: "Quick Settings", aliases: &["control center", "toggles"] },
-];
-
-/// The panels the Panels route lists, in its order.
-pub fn panel_ids() -> impl Iterator<Item = &'static str> {
-    PANEL_NAMES.iter().map(|p| p.id)
+/// The panels the Panels route lists, in the table's order: every panel
+/// but the pages the launcher holds as routes of their own and the tray's
+/// second bar, whose "tray" route already lists its items.
+pub fn panel_ids() -> impl Iterator<Item = PanelId> {
+    PanelId::ALL.into_iter().filter(|p| p.home() != Home::Launcher && *p != PanelId::TrayOverflow)
 }
 
 pub fn panels_provider(ipc: &str) -> Vec<Node> {
-    PANEL_NAMES
-        .iter()
-        .map(|p| Node {
-            aliases: p.aliases.iter().map(|a| a.to_string()).collect(),
-            action: Some(format!("{ipc} call panel open {}", p.id)),
-            ..Node::new(format!("panels.{}", p.id), p.label, Kind::Action)
+    panel_ids()
+        .map(|p| {
+            let d = p.desc();
+            Node {
+                aliases: d.aliases.iter().map(|a| a.to_string()).collect(),
+                action: Some(format!("{ipc} call panel open {}", d.id)),
+                ..Node::new(format!("panels.{}", d.id), d.title, Kind::Action)
+            }
         })
         .collect()
 }

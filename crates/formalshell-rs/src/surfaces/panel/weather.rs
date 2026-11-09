@@ -34,10 +34,6 @@ fn is_day() -> bool {
 }
 
 impl Panel for Weather {
-    fn id(&self) -> &'static str {
-        "weather"
-    }
-
     fn title(&self, v: &View) -> String {
         let place = &v.store.weather.place;
         if place.is_empty() { "Weather".into() } else { place.clone() }

@@ -1,5 +1,5 @@
 // The launcher-reachability guard: every panel the shell can open
-// (fs-chrome's registry) is a Panels row, a page the launcher holds, or the
+// (fs-chrome's table) is a Panels row, a page the launcher holds, or the
 // tray route, and every Panels row is in the shipped tree and opens its panel.
 
 mod common;
@@ -7,6 +7,7 @@ mod common;
 use std::collections::{HashMap, HashSet};
 
 use common::*;
+use fs_chrome::bar::panels::PanelId;
 use fs_menu::node::Kind;
 use fs_menu::providers::{
     ProviderFn, RadioState, RadioStation, TrayItem, apply_providers, capture_entries, panel_ids, panels_provider,
@@ -24,7 +25,7 @@ const LAUNCHER_PAGES: &[(&str, &str)] = &[("settings", "Settings"), ("info", "In
 fn shipped_tree_covers_every_panel() {
     let tree = real_tree();
     let panels = tree.nodes.get("panels").expect("panels node");
-    let names: Vec<&str> = panel_ids().collect();
+    let names: Vec<&str> = panel_ids().map(PanelId::as_str).collect();
     assert_eq!(panels.child_ids, names.iter().map(|n| format!("panels.{n}")).collect::<Vec<_>>());
     for name in names {
         let node = tree.nodes.get(&format!("panels.{name}")).unwrap_or_else(|| panic!("missing launcher route for panel '{name}'"));
@@ -36,15 +37,11 @@ fn shipped_tree_covers_every_panel() {
 
 #[test]
 fn every_panel_reaches_the_launcher() {
-    use fs_chrome::bar::panels::{PANELS, TRAY_OVERFLOW, known, launcher_route};
-    let rows: Vec<&str> = panel_ids().collect();
-    for name in PANELS {
-        let listed = rows.contains(&name);
-        let elsewhere = launcher_route(name).is_some() || name == TRAY_OVERFLOW;
-        assert!(listed != elsewhere, "panel '{name}': a Panels row {listed}, held elsewhere {elsewhere}");
-    }
-    for row in &rows {
-        assert!(known(row).is_some(), "Panels row '{row}' opens no panel");
+    let rows: Vec<PanelId> = panel_ids().collect();
+    for panel in PanelId::ALL {
+        let listed = rows.contains(&panel);
+        let elsewhere = panel.route().is_some() || panel == PanelId::TrayOverflow;
+        assert!(listed != elsewhere, "panel '{panel}': a Panels row {listed}, held elsewhere {elsewhere}");
     }
 }
 
@@ -76,7 +73,7 @@ fn root_query_reaches_every_panel() {
 #[test]
 fn panels_provider_action_shape() {
     let rows = panels_provider("formalshell-ipc");
-    let names: Vec<&str> = panel_ids().collect();
+    let names: Vec<&str> = panel_ids().map(PanelId::as_str).collect();
     assert_eq!(rows.len(), names.len());
     for (row, name) in rows.iter().zip(names) {
         assert_eq!(row.id, format!("panels.{name}"));

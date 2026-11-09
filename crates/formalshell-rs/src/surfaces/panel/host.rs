@@ -14,6 +14,7 @@
 
 use std::time::Instant;
 
+use fs_chrome::bar::panels::{PanelId, Width};
 use fs_types::{Edge, Insets};
 use fs_info::notifications::PositionSpec;
 use fs_theme::color::Rgba;
@@ -22,6 +23,7 @@ use fs_theme::theme::Theme;
 use smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity;
 use vello_cpu::kurbo::Rect;
 
+use super::quick::Origin;
 use super::{Edit, Effect, Panel, View};
 use crate::motion::{Animated, Kind as Clock};
 use crate::runtime::Runtime;
@@ -238,7 +240,10 @@ pub enum Out {
     Summon(&'static str),
     /// Open this panel in the open one's place, then press Enter on this
     /// stop of its.
-    Panel(&'static str, Option<String>),
+    Panel(PanelId, Option<String>),
+    /// Back to the card that handed over to this one, opened again from
+    /// where it was.
+    Back(PanelId, Origin),
     /// Close, then call this IPC target's function on the shell itself.
     Call(&'static str, &'static str),
     /// A tray item's menu off this card, centred on `anchor` along the line
@@ -304,15 +309,28 @@ pub struct Host {
     /// The frame's height, the most the output leaves it and whether the
     /// content was cut to that, as of the last layout.
     pub fit: std::cell::Cell<(f64, f64, bool)>,
-    /// Handed over from quick settings: the header carries a back button
-    /// to it, and Backspace goes back too.
-    pub back: bool,
+    /// The card's `panel` name (a plugin's interned key, or the name of a
+    /// card no `panel` verb opens: the gallery, the centre, a peek).
+    name: &'static str,
+    /// What opened it.
+    pub from: Origin,
+    /// The card that handed over to this one: the header carries a back
+    /// button to it, and Backspace goes back too.
+    pub back: Option<Opener>,
+}
+
+/// A card that handed over to another, as the one it handed to goes back.
+pub struct Opener {
+    pub id: PanelId,
+    pub from: Origin,
+    /// Its title as it handed over, the back button's tooltip.
+    pub title: String,
 }
 
 const PRIME_MS: u64 = 75;
 
 impl Host {
-    pub fn new(module: Box<dyn Panel>, place: Place, theme: &Theme, surface: Surface, scale: f64, cast: bool) -> Self {
+    pub fn new(module: Box<dyn Panel>, name: &'static str, place: Place, theme: &Theme, surface: Surface, scale: f64, cast: bool) -> Self {
         let size = (place.along_len() as i32, place.across_len() as i32);
         let rest = Rect::new(0.0, place.line_at, 0.0, place.line_at);
         let spec = CardSpec { ends: place.ends, ..CardSpec::new(place.edge, place.line_at, Sizing::Surface { size, rest }) };
@@ -352,12 +370,24 @@ impl Host {
             wake: None,
             scale,
             fit: std::cell::Cell::new((0.0, 0.0, false)),
-            back: false,
+            name,
+            from: Origin::Ipc,
+            back: None,
         }
     }
 
     pub fn id(&self) -> &'static str {
-        self.module.id()
+        self.name
+    }
+
+    /// The table's panel it holds, if it holds one.
+    pub fn panel(&self) -> Option<PanelId> {
+        PanelId::parse(self.name)
+    }
+
+    /// The module's title as it reads now.
+    pub fn title(&self, store: &Store, theme: &Theme) -> String {
+        self.module.title(&self.view(store, theme, Instant::now()))
     }
 
     pub fn is_open(&self) -> bool {
@@ -509,7 +539,8 @@ impl Host {
         let v = self.view(store, theme, now);
         let vertical = self.place.edge.is_vertical();
         let p = &self.place;
-        let width = super::card_width(self.module.as_ref(), &v, kit);
+        let class = self.panel().map_or(Width::Default, |p| p.desc().width);
+        let width = super::card_width(self.module.as_ref(), class, &v, kit);
         let body = self.module.body(&v);
         let content_w = (width - s.panel_row_inset * 2.0).max(0.0);
         let content_h = ui::measure(&body, content_w, theme, kit).1;
@@ -574,7 +605,7 @@ impl Host {
             self.win.card.tick(now);
         }
         self.draw(store, theme, kit, now);
-        crate::trace::slow("panel", t0.elapsed(), format_args!("{} size_us={} total_us={}", self.module.id(), sized.as_micros(), t0.elapsed().as_micros()));
+        crate::trace::slow("panel", t0.elapsed(), format_args!("{} size_us={} total_us={}", self.name, sized.as_micros(), t0.elapsed().as_micros()));
     }
 
     /// Input everywhere while open (a click outside closes) but over the
@@ -595,8 +626,8 @@ impl Host {
     fn header(&self, v: &View, s: &fs_theme::tokens::Space) -> El {
         let mut parts = vec![super::title(self.module.title(v)), w::space(s.panel_gap)];
         let mut actions = self.module.actions(v);
-        if self.back {
-            actions.insert(0, w::icon_button("chevron-left").tip("Quick settings").on("back").key("back"));
+        if let Some(back) = &self.back {
+            actions.insert(0, w::icon_button("chevron-left").tip(back.title.clone()).on("back").key("back"));
         }
         if !actions.is_empty() {
             parts.push(w::row(s.panel_gap, actions));
@@ -800,8 +831,8 @@ impl Host {
         if !self.open {
             return Out::None;
         }
-        if self.back && name == Key::Back && !self.module.editing() {
-            return Out::Panel(super::quick::ID, None);
+        if let Some(back) = self.back.as_ref().filter(|_| name == Key::Back && !self.module.editing()) {
+            return Out::Back(back.id, back.from);
         }
         let mut fx = Effect::new(store, runtime);
         if self.module.editing() {
@@ -919,12 +950,12 @@ impl Host {
         if e.on == "close" {
             return Out::Close;
         }
-        if e.on == "back" && self.back {
-            return Out::Panel(super::quick::ID, None);
+        if let Some(back) = self.back.as_ref().filter(|_| e.on == "back") {
+            return Out::Back(back.id, back.from);
         }
         // Only the tray tells the buttons apart; every other panel takes any
         // button as a click.
-        if e.what == What::Click && self.module.id() == super::tray::ID {
+        if e.what == What::Click && self.panel() == Some(PanelId::TrayOverflow) {
             e.what = match button {
                 Button::Right => What::Right,
                 Button::Middle => What::Middle,

@@ -3,6 +3,7 @@
 //! Opening and closing the second bar is `panel open|close|toggle
 //! trayoverflow`, so there is no verb for it here.
 
+use fs_chrome::bar::panels::PanelId;
 use serde_json::json;
 
 use super::registry::{Function, Reply, Target, Type, Value, ok};
@@ -31,7 +32,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     Ok(
         json!({
             "items": listed,
-            "overflow": {"open": app.panel_open() == Some(crate::surfaces::panel::tray::ID), "inline": inline, "hidden": hidden},
+            "overflow": {"open": app.shows(PanelId::TrayOverflow), "inline": inline, "hidden": hidden},
         }),
     )
 }

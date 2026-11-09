@@ -11,7 +11,7 @@ use std::cell::RefCell;
 
 use fs_audio::{Command, Visual};
 use fs_chrome::bar::layout::{Builtin, Entry, EntryKind};
-use fs_chrome::bar::panels::widget_panel;
+use fs_chrome::bar::panels::PanelId;
 use fs_types::{BtAddress, Edge, Region};
 use fs_info::reminders;
 use fs_system::capture::elapsed_label;
@@ -33,8 +33,6 @@ use crate::surfaces::bar::cell::{Action as CellAction, Button, Cell, Env, Summar
 use crate::surfaces::bar::cells;
 use crate::ui::el::Ring;
 use crate::ui::{El, Event, Ink, Size, What, w};
-
-pub const ID: &str = "quicksettings";
 
 /// What opened the card (§10): a chevron in a region of the strip, the
 /// sidebar's chevron button, or an IPC call or keybind.
@@ -309,22 +307,22 @@ pub struct Extra {
     pub summary: Summary,
     /// The panel a click hands the card over to, none where the cell's own
     /// click runs instead.
-    pub panel: Option<&'static str>,
+    pub panel: Option<PanelId>,
 }
 
 /// Where a click on `entry`'s tile goes.
 enum Tap {
-    Panel(&'static str),
+    Panel(PanelId),
     Ipc(&'static [&'static str]),
     Cell,
 }
 
 fn tap(entry: &Entry) -> Tap {
     match entry.kind {
-        EntryKind::Builtin(Builtin::Tray) => Tap::Panel(super::tray::ID),
+        EntryKind::Builtin(Builtin::Tray) => Tap::Panel(PanelId::TrayOverflow),
         // The cell's own click focuses whichever chip it lands on.
         EntryKind::Builtin(Builtin::Workspaces) => Tap::Ipc(&["workspaces", "overview", "open"]),
-        EntryKind::Builtin(b) => widget_panel(b).map_or(Tap::Cell, Tap::Panel),
+        EntryKind::Builtin(b) => PanelId::opened_by(b).map_or(Tap::Cell, Tap::Panel),
         _ => Tap::Cell,
     }
 }
@@ -442,7 +440,7 @@ impl Line {
 /// Where a menu's settings row hands the card over to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hand {
-    Panel(&'static str),
+    Panel(PanelId),
     /// A launcher route ("Keyboard lights" is the launcher's effect level).
     Route(&'static str),
 }
@@ -475,7 +473,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
         if lines.is_empty() {
             lines.push(Line::Note("Nothing is running in the background".into()));
         }
-        return Some(MenuView { glyph: "activity", title: "Background", on: false, lines, settings: Some(("Activity", Hand::Panel("activity"))) });
+        return Some(MenuView { glyph: "activity", title: "Background", on: false, lines, settings: Some(("Activity", Hand::Panel(PanelId::Activity))) });
     }
     let tile = tiles(store).into_iter().find(|t| t.id == id && t.menu)?;
     let row = Line::row;
@@ -486,14 +484,14 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             title: "Sound output",
             on: tile.on,
             lines: audio_devices(store, true).into_iter().map(|(name, label)| row(id, name, "speaker", label, name == a.default_sink)).collect(),
-            settings: Some(("Sound settings", Hand::Panel("audio"))),
+            settings: Some(("Sound settings", Hand::Panel(PanelId::Audio))),
         },
         "microphone" => MenuView {
             glyph: tile.glyph,
             title: "Sound input",
             on: tile.on,
             lines: audio_devices(store, false).into_iter().map(|(name, label)| row(id, name, "mic", label, name == a.default_source)).collect(),
-            settings: Some(("Sound settings", Hand::Panel("audio"))),
+            settings: Some(("Sound settings", Hand::Panel(PanelId::Audio))),
         },
         "brightness" => MenuView {
             glyph: tile.glyph,
@@ -505,7 +503,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 .into_iter()
                 .map(|d| Line::Slider { key: format!("m:brightness:{}", d.id), title: d.label, value: d.percent as f64 / 100.0 })
                 .collect(),
-            settings: Some(("Display settings", Hand::Panel("display"))),
+            settings: Some(("Display settings", Hand::Panel(PanelId::Display))),
         },
         "wired" => MenuView {
             glyph: tile.glyph,
@@ -517,7 +515,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 .iter()
                 .map(|r| row(id, &r.name, "ethernet-port", r.connection.as_deref().unwrap_or(&r.name), r.connected).detail((r.connection.is_some()).then(|| r.name.clone())))
                 .collect(),
-            settings: Some(("Network settings", Hand::Panel("network"))),
+            settings: Some(("Network settings", Hand::Panel(PanelId::Network))),
         },
         "wifi" => {
             let n = &store.network;
@@ -545,7 +543,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             if lines.is_empty() {
                 lines.push(Line::Note(if n.wifi_enabled { "Scanning" } else { "Wi-Fi is off" }.into()));
             }
-            MenuView { glyph: tile.glyph, title: "Wi-Fi", on: tile.on, lines, settings: Some(("All networks", Hand::Panel("network"))) }
+            MenuView { glyph: tile.glyph, title: "Wi-Fi", on: tile.on, lines, settings: Some(("All networks", Hand::Panel(PanelId::Network))) }
         }
         "bluetooth" => {
             let b = &store.bluetooth;
@@ -565,7 +563,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             } else {
                 lines.push(Line::Note("Turn on Bluetooth to connect to devices".into()));
             }
-            MenuView { glyph: tile.glyph, title: "Bluetooth", on: tile.on, lines, settings: Some(("Bluetooth settings", Hand::Panel("bluetooth"))) }
+            MenuView { glyph: tile.glyph, title: "Bluetooth", on: tile.on, lines, settings: Some(("Bluetooth settings", Hand::Panel(PanelId::Bluetooth))) }
         }
         "power-mode" => {
             let p = store.profiles.as_ref()?;
@@ -574,7 +572,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
                 .filter(|(x, _)| *x != Profile::Performance || p.has_performance())
                 .map(|&(x, glyph)| row(id, x.to_wire(), glyph, x.label(), p.active == x))
                 .collect();
-            MenuView { glyph: tile.glyph, title: "Power mode", on: tile.on, lines, settings: Some(("Power settings", Hand::Panel("power"))) }
+            MenuView { glyph: tile.glyph, title: "Power mode", on: tile.on, lines, settings: Some(("Power settings", Hand::Panel(PanelId::Power))) }
         }
         "keyboard" => {
             let l = &store.lights;
@@ -732,7 +730,6 @@ impl MenuState {
 }
 
 pub struct QuickSettings {
-    origin: Origin,
     /// The profile the Power mode toggle goes back to from Balanced: the
     /// last other one it left, as GNOME's does.
     last_profile: Profile,
@@ -758,7 +755,6 @@ pub struct QuickSettings {
 impl Default for QuickSettings {
     fn default() -> Self {
         Self {
-            origin: Origin::Ipc,
             last_profile: Profile::PowerSaver,
             start: None,
             sections: RefCell::new(Vec::new()),
@@ -811,10 +807,6 @@ fn menu_el(v: &View, m: &MenuView, content: f32, ready: bool) -> El {
 }
 
 impl Panel for QuickSettings {
-    fn id(&self) -> &'static str {
-        ID
-    }
-
     fn title(&self, _: &View) -> String {
         "Quick settings".into()
     }
@@ -863,10 +855,6 @@ impl Panel for QuickSettings {
             Topic::Commands,
             Topic::PluginOutput,
         ]
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.panel_width_wide
     }
 
     fn body(&self, v: &View) -> El {
@@ -940,7 +928,7 @@ impl Panel for QuickSettings {
             .collect();
         cells.extend(extras.iter().map(|x| (x.id.as_str(), piece::info(s, &x.id, &x.summary.icon, &x.summary.name, x.summary.value.as_deref()))));
         let items = vec![grid::Item { span: 1, height: s.panel_row }; cells.len()];
-        let placed = grid::place(&items, self.width(v) - s.panel_row_inset * 2.0, s.panel_gap, None);
+        let placed = grid::place(&items, super::width_of(PanelId::QuickSettings.desc().width, s) - s.panel_row_inset * 2.0, s.panel_gap, None);
         let mut rows: Vec<(Vec<&str>, Vec<El>)> = Vec::new();
         for (((id, el), &r), rect) in cells.into_iter().zip(&placed.rows).zip(&placed.rects) {
             if rows.len() <= r {
@@ -1058,9 +1046,9 @@ impl Panel for QuickSettings {
                     .drawn
                     .get_mut()
                     .iter()
-                    .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel }))
+                    .map(|x| json!({ "id": x.id, "title": x.summary.name, "subtitle": x.summary.value, "icon": x.summary.icon, "tone": x.summary.tone.as_str(), "panel": x.panel.map(PanelId::as_str) }))
                     .collect();
-                let state = json!({ "from": self.origin.label(), "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
+                let state = json!({ "menu": m.want, "shown": m.shown, "armed": m.armed, "dim": m.want.is_some(), "height": share(&m.height), "content": share(&m.content), "extras": extras });
                 Some(Ok(state))
             }
             _ => None,
@@ -1117,10 +1105,9 @@ impl Panel for QuickSettings {
 }
 
 impl QuickSettings {
-    /// The card `origin` opened, its info tiles `entries` off a bar on
-    /// `edge`.
-    pub fn opened_by(origin: Origin, entries: Vec<Entry>, edge: Edge) -> Self {
-        Self { origin, entries, edge, ..Self::default() }
+    /// The card with its info tiles `entries`, off a bar on `edge`.
+    pub fn new(entries: Vec<Entry>, edge: Edge) -> Self {
+        Self { entries, edge, ..Self::default() }
     }
 
     /// Every info tile as its cell reads now, in `bar.layout` order; a cell
@@ -1194,12 +1181,12 @@ impl QuickSettings {
         let open = self.menu.get_mut().want.clone();
         let Some(tile) = tiles_with(fx.store, open.as_deref()).into_iter().find(|t| t.id == id && t.available()) else { return };
         match tile.id {
-            "battery" => fx.panel = Some("power"),
+            "battery" => fx.panel = Some(PanelId::Power),
             "screenshot" => {
                 fx.close = true;
                 fx.ipc(&["screenshot", "pick", "smart", "default"]);
             }
-            "settings" => fx.panel = Some("settings"),
+            "settings" => fx.panel = Some(PanelId::Settings),
             "lock" => fx.call = Some(("lock", "lock")),
             "power" | BACKGROUND => self.toggle_menu(tile.id, fx.store),
             "volume" | "microphone" => mute(tile.id, fx),
@@ -1357,7 +1344,7 @@ fn wifi_row(ssid: String, fx: &mut Effect) {
     }
     let retype = n.failure.as_ref().is_some_and(|f| f.ssid == ssid && f.secret);
     if retype || (row.secured && !row.known) {
-        fx.panel = Some("network");
+        fx.panel = Some(PanelId::Network);
         fx.then = Some(format!("wifi:{ssid}"));
         return;
     }
@@ -1372,13 +1359,13 @@ fn background_row(what: &str, fx: &mut Effect) {
     match (task.what.as_str(), task.stop) {
         ("recording", Some(_)) => fx.ipc(&["record", "stop"]),
         ("reminders", Some(_)) => fx.ipc(&["reminder", "clear"]),
-        ("airplay", _) => fx.panel = Some("media"),
+        ("airplay", _) => fx.panel = Some(PanelId::Media),
         (what, stop) => {
             if let Some(source) = what.strip_prefix("activity:") {
                 if stop.is_some() {
                     fx.ipc(&["activity", "dismiss", source]);
                 } else {
-                    fx.panel = Some("activity");
+                    fx.panel = Some(PanelId::Activity);
                 }
             }
         }
@@ -1410,7 +1397,7 @@ pub fn status_menu(store: &Store, state: &Json) -> (Json, bool) {
                 Line::Note(_) | Line::Separator => None,
             })
             .chain(m.settings.map(|(label, hand)| match hand {
-                Hand::Panel(p) => json!({ "id": "m:settings", "title": label, "panel": p }),
+                Hand::Panel(p) => json!({ "id": "m:settings", "title": label, "panel": p.as_str() }),
                 Hand::Route(r) => json!({ "id": "m:settings", "title": label, "route": r }),
             }))
             .collect::<Vec<_>>()

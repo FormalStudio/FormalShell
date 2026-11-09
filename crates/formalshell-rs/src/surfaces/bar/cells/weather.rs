@@ -3,6 +3,7 @@
 //! the whole reading in the tooltip.
 
 use chrono::{Local, Timelike};
+use fs_chrome::bar::panels::PanelId;
 use fs_info::weather as openmeteo;
 
 use crate::services::info::kick;
@@ -62,7 +63,7 @@ impl Cell for Weather {
             }
             None => "WEATHER / UNAVAILABLE".to_owned(),
         };
-        View::new(parts, look.xs).panel("weather").tooltip(format!("{head} / RIGHT REFRESH"))
+        View::new(parts, look.xs).panel(PanelId::Weather).tooltip(format!("{head} / RIGHT REFRESH"))
     }
 
     fn summary(&self) -> Option<Summary> {
@@ -77,7 +78,7 @@ impl Cell for Weather {
                 kick(Source::Weather);
                 Action::None
             }
-            _ => Action::Panel("weather"),
+            _ => Action::Panel(PanelId::Weather),
         }
     }
 }

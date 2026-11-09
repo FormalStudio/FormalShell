@@ -2,6 +2,8 @@
 //! unread, the battery beside it, the cell at 60% while the phone is out of
 //! range. Absent unless `omarchy-iphone-bridge` is installed.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::info::iphone::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
@@ -51,7 +53,7 @@ impl Cell for Iphone {
         if s.unread > 0 {
             tooltip.push(format!("{} UNREAD", s.unread));
         }
-        let mut view = View::new(parts, look.xs).panel("iphone").tooltip(tooltip.join(" / "));
+        let mut view = View::new(parts, look.xs).panel(PanelId::Iphone).tooltip(tooltip.join(" / "));
         view.opacity = if s.connected { 1.0 } else { 0.6 };
         view
     }
@@ -70,6 +72,6 @@ impl Cell for Iphone {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("iphone")
+        Action::Panel(PanelId::Iphone)
     }
 }

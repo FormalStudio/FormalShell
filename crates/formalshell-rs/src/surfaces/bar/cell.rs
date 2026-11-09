@@ -12,6 +12,7 @@
 use std::any::Any;
 use std::time::Instant;
 
+use fs_chrome::bar::panels::PanelId;
 use fs_types::{Edge, Region, WindowId, WorkspaceId};
 use fs_theme::color::Rgba;
 use fs_theme::style::Glow;
@@ -35,8 +36,8 @@ pub enum Button {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     None,
-    /// Open or close the named panel from this cell.
-    Panel(&'static str),
+    /// Open or close this panel from this cell.
+    Panel(PanelId),
     /// Open or close quick settings from its region's chevron.
     Overflow(Region),
     Workspace(WorkspaceId),
@@ -158,7 +159,7 @@ pub struct View {
     pub gap: f64,
     pub tone: Tone,
     /// The panel this cell opens, for its open mark and as its anchor.
-    pub panel: Option<&'static str>,
+    pub panel: Option<PanelId>,
     pub tooltip: String,
     pub interactive: bool,
     /// Whole-cell opacity (the iPhone out of range).
@@ -183,7 +184,7 @@ impl View {
         self
     }
 
-    pub fn panel(mut self, panel: &'static str) -> Self {
+    pub fn panel(mut self, panel: PanelId) -> Self {
         self.panel = Some(panel);
         self
     }

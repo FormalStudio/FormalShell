@@ -286,10 +286,14 @@ is the whole output and paints the ring under its cells.
   the line's end, and deforms on its springs; under `popover` it is a plain
   card fading out of its cell. It is worked out once for a top edge and
   mapped to the others by `Card::edge_map`.
-- `surfaces/panel/mod.rs`: the `Panel` trait (id, title, icon, the topics it
-  reads, a body built from `ui` widgets, header actions, what its stops do)
-  and `PANELS`, the 27 names `panel open|toggle` accepts. `panel::build`
-  registers a module against its name.
+- `crates/fs-chrome/src/bar/panels.rs`: the panel table, `PanelId` and
+  one descriptor per panel (its `panel` name, launcher row title, icon and
+  aliases, width class, home: a card, a launcher page or a modal, and the
+  bar widgets that open it). The launcher's Panels rows, the IPC verbs, the
+  sidebar and the cells all read it.
+- `surfaces/panel/mod.rs`: the `Panel` trait (title, the topics it reads, a
+  body built from `ui` widgets, header actions, what its stops do).
+  `panel::build(id, args)` registers a module against its `PanelId`.
 - `surfaces/panel/host.rs`: `Host` owns everything a panel does not: the
   full-output layer surface that turns a click outside the card into a
   close, the card and its motion, the header, scrolling, the size morph, the
@@ -532,8 +536,8 @@ palette. `formalshell install` can write the greetd config.
 
 - A bar cell: a module under `surfaces/bar/cells/` implementing `Cell`, and
   one arm in `cells::build`.
-- A panel: a module under `surfaces/panel/` implementing `Panel`, its name
-  in `PANELS`, and one arm in `panel::build`.
+- A panel: a module under `surfaces/panel/` implementing `Panel`, its row
+  in fs-chrome's panel table, and one arm in `panel::build`.
 - An IPC target: a module under `src/ipc/` returning a `registry::Target`,
   listed in `ipc::registry()`.
 - A service: a module under `src/services/` with its `State` (and a `Diff`

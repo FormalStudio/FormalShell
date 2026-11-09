@@ -7,6 +7,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::scene::{Bitmap, IRect, Paint};
 use crate::services::tray::Item;
 use crate::store::Topic;
@@ -160,7 +162,7 @@ impl Cell for Tray {
             return View::new(Vec::new(), 0.0);
         }
         let name = if self.vertical { "more-vertical" } else { "ellipsis" };
-        View::icon(name, look).panel(crate::surfaces::panel::tray::ID).tooltip(format!("TRAY / {} ITEMS", self.items.len()))
+        View::icon(name, look).panel(PanelId::TrayOverflow).tooltip(format!("TRAY / {} ITEMS", self.items.len()))
     }
 
     fn summary(&self) -> Option<Summary> {
@@ -170,7 +172,7 @@ impl Cell for Tray {
 
     fn click(&mut self, button: Button, at: (f64, f64), _: &Env) -> Action {
         if !self.icons() {
-            return if button == Button::Left { Action::Panel(crate::surfaces::panel::tray::ID) } else { Action::None };
+            return if button == Button::Left { Action::Panel(PanelId::TrayOverflow) } else { Action::None };
         }
         let along = if self.vertical { at.1 } else { at.0 };
         let Some(i) = self.box_at(along) else { return Action::None };

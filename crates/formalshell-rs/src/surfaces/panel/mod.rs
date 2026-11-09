@@ -1,10 +1,11 @@
 //! Popout panels.
 //!
-//! A panel is one module implementing [`Panel`]: its id, its title and
-//! icon, the store topics it reads, a body built from `ui` widgets, the
-//! header actions it adds beside the close button, and what its keyboard
-//! stops and actions do. [`build`] is where a module is registered against
-//! its `panel` name. [`host::Host`] owns everything a panel does not: the
+//! A panel is one row of fs-chrome's panel table (its name, launcher row,
+//! width and home) and one module implementing [`Panel`]: its title, the
+//! store topics it reads, a body built from `ui` widgets, the header
+//! actions it adds beside the close button, and what its keyboard stops
+//! and actions do. [`build`] is where a module is registered against its
+//! [`PanelId`]. [`host::Host`] owns everything a panel does not: the
 //! card and its motion, the header, the scroll, the size morph, the
 //! handoff, the keyboard cursor and its halo, focus, Escape and the click
 //! outside.
@@ -38,7 +39,6 @@ pub mod power;
 pub mod quick;
 pub mod settings;
 pub mod settings_page;
-pub mod standin;
 pub mod systemupdate;
 pub mod tailscale;
 pub mod tray;
@@ -46,7 +46,11 @@ pub mod usage;
 pub mod weather;
 pub mod workspace_preview;
 
+use fs_chrome::bar::layout::Entry;
+use fs_chrome::bar::panels::{PanelId, Width};
 use fs_theme::theme::Theme;
+use fs_theme::tokens::Space;
+use fs_types::Edge;
 
 use crate::runtime::Runtime;
 use crate::store::{Store, Topic};
@@ -95,7 +99,7 @@ pub struct Effect<'a> {
     /// A launcher route to open as the panel closes.
     pub summon: Option<&'static str>,
     /// Another panel to open in this one's place.
-    pub panel: Option<&'static str>,
+    pub panel: Option<PanelId>,
     /// A stop of `panel`'s to press Enter on once it is open (a network's
     /// row, opening its passphrase step).
     pub then: Option<String>,
@@ -131,13 +135,13 @@ impl<'a> Effect<'a> {
 }
 
 pub trait Panel {
-    fn id(&self) -> &'static str;
     fn title(&self, v: &View) -> String;
     /// The store slices whose change redraws this panel.
     fn reads(&self) -> &'static [Topic];
-    /// The card's width (`panelWidth`): `popupWidthDefault` unless said.
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_default
+    /// A width of its own, past the table's class: one that moves (media's
+    /// split, the gallery's output) or a card the table has no row for.
+    fn width(&self, _v: &View) -> Option<f64> {
+        None
     }
     /// Whether the card is its body's own width (a strip of chips) rather
     /// than `width`; see [`card_width`]. Only the body's root is made to
@@ -251,15 +255,25 @@ pub trait Panel {
     }
 }
 
-pub use fs_chrome::bar::panels::{known, launcher_route};
+/// A width class in pixels.
+pub fn width_of(class: Width, s: &Space) -> f64 {
+    match class {
+        Width::Narrow => s.popup_width_narrow,
+        Width::Default => s.popup_width_default,
+        Width::Wide => s.popup_width_wide,
+        Width::Menu => s.popup_width_menu,
+        Width::Panel => s.panel_width,
+        Width::PanelWide => s.panel_width_wide,
+    }
+}
 
-/// The card's width wherever it is drawn. A card that fits its content is
-/// the body's natural width plus the rows' inset on either side, the same
-/// inset its body sits at, so the room after the last chip is the room
-/// before the first.
-pub fn card_width(module: &dyn Panel, v: &View, kit: &mut crate::paint::Kit) -> f64 {
+/// The card's width wherever it is drawn, `class` its row's in the table.
+/// A card that fits its content is the body's natural width plus the rows'
+/// inset on either side, the same inset its body sits at, so the room
+/// after the last chip is the room before the first.
+pub fn card_width(module: &dyn Panel, class: Width, v: &View, kit: &mut crate::paint::Kit) -> f64 {
     if !module.fits(v) {
-        return module.width(v);
+        return module.width(v).unwrap_or_else(|| width_of(class, &v.theme.space));
     }
     let inset = v.theme.space.panel_row_inset;
     let natural = crate::ui::measure(&module.body(v).hug(), v.output.0.max(1.0), v.theme, kit).0;
@@ -313,37 +327,78 @@ pub fn title(text: String) -> El {
     crate::ui::w::label(text).size(crate::ui::Type::Display).weight(crate::ui::Weight::Semibold).elide()
 }
 
-pub fn build(name: &str) -> Option<Box<dyn Panel>> {
-    if name.starts_with(plugin::PREFIX) {
-        return Some(Box::new(plugin::PluginPanel::new(plugin::intern(name))));
-    }
-    let id = known(name)?;
-    Some(match id {
-        "activity" => Box::new(activity::Activity::default()),
-        "appmenu" => Box::new(appmenu::AppMenu),
-        "audio" => Box::new(audio::Audio),
-        "calendar" => Box::new(calendar::Calendar::new(true)),
-        "iphone" => Box::new(iphone::Iphone::default()),
-        "media" => Box::new(media::Media::default()),
-        "weather" => Box::new(weather::Weather::default()),
-        "network" => Box::new(network::Network::default()),
-        "bluetooth" => Box::new(bluetooth::Bluetooth),
-        "dualsense" => Box::new(dualsense::Dualsense),
-        "earbuds" => Box::new(earbuds::Earbuds::default()),
-        "display" => Box::new(display::Display::new()),
-        "github" => Box::new(github::Github::new()),
-        "monitor" => Box::new(monitor::Monitor::new()),
-        "power" => Box::new(power::Power::new()),
-        "quicksettings" => Box::<quick::QuickSettings>::default(),
-        "info" => Box::new(info::Info::new()),
-        "settings" => Box::<settings::Settings>::default(),
-        page if page.starts_with("settings:") => Box::new(settings_page::SettingsPage::new(page)?),
-        "systemupdate" => Box::new(systemupdate::SystemUpdate::new()),
-        "tailscale" => Box::new(tailscale::Tailscale::new()),
-        "usage" => Box::new(usage::Usage::new()),
-        tray::ID => Box::new(tray::Tray::default()),
-        _ => Box::new(standin::StandIn::new(id)),
-    })
+/// A card the `panel` verbs open: the table's, or a plugin's by its
+/// interned key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Name {
+    Panel(PanelId),
+    Plugin(&'static str),
 }
 
+impl Name {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Name::Panel(id) => id.as_str(),
+            Name::Plugin(key) => key,
+        }
+    }
 
+    pub fn panel(self) -> Option<PanelId> {
+        match self {
+            Name::Panel(id) => Some(id),
+            Name::Plugin(_) => None,
+        }
+    }
+}
+
+impl From<PanelId> for Name {
+    fn from(id: PanelId) -> Self {
+        Name::Panel(id)
+    }
+}
+
+/// What a panel is built with past its id: quick settings' info tiles,
+/// the cells its opener governs on the bar that opened it, and that bar's
+/// edge, which their cells read.
+pub struct Args {
+    pub tiles: Vec<Entry>,
+    pub edge: Edge,
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Args { tiles: Vec::new(), edge: Edge::Top }
+    }
+}
+
+/// A panel's module. Radio Atlas is a modal of its own, not a module.
+pub fn build(id: PanelId, args: Args) -> Option<Box<dyn Panel>> {
+    Some(match id {
+        PanelId::Activity => Box::new(activity::Activity::default()),
+        PanelId::AppMenu => Box::new(appmenu::AppMenu),
+        PanelId::Audio => Box::new(audio::Audio),
+        PanelId::Calendar => Box::new(calendar::Calendar::new(true)),
+        PanelId::Iphone => Box::new(iphone::Iphone::default()),
+        PanelId::Media => Box::new(media::Media::default()),
+        PanelId::Weather => Box::new(weather::Weather::default()),
+        PanelId::Network => Box::new(network::Network::default()),
+        PanelId::Bluetooth => Box::new(bluetooth::Bluetooth),
+        PanelId::Dualsense => Box::new(dualsense::Dualsense),
+        PanelId::Earbuds => Box::new(earbuds::Earbuds::default()),
+        PanelId::Display => Box::new(display::Display::new()),
+        PanelId::Github => Box::new(github::Github::new()),
+        PanelId::Monitor => Box::new(monitor::Monitor::new()),
+        PanelId::Power => Box::new(power::Power::new()),
+        PanelId::QuickSettings => Box::new(quick::QuickSettings::new(args.tiles, args.edge)),
+        PanelId::Info => Box::new(info::Info::new()),
+        PanelId::Settings => Box::<settings::Settings>::default(),
+        PanelId::SettingsAppearance | PanelId::SettingsBar | PanelId::SettingsDesktop | PanelId::SettingsSystem => {
+            Box::new(settings_page::SettingsPage::new(id)?)
+        }
+        PanelId::SystemUpdate => Box::new(systemupdate::SystemUpdate::new()),
+        PanelId::Tailscale => Box::new(tailscale::Tailscale::new()),
+        PanelId::Usage => Box::new(usage::Usage::new()),
+        PanelId::TrayOverflow => Box::new(tray::Tray::default()),
+        PanelId::Radio => return None,
+    })
+}

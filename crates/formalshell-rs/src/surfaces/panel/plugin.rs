@@ -114,10 +114,6 @@ impl PluginPanel {
 }
 
 impl Panel for PluginPanel {
-    fn id(&self) -> &'static str {
-        self.key
-    }
-
     fn title(&self, v: &View) -> String {
         find(v.store, self.key).map_or_else(|| self.id.clone(), |p| p.name.clone())
     }
@@ -126,8 +122,8 @@ impl Panel for PluginPanel {
         &[Topic::Plugins, Topic::PluginOutput]
     }
 
-    fn width(&self, v: &View) -> f64 {
-        width(&v.theme.space, find(v.store, self.key))
+    fn width(&self, v: &View) -> Option<f64> {
+        Some(width(&v.theme.space, find(v.store, self.key)))
     }
 
     fn start(&mut self, _: &mut Effect) {

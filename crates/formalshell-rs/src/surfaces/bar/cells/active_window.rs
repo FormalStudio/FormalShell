@@ -3,6 +3,8 @@
 //! when it changes. With no desktop entry resolved the name is the app id in
 //! the meta ink and there is no icon.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::appicon;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Part, Summary, View};
@@ -88,6 +90,6 @@ impl Cell for ActiveWindow {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("appmenu")
+        Action::Panel(PanelId::AppMenu)
     }
 }

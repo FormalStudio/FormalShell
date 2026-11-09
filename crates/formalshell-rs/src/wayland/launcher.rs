@@ -4,6 +4,7 @@
 
 use std::time::Instant;
 
+use fs_chrome::bar::panels::{Home, PanelId};
 use fs_types::WindowId;
 use smithay_client_toolkit::compositor::Region;
 use smithay_client_toolkit::seat::keyboard::KeyEvent;
@@ -158,24 +159,24 @@ impl App {
         self.show_launcher();
     }
 
-    /// `name`'s panel (Settings, a settings page, Information) held in the
+    /// `id`'s panel (Settings, a settings page, Information) held in the
     /// launcher card, the launcher opening on its route if it is not up.
-    pub fn menu_panel(&mut self, name: &str) {
+    pub fn menu_panel(&mut self, id: PanelId) {
         self.atlas_close();
         self.overlay_close();
         self.close_panels();
         if !self.launcher.open {
             self.launcher.open(&self.store, None);
         }
-        if self.launcher.show_panel(&self.store, name) {
+        if self.launcher.show_panel(&self.store, id) {
             self.launcher_panel_start();
             self.show_launcher();
         }
     }
 
-    /// The panel the open launcher holds, by its `panel` name.
-    pub fn launcher_panel(&self) -> Option<&'static str> {
-        self.launcher.panel.as_ref().filter(|_| self.launcher.open && self.launcher.on_panel()).map(|p| p.name)
+    /// The panel the open launcher holds.
+    pub fn launcher_panel(&self) -> Option<PanelId> {
+        self.launcher.panel.as_ref().filter(|_| self.launcher.open && self.launcher.on_panel()).map(|p| p.id)
     }
 
     /// `Panel::start` once for a panel the launcher took up.
@@ -199,14 +200,15 @@ impl App {
             }
             P::None => {}
             P::Close => self.menu_close(),
-            P::Panel(name, _) if panel::launcher_route(name).is_some() => self.menu_panel(name),
-            P::Panel(name, then) => {
+            P::Panel(id, _) if id.home() == Home::Launcher => self.menu_panel(id),
+            P::Panel(id, then) => {
                 self.menu_close();
-                self.set_panel(name, true, None);
+                self.set_panel(id, true, None);
                 if let Some(stop) = then {
-                    self.panel_activate(name, &stop);
+                    self.panel_activate(id, &stop);
                 }
             }
+            P::Back(..) => {}
             P::Summon(panel::ATLAS) => {
                 self.menu_close();
                 self.atlas_show();
@@ -241,8 +243,8 @@ impl App {
     /// One level up: a settings page goes back to its tiles, anything else
     /// leaves the level.
     fn launcher_up(&mut self) {
-        let page = self.launcher_panel().filter(|n| crate::surfaces::panel::launcher_route(n) != Some(*n));
-        match page.and_then(crate::surfaces::panel::launcher_route) {
+        let page = self.launcher_panel().filter(|p| p.route() != Some(*p));
+        match page.and_then(PanelId::route) {
             Some(route) => self.menu_panel(route),
             None => {
                 let out = self.launcher.pop(&self.store);
@@ -254,7 +256,7 @@ impl App {
     /// The token's click, one level up as Backspace climbs: a settings page
     /// opened off another page's row goes back to that page.
     fn launcher_back(&mut self) {
-        let parent = self.launcher_panel().and_then(|n| n.strip_prefix("settings:")).and_then(crate::services::overrides::page).and_then(|p| p.parent);
+        let parent = self.launcher_panel().and_then(|p| p.as_str().strip_prefix("settings:")).and_then(crate::services::overrides::page).and_then(|p| p.parent);
         match parent {
             Some(parent) => self.menu_panel(parent),
             None => self.launcher_up(),

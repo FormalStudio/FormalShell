@@ -68,20 +68,12 @@ fn facts(v: &View) -> [(&'static str, Fact); 7] {
 }
 
 impl Panel for Info {
-    fn id(&self) -> &'static str {
-        "info"
-    }
-
     fn title(&self, _: &View) -> String {
         "Information".into()
     }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::About, Topic::Monitor]
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_menu
     }
 
     fn body(&self, v: &View) -> El {

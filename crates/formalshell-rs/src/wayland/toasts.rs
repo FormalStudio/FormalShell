@@ -4,6 +4,7 @@
 
 use std::time::Instant;
 
+use fs_chrome::bar::panels::PanelId;
 use fs_types::Insets;
 use fs_info::notifications::PositionSpec;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
@@ -62,8 +63,8 @@ impl App {
                 self.close_panels();
             }
         } else if !self.center_open() {
-            let anchor = anchor.or_else(|| live!(self).bar.panel_anchor(center::ID));
-            self.open_host(Box::new(center::Center::default()), anchor, now);
+            let anchor = anchor.or_else(|| live!(self).bar.center_anchor());
+            self.open_host(Box::new(center::Center::default()), center::ID, crate::surfaces::panel::quick::Origin::Ipc, anchor, now);
         }
         self.tick_notifications();
     }
@@ -258,8 +259,8 @@ impl App {
     fn toast_act(&mut self, act: Act) {
         if let Act::Activity(verb, source) = act {
             if let Ok(surfaces::activity::Done::Panel) = surfaces::activity::act(&self.store, self.runtime.as_ref(), verb, &source) {
-                self.set_panel("activity", true, None);
-                self.panel_call("activity", "select", &source);
+                self.set_panel(PanelId::Activity, true, None);
+                self.panel_call(PanelId::Activity, "select", &source);
             }
             return;
         }

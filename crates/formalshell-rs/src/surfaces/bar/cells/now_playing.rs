@@ -4,6 +4,8 @@
 //! cover takes the glyph's slot, animated off the media panel's own decode
 //! behind `media.animatedBarCover` while the bar is on screen.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::scene::Bitmap;
 use crate::services::motion_art;
 use crate::store::Topic;
@@ -91,7 +93,7 @@ impl Cell for NowPlaying {
                 format!("NOW PLAYING / {by}{title} / RIGHT NEXT / SCROLL PREV NEXT")
             }
         };
-        View::new(parts, look.xs).panel("media").tooltip(tooltip)
+        View::new(parts, look.xs).panel(PanelId::Media).tooltip(tooltip)
     }
 
     fn limits(&self, look: &Look, along: f64, _rest: f64) -> Option<Limits> {
@@ -106,7 +108,7 @@ impl Cell for NowPlaying {
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
-            Button::Left => Action::Panel("media"),
+            Button::Left => Action::Panel(PanelId::Media),
             Button::Right => Action::MediaNext,
             Button::Middle => Action::None,
         }

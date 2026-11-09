@@ -2,6 +2,8 @@
 //! ("2 behind", "Up to date", "No flake"). Visible in every state, since the
 //! user opted in by naming it. Behind inputs make it `warning`.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::info::update::State;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
@@ -46,7 +48,7 @@ impl Cell for SystemUpdate {
         }
         View::new(parts, look.xs)
             .tone(if behind > 0 { Tone::Warning } else { Tone::Rest })
-            .panel("systemupdate")
+            .panel(PanelId::SystemUpdate)
             .tooltip(format!("FLAKE INPUTS / {}", summary.to_uppercase()))
     }
 
@@ -57,6 +59,6 @@ impl Cell for SystemUpdate {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("systemupdate")
+        Action::Panel(PanelId::SystemUpdate)
     }
 }

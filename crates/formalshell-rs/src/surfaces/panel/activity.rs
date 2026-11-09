@@ -23,10 +23,6 @@ fn run(verb: Verb, source: &str, fx: &mut Effect) {
 }
 
 impl Panel for Activity {
-    fn id(&self) -> &'static str {
-        "activity"
-    }
-
     fn title(&self, _: &View) -> String {
         "Activity".into()
     }

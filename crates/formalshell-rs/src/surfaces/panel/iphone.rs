@@ -51,10 +51,6 @@ fn press(index: usize) {
 }
 
 impl Panel for Iphone {
-    fn id(&self) -> &'static str {
-        "iphone"
-    }
-
     fn title(&self, _: &View) -> String {
         "iPhone".into()
     }

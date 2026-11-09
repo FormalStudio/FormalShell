@@ -2,6 +2,8 @@
 //! the first poll resolves with the CLI present. The tooltip words the poll
 //! state the status belongs to, never a daemon state nobody observed.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::info::tailscale::{Poll, State};
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
@@ -48,7 +50,7 @@ impl Cell for Tailscale {
             _ => "TAILSCALE",
         };
         View::new(vec![Part::icon("network").dim(!running)], look.xxs)
-            .panel("tailscale")
+            .panel(PanelId::Tailscale)
             .tooltip(tooltip)
     }
 
@@ -65,6 +67,6 @@ impl Cell for Tailscale {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("tailscale")
+        Action::Panel(PanelId::Tailscale)
     }
 }

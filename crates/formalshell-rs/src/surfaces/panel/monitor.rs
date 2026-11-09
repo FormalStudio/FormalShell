@@ -64,20 +64,12 @@ fn main_output(v: &View) -> String {
 }
 
 impl Panel for Monitor {
-    fn id(&self) -> &'static str {
-        "monitor"
-    }
-
     fn title(&self, _: &View) -> String {
         "Monitor".into()
     }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Monitor, Topic::Compositor, Topic::Config]
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_wide
     }
 
     fn body(&self, v: &View) -> El {

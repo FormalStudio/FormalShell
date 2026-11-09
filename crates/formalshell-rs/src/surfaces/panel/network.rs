@@ -269,10 +269,6 @@ fn action_row(v: &View, glyph: &str, label: &str, trailing: Vec<El>) -> El {
 }
 
 impl Panel for Network {
-    fn id(&self) -> &'static str {
-        "network"
-    }
-
     fn title(&self, _: &View) -> String {
         "Wi-Fi".into()
     }

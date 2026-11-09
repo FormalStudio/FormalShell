@@ -2,6 +2,7 @@
 //! the R0 spike's animation switches (`r0*`) until real targets replace
 //! them.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_types::Edge;
 use serde_json::json;
 
@@ -233,10 +234,10 @@ fn r0_panel(app: &mut App, args: &[Value]) -> Reply {
     let open = match args[0].str() {
         "open" => true,
         "close" => false,
-        "toggle" => app.panel_open() != Some("calendar"),
+        "toggle" => !app.shows(PanelId::Calendar),
         other => return Err(format!("unknown action '{other}' (open|close|toggle)")),
     };
-    app.set_panel("calendar", open, None);
+    app.set_panel(PanelId::Calendar, open, None);
     ok()
 }
 

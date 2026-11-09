@@ -2,6 +2,8 @@
 //! hides the cell until the first poll lands; a failed auth reads NO AUTH,
 //! any other failure NO GH, never a stale count.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::info::github::Poll;
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
@@ -57,7 +59,7 @@ impl Cell for Github {
             Poll::NoAuth => "GITHUB / NOT AUTHENTICATED".to_owned(),
             _ => "GITHUB / UNAVAILABLE".to_owned(),
         };
-        View::new(parts, look.xs).panel("github").tooltip(tooltip)
+        View::new(parts, look.xs).panel(PanelId::Github).tooltip(tooltip)
     }
 
     fn summary(&self) -> Option<Summary> {
@@ -71,6 +73,6 @@ impl Cell for Github {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("github")
+        Action::Panel(PanelId::Github)
     }
 }

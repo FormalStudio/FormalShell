@@ -69,7 +69,7 @@ impl App {
     }
 
     fn preview_up(&self) -> bool {
-        self.panel.as_ref().is_some_and(|p| p.is_open() && p.id() == "workspaces")
+        self.panel.as_ref().is_some_and(|p| p.is_open() && p.id() == card::ID)
     }
 
     /// Opens the card on `chip`, handing over whatever card is up.
@@ -100,7 +100,7 @@ impl App {
         self.peek.hover_at = None;
         self.peek.close_at = None;
         let now = Instant::now();
-        self.open_host(Box::new(module), Some(along), now);
+        self.open_host(Box::new(module), card::ID, crate::surfaces::panel::quick::Origin::Ipc, Some(along), now);
     }
 
     /// `workspaces peek <n>`.
@@ -190,7 +190,7 @@ impl App {
         if !self.preview_up() {
             self.peek.open = None;
         }
-        let shown = self.panel.as_ref().is_some_and(|p| p.id() == "workspaces");
+        let shown = self.panel.as_ref().is_some_and(|p| p.id() == card::ID);
         if shown {
             let wants: Vec<(WindowId, (u32, u32))> = self
                 .peek

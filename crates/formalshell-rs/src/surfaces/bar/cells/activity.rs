@@ -6,6 +6,8 @@
 //! progress repaints only when a stream line moves it, and a ring with
 //! none turns in place. A click opens the Activity panel.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::store::Topic;
 use crate::surfaces::activity;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Limits, Part, View};
@@ -66,7 +68,7 @@ impl Cell for Activity {
             parts.push(Part::Label { text: format!("+{}", s.others), weight: None });
         }
         let tip = if s.detail.is_empty() { s.title.clone() } else { format!("{}: {}", s.title, s.detail) };
-        View::new(parts, look.xs).tone(if s.failed { Tone::Destructive } else { Tone::Rest }).panel("activity").tooltip(tip)
+        View::new(parts, look.xs).tone(if s.failed { Tone::Destructive } else { Tone::Rest }).panel(PanelId::Activity).tooltip(tip)
     }
 
     /// The window title's: a narrow card's width at most, two cells at least.
@@ -75,6 +77,6 @@ impl Cell for Activity {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("activity")
+        Action::Panel(PanelId::Activity)
     }
 }

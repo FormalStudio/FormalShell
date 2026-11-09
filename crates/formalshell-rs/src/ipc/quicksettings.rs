@@ -3,11 +3,14 @@
 //! menu opened (`menu`) and closed (`back`), through the same paths as the
 //! keyboard.
 
+use fs_chrome::bar::panels::PanelId;
 use serde_json::{Value as Json, json};
 
 use super::registry::{Function, Reply, Target, Type, Value, ok, text};
-use crate::surfaces::panel::quick::{self, ID};
+use crate::surfaces::panel::quick;
 use crate::wayland::App;
+
+const ID: PanelId = PanelId::QuickSettings;
 
 pub fn target() -> Target<App> {
     Target {
@@ -22,12 +25,12 @@ pub fn target() -> Target<App> {
 }
 
 fn open(app: &App) -> bool {
-    app.panel.as_ref().is_some_and(|h| h.is_open() && h.id() == ID)
+    app.panel.as_ref().is_some_and(|h| h.is_open() && h.panel() == Some(ID))
 }
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
     let state: Option<Json> = app.panel_call(ID, "state", "").and_then(Result::ok);
-    let host = app.panel.as_ref().filter(|h| h.is_open() && h.id() == ID);
+    let host = app.panel.as_ref().filter(|h| h.is_open() && h.panel() == Some(ID));
     let boxes = host.map(|h| h.quick_boxes()).unwrap_or_default();
     let boxed = |key: &str| boxes.iter().find(|(k, _)| k == key).map_or(Json::Null, |(_, r)| r.to_json());
     let parsed = state.clone().unwrap_or(Json::Null);
@@ -93,7 +96,7 @@ fn status(app: &mut App, _: &[Value]) -> Reply {
     };
     let out = json!({
         "open": host.is_some(),
-        "from": host.and(parsed["from"].as_str()),
+        "from": host.map(|h| h.from.label()),
         "card": host.map_or(Json::Null, |h| h.win.card.rest_rect().to_json()),
         "cursor": host.and_then(|h| h.viewport().3.map(|(k, _)| k.to_owned())),
         "rows": rows,

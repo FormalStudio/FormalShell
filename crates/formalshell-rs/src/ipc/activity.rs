@@ -4,6 +4,8 @@
 //! spawned with its launch shown (`services/launch.rs`), for a keybind, and
 //! `openApp`, the app an install brought, off its row's source.
 
+use fs_chrome::bar::panels::PanelId;
+
 use super::registry::{Function, Reply, Target, Type, Value, ok};
 use crate::services::activity::{self, Input};
 use crate::surfaces::activity::{self as row, Done, Verb};
@@ -21,10 +23,10 @@ fn seen(_: &mut App, _: &[Value]) -> Reply {
 fn verb(app: &mut App, verb: Verb, source: &str) -> Reply {
     match row::act(&app.store, app.runtime.as_ref(), verb, source) {
         Ok(Done::Panel) => {
-            if app.panel_open() != Some("activity") {
-                app.set_panel("activity", true, None);
+            if !app.shows(PanelId::Activity) {
+                app.set_panel(PanelId::Activity, true, None);
             }
-            let _ = app.panel_call("activity", "select", source);
+            let _ = app.panel_call(PanelId::Activity, "select", source);
             ok()
         }
         Ok(Done::Nothing) => ok(),

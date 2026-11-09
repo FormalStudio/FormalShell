@@ -3,6 +3,7 @@
 //! staying on the strip because the user asked for it. Left click mutes,
 //! middle opens the audio panel; no wheel, a mic reads as on or off.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_system::audio::{SourceState, source_state};
 
 use crate::store::Topic;
@@ -43,7 +44,7 @@ impl Cell for Mic {
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
-            Button::Middle => Action::Panel("audio"),
+            Button::Middle => Action::Panel(PanelId::Audio),
             Button::Left => Action::ToggleSourceMute,
             Button::Right => Action::None,
         }

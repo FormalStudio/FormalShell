@@ -176,16 +176,8 @@ fn card(v: &View, b: &devices::power::Battery, held: bool) -> Card {
 }
 
 impl Panel for Power {
-    fn id(&self) -> &'static str {
-        "power"
-    }
-
     fn title(&self, _: &View) -> String {
         "Power".into()
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_narrow
     }
 
     fn reads(&self) -> &'static [Topic] {

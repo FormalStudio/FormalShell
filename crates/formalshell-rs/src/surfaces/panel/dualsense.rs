@@ -22,10 +22,6 @@ fn status_row(s: &fs_theme::tokens::Space, title: &str, glyph: &str, middle: El,
 }
 
 impl Panel for Dualsense {
-    fn id(&self) -> &'static str {
-        "dualsense"
-    }
-
     fn title(&self, _: &View) -> String {
         "DualSense".into()
     }

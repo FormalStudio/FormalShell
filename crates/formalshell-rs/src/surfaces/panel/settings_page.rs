@@ -9,20 +9,21 @@
 //! or the tiles. A page ends on rows opening the pages under it and the
 //! launcher route of its own.
 
+use fs_chrome::bar::panels::PanelId;
+
 use super::{Effect, Panel, View};
 use crate::services::overrides::{self, Control, Key, Page};
 use crate::store::Topic;
 use crate::ui::{El, Event, Ink, What, w};
 
 pub struct SettingsPage {
-    name: &'static str,
     page: &'static Page,
 }
 
 impl SettingsPage {
-    pub fn new(name: &'static str) -> Option<Self> {
-        let page = overrides::page(name.strip_prefix("settings:")?)?;
-        Some(Self { name, page })
+    pub fn new(id: PanelId) -> Option<Self> {
+        let page = overrides::page(id.as_str().strip_prefix("settings:")?)?;
+        Some(Self { page })
     }
 }
 
@@ -50,7 +51,7 @@ fn links(page: &str) -> impl Iterator<Item = &'static (&'static str, &'static st
 fn follow(stop: &str, fx: &mut Effect) -> bool {
     let Some(&(.., to)) = LINKS.iter().find(|l| l.3 == stop) else { return false };
     if let Some(panel) = to.strip_prefix("page:") {
-        fx.panel = Some(panel);
+        fx.panel = PanelId::parse(panel);
     } else {
         fx.summon = to.strip_prefix("route:");
     }
@@ -121,20 +122,12 @@ fn row(v: &View, key: &Key) -> w::Part {
 }
 
 impl Panel for SettingsPage {
-    fn id(&self) -> &'static str {
-        self.name
-    }
-
     fn title(&self, _: &View) -> String {
         self.page.title.into()
     }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Config, Topic::State, Topic::Picker]
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.panel_width_wide
     }
 
     fn actions(&self, _: &View) -> Vec<El> {
@@ -233,7 +226,7 @@ impl Panel for SettingsPage {
     }
 
     fn back(&mut self, fx: &mut Effect) {
-        fx.panel = Some(self.page.parent.unwrap_or("settings"));
+        fx.panel = Some(self.page.parent.unwrap_or(PanelId::Settings));
     }
 
     fn delete(&mut self, stop: &str, fx: &mut Effect) {

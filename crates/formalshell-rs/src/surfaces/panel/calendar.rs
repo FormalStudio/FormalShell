@@ -92,20 +92,12 @@ impl Calendar {
 }
 
 impl Panel for Calendar {
-    fn id(&self) -> &'static str {
-        "calendar"
-    }
-
     fn title(&self, _: &View) -> String {
         today().format("%A %-d").to_string()
     }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Calendar, Topic::Clock, Topic::State, Topic::Config]
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_wide
     }
 
     fn columns(&self) -> usize {

@@ -1,6 +1,8 @@
 //! The default adapter's state as one icon; right
 //! click flips its radio.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::devices;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, View};
@@ -46,14 +48,14 @@ impl Cell for Bluetooth {
                 format!("{head} / RIGHT {}", if on { "RADIO OFF" } else { "RADIO ON" })
             }
         };
-        View::icon(icon, look).panel("bluetooth").tooltip(tooltip)
+        View::icon(icon, look).panel(PanelId::Bluetooth).tooltip(tooltip)
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
             Button::Right if self.state.powered.is_some() => Action::ToggleBluetooth,
             Button::Right => Action::None,
-            _ => Action::Panel("bluetooth"),
+            _ => Action::Panel(PanelId::Bluetooth),
         }
     }
 }

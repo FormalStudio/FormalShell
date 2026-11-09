@@ -3,6 +3,7 @@
 //! one. The cell holds the earbuds service for as long as it exists, which
 //! is what keeps every backend idle on a strip without it.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_devices::earbuds::{battery_summary, worst_level};
 use fs_types::Percent;
 
@@ -59,7 +60,7 @@ impl Cell for Earbuds {
         if r.show_label {
             parts.push(Part::Label { text: format!("{}%", worst.as_percent()), weight: None });
         }
-        View::new(parts, look.xs).panel("earbuds").tooltip(r.tooltip.clone())
+        View::new(parts, look.xs).panel(PanelId::Earbuds).tooltip(r.tooltip.clone())
     }
 
     fn summary(&self) -> Option<Summary> {
@@ -67,6 +68,6 @@ impl Cell for Earbuds {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("earbuds")
+        Action::Panel(PanelId::Earbuds)
     }
 }

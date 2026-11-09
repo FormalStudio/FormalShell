@@ -108,10 +108,6 @@ fn activate_row(fx: &Effect, key: &str) {
 }
 
 impl Panel for Center {
-    fn id(&self) -> &'static str {
-        ID
-    }
-
     fn title(&self, _: &View) -> String {
         "Notifications".into()
     }
@@ -120,8 +116,8 @@ impl Panel for Center {
         &[Topic::Notifications, Topic::Activity]
     }
 
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_wide
+    fn width(&self, v: &View) -> Option<f64> {
+        Some(v.theme.space.popup_width_wide)
     }
 
     fn closable(&self) -> bool {

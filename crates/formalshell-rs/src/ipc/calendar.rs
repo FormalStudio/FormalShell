@@ -2,6 +2,8 @@
 //! day selection, headless. A panel that is not open answers from a fresh
 //! one, which is what an idle panel holds until it opens.
 
+use fs_chrome::bar::panels::PanelId;
+
 use super::registry::{Function, Reply, Target, Type, Value, text};
 use crate::surfaces::panel::Panel;
 use crate::surfaces::panel::calendar::Calendar;
@@ -18,7 +20,7 @@ pub fn target() -> Target<App> {
 }
 
 fn ask(app: &mut App, verb: &str, arg: &str) -> Reply {
-    let reply = app.panel_call("calendar", verb, arg).or_else(|| Calendar::new(false).call(verb, arg));
+    let reply = app.panel_call(PanelId::Calendar, verb, arg).or_else(|| Calendar::new(false).call(verb, arg));
     reply.unwrap_or_else(|| text(""))
 }
 

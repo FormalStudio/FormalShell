@@ -3,6 +3,8 @@
 //! and launcher view open from the click; the figures only run while this
 //! cell is on a bar.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::wants::{Source, Want};
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, Summary, View};
@@ -62,7 +64,7 @@ impl Cell for Monitor {
         if self.label {
             parts.push(Part::Name { text: "Monitor".into(), max: f64::INFINITY, dim: false });
         }
-        View::new(parts, look.xxs).panel("monitor").tooltip(tooltip)
+        View::new(parts, look.xxs).panel(PanelId::Monitor).tooltip(tooltip)
     }
 
     fn summary(&self) -> Option<Summary> {
@@ -74,6 +76,6 @@ impl Cell for Monitor {
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("monitor")
+        Action::Panel(PanelId::Monitor)
     }
 }

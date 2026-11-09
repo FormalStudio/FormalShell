@@ -3,6 +3,7 @@
 //! state.json's `settings`. settings.json pins a key against all of it
 //! (docs/superpowers/specs/2026-10-31-settings-ui.md).
 
+use fs_chrome::bar::panels::PanelId;
 use serde_json::{Value, json};
 
 use super::{config, state, theme};
@@ -14,13 +15,13 @@ pub struct Page {
     pub title: &'static str,
     /// The panel a row of which opens this page, where its back goes; none
     /// for a page the tile grid opens.
-    pub parent: Option<&'static str>,
+    pub parent: Option<PanelId>,
 }
 
 pub const PAGES: [Page; 4] = [
     Page { id: "appearance", title: "Appearance", parent: None },
-    Page { id: "bar", title: "Bar", parent: Some("settings:appearance") },
-    Page { id: "desktop", title: "Desktop", parent: Some("settings:appearance") },
+    Page { id: "bar", title: "Bar", parent: Some(PanelId::SettingsAppearance) },
+    Page { id: "desktop", title: "Desktop", parent: Some(PanelId::SettingsAppearance) },
     Page { id: "system", title: "System", parent: None },
 ];
 

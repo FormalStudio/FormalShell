@@ -1,6 +1,8 @@
 //! `network`: the Wi-Fi list and its actions for the hwsim
 //! rig and for binds, and the speed test the panel runs.
 
+use fs_chrome::bar::panels::PanelId;
+
 use super::registry::{Function, Json, Reply, Target, Type, Value, ok};
 use crate::runtime::Ctx;
 use crate::services::devices::network::{self as net, Network, Secret};
@@ -38,9 +40,9 @@ fn run(app: &App, f: impl FnOnce(&Ctx) + Send + 'static) {
 
 fn status(app: &mut App, _: &[Value]) -> Reply {
     // The panel's "Known networks" disclosure, null while the panel is closed.
-    let known_open = app.panel_call("network", "knownOpen", "").and_then(Result::ok).unwrap_or(Json::Null);
+    let known_open = app.panel_call(PanelId::Network, "knownOpen", "").and_then(Result::ok).unwrap_or(Json::Null);
     // The SSID whose passphrase step is open, null with none or the panel shut.
-    let prompt = app.panel_call("network", "prompt", "").and_then(Result::ok).unwrap_or(Json::Null);
+    let prompt = app.panel_call(PanelId::Network, "prompt", "").and_then(Result::ok).unwrap_or(Json::Null);
     Ok(state(app).status(known_open, prompt))
 }
 

@@ -13,8 +13,6 @@ use crate::services::tray::{self, Item};
 use crate::store::Topic;
 use crate::ui::{El, Event, What, w};
 
-pub const ID: &str = fs_chrome::bar::panels::TRAY_OVERFLOW;
-
 /// Chips to a row before the card wraps.
 pub const COLUMNS: usize = 8;
 
@@ -73,10 +71,6 @@ impl Tray {
 }
 
 impl Panel for Tray {
-    fn id(&self) -> &'static str {
-        ID
-    }
-
     fn title(&self, _: &View) -> String {
         "Tray".into()
     }
@@ -87,10 +81,6 @@ impl Panel for Tray {
 
     fn header(&self) -> bool {
         false
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.panel_width
     }
 
     fn fits(&self, v: &View) -> bool {

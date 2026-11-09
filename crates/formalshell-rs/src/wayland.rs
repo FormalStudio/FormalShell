@@ -46,6 +46,7 @@ use std::time::Instant;
 use calloop::LoopHandle;
 use calloop::timer::{TimeoutAction, Timer};
 use fs_chrome::bar::layout;
+use fs_chrome::bar::panels::{Home, PanelId};
 use fs_types::{Edge, Region as BarRegion};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
@@ -82,7 +83,7 @@ use crate::surfaces::bar::cells::tray as tray_cell;
 use crate::surfaces::card::{Card, CardSpec, Join, Scrim, Sizing};
 use crate::surfaces::card_window::CardWindow;
 use crate::surfaces::modal::Modal;
-use crate::surfaces::panel::{self, host::{Host, Out, Place}, quick};
+use crate::surfaces::panel::{self, Name, host::{Host, Opener, Out, Place}, quick};
 use crate::surfaces::tooltip;
 use crate::surfaces::tray_menu::{Hit, Menu, Outcome};
 
@@ -245,9 +246,6 @@ pub struct App {
     pub kit: Kit,
     /// The bar layer that holds the keyboard for the minimap, if one does.
     sidebar_keys: Option<wl_surface::WlSurface>,
-    /// What opened the quick settings card last, which its chevron reads
-    /// as open while that card is up.
-    quick_from: quick::Origin,
     pub panel: Option<Host>,
     /// A handoff's outgoing card, until the incoming one starts moving.
     outgoing: Option<Host>,
@@ -379,7 +377,6 @@ impl App {
             peek: preview::State::default(),
             bars: heads::Bars::new(bar),
             sidebar_keys: None,
-            quick_from: quick::Origin::Ipc,
             panel: None,
             tray_menu: None,
             outgoing: None,
@@ -789,22 +786,29 @@ impl App {
         self.bar_wl().map(|o| self.output_name(o)).unwrap_or_default()
     }
 
-    /// An IPC verb for the open panel `name`; `None` when it is not up or
+    /// An IPC verb for the open panel `id`; `None` when it is not up or
     /// answers none.
-    pub fn panel_call(&mut self, name: &str, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
-        let reply = self.panel.as_mut().filter(|p| p.is_open() && p.id() == name)?.module.call(verb, arg);
+    pub fn panel_call(&mut self, id: PanelId, verb: &str, arg: &str) -> Option<Result<serde_json::Value, String>> {
+        let reply = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id))?.module.call(verb, arg);
         self.panel_dirty = true;
         reply
     }
 
-    /// The open panel by its `panel` name; the gallery is no panel's.
-    pub fn panel_open(&self) -> Option<&str> {
+    /// The open panel; the gallery, the centre and a peek are no panel's.
+    pub fn panel_open(&self) -> Option<Name> {
         self.panel
             .as_ref()
             .filter(|p| p.is_open())
-            .map(|p| p.id())
-            .and_then(|id| panel::known(id).or_else(|| id.starts_with(panel::plugin::PREFIX).then_some(id)))
-            .or_else(|| self.launcher_panel())
+            .and_then(|p| match p.panel() {
+                Some(id) => Some(Name::Panel(id)),
+                None => p.id().starts_with(panel::plugin::PREFIX).then_some(Name::Plugin(p.id())),
+            })
+            .or_else(|| self.launcher_panel().map(Name::Panel))
+    }
+
+    /// Whether `id` is the open panel.
+    pub fn shows(&self, id: PanelId) -> bool {
+        self.panel_open() == Some(Name::Panel(id))
     }
 
     pub fn gallery_open(&self) -> bool {
@@ -814,24 +818,26 @@ impl App {
     /// The region whose chevron opened the quick settings card, while it
     /// is open; the sidebar's chevron button stands for the right region's.
     pub fn overflow_open(&self) -> Option<BarRegion> {
-        if self.panel_open() != Some(quick::ID) {
-            return None;
-        }
-        match self.quick_from {
+        match self.quick_from()? {
             quick::Origin::Chevron(r) => Some(r),
             quick::Origin::Sidebar => Some(BarRegion::Right),
             quick::Origin::Ipc => None,
         }
     }
 
+    /// What opened the quick settings card, while it is open.
+    fn quick_from(&self) -> Option<quick::Origin> {
+        self.panel.as_ref().filter(|p| p.is_open() && p.panel() == Some(PanelId::QuickSettings)).map(|p| p.from)
+    }
+
     fn sync_open(&mut self, now: Instant) {
-        let panel = self.panel_open().map(str::to_owned);
+        let panel = self.panel_open().and_then(Name::panel);
         let overflow = self.overflow_open();
-        live!(self).bar.set_open(&self.kit, panel.as_deref(), overflow, now);
-        devices::earbuds::panel(panel.as_deref() == Some("earbuds"));
-        devices::bluetooth::panel(panel.as_deref() == Some("bluetooth"));
-        devices::audio::panel(panel.as_deref() == Some("audio"));
-        devices::power::panel(panel.as_deref() == Some("dualsense"));
+        live!(self).bar.set_open(&self.kit, panel, overflow, now);
+        devices::earbuds::panel(panel == Some(PanelId::Earbuds));
+        devices::bluetooth::panel(panel == Some(PanelId::Bluetooth));
+        devices::audio::panel(panel == Some(PanelId::Audio));
+        devices::power::panel(panel == Some(PanelId::Dualsense));
     }
 
     /// The modal card `role` names, while it is on screen.
@@ -983,8 +989,17 @@ impl App {
     /// A panel by name, hung at `anchor` along the line (its own cell's
     /// centre) or at the line's end. A panel opened over another hands the
     /// card over.
-    pub fn set_panel(&mut self, name: &str, open: bool, anchor: Option<f64>) {
-        self.set_panel_from(name, open, anchor, quick::Origin::Ipc);
+    pub fn set_panel(&mut self, name: impl Into<Name>, open: bool, anchor: Option<f64>) {
+        self.set_panel_from(name.into(), open, anchor, quick::Origin::Ipc);
+    }
+
+    /// Where the control `from` names sits along the line.
+    fn opener_anchor(&self, from: quick::Origin) -> Option<f64> {
+        match from {
+            quick::Origin::Chevron(region) => live!(self).bar.chevron_anchor(region),
+            quick::Origin::Sidebar => live!(self).bar.sidebar_anchor("overflow"),
+            quick::Origin::Ipc => None,
+        }
     }
 
     /// The quick settings card from `from`, under its chevron or the
@@ -992,31 +1007,39 @@ impl App {
     /// whichever chevron opened it.
     pub fn set_quick(&mut self, from: quick::Origin, open: bool) {
         if !open {
-            self.set_panel(quick::ID, false, None);
+            self.set_panel(PanelId::QuickSettings, false, None);
             return;
         }
         // Open from elsewhere, the card is made again for this opener's
         // extras and place.
-        if self.panel_open() == Some(quick::ID) && self.quick_from != from {
+        if self.quick_from().is_some_and(|f| f != from) {
             self.close_panels();
         }
-        let anchor = match from {
-            quick::Origin::Chevron(region) => live!(self).bar.chevron_anchor(region),
-            quick::Origin::Sidebar => live!(self).bar.sidebar_anchor("overflow"),
-            quick::Origin::Ipc => None,
-        };
-        self.set_panel_from(quick::ID, true, anchor, from);
+        let anchor = self.opener_anchor(from);
+        self.set_panel_from(Name::Panel(PanelId::QuickSettings), true, anchor, from);
     }
 
-    fn set_panel_from(&mut self, name: &str, open: bool, anchor: Option<f64>, from: quick::Origin) {
-        // Settings and Information live in the launcher card.
-        if panel::launcher_route(name).is_some() {
-            if open {
-                self.menu_panel(name);
-            } else if self.launcher_panel() == Some(name) {
-                self.menu_close();
+    fn set_panel_from(&mut self, name: Name, open: bool, anchor: Option<f64>, from: quick::Origin) {
+        if let Name::Panel(id) = name {
+            match id.home() {
+                Home::Card => {}
+                Home::Launcher => {
+                    if open {
+                        self.menu_panel(id);
+                    } else if self.launcher_panel() == Some(id) {
+                        self.menu_close();
+                    }
+                    return;
+                }
+                Home::Modal => {
+                    if open {
+                        self.atlas_show();
+                    } else {
+                        self.atlas_close();
+                    }
+                    return;
+                }
             }
-            return;
         }
         let now = Instant::now();
         // A menu hangs off the popout under it and goes with it, or with
@@ -1036,15 +1059,15 @@ impl App {
         }
         self.atlas_close();
         self.overlay_close();
-        let module = if name == quick::ID {
-            self.quick_from = from;
-            let bar = &live!(self).bar;
-            Some(Box::new(quick::QuickSettings::opened_by(from, bar.quick_extras(from.region()), bar.edge())) as Box<dyn panel::Panel>)
-        } else {
-            panel::build(name)
+        let module: Option<Box<dyn panel::Panel>> = match name {
+            Name::Panel(id) => {
+                let bar = &live!(self).bar;
+                panel::build(id, panel::Args { tiles: bar.quick_extras(from.region()), edge: bar.edge() })
+            }
+            Name::Plugin(key) => Some(Box::new(panel::plugin::PluginPanel::new(key))),
         };
         let Some(module) = module else { return };
-        self.open_host(module, anchor, now);
+        self.open_host(module, name.as_str(), from, anchor, now);
     }
 
     pub fn set_gallery(&mut self, open: bool) {
@@ -1056,17 +1079,17 @@ impl App {
             return;
         }
         if !self.gallery_open() {
-            self.open_host(Box::new(panel::gallery::Gallery::new()), None, now);
+            self.open_host(Box::new(panel::gallery::Gallery::new()), "gallery", quick::Origin::Ipc, None, now);
         }
     }
 
-    fn open_host(&mut self, module: Box<dyn panel::Panel>, anchor: Option<f64>, now: Instant) {
+    /// `module` in the panel host as `name`, opened by `from`.
+    fn open_host(&mut self, module: Box<dyn panel::Panel>, name: &'static str, from: quick::Origin, anchor: Option<f64>, now: Instant) {
         let place = self.chrome().place(anchor);
-        self.open_host_at(module, place, now);
+        self.open_host_at(module, name, from, place, now);
     }
 
-    fn open_host_at(&mut self, module: Box<dyn panel::Panel>, place: Place, now: Instant) {
-        let id = module.id();
+    fn open_host_at(&mut self, module: Box<dyn panel::Panel>, id: &'static str, from: quick::Origin, place: Place, now: Instant) {
         if self.panel.as_ref().is_some_and(|p| p.id() == id && p.is_open()) {
             return;
         }
@@ -1075,7 +1098,8 @@ impl App {
         layer.set_keyboard_interactivity(keyboard);
         layer.commit();
         let surface = Surface::new("panel", Backend::Gpu, layer, &self.shm, self.started, self.store.display.scales.primary());
-        let mut host = Host::new(module, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
+        let mut host = Host::new(module, id, place, &self.store.theme.theme, surface, self.motion_scale, self.cast);
+        host.from = from;
         host.start(&self.store, self.runtime.as_ref());
         match self.panel.take() {
             Some(mut old) if old.is_open() => {
@@ -1259,7 +1283,7 @@ impl App {
         let Some(key) = self.store.tray.by_id(id).map(|i| i.key.clone()) else {
             return Err(format!("no tray item with id '{id}'"));
         };
-        let over = self.panel_open() == Some(panel::tray::ID);
+        let over = self.shows(PanelId::TrayOverflow);
         self.open_tray_menu(&key, None, over)
     }
 
@@ -1369,14 +1393,14 @@ impl App {
     fn act(&mut self, action: Action, anchor: f64) {
         match action {
             Action::None => {}
-            Action::Panel(name) => {
-                let open = self.panel_open() != Some(name);
-                self.set_panel(name, open, Some(anchor));
+            Action::Panel(id) => {
+                let open = !self.shows(id);
+                self.set_panel(id, open, Some(anchor));
             }
             Action::Overflow(region) => {
-                let open = self.panel_open() != Some(quick::ID);
+                let open = !self.shows(PanelId::QuickSettings);
                 let from = if live!(self).bar.sidebar().is_some() { quick::Origin::Sidebar } else { quick::Origin::Chevron(region) };
-                self.set_panel_from(quick::ID, open, Some(anchor), from);
+                self.set_panel_from(Name::Panel(PanelId::QuickSettings), open, Some(anchor), from);
             }
             Action::Workspace(id) => compositor::focus_workspace(&id),
             Action::WorkspaceAt(idx) => compositor::focus_workspace_at(idx),
@@ -1865,16 +1889,22 @@ impl App {
                 self.close_panels();
                 self.menu_open(Some(route));
             }
-            Out::Panel(quick::ID, _) => self.set_quick(self.quick_from, true),
-            Out::Panel(name, then) => {
-                let from_quick = self.panel_open() == Some(quick::ID);
-                self.set_panel(name, true, None);
-                if let Some(h) = self.panel.as_mut().filter(|h| from_quick && h.is_open() && h.id() == name) {
-                    h.back = true;
+            Out::Panel(id, then) => {
+                // The card handing over is the one the new card goes back to.
+                let opener = self.panel.as_ref().filter(|h| h.is_open()).and_then(|h| {
+                    Some(Opener { id: h.panel()?, from: h.from, title: h.title(&self.store, &self.store.theme.theme) })
+                });
+                self.set_panel(id, true, None);
+                if let Some(h) = self.panel.as_mut().filter(|h| h.is_open() && h.panel() == Some(id)) {
+                    h.back = opener;
                 }
                 if let Some(stop) = then {
-                    self.panel_activate(name, &stop);
+                    self.panel_activate(id, &stop);
                 }
+            }
+            Out::Back(id, from) => {
+                let anchor = self.opener_anchor(from);
+                self.set_panel_from(Name::Panel(id), true, anchor, from);
             }
             Out::Call(target, function) => {
                 self.close_panels();
@@ -1908,10 +1938,10 @@ impl App {
         self.panel_dirty = true;
     }
 
-    /// Enter on `stop` in the open panel `name`, as the keyboard would;
+    /// Enter on `stop` in the open panel `id`, as the keyboard would;
     /// `false` when that panel is not up.
-    pub fn panel_activate(&mut self, name: &str, stop: &str) -> bool {
-        let Some(h) = self.panel.as_mut().filter(|p| p.is_open() && p.id() == name) else { return false };
+    pub fn panel_activate(&mut self, id: PanelId, stop: &str) -> bool {
+        let Some(h) = self.panel.as_mut().filter(|p| p.is_open() && p.panel() == Some(id)) else { return false };
         let out = h.activate(stop, &self.store, self.runtime.as_ref());
         self.panel_dirty = true;
         self.panel_out(out);

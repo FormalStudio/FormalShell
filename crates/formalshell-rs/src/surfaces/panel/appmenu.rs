@@ -60,10 +60,6 @@ fn launch(store: &Store, entry: &Entry, action: &Action) {
 }
 
 impl Panel for AppMenu {
-    fn id(&self) -> &'static str {
-        "appmenu"
-    }
-
     fn title(&self, _: &View) -> String {
         "App menu".into()
     }

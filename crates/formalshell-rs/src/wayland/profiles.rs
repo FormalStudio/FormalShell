@@ -12,6 +12,7 @@
 
 use std::time::Instant;
 
+use fs_chrome::bar::panels::PanelId;
 use fs_theme::palette::ColorRole;
 use fs_types::Edge;
 use fs_upower::Profile;
@@ -86,7 +87,7 @@ fn body(store: &crate::store::Store, side: f64, gap: f64) -> El {
 
 impl App {
     fn profiles_wanted(&self) -> bool {
-        live!(self).bar.sidebar().is_some() && self.launcher_panel() == Some("settings") && !self.chrome().bar_covered()
+        live!(self).bar.sidebar().is_some() && self.launcher_panel() == Some(PanelId::Settings) && !self.chrome().bar_covered()
     }
 
     /// The pill's size: a chip's side plus the padding, three chips tall.

@@ -10,6 +10,7 @@
 //! between four slots and `popupWidthNarrow`, and keeps that width while it
 //! is up, so a backend reporting later never moves it; a longer name elides.
 
+use fs_chrome::bar::panels::PanelId;
 use fs_devices::earbuds::{BatteryId, Device, DeviceKind};
 use fs_system::power::model::Thresholds;
 use fs_theme::palette::ColorRole;
@@ -44,7 +45,7 @@ pub struct Face {
     pub name: String,
     pub parts: Vec<Part>,
     /// The panel a click opens.
-    pub panel: &'static str,
+    pub panel: PanelId,
 }
 
 fn icon_of(bluez: &str, kind: Option<DeviceKind>) -> &'static str {
@@ -101,7 +102,7 @@ pub fn face(store: &Store, address: BtAddress) -> Face {
         .filter(|a| !a.is_empty())
         .or_else(|| remembered(store, address, |f| f.art.as_deref()).map(str::to_owned))
         .unwrap_or_default();
-    Face { icon, art, name, parts, panel: if claimed.is_some() { "earbuds" } else { "bluetooth" } }
+    Face { icon, art, name, parts, panel: if claimed.is_some() { PanelId::Earbuds } else { PanelId::Bluetooth } }
 }
 
 /// What the earbuds backend last called `address` (`field` the name) or the

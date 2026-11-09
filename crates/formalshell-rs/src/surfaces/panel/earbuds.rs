@@ -463,20 +463,12 @@ fn battery_section(s: &fs_theme::tokens::Space, dev: &Device) -> Option<El> {
 }
 
 impl Panel for Earbuds {
-    fn id(&self) -> &'static str {
-        "earbuds"
-    }
-
     fn title(&self, _: &View) -> String {
         "Earbuds".into()
     }
 
     fn reads(&self) -> &'static [Topic] {
         &[Topic::Earbuds]
-    }
-
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_wide
     }
 
     fn opened(&mut self) {

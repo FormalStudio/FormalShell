@@ -10,7 +10,7 @@
 //!
 //! Opened from the pointer it takes no keyboard (`takes_keyboard`), so the
 //! bar keeps its hover; `workspaces peek` opens an ordinary panel. Not in
-//! `PANELS`: with no workspace to show there is nothing to open.
+//! the panel table: with no workspace to show there is nothing to open.
 //!
 //! The thumbnails are the shell's window captures, which live on the App;
 //! they reach the card through [`Shared`], and the card leaves what it laid
@@ -32,6 +32,9 @@ use crate::services::compositor;
 use crate::store::Topic;
 use crate::ui::el::Pic;
 use crate::ui::{El, Event, Ink, Size, What, w};
+
+/// The card's name in the panel host.
+pub const ID: &str = "workspaces";
 
 /// The appicon slice's key for a window's icon here.
 pub fn icon_key(id: &WindowId) -> String {
@@ -86,10 +89,6 @@ impl WorkspacePreview {
 }
 
 impl Panel for WorkspacePreview {
-    fn id(&self) -> &'static str {
-        "workspaces"
-    }
-
     fn title(&self, _: &View) -> String {
         format!("Workspace {}", self.label)
     }
@@ -98,8 +97,8 @@ impl Panel for WorkspacePreview {
         &[Topic::Compositor, Topic::AppIcon]
     }
 
-    fn width(&self, v: &View) -> f64 {
-        v.theme.space.popup_width_wide
+    fn width(&self, v: &View) -> Option<f64> {
+        Some(v.theme.space.popup_width_wide)
     }
 
     fn takes_keyboard(&self) -> bool {
@@ -114,7 +113,7 @@ impl Panel for WorkspacePreview {
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
         let windows = self.windows(v);
-        let mini_w = (self.width(v) - s.panel_padding * 2.0).max(0.0);
+        let mini_w = (s.popup_width_wide - s.panel_padding * 2.0).max(0.0);
         let (aw, ah) = v.output;
         let mini_h = if aw > 0.0 { (mini_w * ah / aw).round() } else { (mini_w * 9.0 / 16.0).round() };
         let inset = s.xs;

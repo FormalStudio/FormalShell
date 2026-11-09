@@ -12,10 +12,13 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::node::{Kind, Node};
 
 /// Root routes, the sub-rows each ships, the injected ones (`capture`,
-/// `lights`, `gpu.mode`), the device routes and one row per panel.
+/// `lights`, `gpu.mode`) and the device routes. A Panels row takes its
+/// panel's icon from the panel table.
 pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("apps", "layout-grid"),
     ("clipboard", "clipboard"),
@@ -106,26 +109,6 @@ pub const ROUTE_ICONS: &[(&str, &str)] = &[
     ("gpu.mode", "arrow-left-right"),
     ("gpu.mode.integrated", "laptop"),
     ("gpu.mode.hybrid", "git-fork"),
-    ("panels.activity", "activity"),
-    ("panels.appmenu", "layout-grid"),
-    ("panels.audio", "volume-2"),
-    ("panels.calendar", "calendar"),
-    ("panels.network", "wifi"),
-    ("panels.bluetooth", "bluetooth"),
-    ("panels.earbuds", "headphones"),
-    ("panels.dualsense", "gamepad-2"),
-    ("panels.power", "battery"),
-    ("panels.weather", "sun"),
-    ("panels.media", "music"),
-    ("panels.github", "git-branch"),
-    ("panels.usage", "bot"),
-    ("panels.tailscale", "network"),
-    ("panels.systemupdate", "package"),
-    ("panels.display", "monitor"),
-    ("panels.monitor", "gauge"),
-    ("panels.iphone", "smartphone"),
-    ("panels.radio", "radio"),
-    ("panels.quicksettings", "sliders-horizontal"),
 ];
 
 static ROUTE_ICON_INDEX: LazyLock<HashMap<&'static str, &'static str>> =
@@ -151,6 +134,9 @@ pub fn icon_for(node: Option<&Node>) -> &'static str {
     let Some(node) = node.filter(|n| !n.id.is_empty()) else { return "" };
     if let Some(name) = ROUTE_ICON_INDEX.get(node.id.as_str()) {
         return name;
+    }
+    if let Some(panel) = node.id.strip_prefix("panels.").and_then(PanelId::parse) {
+        return panel.desc().icon;
     }
     ROUTE_ICON_PREFIXES
         .iter()

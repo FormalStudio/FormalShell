@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+fs-chrome = { path = "../fs-chrome" }
 fs-devices = { path = "../fs-devices" }
 fs-js = { path = "../fs-js" }
 fs-types = { path = "../fs-types" }
@@ -15,6 +16,3 @@ regex = "1"
 roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-
-[dev-dependencies]
-fs-chrome = { path = "../fs-chrome" }

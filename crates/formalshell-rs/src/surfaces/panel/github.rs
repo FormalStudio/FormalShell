@@ -30,10 +30,6 @@ fn open(url: &str, fx: &mut Effect) {
 }
 
 impl Panel for Github {
-    fn id(&self) -> &'static str {
-        "github"
-    }
-
     fn title(&self, _: &View) -> String {
         "GitHub".into()
     }

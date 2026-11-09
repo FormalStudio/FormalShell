@@ -18,6 +18,7 @@ pub mod minimap;
 use std::collections::HashMap;
 use std::time::Instant;
 
+use fs_chrome::bar::panels::PanelId;
 use fs_types::Edge;
 use fs_info::clock::format_qt;
 use fs_theme::palette::ColorRole;
@@ -36,7 +37,7 @@ use crate::surfaces::bar::cells::clock::clock_format;
 use crate::surfaces::activity;
 use crate::surfaces::bar::cell::Action;
 use crate::paint::{Kit, Painter};
-use crate::surfaces::panel::{center, tray};
+use crate::surfaces::panel::center;
 use crate::text::TextStyle;
 use crate::ui::{El, Ink, Type, Ui, Weight, w};
 use crate::wayland::desktop_clock::{self as glass, Digits, FaceSettings, Glass, Under};
@@ -406,7 +407,7 @@ impl Sidebar {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn paint_face(&mut self, collapsed: bool, store: &Store, g: &Geo, raster: f64, kit: &mut Kit, scene: &mut Scene, anchor: Option<NodeId>, clip: IRect) -> Option<NodeId> {
-        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some("panel:calendar")).map(|h| h.rect);
+        let card = self.top.hits.iter().find(|h| h.on.as_deref() == Some(opens(PanelId::Calendar).as_str())).map(|h| h.rect);
         let mut nodes = std::mem::take(&mut self.face);
         let mut p = Painter::new(scene, &mut nodes, Some(clip)).after(anchor);
         self.rail_lines.clear();
@@ -479,9 +480,14 @@ impl Sidebar {
         self.hit_at(i).map_or(0.0, |h| h.rect.y as f64 + h.rect.h as f64 / 2.0)
     }
 
-    /// Where the control opening `name` sits, for an open with no click.
-    pub fn panel_anchor(&self, name: &str) -> Option<f64> {
-        self.anchor_of(&format!("panel:{name}"))
+    /// Where the control opening `id` sits, for an open with no click.
+    pub fn panel_anchor(&self, id: PanelId) -> Option<f64> {
+        self.anchor_of(&opens(id))
+    }
+
+    /// Where the notifications card sits.
+    pub fn center_anchor(&self) -> Option<f64> {
+        self.anchor_of(&format!("panel:{}", center::ID))
     }
 
     /// Where the control whose click is `on` sits.
@@ -548,24 +554,20 @@ impl Sidebar {
     }
 }
 
+/// The click key of a control opening `id`, which `sidebar status` lists
+/// among its hits.
+pub fn opens(id: PanelId) -> String {
+    format!("panel:{id}")
+}
+
 /// What a click on `on` asks for, run here when it is the column's own.
 fn action(on: &str, map: &minimap::Map) -> Action {
     let (verb, arg) = on.split_once(':').unwrap_or((on, ""));
     match verb {
-        "panel" => match arg {
-            "calendar" => Action::Panel("calendar"),
-            "network" => Action::Panel("network"),
-            "audio" => Action::Panel("audio"),
-            "media" => Action::Panel("media"),
-            "activity" => Action::Panel("activity"),
-            tray::ID => Action::Panel(tray::ID),
-            "info" => Action::Panel("info"),
-            "settings" => Action::Panel("settings"),
-            center::ID => Action::Center,
-            _ => Action::None,
-        },
+        "panel" if arg == center::ID => Action::Center,
+        "panel" => PanelId::parse(arg).map_or(Action::None, Action::Panel),
         // An Activity row: the panel holds its actions.
-        "open" => Action::Panel("activity"),
+        "open" => Action::Panel(PanelId::Activity),
         "software" => {
             let change = match arg {
                 "apply" => Some(packages::Change::Apply),
@@ -745,11 +747,11 @@ fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Opti
     let battery = if store.power.battery.is_some() { g.battery_h } else { 0.0 };
     let mut out = vec![(
         "time",
-        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), "panel:calendar").fill(),
+        w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), opens(PanelId::Calendar)).fill(),
     )];
     out.push(("spaces", w::card(map.view(theme, now)).fill()));
     if let Some(media) = media(store, g, cover) {
-        out.push(("media", w::action_card(media.height(inner(g.media_h)), "panel:media").fill()));
+        out.push(("media", w::action_card(media.height(inner(g.media_h)), opens(PanelId::Media)).fill()));
     }
     let row = notifications(theme, store, g, icons, width - g.row_pad * 2.0, kit);
     out.push(("notifications", w::action_card(row.height(inner(g.row_h)).pad_start(g.row_pad - s.md), format!("panel:{}", center::ID)).fill()));
@@ -830,12 +832,12 @@ fn foot_card(store: &Store, edge: Edge, g: &Geo) -> El {
             .fill()
     };
     let mut row = vec![
-        button("wifi", "Network", "panel:network"),
+        button("wifi", "Network", &opens(PanelId::Network)),
         button(chevron_glyph(edge), "Quick settings", "overflow"),
-        button("settings", "Settings", "panel:settings"),
+        button("settings", "Settings", &opens(PanelId::Settings)),
     ];
     if !store.tray.items.is_empty() {
-        row.push(button("ellipsis", "Tray", &format!("panel:{}", tray::ID)));
+        row.push(button("ellipsis", "Tray", &opens(PanelId::TrayOverflow)));
     }
     row.push(button(fold_glyph(edge, false), "Collapse", "collapse"));
     w::card(w::row(0.0, row).fill()).fill()
@@ -870,9 +872,9 @@ fn rail_foot(edge: Edge, g: &Geo) -> El {
             .fill()
     };
     let buttons = vec![
-        button("wifi", "Network", "panel:network"),
+        button("wifi", "Network", &opens(PanelId::Network)),
         button(chevron_glyph(edge), "Quick settings", "overflow"),
-        button("settings", "Settings", "panel:settings"),
+        button("settings", "Settings", &opens(PanelId::Settings)),
         button(fold_glyph(edge, true), "Expand", "expand"),
     ];
     w::card(w::column(0.0, buttons).fill()).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()
@@ -885,10 +887,10 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
     let r = &g.rail;
     let bare = |c: &mut crate::ui::el::CellState| c.inset = Some((0.0, 0.0));
     let square = |child: El| w::cell(w::column(0.0, vec![child.centred()]).fill()).ghost().cell_state(bare).height(r.square).fill();
-    let mut out = vec![("time", w::action_card(w::space(r.time_h), "panel:calendar").cell_state(bare).fill())];
+    let mut out = vec![("time", w::action_card(w::space(r.time_h), opens(PanelId::Calendar)).cell_state(bare).fill())];
     out.push(("spaces", w::card(map.rail_view()).cell_state(bare).fill()));
     if store.media.active().is_some() {
-        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), "panel:media").cell_state(bare).fill()));
+        out.push(("media", w::action_card(square(w::cover(cover.clone(), r.art)), opens(PanelId::Media)).cell_state(bare).fill()));
     }
     let m = &store.notifications.model;
     let bell = w::icon(if m.dnd { "bell-off" } else { "bell" }).size(Type::Caption).ink(Ink::Muted);
@@ -917,7 +919,7 @@ fn rail(store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>) -> V
                     .fill()
             })
             .collect();
-        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), "panel:activity").cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
+        out.push(("activity", w::action_card(w::column(0.0, rows).fill(), opens(PanelId::Activity)).cell_state(|c| c.inset = Some((r.pad, r.pad))).fill()));
     }
     out
 }

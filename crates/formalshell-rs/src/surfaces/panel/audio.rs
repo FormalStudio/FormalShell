@@ -99,10 +99,6 @@ impl Audio {
 }
 
 impl Panel for Audio {
-    fn id(&self) -> &'static str {
-        "audio"
-    }
-
     fn title(&self, _: &View) -> String {
         "Audio".into()
     }

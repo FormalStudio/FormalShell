@@ -142,10 +142,6 @@ fn brightness_row(v: &View, d: &Brightness) -> El {
 }
 
 impl Panel for Display {
-    fn id(&self) -> &'static str {
-        "display"
-    }
-
     fn title(&self, _: &View) -> String {
         "Display".into()
     }

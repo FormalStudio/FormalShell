@@ -124,10 +124,6 @@ fn trust(bt: &Bt, address: &str) {
 }
 
 impl Panel for Bluetooth {
-    fn id(&self) -> &'static str {
-        "bluetooth"
-    }
-
     fn title(&self, _: &View) -> String {
         "Bluetooth".into()
     }

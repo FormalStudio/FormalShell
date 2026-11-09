@@ -66,10 +66,6 @@ fn refresh() {
 }
 
 impl Panel for Usage {
-    fn id(&self) -> &'static str {
-        "usage"
-    }
-
     fn title(&self, _: &View) -> String {
         "Usage".into()
     }

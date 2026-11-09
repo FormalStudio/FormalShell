@@ -1,6 +1,8 @@
 //! Wired, Wi-Fi or offline, as one icon; right click
 //! flips the Wi-Fi radio.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::services::devices;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, View};
@@ -45,13 +47,13 @@ impl Cell for Network {
             "NETWORK / OFFLINE".to_owned()
         };
         let tooltip = format!("{head} / RIGHT {}", if s.wifi_enabled { "WI-FI OFF" } else { "WI-FI ON" });
-        View::icon(icon, look).panel("network").tooltip(tooltip)
+        View::icon(icon, look).panel(PanelId::Network).tooltip(tooltip)
     }
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
             Button::Right => Action::ToggleWifi,
-            _ => Action::Panel("network"),
+            _ => Action::Panel(PanelId::Network),
         }
     }
 }

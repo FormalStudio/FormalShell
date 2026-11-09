@@ -2,6 +2,8 @@
 //! always has an output, so there is no absent state, and no single number
 //! to summarise; `bar.widgets.display.showLabel` opts a name in.
 
+use fs_chrome::bar::panels::PanelId;
+
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
 use crate::paint::Look;
@@ -28,10 +30,10 @@ impl Cell for Display {
         if self.show_label {
             parts.push(Part::Name { text: "Display".into(), max: f64::INFINITY, dim: false });
         }
-        View::new(parts, look.xs).panel("display").tooltip("DISPLAY")
+        View::new(parts, look.xs).panel(PanelId::Display).tooltip("DISPLAY")
     }
 
     fn click(&mut self, _: Button, _: (f64, f64), _: &Env) -> Action {
-        Action::Panel("display")
+        Action::Panel(PanelId::Display)
     }
 }

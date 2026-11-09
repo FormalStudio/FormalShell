@@ -236,10 +236,6 @@ impl Media {
 }
 
 impl Panel for Media {
-    fn id(&self) -> &'static str {
-        "media"
-    }
-
     fn title(&self, _: &View) -> String {
         "Media".into()
     }
@@ -248,9 +244,9 @@ impl Panel for Media {
         &[Topic::Media, Topic::Visualizer, Topic::Config, Topic::Lyrics]
     }
 
-    fn width(&self, v: &View) -> f64 {
+    fn width(&self, v: &View) -> Option<f64> {
         let s = &v.theme.space;
-        if v.store.lyrics.synced() { s.popup_width_menu_split } else { s.popup_width_wide }
+        Some(if v.store.lyrics.synced() { s.popup_width_menu_split } else { s.popup_width_wide })
     }
 
     fn actions(&self, v: &View) -> Vec<El> {

@@ -19,7 +19,7 @@ pub mod slot;
 use std::time::{Duration, Instant};
 
 use fs_chrome::bar::layout::{self, Builtin, Entry, Label, Rails, Resolved};
-use fs_chrome::bar::panels;
+use fs_chrome::bar::panels::{self, PanelId};
 use fs_chrome::frame::{self, Gaps};
 use fs_types::{Edge, Insets, Region};
 use fs_theme::palette::ColorRole;
@@ -525,7 +525,7 @@ impl Bar {
 
     /// The panel of the right region's nth panel-bearing cell, 1-based
     /// (`panel toggleAt`).
-    pub fn panel_at(&self, n: i64) -> Option<&'static str> {
+    pub fn panel_at(&self, n: i64) -> Option<PanelId> {
         panels::panel_at(&self.resolved, n)
     }
 
@@ -633,7 +633,7 @@ impl Bar {
 
     /// Which panel each cell has open; a chevron reads as open while the
     /// quick settings card it opened is up.
-    pub fn set_open(&mut self, kit: &Kit, panel: Option<&str>, overflow: Option<Region>, now: Instant) {
+    pub fn set_open(&mut self, kit: &Kit, panel: Option<PanelId>, overflow: Option<Region>, now: Instant) {
         if let Body::Strip(strip) = &mut self.body {
             for slot in &mut strip.slots {
                 slot.set_open(panel, overflow, kit, now);
@@ -1141,14 +1141,27 @@ impl Bar {
 
     /// Where a panel's own cell sits along the strip, for an open with no
     /// click to read one off.
-    pub fn panel_anchor(&self, name: &str) -> Option<f64> {
+    pub fn panel_anchor(&self, id: PanelId) -> Option<f64> {
         let strip = match &self.body {
-            Body::Sidebar(sb) => return sb.panel_anchor(name),
+            Body::Sidebar(sb) => return sb.panel_anchor(id),
             Body::Strip(strip) => strip,
         };
-        let s = strip.slots.iter().find(|s| s.view.panel == Some(name) && !s.rect.is_empty())?;
-        let r = s.rect;
-        Some(if self.vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 })
+        let s = strip.slots.iter().find(|s| s.view.panel == Some(id) && !s.rect.is_empty())?;
+        Some(self.rect_anchor(s.rect))
+    }
+
+    /// Where the notification centre's own cell (the bell) or card sits.
+    pub fn center_anchor(&self) -> Option<f64> {
+        let strip = match &self.body {
+            Body::Sidebar(sb) => return sb.center_anchor(),
+            Body::Strip(strip) => strip,
+        };
+        let s = strip.slots.iter().find(|s| s.builtin == Some(Builtin::Bell) && !s.rect.is_empty())?;
+        Some(self.rect_anchor(s.rect))
+    }
+
+    fn rect_anchor(&self, r: IRect) -> f64 {
+        if self.vertical() { r.y as f64 + r.h as f64 / 2.0 } else { r.x as f64 + r.w as f64 / 2.0 }
     }
 
     pub fn slot_anchor(&self, i: usize) -> f64 {

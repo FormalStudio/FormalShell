@@ -16,6 +16,7 @@
 
 use std::time::Instant;
 
+use fs_chrome::bar::panels::PanelId;
 use fs_menu::actions::{Action, Run, TargetKind};
 use fs_menu::model::{self, Mode, SectionCtx};
 use fs_menu::nav::{self, Dir};
@@ -207,8 +208,7 @@ pub struct Model {
 pub struct Embedded {
     pub module: Box<dyn crate::surfaces::panel::Panel>,
     pub cursor: crate::surfaces::panel::host::Cursor,
-    /// Its `panel` name (`settings:bar`).
-    pub name: &'static str,
+    pub id: PanelId,
     /// `Panel::start` has run.
     pub started: bool,
     /// The module's width, as the window last read it.
@@ -216,11 +216,11 @@ pub struct Embedded {
 }
 
 impl Embedded {
-    fn new(name: &'static str) -> Option<Self> {
-        let mut module = crate::surfaces::panel::build(name)?;
+    fn new(id: PanelId) -> Option<Self> {
+        let mut module = crate::surfaces::panel::build(id, crate::surfaces::panel::Args::default())?;
         module.opened();
         let cursor = crate::surfaces::panel::host::Cursor::starting(module.cursor_start());
-        Some(Self { module, cursor, name, started: false, width: 0.0 })
+        Some(Self { module, cursor, id, started: false, width: 0.0 })
     }
 }
 
@@ -435,7 +435,7 @@ pub struct Picker {
     /// `picker select` set this up for the open that follows.
     pending: bool,
     /// The settings page it was summoned from, which leaving it returns to.
-    pub from: Option<&'static str>,
+    pub from: Option<PanelId>,
 }
 
 /// One of the picker's sections: its id, heading, and the words at the
@@ -860,18 +860,17 @@ impl Model {
         self.mode == Mode::Menu && self.children.is_empty() && self.panel.is_some()
     }
 
-    /// `name`'s panel in the launcher: its route as the level, then the
+    /// `id`'s panel in the launcher: its route as the level, then the
     /// page itself in the module's place.
-    pub fn show_panel(&mut self, store: &Store, name: &str) -> bool {
-        let Some(route) = crate::surfaces::panel::launcher_route(name) else { return false };
-        let Some(name) = crate::surfaces::panel::known(name) else { return false };
-        if self.mode != Mode::Menu || self.level.as_deref() != Some(route) {
+    pub fn show_panel(&mut self, store: &Store, id: PanelId) -> bool {
+        let Some(route) = id.route() else { return false };
+        if self.mode != Mode::Menu || self.level.as_deref() != Some(route.as_str()) {
             self.abandon_select();
             self.children.clear();
-            self.enter_level(store, Some(route.to_owned()));
+            self.enter_level(store, Some(route.as_str().to_owned()));
         }
-        if self.panel.as_ref().is_none_or(|p| p.name != name) {
-            self.panel = Embedded::new(name);
+        if self.panel.as_ref().is_none_or(|p| p.id != id) {
+            self.panel = Embedded::new(id);
         }
         self.dirty = true;
         true
@@ -1854,7 +1853,7 @@ impl Model {
             "selection": self.query.selection().is_some(),
             "sections": self.section_names(),
             "view": self.view.name(),
-            "panel": self.panel.as_ref().filter(|_| self.on_panel()).map(|p| p.name),
+            "panel": self.panel.as_ref().filter(|_| self.on_panel()).map(|p| p.id.as_str()),
             "panelCursor": self.panel.as_ref().filter(|_| self.on_panel()).and_then(|p| p.cursor.shown()),
             "columns": self.columns(),
             "cursor": self.cursor,
@@ -2095,9 +2094,10 @@ impl Model {
             use crate::services::wants::{Source, Want};
             (Want::new(Source::Monitor), Want::new(Source::Processes))
         });
-        let route = id.as_deref().and_then(crate::surfaces::panel::launcher_route).filter(|r| id.as_deref() == Some(*r));
+        // A level that is a launcher route of its own holds its page.
+        let route = id.as_deref().and_then(PanelId::parse).filter(|p| p.route() == Some(*p));
         match route {
-            Some(r) if self.level.as_deref() != Some(r) || self.panel.is_none() => self.panel = Embedded::new(r),
+            Some(r) if self.level.as_deref() != Some(r.as_str()) || self.panel.is_none() => self.panel = Embedded::new(r),
             Some(_) => {}
             None => self.panel = None,
         }
@@ -3321,7 +3321,7 @@ impl Shown {
             motion_scale: self.scale,
             raster: self.modal.win.surface.scale(),
         };
-        p.width = crate::surfaces::panel::card_width(p.module.as_ref(), &v, kit);
+        p.width = crate::surfaces::panel::card_width(p.module.as_ref(), p.id.desc().width, &v, kit);
         let Some(el) = self.panel_el(m, store, theme) else { return };
         let width = m.panel_body(theme).1;
         m.layout.content_h = ui::measure(&el, width, theme, kit).1;
