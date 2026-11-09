@@ -56,7 +56,7 @@ leg_hotcorner_assert() {
     fail "no hyprland layer dump produced for the hot corners"
   fi
   cat "$hotcorner_layers_path"; echo
-  hotcorner_count=$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_layers_path")
+  hotcorner_count=$("$jq_bin" "$layers_jq"'layer("formalshell:hotcorner") | length' "$hotcorner_layers_path")
   # Level 2 is Hyprland's `top`, the layer the corners ask for so the
   # screensaver and the lock surface can still cover a corner once fired.
   hotcorner_top=$("$jq_bin" '[.[].levels."2"[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_layers_path")
@@ -68,7 +68,7 @@ leg_hotcorner_assert() {
   if [ "$hotcorner_count" != "3" ]; then
     fail "expected 3 formalshell:hotcorner layer surfaces, found $hotcorner_count"
   fi
-  if [ "$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner" and .x == 0 and .y == 0)] | length' "$hotcorner_layers_path")" != "1" ]; then
+  if [ "$("$jq_bin" "$layers_jq"'layer("formalshell:hotcorner") | map(select(.x == 0 and .y == 0)) | length' "$hotcorner_layers_path")" != "1" ]; then
     fail "the overview's top-left hot corner is not mapped"
   fi
   if [ "$hotcorner_top" != "3" ]; then

@@ -83,7 +83,7 @@ snap on
 cp "\$(readlink -f "$settings_path")" "$shot_dir/desktop-clock-settings-gen1.json"
 quiet rest 3
 
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-desktop-clock --title='formalshell desktop clock' sh -c 'sleep 300']==])" > /dev/null 2>&1
+spawn_foot formalshell-desktop-clock "" "formalshell desktop clock"
 sleep 3
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-desktop-clock' })" > /dev/null 2>&1
 sleep 2

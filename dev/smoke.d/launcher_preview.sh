@@ -62,35 +62,32 @@ leg_launcher_preview_drive() {
   local script="$shot_dir/launcher-preview-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$shot_dir/launcher-preview-\$1.json" 2>&1; }
 dump() { call debug dump > "$shot_dir/launcher-preview-dump-\$1.json" 2>&1; }
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
-shoot() { "$grim_bin" "$shot_dir/launcher-preview-\$1.png" > /dev/null 2>&1; }
 seek() { call menu summon "" > /dev/null 2>&1; sleep 0.4; call menu filter "\$1" > /dev/null 2>&1; sleep 1.5; }
 run() {
   local mode=\$1
   seek "Preview Probe"
-  status "app-\$mode"
+  status menu "$shot_dir/launcher-preview-app-\$mode.json"
   dump "app-\$mode"
-  shoot "app-\$mode"
+  shoot "$shot_dir/launcher-preview-app-\$mode.png"
   key -k Right
   sleep 1.5
-  status "window-\$mode"
+  status menu "$shot_dir/launcher-preview-window-\$mode.json"
   dump "window-\$mode"
-  shoot "window-\$mode"
+  shoot "$shot_dir/launcher-preview-window-\$mode.png"
   seek "preview note"
-  status "text-\$mode"
-  shoot "text-\$mode"
+  status menu "$shot_dir/launcher-preview-text-\$mode.json"
+  shoot "$shot_dir/launcher-preview-text-\$mode.png"
   seek "preview-folder"
-  status "folder-\$mode"
-  shoot "folder-\$mode"
+  status menu "$shot_dir/launcher-preview-folder-\$mode.json"
+  shoot "$shot_dir/launcher-preview-folder-\$mode.png"
   call menu close > /dev/null 2>&1
   sleep 1
 }
 sleep 4
 for i in 1 2; do
-  "$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-preview-probe sleep 300]==])" > /dev/null 2>&1
+  spawn_foot formalshell-preview-probe
 done
 sleep 3
 
@@ -101,11 +98,11 @@ sleep 1.5
 dump into-1
 key -k Down
 sleep 1.5
-status into-2
+status menu "$shot_dir/launcher-preview-into-2.json"
 dump into-2
 key -k Left
 sleep 1
-status left
+status menu "$shot_dir/launcher-preview-left.json"
 dump left
 seek "Preview Probe"
 key -k Right
@@ -118,34 +115,34 @@ dump closed
 seek "preview-folder"
 key -k Right
 sleep 1
-status folder-into
-shoot folder-into-dark
+status menu "$shot_dir/launcher-preview-folder-into.json"
+shoot "$shot_dir/launcher-preview-folder-into-dark.png"
 key .
 sleep 0.8
-status folder-hidden
+status menu "$shot_dir/launcher-preview-folder-hidden.json"
 key -k BackSpace
 sleep 0.4
 key -k Right
 sleep 1
 key -k Left
 sleep 1
-status folder-back
+status menu "$shot_dir/launcher-preview-folder-back.json"
 call menu close > /dev/null 2>&1
 
 seek "preview-swatch"
 sleep 1
-status image-dark
-shoot image-dark
+status menu "$shot_dir/launcher-preview-image-dark.json"
+shoot "$shot_dir/launcher-preview-image-dark.png"
 
 "$wl_copy_bin" --type image/png < "$shot_dir/launcher-preview-clip.png"
 sleep 2
 call menu summon clipboard > /dev/null 2>&1
 sleep 2.5
-status clip-dark
-shoot clip-dark
+status menu "$shot_dir/launcher-preview-clip-dark.json"
+shoot "$shot_dir/launcher-preview-clip-dark.png"
 call menu summon files > /dev/null 2>&1
 sleep 1.5
-status files
+status menu "$shot_dir/launcher-preview-files.json"
 call menu close > /dev/null 2>&1
 sleep 1
 
@@ -157,9 +154,7 @@ EOF
 }
 
 launcher_preview_expect() {
-  local f="$shot_dir/launcher-preview-$1.json"
-  [ -s "$f" ] || fail "launcher-preview: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null || fail "launcher-preview $1: $3, got $("$jq_bin" -c '{isOpen, level, cursorId, cardWidth, pane, paneBox, drawn: [.drawn[]?.label][:8]}' "$f")"
+  expect_jq "$shot_dir/launcher-preview-$1.json" "$2" "launcher-preview $1: $3" '{isOpen, level, cursorId, cardWidth, pane, paneBox, drawn: [.drawn[]?.label][:8]}'
 }
 
 # The launcher's capture sessions in one `debug dump`, as a JSON array.

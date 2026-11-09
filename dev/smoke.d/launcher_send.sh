@@ -44,32 +44,20 @@ leg_launcher_send_drive() {
   local script="$shot_dir/launcher-send-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$shot_dir/launcher-send-\$1.json" 2>&1; }
-shoot() { "$grim_bin" "$shot_dir/launcher-send-\$1.png" > /dev/null 2>&1; }
-# Polls status into step \$1 until jq claim \$2 holds, for at most \$3 seconds.
-until_status() {
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    status "\$1"
-    "$jq_bin" -e "\$2" "$shot_dir/launcher-send-\$1.json" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-}
 # Send to… on the first clipboard entry, the targets settled into step \$1.
 clip_send() {
   call menu summon clipboard > /dev/null 2>&1
   sleep 1
-  status "\$1-list"
+  status menu "$shot_dir/launcher-send-\$1-list.json"
   call menu runAction 0 send-to > /dev/null 2>&1
-  until_status "\$1" "\$2" 20
+  until_jq 20 "$shot_dir/launcher-send-\$1.json" "\$2" call menu status
 }
 sleep 4
 "$wl_copy_bin" -- "$launcher_send_text"
 sleep 1.5
 
 clip_send empty '.actions != ["peer:scanning"]'
-shoot empty
+shoot "$shot_dir/launcher-send-empty.png"
 call menu close > /dev/null 2>&1
 sleep 1
 
@@ -90,7 +78,7 @@ for _ in \$(seq 1 40); do
 done
 
 clip_send peers '.actions | index("peer:0") != null'
-shoot peers
+shoot "$shot_dir/launcher-send-peers.png"
 "$wtype_bin" -k Return
 for _ in \$(seq 1 30); do
   ls "$launcher_send_peer_dir"/localsend-text-*.txt > /dev/null 2>&1 && break
@@ -98,16 +86,16 @@ for _ in \$(seq 1 30); do
 done
 sleep 1
 cat "$launcher_send_peer_dir"/localsend-text-*.txt > "$shot_dir/launcher-send-text-received.txt" 2>/dev/null
-status text-sent
+status menu "$shot_dir/launcher-send-text-sent.json"
 
 call menu summon "" > /dev/null 2>&1
 sleep 0.5
 call menu filter send-probe > /dev/null 2>&1
 sleep 1.5
-status file-list
+status menu "$shot_dir/launcher-send-file-list.json"
 i=\$("$jq_bin" '[.ids[] | startswith("files.")] | index(true) // -1' "$shot_dir/launcher-send-file-list.json")
 call menu runAction "\$i" send-to > /dev/null 2>&1
-until_status file-peers '.actions | index("peer:0") != null' 20
+until_jq 20 "$shot_dir/launcher-send-file-peers.json" '.actions | index("peer:0") != null' call menu status
 "$wtype_bin" -k Return
 for _ in \$(seq 1 30); do
   [ -f "$launcher_send_peer_dir/send-probe.txt" ] && break
@@ -124,9 +112,7 @@ EOF
 
 # `<step> <jq claim> <what it means>`, against that step's status.
 launcher_send_expect() {
-  local f="$shot_dir/launcher-send-$1.json"
-  [ -s "$f" ] || fail "launcher-send: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null || fail "launcher-send $1: $3, got $("$jq_bin" -c '{isOpen, level, token, actionsOpen, actions, ids: .ids[:4]}' "$f")"
+  expect_jq "$shot_dir/launcher-send-$1.json" "$2" "launcher-send $1: $3" '{isOpen, level, token, actionsOpen, actions, ids: .ids[:4]}'
 }
 
 leg_launcher_send_assert() {

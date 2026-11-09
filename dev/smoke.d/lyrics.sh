@@ -916,10 +916,6 @@ lyrics_ink_box() {
   esac
 }
 
-lyrics_patch_mean() {
-  "$convert_bin" "$1" -crop "$2" +repage -colorspace Gray -format '%[fx:mean]' info: 2>/dev/null
-}
-
 # The lyrics pane's own crop inside a frame, past the header and short of the
 # card's far padding, as "cropGeometry bodyImage". The two columns split the
 # card's content evenly (MediaPanel's `contentRow._paneWidth`), so the card's
@@ -973,7 +969,7 @@ print(" ".join("%s:%s" % (b[0], b[1]) for b in bands[lo:hi + 1]))
 ' "$(printf '%s' "${2#*x}" | cut -d+ -f1)" "$(lyrics_px 8)"
 }
 
-# The mean gray over a slice of one row's own ink: "0 0.22" is the row's
+# The mean grey, in thousandths, over a slice of one row's own ink: "0 0.22" is the row's
 # start and "0.78 1" its end, measured against the ink that row actually
 # carries rather than against the pane, so a row of five words and a row of
 # one are read at the same places in their own text.
@@ -997,7 +993,7 @@ lyrics_row_slice_mean() {
   fi
   sx=$(awk -v a="$ax" -v w="$aw" -v f="$from" 'BEGIN { printf "%d", a + w * f }')
   sw=$(awk -v w="$aw" -v f="$from" -v t="$to" 'BEGIN { d = int(w * (t - f)); print (d < 4) ? 4 : d }')
-  lyrics_patch_mean "$body" "${sw}x${bh}+$((cx + sx))+$((cy + top))"
+  patch_mean "$body" "${sw}x${bh}+$((cx + sx))+$((cy + top))"
 }
 
 lyrics_wipe_reading() {
@@ -1454,9 +1450,9 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   w_lit=$(lyrics_row_slice_mean "$wrap_body" "$wrap_crop" "$r1" 0 0.22)
   w_dim=$(lyrics_row_slice_mean "$wrap_body" "$wrap_crop" "$r1" 0.8 1)
   w_r2start=$(lyrics_row_slice_mean "$wrap_body" "$wrap_crop" "$r2" 0 0.25)
-  w_mid=$(awk -v a="$w_lit" -v b="$w_dim" 'BEGIN { printf "%.4f", (a + b) / 2 }')
+  w_mid=$(awk -v a="$w_lit" -v b="$w_dim" 'BEGIN { printf "%.1f", (a + b) / 2 }')
   echo "SMOKE_LYRICS_WRAP_EARLY rows '$wrap_rows' start=$w_lit end=$w_dim next-row=$w_r2start"
-  if ! awk -v a="$w_lit" -v b="$w_dim" 'BEGIN { exit !(a > b + 0.03) }'; then
+  if ! awk -v a="$w_lit" -v b="$w_dim" 'BEGIN { exit !(a > b + 30) }'; then
     fail "the early frame's wipe is not partway along its first row: start=$w_lit end=$w_dim"
   fi
   if ! awk -v a="$w_r2start" -v m="$w_mid" 'BEGIN { exit !(a < m) }'; then
@@ -1475,7 +1471,7 @@ print("%d %d" % (lit, len(peaks) - lit - 1))
   w_r2end=$(lyrics_row_slice_mean "$wrap_body" "$wrap_crop" "$r2" 0.8 1)
   w_r3start=$(lyrics_row_slice_mean "$wrap_body" "$wrap_crop" "$r3" 0 0.3)
   w_dim=$(lyrics_row_slice_mean "$wrap_body" "$wrap_crop" "$r3" 0.7 1)
-  w_mid=$(awk -v a="$w_lit" -v b="$w_dim" 'BEGIN { printf "%.4f", (a + b) / 2 }')
+  w_mid=$(awk -v a="$w_lit" -v b="$w_dim" 'BEGIN { printf "%.1f", (a + b) / 2 }')
   echo "SMOKE_LYRICS_WRAP_LATE rows '$wrap_rows' first=$w_lit/$w_r1end second=$w_r2start/$w_r2end third=$w_r3start/$w_dim midpoint=$w_mid"
   if ! awk -v a="$w_r1end" -v m="$w_mid" 'BEGIN { exit !(a > m) }'; then
     fail "the row above the wipe is not fully sung: first row's end=$w_r1end against the midpoint $w_mid"

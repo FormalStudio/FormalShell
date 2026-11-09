@@ -87,7 +87,7 @@ else
   for _ in \$(seq 50); do [ -S "\$control" ] && break; sleep 0.1; done
   echo "stuck" > "$lock_keyring_path"
 fi
-"$wtype_bin" -s 300 "formalshell-test"
+"$wtype_bin" -s 300 "$rig_password"
 t0=\$(date +%s%N)
 "$wtype_bin" -s 300 -k Return
 until [ "\$($ipc call lock isLocked 2>/dev/null)" = false ] || [ \$(( (\$(date +%s%N) - t0) / 1000000 )) -gt 20000 ]; do sleep 0.05; done

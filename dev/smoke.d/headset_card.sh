@@ -127,15 +127,12 @@ list() { local pods="Kyan's AirPods Pro"; [ -z "\${4:-}" ] || pods=\$4; printf '
 mapped() { grep -c 'headset card mapped' "$shell_log_path"; }
 unmapped() { grep -c 'headset card unmapped' "$shell_log_path"; }
 mark() { echo "\$1 mapped=\$(mapped) unmapped=\$(unmapped)" >> "$headset_log_marks"; }
-park() {
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+hover() {
+  park
   sleep 0.5
-  "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1
+  park "\$1" "\$2"
 }
-leave() {
-  "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-  "$wlrctl_bin" pointer move 400 600 > /dev/null 2>&1
-}
+leave() { park 400 600; }
 : > "$headset_log_marks"
 : > "$headset_escape_marks"
 sleep 6
@@ -145,7 +142,7 @@ sleep 2
 $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_bluez_dump"
 "$grim_bin" -g "$headset_region" "$headset_bluez_png" > /dev/null 2>&1
 mark connected
-park $headset_park_x $headset_park_y
+hover $headset_park_x $headset_park_y
 sleep 6
 "$grim_bin" -g "$headset_region" "$headset_held_png" > /dev/null 2>&1
 mark held
@@ -165,7 +162,7 @@ sleep 2.5
 $ipc call debug dump 2>/dev/null | "$jq_bin" -c '.headset' > "$headset_airpods_dump"
 "$grim_bin" -g "$headset_region" "$headset_airpods_png" > /dev/null 2>&1
 mark airpods
-park $headset_park_x $headset_park_y
+hover $headset_park_x $headset_park_y
 sleep 1
 leave
 sleep 2.5
@@ -185,7 +182,7 @@ sleep 4
 list true true false
 sleep 1.5
 # The pointer parked on the card holds it, so only Escape can take it down.
-park $headset_park_x $headset_park_y
+hover $headset_park_x $headset_park_y
 sleep 1
 echo "up active=\$(active) escapes=\$(escapes)" >> "$headset_escape_marks"
 "$grim_bin" -g "$headset_region" "$headset_escape_png" > /dev/null 2>&1

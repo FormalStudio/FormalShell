@@ -61,7 +61,7 @@ sleep 3
 $ipc call lock status > "\$p-status-3.json" 2>&1
 hint "\$sid" > "\$p-hint-3.txt"
 "$grim_bin" "\$p-row-locked.png" > /dev/null 2>&1
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 sleep 4
 $ipc call lock status > "\$p-status-4.json" 2>&1
 hint "\$sid" > "\$p-hint-4.txt"

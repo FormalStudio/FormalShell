@@ -75,9 +75,6 @@ leg_launcher_overflow_drive() {
   local script="$shot_dir/launcher-overflow-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$shot_dir/launcher-overflow-\$1.json" 2>&1; }
-shoot() { "$grim_bin" -o "\${2:-$launcher_overflow_output}" "$shot_dir/launcher-overflow-\$1.png" > /dev/null 2>&1; }
 focus() { "$hyprctl_bin" dispatch "hl.dsp.focus({ monitor = '\${1:-$launcher_overflow_output}' })" > /dev/null 2>&1; sleep 0.4; }
 sleep 4
 width=\$("$hyprctl_bin" -j monitors | "$jq_bin" -r '.[0].width')
@@ -92,8 +89,8 @@ call menu summon "" > /dev/null 2>&1
 sleep 0.6
 call menu filter "Overflow Probe" > /dev/null 2>&1
 sleep 1.5
-status long
-shoot long
+status menu "$shot_dir/launcher-overflow-long.json"
+shoot "$shot_dir/launcher-overflow-long.png" -o "$launcher_overflow_output"
 call menu close > /dev/null 2>&1
 sleep 1
 
@@ -102,23 +99,23 @@ call menu summon "" > /dev/null 2>&1
 sleep 0.6
 call menu filter overflow-trail-probe > /dev/null 2>&1
 sleep 1.5
-status trail
-shoot trail
+status menu "$shot_dir/launcher-overflow-trail.json"
+shoot "$shot_dir/launcher-overflow-trail.png" -o "$launcher_overflow_output"
 call menu close > /dev/null 2>&1
 sleep 1
 
 focus
 call menu summon plugin:overflow-probe > /dev/null 2>&1
 sleep 2
-status mode
+status menu "$shot_dir/launcher-overflow-mode.json"
 "$wtype_bin" -k Tab
 sleep 1.5
-status column
-shoot column
+status menu "$shot_dir/launcher-overflow-column.json"
+shoot "$shot_dir/launcher-overflow-column.png" -o "$launcher_overflow_output"
 "$wtype_bin" -k End
 sleep 1.5
-status end
-shoot end
+status menu "$shot_dir/launcher-overflow-end.json"
+shoot "$shot_dir/launcher-overflow-end.png" -o "$launcher_overflow_output"
 call menu close > /dev/null 2>&1
 sleep 1
 
@@ -131,8 +128,8 @@ call menu summon plugin:overflow-probe > /dev/null 2>&1
 sleep 2
 "$wtype_bin" -k Tab
 sleep 1.5
-status narrow
-shoot narrow "$launcher_overflow_narrow"
+status menu "$shot_dir/launcher-overflow-narrow.json"
+shoot "$shot_dir/launcher-overflow-narrow.png" -o "$launcher_overflow_narrow"
 call menu close > /dev/null 2>&1
 sleep 1
 "$hyprctl_bin" output remove "$launcher_overflow_narrow" > /dev/null 2>&1
@@ -147,7 +144,7 @@ call menu summon plugin:overflow-probe > /dev/null 2>&1
 sleep 2
 "$wtype_bin" -k Tab
 sleep 1.5
-shoot column-light
+shoot "$shot_dir/launcher-overflow-column-light.png" -o "$launcher_overflow_output"
 call menu close > /dev/null 2>&1
 sleep 1
 "$hyprctl_bin" output remove "$launcher_overflow_output" > /dev/null 2>&1
@@ -157,9 +154,7 @@ EOF
 
 # `<step> <jq claim> <what it means>`, against that step's status.
 launcher_overflow_expect() {
-  local f="$shot_dir/launcher-overflow-$1.json"
-  [ -s "$f" ] || fail "launcher-overflow: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null || fail "launcher-overflow $1: $3, got $("$jq_bin" -c '{isOpen, level, cardWidth, cardBox, rowBoxes: .rowBoxes[:3], actionsBox, actionCursor, actionsScroll, actionsScrollMax, actionsMore, n: (.actions | length)}' "$f")"
+  expect_jq "$shot_dir/launcher-overflow-$1.json" "$2" "launcher-overflow $1: $3" '{isOpen, level, cardWidth, cardBox, rowBoxes: .rowBoxes[:3], actionsBox, actionCursor, actionsScroll, actionsScrollMax, actionsMore, n: (.actions | length)}'
 }
 
 leg_launcher_overflow_assert() {

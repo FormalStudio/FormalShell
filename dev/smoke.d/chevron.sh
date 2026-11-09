@@ -168,8 +168,7 @@ sleep 2
 $ipc call bar chevron status > "$chevron_status_closed_again_path" 2>&1
 $ipc call bar room > "$chevron_room_path" 2>&1
 cell() { "$jq_bin" -r --arg n "\$1" '.[0].cells[] | select(.name == \$n) | "\(.x + .width / 2 | floor) \(.y + .height / 2 | floor)"' "$chevron_room_path" | head -n 1; }
-to() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; }
-click() { "$wlrctl_bin" pointer click left > /dev/null 2>&1; }
+to() { park "\$1" "\$2"; }
 check() { echo "\$1 open=\$($ipc call bar chevron status 2>/dev/null | "$jq_bin" -c '.regions.right.open') panel=\$($ipc call panel state 2>/dev/null)" >> "$chevron_clicks_path"; }
 to \$(cell chevron); click; sleep 1.5; check clicked-open
 to 900 700; click; sleep 1.5; check outside
@@ -211,14 +210,11 @@ _chevron_assert_back() {
   fi
 }
 
-# One statistic of one patch of a frame, 0..255. Read off the red channel
-# rather than through a grayscale conversion, the reason --bar-adaptive
-# gives: every colour here is grey and a colorspace conversion answers in
-# numbers these expectations are not written in.
-_chevron_patch() {
-  local png="$1" patch="$2" stat="$3"
-  $convert_bin "$png" -crop "$patch" +repage \
-    -format "%[fx:int($stat.r*255+0.5)]" info: 2>/dev/null
+# The brightest red sample of one patch of a frame, 0..255. Every colour here
+# is grey, so one channel is the whole answer.
+_chevron_patch_max() {
+  $convert_bin "$1" -crop "$2" +repage \
+    -format '%[fx:int(maxima.r*255+0.5)]' info: 2>/dev/null
 }
 
 # The ink claim (M66). Three parts: the band settled
@@ -259,12 +255,12 @@ _chevron_assert_ink() {
   $convert_bin "$chevron_open_path" -crop "$chevron_card_patch" +repage \
     "$chevron_card_ink_path" > /dev/null 2>&1
   [ -f "$chevron_card_ink_path" ] && echo "SMOKE_CHEVRON_CARD_INK $chevron_card_ink_path"
-  mean=$(_chevron_patch "$chevron_open_path" "$chevron_card_patch" mean)
-  max=$(_chevron_patch "$chevron_open_path" "$chevron_card_patch" maxima)
+  mean=$(patch_mean "$chevron_open_path" "$chevron_card_patch")
+  max=$(_chevron_patch_max "$chevron_open_path" "$chevron_card_patch")
   [ -n "$mean" ] && [ -n "$max" ] \
     || fail "could not read the patch $chevron_card_patch out of $chevron_open_path"
   echo "chevron ink: the card patch $chevron_card_patch reads mean=$mean max=$max"
-  if [ "$mean" -gt 120 ]; then
+  if [ "$mean" -gt 471 ]; then
     fail "the patch $chevron_card_patch reads mean $mean, too bright to be the card: it is on the wallpaper beside it, so the ink below is untested"
   fi
   if [ "$max" -lt 150 ]; then

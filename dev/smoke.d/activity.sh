@@ -117,68 +117,67 @@ EOF
 #!/usr/bin/env bash
 m="$act_marks"
 dir="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}/fspec/activity"
-status() { $ipc call activity status > "\$m-\$1.json" 2>&1; $ipc call bar room > "\$m-room-\$1.json" 2>&1; }
-bar() { "$grim_bin" "$shot_dir/activity-bar-\$1.png" > /dev/null 2>&1; }
-shot() { $ipc call panel open activity > /dev/null; sleep 0.8; "$grim_bin" "$shot_dir/activity-panel-\$1.png" > /dev/null 2>&1; $ipc call panel close > /dev/null; sleep 0.4; }
+snap() { status activity "\$m-\$1.json"; call bar room > "\$m-room-\$1.json" 2>&1; }
+shot() { call panel open activity > /dev/null; sleep 0.8; shoot "$shot_dir/activity-panel-\$1.png"; call panel close > /dev/null; sleep 0.4; }
 await() { for _ in \$(seq 200); do [ -e "\$1" ] && return 0; sleep 0.05; done; echo "timed out on \$1" >> "\$m-drive.log"; }
 for _ in \$(seq 100); do
   $ipc call activity status 2>/dev/null | jq -e '.fspec.watching' > /dev/null 2>&1 && break
   sleep 0.1
 done
 command -v fspec > "\$m-fspec-path.txt" 2>&1 || true
-status idle
+snap idle
 
 # fspec: an apply that succeeds, an update that fails, a rollback that dies.
 "$python3_bin" "$stub" "\$dir" smoke-ok ok "\$m.ok" 2>> "\$m-drive.log" &
-await "\$m.ok.1"; sleep 0.5; status ok-1; bar progress
-touch "\$m.ok.go1"; await "\$m.ok.2"; sleep 0.5; status ok-2
+await "\$m.ok.1"; sleep 0.5; snap ok-1; shoot "$shot_dir/activity-bar-progress.png"
+touch "\$m.ok.go1"; await "\$m.ok.2"; sleep 0.5; snap ok-2
 "$python3_bin" "$stub" "\$dir" smoke-fail fail "\$m.fail" 2>> "\$m-drive.log" &
-await "\$m.fail.1"; sleep 0.5; status fail-1
+await "\$m.fail.1"; sleep 0.5; snap fail-1
 $ipc call debug dump > "\$m-dump.json" 2>&1
 shot running
-$ipc call activity dismiss fspec:apply:smoke > "\$m-dismiss.txt" 2>&1; sleep 0.3; status dismissed
-touch "\$m.ok.go2"; await "\$m.ok.3"; sleep 0.5; status ok-3
-touch "\$m.fail.go1"; await "\$m.fail.2"; sleep 0.5; status fail-2; bar failed
+$ipc call activity dismiss fspec:apply:smoke > "\$m-dismiss.txt" 2>&1; sleep 0.3; snap dismissed
+touch "\$m.ok.go2"; await "\$m.ok.3"; sleep 0.5; snap ok-3
+touch "\$m.fail.go1"; await "\$m.fail.2"; sleep 0.5; snap fail-2; shoot "$shot_dir/activity-bar-failed.png"
 shot failed
 "$python3_bin" "$stub" "\$dir" smoke-die die "\$m.die" 2>> "\$m-drive.log" &
-await "\$m.die.1"; sleep 0.5; status die-1
-touch "\$m.die.go1"; await "\$m.die.2"; sleep 0.5; status die-2
-sleep 4; status folded
-$ipc call activity seen > "\$m-seen.txt" 2>&1; sleep 0.3; status seen
+await "\$m.die.1"; sleep 0.5; snap die-1
+touch "\$m.die.go1"; await "\$m.die.2"; sleep 0.5; snap die-2
+sleep 4; snap folded
+$ipc call activity seen > "\$m-seen.txt" 2>&1; sleep 0.3; snap seen
 # The folded rows in the notification centre, then its Clear on real keys.
 # The pointer goes to the output's corner first: a row it rests on takes
 # the cursor. A cursor woken by a key starts on the row it last held, so
 # four Ups reach Clear from wherever that was.
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 $ipc call notifications showHistory > /dev/null; sleep 0.8
 "$grim_bin" "$shot_dir/activity-center.png" > /dev/null 2>&1
-"$wtype_bin" -k Up -k Up -k Up -k Up -k Return; sleep 0.5; status cleared
+"$wtype_bin" -k Up -k Up -k Up -k Up -k Return; sleep 0.5; snap cleared
 "$grim_bin" "$shot_dir/activity-center-cleared.png" > /dev/null 2>&1
 $ipc call panel close > /dev/null; sleep 0.4
 
 # com.canonical.Unity.LauncherEntry from a client that stays on the bus.
 "$python3_bin" "$launcher" "application://$act_app_id.desktop" "\$m.l" 2>> "\$m-drive.log" &
 lpid=\$!
-await "\$m.l.1"; sleep 0.5; status l-1
-touch "\$m.l.go1"; await "\$m.l.2"; sleep 0.5; status l-2
-touch "\$m.l.go2"; await "\$m.l.3"; sleep 0.5; status l-3
-touch "\$m.l.go3"; wait "\$lpid"; sleep 0.5; status l-gone
+await "\$m.l.1"; sleep 0.5; snap l-1
+touch "\$m.l.go1"; await "\$m.l.2"; sleep 0.5; snap l-2
+touch "\$m.l.go2"; await "\$m.l.3"; sleep 0.5; snap l-3
+touch "\$m.l.go3"; wait "\$lpid"; sleep 0.5; snap l-gone
 
 # The notification value hint, replaced by id and by synchronous tag.
 id=\$("$notify_send_bin" -p -a smoke-dl -h int:value:10 Downloading a.iso)
 echo "\$id" > "\$m-notify-id.txt"
-sleep 0.5; status n-1
+sleep 0.5; snap n-1
 "$notify_send_bin" -r "\$id" -a smoke-dl -h int:value:60 Downloading a.iso
 "$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy -h int:value:30 Copying b.img
 "$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy -h int:value:70 Copying b.img
-sleep 0.5; status n-2; bar notify
+sleep 0.5; snap n-2; shoot "$shot_dir/activity-bar-notify.png"
 "$notify_send_bin" -r "\$id" -a smoke-dl Downloaded a.iso
-sleep 0.5; status n-3
+sleep 0.5; snap n-3
 "$notify_send_bin" -a smoke-sync -h string:x-canonical-private-synchronous:smoke-copy Copied b.img
 
 # A failed run retried, and an fspec row opening the panel.
 "$python3_bin" "$stub" "\$dir" smoke-rf runfail "\$m.rf" 2>> "\$m-drive.log" &
-await "\$m.rf.1"; touch "\$m.rf.go1"; await "\$m.rf.2"; sleep 0.5; status rf
+await "\$m.rf.1"; touch "\$m.rf.go1"; await "\$m.rf.2"; sleep 0.5; snap rf
 $ipc call activity open fspec:run:smoke-pkg > "\$m-open.txt" 2>&1; sleep 0.8
 $ipc call panel state > "\$m-open-panel.txt" 2>&1
 "$grim_bin" "$shot_dir/activity-panel-retry.png" > /dev/null 2>&1
@@ -186,19 +185,19 @@ $ipc call panel close > /dev/null
 $ipc call activity retry fspec:run:smoke-pkg > "\$m-retry.txt" 2>&1
 for _ in \$(seq 60); do [ -s "\$m-retried.txt" ] && break; sleep 0.1; done
 $ipc call activity retry fspec:apply:smoke > "\$m-retry-none.txt" 2>&1
-sleep 0.3; status retried
+sleep 0.3; snap retried
 
 # A ring that cannot say how far, alone in the bar.
 sleep 4.2
 "$python3_bin" "$stub" "\$dir" smoke-die2 die "\$m.die2" 2>> "\$m-drive.log" &
-await "\$m.die2.1"; sleep 0.5; status turning; $ipc call bar room > "\$m-room-turning.json" 2>&1
-bar turning; sleep 0.3; bar turning-2
+await "\$m.die2.1"; sleep 0.5; snap turning; $ipc call bar room > "\$m-room-turning.json" 2>&1
+shoot "$shot_dir/activity-bar-turning.png"; sleep 0.3; shoot "$shot_dir/activity-bar-turning-2.png"
 touch "\$m.die2.go1"; await "\$m.die2.2"; $ipc call activity seen > /dev/null
 
 # Ten at once, each titled past the bar.
 for i in \$(seq 0 9); do "$python3_bin" "$stub" "\$dir" smoke-many-\$i long "\$m.many\$i" 2>> "\$m-drive.log" & done
 for i in \$(seq 0 9); do await "\$m.many\$i.1"; done
-sleep 0.5; status many; bar many; shot many
+sleep 0.5; snap many; shoot "$shot_dir/activity-bar-many.png"; shot many
 for i in \$(seq 0 9); do touch "\$m.many\$i.go1"; done
 for i in \$(seq 0 9); do await "\$m.many\$i.2"; done
 sleep 0.5; $ipc call activity seen > /dev/null
@@ -206,9 +205,9 @@ sleep 0.5; $ipc call activity seen > /dev/null
 # A run whose first connection fspec stops writing to: the shell reads
 # past the silence on a fresh connection to the end.
 "$python3_bin" "$stub" "\$dir" smoke-st strand "\$m.st" 2>> "\$m-drive.log" &
-await "\$m.st.1"; sleep 0.5; status st-1
-touch "\$m.st.go1"; await "\$m.st.2"; sleep 4.5; status st-2
-touch "\$m.st.go2"; await "\$m.st.3"; touch "\$m.st.go3"; await "\$m.st.4"; sleep 0.5; status st-end
+await "\$m.st.1"; sleep 0.5; snap st-1
+touch "\$m.st.go1"; await "\$m.st.2"; sleep 4.5; snap st-2
+touch "\$m.st.go2"; await "\$m.st.3"; touch "\$m.st.go3"; await "\$m.st.4"; sleep 0.5; snap st-end
 
 # A real fspec run, where this fspec publishes one.
 if command -v fspec > /dev/null 2>&1 && fspec run --help > /dev/null 2>&1; then

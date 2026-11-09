@@ -102,31 +102,9 @@ dir="$kopuz_dir"
 sock="\${XDG_RUNTIME_DIR:-\${XDG_CACHE_HOME:-\$HOME/.cache}}/kopuz/kopuzd.sock"
 echo "\$sock" > "$kopuz_sock_path_file"
 
-# status <name> <jq test> <seconds>: media status into status-<name>.json
-# until the test holds.
-status() {
-  local out="\$dir/status-\$1.json"
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    $ipc call media status > "\$out" 2>&1
-    "$jq_bin" -e "\$2" "\$out" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-  return 1
-}
-lyrics() {
-  local out="\$dir/lyrics-\$1.json"
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    $ipc call media lyrics > "\$out" 2>&1
-    "$jq_bin" -e "\$2" "\$out" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-  return 1
-}
 shot() {
   sleep 0.6
-  "$grim_bin" "$shot_dir/kopuz-\$1.png" > /dev/null 2>&1
+  shoot "$shot_dir/kopuz-\$1.png"
 }
 control() {
   echo "\$1" > "$kopuz_fifo"
@@ -142,27 +120,27 @@ until [ -S "\$sock" ] && [ -p "$kopuz_fifo" ] || [ "\$SECONDS" -ge 5 ]; do sleep
 "$python3_bin" "$kopuz_stub" player --tracks "$kopuz_tracks" --log "$kopuz_log" > "\$dir/player.log" 2>&1 &
 echo \$! > "$kopuz_player_pid"
 
-status connected '.kopuz.connected' 15
+until_jq 15 "\$dir/status-connected.json" '.kopuz.connected' call media status
 $(stale_audit_start)
 $ipc call panel open media > "\$dir/panel-open.txt" 2>&1
-lyrics kopuz '.state == "synced"' 15
+until_jq 15 "\$dir/lyrics-kopuz.json" '.state == "synced"' call media lyrics
 $ipc call media dontRecommend > "\$dir/reply-dont-recommend-refused.txt" 2>&1
 control "dont-recommend on"
-status dont-recommend '.kopuz.actions | index("dontRecommend")' 5
+until_jq 5 "\$dir/status-dont-recommend.json" '.kopuz.actions | index("dontRecommend")' call media status
 
 $ipc call media playPause > /dev/null 2>&1
-status paused '.isPlaying == false' 5
+until_jq 5 "\$dir/status-paused.json" '.isPlaying == false' call media status
 sleep 1
 $ipc call debug dump > "\$dir/dump.json" 2>&1
 shot unliked
 
 $ipc call media like toggle > "\$dir/reply-like.txt" 2>&1
-status liked '.kopuz.favorite' 5
+until_jq 5 "\$dir/status-liked.json" '.kopuz.favorite' call media status
 shot liked
 $ipc call media dontRecommend > "\$dir/reply-dont-recommend-favorite.txt" 2>&1
 
 control "favorite off"
-status unliked-by-daemon '.kopuz.connected and (.kopuz.favorite | not)' 5
+until_jq 5 "\$dir/status-unliked-by-daemon.json" '.kopuz.connected and (.kopuz.favorite | not)' call media status
 shot unliked-by-daemon
 $(stale_audit_stop kopuz)
 $ipc call media dontRecommend > "\$dir/reply-dont-recommend.txt" 2>&1
@@ -170,16 +148,16 @@ SECONDS=0
 until grep -q '"call": "Next"' "$kopuz_log" || [ "\$SECONDS" -ge 5 ]; do sleep 0.2; done
 
 control "row other"
-status mismatch '.kopuz.connected | not' 5
+until_jq 5 "\$dir/status-mismatch.json" '.kopuz.connected | not' call media status
 control "row playing"
-status matched-again '.kopuz.connected' 5
+until_jq 5 "\$dir/status-matched-again.json" '.kopuz.connected' call media status
 
 kill -9 "\$(cat "$kopuz_daemon_pid")"
-status killed '.kopuz.connected | not' 10
+until_jq 10 "\$dir/status-killed.json" '.kopuz.connected | not' call media status
 shot killed
 $ipc call media next > /dev/null 2>&1
-status local-track '.title == "$kopuz_local_title"' 5
-lyrics local '.source == "local"' 10
+until_jq 5 "\$dir/status-local-track.json" '.title == "$kopuz_local_title"' call media status
+until_jq 10 "\$dir/lyrics-local.json" '.source == "local"' call media lyrics
 shot local
 echo done > "\$dir/drive-done"
 EOF

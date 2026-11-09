@@ -70,8 +70,7 @@ JSON
     sleep 0.1
   done
   [ -s "$bluez_player_dir/ready" ] || fail "--bluez-player: the stub never owned org.bluez ($(cat "$bluez_player_dir/stub.log"))"
-  module=$("$pactl_bin" load-module module-null-sink "sink_name=$bluez_player_sink" sink_properties=device.description=SmokeBluez)
-  add_cleanup "$pactl_bin unload-module $module 2>/dev/null"
+  pw_load_module module-null-sink "sink_name=$bluez_player_sink" sink_properties=device.description=SmokeBluez > /dev/null || fail "--bluez-player: the null sink did not load"
   # Silence, raw, under the node name BlueZ's PipeWire plugin gives an
   # A2DP source's stream.
   "$pw_cat_bin" --playback --raw --target "$bluez_player_sink" --rate 48000 --channels 2 --format s16 \
@@ -86,18 +85,6 @@ leg_bluez_player_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 dir="$bluez_player_dir"
-# status <name> <jq test> <seconds>: media status into status-<name>.json
-# until the test holds.
-status() {
-  local out="\$dir/status-\$1.json"
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    $ipc call media status > "\$out" 2>&1
-    "$jq_bin" -e "\$2" "\$out" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-  return 1
-}
 # cursor <name> <key> <tries> <key to press...>: presses until debug
 # dump's panel cursor sits on <key>, the dump kept as dump-<name>.json.
 cursor() {
@@ -112,23 +99,23 @@ cursor() {
 }
 shot() {
   sleep 0.6
-  "$grim_bin" "$shot_dir/bluez-player-\$1.png" > /dev/null 2>&1
+  shoot "$shot_dir/bluez-player-\$1.png"
 }
 
 sleep 2
-status playing '.kind == "bluetooth" and .isPlaying' 15
+until_jq 15 "\$dir/status-playing.json" '.kind == "bluetooth" and .isPlaying' call media status
 $ipc call panel open media > /dev/null 2>&1
 # The panel open is what lists the audio graph's streams.
-status routed '.output == "$bluez_player_sink"' 10
+until_jq 10 "\$dir/status-routed.json" '.output == "$bluez_player_sink"' call media status
 $ipc call media players > "\$dir/players.json" 2>&1
 shot playing
 
 $ipc call media playPause > "\$dir/reply-pause.txt" 2>&1
-status paused '.isPlaying == false' 5
+until_jq 5 "\$dir/status-paused.json" '.isPlaying == false' call media status
 $ipc call media next > "\$dir/reply-next.txt" 2>&1
-status next '.title == "$bluez_player_next"' 5
+until_jq 5 "\$dir/status-next.json" '.title == "$bluez_player_next"' call media status
 $ipc call media playPause > "\$dir/reply-play.txt" 2>&1
-status resumed '.isPlaying and .title == "$bluez_player_next"' 5
+until_jq 5 "\$dir/status-resumed.json" '.isPlaying and .title == "$bluez_player_next"' call media status
 
 last="pick:\$("$jq_bin" -r '.[-1].id' "\$dir/players.json")"
 $(stale_audit_start)

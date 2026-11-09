@@ -162,9 +162,7 @@ EOF
 # One pixel out of a frame, as six hex digits.
 join_pixel() {
   local rgb
-  rgb=$($convert_bin "$1" -format \
-    "%[fx:int(255*p{$2,$3}.r+0.5)] %[fx:int(255*p{$2,$3}.g+0.5)] %[fx:int(255*p{$2,$3}.b+0.5)]" \
-    info: 2>/dev/null)
+  rgb=$(pixel "$1" "$2" "$3")
   [ -n "$rgb" ] || fail "could not read the pixel at ($2,$3) out of $1"
   # shellcheck disable=SC2086  # three fields, one per channel
   printf '%02X%02X%02X' $rgb

@@ -44,17 +44,15 @@ leg_launch_drive() {
   local script="$shot_dir/launch-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call activity status > "$shot_dir/launch-\$1.json" 2>&1; call bar room > "$shot_dir/launch-room-\$1.json" 2>&1; }
-shoot() { "$grim_bin" "$shot_dir/launch-\$1.png" > /dev/null 2>&1; }
+snap() { status activity "$shot_dir/launch-\$1.json"; call bar room > "$shot_dir/launch-room-\$1.json" 2>&1; }
 sleep 4
-status idle
+snap idle
 call activity launch $launch_probe > "$shot_dir/launch-reply-ipc.txt" 2>&1
 sleep 0.5
-status ipc-running
-shoot ipc-running
+snap ipc-running
+shoot "$shot_dir/launch-ipc-running.png"
 sleep 4
-status ipc-mapped
+snap ipc-mapped
 "$hyprctl_bin" clients -j > "$shot_dir/launch-clients-ipc.json" 2>&1
 pkill -f -- "--app-id=$launch_probe"
 sleep 1
@@ -65,15 +63,15 @@ sleep 0.6
 call menu status > "$shot_dir/launch-menu.json" 2>&1
 call menu activate 0 > /dev/null 2>&1
 sleep 0.5
-status menu-running
+snap menu-running
 sleep 4
-status menu-mapped
+snap menu-mapped
 call activity launch $launch_ghost > /dev/null 2>&1
 sleep 1
-status ghost-running
+snap ghost-running
 sleep 16
-status ghost-failed
-shoot ghost-failed
+snap ghost-failed
+shoot "$shot_dir/launch-ghost-failed.png"
 call activity launch nothing-here > "$shot_dir/launch-reply-unknown.txt" 2>&1
 EOF
   hypr_exec_once "bash $script"
@@ -85,8 +83,7 @@ launch_group() {
 }
 
 launch_expect() {
-  local name=$1 filter=$2 why=$3
-  jq -e "$filter" "$shot_dir/launch-$name.json" > /dev/null 2>&1 || fail "launch: $why: $(cat "$shot_dir/launch-$name.json" 2>/dev/null)"
+  expect_jq "$shot_dir/launch-$1.json" "$2" "launch: $3"
 }
 
 leg_launch_assert() {

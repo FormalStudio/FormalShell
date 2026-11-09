@@ -47,89 +47,58 @@ leg_ipad_drive() {
   write_script "$script" <<EOF
 #!/usr/bin/env bash
 d="$ipad_dir"
-ipc() { $ipc call "\$@"; }
-qs() { ipc quicksettings status > "\$d/qs-\$1.json" 2>&1; }
-# until <file> <jq test> <seconds> <ipc args...>: the call into <file>
-# until the test holds.
-until_holds() {
-  local out="\$d/\$1" test="\$2" secs="\$3"
-  shift 3
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$secs" ]; do
-    ipc "\$@" > "\$out" 2>&1
-    "$jq_bin" -e "\$test" "\$out" > /dev/null 2>&1 && return 0
-    sleep 0.4
-  done
-  return 1
-}
+qs() { status quicksettings "\$d/qs-\$1.json"; }
 shot() {
   sleep 0.6
-  "$grim_bin" "$shot_dir/ipad-\$1.png" > /dev/null 2>&1
+  shoot "$shot_dir/ipad-\$1.png"
 }
-# Arrows toward the stop \$1 off the boxes quicksettings status reports.
-walk_to() {
-  local n=0 at key
-  : > "\$d/\$2"
-  if [ "\$(ipc quicksettings status 2>/dev/null | "$jq_bin" -r '.cursor // ""')" = "" ]; then
-    "$wtype_bin" -k Down
-    sleep 0.3
-  fi
-  while [ \$n -lt 16 ]; do
-    ipc quicksettings status > "\$d/walk.json" 2>/dev/null
-    at=\$("$jq_bin" -r '.cursor // ""' "\$d/walk.json")
-    echo "\$at" >> "\$d/\$2"
-    [ "\$at" = "\$1" ] && return 0
-    key=\$("$jq_bin" -r --arg at "\$at" --arg to "\$1" '
+# The key toward the stop \$to off the boxes quicksettings status reports.
+key_jq='
       ([.rows[] | {key: .id, value: .rect}, {key: (.id + ":icon"), value: .icon}, {key: (.id + ":menu"), value: .arrow}]
         + [(.menu.rows // [])[] | {key: .id, value: .rect}] | map(select(.value != null)) | from_entries) as \$box
       | \$box[\$at] as \$a | \$box[\$to] as \$b
       | if \$a == null or \$b == null then "Down"
         elif \$b.y >= \$a.y + \$a.height then "Down"
         elif \$b.y + \$b.height <= \$a.y then "Up"
-        elif \$b.x > \$a.x then "Right" else "Left" end' "\$d/walk.json")
-    "$wtype_bin" -k "\${key:-Down}"
-    sleep 0.3
-    n=\$((n + 1))
-  done
-}
+        elif \$b.x > \$a.x then "Right" else "Left" end'
 press() {
   "$wtype_bin" -k Return
   sleep "\${1:-1}"
 }
 
 sleep 3
-ipc ipad status > "\$d/status-absent.json" 2>&1
-ipc panel open quicksettings > /dev/null 2>&1
+call ipad status > "\$d/status-absent.json" 2>&1
+call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
 qs absent
 shot absent
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
 
 "$python3_bin" "$ipad_stub" --log "$ipad_log" --control "$ipad_fifo" --ready "\$d/ready" > "\$d/stub.log" 2>&1 &
 echo \$! > "$ipad_pid"
-until_holds status-present.json '.available' 10 ipad status
+until_jq 10 "\$d/status-present.json" '.available' call ipad status
 
-ipc panel open quicksettings > /dev/null 2>&1
+call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
 qs present
 shot tile
 $(stale_audit_start)
-walk_to ipad walk-tile.txt
+walk_to quicksettings .cursor ipad "\$d/walk-tile.txt" "\$key_jq"
 press
-until_holds qs-switched.json '.rows[] | select(.id == "ipad") | .on' 5 quicksettings status
-ipc ipad status > "\$d/status-switched.json" 2>&1
+until_jq 5 "\$d/qs-switched.json" '.rows[] | select(.id == "ipad") | .on' call quicksettings status
+call ipad status > "\$d/status-switched.json" 2>&1
 shot tile-on
 
-walk_to ipad:menu walk-arrow.txt
+walk_to quicksettings .cursor ipad:menu "\$d/walk-arrow.txt" "\$key_jq"
 press 1.5
 qs menu-open
 shot menu
-walk_to m:ipad:top walk-above.txt
+walk_to quicksettings .cursor m:ipad:top "\$d/walk-above.txt" "\$key_jq"
 press
-until_holds qs-above.json '.menu.rows[] | select(.id == "m:ipad:top") | .checked' 5 quicksettings status
+until_jq 5 "\$d/qs-above.json" '.menu.rows[] | select(.id == "m:ipad:top") | .checked' call quicksettings status
 echo '{"Link": "down"}' > "$ipad_fifo"
-until_holds qs-down.json '.menu.rows | any(.id == "m:ipad:reconnect")' 5 quicksettings status
+until_jq 5 "\$d/qs-down.json" '.menu.rows | any(.id == "m:ipad:reconnect")' call quicksettings status
 shot menu-down
 $(stale_audit_stop ipad-quick)
 "$wtype_bin" -k Escape
@@ -137,36 +106,36 @@ sleep 0.8
 "$wtype_bin" -k Escape
 sleep 1
 
-ipc menu summon ipad > "\$d/summon.txt" 2>&1
+call menu summon ipad > "\$d/summon.txt" 2>&1
 sleep 1.5
-ipc menu status > "\$d/menu-route.json" 2>&1
+call menu status > "\$d/menu-route.json" 2>&1
 shot launcher
 $(stale_audit_start)
 "$wtype_bin" first
 sleep 1
-ipc menu status > "\$d/menu-typed.json" 2>&1
+call menu status > "\$d/menu-typed.json" 2>&1
 press
-until_holds menu-stretch.json '.checked | index("ipad.stretch-first") != null' 5 menu status
+until_jq 5 "\$d/menu-stretch.json" '.checked | index("ipad.stretch-first") != null' call menu status
 $(stale_audit_stop ipad-launcher)
 shot launcher-stretch
-ipc ipad status > "\$d/status-stretch.json" 2>&1
+call ipad status > "\$d/status-stretch.json" 2>&1
 "$wtype_bin" -k Escape
 sleep 0.5
 "$wtype_bin" -k Escape
 sleep 1
 
 kill -9 "\$(cat "$ipad_pid")"
-until_holds status-gone.json '.available == false' 10 ipad status
-ipc panel open quicksettings > /dev/null 2>&1
+until_jq 10 "\$d/status-gone.json" '.available == false' call ipad status
+call panel open quicksettings > /dev/null 2>&1
 sleep 1.5
 qs gone
 shot gone
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 0.5
-ipc menu summon ipad > "\$d/summon-gone.txt" 2>&1
+call menu summon ipad > "\$d/summon-gone.txt" 2>&1
 sleep 1
-ipc menu status > "\$d/menu-gone.json" 2>&1
-ipc menu close > /dev/null 2>&1
+call menu status > "\$d/menu-gone.json" 2>&1
+call menu close > /dev/null 2>&1
 echo done > "\$d/drive-done"
 EOF
   hypr_exec_once "bash $script"

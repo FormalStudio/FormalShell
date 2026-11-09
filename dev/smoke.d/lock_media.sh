@@ -103,7 +103,7 @@ $ipc call theme mode light > /dev/null 2>&1
 sleep 7
 $ipc call lock status > "$lock_media_light_json" 2>&1
 "$grim_bin" "$lock_media_light_png" > /dev/null 2>&1
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 sleep 4
 $ipc call lock isLocked > "$lock_media_unlocked_txt" 2>&1
@@ -142,8 +142,8 @@ _lock_media_card_band() {
   geom=$(scaled_jq -r "$geometry_jq"'.outputs | to_entries | .[0].value.mediaCard // empty
     | {x: (.x + 24), y: (.y + 3), width: (.width - 48), height: 6} | geometry' "$json" 2>/dev/null)
   [ -n "$geom" ] || return 0
-  $convert_bin "$png" -crop "$geom" +repage -colorspace gray \
-    -format '%[fx:int(mean*1000)] %[fx:int(standard_deviation*1000)]' info: 2>/dev/null
+  echo "$(patch_mean "$png" "$geom") $($convert_bin "$png" -crop "$geom" +repage -colorspace gray \
+    -format '%[fx:int(standard_deviation*1000)]' info: 2>/dev/null)"
 }
 
 leg_lock_media_assert() {

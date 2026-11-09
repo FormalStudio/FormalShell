@@ -72,23 +72,20 @@ leg_launcher_modes_drive() {
   local script="$shot_dir/launcher-modes-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$shot_dir/launcher-modes-\$1.json" 2>&1; }
 root() { call menu summon "" > /dev/null 2>&1; sleep 0.3; }
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
-shoot() { "$grim_bin" "$shot_dir/launcher-modes-\$1.png" > /dev/null 2>&1; }
 sleep 4
 while IFS='|' read -r id label; do
   root
   call menu filter "\$label" > /dev/null 2>&1
-  status "find-\$id"
+  status menu "$shot_dir/launcher-modes-find-\$id.json"
   i=\$("$jq_bin" --arg id "\$id" '.ids | index(\$id) // -1' "$shot_dir/launcher-modes-find-\$id.json")
   call menu activate "\$i" > /dev/null 2>&1
   sleep 0.3
-  status "name-\$id"
+  status menu "$shot_dir/launcher-modes-name-\$id.json"
   call menu summon "\$id" > /dev/null 2>&1
   sleep 0.3
-  status "summon-\$id"
+  status menu "$shot_dir/launcher-modes-summon-\$id.json"
 done <<'ROUTES'
 $launcher_modes_routes
 radio.search|Search
@@ -97,90 +94,90 @@ ROUTES
 for p in "e|emoji" "k|keybinds" "r|radio.search" "f|files" "m|modesfix"; do
   root
   key -d 30 ":\${p%%|*} "
-  status "prefix-\${p#*|}"
+  status menu "$shot_dir/launcher-modes-prefix-\${p#*|}.json"
 done
 call menu summon ":k SUPER" > /dev/null 2>&1
 sleep 0.3
-status summon-prefixed
+status menu "$shot_dir/launcher-modes-summon-prefixed.json"
 call menu summon files > /dev/null 2>&1
 sleep 0.5
 call menu filter Documents > /dev/null 2>&1
 sleep 0.5
 call menu into 0 > /dev/null 2>&1
 sleep 0.6
-status folder
+status menu "$shot_dir/launcher-modes-folder.json"
 key -d 30 ":e "
-status prefix-in-folder
+status menu "$shot_dir/launcher-modes-prefix-in-folder.json"
 
 root
 call menu filter "Modes Probe" > /dev/null 2>&1
-status scope-root
+status menu "$shot_dir/launcher-modes-scope-root.json"
 call menu summon clipboard > /dev/null 2>&1
 call menu filter "Modes Probe" > /dev/null 2>&1
-status scope-clipboard
+status menu "$shot_dir/launcher-modes-scope-clipboard.json"
 root
 key -d 30 ":e modes"
-status scope-emoji
-shoot emoji-dark
+status menu "$shot_dir/launcher-modes-scope-emoji.json"
+shoot "$shot_dir/launcher-modes-emoji-dark.png"
 root
 call menu filter le > /dev/null 2>&1
-status scope-root-le
+status menu "$shot_dir/launcher-modes-scope-root-le.json"
 root
 key -d 30 ":m le"
-status scope-fixture
-shoot fixture-dark
+status menu "$shot_dir/launcher-modes-scope-fixture.json"
+shoot "$shot_dir/launcher-modes-fixture-dark.png"
 
 call menu summon modesfix.outer.inner > /dev/null 2>&1
 sleep 1
-status inner
-shoot inner-dark
+status menu "$shot_dir/launcher-modes-inner.json"
+shoot "$shot_dir/launcher-modes-inner-dark.png"
 key -k BackSpace
-status backspace
+status menu "$shot_dir/launcher-modes-backspace.json"
 call menu summon modesfix.outer.inner > /dev/null 2>&1
 sleep 0.5
 "$wtype_bin" -P BackSpace -s 1500 -p BackSpace
 sleep 0.6
-status backspace-held
+status menu "$shot_dir/launcher-modes-backspace-held.json"
 call menu summon modesfix.outer.inner > /dev/null 2>&1
 sleep 0.5
 key -k Left
-status left
+status menu "$shot_dir/launcher-modes-left.json"
 
 call menu summon modesfix.outer.inner > /dev/null 2>&1
 sleep 0.5
 key le
-status escape-0
+status menu "$shot_dir/launcher-modes-escape-0.json"
 for n in 1 2 3 4 5; do
   key -k Escape
-  status "escape-\$n"
+  status menu "$shot_dir/launcher-modes-escape-\$n.json"
 done
 
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 call menu summon modesfix.outer > /dev/null 2>&1
 sleep 1
-status click-before
+status menu "$shot_dir/launcher-modes-click-before.json"
 read -r tx ty tw th < <("$jq_bin" -r '[.tokenBox.x, .tokenBox.y, .tokenBox.width, .tokenBox.height] | @tsv' "$shot_dir/launcher-modes-click-before.json")
 "$wlrctl_bin" pointer move \$((tx + tw / 2)) \$((ty + th / 2)) > /dev/null 2>&1
 sleep 0.3
-"$wlrctl_bin" pointer click left > /dev/null 2>&1
+click
 sleep 0.6
-status click-after
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+status menu "$shot_dir/launcher-modes-click-after.json"
+park
 
 call theme mode light > /dev/null 2>&1
 sleep 2
 call theme status > "$shot_dir/launcher-modes-theme.json" 2>&1
 call menu summon modesfix.outer.inner > /dev/null 2>&1
 sleep 1
-shoot inner-light
+shoot "$shot_dir/launcher-modes-inner-light.png"
 root
 key -d 30 ":e modes"
 sleep 0.5
-shoot emoji-light
+shoot "$shot_dir/launcher-modes-emoji-light.png"
 root
 key -d 30 ":m le"
 sleep 0.5
-shoot fixture-light
+shoot "$shot_dir/launcher-modes-fixture-light.png"
 call menu close > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
@@ -188,9 +185,7 @@ EOF
 
 # `<step> <jq claim> <what it means>`, against that step's status.
 launcher_modes_expect() {
-  local f="$shot_dir/launcher-modes-$1.json"
-  [ -s "$f" ] || fail "launcher-modes: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null || fail "launcher-modes $1: $3, got $("$jq_bin" -c '{isOpen, level, token, query, ids: .ids[:6]}' "$f")"
+  expect_jq "$shot_dir/launcher-modes-$1.json" "$2" "launcher-modes $1: $3" '{isOpen, level, token, query, ids: .ids[:6]}'
 }
 
 leg_launcher_modes_assert() {

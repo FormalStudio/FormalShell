@@ -28,7 +28,6 @@ leg_device_routes_vm_only="it connects and forgets networks through NetworkManag
 leg_device_routes_needs="jq wtype pactl ffmpeg mpv convert tesseract"
 
 device_routes_track_path="$shot_dir/device-routes-station.mp3"
-device_routes_module_path="$shot_dir/device-routes-sink-module.txt"
 device_routes_default_before_path="$shot_dir/device-routes-default-before.txt"
 device_routes_default_after_path="$shot_dir/device-routes-default-after.txt"
 device_routes_selection_copy="$shot_dir/device-routes-selection.txt"
@@ -75,25 +74,11 @@ done
 EOF
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-ipc() { $ipc call "\$@"; }
-# menu status into \$1, then the index of row id \$2 in its ids, retried
-# until the row is there.
-row_index() {
-  local i=0 idx=""
-  while [ "\$i" -lt 20 ]; do
-    ipc menu status > "\$1" 2>&1
-    idx=\$("$jq_bin" -r --arg id "\$2" '.ids | index(\$id) // empty' "\$1" 2>/dev/null)
-    [ -n "\$idx" ] && break
-    sleep 0.5
-    i=\$((i + 1))
-  done
-  echo "\$idx"
-}
-net() { ipc network status > "\$1" 2>&1; }
+net() { call network status > "\$1" 2>&1; }
 route() {
-  ipc menu summon "\$1" > /dev/null 2>&1
+  call menu summon "\$1" > /dev/null 2>&1
   sleep 1.5
-  [ -n "\$2" ] && ipc menu filter "\$2" > /dev/null 2>&1
+  [ -n "\$2" ] && call menu filter "\$2" > /dev/null 2>&1
   sleep 1
 }
 
@@ -101,17 +86,17 @@ bash "$server" &
 sleep 3
 
 "$pactl_bin" get-default-sink > "$device_routes_default_before_path" 2>&1
-"$pactl_bin" load-module module-null-sink sink_name=$device_routes_sink sink_properties=device.description=RoutesSink > "$device_routes_module_path"
+pw_load_module module-null-sink sink_name=$device_routes_sink sink_properties=device.description=RoutesSink > /dev/null
 
 # The self-heal in wifi.sh has the why: a wedged supplicant queue and a
 # fixture profile left parked on wlan0 by an interrupted run.
 sudo systemctl restart wpa_supplicant-wlan0.service
 sleep 2
-ipc panel open network > /dev/null 2>&1
+call panel open network > /dev/null 2>&1
 for ssid in FORMALTEST FORMALTEST-EAP; do
   net "$shot_dir/device-routes-reset.json"
   if grep -qF "\"name\":\"\$ssid\",\"known\":true" "$shot_dir/device-routes-reset.json"; then
-    ipc network forget "\$ssid" > /dev/null 2>&1
+    call network forget "\$ssid" > /dev/null 2>&1
     SECONDS=0
     while [ "\$SECONDS" -lt 15 ]; do
       net "$shot_dir/device-routes-reset.json"
@@ -120,9 +105,9 @@ for ssid in FORMALTEST FORMALTEST-EAP; do
     done
   fi
 done
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 # The launcher's own scanner hold is what wakes the radios from here on.
-ipc menu summon wifi > /dev/null 2>&1
+call menu summon wifi > /dev/null 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 25 ]; do
   net "$shot_dir/device-routes-scan.json"
@@ -135,9 +120,9 @@ done
 route wifi FORMALTEST
 idx=\$(row_index "$shot_dir/device-routes-wifi-list.json" wifi.net.FORMALTEST)
 "$grim_bin" "$shot_dir/device-routes-wifi-list.png" > /dev/null 2>&1
-ipc menu activate "\$idx" > /dev/null 2>&1
+call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5
-ipc menu status > "$shot_dir/device-routes-wifi-input.json" 2>&1
+call menu status > "$shot_dir/device-routes-wifi-input.json" 2>&1
 "$wtype_bin" wrong-formaltest-psk
 sleep 1
 "$grim_bin" "$shot_dir/device-routes-wifi-masked.png" > /dev/null 2>&1
@@ -155,15 +140,15 @@ while [ "\$SECONDS" -lt 45 ]; do
   sleep 1
 done
 sleep 1.5
-ipc menu status > "$shot_dir/device-routes-wifi-after-wrong.json" 2>&1
+call menu status > "$shot_dir/device-routes-wifi-after-wrong.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-wrong.png" > /dev/null 2>&1
 
 # The failure was a secret one, so Enter asks again instead of retrying.
 route wifi FORMALTEST
 idx=\$(row_index "$shot_dir/device-routes-wifi-list2.json" wifi.net.FORMALTEST)
-ipc menu activate "\$idx" > /dev/null 2>&1
+call menu activate "\$idx" > /dev/null 2>&1
 sleep 1.5
-ipc menu status > "$shot_dir/device-routes-wifi-input2.json" 2>&1
+call menu status > "$shot_dir/device-routes-wifi-input2.json" 2>&1
 "$wtype_bin" formaltest-psk
 sleep 0.5
 "$wtype_bin" -k Return
@@ -174,19 +159,19 @@ while [ "\$SECONDS" -lt 30 ]; do
   sleep 1
 done
 sleep 2
-ipc menu status > "$shot_dir/device-routes-wifi-ticked.json" 2>&1
+call menu status > "$shot_dir/device-routes-wifi-ticked.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-connected.png" > /dev/null 2>&1
 cp "$iso_home/.local/state/formalshell/menu-selection.txt" "$device_routes_selection_copy" 2>/dev/null
 
 # → on the connected network: its details.
 route wifi FORMALTEST
 idx=\$(row_index "$shot_dir/device-routes-wifi-details-list.json" wifi.net.FORMALTEST)
-ipc menu into "\$idx" > "$shot_dir/device-routes-wifi-into.txt" 2>&1
+call menu into "\$idx" > "$shot_dir/device-routes-wifi-into.txt" 2>&1
 sleep 1.5
-ipc menu status > "$shot_dir/device-routes-wifi-details.json" 2>&1
+call menu status > "$shot_dir/device-routes-wifi-details.json" 2>&1
 ip -4 -o addr show dev wlan0 | awk '{print \$4}' > "$shot_dir/device-routes-wifi-addresses.txt" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-details.png" > /dev/null 2>&1
-ipc menu close > /dev/null 2>&1
+call menu close > /dev/null 2>&1
 sleep 1
 
 # Show password on the saved network: NetworkManager's GetSecrets, through
@@ -194,58 +179,58 @@ sleep 1
 # clear, and Escape dropping it.
 route wifi FORMALTEST
 idx=\$(row_index "$shot_dir/device-routes-wifi-show-list.json" wifi.net.FORMALTEST)
-ipc menu runAction "\$idx" show-password > "$shot_dir/device-routes-wifi-show-run.txt" 2>&1
+call menu runAction "\$idx" show-password > "$shot_dir/device-routes-wifi-show-run.txt" 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 20 ]; do
-  ipc debug dump > "$shot_dir/device-routes-wifi-show-dump.json" 2>&1
+  call debug dump > "$shot_dir/device-routes-wifi-show-dump.json" 2>&1
   if "$jq_bin" -e 'any(.modals[]; .namespace == "formalshell:polkit" and .open)' "$shot_dir/device-routes-wifi-show-dump.json" > /dev/null 2>&1 \
     && [ ! -e "$shot_dir/device-routes-wifi-show-polkit" ]; then
     touch "$shot_dir/device-routes-wifi-show-polkit"
     sleep 1
-    "$wtype_bin" formalshell-test
+    "$wtype_bin" "$rig_password"
     "$wtype_bin" -k Return
   fi
-  ipc menu status > "$shot_dir/device-routes-wifi-show.json" 2>&1
+  call menu status > "$shot_dir/device-routes-wifi-show.json" 2>&1
   "$jq_bin" -e '.secretShown == true' "$shot_dir/device-routes-wifi-show.json" > /dev/null 2>&1 && break
   sleep 0.5
 done
 sleep 1
-ipc debug dump > "$shot_dir/device-routes-wifi-show-dump.json" 2>&1
+call debug dump > "$shot_dir/device-routes-wifi-show-dump.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-wifi-show.png" > /dev/null 2>&1
 "$wtype_bin" -k Escape
 sleep 1
-ipc menu status > "$shot_dir/device-routes-wifi-show-after.json" 2>&1
-ipc menu close > /dev/null 2>&1
+call menu status > "$shot_dir/device-routes-wifi-show-after.json" 2>&1
+call menu close > /dev/null 2>&1
 sleep 1
 
 # A root query reaches what is saved, sunk or a favourite, never what is
 # merely nearby.
-ipc menu summon "" > /dev/null 2>&1
+call menu summon "" > /dev/null 2>&1
 sleep 2
-ipc debug query FORMALTEST > "$shot_dir/device-routes-root-wifi.json" 2>&1
-ipc debug query FORMALTEST-EAP > "$shot_dir/device-routes-root-nearby.json" 2>&1
-ipc debug query RoutesSink > "$shot_dir/device-routes-root-audio.json" 2>&1
-ipc debug query 'Routes Radio' > "$shot_dir/device-routes-root-radio.json" 2>&1
-ipc menu close > /dev/null 2>&1
+call debug query FORMALTEST > "$shot_dir/device-routes-root-wifi.json" 2>&1
+call debug query FORMALTEST-EAP > "$shot_dir/device-routes-root-nearby.json" 2>&1
+call debug query RoutesSink > "$shot_dir/device-routes-root-audio.json" 2>&1
+call debug query 'Routes Radio' > "$shot_dir/device-routes-root-radio.json" 2>&1
+call menu close > /dev/null 2>&1
 sleep 1
 
 # Shift+Enter forgets the saved network.
 route wifi FORMALTEST
 idx=\$(row_index "$shot_dir/device-routes-wifi-forget-list.json" wifi.net.FORMALTEST)
 "$grim_bin" "$shot_dir/device-routes-wifi-hint.png" > /dev/null 2>&1
-ipc menu activateAlternate "\$idx" > /dev/null 2>&1
+call menu activateAlternate "\$idx" > /dev/null 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 15 ]; do
   net "$shot_dir/device-routes-wifi-forgotten.json"
   grep -qE '"name":"FORMALTEST","known":false,"connected":false,"stateChanging":false' "$shot_dir/device-routes-wifi-forgotten.json" && break
   sleep 1
 done
-ipc menu close > /dev/null 2>&1
+call menu close > /dev/null 2>&1
 
 # Audio: the launcher moves the default sink to the null sink.
 route audio RoutesSink
 idx=\$(row_index "$shot_dir/device-routes-audio-list.json" audio.output.$device_routes_sink)
-ipc menu activate "\$idx" > /dev/null 2>&1
+call menu activate "\$idx" > /dev/null 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 10 ]; do
   "$pactl_bin" get-default-sink > "$device_routes_default_after_path" 2>&1
@@ -253,61 +238,60 @@ while [ "\$SECONDS" -lt 10 ]; do
   sleep 1
 done
 sleep 1.5
-ipc menu filter "" > /dev/null 2>&1
+call menu filter "" > /dev/null 2>&1
 sleep 1
-ipc menu status > "$shot_dir/device-routes-audio-ticked.json" 2>&1
+call menu status > "$shot_dir/device-routes-audio-ticked.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-audio.png" > /dev/null 2>&1
-ipc menu close > /dev/null 2>&1
+call menu close > /dev/null 2>&1
 
 # Bluetooth: no adapter in the VM, and the panel is still the panel.
 route bluetooth ""
-ipc menu status > "$shot_dir/device-routes-bluetooth.json" 2>&1
+call menu status > "$shot_dir/device-routes-bluetooth.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-bluetooth.png" > /dev/null 2>&1
-ipc menu close > /dev/null 2>&1
+call menu close > /dev/null 2>&1
 sleep 1
-ipc panel open bluetooth > "$shot_dir/device-routes-bluetooth-panel-open.txt" 2>&1
+call panel open bluetooth > "$shot_dir/device-routes-bluetooth-panel-open.txt" 2>&1
 sleep 1
-ipc panel state > "$shot_dir/device-routes-bluetooth-panel.json" 2>&1
-ipc panel close > /dev/null 2>&1
+call panel state > "$shot_dir/device-routes-bluetooth-panel.json" 2>&1
+call panel close > /dev/null 2>&1
 
 # Radio: tune the favourite, then Stop and Shift+Enter remove it.
 route radio "Routes Radio"
 idx=\$(row_index "$shot_dir/device-routes-radio-list.json" radio.fav.$device_routes_station_id)
-ipc menu activate "\$idx" > /dev/null 2>&1
+call menu activate "\$idx" > /dev/null 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 15 ]; do
-  ipc radio status > "$shot_dir/device-routes-radio-status.json" 2>&1
+  call radio status > "$shot_dir/device-routes-radio-status.json" 2>&1
   grep -qF '"station":"$device_routes_station_name"' "$shot_dir/device-routes-radio-status.json" \
     && grep -qF '"running":true' "$shot_dir/device-routes-radio-status.json" && break
   sleep 1
 done
 sleep 2
-ipc menu filter "" > /dev/null 2>&1
+call menu filter "" > /dev/null 2>&1
 sleep 1
-ipc menu status > "$shot_dir/device-routes-radio-ticked.json" 2>&1
+call menu status > "$shot_dir/device-routes-radio-ticked.json" 2>&1
 "$grim_bin" "$shot_dir/device-routes-radio.png" > /dev/null 2>&1
-ipc menu filter "Routes Radio" > /dev/null 2>&1
+call menu filter "Routes Radio" > /dev/null 2>&1
 idx=\$(row_index "$shot_dir/device-routes-radio-list2.json" radio.fav.$device_routes_station_id)
-ipc menu activateAlternate "\$idx" > /dev/null 2>&1
+call menu activateAlternate "\$idx" > /dev/null 2>&1
 sleep 1.5
-ipc radio status > "$shot_dir/device-routes-radio-removed.json" 2>&1
-ipc menu close > /dev/null 2>&1
-ipc radio stop > /dev/null 2>&1
+call radio status > "$shot_dir/device-routes-radio-removed.json" 2>&1
+call menu close > /dev/null 2>&1
+call radio stop > /dev/null 2>&1
 
-ipc menu summon "" > /dev/null 2>&1
+call menu summon "" > /dev/null 2>&1
 sleep 1.5
-ipc debug query ':r jazz' > "$shot_dir/device-routes-radio-search.json" 2>&1
+call debug query ':r jazz' > "$shot_dir/device-routes-radio-search.json" 2>&1
 SECONDS=0
 while [ "\$SECONDS" -lt 20 ]; do
-  ipc debug query ':r jazz' > "$shot_dir/device-routes-radio-search.json" 2>&1
+  call debug query ':r jazz' > "$shot_dir/device-routes-radio-search.json" 2>&1
   grep -qF 'radio.searching' "$shot_dir/device-routes-radio-search.json" || break
   sleep 1
 done
-ipc debug query jazz > "$shot_dir/device-routes-root-jazz.json" 2>&1
-ipc menu close > /dev/null 2>&1
+call debug query jazz > "$shot_dir/device-routes-root-jazz.json" 2>&1
+call menu close > /dev/null 2>&1
 EOF
   add_cleanup "'$pactl_bin' set-default-sink \"\$(cat '$device_routes_default_before_path' 2>/dev/null)\" 2>/dev/null || true"
-  add_cleanup "[ -s '$device_routes_module_path' ] && '$pactl_bin' unload-module \"\$(cat '$device_routes_module_path')\" 2>/dev/null || true"
   add_cleanup "pkill -f 'device-routes-server.sh' 2>/dev/null || true"
   add_cleanup "pkill -f 'listen 1 http://127.0.0.1:$device_routes_port' 2>/dev/null || true"
   hypr_exec_once "bash $script"

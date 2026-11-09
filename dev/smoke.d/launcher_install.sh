@@ -121,87 +121,64 @@ leg_launcher_install_drive() {
   local script="$shot_dir/launcher-install-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$li_dir/\$1.json" 2>&1; }
-pkgs() { call packages status > "$li_dir/\$1.json" 2>&1; }
-acts() { call activity status > "$li_dir/\$1.json" 2>&1; }
-shoot() { "$grim_bin" "$li_dir/\$1.png" > /dev/null 2>&1; }
-# Polls menu status into step \$1 until jq claim \$2 holds, at most \$3 s.
-until_status() {
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    status "\$1"
-    "$jq_bin" -e "\$2" "$li_dir/\$1.json" > /dev/null 2>&1 && return 0
-    sleep 0.2
-  done
-}
 # Waits for the stub's mark \$1 (op.step), then lets it on.
 step() {
   for _ in \$(seq 1 100); do [ -e "$li_dir/\$1" ] && return 0; sleep 0.1; done
 }
 go() { touch "$li_dir/\$1"; }
-# Waits for packages status step \$1 to satisfy jq claim \$2, at most \$3 s.
-until_pkgs() {
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    pkgs "\$1"
-    "$jq_bin" -e "\$2" "$li_dir/\$1.json" > /dev/null 2>&1 && return 0
-    sleep 0.2
-  done
-}
 "$python3_bin" -m http.server "$li_port" --bind 127.0.0.1 --directory "$li_dir/www" > "$li_dir/http.log" 2>&1 &
 sleep 4
 call menu summon install > /dev/null 2>&1
 sleep 1
-status idle
+status menu "$li_dir/idle.json"
 call menu filter fox > /dev/null 2>&1
-until_status searching '.empty == "install.searching"' 3
-until_status rows '(.ids | length) >= 4 and .drawn[0].picture' 10
+until_jq 3 "$li_dir/searching.json" '.empty == "install.searching"' call menu status
+until_jq 10 "$li_dir/rows.json" '(.ids | length) >= 4 and .drawn[0].picture' call menu status
 sleep 1
-shoot rows
+shoot "$li_dir/rows.png"
 # The panes: Foxglove's with its screenshot fetched off loopback, then the
 # zypper row's and Foxfire's, neither with a screenshot.
-until_pkgs pkgs-pane-shot '.shots["http://127.0.0.1:$li_port/foxglove-shot.png"] != null' 10
+until_jq 10 "$li_dir/pkgs-pane-shot.json" '.shots["http://127.0.0.1:$li_port/foxglove-shot.png"] != null' call packages status
 sleep 1.5
-status pane-shot
-shoot pane-shot
+status menu "$li_dir/pane-shot.json"
+shoot "$li_dir/pane-shot.png"
 "$wtype_bin" -k Down
-until_pkgs pkgs-pane-zypper '.info["zypper:foxtrot-cli"].installed != null' 10
+until_jq 10 "$li_dir/pkgs-pane-zypper.json" '.info["zypper:foxtrot-cli"].installed != null' call packages status
 sleep 1
-status pane-zypper
-shoot pane-zypper
+status menu "$li_dir/pane-zypper.json"
+shoot "$li_dir/pane-zypper.png"
 "$wtype_bin" -k Down
-until_pkgs pkgs-pane-noshot '.info["flatpak:org.example.Foxfire"].license != null' 10
+until_jq 10 "$li_dir/pkgs-pane-noshot.json" '.info["flatpak:org.example.Foxfire"].license != null' call packages status
 sleep 1
-status pane-noshot
-shoot pane-noshot
+status menu "$li_dir/pane-noshot.json"
+shoot "$li_dir/pane-noshot.png"
 "$wtype_bin" -k Up -k Up
 sleep 0.5
 call menu filter broken > /dev/null 2>&1
-until_status failed '.empty == "install.failed"' 10
-shoot failed
+until_jq 10 "$li_dir/failed.json" '.empty == "install.failed"' call menu status
+shoot "$li_dir/failed.png"
 call menu filter zz > /dev/null 2>&1
-until_status none '.empty == "install.none"' 10
+until_jq 10 "$li_dir/none.json" '.empty == "install.none"' call menu status
 touch "$li_dir/gone"
 call menu filter gone > /dev/null 2>&1
-until_status gone '.empty == "install.nofspec"' 10
+until_jq 10 "$li_dir/gone.json" '.empty == "install.nofspec"' call menu status
 rm -f "$li_dir/gone"
 
 call menu filter fox > /dev/null 2>&1
-until_status ready '.ids[0] == "install.pkg.flatpak%3Aorg%2Eexample%2EFoxglove"' 10
+until_jq 10 "$li_dir/ready.json" '.ids[0] == "install.pkg.flatpak%3Aorg%2Eexample%2EFoxglove"' call menu status
 "$wtype_bin" -k Return
 step "\$(sleep 1; cat "$li_dir/last-op").1"
 op=\$(cat "$li_dir/last-op")
-until_status resolving '.drawn[0].value == "Resolving"' 5
+until_jq 5 "$li_dir/resolving.json" '.drawn[0].value == "Resolving"' call menu status
 go "\$op.go1"; step "\$op.2"
-until_status downloading '.drawn[0].value == "Downloading 40%"' 5
-shoot ring
+until_jq 5 "$li_dir/downloading.json" '.drawn[0].value == "Downloading 40%"' call menu status
+shoot "$li_dir/ring.png"
 go "\$op.go2"; step "\$op.3"
-until_status committing '.drawn[0].value == "Installing 50%"' 5
+until_jq 5 "$li_dir/committing.json" '.drawn[0].value == "Installing 50%"' call menu status
 call menu close > /dev/null 2>&1
 sleep 0.8
-shoot toast
-acts running
+shoot "$li_dir/toast.png"
+status activity "$li_dir/running.json"
 cat > "$li_apps/org.example.Foxglove.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
@@ -212,11 +189,11 @@ DESKTOP
 sleep 1.5
 go "\$op.go3"
 for _ in \$(seq 1 30); do
-  pkgs landed
+  status packages "$li_dir/landed.json"
   "$jq_bin" -e '.started[0].app != null' "$li_dir/landed.json" > /dev/null 2>&1 && break
   sleep 0.3
 done
-acts succeeded
+status activity "$li_dir/succeeded.json"
 call activity openApp "fspec:install:flatpak:org.example.Foxglove" > "$li_dir/launch.txt" 2>&1
 sleep 1
 cp "$iso_home/.local/state/formalshell/state.json" "$li_dir/state.json" 2>/dev/null
@@ -224,7 +201,7 @@ cp "$iso_home/.local/state/formalshell/state.json" "$li_dir/state.json" 2>/dev/n
 call menu summon install > /dev/null 2>&1
 sleep 0.5
 call menu filter fox > /dev/null 2>&1
-until_status found '.ids[0] | startswith("apps.")' 10
+until_jq 10 "$li_dir/found.json" '.ids[0] | startswith("apps.")' call menu status
 
 i=\$("$jq_bin" '.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")' "$li_dir/found.json")
 call menu activate "\$i" > /dev/null 2>&1
@@ -233,8 +210,8 @@ fop=\$(cat "$li_dir/last-op")
 step "\$fop.1"
 go "\$fop.go1"; step "\$fop.2"
 sleep 0.6
-status failrow
-acts failact
+status menu "$li_dir/failrow.json"
+status activity "$li_dir/failact.json"
 call menu close > /dev/null 2>&1
 sleep 0.3
 call activity retry "fspec:install:flatpak:org.example.Foxfire" > "$li_dir/retry.txt" 2>&1
@@ -247,15 +224,15 @@ sleep 1
 call menu summon install > /dev/null 2>&1
 sleep 0.5
 call menu filter fox > /dev/null 2>&1
-until_status runready '(.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")) != null' 10
+until_jq 10 "$li_dir/runready.json" '(.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")) != null' call menu status
 i=\$("$jq_bin" '.ids | index("install.pkg.flatpak%3Aorg%2Eexample%2EFoxfire")' "$li_dir/runready.json")
 for _ in \$(seq 1 "\$i"); do "$wtype_bin" -k Down; done
 sleep 0.3
 "$wtype_bin" -k Tab
-until_status runcol '.actionsOpen and .actions[-1] == "run-once"' 5
+until_jq 5 "$li_dir/runcol.json" '.actionsOpen and .actions[-1] == "run-once"' call menu status
 "$wtype_bin" -k End
 sleep 0.3
-shoot runcol
+shoot "$li_dir/runcol.png"
 before=\$(cat "$li_dir/last-op")
 "$wtype_bin" -k Return
 for _ in \$(seq 1 30); do [ "\$(cat "$li_dir/last-op")" != "\$before" ] && break; sleep 0.2; done
@@ -263,11 +240,11 @@ rop=\$(cat "$li_dir/last-op")
 step "\$rop.1"
 go "\$rop.go1"; step "\$rop.2"
 sleep 0.8
-acts runrunning
-shoot runonce
+status activity "$li_dir/runrunning.json"
+shoot "$li_dir/runonce.png"
 go "\$rop.go2"; step "\$rop.3"
 sleep 0.6
-acts runsucceeded
+status activity "$li_dir/runsucceeded.json"
 call menu close > /dev/null 2>&1
 
 cat > "$li_apps/org.example.Foxberry.desktop" <<DESKTOP
@@ -281,17 +258,17 @@ sleep 1.5
 call menu summon install > /dev/null 2>&1
 sleep 0.5
 call menu filter foxb > /dev/null 2>&1
-until_status own '.ids[0] == "apps.org.example.Foxberry"' 10
+until_jq 10 "$li_dir/own.json" '.ids[0] == "apps.org.example.Foxberry"' call menu status
 # Tab before the owner query answers: Uninstall joins the open column.
 "$wtype_bin" -k Tab
-until_status early '.actionsOpen' 3
-until_status column '.actions[-1] == "uninstall"' 5
+until_jq 3 "$li_dir/early.json" '.actionsOpen' call menu status
+until_jq 5 "$li_dir/column.json" '.actions[-1] == "uninstall"' call menu status
 "$wtype_bin" -k End
 sleep 0.3
 "$wtype_bin" -k Return
 sleep 0.4
-status armed
-shoot armed
+status menu "$li_dir/armed.json"
+shoot "$li_dir/armed.png"
 before=\$(cat "$li_dir/last-op")
 "$wtype_bin" -k Return
 for _ in \$(seq 1 30); do [ "\$(cat "$li_dir/last-op")" != "\$before" ] && break; sleep 0.2; done
@@ -302,16 +279,16 @@ rm -f "$li_apps/org.example.Foxberry.desktop"
 sleep 1.5
 go "\$uop.go2"
 for _ in \$(seq 1 30); do
-  pkgs removed
+  status packages "$li_dir/removed.json"
   "$jq_bin" -e '.started[] | select(.verb == "uninstall") | .op != null' "$li_dir/removed.json" > /dev/null 2>&1 && break
   sleep 0.3
 done
 sleep 1.5
-acts uninstalled
+status activity "$li_dir/uninstalled.json"
 call menu summon install > /dev/null 2>&1
 sleep 0.5
 call menu filter foxb > /dev/null 2>&1
-until_status gonerows '(.ids | length) > 0 and (.ids | index("apps.org.example.Foxberry")) == null' 10
+until_jq 10 "$li_dir/gonerows.json" '(.ids | length) > 0 and (.ids | index("apps.org.example.Foxberry")) == null' call menu status
 
 cat > "$li_apps/org.example.Foxtail.desktop" <<DESKTOP
 [Desktop Entry]
@@ -322,15 +299,15 @@ Icon=folder
 DESKTOP
 sleep 1.5
 call menu filter foxtail > /dev/null 2>&1
-until_status distro '.ids[0] == "apps.org.example.Foxtail"' 10
+until_jq 10 "$li_dir/distro.json" '.ids[0] == "apps.org.example.Foxtail"' call menu status
 for _ in \$(seq 1 30); do
-  pkgs distroowner
+  status packages "$li_dir/distroowner.json"
   "$jq_bin" -e '.owners["org.example.Foxtail"] != null' "$li_dir/distroowner.json" > /dev/null 2>&1 && break
   sleep 0.2
 done
 call menu actions 0 > /dev/null 2>&1
 sleep 0.3
-status distrocolumn
+status menu "$li_dir/distrocolumn.json"
 call menu close > /dev/null 2>&1
 for m in "$li_dir"/smoke-*.[0-9]; do touch "\${m%.*}.go1" "\${m%.*}.go2" "\${m%.*}.go3"; done
 EOF
@@ -372,9 +349,7 @@ li_panes() {
 }
 
 li_expect() {
-  local f="$li_dir/$1.json"
-  [ -s "$f" ] || fail "launcher-install: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null || fail "launcher-install $1: $3, got $("$jq_bin" -c '{level, empty, ids: .ids[:5], drawn: .drawn[:3], checked, started, groups}' "$f" 2>/dev/null || cat "$f")"
+  expect_jq "$li_dir/$1.json" "$2" "launcher-install $1: $3" '{level, empty, ids: .ids[:5], drawn: .drawn[:3], checked, started, groups}'
 }
 
 leg_launcher_install_assert() {

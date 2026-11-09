@@ -139,7 +139,7 @@ $ipc call quicksettings status > "$chevron_quiet_first_path" 2>&1
 $ipc call bar chevron collapse > /dev/null 2>&1
 card=\$("$jq_bin" -r '.card | "\(.x),\(.y) \(.width)x\(.height)"' "$chevron_quiet_first_path")
 sleep 1
-burst() {
+timed_burst() {
   local lane=\$1 i t0 t1
   for i in \$(seq 1 $chevron_quiet_burst_frames); do
     t0=\$(date +%s%3N)
@@ -150,7 +150,7 @@ burst() {
 }
 burst_pids=()
 for lane in $chevron_quiet_burst_lanes; do
-  burst "\$lane" &
+  timed_burst "\$lane" &
   burst_pids+=("\$!")
   sleep $chevron_quiet_burst_offset
 done

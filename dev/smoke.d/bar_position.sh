@@ -136,7 +136,7 @@ leg_bar_position_assert() {
   fi
   # hyprctl -j layers nests every surface under its monitor and level; the
   # bar is the one surface in the formalshell:bar namespace.
-  box=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y) \(.w) \(.h)"' "$bar_position_layers_path" 2>/dev/null)
+  box=$("$jq_bin" -r "$layers_jq"'layer("formalshell:bar") | first | "\(.x) \(.y) \(.w) \(.h)"' "$bar_position_layers_path" 2>/dev/null)
   if [ -z "$box" ] || [ "$box" = "null" ]; then
     fail "no formalshell:bar layer surface in $bar_position_layers_path"
   fi

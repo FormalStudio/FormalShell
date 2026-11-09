@@ -129,7 +129,7 @@ corners false
 sleep 2
 corners true
 sleep 2
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 # Polled rather than slept: PAM's own round trip varies here, and a corner
 # that re-arms too eagerly locks again 400ms after the unlock, so a fixed
 # sample lands on the relock and blames the password for it. The first
@@ -153,7 +153,7 @@ sleep 2
 ipc "$hotcorner_relock_s4_path"
 "$grim_bin" "$hotcorner_relock_again_path" > /dev/null 2>&1
 sleep 1
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 sleep 4
 ipc "$hotcorner_relock_s5_path"
 corners true
@@ -171,7 +171,7 @@ sleep 2
 saver "$hotcorner_relock_saver_card_path"
 ipc "$hotcorner_relock_saver_card_lock_path"
 "$grim_bin" "$hotcorner_relock_saver_card_shot_path" > /dev/null 2>&1
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 for i in \$(seq 1 40); do
   ipc "$hotcorner_relock_saver_unlocked_path"
   grep -q '^false\$' "$hotcorner_relock_saver_unlocked_path" && break
@@ -189,7 +189,7 @@ ipc "$hotcorner_relock_saver_again_lock_path"
 sleep 2
 saver "$hotcorner_relock_saver_moved_path"
 ipc "$hotcorner_relock_saver_moved_lock_path"
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 sleep 4
 saver "$hotcorner_relock_saver_final_path"
 ipc "$hotcorner_relock_saver_final_lock_path"
@@ -223,7 +223,7 @@ hotcorner_relock_saver_expect() {
 leg_hotcorner_relock_assert() {
   local f
   [ -s "$hotcorner_relock_overview_path" ] || fail "no layer dump at $hotcorner_relock_overview_path"
-  [ "$("$jq_bin" '[.[].levels[]?[]? | select(.namespace == "formalshell:hotcorner")] | length' "$hotcorner_relock_overview_path")" = 3 ] \
+  [ "$("$jq_bin" "$layers_jq"'layer("formalshell:hotcorner") | length' "$hotcorner_relock_overview_path")" = 3 ] \
     || fail "topLeft overview did not map its corner beside the other two: $(cat "$hotcorner_relock_overview_path")"
   echo "SMOKE_HOTCORNER_RELOCK the overview corner maps beside the other two"
   hotcorner_relock_saver_expect "$hotcorner_relock_saver_on_path" true \

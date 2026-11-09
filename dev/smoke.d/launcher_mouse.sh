@@ -64,11 +64,8 @@ leg_launcher_mouse_drive() {
   local script="$shot_dir/launcher-mouse-drive.sh" p="$shot_dir/launcher-mouse"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$p-\$1.json" 2>&1; }
-shoot() { "$grim_bin" "$p-\$1.png" > /dev/null 2>&1; }
-at() { "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1; "$wlrctl_bin" pointer move "\$1" "\$2" > /dev/null 2>&1; sleep 0.4; }
-click() { "$wlrctl_bin" pointer click "\${1:-left}" > /dev/null 2>&1; sleep 0.8; }
+at() { park "\$1" "\$2"; sleep 0.4; }
+tap() { click "\$@"; sleep 0.8; }
 # The middle of foot button \$2 in status \$1.
 hint() { "$jq_bin" -r --arg on "\$2" '.footHints[] | select(.on == \$on) | "\(.x + .width / 2) \(.y + .height / 2)"' "$p-\$1.json" | head -n 1; }
 # Row 0's box off status \$1, taken with the cursor on it; then row \$1's
@@ -77,15 +74,15 @@ rows_from() { read -r top bottom < <("$jq_bin" -r '[.viewCursor.top, .viewCursor
 row_y() { echo \$((by + top + \$1 * pitch + (bottom - top) / 2)); }
 index() { "$jq_bin" -r --arg id "\$2" '.ids | index(\$id) // -1' "$p-\$1.json"; }
 sleep 4
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 call menu summon "" > /dev/null 2>&1
 sleep 1.5
 "$wtype_bin" e
 sleep 1
-status root
+status menu "$p-root.json"
 "$wtype_bin" -k Down
 sleep 0.5
-status root-down
+status menu "$p-root-down.json"
 "$wtype_bin" -k Up
 sleep 0.5
 read -r bx by top bottom left < <("$jq_bin" -r '[.body.x, .body.y, .viewCursor.top, .viewCursor.bottom, .viewCursor.left] | @tsv' "$p-root.json")
@@ -97,36 +94,36 @@ at "\$x" "\$(row_y 0)"
 "$wlrctl_bin" pointer move 0 1 > /dev/null 2>&1
 for i in 0 1 2 3 4; do
   sleep 0.5
-  status "hover-\$i"
-  [ "\$i" = 2 ] && shoot hover-dark
+  status menu "$p-hover-\$i.json"
+  [ "\$i" = 2 ] && shoot "$p-hover-dark.png"
   "$wlrctl_bin" pointer move 0 "\$pitch" > /dev/null 2>&1
 done
 
 call menu summon toggles > /dev/null 2>&1
 sleep 1.5
-status hub
+status menu "$p-hub.json"
 rows_from hub
 caffeinate=\$(index hub toggles.caffeinate)
 dnd=\$(index hub toggles.dnd)
 overnight=\$(index hub toggles.overnight)
 at "\$x" "\$(row_y "\$caffeinate")"
-click
-status clicked
+tap
+status menu "$p-clicked.json"
 call caffeinate status > "$p-caffeinate.json" 2>&1
 call notifications dndState > "$p-dnd-before.txt" 2>&1
 at "\$x" "\$(row_y "\$dnd")"
-click right
-status right
+tap right
+status menu "$p-right.json"
 call notifications dndState > "$p-dnd-after.txt" 2>&1
-shoot column-dark
+shoot "$p-column-dark.png"
 at "\$x" "\$(row_y "\$overnight")"
-click
-status closed
+tap
+status menu "$p-closed.json"
 call overnight status > "$p-overnight-click.json" 2>&1
 read -r hx hy < <(hint closed primary)
 at "\${hx%.*}" "\${hy%.*}"
-click
-status enter
+tap
+status menu "$p-enter.json"
 call overnight status > "$p-overnight-enter.json" 2>&1
 call overnight disable > /dev/null 2>&1
 call caffeinate disable > /dev/null 2>&1
@@ -134,44 +131,44 @@ call caffeinate disable > /dev/null 2>&1
 call menu summon "" > /dev/null 2>&1
 call menu filter Toggles > /dev/null 2>&1
 sleep 1
-status hints
+status menu "$p-hints.json"
 from=hints
 for on in actions column-back into; do
   read -r hx hy < <(hint "\$from" "\$on")
   at "\${hx%.*}" "\${hy%.*}"
-  click
-  status "hint-\$on"
+  tap
+  status menu "$p-hint-\$on.json"
   from="hint-\$on"
 done
 
 call menu summon "" > /dev/null 2>&1
 call menu filter "Mouse Probe" > /dev/null 2>&1
 sleep 1
-status probe
+status menu "$p-probe.json"
 rows_from probe
 at "\$x" "\$(row_y 0)"
-click right
-status column
+tap right
+status menu "$p-column.json"
 read -r cx cy < <("$jq_bin" -r '"\(.actionsBox.x + .actionsBox.width / 2) \(.actionsBox.y + .actionsBox.height / 2)"' "$p-column.json")
 at "\${cx%.*}" "\${cy%.*}"
-status column-hover
+status menu "$p-column-hover.json"
 "$wlrctl_bin" pointer scroll 15 0 > /dev/null 2>&1
 sleep 1
-status column-wheel
+status menu "$p-column-wheel.json"
 "$python3_bin" "$launcher_mouse_vpointer" finger 30 wait 16 finger 30 wait 100 lift > /dev/null 2>&1
 sleep 1.5
-status column-finger
-shoot column-scrolled
+status menu "$p-column-finger.json"
+shoot "$p-column-scrolled.png"
 at "\$x" "\$(row_y 1)"
 "$wlrctl_bin" pointer scroll 15 0 > /dev/null 2>&1
 sleep 1
-status list-wheel
+status menu "$p-list-wheel.json"
 
 # Left of the card.
 ox=\$("$jq_bin" -r '.body.x' "$p-list-wheel.json")
 at \$((ox - 80)) \$((by + 40))
-click
-status outside
+tap
+status menu "$p-outside.json"
 
 call theme mode light > /dev/null 2>&1
 sleep 2
@@ -180,25 +177,22 @@ call menu summon "" > /dev/null 2>&1
 sleep 1
 rows_from root
 at "\$x" "\$(row_y 2)"
-shoot hover-light
+shoot "$p-hover-light.png"
 call menu summon toggles > /dev/null 2>&1
 sleep 1
 rows_from hub
 at "\$x" "\$(row_y "\$dnd")"
-click right
-shoot column-light
+tap right
+shoot "$p-column-light.png"
 call menu close > /dev/null 2>&1
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
+park
 EOF
   hypr_exec_once "bash $script"
 }
 
 # `<step> <jq claim> <what it means>`, against that step's status.
 launcher_mouse_expect() {
-  local f="$shot_dir/launcher-mouse-$1.json"
-  [ -s "$f" ] || fail "launcher-mouse: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null \
-    || fail "launcher-mouse $1: $3, got $("$jq_bin" -c '{isOpen, level, cursor, cursorId, hover, actionHover, actionsOpen, actionCursor, actionsScroll, actionsScrollMax, scrollTop, scrollMax, ids: .ids[:4]}' "$f")"
+  expect_jq "$shot_dir/launcher-mouse-$1.json" "$2" "launcher-mouse $1: $3" '{isOpen, level, cursor, cursorId, hover, actionHover, actionsOpen, actionCursor, actionsScroll, actionsScrollMax, scrollTop, scrollMax, ids: .ids[:4]}'
 }
 
 leg_launcher_mouse_assert() {

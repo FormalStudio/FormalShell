@@ -65,7 +65,7 @@ done
 $ipc call lock status > "$lock_restore_status_path" 2>&1
 sleep 3
 "$grim_bin" "$lock_restore_back_path" > /dev/null 2>&1
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 sleep 4
 $ipc call lock status > "$lock_restore_after_path" 2>&1
 EOF

@@ -147,7 +147,6 @@ leg_brightness_drive() {
   local script="$shot_dir/brightness-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 sleep 4
 # 1. The keybind path, sampled.
 ( end=\$((SECONDS + 4)); while [ \$SECONDS -lt \$end ]; do

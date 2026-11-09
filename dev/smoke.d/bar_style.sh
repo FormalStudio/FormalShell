@@ -83,7 +83,7 @@ EOS
 
 # One pixel's red channel, 0..255: every surface read here is grey.
 bar_style_pixel() {
-  $convert_bin "$bar_style_frame_path" -crop "1x1+$1+$2" +repage -format '%[fx:int(r*255+0.5)]' info: 2>/dev/null
+  pixel "$bar_style_frame_path" "$1" "$2" | cut -d' ' -f1
 }
 
 leg_bar_style_assert() {
@@ -112,12 +112,12 @@ leg_bar_style_assert() {
   fi
   t=$("$jq_bin" -r '.theme.edgeInset.top' "$bar_style_dump_path")
   # The band's own rows, above every cell (cells sit barMargin in).
-  px=$($convert_bin "$bar_style_frame_path" -crop "40x4+900+1" +repage -format '%[fx:int(mean.r*255+0.5)]' info: 2>/dev/null)
-  echo "band rows 1-4 at x 900: $px (thickness $t)"
-  [ -n "$px" ] && [ "$px" -le 12 ] || fail "a $style band should be opaque black over its own rows, read ${px:-nothing}"
+  px=$(patch_mean "$bar_style_frame_path" 40x4+900+1)
+  echo "band rows 1-4 at x 900: $px thousandths (thickness $t)"
+  [ -n "$px" ] && [ "$px" -le 47 ] || fail "a $style band should be opaque black over its own rows, read ${px:-nothing}"
 
   [ "$style" = corners ] && bar_style_alone || return 0
-  box=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | "\(length) \(first.h)"' "$bar_style_layers_path")
+  box=$("$jq_bin" -r "$layers_jq"'layer("formalshell:bar") | "\(length) \(first.h)"' "$bar_style_layers_path")
   read -r _ bh <<< "$box"
   [ "${box%% *}" = 1 ] || fail "corners should draw on the bar's own window, got $box formalshell:bar layers"
   reserved=$("$jq_bin" -r 'first | .reserved[1]' "$bar_style_monitors_path")

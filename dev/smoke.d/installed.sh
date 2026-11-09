@@ -90,7 +90,7 @@ FROM $installed_base
 ARG UID
 RUN $prep \
  && if getent passwd \$UID >/dev/null; then userdel -r "\$(getent passwd \$UID | cut -d: -f1)"; fi \
- && useradd -u \$UID -m test && echo test:formalshell-test | chpasswd \
+ && useradd -u \$UID -m test && echo test:$rig_password | chpasswd \
  && echo 'test ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/test
 COPY . /src/
 USER test
@@ -168,7 +168,7 @@ sleep 3
 sleep 5
 "$grim_bin" "$installed_error_png" > /dev/null 2>&1
 ipc lock status > "$installed_wrong_path" 2>&1
-"$wtype_bin" "formalshell-test"
+"$wtype_bin" "$rig_password"
 "$wtype_bin" -k Return
 sleep 3
 "$grim_bin" "$installed_unlocked_png" > /dev/null 2>&1

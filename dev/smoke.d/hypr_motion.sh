@@ -88,13 +88,14 @@ leg_hypr_motion_assert() {
   local window desk reads="" moving="" i edge mid
   # The settled window's own fill, and the bare desktop the first strip
   # carries before foot has mapped.
-  window=$($convert_bin "$hypr_motion_settled" -crop 1x1+20+560 +repage -format '%[fx:int(mean*255+0.5)]' info: 2>/dev/null)
-  desk=$($convert_bin "$shot_dir/hypr-motion-strip-0.png" -crop 1x1+20+0 +repage -format '%[fx:int(mean*255+0.5)]' info: 2>/dev/null)
-  near() { [ -n "$1" ] && [ -n "$2" ] && [ $(($1 > $2 ? $1 - $2 : $2 - $1)) -le 6 ]; }
+  window=$(patch_mean "$hypr_motion_settled" 1x1+20+560)
+  desk=$(patch_mean "$shot_dir/hypr-motion-strip-0.png" 1x1+20+0)
+  # 24 thousandths is the 6 of 255 grey levels this compared before.
+  near() { [ -n "$1" ] && [ -n "$2" ] && [ $(($1 > $2 ? $1 - $2 : $2 - $1)) -le 24 ]; }
   for i in $(seq 0 79); do
     [ -f "$shot_dir/hypr-motion-strip-$i.png" ] || continue
-    edge=$($convert_bin "$shot_dir/hypr-motion-strip-$i.png" -crop 1x1+20+0 +repage -format '%[fx:int(mean*255+0.5)]' info: 2>/dev/null)
-    mid=$($convert_bin "$shot_dir/hypr-motion-strip-$i.png" -crop 1x1+900+0 +repage -format '%[fx:int(mean*255+0.5)]' info: 2>/dev/null)
+    edge=$(patch_mean "$shot_dir/hypr-motion-strip-$i.png" 1x1+20+0)
+    mid=$(patch_mean "$shot_dir/hypr-motion-strip-$i.png" 1x1+900+0)
     reads="$reads $edge/$mid"
     if [ -z "$moving" ] && near "$mid" "$window" && near "$edge" "$desk" && ! near "$desk" "$window"; then
       moving=$i

@@ -52,31 +52,19 @@ leg_firefox_install_drive() {
   local script="$shot_dir/firefox-install-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$fi_dir/\$1.json" 2>&1; }
-acts() { call activity status > "$fi_dir/activity-\$1.json" 2>&1; }
-shoot() { "$grim_bin" "$fi_dir/\$1.png" > /dev/null 2>&1; }
-until_status() {
-  SECONDS=0
-  while [ "\$SECONDS" -lt "\$3" ]; do
-    status "\$1"
-    "$jq_bin" -e "\$2" "$fi_dir/\$1.json" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-}
 group='[.groups[] | select(.source == "fspec:install:$fi_pkg")] | first'
 sleep 4
 call menu summon install > /dev/null 2>&1
 sleep 1
 "$wtype_bin" firefox
-until_status rows '.ids | index("$fi_row") != null' 60
-shoot rows
+until_jq 60 "$fi_dir/rows.json" '.ids | index("$fi_row") != null' call menu status
+shoot "$fi_dir/rows.png"
 n=\$("$jq_bin" '.ids | index("$fi_row")' "$fi_dir/rows.json")
 for _ in \$(seq 1 "\$n"); do "$wtype_bin" -k Down; sleep 0.1; done
-status picked
+status menu "$fi_dir/picked.json"
 "$wtype_bin" -k Return
 for _ in \$(seq 1 120); do
-  acts running
+  status activity "$fi_dir/activity-running.json"
   "$jq_bin" -e "\$group | .state == \"running\"" "$fi_dir/activity-running.json" > /dev/null 2>&1 && break
   sleep 0.5
 done
@@ -84,25 +72,25 @@ call menu close > /dev/null 2>&1
 sleep 1
 # Mid-install: once zypper is the step, else whatever the run is at after 20s.
 for _ in \$(seq 1 40); do
-  acts mid
+  status activity "$fi_dir/activity-mid.json"
   "$jq_bin" -e "\$group | .state != \"running\" or (.items[0].phase == \"committing\")" "$fi_dir/activity-mid.json" > /dev/null 2>&1 && break
   sleep 0.5
 done
 call sidebar status > "$fi_dir/sidebar-mid.json" 2>&1
-shoot mid
+shoot "$fi_dir/mid.png"
 for _ in \$(seq 1 1400); do
-  acts end
+  status activity "$fi_dir/activity-end.json"
   "$jq_bin" -e "\$group | .state != \"running\"" "$fi_dir/activity-end.json" > /dev/null 2>&1 && break
   sleep 0.5
 done
 call sidebar status > "$fi_dir/sidebar-done.json" 2>&1
-shoot done-card
+shoot "$fi_dir/done-card.png"
 call menu summon "" > /dev/null 2>&1
 sleep 0.5
 "$wtype_bin" firefox
 sleep 3
-status found
-shoot found
+status menu "$fi_dir/found.json"
+shoot "$fi_dir/found.png"
 call menu close > /dev/null 2>&1
 git -C "$fi_dir/upstream.git" log -1 --format='%an <%ae>|%s' > "$fi_dir/upstream-head.txt" 2>&1
 cp "\${XDG_STATE_HOME:-\$HOME/.local/state}"/fspec/log/* "$fi_dir/" 2>/dev/null

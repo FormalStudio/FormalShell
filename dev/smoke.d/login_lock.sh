@@ -101,14 +101,10 @@ EOF
   printf 'hl.on("hyprland.start", function() hl.exec_cmd([==[bash %s]==]) end)\n' "$early"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
 for _ in \$(seq 1 200); do [ -e "$login_lock_early_done" ] && break; sleep 0.1; done
 # The dissolve is 11s at a tenth of its speed, from the backdrop or 2s after
 # the first frame, and the card's entrance 2s after it.
-for i in \$(seq 1 $login_lock_frames); do
-  "$grim_bin" "$shot_dir/login-lock-burst-\$i.png" > /dev/null 2>&1
-  sleep 0.15
-done
+burst "$shot_dir/login-lock-burst" $login_lock_frames 0.15
 sleep 5
 "$grim_bin" "$login_lock_card_png" > /dev/null 2>&1
 call debug motionScale 100 > /dev/null 2>&1
@@ -136,7 +132,7 @@ if [ "\${DBUS_SYSTEM_BUS_ADDRESS:-}" = "unix:path=$shot_dir/system-bus/socket" ]
   "$wtype_bin" -s 300 -k Escape
   sleep 0.5
 fi
-"$wtype_bin" -s 300 "formalshell-test" -k Return
+"$wtype_bin" -s 300 "$rig_password" -k Return
 sleep 4
 call lock status > "$login_lock_after_json" 2>&1
 EOF

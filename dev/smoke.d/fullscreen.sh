@@ -164,8 +164,7 @@ lp="window = 'class:^(formalshell-lockpointer)\\\$'"
 "$hyprctl_bin" dispatch "hl.dsp.window.resize({ x = $logical_w, y = $logical_h, \$lp })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.window.move({ x = 0, y = 0, \$lp })" > /dev/null 2>&1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ \$lp })" > /dev/null 2>&1
-"$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-"$wlrctl_bin" pointer move $((logical_w / 2)) $((logical_h / 2)) > /dev/null 2>&1
+park $((logical_w / 2)) $((logical_h / 2))
 sleep 1
 "$hyprctl_bin" dispatch "hl.dsp.focus({ window = 'class:^(formalshell-smoke-iconic)\\\$' })" > /dev/null 2>&1
 sleep 0.5
@@ -204,8 +203,7 @@ fs_phase() {
   sleep 2
   if [ "\$fs" = unset ]; then
     read -r cx cy < <("$hyprctl_bin" -j clients | "$jq_bin" -r '.[] | select(.class == "formalshell-lockpointer") | "\\(.at[0] + .size[0] / 2 | floor) \\(.at[1] + .size[1] / 2 | floor)"')
-    "$wlrctl_bin" pointer move -4000 -4000 > /dev/null 2>&1
-    "$wlrctl_bin" pointer move "\$cx" "\$cy" > /dev/null 2>&1
+    park "\$cx" "\$cy"
     sleep 1
   fi
   echo "0 \$name-arm" >> "$fullscreen_lock_log"
@@ -236,7 +234,7 @@ EOS
 # given prefix (the frame-zone namespace is exactly "formalshell:frame-zone",
 # the bar "formalshell:bar", the hot corners "formalshell:hotcorner").
 _fullscreen_count() {
-  "$jq_bin" -r --arg ns "$2" '[.[] | .levels[] | .[] | select(.namespace == $ns)] | length' "$1" 2>/dev/null
+  "$jq_bin" -r --arg ns "$2" "$layers_jq"'layer($ns) | length' "$1" 2>/dev/null
 }
 
 # The same count on one level only: 2 is the top layer, 3 the overlay.

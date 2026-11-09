@@ -94,7 +94,7 @@ for _ in \$(seq 1 16); do
   grep -qF "\"title\":\"$bar_title_track\"" "$bar_title_status_path" && break
   sleep 0.5
 done
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-bar-title --title='$bar_title_text' sh -c 'sleep 300']==])"
+spawn_foot formalshell-bar-title "" "$bar_title_text"
 # Waits for the title to reach the cell rather than sleeping at it; the
 # beat after is the label refit (Theme.motion.spatial past the last change)
 # and the cells' own width glide settling behind it.
@@ -121,7 +121,7 @@ focused() {
   done
   return 1
 }
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-bar-short --title=short sh -c 'sleep 300']==])"
+spawn_foot formalshell-bar-short "" short
 focused formalshell-bar-short
 for i in \$(seq 1 12); do
   $ipc call bar room > "$bar_title_samples_dir/to-short-\$i.json" 2>&1

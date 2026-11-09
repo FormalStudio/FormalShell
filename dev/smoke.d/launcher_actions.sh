@@ -65,46 +65,43 @@ leg_launcher_actions_drive() {
   local script="$shot_dir/launcher-actions-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-call() { $ipc call "\$@"; }
-status() { call menu status > "$shot_dir/launcher-actions-\$1.json" 2>&1; }
 key() { "$wtype_bin" "\$@"; sleep 0.6; }
-shoot() { "$grim_bin" "$shot_dir/launcher-actions-\$1.png" > /dev/null 2>&1; }
 clients() { "$hyprctl_bin" clients -j > "$shot_dir/launcher-actions-clients-\$1.json" 2>&1; }
 probe() { call menu summon "" > /dev/null 2>&1; sleep 0.4; call menu filter "Actions Probe" > /dev/null 2>&1; sleep 0.6; }
 sleep 4
 for verb in "actions 0" "runAction 0 open" "into 0"; do
   call menu \$verb >> "$shot_dir/launcher-actions-closed.txt" 2>&1
 done
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-actions-probe sleep 300]==])" > /dev/null 2>&1
+spawn_foot formalshell-actions-probe
 sleep 2
 
 probe
-status list
+status menu "$shot_dir/launcher-actions-list.json"
 key -k Tab
 sleep 0.6
-status tab
-shoot column-dark
+status menu "$shot_dir/launcher-actions-tab.json"
+shoot "$shot_dir/launcher-actions-column-dark.png"
 key new
-status filtered
+status menu "$shot_dir/launcher-actions-filtered.json"
 key -k Return
 sleep 2
-status after-new
+status menu "$shot_dir/launcher-actions-after-new.json"
 clients new
 
 probe
 key -k Right
 sleep 0.6
-status into
-shoot into-dark
+status menu "$shot_dir/launcher-actions-into.json"
+shoot "$shot_dir/launcher-actions-into-dark.png"
 key -k Tab
-status window-actions
+status menu "$shot_dir/launcher-actions-window-actions.json"
 key move
 key -k Return
 sleep 0.6
-status targets
-shoot targets-dark
+status menu "$shot_dir/launcher-actions-targets.json"
+shoot "$shot_dir/launcher-actions-targets-dark.png"
 key 2
-status target-filtered
+status menu "$shot_dir/launcher-actions-target-filtered.json"
 key -k Return
 sleep 1.5
 clients moved
@@ -132,37 +129,37 @@ clients alternate
 
 probe
 key -k Tab
-status close-0
+status menu "$shot_dir/launcher-actions-close-0.json"
 key -M shift -k Tab -m shift
-status close-shift-tab
+status menu "$shot_dir/launcher-actions-close-shift-tab.json"
 key -k Tab
 key -k Escape
-status close-escape
+status menu "$shot_dir/launcher-actions-close-escape.json"
 key -k Tab
 key -k Left
-status close-left
+status menu "$shot_dir/launcher-actions-close-left.json"
 key -k Tab
 key new
-status escape-filter-0
+status menu "$shot_dir/launcher-actions-escape-filter-0.json"
 key -k Escape
-status escape-filter-1
+status menu "$shot_dir/launcher-actions-escape-filter-1.json"
 key -k Escape
-status escape-filter-2
+status menu "$shot_dir/launcher-actions-escape-filter-2.json"
 
 probe
 key -k Tab
 key confirm
-status confirm-0
+status menu "$shot_dir/launcher-actions-confirm-0.json"
 key -k Return
-status confirm-armed
+status menu "$shot_dir/launcher-actions-confirm-armed.json"
 [ -e "$launcher_actions_confirmed" ]; echo \$? > "$shot_dir/launcher-actions-confirm-armed.txt"
 key -k Return
 sleep 1
-status confirm-ran
+status menu "$shot_dir/launcher-actions-confirm-ran.json"
 probe
 call menu actions 0 > "$shot_dir/launcher-actions-ipc-actions.txt" 2>&1
 sleep 0.4
-status ipc-actions
+status menu "$shot_dir/launcher-actions-ipc-actions.json"
 call menu close > /dev/null 2>&1
 probe
 i=\$("$jq_bin" --arg id "$launcher_actions_app" '.ids | index(\$id) // -1' "$shot_dir/launcher-actions-ipc-actions.json")
@@ -173,25 +170,25 @@ call menu summon "" > /dev/null 2>&1
 sleep 0.4
 call menu filter Clipboard > /dev/null 2>&1
 sleep 0.6
-status pin-list
+status menu "$shot_dir/launcher-actions-pin-list.json"
 i=\$("$jq_bin" '.ids | index("clipboard") // -1' "$shot_dir/launcher-actions-pin-list.json")
 call menu actions "\$i" > /dev/null 2>&1
 sleep 0.6
-status pin-column
+status menu "$shot_dir/launcher-actions-pin-column.json"
 key -k Down
 key -k Return
 sleep 1
-status pin-ran
+status menu "$shot_dir/launcher-actions-pin-ran.json"
 cp "$iso_home/.local/state/formalshell/state.json" "$shot_dir/launcher-actions-pin-state.json" 2>/dev/null
 call menu close > /dev/null 2>&1
 sleep 0.4
 call menu summon "" > /dev/null 2>&1
 sleep 1
-status pin-root
-shoot pin-root-dark
+status menu "$shot_dir/launcher-actions-pin-root.json"
+shoot "$shot_dir/launcher-actions-pin-root-dark.png"
 call menu actions 0 > /dev/null 2>&1
 sleep 0.6
-status unpin-column
+status menu "$shot_dir/launcher-actions-unpin-column.json"
 call menu runAction 0 unpin-recent > /dev/null 2>&1
 sleep 1
 cp "$iso_home/.local/state/formalshell/state.json" "$shot_dir/launcher-actions-unpin-state.json" 2>/dev/null
@@ -199,7 +196,7 @@ call menu close > /dev/null 2>&1
 sleep 0.4
 call menu summon "" > /dev/null 2>&1
 sleep 1
-status unpin-root
+status menu "$shot_dir/launcher-actions-unpin-root.json"
 call menu close > /dev/null 2>&1
 
 call theme mode light > /dev/null 2>&1
@@ -207,7 +204,7 @@ sleep 2
 probe
 key -k Tab
 sleep 0.6
-shoot column-light
+shoot "$shot_dir/launcher-actions-column-light.png"
 call menu close > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
@@ -215,9 +212,7 @@ EOF
 
 # `<step> <jq claim> <what it means>`, against that step's status.
 launcher_actions_expect() {
-  local f="$shot_dir/launcher-actions-$1.json"
-  [ -s "$f" ] || fail "launcher-actions: no status for $1"
-  "$jq_bin" -e "$2" "$f" > /dev/null || fail "launcher-actions $1: $3, got $("$jq_bin" -c '{isOpen, level, token, query, actionsOpen, actions, ids: .ids[:6]}' "$f")"
+  expect_jq "$shot_dir/launcher-actions-$1.json" "$2" "launcher-actions $1: $3" '{isOpen, level, token, query, actionsOpen, actions, ids: .ids[:6]}'
 }
 
 # The probe's windows in one `hyprctl clients` capture, and how many sit on

@@ -58,9 +58,9 @@ leg_frame_assert() {
   if [ ! -s "$frame_layers_path" ] || [ ! -s "$frame_monitors_path" ]; then
     fail "no layer or monitor dump produced for the frame check"
   fi
-  box=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:bar")] | first | "\(.x) \(.y) \(.w) \(.h)"' "$frame_layers_path" 2>/dev/null)
+  box=$("$jq_bin" -r "$layers_jq"'layer("formalshell:bar") | first | "\(.x) \(.y) \(.w) \(.h)"' "$frame_layers_path" 2>/dev/null)
   read -r mw mh <<< "$("$jq_bin" -r 'first | "\(.width / .scale | floor) \(.height / .scale | floor)"' "$frame_monitors_path")"
-  zones=$("$jq_bin" -r '[.[] | .levels[] | .[] | select(.namespace == "formalshell:frame-zone")] | length' "$frame_layers_path")
+  zones=$("$jq_bin" -r "$layers_jq"'layer("formalshell:frame-zone") | length' "$frame_layers_path")
   [ -s "$frame_dump_path" ] || fail "no debug dump produced for the frame check"
   state=$("$jq_bin" -c '.frame' "$frame_dump_path" 2>/dev/null)
   echo "bar window: $box on ${mw}x${mh}, frame zones: $zones, frame: $state"
@@ -105,7 +105,7 @@ leg_frame_assert() {
     echo "SMOKE_FRAME_CORNERS $frame_shot_path"
     t=$("$jq_bin" -r '.theme.edgeInset.top' "$frame_dump_path")
     for x in 11 $((mw - 12)); do
-      px=$($convert_bin "$frame_shot_path" -crop "1x1+$x+$((t + 1))" +repage -format '%[fx:int(r*255+0.5)]' info: 2>/dev/null)
+      px=$(pixel "$frame_shot_path" "$x" "$((t + 1))" | cut -d' ' -f1)
       echo "ring fillet ($x,$((t + 1))): $px"
       [ -n "$px" ] && [ "$px" -le 12 ] || fail "no fillet where the band meets the ring at ($x,$((t + 1))): read ${px:-nothing}, not the solid band's black"
     done

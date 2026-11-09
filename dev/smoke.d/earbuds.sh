@@ -251,42 +251,41 @@ leg_earbuds_drive() {
   local state_dir="$iso_home/.local/state/librepods"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-ipc() { $ipc call "\$@"; }
 nothing_list() { printf '%s\n' "\$1" > "$earbuds_nothing_list"; }
 scq_paired() { cp "\$1" "$earbuds_scq_paired"; }
 none='[]'
 
 sleep 3
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 3
-ipc earbuds devices > "$earbuds_devices_b175" 2>&1
-ipc earbuds status > "$earbuds_status_b175" 2>&1
+call earbuds devices > "$earbuds_devices_b175" 2>&1
+call earbuds status > "$earbuds_status_b175" 2>&1
 "$grim_bin" "$earbuds_b175_png" > /dev/null 2>&1
 {
-  echo "anc: \$(ipc earbuds set anc transparency 2>&1)"
-  echo "eq-bass: \$(ipc earbuds set eq-bass 5 2>&1)"
+  echo "anc: \$(call earbuds set anc transparency 2>&1)"
+  echo "eq-bass: \$(call earbuds set eq-bass 5 2>&1)"
 } >> "$earbuds_replies"
 sleep 1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 
 nothing_list "\$none"
 scq_paired "$earbuds_dir/soundcore-paired-fixture.json"
 sleep 1
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 4
-ipc earbuds devices > "$earbuds_devices_soundcore" 2>&1
+call earbuds devices > "$earbuds_devices_soundcore" 2>&1
 "$grim_bin" "$earbuds_soundcore_png" > /dev/null 2>&1
-echo "mode: \$(ipc earbuds set mode NoiseCanceling 2>&1)" >> "$earbuds_replies"
+echo "mode: \$(call earbuds set mode NoiseCanceling 2>&1)" >> "$earbuds_replies"
 sleep 2
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 
 nothing_list '[{"address":"$earbuds_b175_address","name":"CMF Headphone Pro","connected":true}]'
 sleep 1
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 5
-ipc earbuds devices > "$earbuds_devices_both" 2>&1
+call earbuds devices > "$earbuds_devices_both" 2>&1
 "$grim_bin" "$earbuds_both_png" > /dev/null 2>&1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 
 nothing_list "\$none"
 printf '[]\n' > "$earbuds_scq_paired"
@@ -297,46 +296,46 @@ mkdir -p "$state_dir"
 stub=\$!
 sleep 1
 commits() { grep -c '^commit surface=panel ' "$shell_log_path"; }
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 1.2
 "$grim_bin" "$earbuds_heart_measuring_png" > /dev/null 2>&1
 sleep 1.8
-ipc earbuds devices > "$earbuds_devices_airpods" 2>&1
+call earbuds devices > "$earbuds_devices_airpods" 2>&1
 "$grim_bin" "$earbuds_airpods_png" > /dev/null 2>&1
 sleep 5
-ipc earbuds status > "$earbuds_dir/airpods-status-heart.json" 2>&1
+call earbuds status > "$earbuds_dir/airpods-status-heart.json" 2>&1
 "$grim_bin" "$earbuds_airpods_heart_png" > /dev/null 2>&1
 c0=\$(commits)
 sleep 2
 c1=\$(commits)
 # Reopened at a quarter speed, a panel taking the scale it opens at: one
 # beat stretched to ~3s, so the burst runs through the swell and the ring.
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
-ipc debug motionScale 400 > /dev/null 2>&1
-ipc panel open earbuds > /dev/null 2>&1
+call debug motionScale 400 > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 7
 for i in 0 1 2 3 4 5 6 7; do
   "$grim_bin" "$earbuds_heart_beat_dir-\$i.png" > /dev/null 2>&1
   sleep 0.4
 done
-ipc debug motionScale 100 > /dev/null 2>&1
+call debug motionScale 100 > /dev/null 2>&1
 for mode in anc transparency adaptive off; do
-  echo "\$mode: \$(ipc earbuds set noise \$mode 2>&1)" >> "$earbuds_airpods_replies"
+  echo "\$mode: \$(call earbuds set noise \$mode 2>&1)" >> "$earbuds_airpods_replies"
   sleep 2
-  ipc earbuds status > "$earbuds_dir/airpods-status-\$mode.json" 2>&1
+  call earbuds status > "$earbuds_dir/airpods-status-\$mode.json" 2>&1
 done
 # The stub's head turns 40 degrees and holds it for 6s; the watch has run
 # since the reopen, so catch the hold wherever the cycle is.
 for _ in \$(seq 40); do
-  ipc earbuds status > "$earbuds_dir/airpods-motion-turn.json" 2>&1
+  call earbuds status > "$earbuds_dir/airpods-motion-turn.json" 2>&1
   [ "\$("$jq_bin" -r '(.device.motion.yaw // 0) > 35' "$earbuds_dir/airpods-motion-turn.json" 2>/dev/null)" = true ] && break
   sleep 0.2
 done
-echo "recenter: \$(ipc earbuds recenter 2>&1)" >> "$earbuds_motion_replies"
+echo "recenter: \$(call earbuds recenter 2>&1)" >> "$earbuds_motion_replies"
 sleep 0.5
-ipc earbuds status > "$earbuds_dir/airpods-motion-recentered.json" 2>&1
-ipc panel close > /dev/null 2>&1
+call earbuds status > "$earbuds_dir/airpods-motion-recentered.json" 2>&1
+call panel close > /dev/null 2>&1
 sleep 4
 c2=\$(commits)
 sleep 3
@@ -347,12 +346,12 @@ for _ in \$(seq 60); do
   [ "\$(wc -l < "$earbuds_librepods_log")" -ge 10 ] && break
   sleep 0.5
 done
-ipc earbuds status > "$earbuds_dir/airpods-status-point.json" 2>&1
-ipc panel open earbuds > /dev/null 2>&1
+call earbuds status > "$earbuds_dir/airpods-status-point.json" 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 0.8
 "$grim_bin" "$earbuds_heart_point_png" > /dev/null 2>&1
 sleep 1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
 kill \$stub
 "$python3_bin" "$PWD/dev/librepods-stub.py" --socket "$earbuds_librepods_socket" --status "$state_dir/status.json" \
@@ -366,10 +365,10 @@ rm -f "$state_dir/status.json"
   2>> "$earbuds_librepods_err" &
 stub=\$!
 sleep 1
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 3
-ipc earbuds status > "$earbuds_dir/airpods-motion-error.json" 2>&1
-ipc panel close > /dev/null 2>&1
+call earbuds status > "$earbuds_dir/airpods-motion-error.json" 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
 kill \$stub
 rm -f "$state_dir/status.json"
@@ -384,24 +383,24 @@ head_stop() {
   rm -f "$state_dir/status.json"
 }
 head_stub --motion-silent --fixture "$earbuds_dir/airpods-status-moterr.json"
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 2.5
 "$grim_bin" "$earbuds_head_waiting_png" > /dev/null 2>&1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
 head_stop
 head_stub --fixture "$earbuds_dir/airpods-status-head-nobud.json"
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 2.5
 "$grim_bin" "$earbuds_head_nobud_png" > /dev/null 2>&1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
 head_stop
 # From 9s in at a quarter speed: still for 4s, the nod over 4s (its deepest
 # at 6s), still for 8s, then the turn over 4s (half way at 18s). Timed off
 # the watch's own log line rather than the open.
 head_stub --motion-from 9 --motion-pace 4 --fixture "$earbuds_dir/airpods-status-moterr.json"
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 for _ in \$(seq 100); do
   [ "\$(grep -c '^motion:watch' "$earbuds_head_motion")" -ge 3 ] && break
   sleep 0.05
@@ -412,7 +411,7 @@ at() {
   local left=\$(( start + \$1 * 100000000 - \$(date +%s%N) ))
   [ \$left -gt 0 ] && sleep "\$(printf '%d.%09d' \$((left / 1000000000)) \$((left % 1000000000)))"
 }
-ipc debug dump > "$earbuds_head_dump" 2>&1
+call debug dump > "$earbuds_head_dump" 2>&1
 at 20
 "$grim_bin" "$earbuds_head_rest_png" > /dev/null 2>&1
 at 45
@@ -423,8 +422,8 @@ at 75
 c5=\$(commits)
 at 180
 "$grim_bin" "$earbuds_head_turn_png" > /dev/null 2>&1
-ipc earbuds status > "$earbuds_dir/airpods-head-turn.json" 2>&1
-ipc panel close > /dev/null 2>&1
+call earbuds status > "$earbuds_dir/airpods-head-turn.json" 2>&1
+call panel close > /dev/null 2>&1
 sleep 1
 c6=\$(commits)
 sleep 3
@@ -435,9 +434,9 @@ head_stop
   --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
 stub=\$!
 sleep 9
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 3
-ipc earbuds status > "$earbuds_dir/airpods-noheart-status.json" 2>&1
+call earbuds status > "$earbuds_dir/airpods-noheart-status.json" 2>&1
 # Conversation awareness off while something records, back on after.
 setsid "$pw_loopback_bin" -n ea-mic -i "{ media.class=Audio/Sink node.name=ea_mic_in }" \
   -o "{ media.class=Audio/Source node.name=ea_mic node.description=EarbudsMic }" > /dev/null 2>&1 < /dev/null &
@@ -446,11 +445,11 @@ sleep 1.5
 "$pw_record_bin" --target ea_mic "$earbuds_dir/mic.wav" > /dev/null 2>&1 &
 rec=\$!
 sleep 2.5
-ipc earbuds status > "$earbuds_dir/airpods-ca-recording.json" 2>&1
+call earbuds status > "$earbuds_dir/airpods-ca-recording.json" 2>&1
 kill \$rec 2>/dev/null
 wait \$rec 2>/dev/null
 sleep 2.5
-ipc earbuds status > "$earbuds_dir/airpods-ca-after.json" 2>&1
+call earbuds status > "$earbuds_dir/airpods-ca-after.json" 2>&1
 kill \$loop 2>/dev/null
 rm -f "$earbuds_dir/mic.wav"
 kill \$stub
@@ -458,21 +457,21 @@ kill \$stub
   --fixture "$earbuds_dir/airpods-status-noheart.json" --log "$earbuds_librepods_log" 2>> "$earbuds_librepods_err" &
 stub=\$!
 sleep 1
-echo "hung: \$(ipc earbuds set noise anc 2>&1)" >> "$earbuds_airpods_replies"
+echo "hung: \$(call earbuds set noise anc 2>&1)" >> "$earbuds_airpods_replies"
 sleep 4
-ipc earbuds status > "$earbuds_dir/airpods-status-hung.json" 2>&1
+call earbuds status > "$earbuds_dir/airpods-status-hung.json" 2>&1
 "$grim_bin" "$earbuds_airpods_hung_png" > /dev/null 2>&1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 kill \$stub
 rm -f "$state_dir/status.json"
 
 nothing_list '[{"address":"$earbuds_refused_address","name":"Ear (3)","connected":true}]'
 sleep 1
-ipc panel open earbuds > /dev/null 2>&1
+call panel open earbuds > /dev/null 2>&1
 sleep 12
-ipc earbuds devices > "$earbuds_devices_refused" 2>&1
+call earbuds devices > "$earbuds_devices_refused" 2>&1
 "$grim_bin" "$earbuds_refused_png" > /dev/null 2>&1
-ipc panel close > /dev/null 2>&1
+call panel close > /dev/null 2>&1
 EOF
   hypr_exec_once "bash $script"
 }

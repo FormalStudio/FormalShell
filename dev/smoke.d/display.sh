@@ -36,34 +36,33 @@ leg_display_drive() {
   local script="$shot_dir/display-drive.sh"
   write_script "$script" <<EOF
 #!/usr/bin/env bash
-ipc() { $ipc call "\$@"; }
 mon() { "$hyprctl_bin" monitors all -j > "\$1" 2>&1; }
 sleep 5
 mon "$display_monitors_base"
 out=\$("$jq_bin" -r '.[0].name' "$display_monitors_base")
-ipc display scale "\$out" 1.5 > "$display_scale_path" 2>&1
+call display scale "\$out" 1.5 > "$display_scale_path" 2>&1
 sleep 1
 mon "$display_monitors_scaled"
-ipc display scale "\$out" 1 >> "$display_scale_path" 2>&1
+call display scale "\$out" 1 >> "$display_scale_path" 2>&1
 sleep 1
 "$hyprctl_bin" output create headless "$display_second" > "$display_create_path" 2>&1
 sleep 2
 mon "$display_monitors_two"
-ipc display mirror "$display_second" "\$out" > "$display_mirror_path" 2>&1
+call display mirror "$display_second" "\$out" > "$display_mirror_path" 2>&1
 sleep 1
 mon "$display_monitors_mirrored"
-ipc display mirror "$display_second" "" >> "$display_mirror_path" 2>&1
+call display mirror "$display_second" "" >> "$display_mirror_path" 2>&1
 sleep 1
 mon "$display_monitors_unmirrored"
-ipc display enable "$display_second" false >> "$display_mirror_path" 2>&1
+call display enable "$display_second" false >> "$display_mirror_path" 2>&1
 sleep 1
 mon "$display_monitors_disabled"
-ipc display enable "$display_second" true >> "$display_mirror_path" 2>&1
+call display enable "$display_second" true >> "$display_mirror_path" 2>&1
 sleep 1
 mon "$display_monitors_enabled"
 "$hyprctl_bin" output remove "$display_second" >> "$display_create_path" 2>&1
 sleep 1
-ipc panel open display > /dev/null 2>&1
+call panel open display > /dev/null 2>&1
 sleep 3
 "$grim_bin" "$display_panel_png" > /dev/null 2>&1
 EOF

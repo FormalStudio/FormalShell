@@ -72,7 +72,7 @@ quiet modal 3
 dump modal
 $ipc call menu toggle > /dev/null 2>&1
 sleep 2
-"$hyprctl_bin" dispatch "hl.dsp.exec_cmd([==[$foot_bin --app-id=formalshell-backdrop --title='formalshell backdrop' sh -c 'sleep 300']==])" > /dev/null 2>&1
+spawn_foot formalshell-backdrop "" "formalshell backdrop"
 sleep 3
 "$hyprctl_bin" dispatch "hl.dsp.window.fullscreen({ mode = 'fullscreen', action = 'set', window = 'class:formalshell-backdrop' })" > /dev/null 2>&1
 sleep 2

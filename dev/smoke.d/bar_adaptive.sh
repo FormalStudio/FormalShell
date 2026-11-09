@@ -124,19 +124,15 @@ _bar_adaptive_numbers() {
     "$1" 2>/dev/null
 }
 
-# The mean luminance of one patch of a frame, 0..255, which is all the fill
-# assertions need: every expected band here is flat over the patch.
-# Read off one channel rather than through a grayscale conversion: every
-# band here is grey, and a colorspace conversion is one linearization away
-# from answering in numbers these expectations are not written in.
+# The mean grey of one patch of a frame, in thousandths, which is all the
+# fill assertions need: every expected band here is flat over the patch.
 _bar_adaptive_band() {
-  $convert_bin "$1" -crop "$bar_adaptive_patch" +repage \
-    -format '%[fx:int(mean.r*255+0.5)]' info: 2>/dev/null
+  patch_mean "$1" "$bar_adaptive_patch"
 }
 
 # One case: the reported paint, then the band it drew, against a tolerance
 # wide enough for the rig's own rounding and narrow enough to tell the fills
-# apart (they land 30, 178 and 230 apart). A `want_band` of `unseen` reports
+# apart (they land 118, 698 and 902 thousandths apart). A `want_band` of `unseen` reports
 # the patch and asserts nothing about it, for the one case whose band is not
 # photographable: Hyprland draws a fullscreen window ABOVE the top layer the
 # bar sits on, which is the whole reason the chrome auto-hide exists, so the
@@ -158,7 +154,7 @@ _bar_adaptive_case() {
     fail "$label: could not read the band patch $bar_adaptive_patch out of $png"
   fi
   if [ "$want_band" != "unseen" ]; then
-    if [ "$band" -lt "$((want_band - 12))" ] || [ "$band" -gt "$((want_band + 12))" ]; then
+    if [ "$band" -lt "$((want_band - 47))" ] || [ "$band" -gt "$((want_band + 47))" ]; then
       fail "$label: the band drew $band over the patch, not ~$want_band, so the $want fill is not what reached the frame"
     fi
   fi
@@ -168,13 +164,13 @@ _bar_adaptive_case() {
 leg_bar_adaptive_assert() {
   bar_adaptive_summary=""
   # A flat bright field: nothing busy about it, so the band draws no fill at
-  # all and the patch is the wallpaper's own 230.
-  _bar_adaptive_case bright "$bar_adaptive_bright_json" "$bar_adaptive_bright_png" dark 230
-  # A flat dark one: the same bare band, light ink, the wallpaper's own 30.
-  _bar_adaptive_case dark "$bar_adaptive_dark_json" "$bar_adaptive_dark_png" light 30
+  # all and the patch is the wallpaper's own 230 (902 thousandths).
+  _bar_adaptive_case bright "$bar_adaptive_bright_json" "$bar_adaptive_bright_png" dark 902
+  # A flat dark one: the same bare band, light ink, the wallpaper's own 30 (118 thousandths).
+  _bar_adaptive_case dark "$bar_adaptive_dark_json" "$bar_adaptive_dark_png" light 118
   # Half black and half white: a bare band whose mean (127) asks light ink,
-  # over the white half's own 255.
-  _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" light 255
+  # over the white half's own 255 (1000 thousandths).
+  _bar_adaptive_case busy "$bar_adaptive_busy_json" "$bar_adaptive_busy_png" light 1000
   # A window covering the output: solid black, whatever the wallpaper says.
   # The frame shows the window rather than the band (see `_bar_adaptive_case`),
   # so this one is asserted off the shell's own answers alone.
