@@ -128,7 +128,7 @@ leg_unlock_assert() {
   [ "$between" -ge 1 ] || fail "no unlock frame lies part way between the locked and unlocked means: a cut"
   local cells mixed=""
   for i in $(seq 1 $unlock_frames); do
-    cells=$("$python3_bin" "$script_dir/dissolve-cells.py" "$convert_bin" "$shot_dir/unlock-$i.png" "$unlock_locked_path" "$unlock_unlocked_path")
+    cells=$("$python3_bin" "$script_dir/dissolve-cells.py" "$shot_dir/unlock-$i.png" "$unlock_locked_path" "$unlock_unlocked_path")
     if unlock_mixed "$cells"; then
       echo "unlock: frame $i mid-dissolve, $cells"
       echo "SMOKE_UNLOCK_MID $shot_dir/unlock-$i.png"

@@ -22,8 +22,8 @@ smoke-all *LIST:
     ./dev/remote.sh smoke-all {{LIST}}
 cargo *ARGS:
     ./dev/remote.sh cargo {{ARGS}}
-# fs-tray, fs-notifd, fs-mpris, fs-dbus on a private bus (dev/check.sh); fs-auth,
-# fs-audio, fs-bluez, fs-network and fs-upower on the VM rig (dev/vm.sh).
+# A service crate's tests: on a private bus (dev/check.sh), or against real
+# daemons on the VM rig (dev/vm.sh); dev/rig.sh lists which.
 check NAME:
     ./dev/remote.sh check {{NAME}}
 # dev/smoke-greeter.sh on a VM rig slot, with this tree's build as the

@@ -1,0 +1,12 @@
+#!/bin/sh
+prefix=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+export FS_RS_ICON_FONT="${FS_RS_ICON_FONT-$prefix/share/formalshell/fonts/lucide.ttf}"
+export FS_RS_FONT_DIRS="${FS_RS_FONT_DIRS-$prefix/share/formalshell/fonts}"
+export FS_TEMPLATE_DIR="${FS_TEMPLATE_DIR-$prefix/share/formalshell/templates}"
+export FS_BRANDING_DIR="${FS_BRANDING_DIR-$prefix/share/formalshell/branding}"
+export FS_EARTH_IMAGE="${FS_EARTH_IMAGE-$prefix/share/formalshell/earth.jpg}"
+export FS_EARTH_TILES="${FS_EARTH_TILES-$prefix/share/formalshell/tiles}"
+export FS_EARBUDS_ART="${FS_EARBUDS_ART-$prefix/share/formalshell/earbuds}"
+export FS_WALLPAPERS="${FS_WALLPAPERS-$prefix/share/formalshell/wallpapers}"
+export PATH="@PATH@"
+exec "$prefix/lib/formalshell/formalshell-rs" "$@"

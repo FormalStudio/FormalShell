@@ -17,11 +17,11 @@ events do, and is followed by a frame. Talks the Wayland wire protocol
 directly, so it needs nothing but python3 and WAYLAND_DISPLAY.
 """
 
-import os
-import socket
 import struct
 import sys
 import time
+
+from wl import Wire, string
 
 BTN_LEFT = 0x110
 AXIS_VERTICAL = 0
@@ -29,60 +29,12 @@ AXIS_HORIZONTAL = 1
 SOURCE_FINGER = 1
 
 
-class Wire:
-    def __init__(self):
-        name = os.environ.get("WAYLAND_DISPLAY", "wayland-0")
-        path = name if name.startswith("/") else os.path.join(os.environ["XDG_RUNTIME_DIR"], name)
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect(path)
-        self.next_id = 2
-        self.buf = b""
-
-    def new_id(self):
-        i = self.next_id
-        self.next_id += 1
-        return i
-
-    def send(self, obj, opcode, payload=b""):
-        self.sock.sendall(struct.pack("<II", obj, ((8 + len(payload)) << 16) | opcode) + payload)
-
-    def read(self):
-        while len(self.buf) < 8 or len(self.buf) < (struct.unpack_from("<I", self.buf, 4)[0] >> 16):
-            chunk = self.sock.recv(65536)
-            if not chunk:
-                sys.exit("vpointer: compositor closed the connection")
-            self.buf += chunk
-        obj, word = struct.unpack_from("<II", self.buf)
-        size = word >> 16
-        body = self.buf[8:size]
-        self.buf = self.buf[size:]
-        return obj, word & 0xFFFF, body
-
-    def roundtrip(self, on_event=None):
-        callback = self.new_id()
-        self.send(1, 0, struct.pack("<I", callback))
-        while True:
-            obj, op, body = self.read()
-            if obj == 1 and op == 0:
-                _, code, n = struct.unpack_from("<III", body)
-                sys.exit(f"vpointer: protocol error {code}: {body[12:12 + n - 1].decode()}")
-            if obj == callback:
-                return
-            if on_event:
-                on_event(obj, op, body)
-
-
-def string(s):
-    b = s.encode() + b"\0"
-    return struct.pack("<I", len(b)) + b + b"\0" * (-len(b) % 4)
-
-
 def fixed(v):
     return struct.pack("<i", int(round(v * 256)))
 
 
 def main(steps):
-    w = Wire()
+    w = Wire("vpointer")
     registry = w.new_id()
     w.send(1, 1, struct.pack("<I", registry))
     found = {}

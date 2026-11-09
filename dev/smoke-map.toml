@@ -116,6 +116,8 @@ paths = [
   "dev/build.sh",
   "dev/remote.sh",
   "dev/share-result.sh",
+  "dev/rig.sh",
+  "dev/rig_lock.py",
   "dev/im-txt.py",
   "dev/scoped-run.sh",
 ]
@@ -545,12 +547,12 @@ runs = ["--unlock", "--lock", "--menu", "--multi-output", "--login-lock"]
 
 # The pixel dissolve: the boot's splash into the lock, the lock into the desktop.
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/dissolve.rs", "dev/dissolve-cells.py"]
+paths = ["crates/formalshell-rs/src/surfaces/dissolve.rs", "dev/dissolve-cells.py", "dev/pixels.py"]
 runs = ["--unlock", "--login-lock"]
 
 # The burst-against-settled read typing in the launcher is held to.
 [[rule]]
-paths = ["dev/settled-frames.py"]
+paths = ["dev/settled-frames.py", "dev/pixels.py"]
 runs = ["--menu-rows"]
 
 [[rule]]
@@ -672,6 +674,16 @@ runs = ["--gallery"]
 [[rule]]
 paths = ["crates/fs-system/src/**"]
 runs = ["--gpu", "--monitor"]
+
+# The launcher script every run starts the shell through (dev/build.sh).
+[[rule]]
+paths = ["packaging/formalshell-launcher.in"]
+runs = ["--menu", "--gallery"]
+
+# The Wayland wire the pointer helpers share: every leg that runs one.
+[[rule]]
+paths = ["dev/wl.py"]
+runs = ["--wheel", "--toast-swipe", "--sidebar", "--minimap", "--overview", "--fullscreen", "--radio-atlas", "--launcher-mouse", "--profiles-pill"]
 
 # The legs' own helpers: a dev/*.py script takes the runs of the legs that
 # name it (`dev/smoke.sh --manifest`), so only a helper with more to it than

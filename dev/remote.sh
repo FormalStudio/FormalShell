@@ -44,6 +44,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
 self="$repo_root/dev/remote.sh"
+. "$repo_root/dev/rig.sh"
 
 usage() {
   echo "usage: $0 {sync|run <cmd...>|build|cargo <args...>|lint|check <name>|smoke [flags...]|smoke-affected [base]|smoke-all [list]|pull <remote-dir> <local-dir>|shell}" >&2
@@ -51,7 +52,7 @@ usage() {
 }
 [ $# -gt 0 ] || usage
 
-ssh_opts=(-o BatchMode=yes -o ForwardAgent=no -o ConnectTimeout=10 -o LogLevel=ERROR)
+ssh_opts=("${rig_ssh_opts[@]}" -o ForwardAgent=no)
 
 # Resolved once, by the command an agent ran; the build and runs it starts
 # inherit it.
@@ -66,18 +67,17 @@ fi
 export FS_RIG
 case "$FS_RIG" in
   g815)
-    host="g815"
     # The count of slot users hosts/g815/rig.star declares.
     slots="${FS_G815_SLOTS:-8}"
     ;;
   mac)
-    host=fstestmac
     # hosts/fstestmac/host.star's SLOTS.
     slots=4
     ;;
   *) echo "FS_RIG must be g815 or mac, got '$FS_RIG'" >&2; exit 1 ;;
 esac
 rig=$FS_RIG
+host=$(rig_host "$rig")
 if [ "$rig" = g815 ]; then
   . "$repo_root/dev/perf-hold.sh"
   perf_gate_wait remote.sh
@@ -86,7 +86,7 @@ if [ "$rig" = mac ] && [ -z "${FS_RIG_SLOT:-}" ]; then
   "$repo_root/dev/mac-vm.sh" start
 fi
 
-remote_dir=formalshell
+remote_dir=$rig_remote_dir
 
 # Every run's own time on its slot, kept across runs so a list starts with
 # its longest legs and the last one to finish is not the slowest started last.
@@ -104,10 +104,9 @@ load_manifest() {
 # Runs a list of runs over the free slots off one build. The list goes
 # longest recorded first; a run with no record goes first of all.
 run_list() {
-  local label=$1 list=$2 out shared builder started n=0 running=0 failed flags slug
+  local label=$1 list=$2 out started n=0 running=0 failed flags slug slot waited
   jobs="${FS_SMOKE_JOBS:-$slots}"
   out="$repo_root/artifacts/$label-$(date +%Y%m%d-%H%M%S)"
-  shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
   mkdir -p "$out" "$(dirname "$times")"
   touch "$times"
   load_manifest
@@ -148,13 +147,10 @@ for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
 ' "$list" "$times" "$rig" "$out/manifest.json" > "$out/order"
   started=$SECONDS
   echo "$label: building once on $rig, then $(wc -l < "$out/order" | tr -d ' ') runs over $jobs slots into $out"
-  if ! env -u FS_RIG_SLOT "$self" run "dev/build.sh && dev/share-result.sh $shared" > "$out/build.log" 2>&1; then
-    tail -20 "$out/build.log" >&2
-    echo "$label: build failed, $out/build.log" >&2
-    return 1
-  fi
-  builder=$(sed -n 's/^[a-z0-9]*: slot \([0-9]*\)$/\1/p' "$out/build.log" | head -1)
-  echo "$label: built in $((SECONDS - started))s on slot $builder"
+  trap 'rig_drop_shared; exit 143' INT TERM HUP
+  trap rig_drop_shared EXIT
+  rig_build_shared "$rig" build || { echo "$label: build failed" >&2; return 1; }
+  echo "$label: built in $((SECONDS - started))s on slot $rig_builder"
   : > "$out/results"
   while IFS=$'\t' read -r _ scale flags; do
     n=$((n + 1))
@@ -165,10 +161,10 @@ for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
       t0=$SECONDS
       status=0
       # shellcheck disable=SC2086 # one line is one run's flags
-      env -u FS_RIG_SLOT FS_RESULT="$shared" FS_ARTIFACTS="$out/$slug" FS_SMOKE_SCALE="$scale" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
-      slot=$(sed -n 's/^[a-z0-9]*: slot \([a-z]*[0-9]*\)$/\1/p' "$out/$slug.log" | head -1)
-      waited=$(sed -n 's/^[a-z0-9]*: waited \([0-9]*\)s for a slot$/\1/p' "$out/$slug.log" | head -1)
-      took=$((SECONDS - t0 - ${waited:-0}))
+      env -u FS_RIG_SLOT FS_RESULT="$rig_shared" FS_ARTIFACTS="$out/$slug" FS_SMOKE_SCALE="$scale" FS_SLOT_FILE="$out/$slug.slot" "$self" smoke $flags > "$out/$slug.log" 2>&1 </dev/null || status=$?
+      slot=; waited=0
+      read -r slot waited < "$out/$slug.slot" 2>/dev/null || true
+      took=$((SECONDS - t0 - waited))
       verdict=PASS; [ "$status" -eq 0 ] || verdict=FAIL
       printf '%s\t%s\t%s\n' "$(date +%s)" "$took" "$run" >> "$times"
       printf '%s %4ss slot%s %s\n' "$verdict" "$took" "$slot" "$run" | tee -a "$out/results"
@@ -177,7 +173,7 @@ for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
     if [ "$running" -ge "$jobs" ]; then wait -n; running=$((running - 1)); fi
   done < "$out/order"
   wait
-  ssh -o BatchMode=yes -o LogLevel=ERROR "fstest$builder@$host" "rm -rf $shared" || true
+  rig_drop_shared
   failed=$((n - $(grep -c '^PASS' "$out/results" || true)))
   echo "$label: $((n - failed)) of $n passed in $((SECONDS - started))s; logs and artifacts in $out"
   grep '^FAIL' "$out/results" | sed "s|^|  |" || true
@@ -188,7 +184,7 @@ for scale, r in sorted(scaled, key=lambda s: -est[key(*s)]):
 # of its own.
 case "${1:-}" in
   smoke) load_manifest; if [ "$rig" = g815 ] && "$repo_root/dev/vm.sh" wants "${@:2}"; then exec "$repo_root/dev/vm.sh" "$@"; fi ;;
-  check) case "$rig:${2:-}" in g815:fs-auth|g815:fs-audio|g815:fs-bluez|g815:fs-network|g815:fs-upower) exec "$repo_root/dev/vm.sh" "$@" ;; esac ;;
+  check) if [ "$rig" = g815 ] && rig_is_vm_check "${2:-}"; then exec "$repo_root/dev/vm.sh" "$@"; fi ;;
 esac
 
 # Neither takes a slot itself: the build and every run take their own.
@@ -207,21 +203,7 @@ case "${1:-}" in
     # The whole suite is for milestones. One at a time per rig across every
     # agent on this mac: a second queues here rather than halving both.
     if [ -z "${FS_SMOKE_ALL_HELD:-}" ]; then
-      lock=/tmp/formalshell-smoke-all.lock
-      [ "$rig" = g815 ] || lock=/tmp/formalshell-smoke-all-$rig.lock
-      exec python3 -c '
-import fcntl, os, subprocess, sys
-lock = open(sys.argv[1], "a+")
-try:
-    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-except OSError:
-    lock.seek(0)
-    print("smoke-all: queued behind the run started by %s" % (lock.read().strip() or "another agent"), file=sys.stderr)
-    fcntl.flock(lock, fcntl.LOCK_EX)
-lock.seek(0); lock.truncate(); lock.write("%s (pid %d)\n" % (sys.argv[2], os.getpid())); lock.flush()
-os.environ["FS_SMOKE_ALL_HELD"] = "1"
-sys.exit(subprocess.call(sys.argv[3:]))
-' "$lock" "$repo_root" "$self" "$@"
+      exec python3 "$repo_root/dev/rig_lock.py" all "$rig" "$repo_root" -- "$self" "$@"
     fi
     shift
     list="${1:-$repo_root/dev/smoke-all.list}"
@@ -236,34 +218,7 @@ esac
 # A slot's .last names the checkout that ran there last: the picker tries
 # the free slots this checkout left warm, then unused ones, then any.
 if [ -z "${FS_RIG_SLOT:-}" ]; then
-  exec python3 -c '
-import fcntl, os, subprocess, sys, time
-rig, slots, me, cmd = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
-def last(n):
-    try:
-        return open("/tmp/formalshell-%s-%d.last" % (rig, n)).read().strip()
-    except OSError:
-        return ""
-began = time.time()
-while True:
-    order = sorted(range(slots), key=lambda n: (last(n) != me, last(n) != "", n))
-    for n in order:
-        lock = open("/tmp/formalshell-%s-%d.lock" % (rig, n), "w")
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
-            continue
-        with open("/tmp/formalshell-%s-%d.last" % (rig, n), "w") as f:
-            f.write(me + "\n")
-        os.environ["FS_RIG_SLOT"] = str(n)
-        waited = int(time.time() - began)
-        if waited:
-            print("%s: waited %ds for a slot" % (rig, waited), file=sys.stderr)
-        print("%s: slot %d" % (rig, n), file=sys.stderr)
-        sys.exit(subprocess.call(cmd))
-    time.sleep(3)
-' "$rig" "$slots" "$repo_root" "$self" "$@"
+  exec python3 "$repo_root/dev/rig_lock.py" slot "$rig" "$slots" "$repo_root" -- "$self" "$@"
 fi
 case "$FS_RIG_SLOT" in
   ''|*[!0-9]*) echo "FS_RIG_SLOT must be a slot number, got '$FS_RIG_SLOT'" >&2; exit 1 ;;
@@ -274,6 +229,8 @@ if ! ssh "${ssh_opts[@]}" "$target" true 2>/dev/null; then
   echo "$rig: $target does not answer ssh" >&2
   exit 1
 fi
+# The slot is still held when this runs, so nothing else of this user is.
+trap 'rig_slot_clean "$target"' EXIT
 
 # The slot user's shell is bash, and pam_systemd has already given it
 # XDG_RUNTIME_DIR and its own bus. WAYLAND_DISPLAY is the headless parent's,
@@ -330,98 +287,21 @@ cmd_sync() {
         [ \"\$size\" -le 8192 ] || rm -rf crates/target
       fi
     fi"
-  # .gitignore's patterns keep crates/target, result and artifacts on their
-  # own side. macOS's openrsync reads a `:- .gitignore` dir-merge for the
-  # sending side only and lets --delete remove the same paths on the
-  # receiver, which wiped crates/target before every build; --exclude-from
-  # protects them there too.
-  # Files are compared by checksum and written with the time of the sync,
-  # never the sender's mtime: a slot's target can be newer than a source
-  # carried over from another checkout, and cargo would skip rebuilding it.
-  rsync -rlpcz --delete \
-    --exclude-from="$repo_root/.gitignore" \
-    --filter=':- .gitignore' \
-    --exclude '/.git' \
-    --exclude '/.claude/' \
-    --exclude '/.rig-target-checked' \
-    -e "ssh ${ssh_opts[*]}" \
-    "$repo_root/" "$target:$remote_dir/"
+  rig_sync_tree "$target"
 }
 
-# Pulls a remote file or directory listed in the run's output into
-# ./artifacts/ (FS_ARTIFACTS when set, smoke-all's per-run directory), under
-# its own basename.
+# FS_ARTIFACTS is smoke-all's per-run directory.
 artifacts="${FS_ARTIFACTS:-$repo_root/artifacts}"
-pull_one() {
-  local remote=$1 local_path
-  mkdir -p "$artifacts"
-  case "$remote" in
-    *.tar)
-      local_path="$artifacts/$(basename "$remote" .tar)"
-      mkdir -p "$local_path"
-      ssh "${ssh_opts[@]}" "$target" "cat $(printf '%q' "$remote")" | tar -xf - -C "$local_path" \
-        && echo "pulled frames: $local_path"
-      ;;
-    *)
-      local_path="$artifacts/$(basename "$remote")"
-      rsync -a -e "ssh ${ssh_opts[*]}" "$target:$remote" "$local_path" \
-        && echo "pulled: $local_path"
-      ;;
-  esac
-}
 
 cmd_smoke() {
   cmd_sync
-  local out status=0 forward="" name
-  for name in FS_RESULT FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE FS_CARGO_PROFILE $(printf '%s' "$FS_MANIFEST" | jq -r '[.legs[].env[]] | unique[]'); do
-    [ -z "${!name:-}" ] || forward+="$name=$(printf '%q' "${!name}") "
-  done
-  out=$(remote_run "${forward}./dev/smoke.sh $*" 2>&1) || status=$?
-  echo "$out"
-
-  local ts line remote
-  ts=$(date +%Y%m%d-%H%M%S)
-  if [ "$status" -ne 0 ]; then
-    for remote in $(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+\.(png|log|tar)' | awk '{print $2}'); do
-      pull_one "$remote"
-    done
-    echo "$rig: smoke run failed (exit $status)" >&2
-    exit "$status"
-  fi
-
-  remote=$(printf '%s\n' "$out" | grep -E '^SMOKE_OK [^[:space:]]+' | tail -1 | awk '{print $2}')
-  if [ -z "$remote" ]; then
-    echo "$rig: no SMOKE_OK line in smoke output" >&2
-    exit 1
-  fi
-  mkdir -p "$artifacts"
-  rsync -a -e "ssh ${ssh_opts[*]}" "$target:$remote" "$artifacts/smoke-$ts.png"
-  echo "pulled screenshot: $artifacts/smoke-$ts.png"
-  local rest
-  rest=$(printf '%s\n' "$out" | sed -E 's/SMOKE_OK [^[:space:]]+//' | sed '/^[[:space:]]*$/d')
-  if [ -n "$(printf '%s' "$rest" | tr -d '[:space:]')" ]; then
-    printf '%s\n' "$rest" > "$artifacts/smoke-$ts.json"
-    echo "pulled dump/status output: $artifacts/smoke-$ts.json"
-  fi
-
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    remote=$(printf '%s\n' "$line" | awk '{print $2}')
-    case "$remote" in *.png|*.log|*.tar) pull_one "$remote" ;; esac
-  done <<< "$(printf '%s\n' "$out" | grep -oE '^SMOKE_[A-Za-z0-9_]+ [^[:space:]]+' | grep -v '^SMOKE_OK ')"
-
-  # Legs whose output is committed write it into the checkout's docs/.
-  local dir glob flag
-  for flag in "$@"; do
-    case "$flag" in --*) ;; *) continue ;; esac
-    while IFS=$'\t' read -r dir glob; do
-      [ -n "$dir" ] || continue
-      mkdir -p "$repo_root/$dir"
-      rsync -az -e "ssh ${ssh_opts[*]}" --include "$glob" --exclude '*' \
-        "$target:$remote_dir/$dir/" "$repo_root/$dir/"
-      echo "pulled: $repo_root/$dir/$glob"
-    done < <(printf '%s' "$FS_MANIFEST" | jq -r --arg flag "$flag" '.legs[] | select(.flag | split(" ")[0] == $flag) | .commits[] | [.dir, .glob] | @tsv')
-  done
+  local out_file status=0
+  out_file=$(mktemp)
+  remote_run "$(rig_forward_env FS_RESULT FS_CPU_QUOTA FS_CPU_QUOTA_PERIOD FS_SMOKE_SCALE FS_CARGO_PROFILE)./dev/smoke.sh $*" > "$out_file" 2>&1 || status=$?
+  cat "$out_file"
+  rig_pull_smoke "$target" "$rig" "$artifacts" "$status" "$out_file" "$@" || status=$?
+  rm -f "$out_file"
+  exit "$status"
 }
 
 verb=$1

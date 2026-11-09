@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # clippy over the workspace (its deny-level lints fail the run, warnings
-# print), then the pure crates' tests and the shell's own (none of which
+# print), then the tests of every crate that needs no daemon and the shell's own (none of which
 # need a session), on a Linux host
 # (dev/remote.sh lint runs it on g815, ci.yml on a GitHub runner). Release
 # profile throughout, so the tests share dev/build.sh's dependency builds.
@@ -10,16 +10,18 @@
 # The service crates' tests are `dev/check.sh <crate>`: they need a private
 # bus or a VM.
 set -euo pipefail
-cd "$(dirname "$0")/../crates"
+. "$(dirname "$0")/rig.sh"
+cd "$rig_root/crates"
 
 cargo() {
   if command -v fspec >/dev/null 2>&1; then fspec dev -- cargo "$@"; else command cargo "$@"; fi
 }
 
-pure=()
-for crate in formalshell-rs fs-js fs-chrome fs-info fs-activity fs-system fs-devices fs-media fs-menu fs-screensaver fs-theme fs-audio fs-kopuz; do
-  pure+=(--package "$crate")
+# Every crate but the service crates, whose tests are dev/check.sh's.
+exclude=()
+for crate in $rig_session_checks $rig_vm_checks; do
+  exclude+=(--exclude "$crate")
 done
 
 cargo clippy --locked --release --workspace --all-targets
-cargo test --locked --release "${pure[@]}"
+cargo test --locked --release --workspace "${exclude[@]}"

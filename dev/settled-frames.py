@@ -3,7 +3,7 @@
 against the frames it settles on, and the row boxes `menu status` reported
 through it.
 
-    settled-frames.py frames <convert> <scale> <box.json> <settled.png>... -- <burst.png>...
+    settled-frames.py frames <scale> <box.json> <settled.png>... -- <burst.png>...
     settled-frames.py rows <status.json>...
 
 `frames` crops every picture to the box (`{"x","y","width","height"}` in
@@ -18,40 +18,25 @@ width, and inside its height unless it crosses the body's top or bottom
 edge.
 """
 import json
-import subprocess
 import sys
 
-FUZZ = "3%"
+import pixels
+
+# ImageMagick's 3% threshold on 8-bit gray.
+FUZZ = 0.03 * 255
 MAX_DIFF = 0.0005
 
 
-def crop(convert, path, box, scale):
-    x, y = round(box["x"] * scale), round(box["y"] * scale)
-    w, h = round(box["width"] * scale), round(box["height"] * scale)
-    out = path[: -len(".png")] + ".crop.png"
-    subprocess.run([convert, path, "-crop", f"{w}x{h}+{x}+{y}", "+repage", "-alpha", "off", out], check=True)
-    return out
-
-
-def differing(convert, a, b):
-    """The share of the box's pixels that differ past FUZZ."""
-    out = subprocess.run([convert, a, b, "-compose", "difference", "-composite", "-colorspace", "Gray", "-threshold", FUZZ, "-format", "%[fx:mean]", "info:"], capture_output=True, text=True)
-    try:
-        return float(out.stdout.strip())
-    except ValueError:
-        return 1.0
-
-
 def frames(args):
-    convert, scale, box_path = args[0], float(args[1]), args[2]
+    scale, box_path = float(args[0]), args[1]
     split = args.index("--")
-    settled, burst = args[3:split], args[split + 1:]
+    settled, burst = args[2:split], args[split + 1:]
     box = json.load(open(box_path))
-    ref = [(p, crop(convert, p, box, scale)) for p in settled]
+    ref = [(p, pixels.crop(pixels.load(p), box, scale)) for p in settled]
     bad = 0
     for p in burst:
-        c = crop(convert, p, box, scale)
-        best = min(((differing(convert, c, r), name) for name, r in ref), key=lambda t: t[0])
+        c = pixels.crop(pixels.load(p), box, scale)
+        best = min(((pixels.differing(c, r, FUZZ), name) for name, r in ref), key=lambda t: t[0])
         ok = best[0] <= MAX_DIFF
         bad += not ok
         print(f"{'ok' if ok else 'NONE'} {p.rsplit('/', 1)[-1]} {best[1].rsplit('/', 1)[-1]} {best[0]:.5f}")

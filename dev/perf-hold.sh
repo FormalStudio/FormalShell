@@ -3,7 +3,7 @@
 # other run on g815 or its VM rig would land in the gate's numbers, so it
 # waits here until the marker goes. A marker naming a pid that is gone is a
 # gate that was killed, and holds nothing.
-perf_gate_marker=/tmp/formalshell-perf-gate.running
+perf_gate_marker=$(python3 "$(dirname "${BASH_SOURCE[0]}")/rig_lock.py" marker)
 
 perf_gate_held() {
   local pid

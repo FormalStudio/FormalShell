@@ -81,6 +81,8 @@ import subprocess
 import sys
 import time
 
+import rig_lock
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASELINES = {"cpu": os.path.join(REPO, "docs/perf/baseline.json"), "gpu": os.path.join(REPO, "docs/perf/baseline-gpu.json")}
 QUOTA_ENV = {"FS_CPU_QUOTA": "10%", "FS_CPU_QUOTA_PERIOD": "2ms"}
@@ -136,7 +138,7 @@ CARGO_LINE = "cargo profile: "
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "LogLevel=ERROR", "g815"]
 # dev/perf-hold.sh's marker: every other g815 or VM rig run waits while it
 # names a live gate.
-HOLD = "/tmp/formalshell-perf-gate.running"
+HOLD = rig_lock.PERF_MARKER
 # Another agent's slot run, a VM rig guest, or an apply or package build.
 OTHERS = "ps -eo user=,args= | grep -E '^fstest[0-9]+ .*(smoke|cargo|scoped-run)' | grep -v grep; pgrep -fa 'qemu.*fstestvm|fspec (apply|build)|tarball.sh' | grep -v pgrep"
 

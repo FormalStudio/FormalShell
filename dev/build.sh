@@ -24,8 +24,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$(pwd)
 
+. "$repo/dev/rig.sh"
+
 fail() {
-  echo "SMOKE_FAIL: $1" >&2
+  echo "build: $1" >&2
   exit 1
 }
 
@@ -63,19 +65,6 @@ ln -s "$repo/docs/examples" result/share/formalshell/examples
 for helper in matugen ttfx formalshell-eds; do
   [ -x "$pkg/lib/formalshell/bin/$helper" ] && ln -s "$pkg/lib/formalshell/bin/$helper" "result/lib/formalshell/first/$helper"
 done
-cat > result/bin/formalshell <<'EOF'
-#!/bin/sh
-prefix=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
-export FS_RS_ICON_FONT="${FS_RS_ICON_FONT-$prefix/share/formalshell/fonts/lucide.ttf}"
-export FS_RS_FONT_DIRS="${FS_RS_FONT_DIRS-$prefix/share/formalshell/fonts}"
-export FS_TEMPLATE_DIR="${FS_TEMPLATE_DIR-$prefix/share/formalshell/templates}"
-export FS_BRANDING_DIR="${FS_BRANDING_DIR-$prefix/share/formalshell/branding}"
-export FS_EARTH_IMAGE="${FS_EARTH_IMAGE-$prefix/share/formalshell/earth.jpg}"
-export FS_EARTH_TILES="${FS_EARTH_TILES-$prefix/share/formalshell/tiles}"
-export FS_EARBUDS_ART="${FS_EARBUDS_ART-$prefix/share/formalshell/earbuds}"
-export FS_WALLPAPERS="${FS_WALLPAPERS-$prefix/share/formalshell/wallpapers}"
-export PATH="$prefix/lib/formalshell/first:$prefix/bin:$PATH:$prefix/lib/formalshell/bin"
-exec "$prefix/lib/formalshell/formalshell-rs" "$@"
-EOF
+rig_launcher '$prefix/lib/formalshell/first:$prefix/bin:$PATH:$prefix/lib/formalshell/bin' > result/bin/formalshell
 chmod 755 result/bin/formalshell
 echo "result: $repo/result (helpers and art from $pkg)"

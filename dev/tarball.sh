@@ -14,6 +14,7 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
+. "$repo/dev/rig.sh"
 out=${1:-$repo/artifacts/tarball}
 work=${WORK:-/build}
 arch=$(uname -m)
@@ -258,24 +259,8 @@ echo "$VERSION" > "$share/VERSION"
 
 # The helpers come first on PATH so a distro's own matugen or ttfx, at
 # another version, never renders the shell's templates.
-cat > "$stage/bin/formalshell" <<'EOF'
-#!/bin/sh
-prefix=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
-export FS_RS_ICON_FONT="${FS_RS_ICON_FONT-$prefix/share/formalshell/fonts/lucide.ttf}"
-export FS_RS_FONT_DIRS="${FS_RS_FONT_DIRS-$prefix/share/formalshell/fonts}"
-export FS_TEMPLATE_DIR="${FS_TEMPLATE_DIR-$prefix/share/formalshell/templates}"
-export FS_BRANDING_DIR="${FS_BRANDING_DIR-$prefix/share/formalshell/branding}"
-export FS_EARTH_IMAGE="${FS_EARTH_IMAGE-$prefix/share/formalshell/earth.jpg}"
-export FS_EARTH_TILES="${FS_EARTH_TILES-$prefix/share/formalshell/tiles}"
-export FS_EARBUDS_ART="${FS_EARBUDS_ART-$prefix/share/formalshell/earbuds}"
-export FS_WALLPAPERS="${FS_WALLPAPERS-$prefix/share/formalshell/wallpapers}"
-export PATH="$prefix/lib/formalshell/bin:$prefix/bin:$PATH"
-exec "$prefix/lib/formalshell/formalshell-rs" "$@"
-EOF
-cat > "$stage/bin/formalshell-greeter" <<'EOF'
-#!/bin/sh
-exec "$(dirname "$(readlink -f "$0")")/formalshell" greeter "$@"
-EOF
+rig_launcher '$prefix/lib/formalshell/bin:$prefix/bin:$PATH' > "$stage/bin/formalshell"
+rig_greeter_wrapper > "$stage/bin/formalshell-greeter"
 sed -e 's|@IPC@|"$(dirname "$(readlink -f "$0")")/formalshell-ipc"|' \
   -e 's|@TIMEOUT@|timeout|' -e 's|@SYSTEMCTL@|systemctl|' \
   "$repo/packaging/formalshell-watchdog.in" > "$stage/bin/formalshell-watchdog"

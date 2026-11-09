@@ -18,7 +18,8 @@
 #                          rebooting when the apply swapped the kernel
 set -euo pipefail
 name=fstestmac
-spec="$HOME/.config/formalspec"
+. "$(dirname "$0")/rig.sh"
+spec=$rig_spec
 
 command -v limactl >/dev/null || { echo "mac-vm: limactl is not installed; it is in the macbook's fspec spec" >&2; exit 1; }
 
@@ -30,18 +31,16 @@ ssh_ready() {
   ssh -o BatchMode=yes -o ConnectTimeout=5 "${1:-fstest0}@$name" true 2>/dev/null
 }
 
-# limactl leaves its hostagent running for the VM's life; 9>&- keeps the
-# start lock below out of it, or the lock outlives this script.
 start() {
   if [ "$(status)" = Missing ]; then
-    limactl create --name "$name" --tty=false "$spec/hosts/fstestmac/lima.yaml" 9>&-
+    limactl create --name "$name" --tty=false "$spec/hosts/fstestmac/lima.yaml"
   fi
   if [ "$(status)" != Running ]; then
-    limactl start --tty=false "$name" > /dev/null 9>&-
+    limactl start --tty=false "$name" > /dev/null
   fi
   for _ in $(seq 60); do
     ssh_ready && return 0
-    ssh_ready kyan && break
+    ssh_ready "$rig_guest_admin" && break
     sleep 1
   done
   ssh_ready || { echo "mac-vm: $name is up but has no slot users yet: run dev/mac-vm.sh apply" >&2; return 1; }
@@ -49,11 +48,11 @@ start() {
 
 case "${1:-}" in
   start)
-    # Two agents falling back at once start it once.
-    exec 9> /tmp/formalshell-mac-vm.lock
-    python3 -c 'import fcntl, sys; fcntl.flock(int(sys.argv[1]), fcntl.LOCK_EX)' 9
-    start
+    # Two agents falling back at once start it once; the lock is not passed
+    # on to limactl's hostagent, which outlives this script.
+    exec python3 "$rig_dev/rig_lock.py" file /tmp/formalshell-mac-vm.lock -- "$0" start-locked
     ;;
+  start-locked) start ;;
   stop) limactl stop "$name" ;;
   status) status ;;
   apply)
@@ -62,8 +61,8 @@ case "${1:-}" in
     # A first apply leaves sshd on its old config, which reads no
     # authorized_keys.d, and may leave the boot on kernel-default-base, which
     # has no vkms.
-    if ! ssh_ready || ! ssh "kyan@$name" modinfo vkms >/dev/null 2>&1; then
-      limactl restart --tty=false "$name" > /dev/null 9>&-
+    if ! ssh_ready || ! ssh "$rig_guest_admin@$name" modinfo vkms >/dev/null 2>&1; then
+      limactl restart --tty=false "$name" > /dev/null
       start
     fi
     ;;

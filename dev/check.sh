@@ -2,30 +2,28 @@
 # One service crate's tests against its real daemon, on a Linux host
 # (dev/remote.sh check <name> runs it on g815, or on the VM rig).
 #
-#   dev/check.sh fs-tray|fs-notifd|fs-mpris|fs-dbus
+#   dev/check.sh <session check>         a crate in dev/rig.sh's rig_session_checks
 #   dev/check.sh build <crate> <dir>     on the rig: a VM check's binaries into <dir>
-#   FS_CHECK_BIN=<dir> dev/check.sh fs-auth|fs-audio|fs-bluez|fs-network|fs-upower
+#   FS_CHECK_BIN=<dir> dev/check.sh <VM check>   a crate in dev/rig.sh's rig_vm_checks
 #
-# The first four start their own dbus-daemon (and fs-notifd the real
+# The session checks start their own dbus-daemon (and fs-notifd the real
 # notify-send) on a private session bus; dbus-run-session keeps anything
-# they miss off the host's. fs-auth, fs-audio, fs-bluez, fs-network and
-# fs-upower drive real system daemons (PAM and polkit, PipeWire, BlueZ,
-# NetworkManager against two hostapd radios, UPower and
-# power-profiles-daemon), so they run in a VM rig guest (dev/vm.sh check),
+# they miss off the host's. The VM checks drive real system daemons (PAM and
+# polkit, PipeWire, BlueZ, NetworkManager against two hostapd radios, UPower
+# and power-profiles-daemon), so they run in a VM rig guest (dev/vm.sh check),
 # which has no toolchain: `build` compiles every test binary, ignored tests
 # included, and the crate's probes on the rig, and the guest runs them.
 set -euo pipefail
-cd "$(dirname "$0")/../crates"
+. "$(dirname "$0")/rig.sh"
+cd "$rig_root/crates"
 
 fail() { echo "$1" >&2; exit 1; }
-
-vm_checks="fs-auth fs-audio fs-bluez fs-network fs-upower"
 
 if [ "${1:-}" = build ]; then
   [ $# -eq 3 ] || fail "usage: $0 build <crate> <dir>"
   crate=$2 dest=$3
-  case " $vm_checks " in *" $crate "*) ;; *) fail "$crate: not a VM check ($vm_checks)" ;; esac
-  case "$dest" in /tmp/formalshell-rig-result-*) ;; *) fail "build: $dest is not /tmp/formalshell-rig-result-*" ;; esac
+  rig_is_vm_check "$crate" || fail "$crate: not a VM check ($rig_vm_checks)"
+  rig_result_ok "$dest" || fail "build: $dest is not $rig_result_prefix*"
   features=()
   [ "$crate" = fs-audio ] && features=(--features pipewire)
   rm -rf "$dest"
@@ -62,25 +60,19 @@ run_tests() {
   done
 }
 
-case "$1" in
-  fs-tray|fs-notifd|fs-mpris|fs-dbus)
-    for tool in dbus-daemon dbus-run-session; do
-      command -v "$tool" >/dev/null 2>&1 || fail "$1: $tool is not on PATH; install the openSUSE package dbus-1-daemon"
-    done
-    if [ "$1" = fs-notifd ] && ! command -v notify-send >/dev/null 2>&1; then
-      fail "fs-notifd: notify-send is not on PATH; install the openSUSE package libnotify-tools"
-    fi
-    exec dbus-run-session -- fspec dev -- cargo test --locked --release --package "$1"
-    ;;
-  fs-auth|fs-audio|fs-bluez|fs-network|fs-upower)
-    bin="${FS_CHECK_BIN:-}"
-    [ -n "$bin" ] || fail "$1: drives real system daemons and runs on the VM rig: dev/vm.sh check $1 (dev/remote.sh check $1 hands it there)"
-    skip=()
-    ;;
-  *)
-    fail "$1: no such check (fs-tray, fs-notifd, fs-mpris, fs-dbus; on the VM rig: $vm_checks)"
-    ;;
-esac
+if rig_is_session_check "$1"; then
+  for tool in dbus-daemon dbus-run-session; do
+    command -v "$tool" >/dev/null 2>&1 || fail "$1: $tool is not on PATH; install the openSUSE package dbus-1-daemon"
+  done
+  if [ "$1" = fs-notifd ] && ! command -v notify-send >/dev/null 2>&1; then
+    fail "fs-notifd: notify-send is not on PATH; install the openSUSE package libnotify-tools"
+  fi
+  exec dbus-run-session -- fspec dev -- cargo test --locked --release --package "$1"
+fi
+rig_is_vm_check "$1" || fail "$1: no such check ($rig_session_checks; on the VM rig: $rig_vm_checks)"
+bin="${FS_CHECK_BIN:-}"
+[ -n "$bin" ] || fail "$1: drives real system daemons and runs on the VM rig: dev/vm.sh check $1 (dev/remote.sh check $1 hands it there)"
+skip=()
 
 case "$1" in
   fs-upower)

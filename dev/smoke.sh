@@ -345,7 +345,7 @@ if [ -n "${FS_RESULT:-}" ]; then
   rm -rf result
   ln -s "$FS_RESULT" result
 else
-  dev/build.sh
+  dev/build.sh || { echo "SMOKE_FAIL: dev/build.sh failed" >&2; exit 1; }
 fi
 
 # The tools a leg names in leg_<name>_needs, resolved once, on demand, into

@@ -32,36 +32,25 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
-ssh_opts=(-o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR)
-host="g815"
+. dev/rig.sh
 
 if [ "${FS_SEAMS_TREE:-}" = 1 ] && [ -z "${FS_VM_RESULT:-}" ]; then
-  shared="/tmp/formalshell-rig-result-$(date +%s)-$$"
-  log=$(mktemp)
-  if ! env -u FS_RIG_SLOT FS_RIG=g815 dev/remote.sh run "dev/build.sh && dev/share-result.sh $shared" > "$log" 2>&1; then
-    tail -30 "$log" >&2
-    echo "seams: build failed on the rig" >&2
-    exit 1
-  fi
-  builder=$(sed -n 's/^g815: slot \([0-9]*\)$/\1/p' "$log" | head -1)
-  rm -f "$log"
   status=0
-  FS_VM_RESULT="$shared" "$0" "$@" || status=$?
-  ssh "${ssh_opts[@]}" "fstest$builder@$host" "rm -rf $shared" || true
+  rig_with_build build -- "$0" "$@" || status=$?
   exit "$status"
 fi
 
 [ -n "${FS_VM_SLOT:-}" ] || exec "$repo_root/dev/vm.sh" hold "$0" "$@"
 
-spec="$HOME/.config/formalspec"
+spec=$rig_spec
 vm="fstestvm$FS_VM_SLOT"
 out="$repo_root/artifacts/seams"
 password=formalshell-test
-result=/var/tmp/formalshell-result
-bins="formalshell formalshell-ipc formalshell-greeter"
+result=$rig_vm_result
+bins=$rig_greeter_bins
 
 f() { fspec vm "$1" "$vm" "${@:2}" --spec "$spec"; }
-guest() { ssh "${ssh_opts[@]}" "$vm" "$@"; }
+guest() { ssh "${rig_ssh_opts[@]}" "$vm" "$@"; }
 say() { echo "seams: $*"; }
 
 # Polls until <what> answers true in the guest, at most <seconds>.
@@ -85,16 +74,8 @@ if [ -n "${FS_VM_RESULT:-}" ]; then
   say "linking this tree's build over the guest's package"
   f start | tail -1
   until_guest "ssh" 120 true
-  ssh "${ssh_opts[@]}" -A "$host" "rsync -a --delete -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -p $((2222 + FS_VM_SLOT))' $(printf '%q' "$FS_VM_RESULT")/ kyan@127.0.0.1:$result/"
-  guest "set -e; pkg=\$(readlink -f /opt/fspec/current/bin/formalshell); pkg=\${pkg%/bin/formalshell}
-    find $result -type l ! -exec test -e {} \\; -print | while read -r link; do
-      to=\$(readlink \"\$link\"); ln -sfn \"\$pkg/\${to#*/formalshell/}\" \"\$link\"
-    done
-    printf '#!/bin/sh\nexec \"\$(dirname \"\$(readlink -f \"\$0\")\")/formalshell\" greeter \"\$@\"\n' > $result/bin/formalshell-greeter
-    chmod 755 $result/bin/formalshell-greeter
-    test -e $result.orig || { mkdir -p $result.orig; for b in $bins; do sudo cp -a /opt/fspec/current/bin/\$b $result.orig/ 2>/dev/null || true; done; }
-    for b in $bins; do sudo ln -sfn $result/bin/\$b /opt/fspec/current/bin/\$b; done
-    sync"
+  rig_guest_copy_result "$vm" "$((2222 + FS_VM_SLOT))"
+  rig_guest_link_result "$vm" keep
   f stop | tail -1
 fi
 # The owner's hosts boot onto a wallpaper; the guest's user has none, and

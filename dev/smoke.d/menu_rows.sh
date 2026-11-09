@@ -104,7 +104,7 @@ leg_menu_rows_assert() {
   settled+=("$d/cleared.png")
   burst=("$d"/burst-*.png)
   [ "${#burst[@]}" -ge 3 ] || fail "menu-rows: only ${#burst[@]} frames in the burst"
-  out=$("$python3_bin" "$PWD/dev/settled-frames.py" frames "$convert_bin" "${FS_SMOKE_SCALE:-1}" "$d/box.json" "${settled[@]}" -- "${burst[@]}" 2>&1) || status=$?
+  out=$("$python3_bin" "$PWD/dev/settled-frames.py" frames "${FS_SMOKE_SCALE:-1}" "$d/box.json" "${settled[@]}" -- "${burst[@]}" 2>&1) || status=$?
   echo "$out"
   awk -v d="$d" '/^NONE/ && ++n <= 4 { print "SMOKE_MENU_ROWS_MISS_" n " " d "/" $2 }' <<< "$out"
   [ "$status" -eq 0 ] || fail "menu-rows: $(grep -c '^NONE' <<< "$out") of ${#burst[@]} frames while typing match no settled list (a transition, an overlap or a stale row)"
@@ -113,7 +113,7 @@ leg_menu_rows_assert() {
   echo "$out"
   [ "$status" -eq 0 ] || fail "menu-rows: rows intersect or are cut while typing"
   status=0
-  out=$("$python3_bin" "$PWD/dev/settled-frames.py" frames "$convert_bin" "${FS_SMOKE_SCALE:-1}" "$d/box.json" "$d/final.png" -- "$d/after.png" 2>&1) || status=$?
+  out=$("$python3_bin" "$PWD/dev/settled-frames.py" frames "${FS_SMOKE_SCALE:-1}" "$d/box.json" "$d/final.png" -- "$d/after.png" 2>&1) || status=$?
   echo "$out"
   [ "$status" -eq 0 ] || fail "menu-rows: ${menu_rows_after_ms}ms after the last key the card is not yet the list it settles on"
   echo "SMOKE_MENU_ROWS $d/after.png (${#burst[@]} frames while typing, each a settled list)"

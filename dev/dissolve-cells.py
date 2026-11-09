@@ -4,23 +4,22 @@ grid: how many whole 32 px cells are one colour, and of the cells where the
 two end pictures differ at the cell's centre, how many show the first
 picture's centre pixel and how many the second's.
 
-    dissolve-cells.py <convert> <frame.png> <from.png> <to.png>
+    dissolve-cells.py <frame.png> <from.png> <to.png>
 
 prints `cells=N uniform=U from=S to=D neither=X`. The middle third of a
 dissolve holds every cell at 32 px, so a frame from it reads nearly all
 uniform with both S and D above zero; neither picture alone has that.
 """
-import subprocess
 import sys
+
+import pixels
 
 GRID = 32
 
 
-def raw(convert, path):
-    size = subprocess.run([convert, path, "-format", "%w %h", "info:"], capture_output=True, text=True, check=True).stdout.split()
-    w, h = int(size[0]), int(size[1])
-    data = subprocess.run([convert, path, "-alpha", "off", "-depth", "8", "rgb:-"], capture_output=True, check=True).stdout
-    return w, h, data
+def raw(path):
+    img = pixels.load(path)
+    return img.width, img.height, img.tobytes()
 
 
 def near(a, b, tol):
@@ -28,9 +27,9 @@ def near(a, b, tol):
 
 
 def main():
-    convert, frame, src, dst = sys.argv[1:5]
-    w, h, f = raw(convert, frame)
-    pictures = [raw(convert, p) for p in (src, dst)]
+    frame, src, dst = sys.argv[1:4]
+    w, h, f = raw(frame)
+    pictures = [raw(p) for p in (src, dst)]
     if any((pw, ph) != (w, h) for pw, ph, _ in pictures):
         print("cells=0 uniform=0 from=0 to=0 neither=0 size-mismatch")
         return

@@ -221,7 +221,7 @@ leg_login_lock_assert() {
       echo "login lock: frame $i carries the splash ($pink) and the card ($green)"
     fi
     if [ -z "$mixed" ]; then
-      cells=$("$python3_bin" "$script_dir/dissolve-cells.py" "$convert_bin" "$f" "$login_lock_early_png" "$login_lock_card_png")
+      cells=$("$python3_bin" "$script_dir/dissolve-cells.py" "$f" "$login_lock_early_png" "$login_lock_card_png")
       if login_lock_mixed "$cells"; then
         mixed=$i
         echo "login lock: frame $i mid-dissolve, $cells"

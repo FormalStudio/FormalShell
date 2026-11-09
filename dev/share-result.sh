@@ -6,14 +6,14 @@
 # the installed fspec package (fonts, tiles, helpers) stay links.
 #
 #   dev/share-result.sh /tmp/formalshell-rig-result-<id>
+#
+# A copy a killed run left behind is dev/rig.sh's rig_slot_clean to remove.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. dev/rig.sh
 dest=$1
-case "$dest" in /tmp/formalshell-rig-result-*) ;; *) echo "share-result: $dest is not /tmp/formalshell-rig-result-*" >&2; exit 1 ;; esac
+rig_result_ok "$dest" || { echo "share-result: $dest is not $rig_result_prefix*" >&2; exit 1; }
 [ -x result/bin/formalshell ] || { echo "share-result: no ./result, run dev/build.sh first" >&2; exit 1; }
-
-# A smoke-all that was killed leaves its copy behind; a day is past any run.
-find /tmp -maxdepth 1 -name 'formalshell-rig-result-*' -user "$(id -u)" -mmin +1440 -exec rm -rf {} + 2>/dev/null || true
 
 rm -rf "$dest"
 mkdir -m 755 "$dest"
