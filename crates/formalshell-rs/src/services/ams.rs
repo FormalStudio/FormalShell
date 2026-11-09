@@ -283,6 +283,7 @@ async fn run(ctx: Ctx) {
             if let Some((mut c, _)) = child.take() {
                 let _ = c.kill();
             }
+            state.sent = None;
             if state.available || !state.error.is_empty() || !state.title.is_empty() {
                 state.available = false;
                 state.error.clear();
