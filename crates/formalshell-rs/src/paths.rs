@@ -48,6 +48,19 @@ pub fn data() -> PathBuf {
     base("XDG_DATA_HOME", ".local/share")
 }
 
+/// `data()` then `$XDG_DATA_DIRS` (else `/usr/local/share:/usr/share`),
+/// relative entries dropped, each once.
+pub fn data_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = vec![data()];
+    match std::env::var_os("XDG_DATA_DIRS").filter(|v| !v.is_empty()) {
+        Some(system) => dirs.extend(std::env::split_paths(&system)),
+        None => dirs.extend(["/usr/local/share", "/usr/share"].map(PathBuf::from)),
+    }
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| d.is_absolute() && seen.insert(d.clone()));
+    dirs
+}
+
 /// `$XDG_RUNTIME_DIR` when the session set one, for files that mean
 /// nothing without it (another program's socket).
 pub fn session_runtime() -> Option<PathBuf> {

@@ -123,19 +123,6 @@ fn decode(path: &Path, longest: Option<u32>) -> Option<RgbaImage> {
     })
 }
 
-pub fn data_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = Some(crate::paths::data()).filter(|d| d.is_absolute()).into_iter().collect();
-    let system = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
-    if system.is_empty() {
-        dirs.extend(["/usr/local/share", "/usr/share"].map(PathBuf::from));
-    } else {
-        dirs.extend(system.split(':').filter(|d| !d.is_empty()).map(PathBuf::from));
-    }
-    let mut seen = std::collections::HashSet::new();
-    dirs.retain(|d| seen.insert(d.clone()));
-    dirs
-}
-
 /// One file a name resolved to, and what its directory says about it.
 struct Candidate {
     path: PathBuf,
@@ -242,7 +229,7 @@ fn search(name: &str, theme_path: &str, size: u32) -> Option<PathBuf> {
     if chained.is_some() {
         return chained;
     }
-    let dirs = data_dirs();
+    let dirs = crate::paths::data_dirs();
     let mut themes: Vec<PathBuf> = Vec::new();
     for d in &dirs {
         let mut found: Vec<PathBuf> = subdirs(&d.join("icons")).into_iter().map(|(_, p)| p).collect();
@@ -368,7 +355,7 @@ struct Themes {
 
 fn icon_bases() -> Vec<PathBuf> {
     let mut bases = vec![home().join(".icons")];
-    bases.extend(data_dirs().into_iter().map(|d| d.join("icons")));
+    bases.extend(crate::paths::data_dirs().into_iter().map(|d| d.join("icons")));
     bases
 }
 

@@ -238,7 +238,17 @@ pub enum Ask {
     Icons(Vec<String>),
 }
 
-static ASK: LazyLock<(async_channel::Sender<Ask>, async_channel::Receiver<Ask>)> = LazyLock::new(async_channel::unbounded);
+/// Seeded with the warm-up asks as it is made, so an ask sent before `run`
+/// starts queues behind them rather than being overwritten by them: the tree
+/// and the apps exist by the first summon even with no settings.json and no
+/// state.json yet.
+static ASK: LazyLock<(async_channel::Sender<Ask>, async_channel::Receiver<Ask>)> = LazyLock::new(|| {
+    let (tx, rx) = async_channel::unbounded();
+    for a in [Ask::Base(BaseInputs::default()), Ask::Apps(Vec::new()), Ask::Emoji, Ask::Files] {
+        let _ = tx.try_send(a);
+    }
+    (tx, rx)
+});
 
 /// Callable from any thread.
 pub fn ask(a: Ask) {
@@ -247,12 +257,6 @@ pub fn ask(a: Ask) {
 
 pub async fn run(ctx: Ctx) {
     let (tx, rx) = (ASK.0.clone(), ASK.1.clone());
-    // Warm before anything asks: the tree and the apps exist by the first
-    // summon even with no settings.json and no state.json yet.
-    let _ = tx.try_send(Ask::Base(BaseInputs::default()));
-    let _ = tx.try_send(Ask::Apps(Vec::new()));
-    let _ = tx.try_send(Ask::Emoji);
-    let _ = tx.try_send(Ask::Files);
     ctx.spawn(watch_entries(tx.clone()));
     let mut scale = 1.0;
     let mut launches_seen: Vec<Record> = Vec::new();

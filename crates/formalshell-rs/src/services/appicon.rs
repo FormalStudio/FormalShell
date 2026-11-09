@@ -207,7 +207,7 @@ fn window_of(q: &Query) -> appicon::Window {
 }
 
 pub fn applications_dirs() -> Vec<PathBuf> {
-    icons::data_dirs().into_iter().map(|d| d.join("applications")).collect()
+    crate::paths::data_dirs().into_iter().map(|d| d.join("applications")).collect()
 }
 
 // ---- desktop entries --------------------------------------------------------

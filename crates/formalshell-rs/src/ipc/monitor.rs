@@ -10,7 +10,6 @@ use fs_system::monitor::gpu::{self, OffloadTools};
 use serde_json::Value as Json;
 
 use super::registry::{Function, Target, Type, Value};
-use crate::services::icons::data_dirs;
 use crate::services::info::monitor::now_ms;
 use crate::services::info::procs;
 use crate::services::wants::{self, Source};
@@ -72,7 +71,7 @@ struct Entry {
 /// `DesktopEntries.byId`: the first `<id>.desktop` on the data dirs. The
 /// raw `Exec` is kept, since the offload wrapper runs it through `sh -c`.
 fn entry(id: &str) -> Option<Entry> {
-    let text = data_dirs().iter().find_map(|d| std::fs::read_to_string(d.join("applications").join(format!("{id}.desktop"))).ok())?;
+    let text = crate::paths::data_dirs().iter().find_map(|d| std::fs::read_to_string(d.join("applications").join(format!("{id}.desktop"))).ok())?;
     let mut in_entry = false;
     let (mut exec, mut path, mut terminal) = (None, None, false);
     for line in text.lines().map(str::trim) {

@@ -534,8 +534,13 @@ fn login_script() -> String {
     format!(
         "#!/bin/sh
 # Written by `formalshell install`; `formalshell update` rewrites it.
-mkdir -p \"$XDG_RUNTIME_DIR/{SHELL_DIR}\"
-: > \"$XDG_RUNTIME_DIR/{SHELL_DIR}/{LOGIN_LOCK_MARKER}\"
+# The same fallback as the shell's paths::runtime, so it finds the marker.
+case \"${{XDG_RUNTIME_DIR:-}}\" in
+  /*) runtime=$XDG_RUNTIME_DIR ;;
+  *) runtime=/tmp/formalshell-$(id -u) ;;
+esac
+mkdir -p \"$runtime/{SHELL_DIR}\"
+: > \"$runtime/{SHELL_DIR}/{LOGIN_LOCK_MARKER}\"
 exec uwsm start -g -1 -e -D Hyprland -- hyprland.desktop -- --locked-cmd '{START}'
 "
     )
