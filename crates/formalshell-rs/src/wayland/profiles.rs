@@ -52,7 +52,7 @@ pub(super) struct Pill {
 
 /// Which profiles take a click, and the active one; none without the daemon.
 fn offered(store: &crate::store::Store) -> Option<(Vec<bool>, Profile)> {
-    let p = store.devices.profiles.as_ref()?;
+    let p = store.profiles.as_ref()?;
     Some((PROFILES.iter().map(|(x, ..)| p.available.contains(x)).collect(), p.active))
 }
 
@@ -165,7 +165,7 @@ impl App {
                 let Some((profile, ..)) = on.strip_prefix("profile:").and_then(|i| i.parse::<usize>().ok()).and_then(|i| PROFILES.get(i)) else { return };
                 let profile = *profile;
                 if let Some(rt) = &self.runtime {
-                    rt.service(move |ctx| devices::run(ctx, devices::Op::Profile(profile)));
+                    rt.service(move |ctx| devices::power::set_profile(ctx, profile));
                 }
             }
             PointerEventKind::Leave { .. } => p.pressed = None,
@@ -185,8 +185,8 @@ impl App {
         serde_json::json!({
             "rect": rect(p.popup.win.card.rest_rect()),
             "chips": chips,
-            "active": self.store.devices.profiles.as_ref().map(|p| p.active.to_wire()),
-            "battery": self.store.devices.power.battery.as_ref().map(|b| b.level.as_percent()),
+            "active": self.store.profiles.as_ref().map(|p| p.active.to_wire()),
+            "battery": self.store.power.battery.as_ref().map(|b| b.level.as_percent()),
         })
     }
 
@@ -213,7 +213,7 @@ impl App {
             let (frame, alpha) = p.popup.win.card.popover_frame;
             let (radius, bw, nub) = (p.popup.win.card.radius(), p.popup.win.card.border_width(), p.popup.win.card.nub().unwrap_or_default());
             let (mut painter, _) = p.popup.painter();
-            let charge = self.store.devices.power.battery.as_ref().map(|b| (b.level, level_colour(b)));
+            let charge = self.store.power.battery.as_ref().map(|b| (b.level, level_colour(b)));
             if let Some((level, colour)) = charge {
                 // The charge, the outline's own inside tinted from the foot
                 // up: the nub only when full.

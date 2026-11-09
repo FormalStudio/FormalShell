@@ -95,7 +95,11 @@ enum Ev {
     File(Option<File>),
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let settings_rx = super::media::subscribe();
     let dir = dir();
     let meta = dir.join("meta");

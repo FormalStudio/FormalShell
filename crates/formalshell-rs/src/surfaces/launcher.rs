@@ -521,9 +521,8 @@ pub enum Out {
 }
 
 pub fn snapshot(store: &Store) -> Snapshot {
-    let d = &store.devices;
     let radio = &store.media.radio;
-    let connected: Vec<String> = d.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_string()).collect();
+    let connected: Vec<String> = store.bluetooth.devices.iter().filter(|x| x.connected).map(|x| x.address.to_string()).collect();
     let l = &store.lights;
     let ipad = store.ipad.bridge.as_ref();
     toggles::snapshot(Some(&json!({
@@ -539,9 +538,9 @@ pub fn snapshot(store: &Store) -> Snapshot {
         "notifications.dnd": store.notifications.model.dnd,
         "overnight.active": !store.state.data.overnight.is_null(),
         "hdr.active": crate::services::display::hdr_active(store),
-        "wifi.ssid": d.network.ssid.as_ref().map_or("", |(s, _)| s.as_str()),
-        "audio.sink": d.audio.default_sink,
-        "audio.source": d.audio.default_source,
+        "wifi.ssid": store.network.ssid.as_ref().map_or("", |(s, _)| s.as_str()),
+        "audio.sink": store.audio.default_sink,
+        "audio.source": store.audio.default_source,
         "bluetooth.connected": connected,
         "radio.station": radio.station.as_ref().filter(|_| radio.running()).map_or("", |s| s.uuid.as_str()),
         "ipad.active": ipad.is_some_and(|i| i.active),
@@ -598,7 +597,7 @@ fn wifi_network(r: &crate::services::devices::network::Row) -> fs_menu::provider
 /// A network stepped into: its details off the live scan, a note once it
 /// is no longer listed.
 fn network_rows(store: &Store, ssid: &str, q: &str) -> Vec<Node> {
-    let Some(row) = store.devices.network.row(ssid) else { return vec![Node::note("wifi.details.gone", "No longer listed")] };
+    let Some(row) = store.network.row(ssid) else { return vec![Node::note("wifi.details.gone", "No longer listed")] };
     let q = q.trim().to_lowercase();
     fs_menu::providers::wifi_details(&wifi_network(row)).into_iter().filter(|n| q.is_empty() || n.label.to_lowercase().contains(&q)).collect()
 }
@@ -606,8 +605,7 @@ fn network_rows(store: &Store, ssid: &str, q: &str) -> Vec<Node> {
 /// The four device routes' rows, off the store.
 pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
     use fs_menu::providers as p;
-    let d = &store.devices;
-    let n = &d.network;
+    let n = &store.network;
     let wifi = p::WifiState {
         has_device: n.wifi_device.is_some(),
         enabled: n.wifi_enabled,
@@ -617,10 +615,10 @@ pub fn device_sources(store: &Store) -> Vec<(&'static str, Vec<Node>)> {
         failure_ssid: n.failure.as_ref().map(|f| f.ssid.clone()).unwrap_or_default(),
         failure_text: n.failure.as_ref().map(|f| f.text.clone()).unwrap_or_default(),
     };
-    let b = &d.bluetooth;
+    let b = &store.bluetooth;
     let bluetooth = p::BluetoothState { available: b.powered.is_some(), enabled: b.powered == Some(true), devices: b.devices.clone() };
     let audio: Vec<p::AudioDevice> =
-        d.audio.devices.iter().map(|(name, label, sink)| p::AudioDevice { name: name.clone(), label: label.clone(), is_sink: *sink }).collect();
+        store.audio.devices.iter().map(|(name, label, sink)| p::AudioDevice { name: name.clone(), label: label.clone(), is_sink: *sink }).collect();
     let r = &store.media.radio;
     let radio = p::RadioState { running: r.running(), favorites: r.favorites.iter().map(radio_station).collect() };
     vec![
@@ -751,7 +749,7 @@ impl Model {
 
     /// One monitor tick onto the tiles' history lines.
     pub fn monitor_sample(&mut self, store: &Store) {
-        let m = &store.info.monitor;
+        let m = &store.monitor;
         if m.sampled_ms.is_none() || m.sampled_ms == self.monitor_history.sampled {
             return;
         }
@@ -2213,7 +2211,7 @@ impl Model {
         fs_menu::actions::Subject {
             node,
             windows,
-            discrete_gpu: store.info.monitor.cards.iter().any(|c| c.discrete),
+            discrete_gpu: store.monitor.cards.iter().any(|c| c.discrete),
             picker_select: self.picker.select,
             abbrev,
             pinned: recent_pinned(store).contains(&id),
@@ -4160,7 +4158,7 @@ fn mirror_body(m: &Model, store: &Store, theme: &Theme) -> El {
 /// The process table's rows: the filter, busiest first.
 fn monitor_rows(store: &Store, q: &str) -> Vec<Node> {
     use fs_system::monitor::{format, procs};
-    let p = &store.info.procs;
+    let p = &store.procs;
     if !p.available {
         let note = if p.sampled_ms.is_none() { "Reading processes" } else { "No process table" };
         return vec![Node { dim: Some(true), ..Node::note("monitor.empty", note) }];
@@ -4188,7 +4186,7 @@ fn monitor_rows(store: &Store, q: &str) -> Vec<Node> {
 fn monitor_strip(store: &Store, theme: &Theme, h: &MonitorHistory) -> El {
     use fs_system::monitor::format;
     let s = &theme.space;
-    let m = &store.info.monitor;
+    let m = &store.monitor;
     let gpu = m
         .cards
         .iter()

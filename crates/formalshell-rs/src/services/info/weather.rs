@@ -93,7 +93,7 @@ async fn fetch(url: &str) -> Result<Weather, Error> {
 }
 
 fn publish(ctx: &Ctx, state: State) {
-    ctx.publish(store::Diff::Info(super::Diff::Weather(state)));
+    ctx.publish(store::Diff::Weather(state));
 }
 
 pub async fn run(ctx: Ctx) {

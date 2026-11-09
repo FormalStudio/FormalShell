@@ -52,7 +52,7 @@ fn read() -> Cfg {
 }
 
 fn publish(ctx: &Ctx, state: State) {
-    ctx.publish(store::Diff::Info(super::Diff::Update(state)));
+    ctx.publish(store::Diff::SystemUpdate(state));
 }
 
 /// One pass: the lock, then every probe. Answers the state it ended on.

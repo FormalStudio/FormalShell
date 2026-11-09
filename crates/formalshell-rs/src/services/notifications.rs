@@ -690,7 +690,11 @@ fn arrival(n: &fs_notifd::Notification, replaced: bool) -> Arrival {
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (server, events) = match Server::start(env!("CARGO_PKG_VERSION")).await {
         Ok(s) => s,
         Err(err) => {

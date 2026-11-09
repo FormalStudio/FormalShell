@@ -30,12 +30,12 @@ impl Panel for Dualsense {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Power, Topic::PadLights]
     }
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let Some(supply) = &v.store.devices.power.dualsense else {
+        let Some(supply) = &v.store.power.dualsense else {
             return w::column(s.section_gap, vec![w::panel_empty(s, "No controller")]);
         };
         let hero = w::hero(
@@ -52,7 +52,7 @@ impl Panel for Dualsense {
         )
         .stop("battery");
         let mut out = vec![hero];
-        let lights = &v.store.devices.lights;
+        let lights = &v.store.pad_lights;
         let mut rows = Vec::new();
         if let Some(hex) = &lights.lightbar {
             let fill = Rgba::parse(hex).unwrap_or(Rgba::TRANSPARENT);

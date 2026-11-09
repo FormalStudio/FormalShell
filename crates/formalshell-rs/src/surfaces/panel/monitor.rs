@@ -36,7 +36,7 @@ fn fill(fraction: Option<f64>) -> Option<f64> {
 }
 
 fn metrics(v: &View) -> Vec<Metric> {
-    let m = &v.store.info.monitor;
+    let m = &v.store.monitor;
     let mut out = vec![
         Metric { label: "CPU".into(), figure: pct(m.cpu.aggregate), fill: fill(m.cpu.aggregate), state: String::new() },
     ];
@@ -73,7 +73,7 @@ impl Panel for Monitor {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info, Topic::Compositor, Topic::Config]
+        &[Topic::Monitor, Topic::Compositor, Topic::Config]
     }
 
     fn width(&self, v: &View) -> f64 {

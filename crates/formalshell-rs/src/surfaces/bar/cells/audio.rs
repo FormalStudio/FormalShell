@@ -4,7 +4,7 @@
 
 use fs_audio::Visual;
 
-use crate::services::devices::{self, Op};
+use crate::services::devices;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
 use crate::paint::Look;
@@ -20,11 +20,11 @@ pub const ICONS: &[&str] = &["volume-2"];
 
 impl Cell for Audio {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices, Topic::Config]
+        &[Topic::Audio, Topic::Config]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.devices.audio.clone();
+        let state = env.store.audio.clone();
         let show_label = env.store.config.bool("bar.widgets.audio.showLabel").unwrap_or(false);
         let changed = state != self.state || show_label != self.show_label;
         (self.state, self.show_label) = (state, show_label);
@@ -44,13 +44,13 @@ impl Cell for Audio {
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
-            Button::Right => Action::Device(Op::ToggleMute),
+            Button::Right => Action::ToggleMute,
             _ => Action::Panel("audio"),
         }
     }
 
     fn wheel(&mut self, up: bool, _: &Env) -> Action {
         let Some(v) = self.state.volume else { return Action::None };
-        Action::Device(Op::Volume(Visual::from_f64(v.as_f64() + if up { 0.05 } else { -0.05 })))
+        Action::Volume(Visual::from_f64(v.as_f64() + if up { 0.05 } else { -0.05 }))
     }
 }

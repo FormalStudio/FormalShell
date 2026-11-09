@@ -206,10 +206,14 @@ pub fn command(c: Command) {
 }
 
 fn publish(ctx: &Ctx, audio: Audio) {
-    ctx.publish(store::Diff::Devices(super::Diff::Audio(audio)));
+    ctx.publish(store::Diff::Audio(audio));
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (handle, events) = match fs_audio::spawn() {
         Ok(v) => v,
         Err(err) => {

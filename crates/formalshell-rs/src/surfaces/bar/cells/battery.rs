@@ -5,7 +5,7 @@
 use fs_system::power::model::{Low, Thresholds, battery_icon, charge_state_label, charge_threshold_active, format_duration};
 use fs_upower::DeviceState;
 
-use crate::services::devices::{Op, power};
+use crate::services::devices::power;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
 use crate::paint::{Look, Tone};
@@ -28,12 +28,12 @@ pub const ICONS: &[&str] = &["battery"];
 
 impl Cell for Battery {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices, Topic::Config, Topic::State]
+        &[Topic::Power, Topic::Config, Topic::State]
     }
 
     fn read(&mut self, env: &Env) -> bool {
         let c = &env.store.config;
-        let p = &env.store.devices.power;
+        let p = &env.store.power;
         // state.json's override wins; null there falls back to settings.
         let show_label = env
             .store
@@ -83,7 +83,7 @@ impl Cell for Battery {
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
-            Button::Right => Action::Device(Op::BatteryPercent(!self.r.show_label)),
+            Button::Right => Action::BatteryPercent(!self.r.show_label),
             _ => Action::Panel("power"),
         }
     }

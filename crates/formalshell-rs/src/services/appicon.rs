@@ -112,7 +112,11 @@ pub fn probe(size: u32, scale: f64, queries: Vec<Query>) {
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = PROBE.set(tx);
     let inner = Arc::new(Mutex::new(Inner::default()));

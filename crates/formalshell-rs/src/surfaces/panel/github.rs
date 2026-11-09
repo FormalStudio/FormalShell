@@ -39,7 +39,7 @@ impl Panel for Github {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Github]
     }
 
     fn opened(&mut self) {
@@ -48,7 +48,7 @@ impl Panel for Github {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let g = &v.store.info.github;
+        let g = &v.store.github;
         let mut parts = Vec::new();
         match g.poll {
             Poll::Unknown => parts.push(w::panel_empty(s, "Loading")),
@@ -97,7 +97,7 @@ impl Panel for Github {
     }
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        let g = &fx.store.info.github;
+        let g = &fx.store.github;
         let Some(i) = stop.strip_prefix("row").and_then(|i| i.parse::<usize>().ok()) else { return };
         let row = if i < g.pr_rows.len() { g.pr_rows.get(i) } else { g.issue_rows.get(i - g.pr_rows.len()) };
         if let Some(url) = row.map(|r| r.url.clone()) {

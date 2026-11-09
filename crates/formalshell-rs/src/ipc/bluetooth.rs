@@ -19,7 +19,7 @@ fn text(s: impl Into<String>) -> Value {
 }
 
 fn toggle(app: &mut App, _: &[Value]) -> Value {
-    if app.store.devices.bluetooth.powered.is_none() {
+    if app.store.bluetooth.powered.is_none() {
         return text(NO_ADAPTER);
     }
     if let Some(rt) = &app.runtime {
@@ -34,7 +34,7 @@ fn power(app: &mut App, a: &[Value]) -> Value {
         "off" => false,
         _ => return text("error: power state must be 'on' or 'off'"),
     };
-    if app.store.devices.bluetooth.powered.is_none() {
+    if app.store.bluetooth.powered.is_none() {
         return text(NO_ADAPTER);
     }
     bluetooth::ask(bluetooth::Ask::Power(on));
@@ -43,7 +43,7 @@ fn power(app: &mut App, a: &[Value]) -> Value {
 
 /// A keybind or script can paste an address back in whatever case it has.
 fn write_trust(app: &mut App, address: &str, want: bool) -> Value {
-    let bt = &app.store.devices.bluetooth;
+    let bt = &app.store.bluetooth;
     if bt.powered.is_none() {
         return text(NO_ADAPTER);
     }
@@ -74,7 +74,7 @@ fn quote(s: &str) -> String {
 
 /// The keys in the order the golden replies carry them.
 fn status(app: &mut App, _: &[Value]) -> Value {
-    let bt = &app.store.devices.bluetooth;
+    let bt = &app.store.bluetooth;
     let Some(powered) = bt.powered else {
         return text(r#"{"available":false,"enabled":false,"connected":0,"devices":[]}"#);
     };

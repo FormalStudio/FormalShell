@@ -36,11 +36,11 @@ impl Cell for Weather {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info, Topic::Clock]
+        &[Topic::Weather, Topic::Clock]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let reading = env.store.info.weather.weather.clone();
+        let reading = env.store.weather.weather.clone();
         let hour = Local::now().hour();
         let day = (6..20).contains(&hour);
         let label = env.store.config.bool("bar.widgets.weather.showLabel").unwrap_or(false);

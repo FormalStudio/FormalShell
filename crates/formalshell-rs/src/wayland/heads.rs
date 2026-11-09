@@ -463,7 +463,7 @@ impl App {
     fn shard_run(&self, i: usize) -> Result<(), &'static str> {
         let theme = &self.store.theme.theme;
         let name = self.output_name(&self.heads[i].output);
-        let power = &self.store.devices.power;
+        let power = &self.store.power;
         if !theme.motion_enabled {
             return Err("reducedMotion");
         }
@@ -481,7 +481,7 @@ impl App {
         if self.fullscreen_on(&name) {
             return Err("fullscreen");
         }
-        if self.store.devices.profiles.as_ref().is_some_and(|p| p.active == fs_upower::Profile::PowerSaver) {
+        if self.store.profiles.as_ref().is_some_and(|p| p.active == fs_upower::Profile::PowerSaver) {
             return Err("powerSaver");
         }
         if power.on_battery && power.battery.as_ref().is_some_and(|b| b.level < SHARD_BATTERY_FLOOR) {

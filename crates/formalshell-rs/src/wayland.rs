@@ -1347,6 +1347,12 @@ impl App {
 
     /// What an input on a cell asks for. `anchor` is that cell's centre
     /// along the line.
+    fn service(&self, f: impl FnOnce(&crate::runtime::Ctx) + Send + 'static) {
+        if let Some(rt) = &self.runtime {
+            rt.service(f);
+        }
+    }
+
     fn act(&mut self, action: Action, anchor: f64) {
         match action {
             Action::None => {}
@@ -1362,10 +1368,13 @@ impl App {
             Action::Workspace(id) => compositor::focus_workspace(&id),
             Action::WorkspaceAt(idx) => compositor::focus_workspace_at(idx),
             Action::Window(id) => compositor::focus_window(&id),
-            Action::Device(op) => {
-                if let Some(rt) = &self.runtime {
-                    rt.service(move |ctx| devices::run(ctx, op));
-                }
+            Action::Volume(v) => self.service(move |ctx| devices::audio::set_volume(ctx, v)),
+            Action::ToggleMute => self.service(devices::audio::toggle_mute),
+            Action::ToggleSourceMute => self.service(devices::audio::toggle_source_mute),
+            Action::ToggleWifi => self.service(devices::network::toggle_wifi),
+            Action::ToggleBluetooth => self.service(devices::bluetooth::toggle_power),
+            Action::BatteryPercent(on) => {
+                self.service(move |_| crate::services::state::set(vec![crate::services::state::Field::BatteryShowPercent(serde_json::Value::Bool(on))]))
             }
             Action::Tray { key, click: TrayClick::Menu, offset } => {
                 let _ = self.open_tray_menu(&key, Some(anchor + offset), false);

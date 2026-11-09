@@ -531,7 +531,7 @@ fn end_draining(draining: &mut Draining) {
     }
 }
 
-fn start(ctx: &Ctx, hosts: &mut Hosts, plugin: &Plugin) {
+fn spawn_host(ctx: &Ctx, hosts: &mut Hosts, plugin: &Plugin) {
     if hosts.contains_key(&plugin.id) {
         return;
     }
@@ -559,7 +559,7 @@ fn show(ctx: &Ctx, hosts: &mut Hosts, draining: &mut Draining, open: &mut HashSe
     }
     let Some(plugin) = resolved.by_id(&id).filter(|p| !starts(p)) else { return };
     if on {
-        start(ctx, hosts, plugin);
+        spawn_host(ctx, hosts, plugin);
     } else if let Some((events, stop, _)) = hosts.remove(&id) {
         drop(events);
         let deadline = stop.clone();
@@ -584,7 +584,7 @@ async fn rescan(ctx: &Ctx, hosts: &mut Hosts, open: &HashSet<String>) -> Resolve
     // Dropping a stop sender ends its host, which kills the child.
     hosts.clear();
     for plugin in resolved.plugins.iter().filter(|p| starts(p) || open.contains(&p.id)) {
-        start(ctx, hosts, plugin);
+        spawn_host(ctx, hosts, plugin);
     }
     publish(ctx, Diff::Scanned { directory: dir.to_string_lossy().into_owned(), resolved: resolved.clone() });
     resolved
@@ -595,7 +595,11 @@ enum Next {
     Settings,
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = CMDS.set(tx);
     let settings = info::changed();

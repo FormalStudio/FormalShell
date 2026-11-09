@@ -1,7 +1,7 @@
 //! Wired, Wi-Fi or offline, as one icon; right click
 //! flips the Wi-Fi radio.
 
-use crate::services::devices::{self, Op};
+use crate::services::devices;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, View};
 use crate::paint::Look;
@@ -16,11 +16,11 @@ pub const ICONS: &[&str] = &["wifi"];
 
 impl Cell for Network {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Network]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.devices.network.clone();
+        let state = env.store.network.clone();
         let changed = state != self.state;
         self.state = state;
         changed
@@ -50,7 +50,7 @@ impl Cell for Network {
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
-            Button::Right => Action::Device(Op::ToggleWifi),
+            Button::Right => Action::ToggleWifi,
             _ => Action::Panel("network"),
         }
     }

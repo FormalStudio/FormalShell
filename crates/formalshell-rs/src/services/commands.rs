@@ -134,7 +134,11 @@ async fn poll(ctx: Ctx, module: Module, generation: async_channel::Receiver<()>)
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = MODULES.set(tx);
     let mut current: Vec<Module> = Vec::new();

@@ -246,7 +246,7 @@ pub async fn run(ctx: Ctx) {
         let interval = read();
         let sections = ctx.pool().run(collect).await.unwrap_or_default();
         let state = State { tools, ..sample(&mut prev, &sections, Instant::now()) };
-        ctx.publish(store::Diff::Info(super::Diff::Monitor(Box::new(state))));
+        ctx.publish(store::Diff::Monitor(Box::new(state)));
         idle(interval, &rx, &interval, read).await;
     }
 }

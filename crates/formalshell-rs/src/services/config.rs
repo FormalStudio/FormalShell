@@ -295,7 +295,11 @@ fn describe(diff: &Diff, what: &str) -> String {
     format!("config: {what}, {} key(s) changed [{}]", paths.len(), paths.join(", "))
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let path = settings_path();
     let mut resolver = Resolver::default();
     // The first publish waits for the overrides, so a start never draws

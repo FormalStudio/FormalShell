@@ -57,14 +57,13 @@ fn icon_of(bluez: &str, kind: Option<DeviceKind>) -> &'static str {
 /// and no ring at all when nothing reports a level.
 pub fn face(store: &Store, address: BtAddress) -> Face {
     let seen: Option<&Headset> = store
-        .devices
         .bluetooth
         .headsets
         .as_ref()
         .and_then(|list| list.iter().find(|h| h.address == address));
     // The AirPods daemon's status file carries no address, so a connected
     // device of its own with no address is matched by name.
-    let claimed: Option<&Device> = store.devices.earbuds.devices().iter().find(|d| {
+    let claimed: Option<&Device> = store.earbuds.devices().iter().find(|d| {
         d.address == Some(address)
             || (d.address.is_none() && d.connected && seen.is_some_and(|h| !h.name.is_empty() && h.name.eq_ignore_ascii_case(&d.name)))
     });
@@ -113,9 +112,8 @@ fn remembered<'a>(store: &'a Store, address: BtAddress, key: &str) -> Option<&'a
 /// with none (the AirPods daemon's) the connected Bluetooth headset of its
 /// name. A set it has not named yet keeps the one remembered.
 pub fn learned(store: &Store) -> Vec<(String, serde_json::Value)> {
-    let headsets = store.devices.bluetooth.headsets.as_deref().unwrap_or_default();
+    let headsets = store.bluetooth.headsets.as_deref().unwrap_or_default();
     store
-        .devices
         .earbuds
         .devices()
         .iter()

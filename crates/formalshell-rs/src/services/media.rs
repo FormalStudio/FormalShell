@@ -857,7 +857,11 @@ fn publish(ctx: &Ctx, mpris: &Mpris) {
     ctx.publish(store::Diff::Media(Diff::Mpris(players)));
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let conn = match crate::services::bus::private(&ctx, zbus::connection::Builder::session()).await {
         Ok(conn) => conn,
         Err(err) => return eprintln!("media: no session bus: {err}"),

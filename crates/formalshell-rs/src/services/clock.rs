@@ -44,7 +44,11 @@ fn until_next_minute() -> Duration {
     Duration::from_secs(60) - into
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     loop {
         ctx.publish(store::Diff::Clock(Diff::Text(Local::now().format("%H:%M").to_string())));
         Timer::after(until_next_minute()).await;

@@ -25,11 +25,11 @@ impl Cell for Tailscale {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Tailscale]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.info.tailscale.clone();
+        let state = env.store.tailscale.clone();
         let changed = state != self.state;
         self.state = state;
         changed

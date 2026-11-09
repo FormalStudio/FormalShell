@@ -66,14 +66,15 @@ pool job (fs-pool) ─────────Diff──▶ Publisher ───�
                                                     scene nodes dirtied, App::present
 ```
 
-- `src/store.rs`: `Store` holds one `State` slice per service, and
-  `Store::apply` returns the `Topic` that changed, or `None` when the diff
-  left the slice as it was (so nothing redraws). The UI thread is the only
-  writer.
-- `src/services/mod.rs`: one module per service. Each owns its `State`, a
-  `Diff` that applies to it, and an async task that publishes those diffs
-  through `runtime::Ctx`. Services never see the store; what they need from
-  settings.json is handed to them.
+- `src/store.rs`: one `slices!` declaration lists every slice once, which
+  makes the `Store` field, the `Diff` and `Topic` variants and how a diff
+  applies. `Store::apply` returns the `Topic` that changed, or `None` when
+  the diff left the slice as it was (so nothing redraws). The UI thread is
+  the only writer.
+- `src/services/mod.rs`: one module per service. Each publishes its slice's
+  diffs from async tasks through `runtime::Ctx`, and a whole-session one
+  comes up through its `start(&Ctx)`, listed in `SERVICES`. Services never
+  see the store; what they need from settings.json is handed to them.
 - `src/surfaces/mod.rs`: `changed` routes a topic to the surfaces that read
   that slice.
 - `services::wants`: polls that run only while a bar cell holds a `Want` for
@@ -535,7 +536,9 @@ palette. `formalshell install` can write the greetd config.
   in `PANELS`, and one arm in `panel::build`.
 - An IPC target: a module under `src/ipc/` returning a `registry::Target`,
   listed in `ipc::registry()`.
-- A service: a module under `src/services/` with its `State` and `Diff`, a
-  slice and a `Topic` in `store.rs`, its task started in `services::start`,
-  and the surfaces that read it in `surfaces::changed`.
+- A service: a module under `src/services/` with its `State` (and a `Diff`
+  unless it publishes the whole value), one line in `store.rs`'s `slices!`,
+  its `start(&Ctx)` in `services::SERVICES`, its `Topic` in the `reads()`
+  of every surface that reads it, and an arm in `surfaces::changed` for
+  anything else it moves.
 - Compositor work goes in `src/services/hyprland/` only.

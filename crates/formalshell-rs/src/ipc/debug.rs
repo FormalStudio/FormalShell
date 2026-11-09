@@ -85,7 +85,7 @@ fn dump(app: &mut App, _: &[Value]) -> Value {
             })
         })
         .collect();
-    let phone = &app.store.info.iphone;
+    let phone = &app.store.iphone;
     let mut dump = json!({
         "compositor": "hyprland",
         "available": c.available,

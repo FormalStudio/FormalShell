@@ -136,7 +136,7 @@ impl App {
             }
             crate::services::state::set(vec![crate::services::state::Field::EarbudsFaces(faces)]);
         }
-        let Some(list) = self.store.devices.bluetooth.headsets.clone() else { return };
+        let Some(list) = self.store.bluetooth.headsets.clone() else { return };
         let now = Instant::now();
         let first = !std::mem::replace(&mut self.headset.primed, true);
         let mut show = None;

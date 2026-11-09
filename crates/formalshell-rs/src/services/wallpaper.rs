@@ -343,9 +343,13 @@ pub fn render(path: &str, width: u32, height: u32, colors: Option<usize>, grid: 
     Some(Picture { path: path.to_owned(), dither: colors, grid, width, height, bgra })
 }
 
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
 /// Requests queued behind one another collapse to the newest per size, so
 /// each output's backdrop gets its own picture and none waits on a stale one.
-pub async fn run(ctx: Ctx) {
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = REQUESTS.set(tx);
     let mut last: Vec<Request> = Vec::new();

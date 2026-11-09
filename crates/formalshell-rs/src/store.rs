@@ -2,140 +2,142 @@
 //! diff applies to it; the UI thread is the only writer, through
 //! [`Store::apply`].
 
+use crate::services::devices::{self, earbuds, network};
+use crate::services::info::{calendar, github, iphone, monitor, powerflow, procs, tailscale, update, usage, weather};
 use crate::services::{
-    activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, devices, display,
-    compositor, info, ipad, kopuz, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, recording, screensaver, state, theme, tray,
+    activity, agents, appicon, barpaint, brightness, caffeinate, capture, clipboard, clipssh, clock, commands, config, depth, display,
+    compositor, ipad, kopuz, lights, localsend, lyrics, media, menu, mirror, nightlight, notifications, packages, picker, plugins, radio, recording, screensaver, state, theme, tray,
     visualizer, wallpaper,
 };
 
-#[derive(Default)]
-pub struct Store {
-    pub clock: clock::State,
-    pub config: config::State,
-    pub compositor: compositor::State,
-    pub state: state::State,
-    pub theme: theme::State,
-    pub media: media::State,
-    pub lyrics: lyrics::State,
-    pub visualizer: visualizer::State,
-    pub devices: devices::State,
-    pub display: display::State,
-    pub commands: commands::State,
-    pub bar_paint: barpaint::State,
-    pub wallpaper: wallpaper::State,
-    pub tray: tray::State,
-    pub agents: agents::State,
-    pub appicon: appicon::State,
-    pub info: info::State,
-    pub caffeinate: caffeinate::State,
-    pub plugins: plugins::State,
-    pub recording: recording::State,
-    pub capture: capture::Inbox,
-    pub notifications: notifications::State,
-    pub activity: activity::State,
-    pub menu: menu::State,
-    pub brightness: brightness::State,
-    pub nightlight: nightlight::State,
-    pub lights: lights::State,
-    pub screensaver: screensaver::State,
-    pub clipboard: clipboard::State,
-    pub clipssh: clipssh::State,
-    pub packages: packages::State,
-    pub picker: picker::State,
-    pub localsend: localsend::State,
-    pub depth: depth::State,
-    pub mirror: mirror::State,
-    pub ipad: ipad::State,
+/// Declares every slice once: its `Store` field, its `Diff` variant, its
+/// `Topic` and how a diff applies. An entry applies through the slice's
+/// own `apply` unless it says `{ set }` (the diff is the whole new value)
+/// or gives a closure returning the topic itself; names after a comma are
+/// topics that closure may return beside the slice's own.
+macro_rules! slices {
+    (@apply $store:ident . $field:ident, $variant:ident, $d:ident,) => {
+        $store.$field.apply($d).then_some(Topic::$variant)
+    };
+    (@apply $store:ident . $field:ident, $variant:ident, $d:ident, set) => {
+        set(&mut $store.$field, $d).then_some(Topic::$variant)
+    };
+    (@apply $store:ident . $field:ident, $variant:ident, $d:ident, $f:expr) => {
+        route(&mut $store.$field, $d, $f)
+    };
+    ($( $(#[$m:meta])* $field:ident: $state:ty => $variant:ident($diff:ty) $({ $($how:tt)* })? $(, $(#[$xm:meta])* $extra:ident)* ; )*) => {
+        #[derive(Default)]
+        pub struct Store {
+            $( $(#[$m])* pub $field: $state, )*
+        }
+
+        /// One service's change, tagged with the slice it applies to.
+        pub enum Diff {
+            $( $(#[$m])* $variant($diff), )*
+        }
+
+        /// The slice a diff changed, for the surfaces that read it.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum Topic {
+            $( $(#[$m])* $variant, $( $(#[$xm])* $extra, )* )*
+        }
+
+        impl Store {
+            fn apply_slice(&mut self, diff: Diff) -> Option<Topic> {
+                let store = self;
+                match diff {
+                    $( Diff::$variant(d) => slices!(@apply store.$field, $variant, d, $($($how)*)?), )*
+                }
+            }
+        }
+    };
+}
+
+slices! {
+    clock: clock::State => Clock(clock::Diff);
+    config: config::State => Config(config::Diff);
+    compositor: compositor::State => Compositor(compositor::Diff);
+    state: state::State => State(state::Diff);
+    theme: theme::State => Theme(theme::Diff);
+    media: media::State => Media(media::Diff);
+    lyrics: lyrics::State => Lyrics(lyrics::Diff);
+    visualizer: visualizer::State => Visualizer(visualizer::Diff);
+    bluetooth: devices::Bluetooth => Bluetooth(devices::Bluetooth) { set };
+    network: devices::Network => Network(devices::Network) { set };
+    audio: devices::Audio => Audio(devices::Audio) { set };
+    power: devices::Power => Power(devices::Power) { set };
+    earbuds: earbuds::Earbuds => Earbuds(earbuds::Diff);
+    /// The DualSense's lightbar and player LEDs.
+    pad_lights: devices::power::Lights => PadLights(devices::power::Lights) { set };
+    profiles: Option<fs_upower::ProfilesState> => Profiles(Option<fs_upower::ProfilesState>) { set };
+    /// A saved Wi-Fi passphrase on its way to the launcher, which takes it.
+    revealed: Option<network::Revealed> => Revealed(network::Revealed) { |slot, v| {
+        *slot = Some(v);
+        Some(Topic::Revealed)
+    } };
+    /// What logind lets this session do, as last asked.
+    logind: crate::services::power::Can => Logind(crate::services::power::Can) { set };
+    display: display::State => Display(display::Diff);
+    commands: commands::State => Commands(commands::Diff);
+    bar_paint: barpaint::State => BarPaint(barpaint::Diff);
+    wallpaper: wallpaper::State => Wallpaper(wallpaper::Diff);
+    tray: tray::State => Tray(tray::Diff);
+    agents: agents::State => Agents(agents::Diff);
+    appicon: appicon::State => AppIcon(appicon::Diff);
+    weather: weather::State => Weather(weather::State) { set };
+    github: github::State => Github(github::State) { set };
+    usage: usage::State => Usage(usage::State) { set };
+    system_update: update::State => SystemUpdate(update::State) { set };
+    tailscale: tailscale::State => Tailscale(tailscale::State) { set };
+    monitor: monitor::State => Monitor(Box<monitor::State>) { |slot, v| set(slot, *v).then_some(Topic::Monitor) };
+    iphone: iphone::State => Iphone(iphone::State) { set };
+    calendar: calendar::State => Calendar(calendar::State) { set };
+    procs: procs::State => Procs(procs::Diff);
+    power_flow: powerflow::State => PowerFlow(powerflow::State) { set };
+    /// None until the first read lands.
+    about: Option<fs_info::about::About> => About(fs_info::about::About) { |slot, v| set(slot, Some(v)).then_some(Topic::About) };
+    caffeinate: caffeinate::State => Caffeinate(caffeinate::Diff);
+    /// The plugin list changed: the layout resolves again.
+    plugins: plugins::State => Plugins(plugins::Diff) { |slot, d| slot.apply(d).map(|c| match c {
+        plugins::Change::List => Topic::Plugins,
+        plugins::Change::Output => Topic::PluginOutput,
+    }) },
+        /// What a plugin shows changed.
+        PluginOutput;
+    #[allow(dead_code)]
+    recording: recording::State => Recording(recording::Diff);
+    capture: capture::Inbox => Capture(capture::Event);
+    notifications: notifications::State => Notifications(notifications::Diff);
+    activity: activity::State => Activity(activity::Diff);
+    menu: menu::State => Menu(menu::Diff);
+    brightness: brightness::State => Brightness(brightness::Diff);
+    nightlight: nightlight::State => NightLight(nightlight::Diff);
+    lights: lights::State => Lights(lights::Diff);
+    screensaver: screensaver::State => Screensaver(screensaver::Diff);
+    clipboard: clipboard::State => Clipboard(clipboard::Diff);
+    clipssh: clipssh::State => Clipssh(clipssh::Diff);
+    packages: packages::State => Packages(packages::Diff);
+    picker: picker::State => Picker(picker::Diff);
+    localsend: localsend::State => Localsend(localsend::Diff);
+    depth: depth::State => Depth(depth::Diff);
+    mirror: mirror::State => Mirror(mirror::Diff);
+    ipad: ipad::State => Ipad(ipad::Diff);
     /// Radio Browser answers and the country outlines, waiting for the
     /// atlas to take them.
-    pub atlas: Vec<crate::services::radio::Reply>,
+    atlas: Vec<radio::Reply> => Atlas(radio::Reply) { |slot, r| {
+        slot.push(r);
+        Some(Topic::Atlas)
+    } };
 }
 
-/// One service's change, tagged with the slice it applies to.
-pub enum Diff {
-    Clock(clock::Diff),
-    Config(config::Diff),
-    Compositor(compositor::Diff),
-    State(state::Diff),
-    Theme(theme::Diff),
-    Media(media::Diff),
-    Lyrics(lyrics::Diff),
-    Visualizer(visualizer::Diff),
-    Devices(devices::Diff),
-    Display(display::Diff),
-    Commands(commands::Diff),
-    BarPaint(barpaint::Diff),
-    Wallpaper(wallpaper::Diff),
-    Tray(tray::Diff),
-    Agents(agents::Diff),
-    AppIcon(appicon::Diff),
-    Info(info::Diff),
-    Caffeinate(caffeinate::Diff),
-    Plugins(plugins::Diff),
-    #[allow(dead_code)]
-    Recording(recording::Diff),
-    Capture(capture::Event),
-    Notifications(notifications::Diff),
-    Activity(activity::Diff),
-    Menu(menu::Diff),
-    Brightness(brightness::Diff),
-    NightLight(nightlight::Diff),
-    Lights(lights::Diff),
-    Screensaver(screensaver::Diff),
-    Clipboard(clipboard::Diff),
-    Clipssh(clipssh::Diff),
-    Packages(packages::Diff),
-    Picker(picker::Diff),
-    Localsend(localsend::Diff),
-    Depth(depth::Diff),
-    Mirror(mirror::Diff),
-    Ipad(ipad::Diff),
-    Atlas(crate::services::radio::Reply),
+fn set<T: PartialEq>(slot: &mut T, v: T) -> bool {
+    let changed = *slot != v;
+    *slot = v;
+    changed
 }
 
-/// The slice a diff changed, for the surfaces that read it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Topic {
-    Clock,
-    Config,
-    Compositor,
-    State,
-    Theme,
-    Media,
-    Lyrics,
-    Visualizer,
-    Devices,
-    Display,
-    Commands,
-    BarPaint,
-    Wallpaper,
-    Tray,
-    Agents,
-    AppIcon,
-    Info,
-    Caffeinate,
-    /// The plugin list changed: the layout resolves again.
-    Plugins,
-    /// What a plugin shows changed.
-    PluginOutput,
-    Recording,
-    Capture,
-    Notifications,
-    Activity,
-    Menu,
-    Brightness,
-    NightLight,
-    Lights,
-    Screensaver,
-    Clipboard,
-    Clipssh,
-    Packages,
-    Picker,
-    Localsend,
-    Depth,
-    Mirror,
-    Ipad,
-    Atlas,
+fn route<S, D>(slot: &mut S, diff: D, apply: impl FnOnce(&mut S, D) -> Option<Topic>) -> Option<Topic> {
+    apply(slot, diff)
 }
 
 impl Store {
@@ -167,53 +169,5 @@ impl Store {
             lyrics::sync(&self.media, &self.config, &self.lyrics);
         }
         topic
-    }
-
-    fn apply_slice(&mut self, diff: Diff) -> Option<Topic> {
-        match diff {
-            Diff::Clock(d) => self.clock.apply(d).then_some(Topic::Clock),
-            Diff::Config(d) => self.config.apply(d).then_some(Topic::Config),
-            Diff::State(d) => self.state.apply(d).then_some(Topic::State),
-            Diff::Compositor(d) => self.compositor.apply(d).then_some(Topic::Compositor),
-            Diff::Theme(d) => self.theme.apply(d).then_some(Topic::Theme),
-            Diff::Media(d) => self.media.apply(d).then_some(Topic::Media),
-            Diff::Lyrics(d) => self.lyrics.apply(d).then_some(Topic::Lyrics),
-            Diff::Visualizer(d) => self.visualizer.apply(d).then_some(Topic::Visualizer),
-            Diff::Devices(d) => self.devices.apply(d).then_some(Topic::Devices),
-            Diff::Display(d) => self.display.apply(d).then_some(Topic::Display),
-            Diff::Commands(d) => self.commands.apply(d).then_some(Topic::Commands),
-            Diff::BarPaint(d) => self.bar_paint.apply(d).then_some(Topic::BarPaint),
-            Diff::Wallpaper(d) => self.wallpaper.apply(d).then_some(Topic::Wallpaper),
-            Diff::Tray(d) => self.tray.apply(d).then_some(Topic::Tray),
-            Diff::Agents(d) => self.agents.apply(d).then_some(Topic::Agents),
-            Diff::AppIcon(d) => self.appicon.apply(d).then_some(Topic::AppIcon),
-            Diff::Info(d) => self.info.apply(d).then_some(Topic::Info),
-            Diff::Plugins(d) => self.plugins.apply(d).map(|c| match c {
-                plugins::Change::List => Topic::Plugins,
-                plugins::Change::Output => Topic::PluginOutput,
-            }),
-            Diff::Recording(d) => self.recording.apply(d).then_some(Topic::Recording),
-            Diff::Menu(d) => self.menu.apply(d).then_some(Topic::Menu),
-            Diff::Caffeinate(d) => self.caffeinate.apply(d).then_some(Topic::Caffeinate),
-            Diff::Notifications(d) => self.notifications.apply(d).then_some(Topic::Notifications),
-            Diff::Activity(d) => self.activity.apply(d).then_some(Topic::Activity),
-            Diff::Brightness(d) => self.brightness.apply(d).then_some(Topic::Brightness),
-            Diff::NightLight(d) => self.nightlight.apply(d).then_some(Topic::NightLight),
-            Diff::Lights(d) => self.lights.apply(d).then_some(Topic::Lights),
-            Diff::Capture(e) => self.capture.apply(e).then_some(Topic::Capture),
-            Diff::Screensaver(d) => self.screensaver.apply(d).then_some(Topic::Screensaver),
-            Diff::Clipboard(d) => self.clipboard.apply(d).then_some(Topic::Clipboard),
-            Diff::Clipssh(d) => self.clipssh.apply(d).then_some(Topic::Clipssh),
-            Diff::Packages(d) => self.packages.apply(d).then_some(Topic::Packages),
-            Diff::Picker(d) => self.picker.apply(d).then_some(Topic::Picker),
-            Diff::Localsend(d) => self.localsend.apply(d).then_some(Topic::Localsend),
-            Diff::Depth(d) => self.depth.apply(d).then_some(Topic::Depth),
-            Diff::Mirror(d) => self.mirror.apply(d).then_some(Topic::Mirror),
-            Diff::Ipad(d) => self.ipad.apply(d).then_some(Topic::Ipad),
-            Diff::Atlas(r) => {
-                self.atlas.push(r);
-                Some(Topic::Atlas)
-            }
-        }
     }
 }

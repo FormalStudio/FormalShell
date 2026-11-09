@@ -284,7 +284,11 @@ impl Bpm {
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     if GATE_TX.set(tx).is_err() {
         return;

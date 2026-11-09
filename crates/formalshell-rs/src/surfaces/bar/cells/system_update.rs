@@ -26,11 +26,11 @@ impl Cell for SystemUpdate {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::SystemUpdate]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.info.update.clone();
+        let state = env.store.system_update.clone();
         let label = env.store.config.bool("bar.widgets.systemUpdate.showLabel").unwrap_or(true);
         let changed = state != self.state || label != self.label;
         (self.state, self.label) = (state, label);

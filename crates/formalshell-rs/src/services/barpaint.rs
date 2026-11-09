@@ -104,7 +104,11 @@ fn read(request: &Request) -> Option<Profile> {
     Some(Profile::read(&data, bw, bh, along_x))
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded::<Request>();
     let _ = REQUESTS.set(tx);
     while let Ok(mut request) = rx.recv().await {

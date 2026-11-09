@@ -167,7 +167,11 @@ async fn poll(host: String, argv: Vec<String>, tx: async_channel::Sender<Event>,
     run.or(stop).await;
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (wtx, wrx) = async_channel::unbounded();
     let _ = WATCH.set(wtx);
     let (tx, rx) = async_channel::unbounded::<Event>();

@@ -105,7 +105,11 @@ impl ScreenSaver {
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let shared = Arc::new(Shared { cookies: Mutex::new(Cookies::default()), publisher: ctx.publisher().clone() });
     let built = async {
         let mut builder = Builder::session()?;

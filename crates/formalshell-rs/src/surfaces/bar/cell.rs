@@ -45,8 +45,15 @@ pub enum Action {
     /// A click on one tray item; `offset` is that item's centre along the
     /// strip from the cell's own centre, for a menu to hang under it.
     Tray { key: String, click: TrayClick, offset: f64 },
-    /// A write to a device service (a volume step, a mute, a radio).
-    Device(crate::services::devices::Op),
+    /// The audio cell's wheel: the default sink's volume.
+    Volume(fs_audio::Visual),
+    ToggleMute,
+    /// The mic cell's click.
+    ToggleSourceMute,
+    ToggleWifi,
+    ToggleBluetooth,
+    /// The battery cell's right click: state.json's `batteryShowPercent`.
+    BatteryPercent(bool),
     /// Caffeinate on or off (the indicator's click).
     Caffeinate(bool),
     /// The overnight indicator's click: end it.

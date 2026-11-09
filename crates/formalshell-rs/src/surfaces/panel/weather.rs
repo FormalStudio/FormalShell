@@ -39,12 +39,12 @@ impl Panel for Weather {
     }
 
     fn title(&self, v: &View) -> String {
-        let place = &v.store.info.weather.place;
+        let place = &v.store.weather.place;
         if place.is_empty() { "Weather".into() } else { place.clone() }
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info, Topic::Clock]
+        &[Topic::Weather, Topic::Clock]
     }
 
     fn opened(&mut self) {
@@ -52,12 +52,12 @@ impl Panel for Weather {
     }
 
     fn actions(&self, v: &View) -> Vec<El> {
-        vec![w::icon_button("refresh-cw").enabled(v.store.info.weather.located).on("refresh").key("refresh")]
+        vec![w::icon_button("refresh-cw").enabled(v.store.weather.located).on("refresh").key("refresh")]
     }
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let state = &v.store.info.weather;
+        let state = &v.store.weather;
         let mut parts = Vec::new();
         if !state.located {
             parts.push(w::panel_empty(s, "No location"));

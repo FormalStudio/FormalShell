@@ -115,7 +115,7 @@ fn snapshot(state: &fs_bluez::state::State, open: bool) -> Bluetooth {
 
 /// No system bus, or no BlueZ client on it: no adapter and no headsets.
 fn absent(ctx: &Ctx) {
-    ctx.publish(store::Diff::Devices(super::Diff::Bluetooth(Bluetooth { headsets: Some(Vec::new()), ..Bluetooth::default() })));
+    ctx.publish(store::Diff::Bluetooth(Bluetooth { headsets: Some(Vec::new()), ..Bluetooth::default() }));
     super::earbuds::bluetooth(Vec::new());
 }
 
@@ -184,7 +184,11 @@ fn on_adapter<F: Future<Output = ()> + 'static>(bluez: &fs_bluez::Bluez, ctx: &C
     ctx.spawn(f(bluez.clone(), a.path));
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return absent(&ctx) };
     let (bluez, events, monitor) = match fs_bluez::Bluez::connect(&conn).await {
         Ok(v) => v,
@@ -233,7 +237,7 @@ pub async fn run(ctx: Ctx) {
             // Only what a surface would show differently reaches the UI.
             if last.as_ref() != Some(&view) {
                 let shown: Vec<BtAddress> = view.devices.iter().map(|d| d.address).collect();
-                ctx.publish(store::Diff::Devices(super::Diff::Bluetooth(view.clone())));
+                ctx.publish(store::Diff::Bluetooth(view.clone()));
                 last = Some(view);
                 last_shown = shown;
             }

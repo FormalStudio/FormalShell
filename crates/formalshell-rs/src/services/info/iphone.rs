@@ -489,7 +489,7 @@ fn end_pairing(ctx: &Ctx, session: &mut Session) {
 
 fn publish(ctx: &Ctx, state: &State) {
     ams::set_connected(state.connected);
-    ctx.publish(store::Diff::Info(super::Diff::Iphone(state.clone())));
+    ctx.publish(store::Diff::Iphone(state.clone()));
 }
 
 pub async fn run(ctx: Ctx) {

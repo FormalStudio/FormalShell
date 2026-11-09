@@ -278,7 +278,7 @@ pub fn recenter() {
 }
 
 fn publish(ctx: &Ctx, name: &'static str, backend: Backend) {
-    ctx.publish(store::Diff::Devices(super::Diff::Earbuds(Diff::Backend(name, backend))));
+    ctx.publish(store::Diff::Earbuds(Diff::Backend(name, backend)));
 }
 
 enum Event {

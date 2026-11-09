@@ -412,7 +412,7 @@ impl Sidebar {
             Some(card) if collapsed => self.rail_lines = rail_clock(&mut p, kit, store, g, card),
             Some(card) => {
                 // The time keeps its own box; the battery's line runs under it.
-                let line = store.devices.power.battery.as_ref().map(|b| (b, card.h - g.time_h as i32));
+                let line = store.power.battery.as_ref().map(|b| (b, card.h - g.time_h as i32));
                 let face = IRect::new(card.x, card.y, card.w, card.h - line.map_or(0, |(_, h)| h));
                 self.clock.paint(&mut p, kit, store, g, face, raster);
                 if let Some((b, _)) = line {
@@ -722,7 +722,7 @@ impl ClockCard {
             "format": format,
             "formatted": format_qt(store.clock.now, &format),
             "minuteUs": self.minute_us,
-            "battery": store.devices.power.battery.as_ref().map(|b| b.level.as_percent()),
+            "battery": store.power.battery.as_ref().map(|b| b.level.as_percent()),
         })
     }
 }
@@ -732,7 +732,7 @@ impl ClockCard {
 fn cards(theme: &Theme, store: &Store, map: &minimap::Map, g: &Geo, cover: &Option<Bitmap>, icons: &HashMap<String, Option<Bitmap>>, width: f64, kit: &mut Kit, now: Instant) -> Vec<(&'static str, El)> {
     let s = &theme.space;
     let inner = |h: f64| (h - s.md * 2.0).max(0.0);
-    let battery = if store.devices.power.battery.is_some() { g.battery_h } else { 0.0 };
+    let battery = if store.power.battery.is_some() { g.battery_h } else { 0.0 };
     let mut out = vec![(
         "time",
         w::action_card(w::column(0.0, vec![w::space(inner(g.time_h) + battery)]), "panel:calendar").fill(),

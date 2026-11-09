@@ -1,6 +1,9 @@
-//! One module per service. Each owns a `State` slice of the
-//! [`Store`](crate::store::Store), a `Diff` that applies to it, and an
-//! async task on the service thread that publishes those diffs.
+//! One module per service, beside the helpers they share. Every slice of
+//! the [`Store`](crate::store::Store) is declared once in `store.rs`'s
+//! `slices!`; services publish diffs into it from tasks on the service
+//! thread and never read it. A service running for the whole session comes
+//! up through its `start(&Ctx)`, listed in [`SERVICES`]; the info sources
+//! and display's polls run only while something wants them ([`wants`]).
 
 pub mod activity;
 pub mod agents;
@@ -62,47 +65,57 @@ pub mod wants;
 
 use crate::runtime::Ctx;
 
+/// The whole-session services, in the order they come up.
+const SERVICES: &[fn(&Ctx)] = &[
+    clock::start,
+    config::start,
+    state::start,
+    compositor::start,
+    theme::start,
+    media::start,
+    cover::start,
+    motion_art::start,
+    lyrics::start,
+    kopuz::start,
+    radio::start,
+    airplay::start,
+    ams::start,
+    visualizer::start,
+    commands::start,
+    barpaint::start,
+    wallpaper::start,
+    agents::start,
+    appicon::start,
+    wants::start,
+    plugins::start,
+    nightlight::start,
+    lights::start,
+    brightness::start,
+    devices::bluetooth::start,
+    devices::network::start,
+    devices::audio::start,
+    devices::power::start,
+    devices::earbuds::start,
+    display::start,
+    tray::start,
+    activity::start,
+    notifications::start,
+    menu::start,
+    screensaver::start,
+    inhibit::start,
+    ipad::start,
+    clipboard::start,
+    clipssh::start,
+    packages::start,
+    power::start,
+    picker::start,
+    localsend::start,
+    depth::start,
+    mirror::start,
+];
+
 pub fn start(ctx: &Ctx) {
-    ctx.spawn(clock::run(ctx.clone()));
-    ctx.spawn(config::run(ctx.clone()));
-    ctx.spawn(state::run(ctx.clone()));
-    ctx.spawn(compositor::run(ctx.clone()));
-    ctx.spawn(theme::watch(ctx.clone()));
-    theme::start(ctx);
-    ctx.spawn(media::run(ctx.clone()));
-    ctx.spawn(cover::run(ctx.clone()));
-    ctx.spawn(motion_art::run(ctx.clone()));
-    ctx.spawn(lyrics::run(ctx.clone()));
-    ctx.spawn(kopuz::run(ctx.clone()));
-    ctx.spawn(radio::run(ctx.clone()));
-    ctx.spawn(airplay::run(ctx.clone()));
-    ctx.spawn(ams::run(ctx.clone()));
-    ctx.spawn(visualizer::run(ctx.clone()));
-    ctx.spawn(commands::run(ctx.clone()));
-    ctx.spawn(barpaint::run(ctx.clone()));
-    ctx.spawn(wallpaper::run(ctx.clone()));
-    ctx.spawn(agents::run(ctx.clone()));
-    ctx.spawn(appicon::run(ctx.clone()));
-    ctx.spawn(wants::run(ctx.clone()));
-    ctx.spawn(plugins::run(ctx.clone()));
-    ctx.spawn(nightlight::run(ctx.clone()));
-    ctx.spawn(lights::run(ctx.clone()));
-    brightness::start(ctx);
-    devices::start(ctx);
-    display::start(ctx);
-    ctx.spawn(tray::run(ctx.clone()));
-    ctx.spawn(activity::run(ctx.clone()));
-    ctx.spawn(notifications::run(ctx.clone()));
-    ctx.spawn(menu::run(ctx.clone()));
-    ctx.spawn(screensaver::run(ctx.clone()));
-    ctx.spawn(inhibit::run(ctx.clone()));
-    ctx.spawn(ipad::run(ctx.clone()));
-    ctx.spawn(clipboard::run(ctx.clone()));
-    ctx.spawn(clipssh::run(ctx.clone()));
-    ctx.spawn(packages::run(ctx.clone()));
-    ctx.spawn(power::run(ctx.clone()));
-    ctx.spawn(picker::run(ctx.clone()));
-    ctx.spawn(localsend::run(ctx.clone()));
-    ctx.spawn(depth::run(ctx.clone()));
-    ctx.spawn(mirror::run(ctx.clone()));
+    for start in SERVICES {
+        start(ctx);
+    }
 }

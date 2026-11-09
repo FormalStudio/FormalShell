@@ -35,11 +35,11 @@ impl Cell for Monitor {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Monitor]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let m = &env.store.info.monitor;
+        let m = &env.store.monitor;
         let next = (m.cpu.aggregate, m.mem.as_ref().map(|x| x.used_fraction), m.gpu_busy());
         let label = env.store.config.bool("bar.widgets.monitor.showLabel").unwrap_or(false);
         let changed = next != (self.cpu, self.mem, self.gpu) || label != self.label;

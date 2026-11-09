@@ -291,15 +291,19 @@ fn publish() {
         }
         i.published = Some(n.clone());
         if let Some(ctx) = &i.ctx {
-            ctx.publish(store::Diff::Devices(super::Diff::Network(n)));
+            ctx.publish(store::Diff::Network(n));
         }
     });
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     INNER.with_borrow_mut(|i| i.ctx = Some(ctx.clone()));
     ctx.spawn(holds(ctx.clone()));
-    let publish_none = || ctx.publish(store::Diff::Devices(super::Diff::Network(Network::default())));
+    let publish_none = || ctx.publish(store::Diff::Network(Network::default()));
     // A connect awaits NetworkManager's replies while its StateChanged
     // stream waits, so NetworkManager gets a connection of its own.
     let Ok(conn) = crate::services::bus::private(&ctx, zbus::connection::Builder::system()).await else { return publish_none() };
@@ -479,7 +483,7 @@ pub fn reveal(ctx: &Ctx, ssid: String, request: u64) {
         if let Err(err) = &secret {
             eprintln!("network: no passphrase read for {ssid}: {err}");
         }
-        ctx.publish(store::Diff::Devices(super::Diff::Revealed(Revealed { ssid, request, secret })));
+        ctx.publish(store::Diff::Revealed(Revealed { ssid, request, secret }));
     });
 }
 

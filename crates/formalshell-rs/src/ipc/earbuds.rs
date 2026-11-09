@@ -9,7 +9,7 @@ use serde_json::{Value as Json, json};
 
 use super::registry::{Function, Target, Type, Value};
 use crate::runtime::Msg;
-use crate::services::devices::{self, earbuds};
+use crate::services::devices::earbuds;
 use crate::store;
 use crate::wayland::App;
 
@@ -36,7 +36,7 @@ pub fn target() -> Target<App> {
 }
 
 fn status(app: &mut App, _: &[Value]) -> Value {
-    let e = &app.store.devices.earbuds;
+    let e = &app.store.earbuds;
     if !e.available() {
         return text(json!({"available": false}).to_string());
     }
@@ -45,7 +45,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
 }
 
 fn list(app: &mut App, _: &[Value]) -> Value {
-    let e = &app.store.devices.earbuds;
+    let e = &app.store.earbuds;
     let active = e.active().map(|d| d.key.clone());
     let rows: Vec<Json> = e
         .devices()
@@ -65,11 +65,11 @@ fn list(app: &mut App, _: &[Value]) -> Value {
 
 fn select(app: &mut App, args: &[Value]) -> Value {
     let key = args[0].str();
-    if !app.store.devices.earbuds.has(key) {
+    if !app.store.earbuds.has(key) {
         return text(format!("error: no device '{key}'"));
     }
     let diff = earbuds::Diff::Select(key.to_owned());
-    app.receive(Msg::Diff(store::Diff::Devices(devices::Diff::Earbuds(diff))));
+    app.receive(Msg::Diff(store::Diff::Earbuds(diff)));
     text("ok")
 }
 
@@ -79,7 +79,7 @@ fn recenter(_: &mut App, _: &[Value]) -> Value {
 }
 
 fn set(app: &mut App, args: &[Value]) -> Value {
-    match app.store.devices.earbuds.plan(args[0].str(), args[1].str()) {
+    match app.store.earbuds.plan(args[0].str(), args[1].str()) {
         Ok(op) => {
             if let Some(op) = op {
                 earbuds::write(op);

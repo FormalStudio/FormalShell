@@ -68,7 +68,7 @@ pub async fn run(ctx: Ctx) {
             ctx.pool().run(move || ics::parse_events(&read_dir(&dir), window)).await.unwrap_or_default()
         };
         let from_eds = if cfg.eds && !EDS_DOWN.load(Ordering::Relaxed) { eds().await } else { Vec::new() };
-        ctx.publish(store::Diff::Info(super::Diff::Calendar(State { events: ics::merge_events(&from_files, &from_eds) })));
+        ctx.publish(store::Diff::Calendar(State { events: ics::merge_events(&from_files, &from_eds) }));
         idle(Duration::from_secs(300), &rx, &cfg, read)
             .or(async {
                 let _ = kick.recv().await;

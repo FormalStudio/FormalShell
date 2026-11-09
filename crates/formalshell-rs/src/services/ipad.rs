@@ -210,7 +210,11 @@ enum Input {
     Changed(HashMap<String, OwnedValue>, bool),
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let publish = |ipad: Option<Ipad>| ctx.publish(store::Diff::Ipad(Diff(ipad)));
     let conn = match crate::services::bus::private(&ctx, Builder::session()).await {
         Ok(conn) => conn,

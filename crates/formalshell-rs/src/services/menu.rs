@@ -255,7 +255,11 @@ pub fn ask(a: Ask) {
     let _ = ASK.0.try_send(a);
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = (ASK.0.clone(), ASK.1.clone());
     ctx.spawn(watch_entries(tx.clone()));
     let mut scale = 1.0;

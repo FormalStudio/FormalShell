@@ -88,7 +88,11 @@ pub fn command(cmd: Cmd) {
     let _ = CHANNEL.0.try_send(cmd);
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded::<Wake>();
     let mut s = State::default();
     let mut generation: u64 = 0;

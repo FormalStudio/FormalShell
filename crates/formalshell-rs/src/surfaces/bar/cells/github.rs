@@ -27,11 +27,11 @@ impl Cell for Github {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Github]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let g = &env.store.info.github;
+        let g = &env.store.github;
         let label = env.store.config.bool("bar.widgets.github.showLabel").unwrap_or(true);
         let next = (g.poll, (g.prs, g.issues), label);
         let changed = next != (self.poll, self.counts, self.label);

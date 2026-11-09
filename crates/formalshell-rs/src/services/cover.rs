@@ -47,7 +47,11 @@ pub fn request(url: &str, size: u32, radius: f64) {
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = ASK.set(tx);
     let mut last: Option<(String, std::sync::Arc<Vec<u8>>)> = None;

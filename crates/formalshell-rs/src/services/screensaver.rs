@@ -67,7 +67,11 @@ fn publish(ctx: &Ctx, diff: Diff) {
     ctx.publish(store::Diff::Screensaver(diff));
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let probe = proc::capture(&proc::argv(&["sh", "-c", "command -v ttfx >/dev/null 2>&1"]), std::time::Duration::from_secs(10)).await;
     publish(&ctx, Diff::Ttfx(if probe.code == 0 { Avail::Available } else { Avail::Missing }));
 }
@@ -123,7 +127,7 @@ pub fn stop_run(_: &Ctx, run: u64) {
 
 /// `pinned`: only that frame is sent, and the run races there unpaced,
 /// stopping at [`ttfx::PIN_FRAME_CAP`].
-pub fn start(ctx: &Ctx, run: u64, opts: ttfx::Opts, pinned: Option<usize>) {
+pub fn play(ctx: &Ctx, run: u64, opts: ttfx::Opts, pinned: Option<usize>) {
     let (tx, rx) = async_channel::bounded::<()>(1);
     RUNS.with(|c| c.borrow_mut().insert(run, tx));
     let task_ctx = ctx.clone();

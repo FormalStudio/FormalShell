@@ -77,7 +77,11 @@ enum Wake {
     Done(proc::Done),
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let path = aliases_path();
     let read = |p: &PathBuf| providers::clipssh_aliases(&std::fs::read_to_string(p).unwrap_or_default());
     let mut state = State { aliases: read(&path), target: String::new() };

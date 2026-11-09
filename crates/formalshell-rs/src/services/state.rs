@@ -450,7 +450,11 @@ fn read(ctx: &Ctx, path: &Path) -> impl Future<Output = Option<Option<String>>> 
     })
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let path = state_path();
     let (tx, rx) = async_channel::unbounded::<Vec<Field>>();
     let _ = SETTERS.set(tx);

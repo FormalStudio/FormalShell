@@ -17,7 +17,7 @@ use fs_types::Fraction;
 
 use super::{Edit, Effect, Panel, View};
 use crate::services::clipboard;
-use crate::services::devices::{self, network as net};
+use crate::services::devices::network as net;
 use crate::store::Topic;
 use crate::ui::{El, Event, Ink, Variant, What, w};
 
@@ -48,7 +48,7 @@ fn row_key(ssid: &str) -> String {
 
 impl Network {
     fn state<'a>(fx: &'a Effect) -> &'a net::Network {
-        &fx.store.devices.network
+        &fx.store.network
     }
 
     fn open_prompt(&mut self, ssid: &str, enterprise: bool) {
@@ -139,7 +139,7 @@ impl Network {
 
     fn wifi_row(&self, v: &View, r: &net::Row) -> El {
         let s = &v.theme.space;
-        let n = &v.store.devices.network;
+        let n = &v.store.network;
         let key = row_key(&r.ssid);
         let mine = |ssid: &str| ssid == r.ssid;
         let status = match (&n.action, &n.failure) {
@@ -203,7 +203,7 @@ impl Network {
     /// test with its last result.
     fn footer(&self, v: &View, wifi: bool) -> Vec<El> {
         let s = &v.theme.space;
-        let n = &v.store.devices.network;
+        let n = &v.store.network;
         let mut out = Vec::new();
         if wifi {
             let open = n.qr != net::Qr::Closed;
@@ -278,11 +278,11 @@ impl Panel for Network {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Network]
     }
 
     fn actions(&self, v: &View) -> Vec<El> {
-        let n = &v.store.devices.network;
+        let n = &v.store.network;
         vec![
             w::switch(n.wifi_enabled).on("radio"),
             w::icon_button("refresh-cw").enabled(n.wifi_device.is_some()).tip("Rescan").on("rescan").key("rescan"),
@@ -291,7 +291,7 @@ impl Panel for Network {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let n = &v.store.devices.network;
+        let n = &v.store.network;
         let mut rows: Vec<El> = n
             .wired_rows
             .iter()
@@ -379,9 +379,9 @@ impl Panel for Network {
         match (ev.on.as_str(), &ev.what) {
             ("radio", What::Toggle(on)) => {
                 let on = *on;
-                fx.service(move |ctx| devices::run(ctx, devices::Op::Wifi(on)));
+                fx.service(move |ctx| net::set_wifi(ctx, on));
             }
-            ("rescan", What::Click) => fx.service(|ctx| devices::run(ctx, devices::Op::Rescan)),
+            ("rescan", What::Click) => fx.service(net::rescan),
             ("speedtest", What::Click) => Self::speed(fx),
             ("share", What::Click) => fx.service(net::qr_toggle),
             ("password", What::Click) => fx.service(net::reveal_toggle),

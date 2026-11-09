@@ -67,7 +67,7 @@ pub fn ask(ctx: &Ctx) {
             Ok(m) => Can { suspend: allowed(&m, "CanSuspend").await, reboot: allowed(&m, "CanReboot").await, power_off: allowed(&m, "CanPowerOff").await },
             Err(_) => Can::default(),
         };
-        c.publish(store::Diff::Devices(crate::services::devices::Diff::Logind(can)));
+        c.publish(store::Diff::Logind(can));
     });
 }
 
@@ -82,7 +82,11 @@ pub fn request(action: Action) {
     let _ = CHANNEL.0.try_send(action);
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     while let Ok(action) = CHANNEL.1.recv().await {
         // Off this loop: the call stays pending for as long as the
         // password prompt is up.

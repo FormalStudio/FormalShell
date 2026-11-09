@@ -95,8 +95,15 @@ fn power(snapshot: Snapshot) -> Power {
     }
 }
 
-pub async fn run(ctx: Ctx) {
-    let publish = |p| ctx.publish(store::Diff::Devices(super::Diff::Power(p)));
+/// UPower's devices, the DualSense's lights and power-profiles-daemon.
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+    ctx.spawn(lights(ctx.clone()));
+    ctx.spawn(run_profiles(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
+    let publish = |p| ctx.publish(store::Diff::Power(p));
     let upower = match crate::services::bus::system().await {
         Ok(conn) => UPower::connect(&conn).await,
         Err(err) => Err(err),
@@ -158,11 +165,11 @@ fn read_lights() -> Lights {
     Lights { lightbar: dualsense::parse_lightbar(rgb.as_deref()), player_leds: Some(dualsense::parse_player_leds(Some(&pips))) }
 }
 
-pub async fn lights(ctx: Ctx) {
+async fn lights(ctx: Ctx) {
     loop {
         if PANEL.load(Ordering::Relaxed) {
             let lights = ctx.pool().run(read_lights).await.unwrap_or_default();
-            ctx.publish(store::Diff::Devices(super::Diff::Lights(lights)));
+            ctx.publish(store::Diff::PadLights(lights));
             async { POKE.1.recv().await.ok() }
                 .or(async {
                     Timer::after(LIGHTS_POLL).await;
@@ -188,8 +195,8 @@ pub async fn profiles() -> zbus::Result<PowerProfiles> {
 
 /// power-profiles-daemon's active profile and the ones it offers, none
 /// while the daemon is not on the bus.
-pub async fn run_profiles(ctx: Ctx) {
-    let publish = |p| ctx.publish(store::Diff::Devices(super::Diff::Profiles(p)));
+async fn run_profiles(ctx: Ctx) {
+    let publish = |p| ctx.publish(store::Diff::Profiles(p));
     let Ok(profiles) = profiles().await else { return publish(None) };
     let mut changes = std::pin::pin!(profiles.changes());
     while let Some(state) = changes.next().await {

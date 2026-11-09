@@ -70,7 +70,7 @@ thread_local! {
 /// The last poll, with the action state a poll does not know about.
 fn publish(ctx: &Ctx) {
     let state = POLLED.with_borrow(|p| State { action: ACTION.get(), error: ERROR.get(), ..p.clone() });
-    ctx.publish(store::Diff::Info(super::Diff::Tailscale(state)));
+    ctx.publish(store::Diff::Tailscale(state));
 }
 
 async fn poll(ctx: &Ctx) {

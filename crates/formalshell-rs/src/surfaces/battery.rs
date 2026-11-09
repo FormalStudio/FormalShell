@@ -19,7 +19,7 @@ pub struct Watch {
 impl Watch {
     /// Reads the battery once; true when it raised a notification.
     pub fn check(&mut self, store: &mut Store) -> bool {
-        let Some(b) = store.devices.power.battery.clone() else { return false };
+        let Some(b) = store.power.battery.clone() else { return false };
         // UPower has not populated yet: the percent can still read 0, and
         // recording it would arm the rising guard against a bogus value.
         if b.state == DeviceState::Unknown {
@@ -47,7 +47,7 @@ mod tests {
     fn store(percent: f64, state: DeviceState) -> Store {
         let mut s = Store::default();
         let level = Percent::from_percent(percent);
-        s.devices.power.battery = Some(Battery { level, state, rate: 0.0, time_to_full: None, time_to_empty: None, health: None, size_wh: 0.0 });
+        s.power.battery = Some(Battery { level, state, rate: 0.0, time_to_full: None, time_to_empty: None, health: None, size_wh: 0.0 });
         s
     }
 

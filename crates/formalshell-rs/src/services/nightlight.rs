@@ -389,7 +389,11 @@ enum Wake {
     Timer,
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let rx = CHANNEL.1.clone();
     let mut m = Machine::new(ctx);
     m.publish();

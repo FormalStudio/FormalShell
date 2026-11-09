@@ -98,7 +98,11 @@ struct Running {
     thread: std::thread::JoinHandle<()>,
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (ftx, frx) = async_channel::bounded::<(String, Result<Bitmap, String>)>(2);
     let mut running: Option<(String, Running)> = None;
     let c = ctx.clone();

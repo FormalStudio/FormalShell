@@ -100,7 +100,7 @@ impl Panel for Calendar {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info, Topic::Clock, Topic::State, Topic::Config]
+        &[Topic::Calendar, Topic::Clock, Topic::State, Topic::Config]
     }
 
     fn width(&self, v: &View) -> f64 {
@@ -138,7 +138,7 @@ impl Panel for Calendar {
         let now = Local::now();
         let t = now.date_naive();
         let cells = self.cells();
-        let events = &v.store.info.calendar.events;
+        let events = &v.store.calendar.events;
         let twelve = clock::uses_meridiem(&crate::surfaces::bar::cells::clock::clock_format(v.store));
 
         // One square per day, centred in its seventh of the row, so the

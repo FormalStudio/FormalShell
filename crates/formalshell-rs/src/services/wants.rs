@@ -114,7 +114,7 @@ fn always(source: Source) -> bool {
     source == Source::Iphone
 }
 
-fn start(source: Source, ctx: Ctx) -> Pin<Box<dyn Future<Output = ()>>> {
+fn source_task(source: Source, ctx: Ctx) -> Pin<Box<dyn Future<Output = ()>>> {
     match source {
         Source::Weather => Box::pin(info::weather::run(ctx)),
         Source::Github => Box::pin(info::github::run(ctx)),
@@ -131,7 +131,11 @@ fn start(source: Source, ctx: Ctx) -> Pin<Box<dyn Future<Output = ()>>> {
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = POKE.set(tx);
     let mut running: Vec<Option<async_channel::Sender<()>>> = SOURCES.iter().map(|_| None).collect();
@@ -145,7 +149,7 @@ pub async fn run(ctx: Ctx) {
                 idle_since[i] = None;
                 if running[i].is_none() {
                     let (stop, stopped) = async_channel::bounded::<()>(1);
-                    let task = start(source, ctx.clone());
+                    let task = source_task(source, ctx.clone());
                     // The stop sender dropping ends the receive and with it
                     // the poll, which kills whatever child it held.
                     ctx.spawn(async move {

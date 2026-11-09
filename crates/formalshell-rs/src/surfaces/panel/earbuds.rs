@@ -30,7 +30,7 @@ use fs_types::Percent;
 use super::{Effect, Panel, View};
 use head::Head;
 use heart::Heart;
-use crate::services::devices::{self, earbuds};
+use crate::services::devices::earbuds;
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, Variant, Weight, What, w};
@@ -104,10 +104,10 @@ fn value_text(v: &Value) -> String {
 
 fn set(fx: &Effect, key: &str, raw: String) {
     if key == DEVICE {
-        fx.service(move |ctx| ctx.publish(store::Diff::Devices(devices::Diff::Earbuds(earbuds::Diff::Select(raw)))));
+        fx.service(move |ctx| ctx.publish(store::Diff::Earbuds(earbuds::Diff::Select(raw))));
         return;
     }
-    match fx.store.devices.earbuds.plan(key, &raw) {
+    match fx.store.earbuds.plan(key, &raw) {
         Ok(Some(op)) => earbuds::write(op),
         Ok(None) => {}
         Err(reason) => eprintln!("earbuds: {key}: {reason}"),
@@ -136,7 +136,7 @@ impl Earbuds {
     /// A press writes the device and moves only the ring: the selection
     /// follows once the service reports it.
     fn press(&mut self, fx: &Effect, index: usize) {
-        let (opts, selected) = devices(&fx.store.devices.earbuds);
+        let (opts, selected) = devices(&fx.store.earbuds);
         let Some(o) = opts.get(index) else { return };
         self.rings.insert(DEVICE.to_owned(), index);
         if Some(index) != selected {
@@ -147,7 +147,7 @@ impl Earbuds {
     /// Entry `index` of a choice: an option alone is written as is, a tier
     /// writes the member last picked in it, else its first.
     fn pick_entry(&mut self, fx: &Effect, key: &str, index: usize) {
-        let Some(ctl) = model::control(fx.store.devices.earbuds.active(), key) else { return };
+        let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
         let es = entries(ctl);
         let Some(e) = es.get(index) else { return };
         if picked(ctl, &es) == Some(index) {
@@ -161,7 +161,7 @@ impl Earbuds {
 
     /// Member `index` of the picked tier.
     fn pick_member(&mut self, fx: &Effect, key: &str, index: usize) {
-        let Some(ctl) = model::control(fx.store.devices.earbuds.active(), key) else { return };
+        let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
         let es = entries(ctl);
         let Some(m) = picked(ctl, &es).and_then(|at| es[at].members.get(index).copied()) else { return };
         if let Some(value) = option_value(ctl, m) {
@@ -216,7 +216,7 @@ impl Earbuds {
     fn pick_option(&mut self, fx: &Effect, rest: &str) {
         self.menu.clear();
         let Some((key, i)) = rest.rsplit_once(':') else { return };
-        let Some(ctl) = model::control(fx.store.devices.earbuds.active(), key) else { return };
+        let Some(ctl) = model::control(fx.store.earbuds.active(), key) else { return };
         let Ok(i) = i.parse::<usize>() else { return };
         if model::option_index(Some(ctl)) != Some(i)
             && let Some(value) = option_value(ctl, i)
@@ -472,7 +472,7 @@ impl Panel for Earbuds {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Earbuds]
     }
 
     fn width(&self, v: &View) -> f64 {
@@ -486,7 +486,7 @@ impl Panel for Earbuds {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let e = &v.store.devices.earbuds;
+        let e = &v.store.earbuds;
         let dev = e.active();
         let mut out = Vec::new();
         if !e.available() {
@@ -558,7 +558,7 @@ impl Panel for Earbuds {
         if verb != "menu" && verb != "opt" {
             self.menu.clear();
         }
-        let dev = fx.store.devices.earbuds.active();
+        let dev = fx.store.earbuds.active();
         match (verb, &ev.what) {
             ("pick", What::Pick(i)) => self.press(fx, *i),
             ("seg", What::Pick(i)) => self.pick_entry(fx, key, *i),
@@ -585,7 +585,7 @@ impl Panel for Earbuds {
     }
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
-        let e = &fx.store.devices.earbuds;
+        let e = &fx.store.earbuds;
         if stop == DEVICE {
             let (opts, selected) = devices(e);
             let at = self.ring(DEVICE, opts.len(), selected);
@@ -608,7 +608,7 @@ impl Panel for Earbuds {
     }
 
     fn step(&mut self, stop: &str, direction: i32, fx: &mut Effect) {
-        let e = &fx.store.devices.earbuds;
+        let e = &fx.store.earbuds;
         if stop == DEVICE {
             let (opts, selected) = devices(e);
             let at = self.ring(DEVICE, opts.len(), selected) as i32 + direction;

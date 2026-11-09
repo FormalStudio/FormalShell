@@ -169,7 +169,11 @@ fn listen() -> Option<(async_process::Child, futures_lite::io::Lines<BufReader<a
     Some((child, lines))
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let settings_rx = super::media::subscribe();
     let (gate_tx, gate_rx) = async_channel::unbounded();
     let (cmd_tx, cmd_rx) = async_channel::unbounded();

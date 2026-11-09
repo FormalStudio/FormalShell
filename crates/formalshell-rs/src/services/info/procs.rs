@@ -144,7 +144,7 @@ pub async fn run(ctx: Ctx) {
         let wait = interval();
         let sections = ctx.pool().run(collect).await.unwrap_or_default();
         let (rows, available) = sample(&mut prev, &sections);
-        ctx.publish(store::Diff::Info(super::Diff::Procs(Diff::Rows { rows, available, sampled_ms: now_ms() })));
+        ctx.publish(store::Diff::Procs(Diff::Rows { rows, available, sampled_ms: now_ms() }));
         let kicked = async {
             let _ = kick.recv().await;
         };
@@ -153,13 +153,13 @@ pub async fn run(ctx: Ctx) {
 }
 
 fn finish(ctx: &Ctx, pid: u64, action: &str, ok: bool, message: &str) {
-    ctx.publish(store::Diff::Info(super::Diff::Procs(Diff::Action(Action {
+    ctx.publish(store::Diff::Procs(Diff::Action(Action {
         pid,
         action: action.to_owned(),
         ok,
         message: message.to_owned(),
         at_ms: now_ms(),
-    }))));
+    })));
     // The table is one poll behind an action that worked, and a row for a
     // process already gone invites a second press on it.
     if ok {

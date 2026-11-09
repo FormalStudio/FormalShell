@@ -23,17 +23,17 @@ pub fn warm() {
 
 fn status(app: &mut App, _: &[Value]) -> Value {
     wants::pulse(Source::Monitor);
-    Value::Str(app.store.info.monitor.status(now_ms()).to_string())
+    Value::Str(app.store.monitor.status(now_ms()).to_string())
 }
 
 fn gpu(app: &mut App, _: &[Value]) -> Value {
     wants::pulse(Source::Monitor);
-    Value::Str(app.store.info.monitor.gpu(now_ms()).to_string())
+    Value::Str(app.store.monitor.gpu(now_ms()).to_string())
 }
 
 fn processes(app: &mut App, args: &[Value]) -> Value {
     wants::pulse(Source::Processes);
-    Value::Str(app.store.info.procs.report(args[0].str(), now_ms()).to_string())
+    Value::Str(app.store.procs.report(args[0].str(), now_ms()).to_string())
 }
 
 fn signal(app: &mut App, args: &[Value]) -> Value {
@@ -50,7 +50,7 @@ fn signal(app: &mut App, args: &[Value]) -> Value {
 
 fn restart(app: &mut App, args: &[Value]) -> Value {
     let pid = args[0].str();
-    let kernel = fs_system::monitor::procs::parse_pid(pid).and_then(|n| app.store.info.procs.row(n)).is_some_and(|r| r.kernel);
+    let kernel = fs_system::monitor::procs::parse_pid(pid).and_then(|n| app.store.procs.row(n)).is_some_and(|r| r.kernel);
     Value::Str(match procs::begin_restart(pid, kernel) {
         Ok(n) => {
             if let Some(rt) = &app.runtime {
@@ -99,7 +99,7 @@ fn shq(value: &str) -> String {
 fn launch(app: &mut App, args: &[Value]) -> Value {
     let (id, card) = (args[0].str(), args[1].str());
     let Some(entry) = entry(id) else { return Value::Str(format!("error: no desktop entry '{id}'")) };
-    let m = &app.store.info.monitor;
+    let m = &app.store.monitor;
     let target = if card.is_empty() {
         match m.cards.iter().find(|c| c.discrete) {
             Some(c) => c,

@@ -22,11 +22,11 @@ impl Default for Iphone {
 
 impl Cell for Iphone {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Iphone]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.info.iphone.clone();
+        let state = env.store.iphone.clone();
         let label = env.store.config.bool("bar.widgets.iphone.showLabel").unwrap_or(true);
         let changed = state != self.state || label != self.label;
         (self.state, self.label) = (state, label);

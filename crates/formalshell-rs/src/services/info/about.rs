@@ -12,6 +12,6 @@ use crate::store;
 
 pub async fn run(ctx: Ctx) {
     let out = proc::capture(&about::collect_command(), Duration::from_secs(5)).await;
-    ctx.publish(store::Diff::Info(super::Diff::About(about::parse(&out.stdout))));
+    ctx.publish(store::Diff::About(about::parse(&out.stdout)));
     futures_lite::future::pending::<()>().await;
 }

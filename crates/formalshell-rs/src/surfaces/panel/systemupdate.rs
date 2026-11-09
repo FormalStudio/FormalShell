@@ -41,7 +41,7 @@ impl Panel for SystemUpdate {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info, Topic::Config]
+        &[Topic::SystemUpdate, Topic::Config]
     }
 
     fn actions(&self, v: &View) -> Vec<El> {
@@ -54,7 +54,7 @@ impl Panel for SystemUpdate {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let u = &v.store.info.update;
+        let u = &v.store.system_update;
         let dir = flake_dir(v);
         let counts = u.counts();
         let summary = u.summary();

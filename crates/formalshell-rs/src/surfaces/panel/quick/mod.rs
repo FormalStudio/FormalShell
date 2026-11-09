@@ -23,7 +23,7 @@ use serde_json::{Value as Json, json};
 use super::{Effect, Panel, View};
 use crate::motion::{Animated, Kind as Clock};
 use crate::services::devices::bluetooth::{ActionKind as BtAction, Ask as BtAsk};
-use crate::services::devices::{self, Op, audio, bluetooth as bt, network as net};
+use crate::services::devices::{self, audio, bluetooth as bt, network as net};
 use crate::services::power::{self, Action};
 use crate::runtime::now_ms;
 use crate::services::ipad::Link;
@@ -173,7 +173,7 @@ fn profile_name(p: Profile) -> &'static str {
 /// The battery pill's glyph and percent, as the bar's battery cell reads
 /// them; none without a laptop battery.
 fn battery(store: &Store) -> Option<(&'static str, String)> {
-    let p = &store.devices.power;
+    let p = &store.power;
     let b = p.battery.as_ref()?;
     let threshold = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, p.on_battery);
     let icon = battery_icon(b.level, p.on_battery, threshold, crate::services::devices::power::thresholds(&store.config));
@@ -182,7 +182,7 @@ fn battery(store: &Store) -> Option<(&'static str, String)> {
 
 /// Every audio device of one direction: node name and label.
 fn audio_devices(store: &Store, sinks: bool) -> Vec<(&str, &str)> {
-    store.devices.audio.devices.iter().filter(|d| d.2 == sinks).map(|d| (d.0.as_str(), d.1.as_str())).collect()
+    store.audio.devices.iter().filter(|d| d.2 == sinks).map(|d| (d.0.as_str(), d.1.as_str())).collect()
 }
 
 /// Every control in reading order: the system row, the sliders, then the
@@ -204,7 +204,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
     out.push(Tile::new("lock", Kind::System, "lock", "Lock"));
     out.push(Tile { menu: true, ..Tile::new("power", Kind::System, "power", "Power off") });
 
-    let a = &store.devices.audio;
+    let a = &store.audio;
     if let Some(volume) = a.volume {
         let glyph = if a.muted { "volume-x" } else { "volume-2" };
         out.push(Tile::slider("volume", glyph, "Volume", volume.as_f64(), !a.muted, audio_devices(store, true).len() > 1));
@@ -218,8 +218,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
         out.push(Tile::slider("brightness", "sun", "Brightness", first.percent as f64 / 100.0, true, screens.len() > 1));
     }
 
-    let d = &store.devices;
-    let n = &d.network;
+    let n = &store.network;
     if !n.wired_rows.is_empty() {
         let up = n.wired_rows.iter().find(|r| r.connected);
         let name = up.map(|r| r.connection.clone().unwrap_or_else(|| r.name.clone()));
@@ -240,7 +239,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
             .unless(wifi_reason),
     );
 
-    let bt = &d.bluetooth;
+    let bt = &store.bluetooth;
     let bt_on = bt.powered == Some(true);
     let connected: Vec<&fs_devices::bluetooth::Device> = bt.devices.iter().filter(|x| x.connected).collect();
     let bt_sub = match connected.as_slice() {
@@ -256,7 +255,7 @@ pub fn tiles_with(store: &Store, open: Option<&str>) -> Vec<Tile> {
             .unless(bt.powered.is_none().then_some("No adapter")),
     );
 
-    let profiles = d.profiles.as_ref();
+    let profiles = store.profiles.as_ref();
     out.push(
         Tile::toggle("power-mode", "gauge", "Power mode", profiles.is_some_and(|p| p.active != Profile::Balanced))
             .split(profiles.is_some())
@@ -501,7 +500,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
     }
     let tile = tiles(store).into_iter().find(|t| t.id == id && t.menu)?;
     let row = Line::row;
-    let a = &store.devices.audio;
+    let a = &store.audio;
     Some(match id {
         "volume" => MenuView {
             glyph: tile.glyph,
@@ -534,7 +533,6 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             title: "Wired connections",
             on: tile.on,
             lines: store
-                .devices
                 .network
                 .wired_rows
                 .iter()
@@ -543,7 +541,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             settings: Some(("Network settings", Hand::Panel("network"))),
         },
         "wifi" => {
-            let n = &store.devices.network;
+            let n = &store.network;
             let mut lines: Vec<Line> = n
                 .rows
                 .iter()
@@ -571,7 +569,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             MenuView { glyph: tile.glyph, title: "Wi-Fi", on: tile.on, lines, settings: Some(("All networks", Hand::Panel("network"))) }
         }
         "bluetooth" => {
-            let b = &store.devices.bluetooth;
+            let b = &store.bluetooth;
             let mut lines: Vec<Line> = Vec::new();
             if b.powered == Some(true) {
                 for d in b.devices.iter().filter(|d| d.paired) {
@@ -591,7 +589,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             MenuView { glyph: tile.glyph, title: "Bluetooth", on: tile.on, lines, settings: Some(("Bluetooth settings", Hand::Panel("bluetooth"))) }
         }
         "power-mode" => {
-            let p = store.devices.profiles.as_ref()?;
+            let p = store.profiles.as_ref()?;
             let lines = PROFILES
                 .iter()
                 .filter(|(x, _)| *x != Profile::Performance || p.has_performance())
@@ -614,7 +612,7 @@ pub fn menu(store: &Store, id: &str, armed: Option<&str>) -> Option<MenuView> {
             MenuView { glyph: tile.glyph, title: "iPad", on: tile.on, lines, settings: Some(("iPad settings", Hand::Route("ipad"))) }
         }
         "power" => {
-            let can = store.devices.logind;
+            let can = store.logind;
             let mut lines = Vec::new();
             for (what, rest, confirm) in POWER {
                 let shown = match what {
@@ -846,7 +844,13 @@ impl Panel for QuickSettings {
 
     fn reads(&self) -> &'static [Topic] {
         &[
-            Topic::Devices,
+            Topic::Bluetooth,
+            Topic::Network,
+            Topic::Audio,
+            Topic::Power,
+            Topic::Earbuds,
+            Topic::Profiles,
+            Topic::Logind,
             Topic::Display,
             Topic::Compositor,
             Topic::Config,
@@ -860,7 +864,13 @@ impl Panel for QuickSettings {
             Topic::Recording,
             Topic::Clipssh,
             Topic::Media,
-            Topic::Info,
+            Topic::Weather,
+            Topic::Github,
+            Topic::Usage,
+            Topic::SystemUpdate,
+            Topic::Tailscale,
+            Topic::Monitor,
+            Topic::Iphone,
             Topic::Clock,
             Topic::Tray,
             Topic::Agents,
@@ -1001,7 +1011,7 @@ impl Panel for QuickSettings {
     }
 
     fn start(&mut self, fx: &mut Effect) {
-        if let Some(p) = fx.store.devices.profiles.as_ref().filter(|p| p.active != Profile::Balanced) {
+        if let Some(p) = fx.store.profiles.as_ref().filter(|p| p.active != Profile::Balanced) {
             self.last_profile = p.active;
         }
         self.start = tiles(fx.store).into_iter().find(|t| matches!(t.kind, Kind::Toggle | Kind::Split) && t.available()).map(|t| t.id.to_owned());
@@ -1208,7 +1218,7 @@ impl QuickSettings {
             "power" | BACKGROUND => self.toggle_menu(tile.id, fx.store),
             "volume" | "microphone" => mute(tile.id, fx),
             "wired" => {
-                let n = &fx.store.devices.network;
+                let n = &fx.store.network;
                 if let Some(r) = n.wired_rows.iter().find(|r| r.connected).or(n.wired_rows.first()) {
                     let (name, connected) = (r.name.clone(), r.connected);
                     fx.service(move |ctx| net::wired_toggle(ctx, name, connected));
@@ -1248,14 +1258,14 @@ impl QuickSettings {
             "volume" => fx.service(move |_| audio::command(Command::SetDefaultSink(Some(what)))),
             "microphone" => fx.service(move |_| audio::command(Command::SetDefaultSource(Some(what)))),
             "wired" => {
-                if let Some(r) = fx.store.devices.network.wired_rows.iter().find(|r| r.name == what) {
+                if let Some(r) = fx.store.network.wired_rows.iter().find(|r| r.name == what) {
                     let connected = r.connected;
                     fx.service(move |ctx| net::wired_toggle(ctx, what, connected));
                 }
             }
             "wifi" => wifi_row(what, fx),
             "bluetooth" => {
-                let b = &fx.store.devices.bluetooth;
+                let b = &fx.store.bluetooth;
                 if b.action.is_none()
                     && let Some(address) = BtAddress::parse(&what)
                     && let Some(d) = b.devices.iter().find(|d| d.address == address && d.paired)
@@ -1268,7 +1278,7 @@ impl QuickSettings {
                 if p != Profile::Balanced {
                     self.last_profile = p;
                 }
-                fx.service(move |ctx| devices::run(ctx, Op::Profile(p)));
+                fx.service(move |ctx| devices::power::set_profile(ctx, p));
             }
             "keyboard" => fx.ipc(&["lights", "effect", &what]),
             "ipad" if what == "reconnect" => fx.ipc(&["ipad", "reconnect"]),
@@ -1306,15 +1316,15 @@ impl QuickSettings {
     fn level(&mut self, key: &str, to: Option<f64>, by: f64, fx: &mut Effect) {
         let store = fx.store;
         let at = |cur: f64| to.unwrap_or(cur + by).clamp(0.0, 1.0);
-        let a = &store.devices.audio;
+        let a = &store.audio;
         match key {
             "volume" => {
                 let v = Visual::from_f64(at(a.volume.map_or(0.0, Visual::as_f64)));
-                fx.service(move |ctx| devices::run(ctx, Op::Volume(v)));
+                fx.service(move |ctx| audio::set_volume(ctx, v));
             }
             "microphone" => {
                 let v = Visual::from_f64(at(a.source_volume.map_or(0.0, Visual::as_f64)));
-                fx.service(move |ctx| devices::run(ctx, Op::SourceVolume(v)));
+                fx.service(move |ctx| audio::set_source_volume(ctx, v));
             }
             "brightness" => {
                 let screens = store.display.devices();
@@ -1338,14 +1348,14 @@ impl QuickSettings {
     /// Balanced and the last other profile, flipped. The shell has no IPC
     /// verb for a profile; this is the power panel's own call.
     fn power_mode(&mut self, fx: &mut Effect) {
-        let Some(p) = fx.store.devices.profiles.as_ref() else { return };
+        let Some(p) = fx.store.profiles.as_ref() else { return };
         let next = if p.active == Profile::Balanced {
             if self.last_profile == Profile::Performance && !p.has_performance() { Profile::PowerSaver } else { self.last_profile }
         } else {
             self.last_profile = p.active;
             Profile::Balanced
         };
-        fx.service(move |ctx| devices::run(ctx, devices::Op::Profile(next)));
+        fx.service(move |ctx| devices::power::set_profile(ctx, next));
     }
 }
 
@@ -1354,7 +1364,7 @@ impl QuickSettings {
 /// over to the network panel with its passphrase step open, and the
 /// connected one stays as it is.
 fn wifi_row(ssid: String, fx: &mut Effect) {
-    let n = &fx.store.devices.network;
+    let n = &fx.store.network;
     let Some(row) = n.row(&ssid).filter(|r| !r.connected) else { return };
     if n.action.is_some() {
         return;
@@ -1391,12 +1401,11 @@ fn background_row(what: &str, fx: &mut Effect) {
 
 /// A slider's icon (or Enter on its track): mute its device.
 fn mute(id: &str, fx: &mut Effect) {
-    let op = match id {
-        "volume" => Op::ToggleMute,
-        "microphone" => Op::ToggleSourceMute,
-        _ => return,
-    };
-    fx.service(move |ctx| devices::run(ctx, op));
+    match id {
+        "volume" => fx.service(audio::toggle_mute),
+        "microphone" => fx.service(audio::toggle_source_mute),
+        _ => {}
+    }
 }
 
 /// The open menu for `quicksettings status`: its id, its lines and the

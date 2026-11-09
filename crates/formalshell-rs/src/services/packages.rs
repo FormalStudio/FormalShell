@@ -473,7 +473,11 @@ fn spawn_change(ctx: &Ctx, change: Change) {
     });
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     // The query last asked for, answered or not: the launcher asks again
     // on every resolve.
     let mut last: Option<String> = None;

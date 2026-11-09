@@ -141,7 +141,11 @@ enum Event {
     Settled,
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let path = state_dir().join("clipboard.json");
     let images = images_dir();
     let loaded = {

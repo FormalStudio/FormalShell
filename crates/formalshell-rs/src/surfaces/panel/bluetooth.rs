@@ -137,11 +137,11 @@ impl Panel for Bluetooth {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Bluetooth]
     }
 
     fn actions(&self, v: &View) -> Vec<El> {
-        let bt = &v.store.devices.bluetooth;
+        let bt = &v.store.bluetooth;
         let on = bt.powered == Some(true);
         let mut out = vec![w::switch(on).on("power")];
         let rescan = w::icon_button("refresh-cw").tip("Rescan").key("rescan");
@@ -151,7 +151,7 @@ impl Panel for Bluetooth {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let bt = &v.store.devices.bluetooth;
+        let bt = &v.store.bluetooth;
         if bt.powered.is_none() {
             return w::column(s.section_gap, vec![w::panel_empty(s, "No adapter")]);
         }
@@ -175,7 +175,7 @@ impl Panel for Bluetooth {
     }
 
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
-        let bt = &fx.store.devices.bluetooth;
+        let bt = &fx.store.bluetooth;
         match (ev.on.as_str(), &ev.what) {
             ("power", What::Toggle(on)) => ask(Ask::Power(*on)),
             ("rescan", What::Click) => ask(Ask::Rescan),
@@ -194,13 +194,13 @@ impl Panel for Bluetooth {
 
     fn activate(&mut self, stop: &str, fx: &mut Effect) {
         if let Some(a) = stop.strip_prefix("dev:") {
-            activate(&fx.store.devices.bluetooth, a);
+            activate(&fx.store.bluetooth, a);
         }
     }
 
     fn delete(&mut self, stop: &str, fx: &mut Effect) {
         if let Some(a) = stop.strip_prefix("dev:") {
-            forget(&fx.store.devices.bluetooth, a);
+            forget(&fx.store.bluetooth, a);
         }
     }
 }

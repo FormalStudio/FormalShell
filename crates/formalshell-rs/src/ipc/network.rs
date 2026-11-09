@@ -29,7 +29,7 @@ pub fn target() -> Target<App> {
 }
 
 fn state(app: &App) -> &Network {
-    &app.store.devices.network
+    &app.store.network
 }
 
 fn run(app: &App, f: impl FnOnce(&Ctx) + Send + 'static) {

@@ -149,7 +149,11 @@ pub fn notification_closed(id: u32) {
     send(Input::NoticeClosed(id));
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let (tx, rx) = async_channel::unbounded();
     let _ = INPUT.set(tx.clone());
     ctx.spawn(fspec_stream(ctx.clone(), tx.clone()));

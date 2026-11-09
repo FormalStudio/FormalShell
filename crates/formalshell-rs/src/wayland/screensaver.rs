@@ -583,7 +583,7 @@ impl App {
         let run = self.saver.run;
         self.saver.overlays[i].run = run;
         if let Some(rt) = &self.runtime {
-            rt.service(move |ctx| service::start(ctx, run, opts, pinned));
+            rt.service(move |ctx| service::play(ctx, run, opts, pinned));
         }
     }
 

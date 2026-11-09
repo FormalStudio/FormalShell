@@ -5,7 +5,6 @@
 
 use fs_system::audio::{SourceState, source_state};
 
-use crate::services::devices::Op;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, Part, View};
 use crate::paint::Look;
@@ -22,11 +21,11 @@ impl Default for Mic {
 
 impl Cell for Mic {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Audio]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let a = &env.store.devices.audio;
+        let a = &env.store.audio;
         let state = source_state(a.source, a.source_muted);
         let changed = state != self.state;
         self.state = state;
@@ -45,7 +44,7 @@ impl Cell for Mic {
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
             Button::Middle => Action::Panel("audio"),
-            Button::Left => Action::Device(Op::ToggleSourceMute),
+            Button::Left => Action::ToggleSourceMute,
             Button::Right => Action::None,
         }
     }

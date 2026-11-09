@@ -1,7 +1,7 @@
 //! The default adapter's state as one icon; right
 //! click flips its radio.
 
-use crate::services::devices::{self, Op};
+use crate::services::devices;
 use crate::store::Topic;
 use crate::surfaces::bar::cell::{Action, Button, Cell, Env, View};
 use crate::paint::Look;
@@ -16,11 +16,11 @@ pub const ICONS: &[&str] = &["bluetooth"];
 
 impl Cell for Bluetooth {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Bluetooth]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.devices.bluetooth.clone();
+        let state = env.store.bluetooth.clone();
         let changed = state != self.state;
         self.state = state;
         changed
@@ -51,7 +51,7 @@ impl Cell for Bluetooth {
 
     fn click(&mut self, button: Button, _: (f64, f64), _: &Env) -> Action {
         match button {
-            Button::Right if self.state.powered.is_some() => Action::Device(Op::ToggleBluetooth),
+            Button::Right if self.state.powered.is_some() => Action::ToggleBluetooth,
             Button::Right => Action::None,
             _ => Action::Panel("bluetooth"),
         }

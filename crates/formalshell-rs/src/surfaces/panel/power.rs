@@ -136,12 +136,12 @@ impl Power {
 }
 
 fn active(v: &View) -> usize {
-    v.store.devices.profiles.as_ref().and_then(|p| PROFILES.iter().position(|x| *x == p.active)).unwrap_or(0)
+    v.store.profiles.as_ref().and_then(|p| PROFILES.iter().position(|x| *x == p.active)).unwrap_or(0)
 }
 
 /// The card off UPower's battery and the supply's charge limit.
 fn card(v: &View, b: &devices::power::Battery) -> Card {
-    let power = &v.store.devices.power;
+    let power = &v.store.power;
     let charging = b.state == DeviceState::Charging;
     let held = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, power.on_battery);
     let state = if held {
@@ -157,7 +157,6 @@ fn card(v: &View, b: &devices::power::Battery) -> Card {
     let time = left.filter(|_| !held).map(|t| format!("{} {}", format_duration(t), if charging { "to full" } else { "left" }));
     let limit = v
         .store
-        .info
         .power_flow
         .snapshot
         .supplies
@@ -192,7 +191,7 @@ impl Panel for Power {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices, Topic::Info, Topic::Config]
+        &[Topic::Power, Topic::Profiles, Topic::PowerFlow, Topic::Monitor, Topic::Iphone, Topic::Config]
     }
 
     fn opened(&mut self) {
@@ -203,17 +202,17 @@ impl Panel for Power {
         let s = &v.theme.space;
         let mut parts = Vec::new();
 
-        let sample = &v.store.info.power_flow;
+        let sample = &v.store.power_flow;
         let gpu_w = {
-            let cards = &v.store.info.monitor.cards;
+            let cards = &v.store.monitor.cards;
             let watts: Vec<f64> = cards.iter().filter_map(|c| c.record.metrics.power_w).collect();
             (!watts.is_empty()).then(|| watts.iter().sum())
         };
         let model = flow::build_flow(
             &sample.snapshot,
-            &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.info.iphone.battery.map(|b| b * 100.0) },
+            &Extras { cpu_w: sample.cpu_w, gpu_w, iphone_percent: v.store.iphone.battery.map(|b| b * 100.0) },
         );
-        match &v.store.devices.power.battery {
+        match &v.store.power.battery {
             Some(b) => parts.push(w::panel_text(s, battery_card(s, &card(v, b)))),
             None => {
                 if !model.available {
@@ -227,7 +226,7 @@ impl Panel for Power {
             self.cursor.set(Some(a));
             a
         });
-        let performance = v.store.devices.profiles.as_ref().is_none_or(|p| p.has_performance());
+        let performance = v.store.profiles.as_ref().is_none_or(|p| p.has_performance());
         parts.push(profiles(s, active(v), at, performance));
         if model.available {
             parts.push(w::panel_control(s, w::panel_heading(s, "Power flow"), El::custom(flow_view(&model, true)).fill()));
@@ -264,6 +263,6 @@ impl Power {
     fn apply(&self, index: usize, fx: &Effect) {
         let Some(profile) = PROFILES.get(index).copied() else { return };
         self.cursor.set(Some(index));
-        fx.service(move |ctx| devices::run(ctx, devices::Op::Profile(profile)));
+        fx.service(move |ctx| devices::power::set_profile(ctx, profile));
     }
 }

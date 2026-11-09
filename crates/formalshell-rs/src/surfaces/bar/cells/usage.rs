@@ -28,11 +28,11 @@ impl Cell for Usage {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Usage]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let state = env.store.info.usage.clone();
+        let state = env.store.usage.clone();
         let label = env.store.config.bool("bar.widgets.usage.showLabel").unwrap_or(true);
         let changed = state != self.state || label != self.label;
         (self.state, self.label) = (state, label);

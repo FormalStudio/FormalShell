@@ -75,7 +75,7 @@ impl Panel for Usage {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Usage]
     }
 
     fn actions(&self, _: &View) -> Vec<El> {
@@ -84,7 +84,7 @@ impl Panel for Usage {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let u = &v.store.info.usage;
+        let u = &v.store.usage;
         let mut parts = Vec::new();
         if let Some(top) = peak(u) {
             parts.push(w::hero(

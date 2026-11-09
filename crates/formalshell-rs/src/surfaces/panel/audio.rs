@@ -37,7 +37,7 @@ fn set_muted(fx: &Effect, node: u32, muted: bool) {
 }
 
 fn lists(store: &Store) -> Option<&Lists> {
-    store.devices.audio.lists.as_ref()
+    store.audio.lists.as_ref()
 }
 
 /// A stop's row: `output-device:<id>`, `input-device:<id>`, `stream:<id>`.
@@ -76,7 +76,7 @@ impl Audio {
     }
 
     fn mute(fx: &Effect, stop: &str) {
-        let a = &fx.store.devices.audio;
+        let a = &fx.store.audio;
         let Some(l) = lists(fx.store) else { return };
         match stop {
             "output-slider" => {
@@ -108,12 +108,12 @@ impl Panel for Audio {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices]
+        &[Topic::Audio]
     }
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let a = &v.store.devices.audio;
+        let a = &v.store.audio;
         let empty = Lists::default();
         let l = a.lists.as_ref().unwrap_or(&empty);
         let mut out = Vec::new();
@@ -174,7 +174,7 @@ impl Panel for Audio {
     fn event(&mut self, ev: &Event, fx: &mut Effect) {
         let store = fx.store;
         let Some(l) = lists(store).cloned() else { return };
-        let a = &store.devices.audio;
+        let a = &store.audio;
         let (verb, key) = ev.on.split_once(':').unwrap_or((ev.on.as_str(), ""));
         match (verb, &ev.what) {
             ("mute", What::Toggle(_)) => Self::mute(fx, key),
@@ -228,7 +228,7 @@ impl Panel for Audio {
         let d = direction as f64 * STEP;
         match stop {
             "output-slider" => {
-                if let (Some(id), Some(v)) = (l.sink, fx.store.devices.audio.volume) {
+                if let (Some(id), Some(v)) = (l.sink, fx.store.audio.volume) {
                     set_volume(fx, id, clamp_device(v.as_f64() + d));
                 }
             }

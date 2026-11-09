@@ -51,7 +51,7 @@ fn entry(n: &fs_devices::iphone::Notification) -> Json {
 
 fn status(app: &mut App, _: &[Value]) -> Value {
     wants::pulse(Source::Iphone);
-    let s: &State = &app.store.info.iphone;
+    let s: &State = &app.store.iphone;
     if !s.installed {
         return text(json!({ "installed": false }).to_string());
     }
@@ -82,7 +82,7 @@ fn status(app: &mut App, _: &[Value]) -> Value {
 
 fn pair(app: &mut App, _: &[Value]) -> Value {
     wants::pulse(Source::Iphone);
-    if !app.store.info.iphone.installed {
+    if !app.store.iphone.installed {
         return text("error: no bridge on PATH");
     }
     iphone::command(Cmd::Pair);
@@ -101,7 +101,7 @@ fn invoke(app: &mut App, args: &[Value]) -> Value {
     }
     wants::pulse(Source::Iphone);
     let id = number(args[0].str());
-    match id.filter(|id| iphone::actionable(&app.store.info.iphone, *id)) {
+    match id.filter(|id| iphone::actionable(&app.store.iphone, *id)) {
         Some(id) => {
             iphone::command(Cmd::Invoke { id, positive: action == "positive" });
             text("ok")
@@ -112,7 +112,7 @@ fn invoke(app: &mut App, args: &[Value]) -> Value {
 
 fn dismiss(app: &mut App, args: &[Value]) -> Value {
     wants::pulse(Source::Iphone);
-    let state = &app.store.info.iphone;
+    let state = &app.store.iphone;
     let found = number(args[0].str()).and_then(|id| state.recent.iter().find(|e| e.id == id).map(|e| (id, e.negative_action.is_empty())));
     match found.filter(|(id, bare)| *bare || iphone::actionable(state, *id)) {
         Some((id, _)) => {

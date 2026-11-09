@@ -155,7 +155,11 @@ pub fn command(cmd: Cmd) {
     let _ = CHANNEL.0.try_send(cmd);
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let mut booted: Option<String> = None;
     while let Ok(cmd) = CHANNEL.1.recv().await {
         let cmd = match cmd {

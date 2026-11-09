@@ -1,7 +1,8 @@
 //! The readings the info cells show, one module per source. Each source
 //! runs only while a cell wants it ([`wants`](super::wants)), publishes its
-//! whole state as one snapshot, and answers a failure with a state the cell
-//! words honestly (no gh, no auth, no location), never a stale count.
+//! whole state as one snapshot into its own slice of the store, and
+//! answers a failure with a state the cell words honestly (no gh, no auth,
+//! no location), never a stale count.
 //!
 //! Services run on their own thread and never see the store, so the UI
 //! thread hands them settings.json through [`configure`], and each poll
@@ -28,59 +29,6 @@ use futures_lite::FutureExt;
 use serde_json::Value;
 
 use super::wants::{COUNT, Source};
-
-#[derive(Default)]
-pub struct State {
-    pub weather: weather::State,
-    pub github: github::State,
-    pub usage: usage::State,
-    pub update: update::State,
-    pub tailscale: tailscale::State,
-    pub monitor: monitor::State,
-    pub iphone: iphone::State,
-    pub calendar: calendar::State,
-    pub procs: procs::State,
-    pub power_flow: powerflow::State,
-    /// None until the first read lands.
-    pub about: Option<fs_info::about::About>,
-}
-
-pub enum Diff {
-    Weather(weather::State),
-    Github(github::State),
-    Usage(usage::State),
-    Update(update::State),
-    Tailscale(tailscale::State),
-    Monitor(Box<monitor::State>),
-    Iphone(iphone::State),
-    Calendar(calendar::State),
-    Procs(procs::Diff),
-    PowerFlow(powerflow::State),
-    About(fs_info::about::About),
-}
-
-impl State {
-    pub fn apply(&mut self, diff: Diff) -> bool {
-        fn set<T: PartialEq>(slot: &mut T, v: T) -> bool {
-            let changed = *slot != v;
-            *slot = v;
-            changed
-        }
-        match diff {
-            Diff::Weather(v) => set(&mut self.weather, v),
-            Diff::Github(v) => set(&mut self.github, v),
-            Diff::Usage(v) => set(&mut self.usage, v),
-            Diff::Update(v) => set(&mut self.update, v),
-            Diff::Tailscale(v) => set(&mut self.tailscale, v),
-            Diff::Monitor(v) => set(&mut self.monitor, *v),
-            Diff::Iphone(v) => set(&mut self.iphone, v),
-            Diff::Calendar(v) => set(&mut self.calendar, v),
-            Diff::Procs(d) => self.procs.apply(d),
-            Diff::PowerFlow(v) => set(&mut self.power_flow, v),
-            Diff::About(v) => set(&mut self.about, Some(v)),
-        }
-    }
-}
 
 static SETTINGS: Mutex<Option<Arc<Value>>> = Mutex::new(None);
 static LISTENERS: Mutex<Vec<async_channel::Sender<()>>> = Mutex::new(Vec::new());

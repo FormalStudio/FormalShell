@@ -139,7 +139,7 @@ impl Poll {
     fn update(&self, f: impl FnOnce(&mut State)) {
         let mut state = self.state.borrow_mut();
         f(&mut state);
-        self.ctx.publish(store::Diff::Info(super::Diff::Usage(state.clone())));
+        self.ctx.publish(store::Diff::Usage(state.clone()));
     }
 
     async fn credentials(&self) -> Option<usage::Credentials> {

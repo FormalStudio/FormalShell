@@ -45,8 +45,8 @@ fn fact(read: bool, value: Option<String>) -> Fact {
 }
 
 fn facts(v: &View) -> [(&'static str, Fact); 7] {
-    let a = v.store.info.about.as_ref();
-    let m = &v.store.info.monitor;
+    let a = v.store.about.as_ref();
+    let m = &v.store.monitor;
     let read = a.is_some();
     let sampled = m.sampled_ms.is_some();
     let field = |f: fn(&about::About) -> Option<String>| fact(read, a.and_then(f));
@@ -76,7 +76,7 @@ impl Panel for Info {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::About, Topic::Monitor]
     }
 
     fn width(&self, v: &View) -> f64 {
@@ -167,7 +167,7 @@ fn footer(v: &View) -> El {
     );
     let mut parts = vec![monogram, name, w::spacer(), field, w::spacer()];
 
-    let about = v.store.info.about.as_ref();
+    let about = v.store.about.as_ref();
     if let Some(id) = about.and_then(|a| a.os_id.clone()) {
         // A NAME past 13 characters ("openSUSE Tumbleweed") pushes the row
         // past the card, so it gives way to its first word.

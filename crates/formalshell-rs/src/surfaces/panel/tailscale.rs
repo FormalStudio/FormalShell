@@ -26,7 +26,7 @@ impl Tailscale {
 }
 
 fn toggle(fx: &Effect) {
-    let t = &fx.store.info.tailscale;
+    let t = &fx.store.tailscale;
     if t.poll != Poll::Ok || t.action != Action::None {
         return;
     }
@@ -41,7 +41,7 @@ fn copy(fx: &Effect, ip: Option<String>) {
 }
 
 fn self_ip(store: &crate::store::Store) -> Option<String> {
-    let t = &store.info.tailscale;
+    let t = &store.tailscale;
     (t.poll == Poll::Ok).then(|| t.status.as_ref().and_then(model::self_ip)).flatten()
 }
 
@@ -55,11 +55,11 @@ impl Panel for Tailscale {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info]
+        &[Topic::Tailscale]
     }
 
     fn actions(&self, v: &View) -> Vec<El> {
-        let t = &v.store.info.tailscale;
+        let t = &v.store.tailscale;
         let on = t.poll == Poll::Ok && t.status.as_ref().is_some_and(|s| s.running);
         vec![w::switch(on).on("toggle"), w::icon_button("refresh-cw").tip("Refresh").on("refresh")]
     }
@@ -70,7 +70,7 @@ impl Panel for Tailscale {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let t = &v.store.info.tailscale;
+        let t = &v.store.tailscale;
         let mut parts = Vec::new();
         match t.poll {
             Poll::Unknown => parts.push(w::panel_empty(s, "Loading")),
@@ -146,7 +146,7 @@ impl Panel for Tailscale {
             "self" => copy(fx, self_ip(fx.store)),
             _ => {
                 let peer = stop.strip_prefix("peer").and_then(|i| i.parse::<usize>().ok());
-                let ip = peer.and_then(|i| fx.store.info.tailscale.status.as_ref()?.peers.get(i)?.ip.clone());
+                let ip = peer.and_then(|i| fx.store.tailscale.status.as_ref()?.peers.get(i)?.ip.clone());
                 copy(fx, ip);
             }
         }

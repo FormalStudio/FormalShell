@@ -384,7 +384,7 @@ pub(crate) fn read_palette(path: &Path) -> (Map<String, Value>, bool) {
 }
 
 /// Publishes theme.json as it stands, the placeholder zinc when absent.
-pub async fn watch(ctx: Ctx) {
+async fn watch(ctx: Ctx) {
     let env = Env::from_process();
     let path = env.theme_json();
     let read = blocking(&ctx, move || Ok(read_palette(&path))).await;
@@ -422,9 +422,10 @@ pub fn send_inputs(inputs: Inputs) {
     }
 }
 
-/// The engine wired to the shell: inputs from the store, its mode writes
-/// into state.json.
+/// theme.json as it stands, then the engine wired to the shell: inputs
+/// from the store, its mode writes into state.json.
 pub fn start(ctx: &Ctx) {
+    ctx.spawn(watch(ctx.clone()));
     let (inputs_tx, inputs_rx) = async_channel::unbounded();
     let (requests_tx, requests_rx) = async_channel::unbounded::<Request>();
     let _ = INPUTS.set(inputs_tx);

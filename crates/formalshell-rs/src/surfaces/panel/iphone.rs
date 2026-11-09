@@ -40,7 +40,7 @@ impl Default for Iphone {
 /// The service's error, else the Apple Media Service's own (the two share
 /// one line, as IphoneService.lastError does).
 pub fn last_error(store: &Store) -> String {
-    let s = &store.info.iphone;
+    let s = &store.iphone;
     if s.last_error.is_empty() { store.media.ams.error.clone() } else { s.last_error.clone() }
 }
 
@@ -60,7 +60,7 @@ impl Panel for Iphone {
     }
 
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Info, Topic::Media, Topic::Clock]
+        &[Topic::Iphone, Topic::Media, Topic::Clock]
     }
 
     fn opened(&mut self) {
@@ -73,7 +73,7 @@ impl Panel for Iphone {
 
     fn body(&self, v: &View) -> El {
         let s = &v.theme.space;
-        let st = &v.store.info.iphone;
+        let st = &v.store.iphone;
         let ams = &v.store.media.ams;
         self.np_on.set(v.cursor == Some("np"));
         let not_installed = !st.installed;

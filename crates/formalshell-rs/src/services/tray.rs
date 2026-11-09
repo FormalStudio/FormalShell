@@ -169,7 +169,11 @@ async fn publish_menu(ctx: &Ctx, tray: &fs_tray::Tray, key: &str, largest: f64) 
     }
 }
 
-pub async fn run(ctx: Ctx) {
+pub fn start(ctx: &Ctx) {
+    ctx.spawn(run(ctx.clone()));
+}
+
+async fn run(ctx: Ctx) {
     let conn = match crate::services::bus::session().await {
         Ok(conn) => conn,
         Err(err) => return eprintln!("tray: no session bus: {err}"),

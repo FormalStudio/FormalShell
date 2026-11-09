@@ -30,7 +30,7 @@ pub async fn run(ctx: Ctx) {
         let cpu_w = (rapl.code == 0).then(|| parse_rapl_mw(&rapl.stdout)).flatten();
         let sysfs = proc::capture(&flow::collect_command(), Duration::from_secs(10)).await;
         let snapshot = flow::parse_snapshot(&sysfs.stdout);
-        ctx.publish(store::Diff::Info(super::Diff::PowerFlow(State { cpu_w, snapshot })));
+        ctx.publish(store::Diff::PowerFlow(State { cpu_w, snapshot }));
         Timer::after(SAMPLE).await;
     }
 }

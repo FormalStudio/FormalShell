@@ -37,11 +37,11 @@ impl Drop for Earbuds {
 
 impl Cell for Earbuds {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices, Topic::Config]
+        &[Topic::Earbuds, Topic::Config]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let dev = env.store.devices.earbuds.active();
+        let dev = env.store.earbuds.active();
         let r = Read {
             worst: worst_level(dev),
             tooltip: dev.map_or(String::new(), |d| format!("{} / {}", d.name.to_uppercase(), battery_summary(Some(d)))),

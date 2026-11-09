@@ -108,7 +108,15 @@ pub fn changed(app: &mut App, topic: Topic) {
             // A sky step the engine published moves the desktop's source.
             theme_inputs(app);
         }
-        Topic::Devices => {
+        Topic::Bluetooth
+        | Topic::Network
+        | Topic::Audio
+        | Topic::Power
+        | Topic::Earbuds
+        | Topic::PadLights
+        | Topic::Profiles
+        | Topic::Revealed
+        | Topic::Logind => {
             if app.battery_watch.check(&mut app.store) {
                 changed(app, Topic::Notifications);
             }
@@ -146,7 +154,17 @@ pub fn changed(app: &mut App, topic: Topic) {
         }
         Topic::Mirror => app.launcher_mirror(),
         Topic::Picker => app.launcher_picker(),
-        Topic::Info => {
+        Topic::Weather
+        | Topic::Github
+        | Topic::Usage
+        | Topic::SystemUpdate
+        | Topic::Tailscale
+        | Topic::Monitor
+        | Topic::Iphone
+        | Topic::Calendar
+        | Topic::Procs
+        | Topic::PowerFlow
+        | Topic::About => {
             if app.launcher.open && app.launcher.level.as_deref() == Some(crate::surfaces::launcher::MONITOR_ROUTE) {
                 app.launcher.monitor_sample(&app.store);
                 app.launcher_store_changed();

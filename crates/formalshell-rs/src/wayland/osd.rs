@@ -132,7 +132,7 @@ impl App {
 
     /// The default sink moved: ours, or something else's.
     pub fn osd_audio(&mut self) {
-        let a = &self.store.devices.audio;
+        let a = &self.store.audio;
         let reading = a.volume.map(|v| (v, a.muted));
         let before = std::mem::replace(&mut self.osd.audio_seen, reading);
         if let (Some(b), Some(n)) = (before, reading)
@@ -143,7 +143,7 @@ impl App {
     }
 
     fn osd_reading(&self) -> Reading {
-        let audio = &self.store.devices.audio;
+        let audio = &self.store.audio;
         match self.osd.kind.unwrap_or(Kind::Volume) {
             Kind::Volume => Reading::Volume { level: audio.volume.unwrap_or_default(), muted: audio.muted },
             Kind::Brightness => Reading::Brightness { percent: self.osd_brightness() },

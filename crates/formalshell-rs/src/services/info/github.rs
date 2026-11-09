@@ -90,7 +90,7 @@ pub async fn run(ctx: Ctx) {
     loop {
         let interval = read();
         let done = proc::capture(&proc::argv(&["gh", "api", "graphql", "-f", &format!("query={QUERY}")]), std::time::Duration::from_secs(60)).await;
-        ctx.publish(store::Diff::Info(super::Diff::Github(parse(done.code, &done.stdout))));
+        ctx.publish(store::Diff::Github(parse(done.code, &done.stdout)));
         let asked = async {
             let _ = kick.recv().await;
         };

@@ -25,11 +25,11 @@ pub struct Dualsense {
 
 impl Cell for Dualsense {
     fn reads(&self) -> &'static [Topic] {
-        &[Topic::Devices, Topic::Config]
+        &[Topic::Power, Topic::Config]
     }
 
     fn read(&mut self, env: &Env) -> bool {
-        let supply = env.store.devices.power.dualsense.clone();
+        let supply = env.store.power.dualsense.clone();
         let show_label = env.store.config.bool("bar.widgets.dualsense.showLabel").unwrap_or(true);
         let changed = supply != self.supply || show_label != self.show_label;
         (self.supply, self.show_label) = (supply, show_label);

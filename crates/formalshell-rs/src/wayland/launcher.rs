@@ -546,7 +546,7 @@ impl App {
                 service(Box::new(move |ctx| net::reveal(ctx, value, request)));
             }
             ("wifi", "activate") => {
-                let n = &self.store.devices.network;
+                let n = &self.store.network;
                 let Some(row) = n.row(&value).cloned() else { return };
                 if n.action.is_some() {
                     return;
@@ -578,7 +578,7 @@ impl App {
             }
             ("bluetooth", "toggle") => {
                 let Some(address) = fs_types::BtAddress::parse(&value) else { return };
-                let Some(d) = self.store.devices.bluetooth.devices.iter().find(|d| d.address == address) else { return };
+                let Some(d) = self.store.bluetooth.devices.iter().find(|d| d.address == address) else { return };
                 let kind = if d.connected { bluetooth::ActionKind::Disconnect } else { bluetooth::ActionKind::Connect };
                 bluetooth::ask(bluetooth::Ask::Run(address, kind));
             }
@@ -661,7 +661,7 @@ impl App {
             self.menu_input_as(&format!("Password for {ssid}"), WIFI_PASSWORD, true);
             return;
         }
-        let Some(row) = self.store.devices.network.row(&ssid) else { return };
+        let Some(row) = self.store.network.row(&ssid) else { return };
         let secret = if !identity.is_empty() && row.enterprise {
             net::Secret::Eap { identity, password: value }
         } else {
@@ -922,7 +922,7 @@ impl App {
 
     /// The device routes' rows, again from the store.
     pub fn launcher_devices(&mut self) {
-        if let Some(r) = self.store.devices.revealed.take() {
+        if let Some(r) = self.store.revealed.take() {
             self.wifi_revealed(r);
         }
         let mut moved = false;
