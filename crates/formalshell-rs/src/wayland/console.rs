@@ -16,13 +16,13 @@ use std::time::Duration;
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
 use fs_types::{Edge, IRect, Insets, WindowId};
-use serde_json::{Value as Json, json};
+use serde_json::json;
 
 use super::App;
 use crate::services::compositor::{self, Command};
+use crate::settings;
 
 const TICK: Duration = Duration::from_millis(100);
-const DEFAULT_APP_ID: &str = "dev.formalshell.console";
 
 fn clamp_share(share: f64) -> f64 {
     if share.is_finite() { share.clamp(0.2, 1.0) } else { 0.5 }
@@ -64,15 +64,11 @@ pub struct Console {
 
 impl App {
     fn console_app_id(&self) -> String {
-        self.store.config.str("console.appId").unwrap_or(DEFAULT_APP_ID).to_owned()
+        settings::CONSOLE_APP_ID.get(&self.store.config).to_owned()
     }
 
     fn console_command(&self) -> Vec<String> {
-        match self.store.config.get("console.command") {
-            Some(Json::Array(items)) => items.iter().map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned)).collect(),
-            Some(_) => Vec::new(),
-            None => vec!["ghostty".into(), format!("--class={DEFAULT_APP_ID}")],
-        }
+        settings::console_command(&self.store.config)
     }
 
     fn console_window_id(&self, app_id: &str) -> WindowId {
@@ -187,7 +183,7 @@ impl App {
     /// Sized where nobody can see it, then brought in: the other order
     /// shows the terminal at its own default size until the placement lands.
     fn console_reveal(&mut self, id: WindowId) {
-        let share = self.store.config.f64("console.share").unwrap_or(0.5);
+        let share = settings::CONSOLE_SHARE.get(&self.store.config);
         let margin = self.store.theme.theme.space.md;
         let Some(target) = self.console_screen().and_then(|s| geometry(s, self.console_insets(), share, margin)) else {
             eprintln!("console: no output to place the console on");

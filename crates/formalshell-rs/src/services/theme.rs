@@ -128,11 +128,6 @@ impl Sky {
 /// runs on the monotonic clock, which stands still through a suspend.
 const SKY_LOOK: Duration = Duration::from_secs(600);
 
-/// `location.latitude/longitude`, both or neither.
-pub fn location(config: &super::config::State) -> Option<(f64, f64)> {
-    config.f64("location.latitude").zip(config.f64("location.longitude"))
-}
-
 impl Default for State {
     fn default() -> Self {
         let palette = palette::fallback("dark");
@@ -191,16 +186,10 @@ impl State {
     }
 }
 
-/// `Config.get` over a settings object: one dotted path, `None` when any
-/// step of it is absent.
+/// `Config.get` over a settings object, the shape `Theme::resolve` reads
+/// through: one dotted path, `None` when any step of it is absent.
 pub fn get(settings: &Value) -> impl Fn(&str) -> Option<Value> + '_ {
-    move |path| {
-        let mut node = settings;
-        for part in path.split('.') {
-            node = node.as_object()?.get(part)?;
-        }
-        Some(node.clone())
-    }
+    move |path| super::config::lookup(settings, path).cloned()
 }
 
 /// [`get`] over a settings object it owns.
@@ -298,7 +287,7 @@ pub enum Request {
 /// `theme.mode`: "" leaves the mode to state.json, "dark" and "light" pin
 /// it, "auto" hands it to the schedule. Anything else reads as "".
 pub fn mode_key(settings: &Value) -> &'static str {
-    match get(settings)("theme.mode").as_ref().and_then(Value::as_str) {
+    match super::config::lookup(settings, crate::settings::THEME_MODE.key).and_then(Value::as_str) {
         Some("dark") => "dark",
         Some("light") => "light",
         Some("auto") => "auto",
@@ -683,9 +672,8 @@ impl Engine {
     /// paths a bare gsettings cannot see. Fire and forget.
     fn sync_system_scheme(&self, inputs: &Inputs) {
         let dark = inputs.mode != "light";
-        let s = get(&inputs.settings);
-        let name = |key: &str| s(key).and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
-        let theme_name = fs_theme::gtk::gtk_theme_name(dark, &name("gtk.theme"), &name("gtk.themeDark"));
+        let (light, dark_name) = (crate::settings::GTK_THEME.get(&inputs.settings), crate::settings::GTK_THEME_DARK.get(&inputs.settings));
+        let theme_name = fs_theme::gtk::gtk_theme_name(dark, light, dark_name);
         let scheme = if dark { "'prefer-dark'" } else { "'prefer-light'" };
         let gtk = format!("'{theme_name}'");
         let dconf = self.env.dconf.clone();

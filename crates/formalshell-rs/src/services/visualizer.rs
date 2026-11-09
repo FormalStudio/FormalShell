@@ -77,12 +77,12 @@ impl State {
     }
 
     /// The style drawn: the override, else the configured one when known,
-    /// else `bars`.
+    /// else the key's default.
     pub fn style(&self, configured: &str) -> String {
         if !self.style_override.is_empty() {
             return self.style_override.clone();
         }
-        if fs_media::visualizer::styles::is_known(configured) { configured.to_owned() } else { "bars".to_owned() }
+        if fs_media::visualizer::styles::is_known(configured) { configured.to_owned() } else { crate::settings::VISUALIZER_STYLE.default.to_owned() }
     }
 }
 

@@ -62,6 +62,7 @@ use crate::paint::Kit;
 use crate::runtime::{Msg, Runtime};
 use crate::scene::{IRect, NodeId};
 use crate::services::{barpaint, commands, devices, compositor, info, media, nightlight, notifications, overnight, theme, tray};
+use crate::settings;
 use crate::store::{Diff, Moved, Store, Topic};
 use crate::surface::{Backend, PixelSurface, Pixels, Surface};
 use crate::surfaces;
@@ -499,7 +500,7 @@ impl App {
     /// The live bar's chrome on its output. `fullscreen.hideChrome` false
     /// leaves no output covered.
     pub(crate) fn chrome(&self) -> Chrome {
-        let hide = self.store.config.bool("fullscreen.hideChrome").unwrap_or(true);
+        let hide = settings::HIDE_CHROME.get(&self.store.config);
         let covered = if hide { self.store.compositor.snapshot.fullscreen_outputs.clone() } else { Vec::new() };
         Chrome::new(&self.bar, self.output_size(), self.store.theme.theme.frame_radius, covered)
     }
@@ -667,7 +668,7 @@ impl App {
     /// `bar.position`'s edge, a side one under `layout: sidebar`: top and
     /// bottom put the sidebar on the left.
     fn chrome_edge(&self) -> Edge {
-        let edge = layout::position(self.store.config.str("bar.position"));
+        let edge = settings::bar_position(&self.store.config);
         match (self.store.theme.theme.layout, edge) {
             (fs_theme::theme::Layout::Sidebar, Edge::Top | Edge::Bottom) => Edge::Left,
             _ => edge,
@@ -2489,18 +2490,15 @@ pub fn theme_inputs(app: &App) {
     if !config.loaded || !state.loaded {
         return;
     }
-    let location = theme::location(config);
     // Off settings.json itself rather than the resolved theme, which may
     // not have taken this settings change yet.
-    let settings = config.settings();
-    let get = theme::get(settings);
-    let color = get("wallpaper.color").and_then(|v| fs_theme::theme::wallpaper_color(&v)).flatten();
+    let color = settings::wallpaper_color(config);
     theme::send_inputs(theme::Inputs {
-        settings: settings.clone(),
+        settings: config.settings().clone(),
         wallpaper: crate::services::wallpaper::source(color.as_deref(), &state.data.wallpaper_color, &state.data.wallpaper, &state.data.wallpaper_dark, &state.data.mode, app.store.sky_step()),
         mode: state.data.mode.clone(),
         mode_override: theme::parse_override(&state.data.mode_override),
-        location,
+        location: settings::location(config),
         sky_at: app.store.theme.sky_at,
     });
 }

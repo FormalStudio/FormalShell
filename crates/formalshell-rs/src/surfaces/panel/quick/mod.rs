@@ -176,7 +176,7 @@ fn battery(store: &Store) -> Option<(&'static str, String)> {
     let p = &store.power;
     let b = p.battery.as_ref()?;
     let threshold = charge_threshold_active(b.level, b.state, b.rate, b.time_to_full, p.on_battery);
-    let icon = battery_icon(b.level, p.on_battery, threshold, crate::services::devices::power::thresholds(&store.config));
+    let icon = battery_icon(b.level, p.on_battery, threshold, crate::settings::battery_thresholds(&store.config));
     Some((icon, format!("{}%", b.level.rounded())))
 }
 

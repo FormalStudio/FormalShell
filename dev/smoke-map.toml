@@ -84,6 +84,7 @@ paths = [
   "crates/formalshell-rs/src/surfaces/popup.rs",
   "crates/formalshell-rs/src/services/mod.rs",
   "crates/formalshell-rs/src/services/config.rs",
+  "crates/formalshell-rs/src/settings.rs",
   "crates/formalshell-rs/src/services/state.rs",
   "crates/formalshell-rs/src/services/wants.rs",
   "crates/formalshell-rs/src/services/watch.rs",
@@ -449,7 +450,7 @@ paths = ["crates/formalshell-rs/src/surfaces/launcher.rs", "crates/formalshell-r
 runs = ["--settings-ui", "--bluez-player"]
 
 [[rule]]
-paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/formalshell-rs/src/services/overrides.rs", "crates/formalshell-rs/src/ipc/settings.rs", "crates/formalshell-rs/src/services/config.rs", "crates/formalshell-rs/src/services/state.rs"]
+paths = ["crates/formalshell-rs/src/surfaces/panel/settings_page.rs", "crates/formalshell-rs/src/services/overrides.rs", "crates/formalshell-rs/src/ipc/settings.rs", "crates/formalshell-rs/src/services/config.rs", "crates/formalshell-rs/src/settings.rs", "crates/formalshell-rs/src/services/state.rs"]
 runs = ["--settings-ui", "--settings-ui --light", "--wallpaper-pair"]
 
 [[rule]]

@@ -61,8 +61,8 @@ use zeroize::Zeroizing;
 
 use crate::render::Renderer;
 use crate::scene::{Bitmap, IRect};
-use crate::services::theme;
-use crate::services::wallpaper;
+use crate::services::{config, theme, wallpaper};
+use crate::settings;
 use crate::surface::{Backend, Surface};
 use crate::paint::Kit;
 use crate::surfaces::lock;
@@ -159,18 +159,6 @@ enum Reply {
     Broken(String),
 }
 
-/// settings.json, `{}` when absent or unreadable.
-fn settings(env: &theme::Env) -> Value {
-    let path = env.config_dir.join("formalshell/settings.json");
-    match std::fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-            eprintln!("greeter: {} unparsable: {e}", path.display());
-            Value::Object(Default::default())
-        }),
-        Err(_) => Value::Object(Default::default()),
-    }
-}
-
 fn resolve(settings: &Value, env: &theme::Env) -> Theme {
     let (palette, _) = theme::read_palette(&env.theme_json());
     let mut theme = Theme::resolve(theme::get(settings), &palette);
@@ -179,35 +167,15 @@ fn resolve(settings: &Value, env: &theme::Env) -> Theme {
     theme
 }
 
-/// `greeter.sessionCommand`: a list of non-empty strings, else `["Hyprland"]`.
-fn session_command(settings: &Value) -> Vec<String> {
-    let argv: Option<Vec<String>> = theme::get(settings)("greeter.sessionCommand")
-        .and_then(|v| v.as_array().cloned())
-        .and_then(|items| items.iter().map(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned)).collect());
-    argv.filter(|a| !a.is_empty()).unwrap_or_else(|| vec!["Hyprland".into()])
-}
-
-/// `greeter.sessionDirs`, else the FHS one.
-fn session_dirs(settings: &Value) -> Vec<PathBuf> {
-    let dirs: Option<Vec<PathBuf>> = theme::get(settings)("greeter.sessionDirs").and_then(|v| v.as_array().cloned()).map(|items| items.iter().filter_map(|v| v.as_str()).map(PathBuf::from).collect());
-    dirs.filter(|d| !d.is_empty()).unwrap_or_else(|| sessions::DIRS.iter().map(PathBuf::from).collect())
-}
-
 /// The desktop's source as this login screen can know it: `wallpaper.color`
 /// (the sky as it stands at login), else the mirrored `wallpaper` in the state dir,
 /// else `greeter.wallpaper`. The user's own picker choice lives in a
 /// state.json the greeter never reads.
-fn wallpaper_source(settings: &Value, env: &theme::Env) -> Option<String> {
-    let get = theme::get(settings);
-    let color = get("wallpaper.color").and_then(|v| fs_theme::theme::wallpaper_color(&v)).flatten();
+fn wallpaper_source(doc: &Value, env: &theme::Env) -> Option<String> {
+    let color = settings::wallpaper_color(doc);
     let mirrored = env.state_dir.join("wallpaper");
-    let picture = if mirrored.is_file() {
-        Some(mirrored.to_string_lossy().into_owned())
-    } else {
-        get("greeter.wallpaper").and_then(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned))
-    };
-    let location = get("location.latitude").and_then(|v| v.as_f64()).zip(get("location.longitude").and_then(|v| v.as_f64()));
-    let sky = theme::Sky::read(location, None).step;
+    let picture = if mirrored.is_file() { Some(mirrored.to_string_lossy().into_owned()) } else { settings::greeter_wallpaper(doc) };
+    let sky = theme::Sky::read(settings::location(doc), None).step;
     // The mirror already copied the half the session's mode shows.
     let source = wallpaper::source(color.as_deref(), &Value::Null, picture.as_deref().unwrap_or(""), "", "", sky);
     (!source.is_empty()).then_some(source)
@@ -281,16 +249,16 @@ fn connect(replies: channel::Sender<Reply>) -> Option<mpsc::Sender<Request>> {
 
 pub fn main(args: &[String]) {
     let env = theme::Env::from_process();
-    let settings = settings(&env);
+    let doc = config::read_file();
     if let Some(dir) = args.iter().position(|a| a == "--shot").and_then(|i| args.get(i + 1)) {
-        shots(Path::new(dir), &settings, &env);
+        shots(Path::new(dir), &doc, &env);
         return;
     }
     let started = Instant::now();
     let conn = Connection::connect_to_env().expect("no Wayland compositor to connect to");
     let (globals, queue) = registry_queue_init::<Greeter>(&conn).expect("wl_registry");
     let qh = queue.handle();
-    crate::gpu::resolve(crate::render_backend(), &conn, &globals);
+    crate::gpu::resolve(settings::render_backend(&doc), &conn, &globals);
     let mut event_loop: EventLoop<'static, Greeter> = EventLoop::try_new().expect("event loop");
     let handle = event_loop.handle();
     WaylandSource::new(conn.clone(), queue).insert(handle.clone()).expect("wayland source");
@@ -313,8 +281,8 @@ pub fn main(args: &[String]) {
         })
         .expect("backdrop channel");
 
-    let theme = resolve(&settings, &env);
-    let sessions = sessions::scan(&session_dirs(&settings));
+    let theme = resolve(&doc, &env);
+    let sessions = sessions::scan(&settings::greeter_session_dirs(&doc, &sessions::DIRS));
     let users = users::scan();
     eprintln!("greeter: {} sessions, {} users", sessions.len(), users.len());
     crate::surface::bind_scaling(&globals, &qh);
@@ -337,7 +305,7 @@ pub fn main(args: &[String]) {
         outs: Vec::new(),
         kit: Kit::new(&theme),
         theme,
-        convo: Conversation::new(session_command(&settings)),
+        convo: Conversation::new(settings::greeter_session_command(&doc)),
         field: field(),
         greetd: connect(replies),
         names: sessions.iter().map(|s| s.name.clone()).collect(),
@@ -351,7 +319,7 @@ pub fn main(args: &[String]) {
         menu: Menu::Closed,
         asked: false,
         reopen: false,
-        wallpaper: wallpaper_source(&settings, &env),
+        wallpaper: wallpaper_source(&doc, &env),
         state_dir: env.state_dir.clone(),
         decoded,
         dirty: true,
@@ -723,13 +691,13 @@ fn card<'a>(convo: &'a Conversation, field: &Field<Zeroizing<String>>, available
 /// `--shot <dir>`: the greeter's states, drawn off screen to
 /// `greeter-<state>.png`, for reading the look without
 /// a greetd. Nothing is sent anywhere.
-fn shots(dir: &Path, settings: &Value, env: &theme::Env) {
+fn shots(dir: &Path, doc: &Value, env: &theme::Env) {
     let (w, h) = (1280, 800);
     std::fs::create_dir_all(dir).expect("shot directory");
-    let backdrop = wallpaper_source(settings, env).and_then(|p| decode(&p, (w, h)));
+    let backdrop = wallpaper_source(doc, env).and_then(|p| decode(&p, (w, h)));
     let names: Vec<String> = ["Hyprland (uwsm-managed)", "Plasma (Wayland)", "Waylandcraft"].map(String::from).to_vec();
     let people: Vec<String> = ["Kyan De Sutter", "Guest"].map(String::from).to_vec();
-    let theme = resolve(settings, env);
+    let theme = resolve(doc, env);
     let mut kit = Kit::new(&theme);
     let pic = avatar(&theme, &env.state_dir, "shot", &[1.0]);
     let mut asking = Conversation::new(vec![]);
@@ -984,17 +952,3 @@ impl ProvidesRegistryState for Greeter {
 
 delegate_registry!(Greeter);
 delegate_dispatch2!(Greeter);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn session_command_falls_back_to_hyprland() {
-        assert_eq!(session_command(&json!({})), ["Hyprland"]);
-        assert_eq!(session_command(&json!({"greeter": {"sessionCommand": ["sway", "-d"]}})), ["sway", "-d"]);
-        assert_eq!(session_command(&json!({"greeter": {"sessionCommand": ["sway", ""]}})), ["Hyprland"]);
-        assert_eq!(session_command(&json!({"greeter": {"sessionCommand": []}})), ["Hyprland"]);
-    }
-}

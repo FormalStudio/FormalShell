@@ -592,7 +592,7 @@ impl App {
     fn load_lock_pictures(&mut self) {
         let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) else { return };
         let home = std::env::var("HOME").unwrap_or_default();
-        let path = self.store.config.avatar_path(&home);
+        let path = crate::settings::avatar_path(&self.store.config, &home);
         let size = crate::surfaces::login::avatar_size(&self.store.theme.theme);
         self.lock.avatar.clear();
         self.lock.shards.clear();
@@ -1397,7 +1397,7 @@ impl App {
     }
 
     pub fn lock_before_sleep(&self) -> bool {
-        self.store.config.bool("lock.beforeSleep") != Some(false)
+        crate::settings::LOCK_BEFORE_SLEEP.get(&self.store.config)
     }
 
     /// Lock, then let the delay

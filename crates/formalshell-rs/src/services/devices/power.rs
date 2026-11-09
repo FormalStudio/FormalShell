@@ -16,7 +16,6 @@ use async_lock::OnceCell;
 use futures_lite::FutureExt;
 
 use fs_system::dualsense::{self, Supply};
-use fs_system::power::model::Thresholds;
 use fs_types::Percent;
 use fs_upower::{Device, DeviceState, PowerProfiles, Profile, Snapshot, UPower};
 use futures_lite::StreamExt;
@@ -48,12 +47,6 @@ pub struct Power {
     pub on_battery: bool,
     /// None while no DualSense is connected.
     pub dualsense: Option<Supply>,
-}
-
-/// The laptop's low lines, `battery.warnPercent` and
-/// `battery.criticalPercent` over the defaults.
-pub fn thresholds(config: &crate::services::config::State) -> Thresholds {
-    Thresholds::LAPTOP.with(config.f64("battery.warnPercent"), config.f64("battery.criticalPercent"))
 }
 
 fn battery(d: &Device, physical: Option<&Device>) -> Option<Battery> {

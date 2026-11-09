@@ -16,6 +16,7 @@ mod runtime;
 mod scene;
 mod scroll;
 mod services;
+mod settings;
 mod shards;
 mod store;
 mod surface;
@@ -69,7 +70,7 @@ fn main() {
     let (globals, queue) = registry_queue_init::<App>(&conn).expect("wl_registry");
     let qh = queue.handle();
     trace::phase("wayland");
-    gpu::resolve(render_backend(), &conn, &globals);
+    gpu::resolve(settings::render_backend(&services::config::read_file()), &conn, &globals);
     trace::phase("render");
 
     let mut event_loop: EventLoop<'static, App> = EventLoop::try_new().expect("event loop");
@@ -127,14 +128,6 @@ fn main() {
 /// after it is dropped (the screensaver's, the launcher's). Pinned, every
 /// such buffer is its own mapping, gone with its owner. Fewer arenas keep
 /// the threads' small allocations from each holding their own slack.
-/// `render.backend`, read once: the backend is picked before the first
-/// surface, so a new value takes effect at the next start.
-pub(crate) fn render_backend() -> fs_theme::theme::Backend {
-    let text = std::fs::read_to_string(services::config::settings_path()).unwrap_or_default();
-    let settings: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-    fs_theme::theme::Backend::parse(settings.pointer("/render/backend"))
-}
-
 /// `FORMALSHELL_SMOKE_MOTION_SCALE`, a percentage of every motion clock, for
 /// a leg that has to photograph the first frames of something the shell
 /// does at start, before `debug motionScale` can reach it.

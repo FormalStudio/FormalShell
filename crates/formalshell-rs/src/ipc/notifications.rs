@@ -136,7 +136,7 @@ pub fn reminder() -> Target<App> {
 
 fn reminder_set(app: &mut App, args: &[Value]) -> Value {
     let duration = args[0].str().to_owned();
-    let fallback = app.store.config.str("reminders.defaultMessage").unwrap_or("Time's up").to_owned();
+    let fallback = crate::settings::REMINDER_MESSAGE.get(&app.store.config).to_owned();
     let Some(e) = app.store.notifications.set_reminder(&duration, args[1].str(), &fallback) else {
         return text(format!("error: could not read \"{duration}\" as a duration"));
     };

@@ -69,17 +69,19 @@ pub fn kicked(source: Source) -> async_channel::Receiver<()> {
 
 pub struct Settings(Arc<Value>);
 
+impl crate::settings::Doc for Settings {
+    fn doc(&self) -> &Value {
+        &self.0
+    }
+}
+
 pub fn settings() -> Settings {
     Settings(SETTINGS.lock().unwrap().clone().unwrap_or_else(|| Arc::new(Value::Null)))
 }
 
 impl Settings {
     pub fn get(&self, path: &str) -> Option<&Value> {
-        let mut node = &*self.0;
-        for key in path.split('.') {
-            node = node.get(key)?;
-        }
-        Some(node)
+        super::config::lookup(&self.0, path)
     }
 
     pub fn str(&self, path: &str) -> Option<&str> {

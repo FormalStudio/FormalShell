@@ -27,7 +27,7 @@ pub fn target() -> Target<App> {
 }
 
 fn configured(app: &App) -> String {
-    app.store.config.str("media.visualizerStyle").unwrap_or("bars").to_owned()
+    crate::settings::VISUALIZER_STYLE.get(&app.store.config).to_owned()
 }
 
 fn current(app: &App) -> String {

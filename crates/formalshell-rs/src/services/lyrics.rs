@@ -123,15 +123,12 @@ pub struct Settings {
 
 impl Settings {
     pub fn read(config: &super::config::State) -> Self {
-        let int = |path: &str, fallback: f64, lo: f64, hi: f64| {
-            let n = config.get(path).and_then(Value::as_f64).unwrap_or(fallback);
-            if n.is_finite() { n.round().clamp(lo, hi) } else { fallback }
-        };
+        use crate::settings::{LYRICS_BLUR, LYRICS_OFFSET_AUTO, lyrics_blur_strength, lyrics_offset_ms};
         Self {
-            auto: config.get("media.lyricsOffsetAuto") != Some(&Value::Bool(false)),
-            offset_ms: int("media.lyricsOffsetMs", 0.0, -5000.0, 5000.0),
-            blur: config.bool("media.lyricsBlur").unwrap_or(true),
-            strength: int("media.lyricsBlurStrength", 100.0, 0.0, 200.0),
+            auto: LYRICS_OFFSET_AUTO.get(config),
+            offset_ms: lyrics_offset_ms(config),
+            blur: LYRICS_BLUR.get(config),
+            strength: lyrics_blur_strength(config),
         }
     }
 
@@ -151,7 +148,7 @@ static LATENCY_POKE: OnceLock<async_channel::Sender<()>> = OnceLock::new();
 /// The UI thread's side, after every media or config change: a lookup when
 /// the track (or the switch) changed, and the latency read's inputs.
 pub fn sync(media: &super::media::State, config: &super::config::State, lyrics: &State) {
-    let enabled = config.bool("media.lyrics").unwrap_or(true);
+    let enabled = crate::settings::LYRICS.get(config);
     let a = media.active();
     let ask = match &a {
         Some(a) if enabled && (a.kind == "mpris" || (matches!(a.kind, "iphone" | "bluetooth") && !a.length.is_zero())) && !a.title.is_empty() && !a.artist.is_empty() => Ask {

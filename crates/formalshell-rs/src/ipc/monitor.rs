@@ -7,7 +7,6 @@
 //! `mode` joins with the launcher's monitor view.
 
 use fs_system::monitor::gpu::{self, OffloadTools};
-use serde_json::Value as Json;
 
 use super::registry::{Function, Target, Type, Value};
 use crate::services::info::monitor::now_ms;
@@ -119,11 +118,7 @@ fn launch(app: &mut App, args: &[Value]) -> Value {
     let mut argv = gpu::offload_argv(&exec, Some(&target.record.card), tools);
     let mut bare = true;
     if entry.terminal {
-        let term: Vec<String> = match app.store.config.get("console.command") {
-            Some(Json::Array(items)) => items.iter().map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned)).collect(),
-            Some(Json::String(s)) if !s.is_empty() => vec![s.clone()],
-            _ => Vec::new(),
-        };
+        let term = crate::settings::console_command_set(&app.store.config).unwrap_or_default();
         if !term.is_empty() {
             argv = term.into_iter().chain(argv).collect();
             bare = false;

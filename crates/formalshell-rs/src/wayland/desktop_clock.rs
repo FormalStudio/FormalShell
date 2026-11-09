@@ -16,6 +16,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, Layer};
 use super::App;
 use crate::scene::{Bitmap, IRect, NodeId, Scene};
 use crate::services::wallpaper::{DepthCut, Picture};
+use crate::settings;
 use crate::store::{Store, Topic};
 use crate::surface::{Backend, Surface};
 use crate::paint::{Kit, Painter};
@@ -124,8 +125,8 @@ pub(crate) struct FaceSettings {
 impl FaceSettings {
     pub(crate) fn read(config: &crate::services::config::State) -> Self {
         Self {
-            face: config.str("desktopClock.face").and_then(Face::parse).unwrap_or(Face::Pixel),
-            width: config.str("desktopClock.width").and_then(Width::parse).unwrap_or(Width::Wide),
+            face: Face::parse(settings::CLOCK_FACE.get(config)).unwrap_or(Face::Pixel),
+            width: Width::parse(settings::CLOCK_WIDTH.get(config)).unwrap_or(Width::Wide),
             color: config.str("desktopClock.color").unwrap_or("auto").to_owned(),
             cut: DepthCut::read(config, "desktopClock", None),
         }
@@ -159,7 +160,7 @@ struct Settings {
 impl Settings {
     /// None while `desktopClock.enabled` is off.
     fn read(config: &crate::services::config::State) -> Option<Self> {
-        if config.bool("desktopClock.enabled") != Some(true) {
+        if !settings::CLOCK_ENABLED.get(config) {
             return None;
         }
         let num = |path: &str, fallback: f64, lo: f64, hi: f64| config.f64(path).filter(|n| n.is_finite()).map_or(fallback, |n| n.clamp(lo, hi));
@@ -168,7 +169,7 @@ impl Settings {
             size: num("desktopClock.size", 0.18, 0.02, 0.9),
             x: num("desktopClock.x", 0.5, 0.0, 1.0),
             y: config.f64("desktopClock.y").filter(|n| n.is_finite()).map(|n| n.clamp(0.0, 1.0)),
-            hour12: config.bool("desktopClock.hour12").unwrap_or(false),
+            hour12: settings::CLOCK_HOUR12.get(config),
         })
     }
 }

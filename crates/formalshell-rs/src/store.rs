@@ -174,7 +174,7 @@ impl Store {
     /// The step a sky desktop shows: the engine's last reading, else the
     /// sun read now, until the engine has looked.
     pub fn sky_step(&self) -> i32 {
-        let read = || theme::Sky::read(theme::location(&self.config), self.theme.sky_at);
+        let read = || theme::Sky::read(crate::settings::location(&self.config), self.theme.sky_at);
         self.theme.sky.unwrap_or_else(read).step
     }
 

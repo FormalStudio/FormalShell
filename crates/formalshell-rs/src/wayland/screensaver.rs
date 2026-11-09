@@ -45,6 +45,7 @@ use crate::runtime::now_ms;
 use crate::scene::{IRect, NodeId, Paint, Scene};
 use crate::services::screensaver as service;
 use crate::services::visualizer::Avail;
+use crate::settings;
 use crate::surface::{Backend, Ignore, Surface};
 use crate::text::{Family, ShapedText, TextStyle};
 
@@ -164,15 +165,15 @@ fn ink(color: &str) -> Rgba {
 
 impl App {
     fn saver_requested_effect(&self) -> String {
-        self.store.config.str("screensaver.effect").unwrap_or("random").to_owned()
+        settings::SAVER_EFFECT.get(&self.store.config).to_owned()
     }
 
     fn saver_hold_seconds(&self) -> f64 {
-        self.store.config.f64("screensaver.holdSeconds").unwrap_or(4.0)
+        settings::SAVER_HOLD_SECONDS.get(&self.store.config)
     }
 
     fn saver_guard(&self) -> bool {
-        self.store.config.bool("screensaver.guardMediaPlayback").unwrap_or(true)
+        settings::GUARD_MEDIA.get(&self.store.config)
     }
 
     fn saver_ttfx(&self) -> bool {
@@ -258,7 +259,7 @@ impl App {
 
     /// The banner follows `screensaver.asciiPath`, read off the loop.
     pub fn saver_config(&mut self) {
-        let configured = self.store.config.str("screensaver.asciiPath").unwrap_or("").to_owned();
+        let configured = settings::SAVER_ASCII_PATH.get(&self.store.config).to_owned();
         if let Some(rt) = &self.runtime {
             rt.service(move |ctx| service::load_banner(ctx, configured));
         }
@@ -355,7 +356,7 @@ impl App {
         if let (Some(t), Some(h)) = (self.saver.chain.take(), &self.handle) {
             h.remove(t);
         }
-        let seconds = self.store.config.f64("screensaver.lockAfterSeconds").unwrap_or(0.0);
+        let seconds = settings::SAVER_LOCK_AFTER_SECONDS.get(&self.store.config);
         if !self.saver.active || seconds <= 0.0 {
             return;
         }
@@ -576,7 +577,7 @@ impl App {
             columns: columns as u32,
             rows: rows as u32,
             effect: self.saver_effect(),
-            frame_rate: if pinned.is_some() { 0 } else { self.store.config.f64("screensaver.frameRate").unwrap_or(120.0) as u32 },
+            frame_rate: if pinned.is_some() { 0 } else { settings::SAVER_FRAME_RATE.get(&self.store.config) as u32 },
             background: "#000000".into(),
             seed: self.saver.seed + self.saver.cycles as i64,
         };

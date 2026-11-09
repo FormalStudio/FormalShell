@@ -65,7 +65,7 @@ fn chips(status: &Value) -> Vec<Chip> {
 
 impl App {
     fn preview_enabled(&self) -> bool {
-        self.store.config.bool("workspaces.preview") != Some(false)
+        crate::settings::WORKSPACE_PREVIEW.get(&self.store.config)
     }
 
     fn preview_up(&self) -> bool {

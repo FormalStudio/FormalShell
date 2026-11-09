@@ -56,17 +56,15 @@ pub fn changed(app: &mut App, topic: Topic) {
         }
         Topic::Config => {
             app.launcher_inputs();
-            crate::services::picker::command(crate::services::picker::Cmd::Boot(app.store.config.str("picker.directory").unwrap_or("").to_owned()));
+            use crate::settings::{DEPTH_GENERATE, LOCALSEND_ALIAS, LOCALSEND_DIR, LOCALSEND_RECEIVE, PICKER_DIRECTORY};
             let c = &app.store.config;
+            crate::services::picker::command(crate::services::picker::Cmd::Boot(PICKER_DIRECTORY.get(c).to_owned()));
             crate::services::localsend::command(crate::services::localsend::Cmd::Config {
-                receive: c.bool("localsend.receive").unwrap_or(false),
-                alias: c.str("localsend.alias").unwrap_or("").to_owned(),
-                dir: c.str("localsend.dir").unwrap_or("").to_owned(),
+                receive: LOCALSEND_RECEIVE.get(c),
+                alias: LOCALSEND_ALIAS.get(c).to_owned(),
+                dir: LOCALSEND_DIR.get(c).to_owned(),
             });
-            crate::services::depth::command(crate::services::depth::Cmd::Config {
-                enabled: c.bool("wallpaper.depthGenerate").unwrap_or(false),
-                dir: c.str("picker.directory").unwrap_or("").to_owned(),
-            });
+            crate::services::depth::command(crate::services::depth::Cmd::Config { enabled: DEPTH_GENERATE.get(c), dir: PICKER_DIRECTORY.get(c).to_owned() });
             app.apply_config();
             theme_inputs(app);
             lights_palette(app);

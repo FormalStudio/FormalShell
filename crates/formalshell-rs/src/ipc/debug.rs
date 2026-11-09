@@ -230,7 +230,7 @@ fn stale_audit(_: &mut App, args: &[Value]) -> Value {
 
 fn sky(app: &App) -> serde_json::Value {
     let Some(s) = app.store.theme.sky else { return serde_json::Value::Null };
-    let location = crate::services::theme::location(&app.store.config);
+    let location = crate::settings::location(&app.store.config);
     json!({
         "source": app.store.desktop(),
         "step": s.step,

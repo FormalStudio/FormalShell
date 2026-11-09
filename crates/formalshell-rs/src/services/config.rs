@@ -1,8 +1,8 @@
 //! `~/.config/formalshell/settings.json`, read and never written, over the
-//! settings UI's overrides (state.json's `settings`). Every consumer asks
-//! for a dotted path and brings its own default, so the state is the
+//! settings UI's overrides (state.json's `settings`). The state is the
 //! resolved document (the overrides with settings.json merged over them)
-//! and a diff names the keys that changed.
+//! and a diff names the keys that changed; `crate::settings` types each key
+//! and holds its default.
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -95,14 +95,6 @@ impl State {
 
     pub fn f64(&self, path: &str) -> Option<f64> {
         self.get(path)?.as_f64()
-    }
-
-    /// The profile picture the lock screen and the polkit card show.
-    pub fn avatar_path(&self, home: &str) -> String {
-        match self.str("avatar.path") {
-            Some(p) if !p.is_empty() => p.to_string(),
-            _ => format!("{home}/.face"),
-        }
     }
 }
 
@@ -290,6 +282,20 @@ pub fn settings_path() -> PathBuf {
     crate::paths::config().join("formalshell").join("settings.json")
 }
 
+/// settings.json read once, synchronously, for what has to be known before
+/// the service runs (the render backend) or where it never runs (the
+/// greeter): `{}` when missing, unreadable or unparsable, the last said so.
+pub fn read_file() -> Value {
+    let text = std::fs::read_to_string(settings_path()).unwrap_or_default();
+    let (diff, warning) = Resolver::default().publish(&text);
+    if let Some(warning) = warning {
+        eprintln!("{warning}");
+    }
+    let mut state = State::default();
+    state.apply(diff);
+    state.settings
+}
+
 fn describe(diff: &Diff, what: &str) -> String {
     let paths: Vec<String> = diff.changes.iter().map(|c| c.path.join(".")).collect();
     format!("config: {what}, {} key(s) changed [{}]", paths.len(), paths.join(", "))
@@ -369,13 +375,6 @@ mod tests {
         assert_eq!(s.get("a.b"), Some(&Value::Null), "a null is a value, not a miss");
         assert_eq!(s.get("menu.customPowerButtons.9"), None);
         assert_eq!(s.f64("n"), Some(5.0));
-    }
-
-    #[test]
-    fn avatar_defaults_to_home_face() {
-        assert_eq!(state("{}").avatar_path("/home/k"), "/home/k/.face");
-        assert_eq!(state(r#"{"avatar":{"path":""}}"#).avatar_path("/home/k"), "/home/k/.face");
-        assert_eq!(state(r#"{"avatar":{"path":"/p.png"}}"#).avatar_path("/home/k"), "/p.png");
     }
 
     #[test]

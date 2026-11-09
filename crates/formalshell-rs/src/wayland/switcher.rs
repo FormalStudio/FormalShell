@@ -46,7 +46,7 @@ fn icon_key(id: &WindowId, big: bool) -> String {
 
 impl App {
     pub fn switcher_enabled(&self) -> bool {
-        self.store.config.bool("switcher.enabled") != Some(false)
+        crate::settings::SWITCHER.get(&self.store.config)
     }
 
     fn switcher_entries(&self) -> Vec<&Window> {
@@ -91,7 +91,7 @@ impl App {
             return;
         }
         m.open_history = m.history().to_vec();
-        m.open_workspace = if self.store.config.bool("switcher.currentWorkspace") == Some(true) {
+        m.open_workspace = if crate::settings::SWITCHER_CURRENT_WORKSPACE.get(&self.store.config) {
             self.store.compositor.snapshot.focused_workspace_id.clone()
         } else {
             WorkspaceId::default()

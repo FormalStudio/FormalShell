@@ -31,7 +31,7 @@ use serde_json::Value;
 use crate::runtime::Ctx;
 use crate::store;
 
-const DEFAULT_TEMP: i64 = 4000;
+const DEFAULT_TEMP: i64 = crate::settings::NIGHTLIGHT_TEMP.default as i64;
 const RETRIES: u32 = 5;
 const RETRY_AFTER: Duration = Duration::from_secs(3);
 /// The signal is also sent this long after the process comes up, in case
@@ -50,22 +50,12 @@ pub struct Settings {
 
 impl Settings {
     fn read(settings: &Value) -> Self {
-        let at = |path: &str| {
-            let mut node = settings;
-            for part in path.split('.') {
-                node = node.get(part)?;
-            }
-            Some(node)
-        };
-        let location = match (at("location.latitude").and_then(Value::as_f64), at("location.longitude").and_then(Value::as_f64)) {
-            (Some(lat), Some(lon)) => Some((lat, lon)),
-            _ => None,
-        };
+        use crate::settings::{NIGHTLIGHT_SCHEDULE, NIGHTLIGHT_START_ON, location, nightlight_temp};
         Self {
-            temp: at("nightlight.temp").and_then(Value::as_f64).map_or(DEFAULT_TEMP, |t| t as i64),
-            scheduled: at("nightlight.schedule").and_then(Value::as_str).unwrap_or("sun") == "sun",
-            start_on: at("nightlight.startOn") == Some(&Value::Bool(true)),
-            location,
+            temp: nightlight_temp(settings),
+            scheduled: NIGHTLIGHT_SCHEDULE.get(settings) == "sun",
+            start_on: NIGHTLIGHT_START_ON.get(settings),
+            location: location(settings),
         }
     }
 }

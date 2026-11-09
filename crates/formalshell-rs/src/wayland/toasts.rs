@@ -101,7 +101,7 @@ impl App {
         // side line, that line's side.
         let place = chrome.place(None);
         let mut insets = place.insets();
-        let spec = place.corner(fs_info::notifications::position_spec(self.store.config.str("notifications.position")));
+        let spec = place.corner(fs_info::notifications::position_spec(Some(crate::settings::NOTIFICATIONS_POSITION.get(&self.store.config))));
         let right = spec.right;
         let theme = &self.store.theme.theme;
         let cast = *self.toast_cast.get_or_insert_with(|| surfaces::toasts::column_cast(theme));

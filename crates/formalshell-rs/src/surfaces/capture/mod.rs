@@ -15,6 +15,7 @@ use fs_types::Rect;
 use serde_json::json;
 
 use crate::services::capture::{self as svc, Event, Exit, Job, Run};
+use crate::settings;
 use crate::store::Diff;
 use crate::wayland::App;
 use picker::{Cands, Picker};
@@ -167,10 +168,6 @@ pub fn spawn(app: &App, run: Run) {
     }
 }
 
-fn home() -> String {
-    std::env::var("HOME").unwrap_or_default()
-}
-
 pub fn runtime_dir() -> String {
     crate::paths::runtime().to_string_lossy().into_owned()
 }
@@ -199,29 +196,18 @@ fn slurp_run(app: &App, job: Job, generation: u64, border_role: &str, script: &s
 const SLURP_REGION: &str =
     r#"exec slurp -d -w "$FS_SLURP_WEIGHT" -b "$FS_SLURP_BG" -c "$FS_SLURP_BORDER" -s "$FS_SLURP_SEL" 0</dev/null"#;
 
-fn config_secs(app: &App, key: &str) -> f64 {
-    app.store.config.f64(key).unwrap_or(90.0)
-}
-
 pub fn cands(app: &App) -> Cands {
     Cands::new(&app.capture_screens(), &app.store.compositor.snapshot)
 }
 
 // ---- screenshot ----------------------------------------------------------
 
-fn shot_dir(app: &App) -> String {
-    match app.store.config.str("screenshot.directory") {
-        Some(d) if !d.is_empty() => d.to_owned(),
-        _ => format!("{}/Pictures/Screenshots", home()),
-    }
-}
-
 fn shot_path(app: &App) -> String {
-    format!("{}/screenshot-{}.png", shot_dir(app), model::timestamp(&now()))
+    format!("{}/screenshot-{}.png", settings::screenshot_dir(&app.store.config), model::timestamp(&now()))
 }
 
 fn shot_watchdog(app: &mut App) {
-    let secs = config_secs(app, "screenshot.timeoutSeconds");
+    let secs = settings::SCREENSHOT_TIMEOUT_SECONDS.get(&app.store.config);
     app.capture.shot.watch += 1;
     let token = app.capture.shot.watch;
     app.capture_after((secs * 1000.0) as u64, move |app| {
@@ -285,7 +271,7 @@ fn shot_grab(app: &mut App, geometry: &str) {
     let g = app.capture.generation();
     app.capture.shot.grab = Some(g);
     let run = Run::sh(Job::ShotGrab, g, &format!(r#"mkdir -p "$FS_SHOT_DIR" && {pipeline}"#))
-        .env("FS_SHOT_DIR", shot_dir(app))
+        .env("FS_SHOT_DIR", settings::screenshot_dir(&app.store.config))
         .env("FS_SHOT_PATH", app.capture.shot.pending_path.clone())
         .env("FS_SHOT_GEOM", geometry);
     spawn(app, run);
@@ -295,7 +281,7 @@ pub fn shot_edit(app: &mut App, path: &str) -> String {
     if path.is_empty() {
         return "error: no path".into();
     }
-    let editor = app.store.config.str("screenshot.editor").unwrap_or("tensaku-edit").to_owned();
+    let editor = settings::SCREENSHOT_EDITOR.get(&app.store.config).to_owned();
     let g = app.capture.generation();
     spawn(app, Run::sh(Job::Editor, g, r#"exec "$FS_EDITOR" "$FS_EDIT_PATH""#).env("FS_EDITOR", editor).env("FS_EDIT_PATH", path));
     "ok".into()
@@ -507,7 +493,7 @@ fn on_picked_record(app: &mut App, r: Rect, output: String) {
     s.pending_path.clear();
     s.last_error.clear();
     picker_done(app);
-    let audio = app.store.config.str("recording.audio").unwrap_or("none").to_owned();
+    let audio = settings::RECORDING_AUDIO.get(&app.store.config).to_owned();
     let geometry = format!("{},{} {}x{}", r.x.round(), r.y.round(), r.width.round(), r.height.round());
     let answer = record::start_at(app, &geometry, &output, "region", &audio, None);
     if !answer.starts_with("error:") {
@@ -723,7 +709,7 @@ pub fn picker_status(app: &App) -> String {
 // ---- capture (text and colour) --------------------------------------------
 
 fn grab_watchdog(app: &mut App) {
-    let secs = config_secs(app, "capture.timeoutSeconds");
+    let secs = settings::CAPTURE_TIMEOUT_SECONDS.get(&app.store.config);
     app.capture.grab.watch += 1;
     let token = app.capture.grab.watch;
     app.capture_after((secs * 1000.0) as u64, move |app| {
@@ -761,7 +747,7 @@ pub fn grab_start(app: &mut App, mode: &str, geometry: &str) -> String {
 fn run_ocr(app: &mut App, geometry: &str) {
     let dir = format!("{}/formalshell", runtime_dir());
     let base = format!("{dir}/ocr");
-    let lang = app.store.config.str("capture.ocrLanguage").unwrap_or("eng").to_owned();
+    let lang = settings::OCR_LANGUAGE.get(&app.store.config).to_owned();
     let script = concat!(
         "mkdir -p \"$FS_TMP_DIR\" || exit 2\n",
         "grim -g \"$FS_OCR_GEOM\" \"$FS_OCR_PNG\" || exit 2\n",

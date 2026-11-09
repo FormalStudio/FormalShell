@@ -1023,7 +1023,7 @@ impl Model {
     /// `openImageSelect`.
     pub fn open_image_select(&mut self, store: &Store, dir: &str, token: &str) {
         self.picker_abandon();
-        let dir = crate::services::picker::directory(if dir.is_empty() { store.config.str("picker.directory").unwrap_or("") } else { dir });
+        let dir = crate::services::picker::directory(if dir.is_empty() { crate::settings::PICKER_DIRECTORY.get(&store.config) } else { dir });
         self.picker = Picker { select: true, dir, token: token.into(), pending: true, from: None };
         self.open(store, Some(PICKER_ROUTE));
     }
@@ -1135,7 +1135,7 @@ impl Model {
         if !self.picker.pending {
             self.picker_abandon();
             self.picker.select = false;
-            self.picker.dir = crate::services::picker::directory(store.config.str("picker.directory").unwrap_or(""));
+            self.picker.dir = crate::services::picker::directory(crate::settings::PICKER_DIRECTORY.get(&store.config));
             self.picker.token.clear();
             self.picker.from = None;
         }
@@ -1216,7 +1216,7 @@ impl Model {
         let children = self.children.last().filter(|_| menu);
         let plugin = self.plugin_mode().is_some();
         let route_rows = children.is_some() || plugin || matches!(level, Some("keybinds" | "calc" | "radio.search" | "install" | "clipboard" | "share.history"));
-        let grid_wanted = store.config.bool("menu.appGrid").unwrap_or(false);
+        let grid_wanted = crate::settings::APP_GRID.get(&store.config);
         let picker = menu && children.is_none() && level == Some(PICKER_ROUTE);
         let monitor = menu && children.is_none() && level == Some(MONITOR_ROUTE);
         let mirror = menu && children.is_none() && level == Some(MIRROR_ROUTE);
@@ -1267,7 +1267,7 @@ impl Model {
             }
             Mode::Menu if emoji => {
                 let uses: Vec<fs_menu::frecency::Record> = serde_json::from_value(store.state.data.emoji_uses.clone()).unwrap_or_default();
-                let paste = store.config.bool("clipboard.paste").unwrap_or(true);
+                let paste = crate::settings::CLIPBOARD_PASTE.get(&store.config);
                 store.menu.emoji.as_ref().map_or_else(Vec::new, |e| e.rows(q, paste, &uses, None))
             }
             Mode::Menu if level == Some("keybinds") => {
@@ -2976,7 +2976,7 @@ fn outside_subject(store: &Store, id: &str) -> Option<Node> {
         return Some(fs_menu::providers::recent_subject(path, dir, &std::env::var("HOME").unwrap_or_default()));
     }
     let ch = id.strip_prefix(fs_menu::actions::EMOJI_SUBJECT)?;
-    store.menu.emoji.as_ref()?.row_for(ch, store.config.bool("clipboard.paste").unwrap_or(true))
+    store.menu.emoji.as_ref()?.row_for(ch, crate::settings::CLIPBOARD_PASTE.get(&store.config))
 }
 
 /// The compositor's windows an app's entry claims.

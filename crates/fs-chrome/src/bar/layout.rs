@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use fs_js as js;
 use crate::plugins::{PLUGIN_PREFIX, Plugin};
-use fs_types::{Edge, Region};
+use fs_types::Region;
 
 /// The builtin widgets a user can name in `bar.layout`. All but a handful are
 /// opt-in and absent from [`default_layout`]: a no-config bar carries only
@@ -195,12 +195,6 @@ impl Regions {
 pub struct Resolved {
     pub regions: Regions,
     pub warnings: Vec<String>,
-}
-
-/// `bar.position`: anything but one of the four edges reads as the default,
-/// so a typo in settings.json leaves the bar where it always was.
-pub fn position(raw: Option<&str>) -> Edge {
-    raw.and_then(Edge::parse).unwrap_or(Edge::Top)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1253,17 +1247,6 @@ mod tests {
             other => panic!("not a module: {other:?}"),
         }
         assert!(!entries[0].collapsible);
-    }
-
-    // bar.position: a typo, an absent key or a stale value all leave the bar
-    // where it always was.
-    #[test]
-    fn an_unknown_position_is_the_top() {
-        assert_eq!(position(None), Edge::Top);
-        assert_eq!(position(Some("middle")), Edge::Top);
-        assert_eq!(position(Some("bottom")), Edge::Bottom);
-        assert_eq!(position(Some("left")), Edge::Left);
-        assert_eq!(position(Some("right")), Edge::Right);
     }
 
     // fit_extent: an end region's cap, snapped to a cell boundary rather than

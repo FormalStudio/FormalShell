@@ -83,8 +83,8 @@ pub fn chrome_cover(store: &store::Store, a: &media::Active, size: f64, scale: f
     let theme = &store.theme.theme;
     let (px, radius) = crate::ui::w::cover_inner(theme, size);
     let animated = theme.motion_enabled
-        && store.config.bool("media.appleMusicArt").unwrap_or(false)
-        && store.config.bool("media.animatedBarCover").unwrap_or(true)
+        && crate::settings::APPLE_MUSIC_ART.get(&store.config)
+        && crate::settings::ANIMATED_BAR_COVER.get(&store.config)
         && !a.artist.is_empty()
         && !a.album.is_empty();
     let want = animated.then(|| Want { artist: a.artist.clone(), album: a.album.clone(), size: px, radius, playing: a.playing }.at(scale));

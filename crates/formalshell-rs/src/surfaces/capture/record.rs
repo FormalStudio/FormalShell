@@ -14,6 +14,7 @@ use super::{Act, App, notify, notify_with, now, runtime_dir, slurp_run, spawn, S
 use crate::services::capture::{Exit, Job, Run};
 use crate::services::compositor::{self, Command};
 use crate::services::recording;
+use crate::settings;
 use crate::store::Diff;
 
 const WEBCAM_APP_ID: &str = "formalshell-webcam";
@@ -94,21 +95,6 @@ impl Rec {
     }
 }
 
-fn config_str(app: &App, key: &str, fallback: &str) -> String {
-    app.store.config.str(key).unwrap_or(fallback).to_owned()
-}
-
-fn dir(app: &App) -> String {
-    match app.store.config.str("recording.directory") {
-        Some(d) if !d.is_empty() => d.to_owned(),
-        _ => format!("{}/Videos", std::env::var("HOME").unwrap_or_default()),
-    }
-}
-
-fn config_max_height(app: &App) -> f64 {
-    app.store.config.f64("recording.maxHeight").unwrap_or(0.0)
-}
-
 /// The bar's recording indicator reads this slice, ticked once a second
 /// while the recorder runs.
 fn sync_bar(app: &mut App) {
@@ -154,11 +140,11 @@ pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) 
     if !audio_ok(audio) {
         return format!("error: unknown audio mode \"{audio}\" (none|desktop|desktopmic)");
     }
-    let max = model::resolve_max_height(max_height, config_max_height(app));
+    let max = model::resolve_max_height(max_height, settings::RECORDING_MAX_HEIGHT.get(&app.store.config));
     if max.is_nan() {
         return format!("error: not a number: \"{}\" (maxHeight)", max_height.unwrap_or(""));
     }
-    let path = model::output_path(&dir(app), "screenrecording", "mp4", &now());
+    let path = model::output_path(&settings::recording_dir(&app.store.config), "screenrecording", "mp4", &now());
     let r = &mut app.capture.rec;
     r.scope = scope.into();
     r.audio_mode = audio.into();
@@ -171,7 +157,7 @@ pub fn start(app: &mut App, scope: &str, audio: &str, max_height: Option<&str>) 
         let g = app.capture.generation();
         app.capture.rec.slurp = Some(g);
         spawn(app, slurp_run(app, Job::RecSlurp, g, "destructive", SLURP_REGION));
-        let secs = app.store.config.f64("recording.timeoutSeconds").unwrap_or(90.0);
+        let secs = settings::RECORDING_TIMEOUT_SECONDS.get(&app.store.config);
         app.capture.rec.region_watch += 1;
         let token = app.capture.rec.region_watch;
         app.capture_after((secs * 1000.0) as u64, move |app| {
@@ -205,11 +191,11 @@ pub fn start_at(app: &mut App, geometry: &str, output: &str, scope: &str, audio:
     if !audio_ok(audio) {
         return format!("error: unknown audio mode \"{audio}\" (none|desktop|desktopmic)");
     }
-    let max = model::resolve_max_height(max_height, config_max_height(app));
+    let max = model::resolve_max_height(max_height, settings::RECORDING_MAX_HEIGHT.get(&app.store.config));
     if max.is_nan() {
         return format!("error: not a number: \"{}\" (maxHeight)", max_height.unwrap_or(""));
     }
-    let path = model::output_path(&dir(app), "screenrecording", "mp4", &now());
+    let path = model::output_path(&settings::recording_dir(&app.store.config), "screenrecording", "mp4", &now());
     let r = &mut app.capture.rec;
     r.scope = scope.into();
     r.audio_mode = audio.into();
@@ -274,8 +260,8 @@ pub fn gif(app: &mut App, path: &str) -> String {
     let out = model::gif_output_path(&source);
     let palette = format!("{}/formalshell/gif-palette.png", runtime_dir());
     let opts = model::GifOpts {
-        fps: app.store.config.f64("recording.gifFps").unwrap_or(12.0),
-        width: app.store.config.f64("recording.gifWidth").unwrap_or(640.0),
+        fps: settings::GIF_FPS.get(&app.store.config),
+        width: settings::GIF_WIDTH.get(&app.store.config),
     };
     let argv = model::gif_argv(&source, &palette, &out, opts);
     let g = app.capture.generation();
@@ -296,7 +282,7 @@ pub fn play(app: &mut App, path: &str) -> String {
     if path.is_empty() {
         return "error: no path".into();
     }
-    let player = config_str(app, "recording.player", "xdg-open");
+    let player = settings::RECORDING_PLAYER.get(&app.store.config).to_owned();
     let g = app.capture.generation();
     spawn(app, Run::sh(Job::Player, g, r#"exec "$FS_PLAYER" "$FS_PLAY_PATH""#).env("FS_PLAYER", player).env("FS_PLAY_PATH", path));
     "ok".into()
@@ -323,7 +309,7 @@ fn prepare_directory(app: &mut App) {
     app.capture.rec.mkdir = Some(g);
     let script = format!(r#"mkdir -p "$FS_DIR" || exit 1; [ -n "$FS_PROBE" ] || exit 0; {}; exit 0"#, model::CODEC_PROBE);
     let probe = if app.capture.rec.codec.is_empty() { "1" } else { "" };
-    spawn(app, Run::sh(Job::Mkdir, g, &script).env("FS_DIR", dir(app)).env("FS_PROBE", probe));
+    spawn(app, Run::sh(Job::Mkdir, g, &script).env("FS_DIR", settings::recording_dir(&app.store.config)).env("FS_PROBE", probe));
 }
 
 fn setup_audio(app: &mut App) {
@@ -359,19 +345,19 @@ fn launch(app: &mut App, device: String) {
         app.capture.rec.pending_output.clone()
     };
     let r = &app.capture.rec;
-    let configured = config_str(app, "recording.codec", "");
+    let configured = settings::RECORDING_CODEC.get(&app.store.config).to_owned();
     let picked = configured.is_empty() && !r.codec.is_empty();
     let opts = model::RecorderOpts {
         path: r.pending_path.clone(),
-        framerate: app.store.config.f64("recording.framerate").unwrap_or(30.0),
+        framerate: settings::RECORDING_FRAMERATE.get(&app.store.config),
         output,
         geometry: r.pending_geometry.clone(),
         codec: if configured.is_empty() { r.codec.clone() } else { configured },
         pixel_format: if picked { "yuv420p".into() } else { String::new() },
         max_height: Some(r.pending_max_height),
-        no_dmabuf: app.store.config.bool("recording.noDmabuf") == Some(true),
+        no_dmabuf: settings::RECORDING_NO_DMABUF.get(&app.store.config),
         audio_device: device,
-        audio_backend: config_str(app, "recording.audioBackend", ""),
+        audio_backend: settings::RECORDING_AUDIO_BACKEND.get(&app.store.config).to_owned(),
     };
     let argv = fs_system::proc::die_with_parent(&model::recorder_argv(&opts));
     let g = app.capture.generation();
@@ -386,7 +372,7 @@ fn launch(app: &mut App, device: String) {
 
 fn setup_webcam(app: &mut App, device: String) {
     app.capture.rec.webcam_audio_device = device.clone();
-    if app.store.config.bool("recording.webcam") != Some(true) {
+    if !settings::WEBCAM.get(&app.store.config) {
         launch(app, device);
         return;
     }
@@ -396,10 +382,10 @@ fn setup_webcam(app: &mut App, device: String) {
         launch(app, device);
         return;
     };
-    let size = config_str(app, "recording.webcamSize", "medium");
+    let size = settings::WEBCAM_SIZE.get(&app.store.config).to_owned();
     let margin = app.store.theme.theme.space.xl;
     app.capture.rec.webcam_target = Some(model::webcam_geometry(&size, region, margin));
-    let configured = config_str(app, "recording.webcamDevice", "");
+    let configured = settings::WEBCAM_DEVICE.get(&app.store.config).to_owned();
     if !configured.is_empty() {
         start_webcam(app, &configured);
         return;
@@ -556,7 +542,7 @@ fn fail(app: &mut App, why: String) {
 }
 
 fn finalize(app: &mut App, path: String) {
-    if app.store.config.bool("recording.finalize") == Some(false) {
+    if !settings::RECORDING_FINALIZE.get(&app.store.config) {
         announce_saved(app, path);
         return;
     }
@@ -619,7 +605,7 @@ pub fn exit(app: &mut App, e: Exit) {
                 setup_audio(app);
                 return;
             }
-            let d = dir(app);
+            let d = settings::recording_dir(&app.store.config);
             fail(app, or_code(&e.stderr, format!("could not create {d}")));
         }
         Job::Audio => {

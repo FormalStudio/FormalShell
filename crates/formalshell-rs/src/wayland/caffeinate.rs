@@ -29,13 +29,12 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 
 use super::App;
 use crate::services::caffeinate::Diff;
+use crate::settings;
 use crate::store;
 use crate::surface::Ignore;
 
 const NAMESPACE: &str = "formalshell:caffeinate";
 const INHIBIT_AFTER: Duration = Duration::from_secs(1);
-/// `screensaver.timeoutSeconds`' default.
-const IDLE_SECONDS: f64 = 300.0;
 
 crate::surface::ignore_events!(ZwpIdleInhibitManagerV1, ZwpIdleInhibitorV1, ExtIdleNotifierV1);
 
@@ -110,7 +109,7 @@ impl App {
         }
         self.caffeinate.armed = true;
         self.arm_idle();
-        if self.store.config.bool("caffeinate.onStartup") == Some(true) {
+        if settings::CAFFEINATE_ON_STARTUP.get(&self.store.config) {
             self.set_caffeinated(true);
         }
     }
@@ -122,7 +121,7 @@ impl App {
             return;
         }
         let (Some(notifier), Some(seat)) = (self.idle_notifier.clone(), self.seats.seats().next()) else { return };
-        let seconds = self.store.config.f64("screensaver.timeoutSeconds").filter(|s| *s > 0.0).unwrap_or(IDLE_SECONDS);
+        let seconds = settings::SAVER_TIMEOUT_SECONDS.positive(&self.store.config);
         let notification = notifier.get_idle_notification((seconds * 1000.0) as u32, &seat, &self.qh, IdleEvents);
         self.caffeinate.idle = Some(notification);
     }

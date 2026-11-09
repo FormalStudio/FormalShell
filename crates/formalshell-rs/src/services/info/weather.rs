@@ -34,8 +34,7 @@ struct Cfg {
 
 fn read() -> Cfg {
     let s = settings();
-    let at = s.f64("location.latitude").zip(s.f64("location.longitude"));
-    Cfg { at, interval: s.interval("weather.intervalMs", 900_000) }
+    Cfg { at: crate::settings::location(&s), interval: s.interval("weather.intervalMs", 900_000) }
 }
 
 const SCAN: &str = "if busctl --system status net.connman.iwd >/dev/null 2>&1; then echo iwd; \

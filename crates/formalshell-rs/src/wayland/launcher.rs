@@ -465,7 +465,7 @@ impl App {
     fn clipssh_image(&mut self, rest: &str) {
         use crate::services::clipssh;
         let Some((id, path)) = rest.split_once(':') else { return };
-        let configured = self.store.config.str("clipssh.alias").unwrap_or("");
+        let configured = crate::settings::CLIPSSH_ALIAS.get(&self.store.config);
         match clipssh::resolve_alias(configured, &self.store.clipssh.aliases) {
             Some(alias) => clipssh::command(clipssh::Cmd::SendImage(alias, path.to_owned())),
             None => {
@@ -512,7 +512,7 @@ impl App {
         if cancelled {
             return;
         }
-        let fallback = self.store.config.str("reminders.defaultMessage").unwrap_or("Time's up").to_owned();
+        let fallback = crate::settings::REMINDER_MESSAGE.get(&self.store.config).to_owned();
         let entry = fs_info::reminders::parse_spec(&value).and_then(|spec| {
             let duration = value.split_whitespace().next().unwrap_or_default().to_owned();
             self.store.notifications.set_reminder(&duration, &spec.message, &fallback)
@@ -678,7 +678,7 @@ impl App {
     /// focus returns to, a settle after the window is gone so it never lands
     /// in the launcher's own field.
     fn paste_chord(&mut self) {
-        let chord = self.store.config.str("clipboard.pasteChord").unwrap_or("ctrl+v").to_owned();
+        let chord = crate::settings::PASTE_CHORD.get(&self.store.config).to_owned();
         let Some(keys) = fs_menu::providers::paste_argv(&chord) else {
             eprintln!("Menu: clipboard.pasteChord is not a wtype chord: {chord} - copied but not pasted");
             return;
@@ -705,12 +705,12 @@ impl App {
         if std::mem::take(&mut self.store.clipboard.captured) {
             use crate::services::clipssh;
             clipssh::command(clipssh::Cmd::AutoImage {
-                configured: self.store.config.str("clipssh.alias").unwrap_or("").to_owned(),
-                enabled: self.store.config.bool("clipssh.autoSendImages").unwrap_or(false),
+                configured: crate::settings::CLIPSSH_ALIAS.get(&self.store.config).to_owned(),
+                enabled: crate::settings::CLIPSSH_AUTO_SEND.get(&self.store.config),
             });
         }
         let c = &self.store.clipboard;
-        let paste = self.store.config.bool("clipboard.paste").unwrap_or(true);
+        let paste = crate::settings::CLIPBOARD_PASTE.get(&self.store.config);
         let rows = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Copy, paste);
         let shared = fs_menu::providers::clipboard_provider(&c.items, fs_menu::providers::ClipMode::Share, paste);
         self.apply(Diff::Menu(index::Diff::Source("clipboard".into(), rows)));

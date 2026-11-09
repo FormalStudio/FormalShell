@@ -6,6 +6,7 @@
 use serde_json::{Value, json};
 
 use super::{config, state, theme};
+use crate::settings::{self, Flag, Word};
 use crate::store::Store;
 
 pub struct Page {
@@ -38,63 +39,55 @@ pub struct Key {
     pub control: Control,
 }
 
-const fn switch(page: &'static str, section: &'static str, key: &'static str, label: &'static str, default: bool) -> Key {
-    Key { page, section, key, label, control: Control::Switch(default) }
+const fn switch(page: &'static str, section: &'static str, flag: Flag, label: &'static str) -> Key {
+    Key { page, section, key: flag.key, label, control: Control::Switch(flag.default) }
 }
 
-const fn choice(
-    page: &'static str,
-    section: &'static str,
-    key: &'static str,
-    label: &'static str,
-    values: &'static [(&'static str, &'static str)],
-    default: &'static str,
-) -> Key {
-    Key { page, section, key, label, control: Control::Choice(values, default) }
+const fn choice(page: &'static str, section: &'static str, word: Word, label: &'static str, values: &'static [(&'static str, &'static str)]) -> Key {
+    Key { page, section, key: word.key, label, control: Control::Choice(values, word.default) }
 }
 
 /// `theme.mode`'s row: Light and Dark are the toggle's mode, Auto the key.
-pub const MODE: &str = "theme.mode";
+pub const MODE: &str = settings::THEME_MODE.key;
 
 const CORNER: [(&str, &str); 4] = [("none", "None"), ("overview", "Overview"), ("screensaver", "Screensaver"), ("lock", "Lock")];
 
 pub const KEYS: &[Key] = &[
-    choice("appearance", "Theme", MODE, "Style", &[("light", "Light"), ("dark", "Dark"), ("auto", "Auto")], "dark"),
-    switch("appearance", "Theme", "theme.reactiveRims", "Reactive rims", true),
-    switch("appearance", "Motion", "motion.enabled", "Animations", true),
-    switch("appearance", "Motion", "motion.morph", "Cards grow out of the bar", true),
-    switch("appearance", "Motion", "wallpaper.animate", "Animated backdrop", false),
-    choice("bar", "Placement", "layout", "Layout", &[("bar", "Bar"), ("sidebar", "Sidebar")], "bar"),
-    choice("bar", "Placement", "bar.position", "Edge", &[("top", "Top"), ("bottom", "Bottom"), ("left", "Left"), ("right", "Right")], "top"),
-    choice("bar", "Placement", "bar.style", "Bar style", &[("transparent", "Clear"), ("solid", "Solid"), ("corners", "Corners")], "transparent"),
+    choice("appearance", "Theme", settings::THEME_MODE, "Style", &[("light", "Light"), ("dark", "Dark"), ("auto", "Auto")]),
+    switch("appearance", "Theme", settings::REACTIVE_RIMS, "Reactive rims"),
+    switch("appearance", "Motion", settings::MOTION, "Animations"),
+    switch("appearance", "Motion", settings::MORPH, "Cards grow out of the bar"),
+    switch("appearance", "Motion", settings::WALLPAPER_ANIMATE, "Animated backdrop"),
+    choice("bar", "Placement", settings::LAYOUT, "Layout", &[("bar", "Bar"), ("sidebar", "Sidebar")]),
+    choice("bar", "Placement", settings::BAR_POSITION, "Edge", &[("top", "Top"), ("bottom", "Bottom"), ("left", "Left"), ("right", "Right")]),
+    choice("bar", "Placement", settings::BAR_STYLE, "Bar style", &[("transparent", "Clear"), ("solid", "Solid"), ("corners", "Corners")]),
     choice(
         "bar",
         "Notifications",
-        "notifications.position",
+        settings::NOTIFICATIONS_POSITION,
         "Toasts",
         &[("bottom-right", "Bottom right"), ("top-right", "Top right"), ("bottom-left", "Bottom left"), ("top-left", "Top left")],
-        "bottom-right",
     ),
-    switch("bar", "Notifications", "fullscreen.hideChrome", "Hide over fullscreen windows", true),
-    switch("desktop", "Clock", "desktopClock.enabled", "Desktop clock", false),
-    choice("desktop", "Clock", "desktopClock.face", "Face", &[("pixel", "Pixel"), ("gooey", "Gooey"), ("serif", "Serif")], "pixel"),
-    choice("desktop", "Clock", "desktopClock.width", "Digits", &[("wide", "Wide"), ("narrow", "Narrow")], "wide"),
-    switch("desktop", "Clock", "desktopClock.hour12", "12-hour time", false),
-    switch("desktop", "Clock", "desktopClock.depth", "Behind the subject", true),
-    switch("desktop", "Hot corners", "hotCorners.enabled", "Hot corners", true),
-    choice("desktop", "Hot corners", "hotCorners.topLeft", "Top left", &CORNER, "overview"),
-    choice("desktop", "Hot corners", "hotCorners.topRight", "Top right", &CORNER, "none"),
-    choice("desktop", "Hot corners", "hotCorners.bottomLeft", "Bottom left", &CORNER, "screensaver"),
-    choice("desktop", "Hot corners", "hotCorners.bottomRight", "Bottom right", &CORNER, "lock"),
-    switch("system", "Windows", "switcher.enabled", "Window switcher", true),
-    switch("system", "Windows", "switcher.currentWorkspace", "Switch within the workspace", false),
-    switch("system", "Windows", "workspaces.preview", "Workspace previews", true),
-    switch("system", "Launcher", "menu.appGrid", "Apps as a grid", false),
-    switch("system", "Media", "media.lyrics", "Lyrics", true),
-    switch("system", "Media", "media.lyricsBlur", "Blur unlit lyrics", true),
-    switch("system", "Media", "media.animatedBarCover", "Animated cover in the bar", true),
-    switch("system", "Screen", "screensaver.guardMediaPlayback", "No screensaver during playback", true),
-    switch("system", "Screen", "lock.beforeSleep", "Lock before sleep", true),
+    switch("bar", "Notifications", settings::HIDE_CHROME, "Hide over fullscreen windows"),
+    switch("desktop", "Clock", settings::CLOCK_ENABLED, "Desktop clock"),
+    choice("desktop", "Clock", settings::CLOCK_FACE, "Face", &[("pixel", "Pixel"), ("gooey", "Gooey"), ("serif", "Serif")]),
+    choice("desktop", "Clock", settings::CLOCK_WIDTH, "Digits", &[("wide", "Wide"), ("narrow", "Narrow")]),
+    switch("desktop", "Clock", settings::CLOCK_HOUR12, "12-hour time"),
+    switch("desktop", "Clock", settings::CLOCK_DEPTH, "Behind the subject"),
+    switch("desktop", "Hot corners", settings::HOT_CORNERS_ENABLED, "Hot corners"),
+    choice("desktop", "Hot corners", settings::HOT_CORNER_TOP_LEFT, "Top left", &CORNER),
+    choice("desktop", "Hot corners", settings::HOT_CORNER_TOP_RIGHT, "Top right", &CORNER),
+    choice("desktop", "Hot corners", settings::HOT_CORNER_BOTTOM_LEFT, "Bottom left", &CORNER),
+    choice("desktop", "Hot corners", settings::HOT_CORNER_BOTTOM_RIGHT, "Bottom right", &CORNER),
+    switch("system", "Windows", settings::SWITCHER, "Window switcher"),
+    switch("system", "Windows", settings::SWITCHER_CURRENT_WORKSPACE, "Switch within the workspace"),
+    switch("system", "Windows", settings::WORKSPACE_PREVIEW, "Workspace previews"),
+    switch("system", "Launcher", settings::APP_GRID, "Apps as a grid"),
+    switch("system", "Media", settings::LYRICS, "Lyrics"),
+    switch("system", "Media", settings::LYRICS_BLUR, "Blur unlit lyrics"),
+    switch("system", "Media", settings::ANIMATED_BAR_COVER, "Animated cover in the bar"),
+    switch("system", "Screen", settings::GUARD_MEDIA, "No screensaver during playback"),
+    switch("system", "Screen", settings::LOCK_BEFORE_SLEEP, "Lock before sleep"),
 ];
 
 pub fn find(key: &str) -> Option<&'static Key> {

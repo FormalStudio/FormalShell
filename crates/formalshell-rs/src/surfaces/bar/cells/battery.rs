@@ -43,7 +43,7 @@ impl Cell for Battery {
             .as_bool()
             .unwrap_or_else(|| c.bool("bar.widgets.battery.showLabel").unwrap_or(true));
         let r = Read {
-            battery: p.battery.clone().map(|b| (b, power::thresholds(c))),
+            battery: p.battery.clone().map(|b| (b, crate::settings::battery_thresholds(c))),
             on_battery: p.on_battery,
             show_label,
         };

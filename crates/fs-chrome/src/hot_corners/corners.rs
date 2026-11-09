@@ -138,16 +138,19 @@ impl Corners {
     }
 }
 
-/// A top corner's square comes out of the bar's own input region (the bar
-/// anchors top/left/right): the overview's top-left one takes the leftmost
-/// pixels of the first cell, and the top-right stays "none" so the
-/// indicators keep theirs.
-fn default_corner(corner: Corner) -> Action {
+/// `hotCorners.enabled` when the key is absent.
+pub const DEFAULT_ENABLED: bool = true;
+
+/// A corner's action when its key is absent. A top corner's square comes
+/// out of the bar's own input region (the bar anchors top/left/right): the
+/// overview's top-left one takes the leftmost pixels of the first cell, and
+/// the top-right stays "none" so the indicators keep theirs.
+pub const fn default_action(corner: Corner) -> &'static str {
     match corner {
-        Corner::TopLeft => Action::Overview,
-        Corner::TopRight => Action::None,
-        Corner::BottomLeft => Action::Screensaver,
-        Corner::BottomRight => Action::Lock,
+        Corner::TopLeft => "overview",
+        Corner::TopRight => "none",
+        Corner::BottomLeft => "screensaver",
+        Corner::BottomRight => "lock",
     }
 }
 
@@ -196,7 +199,7 @@ pub fn resolve(hot_corners: Option<&Value>) -> Config {
     for corner in Corner::ALL {
         let name = corner.name();
         let action = match raw.get(name).filter(|v| !v.is_null()) {
-            None => default_corner(corner),
+            None => Action::builtin(default_action(corner)).unwrap_or(Action::None),
             Some(value) => match value.as_str().and_then(|s| {
                 Action::builtin(s)
                     .or_else(|| is_launcher_action(s).then(|| Action::Launcher(s.into())))
@@ -215,7 +218,7 @@ pub fn resolve(hot_corners: Option<&Value>) -> Config {
     }
 
     Config {
-        enabled: raw.get("enabled").is_none_or(|v| *v == Value::Bool(true)),
+        enabled: raw.get("enabled").map_or(DEFAULT_ENABLED, |v| *v == Value::Bool(true)),
         size: clamped_number(
             raw.get("size"),
             DEFAULT_SIZE,

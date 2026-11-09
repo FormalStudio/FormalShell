@@ -40,40 +40,35 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { airplay_enable: false, airplay_name: String::new(), iphone_enable: true, motion: true }
+        Self::read(&Value::Null)
     }
 }
 
 impl Settings {
     fn read(settings: &Value) -> Self {
-        let at = |path: &str| {
-            let mut node = settings;
-            for part in path.split('.') {
-                node = node.get(part)?;
-            }
-            Some(node)
-        };
+        use crate::settings::{AIRPLAY_ENABLE, AIRPLAY_NAME, IPHONE_ENABLE, MOTION};
         Self {
-            airplay_enable: at("airplay.enable") == Some(&Value::Bool(true)),
-            airplay_name: at("airplay.name").and_then(Value::as_str).unwrap_or("").to_owned(),
-            iphone_enable: at("iphone.enable") != Some(&Value::Bool(false)),
-            motion: at("motion.enabled") != Some(&Value::Bool(false)),
+            airplay_enable: AIRPLAY_ENABLE.get(settings),
+            airplay_name: AIRPLAY_NAME.get(settings).to_owned(),
+            iphone_enable: IPHONE_ENABLE.get(settings),
+            motion: MOTION.get(settings),
         }
     }
 }
 
 struct Hub {
-    last: Settings,
+    /// None until the first [`configure`], when subscribers get the defaults.
+    last: Option<Settings>,
     subscribers: Vec<async_channel::Sender<Settings>>,
 }
 
-static HUB: Mutex<Hub> = Mutex::new(Hub { last: Settings { airplay_enable: false, airplay_name: String::new(), iphone_enable: true, motion: true }, subscribers: Vec::new() });
+static HUB: Mutex<Hub> = Mutex::new(Hub { last: None, subscribers: Vec::new() });
 
 /// A service's stream of settings, seeded with the last ones handed over.
 pub fn subscribe() -> async_channel::Receiver<Settings> {
     let (tx, rx) = async_channel::unbounded();
     if let Ok(mut hub) = HUB.lock() {
-        let _ = tx.try_send(hub.last.clone());
+        let _ = tx.try_send(hub.last.clone().unwrap_or_default());
         hub.subscribers.push(tx);
     }
     rx
@@ -84,10 +79,10 @@ pub fn configure(settings: &Value) {
     let next = Settings::read(settings);
     visualizer::set_motion(next.motion);
     let Ok(mut hub) = HUB.lock() else { return };
-    if hub.last == next {
+    if hub.last.as_ref().unwrap_or(&Settings::default()) == &next {
         return;
     }
-    hub.last = next.clone();
+    hub.last = Some(next.clone());
     hub.subscribers.retain(|tx| tx.try_send(next.clone()).is_ok());
 }
 

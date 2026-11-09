@@ -98,7 +98,7 @@ impl App {
                 });
                 if own && let (Some(rt), Some(tx)) = (&self.runtime, self.lock.tx.clone()) {
                     let home = std::env::var("HOME").unwrap_or_default();
-                    let path = self.store.config.avatar_path(&home);
+                    let path = crate::settings::avatar_path(&self.store.config, &home);
                     let scale = self.polkit.as_ref().map_or_else(|| self.store.display.scales.primary(), |d| d.modal.win.surface.scale());
                     let px = crate::scene::pixels_at((self.store.theme.theme.space.lg * 2.0).round(), scale);
                     rt.pool().submit(move || {

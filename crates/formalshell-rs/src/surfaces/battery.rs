@@ -7,7 +7,6 @@ use fs_system::power::model::{Fired, Low, warn_event};
 use fs_types::Percent;
 use fs_upower::DeviceState;
 
-use crate::services::devices::power;
 use crate::store::Store;
 
 #[derive(Default)]
@@ -26,7 +25,7 @@ impl Watch {
             return false;
         }
         let draining = matches!(b.state, DeviceState::Discharging | DeviceState::PendingDischarge | DeviceState::Empty);
-        let result = warn_event(self.last, b.level, !draining, self.fired, power::thresholds(&store.config));
+        let result = warn_event(self.last, b.level, !draining, self.fired, crate::settings::battery_thresholds(&store.config));
         self.last = Some(b.level);
         self.fired = result.fired;
         let body = format!("{}% REMAINING", b.level.rounded());

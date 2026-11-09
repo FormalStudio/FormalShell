@@ -32,6 +32,7 @@ use crate::services::devices::audio;
 use crate::services::{kopuz, motion_art};
 use crate::services::media::Active;
 use crate::services::visualizer::{self, Avail};
+use crate::settings::{APPLE_MUSIC_ART, VISUALIZER, VISUALIZER_STYLE};
 use crate::store::{self, Topic};
 use crate::ui::el::Opt;
 use crate::ui::{El, Event, Ink, Type, What, w};
@@ -180,7 +181,7 @@ fn set_follow(fx: &Effect, on: bool) {
 }
 
 fn spectrum_enabled(v: &View) -> bool {
-    v.store.config.bool("media.visualizer").unwrap_or(true)
+    VISUALIZER.get(&v.store.config)
 }
 
 impl Media {
@@ -275,7 +276,7 @@ impl Panel for Media {
     fn start(&mut self, fx: &mut Effect) {
         set_follow(fx, true);
         audio::routing_wanted(0, true);
-        let on = fx.store.config.bool("media.visualizer").unwrap_or(true);
+        let on = VISUALIZER.get(&fx.store.config);
         self.spectrum.set(on);
         visualizer::set_panel(on);
     }
@@ -328,7 +329,7 @@ impl Panel for Media {
             // shows the slot, motion is on and the album has motion art.
             let animated = self.open
                 && v.theme.motion_enabled
-                && v.store.config.bool("media.appleMusicArt").unwrap_or(false)
+                && APPLE_MUSIC_ART.get(&v.store.config)
                 && !a.artist.is_empty()
                 && !a.album.is_empty();
             let scale = v.raster;
@@ -347,7 +348,7 @@ impl Panel for Media {
         info.push(w::column(s.xxs, words).fill());
         let vis = &v.store.visualizer;
         if enabled && (vis.avail == Avail::Available || a.kind == "iphone") {
-            let style = vis.style(v.store.config.str("media.visualizerStyle").unwrap_or("bars"));
+            let style = vis.style(VISUALIZER_STYLE.get(&v.store.config));
             let tip = styles::label(&style);
             info.push(El::custom(spectrum::Spectrum { style, columns: SPECTRUM_COLUMNS, live: vis.running }).on("spectrum").tip(tip).key("spectrum"));
         }
@@ -493,8 +494,7 @@ impl Panel for Media {
             ("volume", What::Fraction(f)) => fx.store.media.set_volume(Fraction::from_fraction(*f)),
             ("volume", What::Wheel(d)) => self.step_volume(fx, *d as f64 * VOLUME_STEP),
             ("spectrum", What::Click) => {
-                let configured = fx.store.config.str("media.visualizerStyle").unwrap_or("bars").to_owned();
-                let next = styles::step(&fx.store.visualizer.style(&configured), 1).to_owned();
+                let next = styles::step(&fx.store.visualizer.style(VISUALIZER_STYLE.get(&fx.store.config)), 1).to_owned();
                 fx.service(move |ctx| ctx.publish(store::Diff::Visualizer(visualizer::Diff::Style(next))));
             }
             _ => {}
